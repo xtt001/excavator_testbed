@@ -1,0 +1,46 @@
+<mujoco>
+    <include file="scene.xml"/>
+    <include file="excavator_simple_dependencies.xml"/>
+
+    <equality>
+        <connect site1="rod_boom_left" site2="hole_boom_left" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+        <connect site1="rod_boom_right" site2="hole_boom_right" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+        <connect site1="rod_stick_cyl" site2="hole_stick" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+        <connect site1="rod_bucket_rocker_right" site2="rod_bucket_link_right" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+        <connect site1="rod_bucket_rocker_left" site2="rod_bucket_link_left" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+        <connect site1="rod_bucket" site2="rod_bucket_link_middle" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+    </equality>
+
+    <worldbody>
+        <include file="excavator_simple.xml" />
+
+        <body name="box" pos="4.2 0 0.25">
+            <joint name="red_box_joint" type="free" frictionloss="0.01" />
+            <inertial pos="0 0 0" mass="0.05" diaginertia="0.002 0.002 0.002" />
+            <geom condim="4" friction="2.0 0.05 0.0001" solimp="0.9 0.95 0.001" solref="0.002 1" pos="0 0 0" size="0.22 0.22 0.22" type="box" name="red_box" rgba="1 0 0 1" />
+        </body>
+
+        <body name="dump_tray" pos="0 4.0 0">
+            <geom type="cylinder" size="1.0 0.1" rgba="0.8 0.8 0.2 1" name="yellow_dump_tray"/>
+        </body>
+    </worldbody>
+
+    <actuator>
+        <position name="act_swing" joint="j1_swing" ctrllimited="true" ctrlrange="-3.14 3.14" kp="1e7" kv="1e5" user="1"/>
+        <position name="act_boom" joint="j2_boom" ctrllimited="true" ctrlrange="-0.9 0.3" kp="5e7" kv="5e5" user="1"/>
+        <position name="act_stick" joint="j3_stick" ctrllimited="true" ctrlrange="-0.8 1.0" kp="5e7" kv="5e5" user="1"/>
+        <position name="act_bucket" joint="j4_bucket" ctrllimited="true" ctrlrange="-2.1 0.6" kp="1e7" kv="1e5" user="1"/>
+    </actuator>
+
+    <contact>
+        <exclude body1="excavator_simple/boom" body2="excavator_simple/boom_cylinder_left_up"/>
+        <exclude body1="excavator_simple/boom" body2="excavator_simple/boom_cylinder_right_up"/>
+        <exclude body1="excavator_simple/stick" body2="excavator_simple/stick_cylinder_up"/>
+        <exclude body1="excavator_simple/bucket_rocker_right" body2="excavator_simple/bucket_cylinder_up"/>
+        <exclude body1="excavator_simple/bucket_rocker_left" body2="excavator_simple/bucket_cylinder_up"/>
+    </contact>
+
+    <keyframe>
+        <key name="init_pose" qpos="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 4.0 0 0.2 1 0 0 0" />
+    </keyframe>
+</mujoco>

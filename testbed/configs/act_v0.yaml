@@ -1,0 +1,44 @@
+# ACT Policy Config V0 — Transfer cube (pipeline validation)
+# Swap to excavator later: change task_name, equipment_model, dataset_dir, ckpt_dir
+# Load with: yaml.safe_load(open("act_v0.yaml"))
+
+task:
+  task_name: sim_transfer_cube_scripted
+  equipment_model: vx300s_bimanual
+  dataset_dir: data_sim_episodes/sim_transfer_cube_scripted
+  num_episodes: 50
+  episode_len: 400
+  camera_names:
+    - top
+  backend:
+    name: mujoco
+    dt: 0.02
+
+policy:
+  class: ACT
+  act_params:
+    chunk_size: 100
+    kl_weight: 10.0
+    hidden_dim: 512
+    dim_feedforward: 3200
+
+train:
+  lr: 1.0e-5
+  num_epochs: 500
+  batch_size: 8
+  seed: 0
+  num_workers: 4
+  prefetch_factor: 2
+  persistent_workers: true
+  pin_memory: true
+  ckpt_dir: runs/ckpts/transfer_cube_act_v0
+  resume_ckpt: runs/ckpts/transfer_cube_act_v0/policy_epoch_200_seed_0.ckpt
+  start_epoch: 200
+
+eval:
+  ckpt_dir: runs/ckpts/transfer_cube_act_v0
+  ckpt_path: runs/ckpts/transfer_cube_act_v0/policy_best.ckpt
+  num_rollouts: 10
+  save_video: true
+  video_dir: runs/eval/transfer_cube_act_v0/videos
+  results_dir: runs/eval/transfer_cube_act_v0/results

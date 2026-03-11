@@ -1,0 +1,266 @@
+"""
+ACT policy adapter.
+
+Wraps the original ACTPolicy (nn.Module) behind the testbed Policy ABC so
+that the evaluator and CLI can call policy.predict(obs) without knowing
+any ACT internals.
+
+Temporal aggregation
+--------------------
+When `temporal_agg=True`, actions are chunked and averaged using the
+scheme from the original paper: at each step we query the model at
+frequency 1, accumulate the chunk into a (T, T+C, Na) tensor, then
+select the weighted average of all past predictions for the current step.
+"""
+
+from __future__ import annotations
+
+import pickle
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import torch
+from einops import rearrange
+import torchvision.transforms as transforms
+
+from testbed.policies.base import Policy, register_policy
+
+
+def _kl_divergence(mu, logvar):
+    if mu.data.ndimension() == 4:
+        mu = mu.view(mu.size(0), mu.size(1))
+    if logvar.data.ndimension() == 4:
+        logvar = logvar.view(logvar.size(0), logvar.size(1))
+    klds = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp())
+    total_kld       = klds.sum(1).mean(0, True)
+    dimension_wise  = klds.mean(0)
+    mean_kld        = klds.mean(1).mean(0, True)
+    return total_kld, dimension_wise, mean_kld
+
+
+@register_policy("act")
+class ACTAdapter(Policy):
+    """
+    Runnable ACT policy for inference.
+
+    Parameters
+    ----------
+    policy_config  Dict passed to build_ACT_model_and_optimizer.
+    norm_stats     Dataset normalisation stats (qpos_mean/std, action_mean/std).
+    temporal_agg   Use temporal action aggregation (default False).
+    device         Torch device string (default "cuda").
+    """
+
+    def __init__(
+        self,
+        policy_config: dict,
+        norm_stats: dict[str, np.ndarray],
+        temporal_agg: bool = False,
+        device: str = "cuda",
+    ):
+        from testbed.policies.act.detr.main import build_ACT_model_and_optimizer
+
+        self.device       = torch.device(device if torch.cuda.is_available() else "cpu")
+        self.norm_stats   = norm_stats
+        self.temporal_agg = temporal_agg
+        self.kl_weight    = policy_config.get("kl_weight", 10)
+
+        model, optimizer = build_ACT_model_and_optimizer(policy_config)
+        self._model     = model.to(self.device)
+        self._optimizer = optimizer
+
+        # temporal aggregation state
+        self._num_queries: int  = policy_config["num_queries"]
+        self._t: int            = 0
+        self._all_time_actions: torch.Tensor | None = None
+
+        self._normalize  = transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225],
+        )
+
+    # ── lifecycle ─────────────────────────────────────────────────────────────
+
+    def reset(self) -> None:
+        """Called once per evaluation rollout to clear temporal state."""
+        self._t = 0
+        self._all_time_actions = None
+
+    # ── inference ─────────────────────────────────────────────────────────────
+
+    def predict(self, obs: dict) -> np.ndarray:
+        """
+        Parameters
+        ----------
+        obs   dict with keys:
+                "qpos"      : (Nq,) float32
+                "image_<cam>": (C, H, W) float32 [0, 1]   for each camera
+              Camera images should be in channel-first format.
+
+        Returns
+        -------
+        action : (Na,) float32  in *unnormalised* action space.
+        """
+        qpos   = torch.from_numpy(obs["qpos"]).float().to(self.device).unsqueeze(0)
+
+        # normalise qpos
+        qpos = (qpos - torch.from_numpy(self.norm_stats["qpos_mean"]).to(self.device)) \
+                     / torch.from_numpy(self.norm_stats["qpos_std"]).to(self.device)
+
+        # assemble image tensor from obs keys
+        cam_images = [v for k, v in obs.items() if k.startswith("image_")]
+        if not cam_images:
+            raise ValueError("ACTAdapter.predict(): no 'image_*' keys found in obs.")
+        # each cam image: already (C, H, W) float32 [0,1]
+        img = np.stack(cam_images, axis=0)                 # (n_cams, C, H, W)
+        image = torch.from_numpy(img).float().to(self.device).unsqueeze(0)  # (1, n_cams, C, H, W)
+        image = self._normalize(image)
+
+        self._model.eval()
+        with torch.no_grad():
+            a_hat, _, _ = self._model(qpos, image, None)   # (1, C, Na)
+
+        if self.temporal_agg:
+            action = self._aggregate(a_hat)
+        else:
+            # non-aggregated: execute every num_queries steps
+            if self._t % self._num_queries == 0:
+                self._cached_actions = a_hat.squeeze(0)    # (C, Na)
+            step_in_chunk = self._t % self._num_queries
+            action = self._cached_actions[step_in_chunk].cpu().numpy()
+
+        self._t += 1
+
+        # unnormalise
+        action = (
+            action
+            * self.norm_stats["action_std"]
+            + self.norm_stats["action_mean"]
+        )
+        return action.astype(np.float32)
+
+    def _aggregate(self, a_hat: torch.Tensor) -> np.ndarray:
+        """
+        Temporal aggregation from the ACT paper.
+        a_hat shape: (1, C, Na)
+        """
+        Na = a_hat.shape[-1]
+        T  = 400  # max episode length — safe upper bound
+
+        if self._all_time_actions is None:
+            self._all_time_actions = torch.zeros(
+                [T, T + self._num_queries, Na], device=self.device
+            )
+
+        t = self._t
+        self._all_time_actions[[t], t : t + self._num_queries] = a_hat
+
+        # weighted average of all past chunks that cover step t
+        # NOTE: only rows whose chunk actually covers column t are non-zero;
+        #       filter them out exactly as in the original ACT repo to avoid
+        #       zero-padding contaminating the weighted mean.
+        actions_for_curr_step = self._all_time_actions[:t + 1, t]  # (t+1, Na)
+        actions_populated = torch.all(actions_for_curr_step != 0, dim=1)
+        actions_for_curr_step = actions_for_curr_step[actions_populated]
+        k = 0.01
+        exp_weights = np.exp(-k * np.arange(len(actions_for_curr_step)))
+        exp_weights = exp_weights / exp_weights.sum()
+        exp_weights = torch.from_numpy(exp_weights).float().to(self.device).unsqueeze(1)
+        action = (actions_for_curr_step * exp_weights).sum(0).cpu().numpy()
+        return action
+
+    # ── training forward ──────────────────────────────────────────────────────
+
+    def forward_loss(
+        self,
+        qpos: torch.Tensor,
+        image: torch.Tensor,
+        actions: torch.Tensor,
+        is_pad: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        """
+        Training-time forward pass.
+
+        Parameters
+        ----------
+        qpos    (B, Nq)
+        image   (B, n_cams, C, H, W)   normalised
+        actions (B, C, Na)
+        is_pad  (B, C)  bool
+
+        Returns
+        -------
+        {"l1": ..., "kl": ..., "loss": ...}
+        """
+        image   = self._normalize(image)
+        actions = actions[:, : self._model.num_queries]
+        is_pad  = is_pad[:,  : self._model.num_queries]
+
+        a_hat, _, (mu, logvar) = self._model(qpos, image, None, actions, is_pad)
+        total_kld, _, _        = _kl_divergence(mu, logvar)
+
+        import torch.nn.functional as F
+        all_l1 = F.l1_loss(actions, a_hat, reduction="none")
+        l1     = (all_l1 * ~is_pad.unsqueeze(-1)).mean()
+
+        return {
+            "l1":   l1,
+            "kl":   total_kld[0],
+            "loss": l1 + total_kld[0] * self.kl_weight,
+        }
+
+    def configure_optimizers(self):
+        return self._optimizer
+
+    def state_dict(self):
+        return self._model.state_dict()
+
+    def load_state_dict(self, sd, strict: bool = True):
+        return self._model.load_state_dict(sd, strict=strict)
+
+    # ── checkpoint helpers ────────────────────────────────────────────────────
+
+    @classmethod
+    def from_checkpoint(
+        cls,
+        ckpt_path: str | Path,
+        policy_config: dict,
+        norm_stats_path: str | Path,
+        temporal_agg: bool = False,
+        device: str = "cuda",
+    ) -> "ACTAdapter":
+        """
+        Convenience factory: load an ACT policy from a checkpoint file.
+
+        Parameters
+        ----------
+        ckpt_path       Path to policy_best.ckpt (or policy_epoch_N.ckpt).
+        policy_config   Same config dict used during training.
+        norm_stats_path Path to dataset_stats.pkl.
+        """
+        ckpt_path       = Path(ckpt_path)
+        norm_stats_path = Path(norm_stats_path)
+
+        with open(norm_stats_path, "rb") as f:
+            norm_stats = pickle.load(f)
+
+        adapter = cls(
+            policy_config=policy_config,
+            norm_stats=norm_stats,
+            temporal_agg=temporal_agg,
+            device=device,
+        )
+
+        raw = torch.load(ckpt_path, map_location="cpu")
+        if isinstance(raw, dict) and "model_state_dict" in raw:
+            sd = raw["model_state_dict"]
+        elif isinstance(raw, dict):
+            sd = raw
+        else:
+            raise ValueError(f"Unsupported checkpoint format: {type(raw)}")
+
+        adapter.load_state_dict(sd)
+        adapter._model.to(adapter.device)
+        adapter._model.eval()
+        return adapter

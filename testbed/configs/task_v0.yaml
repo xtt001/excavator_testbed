@@ -1,0 +1,22 @@
+# Task V0 — Transfer cube, scripted demos (dual-arm vx300s bimanual)
+# Pipeline validation task. Swap to excavator later by changing task_name + equipment_model.
+# Load with: TaskConfig.model_validate(yaml.safe_load(open("task_v0.yaml")))
+
+task_name: sim_transfer_cube_scripted
+equipment_model: vx300s_bimanual
+dataset_dir: data_sim_episodes/sim_transfer_cube_scripted
+num_episodes: 50
+episode_len: 400
+camera_names:
+  - top
+
+backend:
+  name: mujoco
+  dt: 0.02
+
+inject_noise: false
+only_save_success: true
+success_reward_threshold: 4.0
+target_success_episodes: 50
+fixed_object_pose: null
+excavator_pipeline: ee_replay  # unused for this task

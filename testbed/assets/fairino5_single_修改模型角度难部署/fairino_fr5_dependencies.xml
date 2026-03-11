@@ -1,0 +1,18 @@
+<mujocoinclude>
+    <compiler angle="radian" inertiafromgeom="auto" />
+    <asset>
+        <mesh name="fairino_fr5_1_base_link" file="meshs/base_link.STL" />
+        <mesh name="fairino_fr5_2_shoulder_link" file="meshs/shoulder_link.STL" />
+        <mesh name="fairino_fr5_3_upperarm_link" file="meshs/upperarm_link.STL" />
+        <mesh name="fairino_fr5_4_forearm_link" file="meshs/forearm_link.STL" />
+        <mesh name="fairino_fr5_5_wrist1_link" file="meshs/wrist1_link.STL" />
+        <mesh name="fairino_fr5_6_wrist2_link" file="meshs/wrist2_link.STL" />
+        <mesh name="fairino_fr5_7_wrist3_link" file="meshs/wrist3_link.STL" />
+
+        <mesh name="vx300s_7_gripper" file="meshs/vx300s_7_gripper.stl" scale="0.001 0.001 0.001" />
+        <mesh name="vx300s_8_gripper_prop" file="meshs/vx300s_8_gripper_prop.stl" scale="0.001 0.001 0.001" />
+        <mesh name="vx300s_9_gripper_bar" file="meshs/vx300s_9_gripper_bar.stl" scale="0.001 0.001 0.001" />
+        <mesh name="vx300s_10_gripper_finger_left" file="meshs/vx300s_10_custom_finger_left.stl" scale="0.001 0.001 0.001" />
+        <mesh name="vx300s_10_gripper_finger_right" file="meshs/vx300s_10_custom_finger_right.stl" scale="0.001 0.001 0.001" />
+    </asset>
+</mujocoinclude>

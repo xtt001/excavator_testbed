@@ -1,0 +1,32 @@
+<mujocoinclude>
+    <compiler angle="radian" inertiafromgeom="auto" />
+    <asset>
+        <!-- 底盘 -->
+        <mesh name="excavator_simple_1_base" file="meshs/1_base.STL"/>
+        <!-- 车身 -->
+        <mesh name="excavator_simple_2_swing" file="meshs/2_swing.STL"/>
+        <!-- 动臂 -->  
+        <mesh name="excavator_simple_3_boom" file="meshs/3_boom.STL"/>
+        <!-- 动臂液压缸 left 组 -->
+        <mesh name="excavator_simple_4_boom_cylinder_left_down" file="meshs/4_boom_cylinder_left_down.STL"/>
+        <mesh name="excavator_simple_4_boom_cylinder_left_up" file="meshs/4_boom_cylinder_left_up.STL"/>
+        <!-- 动臂液压缸 right 组 -->
+        <mesh name="excavator_simple_5_boom_cylinder_right_down" file="meshs/5_boom_cylinder_right_down.STL"/>
+        <mesh name="excavator_simple_5_boom_cylinder_right_up" file="meshs/5_boom_cylinder_right_up.STL"/>
+        <!-- 斗杆 -->
+        <mesh name="excavator_simple_6_stick" file="meshs/6_stick.STL"/>
+        <!-- 斗杆液压缸 -->
+        <mesh name="excavator_simple_7_stick_cylinder_down" file="meshs/7_stick_cylinder_down.STL"/>
+        <mesh name="excavator_simple_7_stick_cylinder_up" file="meshs/7_stick_cylinder_up.STL"/>
+        <!-- 铲斗 -->
+        <mesh name="excavator_simple_8_bucket" file="meshs/8_bucket.STL"/>
+        <!-- 铲斗液压缸 -->  
+        <mesh name="excavator_simple_9_bucket_cylinder_down" file="meshs/9_bucket_cylinder_down.STL"/>
+        <mesh name="excavator_simple_9_bucket_cylinder_up" file="meshs/9_bucket_cylinder_up.STL"/>
+        <!-- 铲斗上方摇杆 -->
+        <mesh name="excavator_simple_10_bucket_rocker_left" file="meshs/10_bucket_rocker_left.STL"/>
+        <mesh name="excavator_simple_10_bucket_rocker_right" file="meshs/10_bucket_rocker_right.STL"/>
+        <!-- 斗连杆 -->
+        <mesh name="excavator_simple_11_bucket_link" file="meshs/11_bucket_link.STL"/>
+  </asset>
+</mujocoinclude>

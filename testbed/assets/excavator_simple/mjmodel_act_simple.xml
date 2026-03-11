@@ -1,0 +1,176 @@
+<mujoco model="pudong">
+  <compiler angle="radian" autolimits="true"/>
+  <statistic meansize="1.25026" extent="11.9312" center="2.1243 -5.75274e-10 1.80886"/>
+  <asset>
+    <!-- 底盘 -->
+    <mesh name="excavator_simple_1_base" file="meshs/1_base.STL"/>
+    <!-- 车身 -->
+    <mesh name="excavator_simple_2_swing" file="meshs/2_swing.STL"/>
+    <!-- 动臂 -->  
+    <mesh name="excavator_simple_3_boom" file="meshs/3_boom.STL"/>
+    <!-- 动臂液压缸 left 组 -->
+    <mesh name="excavator_simple_4_boom_cylinder_left_down" file="meshs/4_boom_cylinder_left_down.STL"/>
+    <mesh name="excavator_simple_4_boom_cylinder_left_up" file="meshs/4_boom_cylinder_left_up.STL"/>
+    <!-- 动臂液压缸 right 组 -->
+    <mesh name="excavator_simple_5_boom_cylinder_right_down" file="meshs/5_boom_cylinder_right_down.STL"/>
+    <mesh name="excavator_simple_5_boom_cylinder_right_up" file="meshs/5_boom_cylinder_right_up.STL"/>
+    <!-- 斗杆 -->
+    <mesh name="excavator_simple_6_stick" file="meshs/6_stick.STL"/>
+    <!-- 斗杆液压缸 -->
+    <mesh name="excavator_simple_7_stick_cylinder_down" file="meshs/7_stick_cylinder_down.STL"/>
+    <mesh name="excavator_simple_7_stick_cylinder_up" file="meshs/7_stick_cylinder_up.STL"/>
+    <!-- 铲斗 -->
+    <mesh name="excavator_simple_8_bucket" file="meshs/8_bucket.STL"/>
+    <!-- 铲斗液压缸 -->  
+    <mesh name="excavator_simple_9_bucket_cylinder_down" file="meshs/9_bucket_cylinder_down.STL"/>
+    <mesh name="excavator_simple_9_bucket_cylinder_up" file="meshs/9_bucket_cylinder_up.STL"/>
+    <!-- 铲斗上方摇杆 -->
+    <mesh name="excavator_simple_10_bucket_rocker_left" file="meshs/10_bucket_rocker_left.STL"/>
+    <mesh name="excavator_simple_10_bucket_rocker_right" file="meshs/10_bucket_rocker_right.STL"/>
+    <!-- 斗连杆 -->
+    <mesh name="excavator_simple_11_bucket_link" file="meshs/11_bucket_link.STL"/>
+  </asset>
+  
+  <worldbody>
+    <geom type="mesh" rgba="0.79216 0.81961 0.93333 1" mesh="excavator_simple_1_base"/>
+    <!-- 车身 -->
+    <body name="excavator_simple/swing" pos="0 0 0.72">
+      <inertial pos="-0.83549 0.21412 0.58331" quat="-0.192185 0.658133 0.125692 0.717027" mass="7793.2" diaginertia="12083.5 8855.4 4942.96"/>
+      <joint name="j1_swing" pos="0 0 0" axis="0 0 -1" armature="100"/>
+      <geom type="mesh" rgba="1 0.74902 0 1" mesh="excavator_simple_2_swing"/>
+      
+      <!-- 动臂 -->  
+      <body name="excavator_simple/boom" pos="-0.009 0 1.0372">
+        <inertial pos="2.2911 0 1.2825" quat="0.558762 0.433341 0.433341 0.558762" mass="1440.8" diaginertia="3009.3 2897.59 151.157"/>
+        <joint name="j2_boom" pos="0 0 0" axis="0 1 0" range="-0.9 0.3" armature="100"/>
+        <geom type="mesh" rgba="1 0.49804 0 1" mesh="excavator_simple_3_boom"/>
+        <!-- 动臂左右两侧的液压杆末端点位，连接动臂 rod_boom_left -->
+        <site name="hole_boom_left" pos="1.8012 0.31 1.548" size="0.04" rgba="1 0 0 1"/>
+        <site name="hole_boom_right" pos="1.8012 -0.31 1.548" size="0.04" rgba="1 0 0 1"/>
+        <!-- 斗杆液压缸 -->
+        <body name="excavator_simple/stick_cylinder_down" pos="2.7108 0 2.1303" quat="0.763681 0 0.645593 0">
+          <inertial pos="0 0 0.88447" quat="0.707107 0 0 0.707107" mass="15.576" diaginertia="5.782 5.7795 0.073091"/>
+          <joint name="j_other_1_stick_cylinder" pos="0 0 0" axis="0 -1 0" range="-0.2 0.2"/>
+          <geom type="mesh" rgba="0 1 1 1" mesh="excavator_simple_7_stick_cylinder_down"/>
+          <body name="excavator_simple/stick_cylinder_up" pos="0 0 0.7811">
+            <inertial pos="0 0 0.91721" quat="0.707107 0 0 0.707107" mass="15.423" diaginertia="4.9253 4.9237 0.021379"/>
+            <joint name="j_other_1_stick_cylinder_slide" pos="0 0 0" axis="0 0 -1" type="slide" range="-0.88 0.6"/>
+            <geom type="mesh" rgba="0.086275 0.21961 1 1" mesh="excavator_simple_7_stick_cylinder_up"/>
+            <!-- 斗杆液压杆末端点位，连接斗杆部分 hole_stick -->
+            <site name="rod_stick_cyl" pos="0 0 1.85" size="0.04" rgba="0 1 0 1"/>
+          </body>
+        </body>
+        
+        <!-- 斗杆 -->
+        <body name="excavator_simple/stick" pos="5.4177 0 1.706" quat="0.8043 0 0.594224 0">
+          <inertial pos="0.9223 0 0.24134" quat="0.492398 0.507488 0.507488 0.492398" mass="600.4" diaginertia="564.47 546.154 26.1825"/>
+          <joint name="j3_stick" pos="0 0 0" axis="0 1 0" range="-0.8 1" armature="80"/>
+          <geom type="mesh" rgba="0 0.66667 0 1" mesh="excavator_simple_6_stick"/>
+          <!-- 斗杆 site,用于连接斗杆液压 rod_stick_cyl -->
+          <site name="hole_stick" pos="-0.86 0 0.17" size="0.04" rgba="1 0 0 1"/>
+          
+          <!-- 铲斗液压缸 -->  
+          <body name="excavator_simple/bucket_cylinder_down" pos="0.40628 0 0.76931" quat="0.679624 1.9812e-07 0.733561 1.9812e-07">
+            <inertial pos="0 0 0.68295" quat="0.707107 0 0 0.707107" mass="11.684" diaginertia="2.6763 2.6743 0.046473"/>
+            <joint name="j_other_2_bucket_cylinder" pos="0 0 0" axis="0 -1 0" range="-0.1 0.3"/>
+            <geom type="mesh" rgba="1 0 1 1" mesh="excavator_simple_9_bucket_cylinder_down"/>
+            <body name="excavator_simple/bucket_cylinder_up" pos="0 0 1.0701">
+              <inertial pos="0 0 0.69365" quat="0.707107 0 0 0.707107" mass="8.1381" diaginertia="1.6889 1.6884 0.0079769"/>
+              <joint name="j_other_2_bucket_cylinder_slide" pos="0 0 0" axis="0 0 -1" type="slide" range="-0.1 0.95"/>
+              <geom type="mesh" rgba="1 1 1 1" mesh="excavator_simple_9_bucket_cylinder_up"/>
+              <!-- 铲斗液压缸末端 site，连接 rod_bucket_link_middle -->
+              <site name="rod_bucket" pos="0 0 1.46" size="0.04" rgba="0 1 0 1"/>
+            </body>
+          </body>
+          <!-- 摇杆 -->
+          <body name="excavator_simple/bucket_rocker_left" pos="2.4617 0.17 0.17367" quat="0.911498 0 0.411305 0">
+            <inertial pos="0 0 0.305" quat="0.707107 0 0 0.707107" mass="3.6933" diaginertia="0.18482 0.17974 0.0060665"/>
+            <joint name="j_other_4_bucket_rocker_left" pos="0 0 0" axis="0 1 0" range="-1.7 0.5"/>
+            <geom type="mesh" rgba="1 0.49804 0 1" mesh="excavator_simple_10_bucket_rocker_left"/>
+            <!-- 铲斗上方左侧摇杆 site,连接连杆 rod_bucket_link_left -->
+            <site name="rod_bucket_rocker_left" pos="0 0 0.62" size="0.04" rgba="1 0 0 1"/>
+          </body>
+          <body name="excavator_simple/bucket_rocker_right" pos="2.4617 -0.17 0.17367" quat="0.911498 0 0.411305 0">
+            <inertial pos="0 0 0.305" quat="0.707107 0 0 0.707107" mass="3.6933" diaginertia="0.18482 0.17974 0.0060665"/>
+            <joint name="j_other_3_bucket_rocker_right" pos="0 0 0" axis="0 1 0" range="-1.7 0.5"/>
+            <geom type="mesh" rgba="1 0.49804 0 1" mesh="excavator_simple_10_bucket_rocker_right"/>
+            <!-- 铲斗上方右侧摇杆 site,连接连杆 rod_bucket_link_right -->
+            <site name="rod_bucket_rocker_right" pos="0 0 0.62" size="0.04" rgba="1 0 0 1"/>
+          </body>
+          <!-- 铲斗 -->
+          <body name="excavator_simple/bucket" pos="2.9111 0 0.15097" quat="0.74126 0 0.671217 0">
+            <inertial pos="0.72017 0 0.569" quat="0 0.684168 0 0.729324" mass="359.5" diaginertia="169.366 138.37 94.3213"/>
+            <joint name="j4_bucket" pos="0 0 0" axis="0 1 0" range="-2.1 0.6" armature="50"/>
+            <geom type="mesh" rgba="0.52941 0.54902 0.54902 1" mesh="excavator_simple_8_bucket"/>
+            <!-- 斗连杆 -->
+            <body name="excavator_simple/bucket_link" pos="-0.10419 0 0.59088" quat="0.964663 0 0.263487 0">
+              <inertial pos="0 0 -0.314" mass="16.973" diaginertia="1.2029 1.0753 0.1691"/>
+              <joint name="j_other_5_bucket_link" pos="0 0 0" axis="0 -1 0" range="-2 0.3"/>
+              <geom type="mesh" rgba="0 1 1 1" mesh="excavator_simple_11_bucket_link"/>
+              
+              <site name="rod_bucket_link_right" pos="0 -0.17 -0.63" size="0.05" rgba="0 1 0 1"/>
+              <site name="rod_bucket_link_middle" pos="0 0 -0.63" size="0.05" rgba="1 0 0 1"/>
+              <site name="rod_bucket_link_left" pos="0 0.17 -0.63" size="0.05" rgba="0 0 1 1"/>     
+            </body>
+          </body>
+        </body>
+      </body>
+      
+      <!-- 动臂液压缸1 -->
+      <body name="excavator_simple/boom_cylinder_left_down" pos="0.461 0.31 0.44" quat="0.961691 0 0.274135 0">
+        <inertial pos="0 0 0.76602" quat="0.707107 0 0 0.707107" mass="12.766" diaginertia="3.6026 3.6006 0.051461"/>
+        <joint name="j_other_6_boom_cylinder_left" pos="0 0 0" axis="0 1 0" range="-0.35 0.5"/>
+        <geom type="mesh" rgba="1 0 0 1" mesh="excavator_simple_4_boom_cylinder_left_down" />
+        <body name="excavator_simple/boom_cylinder_left_up" pos="0 0 0.95471">
+          <inertial pos="0 0 0.75378" quat="0.707107 0 0 0.707107" mass="8.7504" diaginertia="2.1113 2.1109 0.0084603"/>
+          <joint name="j_other_6_boom_cylinder_left_slide" pos="0 0 0" axis="0 0 -1" type="slide" range="-0.42 0.8"/>
+          <geom type="mesh" rgba="1 0 0 1" mesh="excavator_simple_4_boom_cylinder_left_up"/>
+          <!-- 动臂液压site -->
+          <site name="rod_boom_left" pos="0 0 1.57" size="0.04" rgba="0 1 0 1" />
+        </body>
+      </body>
+      
+      <!-- 动臂液压缸2 -->
+      <body name="excavator_simple/boom_cylinder_right_down" pos="0.461 -0.31 0.44" quat="0.961691 0 0.274135 0">
+        <inertial pos="0 0 0.76602" quat="0.707107 0 0 0.707107" mass="12.766" diaginertia="3.6026 3.6006 0.051461"/>
+        <joint name="j_other_7_boom_cylinder_right" pos="0 0 0" axis="0 1 0" range="-0.35 0.5"/>
+        <geom type="mesh" rgba="1 0 0 1" mesh="excavator_simple_5_boom_cylinder_right_down"/>
+        <body name="excavator_simple/boom_cylinder_right_up" pos="0 0 0.95471">
+          <inertial pos="0 0 0.75378" quat="0.707107 0 0 0.707107" mass="8.7504" diaginertia="2.1113 2.1109 0.0084603"/>
+          <joint name="j_other_7_boom_cylinder_right_slide" pos="0 0 0" axis="0 0 -1" type="slide" range="-0.42 0.8"/>
+          <geom type="mesh" rgba="1 0 0 1" mesh="excavator_simple_5_boom_cylinder_right_up"/>
+          <!-- 动臂液压site -->
+          <site name="rod_boom_right" pos="0 0 1.57" size="0.04" rgba="0 1 0 1"/>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="act_swing" joint="j1_swing" ctrlrange="-3.14 3.14" kp="5e6" kv="5e4"/>
+    <position name="act_boom" joint="j2_boom" ctrlrange="-0.9 0.3" kp="1e7" kv="1e5"/>
+    <position name="act_stick" joint="j3_stick" ctrlrange="-0.8 1.0" kp="1e7" kv="1e5"/>
+    <position name="act_bucket" joint="j4_bucket" ctrlrange="-2.1 0.6" kp="5e6" kv="5e4"/>
+  </actuator>
+
+  <equality>
+    <!-- 动臂液压部分 -->
+    <connect site1="rod_boom_left" site2="hole_boom_left" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+    <connect site1="rod_boom_right" site2="hole_boom_right" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+
+    <!-- 斗杆液压部分 -->
+    <connect site1="rod_stick_cyl" site2="hole_stick" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+    <!-- 摇杆 -->
+    <connect site1="rod_bucket_rocker_right" site2="rod_bucket_link_right" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+    <connect site1="rod_bucket_rocker_left" site2="rod_bucket_link_left" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+    <connect site1="rod_bucket" site2="rod_bucket_link_middle" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+  </equality>
+
+  <contact>
+    <exclude body1="excavator_simple/boom" body2="excavator_simple/boom_cylinder_left_up"/>
+    <exclude body1="excavator_simple/boom" body2="excavator_simple/boom_cylinder_right_up"/>
+    <exclude body1="excavator_simple/stick" body2="excavator_simple/stick_cylinder_up"/>
+    <exclude body1="excavator_simple/bucket_rocker_right" body2="excavator_simple/bucket_cylinder_up"/>
+  </contact>
+
+</mujoco>

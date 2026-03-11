@@ -1,0 +1,38 @@
+# Eval Config V0 — fixed seeds, excavator task
+# Load with: EvalConfig.model_validate(yaml.safe_load(open("eval_v0.yaml")))
+
+task:
+  task_name: sim_transfer_cube_scripted
+  equipment_model: vx300s_bimanual
+  dataset_dir: data_sim_episodes/sim_transfer_cube_scripted
+  num_episodes: 50
+  episode_len: 400
+  camera_names:
+    - top
+  backend:
+    name: mujoco
+    dt: 0.02
+
+policy:
+  name: act
+  params:
+    lr: 1.0e-5
+    lr_backbone: 1.0e-5
+    backbone: resnet18
+    enc_layers: 4
+    dec_layers: 7
+    nheads: 8
+    hidden_dim: 512
+    dim_feedforward: 3200
+    chunk_size: 100
+    kl_weight: 10.0
+    latent_dim: 32
+    temporal_agg: false
+
+eval:
+  ckpt_dir: runs/ckpts/transfer_cube_act_v0
+  ckpt_path: runs/ckpts/transfer_cube_act_v0/policy_best.ckpt
+  num_rollouts: 50
+  save_video: true
+  video_dir: runs/eval/transfer_cube_act_v0/videos
+  results_dir: runs/eval/transfer_cube_act_v0/results

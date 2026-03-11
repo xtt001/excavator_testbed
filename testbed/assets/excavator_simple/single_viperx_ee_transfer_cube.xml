@@ -1,0 +1,83 @@
+<mujoco>
+    <include file="scene.xml"/>
+    <include file="excavator_simple_dependencies.xml"/>
+
+    <equality>
+        <weld body1="mocap_bucket" body2="excavator_simple/bucket" solref="0.01 1" solimp=".25 .25 0.001" />
+   
+        <connect site1="rod_boom_left" site2="hole_boom_left" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+        <connect site1="rod_boom_right" site2="hole_boom_right" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+        <connect site1="rod_stick_cyl" site2="hole_stick" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+        <connect site1="rod_bucket_rocker_right" site2="rod_bucket_link_right" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+        <connect site1="rod_bucket_rocker_left" site2="rod_bucket_link_left" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+        <connect site1="rod_bucket" site2="rod_bucket_link_middle" solref="0.01 1" solimp="0.95 0.99 0.001"/>
+    </equality>
+    
+    <worldbody>
+        <include file="excavator_simple.xml" />
+        
+        <body mocap="true" name="mocap_bucket" pos="5.3 0 0.4">
+            <site pos="0 0 0" size="0.003 0.003 0.03" type="box" name="mocap_bucket_site1" rgba="1 0 0 1"/>
+            <site pos="0 0 0" size="0.003 0.03 0.003" type="box" name="mocap_bucket_site2" rgba="1 0 0 1"/>
+            <site pos="0 0 0" size="0.03 0.003 0.003" type="box" name="mocap_bucket_site3" rgba="1 0 0 1"/>
+        </body>
+
+        <!-- 一个小球 -->
+        <!-- <body name="dirt_ball" pos="4.0 0 0.2">
+            <joint name="dirt_ball_joint" type="free" frictionloss="0.01" />
+            <inertial pos="0 0 0" mass="50" diaginertia="0.5 0.5 0.5" />
+            <geom condim="4" friction="2.0 0.05 0.0001" solimp="0.9 0.95 0.001" solref="0.002 1" pos="0 0 0" size="0.2" type="sphere" name="dirt_ball_geom" rgba="1 0 0 1" />
+        </body> -->
+
+        <!-- 一堆小球 -->
+        <!-- <composite type="particle" count="6 6 5" spacing="0.3" offset="3.0 -0.9 1.0">
+            <geom size="0.12" type="sphere" rgba="0.5 0.35 0.2 1" mass="5" friction="2.0 0.5 0.001"/>
+        </composite> -->
+
+        <!-- 三个物体 -->
+        <!-- <body name="rock_1" pos="3.8 0.2 0.2">
+            <freejoint/>
+            <geom type="box" size="0.1 0.1 0.1" rgba="0.6 0.6 0.6 1" mass="10" friction="1.5 0.05 0.0001"/>
+        </body>
+        <body name="rock_2" pos="4.2 -0.2 0.2">
+            <freejoint/>
+            <geom type="cylinder" size="0.1 0.15" rgba="0.7 0.5 0.5 1" mass="10" friction="1.5 0.05 0.0001"/>
+        </body>
+        <body name="rock_3" pos="4.0 0 0.2">
+            <freejoint/>
+            <geom type="sphere" size="0.12" rgba="0.5 0.5 0.6 1" mass="10" friction="1.5 0.05 0.0001"/>
+        </body> -->
+        <body name="box" pos="4.2 0 0.25">
+            <joint name="red_box_joint" type="free" frictionloss="0.01" />
+            <inertial pos="0 0 0" mass="0.05" diaginertia="0.002 0.002 0.002" />
+            <geom condim="4" friction="2.0 0.05 0.0001" solimp="0.9 0.95 0.001" solref="0.002 1" pos="0 0 0" size="0.22 0.22 0.22" type="box" name="red_box" rgba="1 0 0 1" />
+        </body>
+        
+        <body name="dump_tray" pos="0 4.0 0">
+            <geom type="cylinder" size="1.0 0.1" rgba="0.8 0.8 0.2 1" name="yellow_dump_tray"/>
+        </body>
+    </worldbody>
+
+    <actuator>
+        <position name="act_swing" joint="j1_swing" ctrllimited="true" ctrlrange="-3.14 3.14" kp="5e5" kv="5e3" user="1"/>
+        <position name="act_boom" joint="j2_boom" ctrllimited="true" ctrlrange="-0.9 0.3" kp="1e6" kv="1e4" user="1"/>
+        <position name="act_stick" joint="j3_stick" ctrllimited="true" ctrlrange="-0.8 1.0" kp="1e6" kv="1e4" user="1"/>
+        <position name="act_bucket" joint="j4_bucket" ctrllimited="true" ctrlrange="-2.1 0.6" kp="5e5" kv="5e3" user="1"/>
+    </actuator>
+    
+    <contact>
+        <exclude body1="excavator_simple/boom" body2="excavator_simple/boom_cylinder_left_up"/>
+        <exclude body1="excavator_simple/boom" body2="excavator_simple/boom_cylinder_right_up"/>
+        <exclude body1="excavator_simple/stick" body2="excavator_simple/stick_cylinder_up"/>
+        <exclude body1="excavator_simple/bucket_rocker_right" body2="excavator_simple/bucket_cylinder_up"/>
+        <exclude body1="excavator_simple/bucket_rocker_left" body2="excavator_simple/bucket_cylinder_up"/>
+    </contact>
+
+    <keyframe>
+        <!-- 结构为 15 + 3 + 4 -->
+        <!-- 目前有15个关节，前15个对应各个关节角度 -->
+        <!-- 接下来3个是 red_box_joint 的位置 -->
+        <!-- 最后4个是 red_box_joint 的姿态 -->
+        <key name="init_pose" qpos="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 4.0 0 0.2 1 0 0 0" />
+    </keyframe>
+</mujoco>
