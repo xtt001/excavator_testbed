@@ -1,4 +1,4 @@
-# Engineering Machinery Testbed
+# Excavator Testbed
 
 A **clean, model-agnostic imitation learning testbed** for engineering machinery (excavator / loader) intelligent control, built on top of MuJoCo + dm_control.
 
