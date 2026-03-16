@@ -28,7 +28,7 @@ from testbed.backends.mujoco.ee_tasks import (
     TransferCubeEETask,
 )
 
-_ASSETS_DIR = Path(__file__).resolve().parents[3] / "assets"
+_ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
 
 
 def _xml(equipment_model: str, filename: str) -> str:

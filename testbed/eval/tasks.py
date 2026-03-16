@@ -77,7 +77,7 @@ EVAL_TASKS: dict[str, EvalTaskDef] = {
         camera_names    = ["top"],   # must match training camera_names in act_v0.yaml
         env_max_reward  = 4.0,
         make_object_pose= _sample_transfer_cube,
-        backend_type    = "mujoco_ee",
+        backend_type    = "mujoco",  # joint-space: model outputs 14-DOF joint commands
     ),
     "sim_insertion_scripted": EvalTaskDef(
         name            = "sim_insertion_scripted",

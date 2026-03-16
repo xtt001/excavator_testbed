@@ -15,7 +15,7 @@ def train_policy(config: dict[str, Any]) -> None:
     train_cfg  = config.get("train", {})
 
     policy_class  = policy_cfg.get("class", "ACT").upper()
-    task_name     = task_cfg.get("name", config.get("task_name", ""))
+    task_name     = task_cfg.get("task_name", task_cfg.get("name", config.get("task_name", "")))
     dataset_dir   = Path(task_cfg.get("dataset_dir", config.get("dataset_dir", "data")))
     num_episodes  = task_cfg.get("num_episodes", config.get("num_episodes", 50))
     camera_names  = task_cfg.get("camera_names", config.get("camera_names", []))
@@ -63,17 +63,20 @@ def train_policy(config: dict[str, Any]) -> None:
         pickle.dump(stats, f)
     print(f"Saved normalisation stats to {stats_path}")
 
-    batch_size = int(train_cfg.get("batch_size", 8))
+    batch_size   = int(train_cfg.get("batch_size", 8))
+    num_workers  = int(train_cfg.get("num_workers", 4))
+    pf_raw       = train_cfg.get("prefetch_factor", 2)
+    prefetch_factor = int(pf_raw) if pf_raw is not None and num_workers > 0 else None
     train_loader, val_loader, _, _ = load_data(
         dataset_dir  = dataset_dir,
         num_episodes = num_episodes,
         camera_names = camera_names,
-        batch_size_train = batch_size,
-        batch_size_val   = batch_size,
-        num_workers      = int(train_cfg.get("num_workers", 4)),
-        prefetch_factor  = int(train_cfg.get("prefetch_factor", 2)),
-        persistent_workers = bool(train_cfg.get("persistent_workers", True)),
-        pin_memory       = bool(train_cfg.get("pin_memory", True)),
+        batch_size_train   = batch_size,
+        batch_size_val     = batch_size,
+        num_workers        = num_workers,
+        prefetch_factor    = prefetch_factor,
+        persistent_workers = bool(train_cfg.get("persistent_workers", True)) and num_workers > 0,
+        pin_memory         = bool(train_cfg.get("pin_memory", True)),
     )
 
     trainer = ACTTrainer(policy_config=policy_config, config=full_config)

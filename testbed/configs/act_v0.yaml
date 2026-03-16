@@ -32,8 +32,9 @@ train:
   persistent_workers: true
   pin_memory: true
   ckpt_dir: runs/ckpts/transfer_cube_act_v0
-  resume_ckpt: runs/ckpts/transfer_cube_act_v0/policy_epoch_200_seed_0.ckpt
-  start_epoch: 200
+  # To resume training, uncomment the two lines below and set the correct epoch:
+  # resume_ckpt: runs/ckpts/transfer_cube_act_v0/policy_epoch_400_seed_0.ckpt
+  # start_epoch: 400
 
 eval:
   ckpt_dir: runs/ckpts/transfer_cube_act_v0

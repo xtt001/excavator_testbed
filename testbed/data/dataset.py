@@ -69,6 +69,28 @@ def get_norm_stats(
             "Expected files like episode_0.hdf5."
         )
 
+    # Filter to episodes where action_dim == qpos_dim (correct joint-space data).
+    # Drop legacy episodes recorded with raw EE-space actions (action_dim != qpos_dim).
+    kept_pairs = [
+        (q, a) for q, a in zip(all_qpos_data, all_action_data)
+        if a.shape[-1] == q.shape[-1]
+    ]
+    dropped = len(all_action_data) - len(kept_pairs)
+    if dropped:
+        action_dims = {t.shape[-1] for t in all_action_data}
+        qpos_dim = all_qpos_data[0].shape[-1]
+        print(
+            f"[get_norm_stats] Skipped {dropped} episode(s) where action_dim != "
+            f"qpos_dim ({qpos_dim}). Found action dims: {action_dims}."
+        )
+    if not kept_pairs:
+        raise ValueError(
+            f"No episodes with action_dim == qpos_dim found under {dataset_dir}. "
+            "Re-collect data with `tb-record`."
+        )
+    all_qpos_data   = [p[0] for p in kept_pairs]
+    all_action_data = [p[1] for p in kept_pairs]
+
     qpos_tensor   = torch.stack(all_qpos_data)    # (N, T, Nq)
     action_tensor = torch.stack(all_action_data)  # (N, T, Na)
 
@@ -231,6 +253,35 @@ def load_data(
         print(
             f"Warning: requested {num_episodes} episodes "
             f"but found {len(available)}. Using available episodes."
+        )
+
+    # Filter to episodes where action_dim matches qpos_dim.
+    # This removes legacy episodes recorded with EE-space actions (wrong format).
+    # The correct pipeline saves joint-space qpos as actions, so action_dim == qpos_dim.
+    import h5py
+    dim_info = {}
+    for ep_id in available:
+        p = dataset_dir / f"episode_{ep_id}.hdf5"
+        with h5py.File(p, "r") as f:
+            dim_info[ep_id] = (
+                f["/action"].shape[1],
+                f["/observations/qpos"].shape[1],
+            )
+    filtered = [i for i in available if dim_info[i][0] == dim_info[i][1]]
+    dropped = len(available) - len(filtered)
+    if dropped:
+        act_dims = set(d[0] for d in dim_info.values())
+        qpos_dim = dim_info[available[0]][1]
+        print(
+            f"Warning: skipped {dropped} episode(s) where action_dim != qpos_dim ({qpos_dim}). "
+            f"Found action dims: {act_dims}. Re-collect data with `tb-record` to fix."
+        )
+    available = filtered
+
+    if not available:
+        raise FileNotFoundError(
+            f"No valid episodes found under {dataset_dir} (action_dim != qpos_dim for all). "
+            "Re-collect data with `tb-record`."
         )
 
     # 80/20 train/val split

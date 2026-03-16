@@ -20,26 +20,32 @@ Excavator task and teleop data collection are **next** — the infrastructure is
 - **Policies are hot-swappable plugins** — register with `@register_policy("name")`, swap in YAML, nothing else changes. ACT is fully wired; `diffusion` stub is ready to implement.
 - **Fixed evaluation** — same tasks, same seeds, same camera views every run. Fair comparison by design.
 - **Backend-agnostic** — MuJoCo (`SimBackend` ABC) now; other simulators slot in by implementing the same interface.
-- **Two backend modes** — `MuJoCoEESimBackend` for scripted data collection (EE-space actions), `MuJoCoSimBackend` for policy evaluation (joint-space actions).
+- **Data collection pipeline** — Phase 1: scripted policy runs in EE-space (`MuJoCoEESimBackend`) to drive the robot. Phase 2: extracted joint trajectory is replayed in joint-space sim (`MuJoCoSimBackend`) and saved as HDF5 with 14-DOF joint-space actions. The trained policy then operates in the same joint-space during evaluation.
 
 ## Quick start
 
 ```bash
 conda activate aloha
-pip install -e ".[dev]"
+pip install -e ".[dev]"   # only needed once
 
-# 1. Collect scripted demos
-python -m testbed.cli.record --config testbed/configs/task_v0.yaml --num_episodes 50
+# 1. Collect scripted demos (two-phase EE→joint pipeline, saves 14-DOF joint-space actions)
+python -m testbed.cli.record --config testbed/configs/task_v0.yaml --num-episodes 50
 
-# 2. Train ACT
+# 2. Train ACT (resumes from checkpoint if resume_ckpt is set in act_v0.yaml)
 python -m testbed.cli.train --config testbed/configs/act_v0.yaml
 
-# 3. Evaluate + save MP4 videos
+# 3. Evaluate trained policy + save MP4 videos
 python -m testbed.cli.eval --config testbed/configs/eval_v0.yaml
 
-# 4. Quick visual demo (N rollouts, saves rollout_00x.mp4)
+# 4. Quick demo (N rollouts, saves runs/demo/transfer_cube_act_v0/rollout_00x.mp4)
 python scripts/demo_sim.py --rollouts 10
+
+# 5. Live interactive viewer (no video saving)
+python scripts/watch_sim.py
 ```
+
+> **Note:** The CLI flag is `--num-episodes` (hyphen), not `--num_episodes`.
+> To train from scratch, remove or comment out `resume_ckpt` / `start_epoch` in `testbed/configs/act_v0.yaml`.
 
 ## Repo layout
 
