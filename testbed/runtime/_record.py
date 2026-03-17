@@ -39,6 +39,7 @@ def record_episodes(config: dict[str, Any]) -> None:
         if not only_success and saved_count >= num_episodes:
             break
 
+        np.random.seed(attempt_idx)
         object_pose = _sample_pose(task_name, equipment_model)
 
         if pipeline in ("ee_replay", "ee"):
@@ -46,7 +47,6 @@ def record_episodes(config: dict[str, Any]) -> None:
             from testbed.backends.mujoco.ee_backend import MuJoCoEESimBackend
             ee_env = MuJoCoEESimBackend(task_name=task_name, equipment_model=equipment_model)
             ee_env.set_initial_object_pose(object_pose)
-            np.random.seed(attempt_idx)
             ts = ee_env.reset()
             ee_episode = [ts]
             scripted = ScriptedPolicy(inject_noise=inject_noise)
@@ -66,6 +66,7 @@ def record_episodes(config: dict[str, Any]) -> None:
                 for joint, ctrl in zip(joint_traj, gripper_ctrl_traj):
                     joint[6] = puppet_gripper_pos_normalize(ctrl[0])
 
+            ee_max_reward = max(float(s.reward or 0) for s in ee_episode[1:])
             subtask_info = ee_episode[0].observation["env_state"].copy()
             del ee_env, ee_episode, scripted
 
@@ -73,7 +74,6 @@ def record_episodes(config: dict[str, Any]) -> None:
             from testbed.backends.mujoco.backend import MuJoCoSimBackend
             sim_env = MuJoCoSimBackend(task_name=task_name, equipment_model=equipment_model)
             sim_env.set_initial_object_pose(subtask_info)
-            np.random.seed(attempt_idx)
             ts = sim_env.reset()
             episode_replay = [ts]
             for t in range(len(joint_traj)):
@@ -96,7 +96,6 @@ def record_episodes(config: dict[str, Any]) -> None:
             from testbed.backends.mujoco.scripted_policies import ExcavatorJointSpaceDigDumpPolicy
             sim_env = MuJoCoSimBackend(task_name=task_name, equipment_model=equipment_model)
             sim_env.set_initial_object_pose(object_pose)
-            np.random.seed(attempt_idx)
             ts = sim_env.reset()
             episode_replay = [ts]
             joint_traj = []
@@ -119,9 +118,10 @@ def record_episodes(config: dict[str, Any]) -> None:
             raise ValueError(f"Unknown pipeline: {pipeline!r}")
 
         status     = "✓" if episode_ok else "✗"
+        phase1_str = f"  phase1={ee_max_reward:.0f}/{env_max:.0f}" if pipeline in ("ee_replay", "ee") else ""
         should_save = (not only_success) or episode_ok
         print(
-            f"Attempt {attempt_idx:4d}  max_reward={max_reward:.1f}/{threshold:.1f}  {status}  "
+            f"Attempt {attempt_idx:4d}  max_reward={max_reward:.1f}/{threshold:.1f}  {status}{phase1_str}  "
             f"{'saving' if should_save else 'skipping'}"
         )
 
