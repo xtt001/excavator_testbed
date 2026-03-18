@@ -1,0 +1,31 @@
+# Eval suite config for AGX excavation (V0)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── AGX connection ────────────────────────────────────────────────────────────
+agx:
+  host:    "127.0.0.1"
+  port:    9000
+  timeout: 10.0
+
+# ── Task ─────────────────────────────────────────────────────────────────────
+task:
+  name: "agx_excavation_teleop"
+
+# ── Eval parameters ───────────────────────────────────────────────────────────
+eval:
+  num_rollouts:  10         # increase to 50 for final eval
+  save_video:    true
+  video_dir:     "runs/eval/agx_excavation"
+
+# ── Success rule (spec §8) ───────────────────────────────────────────────────
+# success = mass_in_bucket >= mass_thresh for hold_steps consecutive steps
+success:
+  mass_thresh:  1.0         # TODO: replace with team-defined value once known
+  hold_steps:   25          # 0.5s @ 50Hz — locked per spec
+
+# ── Policy ────────────────────────────────────────────────────────────────────
+policy:
+  name: "act"               # "act" | "dummy"
+  ckpt_path: ""             # fill in after training
+  temporal_agg: false
+  device: "cuda"

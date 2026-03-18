@@ -1,0 +1,16 @@
+# AGX backend connection config (V0)
+# Used by record_teleop.py, replay.py, eval.py
+# ─────────────────────────────────────────────────────────────────────────────
+
+agx:
+  host:    "127.0.0.1"   # Unity machine IP — override for remote machine
+  port:    9000           # Unity bridge port
+  timeout: 10.0           # socket receive timeout (seconds)
+
+  # V0 locked vector dims — must match protocol.py
+  action_dim: 4           # [swing, boom, stick, bucket]
+  qpos_dim:   3           # [boom, stick, bucket] position_norm
+  qvel_dim:   4           # [swing, boom, stick, bucket] speed
+
+  # env_state
+  env_state_mass_in_bucket_idx: 0   # index of mass_in_bucket in env_state vector
