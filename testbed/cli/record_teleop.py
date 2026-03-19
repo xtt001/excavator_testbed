@@ -17,6 +17,8 @@ Loop (per episode)
 
 Stop session:   Ctrl+C  (saves the current partial episode first).
 Discard episode: press D key before saving (episode not counted).
+Joystick reset: configured reset button discards the current partial episode
+                and starts a fresh Unity reset on the next episode attempt.
 """
 
 from __future__ import annotations
@@ -45,12 +47,18 @@ from testbed.data.schema import (
     ATTR_ENV_STATE_ORDER,
     ATTR_IMAGE_FORMAT,
     ATTR_INVERT,
+    ATTR_JOYSTICK_IDS,
     ATTR_KEY_SPEED,
     ATTR_LIMIT,
     ATTR_PARAM_VERSION,
     ATTR_PROTOCOL_VERSION,
     ATTR_QPOS_ORDER,
     ATTR_QVEL_ORDER,
+    ATTR_RESPONSE_PROFILE_ATTACK_RATE,
+    ATTR_RESPONSE_PROFILE_ENABLED,
+    ATTR_RESPONSE_PROFILE_EXPONENT,
+    ATTR_RESPONSE_PROFILE_RECENTER_RATE,
+    ATTR_RESPONSE_PROFILE_RELEASE_RATE,
     ATTR_SCALE,
     ATTR_SEED,
     ATTR_SIM_BACKEND,
@@ -60,6 +68,15 @@ from testbed.data.schema import (
 )
 
 log = logging.getLogger(__name__)
+
+
+def _action_control_flags(ainfo) -> tuple[bool, bool, bool]:
+    extras = getattr(ainfo, "extras", {}) or {}
+    return (
+        bool(extras.get("reset_requested", False)),
+        bool(extras.get("discard_requested", False)),
+        bool(extras.get("quit_requested", False)),
+    )
 
 
 def main() -> None:
@@ -115,7 +132,10 @@ def main() -> None:
     # ── Build action source ───────────────────────────────────────────────────
     if input_device == "joystick":
         from testbed.actions.gamepad import JoystickActionSource
-        action_source = JoystickActionSource.from_config(teleop_cfg.get("joystick", {}))
+        action_source = JoystickActionSource.from_config(
+            teleop_cfg.get("joystick", {}),
+            default_dt=float(task_cfg.get("dt", info.dt)),
+        )
     else:
         from testbed.actions.keyboard import KeyboardActionSource
         action_source = KeyboardActionSource.from_config(teleop_cfg.get("keyboard", {}))
@@ -163,6 +183,7 @@ def main() -> None:
             action_source.reset()
 
             discard = False
+            reset_requested = False
 
             for local_step in range(max_steps):
                 if _abort:
@@ -179,19 +200,33 @@ def main() -> None:
 
                 obs    = ts.observation
                 action, ainfo = action_source.next_action(obs)
+                reset_now, discard_now, quit_now = _action_control_flags(ainfo)
+                if quit_now:
+                    _abort = True
+                    break
+                if reset_now:
+                    reset_requested = True
+                    discard = True
+                    log.info("Episode reset requested by joystick.")
+                    break
+                if discard_now:
+                    discard = True
+                    log.info("Episode discarded by joystick.")
+                    break
 
-                ts = backend.step(action)
-                step_id = ts.info.get("step_id", local_step)
+                ts_next = backend.step(action)
+                step_id = int(obs.get("step_id", local_step))
 
                 recorder.record(
-                    obs=ts.observation,
+                    obs=obs,
                     action=action,
-                    reward=ts.reward,
+                    reward=ts_next.reward,
                     step_id=step_id,
                     step_ns=time.time_ns(),
                     action_src_type=ainfo.source_type,
                     action_src_id=ainfo.source_id,
                 )
+                ts = ts_next
 
                 # Enforce control rate
                 _sleep_to_rate(task_cfg.get("control_hz", 50))
@@ -202,7 +237,9 @@ def main() -> None:
                 saved += 1
                 episode_idx += 1
             elif discard:
-                pass  # don't advance episode_idx
+                if reset_requested:
+                    log.info("Discarded current partial episode and restarting from Unity reset.")
+                # don't advance episode_idx
 
     finally:
         backend.close()
@@ -243,6 +280,7 @@ def _check_pygame_events(action_source) -> tuple[bool, bool]:
 
     Returns (discard_episode, quit_session).
     Works whether action_source is joystick or keyboard.
+    Joystick button-driven controls are handled separately via ActionInfo.extras.
     """
     try:
         import pygame
@@ -308,10 +346,29 @@ def _build_episode_metadata(
             joystick_cfg.get("axis_map", [0, 1, 3, 4]),
             dtype=np.int32,
         )
+        metadata[ATTR_JOYSTICK_IDS] = np.asarray(
+            joystick_cfg.get("joystick_ids", [int(joystick_cfg.get("joystick_id", 0))] * 4),
+            dtype=np.int32,
+        )
         metadata[ATTR_INVERT] = np.asarray(
             joystick_cfg.get("invert", [False, True, False, True]),
             dtype=np.bool_,
         )
+        response_profile_cfg = joystick_cfg.get("response_profile", {})
+        if bool(response_profile_cfg.get("enabled", False)):
+            metadata[ATTR_RESPONSE_PROFILE_ENABLED] = 1
+            metadata[ATTR_RESPONSE_PROFILE_ATTACK_RATE] = _broadcast_float_config(
+                response_profile_cfg.get("attack_rate", 4.0)
+            )
+            metadata[ATTR_RESPONSE_PROFILE_RELEASE_RATE] = _broadcast_float_config(
+                response_profile_cfg.get("release_rate", 6.0)
+            )
+            metadata[ATTR_RESPONSE_PROFILE_RECENTER_RATE] = _broadcast_float_config(
+                response_profile_cfg.get("recenter_rate", 7.0)
+            )
+            metadata[ATTR_RESPONSE_PROFILE_EXPONENT] = _broadcast_float_config(
+                response_profile_cfg.get("exponent", 1.0)
+            )
     else:
         keyboard_cfg = teleop_cfg.get("keyboard", {})
         metadata[ATTR_KEY_SPEED] = float(keyboard_cfg.get("key_speed", 0.5))

@@ -125,11 +125,19 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
             task_cfg={"task_name": "agx_excavation_teleop", "param_version": "v0"},
             teleop_cfg={
                 "joystick": {
+                    "joystick_ids": [1, 0, 1, 0],
                     "deadzone": 0.05,
                     "scale": 1.0,
                     "clip": 1.0,
-                    "axis_map": [0, 1, 3, 4],
-                    "invert": [False, True, False, True],
+                    "axis_map": [1, 2, 2, 1],
+                    "invert": [False, True, True, False],
+                    "response_profile": {
+                        "enabled": True,
+                        "attack_rate": 4.0,
+                        "release_rate": 6.0,
+                        "recenter_rate": 7.0,
+                        "exponent": 1.0,
+                    },
                 }
             },
             input_device="joystick",
@@ -150,10 +158,28 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         np.testing.assert_allclose(metadata["deadzone"], np.full(4, 0.05, dtype=np.float32))
         np.testing.assert_allclose(metadata["scale"], np.ones(4, dtype=np.float32))
         np.testing.assert_allclose(metadata["limit"], np.ones(4, dtype=np.float32))
-        np.testing.assert_array_equal(metadata["axis_map"], np.array([0, 1, 3, 4], dtype=np.int32))
+        np.testing.assert_array_equal(metadata["axis_map"], np.array([1, 2, 2, 1], dtype=np.int32))
+        np.testing.assert_array_equal(metadata["joystick_ids"], np.array([1, 0, 1, 0], dtype=np.int32))
         np.testing.assert_array_equal(
             metadata["invert"],
-            np.array([False, True, False, True], dtype=np.bool_),
+            np.array([False, True, True, False], dtype=np.bool_),
+        )
+        self.assertEqual(metadata["response_profile_enabled"], 1)
+        np.testing.assert_allclose(
+            metadata["response_profile_attack_rate"],
+            np.full(4, 4.0, dtype=np.float32),
+        )
+        np.testing.assert_allclose(
+            metadata["response_profile_release_rate"],
+            np.full(4, 6.0, dtype=np.float32),
+        )
+        np.testing.assert_allclose(
+            metadata["response_profile_recenter_rate"],
+            np.full(4, 7.0, dtype=np.float32),
+        )
+        np.testing.assert_allclose(
+            metadata["response_profile_exponent"],
+            np.ones(4, dtype=np.float32),
         )
 
     def test_validate_requested_cameras_rejects_missing_camera(self) -> None:

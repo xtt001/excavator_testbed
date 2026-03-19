@@ -14,14 +14,35 @@ teleop:
   num_episodes:  20
 
   joystick:
-    joystick_id: 0              # pygame joystick index
-    # axis_map: [swing, boom, stick, bucket]
-    # Xbox layout: left-X=0, left-Y=1, right-X=3, right-Y=4
-    axis_map:  [0, 1, 3, 4]
-    invert:    [false, true, false, true]  # Y axes are typically inverted
-    deadzone:  0.05             # per-axis deadzone (scalar → applied to all)
-    scale:     1.0              # speed scale (scalar → applied to all)
+    joystick_id: 0              # fallback for single-device setups
+    # Dual-stick FarmStick mapping:
+    # action order is [swing, boom, stick, bucket]
+    # joystick_ids maps each action axis to a pygame joystick device id.
+    # Current setup assumes joystick 0 = right stick, joystick 1 = left stick.
+    joystick_ids: [1, 0, 1, 0]
+    # axis_map uses pygame's zero-based axis indices.
+    # With your FarmStick bring-up this maps:
+    # swing <- left stick left/right
+    # boom  <- right stick front/back
+    # stick <- left stick front/back
+    # bucket <- right stick left/right
+    axis_map:  [0, 1, 1, 0]
+    invert:    [false, false, false, false]
+    # Buttons are read on any configured joystick by default.
+    # These also use pygame's zero-based button indices.
+    # FarmStick manual button 11 is pygame button index 10.
+    reset_button: 10
+    deadzone:  0.05             # legacy raw-axis deadzone; also used by response_profile by default
+    scale:     [0.6, 0.3, 0.7, 0.7]  # match Unity interpreter magnitudes more closely
     clip:      1.0              # hard clip after scale
+    response_profile:
+      enabled: true             # port of Unity AxisResponseProfile behavior
+      use_measured_dt: false    # fixed control-step dt is smoother for synchronous step-ack teleop
+      deadzone: [0.05, 0.05, 0.05, 0.05]  # scalar or [4] per-axis
+      attack_rate: 4.0          # scalar or [4]
+      release_rate: 6.0         # scalar or [4]
+      recenter_rate: 7.0        # scalar or [4]
+      exponent: 1.0             # scalar or [4]
 
   keyboard:
     key_speed:    0.5           # speed when key held (0..1)

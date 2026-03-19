@@ -36,8 +36,14 @@ Schema v1.1 layout (add-only on top of v1.0)
 │   ├── scale                float[4] optional
 │   ├── limit                float[4] optional
 │   ├── axis_map             int[4] optional
+│   ├── joystick_ids         int[4] optional
 │   ├── invert               bool[4] optional
 │   └── key_speed            float optional
+│   ├── response_profile_enabled      int/bool optional
+│   ├── response_profile_attack_rate  float[4] optional
+│   ├── response_profile_release_rate float[4] optional
+│   ├── response_profile_recenter_rate float[4] optional
+│   └── response_profile_exponent     float[4] optional
 │
 ├── observations/
 │   ├── qpos                 (T, 4)  float32  [swing, boom, stick, bucket] position_norm
@@ -110,8 +116,14 @@ ATTR_DEADZONE         = "deadzone"
 ATTR_SCALE            = "scale"
 ATTR_LIMIT            = "limit"
 ATTR_AXIS_MAP         = "axis_map"
+ATTR_JOYSTICK_IDS     = "joystick_ids"
 ATTR_INVERT           = "invert"
 ATTR_KEY_SPEED        = "key_speed"
+ATTR_RESPONSE_PROFILE_ENABLED = "response_profile_enabled"
+ATTR_RESPONSE_PROFILE_ATTACK_RATE = "response_profile_attack_rate"
+ATTR_RESPONSE_PROFILE_RELEASE_RATE = "response_profile_release_rate"
+ATTR_RESPONSE_PROFILE_RECENTER_RATE = "response_profile_recenter_rate"
+ATTR_RESPONSE_PROFILE_EXPONENT = "response_profile_exponent"
 
 # ── V0 locked constants ───────────────────────────────────────────────────────
 DEFAULT_CONTROL_HZ       = 50
