@@ -106,10 +106,19 @@ Edit `testbed/configs/teleop_v0.yaml`:
 agx:
   host: "192.168.x.x"   # Unity machine IP
   port: 5057
+  reset_terrain: false  # teleop default
+  reset_pose: true
 ```
 
 Then run without the mock server. The Unity side must implement the V0 protocol
 defined in Repo C `protocol.md` and match the current Repo B bridge.
+
+For the current teleop pipeline, the default reset policy is "pose-only":
+- `reset_pose: true`
+- `reset_terrain: false`
+
+This avoids re-sculpting the deformable terrain at every episode boundary while
+still returning the excavator to the baseline pose and clearing counters.
 
 ---
 

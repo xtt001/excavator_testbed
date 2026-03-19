@@ -37,6 +37,8 @@ class AgxSimBackend(SimBackend):
         *,
         timeout_s: float | None = None,
         timeout: float | None = None,
+        reset_terrain: bool = True,
+        reset_pose: bool = True,
     ) -> None:
         if timeout_s is None:
             timeout_s = 5.0 if timeout is None else float(timeout)
@@ -44,6 +46,8 @@ class AgxSimBackend(SimBackend):
         self._info: GetInfoResponse | None = None
         self._next_step_id = 0
         self._last_obs: dict[str, Any] | None = None
+        self._reset_terrain = bool(reset_terrain)
+        self._reset_pose = bool(reset_pose)
 
     def close(self) -> None:
         self._client.close()
@@ -53,9 +57,19 @@ class AgxSimBackend(SimBackend):
             self._info = self._client.get_info()
         return self._info
 
-    def reset(self, seed: int | None = None) -> Any:
+    def reset(
+        self,
+        seed: int | None = None,
+        *,
+        reset_terrain: bool | None = None,
+        reset_pose: bool | None = None,
+    ) -> Any:
         info = self.get_info()
-        reset_response = self._client.reset(seed=0 if seed is None else int(seed))
+        reset_response = self._client.reset(
+            seed=0 if seed is None else int(seed),
+            reset_terrain=self._reset_terrain if reset_terrain is None else bool(reset_terrain),
+            reset_pose=self._reset_pose if reset_pose is None else bool(reset_pose),
+        )
         self._next_step_id = 0
         ts = self._step_with_id(
             step_id=self._next_step_id,

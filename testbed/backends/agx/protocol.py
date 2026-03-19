@@ -529,8 +529,12 @@ class AgxSimClient:
         self.connect()
         assert self._socket is not None
         with self._lock:
-            self._socket.sendall(request_frame)
-            response_type, payload = read_frame(self._socket)
+            try:
+                self._socket.sendall(request_frame)
+                response_type, payload = read_frame(self._socket)
+            except Exception:
+                self.close()
+                raise
         if response_type != expected:
             raise AgxProtocolError(
                 f"unexpected response type {response_type.name}, expected {expected.name}"

@@ -179,6 +179,14 @@ We currently have partial reset support (terrain reset + counters). For V0 evalu
 - `reset_terrain` (bool)
 - `reset_pose` (bool)
 
+Current teleop default:
+- `reset_pose = true`
+- `reset_terrain = false`
+
+Rationale:
+- teleop needs a repeatable excavator pose and empty counters
+- terrain re-sculpting on every episode boundary is optional and should not be implicit
+
 ### 7.2 Determinism (V0)
 - V0 does **not** require perfect seed determinism across all terrain randomness,
   but does require **repeatable baseline reset** (same initial pose and empty bucket state).
@@ -459,6 +467,10 @@ RESET_REQ fields:
 - scenario_id: string (optional)
 - reset_terrain: bool
 - reset_pose: bool
+
+Current `tb-record-teleop` default:
+- reset_pose: true
+- reset_terrain: false
 
 RESET_RESP should confirm:
 - reset applied

@@ -4,6 +4,8 @@ import io
 import socket
 import threading
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 
@@ -171,6 +173,40 @@ class AgxProtocolTests(unittest.TestCase):
 
         thread.join(timeout=1.0)
         self.assertFalse(thread.is_alive())
+
+    def test_backend_reset_uses_configured_reset_flags(self) -> None:
+        backend = AgxSimBackend(
+            host="127.0.0.1",
+            port=5057,
+            timeout_s=1.0,
+            reset_terrain=False,
+            reset_pose=True,
+        )
+        backend._info = SimpleNamespace(
+            action_order=(
+                "swing_speed_cmd",
+                "boom_speed_cmd",
+                "stick_speed_cmd",
+                "bucket_speed_cmd",
+            )
+        )
+
+        fake_reset = SimpleNamespace(reset_applied=True, warnings=())
+        fake_timestep = SimpleNamespace(observation={})
+
+        with (
+            patch.object(backend._client, "reset", return_value=fake_reset) as mock_reset,
+            patch.object(backend, "_step_with_id", return_value=fake_timestep),
+        ):
+            backend.reset(seed=11)
+
+        mock_reset.assert_called_once_with(
+            seed=11,
+            reset_terrain=False,
+            reset_pose=True,
+        )
+        self.assertTrue(fake_timestep.observation["reset_applied"])
+        self.assertEqual(fake_timestep.observation["reset_warnings"], [])
 
     def test_step_image_payload_size_is_validated(self) -> None:
         response = StepResponse(

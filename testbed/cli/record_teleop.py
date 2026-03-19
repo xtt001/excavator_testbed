@@ -125,6 +125,8 @@ def main() -> None:
         host=agx_cfg.get("host", "127.0.0.1"),
         port=agx_cfg.get("port", 5057),
         timeout=agx_cfg.get("timeout", 10.0),
+        reset_terrain=agx_cfg.get("reset_terrain", False),
+        reset_pose=agx_cfg.get("reset_pose", True),
     )
     info = backend.get_info()
     _validate_requested_cameras(info.camera_names, camera_names)
