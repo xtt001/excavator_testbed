@@ -123,9 +123,9 @@ class EvalSuite:
             success = ep_highest == task.env_max_reward
             print(
                 f"Rollout {rollout_id:3d}  "
-                f"return={ep_return:.2f}  "
-                f"max_reward={ep_highest:.2f}  "
-                f"success={'✓' if success else '✗'}"
+                f"return = {ep_return:.2f}  "
+                f"max_reward = {ep_highest:.2f}  "
+                f"success = {'True' if success else 'False'}"
             )
 
             if self.save_video and frames:

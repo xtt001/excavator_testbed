@@ -13,7 +13,7 @@ def eval_policy(config: dict[str, Any]) -> None:
     eval_cfg   = config.get("eval", {})
 
     policy_class    = policy_cfg.get("class", "ACT").upper()
-    task_name       = task_cfg.get("name", config.get("task_name", ""))
+    task_name       = task_cfg.get("task_name", config.get("task_name", ""))
     equipment_model = task_cfg.get("equipment_model", config.get("equipment_model", "excavator_simple"))
     camera_names    = task_cfg.get("camera_names", config.get("camera_names", []))
     num_rollouts    = int(eval_cfg.get("num_rollouts", 50))
@@ -25,7 +25,7 @@ def eval_policy(config: dict[str, Any]) -> None:
     results_dir     = Path(eval_cfg.get("results_dir", ckpt_dir / "eval_results"))
 
     if policy_class == "ACT":
-        act_params     = policy_cfg.get("act_params", {})
+        act_params     = policy_cfg.get("params", {})
         norm_stats_path = ckpt_dir / "dataset_stats.pkl"
         policy_config  = {
             "lr":            float(config.get("train", {}).get("lr", 1e-5)),
