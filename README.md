@@ -1,100 +1,206 @@
-# Excavator Testbed
+# Excavator Testbed (Repo A — Python)
 
-A **clean, model-agnostic imitation learning testbed** for engineering machinery (excavator / loader) intelligent control, built on top of MuJoCo + dm_control.
+A **clean, backend-agnostic imitation learning testbed** for engineering machinery intelligent excavation.
 
-## Status
+Three-repo architecture:
+- **Repo A — this repo** (Python): training / eval / data pipeline + AGX remote backend
+- **Repo B — agxunity-sim** (Unity/C#): scene, bridge, camera export, actuator state export
+- **Repo C — sim-protocol** (Shared): protocol.md, schema.md, constants, eval suite YAML
 
-**Pipeline validated end-to-end** on `sim_transfer_cube_scripted` (vx300s bimanual, 14-DOF):
+---
 
-| Stage | Status |
+## Status (branch: `tx/dev_agxunity`)
+
+| Component | Status |
 |---|---|
-| Scripted data collection (HDF5) | ✅ working |
-| ACT training on GPU | ✅ working — val_loss 74.6 → 0.087 over 500 epochs |
-| Policy rollout + evaluation | ✅ working — 10% success @ 39 demos / 500 epochs |
-| MP4 video output with reward overlay | ✅ working |
+| AGX socket protocol (binary framing, step-ack) | ✅ implemented |
+| `AGXSimBackend` (`SimBackend` ABC) | ✅ implemented |
+| HDF5 schema v1.1 (timestamps, action_source, env_state, fpv) | ✅ implemented |
+| `EpisodeRecorder` v1.1 | ✅ implemented |
+| `JoystickActionSource` (pygame, deadzone/scale/invert) | ✅ implemented |
+| `KeyboardActionSource` (pygame, WASD+arrows fallback) | ✅ implemented |
+| `tb-record-teleop` CLI | ✅ implemented |
+| `tb-replay` CLI + QA diff report | ✅ implemented |
+| Eval suite: AGX mass-based success rule (spec §8) | ✅ implemented |
+| ACT policy adapter + trainer | ✅ carried from v0 |
+| Dummy policy | ✅ carried from v0 |
+| MuJoCo backend | ✅ retained (legacy, not primary) |
 
-Excavator task and teleop data collection are **next** — the infrastructure is ready.
+**Next:** connect real AGXUnity machine → collect teleop demos → train ACT → eval.
 
-## Philosophy
-
-- **Policies are hot-swappable plugins** — register with `@register_policy("name")`, swap in YAML, nothing else changes. ACT is fully wired; `diffusion` stub is ready to implement.
-- **Fixed evaluation** — same tasks, same seeds, same camera views every run. Fair comparison by design.
-- **Backend-agnostic** — MuJoCo (`SimBackend` ABC) now; other simulators slot in by implementing the same interface.
-- **Data collection pipeline** — Phase 1: scripted policy runs in EE-space (`MuJoCoEESimBackend`) to drive the robot. Phase 2: extracted joint trajectory is replayed in joint-space sim (`MuJoCoSimBackend`) and saved as HDF5 with 14-DOF joint-space actions. The trained policy then operates in the same joint-space during evaluation.
+---
 
 ## Quick start
 
+### 1. Install
+
 ```bash
-conda activate aloha
-pip install -e ".[dev]"   # only needed once
-
-# 1. Collect scripted demos (two-phase EE→joint pipeline, saves 14-DOF joint-space actions)
-python -m testbed.cli.record --config testbed/configs/task_v0.yaml --num-episodes 50
-
-# 2. Train ACT (resumes from checkpoint if resume_ckpt is set in act_v0.yaml)
-python -m testbed.cli.train --config testbed/configs/act_v0.yaml
-
-# 3. Evaluate trained policy + save MP4 videos
-python -m testbed.cli.eval --config testbed/configs/eval_v0.yaml
-
-# 4. Quick demo (N rollouts, saves runs/demo/transfer_cube_act_v0/rollout_00x.mp4)
-python scripts/demo_sim.py --rollouts 10
-
-# 5. Live interactive viewer (no video saving)
-python scripts/watch_sim.py
+pip install -e ".[dev]"
 ```
 
-> **Note:** The CLI flag is `--num-episodes` (hyphen), not `--num_episodes`.
-> To train from scratch, remove or comment out `resume_ckpt` / `start_epoch` in `testbed/configs/act_v0.yaml`.
+### 2. Run the protocol smoke test against Unity
+
+```bash
+python scripts/agx_smoke.py --host 127.0.0.1 --port 5057 --steps 500
+```
+
+This verifies the live Unity bridge with `GET_INFO / RESET / STEP`, step-id
+continuity, and raw RGB frame decoding.
+
+### 3. Record teleop episodes
+
+```bash
+# keyboard (WASD = swing/boom, arrows = stick/bucket, D = discard, Q = quit)
+tb-record-teleop --config testbed/configs/teleop_v0.yaml --input keyboard
+
+# gamepad
+tb-record-teleop --config testbed/configs/teleop_v0.yaml --input joystick
+```
+
+Episodes are saved to `data/agx_teleop/episode_N.hdf5` (schema v1.1).
+
+### 4. Replay QA
+
+```bash
+tb-replay --episode data/agx_teleop/episode_0.hdf5
+# QA — qpos diff: mean=X  max=X  (over 500 steps)
+
+tb-replay --episode data/agx_teleop/episode_0.hdf5 --save-video
+# writes runs/replay/episode_0_replay.mp4
+```
+
+### 5. Train ACT
+
+```bash
+tb-train --config testbed/configs/act_v0.yaml
+```
+
+### 6. Evaluate
+
+```bash
+tb-eval --config testbed/configs/eval_agx_v0.yaml
+# outputs: runs/eval/agx_excavation/metrics.json + summary.csv + videos/
+```
+
+---
+
+## Connecting real AGXUnity machine
+
+Edit `testbed/configs/teleop_v0.yaml`:
+
+```yaml
+agx:
+  host: "192.168.x.x"   # Unity machine IP
+  port: 5057
+```
+
+Then run without the mock server. The Unity side must implement the V0 protocol
+defined in `docs/add_teleop.md` (and Repo C `protocol.md`).
+
+---
 
 ## Repo layout
 
 ```
-testbed/                    ← Python package (pip install -e .)
+testbed/
   backends/
-    base.py                 ← SimBackend / EESimBackend ABCs
-    mujoco/
-      backend.py            ← MuJoCoSimBackend  (joint-space, policy eval)
-      ee_backend.py         ← MuJoCoEESimBackend (EE-space, data collection)
-      tasks/                ← dm_control task physics (bimanual, single-arm, excavator)
-  policies/
-    base.py                 ← Policy / Trainer ABCs + registry
-    act/                    ← ACT — FULLY IMPLEMENTED (ResNet18 + Transformer, temporal agg)
-    diffusion/              ← Diffusion — stub, NotImplementedError
-    dummy/                  ← Zero / replay policy for smoke tests
+    base.py                   ← SimBackend ABC (swap any backend by implementing this)
+    agx/
+      protocol.py             ← Binary framing, message enums, pack/unpack (V0)
+      backend.py              ← AGXSimBackend(SimBackend) — primary backend
+    mujoco/                   ← MuJoCo backend (retained, not primary)
+  actions/
+    base.py                   ← ActionSource ABC + ActionInfo dataclass
+    gamepad.py                ← JoystickActionSource (pygame, per-axis deadzone/scale)
+    keyboard.py               ← KeyboardActionSource (WASD+arrows fallback)
   data/
-    recorder.py             ← HDF5 episode recorder
-    dataset.py              ← EpisodeDataset (PyTorch DataLoader compatible)
+    schema.py                 ← HDF5 schema v1.1 constants (add-only)
+    hdf5_io.py                ← write_episode / read_episode (v1.0 + v1.1 fields)
+    recorder.py               ← EpisodeRecorder (buffers + flushes to HDF5)
+    dataset.py                ← EpisodicDataset (PyTorch DataLoader)
+  policies/
+    base.py                   ← Policy / Trainer ABCs + @register_policy registry
+    act/                      ← ACT — fully implemented (ResNet18 + Transformer)
+    dummy/                    ← Zero policy for smoke tests
+    diffusion/                ← Stub (NotImplementedError)
   eval/
-    suite.py                ← EvalSuite (runs rollouts, computes metrics)
-    tasks.py                ← EvalTaskDef per task (cameras, reward threshold, pose sampler)
-    video.py                ← MP4 renderer with reward bar overlay
-    metrics.py              ← Success rate, reward statistics
+    suite.py                  ← EvalSuite — AGX mass-based + MuJoCo reward-based success
+    tasks.py                  ← EvalTaskDef per task (agx_excavation_teleop + legacy)
+    metrics.py                ← EvalMetrics → metrics.json + summary.csv
+    video.py                  ← MP4 with reward overlay
   configs/
-    schema.py               ← Pydantic config schemas
-    act_v0.yaml             ← ACT training + eval config (transfer cube)
-    task_v0.yaml            ← Data collection config
-    eval_v0.yaml            ← Standalone eval config
+    agx_v0.yaml               ← AGX host/port/dims
+    teleop_v0.yaml            ← Teleop session config (joystick mapping, episode params)
+    eval_agx_v0.yaml          ← AGX eval suite (success rule, num_rollouts)
+    act_v0.yaml               ← ACT training config
+    task_v0.yaml              ← Legacy MuJoCo task config
   cli/
-    record.py               ← `python -m testbed.cli.record`
-    train.py                ← `python -m testbed.cli.train`
-    eval.py                 ← `python -m testbed.cli.eval`
-  runtime/                  ← Runner loop + safety guard (future: real robot)
-  state/                    ← StructuredState, FK helpers
-  tasks/                    ← Backend-independent task specs
+    record_teleop.py          ← tb-record-teleop
+    replay.py                 ← tb-replay
+    train.py                  ← tb-train
+    eval.py                   ← tb-eval
+    record.py                 ← tb-record (legacy MuJoCo scripted)
 
-scripts/
-  demo_sim.py               ← Run trained policy, save MP4s (no CLI overhead)
-  watch_sim.py              ← Live MuJoCo viewer (interactive window)
+docs/
+  add_teleop.md               ← Full integration spec (protocol + schema + milestones)
 
-legacy/                     ← Original PACT code, frozen — will be removed
-runs/                       ← Experiment artifacts (gitignored)
-data_sim_episodes/          ← Collected HDF5 episodes (gitignored)
+legacy/                       ← Original PACT code — frozen
+data/                         ← HDF5 episodes (gitignored)
+runs/                         ← Experiment artifacts (gitignored)
 ```
 
-## Adding a new policy
+---
 
-Implement `Policy` (+ optionally `Trainer`) from `testbed.policies.base`:
+## AGX V0 protocol summary
+
+All messages share a 16-byte little-endian header:
+`magic(4) version(2) msg_type(2) payload_len(4) crc32(4)`
+
+| Message | Direction | Key fields |
+|---|---|---|
+| `GET_INFO_REQ/RESP` | Python → Unity / Unity → Python | protocol version, dt/control_hz, action/qpos order, camera descriptors |
+| `RESET_REQ/RESP` | Python → Unity / Unity → Python | seed, reset_terrain, reset_pose / success, dt |
+| `STEP_REQ` | Python → Unity | step_id (int64), action float32[4] |
+| `STEP_RESP` | Unity → Python | step_id, qpos[4], qvel[4], env_state[M], reward, fpv image |
+
+**Action vector:** `[swing_speed_cmd, boom_speed_cmd, stick_speed_cmd, bucket_speed_cmd]` — normalized `[-1, 1]`
+
+**Observation:**
+- `qpos (4,)` — `[swing, boom, stick, bucket]` position_norm `[0, 1]`
+- `qvel (4,)` — `[swing, boom, stick, bucket]` speed
+- `env_state (M,)` — index 0 = `mass_in_bucket`
+- `images["fpv"]` — `(H, W, 3)` uint8
+
+**Success rule (spec §8):** `mass_in_bucket ≥ M_thresh` for `hold_steps=25` consecutive steps.
+
+---
+
+## HDF5 schema v1.1
+
+```
+episode_N.hdf5
+├── metadata/           schema_version="1.1", task_name, sim_backend, control_hz,
+│                       dt, action_semantics, camera_names, image_format, seed, ...
+├── observations/
+│   ├── qpos            (T, 4)  float32  [swing, boom, stick, bucket] position_norm
+│   ├── qvel            (T, 4)  float32  [swing, boom, stick, bucket] speed
+│   ├── env_state       (T, M)  float32  env_state[0] = mass_in_bucket
+│   └── images/fpv      (T, H, W, 3) uint8
+├── action              (T, 4)  float32  [swing, boom, stick, bucket] speed cmd
+├── rewards             (T,)    float32
+├── timestamps/
+│   ├── step_id         (T,)    int64
+│   └── step_ns         (T,)    int64
+└── action_source/
+    ├── type            (T,)    str   "teleop" | "policy"
+    └── id              (T,)    str   "joystick" | "keyboard" | ...
+```
+
+Schema is **add-only** — fields are never removed or renamed. Version bump required for any new required field.
+
+---
+
+## Adding a new policy
 
 ```python
 # testbed/policies/my_model/adapter.py
@@ -104,23 +210,29 @@ import numpy as np
 @register_policy("my_model")
 class MyPolicy(Policy):
     def predict(self, obs: dict) -> np.ndarray:
-        # obs["qpos"]        → (14,) joint positions
-        # obs["image_top"]   → (3, H, W) float32 [0,1]
+        # obs["qpos"]       → (4,)  float32  AGX V0
+        # obs["image_fpv"]  → (3, H, W) float32 [0,1]
         ...
-
     def reset(self) -> None: ...
 ```
 
-Then set `policy.class: MyModel` in any YAML config — the CLI picks it up automatically.
+Set `policy.name: my_model` in any eval YAML — the CLI picks it up automatically.
 
-## Tasks
+## Adding a new backend
 
-| Task name | Robot | DOF | Description |
-|---|---|---|---|
-| `sim_transfer_cube_scripted` | vx300s bimanual | 14 | Right arm picks cube, hands off to left arm |
-| `sim_lifting_cube_scripted` | vx300s single | 7 | Single arm lifts cube to target height |
-| `sim_excavator_*` | Excavator | 4 | Dig + dump (scripted policy needs recalibration) |
+Implement `SimBackend` from `testbed.backends.base`:
+
+```python
+class MySimBackend(SimBackend):
+    def reset(self, seed=None): ...   # returns timestep-like object
+    def step(self, action): ...       # returns timestep-like object
+    def render(self, camera_id, h, w): ...
+    @property
+    def dt(self) -> float: ...
+```
+
+Add a `backend_type` entry in `eval/tasks.py` and a factory branch in `EvalSuite._make_env()`.
 
 ## Legacy
 
-The original PACT ACT-coupled code lives in `legacy/`. It is frozen and will be removed once the testbed fully covers all functionality.
+The original PACT ACT-coupled code lives in `legacy/`. It is frozen.

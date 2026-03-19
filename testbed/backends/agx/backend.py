@@ -4,7 +4,7 @@ SimBackend adapter for the Unity AGX step-ack server.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -17,6 +17,8 @@ from testbed.backends.agx.protocol import AgxSimClient, GetInfoResponse, StepRes
 class AgxTimeStep:
     observation: dict[str, Any]
     reward: float = 0.0
+    done: bool = False
+    info: dict[str, Any] = field(default_factory=dict)
 
 
 class AgxSimBackend(SimBackend):
@@ -33,8 +35,11 @@ class AgxSimBackend(SimBackend):
         host: str = "127.0.0.1",
         port: int = 5057,
         *,
-        timeout_s: float = 5.0,
+        timeout_s: float | None = None,
+        timeout: float | None = None,
     ) -> None:
+        if timeout_s is None:
+            timeout_s = 5.0 if timeout is None else float(timeout)
         self._client = AgxSimClient(host=host, port=port, timeout_s=timeout_s)
         self._info: GetInfoResponse | None = None
         self._next_step_id = 0
@@ -98,7 +103,18 @@ class AgxSimBackend(SimBackend):
         response = self._client.step(step_id=step_id, action=action)
         obs = self._obs_from_step_response(response)
         self._last_obs = obs
-        return AgxTimeStep(observation=obs, reward=float(response.reward))
+        info = {
+            "step_id": int(response.step_id),
+            "sim_time_ns": int(response.sim_time_ns),
+            "image_format": response.image_format,
+            "warnings": list(response.warnings),
+        }
+        return AgxTimeStep(
+            observation=obs,
+            reward=float(response.reward),
+            done=False,
+            info=info,
+        )
 
     def _obs_from_step_response(self, response: StepResponse) -> dict[str, Any]:
         image = response.decode_rgb_image()
@@ -114,3 +130,7 @@ class AgxSimBackend(SimBackend):
             "image_format": response.image_format,
             "warnings": list(response.warnings),
         }
+
+
+AGXSimBackend = AgxSimBackend
+AGXTimestep = AgxTimeStep

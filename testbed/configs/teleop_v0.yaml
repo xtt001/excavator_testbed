@@ -1,0 +1,44 @@
+# Teleop recording config (V0) — AGX excavator joystick demos
+# Load with: yaml.safe_load(open("teleop_v0.yaml"))
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── AGX connection ────────────────────────────────────────────────────────────
+agx:
+  host:    "127.0.0.1"   # replace with Unity machine IP for remote setup
+  port:    5057
+  timeout: 10.0
+
+# ── Teleop device ────────────────────────────────────────────────────────────
+teleop:
+  input:         "joystick"     # "joystick" | "keyboard"
+  num_episodes:  20
+
+  joystick:
+    joystick_id: 0              # pygame joystick index
+    # axis_map: [swing, boom, stick, bucket]
+    # Xbox layout: left-X=0, left-Y=1, right-X=3, right-Y=4
+    axis_map:  [0, 1, 3, 4]
+    invert:    [false, true, false, true]  # Y axes are typically inverted
+    deadzone:  0.05             # per-axis deadzone (scalar → applied to all)
+    scale:     1.0              # speed scale (scalar → applied to all)
+    clip:      1.0              # hard clip after scale
+
+  keyboard:
+    key_speed:    0.5           # speed when key held (0..1)
+    window_title: "Testbed Teleop"
+
+# ── Task / episode parameters ────────────────────────────────────────────────
+task:
+  task_name:     "agx_excavation_teleop"
+  dataset_dir:   "data/agx_teleop"
+  camera_names:  ["fpv"]
+  max_steps:     500            # 10s @ 50Hz
+  control_hz:    50
+  dt:            0.02
+  seed:          -1             # -1 = time-based seed per episode
+  param_version: "v0"
+
+# ── Action semantics (locked for V0) ─────────────────────────────────────────
+# action = [swing_speed_cmd, boom_speed_cmd, stick_speed_cmd, bucket_speed_cmd]
+# all in [-1, 1] normalized (post-deadzone, post-scale)
+action_semantics: "actuator_speed_cmd"

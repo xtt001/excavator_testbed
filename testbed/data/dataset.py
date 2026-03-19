@@ -69,28 +69,9 @@ def get_norm_stats(
             "Expected files like episode_0.hdf5."
         )
 
-    # Filter to episodes where action_dim == qpos_dim (correct joint-space data).
-    # Drop legacy episodes recorded with raw EE-space actions (action_dim != qpos_dim).
-    kept_pairs = [
-        (q, a) for q, a in zip(all_qpos_data, all_action_data)
-        if a.shape[-1] == q.shape[-1]
-    ]
-    dropped = len(all_action_data) - len(kept_pairs)
-    if dropped:
-        action_dims = {t.shape[-1] for t in all_action_data}
-        qpos_dim = all_qpos_data[0].shape[-1]
-        print(
-            f"[get_norm_stats] Skipped {dropped} episode(s) where action_dim != "
-            f"qpos_dim ({qpos_dim}). Found action dims: {action_dims}."
-        )
-    if not kept_pairs:
-        raise ValueError(
-            f"No episodes with action_dim == qpos_dim found under {dataset_dir}. "
-            "Re-collect data with `tb-record`."
-        )
-    all_qpos_data   = [p[0] for p in kept_pairs]
-    all_action_data = [p[1] for p in kept_pairs]
-
+    # NOTE: Do NOT assume action_dim == qpos_dim across backends.
+    # Current AGX V0 uses action_dim=4 and qpos_dim=4, but stats are still
+    # computed independently per-dimension.
     qpos_tensor   = torch.stack(all_qpos_data)    # (N, T, Nq)
     action_tensor = torch.stack(all_action_data)  # (N, T, Na)
 

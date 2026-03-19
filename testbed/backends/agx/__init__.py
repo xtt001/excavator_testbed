@@ -1,6 +1,11 @@
 """AGX Unity backend package."""
 
-from testbed.backends.agx.backend import AgxSimBackend, AgxTimeStep
+from testbed.backends.agx.backend import (
+    AGXSimBackend,
+    AGXTimestep,
+    AgxSimBackend,
+    AgxTimeStep,
+)
 from testbed.backends.agx.protocol import (
     AgxConnectionClosedError,
     AgxProtocolError,
@@ -12,6 +17,8 @@ __all__ = [
     "AgxConnectionClosedError",
     "AgxProtocolError",
     "AgxServerError",
+    "AGXSimBackend",
+    "AGXTimestep",
     "AgxSimBackend",
     "AgxSimClient",
     "AgxTimeStep",
