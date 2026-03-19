@@ -88,13 +88,22 @@ EVAL_TASKS: dict[str, EvalTaskDef] = {
         make_object_pose= _sample_insertion,
         backend_type    = "mujoco_ee",
     ),
-    "sim_lifting_cube_scripted": EvalTaskDef(
-        name            = "sim_lifting_cube_scripted",
+    "sim_excavation_cube_scripted": EvalTaskDef(
+        name            = "sim_excavation_cube_scripted",
         equipment_model = "excavator_simple",
         episode_len     = 400,
         camera_names    = ["front_close", "side"],
         env_max_reward  = 3.0,
         make_object_pose= _sample_excavator,
+        backend_type    = "mujoco",
+    ),
+    "sim_lifting_cube_scripted": EvalTaskDef(
+        name            = "sim_lifting_cube_scripted",
+        equipment_model = "fairino5_single",
+        episode_len     = 400,
+        camera_names    = ["top"],
+        env_max_reward  = 4.0,
+        make_object_pose= _sample_lifting_cube,
         backend_type    = "mujoco",
     ),
 }

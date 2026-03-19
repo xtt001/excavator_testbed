@@ -117,7 +117,7 @@ def record_episodes(config: dict[str, Any]) -> None:
         else:
             raise ValueError(f"Unknown pipeline: {pipeline!r}")
 
-        status     = "✓" if episode_ok else "✗"
+        status     = "True" if episode_ok else "False"
         phase1_str = f"  phase1={ee_max_reward:.0f}/{env_max:.0f}" if pipeline in ("ee_replay", "ee") else ""
         should_save = (not only_success) or episode_ok
         print(
