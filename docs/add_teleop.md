@@ -181,11 +181,11 @@ We currently have partial reset support (terrain reset + counters). For V0 evalu
 
 Current teleop default:
 - `reset_pose = true`
-- `reset_terrain = false`
+- `reset_terrain = true`
 
 Rationale:
-- teleop needs a repeatable excavator pose and empty counters
-- terrain re-sculpting on every episode boundary is optional and should not be implicit
+- teleop needs a repeatable excavator pose, terrain baseline, and empty counters
+- duplicate terrain reset paths should be fixed on the Unity side instead of disabling terrain reset in Python
 
 ### 7.2 Determinism (V0)
 - V0 does **not** require perfect seed determinism across all terrain randomness,
@@ -470,7 +470,7 @@ RESET_REQ fields:
 
 Current `tb-record-teleop` default:
 - reset_pose: true
-- reset_terrain: false
+- reset_terrain: true
 
 RESET_RESP should confirm:
 - reset applied

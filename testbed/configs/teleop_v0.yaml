@@ -7,7 +7,7 @@ agx:
   host:    "127.0.0.1"   # replace with Unity machine IP for remote setup
   port:    5057
   timeout: 10.0
-  reset_terrain: false   # teleop default: preserve current dig pit / terrain profile
+  reset_terrain: true    # teleop default: reset terrain for each new episode
   reset_pose:    true    # still return excavator to the baseline pose each episode
 
 # ── Teleop device ────────────────────────────────────────────────────────────
