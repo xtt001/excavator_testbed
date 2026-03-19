@@ -20,16 +20,6 @@ import numpy as np
 from testbed.data.schema import (
     ATTR_SCHEMA_VERSION,
     ATTR_SIM,
-    ATTR_TASK_NAME,
-    ATTR_SIM_BACKEND,
-    ATTR_SEED,
-    ATTR_PARAM_VERSION,
-    ATTR_TIMESTAMP,
-    ATTR_CONTROL_HZ,
-    ATTR_DT,
-    ATTR_ACTION_SEMANTICS,
-    ATTR_CAMERA_NAMES,
-    ATTR_IMAGE_FORMAT,
     DS_ACTION,
     DS_QPOS,
     DS_QVEL,
@@ -43,7 +33,6 @@ from testbed.data.schema import (
     GRP_TIMESTAMPS,
     GRP_ACTION_SOURCE,
     SCHEMA_VERSION,
-    image_ds,
 )
 
 
@@ -134,27 +123,6 @@ def write_episode(
                 for i, s in enumerate(action_src_ids):
                     ds[i] = s
 
-
-# ─── Read ─────────────────────────────────────────────────────────────────────
-
-def read_episode(path: str | Path) -> dict[str, Any]:
-    """
-    Read a full episode from HDF5.
-
-    Returns
-    -------
-    {
-      "qpos":    (T, Nq) float32,
-      "qvel":    (T, Nq) float32,
-      "actions": (T, Na) float32,
-      "images":  {cam: (T, H, W, 3) uint8},
-      "rewards": (T,) float32 | None,
-      "metadata": dict,
-      "is_sim":  bool,
-    }
-    """
-    path = Path(path)
-    result: dict[str, Any] = {}
 
 def read_episode(path: str | Path) -> dict[str, Any]:
     """

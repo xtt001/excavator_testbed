@@ -40,7 +40,10 @@ class EvalSuite:
     video_dir    Directory for MP4 files.
     agx_host     AGX machine host (only used when backend_type=="agx").
     agx_port     AGX machine port (only used when backend_type=="agx").
+    agx_timeout  AGX socket timeout seconds (only used when backend_type=="agx").
     mass_thresh  Override task.mass_thresh (AGX success threshold).
+    hold_steps   Override task.hold_steps for AGX success.
+    env_state_index  Which env_state entry is treated as mass_in_bucket.
     """
 
     def __init__(
@@ -53,7 +56,10 @@ class EvalSuite:
         ckpt_path: str = "",
         agx_host: str = "127.0.0.1",
         agx_port: int = 5057,
+        agx_timeout: float = 10.0,
         mass_thresh: float | None = None,
+        hold_steps: int | None = None,
+        env_state_index: int = 0,
     ):
         self.policy       = policy
         self.task_def     = get_eval_task(task_name)
@@ -62,6 +68,8 @@ class EvalSuite:
         self.ckpt_path    = ckpt_path
         self.agx_host     = agx_host
         self.agx_port     = agx_port
+        self.agx_timeout  = agx_timeout
+        self._env_state_index = int(env_state_index)
 
         # Allow config override for mass_thresh
         if mass_thresh is not None:
@@ -69,6 +77,7 @@ class EvalSuite:
             self._mass_thresh = mass_thresh
         else:
             self._mass_thresh = self.task_def.mass_thresh
+        self._hold_steps = self.task_def.hold_steps if hold_steps is None else int(hold_steps)
 
         if video_dir is None:
             policy_name = type(policy).__name__
@@ -142,8 +151,8 @@ class EvalSuite:
                     success = _mass_success(
                         env_states,
                         mass_thresh=self._mass_thresh,
-                        hold_steps=task.hold_steps,
-                        mass_idx=0,   # schema: env_state[0] = mass_in_bucket
+                        hold_steps=self._hold_steps,
+                        mass_idx=self._env_state_index,
                     )
                     ep_highest = 1.0 if success else 0.0
                 else:
@@ -195,7 +204,11 @@ class EvalSuite:
     def _make_env(self, task: EvalTaskDef):
         if task.backend_type == "agx":
             from testbed.backends.agx.backend import AGXSimBackend
-            return AGXSimBackend(host=self.agx_host, port=self.agx_port)
+            return AGXSimBackend(
+                host=self.agx_host,
+                port=self.agx_port,
+                timeout=self.agx_timeout,
+            )
         elif task.backend_type == "mujoco_ee":
             from testbed.backends.mujoco.ee_backend import MuJoCoEESimBackend
             return MuJoCoEESimBackend(

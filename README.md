@@ -42,10 +42,19 @@ pip install -e ".[dev]"
 
 ```bash
 python scripts/agx_smoke.py --host 127.0.0.1 --port 5057 --steps 500
+
+# stricter validation: reset baseline consistency + reset-separated swing pulse sign checks
+python scripts/agx_smoke.py --host 127.0.0.1 --port 5057 --steps 500 --strict
 ```
 
 This verifies the live Unity bridge with `GET_INFO / RESET / STEP`, step-id
 continuity, and raw RGB frame decoding.
+
+`--strict` adds stronger live checks on top of the basic smoke:
+- GET_INFO metadata consistency
+- reset baseline repeatability
+- reset-separated positive/negative swing pulse sign checks
+- stable FPV image dimensions across the run
 
 ### 3. Record teleop episodes
 
@@ -72,7 +81,7 @@ tb-replay --episode data/agx_teleop/episode_0.hdf5 --save-video
 ### 5. Train ACT
 
 ```bash
-tb-train --config testbed/configs/act_v0.yaml
+tb-train --config testbed/configs/act_agx_v0.yaml
 ```
 
 ### 6. Evaluate
@@ -95,7 +104,7 @@ agx:
 ```
 
 Then run without the mock server. The Unity side must implement the V0 protocol
-defined in `docs/add_teleop.md` (and Repo C `protocol.md`).
+defined in Repo C `protocol.md` and match the current Repo B bridge.
 
 ---
 
@@ -132,7 +141,8 @@ testbed/
     agx_v0.yaml               ← AGX host/port/dims
     teleop_v0.yaml            ← Teleop session config (joystick mapping, episode params)
     eval_agx_v0.yaml          ← AGX eval suite (success rule, num_rollouts)
-    act_v0.yaml               ← ACT training config
+    act_v0.yaml               ← Legacy ACT training config
+    act_agx_v0.yaml           ← ACT training config for AGX teleop data
     task_v0.yaml              ← Legacy MuJoCo task config
   cli/
     record_teleop.py          ← tb-record-teleop
@@ -171,7 +181,12 @@ All messages share a 16-byte little-endian header:
 - `env_state (M,)` — index 0 = `mass_in_bucket`
 - `images["fpv"]` — `(H, W, 3)` uint8
 
-**Success rule (spec §8):** `mass_in_bucket ≥ M_thresh` for `hold_steps=25` consecutive steps.
+**Success rule (spec §8):** `mass_in_bucket ≥ 2.0 kg` for `hold_steps=25` consecutive steps.
+
+Live Repo A <-> Repo B interaction uses the binary TCP step-ack protocol above.
+HDF5 is the offline dataset artifact written by Repo A. Unity-local
+`metadata.json` / `steps.jsonl` / `.rgb24` exports are auxiliary sidecar
+artifacts, not the shared live interaction contract.
 
 ---
 

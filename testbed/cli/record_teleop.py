@@ -31,6 +31,34 @@ from pathlib import Path
 import numpy as np
 import yaml
 
+from testbed.data.schema import (
+    ATTR_ACTION_ORDER,
+    ATTR_ACTION_SEMANTICS,
+    ATTR_AXIS_MAP,
+    ATTR_CAMERA_FPS,
+    ATTR_CAMERA_HEIGHT,
+    ATTR_CAMERA_NAMES,
+    ATTR_CAMERA_ROW_ORDER,
+    ATTR_CAMERA_WIDTH,
+    ATTR_DEADZONE,
+    ATTR_DT,
+    ATTR_ENV_STATE_ORDER,
+    ATTR_IMAGE_FORMAT,
+    ATTR_INVERT,
+    ATTR_KEY_SPEED,
+    ATTR_LIMIT,
+    ATTR_PARAM_VERSION,
+    ATTR_PROTOCOL_VERSION,
+    ATTR_QPOS_ORDER,
+    ATTR_QVEL_ORDER,
+    ATTR_SCALE,
+    ATTR_SEED,
+    ATTR_SIM_BACKEND,
+    ATTR_TASK_NAME,
+    ATTR_TELEOP_INPUT,
+    ATTR_CONTROL_HZ,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -81,6 +109,8 @@ def main() -> None:
         port=agx_cfg.get("port", 5057),
         timeout=agx_cfg.get("timeout", 10.0),
     )
+    info = backend.get_info()
+    _validate_requested_cameras(info.camera_names, camera_names)
 
     # ── Build action source ───────────────────────────────────────────────────
     if input_device == "joystick":
@@ -91,16 +121,13 @@ def main() -> None:
         action_source = KeyboardActionSource.from_config(teleop_cfg.get("keyboard", {}))
 
     # ── Build metadata template ───────────────────────────────────────────────
-    base_meta = {
-        "task_name":        task_cfg.get("task_name", "agx_excavation_teleop"),
-        "sim_backend":      "agxunity",
-        "control_hz":       task_cfg.get("control_hz", 50),
-        "dt":               task_cfg.get("dt", 0.02),
-        "action_semantics": "actuator_speed_cmd",
-        "camera_names":     ",".join(camera_names),
-        "image_format":     "raw_rgb",
-        "param_version":    task_cfg.get("param_version", "v0"),
-    }
+    base_meta = _build_episode_metadata(
+        info=info,
+        task_cfg=task_cfg,
+        teleop_cfg=teleop_cfg,
+        input_device=input_device,
+        camera_names=camera_names,
+    )
 
     # ── Graceful shutdown on Ctrl+C ───────────────────────────────────────────
     _abort = False
@@ -123,7 +150,7 @@ def main() -> None:
 
             ep_seed = seed if seed >= 0 else int(time.time()) % (2**31)
             meta = dict(base_meta)
-            meta["seed"] = ep_seed
+            meta[ATTR_SEED] = ep_seed
 
             recorder = EpisodeRecorder(
                 output_dir=dataset_dir,
@@ -233,3 +260,78 @@ def _check_pygame_events(action_source) -> tuple[bool, bool]:
 
 if __name__ == "__main__":
     main()
+
+
+def _build_episode_metadata(
+    *,
+    info,
+    task_cfg: dict,
+    teleop_cfg: dict,
+    input_device: str,
+    camera_names: list[str],
+) -> dict:
+    metadata: dict[str, object] = {
+        ATTR_TASK_NAME: task_cfg.get("task_name", "agx_excavation_teleop"),
+        ATTR_SIM_BACKEND: "agxunity",
+        ATTR_CONTROL_HZ: int(round(float(info.control_hz))),
+        ATTR_DT: float(info.dt),
+        ATTR_ACTION_SEMANTICS: info.action_semantics,
+        ATTR_CAMERA_NAMES: ",".join(camera_names),
+        ATTR_IMAGE_FORMAT: info.cameras[0].pixel_format if info.cameras else "raw_rgb",
+        ATTR_PARAM_VERSION: task_cfg.get("param_version", "v0"),
+        ATTR_PROTOCOL_VERSION: info.protocol_version,
+        ATTR_ACTION_ORDER: ",".join(info.action_order),
+        ATTR_QPOS_ORDER: ",".join(info.qpos_order),
+        ATTR_QVEL_ORDER: ",".join(info.qvel_order),
+        ATTR_ENV_STATE_ORDER: ",".join(info.env_state_order),
+        ATTR_TELEOP_INPUT: input_device,
+    }
+
+    camera_by_name = {camera.name: camera for camera in info.cameras}
+    if len(camera_names) == 1 and camera_names[0] in camera_by_name:
+        camera = camera_by_name[camera_names[0]]
+        metadata[ATTR_CAMERA_WIDTH] = int(camera.width)
+        metadata[ATTR_CAMERA_HEIGHT] = int(camera.height)
+        metadata[ATTR_CAMERA_FPS] = float(camera.fps)
+        metadata[ATTR_CAMERA_ROW_ORDER] = camera.row_order
+
+    if input_device == "joystick":
+        joystick_cfg = teleop_cfg.get("joystick", {})
+        metadata[ATTR_DEADZONE] = _broadcast_float_config(
+            joystick_cfg.get("deadzone", 0.05)
+        )
+        metadata[ATTR_SCALE] = _broadcast_float_config(
+            joystick_cfg.get("scale", 1.0)
+        )
+        metadata[ATTR_LIMIT] = np.full(4, float(joystick_cfg.get("clip", 1.0)), dtype=np.float32)
+        metadata[ATTR_AXIS_MAP] = np.asarray(
+            joystick_cfg.get("axis_map", [0, 1, 3, 4]),
+            dtype=np.int32,
+        )
+        metadata[ATTR_INVERT] = np.asarray(
+            joystick_cfg.get("invert", [False, True, False, True]),
+            dtype=np.bool_,
+        )
+    else:
+        keyboard_cfg = teleop_cfg.get("keyboard", {})
+        metadata[ATTR_KEY_SPEED] = float(keyboard_cfg.get("key_speed", 0.5))
+
+    return metadata
+
+
+def _broadcast_float_config(value: float | list[float]) -> np.ndarray:
+    if isinstance(value, (int, float)):
+        return np.full(4, float(value), dtype=np.float32)
+    return np.asarray(value, dtype=np.float32)
+
+
+def _validate_requested_cameras(
+    available_camera_names: tuple[str, ...],
+    requested_camera_names: list[str],
+) -> None:
+    missing = sorted(set(requested_camera_names) - set(available_camera_names))
+    if missing:
+        raise KeyError(
+            "Requested camera(s) not advertised by Unity GET_INFO: "
+            + ", ".join(missing)
+        )

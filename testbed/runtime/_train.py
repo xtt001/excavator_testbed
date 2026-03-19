@@ -14,13 +14,14 @@ def train_policy(config: dict[str, Any]) -> None:
     policy_cfg = config.get("policy", {})
     train_cfg  = config.get("train", {})
 
-    policy_class  = policy_cfg.get("class", "ACT").upper()
+    policy_class  = str(policy_cfg.get("class", policy_cfg.get("name", "ACT"))).upper()
     task_name     = task_cfg.get("task_name", task_cfg.get("name", config.get("task_name", "")))
     dataset_dir   = Path(task_cfg.get("dataset_dir", config.get("dataset_dir", "data")))
     num_episodes  = task_cfg.get("num_episodes", config.get("num_episodes", 50))
     camera_names  = task_cfg.get("camera_names", config.get("camera_names", []))
     ckpt_dir      = Path(train_cfg.get("ckpt_dir", config.get("ckpt_dir", f"ckpts/{task_name}")))
     equipment_model = task_cfg.get("equipment_model", config.get("equipment_model", "excavator_simple"))
+    device        = str(train_cfg.get("device", policy_cfg.get("device", "cuda")))
 
     if policy_class != "ACT":
         raise NotImplementedError(f"Trainer for policy class {policy_class!r} not yet implemented.")
@@ -50,6 +51,7 @@ def train_policy(config: dict[str, Any]) -> None:
         "ckpt_dir":       str(ckpt_dir),
         "seed":           int(train_cfg.get("seed", 0)),
         "task_name":      task_name,
+        "device":         device,
         "resume_ckpt":    train_cfg.get("resume_ckpt"),
         "start_epoch":    train_cfg.get("start_epoch"),
     }

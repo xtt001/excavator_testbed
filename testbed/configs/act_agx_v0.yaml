@@ -1,0 +1,46 @@
+# ACT training config for AGX Unity teleop excavation (V0)
+# Load with: yaml.safe_load(open("act_agx_v0.yaml"))
+
+task:
+  task_name: agx_excavation_teleop
+  equipment_model: agxunity
+  dataset_dir: data/agx_teleop
+  num_episodes: 20
+  episode_len: 500
+  camera_names:
+    - fpv
+  backend:
+    name: agx
+    dt: 0.02
+
+policy:
+  class: ACT
+  device: cuda
+  act_params:
+    chunk_size: 100
+    kl_weight: 10.0
+    hidden_dim: 512
+    dim_feedforward: 3200
+
+train:
+  lr: 1.0e-5
+  num_epochs: 500
+  batch_size: 8
+  seed: 0
+  device: cuda
+  num_workers: 4
+  prefetch_factor: 2
+  persistent_workers: true
+  pin_memory: true
+  ckpt_dir: runs/ckpts/agx_excavation_act_v0
+  # To resume training, uncomment the two lines below and set the correct epoch:
+  # resume_ckpt: runs/ckpts/agx_excavation_act_v0/policy_epoch_400_seed_0.ckpt
+  # start_epoch: 400
+
+eval:
+  ckpt_dir: runs/ckpts/agx_excavation_act_v0
+  ckpt_path: runs/ckpts/agx_excavation_act_v0/policy_best.ckpt
+  num_rollouts: 10
+  save_video: true
+  video_dir: runs/eval/agx_excavation_act_v0/videos
+  results_dir: runs/eval/agx_excavation_act_v0/results

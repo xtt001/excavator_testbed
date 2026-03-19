@@ -22,7 +22,22 @@ Schema v1.1 layout (add-only on top of v1.0)
 │   ├── action_semantics     str   "actuator_speed_cmd"  ← v1.1
 │   ├── camera_names         str   comma-sep   ← v1.1
 │   ├── image_format         str   "raw_rgb"   ← v1.1
-│   └── protocol_version     str   optional    ← v1.1
+│   ├── protocol_version     str   optional    ← v1.1
+│   ├── camera_width         int   optional
+│   ├── camera_height        int   optional
+│   ├── camera_fps           float optional
+│   ├── camera_row_order     str   optional
+│   ├── action_order         str   optional comma-sep
+│   ├── qpos_order           str   optional comma-sep
+│   ├── qvel_order           str   optional comma-sep
+│   ├── env_state_order      str   optional comma-sep
+│   ├── teleop_input         str   optional
+│   ├── deadzone             float[4] optional
+│   ├── scale                float[4] optional
+│   ├── limit                float[4] optional
+│   ├── axis_map             int[4] optional
+│   ├── invert               bool[4] optional
+│   └── key_speed            float optional
 │
 ├── observations/
 │   ├── qpos                 (T, 4)  float32  [swing, boom, stick, bucket] position_norm
@@ -82,6 +97,21 @@ ATTR_ACTION_SEMANTICS = "action_semantics"
 ATTR_CAMERA_NAMES     = "camera_names"       # comma-separated string
 ATTR_IMAGE_FORMAT     = "image_format"       # "raw_rgb" | "h264"
 ATTR_PROTOCOL_VERSION = "protocol_version"   # optional
+ATTR_CAMERA_WIDTH     = "camera_width"
+ATTR_CAMERA_HEIGHT    = "camera_height"
+ATTR_CAMERA_FPS       = "camera_fps"
+ATTR_CAMERA_ROW_ORDER = "camera_row_order"
+ATTR_ACTION_ORDER     = "action_order"
+ATTR_QPOS_ORDER       = "qpos_order"
+ATTR_QVEL_ORDER       = "qvel_order"
+ATTR_ENV_STATE_ORDER  = "env_state_order"
+ATTR_TELEOP_INPUT     = "teleop_input"
+ATTR_DEADZONE         = "deadzone"
+ATTR_SCALE            = "scale"
+ATTR_LIMIT            = "limit"
+ATTR_AXIS_MAP         = "axis_map"
+ATTR_INVERT           = "invert"
+ATTR_KEY_SPEED        = "key_speed"
 
 # ── V0 locked constants ───────────────────────────────────────────────────────
 DEFAULT_CONTROL_HZ       = 50

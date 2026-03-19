@@ -46,7 +46,7 @@ class EvalTaskDef:
     env_max_reward:   float = 4.0
     make_object_pose: Callable[[], np.ndarray] | None = None
     # AGX success params
-    mass_thresh:      float = 0.0    # set to team-defined value when known
+    mass_thresh:      float = 2.0    # current V0 default from Unity exported runs
     hold_steps:       int   = 25     # 0.5s @ 50Hz
 
 
@@ -112,8 +112,10 @@ EVAL_TASKS: dict[str, EvalTaskDef] = {
         camera_names     = ["fpv"],
         backend_type     = "agx",
         # Success: mass_in_bucket >= mass_thresh for hold_steps consecutive steps.
-        # mass_thresh is set in eval_agx_v0.yaml and overrides this default.
-        mass_thresh      = 1.0,          # placeholder — override in config
+        # 2.0 kg is the current V0 default:
+        # above observed sub-kg noise, below the smallest clear scoop (~2.10775 kg)
+        # in the current Unity exported episodes.
+        mass_thresh      = 2.0,
         hold_steps       = 25,           # 0.5s @ 50Hz (locked per spec)
     ),
 }

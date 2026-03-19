@@ -20,7 +20,7 @@ eval:
 # ── Success rule (spec §8) ───────────────────────────────────────────────────
 # success = mass_in_bucket >= mass_thresh for hold_steps consecutive steps
 success:
-  mass_thresh:  1.0         # TODO: replace with team-defined value once known
+  mass_thresh:  2.0         # based on current Unity exports; above noise, below smallest clear scoop
   hold_steps:   25          # 0.5s @ 50Hz — locked per spec
 
 # ── Policy ────────────────────────────────────────────────────────────────────

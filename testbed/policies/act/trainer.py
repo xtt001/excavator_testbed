@@ -59,6 +59,7 @@ class ACTTrainer(Trainer):
         ckpt_dir   = Path(cfg["ckpt_dir"])
         seed       = cfg["seed"]
         resume     = cfg.get("resume_ckpt")
+        device     = str(cfg.get("device", "cuda"))
         ckpt_dir.mkdir(parents=True, exist_ok=True)
 
         set_seed(seed)
@@ -68,8 +69,7 @@ class ACTTrainer(Trainer):
         with open(norm_stats_path, "rb") as f:
             norm_stats = pickle.load(f)
 
-        adapter   = ACTAdapter(self.policy_config, norm_stats, device="cuda")
-        adapter._model.cuda()
+        adapter   = ACTAdapter(self.policy_config, norm_stats, device=device)
         optimizer = adapter.configure_optimizers()
 
         min_val_loss  = float("inf")
@@ -174,6 +174,7 @@ class ACTTrainer(Trainer):
             ckpt_path=ckpt_path,
             policy_config=self.policy_config,
             norm_stats_path=norm_stats_path,
+            device=str(self.config.get("device", "cuda")),
         )
 
     # ── helpers ───────────────────────────────────────────────────────────────
@@ -181,10 +182,10 @@ class ACTTrainer(Trainer):
     @staticmethod
     def _forward(data, adapter: ACTAdapter) -> dict:
         image_data, qpos_data, action_data, is_pad = data
-        image_data  = image_data.cuda()
-        qpos_data   = qpos_data.cuda()
-        action_data = action_data.cuda()
-        is_pad      = is_pad.cuda()
+        image_data  = image_data.to(adapter.device)
+        qpos_data   = qpos_data.to(adapter.device)
+        action_data = action_data.to(adapter.device)
+        is_pad      = is_pad.to(adapter.device)
         return adapter.forward_loss(qpos_data, image_data, action_data, is_pad)
 
     @staticmethod

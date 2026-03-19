@@ -74,6 +74,7 @@ class ACTAdapter(Policy):
         self._num_queries: int  = policy_config["num_queries"]
         self._t: int            = 0
         self._all_time_actions: torch.Tensor | None = None
+        self._max_episode_len = int(policy_config.get("max_episode_len", 400))
 
         self._normalize  = transforms.Normalize(
             mean=[0.485, 0.456, 0.406],
@@ -146,12 +147,25 @@ class ACTAdapter(Policy):
         a_hat shape: (1, C, Na)
         """
         Na = a_hat.shape[-1]
-        T  = 400  # max episode length — safe upper bound
 
         if self._all_time_actions is None:
+            horizon = max(self._max_episode_len, self._t + self._num_queries)
             self._all_time_actions = torch.zeros(
-                [T, T + self._num_queries, Na], device=self.device
+                [horizon, horizon + self._num_queries, Na], device=self.device
             )
+
+        required_t = self._t + self._num_queries
+        if required_t > self._all_time_actions.shape[1]:
+            current_t = self._all_time_actions.shape[0]
+            new_t = max(required_t, current_t * 2)
+            expanded = torch.zeros(
+                [new_t, new_t + self._num_queries, Na],
+                device=self.device,
+            )
+            expanded[: self._all_time_actions.shape[0], : self._all_time_actions.shape[1]] = (
+                self._all_time_actions
+            )
+            self._all_time_actions = expanded
 
         t = self._t
         self._all_time_actions[[t], t : t + self._num_queries] = a_hat
