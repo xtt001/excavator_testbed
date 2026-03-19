@@ -168,7 +168,7 @@ Unity docs show 0.02s default fixed timestep.  [oai_citation:6‡Unity 文档](h
 ---
 
 ## 7) Reset Contract (V0)
-We currently have partial reset support (terrain reset + counters). For V0 evaluation we need at least:
+We currently have Unity-side reset support split by responsibility. For V0 evaluation we need at least:
 - return excavator to a known pose
 - reset bucket load state / relevant counters
 - reset camera transform if needed
@@ -186,6 +186,11 @@ Current teleop default:
 Rationale:
 - teleop needs a repeatable excavator pose, terrain baseline, and empty counters
 - duplicate terrain reset paths should be fixed on the Unity side instead of disabling terrain reset in Python
+
+Current Unity implementation notes:
+- terrain reset is handled by `ResetTerrain` / `SceneResetService`
+- excavation metrics reset is handled separately and no longer rewrites terrain heights
+- pending step-ack requests are consumed on Unity `FixedUpdate` so synchronous teleop stays aligned with the fixed simulation timestep
 
 ### 7.2 Determinism (V0)
 - V0 does **not** require perfect seed determinism across all terrain randomness,

@@ -214,6 +214,13 @@ HDF5 is the offline dataset artifact written by Repo A. Unity-local
 `metadata.json` / `steps.jsonl` / `.rgb24` exports are auxiliary sidecar
 artifacts, not the shared live interaction contract.
 
+Current Unity-side runtime notes:
+- terrain reset is handled by Unity `ResetTerrain` / `SceneResetService`; the
+  excavation metrics component no longer mutates terrain heights during reset
+- pending step-ack requests are consumed on Unity `FixedUpdate`, so external
+  teleop stepping is aligned to `Time.fixedDeltaTime` rather than Editor render
+  frame timing
+
 ---
 
 ## HDF5 schema v1.1
