@@ -17,7 +17,7 @@ Three-repo architecture:
 | `AGXSimBackend` (`SimBackend` ABC) | ✅ implemented |
 | HDF5 schema v1.1 (timestamps, action_source, env_state, fpv) | ✅ implemented |
 | `EpisodeRecorder` v1.1 | ✅ implemented |
-| `JoystickActionSource` (pygame, deadzone/scale/invert) | ✅ implemented |
+| `JoystickActionSource` (pygame, dual-stick FarmStick, smoothing, button reset) | ✅ implemented |
 | `KeyboardActionSource` (pygame, WASD+arrows fallback) | ✅ implemented |
 | `tb-record-teleop` CLI | ✅ implemented |
 | `tb-replay` CLI + QA diff report | ✅ implemented |
@@ -26,7 +26,7 @@ Three-repo architecture:
 | Dummy policy | ✅ carried from v0 |
 | MuJoCo backend | ✅ retained (legacy, not primary) |
 
-**Next:** connect real AGXUnity machine → collect teleop demos → train ACT → eval.
+**Next:** collect a small pilot teleop dataset → replay QA → train ACT → eval.
 
 ---
 
@@ -62,11 +62,16 @@ continuity, and raw RGB frame decoding.
 # keyboard (WASD = swing/boom, arrows = stick/bucket, D = discard, Q = quit)
 tb-record-teleop --config testbed/configs/teleop_v0.yaml --input keyboard
 
-# gamepad
+# dual-stick FarmStick / pygame joystick
 tb-record-teleop --config testbed/configs/teleop_v0.yaml --input joystick
 ```
 
 Episodes are saved to `data/agx_teleop/episode_N.hdf5` (schema v1.1).
+
+Current V0 scope:
+- fixed-position / stationary digging only
+- action space is 4D arm control only: `[swing, boom, stick, bucket]`
+- track / drive / steer are intentionally out of scope for V0 teleop data
 
 ### 4. Replay QA
 
@@ -183,6 +188,18 @@ All messages share a 16-byte little-endian header:
 
 **Success rule (spec §8):** `mass_in_bucket ≥ 2.0 kg` for `hold_steps=25` consecutive steps.
 
+Current reward/success ownership:
+- Repo B currently emits `reward = 0.0` in `STEP_RESP`
+- Repo A records that value but does not use it as the primary task signal
+- success is computed post-hoc from the recorded `env_state` time series
+  (`mass_in_bucket_kg`), not decided by the simulator at teleop record time
+
+Here "post-hoc" means:
+- first record the raw episode: observations, actions, images, env_state
+- later run evaluator / analysis logic over the saved episode or rollout
+- derive `success` from the `env_state` series instead of trusting a live
+  simulator reward or a manual operator flag
+
 Live Repo A <-> Repo B interaction uses the binary TCP step-ack protocol above.
 HDF5 is the offline dataset artifact written by Repo A. Unity-local
 `metadata.json` / `steps.jsonl` / `.rgb24` exports are auxiliary sidecar
@@ -202,7 +219,7 @@ episode_N.hdf5
 │   ├── env_state       (T, M)  float32  env_state[0] = mass_in_bucket
 │   └── images/fpv      (T, H, W, 3) uint8
 ├── action              (T, 4)  float32  [swing, boom, stick, bucket] speed cmd
-├── rewards             (T,)    float32
+├── rewards             (T,)    float32  currently usually 0.0 for AGX V0
 ├── timestamps/
 │   ├── step_id         (T,)    int64
 │   └── step_ns         (T,)    int64
