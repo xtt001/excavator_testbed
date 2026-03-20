@@ -153,7 +153,9 @@ For the current teleop pipeline, the default reset policy is full episode reset:
 - `reset_terrain: true`
 
 Terrain reset is expected every episode. The Unity side should ensure that
-terrain initialization is only applied once per episode reset path.
+terrain initialization is only applied once per episode reset path, and that
+`reset_terrain: true` rebuilds the deformable terrain state so soil particles
+remaining in the bucket are returned to the initial terrain baseline.
 
 ---
 
