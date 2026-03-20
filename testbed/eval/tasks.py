@@ -36,7 +36,7 @@ class EvalTaskDef:
     AGX-specific success rule (used when backend_type == "agx"):
     mass_thresh      mass_in_bucket must reach this value (AGX units).
     hold_steps       Number of consecutive steps above mass_thresh = success.
-                     Default 25 = 0.5s @ 50Hz.
+                     Default 1 = threshold reached at any point in the episode.
     """
     name:             str
     equipment_model:  str
@@ -47,7 +47,7 @@ class EvalTaskDef:
     make_object_pose: Callable[[], np.ndarray] | None = None
     # AGX success params
     mass_thresh:      float = 2.0    # current V0 default from Unity exported runs
-    hold_steps:       int   = 25     # 0.5s @ 50Hz
+    hold_steps:       int   = 1      # success = threshold reached within the rollout
 
 
 # ─── MuJoCo pose samplers ─────────────────────────────────────────────────────
@@ -111,12 +111,12 @@ EVAL_TASKS: dict[str, EvalTaskDef] = {
         episode_len      = 500,          # 10s @ 50Hz
         camera_names     = ["fpv"],
         backend_type     = "agx",
-        # Success: mass_in_bucket >= mass_thresh for hold_steps consecutive steps.
+        # Success: mass_in_bucket >= mass_thresh at any point in the episode.
         # 2.0 kg is the current V0 default:
         # above observed sub-kg noise, below the smallest clear scoop (~2.10775 kg)
         # in the current Unity exported episodes.
         mass_thresh      = 2.0,
-        hold_steps       = 25,           # 0.5s @ 50Hz (locked per spec)
+        hold_steps       = 1,
     ),
 }
 

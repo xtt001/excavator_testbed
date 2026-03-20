@@ -1,0 +1,44 @@
+# ACT smoke config for AGX Unity teleop excavation
+# Purpose: verify train/eval plumbing on a tiny pilot dataset before freezing
+# the final benchmark protocol.
+
+task:
+  task_name: agx_excavation_teleop
+  equipment_model: agxunity
+  dataset_dir: data/agx_teleop
+  num_episodes: 5
+  episode_len: 500
+  camera_names:
+    - fpv
+  backend:
+    name: agx
+    dt: 0.02
+
+policy:
+  class: ACT
+  device: cuda
+  act_params:
+    chunk_size: 100
+    kl_weight: 10.0
+    hidden_dim: 512
+    dim_feedforward: 3200
+
+train:
+  lr: 1.0e-5
+  num_epochs: 5
+  batch_size: 2
+  seed: 0
+  device: cuda
+  num_workers: 0
+  prefetch_factor:
+  persistent_workers: false
+  pin_memory: true
+  ckpt_dir: runs/ckpts/agx_excavation_act_smoke
+
+eval:
+  ckpt_dir: runs/ckpts/agx_excavation_act_smoke
+  ckpt_path: runs/ckpts/agx_excavation_act_smoke/policy_best.ckpt
+  num_rollouts: 2
+  save_video: true
+  video_dir: runs/eval/agx_excavation_act_smoke/videos
+  results_dir: runs/eval/agx_excavation_act_smoke/results

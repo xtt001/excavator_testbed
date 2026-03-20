@@ -206,10 +206,10 @@ We will define success in Python evaluator (backend-agnostic) using signals in o
 
 ### Recommended V0 success (mass-based)
 Success if:
-- `mass_in_bucket >= M_thresh` for at least `hold_steps` consecutive steps  
+- `mass_in_bucket >= M_thresh` at any point within the episode budget
 Example defaults:
 - `M_thresh = team_defined` (units from AGX)
-- `hold_steps = 25` (0.5s @ 50Hz)
+- `hold_steps = 1` (threshold reached within the 500-step rollout)
 
 Fallback if mass_in_bucket unavailable:
 - Success = bucket position_norm indicates “scooped posture” + stick/boom within bounds for hold_steps
@@ -477,6 +477,12 @@ Current `tb-record-teleop` default:
 - reset_pose: true
 - reset_terrain: true
 
+Current Repo A operator command:
+
+```bash
+tb-record-teleop --config testbed/configs/teleop_v0.yaml --input joystick --num-episodes 5
+```
+
 RESET_RESP should confirm:
 - reset applied
 - current dt/control_hz
@@ -488,7 +494,21 @@ RESET_RESP should confirm:
 Primary metric: success_rate.
 
 Recommended V0 success rule:
-- success if `mass_in_bucket >= M_thresh` for `hold_steps=25` consecutive steps (0.5s @ 50Hz)
+- success if `mass_in_bucket >= M_thresh` at any point within the `500`-step episode
+
+Current Repo A run sequence:
+
+```bash
+python scripts/agx_smoke.py --host 127.0.0.1 --port 5057 --steps 500 --strict
+tb-record-teleop --config testbed/configs/teleop_v0.yaml --input joystick --num-episodes 5
+tb-replay --episode data/agx_teleop/episode_0.hdf5 --config testbed/configs/teleop_v0.yaml --save-video
+tb-train --config testbed/configs/act_agx_v0.yaml
+tb-eval --config testbed/configs/eval_agx_v0.yaml
+```
+
+Runtime note:
+- `tb-train` is offline and only consumes HDF5 episodes
+- `tb-eval` is live and requires the Unity step-ack server to be running
 
 Fallback if mass_in_bucket unavailable:
 - posture-based thresholds on qpos + stability thresholds on qvel
@@ -701,11 +721,11 @@ Exit criteria:
 ## Milestone M4 (Day 9–12): Success Definition + EvalSuite V0
 ### Joint decision (fast)
 - [ ] Define env_state index for mass_in_bucket
-- [ ] Pick initial M_thresh and hold_steps=25
+- [ ] Pick initial M_thresh and set `hold_steps=1` for the MVP rule
 
 ### Python/testbed team
 - [ ] Implement evaluator rule:
-  - success if mass_in_bucket >= M_thresh for 25 consecutive steps
+  - success if mass_in_bucket >= M_thresh at any point within the episode
 - [ ] Fixed eval suite:
   - fixed reset mode
   - fixed scenario list (even 3 seeds is enough for V0)

@@ -13,20 +13,24 @@ Three-repo architecture:
 
 | Component | Status |
 |---|---|
-| AGX socket protocol (binary framing, step-ack) | ✅ implemented |
-| `AGXSimBackend` (`SimBackend` ABC) | ✅ implemented |
+| AGX socket protocol (binary framing, step-ack) | ✅ implemented and strict smoke-tested |
+| `AGXSimBackend` (`SimBackend` ABC) | ✅ implemented and live smoke-tested |
 | HDF5 schema v1.1 (timestamps, action_source, env_state, fpv) | ✅ implemented |
-| `EpisodeRecorder` v1.1 | ✅ implemented |
+| `EpisodeRecorder` v1.1 | ✅ implemented and live teleop recording tested |
 | `JoystickActionSource` (pygame, dual-stick FarmStick, smoothing, button reset) | ✅ implemented |
 | `KeyboardActionSource` (pygame, WASD+arrows fallback) | ✅ implemented |
-| `tb-record-teleop` CLI | ✅ implemented |
-| `tb-replay` CLI + QA diff report | ✅ implemented |
-| Eval suite: AGX mass-based success rule (spec §8) | ✅ implemented |
-| ACT policy adapter + trainer | ✅ carried from v0 |
-| Dummy policy | ✅ carried from v0 |
+| `tb-record-teleop` CLI | ✅ live HDF5 recording tested against Unity |
+| `tb-replay` CLI + QA diff report | ✅ live replay path tested against Unity |
+| Eval suite: AGX mass-based success rule (spec §8) | ✅ implemented and live smoke-eval tested |
+| ACT policy adapter + trainer | ✅ AGX 4D train path fixed and smoke-trained |
+| ACT live eval path | ✅ checkpoint loading + live rollouts tested |
+| Dummy policy | ✅ retained for smoke / baseline checks |
 | MuJoCo backend | ✅ retained (legacy, not primary) |
+| Current V0 task scope | ✅ stationary digging only, 4D arm action space |
+| Current pilot policy quality | ⚠️ plumbing works, smoke checkpoint still fails digging eval |
 
-**Next:** collect a small pilot teleop dataset → replay QA → train ACT → eval.
+**Current focus:** collect more demos, evaluate the main V0 checkpoint, and improve
+training/data quality. The main plumbing loop is now working end to end.
 
 ---
 
@@ -35,6 +39,7 @@ Three-repo architecture:
 ### 1. Install
 
 ```bash
+conda activate aloha
 pip install -e ".[dev]"
 ```
 
@@ -60,10 +65,10 @@ continuity, and raw RGB frame decoding.
 
 ```bash
 # keyboard (WASD = swing/boom, arrows = stick/bucket, D = discard, Q = quit)
-tb-record-teleop --config testbed/configs/teleop_v0.yaml --input keyboard
+tb-record-teleop --config testbed/configs/teleop_v0.yaml --input keyboard --num-episodes 5
 
 # dual-stick FarmStick / pygame joystick
-tb-record-teleop --config testbed/configs/teleop_v0.yaml --input joystick
+tb-record-teleop --config testbed/configs/teleop_v0.yaml --input joystick --num-episodes 5
 ```
 
 Episodes are saved to `data/agx_teleop/episode_N.hdf5` (schema v1.1).
@@ -76,24 +81,54 @@ Current V0 scope:
 ### 4. Replay QA
 
 ```bash
-tb-replay --episode data/agx_teleop/episode_0.hdf5
+tb-replay --episode data/agx_teleop/episode_0.hdf5 --config testbed/configs/teleop_v0.yaml
 # QA — qpos diff: mean=X  max=X  (over 500 steps)
 
-tb-replay --episode data/agx_teleop/episode_0.hdf5 --save-video
+tb-replay --episode data/agx_teleop/episode_0.hdf5 --config testbed/configs/teleop_v0.yaml --save-video
 # writes runs/replay/episode_0_replay.mp4
 ```
 
 ### 5. Train ACT
 
 ```bash
+# offline training: Unity does not need to be running
 tb-train --config testbed/configs/act_agx_v0.yaml
 ```
 
 ### 6. Evaluate
 
 ```bash
+# smoke eval on the small smoke checkpoint
+tb-eval --config testbed/configs/eval_agx_smoke.yaml
+
+# final V0 eval on the main checkpoint
 tb-eval --config testbed/configs/eval_agx_v0.yaml
-# outputs: runs/eval/agx_excavation/metrics.json + summary.csv + videos/
+# outputs: runs/eval/agx_excavation/*.mp4 + runs/eval/agx_excavation/results/{metrics.json,results.csv}
+```
+
+`tb-eval` is a live rollout command. Unity must be running and listening on the
+configured AGX host/port. `tb-train` is offline and only reads recorded HDF5
+episodes.
+
+### 7. Current V0 run sequence
+
+```bash
+conda activate aloha
+
+# 1) live bridge check
+python scripts/agx_smoke.py --host 127.0.0.1 --port 5057 --steps 500 --strict
+
+# 2) collect pilot demos
+tb-record-teleop --config testbed/configs/teleop_v0.yaml --input joystick --num-episodes 5
+
+# 3) replay one episode back through Unity
+tb-replay --episode data/agx_teleop/episode_0.hdf5 --config testbed/configs/teleop_v0.yaml --save-video
+
+# 4) offline training
+tb-train --config testbed/configs/act_agx_v0.yaml
+
+# 5) live evaluation
+tb-eval --config testbed/configs/eval_agx_v0.yaml
 ```
 
 ---
@@ -154,7 +189,9 @@ testbed/
   configs/
     agx_v0.yaml               ← AGX host/port/dims
     teleop_v0.yaml            ← Teleop session config (joystick mapping, episode params)
+    eval_agx_smoke.yaml       ← Small live eval smoke config
     eval_agx_v0.yaml          ← AGX eval suite (success rule, num_rollouts)
+    act_agx_smoke.yaml        ← Small offline train smoke config
     act_v0.yaml               ← Legacy ACT training config
     act_agx_v0.yaml           ← ACT training config for AGX teleop data
     task_v0.yaml              ← Legacy MuJoCo task config
@@ -172,6 +209,13 @@ legacy/                       ← Original PACT code — frozen
 data/                         ← HDF5 episodes (gitignored)
 runs/                         ← Experiment artifacts (gitignored)
 ```
+
+Useful artifact paths:
+- `data/agx_teleop/episode_N.hdf5` — canonical recorded demos
+- `runs/ckpts/agx_excavation_act_smoke/` — smoke checkpoints + plots
+- `runs/ckpts/agx_excavation_act_v0/` — main V0 checkpoints + plots
+- `runs/eval/agx_excavation_smoke_results/metrics.json` — smoke eval metrics
+- `runs/eval/agx_excavation/results/metrics.json` — main V0 eval metrics
 
 ---
 
@@ -195,7 +239,8 @@ All messages share a 16-byte little-endian header:
 - `env_state (M,)` — index 0 = `mass_in_bucket`
 - `images["fpv"]` — `(H, W, 3)` uint8
 
-**Success rule (spec §8):** `mass_in_bucket ≥ 2.0 kg` for `hold_steps=25` consecutive steps.
+**Success rule (spec §8):** `mass_in_bucket ≥ 2.0 kg` at any point within the
+`500`-step episode (`hold_steps=1`).
 
 Current reward/success ownership:
 - Repo B currently emits `reward = 0.0` in `STEP_RESP`
@@ -213,6 +258,12 @@ Live Repo A <-> Repo B interaction uses the binary TCP step-ack protocol above.
 HDF5 is the offline dataset artifact written by Repo A. Unity-local
 `metadata.json` / `steps.jsonl` / `.rgb24` exports are auxiliary sidecar
 artifacts, not the shared live interaction contract.
+
+Command ownership:
+- `tb-record-teleop` — live Python teleop → Unity step-ack → HDF5
+- `tb-replay` — live Unity replay of a recorded HDF5 episode
+- `tb-train` — offline HDF5 training only
+- `tb-eval` — live policy rollout against Unity
 
 Current Unity-side runtime notes:
 - terrain reset is handled by Unity `ResetTerrain` / `SceneResetService`; the

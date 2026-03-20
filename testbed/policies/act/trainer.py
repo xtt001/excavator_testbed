@@ -13,10 +13,11 @@ from __future__ import annotations
 import os
 import pickle
 import re
+from contextlib import redirect_stderr
 from copy import deepcopy
+from io import StringIO
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -222,6 +223,12 @@ class ACTTrainer(Trainer):
     @staticmethod
     def _plot_history(train_history, val_history, num_epochs, ckpt_dir, seed):
         if not train_history:
+            return
+        try:
+            with redirect_stderr(StringIO()):
+                import matplotlib.pyplot as plt
+        except Exception as exc:
+            print(f"Skipping training plots because matplotlib is unavailable: {exc}")
             return
         for key in train_history[0]:
             plot_path = ckpt_dir / f"train_val_{key}_seed_{seed}.png"

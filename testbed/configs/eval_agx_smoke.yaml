@@ -1,0 +1,25 @@
+# Eval smoke config for AGX excavation (V0 stationary digging)
+
+agx:
+  host: "127.0.0.1"
+  port: 5057
+  timeout: 10.0
+
+task:
+  name: "agx_excavation_teleop"
+
+eval:
+  num_rollouts: 2
+  save_video: true
+  video_dir: "runs/eval/agx_excavation_smoke"
+  results_dir: "runs/eval/agx_excavation_smoke_results"
+
+success:
+  mass_thresh: 2.0
+  hold_steps: 1
+
+policy:
+  name: "act"
+  ckpt_path: "runs/ckpts/agx_excavation_act_smoke/policy_best.ckpt"
+  temporal_agg: false
+  device: "cuda"

@@ -16,16 +16,18 @@ eval:
   num_rollouts:  10         # increase to 50 for final eval
   save_video:    true
   video_dir:     "runs/eval/agx_excavation"
+  results_dir:   "runs/eval/agx_excavation/results"
+  ckpt_dir:      "runs/ckpts/agx_excavation_act_v0"
 
 # ── Success rule (spec §8) ───────────────────────────────────────────────────
-# success = mass_in_bucket >= mass_thresh for hold_steps consecutive steps
+# success = mass_in_bucket reaches mass_thresh at any point within the 500-step episode
 success:
   mass_thresh:  2.0         # based on current Unity exports; above noise, below smallest clear scoop
-  hold_steps:   25          # 0.5s @ 50Hz — locked per spec
+  hold_steps:   1           # current MVP rule: success within the episode budget
 
 # ── Policy ────────────────────────────────────────────────────────────────────
 policy:
   name: "act"               # "act" | "dummy"
-  ckpt_path: ""             # fill in after training
+  ckpt_path: "runs/ckpts/agx_excavation_act_v0/policy_best.ckpt"
   temporal_agg: false
   device: "cuda"

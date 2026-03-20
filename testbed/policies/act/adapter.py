@@ -65,6 +65,7 @@ class ACTAdapter(Policy):
         self.norm_stats   = norm_stats
         self.temporal_agg = temporal_agg
         self.kl_weight    = policy_config.get("kl_weight", 10)
+        self._camera_names = list(policy_config.get("camera_names", []))
 
         model, optimizer = build_ACT_model_and_optimizer(policy_config)
         self._model     = model.to(self.device)
@@ -109,11 +110,36 @@ class ACTAdapter(Policy):
         qpos = (qpos - torch.from_numpy(self.norm_stats["qpos_mean"]).to(self.device)) \
                      / torch.from_numpy(self.norm_stats["qpos_std"]).to(self.device)
 
-        # assemble image tensor from obs keys
-        cam_images = [v for k, v in obs.items() if k.startswith("image_")]
+        # Assemble image tensor in configured camera order. Ignore metadata
+        # keys like `image_format` that may appear in live AGX observations.
+        cam_images: list[np.ndarray] = []
+        for cam in self._camera_names:
+            key = f"image_{cam}"
+            if key not in obs:
+                raise ValueError(
+                    f"ACTAdapter.predict(): missing required camera input {key!r}."
+                )
+            cam_img = np.asarray(obs[key], dtype=np.float32)
+            if cam_img.ndim != 3:
+                raise ValueError(
+                    f"ACTAdapter.predict(): expected {key!r} to be rank-3, got shape {cam_img.shape}."
+                )
+            # Accept either channel-first float images or raw channel-last RGB.
+            if cam_img.shape[0] == 3:
+                pass
+            elif cam_img.shape[-1] == 3:
+                cam_img = np.transpose(cam_img, (2, 0, 1))
+                if cam_img.max() > 1.0:
+                    cam_img = cam_img / 255.0
+            else:
+                raise ValueError(
+                    f"ACTAdapter.predict(): expected {key!r} to have 3 channels, got shape {cam_img.shape}."
+                )
+            cam_images.append(cam_img)
+
         if not cam_images:
-            raise ValueError("ACTAdapter.predict(): no 'image_*' keys found in obs.")
-        # each cam image: already (C, H, W) float32 [0,1]
+            raise ValueError("ACTAdapter.predict(): no camera inputs configured.")
+
         img = np.stack(cam_images, axis=0)                 # (n_cams, C, H, W)
         image = torch.from_numpy(img).float().to(self.device).unsqueeze(0)  # (1, n_cams, C, H, W)
         image = self._normalize(image)

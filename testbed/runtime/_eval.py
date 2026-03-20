@@ -35,9 +35,14 @@ def eval_policy(config: dict[str, Any]) -> None:
     save_video      = bool(eval_cfg.get("save_video", True))
     temporal_agg    = bool(eval_cfg.get("temporal_agg", policy_cfg.get("temporal_agg", False)))
     device          = str(policy_cfg.get("device", eval_cfg.get("device", "cuda")))
-    ckpt_dir        = Path(eval_cfg.get("ckpt_dir", config.get("train", {}).get("ckpt_dir", "ckpts")))
     ckpt_path_value = eval_cfg.get("ckpt_path") or policy_cfg.get("ckpt_path")
-    ckpt_path       = Path(ckpt_path_value) if ckpt_path_value else ckpt_dir / "policy_best.ckpt"
+    explicit_ckpt_dir = eval_cfg.get("ckpt_dir", config.get("train", {}).get("ckpt_dir"))
+    if ckpt_path_value:
+        ckpt_path = Path(ckpt_path_value)
+        ckpt_dir = Path(explicit_ckpt_dir) if explicit_ckpt_dir else ckpt_path.parent
+    else:
+        ckpt_dir = Path(explicit_ckpt_dir) if explicit_ckpt_dir else Path("ckpts")
+        ckpt_path = ckpt_dir / "policy_best.ckpt"
     video_dir       = Path(eval_cfg.get("video_dir", ckpt_dir / "eval_videos"))
     results_dir     = Path(eval_cfg.get("results_dir", ckpt_dir / "eval_results"))
     agx_host        = str(agx_cfg.get("host", "127.0.0.1"))

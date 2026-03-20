@@ -227,15 +227,18 @@ def build_encoder(args):
     return encoder
 
 
+def _resolve_state_dim(equipment_model: str) -> int:
+    equipment_model = equipment_model.lower()
+    if "bimanual" in equipment_model:
+        return 14
+    if "excavator_simple" in equipment_model or "agxunity" in equipment_model or "agx" in equipment_model:
+        return 4
+    return 7
+
+
 def build(args):
-    # 双臂14，单臂7
     equipment_model = args.equipment_model if "equipment_model" in args else 'vx300s_bimanual'
-    if 'bimanual' in equipment_model:
-        state_dim = 14
-    elif 'excavator_simple' in equipment_model:
-        state_dim = 4
-    else:
-        state_dim = 7
+    state_dim = _resolve_state_dim(equipment_model)
 
     # From state
     # backbone = None # from state for now, no need for conv nets
@@ -264,12 +267,7 @@ def build(args):
 
 def build_cnnmlp(args):
     equipment_model = args.equipment_model if "equipment_model" in args else 'vx300s_bimanual'
-    if 'bimanual' in equipment_model:
-        state_dim = 14
-    elif 'excavator_simple' in equipment_model:
-        state_dim = 4
-    else:
-        state_dim = 7
+    state_dim = _resolve_state_dim(equipment_model)
 
     # From state
     # backbone = None # from state for now, no need for conv nets
@@ -289,4 +287,3 @@ def build_cnnmlp(args):
     print("number of parameters: %.2fM" % (n_parameters/1e6,))
 
     return model
-
