@@ -11,8 +11,8 @@ Design goals:
 Success rules
 ─────────────
   MuJoCo backends:  ep_highest_reward == task.env_max_reward
-  AGX backend:      selected env_state signal >= task.mass_thresh
-                    for task.hold_steps consecutive steps  (spec §8)
+  AGX backend:      backend task_success flag from the AGX excavation mission
+                    tracker, with env_state-based fallback if needed
 """
 
 from __future__ import annotations
@@ -25,6 +25,10 @@ from testbed.eval.metrics import EvalMetrics
 from testbed.eval.tasks import EVAL_SEED, EvalTaskDef, get_eval_task
 from testbed.eval.video import save_eval_video
 from testbed.policies.base import Policy
+from testbed.tasks.logic.excavator_reward import (
+    build_agx_excavation_mission_overrides,
+    resolve_agx_field_indices,
+)
 
 
 class EvalSuite:
@@ -43,7 +47,9 @@ class EvalSuite:
     agx_timeout  AGX socket timeout seconds (only used when backend_type=="agx").
     mass_thresh  Override task.mass_thresh (AGX success threshold).
     hold_steps   Override task.hold_steps for AGX success.
-    env_state_index  Which env_state entry is treated as the AGX success signal.
+    success_signal_name  Override task.success_signal_name for AGX success.
+    env_state_index  Legacy fallback index for AGX success signal lookup.
+    reward_overrides Additional AGX reward-shaping overrides.
     """
 
     def __init__(
@@ -59,7 +65,9 @@ class EvalSuite:
         agx_timeout: float = 10.0,
         mass_thresh: float | None = None,
         hold_steps: int | None = None,
-        env_state_index: int = 0,
+        success_signal_name: str | None = None,
+        env_state_index: int | None = None,
+        reward_overrides: dict[str, float] | None = None,
     ):
         self.policy       = policy
         self.task_def     = get_eval_task(task_name)
@@ -69,7 +77,7 @@ class EvalSuite:
         self.agx_host     = agx_host
         self.agx_port     = agx_port
         self.agx_timeout  = agx_timeout
-        self._env_state_index = int(env_state_index)
+        self._env_state_index = None if env_state_index is None else int(env_state_index)
 
         # Allow config override for mass_thresh
         if mass_thresh is not None:
@@ -78,6 +86,14 @@ class EvalSuite:
         else:
             self._mass_thresh = self.task_def.mass_thresh
         self._hold_steps = self.task_def.hold_steps if hold_steps is None else int(hold_steps)
+        self._success_signal_name = (
+            self.task_def.success_signal_name
+            if success_signal_name is None
+            else str(success_signal_name)
+        )
+        self._reward_overrides = dict(self.task_def.reward_overrides)
+        if reward_overrides:
+            self._reward_overrides.update(dict(reward_overrides))
 
         if video_dir is None:
             policy_name = type(policy).__name__
@@ -112,6 +128,8 @@ class EvalSuite:
                 rewards:      list[float]      = []
                 frames:       list[np.ndarray] = []
                 env_states:   list[np.ndarray] = []
+                phase_labels: list[str]        = []
+                success_flags: list[bool]      = []
 
                 for t in range(task.episode_len):
                     obs = ts.observation
@@ -138,6 +156,8 @@ class EvalSuite:
                         es = ts.observation.get("env_state")
                         if es is not None:
                             env_states.append(np.array(es, dtype=np.float32))
+                        phase_labels.append(str(ts.info.get("reward_phase", "idle")))
+                        success_flags.append(bool(ts.info.get("task_success", False)))
 
                     # Video frames
                     if self.save_video and task.camera_names:
@@ -148,13 +168,17 @@ class EvalSuite:
 
                 # ── Success detection ─────────────────────────────────────────
                 if task.backend_type == "agx":
-                    success = _mass_success(
-                        env_states,
-                        mass_thresh=self._mass_thresh,
-                        hold_steps=self._hold_steps,
-                        mass_idx=self._env_state_index,
-                    )
-                    ep_highest = 1.0 if success else 0.0
+                    success = any(success_flags)
+                    if not success:
+                        mass_idx = self._resolve_agx_success_index(env)
+                        if mass_idx is not None:
+                            success = _mass_success(
+                                env_states,
+                                mass_thresh=self._mass_thresh,
+                                hold_steps=self._hold_steps,
+                                mass_idx=mass_idx,
+                            )
+                    ep_highest = float(max(rewards)) if rewards else 0.0
                 else:
                     ep_highest = float(max(rewards)) if rewards else 0.0
                     success    = ep_highest == task.env_max_reward
@@ -179,7 +203,7 @@ class EvalSuite:
                         dt=dt,
                         video_path=self.video_dir / f"rollout_{rollout_id:03d}.mp4",
                         reward_curve=rewards,
-                        phase_labels=None,
+                        phase_labels=phase_labels if phase_labels else None,
                         success=success,
                     )
         finally:
@@ -192,7 +216,7 @@ class EvalSuite:
             ckpt_path       = self.ckpt_path,
             episode_returns = episode_returns,
             highest_rewards = highest_rewards,
-            env_max_reward  = 1.0 if task.backend_type == "agx" else task.env_max_reward,
+            env_max_reward  = task.env_max_reward,
             episode_lengths = episode_lengths,
             extra           = {"success_list": successes},
         )
@@ -204,10 +228,20 @@ class EvalSuite:
     def _make_env(self, task: EvalTaskDef):
         if task.backend_type == "agx":
             from testbed.backends.agx.backend import AGXSimBackend
+            reward_overrides = build_agx_excavation_mission_overrides(
+                success_cfg={
+                    "signal_name": self._success_signal_name,
+                    "mass_thresh": self._mass_thresh,
+                    "hold_steps": self._hold_steps,
+                },
+                reward_cfg=self._reward_overrides,
+            )
             return AGXSimBackend(
                 host=self.agx_host,
                 port=self.agx_port,
                 timeout=self.agx_timeout,
+                task_name=task.name,
+                reward_overrides=reward_overrides,
             )
         elif task.backend_type == "mujoco_ee":
             from testbed.backends.mujoco.ee_backend import MuJoCoEESimBackend
@@ -221,6 +255,30 @@ class EvalSuite:
                 task_name=task.name,
                 equipment_model=task.equipment_model,
             )
+
+    def _resolve_agx_success_index(self, env) -> int | None:
+        if self._env_state_index is not None:
+            return self._env_state_index
+        if not hasattr(env, "get_info"):
+            return None
+        try:
+            info = env.get_info()
+            indices = resolve_agx_field_indices(info.env_state_order)
+        except Exception:
+            return None
+
+        signal_name = self._success_signal_name
+        if signal_name == "mass_in_bucket_kg":
+            return indices.mass_in_bucket_idx
+        if signal_name == "excavated_mass_kg":
+            return indices.excavated_mass_idx
+        if signal_name == "mass_in_target_box_kg":
+            return indices.mass_in_target_box_idx
+        if signal_name == "deposited_mass_in_target_box_kg":
+            return indices.deposited_mass_in_target_box_idx
+        if signal_name == "min_distance_to_target_m":
+            return indices.min_distance_to_target_idx
+        return None
 
 
 # ─── AGX success rule (spec §8) ───────────────────────────────────────────────

@@ -17,3 +17,4 @@ agx:
   env_state_excavated_mass_idx: 1   # cumulative excavated mass in current episode
   env_state_mass_in_target_box_idx: 2
   env_state_deposited_mass_in_target_box_idx: 3
+  env_state_min_distance_to_target_idx: 4

@@ -21,7 +21,7 @@ Three-repo architecture:
 | `KeyboardActionSource` (pygame, WASD+arrows fallback) | ✅ implemented |
 | `tb-record-teleop` CLI | ✅ live HDF5 recording tested against Unity |
 | `tb-replay` CLI + QA diff report | ✅ live replay path tested against Unity |
-| Eval suite: AGX mass-based success rule (spec §8) | ✅ implemented and live smoke-eval tested |
+| Eval suite: AGX target-mass success rule + mission reward | ✅ implemented |
 | ACT policy adapter + trainer | ✅ AGX 4D train path fixed and smoke-trained |
 | ACT live eval path | ✅ checkpoint loading + live rollouts tested |
 | Dummy policy | ✅ retained for smoke / baseline checks |
@@ -82,7 +82,7 @@ Current V0 scope:
 
 ```bash
 tb-replay --episode data/agx_teleop/episode_0.hdf5 --config testbed/configs/teleop_v0.yaml
-# QA — qpos diff: mean=X  max=X  (over 500 steps)
+# QA — qpos diff: mean=X  max=X  (over N replayed steps)
 
 tb-replay --episode data/agx_teleop/episode_0.hdf5 --config testbed/configs/teleop_v0.yaml --save-video
 # writes runs/replay/episode_0_replay.mp4
@@ -184,7 +184,7 @@ testbed/
     dummy/                    ← Zero policy for smoke tests
     diffusion/                ← Stub (NotImplementedError)
   eval/
-    suite.py                  ← EvalSuite — AGX mass-based + MuJoCo reward-based success
+    suite.py                  ← EvalSuite — AGX mission reward + target-mass success
     tasks.py                  ← EvalTaskDef per task (agx_excavation_teleop + legacy)
     metrics.py                ← EvalMetrics → metrics.json + summary.csv
     video.py                  ← MP4 with reward overlay
@@ -238,23 +238,29 @@ All messages share a 16-byte little-endian header:
 **Observation:**
 - `qpos (4,)` — `[swing, boom, stick, bucket]` position_norm `[0, 1]`
 - `qvel (4,)` — `[swing, boom, stick, bucket]` speed
-- `env_state (4,)` —
-  `[mass_in_bucket_kg, excavated_mass_kg, mass_in_target_box_kg, deposited_mass_in_target_box_kg]`
+- `env_state (5,)` —
+  `[mass_in_bucket_kg, excavated_mass_kg, mass_in_target_box_kg, deposited_mass_in_target_box_kg, min_distance_to_target_m]`
 - `images["fpv"]` — `(H, W, 3)` uint8
 
-**Success rule (spec §8):** `mass_in_bucket ≥ 2.0 kg` at any point within the
-`500`-step episode (`hold_steps=1`).
+**Mission reward (Repo A / testbed):**
+- `loading`: reward grows once bucket load becomes meaningful
+- `approaching_target`: reward grows when a loaded bucket moves closer to the active target
+- `depositing`: reward grows when target retained mass starts increasing
+- `retained_success`: reward reaches max when retained target mass stays above the success threshold long enough
+
+**Success rule (current V0 default):**
+`deposited_mass_in_target_box_kg ≥ 100.0 kg` for `25` consecutive steps within
+the `1000`-step episode.
 
 Current reward/success ownership:
 - Repo B currently emits `reward = 0.0` in `STEP_RESP`
-- Repo A records that value but does not use it as the primary task signal
-- success is computed post-hoc from the recorded `env_state` time series
-  (`mass_in_bucket_kg`), not decided by the simulator at teleop record time
+- Repo A computes the excavation mission reward locally from exported `env_state`
+- success is computed from retained target mass, not from Unity reward
 
 Here "post-hoc" means:
 - first record the raw episode: observations, actions, images, env_state
 - later run evaluator / analysis logic over the saved episode or rollout
-- derive `success` from the `env_state` series instead of trusting a live
+- derive `success` from the retained target-mass series instead of trusting a live
   simulator reward or a manual operator flag
 
 Live Repo A <-> Repo B interaction uses the binary TCP step-ack protocol above.
@@ -286,10 +292,10 @@ episode_N.hdf5
 ├── observations/
 │   ├── qpos            (T, 4)  float32  [swing, boom, stick, bucket] position_norm
 │   ├── qvel            (T, 4)  float32  [swing, boom, stick, bucket] speed
-│   ├── env_state       (T, 4)  float32  [mass_in_bucket, excavated_mass, mass_in_target_box, deposited_mass_in_target_box]
+│   ├── env_state       (T, 5)  float32  [mass_in_bucket, excavated_mass, mass_in_target_box, deposited_mass_in_target_box, min_distance_to_target]
 │   └── images/fpv      (T, H, W, 3) uint8
 ├── action              (T, 4)  float32  [swing, boom, stick, bucket] speed cmd
-├── rewards             (T,)    float32  currently usually 0.0 for AGX V0
+├── rewards             (T,)    float32  testbed-defined AGX mission reward
 ├── timestamps/
 │   ├── step_id         (T,)    int64
 │   └── step_ns         (T,)    int64

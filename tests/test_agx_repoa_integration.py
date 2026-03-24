@@ -49,9 +49,14 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
                 "save_video": False,
             },
             "success": {
-                "mass_thresh": 2.5,
+                "signal_name": "deposited_mass_in_target_box_kg",
+                "mass_thresh": 125.0,
                 "hold_steps": 17,
                 "env_state_idx": 3,
+            },
+            "reward": {
+                "load_mass_threshold_kg": 90.0,
+                "target_approach_distance_m": 1.5,
             },
             "policy": {
                 "name": "dummy",
@@ -73,9 +78,20 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         self.assertEqual(suite_kwargs["agx_host"], "10.0.0.2")
         self.assertEqual(suite_kwargs["agx_port"], 6001)
         self.assertEqual(suite_kwargs["agx_timeout"], 12.5)
-        self.assertEqual(suite_kwargs["mass_thresh"], 2.5)
+        self.assertEqual(suite_kwargs["mass_thresh"], 125.0)
         self.assertEqual(suite_kwargs["hold_steps"], 17)
+        self.assertEqual(
+            suite_kwargs["success_signal_name"],
+            "deposited_mass_in_target_box_kg",
+        )
         self.assertEqual(suite_kwargs["env_state_index"], 3)
+        self.assertEqual(
+            suite_kwargs["reward_overrides"],
+            {
+                "load_mass_threshold_kg": 90.0,
+                "target_approach_distance_m": 1.5,
+            },
+        )
         self.assertEqual(suite_kwargs["num_rollouts"], 3)
         self.assertFalse(suite_kwargs["save_video"])
         self.assertEqual(type(suite_kwargs["policy"]).__name__, "DummyPolicy")
@@ -109,6 +125,7 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
                 "excavated_mass_kg",
                 "mass_in_target_box_kg",
                 "deposited_mass_in_target_box_kg",
+                "min_distance_to_target_m",
             ),
             camera_names=("fpv",),
             supports_reset_pose=True,
@@ -243,7 +260,7 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         policy_kwargs = captured["policy_kwargs"]
         self.assertEqual(policy_kwargs["policy_config"]["camera_names"], ["fpv"])
         self.assertEqual(policy_kwargs["policy_config"]["equipment_model"], "agxunity")
-        self.assertEqual(policy_kwargs["policy_config"]["max_episode_len"], 500)
+        self.assertEqual(policy_kwargs["policy_config"]["max_episode_len"], 1000)
 
     def test_train_policy_accepts_policy_name_and_propagates_device(self) -> None:
         captured: dict[str, object] = {}

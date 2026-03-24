@@ -50,7 +50,8 @@ Schema v1.1 layout (add-only on top of v1.0)
 │   ├── qvel                 (T, 4)  float32  [swing, boom, stick, bucket] speed
 │   ├── env_state            (T, M)  float32  current AGX order:
 │   │                                     [mass_in_bucket, excavated_mass,
-│   │                                      mass_in_target_box, deposited_mass_in_target_box]  ← v1.1
+│   │                                      mass_in_target_box, deposited_mass_in_target_box,
+│   │                                      min_distance_to_target]  ← v1.1
 │   └── images/
 │       └── fpv              (T, H, W, 3) uint8                        ← v1.1
 │
@@ -138,6 +139,7 @@ ENV_STATE_MASS_IN_BUCKET_IDX = 0
 ENV_STATE_EXCAVATED_MASS_IDX = 1
 ENV_STATE_MASS_IN_TARGET_BOX_IDX = 2
 ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX = 3
+ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX = 4
 
 # ── Image dataset name template ───────────────────────────────────────────────
 def image_ds(cam_name: str) -> str:

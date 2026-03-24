@@ -24,6 +24,10 @@ from testbed.backends.agx.protocol import (
     encode_frame,
     read_frame,
 )
+from testbed.tasks.logic.excavator_reward import (
+    AgxExcavationRewardTracker,
+    get_agx_excavation_mission,
+)
 
 
 def _build_get_info_response() -> bytes:
@@ -59,6 +63,7 @@ def _build_get_info_response() -> bytes:
                 "excavated_mass_kg",
                 "mass_in_target_box_kg",
                 "deposited_mass_in_target_box_kg",
+                "min_distance_to_target_m",
             ]
         )
     )
@@ -97,7 +102,7 @@ def _build_step_response(
     payload.write(np.int64(step_id).astype("<i8").tobytes())
     payload.write(_pack_float_array([0.1, 0.2, 0.3, 0.4]))
     payload.write(_pack_float_array([1.0, 2.0, 3.0, 4.0]))
-    payload.write(_pack_float_array([5.0, 6.0, 7.0, 8.0]))
+    payload.write(_pack_float_array([5.0, 6.0, 7.0, 8.0, 1.5]))
     payload.write(_pack_string(IMAGE_PIXEL_FORMAT))
     payload.write((2).to_bytes(4, "little", signed=True))
     payload.write((1).to_bytes(4, "little", signed=True))
@@ -155,7 +160,7 @@ class AgxProtocolTests(unittest.TestCase):
             self.assertEqual(step.step_id, 7)
             np.testing.assert_allclose(step.qpos, [0.1, 0.2, 0.3, 0.4])
             np.testing.assert_allclose(step.qvel, [1.0, 2.0, 3.0, 4.0])
-            np.testing.assert_allclose(step.env_state, [5.0, 6.0, 7.0, 8.0])
+            np.testing.assert_allclose(step.env_state, [5.0, 6.0, 7.0, 8.0, 1.5])
             self.assertEqual(step.decode_rgb_image().shape, (1, 2, 3))
 
         thread.join(timeout=1.0)
@@ -224,7 +229,7 @@ class AgxProtocolTests(unittest.TestCase):
             step_id=0,
             qpos=np.zeros(4, dtype=np.float32),
             qvel=np.zeros(4, dtype=np.float32),
-            env_state=np.zeros(4, dtype=np.float32),
+            env_state=np.zeros(5, dtype=np.float32),
             image_format=IMAGE_PIXEL_FORMAT,
             image_w=2,
             image_h=1,
@@ -235,6 +240,37 @@ class AgxProtocolTests(unittest.TestCase):
         )
         with self.assertRaises(AgxProtocolError):
             response.decode_rgb_image()
+
+    def test_reward_tracker_uses_target_mass_success_signal(self) -> None:
+        mission = get_agx_excavation_mission(
+            "agx_excavation_teleop",
+            success_mass_thresh=10.0,
+            success_hold_steps=2,
+        )
+        tracker = AgxExcavationRewardTracker(
+            mission=mission,
+            env_state_order=(
+                "mass_in_bucket_kg",
+                "excavated_mass_kg",
+                "mass_in_target_box_kg",
+                "deposited_mass_in_target_box_kg",
+                "min_distance_to_target_m",
+            ),
+        )
+
+        loaded = tracker.update(np.array([120.0, 140.0, 0.0, 0.0, 2.0], dtype=np.float32))
+        self.assertEqual(loaded.phase_label, "loading")
+        self.assertFalse(loaded.success)
+
+        depositing = tracker.update(np.array([20.0, 140.0, 30.0, 12.0, 0.8], dtype=np.float32))
+        self.assertEqual(depositing.phase_label, "depositing")
+        self.assertFalse(depositing.success)
+        self.assertIn("deposit_progress", depositing.step_successes)
+
+        retained = tracker.update(np.array([10.0, 140.0, 30.0, 12.0, 0.8], dtype=np.float32))
+        self.assertTrue(retained.success)
+        self.assertEqual(retained.reward, 4.0)
+        self.assertIn("mission_success", retained.step_successes)
 
 
 if __name__ == "__main__":

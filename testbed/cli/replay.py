@@ -56,11 +56,15 @@ def main() -> None:
     # ── Load config ───────────────────────────────────────────────────────────
     agx_cfg: dict = {}
     task_cfg: dict = {}
+    success_cfg: dict = {}
+    reward_cfg: dict = {}
     if args.config:
         with open(args.config) as f:
             cfg = yaml.safe_load(f) or {}
         agx_cfg  = cfg.get("agx", {})
         task_cfg = cfg.get("task", {})
+        success_cfg = cfg.get("success", {})
+        reward_cfg = cfg.get("reward", {})
 
     # ── Load episode ──────────────────────────────────────────────────────────
     from testbed.data.hdf5_io import read_episode
@@ -82,10 +86,20 @@ def main() -> None:
 
     # ── Build backend ─────────────────────────────────────────────────────────
     from testbed.backends.agx.backend import AGXSimBackend
+    from testbed.tasks.logic.excavator_reward import (
+        build_agx_excavation_mission_overrides,
+    )
+
+    reward_overrides = build_agx_excavation_mission_overrides(
+        success_cfg=success_cfg,
+        reward_cfg=reward_cfg,
+    )
     backend = AGXSimBackend(
         host=agx_cfg.get("host", "127.0.0.1"),
         port=agx_cfg.get("port", 5057),
         timeout=agx_cfg.get("timeout", 10.0),
+        task_name=str(meta.get("task_name", task_cfg.get("task_name", "agx_excavation_teleop"))),
+        reward_overrides=reward_overrides,
     )
 
     # ── Replay loop ───────────────────────────────────────────────────────────

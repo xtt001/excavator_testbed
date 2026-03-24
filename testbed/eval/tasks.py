@@ -34,9 +34,12 @@ class EvalTaskDef:
                      Not used by AGX — terrain reset is handled by RESET_REQ.
 
     AGX-specific success rule (used when backend_type == "agx"):
-    mass_thresh      mass_in_bucket must reach this value (AGX units).
-    hold_steps       Number of consecutive steps above mass_thresh = success.
-                     Default 1 = threshold reached at any point in the episode.
+    success_signal_name  Name advertised in env_state_order and used as the
+                         final success signal for the task.
+    mass_thresh          Success threshold for the selected signal.
+    hold_steps           Number of consecutive steps above threshold = success.
+    reward_overrides     Optional mission-level reward / threshold overrides
+                         forwarded to the AGX backend tracker.
     """
     name:             str
     equipment_model:  str
@@ -46,8 +49,10 @@ class EvalTaskDef:
     env_max_reward:   float = 4.0
     make_object_pose: Callable[[], np.ndarray] | None = None
     # AGX success params
-    mass_thresh:      float = 2.0    # current V0 default from Unity exported runs
-    hold_steps:       int   = 1      # success = threshold reached within the rollout
+    success_signal_name: str = "deposited_mass_in_target_box_kg"
+    mass_thresh:      float = 100.0
+    hold_steps:       int   = 25
+    reward_overrides: dict[str, float] = field(default_factory=dict)
 
 
 # ─── MuJoCo pose samplers ─────────────────────────────────────────────────────
@@ -108,15 +113,21 @@ EVAL_TASKS: dict[str, EvalTaskDef] = {
     "agx_excavation_teleop": EvalTaskDef(
         name             = "agx_excavation_teleop",
         equipment_model  = "agxunity",
-        episode_len      = 500,          # 10s @ 50Hz
+        episode_len      = 1000,         # 20s @ 50Hz
         camera_names     = ["fpv"],
         backend_type     = "agx",
-        # Success: mass_in_bucket >= mass_thresh at any point in the episode.
-        # 2.0 kg is the current V0 default:
-        # above observed sub-kg noise, below the smallest clear scoop (~2.10775 kg)
-        # in the current Unity exported episodes.
-        mass_thresh      = 2.0,
-        hold_steps       = 1,
+        env_max_reward   = 4.0,
+        success_signal_name = "deposited_mass_in_target_box_kg",
+        mass_thresh      = 100.0,
+        hold_steps       = 25,
+        reward_overrides = {
+            "load_mass_threshold_kg": 100.0,
+            "target_approach_distance_m": 1.25,
+            "deposit_started_threshold_kg": 10.0,
+            "unsafe_distance_m": 0.20,
+            "unsafe_distance_penalty": 0.25,
+            "spill_penalty": 0.25,
+        },
     ),
 }
 

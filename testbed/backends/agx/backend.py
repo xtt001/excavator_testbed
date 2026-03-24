@@ -11,6 +11,15 @@ import numpy as np
 
 from testbed.backends.base import SimBackend
 from testbed.backends.agx.protocol import AgxSimClient, GetInfoResponse, StepResponse
+from testbed.tasks.logic.excavator_reward import (
+    AGX_DEPOSITED_MASS_IN_TARGET_BOX,
+    AGX_EXCAVATED_MASS,
+    AGX_MASS_IN_BUCKET,
+    AGX_MASS_IN_TARGET_BOX,
+    AGX_MIN_DISTANCE_TO_TARGET,
+    AgxExcavationRewardTracker,
+    get_agx_excavation_mission,
+)
 
 
 @dataclass
@@ -35,10 +44,12 @@ class AgxSimBackend(SimBackend):
         host: str = "127.0.0.1",
         port: int = 5057,
         *,
+        task_name: str = "agx_excavation_teleop",
         timeout_s: float | None = None,
         timeout: float | None = None,
         reset_terrain: bool = True,
         reset_pose: bool = True,
+        reward_overrides: dict[str, Any] | None = None,
     ) -> None:
         if timeout_s is None:
             timeout_s = 5.0 if timeout is None else float(timeout)
@@ -48,6 +59,10 @@ class AgxSimBackend(SimBackend):
         self._last_obs: dict[str, Any] | None = None
         self._reset_terrain = bool(reset_terrain)
         self._reset_pose = bool(reset_pose)
+        self._task_name = str(task_name)
+        self._reward_overrides = dict(reward_overrides or {})
+        self._mission = None
+        self._reward_tracker: AgxExcavationRewardTracker | None = None
 
     def close(self) -> None:
         self._client.close()
@@ -55,6 +70,26 @@ class AgxSimBackend(SimBackend):
     def get_info(self) -> GetInfoResponse:
         if self._info is None:
             self._info = self._client.get_info()
+        if self._reward_tracker is None:
+            env_state_order = getattr(
+                self._info,
+                "env_state_order",
+                (
+                    AGX_MASS_IN_BUCKET,
+                    AGX_EXCAVATED_MASS,
+                    AGX_MASS_IN_TARGET_BOX,
+                    AGX_DEPOSITED_MASS_IN_TARGET_BOX,
+                    AGX_MIN_DISTANCE_TO_TARGET,
+                ),
+            )
+            self._mission = get_agx_excavation_mission(
+                self._task_name,
+                **self._reward_overrides,
+            )
+            self._reward_tracker = AgxExcavationRewardTracker(
+                mission=self._mission,
+                env_state_order=env_state_order,
+            )
         return self._info
 
     def reset(
@@ -65,6 +100,8 @@ class AgxSimBackend(SimBackend):
         reset_pose: bool | None = None,
     ) -> Any:
         info = self.get_info()
+        if self._reward_tracker is not None:
+            self._reward_tracker.reset()
         reset_response = self._client.reset(
             seed=0 if seed is None else int(seed),
             reset_terrain=self._reset_terrain if reset_terrain is None else bool(reset_terrain),
@@ -106,7 +143,8 @@ class AgxSimBackend(SimBackend):
 
     @property
     def max_reward(self) -> float:
-        return 0.0
+        self.get_info()
+        return float(self._mission.max_reward) if self._mission is not None else 0.0
 
     def set_initial_object_pose(self, pose: np.ndarray) -> None:
         raise NotImplementedError(
@@ -114,18 +152,46 @@ class AgxSimBackend(SimBackend):
         )
 
     def _step_with_id(self, step_id: int, action: np.ndarray) -> AgxTimeStep:
+        self.get_info()
         response = self._client.step(step_id=step_id, action=action)
         obs = self._obs_from_step_response(response)
         self._last_obs = obs
+        reward = float(response.reward)
+        reward_phase = "unity_raw"
+        task_success = False
+        task_step_successes: list[str] = []
+        task_step_failures: list[str] = []
+        task_metrics: dict[str, float] = {}
+
+        if self._reward_tracker is not None:
+            step_result = self._reward_tracker.update(response.env_state)
+            reward = float(step_result.reward)
+            reward_phase = step_result.phase_label
+            task_success = bool(step_result.success)
+            task_step_successes = list(step_result.step_successes)
+            task_step_failures = list(step_result.step_failures)
+            task_metrics = dict(step_result.metrics)
+            obs["reward_phase"] = reward_phase
+            obs["task_success"] = task_success
+            obs["task_step_successes"] = list(task_step_successes)
+            obs["task_step_failures"] = list(task_step_failures)
+            obs["task_metrics"] = dict(task_metrics)
+
         info = {
             "step_id": int(response.step_id),
             "sim_time_ns": int(response.sim_time_ns),
             "image_format": response.image_format,
             "warnings": list(response.warnings),
+            "raw_reward_unity": float(response.reward),
+            "reward_phase": reward_phase,
+            "task_success": task_success,
+            "task_step_successes": list(task_step_successes),
+            "task_step_failures": list(task_step_failures),
+            "task_metrics": dict(task_metrics),
         }
         return AgxTimeStep(
             observation=obs,
-            reward=float(response.reward),
+            reward=reward,
             done=False,
             info=info,
         )

@@ -108,6 +108,8 @@ def main() -> None:
     agx_cfg    = cfg.get("agx", {})
     teleop_cfg = cfg.get("teleop", {})
     task_cfg   = cfg.get("task", {})
+    success_cfg = cfg.get("success", {})
+    reward_cfg = cfg.get("reward", {})
 
     num_episodes = args.num_episodes or teleop_cfg.get("num_episodes", 10)
     dataset_dir  = Path(args.output_dir or task_cfg.get("dataset_dir", "data/agx_teleop"))
@@ -121,12 +123,22 @@ def main() -> None:
 
     # ── Build backend ─────────────────────────────────────────────────────────
     from testbed.backends.agx.backend import AGXSimBackend
+    from testbed.tasks.logic.excavator_reward import (
+        build_agx_excavation_mission_overrides,
+    )
+
+    reward_overrides = build_agx_excavation_mission_overrides(
+        success_cfg=success_cfg,
+        reward_cfg=reward_cfg,
+    )
     backend = AGXSimBackend(
         host=agx_cfg.get("host", "127.0.0.1"),
         port=agx_cfg.get("port", 5057),
         timeout=agx_cfg.get("timeout", 10.0),
         reset_terrain=agx_cfg.get("reset_terrain", True),
         reset_pose=agx_cfg.get("reset_pose", True),
+        task_name=task_cfg.get("task_name", "agx_excavation_teleop"),
+        reward_overrides=reward_overrides,
     )
     info = backend.get_info()
     _validate_requested_cameras(info.camera_names, camera_names)
@@ -186,6 +198,7 @@ def main() -> None:
 
             discard = False
             reset_requested = False
+            episode_success = bool(ts.info.get("task_success", False))
 
             for local_step in range(max_steps):
                 if _abort:
@@ -228,13 +241,14 @@ def main() -> None:
                     action_src_type=ainfo.source_type,
                     action_src_id=ainfo.source_id,
                 )
+                episode_success = episode_success or bool(ts_next.info.get("task_success", False))
                 ts = ts_next
 
                 # Enforce control rate
                 _sleep_to_rate(task_cfg.get("control_hz", 50))
 
             if not discard and len(recorder) > 0:
-                path = recorder.save(success=False)   # success determined by evaluator
+                path = recorder.save(success=episode_success)
                 log.info("Saved %d steps → %s", len(recorder), path)
                 saved += 1
                 episode_idx += 1

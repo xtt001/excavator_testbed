@@ -7,7 +7,7 @@ task:
   equipment_model: agxunity
   dataset_dir: data/agx_teleop
   num_episodes: 5
-  episode_len: 500
+  episode_len: 1000
   camera_names:
     - fpv
   backend:

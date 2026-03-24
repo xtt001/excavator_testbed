@@ -9,6 +9,7 @@ from typing import Any
 def eval_policy(config: dict[str, Any]) -> None:
     agx_cfg    = config.get("agx", {})
     success_cfg = config.get("success", {})
+    reward_cfg = config.get("reward", {})
     task_cfg   = config.get("task", {})
     policy_cfg = config.get("policy", {})
     eval_cfg   = config.get("eval", {})
@@ -50,12 +51,15 @@ def eval_policy(config: dict[str, Any]) -> None:
     agx_timeout     = float(agx_cfg.get("timeout", 10.0))
     mass_thresh     = success_cfg.get("mass_thresh", success_cfg.get("mass_thresh_kg"))
     hold_steps      = success_cfg.get("hold_steps")
-    env_state_index = int(
-        success_cfg.get(
-            "env_state_idx",
-            success_cfg.get("env_state_index", 0),
-        )
+    success_signal_name = success_cfg.get(
+        "signal_name",
+        success_cfg.get("success_signal_name"),
     )
+    env_state_index_value = success_cfg.get(
+        "env_state_idx",
+        success_cfg.get("env_state_index"),
+    )
+    env_state_index = None if env_state_index_value is None else int(env_state_index_value)
 
     if policy_class == "ACT":
         act_params     = policy_cfg.get("act_params", {})
@@ -109,7 +113,11 @@ def eval_policy(config: dict[str, Any]) -> None:
         agx_timeout  = agx_timeout,
         mass_thresh  = None if mass_thresh is None else float(mass_thresh),
         hold_steps   = None if hold_steps is None else int(hold_steps),
+        success_signal_name = (
+            None if success_signal_name is None else str(success_signal_name)
+        ),
         env_state_index = env_state_index,
+        reward_overrides = dict(reward_cfg),
     )
     metrics = suite.run()
 

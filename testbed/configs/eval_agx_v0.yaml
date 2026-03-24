@@ -19,11 +19,20 @@ eval:
   results_dir:   "runs/eval/agx_excavation/results"
   ckpt_dir:      "runs/ckpts/agx_excavation_act_v0"
 
-# ── Success rule (spec §8) ───────────────────────────────────────────────────
-# success = mass_in_bucket reaches mass_thresh at any point within the 500-step episode
+# ── Mission success / reward ─────────────────────────────────────────────────
+# success = deposited_mass_in_target_box_kg stays above mass_thresh for hold_steps
 success:
-  mass_thresh:  2.0         # based on current Unity exports; above noise, below smallest clear scoop
-  hold_steps:   1           # current MVP rule: success within the episode budget
+  signal_name: "deposited_mass_in_target_box_kg"
+  mass_thresh: 100.0
+  hold_steps:  25
+
+reward:
+  load_mass_threshold_kg:       100.0
+  target_approach_distance_m:   1.25
+  deposit_started_threshold_kg: 10.0
+  unsafe_distance_m:            0.20
+  unsafe_distance_penalty:      0.25
+  spill_penalty:                0.25
 
 # ── Policy ────────────────────────────────────────────────────────────────────
 policy:

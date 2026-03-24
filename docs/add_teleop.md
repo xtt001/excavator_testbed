@@ -206,10 +206,10 @@ We will define success in Python evaluator (backend-agnostic) using signals in o
 
 ### Recommended V0 success (mass-based)
 Success if:
-- `mass_in_bucket >= M_thresh` at any point within the episode budget
+- `deposited_mass_in_target_box >= M_thresh` for `hold_steps` consecutive steps
 Example defaults:
-- `M_thresh = team_defined` (units from AGX)
-- `hold_steps = 1` (threshold reached within the 500-step rollout)
+- `M_thresh = team_defined` (kg retained in the active target)
+- `hold_steps = team_defined` (current default is no longer `1`)
 
 Fallback if mass_in_bucket unavailable:
 - Success = bucket position_norm indicates “scooped posture” + stick/boom within bounds for hold_steps
@@ -494,7 +494,8 @@ RESET_RESP should confirm:
 Primary metric: success_rate.
 
 Recommended V0 success rule:
-- success if `mass_in_bucket >= M_thresh` at any point within the `500`-step episode
+- success if `deposited_mass_in_target_box >= M_thresh` for `hold_steps`
+  consecutive steps within the `1000`-step episode
 
 Current Repo A run sequence:
 
@@ -671,7 +672,7 @@ Exit criteria:
 - [ ] Disable auto-stepping
 - [ ] Implement socket server: GET_INFO/RESET/STEP
 - [ ] STEP: apply speed cmd → DoStep once → return qpos/qvel/env_state + step_id
-- [ ] Run 10s @ 50Hz: step_id monotonic, no duplicates, no reorder
+- [ ] Run 20s @ 50Hz: step_id monotonic, no duplicates, no reorder
 
 ### Python/testbed team
 - [ ] Implement `AGXSimBackend` socket client
@@ -720,12 +721,13 @@ Exit criteria:
 
 ## Milestone M4 (Day 9–12): Success Definition + EvalSuite V0
 ### Joint decision (fast)
-- [ ] Define env_state index for mass_in_bucket
-- [ ] Pick initial M_thresh and set `hold_steps=1` for the MVP rule
+- [ ] Define env_state index for deposited_mass_in_target_box
+- [ ] Pick initial retained-mass threshold and hold window
 
 ### Python/testbed team
 - [ ] Implement evaluator rule:
-  - success if mass_in_bucket >= M_thresh at any point within the episode
+  - success if deposited_mass_in_target_box >= M_thresh for hold_steps
+    consecutive steps within the episode
 - [ ] Fixed eval suite:
   - fixed reset mode
   - fixed scenario list (even 3 seeds is enough for V0)
