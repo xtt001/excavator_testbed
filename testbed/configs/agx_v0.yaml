@@ -14,3 +14,6 @@ agx:
 
   # env_state
   env_state_mass_in_bucket_idx: 0   # index of mass_in_bucket in env_state vector
+  env_state_excavated_mass_idx: 1   # cumulative excavated mass in current episode
+  env_state_mass_in_target_box_idx: 2
+  env_state_deposited_mass_in_target_box_idx: 3
