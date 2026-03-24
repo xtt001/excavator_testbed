@@ -104,7 +104,12 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
                 "bucket_position_norm",
             ),
             qvel_order=("swing_speed", "boom_speed", "stick_speed", "bucket_speed"),
-            env_state_order=("mass_in_bucket_kg",),
+            env_state_order=(
+                "mass_in_bucket_kg",
+                "excavated_mass_kg",
+                "mass_in_target_box_kg",
+                "deposited_mass_in_target_box_kg",
+            ),
             camera_names=("fpv",),
             supports_reset_pose=True,
             supports_images=True,

@@ -238,7 +238,8 @@ All messages share a 16-byte little-endian header:
 **Observation:**
 - `qpos (4,)` — `[swing, boom, stick, bucket]` position_norm `[0, 1]`
 - `qvel (4,)` — `[swing, boom, stick, bucket]` speed
-- `env_state (M,)` — index 0 = `mass_in_bucket`
+- `env_state (4,)` —
+  `[mass_in_bucket_kg, excavated_mass_kg, mass_in_target_box_kg, deposited_mass_in_target_box_kg]`
 - `images["fpv"]` — `(H, W, 3)` uint8
 
 **Success rule (spec §8):** `mass_in_bucket ≥ 2.0 kg` at any point within the
@@ -285,7 +286,7 @@ episode_N.hdf5
 ├── observations/
 │   ├── qpos            (T, 4)  float32  [swing, boom, stick, bucket] position_norm
 │   ├── qvel            (T, 4)  float32  [swing, boom, stick, bucket] speed
-│   ├── env_state       (T, M)  float32  env_state[0] = mass_in_bucket
+│   ├── env_state       (T, 4)  float32  [mass_in_bucket, excavated_mass, mass_in_target_box, deposited_mass_in_target_box]
 │   └── images/fpv      (T, H, W, 3) uint8
 ├── action              (T, 4)  float32  [swing, boom, stick, bucket] speed cmd
 ├── rewards             (T,)    float32  currently usually 0.0 for AGX V0

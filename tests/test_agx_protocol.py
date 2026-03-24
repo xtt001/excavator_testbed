@@ -52,7 +52,16 @@ def _build_get_info_response() -> bytes:
     payload.write(
         _pack_string_array(["swing_speed", "boom_speed", "stick_speed", "bucket_speed"])
     )
-    payload.write(_pack_string_array(["mass_in_bucket_kg"]))
+    payload.write(
+        _pack_string_array(
+            [
+                "mass_in_bucket_kg",
+                "excavated_mass_kg",
+                "mass_in_target_box_kg",
+                "deposited_mass_in_target_box_kg",
+            ]
+        )
+    )
     payload.write(_pack_string_array(["fpv"]))
     payload.write(_pack_bool(True))
     payload.write(_pack_bool(True))
@@ -88,7 +97,7 @@ def _build_step_response(
     payload.write(np.int64(step_id).astype("<i8").tobytes())
     payload.write(_pack_float_array([0.1, 0.2, 0.3, 0.4]))
     payload.write(_pack_float_array([1.0, 2.0, 3.0, 4.0]))
-    payload.write(_pack_float_array([5.0]))
+    payload.write(_pack_float_array([5.0, 6.0, 7.0, 8.0]))
     payload.write(_pack_string(IMAGE_PIXEL_FORMAT))
     payload.write((2).to_bytes(4, "little", signed=True))
     payload.write((1).to_bytes(4, "little", signed=True))
@@ -146,7 +155,7 @@ class AgxProtocolTests(unittest.TestCase):
             self.assertEqual(step.step_id, 7)
             np.testing.assert_allclose(step.qpos, [0.1, 0.2, 0.3, 0.4])
             np.testing.assert_allclose(step.qvel, [1.0, 2.0, 3.0, 4.0])
-            np.testing.assert_allclose(step.env_state, [5.0])
+            np.testing.assert_allclose(step.env_state, [5.0, 6.0, 7.0, 8.0])
             self.assertEqual(step.decode_rgb_image().shape, (1, 2, 3))
 
         thread.join(timeout=1.0)
@@ -215,7 +224,7 @@ class AgxProtocolTests(unittest.TestCase):
             step_id=0,
             qpos=np.zeros(4, dtype=np.float32),
             qvel=np.zeros(4, dtype=np.float32),
-            env_state=np.zeros(1, dtype=np.float32),
+            env_state=np.zeros(4, dtype=np.float32),
             image_format=IMAGE_PIXEL_FORMAT,
             image_w=2,
             image_h=1,

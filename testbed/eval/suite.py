@@ -11,7 +11,7 @@ Design goals:
 Success rules
 ─────────────
   MuJoCo backends:  ep_highest_reward == task.env_max_reward
-  AGX backend:      mass_in_bucket >= task.mass_thresh
+  AGX backend:      selected env_state signal >= task.mass_thresh
                     for task.hold_steps consecutive steps  (spec §8)
 """
 
@@ -43,7 +43,7 @@ class EvalSuite:
     agx_timeout  AGX socket timeout seconds (only used when backend_type=="agx").
     mass_thresh  Override task.mass_thresh (AGX success threshold).
     hold_steps   Override task.hold_steps for AGX success.
-    env_state_index  Which env_state entry is treated as mass_in_bucket.
+    env_state_index  Which env_state entry is treated as the AGX success signal.
     """
 
     def __init__(
@@ -232,8 +232,8 @@ def _mass_success(
     mass_idx: int = 0,
 ) -> bool:
     """
-    Returns True if mass_in_bucket >= mass_thresh for hold_steps
-    consecutive steps at any point in the episode.
+    Returns True if the selected env_state signal >= mass_thresh for
+    hold_steps consecutive steps at any point in the episode.
     """
     if not env_states or mass_thresh <= 0.0:
         return False
