@@ -253,7 +253,8 @@ All messages share a 16-byte little-endian header:
 the `1000`-step episode.
 
 Current reward/success ownership:
-- Repo B currently emits `reward = 0.0` in `STEP_RESP`
+- Repo B now mirrors `deposited_mass_in_target_box_kg` into `STEP_RESP.reward`
+  as a backup success proxy
 - Repo A computes the excavation mission reward locally from exported `env_state`
 - success is computed from retained target mass, not from Unity reward
 
