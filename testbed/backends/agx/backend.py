@@ -17,6 +17,8 @@ from testbed.tasks.logic.excavator_reward import (
     AGX_MASS_IN_BUCKET,
     AGX_MASS_IN_TARGET_BOX,
     AGX_MIN_DISTANCE_TO_TARGET,
+    AGX_TARGET_CONTACT_MAX_NORMAL_FORCE_N,
+    AGX_TARGET_HARD_COLLISION_COUNT,
     AgxExcavationRewardTracker,
     get_agx_excavation_mission,
 )
@@ -80,6 +82,8 @@ class AgxSimBackend(SimBackend):
                     AGX_MASS_IN_TARGET_BOX,
                     AGX_DEPOSITED_MASS_IN_TARGET_BOX,
                     AGX_MIN_DISTANCE_TO_TARGET,
+                    AGX_TARGET_HARD_COLLISION_COUNT,
+                    AGX_TARGET_CONTACT_MAX_NORMAL_FORCE_N,
                 ),
             )
             self._mission = get_agx_excavation_mission(

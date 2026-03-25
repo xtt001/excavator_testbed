@@ -126,6 +126,7 @@ EVAL_TASKS: dict[str, EvalTaskDef] = {
             "deposit_started_threshold_kg": 10.0,
             "unsafe_distance_m": 0.20,
             "unsafe_distance_penalty": 0.25,
+            "hard_collision_penalty": 0.75,
             "spill_penalty": 0.25,
         },
     ),

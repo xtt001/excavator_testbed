@@ -159,6 +159,8 @@ AGX_EXCAVATED_MASS = "excavated_mass_kg"
 AGX_MASS_IN_TARGET_BOX = "mass_in_target_box_kg"
 AGX_DEPOSITED_MASS_IN_TARGET_BOX = "deposited_mass_in_target_box_kg"
 AGX_MIN_DISTANCE_TO_TARGET = "min_distance_to_target_m"
+AGX_TARGET_HARD_COLLISION_COUNT = "target_hard_collision_count"
+AGX_TARGET_CONTACT_MAX_NORMAL_FORCE_N = "target_contact_max_normal_force_n"
 
 AGX_PHASE_LABELS: dict[float, str] = {
     0.0: "idle",
@@ -188,6 +190,7 @@ class AgxExcavationMissionConfig:
     deposit_started_threshold_kg: float = 10.0
     unsafe_distance_m: float = 0.20
     unsafe_distance_penalty: float = 0.25
+    hard_collision_penalty: float = 0.75
     spill_penalty: float = 0.25
     bucket_mass_delta_tol_kg: float = 5.0
     target_mass_delta_tol_kg: float = 2.0
@@ -202,6 +205,8 @@ class AgxExcavationFieldIndices:
     mass_in_target_box_idx: int | None = None
     deposited_mass_in_target_box_idx: int | None = None
     min_distance_to_target_idx: int | None = None
+    target_hard_collision_count_idx: int | None = None
+    target_contact_max_normal_force_n_idx: int | None = None
 
 
 @dataclass(frozen=True)
@@ -211,6 +216,8 @@ class AgxExcavationObservation:
     mass_in_target_box_kg: float = 0.0
     deposited_mass_in_target_box_kg: float = 0.0
     min_distance_to_target_m: float = -1.0
+    target_hard_collision_count: float = 0.0
+    target_contact_max_normal_force_n: float = 0.0
 
     def value_for(self, signal_name: str) -> float:
         if signal_name == AGX_MASS_IN_BUCKET:
@@ -223,6 +230,10 @@ class AgxExcavationObservation:
             return self.deposited_mass_in_target_box_kg
         if signal_name == AGX_MIN_DISTANCE_TO_TARGET:
             return self.min_distance_to_target_m
+        if signal_name == AGX_TARGET_HARD_COLLISION_COUNT:
+            return self.target_hard_collision_count
+        if signal_name == AGX_TARGET_CONTACT_MAX_NORMAL_FORCE_N:
+            return self.target_contact_max_normal_force_n
         return 0.0
 
 
@@ -247,6 +258,7 @@ AGX_EXCAVATION_MISSIONS: dict[str, AgxExcavationMissionConfig] = {
         deposit_started_threshold_kg=10.0,
         unsafe_distance_m=0.20,
         unsafe_distance_penalty=0.25,
+        hard_collision_penalty=0.75,
         spill_penalty=0.25,
         bucket_mass_delta_tol_kg=5.0,
         target_mass_delta_tol_kg=2.0,
@@ -317,6 +329,7 @@ def build_agx_excavation_mission_overrides(
         "deposit_started_threshold_kg",
         "unsafe_distance_m",
         "unsafe_distance_penalty",
+        "hard_collision_penalty",
         "spill_penalty",
         "bucket_mass_delta_tol_kg",
         "target_mass_delta_tol_kg",
@@ -342,6 +355,8 @@ def resolve_agx_field_indices(env_state_order: Iterable[str]) -> AgxExcavationFi
         mass_in_target_box_idx=_lookup(AGX_MASS_IN_TARGET_BOX),
         deposited_mass_in_target_box_idx=_lookup(AGX_DEPOSITED_MASS_IN_TARGET_BOX),
         min_distance_to_target_idx=_lookup(AGX_MIN_DISTANCE_TO_TARGET),
+        target_hard_collision_count_idx=_lookup(AGX_TARGET_HARD_COLLISION_COUNT),
+        target_contact_max_normal_force_n_idx=_lookup(AGX_TARGET_CONTACT_MAX_NORMAL_FORCE_N),
     )
 
 
@@ -365,6 +380,14 @@ def decode_agx_env_state(
             _read(field_indices.deposited_mass_in_target_box_idx, 0.0),
         ),
         min_distance_to_target_m=_read(field_indices.min_distance_to_target_idx, -1.0),
+        target_hard_collision_count=max(
+            0.0,
+            _read(field_indices.target_hard_collision_count_idx, 0.0),
+        ),
+        target_contact_max_normal_force_n=max(
+            0.0,
+            _read(field_indices.target_contact_max_normal_force_n_idx, 0.0),
+        ),
     )
 
 
@@ -425,6 +448,10 @@ class AgxExcavationRewardTracker:
             observation.deposited_mass_in_target_box_kg
             - previous.deposited_mass_in_target_box_kg
         )
+        delta_target_hard_collision_count = max(
+            0.0,
+            observation.target_hard_collision_count - previous.target_hard_collision_count,
+        )
 
         has_valid_distance = observation.min_distance_to_target_m >= 0.0
         previous_has_valid_distance = previous.min_distance_to_target_m >= 0.0
@@ -462,6 +489,7 @@ class AgxExcavationRewardTracker:
             has_valid_distance
             and observation.min_distance_to_target_m <= mission.unsafe_distance_m
         )
+        hard_target_collision = delta_target_hard_collision_count > 0.0
         spill_detected = (
             previous.mass_in_bucket_kg >= mission.load_mass_threshold_kg * 0.5
             and (previous.mass_in_bucket_kg - observation.mass_in_bucket_kg)
@@ -527,9 +555,11 @@ class AgxExcavationRewardTracker:
             reward -= mission.spill_penalty
         if unsafe_distance and not self._success_latched:
             reward -= mission.unsafe_distance_penalty
-        reward = float(np.clip(reward, 0.0, mission.max_reward))
         if self._success_latched:
             reward = mission.max_reward
+        if hard_target_collision:
+            reward -= mission.hard_collision_penalty
+        reward = float(np.clip(reward, 0.0, mission.max_reward))
 
         phase_label = "idle"
         if load_component > 0.0:
@@ -575,6 +605,8 @@ class AgxExcavationRewardTracker:
             step_failures.append("spill_before_target")
         if unsafe_distance:
             step_failures.append("unsafe_target_distance")
+        if hard_target_collision:
+            step_failures.append("hard_target_collision")
 
         self._last_observation = observation
         self._last_phase = phase_label
@@ -591,6 +623,9 @@ class AgxExcavationRewardTracker:
                 "mass_in_target_box_kg": observation.mass_in_target_box_kg,
                 "deposited_mass_in_target_box_kg": observation.deposited_mass_in_target_box_kg,
                 "min_distance_to_target_m": observation.min_distance_to_target_m,
+                "target_hard_collision_count": observation.target_hard_collision_count,
+                "target_contact_max_normal_force_n": observation.target_contact_max_normal_force_n,
+                "delta_target_hard_collision_count": delta_target_hard_collision_count,
                 "delta_mass_in_bucket_kg": delta_bucket,
                 "delta_excavated_mass_kg": delta_excavated,
                 "delta_mass_in_target_box_kg": delta_target,

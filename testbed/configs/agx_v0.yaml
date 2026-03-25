@@ -18,3 +18,5 @@ agx:
   env_state_mass_in_target_box_idx: 2
   env_state_deposited_mass_in_target_box_idx: 3
   env_state_min_distance_to_target_idx: 4
+  env_state_target_hard_collision_count_idx: 5
+  env_state_target_contact_max_normal_force_n_idx: 6

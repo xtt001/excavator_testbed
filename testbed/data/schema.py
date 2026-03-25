@@ -51,7 +51,9 @@ Schema v1.1 layout (add-only on top of v1.0)
 │   ├── env_state            (T, M)  float32  current AGX order:
 │   │                                     [mass_in_bucket, excavated_mass,
 │   │                                      mass_in_target_box, deposited_mass_in_target_box,
-│   │                                      min_distance_to_target]  ← v1.1
+│   │                                      min_distance_to_target,
+│   │                                      target_hard_collision_count,
+│   │                                      target_contact_max_normal_force_n]  ← v1.1
 │   └── images/
 │       └── fpv              (T, H, W, 3) uint8                        ← v1.1
 │
@@ -140,6 +142,8 @@ ENV_STATE_EXCAVATED_MASS_IDX = 1
 ENV_STATE_MASS_IN_TARGET_BOX_IDX = 2
 ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX = 3
 ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX = 4
+ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX = 5
+ENV_STATE_TARGET_CONTACT_MAX_NORMAL_FORCE_N_IDX = 6
 
 # ── Image dataset name template ───────────────────────────────────────────────
 def image_ds(cam_name: str) -> str:

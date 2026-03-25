@@ -126,6 +126,8 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
                 "mass_in_target_box_kg",
                 "deposited_mass_in_target_box_kg",
                 "min_distance_to_target_m",
+                "target_hard_collision_count",
+                "target_contact_max_normal_force_n",
             ),
             camera_names=("fpv",),
             supports_reset_pose=True,

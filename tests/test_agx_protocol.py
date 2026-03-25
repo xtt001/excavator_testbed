@@ -64,6 +64,8 @@ def _build_get_info_response() -> bytes:
                 "mass_in_target_box_kg",
                 "deposited_mass_in_target_box_kg",
                 "min_distance_to_target_m",
+                "target_hard_collision_count",
+                "target_contact_max_normal_force_n",
             ]
         )
     )
@@ -102,7 +104,7 @@ def _build_step_response(
     payload.write(np.int64(step_id).astype("<i8").tobytes())
     payload.write(_pack_float_array([0.1, 0.2, 0.3, 0.4]))
     payload.write(_pack_float_array([1.0, 2.0, 3.0, 4.0]))
-    payload.write(_pack_float_array([5.0, 6.0, 7.0, 8.0, 1.5]))
+    payload.write(_pack_float_array([5.0, 6.0, 7.0, 8.0, 1.5, 0.0, 0.0]))
     payload.write(_pack_string(IMAGE_PIXEL_FORMAT))
     payload.write((2).to_bytes(4, "little", signed=True))
     payload.write((1).to_bytes(4, "little", signed=True))
@@ -160,7 +162,7 @@ class AgxProtocolTests(unittest.TestCase):
             self.assertEqual(step.step_id, 7)
             np.testing.assert_allclose(step.qpos, [0.1, 0.2, 0.3, 0.4])
             np.testing.assert_allclose(step.qvel, [1.0, 2.0, 3.0, 4.0])
-            np.testing.assert_allclose(step.env_state, [5.0, 6.0, 7.0, 8.0, 1.5])
+            np.testing.assert_allclose(step.env_state, [5.0, 6.0, 7.0, 8.0, 1.5, 0.0, 0.0])
             self.assertEqual(step.decode_rgb_image().shape, (1, 2, 3))
 
         thread.join(timeout=1.0)
@@ -229,7 +231,7 @@ class AgxProtocolTests(unittest.TestCase):
             step_id=0,
             qpos=np.zeros(4, dtype=np.float32),
             qvel=np.zeros(4, dtype=np.float32),
-            env_state=np.zeros(5, dtype=np.float32),
+            env_state=np.zeros(7, dtype=np.float32),
             image_format=IMAGE_PIXEL_FORMAT,
             image_w=2,
             image_h=1,
@@ -255,22 +257,117 @@ class AgxProtocolTests(unittest.TestCase):
                 "mass_in_target_box_kg",
                 "deposited_mass_in_target_box_kg",
                 "min_distance_to_target_m",
+                "target_hard_collision_count",
+                "target_contact_max_normal_force_n",
             ),
         )
 
-        loaded = tracker.update(np.array([120.0, 140.0, 0.0, 0.0, 2.0], dtype=np.float32))
+        loaded = tracker.update(
+            np.array([120.0, 140.0, 0.0, 0.0, 2.0, 0.0, 0.0], dtype=np.float32)
+        )
         self.assertEqual(loaded.phase_label, "loading")
         self.assertFalse(loaded.success)
 
-        depositing = tracker.update(np.array([20.0, 140.0, 30.0, 12.0, 0.8], dtype=np.float32))
+        depositing = tracker.update(
+            np.array([20.0, 140.0, 30.0, 12.0, 0.8, 0.0, 0.0], dtype=np.float32)
+        )
         self.assertEqual(depositing.phase_label, "depositing")
         self.assertFalse(depositing.success)
         self.assertIn("deposit_progress", depositing.step_successes)
 
-        retained = tracker.update(np.array([10.0, 140.0, 30.0, 12.0, 0.8], dtype=np.float32))
+        retained = tracker.update(
+            np.array([10.0, 140.0, 30.0, 12.0, 0.8, 0.0, 0.0], dtype=np.float32)
+        )
         self.assertTrue(retained.success)
         self.assertEqual(retained.reward, 4.0)
         self.assertIn("mission_success", retained.step_successes)
+
+    def test_reward_tracker_defaults_missing_collision_signals_for_legacy_env_state(self) -> None:
+        mission = get_agx_excavation_mission("agx_excavation_teleop")
+        tracker = AgxExcavationRewardTracker(
+            mission=mission,
+            env_state_order=(
+                "mass_in_bucket_kg",
+                "excavated_mass_kg",
+                "mass_in_target_box_kg",
+                "deposited_mass_in_target_box_kg",
+                "min_distance_to_target_m",
+            ),
+        )
+
+        result = tracker.update(np.array([110.0, 130.0, 0.0, 0.0, 1.8], dtype=np.float32))
+        self.assertEqual(result.metrics["target_hard_collision_count"], 0.0)
+        self.assertEqual(result.metrics["target_contact_max_normal_force_n"], 0.0)
+        self.assertNotIn("hard_target_collision", result.step_failures)
+
+    def test_reward_tracker_ignores_subthreshold_collision_force(self) -> None:
+        mission = get_agx_excavation_mission("agx_excavation_teleop")
+        tracker = AgxExcavationRewardTracker(
+            mission=mission,
+            env_state_order=(
+                "mass_in_bucket_kg",
+                "excavated_mass_kg",
+                "mass_in_target_box_kg",
+                "deposited_mass_in_target_box_kg",
+                "min_distance_to_target_m",
+                "target_hard_collision_count",
+                "target_contact_max_normal_force_n",
+            ),
+        )
+
+        result = tracker.update(
+            np.array([110.0, 130.0, 0.0, 0.0, 1.8, 0.0, 4200.0], dtype=np.float32)
+        )
+        self.assertEqual(result.metrics["target_hard_collision_count"], 0.0)
+        self.assertEqual(result.metrics["target_contact_max_normal_force_n"], 4200.0)
+        self.assertNotIn("hard_target_collision", result.step_failures)
+
+    def test_reward_tracker_applies_hard_collision_penalty_only_on_count_increase(self) -> None:
+        mission = get_agx_excavation_mission("agx_excavation_teleop")
+        env_state_order = (
+            "mass_in_bucket_kg",
+            "excavated_mass_kg",
+            "mass_in_target_box_kg",
+            "deposited_mass_in_target_box_kg",
+            "min_distance_to_target_m",
+            "target_hard_collision_count",
+            "target_contact_max_normal_force_n",
+        )
+
+        tracker_clean = AgxExcavationRewardTracker(mission=mission, env_state_order=env_state_order)
+        clean = tracker_clean.update(
+            np.array([120.0, 140.0, 0.0, 0.0, 1.5, 0.0, 0.0], dtype=np.float32)
+        )
+
+        tracker_collision = AgxExcavationRewardTracker(
+            mission=mission,
+            env_state_order=env_state_order,
+        )
+        collided = tracker_collision.update(
+            np.array([120.0, 140.0, 0.0, 0.0, 1.5, 1.0, 6500.0], dtype=np.float32)
+        )
+
+        self.assertAlmostEqual(
+            collided.reward,
+            max(0.0, clean.reward - mission.hard_collision_penalty),
+        )
+        self.assertIn("hard_target_collision", collided.step_failures)
+        self.assertEqual(collided.metrics["target_hard_collision_count"], 1.0)
+        self.assertEqual(collided.metrics["target_contact_max_normal_force_n"], 6500.0)
+        self.assertEqual(collided.metrics["delta_target_hard_collision_count"], 1.0)
+
+        clean_next = tracker_clean.update(
+            np.array([120.0, 140.0, 0.0, 0.0, 1.5, 0.0, 0.0], dtype=np.float32)
+        )
+        collided_next = tracker_collision.update(
+            np.array([120.0, 140.0, 0.0, 0.0, 1.5, 1.0, 9200.0], dtype=np.float32)
+        )
+
+        self.assertAlmostEqual(collided_next.reward, clean_next.reward)
+        self.assertNotIn("hard_target_collision", collided_next.step_failures)
+        self.assertEqual(collided_next.metrics["target_hard_collision_count"], 1.0)
+        self.assertEqual(collided_next.metrics["delta_target_hard_collision_count"], 0.0)
+        self.assertEqual(collided_next.metrics["target_contact_max_normal_force_n"], 9200.0)
 
 
 if __name__ == "__main__":
