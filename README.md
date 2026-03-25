@@ -243,7 +243,10 @@ All messages share a 16-byte little-endian header:
 - `images["fpv"]` — `(H, W, 3)` uint8
 
 Collision-field semantics:
-- `min_distance_to_target_m` is the approximate minimum distance between the bucket measurement volume and the active target measurement volume
+- `min_distance_to_target_m` is the approximate minimum distance between the bucket target-distance proxy volume and the active target distance geometry
+- in the current Unity scene that bucket proxy volume is editor-configurable on `ExcavationMassTracker`
+- on the target side Unity now prefers target hard box shapes and only falls back to a dedicated target-distance volume when those shapes are unavailable
+- for `TruckBed`, helper `*FailureVolume` shapes such as the dump/top failure volumes are excluded from that target-side geometry set
 - `target_hard_collision_count` is cumulative within the current episode
 - a continuous excavator-vs-target contact session increments the count at most once
 - the count can increase again only after the excavator leaves the target and later touches it again
