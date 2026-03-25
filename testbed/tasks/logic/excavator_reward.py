@@ -161,6 +161,8 @@ AGX_DEPOSITED_MASS_IN_TARGET_BOX = "deposited_mass_in_target_box_kg"
 AGX_MIN_DISTANCE_TO_TARGET = "min_distance_to_target_m"
 AGX_TARGET_HARD_COLLISION_COUNT = "target_hard_collision_count"
 AGX_TARGET_CONTACT_MAX_NORMAL_FORCE_N = "target_contact_max_normal_force_n"
+AGX_MIN_DISTANCE_TO_DIG_AREA = "min_distance_to_dig_area_m"
+AGX_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE = "bucket_depth_below_dig_area_plane_m"
 
 AGX_PHASE_LABELS: dict[float, str] = {
     0.0: "idle",
@@ -195,6 +197,8 @@ class AgxExcavationMissionConfig:
     bucket_mass_delta_tol_kg: float = 5.0
     target_mass_delta_tol_kg: float = 2.0
     distance_progress_delta_m: float = 0.02
+    dig_area_touch_tolerance_m: float = 0.05
+    dig_below_plane_depth_tolerance_m: float = 0.02
     max_reward: float = 4.0
 
 
@@ -207,6 +211,8 @@ class AgxExcavationFieldIndices:
     min_distance_to_target_idx: int | None = None
     target_hard_collision_count_idx: int | None = None
     target_contact_max_normal_force_n_idx: int | None = None
+    min_distance_to_dig_area_idx: int | None = None
+    bucket_depth_below_dig_area_plane_idx: int | None = None
 
 
 @dataclass(frozen=True)
@@ -218,6 +224,8 @@ class AgxExcavationObservation:
     min_distance_to_target_m: float = -1.0
     target_hard_collision_count: float = 0.0
     target_contact_max_normal_force_n: float = 0.0
+    min_distance_to_dig_area_m: float = -1.0
+    bucket_depth_below_dig_area_plane_m: float = 0.0
 
     def value_for(self, signal_name: str) -> float:
         if signal_name == AGX_MASS_IN_BUCKET:
@@ -234,6 +242,10 @@ class AgxExcavationObservation:
             return self.target_hard_collision_count
         if signal_name == AGX_TARGET_CONTACT_MAX_NORMAL_FORCE_N:
             return self.target_contact_max_normal_force_n
+        if signal_name == AGX_MIN_DISTANCE_TO_DIG_AREA:
+            return self.min_distance_to_dig_area_m
+        if signal_name == AGX_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE:
+            return self.bucket_depth_below_dig_area_plane_m
         return 0.0
 
 
@@ -334,6 +346,8 @@ def build_agx_excavation_mission_overrides(
         "bucket_mass_delta_tol_kg",
         "target_mass_delta_tol_kg",
         "distance_progress_delta_m",
+        "dig_area_touch_tolerance_m",
+        "dig_below_plane_depth_tolerance_m",
     ):
         if key not in reward_cfg:
             continue
@@ -357,6 +371,8 @@ def resolve_agx_field_indices(env_state_order: Iterable[str]) -> AgxExcavationFi
         min_distance_to_target_idx=_lookup(AGX_MIN_DISTANCE_TO_TARGET),
         target_hard_collision_count_idx=_lookup(AGX_TARGET_HARD_COLLISION_COUNT),
         target_contact_max_normal_force_n_idx=_lookup(AGX_TARGET_CONTACT_MAX_NORMAL_FORCE_N),
+        min_distance_to_dig_area_idx=_lookup(AGX_MIN_DISTANCE_TO_DIG_AREA),
+        bucket_depth_below_dig_area_plane_idx=_lookup(AGX_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE),
     )
 
 
@@ -388,6 +404,11 @@ def decode_agx_env_state(
             0.0,
             _read(field_indices.target_contact_max_normal_force_n_idx, 0.0),
         ),
+        min_distance_to_dig_area_m=_read(field_indices.min_distance_to_dig_area_idx, -1.0),
+        bucket_depth_below_dig_area_plane_m=max(
+            0.0,
+            _read(field_indices.bucket_depth_below_dig_area_plane_idx, 0.0),
+        ),
     )
 
 
@@ -397,10 +418,15 @@ class AgxExcavationRewardTracker:
 
     This tracker does not enforce a hard stage machine. Instead, it attaches
     shaped reward to a set of observable sub-targets:
+    - opening the mission with a qualified DigArea good start when available
     - loading soil into the bucket
     - moving a meaningful load toward the active target
     - increasing mass retained in the active target
     - holding retained target mass above the configured success threshold
+
+    If the Unity server still exports the legacy shorter env_state layout, the
+    DigArea gate is disabled automatically and the older reward behavior is
+    preserved.
     """
 
     def __init__(
@@ -414,6 +440,11 @@ class AgxExcavationRewardTracker:
         self._success_consecutive_steps = 0
         self._success_latched = False
         self._last_phase = "idle"
+        self._good_dig_started = False
+        self._dig_area_gating_enabled = (
+            self._field_indices.min_distance_to_dig_area_idx is not None
+            and self._field_indices.bucket_depth_below_dig_area_plane_idx is not None
+        )
 
     @property
     def field_indices(self) -> AgxExcavationFieldIndices:
@@ -432,6 +463,7 @@ class AgxExcavationRewardTracker:
         self._success_consecutive_steps = 0
         self._success_latched = False
         self._last_phase = "idle"
+        self._good_dig_started = False
 
     def update(
         self,
@@ -453,6 +485,29 @@ class AgxExcavationRewardTracker:
             observation.target_hard_collision_count - previous.target_hard_collision_count,
         )
 
+        raw_load_progress = (
+            delta_bucket >= mission.bucket_mass_delta_tol_kg
+            or delta_excavated >= mission.bucket_mass_delta_tol_kg
+        )
+        has_valid_dig_area_distance = observation.min_distance_to_dig_area_m >= 0.0
+        touches_dig_area = (
+            has_valid_dig_area_distance
+            and observation.min_distance_to_dig_area_m <= mission.dig_area_touch_tolerance_m
+        )
+        digs_below_plane = (
+            observation.bucket_depth_below_dig_area_plane_m
+            >= mission.dig_below_plane_depth_tolerance_m
+        )
+        qualified_good_dig_step = (
+            raw_load_progress
+            and touches_dig_area
+            and digs_below_plane
+        )
+        was_good_dig_started = self._good_dig_started
+        if self._dig_area_gating_enabled and qualified_good_dig_step:
+            self._good_dig_started = True
+
+        good_dig_gate_open = (not self._dig_area_gating_enabled) or self._good_dig_started
         has_valid_distance = observation.min_distance_to_target_m >= 0.0
         previous_has_valid_distance = previous.min_distance_to_target_m >= 0.0
         distance_improvement = 0.0
@@ -461,11 +516,10 @@ class AgxExcavationRewardTracker:
                 previous.min_distance_to_target_m - observation.min_distance_to_target_m
             )
 
-        has_load_progress = (
-            delta_bucket >= mission.bucket_mass_delta_tol_kg
-            or delta_excavated >= mission.bucket_mass_delta_tol_kg
+        has_load_progress = raw_load_progress and good_dig_gate_open
+        has_load = good_dig_gate_open and (
+            observation.mass_in_bucket_kg >= mission.load_mass_threshold_kg
         )
-        has_load = observation.mass_in_bucket_kg >= mission.load_mass_threshold_kg
         approach_progress = (
             has_load
             and has_valid_distance
@@ -478,12 +532,18 @@ class AgxExcavationRewardTracker:
             and observation.min_distance_to_target_m <= mission.target_approach_distance_m
         )
         deposit_progress = (
-            delta_target >= mission.target_mass_delta_tol_kg
-            or delta_deposited >= mission.target_mass_delta_tol_kg
+            good_dig_gate_open
+            and (
+                delta_target >= mission.target_mass_delta_tol_kg
+                or delta_deposited >= mission.target_mass_delta_tol_kg
+            )
         )
         has_retained_mass = (
-            observation.deposited_mass_in_target_box_kg >= mission.deposit_started_threshold_kg
-            or observation.mass_in_target_box_kg >= mission.deposit_started_threshold_kg
+            good_dig_gate_open
+            and (
+                observation.deposited_mass_in_target_box_kg >= mission.deposit_started_threshold_kg
+                or observation.mass_in_target_box_kg >= mission.deposit_started_threshold_kg
+            )
         )
         unsafe_distance = (
             has_valid_distance
@@ -491,7 +551,8 @@ class AgxExcavationRewardTracker:
         )
         hard_target_collision = delta_target_hard_collision_count > 0.0
         spill_detected = (
-            previous.mass_in_bucket_kg >= mission.load_mass_threshold_kg * 0.5
+            good_dig_gate_open
+            and previous.mass_in_bucket_kg >= mission.load_mass_threshold_kg * 0.5
             and (previous.mass_in_bucket_kg - observation.mass_in_bucket_kg)
             >= mission.bucket_mass_delta_tol_kg
             and not deposit_progress
@@ -508,11 +569,17 @@ class AgxExcavationRewardTracker:
         if success_held:
             self._success_latched = True
 
-        load_component = float(
-            np.clip(observation.mass_in_bucket_kg / max(mission.load_mass_threshold_kg, 1.0), 0.0, 1.0)
-        )
-        if has_load_progress:
-            load_component = max(load_component, 0.25)
+        load_component = 0.0
+        if good_dig_gate_open:
+            load_component = float(
+                np.clip(
+                    observation.mass_in_bucket_kg / max(mission.load_mass_threshold_kg, 1.0),
+                    0.0,
+                    1.0,
+                )
+            )
+            if has_load_progress:
+                load_component = max(load_component, 0.25)
 
         approach_component = 0.0
         if has_load and has_valid_distance:
@@ -527,18 +594,20 @@ class AgxExcavationRewardTracker:
             if approach_progress:
                 approach_component = max(approach_component, 0.25)
 
-        deposit_component = float(
-            np.clip(
-                observation.deposited_mass_in_target_box_kg
-                / max(mission.success_mass_thresh, 1.0),
-                0.0,
-                1.0,
+        deposit_component = 0.0
+        if good_dig_gate_open:
+            deposit_component = float(
+                np.clip(
+                    observation.deposited_mass_in_target_box_kg
+                    / max(mission.success_mass_thresh, 1.0),
+                    0.0,
+                    1.0,
+                )
             )
-        )
-        if deposit_progress:
-            deposit_component = max(deposit_component, 0.25)
-        if has_retained_mass:
-            deposit_component = max(deposit_component, 0.10)
+            if deposit_progress:
+                deposit_component = max(deposit_component, 0.25)
+            if has_retained_mass:
+                deposit_component = max(deposit_component, 0.10)
 
         hold_component = 0.0
         if mission.success_hold_steps > 0:
@@ -574,6 +643,8 @@ class AgxExcavationRewardTracker:
         step_successes: list[str] = []
         step_failures: list[str] = []
 
+        if self._dig_area_gating_enabled and qualified_good_dig_step and not was_good_dig_started:
+            step_successes.append("good_dig_start")
         if has_load_progress:
             step_successes.append("load_progress")
         if (
@@ -601,6 +672,13 @@ class AgxExcavationRewardTracker:
         if self._success_latched and not was_success_latched:
             step_successes.append("mission_success")
 
+        if (
+            self._dig_area_gating_enabled
+            and raw_load_progress
+            and not was_good_dig_started
+            and not qualified_good_dig_step
+        ):
+            step_failures.append("load_outside_dig_area")
         if spill_detected:
             step_failures.append("spill_before_target")
         if unsafe_distance:
@@ -625,6 +703,8 @@ class AgxExcavationRewardTracker:
                 "min_distance_to_target_m": observation.min_distance_to_target_m,
                 "target_hard_collision_count": observation.target_hard_collision_count,
                 "target_contact_max_normal_force_n": observation.target_contact_max_normal_force_n,
+                "min_distance_to_dig_area_m": observation.min_distance_to_dig_area_m,
+                "bucket_depth_below_dig_area_plane_m": observation.bucket_depth_below_dig_area_plane_m,
                 "delta_target_hard_collision_count": delta_target_hard_collision_count,
                 "delta_mass_in_bucket_kg": delta_bucket,
                 "delta_excavated_mass_kg": delta_excavated,
@@ -633,6 +713,9 @@ class AgxExcavationRewardTracker:
                 "distance_improvement_m": distance_improvement,
                 "success_signal_value": success_signal_value,
                 "success_hold_steps": float(self._success_consecutive_steps),
+                "raw_load_progress": float(raw_load_progress),
+                "good_dig_started": float(self._good_dig_started),
+                "qualified_good_dig_step": float(qualified_good_dig_step),
                 "load_component": load_component,
                 "approach_component": approach_component,
                 "deposit_component": deposit_component,

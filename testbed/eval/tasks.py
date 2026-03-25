@@ -128,6 +128,8 @@ EVAL_TASKS: dict[str, EvalTaskDef] = {
             "unsafe_distance_penalty": 0.25,
             "hard_collision_penalty": 0.75,
             "spill_penalty": 0.25,
+            "dig_area_touch_tolerance_m": 0.05,
+            "dig_below_plane_depth_tolerance_m": 0.02,
         },
     ),
 }

@@ -71,6 +71,8 @@ reward:
   load_mass_threshold_kg:       100.0
   target_approach_distance_m:   1.25
   deposit_started_threshold_kg: 10.0
+  dig_area_touch_tolerance_m:   0.05
+  dig_below_plane_depth_tolerance_m: 0.02
   unsafe_distance_m:            0.20
   unsafe_distance_penalty:      0.25
   hard_collision_penalty:       0.75

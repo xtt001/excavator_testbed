@@ -66,6 +66,8 @@ def _build_get_info_response() -> bytes:
                 "min_distance_to_target_m",
                 "target_hard_collision_count",
                 "target_contact_max_normal_force_n",
+                "min_distance_to_dig_area_m",
+                "bucket_depth_below_dig_area_plane_m",
             ]
         )
     )
@@ -104,7 +106,7 @@ def _build_step_response(
     payload.write(np.int64(step_id).astype("<i8").tobytes())
     payload.write(_pack_float_array([0.1, 0.2, 0.3, 0.4]))
     payload.write(_pack_float_array([1.0, 2.0, 3.0, 4.0]))
-    payload.write(_pack_float_array([5.0, 6.0, 7.0, 8.0, 1.5, 0.0, 0.0]))
+    payload.write(_pack_float_array([5.0, 6.0, 7.0, 8.0, 1.5, 0.0, 0.0, 0.25, 0.0]))
     payload.write(_pack_string(IMAGE_PIXEL_FORMAT))
     payload.write((2).to_bytes(4, "little", signed=True))
     payload.write((1).to_bytes(4, "little", signed=True))
@@ -162,7 +164,10 @@ class AgxProtocolTests(unittest.TestCase):
             self.assertEqual(step.step_id, 7)
             np.testing.assert_allclose(step.qpos, [0.1, 0.2, 0.3, 0.4])
             np.testing.assert_allclose(step.qvel, [1.0, 2.0, 3.0, 4.0])
-            np.testing.assert_allclose(step.env_state, [5.0, 6.0, 7.0, 8.0, 1.5, 0.0, 0.0])
+            np.testing.assert_allclose(
+                step.env_state,
+                [5.0, 6.0, 7.0, 8.0, 1.5, 0.0, 0.0, 0.25, 0.0],
+            )
             self.assertEqual(step.decode_rgb_image().shape, (1, 2, 3))
 
         thread.join(timeout=1.0)
@@ -231,7 +236,7 @@ class AgxProtocolTests(unittest.TestCase):
             step_id=0,
             qpos=np.zeros(4, dtype=np.float32),
             qvel=np.zeros(4, dtype=np.float32),
-            env_state=np.zeros(7, dtype=np.float32),
+            env_state=np.zeros(9, dtype=np.float32),
             image_format=IMAGE_PIXEL_FORMAT,
             image_w=2,
             image_h=1,
@@ -259,28 +264,90 @@ class AgxProtocolTests(unittest.TestCase):
                 "min_distance_to_target_m",
                 "target_hard_collision_count",
                 "target_contact_max_normal_force_n",
+                "min_distance_to_dig_area_m",
+                "bucket_depth_below_dig_area_plane_m",
             ),
         )
 
         loaded = tracker.update(
-            np.array([120.0, 140.0, 0.0, 0.0, 2.0, 0.0, 0.0], dtype=np.float32)
+            np.array([120.0, 140.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.01, 0.04], dtype=np.float32)
         )
         self.assertEqual(loaded.phase_label, "loading")
         self.assertFalse(loaded.success)
+        self.assertIn("good_dig_start", loaded.step_successes)
 
         depositing = tracker.update(
-            np.array([20.0, 140.0, 30.0, 12.0, 0.8, 0.0, 0.0], dtype=np.float32)
+            np.array([20.0, 140.0, 30.0, 12.0, 0.8, 0.0, 0.0, 0.8, 0.0], dtype=np.float32)
         )
         self.assertEqual(depositing.phase_label, "depositing")
         self.assertFalse(depositing.success)
         self.assertIn("deposit_progress", depositing.step_successes)
 
         retained = tracker.update(
-            np.array([10.0, 140.0, 30.0, 12.0, 0.8, 0.0, 0.0], dtype=np.float32)
+            np.array([10.0, 140.0, 30.0, 12.0, 0.8, 0.0, 0.0, 0.8, 0.0], dtype=np.float32)
         )
         self.assertTrue(retained.success)
         self.assertEqual(retained.reward, 4.0)
         self.assertIn("mission_success", retained.step_successes)
+
+    def test_reward_tracker_blocks_load_progress_until_dig_area_good_start(self) -> None:
+        mission = get_agx_excavation_mission("agx_excavation_teleop")
+        tracker = AgxExcavationRewardTracker(
+            mission=mission,
+            env_state_order=(
+                "mass_in_bucket_kg",
+                "excavated_mass_kg",
+                "mass_in_target_box_kg",
+                "deposited_mass_in_target_box_kg",
+                "min_distance_to_target_m",
+                "target_hard_collision_count",
+                "target_contact_max_normal_force_n",
+                "min_distance_to_dig_area_m",
+                "bucket_depth_below_dig_area_plane_m",
+            ),
+        )
+
+        invalid_start = tracker.update(
+            np.array([120.0, 130.0, 0.0, 0.0, 1.8, 0.0, 0.0, 0.20, 0.0], dtype=np.float32)
+        )
+        self.assertEqual(invalid_start.phase_label, "idle")
+        self.assertEqual(invalid_start.reward, 0.0)
+        self.assertIn("load_outside_dig_area", invalid_start.step_failures)
+        self.assertNotIn("good_dig_start", invalid_start.step_successes)
+        self.assertEqual(invalid_start.metrics["good_dig_started"], 0.0)
+
+        valid_start = tracker.update(
+            np.array([130.0, 140.0, 0.0, 0.0, 2.2, 0.0, 0.0, 0.01, 0.05], dtype=np.float32)
+        )
+        self.assertEqual(valid_start.phase_label, "loading")
+        self.assertGreater(valid_start.reward, 0.0)
+        self.assertIn("good_dig_start", valid_start.step_successes)
+        self.assertEqual(valid_start.metrics["good_dig_started"], 1.0)
+
+    def test_reward_tracker_dig_area_defaults_do_not_false_positive(self) -> None:
+        mission = get_agx_excavation_mission("agx_excavation_teleop")
+        tracker = AgxExcavationRewardTracker(
+            mission=mission,
+            env_state_order=(
+                "mass_in_bucket_kg",
+                "excavated_mass_kg",
+                "mass_in_target_box_kg",
+                "deposited_mass_in_target_box_kg",
+                "min_distance_to_target_m",
+                "target_hard_collision_count",
+                "target_contact_max_normal_force_n",
+                "min_distance_to_dig_area_m",
+                "bucket_depth_below_dig_area_plane_m",
+            ),
+        )
+
+        result = tracker.update(
+            np.array([110.0, 130.0, 0.0, 0.0, 1.8, 0.0, 0.0, -1.0, 0.0], dtype=np.float32)
+        )
+        self.assertEqual(result.reward, 0.0)
+        self.assertEqual(result.phase_label, "idle")
+        self.assertIn("load_outside_dig_area", result.step_failures)
+        self.assertNotIn("good_dig_start", result.step_successes)
 
     def test_reward_tracker_defaults_missing_collision_signals_for_legacy_env_state(self) -> None:
         mission = get_agx_excavation_mission("agx_excavation_teleop")

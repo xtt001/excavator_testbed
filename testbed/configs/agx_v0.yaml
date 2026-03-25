@@ -20,3 +20,5 @@ agx:
   env_state_min_distance_to_target_idx: 4
   env_state_target_hard_collision_count_idx: 5
   env_state_target_contact_max_normal_force_n_idx: 6
+  env_state_min_distance_to_dig_area_idx: 7
+  env_state_bucket_depth_below_dig_area_plane_idx: 8

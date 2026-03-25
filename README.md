@@ -238,19 +238,22 @@ All messages share a 16-byte little-endian header:
 **Observation:**
 - `qpos (4,)` — `[swing, boom, stick, bucket]` position_norm `[0, 1]`
 - `qvel (4,)` — `[swing, boom, stick, bucket]` speed
-- `env_state (7,)` —
-  `[mass_in_bucket_kg, excavated_mass_kg, mass_in_target_box_kg, deposited_mass_in_target_box_kg, min_distance_to_target_m, target_hard_collision_count, target_contact_max_normal_force_n]`
+- `env_state (9,)` —
+  `[mass_in_bucket_kg, excavated_mass_kg, mass_in_target_box_kg, deposited_mass_in_target_box_kg, min_distance_to_target_m, target_hard_collision_count, target_contact_max_normal_force_n, min_distance_to_dig_area_m, bucket_depth_below_dig_area_plane_m]`
 - `images["fpv"]` — `(H, W, 3)` uint8
 
 Collision-field semantics:
+- `min_distance_to_target_m` is the approximate minimum distance between the bucket measurement volume and the active target measurement volume
 - `target_hard_collision_count` is cumulative within the current episode
 - a continuous excavator-vs-target contact session increments the count at most once
 - the count can increase again only after the excavator leaves the target and later touches it again
 - `target_contact_max_normal_force_n` is the current-step maximum monitored normal force
 - when the active target is `TruckBed`, collision monitoring covers the whole `BedTruck` hard body, not only the bed/trunk measurement region
+- `min_distance_to_dig_area_m` is the approximate minimum distance between the bucket measurement volume and the scene `DigArea`
+- `bucket_depth_below_dig_area_plane_m` is `max(0, dig_plane_y - bucket_world_min_y)` and only becomes positive when the bucket volume goes below the DigArea plane
 
 **Mission reward (Repo A / testbed):**
-- `loading`: reward grows once bucket load becomes meaningful
+- `loading`: reward grows only after a qualified DigArea good start, meaning bucket load increases while the bucket measurement volume touches the DigArea region and goes below the DigArea plane
 - `approaching_target`: reward grows when a loaded bucket moves closer to the active target
 - `depositing`: reward grows when target retained mass starts increasing
 - `retained_success`: reward reaches max when retained target mass stays above the success threshold long enough
@@ -265,7 +268,7 @@ Current reward/success ownership:
   as a backup success proxy
 - Repo A computes the excavation mission reward locally from exported `env_state`
 - success is computed from retained target mass, not from Unity reward
-- older 5D episodes remain readable; missing collision fields default to `0.0`
+- older 5D / 7D episodes remain readable; missing DigArea or collision fields fall back to legacy defaults
 
 Here "post-hoc" means:
 - first record the raw episode: observations, actions, images, env_state
@@ -302,7 +305,7 @@ episode_N.hdf5
 ├── observations/
 │   ├── qpos            (T, 4)  float32  [swing, boom, stick, bucket] position_norm
 │   ├── qvel            (T, 4)  float32  [swing, boom, stick, bucket] speed
-│   ├── env_state       (T, 7)  float32  [mass_in_bucket, excavated_mass, mass_in_target_box, deposited_mass_in_target_box, min_distance_to_target, target_hard_collision_count, target_contact_max_normal_force_n]
+│   ├── env_state       (T, 9)  float32  [mass_in_bucket, excavated_mass, mass_in_target_box, deposited_mass_in_target_box, min_distance_to_target, target_hard_collision_count, target_contact_max_normal_force_n, min_distance_to_dig_area, bucket_depth_below_dig_area_plane]
 │   └── images/fpv      (T, H, W, 3) uint8
 ├── action              (T, 4)  float32  [swing, boom, stick, bucket] speed cmd
 ├── rewards             (T,)    float32  testbed-defined AGX mission reward
