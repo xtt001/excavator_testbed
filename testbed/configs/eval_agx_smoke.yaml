@@ -13,6 +13,9 @@ eval:
   save_video: true
   video_dir: "runs/eval/agx_excavation_smoke"
   results_dir: "runs/eval/agx_excavation_smoke_results"
+  save_rollout_logs: true
+  rollout_log_dir: "runs/eval/agx_excavation_smoke_results/rollouts"
+  step_log_interval: 50
 
 success:
   signal_name: "deposited_mass_in_target_box_kg"

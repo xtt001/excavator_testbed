@@ -119,6 +119,16 @@ class TrainConfig(BaseModel):
     prefetch_factor: int = 2
     persistent_workers: bool = True
     pin_memory: bool = True
+    split_seed: int | None = None
+    train_split_ratio: float = 0.8
+    split_path: str | None = None
+    reuse_split: bool = True
+    val_every: int = 1
+    save_latest_every: int = 1
+    checkpoint_every: int = 100
+    plot_every: int = 100
+    amp: bool = False
+    amp_dtype: Literal["auto", "bf16", "fp16"] = "auto"
     resume_ckpt: str | None = None
 
 

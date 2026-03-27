@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import copy
+import datetime
 import pickle
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 
 def train_policy(config: dict[str, Any]) -> None:
@@ -22,12 +22,22 @@ def train_policy(config: dict[str, Any]) -> None:
     ckpt_dir      = Path(train_cfg.get("ckpt_dir", config.get("ckpt_dir", f"ckpts/{task_name}")))
     equipment_model = task_cfg.get("equipment_model", config.get("equipment_model", "excavator_simple"))
     device        = str(train_cfg.get("device", policy_cfg.get("device", "cuda")))
+    split_seed_raw = train_cfg.get("split_seed")
+    split_seed = int(train_cfg.get("seed", 0) if split_seed_raw is None else split_seed_raw)
+    train_split_ratio = float(train_cfg.get("train_split_ratio", 0.8))
+    reuse_split = bool(train_cfg.get("reuse_split", True))
+    split_path = Path(train_cfg.get("split_path", ckpt_dir / "train_val_split.yaml"))
 
     if policy_class != "ACT":
         raise NotImplementedError(f"Trainer for policy class {policy_class!r} not yet implemented.")
 
-    from testbed.data.dataset import load_data, get_norm_stats
+    from testbed.data.dataset import load_data
     from testbed.policies.act.trainer import ACTTrainer
+    from testbed.runtime.run_metadata import (
+        build_train_run_metadata,
+        write_json,
+        write_resolved_config,
+    )
 
     # build policy_config dict for ACTAdapter / detr
     act_params = policy_cfg.get("act_params", {})
@@ -54,22 +64,25 @@ def train_policy(config: dict[str, Any]) -> None:
         "device":         device,
         "resume_ckpt":    train_cfg.get("resume_ckpt"),
         "start_epoch":    train_cfg.get("start_epoch"),
+        "val_every":      int(train_cfg.get("val_every", 1)),
+        "save_latest_every": int(train_cfg.get("save_latest_every", 1)),
+        "checkpoint_every": int(train_cfg.get("checkpoint_every", 100)),
+        "plot_every":     int(train_cfg.get("plot_every", train_cfg.get("checkpoint_every", 100))),
+        "amp":            bool(train_cfg.get("amp", False)),
+        "amp_dtype":      str(train_cfg.get("amp_dtype", "auto")),
+        "split_seed":     split_seed,
+        "train_split_ratio": train_split_ratio,
+        "reuse_split":    reuse_split,
+        "split_path":     str(split_path),
     }
 
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-
-    # save normalisation stats so trainer can load them
-    stats = get_norm_stats(dataset_dir, num_episodes)
-    stats_path = ckpt_dir / "dataset_stats.pkl"
-    with open(stats_path, "wb") as f:
-        pickle.dump(stats, f)
-    print(f"Saved normalisation stats to {stats_path}")
 
     batch_size   = int(train_cfg.get("batch_size", 8))
     num_workers  = int(train_cfg.get("num_workers", 4))
     pf_raw       = train_cfg.get("prefetch_factor", 2)
     prefetch_factor = int(pf_raw) if pf_raw is not None and num_workers > 0 else None
-    train_loader, val_loader, _, _ = load_data(
+    train_loader, val_loader, norm_stats, _, split_info = load_data(
         dataset_dir  = dataset_dir,
         num_episodes = num_episodes,
         camera_names = camera_names,
@@ -79,7 +92,82 @@ def train_policy(config: dict[str, Any]) -> None:
         prefetch_factor    = prefetch_factor,
         persistent_workers = bool(train_cfg.get("persistent_workers", True)) and num_workers > 0,
         pin_memory         = bool(train_cfg.get("pin_memory", True)),
+        split_seed         = split_seed,
+        train_split_ratio  = train_split_ratio,
+        split_path         = split_path,
+        reuse_split        = reuse_split,
     )
 
+    # save normalisation stats so trainer can load them
+    stats_path = ckpt_dir / "dataset_stats.pkl"
+    with open(stats_path, "wb") as f:
+        pickle.dump(norm_stats, f)
+    print(f"Saved normalisation stats to {stats_path}")
+
+    resolved_config = _build_resolved_train_config(
+        config=config,
+        dataset_dir=dataset_dir,
+        ckpt_dir=ckpt_dir,
+        split_path=split_path,
+        full_config=full_config,
+    )
+    resolved_config_path = write_resolved_config(ckpt_dir / "resolved_config.yaml", resolved_config)
+    run_metadata = build_train_run_metadata(
+        dataset_dir=dataset_dir,
+        ckpt_dir=ckpt_dir,
+        resolved_config_path=resolved_config_path,
+        dataset_stats_path=stats_path,
+        split_info=split_info,
+        policy_class=policy_class,
+        task_name=task_name,
+        device=device,
+    )
+    run_metadata["status"] = "started"
+    run_metadata_path = write_json(ckpt_dir / "run_metadata.json", run_metadata)
+    print(f"Saved resolved config to {resolved_config_path}")
+    print(f"Saved run metadata to {run_metadata_path}")
+
     trainer = ACTTrainer(policy_config=policy_config, config=full_config)
-    trainer.fit(train_loader, val_loader, full_config)
+    try:
+        best_epoch, best_val_loss, _ = trainer.fit(train_loader, val_loader, full_config)
+    except Exception as exc:
+        run_metadata["status"] = "failed"
+        run_metadata["completed_at"] = datetime.datetime.utcnow().isoformat()
+        run_metadata["error"] = f"{type(exc).__name__}: {exc}"
+        write_json(run_metadata_path, run_metadata)
+        raise
+
+    run_metadata["status"] = "completed"
+    run_metadata["completed_at"] = datetime.datetime.utcnow().isoformat()
+    run_metadata["training_result"] = {
+        "best_epoch": int(best_epoch),
+        "best_val_loss": float(best_val_loss),
+    }
+    write_json(run_metadata_path, run_metadata)
+
+
+def _build_resolved_train_config(
+    *,
+    config: dict[str, Any],
+    dataset_dir: Path,
+    ckpt_dir: Path,
+    split_path: Path,
+    full_config: dict[str, Any],
+) -> dict[str, Any]:
+    resolved = copy.deepcopy(config)
+    task_cfg = resolved.setdefault("task", {})
+    train_cfg = resolved.setdefault("train", {})
+
+    task_cfg["dataset_dir"] = str(dataset_dir)
+    train_cfg["ckpt_dir"] = str(ckpt_dir)
+    train_cfg["split_path"] = str(split_path)
+    train_cfg["split_seed"] = int(full_config["split_seed"])
+    train_cfg["train_split_ratio"] = float(full_config["train_split_ratio"])
+    train_cfg["reuse_split"] = bool(full_config["reuse_split"])
+    train_cfg["val_every"] = int(full_config["val_every"])
+    train_cfg["save_latest_every"] = int(full_config["save_latest_every"])
+    train_cfg["checkpoint_every"] = int(full_config["checkpoint_every"])
+    train_cfg["plot_every"] = int(full_config["plot_every"])
+    train_cfg["amp"] = bool(full_config["amp"])
+    train_cfg["amp_dtype"] = str(full_config["amp_dtype"])
+    return resolved

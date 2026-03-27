@@ -28,10 +28,25 @@ train:
   batch_size: 8
   seed: 0
   device: cuda
-  num_workers: 4
-  prefetch_factor: 2
-  persistent_workers: true
+  # HDF5 per-sample open + multi-worker loading causes visible jitter here.
+  # Start with 0 workers, then benchmark before scaling it up.
+  num_workers: 0
+  prefetch_factor:
+  persistent_workers: false
   pin_memory: true
+  # Freeze the split per run by saving it under ckpt_dir.
+  split_seed: 0
+  train_split_ratio: 0.8
+  reuse_split: true
+  # split_path defaults to <ckpt_dir>/train_val_split.yaml when omitted.
+  # Lower validation / checkpoint cadence improves wall-clock throughput.
+  val_every: 5
+  save_latest_every: 10
+  checkpoint_every: 100
+  plot_every: 100
+  # AMP is opt-in at config level so experiments can record the exact dtype.
+  amp: true
+  amp_dtype: auto
   ckpt_dir: runs/ckpts/agx_excavation_act_v0
   # To resume training, uncomment the two lines below and set the correct epoch:
   # resume_ckpt: runs/ckpts/agx_excavation_act_v0/policy_epoch_400_seed_0.ckpt

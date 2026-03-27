@@ -13,7 +13,7 @@ Loop (per episode)
   2. JoystickActionSource.next_action(obs) → action
   3. AGXSimBackend.step(action)      → next obs, reward
   4. EpisodeRecorder.record(obs, action, ...)
-  5. on Q-key / max_steps reached → EpisodeRecorder.save()
+  5. on task success / Q-key / max_steps reached → EpisodeRecorder.save()
 
 Stop session:   Ctrl+C  (saves the current partial episode first).
 Discard episode: press D key before saving (episode not counted).
@@ -44,16 +44,20 @@ from testbed.data.schema import (
     ATTR_CAMERA_WIDTH,
     ATTR_DEADZONE,
     ATTR_DT,
+    ATTR_EPISODE_ID,
     ATTR_ENV_STATE_ORDER,
     ATTR_IMAGE_FORMAT,
     ATTR_INVERT,
     ATTR_JOYSTICK_IDS,
     ATTR_KEY_SPEED,
     ATTR_LIMIT,
+    ATTR_NOTES,
     ATTR_PARAM_VERSION,
     ATTR_PROTOCOL_VERSION,
     ATTR_QPOS_ORDER,
     ATTR_QVEL_ORDER,
+    ATTR_RECORD_CONFIG_PATH,
+    ATTR_RECORD_CONFIG_YAML,
     ATTR_RESPONSE_PROFILE_ATTACK_RATE,
     ATTR_RESPONSE_PROFILE_ENABLED,
     ATTR_RESPONSE_PROFILE_EXPONENT,
@@ -61,10 +65,12 @@ from testbed.data.schema import (
     ATTR_RESPONSE_PROFILE_RELEASE_RATE,
     ATTR_SCALE,
     ATTR_SEED,
+    ATTR_SESSION_ID,
     ATTR_SIM_BACKEND,
     ATTR_TASK_NAME,
     ATTR_TELEOP_INPUT,
     ATTR_CONTROL_HZ,
+    ATTR_OPERATOR_ID,
 )
 
 log = logging.getLogger(__name__)
@@ -77,6 +83,10 @@ def _action_control_flags(ainfo) -> tuple[bool, bool, bool]:
         bool(extras.get("discard_requested", False)),
         bool(extras.get("quit_requested", False)),
     )
+
+
+def _should_stop_on_success(*, episode_success: bool, stop_on_success: bool) -> bool:
+    return bool(stop_on_success and episode_success)
 
 
 def main() -> None:
@@ -99,27 +109,57 @@ def main() -> None:
                         help="Override seed for all resets.")
     parser.add_argument("--input", choices=["joystick", "keyboard"], default=None,
                         help="Override teleop.input from config.")
+    parser.add_argument("--operator-id", type=str, default=None,
+                        help="Optional operator ID saved into episode metadata.")
+    parser.add_argument("--session-id", type=str, default=None,
+                        help="Optional session ID saved into episode metadata.")
+    parser.add_argument("--notes", type=str, default=None,
+                        help="Optional notes saved into episode metadata.")
     args = parser.parse_args()
 
     # ── Load config ───────────────────────────────────────────────────────────
     with open(args.config) as f:
         cfg: dict = yaml.safe_load(f) or {}
 
+    teleop_cfg = cfg.setdefault("teleop", {})
+    task_cfg = cfg.setdefault("task", {})
+    teleop_meta_cfg = teleop_cfg.setdefault("metadata", {})
+    if args.num_episodes is not None:
+        teleop_cfg["num_episodes"] = int(args.num_episodes)
+    if args.output_dir is not None:
+        task_cfg["dataset_dir"] = str(args.output_dir)
+    if args.seed is not None:
+        task_cfg["seed"] = int(args.seed)
+    if args.input is not None:
+        teleop_cfg["input"] = args.input
+    if args.operator_id is not None:
+        teleop_meta_cfg["operator_id"] = args.operator_id
+    if args.session_id is not None:
+        teleop_meta_cfg["session_id"] = args.session_id
+    if args.notes is not None:
+        teleop_meta_cfg["notes"] = args.notes
+
     agx_cfg    = cfg.get("agx", {})
-    teleop_cfg = cfg.get("teleop", {})
-    task_cfg   = cfg.get("task", {})
     success_cfg = cfg.get("success", {})
     reward_cfg = cfg.get("reward", {})
 
-    num_episodes = args.num_episodes or teleop_cfg.get("num_episodes", 10)
-    dataset_dir  = Path(args.output_dir or task_cfg.get("dataset_dir", "data/agx_teleop"))
-    seed         = args.seed if args.seed is not None else task_cfg.get("seed", -1)
+    num_episodes = int(teleop_cfg.get("num_episodes", 10))
+    dataset_dir  = Path(task_cfg.get("dataset_dir", "data/agx_teleop"))
+    seed         = int(task_cfg.get("seed", -1))
     max_steps    = task_cfg.get("max_steps", 500)
-    input_device = args.input or teleop_cfg.get("input", "joystick")
+    input_device = str(teleop_cfg.get("input", "joystick"))
+    stop_on_success = bool(teleop_cfg.get("stop_on_success", True))
     camera_names: list[str] = task_cfg.get("camera_names", ["fpv"])
+    record_config_yaml = yaml.safe_dump(cfg, sort_keys=False)
 
-    log.info("Config: %d episodes → %s  max_steps=%d  input=%s",
-             num_episodes, dataset_dir, max_steps, input_device)
+    log.info(
+        "Config: %d episodes → %s  max_steps=%d  input=%s  stop_on_success=%s",
+        num_episodes,
+        dataset_dir,
+        max_steps,
+        input_device,
+        stop_on_success,
+    )
 
     # ── Build backend ─────────────────────────────────────────────────────────
     from testbed.backends.agx.backend import AGXSimBackend
@@ -161,6 +201,8 @@ def main() -> None:
         teleop_cfg=teleop_cfg,
         input_device=input_device,
         camera_names=camera_names,
+        config_path=args.config.resolve(),
+        record_config_yaml=record_config_yaml,
     )
 
     # ── Graceful shutdown on Ctrl+C ───────────────────────────────────────────
@@ -185,6 +227,7 @@ def main() -> None:
             ep_seed = seed if seed >= 0 else int(time.time()) % (2**31)
             meta = dict(base_meta)
             meta[ATTR_SEED] = ep_seed
+            meta[ATTR_EPISODE_ID] = f"episode_{episode_idx}"
 
             recorder = EpisodeRecorder(
                 output_dir=dataset_dir,
@@ -243,6 +286,16 @@ def main() -> None:
                 )
                 episode_success = episode_success or bool(ts_next.info.get("task_success", False))
                 ts = ts_next
+
+                if _should_stop_on_success(
+                    episode_success=episode_success,
+                    stop_on_success=stop_on_success,
+                ):
+                    log.info(
+                        "Episode reached task success at step %d and will end early.",
+                        local_step + 1,
+                    )
+                    break
 
                 # Enforce control rate
                 _sleep_to_rate(task_cfg.get("control_hz", 50))
@@ -312,10 +365,6 @@ def _check_pygame_events(action_source) -> tuple[bool, bool]:
     return False, False
 
 
-if __name__ == "__main__":
-    main()
-
-
 def _build_episode_metadata(
     *,
     info,
@@ -323,6 +372,8 @@ def _build_episode_metadata(
     teleop_cfg: dict,
     input_device: str,
     camera_names: list[str],
+    config_path: Path | None = None,
+    record_config_yaml: str | None = None,
 ) -> dict:
     metadata: dict[str, object] = {
         ATTR_TASK_NAME: task_cfg.get("task_name", "agx_excavation_teleop"),
@@ -340,6 +391,18 @@ def _build_episode_metadata(
         ATTR_ENV_STATE_ORDER: ",".join(info.env_state_order),
         ATTR_TELEOP_INPUT: input_device,
     }
+
+    metadata_cfg = teleop_cfg.get("metadata", {})
+    if metadata_cfg.get("operator_id"):
+        metadata[ATTR_OPERATOR_ID] = str(metadata_cfg["operator_id"])
+    if metadata_cfg.get("session_id"):
+        metadata[ATTR_SESSION_ID] = str(metadata_cfg["session_id"])
+    if metadata_cfg.get("notes"):
+        metadata[ATTR_NOTES] = str(metadata_cfg["notes"])
+    if config_path is not None:
+        metadata[ATTR_RECORD_CONFIG_PATH] = str(config_path)
+    if record_config_yaml:
+        metadata[ATTR_RECORD_CONFIG_YAML] = str(record_config_yaml)
 
     camera_by_name = {camera.name: camera for camera in info.cameras}
     if len(camera_names) == 1 and camera_names[0] in camera_by_name:
@@ -408,3 +471,7 @@ def _validate_requested_cameras(
             "Requested camera(s) not advertised by Unity GET_INFO: "
             + ", ".join(missing)
         )
+
+
+if __name__ == "__main__":
+    main()

@@ -34,6 +34,7 @@ from typing import Any
 import numpy as np
 
 from testbed.data.hdf5_io import write_episode
+from testbed.data.schema import ATTR_EPISODE_ID
 
 
 class EpisodeRecorder:
@@ -140,6 +141,7 @@ class EpisodeRecorder:
         path = self.output_dir / f"episode_{self.episode_idx}.hdf5"
 
         meta = dict(self.metadata)
+        meta.setdefault(ATTR_EPISODE_ID, f"episode_{self.episode_idx}")
         meta["success"]   = int(success)
         meta["timestamp"] = datetime.datetime.utcnow().isoformat()
         meta["n_steps"]   = len(self._qpos)

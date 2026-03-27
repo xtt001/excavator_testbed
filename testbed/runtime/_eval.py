@@ -46,6 +46,9 @@ def eval_policy(config: dict[str, Any]) -> None:
         ckpt_path = ckpt_dir / "policy_best.ckpt"
     video_dir       = Path(eval_cfg.get("video_dir", ckpt_dir / "eval_videos"))
     results_dir     = Path(eval_cfg.get("results_dir", ckpt_dir / "eval_results"))
+    save_rollout_logs = bool(eval_cfg.get("save_rollout_logs", True))
+    rollout_log_dir = Path(eval_cfg.get("rollout_log_dir", results_dir / "rollouts"))
+    step_log_interval = int(eval_cfg.get("step_log_interval", 50))
     agx_host        = str(agx_cfg.get("host", "127.0.0.1"))
     agx_port        = int(agx_cfg.get("port", 5057))
     agx_timeout     = float(agx_cfg.get("timeout", 10.0))
@@ -107,7 +110,11 @@ def eval_policy(config: dict[str, Any]) -> None:
         num_rollouts = num_rollouts,
         save_video   = save_video,
         video_dir    = video_dir,
+        results_dir  = results_dir,
         ckpt_path    = str(ckpt_path),
+        save_rollout_logs = save_rollout_logs,
+        rollout_log_dir   = rollout_log_dir,
+        step_log_interval = step_log_interval,
         agx_host     = agx_host,
         agx_port     = agx_port,
         agx_timeout  = agx_timeout,

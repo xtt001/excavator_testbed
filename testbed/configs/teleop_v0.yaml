@@ -14,6 +14,11 @@ agx:
 teleop:
   input:         "joystick"     # "joystick" | "keyboard"
   num_episodes:  20
+  stop_on_success: true         # stop recording as soon as task_success becomes true
+  metadata:
+    operator_id: ""
+    session_id: ""
+    notes: ""
 
   joystick:
     joystick_id: 0              # fallback for single-device setups
@@ -55,6 +60,11 @@ task:
   task_name:     "agx_excavation_teleop"
   dataset_dir:   "data/agx_teleop"
   camera_names:  ["fpv"]
+  # Runtime image resolution comes from Unity GET_INFO camera descriptors and is
+  # saved into each episode's metadata as camera_width / camera_height / camera_fps.
+  # Keep this fixed across a baseline run. High-resolution FPV (e.g. 1920x1060)
+  # has already been observed to cause step-ack jitter; prefer the lower
+  # fixed resolution that keeps live teleop smooth.
   max_steps:     1000           # 20s @ 50Hz
   control_hz:    50
   dt:            0.02

@@ -6,6 +6,7 @@ Design goals:
   • Evaluation conditions (seed, tasks, cameras, episode_len) are fixed in
     testbed/eval/tasks.py; do NOT add random elements here.
   • Produces per-rollout MP4 videos with overlays when save_video=True.
+  • Optionally writes per-rollout JSONL logs plus summary / manifest files.
   • Returns EvalMetrics which can be serialised to JSON/CSV.
 
 Success rules
@@ -21,6 +22,12 @@ from pathlib import Path
 
 import numpy as np
 
+from testbed.eval.rollout_logs import (
+    build_rollout_manifest,
+    build_rollout_summary,
+    write_json,
+    write_jsonl,
+)
 from testbed.eval.metrics import EvalMetrics
 from testbed.eval.tasks import EVAL_SEED, EvalTaskDef, get_eval_task
 from testbed.eval.video import save_eval_video
@@ -42,9 +49,13 @@ class EvalSuite:
     num_rollouts Number of rollouts to run (default 50).
     save_video   If True, write per-rollout MP4 to video_dir.
     video_dir    Directory for MP4 files.
+    results_dir  Root directory for eval result artifacts.
     agx_host     AGX machine host (only used when backend_type=="agx").
     agx_port     AGX machine port (only used when backend_type=="agx").
     agx_timeout  AGX socket timeout seconds (only used when backend_type=="agx").
+    save_rollout_logs  If True, write JSONL timestep logs and summaries.
+    rollout_log_dir    Directory for rollout_XXX.jsonl and summary files.
+    step_log_interval  Print step progress every N steps during rollout.
     mass_thresh  Override task.mass_thresh (AGX success threshold).
     hold_steps   Override task.hold_steps for AGX success.
     success_signal_name  Override task.success_signal_name for AGX success.
@@ -59,7 +70,11 @@ class EvalSuite:
         num_rollouts: int = 50,
         save_video: bool = True,
         video_dir: str | Path | None = None,
+        results_dir: str | Path | None = None,
         ckpt_path: str = "",
+        save_rollout_logs: bool = True,
+        rollout_log_dir: str | Path | None = None,
+        step_log_interval: int = 50,
         agx_host: str = "127.0.0.1",
         agx_port: int = 5057,
         agx_timeout: float = 10.0,
@@ -74,6 +89,8 @@ class EvalSuite:
         self.num_rollouts = num_rollouts
         self.save_video   = save_video
         self.ckpt_path    = ckpt_path
+        self.save_rollout_logs = bool(save_rollout_logs)
+        self.step_log_interval = max(0, int(step_log_interval))
         self.agx_host     = agx_host
         self.agx_port     = agx_port
         self.agx_timeout  = agx_timeout
@@ -99,6 +116,15 @@ class EvalSuite:
             policy_name = type(policy).__name__
             video_dir = Path("runs") / "eval" / task_name / policy_name
         self.video_dir = Path(video_dir)
+        self.results_dir = None if results_dir is None else Path(results_dir)
+        if rollout_log_dir is None:
+            default_results_dir = (
+                self.results_dir
+                if self.results_dir is not None
+                else self.video_dir.parent / "results"
+            )
+            rollout_log_dir = default_results_dir / "rollouts"
+        self.rollout_log_dir = Path(rollout_log_dir)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -112,6 +138,7 @@ class EvalSuite:
         highest_rewards:  list[float] = []
         episode_lengths:  list[int]   = []
         successes:        list[bool]  = []
+        rollout_summaries: list[dict[str, object]] = []
         policy_name = type(self.policy).__name__
 
         try:
@@ -130,6 +157,7 @@ class EvalSuite:
                 env_states:   list[np.ndarray] = []
                 phase_labels: list[str]        = []
                 success_flags: list[bool]      = []
+                step_records: list[dict[str, object]] = []
 
                 for t in range(task.episode_len):
                     obs = ts.observation
@@ -150,14 +178,49 @@ class EvalSuite:
 
                     r = float(ts.reward) if ts.reward is not None else 0.0
                     rewards.append(r)
+                    reward_phase = str(ts.info.get("reward_phase", obs.get("reward_phase", "")))
+                    task_success = bool(ts.info.get("task_success", obs.get("task_success", False)))
+                    task_step_successes = list(
+                        ts.info.get("task_step_successes", obs.get("task_step_successes", []))
+                    )
+                    task_step_failures = list(
+                        ts.info.get("task_step_failures", obs.get("task_step_failures", []))
+                    )
+                    task_metrics = dict(
+                        ts.info.get("task_metrics", obs.get("task_metrics", {}))
+                    )
+                    warnings = list(ts.info.get("warnings", obs.get("warnings", [])))
+                    step_records.append(
+                        {
+                            "rollout_id": int(rollout_id),
+                            "t": int(t),
+                            "step_id": int(obs.get("step_id", t)),
+                            "sim_time_ns": int(obs.get("sim_time_ns", ts.info.get("sim_time_ns", 0))),
+                            "reward": r,
+                            "reward_phase": reward_phase,
+                            "task_success": task_success,
+                            "task_step_successes": task_step_successes,
+                            "task_step_failures": task_step_failures,
+                            "task_metrics": task_metrics,
+                            "qpos": np.array(obs.get("qpos", []), dtype=np.float32),
+                            "qvel": np.array(obs.get("qvel", []), dtype=np.float32),
+                            "env_state": (
+                                None
+                                if obs.get("env_state") is None
+                                else np.array(obs.get("env_state"), dtype=np.float32)
+                            ),
+                            "action": np.array(action, dtype=np.float32),
+                            "warnings": warnings,
+                        }
+                    )
 
                     # AGX: track env_state for mass-based success
                     if task.backend_type == "agx":
                         es = ts.observation.get("env_state")
                         if es is not None:
                             env_states.append(np.array(es, dtype=np.float32))
-                        phase_labels.append(str(ts.info.get("reward_phase", "idle")))
-                        success_flags.append(bool(ts.info.get("task_success", False)))
+                        phase_labels.append(reward_phase or "idle")
+                        success_flags.append(task_success)
 
                     # Video frames
                     if self.save_video and task.camera_names:
@@ -165,6 +228,11 @@ class EvalSuite:
                         frame = ts.observation.get("images", {}).get(cam0)
                         if frame is not None:
                             frames.append(frame)
+
+                    if self._should_log_step_progress(t + 1, task.episode_len):
+                        print(
+                            f"  rollout {rollout_id:03d}  step {t + 1} / {task.episode_len}"
+                        )
 
                 # ── Success detection ─────────────────────────────────────────
                 if task.backend_type == "agx":
@@ -195,20 +263,53 @@ class EvalSuite:
                     f"success={'✓' if success else '✗'}"
                 )
 
+                video_path = ""
                 if self.save_video and frames:
                     self.video_dir.mkdir(parents=True, exist_ok=True)
                     dt = getattr(env, "dt", 0.02)
+                    output_video_path = self.video_dir / f"rollout_{rollout_id:03d}.mp4"
                     save_eval_video(
                         frames=frames,
                         dt=dt,
-                        video_path=self.video_dir / f"rollout_{rollout_id:03d}.mp4",
+                        video_path=output_video_path,
                         reward_curve=rewards,
                         phase_labels=phase_labels if phase_labels else None,
                         success=success,
                     )
+                    video_path = str(output_video_path)
+
+                if self.save_rollout_logs:
+                    summary = build_rollout_summary(
+                        rollout_id=rollout_id,
+                        success=success,
+                        rewards=rewards,
+                        step_records=step_records,
+                        video_path=video_path,
+                    )
+                    jsonl_path = self.rollout_log_dir / f"rollout_{rollout_id:03d}.jsonl"
+                    summary_path = self.rollout_log_dir / f"rollout_{rollout_id:03d}_summary.json"
+                    write_jsonl(jsonl_path, step_records)
+                    write_json(summary_path, summary)
+                    summary["jsonl_path"] = str(jsonl_path)
+                    summary["summary_path"] = str(summary_path)
+                    rollout_summaries.append(summary)
         finally:
             if hasattr(env, "close"):
                 env.close()
+
+        if self.save_rollout_logs:
+            manifest_dir = self.results_dir if self.results_dir is not None else self.rollout_log_dir.parent
+            manifest_path = manifest_dir / "rollout_manifest.json"
+            write_json(
+                manifest_path,
+                build_rollout_manifest(
+                    task_name=task.name,
+                    policy_name=policy_name,
+                    ckpt_path=self.ckpt_path,
+                    rollout_log_dir=self.rollout_log_dir,
+                    rollouts=rollout_summaries,
+                ),
+            )
 
         metrics = EvalMetrics.from_rollouts(
             task_name       = task.name,
@@ -222,6 +323,11 @@ class EvalSuite:
         )
         print("\n" + metrics.summary())
         return metrics
+
+    def _should_log_step_progress(self, step_index: int, episode_len: int) -> bool:
+        if self.step_log_interval <= 0:
+            return False
+        return (step_index % self.step_log_interval == 0) or (step_index == episode_len)
 
     # ── Environment factory ───────────────────────────────────────────────────
 

@@ -7,11 +7,14 @@ docstrings. Public API is backward-compatible with legacy callers.
 
 from __future__ import annotations
 
+import datetime
 import os
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
+import yaml
 from torch.utils.data import DataLoader, Dataset
 
 from testbed.data.hdf5_io import list_episodes
@@ -207,13 +210,18 @@ def load_data(
     prefetch_factor: int = 1,
     persistent_workers: bool = False,
     pin_memory: bool = True,
-) -> tuple[DataLoader, DataLoader, dict, bool]:
+    *,
+    split_seed: int = 0,
+    train_split_ratio: float = 0.8,
+    split_path: str | Path | None = None,
+    reuse_split: bool = True,
+) -> tuple[DataLoader, DataLoader, dict, bool, dict[str, Any]]:
     """
     Build train/val DataLoaders from an HDF5 dataset directory.
 
     Returns
     -------
-    train_loader, val_loader, norm_stats, is_sim
+    train_loader, val_loader, norm_stats, is_sim, split_info
     """
     dataset_dir = Path(dataset_dir)
     print(f"\nData from: {dataset_dir}\n")
@@ -265,11 +273,15 @@ def load_data(
             "Re-collect data with `tb-record`."
         )
 
-    # 80/20 train/val split
-    shuffled = list(np.random.permutation(available))
-    split    = int(0.8 * len(shuffled))
-    train_ids = shuffled[:split]
-    val_ids   = shuffled[split:]
+    train_ids, val_ids, split_info = _resolve_episode_split(
+        dataset_dir=dataset_dir,
+        available_episode_ids=available,
+        requested_num_episodes=int(num_episodes),
+        split_seed=int(split_seed),
+        train_split_ratio=float(train_split_ratio),
+        split_path=None if split_path is None else Path(split_path),
+        reuse_split=bool(reuse_split),
+    )
 
     norm_stats = get_norm_stats(dataset_dir, num_episodes, episode_ids=available)
 
@@ -284,4 +296,116 @@ def load_data(
     train_loader = DataLoader(train_ds, batch_size=batch_size_train, shuffle=True,  **loader_kw)
     val_loader   = DataLoader(val_ds,   batch_size=batch_size_val,   shuffle=True,  **loader_kw)
 
-    return train_loader, val_loader, norm_stats, train_ds.is_sim
+    return train_loader, val_loader, norm_stats, train_ds.is_sim, split_info
+
+
+def _resolve_episode_split(
+    *,
+    dataset_dir: Path,
+    available_episode_ids: list[int],
+    requested_num_episodes: int,
+    split_seed: int,
+    train_split_ratio: float,
+    split_path: Path | None,
+    reuse_split: bool,
+) -> tuple[list[int], list[int], dict[str, Any]]:
+    if split_path is not None and split_path.exists() and reuse_split:
+        split_info = _load_split_file(split_path)
+        _validate_saved_split(
+            split_info=split_info,
+            dataset_dir=dataset_dir,
+            available_episode_ids=available_episode_ids,
+        )
+        train_ids = [int(ep_id) for ep_id in split_info["train_ids"]]
+        val_ids = [int(ep_id) for ep_id in split_info["val_ids"]]
+        split_info["reused_existing_split"] = True
+        return train_ids, val_ids, split_info
+
+    train_ids, val_ids = _generate_episode_split(
+        available_episode_ids=available_episode_ids,
+        split_seed=split_seed,
+        train_split_ratio=train_split_ratio,
+    )
+    split_info = {
+        "schema_version": 1,
+        "generated_at": datetime.datetime.utcnow().isoformat(),
+        "dataset_dir": str(dataset_dir.resolve()),
+        "requested_num_episodes": int(requested_num_episodes),
+        "available_episode_ids": [int(ep_id) for ep_id in available_episode_ids],
+        "split_seed": int(split_seed),
+        "train_split_ratio": float(train_split_ratio),
+        "train_ids": [int(ep_id) for ep_id in train_ids],
+        "val_ids": [int(ep_id) for ep_id in val_ids],
+        "reused_existing_split": False,
+    }
+
+    if split_path is not None:
+        split_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(split_path, "w") as f:
+            yaml.safe_dump(split_info, f, sort_keys=False)
+        split_info["split_path"] = str(split_path)
+    else:
+        split_info["split_path"] = ""
+
+    return train_ids, val_ids, split_info
+
+
+def _generate_episode_split(
+    *,
+    available_episode_ids: list[int],
+    split_seed: int,
+    train_split_ratio: float,
+) -> tuple[list[int], list[int]]:
+    available = [int(ep_id) for ep_id in available_episode_ids]
+    if not available:
+        raise ValueError("Cannot generate split from an empty episode list.")
+
+    ratio = float(np.clip(train_split_ratio, 0.0, 1.0))
+    shuffled = list(np.random.default_rng(split_seed).permutation(available))
+
+    if len(shuffled) == 1:
+        # For tiny smoke/overfit runs, share the only episode across train/val.
+        single = [int(shuffled[0])]
+        return single, single
+
+    split = int(round(ratio * len(shuffled)))
+    split = min(max(split, 1), len(shuffled) - 1)
+    return shuffled[:split], shuffled[split:]
+
+
+def _load_split_file(path: Path) -> dict[str, Any]:
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"Invalid split file format at {path}. Expected a mapping.")
+    data["split_path"] = str(path)
+    return data
+
+
+def _validate_saved_split(
+    *,
+    split_info: dict[str, Any],
+    dataset_dir: Path,
+    available_episode_ids: list[int],
+) -> None:
+    expected_dataset_dir = str(dataset_dir.resolve())
+    saved_dataset_dir = str(split_info.get("dataset_dir", ""))
+    if saved_dataset_dir and saved_dataset_dir != expected_dataset_dir:
+        raise ValueError(
+            "Saved split file dataset_dir does not match current dataset_dir: "
+            f"{saved_dataset_dir} != {expected_dataset_dir}"
+        )
+
+    available = {int(ep_id) for ep_id in available_episode_ids}
+    train_ids = [int(ep_id) for ep_id in split_info.get("train_ids", [])]
+    val_ids = [int(ep_id) for ep_id in split_info.get("val_ids", [])]
+    if not train_ids or not val_ids:
+        raise ValueError("Saved split file must contain non-empty train_ids and val_ids.")
+
+    split_ids = set(train_ids) | set(val_ids)
+    missing = sorted(split_ids - available)
+    if missing:
+        raise ValueError(
+            "Saved split file references episode ids not available in the current dataset: "
+            + ", ".join(str(ep_id) for ep_id in missing)
+        )

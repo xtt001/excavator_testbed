@@ -1,362 +1,448 @@
 # Excavator Testbed (Repo A — Python)
 
-A **clean, backend-agnostic imitation learning testbed** for engineering machinery intelligent excavation.
+用于 AGXUnity 挖掘机任务的 Python 侧数据、训练、评测仓库。
 
-Three-repo architecture:
-- **Repo A — this repo** (Python): training / eval / data pipeline + AGX remote backend
-- **Repo B — agxunity-sim** (Unity/C#): scene, bridge, camera export, actuator state export
-- **Repo C — sim-protocol** (Shared): protocol.md, schema.md, constants, eval suite YAML
+Repo A 负责：
+- AGX step-ack socket 客户端与 `AGXSimBackend`
+- teleop 录制到 HDF5
+- 录制回放与 QA
+- 离线 ACT 训练
+- live policy rollout 评测
+- 基于 Unity 导出 `env_state` 的任务奖励与成功判定
 
----
-
-## Status (branch: `tx/dev_agxunity`)
-
-| Component | Status |
-|---|---|
-| AGX socket protocol (binary framing, step-ack) | ✅ implemented and strict smoke-tested |
-| `AGXSimBackend` (`SimBackend` ABC) | ✅ implemented and live smoke-tested |
-| HDF5 schema v1.1 (timestamps, action_source, env_state, fpv) | ✅ implemented |
-| `EpisodeRecorder` v1.1 | ✅ implemented and live teleop recording tested |
-| `JoystickActionSource` (pygame, dual-stick FarmStick, smoothing, button reset) | ✅ implemented |
-| `KeyboardActionSource` (pygame, WASD+arrows fallback) | ✅ implemented |
-| `tb-record-teleop` CLI | ✅ live HDF5 recording tested against Unity |
-| `tb-replay` CLI + QA diff report | ✅ live replay path tested against Unity |
-| Eval suite: AGX target-mass success rule + mission reward | ✅ implemented |
-| ACT policy adapter + trainer | ✅ AGX 4D train path fixed and smoke-trained |
-| ACT live eval path | ✅ checkpoint loading + live rollouts tested |
-| Dummy policy | ✅ retained for smoke / baseline checks |
-| MuJoCo backend | ✅ retained (legacy, not primary) |
-| Current V0 task scope | ✅ stationary digging only, 4D arm action space |
-| Current pilot policy quality | ⚠️ plumbing works, smoke checkpoint still fails digging eval |
-
-**Current focus:** collect more demos, evaluate the main V0 checkpoint, and improve
-training/data quality. The main plumbing loop is now working end to end.
+三仓结构：
+- Repo A — 本仓库：Python testbed
+- Repo B — `AGXUnity_Excavator`：Unity / C# 场景与桥接
+- Repo C — `sim-protocol`：共享协议、schema、常量、评测定义
 
 ---
 
-## Quick start
+## 当前状态
 
-### 1. Install
+状态日期：`2026-03-26`
+
+| 组件 | 实现状态 | 当前验证状态 |
+|---|---|---|
+| AGX 二进制 step-ack 协议客户端 | 已实现 | 已在本地 Unity 上通过 live strict smoke |
+| `AGXSimBackend` | 已实现 | `GET_INFO / RESET / STEP / reward tracker` 最小 live 链路已打通 |
+| HDF5 schema v1.1 | 已实现 | 支持 `timestamps`、`action_source`、`fpv`、`env_state` |
+| 当前 AGX 任务协议 | 已实现 | 当前目标协议是 `env_state (9,)`，含 DigArea 与 hard collision 字段 |
+| `tb-record-teleop` | 已实现 | 已通过最小 live smoke 录制，生成新 9D episode |
+| `tb-replay` | 已实现 | 保留可用，但还没用最新 9D 数据重新验证 |
+| `tb-train` / ACT trainer | 已实现 | 已在新录制的 9D smoke 数据上完成 1 epoch 训练 |
+| `tb-eval` | 已实现 | 已完成 1 个 live rollout smoke，并写出结果文件 |
+| rollout timestep logs | 已实现 | `tb-eval` 现可写 `rollout_XXX.jsonl / summary / manifest` |
+| `tb-dataset-qc` | 已实现 | 可写 `summary.json / episodes.csv / QC plots` |
+| demo-level metadata | 已实现 | `tb-record-teleop` 支持 `operator_id / session_id / notes / config snapshot` |
+| MuJoCo backend | 保留 | 仅作 legacy / 对照，不是当前主路径 |
+
+当前重点：
+- 录制更多正式 9D 数据，替换旧默认数据目录
+- 补一次新数据上的 `tb-replay` QA
+- 从 smoke 验证转向正式训练与更长评测
+
+---
+
+## 概念框架
+
+```text
+                           Repo B: Unity / AGX 场景
+                    (物理、场景对象、HUD、step-ack server)
+                                      │
+                                      │ GET_INFO / RESET / STEP
+                                      ▼
+                    testbed/backends/agx/protocol.py + AGXSimBackend
+                                      │
+          ┌───────────────────────────┼───────────────────────────┐
+          │                           │                           │
+          ▼                           ▼                           ▼
+   testbed/actions/            testbed/tasks/logic/          testbed/data/
+ (joystick / keyboard)     (reward, success, phase)   (record, replay, HDF5, dataset, QC)
+          │                           │                           │
+          └──────────────┬────────────┴────────────┬──────────────┘
+                         │                         │
+                         ▼                         ▼
+                 testbed/policies/            testbed/eval/
+              (ACT, dummy, future plugins)  (rollout, metrics, video)
+                         │                         │
+                         └──────────────┬──────────┘
+                                        ▼
+                                CLI / Runner 层
+      tb-record-teleop / tb-replay / tb-dataset-qc / tb-train / tb-eval
+                                        │
+                                        ▼
+                     testbed/configs/ + docs/training_setup.md
+                  (训练 setup、实验记录规则、运行参数，不改核心接口)
+```
+
+这个框架里真正的插件边界是：
+- `backends/`：环境接入层
+- `actions/`：teleop 输入层
+- `policies/`：策略层
+- `eval/`：评测层
+
+而训练 setup、split、run metadata、实验记录这些内容，应该放在：
+- `testbed/configs/`
+- [docs/training_setup.md](/home/pingfan/PACT/excavator_testbed/docs/training_setup.md)
+- `runs/...` 下的产物与元数据
+
+也就是说，它们属于“实验管理层”，不是“核心接口层”。
+
+---
+
+## 当前任务定义
+
+当前主任务：`agx_excavation_teleop`
+
+任务范围：
+- 固定工位 / stationary digging
+- 4 维机械臂动作，不含行走底盘
+- DigArea good-start 门控
+- target hard collision 监控
+
+动作向量：
+
+```text
+[swing_speed_cmd, boom_speed_cmd, stick_speed_cmd, bucket_speed_cmd]
+```
+
+观测：
+- `qpos (4,)`：`[swing, boom, stick, bucket]`，归一化位置
+- `qvel (4,)`：`[swing, boom, stick, bucket]`，速度
+- `images["fpv"]`：`(H, W, 3)`，`uint8`
+- `env_state (9,)`：
+
+```text
+[
+  mass_in_bucket_kg,
+  excavated_mass_kg,
+  mass_in_target_box_kg,
+  deposited_mass_in_target_box_kg,
+  min_distance_to_target_m,
+  target_hard_collision_count,
+  target_contact_max_normal_force_n,
+  min_distance_to_dig_area_m,
+  bucket_depth_below_dig_area_plane_m
+]
+```
+
+奖励 / 成功语义：
+- `loading`：只有满足 DigArea good-start 后才开始给正向装载奖励
+- `approaching_target`：载荷存在时，朝目标接近给奖励
+- `depositing`：目标 retained mass 开始增长时给奖励
+- `hard_target_collision`：`target_hard_collision_count` 在本步增加时给固定惩罚
+- `success`：`deposited_mass_in_target_box_kg >= 100 kg` 且连续保持 `25` 步
+
+兼容性：
+- Repo A 仍可读取旧 `5D/7D env_state` 数据
+- 但旧数据只用于兼容或离线 smoke，不应再作为当前任务的标准训练集
+
+---
+
+## Quick Start
+
+### 1. 安装
 
 ```bash
 conda activate aloha
 pip install -e ".[dev]"
 ```
 
-### 2. Run the protocol smoke test against Unity
+### 2. 先验证 live 协议
 
 ```bash
-python scripts/agx_smoke.py --host 127.0.0.1 --port 5057 --steps 500
-
-# stricter validation: reset baseline consistency + reset-separated swing pulse sign checks
-python scripts/agx_smoke.py --host 127.0.0.1 --port 5057 --steps 500 --strict
+python scripts/agx_smoke.py --host 127.0.0.1 --port 5057 --steps 200
+python scripts/agx_smoke.py --host 127.0.0.1 --port 5057 --steps 200 --strict
 ```
 
-This verifies the live Unity bridge with `GET_INFO / RESET / STEP`, step-id
-continuity, and raw RGB frame decoding.
+这一步必须先过。
 
-`--strict` adds stronger live checks on top of the basic smoke:
-- GET_INFO metadata consistency
-- reset baseline repeatability
-- reset-separated positive/negative swing pulse sign checks
-- stable FPV image dimensions across the run
+如果这里在 `GET_INFO` 超时：
+- 不要继续跑 `tb-record-teleop`
+- 不要继续跑 `tb-eval`
+- 先回到 Repo B / Unity 修 step-ack 响应
 
-### 3. Record teleop episodes
+### 3. 录制新的 9D 数据
+
+建议不要直接覆盖旧样本目录，先写到新目录：
 
 ```bash
-# keyboard (WASD = swing/boom, arrows = stick/bucket, D = discard, Q = quit)
-tb-record-teleop --config testbed/configs/teleop_v0.yaml --input keyboard --num-episodes 5
-
-# dual-stick FarmStick / pygame joystick
-tb-record-teleop --config testbed/configs/teleop_v0.yaml --input joystick --num-episodes 5
+tb-record-teleop \
+  --config testbed/configs/teleop_v0.yaml \
+  --input joystick \
+  --num-episodes 5 \
+  --operator-id alice \
+  --session-id baseline-20260326 \
+  --notes "first formal batch" \
+  --output-dir data/agx_teleop_v1
 ```
 
-Episodes are saved to `data/agx_teleop/episode_N.hdf5` (schema v1.1).
+当前 `tb-record-teleop` 默认会在两种情况下结束并保存当前 episode：
+- 达到任务 success
+- 达到 `task.max_steps`
 
-Current V0 scope:
-- fixed-position / stationary digging only
-- action space is 4D arm control only: `[swing, boom, stick, bucket]`
-- track / drive / steer are intentionally out of scope for V0 teleop data
-
-### 4. Replay QA
+键盘 fallback：
 
 ```bash
-tb-replay --episode data/agx_teleop/episode_0.hdf5 --config testbed/configs/teleop_v0.yaml
-# QA — qpos diff: mean=X  max=X  (over N replayed steps)
-
-tb-replay --episode data/agx_teleop/episode_0.hdf5 --config testbed/configs/teleop_v0.yaml --save-video
-# writes runs/replay/episode_0_replay.mp4
+tb-record-teleop \
+  --config testbed/configs/teleop_v0.yaml \
+  --input keyboard \
+  --num-episodes 1 \
+  --output-dir data/agx_teleop_v1
 ```
 
-### 5. Train ACT
+### 4. 回放 QA
 
 ```bash
-# offline training: Unity does not need to be running
+tb-replay \
+  --episode data/agx_teleop_v1/episode_0.hdf5 \
+  --config testbed/configs/teleop_v0.yaml \
+  --save-video
+```
+
+### 4.1 数据质检
+
+```bash
+tb-dataset-qc \
+  --dataset-dir data/agx_teleop_v1
+```
+
+如果目录里混有损坏或未完整写完的 `episode_*.hdf5`，`tb-dataset-qc` 现在会跳过这些文件，并把它们记录到 `summary.json` 里的 `unreadable_episode_ids` / `unreadable_episode_errors`。
+
+### 5. 训练
+
+先编辑 [testbed/configs/act_agx_v0.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/act_agx_v0.yaml)，至少把数据目录和 episode 数量改到你刚录的新数据上，例如：
+
+```yaml
+task:
+  dataset_dir: data/agx_teleop_v1
+  num_episodes: 5
+```
+
+当前默认训练配置还内置了几项提速设置：
+- `num_workers: 0`，避免 HDF5 多 worker 抖动
+- `val_every: 5`，不是每个 epoch 都跑完整验证
+- `save_latest_every: 10`，不是每个 epoch 都刷一次 latest checkpoint
+- `amp: true` + `amp_dtype: auto`，在 CUDA 上自动选 `bf16/fp16`
+
+改好后再训练：
+
+```bash
 tb-train --config testbed/configs/act_agx_v0.yaml
 ```
 
-### 6. Evaluate
+训练启动后，当前会自动在 `ckpt_dir` 下写出：
+- `train_val_split.yaml`
+- `resolved_config.yaml`
+- `run_metadata.json`
+
+其中：
+- `train_val_split.yaml` 用来冻结 train/val episode split
+- `resolved_config.yaml` 记录本次 run 的实际训练配置
+- `run_metadata.json` 记录命令、环境、Repo A git 信息和训练结果摘要
+
+快速 smoke：
 
 ```bash
-# smoke eval on the small smoke checkpoint
-tb-eval --config testbed/configs/eval_agx_smoke.yaml
-
-# final V0 eval on the main checkpoint
-tb-eval --config testbed/configs/eval_agx_v0.yaml
-# outputs: runs/eval/agx_excavation/*.mp4 + runs/eval/agx_excavation/results/{metrics.json,results.csv}
+tb-train \
+  --config testbed/configs/act_agx_smoke.yaml \
+  --epochs 5
 ```
 
-`tb-eval` is a live rollout command. Unity must be running and listening on the
-configured AGX host/port. `tb-train` is offline and only reads recorded HDF5
-episodes.
+### 6. 评测
 
-### 7. Current V0 run sequence
+```bash
+tb-eval --config testbed/configs/eval_agx_smoke.yaml
+tb-eval --config testbed/configs/eval_agx_v0.yaml
+```
+
+`tb-eval` 是 live rollout 命令，需要 Unity 在目标 host/port 上正确响应 step-ack。
+当前评测目录除 `metrics.json / results.csv / videos/` 外，还会额外写出：
+- `rollout_manifest.json`
+- `rollouts/rollout_XXX.jsonl`
+- `rollouts/rollout_XXX_summary.json`
+
+当前 `tb-eval` 还会在终端里输出 rollout 进度，默认类似：
+
+```text
+  rollout 000  step 50 / 1000
+```
+
+这个频率可通过 `eval.step_log_interval` 调整，默认是 `50`。
+
+---
+
+## 数据目录说明
+
+当前工作区里的 `data/agx_teleop/` 不是“当前新任务的标准数据集”。
+
+它目前的用途更接近：
+- 旧样本兼容性检查
+- 离线 smoke 训练
+- 数据 schema 向后兼容验证
+
+已知现状：
+- 这个目录里的现有示例 episode 仍然是旧 `env_state` 版本
+- 不是当前 DigArea / collision / 9D 任务的正式训练数据
+
+因此，当前推荐流程是：
+- 新数据录到 `data/agx_teleop_v1/` 或其他新目录
+- 在训练配置中显式切换 `dataset_dir`
+- 等新数据稳定后，再决定是否替换默认目录
+
+---
+
+## 当前剩余补齐清单
+
+下面这些是现在最值得补的剩余事项，按影响排序：
+
+1. 用新 9D 正式数据补一次 `tb-replay` QA
+   现在 smoke 闭环已经通，但新正式数据还缺一次明确的 replay 一致性确认。
+
+2. 录制并冻结一批正式 baseline 数据
+   旧 `data/agx_teleop` 仍是兼容样本，不该继续当当前任务标准训练集。
+
+3. 扩大 live eval 规模并开始失败模式分析
+   现在已有逐 timestep rollout 日志，下一步应转向多 rollout 统计和失败归因。
+
+这些补齐项不会破坏 testbed 的 clean plug-support 结构，只要遵守一个原则：
+- 不把实验记录逻辑硬塞进 `Policy` / `Backend` 的抽象接口
+- 把它们放在 config、runtime metadata、data tooling、eval output 这些外围层
+
+换句话说：
+- “环境怎么接” 仍然归 `backends/`
+- “策略怎么插” 仍然归 `policies/`
+- “实验怎么记录与分析” 归 `configs/ + docs/ + runs/`
+
+---
+
+## 推荐验证顺序
 
 ```bash
 conda activate aloha
 
-# 1) live bridge check
-python scripts/agx_smoke.py --host 127.0.0.1 --port 5057 --steps 500 --strict
+# 1) 协议检查
+python scripts/agx_smoke.py --host 127.0.0.1 --port 5057 --steps 200 --strict
 
-# 2) collect pilot demos
-tb-record-teleop --config testbed/configs/teleop_v0.yaml --input joystick --num-episodes 5
+# 2) 录制新数据
+tb-record-teleop --config testbed/configs/teleop_v0.yaml --input joystick --num-episodes 5 --output-dir data/agx_teleop_v1
 
-# 3) replay one episode back through Unity
-tb-replay --episode data/agx_teleop/episode_0.hdf5 --config testbed/configs/teleop_v0.yaml --save-video
+# 3) 回放 QA + 数据质检
+tb-replay --episode data/agx_teleop_v1/episode_0.hdf5 --config testbed/configs/teleop_v0.yaml --save-video
+tb-dataset-qc --dataset-dir data/agx_teleop_v1
 
-# 4) offline training
+# 4) 把 act_agx_v0.yaml 的 dataset_dir 改到 data/agx_teleop_v1
 tb-train --config testbed/configs/act_agx_v0.yaml
 
-# 5) live evaluation
+# 5) live eval
 tb-eval --config testbed/configs/eval_agx_v0.yaml
 ```
 
 ---
 
-## Connecting real AGXUnity machine
+## 与 Unity 联调
 
-Edit `testbed/configs/teleop_v0.yaml`:
+编辑 [testbed/configs/teleop_v0.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/teleop_v0.yaml)：
 
 ```yaml
 agx:
-  host: "192.168.x.x"   # Unity machine IP
+  host: "192.168.x.x"
   port: 5057
-  reset_terrain: true   # teleop default
+  reset_terrain: true
   reset_pose: true
 ```
 
-Then run without the mock server. The Unity side must implement the V0 protocol
-defined in Repo C `protocol.md` and match the current Repo B bridge.
-
-For the current teleop pipeline, the default reset policy is full episode reset:
+当前 reset 预期：
 - `reset_pose: true`
 - `reset_terrain: true`
 
-Terrain reset is expected every episode. The Unity side should ensure that
-terrain initialization is only applied once per episode reset path, and that
-`reset_terrain: true` rebuilds the deformable terrain state so soil particles
-remaining in the bucket are returned to the initial terrain baseline.
+Unity 侧需要保证：
+- `GET_INFO` 能及时返回
+- `RESET` 后第一帧可被 Python 同步取回
+- terrain reset 与 episode reset 只走一条清晰路径
 
 ---
 
-## Repo layout
+## 文档入口
 
-```
+当前权威文档：
+- 本 README：仓库说明、当前状态、quick start
+- [docs/current_status_and_plan.md](/home/pingfan/PACT/excavator_testbed/docs/current_status_and_plan.md)：详细的“已开发内容 / 当前 smoke 验证结果 / 下一步计划 / 为什么要补失效归因能力”
+- [docs/training_setup.md](/home/pingfan/PACT/excavator_testbed/docs/training_setup.md)：训练配置字段、实验记录项、失效归因时应保留的证据链
+
+保留文档：
+- `docs/技术可行性评估与顶层架构设计.md`：技术路线与顶层架构评估
+- `docs/工程机械_土堆颗粒模拟调研.md`：土体 / 颗粒模拟调研
+
+---
+
+## Repo Layout
+
+```text
 testbed/
   backends/
-    base.py                   ← SimBackend ABC (swap any backend by implementing this)
-    agx/
-      protocol.py             ← Binary framing, message enums, pack/unpack (V0)
-      backend.py              ← AGXSimBackend(SimBackend) — primary backend
-    mujoco/                   ← MuJoCo backend (retained, not primary)
-  actions/
-    base.py                   ← ActionSource ABC + ActionInfo dataclass
-    gamepad.py                ← JoystickActionSource (pygame, per-axis deadzone/scale)
-    keyboard.py               ← KeyboardActionSource (WASD+arrows fallback)
-  data/
-    schema.py                 ← HDF5 schema v1.1 constants (add-only)
-    hdf5_io.py                ← write_episode / read_episode (v1.0 + v1.1 fields)
-    recorder.py               ← EpisodeRecorder (buffers + flushes to HDF5)
-    dataset.py                ← EpisodicDataset (PyTorch DataLoader)
-  policies/
-    base.py                   ← Policy / Trainer ABCs + @register_policy registry
-    act/                      ← ACT — fully implemented (ResNet18 + Transformer)
-    dummy/                    ← Zero policy for smoke tests
-    diffusion/                ← Stub (NotImplementedError)
-  eval/
-    suite.py                  ← EvalSuite — AGX mission reward + target-mass success
-    tasks.py                  ← EvalTaskDef per task (agx_excavation_teleop + legacy)
-    metrics.py                ← EvalMetrics → metrics.json + summary.csv
-    video.py                  ← MP4 with reward overlay
-  configs/
-    agx_v0.yaml               ← AGX host/port/dims
-    teleop_v0.yaml            ← Teleop session config (joystick mapping, episode params)
-    eval_agx_smoke.yaml       ← Small live eval smoke config
-    eval_agx_v0.yaml          ← AGX eval suite (success rule, num_rollouts)
-    act_agx_smoke.yaml        ← Small offline train smoke config
-    act_v0.yaml               ← Legacy ACT training config
-    act_agx_v0.yaml           ← ACT training config for AGX teleop data
-    task_v0.yaml              ← Legacy MuJoCo task config
-  cli/
-    record_teleop.py          ← tb-record-teleop
-    replay.py                 ← tb-replay
-    train.py                  ← tb-train
-    eval.py                   ← tb-eval
-    record.py                 ← tb-record (legacy MuJoCo scripted)
+    agx/                  AGX 协议与 backend
+    mujoco/               legacy MuJoCo backend
+  actions/                joystick / keyboard action source
+  data/                   HDF5 schema, IO, recorder, dataset
+  eval/                   eval suite, metrics, video, task defs
+  policies/               ACT, dummy, diffusion stub
+  runtime/                runner, train/eval helpers
+  configs/                teleop/train/eval configs
+  cli/                    tb-record-teleop, tb-replay, tb-dataset-qc, tb-train, tb-eval
 
 docs/
-  add_teleop.md               ← Full integration spec (protocol + schema + milestones)
-
-legacy/                       ← Original PACT code — frozen
-data/                         ← HDF5 episodes (gitignored)
-runs/                         ← Experiment artifacts (gitignored)
+  current_status_and_plan.md
+  技术可行性评估与顶层架构设计.md
+  工程机械_土堆颗粒模拟调研.md
 ```
 
-Useful artifact paths:
-- `data/agx_teleop/episode_N.hdf5` — canonical recorded demos
-- `runs/ckpts/agx_excavation_act_smoke/` — smoke checkpoints + plots
-- `runs/ckpts/agx_excavation_act_v0/` — main V0 checkpoints + plots
-- `runs/eval/agx_excavation_smoke_results/metrics.json` — smoke eval metrics
-- `runs/eval/agx_excavation/results/metrics.json` — main V0 eval metrics
+常用产物路径：
+- `data/agx_teleop_v1/episode_N.hdf5`：当前推荐的新任务录制目录
+- `runs/ckpts/agx_excavation_act_smoke/`：smoke checkpoint
+- `runs/ckpts/agx_excavation_act_v0/`：主训练 checkpoint
+- `runs/eval/...`：评测结果与视频
 
 ---
 
-## AGX V0 protocol summary
+## HDF5 Schema v1.1
 
-All messages share a 16-byte little-endian header:
-`magic(4) version(2) msg_type(2) payload_len(4) crc32(4)`
-
-| Message | Direction | Key fields |
-|---|---|---|
-| `GET_INFO_REQ/RESP` | Python → Unity / Unity → Python | protocol version, dt/control_hz, action/qpos order, camera descriptors |
-| `RESET_REQ/RESP` | Python → Unity / Unity → Python | seed, reset_terrain, reset_pose / success, dt |
-| `STEP_REQ` | Python → Unity | step_id (int64), action float32[4] |
-| `STEP_RESP` | Unity → Python | step_id, qpos[4], qvel[4], env_state[M], reward, fpv image |
-
-**Action vector:** `[swing_speed_cmd, boom_speed_cmd, stick_speed_cmd, bucket_speed_cmd]` — normalized `[-1, 1]`
-
-**Observation:**
-- `qpos (4,)` — `[swing, boom, stick, bucket]` position_norm `[0, 1]`
-- `qvel (4,)` — `[swing, boom, stick, bucket]` speed
-- `env_state (9,)` —
-  `[mass_in_bucket_kg, excavated_mass_kg, mass_in_target_box_kg, deposited_mass_in_target_box_kg, min_distance_to_target_m, target_hard_collision_count, target_contact_max_normal_force_n, min_distance_to_dig_area_m, bucket_depth_below_dig_area_plane_m]`
-- `images["fpv"]` — `(H, W, 3)` uint8
-
-Collision-field semantics:
-- `min_distance_to_target_m` is the approximate minimum distance between the bucket target-distance proxy volume and the active target distance geometry
-- in the current Unity scene that bucket proxy volume is editor-configurable on `ExcavationMassTracker`
-- on the target side Unity now prefers target hard box shapes and only falls back to a dedicated target-distance volume when those shapes are unavailable
-- for `TruckBed`, helper `*FailureVolume` shapes such as the dump/top failure volumes are excluded from that target-side geometry set
-- `target_hard_collision_count` is cumulative within the current episode
-- a continuous excavator-vs-target contact session increments the count at most once
-- the count can increase again only after the excavator leaves the target and later touches it again
-- `target_contact_max_normal_force_n` is the current-step maximum monitored normal force
-- when the active target is `TruckBed`, collision monitoring covers the whole `BedTruck` hard body, not only the bed/trunk measurement region
-- `min_distance_to_dig_area_m` is the approximate minimum distance between the bucket measurement volume and the scene `DigArea`
-- `bucket_depth_below_dig_area_plane_m` is `max(0, dig_plane_y - bucket_world_min_y)` and only becomes positive when the bucket volume goes below the DigArea plane
-
-**Mission reward (Repo A / testbed):**
-- `loading`: reward grows only after a qualified DigArea good start, meaning bucket load increases while the bucket measurement volume touches the DigArea region and goes below the DigArea plane
-- `approaching_target`: reward grows when a loaded bucket moves closer to the active target
-- `depositing`: reward grows when target retained mass starts increasing
-- `retained_success`: reward reaches max when retained target mass stays above the success threshold long enough
-- `hard_target_collision`: if cumulative `target_hard_collision_count` increases on this step, Repo A subtracts one fixed `0.75` penalty for that step
-
-**Success rule (current V0 default):**
-`deposited_mass_in_target_box_kg ≥ 100.0 kg` for `25` consecutive steps within
-the `1000`-step episode.
-
-Current reward/success ownership:
-- Repo B now mirrors `deposited_mass_in_target_box_kg` into `STEP_RESP.reward`
-  as a backup success proxy
-- Repo A computes the excavation mission reward locally from exported `env_state`
-- success is computed from retained target mass, not from Unity reward
-- older 5D / 7D episodes remain readable; missing DigArea or collision fields fall back to legacy defaults
-
-Here "post-hoc" means:
-- first record the raw episode: observations, actions, images, env_state
-- later run evaluator / analysis logic over the saved episode or rollout
-- derive `success` from the retained target-mass series instead of trusting a live
-  simulator reward or a manual operator flag
-
-Live Repo A <-> Repo B interaction uses the binary TCP step-ack protocol above.
-HDF5 is the offline dataset artifact written by Repo A. Unity-local
-`metadata.json` / `steps.jsonl` / `.rgb24` exports are auxiliary sidecar
-artifacts, not the shared live interaction contract.
-
-Command ownership:
-- `tb-record-teleop` — live Python teleop → Unity step-ack → HDF5
-- `tb-replay` — live Unity replay of a recorded HDF5 episode
-- `tb-train` — offline HDF5 training only
-- `tb-eval` — live policy rollout against Unity
-
-Current Unity-side runtime notes:
-- terrain reset is handled by Unity `ResetTerrain` / `SceneResetService`; the
-  excavation metrics component no longer mutates terrain heights during reset
-- pending step-ack requests are consumed on Unity `FixedUpdate`, so external
-  teleop stepping is aligned to `Time.fixedDeltaTime` rather than Editor render
-  frame timing
-
----
-
-## HDF5 schema v1.1
-
-```
+```text
 episode_N.hdf5
-├── metadata/           schema_version="1.1", task_name, sim_backend, control_hz,
-│                       dt, action_semantics, camera_names, image_format, seed, ...
+├── metadata/
 ├── observations/
-│   ├── qpos            (T, 4)  float32  [swing, boom, stick, bucket] position_norm
-│   ├── qvel            (T, 4)  float32  [swing, boom, stick, bucket] speed
-│   ├── env_state       (T, 9)  float32  [mass_in_bucket, excavated_mass, mass_in_target_box, deposited_mass_in_target_box, min_distance_to_target, target_hard_collision_count, target_contact_max_normal_force_n, min_distance_to_dig_area, bucket_depth_below_dig_area_plane]
+│   ├── qpos            (T, 4) float32
+│   ├── qvel            (T, 4) float32
+│   ├── env_state       (T, M) float32
 │   └── images/fpv      (T, H, W, 3) uint8
-├── action              (T, 4)  float32  [swing, boom, stick, bucket] speed cmd
-├── rewards             (T,)    float32  testbed-defined AGX mission reward
+├── action              (T, 4) float32
+├── rewards             (T,) float32
 ├── timestamps/
-│   ├── step_id         (T,)    int64
-│   └── step_ns         (T,)    int64
+│   ├── step_id         (T,) int64
+│   └── step_ns         (T,) int64
 └── action_source/
-    ├── type            (T,)    str   "teleop" | "policy"
-    └── id              (T,)    str   "joystick" | "keyboard" | ...
+    ├── type            (T,) str
+    └── id              (T,) str
 ```
 
-Schema is **add-only** — fields are never removed or renamed. Version bump required for any new required field.
+schema 规则：
+- add-only
+- 不重命名旧字段
+- 新必需字段才 bump version
 
 ---
 
-## Adding a new policy
+## 扩展
 
-```python
-# testbed/policies/my_model/adapter.py
-from testbed.policies.base import Policy, register_policy
-import numpy as np
+新增 policy：
+- 在 `testbed/policies/<name>/adapter.py` 下实现并注册到 `PolicyRegistry`
 
-@register_policy("my_model")
-class MyPolicy(Policy):
-    def predict(self, obs: dict) -> np.ndarray:
-        # obs["qpos"]       → (4,)  float32  AGX V0
-        # obs["image_fpv"]  → (3, H, W) float32 [0,1]
-        ...
-    def reset(self) -> None: ...
-```
+新增 backend：
+- 实现 `testbed.backends.base.SimBackend`
+- 在 eval/runtime 工厂处接入
 
-Set `policy.name: my_model` in any eval YAML — the CLI picks it up automatically.
-
-## Adding a new backend
-
-Implement `SimBackend` from `testbed.backends.base`:
-
-```python
-class MySimBackend(SimBackend):
-    def reset(self, seed=None): ...   # returns timestep-like object
-    def step(self, action): ...       # returns timestep-like object
-    def render(self, camera_id, h, w): ...
-    @property
-    def dt(self) -> float: ...
-```
-
-Add a `backend_type` entry in `eval/tasks.py` and a factory branch in `EvalSuite._make_env()`.
+---
 
 ## Legacy
 
-The original PACT ACT-coupled code lives in `legacy/`. It is frozen.
+原始 PACT 代码保留在 `legacy/`，不再作为当前 AGX 主路径继续扩展。

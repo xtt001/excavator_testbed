@@ -42,6 +42,7 @@ dev = [
 tb-record         = "testbed.cli.record:main"
 tb-record-teleop  = "testbed.cli.record_teleop:main"
 tb-replay         = "testbed.cli.replay:main"
+tb-dataset-qc     = "testbed.cli.dataset_qc:main"
 tb-train          = "testbed.cli.train:main"
 tb-eval           = "testbed.cli.eval:main"
 

@@ -17,6 +17,9 @@ eval:
   save_video:    true
   video_dir:     "runs/eval/agx_excavation"
   results_dir:   "runs/eval/agx_excavation/results"
+  save_rollout_logs: true
+  rollout_log_dir: "runs/eval/agx_excavation/results/rollouts"
+  step_log_interval: 50
   ckpt_dir:      "runs/ckpts/agx_excavation_act_v0"
 
 # ── Mission success / reward ─────────────────────────────────────────────────

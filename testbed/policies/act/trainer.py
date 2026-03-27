@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 import pickle
 import re
-from contextlib import redirect_stderr
+from contextlib import nullcontext, redirect_stderr
 from copy import deepcopy
 from io import StringIO
 from pathlib import Path
@@ -61,6 +61,12 @@ class ACTTrainer(Trainer):
         seed       = cfg["seed"]
         resume     = cfg.get("resume_ckpt")
         device     = str(cfg.get("device", "cuda"))
+        val_every  = max(1, int(cfg.get("val_every", 1)))
+        save_latest_every = max(1, int(cfg.get("save_latest_every", 1)))
+        checkpoint_every = max(1, int(cfg.get("checkpoint_every", 100)))
+        plot_every = max(1, int(cfg.get("plot_every", checkpoint_every)))
+        amp_enabled = bool(cfg.get("amp", False))
+        amp_dtype_name = str(cfg.get("amp_dtype", "auto"))
         ckpt_dir.mkdir(parents=True, exist_ok=True)
 
         set_seed(seed)
@@ -78,6 +84,7 @@ class ACTTrainer(Trainer):
         start_epoch   = 0
         train_history: list[dict] = []
         val_history:   list[dict] = []
+        val_epochs:    list[int] = []
 
         # ── optional resume ───────────────────────────────────────────────────
         if resume:
@@ -91,33 +98,61 @@ class ACTTrainer(Trainer):
                 min_val_loss = float(ckpt_obj["min_val_loss"])
             print(f"Resumed from {resume}, starting epoch {start_epoch}")
 
+        use_amp = amp_enabled and device.startswith("cuda") and torch.cuda.is_available()
+        amp_dtype = self._resolve_amp_dtype(amp_dtype_name) if use_amp else None
+        scaler = self._build_grad_scaler(use_amp, amp_dtype)
+        amp_label = self._format_amp_label(use_amp, amp_dtype)
+        print(
+            "Training settings:"
+            f" val_every={val_every},"
+            f" save_latest_every={save_latest_every},"
+            f" checkpoint_every={checkpoint_every},"
+            f" plot_every={plot_every},"
+            f" amp={amp_label}"
+        )
+
         # ── training loop ─────────────────────────────────────────────────────
         for epoch in tqdm(range(start_epoch, num_epochs)):
-            # validation
-            adapter._model.eval()
-            with torch.inference_mode():
-                ep_dicts = []
-                for data in val_loader:
-                    loss_d = self._forward(data, adapter)
-                    ep_dicts.append(loss_d)
-                ep_summary = compute_dict_mean(ep_dicts)
-                val_history.append(ep_summary)
-                epoch_val_loss = ep_summary["loss"]
-                if epoch_val_loss < min_val_loss:
-                    min_val_loss = epoch_val_loss
-                    best_ckpt = (epoch, min_val_loss, deepcopy(adapter.state_dict()))
+            should_validate = (
+                epoch == start_epoch
+                or epoch == num_epochs - 1
+                or (epoch - start_epoch) % val_every == 0
+            )
 
-            self._print_summary("Val", epoch, ep_summary)
+            if should_validate:
+                adapter._model.eval()
+                with torch.inference_mode():
+                    ep_dicts = []
+                    for data in val_loader:
+                        loss_d = self._forward(data, adapter, use_amp, amp_dtype)
+                        ep_dicts.append(loss_d)
+                    ep_summary = compute_dict_mean(ep_dicts)
+                    val_history.append(ep_summary)
+                    val_epochs.append(epoch)
+                    epoch_val_loss = ep_summary["loss"]
+                    if epoch_val_loss < min_val_loss:
+                        min_val_loss = epoch_val_loss
+                        best_ckpt = (epoch, min_val_loss, deepcopy(adapter.state_dict()))
+
+                self._print_summary("Val", epoch, ep_summary)
+            else:
+                print(f"Epoch {epoch} [Val] skipped (val_every={val_every})")
 
             # training
             adapter._model.train()
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             last_batch_idx = -1
             for batch_idx, data in enumerate(train_loader):
-                loss_d = self._forward(data, adapter)
-                loss_d["loss"].backward()
-                optimizer.step()
-                optimizer.zero_grad()
+                loss_d = self._forward(data, adapter, use_amp, amp_dtype)
+                loss = loss_d["loss"]
+                if scaler.is_enabled():
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    loss.backward()
+                    optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
                 train_history.append(detach_dict(loss_d))
                 last_batch_idx = batch_idx
 
@@ -131,24 +166,31 @@ class ACTTrainer(Trainer):
             self._print_summary("Train", epoch, ep_tr)
 
             # periodic checkpoint
-            if epoch % 100 == 0:
+            if epoch == start_epoch or (epoch + 1) % checkpoint_every == 0:
                 self._save_ckpt(
                     ckpt_dir / f"policy_epoch_{epoch}_seed_{seed}.ckpt",
                     adapter, optimizer, epoch, min_val_loss, cfg,
                 )
-                self._plot_history(train_history, val_history, epoch, ckpt_dir, seed)
+            if epoch == start_epoch or (epoch + 1) % plot_every == 0:
+                self._plot_history(train_history, val_history, val_epochs, num_epochs, ckpt_dir, seed)
 
-            # latest checkpoint (always)
-            self._save_ckpt(
-                ckpt_dir / "policy_latest.ckpt",
-                adapter, optimizer, epoch, min_val_loss, cfg,
-            )
+            if epoch == num_epochs - 1 or (epoch + 1) % save_latest_every == 0:
+                self._save_ckpt(
+                    ckpt_dir / "policy_latest.ckpt",
+                    adapter, optimizer, epoch, min_val_loss, cfg,
+                )
 
         # final checkpoints
+        self._save_ckpt(
+            ckpt_dir / "policy_latest.ckpt",
+            adapter, optimizer, num_epochs - 1, min_val_loss, cfg,
+        )
         self._save_ckpt(
             ckpt_dir / "policy_last.ckpt",
             adapter, optimizer, num_epochs - 1, min_val_loss, cfg,
         )
+        if best_ckpt is None:
+            raise RuntimeError("No validation summary was produced; cannot determine best checkpoint.")
         best_epoch, bvl, best_sd = best_ckpt
         self._save_ckpt(
             ckpt_dir / f"policy_epoch_{best_epoch}_seed_{seed}.ckpt",
@@ -159,7 +201,7 @@ class ACTTrainer(Trainer):
             ckpt_dir / "policy_best.ckpt",
             adapter, optimizer, best_epoch, bvl, cfg, sd_override=best_sd,
         )
-        self._plot_history(train_history, val_history, num_epochs, ckpt_dir, seed)
+        self._plot_history(train_history, val_history, val_epochs, num_epochs, ckpt_dir, seed)
         print(f"Training done. Best epoch={best_epoch}, val loss={bvl:.6f}")
         return best_epoch, bvl, best_sd
 
@@ -181,13 +223,19 @@ class ACTTrainer(Trainer):
     # ── helpers ───────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _forward(data, adapter: ACTAdapter) -> dict:
+    def _forward(
+        data,
+        adapter: ACTAdapter,
+        amp_enabled: bool = False,
+        amp_dtype: torch.dtype | None = None,
+    ) -> dict:
         image_data, qpos_data, action_data, is_pad = data
         image_data  = image_data.to(adapter.device)
         qpos_data   = qpos_data.to(adapter.device)
         action_data = action_data.to(adapter.device)
         is_pad      = is_pad.to(adapter.device)
-        return adapter.forward_loss(qpos_data, image_data, action_data, is_pad)
+        with ACTTrainer._autocast_context(adapter.device, amp_enabled, amp_dtype):
+            return adapter.forward_loss(qpos_data, image_data, action_data, is_pad)
 
     @staticmethod
     def _save_ckpt(path, adapter, optimizer, epoch, val_loss, config, sd_override=None):
@@ -221,7 +269,7 @@ class ACTTrainer(Trainer):
         print(f"Epoch {epoch} [{tag}] {parts}")
 
     @staticmethod
-    def _plot_history(train_history, val_history, num_epochs, ckpt_dir, seed):
+    def _plot_history(train_history, val_history, val_epochs, num_epochs, ckpt_dir, seed):
         if not train_history:
             return
         try:
@@ -236,10 +284,50 @@ class ACTTrainer(Trainer):
             tv = [d[key].item() if hasattr(d[key], "item") else d[key] for d in train_history]
             vv = [d[key].item() if hasattr(d[key], "item") else d[key] for d in val_history]
             plt.plot(np.linspace(0, num_epochs - 1, len(tv)), tv,  label="train")
-            plt.plot(np.linspace(0, num_epochs - 1, len(vv)), vv, label="val")
+            if vv:
+                val_x = val_epochs if val_epochs else np.linspace(0, num_epochs - 1, len(vv))
+                plt.plot(val_x, vv, label="val")
             plt.tight_layout()
             plt.legend()
             plt.title(key)
             plt.savefig(plot_path)
             plt.close()
         print(f"Plots saved to {ckpt_dir}")
+
+    @staticmethod
+    def _autocast_context(device, amp_enabled: bool, amp_dtype: torch.dtype | None):
+        if not amp_enabled or amp_dtype is None:
+            return nullcontext()
+        device_str = str(device)
+        device_type = "cuda" if device_str.startswith("cuda") else "cpu"
+        return torch.autocast(device_type=device_type, dtype=amp_dtype)
+
+    @staticmethod
+    def _resolve_amp_dtype(amp_dtype_name: str) -> torch.dtype:
+        key = str(amp_dtype_name).strip().lower()
+        if key in {"", "auto"}:
+            bf16_supported = getattr(torch.cuda, "is_bf16_supported", lambda: False)()
+            return torch.bfloat16 if bf16_supported else torch.float16
+        if key in {"bf16", "bfloat16"}:
+            return torch.bfloat16
+        if key in {"fp16", "float16", "half"}:
+            return torch.float16
+        raise ValueError(f"Unsupported amp_dtype={amp_dtype_name!r}. Use auto, bf16, or fp16.")
+
+    @staticmethod
+    def _format_amp_label(amp_enabled: bool, amp_dtype: torch.dtype | None) -> str:
+        if not amp_enabled or amp_dtype is None:
+            return "disabled"
+        if amp_dtype == torch.bfloat16:
+            return "enabled(bf16)"
+        if amp_dtype == torch.float16:
+            return "enabled(fp16)"
+        return f"enabled({amp_dtype})"
+
+    @staticmethod
+    def _build_grad_scaler(amp_enabled: bool, amp_dtype: torch.dtype | None):
+        scaler_enabled = amp_enabled and amp_dtype == torch.float16
+        grad_scaler_cls = getattr(torch.amp, "GradScaler", None)
+        if grad_scaler_cls is not None:
+            return grad_scaler_cls("cuda", enabled=scaler_enabled)
+        return torch.cuda.amp.GradScaler(enabled=scaler_enabled)

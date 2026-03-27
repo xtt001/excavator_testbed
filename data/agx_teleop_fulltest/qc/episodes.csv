@@ -1,0 +1,3 @@
+episode_id,path,n_steps,success,has_images,has_env_state,env_state_dim,step_ids_monotonic,has_step_ns,action_dim,qpos_dim,qvel_dim,timestamp,operator_id,session_id,warnings,error
+episode_0,data/agx_teleop_fulltest/episode_0.hdf5,1000,1,1,1,9,1,1,4,4,4,2026-03-26T07:18:13.794134,alice,fulltest-20260326,,
+episode_1,data/agx_teleop_fulltest/episode_1.hdf5,1000,1,1,1,9,1,1,4,4,4,2026-03-26T07:18:54.319340,alice,fulltest-20260326,,

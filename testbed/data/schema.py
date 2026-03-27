@@ -23,6 +23,12 @@ Schema v1.1 layout (add-only on top of v1.0)
 │   ├── camera_names         str   comma-sep   ← v1.1
 │   ├── image_format         str   "raw_rgb"   ← v1.1
 │   ├── protocol_version     str   optional    ← v1.1
+│   ├── episode_id           str   optional
+│   ├── operator_id          str   optional
+│   ├── session_id           str   optional
+│   ├── notes                str   optional
+│   ├── record_config_path   str   optional
+│   ├── record_config_yaml   str   optional
 │   ├── camera_width         int   optional
 │   ├── camera_height        int   optional
 │   ├── camera_fps           float optional
@@ -53,7 +59,9 @@ Schema v1.1 layout (add-only on top of v1.0)
 │   │                                      mass_in_target_box, deposited_mass_in_target_box,
 │   │                                      min_distance_to_target,
 │   │                                      target_hard_collision_count,
-│   │                                      target_contact_max_normal_force_n]  ← v1.1
+│   │                                      target_contact_max_normal_force_n,
+│   │                                      min_distance_to_dig_area_m,
+│   │                                      bucket_depth_below_dig_area_plane_m]  ← v1.1
 │   └── images/
 │       └── fpv              (T, H, W, 3) uint8                        ← v1.1
 │
@@ -108,6 +116,12 @@ ATTR_ACTION_SEMANTICS = "action_semantics"
 ATTR_CAMERA_NAMES     = "camera_names"       # comma-separated string
 ATTR_IMAGE_FORMAT     = "image_format"       # "raw_rgb" | "h264"
 ATTR_PROTOCOL_VERSION = "protocol_version"   # optional
+ATTR_EPISODE_ID       = "episode_id"
+ATTR_OPERATOR_ID      = "operator_id"
+ATTR_SESSION_ID       = "session_id"
+ATTR_NOTES            = "notes"
+ATTR_RECORD_CONFIG_PATH = "record_config_path"
+ATTR_RECORD_CONFIG_YAML = "record_config_yaml"
 ATTR_CAMERA_WIDTH     = "camera_width"
 ATTR_CAMERA_HEIGHT    = "camera_height"
 ATTR_CAMERA_FPS       = "camera_fps"
@@ -144,6 +158,8 @@ ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX = 3
 ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX = 4
 ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX = 5
 ENV_STATE_TARGET_CONTACT_MAX_NORMAL_FORCE_N_IDX = 6
+ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX = 7
+ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX = 8
 
 # ── Image dataset name template ───────────────────────────────────────────────
 def image_ds(cam_name: str) -> str:
