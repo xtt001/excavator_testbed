@@ -12,8 +12,9 @@ Design goals:
 Success rules
 ─────────────
   MuJoCo backends:  ep_highest_reward == task.env_max_reward
-  AGX backend:      backend task_success flag from the AGX excavation mission
-                    tracker, with env_state-based fallback if needed
+  AGX backend:      configurable success mode over retained-mass history and
+                    rollout failure summaries. Legacy task_success latch is
+                    still recorded for comparison.
 """
 
 from __future__ import annotations
@@ -61,6 +62,14 @@ class EvalSuite:
     success_signal_name  Override task.success_signal_name for AGX success.
     env_state_index  Legacy fallback index for AGX success signal lookup.
     reward_overrides Additional AGX reward-shaping overrides.
+    agx_success_mode  Primary AGX success mode:
+                      "legacy_any" | "final_hold" | "strict_final_hold" |
+                      "dump_complete_final_hold" | "strict_dump_complete".
+    strict_max_failures  Optional failure-count upper bounds used by the
+                      strict AGX success mode, e.g.
+                      {"hard_target_collision": 0, "spill_before_target": 0}.
+    residual_bucket_mass_thresh  For dump-complete success, final bucket mass
+                      must stay at or below this threshold for hold_steps.
     """
 
     def __init__(
@@ -83,6 +92,9 @@ class EvalSuite:
         success_signal_name: str | None = None,
         env_state_index: int | None = None,
         reward_overrides: dict[str, float] | None = None,
+        agx_success_mode: str = "legacy_any",
+        strict_max_failures: dict[str, int] | None = None,
+        residual_bucket_mass_thresh: float = 100.0,
     ):
         self.policy       = policy
         self.task_def     = get_eval_task(task_name)
@@ -111,6 +123,12 @@ class EvalSuite:
         self._reward_overrides = dict(self.task_def.reward_overrides)
         if reward_overrides:
             self._reward_overrides.update(dict(reward_overrides))
+        self._agx_success_mode = str(agx_success_mode)
+        self._strict_max_failures = {
+            str(name): int(limit)
+            for name, limit in (strict_max_failures or {}).items()
+        }
+        self._residual_bucket_mass_thresh = float(residual_bucket_mass_thresh)
 
         if video_dir is None:
             policy_name = type(policy).__name__
@@ -138,6 +156,16 @@ class EvalSuite:
         highest_rewards:  list[float] = []
         episode_lengths:  list[int]   = []
         successes:        list[bool]  = []
+        legacy_successes: list[bool]  = []
+        final_hold_successes: list[bool] = []
+        strict_successes: list[bool]  = []
+        dump_complete_successes: list[bool] = []
+        strict_dump_complete_successes: list[bool] = []
+        final_signal_values: list[float] = []
+        max_signal_values: list[float] = []
+        final_bucket_values: list[float] = []
+        ending_success_consecutive_steps: list[int] = []
+        ending_dump_complete_consecutive_steps: list[int] = []
         rollout_summaries: list[dict[str, object]] = []
         policy_name = type(self.policy).__name__
 
@@ -236,17 +264,32 @@ class EvalSuite:
 
                 # ── Success detection ─────────────────────────────────────────
                 if task.backend_type == "agx":
-                    success = any(success_flags)
-                    if not success:
-                        mass_idx = self._resolve_agx_success_index(env)
-                        if mass_idx is not None:
-                            success = _mass_success(
-                                env_states,
-                                mass_thresh=self._mass_thresh,
-                                hold_steps=self._hold_steps,
-                                mass_idx=mass_idx,
-                            )
+                    success_summary = self._evaluate_agx_success(
+                        env=env,
+                        env_states=env_states,
+                        success_flags=success_flags,
+                        step_records=step_records,
+                    )
+                    success = bool(success_summary["success"])
                     ep_highest = float(max(rewards)) if rewards else 0.0
+                    legacy_successes.append(bool(success_summary["legacy_success"]))
+                    final_hold_successes.append(bool(success_summary["final_hold_success"]))
+                    strict_successes.append(bool(success_summary["strict_final_hold_success"]))
+                    dump_complete_successes.append(
+                        bool(success_summary["dump_complete_final_hold_success"])
+                    )
+                    strict_dump_complete_successes.append(
+                        bool(success_summary["strict_dump_complete_success"])
+                    )
+                    final_signal_values.append(float(success_summary["final_signal_value"]))
+                    max_signal_values.append(float(success_summary["max_signal_value"]))
+                    final_bucket_values.append(float(success_summary["final_bucket_mass"]))
+                    ending_success_consecutive_steps.append(
+                        int(success_summary["ending_success_consecutive_steps"])
+                    )
+                    ending_dump_complete_consecutive_steps.append(
+                        int(success_summary["ending_dump_complete_consecutive_steps"])
+                    )
                 else:
                     ep_highest = float(max(rewards)) if rewards else 0.0
                     success    = ep_highest == task.env_max_reward
@@ -286,6 +329,8 @@ class EvalSuite:
                         step_records=step_records,
                         video_path=video_path,
                     )
+                    if task.backend_type == "agx":
+                        summary.update(success_summary)
                     jsonl_path = self.rollout_log_dir / f"rollout_{rollout_id:03d}.jsonl"
                     summary_path = self.rollout_log_dir / f"rollout_{rollout_id:03d}_summary.json"
                     write_jsonl(jsonl_path, step_records)
@@ -311,6 +356,41 @@ class EvalSuite:
                 ),
             )
 
+        extra_metrics = {"success_list": successes}
+        if task.backend_type == "agx":
+            extra_metrics.update(
+                {
+                    "success_mode": self._agx_success_mode,
+                    "legacy_success_count": int(sum(legacy_successes)),
+                    "legacy_success_rate": _safe_rate(sum(legacy_successes), len(legacy_successes)),
+                    "final_hold_success_count": int(sum(final_hold_successes)),
+                    "final_hold_success_rate": _safe_rate(sum(final_hold_successes), len(final_hold_successes)),
+                    "strict_final_hold_success_count": int(sum(strict_successes)),
+                    "strict_final_hold_success_rate": _safe_rate(sum(strict_successes), len(strict_successes)),
+                    "dump_complete_final_hold_success_count": int(sum(dump_complete_successes)),
+                    "dump_complete_final_hold_success_rate": _safe_rate(
+                        sum(dump_complete_successes), len(dump_complete_successes)
+                    ),
+                    "strict_dump_complete_success_count": int(sum(strict_dump_complete_successes)),
+                    "strict_dump_complete_success_rate": _safe_rate(
+                        sum(strict_dump_complete_successes), len(strict_dump_complete_successes)
+                    ),
+                    "avg_final_success_signal": float(np.mean(final_signal_values)) if final_signal_values else 0.0,
+                    "avg_max_success_signal": float(np.mean(max_signal_values)) if max_signal_values else 0.0,
+                    "avg_final_bucket_mass": float(np.mean(final_bucket_values)) if final_bucket_values else 0.0,
+                    "avg_ending_success_consecutive_steps": (
+                        float(np.mean(ending_success_consecutive_steps))
+                        if ending_success_consecutive_steps else 0.0
+                    ),
+                    "avg_ending_dump_complete_consecutive_steps": (
+                        float(np.mean(ending_dump_complete_consecutive_steps))
+                        if ending_dump_complete_consecutive_steps else 0.0
+                    ),
+                    "strict_max_failures": dict(self._strict_max_failures),
+                    "residual_bucket_mass_thresh": float(self._residual_bucket_mass_thresh),
+                }
+            )
+
         metrics = EvalMetrics.from_rollouts(
             task_name       = task.name,
             policy_name     = policy_name,
@@ -319,7 +399,8 @@ class EvalSuite:
             highest_rewards = highest_rewards,
             env_max_reward  = task.env_max_reward,
             episode_lengths = episode_lengths,
-            extra           = {"success_list": successes},
+            successes       = successes,
+            extra           = extra_metrics,
         )
         print("\n" + metrics.summary())
         return metrics
@@ -386,6 +467,98 @@ class EvalSuite:
             return indices.min_distance_to_target_idx
         return None
 
+    def _resolve_agx_bucket_mass_index(self, env) -> int | None:
+        if not hasattr(env, "get_info"):
+            return None
+        try:
+            info = env.get_info()
+            indices = resolve_agx_field_indices(info.env_state_order)
+        except Exception:
+            return None
+        return indices.mass_in_bucket_idx
+
+    def _evaluate_agx_success(
+        self,
+        *,
+        env,
+        env_states: list[np.ndarray],
+        success_flags: list[bool],
+        step_records: list[dict[str, object]],
+    ) -> dict[str, object]:
+        mass_idx = self._resolve_agx_success_index(env)
+        bucket_mass_idx = self._resolve_agx_bucket_mass_index(env)
+        signal_series = _extract_signal_series(env_states, mass_idx)
+        bucket_mass_series = _extract_signal_series(env_states, bucket_mass_idx)
+        mass_summary = _mass_success_summary(
+            signal_series=signal_series,
+            mass_thresh=self._mass_thresh,
+            hold_steps=self._hold_steps,
+        )
+        dump_complete_summary = _dump_complete_success_summary(
+            signal_series=signal_series,
+            bucket_mass_series=bucket_mass_series,
+            mass_thresh=self._mass_thresh,
+            residual_bucket_mass_thresh=self._residual_bucket_mass_thresh,
+            hold_steps=self._hold_steps,
+        )
+        failure_counts = _count_rollout_failures(step_records)
+        strict_blocking_failures = {
+            name: failure_counts.get(name, 0)
+            for name, limit in self._strict_max_failures.items()
+            if failure_counts.get(name, 0) > limit
+        }
+
+        legacy_success = bool(any(success_flags) or mass_summary["ever_hold_success"])
+        final_hold_success = bool(mass_summary["final_hold_success"])
+        strict_final_hold_success = bool(final_hold_success and not strict_blocking_failures)
+        dump_complete_final_hold_success = bool(dump_complete_summary["dump_complete_final_hold_success"])
+        strict_dump_complete_success = bool(
+            dump_complete_final_hold_success and not strict_blocking_failures
+        )
+
+        success_mode = self._agx_success_mode
+        if success_mode == "legacy_any":
+            primary_success = legacy_success
+        elif success_mode == "final_hold":
+            primary_success = final_hold_success
+        elif success_mode == "strict_final_hold":
+            primary_success = strict_final_hold_success
+        elif success_mode == "dump_complete_final_hold":
+            primary_success = dump_complete_final_hold_success
+        elif success_mode == "strict_dump_complete":
+            primary_success = strict_dump_complete_success
+        else:
+            raise ValueError(
+                f"Unsupported AGX success mode {success_mode!r}. "
+                "Expected one of: legacy_any, final_hold, strict_final_hold, "
+                "dump_complete_final_hold, strict_dump_complete."
+            )
+
+        return {
+            "success_mode": success_mode,
+            "success": bool(primary_success),
+            "legacy_success": legacy_success,
+            "final_hold_success": final_hold_success,
+            "strict_final_hold_success": strict_final_hold_success,
+            "dump_complete_final_hold_success": dump_complete_final_hold_success,
+            "strict_dump_complete_success": strict_dump_complete_success,
+            "first_task_success_step": _first_true_index(success_flags),
+            "first_hold_success_step": mass_summary["first_hold_success_step"],
+            "first_dump_complete_step": dump_complete_summary["first_dump_complete_step"],
+            "success_signal_name": self._success_signal_name,
+            "success_mass_thresh": float(self._mass_thresh),
+            "success_hold_steps": int(self._hold_steps),
+            "final_signal_value": mass_summary["final_signal_value"],
+            "max_signal_value": mass_summary["max_signal_value"],
+            "ending_success_consecutive_steps": mass_summary["ending_consecutive_steps"],
+            "final_bucket_mass": dump_complete_summary["final_bucket_mass"],
+            "max_bucket_mass": dump_complete_summary["max_bucket_mass"],
+            "residual_bucket_mass_thresh": float(self._residual_bucket_mass_thresh),
+            "ending_dump_complete_consecutive_steps": dump_complete_summary["ending_consecutive_steps"],
+            "strict_max_failures": dict(self._strict_max_failures),
+            "strict_blocking_failures": strict_blocking_failures,
+        }
+
 
 # ─── AGX success rule (spec §8) ───────────────────────────────────────────────
 
@@ -410,3 +583,124 @@ def _mass_success(
         else:
             consecutive = 0
     return False
+
+
+def _extract_signal_series(env_states: list[np.ndarray], mass_idx: int | None) -> list[float]:
+    if mass_idx is None:
+        return []
+    series: list[float] = []
+    for env_state in env_states:
+        if len(env_state) > mass_idx:
+            series.append(float(env_state[mass_idx]))
+    return series
+
+
+def _mass_success_summary(
+    *,
+    signal_series: list[float],
+    mass_thresh: float,
+    hold_steps: int,
+) -> dict[str, object]:
+    if not signal_series or mass_thresh <= 0.0:
+        return {
+            "ever_hold_success": False,
+            "final_hold_success": False,
+            "first_hold_success_step": None,
+            "final_signal_value": 0.0,
+            "max_signal_value": 0.0,
+            "ending_consecutive_steps": 0,
+        }
+
+    consecutive = 0
+    first_hold_success_step: int | None = None
+    for step_index, value in enumerate(signal_series):
+        if value >= mass_thresh:
+            consecutive += 1
+            if consecutive >= hold_steps and first_hold_success_step is None:
+                first_hold_success_step = step_index
+        else:
+            consecutive = 0
+
+    ending_consecutive_steps = 0
+    for value in reversed(signal_series):
+        if value >= mass_thresh:
+            ending_consecutive_steps += 1
+        else:
+            break
+
+    return {
+        "ever_hold_success": first_hold_success_step is not None,
+        "final_hold_success": ending_consecutive_steps >= hold_steps,
+        "first_hold_success_step": first_hold_success_step,
+        "final_signal_value": float(signal_series[-1]),
+        "max_signal_value": float(max(signal_series)),
+        "ending_consecutive_steps": int(ending_consecutive_steps),
+    }
+
+
+def _dump_complete_success_summary(
+    *,
+    signal_series: list[float],
+    bucket_mass_series: list[float],
+    mass_thresh: float,
+    residual_bucket_mass_thresh: float,
+    hold_steps: int,
+) -> dict[str, object]:
+    if (
+        not signal_series
+        or not bucket_mass_series
+        or len(signal_series) != len(bucket_mass_series)
+        or mass_thresh <= 0.0
+    ):
+        return {
+            "dump_complete_final_hold_success": False,
+            "first_dump_complete_step": None,
+            "final_bucket_mass": float(bucket_mass_series[-1]) if bucket_mass_series else 0.0,
+            "max_bucket_mass": float(max(bucket_mass_series)) if bucket_mass_series else 0.0,
+            "ending_consecutive_steps": 0,
+        }
+
+    consecutive = 0
+    first_dump_complete_step: int | None = None
+    for step_index, (signal_value, bucket_value) in enumerate(zip(signal_series, bucket_mass_series)):
+        if signal_value >= mass_thresh and bucket_value <= residual_bucket_mass_thresh:
+            consecutive += 1
+            if consecutive >= hold_steps and first_dump_complete_step is None:
+                first_dump_complete_step = step_index
+        else:
+            consecutive = 0
+
+    ending_consecutive_steps = 0
+    for signal_value, bucket_value in reversed(list(zip(signal_series, bucket_mass_series))):
+        if signal_value >= mass_thresh and bucket_value <= residual_bucket_mass_thresh:
+            ending_consecutive_steps += 1
+        else:
+            break
+
+    return {
+        "dump_complete_final_hold_success": ending_consecutive_steps >= hold_steps,
+        "first_dump_complete_step": first_dump_complete_step,
+        "final_bucket_mass": float(bucket_mass_series[-1]),
+        "max_bucket_mass": float(max(bucket_mass_series)),
+        "ending_consecutive_steps": int(ending_consecutive_steps),
+    }
+
+
+def _count_rollout_failures(step_records: list[dict[str, object]]) -> dict[str, int]:
+    failure_counts: dict[str, int] = {}
+    for record in step_records:
+        for failure_name in record.get("task_step_failures", []):
+            failure_key = str(failure_name)
+            failure_counts[failure_key] = failure_counts.get(failure_key, 0) + 1
+    return failure_counts
+
+
+def _first_true_index(flags: list[bool]) -> int | None:
+    for index, flag in enumerate(flags):
+        if flag:
+            return index
+    return None
+
+
+def _safe_rate(numerator: int | float, denominator: int) -> float:
+    return float(numerator) / float(denominator) if denominator > 0 else 0.0

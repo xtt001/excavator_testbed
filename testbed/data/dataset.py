@@ -72,16 +72,17 @@ def get_norm_stats(
             "Expected files like episode_0.hdf5."
         )
 
-    # NOTE: Do NOT assume action_dim == qpos_dim across backends.
-    # Current AGX V0 uses action_dim=4 and qpos_dim=4, but stats are still
-    # computed independently per-dimension.
-    qpos_tensor   = torch.stack(all_qpos_data)    # (N, T, Nq)
-    action_tensor = torch.stack(all_action_data)  # (N, T, Na)
+    # NOTE: Do NOT assume all episodes share the same timestep length.
+    # Success-truncated AGX demos are intentionally variable-length.
+    # Stats should be computed over the concatenated time axis, not by stacking
+    # episodes into a rectangular (N, T, D) tensor.
+    qpos_tensor   = torch.cat(all_qpos_data, dim=0)    # (sum_T, Nq)
+    action_tensor = torch.cat(all_action_data, dim=0)  # (sum_T, Na)
 
-    action_mean = action_tensor.mean(dim=[0, 1], keepdim=True)
-    action_std  = action_tensor.std(dim=[0, 1],  keepdim=True).clamp(min=1e-2)
-    qpos_mean   = qpos_tensor.mean(dim=[0, 1],   keepdim=True)
-    qpos_std    = qpos_tensor.std(dim=[0, 1],    keepdim=True).clamp(min=1e-2)
+    action_mean = action_tensor.mean(dim=0, keepdim=True)
+    action_std  = action_tensor.std(dim=0,  keepdim=True).clamp(min=1e-2)
+    qpos_mean   = qpos_tensor.mean(dim=0,   keepdim=True)
+    qpos_std    = qpos_tensor.std(dim=0,    keepdim=True).clamp(min=1e-2)
 
     return {
         "action_mean":  action_mean.numpy().squeeze().astype(np.float32),
@@ -119,12 +120,14 @@ class EpisodicDataset(Dataset):
         dataset_dir: str | Path,
         camera_names: list[str],
         norm_stats: dict[str, np.ndarray],
+        episode_len: int | None = None,
     ):
         super().__init__()
         self.episode_ids  = episode_ids
         self.dataset_dir  = Path(dataset_dir)
         self.camera_names = camera_names
         self.norm_stats   = norm_stats
+        self.episode_len  = int(episode_len) if episode_len is not None else None
         self.is_sim: bool | None = None
         # Warm-up to populate self.is_sim
         self.__getitem__(0)
@@ -165,11 +168,18 @@ class EpisodicDataset(Dataset):
 
         self.is_sim = is_sim
 
-        # ── pad action to full length ──────────────────────────────────────
-        padded_action = np.zeros(original_action_shape, dtype=np.float32)
+        # ── pad action to fixed dataset length for batching ────────────────
+        target_len = self.episode_len if self.episode_len is not None else T
+        if T > target_len:
+            raise ValueError(
+                f"Episode {ep_id} has length {T}, which exceeds configured "
+                f"episode_len {target_len}. Increase task.episode_len or re-record."
+            )
+
+        padded_action = np.zeros((target_len, original_action_shape[1]), dtype=np.float32)
         padded_action[:action_len] = action
-        is_pad = np.zeros(T, dtype=bool)
-        is_pad[action_len:] = True
+        is_pad = np.ones(target_len, dtype=bool)
+        is_pad[:action_len] = False
 
         # ── assemble camera tensor ─────────────────────────────────────────
         all_cam_images = np.stack(
@@ -204,6 +214,7 @@ def load_data(
     dataset_dir: str | Path,
     num_episodes: int,
     camera_names: list[str],
+    episode_len: int | None,
     batch_size_train: int,
     batch_size_val: int,
     num_workers: int = 1,
@@ -249,6 +260,7 @@ def load_data(
     # The correct pipeline saves joint-space qpos as actions, so action_dim == qpos_dim.
     import h5py
     dim_info = {}
+    length_info = {}
     for ep_id in available:
         p = dataset_dir / f"episode_{ep_id}.hdf5"
         with h5py.File(p, "r") as f:
@@ -256,6 +268,7 @@ def load_data(
                 f["/action"].shape[1],
                 f["/observations/qpos"].shape[1],
             )
+            length_info[ep_id] = int(f["/action"].shape[0])
     filtered = [i for i in available if dim_info[i][0] == dim_info[i][1]]
     dropped = len(available) - len(filtered)
     if dropped:
@@ -273,6 +286,14 @@ def load_data(
             "Re-collect data with `tb-record`."
         )
 
+    max_episode_len = max(length_info[ep_id] for ep_id in available)
+    target_episode_len = int(episode_len) if episode_len is not None else max_episode_len
+    if max_episode_len > target_episode_len:
+        raise ValueError(
+            f"Dataset contains an episode of length {max_episode_len}, but configured "
+            f"episode_len is only {target_episode_len}. Increase task.episode_len."
+        )
+
     train_ids, val_ids, split_info = _resolve_episode_split(
         dataset_dir=dataset_dir,
         available_episode_ids=available,
@@ -285,8 +306,23 @@ def load_data(
 
     norm_stats = get_norm_stats(dataset_dir, num_episodes, episode_ids=available)
 
-    train_ds = EpisodicDataset(train_ids, dataset_dir, camera_names, norm_stats)
-    val_ds   = EpisodicDataset(val_ids,   dataset_dir, camera_names, norm_stats)
+    train_ds = EpisodicDataset(
+        train_ids,
+        dataset_dir,
+        camera_names,
+        norm_stats,
+        episode_len=target_episode_len,
+    )
+    val_ds = EpisodicDataset(
+        val_ids,
+        dataset_dir,
+        camera_names,
+        norm_stats,
+        episode_len=target_episode_len,
+    )
+
+    split_info["dataset_max_episode_len"] = int(max_episode_len)
+    split_info["loader_episode_len"] = int(target_episode_len)
 
     loader_kw: dict = {"pin_memory": pin_memory, "num_workers": num_workers}
     if num_workers > 0:

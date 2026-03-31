@@ -23,11 +23,17 @@ eval:
   ckpt_dir:      "runs/ckpts/agx_excavation_act_v0"
 
 # ── Mission success / reward ─────────────────────────────────────────────────
-# success = deposited_mass_in_target_box_kg stays above mass_thresh for hold_steps
+# success = target retained mass stays above mass_thresh while bucket residual
+# mass stays below residual_bucket_mass_thresh for hold_steps at episode end.
 success:
+  mode: "dump_complete_final_hold"
   signal_name: "deposited_mass_in_target_box_kg"
-  mass_thresh: 100.0
+  mass_thresh: 300.0
   hold_steps:  25
+  residual_bucket_mass_thresh: 100.0
+  strict_max_failures:
+    hard_target_collision: 0
+    spill_before_target: 0
 
 reward:
   load_mass_threshold_kg:       100.0

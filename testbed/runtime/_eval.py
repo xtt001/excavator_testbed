@@ -58,6 +58,14 @@ def eval_policy(config: dict[str, Any]) -> None:
         "signal_name",
         success_cfg.get("success_signal_name"),
     )
+    agx_success_mode = str(success_cfg.get("mode", "legacy_any"))
+    strict_max_failures = dict(success_cfg.get("strict_max_failures", {}))
+    residual_bucket_mass_thresh = float(
+        success_cfg.get(
+            "residual_bucket_mass_thresh",
+            success_cfg.get("bucket_residual_mass_thresh", 100.0),
+        )
+    )
     env_state_index_value = success_cfg.get(
         "env_state_idx",
         success_cfg.get("env_state_index"),
@@ -103,6 +111,40 @@ def eval_policy(config: dict[str, Any]) -> None:
 
     from testbed.eval.suite import EvalSuite
     from testbed.eval.metrics import EvalMetrics
+    from testbed.runtime.run_metadata import (
+        build_eval_run_metadata,
+        write_json,
+        write_resolved_config,
+    )
+
+    results_dir.mkdir(parents=True, exist_ok=True)
+    resolved_eval_config_path = write_resolved_config(
+        results_dir / "eval_resolved_config.yaml",
+        config,
+    )
+    eval_run_metadata = build_eval_run_metadata(
+        ckpt_dir=ckpt_dir,
+        ckpt_path=ckpt_path,
+        results_dir=results_dir,
+        resolved_config_path=resolved_eval_config_path,
+        task_name=task_name,
+        policy_class=policy_class,
+        device=device,
+    )
+    eval_run_metadata["status"] = "started"
+    eval_run_metadata["success"] = {
+        "mode": agx_success_mode,
+        "signal_name": success_signal_name,
+        "mass_thresh": None if mass_thresh is None else float(mass_thresh),
+        "hold_steps": None if hold_steps is None else int(hold_steps),
+        "env_state_index": env_state_index,
+        "residual_bucket_mass_thresh": residual_bucket_mass_thresh,
+        "strict_max_failures": {
+            str(name): int(limit) for name, limit in strict_max_failures.items()
+        },
+    }
+    eval_run_metadata["reward_overrides"] = dict(reward_cfg)
+    eval_run_metadata_path = write_json(results_dir / "eval_run_metadata.json", eval_run_metadata)
 
     suite = EvalSuite(
         policy       = policy,
@@ -123,13 +165,28 @@ def eval_policy(config: dict[str, Any]) -> None:
         success_signal_name = (
             None if success_signal_name is None else str(success_signal_name)
         ),
+        agx_success_mode = agx_success_mode,
+        strict_max_failures = strict_max_failures,
+        residual_bucket_mass_thresh = residual_bucket_mass_thresh,
         env_state_index = env_state_index,
         reward_overrides = dict(reward_cfg),
     )
-    metrics = suite.run()
+    try:
+        metrics = suite.run()
+    except Exception as exc:
+        eval_run_metadata["status"] = "failed"
+        eval_run_metadata["error"] = f"{type(exc).__name__}: {exc}"
+        write_json(eval_run_metadata_path, eval_run_metadata)
+        raise
 
-    # save results
-    results_dir.mkdir(parents=True, exist_ok=True)
     metrics.to_json(results_dir / "metrics.json")
     EvalMetrics.append_to_csv([metrics], results_dir / "results.csv")
+    eval_run_metadata["status"] = "completed"
+    if hasattr(metrics, "to_dict"):
+        eval_run_metadata["metrics"] = metrics.to_dict()
+    else:
+        eval_run_metadata["metrics"] = {
+            "repr": repr(metrics),
+        }
+    write_json(eval_run_metadata_path, eval_run_metadata)
     print(f"\nResults saved to {results_dir}")

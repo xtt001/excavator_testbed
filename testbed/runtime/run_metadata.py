@@ -68,6 +68,42 @@ def build_train_run_metadata(
     }
 
 
+def build_eval_run_metadata(
+    *,
+    ckpt_dir: Path,
+    ckpt_path: Path,
+    results_dir: Path,
+    resolved_config_path: Path,
+    task_name: str,
+    policy_class: str,
+    device: str,
+) -> dict[str, Any]:
+    repo_root = Path(__file__).resolve().parents[2]
+    return {
+        "run_type": "eval",
+        "generated_at": datetime.datetime.utcnow().isoformat(),
+        "task_name": str(task_name),
+        "policy_class": str(policy_class),
+        "device_requested": str(device),
+        "command": shlex.join(sys.argv),
+        "argv": list(sys.argv),
+        "cwd": os.getcwd(),
+        "paths": {
+            "ckpt_dir": str(ckpt_dir.resolve()),
+            "ckpt_path": str(ckpt_path.resolve()),
+            "results_dir": str(results_dir.resolve()),
+            "resolved_config": str(resolved_config_path.resolve()),
+            "metrics_json": str((results_dir / "metrics.json").resolve()),
+            "results_csv": str((results_dir / "results.csv").resolve()),
+            "rollout_manifest": str((results_dir / "rollout_manifest.json").resolve()),
+        },
+        "environment": _collect_environment_snapshot(),
+        "repo_snapshots": {
+            "repo_a": _collect_repo_snapshot(repo_root),
+        },
+    }
+
+
 def _collect_environment_snapshot() -> dict[str, Any]:
     snapshot: dict[str, Any] = {
         "python_executable": sys.executable,

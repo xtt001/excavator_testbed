@@ -8,7 +8,7 @@
 - 了解当前最小 live 闭环已经验证到了哪一步
 - 了解接下来应该优先做什么
 
-状态日期：`2026-03-26`
+状态日期：`2026-03-27`
 
 ---
 
@@ -77,6 +77,8 @@
 - AGX 任务评测套件
 - 训练 run 的 frozen split / resolved config / run metadata 自动落盘
 - eval 逐 timestep rollout 日志与 summary / manifest 输出
+- AGX eval 多口径 success 判定（`legacy_any / final_hold / strict_final_hold / dump_complete_final_hold / strict_dump_complete`）
+- `tb-experiment-record` 与 `experiment_registry.csv`
 
 对应代码：
 - [testbed/policies/act/adapter.py](/home/pingfan/PACT/excavator_testbed/testbed/policies/act/adapter.py)
@@ -175,7 +177,7 @@ for 25 consecutive steps
 
 结论：
 - 最小 live pipeline 已经打通
-- 当前问题不再是“协议不通”，而是“正式数据与正式配置还没完全切到新基线”
+- 当前问题不再是“协议不通”，而是“正式数据与正式配置已经切到新基线，接下来要提高成功定义与结果归因质量”
 
 本轮 smoke 产物：
 - 数据：`data/agx_teleop_v1_smoke/episode_0.hdf5`、`episode_1.hdf5`
@@ -225,6 +227,47 @@ for 25 consecutive steps
 - `1920x1060` 级别图像会明显拖慢 live teleop
 - 改回较低固定分辨率后，录制和交互恢复正常
 
+### 4.2 2026-03-27 首轮 fulltest baseline
+
+当前已经完成第一轮正式 baseline：
+- 数据集：`data/agx_teleop_fulltest/`
+- 训练配置：`testbed/configs/act_agx_fulltest.yaml`
+- 评测配置：`testbed/configs/eval_agx_fulltest.yaml`
+
+当前结果判断：
+- 训练本身已经稳定收敛，说明新数据集足以让 ACT 学到任务骨架
+- 首轮评测视频可见策略能挖、能运，但 dump 质量仍然明显不足
+- 当前更准确的判断是：模型并不是“后半段完全没学到”，而是“后半段学到了动作模式，但学偏了”
+- 一个直接信号是：policy 会模仿 teleop 中用于减速/纠偏的反向拨杆动作，而不是理解“为什么此刻需要减速”
+
+本轮新增并已落地的能力：
+- AGX eval 现在支持五套 success 口径：
+  - `legacy_any`
+  - `final_hold`
+  - `strict_final_hold`
+  - `dump_complete_final_hold`
+  - `strict_dump_complete`
+- 当前推荐主口径是 `dump_complete_final_hold`
+- 默认阈值：
+  - `mass_thresh = 300.0 kg`
+  - `residual_bucket_mass_thresh = 100.0 kg`
+  - `hold_steps = 25`
+- `strict_dump_complete` 会在 dump-complete final hold 的基础上，再检查 `spill_before_target` / `hard_target_collision` 等失败计数上限
+- train + eval + dataset QC 现在可以汇总成实验记录：
+  - `runs/experiments/<name>/experiment_record.json`
+  - `runs/experiments/<name>/experiment_record.md`
+  - `runs/experiments/experiment_registry.csv`
+
+当前已经生成的实验记录：
+- `runs/experiments/agx_fulltest_round1/`
+- `runs/experiments/agx_v0_round0/`
+
+这意味着后续每一轮 baseline 都可以按同一格式登记：
+- 用的是什么数据
+- 最优 epoch / val loss 是多少
+- eval 用的是什么 success 口径
+- 成功率、平均回报、平均 spill / collision 次数是多少
+
 ---
 
 ## 5. 当前数据状态
@@ -244,7 +287,7 @@ for 25 consecutive steps
 
 ## 6. 当前主要待办
 
-当前已经没有“协议级卡死”的阻塞，剩下的是把 smoke 验证推广成正式基线。
+当前已经没有“协议级卡死”的阻塞，剩下的是把第一轮正式 baseline 变成可对比、可解释、可迭代的实验流程。
 
 这里要注意一个架构原则：
 - 训练 setup、split、run metadata、分析日志都应该补
@@ -258,6 +301,27 @@ for 25 consecutive steps
 - 是不是 reward / penalty 或 task logic 让问题过难
 - 是不是 split、训练轮数、chunk size、eval 条件不合适
 - 还是 rollout 链路本身就和训练假设不一致
+
+当前最优先的后续工作不是盲目继续堆数据，而是：
+- 用新的 `dump_complete_final_hold / strict_dump_complete` 口径重跑 baseline eval
+- 让 `experiment_registry.csv` 里真正形成多轮可比较记录
+- 再根据对比结果决定下一步更该补数据、调 reward/task，还是动 policy
+
+当前 2026-03-27 这轮分析之后，下一步优先级已经进一步收敛为：
+- 先做 `ACT(qpos)` vs `ACT(qpos+qvel)` 对照实验
+- 暂不把 reward 优化当成当前 BC 提升的主路径
+- 也暂不直接上更大的上层决策模型
+
+原因：
+- 当前 ACT 实现真实输入是 `images + qpos`
+- 当前 `qvel / env_state / reward` 都不进入 ACT loss
+- 现有失败模式高度怀疑与末端速度控制有关
+- 因此先加 `qvel`，比先改 reward 更有可能提升 dump phase
+
+建议的工程做法：
+- 在独立实验分支中完成 `qvel` 输入改造
+- 不直接覆盖当前 `qpos` baseline
+- 让新的 checkpoint、config、experiment record 单独命名，便于横向比较
 
 ### 待办 1：默认数据目录仍是旧样本
 

@@ -75,6 +75,7 @@ def build_rollout_summary(
         "episode_return": float(np.sum(rewards)) if rewards else 0.0,
         "episode_len": len(rewards),
         "highest_reward": float(max(rewards)) if rewards else 0.0,
+        "first_success_event_step": first_success_step,
         "first_success_step": first_success_step,
         "first_failure_step": first_failure_step,
         "failure_counts": dict(sorted(failure_counts.items())),
@@ -90,6 +91,25 @@ def build_rollout_manifest(
     rollout_log_dir: Path | str,
     rollouts: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    success_counts_by_mode: dict[str, int] = {}
+    success_rates_by_mode: dict[str, float] = {}
+    if rollouts:
+        success_keys = [
+            "success",
+            "legacy_success",
+            "final_hold_success",
+            "strict_final_hold_success",
+            "dump_complete_final_hold_success",
+            "strict_dump_complete_success",
+        ]
+        n_rollouts = len(rollouts)
+        for key in success_keys:
+            if key not in rollouts[0]:
+                continue
+            count = int(sum(bool(rollout.get(key, False)) for rollout in rollouts))
+            success_counts_by_mode[key] = count
+            success_rates_by_mode[key] = count / n_rollouts if n_rollouts > 0 else 0.0
+
     return {
         "generated_at": datetime.datetime.utcnow().isoformat(),
         "task_name": task_name,
@@ -97,5 +117,7 @@ def build_rollout_manifest(
         "ckpt_path": str(ckpt_path),
         "rollout_log_dir": str(rollout_log_dir),
         "n_rollouts": len(rollouts),
+        "success_counts_by_mode": success_counts_by_mode,
+        "success_rates_by_mode": success_rates_by_mode,
         "rollouts": [to_jsonable(rollout) for rollout in rollouts],
     }

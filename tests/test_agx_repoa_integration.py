@@ -16,11 +16,17 @@ from testbed.cli.record_teleop import (
     _should_stop_on_success,
     _validate_requested_cameras,
 )
+from testbed.data.dataset import load_data
 from testbed.data.hdf5_io import read_episode, write_episode
 from testbed.data.qc import run_dataset_qc
 from testbed.data.recorder import EpisodeRecorder
 from testbed.eval.suite import EvalSuite
 from testbed.policies.act.adapter import ACTAdapter
+from testbed.runtime.experiment_record import (
+    append_experiment_registry,
+    build_experiment_record,
+    write_experiment_record,
+)
 from testbed.runtime._train import train_policy
 from testbed.runtime._eval import eval_policy
 
@@ -59,9 +65,11 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
                 "save_video": False,
             },
             "success": {
+                "mode": "dump_complete_final_hold",
                 "signal_name": "deposited_mass_in_target_box_kg",
                 "mass_thresh": 125.0,
                 "hold_steps": 17,
+                "residual_bucket_mass_thresh": 88.0,
                 "env_state_idx": 3,
             },
             "reward": {
@@ -90,6 +98,8 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         self.assertEqual(suite_kwargs["agx_timeout"], 12.5)
         self.assertEqual(suite_kwargs["mass_thresh"], 125.0)
         self.assertEqual(suite_kwargs["hold_steps"], 17)
+        self.assertEqual(suite_kwargs["agx_success_mode"], "dump_complete_final_hold")
+        self.assertEqual(suite_kwargs["residual_bucket_mass_thresh"], 88.0)
         self.assertEqual(
             suite_kwargs["success_signal_name"],
             "deposited_mass_in_target_box_kg",
@@ -537,6 +547,204 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         self.assertTrue(any("rollout 000  step 4 / 5" in line for line in printed))
         self.assertTrue(any("rollout 000  step 5 / 5" in line for line in printed))
 
+    def test_eval_suite_reports_agx_success_modes(self) -> None:
+        class FakePolicy:
+            def reset(self) -> None:
+                pass
+
+            def predict(self, _obs) -> np.ndarray:
+                return np.zeros(4, dtype=np.float32)
+
+        class FakeTimeStep:
+            def __init__(self, observation, reward: float, info: dict[str, object]) -> None:
+                self.observation = observation
+                self.reward = reward
+                self.info = info
+
+        class FakeEnv:
+            dt = 0.02
+
+            def __init__(self) -> None:
+                self._index = 0
+                self._signal = [0.0, 120.0, 120.0, 0.0]
+
+            def reset(self, seed=None):
+                self._index = 0
+                return FakeTimeStep(
+                    observation={
+                        "qpos": np.zeros(4, dtype=np.float32),
+                        "qvel": np.zeros(4, dtype=np.float32),
+                        "images": {},
+                        "env_state": np.array([0.0, 0.0, 0.0, self._signal[0], 0, 0, 0, 0, 0], dtype=np.float32),
+                        "step_id": 0,
+                        "sim_time_ns": 0,
+                    },
+                    reward=0.0,
+                    info={},
+                )
+
+            def step(self, action):
+                self._index += 1
+                value = self._signal[self._index]
+                return FakeTimeStep(
+                    observation={
+                        "qpos": np.zeros(4, dtype=np.float32),
+                        "qvel": np.zeros(4, dtype=np.float32),
+                        "images": {},
+                        "env_state": np.array([0.0, 0.0, 0.0, value, 0, 0, 0, 0, 0], dtype=np.float32),
+                        "step_id": self._index,
+                        "sim_time_ns": self._index * 20_000_000,
+                    },
+                    reward=1.0,
+                    info={
+                        "sim_time_ns": self._index * 20_000_000,
+                        "reward_phase": "depositing",
+                        "task_success": self._index in (1, 2),
+                        "task_step_successes": [],
+                        "task_step_failures": ["spill_before_target"] if self._index == 2 else [],
+                        "task_metrics": {
+                            "deposited_mass_in_target_box_kg": value,
+                        },
+                        "warnings": [],
+                    },
+                )
+
+            def close(self) -> None:
+                pass
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            suite = EvalSuite(
+                policy=FakePolicy(),
+                task_name="agx_excavation_teleop",
+                num_rollouts=1,
+                save_video=False,
+                results_dir=Path(tmpdir) / "results",
+                save_rollout_logs=True,
+                rollout_log_dir=Path(tmpdir) / "results" / "rollouts",
+                mass_thresh=100.0,
+                hold_steps=2,
+                env_state_index=3,
+                agx_success_mode="final_hold",
+                strict_max_failures={"spill_before_target": 0},
+            )
+            suite.task_def = replace(suite.task_def, episode_len=3)
+            suite._make_env = lambda _task: FakeEnv()
+
+            metrics = suite.run()
+
+            self.assertEqual(metrics.n_success, 0)
+            self.assertEqual(metrics.extra["success_mode"], "final_hold")
+            self.assertEqual(metrics.extra["legacy_success_rate"], 1.0)
+            self.assertEqual(metrics.extra["final_hold_success_rate"], 0.0)
+            self.assertEqual(metrics.extra["strict_final_hold_success_rate"], 0.0)
+
+            summary_path = Path(tmpdir) / "results" / "rollouts" / "rollout_000_summary.json"
+            with open(summary_path) as f:
+                summary = json.load(f)
+            self.assertTrue(summary["legacy_success"])
+            self.assertFalse(summary["final_hold_success"])
+            self.assertFalse(summary["strict_final_hold_success"])
+            self.assertEqual(summary["first_task_success_step"], 0)
+            self.assertEqual(summary["first_hold_success_step"], 1)
+            self.assertEqual(summary["strict_blocking_failures"], {"spill_before_target": 1})
+
+    def test_dump_complete_success_requires_low_final_bucket_mass(self) -> None:
+        class FakeEnv:
+            def get_info(self):
+                class Info:
+                    env_state_order = (
+                        "mass_in_bucket_kg",
+                        "excavated_mass_kg",
+                        "mass_in_target_box_kg",
+                        "deposited_mass_in_target_box_kg",
+                        "min_distance_to_target_m",
+                        "target_hard_collision_count",
+                        "target_contact_max_normal_force_n",
+                        "min_distance_to_dig_area_m",
+                        "bucket_depth_below_dig_area_plane_m",
+                    )
+
+                return Info()
+
+        suite = EvalSuite(
+            policy=object(),
+            task_name="agx_excavation_teleop",
+            save_video=False,
+            save_rollout_logs=False,
+            mass_thresh=300.0,
+            hold_steps=2,
+            agx_success_mode="dump_complete_final_hold",
+            residual_bucket_mass_thresh=100.0,
+        )
+
+        env_states = [
+            np.array([350.0, 0.0, 0.0, 320.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+            np.array([220.0, 0.0, 0.0, 320.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+            np.array([180.0, 0.0, 0.0, 320.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+        ]
+        summary = suite._evaluate_agx_success(
+            env=FakeEnv(),
+            env_states=env_states,
+            success_flags=[False, False, False],
+            step_records=[],
+        )
+
+        self.assertTrue(summary["final_hold_success"])
+        self.assertFalse(summary["dump_complete_final_hold_success"])
+        self.assertFalse(summary["success"])
+        self.assertEqual(summary["final_bucket_mass"], 180.0)
+        self.assertEqual(summary["residual_bucket_mass_thresh"], 100.0)
+
+    def test_strict_dump_complete_blocks_spill_or_collision(self) -> None:
+        class FakeEnv:
+            def get_info(self):
+                class Info:
+                    env_state_order = (
+                        "mass_in_bucket_kg",
+                        "excavated_mass_kg",
+                        "mass_in_target_box_kg",
+                        "deposited_mass_in_target_box_kg",
+                        "min_distance_to_target_m",
+                        "target_hard_collision_count",
+                        "target_contact_max_normal_force_n",
+                        "min_distance_to_dig_area_m",
+                        "bucket_depth_below_dig_area_plane_m",
+                    )
+
+                return Info()
+
+        suite = EvalSuite(
+            policy=object(),
+            task_name="agx_excavation_teleop",
+            save_video=False,
+            save_rollout_logs=False,
+            mass_thresh=300.0,
+            hold_steps=2,
+            agx_success_mode="strict_dump_complete",
+            strict_max_failures={"spill_before_target": 0, "hard_target_collision": 0},
+            residual_bucket_mass_thresh=100.0,
+        )
+
+        env_states = [
+            np.array([90.0, 0.0, 0.0, 320.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+            np.array([80.0, 0.0, 0.0, 330.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+        ]
+        step_records = [
+            {"task_step_failures": []},
+            {"task_step_failures": ["spill_before_target"]},
+        ]
+        summary = suite._evaluate_agx_success(
+            env=FakeEnv(),
+            env_states=env_states,
+            success_flags=[False, False],
+            step_records=step_records,
+        )
+
+        self.assertTrue(summary["dump_complete_final_hold_success"])
+        self.assertFalse(summary["strict_dump_complete_success"])
+        self.assertFalse(summary["success"])
+        self.assertEqual(summary["strict_blocking_failures"], {"spill_before_target": 1})
+
     def test_dataset_qc_handles_legacy_episode_and_writes_reports(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             dataset_dir = Path(tmpdir) / "dataset"
@@ -582,6 +790,55 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
             self.assertIn("episode_1", summary["warnings"]["missing_image_ids"])
             self.assertIn("episode_2", summary["warnings"]["unreadable_episode_ids"])
 
+    def test_load_data_supports_variable_length_success_truncated_episodes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dataset_dir = Path(tmpdir) / "dataset"
+            dataset_dir.mkdir(parents=True, exist_ok=True)
+
+            lengths = [5, 7, 6]
+            for episode_id, length in enumerate(lengths):
+                write_episode(
+                    dataset_dir / f"episode_{episode_id}.hdf5",
+                    qpos=np.full((length, 4), episode_id, dtype=np.float32),
+                    qvel=np.zeros((length, 4), dtype=np.float32),
+                    actions=np.full((length, 4), 0.1 * (episode_id + 1), dtype=np.float32),
+                    images={"fpv": np.zeros((length, 8, 8, 3), dtype=np.uint8)},
+                    rewards=np.zeros(length, dtype=np.float32),
+                    metadata={"success": 1},
+                    env_state=np.zeros((length, 9), dtype=np.float32),
+                    step_ids=np.arange(length, dtype=np.int64),
+                    step_ns=np.arange(length, dtype=np.int64),
+                )
+
+            train_loader, val_loader, norm_stats, _, split_info = load_data(
+                dataset_dir=dataset_dir,
+                num_episodes=3,
+                camera_names=["fpv"],
+                episode_len=10,
+                batch_size_train=2,
+                batch_size_val=1,
+                num_workers=0,
+                prefetch_factor=1,
+                persistent_workers=False,
+                pin_memory=False,
+                split_seed=0,
+                train_split_ratio=0.67,
+                reuse_split=False,
+            )
+
+            self.assertEqual(norm_stats["qpos_mean"].shape, (4,))
+            self.assertEqual(norm_stats["action_mean"].shape, (4,))
+            self.assertEqual(split_info["dataset_max_episode_len"], 7)
+            self.assertEqual(split_info["loader_episode_len"], 10)
+
+            image_data, qpos_data, action_data, is_pad = next(iter(train_loader))
+            self.assertEqual(image_data.shape[1:], (1, 3, 8, 8))
+            self.assertEqual(qpos_data.shape[1:], (4,))
+            self.assertEqual(action_data.shape[1:], (10, 4))
+            self.assertEqual(is_pad.shape[1:], (10,))
+            self.assertGreaterEqual(len(train_loader), 1)
+            self.assertGreaterEqual(len(val_loader), 1)
+
     def test_episode_recorder_preserves_demo_metadata_attrs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             recorder = EpisodeRecorder(
@@ -613,6 +870,92 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
             self.assertEqual(metadata["notes"], "test note")
             self.assertEqual(metadata["record_config_path"], "/tmp/teleop_v0.yaml")
             self.assertIn("task_name: agx_excavation_teleop", metadata["record_config_yaml"])
+
+    def test_experiment_record_collects_train_eval_and_qc_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            train_ckpt_dir = tmp / "ckpts" / "run_a"
+            eval_results_dir = tmp / "eval" / "run_a" / "results"
+            dataset_dir = tmp / "data" / "dataset_a"
+            (dataset_dir / "qc").mkdir(parents=True, exist_ok=True)
+            train_ckpt_dir.mkdir(parents=True, exist_ok=True)
+            eval_results_dir.mkdir(parents=True, exist_ok=True)
+
+            (train_ckpt_dir / "run_metadata.json").write_text(json.dumps({
+                "training_result": {"best_epoch": 42, "best_val_loss": 0.321},
+                "command": "tb-train --config x.yaml",
+                "paths": {"dataset_dir": str(dataset_dir)},
+                "split": {"train_ids": [0, 1], "val_ids": [2]},
+            }))
+            (train_ckpt_dir / "resolved_config.yaml").write_text("task:\n  dataset_dir: data/dataset_a\n")
+            (eval_results_dir / "metrics.json").write_text(json.dumps({
+                "ckpt_path": "runs/ckpts/run_a/policy_best.ckpt",
+                "n_rollouts": 10,
+                "n_success": 2,
+                "success_rate": 0.2,
+                "avg_return": 123.4,
+                "avg_episode_len": 1000.0,
+                "extra": {
+                    "success_mode": "dump_complete_final_hold",
+                    "avg_final_success_signal": 210.0,
+                    "avg_max_success_signal": 420.0,
+                    "avg_final_bucket_mass": 88.0,
+                },
+            }))
+            (eval_results_dir / "rollout_manifest.json").write_text(json.dumps({
+                "success_rates_by_mode": {
+                    "legacy_success": 0.3,
+                    "final_hold_success": 0.2,
+                    "strict_final_hold_success": 0.1,
+                    "dump_complete_final_hold_success": 0.1,
+                    "strict_dump_complete_success": 0.0,
+                },
+                "success_counts_by_mode": {
+                    "legacy_success": 3,
+                    "final_hold_success": 2,
+                    "strict_final_hold_success": 1,
+                    "dump_complete_final_hold_success": 1,
+                    "strict_dump_complete_success": 0,
+                },
+                "rollouts": [
+                    {"failure_counts": {"spill_before_target": 2, "hard_target_collision": 1}},
+                    {"failure_counts": {"spill_before_target": 0, "unsafe_target_distance": 3}},
+                ],
+            }))
+            (dataset_dir / "qc" / "summary.json").write_text(json.dumps({
+                "n_episodes": 20,
+                "success_rate": 1.0,
+                "episode_length": {"mean": [704.25], "std": [70.7]},
+            }))
+
+            record = build_experiment_record(
+                train_ckpt_dir=train_ckpt_dir,
+                eval_results_dir=eval_results_dir,
+                dataset_dir=dataset_dir,
+                experiment_name="fulltest_round1",
+                notes="first baseline",
+            )
+            json_path, md_path = write_experiment_record(
+                record=record,
+                output_root=tmp / "experiments",
+            )
+            registry_path = append_experiment_registry(
+                record,
+                tmp / "experiments" / "experiment_registry.csv",
+            )
+
+            self.assertEqual(record["experiment_name"], "fulltest_round1")
+            self.assertEqual(record["train"]["best_epoch"], 42)
+            self.assertEqual(record["eval"]["primary_success_rate"], 0.2)
+            self.assertEqual(record["eval"]["legacy_success_rate"], 0.3)
+            self.assertEqual(record["eval"]["dump_complete_final_hold_success_rate"], 0.1)
+            self.assertEqual(record["eval"]["strict_dump_complete_success_rate"], 0.0)
+            self.assertEqual(record["eval"]["avg_final_bucket_mass"], 88.0)
+            self.assertEqual(record["eval"]["mean_failure_counts"]["spill_before_target"], 1.0)
+            self.assertTrue(json_path.exists())
+            self.assertTrue(md_path.exists())
+            self.assertTrue(registry_path.exists())
+            self.assertIn("fulltest_round1", md_path.read_text())
 
 
 if __name__ == "__main__":

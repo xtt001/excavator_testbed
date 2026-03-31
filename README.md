@@ -225,10 +225,23 @@ task:
 - `save_latest_every: 10`，不是每个 epoch 都刷一次 latest checkpoint
 - `amp: true` + `amp_dtype: auto`，在 CUDA 上自动选 `bf16/fp16`
 
+当前训练器也已经支持“成功即提前结束”的变长 demo：
+- 归一化统计会按所有 episode 的时间维拼接计算
+- DataLoader 会按配置里的 `task.episode_len` 统一 pad action / `is_pad`
+- 所以像 `data/agx_teleop_fulltest` 这种 `586-842` 步的 success-truncated 数据，可以直接训练
+
 改好后再训练：
 
 ```bash
 tb-train --config testbed/configs/act_agx_v0.yaml
+```
+
+如果你当前就是要直接训练
+`data/agx_teleop_fulltest`
+这批 `20` 条 joystick success demo，不用再手改 `v0`，可以直接用：
+
+```bash
+tb-train --config testbed/configs/act_agx_fulltest.yaml
 ```
 
 训练启动后，当前会自动在 `ckpt_dir` 下写出：
@@ -256,11 +269,41 @@ tb-eval --config testbed/configs/eval_agx_smoke.yaml
 tb-eval --config testbed/configs/eval_agx_v0.yaml
 ```
 
+如果你当前训练的是
+`testbed/configs/act_agx_fulltest.yaml`
+这条 baseline，对应直接评测：
+
+```bash
+tb-eval --config testbed/configs/eval_agx_fulltest.yaml
+```
+
 `tb-eval` 是 live rollout 命令，需要 Unity 在目标 host/port 上正确响应 step-ack。
 当前评测目录除 `metrics.json / results.csv / videos/` 外，还会额外写出：
 - `rollout_manifest.json`
 - `rollouts/rollout_XXX.jsonl`
 - `rollouts/rollout_XXX_summary.json`
+- `eval_run_metadata.json`
+- `eval_resolved_config.yaml`
+
+当前 AGX eval 现在会同时记录五套 success 口径：
+- `legacy_any`：历史口径，只要 rollout 中任意时刻曾满足 mission success
+- `final_hold`：episode 结束时仍满足 retained-mass hold 条件
+- `strict_final_hold`：在 `final_hold` 基础上，还要求指定失败项计数不超过阈值
+- `dump_complete_final_hold`：推荐主口径，episode 结束时既要保住足够多的 retained mass，也要把 bucket 余土降到阈值以下
+- `strict_dump_complete`：在 `dump_complete_final_hold` 基础上，再要求指定失败项计数不超过阈值
+
+当前推荐配置默认把主 success mode 设为 `dump_complete_final_hold`，并使用：
+- `mass_thresh = 300.0 kg`
+- `residual_bucket_mass_thresh = 100.0 kg`
+- `hold_steps = 25`
+- strict 默认阻断项：
+  - `hard_target_collision = 0`
+  - `spill_before_target = 0`
+
+也就是说：
+- `metrics.json` / `results.csv` 里的主 `success_rate` 现在对应 `dump_complete_final_hold`
+- `rollout_manifest.json` 里会额外保留
+  `legacy_success / final_hold_success / strict_final_hold_success / dump_complete_final_hold_success / strict_dump_complete_success`
 
 当前 `tb-eval` 还会在终端里输出 rollout 进度，默认类似：
 
@@ -269,6 +312,34 @@ tb-eval --config testbed/configs/eval_agx_v0.yaml
 ```
 
 这个频率可通过 `eval.step_log_interval` 调整，默认是 `50`。
+
+### 6.1 实验记录
+
+训练 run 现在会自动写：
+- `train_val_split.yaml`
+- `resolved_config.yaml`
+- `run_metadata.json`
+
+评测 run 现在会自动写：
+- `eval_resolved_config.yaml`
+- `eval_run_metadata.json`
+- `metrics.json`
+- `results.csv`
+- `rollout_manifest.json`
+
+如果你要把某一轮 train + eval + dataset QC 汇总成可比较的实验记录，再运行：
+
+```bash
+tb-experiment-record \
+  --train-ckpt-dir runs/ckpts/agx_excavation_act_fulltest \
+  --eval-results-dir runs/eval/agx_excavation_act_fulltest/results \
+  --notes "first 20-demo fulltest baseline"
+```
+
+它会写出：
+- `runs/experiments/<experiment_name>/experiment_record.json`
+- `runs/experiments/<experiment_name>/experiment_record.md`
+- `runs/experiments/experiment_registry.csv`
 
 ---
 
@@ -389,7 +460,7 @@ testbed/
   policies/               ACT, dummy, diffusion stub
   runtime/                runner, train/eval helpers
   configs/                teleop/train/eval configs
-  cli/                    tb-record-teleop, tb-replay, tb-dataset-qc, tb-train, tb-eval
+  cli/                    tb-record-teleop, tb-replay, tb-dataset-qc, tb-train, tb-eval, tb-experiment-record
 
 docs/
   current_status_and_plan.md
@@ -429,6 +500,94 @@ schema 规则：
 - add-only
 - 不重命名旧字段
 - 新必需字段才 bump version
+
+当前 HDF5 里“实际记录”的内容可以分成 4 类：
+
+1. 训练主数据
+- `observations/qpos`
+- `observations/images/<camera>`
+- `action`
+
+2. 任务分析与回放辅助
+- `observations/qvel`
+- `observations/env_state`
+- `rewards`
+- `timestamps/step_id`
+- `timestamps/step_ns`
+- `action_source/type`
+- `action_source/id`
+
+3. 录制上下文 metadata
+- `task_name`
+- `param_version`
+- `timestamp`
+- `seed`
+- `protocol_version`
+- `control_hz`
+- `dt`
+- `action_semantics`
+- `camera_names`
+- `image_format`
+- `camera_width`
+- `camera_height`
+- `camera_fps`
+- `camera_row_order`
+- `action_order`
+- `qpos_order`
+- `qvel_order`
+- `env_state_order`
+
+4. demo-level metadata
+- `episode_id`
+- `operator_id`
+- `session_id`
+- `notes`
+- `teleop_input`
+- `record_config_path`
+- `record_config_yaml`
+- joystick / keyboard 录制参数快照
+
+一个关键点：
+- 当前 ACT 模仿学习训练 **不会** 直接把 `rewards`、`env_state`、`task_success` 当作监督信号
+- 当前 ACT data loader 实际吃的是：
+  - `qpos`
+  - `images`
+  - `action`
+- `qvel / env_state / rewards / timestamps / metadata` 目前主要用于：
+  - replay
+  - dataset QC
+  - rollout analysis
+  - failure diagnosis
+  - experiment record
+
+这里还要明确一点：
+- 当前实现里 ACT 的低维输入只是 `qpos`
+- 这不代表 ACT “天然只能吃 position”
+- 在当前代码结构下，可以把低维 `robot_state` 扩成：
+  - `concat(qpos, qvel)`
+  - 或 `concat(qpos, qvel, selected_env_state)`
+- 但这属于新的输入定义实验，需要同时改：
+  - dataset
+  - normalization stats
+  - adapter 推理入口
+  - model `state_dim`
+- 因为它会改变 checkpoint 兼容性和 baseline 可比性，推荐放到单独实验分支上做
+
+因此，**单独修改 eval success 口径，不会让旧 HDF5 数据立刻失效**。
+
+但要注意一个例外：
+- `tb-record-teleop` 如果开启 `stop_on_success: true`
+- episode 会在当时录制所使用的 backend `task_success` 首次满足后提前结束
+
+这意味着：
+- 如果只是把 success 逻辑从旧 eval 口径改成更严格的
+  `dump_complete_final_hold / strict_dump_complete`
+  - 旧 demo 仍然可以继续训练
+  - 第一反应应该先重训、重评测
+- 如果你后来认为“旧 demo 经常在较宽松 success 下过早截断，没有保留足够稳定、足够干净的 dump 后半段”
+  - 那时才值得重新录制一批更符合新目标语义的数据
+
+更细的字段定义以 [schema.py](/home/pingfan/PACT/excavator_testbed/testbed/data/schema.py) 和 [hdf5_io.py](/home/pingfan/PACT/excavator_testbed/testbed/data/hdf5_io.py) 为准。
 
 ---
 

@@ -9,6 +9,30 @@ Before recording demos and training the first baseline, make sure the testbed ca
 
 ---
 
+## Current Status on 2026-03-27
+
+The following infrastructure items are already implemented and verified in Repo A:
+
+- `tb-record-teleop`, `tb-replay`, `tb-dataset-qc`, `tb-train`, `tb-eval`
+- frozen train/val split
+- `resolved_config.yaml` and `run_metadata.json` for training runs
+- `eval_resolved_config.yaml` and `eval_run_metadata.json` for eval runs
+- rollout-level `jsonl / summary / manifest` outputs
+- demo-level metadata (`operator_id / session_id / notes / config snapshot`)
+- experiment-level comparison records:
+  - `experiment_record.json`
+  - `experiment_record.md`
+  - `runs/experiments/experiment_registry.csv`
+
+The main remaining gaps are no longer basic plumbing. They are now:
+
+- stricter success / failure semantics for policy comparison
+- better cross-run comparison over multiple baselines
+- more evidence to decide whether the next bottleneck is data, task logic, or policy design
+- a clean input-design comparison for ACT, starting with `qpos` vs `qpos + qvel`
+
+---
+
 ## 1. Environment and episode control
 
 ### Reset and initialization
@@ -46,6 +70,9 @@ Before recording demos and training the first baseline, make sure the testbed ca
 - The exact observation keys are documented
 - Observation dimensions are printed and checked at runtime
 - Train-time and eval-time observations are guaranteed to match
+- Current Repo A ACT baseline uses `images + qpos`
+- `qvel` is already recorded in HDF5 but is not yet part of the ACT input
+- Next planned ablation is `ACT(qpos)` vs `ACT(qpos + qvel)`
 
 ### Sensor sanity checks
 
@@ -290,4 +317,3 @@ If the baseline fails, will we be able to answer all of these?
 - Was it a policy problem or a testbed/interface problem?
 
 If the answer is "no" to any of these, improve the testbed first.
-

@@ -59,18 +59,24 @@ class EvalMetrics:
         highest_rewards: list[float],
         env_max_reward: float,
         episode_lengths: list[int] | None = None,
+        successes: list[bool] | None = None,
         extra: dict | None = None,
     ) -> "EvalMetrics":
         import numpy as np
         n = len(episode_returns)
-        n_success = int(np.sum(np.array(highest_rewards) == env_max_reward))
+        if successes is None:
+            n_success = int(np.sum(np.array(highest_rewards) == env_max_reward))
+            success_rate = n_success / n if n > 0 else 0.0
+        else:
+            n_success = int(np.sum(np.array(successes, dtype=np.bool_)))
+            success_rate = n_success / n if n > 0 else 0.0
         return cls(
             task_name       = task_name,
             policy_name     = policy_name,
             ckpt_path       = ckpt_path,
             n_rollouts      = n,
             n_success       = n_success,
-            success_rate    = n_success / n if n > 0 else 0.0,
+            success_rate    = success_rate,
             avg_return      = float(np.mean(episode_returns)),
             avg_episode_len = float(np.mean(episode_lengths)) if episode_lengths else 0.0,
             episode_returns = [float(r) for r in episode_returns],

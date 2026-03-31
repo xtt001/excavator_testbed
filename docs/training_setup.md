@@ -92,6 +92,7 @@
 当前以这些文件为准：
 - [testbed/configs/act_agx_v0.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/act_agx_v0.yaml)：正式训练默认配置
 - [testbed/configs/act_agx_smoke.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/act_agx_smoke.yaml)：最小 smoke 训练配置
+- [testbed/configs/act_agx_fulltest.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/act_agx_fulltest.yaml)：当前 `data/agx_teleop_fulltest` 这 20 条 joystick success demo 的第一版 baseline 配置
 - [testbed/policies/act/trainer.py](/home/pingfan/PACT/excavator_testbed/testbed/policies/act/trainer.py)：训练循环真实行为
 - [testbed/runtime/_train.py](/home/pingfan/PACT/excavator_testbed/testbed/runtime/_train.py)：配置如何落到 trainer / dataloader
 
@@ -132,7 +133,7 @@
 
 ### 5.1.1 当前任务成功规则与录制结束规则
 
-当前任务成功规则：
+当前录制期 backend `task_success` 规则：
 - success signal: `deposited_mass_in_target_box_kg`
 - `mass_thresh`: `100.0 kg`
 - `hold_steps`: `25`
@@ -148,15 +149,217 @@ for 25 consecutive steps
 - `approaching_target` 依赖载荷和目标接近
 - `hard_target_collision_count` 增长时给惩罚
 
+录制结束规则还要额外记住一点：
+- `tb-record-teleop` 的 `stop_on_success: true` 用的是 backend 每步返回的 `task_success`
+- 也就是录制期 episode 是否提前结束，取决于当时录制所使用的 mission success 语义
+- 这和后续 `tb-eval` 里选用哪一种 success mode 是两回事
+
+### 5.1.2 HDF5 里到底存了什么
+
+当前每条 `episode_N.hdf5` 主要包含：
+
+```text
+/metadata attrs
+/observations/qpos
+/observations/qvel
+/observations/env_state
+/observations/images/<camera>
+/action
+/rewards
+/timestamps/step_id
+/timestamps/step_ns
+/action_source/type
+/action_source/id
+```
+
+其中 metadata attrs 当前会尽量写入：
+- 任务与协议信息：
+  - `task_name`
+  - `param_version`
+  - `timestamp`
+  - `seed`
+  - `protocol_version`
+  - `control_hz`
+  - `dt`
+  - `action_semantics`
+- 相机与观测定义：
+  - `camera_names`
+  - `image_format`
+  - `camera_width`
+  - `camera_height`
+  - `camera_fps`
+  - `camera_row_order`
+  - `action_order`
+  - `qpos_order`
+  - `qvel_order`
+  - `env_state_order`
+- demo-level metadata：
+  - `episode_id`
+  - `operator_id`
+  - `session_id`
+  - `notes`
+  - `teleop_input`
+  - `record_config_path`
+  - `record_config_yaml`
+- 输入设备参数快照：
+  - joystick deadzone / scale / limit / axis_map / invert
+  - response profile 参数
+  - keyboard key speed
+
+更精确的字段定义见：
+- [testbed/data/schema.py](/home/pingfan/PACT/excavator_testbed/testbed/data/schema.py)
+- [testbed/data/hdf5_io.py](/home/pingfan/PACT/excavator_testbed/testbed/data/hdf5_io.py)
+
+### 5.1.3 当前 ACT 训练真正用了哪些 HDF5 字段
+
+虽然 HDF5 里存了很多字段，但当前 ACT behaviour cloning 训练真正直接使用的是：
+- `observations/qpos`
+- `observations/images/<camera>`
+- `action`
+
+当前 **没有** 直接进入 ACT loss 的字段：
+- `qvel`
+- `env_state`
+- `rewards`
+- `task_success`
+- `metadata`
+- `timestamps`
+
+这些字段目前主要用于：
+- replay
+- dataset QC
+- rollout 诊断
+- failure analysis
+- experiment record
+
+这也意味着：
+- 当前 ACT 学的是 `obs -> action`
+- 当前 **不是** `action -> reward` 或 `obs -> reward-conditioned action`
+- 因此单独优化 task reward / eval reward，不会直接改变当前 BC 模型的训练目标
+
+### 5.1.3.1 当前 ACT 是否只能吃 `qpos`
+
+不是。
+
+当前 repo 里的实现只是把 ACT 的低维 `robot_state` 定义成了 `qpos`，但这条接口本身可以扩展成更大的低维向量。
+
+在当前代码结构下，技术上可以尝试：
+- `robot_state = concat(qpos, qvel)`
+- `robot_state = concat(qpos, qvel, selected_env_state)`
+
+其中第一步最推荐做的不是直接塞很多任务字段，而是先做一个最小对照实验：
+- baseline A：`qpos`
+- baseline B：`qpos + qvel`
+
+原因：
+- 当前失败模式明显和末端速度控制有关
+- `qvel` 比 reward 更直接对应“为什么此刻要反向拨杆减速”
+- 这类改动仍然属于 imitation learning 输入设计，不会把训练范式从 BC 改成 RL
+
+实现这类实验时要同步改的地方：
+- `testbed/data/dataset.py`
+- `testbed/runtime/_train.py`
+- `testbed/policies/act/adapter.py`
+- ACT model `state_dim` 与归一化统计
+
+由于这会改变输入维度和 checkpoint 兼容性，推荐在独立实验分支中完成，而不要直接覆盖当前 `qpos` baseline。
+
+### 5.1.4 success 逻辑变化后，旧数据是否还有效
+
+短答案：
+- **通常仍然有效**
+- **先重训 / 重评测，再决定要不要重录**
+
+原因：
+- 当前 ACT 是 imitation learning，不是用 reward/success 直接优化
+- 所以单独修改 eval success 逻辑，不会自动让旧 HDF5 失效
+
+当前更合理的判断准则是：
+
+1. 只改了 eval success 口径
+- 例如从旧口径换到 `dump_complete_final_hold` 或 `strict_dump_complete`
+- 旧 demo 仍然可以继续训练
+- 先用旧数据重新训练或至少重新评测
+
+2. 录制时 episode 可能被旧 success 提前截断
+- 如果 `stop_on_success: true`
+- 且旧录制 success 语义比现在想要的目标宽松
+- 那么旧 demo 可能缺少更稳定、更干净的 dump 后半段
+
+这时旧数据不是“无效”，而是“可能不够理想”。
+
+所以推荐顺序是：
+- 第一步：先用现有数据重训 / 重评测
+- 第二步：看新 success 口径下 rollout 到底差在哪里
+- 第三步：如果确认问题是 demo 后半段语义不足，再决定针对性重录
+
 当前 teleop 录制的 episode 结束条件：
 - 达到任务 success 时，默认提前结束并保存
 - 达到 `task.max_steps` 时结束并保存
 - 用户主动 discard / quit 时，不按成功 episode 保存
 
+当前训练侧已经显式支持这类 success-truncated 变长 demo：
+- 归一化统计按所有 episode 的时间维拼接计算，不要求每条 demo 长度相同
+- DataLoader 会按训练配置中的 `task.episode_len` 统一 pad `action` 和 `is_pad`
+- 因此 `586-842` 步这类提前结束的 success episode，不需要先手工补齐到固定 1000 步
+
 对应配置来源：
 - [testbed/configs/teleop_v0.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/teleop_v0.yaml)
 - [testbed/configs/eval_agx_v0.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/eval_agx_v0.yaml)
+- [testbed/configs/eval_agx_fulltest.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/eval_agx_fulltest.yaml)
 - [testbed/tasks/logic/excavator_reward.py](/home/pingfan/PACT/excavator_testbed/testbed/tasks/logic/excavator_reward.py)
+
+当前 eval 侧已经不再只保留一种 AGX success 口径，而是同时记录：
+- `legacy_any`
+  只要 rollout 中任意时刻触发过 `task_success` 或 retained-mass hold，就记成功
+- `final_hold`
+  episode 结束时，成功信号仍满足 `mass_thresh + hold_steps`
+- `strict_final_hold`
+  在 `final_hold` 基础上，再要求指定 failure counts 不超过阈值
+- `dump_complete_final_hold`
+  episode 结束时，既要满足 `deposited_mass_in_target_box_kg >= mass_thresh`
+  ，也要满足 `mass_in_bucket_kg <= residual_bucket_mass_thresh`，并连续保持 `hold_steps`
+- `strict_dump_complete`
+  在 `dump_complete_final_hold` 基础上，再要求指定 failure counts 不超过阈值
+
+当前推荐配置：
+- 主 success mode 用 `dump_complete_final_hold`
+- 默认阈值：
+  - `mass_thresh = 300.0 kg`
+  - `residual_bucket_mass_thresh = 100.0 kg`
+  - `hold_steps = 25`
+- 同时记录 strict 口径
+- strict 默认阻断项：
+  - `hard_target_collision: 0`
+  - `spill_before_target: 0`
+
+这样后续分析时可以明确区分：
+- “曾经把土抖进去过”
+- “最后仍然保住了足够多的土”
+- “最后保住了足够多的土，而且 bucket 也基本倒空了”
+- “最后保住了土、bucket 也基本倒空了，而且没有靠明显碰撞/提前撒土完成”
+
+### 5.1.5 当前 reward / penalty 在训练中的角色
+
+当前 AGX reward tracker 会输出：
+- `load_component`
+- `approach_component`
+- `deposit_component`
+- `hold_component`
+
+并叠加这些惩罚：
+- `spill_penalty`
+- `unsafe_distance_penalty`
+- `hard_collision_penalty`
+
+但在当前纯 ACT behavior cloning 路径里，这些 reward / penalty：
+- 会进入 rollout 评测与分析
+- 会进入 `task_metrics` / experiment record
+- **不会**进入 ACT 的训练 loss
+
+因此：
+- 它们对“失效归因”非常重要
+- 但不会直接让当前 BC 模型学会你的操作意图
 
 ### 5.2 模型
 
@@ -199,6 +402,52 @@ for 25 consecutive steps
   避免每个 epoch 都刷一遍 `policy_latest.ckpt`
 - `amp: true` + `amp_dtype: auto`
   在 CUDA 上优先尝试 `bf16`，不支持时回退到 `fp16`
+
+### 5.4 当前 `data/agx_teleop_fulltest` 的推荐 baseline 配置
+
+如果当前目标是直接在
+`data/agx_teleop_fulltest`
+上启动第一轮非 smoke baseline，推荐直接使用：
+
+- [testbed/configs/act_agx_fulltest.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/act_agx_fulltest.yaml)
+
+这份配置当前固定为：
+
+- `task.dataset_dir = data/agx_teleop_fulltest`
+- `task.num_episodes = 20`
+- `task.episode_len = 1000`
+- `task.camera_names = ["fpv"]`
+- `train.batch_size = 4`
+- `train.num_epochs = 500`
+- `train.val_every = 5`
+- `train.save_latest_every = 10`
+- `train.checkpoint_every = 50`
+- `train.plot_every = 50`
+- `train.amp = true`
+- `train.ckpt_dir = runs/ckpts/agx_excavation_act_fulltest`
+
+当前这样设置的原因：
+
+- 这批数据只有 20 条 demo，`batch_size = 4` 比通用 `v0` 的 `8` 更适合作为第一轮 baseline
+- 继续保留 `500 epochs`，让 ACT 在这批 demo 上有足够训练量
+- 继续使用固定 split、低频验证和 AMP，保证后续 run 之间可比
+- 这批数据本身是 success-truncated 变长 episode，当前训练器已经支持直接读取这类数据
+
+推荐命令：
+
+```bash
+tb-train --config testbed/configs/act_agx_fulltest.yaml
+```
+
+配套 live eval 配置：
+
+- [testbed/configs/eval_agx_fulltest.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/eval_agx_fulltest.yaml)
+
+推荐命令：
+
+```bash
+tb-eval --config testbed/configs/eval_agx_fulltest.yaml
+```
 
 ---
 
@@ -312,6 +561,8 @@ for 25 consecutive steps
 - `runs/eval/<run_name>/results/rollout_manifest.json`
 - `runs/eval/<run_name>/results/rollouts/rollout_XXX.jsonl`
 - `runs/eval/<run_name>/results/rollouts/rollout_XXX_summary.json`
+- `runs/eval/<run_name>/results/eval_resolved_config.yaml`
+- `runs/eval/<run_name>/results/eval_run_metadata.json`
 - `<dataset_dir>/qc/summary.json`
 - `<dataset_dir>/qc/episodes.csv`
 - `<dataset_dir>/qc/*.png`
@@ -338,9 +589,39 @@ rollout 000  step 50 / 1000
 
 当前仍未自动写出的内容：
 - Repo B / Repo C git commit
-- rollout 结果目录回链
 - 人工实验备注
 - broken demo 排除标记
+
+现在推荐在每轮正式 baseline 之后，再显式生成一份 experiment-level 记录：
+
+```bash
+tb-experiment-record \
+  --train-ckpt-dir runs/ckpts/<run_name> \
+  --eval-results-dir runs/eval/<run_name>/results \
+  --notes "what changed in this round"
+```
+
+这条命令会汇总：
+- train run metadata
+- eval run metadata
+- rollout manifest
+- dataset QC summary
+
+并额外写出：
+- `runs/experiments/<experiment_name>/experiment_record.json`
+- `runs/experiments/<experiment_name>/experiment_record.md`
+- `runs/experiments/experiment_registry.csv`
+
+其中 `experiment_registry.csv` 是当前推荐的“横向比较记录表”，至少会固定记录：
+- dataset 目录与 episode 数量
+- best epoch / best val loss
+- primary success mode
+- primary / legacy / final_hold / strict_final_hold /
+  `dump_complete_final_hold` / `strict_dump_complete` success rates
+- avg return / avg episode len
+- avg final success signal / avg max success signal
+- avg final bucket mass
+- mean `spill_before_target / hard_target_collision / unsafe_target_distance`
 
 其中至少包含：
 - 本次 run 名称

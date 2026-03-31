@@ -18,6 +18,7 @@ def train_policy(config: dict[str, Any]) -> None:
     task_name     = task_cfg.get("task_name", task_cfg.get("name", config.get("task_name", "")))
     dataset_dir   = Path(task_cfg.get("dataset_dir", config.get("dataset_dir", "data")))
     num_episodes  = task_cfg.get("num_episodes", config.get("num_episodes", 50))
+    episode_len   = int(task_cfg.get("episode_len", config.get("episode_len", 400)))
     camera_names  = task_cfg.get("camera_names", config.get("camera_names", []))
     ckpt_dir      = Path(train_cfg.get("ckpt_dir", config.get("ckpt_dir", f"ckpts/{task_name}")))
     equipment_model = task_cfg.get("equipment_model", config.get("equipment_model", "excavator_simple"))
@@ -86,6 +87,7 @@ def train_policy(config: dict[str, Any]) -> None:
         dataset_dir  = dataset_dir,
         num_episodes = num_episodes,
         camera_names = camera_names,
+        episode_len  = episode_len,
         batch_size_train   = batch_size,
         batch_size_val     = batch_size,
         num_workers        = num_workers,

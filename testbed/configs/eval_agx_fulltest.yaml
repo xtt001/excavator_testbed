@@ -1,4 +1,4 @@
-# Eval smoke config for AGX excavation (V0 stationary digging)
+# Eval config for the first fulltest ACT baseline on data/agx_teleop_fulltest.
 
 agx:
   host: "127.0.0.1"
@@ -9,13 +9,14 @@ task:
   name: "agx_excavation_teleop"
 
 eval:
-  num_rollouts: 2
+  num_rollouts: 10
   save_video: true
-  video_dir: "runs/eval/agx_excavation_smoke"
-  results_dir: "runs/eval/agx_excavation_smoke_results"
+  video_dir: "runs/eval/agx_excavation_act_fulltest/videos"
+  results_dir: "runs/eval/agx_excavation_act_fulltest/results"
   save_rollout_logs: true
-  rollout_log_dir: "runs/eval/agx_excavation_smoke_results/rollouts"
+  rollout_log_dir: "runs/eval/agx_excavation_act_fulltest/results/rollouts"
   step_log_interval: 50
+  ckpt_dir: "runs/ckpts/agx_excavation_act_fulltest"
 
 success:
   mode: "dump_complete_final_hold"
@@ -40,6 +41,6 @@ reward:
 
 policy:
   name: "act"
-  ckpt_path: "runs/ckpts/agx_excavation_act_smoke/policy_best.ckpt"
+  ckpt_path: "runs/ckpts/agx_excavation_act_fulltest/policy_best.ckpt"
   temporal_agg: false
   device: "cuda"

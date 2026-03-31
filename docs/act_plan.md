@@ -11,18 +11,22 @@
 - eval 逐 timestep rollout logs 已落地
 - dataset QC 已落地
 - demo-level metadata 已落地
+- AGX eval 多口径 success 逻辑已落地
+- experiment record / registry 已落地
 
 当前更准确的阶段判断是：
 
 - 还不能说 baseline ACT 已经有性能结论
 - 但可以说：外围实验管理层已经足够支撑第一轮正式 baseline 和失效归因
+- 第一轮 fulltest baseline 已证明 ACT 不是“完全学不会”
+- 当前更像是：它学到了任务骨架，也学到了部分不该学的 teleop 纠偏动作
 
 因此这份计划接下来应该把重点放在：
 
-- 录制更正式、更紧凑的 demo 数据
-- 补新数据上的 replay QA
-- 用正式数据跑第一轮真正的 baseline
-- 再根据 rollout logs 判断失败更像数据问题、任务问题，还是模型问题
+- 用统一 experiment record 记录每一轮 train + eval
+- 先完成一轮 `ACT(qpos)` vs `ACT(qpos+qvel)` 的输入对照实验
+- 再根据 rollout logs 和 success-mode 对比判断失败更像数据问题、任务问题，还是输入设计问题
+- 在此基础上再决定是否追加更针对 dump phase 的数据
 
 ## A. 先明确本阶段目标
 
@@ -119,6 +123,17 @@
 - 是否先只用低维状态
 - 如果用视觉，先确认视觉流是否稳定
 - 明确 observation 在 train / eval 中完全一致
+
+当前已确认的实现事实：
+- 当前 baseline ACT 真实输入是 `images + qpos`
+- `qvel` 虽然已经记录进 HDF5，但当前还没有进入 ACT 训练与推理
+- `env_state / rewards / task_success` 也没有进入 ACT loss
+
+因此当前 observation 侧最值得优先验证的，不是继续猜 reward，而是：
+- `ACT(qpos)`
+- `ACT(qpos + qvel)`
+
+先做最小输入对照，再决定是否继续引入部分 task-state conditioning
 
 ### 4. 任务成功标准
 
@@ -246,6 +261,8 @@
 - 平均 episode 长度
 - 是否存在明显动作抖动
 - 是否存在提前崩溃
+- 是否在接近 truck 时出现“不必要的反向 swing / 反向纠偏”
+- 是否出现“到达 truck 上方后又明显退回去”的固定动作模式
 
 ### 3. 视频回看时重点看
 
@@ -255,6 +272,38 @@
 - 旋转是否平稳
 - 倒土是否对准目标
 - 后半段是否因为误差累积崩掉
+- 是否在本不需要减速时也机械地模仿了 teleop 中的反向拨杆动作
+
+---
+
+## H. 下一步具体实验
+
+当前最推荐的下一步不是直接改 reward，也不是直接加更复杂的上层模型，而是：
+
+### 1. 做 `qvel` 输入对照实验
+
+- 保留当前 `ACT(qpos)` 作为基线
+- 新开一个实验分支，做 `ACT(qpos + qvel)`
+- 固定：
+  - 数据集
+  - split
+  - seed
+  - eval 配置
+  - success 口径
+- 只改输入定义
+
+目标：
+- 验证 dump phase 的失败是否主要来自“模型看不到速度状态”
+
+### 2. 何时再去动 reward / hierarchy
+
+只有在下面任一条件成立时，再优先考虑：
+- `qvel` 版也仍然主要死在 dump 末端
+- 说明单纯补速度状态还不够
+- 那时再考虑：
+  - 加部分 task-state conditioning
+  - reward-guided fine-tune
+  - 层级控制 / 上层决策模型
 
 ---
 
@@ -355,4 +404,3 @@
 - 看视频
 - 做失败分类
 - 写出 baseline 结论：能不能学会，失败在哪
-
