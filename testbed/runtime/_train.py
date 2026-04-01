@@ -20,6 +20,7 @@ def train_policy(config: dict[str, Any]) -> None:
     num_episodes  = task_cfg.get("num_episodes", config.get("num_episodes", 50))
     episode_len   = int(task_cfg.get("episode_len", config.get("episode_len", 400)))
     camera_names  = task_cfg.get("camera_names", config.get("camera_names", []))
+    low_dim_keys  = list(policy_cfg.get("low_dim_keys", ["qpos"]))
     ckpt_dir      = Path(train_cfg.get("ckpt_dir", config.get("ckpt_dir", f"ckpts/{task_name}")))
     equipment_model = task_cfg.get("equipment_model", config.get("equipment_model", "excavator_simple"))
     device        = str(train_cfg.get("device", policy_cfg.get("device", "cuda")))
@@ -55,6 +56,8 @@ def train_policy(config: dict[str, Any]) -> None:
         "nheads":        8,
         "camera_names":  camera_names,
         "equipment_model": equipment_model,
+        "low_dim_keys":  low_dim_keys,
+        "state_dim":     _resolve_low_dim_state_dim(low_dim_keys, equipment_model),
     }
 
     full_config = {
@@ -98,6 +101,7 @@ def train_policy(config: dict[str, Any]) -> None:
         train_split_ratio  = train_split_ratio,
         split_path         = split_path,
         reuse_split        = reuse_split,
+        low_dim_keys       = low_dim_keys,
     )
 
     # save normalisation stats so trainer can load them
@@ -173,3 +177,22 @@ def _build_resolved_train_config(
     train_cfg["amp"] = bool(full_config["amp"])
     train_cfg["amp_dtype"] = str(full_config["amp_dtype"])
     return resolved
+
+
+def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) -> int:
+    dims = {
+        "qpos": _resolve_single_low_dim_dim("qpos", equipment_model),
+        "qvel": _resolve_single_low_dim_dim("qvel", equipment_model),
+    }
+    return int(sum(dims[key] for key in low_dim_keys))
+
+
+def _resolve_single_low_dim_dim(key: str, equipment_model: str) -> int:
+    equipment_model = str(equipment_model).lower()
+    if key in ("qpos", "qvel"):
+        if "bimanual" in equipment_model:
+            return 14
+        if "excavator_simple" in equipment_model or "agxunity" in equipment_model or "agx" in equipment_model:
+            return 4
+        return 7
+    raise ValueError(f"Unsupported low-dim key {key!r}.")

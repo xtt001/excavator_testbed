@@ -244,6 +244,12 @@ tb-train --config testbed/configs/act_agx_v0.yaml
 tb-train --config testbed/configs/act_agx_fulltest.yaml
 ```
 
+如果你要开始做 `qpos` vs `qpos+qvel` 的最小输入对照实验，可以直接用新增的 `qvel` 版本配置：
+
+```bash
+tb-train --config testbed/configs/act_agx_fulltest_qvel.yaml
+```
+
 训练启动后，当前会自动在 `ckpt_dir` 下写出：
 - `train_val_split.yaml`
 - `resolved_config.yaml`
@@ -275,6 +281,12 @@ tb-eval --config testbed/configs/eval_agx_v0.yaml
 
 ```bash
 tb-eval --config testbed/configs/eval_agx_fulltest.yaml
+```
+
+如果你训练的是 `qpos+qvel` 对照版本，对应评测配置是：
+
+```bash
+tb-eval --config testbed/configs/eval_agx_fulltest_qvel.yaml
 ```
 
 `tb-eval` 是 live rollout 命令，需要 Unity 在目标 host/port 上正确响应 step-ack。
@@ -561,7 +573,7 @@ schema 规则：
   - experiment record
 
 这里还要明确一点：
-- 当前实现里 ACT 的低维输入只是 `qpos`
+- 当前默认 baseline 里 ACT 的低维输入仍然只是 `qpos`
 - 这不代表 ACT “天然只能吃 position”
 - 在当前代码结构下，可以把低维 `robot_state` 扩成：
   - `concat(qpos, qvel)`
@@ -571,7 +583,10 @@ schema 规则：
   - normalization stats
   - adapter 推理入口
   - model `state_dim`
-- 因为它会改变 checkpoint 兼容性和 baseline 可比性，推荐放到单独实验分支上做
+- 当前仓库已经落了一条独立的 `qpos+qvel` 实验路径：
+  - [testbed/configs/act_agx_fulltest_qvel.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/act_agx_fulltest_qvel.yaml)
+  - [testbed/configs/eval_agx_fulltest_qvel.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/eval_agx_fulltest_qvel.yaml)
+- 因为它会改变 checkpoint 兼容性和 baseline 可比性，当前仍建议把 `qvel` 版本当成独立对照实验，而不要覆盖 `qpos` baseline
 
 因此，**单独修改 eval success 口径，不会让旧 HDF5 数据立刻失效**。
 

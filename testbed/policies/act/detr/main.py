@@ -63,6 +63,8 @@ def get_args_parser():
     parser.add_argument('--kl_weight', action='store', type=int, help='KL Weight', required=False)
     parser.add_argument('--chunk_size', action='store', type=int, help='chunk_size', required=False)
     parser.add_argument('--temporal_agg', action='store_true')
+    parser.add_argument('--state_dim', action='store', type=int, required=False,
+                        help='explicit low-dimensional robot state dimension override')
 
     # 设备型号
     parser.add_argument('--equipment_model', action='store', type=str, default='vx300s_bimanual',
@@ -114,4 +116,3 @@ def build_CNNMLP_model_and_optimizer(args_override):
                                   weight_decay=args.weight_decay)
 
     return model, optimizer
-

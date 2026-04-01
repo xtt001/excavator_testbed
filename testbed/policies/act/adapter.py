@@ -47,7 +47,7 @@ class ACTAdapter(Policy):
     Parameters
     ----------
     policy_config  Dict passed to build_ACT_model_and_optimizer.
-    norm_stats     Dataset normalisation stats (qpos_mean/std, action_mean/std).
+    norm_stats     Dataset normalisation stats (proprio_mean/std, action_mean/std).
     temporal_agg   Use temporal action aggregation (default False).
     device         Torch device string (default "cuda").
     """
@@ -66,6 +66,7 @@ class ACTAdapter(Policy):
         self.temporal_agg = temporal_agg
         self.kl_weight    = policy_config.get("kl_weight", 10)
         self._camera_names = list(policy_config.get("camera_names", []))
+        self._low_dim_keys = list(policy_config.get("low_dim_keys", ["qpos"]))
 
         model, optimizer = build_ACT_model_and_optimizer(policy_config)
         self._model     = model.to(self.device)
@@ -81,6 +82,7 @@ class ACTAdapter(Policy):
             mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225],
         )
+        self._proprio_mean, self._proprio_std = self._resolve_proprio_norm_stats()
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -97,6 +99,7 @@ class ACTAdapter(Policy):
         ----------
         obs   dict with keys:
                 "qpos"      : (Nq,) float32
+                "qvel"      : (Nv,) float32 when configured in low_dim_keys
                 "image_<cam>": (C, H, W) float32 [0, 1]   for each camera
               Camera images should be in channel-first format.
 
@@ -104,11 +107,12 @@ class ACTAdapter(Policy):
         -------
         action : (Na,) float32  in *unnormalised* action space.
         """
-        qpos   = torch.from_numpy(obs["qpos"]).float().to(self.device).unsqueeze(0)
+        proprio = self._build_proprio(obs)
 
-        # normalise qpos
-        qpos = (qpos - torch.from_numpy(self.norm_stats["qpos_mean"]).to(self.device)) \
-                     / torch.from_numpy(self.norm_stats["qpos_std"]).to(self.device)
+        # normalise low-dimensional robot state
+        proprio = (
+            proprio - self._proprio_mean
+        ) / self._proprio_std
 
         # Assemble image tensor in configured camera order. Ignore metadata
         # keys like `image_format` that may appear in live AGX observations.
@@ -146,7 +150,7 @@ class ACTAdapter(Policy):
 
         self._model.eval()
         with torch.no_grad():
-            a_hat, _, _ = self._model(qpos, image, None)   # (1, C, Na)
+            a_hat, _, _ = self._model(proprio, image, None)   # (1, C, Na)
 
         if self.temporal_agg:
             action = self._aggregate(a_hat)
@@ -166,6 +170,39 @@ class ACTAdapter(Policy):
             + self.norm_stats["action_mean"]
         )
         return action.astype(np.float32)
+
+    def _build_proprio(self, obs: dict) -> torch.Tensor:
+        parts: list[np.ndarray] = []
+        for key in self._low_dim_keys:
+            if key not in obs:
+                raise ValueError(
+                    f"ACTAdapter.predict(): missing required low-dimensional input {key!r}."
+                )
+            value = np.asarray(obs[key], dtype=np.float32).reshape(-1)
+            parts.append(value)
+        if not parts:
+            raise ValueError("ACTAdapter.predict(): low_dim_keys must not be empty.")
+        proprio = np.concatenate(parts, axis=0).astype(np.float32)
+        return torch.from_numpy(proprio).float().to(self.device).unsqueeze(0)
+
+    def _resolve_proprio_norm_stats(self) -> tuple[torch.Tensor, torch.Tensor]:
+        if "proprio_mean" in self.norm_stats and "proprio_std" in self.norm_stats:
+            mean = self.norm_stats["proprio_mean"]
+            std = self.norm_stats["proprio_std"]
+        elif self._low_dim_keys == ["qpos"]:
+            # Backward compatibility for older qpos-only checkpoints.
+            mean = self.norm_stats["qpos_mean"]
+            std = self.norm_stats["qpos_std"]
+        else:
+            raise KeyError(
+                "dataset_stats.pkl does not contain proprio_mean/proprio_std for "
+                f"low_dim_keys={self._low_dim_keys}. Recompute stats by retraining "
+                "with the updated data pipeline."
+            )
+        return (
+            torch.from_numpy(np.asarray(mean, dtype=np.float32)).to(self.device),
+            torch.from_numpy(np.asarray(std, dtype=np.float32)).to(self.device),
+        )
 
     def _aggregate(self, a_hat: torch.Tensor) -> np.ndarray:
         """
@@ -214,7 +251,7 @@ class ACTAdapter(Policy):
 
     def forward_loss(
         self,
-        qpos: torch.Tensor,
+        proprio: torch.Tensor,
         image: torch.Tensor,
         actions: torch.Tensor,
         is_pad: torch.Tensor,
@@ -224,7 +261,7 @@ class ACTAdapter(Policy):
 
         Parameters
         ----------
-        qpos    (B, Nq)
+        proprio (B, Np)
         image   (B, n_cams, C, H, W)   normalised
         actions (B, C, Na)
         is_pad  (B, C)  bool
@@ -237,7 +274,7 @@ class ACTAdapter(Policy):
         actions = actions[:, : self._model.num_queries]
         is_pad  = is_pad[:,  : self._model.num_queries]
 
-        a_hat, _, (mu, logvar) = self._model(qpos, image, None, actions, is_pad)
+        a_hat, _, (mu, logvar) = self._model(proprio, image, None, actions, is_pad)
         total_kld, _, _        = _kl_divergence(mu, logvar)
 
         import torch.nn.functional as F

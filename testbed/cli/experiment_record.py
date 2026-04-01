@@ -36,10 +36,16 @@ def main() -> None:
         help="Optional experiment name used for the record directory.",
     )
     parser.add_argument(
+        "--hypothesis",
+        type=str,
+        default="",
+        help="What scientific question or hypothesis this experiment is testing.",
+    )
+    parser.add_argument(
         "--notes",
         type=str,
         default="",
-        help="Free-form notes stored in the record.",
+        help="Free-form notes about the outcome or observations of this run.",
     )
     parser.add_argument(
         "--output-root",
@@ -60,6 +66,7 @@ def main() -> None:
         eval_results_dir=args.eval_results_dir,
         dataset_dir=args.dataset_dir,
         experiment_name=args.name,
+        hypothesis=args.hypothesis,
         notes=args.notes,
     )
     json_path, md_path = write_experiment_record(

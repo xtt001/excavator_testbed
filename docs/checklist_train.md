@@ -1,319 +1,288 @@
-# AGX ACT Testbed Readiness Checklist
+# AGX ACT 实验就绪检查清单
 
-Before recording demos and training the first baseline, make sure the testbed can support:
+本文档分两层：
 
-1. reliable data collection,
-2. reproducible training,
-3. interpretable rollout analysis,
-4. easy failure diagnosis.
+- **系统就绪层**（§1–§9）：搭建 testbed 期间检查一次，之后只在系统有重大变更时重查
+- **每轮实验层**（§10）：每次正式实验前必须过一遍
 
 ---
 
-## Current Status on 2026-03-27
+## 系统就绪层
 
-The following infrastructure items are already implemented and verified in Repo A:
-
-- `tb-record-teleop`, `tb-replay`, `tb-dataset-qc`, `tb-train`, `tb-eval`
-- frozen train/val split
-- `resolved_config.yaml` and `run_metadata.json` for training runs
-- `eval_resolved_config.yaml` and `eval_run_metadata.json` for eval runs
-- rollout-level `jsonl / summary / manifest` outputs
-- demo-level metadata (`operator_id / session_id / notes / config snapshot`)
-- experiment-level comparison records:
-  - `experiment_record.json`
-  - `experiment_record.md`
-  - `runs/experiments/experiment_registry.csv`
-
-The main remaining gaps are no longer basic plumbing. They are now:
-
-- stricter success / failure semantics for policy comparison
-- better cross-run comparison over multiple baselines
-- more evidence to decide whether the next bottleneck is data, task logic, or policy design
-- a clean input-design comparison for ACT, starting with `qpos` vs `qpos + qvel`
+以下各节用于确认 testbed 的基础能力是否具备。
+标记 `[x]` 表示已验证，`[ ]` 表示待完成。
 
 ---
 
-## 1. Environment and episode control
+## 1. 环境与 episode 控制
 
-### Reset and initialization
+### 重置与初始化
 
-- Environment reset is stable and repeatable
-- Initial excavator pose is deterministic for baseline experiments
-- Soil pile / target dump area initialization is deterministic for baseline experiments
-- Camera pose(s) are fixed and recorded
-- Any randomness in the environment can be switched on/off by config
+- [x] 环境 reset 稳定、可重复
+- [x] 初始挖掘机姿态对 baseline 实验是确定性的
+- [ ] 土堆 / 目标倒土区初始化对 baseline 实验是确定性的
+- [x] 相机位姿固定并已记录
+- [ ] 环境中的随机性可通过配置开关控制
 
-### Episode lifecycle
+### Episode 生命周期
 
-- Clear episode start condition
-- Clear episode termination condition
-- Clear timeout condition
-- Clear success condition
-- Clear failure condition
-- Episode ID is unique and saved everywhere
+- [x] episode 开始条件明确
+- [x] episode 结束条件明确（success / max_steps / discard）
+- [x] timeout 条件明确
+- [x] success 条件明确（`deposited_mass_in_target_box_kg >= mass_thresh` 持续 hold_steps）
+- [x] failure 条件明确（hard collision / spill_before_target 等）
+- [x] episode ID 唯一，所有相关产物都写入此 ID
 
-### Timing
+### 时序
 
-- Control frequency is fixed and known
-- Observation frequency is fixed and known
-- Logging frequency is fixed and known
-- Timestamps are recorded for every observation-action pair
-- Teleop latency is measured or at least estimated
-
----
-
-## 2. Observation pipeline
-
-### Observation definition
-
-- Final baseline observation space is explicitly defined
-- The exact observation keys are documented
-- Observation dimensions are printed and checked at runtime
-- Train-time and eval-time observations are guaranteed to match
-- Current Repo A ACT baseline uses `images + qpos`
-- `qvel` is already recorded in HDF5 but is not yet part of the ACT input
-- Next planned ablation is `ACT(qpos)` vs `ACT(qpos + qvel)`
-
-### Sensor sanity checks
-
-- Joint positions are correct
-- Joint velocities are correct
-- Bucket pose is correct
-- End-effector / bucket tip position is correct
-- Target area state is correct
-- Soil-related state, if used, is correct
-- Camera images are synchronized and not stale
-
-### Logging
-
-- Raw observations can be saved per timestep
-- A lightweight observation summary can be printed during rollout
-- Missing / NaN / invalid observations trigger warnings
+- [x] 控制频率固定已知
+- [x] 观测频率固定已知
+- [x] 每个 observation-action pair 都有 timestamp
+- [ ] teleop 延迟已测量或估计
 
 ---
 
-## 3. Action pipeline
+## 2. 观测管道
 
-### Action definition
+### 观测定义
 
-- Action space is explicitly documented
-- Action dimensions are printed and checked at runtime
-- Action bounds are defined
-- Action clipping behavior is defined
-- Action smoothing / filtering behavior is defined or intentionally disabled
+- [x] baseline 观测空间已明确定义（`images + qpos`）
+- [x] 观测的 key 名和维度已记录
+- [x] 运行时打印并检查了观测维度
+- [x] 训练时和 eval 时的观测接口保证一致
+- [x] `qvel` 已录入 HDF5，`ACT(qpos+qvel)` 对照实验路径已就位
+- [x] baseline / 对照实验分工明确：
+  - baseline：`ACT(qpos)`
+  - 对照：`ACT(qpos+qvel)`
 
-### Execution sanity checks
+### 传感器合理性检查
 
-- A commanded action produces the expected excavator behavior
-- Action delay between command and simulator response is understood
-- Teleop action format and policy action format are identical
-- Recorded actions and replayed actions are in the same scale and convention
+- [x] 关节角度读数正确
+- [x] 关节速度读数正确
+- [x] 相机图像已同步、无过期帧
+- [ ] bucket 姿态正确
+- [ ] end-effector / bucket tip 位置正确
+- [ ] 目标区域状态正确
+- [ ] 土相关状态（如使用）正确
 
-### Logging
+### 日志
 
-- Executed action is logged every timestep
-- Raw commanded action and final executed action are both saved if filtering exists
-- Sudden action spikes can be automatically detected
+- [x] 原始观测可按 timestep 保存
+- [x] 缺失 / NaN / 无效观测会触发 warning
 
 ---
 
-## 4. Demo recording pipeline
+## 3. 动作管道
+
+### 动作定义
+
+- [x] action space 已明确记录（4D speed cmd）
+- [x] action 维度运行时打印并检查
+- [ ] action bounds 已定义
+- [ ] action clipping 行为已定义
+- [x] action smoothing / filtering 已明确（当前无 filtering）
+
+### 执行合理性检查
+
+- [x] 指令动作能产生预期挖掘机行为
+- [x] teleop action 格式和 policy action 格式一致
+- [x] 录制动作和回放动作在同一 scale / convention 下
+
+### 日志
+
+- [x] 每 timestep 记录执行的 action
+- [x] 突然的 action spike 可被检测（rollout 日志中可见）
+
+---
+
+## 4. Demo 录制管道
 
 ### Metadata
 
-- Every demo stores episode ID
-- Every demo stores operator ID
-- Every demo stores scenario/task version
-- Every demo stores timestamp
-- Every demo stores config snapshot
-- Every demo stores observation/action definitions used during recording
+- [x] 每条 demo 存储 episode ID
+- [x] 每条 demo 存储 operator ID
+- [x] 每条 demo 存储 task 版本
+- [x] 每条 demo 存储 timestamp
+- [x] 每条 demo 存储 config snapshot
+- [x] 每条 demo 存储 observation / action 定义
 
-### Quality control
+### 质量控制
 
-- Each recorded demo can be replayed
-- Each demo can be labeled as success/failure
-- Each demo can be labeled with notes
-- Broken demos can be excluded cleanly
-- Very short or truncated demos can be automatically flagged
+- [x] 每条 demo 可以回放
+- [x] 每条 demo 可标记 success / failure
+- [x] 破损 demo 可干净地排除
+- [ ] 极短或截断的 demo 可自动标记
 
-### Video
+### 视频
 
-- A rollout video is saved for every demo
-- Video is synchronized with timestep index
-- It is easy to inspect demo videos before using them for training
-
----
-
-## 5. Dataset tooling
-
-### Dataset inspection
-
-- Script exists to print dataset statistics
-- Script exists to inspect episode lengths
-- Script exists to inspect action distribution
-- Script exists to inspect observation ranges
-- Script exists to detect NaN / inf / missing values
-
-### Splits
-
-- Train / val / test split is explicit and saved
-- Split is episode-based, not random timestep-based
-- Split files can be reproduced with a fixed seed
-- Baseline uses a frozen split
-
-### Visualization
-
-- Plot of action trajectories is available
-- Plot of episode length distribution is available
-- Plot of key state trajectories is available
-- Quick viewer exists for stepping through one demo
+- [ ] 每条 demo 保存 rollout 视频
+- [ ] 视频与 timestep index 同步
+- [ ] 训练前可方便地检视 demo 视频
 
 ---
 
-## 6. Training pipeline
+## 5. 数据集工具
 
-### Reproducibility
+### 数据集检查
 
-- Training config is saved with every run
-- Random seed is saved
-- Code version / git commit is saved
-- Checkpoint naming is consistent
-- Output directory naming is consistent
+- [x] `tb-dataset-qc`：打印数据集统计
+- [x] episode 长度分布
+- [x] action distribution
+- [x] observation ranges
+- [x] NaN / inf / 缺失值检测
 
-### Logging
+### 数据集切分
 
-- Train loss is logged
-- Validation loss is logged
-- Learning rate is logged
-- KL loss is logged if applicable
-- Any auxiliary losses are logged
-- Checkpoint save events are logged
+- [x] train / val split 明确保存（`train_val_split.yaml`）
+- [x] split 是 episode 级的，不是随机 timestep 级的
+- [x] 可用固定 seed 复现
+- [x] baseline 使用 frozen split
 
-### Monitoring
+### 可视化
 
-- Loss curves can be plotted automatically
-- Best checkpoint is tracked automatically
-- Last checkpoint is always saved
-- Training crash recovery is possible
-
-### Sanity tests
-
-- Model can overfit a tiny subset of demos
-- One training batch can run end-to-end without error
-- Rollout from an early checkpoint can run without interface bugs
+- [x] action 轨迹图（`action_distribution.png`）
+- [x] episode 长度分布图（`episode_length_hist.png`）
+- [x] 关键状态轨迹图（`state_ranges.png`）
 
 ---
 
-## 7. Rollout evaluation pipeline
+## 6. 训练管道
 
-### Eval protocol
+### 可复现性
 
-- Eval environment config is fixed for baseline
-- Eval seeds are fixed and saved
-- Number of rollout trials per checkpoint is fixed
-- Eval uses the same observation interface as training
-- Eval uses the same action interface as deployment
+- [x] 每次 run 保存完整 config（`resolved_config.yaml`）
+- [x] random seed 已保存
+- [x] Repo A git commit 已保存（`run_metadata.json`）
+- [x] checkpoint 命名规则一致
+- [x] 输出目录命名规则一致（待推行第 4 节命名规范）
 
-### Success metrics
+### 日志
 
-- Binary overall task success is defined
-- Digging success is defined
-- Swing/rotation success is defined
-- Dumping success is defined
-- Timeout is defined
-- Safety violation / invalid behavior is defined if needed
+- [x] train loss 已记录
+- [x] validation loss 已记录
+- [x] learning rate 已记录
+- [x] KL loss 已记录
+- [x] checkpoint 保存事件已记录
 
-### Per-rollout outputs
+### 健全性测试
 
-- Save rollout video
-- Save timestep-wise observations
-- Save timestep-wise actions
-- Save key event markers
-- Save final success/failure label
-- Save failure reason label
+- [ ] 模型可以在少量 demo 上过拟合
+- [x] 单个训练 batch 可以端到端跑通无报错
+- [x] 早期 checkpoint 的 rollout 可以无接口错误运行
 
 ---
 
-## 8. Failure analysis support
+## 7. Rollout 评测管道
 
-### Failure taxonomy
+### Eval 协议
 
-- Failure labels are defined before experiments begin
-- Common failure type: cannot enter soil correctly
-- Common failure type: enters soil but fails to scoop
-- Common failure type: scoops but loses material before dump
-- Common failure type: swing trajectory is wrong
-- Common failure type: reaches dump zone but fails to unload correctly
-- Common failure type: action jitter / oscillation
-- Common failure type: late-stage drift / accumulated error
-- Common failure type: rollout diverges despite low training loss
+- [x] eval 环境配置对 baseline 固定
+- [x] eval 使用的 seed 已固定并保存
+- [x] 每个 checkpoint 评测的 rollout 数已固定
+- [x] eval 使用的观测接口与训练一致
+- [x] eval 使用的 action 接口与 deployment 一致
 
-### Analysis tooling
+### Success 指标
 
-- Tool exists to review failed rollouts quickly
-- Tool exists to compare successful and failed rollouts
-- Tool exists to plot key state/action traces over time
-- Tool exists to align rollout video with timestep logs
+- [x] 五套 success 口径已定义（见 `training_setup.md` §3.4）
+- [x] 推荐主口径：`dump_complete_final_hold`
+- [x] timeout 已定义（`task.episode_len = 1000`）
+- [ ] safety violation / 无效行为已明确定义
 
----
+### 每次 rollout 输出
 
-## 9. Debug visualization
-
-### Must-have visual overlays
-
-- Show episode ID on video
-- Show timestep on video
-- Show success/failure status on video
-- Show current phase if available
-- Show commanded action values if useful
-- Show key state values if useful
-
-### Nice-to-have
-
-- Side-by-side expert vs policy rollout viewer
-- Side-by-side successful vs failed rollout viewer
-- Ability to scrub video by timestep
-- Ability to inspect a rollout from multiple camera views
+- [x] rollout 日志（`rollout_XXX.jsonl`）
+- [x] rollout summary（`rollout_XXX_summary.json`）
+- [x] 最终 success / failure 标签
+- [ ] rollout 视频
+- [ ] 关键 event marker
 
 ---
 
-## 10. Minimum experiment-readiness gates
+## 8. 失败分析支持
 
-Before recording the main dataset, confirm these gates are all true:
+### 失败分类法
 
-- I can record one demo and replay it perfectly
-- I can save synchronized observation-action-video logs
-- I can inspect dataset quality before training
-- I can train one small run and get complete logs
-- I can rollout one checkpoint and save videos plus metrics
-- I can label rollout failures without ambiguity
-- I can compare runs reproducibly
+失败类型已预定义，分析时对照使用：
 
----
+- 无法正确入土（not entering soil correctly）
+- 入土但无法铲料（enters soil but fails to scoop）
+- 铲料后在旋转过程中撒料（loses material before dump）
+- 旋转轨迹偏差（swing trajectory wrong）
+- 到达倒料区但无法卸料（reaches dump zone but fails to unload）
+- 动作抖动 / 振荡（action jitter / oscillation）
+- 后期漂移 / 累积误差（late-stage drift）
+- rollout 发散但训练 loss 很低（rollout diverges despite low train loss）
 
-## 11. Highest-priority things to perfect first
+### 分析工具
 
-If time is limited, prioritize these in order:
-
-1. [ ] Stable reset and deterministic baseline scenario
-2. [x] Correct observation/action logging with timestamps
-3. [ ] Demo replay and video saving
-4. [x] Frozen train/val split and saved configs
-5. [x] Rollout video + per-timestep action/state logging
-6. [ ] Clear success metrics and failure labels
-7. [ ] Tiny-dataset overfit sanity test
+- [x] `rollout_XXX.jsonl`：逐 timestep 状态 / 动作 / reward phase
+- [x] `tb-dataset-qc` plots：action distribution / state ranges
+- [ ] 快速浏览失败 rollout 的工具
+- [ ] 成功 vs 失败 rollout 对比工具
+- [ ] rollout 视频与 timestep 日志对齐工具
 
 ---
 
-## 12. Practical question to ask before baseline training
+## 9. Debug 可视化
 
-If the baseline fails, will we be able to answer all of these?
+### 必须有的
 
-- Was the demo data clean?
-- Were observations correct?
-- Were actions executed as intended?
-- Was training stable?
-- Did rollout fail in one phase or all phases?
-- Was it a policy problem or a testbed/interface problem?
+- [ ] 视频上显示 episode ID
+- [ ] 视频上显示 timestep
+- [ ] 视频上显示 success / failure 状态
+- [ ] 视频上显示当前 phase（如可用）
 
-If the answer is "no" to any of these, improve the testbed first.
+### 锦上添花
+
+- [ ] 专家 vs policy rollout 并排对比
+- [ ] 成功 vs 失败 rollout 并排对比
+- [ ] 按 timestep 拖动视频
+- [ ] 多摄像头视角查看 rollout
+
+---
+
+## 10. 每轮实验启动前最小清单
+
+**每次跑正式实验前过一遍，不要跳步。**
+
+### 10.1 环境确认
+
+- [ ] `tb-agx-smoke --strict` 通过（或等效的 live 连通验证）
+- [ ] 当前代码已 git commit，知道 Repo A 的 commit hash
+- [ ] 知道对应的 Repo B / Repo C commit（手动记录到 `--notes`）
+
+### 10.2 训练前
+
+- [ ] `task.dataset_dir` 指向正确的数据目录
+- [ ] `task.num_episodes` 与目录内实际 episode 数一致
+- [ ] 数据目录已跑过 `tb-dataset-qc`，QC 结果无异常
+- [ ] `chunk_size` ≤ episode 最短有效长度
+- [ ] `train.ckpt_dir` 是新的目录，不会覆盖旧实验
+- [ ] 实验名符合命名规范（见 `training_setup.md` §4）
+
+### 10.3 评测前
+
+- [ ] 确认 `policy.ckpt_path`（用 best？latest？特定 epoch？）
+- [ ] 确认 `success.mode` 与这次对比目标一致
+- [ ] 确认 `success.mass_thresh` / `hold_steps` / `residual_bucket_mass_thresh` 与对照组一致
+- [ ] 确认 `eval.num_rollouts` ≥ 10
+- [ ] `eval.results_dir` 是新的目录，不会覆盖旧结果
+
+### 10.4 记录前
+
+- [ ] 实验假设（`--hypothesis`）：**实验前**写，描述"想验证什么"
+- [ ] 实验备注（`--notes`）：**实验后**写，描述"观察到什么、结论是什么"
+- [ ] 实验名（`--name`）：符合第 4 节命名规范
+- [ ] 运行 `tb-experiment-record`，检查 `experiment_registry.csv` 新行合理
+
+### 10.5 结果可解释性检查
+
+跑完之后，能回答下面所有问题才算这一轮合格：
+
+- demo 数据干净吗？（`tb-dataset-qc` 结果）
+- 观测正确吗？（replay QA 或 rollout 日志）
+- 动作执行符合预期吗？（rollout 日志 action trace）
+- 训练稳定吗？（loss curve）
+- rollout 是在哪个阶段失败的？（failure taxonomy）
+- 失败更像是策略问题还是 testbed/接口问题？（失效归因框架）

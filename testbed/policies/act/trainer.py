@@ -229,13 +229,13 @@ class ACTTrainer(Trainer):
         amp_enabled: bool = False,
         amp_dtype: torch.dtype | None = None,
     ) -> dict:
-        image_data, qpos_data, action_data, is_pad = data
+        image_data, proprio_data, action_data, is_pad = data
         image_data  = image_data.to(adapter.device)
-        qpos_data   = qpos_data.to(adapter.device)
+        proprio_data = proprio_data.to(adapter.device)
         action_data = action_data.to(adapter.device)
         is_pad      = is_pad.to(adapter.device)
         with ACTTrainer._autocast_context(adapter.device, amp_enabled, amp_dtype):
-            return adapter.forward_loss(qpos_data, image_data, action_data, is_pad)
+            return adapter.forward_loss(proprio_data, image_data, action_data, is_pad)
 
     @staticmethod
     def _save_ckpt(path, adapter, optimizer, epoch, val_loss, config, sd_override=None):

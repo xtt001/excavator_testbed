@@ -323,6 +323,19 @@ for 25 consecutive steps
 - 不直接覆盖当前 `qpos` baseline
 - 让新的 checkpoint、config、experiment record 单独命名，便于横向比较
 
+当前进度更新：
+- `qpos + qvel` 输入链路已经在 Repo A 中实现完毕
+- 当前 baseline 仍然是 `ACT(qpos)`，配置不变
+- 新的对照实验配置已经就位：
+  - [testbed/configs/act_agx_fulltest_qvel.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/act_agx_fulltest_qvel.yaml)
+  - [testbed/configs/eval_agx_fulltest_qvel.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/eval_agx_fulltest_qvel.yaml)
+- 下一步先跑这组 `qvel` 对照，不急着同时引入 reward-guided learning
+
+如果 `qvel` 版仍然主要死在 dump 后半段，下一层最值得尝试的不是“全量 env_state”，而是小规模、语义明确的 task-state conditioning：
+- `mass_in_bucket_kg`
+- `deposited_mass_in_target_box_kg`
+- `min_distance_to_target_m`
+
 ### 待办 1：默认数据目录仍是旧样本
 
 现状：

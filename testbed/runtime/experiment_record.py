@@ -10,6 +10,40 @@ from typing import Any
 
 import yaml
 
+# ── CSV column order ────────────────────────────────────────────────────────
+# Keep this list as the single source of truth. append_experiment_registry
+# reads it directly so the header and every row always stay in sync.
+_REGISTRY_COLUMNS: list[str] = [
+    "generated_at",
+    "experiment_name",
+    "dataset_dir",
+    "dataset_n_episodes",
+    "dataset_success_rate",
+    "train_ckpt_dir",
+    "train_best_epoch",
+    "train_best_val_loss",
+    "eval_results_dir",
+    "success_mode",
+    "n_rollouts",
+    "eval_ckpt_path",
+    "primary_success_rate",
+    "legacy_success_rate",
+    "final_hold_success_rate",
+    "strict_final_hold_success_rate",
+    "dump_complete_final_hold_success_rate",
+    "strict_dump_complete_success_rate",
+    "avg_return",
+    "avg_episode_len",
+    "avg_final_success_signal",
+    "avg_max_success_signal",
+    "avg_final_bucket_mass",
+    "mean_spill_before_target",
+    "mean_hard_target_collision",
+    "mean_unsafe_target_distance",
+    "hypothesis",
+    "notes",
+]
+
 
 def build_experiment_record(
     *,
@@ -17,6 +51,7 @@ def build_experiment_record(
     eval_results_dir: Path,
     dataset_dir: Path | None = None,
     experiment_name: str = "",
+    hypothesis: str = "",
     notes: str = "",
 ) -> dict[str, Any]:
     train_run_metadata = _read_json_if_exists(train_ckpt_dir / "run_metadata.json")
@@ -39,6 +74,18 @@ def build_experiment_record(
     success_counts = dict(rollout_manifest.get("success_counts_by_mode", {}))
     metrics_extra = dict(eval_metrics.get("extra", {}))
 
+    # Eval thresholds from resolved config (success.* and policy.ckpt_path)
+    eval_thresholds = {
+        "mass_thresh": _nested_get(eval_resolved_config, "success", "mass_thresh"),
+        "hold_steps": _nested_get(eval_resolved_config, "success", "hold_steps"),
+        "residual_bucket_mass_thresh": _nested_get(
+            eval_resolved_config, "success", "residual_bucket_mass_thresh"
+        ),
+        "strict_max_failures": _nested_get(
+            eval_resolved_config, "success", "strict_max_failures"
+        ),
+    }
+
     generated_at = datetime.datetime.utcnow().isoformat()
     record_name = experiment_name or _default_experiment_name(
         train_ckpt_dir=train_ckpt_dir,
@@ -50,6 +97,7 @@ def build_experiment_record(
         "record_type": "experiment_record",
         "generated_at": generated_at,
         "experiment_name": record_name,
+        "hypothesis": hypothesis,
         "notes": notes,
         "dataset": {
             "dataset_dir": "" if resolved_dataset_dir is None else str(resolved_dataset_dir.resolve()),
@@ -79,8 +127,14 @@ def build_experiment_record(
             "metrics_path": _existing_path_str(eval_results_dir / "metrics.json"),
             "results_csv_path": _existing_path_str(eval_results_dir / "results.csv"),
             "rollout_manifest_path": _existing_path_str(eval_results_dir / "rollout_manifest.json"),
-            "ckpt_path": eval_metrics.get("ckpt_path", ""),
-            "n_rollouts": eval_metrics.get("n_rollouts"),
+            "ckpt_path": (
+                eval_metrics.get("ckpt_path")
+                or _nested_get(eval_resolved_config, "policy", "ckpt_path", default="")
+            ),
+            "n_rollouts": (
+                eval_metrics.get("n_rollouts")
+                or _nested_get(eval_resolved_config, "eval", "num_rollouts")
+            ),
             "avg_return": eval_metrics.get("avg_return"),
             "avg_episode_len": eval_metrics.get("avg_episode_len"),
             "success_mode": metrics_extra.get("success_mode", ""),
@@ -104,6 +158,7 @@ def build_experiment_record(
                 "avg_ending_dump_complete_consecutive_steps"
             ),
             "mean_failure_counts": failure_means,
+            "thresholds": eval_thresholds,
         },
         "artifacts": {
             "train_ckpt_dir": str(train_ckpt_dir.resolve()),
@@ -142,8 +197,44 @@ def write_experiment_record(
 
 
 def append_experiment_registry(record: dict[str, Any], registry_csv_path: Path) -> Path:
+    """Append one row to the experiment registry CSV.
+
+    The CSV is always written with the canonical column set defined in
+    ``_REGISTRY_COLUMNS``.  If the file does not yet exist the header is
+    written first.  Older files that were created before new columns were
+    added will have those cells left blank on subsequent appends — the header
+    must be regenerated manually (or by running ``rewrite_experiment_registry``)
+    to stay in sync.
+    """
     registry_csv_path.parent.mkdir(parents=True, exist_ok=True)
-    row = {
+    row = _build_registry_row(record)
+
+    write_header = not registry_csv_path.exists()
+    with open(registry_csv_path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=_REGISTRY_COLUMNS, extrasaction="ignore")
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+    return registry_csv_path
+
+
+def rewrite_experiment_registry(records: list[dict[str, Any]], registry_csv_path: Path) -> Path:
+    """Overwrite the registry CSV from a list of records using the current schema.
+
+    Use this when the canonical column list changes and you need to
+    re-generate the CSV from the stored JSON records to fix schema drift.
+    """
+    registry_csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(registry_csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=_REGISTRY_COLUMNS, extrasaction="ignore")
+        writer.writeheader()
+        for record in records:
+            writer.writerow(_build_registry_row(record))
+    return registry_csv_path
+
+
+def _build_registry_row(record: dict[str, Any]) -> dict[str, Any]:
+    return {
         "generated_at": record.get("generated_at", ""),
         "experiment_name": record.get("experiment_name", ""),
         "dataset_dir": _nested_get(record, "dataset", "dataset_dir", default=""),
@@ -154,6 +245,8 @@ def append_experiment_registry(record: dict[str, Any], registry_csv_path: Path) 
         "train_best_val_loss": _nested_get(record, "train", "best_val_loss", default=""),
         "eval_results_dir": _nested_get(record, "eval", "results_dir", default=""),
         "success_mode": _nested_get(record, "eval", "success_mode", default=""),
+        "n_rollouts": _nested_get(record, "eval", "n_rollouts", default=""),
+        "eval_ckpt_path": _nested_get(record, "eval", "ckpt_path", default=""),
         "primary_success_rate": _nested_get(record, "eval", "primary_success_rate", default=""),
         "legacy_success_rate": _nested_get(record, "eval", "legacy_success_rate", default=""),
         "final_hold_success_rate": _nested_get(record, "eval", "final_hold_success_rate", default=""),
@@ -168,16 +261,9 @@ def append_experiment_registry(record: dict[str, Any], registry_csv_path: Path) 
         "mean_spill_before_target": _nested_get(record, "eval", "mean_failure_counts", "spill_before_target", default=0.0),
         "mean_hard_target_collision": _nested_get(record, "eval", "mean_failure_counts", "hard_target_collision", default=0.0),
         "mean_unsafe_target_distance": _nested_get(record, "eval", "mean_failure_counts", "unsafe_target_distance", default=0.0),
+        "hypothesis": record.get("hypothesis", ""),
         "notes": record.get("notes", ""),
     }
-
-    write_header = not registry_csv_path.exists()
-    with open(registry_csv_path, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(row.keys()))
-        if write_header:
-            writer.writeheader()
-        writer.writerow(row)
-    return registry_csv_path
 
 
 def render_experiment_record_markdown(record: dict[str, Any]) -> str:
@@ -185,12 +271,16 @@ def render_experiment_record_markdown(record: dict[str, Any]) -> str:
     train = record.get("train", {})
     eval_record = record.get("eval", {})
     failure_means = dict(eval_record.get("mean_failure_counts", {}))
+    thresholds = dict(eval_record.get("thresholds", {}))
+    hypothesis = record.get("hypothesis", "")
+    notes = record.get("notes", "")
 
     lines = [
-        f"# Experiment Record - {record.get('experiment_name', '')}",
+        f"# Experiment Record — {record.get('experiment_name', '')}",
         "",
         f"- Generated at: `{record.get('generated_at', '')}`",
-        f"- Notes: {record.get('notes', '') or '(none)'}",
+        f"- Hypothesis: {hypothesis or '(none)'}",
+        f"- Notes: {notes or '(none)'}",
         "",
         "## Dataset",
         "",
@@ -212,6 +302,9 @@ def render_experiment_record_markdown(record: dict[str, Any]) -> str:
         "## Eval",
         "",
         f"- Results dir: `{eval_record.get('results_dir', '')}`",
+        f"- Eval resolved config: `{eval_record.get('resolved_config_path', '')}`",
+        f"- Checkpoint evaluated: `{eval_record.get('ckpt_path', '')}`",
+        f"- N rollouts: `{eval_record.get('n_rollouts', '')}`",
         f"- Success mode: `{eval_record.get('success_mode', '')}`",
         f"- Primary success rate: `{eval_record.get('primary_success_rate', '')}`",
         f"- Legacy success rate: `{eval_record.get('legacy_success_rate', '')}`",
@@ -225,9 +318,31 @@ def render_experiment_record_markdown(record: dict[str, Any]) -> str:
         f"- Avg max success signal: `{eval_record.get('avg_max_success_signal', '')}`",
         f"- Avg final bucket mass: `{eval_record.get('avg_final_bucket_mass', '')}`",
         "",
-        "## Mean Failure Counts",
+        "## Eval Thresholds",
         "",
     ]
+
+    if thresholds:
+        if thresholds.get("mass_thresh") is not None:
+            lines.append(f"- `mass_thresh`: `{thresholds['mass_thresh']} kg`")
+        if thresholds.get("residual_bucket_mass_thresh") is not None:
+            lines.append(f"- `residual_bucket_mass_thresh`: `{thresholds['residual_bucket_mass_thresh']} kg`")
+        if thresholds.get("hold_steps") is not None:
+            lines.append(f"- `hold_steps`: `{thresholds['hold_steps']}`")
+        strict = thresholds.get("strict_max_failures")
+        if strict:
+            for k, v in sorted(strict.items()):
+                lines.append(f"- strict `{k}` max: `{v}`")
+    else:
+        lines.append("- (not recorded — rerun `tb-experiment-record` to populate)")
+
+    lines.extend(
+        [
+            "",
+            "## Mean Failure Counts",
+            "",
+        ]
+    )
 
     if failure_means:
         for name in sorted(failure_means):

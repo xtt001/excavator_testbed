@@ -13,6 +13,7 @@ def eval_policy(config: dict[str, Any]) -> None:
     task_cfg   = config.get("task", {})
     policy_cfg = config.get("policy", {})
     eval_cfg   = config.get("eval", {})
+    low_dim_keys = list(policy_cfg.get("low_dim_keys", ["qpos"]))
 
     policy_class = str(policy_cfg.get("class", policy_cfg.get("name", "ACT"))).upper()
     task_name = task_cfg.get("name", task_cfg.get("task_name", config.get("task_name", "")))
@@ -89,6 +90,8 @@ def eval_policy(config: dict[str, Any]) -> None:
             "camera_names":  camera_names,
             "equipment_model": equipment_model,
             "max_episode_len": max_episode_len,
+            "low_dim_keys":  low_dim_keys,
+            "state_dim":     _resolve_low_dim_state_dim(low_dim_keys, equipment_model),
         }
         from testbed.policies.act.adapter import ACTAdapter
         policy = ACTAdapter.from_checkpoint(
@@ -190,3 +193,22 @@ def eval_policy(config: dict[str, Any]) -> None:
         }
     write_json(eval_run_metadata_path, eval_run_metadata)
     print(f"\nResults saved to {results_dir}")
+
+
+def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) -> int:
+    dims = {
+        "qpos": _resolve_single_low_dim_dim("qpos", equipment_model),
+        "qvel": _resolve_single_low_dim_dim("qvel", equipment_model),
+    }
+    return int(sum(dims[key] for key in low_dim_keys))
+
+
+def _resolve_single_low_dim_dim(key: str, equipment_model: str) -> int:
+    equipment_model = str(equipment_model).lower()
+    if key in ("qpos", "qvel"):
+        if "bimanual" in equipment_model:
+            return 14
+        if "excavator_simple" in equipment_model or "agxunity" in equipment_model or "agx" in equipment_model:
+            return 4
+        return 7
+    raise ValueError(f"Unsupported low-dim key {key!r}.")

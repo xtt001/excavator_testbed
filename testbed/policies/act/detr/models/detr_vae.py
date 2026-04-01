@@ -33,12 +33,13 @@ def get_sinusoid_encoding_table(n_position, d_hid):
 
 class DETRVAE(nn.Module):
     """ This is the DETR module that performs object detection """
-    def __init__(self, backbones, transformer, encoder, state_dim, num_queries, camera_names):
+    def __init__(self, backbones, transformer, encoder, robot_state_dim, action_dim, num_queries, camera_names):
         """ Initializes the model.
         Parameters:
             backbones: torch module of the backbone to be used. See backbone.py
             transformer: torch module of the transformer architecture. See transformer.py
-            state_dim: robot state dimension of the environment
+            robot_state_dim: low-dimensional robot state dimension fed to the policy
+            action_dim: action dimension of the environment
             num_queries: number of object queries, ie detection slot. This is the maximal number of objects
                          DETR can detect in a single image. For COCO, we recommend 100 queries.
             aux_loss: True if auxiliary decoding losses (loss at each decoder layer) are to be used.
@@ -49,16 +50,16 @@ class DETRVAE(nn.Module):
         self.transformer = transformer
         self.encoder = encoder
         hidden_dim = transformer.d_model
-        self.action_head = nn.Linear(hidden_dim, state_dim)
+        self.action_head = nn.Linear(hidden_dim, action_dim)
         self.is_pad_head = nn.Linear(hidden_dim, 1)
         self.query_embed = nn.Embedding(num_queries, hidden_dim)
         if backbones is not None:
             self.input_proj = nn.Conv2d(backbones[0].num_channels, hidden_dim, kernel_size=1)
             self.backbones = nn.ModuleList(backbones)
-            self.input_proj_robot_state = nn.Linear(state_dim, hidden_dim)
+            self.input_proj_robot_state = nn.Linear(robot_state_dim, hidden_dim)
         else:
             # input_dim = 14 + 7 # robot_state + env_state
-            self.input_proj_robot_state = nn.Linear(state_dim, hidden_dim)
+            self.input_proj_robot_state = nn.Linear(robot_state_dim, hidden_dim)
             self.input_proj_env_state = nn.Linear(7, hidden_dim)
             self.pos = torch.nn.Embedding(2, hidden_dim)
             self.backbones = None
@@ -66,8 +67,8 @@ class DETRVAE(nn.Module):
         # encoder extra parameters
         self.latent_dim = 32 # final size of latent z # TODO tune
         self.cls_embed = nn.Embedding(1, hidden_dim) # extra cls token embedding
-        self.encoder_action_proj = nn.Linear(state_dim, hidden_dim) # project action to embedding
-        self.encoder_joint_proj = nn.Linear(state_dim, hidden_dim)  # project qpos to embedding
+        self.encoder_action_proj = nn.Linear(action_dim, hidden_dim) # project action to embedding
+        self.encoder_joint_proj = nn.Linear(robot_state_dim, hidden_dim)  # project robot state to embedding
         self.latent_proj = nn.Linear(hidden_dim, self.latent_dim*2) # project hidden state to latent std, var
         self.register_buffer('pos_table', get_sinusoid_encoding_table(1+1+num_queries, hidden_dim)) # [CLS], qpos, a_seq
 
@@ -142,19 +143,20 @@ class DETRVAE(nn.Module):
 
 # 未使用，没做单臂CNNMLP模型
 class CNNMLP(nn.Module):
-    def __init__(self, backbones, state_dim, camera_names):
+    def __init__(self, backbones, robot_state_dim, action_dim, camera_names):
         """ Initializes the model.
         Parameters:
             backbones: torch module of the backbone to be used. See backbone.py
             transformer: torch module of the transformer architecture. See transformer.py
-            state_dim: robot state dimension of the environment
+            robot_state_dim: low-dimensional robot state dimension fed to the policy
+            action_dim: action dimension of the environment
             num_queries: number of object queries, ie detection slot. This is the maximal number of objects
                          DETR can detect in a single image. For COCO, we recommend 100 queries.
             aux_loss: True if auxiliary decoding losses (loss at each decoder layer) are to be used.
         """
         super().__init__()
         self.camera_names = camera_names
-        self.action_head = nn.Linear(1000, state_dim) # TODO add more
+        self.action_head = nn.Linear(1000, action_dim) # TODO add more
         if backbones is not None:
             self.backbones = nn.ModuleList(backbones)
             backbone_down_projs = []
@@ -167,8 +169,8 @@ class CNNMLP(nn.Module):
                 backbone_down_projs.append(down_proj)
             self.backbone_down_projs = nn.ModuleList(backbone_down_projs)
 
-            mlp_in_dim = 768 * len(backbones) + 14
-            self.mlp = mlp(input_dim=mlp_in_dim, hidden_dim=1024, output_dim=14, hidden_depth=2)
+            mlp_in_dim = 768 * len(backbones) + robot_state_dim
+            self.mlp = mlp(input_dim=mlp_in_dim, hidden_dim=1024, output_dim=action_dim, hidden_depth=2)
         else:
             raise NotImplementedError
 
@@ -227,7 +229,7 @@ def build_encoder(args):
     return encoder
 
 
-def _resolve_state_dim(equipment_model: str) -> int:
+def _resolve_action_dim(equipment_model: str) -> int:
     equipment_model = equipment_model.lower()
     if "bimanual" in equipment_model:
         return 14
@@ -238,7 +240,9 @@ def _resolve_state_dim(equipment_model: str) -> int:
 
 def build(args):
     equipment_model = args.equipment_model if "equipment_model" in args else 'vx300s_bimanual'
-    state_dim = _resolve_state_dim(equipment_model)
+    explicit_state_dim = getattr(args, "state_dim", None)
+    action_dim = _resolve_action_dim(equipment_model)
+    robot_state_dim = int(explicit_state_dim) if explicit_state_dim is not None else action_dim
 
     # From state
     # backbone = None # from state for now, no need for conv nets
@@ -255,7 +259,8 @@ def build(args):
         backbones,
         transformer,
         encoder,
-        state_dim=state_dim,
+        robot_state_dim=robot_state_dim,
+        action_dim=action_dim,
         num_queries=args.num_queries,
         camera_names=args.camera_names,
     )
@@ -267,7 +272,9 @@ def build(args):
 
 def build_cnnmlp(args):
     equipment_model = args.equipment_model if "equipment_model" in args else 'vx300s_bimanual'
-    state_dim = _resolve_state_dim(equipment_model)
+    explicit_state_dim = getattr(args, "state_dim", None)
+    action_dim = _resolve_action_dim(equipment_model)
+    robot_state_dim = int(explicit_state_dim) if explicit_state_dim is not None else action_dim
 
     # From state
     # backbone = None # from state for now, no need for conv nets
@@ -279,7 +286,8 @@ def build_cnnmlp(args):
 
     model = CNNMLP(
         backbones,
-        state_dim=state_dim,
+        robot_state_dim=robot_state_dim,
+        action_dim=action_dim,
         camera_names=args.camera_names,
     )
 

@@ -306,6 +306,62 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         self.assertEqual(policy_kwargs["policy_config"]["camera_names"], ["fpv"])
         self.assertEqual(policy_kwargs["policy_config"]["equipment_model"], "agxunity")
         self.assertEqual(policy_kwargs["policy_config"]["max_episode_len"], 1000)
+        self.assertEqual(policy_kwargs["policy_config"]["low_dim_keys"], ["qpos"])
+        self.assertEqual(policy_kwargs["policy_config"]["state_dim"], 4)
+
+    def test_eval_policy_propagates_qpos_plus_qvel_state_dim(self) -> None:
+        captured: dict[str, object] = {}
+        fake_metrics = _FakeMetrics()
+
+        class FakeSuite:
+            def __init__(self, **kwargs) -> None:
+                captured["suite_kwargs"] = kwargs
+
+            def run(self):
+                return fake_metrics
+
+        class FakePolicy:
+            def reset(self) -> None:
+                pass
+
+        def _fake_from_checkpoint(**kwargs):
+            captured["policy_kwargs"] = kwargs
+            return FakePolicy()
+
+        config = {
+            "task": {
+                "name": "agx_excavation_teleop",
+            },
+            "eval": {
+                "save_video": False,
+                "results_dir": None,
+            },
+            "policy": {
+                "name": "act",
+                "ckpt_path": "/tmp/fake.ckpt",
+                "device": "cpu",
+                "low_dim_keys": ["qpos", "qvel"],
+            },
+            "train": {
+                "ckpt_dir": "/tmp/fake_ckpts",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config["eval"]["results_dir"] = tmpdir
+            with (
+                patch("testbed.eval.suite.EvalSuite", FakeSuite),
+                patch("testbed.eval.metrics.EvalMetrics.append_to_csv"),
+                patch(
+                    "testbed.policies.act.adapter.ACTAdapter.from_checkpoint",
+                    side_effect=_fake_from_checkpoint,
+                ),
+            ):
+                eval_policy(config)
+
+        policy_kwargs = captured["policy_kwargs"]
+        self.assertEqual(policy_kwargs["policy_config"]["low_dim_keys"], ["qpos", "qvel"])
+        self.assertEqual(policy_kwargs["policy_config"]["state_dim"], 8)
 
     def test_train_policy_accepts_policy_name_and_propagates_device(self) -> None:
         captured: dict[str, object] = {}
@@ -355,7 +411,53 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
 
         self.assertEqual(captured["config"]["device"], "cpu")
         self.assertEqual(captured["policy_config"]["num_queries"], 32)
+        self.assertEqual(captured["policy_config"]["low_dim_keys"], ["qpos"])
+        self.assertEqual(captured["policy_config"]["state_dim"], 4)
         self.assertEqual(captured["fit_config"]["device"], "cpu")
+
+    def test_train_policy_propagates_qpos_plus_qvel_state_dim(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeTrainer:
+            def __init__(self, policy_config, config) -> None:
+                captured["policy_config"] = policy_config
+
+            def fit(self, train_loader, val_loader, config):
+                return 0, 0.0, {}
+
+        config = {
+            "task": {
+                "name": "agx_excavation_teleop",
+                "dataset_dir": None,
+                "num_episodes": 2,
+                "camera_names": ["fpv"],
+                "equipment_model": "agxunity",
+            },
+            "policy": {
+                "name": "act",
+                "device": "cpu",
+                "low_dim_keys": ["qpos", "qvel"],
+            },
+            "train": {
+                "num_epochs": 1,
+                "device": "cpu",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config["task"]["dataset_dir"] = tmpdir
+            config["train"]["ckpt_dir"] = tmpdir
+            with (
+                patch(
+                    "testbed.data.dataset.load_data",
+                    return_value=("train_loader", "val_loader", {"proprio_mean": np.zeros(8), "proprio_std": np.ones(8)}, True, {"train_ids": [0], "val_ids": [1]}),
+                ),
+                patch("testbed.policies.act.trainer.ACTTrainer", FakeTrainer),
+            ):
+                train_policy(config)
+
+        self.assertEqual(captured["policy_config"]["low_dim_keys"], ["qpos", "qvel"])
+        self.assertEqual(captured["policy_config"]["state_dim"], 8)
 
     def test_act_temporal_aggregation_grows_past_400_steps(self) -> None:
         adapter = object.__new__(ACTAdapter)
@@ -838,6 +940,55 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
             self.assertEqual(is_pad.shape[1:], (10,))
             self.assertGreaterEqual(len(train_loader), 1)
             self.assertGreaterEqual(len(val_loader), 1)
+
+    def test_load_data_supports_qpos_plus_qvel_low_dim_input(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dataset_dir = Path(tmpdir) / "dataset"
+            dataset_dir.mkdir(parents=True, exist_ok=True)
+
+            for episode_id, length in enumerate([4, 5]):
+                qpos = np.full((length, 4), episode_id + 1, dtype=np.float32)
+                qvel = np.full((length, 4), 10 * (episode_id + 1), dtype=np.float32)
+                write_episode(
+                    dataset_dir / f"episode_{episode_id}.hdf5",
+                    qpos=qpos,
+                    qvel=qvel,
+                    actions=np.full((length, 4), 0.2, dtype=np.float32),
+                    images={"fpv": np.zeros((length, 8, 8, 3), dtype=np.uint8)},
+                    rewards=np.zeros(length, dtype=np.float32),
+                    metadata={"success": 1},
+                    env_state=np.zeros((length, 9), dtype=np.float32),
+                    step_ids=np.arange(length, dtype=np.int64),
+                    step_ns=np.arange(length, dtype=np.int64),
+                )
+
+            train_loader, _, norm_stats, _, split_info = load_data(
+                dataset_dir=dataset_dir,
+                num_episodes=2,
+                camera_names=["fpv"],
+                episode_len=6,
+                batch_size_train=1,
+                batch_size_val=1,
+                num_workers=0,
+                prefetch_factor=1,
+                persistent_workers=False,
+                pin_memory=False,
+                split_seed=0,
+                train_split_ratio=0.5,
+                reuse_split=False,
+                low_dim_keys=["qpos", "qvel"],
+            )
+
+            self.assertEqual(norm_stats["proprio_mean"].shape, (8,))
+            self.assertEqual(norm_stats["proprio_std"].shape, (8,))
+            self.assertEqual(split_info["low_dim_keys"], ["qpos", "qvel"])
+            self.assertEqual(split_info["low_dim_dim"], 8)
+
+            image_data, proprio_data, action_data, is_pad = next(iter(train_loader))
+            self.assertEqual(image_data.shape[1:], (1, 3, 8, 8))
+            self.assertEqual(proprio_data.shape[1:], (8,))
+            self.assertEqual(action_data.shape[1:], (6, 4))
+            self.assertEqual(is_pad.shape[1:], (6,))
 
     def test_episode_recorder_preserves_demo_metadata_attrs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -126,7 +126,7 @@
 
 当前已确认的实现事实：
 - 当前 baseline ACT 真实输入是 `images + qpos`
-- `qvel` 虽然已经记录进 HDF5，但当前还没有进入 ACT 训练与推理
+- `qvel` 已经记录进 HDF5，并且现在已经打通了一条独立的 `ACT(qpos + qvel)` 对照实验路径
 - `env_state / rewards / task_success` 也没有进入 ACT loss
 
 因此当前 observation 侧最值得优先验证的，不是继续猜 reward，而是：
@@ -134,6 +134,11 @@
 - `ACT(qpos + qvel)`
 
 先做最小输入对照，再决定是否继续引入部分 task-state conditioning
+
+当前对应配置：
+- [testbed/configs/act_agx_fulltest.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/act_agx_fulltest.yaml)
+- [testbed/configs/act_agx_fulltest_qvel.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/act_agx_fulltest_qvel.yaml)
+- [testbed/configs/eval_agx_fulltest_qvel.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/eval_agx_fulltest_qvel.yaml)
 
 ### 4. 任务成功标准
 
