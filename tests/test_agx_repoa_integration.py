@@ -12,8 +12,8 @@ import torch
 
 from testbed.backends.agx.protocol import CameraDescriptor, GetInfoResponse
 from testbed.cli.record_teleop import (
+    _advance_success_stop_state,
     _build_episode_metadata,
-    _should_stop_on_success,
     _validate_requested_cameras,
 )
 from testbed.data.dataset import load_data
@@ -242,16 +242,47 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             _validate_requested_cameras(("fpv",), ["fpv", "side"])
 
-    def test_stop_on_success_helper_respects_flag(self) -> None:
-        self.assertTrue(
-            _should_stop_on_success(episode_success=True, stop_on_success=True)
+    def test_advance_success_stop_state_without_tail(self) -> None:
+        should_stop, remaining = _advance_success_stop_state(
+            episode_success=True,
+            stop_on_success=True,
+            just_reached_success=True,
+            post_success_tail_steps=0,
+            post_success_tail_remaining=None,
         )
-        self.assertFalse(
-            _should_stop_on_success(episode_success=False, stop_on_success=True)
+        self.assertTrue(should_stop)
+        self.assertEqual(remaining, 0)
+
+    def test_advance_success_stop_state_with_tail(self) -> None:
+        should_stop, remaining = _advance_success_stop_state(
+            episode_success=True,
+            stop_on_success=True,
+            just_reached_success=True,
+            post_success_tail_steps=3,
+            post_success_tail_remaining=None,
         )
-        self.assertFalse(
-            _should_stop_on_success(episode_success=True, stop_on_success=False)
+        self.assertFalse(should_stop)
+        self.assertEqual(remaining, 2)
+
+        should_stop, remaining = _advance_success_stop_state(
+            episode_success=True,
+            stop_on_success=True,
+            just_reached_success=False,
+            post_success_tail_steps=3,
+            post_success_tail_remaining=remaining,
         )
+        self.assertFalse(should_stop)
+        self.assertEqual(remaining, 1)
+
+        should_stop, remaining = _advance_success_stop_state(
+            episode_success=True,
+            stop_on_success=True,
+            just_reached_success=False,
+            post_success_tail_steps=3,
+            post_success_tail_remaining=remaining,
+        )
+        self.assertTrue(should_stop)
+        self.assertEqual(remaining, 0)
 
     def test_eval_policy_uses_task_defaults_for_act_camera_setup(self) -> None:
         captured: dict[str, object] = {}

@@ -45,6 +45,7 @@ tb-replay         = "testbed.cli.replay:main"
 tb-dataset-qc     = "testbed.cli.dataset_qc:main"
 tb-train          = "testbed.cli.train:main"
 tb-eval           = "testbed.cli.eval:main"
+tb-dataset-videos = "testbed.cli.dataset_videos:main"
 tb-experiment-record = "testbed.cli.experiment_record:main"
 
 [tool.setuptools.packages.find]

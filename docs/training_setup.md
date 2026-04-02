@@ -61,9 +61,11 @@
 |---|---|
 | 正式训练默认配置 | `testbed/configs/act_agx_v0.yaml` |
 | fulltest baseline（qpos）| `testbed/configs/act_agx_fulltest.yaml` |
+| rerecord baseline（qpos）| `testbed/configs/act_agx_v1.yaml` |
 | fulltest 对照（qpos+qvel）| `testbed/configs/act_agx_fulltest_qvel.yaml` |
 | smoke 训练 | `testbed/configs/act_agx_smoke.yaml` |
 | fulltest eval（qpos）| `testbed/configs/eval_agx_fulltest.yaml` |
+| rerecord eval（qpos）| `testbed/configs/eval_agx_v1.yaml` |
 | fulltest eval（qpos+qvel）| `testbed/configs/eval_agx_fulltest_qvel.yaml` |
 | 训练循环真实行为 | `testbed/policies/act/trainer.py` |
 | 配置如何落到 trainer | `testbed/runtime/_train.py` |
@@ -113,7 +115,7 @@
 | 字段 | fulltest 值 | 说明 |
 |---|---|---|
 | `lr` | `1e-5` | |
-| `num_epochs` | `500` | |
+| `num_epochs` | `2000` | `act_agx_v1.yaml` 当前默认值；其它配置可能不同 |
 | `batch_size` | `4` | 20 条 demo 下比通用 v0 的 8 更合适 |
 | `seed` | `0` | |
 | `device` | `cuda` | |
@@ -152,6 +154,53 @@
 `tb-record-teleop` 的 `stop_on_success: true` 使用 backend 每步返回的 `task_success`，即录制期用的是 backend 录制时的 mission success 语义，和后续 `tb-eval` 选哪种 success mode 是两回事。
 
 当前 teleop 录制期 success 规则（`deposited_mass_in_target_box_kg >= 100.0 kg` 持续 25 步）比 eval 推荐口径（300 kg）宽松，但这不会让旧 demo 失效——先重训/重评测，再决定要不要重录。
+
+当前建议重录时优先使用 [testbed/configs/teleop_v1.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/teleop_v1.yaml)：
+- `dataset_dir = data/agx_teleop_v1`
+- `success.mode = dump_complete_final_hold`
+- `success.mass_thresh = 300.0 kg`
+- `success.residual_bucket_mass_thresh = 100.0 kg`
+- `success.hold_steps = 25`
+- `teleop.post_success_tail_steps = 50`
+
+这份 `v1` 配置现在会在 recorder/backend 中使用完整的 dump-complete 录制逻辑：
+- target retained mass 达到 `300kg`
+- bucket residual mass 降到 `100kg` 以下
+- 连续保持 `25` 步
+- 然后再录 `50` 步尾段
+
+这样录下来的 demo 会包含更完整的 dump 后半段，而不是在刚达到 `100kg` retained mass 时立刻截断。
+
+### 3.6 数据验证与视频导出工具
+
+录制完成后有两种方式检查数据：
+
+**离线导出视频**（不需要 AGX，推荐优先使用）：
+```bash
+# 导出整个目录的 FPV 视频
+tb-dataset-videos data/agx_teleop_v1/
+
+# 指定输出目录
+tb-dataset-videos data/agx_teleop_v1/ -o runs/videos/v1
+
+# 只导出特定 episode
+tb-dataset-videos data/agx_teleop_v1/ --indices 0 3 5 10
+```
+
+视频默认输出到 `<dataset_dir>/videos/`，文件名与 episode 对应（如 `episode_0.mp4`）。
+
+**AGX 回放 QA**（需要连 AGX，用于验证动作重放一致性）：
+```bash
+# 批量回放整个目录
+tb-replay --episode data/agx_teleop_v1/ --config testbed/configs/teleop_v1.yaml --save-video
+
+# 单个 episode
+tb-replay --episode data/agx_teleop_v1/episode_0.hdf5 --config testbed/configs/teleop_v1.yaml
+```
+
+`tb-replay` 支持单文件或目录输入。批量回放时会自动按 episode 编号排序，共享同一个 backend 连接，最后输出 qpos diff 汇总表。
+
+两者区别：`tb-dataset-videos` 直接读 HDF5 中已存储的图片帧，速度快且无需 AGX；`tb-replay` 重新通过 AGX 执行动作序列，用于验证 action→observation 的可重放性。
 
 ---
 

@@ -85,8 +85,35 @@ def _action_control_flags(ainfo) -> tuple[bool, bool, bool]:
     )
 
 
-def _should_stop_on_success(*, episode_success: bool, stop_on_success: bool) -> bool:
-    return bool(stop_on_success and episode_success)
+def _advance_success_stop_state(
+    *,
+    episode_success: bool,
+    stop_on_success: bool,
+    just_reached_success: bool,
+    post_success_tail_steps: int,
+    post_success_tail_remaining: int | None,
+) -> tuple[bool, int | None]:
+    if not stop_on_success:
+        return False, None
+
+    if just_reached_success:
+        post_success_tail_remaining = max(0, int(post_success_tail_steps))
+        if post_success_tail_remaining == 0:
+            return True, 0
+
+    if not episode_success:
+        return False, post_success_tail_remaining
+
+    if post_success_tail_remaining is None:
+        return True, None
+
+    if post_success_tail_remaining <= 0:
+        return True, 0
+
+    post_success_tail_remaining -= 1
+    if post_success_tail_remaining <= 0:
+        return True, 0
+    return False, post_success_tail_remaining
 
 
 def main() -> None:
@@ -149,16 +176,21 @@ def main() -> None:
     max_steps    = task_cfg.get("max_steps", 500)
     input_device = str(teleop_cfg.get("input", "joystick"))
     stop_on_success = bool(teleop_cfg.get("stop_on_success", True))
+    post_success_tail_steps = int(teleop_cfg.get("post_success_tail_steps", 0))
     camera_names: list[str] = task_cfg.get("camera_names", ["fpv"])
     record_config_yaml = yaml.safe_dump(cfg, sort_keys=False)
 
     log.info(
-        "Config: %d episodes → %s  max_steps=%d  input=%s  stop_on_success=%s",
+        (
+            "Config: %d episodes → %s  max_steps=%d  input=%s  "
+            "stop_on_success=%s  post_success_tail_steps=%d"
+        ),
         num_episodes,
         dataset_dir,
         max_steps,
         input_device,
         stop_on_success,
+        post_success_tail_steps,
     )
 
     # ── Build backend ─────────────────────────────────────────────────────────
@@ -242,6 +274,7 @@ def main() -> None:
             discard = False
             reset_requested = False
             episode_success = bool(ts.info.get("task_success", False))
+            post_success_tail_remaining: int | None = None
 
             for local_step in range(max_steps):
                 if _abort:
@@ -284,17 +317,41 @@ def main() -> None:
                     action_src_type=ainfo.source_type,
                     action_src_id=ainfo.source_id,
                 )
-                episode_success = episode_success or bool(ts_next.info.get("task_success", False))
+                current_task_success = bool(ts_next.info.get("task_success", False))
+                just_reached_success = (not episode_success) and current_task_success
+                episode_success = episode_success or current_task_success
                 ts = ts_next
 
-                if _should_stop_on_success(
+                should_stop, post_success_tail_remaining = _advance_success_stop_state(
                     episode_success=episode_success,
                     stop_on_success=stop_on_success,
-                ):
+                    just_reached_success=just_reached_success,
+                    post_success_tail_steps=post_success_tail_steps,
+                    post_success_tail_remaining=post_success_tail_remaining,
+                )
+                if just_reached_success and stop_on_success and post_success_tail_steps > 0:
                     log.info(
-                        "Episode reached task success at step %d and will end early.",
+                        (
+                            "Episode reached task success at step %d; "
+                            "recording %d additional tail steps before stopping."
+                        ),
+                        local_step + 1,
+                        post_success_tail_steps,
+                    )
+                elif just_reached_success and stop_on_success:
+                    log.info(
+                        "Episode reached task success at step %d and will end immediately.",
                         local_step + 1,
                     )
+
+                if should_stop:
+                    if stop_on_success and post_success_tail_steps > 0:
+                        log.info(
+                            (
+                                "Episode completed post-success tail and will stop at step %d."
+                            ),
+                            local_step + 1,
+                        )
                     break
 
                 # Enforce control rate

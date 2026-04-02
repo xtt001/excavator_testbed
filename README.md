@@ -28,7 +28,8 @@ Repo A 负责：
 | HDF5 schema v1.1 | 已实现 | 支持 `timestamps`、`action_source`、`fpv`、`env_state` |
 | 当前 AGX 任务协议 | 已实现 | 当前目标协议是 `env_state (9,)`，含 DigArea 与 hard collision 字段 |
 | `tb-record-teleop` | 已实现 | 已通过最小 live smoke 录制，生成新 9D episode |
-| `tb-replay` | 已实现 | 保留可用，但还没用最新 9D 数据重新验证 |
+| `tb-replay` | 已实现 | 支持单文件或整个目录批量回放，每次生成 qpos QA 汇总表 |
+| `tb-dataset-videos` | 已实现 | 从 HDF5 离线导出 MP4 视频（无需连 AGX） |
 | `tb-train` / ACT trainer | 已实现 | 已在新录制的 9D smoke 数据上完成 1 epoch 训练 |
 | `tb-eval` | 已实现 | 已完成 1 个 live rollout smoke，并写出结果文件 |
 | rollout timestep logs | 已实现 | `tb-eval` 现可写 `rollout_XXX.jsonl / summary / manifest` |
@@ -68,7 +69,7 @@ Repo A 负责：
                          └──────────────┬──────────┘
                                         ▼
                                 CLI / Runner 层
-      tb-record-teleop / tb-replay / tb-dataset-qc / tb-train / tb-eval
+      tb-record-teleop / tb-replay / tb-dataset-videos / tb-dataset-qc / tb-train / tb-eval
                                         │
                                         ▼
                      testbed/configs/ + docs/training_setup.md
@@ -168,12 +169,12 @@ python scripts/agx_smoke.py --host 127.0.0.1 --port 5057 --steps 200 --strict
 
 ```bash
 tb-record-teleop \
-  --config testbed/configs/teleop_v0.yaml \
+  --config testbed/configs/teleop_v1.yaml \
   --input joystick \
-  --num-episodes 5 \
+  --num-episodes 20 \
   --operator-id alice \
-  --session-id baseline-20260326 \
-  --notes "first formal batch" \
+  --session-id baseline-v1 \
+  --notes "first rerecord batch with 300kg retained-mass stop" \
   --output-dir data/agx_teleop_v1
 ```
 
@@ -181,11 +182,19 @@ tb-record-teleop \
 - 达到任务 success
 - 达到 `task.max_steps`
 
+当前推荐录制配置是 [testbed/configs/teleop_v1.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/teleop_v1.yaml)：
+- 输出目录默认写到 `data/agx_teleop_v1`
+- 录制期 success 切到 `dump_complete_final_hold`
+- `deposited_mass_in_target_box_kg >= 300kg`
+- `mass_in_bucket_kg <= 100kg`
+- 连续保持 `25` 步
+- 成功后再继续录制 `50` 步尾段，保留 dump 后半段和收尾动作
+
 键盘 fallback：
 
 ```bash
 tb-record-teleop \
-  --config testbed/configs/teleop_v0.yaml \
+  --config testbed/configs/teleop_v1.yaml \
   --input keyboard \
   --num-episodes 1 \
   --output-dir data/agx_teleop_v1
@@ -194,9 +203,16 @@ tb-record-teleop \
 ### 4. 回放 QA
 
 ```bash
+# 单个 episode（需要连 AGX）
 tb-replay \
   --episode data/agx_teleop_v1/episode_0.hdf5 \
-  --config testbed/configs/teleop_v0.yaml \
+  --config testbed/configs/teleop_v1.yaml \
+  --save-video
+
+# 批量回放整个目录（需要连 AGX）
+tb-replay \
+  --episode data/agx_teleop_v1/ \
+  --config testbed/configs/teleop_v1.yaml \
   --save-video
 ```
 
@@ -208,6 +224,24 @@ tb-dataset-qc \
 ```
 
 如果目录里混有损坏或未完整写完的 `episode_*.hdf5`，`tb-dataset-qc` 现在会跳过这些文件，并把它们记录到 `summary.json` 里的 `unreadable_episode_ids` / `unreadable_episode_errors`。
+
+### 4.2 离线导出视频
+
+从 HDF5 中直接导出 FPV 视频，不需要连接 AGX：
+
+```bash
+# 导出整个目录（默认输出到 <dataset_dir>/videos/）
+tb-dataset-videos data/agx_teleop_v1/
+
+# 指定输出目录
+tb-dataset-videos data/agx_teleop_v1/ -o runs/videos/v1
+
+# 只导出特定 episode
+tb-dataset-videos data/agx_teleop_v1/ --indices 0 3 5 10
+
+# 单个 episode
+tb-dataset-videos data/agx_teleop_v1/episode_0.hdf5
+```
 
 ### 5. 训练
 
@@ -242,6 +276,12 @@ tb-train --config testbed/configs/act_agx_v0.yaml
 
 ```bash
 tb-train --config testbed/configs/act_agx_fulltest.yaml
+```
+
+如果你刚刚已经按 `teleop_v1.yaml` 重录了新的 `30` 条数据，可以直接用：
+
+```bash
+tb-train --config testbed/configs/act_agx_v1.yaml
 ```
 
 如果你要开始做 `qpos` vs `qpos+qvel` 的最小输入对照实验，可以直接用新增的 `qvel` 版本配置：
@@ -281,6 +321,12 @@ tb-eval --config testbed/configs/eval_agx_v0.yaml
 
 ```bash
 tb-eval --config testbed/configs/eval_agx_fulltest.yaml
+```
+
+如果你训练的是新的 `teleop_v1` / `act_agx_v1` 这批数据，对应直接评测：
+
+```bash
+tb-eval --config testbed/configs/eval_agx_v1.yaml
 ```
 
 如果你训练的是 `qpos+qvel` 对照版本，对应评测配置是：
@@ -410,9 +456,12 @@ python scripts/agx_smoke.py --host 127.0.0.1 --port 5057 --steps 200 --strict
 # 2) 录制新数据
 tb-record-teleop --config testbed/configs/teleop_v0.yaml --input joystick --num-episodes 5 --output-dir data/agx_teleop_v1
 
-# 3) 回放 QA + 数据质检
-tb-replay --episode data/agx_teleop_v1/episode_0.hdf5 --config testbed/configs/teleop_v0.yaml --save-video
+# 3) 离线导出视频 + 数据质检
+tb-dataset-videos data/agx_teleop_v1/
 tb-dataset-qc --dataset-dir data/agx_teleop_v1
+
+# 3b) 可选：通过 AGX 批量回放 QA（需要连 AGX）
+tb-replay --episode data/agx_teleop_v1/ --config testbed/configs/teleop_v1.yaml --save-video
 
 # 4) 把 act_agx_v0.yaml 的 dataset_dir 改到 data/agx_teleop_v1
 tb-train --config testbed/configs/act_agx_v0.yaml
@@ -425,7 +474,7 @@ tb-eval --config testbed/configs/eval_agx_v0.yaml
 
 ## 与 Unity 联调
 
-编辑 [testbed/configs/teleop_v0.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/teleop_v0.yaml)：
+编辑 [testbed/configs/teleop_v1.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/teleop_v1.yaml)：
 
 ```yaml
 agx:
@@ -472,7 +521,7 @@ testbed/
   policies/               ACT, dummy, diffusion stub
   runtime/                runner, train/eval helpers
   configs/                teleop/train/eval configs
-  cli/                    tb-record-teleop, tb-replay, tb-dataset-qc, tb-train, tb-eval, tb-experiment-record
+  cli/                    tb-record-teleop, tb-replay, tb-dataset-videos, tb-dataset-qc, tb-train, tb-eval, tb-experiment-record
 
 docs/
   current_status_and_plan.md

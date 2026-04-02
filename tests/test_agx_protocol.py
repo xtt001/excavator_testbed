@@ -251,6 +251,7 @@ class AgxProtocolTests(unittest.TestCase):
     def test_reward_tracker_uses_target_mass_success_signal(self) -> None:
         mission = get_agx_excavation_mission(
             "agx_excavation_teleop",
+            success_mode="final_hold",
             success_mass_thresh=10.0,
             success_hold_steps=2,
         )
@@ -289,6 +290,47 @@ class AgxProtocolTests(unittest.TestCase):
         self.assertTrue(retained.success)
         self.assertEqual(retained.reward, 4.0)
         self.assertIn("mission_success", retained.step_successes)
+
+    def test_reward_tracker_supports_dump_complete_success_mode(self) -> None:
+        mission = get_agx_excavation_mission(
+            "agx_excavation_teleop",
+            success_mode="dump_complete_final_hold",
+            success_mass_thresh=300.0,
+            success_hold_steps=2,
+            residual_bucket_mass_thresh=100.0,
+        )
+        tracker = AgxExcavationRewardTracker(
+            mission=mission,
+            env_state_order=(
+                "mass_in_bucket_kg",
+                "excavated_mass_kg",
+                "mass_in_target_box_kg",
+                "deposited_mass_in_target_box_kg",
+                "min_distance_to_target_m",
+                "target_hard_collision_count",
+                "target_contact_max_normal_force_n",
+                "min_distance_to_dig_area_m",
+                "bucket_depth_below_dig_area_plane_m",
+            ),
+        )
+
+        almost_done = tracker.update(
+            np.array([180.0, 140.0, 500.0, 320.0, 0.8, 0.0, 0.0, 0.8, 0.0], dtype=np.float32)
+        )
+        self.assertFalse(almost_done.success)
+        self.assertEqual(almost_done.metrics["success_condition_met"], 0.0)
+
+        held_once = tracker.update(
+            np.array([80.0, 140.0, 500.0, 320.0, 0.8, 0.0, 0.0, 0.8, 0.0], dtype=np.float32)
+        )
+        self.assertFalse(held_once.success)
+        self.assertEqual(held_once.metrics["success_condition_met"], 1.0)
+
+        held_twice = tracker.update(
+            np.array([70.0, 140.0, 500.0, 320.0, 0.8, 0.0, 0.0, 0.8, 0.0], dtype=np.float32)
+        )
+        self.assertTrue(held_twice.success)
+        self.assertEqual(held_twice.metrics["success_mode_is_dump_complete"], 1.0)
 
     def test_reward_tracker_blocks_load_progress_until_dig_area_good_start(self) -> None:
         mission = get_agx_excavation_mission("agx_excavation_teleop")

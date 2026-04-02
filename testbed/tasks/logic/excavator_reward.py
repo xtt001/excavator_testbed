@@ -184,9 +184,11 @@ class AgxExcavationMissionConfig:
     """
 
     name: str
+    success_mode: str = "final_hold"
     success_signal_name: str = AGX_DEPOSITED_MASS_IN_TARGET_BOX
     success_mass_thresh: float = 100.0
     success_hold_steps: int = 25
+    residual_bucket_mass_thresh: float = 100.0
     load_mass_threshold_kg: float = 100.0
     target_approach_distance_m: float = 1.25
     deposit_started_threshold_kg: float = 10.0
@@ -320,6 +322,10 @@ def build_agx_excavation_mission_overrides(
     reward_cfg = dict(reward_cfg or {})
     overrides: dict[str, Any] = {}
 
+    if "mode" in success_cfg:
+        overrides["success_mode"] = str(success_cfg["mode"])
+    if "success_mode" in success_cfg:
+        overrides["success_mode"] = str(success_cfg["success_mode"])
     if "signal_name" in success_cfg:
         overrides["success_signal_name"] = str(success_cfg["signal_name"])
     if "success_signal_name" in success_cfg:
@@ -334,6 +340,14 @@ def build_agx_excavation_mission_overrides(
         overrides["success_hold_steps"] = int(success_cfg["hold_steps"])
     if "success_hold_steps" in success_cfg:
         overrides["success_hold_steps"] = int(success_cfg["success_hold_steps"])
+    if "residual_bucket_mass_thresh" in success_cfg:
+        overrides["residual_bucket_mass_thresh"] = float(
+            success_cfg["residual_bucket_mass_thresh"]
+        )
+    if "bucket_residual_mass_thresh" in success_cfg:
+        overrides["residual_bucket_mass_thresh"] = float(
+            success_cfg["bucket_residual_mass_thresh"]
+        )
 
     for key in (
         "load_mass_threshold_kg",
@@ -465,6 +479,24 @@ class AgxExcavationRewardTracker:
         self._last_phase = "idle"
         self._good_dig_started = False
 
+    def _success_condition_met(
+        self,
+        observation: AgxExcavationObservation,
+    ) -> tuple[bool, float]:
+        mission = self.mission
+        success_signal_value = observation.value_for(mission.success_signal_name)
+        if mission.success_mode == "final_hold":
+            return success_signal_value >= mission.success_mass_thresh, success_signal_value
+        if mission.success_mode == "dump_complete_final_hold":
+            return (
+                success_signal_value >= mission.success_mass_thresh
+                and observation.mass_in_bucket_kg <= mission.residual_bucket_mass_thresh
+            ), success_signal_value
+        raise ValueError(
+            f"Unsupported AGX excavation success_mode={mission.success_mode!r}. "
+            "Supported modes: 'final_hold', 'dump_complete_final_hold'."
+        )
+
     def update(
         self,
         env_state: np.ndarray | Iterable[float],
@@ -558,8 +590,8 @@ class AgxExcavationRewardTracker:
             and not deposit_progress
         )
 
-        success_signal_value = observation.value_for(mission.success_signal_name)
-        if success_signal_value >= mission.success_mass_thresh:
+        success_condition_met, success_signal_value = self._success_condition_met(observation)
+        if success_condition_met:
             self._success_consecutive_steps += 1
         else:
             self._success_consecutive_steps = 0
@@ -664,10 +696,7 @@ class AgxExcavationRewardTracker:
             step_successes.append("entered_target_zone")
         if deposit_progress:
             step_successes.append("deposit_progress")
-        if (
-            success_signal_value >= mission.success_mass_thresh
-            and self._success_consecutive_steps == 1
-        ):
+        if success_condition_met and self._success_consecutive_steps == 1:
             step_successes.append("success_threshold_reached")
         if self._success_latched and not was_success_latched:
             step_successes.append("mission_success")
@@ -712,6 +741,11 @@ class AgxExcavationRewardTracker:
                 "delta_deposited_mass_in_target_box_kg": delta_deposited,
                 "distance_improvement_m": distance_improvement,
                 "success_signal_value": success_signal_value,
+                "success_condition_met": float(success_condition_met),
+                "success_mode_is_dump_complete": float(
+                    mission.success_mode == "dump_complete_final_hold"
+                ),
+                "residual_bucket_mass_thresh": mission.residual_bucket_mass_thresh,
                 "success_hold_steps": float(self._success_consecutive_steps),
                 "raw_load_progress": float(raw_load_progress),
                 "good_dig_started": float(self._good_dig_started),
