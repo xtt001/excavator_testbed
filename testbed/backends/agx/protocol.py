@@ -113,6 +113,15 @@ class StepResponse:
     sim_time_ns: int
     warnings: tuple[str, ...]
 
+    # ── Per-step latency breakdown (UTC ns, same epoch as time.time_ns()).
+    # All default to -1 when the Unity side is running an older build that
+    # does not yet emit these fields (backward compatible).
+    t_req_recv_ns:     int = -1  # TCP thread: STEP_REQ fully read by Unity
+    t_queue_exit_ns:   int = -1  # Update thread: dequeued, processing starts
+    t_physics_done_ns: int = -1  # After Simulation.Instance.DoStep()
+    t_image_ready_ns:  int = -1  # After ObservationCollector.Collect()
+    t_resp_queued_ns:  int = -1  # Serialised, just before TCP send
+
     def decode_rgb_image(self) -> np.ndarray | None:
         if self.image_w == 0 or self.image_h == 0:
             if self.image_payload:
@@ -193,6 +202,12 @@ class _PayloadReader:
         if length < 0 or length > MAX_PAYLOAD_BYTES:
             raise AgxProtocolError("byte_array_length_invalid")
         return self._take(length).tobytes()
+
+    def read_int64_optional(self, default: int = -1) -> int:
+        """Read an int64 if 8 bytes remain; otherwise return default (-1)."""
+        if self._offset + 8 > len(self._payload):
+            return default
+        return struct.unpack("<q", self._take(8))[0]
 
     def ensure_fully_consumed(self) -> None:
         if self._offset != len(self._payload):
@@ -407,6 +422,15 @@ def decode_step_response(payload: bytes) -> StepResponse:
     reward = reader.read_float32()
     sim_time_ns = reader.read_int64()
     warnings = reader.read_string_array()
+
+    # Latency breakdown timestamps — appended after warnings.
+    # Older Unity builds do not send these; default to -1 (backward compat).
+    t_req_recv_ns     = reader.read_int64_optional()
+    t_queue_exit_ns   = reader.read_int64_optional()
+    t_physics_done_ns = reader.read_int64_optional()
+    t_image_ready_ns  = reader.read_int64_optional()
+    t_resp_queued_ns  = reader.read_int64_optional()
+
     reader.ensure_fully_consumed()
     return StepResponse(
         success=success,
@@ -422,6 +446,11 @@ def decode_step_response(payload: bytes) -> StepResponse:
         reward=reward,
         sim_time_ns=sim_time_ns,
         warnings=warnings,
+        t_req_recv_ns=t_req_recv_ns,
+        t_queue_exit_ns=t_queue_exit_ns,
+        t_physics_done_ns=t_physics_done_ns,
+        t_image_ready_ns=t_image_ready_ns,
+        t_resp_queued_ns=t_resp_queued_ns,
     )
 
 

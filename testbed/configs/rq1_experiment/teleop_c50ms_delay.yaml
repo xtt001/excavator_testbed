@@ -1,0 +1,92 @@
+# RQ1 Condition: 720x480, 50ms injected one-way delay
+# Run AFTER: sudo bash scripts/inject_delay.sh 50
+# Actual RTT ≈ baseline (~23ms) + 2×50ms ≈ 123ms
+
+agx:
+  host:    "127.0.0.1"
+  port:    5057
+  timeout: 20.0
+  reset_terrain: true
+  reset_pose:    true
+
+teleop:
+  input:         "joystick"
+  num_episodes:  10
+  stop_on_success: true
+  post_success_tail_steps: 50
+  metadata:
+    operator_id: ""
+    session_id:  "rq1_c50ms_delay"
+    notes:       "RQ1: 50ms injected one-way delay, 720x480, RTT~123ms"
+
+  joystick:
+    joystick_id: 0
+    joystick_ids: [1, 0, 1, 0]
+    axis_map:  [0, 1, 1, 0]
+    invert:    [false, false, false, false]
+    reset_button: 10
+    deadzone:  0.05
+    scale:     [0.6, 0.3, 0.7, 0.7]
+    clip:      1.0
+    response_profile:
+      enabled: true
+      use_measured_dt: false
+      deadzone: [0.05, 0.05, 0.05, 0.05]
+      attack_rate: 4.0
+      release_rate: 6.0
+      recenter_rate: 7.0
+      exponent: 1.0
+
+task:
+  task_name:     "agx_excavation_teleop"
+  dataset_dir:   "data/rq1/c1_50ms"
+  camera_names:  ["fpv"]
+  max_steps:     1000
+  control_hz:    50
+  dt:            0.02
+  seed:          -1
+  param_version: "rq1_c1_50ms"
+
+success:
+  mode: "dump_complete_final_hold"
+  signal_name: "deposited_mass_in_target_box_kg"
+  mass_thresh: 300.0
+  residual_bucket_mass_thresh: 100.0
+  hold_steps:  25
+
+reward:
+  load_mass_threshold_kg:       100.0
+  target_approach_distance_m:   1.25
+  deposit_started_threshold_kg: 10.0
+  dig_area_touch_tolerance_m:   0.05
+  dig_below_plane_depth_tolerance_m: 0.02
+  unsafe_distance_m:            0.20
+  unsafe_distance_penalty:      0.25
+  hard_collision_penalty:       0.75
+  spill_penalty:                0.25
+
+action_semantics: "actuator_speed_cmd"
+
+# ── Operator display window ────────────────────────────────────────────────────
+# Operator MUST look at this window — it shows delayed images (natural RTT delay).
+display:
+  enabled: true
+  window_title: "Operator View (50ms delay)"
+  downsample_to: null
+  save_downsampled: false
+
+# ── Latency instrumentation ───────────────────────────────────────────────────
+latency:
+  enabled: true
+  output_dir: "outputs/rq1"
+  run_id: "c1_50ms"
+  network:
+    delay_inject_ms:  50.0
+    jitter_inject_ms: 5.0
+    loss_rate:        0.0
+  stream:
+    resolution: "720x480"
+    fps: 50.0
+    codec: "raw_rgb"
+  analysis:
+    auto_export_on_close: true

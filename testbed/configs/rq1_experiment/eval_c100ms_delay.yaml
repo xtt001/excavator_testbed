@@ -1,0 +1,40 @@
+# RQ1 eval config — condition: c100ms_delay
+
+task:
+  task_name: agx_excavation_teleop
+  equipment_model: agxunity
+  episode_len: 1000
+  camera_names:
+    - fpv
+
+policy:
+  class: ACT
+  device: cuda
+  act_params:
+    chunk_size: 100
+    kl_weight: 10.0
+    hidden_dim: 512
+    dim_feedforward: 3200
+  ckpt_path: runs/ckpts/rq1/c100ms_delay/policy_best.ckpt
+
+eval:
+  ckpt_dir: runs/ckpts/rq1/c100ms_delay
+  ckpt_path: runs/ckpts/rq1/c100ms_delay/policy_best.ckpt
+  num_rollouts: 50
+  save_video: true
+  video_dir: runs/eval/rq1/c100ms_delay/videos
+  results_dir: runs/eval/rq1/c100ms_delay/results
+  save_rollout_logs: true
+  rollout_log_dir: runs/eval/rq1/c100ms_delay/results/rollouts
+  step_log_interval: 50
+
+agx:
+  host: "127.0.0.1"
+  port: 5057
+  timeout: 10.0
+
+success:
+  mode: dump_complete_final_hold
+  mass_thresh: 300.0
+  residual_bucket_mass_thresh: 100.0
+  hold_steps: 25

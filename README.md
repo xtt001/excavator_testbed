@@ -82,6 +82,10 @@ Repo A 负责：
 - `policies/`：策略层
 - `eval/`：评测层
 
+如果需要看当前三仓协同关系以及 `latency_module` 所在位置的完整系统视图，可参考：
+- [docs/kaiti/三仓Testbed系统概念图.md](/home/pingfan/PACT/excavator_testbed/docs/kaiti/三仓Testbed系统概念图.md)
+- [docs/kaiti/figures/system_concept_3repo_latency.svg](/home/pingfan/PACT/excavator_testbed/docs/kaiti/figures/system_concept_3repo_latency.svg)
+
 而训练 setup、split、run metadata、实验记录这些内容，应该放在：
 - `testbed/configs/`
 - [docs/training_setup.md](/home/pingfan/PACT/excavator_testbed/docs/training_setup.md)

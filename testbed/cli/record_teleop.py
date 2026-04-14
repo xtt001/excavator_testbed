@@ -166,32 +166,52 @@ def main() -> None:
     if args.notes is not None:
         teleop_meta_cfg["notes"] = args.notes
 
-    agx_cfg    = cfg.get("agx", {})
+    agx_cfg     = cfg.get("agx", {})
     success_cfg = cfg.get("success", {})
-    reward_cfg = cfg.get("reward", {})
+    reward_cfg  = cfg.get("reward", {})
+    display_cfg = cfg.get("display", {})
 
     num_episodes = int(teleop_cfg.get("num_episodes", 10))
     dataset_dir  = Path(task_cfg.get("dataset_dir", "data/agx_teleop"))
     seed         = int(task_cfg.get("seed", -1))
     max_steps    = task_cfg.get("max_steps", 500)
+    dt           = float(task_cfg.get("dt", 0.02))
     input_device = str(teleop_cfg.get("input", "joystick"))
     stop_on_success = bool(teleop_cfg.get("stop_on_success", True))
     post_success_tail_steps = int(teleop_cfg.get("post_success_tail_steps", 0))
     camera_names: list[str] = task_cfg.get("camera_names", ["fpv"])
     record_config_yaml = yaml.safe_dump(cfg, sort_keys=False)
 
+    # Episode limits are based on sim_time so they stay consistent
+    # across different network latencies (Realtime Mode).
+    max_sim_time_s = max_steps * dt
+    post_success_tail_sim_s = post_success_tail_steps * dt
+
     log.info(
         (
-            "Config: %d episodes → %s  max_steps=%d  input=%s  "
-            "stop_on_success=%s  post_success_tail_steps=%d"
+            "Config: %d episodes → %s  max_steps=%d (max_sim_time=%.1fs)  input=%s  "
+            "stop_on_success=%s  post_success_tail_steps=%d (tail_sim=%.2fs)"
         ),
         num_episodes,
         dataset_dir,
         max_steps,
+        max_sim_time_s,
         input_device,
         stop_on_success,
         post_success_tail_steps,
+        post_success_tail_sim_s,
     )
+    if display_cfg.get("enabled", False):
+        target = display_cfg.get("downsample_to")
+        save_ds = display_cfg.get("save_downsampled", False)
+        if target:
+            log.info(
+                "[display] Operator view: %dx%d (downsampled from Unity)  "
+                "save_downsampled=%s  — look at the Python window, NOT Unity",
+                target[0], target[1], save_ds,
+            )
+        else:
+            log.info("[display] Operator view: native resolution  — look at the Python window, NOT Unity")
 
     # ── Build backend ─────────────────────────────────────────────────────────
     from testbed.backends.agx.backend import AGXSimBackend
@@ -214,6 +234,15 @@ def main() -> None:
     )
     info = backend.get_info()
     _validate_requested_cameras(info.camera_names, camera_names)
+
+    # ── Latency instrumentation (optional, controlled by cfg['latency']['enabled']) ──
+    from testbed.latency_module import LatencySession
+    latency_session = LatencySession.from_config(cfg)
+    latency_session.open()
+    latency_session.start_run()
+    if latency_session.enabled:
+        latency_session.attach_probe(backend._client)
+        log.info("[latency] instrumentation enabled → %s", latency_session.trace_path)
 
     # ── Build action source ───────────────────────────────────────────────────
     if input_device == "joystick":
@@ -245,6 +274,9 @@ def main() -> None:
         log.warning("Ctrl+C received — will finish current episode then exit.")
     signal.signal(signal.SIGINT, _sigint)
 
+    # ── Operator display (pygame-based, must be after pygame.init) ───────────
+    _init_display(display_cfg)
+
     # ── Episode loop ──────────────────────────────────────────────────────────
     from testbed.data.recorder import EpisodeRecorder
 
@@ -268,18 +300,18 @@ def main() -> None:
                 camera_names=camera_names,
             )
 
+            latency_session.start_episode(episode_idx)
             ts = backend.reset(seed=ep_seed)
             action_source.reset()
 
             discard = False
             reset_requested = False
             episode_success = bool(ts.info.get("task_success", False))
-            post_success_tail_remaining: int | None = None
+            success_sim_time_s: float | None = None  # sim_time when success first triggered
+            episode_start_sim_ns: int | None = None
+            local_step = 0
 
-            for local_step in range(max_steps):
-                if _abort:
-                    break
-
+            while not _abort:
                 # Check for quit / discard from keyboard
                 discard, quit_now = _check_pygame_events(action_source)
                 if quit_now:
@@ -290,6 +322,7 @@ def main() -> None:
                     break
 
                 obs    = ts.observation
+                obs = _downsample_obs(obs, display_cfg)
                 action, ainfo = action_source.next_action(obs)
                 reset_now, discard_now, quit_now = _action_control_flags(ainfo)
                 if quit_now:
@@ -305,6 +338,7 @@ def main() -> None:
                     log.info("Episode discarded by joystick.")
                     break
 
+                latency_session.log_cmd_input()
                 ts_next = backend.step(action)
                 step_id = int(obs.get("step_id", local_step))
 
@@ -317,46 +351,59 @@ def main() -> None:
                     action_src_type=ainfo.source_type,
                     action_src_id=ainfo.source_id,
                 )
+
+                # Track sim_time from Unity for episode termination
+                sim_time_ns = int(ts_next.info.get("sim_time_ns", 0))
+                if episode_start_sim_ns is None:
+                    episode_start_sim_ns = sim_time_ns
+                elapsed_sim_s = (sim_time_ns - episode_start_sim_ns) / 1e9
+
                 current_task_success = bool(ts_next.info.get("task_success", False))
                 just_reached_success = (not episode_success) and current_task_success
                 episode_success = episode_success or current_task_success
                 ts = ts_next
+                local_step += 1
 
-                should_stop, post_success_tail_remaining = _advance_success_stop_state(
-                    episode_success=episode_success,
-                    stop_on_success=stop_on_success,
-                    just_reached_success=just_reached_success,
-                    post_success_tail_steps=post_success_tail_steps,
-                    post_success_tail_remaining=post_success_tail_remaining,
-                )
-                if just_reached_success and stop_on_success and post_success_tail_steps > 0:
+                # Max sim time reached
+                if elapsed_sim_s >= max_sim_time_s:
                     log.info(
-                        (
-                            "Episode reached task success at step %d; "
-                            "recording %d additional tail steps before stopping."
-                        ),
-                        local_step + 1,
-                        post_success_tail_steps,
+                        "Episode reached max sim time (%.1fs) at python step %d.",
+                        elapsed_sim_s, local_step,
                     )
-                elif just_reached_success and stop_on_success:
-                    log.info(
-                        "Episode reached task success at step %d and will end immediately.",
-                        local_step + 1,
-                    )
-
-                if should_stop:
-                    if stop_on_success and post_success_tail_steps > 0:
-                        log.info(
-                            (
-                                "Episode completed post-success tail and will stop at step %d."
-                            ),
-                            local_step + 1,
-                        )
                     break
+
+                # Success + tail logic (based on sim_time)
+                if just_reached_success and stop_on_success:
+                    success_sim_time_s = elapsed_sim_s
+                    if post_success_tail_sim_s > 0:
+                        log.info(
+                            "Episode reached task success at sim_time=%.2fs (step %d); "
+                            "recording %.2fs additional tail.",
+                            elapsed_sim_s, local_step, post_success_tail_sim_s,
+                        )
+                    else:
+                        log.info(
+                            "Episode reached task success at sim_time=%.2fs (step %d) and will end immediately.",
+                            elapsed_sim_s, local_step,
+                        )
+                        break
+
+                if (stop_on_success and success_sim_time_s is not None
+                        and elapsed_sim_s >= success_sim_time_s + post_success_tail_sim_s):
+                    log.info(
+                        "Episode completed post-success tail at sim_time=%.2fs (step %d).",
+                        elapsed_sim_s, local_step,
+                    )
+                    break
+
+                # Display uses idle time between step completion and next
+                # cycle — never delays the obs→action→step critical path.
+                _display_obs(ts_next.observation, display_cfg)
 
                 # Enforce control rate
                 _sleep_to_rate(task_cfg.get("control_hz", 50))
 
+            latency_session.end_episode(success=episode_success)
             if not discard and len(recorder) > 0:
                 path = recorder.save(success=episode_success)
                 log.info("Saved %d steps → %s", len(recorder), path)
@@ -370,6 +417,8 @@ def main() -> None:
     finally:
         backend.close()
         action_source.close()
+        latency_session.close()
+        _close_display(display_cfg)
 
     log.info("Session complete: %d / %d episodes saved to %s", saved, num_episodes, dataset_dir)
 
@@ -516,6 +565,102 @@ def _broadcast_float_config(value: float | list[float]) -> np.ndarray:
     if isinstance(value, (int, float)):
         return np.full(4, float(value), dtype=np.float32)
     return np.asarray(value, dtype=np.float32)
+
+
+# ── Operator display helpers (pygame-based to avoid cv2/SDL conflicts) ────────
+
+_pg_display_surface = None
+
+
+def _init_display(display_cfg: dict) -> None:
+    """Create a pygame display window for showing the operator FPV feed."""
+    global _pg_display_surface
+    if not display_cfg.get("enabled", False):
+        return
+    if _pg_display_surface is not None:
+        return
+    import os
+    os.environ.setdefault("SDL_RENDER_VSYNC", "0")
+    import pygame
+    title = display_cfg.get("window_title", "Operator View")
+    pygame.display.set_caption(title)
+    _pg_display_surface = pygame.display.set_mode((720, 480), pygame.RESIZABLE)
+
+
+def _display_obs(obs: dict, display_cfg: dict) -> None:
+    """Show the fpv image to the operator in the pygame window.
+
+    Uses ``pygame.image.frombuffer`` to avoid the expensive
+    ``swapaxes`` + ``make_surface`` path.  Runs every step so the
+    operator sees the same frame rate as the model.
+    """
+    global _pg_display_surface
+    if not display_cfg.get("enabled", False):
+        return
+
+    image = obs.get("images", {}).get("fpv")
+    if image is None:
+        return
+
+    import pygame
+
+    target = display_cfg.get("downsample_to")
+    if target:
+        w, h = int(target[0]), int(target[1])
+        import cv2
+        disp = cv2.resize(image, (w, h), interpolation=cv2.INTER_AREA)
+        if w < 480:
+            scale = max(1, 480 // w)
+            disp = cv2.resize(disp, (w * scale, h * scale), interpolation=cv2.INTER_NEAREST)
+    else:
+        disp = image
+
+    h_img, w_img = disp.shape[:2]
+
+    if _pg_display_surface is None:
+        title = display_cfg.get("window_title", "Operator View")
+        pygame.display.set_caption(title)
+        _pg_display_surface = pygame.display.set_mode((w_img, h_img), pygame.RESIZABLE)
+
+    surf = pygame.image.frombuffer(
+        disp.astype(np.uint8).tobytes(), (w_img, h_img), "RGB"
+    )
+    win_w, win_h = _pg_display_surface.get_size()
+    if (w_img, h_img) != (win_w, win_h):
+        surf = pygame.transform.scale(surf, (win_w, win_h))
+    _pg_display_surface.blit(surf, (0, 0))
+    pygame.display.update()
+
+
+def _downsample_obs(obs: dict, display_cfg: dict) -> dict:
+    """
+    If display.save_downsampled is true, replace the fpv image in obs with
+    a downsampled copy so the HDF5 stores the same resolution the operator saw.
+    Returns obs (modified in-place if downsampling, otherwise unchanged).
+    """
+    if not display_cfg.get("enabled", False):
+        return obs
+    if not display_cfg.get("save_downsampled", False):
+        return obs
+    target = display_cfg.get("downsample_to")
+    if not target:
+        return obs
+    image = obs.get("images", {}).get("fpv")
+    if image is None:
+        return obs
+    import cv2
+    w, h = int(target[0]), int(target[1])
+    small = cv2.resize(image, (w, h), interpolation=cv2.INTER_AREA)
+    obs = dict(obs)
+    obs["images"] = dict(obs.get("images", {}))
+    obs["images"]["fpv"] = small
+    return obs
+
+
+def _close_display(display_cfg: dict) -> None:
+    """Clean up the operator display window."""
+    global _pg_display_surface
+    _pg_display_surface = None
 
 
 def _validate_requested_cameras(
