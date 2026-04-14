@@ -8,7 +8,7 @@
 - 了解当前最小 live 闭环已经验证到了哪一步
 - 了解接下来应该优先做什么
 
-状态日期：`2026-03-27`
+状态日期：`2026-04-14`
 
 ---
 
@@ -165,19 +165,19 @@ for 25 consecutive steps
 |---|---|---|
 | 协议客户端 | 已完成 | `agx_smoke.py --strict` 已通过 |
 | `AGXSimBackend` | 已完成 | live `GET_INFO / RESET / STEP` 已通过 |
-| `tb-record-teleop` | 已完成 | 已用 joystick 在 `data/agx_teleop_fulltest/` 录到 2 个新 9D success episode |
-| `tb-eval` | 已完成 | 已完成 2 个 live rollout smoke，并写出 `metrics.json / results.csv / rollout logs` |
-| `tb-train` | 已完成 | 已在新录制的 9D smoke 数据上完成 1 epoch 训练 |
+| `tb-record-teleop` | 已完成 | 已按 `teleop_v1` 在 `data/agx_teleop_v1/` 录到 `30` 条正式 success demo |
+| `tb-eval` | 已完成 | 已完成 `fulltest(qpos)`、`fulltest(qpos+qvel)` 与 `v1(qpos)` 三轮正式评测 |
+| `tb-train` | 已完成 | 已完成 `fulltest(qpos)`、`fulltest(qpos+qvel)` 与 `v1(qpos)` 三轮正式训练 |
 | 训练 run metadata | 已完成 | 已实测写出 `train_val_split.yaml / resolved_config.yaml / run_metadata.json` |
 | rollout eval logs | 已完成 | 已在 `runs/eval/agx_excavation_smoke_results/` 实测写出 `rollout_XXX.jsonl / summary / manifest` |
-| `tb-dataset-qc` | 已完成 | 已在 `data/agx_teleop_fulltest/qc/` 实测写出 `summary.json / episodes.csv / plots` |
-| demo-level metadata | 已完成 | 已在 `data/agx_teleop_fulltest/qc/episodes.csv` 实测看到 `operator_id / session_id` 回读 |
+| `tb-dataset-qc` | 已完成 | 已在 `data/agx_teleop_fulltest/` 与 `data/agx_teleop_v1/` 实测写出 QC 摘要 |
+| demo-level metadata | 已完成 | 已在 `data/agx_teleop_v1/qc/episodes.csv` 实测看到 `operator_id / session_id` 回读 |
 | CUDA 训练环境 | 可用 | 已检测到可用 GPU |
 | 旧样本兼容读取 | 可用 | 已确认可读取旧 HDF5 |
 
 结论：
-- 最小 live pipeline 已经打通
-- 当前问题不再是“协议不通”，而是“正式数据与正式配置已经切到新基线，接下来要提高成功定义与结果归因质量”
+- 最小 live pipeline 早已打通，当前业务 baseline 已经迁移到 `data/agx_teleop_v1/`
+- 这条分支的重点不再是“能不能学会任务”，而是“如何冻结 v1 基线，并解释严格口径下为什么仍然失败”
 
 本轮 smoke 产物：
 - 数据：`data/agx_teleop_v1_smoke/episode_0.hdf5`、`episode_1.hdf5`
@@ -258,9 +258,48 @@ for 25 consecutive steps
   - `runs/experiments/<name>/experiment_record.md`
   - `runs/experiments/experiment_registry.csv`
 
+### 4.3 2026-03-31 fulltest `qpos+qvel` 对照
+
+当前已经完成第一轮 `qpos+qvel` 对照实验：
+- 数据集：`data/agx_teleop_fulltest/`
+- 训练配置：`testbed/configs/act_agx_fulltest_qvel.yaml`
+- 评测配置：`testbed/configs/eval_agx_fulltest_qvel.yaml`
+
+这轮结果给出了一个清楚结论：
+- `qvel` 确实提升了末段控制质量
+- 主口径 `dump_complete_final_hold` 成功率从 `30%` 提升到 `60%`
+- `hard_target_collision` 平均次数从 `5.3` 降到 `0.2`
+- `unsafe_target_distance` 平均次数从 `66.4` 降到 `22.2`
+
+这说明前一轮对失败模式的判断基本成立：
+- 问题并不只在“任务太难”
+- 速度状态对 dump phase 的稳定性有直接帮助
+- `qvel` 值得保留为正式对照线
+
+### 4.4 2026-04-02 rerecord `v1` baseline
+
+当前已经完成第一轮 `v1` rerecord baseline：
+- 数据集：`data/agx_teleop_v1/`
+- 训练配置：`testbed/configs/act_agx_v1.yaml`
+- 评测配置：`testbed/configs/eval_agx_v1.yaml`
+
+这轮结果把业务基线往前推了一大步：
+- 数据集规模提升到 `30` 条 success demo
+- 数据集 QC 为 `100%` success、无缺图、无 NaN、无 shape mismatch
+- 主口径 `dump_complete_final_hold` 下达到 `10 / 10` success
+- 最优 `val loss = 0.1007`
+
+同时也明确留下了下一层问题：
+- `strict_dump_complete` 仍然是 `0%`
+- 主要失败项仍然是 `spill_before_target`
+- 这意味着当前 baseline 已经会完成任务，但还没有达到严格口径下的完成质量
+
 当前已经生成的实验记录：
 - `runs/experiments/agx_fulltest_round1/`
 - `runs/experiments/agx_v0_round0/`
+- `runs/experiments/agx_fulltest_round2_dumpcomplete/`
+- `runs/experiments/agx_fulltest_qvel_round1/`
+- `runs/experiments/agx_v1_round1/`
 
 这意味着后续每一轮 baseline 都可以按同一格式登记：
 - 用的是什么数据
@@ -272,22 +311,27 @@ for 25 consecutive steps
 
 ## 5. 当前数据状态
 
-当前工作区内的 `data/agx_teleop/` 仍然是旧样本目录。
+当前工作区里可以把数据分成三层理解：
 
-它的问题不是“不能读”，而是“不是当前新任务的正式数据基线”：
-- 其中已有 episode 仍然是旧 `env_state` 版本
-- 不能代表最新 DigArea / collision / 9D 任务语义
+- `data/agx_teleop/`
+  旧兼容样本目录，只用于回归检查、schema 兼容和离线 smoke，不再代表当前业务基线。
 
-因此当前正确做法不是继续默认使用这批数据，而是：
-- 重新录制一个新目录
-- 例如：`data/agx_teleop_v1/`
-- 然后把训练配置显式指向这个新目录
+- `data/agx_teleop_fulltest/`
+  第一轮正式 baseline 数据集，主要用于保留 `qpos` 与 `qpos+qvel` 的可比较对照。
+
+- `data/agx_teleop_v1/`
+  当前更接近业务主线的 rerecord 数据集。它对应新的录制结束规则、`dump_complete_final_hold` 录制语义和更完整的 dump 尾段。
+
+因此，这条分支当前最合理的默认理解是：
+- `v1` 是业务 baseline
+- `fulltest` 是对照与归因数据
+- `agx_teleop` 是 legacy 兼容目录
 
 ---
 
 ## 6. 当前主要待办
 
-当前已经没有“协议级卡死”的阻塞，剩下的是把第一轮正式 baseline 变成可对比、可解释、可迭代的实验流程。
+当前已经没有“协议级卡死”的阻塞，剩下的是把 `v1` baseline 变成可冻结、可解释、可扩展的默认工作流。
 
 这里要注意一个架构原则：
 - 训练 setup、split、run metadata、分析日志都应该补
@@ -302,117 +346,80 @@ for 25 consecutive steps
 - 是不是 split、训练轮数、chunk size、eval 条件不合适
 - 还是 rollout 链路本身就和训练假设不一致
 
-当前最优先的后续工作不是盲目继续堆数据，而是：
-- 用新的 `dump_complete_final_hold / strict_dump_complete` 口径重跑 baseline eval
-- 让 `experiment_registry.csv` 里真正形成多轮可比较记录
-- 再根据对比结果决定下一步更该补数据、调 reward/task，还是动 policy
+当前最优先的后续工作已经收敛成三件事：
+- 先把 `v1` baseline 作为默认工作口径写清楚
+- 补齐 `v1` 数据集的 replay QA，让录制、QC、训练、评测、回放形成完整闭环
+- 围绕 `strict_dump_complete` 和 `spill_before_target` 做 failure analysis，再决定下一轮应该改数据、改输入还是改任务语义
 
-当前 2026-03-27 这轮分析之后，下一步优先级已经进一步收敛为：
-- 先做 `ACT(qpos)` vs `ACT(qpos+qvel)` 对照实验
-- 暂不把 reward 优化当成当前 BC 提升的主路径
-- 也暂不直接上更大的上层决策模型
+当前对 `qvel` 的定位也已经比 3 月底更明确：
+- `qvel` 对照已经完成，不再是“下一步待跑”的假设
+- 它是一个已验证有效的比较分支
+- 下一步需要回答的是：要不要把它迁移到 `v1` 数据集继续验证，而不是继续停留在 `fulltest`
 
-原因：
-- 当前 ACT 实现真实输入是 `images + qpos`
-- 当前 `qvel / env_state / reward` 都不进入 ACT loss
-- 现有失败模式高度怀疑与末端速度控制有关
-- 因此先加 `qvel`，比先改 reward 更有可能提升 dump phase
-
-建议的工程做法：
-- 在独立实验分支中完成 `qvel` 输入改造
-- 不直接覆盖当前 `qpos` baseline
-- 让新的 checkpoint、config、experiment record 单独命名，便于横向比较
-
-当前进度更新：
-- `qpos + qvel` 输入链路已经在 Repo A 中实现完毕
-- 当前 baseline 仍然是 `ACT(qpos)`，配置不变
-- 新的对照实验配置已经就位：
-  - [testbed/configs/act_agx_fulltest_qvel.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/act_agx_fulltest_qvel.yaml)
-  - [testbed/configs/eval_agx_fulltest_qvel.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/eval_agx_fulltest_qvel.yaml)
-- 下一步先跑这组 `qvel` 对照，不急着同时引入 reward-guided learning
-
-如果 `qvel` 版仍然主要死在 dump 后半段，下一层最值得尝试的不是“全量 env_state”，而是小规模、语义明确的 task-state conditioning：
-- `mass_in_bucket_kg`
-- `deposited_mass_in_target_box_kg`
-- `min_distance_to_target_m`
-
-### 待办 1：默认数据目录仍是旧样本
+### 待办 1：补 `v1` 数据集的 replay QA
 
 现状：
-- `data/agx_teleop` 仍是旧 episode
-- 默认训练配置仍指向这个目录
+- `data/agx_teleop_v1/` 已经完成 QC、训练和评测
+- 但还缺一次面向正式数据集的 batch replay 证据
 
 影响：
-- 即使 `tb-train` 能跑，也只是离线 smoke
-- 不能把训练结果解释为“基于新任务数据的模型”
+- 当前闭环里唯一还没有明确落盘的是 action→observation 的重放一致性
 
-### 待办 2：新数据上的 replay QA 还没补
+### 待办 2：把默认基线口径从“fulltest 历史基线”切到“v1 业务基线”
 
 现状：
-- 本轮已完成 `record -> qc -> train -> eval` smoke
-- 但还没对新 `data/agx_teleop_v1_smoke` 再跑一遍 `tb-replay`
+- 代码和配置已经支持 `v1`
+- 部分文档仍然把 `fulltest` 写成默认训练入口
 
 影响：
-- 还缺一次“新任务数据回放一致性”的明确确认
+- 新成员容易把“历史对照线”和“当前默认工作线”混在一起
 
-### 待办 3：smoke 配置还是临时文件
+### 待办 3：做严格口径下的失败归因
 
 现状：
-- 本轮为了快速验证，用了临时 smoke 配置来缩短 episode 和对齐 `chunk_size`
+- `dump_complete_final_hold` 已经通过
+- `strict_dump_complete` 仍然是 `0%`
 
 影响：
-- 这些配置还没整理成仓库内正式追踪的 config 文件
-
-### 待办 4：还缺基于正式数据的失败归因闭环
-
-现状：
-- 训练 run metadata、rollout logs、dataset QC、demo metadata 已经到位
-- 但这些能力目前主要在 smoke 数据和单测层面完成了验证
-
-影响：
-- 现在已经具备 baseline 失败归因所需的外围证据链
-- 下一步重点不再是“补工具入口”，而是“用正式数据和正式 rollout 真的跑起来”
-- 也就是先把 “工具是否可用” 的问题收口，再进入 “baseline 为什么学不会” 的问题
+- 目前最需要解释的是完成质量，而不是可学习性
 
 ---
 
 ## 7. 推荐下一步计划
 
-### 阶段 0：补 replay QA
+### 阶段 0：整理默认入口
 
 目标：
-- 对新 9D 数据补一次回放一致性检查
+- 让 README、训练说明和默认命令都清楚指向 `teleop_v1 / act_agx_v1 / eval_agx_v1`
 
 最小验收：
-- `tb-replay` 在新数据上不报错
-- 输出一条可接受的 QA diff
+- 新成员按 README 运行时，拿到的是 `v1` 业务基线而不是旧目录
 
-### 阶段 1：录制正式数据
+### 阶段 1：补 replay QA
 
 目标：
-- 产出当前 9D 任务语义的正式 teleop 数据集
+- 对 `data/agx_teleop_v1/` 补一次正式批量回放
 
 最小验收：
-- 使用独立目录，例如 `data/agx_teleop_v1/`
-- episode 数量达到正式训练所需规模
+- `tb-replay` 批量运行稳定
+- 输出一组可接受的 qpos diff 汇总
 
-### 阶段 2：切换正式训练基线
+### 阶段 2：收紧 failure analysis
 
 目标：
-- 把正式训练配置切到新数据目录
+- 从“会不会做任务”转向“为什么过不了 strict 口径”
 
 最小验收：
-- `act_agx_v0.yaml` 指向新目录
-- 训练结果不再依赖旧 `data/agx_teleop`
+- 明确 `spill_before_target` 的主要触发阶段
+- 形成下一轮实验假设
 
-### 阶段 3：扩大 live eval
+### 阶段 3：决定 qvel 的去留
 
 目标：
-- 从 `1` 个 smoke rollout 扩大到正式评测规模
+- 判断 `qvel` 是继续保留为 fulltest 对照，还是迁移到 `v1` 上继续验证
 
 最小验收：
-- `tb-eval` 多 rollout 稳定完成
-- 结果目录持续生成 `metrics.json / results.csv`
+- 给出分支角色和实验角色的清晰边界
 
 ---
 

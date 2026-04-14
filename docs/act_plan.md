@@ -1,10 +1,10 @@
 # ACT on AGX 挖机任务 Checklist
 
-## 2026-03-26 当前状态快照
+## 2026-04-14 当前状态快照
 
-这份清单现在还没有“全部做完”，但当前阶段已经不再卡在基础 plumbing。
+这份清单现在仍然没有“全部做完”，但阶段判断已经比 3 月底清楚很多。
 
-今天这轮之后，已经明确完成并验证的内容是：
+当前已经明确完成并验证的内容是：
 
 - `record -> qc -> train -> eval` 最小闭环已经跑通
 - frozen split、`resolved_config`、`run_metadata` 已落地
@@ -13,20 +13,22 @@
 - demo-level metadata 已落地
 - AGX eval 多口径 success 逻辑已落地
 - experiment record / registry 已落地
+- `ACT(qpos+qvel)` 对照已经完成
+- `data/agx_teleop_v1/` rerecord baseline 已完成
 
 当前更准确的阶段判断是：
 
-- 还不能说 baseline ACT 已经有性能结论
-- 但可以说：外围实验管理层已经足够支撑第一轮正式 baseline 和失效归因
-- 第一轮 fulltest baseline 已证明 ACT 不是“完全学不会”
-- 当前更像是：它学到了任务骨架，也学到了部分不该学的 teleop 纠偏动作
+- baseline ACT 已经有明确性能结论
+- `fulltest(qpos)` 证明了任务可学
+- `fulltest(qpos+qvel)` 证明了速度状态有帮助
+- `v1(qpos)` 已经在主口径下达到稳定成功
 
 因此这份计划接下来应该把重点放在：
 
 - 用统一 experiment record 记录每一轮 train + eval
-- 先完成一轮 `ACT(qpos)` vs `ACT(qpos+qvel)` 的输入对照实验
-- 再根据 rollout logs 和 success-mode 对比判断失败更像数据问题、任务问题，还是输入设计问题
-- 在此基础上再决定是否追加更针对 dump phase 的数据
+- 给 `v1` 数据集补 replay QA，把正式数据闭环补完整
+- 围绕 `strict_dump_complete` 和 `spill_before_target` 做失败归因
+- 再决定 `qvel` 是继续保留为对照线，还是迁移到 `v1` 数据集继续验证
 
 ## A. 先明确本阶段目标
 
@@ -283,32 +285,33 @@
 
 ## H. 下一步具体实验
 
-当前最推荐的下一步不是直接改 reward，也不是直接加更复杂的上层模型，而是：
+当前最推荐的下一步不是再证明一次 baseline 能不能学会，也不是直接加更复杂的上层模型，而是先把默认业务基线和严格口径 failure analysis 做扎实。
 
-### 1. 做 `qvel` 输入对照实验
+### 1. 给 `v1` 数据集补 replay QA
 
-- 保留当前 `ACT(qpos)` 作为基线
-- 新开一个实验分支，做 `ACT(qpos + qvel)`
-- 固定：
-  - 数据集
-  - split
-  - seed
-  - eval 配置
-  - success 口径
-- 只改输入定义
+- 使用 `teleop_v1.yaml` 对 `data/agx_teleop_v1/` 做正式批量回放
+- 补齐 qpos diff 汇总和回放视频
+- 把录制、QC、训练、评测、回放五个环节闭合
 
 目标：
-- 验证 dump phase 的失败是否主要来自“模型看不到速度状态”
+- 确认 `v1` 不是只有“能训练、能评测”，而是也具备可重放性证据
 
-### 2. 何时再去动 reward / hierarchy
+### 2. 围绕 strict 口径做 failure analysis
 
-只有在下面任一条件成立时，再优先考虑：
-- `qvel` 版也仍然主要死在 dump 末端
-- 说明单纯补速度状态还不够
-- 那时再考虑：
-  - 加部分 task-state conditioning
-  - reward-guided fine-tune
-  - 层级控制 / 上层决策模型
+- 以 `act_agx_v1.yaml` / `eval_agx_v1.yaml` 作为默认分析入口
+- 对齐 `strict_dump_complete` 下的失败分布
+- 聚焦 `spill_before_target` 在哪个阶段最常发生
+
+目标：
+- 判断当前短板主要来自数据风格、末段控制，还是 success 口径本身过严
+
+### 3. 决定 `qvel` 的下一步位置
+
+- 如果想保留一条干净的业务主线，就把 `qvel` 继续作为对照实验
+- 如果想验证速度状态在 rerecord 数据上的收益，就新开 `v1 + qvel` 分支实验
+
+目标：
+- 明确 `qvel` 是“长期对照项”还是“即将并入默认 baseline 的候选项”
 
 ---
 

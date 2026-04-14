@@ -1,5 +1,6 @@
 # ── Artifacts (never commit) ──────────────────────────────────────────────────
 runs/
+outputs/
 artifacts/
 data_sim_episodes/
 *.hdf5
@@ -47,3 +48,6 @@ Thumbs.db
 *.png
 *.jpg
 *.jpeg
+
+# ── Local paper materials ─────────────────────────────────────────────────────
+docs/kaiti/

@@ -19,7 +19,7 @@ Repo A 负责：
 
 ## 当前状态
 
-状态日期：`2026-03-26`
+状态日期：`2026-04-14`
 
 | 组件 | 实现状态 | 当前验证状态 |
 |---|---|---|
@@ -27,20 +27,20 @@ Repo A 负责：
 | `AGXSimBackend` | 已实现 | `GET_INFO / RESET / STEP / reward tracker` 最小 live 链路已打通 |
 | HDF5 schema v1.1 | 已实现 | 支持 `timestamps`、`action_source`、`fpv`、`env_state` |
 | 当前 AGX 任务协议 | 已实现 | 当前目标协议是 `env_state (9,)`，含 DigArea 与 hard collision 字段 |
-| `tb-record-teleop` | 已实现 | 已通过最小 live smoke 录制，生成新 9D episode |
-| `tb-replay` | 已实现 | 支持单文件或整个目录批量回放，每次生成 qpos QA 汇总表 |
+| `tb-record-teleop` | 已实现 | 已按 `teleop_v1` 重录 `30` 条正式 success demo，落盘到 `data/agx_teleop_v1/` |
+| `tb-replay` | 已实现 | 支持单文件或整个目录批量回放；`fulltest` 已验证，`v1` 仍建议补一轮正式 batch QA |
 | `tb-dataset-videos` | 已实现 | 从 HDF5 离线导出 MP4 视频（无需连 AGX） |
-| `tb-train` / ACT trainer | 已实现 | 已在新录制的 9D smoke 数据上完成 1 epoch 训练 |
-| `tb-eval` | 已实现 | 已完成 1 个 live rollout smoke，并写出结果文件 |
+| `tb-train` / ACT trainer | 已实现 | 已完成 `fulltest(qpos)`、`fulltest(qpos+qvel)` 与 `v1(qpos)` 三条训练线 |
+| `tb-eval` | 已实现 | 已完成正式 live eval；当前最好结果是 `v1(qpos)` 在主口径下 `10/10` 成功 |
 | rollout timestep logs | 已实现 | `tb-eval` 现可写 `rollout_XXX.jsonl / summary / manifest` |
 | `tb-dataset-qc` | 已实现 | 可写 `summary.json / episodes.csv / QC plots` |
 | demo-level metadata | 已实现 | `tb-record-teleop` 支持 `operator_id / session_id / notes / config snapshot` |
 | MuJoCo backend | 保留 | 仅作 legacy / 对照，不是当前主路径 |
 
 当前重点：
-- 录制更多正式 9D 数据，替换旧默认数据目录
-- 补一次新数据上的 `tb-replay` QA
-- 从 smoke 验证转向正式训练与更长评测
+- 冻结 `data/agx_teleop_v1`、`act_agx_v1.yaml`、`eval_agx_v1.yaml` 作为当前业务 baseline
+- 补一次 `v1` 数据集的正式 `tb-replay` QA，把数据闭环补完整
+- 围绕 `strict_dump_complete` 和 `spill_before_target` 做 failure analysis，决定下一轮该改数据还是改输入
 
 ---
 
@@ -84,10 +84,13 @@ Repo A 负责：
 
 而训练 setup、split、run metadata、实验记录这些内容，应该放在：
 - `testbed/configs/`
+- [testbed/configs/README.md](/home/pingfan/PACT/excavator_testbed/testbed/configs/README.md)
 - [docs/training_setup.md](/home/pingfan/PACT/excavator_testbed/docs/training_setup.md)
 - `runs/...` 下的产物与元数据
 
 也就是说，它们属于“实验管理层”，不是“核心接口层”。
+
+如果你想快速弄清楚每个 YAML 的角色、入口命令和当前推荐用法，直接看 [testbed/configs/README.md](/home/pingfan/PACT/excavator_testbed/testbed/configs/README.md)。
 
 ---
 
@@ -245,15 +248,19 @@ tb-dataset-videos data/agx_teleop_v1/episode_0.hdf5
 
 ### 5. 训练
 
-先编辑 [testbed/configs/act_agx_v0.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/act_agx_v0.yaml)，至少把数据目录和 episode 数量改到你刚录的新数据上，例如：
+当前业务 baseline 直接使用 [testbed/configs/act_agx_v1.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/act_agx_v1.yaml)。
 
-```yaml
-task:
-  dataset_dir: data/agx_teleop_v1
-  num_episodes: 5
+```bash
+tb-train --config testbed/configs/act_agx_v1.yaml
 ```
 
-当前默认训练配置还内置了几项提速设置：
+这份配置默认对应：
+- 数据集 `data/agx_teleop_v1`
+- `30` 条 rerecord success demo
+- `qpos` 输入
+- `dump_complete_final_hold` 主口径
+
+当前训练器还内置了几项提速设置：
 - `num_workers: 0`，避免 HDF5 多 worker 抖动
 - `val_every: 5`，不是每个 epoch 都跑完整验证
 - `save_latest_every: 10`，不是每个 epoch 都刷一次 latest checkpoint
@@ -262,29 +269,15 @@ task:
 当前训练器也已经支持“成功即提前结束”的变长 demo：
 - 归一化统计会按所有 episode 的时间维拼接计算
 - DataLoader 会按配置里的 `task.episode_len` 统一 pad action / `is_pad`
-- 所以像 `data/agx_teleop_fulltest` 这种 `586-842` 步的 success-truncated 数据，可以直接训练
+- 所以像 `data/agx_teleop_fulltest` 和 `data/agx_teleop_v1` 这种 success-truncated 数据，都可以直接训练
 
-改好后再训练：
-
-```bash
-tb-train --config testbed/configs/act_agx_v0.yaml
-```
-
-如果你当前就是要直接训练
-`data/agx_teleop_fulltest`
-这批 `20` 条 joystick success demo，不用再手改 `v0`，可以直接用：
+如果你要复现第一轮 `fulltest(qpos)` 基线，可以直接用：
 
 ```bash
 tb-train --config testbed/configs/act_agx_fulltest.yaml
 ```
 
-如果你刚刚已经按 `teleop_v1.yaml` 重录了新的 `30` 条数据，可以直接用：
-
-```bash
-tb-train --config testbed/configs/act_agx_v1.yaml
-```
-
-如果你要开始做 `qpos` vs `qpos+qvel` 的最小输入对照实验，可以直接用新增的 `qvel` 版本配置：
+如果你要复现 `fulltest` 上的 `qpos+qvel` 对照实验，可以直接用：
 
 ```bash
 tb-train --config testbed/configs/act_agx_fulltest_qvel.yaml
@@ -312,7 +305,7 @@ tb-train \
 
 ```bash
 tb-eval --config testbed/configs/eval_agx_smoke.yaml
-tb-eval --config testbed/configs/eval_agx_v0.yaml
+tb-eval --config testbed/configs/eval_agx_v1.yaml
 ```
 
 如果你当前训练的是
@@ -389,9 +382,9 @@ tb-eval --config testbed/configs/eval_agx_fulltest_qvel.yaml
 
 ```bash
 tb-experiment-record \
-  --train-ckpt-dir runs/ckpts/agx_excavation_act_fulltest \
-  --eval-results-dir runs/eval/agx_excavation_act_fulltest/results \
-  --notes "first 20-demo fulltest baseline"
+  --train-ckpt-dir runs/ckpts/agx_excavation_act_v1 \
+  --eval-results-dir runs/eval/agx_excavation_act_v1/results \
+  --notes "rerecord v1 baseline on 30 success demos"
 ```
 
 它会写出：
@@ -423,16 +416,16 @@ tb-experiment-record \
 
 ## 当前剩余补齐清单
 
-下面这些是现在最值得补的剩余事项，按影响排序：
+下面这些是当前最值得补的事项，按优先级排序：
 
-1. 用新 9D 正式数据补一次 `tb-replay` QA
-   现在 smoke 闭环已经通，但新正式数据还缺一次明确的 replay 一致性确认。
+1. 给 `data/agx_teleop_v1/` 补一轮正式 `tb-replay` QA  
+   现在训练、评测和 QC 都已经跑过，唯一还缺的是针对正式 `v1` 数据集的回放一致性证据。
 
-2. 录制并冻结一批正式 baseline 数据
-   旧 `data/agx_teleop` 仍是兼容样本，不该继续当当前任务标准训练集。
+2. 把 `strict_dump_complete` 下的失败模式整理出来  
+   `v1(qpos)` 已经在主口径下 `10/10` 成功，当前真正卡住的是严格口径下的 `spill_before_target`。
 
-3. 扩大 live eval 规模并开始失败模式分析
-   现在已有逐 timestep rollout 日志，下一步应转向多 rollout 统计和失败归因。
+3. 明确 `qvel` 在后续主线里的位置  
+   当前 `qvel` 对照已经在 `fulltest` 上给出正向结果，下一步需要判断它是继续作为对照线保留，还是迁移到 `v1` 数据集上继续验证。
 
 这些补齐项不会破坏 testbed 的 clean plug-support 结构，只要遵守一个原则：
 - 不把实验记录逻辑硬塞进 `Policy` / `Backend` 的抽象接口
@@ -453,8 +446,8 @@ conda activate aloha
 # 1) 协议检查
 python scripts/agx_smoke.py --host 127.0.0.1 --port 5057 --steps 200 --strict
 
-# 2) 录制新数据
-tb-record-teleop --config testbed/configs/teleop_v0.yaml --input joystick --num-episodes 5 --output-dir data/agx_teleop_v1
+# 2) 录制或复查 v1 数据
+tb-record-teleop --config testbed/configs/teleop_v1.yaml --input joystick --num-episodes 1 --output-dir data/agx_teleop_v1
 
 # 3) 离线导出视频 + 数据质检
 tb-dataset-videos data/agx_teleop_v1/
@@ -463,11 +456,11 @@ tb-dataset-qc --dataset-dir data/agx_teleop_v1
 # 3b) 可选：通过 AGX 批量回放 QA（需要连 AGX）
 tb-replay --episode data/agx_teleop_v1/ --config testbed/configs/teleop_v1.yaml --save-video
 
-# 4) 把 act_agx_v0.yaml 的 dataset_dir 改到 data/agx_teleop_v1
-tb-train --config testbed/configs/act_agx_v0.yaml
+# 4) 训练当前业务 baseline
+tb-train --config testbed/configs/act_agx_v1.yaml
 
 # 5) live eval
-tb-eval --config testbed/configs/eval_agx_v0.yaml
+tb-eval --config testbed/configs/eval_agx_v1.yaml
 ```
 
 ---
