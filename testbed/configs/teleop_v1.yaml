@@ -24,8 +24,13 @@ teleop:
   joystick:
     joystick_id: 0
     joystick_ids: [1, 0, 1, 0]
-    axis_map:  [0, 1, 1, 0]
-    invert:    [false, false, false, false]
+    # FarmStick default aligned to the real excavator:
+    # swing <- left stick front/back (reversed),
+    # stick <- left stick left/right (reversed),
+    # boom <- right stick front/back,
+    # bucket <- right stick left/right (reversed).
+    axis_map:  [1, 1, 0, 0]
+    invert:    [true, false, true, true]
     reset_button: 10
     deadzone:  0.05
     scale:     [0.6, 0.3, 0.7, 0.7]

@@ -28,13 +28,13 @@ teleop:
     # Current setup assumes joystick 0 = right stick, joystick 1 = left stick.
     joystick_ids: [1, 0, 1, 0]
     # axis_map uses pygame's zero-based axis indices.
-    # With your FarmStick bring-up this maps:
-    # swing <- left stick left/right
+    # With the current real-excavator-aligned FarmStick layout this maps:
+    # swing <- left stick front/back (reversed)
     # boom  <- right stick front/back
-    # stick <- left stick front/back
-    # bucket <- right stick left/right
-    axis_map:  [0, 1, 1, 0]
-    invert:    [false, false, false, false]
+    # stick <- left stick left/right (reversed)
+    # bucket <- right stick left/right (reversed vs older testbed default)
+    axis_map:  [1, 1, 0, 0]
+    invert:    [true, false, true, true]
     # Buttons are read on any configured joystick by default.
     # These also use pygame's zero-based button indices.
     # FarmStick manual button 11 is pygame button index 10.

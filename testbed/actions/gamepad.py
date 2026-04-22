@@ -6,11 +6,11 @@ Action vector layout (V0, length 4):
 
 All commands are normalized to [-1, 1] post-deadzone and post-scale.
 
-Default axis mapping (Xbox / generic dual-stick layout):
-    axis 0  → swing    (left stick X)
-    axis 1  → boom     (left stick Y, inverted)
-    axis 3  → stick    (right stick X)
-    axis 4  → bucket   (right stick Y, inverted)
+Default axis mapping (current FarmStick excavator layout):
+    axis 1  → swing    (left stick Y, inverted)
+    axis 1  → boom     (right stick Y)
+    axis 0  → stick    (left stick X, inverted)
+    axis 0  → bucket   (right stick X, inverted)
 
 Override via the `axis_map` and `invert` config keys.
 All tunable values live in teleop_v0.yaml — nothing is hardcoded here.
@@ -60,8 +60,8 @@ class JoystickActionSource(ActionSource):
         self,
         joystick_id: int = 0,
         joystick_ids: Sequence[int] | None = None,
-        axis_map:    Sequence[int]  = (0, 1, 3, 4),
-        invert:      Sequence[bool] = (False, True, False, True),
+        axis_map:    Sequence[int]  = (1, 1, 0, 0),
+        invert:      Sequence[bool] = (True, False, True, True),
         deadzone:    float | Sequence[float] = 0.05,
         scale:       float | Sequence[float] = 1.0,
         clip:        float = 1.0,
@@ -244,8 +244,8 @@ class JoystickActionSource(ActionSource):
         return cls(
             joystick_id=cfg.get("joystick_id", 0),
             joystick_ids=cfg.get("joystick_ids"),
-            axis_map=cfg.get("axis_map", [0, 1, 3, 4]),
-            invert=cfg.get("invert", [False, True, False, True]),
+            axis_map=cfg.get("axis_map", [1, 1, 0, 0]),
+            invert=cfg.get("invert", [True, False, True, True]),
             deadzone=cfg.get("deadzone", 0.05),
             scale=cfg.get("scale", 1.0),
             clip=cfg.get("clip", 1.0),
