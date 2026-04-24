@@ -118,7 +118,7 @@ def _build_step_response(
 
 
 def _serve_scripted(
-    script: list[tuple[MessageType, bytes]]
+    script: list[tuple[MessageType, bytes | list[bytes] | tuple[bytes, ...]]]
 ) -> tuple[str, int, threading.Thread]:
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(("127.0.0.1", 0))
@@ -134,7 +134,11 @@ def _serve_scripted(
                     raise AssertionError(
                         f"expected request {expected_type}, got {request_type}"
                     )
-                conn.sendall(response_frame)
+                if isinstance(response_frame, (list, tuple)):
+                    for frame in response_frame:
+                        conn.sendall(frame)
+                else:
+                    conn.sendall(response_frame)
         server.close()
 
     thread = threading.Thread(target=_worker, daemon=True)
@@ -169,6 +173,37 @@ class AgxProtocolTests(unittest.TestCase):
                 [5.0, 6.0, 7.0, 8.0, 1.5, 0.0, 0.0, 0.25, 0.0],
             )
             self.assertEqual(step.decode_rgb_image().shape, (1, 2, 3))
+
+        thread.join(timeout=1.0)
+        self.assertFalse(thread.is_alive())
+
+    def test_client_roundtrip_skips_one_stale_response_frame(self) -> None:
+        host, port, thread = _serve_scripted(
+            [
+                (
+                    MessageType.GET_INFO_REQ,
+                    [_build_reset_response(), _build_get_info_response()],
+                ),
+                (
+                    MessageType.RESET_REQ,
+                    [_build_get_info_response(), _build_reset_response()],
+                ),
+                (
+                    MessageType.STEP_REQ,
+                    [_build_reset_response(), _build_step_response(step_id=7)],
+                ),
+            ]
+        )
+
+        with AgxSimClient(host=host, port=port, timeout_s=1.0) as client:
+            info = client.get_info()
+            self.assertEqual(info.protocol_version, "agx-sim/v0")
+
+            reset = client.reset(seed=3)
+            self.assertTrue(reset.reset_applied)
+
+            step = client.step(7, np.zeros(4, dtype=np.float32))
+            self.assertEqual(step.step_id, 7)
 
         thread.join(timeout=1.0)
         self.assertFalse(thread.is_alive())
@@ -225,9 +260,111 @@ class AgxProtocolTests(unittest.TestCase):
             seed=11,
             reset_terrain=False,
             reset_pose=True,
+            scenario_id=None,
         )
         self.assertTrue(fake_timestep.observation["reset_applied"])
         self.assertEqual(fake_timestep.observation["reset_warnings"], [])
+
+    def test_backend_reset_uses_configured_scenario_id(self) -> None:
+        backend = AgxSimBackend(
+            host="127.0.0.1",
+            port=5057,
+            timeout_s=1.0,
+            scenario_id="s0_baseline",
+        )
+        backend._info = SimpleNamespace(
+            action_order=(
+                "swing_speed_cmd",
+                "boom_speed_cmd",
+                "stick_speed_cmd",
+                "bucket_speed_cmd",
+            )
+        )
+
+        fake_reset = SimpleNamespace(reset_applied=True, warnings=())
+        fake_timestep = SimpleNamespace(observation={})
+
+        with (
+            patch.object(backend._client, "reset", return_value=fake_reset) as mock_reset,
+            patch.object(backend, "_step_with_id", return_value=fake_timestep),
+        ):
+            backend.reset(seed=5)
+
+        mock_reset.assert_called_once_with(
+            seed=5,
+            reset_terrain=True,
+            reset_pose=True,
+            scenario_id="s0_baseline",
+        )
+
+    def test_backend_get_info_retries_once_after_unexpected_response_type(self) -> None:
+        backend = AgxSimBackend(host="127.0.0.1", port=5057, timeout_s=1.0)
+        fake_info = SimpleNamespace(
+            protocol_version="agx-sim/v0",
+            env_state_order=(
+                "mass_in_bucket_kg",
+                "excavated_mass_kg",
+                "mass_in_target_box_kg",
+                "deposited_mass_in_target_box_kg",
+                "min_distance_to_target_m",
+                "target_hard_collision_count",
+                "target_contact_max_normal_force_n",
+                "min_distance_to_dig_area_m",
+                "bucket_depth_below_dig_area_plane_m",
+            ),
+        )
+
+        with (
+            patch.object(
+                backend._client,
+                "get_info",
+                side_effect=[
+                    AgxProtocolError(
+                        "unexpected response type STEP_RESP, expected GET_INFO_RESP"
+                    ),
+                    fake_info,
+                ],
+            ) as mock_get_info,
+            patch.object(backend._client, "close") as mock_close,
+        ):
+            info = backend.get_info()
+
+        self.assertIs(info, fake_info)
+        self.assertEqual(mock_get_info.call_count, 2)
+        mock_close.assert_called_once()
+
+    def test_backend_reset_retries_once_after_unexpected_response_type(self) -> None:
+        backend = AgxSimBackend(host="127.0.0.1", port=5057, timeout_s=1.0)
+        backend._info = SimpleNamespace(
+            action_order=(
+                "swing_speed_cmd",
+                "boom_speed_cmd",
+                "stick_speed_cmd",
+                "bucket_speed_cmd",
+            )
+        )
+        fake_reset = SimpleNamespace(reset_applied=True, warnings=())
+        fake_timestep = SimpleNamespace(observation={})
+
+        with (
+            patch.object(
+                backend._client,
+                "reset",
+                side_effect=[
+                    AgxProtocolError(
+                        "unexpected response type GET_INFO_RESP, expected RESET_RESP"
+                    ),
+                    fake_reset,
+                ],
+            ) as mock_reset,
+            patch.object(backend._client, "close") as mock_close,
+            patch.object(backend, "_step_with_id", return_value=fake_timestep),
+        ):
+            backend.reset(seed=9)
+
+        self.assertEqual(mock_reset.call_count, 2)
+        mock_close.assert_called_once()
+        self.assertTrue(fake_timestep.observation["reset_applied"])
 
     def test_step_image_payload_size_is_validated(self) -> None:
         response = StepResponse(

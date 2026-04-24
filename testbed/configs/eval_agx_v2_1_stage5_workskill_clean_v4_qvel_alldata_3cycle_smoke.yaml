@@ -1,0 +1,87 @@
+# Eval config for clean_v4 qpos+qvel work-skill checkpoint trained on the combined old+new multiround dataset.
+
+agx:
+  host: "127.0.0.1"
+  port: 5057
+  timeout: 10.0
+
+task:
+  name: "agx_excavation_teleop"
+  episode_len: 5000
+  scenario_id: "s0_truck"
+
+eval:
+  num_rollouts: 1
+  save_video: true
+  video_dir: "runs/eval/agx_excavation_v2_1_stage5_workskill_clean_v4_qvel_alldata_3cycle_smoke/videos"
+  results_dir: "runs/eval/agx_excavation_v2_1_stage5_workskill_clean_v4_qvel_alldata_3cycle_smoke/results"
+  save_rollout_logs: true
+  rollout_log_dir: "runs/eval/agx_excavation_v2_1_stage5_workskill_clean_v4_qvel_alldata_3cycle_smoke/results/rollouts"
+  step_log_interval: 100
+  target_cycle_gate: 3
+
+success:
+  mode: "dump_complete_final_hold"
+  signal_name: "deposited_mass_in_target_box_kg"
+  mass_thresh: 300.0
+  hold_steps: 25
+  residual_bucket_mass_thresh: 100.0
+  strict_max_failures:
+    hard_target_collision: 0
+    spill_before_target: 0
+
+reward:
+  load_mass_threshold_kg: 100.0
+  target_approach_distance_m: 1.25
+  deposit_started_threshold_kg: 10.0
+  dig_area_touch_tolerance_m: 0.05
+  dig_below_plane_depth_tolerance_m: 0.02
+  unsafe_distance_m: 0.20
+  unsafe_distance_penalty: 0.25
+  hard_collision_penalty: 0.75
+  spill_penalty: 0.25
+
+policy:
+  class: "hybrid_planner_act"
+  device: "cuda"
+  temporal_agg: false
+  bootstrap_ckpt_path: "runs/ckpts/agx_excavation_act_v1/policy_best.ckpt"
+  bootstrap_ckpt_dir: "runs/ckpts/agx_excavation_act_v1"
+  bootstrap_low_dim_keys: ["qpos"]
+  bootstrap_end_mode: "loaded_and_clear"
+  bootstrap_end_min_bucket_mass_kg: 300.0
+  bootstrap_end_min_distance_to_dig_area_m: 0.25
+  work_ckpt_path: "runs/ckpts/agx_excavation_act_v2_1_multi_raw_all_workskill_clean_v4_qvel_e500/policy_best.ckpt"
+  work_ckpt_dir: "runs/ckpts/agx_excavation_act_v2_1_multi_raw_all_workskill_clean_v4_qvel_e500"
+  work_low_dim_keys: ["qpos", "qvel"]
+  act_params:
+    chunk_size: 100
+    kl_weight: 10
+    hidden_dim: 512
+    dim_feedforward: 3200
+  planner:
+    kind: "rule"
+    manifest_id: "s0_truck"
+  transition:
+    bands:
+      left:
+        qpos_lo: [0.50, 0.574, 0.463, 0.610]
+        qpos_hi: [0.62, 0.694, 0.583, 0.770]
+      mid:
+        qpos_lo: [0.44, 0.574, 0.463, 0.610]
+        qpos_hi: [0.56, 0.694, 0.583, 0.770]
+      right:
+        qpos_lo: [0.38, 0.574, 0.463, 0.610]
+        qpos_hi: [0.50, 0.694, 0.583, 0.770]
+    kp: 2.0
+    kd: 0.25
+    action_clip: 0.35
+    action_clip_by_joint: [0.75, 0.35, 0.35, 0.55]
+    clear_target_min_steps: 24
+    clear_target_max_steps: 120
+    corridor_align_max_steps: 420
+    corridor_align_qvel_abs_max: 0.15
+    corridor_align_hold_steps: 5
+    wait_next_dig_max_steps: 420
+    wait_next_dig_mode: servo_reentry_pose
+    wait_next_dig_reentry_template_qpos: [0.50, 0.222, 0.526, 0.00015]

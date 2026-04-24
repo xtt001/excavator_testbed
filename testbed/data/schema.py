@@ -49,7 +49,17 @@ Schema v1.1 layout (add-only on top of v1.0)
 │   ├── response_profile_attack_rate  float[4] optional
 │   ├── response_profile_release_rate float[4] optional
 │   ├── response_profile_recenter_rate float[4] optional
-│   └── response_profile_exponent     float[4] optional
+│   ├── response_profile_exponent     float[4] optional
+│   ├── scenario_id         str   optional
+│   ├── goal_token_dim      int   optional
+│   ├── goal_token_version  str   optional
+│   ├── phase_version       str   optional
+│   ├── scenario_manifest_version str optional
+│   ├── recording_mode      str   optional
+│   ├── target_dump_count   int   optional
+│   ├── stop_reason         str   optional
+│   ├── transition_source   str   optional
+│   └── v2_enabled          int/bool optional
 │
 ├── observations/
 │   ├── qpos                 (T, 4)  float32  [swing, boom, stick, bucket] position_norm
@@ -75,6 +85,40 @@ Schema v1.1 layout (add-only on top of v1.0)
 └── action_source/                                                      ← v1.1
     ├── type                 (T,) bytes  "teleop"|"policy"|"scripted"
     └── id                   (T,) bytes  "joystick"|"keyboard"|…
+
+Optional Repo A `/v2` extension group (still schema_version="1.1")
+────────────────────────────────────────────────────────────────
+/v2
+├── step/
+│   ├── cycle_id             (T,)    int32
+│   ├── mode_id              (T,)    uint8
+│   ├── phase_id             (T,)    uint8
+│   ├── phase_progress       (T,)    float32
+│   ├── work_stage_id        (T,)    uint8
+│   ├── goal_tokens          (T, 10) float32
+│   ├── planner_replan_mask  (T,)    uint8
+│   ├── qualified_dig_start_mask (T,) uint8
+│   ├── dump_start_mask      (T,)    uint8
+│   ├── dump_end_mask        (T,)    uint8
+│   ├── pause_mask           (T,)    uint8
+│   └── boundary_mask        (T,)    uint8
+└── cycle/
+    ├── cycle_id             (K,)    int32
+    ├── start_step           (K,)    int32
+    ├── dump_end_step        (K,)    int32
+    ├── end_step             (K,)    int32
+    ├── curr_src_sector_id   (K,)    int32
+    ├── curr_cut_depth_class (K,)    int32
+    ├── next_src_sector_id   (K,)    int32
+    ├── next_cut_depth_class (K,)    int32
+    ├── dst_target_id        (K,)    int32
+    ├── fill_peak_kg         (K,)    float32
+    ├── deposit_delta_kg     (K,)    float32
+    ├── peak_bucket_depth_m  (K,)    float32
+    ├── collision_count_delta (K,)   int32
+    ├── transition_source    (K,)    string
+    ├── plan_source          (K,)    string
+    └── cycle_success        (K,)    int8
 """
 
 # ── Schema version ────────────────────────────────────────────────────────────
@@ -86,6 +130,9 @@ GRP_OBS           = "observations"
 GRP_IMAGES        = "observations/images"
 GRP_TIMESTAMPS    = "timestamps"        # v1.1
 GRP_ACTION_SOURCE = "action_source"     # v1.1
+GRP_V2            = "v2"                # optional Repo A add-only extension
+GRP_V2_STEP       = "v2/step"
+GRP_V2_CYCLE      = "v2/cycle"
 
 # ── Dataset paths — v1.0 ─────────────────────────────────────────────────────
 DS_QPOS    = "observations/qpos"
@@ -99,6 +146,37 @@ DS_STEP_ID         = "timestamps/step_id"            # (T,) int64
 DS_STEP_NS         = "timestamps/step_ns"            # (T,) int64
 DS_ACTION_SRC_TYPE = "action_source/type"            # (T,) variable-length str
 DS_ACTION_SRC_ID   = "action_source/id"              # (T,) variable-length str
+
+# ── Dataset paths — optional Repo A /v2 extension ───────────────────────────
+DS_V2_STEP_CYCLE_ID       = "v2/step/cycle_id"
+DS_V2_STEP_MODE_ID        = "v2/step/mode_id"
+DS_V2_STEP_PHASE_ID       = "v2/step/phase_id"
+DS_V2_STEP_PHASE_PROGRESS = "v2/step/phase_progress"
+DS_V2_STEP_WORK_STAGE_ID  = "v2/step/work_stage_id"
+DS_V2_STEP_GOAL_TOKENS    = "v2/step/goal_tokens"
+DS_V2_STEP_PLANNER_REPLAN_MASK = "v2/step/planner_replan_mask"
+DS_V2_STEP_QUALIFIED_DIG_START_MASK = "v2/step/qualified_dig_start_mask"
+DS_V2_STEP_DUMP_START_MASK = "v2/step/dump_start_mask"
+DS_V2_STEP_DUMP_END_MASK = "v2/step/dump_end_mask"
+DS_V2_STEP_PAUSE_MASK     = "v2/step/pause_mask"
+DS_V2_STEP_BOUNDARY_MASK  = "v2/step/boundary_mask"
+
+DS_V2_CYCLE_CYCLE_ID        = "v2/cycle/cycle_id"
+DS_V2_CYCLE_START_STEP      = "v2/cycle/start_step"
+DS_V2_CYCLE_DUMP_END_STEP   = "v2/cycle/dump_end_step"
+DS_V2_CYCLE_END_STEP        = "v2/cycle/end_step"
+DS_V2_CYCLE_DST_TARGET_ID   = "v2/cycle/dst_target_id"
+DS_V2_CYCLE_CURR_SRC_SECTOR_ID = "v2/cycle/curr_src_sector_id"
+DS_V2_CYCLE_CURR_CUT_DEPTH_CLASS = "v2/cycle/curr_cut_depth_class"
+DS_V2_CYCLE_NEXT_SRC_SECTOR_ID = "v2/cycle/next_src_sector_id"
+DS_V2_CYCLE_NEXT_CUT_DEPTH_CLASS = "v2/cycle/next_cut_depth_class"
+DS_V2_CYCLE_FILL_PEAK_KG    = "v2/cycle/fill_peak_kg"
+DS_V2_CYCLE_DEPOSIT_DELTA_KG = "v2/cycle/deposit_delta_kg"
+DS_V2_CYCLE_PEAK_BUCKET_DEPTH_M = "v2/cycle/peak_bucket_depth_m"
+DS_V2_CYCLE_COLLISION_COUNT_DELTA = "v2/cycle/collision_count_delta"
+DS_V2_CYCLE_TRANSITION_SOURCE = "v2/cycle/transition_source"
+DS_V2_CYCLE_PLAN_SOURCE = "v2/cycle/plan_source"
+DS_V2_CYCLE_SUCCESS         = "v2/cycle/cycle_success"
 
 # ── Metadata attribute names — v1.0 ──────────────────────────────────────────
 ATTR_SCHEMA_VERSION = "schema_version"
@@ -143,6 +221,17 @@ ATTR_RESPONSE_PROFILE_ATTACK_RATE = "response_profile_attack_rate"
 ATTR_RESPONSE_PROFILE_RELEASE_RATE = "response_profile_release_rate"
 ATTR_RESPONSE_PROFILE_RECENTER_RATE = "response_profile_recenter_rate"
 ATTR_RESPONSE_PROFILE_EXPONENT = "response_profile_exponent"
+ATTR_SCENARIO_ID = "scenario_id"
+ATTR_GOAL_TOKEN_DIM = "goal_token_dim"
+ATTR_GOAL_TOKEN_VERSION = "goal_token_version"
+ATTR_PHASE_VERSION = "phase_version"
+ATTR_WORK_STAGE_VERSION = "work_stage_version"
+ATTR_SCENARIO_MANIFEST_VERSION = "scenario_manifest_version"
+ATTR_RECORDING_MODE = "recording_mode"
+ATTR_TARGET_DUMP_COUNT = "target_dump_count"
+ATTR_STOP_REASON = "stop_reason"
+ATTR_TRANSITION_SOURCE = "transition_source"
+ATTR_V2_ENABLED = "v2_enabled"
 
 # ── V0 locked constants ───────────────────────────────────────────────────────
 DEFAULT_CONTROL_HZ       = 50

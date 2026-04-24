@@ -18,9 +18,11 @@ import yaml
 from torch.utils.data import DataLoader, Dataset
 
 from testbed.data.hdf5_io import list_episodes
+from testbed.data.schema import DS_V2_STEP_GOAL_TOKENS
+from testbed.data.v2_1 import GOAL_TOKEN_DIM
 
 
-SUPPORTED_LOW_DIM_KEYS = ("qpos", "qvel")
+SUPPORTED_LOW_DIM_KEYS = ("qpos", "qvel", "goal_tokens")
 
 
 def _normalize_low_dim_keys(low_dim_keys: list[str] | tuple[str, ...] | None) -> list[str]:
@@ -38,17 +40,29 @@ def _assemble_low_dim_observation(
     *,
     qpos: np.ndarray,
     qvel: np.ndarray,
+    goal_tokens: np.ndarray | None = None,
     low_dim_keys: list[str],
 ) -> np.ndarray:
     qpos_arr = np.asarray(qpos, dtype=np.float32)
     qvel_arr = np.asarray(qvel, dtype=np.float32)
-    sequence_mode = qpos_arr.ndim > 1 or qvel_arr.ndim > 1
+    goal_tokens_arr = None if goal_tokens is None else np.asarray(goal_tokens, dtype=np.float32)
+    sequence_mode = (
+        qpos_arr.ndim > 1
+        or qvel_arr.ndim > 1
+        or (goal_tokens_arr is not None and goal_tokens_arr.ndim > 1)
+    )
     parts: list[np.ndarray] = []
     for key in low_dim_keys:
         if key == "qpos":
             part = qpos_arr
         elif key == "qvel":
             part = qvel_arr
+        elif key == "goal_tokens":
+            if goal_tokens_arr is None:
+                raise KeyError(
+                    "Requested low_dim key 'goal_tokens' but /v2/step/goal_tokens is missing."
+                )
+            part = goal_tokens_arr
         else:
             continue
         if sequence_mode:
@@ -103,7 +117,10 @@ def get_norm_stats(
     example_qpos = None
     example_proprio = None
 
-    ids = episode_ids if episode_ids is not None else list(range(num_episodes))
+    if episode_ids is not None:
+        ids = [int(ep_id) for ep_id in episode_ids]
+    else:
+        ids = _select_episode_ids(dataset_dir, num_episodes)
     for ep_idx in ids:
         p = dataset_dir / f"episode_{ep_idx}.hdf5"
         if not p.exists():
@@ -112,9 +129,11 @@ def get_norm_stats(
             qpos   = f["/observations/qpos"][()]
             qvel   = f["/observations/qvel"][()]
             action = f["/action"][()]
+            goal_tokens = _read_goal_tokens_dataset(f) if "goal_tokens" in selected_low_dim_keys else None
         proprio = _assemble_low_dim_observation(
             qpos=qpos,
             qvel=qvel,
+            goal_tokens=goal_tokens,
             low_dim_keys=selected_low_dim_keys,
         )
         all_proprio_data.append(torch.from_numpy(proprio))
@@ -226,9 +245,15 @@ class EpisodicDataset(Dataset):
             # ── observation at t0 ─────────────────────────────────────────
             qpos = f["/observations/qpos"][t0]
             qvel = f["/observations/qvel"][t0]
+            goal_tokens = (
+                _read_goal_tokens_dataset(f, index=t0)
+                if "goal_tokens" in self.low_dim_keys
+                else None
+            )
             proprio = _assemble_low_dim_observation(
                 qpos=qpos,
                 qvel=qvel,
+                goal_tokens=goal_tokens,
                 low_dim_keys=self.low_dim_keys,
             )
             image_dict = {
@@ -317,19 +342,14 @@ def load_data(
     dataset_dir = Path(dataset_dir)
     print(f"\nData from: {dataset_dir}\n")
 
-    # discover available episode files
-    available = [
-        int(p.stem.split("_", 1)[1])
-        for p in list_episodes(dataset_dir)
-    ]
-    available = [i for i in available if i < num_episodes]
+    available = _select_episode_ids(dataset_dir, num_episodes)
 
     if not available:
         raise FileNotFoundError(
             f"No episodes found under {dataset_dir}. "
             "Expected files like episode_0.hdf5."
         )
-    if len(available) < num_episodes:
+    if num_episodes > 0 and len(available) < num_episodes:
         print(
             f"Warning: requested {num_episodes} episodes "
             f"but found {len(available)}. Using available episodes."
@@ -423,6 +443,18 @@ def load_data(
     val_loader   = DataLoader(val_ds,   batch_size=batch_size_val,   shuffle=True,  **loader_kw)
 
     return train_loader, val_loader, norm_stats, train_ds.is_sim, split_info
+
+
+def _select_episode_ids(dataset_dir: str | Path, num_episodes: int) -> list[int]:
+    dataset_dir = Path(dataset_dir)
+    discovered = [
+        int(path.stem.split("_", 1)[1])
+        for path in list_episodes(dataset_dir)
+    ]
+    discovered = sorted(discovered)
+    if num_episodes <= 0:
+        return discovered
+    return [episode_id for episode_id in discovered if episode_id < int(num_episodes)]
 
 
 def _resolve_episode_split(
@@ -535,3 +567,19 @@ def _validate_saved_split(
             "Saved split file references episode ids not available in the current dataset: "
             + ", ".join(str(ep_id) for ep_id in missing)
         )
+
+
+def _read_goal_tokens_dataset(h5_file, index: int | None = None) -> np.ndarray:
+    if DS_V2_STEP_GOAL_TOKENS not in h5_file:
+        raise KeyError(
+            "Requested low_dim key 'goal_tokens' but /v2/step/goal_tokens is missing."
+        )
+    dataset = h5_file[DS_V2_STEP_GOAL_TOKENS]
+    value = dataset[()] if index is None else dataset[index]
+    arr = np.asarray(value, dtype=np.float32)
+    expected_dim = GOAL_TOKEN_DIM
+    if arr.shape[-1] != expected_dim:
+        raise ValueError(
+            f"/v2/step/goal_tokens must have last dimension {expected_dim}, got {arr.shape}."
+        )
+    return arr

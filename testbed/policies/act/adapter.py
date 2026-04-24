@@ -100,6 +100,7 @@ class ACTAdapter(Policy):
         obs   dict with keys:
                 "qpos"      : (Nq,) float32
                 "qvel"      : (Nv,) float32 when configured in low_dim_keys
+                "goal_tokens": (10,) float32 when configured in low_dim_keys
                 "image_<cam>": (C, H, W) float32 [0, 1]   for each camera
               Camera images should be in channel-first format.
 

@@ -532,6 +532,8 @@ class AgxSimClient:
             try:
                 self._socket.sendall(request_frame)
                 response_type, payload = read_frame(self._socket)
+                if response_type != expected:
+                    response_type, payload = read_frame(self._socket)
             except Exception:
                 self.close()
                 raise

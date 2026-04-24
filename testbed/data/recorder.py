@@ -127,7 +127,12 @@ class EpisodeRecorder:
 
     # ── Save ─────────────────────────────────────────────────────────────────
 
-    def save(self, success: bool = False) -> Path:
+    def save(
+        self,
+        success: bool = False,
+        *,
+        v2: dict[str, dict[str, np.ndarray]] | None = None,
+    ) -> Path:
         """
         Flush buffers to disk as episode_{episode_idx}.hdf5.
 
@@ -174,6 +179,7 @@ class EpisodeRecorder:
             step_ns=np.array(self._step_ns, dtype=np.int64) if any(self._step_ns) else None,
             action_src_types=self._action_src_types if self._action_src_types else None,
             action_src_ids=self._action_src_ids if self._action_src_ids else None,
+            v2=v2,
         )
         return path
 

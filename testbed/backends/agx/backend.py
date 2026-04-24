@@ -10,7 +10,12 @@ from typing import Any
 import numpy as np
 
 from testbed.backends.base import SimBackend
-from testbed.backends.agx.protocol import AgxSimClient, GetInfoResponse, StepResponse
+from testbed.backends.agx.protocol import (
+    AgxProtocolError,
+    AgxSimClient,
+    GetInfoResponse,
+    StepResponse,
+)
 from testbed.tasks.logic.excavator_reward import (
     AGX_DEPOSITED_MASS_IN_TARGET_BOX,
     AGX_EXCAVATED_MASS,
@@ -53,6 +58,7 @@ class AgxSimBackend(SimBackend):
         timeout: float | None = None,
         reset_terrain: bool = True,
         reset_pose: bool = True,
+        scenario_id: str | None = None,
         reward_overrides: dict[str, Any] | None = None,
     ) -> None:
         if timeout_s is None:
@@ -63,6 +69,7 @@ class AgxSimBackend(SimBackend):
         self._last_obs: dict[str, Any] | None = None
         self._reset_terrain = bool(reset_terrain)
         self._reset_pose = bool(reset_pose)
+        self._scenario_id = None if scenario_id in (None, "") else str(scenario_id)
         self._task_name = str(task_name)
         self._reward_overrides = dict(reward_overrides or {})
         self._mission = None
@@ -73,7 +80,10 @@ class AgxSimBackend(SimBackend):
 
     def get_info(self) -> GetInfoResponse:
         if self._info is None:
-            self._info = self._client.get_info()
+            self._info = self._call_with_resync(
+                self._client.get_info,
+                action_name="get_info",
+            )
         if self._reward_tracker is None:
             env_state_order = getattr(
                 self._info,
@@ -106,14 +116,19 @@ class AgxSimBackend(SimBackend):
         *,
         reset_terrain: bool | None = None,
         reset_pose: bool | None = None,
+        scenario_id: str | None = None,
     ) -> Any:
         info = self.get_info()
         if self._reward_tracker is not None:
             self._reward_tracker.reset()
-        reset_response = self._client.reset(
-            seed=0 if seed is None else int(seed),
-            reset_terrain=self._reset_terrain if reset_terrain is None else bool(reset_terrain),
-            reset_pose=self._reset_pose if reset_pose is None else bool(reset_pose),
+        reset_response = self._call_with_resync(
+            lambda: self._client.reset(
+                seed=0 if seed is None else int(seed),
+                reset_terrain=self._reset_terrain if reset_terrain is None else bool(reset_terrain),
+                reset_pose=self._reset_pose if reset_pose is None else bool(reset_pose),
+                scenario_id=self._scenario_id if scenario_id is None else scenario_id,
+            ),
+            action_name="reset",
         )
         self._next_step_id = 0
         ts = self._step_with_id(
@@ -203,6 +218,17 @@ class AgxSimBackend(SimBackend):
             done=False,
             info=info,
         )
+
+    def _call_with_resync(self, fn, *, action_name: str):
+        try:
+            return fn()
+        except AgxProtocolError as exc:
+            if "unexpected response type" not in str(exc):
+                raise
+            self._client.close()
+            if action_name == "get_info":
+                self._info = None
+            return fn()
 
     def _obs_from_step_response(self, response: StepResponse) -> dict[str, Any]:
         image = response.decode_rgb_image()

@@ -19,6 +19,7 @@ Success rules
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -29,7 +30,20 @@ from testbed.eval.rollout_logs import (
     write_json,
     write_jsonl,
 )
+from testbed.eval.hybrid_metrics import (
+    aggregate_hybrid_metrics,
+    build_hybrid_summary,
+)
+from testbed.eval.planner_metrics import aggregate_planner_metrics
+from testbed.eval.quality_metrics import (
+    aggregate_quality_metrics,
+    build_quality_summary,
+)
 from testbed.eval.metrics import EvalMetrics
+from testbed.eval.multi_cycle_metrics import (
+    aggregate_multicycle_metrics,
+    build_multicycle_summary,
+)
 from testbed.eval.tasks import EVAL_SEED, EvalTaskDef, get_eval_task
 from testbed.eval.video import save_eval_video
 from testbed.policies.base import Policy
@@ -37,6 +51,10 @@ from testbed.tasks.logic.excavator_reward import (
     build_agx_excavation_mission_overrides,
     resolve_agx_field_indices,
 )
+from testbed.data.v2_1 import build_goal_tokens
+from testbed.planner.boundary_detector import build_boundary_detector_from_config
+
+DEFAULT_PAUSE_EPS = 0.05
 
 
 class EvalSuite:
@@ -70,6 +88,14 @@ class EvalSuite:
                       {"hard_target_collision": 0, "spill_before_target": 0}.
     residual_bucket_mass_thresh  For dump-complete success, final bucket mass
                       must stay at or below this threshold for hold_steps.
+    target_cycle_gate  Optional multicycle early-stop gate; when set, the
+                      rollout stops once the external boundary detector has
+                      observed this many completed dump events.
+    target_cycle_gate_terminal_hold_steps  Optional tail length after the
+                      target-cycle gate first fires. This prevents the gate
+                      from truncating dump-complete final-hold accounting.
+    episode_len     Optional per-run rollout horizon override.
+    camera_names    Optional per-run camera override for video/eval inputs.
     """
 
     def __init__(
@@ -87,6 +113,7 @@ class EvalSuite:
         agx_host: str = "127.0.0.1",
         agx_port: int = 5057,
         agx_timeout: float = 10.0,
+        scenario_id: str | None = None,
         mass_thresh: float | None = None,
         hold_steps: int | None = None,
         success_signal_name: str | None = None,
@@ -95,9 +122,17 @@ class EvalSuite:
         agx_success_mode: str = "legacy_any",
         strict_max_failures: dict[str, int] | None = None,
         residual_bucket_mass_thresh: float = 100.0,
+        target_cycle_gate: int | None = None,
+        target_cycle_gate_terminal_hold_steps: int | None = None,
+        episode_len: int | None = None,
+        camera_names: list[str] | None = None,
     ):
         self.policy       = policy
         self.task_def     = get_eval_task(task_name)
+        if episode_len is not None:
+            self.task_def = replace(self.task_def, episode_len=int(episode_len))
+        if camera_names is not None:
+            self.task_def = replace(self.task_def, camera_names=list(camera_names))
         self.num_rollouts = num_rollouts
         self.save_video   = save_video
         self.ckpt_path    = ckpt_path
@@ -106,7 +141,11 @@ class EvalSuite:
         self.agx_host     = agx_host
         self.agx_port     = agx_port
         self.agx_timeout  = agx_timeout
+        self._scenario_id = None if scenario_id in (None, "") else str(scenario_id)
         self._env_state_index = None if env_state_index is None else int(env_state_index)
+        self._live_goal_tokens = None
+        if self._scenario_id is not None:
+            self._live_goal_tokens = build_goal_tokens(self._scenario_id)
 
         # Allow config override for mass_thresh
         if mass_thresh is not None:
@@ -129,6 +168,14 @@ class EvalSuite:
             for name, limit in (strict_max_failures or {}).items()
         }
         self._residual_bucket_mass_thresh = float(residual_bucket_mass_thresh)
+        self._target_cycle_gate = (
+            None if target_cycle_gate is None else max(1, int(target_cycle_gate))
+        )
+        self._target_cycle_gate_terminal_hold_steps = (
+            max(0, int(self._hold_steps))
+            if target_cycle_gate_terminal_hold_steps is None
+            else max(0, int(target_cycle_gate_terminal_hold_steps))
+        )
 
         if video_dir is None:
             policy_name = type(policy).__name__
@@ -167,6 +214,11 @@ class EvalSuite:
         ending_success_consecutive_steps: list[int] = []
         ending_dump_complete_consecutive_steps: list[int] = []
         rollout_summaries: list[dict[str, object]] = []
+        continuity_summaries: list[dict[str, float]] = []
+        multicycle_summaries: list[dict[str, float | int]] = []
+        hybrid_summaries: list[dict[str, float | int | str]] = []
+        planner_summaries: list[dict[str, object]] = []
+        quality_summaries: list[dict[str, float | int]] = []
         policy_name = type(self.policy).__name__
 
         try:
@@ -186,6 +238,15 @@ class EvalSuite:
                 phase_labels: list[str]        = []
                 success_flags: list[bool]      = []
                 step_records: list[dict[str, object]] = []
+                rollout_stop_reason = "episode_len_reached"
+                target_cycle_gate_reached_step: int | None = None
+                boundary_detector = build_boundary_detector_from_config(
+                    reward_cfg=self._reward_overrides,
+                    success_cfg={
+                        "residual_bucket_mass_thresh": self._residual_bucket_mass_thresh,
+                    },
+                    pause_action_eps=DEFAULT_PAUSE_EPS,
+                )
 
                 for t in range(task.episode_len):
                     obs = ts.observation
@@ -200,9 +261,33 @@ class EvalSuite:
                                 np.array(img, dtype=np.float32) / 255.0,
                                 "h w c -> c h w",
                             )
+                    if self._live_goal_tokens is not None and "goal_tokens" not in policy_input:
+                        policy_input["goal_tokens"] = self._live_goal_tokens.copy()
 
                     action = self.policy.predict(policy_input)
+                    policy_debug = (
+                        dict(self.policy.debug_state())
+                        if hasattr(self.policy, "debug_state")
+                        else {}
+                    )
                     ts     = env.step(action)
+                    boundary_event = boundary_detector.update(
+                        env_state=ts.observation.get("env_state", np.zeros(9, dtype=np.float32)),
+                        action=action,
+                        qpos=ts.observation.get("qpos", np.zeros(4, dtype=np.float32)),
+                        reward_phase=str(
+                            ts.info.get("reward_phase", ts.observation.get("reward_phase", ""))
+                        ),
+                        task_step_successes=list(
+                            ts.info.get(
+                                "task_step_successes",
+                                ts.observation.get("task_step_successes", []),
+                            )
+                        ),
+                        task_metrics=dict(
+                            ts.info.get("task_metrics", ts.observation.get("task_metrics", {}))
+                        ),
+                    )
 
                     r = float(ts.reward) if ts.reward is not None else 0.0
                     rewards.append(r)
@@ -238,7 +323,80 @@ class EvalSuite:
                                 else np.array(obs.get("env_state"), dtype=np.float32)
                             ),
                             "action": np.array(action, dtype=np.float32),
+                            "goal_tokens": (
+                                None
+                                if policy_input.get("goal_tokens") is None
+                                else np.array(policy_input.get("goal_tokens"), dtype=np.float32)
+                            ),
+                            "cycle_id": int(boundary_event.cycle_id),
+                            "mode_id": int(boundary_event.mode_id),
+                            "qualified_dig_start_mask": int(boundary_event.qualified_dig_start),
+                            "dump_start_mask": int(boundary_event.dump_start),
+                            "dump_end_mask": int(boundary_event.dump_end),
+                            "pause_mask": int(boundary_event.pause),
+                            "boundary_mask": int(boundary_event.boundary),
                             "warnings": warnings,
+                            "hybrid_mode": str(policy_debug.get("hybrid_mode", "")),
+                            "transition_submode": str(
+                                policy_debug.get("transition_submode", "")
+                            ),
+                            "planner_cycle_index": int(
+                                policy_debug.get("planner_cycle_index", -1)
+                            ),
+                            "planner_curr_sector_id": int(
+                                policy_debug.get("planner_curr_sector_id", -1)
+                            ),
+                            "planner_next_sector_id": int(
+                                policy_debug.get("planner_next_sector_id", -1)
+                            ),
+                            "planner_current_sector_id": int(
+                                policy_debug.get("planner_current_sector_id", -1)
+                            ),
+                            "planner_current_depth_class": int(
+                                policy_debug.get("planner_current_depth_class", -1)
+                            ),
+                            "planner_next_depth_class": int(
+                                policy_debug.get("planner_next_depth_class", -1)
+                            ),
+                            "planner_plan_source": str(
+                                policy_debug.get("planner_plan_source", "")
+                            ),
+                            "planner_replan_mask": int(
+                                bool(policy_debug.get("planner_replan_mask", False))
+                            ),
+                            "transition_timeout": bool(
+                                policy_debug.get("transition_timeout", False)
+                            ),
+                            "transition_collision_delta": int(
+                                policy_debug.get("transition_collision_delta", 0)
+                            ),
+                            "corridor_align_steps": int(
+                                policy_debug.get("corridor_align_steps", 0)
+                            ),
+                            "wait_next_dig_steps": int(
+                                policy_debug.get("wait_next_dig_steps", 0)
+                            ),
+                            "transition_completed": bool(
+                                policy_debug.get("transition_completed", False)
+                            ),
+                            "transition_source": str(
+                                policy_debug.get("transition_source", "")
+                            ),
+                            "transition_policy_mode": str(
+                                policy_debug.get("transition_policy_mode", "")
+                            ),
+                            "transition_fallback_count": int(
+                                policy_debug.get("transition_fallback_count", 0)
+                            ),
+                            "transition_fallback_reason": str(
+                                policy_debug.get("transition_fallback_reason", "")
+                            ),
+                            "work_target_guard_active": bool(
+                                policy_debug.get("work_target_guard_active", False)
+                            ),
+                            "work_target_guard_count": int(
+                                policy_debug.get("work_target_guard_count", 0)
+                            ),
                         }
                     )
 
@@ -261,6 +419,21 @@ class EvalSuite:
                         print(
                             f"  rollout {rollout_id:03d}  step {t + 1} / {task.episode_len}"
                         )
+
+                    if bool(policy_debug.get("transition_timeout", False)):
+                        rollout_stop_reason = "transition_timeout"
+                        break
+                    (
+                        target_cycle_gate_reached_step,
+                        target_gate_stop_reason,
+                    ) = self._target_cycle_gate_stop_reason(
+                        completed_dump_count=boundary_detector.completed_dump_count,
+                        step_index=t,
+                        gate_reached_step=target_cycle_gate_reached_step,
+                    )
+                    if target_gate_stop_reason is not None:
+                        rollout_stop_reason = target_gate_stop_reason
+                        break
 
                 # ── Success detection ─────────────────────────────────────────
                 if task.backend_type == "agx":
@@ -322,6 +495,10 @@ class EvalSuite:
                     video_path = str(output_video_path)
 
                 if self.save_rollout_logs:
+                    continuity_summary = _build_continuity_summary(
+                        step_records=step_records,
+                        success_summary=success_summary if task.backend_type == "agx" else None,
+                    )
                     summary = build_rollout_summary(
                         rollout_id=rollout_id,
                         success=success,
@@ -331,13 +508,80 @@ class EvalSuite:
                     )
                     if task.backend_type == "agx":
                         summary.update(success_summary)
+                    summary.update(continuity_summary)
+                    hybrid_summary = build_hybrid_summary(step_records)
+                    if hasattr(self.policy, "rollout_summary"):
+                        hybrid_summary.update(dict(self.policy.rollout_summary()))
+                    multicycle_summary = build_multicycle_summary(
+                        step_records,
+                        success_summary=success_summary if task.backend_type == "agx" else None,
+                        hybrid_summary=hybrid_summary,
+                    )
+                    summary.update(multicycle_summary)
+                    summary.update(hybrid_summary)
+                    quality_summary = build_quality_summary(step_records)
+                    summary.update(quality_summary)
+                    planner_trace = (
+                        dict(self.policy.planner_trace())
+                        if hasattr(self.policy, "planner_trace")
+                        else {}
+                    )
+                    summary["rollout_stop_reason"] = rollout_stop_reason
                     jsonl_path = self.rollout_log_dir / f"rollout_{rollout_id:03d}.jsonl"
                     summary_path = self.rollout_log_dir / f"rollout_{rollout_id:03d}_summary.json"
                     write_jsonl(jsonl_path, step_records)
                     write_json(summary_path, summary)
+                    if planner_trace:
+                        planner_trace_path = (
+                            self.rollout_log_dir / f"rollout_{rollout_id:03d}_planner_trace.json"
+                        )
+                        write_json(planner_trace_path, planner_trace)
+                        summary["planner_trace_path"] = str(planner_trace_path)
                     summary["jsonl_path"] = str(jsonl_path)
                     summary["summary_path"] = str(summary_path)
                     rollout_summaries.append(summary)
+                    continuity_summaries.append(continuity_summary)
+                    multicycle_summaries.append(multicycle_summary)
+                    hybrid_summaries.append(hybrid_summary)
+                    planner_summaries.append(summary)
+                    quality_summaries.append(quality_summary)
+                elif task.backend_type == "agx":
+                    continuity_summaries.append(
+                        _build_continuity_summary(
+                            step_records=step_records,
+                            success_summary=success_summary,
+                        )
+                    )
+                    hybrid_summary = build_hybrid_summary(step_records)
+                    if hasattr(self.policy, "rollout_summary"):
+                        hybrid_summary.update(dict(self.policy.rollout_summary()))
+                    multicycle_summaries.append(
+                        build_multicycle_summary(
+                            step_records,
+                            success_summary=success_summary,
+                            hybrid_summary=hybrid_summary,
+                        )
+                    )
+                    hybrid_summaries.append(hybrid_summary)
+                    planner_summaries.append(hybrid_summary)
+                    quality_summaries.append(build_quality_summary(step_records))
+                else:
+                    continuity_summaries.append(
+                        _build_continuity_summary(step_records=step_records, success_summary=None)
+                    )
+                    hybrid_summary = build_hybrid_summary(step_records)
+                    if hasattr(self.policy, "rollout_summary"):
+                        hybrid_summary.update(dict(self.policy.rollout_summary()))
+                    multicycle_summaries.append(
+                        build_multicycle_summary(
+                            step_records,
+                            success_summary=None,
+                            hybrid_summary=hybrid_summary,
+                        )
+                    )
+                    hybrid_summaries.append(hybrid_summary)
+                    planner_summaries.append(hybrid_summary)
+                    quality_summaries.append(build_quality_summary(step_records))
         finally:
             if hasattr(env, "close"):
                 env.close()
@@ -360,6 +604,7 @@ class EvalSuite:
         if task.backend_type == "agx":
             extra_metrics.update(
                 {
+                    "scenario_id": "" if self._scenario_id is None else self._scenario_id,
                     "success_mode": self._agx_success_mode,
                     "legacy_success_count": int(sum(legacy_successes)),
                     "legacy_success_rate": _safe_rate(sum(legacy_successes), len(legacy_successes)),
@@ -388,8 +633,19 @@ class EvalSuite:
                     ),
                     "strict_max_failures": dict(self._strict_max_failures),
                     "residual_bucket_mass_thresh": float(self._residual_bucket_mass_thresh),
+                    "target_cycle_gate": (
+                        0 if self._target_cycle_gate is None else int(self._target_cycle_gate)
+                    ),
+                    "target_cycle_gate_terminal_hold_steps": int(
+                        self._target_cycle_gate_terminal_hold_steps
+                    ),
                 }
             )
+        extra_metrics.update(_aggregate_continuity_metrics(continuity_summaries))
+        extra_metrics.update(aggregate_multicycle_metrics(multicycle_summaries))
+        extra_metrics.update(aggregate_hybrid_metrics(hybrid_summaries))
+        extra_metrics.update(aggregate_planner_metrics(planner_summaries))
+        extra_metrics.update(aggregate_quality_metrics(quality_summaries))
 
         metrics = EvalMetrics.from_rollouts(
             task_name       = task.name,
@@ -410,6 +666,28 @@ class EvalSuite:
             return False
         return (step_index % self.step_log_interval == 0) or (step_index == episode_len)
 
+    def _target_cycle_gate_stop_reason(
+        self,
+        *,
+        completed_dump_count: int,
+        step_index: int,
+        gate_reached_step: int | None,
+    ) -> tuple[int | None, str | None]:
+        if self._target_cycle_gate is None:
+            return gate_reached_step, None
+        if int(completed_dump_count) < int(self._target_cycle_gate):
+            return gate_reached_step, None
+
+        if gate_reached_step is None:
+            gate_reached_step = int(step_index)
+        if self._target_cycle_gate_terminal_hold_steps <= 0:
+            return gate_reached_step, "target_cycle_gate_reached"
+
+        held_steps = int(step_index) - int(gate_reached_step) + 1
+        if held_steps >= self._target_cycle_gate_terminal_hold_steps:
+            return gate_reached_step, "target_cycle_gate_terminal_hold_reached"
+        return gate_reached_step, None
+
     # ── Environment factory ───────────────────────────────────────────────────
 
     def _make_env(self, task: EvalTaskDef):
@@ -428,6 +706,7 @@ class EvalSuite:
                 port=self.agx_port,
                 timeout=self.agx_timeout,
                 task_name=task.name,
+                scenario_id=self._scenario_id,
                 reward_overrides=reward_overrides,
             )
         elif task.backend_type == "mujoco_ee":
@@ -704,3 +983,94 @@ def _first_true_index(flags: list[bool]) -> int | None:
 
 def _safe_rate(numerator: int | float, denominator: int) -> float:
     return float(numerator) / float(denominator) if denominator > 0 else 0.0
+
+
+def _build_continuity_summary(
+    *,
+    step_records: list[dict[str, object]],
+    success_summary: dict[str, object] | None,
+) -> dict[str, float | int | str | None]:
+    if not step_records:
+        return {
+            "pause_ratio": 0.0,
+            "mean_action_jerk": 0.0,
+            "boundary_jump_l1": 0.0,
+            "boundary_jump_l2": 0.0,
+            "boundary_source": "none",
+            "boundary_step_count": 0,
+        }
+
+    actions = np.asarray(
+        [np.asarray(record.get("action", []), dtype=np.float32).reshape(-1) for record in step_records],
+        dtype=np.float32,
+    )
+    pause_mask = np.asarray(
+        [
+            bool(record.get("pause_mask", np.sum(np.abs(action)) < DEFAULT_PAUSE_EPS))
+            for record, action in zip(step_records, actions, strict=False)
+        ],
+        dtype=bool,
+    )
+
+    boundary_mask = np.asarray(
+        [bool(record.get("boundary_mask", 0)) for record in step_records],
+        dtype=bool,
+    )
+    boundary_source = "step_record_mask" if np.any(boundary_mask) else "none"
+    if not np.any(boundary_mask):
+        first_dump_complete_step = (
+            None
+            if success_summary is None
+            else success_summary.get("first_dump_complete_step")
+        )
+        if first_dump_complete_step is not None:
+            boundary_mask[max(0, int(first_dump_complete_step) - 1) : min(len(boundary_mask), int(first_dump_complete_step) + 2)] = True
+            boundary_source = "dump_complete_window"
+
+    action_delta = np.diff(actions, axis=0) if len(actions) >= 2 else np.zeros((0, 0), dtype=np.float32)
+    if len(actions) >= 3:
+        action_jerk = actions[2:] - (2.0 * actions[1:-1]) + actions[:-2]
+        mean_action_jerk = float(np.linalg.norm(action_jerk, ord=2, axis=1).mean())
+    else:
+        mean_action_jerk = 0.0
+
+    boundary_indices = np.flatnonzero(boundary_mask)
+    boundary_indices = boundary_indices[boundary_indices > 0]
+    if len(boundary_indices) > 0 and len(action_delta) > 0:
+        boundary_delta = action_delta[boundary_indices - 1]
+        boundary_jump_l1 = float(np.linalg.norm(boundary_delta, ord=1, axis=1).mean())
+        boundary_jump_l2 = float(np.linalg.norm(boundary_delta, ord=2, axis=1).mean())
+    else:
+        boundary_jump_l1 = 0.0
+        boundary_jump_l2 = 0.0
+
+    return {
+        "pause_ratio": float(pause_mask.mean()) if len(pause_mask) > 0 else 0.0,
+        "mean_action_jerk": mean_action_jerk,
+        "boundary_jump_l1": boundary_jump_l1,
+        "boundary_jump_l2": boundary_jump_l2,
+        "boundary_source": boundary_source,
+        "boundary_step_count": int(len(boundary_indices)),
+    }
+
+
+def _aggregate_continuity_metrics(
+    continuity_summaries: list[dict[str, float | int | str | None]],
+) -> dict[str, float]:
+    if not continuity_summaries:
+        return {
+            "avg_pause_ratio": 0.0,
+            "avg_mean_action_jerk": 0.0,
+            "avg_boundary_jump_l1": 0.0,
+            "avg_boundary_jump_l2": 0.0,
+        }
+    pause_ratio = [float(item.get("pause_ratio", 0.0)) for item in continuity_summaries]
+    mean_action_jerk = [float(item.get("mean_action_jerk", 0.0)) for item in continuity_summaries]
+    boundary_jump_l1 = [float(item.get("boundary_jump_l1", 0.0)) for item in continuity_summaries]
+    boundary_jump_l2 = [float(item.get("boundary_jump_l2", 0.0)) for item in continuity_summaries]
+    return {
+        "avg_pause_ratio": float(np.mean(pause_ratio)),
+        "avg_mean_action_jerk": float(np.mean(mean_action_jerk)),
+        "avg_boundary_jump_l1": float(np.mean(boundary_jump_l1)),
+        "avg_boundary_jump_l2": float(np.mean(boundary_jump_l2)),
+    }

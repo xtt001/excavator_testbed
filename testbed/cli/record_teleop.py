@@ -67,13 +67,26 @@ from testbed.data.schema import (
     ATTR_SEED,
     ATTR_SESSION_ID,
     ATTR_SIM_BACKEND,
+    ATTR_STOP_REASON,
     ATTR_TASK_NAME,
     ATTR_TELEOP_INPUT,
     ATTR_CONTROL_HZ,
+    ATTR_TARGET_DUMP_COUNT,
     ATTR_OPERATOR_ID,
+    ATTR_RECORDING_MODE,
+    ATTR_SCENARIO_ID,
 )
+from testbed.data.v2_1 import (
+    GOAL_TOKEN_VERSION,
+    PHASE_VERSION,
+    build_v2_1_metadata_attrs,
+)
+from testbed.planner.boundary_detector import build_boundary_detector_from_config
 
 log = logging.getLogger(__name__)
+
+STOP_MODE_TASK_SUCCESS_TAIL = "task_success_tail"
+STOP_MODE_TARGET_DUMP_COUNT = "target_dump_count"
 
 
 def _action_control_flags(ainfo) -> tuple[bool, bool, bool]:
@@ -100,6 +113,7 @@ def _advance_success_stop_state(
         post_success_tail_remaining = max(0, int(post_success_tail_steps))
         if post_success_tail_remaining == 0:
             return True, 0
+        return False, post_success_tail_remaining
 
     if not episode_success:
         return False, post_success_tail_remaining
@@ -114,6 +128,15 @@ def _advance_success_stop_state(
     if post_success_tail_remaining <= 0:
         return True, 0
     return False, post_success_tail_remaining
+
+
+def _resolve_stop_mode(teleop_cfg: dict) -> str:
+    stop_mode = str(teleop_cfg.get("stop_mode", "")).strip()
+    if stop_mode:
+        return stop_mode
+    if bool(teleop_cfg.get("stop_on_success", True)):
+        return STOP_MODE_TASK_SUCCESS_TAIL
+    return "none"
 
 
 def main() -> None:
@@ -175,22 +198,49 @@ def main() -> None:
     seed         = int(task_cfg.get("seed", -1))
     max_steps    = task_cfg.get("max_steps", 500)
     input_device = str(teleop_cfg.get("input", "joystick"))
+    stop_mode = _resolve_stop_mode(teleop_cfg)
     stop_on_success = bool(teleop_cfg.get("stop_on_success", True))
     post_success_tail_steps = int(teleop_cfg.get("post_success_tail_steps", 0))
+    scenario_id = task_cfg.get("scenario_id")
     camera_names: list[str] = task_cfg.get("camera_names", ["fpv"])
     record_config_yaml = yaml.safe_dump(cfg, sort_keys=False)
+
+    recording_mode = str(task_cfg.get("recording_mode", "")).strip()
+    target_dump_count = int(teleop_cfg.get("target_dump_count", 3))
+
+    if stop_mode not in (
+        STOP_MODE_TASK_SUCCESS_TAIL,
+        STOP_MODE_TARGET_DUMP_COUNT,
+        "none",
+    ):
+        raise ValueError(
+            f"Unsupported teleop.stop_mode {stop_mode!r}. Expected one of: "
+            f"{STOP_MODE_TASK_SUCCESS_TAIL}, {STOP_MODE_TARGET_DUMP_COUNT}, none."
+        )
+
+    dump_boundary_detector = None
+    if stop_mode == STOP_MODE_TARGET_DUMP_COUNT:
+        dump_boundary_detector = build_boundary_detector_from_config(
+            reward_cfg=reward_cfg,
+            success_cfg=success_cfg,
+        )
 
     log.info(
         (
             "Config: %d episodes → %s  max_steps=%d  input=%s  "
-            "stop_on_success=%s  post_success_tail_steps=%d"
+            "stop_mode=%s  stop_on_success=%s  post_success_tail_steps=%d  "
+            "scenario_id=%s  recording_mode=%s  target_dump_count=%d"
         ),
         num_episodes,
         dataset_dir,
         max_steps,
         input_device,
+        stop_mode,
         stop_on_success,
         post_success_tail_steps,
+        "" if scenario_id is None else scenario_id,
+        recording_mode,
+        target_dump_count,
     )
 
     # ── Build backend ─────────────────────────────────────────────────────────
@@ -209,6 +259,7 @@ def main() -> None:
         timeout=agx_cfg.get("timeout", 10.0),
         reset_terrain=agx_cfg.get("reset_terrain", True),
         reset_pose=agx_cfg.get("reset_pose", True),
+        scenario_id=None if scenario_id is None else str(scenario_id),
         task_name=task_cfg.get("task_name", "agx_excavation_teleop"),
         reward_overrides=reward_overrides,
     )
@@ -275,6 +326,11 @@ def main() -> None:
             reset_requested = False
             episode_success = bool(ts.info.get("task_success", False))
             post_success_tail_remaining: int | None = None
+            completed_dump_count = 0
+            target_dump_count_reached = False
+            stop_reason = ""
+            if dump_boundary_detector is not None:
+                dump_boundary_detector.reset()
 
             for local_step in range(max_steps):
                 if _abort:
@@ -322,43 +378,132 @@ def main() -> None:
                 episode_success = episode_success or current_task_success
                 ts = ts_next
 
-                should_stop, post_success_tail_remaining = _advance_success_stop_state(
-                    episode_success=episode_success,
-                    stop_on_success=stop_on_success,
-                    just_reached_success=just_reached_success,
-                    post_success_tail_steps=post_success_tail_steps,
-                    post_success_tail_remaining=post_success_tail_remaining,
-                )
-                if just_reached_success and stop_on_success and post_success_tail_steps > 0:
-                    log.info(
-                        (
-                            "Episode reached task success at step %d; "
-                            "recording %d additional tail steps before stopping."
-                        ),
-                        local_step + 1,
-                        post_success_tail_steps,
+                should_stop = False
+                if stop_mode == STOP_MODE_TASK_SUCCESS_TAIL:
+                    should_stop, post_success_tail_remaining = _advance_success_stop_state(
+                        episode_success=episode_success,
+                        stop_on_success=stop_on_success,
+                        just_reached_success=just_reached_success,
+                        post_success_tail_steps=post_success_tail_steps,
+                        post_success_tail_remaining=post_success_tail_remaining,
                     )
-                elif just_reached_success and stop_on_success:
-                    log.info(
-                        "Episode reached task success at step %d and will end immediately.",
-                        local_step + 1,
-                    )
-
-                if should_stop:
-                    if stop_on_success and post_success_tail_steps > 0:
+                    if just_reached_success and stop_on_success and post_success_tail_steps > 0:
                         log.info(
                             (
-                                "Episode completed post-success tail and will stop at step %d."
+                                "Episode reached task success at step %d; "
+                                "recording %d additional tail steps before stopping."
                             ),
                             local_step + 1,
+                            post_success_tail_steps,
                         )
+                    elif just_reached_success and stop_on_success:
+                        log.info(
+                            "Episode reached task success at step %d and will end immediately.",
+                            local_step + 1,
+                        )
+                    if should_stop and stop_on_success and post_success_tail_steps > 0:
+                        log.info(
+                            "Episode completed post-success tail and will stop at step %d.",
+                            local_step + 1,
+                        )
+                elif stop_mode == STOP_MODE_TARGET_DUMP_COUNT and dump_boundary_detector is not None:
+                    dump_event = dump_boundary_detector.update(
+                        env_state=ts.observation.get("env_state", np.zeros(9, dtype=np.float32)),
+                        action=action,
+                        qpos=ts.observation.get("qpos", np.zeros(4, dtype=np.float32)),
+                        reward_phase=str(
+                            ts.info.get("reward_phase", ts.observation.get("reward_phase", ""))
+                        ),
+                        task_step_successes=list(
+                            ts.info.get(
+                                "task_step_successes",
+                                ts.observation.get("task_step_successes", []),
+                            )
+                        ),
+                        task_metrics=dict(
+                            ts.info.get("task_metrics", ts.observation.get("task_metrics", {}))
+                        ),
+                    )
+                    completed_dump_count = dump_boundary_detector.completed_dump_count
+                    if dump_event.dump_end:
+                        log.info(
+                            "Episode reached dump_end #%d at step %d.",
+                            completed_dump_count,
+                            local_step + 1,
+                        )
+                    target_reached_now = completed_dump_count >= target_dump_count
+                    just_reached_target = bool(target_reached_now and not target_dump_count_reached)
+                    target_dump_count_reached = target_dump_count_reached or target_reached_now
+                    should_stop, post_success_tail_remaining = _advance_success_stop_state(
+                        episode_success=target_dump_count_reached,
+                        stop_on_success=True,
+                        just_reached_success=just_reached_target,
+                        post_success_tail_steps=post_success_tail_steps,
+                        post_success_tail_remaining=post_success_tail_remaining,
+                    )
+                    if just_reached_target:
+                        stop_reason = "target_dump_count_reached"
+                        if post_success_tail_steps > 0:
+                            log.info(
+                                (
+                                    "Episode reached target_dump_count=%d at step %d; "
+                                    "recording %d additional tail steps before stopping."
+                                ),
+                                target_dump_count,
+                                local_step + 1,
+                                post_success_tail_steps,
+                            )
+                        else:
+                            log.info(
+                                "Episode reached target_dump_count=%d at step %d and will stop.",
+                                target_dump_count,
+                                local_step + 1,
+                            )
+                    if should_stop and target_dump_count_reached and post_success_tail_steps > 0:
+                        log.info(
+                            "Episode completed target_dump_count tail and will stop at step %d.",
+                            local_step + 1,
+                        )
+
+                if should_stop:
                     break
 
                 # Enforce control rate
                 _sleep_to_rate(task_cfg.get("control_hz", 50))
 
+            recorder.metadata["stop_mode"] = stop_mode
+            if scenario_id is not None:
+                recorder.metadata["scenario_id"] = str(scenario_id)
+            if recording_mode:
+                recorder.metadata[ATTR_RECORDING_MODE] = str(recording_mode)
+            if stop_mode == STOP_MODE_TARGET_DUMP_COUNT:
+                recorder.metadata[ATTR_TARGET_DUMP_COUNT] = int(target_dump_count)
+                recorder.metadata["goal_token_version"] = GOAL_TOKEN_VERSION
+                recorder.metadata["phase_version"] = PHASE_VERSION
+                recorder.metadata["completed_dump_count"] = int(completed_dump_count)
+
+            if not stop_reason and not discard and not _abort:
+                stop_reason = "max_steps_reached"
+                if stop_mode == STOP_MODE_TARGET_DUMP_COUNT:
+                    log.warning(
+                        (
+                            "Episode reached max_steps=%d before target_dump_count=%d; "
+                            "completed_dump_count=%d."
+                        ),
+                        max_steps,
+                        target_dump_count,
+                        completed_dump_count,
+                    )
+            if stop_reason:
+                recorder.metadata[ATTR_STOP_REASON] = str(stop_reason)
+
             if not discard and len(recorder) > 0:
-                path = recorder.save(success=episode_success)
+                save_success = (
+                    bool(stop_reason == "target_dump_count_reached")
+                    if stop_mode == STOP_MODE_TARGET_DUMP_COUNT
+                    else episode_success
+                )
+                path = recorder.save(success=save_success)
                 log.info("Saved %d steps → %s", len(recorder), path)
                 saved += 1
                 episode_idx += 1
@@ -448,6 +593,14 @@ def _build_episode_metadata(
         ATTR_ENV_STATE_ORDER: ",".join(info.env_state_order),
         ATTR_TELEOP_INPUT: input_device,
     }
+    scenario_id = task_cfg.get("scenario_id")
+    recording_mode = str(task_cfg.get("recording_mode", "")).strip()
+    if scenario_id and recording_mode == "teleop_multi_raw":
+        metadata.update(build_v2_1_metadata_attrs(scenario_id=str(scenario_id)))
+        metadata[ATTR_RECORDING_MODE] = str(recording_mode)
+        metadata[ATTR_TARGET_DUMP_COUNT] = int(teleop_cfg.get("target_dump_count", 3))
+    elif scenario_id:
+        metadata[ATTR_SCENARIO_ID] = str(scenario_id)
 
     metadata_cfg = teleop_cfg.get("metadata", {})
     if metadata_cfg.get("operator_id"):

@@ -19,19 +19,26 @@ Repo A 负责：
 
 ## 当前状态
 
-状态日期：`2026-04-14`
+状态日期：`2026-04-19`
 
 | 组件 | 实现状态 | 当前验证状态 |
 |---|---|---|
 | AGX 二进制 step-ack 协议客户端 | 已实现 | 已在本地 Unity 上通过 live strict smoke |
 | `AGXSimBackend` | 已实现 | `GET_INFO / RESET / STEP / reward tracker` 最小 live 链路已打通 |
 | HDF5 schema v1.1 | 已实现 | 支持 `timestamps`、`action_source`、`fpv`、`env_state` |
+| Repo A `/v2` add-only extension | 已实现 | 当前主线为 V2.1 Stage 1 multicycle labeler、10D `goal_tokens`、phase/mode/boundary 标签，并新增细粒度 `work_stage_id` |
 | 当前 AGX 任务协议 | 已实现 | 当前目标协议是 `env_state (9,)`，含 DigArea 与 hard collision 字段 |
-| `tb-record-teleop` | 已实现 | 已按 `teleop_v1` 重录 `30` 条正式 success demo，落盘到 `data/agx_teleop_v1/` |
+| `tb-record-teleop` | 已实现 | `v1` 保持兼容；当前 V2 主线已切到 `teleop_multi_raw + target_dump_count` |
 | `tb-replay` | 已实现 | 支持单文件或整个目录批量回放；`fulltest` 已验证，`v1` 仍建议补一轮正式 batch QA |
 | `tb-dataset-videos` | 已实现 | 从 HDF5 离线导出 MP4 视频（无需连 AGX） |
+| `tb-label-v2_1` | 已实现 | 给 `teleop_multi_raw` 生成兄弟目录 relabeled 数据集并补写 Stage-1 `/v2` 标签 |
+| `tb-build-workskill-v2_1` | 已实现 | 从 sibling relabeled 数据集中裁出 `qualified_dig_start -> dump_end` 的 Stage-3 workskill 数据集 |
+| `tb-build-transition-v2_1` | 已实现 | 从 sibling relabeled 数据集中裁出 `dump_end -> next qualified_dig_start` 的 transition feasibility 数据集 |
 | `tb-train` / ACT trainer | 已实现 | 已完成 `fulltest(qpos)`、`fulltest(qpos+qvel)` 与 `v1(qpos)` 三条训练线 |
-| `tb-eval` | 已实现 | 已完成正式 live eval；当前最好结果是 `v1(qpos)` 在主口径下 `10/10` 成功 |
+| `tb-eval` | 已实现 | 已完成正式 live eval；当前支持 V2.1 Stage 1 多轮 boundary / continuity 指标 |
+| `hybrid_planner_act` | 已实现 | 已接入最小 Stage 2 deploy 链；当前已在 `s0_truck` 上通过 live `2-cycle` gate，并完成一次 `3-cycle smoke` |
+| Stage 3 bootstrap work-skill | 已实现 | 已完成 `agx_teleop_v1 -> v2_1_relabeled -> v2_1_workskill`，并跑通 `qvel/gcact` smoke train；`qvel e50 + loaded_and_clear bootstrap` 已通过单轮 live success gate |
+| Stage 4 rule planner | 已实现（首版目标已完成） | 已把 `RuleTaskPlanner / PlannerGoal / CycleSummary / SectorBelief` 接入现有 `hybrid_planner_act`，并完成 `planner_trace.json` 回放；正式主配置下 `3` 条 live rollout 已达到 `cycle2_success_rate = 1.0`，官方 `3-cycle smoke` 也已达到 `cycle3_success_rate = 1.0` |
 | rollout timestep logs | 已实现 | `tb-eval` 现可写 `rollout_XXX.jsonl / summary / manifest` |
 | `tb-dataset-qc` | 已实现 | 可写 `summary.json / episodes.csv / QC plots` |
 | demo-level metadata | 已实现 | `tb-record-teleop` 支持 `operator_id / session_id / notes / config snapshot` |
@@ -39,8 +46,16 @@ Repo A 负责：
 
 当前重点：
 - 冻结 `data/agx_teleop_v1`、`act_agx_v1.yaml`、`eval_agx_v1.yaml` 作为当前业务 baseline
-- 补一次 `v1` 数据集的正式 `tb-replay` QA，把数据闭环补完整
-- 围绕 `strict_dump_complete` 和 `spill_before_target` 做 failure analysis，决定下一轮该改数据还是改输入
+- 用 `teleop_v2_1_multi_raw -> tb-label-v2_1 -> eval_agx_v2_1_stage1` 跑通 V2.1 Stage 1 多轮数据与评测链路
+- 用 `eval_agx_v2_1_stage2_hybrid.yaml` 继续回归 Stage 2 最小 hybrid 闭环，并用 `eval_agx_v2_1_stage2_hybrid_3cycle_smoke.yaml` 做 3-cycle smoke
+- 用 `agx_teleop_v1 -> agx_teleop_v1_v2_1_relabeled -> agx_teleop_v1_v2_1_workskill` 作为当前 Stage 3 bootstrap work-skill 链
+- Stage 4 的第一版 rule planner 已经接入 Stage-2 稳线并完成首版目标；当前重点转为更大样本的多 rollout 回归与规则细化
+- `/v2/step/work_stage_id` 已接入离线 relabel，用来标出 `entry_to_bite / first_bite / rebite_recovery / carry / approach_dump / dump`
+- 旧的 `ready-anchor / dump_plus_ready / 单铲 ready-return` 已从当前主线删除，只保留在历史提交中
+- Stage 3 当前存在一个 deploy-only bootstrap handoff：
+  - `reset -> loaded_and_clear` 先由 `ACT V1` 起手
+  - `loaded_and_clear -> dump_end` 再切给 Stage-3 work policy
+  - 这条逻辑仅作为 live 兼容层存在，不进入协议、`/v2` schema、planner 语义或默认训练口径
 
 ---
 
@@ -193,6 +208,222 @@ tb-record-teleop \
 - 连续保持 `25` 步
 - 成功后再继续录制 `50` 步尾段，保留 dump 后半段和收尾动作
 
+V2.1 Stage 1 多轮 raw 录制入口：
+
+```bash
+tb-record-teleop --config testbed/configs/teleop_v2_1_multi_raw.yaml --num-episodes 10
+tb-label-v2_1 --dataset-dir data/agx_teleop_v2_1_multi_raw
+```
+
+这条线的关键边界是：
+- 录制停止条件改成“第 `3` 次有效 `dump_end`”
+- 当前默认 `task.max_steps = 4000`
+- 达到第 `3` 次 `dump_end` 后继续录 `teleop.post_success_tail_steps = 50` 步，保留 terminal dump 的 post-step observation
+- 不再要求回 fixed ready pose，也不要求回 ready-anchor
+- `scenario_id` 仍会透传到 Repo B reset preset
+- `/v2` 标签默认离线生成到兄弟目录副本，不原地改写 raw 数据
+- 当前主线的 `/v2` 语义已经切到 multicycle 事件体系：`qualified_dig_start / dump_start / dump_end / boundary_mask`
+
+V2.1 Stage 2 最小 hybrid live eval 入口：
+
+```bash
+tb-eval --config testbed/configs/eval_agx_v2_1_stage2_hybrid.yaml
+tb-eval --config testbed/configs/eval_agx_v2_1_stage2_hybrid_3cycle_smoke.yaml
+```
+
+这条线当前固定采用：
+
+- `ACT V1 checkpoint` 负责 `WORK`
+- scripted corridor servo 负责 `TRANSITION`
+- fixed sequence planner 固定为 `mid -> mid -> mid`
+- 当前 live 默认 `scenario_id = s0_truck`
+- 主配置 `target_cycle_gate = 2`
+- `3-cycle` 配置只作 smoke，默认 `episode_len = 8000`
+
+V2.1 Stage 3 bootstrap work-skill 入口：
+
+```bash
+tb-label-v2_1 --dataset-dir data/agx_teleop_v1 --scenario-id s0_truck
+tb-build-workskill-v2_1 --dataset-dir data/agx_teleop_v1_v2_1_relabeled
+tb-train --config testbed/configs/act_agx_v2_1_workskill_qvel.yaml
+tb-train --config testbed/configs/act_agx_v2_1_workskill_gcact.yaml
+tb-eval --config testbed/configs/eval_agx_v2_1_stage3_workskill_qvel.yaml
+
+# current multiround raw -> workskill training line
+tb-label-v2_1 --dataset-dir data/agx_teleop_v2_1_multi_raw
+tb-build-workskill-v2_1 --dataset-dir data/agx_teleop_v2_1_multi_raw_relabeled
+tb-train --config testbed/configs/act_agx_v2_1_multi_raw_workskill_qvel.yaml
+tb-train --config testbed/configs/act_agx_v2_1_multi_raw_workskill_gcact.yaml
+
+# high-quality workskill line on current multiround raw demos
+tb-build-workskill-v2_1 --dataset-dir data/agx_teleop_v2_1_multi_raw_relabeled --clean-profile stage5
+tb-train --config testbed/configs/act_agx_v2_1_multi_raw_workskill_clean_v2_qvel.yaml
+tb-train --config testbed/configs/act_agx_v2_1_multi_raw_workskill_clean_v2_gcact.yaml
+tb-eval --config testbed/configs/eval_agx_v2_1_stage5_workskill_clean_v2_qvel_3cycle_smoke.yaml
+tb-train --config testbed/configs/act_agx_v2_1_multi_raw_new_workskill_clean_v2_qvel.yaml
+tb-eval --config testbed/configs/eval_agx_v2_1_stage5_workskill_clean_v2_qvel_newdata_3cycle_smoke.yaml
+tb-build-workskill-v2_1 --dataset-dir data/agx_teleop_v2_1_multi_raw_new_relabeled --clean-profile stage5_strict
+tb-train --config testbed/configs/act_agx_v2_1_multi_raw_new_workskill_clean_v3_qvel.yaml
+tb-eval --config testbed/configs/eval_agx_v2_1_stage5_workskill_clean_v3_qvel_newdata_3cycle_smoke.yaml
+tb-build-workskill-v2_1 --dataset-dir data/agx_teleop_v2_1_multi_raw_relabeled --clean-profile stage5_strict
+tb-train --config testbed/configs/act_agx_v2_1_multi_raw_all_workskill_clean_v3_qvel.yaml
+tb-eval --config testbed/configs/eval_agx_v2_1_stage5_workskill_clean_v3_qvel_alldata_3cycle_smoke.yaml
+# current v3-only target-safe quality-mix retrain candidate:
+# old clean_v3 + 2604241251 terminal-fix clean_v3, with near_dump_start removed
+tb-train --config testbed/configs/act_agx_v2_1_multi_raw_all_workskill_clean_v3_qualitymix_qvel.yaml
+tb-eval --config testbed/configs/eval_agx_v2_1_stage5_workskill_clean_v3_qualitymix_qvel_3cycle_smoke.yaml
+# v3b / v4 are currently diagnostic-only; they are too strict for the main WORK train set.
+
+# note: the combined strict clean_v3 workskill line uses episode_len=1200
+# note: sector relabeling now uses dig-area calibrated qds swing bins:
+#       leftmost ~= 0.43, mid ~= 0.50, rightmost ~= 0.56
+#       swing < 0.4733 -> left, 0.4733 <= swing < 0.5167 -> mid, >= 0.5167 -> right
+#       transition corridor naming is now aligned to the same physical convention;
+#       legacy mirrored left/right band configs are auto-normalized at runtime
+#       the rebuilt clean_v3 training set is no longer all-mid; current split is
+#       left=15, mid=31, right=9 over 55 total cycles
+# note: keep clean_v3 as the current main training profile; v3b/v4 are only
+# diagnostic filters for checking early dump / severe pre-target spill.
+# note: clean_v3 now also rejects near target dump starts:
+#       dump_start_distance_m < 0.35 -> near_dump_start. This removes close-call
+#       low-boom dump examples that can become hard target collisions in rollout.
+#       Current target-safe qualitymix has 74 cycles: left=18, mid=40, right=16.
+# note: the target-safe smoke eval also enables a live WORK safety guard:
+#       if loaded and min_distance_to_target < 0.45, cap bucket dump action to
+#       -0.15 and command at least +0.08 boom raise before continuing.
+# note: current target_dump_count recording keeps a 50-step terminal tail after
+# the online dump_end event; offline relabel still recovers legacy no-tail raws
+# from metadata so old final cycles are not silently dropped.
+
+# transition feasibility line on current multiround raw demos
+tb-label-v2_1 --dataset-dir data/agx_teleop_v2_1_multi_raw
+tb-build-transition-v2_1 --dataset-dir data/agx_teleop_v2_1_multi_raw_relabeled
+tb-train --config testbed/configs/act_agx_v2_1_multi_raw_transition_qvel.yaml
+```
+
+这条线当前锁定为：
+
+- `data/agx_teleop_v1/` 只读
+- 所有 Stage 3 产物都写到 sibling 数据集
+- 当前高质量 workskill 主线已经接入：
+  - `data/agx_teleop_v2_1_multi_raw_workskill_clean_v2`
+  - 当前首轮 clean 结果：`40 -> 29` cycles
+  - 当前主要 reject reasons：
+    - `far_dump_start = 7`
+    - `flat_bucket_qds = 3`
+    - `collision_in_cycle = 1`
+- `qvel` 负责 live smoke
+- `gcact` 只做 held-out 对照
+- Stage 3 live 现在会在第一次 `qualified_dig_start` 之前先用 `ACT V1` 做 bootstrap 起手，避免把 post-dig-start work-skill 模型直接接到 reset 初态
+- 当前正式 handoff 条件为 `loaded_and_clear`：
+  - `mass_in_bucket_kg >= 300`
+  - `min_distance_to_dig_area_m >= 0.25`
+- 当前正式 Stage 3 live work checkpoint 为：
+  - `runs/ckpts/agx_excavation_act_v2_1_workskill_qvel_e50`
+
+V2.1 Stage 4 rule planner 入口：
+
+```bash
+tb-eval --config testbed/configs/eval_agx_v2_1_stage4_rule_planner.yaml
+tb-eval --config testbed/configs/eval_agx_v2_1_stage4_rule_planner_3cycle_smoke.yaml
+tb-eval --config testbed/configs/eval_agx_v2_1_stage4_rule_planner_learned_transition_3cycle_smoke.yaml
+tb-eval --config testbed/configs/eval_agx_v2_1_stage4_rule_planner_learned_transition_clean_3cycle_smoke.yaml
+```
+
+这条线当前固定采用：
+
+- `policy.class = hybrid_planner_act`
+- `planner.kind = rule`
+- `WORK = ACT V1`
+- learned transition 对照线只替换 `wait_next_dig` 子段，不改变 Stage-4 的 scripted `clear_target -> corridor_align`
+- 如需先清掉过长 transition 样本，再构建 sibling clean 数据集：
+
+```bash
+tb-build-transition-v2_1 \
+  --dataset-dir data/agx_teleop_v2_1_multi_raw_relabeled \
+  --output-dir data/agx_teleop_v2_1_multi_raw_transition_clean \
+  --max-transition-len 420
+tb-train --config testbed/configs/act_agx_v2_1_multi_raw_transition_clean_qvel.yaml
+```
+- 不启用 Stage 3 bootstrap
+- 不启用在线 goal token 注入
+- planner 只驱动：
+  - `next_goal`
+  - `next_entry_corridor`
+  - belief 更新
+  - `planner_trace.json` 回放
+
+当前已完成的 Stage 4 live 结果包括：
+
+- 第一轮 `dump_end` 后能正确 replan
+- `planner_replan_count = 1`
+- `planner_sector_sequence = ["left"]`
+- 当前 Stage 4 已补上：
+  - soft non-mid corridor
+  - `wait_next_dig = servo_reentry_pose`
+- 正式主配置下的 `3` 条 live rollout 已达到：
+  - `cycle1_success_rate = 1.0`
+  - `cycle2_success_rate = 1.0`
+  - `transition_timeout_count = 0.0`
+- 正式 `3-cycle smoke` 已跑通到：
+  - `planner_sector_sequence = ["left", "right"]`
+  - `completed_transition_count = 2`
+  - `transition_timeout_count = 0`
+  - `cycle3_success_rate = 1.0`
+- 当前剩余工作是：
+  - rule planner 规则细化
+  - 与 Stage 5 learned transition 的标准化 compare
+- 这条 bootstrap handoff 仅是部署兼容层；进入 Stage 4 后，planner / belief / cycle summary 仍必须在语义上独立于 bootstrap 存在
+
+V2.1 Stage 5 learned transition + fallback 入口：
+
+```bash
+tb-build-transition-v2_1 \
+  --dataset-dir data/agx_teleop_v2_1_multi_raw_relabeled \
+  --clean-profile stage5
+tb-train --config testbed/configs/act_agx_v2_1_multi_raw_transition_clean_v2_qvel.yaml
+tb-eval --config testbed/configs/eval_agx_v2_1_stage5_scripted_transition_compare_5rollouts.yaml
+tb-eval --config testbed/configs/eval_agx_v2_1_stage5_learned_transition_clean_v2_compare_5rollouts.yaml
+tb-eval --config testbed/configs/eval_agx_v2_1_stage5_learned_transition_clean_v2_fallback_compare_5rollouts.yaml
+```
+
+这条线当前锁定为：
+
+- Stage 5 只推进 learned transition，不启动 learned planner
+- 默认高层 planner 继续是 `RuleTaskPlanner`
+- learned transition 只替换 `wait_next_dig` 子段
+- fallback 允许在当次 transition 内切回 scripted `wait_next_dig`
+- `transition_clean_v2` builder 会输出 `summary.json`，当前 reject reasons 至少包括：
+  - `overlong_transition_len`
+  - `late_qds_failure`
+  - 高 `pause_ratio` 的明显犹豫样本
+- compare 的主口径固定为：
+  - `cycle3_success_rate`
+  - `transition_timeout_rate`
+  - `completed_transition_count`
+- 同时 evaluator 会输出动作质量指标，避免只看 success gate：
+  - `spill_before_target_count`
+  - `unsafe_target_distance_count`
+  - `hard_target_collision_count`
+  - `flat_bucket_qds_count`
+  - `peak_bucket_depth_mean`
+- `far_dump_start_count`
+- `near_dump_start_count`
+  - `carry_efficiency_proxy_mean`
+  - `high_residual_bucket_mass_count`
+  - `dig_area_escape_cycle_count`
+  - `quality_issue_count`
+- learned planner 只有在 transition 和 work 两层都稳定后才进入下一阶段
+
+只想测试多轮 raw 录制而不污染正式数据目录时：
+
+```bash
+tb-record-teleop --config testbed/configs/teleop_v2_1_multi_raw.yaml \
+  --output-dir runs/preview/teleop_v2_1_multi_raw_preview \
+  --num-episodes 1 \
+  --notes "preview-only"
+```
+
 键盘 fallback：
 
 ```bash
@@ -261,7 +492,7 @@ tb-train --config testbed/configs/act_agx_v1.yaml
 - `dump_complete_final_hold` 主口径
 
 当前训练器还内置了几项提速设置：
-- `num_workers: 0`，避免 HDF5 多 worker 抖动
+- 默认基线仍可用 `num_workers: 0` 保守启动；当前 clean_v3 主训练线和过严诊断线均可按需提升 `num_workers`、`persistent_workers`、`prefetch_factor` 来缓解 HDF5 I/O 瓶颈
 - `val_every: 5`，不是每个 epoch 都跑完整验证
 - `save_latest_every: 10`，不是每个 epoch 都刷一次 latest checkpoint
 - `amp: true` + `amp_dtype: auto`，在 CUDA 上自动选 `bf16/fp16`
@@ -347,6 +578,7 @@ tb-eval --config testbed/configs/eval_agx_fulltest_qvel.yaml
 - `mass_thresh = 300.0 kg`
 - `residual_bucket_mass_thresh = 100.0 kg`
 - `hold_steps = 25`
+- 3-cycle smoke 这类带 `target_cycle_gate` 的 eval，可以设置 `eval.target_cycle_gate_terminal_hold_steps = 25`，让第 N 次 `dump_end` 后继续跑完末尾 hold，而不是立刻截断 dump-complete 判定
 - strict 默认阻断项：
   - `hard_target_collision = 0`
   - `spill_before_target = 0`

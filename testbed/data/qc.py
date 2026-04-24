@@ -67,6 +67,7 @@ def run_dataset_qc(
                     "env_state_dim": 0,
                     "step_ids_monotonic": 0,
                     "has_step_ns": 0,
+                    "has_v2": 0,
                     "action_dim": -1,
                     "qpos_dim": -1,
                     "qvel_dim": -1,
@@ -89,6 +90,7 @@ def run_dataset_qc(
         step_ids = episode.get("step_ids")
         step_ns = episode.get("step_ns")
         images = episode.get("images", {})
+        v2_data = episode.get("v2")
         success = bool(int(metadata.get("success", 0)))
         n_steps = int(len(actions))
 
@@ -146,6 +148,7 @@ def run_dataset_qc(
                 "env_state_dim": 0 if env_state is None else int(env_state.shape[1]),
                 "step_ids_monotonic": int("non_monotonic_step_id" not in warnings),
                 "has_step_ns": int(step_ns is not None),
+                "has_v2": int(v2_data is not None),
                 "action_dim": int(actions.shape[1]) if actions.ndim == 2 else -1,
                 "qpos_dim": int(qpos.shape[1]) if qpos.ndim == 2 else -1,
                 "qvel_dim": int(qvel.shape[1]) if qvel.ndim == 2 else -1,
@@ -177,6 +180,7 @@ def run_dataset_qc(
         "n_episodes": len(rows),
         "n_success": int(success_values.sum()),
         "success_rate": float(success_values.mean()) if len(success_values) > 0 else 0.0,
+        "n_v2_episodes": int(sum(int(row.get("has_v2", 0)) for row in rows)),
         "episode_length": _series_stats(lengths.reshape(-1, 1)),
         "stats": {
             "action": _series_stats(actions_cat),

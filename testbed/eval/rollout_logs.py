@@ -93,6 +93,12 @@ def build_rollout_manifest(
 ) -> dict[str, Any]:
     success_counts_by_mode: dict[str, int] = {}
     success_rates_by_mode: dict[str, float] = {}
+    continuity_means: dict[str, float] = {}
+    multicycle_means: dict[str, float] = {}
+    hybrid_means: dict[str, float] = {}
+    planner_means: dict[str, float] = {}
+    quality_means: dict[str, float] = {}
+    planner_sector_sequences: list[list[str]] = []
     if rollouts:
         success_keys = [
             "success",
@@ -109,6 +115,89 @@ def build_rollout_manifest(
             count = int(sum(bool(rollout.get(key, False)) for rollout in rollouts))
             success_counts_by_mode[key] = count
             success_rates_by_mode[key] = count / n_rollouts if n_rollouts > 0 else 0.0
+        continuity_keys = [
+            "pause_ratio",
+            "mean_action_jerk",
+            "boundary_jump_l1",
+            "boundary_jump_l2",
+        ]
+        for key in continuity_keys:
+            values = [float(rollout.get(key, 0.0)) for rollout in rollouts if key in rollout]
+            if values:
+                continuity_means[key] = float(np.mean(values))
+        multicycle_keys = [
+            "dump_to_next_dig_gap_steps",
+            "completed_dump_count",
+            "cycle1_success",
+            "cycle2_success",
+            "cycle3_success",
+        ]
+        for key in multicycle_keys:
+            values = [float(rollout.get(key, 0.0)) for rollout in rollouts if key in rollout]
+            if values:
+                multicycle_means[key] = float(np.mean(values))
+        hybrid_keys = [
+            "transition_timeout_count",
+            "transition_collision_rate",
+            "avg_corridor_align_steps",
+            "avg_wait_next_dig_steps",
+            "completed_transition_count",
+            "work_target_guard_count",
+        ]
+        for key in hybrid_keys:
+            values = [float(rollout.get(key, 0.0)) for rollout in rollouts if key in rollout]
+            if values:
+                hybrid_means[key] = float(np.mean(values))
+        planner_keys = [
+            "planner_replan_count",
+            "planner_blocked_sector_count",
+            "planner_done_sector_count",
+        ]
+        for key in planner_keys:
+            values = [float(rollout.get(key, 0.0)) for rollout in rollouts if key in rollout]
+            if values:
+                planner_means[key] = float(np.mean(values))
+        planner_sector_sequences = [
+            list(rollout.get("planner_sector_sequence", []))
+            for rollout in rollouts
+            if rollout.get("planner_sector_sequence")
+        ]
+        quality_keys = [
+            "spill_before_target_count",
+            "spill_before_target_rate",
+            "unsafe_target_distance_count",
+            "unsafe_target_distance_rate",
+            "hard_target_collision_count",
+            "hard_target_collision_rate",
+            "qds_bucket_qpos_mean",
+            "qds_bucket_qpos_max",
+            "flat_bucket_qds_count",
+            "flat_bucket_qds_rate",
+            "peak_bucket_depth_mean",
+            "shallow_peak_bucket_depth_count",
+            "shallow_peak_bucket_depth_rate",
+            "dump_start_distance_mean",
+            "dump_start_distance_max",
+            "far_dump_start_count",
+            "far_dump_start_rate",
+            "near_dump_start_count",
+            "near_dump_start_rate",
+            "carry_efficiency_proxy_mean",
+            "low_carry_efficiency_count",
+            "low_carry_efficiency_rate",
+            "dump_end_residual_bucket_mass_mean",
+            "dump_end_residual_bucket_mass_max",
+            "high_residual_bucket_mass_count",
+            "high_residual_bucket_mass_rate",
+            "dig_area_escape_cycle_count",
+            "dig_area_escape_cycle_rate",
+            "dig_area_escape_step_ratio",
+            "quality_issue_count",
+        ]
+        for key in quality_keys:
+            values = [float(rollout.get(key, 0.0)) for rollout in rollouts if key in rollout]
+            if values:
+                quality_means[key] = float(np.mean(values))
 
     return {
         "generated_at": datetime.datetime.utcnow().isoformat(),
@@ -119,5 +208,11 @@ def build_rollout_manifest(
         "n_rollouts": len(rollouts),
         "success_counts_by_mode": success_counts_by_mode,
         "success_rates_by_mode": success_rates_by_mode,
+        "continuity_means": continuity_means,
+        "multicycle_means": multicycle_means,
+        "hybrid_means": hybrid_means,
+        "planner_means": planner_means,
+        "quality_means": quality_means,
+        "planner_sector_sequences": planner_sector_sequences,
         "rollouts": [to_jsonable(rollout) for rollout in rollouts],
     }

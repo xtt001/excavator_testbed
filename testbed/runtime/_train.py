@@ -8,6 +8,8 @@ import pickle
 from pathlib import Path
 from typing import Any
 
+from testbed.data.v2_1 import GOAL_TOKEN_DIM
+
 
 def train_policy(config: dict[str, Any]) -> None:
     task_cfg   = config.get("task", {})
@@ -17,7 +19,8 @@ def train_policy(config: dict[str, Any]) -> None:
     policy_class  = str(policy_cfg.get("class", policy_cfg.get("name", "ACT"))).upper()
     task_name     = task_cfg.get("task_name", task_cfg.get("name", config.get("task_name", "")))
     dataset_dir   = Path(task_cfg.get("dataset_dir", config.get("dataset_dir", "data")))
-    num_episodes  = task_cfg.get("num_episodes", config.get("num_episodes", 50))
+    num_episodes_raw = task_cfg.get("num_episodes", config.get("num_episodes"))
+    num_episodes  = 0 if num_episodes_raw is None else int(num_episodes_raw)
     episode_len   = int(task_cfg.get("episode_len", config.get("episode_len", 400)))
     camera_names  = task_cfg.get("camera_names", config.get("camera_names", []))
     low_dim_keys  = list(policy_cfg.get("low_dim_keys", ["qpos"]))
@@ -183,12 +186,15 @@ def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) ->
     dims = {
         "qpos": _resolve_single_low_dim_dim("qpos", equipment_model),
         "qvel": _resolve_single_low_dim_dim("qvel", equipment_model),
+        "goal_tokens": _resolve_single_low_dim_dim("goal_tokens", equipment_model),
     }
     return int(sum(dims[key] for key in low_dim_keys))
 
 
 def _resolve_single_low_dim_dim(key: str, equipment_model: str) -> int:
     equipment_model = str(equipment_model).lower()
+    if key == "goal_tokens":
+        return int(GOAL_TOKEN_DIM)
     if key in ("qpos", "qvel"):
         if "bimanual" in equipment_model:
             return 14

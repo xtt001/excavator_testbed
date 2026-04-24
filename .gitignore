@@ -1,5 +1,6 @@
 # ── Artifacts (never commit) ──────────────────────────────────────────────────
 runs/
+data/
 outputs/
 artifacts/
 data_sim_episodes/

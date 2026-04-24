@@ -1,0 +1,46 @@
+# Stricter high-quality work-skill ACT config on the newer teleop_v2_1_multi_raw clean_v3 dataset.
+
+task:
+  task_name: agx_excavation_teleop
+  equipment_model: agxunity
+  dataset_dir: data/agx_teleop_v2_1_multi_raw_new_workskill_clean_v3
+  num_episodes: 0
+  episode_len: 800
+  camera_names:
+    - fpv
+  backend:
+    name: agx
+    dt: 0.02
+
+policy:
+  class: ACT
+  device: cuda
+  low_dim_keys:
+    - qpos
+    - qvel
+  act_params:
+    chunk_size: 100
+    kl_weight: 10.0
+    hidden_dim: 512
+    dim_feedforward: 3200
+
+train:
+  lr: 1.0e-5
+  num_epochs: 500
+  batch_size: 4
+  seed: 0
+  device: cuda
+  num_workers: 0
+  prefetch_factor:
+  persistent_workers: false
+  pin_memory: true
+  split_seed: 0
+  train_split_ratio: 0.8
+  reuse_split: true
+  val_every: 5
+  save_latest_every: 10
+  checkpoint_every: 50
+  plot_every: 50
+  amp: true
+  amp_dtype: auto
+  ckpt_dir: runs/ckpts/agx_excavation_act_v2_1_multi_raw_new_workskill_clean_v3_qvel

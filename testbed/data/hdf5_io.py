@@ -2,10 +2,8 @@
 Low-level HDF5 read/write for demo episodes.
 
 Preserves full backward compatibility with legacy episode_N.hdf5 files
-(same qpos/qvel/images/action layout) while adding a /metadata group
-and schema versioning for new files.
-
-write_episode() now accepts all v1.1 fields as optional kwargs.
+(same qpos/qvel/images/action layout) while adding a /metadata group,
+schema versioning, and an optional Repo A `/v2` extension group.
 """
 
 from __future__ import annotations
@@ -21,17 +19,20 @@ from testbed.data.schema import (
     ATTR_SCHEMA_VERSION,
     ATTR_SIM,
     DS_ACTION,
+    DS_ACTION_SRC_ID,
+    DS_ACTION_SRC_TYPE,
+    DS_ENV_STATE,
     DS_QPOS,
     DS_QVEL,
     DS_REWARDS,
-    DS_ENV_STATE,
     DS_STEP_ID,
     DS_STEP_NS,
-    DS_ACTION_SRC_TYPE,
-    DS_ACTION_SRC_ID,
     GRP_METADATA,
-    GRP_TIMESTAMPS,
     GRP_ACTION_SOURCE,
+    GRP_TIMESTAMPS,
+    GRP_V2,
+    GRP_V2_CYCLE,
+    GRP_V2_STEP,
     SCHEMA_VERSION,
 )
 
@@ -54,6 +55,7 @@ def write_episode(
     step_ns: np.ndarray | None = None,            # (T,) int64
     action_src_types: list[str] | None = None,    # (T,) str
     action_src_ids: list[str] | None = None,      # (T,) str
+    v2: dict[str, dict[str, np.ndarray]] | None = None,
 ) -> None:
     """
     Write one demonstration episode to an HDF5 file (schema v1.1).
@@ -123,6 +125,32 @@ def write_episode(
                 for i, s in enumerate(action_src_ids):
                     ds[i] = s
 
+        if v2:
+            _write_v2_group(f, v2)
+
+
+def write_v2_extension(
+    path: str | Path,
+    *,
+    v2: dict[str, dict[str, np.ndarray]],
+    metadata_updates: dict[str, Any] | None = None,
+) -> None:
+    """Attach or replace the optional Repo A `/v2` extension in-place."""
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(path)
+
+    with h5py.File(path, "a") as f:
+        meta = f.require_group(GRP_METADATA)
+        meta.attrs[ATTR_SCHEMA_VERSION] = SCHEMA_VERSION
+        meta.attrs[ATTR_SIM] = bool(meta.attrs.get(ATTR_SIM, True))
+        if metadata_updates:
+            for key, value in metadata_updates.items():
+                meta.attrs[key] = value
+        if GRP_V2 in f:
+            del f[GRP_V2]
+        _write_v2_group(f, v2)
+
 
 def read_episode(path: str | Path) -> dict[str, Any]:
     """
@@ -141,6 +169,7 @@ def read_episode(path: str | Path) -> dict[str, Any]:
       "step_ns":          (T,) int64 | None,        # v1.1
       "action_src_types": list[str] | None,         # v1.1
       "action_src_ids":   list[str] | None,         # v1.1
+      "v2":               dict | None,              # optional Repo A extension
       "metadata":         dict,
       "is_sim":           bool,
     }
@@ -190,6 +219,8 @@ def read_episode(path: str | Path) -> dict[str, Any]:
         else:
             result["action_src_ids"] = None
 
+        result["v2"] = _read_v2_group(f)
+
         # metadata
         meta: dict[str, Any] = {}
         if GRP_METADATA in f:
@@ -221,3 +252,49 @@ def list_episodes(dataset_dir: str | Path) -> list[Path]:
 
 def episode_id_from_path(path: Path) -> int:
     return int(path.stem.split("_", 1)[1])
+
+
+def _write_v2_group(h5_file: h5py.File, v2: dict[str, dict[str, np.ndarray]]) -> None:
+    v2_grp = h5_file.create_group(GRP_V2)
+    step_data = dict(v2.get("step", {}))
+    cycle_data = dict(v2.get("cycle", {}))
+    if step_data:
+        _write_dataset_group(v2_grp.create_group("step"), step_data)
+    if cycle_data:
+        _write_dataset_group(v2_grp.create_group("cycle"), cycle_data)
+
+
+def _write_dataset_group(group: h5py.Group, payload: dict[str, np.ndarray]) -> None:
+    for key, value in payload.items():
+        arr = np.asarray(value)
+        if arr.dtype.kind == "U":
+            str_dtype = h5py.special_dtype(vlen=str)
+            ds = group.create_dataset(str(key), (len(arr),), dtype=str_dtype)
+            for index, item in enumerate(arr):
+                ds[index] = str(item)
+            continue
+        group.create_dataset(str(key), data=arr)
+
+
+def _read_v2_group(h5_file: h5py.File) -> dict[str, dict[str, Any]] | None:
+    if GRP_V2 not in h5_file:
+        return None
+    result: dict[str, dict[str, Any]] = {}
+    for section_name, group_path in (("step", GRP_V2_STEP), ("cycle", GRP_V2_CYCLE)):
+        if group_path not in h5_file:
+            continue
+        section_group = h5_file[group_path]
+        section_payload: dict[str, Any] = {}
+        for dataset_name in section_group:
+            value = section_group[dataset_name][()]
+            if isinstance(value, np.ndarray) and value.dtype.kind == "S":
+                value = np.asarray(
+                    [
+                        item.decode() if isinstance(item, bytes) else item
+                        for item in value
+                    ],
+                    dtype=object,
+                )
+            section_payload[dataset_name] = value
+        result[section_name] = section_payload
+    return result or None

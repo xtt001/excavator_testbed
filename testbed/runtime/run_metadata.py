@@ -77,6 +77,7 @@ def build_eval_run_metadata(
     task_name: str,
     policy_class: str,
     device: str,
+    scenario_id: str | None = None,
 ) -> dict[str, Any]:
     repo_root = Path(__file__).resolve().parents[2]
     return {
@@ -85,6 +86,7 @@ def build_eval_run_metadata(
         "task_name": str(task_name),
         "policy_class": str(policy_class),
         "device_requested": str(device),
+        "scenario_id": "" if scenario_id is None else str(scenario_id),
         "command": shlex.join(sys.argv),
         "argv": list(sys.argv),
         "cwd": os.getcwd(),

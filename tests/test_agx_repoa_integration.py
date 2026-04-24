@@ -12,15 +12,28 @@ import torch
 
 from testbed.backends.agx.protocol import CameraDescriptor, GetInfoResponse
 from testbed.cli.record_teleop import (
+    STOP_MODE_TARGET_DUMP_COUNT,
+    STOP_MODE_TASK_SUCCESS_TAIL,
     _advance_success_stop_state,
     _build_episode_metadata,
+    _resolve_stop_mode,
     _validate_requested_cameras,
 )
 from testbed.data.dataset import load_data
-from testbed.data.hdf5_io import read_episode, write_episode
+from testbed.data.hdf5_io import read_episode, write_episode, write_v2_extension
 from testbed.data.qc import run_dataset_qc
 from testbed.data.recorder import EpisodeRecorder
+from testbed.data.v2_1 import (
+    GOAL_TOKEN_VERSION,
+    build_goal_tokens as build_goal_tokens_v2_1,
+    label_episode_v2_1,
+)
 from testbed.eval.suite import EvalSuite
+from testbed.eval.multi_cycle_metrics import (
+    aggregate_multicycle_metrics,
+    build_multicycle_summary,
+)
+from testbed.planner.boundary_detector import BoundaryDetector
 from testbed.policies.act.adapter import ACTAdapter
 from testbed.runtime.experiment_record import (
     append_experiment_registry,
@@ -59,6 +72,7 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
             },
             "task": {
                 "name": "agx_excavation_teleop",
+                "scenario_id": "s0_baseline",
             },
             "eval": {
                 "num_rollouts": 3,
@@ -96,6 +110,7 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         self.assertEqual(suite_kwargs["agx_host"], "10.0.0.2")
         self.assertEqual(suite_kwargs["agx_port"], 6001)
         self.assertEqual(suite_kwargs["agx_timeout"], 12.5)
+        self.assertEqual(suite_kwargs["scenario_id"], "s0_baseline")
         self.assertEqual(suite_kwargs["mass_thresh"], 125.0)
         self.assertEqual(suite_kwargs["hold_steps"], 17)
         self.assertEqual(suite_kwargs["agx_success_mode"], "dump_complete_final_hold")
@@ -166,8 +181,14 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         )
         metadata = _build_episode_metadata(
             info=info,
-            task_cfg={"task_name": "agx_excavation_teleop", "param_version": "v0"},
+            task_cfg={
+                "task_name": "agx_excavation_teleop",
+                "param_version": "v2_1_stage1",
+                "scenario_id": "s0_baseline",
+                "recording_mode": "teleop_multi_raw",
+            },
             teleop_cfg={
+                "target_dump_count": 3,
                 "metadata": {
                     "operator_id": "alice",
                     "session_id": "sess-001",
@@ -219,6 +240,13 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         self.assertEqual(metadata["operator_id"], "alice")
         self.assertEqual(metadata["session_id"], "sess-001")
         self.assertEqual(metadata["notes"], "baseline teleop")
+        self.assertEqual(metadata["scenario_id"], "s0_baseline")
+        self.assertEqual(metadata["recording_mode"], "teleop_multi_raw")
+        self.assertEqual(metadata["goal_token_dim"], 10)
+        self.assertEqual(metadata["goal_token_version"], GOAL_TOKEN_VERSION)
+        self.assertEqual(metadata["phase_version"], "v2_1_mode_phase_7cls")
+        self.assertEqual(metadata["scenario_manifest_version"], "v2_1b")
+        self.assertEqual(metadata["target_dump_count"], 3)
         self.assertEqual(metadata["record_config_path"], "/tmp/teleop_v0.yaml")
         self.assertIn("task_name: agx_excavation_teleop", metadata["record_config_yaml"])
         np.testing.assert_allclose(
@@ -262,6 +290,16 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
             post_success_tail_remaining=None,
         )
         self.assertFalse(should_stop)
+        self.assertEqual(remaining, 3)
+
+        should_stop, remaining = _advance_success_stop_state(
+            episode_success=True,
+            stop_on_success=True,
+            just_reached_success=False,
+            post_success_tail_steps=3,
+            post_success_tail_remaining=remaining,
+        )
+        self.assertFalse(should_stop)
         self.assertEqual(remaining, 2)
 
         should_stop, remaining = _advance_success_stop_state(
@@ -283,6 +321,108 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         )
         self.assertTrue(should_stop)
         self.assertEqual(remaining, 0)
+
+    def test_resolve_stop_mode_preserves_v1_compat(self) -> None:
+        self.assertEqual(
+            _resolve_stop_mode({"stop_on_success": True}),
+            STOP_MODE_TASK_SUCCESS_TAIL,
+        )
+        self.assertEqual(
+            _resolve_stop_mode({"stop_mode": "target_dump_count"}),
+            STOP_MODE_TARGET_DUMP_COUNT,
+        )
+        self.assertEqual(
+            _resolve_stop_mode({"stop_on_success": False}),
+            "none",
+        )
+
+    def test_boundary_detector_emits_multicycle_events(self) -> None:
+        detector = BoundaryDetector()
+        qpos = np.asarray(
+            [
+                [0.50, 0.0, 0.0, 0.0],
+                [0.50, 0.0, 0.0, 0.0],
+                [0.50, 0.0, 0.0, 0.0],
+                [0.50, 0.0, 0.0, 0.0],
+                [0.80, 0.0, 0.0, 0.0],
+                [0.80, 0.0, 0.0, 0.0],
+            ],
+            dtype=np.float32,
+        )
+        actions = np.asarray(
+            [
+                [0.0, 0.0, 0.0, 0.0],
+                [0.2, 0.0, 0.0, 0.0],
+                [0.2, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0],
+            ],
+            dtype=np.float32,
+        )
+        env_states = np.asarray(
+            [
+                [0.0, 0.0, 0.0, 0.0, 1.5, 0.0, 0.0, 0.20, 0.00],
+                [120.0, 10.0, 0.0, 0.0, 1.4, 0.0, 0.0, 0.04, 0.03],
+                [140.0, 20.0, 0.0, 12.0, 1.0, 0.0, 0.0, 0.03, 0.04],
+                [20.0, 20.0, 0.0, 12.0, 1.0, 0.0, 0.0, 0.20, 0.00],
+                [15.0, 20.0, 0.0, 12.0, 1.0, 0.0, 0.0, 0.20, 0.00],
+                [10.0, 20.0, 0.0, 12.0, 1.0, 0.0, 0.0, 0.20, 0.00],
+            ],
+            dtype=np.float32,
+        )
+
+        events = [
+            detector.update(env_state=env_states[i], action=actions[i], qpos=qpos[i])
+            for i in range(len(actions))
+        ]
+
+        self.assertEqual([int(event.qualified_dig_start) for event in events], [0, 1, 0, 0, 0, 0])
+        self.assertEqual([int(event.dump_start) for event in events], [0, 0, 1, 0, 0, 0])
+        self.assertEqual([int(event.dump_end) for event in events], [0, 0, 0, 0, 0, 1])
+        self.assertEqual(detector.completed_dump_count, 1)
+
+    def test_multicycle_metrics_aggregate_cycle_success_rates(self) -> None:
+        summaries = [
+            build_multicycle_summary(
+                [
+                    {"t": 0, "qualified_dig_start_mask": 1, "dump_end_mask": 0},
+                    {"t": 1, "qualified_dig_start_mask": 0, "dump_end_mask": 1},
+                    {"t": 2, "qualified_dig_start_mask": 1, "dump_end_mask": 0},
+                    {"t": 3, "qualified_dig_start_mask": 0, "dump_end_mask": 1},
+                    {"t": 4, "qualified_dig_start_mask": 1, "dump_end_mask": 0},
+                    {"t": 5, "qualified_dig_start_mask": 0, "dump_end_mask": 1},
+                ]
+            ),
+            build_multicycle_summary(
+                [
+                    {"t": 0, "qualified_dig_start_mask": 1, "dump_end_mask": 0},
+                    {"t": 1, "qualified_dig_start_mask": 0, "dump_end_mask": 1},
+                ]
+            ),
+        ]
+
+        aggregate = aggregate_multicycle_metrics(summaries)
+        self.assertEqual(aggregate["cycle1_success_rate"], 1.0)
+        self.assertEqual(aggregate["cycle2_success_rate"], 0.5)
+        self.assertEqual(aggregate["cycle3_success_rate"], 0.5)
+        self.assertEqual(aggregate["carry_over_drop"], 0.5)
+
+    def test_multicycle_metrics_counts_terminal_dump_complete_as_last_cycle(self) -> None:
+        summary = build_multicycle_summary(
+            [
+                {"t": 0, "qualified_dig_start_mask": 1, "dump_end_mask": 0},
+                {"t": 1, "qualified_dig_start_mask": 0, "dump_end_mask": 1},
+                {"t": 2, "qualified_dig_start_mask": 1, "dump_end_mask": 0},
+                {"t": 3, "qualified_dig_start_mask": 0, "dump_end_mask": 1},
+            ],
+            success_summary={"dump_complete_final_hold_success": True},
+            hybrid_summary={"completed_transition_count": 2},
+        )
+        self.assertEqual(summary["completed_dump_count"], 3)
+        self.assertEqual(summary["cycle1_success"], 1)
+        self.assertEqual(summary["cycle2_success"], 1)
+        self.assertEqual(summary["cycle3_success"], 1)
 
     def test_eval_policy_uses_task_defaults_for_act_camera_setup(self) -> None:
         captured: dict[str, object] = {}
@@ -394,6 +534,65 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         self.assertEqual(policy_kwargs["policy_config"]["low_dim_keys"], ["qpos", "qvel"])
         self.assertEqual(policy_kwargs["policy_config"]["state_dim"], 8)
 
+    def test_eval_policy_supports_goal_tokens_state_dim(self) -> None:
+        captured: dict[str, object] = {}
+        fake_metrics = _FakeMetrics()
+
+        class FakeSuite:
+            def __init__(self, **kwargs) -> None:
+                captured["suite_kwargs"] = kwargs
+
+            def run(self):
+                return fake_metrics
+
+        class FakePolicy:
+            def reset(self) -> None:
+                pass
+
+        def _fake_from_checkpoint(**kwargs):
+            captured["policy_kwargs"] = kwargs
+            return FakePolicy()
+
+        config = {
+            "task": {
+                "name": "agx_excavation_teleop",
+                "scenario_id": "s0_baseline",
+            },
+            "eval": {
+                "save_video": False,
+                "results_dir": None,
+            },
+            "policy": {
+                "name": "act",
+                "ckpt_path": "/tmp/fake.ckpt",
+                "device": "cpu",
+                "low_dim_keys": ["qpos", "qvel", "goal_tokens"],
+            },
+            "train": {
+                "ckpt_dir": "/tmp/fake_ckpts",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config["eval"]["results_dir"] = tmpdir
+            with (
+                patch("testbed.eval.suite.EvalSuite", FakeSuite),
+                patch("testbed.eval.metrics.EvalMetrics.append_to_csv"),
+                patch(
+                    "testbed.policies.act.adapter.ACTAdapter.from_checkpoint",
+                    side_effect=_fake_from_checkpoint,
+                ),
+            ):
+                eval_policy(config)
+
+        policy_kwargs = captured["policy_kwargs"]
+        self.assertEqual(
+            policy_kwargs["policy_config"]["low_dim_keys"],
+            ["qpos", "qvel", "goal_tokens"],
+        )
+        self.assertEqual(policy_kwargs["policy_config"]["state_dim"], 18)
+        self.assertEqual(captured["suite_kwargs"]["scenario_id"], "s0_baseline")
+
     def test_train_policy_accepts_policy_name_and_propagates_device(self) -> None:
         captured: dict[str, object] = {}
 
@@ -489,6 +688,59 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
 
         self.assertEqual(captured["policy_config"]["low_dim_keys"], ["qpos", "qvel"])
         self.assertEqual(captured["policy_config"]["state_dim"], 8)
+
+    def test_train_policy_supports_goal_tokens_state_dim(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeTrainer:
+            def __init__(self, policy_config, config) -> None:
+                captured["policy_config"] = policy_config
+
+            def fit(self, train_loader, val_loader, config):
+                return 0, 0.0, {}
+
+        config = {
+            "task": {
+                "name": "agx_excavation_teleop",
+                "dataset_dir": None,
+                "num_episodes": 2,
+                "camera_names": ["fpv"],
+                "equipment_model": "agxunity",
+            },
+            "policy": {
+                "name": "act",
+                "device": "cpu",
+                "low_dim_keys": ["qpos", "qvel", "goal_tokens"],
+            },
+            "train": {
+                "num_epochs": 1,
+                "device": "cpu",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config["task"]["dataset_dir"] = tmpdir
+            config["train"]["ckpt_dir"] = tmpdir
+            with (
+                patch(
+                    "testbed.data.dataset.load_data",
+                    return_value=(
+                        "train_loader",
+                        "val_loader",
+                        {"proprio_mean": np.zeros(18), "proprio_std": np.ones(18)},
+                        True,
+                        {"train_ids": [0], "val_ids": [1]},
+                    ),
+                ),
+                patch("testbed.policies.act.trainer.ACTTrainer", FakeTrainer),
+            ):
+                train_policy(config)
+
+        self.assertEqual(
+            captured["policy_config"]["low_dim_keys"],
+            ["qpos", "qvel", "goal_tokens"],
+        )
+        self.assertEqual(captured["policy_config"]["state_dim"], 18)
 
     def test_act_temporal_aggregation_grows_past_400_steps(self) -> None:
         adapter = object.__new__(ACTAdapter)
@@ -599,6 +851,106 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
                 manifest = json.load(f)
             self.assertEqual(manifest["n_rollouts"], 1)
             self.assertEqual(len(manifest["rollouts"]), 1)
+
+    def test_eval_suite_reports_continuity_metrics(self) -> None:
+        class FakePolicy:
+            def reset(self) -> None:
+                pass
+
+            def predict(self, _obs) -> np.ndarray:
+                return np.asarray([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+
+        class FakeTimeStep:
+            def __init__(self, observation, reward: float, info: dict[str, object]) -> None:
+                self.observation = observation
+                self.reward = reward
+                self.info = info
+
+        class FakeEnv:
+            dt = 0.02
+
+            def __init__(self) -> None:
+                self._index = 0
+                self._actions = [
+                    np.asarray([0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+                    np.asarray([0.2, 0.0, 0.0, 0.0], dtype=np.float32),
+                    np.asarray([0.2, 0.0, 0.0, 0.0], dtype=np.float32),
+                ]
+                self._signal = [0.0, 320.0, 320.0]
+
+            def reset(self, seed=None):
+                self._index = 0
+                return FakeTimeStep(
+                    observation={
+                        "qpos": np.zeros(4, dtype=np.float32),
+                        "qvel": np.zeros(4, dtype=np.float32),
+                        "images": {},
+                        "env_state": np.asarray([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+                        "step_id": 0,
+                        "sim_time_ns": 0,
+                    },
+                    reward=0.0,
+                    info={},
+                )
+
+            def step(self, action):
+                self._index += 1
+                value = self._signal[min(self._index - 1, len(self._signal) - 1)]
+                return FakeTimeStep(
+                    observation={
+                        "qpos": np.full(4, self._index, dtype=np.float32),
+                        "qvel": np.full(4, 0.1 * self._index, dtype=np.float32),
+                        "images": {},
+                        "env_state": np.asarray([0.0, 0.0, 0.0, value, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+                        "step_id": self._index,
+                        "sim_time_ns": self._index * 20_000_000,
+                    },
+                    reward=1.0,
+                    info={
+                        "sim_time_ns": self._index * 20_000_000,
+                        "reward_phase": "depositing",
+                        "task_success": self._index >= 2,
+                        "task_step_successes": [],
+                        "task_step_failures": [],
+                        "task_metrics": {},
+                        "warnings": [],
+                    },
+                )
+
+            def close(self) -> None:
+                pass
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            suite = EvalSuite(
+                policy=FakePolicy(),
+                task_name="agx_excavation_teleop",
+                num_rollouts=1,
+                save_video=False,
+                results_dir=Path(tmpdir) / "results",
+                save_rollout_logs=True,
+                rollout_log_dir=Path(tmpdir) / "results" / "rollouts",
+                mass_thresh=300.0,
+                hold_steps=2,
+                env_state_index=3,
+                agx_success_mode="dump_complete_final_hold",
+            )
+            suite.task_def = replace(suite.task_def, episode_len=3)
+            suite._make_env = lambda _task: FakeEnv()
+
+            metrics = suite.run()
+
+            self.assertIn("avg_pause_ratio", metrics.extra)
+            self.assertIn("avg_mean_action_jerk", metrics.extra)
+            self.assertIn("avg_boundary_jump_l1", metrics.extra)
+            summary_path = Path(tmpdir) / "results" / "rollouts" / "rollout_000_summary.json"
+            with open(summary_path) as f:
+                summary = json.load(f)
+            self.assertIn("pause_ratio", summary)
+            self.assertIn("mean_action_jerk", summary)
+            manifest_path = Path(tmpdir) / "results" / "rollout_manifest.json"
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            self.assertIn("continuity_means", manifest)
 
     def test_eval_suite_prints_step_progress_at_interval(self) -> None:
         class FakePolicy:
@@ -1020,6 +1372,243 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
             self.assertEqual(proprio_data.shape[1:], (8,))
             self.assertEqual(action_data.shape[1:], (6, 4))
             self.assertEqual(is_pad.shape[1:], (6,))
+
+    def test_write_and_read_episode_preserves_v2_extension(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "episode_0.hdf5"
+            goal_tokens = np.repeat(
+                build_goal_tokens_v2_1("s0_baseline").reshape(1, -1),
+                3,
+                axis=0,
+            )
+            write_episode(
+                path,
+                qpos=np.zeros((3, 4), dtype=np.float32),
+                qvel=np.zeros((3, 4), dtype=np.float32),
+                actions=np.zeros((3, 4), dtype=np.float32),
+                images={"fpv": np.zeros((3, 8, 8, 3), dtype=np.uint8)},
+                rewards=np.zeros(3, dtype=np.float32),
+                metadata={"scenario_id": "s0_baseline"},
+                env_state=np.zeros((3, 9), dtype=np.float32),
+                v2={
+                    "step": {
+                        "cycle_id": np.zeros(3, dtype=np.int32),
+                        "mode_id": np.zeros(3, dtype=np.uint8),
+                        "phase_id": np.zeros(3, dtype=np.int32),
+                        "phase_progress": np.zeros(3, dtype=np.float32),
+                        "goal_tokens": goal_tokens.astype(np.float32),
+                        "planner_replan_mask": np.zeros(3, dtype=np.uint8),
+                        "qualified_dig_start_mask": np.zeros(3, dtype=np.uint8),
+                        "dump_start_mask": np.zeros(3, dtype=np.uint8),
+                        "dump_end_mask": np.zeros(3, dtype=np.uint8),
+                        "pause_mask": np.zeros(3, dtype=np.uint8),
+                        "boundary_mask": np.asarray([0, 1, 1], dtype=np.uint8),
+                    },
+                    "cycle": {
+                        "cycle_id": np.asarray([0], dtype=np.int32),
+                        "start_step": np.asarray([0], dtype=np.int32),
+                        "dump_end_step": np.asarray([2], dtype=np.int32),
+                        "end_step": np.asarray([2], dtype=np.int32),
+                        "curr_src_sector_id": np.asarray([1], dtype=np.int32),
+                        "curr_cut_depth_class": np.asarray([1], dtype=np.int32),
+                        "next_src_sector_id": np.asarray([-1], dtype=np.int32),
+                        "next_cut_depth_class": np.asarray([-1], dtype=np.int32),
+                        "dst_target_id": np.asarray([0], dtype=np.int32),
+                        "fill_peak_kg": np.asarray([50.0], dtype=np.float32),
+                        "deposit_delta_kg": np.asarray([25.0], dtype=np.float32),
+                        "peak_bucket_depth_m": np.asarray([0.05], dtype=np.float32),
+                        "collision_count_delta": np.asarray([0], dtype=np.int32),
+                        "transition_source": np.asarray(["none"]),
+                        "plan_source": np.asarray(["none"]),
+                        "cycle_success": np.asarray([1], dtype=np.int8),
+                    },
+                },
+            )
+
+            episode = read_episode(path)
+            self.assertIsNotNone(episode["v2"])
+            self.assertEqual(episode["v2"]["step"]["goal_tokens"].shape, (3, 10))
+            self.assertEqual(episode["v2"]["cycle"]["curr_src_sector_id"].tolist(), [1])
+
+    def test_label_episode_v2_1_and_write_extension(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "episode_0.hdf5"
+            qpos = np.asarray(
+                [
+                    [0.50, 0.41, 0.63, 0.28],
+                    [0.50, 0.41, 0.63, 0.28],
+                    [0.50, 0.41, 0.63, 0.28],
+                    [0.50, 0.41, 0.63, 0.28],
+                    [0.80, 0.41, 0.63, 0.28],
+                    [0.80, 0.41, 0.63, 0.28],
+                ],
+                dtype=np.float32,
+            )
+            actions = np.asarray(
+                [
+                    [0.0, 0.0, 0.0, 0.0],
+                    [0.1, 0.0, 0.0, 0.0],
+                    [0.1, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 0.0],
+                ],
+                dtype=np.float32,
+            )
+            env_state = np.asarray(
+                [
+                    [0.0, 0.0, 0.0, 0.0, 1.5, 0.0, 0.0, 0.20, 0.00],
+                    [120.0, 10.0, 0.0, 0.0, 1.4, 0.0, 0.0, 0.04, 0.03],
+                    [140.0, 20.0, 0.0, 12.0, 1.0, 0.0, 0.0, 0.03, 0.04],
+                    [20.0, 20.0, 0.0, 12.0, 1.0, 0.0, 0.0, 0.20, 0.00],
+                    [15.0, 20.0, 0.0, 12.0, 1.0, 0.0, 0.0, 0.20, 0.00],
+                    [10.0, 20.0, 0.0, 12.0, 1.0, 0.0, 0.0, 0.20, 0.00],
+                ],
+                dtype=np.float32,
+            )
+            write_episode(
+                path,
+                qpos=qpos,
+                qvel=np.zeros((6, 4), dtype=np.float32),
+                actions=actions,
+                images={"fpv": np.zeros((6, 8, 8, 3), dtype=np.uint8)},
+                rewards=np.zeros(6, dtype=np.float32),
+                metadata={"scenario_id": "s0_baseline", "stop_reason": "target_dump_count_reached"},
+                env_state=env_state,
+            )
+
+            episode = read_episode(path)
+            v2_payload, metadata_updates = label_episode_v2_1(
+                qpos=episode["qpos"],
+                actions=episode["actions"],
+                env_state=episode["env_state"],
+                metadata=episode["metadata"],
+                scenario_id="s0_baseline",
+            )
+            write_v2_extension(path, v2=v2_payload, metadata_updates=metadata_updates)
+
+            labeled_episode = read_episode(path)
+            self.assertTrue(bool(labeled_episode["metadata"]["v2_enabled"]))
+            self.assertEqual(labeled_episode["v2"]["step"]["goal_tokens"].shape, (6, 10))
+            self.assertEqual(labeled_episode["v2"]["cycle"]["cycle_success"].tolist(), [1])
+            self.assertEqual(labeled_episode["v2"]["cycle"]["dump_end_step"].tolist(), [5])
+            self.assertEqual(labeled_episode["v2"]["cycle"]["end_step"].tolist(), [5])
+
+    def test_load_data_supports_goal_tokens_low_dim_input(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dataset_dir = Path(tmpdir) / "dataset"
+            dataset_dir.mkdir(parents=True, exist_ok=True)
+
+            for episode_id, length in enumerate([4, 5]):
+                qpos = np.full((length, 4), episode_id + 1, dtype=np.float32)
+                qvel = np.full((length, 4), 10 * (episode_id + 1), dtype=np.float32)
+                goal_tokens = np.repeat(
+                    build_goal_tokens_v2_1("s0_baseline").reshape(1, -1),
+                    length,
+                    axis=0,
+                )
+                write_episode(
+                    dataset_dir / f"episode_{episode_id}.hdf5",
+                    qpos=qpos,
+                    qvel=qvel,
+                    actions=np.full((length, 4), 0.2, dtype=np.float32),
+                    images={"fpv": np.zeros((length, 8, 8, 3), dtype=np.uint8)},
+                    rewards=np.zeros(length, dtype=np.float32),
+                    metadata={"success": 1, "scenario_id": "s0_baseline"},
+                    env_state=np.zeros((length, 9), dtype=np.float32),
+                    step_ids=np.arange(length, dtype=np.int64),
+                    step_ns=np.arange(length, dtype=np.int64),
+                    v2={
+                        "step": {
+                            "cycle_id": np.zeros(length, dtype=np.int32),
+                            "mode_id": np.zeros(length, dtype=np.uint8),
+                            "phase_id": np.zeros(length, dtype=np.int32),
+                            "phase_progress": np.zeros(length, dtype=np.float32),
+                            "goal_tokens": goal_tokens.astype(np.float32),
+                            "planner_replan_mask": np.zeros(length, dtype=np.uint8),
+                            "qualified_dig_start_mask": np.zeros(length, dtype=np.uint8),
+                            "dump_start_mask": np.zeros(length, dtype=np.uint8),
+                            "dump_end_mask": np.zeros(length, dtype=np.uint8),
+                            "pause_mask": np.zeros(length, dtype=np.uint8),
+                            "boundary_mask": np.zeros(length, dtype=np.uint8),
+                        },
+                        "cycle": {
+                            "cycle_id": np.asarray([0], dtype=np.int32),
+                            "start_step": np.asarray([0], dtype=np.int32),
+                            "dump_end_step": np.asarray([length - 1], dtype=np.int32),
+                            "end_step": np.asarray([length - 1], dtype=np.int32),
+                            "curr_src_sector_id": np.asarray([1], dtype=np.int32),
+                            "curr_cut_depth_class": np.asarray([1], dtype=np.int32),
+                            "next_src_sector_id": np.asarray([-1], dtype=np.int32),
+                            "next_cut_depth_class": np.asarray([-1], dtype=np.int32),
+                            "dst_target_id": np.asarray([0], dtype=np.int32),
+                            "fill_peak_kg": np.asarray([10.0], dtype=np.float32),
+                            "deposit_delta_kg": np.asarray([5.0], dtype=np.float32),
+                            "peak_bucket_depth_m": np.asarray([0.05], dtype=np.float32),
+                            "collision_count_delta": np.asarray([0], dtype=np.int32),
+                            "transition_source": np.asarray(["none"]),
+                            "plan_source": np.asarray(["none"]),
+                            "cycle_success": np.asarray([1], dtype=np.int8),
+                        },
+                    },
+                )
+
+            train_loader, _, norm_stats, _, split_info = load_data(
+                dataset_dir=dataset_dir,
+                num_episodes=2,
+                camera_names=["fpv"],
+                episode_len=6,
+                batch_size_train=1,
+                batch_size_val=1,
+                num_workers=0,
+                prefetch_factor=1,
+                persistent_workers=False,
+                pin_memory=False,
+                split_seed=0,
+                train_split_ratio=0.5,
+                reuse_split=False,
+                low_dim_keys=["qpos", "qvel", "goal_tokens"],
+            )
+
+            self.assertEqual(norm_stats["proprio_mean"].shape, (18,))
+            self.assertEqual(split_info["low_dim_dim"], 18)
+            image_data, proprio_data, action_data, is_pad = next(iter(train_loader))
+            self.assertEqual(proprio_data.shape[1:], (18,))
+            self.assertEqual(action_data.shape[1:], (6, 4))
+            self.assertEqual(is_pad.shape[1:], (6,))
+
+    def test_load_data_goal_tokens_requires_v2_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dataset_dir = Path(tmpdir) / "dataset"
+            dataset_dir.mkdir(parents=True, exist_ok=True)
+            write_episode(
+                dataset_dir / "episode_0.hdf5",
+                qpos=np.zeros((3, 4), dtype=np.float32),
+                qvel=np.zeros((3, 4), dtype=np.float32),
+                actions=np.zeros((3, 4), dtype=np.float32),
+                images={"fpv": np.zeros((3, 8, 8, 3), dtype=np.uint8)},
+                rewards=np.zeros(3, dtype=np.float32),
+                metadata={"success": 1},
+                env_state=np.zeros((3, 9), dtype=np.float32),
+            )
+
+            with self.assertRaises(KeyError):
+                load_data(
+                    dataset_dir=dataset_dir,
+                    num_episodes=1,
+                    camera_names=["fpv"],
+                    episode_len=3,
+                    batch_size_train=1,
+                    batch_size_val=1,
+                    num_workers=0,
+                    prefetch_factor=1,
+                    persistent_workers=False,
+                    pin_memory=False,
+                    split_seed=0,
+                    train_split_ratio=1.0,
+                    reuse_split=False,
+                    low_dim_keys=["qpos", "goal_tokens"],
+                )
 
     def test_episode_recorder_preserves_demo_metadata_attrs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
