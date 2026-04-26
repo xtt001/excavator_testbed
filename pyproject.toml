@@ -50,6 +50,7 @@ tb-experiment-record = "testbed.cli.experiment_record:main"
 tb-label-v2_1     = "testbed.cli.label_v2_1:main"
 tb-build-workskill-v2_1 = "testbed.cli.build_workskill_v2_1:main"
 tb-build-transition-v2_1 = "testbed.cli.build_transition_v2_1:main"
+tb-build-primitives-v2_2 = "testbed.cli.build_primitives_v2_2:main"
 tb-audit-target-geometry = "testbed.cli.audit_target_geometry:main"
 
 [tool.setuptools.packages.find]

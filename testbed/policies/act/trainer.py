@@ -274,24 +274,26 @@ class ACTTrainer(Trainer):
             return
         try:
             with redirect_stderr(StringIO()):
+                import matplotlib
+                matplotlib.use("Agg", force=True)
                 import matplotlib.pyplot as plt
         except Exception as exc:
             print(f"Skipping training plots because matplotlib is unavailable: {exc}")
             return
         for key in train_history[0]:
             plot_path = ckpt_dir / f"train_val_{key}_seed_{seed}.png"
-            plt.figure()
+            fig, ax = plt.subplots()
             tv = [d[key].item() if hasattr(d[key], "item") else d[key] for d in train_history]
             vv = [d[key].item() if hasattr(d[key], "item") else d[key] for d in val_history]
-            plt.plot(np.linspace(0, num_epochs - 1, len(tv)), tv,  label="train")
+            ax.plot(np.linspace(0, num_epochs - 1, len(tv)), tv,  label="train")
             if vv:
                 val_x = val_epochs if val_epochs else np.linspace(0, num_epochs - 1, len(vv))
-                plt.plot(val_x, vv, label="val")
-            plt.tight_layout()
-            plt.legend()
-            plt.title(key)
-            plt.savefig(plot_path)
-            plt.close()
+                ax.plot(val_x, vv, label="val")
+            fig.tight_layout()
+            ax.legend()
+            ax.set_title(key)
+            fig.savefig(plot_path)
+            plt.close(fig)
         print(f"Plots saved to {ckpt_dir}")
 
     @staticmethod

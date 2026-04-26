@@ -34,10 +34,12 @@ Repo A 负责：
 | `tb-label-v2_1` | 已实现 | 给 `teleop_multi_raw` 生成兄弟目录 relabeled 数据集并补写 Stage-1 `/v2` 标签 |
 | `tb-build-workskill-v2_1` | 已实现 | 从 sibling relabeled 数据集中裁出 `qualified_dig_start -> dump_end` 的 Stage-3 workskill 数据集 |
 | `tb-build-transition-v2_1` | 已实现 | 从 sibling relabeled 数据集中裁出 `dump_end -> next qualified_dig_start` 的 transition feasibility 数据集 |
+| `tb-build-primitives-v2_2` | 已实现 | 从 refreshed V2.1 workskill/raw 数据集中裁出 V2.2 `dig/carry/dump/return` 四个 primitive sibling 数据集 |
 | `tb-audit-target-geometry` | 已实现 | 检查数据集是否带齐 target-safety 训练所需的 4 个 target geometry 字段 |
 | `tb-train` / ACT trainer | 已实现 | 已完成 `fulltest(qpos)`、`fulltest(qpos+qvel)` 与 `v1(qpos)` 三条训练线 |
 | `tb-eval` | 已实现 | 已完成正式 live eval；当前支持 V2.1 Stage 1 多轮 boundary / continuity 指标 |
 | `hybrid_planner_act` | 已实现 | 已接入最小 Stage 2 deploy 链；当前已在 `s0_truck` 上通过 live `2-cycle` gate，并完成一次 `3-cycle smoke` |
+| `primitive_planner_act` | 已实现（V2.2 smoke 入口） | 加载 `dig/carry/dump/return` 四个 ACT checkpoint；低层只用 `qpos+qvel`，Unity target geometry 只用于 scripted switch 与日志/QC |
 | Stage 3 bootstrap work-skill | 已实现 | 已完成 `agx_teleop_v1 -> v2_1_relabeled -> v2_1_workskill`，并跑通 `qvel/gcact` smoke train；`qvel e50 + loaded_and_clear bootstrap` 已通过单轮 live success gate |
 | Stage 4 rule planner | 已实现（首版目标已完成） | 已把 `RuleTaskPlanner / PlannerGoal / CycleSummary / SectorBelief` 接入现有 `hybrid_planner_act`，并完成 `planner_trace.json` 回放；正式主配置下 `3` 条 live rollout 已达到 `cycle2_success_rate = 1.0`，官方 `3-cycle smoke` 也已达到 `cycle3_success_rate = 1.0` |
 | rollout timestep logs | 已实现 | `tb-eval` 现可写 `rollout_XXX.jsonl / summary / manifest` |
@@ -57,6 +59,13 @@ Repo A 负责：
   - `reset -> loaded_and_clear` 先由 `ACT V1` 起手
   - `loaded_and_clear -> dump_end` 再切给 Stage-3 work policy
   - 这条逻辑仅作为 live 兼容层存在，不进入协议、`/v2` schema、planner 语义或默认训练口径
+- V2.2 当前新增四 primitive smoke 线：
+  - builder: `tb-build-primitives-v2_2`
+  - 当前数据 root: `data/agx_v2_2_4primitives_260426`
+  - 当前计数：`dig=64`, `carry=64`, `dump=64`, `return=120`
+  - `carry` 在 deterministic `dump_intent_start` 前截断，避免学习 bucket curl-out；`dump` 从 `dump_intent_start` 开始，不再等 mass-based `dump_start`
+  - live eval 入口：`eval_agx_v2_2_4primitives_qvel_3cycle_smoke.yaml`
+  - 首轮 reset 仍可配置 `bootstrap_policy` 到 `loaded_and_clear`，但 primitive 执行阶段不启用 fallback
 
 ---
 
@@ -895,6 +904,12 @@ target-safety 训练还有一个额外契约：
   `dump_clearance_ok_mask`
 - `dump_clearance_ok_mask` 是 Unity source-of-truth clearance mask；TruckBed
   可放宽水平距离，但垂直仍必须满足 `bucket_height_above_target_rim_m >= 0.0`
+- V2.2 scripted primitive planner 的 dump readiness 不用固定 swing qpos；它用
+  target-relative geometry，并允许 `bucket_over_target_footprint_mask` 或连续的
+  `target_horizontal_distance_m <= 0.20m` 作为水平就位信号，同时要求 bucket 在 rim
+  上方和 clearance OK
+- V2.2 4-primitives planner 的 `dig -> carry` 切换只看 bucket 是否已 loaded；
+  离开 dig 区和运载到 truck 属于 carry primitive，不要求先满足固定 escape distance
 - `tb-audit-target-geometry --dataset-dir <dataset>` 会检查覆盖率
 - 没有这些字段的旧数据仍可用于非 target-geometry 的诊断/训练线，但不要混进
   target-safety workskill 训练

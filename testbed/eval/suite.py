@@ -412,6 +412,23 @@ class EvalSuite:
                             "work_target_guard_count": int(
                                 policy_debug.get("work_target_guard_count", 0)
                             ),
+                            "skill_name": str(policy_debug.get("skill_name", "")),
+                            "skill_id": int(policy_debug.get("skill_id", -1)),
+                            "skill_switch_reason": str(
+                                policy_debug.get("skill_switch_reason", "")
+                            ),
+                            "primitive_checkpoint_path": str(
+                                policy_debug.get("primitive_checkpoint_path", "")
+                            ),
+                            "primitive_cycle_index": int(
+                                policy_debug.get("primitive_cycle_index", -1)
+                            ),
+                            "dump_ready_hold_count": int(
+                                policy_debug.get("dump_ready_hold_count", 0)
+                            ),
+                            "dump_done_hold_count": int(
+                                policy_debug.get("dump_done_hold_count", 0)
+                            ),
                         }
                     )
                     if stream_path is not None:

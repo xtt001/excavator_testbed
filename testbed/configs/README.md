@@ -58,6 +58,20 @@
   - 更大样本的多 rollout 回归
   - rule planner 规则细化
 
+现在，V2.2 **4-primitives smoke** 也已经接入新分支：
+
+- 新增 `tb-build-primitives-v2_2`
+- 新增 `act_agx_v2_2_4primitives_{dig,carry,dump,return}_qvel_e500.yaml`
+- 新增 `eval_agx_v2_2_4primitives_qvel_3cycle_smoke.yaml`
+- 当前数据 root: `data/agx_v2_2_4primitives_260426`
+- 当前数据计数：
+  - `dig = 64`，median `8` steps
+  - `carry = 64`，median `457` steps
+  - `dump = 64`，median `138.5` steps
+  - `return = 120`，median `298.5` steps
+- low-level primitive ACT 默认只用 `qpos + qvel`
+- Unity `env_state` / target geometry 只用于离线切分、scripted switch、QC 和 rollout 日志，不作为低维 policy input
+
 ## 今天优先用哪些文件
 
 | 目标 | 推荐配置 / 命令 | 说明 |
@@ -74,6 +88,8 @@
 | V2.1 Stage 3 qvel live smoke | `testbed/configs/eval_agx_v2_1_stage3_workskill_qvel.yaml` | 把 Stage-3 qvel work ckpt 接回 Stage-2 hybrid live smoke |
 | V2.1 Stage 4 rule planner 主评测 | `testbed/configs/eval_agx_v2_1_stage4_rule_planner.yaml` | 第一版 coarse replan 主入口；当前使用 soft corridor + `servo_reentry_pose`，官方 `2-cycle` 主门槛已通过 |
 | V2.1 Stage 4 rule planner 3-cycle smoke | `testbed/configs/eval_agx_v2_1_stage4_rule_planner_3cycle_smoke.yaml` | Stage-4 多轮 smoke 入口；官方 `3-cycle smoke` 已通过一次真实 live 检查 |
+| V2.2 四 primitive e500 训练 | `testbed/configs/act_agx_v2_2_4primitives_{dig,carry,dump,return}_qvel_e500.yaml` | 从 `data/agx_v2_2_4primitives_260426/{primitive}` 训练四个 ACT |
+| V2.2 四 primitive 3-cycle smoke | `testbed/configs/eval_agx_v2_2_4primitives_qvel_3cycle_smoke.yaml` | `primitive_planner_act`，scripted geometry switch，默认 `temporal_agg = true` |
 | 历史 `qpos + qvel` 对照 | `act_agx_fulltest_qvel.yaml` + `eval_agx_fulltest_qvel.yaml` | 保留为旧对照线 |
 | smoke 验证 | `act_agx_smoke.yaml` + `eval_agx_smoke.yaml` | 只用于验证 train/eval 链路 |
 
@@ -165,6 +181,10 @@ tail 用来保留 terminal dump 后的 plateau / `dump_end` 观测，避免刚�
 | `act_agx_v2_1_multi_raw_transition_qvel.yaml` | 当前 transition feasibility 训练线 | `qpos + qvel`，默认读取 `data/agx_teleop_v2_1_multi_raw_transition` |
 | `act_agx_v2_1_multi_raw_transition_clean_qvel.yaml` | 当前 clean-by-length transition 对照线 | `qpos + qvel`，默认读取 `data/agx_teleop_v2_1_multi_raw_transition_clean` |
 | `act_agx_v2_1_multi_raw_transition_clean_v2_qvel.yaml` | Stage 5 learned transition 主训练线 | `qpos + qvel`，默认读取 `data/agx_teleop_v2_1_multi_raw_transition_clean_v2` |
+| `act_agx_v2_2_4primitives_dig_qvel_e500.yaml` | V2.2 dig primitive smoke | `qpos + qvel`，默认读取 `data/agx_v2_2_4primitives_260426/dig` |
+| `act_agx_v2_2_4primitives_carry_qvel_e500.yaml` | V2.2 carry primitive smoke | `qpos + qvel`，默认读取 `data/agx_v2_2_4primitives_260426/carry` |
+| `act_agx_v2_2_4primitives_dump_qvel_e500.yaml` | V2.2 dump primitive smoke | `qpos + qvel`，默认读取 `data/agx_v2_2_4primitives_260426/dump` |
+| `act_agx_v2_2_4primitives_return_qvel_e500.yaml` | V2.2 return primitive smoke | `qpos + qvel`，默认读取 `data/agx_v2_2_4primitives_260426/return` |
 | `act_agx_smoke.yaml` | smoke | 只验证训练链路 |
 
 说明：
@@ -258,6 +278,41 @@ tail 用来保留 terminal dump 后的 plateau / `dump_end` 观测，避免刚�
   - 当前 builder 会同步写出 `summary.json`
   - 当前 reject reason 至少包括：
     - `overlong_transition_len`
+
+### V2.2 primitive 数据构建
+
+当前四 primitive root 由下面命令生成到 data disk，并通过 `data/` 下 symlink 暴露：
+
+```bash
+tb-build-primitives-v2_2 \
+  --workskill-dir data/agx_teleop_v2_1_refresh_tail50_workskill_clean_v3_targetsafe_v2_1c_260424183039 \
+  --raw-dir data/agx_teleop_v2_1_multi_raw_refreshed_targetgeo_tail50_260424183039 \
+  --raw-dir data/agx_teleop_v2_1_multi_raw_new_refreshed_targetgeo_tail50_260424183039 \
+  --raw-dir data/agx_teleop_v2_1_multi_raw_carryfix_refreshed_targetgeo_tail50_260424183039 \
+  --raw-dir data/agx_teleop_v2_1_multi_raw_quality_2604241251_refreshed_targetgeo_tail50_260424183039 \
+  --output-root /data/pingfan/excavator_testbed_data_archive/agx_v2_2_4primitives_260426
+ln -sfn /data/pingfan/excavator_testbed_data_archive/agx_v2_2_4primitives_260426 \
+  data/agx_v2_2_4primitives_260426
+```
+
+切分语义：
+
+- `dig`: `qualified_dig_start` 到 `carry/approach_dump` 前
+- `carry`: `carry + approach_dump`，但在 deterministic `dump_intent_start` 前截断
+- `dump`: 从 `dump_intent_start` 到 `dump_end`
+- `return`: full raw 中的 `dump_end -> next qualified_dig_start`
+
+`dump_intent_start` 优先使用 approach 区内第一段稳定 pre-dump curl-out
+onset，否则使用官方 mass-based `dump_start`。这样 carry 不会学习“还没到车斗上方就 curl-out”，dump 也不会因为 mass-based `dump_start` 太晚而缺少起始动作。
+
+V2.2 scripted planner 的 dump readiness 使用 target-relative geometry：
+`mass_in_bucket_kg` 足够、`bucket_height_above_target_rim_m >= 0`、clearance
+OK，并且位置满足 `bucket_over_target_footprint_mask` 或
+`target_horizontal_distance_m <= dump_ready_max_horizontal_distance_m`。当前 3-cycle
+smoke 配置把水平阈值设为 `0.20m`，因为 Unity footprint mask 在边缘进入车斗上方时
+可能比连续水平距离晚几步触发，而那几步正是 bucket 仍在 rim 上方的可倒窗口。
+`dig -> carry` 只要求 bucket 已 loaded；从 dig 区离开属于 carry primitive 的职责，
+不再要求 `min_distance_to_dig_area_m >= 0.20`。
     - `late_qds_failure`
     - 高 `pause_ratio` 的明显犹豫样本
 
@@ -284,6 +339,7 @@ tail 用来保留 terminal dump 后的 plateau / `dump_end` 观测，避免刚�
 | `eval_agx_v2_1_stage5_workskill_clean_v3_qualitymix_qvel_3cycle_smoke.yaml` | Stage 5 target-safe qualitymix work smoke | 使用当前 `74` 条 target-safe terminal-fix qualitymix v3 数据训练出的 `WORK` ckpt；第 3 次 dump 后保留 `25` 步 terminal hold，并启用两段 target guard |
 | `eval_agx_v2_1_stage5_workskill_clean_v3b_qvel_alldata_3cycle_smoke.yaml` | Stage 5 全量 balanced 高质量 work smoke | 使用 `clean_v3b` 合并数据训练出的 `WORK` ckpt；当前默认 `task.episode_len = 5000` |
 | `eval_agx_v2_1_stage5_workskill_clean_v4_qvel_alldata_3cycle_smoke.yaml` | Stage 5 全量 cleanest 高质量 work smoke | 使用 `clean_v4` 合并数据训练出的 `WORK` ckpt；当前默认 `task.episode_len = 5000` |
+| `eval_agx_v2_2_4primitives_qvel_3cycle_smoke.yaml` | V2.2 4-primitives smoke | 加载 `dig/carry/dump/return` 四个 ACT ckpt；scripted planner 只用 target-relative geometry 切换，不把 `env_state` 输入低层 ACT |
 | `eval_agx_fulltest.yaml` | 历史 `qpos` 对照 | 保留历史对照 |
 | `eval_agx_fulltest_qvel.yaml` | 历史 `qpos + qvel` 对照 | 保留历史对照 |
 | `eval_agx_smoke.yaml` | smoke | 只快速检查 eval 链路 |
