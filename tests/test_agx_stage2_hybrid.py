@@ -70,6 +70,10 @@ def _make_env_state(
     mass_in_target_box: float = 0.0,
     deposited_mass: float = 0.0,
     min_distance_to_target: float = 2.0,
+    target_horizontal_distance: float | None = None,
+    bucket_height_above_target_rim: float = -0.10,
+    bucket_over_target_footprint: float = 0.0,
+    dump_clearance_ok: float = 0.0,
     collision_count: float = 0.0,
     min_distance_to_dig_area: float = 0.20,
     bucket_depth: float = 0.0,
@@ -85,6 +89,12 @@ def _make_env_state(
             0.0,
             min_distance_to_dig_area,
             bucket_depth,
+            min_distance_to_target
+            if target_horizontal_distance is None
+            else target_horizontal_distance,
+            bucket_height_above_target_rim,
+            bucket_over_target_footprint,
+            dump_clearance_ok,
         ],
         dtype=np.float32,
     )
@@ -219,6 +229,42 @@ class Stage2CorridorServoTests(unittest.TestCase):
         )
         self.assertTrue(output.transition_timeout)
         self.assertEqual(output.action.shape, (4,))
+
+    def test_scripted_transition_can_target_near_zero_bucket_qpos(self) -> None:
+        controller = TransitionController(
+            bands=build_default_entry_corridor_bands(),
+            scripted_bucket_qpos_target=0.0,
+            action_clip_by_joint=[0.75, 0.35, 0.35, 0.55],
+        )
+        controller.start_transition(
+            target_sector_name="mid",
+            env_state=_make_env_state(min_distance_to_target=2.0),
+        )
+
+        output = controller.step(
+            obs=_make_obs(
+                qpos=np.asarray([0.50, 0.634, 0.523, 0.690], dtype=np.float32),
+                qvel=np.zeros(4, dtype=np.float32),
+                env_state=_make_env_state(min_distance_to_target=2.0),
+            ),
+            qualified_dig_start=False,
+        )
+
+        self.assertEqual(output.action.shape, (4,))
+        self.assertLess(float(output.action[3]), -0.50)
+        reentry_target = controller.wait_next_dig_reentry_target_qpos("mid")
+        self.assertAlmostEqual(float(reentry_target[3]), 0.0)
+
+        for _ in range(5):
+            output = controller.step(
+                obs=_make_obs(
+                    qpos=np.asarray([0.50, 0.634, 0.523, 0.0], dtype=np.float32),
+                    qvel=np.zeros(4, dtype=np.float32),
+                    env_state=_make_env_state(min_distance_to_target=2.0),
+                ),
+                qualified_dig_start=False,
+            )
+        self.assertEqual(output.submode, TRANSITION_SUBMODE_WAIT_NEXT_DIG)
 
 
 class Stage2BoundaryDetectorTests(unittest.TestCase):
@@ -495,6 +541,67 @@ class Stage2HybridPolicyTests(unittest.TestCase):
         self.assertAlmostEqual(float(action[3]), -0.30)
         self.assertTrue(policy.debug_state()["work_target_guard_active"])
         self.assertEqual(policy.rollout_summary()["work_target_guard_count"], 1)
+
+    def test_work_target_guard_allows_dump_when_target_clearance_is_ok(self) -> None:
+        raw_action = np.asarray([0.01, -0.02, 0.0, -0.80], dtype=np.float32)
+        policy = HybridPlannerACTPolicy(
+            work_policy=_ConstantWorkPolicy(raw_action),
+            work_target_guard_enabled=True,
+            work_target_guard_distance_m=0.45,
+            planner=FixedSequencePlanner(["mid", "mid", "mid"]),
+            transition_controller=TransitionController(
+                bands=build_default_entry_corridor_bands(),
+            ),
+            boundary_detector=build_boundary_detector_from_config(
+                reward_cfg={"target_approach_distance_m": 1.25},
+                success_cfg={"residual_bucket_mass_thresh": 100.0},
+                pause_action_eps=0.05,
+            ),
+        )
+        action = policy.predict(
+            _make_obs(
+                env_state=_make_env_state(
+                    mass_in_bucket=1200.0,
+                    min_distance_to_target=0.20,
+                    target_horizontal_distance=0.20,
+                    bucket_height_above_target_rim=0.15,
+                    bucket_over_target_footprint=1.0,
+                    dump_clearance_ok=1.0,
+                )
+            )
+        )
+
+        np.testing.assert_allclose(action, raw_action)
+        self.assertFalse(policy.debug_state()["work_target_guard_active"])
+        self.assertEqual(policy.rollout_summary()["work_target_guard_count"], 0)
+
+    def test_work_target_guard_rejects_legacy_target_distance_fallback(self) -> None:
+        policy = HybridPlannerACTPolicy(
+            work_policy=_ConstantWorkPolicy(
+                np.asarray([0.01, -0.02, 0.0, -0.80], dtype=np.float32)
+            ),
+            work_target_guard_enabled=True,
+            work_target_guard_distance_m=0.45,
+            planner=FixedSequencePlanner(["mid", "mid", "mid"]),
+            transition_controller=TransitionController(
+                bands=build_default_entry_corridor_bands(),
+            ),
+            boundary_detector=build_boundary_detector_from_config(
+                reward_cfg={"target_approach_distance_m": 1.25},
+                success_cfg={"residual_bucket_mass_thresh": 100.0},
+                pause_action_eps=0.05,
+            ),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "target geometry fields"):
+            policy.predict(
+                _make_obs(
+                    env_state=np.asarray(
+                        [1200.0, 0.0, 0.0, 0.0, 0.20, 0.0, 0.0, 0.2, 0.0],
+                        dtype=np.float32,
+                    )
+                )
+            )
 
     def test_hybrid_policy_marks_transition_timeout(self) -> None:
         policy = self._build_policy(corridor_align_max_steps=2)

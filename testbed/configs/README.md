@@ -9,6 +9,13 @@
 - 不再把 fixed ready pose / ready-anchor 作为主 stop 逻辑
 - `/v2` 标注主入口改为 `tb-label-v2_1`
 - Stage 1 不新增训练主线；重点是录制、离线标注和多轮评测
+- target-safety workskill 现在要求显式 target geometry 字段：
+  `target_horizontal_distance_m`、`bucket_height_above_target_rim_m`、
+  `bucket_over_target_footprint_mask`、`dump_clearance_ok_mask`。旧的
+  `min_distance_to_target_m` 不再作为这些字段的 fallback。
+- `dump_clearance_ok_mask` 由 Unity 作为 target-clearance source of truth
+  输出；TruckBed 可使用水平 dump 容差，但垂直方向仍要求
+  `bucket_height_above_target_rim_m >= 0.0`。
 
 同日，V2.1 **Stage 2 最小 hybrid 闭环** 也已经接入 live eval：
 
@@ -87,6 +94,20 @@
 | `teleop_v1.yaml` | 当前业务 baseline | `dump_complete_final_hold` 成功即停；成功后继续录 `50` 步尾段 |
 | `teleop_v2_1_multi_raw.yaml` | 当前 V2 主入口 | `recording_mode = teleop_multi_raw`；`scenario_id = s0_truck`；`stop_mode = target_dump_count`；默认录 `3` 次有效 `dump_end` 后再保留 `50` 步 terminal tail；`task.max_steps = 4000` |
 | `teleop_v0.yaml` | legacy | 兼容早期数据与旧流程 |
+
+`tb-replay` 可以复用这些 teleop 配置连接 AGX。需要把旧 episode 的 action 序列在当前 Unity 中重新采集 observation/env_state 时，使用：
+
+```bash
+tb-replay \
+  --episode data/agx_teleop_v2_1_multi_raw/episode_0.hdf5 \
+  --config testbed/configs/teleop_v2_1_multi_raw.yaml \
+  --record-output-dir data/agx_teleop_v2_1_multi_raw_replayed_current
+```
+
+刷新写新 HDF5 时，`tb-replay` 会把 `teleop.post_success_tail_steps`
+作为 source actions 后的 zero-action tail；当前 V2.1 默认 `50` 步。这个
+tail 用来保留 terminal dump 后的 plateau / `dump_end` 观测，避免刚倒完就
+截断。可用 `--post-tail-steps <N>` 临时覆盖。
 
 当前这三份 `teleop` 配置共享同一套 FarmStick 默认臂控映射，已按真机控制习惯对齐为：
 
@@ -189,12 +210,13 @@
     - dig-area anchors: leftmost `0.43`, mid `0.50`, rightmost `0.56`
     - `swing < 0.4733 -> left`
   - target-safe 过滤现在也启用在 `stage5_strict`/v3 上：
-    - `dump_start_distance_m < 0.35 -> near_dump_start`
+    - `target_horizontal_distance_m < 0.35 -> near_dump_start`
+    - 缺少任一 target geometry 字段会被标成 `missing_target_geometry`
     - 目的是去掉已经贴近 truck/target 才开始 dump 的 close-call 样本，避免 BC 学到低 boom + 强 curl 的硬碰撞模式
   - 当前 target-safe qualitymix：`74` 条，高质量补录 mix sector split 为 `left = 18`, `mid = 40`, `right = 16`
   - 当前 target-safe smoke eval 额外启用 live WORK safety guard：
-    - loaded 且 `min_distance_to_target < 1.25` 的 approach 区，先把强 dump action 软限到不小于 `-0.30`，并至少给 boom `+0.04`
-    - loaded 且 `min_distance_to_target < 0.45` 的 hard guard 区，再把 bucket dump action 下限收回到 `-0.15`
+    - loaded 且 `target_horizontal_distance_m < 1.25` 且 clearance 不满足时，approach 区先把强 dump action 软限到不小于 `-0.30`，并至少给 boom `+0.04`
+    - loaded 且 `target_horizontal_distance_m < 0.45` 且 clearance 不满足时，hard guard 区再把 bucket dump action 下限收回到 `-0.15`
     - hard guard 区同时至少给 boom `+0.08` raise command，用来先把 bucket 从 target 边缘抬开
     - rollout summary 会记录 `work_target_guard_count`
     - `eval.target_cycle_gate_terminal_hold_steps = 25`，避免第 3 次 `dump_end` 立刻截断 `dump_complete_final_hold` 的末尾 hold 计数
@@ -304,6 +326,9 @@ V2.1 Stage 4 在保留 Stage 2 指标的同时，还会额外输出：
 - `peak_bucket_depth_mean`
 - `shallow_peak_bucket_depth_count`
 - `dump_start_distance_mean` / `dump_start_distance_max`
+- `dump_start_horizontal_distance_mean` / `dump_start_horizontal_distance_max`
+- `dump_start_geometry_missing_count`
+- `target_geometry_available_rate`
 - `far_dump_start_count`
 - `near_dump_start_count`
 - `carry_efficiency_proxy_mean`
@@ -484,6 +509,18 @@ V2.1 Stage 4 在保留 Stage 2 指标的同时，还会额外输出：
 - `RuleTaskPlanner` 继续作为默认高层 planner
 - learned transition 只替换 `wait_next_dig` 子段
 - fallback 只在当次 transition 内切回 scripted `wait_next_dig`
+- scripted transition 可设置 `policy.transition.scripted_bucket_qpos_target: 0.0`，
+  让 clear/corridor/wait 子段都以接近 0 的 bucket qpos 作为目标，便于和旧的
+  corridor-band bucket curl-in 行为做 A/B rollout；`scripted_bucket_qpos_tolerance`
+  会同步替代 corridor band 里旧的 bucket 区间判定。
+- work-policy 主线不把 `env_state` 放进 `policy.low_dim_keys` 或
+  `policy.work_low_dim_keys`。target geometry 只用于离线筛选、label、reward/QC 与
+  rollout 诊断，避免把 Unity 特权状态喂给模型。
+- workskill 数据可带 `/v2/step/action_loss_mask`。ACT loader 会把 mask 为 `0`
+  的 timestep 当作 action-loss padding；默认 workskill builder 现在写全 `1`，
+  不再按裸 bucket action 阈值自动屏蔽，因为这个阈值会误伤 digging 监督。
+- eval 支持 `eval.stream_rollout_logs: true`，会在 rollout 过程中写
+  `rollout_XXX.partial.jsonl`，中途停止时也能保留第 2/第 3 cycle 的逐步证据。
 - compare 的主口径固定为：
   - `cycle3_success_rate`
   - `transition_timeout_rate`

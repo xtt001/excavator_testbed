@@ -20,24 +20,38 @@ def _record(
     bucket_qpos: float = 0.10,
     mass_in_bucket: float = 0.0,
     min_distance_to_target: float = 2.0,
+    target_horizontal_distance: float | None = None,
+    bucket_height_above_target_rim: float = 0.10,
+    bucket_over_target_footprint: float = 1.0,
+    dump_clearance_ok: float = 1.0,
     min_distance_to_dig_area: float = 0.0,
     bucket_depth: float = 0.0,
     failures: list[str] | None = None,
+    include_target_geometry: bool = True,
 ) -> dict[str, object]:
-    env_state = np.asarray(
-        [
-            mass_in_bucket,
-            0.0,
-            0.0,
-            0.0,
-            min_distance_to_target,
-            0.0,
-            0.0,
-            min_distance_to_dig_area,
-            bucket_depth,
-        ],
-        dtype=np.float32,
-    )
+    values = [
+        mass_in_bucket,
+        0.0,
+        0.0,
+        0.0,
+        min_distance_to_target,
+        0.0,
+        0.0,
+        min_distance_to_dig_area,
+        bucket_depth,
+    ]
+    if include_target_geometry:
+        values.extend(
+            [
+                min_distance_to_target
+                if target_horizontal_distance is None
+                else target_horizontal_distance,
+                bucket_height_above_target_rim,
+                bucket_over_target_footprint,
+                dump_clearance_ok,
+            ]
+        )
+    env_state = np.asarray(values, dtype=np.float32)
     return {
         "t": int(t),
         "cycle_id": int(cycle_id),
@@ -129,9 +143,35 @@ class TestQualityMetrics(unittest.TestCase):
         self.assertEqual(summary["shallow_peak_bucket_depth_count"], 0)
         self.assertGreater(float(summary["peak_bucket_depth_mean"]), 0.30)
         self.assertGreater(float(summary["dump_start_distance_mean"]), 1.25)
+        self.assertGreater(
+            float(summary["dump_start_horizontal_distance_mean"]),
+            1.25,
+        )
+        self.assertEqual(summary["dump_start_geometry_missing_count"], 0)
+        self.assertAlmostEqual(float(summary["target_geometry_available_rate"]), 1.0)
         self.assertLess(float(summary["carry_efficiency_proxy_mean"]), 0.40)
         self.assertGreater(float(summary["dig_area_escape_step_ratio"]), 0.0)
         self.assertGreater(int(summary["quality_issue_count"]), 0)
+
+    def test_build_quality_summary_does_not_fallback_to_legacy_target_distance(self) -> None:
+        records = [
+            _record(t=0, cycle_id=0, qds=1, include_target_geometry=False),
+            _record(
+                t=1,
+                cycle_id=0,
+                dump_start=1,
+                mass_in_bucket=200.0,
+                min_distance_to_target=2.0,
+                include_target_geometry=False,
+            ),
+        ]
+
+        summary = build_quality_summary(records)
+
+        self.assertEqual(summary["dump_start_geometry_missing_count"], 1)
+        self.assertEqual(summary["far_dump_start_count"], 0)
+        self.assertEqual(summary["near_dump_start_count"], 0)
+        self.assertAlmostEqual(float(summary["target_geometry_available_rate"]), 0.0)
 
     def test_aggregate_quality_metrics_averages_rollout_summaries(self) -> None:
         metrics = aggregate_quality_metrics(

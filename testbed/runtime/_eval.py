@@ -65,6 +65,7 @@ def eval_policy(config: dict[str, Any]) -> None:
     video_dir       = Path(eval_cfg.get("video_dir", ckpt_dir / "eval_videos"))
     results_dir     = Path(eval_cfg.get("results_dir", ckpt_dir / "eval_results"))
     save_rollout_logs = bool(eval_cfg.get("save_rollout_logs", True))
+    stream_rollout_logs = bool(eval_cfg.get("stream_rollout_logs", False))
     rollout_log_dir = Path(eval_cfg.get("rollout_log_dir", results_dir / "rollouts"))
     step_log_interval = int(eval_cfg.get("step_log_interval", 50))
     agx_host        = str(agx_cfg.get("host", "127.0.0.1"))
@@ -386,6 +387,12 @@ def eval_policy(config: dict[str, Any]) -> None:
                 wait_next_dig_reentry_template_qpos=transition_cfg.get(
                     "wait_next_dig_reentry_template_qpos"
                 ),
+                scripted_bucket_qpos_target=transition_cfg.get(
+                    "scripted_bucket_qpos_target"
+                ),
+                scripted_bucket_qpos_tolerance=float(
+                    transition_cfg.get("scripted_bucket_qpos_tolerance", 0.03)
+                ),
             ),
             boundary_detector=build_boundary_detector_from_config(
                 reward_cfg=reward_cfg,
@@ -460,6 +467,7 @@ def eval_policy(config: dict[str, Any]) -> None:
         results_dir  = results_dir,
         ckpt_path    = str(ckpt_path),
         save_rollout_logs = save_rollout_logs,
+        stream_rollout_logs = stream_rollout_logs,
         rollout_log_dir   = rollout_log_dir,
         step_log_interval = step_log_interval,
         agx_host     = agx_host,

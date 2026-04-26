@@ -27,13 +27,14 @@ Repo A 负责：
 | `AGXSimBackend` | 已实现 | `GET_INFO / RESET / STEP / reward tracker` 最小 live 链路已打通 |
 | HDF5 schema v1.1 | 已实现 | 支持 `timestamps`、`action_source`、`fpv`、`env_state` |
 | Repo A `/v2` add-only extension | 已实现 | 当前主线为 V2.1 Stage 1 multicycle labeler、10D `goal_tokens`、phase/mode/boundary 标签，并新增细粒度 `work_stage_id` |
-| 当前 AGX 任务协议 | 已实现 | 当前目标协议是 `env_state (9,)`，含 DigArea 与 hard collision 字段 |
+| 当前 AGX 任务协议 | 已实现 | 当前 target-safety 目标协议是 `env_state (13,)`，新增水平距离、高度与 dump clearance 字段；legacy `env_state (9,)` 只保留作非 target-geometry 用途 |
 | `tb-record-teleop` | 已实现 | `v1` 保持兼容；当前 V2 主线已切到 `teleop_multi_raw + target_dump_count` |
 | `tb-replay` | 已实现 | 支持单文件或整个目录批量回放；`fulltest` 已验证，`v1` 仍建议补一轮正式 batch QA |
 | `tb-dataset-videos` | 已实现 | 从 HDF5 离线导出 MP4 视频（无需连 AGX） |
 | `tb-label-v2_1` | 已实现 | 给 `teleop_multi_raw` 生成兄弟目录 relabeled 数据集并补写 Stage-1 `/v2` 标签 |
 | `tb-build-workskill-v2_1` | 已实现 | 从 sibling relabeled 数据集中裁出 `qualified_dig_start -> dump_end` 的 Stage-3 workskill 数据集 |
 | `tb-build-transition-v2_1` | 已实现 | 从 sibling relabeled 数据集中裁出 `dump_end -> next qualified_dig_start` 的 transition feasibility 数据集 |
+| `tb-audit-target-geometry` | 已实现 | 检查数据集是否带齐 target-safety 训练所需的 4 个 target geometry 字段 |
 | `tb-train` / ACT trainer | 已实现 | 已完成 `fulltest(qpos)`、`fulltest(qpos+qvel)` 与 `v1(qpos)` 三条训练线 |
 | `tb-eval` | 已实现 | 已完成正式 live eval；当前支持 V2.1 Stage 1 多轮 boundary / continuity 指标 |
 | `hybrid_planner_act` | 已实现 | 已接入最小 Stage 2 deploy 链；当前已在 `s0_truck` 上通过 live `2-cycle` gate，并完成一次 `3-cycle smoke` |
@@ -129,7 +130,7 @@ Repo A 负责：
 - `qpos (4,)`：`[swing, boom, stick, bucket]`，归一化位置
 - `qvel (4,)`：`[swing, boom, stick, bucket]`，速度
 - `images["fpv"]`：`(H, W, 3)`，`uint8`
-- `env_state (9,)`：
+- `env_state (13,)`：
 
 ```text
 [
@@ -141,13 +142,25 @@ Repo A 负责：
   target_hard_collision_count,
   target_contact_max_normal_force_n,
   min_distance_to_dig_area_m,
-  bucket_depth_below_dig_area_plane_m
+  bucket_depth_below_dig_area_plane_m,
+  target_horizontal_distance_m,
+  bucket_height_above_target_rim_m,
+  bucket_over_target_footprint_mask,
+  dump_clearance_ok_mask
 ]
 ```
 
+target-safety 相关逻辑只使用后 4 个显式 target geometry 字段：
+`min_distance_to_target_m` 仍会记录为 legacy scalar metric，但不会被当作
+`target_horizontal_distance_m` 或 clearance 的 fallback。
+其中 `dump_clearance_ok_mask` 是 Unity 输出的 clearance source of truth：
+TruckBed 水平方向允许目标侧配置的 dump 容差，但垂直方向仍要求
+`bucket_height_above_target_rim_m >= 0.0`，也就是桶底必须在车厢 rim/top
+之上。
+
 奖励 / 成功语义：
 - `loading`：只有满足 DigArea good-start 后才开始给正向装载奖励
-- `approaching_target`：载荷存在时，朝目标接近给奖励
+- `approaching_target`：载荷存在且 `target_horizontal_distance_m` 有效时，朝目标水平接近给奖励
 - `depositing`：目标 retained mass 开始增长时给奖励
 - `hard_target_collision`：`target_hard_collision_count` 在本步增加时给固定惩罚
 - `success`：`deposited_mass_in_target_box_kg >= 100 kg` 且连续保持 `25` 步
@@ -284,13 +297,21 @@ tb-eval --config testbed/configs/eval_agx_v2_1_stage5_workskill_clean_v3_quality
 #       left=15, mid=31, right=9 over 55 total cycles
 # note: keep clean_v3 as the current main training profile; v3b/v4 are only
 # diagnostic filters for checking early dump / severe pre-target spill.
-# note: clean_v3 now also rejects near target dump starts:
-#       dump_start_distance_m < 0.35 -> near_dump_start. This removes close-call
-#       low-boom dump examples that can become hard target collisions in rollout.
+# note: clean_v3 now requires explicit target geometry fields for target-safe
+#       filtering. Legacy min_distance_to_target_m is not used as a fallback.
+#       target_horizontal_distance_m < 0.35 -> near_dump_start. This removes
+#       close-call low-boom dump examples that can become hard target collisions
+#       in rollout.
 #       Current target-safe qualitymix has 74 cycles: left=18, mid=40, right=16.
 # note: the target-safe smoke eval also enables a live WORK safety guard:
-#       if loaded and min_distance_to_target < 0.45, cap bucket dump action to
-#       -0.15 and command at least +0.08 boom raise before continuing.
+#       if loaded, target_horizontal_distance_m < 0.45, and dump clearance is
+#       not ok, cap bucket dump action to -0.15 and command at least +0.08 boom
+#       raise before continuing.
+#       dump clearance comes from Unity's dump_clearance_ok_mask; TruckBed may
+#       use horizontal tolerance, but vertical clearance still requires
+#       bucket_height_above_target_rim_m >= 0.0.
+#       run tb-audit-target-geometry before using an old dataset for target-safe
+#       workskill training.
 # note: current target_dump_count recording keeps a 50-step terminal tail after
 # the online dump_end event; offline relabel still recovers legacy no-tail raws
 # from metadata so old final cycles are not silently dropped.
@@ -336,6 +357,10 @@ tb-eval --config testbed/configs/eval_agx_v2_1_stage4_rule_planner_learned_trans
 - `planner.kind = rule`
 - `WORK = ACT V1`
 - learned transition 对照线只替换 `wait_next_dig` 子段，不改变 Stage-4 的 scripted `clear_target -> corridor_align`
+- scripted transition 可通过 `policy.transition.scripted_bucket_qpos_target: 0.0`
+  让 clear/corridor/wait 子段都把 bucket 姿态保持在接近 0，避免 transition
+  期间把 bucket 强制 curl-in 到 corridor band 的旧 bucket 中心；对应的
+  `scripted_bucket_qpos_tolerance` 会同步用于 corridor 对齐判定。
 - 如需先清掉过长 transition 样本，再构建 sibling clean 数据集：
 
 ```bash
@@ -448,7 +473,19 @@ tb-replay \
   --episode data/agx_teleop_v1/ \
   --config testbed/configs/teleop_v1.yaml \
   --save-video
+
+# 用旧 episode 的 action 序列在当前 Unity 中重新采集 HDF5
+tb-replay \
+  --episode data/agx_teleop_v2_1_multi_raw/episode_0.hdf5 \
+  --config testbed/configs/teleop_v2_1_multi_raw.yaml \
+  --record-output-dir data/agx_teleop_v2_1_multi_raw_replayed_current
 ```
+
+使用 `--record-output-dir` 做数据刷新时，`tb-replay` 会读取 teleop config
+里的 `post_success_tail_steps`，当前 V2.1 默认是 `50` 步，并在 source
+actions 结束后追加 zero-action hold tail。这样旧数据刷新成 13D
+`env_state` 时不会把 terminal dump 的 plateau / `dump_end` 观察截断。
+需要临时覆盖时可用 `--post-tail-steps <N>`。
 
 ### 4.1 数据质检
 
@@ -688,6 +725,9 @@ tb-dataset-qc --dataset-dir data/agx_teleop_v1
 # 3b) 可选：通过 AGX 批量回放 QA（需要连 AGX）
 tb-replay --episode data/agx_teleop_v1/ --config testbed/configs/teleop_v1.yaml --save-video
 
+# 3c) 可选：用已有动作重放并重新记录当前 Unity 观测/env_state
+tb-replay --episode data/agx_teleop_v1/episode_0.hdf5 --config testbed/configs/teleop_v1.yaml --record-output-dir data/agx_teleop_v1_replayed_current
+
 # 4) 训练当前业务 baseline
 tb-train --config testbed/configs/act_agx_v1.yaml
 
@@ -834,29 +874,41 @@ schema 规则：
 - joystick / keyboard 录制参数快照
 
 一个关键点：
-- 当前 ACT 模仿学习训练 **不会** 直接把 `rewards`、`env_state`、`task_success` 当作监督信号
+- 当前 ACT 模仿学习训练 **不会** 直接把 `rewards`、`task_success` 当作监督信号
 - 当前 ACT data loader 实际吃的是：
   - `qpos`
   - `images`
   - `action`
-- `qvel / env_state / rewards / timestamps / metadata` 目前主要用于：
+  - 可选 low-dim：`qvel`、`goal_tokens`
+- `env_state` 不作为 policy 输入；它保留给 label、data filtering、reward/QC 和 rollout
+  诊断，避免把仿真/Unity 特权信息直接喂给可迁移模型
+- 未放进 `low_dim_keys` 的 `qvel / rewards / timestamps / metadata` 仍主要用于：
   - replay
   - dataset QC
   - rollout analysis
   - failure diagnosis
   - experiment record
 
+target-safety 训练还有一个额外契约：
+- 数据必须带齐 `target_horizontal_distance_m`、
+  `bucket_height_above_target_rim_m`、`bucket_over_target_footprint_mask`、
+  `dump_clearance_ok_mask`
+- `dump_clearance_ok_mask` 是 Unity source-of-truth clearance mask；TruckBed
+  可放宽水平距离，但垂直仍必须满足 `bucket_height_above_target_rim_m >= 0.0`
+- `tb-audit-target-geometry --dataset-dir <dataset>` 会检查覆盖率
+- 没有这些字段的旧数据仍可用于非 target-geometry 的诊断/训练线，但不要混进
+  target-safety workskill 训练
+- workskill builder 会写可选 `/v2/step/action_loss_mask`。默认 builder 现在写全
+  `1`，也就是不自动删 action 监督；裸 `bucket` action 阈值会误伤 digging
+  阶段，所以 pre-dump bucket action onset 只作为诊断统计，不作为默认 loss mask。
+
 这里还要明确一点：
 - 当前默认 baseline 里 ACT 的低维输入仍然只是 `qpos`
 - 这不代表 ACT “天然只能吃 position”
 - 在当前代码结构下，可以把低维 `robot_state` 扩成：
   - `concat(qpos, qvel)`
-  - 或 `concat(qpos, qvel, selected_env_state)`
-- 但这属于新的输入定义实验，需要同时改：
-  - dataset
-  - normalization stats
-  - adapter 推理入口
-  - model `state_dim`
+  - `concat(qpos, qvel, goal_tokens)`
+- `env_state` 只进入离线标签/筛选，不进入 ACT policy 输入线
 - 当前仓库已经落了一条独立的 `qpos+qvel` 实验路径：
   - [testbed/configs/act_agx_fulltest_qvel.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/act_agx_fulltest_qvel.yaml)
   - [testbed/configs/eval_agx_fulltest_qvel.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/eval_agx_fulltest_qvel.yaml)

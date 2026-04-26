@@ -1373,6 +1373,46 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
             self.assertEqual(action_data.shape[1:], (6, 4))
             self.assertEqual(is_pad.shape[1:], (6,))
 
+    def test_load_data_applies_v2_action_loss_mask(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dataset_dir = Path(tmpdir) / "dataset"
+            dataset_dir.mkdir(parents=True, exist_ok=True)
+            length = 3
+            write_episode(
+                dataset_dir / "episode_0.hdf5",
+                qpos=np.zeros((length, 4), dtype=np.float32),
+                qvel=np.zeros((length, 4), dtype=np.float32),
+                actions=np.ones((length, 4), dtype=np.float32),
+                images={"fpv": np.zeros((length, 8, 8, 3), dtype=np.uint8)},
+                rewards=np.zeros(length, dtype=np.float32),
+                metadata={"success": 1},
+                env_state=np.zeros((length, 9), dtype=np.float32),
+                v2={
+                    "step": {
+                        "action_loss_mask": np.zeros(length, dtype=np.uint8),
+                    },
+                },
+            )
+
+            train_loader, _, _, _, _ = load_data(
+                dataset_dir=dataset_dir,
+                num_episodes=1,
+                camera_names=["fpv"],
+                episode_len=length,
+                batch_size_train=1,
+                batch_size_val=1,
+                num_workers=0,
+                prefetch_factor=1,
+                persistent_workers=False,
+                pin_memory=False,
+                split_seed=0,
+                train_split_ratio=1.0,
+                reuse_split=False,
+            )
+
+            _, _, _, is_pad = next(iter(train_loader))
+            self.assertTrue(bool(torch.all(is_pad)))
+
     def test_write_and_read_episode_preserves_v2_extension(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "episode_0.hdf5"

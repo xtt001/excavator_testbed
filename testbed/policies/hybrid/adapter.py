@@ -9,10 +9,13 @@ import numpy as np
 
 from testbed.data.schema import (
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+    ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+    ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
-    ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX,
+    ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+    ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
     ENV_STATE_TARGET_CONTACT_MAX_NORMAL_FORCE_N_IDX,
     ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX,
 )
@@ -335,21 +338,77 @@ class HybridPlannerACTPolicy(Policy):
             obs.get("env_state", np.zeros(9, dtype=np.float32)),
             dtype=np.float32,
         ).reshape(-1)
-        if len(env_state) <= max(
-            ENV_STATE_MASS_IN_BUCKET_IDX,
-            ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX,
-        ):
+        task_metrics = dict(obs.get("task_metrics", {}) or {})
+        if len(env_state) <= ENV_STATE_MASS_IN_BUCKET_IDX and "mass_in_bucket_kg" not in task_metrics:
             return None
-        mass_in_bucket = float(env_state[ENV_STATE_MASS_IN_BUCKET_IDX])
-        min_distance_to_target = float(env_state[ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX])
-        if not np.isfinite(mass_in_bucket) or not np.isfinite(min_distance_to_target):
+        mass_in_bucket = float(
+            task_metrics.get(
+                "mass_in_bucket_kg",
+                env_state[ENV_STATE_MASS_IN_BUCKET_IDX]
+                if len(env_state) > ENV_STATE_MASS_IN_BUCKET_IDX
+                else 0.0,
+            )
+        )
+        if not np.isfinite(mass_in_bucket):
             return None
         if mass_in_bucket < self.work_target_guard_min_bucket_mass_kg:
             return None
 
+        def _target_metric(name: str, index: int) -> tuple[float, bool]:
+            if name in task_metrics:
+                value = float(task_metrics[name])
+                return value, bool(np.isfinite(value))
+            if len(env_state) <= index:
+                return 0.0, False
+            value = float(env_state[index])
+            return value, bool(np.isfinite(value))
+
+        target_horizontal_distance, has_target_horizontal_distance = _target_metric(
+            "target_horizontal_distance_m",
+            ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
+        )
+        bucket_height_above_target_rim, has_target_height = _target_metric(
+            "bucket_height_above_target_rim_m",
+            ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
+        )
+        bucket_over_target_footprint, has_target_footprint = _target_metric(
+            "bucket_over_target_footprint_mask",
+            ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+        )
+        dump_clearance_ok_mask, has_dump_clearance = _target_metric(
+            "dump_clearance_ok_mask",
+            ENV_STATE_DUMP_CLEARANCE_OK_IDX,
+        )
+        target_geometry_available = bool(
+            task_metrics.get(
+                "target_geometry_available",
+                float(
+                    has_target_horizontal_distance
+                    and target_horizontal_distance >= 0.0
+                    and has_target_height
+                    and has_target_footprint
+                    and has_dump_clearance
+                ),
+            )
+        )
+        if not target_geometry_available:
+            raise RuntimeError(
+                "work_target_guard requires target geometry fields "
+                "(target_horizontal_distance_m, bucket_height_above_target_rim_m, "
+                "bucket_over_target_footprint_mask, dump_clearance_ok_mask). "
+                "Legacy min_distance_to_target_m is not used as a fallback."
+            )
+        if not np.isfinite(target_horizontal_distance):
+            return None
+        dump_clearance_ok = bool(
+            dump_clearance_ok_mask > 0.5
+        )
+        if dump_clearance_ok:
+            return None
+
         bucket_action = float(action[3])
         if (
-            min_distance_to_target < self.work_target_guard_distance_m
+            target_horizontal_distance < self.work_target_guard_distance_m
             and bucket_action < self.work_target_guard_bucket_action_floor
         ):
             return (
@@ -357,7 +416,7 @@ class HybridPlannerACTPolicy(Policy):
                 float(self.work_target_guard_boom_action_min),
             )
         if (
-            min_distance_to_target < self.work_target_guard_approach_distance_m
+            target_horizontal_distance < self.work_target_guard_approach_distance_m
             and bucket_action < self.work_target_guard_approach_bucket_action_floor
         ):
             return (

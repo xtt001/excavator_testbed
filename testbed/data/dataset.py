@@ -18,7 +18,7 @@ import yaml
 from torch.utils.data import DataLoader, Dataset
 
 from testbed.data.hdf5_io import list_episodes
-from testbed.data.schema import DS_V2_STEP_GOAL_TOKENS
+from testbed.data.schema import DS_V2_STEP_ACTION_LOSS_MASK, DS_V2_STEP_GOAL_TOKENS
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
 
 
@@ -264,10 +264,12 @@ class EpisodicDataset(Dataset):
             # ── action from t0 onward (legacy hack for real data) ─────────
             if is_sim:
                 action     = f["/action"][t0:]
+                action_loss_mask = _read_action_loss_mask(f, start=t0)
                 action_len = T - t0
             else:
                 start = max(0, t0 - 1)
                 action     = f["/action"][start:]
+                action_loss_mask = _read_action_loss_mask(f, start=start)
                 action_len = T - start
 
         self.is_sim = is_sim
@@ -284,6 +286,14 @@ class EpisodicDataset(Dataset):
         padded_action[:action_len] = action
         is_pad = np.ones(target_len, dtype=bool)
         is_pad[:action_len] = False
+        if action_loss_mask is not None:
+            loss_mask = np.asarray(action_loss_mask[:action_len], dtype=np.uint8).reshape(-1)
+            if loss_mask.shape[0] != action_len:
+                raise ValueError(
+                    f"Episode {ep_id} action_loss_mask length {loss_mask.shape[0]} "
+                    f"does not match action_len {action_len}."
+                )
+            is_pad[:action_len] |= loss_mask == 0
 
         # ── assemble camera tensor ─────────────────────────────────────────
         all_cam_images = np.stack(
@@ -582,4 +592,14 @@ def _read_goal_tokens_dataset(h5_file, index: int | None = None) -> np.ndarray:
         raise ValueError(
             f"/v2/step/goal_tokens must have last dimension {expected_dim}, got {arr.shape}."
         )
+    return arr
+
+
+def _read_action_loss_mask(h5_file, *, start: int) -> np.ndarray | None:
+    if DS_V2_STEP_ACTION_LOSS_MASK not in h5_file:
+        return None
+    dataset = h5_file[DS_V2_STEP_ACTION_LOSS_MASK]
+    arr = np.asarray(dataset[start:], dtype=np.uint8)
+    if arr.ndim != 1:
+        raise ValueError(f"/v2/step/action_loss_mask must be rank-1, got {arr.shape}.")
     return arr

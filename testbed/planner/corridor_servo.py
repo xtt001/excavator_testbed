@@ -129,6 +129,8 @@ class TransitionController:
         wait_next_dig_max_steps: int = 120,
         wait_next_dig_mode: str = WAIT_NEXT_DIG_MODE_WORK_POLICY_HANDOFF,
         wait_next_dig_reentry_template_qpos: np.ndarray | list[float] | tuple[float, ...] | None = None,
+        scripted_bucket_qpos_target: float | None = None,
+        scripted_bucket_qpos_tolerance: float = 0.03,
     ) -> None:
         if not bands:
             raise ValueError("TransitionController requires at least one corridor band.")
@@ -152,6 +154,12 @@ class TransitionController:
         self.corridor_align_hold_steps = int(corridor_align_hold_steps)
         self.wait_next_dig_max_steps = int(wait_next_dig_max_steps)
         self.wait_next_dig_mode = str(wait_next_dig_mode)
+        self.scripted_bucket_qpos_target = (
+            None
+            if scripted_bucket_qpos_target is None
+            else float(scripted_bucket_qpos_target)
+        )
+        self.scripted_bucket_qpos_tolerance = float(scripted_bucket_qpos_tolerance)
         if wait_next_dig_reentry_template_qpos is None:
             self.wait_next_dig_reentry_template_qpos = np.asarray(
                 [0.50, 0.255, 0.520, 0.0002],
@@ -248,6 +256,7 @@ class TransitionController:
                 [self._band.center[0], 0.72, 0.46, 0.78],
                 dtype=np.float32,
             )
+            target_qpos = self._scripted_target_qpos(target_qpos)
             action = _pd_servo(
                 qpos=qpos,
                 qvel=qvel,
@@ -275,7 +284,7 @@ class TransitionController:
         elif self._submode == TRANSITION_SUBMODE_CORRIDOR_ALIGN:
             self._submode_steps += 1
             self._corridor_align_steps += 1
-            target_qpos = self._band.center
+            target_qpos = self._scripted_target_qpos(self._band.center)
             action = _pd_servo(
                 qpos=qpos,
                 qvel=qvel,
@@ -284,7 +293,7 @@ class TransitionController:
                 kd=self.kd,
                 action_clip=self.action_clip_by_joint,
             )
-            in_band = bool(np.all(qpos >= self._band.qpos_lo) and np.all(qpos <= self._band.qpos_hi))
+            in_band = self._corridor_in_band(qpos)
             qvel_small = bool(np.all(np.abs(qvel) <= self.corridor_align_qvel_abs_max))
             if in_band and qvel_small:
                 self._align_hold_steps += 1
@@ -302,7 +311,7 @@ class TransitionController:
             if self.wait_next_dig_mode == WAIT_NEXT_DIG_MODE_SERVO_REENTRY_POSE:
                 target_qpos = self.wait_next_dig_reentry_target_qpos(self._band.name)
             else:
-                target_qpos = self._band.center
+                target_qpos = self._scripted_target_qpos(self._band.center)
             action = _pd_servo(
                 qpos=qpos,
                 qvel=qvel,
@@ -344,7 +353,27 @@ class TransitionController:
         band = self.bands[str(sector_name)]
         target = self.wait_next_dig_reentry_template_qpos.copy()
         target[0] = float(band.center[0])
+        target = self._scripted_target_qpos(target)
         return target.astype(np.float32)
+
+    def _scripted_target_qpos(self, target_qpos: np.ndarray) -> np.ndarray:
+        target = np.asarray(target_qpos, dtype=np.float32).copy()
+        if self.scripted_bucket_qpos_target is not None:
+            target[3] = float(self.scripted_bucket_qpos_target)
+        return target
+
+    def _corridor_in_band(self, qpos: np.ndarray) -> bool:
+        if self._band is None:
+            return False
+        qpos_arr = np.asarray(qpos, dtype=np.float32).reshape(4)
+        qpos_lo = np.asarray(self._band.qpos_lo, dtype=np.float32).copy()
+        qpos_hi = np.asarray(self._band.qpos_hi, dtype=np.float32).copy()
+        if self.scripted_bucket_qpos_target is not None:
+            bucket_target = float(self.scripted_bucket_qpos_target)
+            bucket_tol = max(0.0, float(self.scripted_bucket_qpos_tolerance))
+            qpos_lo[3] = bucket_target - bucket_tol
+            qpos_hi[3] = bucket_target + bucket_tol
+        return bool(np.all(qpos_arr >= qpos_lo) and np.all(qpos_arr <= qpos_hi))
 
 
 def _pd_servo(

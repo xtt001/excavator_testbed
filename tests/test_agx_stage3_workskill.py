@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,6 +27,18 @@ from testbed.data.workskill_v2_1 import (
     CLEAN_PROFILE_STAGE5_STRICT,
     build_workskill_dataset,
 )
+
+
+def _with_target_geometry(env_state: np.ndarray) -> np.ndarray:
+    arr = np.asarray(env_state, dtype=np.float32)
+    if arr.ndim != 2 or arr.shape[1] >= 13:
+        return arr
+    geometry = np.zeros((arr.shape[0], 4), dtype=np.float32)
+    geometry[:, 0] = arr[:, 4]
+    geometry[:, 1] = 0.10
+    geometry[:, 2] = 1.0
+    geometry[:, 3] = 1.0
+    return np.concatenate([arr, geometry], axis=1)
 
 
 class TestStage3Workskill(unittest.TestCase):
@@ -64,7 +77,7 @@ class TestStage3Workskill(unittest.TestCase):
         v2_payload, _ = label_episode_v2_1(
             qpos=qpos,
             actions=actions,
-            env_state=env_state,
+            env_state=_with_target_geometry(env_state),
             metadata={
                 "stop_reason": "target_dump_count_reached",
                 "target_dump_count": 1,
@@ -94,12 +107,18 @@ class TestStage3Workskill(unittest.TestCase):
                 length,
                 axis=0,
             ).astype(np.float32)
+            actions = np.ones((length, 4), dtype=np.float32)
+            actions[3, 3] = -0.50
+            env_state = np.zeros((length, 9), dtype=np.float32)
+            env_state[:, 4] = 0.75
+            env_state[3, 4] = 0.30
+            env_state = _with_target_geometry(env_state)
             source_path = dataset_dir / "episode_0.hdf5"
             write_episode(
                 source_path,
                 qpos=np.arange(length * 4, dtype=np.float32).reshape(length, 4),
                 qvel=np.zeros((length, 4), dtype=np.float32),
-                actions=np.ones((length, 4), dtype=np.float32),
+                actions=actions,
                 images={"fpv": np.arange(length * 4 * 4 * 3, dtype=np.uint8).reshape(length, 4, 4, 3)},
                 rewards=np.arange(length, dtype=np.float32),
                 metadata={
@@ -108,7 +127,7 @@ class TestStage3Workskill(unittest.TestCase):
                     "goal_token_version": GOAL_TOKEN_VERSION,
                     "phase_version": "v2_1_mode_phase_7cls",
                 },
-                env_state=np.zeros((length, 9), dtype=np.float32),
+                env_state=env_state,
                 step_ids=np.arange(length, dtype=np.int64),
                 step_ns=np.arange(length, dtype=np.int64) * 10,
                 action_src_types=["teleop"] * length,
@@ -170,6 +189,21 @@ class TestStage3Workskill(unittest.TestCase):
             self.assertEqual(cropped_episode["v2"]["cycle"]["end_step"].tolist(), [3])
             self.assertEqual(cropped_episode["v2"]["cycle"]["cycle_success"].tolist(), [1])
             self.assertEqual(cropped_episode["v2"]["step"]["goal_tokens"].shape, (4, GOAL_TOKEN_DIM))
+            self.assertEqual(cropped_episode["v2"]["step"]["action_loss_mask"].tolist(), [1, 1, 1, 1])
+            with open(output_dir / "summary.json") as f:
+                summary = json.load(f)
+            self.assertEqual(summary["kept_strong_dump_frame_count_distribution"]["max"], 1.0)
+            self.assertEqual(
+                summary["kept_strong_dump_near_target_frame_count_distribution"]["max"],
+                1.0,
+            )
+            self.assertAlmostEqual(
+                summary["kept_strong_dump_min_target_distance_distribution_m"]["min"],
+                0.30,
+                places=5,
+            )
+            self.assertEqual(summary["kept_action_loss_masked_frame_count_distribution"]["max"], 0.0)
+            self.assertEqual(summary["action_loss_mask_policy"]["ignored_cases"], [])
 
     def test_build_workskill_dataset_fails_without_successful_cycles(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -256,7 +290,7 @@ class TestStage3Workskill(unittest.TestCase):
                 actions=np.full((length, 4), 0.08, dtype=np.float32),
                 images={"fpv": np.zeros((length, 4, 4, 3), dtype=np.uint8)},
                 metadata={"scenario_id": "s0_truck", "v2_enabled": True},
-                env_state=env_state,
+                env_state=_with_target_geometry(env_state),
                 v2={
                     "step": {
                         "cycle_id": np.asarray([-1, 0, 0, 0, 0, 0, 0, -1], dtype=np.int32),
@@ -337,7 +371,7 @@ class TestStage3Workskill(unittest.TestCase):
                 actions=np.full((length, 4), 0.08, dtype=np.float32),
                 images={"fpv": np.zeros((length, 4, 4, 3), dtype=np.uint8)},
                 metadata={"scenario_id": "s0_truck", "v2_enabled": True},
-                env_state=env_state,
+                env_state=_with_target_geometry(env_state),
                 v2={
                     "step": {
                         "cycle_id": np.concatenate(
@@ -423,7 +457,7 @@ class TestStage3Workskill(unittest.TestCase):
                 actions=np.full((length, 4), 0.08, dtype=np.float32),
                 images={"fpv": np.zeros((length, 4, 4, 3), dtype=np.uint8)},
                 metadata={"scenario_id": "s0_truck", "v2_enabled": True},
-                env_state=env_state,
+                env_state=_with_target_geometry(env_state),
                 v2={
                     "step": {
                         "cycle_id": np.asarray([-1] + [0] * (length - 2) + [-1], dtype=np.int32),
@@ -535,7 +569,7 @@ class TestStage3Workskill(unittest.TestCase):
             dump_start_mask=dump_start_mask,
             bucket_depth=bucket_depth,
             mass_in_bucket=mass,
-            env_state=env_state,
+            env_state=_with_target_geometry(env_state),
         )
 
         self.assertEqual(int(work_stage_id[1]), WORK_STAGE_NAME_TO_ID["entry_to_bite"])
@@ -573,7 +607,7 @@ class TestStage3Workskill(unittest.TestCase):
                 actions=np.full((length, 4), 0.08, dtype=np.float32),
                 images={"fpv": np.zeros((length, 4, 4, 3), dtype=np.uint8)},
                 metadata={"scenario_id": "s0_truck", "v2_enabled": True},
-                env_state=env_state,
+                env_state=_with_target_geometry(env_state),
                 v2={
                     "step": {
                         "cycle_id": np.asarray([-1] + [0] * (length - 2) + [-1], dtype=np.int32),
@@ -647,7 +681,7 @@ class TestStage3Workskill(unittest.TestCase):
                 actions=np.full((length, 4), 0.08, dtype=np.float32),
                 images={"fpv": np.zeros((length, 4, 4, 3), dtype=np.uint8)},
                 metadata={"scenario_id": "s0_truck", "v2_enabled": True},
-                env_state=env_state,
+                env_state=_with_target_geometry(env_state),
                 v2={
                     "step": {
                         "cycle_id": np.asarray([-1] + [0] * (length - 2) + [-1], dtype=np.int32),
@@ -722,7 +756,7 @@ class TestStage3Workskill(unittest.TestCase):
                 actions=np.full((length, 4), 0.08, dtype=np.float32),
                 images={"fpv": np.zeros((length, 4, 4, 3), dtype=np.uint8)},
                 metadata={"scenario_id": "s0_truck", "v2_enabled": True},
-                env_state=env_state,
+                env_state=_with_target_geometry(env_state),
                 v2={
                     "step": {
                         "cycle_id": np.concatenate(
@@ -801,7 +835,7 @@ class TestStage3Workskill(unittest.TestCase):
                 actions=np.full((length, 4), 0.08, dtype=np.float32),
                 images={"fpv": np.zeros((length, 4, 4, 3), dtype=np.uint8)},
                 metadata={"scenario_id": "s0_truck", "v2_enabled": True},
-                env_state=env_state,
+                env_state=_with_target_geometry(env_state),
                 v2={
                     "step": {
                         "cycle_id": np.concatenate(
@@ -922,7 +956,7 @@ class TestStage3Workskill(unittest.TestCase):
         v2_payload, _ = label_episode_v2_1(
             qpos=qpos,
             actions=actions,
-            env_state=env_state,
+            env_state=_with_target_geometry(env_state),
             metadata={"success": 1},
             scenario_id="s0_truck",
         )

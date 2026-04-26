@@ -9,9 +9,12 @@ import numpy as np
 
 from testbed.data.schema import (
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+    ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
+    ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+    ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
-    ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX,
+    ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
 
 FLAT_BUCKET_QPOS_THRESH = 0.20
@@ -52,6 +55,50 @@ def _safe_env_scalar(record: dict[str, Any], index: int) -> float | None:
     if not np.isfinite(value):
         return None
     return value
+
+
+def _target_geometry(record: dict[str, Any]) -> dict[str, float] | None:
+    task_metrics = dict(record.get("task_metrics", {}) or {})
+    if float(task_metrics.get("target_geometry_available", 1.0)) <= 0.0:
+        return None
+    required_metric_keys = (
+        "target_horizontal_distance_m",
+        "bucket_height_above_target_rim_m",
+        "bucket_over_target_footprint_mask",
+        "dump_clearance_ok_mask",
+    )
+    if all(key in task_metrics for key in required_metric_keys):
+        values = {key: float(task_metrics[key]) for key in required_metric_keys}
+        if all(np.isfinite(value) for value in values.values()):
+            return values
+
+    env_state = record.get("env_state")
+    if env_state is None:
+        return None
+    arr = np.asarray(env_state, dtype=np.float32).reshape(-1)
+    required_indices = (
+        ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
+        ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
+        ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+        ENV_STATE_DUMP_CLEARANCE_OK_IDX,
+    )
+    if any(index >= len(arr) for index in required_indices):
+        return None
+    values = {
+        "target_horizontal_distance_m": float(arr[ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX]),
+        "bucket_height_above_target_rim_m": float(
+            arr[ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX]
+        ),
+        "bucket_over_target_footprint_mask": float(
+            arr[ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX]
+        ),
+        "dump_clearance_ok_mask": float(arr[ENV_STATE_DUMP_CLEARANCE_OK_IDX]),
+    }
+    if not all(np.isfinite(value) for value in values.values()):
+        return None
+    if values["target_horizontal_distance_m"] < 0.0:
+        return None
+    return values
 
 
 def _safe_bucket_qpos(record: dict[str, Any]) -> float | None:
@@ -156,6 +203,8 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
             "unsafe_target_distance_rate": 0.0,
             "hard_target_collision_count": 0,
             "hard_target_collision_rate": 0.0,
+            "target_geometry_available_count": 0,
+            "target_geometry_available_rate": 0.0,
             "qualified_dig_start_count": 0,
             "dump_start_count": 0,
             "dump_end_count": 0,
@@ -168,6 +217,10 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
             "shallow_peak_bucket_depth_rate": 0.0,
             "dump_start_distance_mean": 0.0,
             "dump_start_distance_max": 0.0,
+            "dump_start_horizontal_distance_mean": 0.0,
+            "dump_start_horizontal_distance_max": 0.0,
+            "dump_start_geometry_missing_count": 0,
+            "dump_start_geometry_missing_rate": 0.0,
             "far_dump_start_count": 0,
             "far_dump_start_rate": 0.0,
             "near_dump_start_count": 0,
@@ -188,6 +241,9 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
     spill_before_target_count = _count_failure(step_records, "spill_before_target")
     unsafe_target_distance_count = _count_failure(step_records, "unsafe_target_distance")
     hard_target_collision_count = _count_failure(step_records, "hard_target_collision")
+    target_geometry_available_count = int(
+        sum(_target_geometry(record) is not None for record in step_records)
+    )
 
     windows = _build_cycle_windows(step_records)
     qds_bucket_qpos_values: list[float] = []
@@ -200,6 +256,7 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
     shallow_peak_bucket_depth_count = 0
     far_dump_start_count = 0
     near_dump_start_count = 0
+    dump_start_geometry_missing_count = 0
     low_carry_efficiency_count = 0
     high_residual_bucket_mass_count = 0
     dig_area_escape_cycle_count = 0
@@ -230,10 +287,15 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
                 shallow_peak_bucket_depth_count += 1
 
         if window.dump_start_idx is not None:
-            dump_start_distance = _safe_env_scalar(
-                step_records[window.dump_start_idx], ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX
+            geometry = _target_geometry(step_records[window.dump_start_idx])
+            dump_start_distance = (
+                None
+                if geometry is None
+                else float(geometry["target_horizontal_distance_m"])
             )
-            if dump_start_distance is not None:
+            if dump_start_distance is None:
+                dump_start_geometry_missing_count += 1
+            else:
                 dump_start_distance_values.append(dump_start_distance)
                 if dump_start_distance > FAR_DUMP_START_DISTANCE_M:
                     far_dump_start_count += 1
@@ -301,6 +363,8 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
         "unsafe_target_distance_rate": float(unsafe_target_distance_count) / float(n_steps),
         "hard_target_collision_count": int(hard_target_collision_count),
         "hard_target_collision_rate": float(hard_target_collision_count) / float(n_steps),
+        "target_geometry_available_count": int(target_geometry_available_count),
+        "target_geometry_available_rate": float(target_geometry_available_count) / float(n_steps),
         "qualified_dig_start_count": qds_count_actual,
         "dump_start_count": dump_start_count_actual,
         "dump_end_count": dump_end_count_actual,
@@ -314,6 +378,11 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
         / float(qds_count),
         "dump_start_distance_mean": _safe_array_mean(dump_start_distance_values),
         "dump_start_distance_max": _safe_array_max(dump_start_distance_values),
+        "dump_start_horizontal_distance_mean": _safe_array_mean(dump_start_distance_values),
+        "dump_start_horizontal_distance_max": _safe_array_max(dump_start_distance_values),
+        "dump_start_geometry_missing_count": int(dump_start_geometry_missing_count),
+        "dump_start_geometry_missing_rate": float(dump_start_geometry_missing_count)
+        / float(dump_start_count),
         "far_dump_start_count": int(far_dump_start_count),
         "far_dump_start_rate": float(far_dump_start_count) / float(dump_start_count),
         "near_dump_start_count": int(near_dump_start_count),
@@ -358,6 +427,8 @@ def aggregate_quality_metrics(
         "avg_unsafe_target_distance_rate": _avg("unsafe_target_distance_rate"),
         "avg_hard_target_collision_count": _avg("hard_target_collision_count"),
         "avg_hard_target_collision_rate": _avg("hard_target_collision_rate"),
+        "avg_target_geometry_available_count": _avg("target_geometry_available_count"),
+        "avg_target_geometry_available_rate": _avg("target_geometry_available_rate"),
         "avg_qds_bucket_qpos_mean": _avg("qds_bucket_qpos_mean"),
         "avg_qds_bucket_qpos_max": _avg("qds_bucket_qpos_max"),
         "avg_flat_bucket_qds_count": _avg("flat_bucket_qds_count"),
@@ -367,6 +438,18 @@ def aggregate_quality_metrics(
         "avg_shallow_peak_bucket_depth_rate": _avg("shallow_peak_bucket_depth_rate"),
         "avg_dump_start_distance_mean": _avg("dump_start_distance_mean"),
         "avg_dump_start_distance_max": _avg("dump_start_distance_max"),
+        "avg_dump_start_horizontal_distance_mean": _avg(
+            "dump_start_horizontal_distance_mean"
+        ),
+        "avg_dump_start_horizontal_distance_max": _avg(
+            "dump_start_horizontal_distance_max"
+        ),
+        "avg_dump_start_geometry_missing_count": _avg(
+            "dump_start_geometry_missing_count"
+        ),
+        "avg_dump_start_geometry_missing_rate": _avg(
+            "dump_start_geometry_missing_rate"
+        ),
         "avg_far_dump_start_count": _avg("far_dump_start_count"),
         "avg_far_dump_start_rate": _avg("far_dump_start_rate"),
         "avg_near_dump_start_count": _avg("near_dump_start_count"),

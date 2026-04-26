@@ -163,6 +163,17 @@ AGX_TARGET_HARD_COLLISION_COUNT = "target_hard_collision_count"
 AGX_TARGET_CONTACT_MAX_NORMAL_FORCE_N = "target_contact_max_normal_force_n"
 AGX_MIN_DISTANCE_TO_DIG_AREA = "min_distance_to_dig_area_m"
 AGX_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE = "bucket_depth_below_dig_area_plane_m"
+AGX_TARGET_HORIZONTAL_DISTANCE = "target_horizontal_distance_m"
+AGX_BUCKET_HEIGHT_ABOVE_TARGET_RIM = "bucket_height_above_target_rim_m"
+AGX_BUCKET_OVER_TARGET_FOOTPRINT = "bucket_over_target_footprint_mask"
+AGX_DUMP_CLEARANCE_OK = "dump_clearance_ok_mask"
+
+AGX_TARGET_GEOMETRY_FIELDS = (
+    AGX_TARGET_HORIZONTAL_DISTANCE,
+    AGX_BUCKET_HEIGHT_ABOVE_TARGET_RIM,
+    AGX_BUCKET_OVER_TARGET_FOOTPRINT,
+    AGX_DUMP_CLEARANCE_OK,
+)
 
 AGX_PHASE_LABELS: dict[float, str] = {
     0.0: "idle",
@@ -215,6 +226,10 @@ class AgxExcavationFieldIndices:
     target_contact_max_normal_force_n_idx: int | None = None
     min_distance_to_dig_area_idx: int | None = None
     bucket_depth_below_dig_area_plane_idx: int | None = None
+    target_horizontal_distance_idx: int | None = None
+    bucket_height_above_target_rim_idx: int | None = None
+    bucket_over_target_footprint_idx: int | None = None
+    dump_clearance_ok_idx: int | None = None
 
 
 @dataclass(frozen=True)
@@ -228,6 +243,18 @@ class AgxExcavationObservation:
     target_contact_max_normal_force_n: float = 0.0
     min_distance_to_dig_area_m: float = -1.0
     bucket_depth_below_dig_area_plane_m: float = 0.0
+    target_horizontal_distance_m: float = -1.0
+    bucket_height_above_target_rim_m: float = 0.0
+    bucket_over_target_footprint_mask: float = 0.0
+    dump_clearance_ok_mask: float = 0.0
+    target_geometry_available: bool = False
+
+    @property
+    def dump_clearance_ok(self) -> bool:
+        return bool(
+            self.target_geometry_available
+            and self.dump_clearance_ok_mask > 0.5
+        )
 
     def value_for(self, signal_name: str) -> float:
         if signal_name == AGX_MASS_IN_BUCKET:
@@ -248,6 +275,14 @@ class AgxExcavationObservation:
             return self.min_distance_to_dig_area_m
         if signal_name == AGX_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE:
             return self.bucket_depth_below_dig_area_plane_m
+        if signal_name == AGX_TARGET_HORIZONTAL_DISTANCE:
+            return self.target_horizontal_distance_m
+        if signal_name == AGX_BUCKET_HEIGHT_ABOVE_TARGET_RIM:
+            return self.bucket_height_above_target_rim_m
+        if signal_name == AGX_BUCKET_OVER_TARGET_FOOTPRINT:
+            return self.bucket_over_target_footprint_mask
+        if signal_name == AGX_DUMP_CLEARANCE_OK:
+            return self.dump_clearance_ok_mask
         return 0.0
 
 
@@ -387,6 +422,10 @@ def resolve_agx_field_indices(env_state_order: Iterable[str]) -> AgxExcavationFi
         target_contact_max_normal_force_n_idx=_lookup(AGX_TARGET_CONTACT_MAX_NORMAL_FORCE_N),
         min_distance_to_dig_area_idx=_lookup(AGX_MIN_DISTANCE_TO_DIG_AREA),
         bucket_depth_below_dig_area_plane_idx=_lookup(AGX_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE),
+        target_horizontal_distance_idx=_lookup(AGX_TARGET_HORIZONTAL_DISTANCE),
+        bucket_height_above_target_rim_idx=_lookup(AGX_BUCKET_HEIGHT_ABOVE_TARGET_RIM),
+        bucket_over_target_footprint_idx=_lookup(AGX_BUCKET_OVER_TARGET_FOOTPRINT),
+        dump_clearance_ok_idx=_lookup(AGX_DUMP_CLEARANCE_OK),
     )
 
 
@@ -400,6 +439,38 @@ def decode_agx_env_state(
         if index is None or index < 0 or index >= len(env_state):
             return default
         return float(env_state[index])
+
+    def _read_available(index: int | None, default: float) -> tuple[float, bool]:
+        if index is None or index < 0 or index >= len(env_state):
+            return default, False
+        value = float(env_state[index])
+        if not np.isfinite(value):
+            return default, False
+        return value, True
+
+    target_horizontal_distance, has_horizontal_distance = _read_available(
+        field_indices.target_horizontal_distance_idx,
+        -1.0,
+    )
+    bucket_height_above_target_rim, has_target_height = _read_available(
+        field_indices.bucket_height_above_target_rim_idx,
+        0.0,
+    )
+    bucket_over_target_footprint, has_target_footprint = _read_available(
+        field_indices.bucket_over_target_footprint_idx,
+        0.0,
+    )
+    dump_clearance_ok, has_dump_clearance = _read_available(
+        field_indices.dump_clearance_ok_idx,
+        0.0,
+    )
+    target_geometry_available = bool(
+        has_horizontal_distance
+        and target_horizontal_distance >= 0.0
+        and has_target_height
+        and has_target_footprint
+        and has_dump_clearance
+    )
 
     return AgxExcavationObservation(
         mass_in_bucket_kg=max(0.0, _read(field_indices.mass_in_bucket_idx, 0.0)),
@@ -423,6 +494,11 @@ def decode_agx_env_state(
             0.0,
             _read(field_indices.bucket_depth_below_dig_area_plane_idx, 0.0),
         ),
+        target_horizontal_distance_m=target_horizontal_distance,
+        bucket_height_above_target_rim_m=bucket_height_above_target_rim,
+        bucket_over_target_footprint_mask=bucket_over_target_footprint,
+        dump_clearance_ok_mask=dump_clearance_ok,
+        target_geometry_available=target_geometry_available,
     )
 
 
@@ -438,9 +514,10 @@ class AgxExcavationRewardTracker:
     - increasing mass retained in the active target
     - holding retained target mass above the configured success threshold
 
-    If the Unity server still exports the legacy shorter env_state layout, the
-    DigArea gate is disabled automatically and the older reward behavior is
-    preserved.
+    Target approach and target-safety reward terms require the explicit target
+    geometry contract. The legacy scalar min_distance_to_target_m remains a
+    logged metric only and is not used as a substitute for horizontal distance
+    or dump clearance.
     """
 
     def __init__(
@@ -540,12 +617,19 @@ class AgxExcavationRewardTracker:
             self._good_dig_started = True
 
         good_dig_gate_open = (not self._dig_area_gating_enabled) or self._good_dig_started
-        has_valid_distance = observation.min_distance_to_target_m >= 0.0
-        previous_has_valid_distance = previous.min_distance_to_target_m >= 0.0
+        has_valid_distance = (
+            observation.target_geometry_available
+            and observation.target_horizontal_distance_m >= 0.0
+        )
+        previous_has_valid_distance = (
+            previous.target_geometry_available
+            and previous.target_horizontal_distance_m >= 0.0
+        )
         distance_improvement = 0.0
         if has_valid_distance and previous_has_valid_distance:
             distance_improvement = (
-                previous.min_distance_to_target_m - observation.min_distance_to_target_m
+                previous.target_horizontal_distance_m
+                - observation.target_horizontal_distance_m
             )
 
         has_load_progress = raw_load_progress and good_dig_gate_open
@@ -561,7 +645,7 @@ class AgxExcavationRewardTracker:
         in_target_approach_zone = (
             has_load
             and has_valid_distance
-            and observation.min_distance_to_target_m <= mission.target_approach_distance_m
+            and observation.target_horizontal_distance_m <= mission.target_approach_distance_m
         )
         deposit_progress = (
             good_dig_gate_open
@@ -579,7 +663,8 @@ class AgxExcavationRewardTracker:
         )
         unsafe_distance = (
             has_valid_distance
-            and observation.min_distance_to_target_m <= mission.unsafe_distance_m
+            and observation.target_horizontal_distance_m <= mission.unsafe_distance_m
+            and not observation.dump_clearance_ok
         )
         hard_target_collision = delta_target_hard_collision_count > 0.0
         spill_detected = (
@@ -618,7 +703,10 @@ class AgxExcavationRewardTracker:
             approach_component = float(
                 np.clip(
                     1.0
-                    - (observation.min_distance_to_target_m / max(mission.target_approach_distance_m, 1.0e-6)),
+                    - (
+                        observation.target_horizontal_distance_m
+                        / max(mission.target_approach_distance_m, 1.0e-6)
+                    ),
                     0.0,
                     1.0,
                 )
@@ -690,7 +778,8 @@ class AgxExcavationRewardTracker:
             in_target_approach_zone
             and (
                 not previous_has_valid_distance
-                or previous.min_distance_to_target_m > mission.target_approach_distance_m
+                or previous.target_horizontal_distance_m
+                > mission.target_approach_distance_m
             )
         ):
             step_successes.append("entered_target_zone")
@@ -730,6 +819,12 @@ class AgxExcavationRewardTracker:
                 "mass_in_target_box_kg": observation.mass_in_target_box_kg,
                 "deposited_mass_in_target_box_kg": observation.deposited_mass_in_target_box_kg,
                 "min_distance_to_target_m": observation.min_distance_to_target_m,
+                "target_horizontal_distance_m": observation.target_horizontal_distance_m,
+                "bucket_height_above_target_rim_m": observation.bucket_height_above_target_rim_m,
+                "bucket_over_target_footprint_mask": observation.bucket_over_target_footprint_mask,
+                "dump_clearance_ok_mask": observation.dump_clearance_ok_mask,
+                "target_geometry_available": float(observation.target_geometry_available),
+                "dump_clearance_ok": float(observation.dump_clearance_ok),
                 "target_hard_collision_count": observation.target_hard_collision_count,
                 "target_contact_max_normal_force_n": observation.target_contact_max_normal_force_n,
                 "min_distance_to_dig_area_m": observation.min_distance_to_dig_area_m,

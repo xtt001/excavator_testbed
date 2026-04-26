@@ -59,6 +59,10 @@ Schema v1.1 layout (add-only on top of v1.0)
 │   ├── target_dump_count   int   optional
 │   ├── stop_reason         str   optional
 │   ├── transition_source   str   optional
+│   ├── replay_source_episode str optional
+│   ├── replay_source_dataset str optional
+│   ├── replay_config_path  str   optional
+│   ├── replay_post_tail_steps int optional
 │   └── v2_enabled          int/bool optional
 │
 ├── observations/
@@ -71,7 +75,11 @@ Schema v1.1 layout (add-only on top of v1.0)
 │   │                                      target_hard_collision_count,
 │   │                                      target_contact_max_normal_force_n,
 │   │                                      min_distance_to_dig_area_m,
-│   │                                      bucket_depth_below_dig_area_plane_m]  ← v1.1
+│   │                                      bucket_depth_below_dig_area_plane_m,
+│   │                                      target_horizontal_distance_m,
+│   │                                      bucket_height_above_target_rim_m,
+│   │                                      bucket_over_target_footprint_mask,
+│   │                                      dump_clearance_ok_mask]  ← v1.1 add-only
 │   └── images/
 │       └── fpv              (T, H, W, 3) uint8                        ← v1.1
 │
@@ -96,6 +104,7 @@ Optional Repo A `/v2` extension group (still schema_version="1.1")
 │   ├── phase_progress       (T,)    float32
 │   ├── work_stage_id        (T,)    uint8
 │   ├── goal_tokens          (T, 10) float32
+│   ├── action_loss_mask     (T,)    uint8 optional, 1=train action, 0=ignore
 │   ├── planner_replan_mask  (T,)    uint8
 │   ├── qualified_dig_start_mask (T,) uint8
 │   ├── dump_start_mask      (T,)    uint8
@@ -154,6 +163,7 @@ DS_V2_STEP_PHASE_ID       = "v2/step/phase_id"
 DS_V2_STEP_PHASE_PROGRESS = "v2/step/phase_progress"
 DS_V2_STEP_WORK_STAGE_ID  = "v2/step/work_stage_id"
 DS_V2_STEP_GOAL_TOKENS    = "v2/step/goal_tokens"
+DS_V2_STEP_ACTION_LOSS_MASK = "v2/step/action_loss_mask"
 DS_V2_STEP_PLANNER_REPLAN_MASK = "v2/step/planner_replan_mask"
 DS_V2_STEP_QUALIFIED_DIG_START_MASK = "v2/step/qualified_dig_start_mask"
 DS_V2_STEP_DUMP_START_MASK = "v2/step/dump_start_mask"
@@ -231,6 +241,10 @@ ATTR_RECORDING_MODE = "recording_mode"
 ATTR_TARGET_DUMP_COUNT = "target_dump_count"
 ATTR_STOP_REASON = "stop_reason"
 ATTR_TRANSITION_SOURCE = "transition_source"
+ATTR_REPLAY_SOURCE_EPISODE = "replay_source_episode"
+ATTR_REPLAY_SOURCE_DATASET = "replay_source_dataset"
+ATTR_REPLAY_CONFIG_PATH = "replay_config_path"
+ATTR_REPLAY_POST_TAIL_STEPS = "replay_post_tail_steps"
 ATTR_V2_ENABLED = "v2_enabled"
 
 # ── V0 locked constants ───────────────────────────────────────────────────────
@@ -249,6 +263,10 @@ ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX = 5
 ENV_STATE_TARGET_CONTACT_MAX_NORMAL_FORCE_N_IDX = 6
 ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX = 7
 ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX = 8
+ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX = 9
+ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX = 10
+ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX = 11
+ENV_STATE_DUMP_CLEARANCE_OK_IDX = 12
 
 # ── Image dataset name template ───────────────────────────────────────────────
 def image_ds(cam_name: str) -> str:

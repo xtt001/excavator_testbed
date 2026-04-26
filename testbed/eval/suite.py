@@ -20,6 +20,7 @@ Success rules
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +28,7 @@ import numpy as np
 from testbed.eval.rollout_logs import (
     build_rollout_manifest,
     build_rollout_summary,
+    to_jsonable,
     write_json,
     write_jsonl,
 )
@@ -74,6 +76,8 @@ class EvalSuite:
     agx_timeout  AGX socket timeout seconds (only used when backend_type=="agx").
     save_rollout_logs  If True, write JSONL timestep logs and summaries.
     rollout_log_dir    Directory for rollout_XXX.jsonl and summary files.
+    stream_rollout_logs If True, append rollout_XXX.partial.jsonl during the
+                      rollout so interrupted runs still leave timestep evidence.
     step_log_interval  Print step progress every N steps during rollout.
     mass_thresh  Override task.mass_thresh (AGX success threshold).
     hold_steps   Override task.hold_steps for AGX success.
@@ -108,6 +112,7 @@ class EvalSuite:
         results_dir: str | Path | None = None,
         ckpt_path: str = "",
         save_rollout_logs: bool = True,
+        stream_rollout_logs: bool = False,
         rollout_log_dir: str | Path | None = None,
         step_log_interval: int = 50,
         agx_host: str = "127.0.0.1",
@@ -137,6 +142,7 @@ class EvalSuite:
         self.save_video   = save_video
         self.ckpt_path    = ckpt_path
         self.save_rollout_logs = bool(save_rollout_logs)
+        self.stream_rollout_logs = bool(stream_rollout_logs)
         self.step_log_interval = max(0, int(step_log_interval))
         self.agx_host     = agx_host
         self.agx_port     = agx_port
@@ -238,6 +244,7 @@ class EvalSuite:
                 phase_labels: list[str]        = []
                 success_flags: list[bool]      = []
                 step_records: list[dict[str, object]] = []
+                stream_path = None
                 rollout_stop_reason = "episode_len_reached"
                 target_cycle_gate_reached_step: int | None = None
                 boundary_detector = build_boundary_detector_from_config(
@@ -247,6 +254,14 @@ class EvalSuite:
                     },
                     pause_action_eps=DEFAULT_PAUSE_EPS,
                 )
+
+                if self.save_rollout_logs and self.stream_rollout_logs:
+                    self.rollout_log_dir.mkdir(parents=True, exist_ok=True)
+                    stream_path = (
+                        self.rollout_log_dir
+                        / f"rollout_{rollout_id:03d}.partial.jsonl"
+                    )
+                    stream_path.write_text("")
 
                 for t in range(task.episode_len):
                     obs = ts.observation
@@ -399,6 +414,15 @@ class EvalSuite:
                             ),
                         }
                     )
+                    if stream_path is not None:
+                        with open(stream_path, "a") as f:
+                            f.write(
+                                json.dumps(
+                                    to_jsonable(step_records[-1]),
+                                    separators=(",", ":"),
+                                )
+                            )
+                            f.write("\n")
 
                     # AGX: track env_state for mass-based success
                     if task.backend_type == "agx":

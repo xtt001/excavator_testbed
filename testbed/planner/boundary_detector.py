@@ -9,12 +9,16 @@ import numpy as np
 
 from testbed.data.schema import (
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+    ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+    ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_EXCAVATED_MASS_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
     ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX,
+    ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+    ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
     ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX,
 )
 
@@ -213,6 +217,14 @@ class BoundaryDetector:
                 return 0.0
             return float(env_state[index])
 
+        def _read_env_optional(index: int) -> tuple[float, bool]:
+            if index < 0 or index >= len(env_state):
+                return 0.0, False
+            value = float(env_state[index])
+            if not np.isfinite(value):
+                return 0.0, False
+            return value, True
+
         mass_in_bucket = float(
             task_metrics.get("mass_in_bucket_kg", _read_env(ENV_STATE_MASS_IN_BUCKET_IDX))
         )
@@ -236,6 +248,50 @@ class BoundaryDetector:
                 "min_distance_to_target_m",
                 _read_env(ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX),
             )
+        )
+        target_horizontal_distance, has_target_horizontal_distance = _read_env_optional(
+            ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX
+        )
+        bucket_height_above_target_rim, has_target_height = _read_env_optional(
+            ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX
+        )
+        bucket_over_target_footprint, has_target_footprint = _read_env_optional(
+            ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX
+        )
+        dump_clearance_ok_mask, has_dump_clearance = _read_env_optional(
+            ENV_STATE_DUMP_CLEARANCE_OK_IDX
+        )
+        if "target_horizontal_distance_m" in task_metrics:
+            target_horizontal_distance = float(task_metrics["target_horizontal_distance_m"])
+            has_target_horizontal_distance = bool(np.isfinite(target_horizontal_distance))
+        if "bucket_height_above_target_rim_m" in task_metrics:
+            bucket_height_above_target_rim = float(
+                task_metrics["bucket_height_above_target_rim_m"]
+            )
+            has_target_height = bool(np.isfinite(bucket_height_above_target_rim))
+        if "bucket_over_target_footprint_mask" in task_metrics:
+            bucket_over_target_footprint = float(
+                task_metrics["bucket_over_target_footprint_mask"]
+            )
+            has_target_footprint = bool(np.isfinite(bucket_over_target_footprint))
+        if "dump_clearance_ok_mask" in task_metrics:
+            dump_clearance_ok_mask = float(task_metrics["dump_clearance_ok_mask"])
+            has_dump_clearance = bool(np.isfinite(dump_clearance_ok_mask))
+        target_geometry_available = bool(
+            task_metrics.get(
+                "target_geometry_available",
+                float(
+                    has_target_horizontal_distance
+                    and target_horizontal_distance >= 0.0
+                    and has_target_height
+                    and has_target_footprint
+                    and has_dump_clearance
+                ),
+            )
+        )
+        dump_clearance_ok = bool(
+            target_geometry_available
+            and dump_clearance_ok_mask > 0.5
         )
         min_distance_to_dig_area = float(
             task_metrics.get(
@@ -269,6 +325,12 @@ class BoundaryDetector:
             "mass_in_target_box_kg": mass_in_target_box,
             "deposited_mass_in_target_box_kg": deposited_mass,
             "min_distance_to_target_m": min_distance_to_target,
+            "target_horizontal_distance_m": target_horizontal_distance,
+            "bucket_height_above_target_rim_m": bucket_height_above_target_rim,
+            "bucket_over_target_footprint_mask": bucket_over_target_footprint,
+            "dump_clearance_ok_mask": dump_clearance_ok_mask,
+            "target_geometry_available": float(target_geometry_available),
+            "dump_clearance_ok": float(dump_clearance_ok),
             "min_distance_to_dig_area_m": min_distance_to_dig_area,
             "bucket_depth_below_dig_area_plane_m": bucket_depth,
             "target_hard_collision_count": collision_count,
@@ -321,7 +383,11 @@ class BoundaryDetector:
             >= self.config.target_mass_delta_tol_kg
         )
         valid_deposit_context = (
-            metrics["min_distance_to_target_m"] <= self.config.target_approach_distance_m
+            (
+                metrics["target_geometry_available"] > 0.0
+                and metrics["target_horizontal_distance_m"]
+                <= self.config.target_approach_distance_m
+            )
             or metrics["reward_phase_is_depositing"] > 0.0
             or metrics["success_condition_met"] > 0.0
             or metrics["success_signal_value"] >= self.config.target_mass_delta_tol_kg

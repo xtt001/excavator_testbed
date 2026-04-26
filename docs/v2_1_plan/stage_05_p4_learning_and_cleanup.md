@@ -343,13 +343,21 @@ builder 会同步写出 `summary.json`，至少包含：
   - `probe_then_reload`
   - severe `pretarget_spill_proxy`
 - 同时把 `far_dump_start` 从宽松口径收回到更贴近 truck 顶部的折中阈值
-- `stage5_strict`/v3 现在启用 target-safe 下界：`dump_start_distance_m < 0.35` 会标成 `near_dump_start` 并剔除，用来去掉贴近 target 才开始 dump 的 close-call 样本，避免 rollouts 里低 boom + 强 curl 放大成硬碰撞。
+- `stage5_strict`/v3 现在启用显式 target geometry contract：必须有 `target_horizontal_distance_m`、`bucket_height_above_target_rim_m`、`bucket_over_target_footprint_mask`、`dump_clearance_ok_mask`，缺任一项会标成 `missing_target_geometry`；`min_distance_to_target_m` 不再作为 fallback。
+- target-safe 下界改为基于 `target_horizontal_distance_m`：`target_horizontal_distance_m < 0.35` 会标成 `near_dump_start` 并剔除，用来去掉贴近 target 才开始 dump 的 close-call 样本，避免 rollouts 里低 boom + 强 curl 放大成硬碰撞。
 - 当前 target-safe qualitymix 已落地为 `74` 条：旧档案 `51` 条 + `2604241251` terminal-fix 质量补录 `23` 条，sector split 为 `left = 18`, `mid = 40`, `right = 16`。
 - 当前 target-safe smoke eval 也启用 live WORK safety guard：
-  - approach 区：loaded 且 `min_distance_to_target < 1.25` 时，先把 bucket 强 dump action 软限到不小于 `-0.30`，并至少给 boom `+0.04`。
-  - hard guard 区：loaded 且 `min_distance_to_target < 0.45` 时，把 bucket dump action 进一步限到不小于 `-0.15`，并至少给 boom `+0.08`。
+  - approach 区：loaded 且 `target_horizontal_distance_m < 1.25` 且 dump clearance 不满足时，先把 bucket 强 dump action 软限到不小于 `-0.30`，并至少给 boom `+0.04`。
+  - hard guard 区：loaded 且 `target_horizontal_distance_m < 0.45` 且 dump clearance 不满足时，把 bucket dump action 进一步限到不小于 `-0.15`，并至少给 boom `+0.08`。
+  - dump clearance 以 Unity 的 `dump_clearance_ok_mask` 为准；TruckBed 水平距离可使用目标侧 dump 容差，垂直方向仍要求 `bucket_height_above_target_rim_m >= 0.0`。
   - summary 记录 `work_target_guard_count`，用于确认 guard 是否介入。
   - 当前 3-cycle smoke 配置在 `target_cycle_gate = 3` 后额外保留 `25` 步 terminal hold，避免刚出现第 3 次 `dump_end` 就截断 `dump_complete_final_hold` 的末尾连续计数。
+
+当前旧数据 audit 结论：
+
+- `tb-audit-target-geometry --dataset-dir data/agx_teleop_v2_1_multi_raw_all_workskill_clean_v3_qualitymix_targetsafe_2604241251_v2_1c`
+- 结果：`74 / 74` episodes 都是 legacy `env_state_width = 9`，4 个 target geometry 字段覆盖率都是 `0.0`
+- 决策：这批旧数据仍可留作非 target-geometry 诊断/训练材料，但不要继续混入 target-safety workskill 训练；需要按新 contract 补录新数据
 
 当前 `clean_v3b` 结果是：
 

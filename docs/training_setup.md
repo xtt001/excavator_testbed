@@ -199,9 +199,20 @@ tb-replay --episode data/agx_teleop_v1/ --config testbed/configs/teleop_v1.yaml 
 
 # 单个 episode
 tb-replay --episode data/agx_teleop_v1/episode_0.hdf5 --config testbed/configs/teleop_v1.yaml
+
+# 重放旧 action 序列并重新记录当前 Unity observation/env_state
+tb-replay \
+  --episode data/agx_teleop_v1/episode_0.hdf5 \
+  --config testbed/configs/teleop_v1.yaml \
+  --record-output-dir data/agx_teleop_v1_replayed_current
 ```
 
-`tb-replay` 支持单文件或目录输入。批量回放时会自动按 episode 编号排序，共享同一个 backend 连接，最后输出 qpos diff 汇总表。
+`tb-replay` 支持单文件或目录输入。批量回放时会自动按 episode 编号排序，共享同一个 backend 连接，最后输出 qpos diff 汇总表。加上 `--record-output-dir` 后，会把 source episode 的 actions 在当前 Unity 后端里重新执行并写成新的 HDF5，可用于 Unity 侧 `env_state` 或相机观测变更后的数据刷新。
+
+刷新写新 HDF5 时，`tb-replay` 会默认读取 config 里的
+`teleop.post_success_tail_steps`，当前 V2.1 是 `50` 步，并在 source
+actions 后追加 zero-action hold tail。这个 tail 保留 terminal dump 后的
+plateau / `dump_end` 观测；可用 `--post-tail-steps <N>` 临时覆盖。
 
 两者区别：`tb-dataset-videos` 直接读 HDF5 中已存储的图片帧，速度快且无需 AGX；`tb-replay` 重新通过 AGX 执行动作序列，用于验证 action→observation 的可重放性。
 
