@@ -60,3 +60,34 @@ Combined dataset: `data/agx_teleop_v2_1_refresh_tail50_workskill_clean_v3_target
 - The model can complete 3 cycles, but strict safety still fails because it sometimes starts dumping too near the target and spills before target. This looks more like target-approach/dump gating behavior than a total data failure.
 - Next improvement should be scripted policy/guard first: block or reshape dump actions until target horizontal distance and height-above-rim satisfy the stricter geometry gate, and consider tightening the workskill filter toward `dump_start_horizontal_distance >= 0.45 m` for the next comparison run.
 - New recording is useful after the guard comparison, not as the immediate first move.
+
+## 2026-04-26 Follow-Up
+
+The attempted action-loss mask was not kept. Masking frames by a bare strong
+bucket action threshold also masked normal digging/carry actions near the
+beginning of workskill windows, which made cycle 2 hesitate and stall. The
+combined workskill dataset has been restored to an all-ones
+`/v2/step/action_loss_mask`; pre-dump bucket action onset is now treated as a
+diagnostic, not an automatic training mask.
+
+A more useful test was to keep the original e2000 checkpoint, remove the target
+guard, keep the scripted bucket transition target at `0.0`, and enable ACT
+temporal aggregation at eval time.
+
+- Eval config: `runs/refresh_data_train_rollout_260424183039/eval_refresh_tail50_v2_1c_e2000_bucket0_noguard_temporalagg_3cycle_smoke.yaml`
+- Video: `rollout_000_temporalagg_noguard.mp4`
+- Success: True; cycle1/2/3 success: 1/1/1; strict dump-complete: False
+- Mean action jerk: 0.0031, much smoother than the previous non-aggregated
+  rollouts.
+- Cycle 2 no longer showed the bad pre-dump pattern
+  `qpos_bucket >= 0.8 && action_bucket <= -0.45`; dump_start happened at
+  horizontal distance 0.174 m, so the load was at least partially in the bed.
+- Cycle 3 dumped too far by the detector (`dump_start_horizontal_distance =
+  1.371 m`), while cycle 1/2 were too close. The remaining issue is not old
+  data teaching an early dump; it is phase/timing instability around the
+  transport-to-dump transition.
+
+Current conclusion: use temporal aggregation for live rollout by default, do
+not train on the masked e500 checkpoint, and next improve the policy by adding
+a real phase/context signal or shorter/receding-horizon action chunks rather
+than relying on an env_state policy input.
