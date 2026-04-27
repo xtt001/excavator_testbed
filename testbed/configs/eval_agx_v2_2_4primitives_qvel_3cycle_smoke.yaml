@@ -13,11 +13,11 @@ task:
 eval:
   num_rollouts: 1
   save_video: true
-  video_dir: "runs/eval/agx_v2_2_4primitives_qvel_3cycle_smoke/videos"
-  results_dir: "runs/eval/agx_v2_2_4primitives_qvel_3cycle_smoke/results"
+  video_dir: "runs/eval/agx_v2_2_4primitives_carrytrim120_leftboost_postdump_hold30_260427_smoke/videos"
+  results_dir: "runs/eval/agx_v2_2_4primitives_carrytrim120_leftboost_postdump_hold30_260427_smoke/results"
   save_rollout_logs: true
   stream_rollout_logs: true
-  rollout_log_dir: "runs/eval/agx_v2_2_4primitives_qvel_3cycle_smoke/results/rollouts"
+  rollout_log_dir: "runs/eval/agx_v2_2_4primitives_carrytrim120_leftboost_postdump_hold30_260427_smoke/results/rollouts"
   step_log_interval: 100
   target_cycle_gate: 3
   target_cycle_gate_terminal_hold_steps: 25
@@ -66,10 +66,10 @@ policy:
 
   dig_ckpt_path: "/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/dig_qvel_e500_260426/policy_best.ckpt"
   dig_ckpt_dir: "/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/dig_qvel_e500_260426"
-  carry_ckpt_path: "/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/carry_qvel_e500_260426/policy_best.ckpt"
-  carry_ckpt_dir: "/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/carry_qvel_e500_260426"
-  dump_ckpt_path: "/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/dump_qvel_e500_260426/policy_best.ckpt"
-  dump_ckpt_dir: "/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/dump_qvel_e500_260426"
+  carry_ckpt_path: "/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/carry_qvel_carrytrim120_leftboost_e500_260427/policy_best.ckpt"
+  carry_ckpt_dir: "/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/carry_qvel_carrytrim120_leftboost_e500_260427"
+  dump_ckpt_path: "/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/dump_qvel_safe_dump_leftboost_e500_260427/policy_best.ckpt"
+  dump_ckpt_dir: "/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/dump_qvel_safe_dump_leftboost_e500_260427"
   return_ckpt_path: "/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/return_qvel_e500_260426/policy_best.ckpt"
   return_ckpt_dir: "/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/return_qvel_e500_260426"
 
@@ -77,12 +77,12 @@ policy:
     dig_to_carry_min_bucket_mass_kg: 300.0
     dig_to_carry_min_distance_to_dig_area_m: 0.0
     dump_ready_min_bucket_mass_kg: 150.0
-    dump_ready_min_height_above_rim_m: 0.0
+    dump_ready_min_height_above_rim_m: 0.45
     dump_ready_require_over_footprint: true
     dump_ready_require_clearance: true
-    dump_ready_max_horizontal_distance_m: 0.20
+    dump_ready_max_horizontal_distance_m: 0.60
     dump_ready_hold_steps: 3
     dump_done_max_bucket_mass_kg: 100.0
     dump_done_min_deposit_delta_kg: 10.0
-    dump_done_hold_steps: 2
+    dump_done_hold_steps: 30
     return_max_steps: 420

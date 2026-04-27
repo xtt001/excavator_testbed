@@ -6,8 +6,21 @@ from pathlib import Path
 
 import numpy as np
 
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
+    ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+    ENV_STATE_DUMP_CLEARANCE_OK_IDX,
+    ENV_STATE_MASS_IN_BUCKET_IDX,
+    ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
+    ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX,
+    ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
+)
 from testbed.data.hdf5_io import read_episode, write_episode
 from testbed.data.primitives_v2_2 import (
+    CARRY_ACTION_HORIZON_STEPS,
+    CARRY_MIN_WINDOW_LEN,
+    CARRY_PRE_DUMP_TRIM_STEPS,
     build_primitive_datasets,
     extract_workskill_primitive_slices,
 )
@@ -38,6 +51,8 @@ class TestPrimitivesV22(unittest.TestCase):
             self.assertEqual(summary["primitives"]["carry"]["episode_count"], 1)
             self.assertEqual(summary["primitives"]["dump"]["episode_count"], 1)
             self.assertEqual(summary["primitives"]["return"]["episode_count"], 1)
+            self.assertEqual(summary["dump_qc"]["accepted_window_count"], 1)
+            self.assertFalse(summary["dump_intent_config"]["official_dump_start_fallback"])
             self.assertTrue((output_root / "summary.json").exists())
             for primitive_name in ("dig", "carry", "dump", "return"):
                 self.assertTrue((output_root / primitive_name / "episode_0.hdf5").exists())
@@ -47,21 +62,31 @@ class TestPrimitivesV22(unittest.TestCase):
             dump_episode = read_episode(output_root / "dump" / "episode_0.hdf5")
             return_episode = read_episode(output_root / "return" / "episode_0.hdf5")
 
-            self.assertEqual(dig_episode["qpos"].shape[0], 3)
-            self.assertEqual(carry_episode["qpos"].shape[0], 3)
-            self.assertEqual(dump_episode["qpos"].shape[0], 6)
+            self.assertEqual(dig_episode["qpos"].shape[0], 20)
+            self.assertEqual(carry_episode["qpos"].shape[0], CARRY_MIN_WINDOW_LEN)
+            self.assertEqual(dump_episode["qpos"].shape[0], 100)
             self.assertEqual(return_episode["qpos"].shape[0], 4)
-            self.assertEqual(carry_episode["step_ids"].tolist(), [13, 14, 15])
-            self.assertEqual(dump_episode["step_ids"].tolist(), [16, 17, 18, 19, 20, 21])
+            self.assertEqual(carry_episode["step_ids"][0], 30)
+            self.assertEqual(carry_episode["step_ids"][-1], 149)
+            self.assertEqual(dump_episode["step_ids"][0], 270)
+            self.assertEqual(dump_episode["step_ids"][-1], 369)
             self.assertEqual(return_episode["step_ids"].tolist(), [3, 4, 5, 6])
             self.assertEqual(carry_episode["metadata"]["primitive_name"], "carry")
             self.assertEqual(
                 carry_episode["metadata"]["primitive_window"],
                 "carry_to_before_dump_intent",
             )
-            self.assertEqual(int(carry_episode["metadata"]["dump_intent_step"]), 16)
-            self.assertEqual(int(carry_episode["metadata"]["official_dump_start_step"]), 19)
+            self.assertEqual(int(carry_episode["metadata"]["dump_intent_step"]), 270)
+            self.assertEqual(int(carry_episode["metadata"]["official_dump_start_step"]), 310)
+            self.assertEqual(
+                int(carry_episode["metadata"]["carry_removed_pre_dump_steps"]),
+                CARRY_PRE_DUMP_TRIM_STEPS,
+            )
             self.assertEqual(dump_episode["metadata"]["primitive_name"], "dump")
+            self.assertAlmostEqual(
+                float(dump_episode["metadata"]["dump_start_height_above_rim_m"]),
+                0.60,
+            )
             self.assertEqual(return_episode["metadata"]["primitive_name"], "return")
             self.assertEqual(int(return_episode["metadata"]["source_prev_cycle_id"]), 0)
             self.assertEqual(int(return_episode["metadata"]["source_next_cycle_id"]), 1)
@@ -85,6 +110,21 @@ class TestPrimitivesV22(unittest.TestCase):
             carry_bucket_action = carry_episode["actions"][:, 3]
             strong_dump = np.logical_and(carry_bucket_qpos >= 0.80, carry_bucket_action <= -0.45)
             self.assertFalse(bool(np.any(strong_dump)))
+            safe_dump_intent = np.logical_and(
+                carry_bucket_qpos >= 0.40,
+                carry_bucket_action <= -0.08,
+            )
+            self.assertFalse(bool(np.any(safe_dump_intent)))
+            tail_actions = carry_bucket_action[-CARRY_ACTION_HORIZON_STEPS:]
+            stable_tail_curl = np.convolve(
+                (tail_actions <= -0.20).astype(np.int32),
+                np.ones(5, dtype=np.int32),
+                mode="valid",
+            )
+            self.assertFalse(bool(np.any(stable_tail_curl >= 5)))
+            self.assertFalse(
+                bool(carry_episode["metadata"]["carry_tail_has_stable_strong_curl_out"])
+            )
 
     def test_dump_starts_before_or_at_official_mass_based_dump_start(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -101,11 +141,118 @@ class TestPrimitivesV22(unittest.TestCase):
             )
 
             dump_episode = read_episode(output_root / "dump" / "episode_0.hdf5")
-            self.assertEqual(dump_episode["step_ids"][0], 16)
+            self.assertEqual(dump_episode["step_ids"][0], 270)
             self.assertLessEqual(
                 int(dump_episode["metadata"]["dump_intent_step"]),
                 int(dump_episode["metadata"]["official_dump_start_step"]),
             )
+
+    def test_carry_tail_trim_rejects_too_short_window(self) -> None:
+        episode = _make_workskill_episode_payload(length=180)
+        slices, rejects = extract_workskill_primitive_slices(
+            episode=episode,
+            source_path=Path("episode_0.hdf5"),
+            source_dataset_dir=Path("."),
+        )
+
+        self.assertFalse(any(item.primitive_name == "carry" for item in slices))
+        self.assertTrue(
+            any(
+                record.primitive_name == "carry"
+                and record.reason == "carry_too_short_after_tail_trim"
+                for record in rejects
+            )
+        )
+        self.assertTrue(any(item.primitive_name == "dump" for item in slices))
+
+    def test_carry_tail_trim_does_not_treat_curled_in_saturation_as_dump(self) -> None:
+        episode = _make_workskill_episode_payload(length=360)
+        episode["qpos"][20:80, 3] = 0.0
+        episode["actions"][20:80, 3] = -0.70
+
+        slices, rejects = extract_workskill_primitive_slices(
+            episode=episode,
+            source_path=Path("episode_0.hdf5"),
+            source_dataset_dir=Path("."),
+        )
+
+        carry = next(item for item in slices if item.primitive_name == "carry")
+        self.assertEqual(carry.window_len, 120)
+        self.assertFalse(any(record.primitive_name == "carry" for record in rejects))
+
+    def test_dump_builder_rejects_instead_of_falling_back_to_official_dump_start(self) -> None:
+        episode = _make_workskill_episode_payload(length=12)
+        episode["actions"][:, 3] = 0.05
+
+        slices, rejects = extract_workskill_primitive_slices(
+            episode=episode,
+            source_path=Path("episode_0.hdf5"),
+            source_dataset_dir=Path("."),
+        )
+
+        self.assertFalse(any(item.primitive_name == "dump" for item in slices))
+        self.assertTrue(
+            any(
+                record.primitive_name == "dump"
+                and record.reason == "missing_safe_dump_intent"
+                for record in rejects
+            )
+        )
+
+    def test_dump_qc_rejects_unsafe_first20_height_or_clearance(self) -> None:
+        episode = _make_workskill_episode_payload(length=12)
+        episode["env_state"][9, ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX] = -0.10
+
+        slices, rejects = extract_workskill_primitive_slices(
+            episode=episode,
+            source_path=Path("episode_0.hdf5"),
+            source_dataset_dir=Path("."),
+        )
+
+        self.assertFalse(any(item.primitive_name == "dump" for item in slices))
+        self.assertTrue(
+            any(
+                record.primitive_name == "dump"
+                and record.reason == "dump_first20_height_below_rim"
+                for record in rejects
+            )
+        )
+
+        episode = _make_workskill_episode_payload(length=12)
+        episode["env_state"][9, ENV_STATE_DUMP_CLEARANCE_OK_IDX] = 0.0
+        slices, rejects = extract_workskill_primitive_slices(
+            episode=episode,
+            source_path=Path("episode_0.hdf5"),
+            source_dataset_dir=Path("."),
+        )
+
+        self.assertFalse(any(item.primitive_name == "dump" for item in slices))
+        self.assertTrue(
+            any(
+                record.primitive_name == "dump"
+                and record.reason == "dump_first20_clearance_lost"
+                for record in rejects
+            )
+        )
+
+    def test_dump_qc_rejects_hard_collision_window(self) -> None:
+        episode = _make_workskill_episode_payload(length=12)
+        episode["env_state"][10:, ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX] = 1.0
+
+        slices, rejects = extract_workskill_primitive_slices(
+            episode=episode,
+            source_path=Path("episode_0.hdf5"),
+            source_dataset_dir=Path("."),
+        )
+
+        self.assertFalse(any(item.primitive_name == "dump" for item in slices))
+        self.assertTrue(
+            any(
+                record.primitive_name == "dump"
+                and record.reason == "dump_hard_collision"
+                for record in rejects
+            )
+        )
 
     def test_return_window_matches_dump_end_to_next_qualified_dig_start(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -219,7 +366,7 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertTrue(policy.debug_state()["transition_completed"])
         self.assertEqual(policy.rollout_summary()["completed_transition_count"], 1)
 
-    def test_primitive_planner_accepts_horizontal_target_distance_for_dump_ready(self) -> None:
+    def test_primitive_planner_accepts_high_far_relative_dump_readiness(self) -> None:
         policy = PrimitivePlannerACTPolicy(
             dig_policy=_ConstantPolicy(0),
             carry_policy=_ConstantPolicy(1),
@@ -227,7 +374,8 @@ class TestPrimitivesV22(unittest.TestCase):
             return_policy=_ConstantPolicy(3),
             boundary_detector=_FakeBoundaryDetector([_FakeBoundaryEvent(), _FakeBoundaryEvent()]),
             dump_ready_hold_steps=1,
-            dump_ready_max_horizontal_distance_m=0.20,
+            dump_ready_max_horizontal_distance_m=0.60,
+            dump_ready_min_height_above_rim_m=0.45,
         )
 
         policy.predict(_obs(mass=320.0, dig_distance=0.30))
@@ -235,8 +383,8 @@ class TestPrimitivesV22(unittest.TestCase):
             _obs(
                 mass=320.0,
                 dig_distance=0.30,
-                horizontal_distance=0.15,
-                height_above_rim=0.05,
+                horizontal_distance=0.60,
+                height_above_rim=0.45,
                 over_footprint=False,
                 clearance_ok=True,
             )
@@ -247,6 +395,32 @@ class TestPrimitivesV22(unittest.TestCase):
             policy.debug_state()["skill_switch_reason"],
             "carry_to_dump_target_ready",
         )
+
+    def test_primitive_planner_blocks_low_height_even_when_horizontally_close(self) -> None:
+        policy = PrimitivePlannerACTPolicy(
+            dig_policy=_ConstantPolicy(0),
+            carry_policy=_ConstantPolicy(1),
+            dump_policy=_ConstantPolicy(2),
+            return_policy=_ConstantPolicy(3),
+            boundary_detector=_FakeBoundaryDetector([_FakeBoundaryEvent(), _FakeBoundaryEvent()]),
+            dump_ready_hold_steps=1,
+            dump_ready_max_horizontal_distance_m=0.82,
+            dump_ready_min_height_above_rim_m=0.45,
+        )
+
+        policy.predict(_obs(mass=320.0, dig_distance=0.30))
+        action = policy.predict(
+            _obs(
+                mass=320.0,
+                dig_distance=0.30,
+                horizontal_distance=0.15,
+                height_above_rim=0.20,
+                over_footprint=True,
+                clearance_ok=True,
+            )
+        )
+        self.assertEqual(float(action[0]), 1.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "carry")
 
     def test_primitive_planner_dig_to_carry_uses_loaded_bucket_not_escape_distance(self) -> None:
         policy = PrimitivePlannerACTPolicy(
@@ -267,11 +441,31 @@ class TestPrimitivesV22(unittest.TestCase):
 
 
 def _write_workskill_episode(path: Path) -> None:
-    episode = _make_workskill_episode_payload(length=12)
+    episode = _make_workskill_episode_payload(length=360)
     write_episode(path, **episode)
 
 
 def _make_workskill_episode_payload(length: int) -> dict:
+    if length >= 320:
+        carry_start = 20
+        approach_start = 90
+        dump_intent_start = 260
+        official_dump_start = 300
+    elif length >= 180:
+        carry_start = 20
+        approach_start = 60
+        dump_intent_start = 120
+        official_dump_start = 150
+    else:
+        carry_start = 3
+        approach_start = 5
+        dump_intent_start = 6
+        official_dump_start = 9
+    official_dump_start = min(official_dump_start, max(0, length - 3))
+    dump_intent_start = min(dump_intent_start, max(0, official_dump_start - 3))
+    approach_start = min(approach_start, max(0, dump_intent_start - 1))
+    carry_start = min(carry_start, max(0, approach_start - 1))
+
     goal_tokens = np.repeat(
         build_goal_tokens("s0_truck").reshape(1, -1),
         length,
@@ -280,37 +474,32 @@ def _make_workskill_episode_payload(length: int) -> dict:
     qpos = np.zeros((length, 4), dtype=np.float32)
     qpos[:, 0] = 0.50
     qpos[:, 3] = 0.20
-    qpos[6:, 3] = 0.85
+    qpos[dump_intent_start:, 3] = 0.85
     actions = np.full((length, 4), 0.05, dtype=np.float32)
-    actions[6:8, 3] = -0.50
-    actions[9:, 3] = -0.55
-    work_stage_id = np.asarray(
-        [
-            WORK_STAGE_NAME_TO_ID["entry_to_bite"],
-            WORK_STAGE_NAME_TO_ID["first_bite"],
-            WORK_STAGE_NAME_TO_ID["first_bite"],
-            WORK_STAGE_NAME_TO_ID["carry"],
-            WORK_STAGE_NAME_TO_ID["carry"],
-            WORK_STAGE_NAME_TO_ID["approach_dump"],
-            WORK_STAGE_NAME_TO_ID["approach_dump"],
-            WORK_STAGE_NAME_TO_ID["approach_dump"],
-            WORK_STAGE_NAME_TO_ID["approach_dump"],
-            WORK_STAGE_NAME_TO_ID["dump"],
-            WORK_STAGE_NAME_TO_ID["dump"],
-            WORK_STAGE_NAME_TO_ID["dump"],
-        ],
+    actions[dump_intent_start:official_dump_start, 3] = -0.10
+    actions[official_dump_start:, 3] = -0.55
+    work_stage_id = np.full(
+        length,
+        WORK_STAGE_NAME_TO_ID["first_bite"],
         dtype=np.uint8,
     )
-
-
-    if length != 12:
-        work_stage_id = np.resize(work_stage_id, length).astype(np.uint8)
+    work_stage_id[0] = WORK_STAGE_NAME_TO_ID["entry_to_bite"]
+    work_stage_id[carry_start:approach_start] = WORK_STAGE_NAME_TO_ID["carry"]
+    work_stage_id[approach_start:official_dump_start] = WORK_STAGE_NAME_TO_ID["approach_dump"]
+    work_stage_id[official_dump_start:] = WORK_STAGE_NAME_TO_ID["dump"]
     dump_start_mask = np.zeros(length, dtype=np.uint8)
     dump_end_mask = np.zeros(length, dtype=np.uint8)
-    if length > 9:
-        dump_start_mask[9] = 1
-    if length > 11:
-        dump_end_mask[11] = 1
+    dump_start_mask[official_dump_start] = 1
+    dump_end_mask[length - 1] = 1
+
+    env_state = np.zeros((length, 13), dtype=np.float32)
+    env_state[:, ENV_STATE_MASS_IN_BUCKET_IDX] = 500.0
+    env_state[:, ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX] = 0.0
+    env_state[:, ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX] = 0.30
+    env_state[:, ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX] = 0.60
+    env_state[:, ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX] = 0.60
+    env_state[:, ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX] = 0.0
+    env_state[:, ENV_STATE_DUMP_CLEARANCE_OK_IDX] = 1.0
 
     return {
         "qpos": qpos,
@@ -326,7 +515,7 @@ def _make_workskill_episode_payload(length: int) -> dict:
             "source_cycle_id": 2,
             "source_start_step": 10,
         },
-        "env_state": np.zeros((length, 13), dtype=np.float32),
+        "env_state": env_state,
         "step_ids": np.arange(10, 10 + length, dtype=np.int64),
         "step_ns": np.arange(length, dtype=np.int64) * 10,
         "action_src_types": ["teleop"] * length,
@@ -472,7 +661,7 @@ def _obs(
     env_state[10] = (
         float(height_above_rim)
         if height_above_rim is not None
-        else (0.05 if dump_ready else -0.20)
+        else (0.50 if dump_ready else -0.20)
     )
     env_state[11] = (
         float(over_footprint)

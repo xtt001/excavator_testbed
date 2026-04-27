@@ -542,7 +542,7 @@ def eval_policy(config: dict[str, Any]) -> None:
                 switch_cfg.get("dump_ready_min_bucket_mass_kg", 150.0)
             ),
             dump_ready_min_height_above_rim_m=float(
-                switch_cfg.get("dump_ready_min_height_above_rim_m", 0.0)
+                switch_cfg.get("dump_ready_min_height_above_rim_m", 0.45)
             ),
             dump_ready_require_over_footprint=bool(
                 switch_cfg.get("dump_ready_require_over_footprint", True)
@@ -551,7 +551,7 @@ def eval_policy(config: dict[str, Any]) -> None:
                 switch_cfg.get("dump_ready_require_clearance", True)
             ),
             dump_ready_max_horizontal_distance_m=_optional_float(
-                switch_cfg.get("dump_ready_max_horizontal_distance_m")
+                switch_cfg.get("dump_ready_max_horizontal_distance_m", 0.82)
             ),
             dump_ready_hold_steps=int(switch_cfg.get("dump_ready_hold_steps", 3)),
             dump_done_max_bucket_mass_kg=float(

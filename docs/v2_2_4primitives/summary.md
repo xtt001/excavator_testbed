@@ -81,3 +81,71 @@ Two rollout failures were useful:
 This is a good V2.2 smoke, not a production-clean model yet. The successful rollout still reports nonzero diagnostic quality issues (`avg_spill_before_target_count=235`, `avg_hard_target_collision_count=12`, `avg_quality_issue_count=604`). The next training pass should improve carry/dump smoothness and target clearance before treating this as a stable 2000-epoch baseline.
 
 Recommended next step: train the same four primitives to 2000 epochs with the updated planner thresholds, then run a 5-rollout compare against the best V2.1 temporal-aggregation baseline.
+
+## Safe-Dump Update
+
+Date: 2026-04-27
+
+- Recut `carry/dump` with safe pre-dump onset and no fallback to official mass-based `dump_start`.
+- New root: `data/agx_v2_2_4primitives_safe_dump_260427`
+- Counts: `dig=64`, `carry=27`, `dump=27`, `return=120`
+- Dump QC: first 20 steps had `height_below_rim=0`, `clearance_loss=0`, `hard_collision_window_count=0`; full-window `near_collision_window_count=3`.
+- Trained affected primitives only:
+  - `carry_qvel_safe_dump_e500_260427`: best epoch `360`, val loss `0.2872`
+  - `dump_qvel_safe_dump_e500_260427`: best epoch `400`, val loss `0.2691`
+- A live smoke with `dump_ready_max_horizontal_distance_m=0.60` exposed a new mismatch: cycle2 stayed in `carry`, began curl-out around `horizontal ~= 0.79m`, spilled the bucket before `dump_ready`, then oscillated with empty bucket. The planner threshold is now `0.82m`, matching the safe dump onset max (`0.818m`) so the handoff happens before carry starts dumping.
+- Success video: [`rollout_000_safe_dump_260427_success.mp4`](rollout_000_safe_dump_260427_success.mp4)
+- Final safe-dump smoke:
+  - `success_rate=1.0`, `cycle1/2/3_success_rate=1.0`
+  - `completed_transition_count=2`, `transition_timeout_count=0`
+  - `avg_final_success_signal=3740.48kg`, `avg_final_bucket_mass=0.0kg`
+  - `avg_hard_target_collision_count=0`
+  - Remaining quality debt: `avg_spill_before_target_count=227`, `avg_unsafe_target_distance_count=103`, `avg_quality_issue_count=336`
+  - Key switches: cycle1 `carry->dump` at `horizontal=0.729m,height=0.668m`; cycle2 at `0.785m,0.666m`; cycle3 at `0.724m,0.662m`
+
+## Carry Tail + Post-Dump Hold Update
+
+Date: 2026-04-27
+
+- Root: `data/agx_v2_2_4primitives_carrytrim120_leftboost_260427`
+- Carry mix: `63` episodes = safe carry `27` + clean recorded carry `3 x 12`.
+- Carry split: end at `min(dump_intent_start - 120, stable_curl_out_onset - 10)`.
+  The `120` step trim covers ACT `chunk_size=100` plus a 20 step buffer, so the
+  carry policy no longer supervises dump/curl-out tail actions.
+- Carry QC: accepted safe carry `27`, accepted clean recorded carry `3`,
+  `tail_stable_strong_curl_out_count=0`, carry bucket mass loss `0kg`.
+- Carry checkpoint:
+  `/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/carry_qvel_carrytrim120_leftboost_e500_260427/policy_best.ckpt`
+  - Best epoch `495`, val loss `0.1100`.
+- Dump checkpoint reused:
+  `/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/dump_qvel_safe_dump_leftboost_e500_260427/policy_best.ckpt`
+- Planner smoke config:
+  - `dump_ready_max_horizontal_distance_m=0.60`
+  - `dump_ready_min_height_above_rim_m=0.45`
+  - `dump_done_hold_steps=30`
+
+Reason for `dump_done_hold_steps=30`: ACT predicts 100-step chunks and temporal
+aggregation blends future actions. With `dump_done_hold_steps=2`, cycle2 already
+placed soil into the truck, but return took over while the bucket was still at
+the bed edge and pulled roughly `370kg` back out. Holding dump for 30 steps lets
+the dump policy finish the release/stabilization phase before return starts.
+
+Current best live smoke:
+
+- Output:
+  `runs/eval/agx_v2_2_4primitives_carrytrim120_leftboost_postdump_hold30_260427_smoke/`
+- Video:
+  [`rollout_000_carrytrim120_leftboost_postdump_hold30_260427_success.mp4`](rollout_000_carrytrim120_leftboost_postdump_hold30_260427_success.mp4)
+- `success_rate=1.0`, `cycle1/2/3_success_rate=1.0`
+- `completed_transition_count=2`, `transition_timeout_count=0`
+- `avg_final_success_signal=6201.70kg`, `avg_hard_target_collision_count=0`
+- Cycle dump quality:
+  - cycle1: mass out `2198.1kg`, final target delta `2011.6kg`, fraction `0.915`, post-dump drop `0kg`
+  - cycle2: mass out `2008.8kg`, final target delta `1868.1kg`, fraction `0.908`, post-dump drop `0kg`
+  - cycle3: mass out `2422.1kg`, final target delta `2322.0kg`, fraction `0.959`, post-dump drop `0kg`
+
+Residual issue: cycle2 still shows a small pre-dump micro pullback near the start
+of dump. It is much smaller than before and did not cause meaningful spill in
+the hold30 smoke, but this is a sign that the 4-primitive boundary is still
+doing too much. If this becomes unstable across more rollouts, the next design
+step should be five primitives: `dig -> carry -> approach_dump -> dump_release -> return`.

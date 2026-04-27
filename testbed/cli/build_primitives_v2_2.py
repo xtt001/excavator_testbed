@@ -88,6 +88,8 @@ def main() -> None:
             {
                 "output_root": summary["output_root"],
                 "primitives": summary["primitives"],
+                "carry_qc": summary.get("carry_qc", {}),
+                "dump_qc": summary.get("dump_qc", {}),
                 "reject_counts": summary["reject_counts"],
             },
             indent=2,

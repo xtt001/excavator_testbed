@@ -3,7 +3,7 @@
 task:
   task_name: agx_excavation_teleop
   equipment_model: agxunity
-  dataset_dir: data/agx_v2_2_4primitives_260426/carry
+  dataset_dir: data/agx_v2_2_4primitives_carrytrim120_leftboost_260427/carry
   num_episodes: 0
   episode_len: 700
   camera_names:
@@ -43,4 +43,4 @@ train:
   plot_every: 50
   amp: true
   amp_dtype: auto
-  ckpt_dir: /data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/carry_qvel_e500_260426
+  ckpt_dir: /data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/carry_qvel_carrytrim120_leftboost_e500_260427

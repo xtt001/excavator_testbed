@@ -68,10 +68,10 @@ class PrimitivePlannerACTPolicy(Policy):
         dig_to_carry_min_bucket_mass_kg: float = 300.0,
         dig_to_carry_min_distance_to_dig_area_m: float = 0.0,
         dump_ready_min_bucket_mass_kg: float = 150.0,
-        dump_ready_min_height_above_rim_m: float = 0.0,
+        dump_ready_min_height_above_rim_m: float = 0.45,
         dump_ready_require_over_footprint: bool = True,
         dump_ready_require_clearance: bool = True,
-        dump_ready_max_horizontal_distance_m: float | None = None,
+        dump_ready_max_horizontal_distance_m: float | None = 0.60,
         dump_ready_hold_steps: int = 3,
         dump_done_max_bucket_mass_kg: float = 100.0,
         dump_done_min_deposit_delta_kg: float = 10.0,
@@ -307,14 +307,14 @@ class PrimitivePlannerACTPolicy(Policy):
         over_footprint = geometry["bucket_over_target_footprint_mask"] > 0.5
         height_ok = (
             geometry["bucket_height_above_target_rim_m"]
-            >= self.dump_ready_min_height_above_rim_m
+            >= self.dump_ready_min_height_above_rim_m - 1.0e-6
         )
         clearance_ok = geometry["dump_clearance_ok_mask"] > 0.5
         horizontal_ok = False
         if self.dump_ready_max_horizontal_distance_m is not None:
             horizontal_ok = (
                 geometry["target_horizontal_distance_m"]
-                <= self.dump_ready_max_horizontal_distance_m
+                <= self.dump_ready_max_horizontal_distance_m + 1.0e-6
             )
         position_ok = (
             over_footprint

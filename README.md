@@ -61,9 +61,16 @@ Repo A 负责：
   - 这条逻辑仅作为 live 兼容层存在，不进入协议、`/v2` schema、planner 语义或默认训练口径
 - V2.2 当前新增四 primitive smoke 线：
   - builder: `tb-build-primitives-v2_2`
-  - 当前数据 root: `data/agx_v2_2_4primitives_260426`
-  - 当前计数：`dig=64`, `carry=64`, `dump=64`, `return=120`
-  - `carry` 在 deterministic `dump_intent_start` 前截断，避免学习 bucket curl-out；`dump` 从 `dump_intent_start` 开始，不再等 mass-based `dump_start`
+  - 当前 carry-tail 清理数据 root:
+    `data/agx_v2_2_4primitives_carrytrim120_leftboost_260427`
+  - 当前计数：`carry=63`（safe carry 27 + new left-clean carry 3x12），
+    `dig/dump/return` 复用 cleaned primitive roots
+  - `carry` 在 safe `dump_intent_start - 120` 前截断；这是为了覆盖 ACT
+    `chunk_size=100` 的未来动作 horizon，再加 20 step buffer，避免 carry
+    学到 pre-dump curl-out tail
+  - `dump` 从安全 pre-dump onset 开始，不 fallback 到 mass-based `dump_start`
+  - planner 在 `dump_done` 后保持 dump skill `30` step，再切 return，避免
+    temporal aggregation 边界上 return 动作把刚落入车斗的土带出
   - live eval 入口：`eval_agx_v2_2_4primitives_qvel_3cycle_smoke.yaml`
   - 首轮 reset 仍可配置 `bootstrap_policy` 到 `loaded_and_clear`，但 primitive 执行阶段不启用 fallback
 
@@ -906,8 +913,9 @@ target-safety 训练还有一个额外契约：
   可放宽水平距离，但垂直仍必须满足 `bucket_height_above_target_rim_m >= 0.0`
 - V2.2 scripted primitive planner 的 dump readiness 不用固定 swing qpos；它用
   target-relative geometry，并允许 `bucket_over_target_footprint_mask` 或连续的
-  `target_horizontal_distance_m <= 0.20m` 作为水平就位信号，同时要求 bucket 在 rim
-  上方和 clearance OK
+  `target_horizontal_distance_m <= 0.82m` 作为水平就位信号，同时要求 bucket 至少
+  高出 rim `0.45m` 且 clearance OK。这个阈值来自 safe dump dataset 的
+  pre-dump onset 分布，不是固定 swing qpos。
 - V2.2 4-primitives planner 的 `dig -> carry` 切换只看 bucket 是否已 loaded；
   离开 dig 区和运载到 truck 属于 carry primitive，不要求先满足固定 escape distance
 - `tb-audit-target-geometry --dataset-dir <dataset>` 会检查覆盖率

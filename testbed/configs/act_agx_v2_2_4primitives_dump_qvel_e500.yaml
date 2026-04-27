@@ -3,7 +3,7 @@
 task:
   task_name: agx_excavation_teleop
   equipment_model: agxunity
-  dataset_dir: data/agx_v2_2_4primitives_260426/dump
+  dataset_dir: data/agx_v2_2_4primitives_safe_dump_260427/dump
   num_episodes: 0
   episode_len: 400
   camera_names:
@@ -43,4 +43,4 @@ train:
   plot_every: 50
   amp: true
   amp_dtype: auto
-  ckpt_dir: /data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/dump_qvel_e500_260426
+  ckpt_dir: /data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/dump_qvel_safe_dump_e500_260427
