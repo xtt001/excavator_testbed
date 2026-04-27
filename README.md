@@ -65,6 +65,10 @@ Repo A 负责：
   - builder: `tb-build-primitives-v2_2`
   - 当前 ownership probe root:
     `data/agx_v2_2_4primitives_ownership_boundary_260427_1ep`
+  - 当前 carry/dump 训练 mix:
+    `data/agx_v2_2_4primitives_ownership_history_probe_leftboost_260427`
+  - 当前 ownership smoke eval:
+    `testbed/configs/eval_agx_v2_2_4primitives_ownership_leftboost_qvel_3cycle_smoke.yaml`
   - ownership 定义：`carry` 只负责 loaded transport；`dump` 负责 move to top
     of target、alignment、release 和 post-dump hold
   - `dump` 起点取 `first approach_dump stage` 与 stable pre-dump curl-out onset

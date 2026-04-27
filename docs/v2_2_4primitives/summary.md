@@ -194,3 +194,48 @@ This probe is good evidence that the 4p ownership definition matches human
 operation better than the 5p approach/release split. More data should use this
 definition: carry to target vicinity without owning final alignment, then dump
 owns the approach-to-release sequence.
+
+## Ownership History Rebuild And Carry/Dump Training Mix
+
+Date: 2026-04-27
+
+The refreshed V2.1 tail50 + targetsafe + V2.1c history workskill root was
+rebuilt with the current 4p ownership boundary:
+
+- Source workskill:
+  `/data/pingfan/excavator_testbed_data_archive/agx_teleop_v2_1_refresh_tail50_workskill_clean_v3_targetsafe_v2_1c_260424183039`
+- 4p history root:
+  `/data/pingfan/excavator_testbed_data_archive/agx_v2_2_4primitives_ownership_history_260427`
+- Repo symlink: `data/agx_v2_2_4primitives_ownership_history_260427`
+- Counts: `dig=64`, `carry=27`, `dump=27`, `return=0` (`--skip-return`)
+- Carry QC: bucket mass loss `0kg`, `tail_stable_strong_curl_out_count=0`,
+  boundary sources `{stable_curl_out: 23, approach_dump_stage: 4}`
+- Dump QC: hard collision windows `0`, near collision windows `3`
+- Rejects: `30` windows missing dump ownership boundary and `7` missing safe
+  dump intent; these are excluded from carry/dump supervision.
+
+The first ownership smoke training mix uses symlinks, not image copies:
+
+- Mix root:
+  `/data/pingfan/excavator_testbed_data_archive/agx_v2_2_4primitives_ownership_history_probe_leftboost_260427`
+- Repo symlink:
+  `data/agx_v2_2_4primitives_ownership_history_probe_leftboost_260427`
+- Mix rule: history ownership all + latest ownership probe all cycles `4x` +
+  probe cycle2/source_cycle_id `1` extra `8x`
+- Counts: `carry=47`, `dump=47`
+- Carry config:
+  `testbed/configs/act_agx_v2_2_4primitives_carry_ownership_leftboost_qvel_e500.yaml`
+- Dump config:
+  `testbed/configs/act_agx_v2_2_4primitives_dump_ownership_leftboost_qvel_e500.yaml`
+- Carry checkpoint:
+  `/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/carry_qvel_ownership_history_probe_leftboost_e500_260427/policy_best.ckpt`
+  (`best_epoch=499`, `best_val_loss=0.1020`)
+- Dump checkpoint:
+  `/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/dump_qvel_ownership_history_probe_leftboost_e500_260427/policy_best.ckpt`
+  (`best_epoch=190`, `best_val_loss=0.1109`)
+- Smoke eval config:
+  `testbed/configs/eval_agx_v2_2_4primitives_ownership_leftboost_qvel_3cycle_smoke.yaml`
+
+Only `carry` and `dump` are retrained in this smoke. `dig` and `return` remain
+on the existing V2.2 primitive checkpoints unless the rollout shows a separate
+regression.

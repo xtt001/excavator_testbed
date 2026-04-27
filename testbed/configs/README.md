@@ -88,8 +88,10 @@
 | V2.1 Stage 3 qvel live smoke | `testbed/configs/eval_agx_v2_1_stage3_workskill_qvel.yaml` | 把 Stage-3 qvel work ckpt 接回 Stage-2 hybrid live smoke |
 | V2.1 Stage 4 rule planner 主评测 | `testbed/configs/eval_agx_v2_1_stage4_rule_planner.yaml` | 第一版 coarse replan 主入口；当前使用 soft corridor + `servo_reentry_pose`，官方 `2-cycle` 主门槛已通过 |
 | V2.1 Stage 4 rule planner 3-cycle smoke | `testbed/configs/eval_agx_v2_1_stage4_rule_planner_3cycle_smoke.yaml` | Stage-4 多轮 smoke 入口；官方 `3-cycle smoke` 已通过一次真实 live 检查 |
-| V2.2 四 primitive e500 训练 | `testbed/configs/act_agx_v2_2_4primitives_{dig,carry,dump,return}_qvel_e500.yaml` | `carry` 读取 carrytrim120 leftboost root；`dump` 读取 safe-dump/leftboost root；`dig/return` 继续复用 260426/safe roots |
+| V2.2 四 primitive e500 训练 | `testbed/configs/act_agx_v2_2_4primitives_{dig,carry,dump,return}_qvel_e500.yaml` | baseline primitive configs；旧 carrytrim/safe-dump 结果保留作对照 |
+| V2.2 ownership carry/dump e500 | `testbed/configs/act_agx_v2_2_4primitives_{carry,dump}_ownership_leftboost_qvel_e500.yaml` | 使用 history ownership + latest probe leftboost mix，只重训 `carry`/`dump` |
 | V2.2 四 primitive 3-cycle smoke | `testbed/configs/eval_agx_v2_2_4primitives_qvel_3cycle_smoke.yaml` | `primitive_planner_act`，scripted geometry switch，`dump_done_hold_steps=30`，默认 `temporal_agg = true` |
+| V2.2 ownership 3-cycle smoke | `testbed/configs/eval_agx_v2_2_4primitives_ownership_leftboost_qvel_3cycle_smoke.yaml` | 加载新 ownership `carry`/`dump` checkpoint；`dig`/`return` 复用当前 e500 |
 | V2.2 五 primitive e500 训练 | `testbed/configs/act_agx_v2_2_5primitives_{carry,approach_dump,dump_release}_qvel_e500.yaml` | `carry`/`dump_release` 可从 4p best warm-start；`approach_dump` 合并 left/mid/right |
 | V2.2 五 primitive 3-cycle smoke | `testbed/configs/eval_agx_v2_2_5primitives_qvel_3cycle_smoke.yaml` | `primitive_planner_act_5p`，`carry -> approach_dump -> dump_release` 由相对几何高频切换 |
 | 历史 `qpos + qvel` 对照 | `act_agx_fulltest_qvel.yaml` + `eval_agx_fulltest_qvel.yaml` | 保留为旧对照线 |
@@ -321,6 +323,35 @@ ln -sfn /data/pingfan/excavator_testbed_data_archive/agx_v2_2_4primitives_safe_d
   `ownership_boundary_source_counts={stable_curl_out: 3}`
 - Dump QC: hard collision windows `0`, near collision windows `0`,
   dump starts `30-67` steps before official mass-based `dump_start`
+
+2026-04-27 history ownership rebuild:
+
+- Source workskill:
+  `data/agx_teleop_v2_1_refresh_tail50_workskill_clean_v3_targetsafe_v2_1c_260424183039`
+- 4p history root:
+  `data/agx_v2_2_4primitives_ownership_history_260427`
+- Counts: `dig=64`, `carry=27`, `dump=27`, `return=0` (`--skip-return`)
+- Carry QC: bucket mass loss `0kg`, `tail_stable_strong_curl_out_count=0`,
+  boundary sources `{stable_curl_out: 23, approach_dump_stage: 4}`
+- Rejects: `30` windows missing dump ownership boundary and `7` missing safe
+  dump intent; these are not used for carry/dump training.
+
+Current carry/dump smoke training mix:
+
+- Root: `data/agx_v2_2_4primitives_ownership_history_probe_leftboost_260427`
+- Mix rule: history ownership all + latest ownership probe all cycles `4x` +
+  probe cycle2/source_cycle_id `1` extra `8x`
+- Counts: `carry=47`, `dump=47`
+- Training configs warm-start model weights from the previous V2.2 carry/dump
+  best checkpoints, but reset optimizer/best-state and start this dataset at
+  epoch `0`.
+- Finished smoke training:
+  - carry: `/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/carry_qvel_ownership_history_probe_leftboost_e500_260427/policy_best.ckpt`,
+    best epoch `499`, best val loss `0.1020`
+  - dump: `/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/dump_qvel_ownership_history_probe_leftboost_e500_260427/policy_best.ckpt`,
+    best epoch `190`, best val loss `0.1109`
+- Smoke eval config:
+  `testbed/configs/eval_agx_v2_2_4primitives_ownership_leftboost_qvel_3cycle_smoke.yaml`
 
 V2.2 scripted planner 的 dump readiness 使用 target-relative geometry：
 `mass_in_bucket_kg` 足够、`bucket_height_above_target_rim_m >= 0.45`、clearance
