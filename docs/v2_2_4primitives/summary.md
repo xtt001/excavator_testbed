@@ -239,3 +239,56 @@ The first ownership smoke training mix uses symlinks, not image copies:
 Only `carry` and `dump` are retrained in this smoke. `dig` and `return` remain
 on the existing V2.2 primitive checkpoints unless the rollout shows a separate
 regression.
+
+## Ownership Carry/Dump Rollout Result
+
+Date: 2026-04-27
+
+Rollout config:
+`testbed/configs/eval_agx_v2_2_4primitives_ownership_leftboost_qvel_3cycle_smoke.yaml`
+
+Artifacts:
+
+- Video:
+  `runs/eval/agx_v2_2_4primitives_ownership_leftboost_260427_smoke/videos/rollout_000.mp4`
+- Metrics:
+  `runs/eval/agx_v2_2_4primitives_ownership_leftboost_260427_smoke/results/metrics.json`
+- JSONL:
+  `runs/eval/agx_v2_2_4primitives_ownership_leftboost_260427_smoke/results/rollouts/rollout_000.jsonl`
+- Keyframes:
+  `runs/eval/agx_v2_2_4primitives_ownership_leftboost_260427_smoke/results/diagnostics/keyframes.jpg`
+
+Nominal metrics passed:
+
+- `success_rate=1.0`
+- `cycle1/2/3_success_rate=1.0`
+- `completed_transition_count=2`
+- `transition_timeout_count=0`
+- `hard_target_collision_count=0`
+- `final_bucket_mass=0kg`
+
+Behavioral inspection failed acceptance. Cycle2 still dumps behind/back-edge of
+the truck. The new ownership carry does not collide, and it no longer shows the
+old severe pre-switch emptying, but planner `carry -> dump` still fires at a
+state that is not truly over the bed:
+
+- Cycle2 `carry -> dump`: `t=2012`, `horizontal=0.593m`,
+  `height_above_rim=0.482m`, `over_footprint=0`, `clearance=1`
+- Cycle2 official material `dump_start`: `t=2106`, `horizontal=0.698m`,
+  `height_above_rim=0.561m`, `over_footprint=0`
+- Cycle2 `dump_end`: `t=2140`, bucket empty, no hard collision, but visual dump
+  is mostly behind/outside the target bed.
+
+The current success metrics are therefore too permissive for this failure mode:
+the rollout can pass aggregate 3-cycle success while one cycle deposits poorly.
+The likely next fix is not more e500 training alone. The planner readiness needs
+a better relative target-occupancy signal than the current
+`horizontal_distance <= 0.60m` OR condition, because `bucket_over_target_footprint`
+is never true in this rollout. Options:
+
+- fix/retune Unity target footprint so `over_footprint` becomes meaningful, then
+  require it or a learned visual geometry head;
+- add a stricter relative offset/bed-center readiness signal instead of only
+  scalar horizontal distance;
+- add per-cycle deposited-fraction/post-drop acceptance metrics so this failure
+  cannot hide behind aggregate success.
