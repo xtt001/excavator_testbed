@@ -2,6 +2,12 @@
 
 Date: 2026-04-27
 
+Status: diagnostic branch only. After the one-episode ownership probe, the
+active direction returned to four primitives where `dump` owns target approach,
+alignment, release, and post-dump hold. The 5p split remains useful as a record
+of the failed approach/release separation, but is not the recommended training
+path for current human teleop data.
+
 ## Design
 
 - Branch: `fs/v2_2-dev-5primitives`

@@ -300,15 +300,27 @@ ln -sfn /data/pingfan/excavator_testbed_data_archive/agx_v2_2_4primitives_safe_d
 切分语义：
 
 - `dig`: `qualified_dig_start` 到 `carry/approach_dump` 前
-- `carry`: `carry + approach_dump`，但在 deterministic `dump_intent_start - 120`
-  前截断；`120 = chunk_size 100 + 20 step buffer`，用于避免 ACT 的未来
-  action horizon 学到 pre-dump curl-out tail
-- `dump`: 从 `dump_intent_start` 到 `dump_end`
+- `carry`: `carry_start -> dump ownership boundary`，只负责 loaded transport
+- `dump`: `dump ownership boundary -> dump_end`，负责 move to top of target、
+  alignment、release 和 post-dump hold
 - `return`: full raw 中的 `dump_end -> next qualified_dig_start`
 
-`dump_intent_start` 使用 approach 区内第一段安全、稳定的 pre-dump curl-out
-onset；V2.2 safe-dump builder 不再 fallback 到官方 mass-based `dump_start`。
-找不到安全 onset 的 carry/dump window 会被 reject，并写入 `summary.json`。
+`dump ownership boundary` 使用 deterministic rule：
+`min(first approach_dump stage, stable pre-dump curl-out onset)`。这让 ACT 的
+`chunk_size=100` 未来动作监督不会跨 skill boundary；如果人类 teleop 在接近车斗时
+已经开始稳定 curl-out，这段会归 `dump`，不是 `carry`。V2.2 builder 不再 fallback
+到官方 mass-based `dump_start`；找不到安全 onset 的 dump window 会被 reject，并写入
+`summary.json`。
+
+2026-04-27 ownership probe:
+
+- Raw: `/data/pingfan/excavator_testbed_data_archive/agx_v2_2_ownership_probe_raw_260427_1ep`
+- 4p root: `data/agx_v2_2_4primitives_ownership_boundary_260427_1ep`
+- Counts: `dig=3`, `carry=3`, `dump=3`, `return=0` (`--skip-return`)
+- Carry QC: bucket mass loss `0kg`, `tail_stable_strong_curl_out_count=0`,
+  `ownership_boundary_source_counts={stable_curl_out: 3}`
+- Dump QC: hard collision windows `0`, near collision windows `0`,
+  dump starts `30-67` steps before official mass-based `dump_start`
 
 V2.2 scripted planner 的 dump readiness 使用 target-relative geometry：
 `mass_in_bucket_kg` 足够、`bucket_height_above_target_rim_m >= 0.45`、clearance

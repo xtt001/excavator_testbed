@@ -20,7 +20,6 @@ from testbed.data.hdf5_io import read_episode, write_episode
 from testbed.data.primitives_v2_2 import (
     CARRY_ACTION_HORIZON_STEPS,
     CARRY_MIN_WINDOW_LEN,
-    CARRY_PRE_DUMP_TRIM_STEPS,
     build_primitive_datasets,
     build_primitive_datasets_5p,
     extract_workskill_primitive_slices,
@@ -69,25 +68,27 @@ class TestPrimitivesV22(unittest.TestCase):
 
             self.assertEqual(dig_episode["qpos"].shape[0], 20)
             self.assertEqual(carry_episode["qpos"].shape[0], CARRY_MIN_WINDOW_LEN)
-            self.assertEqual(dump_episode["qpos"].shape[0], 100)
+            self.assertEqual(dump_episode["qpos"].shape[0], 220)
             self.assertEqual(return_episode["qpos"].shape[0], 4)
             self.assertEqual(carry_episode["step_ids"][0], 30)
             self.assertEqual(carry_episode["step_ids"][-1], 149)
-            self.assertEqual(dump_episode["step_ids"][0], 270)
+            self.assertEqual(dump_episode["step_ids"][0], 150)
             self.assertEqual(dump_episode["step_ids"][-1], 369)
             self.assertEqual(return_episode["step_ids"].tolist(), [3, 4, 5, 6])
             self.assertEqual(carry_episode["metadata"]["primitive_name"], "carry")
             self.assertEqual(
                 carry_episode["metadata"]["primitive_window"],
-                "carry_to_before_dump_intent",
+                "carry_to_before_dump_ownership",
             )
             self.assertEqual(int(carry_episode["metadata"]["dump_intent_step"]), 270)
             self.assertEqual(int(carry_episode["metadata"]["official_dump_start_step"]), 310)
-            self.assertEqual(
-                int(carry_episode["metadata"]["carry_removed_pre_dump_steps"]),
-                CARRY_PRE_DUMP_TRIM_STEPS,
-            )
             self.assertEqual(dump_episode["metadata"]["primitive_name"], "dump")
+            self.assertEqual(
+                dump_episode["metadata"]["primitive_window"],
+                "dump_approach_to_dump_end",
+            )
+            self.assertEqual(int(dump_episode["metadata"]["dump_ownership_start_step"]), 140)
+            self.assertEqual(int(dump_episode["metadata"]["dump_approach_steps_before_intent"]), 120)
             self.assertAlmostEqual(
                 float(dump_episode["metadata"]["dump_start_height_above_rim_m"]),
                 0.60,
@@ -130,8 +131,8 @@ class TestPrimitivesV22(unittest.TestCase):
             dump_release_episode = read_episode(output_root / "dump_release" / "episode_0.hdf5")
 
             self.assertEqual(carry_episode["step_ids"][0], 30)
-            self.assertEqual(carry_episode["step_ids"][-1], 99)
-            self.assertEqual(approach_episode["step_ids"][0], 100)
+            self.assertEqual(carry_episode["step_ids"][-1], 149)
+            self.assertEqual(approach_episode["step_ids"][0], 150)
             self.assertEqual(approach_episode["step_ids"][-1], 269)
             self.assertEqual(dump_release_episode["step_ids"][0], 270)
             self.assertEqual(dump_release_episode["step_ids"][-1], 369)
@@ -200,7 +201,7 @@ class TestPrimitivesV22(unittest.TestCase):
             )
 
             carry_episode = read_episode(output_root / "carry" / "episode_0.hdf5")
-            self.assertEqual(carry_episode["step_ids"][-1], 99)
+            self.assertEqual(carry_episode["step_ids"][-1], 149)
             self.assertFalse(
                 bool(carry_episode["metadata"]["carry_tail_has_stable_strong_curl_out"])
             )
@@ -271,7 +272,7 @@ class TestPrimitivesV22(unittest.TestCase):
 
     def test_5p_builder_rejects_approach_mass_loss_before_release(self) -> None:
         episode = _make_workskill_episode_payload(length=360)
-        episode["env_state"][120:260, ENV_STATE_MASS_IN_BUCKET_IDX] = 300.0
+        episode["env_state"][200:260, ENV_STATE_MASS_IN_BUCKET_IDX] = 300.0
 
         slices, rejects = extract_workskill_primitive_slices_5p(
             episode=episode,
@@ -288,7 +289,7 @@ class TestPrimitivesV22(unittest.TestCase):
             )
         )
 
-    def test_dump_starts_before_or_at_official_mass_based_dump_start(self) -> None:
+    def test_dump_owns_approach_before_release_intent(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             workskill_dir = Path(tmpdir) / "workskill"
             output_root = Path(tmpdir) / "primitives"
@@ -303,13 +304,15 @@ class TestPrimitivesV22(unittest.TestCase):
             )
 
             dump_episode = read_episode(output_root / "dump" / "episode_0.hdf5")
-            self.assertEqual(dump_episode["step_ids"][0], 270)
+            self.assertEqual(dump_episode["step_ids"][0], 150)
+            self.assertEqual(int(dump_episode["metadata"]["dump_ownership_start_step"]), 140)
+            self.assertEqual(int(dump_episode["metadata"]["dump_approach_steps_before_intent"]), 120)
             self.assertLessEqual(
                 int(dump_episode["metadata"]["dump_intent_step"]),
                 int(dump_episode["metadata"]["official_dump_start_step"]),
             )
 
-    def test_carry_tail_trim_rejects_too_short_window(self) -> None:
+    def test_carry_ownership_rejects_too_short_window(self) -> None:
         episode = _make_workskill_episode_payload(length=180)
         slices, rejects = extract_workskill_primitive_slices(
             episode=episode,
@@ -321,13 +324,13 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertTrue(
             any(
                 record.primitive_name == "carry"
-                and record.reason == "carry_too_short_after_tail_trim"
+                and record.reason == "carry_too_short_before_dump_ownership"
                 for record in rejects
             )
         )
         self.assertTrue(any(item.primitive_name == "dump" for item in slices))
 
-    def test_carry_tail_trim_does_not_treat_curled_in_saturation_as_dump(self) -> None:
+    def test_carry_ownership_does_not_treat_curled_in_saturation_as_dump(self) -> None:
         episode = _make_workskill_episode_payload(length=360)
         episode["qpos"][20:80, 3] = 0.0
         episode["actions"][20:80, 3] = -0.70
@@ -341,6 +344,28 @@ class TestPrimitivesV22(unittest.TestCase):
         carry = next(item for item in slices if item.primitive_name == "carry")
         self.assertEqual(carry.window_len, 120)
         self.assertFalse(any(record.primitive_name == "carry" for record in rejects))
+
+    def test_stable_curl_out_before_approach_belongs_to_dump(self) -> None:
+        episode = _make_workskill_episode_payload(length=360)
+        work_stage_id = episode["v2"]["step"]["work_stage_id"]
+        work_stage_id[20:180] = WORK_STAGE_NAME_TO_ID["carry"]
+        work_stage_id[180:300] = WORK_STAGE_NAME_TO_ID["approach_dump"]
+        episode["qpos"][150:260, 3] = 0.60
+        episode["actions"][150:260, 3] = -0.25
+
+        slices, rejects = extract_workskill_primitive_slices(
+            episode=episode,
+            source_path=Path("episode_0.hdf5"),
+            source_dataset_dir=Path("."),
+        )
+
+        carry = next(item for item in slices if item.primitive_name == "carry")
+        dump = next(item for item in slices if item.primitive_name == "dump")
+        self.assertFalse(any(record.primitive_name == "carry" for record in rejects))
+        self.assertEqual(carry.end_step_exclusive, 150)
+        self.assertEqual(dump.start_step, 150)
+        self.assertEqual(dump.dump_qc["dump_ownership_boundary_source"], "stable_curl_out")
+        self.assertEqual(dump.dump_qc["dump_ownership_stable_curl_out_onset_step"], 150)
 
     def test_dump_builder_rejects_instead_of_falling_back_to_official_dump_start(self) -> None:
         episode = _make_workskill_episode_payload(length=12)
@@ -708,7 +733,7 @@ def _write_workskill_episode(path: Path) -> None:
 def _make_workskill_episode_payload(length: int) -> dict:
     if length >= 320:
         carry_start = 20
-        approach_start = 90
+        approach_start = 140
         dump_intent_start = 260
         official_dump_start = 300
     elif length >= 180:

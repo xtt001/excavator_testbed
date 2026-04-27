@@ -149,3 +149,48 @@ of dump. It is much smaller than before and did not cause meaningful spill in
 the hold30 smoke, but this is a sign that the 4-primitive boundary is still
 doing too much. If this becomes unstable across more rollouts, the next design
 step should be five primitives: `dig -> carry -> approach_dump -> dump_release -> return`.
+
+## Ownership Pivot Back To 4 Primitives
+
+Date: 2026-04-27
+
+The 5-primitive experiment showed that `approach_dump` is not intuitive for
+human teleop: operators naturally blend swing, boom/stick alignment, and
+curl-out while visually checking that soil will not spill. A strict
+`approach_dump -> dump_release` split produced too few clean approach windows.
+
+Current V2.2 ownership returns to four primitives:
+
+- `dig`: dig/load.
+- `carry`: loaded transport before dump ownership begins.
+- `dump`: move to top of target, align, release, and post-dump hold.
+- `return`: empty-bucket return to the next dig.
+
+The key ACT rule is: do not let a training chunk cross skill ownership. The
+builder therefore ends `carry` at the earlier of:
+
+- first `approach_dump` stage, or
+- stable pre-dump curl-out onset.
+
+`dump` starts at the same boundary. This keeps ACT's `chunk_size=100` future
+action supervision from teaching carry to perform dump/release.
+
+One-episode ownership probe:
+
+- Raw:
+  `/data/pingfan/excavator_testbed_data_archive/agx_v2_2_ownership_probe_raw_260427_1ep`
+- Workskill:
+  `/data/pingfan/excavator_testbed_data_archive/agx_v2_2_ownership_probe_workskill_260427_1ep`
+- 4p root:
+  `/data/pingfan/excavator_testbed_data_archive/agx_v2_2_4primitives_ownership_boundary_260427_1ep`
+- Repo symlink: `data/agx_v2_2_4primitives_ownership_boundary_260427_1ep`
+- Counts: `dig=3`, `carry=3`, `dump=3`, `return=0` (`--skip-return`)
+- Carry QC: bucket mass loss `0kg`, `tail_stable_strong_curl_out_count=0`,
+  `ownership_boundary_source_counts={stable_curl_out: 3}`
+- Dump QC: hard collision windows `0`, near collision windows `0`
+- Dump boundary starts `30-67` steps before official mass-based `dump_start`
+
+This probe is good evidence that the 4p ownership definition matches human
+operation better than the 5p approach/release split. More data should use this
+definition: carry to target vicinity without owning final alignment, then dump
+owns the approach-to-release sequence.

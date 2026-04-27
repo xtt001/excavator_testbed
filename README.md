@@ -63,14 +63,12 @@ Repo A 负责：
   - 这条逻辑仅作为 live 兼容层存在，不进入协议、`/v2` schema、planner 语义或默认训练口径
 - V2.2 当前新增四 primitive smoke 线：
   - builder: `tb-build-primitives-v2_2`
-  - 当前 carry-tail 清理数据 root:
-    `data/agx_v2_2_4primitives_carrytrim120_leftboost_260427`
-  - 当前计数：`carry=63`（safe carry 27 + new left-clean carry 3x12），
-    `dig/dump/return` 复用 cleaned primitive roots
-  - `carry` 在 safe `dump_intent_start - 120` 前截断；这是为了覆盖 ACT
-    `chunk_size=100` 的未来动作 horizon，再加 20 step buffer，避免 carry
-    学到 pre-dump curl-out tail
-  - `dump` 从安全 pre-dump onset 开始，不 fallback 到 mass-based `dump_start`
+  - 当前 ownership probe root:
+    `data/agx_v2_2_4primitives_ownership_boundary_260427_1ep`
+  - ownership 定义：`carry` 只负责 loaded transport；`dump` 负责 move to top
+    of target、alignment、release 和 post-dump hold
+  - `dump` 起点取 `first approach_dump stage` 与 stable pre-dump curl-out onset
+    中更早者，避免 ACT 的 `chunk_size=100` 未来动作监督跨 skill boundary
   - planner 在 `dump_done` 后保持 dump skill `30` step，再切 return，避免
     temporal aggregation 边界上 return 动作把刚落入车斗的土带出
   - live eval 入口：`eval_agx_v2_2_4primitives_qvel_3cycle_smoke.yaml`
@@ -89,6 +87,8 @@ Repo A 负责：
     切换，使用相对几何、bucket mass、clearance 或视觉 geometry head，不逐步询问 VLM
   - 首版 ACT low-dim input 仍为 `qpos + qvel`；Unity target geometry 只用于
     offline label/QC、scripted switch 和 rollout logs
+  - 2026-04-27 probe 后结论：5p 的 `approach_dump` 对 human teleop 不够直觉；
+    当前主线回到 4p ownership，让 `dump` 统一拥有 approach + release
 
 ---
 

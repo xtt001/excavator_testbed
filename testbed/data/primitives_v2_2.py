@@ -34,8 +34,8 @@ PRIMITIVE_NAMES = ("dig", "carry", "dump", "return")
 PRIMITIVE_NAMES_5P = ("dig", "carry", "approach_dump", "dump_release", "return")
 
 DIG_WINDOW_NAME = "qualified_dig_start_to_before_carry"
-CARRY_WINDOW_NAME = "carry_to_before_dump_intent"
-DUMP_WINDOW_NAME = "dump_intent_to_dump_end"
+CARRY_WINDOW_NAME = "carry_to_before_dump_ownership"
+DUMP_WINDOW_NAME = "dump_approach_to_dump_end"
 RETURN_WINDOW_NAME = "dump_end_to_next_qualified_dig_start"
 FIVEP_CARRY_WINDOW_NAME = "carry_to_before_approach_dump"
 APPROACH_DUMP_WINDOW_NAME = "approach_dump_to_before_dump_release"
@@ -43,8 +43,8 @@ DUMP_RELEASE_WINDOW_NAME = "dump_release_to_dump_end_hold"
 
 BUCKET_QPOS_INDEX = 3
 BUCKET_ACTION_INDEX = 3
-CARRY_PRE_DUMP_TRIM_STEPS = 120
 CARRY_ACTION_HORIZON_STEPS = 100
+CARRY_CURL_OUT_LOOKBACK_STEPS = 120
 CARRY_CURL_OUT_ACTIVE_QPOS_MIN = 0.20
 CARRY_CURL_OUT_BUCKET_QPOS_MIN = 0.40
 CARRY_CURL_OUT_BUCKET_ACTION_MAX = -0.20
@@ -109,13 +109,6 @@ class PrimitiveRejectRecord:
 @dataclass(frozen=True)
 class DumpIntentSearchResult:
     start_step: int | None
-    qc: dict[str, Any]
-    reject_reason: str | None = None
-
-
-@dataclass(frozen=True)
-class CarryTailTrimResult:
-    end_step: int
     qc: dict[str, Any]
     reject_reason: str | None = None
 
@@ -455,6 +448,10 @@ def extract_workskill_primitive_slices(
             WORK_STAGE_NAME_TO_ID["approach_dump"],
         },
     )
+    approach_start = _first_index_where(
+        work_stage_id,
+        {WORK_STAGE_NAME_TO_ID["approach_dump"]},
+    )
     official_dump_start = _first_dump_start(
         work_stage_id=work_stage_id,
         dump_start_mask=dump_start_mask,
@@ -465,6 +462,34 @@ def extract_workskill_primitive_slices(
         official_dump_start=official_dump_start,
     )
     dump_intent_start = dump_intent.start_step
+    stable_curl_out_onset = (
+        None
+        if carry_start is None or dump_intent_start is None
+        else _find_stable_carry_curl_out_onset(
+            episode=episode,
+            start=int(carry_start),
+            end=int(dump_intent_start),
+        )
+    )
+    dump_ownership_candidates = [
+        int(value)
+        for value in (approach_start, stable_curl_out_onset)
+        if value is not None
+    ]
+    dump_ownership_start = (
+        None if not dump_ownership_candidates else int(min(dump_ownership_candidates))
+    )
+    dump_ownership_boundary_source = None
+    if dump_ownership_start is not None:
+        dump_ownership_boundary_source = (
+            "stable_curl_out"
+            if stable_curl_out_onset is not None
+            and (
+                approach_start is None
+                or int(stable_curl_out_onset) <= int(approach_start)
+            )
+            else "approach_dump_stage"
+        )
 
     slices: list[PrimitiveSlice] = []
     rejects: list[PrimitiveRejectRecord] = []
@@ -533,7 +558,19 @@ def extract_workskill_primitive_slices(
             end=int(carry_start),
         )
 
-    if dump_intent_start is None:
+    if dump_ownership_start is None:
+        rejects.append(
+            PrimitiveRejectRecord(
+                primitive_name="carry",
+                reason="missing_dump_ownership_boundary",
+                source_dataset_dir=str(source_dataset_dir.resolve()),
+                source_episode_id=int(source_episode_id),
+                source_cycle_id=int(source_cycle_id),
+                start_step=int(source_start_offset + (carry_start or 0)),
+                end_step_exclusive=int(source_start_offset + n_steps),
+            )
+        )
+    elif dump_intent_start is None:
         reason = dump_intent.reject_reason or "missing_safe_dump_intent"
         rejects.append(
             PrimitiveRejectRecord(
@@ -560,22 +597,73 @@ def extract_workskill_primitive_slices(
             )
         )
     else:
-        carry_trim = _trim_carry_end_before_dump_tail(
+        carry_qc = _window_tail_qc(
             episode=episode,
-            carry_start=int(carry_start),
-            dump_intent_start=int(dump_intent_start),
+            prefix="carry",
+            start=int(carry_start),
+            end=int(dump_ownership_start),
+            release_start=int(dump_intent_start),
         )
-        if carry_trim.reject_reason is not None:
+        carry_qc.update(
+            {
+                "carry_dump_ownership_start_step": int(dump_ownership_start),
+                "carry_dump_ownership_boundary_source": str(
+                    dump_ownership_boundary_source
+                ),
+                "carry_dump_ownership_approach_stage_step": (
+                    -1 if approach_start is None else int(approach_start)
+                ),
+                "carry_dump_ownership_stable_curl_out_onset_step": (
+                    -1 if stable_curl_out_onset is None else int(stable_curl_out_onset)
+                ),
+                "carry_dump_approach_steps_before_intent": int(
+                    int(dump_intent_start) - int(dump_ownership_start)
+                ),
+            }
+        )
+        if int(dump_ownership_start) - int(carry_start) < CARRY_MIN_WINDOW_LEN:
             rejects.append(
                 PrimitiveRejectRecord(
                     primitive_name="carry",
-                    reason=carry_trim.reject_reason,
+                    reason="carry_too_short_before_dump_ownership",
                     source_dataset_dir=str(source_dataset_dir.resolve()),
                     source_episode_id=int(source_episode_id),
                     source_cycle_id=int(source_cycle_id),
                     start_step=int(source_start_offset + carry_start),
-                    end_step_exclusive=int(source_start_offset + carry_trim.end_step),
-                    details=carry_trim.qc,
+                    end_step_exclusive=int(source_start_offset + dump_ownership_start),
+                    details=carry_qc,
+                )
+            )
+        elif (
+            float(carry_qc.get("carry_bucket_mass_loss_kg", 0.0))
+            > CARRY_MAX_BUCKET_MASS_LOSS_KG
+        ):
+            rejects.append(
+                PrimitiveRejectRecord(
+                    primitive_name="carry",
+                    reason="carry_mass_loss_before_dump_ownership",
+                    source_dataset_dir=str(source_dataset_dir.resolve()),
+                    source_episode_id=int(source_episode_id),
+                    source_cycle_id=int(source_cycle_id),
+                    start_step=int(source_start_offset + carry_start),
+                    end_step_exclusive=int(source_start_offset + dump_ownership_start),
+                    details=carry_qc,
+                )
+            )
+        elif (
+            int(carry_qc.get("carry_hard_collision_delta_count", 0))
+            > CARRY_MAX_HARD_COLLISION_DELTA
+        ):
+            rejects.append(
+                PrimitiveRejectRecord(
+                    primitive_name="carry",
+                    reason="carry_hard_collision_before_dump_ownership",
+                    source_dataset_dir=str(source_dataset_dir.resolve()),
+                    source_episode_id=int(source_episode_id),
+                    source_cycle_id=int(source_cycle_id),
+                    start_step=int(source_start_offset + carry_start),
+                    end_step_exclusive=int(source_start_offset + dump_ownership_start),
+                    details=carry_qc,
                 )
             )
         else:
@@ -583,12 +671,24 @@ def extract_workskill_primitive_slices(
                 primitive_name="carry",
                 window_name=CARRY_WINDOW_NAME,
                 start=int(carry_start),
-                end=int(carry_trim.end_step),
-                reason_if_invalid="carry_too_short_after_tail_trim",
-                carry_qc=carry_trim.qc,
+                end=int(dump_ownership_start),
+                reason_if_invalid="carry_too_short_before_dump_ownership",
+                carry_qc=carry_qc,
             )
 
-    if dump_intent_start is None:
+    if dump_ownership_start is None:
+        rejects.append(
+            PrimitiveRejectRecord(
+                primitive_name="dump",
+                reason="missing_dump_ownership_boundary",
+                source_dataset_dir=str(source_dataset_dir.resolve()),
+                source_episode_id=int(source_episode_id),
+                source_cycle_id=int(source_cycle_id),
+                start_step=int(source_start_offset),
+                end_step_exclusive=int(source_start_offset + n_steps),
+            )
+        )
+    elif dump_intent_start is None:
         reason = dump_intent.reject_reason or "missing_safe_dump_intent"
         rejects.append(
             PrimitiveRejectRecord(
@@ -603,12 +703,29 @@ def extract_workskill_primitive_slices(
             )
         )
     else:
+        dump_qc = dict(dump_intent.qc)
+        dump_qc.update(
+            {
+                "dump_ownership_start_step": int(dump_ownership_start),
+                "dump_ownership_window_len": int(n_steps - int(dump_ownership_start)),
+                "dump_ownership_boundary_source": str(dump_ownership_boundary_source),
+                "dump_ownership_approach_stage_step": (
+                    -1 if approach_start is None else int(approach_start)
+                ),
+                "dump_ownership_stable_curl_out_onset_step": (
+                    -1 if stable_curl_out_onset is None else int(stable_curl_out_onset)
+                ),
+                "dump_approach_steps_before_intent": int(
+                    int(dump_intent_start) - int(dump_ownership_start)
+                ),
+            }
+        )
         _append_or_reject(
             primitive_name="dump",
             window_name=DUMP_WINDOW_NAME,
-            start=int(dump_intent_start),
+            start=int(dump_ownership_start),
             end=n_steps,
-            dump_qc=dump_intent.qc,
+            dump_qc=dump_qc,
         )
 
     return slices, rejects
@@ -1022,48 +1139,6 @@ def build_primitive_v2_payload(
     }
 
 
-def _trim_carry_end_before_dump_tail(
-    *,
-    episode: dict[str, Any],
-    carry_start: int,
-    dump_intent_start: int,
-) -> CarryTailTrimResult:
-    """Trim carry before dump-tail actions can enter ACT's supervised horizon."""
-    carry_start = int(carry_start)
-    dump_intent_start = int(dump_intent_start)
-    horizon_trim_end = int(dump_intent_start - CARRY_PRE_DUMP_TRIM_STEPS)
-    stable_curl_out_onset = _find_stable_carry_curl_out_onset(
-        episode=episode,
-        start=carry_start,
-        end=dump_intent_start,
-    )
-    curl_trim_end = (
-        None
-        if stable_curl_out_onset is None
-        else int(stable_curl_out_onset - CARRY_CURL_OUT_GUARD_STEPS)
-    )
-    candidate_ends = [horizon_trim_end]
-    if curl_trim_end is not None:
-        candidate_ends.append(curl_trim_end)
-    carry_end = int(min(candidate_ends))
-    qc = _carry_tail_qc(
-        episode=episode,
-        carry_start=carry_start,
-        carry_end=carry_end,
-        dump_intent_start=dump_intent_start,
-        stable_curl_out_onset=stable_curl_out_onset,
-        horizon_trim_end=horizon_trim_end,
-        curl_trim_end=curl_trim_end,
-    )
-    if carry_end - carry_start < CARRY_MIN_WINDOW_LEN:
-        return CarryTailTrimResult(
-            end_step=carry_end,
-            qc=qc,
-            reject_reason="carry_too_short_after_tail_trim",
-        )
-    return CarryTailTrimResult(end_step=carry_end, qc=qc)
-
-
 def _find_stable_carry_curl_out_onset(
     *,
     episode: dict[str, Any],
@@ -1093,7 +1168,7 @@ def _find_stable_carry_curl_out_onset(
         min_stable_steps=CARRY_CURL_OUT_MIN_STABLE_STEPS,
     ):
         return int(onset)
-    continuing_dump_start = max(int(start), int(end) - CARRY_PRE_DUMP_TRIM_STEPS)
+    continuing_dump_start = max(int(start), int(end) - CARRY_CURL_OUT_LOOKBACK_STEPS)
     for onset in _stable_true_indices(
         continuing_dump,
         start=continuing_dump_start,
@@ -1102,82 +1177,6 @@ def _find_stable_carry_curl_out_onset(
     ):
         return int(onset)
     return None
-
-
-def _carry_tail_qc(
-    *,
-    episode: dict[str, Any],
-    carry_start: int,
-    carry_end: int,
-    dump_intent_start: int,
-    stable_curl_out_onset: int | None,
-    horizon_trim_end: int,
-    curl_trim_end: int | None,
-) -> dict[str, Any]:
-    qpos = np.asarray(episode["qpos"], dtype=np.float32)
-    actions = np.asarray(episode["actions"], dtype=np.float32)
-    tail_start = max(int(carry_start), int(carry_end) - CARRY_ACTION_HORIZON_STEPS)
-    tail_end = max(tail_start, int(carry_end))
-    tail_bucket_action = actions[tail_start:tail_end, BUCKET_ACTION_INDEX]
-    tail_bucket_qpos = qpos[tail_start:tail_end, BUCKET_QPOS_INDEX]
-    stable_tail_curl = False
-    if len(tail_bucket_action) > 0:
-        strong_tail = (
-            (tail_bucket_qpos >= CARRY_CURL_OUT_ACTIVE_QPOS_MIN)
-            & (tail_bucket_action <= CARRY_CURL_OUT_BUCKET_ACTION_MAX)
-        )
-        stable_tail_curl = any(
-            True
-            for _ in _stable_true_indices(
-                strong_tail,
-                start=0,
-                end=len(strong_tail),
-                min_stable_steps=CARRY_CURL_OUT_MIN_STABLE_STEPS,
-            )
-        )
-
-    qc: dict[str, Any] = {
-        "carry_pre_dump_trim_steps": int(CARRY_PRE_DUMP_TRIM_STEPS),
-        "carry_action_horizon_steps": int(CARRY_ACTION_HORIZON_STEPS),
-        "carry_curl_out_guard_steps": int(CARRY_CURL_OUT_GUARD_STEPS),
-        "carry_start_step": int(carry_start),
-        "carry_end_step": int(carry_end),
-        "carry_window_len": int(carry_end - carry_start),
-        "carry_dump_intent_step": int(dump_intent_start),
-        "carry_removed_pre_dump_steps": int(dump_intent_start - carry_end),
-        "carry_horizon_trim_end_step": int(horizon_trim_end),
-        "carry_curl_trim_end_step": -1 if curl_trim_end is None else int(curl_trim_end),
-        "carry_stable_curl_out_onset_step": (
-            -1 if stable_curl_out_onset is None else int(stable_curl_out_onset)
-        ),
-        "carry_tail_start_step": int(tail_start),
-        "carry_tail_len": int(tail_end - tail_start),
-        "carry_tail_has_stable_strong_curl_out": bool(stable_tail_curl),
-    }
-    if len(tail_bucket_action) > 0:
-        qc.update(
-            {
-                "carry_tail_bucket_action_min": float(np.min(tail_bucket_action)),
-                "carry_tail_bucket_action_median": float(np.median(tail_bucket_action)),
-                "carry_tail_bucket_action_max": float(np.max(tail_bucket_action)),
-                "carry_tail_bucket_qpos_min": float(np.min(tail_bucket_qpos)),
-                "carry_tail_bucket_qpos_median": float(np.median(tail_bucket_qpos)),
-                "carry_tail_bucket_qpos_max": float(np.max(tail_bucket_qpos)),
-            }
-        )
-
-    env_state = _target_geometry_env_state(episode=episode)
-    if env_state is not None and carry_start < len(env_state) and carry_end > carry_start:
-        mass_start = float(env_state[carry_start, ENV_STATE_MASS_IN_BUCKET_IDX])
-        mass_end = float(env_state[carry_end - 1, ENV_STATE_MASS_IN_BUCKET_IDX])
-        qc.update(
-            {
-                "carry_start_bucket_mass_kg": float(mass_start),
-                "carry_end_bucket_mass_kg": float(mass_end),
-                "carry_bucket_mass_loss_kg": float(max(0.0, mass_start - mass_end)),
-            }
-        )
-    return qc
 
 
 def _window_tail_qc(
@@ -1701,10 +1700,20 @@ def _build_summary(
             "min_height_above_rim_m": float(DUMP_INTENT_MIN_HEIGHT_ABOVE_RIM_M),
             "official_dump_start_fallback": False,
         },
+        "dump_ownership_config": {
+            "dump_window": DUMP_WINDOW_NAME,
+            "carry_window": CARRY_WINDOW_NAME,
+            "boundary_rule": (
+                "min(first approach_dump stage, stable pre-dump curl-out onset)"
+            ),
+            "carry_action_horizon_steps": int(CARRY_ACTION_HORIZON_STEPS),
+            "curl_out_lookback_steps": int(CARRY_CURL_OUT_LOOKBACK_STEPS),
+            "dump_owns": "target approach, alignment, release, and post-dump hold",
+            "carry_owns": "safe loaded transport before dump ownership begins",
+        },
         "carry_tail_config": {
-            "pre_dump_trim_steps": int(CARRY_PRE_DUMP_TRIM_STEPS),
             "action_horizon_steps": int(CARRY_ACTION_HORIZON_STEPS),
-            "extra_buffer_steps": int(CARRY_PRE_DUMP_TRIM_STEPS - CARRY_ACTION_HORIZON_STEPS),
+            "curl_out_lookback_steps": int(CARRY_CURL_OUT_LOOKBACK_STEPS),
             "curl_out_active_qpos_min": float(CARRY_CURL_OUT_ACTIVE_QPOS_MIN),
             "curl_out_bucket_qpos_min": float(CARRY_CURL_OUT_BUCKET_QPOS_MIN),
             "curl_out_bucket_action_max": float(CARRY_CURL_OUT_BUCKET_ACTION_MAX),
@@ -1740,12 +1749,20 @@ def _build_summary(
 def _build_carry_qc_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "accepted_window_count": int(len(records)),
-        "trimmed_window_len": _numeric_stats(records, "carry_window_len"),
-        "removed_pre_dump_steps": _numeric_stats(records, "carry_removed_pre_dump_steps"),
-        "stable_curl_out_onset_step": _numeric_stats(
+        "window_len": _numeric_stats(records, "carry_window_len"),
+        "steps_before_release": _numeric_stats(records, "carry_steps_before_release"),
+        "ownership_stable_curl_out_onset_step": _numeric_stats(
             records,
-            "carry_stable_curl_out_onset_step",
+            "carry_dump_ownership_stable_curl_out_onset_step",
             ignore_negative=True,
+        ),
+        "ownership_boundary_source_counts": dict(
+            sorted(
+                Counter(
+                    str(record.get("carry_dump_ownership_boundary_source", "unknown"))
+                    for record in records
+                ).items()
+            )
         ),
         "tail_bucket_action_min": _numeric_stats(records, "carry_tail_bucket_action_min"),
         "tail_bucket_action_median": _numeric_stats(
@@ -1756,6 +1773,9 @@ def _build_carry_qc_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
         "bucket_mass_loss_kg": _numeric_stats(records, "carry_bucket_mass_loss_kg"),
         "tail_stable_strong_curl_out_count": int(
             sum(bool(record.get("carry_tail_has_stable_strong_curl_out", False)) for record in records)
+        ),
+        "tail_stable_release_count": int(
+            sum(bool(record.get("carry_tail_has_stable_release", False)) for record in records)
         ),
     }
 
