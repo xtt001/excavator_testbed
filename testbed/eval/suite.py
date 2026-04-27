@@ -429,6 +429,12 @@ class EvalSuite:
                             "dump_done_hold_count": int(
                                 policy_debug.get("dump_done_hold_count", 0)
                             ),
+                            "approach_ready_hold_count": int(
+                                policy_debug.get("approach_ready_hold_count", 0)
+                            ),
+                            "dump_release_ready_hold_count": int(
+                                policy_debug.get("dump_release_ready_hold_count", 0)
+                            ),
                         }
                     )
                     if stream_path is not None:

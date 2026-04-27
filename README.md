@@ -19,7 +19,7 @@ Repo A 负责：
 
 ## 当前状态
 
-状态日期：`2026-04-19`
+状态日期：`2026-04-27`
 
 | 组件 | 实现状态 | 当前验证状态 |
 |---|---|---|
@@ -35,11 +35,13 @@ Repo A 负责：
 | `tb-build-workskill-v2_1` | 已实现 | 从 sibling relabeled 数据集中裁出 `qualified_dig_start -> dump_end` 的 Stage-3 workskill 数据集 |
 | `tb-build-transition-v2_1` | 已实现 | 从 sibling relabeled 数据集中裁出 `dump_end -> next qualified_dig_start` 的 transition feasibility 数据集 |
 | `tb-build-primitives-v2_2` | 已实现 | 从 refreshed V2.1 workskill/raw 数据集中裁出 V2.2 `dig/carry/dump/return` 四个 primitive sibling 数据集 |
+| `tb-build-primitives-v2_2_5p` | 已实现（V2.2 5p 实验入口） | 裁出 `dig/carry/approach_dump/dump_release/return`；`approach_dump` 合并 left/mid/right 训练 |
 | `tb-audit-target-geometry` | 已实现 | 检查数据集是否带齐 target-safety 训练所需的 4 个 target geometry 字段 |
 | `tb-train` / ACT trainer | 已实现 | 已完成 `fulltest(qpos)`、`fulltest(qpos+qvel)` 与 `v1(qpos)` 三条训练线 |
 | `tb-eval` | 已实现 | 已完成正式 live eval；当前支持 V2.1 Stage 1 多轮 boundary / continuity 指标 |
 | `hybrid_planner_act` | 已实现 | 已接入最小 Stage 2 deploy 链；当前已在 `s0_truck` 上通过 live `2-cycle` gate，并完成一次 `3-cycle smoke` |
 | `primitive_planner_act` | 已实现（V2.2 smoke 入口） | 加载 `dig/carry/dump/return` 四个 ACT checkpoint；低层只用 `qpos+qvel`，Unity target geometry 只用于 scripted switch 与日志/QC |
+| `primitive_planner_act_5p` | 已实现（V2.2 5p smoke 入口） | 加载 `dig/carry/approach_dump/dump_release/return` 五个 ACT checkpoint；VLM/upper model 只保留低频任务意图，不按 primitive 频率决策 |
 | Stage 3 bootstrap work-skill | 已实现 | 已完成 `agx_teleop_v1 -> v2_1_relabeled -> v2_1_workskill`，并跑通 `qvel/gcact` smoke train；`qvel e50 + loaded_and_clear bootstrap` 已通过单轮 live success gate |
 | Stage 4 rule planner | 已实现（首版目标已完成） | 已把 `RuleTaskPlanner / PlannerGoal / CycleSummary / SectorBelief` 接入现有 `hybrid_planner_act`，并完成 `planner_trace.json` 回放；正式主配置下 `3` 条 live rollout 已达到 `cycle2_success_rate = 1.0`，官方 `3-cycle smoke` 也已达到 `cycle3_success_rate = 1.0` |
 | rollout timestep logs | 已实现 | `tb-eval` 现可写 `rollout_XXX.jsonl / summary / manifest` |
@@ -73,6 +75,20 @@ Repo A 负责：
     temporal aggregation 边界上 return 动作把刚落入车斗的土带出
   - live eval 入口：`eval_agx_v2_2_4primitives_qvel_3cycle_smoke.yaml`
   - 首轮 reset 仍可配置 `bootstrap_policy` 到 `loaded_and_clear`，但 primitive 执行阶段不启用 fallback
+- V2.2 5-primitives 实验线：
+  - branch: `fs/v2_2-dev-5primitives`
+  - builder: `tb-build-primitives-v2_2_5p`
+  - planner: `primitive_planner_act_5p`
+  - split: `dig -> carry -> approach_dump -> dump_release -> return`
+  - `carry` 负责运土到 truck 附近；`approach_dump` 负责进入可倒相对几何，也允许
+    人类 teleop 中常见的轻微 swing 与 curl-out 同时发生；稳定 release intent
+    归 `dump_release`，避免上一段 skill 接管下一段 skill 的工作
+  - `approach_dump` 首版合并 left/mid/right 数据训练，不按 dig 来源分 skill
+  - 长期结构是两层：VLM/upper model 低频输出 dig 区域、dig 深度、dump target、
+    是否继续下一铲等任务意图；skill planner / boundary head 高频管理 primitive
+    切换，使用相对几何、bucket mass、clearance 或视觉 geometry head，不逐步询问 VLM
+  - 首版 ACT low-dim input 仍为 `qpos + qvel`；Unity target geometry 只用于
+    offline label/QC、scripted switch 和 rollout logs
 
 ---
 

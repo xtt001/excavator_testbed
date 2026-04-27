@@ -70,6 +70,8 @@ def train_policy(config: dict[str, Any]) -> None:
         "task_name":      task_name,
         "device":         device,
         "resume_ckpt":    train_cfg.get("resume_ckpt"),
+        "resume_optimizer": bool(train_cfg.get("resume_optimizer", True)),
+        "reset_best_on_resume": bool(train_cfg.get("reset_best_on_resume", False)),
         "start_epoch":    train_cfg.get("start_epoch"),
         "val_every":      int(train_cfg.get("val_every", 1)),
         "save_latest_every": int(train_cfg.get("save_latest_every", 1)),

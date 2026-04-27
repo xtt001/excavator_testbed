@@ -1,0 +1,50 @@
+# V2.2 5-primitive dump-release ACT smoke training.
+
+task:
+  task_name: agx_excavation_teleop
+  equipment_model: agxunity
+  dataset_dir: data/agx_v2_2_5primitives_approach_dump_260427/dump_release
+  num_episodes: 0
+  episode_len: 700
+  camera_names:
+    - fpv
+  backend:
+    name: agx
+    dt: 0.02
+
+policy:
+  class: ACT
+  device: cuda
+  low_dim_keys:
+    - qpos
+    - qvel
+  act_params:
+    chunk_size: 100
+    kl_weight: 10.0
+    hidden_dim: 512
+    dim_feedforward: 3200
+
+train:
+  lr: 1.0e-5
+  num_epochs: 500
+  batch_size: 4
+  seed: 0
+  device: cuda
+  num_workers: 4
+  prefetch_factor: 2
+  persistent_workers: true
+  pin_memory: true
+  split_seed: 0
+  train_split_ratio: 0.8
+  reuse_split: true
+  val_every: 5
+  save_latest_every: 10
+  checkpoint_every: 50
+  plot_every: 50
+  amp: true
+  amp_dtype: auto
+  resume_ckpt: /data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/dump_qvel_safe_dump_leftboost_e500_260427/policy_best.ckpt
+  resume_optimizer: false
+  reset_best_on_resume: true
+  start_epoch: 0
+  ckpt_dir: /data/pingfan/excavator_testbed_runs/ckpts/v2_2_5primitives/dump_release_qvel_e500_260427

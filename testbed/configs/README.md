@@ -90,6 +90,8 @@
 | V2.1 Stage 4 rule planner 3-cycle smoke | `testbed/configs/eval_agx_v2_1_stage4_rule_planner_3cycle_smoke.yaml` | Stage-4 多轮 smoke 入口；官方 `3-cycle smoke` 已通过一次真实 live 检查 |
 | V2.2 四 primitive e500 训练 | `testbed/configs/act_agx_v2_2_4primitives_{dig,carry,dump,return}_qvel_e500.yaml` | `carry` 读取 carrytrim120 leftboost root；`dump` 读取 safe-dump/leftboost root；`dig/return` 继续复用 260426/safe roots |
 | V2.2 四 primitive 3-cycle smoke | `testbed/configs/eval_agx_v2_2_4primitives_qvel_3cycle_smoke.yaml` | `primitive_planner_act`，scripted geometry switch，`dump_done_hold_steps=30`，默认 `temporal_agg = true` |
+| V2.2 五 primitive e500 训练 | `testbed/configs/act_agx_v2_2_5primitives_{carry,approach_dump,dump_release}_qvel_e500.yaml` | `carry`/`dump_release` 可从 4p best warm-start；`approach_dump` 合并 left/mid/right |
+| V2.2 五 primitive 3-cycle smoke | `testbed/configs/eval_agx_v2_2_5primitives_qvel_3cycle_smoke.yaml` | `primitive_planner_act_5p`，`carry -> approach_dump -> dump_release` 由相对几何高频切换 |
 | 历史 `qpos + qvel` 对照 | `act_agx_fulltest_qvel.yaml` + `eval_agx_fulltest_qvel.yaml` | 保留为旧对照线 |
 | smoke 验证 | `act_agx_smoke.yaml` + `eval_agx_smoke.yaml` | 只用于验证 train/eval 链路 |
 
@@ -317,6 +319,46 @@ skill `30` step 再切 return。这个 hold 用来跨过 ACT chunk/temporal aggr
 边界，避免 return policy 在土刚落入车斗时立刻回摆，把土从边缘带出。
 `dig -> carry` 只要求 bucket 已 loaded；从 dig 区离开属于 carry primitive 的职责，
 不再要求 `min_distance_to_dig_area_m >= 0.20`。
+
+### V2.2 5-primitives 数据构建
+
+5p 实验线保留 4p baseline，同时新增更细的 approach/release 分界：
+
+```bash
+tb-build-primitives-v2_2_5p \
+  --workskill-dir data/agx_teleop_v2_1_refresh_tail50_workskill_clean_v3_targetsafe_v2_1c_260424183039 \
+  --raw-dir data/agx_teleop_v2_1_multi_raw_refreshed_targetgeo_tail50_260424183039 \
+  --raw-dir data/agx_teleop_v2_1_multi_raw_new_refreshed_targetgeo_tail50_260424183039 \
+  --raw-dir data/agx_teleop_v2_1_multi_raw_carryfix_refreshed_targetgeo_tail50_260424183039 \
+  --raw-dir data/agx_teleop_v2_1_multi_raw_quality_2604241251_refreshed_targetgeo_tail50_260424183039 \
+  --output-root /data/pingfan/excavator_testbed_data_archive/agx_v2_2_5primitives_approach_dump_260427
+ln -sfn /data/pingfan/excavator_testbed_data_archive/agx_v2_2_5primitives_approach_dump_260427 \
+  data/agx_v2_2_5primitives_approach_dump_260427
+```
+
+切分语义：
+
+- `dig`: `qualified_dig_start -> carry_start`
+- `carry`: `carry_start -> first approach_dump stage`
+- `approach_dump`: `first approach_dump stage -> stable safe release intent`；
+  允许人类 teleop 中轻微 swing 与 curl-out 混合发生，但不让 stable release intent
+  进入上一段 skill 的监督
+- `dump_release`: `stable safe release intent -> dump_end + 30 step hold`
+- `return`: full raw 中的 `dump_end -> next qualified_dig_start`
+
+`approach_dump` 首版合并 left/mid/right 训练，因为它学习的是进入可倒相对几何，
+不学习 dig 来源。长期 upper model/VLM 只低频输出任务意图，例如 dig 区域、
+dig 深度、dump target 和是否继续下一铲；primitive 间高频切换由 scripted
+planner 或后续 boundary/geometry head 完成。
+
+2026-04-27 diagnostic: 用 material-release `dump_start` 做 5p 边界时，
+`approach_dump` 仍会学到 `dump_release` 的工作，在 cycle2 提前倒空并把状态推到
+后续 skill 未见过的分布。因此当前 builder 改为 stable safe release intent
+分界；ownership 重建数据根为
+`data/agx_v2_2_5primitives_ownership_260427`。该根目前只有
+`approach_dump=4`、`dump_release=27`，说明历史 human teleop 的 phase gap
+过于混合，继续训练前需要补录更清晰的 approach/dump_release ownership 数据，
+或引入 axis ownership/boundary head。
     - `late_qds_failure`
     - 高 `pause_ratio` 的明显犹豫样本
 

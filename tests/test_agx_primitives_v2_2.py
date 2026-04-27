@@ -22,11 +22,16 @@ from testbed.data.primitives_v2_2 import (
     CARRY_MIN_WINDOW_LEN,
     CARRY_PRE_DUMP_TRIM_STEPS,
     build_primitive_datasets,
+    build_primitive_datasets_5p,
     extract_workskill_primitive_slices,
+    extract_workskill_primitive_slices_5p,
 )
 from testbed.data.v2_1 import GOAL_TOKEN_VERSION, WORK_STAGE_NAME_TO_ID, build_goal_tokens
 from testbed.policies.base import Policy
-from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+from testbed.policies.hybrid.primitive_planner import (
+    PrimitivePlannerACT5PPolicy,
+    PrimitivePlannerACTPolicy,
+)
 
 
 class TestPrimitivesV22(unittest.TestCase):
@@ -91,6 +96,60 @@ class TestPrimitivesV22(unittest.TestCase):
             self.assertEqual(int(return_episode["metadata"]["source_prev_cycle_id"]), 0)
             self.assertEqual(int(return_episode["metadata"]["source_next_cycle_id"]), 1)
 
+    def test_build_primitive_datasets_5p_creates_five_sibling_datasets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            workskill_dir = tmp / "workskill"
+            raw_dir = tmp / "raw"
+            output_root = tmp / "primitives_5p"
+            workskill_dir.mkdir()
+            raw_dir.mkdir()
+            _write_workskill_episode(workskill_dir / "episode_0.hdf5")
+            _write_raw_episode(raw_dir / "episode_0.hdf5")
+
+            summary = build_primitive_datasets_5p(
+                workskill_dir=workskill_dir,
+                raw_dirs=[raw_dir],
+                output_root=output_root,
+            )
+
+            self.assertEqual(summary["primitive_version"], "v2_2_5primitives")
+            for primitive_name in (
+                "dig",
+                "carry",
+                "approach_dump",
+                "dump_release",
+                "return",
+            ):
+                self.assertEqual(summary["primitives"][primitive_name]["episode_count"], 1)
+                self.assertTrue((output_root / primitive_name / "episode_0.hdf5").exists())
+            self.assertEqual(summary["approach_dump_qc"]["accepted_window_count"], 1)
+
+            carry_episode = read_episode(output_root / "carry" / "episode_0.hdf5")
+            approach_episode = read_episode(output_root / "approach_dump" / "episode_0.hdf5")
+            dump_release_episode = read_episode(output_root / "dump_release" / "episode_0.hdf5")
+
+            self.assertEqual(carry_episode["step_ids"][0], 30)
+            self.assertEqual(carry_episode["step_ids"][-1], 99)
+            self.assertEqual(approach_episode["step_ids"][0], 100)
+            self.assertEqual(approach_episode["step_ids"][-1], 269)
+            self.assertEqual(dump_release_episode["step_ids"][0], 270)
+            self.assertEqual(dump_release_episode["step_ids"][-1], 369)
+            self.assertEqual(
+                carry_episode["metadata"]["primitive_window"],
+                "carry_to_before_approach_dump",
+            )
+            self.assertEqual(
+                approach_episode["metadata"]["primitive_window"],
+                "approach_dump_to_before_dump_release",
+            )
+            self.assertEqual(
+                dump_release_episode["metadata"]["primitive_window"],
+                "dump_release_to_dump_end_hold",
+            )
+            self.assertEqual(int(approach_episode["metadata"]["dump_release_step"]), 270)
+            self.assertEqual(int(dump_release_episode["metadata"]["dump_end_step"]), 369)
+
     def test_carry_window_excludes_dump_intent_curl_out_segment(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             workskill_dir = Path(tmpdir) / "workskill"
@@ -125,6 +184,109 @@ class TestPrimitivesV22(unittest.TestCase):
             self.assertFalse(
                 bool(carry_episode["metadata"]["carry_tail_has_stable_strong_curl_out"])
             )
+
+    def test_5p_carry_excludes_approach_and_release_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workskill_dir = Path(tmpdir) / "workskill"
+            output_root = Path(tmpdir) / "primitives"
+            workskill_dir.mkdir()
+            _write_workskill_episode(workskill_dir / "episode_0.hdf5")
+
+            build_primitive_datasets_5p(
+                workskill_dir=workskill_dir,
+                raw_dirs=[],
+                output_root=output_root,
+                require_return=False,
+            )
+
+            carry_episode = read_episode(output_root / "carry" / "episode_0.hdf5")
+            self.assertEqual(carry_episode["step_ids"][-1], 99)
+            self.assertFalse(
+                bool(carry_episode["metadata"]["carry_tail_has_stable_strong_curl_out"])
+            )
+            self.assertFalse(
+                bool(carry_episode["metadata"]["carry_tail_has_stable_release"])
+            )
+
+    def test_5p_approach_dump_excludes_stable_release_intent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workskill_dir = Path(tmpdir) / "workskill"
+            output_root = Path(tmpdir) / "primitives"
+            workskill_dir.mkdir()
+            _write_workskill_episode(workskill_dir / "episode_0.hdf5")
+
+            build_primitive_datasets_5p(
+                workskill_dir=workskill_dir,
+                raw_dirs=[],
+                output_root=output_root,
+                require_return=False,
+            )
+
+            approach_episode = read_episode(output_root / "approach_dump" / "episode_0.hdf5")
+            tail_actions = approach_episode["actions"][-CARRY_ACTION_HORIZON_STEPS:, 3]
+            tail_qpos = approach_episode["qpos"][-CARRY_ACTION_HORIZON_STEPS:, 3]
+            release_tail = np.logical_and(tail_qpos >= 0.40, tail_actions <= -0.08)
+            stable_tail_release = np.convolve(
+                release_tail.astype(np.int32),
+                np.ones(3, dtype=np.int32),
+                mode="valid",
+            )
+            self.assertFalse(bool(np.any(stable_tail_release >= 3)))
+            self.assertFalse(
+                bool(approach_episode["metadata"]["approach_dump_tail_has_stable_release"])
+            )
+            self.assertAlmostEqual(
+                float(approach_episode["metadata"]["approach_dump_bucket_mass_loss_kg"]),
+                0.0,
+            )
+
+    def test_5p_approach_dump_allows_mild_human_mixed_curl(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workskill_dir = Path(tmpdir) / "workskill"
+            output_root = Path(tmpdir) / "primitives"
+            workskill_dir.mkdir()
+            episode = _make_workskill_episode_payload(length=360)
+            episode["qpos"][180:210, 3] = 0.55
+            episode["actions"][180:210, 3] = -0.05
+            write_episode(workskill_dir / "episode_0.hdf5", **episode)
+
+            build_primitive_datasets_5p(
+                workskill_dir=workskill_dir,
+                raw_dirs=[],
+                output_root=output_root,
+                require_return=False,
+            )
+
+            approach_episode = read_episode(output_root / "approach_dump" / "episode_0.hdf5")
+            mild_mixed_curl = np.logical_and(
+                approach_episode["qpos"][:, 3] >= 0.50,
+                approach_episode["actions"][:, 3] < 0.0,
+            )
+            stable_release = np.logical_and(
+                approach_episode["qpos"][:, 3] >= 0.40,
+                approach_episode["actions"][:, 3] <= -0.08,
+            )
+            self.assertTrue(bool(np.any(mild_mixed_curl)))
+            self.assertFalse(bool(np.any(stable_release)))
+
+    def test_5p_builder_rejects_approach_mass_loss_before_release(self) -> None:
+        episode = _make_workskill_episode_payload(length=360)
+        episode["env_state"][120:260, ENV_STATE_MASS_IN_BUCKET_IDX] = 300.0
+
+        slices, rejects = extract_workskill_primitive_slices_5p(
+            episode=episode,
+            source_path=Path("episode_0.hdf5"),
+            source_dataset_dir=Path("."),
+        )
+
+        self.assertFalse(any(item.primitive_name == "approach_dump" for item in slices))
+        self.assertTrue(
+            any(
+                record.primitive_name == "approach_dump"
+                and record.reason == "approach_dump_mass_loss_before_release"
+                for record in rejects
+            )
+        )
 
     def test_dump_starts_before_or_at_official_mass_based_dump_start(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -438,6 +600,104 @@ class TestPrimitivesV22(unittest.TestCase):
             policy.debug_state()["skill_switch_reason"],
             "dig_to_carry_loaded",
         )
+
+    def test_5p_primitive_planner_switches_on_synthetic_geometry_events(self) -> None:
+        detector = _FakeBoundaryDetector(
+            [
+                _FakeBoundaryEvent(),
+                _FakeBoundaryEvent(),
+                _FakeBoundaryEvent(),
+                _FakeBoundaryEvent(),
+                _FakeBoundaryEvent(),
+                _FakeBoundaryEvent(),
+                _FakeBoundaryEvent(),
+                _FakeBoundaryEvent(qualified_dig_start=True),
+            ]
+        )
+        policy = PrimitivePlannerACT5PPolicy(
+            dig_policy=_ConstantPolicy(0),
+            carry_policy=_ConstantPolicy(1),
+            approach_dump_policy=_ConstantPolicy(2),
+            dump_release_policy=_ConstantPolicy(3),
+            return_policy=_ConstantPolicy(4),
+            boundary_detector=detector,
+            approach_ready_hold_steps=2,
+            dump_release_ready_hold_steps=2,
+            dump_done_hold_steps=2,
+            primitive_checkpoint_paths={
+                "dig": "dig.ckpt",
+                "carry": "carry.ckpt",
+                "approach_dump": "approach_dump.ckpt",
+                "dump_release": "dump_release.ckpt",
+                "return": "return.ckpt",
+            },
+        )
+
+        action = policy.predict(_obs(mass=0.0, dig_distance=0.02))
+        self.assertEqual(float(action[0]), 0.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "dig")
+
+        action = policy.predict(_obs(mass=320.0, dig_distance=0.30))
+        self.assertEqual(float(action[0]), 1.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "carry")
+
+        approach_obs = _obs(
+            mass=320.0,
+            dig_distance=0.30,
+            horizontal_distance=1.20,
+            height_above_rim=0.0,
+            over_footprint=False,
+            clearance_ok=True,
+        )
+        action = policy.predict(approach_obs)
+        self.assertEqual(float(action[0]), 1.0)
+        self.assertEqual(policy.debug_state()["approach_ready_hold_count"], 1)
+
+        action = policy.predict(approach_obs)
+        self.assertEqual(float(action[0]), 2.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "approach_dump")
+        self.assertEqual(
+            policy.debug_state()["skill_switch_reason"],
+            "carry_to_approach_dump_region_ready",
+        )
+
+        dump_ready_obs = _obs(
+            mass=320.0,
+            dig_distance=0.30,
+            horizontal_distance=0.60,
+            height_above_rim=0.45,
+            over_footprint=False,
+            clearance_ok=True,
+        )
+        action = policy.predict(dump_ready_obs)
+        self.assertEqual(float(action[0]), 2.0)
+        self.assertEqual(policy.debug_state()["dump_release_ready_hold_count"], 1)
+
+        action = policy.predict(dump_ready_obs)
+        self.assertEqual(float(action[0]), 3.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "dump_release")
+        self.assertEqual(
+            policy.debug_state()["skill_switch_reason"],
+            "approach_dump_to_dump_release_ready",
+        )
+
+        action = policy.predict(
+            _obs(mass=50.0, dig_distance=0.30, dump_ready=True, deposited=20.0)
+        )
+        self.assertEqual(float(action[0]), 3.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "dump_release")
+
+        action = policy.predict(
+            _obs(mass=50.0, dig_distance=0.30, dump_ready=True, deposited=20.0)
+        )
+        self.assertEqual(float(action[0]), 4.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "return")
+
+        action = policy.predict(_obs(mass=0.0, dig_distance=0.02))
+        self.assertEqual(float(action[0]), 0.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "dig")
+        self.assertTrue(policy.debug_state()["transition_completed"])
+        self.assertEqual(policy.rollout_summary()["completed_transition_count"], 1)
 
 
 def _write_workskill_episode(path: Path) -> None:

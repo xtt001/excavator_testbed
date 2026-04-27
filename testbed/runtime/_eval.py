@@ -40,7 +40,11 @@ def eval_policy(config: dict[str, Any]) -> None:
         )
     )
     save_video      = bool(eval_cfg.get("save_video", True))
-    temporal_agg_default = True if policy_class == "PRIMITIVE_PLANNER_ACT" else False
+    temporal_agg_default = (
+        True
+        if policy_class in {"PRIMITIVE_PLANNER_ACT", "PRIMITIVE_PLANNER_ACT_5P"}
+        else False
+    )
     temporal_agg    = bool(
         eval_cfg.get(
             "temporal_agg",
@@ -61,7 +65,7 @@ def eval_policy(config: dict[str, Any]) -> None:
             or eval_cfg.get("ckpt_dir")
             or config.get("train", {}).get("ckpt_dir")
         )
-    elif policy_class == "PRIMITIVE_PLANNER_ACT":
+    elif policy_class in {"PRIMITIVE_PLANNER_ACT", "PRIMITIVE_PLANNER_ACT_5P"}:
         ckpt_path_value = (
             eval_cfg.get("dig_ckpt_path")
             or policy_cfg.get("dig_ckpt_path")
@@ -424,7 +428,7 @@ def eval_policy(config: dict[str, Any]) -> None:
             scenario_id=scenario_id,
         )
 
-    elif policy_class == "PRIMITIVE_PLANNER_ACT":
+    elif policy_class in {"PRIMITIVE_PLANNER_ACT", "PRIMITIVE_PLANNER_ACT_5P"}:
         primitive_low_dim_keys = list(policy_cfg.get("primitive_low_dim_keys", ["qpos", "qvel"]))
         if "goal_tokens" in primitive_low_dim_keys and not scenario_id:
             raise ValueError(
@@ -435,7 +439,12 @@ def eval_policy(config: dict[str, Any]) -> None:
         primitive_policies = {}
         primitive_ckpt_paths: dict[str, str] = {}
         primitive_ckpt_dirs: dict[str, str] = {}
-        for primitive_name in ("dig", "carry", "dump", "return"):
+        primitive_names = (
+            ("dig", "carry", "approach_dump", "dump_release", "return")
+            if policy_class == "PRIMITIVE_PLANNER_ACT_5P"
+            else ("dig", "carry", "dump", "return")
+        )
+        for primitive_name in primitive_names:
             primitive_ckpt_path_value = (
                 eval_cfg.get(f"{primitive_name}_ckpt_path")
                 or policy_cfg.get(f"{primitive_name}_ckpt_path")
@@ -515,71 +524,121 @@ def eval_policy(config: dict[str, Any]) -> None:
             primitive_ckpt_dirs["bootstrap"] = str(bootstrap_ckpt_dir)
 
         from testbed.planner.boundary_detector import build_boundary_detector_from_config
-        from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+        from testbed.policies.hybrid.primitive_planner import (
+            PrimitivePlannerACT5PPolicy,
+            PrimitivePlannerACTPolicy,
+        )
 
         switch_cfg = dict(policy_cfg.get("switch", {}))
         transition_cfg = dict(policy_cfg.get("transition", {}))
-        policy = PrimitivePlannerACTPolicy(
-            dig_policy=primitive_policies["dig"],
-            carry_policy=primitive_policies["carry"],
-            dump_policy=primitive_policies["dump"],
-            return_policy=primitive_policies["return"],
-            bootstrap_policy=bootstrap_policy,
-            bootstrap_end_mode=str(policy_cfg.get("bootstrap_end_mode", "disabled")),
-            bootstrap_end_min_bucket_mass_kg=float(
+        boundary_detector = build_boundary_detector_from_config(
+            reward_cfg=reward_cfg,
+            success_cfg=success_cfg,
+            pause_action_eps=float(
+                switch_cfg.get(
+                    "pause_action_eps",
+                    transition_cfg.get("pause_action_eps", 0.05),
+                )
+            ),
+        )
+        common_kwargs = {
+            "bootstrap_policy": bootstrap_policy,
+            "bootstrap_end_mode": str(policy_cfg.get("bootstrap_end_mode", "disabled")),
+            "bootstrap_end_min_bucket_mass_kg": float(
                 policy_cfg.get("bootstrap_end_min_bucket_mass_kg", 300.0)
             ),
-            bootstrap_end_min_distance_to_dig_area_m=float(
+            "bootstrap_end_min_distance_to_dig_area_m": float(
                 policy_cfg.get("bootstrap_end_min_distance_to_dig_area_m", 0.25)
             ),
-            dig_to_carry_min_bucket_mass_kg=float(
+            "dig_to_carry_min_bucket_mass_kg": float(
                 switch_cfg.get("dig_to_carry_min_bucket_mass_kg", 300.0)
             ),
-            dig_to_carry_min_distance_to_dig_area_m=float(
+            "dig_to_carry_min_distance_to_dig_area_m": float(
                 switch_cfg.get("dig_to_carry_min_distance_to_dig_area_m", 0.20)
             ),
-            dump_ready_min_bucket_mass_kg=float(
-                switch_cfg.get("dump_ready_min_bucket_mass_kg", 150.0)
-            ),
-            dump_ready_min_height_above_rim_m=float(
-                switch_cfg.get("dump_ready_min_height_above_rim_m", 0.45)
-            ),
-            dump_ready_require_over_footprint=bool(
-                switch_cfg.get("dump_ready_require_over_footprint", True)
-            ),
-            dump_ready_require_clearance=bool(
-                switch_cfg.get("dump_ready_require_clearance", True)
-            ),
-            dump_ready_max_horizontal_distance_m=_optional_float(
-                switch_cfg.get("dump_ready_max_horizontal_distance_m", 0.82)
-            ),
-            dump_ready_hold_steps=int(switch_cfg.get("dump_ready_hold_steps", 3)),
-            dump_done_max_bucket_mass_kg=float(
+            "dump_done_max_bucket_mass_kg": float(
                 switch_cfg.get("dump_done_max_bucket_mass_kg", 100.0)
             ),
-            dump_done_min_deposit_delta_kg=float(
+            "dump_done_min_deposit_delta_kg": float(
                 switch_cfg.get("dump_done_min_deposit_delta_kg", 10.0)
             ),
-            dump_done_hold_steps=int(switch_cfg.get("dump_done_hold_steps", 2)),
-            return_max_steps=int(
+            "dump_done_hold_steps": int(switch_cfg.get("dump_done_hold_steps", 2)),
+            "return_max_steps": int(
                 switch_cfg.get(
                     "return_max_steps",
                     transition_cfg.get("wait_next_dig_max_steps", 420),
                 )
             ),
-            boundary_detector=build_boundary_detector_from_config(
-                reward_cfg=reward_cfg,
-                success_cfg=success_cfg,
-                pause_action_eps=float(
-                    switch_cfg.get(
-                        "pause_action_eps",
-                        transition_cfg.get("pause_action_eps", 0.05),
-                    )
+            "boundary_detector": boundary_detector,
+            "action_dim": int(policy_cfg.get("action_dim", 4)),
+            "primitive_checkpoint_paths": primitive_ckpt_paths,
+        }
+        if policy_class == "PRIMITIVE_PLANNER_ACT_5P":
+            policy = PrimitivePlannerACT5PPolicy(
+                dig_policy=primitive_policies["dig"],
+                carry_policy=primitive_policies["carry"],
+                approach_dump_policy=primitive_policies["approach_dump"],
+                dump_release_policy=primitive_policies["dump_release"],
+                return_policy=primitive_policies["return"],
+                approach_ready_min_bucket_mass_kg=float(
+                    switch_cfg.get("approach_ready_min_bucket_mass_kg", 150.0)
                 ),
-            ),
-            action_dim=int(policy_cfg.get("action_dim", 4)),
-            primitive_checkpoint_paths=primitive_ckpt_paths,
-        )
+                approach_ready_max_horizontal_distance_m=_optional_float(
+                    switch_cfg.get("approach_ready_max_horizontal_distance_m", 1.25)
+                ),
+                approach_ready_min_height_above_rim_m=float(
+                    switch_cfg.get("approach_ready_min_height_above_rim_m", -0.20)
+                ),
+                approach_ready_require_clearance=bool(
+                    switch_cfg.get("approach_ready_require_clearance", True)
+                ),
+                approach_ready_hold_steps=int(
+                    switch_cfg.get("approach_ready_hold_steps", 3)
+                ),
+                dump_release_ready_min_bucket_mass_kg=float(
+                    switch_cfg.get("dump_release_ready_min_bucket_mass_kg", 150.0)
+                ),
+                dump_release_ready_min_height_above_rim_m=float(
+                    switch_cfg.get("dump_release_ready_min_height_above_rim_m", 0.45)
+                ),
+                dump_release_ready_require_over_footprint=bool(
+                    switch_cfg.get("dump_release_ready_require_over_footprint", True)
+                ),
+                dump_release_ready_require_clearance=bool(
+                    switch_cfg.get("dump_release_ready_require_clearance", True)
+                ),
+                dump_release_ready_max_horizontal_distance_m=_optional_float(
+                    switch_cfg.get("dump_release_ready_max_horizontal_distance_m", 0.60)
+                ),
+                dump_release_ready_hold_steps=int(
+                    switch_cfg.get("dump_release_ready_hold_steps", 3)
+                ),
+                **common_kwargs,
+            )
+        else:
+            policy = PrimitivePlannerACTPolicy(
+                dig_policy=primitive_policies["dig"],
+                carry_policy=primitive_policies["carry"],
+                dump_policy=primitive_policies["dump"],
+                return_policy=primitive_policies["return"],
+                dump_ready_min_bucket_mass_kg=float(
+                    switch_cfg.get("dump_ready_min_bucket_mass_kg", 150.0)
+                ),
+                dump_ready_min_height_above_rim_m=float(
+                    switch_cfg.get("dump_ready_min_height_above_rim_m", 0.45)
+                ),
+                dump_ready_require_over_footprint=bool(
+                    switch_cfg.get("dump_ready_require_over_footprint", True)
+                ),
+                dump_ready_require_clearance=bool(
+                    switch_cfg.get("dump_ready_require_clearance", True)
+                ),
+                dump_ready_max_horizontal_distance_m=_optional_float(
+                    switch_cfg.get("dump_ready_max_horizontal_distance_m", 0.82)
+                ),
+                dump_ready_hold_steps=int(switch_cfg.get("dump_ready_hold_steps", 3)),
+                **common_kwargs,
+            )
 
     else:
         from testbed.policies.base import PolicyRegistry

@@ -67,6 +67,8 @@ class ACTTrainer(Trainer):
         plot_every = max(1, int(cfg.get("plot_every", checkpoint_every)))
         amp_enabled = bool(cfg.get("amp", False))
         amp_dtype_name = str(cfg.get("amp_dtype", "auto"))
+        resume_optimizer = bool(cfg.get("resume_optimizer", True))
+        reset_best_on_resume = bool(cfg.get("reset_best_on_resume", False))
         ckpt_dir.mkdir(parents=True, exist_ok=True)
 
         set_seed(seed)
@@ -91,10 +93,10 @@ class ACTTrainer(Trainer):
             ckpt_obj = torch.load(resume, map_location="cpu")
             sd = ckpt_obj["model_state_dict"] if "model_state_dict" in ckpt_obj else ckpt_obj
             adapter.load_state_dict(sd)
-            if "optimizer_state_dict" in ckpt_obj:
+            if resume_optimizer and "optimizer_state_dict" in ckpt_obj:
                 optimizer.load_state_dict(ckpt_obj["optimizer_state_dict"])
             start_epoch = self._infer_start_epoch(resume, ckpt_obj, cfg)
-            if "min_val_loss" in ckpt_obj:
+            if "min_val_loss" in ckpt_obj and not reset_best_on_resume:
                 min_val_loss = float(ckpt_obj["min_val_loss"])
             print(f"Resumed from {resume}, starting epoch {start_epoch}")
 
