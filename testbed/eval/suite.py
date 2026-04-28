@@ -423,6 +423,12 @@ class EvalSuite:
                             "primitive_cycle_index": int(
                                 policy_debug.get("primitive_cycle_index", -1)
                             ),
+                            "primitive_goal_curr_sector_id": int(
+                                policy_debug.get("primitive_goal_curr_sector_id", -1)
+                            ),
+                            "primitive_goal_next_sector_id": int(
+                                policy_debug.get("primitive_goal_next_sector_id", -1)
+                            ),
                             "dump_ready_hold_count": int(
                                 policy_debug.get("dump_ready_hold_count", 0)
                             ),

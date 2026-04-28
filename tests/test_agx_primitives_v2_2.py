@@ -678,6 +678,48 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertTrue(policy.debug_state()["transition_completed"])
         self.assertEqual(policy.rollout_summary()["completed_transition_count"], 1)
 
+    def test_primitive_planner_injects_goal_tokens_for_sequence(self) -> None:
+        dig_policy = _RecordingPolicy(0)
+        return_policy = _RecordingPolicy(3)
+        detector = _FakeBoundaryDetector(
+            [
+                _FakeBoundaryEvent(),
+                _FakeBoundaryEvent(),
+                _FakeBoundaryEvent(),
+                _FakeBoundaryEvent(),
+                _FakeBoundaryEvent(qualified_dig_start=True),
+            ]
+        )
+        policy = PrimitivePlannerACTPolicy(
+            dig_policy=dig_policy,
+            carry_policy=_ConstantPolicy(1),
+            dump_policy=_ConstantPolicy(2),
+            return_policy=return_policy,
+            boundary_detector=detector,
+            goal_sequence=["mid", "left", "right"],
+            goal_scenario_id="s0_truck",
+            dump_ready_hold_steps=1,
+            dump_done_hold_steps=1,
+            dump_done_use_boundary_event=False,
+        )
+
+        policy.predict(_obs(mass=0.0, dig_distance=0.02))
+        np.testing.assert_allclose(dig_policy.last_goal_tokens[:3], [0.0, 1.0, 0.0])
+        np.testing.assert_allclose(dig_policy.last_goal_tokens[4:7], [1.0, 0.0, 0.0])
+
+        policy.predict(_obs(mass=320.0, dig_distance=0.30))
+        policy.predict(_obs(mass=320.0, dig_distance=0.30, dump_ready=True))
+        policy.predict(_obs(mass=50.0, dig_distance=0.30, dump_ready=True, deposited=20.0))
+        policy.predict(_obs(mass=0.0, dig_distance=0.02))
+        np.testing.assert_allclose(return_policy.last_goal_tokens[:3], [0.0, 1.0, 0.0])
+        np.testing.assert_allclose(return_policy.last_goal_tokens[4:7], [1.0, 0.0, 0.0])
+
+        policy.predict(_obs(mass=0.0, dig_distance=0.02))
+        np.testing.assert_allclose(dig_policy.last_goal_tokens[:3], [1.0, 0.0, 0.0])
+        np.testing.assert_allclose(dig_policy.last_goal_tokens[4:7], [0.0, 0.0, 1.0])
+        self.assertEqual(policy.debug_state()["primitive_goal_curr_sector_id"], 0)
+        self.assertEqual(policy.debug_state()["primitive_goal_next_sector_id"], 2)
+
     def test_primitive_planner_can_wait_past_dump_end_boundary_for_hold(self) -> None:
         detector = _FakeBoundaryDetector(
             [
@@ -1280,6 +1322,16 @@ class _ConstantPolicy(Policy):
         action = np.zeros(4, dtype=np.float32)
         action[0] = self.value
         return action
+
+
+class _RecordingPolicy(_ConstantPolicy):
+    def __init__(self, value: float) -> None:
+        super().__init__(value)
+        self.last_goal_tokens: np.ndarray | None = None
+
+    def predict(self, obs: dict) -> np.ndarray:
+        self.last_goal_tokens = np.asarray(obs.get("goal_tokens"), dtype=np.float32)
+        return super().predict(obs)
 
 
 class _FakeBoundaryEvent:

@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 
+from testbed.data.v2_1 import build_goal_tokens
 from testbed.data.schema import (
     ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
     ENV_STATE_BUCKET_BED_RELATIVE_X_IDX,
@@ -33,6 +34,7 @@ PRIMITIVE_SKILL_IDS_5P = {
 TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY = "v2_2_primitive_return_policy"
 TRANSITION_POLICY_MODE_PRIMITIVE = "primitive_return_policy"
 BOOTSTRAP_SKILL_NAME = "bootstrap"
+PRIMITIVE_GOAL_SECTOR_IDS = {"left": 0, "mid": 1, "right": 2}
 
 
 @dataclass(frozen=True)
@@ -95,6 +97,10 @@ class PrimitivePlannerACTPolicy(Policy):
         return_max_steps: int = 420,
         action_dim: int = 4,
         primitive_checkpoint_paths: dict[str, str] | None = None,
+        goal_sequence: list[str] | tuple[str, ...] | None = None,
+        goal_scenario_id: str = "s0_truck",
+        goal_depth_norm: float = 1.0,
+        goal_dump_target_norm: float = 1.0,
     ) -> None:
         self.dig_policy = dig_policy
         self.carry_policy = carry_policy
@@ -157,6 +163,10 @@ class PrimitivePlannerACTPolicy(Policy):
             str(name): str(path)
             for name, path in dict(primitive_checkpoint_paths or {}).items()
         }
+        self.goal_sequence = self._normalize_goal_sequence(goal_sequence)
+        self.goal_scenario_id = str(goal_scenario_id)
+        self.goal_depth_norm = float(goal_depth_norm)
+        self.goal_dump_target_norm = float(goal_dump_target_norm)
         self.reset()
 
     def reset(self) -> None:
@@ -206,7 +216,8 @@ class PrimitivePlannerACTPolicy(Policy):
                 self._transition_timeout_count += 1
 
         policy = self._active_policy()
-        action = np.asarray(policy.predict(obs), dtype=np.float32).reshape(self.action_dim)
+        policy_obs = self._policy_obs(obs)
+        action = np.asarray(policy.predict(policy_obs), dtype=np.float32).reshape(self.action_dim)
         self._prev_action = action.copy()
 
         if self._switch_reason == "return_to_dig_qualified_dig_start":
@@ -244,6 +255,8 @@ class PrimitivePlannerACTPolicy(Policy):
                 self._debug_state.dump_release_ready_hold_count
             ),
             "primitive_cycle_index": int(self._debug_state.primitive_cycle_index),
+            "primitive_goal_curr_sector_id": int(self._goal_sector_id(self._cycle_index)),
+            "primitive_goal_next_sector_id": int(self._next_goal_sector_id()),
         }
 
     def rollout_summary(self) -> dict[str, float | int | str | list[str]]:
@@ -573,6 +586,67 @@ class PrimitivePlannerACTPolicy(Policy):
             dtype=np.float32,
         ).reshape(-1)
 
+    def _policy_obs(self, obs: dict) -> dict:
+        goal_tokens = self._goal_tokens()
+        if goal_tokens is None:
+            return obs
+        policy_obs = dict(obs)
+        policy_obs["goal_tokens"] = goal_tokens
+        return policy_obs
+
+    def _goal_tokens(self) -> np.ndarray | None:
+        if not self.goal_sequence:
+            return None
+        curr_sector_id = self._goal_sector_id(self._cycle_index)
+        next_sector_id = self._next_goal_sector_id()
+        return build_goal_tokens(
+            self.goal_scenario_id,
+            curr_sector_id=curr_sector_id,
+            curr_cut_depth_norm=self.goal_depth_norm,
+            next_sector_id=next_sector_id,
+            next_cut_depth_norm=self.goal_depth_norm,
+            dst_target_norm=self.goal_dump_target_norm,
+            has_lookahead=next_sector_id >= 0,
+        )
+
+    def _goal_sector_id(self, cycle_index: int) -> int:
+        if not self.goal_sequence:
+            return -1
+        index = max(0, min(int(cycle_index), len(self.goal_sequence) - 1))
+        return int(self.goal_sequence[index])
+
+    def _next_goal_sector_id(self) -> int:
+        if not self.goal_sequence:
+            return -1
+        next_index = int(self._cycle_index) + 1
+        if next_index >= len(self.goal_sequence):
+            return -1
+        return int(self.goal_sequence[next_index])
+
+    @staticmethod
+    def _normalize_goal_sequence(
+        goal_sequence: list[str] | tuple[str, ...] | None,
+    ) -> tuple[int, ...]:
+        if not goal_sequence:
+            return ()
+        normalized: list[int] = []
+        for item in goal_sequence:
+            if isinstance(item, str):
+                key = item.strip().lower()
+                if key not in PRIMITIVE_GOAL_SECTOR_IDS:
+                    raise ValueError(
+                        f"Unknown primitive goal sector {item!r}. Expected left, mid, or right."
+                    )
+                normalized.append(PRIMITIVE_GOAL_SECTOR_IDS[key])
+            else:
+                value = int(item)
+                if value < 0 or value > 2:
+                    raise ValueError(
+                        f"Primitive goal sector id must be 0, 1, or 2, got {item!r}."
+                    )
+                normalized.append(value)
+        return tuple(normalized)
+
     def _active_policy(self) -> Policy:
         if self._skill_name == BOOTSTRAP_SKILL_NAME:
             if self.bootstrap_policy is None:
@@ -667,6 +741,10 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
         return_max_steps: int = 420,
         action_dim: int = 4,
         primitive_checkpoint_paths: dict[str, str] | None = None,
+        goal_sequence: list[str] | tuple[str, ...] | None = None,
+        goal_scenario_id: str = "s0_truck",
+        goal_depth_norm: float = 1.0,
+        goal_dump_target_norm: float = 1.0,
     ) -> None:
         self.approach_dump_policy = approach_dump_policy
         self.dump_release_policy = dump_release_policy
@@ -734,6 +812,10 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             return_max_steps=return_max_steps,
             action_dim=action_dim,
             primitive_checkpoint_paths=primitive_checkpoint_paths,
+            goal_sequence=goal_sequence,
+            goal_scenario_id=goal_scenario_id,
+            goal_depth_norm=goal_depth_norm,
+            goal_dump_target_norm=goal_dump_target_norm,
         )
         self.dump_release_ready_hold_steps = self.dump_ready_hold_steps
 

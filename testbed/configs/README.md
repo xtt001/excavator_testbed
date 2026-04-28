@@ -80,6 +80,11 @@
   - `return = 120`，median `298.5` steps
 - low-level primitive ACT 默认只用 `qpos + qvel`
 - Unity `env_state` / target geometry 只用于离线切分、scripted switch、QC 和 rollout 日志，不作为低维 policy input
+- 需要控制长 rollout 的 dig sector 时，`primitive_planner_act` 可通过
+  `policy.goal_sequence` 生成 10D `goal_tokens` 并注入给低层 primitive ACT。
+  该信号只在对应 primitive 的 `low_dim_keys` 包含 `goal_tokens` 时进入模型；
+  典型用法是让 `dig` / `return` 使用 `qpos + qvel + goal_tokens`，而
+  `carry` / `dump` 继续复用 `qpos + qvel` checkpoint。
 
 ## 今天优先用哪些文件
 
@@ -725,6 +730,25 @@ policy:
 `mask_dataset: "/observations/image_masks/fpv"`；设置
 `require_mask_dataset: true` 时缺失 mask 会直接报错。这个 mask 只改视觉输入，
 不把 `env_state` 加进 ACT low-dim 输入。
+- V2.2 primitive planner 支持低频 sector 序列：
+
+```yaml
+policy:
+  class: "primitive_planner_act"
+  goal_sequence: ["mid", "left", "right", "left", "right"]
+  goal_scenario_id: "s0_truck"
+  goal_depth_norm: 1.0
+  goal_dump_target_norm: 1.0
+  dig_low_dim_keys: ["qpos", "qvel", "goal_tokens"]
+  return_low_dim_keys: ["qpos", "qvel", "goal_tokens"]
+  carry_low_dim_keys: ["qpos", "qvel"]
+  dump_low_dim_keys: ["qpos", "qvel"]
+```
+
+这会把 planner 的当前/下一铲目标 sector 转成已有 10D `goal_tokens`，
+不把 Unity `env_state` 喂给 ACT。rollout JSONL 会记录
+`primitive_goal_curr_sector_id` 和 `primitive_goal_next_sector_id`，用于核对
+planner 意图与实际 dig/return 行为是否对齐。
 - eval 支持 `eval.stream_rollout_logs: true`，会在 rollout 过程中写
   `rollout_XXX.partial.jsonl`，中途停止时也能保留第 2/第 3 cycle 的逐步证据。
 - compare 的主口径固定为：

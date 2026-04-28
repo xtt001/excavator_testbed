@@ -88,6 +88,16 @@
   selected target-relative position rule is true for the configured hold, and
   optional clearance is satisfied if enabled. It should not switch merely
   because the bucket is high while still far behind the truck.
+- The V2.2 planner can optionally inject the existing 10D
+  `/v2/step/goal_tokens` format into primitive ACT observations from
+  `policy.goal_sequence`, for example `["mid", "left", "right", "left",
+  "right"]`. This is a low-frequency task-intent signal for skills that were
+  trained with `goal_tokens`; it is not Unity `env_state`, and it does not
+  replace the target-relative geometry gates for `carry -> dump`.
+- `primitive_goal_curr_sector_id` and `primitive_goal_next_sector_id` are
+  written into rollout JSONL so that a failed long rollout can be separated
+  into "planner intended this sector" versus "dig/return ACT did not realize
+  that sector".
 
 ## Recording Vs Training Acceptance
 

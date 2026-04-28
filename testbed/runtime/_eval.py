@@ -596,6 +596,20 @@ def eval_policy(config: dict[str, Any]) -> None:
             "boundary_detector": boundary_detector,
             "action_dim": int(policy_cfg.get("action_dim", 4)),
             "primitive_checkpoint_paths": primitive_ckpt_paths,
+            "goal_sequence": list(
+                policy_cfg.get(
+                    "goal_sequence",
+                    policy_cfg.get("primitive_goal_sequence", []),
+                )
+                or []
+            ),
+            "goal_scenario_id": str(
+                policy_cfg.get("goal_scenario_id", scenario_id or "s0_truck")
+            ),
+            "goal_depth_norm": float(policy_cfg.get("goal_depth_norm", 1.0)),
+            "goal_dump_target_norm": float(
+                policy_cfg.get("goal_dump_target_norm", 1.0)
+            ),
         }
         if policy_class == "PRIMITIVE_PLANNER_ACT_5P":
             policy = PrimitivePlannerACT5PPolicy(
