@@ -132,6 +132,7 @@ def eval_policy(config: dict[str, Any]) -> None:
             temporal_agg=temporal_agg,
             device=device,
             act_params=policy_cfg.get("act_params", {}),
+            image_mask_config=policy_cfg.get("image_mask", {}),
         )
 
     elif policy_class == "DUMMY":
@@ -158,6 +159,10 @@ def eval_policy(config: dict[str, Any]) -> None:
             temporal_agg=temporal_agg,
             device=device,
             act_params=policy_cfg.get("act_params", {}),
+            image_mask_config=policy_cfg.get(
+                "work_image_mask",
+                policy_cfg.get("image_mask", {}),
+            ),
         )
 
         bootstrap_ckpt_path_value = (
@@ -196,6 +201,10 @@ def eval_policy(config: dict[str, Any]) -> None:
                     "bootstrap_act_params",
                     policy_cfg.get("act_params", {}),
                 ),
+                image_mask_config=policy_cfg.get(
+                    "bootstrap_image_mask",
+                    policy_cfg.get("image_mask", {}),
+                ),
             )
 
         transition_ckpt_path_value = (
@@ -233,6 +242,10 @@ def eval_policy(config: dict[str, Any]) -> None:
                 act_params=policy_cfg.get(
                     "transition_act_params",
                     policy_cfg.get("act_params", {}),
+                ),
+                image_mask_config=policy_cfg.get(
+                    "transition_image_mask",
+                    policy_cfg.get("image_mask", {}),
                 ),
             )
 
@@ -479,6 +492,10 @@ def eval_policy(config: dict[str, Any]) -> None:
                     f"{primitive_name}_act_params",
                     policy_cfg.get("act_params", {}),
                 ),
+                image_mask_config=policy_cfg.get(
+                    f"{primitive_name}_image_mask",
+                    policy_cfg.get("image_mask", {}),
+                ),
             )
             primitive_ckpt_paths[primitive_name] = str(primitive_ckpt_path)
             primitive_ckpt_dirs[primitive_name] = str(primitive_ckpt_dir)
@@ -518,6 +535,10 @@ def eval_policy(config: dict[str, Any]) -> None:
                 act_params=policy_cfg.get(
                     "bootstrap_act_params",
                     policy_cfg.get("act_params", {}),
+                ),
+                image_mask_config=policy_cfg.get(
+                    "bootstrap_image_mask",
+                    policy_cfg.get("image_mask", {}),
                 ),
             )
             primitive_ckpt_paths["bootstrap"] = str(bootstrap_ckpt_path)
@@ -856,6 +877,7 @@ def _build_act_eval_policy(
     temporal_agg: bool,
     device: str,
     act_params: dict[str, Any] | None = None,
+    image_mask_config: dict[str, Any] | None = None,
 ):
     act_params = dict(act_params or {})
     policy_config = {
@@ -874,6 +896,7 @@ def _build_act_eval_policy(
         "max_episode_len": max_episode_len,
         "low_dim_keys": list(low_dim_keys),
         "state_dim": _resolve_low_dim_state_dim(low_dim_keys, equipment_model),
+        "image_mask": dict(image_mask_config or {}),
     }
     from testbed.policies.act.adapter import ACTAdapter
 

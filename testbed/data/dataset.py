@@ -18,6 +18,11 @@ import yaml
 from torch.utils.data import DataLoader, Dataset
 
 from testbed.data.hdf5_io import list_episodes
+from testbed.data.image_masks import (
+    apply_image_mask,
+    mask_dataset_path,
+    require_mask_dataset,
+)
 from testbed.data.schema import DS_V2_STEP_ACTION_LOSS_MASK, DS_V2_STEP_GOAL_TOKENS
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
 
@@ -213,6 +218,7 @@ class EpisodicDataset(Dataset):
         norm_stats: dict[str, np.ndarray],
         episode_len: int | None = None,
         low_dim_keys: list[str] | tuple[str, ...] | None = None,
+        image_mask_config: dict[str, Any] | None = None,
     ):
         super().__init__()
         self.episode_ids  = episode_ids
@@ -221,6 +227,7 @@ class EpisodicDataset(Dataset):
         self.norm_stats   = norm_stats
         self.episode_len  = int(episode_len) if episode_len is not None else None
         self.low_dim_keys = _normalize_low_dim_keys(low_dim_keys)
+        self.image_mask_config = dict(image_mask_config or {})
         self.is_sim: bool | None = None
         # Warm-up to populate self.is_sim
         self.__getitem__(0)
@@ -256,10 +263,31 @@ class EpisodicDataset(Dataset):
                 goal_tokens=goal_tokens,
                 low_dim_keys=self.low_dim_keys,
             )
-            image_dict = {
-                cam: f[f"/observations/images/{cam}"][t0]
-                for cam in self.camera_names
-            }
+            image_dict = {}
+            for cam in self.camera_names:
+                image = f[f"/observations/images/{cam}"][t0]
+                mask = None
+                mask_path = mask_dataset_path(
+                    camera_name=cam,
+                    mask_config=self.image_mask_config,
+                )
+                if mask_path is not None:
+                    if mask_path in f:
+                        mask = f[mask_path][t0]
+                    elif require_mask_dataset(
+                        camera_name=cam,
+                        mask_config=self.image_mask_config,
+                    ):
+                        raise KeyError(
+                            f"Episode {ep_id} is missing required image mask dataset "
+                            f"{mask_path!r} for camera {cam!r}."
+                        )
+                image_dict[cam] = apply_image_mask(
+                    image,
+                    camera_name=cam,
+                    mask_config=self.image_mask_config,
+                    mask=mask,
+                )
 
             # ── action from t0 onward (legacy hack for real data) ─────────
             if is_sim:
@@ -341,6 +369,7 @@ def load_data(
     split_path: str | Path | None = None,
     reuse_split: bool = True,
     low_dim_keys: list[str] | tuple[str, ...] | None = None,
+    image_mask_config: dict[str, Any] | None = None,
 ) -> tuple[DataLoader, DataLoader, dict, bool, dict[str, Any]]:
     """
     Build train/val DataLoaders from an HDF5 dataset directory.
@@ -429,6 +458,7 @@ def load_data(
         norm_stats,
         episode_len=target_episode_len,
         low_dim_keys=selected_low_dim_keys,
+        image_mask_config=image_mask_config,
     )
     val_ds = EpisodicDataset(
         val_ids,
@@ -437,12 +467,14 @@ def load_data(
         norm_stats,
         episode_len=target_episode_len,
         low_dim_keys=selected_low_dim_keys,
+        image_mask_config=image_mask_config,
     )
 
     split_info["dataset_max_episode_len"] = int(max_episode_len)
     split_info["loader_episode_len"] = int(target_episode_len)
     split_info["low_dim_keys"] = list(selected_low_dim_keys)
     split_info["low_dim_dim"] = int(norm_stats["proprio_dim"])
+    split_info["image_mask_enabled"] = bool(image_mask_config)
 
     loader_kw: dict = {"pin_memory": pin_memory, "num_workers": num_workers}
     if num_workers > 0:

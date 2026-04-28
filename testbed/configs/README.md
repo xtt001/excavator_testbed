@@ -707,6 +707,24 @@ V2.1 Stage 4 在保留 Stage 2 指标的同时，还会额外输出：
 - workskill 数据可带 `/v2/step/action_loss_mask`。ACT loader 会把 mask 为 `0`
   的 timestep 当作 action-loss padding；默认 workskill builder 现在写全 `1`，
   不再按裸 bucket action 阈值自动屏蔽，因为这个阈值会误伤 digging 监督。
+- ACT 训练/eval 支持 `policy.image_mask`，用于把 RGB 输入先变成 masked RGB，再送进
+  现有 3-channel ResNet backbone。最小配置示例：
+
+```yaml
+policy:
+  image_mask:
+    enabled: true
+    mode: multiply
+    cameras:
+      fpv:
+        rect_xyxy_norm: [0.10, 0.35, 0.90, 0.95]
+```
+
+`rect_xyxy_norm` 是 `[x0, y0, x1, y1]` 的归一化像素窗口，mask 外像素置零。
+如果后续数据集或 Unity 输出真实 mask，也可以把 camera spec 改成
+`mask_dataset: "/observations/image_masks/fpv"`；设置
+`require_mask_dataset: true` 时缺失 mask 会直接报错。这个 mask 只改视觉输入，
+不把 `env_state` 加进 ACT low-dim 输入。
 - eval 支持 `eval.stream_rollout_logs: true`，会在 rollout 过程中写
   `rollout_XXX.partial.jsonl`，中途停止时也能保留第 2/第 3 cycle 的逐步证据。
 - compare 的主口径固定为：

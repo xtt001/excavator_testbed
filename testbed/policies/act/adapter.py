@@ -24,6 +24,7 @@ import torch
 from einops import rearrange
 import torchvision.transforms as transforms
 
+from testbed.data.image_masks import apply_image_mask
 from testbed.policies.base import Policy, register_policy
 
 
@@ -67,6 +68,7 @@ class ACTAdapter(Policy):
         self.kl_weight    = policy_config.get("kl_weight", 10)
         self._camera_names = list(policy_config.get("camera_names", []))
         self._low_dim_keys = list(policy_config.get("low_dim_keys", ["qpos"]))
+        self._image_mask_config = dict(policy_config.get("image_mask") or {})
 
         model, optimizer = build_ACT_model_and_optimizer(policy_config)
         self._model     = model.to(self.device)
@@ -124,7 +126,13 @@ class ACTAdapter(Policy):
                 raise ValueError(
                     f"ACTAdapter.predict(): missing required camera input {key!r}."
                 )
-            cam_img = np.asarray(obs[key], dtype=np.float32)
+            cam_img = apply_image_mask(
+                np.asarray(obs[key]),
+                camera_name=cam,
+                mask_config=self._image_mask_config,
+                mask=obs.get(f"image_mask_{cam}"),
+            )
+            cam_img = np.asarray(cam_img, dtype=np.float32)
             if cam_img.ndim != 3:
                 raise ValueError(
                     f"ACTAdapter.predict(): expected {key!r} to be rank-3, got shape {cam_img.shape}."

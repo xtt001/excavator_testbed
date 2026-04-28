@@ -24,6 +24,9 @@ def train_policy(config: dict[str, Any]) -> None:
     episode_len   = int(task_cfg.get("episode_len", config.get("episode_len", 400)))
     camera_names  = task_cfg.get("camera_names", config.get("camera_names", []))
     low_dim_keys  = list(policy_cfg.get("low_dim_keys", ["qpos"]))
+    image_mask_config = copy.deepcopy(
+        policy_cfg.get("image_mask", task_cfg.get("image_mask", {}))
+    )
     ckpt_dir      = Path(train_cfg.get("ckpt_dir", config.get("ckpt_dir", f"ckpts/{task_name}")))
     equipment_model = task_cfg.get("equipment_model", config.get("equipment_model", "excavator_simple"))
     device        = str(train_cfg.get("device", policy_cfg.get("device", "cuda")))
@@ -61,6 +64,7 @@ def train_policy(config: dict[str, Any]) -> None:
         "equipment_model": equipment_model,
         "low_dim_keys":  low_dim_keys,
         "state_dim":     _resolve_low_dim_state_dim(low_dim_keys, equipment_model),
+        "image_mask":    image_mask_config,
     }
 
     full_config = {
@@ -107,6 +111,7 @@ def train_policy(config: dict[str, Any]) -> None:
         split_path         = split_path,
         reuse_split        = reuse_split,
         low_dim_keys       = low_dim_keys,
+        image_mask_config  = image_mask_config,
     )
 
     # save normalisation stats so trainer can load them

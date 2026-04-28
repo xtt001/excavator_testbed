@@ -937,6 +937,11 @@ schema 规则：
   - `images`
   - `action`
   - 可选 low-dim：`qvel`、`goal_tokens`
+- 视觉输入可以通过 `policy.image_mask` 做 masked RGB 预处理：仍然保持
+  3-channel RGB，不改 ACT/ResNet 结构。当前支持按 camera 配置 binary rectangle
+  mask，或从 HDF5 的 `/observations/image_masks/...` 读取 mask；mask 外像素会置零。
+  这适合先试 `dig` 区域 crop/mask，让 ACT 只看目标挖掘区域，同时避免把
+  Unity `env_state` 当成 policy 输入。
 - `env_state` 不作为 policy 输入；它保留给 label、data filtering、reward/QC 和 rollout
   诊断，避免把仿真/Unity 特权信息直接喂给可迁移模型
 - 未放进 `low_dim_keys` 的 `qvel / rewards / timestamps / metadata` 仍主要用于：
@@ -985,6 +990,9 @@ target-safety 训练还有一个额外契约：
 - 在当前代码结构下，可以把低维 `robot_state` 扩成：
   - `concat(qpos, qvel)`
   - `concat(qpos, qvel, goal_tokens)`
+- 也可以保持低维输入为 `qpos + qvel`，同时用 `policy.image_mask` 给 ACT 的 RGB
+  输入加 binary mask。第一版 mask 不改变 checkpoint 架构；它只是把指定 camera
+  的非目标区域置零，所以需要用同样的 mask 配置重新训练对应 checkpoint。
 - `env_state` 只进入离线标签/筛选，不进入 ACT policy 输入线
 - 当前仓库已经落了一条独立的 `qpos+qvel` 实验路径：
   - [testbed/configs/act_agx_fulltest_qvel.yaml](/home/pingfan/PACT/excavator_testbed/testbed/configs/act_agx_fulltest_qvel.yaml)
