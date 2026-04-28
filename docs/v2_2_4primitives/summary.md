@@ -93,7 +93,7 @@ Date: 2026-04-27
 - Trained affected primitives only:
   - `carry_qvel_safe_dump_e500_260427`: best epoch `360`, val loss `0.2872`
   - `dump_qvel_safe_dump_e500_260427`: best epoch `400`, val loss `0.2691`
-- A live smoke with `dump_ready_max_horizontal_distance_m=0.60` exposed a new mismatch: cycle2 stayed in `carry`, began curl-out around `horizontal ~= 0.79m`, spilled the bucket before `dump_ready`, then oscillated with empty bucket. The planner threshold is now `0.82m`, matching the safe dump onset max (`0.818m`) so the handoff happens before carry starts dumping.
+- A live smoke with scalar `dump_ready_max_horizontal_distance_m=0.60` exposed a new mismatch: cycle2 stayed in `carry`, began curl-out around `horizontal ~= 0.79m`, spilled the bucket before `dump_ready`, then oscillated with empty bucket. Later bed-footprint smokes at `0.82m` and `0.70m` switched earlier but caused left cycle2 to empty outside the target. The current smoke returns to `0.60m` and isolates the post-dump fix by disabling immediate `dump_end` boundary switching.
 - Success video: [`rollout_000_safe_dump_260427_success.mp4`](rollout_000_safe_dump_260427_success.mp4)
 - Final safe-dump smoke:
   - `success_rate=1.0`, `cycle1/2/3_success_rate=1.0`
@@ -102,6 +102,85 @@ Date: 2026-04-27
   - `avg_hard_target_collision_count=0`
   - Remaining quality debt: `avg_spill_before_target_count=227`, `avg_unsafe_target_distance_count=103`, `avg_quality_issue_count=336`
   - Key switches: cycle1 `carry->dump` at `horizontal=0.729m,height=0.668m`; cycle2 at `0.785m,0.666m`; cycle3 at `0.724m,0.662m`
+
+## 2026-04-28 Planner Switch Fix
+
+- Root cause found during good20 strict rollout comparison: configs that set
+  `dump_ready_require_over_footprint=false` were unintentionally bypassing all
+  position checks. Those smokes switched to `dump` as soon as height/mass were
+  acceptable, even when `bucket_bed_footprint_outside_distance_m` was still
+  around `2.4-3.0m`.
+- Planner semantics are now corrected: in `bed_relative` mode,
+  `bucket_bed_footprint_outside_distance_m` must satisfy the configured limit
+  regardless of whether the Unity footprint mask is required. The footprint
+  flag is optional evidence, not permission to ignore bed-relative geometry.
+- Human good20 data shows two distinct moments: approach ownership begins
+  near `bed_outside ~= 1.35m`, while official dump/release is much later
+  around median `bed_outside ~= 0.49m`. Four primitives keep both inside
+  `dump`, so the runtime switch must match the dump training start and not
+  collapse into a pure height trigger.
+- Fixed-planner smoke with `bed_outside<=1.25`, `height>=0.30`, and no
+  over-footprint/clearance requirement succeeded without hard collision, but
+  cycle2 waited in `carry` for `1426` steps. The blocker was the position gate:
+  cycle2 first reached height at `t=1345` with `bed_outside=1.888`, then hovered
+  around `1.26-1.43` until `t=2498`, when it finally crossed `1.25` for the
+  3-step hold. Offline replay of the same log shows a corrected
+  `bed_outside<=1.35` gate would have switched cycle2 at `t=1516`, much closer
+  to the human approach-start distribution, while still preserving the fixed
+  position check.
+- The planner now supports signed bed-relative windows. The current pushed 4p
+  smoke config uses the tighter successful 5-cycle handoff corridor:
+  `outside<=1.35`, `-4.30<=bucket_bed_relative_x_m<=2.00`, and
+  `2.75<=bucket_bed_relative_z_m<=3.50`. The unsigned `outside` scalar is kept
+  only as a coarse proximity gate; it is no longer sufficient by itself because
+  it cannot distinguish truck tail, middle, and front.
+- Data/configs that lack 16-field bed-relative geometry, or experiments that
+  switch from `outside` alone, are retained only as diagnostics. They should not
+  be mixed into the current V2.2 middle-handoff carry/dump training or treated as
+  acceptance evidence.
+- Live signed-corridor smoke:
+  `runs/eval/agx_v2_2_4primitives_good20_strict_signedcorridor_260428_smoke`
+  - video:
+    `runs/eval/agx_v2_2_4primitives_good20_strict_signedcorridor_260428_smoke/videos/rollout_000.mp4`
+  - `success_rate=1.0`, `cycle1/2/3_success_rate=1.0`
+  - `completed_transition_count=2`, `transition_timeout_count=0`,
+    `hard_target_collision_count=0`
+  - switch points:
+    cycle1 `t=570`, `outside=1.301`, `x=-3.917`, `z=3.183`;
+    cycle2 `t=1514`, `outside=1.340`, `x=-1.636`, `z=3.213`;
+    cycle3 `t=2572`, `outside=1.269`, `x=-4.324`, `z=3.018`
+  - deposit quality still needs work:
+    `cycle1/2/3_deposited_fraction=0.701/0.485/0.646`, with no post-dump
+    target mass drop. The signed corridor fixed the planner waiting/position
+    bug, but the current dump/carry policies still do not put enough of each
+    bucket into the target.
+- Longer 5-cycle stress tests were run with target intent
+  `mid -> left -> right -> left -> right`, but current 4p `qpos+qvel`
+  primitives do not receive a next-sector goal. The scripted planner only
+  manages `dig/carry/dump/return` boundaries, so the actual sector is whatever
+  the learned `return` and `dig` policies produce before
+  `qualified_dig_start` fires.
+  - Baseline signed corridor, `x_min=-5.0`:
+    `runs/eval/agx_v2_2_4primitives_good20_strict_signedcorridor_5cycle_mlr_lr_ep8000_260428_smoke`
+    produced actual QDS sectors `mid, left, right, mid, ...`.
+    It succeeded by aggregate metrics, but cycle4/5 dump had hard collision
+    events and lower deposit quality:
+    `cycle_deposited_fraction_mean=0.587`, min `0.502`,
+    `hard_target_collision_count=11`, max post-dump target drop `89.97kg`.
+  - Tighter signed corridor, `x_min=-4.3`:
+    `runs/eval/agx_v2_2_4primitives_good20_strict_signedcorridor_xmin43_5cycle_260428_smoke`
+    produced actual QDS sectors `mid, left, right, right, right`.
+    It improved dump placement quality but still did not control the requested
+    sequence: `cycle_deposited_fraction_mean=0.709`, min `0.533`,
+    `hard_target_collision_count=5`, max post-dump target drop `44.98kg`.
+    Cycle5 stayed in `dig` until `t=5745` because bucket mass did not reach
+    the `dig_to_carry_min_bucket_mass_kg=300` threshold; it was slow digging,
+    not a carry/dump planner wait.
+  - Conclusion: signed bed-relative gates are useful for dump entry, but they
+    cannot make the agent dig a requested sector. To run deterministic
+    `mid-left-right-left-right`, `return/dig` must become goal-conditioned or
+    the planner must own next-sector positioning before allowing
+    `qualified_dig_start -> dig`.
 
 ## Carry Tail + Post-Dump Hold Update
 
@@ -120,15 +199,18 @@ Date: 2026-04-27
 - Dump checkpoint reused:
   `/data/pingfan/excavator_testbed_runs/ckpts/v2_2_4primitives/dump_qvel_safe_dump_leftboost_e500_260427/policy_best.ckpt`
 - Planner smoke config:
-  - `dump_ready_max_horizontal_distance_m=0.60`
+  - `dump_ready_max_horizontal_distance_m=null`
+  - `dump_ready_max_bed_footprint_outside_distance_m=0.60`
   - `dump_ready_min_height_above_rim_m=0.45`
   - `dump_done_hold_steps=30`
+  - `dump_done_use_boundary_event=false`
 
-Reason for `dump_done_hold_steps=30`: ACT predicts 100-step chunks and temporal
-aggregation blends future actions. With `dump_done_hold_steps=2`, cycle2 already
-placed soil into the truck, but return took over while the bucket was still at
-the bed edge and pulled roughly `370kg` back out. Holding dump for 30 steps lets
-the dump policy finish the release/stabilization phase before return starts.
+Reason for `dump_done_hold_steps=30` and disabled immediate `dump_end` switching:
+ACT predicts 100-step chunks and temporal aggregation blends future actions. With
+the boundary event taking priority, cycle2 already placed soil into the truck,
+but return took over while the bucket was still at the bed edge and pulled soil
+back out. Holding dump for 30 steps lets the dump policy finish the
+release/stabilization phase before return starts.
 
 Current best live smoke:
 
@@ -166,14 +248,14 @@ Current V2.2 ownership returns to four primitives:
 - `dump`: move to top of target, align, release, and post-dump hold.
 - `return`: empty-bucket return to the next dig.
 
+Phase boundary source of truth:
+[`phase_boundaries.md`](phase_boundaries.md).
+
 The key ACT rule is: do not let a training chunk cross skill ownership. The
-builder therefore ends `carry` at the earlier of:
-
-- first `approach_dump` stage, or
-- stable pre-dump curl-out onset.
-
-`dump` starts at the same boundary. This keeps ACT's `chunk_size=100` future
-action supervision from teaching carry to perform dump/release.
+builder now ends `carry` at the first `approach_dump` stage and starts `dump`
+there. If stable curl-out appears before `approach_dump`, the window is rejected
+as ambiguous ownership instead of assigning that release motion to either
+`carry` or a late-starting `dump`.
 
 One-episode ownership probe:
 
@@ -281,14 +363,186 @@ state that is not truly over the bed:
 
 The current success metrics are therefore too permissive for this failure mode:
 the rollout can pass aggregate 3-cycle success while one cycle deposits poorly.
-The likely next fix is not more e500 training alone. The planner readiness needs
-a better relative target-occupancy signal than the current
-`horizontal_distance <= 0.60m` OR condition, because `bucket_over_target_footprint`
-is never true in this rollout. Options:
+The follow-up fix is now implemented:
 
-- fix/retune Unity target footprint so `over_footprint` becomes meaningful, then
-  require it or a learned visual geometry head;
-- add a stricter relative offset/bed-center readiness signal instead of only
-  scalar horizontal distance;
-- add per-cycle deposited-fraction/post-drop acceptance metrics so this failure
-  cannot hide behind aggregate success.
+- Unity target geometry now emits bed-local bucket proxy center offsets:
+  `bucket_bed_relative_x_m`, `bucket_bed_relative_z_m`, and
+  `bucket_bed_footprint_outside_distance_m`.
+- `bucket_over_target_footprint_mask` now uses the existing TruckBed clearance
+  tolerance to mean the bucket proxy is above the truck-top dump region, not
+  strict OBB overlap; center-relative `bucket_bed_relative_x_m/z_m` remains a
+  diagnostic.
+- The current 4p smoke position mode is `bed_relative`; it no
+  longer switches dump from `target_horizontal_distance_m <= 0.60m` alone, and
+  the current smoke config sets `dump_ready_max_horizontal_distance_m=null`.
+  Unity `bucket_over_target_footprint_mask` now means bucket proxy is above the
+  truck-top dump region, not strict OBB overlap. The smoke handoff uses
+  `bed_relative` mode with `bucket_bed_footprint_outside_distance_m <= 0.60m`;
+  the truck-top mask is diagnostic, while the strict outside distance remains
+  the release-depth gate. Earlier `0.82m` / `0.70m` smokes made left cycle2
+  release outside the target, and the `0.60m` truck-top-mask smoke still handed
+  off near the truck tail. A `0.35m` diagnostic did not enter dump at all:
+  current carry never satisfied `outside<=0.35m` while also keeping
+  `height_above_rim>=0.45m`. That points to a builder/label ownership mismatch
+  rather than a threshold-only fix.
+- The 4p builder has been updated for middle-handoff ownership: it requires the
+  new bed-relative geometry fields, rejects old 13-field target geometry for
+  carry/dump ownership, rejects stable curl-out before `approach_dump`, and
+  requires safe release intent to satisfy
+  `bucket_bed_footprint_outside_distance_m <= 0.45m`.
+- Rollout QC now reports per-cycle deposited fraction and post-dump target mass
+  drop, including `cycle2_deposited_fraction` and
+  `cycle2_post_dump_target_mass_drop_kg`, so aggregate success cannot hide a
+  cycle2 back-edge dump.
+
+## Middle-Handoff Data Refresh Probe
+
+Date: 2026-04-28
+
+The Unity protocol now writes 16-field target geometry, so two one-episode
+smokes were replay-refreshed before rebuilding carry/dump:
+
+- Historical V2.1 sample:
+  `data/agx_teleop_v2_1_multi_raw_targetgeo16_smoke_260428`
+  - Replay QA: qpos mean diff `0.0005`, max diff `0.0020`.
+  - Env state width: `16`.
+  - Workskill all cycles: `3`.
+  - New middle-handoff primitive result: `dig=3`, `carry=0`, `dump=0`.
+  - Rejects: cycle1/2 fail `dump_first20_height_below_rim` and clearance loss;
+    cycle3 fails `missing_safe_dump_intent`.
+- Recent ownership probe:
+  `data/agx_v2_2_ownership_probe_raw_targetgeo16_260428`
+  - Replay QA: qpos mean diff `0.0004`, max diff `0.0021`.
+  - Env state width: `16`.
+  - Workskill all cycles: `3`.
+  - New middle-handoff primitive result: `dig=3`, `carry=0`, `dump=0`.
+  - Rejects: cycle1/2 have stable curl-out before `approach_dump`
+    (`carry_release_before_approach_dump_stage` /
+    `release_before_approach_dump_stage`); cycle3 fails
+    `missing_safe_dump_intent`.
+
+Conclusion: old refreshed data and the earlier ownership probe are useful for
+diagnosis, but they should not be used for the new middle-handoff carry/dump
+training. The next dataset must be newly recorded with the phase-boundary
+document in mind: carry closes and transports, approach_dump starts before any
+stable release, and release begins only after the bucket is over the truck-bed
+middle region.
+
+## Middle-Handoff Teleop Rerecord Check
+
+Date: 2026-04-28
+
+Recorded one new raw episode:
+
+- Raw:
+  `data/agx_v2_2_middlehandoff_teleop_raw_260428_rerecord_1ep`
+- Relabeled:
+  `data/agx_v2_2_middlehandoff_teleop_raw_260428_rerecord_1ep_relabeled`
+- Workskill all:
+  `data/agx_v2_2_middlehandoff_teleop_raw_260428_rerecord_1ep_workskill_all`
+
+Basic recording quality was usable for diagnosis:
+
+- Steps: `3485`
+- Completed dumps: `3`
+- Env state width: `16`
+- Target geometry step coverage: `1.0`
+- Hard target collisions: `0`
+
+The relabel now uses bed-top geometry for `approach_dump`, so all three cycles
+received explicit approach windows:
+
+- Cycle1: `carry 289-761`, `approach_dump 762-954`, `dump_start 955`
+- Cycle2: `carry 1341-1966`, `approach_dump 1967-2051`, `dump_start 2052`
+- Cycle3: `carry 2537-3068`, `approach_dump 3069-3152`, `dump_start 3153`
+
+Strict primitive acceptance still rejected this episode for carry/dump
+training:
+
+- Primitive result: `dig=3`, `carry=0`, `dump=0`, `return` build incomplete
+  because carry/dump were empty.
+- Cycle1 reject: `dump_first20_height_below_rim` and
+  `dump_first20_clearance_lost` after the first safe candidate.
+- Cycle2 reject: `missing_safe_dump_intent`; the approach window never reached
+  `bucket_bed_footprint_outside_distance_m <= 0.45` before official
+  `dump_start`.
+- Cycle3 reject: `missing_safe_dump_intent`; the bucket stayed closed through
+  the approach window and never produced stable pre-dump release intent before
+  official `dump_start`.
+
+Decision: keep this raw episode as a diagnostic sample, but do not train
+`carry` or `dump` from it. The next collection should make the release moment
+more explicit: first move/hold over the truck-bed middle, then start sustained
+curl-out while height and clearance are still safely above the rim.
+
+Follow-up adjustment: the vertical threshold was slightly relaxed because the
+current teleop style separates movements and the bucket proxy can dip just
+below the rim without any hard collision. `dump_intent` now starts at
+`bucket_height_above_target_rim_m >= 0.20`, and first-20-step dump QC tolerates
+down to `-0.08m` when no hard target collision occurs. The bed-relative release
+depth (`bucket_bed_footprint_outside_distance_m <= 0.45`) and sustained
+curl-out requirements remain unchanged.
+
+After this height tolerance adjustment, the same rerecord built:
+
+- Primitive root:
+  `data/agx_v2_2_middlehandoff_teleop_rerecord_primitives_v2_2_heighttol_260428`
+- Accepted: `dig=3`, `carry=1`, `dump=1`, `return=2`
+- Accepted dump first-20 min height: `-0.0466m`, within the new `-0.08m`
+  tolerance, with hard collision count `0`.
+- Remaining rejects: `carry:missing_safe_dump_intent=2`,
+  `dump:missing_safe_dump_intent=2`.
+
+This confirms the height threshold was too strict for cycle1, while cycle2/3
+are still true ownership/data issues: one does not get close enough to the
+truck-bed middle before release, and one does not show stable pre-dump
+release intent before official `dump_start`.
+
+## Middle-Handoff Rerecord2 Check
+
+Date: 2026-04-28
+
+Previous middle-handoff candidate episodes are discarded for training
+selection. They remain on disk only as diagnostics. A new one-episode raw
+recording was collected:
+
+- Raw:
+  `data/agx_v2_2_middlehandoff_teleop_raw_260428_rerecord2_1ep`
+- Relabeled:
+  `data/agx_v2_2_middlehandoff_teleop_raw_260428_rerecord2_1ep_relabeled`
+- Workskill all:
+  `data/agx_v2_2_middlehandoff_teleop_raw_260428_rerecord2_1ep_workskill_all`
+- Primitive root:
+  `data/agx_v2_2_middlehandoff_teleop_rerecord2_primitives_v2_2_260428`
+
+Recording checks:
+
+- Steps: `3336`
+- Completed dumps: `3`
+- Env state width: `16`
+- Target geometry coverage: `1.0`
+- Hard target collision count: `0`
+
+Relabeled phase windows:
+
+- Cycle1: `carry 310-835`, `approach_dump 836-1005`, `dump_start 1006`
+- Cycle2: `carry 1423-1999`, `approach_dump 2000-2156`, `dump_start 2157`
+- Cycle3: `carry 2575-3065`, no `approach_dump`, `dump_start 3066`
+
+Strict primitive acceptance:
+
+- Accepted: `dig=3`, `carry=2`, `dump=2`, `return=2`
+- Rejected: `carry:missing_dump_ownership_boundary=1`,
+  `dump:missing_dump_ownership_boundary=1`
+- Accepted carry windows have zero pre-dump mass loss and no stable release in
+  the carry tail.
+- Accepted dump windows start at
+  `bucket_bed_footprint_outside_distance_m ~= 0.434-0.444`,
+  `height_above_rim ~= 0.389-0.407`, with no first-20 clearance loss and no
+  hard collision.
+
+Decision: this rerecord is the first good candidate for the new middle-handoff
+carry/dump dataset, but it contributes only two usable carry/dump cycles.
+Collect more episodes with the same cycle1/2 style, and for cycle3 make sure
+there is a visible approach phase before release so the builder can assign
+`dump` ownership cleanly.

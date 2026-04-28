@@ -16,8 +16,12 @@ import numpy as np
 
 from testbed.data.hdf5_io import episode_id_from_path, list_episodes, read_episode, write_episode
 from testbed.data.schema import (
+    ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+    ENV_STATE_BUCKET_BED_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX,
@@ -58,10 +62,15 @@ DUMP_INTENT_BUCKET_QPOS_MIN = 0.40
 DUMP_INTENT_BUCKET_ACTION_MAX = -0.08
 DUMP_INTENT_MIN_STABLE_STEPS = 3
 DUMP_INTENT_MIN_BUCKET_MASS_KG = 150.0
-DUMP_INTENT_MIN_HEIGHT_ABOVE_RIM_M = 0.30
+DUMP_INTENT_MIN_HEIGHT_ABOVE_RIM_M = 0.20
+DUMP_INTENT_MAX_BED_FOOTPRINT_OUTSIDE_DISTANCE_M = 0.45
 DUMP_QC_FIRST_STEPS = 20
-DUMP_QC_MIN_FIRST_HEIGHT_ABOVE_RIM_M = 0.0
+DUMP_QC_MIN_FIRST_HEIGHT_ABOVE_RIM_M = -0.08
 DUMP_QC_NEAR_COLLISION_HORIZONTAL_M = 0.05
+GOOD_DUMP_MIN_BUCKET_MASS_LOSS_KG = 80.0
+GOOD_DUMP_MIN_DEPOSIT_DELTA_KG = 80.0
+GOOD_DUMP_MIN_DEPOSITED_FRACTION_OF_BUCKET_LOSS = 0.50
+GOOD_DUMP_MAX_HARD_COLLISION_DELTA = 0
 DUMP_RELEASE_POST_HOLD_STEPS = 30
 APPROACH_DUMP_ACTION_HORIZON_STEPS = 100
 APPROACH_DUMP_MIN_WINDOW_LEN = 20
@@ -456,41 +465,82 @@ def extract_workskill_primitive_slices(
         work_stage_id=work_stage_id,
         dump_start_mask=dump_start_mask,
     )
+    pre_approach_curl_out_onset = (
+        None
+        if carry_start is None or approach_start is None
+        else _find_stable_carry_curl_out_onset(
+            episode=episode,
+            start=int(carry_start),
+            end=int(approach_start),
+        )
+    )
+    dump_ownership_start = None if approach_start is None else int(approach_start)
+    dump_ownership_boundary_source = (
+        None if dump_ownership_start is None else "approach_dump_stage"
+    )
     dump_intent = _find_dump_intent_start(
         episode=episode,
         work_stage_id=work_stage_id,
         official_dump_start=official_dump_start,
     )
     dump_intent_start = dump_intent.start_step
-    stable_curl_out_onset = (
-        None
-        if carry_start is None or dump_intent_start is None
-        else _find_stable_carry_curl_out_onset(
-            episode=episode,
-            start=int(carry_start),
-            end=int(dump_intent_start),
+    quality_ownership_start = (
+        pre_approach_curl_out_onset
+        if pre_approach_curl_out_onset is not None
+        else dump_ownership_start
+        if dump_ownership_start is not None
+        else official_dump_start
+    )
+    quality_release_marker = (
+        pre_approach_curl_out_onset
+        if pre_approach_curl_out_onset is not None
+        else dump_intent_start
+        if dump_intent_start is not None
+        else official_dump_start
+    )
+    good_dump_acceptance = _find_good_dump_acceptance(
+        episode=episode,
+        start=quality_ownership_start,
+        release_marker=quality_release_marker,
+        official_dump_start=official_dump_start,
+    )
+    use_quality_acceptance = bool(
+        good_dump_acceptance.start_step is not None
+        and (
+            dump_intent_start is None
+            or pre_approach_curl_out_onset is not None
+            or dump_ownership_start is None
         )
     )
-    dump_ownership_candidates = [
-        int(value)
-        for value in (approach_start, stable_curl_out_onset)
-        if value is not None
-    ]
-    dump_ownership_start = (
-        None if not dump_ownership_candidates else int(min(dump_ownership_candidates))
+    effective_dump_intent_start = (
+        int(good_dump_acceptance.start_step)
+        if use_quality_acceptance
+        else dump_intent_start
     )
-    dump_ownership_boundary_source = None
-    if dump_ownership_start is not None:
-        dump_ownership_boundary_source = (
-            "stable_curl_out"
-            if stable_curl_out_onset is not None
-            and (
-                approach_start is None
-                or int(stable_curl_out_onset) <= int(approach_start)
+    effective_dump_ownership_start = dump_ownership_start
+    effective_dump_ownership_boundary_source = dump_ownership_boundary_source
+    if use_quality_acceptance:
+        if pre_approach_curl_out_onset is not None:
+            effective_dump_ownership_start = int(pre_approach_curl_out_onset)
+            effective_dump_ownership_boundary_source = (
+                "pre_approach_stable_curl_out_good_dump"
             )
-            else "approach_dump_stage"
-        )
-
+        elif dump_ownership_start is not None:
+            effective_dump_ownership_start = int(dump_ownership_start)
+            effective_dump_ownership_boundary_source = (
+                "approach_dump_stage_good_dump_quality"
+            )
+        elif quality_ownership_start is not None:
+            effective_dump_ownership_start = int(quality_ownership_start)
+            effective_dump_ownership_boundary_source = "good_dump_release_marker"
+    pre_approach_release_details = {
+        "pre_approach_stable_curl_out_onset_step": int(
+            -1 if pre_approach_curl_out_onset is None else pre_approach_curl_out_onset
+        ),
+        "approach_dump_stage_step": int(-1 if approach_start is None else approach_start),
+        "boundary_rule": "first_approach_dump_stage",
+        "good_dump_quality_acceptance": bool(use_quality_acceptance),
+    }
     slices: list[PrimitiveSlice] = []
     rejects: list[PrimitiveRejectRecord] = []
 
@@ -527,8 +577,8 @@ def extract_workskill_primitive_slices(
                 start_step=int(start),
                 end_step_exclusive=int(end),
                 dump_intent_step=None
-                if dump_intent_start is None
-                else int(source_start_offset + dump_intent_start),
+                if effective_dump_intent_start is None
+                else int(source_start_offset + effective_dump_intent_start),
                 official_dump_start_step=None
                 if official_dump_start is None
                 else int(source_start_offset + official_dump_start),
@@ -558,7 +608,7 @@ def extract_workskill_primitive_slices(
             end=int(carry_start),
         )
 
-    if dump_ownership_start is None:
+    if effective_dump_ownership_start is None:
         rejects.append(
             PrimitiveRejectRecord(
                 primitive_name="carry",
@@ -570,8 +620,12 @@ def extract_workskill_primitive_slices(
                 end_step_exclusive=int(source_start_offset + n_steps),
             )
         )
-    elif dump_intent_start is None:
-        reason = dump_intent.reject_reason or "missing_safe_dump_intent"
+    elif effective_dump_intent_start is None:
+        reason = (
+            dump_intent.reject_reason
+            or good_dump_acceptance.reject_reason
+            or "missing_good_dump_or_safe_intent"
+        )
         rejects.append(
             PrimitiveRejectRecord(
                 primitive_name="carry",
@@ -581,7 +635,20 @@ def extract_workskill_primitive_slices(
                 source_cycle_id=int(source_cycle_id),
                 start_step=int(source_start_offset + (carry_start or 0)),
                 end_step_exclusive=int(source_start_offset + n_steps),
-                details=dump_intent.qc,
+                details=dump_intent.qc or good_dump_acceptance.qc,
+            )
+        )
+    elif pre_approach_curl_out_onset is not None and not use_quality_acceptance:
+        rejects.append(
+            PrimitiveRejectRecord(
+                primitive_name="carry",
+                reason="carry_release_before_approach_dump_stage",
+                source_dataset_dir=str(source_dataset_dir.resolve()),
+                source_episode_id=int(source_episode_id),
+                source_cycle_id=int(source_cycle_id),
+                start_step=int(source_start_offset + (carry_start or 0)),
+                end_step_exclusive=int(source_start_offset + dump_ownership_start),
+                details=pre_approach_release_details,
             )
         )
     elif carry_start is None:
@@ -593,7 +660,7 @@ def extract_workskill_primitive_slices(
                 source_episode_id=int(source_episode_id),
                 source_cycle_id=int(source_cycle_id),
                 start_step=int(source_start_offset),
-                end_step_exclusive=int(source_start_offset + dump_intent_start),
+                end_step_exclusive=int(source_start_offset + effective_dump_intent_start),
             )
         )
     else:
@@ -601,27 +668,33 @@ def extract_workskill_primitive_slices(
             episode=episode,
             prefix="carry",
             start=int(carry_start),
-            end=int(dump_ownership_start),
-            release_start=int(dump_intent_start),
+            end=int(effective_dump_ownership_start),
+            release_start=int(effective_dump_intent_start),
         )
         carry_qc.update(
             {
-                "carry_dump_ownership_start_step": int(dump_ownership_start),
+                "carry_dump_ownership_start_step": int(effective_dump_ownership_start),
                 "carry_dump_ownership_boundary_source": str(
-                    dump_ownership_boundary_source
+                    effective_dump_ownership_boundary_source
                 ),
                 "carry_dump_ownership_approach_stage_step": (
                     -1 if approach_start is None else int(approach_start)
                 ),
                 "carry_dump_ownership_stable_curl_out_onset_step": (
-                    -1 if stable_curl_out_onset is None else int(stable_curl_out_onset)
+                    -1
+                    if pre_approach_curl_out_onset is None
+                    else int(pre_approach_curl_out_onset)
                 ),
                 "carry_dump_approach_steps_before_intent": int(
-                    int(dump_intent_start) - int(dump_ownership_start)
+                    int(effective_dump_intent_start) - int(effective_dump_ownership_start)
+                ),
+                "carry_dump_ownership_requires_bed_geometry": True,
+                "carry_dump_acceptance_mode": (
+                    "good_dump_quality" if use_quality_acceptance else "safe_intent"
                 ),
             }
         )
-        if int(dump_ownership_start) - int(carry_start) < CARRY_MIN_WINDOW_LEN:
+        if int(effective_dump_ownership_start) - int(carry_start) < CARRY_MIN_WINDOW_LEN:
             rejects.append(
                 PrimitiveRejectRecord(
                     primitive_name="carry",
@@ -630,7 +703,20 @@ def extract_workskill_primitive_slices(
                     source_episode_id=int(source_episode_id),
                     source_cycle_id=int(source_cycle_id),
                     start_step=int(source_start_offset + carry_start),
-                    end_step_exclusive=int(source_start_offset + dump_ownership_start),
+                    end_step_exclusive=int(source_start_offset + effective_dump_ownership_start),
+                    details=carry_qc,
+                )
+            )
+        elif bool(carry_qc.get("carry_tail_has_stable_release", False)):
+            rejects.append(
+                PrimitiveRejectRecord(
+                    primitive_name="carry",
+                    reason="carry_tail_has_release_before_dump_ownership",
+                    source_dataset_dir=str(source_dataset_dir.resolve()),
+                    source_episode_id=int(source_episode_id),
+                    source_cycle_id=int(source_cycle_id),
+                    start_step=int(source_start_offset + carry_start),
+                    end_step_exclusive=int(source_start_offset + effective_dump_ownership_start),
                     details=carry_qc,
                 )
             )
@@ -646,7 +732,7 @@ def extract_workskill_primitive_slices(
                     source_episode_id=int(source_episode_id),
                     source_cycle_id=int(source_cycle_id),
                     start_step=int(source_start_offset + carry_start),
-                    end_step_exclusive=int(source_start_offset + dump_ownership_start),
+                    end_step_exclusive=int(source_start_offset + effective_dump_ownership_start),
                     details=carry_qc,
                 )
             )
@@ -662,7 +748,7 @@ def extract_workskill_primitive_slices(
                     source_episode_id=int(source_episode_id),
                     source_cycle_id=int(source_cycle_id),
                     start_step=int(source_start_offset + carry_start),
-                    end_step_exclusive=int(source_start_offset + dump_ownership_start),
+                    end_step_exclusive=int(source_start_offset + effective_dump_ownership_start),
                     details=carry_qc,
                 )
             )
@@ -671,12 +757,12 @@ def extract_workskill_primitive_slices(
                 primitive_name="carry",
                 window_name=CARRY_WINDOW_NAME,
                 start=int(carry_start),
-                end=int(dump_ownership_start),
+                end=int(effective_dump_ownership_start),
                 reason_if_invalid="carry_too_short_before_dump_ownership",
                 carry_qc=carry_qc,
             )
 
-    if dump_ownership_start is None:
+    if effective_dump_ownership_start is None:
         rejects.append(
             PrimitiveRejectRecord(
                 primitive_name="dump",
@@ -688,8 +774,12 @@ def extract_workskill_primitive_slices(
                 end_step_exclusive=int(source_start_offset + n_steps),
             )
         )
-    elif dump_intent_start is None:
-        reason = dump_intent.reject_reason or "missing_safe_dump_intent"
+    elif effective_dump_intent_start is None:
+        reason = (
+            dump_intent.reject_reason
+            or good_dump_acceptance.reject_reason
+            or "missing_good_dump_or_safe_intent"
+        )
         rejects.append(
             PrimitiveRejectRecord(
                 primitive_name="dump",
@@ -699,31 +789,56 @@ def extract_workskill_primitive_slices(
                 source_cycle_id=int(source_cycle_id),
                 start_step=int(source_start_offset),
                 end_step_exclusive=int(source_start_offset + n_steps),
-                details=dump_intent.qc,
+                details=dump_intent.qc or good_dump_acceptance.qc,
+            )
+        )
+    elif pre_approach_curl_out_onset is not None and not use_quality_acceptance:
+        rejects.append(
+            PrimitiveRejectRecord(
+                primitive_name="dump",
+                reason="release_before_approach_dump_stage",
+                source_dataset_dir=str(source_dataset_dir.resolve()),
+                source_episode_id=int(source_episode_id),
+                source_cycle_id=int(source_cycle_id),
+                start_step=int(source_start_offset + pre_approach_curl_out_onset),
+                end_step_exclusive=int(source_start_offset + n_steps),
+                details=pre_approach_release_details,
             )
         )
     else:
-        dump_qc = dict(dump_intent.qc)
+        dump_qc = dict(
+            good_dump_acceptance.qc if use_quality_acceptance else dump_intent.qc
+        )
         dump_qc.update(
             {
-                "dump_ownership_start_step": int(dump_ownership_start),
-                "dump_ownership_window_len": int(n_steps - int(dump_ownership_start)),
-                "dump_ownership_boundary_source": str(dump_ownership_boundary_source),
+                "dump_ownership_start_step": int(effective_dump_ownership_start),
+                "dump_ownership_window_len": int(
+                    n_steps - int(effective_dump_ownership_start)
+                ),
+                "dump_ownership_boundary_source": str(
+                    effective_dump_ownership_boundary_source
+                ),
                 "dump_ownership_approach_stage_step": (
                     -1 if approach_start is None else int(approach_start)
                 ),
                 "dump_ownership_stable_curl_out_onset_step": (
-                    -1 if stable_curl_out_onset is None else int(stable_curl_out_onset)
+                    -1
+                    if pre_approach_curl_out_onset is None
+                    else int(pre_approach_curl_out_onset)
                 ),
                 "dump_approach_steps_before_intent": int(
-                    int(dump_intent_start) - int(dump_ownership_start)
+                    int(effective_dump_intent_start) - int(effective_dump_ownership_start)
+                ),
+                "dump_ownership_requires_bed_geometry": True,
+                "dump_acceptance_mode": (
+                    "good_dump_quality" if use_quality_acceptance else "safe_intent"
                 ),
             }
         )
         _append_or_reject(
             primitive_name="dump",
             window_name=DUMP_WINDOW_NAME,
-            start=int(dump_ownership_start),
+            start=int(effective_dump_ownership_start),
             end=n_steps,
             dump_qc=dump_qc,
         )
@@ -1256,7 +1371,10 @@ def _window_tail_qc(
             }
         )
 
-    env_state = _target_geometry_env_state(episode=episode)
+    env_state = _target_geometry_env_state(
+        episode=episode,
+        require_bed_geometry=True,
+    )
     if env_state is not None and start < len(env_state) and end > start:
         mass_start = float(env_state[start, ENV_STATE_MASS_IN_BUCKET_IDX])
         mass_end = float(env_state[end - 1, ENV_STATE_MASS_IN_BUCKET_IDX])
@@ -1293,6 +1411,35 @@ def _window_tail_qc(
                 ),
             }
         )
+        if ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX < env_state.shape[1]:
+            qc.update(
+                {
+                    f"{prefix}_start_bed_relative_x_m": float(
+                        env_state[start, ENV_STATE_BUCKET_BED_RELATIVE_X_IDX]
+                    ),
+                    f"{prefix}_start_bed_relative_z_m": float(
+                        env_state[start, ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX]
+                    ),
+                    f"{prefix}_start_bed_footprint_outside_distance_m": float(
+                        env_state[
+                            start,
+                            ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+                        ]
+                    ),
+                    f"{prefix}_end_bed_relative_x_m": float(
+                        env_state[end - 1, ENV_STATE_BUCKET_BED_RELATIVE_X_IDX]
+                    ),
+                    f"{prefix}_end_bed_relative_z_m": float(
+                        env_state[end - 1, ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX]
+                    ),
+                    f"{prefix}_end_bed_footprint_outside_distance_m": float(
+                        env_state[
+                            end - 1,
+                            ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+                        ]
+                    ),
+                }
+            )
     return qc
 
 
@@ -1328,15 +1475,19 @@ def _find_dump_intent_start(
             reject_reason="empty_pre_dump_approach_window",
         )
 
-    env_state = _target_geometry_env_state(episode=episode)
+    env_state = _target_geometry_env_state(
+        episode=episode,
+        require_bed_geometry=True,
+    )
     if env_state is None:
         return DumpIntentSearchResult(
             start_step=None,
             qc={
                 "dump_intent_search_start_step": int(search_start),
                 "dump_intent_search_end_step": int(search_end),
+                "dump_intent_requires_bed_geometry": True,
             },
-            reject_reason="missing_target_geometry_for_dump_intent",
+            reject_reason="missing_bed_geometry_for_dump_intent",
         )
 
     search_mask = _safe_dump_intent_mask(
@@ -1380,9 +1531,74 @@ def _find_dump_intent_start(
             "dump_intent_search_start_step": int(search_start),
             "dump_intent_search_end_step": int(search_end),
             "dump_intent_safe_candidate_count": 0,
+            "dump_intent_requires_bed_geometry": True,
+            "dump_intent_max_bed_footprint_outside_distance_m": float(
+                DUMP_INTENT_MAX_BED_FOOTPRINT_OUTSIDE_DISTANCE_M
+            ),
         },
         reject_reason="missing_safe_dump_intent",
     )
+
+
+def _find_good_dump_acceptance(
+    *,
+    episode: dict[str, Any],
+    start: int | None,
+    release_marker: int | None,
+    official_dump_start: int | None,
+) -> DumpIntentSearchResult:
+    """Accept robust human dump entrances when the whole dump is good.
+
+    Strict safe-intent matching is useful for clean ownership labels, but it is
+    too narrow for human teleop: some no-crash, successful dumps enter release
+    without matching one exact pre-release geometry/action pattern. This helper
+    keeps those windows if the final dump quality is good, while still marking
+    them as quality-accepted rather than strict safe-intent examples.
+    """
+    if start is None:
+        return DumpIntentSearchResult(
+            start_step=None,
+            qc={},
+            reject_reason="missing_good_dump_quality_start",
+        )
+    if release_marker is None:
+        return DumpIntentSearchResult(
+            start_step=None,
+            qc={},
+            reject_reason="missing_good_dump_release_marker",
+        )
+    if _target_geometry_env_state(episode=episode, require_bed_geometry=True) is None:
+        return DumpIntentSearchResult(
+            start_step=None,
+            qc={"dump_quality_missing_target_geometry": True},
+            reject_reason="missing_target_geometry_for_good_dump_quality",
+        )
+    release_marker = int(release_marker)
+    official_marker = int(official_dump_start) if official_dump_start is not None else release_marker
+    dump_qc = _dump_window_qc(
+        episode=episode,
+        start=release_marker,
+        end=len(episode["actions"]),
+        official_dump_start=official_marker,
+    )
+    quality_qc = _good_dump_quality_qc(
+        episode=episode,
+        start=int(start),
+        release_marker=release_marker,
+        end=len(episode["actions"]),
+    )
+    qc = dict(dump_qc)
+    qc.update(quality_qc)
+    reject_reasons = _good_dump_quality_reject_reasons(qc)
+    if reject_reasons:
+        qc["dump_quality_reject_reasons"] = ",".join(reject_reasons)
+        return DumpIntentSearchResult(
+            start_step=None,
+            qc=qc,
+            reject_reason=str(reject_reasons[0]),
+        )
+    qc["dump_acceptance_mode"] = "good_dump_quality"
+    return DumpIntentSearchResult(start_step=release_marker, qc=qc)
 
 
 def _find_dump_release_start_5p(
@@ -1441,6 +1657,10 @@ def _safe_dump_intent_mask(
             >= DUMP_INTENT_MIN_HEIGHT_ABOVE_RIM_M
         )
         & (env_state[:, ENV_STATE_DUMP_CLEARANCE_OK_IDX] > 0.5)
+        & (
+            env_state[:, ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX]
+            <= DUMP_INTENT_MAX_BED_FOOTPRINT_OUTSIDE_DISTANCE_M
+        )
     )
 
 
@@ -1463,7 +1683,11 @@ def _stable_true_indices(
             yield int(index)
 
 
-def _target_geometry_env_state(*, episode: dict[str, Any]) -> np.ndarray | None:
+def _target_geometry_env_state(
+    *,
+    episode: dict[str, Any],
+    require_bed_geometry: bool = False,
+) -> np.ndarray | None:
     env_state = episode.get("env_state")
     if env_state is None:
         return None
@@ -1478,6 +1702,12 @@ def _target_geometry_env_state(*, episode: dict[str, Any]) -> np.ndarray | None:
         ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
         ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     )
+    if require_bed_geometry:
+        required_indices = required_indices + (
+            ENV_STATE_BUCKET_BED_RELATIVE_X_IDX,
+            ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX,
+            ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+        )
     if any(index >= arr.shape[1] for index in required_indices):
         return None
     if not np.all(np.isfinite(arr[:, list(required_indices)])):
@@ -1492,7 +1722,7 @@ def _dump_window_qc(
     end: int,
     official_dump_start: int,
 ) -> dict[str, Any]:
-    env_state = _target_geometry_env_state(episode=episode)
+    env_state = _target_geometry_env_state(episode=episode, require_bed_geometry=True)
     if env_state is None:
         return {"dump_qc_missing_target_geometry": True}
     start = max(0, int(start))
@@ -1507,6 +1737,7 @@ def _dump_window_qc(
     horizontal = window[:, ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX]
     over_footprint = window[:, ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX]
     collisions = window[:, ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX]
+    bed_outside = window[:, ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX]
     near_collision_mask = (heights < 0.0) & (
         (over_footprint > 0.5)
         | (horizontal <= DUMP_QC_NEAR_COLLISION_HORIZONTAL_M)
@@ -1522,6 +1753,9 @@ def _dump_window_qc(
         "dump_qc_intent_start_step": int(start),
         "dump_qc_official_dump_start_step": int(official_dump_start),
         "dump_intent_steps_before_official": int(official_dump_start - start),
+        "dump_intent_max_bed_footprint_outside_distance_m": float(
+            DUMP_INTENT_MAX_BED_FOOTPRINT_OUTSIDE_DISTANCE_M
+        ),
         "dump_window_len": int(end - start),
         "dump_start_height_above_rim_m": float(
             env_state[start, ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX]
@@ -1532,6 +1766,16 @@ def _dump_window_qc(
         "dump_start_clearance_ok": int(
             env_state[start, ENV_STATE_DUMP_CLEARANCE_OK_IDX] > 0.5
         ),
+        "dump_start_bed_relative_x_m": float(
+            env_state[start, ENV_STATE_BUCKET_BED_RELATIVE_X_IDX]
+        ),
+        "dump_start_bed_relative_z_m": float(
+            env_state[start, ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX]
+        ),
+        "dump_start_bed_footprint_outside_distance_m": float(
+            env_state[start, ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX]
+        ),
+        "dump_min_bed_footprint_outside_distance_m": float(np.min(bed_outside)),
         "dump_first20_min_height_above_rim_m": float(np.min(first_heights)),
         "dump_first20_clearance_loss_step": int(
             -1 if len(clearance_loss_indices) == 0 else clearance_loss_indices[0]
@@ -1550,6 +1794,160 @@ def _dump_window_qc(
     }
 
 
+def _good_dump_quality_qc(
+    *,
+    episode: dict[str, Any],
+    start: int,
+    release_marker: int,
+    end: int,
+) -> dict[str, Any]:
+    env_state = _target_geometry_env_state(episode=episode, require_bed_geometry=True)
+    if env_state is None:
+        return {"dump_quality_missing_target_geometry": True}
+    start = max(0, int(start))
+    release_marker = max(start, int(release_marker))
+    end = min(int(end), len(env_state))
+    if end <= start:
+        return {
+            "dump_quality_start_step": int(start),
+            "dump_quality_release_marker_step": int(release_marker),
+            "dump_quality_invalid_window": True,
+        }
+    window = env_state[start:end]
+    release_window = env_state[release_marker:end]
+    if len(release_window) <= 0:
+        release_window = window
+
+    mass_start = float(np.max(window[:, ENV_STATE_MASS_IN_BUCKET_IDX]))
+    mass_end = float(env_state[end - 1, ENV_STATE_MASS_IN_BUCKET_IDX])
+    bucket_mass_loss = float(max(0.0, mass_start - mass_end))
+    deposited_start = float(env_state[start, ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX])
+    deposited_end = float(
+        np.max(window[:, ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX])
+    )
+    deposit_delta = float(max(0.0, deposited_end - deposited_start))
+    deposited_fraction = float(
+        0.0 if bucket_mass_loss <= 1e-6 else deposit_delta / bucket_mass_loss
+    )
+    hard_collision_delta = int(
+        round(
+            float(
+                np.max(window[:, ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX])
+                - window[0, ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX]
+            )
+        )
+    )
+
+    cycle_qc = _single_cycle_quality_qc(episode)
+    cycle_success = int(cycle_qc.get("dump_quality_cycle_success", 0))
+    metadata_success = int(dict(episode.get("metadata", {})).get("success", 0))
+    cycle_collision_delta = int(
+        cycle_qc.get("dump_quality_cycle_collision_delta_count", 0)
+    )
+    cycle_deposit_delta = float(cycle_qc.get("dump_quality_cycle_deposit_delta_kg", 0.0))
+    hard_collision_delta = max(0, hard_collision_delta, cycle_collision_delta)
+    deposit_delta_for_accept = float(max(deposit_delta, cycle_deposit_delta))
+    fraction_for_accept = float(
+        0.0
+        if bucket_mass_loss <= 1e-6
+        else deposit_delta_for_accept / bucket_mass_loss
+    )
+    good_by_cycle_success = bool(cycle_success > 0 and hard_collision_delta <= 0)
+    good_by_mass_fraction = bool(
+        bucket_mass_loss >= GOOD_DUMP_MIN_BUCKET_MASS_LOSS_KG
+        and deposit_delta_for_accept >= GOOD_DUMP_MIN_DEPOSIT_DELTA_KG
+        and fraction_for_accept >= GOOD_DUMP_MIN_DEPOSITED_FRACTION_OF_BUCKET_LOSS
+    )
+    good_by_metadata = bool(
+        metadata_success > 0
+        and deposit_delta_for_accept >= GOOD_DUMP_MIN_DEPOSIT_DELTA_KG
+        and hard_collision_delta <= 0
+    )
+    acceptance_source = "none"
+    if good_by_cycle_success:
+        acceptance_source = "cycle_success"
+    elif good_by_mass_fraction:
+        acceptance_source = "mass_fraction"
+    elif good_by_metadata:
+        acceptance_source = "metadata_success"
+
+    qc = {
+        "dump_quality_start_step": int(start),
+        "dump_quality_release_marker_step": int(release_marker),
+        "dump_quality_window_len": int(end - start),
+        "dump_quality_start_bucket_mass_kg": float(mass_start),
+        "dump_quality_end_bucket_mass_kg": float(mass_end),
+        "dump_quality_bucket_mass_loss_kg": float(bucket_mass_loss),
+        "dump_quality_deposit_delta_kg": float(deposit_delta),
+        "dump_quality_deposit_delta_for_accept_kg": float(deposit_delta_for_accept),
+        "dump_quality_deposited_fraction_of_bucket_loss": float(deposited_fraction),
+        "dump_quality_fraction_for_accept": float(fraction_for_accept),
+        "dump_quality_hard_collision_delta_count": int(hard_collision_delta),
+        "dump_quality_good_by_cycle_success": bool(good_by_cycle_success),
+        "dump_quality_good_by_mass_fraction": bool(good_by_mass_fraction),
+        "dump_quality_good_by_metadata": bool(good_by_metadata),
+        "dump_quality_good_dump": bool(
+            hard_collision_delta <= GOOD_DUMP_MAX_HARD_COLLISION_DELTA
+            and (good_by_cycle_success or good_by_mass_fraction or good_by_metadata)
+        ),
+        "dump_quality_acceptance_source": acceptance_source,
+        "dump_quality_min_bucket_mass_loss_kg": float(GOOD_DUMP_MIN_BUCKET_MASS_LOSS_KG),
+        "dump_quality_min_deposit_delta_kg": float(GOOD_DUMP_MIN_DEPOSIT_DELTA_KG),
+        "dump_quality_min_deposited_fraction_of_bucket_loss": float(
+            GOOD_DUMP_MIN_DEPOSITED_FRACTION_OF_BUCKET_LOSS
+        ),
+        "dump_quality_release_min_height_above_rim_m": float(
+            np.min(release_window[:, ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX])
+        ),
+        "dump_quality_release_min_bed_footprint_outside_distance_m": float(
+            np.min(
+                release_window[
+                    :,
+                    ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+                ]
+            )
+        ),
+    }
+    qc.update(cycle_qc)
+    return qc
+
+
+def _single_cycle_quality_qc(episode: dict[str, Any]) -> dict[str, Any]:
+    cycle = dict(dict(episode.get("v2", {})).get("cycle", {}))
+    if not cycle:
+        return {}
+    qc: dict[str, Any] = {}
+    if "cycle_success" in cycle and len(cycle["cycle_success"]) > 0:
+        qc["dump_quality_cycle_success"] = int(np.asarray(cycle["cycle_success"])[0])
+    if "deposit_delta_kg" in cycle and len(cycle["deposit_delta_kg"]) > 0:
+        qc["dump_quality_cycle_deposit_delta_kg"] = float(
+            np.asarray(cycle["deposit_delta_kg"], dtype=np.float32)[0]
+        )
+    if "collision_count_delta" in cycle and len(cycle["collision_count_delta"]) > 0:
+        qc["dump_quality_cycle_collision_delta_count"] = int(
+            np.asarray(cycle["collision_count_delta"], dtype=np.int32)[0]
+        )
+    return qc
+
+
+def _good_dump_quality_reject_reasons(qc: dict[str, Any]) -> list[str]:
+    if bool(qc.get("dump_qc_missing_target_geometry", False)) or bool(
+        qc.get("dump_quality_missing_target_geometry", False)
+    ):
+        return ["missing_target_geometry_for_good_dump_quality"]
+    if bool(qc.get("dump_quality_invalid_window", False)):
+        return ["invalid_good_dump_quality_window"]
+    reasons: list[str] = []
+    if (
+        int(qc.get("dump_quality_hard_collision_delta_count", 0))
+        > GOOD_DUMP_MAX_HARD_COLLISION_DELTA
+    ):
+        reasons.append("dump_quality_hard_collision")
+    if not bool(qc.get("dump_quality_good_dump", False)):
+        reasons.append("dump_quality_not_good_dump")
+    return reasons
+
+
 def _dump_qc_reject_reasons(qc: dict[str, Any]) -> list[str]:
     if bool(qc.get("dump_qc_missing_target_geometry", False)):
         return ["missing_target_geometry_for_dump_qc"]
@@ -1559,7 +1957,11 @@ def _dump_qc_reject_reasons(qc: dict[str, Any]) -> list[str]:
         < DUMP_QC_MIN_FIRST_HEIGHT_ABOVE_RIM_M
     ):
         reasons.append("dump_first20_height_below_rim")
-    if int(qc.get("dump_first20_clearance_loss_step", -1)) >= 0:
+    if (
+        int(qc.get("dump_first20_clearance_loss_step", -1)) >= 0
+        and float(qc.get("dump_first20_min_height_above_rim_m", 0.0))
+        < DUMP_QC_MIN_FIRST_HEIGHT_ABOVE_RIM_M
+    ):
         reasons.append("dump_first20_clearance_lost")
     if int(qc.get("dump_hard_collision_delta_count", 0)) > 0:
         reasons.append("dump_hard_collision")
@@ -1698,18 +2100,32 @@ def _build_summary(
             "min_stable_steps": int(DUMP_INTENT_MIN_STABLE_STEPS),
             "min_bucket_mass_kg": float(DUMP_INTENT_MIN_BUCKET_MASS_KG),
             "min_height_above_rim_m": float(DUMP_INTENT_MIN_HEIGHT_ABOVE_RIM_M),
+            "max_bed_footprint_outside_distance_m": float(
+                DUMP_INTENT_MAX_BED_FOOTPRINT_OUTSIDE_DISTANCE_M
+            ),
+            "requires_bed_geometry": True,
             "official_dump_start_fallback": False,
+            "good_dump_quality_acceptance": True,
+        },
+        "good_dump_quality_acceptance_config": {
+            "min_bucket_mass_loss_kg": float(GOOD_DUMP_MIN_BUCKET_MASS_LOSS_KG),
+            "min_deposit_delta_kg": float(GOOD_DUMP_MIN_DEPOSIT_DELTA_KG),
+            "min_deposited_fraction_of_bucket_loss": float(
+                GOOD_DUMP_MIN_DEPOSITED_FRACTION_OF_BUCKET_LOSS
+            ),
+            "max_hard_collision_delta": int(GOOD_DUMP_MAX_HARD_COLLISION_DELTA),
+            "accepts_cycle_success": True,
+            "purpose": "allow no-crash, good-dump human entrances that miss the strict safe-intent pattern",
         },
         "dump_ownership_config": {
             "dump_window": DUMP_WINDOW_NAME,
             "carry_window": CARRY_WINDOW_NAME,
-            "boundary_rule": (
-                "min(first approach_dump stage, stable pre-dump curl-out onset)"
-            ),
+            "boundary_rule": "first approach_dump stage",
+            "pre_approach_release_policy": "shift boundary into dump if final dump quality is good; otherwise reject",
             "carry_action_horizon_steps": int(CARRY_ACTION_HORIZON_STEPS),
             "curl_out_lookback_steps": int(CARRY_CURL_OUT_LOOKBACK_STEPS),
             "dump_owns": "target approach, alignment, release, and post-dump hold",
-            "carry_owns": "safe loaded transport before dump ownership begins",
+            "carry_owns": "safe loaded transport before target approach/alignment",
         },
         "carry_tail_config": {
             "action_horizon_steps": int(CARRY_ACTION_HORIZON_STEPS),
@@ -1760,6 +2176,14 @@ def _build_carry_qc_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
             sorted(
                 Counter(
                     str(record.get("carry_dump_ownership_boundary_source", "unknown"))
+                    for record in records
+                ).items()
+            )
+        ),
+        "acceptance_mode_counts": dict(
+            sorted(
+                Counter(
+                    str(record.get("carry_dump_acceptance_mode", "safe_intent"))
                     for record in records
                 ).items()
             )
@@ -1828,7 +2252,7 @@ def _build_dump_qc_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
             "first20_min_height_above_rim_m": float(
                 DUMP_QC_MIN_FIRST_HEIGHT_ABOVE_RIM_M
             ),
-            "first20_clearance_must_stay_ok": True,
+            "first20_clearance_loss_rejected_only_below_height_tolerance": True,
             "hard_collision_delta_count": 0,
         },
         "start_height_above_rim_m": _numeric_stats(
@@ -1838,6 +2262,14 @@ def _build_dump_qc_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
         "start_horizontal_distance_m": _numeric_stats(
             records,
             "dump_start_horizontal_distance_m",
+        ),
+        "start_bed_footprint_outside_distance_m": _numeric_stats(
+            records,
+            "dump_start_bed_footprint_outside_distance_m",
+        ),
+        "min_bed_footprint_outside_distance_m": _numeric_stats(
+            records,
+            "dump_min_bed_footprint_outside_distance_m",
         ),
         "first20_min_height_above_rim_m": _numeric_stats(
             records,
@@ -1850,6 +2282,30 @@ def _build_dump_qc_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
         "steps_before_official_dump_start": _numeric_stats(
             records,
             "dump_intent_steps_before_official",
+        ),
+        "acceptance_mode_counts": dict(
+            sorted(
+                Counter(
+                    str(record.get("dump_acceptance_mode", "safe_intent"))
+                    for record in records
+                ).items()
+            )
+        ),
+        "quality_acceptance_source_counts": dict(
+            sorted(
+                Counter(
+                    str(record.get("dump_quality_acceptance_source", "strict_safe_intent"))
+                    for record in records
+                ).items()
+            )
+        ),
+        "quality_deposit_delta_for_accept_kg": _numeric_stats(
+            records,
+            "dump_quality_deposit_delta_for_accept_kg",
+        ),
+        "quality_deposited_fraction_of_bucket_loss": _numeric_stats(
+            records,
+            "dump_quality_fraction_for_accept",
         ),
         "first20_height_below_rim_count": int(
             sum(

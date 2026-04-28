@@ -167,12 +167,18 @@ AGX_TARGET_HORIZONTAL_DISTANCE = "target_horizontal_distance_m"
 AGX_BUCKET_HEIGHT_ABOVE_TARGET_RIM = "bucket_height_above_target_rim_m"
 AGX_BUCKET_OVER_TARGET_FOOTPRINT = "bucket_over_target_footprint_mask"
 AGX_DUMP_CLEARANCE_OK = "dump_clearance_ok_mask"
+AGX_BUCKET_BED_RELATIVE_X = "bucket_bed_relative_x_m"
+AGX_BUCKET_BED_RELATIVE_Z = "bucket_bed_relative_z_m"
+AGX_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE = "bucket_bed_footprint_outside_distance_m"
 
 AGX_TARGET_GEOMETRY_FIELDS = (
     AGX_TARGET_HORIZONTAL_DISTANCE,
     AGX_BUCKET_HEIGHT_ABOVE_TARGET_RIM,
     AGX_BUCKET_OVER_TARGET_FOOTPRINT,
     AGX_DUMP_CLEARANCE_OK,
+    AGX_BUCKET_BED_RELATIVE_X,
+    AGX_BUCKET_BED_RELATIVE_Z,
+    AGX_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE,
 )
 
 AGX_PHASE_LABELS: dict[float, str] = {
@@ -230,6 +236,9 @@ class AgxExcavationFieldIndices:
     bucket_height_above_target_rim_idx: int | None = None
     bucket_over_target_footprint_idx: int | None = None
     dump_clearance_ok_idx: int | None = None
+    bucket_bed_relative_x_idx: int | None = None
+    bucket_bed_relative_z_idx: int | None = None
+    bucket_bed_footprint_outside_distance_idx: int | None = None
 
 
 @dataclass(frozen=True)
@@ -247,6 +256,9 @@ class AgxExcavationObservation:
     bucket_height_above_target_rim_m: float = 0.0
     bucket_over_target_footprint_mask: float = 0.0
     dump_clearance_ok_mask: float = 0.0
+    bucket_bed_relative_x_m: float = 0.0
+    bucket_bed_relative_z_m: float = 0.0
+    bucket_bed_footprint_outside_distance_m: float = -1.0
     target_geometry_available: bool = False
 
     @property
@@ -283,6 +295,12 @@ class AgxExcavationObservation:
             return self.bucket_over_target_footprint_mask
         if signal_name == AGX_DUMP_CLEARANCE_OK:
             return self.dump_clearance_ok_mask
+        if signal_name == AGX_BUCKET_BED_RELATIVE_X:
+            return self.bucket_bed_relative_x_m
+        if signal_name == AGX_BUCKET_BED_RELATIVE_Z:
+            return self.bucket_bed_relative_z_m
+        if signal_name == AGX_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE:
+            return self.bucket_bed_footprint_outside_distance_m
         return 0.0
 
 
@@ -426,6 +444,11 @@ def resolve_agx_field_indices(env_state_order: Iterable[str]) -> AgxExcavationFi
         bucket_height_above_target_rim_idx=_lookup(AGX_BUCKET_HEIGHT_ABOVE_TARGET_RIM),
         bucket_over_target_footprint_idx=_lookup(AGX_BUCKET_OVER_TARGET_FOOTPRINT),
         dump_clearance_ok_idx=_lookup(AGX_DUMP_CLEARANCE_OK),
+        bucket_bed_relative_x_idx=_lookup(AGX_BUCKET_BED_RELATIVE_X),
+        bucket_bed_relative_z_idx=_lookup(AGX_BUCKET_BED_RELATIVE_Z),
+        bucket_bed_footprint_outside_distance_idx=_lookup(
+            AGX_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE
+        ),
     )
 
 
@@ -464,6 +487,18 @@ def decode_agx_env_state(
         field_indices.dump_clearance_ok_idx,
         0.0,
     )
+    bucket_bed_relative_x, _has_bed_relative_x = _read_available(
+        field_indices.bucket_bed_relative_x_idx,
+        0.0,
+    )
+    bucket_bed_relative_z, _has_bed_relative_z = _read_available(
+        field_indices.bucket_bed_relative_z_idx,
+        0.0,
+    )
+    bucket_bed_footprint_outside_distance, _has_bed_outside_distance = _read_available(
+        field_indices.bucket_bed_footprint_outside_distance_idx,
+        -1.0,
+    )
     target_geometry_available = bool(
         has_horizontal_distance
         and target_horizontal_distance >= 0.0
@@ -498,6 +533,11 @@ def decode_agx_env_state(
         bucket_height_above_target_rim_m=bucket_height_above_target_rim,
         bucket_over_target_footprint_mask=bucket_over_target_footprint,
         dump_clearance_ok_mask=dump_clearance_ok,
+        bucket_bed_relative_x_m=bucket_bed_relative_x,
+        bucket_bed_relative_z_m=bucket_bed_relative_z,
+        bucket_bed_footprint_outside_distance_m=(
+            bucket_bed_footprint_outside_distance
+        ),
         target_geometry_available=target_geometry_available,
     )
 
@@ -823,6 +863,11 @@ class AgxExcavationRewardTracker:
                 "bucket_height_above_target_rim_m": observation.bucket_height_above_target_rim_m,
                 "bucket_over_target_footprint_mask": observation.bucket_over_target_footprint_mask,
                 "dump_clearance_ok_mask": observation.dump_clearance_ok_mask,
+                "bucket_bed_relative_x_m": observation.bucket_bed_relative_x_m,
+                "bucket_bed_relative_z_m": observation.bucket_bed_relative_z_m,
+                "bucket_bed_footprint_outside_distance_m": (
+                    observation.bucket_bed_footprint_outside_distance_m
+                ),
                 "target_geometry_available": float(observation.target_geometry_available),
                 "dump_clearance_ok": float(observation.dump_clearance_ok),
                 "target_hard_collision_count": observation.target_hard_collision_count,

@@ -563,6 +563,9 @@ def eval_policy(config: dict[str, Any]) -> None:
                 switch_cfg.get("dump_done_min_deposit_delta_kg", 10.0)
             ),
             "dump_done_hold_steps": int(switch_cfg.get("dump_done_hold_steps", 2)),
+            "dump_done_use_boundary_event": bool(
+                switch_cfg.get("dump_done_use_boundary_event", True)
+            ),
             "return_max_steps": int(
                 switch_cfg.get(
                     "return_max_steps",
@@ -610,6 +613,30 @@ def eval_policy(config: dict[str, Any]) -> None:
                 dump_release_ready_max_horizontal_distance_m=_optional_float(
                     switch_cfg.get("dump_release_ready_max_horizontal_distance_m", 0.60)
                 ),
+                dump_release_ready_position_mode=str(
+                    switch_cfg.get(
+                        "dump_release_ready_position_mode",
+                        "footprint_or_bed_relative",
+                    )
+                ),
+                dump_release_ready_max_bed_footprint_outside_distance_m=_optional_float(
+                    switch_cfg.get(
+                        "dump_release_ready_max_bed_footprint_outside_distance_m",
+                        0.05,
+                    )
+                ),
+                dump_release_ready_min_bed_relative_x_m=_optional_float(
+                    switch_cfg.get("dump_release_ready_min_bed_relative_x_m")
+                ),
+                dump_release_ready_max_bed_relative_x_m=_optional_float(
+                    switch_cfg.get("dump_release_ready_max_bed_relative_x_m")
+                ),
+                dump_release_ready_min_bed_relative_z_m=_optional_float(
+                    switch_cfg.get("dump_release_ready_min_bed_relative_z_m")
+                ),
+                dump_release_ready_max_bed_relative_z_m=_optional_float(
+                    switch_cfg.get("dump_release_ready_max_bed_relative_z_m")
+                ),
                 dump_release_ready_hold_steps=int(
                     switch_cfg.get("dump_release_ready_hold_steps", 3)
                 ),
@@ -635,6 +662,30 @@ def eval_policy(config: dict[str, Any]) -> None:
                 ),
                 dump_ready_max_horizontal_distance_m=_optional_float(
                     switch_cfg.get("dump_ready_max_horizontal_distance_m", 0.82)
+                ),
+                dump_ready_position_mode=str(
+                    switch_cfg.get(
+                        "dump_ready_position_mode",
+                        "footprint_or_bed_relative",
+                    )
+                ),
+                dump_ready_max_bed_footprint_outside_distance_m=_optional_float(
+                    switch_cfg.get(
+                        "dump_ready_max_bed_footprint_outside_distance_m",
+                        0.05,
+                    )
+                ),
+                dump_ready_min_bed_relative_x_m=_optional_float(
+                    switch_cfg.get("dump_ready_min_bed_relative_x_m")
+                ),
+                dump_ready_max_bed_relative_x_m=_optional_float(
+                    switch_cfg.get("dump_ready_max_bed_relative_x_m")
+                ),
+                dump_ready_min_bed_relative_z_m=_optional_float(
+                    switch_cfg.get("dump_ready_min_bed_relative_z_m")
+                ),
+                dump_ready_max_bed_relative_z_m=_optional_float(
+                    switch_cfg.get("dump_ready_max_bed_relative_z_m")
                 ),
                 dump_ready_hold_steps=int(switch_cfg.get("dump_ready_hold_steps", 3)),
                 **common_kwargs,

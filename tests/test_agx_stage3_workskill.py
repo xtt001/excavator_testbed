@@ -9,6 +9,12 @@ import numpy as np
 
 from testbed.data.dataset import load_data
 from testbed.data.hdf5_io import read_episode, write_episode
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+    ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
+    ENV_STATE_MASS_IN_BUCKET_IDX,
+    ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX,
+)
 from testbed.data.v2_1 import (
     GOAL_TOKEN_DIM,
     GOAL_TOKEN_VERSION,
@@ -577,6 +583,35 @@ class TestStage3Workskill(unittest.TestCase):
         self.assertEqual(int(work_stage_id[6]), WORK_STAGE_NAME_TO_ID["rebite_recovery"])
         self.assertEqual(int(work_stage_id[10]), WORK_STAGE_NAME_TO_ID["carry"])
         self.assertEqual(int(work_stage_id[12]), WORK_STAGE_NAME_TO_ID["approach_dump"])
+        self.assertEqual(int(work_stage_id[15]), WORK_STAGE_NAME_TO_ID["dump"])
+
+    def test_approach_dump_uses_bed_top_geometry_for_new_env_state(self) -> None:
+        length = 18
+        work_stage_id = np.zeros(length, dtype=np.uint8)
+        dump_start_mask = np.zeros(length, dtype=np.uint8)
+        dump_start_mask[15] = 1
+        bucket_depth = np.zeros(length, dtype=np.float32)
+        mass = np.full(length, 300.0, dtype=np.float32)
+        env_state = np.zeros((length, 16), dtype=np.float32)
+        env_state[:, ENV_STATE_MASS_IN_BUCKET_IDX] = mass
+        env_state[:, ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX] = 2.0
+        env_state[:, ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX] = 0.50
+        env_state[:, ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = 2.0
+        env_state[11:, ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = 1.20
+
+        _fill_cycle_work_stage_labels(
+            work_stage_id=work_stage_id,
+            start_step=1,
+            dump_end_step=16,
+            next_start_step=None,
+            dump_start_mask=dump_start_mask,
+            bucket_depth=bucket_depth,
+            mass_in_bucket=mass,
+            env_state=env_state,
+        )
+
+        self.assertEqual(int(work_stage_id[10]), WORK_STAGE_NAME_TO_ID["carry"])
+        self.assertEqual(int(work_stage_id[11]), WORK_STAGE_NAME_TO_ID["approach_dump"])
         self.assertEqual(int(work_stage_id[15]), WORK_STAGE_NAME_TO_ID["dump"])
 
     def test_build_workskill_dataset_stage5_cleanest_filters_pretarget_spill(self) -> None:

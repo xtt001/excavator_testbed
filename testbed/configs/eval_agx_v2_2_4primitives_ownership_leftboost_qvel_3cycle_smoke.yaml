@@ -77,12 +77,19 @@ policy:
     dig_to_carry_min_bucket_mass_kg: 300.0
     dig_to_carry_min_distance_to_dig_area_m: 0.0
     dump_ready_min_bucket_mass_kg: 150.0
-    dump_ready_min_height_above_rim_m: 0.45
-    dump_ready_require_over_footprint: true
-    dump_ready_require_clearance: true
-    dump_ready_max_horizontal_distance_m: 0.60
+    dump_ready_min_height_above_rim_m: 0.30
+    dump_ready_require_over_footprint: false
+    dump_ready_require_clearance: false
+    dump_ready_position_mode: "bed_relative"
+    dump_ready_max_horizontal_distance_m: null
+    dump_ready_max_bed_footprint_outside_distance_m: 1.35
+    dump_ready_min_bed_relative_x_m: -4.30
+    dump_ready_max_bed_relative_x_m: 2.00
+    dump_ready_min_bed_relative_z_m: 2.75
+    dump_ready_max_bed_relative_z_m: 3.50
     dump_ready_hold_steps: 3
     dump_done_max_bucket_mass_kg: 100.0
     dump_done_min_deposit_delta_kg: 10.0
     dump_done_hold_steps: 30
+    dump_done_use_boundary_event: false
     return_max_steps: 420

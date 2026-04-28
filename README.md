@@ -67,14 +67,23 @@ Repo A 负责：
     `data/agx_v2_2_4primitives_ownership_boundary_260427_1ep`
   - 当前 carry/dump 训练 mix:
     `data/agx_v2_2_4primitives_ownership_history_probe_leftboost_260427`
+    （旧 boundary rule baseline；新版 middle-handoff builder 需要用 16-field
+    bed geometry 数据重建）
   - 当前 ownership smoke eval:
     `testbed/configs/eval_agx_v2_2_4primitives_ownership_leftboost_qvel_3cycle_smoke.yaml`
+  - phase boundary source of truth:
+    `docs/v2_2_4primitives/phase_boundaries.md`
   - ownership 定义：`carry` 只负责 loaded transport；`dump` 负责 move to top
     of target、alignment、release 和 post-dump hold
-  - `dump` 起点取 `first approach_dump stage` 与 stable pre-dump curl-out onset
-    中更早者，避免 ACT 的 `chunk_size=100` 未来动作监督跨 skill boundary
-  - planner 在 `dump_done` 后保持 dump skill `30` step，再切 return，避免
-    temporal aggregation 边界上 return 动作把刚落入车斗的土带出
+  - `dump` 起点固定为 `first approach_dump stage`；如果 stable curl-out 早于
+    `approach_dump`，builder 会 reject 该 carry/dump window，避免把边界不清的
+    teleop 数据混入新版 ownership 训练
+  - 2026-04-28 middle-handoff probe 已验证：旧 refreshed sample 和此前
+    ownership probe 即使刷新成 16-field geometry，也只接受 `dig`，`carry/dump`
+    全部 reject；下一批训练前需要按 phase boundary 文档补录新数据
+  - planner 在 `dump_done` 后保持 dump skill `30` step，再切 return；当前 smoke
+    关闭即时 `dump_end` boundary 切换，避免 temporal aggregation 边界上 return
+    动作把刚落入车斗的土带出
   - live eval 入口：`eval_agx_v2_2_4primitives_qvel_3cycle_smoke.yaml`
   - 首轮 reset 仍可配置 `bootstrap_policy` 到 `loaded_and_clear`，但 primitive 执行阶段不启用 fallback
 - V2.2 5-primitives 实验线：
@@ -182,13 +191,25 @@ Repo A 负责：
   target_horizontal_distance_m,
   bucket_height_above_target_rim_m,
   bucket_over_target_footprint_mask,
-  dump_clearance_ok_mask
+  dump_clearance_ok_mask,
+  bucket_bed_relative_x_m,
+  bucket_bed_relative_z_m,
+  bucket_bed_footprint_outside_distance_m
 ]
 ```
 
-target-safety 相关逻辑只使用后 4 个显式 target geometry 字段：
+target-safety 相关逻辑使用显式 target geometry 字段：
 `min_distance_to_target_m` 仍会记录为 legacy scalar metric，但不会被当作
 `target_horizontal_distance_m` 或 clearance 的 fallback。
+V2.2 的 Unity bridge 额外输出 bucket proxy center 在 truck-bed local frame
+下的 `bucket_bed_relative_x_m/z_m`，以及到 bed footprint 的
+`bucket_bed_footprint_outside_distance_m`；`bucket_over_target_footprint_mask`
+现在表示 bucket proxy 位于 truck-top 可倒料区域上方，复用 TruckBed 已有
+clearance tolerance，不再要求 strict OBB footprint 相交。
+`bucket_bed_footprint_outside_distance_m` 是 unsigned proximity，只说明 bucket
+proxy 离 truck-bed footprint 有多近；它不能区分 tail/middle/front。需要表达
+“不要在车斗尾部交接”时，必须同时使用 signed
+`bucket_bed_relative_x_m/z_m` window。
 其中 `dump_clearance_ok_mask` 是 Unity 输出的 clearance source of truth：
 TruckBed 水平方向允许目标侧配置的 dump 容差，但垂直方向仍要求
 `bucket_height_above_target_rim_m >= 0.0`，也就是桶底必须在车厢 rim/top
@@ -931,11 +952,24 @@ target-safety 训练还有一个额外契约：
   `dump_clearance_ok_mask`
 - `dump_clearance_ok_mask` 是 Unity source-of-truth clearance mask；TruckBed
   可放宽水平距离，但垂直仍必须满足 `bucket_height_above_target_rim_m >= 0.0`
+- `bucket_over_target_footprint_mask` 是 Unity 的 truck-top mask：表示 bucket proxy
+  位于 truck bed 上方可倒料区域内；它复用 TruckBed 现有 clearance tolerance，
+  不新增 env_state 字段。更严格的 release 深度仍看
+  `bucket_bed_footprint_outside_distance_m`。
+- V2.2 middle-handoff builder 要求数据包含
+  `bucket_bed_relative_x_m/z_m` 和 `bucket_bed_footprint_outside_distance_m`；
+  旧 13-field target geometry 数据会被新版 carry/dump ownership builder reject，
+  不再 silently 进入训练。
 - V2.2 scripted primitive planner 的 dump readiness 不用固定 swing qpos；它用
-  target-relative geometry，并允许 `bucket_over_target_footprint_mask` 或连续的
-  `target_horizontal_distance_m <= 0.82m` 作为水平就位信号，同时要求 bucket 至少
-  高出 rim `0.45m` 且 clearance OK。这个阈值来自 safe dump dataset 的
-  pre-dump onset 分布，不是固定 swing qpos。
+  target-relative geometry，并要求
+  `bucket_bed_footprint_outside_distance_m <= 1.35m` 加 signed
+  `bucket_bed_relative_x_m/z_m` corridor 表明 bucket proxy 已经进入 truck-top
+  approach handoff 区；当前 V2.2 smoke config 把
+  `dump_ready_max_horizontal_distance_m` 设为 `null`，scalar horizontal distance
+  只保留为显式 legacy mode，不再作为默认 dump 切换条件。当前 approach handoff
+  corridor 是 `-4.30<=bed_relative_x<=2.00`、
+  `2.75<=bed_relative_z<=3.50`，并要求 bucket 至少高出 rim `0.30m`。
+  单独的 unsigned `outside` 不再作为默认 dump 切换条件，因为它不能区分车斗尾部和中部。
 - V2.2 4-primitives planner 的 `dig -> carry` 切换只看 bucket 是否已 loaded；
   离开 dig 区和运载到 truck 属于 carry primitive，不要求先满足固定 escape distance
 - `tb-audit-target-geometry --dataset-dir <dataset>` 会检查覆盖率

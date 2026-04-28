@@ -79,7 +79,11 @@ Schema v1.1 layout (add-only on top of v1.0)
 │   │                                      target_horizontal_distance_m,
 │   │                                      bucket_height_above_target_rim_m,
 │   │                                      bucket_over_target_footprint_mask,
-│   │                                      dump_clearance_ok_mask]  ← v1.1 add-only
+│   │                                      dump_clearance_ok_mask,
+│   │                                      bucket_bed_relative_x_m,
+│   │                                      bucket_bed_relative_z_m,
+│   │                                      bucket_bed_footprint_outside_distance_m]
+│   │                                      ← v1.1 add-only
 │   └── images/
 │       └── fpv              (T, H, W, 3) uint8                        ← v1.1
 │
@@ -267,6 +271,9 @@ ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX = 9
 ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX = 10
 ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX = 11
 ENV_STATE_DUMP_CLEARANCE_OK_IDX = 12
+ENV_STATE_BUCKET_BED_RELATIVE_X_IDX = 13
+ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX = 14
+ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX = 15
 
 # ── Image dataset name template ───────────────────────────────────────────────
 def image_ds(cam_name: str) -> str:

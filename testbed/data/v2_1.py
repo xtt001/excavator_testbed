@@ -16,7 +16,9 @@ from testbed.data.schema import (
     ATTR_TRANSITION_SOURCE,
     ATTR_V2_ENABLED,
     ATTR_WORK_STAGE_VERSION,
+    ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+    ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX,
@@ -33,7 +35,7 @@ from testbed.planner.boundary_detector import (
 GOAL_TOKEN_DIM = 10
 GOAL_TOKEN_VERSION = "v2_1c_sector10d_digarea13"
 PHASE_VERSION = "v2_1_mode_phase_7cls"
-WORK_STAGE_VERSION = "v2_1_work_stage_7cls"
+WORK_STAGE_VERSION = "v2_1d_work_stage_7cls_bedtop16"
 SCENARIO_MANIFEST_VERSION = "v2_1b"
 TRANSITION_SOURCE_NONE = "none"
 PLAN_SOURCE_NONE = "none"
@@ -78,6 +80,8 @@ FIRST_BITE_FAILURE_PEAK_MASS_KG = 120.0
 FIRST_BITE_FAILURE_RETURN_MASS_KG = 20.0
 APPROACH_DUMP_TARGET_DISTANCE_M = 1.15
 APPROACH_DUMP_MIN_MASS_KG = 150.0
+APPROACH_DUMP_MAX_BED_FOOTPRINT_OUTSIDE_DISTANCE_M = 1.35
+APPROACH_DUMP_MIN_HEIGHT_ABOVE_RIM_M = 0.30
 
 
 @dataclass(frozen=True)
@@ -794,6 +798,27 @@ def _find_approach_dump_start(
 ) -> int | None:
     if env_state.ndim != 2 or end_step_exclusive <= start_step:
         return None
+    if env_state.shape[1] > ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX:
+        for step_index in range(start_step, end_step_exclusive):
+            bucket_mass = float(mass_in_bucket[step_index])
+            height_above_rim = float(
+                env_state[step_index, ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX]
+            )
+            bed_outside_distance = float(
+                env_state[
+                    step_index,
+                    ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+                ]
+            )
+            if (
+                bucket_mass >= APPROACH_DUMP_MIN_MASS_KG
+                and height_above_rim >= APPROACH_DUMP_MIN_HEIGHT_ABOVE_RIM_M
+                and bed_outside_distance
+                <= APPROACH_DUMP_MAX_BED_FOOTPRINT_OUTSIDE_DISTANCE_M
+            ):
+                return int(step_index)
+        return None
+
     for step_index in range(start_step, end_step_exclusive):
         target_distance = float(env_state[step_index, ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX])
         bucket_mass = float(mass_in_bucket[step_index])

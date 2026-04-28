@@ -11,6 +11,7 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
@@ -26,6 +27,8 @@ SHALLOW_PEAK_BUCKET_DEPTH_THRESH_M = 0.25
 DIG_AREA_ESCAPE_MASS_THRESH_KG = 300.0
 DIG_AREA_ESCAPE_DISTANCE_M = 0.35
 DIG_AREA_ESCAPE_MIN_STREAK = 5
+LOW_CYCLE_DEPOSITED_FRACTION_THRESH = 0.90
+HIGH_CYCLE_POST_DUMP_DROP_THRESH_KG = 50.0
 
 
 @dataclass(frozen=True)
@@ -34,6 +37,7 @@ class _CycleWindow:
     qds_idx: int
     dump_start_idx: int | None
     dump_end_idx: int | None
+    end_idx: int
 
 
 def _safe_array_mean(values: list[float]) -> float:
@@ -162,6 +166,7 @@ def _build_cycle_windows(step_records: list[dict[str, Any]]) -> list[_CycleWindo
                 qds_idx=int(qds_idx),
                 dump_start_idx=None if dump_start_idx is None else int(dump_start_idx),
                 dump_end_idx=None if dump_end_idx is None else int(dump_end_idx),
+                end_idx=int(indices[-1]),
             )
         )
     return windows
@@ -192,6 +197,96 @@ def _detect_dig_area_escape(
         else:
             streak = 0
     return escaped, escape_steps
+
+
+def _build_cycle_deposit_metrics(
+    step_records: list[dict[str, Any]],
+    window: _CycleWindow,
+) -> dict[str, float] | None:
+    if window.dump_start_idx is None:
+        return None
+
+    dump_start_idx = int(window.dump_start_idx)
+    end_idx = max(int(window.end_idx), dump_start_idx)
+    baseline_idx = max(int(window.qds_idx), dump_start_idx - 1)
+
+    baseline_target_mass = _safe_env_scalar(
+        step_records[baseline_idx], ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX
+    )
+    final_target_mass = _safe_env_scalar(
+        step_records[end_idx], ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX
+    )
+    if baseline_target_mass is None or final_target_mass is None:
+        return None
+
+    target_series = [
+        target_mass
+        for idx in range(dump_start_idx, end_idx + 1)
+        if (
+            (target_mass := _safe_env_scalar(
+                step_records[idx], ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX
+            ))
+            is not None
+        )
+    ]
+    bucket_series = [
+        mass
+        for idx in range(int(window.qds_idx), end_idx + 1)
+        if (
+            (mass := _safe_env_scalar(step_records[idx], ENV_STATE_MASS_IN_BUCKET_IDX))
+            is not None
+        )
+    ]
+    pre_dump_bucket_series = [
+        mass
+        for idx in range(int(window.qds_idx), dump_start_idx + 1)
+        if (
+            (mass := _safe_env_scalar(step_records[idx], ENV_STATE_MASS_IN_BUCKET_IDX))
+            is not None
+        )
+    ]
+    post_dump_bucket_series = [
+        mass
+        for idx in range(dump_start_idx, end_idx + 1)
+        if (
+            (mass := _safe_env_scalar(step_records[idx], ENV_STATE_MASS_IN_BUCKET_IDX))
+            is not None
+        )
+    ]
+    if not target_series or not bucket_series:
+        return None
+
+    peak_target_mass = float(np.max(target_series))
+    peak_bucket_mass = float(
+        np.max(pre_dump_bucket_series if pre_dump_bucket_series else bucket_series)
+    )
+    min_post_dump_bucket_mass = float(
+        np.min(post_dump_bucket_series if post_dump_bucket_series else bucket_series)
+    )
+    bucket_mass_out = max(0.0, peak_bucket_mass - min_post_dump_bucket_mass)
+    target_deposit_peak_delta = max(0.0, peak_target_mass - baseline_target_mass)
+    target_deposit_final_delta = max(0.0, final_target_mass - baseline_target_mass)
+    post_dump_target_mass_drop = max(
+        0.0, target_deposit_peak_delta - target_deposit_final_delta
+    )
+    deposited_fraction = (
+        float(np.clip(target_deposit_final_delta / bucket_mass_out, 0.0, 1.0))
+        if bucket_mass_out > 1.0e-6
+        else 0.0
+    )
+    peak_deposited_fraction = (
+        float(np.clip(target_deposit_peak_delta / bucket_mass_out, 0.0, 1.0))
+        if bucket_mass_out > 1.0e-6
+        else 0.0
+    )
+    return {
+        "bucket_mass_out_kg": float(bucket_mass_out),
+        "target_deposit_final_delta_kg": float(target_deposit_final_delta),
+        "target_deposit_peak_delta_kg": float(target_deposit_peak_delta),
+        "deposited_fraction": float(deposited_fraction),
+        "peak_deposited_fraction": float(peak_deposited_fraction),
+        "post_dump_target_mass_drop_kg": float(post_dump_target_mass_drop),
+    }
 
 
 def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float | int]:
@@ -235,6 +330,15 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
             "dig_area_escape_cycle_count": 0,
             "dig_area_escape_cycle_rate": 0.0,
             "dig_area_escape_step_ratio": 0.0,
+            "cycle_deposit_metric_count": 0,
+            "cycle_deposited_fraction_mean": 0.0,
+            "cycle_deposited_fraction_min": 0.0,
+            "cycle_post_dump_target_mass_drop_mean_kg": 0.0,
+            "cycle_post_dump_target_mass_drop_max_kg": 0.0,
+            "low_cycle_deposited_fraction_count": 0,
+            "low_cycle_deposited_fraction_rate": 0.0,
+            "high_cycle_post_dump_drop_count": 0,
+            "high_cycle_post_dump_drop_rate": 0.0,
             "quality_issue_count": 0,
         }
 
@@ -262,6 +366,11 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
     dig_area_escape_cycle_count = 0
     dig_area_escape_step_count = 0
     dig_area_escape_window_steps = 0
+    cycle_deposited_fraction_values: list[float] = []
+    cycle_post_dump_drop_values: list[float] = []
+    low_cycle_deposited_fraction_count = 0
+    high_cycle_post_dump_drop_count = 0
+    per_cycle_deposit_metrics: dict[str, float] = {}
 
     for window in windows:
         qds_record = step_records[window.qds_idx]
@@ -336,6 +445,21 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
                 if residual_bucket_mass > HIGH_RESIDUAL_BUCKET_MASS_THRESH_KG:
                     high_residual_bucket_mass_count += 1
 
+        cycle_deposit_metrics = _build_cycle_deposit_metrics(step_records, window)
+        if cycle_deposit_metrics is not None:
+            display_cycle = int(window.cycle_id) + 1
+            prefix = f"cycle{display_cycle}"
+            deposited_fraction = float(cycle_deposit_metrics["deposited_fraction"])
+            post_drop = float(cycle_deposit_metrics["post_dump_target_mass_drop_kg"])
+            cycle_deposited_fraction_values.append(deposited_fraction)
+            cycle_post_dump_drop_values.append(post_drop)
+            if deposited_fraction < LOW_CYCLE_DEPOSITED_FRACTION_THRESH:
+                low_cycle_deposited_fraction_count += 1
+            if post_drop > HIGH_CYCLE_POST_DUMP_DROP_THRESH_KG:
+                high_cycle_post_dump_drop_count += 1
+            for key, value in cycle_deposit_metrics.items():
+                per_cycle_deposit_metrics[f"{prefix}_{key}"] = float(value)
+
     quality_issue_count = int(
         spill_before_target_count
         + unsafe_target_distance_count
@@ -346,6 +470,8 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
         + low_carry_efficiency_count
         + high_residual_bucket_mass_count
         + dig_area_escape_cycle_count
+        + low_cycle_deposited_fraction_count
+        + high_cycle_post_dump_drop_count
     )
 
     n_steps = max(len(step_records), 1)
@@ -355,8 +481,10 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
     qds_count = max(qds_count_actual, 1)
     dump_start_count = max(dump_start_count_actual, 1)
     dump_end_count = max(dump_end_count_actual, 1)
+    cycle_deposit_metric_count = len(cycle_deposited_fraction_values)
+    cycle_deposit_metric_denominator = max(cycle_deposit_metric_count, 1)
 
-    return {
+    summary = {
         "spill_before_target_count": int(spill_before_target_count),
         "spill_before_target_rate": float(spill_before_target_count) / float(n_steps),
         "unsafe_target_distance_count": int(unsafe_target_distance_count),
@@ -407,8 +535,37 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
             if dig_area_escape_window_steps > 0
             else 0.0
         ),
+        "cycle_deposit_metric_count": int(cycle_deposit_metric_count),
+        "cycle_deposited_fraction_mean": _safe_array_mean(
+            cycle_deposited_fraction_values
+        ),
+        "cycle_deposited_fraction_min": (
+            float(np.min(cycle_deposited_fraction_values))
+            if cycle_deposited_fraction_values
+            else 0.0
+        ),
+        "cycle_post_dump_target_mass_drop_mean_kg": _safe_array_mean(
+            cycle_post_dump_drop_values
+        ),
+        "cycle_post_dump_target_mass_drop_max_kg": _safe_array_max(
+            cycle_post_dump_drop_values
+        ),
+        "low_cycle_deposited_fraction_count": int(
+            low_cycle_deposited_fraction_count
+        ),
+        "low_cycle_deposited_fraction_rate": (
+            float(low_cycle_deposited_fraction_count)
+            / float(cycle_deposit_metric_denominator)
+        ),
+        "high_cycle_post_dump_drop_count": int(high_cycle_post_dump_drop_count),
+        "high_cycle_post_dump_drop_rate": (
+            float(high_cycle_post_dump_drop_count)
+            / float(cycle_deposit_metric_denominator)
+        ),
         "quality_issue_count": quality_issue_count,
     }
+    summary.update(per_cycle_deposit_metrics)
+    return summary
 
 
 def aggregate_quality_metrics(
@@ -468,5 +625,34 @@ def aggregate_quality_metrics(
         "avg_dig_area_escape_cycle_count": _avg("dig_area_escape_cycle_count"),
         "avg_dig_area_escape_cycle_rate": _avg("dig_area_escape_cycle_rate"),
         "avg_dig_area_escape_step_ratio": _avg("dig_area_escape_step_ratio"),
+        "avg_cycle_deposit_metric_count": _avg("cycle_deposit_metric_count"),
+        "avg_cycle_deposited_fraction_mean": _avg("cycle_deposited_fraction_mean"),
+        "avg_cycle_deposited_fraction_min": _avg("cycle_deposited_fraction_min"),
+        "avg_cycle_post_dump_target_mass_drop_mean_kg": _avg(
+            "cycle_post_dump_target_mass_drop_mean_kg"
+        ),
+        "avg_cycle_post_dump_target_mass_drop_max_kg": _avg(
+            "cycle_post_dump_target_mass_drop_max_kg"
+        ),
+        "avg_low_cycle_deposited_fraction_count": _avg(
+            "low_cycle_deposited_fraction_count"
+        ),
+        "avg_low_cycle_deposited_fraction_rate": _avg(
+            "low_cycle_deposited_fraction_rate"
+        ),
+        "avg_high_cycle_post_dump_drop_count": _avg("high_cycle_post_dump_drop_count"),
+        "avg_high_cycle_post_dump_drop_rate": _avg("high_cycle_post_dump_drop_rate"),
+        "avg_cycle1_deposited_fraction": _avg("cycle1_deposited_fraction"),
+        "avg_cycle2_deposited_fraction": _avg("cycle2_deposited_fraction"),
+        "avg_cycle3_deposited_fraction": _avg("cycle3_deposited_fraction"),
+        "avg_cycle1_post_dump_target_mass_drop_kg": _avg(
+            "cycle1_post_dump_target_mass_drop_kg"
+        ),
+        "avg_cycle2_post_dump_target_mass_drop_kg": _avg(
+            "cycle2_post_dump_target_mass_drop_kg"
+        ),
+        "avg_cycle3_post_dump_target_mass_drop_kg": _avg(
+            "cycle3_post_dump_target_mass_drop_kg"
+        ),
         "avg_quality_issue_count": _avg("quality_issue_count"),
     }

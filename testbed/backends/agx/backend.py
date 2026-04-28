@@ -26,6 +26,9 @@ from testbed.tasks.logic.excavator_reward import (
     AGX_TARGET_CONTACT_MAX_NORMAL_FORCE_N,
     AGX_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE,
     AGX_BUCKET_HEIGHT_ABOVE_TARGET_RIM,
+    AGX_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE,
+    AGX_BUCKET_BED_RELATIVE_X,
+    AGX_BUCKET_BED_RELATIVE_Z,
     AGX_TARGET_HARD_COLLISION_COUNT,
     AGX_BUCKET_OVER_TARGET_FOOTPRINT,
     AGX_DUMP_CLEARANCE_OK,
@@ -106,6 +109,9 @@ class AgxSimBackend(SimBackend):
                     AGX_BUCKET_HEIGHT_ABOVE_TARGET_RIM,
                     AGX_BUCKET_OVER_TARGET_FOOTPRINT,
                     AGX_DUMP_CLEARANCE_OK,
+                    AGX_BUCKET_BED_RELATIVE_X,
+                    AGX_BUCKET_BED_RELATIVE_Z,
+                    AGX_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE,
                 ),
             )
             self._mission = get_agx_excavation_mission(

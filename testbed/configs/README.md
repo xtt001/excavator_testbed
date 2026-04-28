@@ -11,8 +11,17 @@
 - Stage 1 不新增训练主线；重点是录制、离线标注和多轮评测
 - target-safety workskill 现在要求显式 target geometry 字段：
   `target_horizontal_distance_m`、`bucket_height_above_target_rim_m`、
-  `bucket_over_target_footprint_mask`、`dump_clearance_ok_mask`。旧的
-  `min_distance_to_target_m` 不再作为这些字段的 fallback。
+  `bucket_over_target_footprint_mask`、`dump_clearance_ok_mask`。V2.2 Unity
+  bridge 还会输出 `bucket_bed_relative_x_m`、`bucket_bed_relative_z_m`、
+  `bucket_bed_footprint_outside_distance_m`；`bucket_over_target_footprint_mask`
+  表示 bucket proxy 是否在 truck-top 可倒料区域上方，严格 release 深度由
+  outside distance 判断。旧的 `min_distance_to_target_m`
+  不再作为这些字段的 fallback。
+- 当前 `tb-label-v2_1` 的 work-stage 版本为
+  `v2_1d_work_stage_7cls_bedtop16`。在 16-field Unity 数据上，
+  `approach_dump` 使用 bed-top geometry 提前识别最终对车阶段；primitive
+  builder 仍单独要求更严格的 safe release intent，不能把 early curl-out
+  自动吞进训练窗口。
 - `dump_clearance_ok_mask` 由 Unity 作为 target-clearance source of truth
   输出；TruckBed 可使用水平 dump 容差，但垂直方向仍要求
   `bucket_height_above_target_rim_m >= 0.0`。
@@ -302,19 +311,19 @@ ln -sfn /data/pingfan/excavator_testbed_data_archive/agx_v2_2_4primitives_safe_d
 切分语义：
 
 - `dig`: `qualified_dig_start` 到 `carry/approach_dump` 前
-- `carry`: `carry_start -> dump ownership boundary`，只负责 loaded transport
-- `dump`: `dump ownership boundary -> dump_end`，负责 move to top of target、
+- `carry`: `carry_start -> first approach_dump stage`，只负责 loaded transport
+- `dump`: `first approach_dump stage -> dump_end`，负责 move to top of target、
   alignment、release 和 post-dump hold
 - `return`: full raw 中的 `dump_end -> next qualified_dig_start`
 
-`dump ownership boundary` 使用 deterministic rule：
-`min(first approach_dump stage, stable pre-dump curl-out onset)`。这让 ACT 的
-`chunk_size=100` 未来动作监督不会跨 skill boundary；如果人类 teleop 在接近车斗时
-已经开始稳定 curl-out，这段会归 `dump`，不是 `carry`。V2.2 builder 不再 fallback
-到官方 mass-based `dump_start`；找不到安全 onset 的 dump window 会被 reject，并写入
-`summary.json`。
+`dump ownership boundary` 使用 deterministic rule：`first approach_dump stage`。
+如果 stable pre-dump curl-out 早于 `approach_dump`，新版 builder 会 reject 该
+carry/dump window，而不是把这段混合动作分给 `carry` 或 `dump`。V2.2 builder 不再
+fallback 到官方 mass-based `dump_start`；找不到带 bed geometry 的安全 onset 的
+dump window 会被 reject，并写入 `summary.json`。完整 phase boundary 定义见
+`docs/v2_2_4primitives/phase_boundaries.md`。
 
-2026-04-27 ownership probe:
+2026-04-27 ownership probe（旧 boundary rule 结果，保留作诊断 baseline）:
 
 - Raw: `/data/pingfan/excavator_testbed_data_archive/agx_v2_2_ownership_probe_raw_260427_1ep`
 - 4p root: `data/agx_v2_2_4primitives_ownership_boundary_260427_1ep`
@@ -324,7 +333,8 @@ ln -sfn /data/pingfan/excavator_testbed_data_archive/agx_v2_2_4primitives_safe_d
 - Dump QC: hard collision windows `0`, near collision windows `0`,
   dump starts `30-67` steps before official mass-based `dump_start`
 
-2026-04-27 history ownership rebuild:
+2026-04-27 history ownership rebuild（旧 boundary rule 结果，不能直接代表新版
+middle-handoff builder）:
 
 - Source workskill:
   `data/agx_teleop_v2_1_refresh_tail50_workskill_clean_v3_targetsafe_v2_1c_260424183039`
@@ -339,6 +349,9 @@ ln -sfn /data/pingfan/excavator_testbed_data_archive/agx_v2_2_4primitives_safe_d
 Current carry/dump smoke training mix:
 
 - Root: `data/agx_v2_2_4primitives_ownership_history_probe_leftboost_260427`
+- 注意：该 root 是旧 boundary rule 训练 mix。新版 builder 会要求 16-field bed
+  geometry，并把 stable curl-out before `approach_dump` 的窗口 reject；因此需要用
+  刷新后的新 geometry 数据重建 carry/dump root 后再训练。
 - Mix rule: history ownership all + latest ownership probe all cycles `4x` +
   probe cycle2/source_cycle_id `1` extra `8x`
 - Counts: `carry=47`, `dump=47`
@@ -353,13 +366,35 @@ Current carry/dump smoke training mix:
 - Smoke eval config:
   `testbed/configs/eval_agx_v2_2_4primitives_ownership_leftboost_qvel_3cycle_smoke.yaml`
 
+2026-04-28 middle-handoff data probe:
+
+- `data/agx_teleop_v2_1_multi_raw_targetgeo16_smoke_260428` and
+  `data/agx_v2_2_ownership_probe_raw_targetgeo16_260428` replayed cleanly with
+  16-field env_state.
+- The new builder accepted `dig` only and rejected all `carry/dump` windows.
+- Decision: do not batch-train from these roots. Record new demonstrations with
+  `docs/v2_2_4primitives/phase_boundaries.md` as the manipulation contract.
+
 V2.2 scripted planner 的 dump readiness 使用 target-relative geometry：
-`mass_in_bucket_kg` 足够、`bucket_height_above_target_rim_m >= 0.45`、clearance
-OK，并且位置满足 `bucket_over_target_footprint_mask` 或
-`target_horizontal_distance_m <= dump_ready_max_horizontal_distance_m`。当前 3-cycle
-carrytrim smoke 配置把水平阈值设为 `0.60m`，并在 `dump_done` 后保持 dump
-skill `30` step 再切 return。这个 hold 用来跨过 ACT chunk/temporal aggregation
-边界，避免 return policy 在土刚落入车斗时立刻回摆，把土从边缘带出。
+`mass_in_bucket_kg` 足够、`bucket_height_above_target_rim_m >= 0.30`，并且位置满足
+`bucket_bed_footprint_outside_distance_m <= dump_ready_max_bed_footprint_outside_distance_m`
+以及可选的 signed `bucket_bed_relative_x_m/z_m` window。
+在 `bed_relative` 模式下，即使 `dump_ready_require_over_footprint=false`，
+也仍然必须满足 bed-relative 位置条件；这个开关只表示不强制 Unity 的
+`bucket_over_target_footprint_mask`，不能让 planner 绕过位置检查。
+Unity 的 `bucket_over_target_footprint_mask` 现在表示 truck-top mask，用于诊断
+bucket 是否在车斗上方；当前 3-cycle ownership smoke 配置使用 `bed_relative`，并把
+`dump_ready_max_horizontal_distance_m` 设为 `null`，不再让 scalar horizontal
+distance 单独触发 `carry -> dump`。当前 4p approach handoff 不再只用 unsigned
+`outside`；它使用 good20 teleop 分布得到的 corridor：
+`outside<=1.35m`、`-4.30<=bed_relative_x<=2.00`、
+`2.75<=bed_relative_z<=3.50`。`outside` 只表示离 bed footprint 多近，不能区分
+tail/middle/front，因此不应单独作为 handoff rule。
+当前 smoke config
+设置 `dump_done_use_boundary_event=false`，所以 `dump_done` 后保持 dump
+skill `30` step 再切 return，不让 Unity 的即时 `dump_end` event 绕过这个 hold。
+这个 hold 用来跨过 ACT chunk/temporal aggregation 边界，避免 return policy 在土刚落入
+车斗时立刻回摆，把土从边缘带出。
 `dig -> carry` 只要求 bucket 已 loaded；从 dig 区离开属于 carry primitive 的职责，
 不再要求 `min_distance_to_dig_area_m >= 0.20`。
 
@@ -482,6 +517,12 @@ V2.1 Stage 4 在保留 Stage 2 指标的同时，还会额外输出：
 - `high_residual_bucket_mass_count`
 - `dig_area_escape_cycle_count`
 - `dig_area_escape_step_ratio`
+- `cycle_deposited_fraction_mean` / `cycle_deposited_fraction_min`
+- `cycle1_deposited_fraction` / `cycle2_deposited_fraction` / `cycle3_deposited_fraction`
+- `cycle_post_dump_target_mass_drop_mean_kg` / `cycle_post_dump_target_mass_drop_max_kg`
+- `cycle1_post_dump_target_mass_drop_kg` / `cycle2_post_dump_target_mass_drop_kg` / `cycle3_post_dump_target_mass_drop_kg`
+- `low_cycle_deposited_fraction_count`
+- `high_cycle_post_dump_drop_count`
 - `quality_issue_count`
 
 对应的关键 rate 版本也会一起输出，例如：
@@ -494,6 +535,8 @@ V2.1 Stage 4 在保留 Stage 2 指标的同时，还会额外输出：
 - `near_dump_start_rate`
 - `low_carry_efficiency_rate`
 - `high_residual_bucket_mass_rate`
+- `low_cycle_deposited_fraction_rate`
+- `high_cycle_post_dump_drop_rate`
 - `dig_area_escape_cycle_rate`
 
 聚合后的 `metrics.json` 会以 `avg_*` 前缀输出这些质量指标和 rate 指标，方便直接比较不同策略的动作质量。

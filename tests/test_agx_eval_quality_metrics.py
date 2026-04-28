@@ -24,6 +24,7 @@ def _record(
     bucket_height_above_target_rim: float = 0.10,
     bucket_over_target_footprint: float = 1.0,
     dump_clearance_ok: float = 1.0,
+    deposited_mass: float = 0.0,
     min_distance_to_dig_area: float = 0.0,
     bucket_depth: float = 0.0,
     failures: list[str] | None = None,
@@ -33,7 +34,7 @@ def _record(
         mass_in_bucket,
         0.0,
         0.0,
-        0.0,
+        deposited_mass,
         min_distance_to_target,
         0.0,
         0.0,
@@ -173,6 +174,40 @@ class TestQualityMetrics(unittest.TestCase):
         self.assertEqual(summary["near_dump_start_count"], 0)
         self.assertAlmostEqual(float(summary["target_geometry_available_rate"]), 0.0)
 
+    def test_build_quality_summary_reports_per_cycle_deposit_drop(self) -> None:
+        records = [
+            _record(t=0, cycle_id=0, qds=1, mass_in_bucket=500.0, deposited_mass=0.0),
+            _record(
+                t=1,
+                cycle_id=0,
+                dump_start=1,
+                mass_in_bucket=500.0,
+                deposited_mass=0.0,
+            ),
+            _record(t=2, cycle_id=0, mass_in_bucket=0.0, deposited_mass=450.0),
+            _record(t=3, cycle_id=1, qds=1, mass_in_bucket=500.0, deposited_mass=450.0),
+            _record(
+                t=4,
+                cycle_id=1,
+                dump_start=1,
+                mass_in_bucket=500.0,
+                deposited_mass=450.0,
+            ),
+            _record(t=5, cycle_id=1, mass_in_bucket=100.0, deposited_mass=900.0),
+            _record(t=6, cycle_id=1, mass_in_bucket=0.0, deposited_mass=650.0),
+        ]
+
+        summary = build_quality_summary(records)
+
+        self.assertEqual(summary["cycle_deposit_metric_count"], 2)
+        self.assertAlmostEqual(float(summary["cycle1_deposited_fraction"]), 0.9)
+        self.assertAlmostEqual(float(summary["cycle1_post_dump_target_mass_drop_kg"]), 0.0)
+        self.assertAlmostEqual(float(summary["cycle2_deposited_fraction"]), 0.4)
+        self.assertAlmostEqual(float(summary["cycle2_post_dump_target_mass_drop_kg"]), 250.0)
+        self.assertAlmostEqual(float(summary["cycle_deposited_fraction_min"]), 0.4)
+        self.assertEqual(summary["low_cycle_deposited_fraction_count"], 1)
+        self.assertEqual(summary["high_cycle_post_dump_drop_count"], 1)
+
     def test_aggregate_quality_metrics_averages_rollout_summaries(self) -> None:
         metrics = aggregate_quality_metrics(
             [
@@ -183,6 +218,8 @@ class TestQualityMetrics(unittest.TestCase):
                     "near_dump_start_count": 0,
                     "near_dump_start_rate": 0.0,
                     "carry_efficiency_proxy_mean": 0.35,
+                    "cycle2_deposited_fraction": 0.4,
+                    "cycle2_post_dump_target_mass_drop_kg": 250.0,
                     "quality_issue_count": 5,
                 },
                 {
@@ -192,6 +229,8 @@ class TestQualityMetrics(unittest.TestCase):
                     "near_dump_start_count": 2,
                     "near_dump_start_rate": 1.0,
                     "carry_efficiency_proxy_mean": 0.85,
+                    "cycle2_deposited_fraction": 0.95,
+                    "cycle2_post_dump_target_mass_drop_kg": 10.0,
                     "quality_issue_count": 1,
                 },
             ]
@@ -203,6 +242,10 @@ class TestQualityMetrics(unittest.TestCase):
         self.assertAlmostEqual(metrics["avg_near_dump_start_count"], 1.0)
         self.assertAlmostEqual(metrics["avg_near_dump_start_rate"], 0.5)
         self.assertAlmostEqual(metrics["avg_carry_efficiency_proxy_mean"], 0.60)
+        self.assertAlmostEqual(metrics["avg_cycle2_deposited_fraction"], 0.675)
+        self.assertAlmostEqual(
+            metrics["avg_cycle2_post_dump_target_mass_drop_kg"], 130.0
+        )
         self.assertAlmostEqual(metrics["avg_quality_issue_count"], 3.0)
 
 

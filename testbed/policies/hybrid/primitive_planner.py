@@ -8,6 +8,9 @@ from typing import Any
 import numpy as np
 
 from testbed.data.schema import (
+    ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+    ENV_STATE_BUCKET_BED_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
@@ -78,10 +81,17 @@ class PrimitivePlannerACTPolicy(Policy):
         dump_ready_require_over_footprint: bool = True,
         dump_ready_require_clearance: bool = True,
         dump_ready_max_horizontal_distance_m: float | None = 0.60,
+        dump_ready_position_mode: str = "footprint_or_bed_relative",
+        dump_ready_max_bed_footprint_outside_distance_m: float | None = 0.05,
+        dump_ready_min_bed_relative_x_m: float | None = None,
+        dump_ready_max_bed_relative_x_m: float | None = None,
+        dump_ready_min_bed_relative_z_m: float | None = None,
+        dump_ready_max_bed_relative_z_m: float | None = None,
         dump_ready_hold_steps: int = 3,
         dump_done_max_bucket_mass_kg: float = 100.0,
         dump_done_min_deposit_delta_kg: float = 10.0,
         dump_done_hold_steps: int = 2,
+        dump_done_use_boundary_event: bool = True,
         return_max_steps: int = 420,
         action_dim: int = 4,
         primitive_checkpoint_paths: dict[str, str] | None = None,
@@ -110,10 +120,37 @@ class PrimitivePlannerACTPolicy(Policy):
             if dump_ready_max_horizontal_distance_m is None
             else float(dump_ready_max_horizontal_distance_m)
         )
+        self.dump_ready_position_mode = str(dump_ready_position_mode)
+        self.dump_ready_max_bed_footprint_outside_distance_m = (
+            None
+            if dump_ready_max_bed_footprint_outside_distance_m is None
+            else float(dump_ready_max_bed_footprint_outside_distance_m)
+        )
+        self.dump_ready_min_bed_relative_x_m = (
+            None
+            if dump_ready_min_bed_relative_x_m is None
+            else float(dump_ready_min_bed_relative_x_m)
+        )
+        self.dump_ready_max_bed_relative_x_m = (
+            None
+            if dump_ready_max_bed_relative_x_m is None
+            else float(dump_ready_max_bed_relative_x_m)
+        )
+        self.dump_ready_min_bed_relative_z_m = (
+            None
+            if dump_ready_min_bed_relative_z_m is None
+            else float(dump_ready_min_bed_relative_z_m)
+        )
+        self.dump_ready_max_bed_relative_z_m = (
+            None
+            if dump_ready_max_bed_relative_z_m is None
+            else float(dump_ready_max_bed_relative_z_m)
+        )
         self.dump_ready_hold_steps = max(1, int(dump_ready_hold_steps))
         self.dump_done_max_bucket_mass_kg = float(dump_done_max_bucket_mass_kg)
         self.dump_done_min_deposit_delta_kg = float(dump_done_min_deposit_delta_kg)
         self.dump_done_hold_steps = max(1, int(dump_done_hold_steps))
+        self.dump_done_use_boundary_event = bool(dump_done_use_boundary_event)
         self.return_max_steps = int(return_max_steps)
         self.action_dim = int(action_dim)
         self.primitive_checkpoint_paths = {
@@ -217,6 +254,7 @@ class PrimitivePlannerACTPolicy(Policy):
             "transition_fallback_reason": "",
             "transition_timeout_count": int(self._transition_timeout_count),
             "completed_transition_count": int(self._completed_transition_count),
+            "dump_done_use_boundary_event": int(self.dump_done_use_boundary_event),
             "primitive_final_skill": str(self._skill_name),
             "primitive_cycle_index": int(self._cycle_index),
         }
@@ -248,7 +286,11 @@ class PrimitivePlannerACTPolicy(Policy):
             return
 
         if self._skill_name == "dump":
-            if boundary_event is not None and bool(getattr(boundary_event, "dump_end", False)):
+            if (
+                self.dump_done_use_boundary_event
+                and boundary_event is not None
+                and bool(getattr(boundary_event, "dump_end", False))
+            ):
                 self._set_skill("return", "dump_to_return_dump_end")
                 return
             if self._dump_done(obs):
@@ -328,15 +370,94 @@ class PrimitivePlannerACTPolicy(Policy):
                 geometry["target_horizontal_distance_m"]
                 <= self.dump_ready_max_horizontal_distance_m + 1.0e-6
             )
-        position_ok = (
-            over_footprint
-            or horizontal_ok
-            or not self.dump_ready_require_over_footprint
+        bed_relative_ok = self._bed_relative_dump_position_ok(geometry)
+        position_ok = self._dump_ready_position_ok(
+            over_footprint=over_footprint,
+            bed_relative_ok=bed_relative_ok,
+            horizontal_ok=horizontal_ok,
         )
         return bool(
             height_ok
             and position_ok
             and (clearance_ok or not self.dump_ready_require_clearance)
+        )
+
+    def _bed_relative_dump_position_ok(self, geometry: dict[str, float]) -> bool:
+        if self.dump_ready_max_bed_footprint_outside_distance_m is None:
+            return False
+        outside_distance = float(
+            geometry.get("bucket_bed_footprint_outside_distance_m", np.nan)
+        )
+        outside_ok = bool(
+            np.isfinite(outside_distance)
+            and outside_distance >= 0.0
+            and outside_distance
+            <= self.dump_ready_max_bed_footprint_outside_distance_m + 1.0e-6
+        )
+        if not outside_ok:
+            return False
+        return bool(
+            self._optional_range_ok(
+                geometry=geometry,
+                name="bucket_bed_relative_x_m",
+                min_value=self.dump_ready_min_bed_relative_x_m,
+                max_value=self.dump_ready_max_bed_relative_x_m,
+            )
+            and self._optional_range_ok(
+                geometry=geometry,
+                name="bucket_bed_relative_z_m",
+                min_value=self.dump_ready_min_bed_relative_z_m,
+                max_value=self.dump_ready_max_bed_relative_z_m,
+            )
+        )
+
+    @staticmethod
+    def _optional_range_ok(
+        *,
+        geometry: dict[str, float],
+        name: str,
+        min_value: float | None,
+        max_value: float | None,
+    ) -> bool:
+        if min_value is None and max_value is None:
+            return True
+        value = float(geometry.get(name, np.nan))
+        if not np.isfinite(value):
+            return False
+        if min_value is not None and value < min_value - 1.0e-6:
+            return False
+        if max_value is not None and value > max_value + 1.0e-6:
+            return False
+        return True
+
+    def _dump_ready_position_ok(
+        self,
+        *,
+        over_footprint: bool,
+        bed_relative_ok: bool,
+        horizontal_ok: bool,
+    ) -> bool:
+        # `dump_ready_require_over_footprint=False` relaxes the footprint mask
+        # only; it must not disable the selected target-relative position rule.
+        mode = self.dump_ready_position_mode
+        if mode == "footprint_or_bed_relative":
+            return bool(
+                bed_relative_ok
+                or (over_footprint and self.dump_ready_require_over_footprint)
+            )
+        if mode == "bed_relative":
+            return bool(bed_relative_ok)
+        if mode == "footprint":
+            return bool(over_footprint or not self.dump_ready_require_over_footprint)
+        if mode == "footprint_or_horizontal":
+            return bool(
+                horizontal_ok
+                or (over_footprint and self.dump_ready_require_over_footprint)
+            )
+        raise ValueError(
+            f"Unsupported dump_ready_position_mode {mode!r}. Expected one of "
+            "footprint_or_bed_relative, bed_relative, footprint, "
+            "footprint_or_horizontal."
         )
 
     def _dump_done(self, obs: dict) -> bool:
@@ -366,6 +487,16 @@ class PrimitivePlannerACTPolicy(Policy):
                 )
             return value
 
+        def _optional_metric(name: str, index: int) -> float:
+            if name in task_metrics:
+                value = float(task_metrics[name])
+                return value if np.isfinite(value) else float("nan")
+            env_state = self._env_state(obs)
+            if len(env_state) <= index:
+                return float("nan")
+            value = float(env_state[index])
+            return value if np.isfinite(value) else float("nan")
+
         available = task_metrics.get("target_geometry_available")
         if available is not None and float(available) <= 0.5:
             raise RuntimeError(
@@ -388,6 +519,18 @@ class PrimitivePlannerACTPolicy(Policy):
             "dump_clearance_ok_mask": _metric(
                 "dump_clearance_ok_mask",
                 ENV_STATE_DUMP_CLEARANCE_OK_IDX,
+            ),
+            "bucket_bed_relative_x_m": _optional_metric(
+                "bucket_bed_relative_x_m",
+                ENV_STATE_BUCKET_BED_RELATIVE_X_IDX,
+            ),
+            "bucket_bed_relative_z_m": _optional_metric(
+                "bucket_bed_relative_z_m",
+                ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX,
+            ),
+            "bucket_bed_footprint_outside_distance_m": _optional_metric(
+                "bucket_bed_footprint_outside_distance_m",
+                ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
             ),
         }
 
@@ -510,10 +653,17 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
         dump_release_ready_require_over_footprint: bool = True,
         dump_release_ready_require_clearance: bool = True,
         dump_release_ready_max_horizontal_distance_m: float | None = 0.60,
+        dump_release_ready_position_mode: str = "footprint_or_bed_relative",
+        dump_release_ready_max_bed_footprint_outside_distance_m: float | None = 0.05,
+        dump_release_ready_min_bed_relative_x_m: float | None = None,
+        dump_release_ready_max_bed_relative_x_m: float | None = None,
+        dump_release_ready_min_bed_relative_z_m: float | None = None,
+        dump_release_ready_max_bed_relative_z_m: float | None = None,
         dump_release_ready_hold_steps: int = 3,
         dump_done_max_bucket_mass_kg: float = 100.0,
         dump_done_min_deposit_delta_kg: float = 10.0,
         dump_done_hold_steps: int = 30,
+        dump_done_use_boundary_event: bool = True,
         return_max_steps: int = 420,
         action_dim: int = 4,
         primitive_checkpoint_paths: dict[str, str] | None = None,
@@ -560,10 +710,27 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             dump_ready_max_horizontal_distance_m=(
                 dump_release_ready_max_horizontal_distance_m
             ),
+            dump_ready_position_mode=dump_release_ready_position_mode,
+            dump_ready_max_bed_footprint_outside_distance_m=(
+                dump_release_ready_max_bed_footprint_outside_distance_m
+            ),
+            dump_ready_min_bed_relative_x_m=(
+                dump_release_ready_min_bed_relative_x_m
+            ),
+            dump_ready_max_bed_relative_x_m=(
+                dump_release_ready_max_bed_relative_x_m
+            ),
+            dump_ready_min_bed_relative_z_m=(
+                dump_release_ready_min_bed_relative_z_m
+            ),
+            dump_ready_max_bed_relative_z_m=(
+                dump_release_ready_max_bed_relative_z_m
+            ),
             dump_ready_hold_steps=dump_release_ready_hold_steps,
             dump_done_max_bucket_mass_kg=dump_done_max_bucket_mass_kg,
             dump_done_min_deposit_delta_kg=dump_done_min_deposit_delta_kg,
             dump_done_hold_steps=dump_done_hold_steps,
+            dump_done_use_boundary_event=dump_done_use_boundary_event,
             return_max_steps=return_max_steps,
             action_dim=action_dim,
             primitive_checkpoint_paths=primitive_checkpoint_paths,
@@ -617,7 +784,11 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             return
 
         if self._skill_name == "dump_release":
-            if boundary_event is not None and bool(getattr(boundary_event, "dump_end", False)):
+            if (
+                self.dump_done_use_boundary_event
+                and boundary_event is not None
+                and bool(getattr(boundary_event, "dump_end", False))
+            ):
                 self._set_skill("return", "dump_release_to_return_dump_end")
                 return
             if self._dump_done(obs):
