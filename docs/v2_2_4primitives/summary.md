@@ -228,18 +228,18 @@ Current best live smoke:
 
 Residual issue: cycle2 still shows a small pre-dump micro pullback near the start
 of dump. It is much smaller than before and did not cause meaningful spill in
-the hold30 smoke, but this is a sign that the 4-primitive boundary is still
-doing too much. If this becomes unstable across more rollouts, the next design
-step should be five primitives: `dig -> carry -> approach_dump -> dump_release -> return`.
+the hold30 smoke. The current recommended direction is to keep the four
+primitive ownership boundary and improve goal conditioning / data quality
+inside that structure.
 
 ## Ownership Pivot Back To 4 Primitives
 
 Date: 2026-04-27
 
-The 5-primitive experiment showed that `approach_dump` is not intuitive for
-human teleop: operators naturally blend swing, boom/stick alignment, and
-curl-out while visually checking that soil will not spill. A strict
-`approach_dump -> dump_release` split produced too few clean approach windows.
+The diagnostic approach/release split showed that `approach_dump` is not
+intuitive for human teleop: operators naturally blend swing, boom/stick
+alignment, and curl-out while visually checking that soil will not spill. A
+strict release-only sub-skill produced too few clean approach windows.
 
 Current V2.2 ownership returns to four primitives:
 
@@ -273,7 +273,7 @@ One-episode ownership probe:
 - Dump boundary starts `30-67` steps before official mass-based `dump_start`
 
 This probe is good evidence that the 4p ownership definition matches human
-operation better than the 5p approach/release split. More data should use this
+operation better than a finer approach/release split. More data should use this
 definition: carry to target vicinity without owning final alignment, then dump
 owns the approach-to-release sequence.
 
