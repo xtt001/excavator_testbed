@@ -8,7 +8,7 @@
 - 分析 rollout 失败时知道从哪一层开始排查
 - 追踪"数据变了"还是"超参数变了"还是"eval 口径变了"
 
-状态日期：`2026-03-31`
+状态日期：`2026-04-14`
 
 ---
 
@@ -59,14 +59,15 @@
 
 | 用途 | 文件 |
 |---|---|
-| 正式训练默认配置 | `testbed/configs/act_agx_v0.yaml` |
+| 当前业务 baseline 训练 | `testbed/configs/act_agx_v1.yaml` |
+| 当前业务 baseline 评测 | `testbed/configs/eval_agx_v1.yaml` |
 | fulltest baseline（qpos）| `testbed/configs/act_agx_fulltest.yaml` |
-| rerecord baseline（qpos）| `testbed/configs/act_agx_v1.yaml` |
 | fulltest 对照（qpos+qvel）| `testbed/configs/act_agx_fulltest_qvel.yaml` |
 | smoke 训练 | `testbed/configs/act_agx_smoke.yaml` |
+| legacy 默认训练配置 | `testbed/configs/act_agx_v0.yaml` |
 | fulltest eval（qpos）| `testbed/configs/eval_agx_fulltest.yaml` |
-| rerecord eval（qpos）| `testbed/configs/eval_agx_v1.yaml` |
 | fulltest eval（qpos+qvel）| `testbed/configs/eval_agx_fulltest_qvel.yaml` |
+| 全部 YAML 文件索引 | `testbed/configs/README.md` |
 | 训练循环真实行为 | `testbed/policies/act/trainer.py` |
 | 配置如何落到 trainer | `testbed/runtime/_train.py` |
 
@@ -76,12 +77,14 @@
 
 ### 3.1 数据
 
-| 字段 | fulltest 默认值 | 说明 |
+当前业务 baseline 默认使用 rerecord `v1` 数据集；`fulltest` 保留为历史基线与 `qvel` 对照。
+
+| 字段 | v1 baseline 默认值 | 说明 |
 |---|---|---|
 | `task.task_name` | `agx_excavation_teleop` | |
 | `task.equipment_model` | `agxunity` | |
-| `task.dataset_dir` | `data/agx_teleop_fulltest` | 每次实验前确认已改对 |
-| `task.num_episodes` | `20` | 需与目录内实际 episode 数一致 |
+| `task.dataset_dir` | `data/agx_teleop_v1` | 当前业务主线默认目录 |
+| `task.num_episodes` | `30` | 需与目录内实际 episode 数一致 |
 | `task.episode_len` | `1000` | |
 | `task.camera_names` | `["fpv"]` | |
 
@@ -97,7 +100,7 @@
 **不进入** ACT loss 的字段（仅用于 replay、QC、rollout 诊断、failure analysis）：
 - `qvel`、`env_state`、`rewards`、`task_success`、`timestamps`
 
-`qpos + qvel` 对照实验路径已就位（`act_agx_fulltest_qvel.yaml`），但和 `qpos` baseline 是独立 checkpoint，不共用。
+`qpos + qvel` 对照实验路径已就位（`act_agx_fulltest_qvel.yaml`），当前仍保留在 `fulltest` 线上，和 `v1(qpos)` baseline 是独立 checkpoint，不共用。
 
 ### 3.2 模型
 
@@ -112,11 +115,11 @@
 
 ### 3.3 训练超参
 
-| 字段 | fulltest 值 | 说明 |
+| 字段 | v1 baseline 值 | 说明 |
 |---|---|---|
 | `lr` | `1e-5` | |
-| `num_epochs` | `2000` | `act_agx_v1.yaml` 当前默认值；其它配置可能不同 |
-| `batch_size` | `4` | 20 条 demo 下比通用 v0 的 8 更合适 |
+| `num_epochs` | `2000` | 当前业务 baseline 采用长训练周期 |
+| `batch_size` | `4` | `30` 条 demo 下较稳妥 |
 | `seed` | `0` | |
 | `device` | `cuda` | |
 | `num_workers` | `0` | HDF5 按 sample 开文件，多 worker 容易抖 |
@@ -129,7 +132,7 @@
 | `plot_every` | `50` | |
 | `amp` | `true` | |
 | `amp_dtype` | `auto` | CUDA 优先 bf16，否则回退 fp16 |
-| `ckpt_dir` | `runs/ckpts/agx_excavation_act_fulltest` | 每次新 run 用新目录 |
+| `ckpt_dir` | `runs/ckpts/agx_excavation_act_v1` | 每次新 run 用新目录 |
 
 ### 3.4 eval 成功口径
 
@@ -222,10 +225,11 @@ tb-replay --episode data/agx_teleop_v1/episode_0.hdf5 --config testbed/configs/t
 
 | 场景 | 推荐名称 |
 |---|---|
+| 当前业务 baseline（rerecord `v1`） | `agx_act_qpos_v1` |
 | qpos baseline，fulltest 数据第 1 轮 | `agx_act_qpos_fulltest_v1` |
 | qpos+qvel 对照，同一批数据 | `agx_act_qpos_qvel_fulltest_v1` |
 | 加 mass_in_bucket conditioning | `agx_act_qpos_qvel_taskstate_fulltest_v1` |
-| 新一批数据，重跑 qpos baseline | `agx_act_qpos_fulltest_v2` |
+| 新一批 rerecord 数据，重跑业务 baseline | `agx_act_qpos_v2` |
 
 ### 4.3 checkpoint 目录命名
 
@@ -435,3 +439,26 @@ print('done, rows:', len(records))
 - 这指向末端速度控制问题，优先尝试 `qpos + qvel` 对照实验
 
 新增的五套 success 口径（`legacy_any` / `final_hold` / `strict_final_hold` / `dump_complete_final_hold` / `strict_dump_complete`）在本轮已完成接入与验证。推荐主口径切换为 `dump_complete_final_hold`。
+
+### 2026-03-31 fulltest `qpos+qvel` 对照结论
+
+第一轮 `qpos+qvel` 对照的主要结论：
+- 主口径 `dump_complete_final_hold` 成功率从 `30%` 提升到 `60%`
+- `hard_target_collision` 明显下降
+- `unsafe_target_distance` 明显下降
+- 速度信息对 dump phase 的稳定性有直接帮助
+
+这轮实验证明 `qvel` 不是无效附加项，它至少在 `fulltest` 数据集上有明确收益。
+
+### 2026-04-02 rerecord `v1` baseline 结论
+
+第一轮 `v1(qpos)` 业务 baseline 的主要结论：
+- 数据集 `data/agx_teleop_v1/` 已经具备 `30` 条 success demo
+- 主口径 `dump_complete_final_hold` 下达到 `10 / 10` success
+- 当前更像“完成质量问题”而不是“可学习性问题”
+
+当前最重要的残留问题不是 success rate，而是：
+- `strict_dump_complete` 仍然是 `0%`
+- `spill_before_target` 仍然偏高
+
+因此，下一轮实验设计的重点应该放在严格口径 failure analysis，而不是重新证明 baseline 能否学会任务。

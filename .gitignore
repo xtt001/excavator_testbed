@@ -2,6 +2,7 @@
 runs/
 outputs/
 artifacts/
+data/
 data_sim_episodes/
 *.hdf5
 *.mp4
