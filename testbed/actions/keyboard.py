@@ -4,11 +4,11 @@ KeyboardActionSource — keyboard fallback for the AGX V0 action vector.
 Uses pygame keyboard events.  Much less precise than a joystick but
 useful for debugging and CI environments without hardware.
 
-Default key mapping (WASD + arrows):
-    W / S   → boom    +/-
-    A / D   → swing   -/+
-    ↑ / ↓   → stick   +/-
-    ← / →   → bucket  -/+
+Default key mapping:
+    F / H   → swing   -/+
+    I / K   → boom    +/-
+    T / G   → stick   -/+
+    J / L   → bucket  -/+
 
 Hold key = continuous speed command at `key_speed` magnitude.
 All values are normalized to [-1, 1].
@@ -37,7 +37,7 @@ ACTION_DIM = 4
 
 class KeyboardActionSource(ActionSource):
     """
-    WASD + arrow keys → AGX V0 speed commands.
+    Keyboard keys → AGX V0 speed commands.
 
     Parameters
     ----------
@@ -68,28 +68,28 @@ class KeyboardActionSource(ActionSource):
 
         t0 = time.perf_counter()
 
-        # swing: A(-) / D(+)
-        if keys[pg.K_a]:
+        # swing: F(-) / H(+)
+        if keys[pg.K_f]:
             action[IDX_SWING] -= spd
-        if keys[pg.K_d]:
+        if keys[pg.K_h]:
             action[IDX_SWING] += spd
 
-        # boom: W(+) / S(-)
-        if keys[pg.K_w]:
+        # boom: I(+) / K(-)
+        if keys[pg.K_i]:
             action[IDX_BOOM] += spd
-        if keys[pg.K_s]:
+        if keys[pg.K_k]:
             action[IDX_BOOM] -= spd
 
-        # stick: UP(+) / DOWN(-)
-        if keys[pg.K_UP]:
-            action[IDX_STICK] += spd
-        if keys[pg.K_DOWN]:
+        # stick: T(-) / G(+)
+        if keys[pg.K_t]:
             action[IDX_STICK] -= spd
+        if keys[pg.K_g]:
+            action[IDX_STICK] += spd
 
-        # bucket: RIGHT(+) / LEFT(-)
-        if keys[pg.K_RIGHT]:
+        # bucket: L(+) / J(-)
+        if keys[pg.K_l]:
             action[IDX_BUCKET] += spd
-        if keys[pg.K_LEFT]:
+        if keys[pg.K_j]:
             action[IDX_BUCKET] -= spd
 
         action = np.clip(action, -1.0, 1.0)
@@ -117,7 +117,7 @@ class KeyboardActionSource(ActionSource):
         if self._win_title:
             pg.display.set_mode((400, 120))
             pg.display.set_caption(self._win_title)
-        log.info("KeyboardActionSource ready (WASD+arrows).")
+        log.info("KeyboardActionSource ready (F/H swing, T/G stick, J/L bucket, I/K boom).")
 
     @classmethod
     def from_config(cls, cfg: dict) -> "KeyboardActionSource":

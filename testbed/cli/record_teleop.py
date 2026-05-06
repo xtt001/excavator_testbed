@@ -16,7 +16,7 @@ Loop (per episode)
   5. on task success / Q-key / max_steps reached → EpisodeRecorder.save()
 
 Stop session:   Ctrl+C  (saves the current partial episode first).
-Discard episode: press D key before saving (episode not counted).
+Discard episode: press Backspace before saving (episode not counted).
 Joystick reset: configured reset button discards the current partial episode
                 and starts a fresh Unity reset on the next episode attempt.
 """
