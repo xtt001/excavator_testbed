@@ -47,6 +47,7 @@ tb-train          = "testbed.cli.train:main"
 tb-eval           = "testbed.cli.eval:main"
 tb-dataset-videos = "testbed.cli.dataset_videos:main"
 tb-experiment-record = "testbed.cli.experiment_record:main"
+tb-keyframe-capture = "testbed.cli.keyframe_capture:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
