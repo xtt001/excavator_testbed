@@ -102,6 +102,24 @@ def eval_policy(config: dict[str, Any]) -> None:
             device=device,
         )
 
+    elif policy_class == "VIPACT":
+        from testbed.policies.vipact.adapter import ViPACTAdapter
+
+        policy = ViPACTAdapter(
+            repo_path=policy_cfg.get("repo_path", "/home/zhaoshuai/workspace_act/ViPACT"),
+            ckpt_path=ckpt_path,
+            norm_stats_path=policy_cfg.get("norm_stats_path"),
+            camera_names=policy_cfg.get("camera_names", camera_names),
+            device=device,
+            temporal_agg=temporal_agg,
+            max_episode_len=max_episode_len,
+            act_params=policy_cfg.get("act_params", {}),
+            equipment_model=policy_cfg.get("equipment_model", "excavator_simple"),
+            image_channels=int(policy_cfg.get("image_channels", 3)),
+            use_mask_conditioning=bool(policy_cfg.get("use_mask_conditioning", False)),
+            strict_load=bool(policy_cfg.get("strict_load", True)),
+        )
+
     elif policy_class == "DUMMY":
         action_dim = int(policy_cfg.get("action_dim", 4))
         from testbed.policies.dummy.adapter import DummyPolicy
