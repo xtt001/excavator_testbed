@@ -1,0 +1,64 @@
+# Eval config for a ViPACT-trained ACT checkpoint on live AGX Unity.
+#
+# ViPACT should train in /home/zhaoshuai/workspace_act/ViPACT and produce:
+#   policy_best.ckpt
+#   dataset_stats.pkl
+# Then update eval.ckpt_path / policy.norm_stats_path below.
+
+agx:
+  host: "127.0.0.1"
+  port: 5057
+  timeout: 10.0
+
+task:
+  name: "agx_excavation_teleop"
+
+eval:
+  num_rollouts: 10
+  save_video: true
+  video_dir: "runs/eval/agx_excavation_vipact_v1/videos"
+  results_dir: "runs/eval/agx_excavation_vipact_v1/results"
+  save_rollout_logs: true
+  rollout_log_dir: "runs/eval/agx_excavation_vipact_v1/results/rollouts"
+  step_log_interval: 50
+  ckpt_path: "/home/zhaoshuai/workspace_act/ViPACT/ckpts/agx_excavation_vipact/policy_best.ckpt"
+
+success:
+  mode: "dump_complete_final_hold"
+  signal_name: "deposited_mass_in_target_box_kg"
+  mass_thresh: 300.0
+  hold_steps: 25
+  residual_bucket_mass_thresh: 100.0
+  strict_max_failures:
+    hard_target_collision: 0
+    spill_before_target: 0
+
+reward:
+  load_mass_threshold_kg:       100.0
+  target_approach_distance_m:   1.25
+  deposit_started_threshold_kg: 10.0
+  dig_area_touch_tolerance_m:   0.05
+  dig_below_plane_depth_tolerance_m: 0.02
+  unsafe_distance_m:            0.20
+  unsafe_distance_penalty:      0.25
+  hard_collision_penalty:       0.75
+  spill_penalty:                0.25
+
+policy:
+  name: "vipact"
+  repo_path: "/home/zhaoshuai/workspace_act/ViPACT"
+  norm_stats_path: "/home/zhaoshuai/workspace_act/ViPACT/ckpts/agx_excavation_vipact/dataset_stats.pkl"
+  camera_names: ["fpv"]
+  # Current ViPACT uses equipment_model to infer state/action dim.
+  # excavator_simple maps to the required 4D AGX action.
+  equipment_model: "excavator_simple"
+  temporal_agg: false
+  device: "cuda"
+  image_channels: 3
+  use_mask_conditioning: false
+  strict_load: true
+  act_params:
+    chunk_size: 100
+    kl_weight: 10.0
+    hidden_dim: 512
+    dim_feedforward: 3200
