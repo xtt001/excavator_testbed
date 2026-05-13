@@ -12,7 +12,8 @@ Repo A 负责：
 
 三仓结构：
 - Repo A — 本仓库：Python testbed
-- Repo B — `AGXUnity_Excavator`：Unity / C# 场景与桥接
+- Repo B — `AGXUnityE85ExcavatorSim`：Unity / C# 场景与桥接；历史
+  asset 路径仍保留 `Assets/AGXUnity_Excavator/...`
 - Repo C — `sim-protocol`：共享协议、schema、常量、评测定义
 
 ---

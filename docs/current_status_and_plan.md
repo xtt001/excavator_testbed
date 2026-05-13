@@ -29,6 +29,10 @@
 
 这三部分分别在 Repo B 和 Repo C。
 
+当前 Repo B 指 `/home/pingfan/AGXUnityE85ExcavatorSim`。历史 Unity asset
+目录仍叫 `Assets/AGXUnity_Excavator/...`，但项目级记录和联调说明应使用
+`AGXUnityE85ExcavatorSim`。
+
 当前阶段还要额外记住一个目标：
 - 我们补训练 setup、metadata、analysis tooling，不是为了把系统做复杂
 - 而是为了在 baseline ACT 学不会技能时，能区分问题更可能来自数据、reward / task、实验设置、策略本身，还是接口实现

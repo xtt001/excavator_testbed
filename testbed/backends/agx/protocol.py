@@ -2,7 +2,7 @@
 AGX Unity step-ack binary protocol client helpers.
 
 Implements the wire format documented in:
-  /home/pingfan/AGXexcavator/Assets/AGXUnity_Excavator/Docs/protocol.md
+  /home/pingfan/AGXUnityE85ExcavatorSim/Assets/AGXUnity_Excavator/Docs/protocol.md
 """
 
 from __future__ import annotations
