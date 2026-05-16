@@ -16,7 +16,7 @@ from testbed.data.schema import (
     ATTR_TRANSITION_SOURCE,
     ATTR_V2_ENABLED,
     ATTR_WORK_STAGE_VERSION,
-    ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
@@ -80,8 +80,22 @@ FIRST_BITE_FAILURE_PEAK_MASS_KG = 120.0
 FIRST_BITE_FAILURE_RETURN_MASS_KG = 20.0
 APPROACH_DUMP_TARGET_DISTANCE_M = 1.15
 APPROACH_DUMP_MIN_MASS_KG = 150.0
-APPROACH_DUMP_MAX_BED_FOOTPRINT_OUTSIDE_DISTANCE_M = 1.35
+APPROACH_DUMP_MAX_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_M = 1.35
 APPROACH_DUMP_MIN_HEIGHT_ABOVE_RIM_M = 0.30
+
+STAGE_SUCCESS_VERSION = "v2_2_stage_success_4p"
+STAGE_SUCCESS_FLAG_DIG = 1 << 0
+STAGE_SUCCESS_FLAG_CARRY = 1 << 1
+STAGE_SUCCESS_FLAG_DUMP = 1 << 2
+STAGE_SUCCESS_FLAG_RETURN = 1 << 3
+
+STAGE_FAILURE_OK = 0
+STAGE_FAILURE_LOW_DIG_PRODUCTIVITY = 1
+STAGE_FAILURE_CARRY_SPILL = 2
+STAGE_FAILURE_MISSING_DUMP_END = 3
+STAGE_FAILURE_LOW_DUMP_DEPOSIT = 4
+STAGE_FAILURE_HARD_COLLISION = 5
+STAGE_FAILURE_RETURN_MISSING = 6
 
 
 @dataclass(frozen=True)
@@ -288,6 +302,18 @@ def label_episode_v2_1(
         "transition_source": [],
         "cycle_success": [],
         "plan_source": [],
+        "dig_success": [],
+        "carry_success": [],
+        "dump_success": [],
+        "return_success": [],
+        "return_required": [],
+        "stage_success": [],
+        "stage_success_flags": [],
+        "stage_failure_reason_code": [],
+        "payload_gain_kg": [],
+        "carry_loss_before_dump_kg": [],
+        "dump_deposited_fraction": [],
+        "residual_bucket_mass_after_dump_kg": [],
     }
     goal_tokens_by_cycle: dict[int, np.ndarray] = {}
     boundary_mask = np.zeros(n_steps, dtype=np.uint8)
@@ -305,6 +331,10 @@ def label_episode_v2_1(
     deposited_mass = env_state_arr[:, ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX]
     bucket_depth = env_state_arr[:, ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX]
     hard_collision_count = env_state_arr[:, ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX]
+    stage_thresholds = _stage_success_thresholds(
+        reward_cfg=dict(reward_cfg or {}),
+        success_cfg=dict(success_cfg or {}),
+    )
 
     for cycle_index, start_step in enumerate(cycle_starts.tolist()):
         next_start_step = (
@@ -399,6 +429,20 @@ def label_episode_v2_1(
         collision_count_delta = int(
             round(hard_collision_count[terminal_index] - hard_collision_count[start_step])
         )
+        stage_summary = _compute_stage_success(
+            start_step=start_step,
+            dump_end_step=dump_end_step,
+            next_start_step=next_start_step,
+            terminal_index=terminal_index,
+            window=window,
+            dump_start_mask=dump_start_mask,
+            mass_in_bucket=mass_in_bucket,
+            fill_peak_kg=fill_peak_kg,
+            deposit_delta_kg=deposit_delta_kg,
+            peak_bucket_depth_m=peak_bucket_depth_m,
+            collision_count_delta=collision_count_delta,
+            thresholds=stage_thresholds,
+        )
         cycle_success = int(
             dump_end_step >= 0 and end_step >= 0 and deposit_delta_kg > 0.0
         )
@@ -419,6 +463,8 @@ def label_episode_v2_1(
         cycle_payload["transition_source"].append(TRANSITION_SOURCE_NONE)
         cycle_payload["cycle_success"].append(int(cycle_success))
         cycle_payload["plan_source"].append(PLAN_SOURCE_NONE)
+        for key, value in stage_summary.items():
+            cycle_payload[key].append(value)
 
         _fill_cycle_phase_labels(
             phase_id=phase_id,
@@ -508,6 +554,30 @@ def label_episode_v2_1(
             ),
             "cycle_success": np.asarray(cycle_payload["cycle_success"], dtype=np.uint8),
             "plan_source": np.asarray(cycle_payload["plan_source"], dtype="<U16"),
+            "dig_success": np.asarray(cycle_payload["dig_success"], dtype=np.uint8),
+            "carry_success": np.asarray(cycle_payload["carry_success"], dtype=np.uint8),
+            "dump_success": np.asarray(cycle_payload["dump_success"], dtype=np.uint8),
+            "return_success": np.asarray(cycle_payload["return_success"], dtype=np.uint8),
+            "return_required": np.asarray(cycle_payload["return_required"], dtype=np.uint8),
+            "stage_success": np.asarray(cycle_payload["stage_success"], dtype=np.uint8),
+            "stage_success_flags": np.asarray(
+                cycle_payload["stage_success_flags"], dtype=np.int32
+            ),
+            "stage_failure_reason_code": np.asarray(
+                cycle_payload["stage_failure_reason_code"], dtype=np.int32
+            ),
+            "payload_gain_kg": np.asarray(
+                cycle_payload["payload_gain_kg"], dtype=np.float32
+            ),
+            "carry_loss_before_dump_kg": np.asarray(
+                cycle_payload["carry_loss_before_dump_kg"], dtype=np.float32
+            ),
+            "dump_deposited_fraction": np.asarray(
+                cycle_payload["dump_deposited_fraction"], dtype=np.float32
+            ),
+            "residual_bucket_mass_after_dump_kg": np.asarray(
+                cycle_payload["residual_bucket_mass_after_dump_kg"], dtype=np.float32
+            ),
         },
     }
 
@@ -516,9 +586,160 @@ def label_episode_v2_1(
         {
             ATTR_V2_ENABLED: True,
             ATTR_TRANSITION_SOURCE: TRANSITION_SOURCE_NONE,
+            "qualified_dig_start_mode": str(detector.config.qualified_dig_start_mode),
+            "stage_success_version": STAGE_SUCCESS_VERSION,
+            "stage_success_dig_min_payload_gain_kg": float(
+                stage_thresholds["dig_min_payload_gain_kg"]
+            ),
+            "stage_success_dig_min_depth_m": float(stage_thresholds["dig_min_depth_m"]),
+            "stage_success_dump_min_deposit_delta_kg": float(
+                stage_thresholds["dump_min_deposit_delta_kg"]
+            ),
+            "stage_success_dump_min_deposited_fraction": float(
+                stage_thresholds["dump_min_deposited_fraction"]
+            ),
         }
     )
     return v2_payload, metadata_updates
+
+
+def _stage_success_thresholds(
+    *,
+    reward_cfg: dict[str, Any],
+    success_cfg: dict[str, Any],
+) -> dict[str, float | int]:
+    stage_cfg = dict(success_cfg.get("stage_success", {}) or {})
+    load_mass_threshold = float(
+        reward_cfg.get(
+            "load_mass_threshold_kg",
+            success_cfg.get("load_mass_threshold_kg", 55.0),
+        )
+    )
+    dig_min_payload = float(
+        stage_cfg.get(
+            "dig_min_payload_gain_kg",
+            max(10.0, min(30.0, 0.30 * load_mass_threshold)),
+        )
+    )
+    return {
+        "dig_min_payload_gain_kg": dig_min_payload,
+        "dig_min_depth_m": float(stage_cfg.get("dig_min_depth_m", 0.02)),
+        "carry_max_loss_before_dump_kg": float(
+            stage_cfg.get("carry_max_loss_before_dump_kg", max(20.0, 0.65 * dig_min_payload))
+        ),
+        "carry_max_loss_before_dump_fraction": float(
+            stage_cfg.get("carry_max_loss_before_dump_fraction", 0.60)
+        ),
+        "dump_min_deposit_delta_kg": float(
+            stage_cfg.get(
+                "dump_min_deposit_delta_kg",
+                max(5.0, min(20.0, 0.20 * load_mass_threshold)),
+            )
+        ),
+        "dump_min_deposited_fraction": float(
+            stage_cfg.get("dump_min_deposited_fraction", 0.25)
+        ),
+        "max_hard_collision_delta": int(stage_cfg.get("max_hard_collision_delta", 0)),
+    }
+
+
+def _compute_stage_success(
+    *,
+    start_step: int,
+    dump_end_step: int,
+    next_start_step: int | None,
+    terminal_index: int,
+    window: slice,
+    dump_start_mask: np.ndarray,
+    mass_in_bucket: np.ndarray,
+    fill_peak_kg: float,
+    deposit_delta_kg: float,
+    peak_bucket_depth_m: float,
+    collision_count_delta: int,
+    thresholds: dict[str, float | int],
+) -> dict[str, int | float]:
+    start_mass = float(mass_in_bucket[start_step])
+    payload_gain_kg = max(0.0, float(fill_peak_kg) - start_mass)
+    residual_bucket_mass = float(mass_in_bucket[terminal_index])
+    dump_start_step = _find_first_mask_index(
+        mask=dump_start_mask,
+        start_step=start_step,
+        end_step_exclusive=max(start_step + 1, terminal_index + 1),
+    )
+    if dump_start_step is None:
+        dump_start_step = terminal_index
+    pre_dump_mass = float(mass_in_bucket[dump_start_step])
+    carry_loss_before_dump = max(0.0, float(fill_peak_kg) - pre_dump_mass)
+    deposited_fraction = float(deposit_delta_kg) / max(1e-6, float(fill_peak_kg))
+    hard_collision_ok = int(collision_count_delta) <= int(thresholds["max_hard_collision_delta"])
+
+    dig_success = bool(
+        payload_gain_kg >= float(thresholds["dig_min_payload_gain_kg"])
+        and float(peak_bucket_depth_m) >= float(thresholds["dig_min_depth_m"])
+    )
+    carry_loss_limit = max(
+        float(thresholds["carry_max_loss_before_dump_kg"]),
+        float(fill_peak_kg) * float(thresholds["carry_max_loss_before_dump_fraction"]),
+    )
+    carry_success = bool(
+        dig_success
+        and hard_collision_ok
+        and carry_loss_before_dump <= carry_loss_limit
+        and pre_dump_mass >= 0.5 * float(thresholds["dig_min_payload_gain_kg"])
+    )
+    dump_success = bool(
+        dump_end_step >= 0
+        and hard_collision_ok
+        and float(deposit_delta_kg) >= float(thresholds["dump_min_deposit_delta_kg"])
+        and deposited_fraction >= float(thresholds["dump_min_deposited_fraction"])
+    )
+    return_required = next_start_step is not None
+    return_success = bool(return_required)
+    stage_success = bool(
+        dig_success
+        and carry_success
+        and dump_success
+        and (return_success or not return_required)
+    )
+
+    flags = 0
+    if dig_success:
+        flags |= STAGE_SUCCESS_FLAG_DIG
+    if carry_success:
+        flags |= STAGE_SUCCESS_FLAG_CARRY
+    if dump_success:
+        flags |= STAGE_SUCCESS_FLAG_DUMP
+    if return_success:
+        flags |= STAGE_SUCCESS_FLAG_RETURN
+
+    failure_reason = STAGE_FAILURE_OK
+    if not dig_success:
+        failure_reason = STAGE_FAILURE_LOW_DIG_PRODUCTIVITY
+    elif not hard_collision_ok:
+        failure_reason = STAGE_FAILURE_HARD_COLLISION
+    elif not carry_success:
+        failure_reason = STAGE_FAILURE_CARRY_SPILL
+    elif dump_end_step < 0:
+        failure_reason = STAGE_FAILURE_MISSING_DUMP_END
+    elif not dump_success:
+        failure_reason = STAGE_FAILURE_LOW_DUMP_DEPOSIT
+    elif return_required and not return_success:
+        failure_reason = STAGE_FAILURE_RETURN_MISSING
+
+    return {
+        "dig_success": int(dig_success),
+        "carry_success": int(carry_success),
+        "dump_success": int(dump_success),
+        "return_success": int(return_success),
+        "return_required": int(return_required),
+        "stage_success": int(stage_success),
+        "stage_success_flags": int(flags),
+        "stage_failure_reason_code": int(failure_reason),
+        "payload_gain_kg": float(payload_gain_kg),
+        "carry_loss_before_dump_kg": float(carry_loss_before_dump),
+        "dump_deposited_fraction": float(max(0.0, deposited_fraction)),
+        "residual_bucket_mass_after_dump_kg": float(residual_bucket_mass),
+    }
 
 
 def _fill_cycle_phase_labels(
@@ -798,23 +1019,23 @@ def _find_approach_dump_start(
 ) -> int | None:
     if env_state.ndim != 2 or end_step_exclusive <= start_step:
         return None
-    if env_state.shape[1] > ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX:
+    if env_state.shape[1] > ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX:
         for step_index in range(start_step, end_step_exclusive):
             bucket_mass = float(mass_in_bucket[step_index])
             height_above_rim = float(
                 env_state[step_index, ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX]
             )
-            bed_outside_distance = float(
+            dump_area_outside_distance = float(
                 env_state[
                     step_index,
-                    ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+                    ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
                 ]
             )
             if (
                 bucket_mass >= APPROACH_DUMP_MIN_MASS_KG
                 and height_above_rim >= APPROACH_DUMP_MIN_HEIGHT_ABOVE_RIM_M
-                and bed_outside_distance
-                <= APPROACH_DUMP_MAX_BED_FOOTPRINT_OUTSIDE_DISTANCE_M
+                and dump_area_outside_distance
+                <= APPROACH_DUMP_MAX_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_M
             ):
                 return int(step_index)
         return None

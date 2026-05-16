@@ -152,7 +152,7 @@ def write_v2_extension(
         _write_v2_group(f, v2)
 
 
-def read_episode(path: str | Path) -> dict[str, Any]:
+def read_episode(path: str | Path, *, load_images: bool = True) -> dict[str, Any]:
     """
     Read a full episode from HDF5 (v1.0 and v1.1 compatible).
 
@@ -162,7 +162,7 @@ def read_episode(path: str | Path) -> dict[str, Any]:
       "qpos":             (T, Nq) float32,
       "qvel":             (T, Nq) float32,
       "actions":          (T, Na) float32,
-      "images":           {cam: (T, H, W, 3) uint8},
+      "images":           {cam: (T, H, W, 3) uint8}, or {} when load_images=False
       "rewards":          (T,) float32 | None,
       "env_state":        (T, M) float32 | None,    # v1.1
       "step_ids":         (T,) int64 | None,        # v1.1
@@ -184,7 +184,7 @@ def read_episode(path: str | Path) -> dict[str, Any]:
 
         # images
         images = {}
-        if "observations/images" in f:
+        if load_images and "observations/images" in f:
             for cam in f["observations/images"]:
                 images[cam] = f[f"observations/images/{cam}"][()]
         result["images"] = images
@@ -287,7 +287,7 @@ def _read_v2_group(h5_file: h5py.File) -> dict[str, dict[str, Any]] | None:
         section_payload: dict[str, Any] = {}
         for dataset_name in section_group:
             value = section_group[dataset_name][()]
-            if isinstance(value, np.ndarray) and value.dtype.kind == "S":
+            if isinstance(value, np.ndarray) and value.dtype.kind in {"S", "O"}:
                 value = np.asarray(
                     [
                         item.decode() if isinstance(item, bytes) else item

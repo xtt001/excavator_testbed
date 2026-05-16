@@ -8,7 +8,9 @@ import pickle
 from pathlib import Path
 from typing import Any
 
+from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_DIM
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
+from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 
 
 def train_policy(config: dict[str, Any]) -> None:
@@ -194,6 +196,12 @@ def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) ->
         "qpos": _resolve_single_low_dim_dim("qpos", equipment_model),
         "qvel": _resolve_single_low_dim_dim("qvel", equipment_model),
         "goal_tokens": _resolve_single_low_dim_dim("goal_tokens", equipment_model),
+        "cell_entry_tokens": _resolve_single_low_dim_dim(
+            "cell_entry_tokens", equipment_model
+        ),
+        "dig_cut_tokens": _resolve_single_low_dim_dim(
+            "dig_cut_tokens", equipment_model
+        ),
     }
     return int(sum(dims[key] for key in low_dim_keys))
 
@@ -202,10 +210,19 @@ def _resolve_single_low_dim_dim(key: str, equipment_model: str) -> int:
     equipment_model = str(equipment_model).lower()
     if key == "goal_tokens":
         return int(GOAL_TOKEN_DIM)
+    if key == "cell_entry_tokens":
+        return int(CELL_ENTRY_TOKEN_DIM)
+    if key == "dig_cut_tokens":
+        return int(DIG_CUT_TOKEN_DIM)
     if key in ("qpos", "qvel"):
         if "bimanual" in equipment_model:
             return 14
-        if "excavator_simple" in equipment_model or "agxunity" in equipment_model or "agx" in equipment_model:
+        if (
+            "excavator_simple" in equipment_model
+            or "agxunity" in equipment_model
+            or "agx" in equipment_model
+            or "yulong" in equipment_model
+        ):
             return 4
         return 7
     raise ValueError(f"Unsupported low-dim key {key!r}.")

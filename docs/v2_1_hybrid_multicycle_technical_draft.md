@@ -247,6 +247,10 @@ qualified_dig_start =
     )
 ```
 
+`qualified_dig_start_mode = "contact_depth"` 可用于 YuLong 这类小斗环境：
+同样要求 dig-area 距离和低于平面深度，但不再要求质量增量或
+`good_dig_start/load_progress`，避免小满载质量与颗粒传感器滞后把入口推迟到已经装载之后。
+
 建议默认参数：
 
 - `K = 5`

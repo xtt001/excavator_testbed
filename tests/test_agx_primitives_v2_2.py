@@ -4,15 +4,21 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import h5py
 import numpy as np
 
 from testbed.data.schema import (
-    ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
-    ENV_STATE_BUCKET_BED_RELATIVE_X_IDX,
-    ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+    ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
     ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
@@ -23,6 +29,7 @@ from testbed.data.hdf5_io import read_episode, write_episode
 from testbed.data.primitives_v2_2 import (
     CARRY_ACTION_HORIZON_STEPS,
     CARRY_MIN_WINDOW_LEN,
+    PRIMITIVE_BOUNDARY_PROFILE_EFFECT_RELEASE_FALLBACK,
     build_primitive_datasets,
     build_primitive_datasets_5p,
     extract_workskill_primitive_slices,
@@ -99,6 +106,92 @@ class TestPrimitivesV22(unittest.TestCase):
             self.assertEqual(return_episode["metadata"]["primitive_name"], "return")
             self.assertEqual(int(return_episode["metadata"]["source_prev_cycle_id"]), 0)
             self.assertEqual(int(return_episode["metadata"]["source_next_cycle_id"]), 1)
+
+    def test_direct_raw_manifest_and_vds_modes_do_not_copy_images(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            raw_dir = tmp / "raw_enriched"
+            raw_dir.mkdir()
+            raw_episode = _make_workskill_episode_payload(length=360)
+            raw_episode["metadata"] = {"scenario_id": "s0_truck", "v2_enabled": True}
+            raw_episode["v2"]["cycle"] = {
+                "cycle_id": np.asarray([0], dtype=np.int32),
+                "start_step": np.asarray([0], dtype=np.int32),
+                "end_step": np.asarray([359], dtype=np.int32),
+                "cycle_success": np.asarray([1], dtype=np.uint8),
+                "stage_success": np.asarray([1], dtype=np.uint8),
+                "deposit_delta_kg": np.asarray([420.0], dtype=np.float32),
+            }
+            write_episode(raw_dir / "episode_0.hdf5", **raw_episode)
+
+            manifest_root = tmp / "primitive_manifest"
+            manifest_summary = build_primitive_datasets(
+                raw_dirs=[raw_dir],
+                output_root=manifest_root,
+                require_return=False,
+                storage_mode="manifest",
+            )
+            self.assertEqual(manifest_summary["storage_mode"], "manifest")
+            self.assertEqual(
+                manifest_summary["primitives"]["dig"]["episode_count"], 1
+            )
+            self.assertTrue((manifest_root / "window_manifest.json").exists())
+            self.assertFalse(list(manifest_root.rglob("episode_*.hdf5")))
+
+            vds_root = tmp / "primitive_vds"
+            vds_summary = build_primitive_datasets(
+                raw_dirs=[raw_dir],
+                output_root=vds_root,
+                require_return=False,
+                storage_mode="vds",
+            )
+            self.assertEqual(vds_summary["storage_mode"], "vds")
+            dig_episode = read_episode(vds_root / "dig" / "episode_0.hdf5")
+            self.assertEqual(dig_episode["qpos"].shape[0], 20)
+            with h5py.File(vds_root / "dig" / "episode_0.hdf5", "r") as f:
+                self.assertTrue(f["observations/qpos"].is_virtual)
+                self.assertTrue(f["observations/images/fpv"].is_virtual)
+                self.assertEqual(f["metadata"].attrs["storage_mode"], "vds")
+
+    def test_primitive_split_preserves_source_cycle_qc_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            workskill_dir = tmp / "workskill"
+            raw_dir = tmp / "raw"
+            output_root = tmp / "primitives"
+            workskill_dir.mkdir()
+            raw_dir.mkdir()
+            episode = _make_workskill_episode_payload(length=360)
+            _mark_good_dump_quality(episode, official_dump_start=300)
+            episode["v2"]["cycle"].update(
+                {
+                    "cycle_id": np.asarray([2], dtype=np.int32),
+                    "stage_success": np.asarray([1], dtype=np.uint8),
+                    "stage_success_flags": np.asarray([15], dtype=np.uint8),
+                    "stage_failure_reason_code": np.asarray([0], dtype=np.uint8),
+                    "payload_gain_kg": np.asarray([120.0], dtype=np.float32),
+                    "dump_deposited_fraction": np.asarray([0.75], dtype=np.float32),
+                    "cell_entry_planner_ok": np.asarray([1], dtype=np.uint8),
+                }
+            )
+            write_episode(workskill_dir / "episode_0.hdf5", **episode)
+            _write_raw_episode(raw_dir / "episode_0.hdf5")
+
+            build_primitive_datasets(
+                workskill_dir=workskill_dir,
+                raw_dirs=[raw_dir],
+                output_root=output_root,
+            )
+
+            dig_episode = read_episode(output_root / "dig" / "episode_0.hdf5")
+            self.assertEqual(dig_episode["v2"]["cycle"]["cycle_id"].tolist(), [0])
+            self.assertEqual(dig_episode["v2"]["cycle"]["stage_success"].tolist(), [1])
+            self.assertEqual(int(dig_episode["metadata"]["stage_success"]), 1)
+            self.assertEqual(int(dig_episode["metadata"]["stage_success_flags"]), 15)
+            self.assertAlmostEqual(
+                float(dig_episode["metadata"]["payload_gain_kg"]),
+                120.0,
+            )
 
     def test_build_primitive_datasets_5p_creates_five_sibling_datasets(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -187,6 +280,46 @@ class TestPrimitivesV22(unittest.TestCase):
             self.assertFalse(bool(np.any(stable_tail_curl >= 5)))
             self.assertFalse(
                 bool(carry_episode["metadata"]["carry_tail_has_stable_strong_curl_out"])
+            )
+
+    def test_effect_release_fallback_splits_when_approach_stage_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workskill_dir = Path(tmpdir) / "workskill"
+            output_root = Path(tmpdir) / "primitives"
+            workskill_dir.mkdir()
+            episode = _make_workskill_episode_payload(length=360)
+            work_stage_id = episode["v2"]["step"]["work_stage_id"]
+            work_stage_id[work_stage_id == WORK_STAGE_NAME_TO_ID["approach_dump"]] = (
+                WORK_STAGE_NAME_TO_ID["carry"]
+            )
+            _mark_good_dump_quality(episode, official_dump_start=300)
+            write_episode(workskill_dir / "episode_0.hdf5", **episode)
+
+            summary = build_primitive_datasets(
+                workskill_dir=workskill_dir,
+                raw_dirs=[],
+                output_root=output_root,
+                require_return=False,
+                boundary_profile=PRIMITIVE_BOUNDARY_PROFILE_EFFECT_RELEASE_FALLBACK,
+            )
+
+            self.assertEqual(summary["primitives"]["carry"]["episode_count"], 1)
+            self.assertEqual(summary["primitives"]["dump"]["episode_count"], 1)
+            self.assertTrue(summary["dump_ownership_config"]["effect_release_fallback_enabled"])
+            carry_episode = read_episode(output_root / "carry" / "episode_0.hdf5")
+            dump_episode = read_episode(output_root / "dump" / "episode_0.hdf5")
+            self.assertEqual(carry_episode["step_ids"][-1], 269)
+            self.assertEqual(dump_episode["step_ids"][0], 270)
+            self.assertEqual(
+                dump_episode["metadata"]["dump_ownership_boundary_source"],
+                "pre_approach_stable_curl_out_good_dump",
+            )
+            self.assertEqual(
+                dump_episode["metadata"]["primitive_boundary_profile"],
+                PRIMITIVE_BOUNDARY_PROFILE_EFFECT_RELEASE_FALLBACK,
+            )
+            self.assertFalse(
+                bool(carry_episode["metadata"]["carry_tail_has_stable_release"])
             )
 
     def test_5p_carry_excludes_approach_and_release_actions(self) -> None:
@@ -379,8 +512,8 @@ class TestPrimitivesV22(unittest.TestCase):
             )
         )
 
-    def test_4p_builder_rejects_old_env_state_without_bed_geometry(self) -> None:
-        episode = _make_workskill_episode_payload(length=360, include_bed_geometry=False)
+    def test_4p_builder_rejects_old_env_state_without_dump_area_geometry(self) -> None:
+        episode = _make_workskill_episode_payload(length=360, include_dump_area_geometry=False)
 
         slices, rejects = extract_workskill_primitive_slices(
             episode=episode,
@@ -393,14 +526,14 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertTrue(
             any(
                 record.primitive_name == "carry"
-                and record.reason == "missing_bed_geometry_for_dump_intent"
+                and record.reason == "missing_dump_area_geometry_for_dump_intent"
                 for record in rejects
             )
         )
         self.assertTrue(
             any(
                 record.primitive_name == "dump"
-                and record.reason == "missing_bed_geometry_for_dump_intent"
+                and record.reason == "missing_dump_area_geometry_for_dump_intent"
                 for record in rejects
             )
         )
@@ -678,6 +811,58 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertTrue(policy.debug_state()["transition_completed"])
         self.assertEqual(policy.rollout_summary()["completed_transition_count"], 1)
 
+    def test_primitive_planner_supports_scripted_qpos_bootstrap(self) -> None:
+        target_qpos = np.asarray([0.50, 0.58, 0.62, 0.11], dtype=np.float32)
+        policy = PrimitivePlannerACTPolicy(
+            dig_policy=_ConstantPolicy(0),
+            carry_policy=_ConstantPolicy(1),
+            dump_policy=_ConstantPolicy(2),
+            return_policy=_ConstantPolicy(3),
+            boundary_detector=_FakeBoundaryDetector([]),
+            bootstrap_end_mode="scripted_qpos",
+            scripted_bootstrap_target_qpos=target_qpos,
+            scripted_bootstrap_action_clip=[0.75, 0.35, 0.35, 0.55],
+            scripted_bootstrap_hold_steps=1,
+        )
+
+        action = policy.predict(_obs(mass=0.0, dig_distance=0.20))
+        self.assertEqual(policy.debug_state()["skill_name"], "bootstrap")
+        self.assertGreater(float(action[0]), 0.0)
+        self.assertGreater(float(action[1]), 0.0)
+
+        obs = _obs(mass=0.0, dig_distance=0.20)
+        obs["qpos"] = target_qpos.copy()
+        obs["qvel"] = np.zeros(4, dtype=np.float32)
+        action = policy.predict(obs)
+        self.assertEqual(float(action[0]), 0.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "dig")
+        self.assertEqual(
+            policy.debug_state()["skill_switch_reason"],
+            "bootstrap_to_dig",
+        )
+
+    def test_primitive_planner_scripted_qpos_bootstrap_action_signs(self) -> None:
+        target_qpos = np.asarray([0.50, 0.58, 0.62, 0.11], dtype=np.float32)
+        policy = PrimitivePlannerACTPolicy(
+            dig_policy=_ConstantPolicy(0),
+            carry_policy=_ConstantPolicy(1),
+            dump_policy=_ConstantPolicy(2),
+            return_policy=_ConstantPolicy(3),
+            boundary_detector=_FakeBoundaryDetector([]),
+            bootstrap_end_mode="scripted_qpos",
+            scripted_bootstrap_target_qpos=target_qpos,
+            scripted_bootstrap_action_clip=[0.75, 0.35, 0.35, 0.55],
+            scripted_bootstrap_action_signs=[1.0, -1.0, 1.0, 1.0],
+        )
+
+        obs = _obs(mass=0.0, dig_distance=0.20)
+        obs["qpos"] = np.asarray([0.50, 0.42, 0.62, 0.50], dtype=np.float32)
+        obs["qvel"] = np.zeros(4, dtype=np.float32)
+        action = policy.predict(obs)
+
+        self.assertLess(float(action[1]), 0.0)
+        self.assertLess(float(action[3]), 0.0)
+
     def test_primitive_planner_injects_goal_tokens_for_sequence(self) -> None:
         dig_policy = _RecordingPolicy(0)
         return_policy = _RecordingPolicy(3)
@@ -719,6 +904,36 @@ class TestPrimitivesV22(unittest.TestCase):
         np.testing.assert_allclose(dig_policy.last_goal_tokens[4:7], [0.0, 0.0, 1.0])
         self.assertEqual(policy.debug_state()["primitive_goal_curr_sector_id"], 0)
         self.assertEqual(policy.debug_state()["primitive_goal_next_sector_id"], 2)
+
+    def test_primitive_planner_injects_cell_entry_tokens_only_for_dig(self) -> None:
+        dig_policy = _RecordingPolicy(0)
+        carry_policy = _RecordingPolicy(1)
+        policy = PrimitivePlannerACTPolicy(
+            dig_policy=dig_policy,
+            carry_policy=carry_policy,
+            dump_policy=_RecordingPolicy(2),
+            return_policy=_RecordingPolicy(3),
+            boundary_detector=_FakeBoundaryDetector([]),
+            cell_entry_enabled=True,
+            dig_to_carry_min_bucket_mass_kg=20.0,
+            dig_to_carry_min_distance_to_dig_area_m=0.0,
+        )
+
+        action = policy.predict(_cell_entry_obs(mass=0.0, dig_distance=0.0))
+        self.assertEqual(float(action[0]), 0.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "dig")
+        self.assertTrue(policy.debug_state()["cell_entry_token_injected"])
+        self.assertEqual(dig_policy.last_cell_entry_tokens.shape, (10,))
+        self.assertEqual(
+            int(policy.debug_state()["cell_entry_selected_cell_id"]),
+            2,
+        )
+
+        action = policy.predict(_cell_entry_obs(mass=50.0, dig_distance=0.1))
+        self.assertEqual(float(action[0]), 1.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "carry")
+        self.assertFalse(policy.debug_state()["cell_entry_token_injected"])
+        self.assertIsNone(carry_policy.last_cell_entry_tokens)
 
     def test_primitive_planner_can_wait_past_dump_end_boundary_for_hold(self) -> None:
         detector = _FakeBoundaryDetector(
@@ -804,7 +1019,7 @@ class TestPrimitivesV22(unittest.TestCase):
             "dump_to_return_dump_end",
         )
 
-    def test_primitive_planner_uses_bed_relative_readiness_not_horizontal_only(self) -> None:
+    def test_primitive_planner_uses_dump_area_relative_readiness_not_horizontal_only(self) -> None:
         policy = PrimitivePlannerACTPolicy(
             dig_policy=_ConstantPolicy(0),
             carry_policy=_ConstantPolicy(1),
@@ -825,7 +1040,7 @@ class TestPrimitivesV22(unittest.TestCase):
                 height_above_rim=0.45,
                 over_footprint=False,
                 clearance_ok=True,
-                bed_footprint_outside_distance=0.30,
+                dump_area_footprint_outside_distance=0.30,
             )
         )
         self.assertEqual(float(action[0]), 1.0)
@@ -839,7 +1054,7 @@ class TestPrimitivesV22(unittest.TestCase):
                 height_above_rim=0.45,
                 over_footprint=False,
                 clearance_ok=True,
-                bed_footprint_outside_distance=0.03,
+                dump_area_footprint_outside_distance=0.03,
             )
         )
         self.assertEqual(float(action[0]), 2.0)
@@ -862,9 +1077,9 @@ class TestPrimitivesV22(unittest.TestCase):
             dump_ready_min_height_above_rim_m=0.30,
             dump_ready_require_over_footprint=False,
             dump_ready_require_clearance=False,
-            dump_ready_position_mode="bed_relative",
+            dump_ready_position_mode="dump_area_relative",
             dump_ready_max_horizontal_distance_m=None,
-            dump_ready_max_bed_footprint_outside_distance_m=1.25,
+            dump_ready_max_dump_area_footprint_outside_distance_m=1.25,
         )
 
         policy.predict(_obs(mass=320.0, dig_distance=0.30))
@@ -875,7 +1090,7 @@ class TestPrimitivesV22(unittest.TestCase):
                 height_above_rim=0.45,
                 over_footprint=False,
                 clearance_ok=False,
-                bed_footprint_outside_distance=2.40,
+                dump_area_footprint_outside_distance=2.40,
             )
         )
         self.assertEqual(float(action[0]), 1.0)
@@ -888,13 +1103,13 @@ class TestPrimitivesV22(unittest.TestCase):
                 height_above_rim=0.45,
                 over_footprint=False,
                 clearance_ok=False,
-                bed_footprint_outside_distance=1.20,
+                dump_area_footprint_outside_distance=1.20,
             )
         )
         self.assertEqual(float(action[0]), 2.0)
         self.assertEqual(policy.debug_state()["skill_name"], "dump")
 
-    def test_primitive_planner_uses_signed_bed_relative_window(self) -> None:
+    def test_primitive_planner_uses_signed_dump_area_relative_window(self) -> None:
         policy = PrimitivePlannerACTPolicy(
             dig_policy=_ConstantPolicy(0),
             carry_policy=_ConstantPolicy(1),
@@ -907,13 +1122,13 @@ class TestPrimitivesV22(unittest.TestCase):
             dump_ready_min_height_above_rim_m=0.30,
             dump_ready_require_over_footprint=False,
             dump_ready_require_clearance=False,
-            dump_ready_position_mode="bed_relative",
+            dump_ready_position_mode="dump_area_relative",
             dump_ready_max_horizontal_distance_m=None,
-            dump_ready_max_bed_footprint_outside_distance_m=1.35,
-            dump_ready_min_bed_relative_x_m=-5.0,
-            dump_ready_max_bed_relative_x_m=2.0,
-            dump_ready_min_bed_relative_z_m=2.75,
-            dump_ready_max_bed_relative_z_m=3.50,
+            dump_ready_max_dump_area_footprint_outside_distance_m=1.35,
+            dump_ready_min_dump_area_relative_x_m=-5.0,
+            dump_ready_max_dump_area_relative_x_m=2.0,
+            dump_ready_min_dump_area_relative_z_m=2.75,
+            dump_ready_max_dump_area_relative_z_m=3.50,
         )
 
         policy.predict(_obs(mass=320.0, dig_distance=0.30))
@@ -922,9 +1137,9 @@ class TestPrimitivesV22(unittest.TestCase):
                 mass=320.0,
                 dig_distance=0.30,
                 height_above_rim=0.45,
-                bed_relative_x=-6.20,
-                bed_relative_z=3.10,
-                bed_footprint_outside_distance=1.20,
+                dump_area_relative_x=-6.20,
+                dump_area_relative_z=3.10,
+                dump_area_footprint_outside_distance=1.20,
             )
         )
         self.assertEqual(float(action[0]), 1.0)
@@ -935,9 +1150,9 @@ class TestPrimitivesV22(unittest.TestCase):
                 mass=320.0,
                 dig_distance=0.30,
                 height_above_rim=0.45,
-                bed_relative_x=-3.20,
-                bed_relative_z=2.40,
-                bed_footprint_outside_distance=1.20,
+                dump_area_relative_x=-3.20,
+                dump_area_relative_z=2.40,
+                dump_area_footprint_outside_distance=1.20,
             )
         )
         self.assertEqual(float(action[0]), 1.0)
@@ -948,9 +1163,9 @@ class TestPrimitivesV22(unittest.TestCase):
                 mass=320.0,
                 dig_distance=0.30,
                 height_above_rim=0.45,
-                bed_relative_x=-3.20,
-                bed_relative_z=3.10,
-                bed_footprint_outside_distance=1.20,
+                dump_area_relative_x=-3.20,
+                dump_area_relative_z=3.10,
+                dump_area_footprint_outside_distance=1.20,
             )
         )
         self.assertEqual(float(action[0]), 2.0)
@@ -1066,7 +1281,7 @@ class TestPrimitivesV22(unittest.TestCase):
             height_above_rim=0.45,
             over_footprint=False,
             clearance_ok=True,
-            bed_footprint_outside_distance=0.03,
+            dump_area_footprint_outside_distance=0.03,
         )
         action = policy.predict(dump_ready_obs)
         self.assertEqual(float(action[0]), 2.0)
@@ -1107,7 +1322,7 @@ def _write_workskill_episode(path: Path) -> None:
 def _make_workskill_episode_payload(
     length: int,
     *,
-    include_bed_geometry: bool = True,
+    include_dump_area_geometry: bool = True,
 ) -> dict:
     if length >= 320:
         carry_start = 20
@@ -1155,7 +1370,7 @@ def _make_workskill_episode_payload(
     dump_start_mask[official_dump_start] = 1
     dump_end_mask[length - 1] = 1
 
-    env_state_width = 16 if include_bed_geometry else 13
+    env_state_width = 16 if include_dump_area_geometry else 13
     env_state = np.zeros((length, env_state_width), dtype=np.float32)
     env_state[:, ENV_STATE_MASS_IN_BUCKET_IDX] = 500.0
     env_state[:, ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX] = 0.0
@@ -1164,26 +1379,26 @@ def _make_workskill_episode_payload(
     env_state[:, ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX] = 0.60
     env_state[:, ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX] = 0.0
     env_state[:, ENV_STATE_DUMP_CLEARANCE_OK_IDX] = 1.0
-    if include_bed_geometry:
-        # Approach starts outside the truck-top release zone and moves inward.
-        env_state[:, ENV_STATE_BUCKET_BED_RELATIVE_X_IDX] = -1.50
-        env_state[:, ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX] = 2.80
-        env_state[:, ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = 1.00
+    if include_dump_area_geometry:
+        # Approach starts outside the dump-area release zone and moves inward.
+        env_state[:, ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX] = -1.50
+        env_state[:, ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX] = 2.80
+        env_state[:, ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = 1.00
         if approach_start < length:
             approach_len = max(1, official_dump_start - approach_start)
             env_state[
                 approach_start:official_dump_start,
-                ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+                ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
             ] = np.linspace(0.90, 0.30, approach_len, dtype=np.float32)
-            env_state[approach_start:official_dump_start, ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX] = np.linspace(
+            env_state[approach_start:official_dump_start, ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX] = np.linspace(
                 2.90,
                 2.35,
                 approach_len,
                 dtype=np.float32,
             )
-        env_state[dump_intent_start:, ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = 0.30
-        env_state[official_dump_start:, ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = 0.20
-        env_state[official_dump_start:, ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX] = 2.25
+        env_state[dump_intent_start:, ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = 0.30
+        env_state[official_dump_start:, ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = 0.20
+        env_state[official_dump_start:, ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX] = 2.25
 
     return {
         "qpos": qpos,
@@ -1328,9 +1543,15 @@ class _RecordingPolicy(_ConstantPolicy):
     def __init__(self, value: float) -> None:
         super().__init__(value)
         self.last_goal_tokens: np.ndarray | None = None
+        self.last_cell_entry_tokens: np.ndarray | None = None
 
     def predict(self, obs: dict) -> np.ndarray:
         self.last_goal_tokens = np.asarray(obs.get("goal_tokens"), dtype=np.float32)
+        self.last_cell_entry_tokens = (
+            None
+            if "cell_entry_tokens" not in obs
+            else np.asarray(obs.get("cell_entry_tokens"), dtype=np.float32)
+        )
         return super().predict(obs)
 
 
@@ -1370,9 +1591,9 @@ def _obs(
     height_above_rim: float | None = None,
     over_footprint: bool | None = None,
     clearance_ok: bool | None = None,
-    bed_relative_x: float = 0.0,
-    bed_relative_z: float = 0.0,
-    bed_footprint_outside_distance: float | None = None,
+    dump_area_relative_x: float = 0.0,
+    dump_area_relative_z: float = 0.0,
+    dump_area_footprint_outside_distance: float | None = None,
 ) -> dict:
     env_state = np.zeros(16, dtype=np.float32)
     env_state[0] = float(mass)
@@ -1398,12 +1619,12 @@ def _obs(
         if clearance_ok is not None
         else (1.0 if dump_ready else 0.0)
     )
-    if bed_footprint_outside_distance is None:
-        bed_footprint_outside_distance = 0.0 if bool(env_state[11] > 0.5) else float(env_state[9])
-    env_state[ENV_STATE_BUCKET_BED_RELATIVE_X_IDX] = float(bed_relative_x)
-    env_state[ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX] = float(bed_relative_z)
-    env_state[ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = float(
-        bed_footprint_outside_distance
+    if dump_area_footprint_outside_distance is None:
+        dump_area_footprint_outside_distance = 0.0 if bool(env_state[11] > 0.5) else float(env_state[9])
+    env_state[ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX] = float(dump_area_relative_x)
+    env_state[ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX] = float(dump_area_relative_z)
+    env_state[ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = float(
+        dump_area_footprint_outside_distance
     )
     return {
         "qpos": np.zeros(4, dtype=np.float32),
@@ -1418,17 +1639,31 @@ def _obs(
             "bucket_height_above_target_rim_m": float(env_state[10]),
             "bucket_over_target_footprint_mask": float(env_state[11]),
             "dump_clearance_ok_mask": float(env_state[12]),
-            "bucket_bed_relative_x_m": float(
-                env_state[ENV_STATE_BUCKET_BED_RELATIVE_X_IDX]
+            "bucket_dump_area_relative_x_m": float(
+                env_state[ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX]
             ),
-            "bucket_bed_relative_z_m": float(
-                env_state[ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX]
+            "bucket_dump_area_relative_z_m": float(
+                env_state[ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX]
             ),
-            "bucket_bed_footprint_outside_distance_m": float(
-                env_state[ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX]
+            "bucket_dump_area_footprint_outside_distance_m": float(
+                env_state[ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX]
             ),
         },
     }
+
+
+def _cell_entry_obs(*, mass: float, dig_distance: float) -> dict:
+    obs = _obs(mass=mass, dig_distance=dig_distance)
+    env_state = np.zeros(28, dtype=np.float32)
+    old_env_state = np.asarray(obs["env_state"], dtype=np.float32)
+    env_state[: len(old_env_state)] = old_env_state
+    env_state[ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX] = 1.0
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX] = -0.625
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX] = 0.0
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX] = 0.0
+    env_state[ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX] = 2.0
+    obs["env_state"] = env_state
+    return obs
 
 
 if __name__ == "__main__":

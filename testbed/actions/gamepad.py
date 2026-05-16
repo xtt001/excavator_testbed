@@ -67,6 +67,7 @@ class JoystickActionSource(ActionSource):
         clip:        float = 1.0,
         reset_button: int | None = None,
         discard_button: int | None = None,
+        save_button: int | None = None,
         quit_button: int | None = None,
         button_joystick_ids: Sequence[int] | None = None,
         response_profile: dict | None = None,
@@ -107,6 +108,7 @@ class JoystickActionSource(ActionSource):
         )
         self._reset_button = self._normalize_button(reset_button, name="reset_button")
         self._discard_button = self._normalize_button(discard_button, name="discard_button")
+        self._save_button = self._normalize_button(save_button, name="save_button")
         self._quit_button = self._normalize_button(quit_button, name="quit_button")
         self._button_states: dict[tuple[int, int], bool] = {}
         self._response_profile_cfg = dict(response_profile or {})
@@ -182,6 +184,7 @@ class JoystickActionSource(ActionSource):
             extras={
                 "reset_requested": self._button_edge(self._reset_button),
                 "discard_requested": self._button_edge(self._discard_button),
+                "save_episode_requested": self._button_edge(self._save_button),
                 "quit_requested": self._button_edge(self._quit_button),
             },
         )
@@ -251,6 +254,7 @@ class JoystickActionSource(ActionSource):
             clip=cfg.get("clip", 1.0),
             reset_button=cfg.get("reset_button"),
             discard_button=cfg.get("discard_button"),
+            save_button=cfg.get("save_button"),
             quit_button=cfg.get("quit_button"),
             button_joystick_ids=cfg.get("button_joystick_ids"),
             response_profile=cfg.get("response_profile"),

@@ -80,9 +80,21 @@ Schema v1.1 layout (add-only on top of v1.0)
 │   │                                      bucket_height_above_target_rim_m,
 │   │                                      bucket_over_target_footprint_mask,
 │   │                                      dump_clearance_ok_mask,
-│   │                                      bucket_bed_relative_x_m,
-│   │                                      bucket_bed_relative_z_m,
-│   │                                      bucket_bed_footprint_outside_distance_m]
+│   │                                      bucket_dump_area_relative_x_m,
+│   │                                      bucket_dump_area_relative_z_m,
+│   │                                      bucket_dump_area_footprint_outside_distance_m,
+│   │                                      dig_area_geometry_available,
+│   │                                      dig_area_long_axis,
+│   │                                      dig_area_grid_long_count,
+│   │                                      dig_area_grid_short_count,
+│   │                                      bucket_dig_area_relative_x_m,
+│   │                                      bucket_dig_area_relative_y_m,
+│   │                                      bucket_dig_area_relative_z_m,
+│   │                                      bucket_dig_area_long_norm,
+│   │                                      bucket_dig_area_short_norm,
+│   │                                      bucket_dig_area_long_index,
+│   │                                      bucket_dig_area_short_index,
+│   │                                      bucket_dig_area_cell_id]
 │   │                                      ← v1.1 add-only
 │   └── images/
 │       └── fpv              (T, H, W, 3) uint8                        ← v1.1
@@ -113,6 +125,8 @@ Optional Repo A `/v2` extension group (still schema_version="1.1")
 │   ├── qualified_dig_start_mask (T,) uint8
 │   ├── dump_start_mask      (T,)    uint8
 │   ├── dump_end_mask        (T,)    uint8
+│   ├── cell_entry_tokens    (T, 10) float32 optional
+│   ├── dig_cut_tokens       (T, 10) float32 optional operator-first dig target
 │   ├── pause_mask           (T,)    uint8
 │   └── boundary_mask        (T,)    uint8
 └── cycle/
@@ -131,7 +145,19 @@ Optional Repo A `/v2` extension group (still schema_version="1.1")
     ├── collision_count_delta (K,)   int32
     ├── transition_source    (K,)    string
     ├── plan_source          (K,)    string
-    └── cycle_success        (K,)    int8
+    ├── cycle_success        (K,)    int8  legacy dump-complete success
+    ├── dig_success          (K,)    uint8 optional stage success
+    ├── carry_success        (K,)    uint8 optional stage success
+    ├── dump_success         (K,)    uint8 optional stage success
+    ├── return_success       (K,)    uint8 optional stage success
+    ├── return_required      (K,)    uint8 optional stage mask
+    ├── stage_success        (K,)    uint8 optional composite success
+    ├── stage_success_flags  (K,)    int32 optional bit mask
+    ├── stage_failure_reason_code (K,) int32 optional first failure reason
+    ├── payload_gain_kg      (K,)    float32 optional
+    ├── carry_loss_before_dump_kg (K,) float32 optional
+    ├── dump_deposited_fraction (K,) float32 optional
+    └── residual_bucket_mass_after_dump_kg (K,) float32 optional
 """
 
 # ── Schema version ────────────────────────────────────────────────────────────
@@ -167,6 +193,8 @@ DS_V2_STEP_PHASE_ID       = "v2/step/phase_id"
 DS_V2_STEP_PHASE_PROGRESS = "v2/step/phase_progress"
 DS_V2_STEP_WORK_STAGE_ID  = "v2/step/work_stage_id"
 DS_V2_STEP_GOAL_TOKENS    = "v2/step/goal_tokens"
+DS_V2_STEP_CELL_ENTRY_TOKENS = "v2/step/cell_entry_tokens"
+DS_V2_STEP_DIG_CUT_TOKENS = "v2/step/dig_cut_tokens"
 DS_V2_STEP_ACTION_LOSS_MASK = "v2/step/action_loss_mask"
 DS_V2_STEP_PLANNER_REPLAN_MASK = "v2/step/planner_replan_mask"
 DS_V2_STEP_QUALIFIED_DIG_START_MASK = "v2/step/qualified_dig_start_mask"
@@ -191,6 +219,25 @@ DS_V2_CYCLE_COLLISION_COUNT_DELTA = "v2/cycle/collision_count_delta"
 DS_V2_CYCLE_TRANSITION_SOURCE = "v2/cycle/transition_source"
 DS_V2_CYCLE_PLAN_SOURCE = "v2/cycle/plan_source"
 DS_V2_CYCLE_SUCCESS         = "v2/cycle/cycle_success"
+DS_V2_CYCLE_DIG_SUCCESS = "v2/cycle/dig_success"
+DS_V2_CYCLE_CARRY_SUCCESS = "v2/cycle/carry_success"
+DS_V2_CYCLE_DUMP_SUCCESS = "v2/cycle/dump_success"
+DS_V2_CYCLE_RETURN_SUCCESS = "v2/cycle/return_success"
+DS_V2_CYCLE_RETURN_REQUIRED = "v2/cycle/return_required"
+DS_V2_CYCLE_STAGE_SUCCESS = "v2/cycle/stage_success"
+DS_V2_CYCLE_STAGE_SUCCESS_FLAGS = "v2/cycle/stage_success_flags"
+DS_V2_CYCLE_STAGE_FAILURE_REASON_CODE = "v2/cycle/stage_failure_reason_code"
+DS_V2_CYCLE_PAYLOAD_GAIN_KG = "v2/cycle/payload_gain_kg"
+DS_V2_CYCLE_CARRY_LOSS_BEFORE_DUMP_KG = "v2/cycle/carry_loss_before_dump_kg"
+DS_V2_CYCLE_DUMP_DEPOSITED_FRACTION = "v2/cycle/dump_deposited_fraction"
+DS_V2_CYCLE_RESIDUAL_BUCKET_MASS_AFTER_DUMP_KG = (
+    "v2/cycle/residual_bucket_mass_after_dump_kg"
+)
+DS_V2_CYCLE_EFFECTIVE_DEPOSIT_DELTA_KG = "v2/cycle/cycle_effective_deposit_delta_kg"
+DS_V2_CYCLE_LEGACY_DUMP_END_DEPOSIT_DELTA_KG = (
+    "v2/cycle/legacy_dump_end_deposit_delta_kg"
+)
+DS_V2_CYCLE_DUMP_WINDOW_DEPOSIT_DELTA_KG = "v2/cycle/dump_window_deposit_delta_kg"
 
 # ── Metadata attribute names — v1.0 ──────────────────────────────────────────
 ATTR_SCHEMA_VERSION = "schema_version"
@@ -250,6 +297,17 @@ ATTR_REPLAY_SOURCE_DATASET = "replay_source_dataset"
 ATTR_REPLAY_CONFIG_PATH = "replay_config_path"
 ATTR_REPLAY_POST_TAIL_STEPS = "replay_post_tail_steps"
 ATTR_V2_ENABLED = "v2_enabled"
+ATTR_SCENE_VERSION = "scene_version"
+ATTR_SOIL_PRESET_ID = "soil_preset_id"
+ATTR_DIG_AREA_PRESET_ID = "dig_area_preset_id"
+ATTR_DUMP_AREA_PRESET_ID = "dump_area_preset_id"
+ATTR_TASK_GOAL_DESCRIPTION = "task_goal_description"
+ATTR_TARGET_DEPTH_M = "target_depth_m"
+ATTR_RECORDING_PROTOCOL_VERSION = "recording_protocol_version"
+ATTR_WARMUP_OR_TRAIN = "warmup_or_train"
+ATTR_OPERATOR_NOTES = "operator_notes"
+ATTR_OBSERVER_NOTES = "observer_notes"
+ATTR_ENV_STATE_CONTRACT_VERSION = "env_state_contract_version"
 
 # ── V0 locked constants ───────────────────────────────────────────────────────
 DEFAULT_CONTROL_HZ       = 50
@@ -257,7 +315,9 @@ DEFAULT_DT               = 0.02
 DEFAULT_ACTION_SEMANTICS = "actuator_speed_cmd"
 DEFAULT_IMAGE_FORMAT     = "raw_rgb"
 
-# env_state indices for the current AGX Unity contract
+# env_state indices for the current AGX Unity contract. Index 4 keeps the
+# historical field name but now mirrors the DumpArea footprint outside-distance;
+# target-safety reward/QC should use the explicit geometry fields at indices 9-15.
 ENV_STATE_MASS_IN_BUCKET_IDX = 0
 ENV_STATE_EXCAVATED_MASS_IDX = 1
 ENV_STATE_MASS_IN_TARGET_BOX_IDX = 2
@@ -271,9 +331,105 @@ ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX = 9
 ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX = 10
 ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX = 11
 ENV_STATE_DUMP_CLEARANCE_OK_IDX = 12
-ENV_STATE_BUCKET_BED_RELATIVE_X_IDX = 13
-ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX = 14
-ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX = 15
+ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX = 13
+ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX = 14
+ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX = 15
+ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX = 16
+ENV_STATE_DIG_AREA_LONG_AXIS_IDX = 17
+ENV_STATE_DIG_AREA_GRID_LONG_COUNT_IDX = 18
+ENV_STATE_DIG_AREA_GRID_SHORT_COUNT_IDX = 19
+ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX = 20
+ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX = 21
+ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX = 22
+ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX = 23
+ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX = 24
+ENV_STATE_BUCKET_DIG_AREA_LONG_INDEX_IDX = 25
+ENV_STATE_BUCKET_DIG_AREA_SHORT_INDEX_IDX = 26
+ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX = 27
+ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX = 28
+ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX = 29
+ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX = 30
+ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX = 31
+ENV_STATE_BUCKET_DEPTH_BELOW_TARGET_SURFACE_IDX = 32
+ENV_STATE_DIG_AREA_SURFACE_DEPTH_START_IDX = 33
+ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX = 39
+ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX = 45
+ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX = 51
+ENV_STATE_BUCKET_MASS_DELTA_IDX = 57
+ENV_STATE_DEPOSITED_MASS_IN_DUMP_AREA_IDX = 58
+ENV_STATE_OFFTARGET_DEPOSITED_MASS_IDX = 59
+ENV_STATE_TARGET_GEOMETRY_AVAILABLE_IDX = 60
+ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX = 61
+ENV_STATE_BUCKET_CONTACT_DUMP_AREA_MASK_IDX = 62
+ENV_STATE_HARD_COLLISION_COUNT_IDX = 63
+ENV_STATE_V2_2_DIM = 64
+
+ENV_STATE_ORDER_V2_2 = (
+    "mass_in_bucket_kg",
+    "excavated_mass_kg",
+    "mass_in_target_box_kg",
+    "deposited_mass_in_target_box_kg",
+    "min_distance_to_target_m",
+    "target_hard_collision_count",
+    "target_contact_max_normal_force_n",
+    "min_distance_to_dig_area_m",
+    "bucket_depth_below_dig_area_plane_m",
+    "target_horizontal_distance_m",
+    "bucket_height_above_target_rim_m",
+    "bucket_over_target_footprint_mask",
+    "dump_clearance_ok_mask",
+    "bucket_dump_area_relative_x_m",
+    "bucket_dump_area_relative_z_m",
+    "bucket_dump_area_footprint_outside_distance_m",
+    "dig_area_geometry_available",
+    "dig_area_long_axis",
+    "dig_area_grid_long_count",
+    "dig_area_grid_short_count",
+    "bucket_dig_area_relative_x_m",
+    "bucket_dig_area_relative_y_m",
+    "bucket_dig_area_relative_z_m",
+    "bucket_dig_area_long_norm",
+    "bucket_dig_area_short_norm",
+    "bucket_dig_area_long_index",
+    "bucket_dig_area_short_index",
+    "bucket_dig_area_cell_id",
+    "bucket_tip_dig_area_x_m",
+    "bucket_tip_dig_area_y_m",
+    "bucket_tip_dig_area_z_m",
+    "bucket_depth_below_local_surface_m",
+    "bucket_depth_below_target_surface_m",
+    "dig_area_surface_depth_m_r0_c0",
+    "dig_area_surface_depth_m_r0_c1",
+    "dig_area_surface_depth_m_r1_c0",
+    "dig_area_surface_depth_m_r1_c1",
+    "dig_area_surface_depth_m_r2_c0",
+    "dig_area_surface_depth_m_r2_c1",
+    "dig_area_removed_depth_m_r0_c0",
+    "dig_area_removed_depth_m_r0_c1",
+    "dig_area_removed_depth_m_r1_c0",
+    "dig_area_removed_depth_m_r1_c1",
+    "dig_area_removed_depth_m_r2_c0",
+    "dig_area_removed_depth_m_r2_c1",
+    "dig_area_target_depth_m_r0_c0",
+    "dig_area_target_depth_m_r0_c1",
+    "dig_area_target_depth_m_r1_c0",
+    "dig_area_target_depth_m_r1_c1",
+    "dig_area_target_depth_m_r2_c0",
+    "dig_area_target_depth_m_r2_c1",
+    "dig_area_cell_valid_mask_r0_c0",
+    "dig_area_cell_valid_mask_r0_c1",
+    "dig_area_cell_valid_mask_r1_c0",
+    "dig_area_cell_valid_mask_r1_c1",
+    "dig_area_cell_valid_mask_r2_c0",
+    "dig_area_cell_valid_mask_r2_c1",
+    "bucket_mass_delta_kg",
+    "deposited_mass_in_dump_area_kg",
+    "offtarget_deposited_mass_kg",
+    "target_geometry_available",
+    "bucket_contact_dig_area_mask",
+    "bucket_contact_dump_area_mask",
+    "hard_collision_count",
+)
 
 # ── Image dataset name template ───────────────────────────────────────────────
 def image_ds(cam_name: str) -> str:

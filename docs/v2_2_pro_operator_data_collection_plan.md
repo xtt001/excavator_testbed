@@ -190,6 +190,22 @@ reset scene
 
 不要只录 3 铲作为主数据。3 铲可以保留为 smoke / calibration。
 
+当前 YuLong 主录制入口为：
+
+```bash
+tb-record-teleop --config testbed/configs/teleop_yulong_v2_2_pro_full_task.yaml
+```
+
+该配置把 `max_steps` 设为 20000，只作为防止失控和文件过大的硬上限；正常结束由 operator
+或 observer 在“可达区域已经低产 / 只剩边缘不可达土”时手动保存。由于当前 Unity
+3x2 `removed_depth` 仍为诊断字段，不作为成功来源，正式 success 暂时使用
+mass/productivity 口径：
+
+- episode 级：累计 `deposited_mass_in_target_box_kg`、完整 dump 次数和最近几铲边际产出；
+- cycle 级：`payload_gain_kg`、`deposit_delta_kg`、`dump_deposited_fraction`；
+- 质量分层：`stage_success` / `stage_failure_reason_code`；
+- 目标安全：target/dump area hard collision 和 unsafe dump distance，不惩罚 dig area 接触。
+
 ### 专业录制前的 new-env pilot
 
 因为下一阶段场景已经变化，专业师傅大规模录制前必须先做小规模 pilot。pilot 的目标是
@@ -447,6 +463,29 @@ primitives/dump
 primitives/return
 ```
 
+### Optional: Empty-Box Capacity Calibration
+
+在正式定义 task success 前，可以单独录一条 YuLong capacity calibration：
+
+```bash
+tb-record-teleop --config testbed/configs/teleop_yulong_v2_2_empty_box_capacity.yaml
+```
+
+这条数据的目标是让 operator 尽量把**可达、可生产**区域挖到边际收益很低，
+记录总 dump 次数、累计 `deposited_mass_in_target_box_kg`、各 cycle
+`payload_gain_kg` / `deposit_delta_kg`，以及 3x2 grid 的 removed depth。
+它不应直接把“挖空整个箱子”定义成 success，因为边缘土可能不可挖或不值得挖。
+
+容量标定数据 relabel 时应复用同一份 YAML 阈值：
+
+```bash
+tb-label-v2_1 \
+  --dataset-dir data/yulong_v2_2_empty_box_capacity_raw_20260514 \
+  --config testbed/configs/teleop_yulong_v2_2_empty_box_capacity.yaml \
+  --scenario-id s0_truck \
+  --qualified-dig-start-mode contact_depth
+```
+
 ### Step 5: 质量分层，不要只保留最干净数据
 
 不要把数据一刀切成“好/坏”。建议分层：
@@ -550,6 +589,8 @@ dump area 下不要加 truck-token。
    - 打开视频；
    - 检查 `env_state_order`。
 3. 调整 joystick 映射，让师傅确认手感。
+   - 当前 YuLong FarmStick 约定：左手 swing 轴在 pygame 里使用反向
+     `invert[0]=true`；手柄实体 Button 10 保存 episode，Button 11 丢弃并 reset。
 4. 录 3-5 条 warmup，不进训练。
 5. 让师傅看回放，确认仿真操作是否接近真实习惯。
 

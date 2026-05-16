@@ -87,13 +87,16 @@
 
 - `min_distance_to_dig_area_m <= 0.05`
 - `bucket_depth_below_dig_area_plane_m >= 0.02`
-- 并且满足下面二选一：
+- 默认 `qualified_dig_start_mode = "progress"` 时，还需要满足下面二选一：
   - `reward_phase in {"good_dig_start", "load_progress"}`
   - `mass_in_bucket_kg` 在最近 `K = 5` 步内的增量超过 `delta_mass_start`
+- 小斗或质量传感器滞后的环境可使用 `qualified_dig_start_mode = "contact_depth"`，
+  此时只用上述 dig-area 距离和低于平面的几何条件触发，不要求质量增量。
 
 默认：
 
 - `delta_mass_start = 5 kg`
+- `qualified_dig_start_mode = "progress"`
 
 #### `dump_start`
 

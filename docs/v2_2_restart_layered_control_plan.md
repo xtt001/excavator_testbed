@@ -17,7 +17,7 @@ V2.2 是起点，不是终点。
 - `dig -> carry -> dump -> return` 四 primitive ownership；
 - `dump` 作为一个混合 primitive，包含 approach、alignment、release、post-dump hold；
 - 不恢复默认 5P split；
-- 固定 truck / 固定 dump area 阶段不加 truck-token；
+- 固定 dump area 阶段不加 dump-area-token；
 - selected target 和 actual outcome 必须分开记录；
 - 错误 cell 的实际执行不能 rebind 成成功。
 
@@ -210,7 +210,7 @@ dig -> carry -> dump -> return
 不输入：
 
 - dump target；
-- truck-token；
+- dump-area-token；
 - return 目标。
 
 ### carry
@@ -235,7 +235,7 @@ dig -> carry -> dump -> return
 - post-dump hold；
 - 确保不要被 return 过早接管。
 
-固定 truck / 固定 dump area 下，`dump` 默认不 conditioned。
+固定 dump area 下，`dump` 默认不 conditioned。
 
 只有当 dump area 变成变量时，才给 `dump` 加 dump-area target。即使未来加，也只应该
 加 dump 相关目标，不把 dig cell / bite token 喂给 dump。
@@ -280,8 +280,9 @@ next actual bite point after dig already starts
 2. **actual accepted start**：执行效果上确认这次 dig 已经有效开始；
 3. **actual bite / removal**：soil 实际开始被切削和最终被移除的位置。
 
-当前 legacy `qualified_dig_start` 可以作为短期替代信号，但最终应升级为更清楚的
-effect-based event：
+当前 legacy `qualified_dig_start` 可以作为短期替代信号；YuLong 小斗环境使用
+`qualified_dig_start_mode=contact_depth`，让它先表达 dig-area 接触和下挖深度，
+不再等待质量增量。最终仍应升级为更清楚的 effect-based event：
 
 - bucket 进入目标作业区局部范围；
 - bucket 相对 local surface 达到可挖深度；
@@ -307,6 +308,15 @@ effect-based event：
 | 3 | `dig + return + dump` | 仅在 dump area 可变时启用 | target deposit vs actual deposit |
 
 `carry` 默认保持非 conditioned。
+
+当前 YuLong pilot 属于阶段 0：先按 V2.2 四 primitive ownership 重新切分和训练，
+不把 `left/mid/right` planner 或旧阈值实现当成新框架定义。若新环境没有打出
+`approach_dump` 标签，但稳定 release onset 和 final good dump 都成立，可以使用
+`tb-build-primitives-v2_2 --boundary-profile v2_2_effect_release_fallback`，把
+`carry -> dump` 边界前移到 effect-based release onset。reset 到首个 entry 的
+短期 smoke 兼容层使用 `primitive_planner_act` 的 `bootstrap_end_mode=scripted_qpos`；
+若设备动作方向和 qpos 方向不一致，用 `scripted_bootstrap.action_signs` 显式声明每轴符号。
+它只负责进入 planned/accepted entry 附近，不是 learned primitive，也不代表最终 planner。
 
 ### dig pose 如何强化
 
@@ -418,7 +428,7 @@ V2.3 / V2.3.5：
 
 - paramdig 是必要方向，但不能和 carry/dump/return 同时大改；
 - 5P split 不适合专业司机自然 dump；
-- truck-token 对固定 truck 没价值；
+- dump-area-token 对dump area 没价值；
 - return 的 target 不能定义成 next actual bite；
 - planner rebind 会掩盖失败，不能算成功；
 - 旧 detector / 旧 planner 可以作为过渡工具，但不是新框架定义。

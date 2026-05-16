@@ -1,0 +1,101 @@
+# YuLong V2.2 empty-box capacity calibration.
+#
+# Use this for a manual "try to deplete the reachable dig box" test. The goal is
+# to measure practical reachable capacity, not to create main training data.
+# Press joystick save_button or keyboard "s" when only edge/unreachable soil
+# remains, or let max_steps end the episode.
+
+agx:
+  host: "127.0.0.1"
+  port: 5057
+  timeout: 10.0
+  reset_terrain: true
+  reset_pose: true
+
+teleop:
+  input: "joystick"
+  num_episodes: 1
+  stop_mode: "target_dump_count"
+  target_dump_count: 99
+  stop_on_success: false
+  post_success_tail_steps: 0
+  manual_save_key: "s"
+  metadata:
+    operator_id: ""
+    session_id: "yulong_v2_2_empty_box_capacity_20260514"
+    notes: "YuLong V2.2 empty-box reachable-capacity calibration; do not use empty-box depletion as normal task success"
+    scene_version: "yulong_cad_v2_2"
+    soil_preset_id: "digterrain_default"
+    dig_area_preset_id: "digarea_3x2_default"
+    dump_area_preset_id: "active_dump_area_default"
+    task_goal_description: "Measure reachable dig-box production capacity and marginal-dig cutoff; success rule calibration only"
+    target_depth_m: 0.08
+    recording_protocol_version: "v2.2_capacity_calibration_hdf5"
+    warmup_or_train: "capacity_calibration"
+    operator_notes: "Dig until remaining soil is edge-only, unreachable, or no longer productive; save manually."
+    observer_notes: ""
+    env_state_contract_version: "agx_env_state_v2_2_64"
+    offtarget_deposited_mass_source: "unavailable"
+
+  joystick:
+    joystick_id: 0
+    joystick_ids: [1, 0, 1, 0]
+    axis_map: [1, 1, 0, 0]
+    invert: [true, false, false, true]
+    reset_button: 10
+    save_button: 9
+    deadzone: 0.05
+    scale: [0.6, 0.3, 0.7, 0.7]
+    clip: 1.0
+    response_profile:
+      enabled: true
+      use_measured_dt: false
+      deadzone: [0.05, 0.05, 0.05, 0.05]
+      attack_rate: 4.0
+      release_rate: 6.0
+      recenter_rate: 7.0
+      exponent: 1.0
+
+  keyboard:
+    key_speed: 0.5
+    window_title: "Testbed Teleop"
+
+task:
+  task_name: "agx_excavation_teleop"
+  equipment_model: "yulong"
+  dataset_dir: "data/yulong_v2_2_empty_box_capacity_raw_20260514"
+  camera_names: ["fpv"]
+  max_steps: 18000
+  control_hz: 50
+  dt: 0.02
+  seed: -1
+  param_version: "v2_2_yulong_empty_box_capacity"
+  scenario_id: "s0_truck"
+  recording_mode: "teleop_capacity_calibration_raw"
+
+success:
+  mode: "dump_complete_final_hold"
+  signal_name: "deposited_mass_in_target_box_kg"
+  mass_thresh: 20.0
+  residual_bucket_mass_thresh: 45.0
+  hold_steps: 25
+  stage_success:
+    dig_min_payload_gain_kg: 15.0
+    dig_min_depth_m: 0.02
+    dump_min_deposit_delta_kg: 8.0
+    dump_min_deposited_fraction: 0.25
+    max_hard_collision_delta: 0
+
+reward:
+  load_mass_threshold_kg: 55.0
+  target_approach_distance_m: 1.25
+  deposit_started_threshold_kg: 5.0
+  dig_area_touch_tolerance_m: 0.05
+  dig_below_plane_depth_tolerance_m: 0.02
+  qualified_dig_start_mode: "contact_depth"
+  unsafe_distance_m: 0.20
+  unsafe_distance_penalty: 0.25
+  hard_collision_penalty: 0.75
+  spill_penalty: 0.25
+
+action_semantics: "actuator_speed_cmd"

@@ -43,8 +43,11 @@ from testbed.data.schema import (
     ATTR_CAMERA_ROW_ORDER,
     ATTR_CAMERA_WIDTH,
     ATTR_DEADZONE,
+    ATTR_DIG_AREA_PRESET_ID,
+    ATTR_DUMP_AREA_PRESET_ID,
     ATTR_DT,
     ATTR_EPISODE_ID,
+    ATTR_ENV_STATE_CONTRACT_VERSION,
     ATTR_ENV_STATE_ORDER,
     ATTR_IMAGE_FORMAT,
     ATTR_INVERT,
@@ -73,8 +76,16 @@ from testbed.data.schema import (
     ATTR_CONTROL_HZ,
     ATTR_TARGET_DUMP_COUNT,
     ATTR_OPERATOR_ID,
+    ATTR_OPERATOR_NOTES,
+    ATTR_OBSERVER_NOTES,
     ATTR_RECORDING_MODE,
+    ATTR_RECORDING_PROTOCOL_VERSION,
     ATTR_SCENARIO_ID,
+    ATTR_SCENE_VERSION,
+    ATTR_SOIL_PRESET_ID,
+    ATTR_TARGET_DEPTH_M,
+    ATTR_TASK_GOAL_DESCRIPTION,
+    ATTR_WARMUP_OR_TRAIN,
 )
 from testbed.data.v2_1 import (
     GOAL_TOKEN_VERSION,
@@ -89,11 +100,12 @@ STOP_MODE_TASK_SUCCESS_TAIL = "task_success_tail"
 STOP_MODE_TARGET_DUMP_COUNT = "target_dump_count"
 
 
-def _action_control_flags(ainfo) -> tuple[bool, bool, bool]:
+def _action_control_flags(ainfo) -> tuple[bool, bool, bool, bool]:
     extras = getattr(ainfo, "extras", {}) or {}
     return (
         bool(extras.get("reset_requested", False)),
         bool(extras.get("discard_requested", False)),
+        bool(extras.get("save_episode_requested", False)),
         bool(extras.get("quit_requested", False)),
     )
 
@@ -207,6 +219,7 @@ def main() -> None:
 
     recording_mode = str(task_cfg.get("recording_mode", "")).strip()
     target_dump_count = int(teleop_cfg.get("target_dump_count", 3))
+    manual_save_key = str(teleop_cfg.get("manual_save_key", "s")).strip()
 
     if stop_mode not in (
         STOP_MODE_TASK_SUCCESS_TAIL,
@@ -337,9 +350,16 @@ def main() -> None:
                     break
 
                 # Check for quit / discard from keyboard
-                discard, quit_now = _check_pygame_events(action_source)
+                discard, manual_save_now, quit_now = _check_pygame_events(
+                    action_source,
+                    manual_save_key=manual_save_key,
+                )
                 if quit_now:
                     _abort = True
+                    break
+                if manual_save_now:
+                    stop_reason = "manual_episode_end"
+                    log.info("Episode manual save requested by keyboard.")
                     break
                 if discard:
                     log.info("Episode discarded by user.")
@@ -347,9 +367,13 @@ def main() -> None:
 
                 obs    = ts.observation
                 action, ainfo = action_source.next_action(obs)
-                reset_now, discard_now, quit_now = _action_control_flags(ainfo)
+                reset_now, discard_now, save_now, quit_now = _action_control_flags(ainfo)
                 if quit_now:
                     _abort = True
+                    break
+                if save_now:
+                    stop_reason = "manual_episode_end"
+                    log.info("Episode manual save requested by joystick.")
                     break
                 if reset_now:
                     reset_requested = True
@@ -402,10 +426,13 @@ def main() -> None:
                             local_step + 1,
                         )
                     if should_stop and stop_on_success and post_success_tail_steps > 0:
+                        stop_reason = STOP_MODE_TASK_SUCCESS_TAIL
                         log.info(
                             "Episode completed post-success tail and will stop at step %d.",
                             local_step + 1,
                         )
+                    elif should_stop and stop_on_success:
+                        stop_reason = STOP_MODE_TASK_SUCCESS_TAIL
                 elif stop_mode == STOP_MODE_TARGET_DUMP_COUNT and dump_boundary_detector is not None:
                     dump_event = dump_boundary_detector.update(
                         env_state=ts.observation.get("env_state", np.zeros(9, dtype=np.float32)),
@@ -545,11 +572,11 @@ def _sleep_to_rate(control_hz: float) -> None:
     _last_step_time = time.perf_counter()
 
 
-def _check_pygame_events(action_source) -> tuple[bool, bool]:
+def _check_pygame_events(action_source, *, manual_save_key: str = "s") -> tuple[bool, bool, bool]:
     """
     Poll pygame events for session-level controls.
 
-    Returns (discard_episode, quit_session).
+    Returns (discard_episode, manual_save_episode, quit_session).
     Works whether action_source is joystick or keyboard.
     Joystick button-driven controls are handled separately via ActionInfo.extras.
     """
@@ -559,12 +586,26 @@ def _check_pygame_events(action_source) -> tuple[bool, bool]:
             return False, True
         keys = pygame.key.get_pressed()
         if keys[pygame.K_q]:          # Q = end session
-            return False, True
+            return False, False, True
         if keys[pygame.K_d]:          # D = discard this episode
-            return True, False
+            return True, False, False
+        save_key = _pygame_key_code(pygame, manual_save_key)
+        if save_key is not None and keys[save_key]:
+            return False, True, False
     except Exception:
         pass
-    return False, False
+    return False, False, False
+
+
+def _pygame_key_code(pygame, key_name: str | None) -> int | None:
+    if not key_name:
+        return None
+    key_name = str(key_name).strip().lower()
+    if not key_name:
+        return None
+    if len(key_name) == 1:
+        return getattr(pygame, f"K_{key_name}", None)
+    return getattr(pygame, f"K_{key_name}", None)
 
 
 def _build_episode_metadata(
@@ -609,6 +650,22 @@ def _build_episode_metadata(
         metadata[ATTR_SESSION_ID] = str(metadata_cfg["session_id"])
     if metadata_cfg.get("notes"):
         metadata[ATTR_NOTES] = str(metadata_cfg["notes"])
+    for attr_name in (
+        ATTR_SCENE_VERSION,
+        ATTR_SOIL_PRESET_ID,
+        ATTR_DIG_AREA_PRESET_ID,
+        ATTR_DUMP_AREA_PRESET_ID,
+        ATTR_TASK_GOAL_DESCRIPTION,
+        ATTR_TARGET_DEPTH_M,
+        ATTR_RECORDING_PROTOCOL_VERSION,
+        ATTR_WARMUP_OR_TRAIN,
+        ATTR_OPERATOR_NOTES,
+        ATTR_OBSERVER_NOTES,
+        ATTR_ENV_STATE_CONTRACT_VERSION,
+        "offtarget_deposited_mass_source",
+    ):
+        if attr_name in metadata_cfg:
+            metadata[attr_name] = metadata_cfg[attr_name]
     if config_path is not None:
         metadata[ATTR_RECORD_CONFIG_PATH] = str(config_path)
     if record_config_yaml:

@@ -8,7 +8,6 @@ docstrings. Public API is backward-compatible with legacy callers.
 from __future__ import annotations
 
 import datetime
-import os
 from pathlib import Path
 from typing import Any
 
@@ -23,14 +22,28 @@ from testbed.data.image_masks import (
     mask_dataset_path,
     require_mask_dataset,
 )
-from testbed.data.schema import DS_V2_STEP_ACTION_LOSS_MASK, DS_V2_STEP_GOAL_TOKENS
+from testbed.data.schema import (
+    DS_V2_STEP_ACTION_LOSS_MASK,
+    DS_V2_STEP_CELL_ENTRY_TOKENS,
+    DS_V2_STEP_DIG_CUT_TOKENS,
+    DS_V2_STEP_GOAL_TOKENS,
+)
+from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_DIM
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
+from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
+
+SUPPORTED_LOW_DIM_KEYS = (
+    "qpos",
+    "qvel",
+    "goal_tokens",
+    "cell_entry_tokens",
+    "dig_cut_tokens",
+)
 
 
-SUPPORTED_LOW_DIM_KEYS = ("qpos", "qvel", "goal_tokens")
-
-
-def _normalize_low_dim_keys(low_dim_keys: list[str] | tuple[str, ...] | None) -> list[str]:
+def _normalize_low_dim_keys(
+    low_dim_keys: list[str] | tuple[str, ...] | None,
+) -> list[str]:
     keys = ["qpos"] if not low_dim_keys else [str(key) for key in low_dim_keys]
     invalid = [key for key in keys if key not in SUPPORTED_LOW_DIM_KEYS]
     if invalid:
@@ -46,15 +59,29 @@ def _assemble_low_dim_observation(
     qpos: np.ndarray,
     qvel: np.ndarray,
     goal_tokens: np.ndarray | None = None,
+    cell_entry_tokens: np.ndarray | None = None,
+    dig_cut_tokens: np.ndarray | None = None,
     low_dim_keys: list[str],
 ) -> np.ndarray:
     qpos_arr = np.asarray(qpos, dtype=np.float32)
     qvel_arr = np.asarray(qvel, dtype=np.float32)
-    goal_tokens_arr = None if goal_tokens is None else np.asarray(goal_tokens, dtype=np.float32)
+    goal_tokens_arr = (
+        None if goal_tokens is None else np.asarray(goal_tokens, dtype=np.float32)
+    )
+    cell_entry_tokens_arr = (
+        None
+        if cell_entry_tokens is None
+        else np.asarray(cell_entry_tokens, dtype=np.float32)
+    )
+    dig_cut_tokens_arr = (
+        None if dig_cut_tokens is None else np.asarray(dig_cut_tokens, dtype=np.float32)
+    )
     sequence_mode = (
         qpos_arr.ndim > 1
         or qvel_arr.ndim > 1
         or (goal_tokens_arr is not None and goal_tokens_arr.ndim > 1)
+        or (cell_entry_tokens_arr is not None and cell_entry_tokens_arr.ndim > 1)
+        or (dig_cut_tokens_arr is not None and dig_cut_tokens_arr.ndim > 1)
     )
     parts: list[np.ndarray] = []
     for key in low_dim_keys:
@@ -68,6 +95,20 @@ def _assemble_low_dim_observation(
                     "Requested low_dim key 'goal_tokens' but /v2/step/goal_tokens is missing."
                 )
             part = goal_tokens_arr
+        elif key == "cell_entry_tokens":
+            if cell_entry_tokens_arr is None:
+                raise KeyError(
+                    "Requested low_dim key 'cell_entry_tokens' but "
+                    "/v2/step/cell_entry_tokens is missing."
+                )
+            part = cell_entry_tokens_arr
+        elif key == "dig_cut_tokens":
+            if dig_cut_tokens_arr is None:
+                raise KeyError(
+                    "Requested low_dim key 'dig_cut_tokens' but "
+                    "/v2/step/dig_cut_tokens is missing."
+                )
+            part = dig_cut_tokens_arr
         else:
             continue
         if sequence_mode:
@@ -82,6 +123,7 @@ def _assemble_low_dim_observation(
 
 
 # ─── Normalization stats ──────────────────────────────────────────────────────
+
 
 def get_norm_stats(
     dataset_dir: str | Path,
@@ -117,8 +159,8 @@ def get_norm_stats(
     dataset_dir = Path(dataset_dir)
     selected_low_dim_keys = _normalize_low_dim_keys(low_dim_keys)
     all_proprio_data: list[torch.Tensor] = []
-    all_qpos_data:    list[torch.Tensor] = []
-    all_action_data:  list[torch.Tensor] = []
+    all_qpos_data: list[torch.Tensor] = []
+    all_action_data: list[torch.Tensor] = []
     example_qpos = None
     example_proprio = None
 
@@ -131,14 +173,30 @@ def get_norm_stats(
         if not p.exists():
             continue
         with h5py.File(p, "r") as f:
-            qpos   = f["/observations/qpos"][()]
-            qvel   = f["/observations/qvel"][()]
+            qpos = f["/observations/qpos"][()]
+            qvel = f["/observations/qvel"][()]
             action = f["/action"][()]
-            goal_tokens = _read_goal_tokens_dataset(f) if "goal_tokens" in selected_low_dim_keys else None
+            goal_tokens = (
+                _read_goal_tokens_dataset(f)
+                if "goal_tokens" in selected_low_dim_keys
+                else None
+            )
+            cell_entry_tokens = (
+                _read_cell_entry_tokens_dataset(f)
+                if "cell_entry_tokens" in selected_low_dim_keys
+                else None
+            )
+            dig_cut_tokens = (
+                _read_dig_cut_tokens_dataset(f)
+                if "dig_cut_tokens" in selected_low_dim_keys
+                else None
+            )
         proprio = _assemble_low_dim_observation(
             qpos=qpos,
             qvel=qvel,
             goal_tokens=goal_tokens,
+            cell_entry_tokens=cell_entry_tokens,
+            dig_cut_tokens=dig_cut_tokens,
             low_dim_keys=selected_low_dim_keys,
         )
         all_proprio_data.append(torch.from_numpy(proprio))
@@ -158,21 +216,21 @@ def get_norm_stats(
     # Stats should be computed over the concatenated time axis, not by stacking
     # episodes into a rectangular (N, T, D) tensor.
     proprio_tensor = torch.cat(all_proprio_data, dim=0)  # (sum_T, Np)
-    qpos_tensor    = torch.cat(all_qpos_data, dim=0)     # (sum_T, Nq)
-    action_tensor  = torch.cat(all_action_data, dim=0)   # (sum_T, Na)
+    qpos_tensor = torch.cat(all_qpos_data, dim=0)  # (sum_T, Nq)
+    action_tensor = torch.cat(all_action_data, dim=0)  # (sum_T, Na)
 
     action_mean = action_tensor.mean(dim=0, keepdim=True)
-    action_std  = action_tensor.std(dim=0,  keepdim=True).clamp(min=1e-2)
+    action_std = action_tensor.std(dim=0, keepdim=True).clamp(min=1e-2)
     proprio_mean = proprio_tensor.mean(dim=0, keepdim=True)
-    proprio_std  = proprio_tensor.std(dim=0,  keepdim=True).clamp(min=1e-2)
-    qpos_mean    = qpos_tensor.mean(dim=0,    keepdim=True)
-    qpos_std     = qpos_tensor.std(dim=0,     keepdim=True).clamp(min=1e-2)
+    proprio_std = proprio_tensor.std(dim=0, keepdim=True).clamp(min=1e-2)
+    qpos_mean = qpos_tensor.mean(dim=0, keepdim=True)
+    qpos_std = qpos_tensor.std(dim=0, keepdim=True).clamp(min=1e-2)
 
     stats = {
-        "action_mean":  action_mean.numpy().squeeze().astype(np.float32),
-        "action_std":   action_std.numpy().squeeze().astype(np.float32),
+        "action_mean": action_mean.numpy().squeeze().astype(np.float32),
+        "action_std": action_std.numpy().squeeze().astype(np.float32),
         "proprio_mean": proprio_mean.numpy().squeeze().astype(np.float32),
-        "proprio_std":  proprio_std.numpy().squeeze().astype(np.float32),
+        "proprio_std": proprio_std.numpy().squeeze().astype(np.float32),
         "example_proprio": example_proprio,
         "proprio_keys": np.asarray(selected_low_dim_keys, dtype=object),
         "proprio_dim": int(proprio_tensor.shape[1]),
@@ -190,6 +248,7 @@ def get_norm_stats(
 
 
 # ─── Dataset ─────────────────────────────────────────────────────────────────
+
 
 class EpisodicDataset(Dataset):
     """
@@ -221,11 +280,11 @@ class EpisodicDataset(Dataset):
         image_mask_config: dict[str, Any] | None = None,
     ):
         super().__init__()
-        self.episode_ids  = episode_ids
-        self.dataset_dir  = Path(dataset_dir)
+        self.episode_ids = episode_ids
+        self.dataset_dir = Path(dataset_dir)
         self.camera_names = camera_names
-        self.norm_stats   = norm_stats
-        self.episode_len  = int(episode_len) if episode_len is not None else None
+        self.norm_stats = norm_stats
+        self.episode_len = int(episode_len) if episode_len is not None else None
         self.low_dim_keys = _normalize_low_dim_keys(low_dim_keys)
         self.image_mask_config = dict(image_mask_config or {})
         self.is_sim: bool | None = None
@@ -238,8 +297,8 @@ class EpisodicDataset(Dataset):
     def __getitem__(self, index: int):
         import h5py
 
-        ep_id  = self.episode_ids[index]
-        path   = self.dataset_dir / f"episode_{ep_id}.hdf5"
+        ep_id = self.episode_ids[index]
+        path = self.dataset_dir / f"episode_{ep_id}.hdf5"
 
         with h5py.File(path, "r") as f:
             is_sim: bool = bool(f.attrs.get("sim", True))
@@ -257,10 +316,22 @@ class EpisodicDataset(Dataset):
                 if "goal_tokens" in self.low_dim_keys
                 else None
             )
+            cell_entry_tokens = (
+                _read_cell_entry_tokens_dataset(f, index=t0)
+                if "cell_entry_tokens" in self.low_dim_keys
+                else None
+            )
+            dig_cut_tokens = (
+                _read_dig_cut_tokens_dataset(f, index=t0)
+                if "dig_cut_tokens" in self.low_dim_keys
+                else None
+            )
             proprio = _assemble_low_dim_observation(
                 qpos=qpos,
                 qvel=qvel,
                 goal_tokens=goal_tokens,
+                cell_entry_tokens=cell_entry_tokens,
+                dig_cut_tokens=dig_cut_tokens,
                 low_dim_keys=self.low_dim_keys,
             )
             image_dict = {}
@@ -291,12 +362,12 @@ class EpisodicDataset(Dataset):
 
             # ── action from t0 onward (legacy hack for real data) ─────────
             if is_sim:
-                action     = f["/action"][t0:]
+                action = f["/action"][t0:]
                 action_loss_mask = _read_action_loss_mask(f, start=t0)
                 action_len = T - t0
             else:
                 start = max(0, t0 - 1)
-                action     = f["/action"][start:]
+                action = f["/action"][start:]
                 action_loss_mask = _read_action_loss_mask(f, start=start)
                 action_len = T - start
 
@@ -310,12 +381,16 @@ class EpisodicDataset(Dataset):
                 f"episode_len {target_len}. Increase task.episode_len or re-record."
             )
 
-        padded_action = np.zeros((target_len, original_action_shape[1]), dtype=np.float32)
+        padded_action = np.zeros(
+            (target_len, original_action_shape[1]), dtype=np.float32
+        )
         padded_action[:action_len] = action
         is_pad = np.ones(target_len, dtype=bool)
         is_pad[:action_len] = False
         if action_loss_mask is not None:
-            loss_mask = np.asarray(action_loss_mask[:action_len], dtype=np.uint8).reshape(-1)
+            loss_mask = np.asarray(
+                action_loss_mask[:action_len], dtype=np.uint8
+            ).reshape(-1)
             if loss_mask.shape[0] != action_len:
                 raise ValueError(
                     f"Episode {ep_id} action_loss_mask length {loss_mask.shape[0]} "
@@ -329,28 +404,27 @@ class EpisodicDataset(Dataset):
         )  # (n_cams, H, W, 3)
 
         # ── convert to tensors ────────────────────────────────────────────
-        image_data   = torch.from_numpy(all_cam_images)
+        image_data = torch.from_numpy(all_cam_images)
         proprio_data = torch.from_numpy(proprio).float()
-        action_data  = torch.from_numpy(padded_action).float()
-        is_pad_t     = torch.from_numpy(is_pad)
+        action_data = torch.from_numpy(padded_action).float()
+        is_pad_t = torch.from_numpy(is_pad)
 
         # channel-last → channel-first + normalize to [0, 1]
         image_data = torch.einsum("k h w c -> k c h w", image_data).float() / 255.0
 
         # normalise proprio and actions
         action_data = (
-            action_data
-            - torch.from_numpy(self.norm_stats["action_mean"])
+            action_data - torch.from_numpy(self.norm_stats["action_mean"])
         ) / torch.from_numpy(self.norm_stats["action_std"])
         proprio_data = (
-            proprio_data
-            - torch.from_numpy(self.norm_stats["proprio_mean"])
+            proprio_data - torch.from_numpy(self.norm_stats["proprio_mean"])
         ) / torch.from_numpy(self.norm_stats["proprio_std"])
 
         return image_data, proprio_data, action_data, is_pad_t
 
 
 # ─── load_data ────────────────────────────────────────────────────────────────
+
 
 def load_data(
     dataset_dir: str | Path,
@@ -398,6 +472,7 @@ def load_data(
     # This removes legacy episodes recorded with EE-space actions (wrong format).
     # The correct pipeline saves joint-space qpos as actions, so action_dim == qpos_dim.
     import h5py
+
     dim_info = {}
     length_info = {}
     for ep_id in available:
@@ -426,7 +501,9 @@ def load_data(
         )
 
     max_episode_len = max(length_info[ep_id] for ep_id in available)
-    target_episode_len = int(episode_len) if episode_len is not None else max_episode_len
+    target_episode_len = (
+        int(episode_len) if episode_len is not None else max_episode_len
+    )
     if max_episode_len > target_episode_len:
         raise ValueError(
             f"Dataset contains an episode of length {max_episode_len}, but configured "
@@ -481,8 +558,12 @@ def load_data(
         loader_kw["prefetch_factor"] = prefetch_factor
         loader_kw["persistent_workers"] = bool(persistent_workers)
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size_train, shuffle=True,  **loader_kw)
-    val_loader   = DataLoader(val_ds,   batch_size=batch_size_val,   shuffle=True,  **loader_kw)
+    train_loader = DataLoader(
+        train_ds, batch_size=batch_size_train, shuffle=True, **loader_kw
+    )
+    val_loader = DataLoader(
+        val_ds, batch_size=batch_size_val, shuffle=True, **loader_kw
+    )
 
     return train_loader, val_loader, norm_stats, train_ds.is_sim, split_info
 
@@ -490,8 +571,7 @@ def load_data(
 def _select_episode_ids(dataset_dir: str | Path, num_episodes: int) -> list[int]:
     dataset_dir = Path(dataset_dir)
     discovered = [
-        int(path.stem.split("_", 1)[1])
-        for path in list_episodes(dataset_dir)
+        int(path.stem.split("_", 1)[1]) for path in list_episodes(dataset_dir)
     ]
     discovered = sorted(discovered)
     if num_episodes <= 0:
@@ -600,7 +680,9 @@ def _validate_saved_split(
     train_ids = [int(ep_id) for ep_id in split_info.get("train_ids", [])]
     val_ids = [int(ep_id) for ep_id in split_info.get("val_ids", [])]
     if not train_ids or not val_ids:
-        raise ValueError("Saved split file must contain non-empty train_ids and val_ids.")
+        raise ValueError(
+            "Saved split file must contain non-empty train_ids and val_ids."
+        )
 
     split_ids = set(train_ids) | set(val_ids)
     missing = sorted(split_ids - available)
@@ -623,6 +705,42 @@ def _read_goal_tokens_dataset(h5_file, index: int | None = None) -> np.ndarray:
     if arr.shape[-1] != expected_dim:
         raise ValueError(
             f"/v2/step/goal_tokens must have last dimension {expected_dim}, got {arr.shape}."
+        )
+    return arr
+
+
+def _read_cell_entry_tokens_dataset(h5_file, index: int | None = None) -> np.ndarray:
+    if DS_V2_STEP_CELL_ENTRY_TOKENS not in h5_file:
+        raise KeyError(
+            "Requested low_dim key 'cell_entry_tokens' but "
+            "/v2/step/cell_entry_tokens is missing."
+        )
+    dataset = h5_file[DS_V2_STEP_CELL_ENTRY_TOKENS]
+    value = dataset[()] if index is None else dataset[index]
+    arr = np.asarray(value, dtype=np.float32)
+    expected_dim = CELL_ENTRY_TOKEN_DIM
+    if arr.shape[-1] != expected_dim:
+        raise ValueError(
+            "/v2/step/cell_entry_tokens must have last dimension "
+            f"{expected_dim}, got {arr.shape}."
+        )
+    return arr
+
+
+def _read_dig_cut_tokens_dataset(h5_file, index: int | None = None) -> np.ndarray:
+    if DS_V2_STEP_DIG_CUT_TOKENS not in h5_file:
+        raise KeyError(
+            "Requested low_dim key 'dig_cut_tokens' but "
+            "/v2/step/dig_cut_tokens is missing."
+        )
+    dataset = h5_file[DS_V2_STEP_DIG_CUT_TOKENS]
+    value = dataset[()] if index is None else dataset[index]
+    arr = np.asarray(value, dtype=np.float32)
+    expected_dim = DIG_CUT_TOKEN_DIM
+    if arr.shape[-1] != expected_dim:
+        raise ValueError(
+            "/v2/step/dig_cut_tokens must have last dimension "
+            f"{expected_dim}, got {arr.shape}."
         )
     return arr
 

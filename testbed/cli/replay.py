@@ -465,19 +465,30 @@ def _build_replay_metadata(
         ATTR_CAMERA_ROW_ORDER,
         ATTR_CAMERA_WIDTH,
         ATTR_CONTROL_HZ,
+        ATTR_DIG_AREA_PRESET_ID,
+        ATTR_DUMP_AREA_PRESET_ID,
         ATTR_DT,
+        ATTR_ENV_STATE_CONTRACT_VERSION,
         ATTR_ENV_STATE_ORDER,
         ATTR_EPISODE_ID,
         ATTR_IMAGE_FORMAT,
+        ATTR_OPERATOR_NOTES,
+        ATTR_OBSERVER_NOTES,
         ATTR_PROTOCOL_VERSION,
         ATTR_QPOS_ORDER,
         ATTR_QVEL_ORDER,
+        ATTR_RECORDING_PROTOCOL_VERSION,
         ATTR_REPLAY_CONFIG_PATH,
         ATTR_REPLAY_POST_TAIL_STEPS,
         ATTR_REPLAY_SOURCE_DATASET,
         ATTR_REPLAY_SOURCE_EPISODE,
+        ATTR_SCENE_VERSION,
         ATTR_SIM_BACKEND,
+        ATTR_SOIL_PRESET_ID,
+        ATTR_TARGET_DEPTH_M,
+        ATTR_TASK_GOAL_DESCRIPTION,
         ATTR_TELEOP_INPUT,
+        ATTR_WARMUP_OR_TRAIN,
     )
 
     metadata = dict(source_metadata)
@@ -500,6 +511,21 @@ def _build_replay_metadata(
             ATTR_REPLAY_POST_TAIL_STEPS: int(post_tail_steps),
         }
     )
+    metadata.setdefault(ATTR_SCENE_VERSION, "yulong_cad_v2_2")
+    metadata.setdefault(ATTR_SOIL_PRESET_ID, "digterrain_default")
+    metadata.setdefault(ATTR_DIG_AREA_PRESET_ID, "digarea_3x2_default")
+    metadata.setdefault(ATTR_DUMP_AREA_PRESET_ID, "active_dump_area_default")
+    metadata.setdefault(
+        ATTR_TASK_GOAL_DESCRIPTION,
+        "YuLong fixed-station replay refreshed with V2.2 plan fields",
+    )
+    metadata.setdefault(ATTR_TARGET_DEPTH_M, 0.08)
+    metadata.setdefault(ATTR_RECORDING_PROTOCOL_VERSION, "v2.2_replay_hdf5")
+    metadata.setdefault(ATTR_WARMUP_OR_TRAIN, "train")
+    metadata.setdefault(ATTR_OPERATOR_NOTES, "")
+    metadata.setdefault(ATTR_OBSERVER_NOTES, "")
+    metadata.setdefault(ATTR_ENV_STATE_CONTRACT_VERSION, "agx_env_state_v2_2_64")
+    metadata.setdefault("offtarget_deposited_mass_source", "unavailable")
     if config_path is not None:
         metadata[ATTR_REPLAY_CONFIG_PATH] = str(config_path)
 

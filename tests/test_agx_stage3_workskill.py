@@ -10,7 +10,7 @@ import numpy as np
 from testbed.data.dataset import load_data
 from testbed.data.hdf5_io import read_episode, write_episode
 from testbed.data.schema import (
-    ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX,
@@ -33,6 +33,7 @@ from testbed.data.workskill_v2_1 import (
     CLEAN_PROFILE_STAGE5_STRICT,
     build_workskill_dataset,
 )
+from testbed.cli.label_v2_1 import _load_label_config_sections
 
 
 def _with_target_geometry(env_state: np.ndarray) -> np.ndarray:
@@ -48,6 +49,35 @@ def _with_target_geometry(env_state: np.ndarray) -> np.ndarray:
 
 
 class TestStage3Workskill(unittest.TestCase):
+    def test_label_config_sections_load_stage_success_thresholds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "teleop.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "success:",
+                        "  stage_success:",
+                        "    dig_min_payload_gain_kg: 15.0",
+                        "    dump_min_deposit_delta_kg: 8.0",
+                        "reward:",
+                        "  load_mass_threshold_kg: 55.0",
+                        "  qualified_dig_start_mode: contact_depth",
+                    ]
+                )
+            )
+
+            success_cfg, reward_cfg = _load_label_config_sections(config_path)
+
+            self.assertEqual(
+                success_cfg["stage_success"]["dig_min_payload_gain_kg"],
+                15.0,
+            )
+            self.assertEqual(
+                success_cfg["stage_success"]["dump_min_deposit_delta_kg"],
+                8.0,
+            )
+            self.assertEqual(reward_cfg["load_mass_threshold_kg"], 55.0)
+
     def test_swing_to_sector_id_uses_dig_area_calibrated_thresholds(self) -> None:
         self.assertAlmostEqual(SECTOR_LEFT_MAX_SWING, 0.47333333333333333)
         self.assertAlmostEqual(SECTOR_MID_MAX_SWING, 0.5166666666666667)
@@ -99,7 +129,55 @@ class TestStage3Workskill(unittest.TestCase):
         self.assertEqual(cycle["dump_end_step"].tolist(), [4])
         self.assertEqual(cycle["end_step"].tolist(), [4])
         self.assertEqual(cycle["cycle_success"].tolist(), [1])
+        self.assertEqual(cycle["dig_success"].tolist(), [1])
+        self.assertEqual(cycle["carry_success"].tolist(), [1])
+        self.assertEqual(cycle["dump_success"].tolist(), [1])
+        self.assertEqual(cycle["return_required"].tolist(), [0])
+        self.assertEqual(cycle["return_success"].tolist(), [0])
+        self.assertEqual(cycle["stage_success"].tolist(), [1])
+        self.assertGreater(float(cycle["payload_gain_kg"][0]), 0.0)
+        self.assertGreater(float(cycle["dump_deposited_fraction"][0]), 0.0)
         self.assertEqual(step["dump_end_mask"].tolist(), [0, 0, 0, 0, 1])
+
+    def test_label_episode_reports_stage_success_failures(self) -> None:
+        qpos = np.asarray(
+            [
+                [0.50, 0.0, 0.0, 0.0],
+                [0.50, 0.0, 0.0, 0.0],
+                [0.50, 0.0, 0.0, 0.0],
+                [0.50, 0.0, 0.0, 0.0],
+            ],
+            dtype=np.float32,
+        )
+        actions = np.ones((4, 4), dtype=np.float32)
+        env_state = np.asarray(
+            [
+                [0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.20, 0.00],
+                [5.0, 5.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.01, 0.03],
+                [8.0, 8.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.20, 0.00],
+                [2.0, 8.0, 2.0, 2.0, 1.0, 0.0, 0.0, 0.20, 0.00],
+            ],
+            dtype=np.float32,
+        )
+
+        v2_payload, metadata_updates = label_episode_v2_1(
+            qpos=qpos,
+            actions=actions,
+            env_state=_with_target_geometry(env_state),
+            metadata={"success": 1},
+            scenario_id="s0_truck",
+            reward_cfg={
+                "load_mass_threshold_kg": 55.0,
+                "qualified_dig_start_mode": "contact_depth",
+            },
+        )
+
+        cycle = v2_payload["cycle"]
+        self.assertEqual(metadata_updates["stage_success_version"], "v2_2_stage_success_4p")
+        self.assertEqual(cycle["cycle_success"].tolist(), [1])
+        self.assertEqual(cycle["dig_success"].tolist(), [0])
+        self.assertEqual(cycle["stage_success"].tolist(), [0])
+        self.assertEqual(cycle["stage_failure_reason_code"].tolist(), [1])
 
     def test_build_workskill_dataset_creates_cropped_episode(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -585,7 +663,7 @@ class TestStage3Workskill(unittest.TestCase):
         self.assertEqual(int(work_stage_id[12]), WORK_STAGE_NAME_TO_ID["approach_dump"])
         self.assertEqual(int(work_stage_id[15]), WORK_STAGE_NAME_TO_ID["dump"])
 
-    def test_approach_dump_uses_bed_top_geometry_for_new_env_state(self) -> None:
+    def test_approach_dump_uses_dump_area_top_geometry_for_new_env_state(self) -> None:
         length = 18
         work_stage_id = np.zeros(length, dtype=np.uint8)
         dump_start_mask = np.zeros(length, dtype=np.uint8)
@@ -596,8 +674,8 @@ class TestStage3Workskill(unittest.TestCase):
         env_state[:, ENV_STATE_MASS_IN_BUCKET_IDX] = mass
         env_state[:, ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX] = 2.0
         env_state[:, ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX] = 0.50
-        env_state[:, ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = 2.0
-        env_state[11:, ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = 1.20
+        env_state[:, ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = 2.0
+        env_state[11:, ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = 1.20
 
         _fill_cycle_work_stage_labels(
             work_stage_id=work_stage_id,

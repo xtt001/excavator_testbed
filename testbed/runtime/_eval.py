@@ -7,7 +7,9 @@ from typing import Any
 
 import numpy as np
 
+from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_DIM
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
+from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 
 
 def eval_policy(config: dict[str, Any]) -> None:
@@ -90,6 +92,16 @@ def eval_policy(config: dict[str, Any]) -> None:
     save_rollout_logs = bool(eval_cfg.get("save_rollout_logs", True))
     stream_rollout_logs = bool(eval_cfg.get("stream_rollout_logs", False))
     rollout_log_dir = Path(eval_cfg.get("rollout_log_dir", results_dir / "rollouts"))
+    record_hdf5 = bool(eval_cfg.get("record_hdf5", False))
+    record_hdf5_dir = Path(
+        eval_cfg.get(
+            "record_hdf5_dir",
+            eval_cfg.get("hdf5_dir", results_dir / "hdf5_rollouts"),
+        )
+    )
+    record_hdf5_with_cell_entry = bool(
+        eval_cfg.get("record_hdf5_with_cell_entry", True)
+    )
     step_log_interval = int(eval_cfg.get("step_log_interval", 50))
     agx_host        = str(agx_cfg.get("host", "127.0.0.1"))
     agx_port        = int(agx_cfg.get("port", 5057))
@@ -552,6 +564,8 @@ def eval_policy(config: dict[str, Any]) -> None:
 
         switch_cfg = dict(policy_cfg.get("switch", {}))
         transition_cfg = dict(policy_cfg.get("transition", {}))
+        scripted_bootstrap_cfg = dict(policy_cfg.get("scripted_bootstrap", {}))
+        cell_entry_cfg = dict(policy_cfg.get("cell_entry", {}))
         boundary_detector = build_boundary_detector_from_config(
             reward_cfg=reward_cfg,
             success_cfg=success_cfg,
@@ -610,6 +624,35 @@ def eval_policy(config: dict[str, Any]) -> None:
             "goal_dump_target_norm": float(
                 policy_cfg.get("goal_dump_target_norm", 1.0)
             ),
+            "cell_entry_enabled": bool(
+                cell_entry_cfg.get("enabled", policy_cfg.get("cell_entry_enabled", False))
+            ),
+            "cell_entry_grid": dict(cell_entry_cfg.get("grid", {})),
+            "cell_entry_low_productivity_payload_gain_kg": float(
+                cell_entry_cfg.get("low_productivity_payload_gain_kg", 100.0)
+            ),
+            "scripted_bootstrap_target_qpos": scripted_bootstrap_cfg.get("target_qpos"),
+            "scripted_bootstrap_kp": float(scripted_bootstrap_cfg.get("kp", 2.0)),
+            "scripted_bootstrap_kd": float(scripted_bootstrap_cfg.get("kd", 0.25)),
+            "scripted_bootstrap_action_clip": scripted_bootstrap_cfg.get(
+                "action_clip",
+                0.35,
+            ),
+            "scripted_bootstrap_action_signs": scripted_bootstrap_cfg.get(
+                "action_signs"
+            ),
+            "scripted_bootstrap_qpos_tolerance": float(
+                scripted_bootstrap_cfg.get("qpos_tolerance", 0.02)
+            ),
+            "scripted_bootstrap_qvel_abs_max": float(
+                scripted_bootstrap_cfg.get("qvel_abs_max", 0.08)
+            ),
+            "scripted_bootstrap_hold_steps": int(
+                scripted_bootstrap_cfg.get("hold_steps", 5)
+            ),
+            "scripted_bootstrap_max_steps": int(
+                scripted_bootstrap_cfg.get("max_steps", 240)
+            ),
         }
         if policy_class == "PRIMITIVE_PLANNER_ACT_5P":
             policy = PrimitivePlannerACT5PPolicy(
@@ -651,26 +694,26 @@ def eval_policy(config: dict[str, Any]) -> None:
                 dump_release_ready_position_mode=str(
                     switch_cfg.get(
                         "dump_release_ready_position_mode",
-                        "footprint_or_bed_relative",
+                        "footprint_or_dump_area_relative",
                     )
                 ),
-                dump_release_ready_max_bed_footprint_outside_distance_m=_optional_float(
+                dump_release_ready_max_dump_area_footprint_outside_distance_m=_optional_float(
                     switch_cfg.get(
-                        "dump_release_ready_max_bed_footprint_outside_distance_m",
+                        "dump_release_ready_max_dump_area_footprint_outside_distance_m",
                         0.05,
                     )
                 ),
-                dump_release_ready_min_bed_relative_x_m=_optional_float(
-                    switch_cfg.get("dump_release_ready_min_bed_relative_x_m")
+                dump_release_ready_min_dump_area_relative_x_m=_optional_float(
+                    switch_cfg.get("dump_release_ready_min_dump_area_relative_x_m")
                 ),
-                dump_release_ready_max_bed_relative_x_m=_optional_float(
-                    switch_cfg.get("dump_release_ready_max_bed_relative_x_m")
+                dump_release_ready_max_dump_area_relative_x_m=_optional_float(
+                    switch_cfg.get("dump_release_ready_max_dump_area_relative_x_m")
                 ),
-                dump_release_ready_min_bed_relative_z_m=_optional_float(
-                    switch_cfg.get("dump_release_ready_min_bed_relative_z_m")
+                dump_release_ready_min_dump_area_relative_z_m=_optional_float(
+                    switch_cfg.get("dump_release_ready_min_dump_area_relative_z_m")
                 ),
-                dump_release_ready_max_bed_relative_z_m=_optional_float(
-                    switch_cfg.get("dump_release_ready_max_bed_relative_z_m")
+                dump_release_ready_max_dump_area_relative_z_m=_optional_float(
+                    switch_cfg.get("dump_release_ready_max_dump_area_relative_z_m")
                 ),
                 dump_release_ready_hold_steps=int(
                     switch_cfg.get("dump_release_ready_hold_steps", 3)
@@ -701,26 +744,26 @@ def eval_policy(config: dict[str, Any]) -> None:
                 dump_ready_position_mode=str(
                     switch_cfg.get(
                         "dump_ready_position_mode",
-                        "footprint_or_bed_relative",
+                        "footprint_or_dump_area_relative",
                     )
                 ),
-                dump_ready_max_bed_footprint_outside_distance_m=_optional_float(
+                dump_ready_max_dump_area_footprint_outside_distance_m=_optional_float(
                     switch_cfg.get(
-                        "dump_ready_max_bed_footprint_outside_distance_m",
+                        "dump_ready_max_dump_area_footprint_outside_distance_m",
                         0.05,
                     )
                 ),
-                dump_ready_min_bed_relative_x_m=_optional_float(
-                    switch_cfg.get("dump_ready_min_bed_relative_x_m")
+                dump_ready_min_dump_area_relative_x_m=_optional_float(
+                    switch_cfg.get("dump_ready_min_dump_area_relative_x_m")
                 ),
-                dump_ready_max_bed_relative_x_m=_optional_float(
-                    switch_cfg.get("dump_ready_max_bed_relative_x_m")
+                dump_ready_max_dump_area_relative_x_m=_optional_float(
+                    switch_cfg.get("dump_ready_max_dump_area_relative_x_m")
                 ),
-                dump_ready_min_bed_relative_z_m=_optional_float(
-                    switch_cfg.get("dump_ready_min_bed_relative_z_m")
+                dump_ready_min_dump_area_relative_z_m=_optional_float(
+                    switch_cfg.get("dump_ready_min_dump_area_relative_z_m")
                 ),
-                dump_ready_max_bed_relative_z_m=_optional_float(
-                    switch_cfg.get("dump_ready_max_bed_relative_z_m")
+                dump_ready_max_dump_area_relative_z_m=_optional_float(
+                    switch_cfg.get("dump_ready_max_dump_area_relative_z_m")
                 ),
                 dump_ready_hold_steps=int(switch_cfg.get("dump_ready_hold_steps", 3)),
                 **common_kwargs,
@@ -777,7 +820,47 @@ def eval_policy(config: dict[str, Any]) -> None:
         if eval_cfg.get("target_cycle_gate_terminal_hold_steps") is None
         else int(eval_cfg.get("target_cycle_gate_terminal_hold_steps"))
     )
+    eval_run_metadata["live_goal_sequence"] = list(
+        eval_cfg.get("live_goal_sequence", policy_cfg.get("goal_sequence", [])) or []
+    )
+    eval_run_metadata["live_goal_depth_norm"] = float(
+        eval_cfg.get("live_goal_depth_norm", policy_cfg.get("goal_depth_norm", 1.0))
+    )
+    eval_run_metadata["live_goal_dump_target_norm"] = float(
+        eval_cfg.get(
+            "live_goal_dump_target_norm",
+            policy_cfg.get("goal_dump_target_norm", 1.0),
+        )
+    )
+    eval_run_metadata["record_hdf5"] = {
+        "enabled": record_hdf5,
+        "dir": str(record_hdf5_dir),
+        "with_cell_entry": record_hdf5_with_cell_entry,
+    }
     eval_run_metadata_path = write_json(results_dir / "eval_run_metadata.json", eval_run_metadata)
+    repo_a_snapshot = dict(eval_run_metadata.get("repo_snapshots", {}).get("repo_a", {}))
+    record_hdf5_metadata = dict(eval_cfg.get("record_hdf5_metadata", {}) or {})
+    record_hdf5_metadata.update(
+        {
+            "record_config_path": str(resolved_eval_config_path.resolve()),
+            "eval_results_dir": str(results_dir.resolve()),
+            "eval_run_metadata_path": str(eval_run_metadata_path.resolve()),
+            "git_commit": str(repo_a_snapshot.get("commit", "")),
+            "git_branch": str(repo_a_snapshot.get("branch", "")),
+            "git_dirty": int(bool(repo_a_snapshot.get("dirty", False))),
+            "policy_class": str(policy_class),
+            "device_requested": str(device),
+        }
+    )
+    if policy_class in {"PRIMITIVE_PLANNER_ACT", "PRIMITIVE_PLANNER_ACT_5P"}:
+        record_hdf5_metadata.update(
+            {
+                "dig_ckpt_path": str(policy_cfg.get("dig_ckpt_path", "")),
+                "carry_ckpt_path": str(policy_cfg.get("carry_ckpt_path", "")),
+                "dump_ckpt_path": str(policy_cfg.get("dump_ckpt_path", "")),
+                "return_ckpt_path": str(policy_cfg.get("return_ckpt_path", "")),
+            }
+        )
 
     suite = EvalSuite(
         policy       = policy,
@@ -790,6 +873,10 @@ def eval_policy(config: dict[str, Any]) -> None:
         save_rollout_logs = save_rollout_logs,
         stream_rollout_logs = stream_rollout_logs,
         rollout_log_dir   = rollout_log_dir,
+        record_hdf5 = record_hdf5,
+        record_hdf5_dir = record_hdf5_dir,
+        record_hdf5_metadata = record_hdf5_metadata,
+        record_hdf5_with_cell_entry = record_hdf5_with_cell_entry,
         step_log_interval = step_log_interval,
         agx_host     = agx_host,
         agx_port     = agx_port,
@@ -814,6 +901,19 @@ def eval_policy(config: dict[str, Any]) -> None:
             None
             if eval_cfg.get("target_cycle_gate_terminal_hold_steps") is None
             else int(eval_cfg.get("target_cycle_gate_terminal_hold_steps"))
+        ),
+        live_goal_sequence = eval_cfg.get(
+            "live_goal_sequence",
+            policy_cfg.get("goal_sequence", []),
+        ),
+        live_goal_depth_norm = float(
+            eval_cfg.get("live_goal_depth_norm", policy_cfg.get("goal_depth_norm", 1.0))
+        ),
+        live_goal_dump_target_norm = float(
+            eval_cfg.get(
+                "live_goal_dump_target_norm",
+                policy_cfg.get("goal_dump_target_norm", 1.0),
+            )
         ),
         episode_len = max_episode_len,
         camera_names = list(camera_names),
@@ -844,6 +944,12 @@ def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) ->
         "qpos": _resolve_single_low_dim_dim("qpos", equipment_model),
         "qvel": _resolve_single_low_dim_dim("qvel", equipment_model),
         "goal_tokens": _resolve_single_low_dim_dim("goal_tokens", equipment_model),
+        "cell_entry_tokens": _resolve_single_low_dim_dim(
+            "cell_entry_tokens", equipment_model
+        ),
+        "dig_cut_tokens": _resolve_single_low_dim_dim(
+            "dig_cut_tokens", equipment_model
+        ),
     }
     return int(sum(dims[key] for key in low_dim_keys))
 
@@ -856,10 +962,19 @@ def _resolve_single_low_dim_dim(key: str, equipment_model: str) -> int:
     equipment_model = str(equipment_model).lower()
     if key == "goal_tokens":
         return int(GOAL_TOKEN_DIM)
+    if key == "cell_entry_tokens":
+        return int(CELL_ENTRY_TOKEN_DIM)
+    if key == "dig_cut_tokens":
+        return int(DIG_CUT_TOKEN_DIM)
     if key in ("qpos", "qvel"):
         if "bimanual" in equipment_model:
             return 14
-        if "excavator_simple" in equipment_model or "agxunity" in equipment_model or "agx" in equipment_model:
+        if (
+            "excavator_simple" in equipment_model
+            or "agxunity" in equipment_model
+            or "agx" in equipment_model
+            or "yulong" in equipment_model
+        ):
             return 4
         return 7
     raise ValueError(f"Unsupported low-dim key {key!r}.")

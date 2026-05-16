@@ -209,21 +209,21 @@ dump  = approach + align + release + post-dump hold
 
 ### 3. 修正 target geometry
 
-`outside` 这种无方向距离只能说明 bucket 离 truck-bed footprint 多近，不能说明 bucket 在 tail、middle 还是 front。
+`outside` 这种无方向距离只能说明 bucket 离 dump-area footprint 多近，不能说明 bucket 在 tail、middle 还是 front。
 
-V2.2 改成使用 signed bed-relative geometry：
+V2.2 改成使用 signed dump-area-relative geometry：
 
 ```text
-bucket_bed_relative_x_m
-bucket_bed_relative_z_m
-bucket_bed_footprint_outside_distance_m
+bucket_dump_area_relative_x_m
+bucket_dump_area_relative_z_m
+bucket_dump_area_footprint_outside_distance_m
 ```
 
-这样 planner 不会再把“靠近车斗尾部”和“在车斗中部上方”当成同一件事。
+这样 planner 不会再把“靠近dump area尾部”和“在dump area中部上方”当成同一件事。
 
 ### 4. 用 post-dump hold 减少边界 spill
 
-ACT 有 chunk prediction 和 temporal aggregation。dump 完马上切 return，可能把刚落进车斗的土又带出来。
+ACT 有 chunk prediction 和 temporal aggregation。dump 完马上切 return，可能把刚落进dump area的土又带出来。
 
 所以当前 smoke 路线在 dump 完成后保留短暂 hold，再切 return。这是一个实际有效的边界修复，不依赖 learned transition。
 

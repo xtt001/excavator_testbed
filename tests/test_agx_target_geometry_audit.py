@@ -27,6 +27,9 @@ TARGET_GEOMETRY_ENV_STATE_ORDER = LEGACY_ENV_STATE_ORDER + (
     "bucket_height_above_target_rim_m",
     "bucket_over_target_footprint_mask",
     "dump_clearance_ok_mask",
+    "bucket_dump_area_relative_x_m",
+    "bucket_dump_area_relative_z_m",
+    "bucket_dump_area_footprint_outside_distance_m",
 )
 
 
@@ -68,11 +71,14 @@ class TestTargetGeometryAudit(unittest.TestCase):
     def test_geometry_dataset_is_usable_when_all_required_fields_are_present(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             dataset_dir = Path(tmp)
-            env_state = np.zeros((3, 13), dtype=np.float32)
+            env_state = np.zeros((3, 16), dtype=np.float32)
             env_state[:, 9] = [1.0, 0.8, 0.2]
             env_state[:, 10] = [0.1, 0.1, 0.2]
             env_state[:, 11] = [0.0, 0.0, 1.0]
             env_state[:, 12] = [0.0, 0.0, 1.0]
+            env_state[:, 13] = [0.2, 0.1, 0.0]
+            env_state[:, 14] = [0.3, 0.2, 0.1]
+            env_state[:, 15] = [0.4, 0.2, 0.0]
             _write_minimal_episode(
                 dataset_dir / "episode_0.hdf5",
                 env_state=env_state,

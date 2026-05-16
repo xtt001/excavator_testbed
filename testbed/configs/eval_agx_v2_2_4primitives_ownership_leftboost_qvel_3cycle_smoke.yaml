@@ -80,13 +80,13 @@ policy:
     dump_ready_min_height_above_rim_m: 0.30
     dump_ready_require_over_footprint: false
     dump_ready_require_clearance: false
-    dump_ready_position_mode: "bed_relative"
+    dump_ready_position_mode: "dump_area_relative"
     dump_ready_max_horizontal_distance_m: null
-    dump_ready_max_bed_footprint_outside_distance_m: 1.35
-    dump_ready_min_bed_relative_x_m: -4.30
-    dump_ready_max_bed_relative_x_m: 2.00
-    dump_ready_min_bed_relative_z_m: 2.75
-    dump_ready_max_bed_relative_z_m: 3.50
+    dump_ready_max_dump_area_footprint_outside_distance_m: 1.35
+    dump_ready_min_dump_area_relative_x_m: -4.30
+    dump_ready_max_dump_area_relative_x_m: 2.00
+    dump_ready_min_dump_area_relative_z_m: 2.75
+    dump_ready_max_dump_area_relative_z_m: 3.50
     dump_ready_hold_steps: 3
     dump_done_max_bucket_mass_kg: 100.0
     dump_done_min_deposit_delta_kg: 10.0

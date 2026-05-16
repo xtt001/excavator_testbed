@@ -230,7 +230,12 @@ def _resolve_action_dim(equipment_model: str) -> int:
     equipment_model = equipment_model.lower()
     if "bimanual" in equipment_model:
         return 14
-    if "excavator_simple" in equipment_model or "agxunity" in equipment_model or "agx" in equipment_model:
+    if (
+        "excavator_simple" in equipment_model
+        or "agxunity" in equipment_model
+        or "agx" in equipment_model
+        or "yulong" in equipment_model
+    ):
         return 4
     return 7
 

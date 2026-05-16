@@ -20,27 +20,29 @@ Repo A 负责：
 
 ## 当前状态
 
-状态日期：`2026-04-27`
+状态日期：`2026-05-16`
 
 | 组件 | 实现状态 | 当前验证状态 |
 |---|---|---|
 | AGX 二进制 step-ack 协议客户端 | 已实现 | 已在本地 Unity 上通过 live strict smoke |
 | `AGXSimBackend` | 已实现 | `GET_INFO / RESET / STEP / reward tracker` 最小 live 链路已打通 |
 | HDF5 schema v1.1 | 已实现 | 支持 `timestamps`、`action_source`、`fpv`、`env_state` |
-| Repo A `/v2` add-only extension | 已实现 | 当前主线为 V2.1 Stage 1 multicycle labeler、10D `goal_tokens`、phase/mode/boundary 标签，并新增细粒度 `work_stage_id` |
-| 当前 AGX 任务协议 | 已实现 | 当前 target-safety 目标协议是 `env_state (13,)`，新增水平距离、高度与 dump clearance 字段；legacy `env_state (9,)` 只保留作非 target-geometry 用途 |
+| Repo A `/v2` add-only extension | 已实现 | 当前主线为 V2.1 Stage 1 multicycle labeler、10D `goal_tokens`、phase/mode/boundary 标签、细粒度 `work_stage_id`，并新增 V2.2 stage success、3x2 Cell Entry planned/actual/audit 字段、`cell_entry_tokens`、operator-first `dig_cut_tokens` |
+| 当前 AGX 任务协议 | 已实现 | 当前 target-safety + Cell Entry 目标协议是 add-only `env_state`；YuLong/AGX V2.2 live bridge 使用 `64D` contract，前 0-27 项保持兼容 |
 | `tb-record-teleop` | 已实现 | `v1` 保持兼容；当前 V2 主线已切到 `teleop_multi_raw + target_dump_count` |
 | `tb-replay` | 已实现 | 支持单文件或整个目录批量回放；`fulltest` 已验证，`v1` 仍建议补一轮正式 batch QA |
 | `tb-dataset-videos` | 已实现 | 从 HDF5 离线导出 MP4 视频（无需连 AGX） |
 | `tb-label-v2_1` | 已实现 | 给 `teleop_multi_raw` 生成兄弟目录 relabeled 数据集并补写 Stage-1 `/v2` 标签 |
 | `tb-build-workskill-v2_1` | 已实现 | 从 sibling relabeled 数据集中裁出 `qualified_dig_start -> dump_end` 的 Stage-3 workskill 数据集 |
 | `tb-build-transition-v2_1` | 已实现 | 从 sibling relabeled 数据集中裁出 `dump_end -> next qualified_dig_start` 的 transition feasibility 数据集 |
-| `tb-build-primitives-v2_2` | 已实现 | 从 refreshed V2.1 workskill/raw 数据集中裁出 V2.2 `dig/carry/dump/return` 四个 primitive sibling 数据集 |
-| `tb-audit-target-geometry` | 已实现 | 检查数据集是否带齐 target-safety 训练所需的 4 个 target geometry 字段 |
+| `tb-build-cell-entry-v2_2` | 已实现 | 从 raw 数据生成 enriched raw，追加 3x2 Cell Entry planned/actual/audit `/v2` 字段与 JSON summary |
+| `tb-build-operator-first-v2_2` | 已实现 | 从 relabeled VDS 数据生成 operator-first wrapper，追加 effective deposit、professional cut corridor、return target 与 `/v2/step/dig_cut_tokens`，不修改 raw |
+| `tb-build-primitives-v2_2` | 已实现 | 从 V2.1 workskill/raw 数据集中裁出 V2.2 `dig/carry/dump/return` 四个 primitive sibling 数据集；new-env pilot 可用 effect-release fallback profile |
+| `tb-audit-target-geometry` | 已实现 | 检查数据集是否带齐 target-safety 训练所需的 7 个 target/dump-area geometry 字段 |
 | `tb-train` / ACT trainer | 已实现 | 已完成 `fulltest(qpos)`、`fulltest(qpos+qvel)` 与 `v1(qpos)` 三条训练线 |
 | `tb-eval` | 已实现 | 已完成正式 live eval；当前支持 V2.1 Stage 1 多轮 boundary / continuity 指标 |
 | `hybrid_planner_act` | 已实现 | 已接入最小 Stage 2 deploy 链；当前已在 `s0_truck` 上通过 live `2-cycle` gate，并完成一次 `3-cycle smoke` |
-| `primitive_planner_act` | 已实现（V2.2 smoke 入口） | 加载 `dig/carry/dump/return` 四个 ACT checkpoint；低层只用 `qpos+qvel`，Unity target geometry 只用于 scripted switch 与日志/QC |
+| `primitive_planner_act` | 已实现（V2.2 smoke 入口） | 加载 `dig/carry/dump/return` 四个 ACT checkpoint；YuLong operator-first 主线只给 `dig` 注入 `dig_cut_tokens`，carry/dump/return 保持 `qpos+qvel` |
 | Stage 3 bootstrap work-skill | 已实现 | 已完成 `agx_teleop_v1 -> v2_1_relabeled -> v2_1_workskill`，并跑通 `qvel/gcact` smoke train；`qvel e50 + loaded_and_clear bootstrap` 已通过单轮 live success gate |
 | Stage 4 rule planner | 已实现（首版目标已完成） | 已把 `RuleTaskPlanner / PlannerGoal / CycleSummary / SectorBelief` 接入现有 `hybrid_planner_act`，并完成 `planner_trace.json` 回放；正式主配置下 `3` 条 live rollout 已达到 `cycle2_success_rate = 1.0`，官方 `3-cycle smoke` 也已达到 `cycle3_success_rate = 1.0` |
 | rollout timestep logs | 已实现 | `tb-eval` 现可写 `rollout_XXX.jsonl / summary / manifest` |
@@ -54,6 +56,12 @@ Repo A 负责：
 - 用 `eval_agx_v2_1_stage2_hybrid.yaml` 继续回归 Stage 2 最小 hybrid 闭环，并用 `eval_agx_v2_1_stage2_hybrid_3cycle_smoke.yaml` 做 3-cycle smoke
 - 用 `agx_teleop_v1 -> agx_teleop_v1_v2_1_relabeled -> agx_teleop_v1_v2_1_workskill` 作为当前 Stage 3 bootstrap work-skill 链
 - Stage 4 的第一版 rule planner 已经接入 Stage-2 稳线并完成首版目标；当前重点转为更大样本的多 rollout 回归与规则细化
+- YuLong new-env pilot 当前已按小斗 `contact_depth` 规则重切 V2.2 四 primitive root：
+  `data/yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4primitives_effect_release_20260514`
+  （`dig=40 / carry=40 / dump=40 / return=40`，reject 为 0），训练入口为
+  `act_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_{dig,carry,dump,return}_qvel.yaml`，
+  rollout 入口为 `eval_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_qvel_smoke.yaml`；
+  多轮验证使用 `eval_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_qvel_3cycle_smoke.yaml`
 - `/v2/step/work_stage_id` 已接入离线 relabel，用来标出 `entry_to_bite / first_bite / rebite_recovery / carry / approach_dump / dump`
 - 旧的 `ready-anchor / dump_plus_ready / 单铲 ready-return` 已从当前主线删除，只保留在历史提交中
 - Stage 3 当前存在一个 deploy-only bootstrap handoff：
@@ -61,13 +69,14 @@ Repo A 负责：
   - `loaded_and_clear -> dump_end` 再切给 Stage-3 work policy
   - 这条逻辑仅作为 live 兼容层存在，不进入协议、`/v2` schema、planner 语义或默认训练口径
 - V2.2 当前新增四 primitive smoke 线：
+  - Cell Entry builder: `tb-build-cell-entry-v2_2`
   - builder: `tb-build-primitives-v2_2`
   - 当前 ownership probe root:
     `data/agx_v2_2_4primitives_ownership_boundary_260427_1ep`
   - 当前 carry/dump 训练 mix:
     `data/agx_v2_2_4primitives_ownership_history_probe_leftboost_260427`
     （旧 boundary rule baseline；新版 middle-handoff builder 需要用 16-field
-    bed geometry 数据重建）
+    dump area geometry 数据重建）
   - 当前 ownership smoke eval:
     `testbed/configs/eval_agx_v2_2_4primitives_ownership_leftboost_qvel_3cycle_smoke.yaml`
   - phase boundary source of truth:
@@ -77,14 +86,27 @@ Repo A 负责：
   - `dump` 起点固定为 `first approach_dump stage`；如果 stable curl-out 早于
     `approach_dump`，builder 会 reject 该 carry/dump window，避免把边界不清的
     teleop 数据混入新版 ownership 训练
+  - 对 YuLong 这类 new-env pilot，可显式使用
+    `--boundary-profile v2_2_effect_release_fallback`：当旧阈值没有打出
+    `approach_dump`，但稳定 release onset 和最终 good dump 都成立时，把
+    `carry -> dump` 边界前移到 effect-based release onset；这保留四 primitive
+    ownership，同时不把旧阈值实现当成新框架定义
   - 2026-04-28 middle-handoff probe 已验证：旧 refreshed sample 和此前
     ownership probe 即使刷新成 16-field geometry，也只接受 `dig`，`carry/dump`
     全部 reject；下一批训练前需要按 phase boundary 文档补录新数据
   - planner 在 `dump_done` 后保持 dump skill `30` step，再切 return；当前 smoke
     关闭即时 `dump_end` boundary 切换，避免 temporal aggregation 边界上 return
-    动作把刚落入车斗的土带出
+    动作把刚落入dump area的土带出
   - live eval 入口：`eval_agx_v2_2_4primitives_qvel_3cycle_smoke.yaml`
-  - 首轮 reset 仍可配置 `bootstrap_policy` 到 `loaded_and_clear`，但 primitive 执行阶段不启用 fallback
+  - 首轮 reset 仍可配置 `bootstrap_policy` 到 `loaded_and_clear`；YuLong pilot
+    也支持 `bootstrap_end_mode=scripted_qpos`，只用于 smoke 时进入首个
+    planned/accepted entry pose；若设备归一化动作方向和 qpos 方向不一致，
+    用 `scripted_bootstrap.action_signs` 显式声明每轴符号，primitive 执行阶段不启用 fallback
+  - YuLong 小斗 relabel/eval 使用 `qualified_dig_start_mode=contact_depth`，
+    让 `qualified_dig_start` 主要由 dig-area 距离和下挖深度触发，不等待质量增量
+  - YuLong operator-first 主线保留 Cell Entry planned/actual/audit 作为 legacy diagnostic；
+    正式 dig 条件目标改为 `/v2/step/dig_cut_tokens`，从专业操作的 entry/exit
+    cut corridor 离线推导，`carry/dump/return` 仍默认保持 `qpos + qvel`
 ---
 
 ## 概念框架
@@ -157,7 +179,8 @@ Repo A 负责：
 - `qpos (4,)`：`[swing, boom, stick, bucket]`，归一化位置
 - `qvel (4,)`：`[swing, boom, stick, bucket]`，速度
 - `images["fpv"]`：`(H, W, 3)`，`uint8`
-- `env_state (13,)`：
+- `env_state`：旧数据保持 `28D`；2026-05-14 起 Unity V2.2 bridge
+  对 YuLong/AGX 采用 add-only `64D` contract，前 0-27 位顺序完全不变。
 
 ```text
 [
@@ -174,38 +197,88 @@ Repo A 负责：
   bucket_height_above_target_rim_m,
   bucket_over_target_footprint_mask,
   dump_clearance_ok_mask,
-  bucket_bed_relative_x_m,
-  bucket_bed_relative_z_m,
-  bucket_bed_footprint_outside_distance_m
+  bucket_dump_area_relative_x_m,
+  bucket_dump_area_relative_z_m,
+  bucket_dump_area_footprint_outside_distance_m,
+  dig_area_geometry_available,
+  dig_area_long_axis,
+  dig_area_grid_long_count,
+  dig_area_grid_short_count,
+  bucket_dig_area_relative_x_m,
+  bucket_dig_area_relative_y_m,
+  bucket_dig_area_relative_z_m,
+  bucket_dig_area_long_norm,
+  bucket_dig_area_short_norm,
+  bucket_dig_area_long_index,
+  bucket_dig_area_short_index,
+  bucket_dig_area_cell_id
 ]
 ```
 
+V2.2 追加的 28-63 位覆盖 plan(1) 的现场采集字段：
+
+```text
+bucket_tip_dig_area_x/y/z_m,
+bucket_depth_below_local_surface_m,
+bucket_depth_below_target_surface_m,
+dig_area_surface_depth_m_r{0..2}_c{0..1},
+dig_area_removed_depth_m_r{0..2}_c{0..1},
+dig_area_target_depth_m_r{0..2}_c{0..1},
+dig_area_cell_valid_mask_r{0..2}_c{0..1},
+bucket_mass_delta_kg,
+deposited_mass_in_dump_area_kg,
+offtarget_deposited_mass_kg,
+target_geometry_available,
+bucket_contact_dig_area_mask,
+bucket_contact_dump_area_mask,
+hard_collision_count
+```
+
+其中 `offtarget_deposited_mass_kg = -1.0` 表示当前 Unity 场景没有可靠的
+off-target mass sensor；对应 HDF5 metadata 会写
+`offtarget_deposited_mass_source=unavailable`。
+
 target-safety 相关逻辑使用显式 target geometry 字段：
-`min_distance_to_target_m` 仍会记录为 legacy scalar metric，但不会被当作
-`target_horizontal_distance_m` 或 clearance 的 fallback。
-V2.2 的 Unity bridge 额外输出 bucket proxy center 在 truck-bed local frame
-下的 `bucket_bed_relative_x_m/z_m`，以及到 bed footprint 的
-`bucket_bed_footprint_outside_distance_m`；`bucket_over_target_footprint_mask`
-现在表示 bucket proxy 位于 truck-top 可倒料区域上方，复用 TruckBed 已有
-clearance tolerance，不再要求 strict OBB footprint 相交。
-`bucket_bed_footprint_outside_distance_m` 是 unsigned proximity，只说明 bucket
-proxy 离 truck-bed footprint 有多近；它不能区分 tail/middle/front。需要表达
-“不要在车斗尾部交接”时，必须同时使用 signed
-`bucket_bed_relative_x_m/z_m` window。
+`min_distance_to_target_m` 现在是 DumpArea footprint outside-distance 的
+scalar mirror；reward/QC 仍优先使用显式的
+`target_horizontal_distance_m`、`dump_clearance_ok_mask` 和
+`bucket_dump_area_footprint_outside_distance_m`，不把这个 scalar 当作
+clearance fallback。
+当前 Unity bridge 额外输出 bucket proxy center 在 active dump area local frame
+下的 `bucket_dump_area_relative_x_m/z_m`，以及到 dump-area footprint 的
+`bucket_dump_area_footprint_outside_distance_m`；`bucket_over_target_footprint_mask`
+表示 bucket proxy 位于 dump-area 可倒料区域上方，可结合目标侧配置的
+clearance tolerance 使用。
+`bucket_dump_area_footprint_outside_distance_m` 是 unsigned proximity，只说明 bucket
+proxy 离 dump-area footprint 有多近；它不能表达目标局部坐标中的前后/左右位置。
+需要约束 handoff corridor 时，必须同时使用 signed
+`bucket_dump_area_relative_x_m/z_m` window。
 其中 `dump_clearance_ok_mask` 是 Unity 输出的 clearance source of truth：
-TruckBed 水平方向允许目标侧配置的 dump 容差，但垂直方向仍要求
-`bucket_height_above_target_rim_m >= 0.0`，也就是桶底必须在车厢 rim/top
+DumpArea 水平方向允许目标侧配置的 dump 容差，但垂直方向仍要求
+`bucket_height_above_target_rim_m >= 0.0`，也就是桶底必须在 dump-area rim/top
 之上。
+`mass_in_target_box_kg` 是当前 DumpArea 的 reset-relative delivered mass：
+terrain particle 第一次进入 DumpArea 测量体积时，按 AGX particle 自身质量
+计一次；reset 时已经在体积内的 particle 会先作为基线 prime，不计入新增交付。
+Unity 侧 ledger 使用全局 `particle.hash()` 去重，并在 particle 消失后释放 hash，
+避免同一粒子经多个 terrain provider 暴露时被双计，同时允许后续铲次复用 hash 后重新计入。
+`deposited_mass_in_target_box_kg` 在当前 E85 场景中使用同一套 unique
+particle-entry ledger。这个正式质量源不依赖 `DumpTerrainReceiver` 高度场密度换算、
+settled/live 状态拼接，也不合入 bucket-unload near target 推断量。
+Cell Entry 字段固定使用 DigArea 3x2 grid：长边 3 份、短边 2 份；
+`cell_id = long_index * 2 + short_index`。bucket 出界或 DigArea 几何不可用时，
+`dig_area_geometry_available = 0`，indices 与 `cell_id` 均为 `-1`。
 
 奖励 / 成功语义：
 - `loading`：只有满足 DigArea good-start 后才开始给正向装载奖励
 - `approaching_target`：载荷存在且 `target_horizontal_distance_m` 有效时，朝目标水平接近给奖励
-- `depositing`：目标 retained mass 开始增长时给奖励
+- `depositing`：目标 delivered mass 开始增长时给奖励
 - `hard_target_collision`：`target_hard_collision_count` 在本步增加时给固定惩罚
 - `success`：`deposited_mass_in_target_box_kg >= 100 kg` 且连续保持 `25` 步
 
 兼容性：
 - Repo A 仍可读取旧 `5D/7D env_state` 数据
+- Repo A 仍可降级读取旧 `16D env_state` 数据；Cell Entry actual cell 会记为 unknown，不会被当作成功命中
 - 但旧数据只用于兼容或离线 smoke，不应再作为当前任务的标准训练集
 
 ---
@@ -244,7 +317,7 @@ tb-record-teleop \
   --num-episodes 20 \
   --operator-id alice \
   --session-id baseline-v1 \
-  --notes "first rerecord batch with 300kg retained-mass stop" \
+  --notes "first rerecord batch with 300kg delivered-mass stop" \
   --output-dir data/agx_teleop_v1
 ```
 
@@ -337,7 +410,7 @@ tb-eval --config testbed/configs/eval_agx_v2_1_stage5_workskill_clean_v3_quality
 # note: keep clean_v3 as the current main training profile; v3b/v4 are only
 # diagnostic filters for checking early dump / severe pre-target spill.
 # note: clean_v3 now requires explicit target geometry fields for target-safe
-#       filtering. Legacy min_distance_to_target_m is not used as a fallback.
+#       filtering. Scalar min_distance_to_target_m is not used as a fallback.
 #       target_horizontal_distance_m < 0.35 -> near_dump_start. This removes
 #       close-call low-boom dump examples that can become hard target collisions
 #       in rollout.
@@ -346,7 +419,7 @@ tb-eval --config testbed/configs/eval_agx_v2_1_stage5_workskill_clean_v3_quality
 #       if loaded, target_horizontal_distance_m < 0.45, and dump clearance is
 #       not ok, cap bucket dump action to -0.15 and command at least +0.08 boom
 #       raise before continuing.
-#       dump clearance comes from Unity's dump_clearance_ok_mask; TruckBed may
+#       dump clearance comes from Unity's dump_clearance_ok_mask; DumpArea may
 #       use horizontal tolerance, but vertical clearance still requires
 #       bucket_height_above_target_rim_m >= 0.0.
 #       run tb-audit-target-geometry before using an old dataset for target-safe
@@ -645,9 +718,9 @@ tb-eval --config testbed/configs/eval_agx_fulltest_qvel.yaml
 
 当前 AGX eval 现在会同时记录五套 success 口径：
 - `legacy_any`：历史口径，只要 rollout 中任意时刻曾满足 mission success
-- `final_hold`：episode 结束时仍满足 retained-mass hold 条件
+- `final_hold`：episode 结束时仍满足 delivered-mass hold 条件
 - `strict_final_hold`：在 `final_hold` 基础上，还要求指定失败项计数不超过阈值
-- `dump_complete_final_hold`：推荐主口径，episode 结束时既要保住足够多的 retained mass，也要把 bucket 余土降到阈值以下
+- `dump_complete_final_hold`：推荐主口径，episode 结束时既要交付足够多的 delivered mass，也要把 bucket 余土降到阈值以下
 - `strict_dump_complete`：在 `dump_complete_final_hold` 基础上，再要求指定失败项计数不超过阈值
 
 当前推荐配置默认把主 success mode 设为 `dump_complete_final_hold`，并使用：
@@ -902,6 +975,17 @@ schema 规则：
 - `qpos_order`
 - `qvel_order`
 - `env_state_order`
+- `env_state_contract_version`
+- `scene_version`
+- `soil_preset_id`
+- `dig_area_preset_id`
+- `dump_area_preset_id`
+- `task_goal_description`
+- `target_depth_m`
+- `recording_protocol_version`
+- `warmup_or_train`
+- `operator_notes`
+- `observer_notes`
 
 4. demo-level metadata
 - `episode_id`
@@ -919,7 +1003,7 @@ schema 规则：
   - `qpos`
   - `images`
   - `action`
-  - 可选 low-dim：`qvel`、`goal_tokens`
+  - 可选 low-dim：`qvel`、`goal_tokens`、`cell_entry_tokens`、`dig_cut_tokens`
 - 视觉输入可以通过 `policy.image_mask` 做 masked RGB 预处理：仍然保持
   3-channel RGB，不改 ACT/ResNet 结构。当前支持按 camera 配置 binary rectangle
   mask，或从 HDF5 的 `/observations/image_masks/...` 读取 mask；mask 外像素会置零。
@@ -938,28 +1022,31 @@ target-safety 训练还有一个额外契约：
 - 数据必须带齐 `target_horizontal_distance_m`、
   `bucket_height_above_target_rim_m`、`bucket_over_target_footprint_mask`、
   `dump_clearance_ok_mask`
-- `dump_clearance_ok_mask` 是 Unity source-of-truth clearance mask；TruckBed
+- `dump_clearance_ok_mask` 是 Unity source-of-truth clearance mask；DumpArea
   可放宽水平距离，但垂直仍必须满足 `bucket_height_above_target_rim_m >= 0.0`
-- `bucket_over_target_footprint_mask` 是 Unity 的 truck-top mask：表示 bucket proxy
-  位于 truck bed 上方可倒料区域内；它复用 TruckBed 现有 clearance tolerance，
+- `bucket_over_target_footprint_mask` 是 Unity 的 dump-area mask：表示 bucket proxy
+  位于 dump area 上方可倒料区域内；它可结合 DumpArea clearance tolerance，
   不新增 env_state 字段。更严格的 release 深度仍看
-  `bucket_bed_footprint_outside_distance_m`。
+  `bucket_dump_area_footprint_outside_distance_m`。
 - V2.2 middle-handoff builder 要求数据包含
-  `bucket_bed_relative_x_m/z_m` 和 `bucket_bed_footprint_outside_distance_m`；
-  旧 13-field target geometry 数据会被新版 carry/dump ownership builder reject，
+  `bucket_dump_area_relative_x_m/z_m` 和 `bucket_dump_area_footprint_outside_distance_m`；
+  旧 13-field target geometry 数据缺少 signed dump-area local 几何，会被新版 carry/dump ownership builder reject，
   不再 silently 进入训练。
 - V2.2 scripted primitive planner 的 dump readiness 不用固定 swing qpos；它用
   target-relative geometry，并要求
-  `bucket_bed_footprint_outside_distance_m <= 1.35m` 加 signed
-  `bucket_bed_relative_x_m/z_m` corridor 表明 bucket proxy 已经进入 truck-top
+  `bucket_dump_area_footprint_outside_distance_m <= 1.35m` 加 signed
+  `bucket_dump_area_relative_x_m/z_m` corridor 表明 bucket proxy 已经进入 dump-area
   approach handoff 区；当前 V2.2 smoke config 把
   `dump_ready_max_horizontal_distance_m` 设为 `null`，scalar horizontal distance
   只保留为显式 legacy mode，不再作为默认 dump 切换条件。当前 approach handoff
-  corridor 是 `-4.30<=bed_relative_x<=2.00`、
-  `2.75<=bed_relative_z<=3.50`，并要求 bucket 至少高出 rim `0.30m`。
-  单独的 unsigned `outside` 不再作为默认 dump 切换条件，因为它不能区分车斗尾部和中部。
+  corridor 是 `-4.30<=dump_area_relative_x<=2.00`、
+  `2.75<=dump_area_relative_z<=3.50`，并要求 bucket 至少高出 rim `0.30m`。
+  单独的 unsigned `outside` 不再作为默认 dump 切换条件，因为它不能区分 dump area 的局部前后位置。
 - V2.2 4-primitives planner 的 `dig -> carry` 切换只看 bucket 是否已 loaded；
-  离开 dig 区和运载到 truck 属于 carry primitive，不要求先满足固定 escape distance
+  离开 dig 区和运载到 dump area 属于 carry primitive，不要求先满足固定 escape distance
+- V2.2 Cell Entry enriched raw 会补写 `/v2/step/cell_entry_tokens` 和
+  planned/actual/audit flat fields，供后续 conditional primitive 使用；当前默认
+  primitive train/eval configs 不把这些 token 加进 low-dim 输入
 - `tb-audit-target-geometry --dataset-dir <dataset>` 会检查覆盖率
 - 没有这些字段的旧数据仍可用于非 target-geometry 的诊断/训练线，但不要混进
   target-safety workskill 训练

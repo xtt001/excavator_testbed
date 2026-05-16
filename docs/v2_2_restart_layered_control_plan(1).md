@@ -17,7 +17,7 @@ V2.2 是起点，不是终点。
 - `dig -> carry -> dump -> return` 四 primitive ownership；
 - `dump` 作为一个混合 primitive，包含 approach、alignment、release、post-dump hold；
 - 不恢复默认 5P split；
-- 固定 truck / 固定 dump area 阶段不加 truck-token；
+- 固定 dump area 阶段不加 dump-area-token；
 - selected target 和 actual outcome 必须分开记录；
 - 错误 cell 的实际执行不能 rebind 成成功。
 
@@ -274,7 +274,7 @@ dig -> carry -> dump -> return
 不输入：
 
 - dump target；
-- truck-token；
+- dump-area-token；
 - return 目标；
 - `cycle_index`，第一阶段只记录，不作为 dig ACT 的核心控制条件。
 
@@ -304,7 +304,7 @@ approach correction 或 recover。
 - post-dump hold；
 - 确保不要被 return 过早接管。
 
-固定 truck / 固定 dump area 下，`dump` 默认不 conditioned。
+固定 dump area 下，`dump` 默认不 conditioned。
 
 只有当 dump area 变成变量时，才给 `dump` 加 dump-area target。即使未来加，也只应该
 加 dump 相关目标，不把 dig cell / bite token 喂给 dump。
@@ -407,8 +407,9 @@ else:
 2. **actual accepted start**：执行效果上确认这次 dig 已经有效开始；
 3. **actual bite / removal**：soil 实际开始被切削和最终被移除的位置。
 
-当前 legacy `qualified_dig_start` 可以作为短期替代信号，但最终应升级为更清楚的
-effect-based event：
+当前 legacy `qualified_dig_start` 可以作为短期替代信号；YuLong 小斗环境使用
+`qualified_dig_start_mode=contact_depth`，让它先表达 dig-area 接触和下挖深度，
+不再等待质量增量。最终仍应升级为更清楚的 effect-based event：
 
 - bucket 进入目标作业区局部范围；
 - bucket 相对 local surface 达到可挖深度；
@@ -434,6 +435,21 @@ effect-based event：
 | 3 | `dig + return + dump` | 仅在 dump area 可变时启用 | target deposit vs actual deposit |
 
 `carry` 默认保持非 conditioned。
+
+当前 YuLong pilot 的数据构建仍先经过阶段 0 的四 primitive ownership 稳定性检查；
+通过后进入阶段 1：只训练 conditioned `dig`。训练配置使用
+`act_yulong_v2_2_pro_conditioned_dig_cell_entry_qvel.yaml`，输入为
+`qpos + qvel + cell_entry_tokens`；live 配置使用
+`eval_yulong_v2_2_pro_primitive_planner_conditioned_dig_smoke.yaml`，由
+`primitive_planner_act` 只在调用 `dig` policy 时注入 live Cell Entry token，
+`carry/dump/return` 仍保持 `qpos + qvel`。不把 one full-task ACT/GC-ACT 或
+旧 `left/mid/right` goal-token planner 当成正式主线。若新环境没有打出
+`approach_dump` 标签，但稳定 release onset 和 final good dump 都成立，可以使用
+`tb-build-primitives-v2_2 --boundary-profile v2_2_effect_release_fallback`，把
+`carry -> dump` 边界前移到 effect-based release onset。reset 到首个 entry 的
+短期 smoke 兼容层使用 `primitive_planner_act` 的 `bootstrap_end_mode=scripted_qpos`；
+若设备动作方向和 qpos 方向不一致，用 `scripted_bootstrap.action_signs` 显式声明每轴符号。
+它只负责进入 planned/accepted entry 附近，不是 learned primitive，也不代表最终 planner。
 
 ### dig pose 如何强化
 
@@ -540,10 +556,54 @@ boundary_or_label_uncertain
 ```text
 raw full-cycle
   -> relabeled full-cycle
+  -> cell-entry/operator-first enriched raw (prefer VDS wrapper)
   -> primitives/dig
   -> primitives/carry
   -> primitives/dump
   -> primitives/return
+```
+
+当前实现入口是 `tb-build-cell-entry-v2_2`：它在 primitive split 之前对 raw
+episode 追加 3x2 Cell Entry 的 planned/actual/audit `/v2` 字段与
+`cell_entry_tokens`。YuLong 主线应使用
+`tb-build-cell-entry-v2_2 --storage-mode vds`，让大图像、qpos/qvel/action、
+env_state、timestamps 和已有 `/v2/step/*` 通过 HDF5 VDS 指向 immutable raw root，
+只在 wrapper 中直接写新增 Cell Entry 字段、metadata、cycle QC 和 lineage。
+`tb-build-primitives-v2_2 --storage-mode vds --raw-dir <cell-entry-root>`
+直接消费 enriched raw 并切出四个 primitive sibling datasets；`--storage-mode manifest`
+只写窗口 manifest/summary，用于 dry-run QC。primitive wrapper 会记录
+`source_episode_path`、`source_start_step`、`source_end_step_exclusive`、
+`source_cycle_id`、`primitive_name`、boundary profile 与 Cell Entry audit 标量。
+两个 builder 都会写 `lineage.json`，并默认拒绝覆盖已有 episode；需要维护
+`data/` 下的当前候选入口时，用 `--current-symlink <path>` 只更新 symlink，
+真实历史 root 仍应保持 immutable。builder 不重新承担 planner/audit 决策。
+
+2026-05-16 YuLong pro 数据采用 operator-first 语义修正：`cell_entry` 继续作为
+legacy diagnostic，不再把离线 scripted selected cell 当成专业师傅必须执行的目标。
+正式 conditioned dig 目标改为 `dig_cut_tokens`，由专业操作的实际 entry/exit
+cut corridor、cut length、depth peak 和 payload gain 离线推导。对应入口为
+`tb-build-operator-first-v2_2`，输入已有 relabeled VDS root，输出 add-only VDS
+wrapper；新增字段包括 `cycle_effective_deposit_delta_kg`、`legacy_dump_end_deposit_delta_kg`、
+`dump_window_deposit_delta_kg`、`operator_entry_*`、`operator_exit_*`、
+`operator_cut_*`、`next_operator_entry_*`、`return_entry_delta_*` 与
+`/v2/step/dig_cut_tokens`。该 builder 不覆盖旧 `/v2/cycle/deposit_delta_kg`，
+也不修改 immutable raw。
+
+当前 YuLong operator-first 主线命令：
+
+```bash
+tb-build-operator-first-v2_2 \
+  --dataset-dir data/yulong_v2_2_current_relabeled \
+  --output-dir /data/pingfan/excavator_testbed_data_archive/yulong_v2_2_pro_full_task_raw_20260515_26eps_good_operator_first_relabel_v2_2_20260516 \
+  --storage-mode vds \
+  --current-symlink data/yulong_v2_2_current_operator_relabel
+
+tb-build-primitives-v2_2 \
+  --raw-dir data/yulong_v2_2_current_operator_relabel \
+  --output-root /data/pingfan/excavator_testbed_data_archive/yulong_v2_2_pro_full_task_raw_20260515_26eps_good_operator_first_primitives_v2_2_vds_20260516 \
+  --storage-mode vds \
+  --boundary-profile v2_2_effect_release_fallback \
+  --current-symlink data/yulong_v2_2_current_primitives_operator_first
 ```
 
 具体录制入口、episode 长度、stop mode、字段需求、QC 和专业师傅现场规则，以
@@ -563,10 +623,11 @@ raw full-cycle
    primitive split、predicate attribution、3-cycle smoke 或离线回放都必须正常。
 6. pilot 通过后，再邀请专业师傅录制大规模 full-cycle raw 数据，保持自然操作，不要求按
    primitive 停顿。
-7. 写新版 relabel/builder：输出 planned/actual 对齐字段、predicate 结果、failure attribution
-   和四 primitive sibling datasets。
+7. 写新版 relabel/builder：先用 `tb-build-operator-first-v2_2` 输出 operator cut
+   corridor、effective deposit、return target 与 `dig_cut_tokens`，旧
+   `cell_entry` 字段只保留诊断，再由 primitive builder 产出四 primitive sibling datasets。
 8. 先训练 V2.2-style 四 primitive：全部 `qpos+qvel`，确认新数据能学回基本循环。
-9. 只参数化 `dig`，做 A/B：old dig vs conditioned dig，其他 checkpoint 不变。
+9. 只参数化 `dig`，做 A/B：old dig vs operator-first conditioned dig，其他 checkpoint 不变。
 10. 如果 return 无法到达 next entry，再参数化 `return`。
 11. 只有 dump area 可变时，再参数化 `dump`。
 
@@ -593,7 +654,7 @@ V2.3 / V2.3.5：
 
 - paramdig 是必要方向，但不能和 carry/dump/return 同时大改；
 - 5P split 不适合专业司机自然 dump；
-- truck-token 对固定 truck 没价值；
+- dump-area-token 对dump area 没价值；
 - return 的 target 不能定义成 next actual bite；
 - planner rebind 会掩盖失败，不能算成功；
 - 旧 detector / 旧 planner 可以作为过渡工具，但不是新框架定义。

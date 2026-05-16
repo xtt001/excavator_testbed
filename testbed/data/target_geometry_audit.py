@@ -14,6 +14,9 @@ from testbed.data.schema import (
     ATTR_ENV_STATE_ORDER,
     DS_ENV_STATE,
     GRP_METADATA,
+    ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
     ENV_STATE_DUMP_CLEARANCE_OK_IDX,
@@ -26,6 +29,9 @@ TARGET_GEOMETRY_FIELDS = (
     "bucket_height_above_target_rim_m",
     "bucket_over_target_footprint_mask",
     "dump_clearance_ok_mask",
+    "bucket_dump_area_relative_x_m",
+    "bucket_dump_area_relative_z_m",
+    "bucket_dump_area_footprint_outside_distance_m",
 )
 
 TARGET_GEOMETRY_FIXED_INDICES = {
@@ -33,6 +39,9 @@ TARGET_GEOMETRY_FIXED_INDICES = {
     "bucket_height_above_target_rim_m": ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     "bucket_over_target_footprint_mask": ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
     "dump_clearance_ok_mask": ENV_STATE_DUMP_CLEARANCE_OK_IDX,
+    "bucket_dump_area_relative_x_m": ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
+    "bucket_dump_area_relative_z_m": ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
+    "bucket_dump_area_footprint_outside_distance_m": ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
 }
 
 

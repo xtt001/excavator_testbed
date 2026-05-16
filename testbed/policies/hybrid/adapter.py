@@ -396,7 +396,7 @@ class HybridPlannerACTPolicy(Policy):
                 "work_target_guard requires target geometry fields "
                 "(target_horizontal_distance_m, bucket_height_above_target_rim_m, "
                 "bucket_over_target_footprint_mask, dump_clearance_ok_mask). "
-                "Legacy min_distance_to_target_m is not used as a fallback."
+                "Scalar min_distance_to_target_m is not used as a fallback."
             )
         if not np.isfinite(target_horizontal_distance):
             return None

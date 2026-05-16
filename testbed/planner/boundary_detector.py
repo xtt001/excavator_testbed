@@ -26,12 +26,20 @@ from testbed.data.schema import (
 MODE_WORK = 0
 MODE_TRANSITION = 1
 
+QUALIFIED_DIG_START_MODE_PROGRESS = "progress"
+QUALIFIED_DIG_START_MODE_CONTACT_DEPTH = "contact_depth"
+QUALIFIED_DIG_START_MODES = {
+    QUALIFIED_DIG_START_MODE_PROGRESS,
+    QUALIFIED_DIG_START_MODE_CONTACT_DEPTH,
+}
+
 
 @dataclass(frozen=True)
 class BoundaryDetectorConfig:
     target_approach_distance_m: float = 1.25
     dig_area_touch_tolerance_m: float = 0.05
     dig_below_plane_depth_tolerance_m: float = 0.02
+    qualified_dig_start_mode: str = QUALIFIED_DIG_START_MODE_PROGRESS
     delta_mass_start_kg: float = 5.0
     target_mass_delta_tol_kg: float = 2.0
     residual_bucket_mass_thresh: float = 100.0
@@ -60,6 +68,12 @@ def build_boundary_detector_from_config(
 ) -> "BoundaryDetector":
     reward_cfg = dict(reward_cfg or {})
     success_cfg = dict(success_cfg or {})
+    qualified_dig_start_mode = str(
+        reward_cfg.get(
+            "qualified_dig_start_mode",
+            QUALIFIED_DIG_START_MODE_PROGRESS,
+        )
+    )
     return BoundaryDetector(
         BoundaryDetectorConfig(
             target_approach_distance_m=float(
@@ -71,7 +85,8 @@ def build_boundary_detector_from_config(
             dig_below_plane_depth_tolerance_m=float(
                 reward_cfg.get("dig_below_plane_depth_tolerance_m", 0.02)
             ),
-            delta_mass_start_kg=5.0,
+            qualified_dig_start_mode=qualified_dig_start_mode,
+            delta_mass_start_kg=float(reward_cfg.get("delta_mass_start_kg", 5.0)),
             target_mass_delta_tol_kg=float(
                 reward_cfg.get("target_mass_delta_tol_kg", 2.0)
             ),
@@ -94,6 +109,12 @@ class BoundaryDetector:
 
     def __init__(self, config: BoundaryDetectorConfig | None = None) -> None:
         self.config = config or BoundaryDetectorConfig()
+        if self.config.qualified_dig_start_mode not in QUALIFIED_DIG_START_MODES:
+            raise ValueError(
+                "Unsupported qualified_dig_start_mode "
+                f"{self.config.qualified_dig_start_mode!r}; expected one of "
+                f"{sorted(QUALIFIED_DIG_START_MODES)}."
+            )
         self.reset()
 
     def reset(self) -> None:
@@ -360,6 +381,15 @@ class BoundaryDetector:
         }
 
     def _is_qualified_dig_condition(self, metrics: dict[str, float]) -> bool:
+        contact_depth_ready = bool(
+            metrics["min_distance_to_dig_area_m"]
+            <= self.config.dig_area_touch_tolerance_m
+            and metrics["bucket_depth_below_dig_area_plane_m"]
+            >= self.config.dig_below_plane_depth_tolerance_m
+        )
+        if self.config.qualified_dig_start_mode == QUALIFIED_DIG_START_MODE_CONTACT_DEPTH:
+            return contact_depth_ready
+
         raw_load_progress = (
             metrics["delta_mass_in_bucket_kg"] > self.config.delta_mass_start_kg
             or metrics["delta_excavated_mass_kg"] > self.config.delta_mass_start_kg
@@ -370,9 +400,7 @@ class BoundaryDetector:
             or metrics["step_success_load_progress"] > 0.0
         )
         return bool(
-            metrics["min_distance_to_dig_area_m"] <= self.config.dig_area_touch_tolerance_m
-            and metrics["bucket_depth_below_dig_area_plane_m"]
-            >= self.config.dig_below_plane_depth_tolerance_m
+            contact_depth_ready
             and (good_dig_signal or raw_load_progress)
         )
 

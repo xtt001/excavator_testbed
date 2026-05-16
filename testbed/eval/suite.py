@@ -22,6 +22,8 @@ from __future__ import annotations
 from dataclasses import replace
 import json
 from pathlib import Path
+import time
+from typing import Any
 
 import numpy as np
 
@@ -48,6 +50,10 @@ from testbed.eval.multi_cycle_metrics import (
 )
 from testbed.eval.tasks import EVAL_SEED, EvalTaskDef, get_eval_task
 from testbed.eval.video import save_eval_video
+from testbed.eval.rollout_hdf5 import (
+    build_rollout_v2_payload,
+    enrich_rollout_hdf5_in_place,
+)
 from testbed.policies.base import Policy
 from testbed.tasks.logic.excavator_reward import (
     build_agx_excavation_mission_overrides,
@@ -57,6 +63,7 @@ from testbed.data.v2_1 import build_goal_tokens
 from testbed.planner.boundary_detector import build_boundary_detector_from_config
 
 DEFAULT_PAUSE_EPS = 0.05
+LIVE_GOAL_SECTOR_IDS = {"left": 0, "mid": 1, "right": 2}
 
 
 class EvalSuite:
@@ -78,6 +85,8 @@ class EvalSuite:
     rollout_log_dir    Directory for rollout_XXX.jsonl and summary files.
     stream_rollout_logs If True, append rollout_XXX.partial.jsonl during the
                       rollout so interrupted runs still leave timestep evidence.
+    record_hdf5   If True, write each policy rollout as a trainable HDF5 episode.
+    record_hdf5_dir Directory for policy-rollout HDF5 episodes.
     step_log_interval  Print step progress every N steps during rollout.
     mass_thresh  Override task.mass_thresh (AGX success threshold).
     hold_steps   Override task.hold_steps for AGX success.
@@ -114,6 +123,10 @@ class EvalSuite:
         save_rollout_logs: bool = True,
         stream_rollout_logs: bool = False,
         rollout_log_dir: str | Path | None = None,
+        record_hdf5: bool = False,
+        record_hdf5_dir: str | Path | None = None,
+        record_hdf5_metadata: dict[str, object] | None = None,
+        record_hdf5_with_cell_entry: bool = True,
         step_log_interval: int = 50,
         agx_host: str = "127.0.0.1",
         agx_port: int = 5057,
@@ -129,6 +142,9 @@ class EvalSuite:
         residual_bucket_mass_thresh: float = 100.0,
         target_cycle_gate: int | None = None,
         target_cycle_gate_terminal_hold_steps: int | None = None,
+        live_goal_sequence: list[str] | tuple[str, ...] | list[int] | tuple[int, ...] | None = None,
+        live_goal_depth_norm: float = 1.0,
+        live_goal_dump_target_norm: float = 1.0,
         episode_len: int | None = None,
         camera_names: list[str] | None = None,
     ):
@@ -143,6 +159,10 @@ class EvalSuite:
         self.ckpt_path    = ckpt_path
         self.save_rollout_logs = bool(save_rollout_logs)
         self.stream_rollout_logs = bool(stream_rollout_logs)
+        self.record_hdf5 = bool(record_hdf5)
+        self.record_hdf5_dir = None if record_hdf5_dir is None else Path(record_hdf5_dir)
+        self.record_hdf5_metadata = dict(record_hdf5_metadata or {})
+        self.record_hdf5_with_cell_entry = bool(record_hdf5_with_cell_entry)
         self.step_log_interval = max(0, int(step_log_interval))
         self.agx_host     = agx_host
         self.agx_port     = agx_port
@@ -152,6 +172,9 @@ class EvalSuite:
         self._live_goal_tokens = None
         if self._scenario_id is not None:
             self._live_goal_tokens = build_goal_tokens(self._scenario_id)
+        self._live_goal_sequence = self._normalize_live_goal_sequence(live_goal_sequence)
+        self._live_goal_depth_norm = float(live_goal_depth_norm)
+        self._live_goal_dump_target_norm = float(live_goal_dump_target_norm)
 
         # Allow config override for mass_thresh
         if mass_thresh is not None:
@@ -196,6 +219,11 @@ class EvalSuite:
             )
             rollout_log_dir = default_results_dir / "rollouts"
         self.rollout_log_dir = Path(rollout_log_dir)
+        if self.record_hdf5 and self.record_hdf5_dir is None:
+            self.record_hdf5_dir = (
+                (self.results_dir if self.results_dir is not None else self.rollout_log_dir.parent)
+                / "hdf5_rollouts"
+            )
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -226,6 +254,9 @@ class EvalSuite:
         planner_summaries: list[dict[str, object]] = []
         quality_summaries: list[dict[str, float | int]] = []
         policy_name = type(self.policy).__name__
+        hdf5_paths: list[str] = []
+        if self.record_hdf5 and self.record_hdf5_dir is not None:
+            self.record_hdf5_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             for rollout_id in range(self.num_rollouts):
@@ -237,6 +268,21 @@ class EvalSuite:
 
                 ts = env.reset(seed=EVAL_SEED + rollout_id)
                 self.policy.reset()
+                rollout_recorder = None
+                if self.record_hdf5:
+                    from testbed.data.recorder import EpisodeRecorder
+
+                    rollout_recorder = EpisodeRecorder(
+                        output_dir=self.record_hdf5_dir,
+                        episode_idx=rollout_id,
+                        metadata=self._build_rollout_hdf5_metadata(
+                            env=env,
+                            rollout_id=rollout_id,
+                            task=task,
+                            policy_name=policy_name,
+                        ),
+                        camera_names=list(task.camera_names),
+                    )
 
                 rewards:      list[float]      = []
                 frames:       list[np.ndarray] = []
@@ -254,6 +300,7 @@ class EvalSuite:
                     },
                     pause_action_eps=DEFAULT_PAUSE_EPS,
                 )
+                live_goal_cycle_id = -1
 
                 if self.save_rollout_logs and self.stream_rollout_logs:
                     self.rollout_log_dir.mkdir(parents=True, exist_ok=True)
@@ -276,8 +323,12 @@ class EvalSuite:
                                 np.array(img, dtype=np.float32) / 255.0,
                                 "h w c -> c h w",
                             )
-                    if self._live_goal_tokens is not None and "goal_tokens" not in policy_input:
-                        policy_input["goal_tokens"] = self._live_goal_tokens.copy()
+                    if "goal_tokens" not in policy_input:
+                        goal_tokens = self._live_goal_tokens_for_cycle(
+                            live_goal_cycle_id
+                        )
+                        if goal_tokens is not None:
+                            policy_input["goal_tokens"] = goal_tokens
 
                     action = self.policy.predict(policy_input)
                     policy_debug = (
@@ -286,62 +337,122 @@ class EvalSuite:
                         else {}
                     )
                     ts     = env.step(action)
+                    post_obs = ts.observation
                     boundary_event = boundary_detector.update(
-                        env_state=ts.observation.get("env_state", np.zeros(9, dtype=np.float32)),
+                        env_state=post_obs.get("env_state", np.zeros(9, dtype=np.float32)),
                         action=action,
-                        qpos=ts.observation.get("qpos", np.zeros(4, dtype=np.float32)),
+                        qpos=post_obs.get("qpos", np.zeros(4, dtype=np.float32)),
                         reward_phase=str(
-                            ts.info.get("reward_phase", ts.observation.get("reward_phase", ""))
+                            ts.info.get("reward_phase", post_obs.get("reward_phase", ""))
                         ),
                         task_step_successes=list(
                             ts.info.get(
                                 "task_step_successes",
-                                ts.observation.get("task_step_successes", []),
+                                post_obs.get("task_step_successes", []),
                             )
                         ),
                         task_metrics=dict(
-                            ts.info.get("task_metrics", ts.observation.get("task_metrics", {}))
+                            ts.info.get("task_metrics", post_obs.get("task_metrics", {}))
                         ),
                     )
+                    live_goal_cycle_id = int(boundary_event.cycle_id)
 
                     r = float(ts.reward) if ts.reward is not None else 0.0
                     rewards.append(r)
-                    reward_phase = str(ts.info.get("reward_phase", obs.get("reward_phase", "")))
-                    task_success = bool(ts.info.get("task_success", obs.get("task_success", False)))
+                    reward_phase = str(ts.info.get("reward_phase", post_obs.get("reward_phase", "")))
+                    task_success = bool(ts.info.get("task_success", post_obs.get("task_success", False)))
                     task_step_successes = list(
-                        ts.info.get("task_step_successes", obs.get("task_step_successes", []))
+                        ts.info.get("task_step_successes", post_obs.get("task_step_successes", []))
                     )
                     task_step_failures = list(
-                        ts.info.get("task_step_failures", obs.get("task_step_failures", []))
+                        ts.info.get("task_step_failures", post_obs.get("task_step_failures", []))
                     )
                     task_metrics = dict(
-                        ts.info.get("task_metrics", obs.get("task_metrics", {}))
+                        ts.info.get("task_metrics", post_obs.get("task_metrics", {}))
                     )
-                    warnings = list(ts.info.get("warnings", obs.get("warnings", [])))
+                    warnings = list(ts.info.get("warnings", post_obs.get("warnings", [])))
+                    if rollout_recorder is not None:
+                        rollout_recorder.record(
+                            obs=post_obs,
+                            action=np.asarray(action, dtype=np.float32),
+                            reward=r,
+                            step_id=int(post_obs.get("step_id", t)),
+                            step_ns=time.time_ns(),
+                            action_src_type="policy",
+                            action_src_id=self._policy_action_source_id(
+                                policy_name=policy_name,
+                                policy_debug=policy_debug,
+                            ),
+                        )
                     step_records.append(
                         {
                             "rollout_id": int(rollout_id),
                             "t": int(t),
-                            "step_id": int(obs.get("step_id", t)),
-                            "sim_time_ns": int(obs.get("sim_time_ns", ts.info.get("sim_time_ns", 0))),
+                            "step_id": int(post_obs.get("step_id", t)),
+                            "sim_time_ns": int(post_obs.get("sim_time_ns", ts.info.get("sim_time_ns", 0))),
                             "reward": r,
                             "reward_phase": reward_phase,
                             "task_success": task_success,
                             "task_step_successes": task_step_successes,
                             "task_step_failures": task_step_failures,
                             "task_metrics": task_metrics,
-                            "qpos": np.array(obs.get("qpos", []), dtype=np.float32),
-                            "qvel": np.array(obs.get("qvel", []), dtype=np.float32),
+                            "qpos": np.array(post_obs.get("qpos", []), dtype=np.float32),
+                            "qvel": np.array(post_obs.get("qvel", []), dtype=np.float32),
                             "env_state": (
                                 None
-                                if obs.get("env_state") is None
-                                else np.array(obs.get("env_state"), dtype=np.float32)
+                                if post_obs.get("env_state") is None
+                                else np.array(post_obs.get("env_state"), dtype=np.float32)
                             ),
                             "action": np.array(action, dtype=np.float32),
                             "goal_tokens": (
                                 None
                                 if policy_input.get("goal_tokens") is None
                                 else np.array(policy_input.get("goal_tokens"), dtype=np.float32)
+                            ),
+                            "cell_entry_token_injected": bool(
+                                policy_debug.get("cell_entry_token_injected", False)
+                            ),
+                            "cell_entry_selected_cell_id": int(
+                                policy_debug.get("cell_entry_selected_cell_id", -1)
+                            ),
+                            "cell_entry_selected_long_index": int(
+                                policy_debug.get("cell_entry_selected_long_index", -1)
+                            ),
+                            "cell_entry_selected_short_index": int(
+                                policy_debug.get("cell_entry_selected_short_index", -1)
+                            ),
+                            "cell_entry_planned_entry_x_m": float(
+                                policy_debug.get("cell_entry_planned_entry_x_m", np.nan)
+                            ),
+                            "cell_entry_planned_entry_y_m": float(
+                                policy_debug.get("cell_entry_planned_entry_y_m", np.nan)
+                            ),
+                            "cell_entry_planned_entry_z_m": float(
+                                policy_debug.get("cell_entry_planned_entry_z_m", np.nan)
+                            ),
+                            "cell_entry_planner_ok": bool(
+                                policy_debug.get("cell_entry_planner_ok", False)
+                            ),
+                            "cell_entry_audit_reason_code": int(
+                                policy_debug.get("cell_entry_audit_reason_code", -1)
+                            ),
+                            "cell_entry_audit_reason": str(
+                                policy_debug.get("cell_entry_audit_reason", "")
+                            ),
+                            "cell_entry_audit_risk_flags": int(
+                                policy_debug.get("cell_entry_audit_risk_flags", 0)
+                            ),
+                            "cell_entry_inside_entry_envelope": bool(
+                                policy_debug.get("cell_entry_inside_entry_envelope", False)
+                            ),
+                            "cell_entry_distance_to_entry_envelope_m": float(
+                                policy_debug.get(
+                                    "cell_entry_distance_to_entry_envelope_m",
+                                    np.nan,
+                                )
+                            ),
+                            "cell_entry_seen_cell_id": int(
+                                policy_debug.get("cell_entry_seen_cell_id", -1)
                             ),
                             "cycle_id": int(boundary_event.cycle_id),
                             "mode_id": int(boundary_event.mode_id),
@@ -525,6 +636,15 @@ class EvalSuite:
                 highest_rewards.append(ep_highest)
                 episode_lengths.append(len(rewards))
                 successes.append(success)
+                hdf5_path = ""
+                cell_entry_summary: dict[str, Any] = {}
+                if rollout_recorder is not None and len(rollout_recorder) > 0:
+                    v2_payload = build_rollout_v2_payload(step_records)
+                    saved_hdf5 = rollout_recorder.save(success=success, v2=v2_payload)
+                    hdf5_path = str(saved_hdf5)
+                    hdf5_paths.append(hdf5_path)
+                    if self.record_hdf5_with_cell_entry:
+                        cell_entry_summary = enrich_rollout_hdf5_in_place(saved_hdf5)
 
                 print(
                     f"Rollout {rollout_id:3d}  "
@@ -559,6 +679,10 @@ class EvalSuite:
                         step_records=step_records,
                         video_path=video_path,
                     )
+                    if hdf5_path:
+                        summary["hdf5_path"] = hdf5_path
+                    if cell_entry_summary:
+                        summary["cell_entry_summary"] = cell_entry_summary
                     if task.backend_type == "agx":
                         summary.update(success_summary)
                     summary.update(continuity_summary)
@@ -654,6 +778,8 @@ class EvalSuite:
             )
 
         extra_metrics = {"success_list": successes}
+        if hdf5_paths:
+            extra_metrics["hdf5_paths"] = list(hdf5_paths)
         if task.backend_type == "agx":
             extra_metrics.update(
                 {
@@ -714,6 +840,114 @@ class EvalSuite:
         print("\n" + metrics.summary())
         return metrics
 
+    def _build_rollout_hdf5_metadata(
+        self,
+        *,
+        env,
+        rollout_id: int,
+        task: EvalTaskDef,
+        policy_name: str,
+    ) -> dict[str, object]:
+        from testbed.data.schema import (
+            ATTR_ACTION_ORDER,
+            ATTR_ACTION_SEMANTICS,
+            ATTR_CAMERA_FPS,
+            ATTR_CAMERA_HEIGHT,
+            ATTR_CAMERA_NAMES,
+            ATTR_CAMERA_ROW_ORDER,
+            ATTR_CAMERA_WIDTH,
+            ATTR_CONTROL_HZ,
+            ATTR_DIG_AREA_PRESET_ID,
+            ATTR_DT,
+            ATTR_DUMP_AREA_PRESET_ID,
+            ATTR_ENV_STATE_CONTRACT_VERSION,
+            ATTR_ENV_STATE_ORDER,
+            ATTR_IMAGE_FORMAT,
+            ATTR_OBSERVER_NOTES,
+            ATTR_OPERATOR_NOTES,
+            ATTR_PARAM_VERSION,
+            ATTR_PROTOCOL_VERSION,
+            ATTR_QPOS_ORDER,
+            ATTR_QVEL_ORDER,
+            ATTR_RECORDING_MODE,
+            ATTR_RECORDING_PROTOCOL_VERSION,
+            ATTR_SCENE_VERSION,
+            ATTR_SCENARIO_ID,
+            ATTR_SEED,
+            ATTR_SIM_BACKEND,
+            ATTR_SOIL_PRESET_ID,
+            ATTR_TARGET_DEPTH_M,
+            ATTR_TASK_GOAL_DESCRIPTION,
+            ATTR_TASK_NAME,
+            ATTR_WARMUP_OR_TRAIN,
+        )
+
+        info = env.get_info() if hasattr(env, "get_info") else None
+        camera_names = list(task.camera_names)
+        camera_by_name = {
+            camera.name: camera
+            for camera in (getattr(info, "cameras", ()) if info is not None else ())
+        }
+        metadata: dict[str, object] = {
+            ATTR_TASK_NAME: task.name,
+            ATTR_SIM_BACKEND: "agxunity" if task.backend_type == "agx" else task.backend_type,
+            ATTR_SEED: int(EVAL_SEED + rollout_id),
+            ATTR_PARAM_VERSION: "v2.2_policy_rollout",
+            ATTR_RECORDING_MODE: "policy_rollout",
+            ATTR_RECORDING_PROTOCOL_VERSION: "v2.2_policy_rollout_hdf5",
+            ATTR_ENV_STATE_CONTRACT_VERSION: "agx_env_state_v2_2_64",
+            ATTR_CAMERA_NAMES: ",".join(camera_names),
+            ATTR_IMAGE_FORMAT: "raw_rgb",
+            ATTR_SCENE_VERSION: "unknown",
+            ATTR_SOIL_PRESET_ID: "unknown",
+            ATTR_DIG_AREA_PRESET_ID: "default_3x2",
+            ATTR_DUMP_AREA_PRESET_ID: "active_dump_area",
+            ATTR_TASK_GOAL_DESCRIPTION: "Yulong fixed-station 3-cycle dig/dump policy rollout",
+            ATTR_TARGET_DEPTH_M: 0.08,
+            ATTR_WARMUP_OR_TRAIN: "train",
+            ATTR_OPERATOR_NOTES: "",
+            ATTR_OBSERVER_NOTES: "",
+            "policy_name": str(policy_name),
+            "checkpoint_path": str(self.ckpt_path),
+        }
+        if self._scenario_id is not None:
+            metadata[ATTR_SCENARIO_ID] = str(self._scenario_id)
+        if info is not None:
+            metadata.update(
+                {
+                    ATTR_CONTROL_HZ: int(round(float(info.control_hz))),
+                    ATTR_DT: float(info.dt),
+                    ATTR_ACTION_SEMANTICS: str(info.action_semantics),
+                    ATTR_PROTOCOL_VERSION: str(info.protocol_version),
+                    ATTR_ACTION_ORDER: ",".join(info.action_order),
+                    ATTR_QPOS_ORDER: ",".join(info.qpos_order),
+                    ATTR_QVEL_ORDER: ",".join(info.qvel_order),
+                    ATTR_ENV_STATE_ORDER: ",".join(info.env_state_order),
+                }
+            )
+        if len(camera_names) == 1 and camera_names[0] in camera_by_name:
+            camera = camera_by_name[camera_names[0]]
+            metadata[ATTR_CAMERA_WIDTH] = int(camera.width)
+            metadata[ATTR_CAMERA_HEIGHT] = int(camera.height)
+            metadata[ATTR_CAMERA_FPS] = float(camera.fps)
+            metadata[ATTR_CAMERA_ROW_ORDER] = str(camera.row_order)
+
+        metadata.update(self.record_hdf5_metadata)
+        return {str(key): _metadata_attr_value(value) for key, value in metadata.items()}
+
+    def _policy_action_source_id(
+        self,
+        *,
+        policy_name: str,
+        policy_debug: dict[str, object],
+    ) -> str:
+        primitive_checkpoint = str(policy_debug.get("primitive_checkpoint_path", ""))
+        if primitive_checkpoint:
+            return f"policy:{policy_name}:{primitive_checkpoint}"
+        if self.ckpt_path:
+            return f"policy:{policy_name}:{self.ckpt_path}"
+        return f"policy:{policy_name}"
+
     def _should_log_step_progress(self, step_index: int, episode_len: int) -> bool:
         if self.step_log_interval <= 0:
             return False
@@ -740,6 +974,55 @@ class EvalSuite:
         if held_steps >= self._target_cycle_gate_terminal_hold_steps:
             return gate_reached_step, "target_cycle_gate_terminal_hold_reached"
         return gate_reached_step, None
+
+    def _live_goal_tokens_for_cycle(self, cycle_index: int) -> np.ndarray | None:
+        if self._scenario_id is None:
+            return None
+        if int(cycle_index) < 0:
+            return None if self._live_goal_tokens is None else self._live_goal_tokens.copy()
+        if not self._live_goal_sequence:
+            return None if self._live_goal_tokens is None else self._live_goal_tokens.copy()
+        index = max(0, min(int(cycle_index), len(self._live_goal_sequence) - 1))
+        curr_sector_id = int(self._live_goal_sequence[index])
+        next_index = index + 1
+        next_sector_id = (
+            int(self._live_goal_sequence[next_index])
+            if next_index < len(self._live_goal_sequence)
+            else -1
+        )
+        return build_goal_tokens(
+            self._scenario_id,
+            curr_sector_id=curr_sector_id,
+            curr_cut_depth_norm=self._live_goal_depth_norm,
+            next_sector_id=next_sector_id,
+            next_cut_depth_norm=self._live_goal_depth_norm,
+            dst_target_norm=self._live_goal_dump_target_norm,
+            has_lookahead=next_sector_id >= 0,
+        )
+
+    @staticmethod
+    def _normalize_live_goal_sequence(
+        goal_sequence: list[str] | tuple[str, ...] | list[int] | tuple[int, ...] | None,
+    ) -> tuple[int, ...]:
+        if not goal_sequence:
+            return ()
+        normalized: list[int] = []
+        for item in goal_sequence:
+            if isinstance(item, str):
+                key = item.strip().lower()
+                if key not in LIVE_GOAL_SECTOR_IDS:
+                    raise ValueError(
+                        f"Unknown live goal sector {item!r}. Expected left, mid, or right."
+                    )
+                normalized.append(LIVE_GOAL_SECTOR_IDS[key])
+            else:
+                value = int(item)
+                if value < 0 or value > 2:
+                    raise ValueError(
+                        f"Live goal sector id must be 0, 1, or 2, got {item!r}."
+                    )
+                normalized.append(value)
+        return tuple(normalized)
 
     # ── Environment factory ───────────────────────────────────────────────────
 
@@ -1032,6 +1315,19 @@ def _first_true_index(flags: list[bool]) -> int | None:
         if flag:
             return index
     return None
+
+
+def _metadata_attr_value(value: object) -> object:
+    if isinstance(value, (str, bytes, int, float, bool, np.integer, np.floating, np.bool_)):
+        return value
+    if value is None:
+        return ""
+    if isinstance(value, Path):
+        return str(value)
+    try:
+        return json.dumps(to_jsonable(value), sort_keys=True)
+    except TypeError:
+        return str(value)
 
 
 def _safe_rate(numerator: int | float, denominator: int) -> float:

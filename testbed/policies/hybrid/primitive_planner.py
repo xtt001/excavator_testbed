@@ -7,20 +7,39 @@ from typing import Any
 
 import numpy as np
 
+from testbed.data.operator_first_v2_2 import (
+    DIG_CUT_TOKEN_DIM,
+    build_live_dig_cut_tokens_from_pose,
+)
 from testbed.data.v2_1 import build_goal_tokens
 from testbed.data.schema import (
-    ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
-    ENV_STATE_BUCKET_BED_RELATIVE_X_IDX,
-    ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+    ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
     ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
     ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
 from testbed.planner.boundary_detector import BoundaryDetector
+from testbed.planner.cell_entry import (
+    CELL_ENTRY_TOKEN_DIM,
+    CellEntryGoal,
+    CellEntryPlanner,
+    CellGridSpec,
+    PlannerDecisionAudit,
+    PlannerDecisionAuditor,
+    PrimitiveCycleOutcome,
+    build_cell_entry_tokens,
+)
 from testbed.policies.base import Policy, register_policy
 from testbed.policies.hybrid.adapter import HYBRID_MODE_TRANSITION, HYBRID_MODE_WORK
 
@@ -83,12 +102,12 @@ class PrimitivePlannerACTPolicy(Policy):
         dump_ready_require_over_footprint: bool = True,
         dump_ready_require_clearance: bool = True,
         dump_ready_max_horizontal_distance_m: float | None = 0.60,
-        dump_ready_position_mode: str = "footprint_or_bed_relative",
-        dump_ready_max_bed_footprint_outside_distance_m: float | None = 0.05,
-        dump_ready_min_bed_relative_x_m: float | None = None,
-        dump_ready_max_bed_relative_x_m: float | None = None,
-        dump_ready_min_bed_relative_z_m: float | None = None,
-        dump_ready_max_bed_relative_z_m: float | None = None,
+        dump_ready_position_mode: str = "footprint_or_dump_area_relative",
+        dump_ready_max_dump_area_footprint_outside_distance_m: float | None = 0.05,
+        dump_ready_min_dump_area_relative_x_m: float | None = None,
+        dump_ready_max_dump_area_relative_x_m: float | None = None,
+        dump_ready_min_dump_area_relative_z_m: float | None = None,
+        dump_ready_max_dump_area_relative_z_m: float | None = None,
         dump_ready_hold_steps: int = 3,
         dump_done_max_bucket_mass_kg: float = 100.0,
         dump_done_min_deposit_delta_kg: float = 10.0,
@@ -101,6 +120,18 @@ class PrimitivePlannerACTPolicy(Policy):
         goal_scenario_id: str = "s0_truck",
         goal_depth_norm: float = 1.0,
         goal_dump_target_norm: float = 1.0,
+        cell_entry_enabled: bool = False,
+        cell_entry_grid: dict[str, Any] | None = None,
+        cell_entry_low_productivity_payload_gain_kg: float = 100.0,
+        scripted_bootstrap_target_qpos: list[float] | tuple[float, ...] | np.ndarray | None = None,
+        scripted_bootstrap_kp: float = 2.0,
+        scripted_bootstrap_kd: float = 0.25,
+        scripted_bootstrap_action_clip: float | list[float] | tuple[float, ...] = 0.35,
+        scripted_bootstrap_action_signs: list[float] | tuple[float, ...] | np.ndarray | None = None,
+        scripted_bootstrap_qpos_tolerance: float = 0.02,
+        scripted_bootstrap_qvel_abs_max: float = 0.08,
+        scripted_bootstrap_hold_steps: int = 5,
+        scripted_bootstrap_max_steps: int = 240,
     ) -> None:
         self.dig_policy = dig_policy
         self.carry_policy = carry_policy
@@ -127,30 +158,30 @@ class PrimitivePlannerACTPolicy(Policy):
             else float(dump_ready_max_horizontal_distance_m)
         )
         self.dump_ready_position_mode = str(dump_ready_position_mode)
-        self.dump_ready_max_bed_footprint_outside_distance_m = (
+        self.dump_ready_max_dump_area_footprint_outside_distance_m = (
             None
-            if dump_ready_max_bed_footprint_outside_distance_m is None
-            else float(dump_ready_max_bed_footprint_outside_distance_m)
+            if dump_ready_max_dump_area_footprint_outside_distance_m is None
+            else float(dump_ready_max_dump_area_footprint_outside_distance_m)
         )
-        self.dump_ready_min_bed_relative_x_m = (
+        self.dump_ready_min_dump_area_relative_x_m = (
             None
-            if dump_ready_min_bed_relative_x_m is None
-            else float(dump_ready_min_bed_relative_x_m)
+            if dump_ready_min_dump_area_relative_x_m is None
+            else float(dump_ready_min_dump_area_relative_x_m)
         )
-        self.dump_ready_max_bed_relative_x_m = (
+        self.dump_ready_max_dump_area_relative_x_m = (
             None
-            if dump_ready_max_bed_relative_x_m is None
-            else float(dump_ready_max_bed_relative_x_m)
+            if dump_ready_max_dump_area_relative_x_m is None
+            else float(dump_ready_max_dump_area_relative_x_m)
         )
-        self.dump_ready_min_bed_relative_z_m = (
+        self.dump_ready_min_dump_area_relative_z_m = (
             None
-            if dump_ready_min_bed_relative_z_m is None
-            else float(dump_ready_min_bed_relative_z_m)
+            if dump_ready_min_dump_area_relative_z_m is None
+            else float(dump_ready_min_dump_area_relative_z_m)
         )
-        self.dump_ready_max_bed_relative_z_m = (
+        self.dump_ready_max_dump_area_relative_z_m = (
             None
-            if dump_ready_max_bed_relative_z_m is None
-            else float(dump_ready_max_bed_relative_z_m)
+            if dump_ready_max_dump_area_relative_z_m is None
+            else float(dump_ready_max_dump_area_relative_z_m)
         )
         self.dump_ready_hold_steps = max(1, int(dump_ready_hold_steps))
         self.dump_done_max_bucket_mass_kg = float(dump_done_max_bucket_mass_kg)
@@ -167,6 +198,37 @@ class PrimitivePlannerACTPolicy(Policy):
         self.goal_scenario_id = str(goal_scenario_id)
         self.goal_depth_norm = float(goal_depth_norm)
         self.goal_dump_target_norm = float(goal_dump_target_norm)
+        self.cell_entry_enabled = bool(cell_entry_enabled)
+        self.cell_entry_grid = CellGridSpec(**dict(cell_entry_grid or {}))
+        self.cell_entry_grid.validate()
+        self.cell_entry_planner = CellEntryPlanner(grid=self.cell_entry_grid)
+        self.cell_entry_auditor = PlannerDecisionAuditor(
+            grid=self.cell_entry_grid,
+            low_productivity_payload_gain_kg=(
+                cell_entry_low_productivity_payload_gain_kg
+            ),
+        )
+        self.scripted_bootstrap_target_qpos = (
+            None
+            if scripted_bootstrap_target_qpos is None
+            else np.asarray(scripted_bootstrap_target_qpos, dtype=np.float32).reshape(
+                self.action_dim
+            )
+        )
+        self.scripted_bootstrap_kp = float(scripted_bootstrap_kp)
+        self.scripted_bootstrap_kd = float(scripted_bootstrap_kd)
+        self.scripted_bootstrap_action_clip = scripted_bootstrap_action_clip
+        self.scripted_bootstrap_action_signs = (
+            np.ones(self.action_dim, dtype=np.float32)
+            if scripted_bootstrap_action_signs is None
+            else np.asarray(scripted_bootstrap_action_signs, dtype=np.float32).reshape(
+                self.action_dim
+            )
+        )
+        self.scripted_bootstrap_qpos_tolerance = float(scripted_bootstrap_qpos_tolerance)
+        self.scripted_bootstrap_qvel_abs_max = float(scripted_bootstrap_qvel_abs_max)
+        self.scripted_bootstrap_hold_steps = max(1, int(scripted_bootstrap_hold_steps))
+        self.scripted_bootstrap_max_steps = max(1, int(scripted_bootstrap_max_steps))
         self.reset()
 
     def reset(self) -> None:
@@ -175,7 +237,13 @@ class PrimitivePlannerACTPolicy(Policy):
         self.boundary_detector.reset()
         self._skill_name = (
             BOOTSTRAP_SKILL_NAME
-            if self.bootstrap_policy is not None and self.bootstrap_end_mode != "disabled"
+            if (
+                self.bootstrap_end_mode != "disabled"
+                and (
+                    self.bootstrap_policy is not None
+                    or self._scripted_bootstrap_enabled()
+                )
+            )
             else "dig"
         )
         self._prev_action: np.ndarray | None = None
@@ -183,10 +251,23 @@ class PrimitivePlannerACTPolicy(Policy):
         self._dump_ready_hold_count = 0
         self._dump_done_hold_count = 0
         self._return_step_count = 0
+        self._scripted_bootstrap_step_count = 0
+        self._scripted_bootstrap_hold_count = 0
+        self._scripted_bootstrap_timeout_count = 0
         self._completed_transition_count = 0
         self._transition_timeout_count = 0
         self._cycle_index = 0
         self._dump_start_deposited_mass_kg = 0.0
+        self.cell_entry_planner.reset()
+        self._cell_entry_goal: CellEntryGoal | None = None
+        self._cell_entry_goal_cycle_id = -1
+        self._cell_entry_audit: PlannerDecisionAudit | None = None
+        self._cell_entry_tokens = np.zeros(CELL_ENTRY_TOKEN_DIM, dtype=np.float32)
+        self._cell_entry_token_injected = False
+        self._dig_cut_tokens = np.zeros(DIG_CUT_TOKEN_DIM, dtype=np.float32)
+        self._dig_cut_token_injected = False
+        self._cell_entry_seen_cell_id = -1
+        self._cell_entry_trace: list[dict[str, Any]] = []
         self._debug_state = self._make_debug_state(
             transition_timeout=False,
             transition_completed=False,
@@ -215,9 +296,14 @@ class PrimitivePlannerACTPolicy(Policy):
                 transition_timeout = True
                 self._transition_timeout_count += 1
 
-        policy = self._active_policy()
-        policy_obs = self._policy_obs(obs)
-        action = np.asarray(policy.predict(policy_obs), dtype=np.float32).reshape(self.action_dim)
+        if self._skill_name == BOOTSTRAP_SKILL_NAME and self._scripted_bootstrap_enabled():
+            action = self._scripted_bootstrap_action(obs)
+        else:
+            policy = self._active_policy()
+            policy_obs = self._policy_obs(obs)
+            action = np.asarray(policy.predict(policy_obs), dtype=np.float32).reshape(
+                self.action_dim
+            )
         self._prev_action = action.copy()
 
         if self._switch_reason == "return_to_dig_qualified_dig_start":
@@ -230,6 +316,8 @@ class PrimitivePlannerACTPolicy(Policy):
         return action
 
     def debug_state(self) -> dict[str, Any]:
+        cell_goal = self._cell_entry_goal
+        cell_audit = self._cell_entry_audit
         return {
             "skill_name": self._debug_state.skill_name,
             "skill_id": int(self._debug_state.skill_id),
@@ -257,6 +345,55 @@ class PrimitivePlannerACTPolicy(Policy):
             "primitive_cycle_index": int(self._debug_state.primitive_cycle_index),
             "primitive_goal_curr_sector_id": int(self._goal_sector_id(self._cycle_index)),
             "primitive_goal_next_sector_id": int(self._next_goal_sector_id()),
+            "cell_entry_enabled": bool(self.cell_entry_enabled),
+            "cell_entry_token_injected": bool(self._cell_entry_token_injected),
+            "cell_entry_token_dim": int(CELL_ENTRY_TOKEN_DIM),
+            "dig_cut_token_injected": bool(self._dig_cut_token_injected),
+            "dig_cut_token_dim": int(DIG_CUT_TOKEN_DIM),
+            "cell_entry_selected_cell_id": int(
+                -1 if cell_goal is None else cell_goal.selected_cell_id
+            ),
+            "cell_entry_selected_long_index": int(
+                -1 if cell_goal is None else cell_goal.selected_long_index
+            ),
+            "cell_entry_selected_short_index": int(
+                -1 if cell_goal is None else cell_goal.selected_short_index
+            ),
+            "cell_entry_planned_entry_x_m": float(
+                np.nan if cell_goal is None else cell_goal.planned_entry_x_m
+            ),
+            "cell_entry_planned_entry_y_m": float(
+                np.nan if cell_goal is None else cell_goal.planned_entry_y_m
+            ),
+            "cell_entry_planned_entry_z_m": float(
+                np.nan if cell_goal is None else cell_goal.planned_entry_z_m
+            ),
+            "cell_entry_planner_ok": bool(
+                False if cell_audit is None else cell_audit.planner_ok
+            ),
+            "cell_entry_audit_reason_code": int(
+                -1 if cell_audit is None else cell_audit.reason_code
+            ),
+            "cell_entry_audit_reason": str(
+                "" if cell_audit is None else cell_audit.reason
+            ),
+            "cell_entry_audit_risk_flags": int(
+                0 if cell_audit is None else cell_audit.risk_flags
+            ),
+            "cell_entry_inside_entry_envelope": bool(
+                False if cell_audit is None else cell_audit.inside_entry_envelope
+            ),
+            "cell_entry_distance_to_entry_envelope_m": float(
+                np.nan
+                if cell_audit is None
+                else cell_audit.distance_to_entry_envelope_m
+            ),
+            "cell_entry_seen_cell_id": int(self._cell_entry_seen_cell_id),
+            "scripted_bootstrap_step_count": int(self._scripted_bootstrap_step_count),
+            "scripted_bootstrap_hold_count": int(self._scripted_bootstrap_hold_count),
+            "scripted_bootstrap_timeout_count": int(
+                self._scripted_bootstrap_timeout_count
+            ),
         }
 
     def rollout_summary(self) -> dict[str, float | int | str | list[str]]:
@@ -270,6 +407,21 @@ class PrimitivePlannerACTPolicy(Policy):
             "dump_done_use_boundary_event": int(self.dump_done_use_boundary_event),
             "primitive_final_skill": str(self._skill_name),
             "primitive_cycle_index": int(self._cycle_index),
+            "cell_entry_enabled": int(self.cell_entry_enabled),
+            "cell_entry_trace_count": int(len(self._cell_entry_trace)),
+            "dig_cut_token_dim": int(DIG_CUT_TOKEN_DIM),
+            "dig_cut_token_injected": int(self._dig_cut_token_injected),
+            "scripted_bootstrap_timeout_count": int(
+                self._scripted_bootstrap_timeout_count
+            ),
+        }
+
+    def planner_trace(self) -> dict[str, object]:
+        return {
+            "cell_entry_trace": list(self._cell_entry_trace),
+            "dig_cut_token_contract": (
+                "entry_x,entry_z,exit_x,exit_z,dir_x,dir_z,length,depth,payload,valid"
+            ),
         }
 
     def _maybe_switch_skill(self, *, obs: dict, boundary_event: Any | None) -> None:
@@ -277,7 +429,8 @@ class PrimitivePlannerACTPolicy(Policy):
             if self._should_end_bootstrap(obs=obs, boundary_event=boundary_event):
                 next_skill = (
                     "dig"
-                    if self.bootstrap_end_mode == "first_qualified_dig_start"
+                    if self.bootstrap_end_mode
+                    in {"first_qualified_dig_start", "scripted_qpos"}
                     else "carry"
                 )
                 self._set_skill(next_skill, f"bootstrap_to_{next_skill}")
@@ -285,6 +438,7 @@ class PrimitivePlannerACTPolicy(Policy):
 
         if self._skill_name == "dig":
             if self._dig_to_carry_ready(obs=obs, boundary_event=boundary_event):
+                self._complete_cell_entry_dig(obs)
                 self._set_skill("carry", "dig_to_carry_loaded")
             return
 
@@ -339,6 +493,13 @@ class PrimitivePlannerACTPolicy(Policy):
             self._dump_done_hold_count = 0
 
     def _should_end_bootstrap(self, *, obs: dict, boundary_event: Any | None) -> bool:
+        if self._scripted_bootstrap_enabled():
+            if self._scripted_bootstrap_target_reached(obs):
+                return True
+            if self._scripted_bootstrap_step_count >= self.scripted_bootstrap_max_steps:
+                self._scripted_bootstrap_timeout_count += 1
+                return True
+            return False
         if self.bootstrap_policy is None:
             return False
         if self.bootstrap_end_mode == "first_qualified_dig_start":
@@ -354,6 +515,55 @@ class PrimitivePlannerACTPolicy(Policy):
         if self.bootstrap_end_mode == "disabled":
             return False
         raise ValueError(f"Unsupported bootstrap_end_mode {self.bootstrap_end_mode!r}.")
+
+    def _scripted_bootstrap_enabled(self) -> bool:
+        return bool(
+            self.bootstrap_end_mode == "scripted_qpos"
+            and self.scripted_bootstrap_target_qpos is not None
+        )
+
+    def _scripted_bootstrap_target_reached(self, obs: dict) -> bool:
+        if self.scripted_bootstrap_target_qpos is None:
+            return False
+        qpos = np.asarray(
+            obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
+            dtype=np.float32,
+        ).reshape(self.action_dim)
+        qvel = np.asarray(
+            obs.get("qvel", np.zeros(self.action_dim, dtype=np.float32)),
+            dtype=np.float32,
+        ).reshape(self.action_dim)
+        qpos_close = bool(
+            np.all(np.abs(qpos - self.scripted_bootstrap_target_qpos) <= self.scripted_bootstrap_qpos_tolerance)
+        )
+        qvel_small = bool(np.all(np.abs(qvel) <= self.scripted_bootstrap_qvel_abs_max))
+        if qpos_close and qvel_small:
+            self._scripted_bootstrap_hold_count += 1
+        else:
+            self._scripted_bootstrap_hold_count = 0
+        return bool(self._scripted_bootstrap_hold_count >= self.scripted_bootstrap_hold_steps)
+
+    def _scripted_bootstrap_action(self, obs: dict) -> np.ndarray:
+        if self.scripted_bootstrap_target_qpos is None:
+            raise RuntimeError("scripted bootstrap is active without target qpos.")
+        self._scripted_bootstrap_step_count += 1
+        qpos = np.asarray(
+            obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
+            dtype=np.float32,
+        ).reshape(self.action_dim)
+        qvel = np.asarray(
+            obs.get("qvel", np.zeros(self.action_dim, dtype=np.float32)),
+            dtype=np.float32,
+        ).reshape(self.action_dim)
+        return _pd_servo_action(
+            qpos=qpos,
+            qvel=qvel,
+            target_qpos=self.scripted_bootstrap_target_qpos,
+            kp=self.scripted_bootstrap_kp,
+            kd=self.scripted_bootstrap_kd,
+            action_clip=self.scripted_bootstrap_action_clip,
+            action_signs=self.scripted_bootstrap_action_signs,
+        )
 
     def _dig_to_carry_ready(self, *, obs: dict, boundary_event: Any | None) -> bool:
         metrics = dict(getattr(boundary_event, "metrics", {}) or {})
@@ -383,10 +593,10 @@ class PrimitivePlannerACTPolicy(Policy):
                 geometry["target_horizontal_distance_m"]
                 <= self.dump_ready_max_horizontal_distance_m + 1.0e-6
             )
-        bed_relative_ok = self._bed_relative_dump_position_ok(geometry)
+        dump_area_relative_ok = self._dump_area_relative_dump_position_ok(geometry)
         position_ok = self._dump_ready_position_ok(
             over_footprint=over_footprint,
-            bed_relative_ok=bed_relative_ok,
+            dump_area_relative_ok=dump_area_relative_ok,
             horizontal_ok=horizontal_ok,
         )
         return bool(
@@ -395,32 +605,32 @@ class PrimitivePlannerACTPolicy(Policy):
             and (clearance_ok or not self.dump_ready_require_clearance)
         )
 
-    def _bed_relative_dump_position_ok(self, geometry: dict[str, float]) -> bool:
-        if self.dump_ready_max_bed_footprint_outside_distance_m is None:
+    def _dump_area_relative_dump_position_ok(self, geometry: dict[str, float]) -> bool:
+        if self.dump_ready_max_dump_area_footprint_outside_distance_m is None:
             return False
         outside_distance = float(
-            geometry.get("bucket_bed_footprint_outside_distance_m", np.nan)
+            geometry.get("bucket_dump_area_footprint_outside_distance_m", np.nan)
         )
         outside_ok = bool(
             np.isfinite(outside_distance)
             and outside_distance >= 0.0
             and outside_distance
-            <= self.dump_ready_max_bed_footprint_outside_distance_m + 1.0e-6
+            <= self.dump_ready_max_dump_area_footprint_outside_distance_m + 1.0e-6
         )
         if not outside_ok:
             return False
         return bool(
             self._optional_range_ok(
                 geometry=geometry,
-                name="bucket_bed_relative_x_m",
-                min_value=self.dump_ready_min_bed_relative_x_m,
-                max_value=self.dump_ready_max_bed_relative_x_m,
+                name="bucket_dump_area_relative_x_m",
+                min_value=self.dump_ready_min_dump_area_relative_x_m,
+                max_value=self.dump_ready_max_dump_area_relative_x_m,
             )
             and self._optional_range_ok(
                 geometry=geometry,
-                name="bucket_bed_relative_z_m",
-                min_value=self.dump_ready_min_bed_relative_z_m,
-                max_value=self.dump_ready_max_bed_relative_z_m,
+                name="bucket_dump_area_relative_z_m",
+                min_value=self.dump_ready_min_dump_area_relative_z_m,
+                max_value=self.dump_ready_max_dump_area_relative_z_m,
             )
         )
 
@@ -447,19 +657,19 @@ class PrimitivePlannerACTPolicy(Policy):
         self,
         *,
         over_footprint: bool,
-        bed_relative_ok: bool,
+        dump_area_relative_ok: bool,
         horizontal_ok: bool,
     ) -> bool:
         # `dump_ready_require_over_footprint=False` relaxes the footprint mask
         # only; it must not disable the selected target-relative position rule.
         mode = self.dump_ready_position_mode
-        if mode == "footprint_or_bed_relative":
+        if mode == "footprint_or_dump_area_relative":
             return bool(
-                bed_relative_ok
+                dump_area_relative_ok
                 or (over_footprint and self.dump_ready_require_over_footprint)
             )
-        if mode == "bed_relative":
-            return bool(bed_relative_ok)
+        if mode == "dump_area_relative":
+            return bool(dump_area_relative_ok)
         if mode == "footprint":
             return bool(over_footprint or not self.dump_ready_require_over_footprint)
         if mode == "footprint_or_horizontal":
@@ -469,7 +679,7 @@ class PrimitivePlannerACTPolicy(Policy):
             )
         raise ValueError(
             f"Unsupported dump_ready_position_mode {mode!r}. Expected one of "
-            "footprint_or_bed_relative, bed_relative, footprint, "
+            "footprint_or_dump_area_relative, dump_area_relative, footprint, "
             "footprint_or_horizontal."
         )
 
@@ -533,17 +743,17 @@ class PrimitivePlannerACTPolicy(Policy):
                 "dump_clearance_ok_mask",
                 ENV_STATE_DUMP_CLEARANCE_OK_IDX,
             ),
-            "bucket_bed_relative_x_m": _optional_metric(
-                "bucket_bed_relative_x_m",
-                ENV_STATE_BUCKET_BED_RELATIVE_X_IDX,
+            "bucket_dump_area_relative_x_m": _optional_metric(
+                "bucket_dump_area_relative_x_m",
+                ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
             ),
-            "bucket_bed_relative_z_m": _optional_metric(
-                "bucket_bed_relative_z_m",
-                ENV_STATE_BUCKET_BED_RELATIVE_Z_IDX,
+            "bucket_dump_area_relative_z_m": _optional_metric(
+                "bucket_dump_area_relative_z_m",
+                ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
             ),
-            "bucket_bed_footprint_outside_distance_m": _optional_metric(
-                "bucket_bed_footprint_outside_distance_m",
-                ENV_STATE_BUCKET_BED_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+            "bucket_dump_area_footprint_outside_distance_m": _optional_metric(
+                "bucket_dump_area_footprint_outside_distance_m",
+                ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
             ),
         }
 
@@ -587,12 +797,141 @@ class PrimitivePlannerACTPolicy(Policy):
         ).reshape(-1)
 
     def _policy_obs(self, obs: dict) -> dict:
+        self._cell_entry_token_injected = False
+        self._dig_cut_token_injected = False
         goal_tokens = self._goal_tokens()
-        if goal_tokens is None:
+        cell_entry_tokens = self._cell_entry_tokens_for_obs(obs)
+        dig_cut_tokens = self._dig_cut_tokens_for_obs(obs)
+        if goal_tokens is None and cell_entry_tokens is None and dig_cut_tokens is None:
             return obs
         policy_obs = dict(obs)
-        policy_obs["goal_tokens"] = goal_tokens
+        if goal_tokens is not None:
+            policy_obs["goal_tokens"] = goal_tokens
+        if cell_entry_tokens is not None:
+            policy_obs["cell_entry_tokens"] = cell_entry_tokens
+            self._cell_entry_token_injected = True
+        if dig_cut_tokens is not None:
+            policy_obs["dig_cut_tokens"] = dig_cut_tokens
+            self._dig_cut_token_injected = True
         return policy_obs
+
+    def _dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
+        if self._skill_name != "dig":
+            return None
+        self._dig_cut_tokens = build_live_dig_cut_tokens_from_pose(
+            self._bucket_dig_area_pose(obs)
+        )
+        return self._dig_cut_tokens.copy()
+
+    def _cell_entry_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
+        if not self.cell_entry_enabled or self._skill_name != "dig":
+            return None
+        if (
+            self._cell_entry_goal is None
+            or self._cell_entry_goal_cycle_id != int(self._cycle_index)
+        ):
+            self._cell_entry_goal = self.cell_entry_planner.plan(
+                cycle_id=int(self._cycle_index)
+            )
+            self._cell_entry_goal_cycle_id = int(self._cycle_index)
+            self._cell_entry_seen_cell_id = -1
+
+        cell_id = self._dig_cell_id(obs)
+        if cell_id >= 0 and self._cell_entry_seen_cell_id < 0:
+            self._cell_entry_seen_cell_id = int(cell_id)
+        outcome = PrimitiveCycleOutcome(
+            cycle_id=int(self._cycle_index),
+            actual_start_step=-1,
+            actual_bite_step=-1,
+            actual_removal_step=-1,
+            actual_start_cell_id=int(cell_id),
+            actual_bite_cell_id=int(cell_id),
+            actual_removal_cell_id=int(cell_id),
+            payload_gain_kg=float(self.cell_entry_auditor.low_productivity_payload_gain_kg),
+            deposit_delta_kg=0.0,
+            collision_count_delta=0,
+            return_miss=False,
+        )
+        self._cell_entry_audit = self.cell_entry_auditor.audit(
+            goal=self._cell_entry_goal,
+            outcome=outcome,
+            current_bucket_pose=self._bucket_dig_area_pose(obs),
+            geometry_available=self._dig_area_geometry_available(obs),
+        )
+        self._cell_entry_tokens = build_cell_entry_tokens(
+            grid=self.cell_entry_grid,
+            goal=self._cell_entry_goal,
+            audit=self._cell_entry_audit,
+        )
+        return self._cell_entry_tokens.copy()
+
+    def _complete_cell_entry_dig(self, obs: dict) -> None:
+        if not self.cell_entry_enabled or self._cell_entry_goal is None:
+            return
+        cell_id = self._dig_cell_id(obs)
+        if cell_id < 0:
+            cell_id = int(self._cell_entry_seen_cell_id)
+        outcome = PrimitiveCycleOutcome(
+            cycle_id=int(self._cycle_index),
+            actual_start_step=-1,
+            actual_bite_step=-1,
+            actual_removal_step=-1,
+            actual_start_cell_id=int(cell_id),
+            actual_bite_cell_id=int(cell_id),
+            actual_removal_cell_id=int(cell_id),
+            payload_gain_kg=float(self._mass_in_bucket(obs)),
+            deposit_delta_kg=0.0,
+            collision_count_delta=0,
+            return_miss=False,
+        )
+        self.cell_entry_planner.update(outcome)
+        self._cell_entry_trace.append(
+            {
+                "cycle_id": int(self._cycle_index),
+                "selected_cell_id": int(self._cell_entry_goal.selected_cell_id),
+                "actual_cell_id": int(cell_id),
+                "payload_gain_kg": float(outcome.payload_gain_kg),
+                "audit_reason_code": int(
+                    -1
+                    if self._cell_entry_audit is None
+                    else self._cell_entry_audit.reason_code
+                ),
+                "audit_reason": str(
+                    ""
+                    if self._cell_entry_audit is None
+                    else self._cell_entry_audit.reason
+                ),
+            }
+        )
+
+    def _dig_area_geometry_available(self, obs: dict) -> bool:
+        env_state = self._env_state(obs)
+        return bool(
+            len(env_state) > ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX
+            and float(env_state[ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX]) > 0.5
+        )
+
+    def _dig_cell_id(self, obs: dict) -> int:
+        env_state = self._env_state(obs)
+        if len(env_state) <= ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX:
+            return -1
+        value = float(env_state[ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX])
+        if not np.isfinite(value):
+            return -1
+        return int(round(value))
+
+    def _bucket_dig_area_pose(self, obs: dict) -> tuple[float, float, float] | None:
+        env_state = self._env_state(obs)
+        if len(env_state) <= ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX:
+            return None
+        values = (
+            float(env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX]),
+            float(env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX]),
+            float(env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX]),
+        )
+        if not all(np.isfinite(value) for value in values):
+            return None
+        return values
 
     def _goal_tokens(self) -> np.ndarray | None:
         if not self.goal_sequence:
@@ -693,6 +1032,25 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
 
+def _pd_servo_action(
+    *,
+    qpos: np.ndarray,
+    qvel: np.ndarray,
+    target_qpos: np.ndarray,
+    kp: float,
+    kd: float,
+    action_clip: float | np.ndarray | list[float] | tuple[float, ...],
+    action_signs: np.ndarray | list[float] | tuple[float, ...] | None = None,
+) -> np.ndarray:
+    action = float(kp) * (target_qpos - qpos) - float(kd) * qvel
+    if action_signs is not None:
+        action = np.asarray(action_signs, dtype=np.float32).reshape(action.shape) * action
+    action_clip_arr = np.asarray(action_clip, dtype=np.float32)
+    if action_clip_arr.ndim == 0:
+        action_clip_arr = np.full_like(action, float(action_clip_arr))
+    return np.clip(action, -action_clip_arr, action_clip_arr).astype(np.float32)
+
+
 @register_policy("primitive_planner_act_5p")
 class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
     """Scripted V2.2 planner over dig/carry/approach_dump/dump_release/return.
@@ -727,12 +1085,12 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
         dump_release_ready_require_over_footprint: bool = True,
         dump_release_ready_require_clearance: bool = True,
         dump_release_ready_max_horizontal_distance_m: float | None = 0.60,
-        dump_release_ready_position_mode: str = "footprint_or_bed_relative",
-        dump_release_ready_max_bed_footprint_outside_distance_m: float | None = 0.05,
-        dump_release_ready_min_bed_relative_x_m: float | None = None,
-        dump_release_ready_max_bed_relative_x_m: float | None = None,
-        dump_release_ready_min_bed_relative_z_m: float | None = None,
-        dump_release_ready_max_bed_relative_z_m: float | None = None,
+        dump_release_ready_position_mode: str = "footprint_or_dump_area_relative",
+        dump_release_ready_max_dump_area_footprint_outside_distance_m: float | None = 0.05,
+        dump_release_ready_min_dump_area_relative_x_m: float | None = None,
+        dump_release_ready_max_dump_area_relative_x_m: float | None = None,
+        dump_release_ready_min_dump_area_relative_z_m: float | None = None,
+        dump_release_ready_max_dump_area_relative_z_m: float | None = None,
         dump_release_ready_hold_steps: int = 3,
         dump_done_max_bucket_mass_kg: float = 100.0,
         dump_done_min_deposit_delta_kg: float = 10.0,
@@ -745,6 +1103,9 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
         goal_scenario_id: str = "s0_truck",
         goal_depth_norm: float = 1.0,
         goal_dump_target_norm: float = 1.0,
+        cell_entry_enabled: bool = False,
+        cell_entry_grid: dict[str, Any] | None = None,
+        cell_entry_low_productivity_payload_gain_kg: float = 100.0,
     ) -> None:
         self.approach_dump_policy = approach_dump_policy
         self.dump_release_policy = dump_release_policy
@@ -789,20 +1150,20 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
                 dump_release_ready_max_horizontal_distance_m
             ),
             dump_ready_position_mode=dump_release_ready_position_mode,
-            dump_ready_max_bed_footprint_outside_distance_m=(
-                dump_release_ready_max_bed_footprint_outside_distance_m
+            dump_ready_max_dump_area_footprint_outside_distance_m=(
+                dump_release_ready_max_dump_area_footprint_outside_distance_m
             ),
-            dump_ready_min_bed_relative_x_m=(
-                dump_release_ready_min_bed_relative_x_m
+            dump_ready_min_dump_area_relative_x_m=(
+                dump_release_ready_min_dump_area_relative_x_m
             ),
-            dump_ready_max_bed_relative_x_m=(
-                dump_release_ready_max_bed_relative_x_m
+            dump_ready_max_dump_area_relative_x_m=(
+                dump_release_ready_max_dump_area_relative_x_m
             ),
-            dump_ready_min_bed_relative_z_m=(
-                dump_release_ready_min_bed_relative_z_m
+            dump_ready_min_dump_area_relative_z_m=(
+                dump_release_ready_min_dump_area_relative_z_m
             ),
-            dump_ready_max_bed_relative_z_m=(
-                dump_release_ready_max_bed_relative_z_m
+            dump_ready_max_dump_area_relative_z_m=(
+                dump_release_ready_max_dump_area_relative_z_m
             ),
             dump_ready_hold_steps=dump_release_ready_hold_steps,
             dump_done_max_bucket_mass_kg=dump_done_max_bucket_mass_kg,
@@ -816,6 +1177,11 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             goal_scenario_id=goal_scenario_id,
             goal_depth_norm=goal_depth_norm,
             goal_dump_target_norm=goal_dump_target_norm,
+            cell_entry_enabled=cell_entry_enabled,
+            cell_entry_grid=cell_entry_grid,
+            cell_entry_low_productivity_payload_gain_kg=(
+                cell_entry_low_productivity_payload_gain_kg
+            ),
         )
         self.dump_release_ready_hold_steps = self.dump_ready_hold_steps
 
@@ -835,7 +1201,8 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             if self._should_end_bootstrap(obs=obs, boundary_event=boundary_event):
                 next_skill = (
                     "dig"
-                    if self.bootstrap_end_mode == "first_qualified_dig_start"
+                    if self.bootstrap_end_mode
+                    in {"first_qualified_dig_start", "scripted_qpos"}
                     else "carry"
                 )
                 self._set_skill(next_skill, f"bootstrap_to_{next_skill}")

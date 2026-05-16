@@ -1,0 +1,51 @@
+# YuLong V2.2 pro full-task 15-dig goal-conditioned ACT baseline.
+#
+# Dataset is an HDF5 Virtual Dataset crop: each episode starts at reset and
+# ends at the 15th successful dump. Keep the source relabeled 13eps dataset in
+# place because image/action datasets are virtual links into it.
+
+task:
+  task_name: agx_excavation_teleop
+  equipment_model: yulong
+  dataset_dir: data/yulong_v2_2_pro_full_task_15dig_gcact_vds_20260515
+  num_episodes: 0
+  episode_len: 13108
+  camera_names:
+    - fpv
+  backend:
+    name: agx
+    dt: 0.02
+
+policy:
+  class: ACT
+  device: cuda
+  low_dim_keys:
+    - qpos
+    - qvel
+    - goal_tokens
+  act_params:
+    chunk_size: 100
+    kl_weight: 10.0
+    hidden_dim: 512
+    dim_feedforward: 3200
+
+train:
+  lr: 1.0e-5
+  num_epochs: 80
+  batch_size: 2
+  seed: 0
+  device: cuda
+  num_workers: 0
+  prefetch_factor:
+  persistent_workers: false
+  pin_memory: true
+  split_seed: 0
+  train_split_ratio: 0.8
+  reuse_split: true
+  val_every: 5
+  save_latest_every: 5
+  checkpoint_every: 20
+  plot_every: 20
+  amp: true
+  amp_dtype: auto
+  ckpt_dir: /data/pingfan/excavator_testbed_runs/ckpts/yulong_v2_2_pro_full_task_15dig_gcact_20260515

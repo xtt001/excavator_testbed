@@ -12,19 +12,40 @@
 - target-safety workskill 现在要求显式 target geometry 字段：
   `target_horizontal_distance_m`、`bucket_height_above_target_rim_m`、
   `bucket_over_target_footprint_mask`、`dump_clearance_ok_mask`。V2.2 Unity
-  bridge 还会输出 `bucket_bed_relative_x_m`、`bucket_bed_relative_z_m`、
-  `bucket_bed_footprint_outside_distance_m`；`bucket_over_target_footprint_mask`
-  表示 bucket proxy 是否在 truck-top 可倒料区域上方，严格 release 深度由
-  outside distance 判断。旧的 `min_distance_to_target_m`
-  不再作为这些字段的 fallback。
+  bridge 还会输出 `bucket_dump_area_relative_x_m`、`bucket_dump_area_relative_z_m`、
+  `bucket_dump_area_footprint_outside_distance_m`；`bucket_over_target_footprint_mask`
+  表示 bucket proxy 是否在 dump-area 可倒料区域上方，严格 release 深度由
+  outside distance 判断。`min_distance_to_target_m` 现在只是 DumpArea footprint
+  outside-distance 的 scalar mirror，不作为 clearance fallback。
 - 当前 `tb-label-v2_1` 的 work-stage 版本为
-  `v2_1d_work_stage_7cls_bedtop16`。在 16-field Unity 数据上，
-  `approach_dump` 使用 bed-top geometry 提前识别最终对车阶段；primitive
+  `v2_1d_work_stage_7cls_bedtop16`。这个 attr 名称保留了历史版本字符串，
+  但当前 16-field Unity 数据的几何语义已经是 DumpArea，不是 truck bed。在这类数据上，
+  `approach_dump` 使用 dump-area-top geometry 提前识别最终 dump 对齐阶段；primitive
   builder 仍单独要求更严格的 safe release intent，不能把 early curl-out
   自动吞进训练窗口。
 - `dump_clearance_ok_mask` 由 Unity 作为 target-clearance source of truth
-  输出；TruckBed 可使用水平 dump 容差，但垂直方向仍要求
+  输出；DumpArea 可使用水平 dump 容差，但垂直方向仍要求
   `bucket_height_above_target_rim_m >= 0.0`。
+- 当前成功/QC 使用的 `deposited_mass_in_target_box_kg` 是 Unity 输出的
+  reset-relative delivered mass；`mass_in_target_box_kg` / `deposited`
+  都来自 DumpArea unique particle-entry ledger：terrain particle 第一次进入
+  DumpArea 测量体积时按自身 AGX mass 计一次；Unity ledger 使用全局
+  `particle.hash()` 去重，并在 particle 消失后释放 hash，避免同一粒子经多个
+  terrain provider 暴露时被双计，同时允许后续铲次复用 hash 后重新计入。这个口径不依赖
+  `DumpTerrainReceiver` 高度场密度换算、settled/live 状态拼接，且不包含
+  bucket-unload 推断量。早于这个语义更新录制的数据只能作为诊断参考。
+- 2026-05-14 V2.2 YuLong bridge 将 `env_state` 从旧 `28D` add-only
+  扩展到 `64D`：前 0-27 位不变，追加 bucket tip local pose、3x2
+  surface/removed/target depth grid、valid mask、bucket mass delta、dump/offtarget
+  deposition 标志和 contact/collision masks。`offtarget_deposited_mass_kg=-1.0`
+  表示当前场景没有可靠 off-target mass sensor。
+- 同日，`tb-label-v2_1` 的 `/v2/cycle` 会追加 stage success 字段：
+  `dig_success`、`carry_success`、`dump_success`、`return_success`、
+  `return_required`、`stage_success` 和诊断量
+  `payload_gain_kg` / `carry_loss_before_dump_kg` /
+  `dump_deposited_fraction`。这些字段用于 pilot QC 和 gold/silver/diagnostic
+  分层；旧 `cycle_success` 语义保持不变，避免影响已有 workskill/transition
+  builder。
 
 同日，V2.1 **Stage 2 最小 hybrid 闭环** 也已经接入 live eval：
 
@@ -69,6 +90,7 @@
 
 现在，V2.2 **4-primitives smoke** 也已经接入新分支：
 
+- 新增 `tb-build-cell-entry-v2_2`
 - 新增 `tb-build-primitives-v2_2`
 - 新增 `act_agx_v2_2_4primitives_{dig,carry,dump,return}_qvel_e500.yaml`
 - 新增 `eval_agx_v2_2_4primitives_qvel_3cycle_smoke.yaml`
@@ -80,11 +102,31 @@
   - `return = 120`，median `298.5` steps
 - low-level primitive ACT 默认只用 `qpos + qvel`
 - Unity `env_state` / target geometry 只用于离线切分、scripted switch、QC 和 rollout 日志，不作为低维 policy input
-- 需要控制长 rollout 的 dig sector 时，`primitive_planner_act` 可通过
-  `policy.goal_sequence` 生成 10D `goal_tokens` 并注入给低层 primitive ACT。
-  该信号只在对应 primitive 的 `low_dim_keys` 包含 `goal_tokens` 时进入模型；
-  典型用法是让 `dig` / `return` 使用 `qpos + qvel + goal_tokens`，而
-  `carry` / `dump` 继续复用 `qpos + qvel` checkpoint。
+- YuLong V2.2 主线固定为：
+  `immutable raw -> relabel VDS -> operator-first relabel VDS -> 4 primitive VDS -> conditioned dig -> primitive_planner_act live token injection`。
+  不再把 one full-task ACT/GC-ACT 作为正式 rollout 主线；已生成的 full-task checkpoint
+  只作为 diagnostic 对照。
+- `tb-build-cell-entry-v2_2 --storage-mode vds` 会写 lightweight enriched wrapper：
+  `observations/images/*`、`qpos/qvel/env_state`、`action`、`rewards`、`timestamps`
+  和已有 `/v2/step/*` 走 HDF5 VDS，新增 Cell Entry planned/actual/audit 字段与
+  `/v2/cycle` QC 小字段直接写入 wrapper，并生成 `lineage.json`。
+- `tb-build-operator-first-v2_2 --storage-mode vds` 从已有 relabeled root 追加
+  operator-first 字段：effective deposit、专业师傅实际 entry/exit cut corridor、
+  return next-entry target 与 `/v2/step/dig_cut_tokens`。旧 Cell Entry planner 字段
+  继续保留为 `legacy_rule_alignment` 诊断，不作为 reject gate。
+- `tb-build-primitives-v2_2 --storage-mode vds --raw-dir <operator-first-root>`
+  可直接从 operator-first enriched raw 切 `dig/carry/dump/return`，不再需要复制大型
+  workskill 图像 root；`--storage-mode manifest` 只产出 `window_manifest.json` 和
+  `summary.json`，用于 dry-run QC。
+- 两个 builder 都会写 `lineage.json`，默认拒绝覆盖已有 episode；只有显式
+  `--overwrite` 才会替换 builder output。需要在 `data/` 下保留当前候选入口时，
+  使用 `--current-symlink <path>` 更新 symlink；如果该路径是真实目录，builder 会拒绝替换。
+- conditioned dig 已接入两条语义：legacy `cell_entry_tokens` 与 operator-first
+  `dig_cut_tokens` 都是固定 10D low-dim key。当前 YuLong pro 主线使用
+  `act_yulong_v2_2_operator_first_4p_dig_cut_qvel.yaml` 训练
+  `qpos + qvel + dig_cut_tokens` 的 dig；`carry/dump/return` 继续保持
+  `qpos + qvel`。live 时 `primitive_planner_act` 只在调用 `dig` policy 时注入
+  `dig_cut_tokens`，不会把 dig token 喂给 carry/dump/return。
 
 ## 今天优先用哪些文件
 
@@ -98,10 +140,30 @@
 | V2.1 Stage 2 hybrid 主评测 | `testbed/configs/eval_agx_v2_1_stage2_hybrid.yaml` | 最小 hybrid 闭环主入口；`target_cycle_gate = 2` |
 | V2.1 Stage 2 hybrid 3-cycle smoke | `testbed/configs/eval_agx_v2_1_stage2_hybrid_3cycle_smoke.yaml` | 只做 3-cycle smoke，不作主门槛；默认 `episode_len = 8000` |
 | V2.1 Stage 3 qvel work-skill 训练 | `testbed/configs/act_agx_v2_1_workskill_qvel.yaml` | bootstrap work-skill 主训练入口；读取 sibling cropped 数据集 |
+| YuLong FarmStick replayx20 qvel pilot | `testbed/configs/act_yulong_farmstick_3cycle_replay20_workskill_qvel.yaml` | 读取人工 3cycle 动作经 YuLong 修正控制重放后的 work-skill 数据 |
+| YuLong V2.2 pro/internal pilot 录制 | `testbed/configs/teleop_yulong_v2_2_pro_pilot.yaml` | 当前新环境人工 teleop pilot 入口；默认 3 次 `dump_end` + 100 tail，使用 `contact_depth` QDS 和 V2.2 metadata |
+| YuLong V2.2 pro full-task 录制 | `testbed/configs/teleop_yulong_v2_2_pro_full_task.yaml` | 专业师傅主录制入口；`max_steps=20000` 只是安全上限，人工保存结束；success 暂按 mass/productivity，不依赖 grid depth |
+| YuLong V2.2 empty-box capacity 录制 | `testbed/configs/teleop_yulong_v2_2_empty_box_capacity.yaml` | 只用于“尽量挖空可达区域”的容量标定；手动保存，默认不作为训练主数据，也不把 empty box 当 task success |
+| YuLong V2.2 pro full-task 5/10/15-dig GC-ACT diagnostic | `testbed/configs/act_yulong_v2_2_pro_full_task_{5,10,15}dig_gcact.yaml` | 仅保留为 diagnostic 对照；不作为正式 rollout 主线 |
+| YuLong V2.2 pro full-task 5-dig GC-ACT diagnostic smoke | `testbed/configs/eval_yulong_v2_2_pro_full_task_5dig_gcact_smoke.yaml` | 仅用于诊断 one full-task 行为，不进入正式数据/评测主线 |
+| YuLong V2.2 Cell Entry enriched raw VDS | `tb-build-cell-entry-v2_2 --dataset-dir <raw-dir> --output-dir <cell-entry-root> --storage-mode vds` | 追加 3x2 Cell Entry planned/actual/audit `/v2` 字段，并用 VDS 避免复制图像 |
+| YuLong V2.2 operator-first relabel VDS | `tb-build-operator-first-v2_2 --dataset-dir data/yulong_v2_2_current_relabeled --output-dir <operator-first-root> --storage-mode vds` | 追加 effective deposit、operator cut corridor、return target 与 `dig_cut_tokens`；不覆盖 legacy `deposit_delta_kg` |
+| YuLong V2.2 primitive VDS dry-run | `tb-build-primitives-v2_2 --raw-dir <cell-entry-root> --output-root <primitive-root> --storage-mode manifest --skip-return` | 只生成 window manifest/summary，用于切分 QC |
+| YuLong V2.2 primitive VDS build | `tb-build-primitives-v2_2 --raw-dir <operator-first-root> --output-root <primitive-root> --storage-mode vds --boundary-profile v2_2_effect_release_fallback` | 从 operator-first enriched raw 直接切 `dig/carry/dump/return`，写 VDS primitive wrapper、tier 和 lineage |
+| YuLong V2.2 conditioned dig 训练 | `testbed/configs/act_yulong_v2_2_pro_conditioned_dig_cell_entry_qvel.yaml` | dig 使用 `qpos + qvel + cell_entry_tokens`，读取 VDS primitive dig root |
+| YuLong V2.2 operator-first 4P 500 epoch 训练 | `testbed/configs/act_yulong_v2_2_operator_first_4p_{dig_cut,carry,dump,return}_qvel.yaml` | dig 使用 `qpos + qvel + dig_cut_tokens`；carry/dump/return 使用 `qpos + qvel` |
+| YuLong V2.2 operator-first primitive planner smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_smoke.yaml` | 加载 4 个 operator-first checkpoint；live 只给 dig 注入 `dig_cut_tokens` |
+| YuLong V2.2 conditioned dig primitive planner smoke | `testbed/configs/eval_yulong_v2_2_pro_primitive_planner_conditioned_dig_smoke.yaml` | `primitive_planner_act` 只给 dig 注入 Cell Entry token；carry/dump/return 仍为 `qpos + qvel` |
+| YuLong FarmStick replayx20 rollout smoke | `testbed/configs/eval_yulong_farmstick_3cycle_replay20_workskill_qvel_smoke.yaml` | 单 rollout 接回 Unity；无 YuLong bootstrap，直接 smoke work policy |
+| YuLong V2.2 四 primitive contact-depth 训练 | `testbed/configs/act_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_{dig,carry,dump,return}_qvel.yaml` | 小斗 YuLong 主训练入口；`qualified_dig_start=contact_depth` 后重切，四类各 40 条且无 reject |
+| YuLong V2.2 四 primitive contact-depth smoke | `testbed/configs/eval_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_qvel_smoke.yaml` | `primitive_planner_act` + `scripted_qpos` reset bootstrap；使用 contact-depth dig 起点 qpos；dig->carry 质量阈值下调到 `20kg` |
+| YuLong V2.2 四 primitive contact-depth 3-cycle smoke | `testbed/configs/eval_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_qvel_3cycle_smoke.yaml` | 同一组 contact-depth checkpoint；`target_cycle_gate=3`，用于验证 return 是否能接回下一轮 QDS |
+| YuLong V2.2 四 primitive 旧对照 | `testbed/configs/act_yulong_farmstick_3cycle_replay20_v2_2_4p_{dig,carry,dump,return}_qvel.yaml` + `testbed/configs/eval_yulong_farmstick_3cycle_replay20_v2_2_4p_qvel_smoke.yaml` | 旧 progress QDS 切分结果，仅保留作对照 |
 | V2.1 Stage 3 gcact 训练 | `testbed/configs/act_agx_v2_1_workskill_gcact.yaml` | `qpos + qvel + goal_tokens` 的 held-out 对照线 |
 | V2.1 Stage 3 qvel live smoke | `testbed/configs/eval_agx_v2_1_stage3_workskill_qvel.yaml` | 把 Stage-3 qvel work ckpt 接回 Stage-2 hybrid live smoke |
 | V2.1 Stage 4 rule planner 主评测 | `testbed/configs/eval_agx_v2_1_stage4_rule_planner.yaml` | 第一版 coarse replan 主入口；当前使用 soft corridor + `servo_reentry_pose`，官方 `2-cycle` 主门槛已通过 |
 | V2.1 Stage 4 rule planner 3-cycle smoke | `testbed/configs/eval_agx_v2_1_stage4_rule_planner_3cycle_smoke.yaml` | Stage-4 多轮 smoke 入口；官方 `3-cycle smoke` 已通过一次真实 live 检查 |
+| V2.2 Cell Entry enriched raw | `tb-build-cell-entry-v2_2 --dataset-dir <raw-dir> --storage-mode vds` | 追加 3x2 Cell Entry planned/actual/audit `/v2` 字段；推荐 VDS wrapper，不复制图像 |
 | V2.2 四 primitive e500 训练 | `testbed/configs/act_agx_v2_2_4primitives_{dig,carry,dump,return}_qvel_e500.yaml` | baseline primitive configs；旧 carrytrim/safe-dump 结果保留作对照 |
 | V2.2 ownership carry/dump e500 | `testbed/configs/act_agx_v2_2_4primitives_{carry,dump}_ownership_leftboost_qvel_e500.yaml` | 使用 history ownership + latest probe leftboost mix，只重训 `carry`/`dump` |
 | V2.2 四 primitive 3-cycle smoke | `testbed/configs/eval_agx_v2_2_4primitives_qvel_3cycle_smoke.yaml` | `primitive_planner_act`，scripted geometry switch，`dump_done_hold_steps=30`，默认 `temporal_agg = true` |
@@ -167,6 +229,14 @@ tail 用来保留 terminal dump 后的 plateau / `dump_end` 观测，避免刚�
 
 结束，则说明这条数据没有形成任何有效 `dump_end`。这类 episode 不应直接进入后续 `tb-label-v2_1` / 训练主线，建议先移到隔离目录再人工复核。
 
+V1/FarmStick 的 `task_success_tail` 录制在 success 后补完 tail 自动停止时，
+会写入 `stop_reason = task_success_tail`；只有真正跑满 `max_steps` 才写
+`max_steps_reached`。
+
+`tb-label-v2_1` 可用 `--config <teleop-or-eval-yaml>` 复用同一份
+`success.stage_success` 与 `reward` 阈值，避免 stage success 在录制、relabel
+和容量标定之间漂移。
+
 当前 V2.1 Stage 1 的录制不再依赖：
 
 - `dump_plus_ready`
@@ -183,6 +253,12 @@ tail 用来保留 terminal dump 后的 plateau / `dump_end` 观测，避免刚�
 | `act_agx_fulltest.yaml` | 历史 `qpos` 对照 | 保留给旧 run 对照 |
 | `act_agx_fulltest_qvel.yaml` | 当前输入消融对照 | 历史 `qpos + qvel` 对照 |
 | `act_agx_v2_1_workskill_qvel.yaml` | Stage 3 bootstrap 主线 | `qpos + qvel`，默认读取 `data/agx_teleop_v1_v2_1_workskill` |
+| `act_yulong_farmstick_3cycle_replay20_workskill_qvel.yaml` | YuLong pilot 训练线 | `qpos + qvel`，默认读取 `data/yulong_farmstick_3cycle_replay20_varseed_fixedobs_20260514_1337_v2_1_workskill` |
+| `act_yulong_v2_2_pro_full_task_{5,10,15}dig_gcact.yaml` | YuLong pro full-task GC-ACT diagnostic | 仅保留诊断 one full-task 行为，不作为正式 rollout 主线 |
+| `eval_yulong_v2_2_pro_full_task_5dig_gcact_smoke.yaml` | YuLong pro full-task 5-dig diagnostic smoke | 仅用于诊断；正式主线回到四 primitive layered control |
+| `act_yulong_v2_2_pro_conditioned_dig_cell_entry_qvel.yaml` | YuLong V2.2 conditioned dig 主线 | `qpos + qvel + cell_entry_tokens`，读取 VDS primitive dig root |
+| `act_yulong_v2_2_operator_first_4p_dig_cut_qvel.yaml` | YuLong V2.2 operator-first dig 主线 | `qpos + qvel + dig_cut_tokens`，读取 `data/yulong_v2_2_current_primitives_operator_first/dig` |
+| `act_yulong_v2_2_operator_first_4p_{carry,dump,return}_qvel.yaml` | YuLong V2.2 operator-first 其他 primitive 主线 | `qpos + qvel`，读取 `data/yulong_v2_2_current_primitives_operator_first/{carry,dump,return}` |
 | `act_agx_v2_1_workskill_gcact.yaml` | Stage 3 held-out 对照 | `qpos + qvel + goal_tokens`，本阶段不进 live |
 | `act_agx_v2_1_multi_raw_workskill_qvel.yaml` | 当前多轮 raw 主训练线 | `qpos + qvel`，默认读取 `data/agx_teleop_v2_1_multi_raw_workskill` |
 | `act_agx_v2_1_multi_raw_workskill_gcact.yaml` | 当前多轮 raw goal-token 对照线 | `qpos + qvel + goal_tokens`，默认读取 `data/agx_teleop_v2_1_multi_raw_workskill` |
@@ -248,7 +324,7 @@ tail 用来保留 terminal dump 后的 plateau / `dump_end` 观测，避免刚�
   - target-safe 过滤现在也启用在 `stage5_strict`/v3 上：
     - `target_horizontal_distance_m < 0.35 -> near_dump_start`
     - 缺少任一 target geometry 字段会被标成 `missing_target_geometry`
-    - 目的是去掉已经贴近 truck/target 才开始 dump 的 close-call 样本，避免 BC 学到低 boom + 强 curl 的硬碰撞模式
+    - 目的是去掉已经贴近 target 才开始 dump 的 close-call 样本，避免 BC 学到低 boom + 强 curl 的硬碰撞模式
   - 当前 target-safe qualitymix：`74` 条，高质量补录 mix sector split 为 `left = 18`, `mid = 40`, `right = 16`
   - 当前 target-safe smoke eval 额外启用 live WORK safety guard：
     - loaded 且 `target_horizontal_distance_m < 1.25` 且 clearance 不满足时，approach 区先把强 dump action 软限到不小于 `-0.30`，并至少给 boom `+0.04`
@@ -283,7 +359,7 @@ tail 用来保留 terminal dump 后的 plateau / `dump_end` 观测，避免刚�
     - `collision_in_cycle`
   - 这条线当前的 spill 口径已放松为：
     - 允许中等 swing spill
-    - 只拒绝“还没真正到 truck 顶部就明显提前倒、接近半桶级别”的 severe early spill
+    - 只拒绝“还没真正到 dump area 上方就明显提前倒、接近半桶级别”的 severe early spill
   - 当前 `24` 条 cycle 太小且过严，不作为主训练集；只用于定位 severe early dump / severe pre-target spill
 - 当前新录 `teleop_v2_1_multi_raw` 的 sibling transition feasibility 训练线也已接入：
   - sibling transition: `data/agx_teleop_v2_1_multi_raw_transition`
@@ -296,6 +372,20 @@ tail 用来保留 terminal dump 后的 plateau / `dump_end` 观测，避免刚�
     - `overlong_transition_len`
 
 ### V2.2 primitive 数据构建
+
+先对 raw 数据补写 Cell Entry planned/actual/audit 字段：
+
+```bash
+tb-build-cell-entry-v2_2 \
+  --dataset-dir data/agx_teleop_v2_1_multi_raw_refreshed_targetgeo_tail50_260424183039 \
+  --output-dir data/agx_teleop_v2_1_multi_raw_refreshed_targetgeo_tail50_cell_entry_v2_2
+```
+
+这个 builder 只生成 enriched raw 和 `cell_entry_summary.json`；后续
+`tb-build-primitives-v2_2` 会把 `/v2/step` 中已有字段随 primitive window 一起切片，
+并在来源 cycle 标签存在时保留一行 `/v2/cycle`，同时把 `stage_success`、
+`cycle_success`、Cell Entry audit 等常用 cycle 级 QC 标量镜像到 primitive
+metadata，方便后续训练集过滤。planner/audit 决策不放在 primitive builder 中重做。
 
 当前四 primitive root 由下面命令生成到 data disk，并通过 `data/` 下 symlink 暴露：
 
@@ -322,9 +412,25 @@ ln -sfn /data/pingfan/excavator_testbed_data_archive/agx_v2_2_4primitives_safe_d
 `dump ownership boundary` 使用 deterministic rule：`first approach_dump stage`。
 如果 stable pre-dump curl-out 早于 `approach_dump`，新版 builder 会 reject 该
 carry/dump window，而不是把这段混合动作分给 `carry` 或 `dump`。V2.2 builder 不再
-fallback 到官方 mass-based `dump_start`；找不到带 bed geometry 的安全 onset 的
+fallback 到官方 mass-based `dump_start`；找不到带 dump area geometry 的安全 onset 的
 dump window 会被 reject，并写入 `summary.json`。完整 phase boundary 定义见
 `docs/v2_2_4primitives/phase_boundaries.md`。
+
+YuLong new-env pilot 使用额外的边界 profile：
+
+```bash
+tb-build-primitives-v2_2 \
+  --workskill-dir data/yulong_farmstick_3cycle_replay20_varseed_fixedobs_20260514_1337_v2_1_workskill \
+  --raw-dir data/yulong_farmstick_3cycle_replay20_varseed_fixedobs_20260514_1337_v2_1_relabeled \
+  --output-root data/yulong_farmstick_3cycle_replay20_v2_2_4primitives_effect_release_20260514 \
+  --return-max-transition-len 600 \
+  --boundary-profile v2_2_effect_release_fallback
+```
+
+这个 profile 只在没有 `approach_dump` 标签、但存在稳定 release/curl-out onset 且
+最终 dump 通过 good-quality acceptance 时启用。它把 `carry -> dump` 边界前移到
+effect-based release onset，避免 `carry` 学到开斗动作。当前 YuLong pilot root
+构建结果为 `dig=20 / carry=20 / dump=20 / return=20`，`reject_counts={}`。
 
 2026-04-27 ownership probe（旧 boundary rule 结果，保留作诊断 baseline）:
 
@@ -352,7 +458,7 @@ middle-handoff builder）:
 Current carry/dump smoke training mix:
 
 - Root: `data/agx_v2_2_4primitives_ownership_history_probe_leftboost_260427`
-- 注意：该 root 是旧 boundary rule 训练 mix。新版 builder 会要求 16-field bed
+- 注意：该 root 是旧 boundary rule 训练 mix。新版 builder 会要求 16-field dump-area
   geometry，并把 stable curl-out before `approach_dump` 的窗口 reject；因此需要用
   刷新后的新 geometry 数据重建 carry/dump root 后再训练。
 - Mix rule: history ownership all + latest ownership probe all cycles `4x` +
@@ -380,24 +486,24 @@ Current carry/dump smoke training mix:
 
 V2.2 scripted planner 的 dump readiness 使用 target-relative geometry：
 `mass_in_bucket_kg` 足够、`bucket_height_above_target_rim_m >= 0.30`，并且位置满足
-`bucket_bed_footprint_outside_distance_m <= dump_ready_max_bed_footprint_outside_distance_m`
-以及可选的 signed `bucket_bed_relative_x_m/z_m` window。
-在 `bed_relative` 模式下，即使 `dump_ready_require_over_footprint=false`，
-也仍然必须满足 bed-relative 位置条件；这个开关只表示不强制 Unity 的
+`bucket_dump_area_footprint_outside_distance_m <= dump_ready_max_dump_area_footprint_outside_distance_m`
+以及可选的 signed `bucket_dump_area_relative_x_m/z_m` window。
+在 `dump_area_relative` 模式下，即使 `dump_ready_require_over_footprint=false`，
+也仍然必须满足 dump-area-relative 位置条件；这个开关只表示不强制 Unity 的
 `bucket_over_target_footprint_mask`，不能让 planner 绕过位置检查。
-Unity 的 `bucket_over_target_footprint_mask` 现在表示 truck-top mask，用于诊断
-bucket 是否在车斗上方；当前 3-cycle ownership smoke 配置使用 `bed_relative`，并把
+Unity 的 `bucket_over_target_footprint_mask` 现在表示 dump-area mask，用于诊断
+bucket 是否在dump area上方；当前 3-cycle ownership smoke 配置使用 `dump_area_relative`，并把
 `dump_ready_max_horizontal_distance_m` 设为 `null`，不再让 scalar horizontal
 distance 单独触发 `carry -> dump`。当前 4p approach handoff 不再只用 unsigned
 `outside`；它使用 good20 teleop 分布得到的 corridor：
-`outside<=1.35m`、`-4.30<=bed_relative_x<=2.00`、
-`2.75<=bed_relative_z<=3.50`。`outside` 只表示离 bed footprint 多近，不能区分
+`outside<=1.35m`、`-4.30<=dump_area_relative_x<=2.00`、
+`2.75<=dump_area_relative_z<=3.50`。`outside` 只表示离 dump-area footprint 多近，不能区分
 tail/middle/front，因此不应单独作为 handoff rule。
 当前 smoke config
 设置 `dump_done_use_boundary_event=false`，所以 `dump_done` 后保持 dump
 skill `30` step 再切 return，不让 Unity 的即时 `dump_end` event 绕过这个 hold。
 这个 hold 用来跨过 ACT chunk/temporal aggregation 边界，避免 return policy 在土刚落入
-车斗时立刻回摆，把土从边缘带出。
+dump area时立刻回摆，把土从边缘带出。
 `dig -> carry` 只要求 bucket 已 loaded；从 dig 区离开属于 carry primitive 的职责，
 不再要求 `min_distance_to_dig_area_m >= 0.20`。
 
@@ -600,12 +706,41 @@ V2.1 Stage 4 在保留 Stage 2 指标的同时，还会额外输出：
 3. `tb-train --config testbed/configs/act_agx_v2_1_multi_raw_workskill_qvel.yaml`
 4. `tb-train --config testbed/configs/act_agx_v2_1_multi_raw_workskill_gcact.yaml`
 
+### YuLong FarmStick 3cycle replayx20 pilot
+
+这条线用人工录制的 `data/yulong_farmstick_3cycle_raw_20260514/episode_0.hdf5`
+作为动作老师，但 observation/env_state 通过当前 YuLong Unity 控制器重新采集，
+用于避开早期录制中 swing 被土壤反力拖动后的状态漂移。
+`replay_sources20_varseed` 中的 20 个源 HDF5 会保留同一动作序列，但把
+`metadata.seed` 改成不同值，避免训练集退化成同 seed 的重复 replay。
+`equipment_model: yulong` 在 train/eval/ACT 维度解析中按 YuLong/AGX 四轴挖机处理：
+action 为 4 维，`qpos + qvel` 低维输入为 8 维。
+
+1. `tb-replay --episode data/yulong_farmstick_3cycle_raw_20260514_replay_sources20_varseed --config testbed/configs/teleop_v2_1_multi_raw.yaml --record-output-dir data/yulong_farmstick_3cycle_replay20_varseed_fixedobs_20260514_1337`
+2. `tb-label-v2_1 --dataset-dir data/yulong_farmstick_3cycle_replay20_varseed_fixedobs_20260514_1337 --scenario-id s0_truck --qualified-dig-start-mode contact_depth`
+3. `tb-build-workskill-v2_1 --dataset-dir data/yulong_farmstick_3cycle_replay20_varseed_fixedobs_20260514_1337_v2_1_relabeled`
+4. `tb-train --config testbed/configs/act_yulong_farmstick_3cycle_replay20_workskill_qvel.yaml`
+5. `tb-build-primitives-v2_2 --workskill-dir data/yulong_farmstick_3cycle_replay20_varseed_fixedobs_20260514_1337_contact_depth_v2_1_workskill --raw-dir data/yulong_farmstick_3cycle_replay20_varseed_fixedobs_20260514_1337_contact_depth_v2_1_relabeled --output-root data/yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4primitives_effect_release_20260514 --return-max-transition-len 600 --boundary-profile v2_2_effect_release_fallback`
+6. `tb-train --config testbed/configs/act_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_dig_qvel.yaml`
+7. `tb-train --config testbed/configs/act_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_carry_qvel.yaml`
+8. `tb-train --config testbed/configs/act_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_dump_qvel.yaml`
+9. `tb-train --config testbed/configs/act_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_return_qvel.yaml`
+10. `tb-eval --config testbed/configs/eval_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_qvel_smoke.yaml`
+11. `tb-eval --config testbed/configs/eval_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_qvel_3cycle_smoke.yaml`
+
 当前锁定口径：
 
 - source raw 数据集继续只读
+- YuLong 小斗满载质量约 `50kg`，`qualified_dig_start` 用
+  `contact_depth` 模式，以 dig-area 距离和下挖深度为主，不再依赖质量增量
+- 当前 contact-depth V2.2 root 为
+  `data/yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4primitives_effect_release_20260514`，
+  计数为 `dig=40 / carry=40 / dump=40 / return=40`，reject 为 0；由于 dig
+  起点早于旧 progress QDS，smoke planner 的 `dig_to_carry_min_bucket_mass_kg`
+  使用 `20kg`，避免继续按旧大斗/旧切分的 `55kg` 口径拖住 dig skill
 - sibling 输出固定为：
-  - `data/agx_teleop_v2_1_multi_raw_relabeled`
-  - `data/agx_teleop_v2_1_multi_raw_workskill`
+  - `data/yulong_farmstick_3cycle_replay20_varseed_fixedobs_20260514_1337_contact_depth_v2_1_relabeled`
+  - `data/yulong_farmstick_3cycle_replay20_varseed_fixedobs_20260514_1337_contact_depth_v2_1_workskill`
 - 这条线的 `qvel` 是当前主训练入口
 - `gcact` 继续作为 held-out 对照
 
@@ -686,25 +821,24 @@ policy:
 `mask_dataset: "/observations/image_masks/fpv"`；设置
 `require_mask_dataset: true` 时缺失 mask 会直接报错。这个 mask 只改视觉输入，
 不把 `env_state` 加进 ACT low-dim 输入。
-- V2.2 primitive planner 支持低频 sector 序列：
+- 旧低频 sector `goal_tokens` 只作为 diagnostic/legacy 对照。正式 YuLong V2.2
+  主线使用 Cell Entry token，只参数化 `dig`：
 
 ```yaml
 policy:
   class: "primitive_planner_act"
-  goal_sequence: ["mid", "left", "right", "left", "right"]
-  goal_scenario_id: "s0_truck"
-  goal_depth_norm: 1.0
-  goal_dump_target_norm: 1.0
-  dig_low_dim_keys: ["qpos", "qvel", "goal_tokens"]
-  return_low_dim_keys: ["qpos", "qvel", "goal_tokens"]
+  cell_entry:
+    enabled: true
+  dig_low_dim_keys: ["qpos", "qvel", "cell_entry_tokens"]
+  return_low_dim_keys: ["qpos", "qvel"]
   carry_low_dim_keys: ["qpos", "qvel"]
   dump_low_dim_keys: ["qpos", "qvel"]
 ```
 
-这会把 planner 的当前/下一铲目标 sector 转成已有 10D `goal_tokens`，
-不把 Unity `env_state` 喂给 ACT。rollout JSONL 会记录
-`primitive_goal_curr_sector_id` 和 `primitive_goal_next_sector_id`，用于核对
-planner 意图与实际 dig/return 行为是否对齐。
+live planner 会把 planned cell / entry envelope 转成 10D `cell_entry_tokens`，
+并且只在调用 `dig` policy 时注入。rollout JSONL 会记录
+`cell_entry_selected_cell_id`、planned entry、audit reason 和
+`cell_entry_token_injected`，用于区分 planner miss、return miss、dig miss 与 dump fail。
 - eval 支持 `eval.stream_rollout_logs: true`，会在 rollout 过程中写
   `rollout_XXX.partial.jsonl`，中途停止时也能保留第 2/第 3 cycle 的逐步证据。
 - compare 的主口径固定为：
@@ -712,6 +846,11 @@ planner 意图与实际 dig/return 行为是否对齐。
   - `transition_timeout_rate`
   - `completed_transition_count`
 - 顶层 `dump_complete_final_hold_success_rate` 只作为辅助参考
+- 如需把最新 YuLong 四 primitive checkpoint 直接 rollout 成带 V2.2 字段的
+  HDF5，使用：
+  `tb-eval --config testbed/configs/eval_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_qvel_3cycle_record_hdf5.yaml`
+  输出目录默认为
+  `data/yulong_v2_2_plan_fields_contact_depth_4p_policy_rollout_20260514`。
 
 ### 开始 V2.1 Stage 4 rule planner
 

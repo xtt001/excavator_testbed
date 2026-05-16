@@ -574,7 +574,7 @@ Repo B 内部确实已经有 `base_pose_world` 和 `bucket_pose_world`，但当�
 ### s2
 
 - dig patch 在 3x3 网格里切换
-- active target 可选 `ContainerBox` / `TruckBed`
+- active target 可选 `ContainerBox` / `DumpArea`
 
 ### s3
 
@@ -599,7 +599,7 @@ Repo B 内部确实已经有 `base_pose_world` 和 `bucket_pose_world`，但当�
 | E09 | lookahead 解决衔接 | 加 `next_src_patch_id` 和 ready anchor lookahead | Repo A policy/eval | `v2_cycle_s2` | `handover_gap_steps` | 比 E08 更低 |
 | E10 | 连续两铲 | 规则式 high-level sequencer 跑 2 cycle | Repo A eval | `v2_multi2_s2` | `cycle2_success_rate` | 第二铲不雪崩 |
 | E11 | reset 泛化 | pose jitter | Repo A + Repo B scenario preset | `v2_cycle_s1` | 成功率、anchor hit | 下降可控 |
-| E12 | target 泛化 | `ContainerBox` / `TruckBed` 切换 | Repo B target preset + Repo A labels | `v2_cycle_s3` | 成功率、collision | 两类目标都可评测 |
+| E12 | target 泛化 | `ContainerBox` / `DumpArea` 切换 | Repo B target preset + Repo A labels | `v2_cycle_s3` | 成功率、collision | 两类目标都可评测 |
 
 ---
 

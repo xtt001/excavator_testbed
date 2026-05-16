@@ -1,0 +1,102 @@
+# YuLong FarmStick replayx20 contact-depth V2.2 four-primitive smoke.
+
+agx:
+  host: "127.0.0.1"
+  port: 5057
+  timeout: 10.0
+
+task:
+  name: "agx_excavation_teleop"
+  equipment_model: "yulong"
+  episode_len: 4500
+  scenario_id: "s0_truck"
+  camera_names:
+    - fpv
+
+eval:
+  num_rollouts: 1
+  save_video: false
+  video_dir: "runs/eval/yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_qvel_smoke/videos"
+  results_dir: "runs/eval/yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_qvel_smoke/results"
+  save_rollout_logs: true
+  stream_rollout_logs: true
+  rollout_log_dir: "runs/eval/yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_qvel_smoke/results/rollouts"
+  step_log_interval: 100
+  target_cycle_gate: 1
+  temporal_agg: true
+
+success:
+  mode: "dump_complete_final_hold"
+  signal_name: "deposited_mass_in_target_box_kg"
+  mass_thresh: 20.0
+  hold_steps: 25
+  residual_bucket_mass_thresh: 45.0
+  strict_max_failures:
+    hard_target_collision: 0
+    spill_before_target: 0
+
+reward:
+  load_mass_threshold_kg: 55.0
+  target_approach_distance_m: 1.25
+  deposit_started_threshold_kg: 5.0
+  dig_area_touch_tolerance_m: 0.05
+  dig_below_plane_depth_tolerance_m: 0.02
+  qualified_dig_start_mode: "contact_depth"
+  unsafe_distance_m: 0.20
+  unsafe_distance_penalty: 0.25
+  hard_collision_penalty: 0.75
+  spill_penalty: 0.25
+
+policy:
+  class: "primitive_planner_act"
+  device: "cuda"
+  temporal_agg: true
+  primitive_low_dim_keys: ["qpos", "qvel"]
+  action_dim: 4
+  act_params:
+    chunk_size: 100
+    kl_weight: 10
+    hidden_dim: 512
+    dim_feedforward: 3200
+
+  bootstrap_end_mode: "scripted_qpos"
+  scripted_bootstrap:
+    target_qpos: [0.5, 0.4083661, 0.6206904, 0.1711094]
+    kp: 2.0
+    kd: 0.25
+    action_clip: [0.75, 0.35, 0.35, 0.55]
+    action_signs: [1.0, -1.0, 1.0, 1.0]
+    qpos_tolerance: 0.02
+    qvel_abs_max: 0.10
+    hold_steps: 5
+    max_steps: 240
+
+  dig_ckpt_path: "runs/ckpts/yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p/dig_qvel/policy_best.ckpt"
+  dig_ckpt_dir: "runs/ckpts/yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p/dig_qvel"
+  carry_ckpt_path: "runs/ckpts/yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p/carry_qvel/policy_best.ckpt"
+  carry_ckpt_dir: "runs/ckpts/yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p/carry_qvel"
+  dump_ckpt_path: "runs/ckpts/yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p/dump_qvel/policy_best.ckpt"
+  dump_ckpt_dir: "runs/ckpts/yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p/dump_qvel"
+  return_ckpt_path: "runs/ckpts/yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p/return_qvel/policy_best.ckpt"
+  return_ckpt_dir: "runs/ckpts/yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p/return_qvel"
+
+  switch:
+    dig_to_carry_min_bucket_mass_kg: 20.0
+    dig_to_carry_min_distance_to_dig_area_m: 0.0
+    dump_ready_min_bucket_mass_kg: 20.0
+    dump_ready_min_height_above_rim_m: 0.50
+    dump_ready_require_over_footprint: false
+    dump_ready_require_clearance: false
+    dump_ready_position_mode: "dump_area_relative"
+    dump_ready_max_horizontal_distance_m: null
+    dump_ready_max_dump_area_footprint_outside_distance_m: 0.45
+    dump_ready_min_dump_area_relative_x_m: 0.0
+    dump_ready_max_dump_area_relative_x_m: 1.2
+    dump_ready_min_dump_area_relative_z_m: 1.0
+    dump_ready_max_dump_area_relative_z_m: 1.8
+    dump_ready_hold_steps: 3
+    dump_done_max_bucket_mass_kg: 45.0
+    dump_done_min_deposit_delta_kg: 5.0
+    dump_done_hold_steps: 30
+    dump_done_use_boundary_event: false
+    return_max_steps: 420

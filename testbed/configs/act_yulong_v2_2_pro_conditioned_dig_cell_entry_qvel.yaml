@@ -1,0 +1,51 @@
+# YuLong V2.2 conditioned dig primitive ACT.
+#
+# Mainline use:
+#   Cell Entry enriched raw -> VDS primitives -> conditioned dig
+# The dig policy is the only primitive that consumes cell_entry_tokens.
+
+task:
+  task_name: agx_excavation_teleop
+  equipment_model: yulong
+  dataset_dir: data/yulong_v2_2_current_primitives/dig
+  num_episodes: 0
+  episode_len: 128
+  camera_names:
+    - fpv
+  backend:
+    name: agx
+    dt: 0.02
+
+policy:
+  class: ACT
+  device: cuda
+  low_dim_keys:
+    - qpos
+    - qvel
+    - cell_entry_tokens
+  act_params:
+    chunk_size: 100
+    kl_weight: 10.0
+    hidden_dim: 512
+    dim_feedforward: 3200
+
+train:
+  lr: 1.0e-5
+  num_epochs: 500
+  batch_size: 4
+  seed: 0
+  device: cuda
+  num_workers: 0
+  prefetch_factor:
+  persistent_workers: false
+  pin_memory: true
+  split_seed: 0
+  train_split_ratio: 0.8
+  reuse_split: true
+  val_every: 5
+  save_latest_every: 10
+  checkpoint_every: 50
+  plot_every: 50
+  amp: true
+  amp_dtype: auto
+  ckpt_dir: runs/ckpts/yulong_v2_2_pro_primitives/conditioned_dig_cell_entry_qvel

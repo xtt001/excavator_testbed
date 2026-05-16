@@ -11,7 +11,12 @@ from unittest.mock import patch
 import numpy as np
 
 from testbed.eval.suite import EvalSuite
-from testbed.planner.boundary_detector import BoundaryDetector, build_boundary_detector_from_config
+from testbed.planner.boundary_detector import (
+    BoundaryDetector,
+    BoundaryDetectorConfig,
+    QUALIFIED_DIG_START_MODE_CONTACT_DEPTH,
+    build_boundary_detector_from_config,
+)
 from testbed.planner.corridor_servo import (
     TRANSITION_SUBMODE_WAIT_NEXT_DIG,
     TransitionController,
@@ -268,6 +273,41 @@ class Stage2CorridorServoTests(unittest.TestCase):
 
 
 class Stage2BoundaryDetectorTests(unittest.TestCase):
+    def test_contact_depth_mode_emits_qds_without_mass_progress(self) -> None:
+        progress_detector = BoundaryDetector()
+        contact_detector = BoundaryDetector(
+            BoundaryDetectorConfig(
+                qualified_dig_start_mode=QUALIFIED_DIG_START_MODE_CONTACT_DEPTH
+            )
+        )
+        env_state = _make_env_state(
+            mass_in_bucket=0.0,
+            excavated_mass=0.0,
+            min_distance_to_dig_area=0.04,
+            bucket_depth=0.03,
+        )
+        action = np.zeros(4, dtype=np.float32)
+        qpos = np.asarray([0.5, 0.6, 0.5, 0.6], dtype=np.float32)
+
+        self.assertFalse(
+            progress_detector.update(
+                env_state=env_state,
+                action=action,
+                qpos=qpos,
+                reward_phase="",
+                task_step_successes=[],
+            ).qualified_dig_start
+        )
+        self.assertTrue(
+            contact_detector.update(
+                env_state=env_state,
+                action=action,
+                qpos=qpos,
+                reward_phase="",
+                task_step_successes=[],
+            ).qualified_dig_start
+        )
+
     def test_dump_start_and_end_detect_even_when_truck_distance_is_large(self) -> None:
         detector = BoundaryDetector()
 
