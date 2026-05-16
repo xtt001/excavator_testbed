@@ -31,20 +31,24 @@ policy:
 train:
   lr: 1.0e-5
   num_epochs: 500
-  batch_size: 16
+  batch_size: 24
   seed: 0
   device: cuda
-  num_workers: 4
-  prefetch_factor: 2
+  num_workers: 8
+  prefetch_factor: 4
   persistent_workers: true
   pin_memory: true
+  hdf5_cache_size: 32
   split_seed: 0
   train_split_ratio: 0.8
   reuse_split: true
-  val_every: 5
-  save_latest_every: 10
+  val_every: 20
+  save_latest_every: 25
   checkpoint_every: 50
-  plot_every: 50
+  plot_every: 100
   amp: true
   amp_dtype: auto
+  cudnn_benchmark: true
+  allow_tf32: true
+  matmul_precision: high
   ckpt_dir: runs/ckpts/yulong_v2_2_operator_first_4p_500e_20260516/dig

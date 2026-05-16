@@ -8,6 +8,7 @@ docstrings. Public API is backward-compatible with legacy callers.
 from __future__ import annotations
 
 import datetime
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -278,6 +279,7 @@ class EpisodicDataset(Dataset):
         episode_len: int | None = None,
         low_dim_keys: list[str] | tuple[str, ...] | None = None,
         image_mask_config: dict[str, Any] | None = None,
+        hdf5_cache_size: int = 0,
     ):
         super().__init__()
         self.episode_ids = episode_ids
@@ -287,9 +289,12 @@ class EpisodicDataset(Dataset):
         self.episode_len = int(episode_len) if episode_len is not None else None
         self.low_dim_keys = _normalize_low_dim_keys(low_dim_keys)
         self.image_mask_config = dict(image_mask_config or {})
+        self.hdf5_cache_size = max(0, int(hdf5_cache_size))
+        self._h5_cache: OrderedDict[int, Any] = OrderedDict()
         self.is_sim: bool | None = None
         # Warm-up to populate self.is_sim
         self.__getitem__(0)
+        self.close()
 
     def __len__(self) -> int:
         return len(self.episode_ids)
@@ -300,7 +305,9 @@ class EpisodicDataset(Dataset):
         ep_id = self.episode_ids[index]
         path = self.dataset_dir / f"episode_{ep_id}.hdf5"
 
-        with h5py.File(path, "r") as f:
+        close_after_read = self.hdf5_cache_size <= 0
+        f = h5py.File(path, "r") if close_after_read else self._cached_h5(ep_id, path)
+        try:
             is_sim: bool = bool(f.attrs.get("sim", True))
             original_action_shape = f["/action"].shape
             T = original_action_shape[0]
@@ -370,6 +377,9 @@ class EpisodicDataset(Dataset):
                 action = f["/action"][start:]
                 action_loss_mask = _read_action_loss_mask(f, start=start)
                 action_len = T - start
+        finally:
+            if close_after_read:
+                f.close()
 
         self.is_sim = is_sim
 
@@ -422,6 +432,36 @@ class EpisodicDataset(Dataset):
 
         return image_data, proprio_data, action_data, is_pad_t
 
+    def close(self) -> None:
+        for handle in self._h5_cache.values():
+            try:
+                handle.close()
+            except Exception:
+                pass
+        self._h5_cache.clear()
+
+    def __del__(self) -> None:
+        self.close()
+
+    def __getstate__(self) -> dict[str, Any]:
+        state = dict(self.__dict__)
+        state["_h5_cache"] = OrderedDict()
+        return state
+
+    def _cached_h5(self, ep_id: int, path: Path):
+        import h5py
+
+        if ep_id in self._h5_cache:
+            handle = self._h5_cache.pop(ep_id)
+            self._h5_cache[ep_id] = handle
+            return handle
+        handle = h5py.File(path, "r")
+        self._h5_cache[ep_id] = handle
+        while len(self._h5_cache) > self.hdf5_cache_size:
+            _, old_handle = self._h5_cache.popitem(last=False)
+            old_handle.close()
+        return handle
+
 
 # ─── load_data ────────────────────────────────────────────────────────────────
 
@@ -444,6 +484,7 @@ def load_data(
     reuse_split: bool = True,
     low_dim_keys: list[str] | tuple[str, ...] | None = None,
     image_mask_config: dict[str, Any] | None = None,
+    hdf5_cache_size: int = 0,
 ) -> tuple[DataLoader, DataLoader, dict, bool, dict[str, Any]]:
     """
     Build train/val DataLoaders from an HDF5 dataset directory.
@@ -536,6 +577,7 @@ def load_data(
         episode_len=target_episode_len,
         low_dim_keys=selected_low_dim_keys,
         image_mask_config=image_mask_config,
+        hdf5_cache_size=hdf5_cache_size,
     )
     val_ds = EpisodicDataset(
         val_ids,
@@ -545,6 +587,7 @@ def load_data(
         episode_len=target_episode_len,
         low_dim_keys=selected_low_dim_keys,
         image_mask_config=image_mask_config,
+        hdf5_cache_size=hdf5_cache_size,
     )
 
     split_info["dataset_max_episode_len"] = int(max_episode_len)
@@ -552,6 +595,7 @@ def load_data(
     split_info["low_dim_keys"] = list(selected_low_dim_keys)
     split_info["low_dim_dim"] = int(norm_stats["proprio_dim"])
     split_info["image_mask_enabled"] = bool(image_mask_config)
+    split_info["hdf5_cache_size"] = int(hdf5_cache_size)
 
     loader_kw: dict = {"pin_memory": pin_memory, "num_workers": num_workers}
     if num_workers > 0:

@@ -156,6 +156,11 @@
 | YuLong V2.2 conditioned dig primitive planner smoke | `testbed/configs/eval_yulong_v2_2_pro_primitive_planner_conditioned_dig_smoke.yaml` | `primitive_planner_act` 只给 dig 注入 Cell Entry token；carry/dump/return 仍为 `qpos + qvel` |
 | YuLong FarmStick replayx20 rollout smoke | `testbed/configs/eval_yulong_farmstick_3cycle_replay20_workskill_qvel_smoke.yaml` | 单 rollout 接回 Unity；无 YuLong bootstrap，直接 smoke work policy |
 | YuLong V2.2 四 primitive contact-depth 训练 | `testbed/configs/act_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_{dig,carry,dump,return}_qvel.yaml` | 小斗 YuLong 主训练入口；`qualified_dig_start=contact_depth` 后重切，四类各 40 条且无 reject |
+
+YuLong operator-first 训练优化不改变图像分辨率或推理输入语义。当前配置仍读取原始
+`fpv` 图像，只通过 `batch_size`、`num_workers`、`prefetch_factor`、
+`hdf5_cache_size`、TF32/cudnn benchmark 和较低频率的 validation/plot 来提高吞吐；
+如果出现 CUDA OOM，优先把对应 primitive 的 `batch_size` 下调。
 | YuLong V2.2 四 primitive contact-depth smoke | `testbed/configs/eval_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_qvel_smoke.yaml` | `primitive_planner_act` + `scripted_qpos` reset bootstrap；使用 contact-depth dig 起点 qpos；dig->carry 质量阈值下调到 `20kg` |
 | YuLong V2.2 四 primitive contact-depth 3-cycle smoke | `testbed/configs/eval_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_qvel_3cycle_smoke.yaml` | 同一组 contact-depth checkpoint；`target_cycle_gate=3`，用于验证 return 是否能接回下一轮 QDS |
 | YuLong V2.2 四 primitive 旧对照 | `testbed/configs/act_yulong_farmstick_3cycle_replay20_v2_2_4p_{dig,carry,dump,return}_qvel.yaml` + `testbed/configs/eval_yulong_farmstick_3cycle_replay20_v2_2_4p_qvel_smoke.yaml` | 旧 progress QDS 切分结果，仅保留作对照 |

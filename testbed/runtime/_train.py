@@ -8,6 +8,8 @@ import pickle
 from pathlib import Path
 from typing import Any
 
+import torch
+
 from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_DIM
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
@@ -85,6 +87,9 @@ def train_policy(config: dict[str, Any]) -> None:
         "plot_every":     int(train_cfg.get("plot_every", train_cfg.get("checkpoint_every", 100))),
         "amp":            bool(train_cfg.get("amp", False)),
         "amp_dtype":      str(train_cfg.get("amp_dtype", "auto")),
+        "cudnn_benchmark": bool(train_cfg.get("cudnn_benchmark", True)),
+        "allow_tf32":     bool(train_cfg.get("allow_tf32", True)),
+        "matmul_precision": str(train_cfg.get("matmul_precision", "high")),
         "split_seed":     split_seed,
         "train_split_ratio": train_split_ratio,
         "reuse_split":    reuse_split,
@@ -92,6 +97,7 @@ def train_policy(config: dict[str, Any]) -> None:
     }
 
     ckpt_dir.mkdir(parents=True, exist_ok=True)
+    _configure_torch_performance(train_cfg=train_cfg, device=device)
 
     batch_size   = int(train_cfg.get("batch_size", 8))
     num_workers  = int(train_cfg.get("num_workers", 4))
@@ -114,6 +120,7 @@ def train_policy(config: dict[str, Any]) -> None:
         reuse_split        = reuse_split,
         low_dim_keys       = low_dim_keys,
         image_mask_config  = image_mask_config,
+        hdf5_cache_size    = int(train_cfg.get("hdf5_cache_size", 0)),
     )
 
     # save normalisation stats so trainer can load them
@@ -188,7 +195,26 @@ def _build_resolved_train_config(
     train_cfg["plot_every"] = int(full_config["plot_every"])
     train_cfg["amp"] = bool(full_config["amp"])
     train_cfg["amp_dtype"] = str(full_config["amp_dtype"])
+    train_cfg["cudnn_benchmark"] = bool(full_config["cudnn_benchmark"])
+    train_cfg["allow_tf32"] = bool(full_config["allow_tf32"])
+    train_cfg["matmul_precision"] = str(full_config["matmul_precision"])
     return resolved
+
+
+def _configure_torch_performance(
+    *,
+    train_cfg: dict[str, Any],
+    device: str,
+) -> None:
+    if not str(device).startswith("cuda") or not torch.cuda.is_available():
+        return
+    torch.backends.cudnn.benchmark = bool(train_cfg.get("cudnn_benchmark", True))
+    allow_tf32 = bool(train_cfg.get("allow_tf32", True))
+    torch.backends.cuda.matmul.allow_tf32 = allow_tf32
+    torch.backends.cudnn.allow_tf32 = allow_tf32
+    precision = str(train_cfg.get("matmul_precision", "high"))
+    if precision:
+        torch.set_float32_matmul_precision(precision)
 
 
 def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) -> int:
