@@ -566,6 +566,7 @@ def eval_policy(config: dict[str, Any]) -> None:
         transition_cfg = dict(policy_cfg.get("transition", {}))
         scripted_bootstrap_cfg = dict(policy_cfg.get("scripted_bootstrap", {}))
         cell_entry_cfg = dict(policy_cfg.get("cell_entry", {}))
+        dig_cut_planner_cfg = dict(policy_cfg.get("dig_cut_planner", {}))
         boundary_detector = build_boundary_detector_from_config(
             reward_cfg=reward_cfg,
             success_cfg=success_cfg,
@@ -631,6 +632,7 @@ def eval_policy(config: dict[str, Any]) -> None:
             "cell_entry_low_productivity_payload_gain_kg": float(
                 cell_entry_cfg.get("low_productivity_payload_gain_kg", 100.0)
             ),
+            "dig_cut_planner": dig_cut_planner_cfg,
             "scripted_bootstrap_target_qpos": scripted_bootstrap_cfg.get("target_qpos"),
             "scripted_bootstrap_kp": float(scripted_bootstrap_cfg.get("kp", 2.0)),
             "scripted_bootstrap_kd": float(scripted_bootstrap_cfg.get("kd", 0.25)),

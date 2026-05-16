@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from testbed.data.operator_first_v2_2 import build_live_dig_cut_tokens_from_pose
 from testbed.data.schema import (
     ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX,
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
@@ -43,7 +45,54 @@ from testbed.policies.hybrid.primitive_planner import (
 )
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+YULONG_DIG_CUT_PRIOR_PATH = (
+    REPO_ROOT
+    / "testbed/configs/planner_priors/yulong_operator_first_dig_cut_prior_v1.json"
+)
+
+
 class TestPrimitivesV22(unittest.TestCase):
+    def test_yulong_operator_prior_json_matches_committed_gold_statistics(self) -> None:
+        with YULONG_DIG_CUT_PRIOR_PATH.open("r", encoding="utf-8") as handle:
+            prior = json.load(handle)
+
+        self.assertEqual(prior["prior_id"], "yulong_operator_first_dig_cut_prior_v1")
+        self.assertEqual(prior["schema_version"], "v1")
+        self.assertEqual(
+            prior["dig_cut_token_contract"], "v2_2_operator_first_cut_v1"
+        )
+        self.assertEqual(len(prior["token_order"]), 10)
+        source = prior["source"]
+        self.assertEqual(source["source_episode_count"], 26)
+        self.assertEqual(source["source_cycle_count_all"], 649)
+        self.assertEqual(source["source_cycle_count_used"], 640)
+        self.assertEqual(source["excluded_cycle_count"], 9)
+        self.assertEqual(source["tier_filter"], "gold")
+        self.assertEqual(
+            source["source_lineage_git_commit"],
+            "8ad9721f4ad79aaf1c5dcb7c4c28c566f5b46e7f",
+        )
+        self.assertEqual(source["prior_builder_git_commit"], "2568a7c")
+
+        expected = {
+            "entry_x_m": (0.4148, 0.9226, 1.3053),
+            "entry_z_m": (-1.0327, -0.3382, 0.6171),
+            "exit_x_m": (-0.5777, 0.0595, 0.8601),
+            "exit_z_m": (-0.8376, -0.2309, 0.54),
+            "cut_direction_x": (-0.9726, -0.8189, 0.2026),
+            "cut_direction_z": (-0.1904, 0.0655, 0.3364),
+            "cut_length_m": (0.7381, 1.1568, 1.6275),
+            "cut_depth_peak_m": (0.8524, 1.0339, 1.1767),
+            "payload_gain_kg": (48.3301, 59.0535, 74.2262),
+            "effective_deposit_delta_kg": (42.4849, 56.7207, 68.7807),
+        }
+        for field_name, (p10, p50, p90) in expected.items():
+            stats = prior["fields"][field_name]
+            self.assertAlmostEqual(float(stats["p10"]), p10, places=4)
+            self.assertAlmostEqual(float(stats["p50"]), p50, places=4)
+            self.assertAlmostEqual(float(stats["p90"]), p90, places=4)
+
     def test_build_primitive_datasets_creates_four_sibling_datasets(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
@@ -935,6 +984,100 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertFalse(policy.debug_state()["cell_entry_token_injected"])
         self.assertIsNone(carry_policy.last_cell_entry_tokens)
 
+    def test_primitive_planner_conservative_dig_cut_mode_matches_legacy_token(self) -> None:
+        dig_policy = _RecordingPolicy(0)
+        policy = PrimitivePlannerACTPolicy(
+            dig_policy=dig_policy,
+            carry_policy=_RecordingPolicy(1),
+            dump_policy=_RecordingPolicy(2),
+            return_policy=_RecordingPolicy(3),
+            boundary_detector=_FakeBoundaryDetector([]),
+            dig_cut_planner={
+                "enabled": True,
+                "mode": "conservative_pose",
+                "fallback_mode": "conservative_pose",
+                "hold_token_until_skill_exit": False,
+            },
+        )
+
+        pose = (0.8, 0.0, -0.3)
+        policy.predict(_dig_cut_obs(mass=0.0, dig_distance=0.0, pose=pose))
+
+        np.testing.assert_allclose(
+            dig_policy.last_dig_cut_tokens,
+            build_live_dig_cut_tokens_from_pose(pose),
+        )
+        state = policy.debug_state()
+        self.assertEqual(state["dig_cut_planner_mode"], "conservative_pose")
+        self.assertEqual(state["dig_cut_token_source"], "conservative_pose")
+        self.assertTrue(state["dig_cut_token_injected"])
+
+    def test_primitive_planner_operator_prior_locks_token_for_dig_cycle(self) -> None:
+        dig_policy = _RecordingPolicy(0)
+        carry_policy = _RecordingPolicy(1)
+        policy = PrimitivePlannerACTPolicy(
+            dig_policy=dig_policy,
+            carry_policy=carry_policy,
+            dump_policy=_RecordingPolicy(2),
+            return_policy=_RecordingPolicy(3),
+            boundary_detector=_FakeBoundaryDetector([]),
+            dig_to_carry_min_bucket_mass_kg=20.0,
+            dig_to_carry_min_distance_to_dig_area_m=0.0,
+            dig_cut_planner={
+                "enabled": True,
+                "mode": "operator_prior",
+                "prior_path": str(YULONG_DIG_CUT_PRIOR_PATH),
+                "fallback_mode": "conservative_pose",
+                "hold_token_until_skill_exit": True,
+            },
+        )
+
+        policy.predict(_dig_cut_obs(mass=0.0, dig_distance=0.0, pose=(9.0, 0.0, 9.0)))
+        first_token = np.asarray(dig_policy.last_dig_cut_tokens, dtype=np.float32)
+        self.assertEqual(first_token.shape, (10,))
+        self.assertTrue(np.all(np.isfinite(first_token)))
+        self.assertEqual(float(first_token[-1]), 1.0)
+        state = policy.debug_state()
+        self.assertEqual(state["dig_cut_planner_mode"], "operator_prior")
+        self.assertEqual(
+            state["dig_cut_prior_id"], "yulong_operator_first_dig_cut_prior_v1"
+        )
+        self.assertEqual(state["dig_cut_token_source"], "operator_prior_pose_clamped")
+        self.assertTrue(state["token_in_prior_p10_p90"])
+
+        policy.predict(_dig_cut_obs(mass=0.0, dig_distance=0.0, pose=(-9.0, 0.0, -9.0)))
+        np.testing.assert_allclose(dig_policy.last_dig_cut_tokens, first_token)
+
+        policy.predict(_dig_cut_obs(mass=50.0, dig_distance=0.1, pose=(-9.0, 0.0, -9.0)))
+        self.assertEqual(policy.debug_state()["skill_name"], "carry")
+        self.assertFalse(policy.debug_state()["dig_cut_token_injected"])
+        self.assertIsNone(carry_policy.last_dig_cut_tokens)
+
+    def test_primitive_planner_operator_prior_uses_median_when_pose_missing(self) -> None:
+        dig_policy = _RecordingPolicy(0)
+        policy = PrimitivePlannerACTPolicy(
+            dig_policy=dig_policy,
+            carry_policy=_RecordingPolicy(1),
+            dump_policy=_RecordingPolicy(2),
+            return_policy=_RecordingPolicy(3),
+            boundary_detector=_FakeBoundaryDetector([]),
+            dig_cut_planner={
+                "enabled": True,
+                "mode": "operator_prior",
+                "prior_path": str(YULONG_DIG_CUT_PRIOR_PATH),
+                "fallback_mode": "conservative_pose",
+                "hold_token_until_skill_exit": True,
+            },
+        )
+
+        policy.predict(_obs(mass=0.0, dig_distance=0.0))
+
+        self.assertEqual(dig_policy.last_dig_cut_tokens.shape, (10,))
+        state = policy.debug_state()
+        self.assertEqual(state["dig_cut_token_source"], "operator_prior_median_pose_fallback")
+        self.assertEqual(state["fallback_reason"], "missing_bucket_dig_area_pose")
+        self.assertTrue(state["token_in_prior_p10_p90"])
+
     def test_primitive_planner_can_wait_past_dump_end_boundary_for_hold(self) -> None:
         detector = _FakeBoundaryDetector(
             [
@@ -1544,6 +1687,7 @@ class _RecordingPolicy(_ConstantPolicy):
         super().__init__(value)
         self.last_goal_tokens: np.ndarray | None = None
         self.last_cell_entry_tokens: np.ndarray | None = None
+        self.last_dig_cut_tokens: np.ndarray | None = None
 
     def predict(self, obs: dict) -> np.ndarray:
         self.last_goal_tokens = np.asarray(obs.get("goal_tokens"), dtype=np.float32)
@@ -1551,6 +1695,11 @@ class _RecordingPolicy(_ConstantPolicy):
             None
             if "cell_entry_tokens" not in obs
             else np.asarray(obs.get("cell_entry_tokens"), dtype=np.float32)
+        )
+        self.last_dig_cut_tokens = (
+            None
+            if "dig_cut_tokens" not in obs
+            else np.asarray(obs.get("dig_cut_tokens"), dtype=np.float32)
         )
         return super().predict(obs)
 
@@ -1662,6 +1811,23 @@ def _cell_entry_obs(*, mass: float, dig_distance: float) -> dict:
     env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX] = 0.0
     env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX] = 0.0
     env_state[ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX] = 2.0
+    obs["env_state"] = env_state
+    return obs
+
+
+def _dig_cut_obs(
+    *,
+    mass: float,
+    dig_distance: float,
+    pose: tuple[float, float, float],
+) -> dict:
+    obs = _obs(mass=mass, dig_distance=dig_distance)
+    env_state = np.zeros(23, dtype=np.float32)
+    old_env_state = np.asarray(obs["env_state"], dtype=np.float32)
+    env_state[: len(old_env_state)] = old_env_state
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX] = float(pose[0])
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX] = float(pose[1])
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX] = float(pose[2])
     obs["env_state"] = env_state
     return obs
 

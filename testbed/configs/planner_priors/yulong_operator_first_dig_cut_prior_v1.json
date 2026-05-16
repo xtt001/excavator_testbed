@@ -1,0 +1,82 @@
+{
+  "prior_id": "yulong_operator_first_dig_cut_prior_v1",
+  "schema_version": "v1",
+  "dig_cut_token_contract": "v2_2_operator_first_cut_v1",
+  "token_order": [
+    "entry_x",
+    "entry_z",
+    "exit_x",
+    "exit_z",
+    "cut_direction_x",
+    "cut_direction_z",
+    "cut_length",
+    "cut_depth_peak",
+    "payload_gain",
+    "valid"
+  ],
+  "source": {
+    "archive_root": "/data/pingfan/excavator_testbed_data_archive/yulong_v2_2_pro_full_task_raw_20260515_26eps_good_operator_first_relabel_v2_2_20260516",
+    "source_dataset": "data/yulong_v2_2_current_relabeled",
+    "source_lineage_git_commit": "8ad9721f4ad79aaf1c5dcb7c4c28c566f5b46e7f",
+    "prior_builder_git_commit": "2568a7c",
+    "source_episode_count": 26,
+    "source_cycle_count_all": 649,
+    "source_cycle_count_used": 640,
+    "excluded_cycle_count": 9,
+    "tier_filter": "gold",
+    "created_at": "2026-05-16",
+    "notes": "Gold-only robust prior from YuLong V2.2 operator-first professional cycles; silver cycles remain diagnostic only."
+  },
+  "fields": {
+    "entry_x_m": {
+      "p10": 0.4148,
+      "p50": 0.9226,
+      "p90": 1.3053
+    },
+    "entry_z_m": {
+      "p10": -1.0327,
+      "p50": -0.3382,
+      "p90": 0.6171
+    },
+    "exit_x_m": {
+      "p10": -0.5777,
+      "p50": 0.0595,
+      "p90": 0.8601
+    },
+    "exit_z_m": {
+      "p10": -0.8376,
+      "p50": -0.2309,
+      "p90": 0.54
+    },
+    "cut_direction_x": {
+      "p10": -0.9726,
+      "p50": -0.8189,
+      "p90": 0.2026
+    },
+    "cut_direction_z": {
+      "p10": -0.1904,
+      "p50": 0.0655,
+      "p90": 0.3364
+    },
+    "cut_length_m": {
+      "p10": 0.7381,
+      "p50": 1.1568,
+      "p90": 1.6275
+    },
+    "cut_depth_peak_m": {
+      "p10": 0.8524,
+      "p50": 1.0339,
+      "p90": 1.1767
+    },
+    "payload_gain_kg": {
+      "p10": 48.3301,
+      "p50": 59.0535,
+      "p90": 74.2262
+    },
+    "effective_deposit_delta_kg": {
+      "p10": 42.4849,
+      "p50": 56.7207,
+      "p90": 68.7807
+    }
+  }
+}

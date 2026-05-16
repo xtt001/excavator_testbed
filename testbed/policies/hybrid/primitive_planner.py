@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_TOKEN_DIM,
+    _build_dig_cut_token,
     build_live_dig_cut_tokens_from_pose,
 )
 from testbed.data.v2_1 import build_goal_tokens
@@ -123,6 +126,7 @@ class PrimitivePlannerACTPolicy(Policy):
         cell_entry_enabled: bool = False,
         cell_entry_grid: dict[str, Any] | None = None,
         cell_entry_low_productivity_payload_gain_kg: float = 100.0,
+        dig_cut_planner: dict[str, Any] | None = None,
         scripted_bootstrap_target_qpos: list[float] | tuple[float, ...] | np.ndarray | None = None,
         scripted_bootstrap_kp: float = 2.0,
         scripted_bootstrap_kd: float = 0.25,
@@ -208,6 +212,26 @@ class PrimitivePlannerACTPolicy(Policy):
                 cell_entry_low_productivity_payload_gain_kg
             ),
         )
+        self.dig_cut_planner_cfg = dict(dig_cut_planner or {})
+        self.dig_cut_planner_enabled = bool(
+            self.dig_cut_planner_cfg.get("enabled", True)
+        )
+        self.dig_cut_planner_mode = str(
+            self.dig_cut_planner_cfg.get("mode", "conservative_pose")
+        )
+        self.dig_cut_planner_fallback_mode = str(
+            self.dig_cut_planner_cfg.get("fallback_mode", "conservative_pose")
+        )
+        self.dig_cut_hold_token_until_skill_exit = bool(
+            self.dig_cut_planner_cfg.get(
+                "hold_token_until_skill_exit",
+                self.dig_cut_planner_mode == "operator_prior",
+            )
+        )
+        self.dig_cut_prior_path = str(self.dig_cut_planner_cfg.get("prior_path", ""))
+        self.dig_cut_prior = self._load_dig_cut_prior(self.dig_cut_prior_path)
+        self.dig_cut_prior_id = str(self.dig_cut_prior.get("prior_id", ""))
+        self._validate_dig_cut_planner_config()
         self.scripted_bootstrap_target_qpos = (
             None
             if scripted_bootstrap_target_qpos is None
@@ -268,6 +292,10 @@ class PrimitivePlannerACTPolicy(Policy):
         self._dig_cut_token_injected = False
         self._cell_entry_seen_cell_id = -1
         self._cell_entry_trace: list[dict[str, Any]] = []
+        self._dig_cut_planned_cycle_id = -1
+        self._dig_cut_token_source = "none"
+        self._dig_cut_fallback_reason = ""
+        self._dig_cut_token_in_prior_p10_p90 = False
         self._debug_state = self._make_debug_state(
             transition_timeout=False,
             transition_completed=False,
@@ -350,6 +378,16 @@ class PrimitivePlannerACTPolicy(Policy):
             "cell_entry_token_dim": int(CELL_ENTRY_TOKEN_DIM),
             "dig_cut_token_injected": bool(self._dig_cut_token_injected),
             "dig_cut_token_dim": int(DIG_CUT_TOKEN_DIM),
+            "dig_cut_planner_mode": str(self.dig_cut_planner_mode),
+            "dig_cut_prior_id": str(self.dig_cut_prior_id),
+            "dig_cut_token_source": str(self._dig_cut_token_source),
+            "dig_cut_tokens": self._dig_cut_tokens.astype(float).tolist(),
+            "token_in_prior_p10_p90": bool(self._dig_cut_token_in_prior_p10_p90),
+            "dig_cut_token_in_prior_p10_p90": bool(
+                self._dig_cut_token_in_prior_p10_p90
+            ),
+            "fallback_reason": str(self._dig_cut_fallback_reason),
+            "dig_cut_fallback_reason": str(self._dig_cut_fallback_reason),
             "cell_entry_selected_cell_id": int(
                 -1 if cell_goal is None else cell_goal.selected_cell_id
             ),
@@ -411,6 +449,13 @@ class PrimitivePlannerACTPolicy(Policy):
             "cell_entry_trace_count": int(len(self._cell_entry_trace)),
             "dig_cut_token_dim": int(DIG_CUT_TOKEN_DIM),
             "dig_cut_token_injected": int(self._dig_cut_token_injected),
+            "dig_cut_planner_mode": str(self.dig_cut_planner_mode),
+            "dig_cut_prior_id": str(self.dig_cut_prior_id),
+            "dig_cut_token_source": str(self._dig_cut_token_source),
+            "dig_cut_token_in_prior_p10_p90": int(
+                self._dig_cut_token_in_prior_p10_p90
+            ),
+            "dig_cut_fallback_reason": str(self._dig_cut_fallback_reason),
             "scripted_bootstrap_timeout_count": int(
                 self._scripted_bootstrap_timeout_count
             ),
@@ -422,6 +467,9 @@ class PrimitivePlannerACTPolicy(Policy):
             "dig_cut_token_contract": (
                 "entry_x,entry_z,exit_x,exit_z,dir_x,dir_z,length,depth,payload,valid"
             ),
+            "dig_cut_planner_mode": str(self.dig_cut_planner_mode),
+            "dig_cut_prior_id": str(self.dig_cut_prior_id),
+            "dig_cut_prior_path": str(self.dig_cut_prior_path),
         }
 
     def _maybe_switch_skill(self, *, obs: dict, boundary_event: Any | None) -> None:
@@ -491,6 +539,8 @@ class PrimitivePlannerACTPolicy(Policy):
         elif skill_name == "dig":
             self._dump_ready_hold_count = 0
             self._dump_done_hold_count = 0
+        if skill_name != "dig":
+            self._clear_dig_cut_plan()
 
     def _should_end_bootstrap(self, *, obs: dict, boundary_event: Any | None) -> bool:
         if self._scripted_bootstrap_enabled():
@@ -816,12 +866,188 @@ class PrimitivePlannerACTPolicy(Policy):
         return policy_obs
 
     def _dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        if self._skill_name != "dig":
+        if self._skill_name != "dig" or not self.dig_cut_planner_enabled:
             return None
-        self._dig_cut_tokens = build_live_dig_cut_tokens_from_pose(
-            self._bucket_dig_area_pose(obs)
-        )
+        if (
+            self.dig_cut_hold_token_until_skill_exit
+            and self._dig_cut_planned_cycle_id == int(self._cycle_index)
+        ):
+            return self._dig_cut_tokens.copy()
+        self._dig_cut_tokens = self._build_dig_cut_tokens_for_obs(obs)
+        self._dig_cut_planned_cycle_id = int(self._cycle_index)
         return self._dig_cut_tokens.copy()
+
+    def _build_dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray:
+        self._dig_cut_fallback_reason = ""
+        if self.dig_cut_planner_mode == "conservative_pose":
+            self._dig_cut_token_source = "conservative_pose"
+            token = build_live_dig_cut_tokens_from_pose(self._bucket_dig_area_pose(obs))
+            self._dig_cut_token_in_prior_p10_p90 = False
+            return token
+        if self.dig_cut_planner_mode == "operator_prior":
+            try:
+                token, raw_fields, source, fallback_reason = (
+                    self._build_operator_prior_dig_cut_tokens(obs)
+                )
+                self._dig_cut_token_source = source
+                self._dig_cut_fallback_reason = fallback_reason
+                self._dig_cut_token_in_prior_p10_p90 = self._raw_fields_in_prior_range(
+                    raw_fields
+                )
+                return token
+            except Exception as exc:
+                if self.dig_cut_planner_fallback_mode != "conservative_pose":
+                    raise
+                self._dig_cut_token_source = "fallback_conservative_pose"
+                self._dig_cut_fallback_reason = str(exc)
+                token = build_live_dig_cut_tokens_from_pose(
+                    self._bucket_dig_area_pose(obs)
+                )
+                self._dig_cut_token_in_prior_p10_p90 = False
+                return token
+        raise ValueError(f"Unsupported dig_cut_planner mode {self.dig_cut_planner_mode!r}.")
+
+    def _build_operator_prior_dig_cut_tokens(
+        self, obs: dict
+    ) -> tuple[np.ndarray, dict[str, float | int], str, str]:
+        if not self.dig_cut_prior:
+            raise ValueError("operator_prior mode requires a dig cut prior JSON.")
+        fields = dict(self.dig_cut_prior.get("fields", {}))
+        pose = self._bucket_dig_area_pose(obs)
+        fallback_reason = ""
+        if pose is None:
+            entry_x = self._prior_percentile(fields, "entry_x_m", "p50")
+            entry_y = 0.0
+            entry_z = self._prior_percentile(fields, "entry_z_m", "p50")
+            source = "operator_prior_median_pose_fallback"
+            fallback_reason = "missing_bucket_dig_area_pose"
+        else:
+            entry_x = self._clamp_to_prior(fields, "entry_x_m", float(pose[0]))
+            entry_y = float(pose[1])
+            entry_z = self._clamp_to_prior(fields, "entry_z_m", float(pose[2]))
+            source = "operator_prior_pose_clamped"
+
+        dir_x = self._prior_percentile(fields, "cut_direction_x", "p50")
+        dir_z = self._prior_percentile(fields, "cut_direction_z", "p50")
+        norm = float(np.hypot(dir_x, dir_z))
+        if norm <= 1.0e-6:
+            dir_x, dir_z = -1.0, 0.0
+        else:
+            dir_x, dir_z = dir_x / norm, dir_z / norm
+        length = self._prior_percentile(fields, "cut_length_m", "p50")
+        exit_x = self._clamp_to_prior(fields, "exit_x_m", entry_x + dir_x * length)
+        exit_z = self._clamp_to_prior(fields, "exit_z_m", entry_z + dir_z * length)
+
+        delta_x = exit_x - entry_x
+        delta_z = exit_z - entry_z
+        generated_length = float(np.hypot(delta_x, delta_z))
+        if generated_length > 1.0e-6:
+            dir_x = delta_x / generated_length
+            dir_z = delta_z / generated_length
+            length = generated_length
+
+        raw_fields = {
+            "operator_entry_x_m": float(entry_x),
+            "operator_entry_y_m": float(entry_y),
+            "operator_entry_z_m": float(entry_z),
+            "operator_exit_x_m": float(exit_x),
+            "operator_exit_y_m": float(entry_y),
+            "operator_exit_z_m": float(exit_z),
+            "operator_cut_direction_x": float(
+                self._clamp_to_prior(fields, "cut_direction_x", dir_x)
+            ),
+            "operator_cut_direction_y": 0.0,
+            "operator_cut_direction_z": float(
+                self._clamp_to_prior(fields, "cut_direction_z", dir_z)
+            ),
+            "operator_cut_length_m": float(
+                self._clamp_to_prior(fields, "cut_length_m", length)
+            ),
+            "operator_cut_depth_peak_m": float(
+                self._prior_percentile(fields, "cut_depth_peak_m", "p50")
+            ),
+            "operator_cut_payload_gain_kg": float(
+                self._prior_percentile(fields, "payload_gain_kg", "p50")
+            ),
+            "operator_cut_valid": 1,
+        }
+        return _build_dig_cut_token(raw_fields), raw_fields, source, fallback_reason
+
+    def _clear_dig_cut_plan(self) -> None:
+        self._dig_cut_planned_cycle_id = -1
+        self._dig_cut_tokens = np.zeros(DIG_CUT_TOKEN_DIM, dtype=np.float32)
+        self._dig_cut_token_source = "none"
+        self._dig_cut_fallback_reason = ""
+        self._dig_cut_token_in_prior_p10_p90 = False
+
+    def _validate_dig_cut_planner_config(self) -> None:
+        if not self.dig_cut_planner_enabled:
+            return
+        supported_modes = {"conservative_pose", "operator_prior"}
+        if self.dig_cut_planner_mode not in supported_modes:
+            raise ValueError(
+                f"Unsupported dig_cut_planner mode {self.dig_cut_planner_mode!r}; "
+                f"expected one of {sorted(supported_modes)}."
+            )
+        if (
+            self.dig_cut_planner_mode == "operator_prior"
+            and not self.dig_cut_prior_path
+        ):
+            raise ValueError("operator_prior dig_cut_planner requires prior_path.")
+
+    @staticmethod
+    def _load_dig_cut_prior(path: str) -> dict[str, Any]:
+        if not path:
+            return {}
+        prior_path = Path(path).expanduser()
+        if not prior_path.is_absolute():
+            prior_path = Path.cwd() / prior_path
+        with prior_path.open("r", encoding="utf-8") as handle:
+            prior = json.load(handle)
+        if int(len(prior.get("token_order", []))) != DIG_CUT_TOKEN_DIM:
+            raise ValueError(
+                f"dig cut prior {prior_path} has invalid token_order length."
+            )
+        return dict(prior)
+
+    @staticmethod
+    def _prior_percentile(
+        fields: dict[str, Any], field_name: str, percentile: str
+    ) -> float:
+        try:
+            return float(fields[field_name][percentile])
+        except KeyError as exc:
+            raise KeyError(f"Missing prior field {field_name}.{percentile}") from exc
+
+    def _clamp_to_prior(
+        self, fields: dict[str, Any], field_name: str, value: float
+    ) -> float:
+        lo = self._prior_percentile(fields, field_name, "p10")
+        hi = self._prior_percentile(fields, field_name, "p90")
+        return float(np.clip(float(value), lo, hi))
+
+    def _raw_fields_in_prior_range(self, raw_fields: dict[str, float | int]) -> bool:
+        if not self.dig_cut_prior:
+            return False
+        fields = dict(self.dig_cut_prior.get("fields", {}))
+        mapping = {
+            "operator_entry_x_m": "entry_x_m",
+            "operator_entry_z_m": "entry_z_m",
+            "operator_exit_x_m": "exit_x_m",
+            "operator_exit_z_m": "exit_z_m",
+            "operator_cut_direction_x": "cut_direction_x",
+            "operator_cut_direction_z": "cut_direction_z",
+            "operator_cut_length_m": "cut_length_m",
+            "operator_cut_depth_peak_m": "cut_depth_peak_m",
+            "operator_cut_payload_gain_kg": "payload_gain_kg",
+        }
+        for raw_name, prior_name in mapping.items():
+            value = float(raw_fields.get(raw_name, np.nan))
+            lo = self._prior_percentile(fields, prior_name, "p10")
+            hi = self._prior_percentile(fields, prior_name, "p90")
+            if not np.isfinite(value) or value < lo - 1.0e-6 or value > hi + 1.0e-6:
+                return False
+        return True
 
     def _cell_entry_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
         if not self.cell_entry_enabled or self._skill_name != "dig":
@@ -1106,6 +1332,7 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
         cell_entry_enabled: bool = False,
         cell_entry_grid: dict[str, Any] | None = None,
         cell_entry_low_productivity_payload_gain_kg: float = 100.0,
+        dig_cut_planner: dict[str, Any] | None = None,
     ) -> None:
         self.approach_dump_policy = approach_dump_policy
         self.dump_release_policy = dump_release_policy
@@ -1182,6 +1409,7 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             cell_entry_low_productivity_payload_gain_kg=(
                 cell_entry_low_productivity_payload_gain_kg
             ),
+            dig_cut_planner=dig_cut_planner,
         )
         self.dump_release_ready_hold_steps = self.dump_ready_hold_steps
 
@@ -1274,6 +1502,8 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             self._approach_ready_hold_count = 0
             self._dump_release_ready_hold_count = 0
             self._dump_done_hold_count = 0
+        if skill_name != "dig":
+            self._clear_dig_cut_plan()
 
     def _approach_ready(self, obs: dict) -> bool:
         if self._mass_in_bucket(obs) < self.approach_ready_min_bucket_mass_kg:

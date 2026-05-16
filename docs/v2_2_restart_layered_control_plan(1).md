@@ -589,6 +589,15 @@ wrapper；新增字段包括 `cycle_effective_deposit_delta_kg`、`legacy_dump_e
 `/v2/step/dig_cut_tokens`。该 builder 不覆盖旧 `/v2/cycle/deposit_delta_kg`，
 也不修改 immutable raw。
 
+planner 同步采用 operator-first live token：`dig_cut_tokens` 的 10D contract
+保持不变，训练侧无需重训；rollout 侧默认使用
+`dig_cut_planner.mode=operator_prior`，读取
+`testbed/configs/planner_priors/yulong_operator_first_dig_cut_prior_v1.json`。该 prior
+来自当前 26 条 YuLong 专业操作 operator-first relabel 数据中的 640 条 gold cycle，
+记录 P10/P50/P90 与 lineage。旧固定模板 planner 保留为
+`dig_cut_planner.mode=conservative_pose`，baseline tag 为
+`planner-baseline-conservative-pose-20260516`，用于 A/B 和回溯。
+
 当前 YuLong operator-first 主线命令：
 
 ```bash

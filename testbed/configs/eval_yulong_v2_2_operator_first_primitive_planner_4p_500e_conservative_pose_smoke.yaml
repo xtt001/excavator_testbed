@@ -1,6 +1,6 @@
-# YuLong V2.2 operator-first four-primitive rollout smoke.
+# YuLong V2.2 operator-first four-primitive conservative planner baseline smoke.
 #
-# dig receives qpos + qvel + dig_cut_tokens from the primitive planner.
+# dig receives qpos + qvel + the legacy conservative_pose dig_cut_tokens.
 # carry/dump/return remain qpos + qvel.
 
 agx:
@@ -19,13 +19,13 @@ task:
 eval:
   num_rollouts: 1
   save_video: true
-  video_dir: "runs/eval/yulong_v2_2_operator_first_4p_500e_rollout_20260516/videos"
-  results_dir: "runs/eval/yulong_v2_2_operator_first_4p_500e_rollout_20260516/results"
+  video_dir: "runs/eval/yulong_v2_2_operator_first_4p_500e_conservative_pose_20260516/videos"
+  results_dir: "runs/eval/yulong_v2_2_operator_first_4p_500e_conservative_pose_20260516/results"
   save_rollout_logs: true
   stream_rollout_logs: true
-  rollout_log_dir: "runs/eval/yulong_v2_2_operator_first_4p_500e_rollout_20260516/results/rollouts"
+  rollout_log_dir: "runs/eval/yulong_v2_2_operator_first_4p_500e_conservative_pose_20260516/results/rollouts"
   record_hdf5: true
-  record_hdf5_dir: "runs/eval/yulong_v2_2_operator_first_4p_500e_rollout_20260516/hdf5"
+  record_hdf5_dir: "runs/eval/yulong_v2_2_operator_first_4p_500e_conservative_pose_20260516/hdf5"
   record_hdf5_with_cell_entry: false
   record_hdf5_metadata:
     scene_version: "yulong_cad_v2_2"
@@ -72,10 +72,9 @@ policy:
   action_dim: 4
   dig_cut_planner:
     enabled: true
-    mode: "operator_prior"
-    prior_path: "testbed/configs/planner_priors/yulong_operator_first_dig_cut_prior_v1.json"
+    mode: "conservative_pose"
     fallback_mode: "conservative_pose"
-    hold_token_until_skill_exit: true
+    hold_token_until_skill_exit: false
   act_params:
     chunk_size: 100
     kl_weight: 10

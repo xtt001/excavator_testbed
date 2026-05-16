@@ -127,6 +127,13 @@
   `qpos + qvel + dig_cut_tokens` 的 dig；`carry/dump/return` 继续保持
   `qpos + qvel`。live 时 `primitive_planner_act` 只在调用 `dig` policy 时注入
   `dig_cut_tokens`，不会把 dig token 喂给 carry/dump/return。
+- YuLong operator-first rollout 默认使用 `dig_cut_planner.mode=operator_prior`，
+  prior 文件为
+  `testbed/configs/planner_priors/yulong_operator_first_dig_cut_prior_v1.json`。
+  该 prior 固定来自 26 条专业操作 operator-first relabel 数据中的 640 条 gold
+  cycle，记录 P10/P50/P90 与 lineage；旧固定模板 planner 保留为
+  `dig_cut_planner.mode=conservative_pose`，baseline tag 为
+  `planner-baseline-conservative-pose-20260516`。
 
 ## 今天优先用哪些文件
 
@@ -152,7 +159,8 @@
 | YuLong V2.2 primitive VDS build | `tb-build-primitives-v2_2 --raw-dir <operator-first-root> --output-root <primitive-root> --storage-mode vds --boundary-profile v2_2_effect_release_fallback` | 从 operator-first enriched raw 直接切 `dig/carry/dump/return`，写 VDS primitive wrapper、tier 和 lineage |
 | YuLong V2.2 conditioned dig 训练 | `testbed/configs/act_yulong_v2_2_pro_conditioned_dig_cell_entry_qvel.yaml` | dig 使用 `qpos + qvel + cell_entry_tokens`，读取 VDS primitive dig root |
 | YuLong V2.2 operator-first 4P 500 epoch 训练 | `testbed/configs/act_yulong_v2_2_operator_first_4p_{dig_cut,carry,dump,return}_qvel.yaml` | dig 使用 `qpos + qvel + dig_cut_tokens`；carry/dump/return 使用 `qpos + qvel` |
-| YuLong V2.2 operator-first primitive planner smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_smoke.yaml` | 加载 4 个 operator-first checkpoint；live 只给 dig 注入 `dig_cut_tokens` |
+| YuLong V2.2 operator-first primitive planner smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_smoke.yaml` | 加载 4 个 operator-first checkpoint；live 只给 dig 注入 operator-prior `dig_cut_tokens` |
+| YuLong V2.2 conservative planner baseline smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_conservative_pose_smoke.yaml` | 回放旧 `conservative_pose` dig token 模板，用于 A/B 和 git baseline 对照 |
 | YuLong V2.2 conditioned dig primitive planner smoke | `testbed/configs/eval_yulong_v2_2_pro_primitive_planner_conditioned_dig_smoke.yaml` | `primitive_planner_act` 只给 dig 注入 Cell Entry token；carry/dump/return 仍为 `qpos + qvel` |
 | YuLong FarmStick replayx20 rollout smoke | `testbed/configs/eval_yulong_farmstick_3cycle_replay20_workskill_qvel_smoke.yaml` | 单 rollout 接回 Unity；无 YuLong bootstrap，直接 smoke work policy |
 | YuLong V2.2 四 primitive contact-depth 训练 | `testbed/configs/act_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_{dig,carry,dump,return}_qvel.yaml` | 小斗 YuLong 主训练入口；`qualified_dig_start=contact_depth` 后重切，四类各 40 条且无 reject |
