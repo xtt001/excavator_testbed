@@ -16,6 +16,7 @@ from testbed.data.operator_first_v2_2 import (
 )
 from testbed.data.v2_1 import build_goal_tokens
 from testbed.data.schema import (
+    ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
     ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX,
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
@@ -112,10 +113,20 @@ class PrimitivePlannerACTPolicy(Policy):
         dump_ready_min_dump_area_relative_z_m: float | None = None,
         dump_ready_max_dump_area_relative_z_m: float | None = None,
         dump_ready_hold_steps: int = 3,
+        dump_ready_near_window_enabled: bool = False,
+        dump_ready_near_window_x_tolerance_m: float = 0.05,
+        dump_ready_near_window_z_tolerance_m: float = 0.05,
+        dump_ready_near_window_outside_tolerance_m: float = 0.0,
+        dump_ready_near_window_require_over_footprint: bool = True,
         dump_done_max_bucket_mass_kg: float = 100.0,
         dump_done_min_deposit_delta_kg: float = 10.0,
         dump_done_hold_steps: int = 2,
         dump_done_use_boundary_event: bool = True,
+        return_to_dig_shallow_guard_enabled: bool = False,
+        return_to_dig_max_bucket_mass_kg: float = 15.0,
+        return_to_dig_touch_tolerance_m: float = 0.05,
+        return_to_dig_min_depth_m: float = 0.02,
+        return_to_dig_max_depth_m: float = 0.12,
         return_max_steps: int = 420,
         action_dim: int = 4,
         primitive_checkpoint_paths: dict[str, str] | None = None,
@@ -188,10 +199,30 @@ class PrimitivePlannerACTPolicy(Policy):
             else float(dump_ready_max_dump_area_relative_z_m)
         )
         self.dump_ready_hold_steps = max(1, int(dump_ready_hold_steps))
+        self.dump_ready_near_window_enabled = bool(dump_ready_near_window_enabled)
+        self.dump_ready_near_window_x_tolerance_m = float(
+            dump_ready_near_window_x_tolerance_m
+        )
+        self.dump_ready_near_window_z_tolerance_m = float(
+            dump_ready_near_window_z_tolerance_m
+        )
+        self.dump_ready_near_window_outside_tolerance_m = float(
+            dump_ready_near_window_outside_tolerance_m
+        )
+        self.dump_ready_near_window_require_over_footprint = bool(
+            dump_ready_near_window_require_over_footprint
+        )
         self.dump_done_max_bucket_mass_kg = float(dump_done_max_bucket_mass_kg)
         self.dump_done_min_deposit_delta_kg = float(dump_done_min_deposit_delta_kg)
         self.dump_done_hold_steps = max(1, int(dump_done_hold_steps))
         self.dump_done_use_boundary_event = bool(dump_done_use_boundary_event)
+        self.return_to_dig_shallow_guard_enabled = bool(
+            return_to_dig_shallow_guard_enabled
+        )
+        self.return_to_dig_max_bucket_mass_kg = float(return_to_dig_max_bucket_mass_kg)
+        self.return_to_dig_touch_tolerance_m = float(return_to_dig_touch_tolerance_m)
+        self.return_to_dig_min_depth_m = float(return_to_dig_min_depth_m)
+        self.return_to_dig_max_depth_m = float(return_to_dig_max_depth_m)
         self.return_max_steps = int(return_max_steps)
         self.action_dim = int(action_dim)
         self.primitive_checkpoint_paths = {
@@ -334,7 +365,7 @@ class PrimitivePlannerACTPolicy(Policy):
             )
         self._prev_action = action.copy()
 
-        if self._switch_reason == "return_to_dig_qualified_dig_start":
+        if self._switch_reason.startswith("return_to_dig_"):
             transition_completed = True
 
         self._debug_state = self._make_debug_state(
@@ -523,6 +554,14 @@ class PrimitivePlannerACTPolicy(Policy):
                 self._completed_transition_count += 1
                 self._cycle_index += 1
                 self._set_skill("dig", "return_to_dig_qualified_dig_start")
+                return
+            if self._return_to_dig_shallow_guard_ready(
+                obs=obs,
+                boundary_event=boundary_event,
+            ):
+                self._completed_transition_count += 1
+                self._cycle_index += 1
+                self._set_skill("dig", "return_to_dig_shallow_entry_guard")
 
     def _set_skill(self, skill_name: str, reason: str) -> None:
         if skill_name == self._skill_name:
@@ -649,6 +688,11 @@ class PrimitivePlannerACTPolicy(Policy):
             dump_area_relative_ok=dump_area_relative_ok,
             horizontal_ok=horizontal_ok,
         )
+        if not position_ok:
+            position_ok = self._dump_area_relative_near_window_ok(
+                geometry=geometry,
+                over_footprint=over_footprint,
+            )
         return bool(
             height_ok
             and position_ok
@@ -684,6 +728,49 @@ class PrimitivePlannerACTPolicy(Policy):
             )
         )
 
+    def _dump_area_relative_near_window_ok(
+        self,
+        *,
+        geometry: dict[str, float],
+        over_footprint: bool,
+    ) -> bool:
+        if not self.dump_ready_near_window_enabled:
+            return False
+        if self.dump_ready_near_window_require_over_footprint and not over_footprint:
+            return False
+        if self.dump_ready_max_dump_area_footprint_outside_distance_m is None:
+            return False
+        outside_distance = float(
+            geometry.get("bucket_dump_area_footprint_outside_distance_m", np.nan)
+        )
+        outside_limit = (
+            self.dump_ready_max_dump_area_footprint_outside_distance_m
+            + self.dump_ready_near_window_outside_tolerance_m
+        )
+        outside_ok = bool(
+            np.isfinite(outside_distance)
+            and outside_distance >= 0.0
+            and outside_distance <= outside_limit + 1.0e-6
+        )
+        if not outside_ok:
+            return False
+        return bool(
+            self._optional_range_near_ok(
+                geometry=geometry,
+                name="bucket_dump_area_relative_x_m",
+                min_value=self.dump_ready_min_dump_area_relative_x_m,
+                max_value=self.dump_ready_max_dump_area_relative_x_m,
+                tolerance=self.dump_ready_near_window_x_tolerance_m,
+            )
+            and self._optional_range_near_ok(
+                geometry=geometry,
+                name="bucket_dump_area_relative_z_m",
+                min_value=self.dump_ready_min_dump_area_relative_z_m,
+                max_value=self.dump_ready_max_dump_area_relative_z_m,
+                tolerance=self.dump_ready_near_window_z_tolerance_m,
+            )
+        )
+
     @staticmethod
     def _optional_range_ok(
         *,
@@ -702,6 +789,28 @@ class PrimitivePlannerACTPolicy(Policy):
         if max_value is not None and value > max_value + 1.0e-6:
             return False
         return True
+
+    @staticmethod
+    def _optional_range_near_ok(
+        *,
+        geometry: dict[str, float],
+        name: str,
+        min_value: float | None,
+        max_value: float | None,
+        tolerance: float,
+    ) -> bool:
+        if min_value is None and max_value is None:
+            return True
+        value = float(geometry.get(name, np.nan))
+        if not np.isfinite(value):
+            return False
+        tol = max(0.0, float(tolerance))
+        if min_value is not None and value < min_value - tol - 1.0e-6:
+            return False
+        if max_value is not None and value > max_value + tol + 1.0e-6:
+            return False
+        return True
+
 
     def _dump_ready_position_ok(
         self,
@@ -737,6 +846,32 @@ class PrimitivePlannerACTPolicy(Policy):
         mass_low = self._mass_in_bucket(obs) <= self.dump_done_max_bucket_mass_kg
         deposit_delta = self._deposited_mass(obs) - self._dump_start_deposited_mass_kg
         return bool(mass_low and deposit_delta >= self.dump_done_min_deposit_delta_kg)
+
+    def _return_to_dig_shallow_guard_ready(
+        self,
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> bool:
+        if not self.return_to_dig_shallow_guard_enabled:
+            return False
+        metrics = dict(getattr(boundary_event, "metrics", {}) or {})
+        mass = float(metrics.get("mass_in_bucket_kg", self._mass_in_bucket(obs)))
+        distance = float(
+            metrics.get("min_distance_to_dig_area_m", self._min_distance_to_dig_area(obs))
+        )
+        depth = float(
+            metrics.get(
+                "bucket_depth_below_dig_area_plane_m",
+                self._bucket_depth_below_dig_area_plane(obs),
+            )
+        )
+        return bool(
+            mass <= self.return_to_dig_max_bucket_mass_kg
+            and distance <= self.return_to_dig_touch_tolerance_m
+            and depth >= self.return_to_dig_min_depth_m
+            and depth <= self.return_to_dig_max_depth_m
+        )
 
     def _target_geometry(self, obs: dict) -> dict[str, float]:
         task_metrics = dict(obs.get("task_metrics", {}) or {})
@@ -837,6 +972,17 @@ class PrimitivePlannerACTPolicy(Policy):
         return (
             float(env_state[ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX])
             if len(env_state) > ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX
+            else 0.0
+        )
+
+    def _bucket_depth_below_dig_area_plane(self, obs: dict) -> float:
+        task_metrics = dict(obs.get("task_metrics", {}) or {})
+        if "bucket_depth_below_dig_area_plane_m" in task_metrics:
+            return float(task_metrics["bucket_depth_below_dig_area_plane_m"])
+        env_state = self._env_state(obs)
+        return (
+            float(env_state[ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX])
+            if len(env_state) > ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX
             else 0.0
         )
 
@@ -1318,10 +1464,20 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
         dump_release_ready_min_dump_area_relative_z_m: float | None = None,
         dump_release_ready_max_dump_area_relative_z_m: float | None = None,
         dump_release_ready_hold_steps: int = 3,
+        dump_ready_near_window_enabled: bool = False,
+        dump_ready_near_window_x_tolerance_m: float = 0.05,
+        dump_ready_near_window_z_tolerance_m: float = 0.05,
+        dump_ready_near_window_outside_tolerance_m: float = 0.0,
+        dump_ready_near_window_require_over_footprint: bool = True,
         dump_done_max_bucket_mass_kg: float = 100.0,
         dump_done_min_deposit_delta_kg: float = 10.0,
         dump_done_hold_steps: int = 30,
         dump_done_use_boundary_event: bool = True,
+        return_to_dig_shallow_guard_enabled: bool = False,
+        return_to_dig_max_bucket_mass_kg: float = 15.0,
+        return_to_dig_touch_tolerance_m: float = 0.05,
+        return_to_dig_min_depth_m: float = 0.02,
+        return_to_dig_max_depth_m: float = 0.12,
         return_max_steps: int = 420,
         action_dim: int = 4,
         primitive_checkpoint_paths: dict[str, str] | None = None,
@@ -1393,10 +1549,30 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
                 dump_release_ready_max_dump_area_relative_z_m
             ),
             dump_ready_hold_steps=dump_release_ready_hold_steps,
+            dump_ready_near_window_enabled=dump_ready_near_window_enabled,
+            dump_ready_near_window_x_tolerance_m=(
+                dump_ready_near_window_x_tolerance_m
+            ),
+            dump_ready_near_window_z_tolerance_m=(
+                dump_ready_near_window_z_tolerance_m
+            ),
+            dump_ready_near_window_outside_tolerance_m=(
+                dump_ready_near_window_outside_tolerance_m
+            ),
+            dump_ready_near_window_require_over_footprint=(
+                dump_ready_near_window_require_over_footprint
+            ),
             dump_done_max_bucket_mass_kg=dump_done_max_bucket_mass_kg,
             dump_done_min_deposit_delta_kg=dump_done_min_deposit_delta_kg,
             dump_done_hold_steps=dump_done_hold_steps,
             dump_done_use_boundary_event=dump_done_use_boundary_event,
+            return_to_dig_shallow_guard_enabled=(
+                return_to_dig_shallow_guard_enabled
+            ),
+            return_to_dig_max_bucket_mass_kg=return_to_dig_max_bucket_mass_kg,
+            return_to_dig_touch_tolerance_m=return_to_dig_touch_tolerance_m,
+            return_to_dig_min_depth_m=return_to_dig_min_depth_m,
+            return_to_dig_max_depth_m=return_to_dig_max_depth_m,
             return_max_steps=return_max_steps,
             action_dim=action_dim,
             primitive_checkpoint_paths=primitive_checkpoint_paths,
@@ -1483,6 +1659,14 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
                 self._completed_transition_count += 1
                 self._cycle_index += 1
                 self._set_skill("dig", "return_to_dig_qualified_dig_start")
+                return
+            if self._return_to_dig_shallow_guard_ready(
+                obs=obs,
+                boundary_event=boundary_event,
+            ):
+                self._completed_transition_count += 1
+                self._cycle_index += 1
+                self._set_skill("dig", "return_to_dig_shallow_entry_guard")
 
     def _set_skill(self, skill_name: str, reason: str) -> None:
         if skill_name == self._skill_name:

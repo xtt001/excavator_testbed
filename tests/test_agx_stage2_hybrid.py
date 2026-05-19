@@ -374,6 +374,83 @@ class Stage2BoundaryDetectorTests(unittest.TestCase):
         assert dump_end_event is not None
         self.assertTrue(dump_end_event.dump_end)
 
+    def test_dump_start_accepts_smooth_cumulative_professional_deposit(self) -> None:
+        detector = BoundaryDetector(
+            BoundaryDetectorConfig(
+                qualified_dig_start_mode=QUALIFIED_DIG_START_MODE_CONTACT_DEPTH,
+                target_mass_delta_tol_kg=2.0,
+                dump_start_min_cumulative_deposit_delta_kg=5.0,
+                residual_bucket_mass_thresh=15.0,
+                deposit_plateau_steps=2,
+            )
+        )
+        action = np.zeros(4, dtype=np.float32)
+        qpos = np.asarray([0.5, 0.6, 0.5, 0.6], dtype=np.float32)
+
+        first_dig = detector.update(
+            env_state=_make_env_state(
+                min_distance_to_dig_area=0.04,
+                bucket_depth=0.03,
+            ),
+            action=action,
+            qpos=qpos,
+        )
+        self.assertTrue(first_dig.qualified_dig_start)
+
+        dump_start_event = None
+        for deposited_mass in (1.5, 3.0, 4.5, 6.0):
+            dump_start_event = detector.update(
+                env_state=_make_env_state(
+                    mass_in_bucket=20.0,
+                    deposited_mass=deposited_mass,
+                    min_distance_to_target=0.30,
+                    target_horizontal_distance=0.30,
+                    bucket_height_above_target_rim=0.70,
+                    bucket_over_target_footprint=1.0,
+                    dump_clearance_ok=1.0,
+                    min_distance_to_dig_area=1.0,
+                    bucket_depth=0.0,
+                ),
+                action=action,
+                qpos=qpos,
+                task_metrics={
+                    "delta_deposited_mass_in_target_box_kg": 1.5,
+                    "target_geometry_available": 1.0,
+                    "target_horizontal_distance_m": 0.30,
+                },
+            )
+
+        assert dump_start_event is not None
+        self.assertTrue(dump_start_event.dump_start)
+
+        dump_end_event = None
+        dump_end_seen = False
+        for _ in range(2):
+            dump_end_event = detector.update(
+                env_state=_make_env_state(
+                    mass_in_bucket=0.0,
+                    deposited_mass=6.0,
+                    min_distance_to_target=0.30,
+                    target_horizontal_distance=0.30,
+                    bucket_height_above_target_rim=0.70,
+                    bucket_over_target_footprint=1.0,
+                    dump_clearance_ok=1.0,
+                    min_distance_to_dig_area=1.0,
+                    bucket_depth=0.0,
+                ),
+                action=action,
+                qpos=qpos,
+                task_metrics={
+                    "delta_deposited_mass_in_target_box_kg": 0.0,
+                    "target_geometry_available": 1.0,
+                    "target_horizontal_distance_m": 0.30,
+                },
+            )
+            dump_end_seen = dump_end_seen or bool(dump_end_event.dump_end)
+
+        assert dump_end_event is not None
+        self.assertTrue(dump_end_seen)
+
 
 class Stage2HybridPolicyTests(unittest.TestCase):
     def _build_policy(

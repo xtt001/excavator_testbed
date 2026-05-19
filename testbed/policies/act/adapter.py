@@ -8,9 +8,9 @@ any ACT internals.
 Temporal aggregation
 --------------------
 When `temporal_agg=True`, actions are chunked and averaged using the
-scheme from the original paper: at each step we query the model at
-frequency 1, accumulate the chunk into a (T, T+C, Na) tensor, then
-select the weighted average of all past predictions for the current step.
+scheme from the original paper. Only the last `num_queries` chunks can
+contribute to the current action, so inference keeps a rolling
+`(C, C, Na)` buffer instead of the original dense `(T, T+C, Na)` tensor.
 """
 
 from __future__ import annotations
@@ -78,6 +78,7 @@ class ACTAdapter(Policy):
         self._num_queries: int  = policy_config["num_queries"]
         self._t: int            = 0
         self._all_time_actions: torch.Tensor | None = None
+        self._all_time_actions_valid: torch.Tensor | None = None
         self._max_episode_len = int(policy_config.get("max_episode_len", 400))
 
         self._normalize  = transforms.Normalize(
@@ -92,6 +93,7 @@ class ACTAdapter(Policy):
         """Called once per evaluation rollout to clear temporal state."""
         self._t = 0
         self._all_time_actions = None
+        self._all_time_actions_valid = None
 
     # ── inference ─────────────────────────────────────────────────────────────
 
@@ -218,37 +220,53 @@ class ACTAdapter(Policy):
         Temporal aggregation from the ACT paper.
         a_hat shape: (1, C, Na)
         """
-        Na = a_hat.shape[-1]
+        chunk = a_hat.squeeze(0)
+        num_queries, Na = chunk.shape
+        if num_queries != self._num_queries:
+            raise ValueError(
+                "ACTAdapter._aggregate(): model query count changed from "
+                f"{self._num_queries} to {num_queries}."
+            )
 
-        if self._all_time_actions is None:
-            horizon = max(self._max_episode_len, self._t + self._num_queries)
+        if (
+            self._all_time_actions is None
+            or self._all_time_actions.shape != (self._num_queries, self._num_queries, Na)
+        ):
             self._all_time_actions = torch.zeros(
-                [horizon, horizon + self._num_queries, Na], device=self.device
-            )
-
-        required_t = self._t + self._num_queries
-        if required_t > self._all_time_actions.shape[1]:
-            current_t = self._all_time_actions.shape[0]
-            new_t = max(required_t, current_t * 2)
-            expanded = torch.zeros(
-                [new_t, new_t + self._num_queries, Na],
+                [self._num_queries, self._num_queries, Na],
                 device=self.device,
+                dtype=chunk.dtype,
             )
-            expanded[: self._all_time_actions.shape[0], : self._all_time_actions.shape[1]] = (
-                self._all_time_actions
+            self._all_time_actions_valid = torch.zeros(
+                [self._num_queries, self._num_queries],
+                device=self.device,
+                dtype=torch.bool,
             )
-            self._all_time_actions = expanded
+        elif self._all_time_actions_valid is None:
+            self._all_time_actions_valid = torch.zeros(
+                [self._num_queries, self._num_queries],
+                device=self.device,
+                dtype=torch.bool,
+            )
 
         t = self._t
-        self._all_time_actions[[t], t : t + self._num_queries] = a_hat
+        slot = t % self._num_queries
+        self._all_time_actions[slot] = chunk
+        self._all_time_actions_valid[slot] = True
 
-        # weighted average of all past chunks that cover step t
-        # NOTE: only rows whose chunk actually covers column t are non-zero;
-        #       filter them out exactly as in the original ACT repo to avoid
-        #       zero-padding contaminating the weighted mean.
-        actions_for_curr_step = self._all_time_actions[:t + 1, t]  # (t+1, Na)
-        actions_populated = torch.all(actions_for_curr_step != 0, dim=1)
-        actions_for_curr_step = actions_for_curr_step[actions_populated]
+        # Weighted average of past chunks that cover step t.  The dense ACT
+        # implementation reads rows in chronological order; preserve that order
+        # while using only the rolling window that can still affect this step.
+        start_step = max(0, t - self._num_queries + 1)
+        actions_for_curr_step = []
+        for source_step in range(start_step, t + 1):
+            source_slot = source_step % self._num_queries
+            query_offset = t - source_step
+            if bool(self._all_time_actions_valid[source_slot, query_offset]):
+                actions_for_curr_step.append(
+                    self._all_time_actions[source_slot, query_offset]
+                )
+        actions_for_curr_step = torch.stack(actions_for_curr_step, dim=0)
         k = 0.01
         exp_weights = np.exp(-k * np.arange(len(actions_for_curr_step)))
         exp_weights = exp_weights / exp_weights.sum()

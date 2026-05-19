@@ -162,7 +162,7 @@
 | YuLong V2.2 operator-first primitive planner smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_smoke.yaml` | 加载 4 个 operator-first checkpoint；live 只给 dig 注入 operator-prior `dig_cut_tokens` |
 | YuLong V2.2 conservative planner baseline smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_conservative_pose_smoke.yaml` | 回放旧 `conservative_pose` dig token 模板，用于 A/B 和 git baseline 对照 |
 | YuLong V2.2 5-cycle clean-dump smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_5cycle_clean_dump_smoke.yaml` | 5 dig 压力测试；bucket 残余阈值 `15kg`，dump/terminal hold 约 `2s`，默认不写 HDF5 |
-| YuLong V2.2 10-cycle clean-dump smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_10cycle_clean_dump_smoke.yaml` | 10 dig 压力测试；bucket 残余阈值 `15kg`，dump/terminal hold 约 `0.6s`，默认不写 HDF5 |
+| YuLong V2.2 10-cycle clean-dump smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_10cycle_clean_dump_smoke.yaml` | 10 dig 压力测试；bucket 残余阈值 `15kg`，no post-dump hold，smooth dump 用累计入箱质量识别，return 浅接触 entry 后切 dig，默认不写 HDF5 |
 | YuLong V2.2 conditioned dig primitive planner smoke | `testbed/configs/eval_yulong_v2_2_pro_primitive_planner_conditioned_dig_smoke.yaml` | `primitive_planner_act` 只给 dig 注入 Cell Entry token；carry/dump/return 仍为 `qpos + qvel` |
 | YuLong FarmStick replayx20 rollout smoke | `testbed/configs/eval_yulong_farmstick_3cycle_replay20_workskill_qvel_smoke.yaml` | 单 rollout 接回 Unity；无 YuLong bootstrap，直接 smoke work policy |
 | YuLong V2.2 四 primitive contact-depth 训练 | `testbed/configs/act_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_{dig,carry,dump,return}_qvel.yaml` | 小斗 YuLong 主训练入口；`qualified_dig_start=contact_depth` 后重切，四类各 40 条且无 reject |
@@ -171,6 +171,10 @@ YuLong operator-first 训练优化不改变图像分辨率或推理输入语义�
 `fpv` 图像，只通过 `batch_size`、`num_workers`、`prefetch_factor`、
 `hdf5_cache_size`、TF32/cudnn benchmark 和较低频率的 validation/plot 来提高吞吐；
 如果出现 CUDA OOM，优先把对应 primitive 的 `batch_size` 下调。
+ACT live temporal aggregation 使用 rolling query window：当前动作只会被最近
+`chunk_size` 个预测 chunk 影响，因此 eval 端只保留 `(chunk_size, chunk_size, action_dim)`
+buffer，而不是按 `episode_len^2` 分配显存。这保持 temporal aggregation 语义，同时允许
+10/15/30-cycle 这类长 rollout 使用较大的 `task.episode_len`。
 | YuLong V2.2 四 primitive contact-depth smoke | `testbed/configs/eval_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_qvel_smoke.yaml` | `primitive_planner_act` + `scripted_qpos` reset bootstrap；使用 contact-depth dig 起点 qpos；dig->carry 质量阈值下调到 `20kg` |
 | YuLong V2.2 四 primitive contact-depth 3-cycle smoke | `testbed/configs/eval_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_qvel_3cycle_smoke.yaml` | 同一组 contact-depth checkpoint；`target_cycle_gate=3`，用于验证 return 是否能接回下一轮 QDS |
 | YuLong V2.2 四 primitive 旧对照 | `testbed/configs/act_yulong_farmstick_3cycle_replay20_v2_2_4p_{dig,carry,dump,return}_qvel.yaml` + `testbed/configs/eval_yulong_farmstick_3cycle_replay20_v2_2_4p_qvel_smoke.yaml` | 旧 progress QDS 切分结果，仅保留作对照 |
@@ -519,6 +523,14 @@ tail/middle/front，因此不应单独作为 handoff rule。
 skill `30` step 再切 return，不让 Unity 的即时 `dump_end` event 绕过这个 hold。
 这个 hold 用来跨过 ACT chunk/temporal aggregation 边界，避免 return policy 在土刚落入
 dump area时立刻回摆，把土从边缘带出。
+YuLong 10-cycle clean-dump config 是当前例外：不再使用 post-dump hold，而是让
+BoundaryDetector 用 `deposit_started_threshold_kg` 对累计有效入箱质量识别 smooth
+professional dump；同时启用 `return_to_dig_shallow_guard_enabled`，当 return 空斗到达
+dig-area 浅接触 entry 时直接切回 dig，防止 return primitive 继续下压到箱底。
+长周期 YuLong smoke 使用 outcome-first `carry -> dump` handoff：bucket 已在 dump
+footprint 上方、离 rim 足够高、bucket mass 仍高于 `15kg` 时即可 handoff 到 dump；
+signed x/z window 保留为旧规则兼容。这个规则避免长 rollout 后段因土量下降到
+`20kg` 以下、或 target-relative 坐标漂到窗口另一侧而一直停留在 carry。
 `dig -> carry` 只要求 bucket 已 loaded；从 dig 区离开属于 carry primitive 的职责，
 不再要求 `min_distance_to_dig_area_m >= 0.20`。
 

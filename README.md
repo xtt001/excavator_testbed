@@ -97,6 +97,13 @@ Repo A 负责：
   - planner 在 `dump_done` 后保持 dump skill `30` step，再切 return；当前 smoke
     关闭即时 `dump_end` boundary 切换，避免 temporal aggregation 边界上 return
     动作把刚落入dump area的土带出
+  - YuLong 10-cycle clean-dump smoke 不再依赖 post-dump hold；smooth professional
+    release 用累计有效入箱质量识别 `dump_start/dump_end`，return 到浅接触 entry
+    后立即 handoff 给 dig，避免 return primitive 继续向下挖
+  - YuLong long-cycle smoke 使用 outcome-first `carry -> dump` handoff：bucket
+    已在 dump footprint 上方、离 rim 足够高、bucket mass 仍高于 `15kg` 时即可切
+    dump；signed x/z window 保留为旧规则兼容，避免长 rollout 后段因土量下降或
+    target-relative 坐标漂移一直停留在 carry
   - live eval 入口：`eval_agx_v2_2_4primitives_qvel_3cycle_smoke.yaml`
   - 首轮 reset 仍可配置 `bootstrap_policy` 到 `loaded_and_clear`；YuLong pilot
     也支持 `bootstrap_end_mode=scripted_qpos`，只用于 smoke 时进入首个
@@ -291,6 +298,8 @@ Cell Entry 字段固定使用 DigArea 3x2 grid：长边 3 份、短边 2 份；
 conda activate aloha
 pip install -e ".[dev]"
 ```
+
+`dev` extra 包含格式化、lint 与测试入口（包括 `pytest`）。
 
 ### 2. 先验证 live 协议
 

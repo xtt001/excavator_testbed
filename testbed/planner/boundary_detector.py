@@ -42,6 +42,7 @@ class BoundaryDetectorConfig:
     qualified_dig_start_mode: str = QUALIFIED_DIG_START_MODE_PROGRESS
     delta_mass_start_kg: float = 5.0
     target_mass_delta_tol_kg: float = 2.0
+    dump_start_min_cumulative_deposit_delta_kg: float = 5.0
     residual_bucket_mass_thresh: float = 100.0
     deposit_plateau_steps: int = 3
     pause_action_eps: float = 0.05
@@ -90,6 +91,12 @@ def build_boundary_detector_from_config(
             target_mass_delta_tol_kg=float(
                 reward_cfg.get("target_mass_delta_tol_kg", 2.0)
             ),
+            dump_start_min_cumulative_deposit_delta_kg=float(
+                success_cfg.get(
+                    "dump_start_min_cumulative_deposit_delta_kg",
+                    reward_cfg.get("deposit_started_threshold_kg", 5.0),
+                )
+            ),
             residual_bucket_mass_thresh=float(
                 success_cfg.get(
                     "residual_bucket_mass_thresh",
@@ -125,6 +132,8 @@ class BoundaryDetector:
         self._completed_dump_count = 0
         self._plateau_count = 0
         self._qualified_condition_active = False
+        self._cycle_start_deposited_mass_kg = 0.0
+        self._cycle_start_target_mass_kg = 0.0
         self._last_metrics: dict[str, float] | None = None
 
     @property
@@ -173,6 +182,10 @@ class BoundaryDetector:
             self._awaiting_next_dig = False
             self._dump_started = False
             self._plateau_count = 0
+            self._cycle_start_deposited_mass_kg = metrics[
+                "deposited_mass_in_target_box_kg"
+            ]
+            self._cycle_start_target_mass_kg = metrics["mass_in_target_box_kg"]
 
         dump_start_condition = self._is_dump_start_condition(metrics)
         dump_start = bool(
@@ -405,10 +418,17 @@ class BoundaryDetector:
         )
 
     def _is_dump_start_condition(self, metrics: dict[str, float]) -> bool:
+        cycle_deposit_delta = max(
+            metrics["deposited_mass_in_target_box_kg"]
+            - self._cycle_start_deposited_mass_kg,
+            metrics["mass_in_target_box_kg"] - self._cycle_start_target_mass_kg,
+        )
         deposit_progress = (
             metrics["delta_mass_in_target_box_kg"] >= self.config.target_mass_delta_tol_kg
             or metrics["delta_deposited_mass_in_target_box_kg"]
             >= self.config.target_mass_delta_tol_kg
+            or cycle_deposit_delta
+            >= self.config.dump_start_min_cumulative_deposit_delta_kg
         )
         valid_deposit_context = (
             (

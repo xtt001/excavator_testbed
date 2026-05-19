@@ -602,6 +602,42 @@ def eval_policy(config: dict[str, Any]) -> None:
             "dump_done_use_boundary_event": bool(
                 switch_cfg.get("dump_done_use_boundary_event", True)
             ),
+            "dump_ready_near_window_enabled": bool(
+                switch_cfg.get("dump_ready_near_window_enabled", False)
+            ),
+            "dump_ready_near_window_x_tolerance_m": float(
+                switch_cfg.get("dump_ready_near_window_x_tolerance_m", 0.05)
+            ),
+            "dump_ready_near_window_z_tolerance_m": float(
+                switch_cfg.get("dump_ready_near_window_z_tolerance_m", 0.05)
+            ),
+            "dump_ready_near_window_outside_tolerance_m": float(
+                switch_cfg.get("dump_ready_near_window_outside_tolerance_m", 0.0)
+            ),
+            "dump_ready_near_window_require_over_footprint": bool(
+                switch_cfg.get("dump_ready_near_window_require_over_footprint", True)
+            ),
+            "return_to_dig_shallow_guard_enabled": bool(
+                switch_cfg.get("return_to_dig_shallow_guard_enabled", False)
+            ),
+            "return_to_dig_max_bucket_mass_kg": float(
+                switch_cfg.get("return_to_dig_max_bucket_mass_kg", 15.0)
+            ),
+            "return_to_dig_touch_tolerance_m": float(
+                switch_cfg.get(
+                    "return_to_dig_touch_tolerance_m",
+                    reward_cfg.get("dig_area_touch_tolerance_m", 0.05),
+                )
+            ),
+            "return_to_dig_min_depth_m": float(
+                switch_cfg.get(
+                    "return_to_dig_min_depth_m",
+                    reward_cfg.get("dig_below_plane_depth_tolerance_m", 0.02),
+                )
+            ),
+            "return_to_dig_max_depth_m": float(
+                switch_cfg.get("return_to_dig_max_depth_m", 0.12)
+            ),
             "return_max_steps": int(
                 switch_cfg.get(
                     "return_max_steps",

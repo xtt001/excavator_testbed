@@ -742,12 +742,13 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(captured["policy_config"]["state_dim"], 18)
 
-    def test_act_temporal_aggregation_grows_past_400_steps(self) -> None:
+    def test_act_temporal_aggregation_uses_rolling_query_window(self) -> None:
         adapter = object.__new__(ACTAdapter)
         adapter.device = torch.device("cpu")
         adapter._num_queries = 2
         adapter._t = 400
         adapter._all_time_actions = None
+        adapter._all_time_actions_valid = None
         adapter._max_episode_len = 400
 
         action = ACTAdapter._aggregate(
@@ -756,7 +757,8 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         )
 
         self.assertEqual(action.shape, (4,))
-        self.assertGreaterEqual(adapter._all_time_actions.shape[0], 402)
+        self.assertEqual(adapter._all_time_actions.shape, (2, 2, 4))
+        self.assertEqual(adapter._all_time_actions_valid.shape, (2, 2))
 
     def test_eval_suite_writes_rollout_logs_and_manifest(self) -> None:
         class FakePolicy:

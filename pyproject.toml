@@ -33,6 +33,7 @@ dependencies = [
 dev = [
     "black>=24.0",
     "isort>=5.13",
+    "pytest>=9.0",
     "ruff>=0.3",
     "mypy>=1.9",
     "pre-commit>=3.7",

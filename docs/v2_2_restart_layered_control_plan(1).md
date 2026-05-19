@@ -598,6 +598,18 @@ planner 同步采用 operator-first live token：`dig_cut_tokens` 的 10D contra
 `dig_cut_planner.mode=conservative_pose`，baseline tag 为
 `planner-baseline-conservative-pose-20260516`，用于 A/B 和回溯。
 
+2026-05-19 live primitive 状态机同步 operator-first dump/return 语义：YuLong
+10-cycle clean-dump rollout 不再用 post-dump hold 作为主要稳定手段；smooth dump
+由累计有效入箱质量触发 `dump_start/dump_end`，避免专业师傅缓慢开斗时单步
+deposit spike 低于旧阈值而漏记 dump。return 阶段增加浅接触 entry handoff：空斗回到
+dig-area 且 bucket 只浅入土时立即切回 dig，避免 return primitive 在错误状态下继续向下压。
+30-cycle stress 暴露出 `carry -> dump` signed window 和 `20kg` dump-ready payload
+阈值会在后段造成卡死：bucket 已在 dump footprint 上方、离 rim 足够高、bucket 里
+仍有约 `15-20kg` 土，但 target-relative x/z 漂到窗口另一侧或 payload 低于旧阈值，
+状态机就一直停留在 carry。因此 long-cycle smoke 改为 outcome-first handoff：
+bucket 在 dump footprint 上方、height/mass 满足即可切 dump；signed x/z window 只作
+旧规则兼容，不再作为专业操作的唯一 dump 起点定义。
+
 当前 YuLong operator-first 主线命令：
 
 ```bash

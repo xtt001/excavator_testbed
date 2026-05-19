@@ -1162,6 +1162,48 @@ class TestPrimitivesV22(unittest.TestCase):
             "dump_to_return_dump_end",
         )
 
+    def test_primitive_planner_shallow_guard_hands_return_to_dig_without_qds(
+        self,
+    ) -> None:
+        policy = PrimitivePlannerACTPolicy(
+            dig_policy=_ConstantPolicy(0),
+            carry_policy=_ConstantPolicy(1),
+            dump_policy=_ConstantPolicy(2),
+            return_policy=_ConstantPolicy(3),
+            boundary_detector=_FakeBoundaryDetector([]),
+            dump_ready_hold_steps=1,
+            dump_done_hold_steps=1,
+            dump_done_use_boundary_event=False,
+            return_to_dig_shallow_guard_enabled=True,
+            return_to_dig_max_bucket_mass_kg=15.0,
+            return_to_dig_touch_tolerance_m=0.05,
+            return_to_dig_min_depth_m=0.02,
+            return_to_dig_max_depth_m=0.12,
+        )
+
+        policy.predict(_obs(mass=0.0, dig_distance=0.02))
+        policy.predict(_obs(mass=320.0, dig_distance=0.30))
+        policy.predict(_obs(mass=320.0, dig_distance=0.30, dump_ready=True))
+        policy.predict(_obs(mass=0.0, dig_distance=0.30, dump_ready=True, deposited=20.0))
+
+        action = policy.predict(
+            _obs(
+                mass=0.0,
+                dig_distance=0.0,
+                bucket_depth=0.08,
+                deposited=20.0,
+            )
+        )
+
+        self.assertEqual(float(action[0]), 0.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "dig")
+        self.assertTrue(policy.debug_state()["transition_completed"])
+        self.assertEqual(
+            policy.debug_state()["skill_switch_reason"],
+            "return_to_dig_shallow_entry_guard",
+        )
+        self.assertEqual(policy.rollout_summary()["completed_transition_count"], 1)
+
     def test_primitive_planner_uses_dump_area_relative_readiness_not_horizontal_only(self) -> None:
         policy = PrimitivePlannerACTPolicy(
             dig_policy=_ConstantPolicy(0),
@@ -1313,6 +1355,94 @@ class TestPrimitivesV22(unittest.TestCase):
         )
         self.assertEqual(float(action[0]), 2.0)
         self.assertEqual(policy.debug_state()["skill_name"], "dump")
+
+    def test_primitive_planner_uses_tight_near_window_dump_handoff(self) -> None:
+        policy = PrimitivePlannerACTPolicy(
+            dig_policy=_ConstantPolicy(0),
+            carry_policy=_ConstantPolicy(1),
+            dump_policy=_ConstantPolicy(2),
+            return_policy=_ConstantPolicy(3),
+            boundary_detector=_FakeBoundaryDetector(
+                [_FakeBoundaryEvent(), _FakeBoundaryEvent(), _FakeBoundaryEvent()]
+            ),
+            dump_ready_hold_steps=2,
+            dump_ready_min_height_above_rim_m=0.30,
+            dump_ready_require_over_footprint=False,
+            dump_ready_require_clearance=False,
+            dump_ready_position_mode="dump_area_relative",
+            dump_ready_max_horizontal_distance_m=None,
+            dump_ready_max_dump_area_footprint_outside_distance_m=0.45,
+            dump_ready_min_dump_area_relative_x_m=0.0,
+            dump_ready_max_dump_area_relative_x_m=1.2,
+            dump_ready_min_dump_area_relative_z_m=1.0,
+            dump_ready_max_dump_area_relative_z_m=1.8,
+            dump_ready_near_window_enabled=True,
+            dump_ready_near_window_x_tolerance_m=0.05,
+            dump_ready_near_window_z_tolerance_m=0.05,
+            dump_ready_near_window_outside_tolerance_m=0.0,
+            dump_ready_near_window_require_over_footprint=True,
+        )
+
+        policy.predict(_obs(mass=320.0, dig_distance=0.30))
+        near_obs = _obs(
+            mass=320.0,
+            dig_distance=0.30,
+            height_above_rim=0.62,
+            over_footprint=True,
+            dump_area_relative_x=1.202,
+            dump_area_relative_z=0.982,
+            dump_area_footprint_outside_distance=0.0,
+        )
+        action = policy.predict(near_obs)
+        self.assertEqual(float(action[0]), 1.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "carry")
+        self.assertEqual(policy.debug_state()["dump_ready_hold_count"], 1)
+
+        action = policy.predict(near_obs)
+        self.assertEqual(float(action[0]), 2.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "dump")
+
+    def test_primitive_planner_near_window_does_not_accept_far_miss(self) -> None:
+        policy = PrimitivePlannerACTPolicy(
+            dig_policy=_ConstantPolicy(0),
+            carry_policy=_ConstantPolicy(1),
+            dump_policy=_ConstantPolicy(2),
+            return_policy=_ConstantPolicy(3),
+            boundary_detector=_FakeBoundaryDetector(
+                [_FakeBoundaryEvent(), _FakeBoundaryEvent()]
+            ),
+            dump_ready_hold_steps=1,
+            dump_ready_min_height_above_rim_m=0.30,
+            dump_ready_require_over_footprint=False,
+            dump_ready_require_clearance=False,
+            dump_ready_position_mode="dump_area_relative",
+            dump_ready_max_horizontal_distance_m=None,
+            dump_ready_max_dump_area_footprint_outside_distance_m=0.45,
+            dump_ready_min_dump_area_relative_x_m=0.0,
+            dump_ready_max_dump_area_relative_x_m=1.2,
+            dump_ready_min_dump_area_relative_z_m=1.0,
+            dump_ready_max_dump_area_relative_z_m=1.8,
+            dump_ready_near_window_enabled=True,
+            dump_ready_near_window_x_tolerance_m=0.05,
+            dump_ready_near_window_z_tolerance_m=0.05,
+            dump_ready_near_window_require_over_footprint=True,
+        )
+
+        policy.predict(_obs(mass=320.0, dig_distance=0.30))
+        action = policy.predict(
+            _obs(
+                mass=320.0,
+                dig_distance=0.30,
+                height_above_rim=0.62,
+                over_footprint=True,
+                dump_area_relative_x=1.35,
+                dump_area_relative_z=0.80,
+                dump_area_footprint_outside_distance=0.0,
+            )
+        )
+
+        self.assertEqual(float(action[0]), 1.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "carry")
 
     def test_primitive_planner_blocks_low_height_even_when_horizontally_close(self) -> None:
         policy = PrimitivePlannerACTPolicy(
@@ -1734,6 +1864,7 @@ def _obs(
     *,
     mass: float,
     dig_distance: float,
+    bucket_depth: float = 0.0,
     dump_ready: bool = False,
     deposited: float = 0.0,
     horizontal_distance: float | None = None,
@@ -1748,6 +1879,7 @@ def _obs(
     env_state[0] = float(mass)
     env_state[3] = float(deposited)
     env_state[7] = float(dig_distance)
+    env_state[8] = float(bucket_depth)
     env_state[9] = (
         float(horizontal_distance)
         if horizontal_distance is not None
@@ -1783,6 +1915,7 @@ def _obs(
             "mass_in_bucket_kg": float(mass),
             "deposited_mass_in_target_box_kg": float(deposited),
             "min_distance_to_dig_area_m": float(dig_distance),
+            "bucket_depth_below_dig_area_plane_m": float(bucket_depth),
             "target_geometry_available": 1.0,
             "target_horizontal_distance_m": float(env_state[9]),
             "bucket_height_above_target_rim_m": float(env_state[10]),
