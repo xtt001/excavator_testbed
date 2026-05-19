@@ -161,6 +161,7 @@
 | YuLong V2.2 operator-first 4P 500 epoch 训练 | `testbed/configs/act_yulong_v2_2_operator_first_4p_{dig_cut,carry,dump,return}_qvel.yaml` | dig 使用 `qpos + qvel + dig_cut_tokens`；carry/dump/return 使用 `qpos + qvel` |
 | YuLong V2.2 operator-first primitive planner smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_smoke.yaml` | 加载 4 个 operator-first checkpoint；live 只给 dig 注入 operator-prior `dig_cut_tokens` |
 | YuLong V2.2 conservative planner baseline smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_conservative_pose_smoke.yaml` | 回放旧 `conservative_pose` dig token 模板，用于 A/B 和 git baseline 对照 |
+| YuLong V2.2 5-cycle clean-dump smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_5cycle_clean_dump_smoke.yaml` | 5 dig 压力测试；bucket 残余阈值 `15kg`，dump/terminal hold 约 `2s`，默认不写 HDF5 |
 | YuLong V2.2 conditioned dig primitive planner smoke | `testbed/configs/eval_yulong_v2_2_pro_primitive_planner_conditioned_dig_smoke.yaml` | `primitive_planner_act` 只给 dig 注入 Cell Entry token；carry/dump/return 仍为 `qpos + qvel` |
 | YuLong FarmStick replayx20 rollout smoke | `testbed/configs/eval_yulong_farmstick_3cycle_replay20_workskill_qvel_smoke.yaml` | 单 rollout 接回 Unity；无 YuLong bootstrap，直接 smoke work policy |
 | YuLong V2.2 四 primitive contact-depth 训练 | `testbed/configs/act_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_{dig,carry,dump,return}_qvel.yaml` | 小斗 YuLong 主训练入口；`qualified_dig_start=contact_depth` 后重切，四类各 40 条且无 reject |
