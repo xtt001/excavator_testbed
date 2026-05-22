@@ -1,0 +1,299 @@
+agx:
+  host: 127.0.0.1
+  port: 5057
+  timeout: 10.0
+task:
+  name: agx_excavation_teleop
+  equipment_model: yulong
+  episode_len: 24000
+  scenario_id: s0_truck
+  camera_names:
+  - fpv
+eval:
+  num_rollouts: 1
+  save_video: true
+  video_dir: runs/eval/yulong_v2_4_5_qc6_cell_weighted_3cycle_smoke_20260522/videos
+  results_dir: runs/eval/yulong_v2_4_5_qc6_cell_weighted_3cycle_smoke_20260522/results
+  save_rollout_logs: true
+  stream_rollout_logs: true
+  rollout_log_dir: runs/eval/yulong_v2_4_5_qc6_cell_weighted_3cycle_smoke_20260522/results/rollouts
+  record_hdf5: false
+  step_log_interval: 100
+  target_cycle_gate: 3
+  target_cycle_gate_terminal_hold_steps: 1
+  temporal_agg: true
+success:
+  mode: dump_complete_final_hold
+  signal_name: deposited_mass_in_target_box_kg
+  mass_thresh: 20.0
+  hold_steps: 1
+  residual_bucket_mass_thresh: 15.0
+  strict_max_failures:
+    hard_target_collision: 0
+    spill_before_target: 0
+reward:
+  load_mass_threshold_kg: 55.0
+  target_approach_distance_m: 1.25
+  deposit_started_threshold_kg: 5.0
+  dig_area_touch_tolerance_m: 0.05
+  dig_below_plane_depth_tolerance_m: 0.02
+  qualified_dig_start_mode: contact_depth
+  unsafe_distance_m: 0.2
+  unsafe_distance_penalty: 0.25
+  hard_collision_penalty: 0.75
+  spill_penalty: 0.25
+policy:
+  class: primitive_planner_act
+  device: cuda
+  temporal_agg: true
+  primitive_low_dim_keys:
+  - qpos
+  - qvel
+  dig_low_dim_keys:
+  - qpos
+  - qvel
+  - dig_cut_tokens
+  carry_low_dim_keys:
+  - qpos
+  - qvel
+  dump_low_dim_keys:
+  - qpos
+  - qvel
+  return_low_dim_keys:
+  - qpos
+  - qvel
+  - return_start_envelope_tokens_v1
+  action_dim: 4
+  dig_cut_planner:
+    enabled: true
+    mode: operator_prior_sweep_belief
+    prior_path: testbed/configs/planner_priors/yulong_removed_depth_dig_cut_prior_v3.json
+    fallback_mode: conservative_pose
+    hold_token_until_skill_exit: true
+    coverage:
+      use_env_removed_depth: true
+      entry_x_percentiles:
+      - p10
+      - p50
+      - p90
+      entry_z_percentiles:
+      - p10
+      - p50
+      - p90
+      cut_depth_percentile: p90
+      payload_percentile: p90
+      cut_length_percentile: p50
+      low_productivity_payload_kg: 15.0
+      low_productivity_deposit_kg: 15.0
+      deplete_after_low_streak: 2
+      global_low_productivity_stop: 9
+      max_attempts_per_corridor: 3
+      unattempted_bonus: 2.0
+      attempt_penalty: 0.65
+      recent_selection_penalty: 1.25
+      recent_row_selection_penalty: 1.5
+      belief_gain_scale: 0.55
+      belief_depleted_score: 1.0
+      first_dig_strategy: nearest_entry
+      first_dig_preferred_corridor_id: null
+      first_dig_preferred_bonus: 0.0
+      first_dig_proximity_weight: 8.0
+      first_dig_max_entry_distance_m: 0.45
+      first_dig_qpos_delta_weight: 4.0
+      first_dig_max_qpos_delta:
+      - 0.12
+      - 0.18
+      - 0.2
+      - 0.22
+      candidate_layout: cell_weighted_3x2
+      rare_cell_source_fraction_threshold: 0.05
+      rare_cell_max_attempts: 1
+      cell_confidence_weight: 0.75
+  return_target_planner:
+    enabled: true
+    hold_token_until_skill_exit: true
+    token_source_prefix: conditioned_return
+  pre_dig_align:
+    enabled: true
+    first_dig_only: true
+    controlled_dims:
+    - 1
+    - 1
+    - 1
+    - 1
+    bucket_target_qpos: null
+    kp: 2.4
+    kd: 0.25
+    action_clip:
+    - 0.65
+    - 0.45
+    - 0.45
+    - 0.35
+    action_signs:
+    - 1.0
+    - -1.0
+    - 1.0
+    - 1.0
+    qpos_tolerance:
+    - 0.025
+    - 0.04
+    - 0.05
+    - 0.06
+    qvel_abs_max: 0.15
+    hold_steps: 3
+    max_steps: 340
+    max_entry_error_m: 0.35
+    first_dig_entry_close_handoff: true
+    first_dig_entry_close_handoff_qvel_abs_max: 0.15
+    timeout_accept_entry_error_m: 0.45
+    timeout_replan_entry_error_m: 0.45
+    start_envelope_enabled: true
+    start_envelope_max_entry_error_m: 0.65
+    start_qpos_min:
+    - 0.45
+    - 0.64
+    - 0.0
+    - 0.06
+    start_qpos_max:
+    - 0.55
+    - 0.86
+    - 0.52
+    - 0.55
+    start_pose_min:
+    - -0.6
+    - -0.3
+    - -1.5
+    start_pose_max:
+    - 1.65
+    - 0.25
+    - 1.2
+    qpos_min:
+    - 0.45
+    - 0.64
+    - 0.0
+    - 0.06
+    qpos_max:
+    - 0.55
+    - 0.86
+    - 0.52
+    - 0.55
+    qpos_from_token_coefficients:
+    - - 0.4938039
+      - -0.00269709
+      - -0.08993127
+    - - 0.73186214
+      - 0.16238509
+      - -0.00951256
+    - - 0.23831582
+      - -0.41589191
+      - 0.00182466
+    - - 0.34460073
+      - -0.29267581
+      - -0.01472922
+  act_params:
+    chunk_size: 100
+    kl_weight: 10
+    hidden_dim: 512
+    dim_feedforward: 3200
+  dig_outcome_head:
+    enabled: true
+    dim: 10
+    action_horizon: 100
+    hidden_dim: 512
+  return_outcome_head:
+    enabled: true
+    dim: 10
+    action_horizon: 100
+    hidden_dim: 512
+  bootstrap_end_mode: scripted_qpos
+  scripted_bootstrap:
+    target_qpos:
+    - 0.5
+    - 0.4083661
+    - 0.6206904
+    - 0.1711094
+    kp: 2.0
+    kd: 0.25
+    action_clip:
+    - 0.75
+    - 0.35
+    - 0.35
+    - 0.55
+    action_signs:
+    - 1.0
+    - -1.0
+    - 1.0
+    - 1.0
+    qpos_tolerance: 0.02
+    qvel_abs_max: 0.1
+    hold_steps: 5
+    max_steps: 240
+  dig_ckpt_path: runs/ckpts/yulong_v2_4_5_process_boundary_qc6_20260522/dig/policy_best.ckpt
+  dig_ckpt_dir: runs/ckpts/yulong_v2_4_5_process_boundary_qc6_20260522/dig
+  carry_ckpt_path: runs/ckpts/yulong_v2_4_5_process_boundary_qc6_20260522/carry/policy_best.ckpt
+  carry_ckpt_dir: runs/ckpts/yulong_v2_4_5_process_boundary_qc6_20260522/carry
+  dump_ckpt_path: runs/ckpts/yulong_v2_4_5_process_boundary_qc6_20260522/dump/policy_best.ckpt
+  dump_ckpt_dir: runs/ckpts/yulong_v2_4_5_process_boundary_qc6_20260522/dump
+  return_ckpt_path: runs/ckpts/yulong_v2_4_5_process_boundary_qc6_20260522/return/policy_best.ckpt
+  return_ckpt_dir: runs/ckpts/yulong_v2_4_5_process_boundary_qc6_20260522/return
+  switch:
+    dig_to_carry_min_bucket_mass_kg: 15.0
+    dig_to_carry_target_bucket_mass_kg: 45.0
+    dig_to_carry_min_distance_to_dig_area_m: 0.0
+    dig_to_carry_mass_plateau_enabled: true
+    dig_to_carry_mass_plateau_min_bucket_mass_kg: 15.0
+    dig_to_carry_mass_plateau_epsilon_kg: 1.0
+    dig_to_carry_mass_plateau_hold_steps: 25
+    dig_to_carry_mass_plateau_min_steps: 160
+    dig_bad_replan_enabled: true
+    dig_bad_replan_max_steps: 220
+    dig_bad_replan_min_bucket_mass_kg: 15.0
+    dig_exit_guard_enabled: true
+    dig_exit_guard_min_steps: 80
+    dig_exit_guard_overshoot_m: 0.65
+    dig_exit_guard_min_bucket_mass_kg: 20.0
+    dump_ready_min_bucket_mass_kg: 15.0
+    dump_ready_min_height_above_rim_m: 0.5
+    dump_ready_require_over_footprint: true
+    dump_ready_require_clearance: false
+    dump_ready_position_mode: footprint_or_dump_area_relative
+    dump_ready_max_dump_area_footprint_outside_distance_m: 0.45
+    dump_ready_min_dump_area_relative_x_m: 0.0
+    dump_ready_max_dump_area_relative_x_m: 1.2
+    dump_ready_min_dump_area_relative_z_m: 1.0
+    dump_ready_max_dump_area_relative_z_m: 1.8
+    dump_ready_hold_steps: 3
+    dump_ready_near_window_enabled: true
+    dump_ready_near_window_x_tolerance_m: 0.05
+    dump_ready_near_window_z_tolerance_m: 0.05
+    dump_ready_near_window_outside_tolerance_m: 0.0
+    dump_ready_near_window_require_over_footprint: true
+    dump_done_max_bucket_mass_kg: 15.0
+    dump_done_min_deposit_delta_kg: 5.0
+    dump_done_hold_steps: 1
+    dump_done_use_boundary_event: true
+    return_to_dig_shallow_guard_enabled: true
+    return_to_dig_max_bucket_mass_kg: 15.0
+    return_to_dig_touch_tolerance_m: 0.05
+    return_to_dig_min_depth_m: 0.02
+    return_to_dig_max_depth_m: 0.12
+    return_to_dig_max_entry_error_m: 0.55
+    return_max_steps: 420
+boundary:
+  profile: v2_4_5_spatial_mass
+  dig_complete_min_bucket_mass_kg: 15.0
+  dig_complete_mass_plateau_epsilon_kg: 1.0
+  dig_complete_mass_plateau_hold_steps: 8
+  dig_complete_departed_distance_m: 0.08
+  dig_complete_departed_hold_steps: 3
+  dump_committed_min_bucket_mass_kg: 15.0
+  dump_committed_min_height_above_rim_m: 0.45
+  dump_committed_max_outside_distance_m: 0.45
+  dump_committed_min_relative_x_m: -0.4
+  dump_committed_max_relative_x_m: 2.1
+  dump_committed_min_relative_z_m: 0.3
+  dump_committed_max_relative_z_m: 2.3
+  dump_committed_require_clearance: false
+  dump_committed_hold_steps: 3
+  release_onset_min_bucket_mass_drop_kg: 0.5
+  release_onset_min_deposit_gain_kg: 0.5

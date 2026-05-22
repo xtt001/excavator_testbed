@@ -98,6 +98,11 @@ class CoverageCorridorState:
     exit_x_m: float
     exit_z_m: float
     cell_id: int = -1
+    source_count: int = 0
+    source_fraction: float = 0.0
+    cut_depth_peak_m: float = float("nan")
+    payload_gain_kg: float = float("nan")
+    effective_deposit_delta_kg: float = float("nan")
     score: float = 0.0
     attempts: int = 0
     low_productivity_streak: int = 0
@@ -361,6 +366,9 @@ class PrimitivePlannerACTPolicy(Policy):
             self.return_target_planner_cfg.get("token_source_prefix", "return_target")
         )
         coverage_cfg = dict(self.dig_cut_planner_cfg.get("coverage", {}) or {})
+        self.coverage_candidate_layout = str(
+            coverage_cfg.get("candidate_layout", "percentile_grid")
+        ).strip().lower()
         self.coverage_use_env_removed_depth = bool(
             coverage_cfg.get(
                 "use_env_removed_depth",
@@ -402,6 +410,15 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         self.coverage_recent_row_selection_penalty = float(
             coverage_cfg.get("recent_row_selection_penalty", 0.0)
+        )
+        self.coverage_rare_cell_source_fraction_threshold = float(
+            coverage_cfg.get("rare_cell_source_fraction_threshold", 0.05)
+        )
+        self.coverage_rare_cell_max_attempts = max(
+            1, int(coverage_cfg.get("rare_cell_max_attempts", 1))
+        )
+        self.coverage_cell_confidence_weight = float(
+            coverage_cfg.get("cell_confidence_weight", 0.75)
         )
         self.coverage_first_dig_strategy = str(
             coverage_cfg.get("first_dig_strategy", "coverage_score")
@@ -814,6 +831,7 @@ class PrimitivePlannerACTPolicy(Policy):
             "coverage_use_env_removed_depth": bool(
                 self.coverage_use_env_removed_depth
             ),
+            "coverage_candidate_layout": str(self.coverage_candidate_layout),
             "coverage_first_dig_strategy": str(self.coverage_first_dig_strategy),
             "coverage_first_dig_preferred_corridor_id": int(
                 -1
@@ -979,6 +997,7 @@ class PrimitivePlannerACTPolicy(Policy):
             "coverage_use_env_removed_depth": int(
                 self.coverage_use_env_removed_depth
             ),
+            "coverage_candidate_layout": str(self.coverage_candidate_layout),
             "coverage_first_dig_strategy": str(self.coverage_first_dig_strategy),
             "coverage_first_dig_preferred_corridor_id": int(
                 -1
@@ -1041,6 +1060,7 @@ class PrimitivePlannerACTPolicy(Policy):
             "coverage_use_env_removed_depth": bool(
                 self.coverage_use_env_removed_depth
             ),
+            "coverage_candidate_layout": str(self.coverage_candidate_layout),
             "coverage_first_dig_strategy": str(self.coverage_first_dig_strategy),
             "coverage_first_dig_preferred_corridor_id": int(
                 -1
@@ -1127,25 +1147,62 @@ class PrimitivePlannerACTPolicy(Policy):
             return
 
         if self._skill_name == "carry":
-            if self._dump_ready(obs):
+            dump_committed_event = bool(
+                boundary_event is not None
+                and getattr(boundary_event, "dump_committed_start", False)
+            )
+            legacy_dump_start_event = bool(
+                boundary_event is not None
+                and getattr(boundary_event, "dump_start", False)
+                and not self._semantic_boundary_profile_active()
+            )
+            if dump_committed_event or legacy_dump_start_event:
+                self._dump_ready_hold_count = self.dump_ready_hold_steps
+            elif (
+                not self._semantic_boundary_profile_active()
+                and self._dump_ready(obs)
+            ):
                 self._dump_ready_hold_count += 1
             else:
                 self._dump_ready_hold_count = 0
             if self._dump_ready_hold_count >= self.dump_ready_hold_steps:
                 self._dump_start_deposited_mass_kg = self._deposited_mass(obs)
-                self._set_skill("dump", "carry_to_dump_target_ready")
+                reason = (
+                    "dump_committed_boundary"
+                    if dump_committed_event
+                    else "dump_start_boundary"
+                    if legacy_dump_start_event
+                    else "target_ready"
+                )
+                self._set_skill("dump", f"carry_to_dump_{reason}")
             return
 
         if self._skill_name == "dump":
             if (
                 self.dump_done_use_boundary_event
                 and boundary_event is not None
-                and bool(getattr(boundary_event, "dump_end", False))
+                and bool(
+                    getattr(boundary_event, "dump_complete", False)
+                    or (
+                        getattr(boundary_event, "dump_end", False)
+                        and not self._semantic_boundary_profile_active()
+                    )
+                )
             ):
-                self._complete_coverage_dump(obs, reason="dump_end_boundary")
-                self._set_skill("return", "dump_to_return_dump_end")
+                reason = (
+                    "dump_complete_boundary"
+                    if bool(getattr(boundary_event, "dump_complete", False))
+                    else "dump_end_boundary"
+                )
+                self._complete_coverage_dump(obs, reason=reason)
+                self._set_skill(
+                    "return",
+                    "dump_to_return_dump_complete_boundary"
+                    if reason == "dump_complete_boundary"
+                    else "dump_to_return_dump_end",
+                )
                 return
-            if self._dump_done(obs):
+            if not self._semantic_boundary_profile_active() and self._dump_done(obs):
                 self._dump_done_hold_count += 1
             else:
                 self._dump_done_hold_count = 0
@@ -1156,9 +1213,14 @@ class PrimitivePlannerACTPolicy(Policy):
 
         if self._skill_name == "return":
             self._return_to_dig_entry_close(obs)
-            if boundary_event is not None and bool(
-                getattr(boundary_event, "qualified_dig_start", False)
-            ) and self._return_to_dig_entry_close(obs):
+            next_dig_event = bool(
+                boundary_event is not None
+                and (
+                    getattr(boundary_event, "next_dig_entry_ready", False)
+                    or getattr(boundary_event, "qualified_dig_start", False)
+                )
+            )
+            if next_dig_event and self._return_to_dig_entry_close(obs):
                 self._completed_transition_count += 1
                 self._cycle_index += 1
                 next_skill = (
@@ -1168,7 +1230,7 @@ class PrimitivePlannerACTPolicy(Policy):
                 )
                 self._set_skill(
                     next_skill,
-                    f"return_to_{next_skill}_qualified_dig_start",
+                    f"return_to_{next_skill}_next_dig_entry_ready",
                 )
                 return
             if self._return_to_dig_shallow_guard_ready(
@@ -1643,6 +1705,14 @@ class PrimitivePlannerACTPolicy(Policy):
         return float(progress - length)
 
     def _dig_to_carry_ready(self, *, obs: dict, boundary_event: Any | None) -> bool:
+        if boundary_event is not None and bool(
+            getattr(boundary_event, "dig_complete", False)
+        ):
+            self._dig_to_carry_reason = "dig_complete_boundary"
+            return True
+        if self._semantic_boundary_profile_active():
+            self._dig_to_carry_reason = ""
+            return False
         metrics = dict(getattr(boundary_event, "metrics", {}) or {})
         mass = float(metrics.get("mass_in_bucket_kg", self._mass_in_bucket(obs)))
         dig_distance = float(
@@ -1675,6 +1745,11 @@ class PrimitivePlannerACTPolicy(Policy):
             return True
         self._dig_to_carry_reason = ""
         return False
+
+    def _semantic_boundary_profile_active(self) -> bool:
+        config = getattr(self.boundary_detector, "config", None)
+        profile = str(getattr(config, "boundary_profile", "legacy"))
+        return profile == "v2_4_5_spatial_mass"
 
     def _dump_ready(self, obs: dict) -> bool:
         mass = self._mass_in_bucket(obs)
@@ -2454,6 +2529,10 @@ class PrimitivePlannerACTPolicy(Policy):
         if self._coverage_corridors:
             return
         fields = dict(self.dig_cut_prior.get("fields", {}))
+        if self.coverage_candidate_layout == "cell_weighted_3x2":
+            self._coverage_corridors = self._build_cell_weighted_coverage_corridors(fields)
+            return
+
         candidates: list[CoverageCorridorState] = []
         corridor_id = 0
         for z_index, z_percentile in enumerate(self.coverage_entry_z_percentiles):
@@ -2479,6 +2558,105 @@ class PrimitivePlannerACTPolicy(Policy):
                 )
                 corridor_id += 1
         self._coverage_corridors = candidates
+
+    def _build_cell_weighted_coverage_corridors(
+        self,
+        fields: dict[str, object],
+    ) -> list[CoverageCorridorState]:
+        raw_cells = self.dig_cut_prior.get("coverage_cells", [])
+        if not isinstance(raw_cells, list) or not raw_cells:
+            raise ValueError(
+                "coverage.candidate_layout='cell_weighted_3x2' requires "
+                "coverage_cells in the dig cut prior."
+            )
+        cells = [dict(item) for item in raw_cells if isinstance(item, dict)]
+        if not cells:
+            raise ValueError(
+                "coverage.candidate_layout='cell_weighted_3x2' found no valid "
+                "coverage_cells in the dig cut prior."
+            )
+
+        candidates: list[CoverageCorridorState] = []
+        for corridor_id, cell in enumerate(
+            sorted(cells, key=lambda item: int(item.get("cell_id", 999999)))
+        ):
+            entry = dict(cell.get("entry", {}) or {})
+            exit_point = dict(cell.get("exit", {}) or {})
+            entry_x = self._coverage_cell_float(
+                entry,
+                "x_m",
+                self._prior_percentile(fields, "entry_x_m", "p50"),
+            )
+            entry_z = self._coverage_cell_float(
+                entry,
+                "z_m",
+                self._prior_percentile(fields, "entry_z_m", "p50"),
+            )
+            if "x_m" in exit_point and "z_m" in exit_point:
+                exit_x = self._coverage_cell_float(
+                    exit_point,
+                    "x_m",
+                    self._prior_percentile(fields, "exit_x_m", "p50"),
+                )
+                exit_z = self._coverage_cell_float(
+                    exit_point,
+                    "z_m",
+                    self._prior_percentile(fields, "exit_z_m", "p50"),
+                )
+            else:
+                exit_x, exit_z = self._coverage_exit_from_entry(entry_x, entry_z)
+            candidates.append(
+                CoverageCorridorState(
+                    corridor_id=int(corridor_id),
+                    entry_x_m=float(entry_x),
+                    entry_z_m=float(entry_z),
+                    exit_x_m=float(exit_x),
+                    exit_z_m=float(exit_z),
+                    cell_id=int(cell.get("cell_id", corridor_id)),
+                    source_count=max(0, int(cell.get("source_count", 0))),
+                    source_fraction=max(0.0, float(cell.get("source_fraction", 0.0))),
+                    cut_depth_peak_m=self._coverage_cell_float(
+                        cell,
+                        "cut_depth_peak_m",
+                        self._prior_percentile(
+                            fields,
+                            "cut_depth_peak_m",
+                            self.coverage_cut_depth_percentile,
+                        ),
+                    ),
+                    payload_gain_kg=self._coverage_cell_float(
+                        cell,
+                        "payload_gain_kg",
+                        self._prior_percentile(
+                            fields,
+                            "payload_gain_kg",
+                            self.coverage_payload_percentile,
+                        ),
+                    ),
+                    effective_deposit_delta_kg=self._coverage_cell_float(
+                        cell,
+                        "effective_deposit_delta_kg",
+                        self._prior_percentile(
+                            fields,
+                            "effective_deposit_delta_kg",
+                            "p50",
+                        ),
+                    ),
+                )
+            )
+        return candidates
+
+    @staticmethod
+    def _coverage_cell_float(
+        mapping: dict[str, object],
+        name: str,
+        default: float,
+    ) -> float:
+        try:
+            value = float(mapping.get(name, default))
+        except (TypeError, ValueError):
+            value = float(default)
+        return float(value if np.isfinite(value) else default)
 
     def _coverage_exit_from_entry(self, entry_x: float, entry_z: float) -> tuple[float, float]:
         fields = dict(self.dig_cut_prior.get("fields", {}))
@@ -2530,8 +2708,11 @@ class PrimitivePlannerACTPolicy(Policy):
                 first_dig_entry_reachable and first_dig_qpos_reachable
             )
             first_dig_gated_out = bool(first_dig_gate_available and not first_dig_reachable)
+            rare_first_dig_gated_out = self._coverage_rare_first_dig_gated_out(
+                corridor
+            )
             score = self._coverage_score(corridor, remaining_depth) + first_dig_bonus
-            if first_dig_gated_out:
+            if first_dig_gated_out or rare_first_dig_gated_out:
                 score = -1.0e12 + float(score)
             corridor.score = float(score)
             corridor.last_remaining_depth_m = float(remaining_depth)
@@ -2541,7 +2722,11 @@ class PrimitivePlannerACTPolicy(Policy):
                     "cell_id": int(self._coverage_cell_id(corridor)),
                     "score": float(score),
                     "attempts": int(corridor.attempts),
+                    "attempt_limit": int(self._coverage_corridor_attempt_limit(corridor)),
                     "depleted": int(corridor.depleted),
+                    "source_count": int(corridor.source_count),
+                    "source_fraction": float(corridor.source_fraction),
+                    "cell_confidence": float(self._coverage_cell_confidence(corridor)),
                     "belief_coverage": float(corridor.belief_coverage),
                     "remaining_depth_m": float(remaining_depth),
                     "first_dig_bonus": float(first_dig_bonus),
@@ -2561,6 +2746,7 @@ class PrimitivePlannerACTPolicy(Policy):
                     "first_dig_reachable": int(first_dig_reachable),
                     "first_dig_gate_applied": int(first_dig_gate_available),
                     "first_dig_gated_out": int(first_dig_gated_out),
+                    "rare_first_dig_gated_out": int(rare_first_dig_gated_out),
                     "first_dig_max_entry_distance_m": float(
                         np.nan
                         if self.coverage_first_dig_max_entry_distance_m is None
@@ -2569,7 +2755,7 @@ class PrimitivePlannerACTPolicy(Policy):
                     "low_productivity_streak": int(corridor.low_productivity_streak),
                 }
             )
-            if first_dig_gated_out:
+            if first_dig_gated_out or rare_first_dig_gated_out:
                 continue
             if score > best_score:
                 best = corridor
@@ -2600,7 +2786,9 @@ class PrimitivePlannerACTPolicy(Policy):
         for corridor in self._coverage_corridors:
             if corridor.depleted:
                 continue
-            if corridor.attempts >= self.coverage_max_attempts_per_corridor:
+            if corridor.attempts >= self._coverage_corridor_attempt_limit(corridor):
+                continue
+            if self._coverage_rare_first_dig_gated_out(corridor):
                 continue
             distance = self._coverage_entry_distance_m(corridor, obs)
             qpos_delta = self._coverage_first_dig_qpos_delta(corridor, obs)
@@ -2628,13 +2816,17 @@ class PrimitivePlannerACTPolicy(Policy):
     ) -> float:
         if corridor.depleted:
             return -1.0e9 - float(corridor.attempts)
-        if corridor.attempts >= self.coverage_max_attempts_per_corridor:
+        if corridor.attempts >= self._coverage_corridor_attempt_limit(corridor):
             return -1.0e8 - float(corridor.attempts)
         fields = dict(self.dig_cut_prior.get("fields", {}))
-        target_depth = self._prior_percentile(
-            fields,
-            "cut_depth_peak_m",
-            self.coverage_cut_depth_percentile,
+        target_depth = (
+            float(corridor.cut_depth_peak_m)
+            if np.isfinite(corridor.cut_depth_peak_m)
+            else self._prior_percentile(
+                fields,
+                "cut_depth_peak_m",
+                self.coverage_cut_depth_percentile,
+            )
         )
         if self.coverage_use_env_removed_depth:
             remaining_ratio = (
@@ -2671,15 +2863,62 @@ class PrimitivePlannerACTPolicy(Policy):
             self.coverage_unattempted_bonus if corridor.attempts <= 0 else 0.0
         )
         attempt_penalty = self.coverage_attempt_penalty * float(corridor.attempts)
+        cell_confidence = self._coverage_cell_confidence(corridor)
         return (
             2.0 * remaining_ratio
             + productivity
+            + self.coverage_cell_confidence_weight * cell_confidence
             + unattempted_bonus
             - repeat_penalty
             - row_penalty
             - attempt_penalty
             - 0.5 * float(corridor.low_productivity_streak)
         )
+
+    def _coverage_cell_confidence(self, corridor: CoverageCorridorState) -> float:
+        if self.coverage_candidate_layout != "cell_weighted_3x2":
+            return 0.0
+        fraction = float(corridor.source_fraction)
+        if not np.isfinite(fraction) or fraction <= 0.0:
+            return 0.0
+        uniform_fraction = 1.0 / 6.0
+        return float(np.clip(fraction / uniform_fraction, 0.0, 1.5))
+
+    def _coverage_corridor_is_rare(self, corridor: CoverageCorridorState) -> bool:
+        if self.coverage_candidate_layout != "cell_weighted_3x2":
+            return False
+        fraction = float(corridor.source_fraction)
+        return bool(
+            np.isfinite(fraction)
+            and fraction > 0.0
+            and fraction < self.coverage_rare_cell_source_fraction_threshold
+        )
+
+    def _coverage_corridor_attempt_limit(self, corridor: CoverageCorridorState) -> int:
+        limit = int(self.coverage_max_attempts_per_corridor)
+        if self._coverage_corridor_is_rare(corridor):
+            limit = min(limit, int(self.coverage_rare_cell_max_attempts))
+        return max(1, int(limit))
+
+    def _coverage_rare_first_dig_gated_out(
+        self,
+        corridor: CoverageCorridorState,
+    ) -> bool:
+        if not self._coverage_first_dig_active():
+            return False
+        if not self._coverage_corridor_is_rare(corridor):
+            return False
+        for candidate in self._coverage_corridors:
+            if candidate is corridor:
+                continue
+            if self._coverage_corridor_is_rare(candidate):
+                continue
+            if candidate.depleted:
+                continue
+            if candidate.attempts >= self._coverage_corridor_attempt_limit(candidate):
+                continue
+            return True
+        return False
 
     def _coverage_recent_row_penalty(self, corridor: CoverageCorridorState) -> float:
         if self.coverage_recent_row_selection_penalty <= 0.0:
@@ -2851,17 +3090,29 @@ class PrimitivePlannerACTPolicy(Policy):
                 self._clamp_to_prior(fields, "cut_length_m", length)
             ),
             "operator_cut_depth_peak_m": float(
-                self._prior_percentile(
+                self._clamp_to_prior(
                     fields,
                     "cut_depth_peak_m",
-                    self.coverage_cut_depth_percentile,
+                    float(corridor.cut_depth_peak_m)
+                    if np.isfinite(corridor.cut_depth_peak_m)
+                    else self._prior_percentile(
+                        fields,
+                        "cut_depth_peak_m",
+                        self.coverage_cut_depth_percentile,
+                    ),
                 )
             ),
             "operator_cut_payload_gain_kg": float(
-                self._prior_percentile(
+                self._clamp_to_prior(
                     fields,
                     "payload_gain_kg",
-                    self.coverage_payload_percentile,
+                    float(corridor.payload_gain_kg)
+                    if np.isfinite(corridor.payload_gain_kg)
+                    else self._prior_percentile(
+                        fields,
+                        "payload_gain_kg",
+                        self.coverage_payload_percentile,
+                    ),
                 )
             ),
             "operator_cut_valid": 1,
@@ -2964,7 +3215,7 @@ class PrimitivePlannerACTPolicy(Policy):
         ):
             corridor.depleted = True
             corridor.last_reason = "low_productivity_consecutive"
-        if corridor.attempts >= self.coverage_max_attempts_per_corridor:
+        if corridor.attempts >= self._coverage_corridor_attempt_limit(corridor):
             corridor.depleted = True
             corridor.last_reason = "attempt_limit_reached"
         if (
@@ -3031,7 +3282,7 @@ class PrimitivePlannerACTPolicy(Policy):
         if (
             corridor.low_productivity_streak
             >= self.coverage_deplete_after_low_streak
-            or corridor.attempts >= self.coverage_max_attempts_per_corridor
+            or corridor.attempts >= self._coverage_corridor_attempt_limit(corridor)
         ):
             corridor.depleted = True
         if all(candidate.depleted for candidate in self._coverage_corridors):
@@ -3099,8 +3350,8 @@ class PrimitivePlannerACTPolicy(Policy):
     def _coverage_depleted_count(self) -> int:
         return int(sum(1 for corridor in self._coverage_corridors if corridor.depleted))
 
-    @staticmethod
     def _coverage_corridor_to_debug(
+        self,
         corridor: CoverageCorridorState,
     ) -> dict[str, float | int | str]:
         return {
@@ -3110,6 +3361,10 @@ class PrimitivePlannerACTPolicy(Policy):
             "exit_x_m": float(corridor.exit_x_m),
             "exit_z_m": float(corridor.exit_z_m),
             "cell_id": int(max(0, min(5, corridor.cell_id))),
+            "source_count": int(corridor.source_count),
+            "source_fraction": float(corridor.source_fraction),
+            "attempt_limit": int(self._coverage_corridor_attempt_limit(corridor)),
+            "cell_confidence": float(self._coverage_cell_confidence(corridor)),
             "score": float(corridor.score),
             "attempts": int(corridor.attempts),
             "low_productivity_streak": int(corridor.low_productivity_streak),
@@ -3151,6 +3406,13 @@ class PrimitivePlannerACTPolicy(Policy):
         ):
             raise ValueError(
                 f"{self.dig_cut_planner_mode} dig_cut_planner requires prior_path."
+            )
+        supported_layouts = {"percentile_grid", "cell_weighted_3x2"}
+        if self.coverage_candidate_layout not in supported_layouts:
+            raise ValueError(
+                "Unsupported coverage.candidate_layout "
+                f"{self.coverage_candidate_layout!r}; expected one of "
+                f"{sorted(supported_layouts)}."
             )
 
     @staticmethod

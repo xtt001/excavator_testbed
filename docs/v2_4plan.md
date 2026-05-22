@@ -163,6 +163,54 @@ dump area 的片段保留给 carry。该 run 仍只到 Gate 2，没有 materiali
   和
   `/fastdata/pingfan/excavator_testbed_data_hot/yulong_v2_4_removed_depth_hindsight_goal_primitives_vds_v2_4_5_process_boundary_qc6_20260522/boundary_audit/contact_sheets_clean_gold/index.html`。
 
+2026-05-22 后续主线接受 qc6 作为 copy/train/eval 的唯一数据源，不再从 qc5 或
+scale022 派生训练 copy：
+
+- primitive VDS root:
+  `/fastdata/pingfan/excavator_testbed_data_hot/yulong_v2_4_removed_depth_hindsight_goal_primitives_vds_v2_4_5_process_boundary_qc6_20260522`
+- materialized copy root:
+  `/fastdata/pingfan/excavator_testbed_data_hot/yulong_v2_4_removed_depth_hindsight_goal_primitives_copy_v2_4_5_process_boundary_qc6_20260522`
+- checkpoint root:
+  `runs/ckpts/yulong_v2_4_5_process_boundary_qc6_20260522/{dig,return,carry,dump}`
+- qc6 训练只用 `training_tier=gold`：`dig/carry/dump=595`，`return=545`。
+  全量 primitive 仍保留 silver 诊断样本：`dig/carry/dump=644`，`return=589`。
+- 人工复核记录的 3x2 dominant removed-depth 分布为
+  `0:64, 1:163, 2:142, 3:180, 4:18, 5:82`，cell 4 明显稀缺。实际 qc6 gold
+  prior 使用训练样本中可见 cell 统计写入
+  `testbed/configs/planner_priors/yulong_removed_depth_dig_cut_prior_v3.json` 的
+  `coverage_cells`，其中 cell 4 `source_fraction < 0.05`，默认只尝试一次且不作为
+  first-dig 候选，除非其它 cell 已耗尽。
+- `PrimitivePlannerACTPolicy` 新增
+  `coverage.candidate_layout: cell_weighted_3x2`。当 prior 提供 `coverage_cells`
+  时 planner 只生成 6 条 corridor，直接对应 3x2 removed-depth cell；旧 prior
+  没有 `coverage_cells` 时仍按 3x3 percentile grid 生成 9 条候选，保证旧 eval
+  和测试兼容。
+- `BoundaryDetectorConfig.boundary_profile=v2_4_5_spatial_mass` 会输出
+  `dig_complete / dump_committed_start / release_onset / dump_complete /
+  next_dig_entry_ready` 等语义事件。planner 在该 profile 下优先消费事件完成
+  `dig -> carry -> dump -> return -> dig`，不再在 planner 内拼 committed aiming
+  band 的几何阈值；`return -> dig` 仍保留 pending target 的 entry-close gate，
+  因为这是目标协调而不是全局物理边界。
+- 本轮配置：
+  - `act_yulong_v2_4_5_process_boundary_qc6_dig_qvel.yaml`
+  - `act_yulong_v2_4_5_process_boundary_qc6_return_envelope_qvel.yaml`
+  - `act_yulong_v2_4_5_process_boundary_qc6_carry_qvel.yaml`
+  - `act_yulong_v2_4_5_process_boundary_qc6_dump_qvel.yaml`
+  - `eval_yulong_v2_4_5_qc6_cell_weighted_3cycle_smoke.yaml`
+  - `eval_yulong_v2_4_5_qc6_cell_weighted_15cycle_probe.yaml`
+  - `eval_yulong_v2_4_5_qc6_cell_weighted_30cycle_probe.yaml`
+- 本地全量推进脚本：
+
+```bash
+chmod +x runs/jobs/yulong_v2_4_5_process_boundary_qc6_20260522/run_qc6_materialize_train_eval.sh
+TRAIN_AFTER_QC=1 RUN_EVAL_AFTER_TRAIN=0 \
+  runs/jobs/yulong_v2_4_5_process_boundary_qc6_20260522/run_qc6_materialize_train_eval.sh
+```
+
+脚本顺序固定为 materialize -> pre-train QC -> `dig -> return -> carry -> dump`
+训练 -> dig token sensitivity。`RUN_EVAL_AFTER_TRAIN=1` 会继续跑 3/15/30-cycle
+live eval，需要 Unity/AGX endpoint 已就绪。
+
 推荐闭环命令第一步只跑到可视化 gate：
 
 ```bash

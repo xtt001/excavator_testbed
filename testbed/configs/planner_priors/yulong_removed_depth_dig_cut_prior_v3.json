@@ -16,63 +16,161 @@
     "valid"
   ],
   "source": {
-    "source_dataset": "/fastdata/pingfan/excavator_testbed_data_hot/yulong_v2_4_removed_depth_hindsight_goal_primitives_vds_scale022_20260522/dig",
-    "source_job": "runs/jobs/yulong_removed_depth_scale022_20260522",
-    "source_cycle_count_used": 114,
+    "source_dataset": "/fastdata/pingfan/excavator_testbed_data_hot/yulong_v2_4_removed_depth_hindsight_goal_primitives_vds_v2_4_5_process_boundary_qc6_20260522/dig",
+    "source_job": "runs/jobs/yulong_v2_4_5_process_boundary_qc6_20260522",
+    "source_cycle_count_used": 595,
     "tier_filter": "gold",
     "created_at": "2026-05-22",
-    "notes": "Gold dig primitive prior after Unity removed-depth replay. cut_depth_peak_m stores max(actual_removed_depth_delta_grid), not legacy bucket peak depth. Scale v3 is 0.25m: gold depth-token saturation is about 1.75%, below the 2% pre-train QC gate."
+    "notes": "QC6 gold dig primitive prior after V2.4.5 spatial-mass boundary review. cut_depth_peak_m stores max(actual_removed_depth_delta_grid), not legacy bucket peak depth. coverage_cells are 3x2 dominant removed-depth cells for weighted coverage planning; cell 4 is intentionally marked rare by source_fraction."
   },
   "fields": {
     "entry_x_m": {
-      "p10": 0.4148,
-      "p50": 0.9226,
-      "p90": 1.3053
+      "p10": 0.4576,
+      "p50": 0.9239,
+      "p90": 1.3148
     },
     "entry_z_m": {
-      "p10": -1.0327,
-      "p50": -0.3382,
-      "p90": 0.6171
+      "p10": -1.0892,
+      "p50": -0.3468,
+      "p90": 0.589
     },
     "exit_x_m": {
-      "p10": -0.5777,
-      "p50": 0.0595,
-      "p90": 0.8601
+      "p10": -0.5711,
+      "p50": 0.0702,
+      "p90": 0.8942
     },
     "exit_z_m": {
-      "p10": -0.8376,
-      "p50": -0.2309,
-      "p90": 0.54
+      "p10": -0.8913,
+      "p50": -0.2548,
+      "p90": 0.517
     },
     "cut_direction_x": {
-      "p10": -0.9726,
-      "p50": -0.8189,
-      "p90": 0.2026
+      "p10": -0.9715,
+      "p50": -0.8133,
+      "p90": 0.2339
     },
     "cut_direction_z": {
-      "p10": -0.1904,
-      "p50": 0.0655,
-      "p90": 0.3364
+      "p10": -0.1942,
+      "p50": 0.066,
+      "p90": 0.3514
     },
     "cut_length_m": {
-      "p10": 0.7381,
-      "p50": 1.1568,
-      "p90": 1.6275
+      "p10": 0.7397,
+      "p50": 1.1642,
+      "p90": 1.6387
     },
     "cut_depth_peak_m": {
-      "p10": 0.0462,
-      "p50": 0.0847,
-      "p90": 0.1567
+      "p10": 0.0264,
+      "p50": 0.0475,
+      "p90": 0.0942
     },
     "payload_gain_kg": {
-      "p10": 48.3301,
-      "p50": 59.0535,
-      "p90": 74.2262
+      "p10": 48.7756,
+      "p50": 59.8277,
+      "p90": 75.1446
     },
     "effective_deposit_delta_kg": {
-      "p10": 42.4849,
-      "p50": 56.7207,
-      "p90": 68.7807
+      "p10": 42.8599,
+      "p50": 57.2455,
+      "p90": 69.8009
     }
-  }
+  },
+  "coverage_cells": [
+    {
+      "cell_id": 0,
+      "source_count": 53,
+      "source_fraction": 0.089076,
+      "entry": {
+        "x_m": 0.8955,
+        "z_m": -0.952
+      },
+      "exit": {
+        "x_m": -0.0301,
+        "z_m": -0.7181
+      },
+      "cut_depth_peak_m": 0.0373,
+      "payload_gain_kg": 63.1433,
+      "effective_deposit_delta_kg": 62.0635
+    },
+    {
+      "cell_id": 1,
+      "source_count": 156,
+      "source_fraction": 0.262185,
+      "entry": {
+        "x_m": 1.0088,
+        "z_m": -0.883
+      },
+      "exit": {
+        "x_m": 0.2052,
+        "z_m": -0.7122
+      },
+      "cut_depth_peak_m": 0.0509,
+      "payload_gain_kg": 57.8156,
+      "effective_deposit_delta_kg": 56.0641
+    },
+    {
+      "cell_id": 2,
+      "source_count": 116,
+      "source_fraction": 0.194958,
+      "entry": {
+        "x_m": 0.7045,
+        "z_m": -0.1627
+      },
+      "exit": {
+        "x_m": -0.1585,
+        "z_m": -0.1564
+      },
+      "cut_depth_peak_m": 0.0298,
+      "payload_gain_kg": 60.0893,
+      "effective_deposit_delta_kg": 56.0962
+    },
+    {
+      "cell_id": 3,
+      "source_count": 177,
+      "source_fraction": 0.297479,
+      "entry": {
+        "x_m": 1.0463,
+        "z_m": -0.1627
+      },
+      "exit": {
+        "x_m": 0.1283,
+        "z_m": -0.1053
+      },
+      "cut_depth_peak_m": 0.0571,
+      "payload_gain_kg": 59.3076,
+      "effective_deposit_delta_kg": 58.8811
+    },
+    {
+      "cell_id": 4,
+      "source_count": 15,
+      "source_fraction": 0.02521,
+      "entry": {
+        "x_m": 0.8023,
+        "z_m": 0.5011
+      },
+      "exit": {
+        "x_m": -0.1464,
+        "z_m": 0.5263
+      },
+      "cut_depth_peak_m": 0.0516,
+      "payload_gain_kg": 65.8903,
+      "effective_deposit_delta_kg": 52.5116
+    },
+    {
+      "cell_id": 5,
+      "source_count": 78,
+      "source_fraction": 0.131092,
+      "entry": {
+        "x_m": 0.9157,
+        "z_m": 0.6886
+      },
+      "exit": {
+        "x_m": 0.0999,
+        "z_m": 0.5431
+      },
+      "cut_depth_peak_m": 0.0718,
+      "payload_gain_kg": 61.8898,
+      "effective_deposit_delta_kg": 55.6428
+    }
+  ]
 }

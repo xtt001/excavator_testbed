@@ -449,6 +449,7 @@ def eval_policy(config: dict[str, Any]) -> None:
             boundary_detector=build_boundary_detector_from_config(
                 reward_cfg=reward_cfg,
                 success_cfg=success_cfg,
+                boundary_cfg=dict(config.get("boundary", {}) or {}),
                 pause_action_eps=float(
                     transition_cfg.get("pause_action_eps", 0.05)
                 ),
@@ -631,6 +632,7 @@ def eval_policy(config: dict[str, Any]) -> None:
         boundary_detector = build_boundary_detector_from_config(
             reward_cfg=reward_cfg,
             success_cfg=success_cfg,
+            boundary_cfg=dict(config.get("boundary", {}) or {}),
             pause_action_eps=float(
                 switch_cfg.get(
                     "pause_action_eps",

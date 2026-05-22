@@ -64,6 +64,10 @@ YULONG_DIG_CUT_PRIOR_PATH = (
     REPO_ROOT
     / "testbed/configs/planner_priors/yulong_operator_first_dig_cut_prior_v1.json"
 )
+YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH = (
+    REPO_ROOT
+    / "testbed/configs/planner_priors/yulong_removed_depth_dig_cut_prior_v3.json"
+)
 
 
 class TestPrimitivesV22(unittest.TestCase):
@@ -1960,6 +1964,78 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertTrue(state["planner_terminal_stop_requested"])
         self.assertEqual(state["planner_terminal_stop_reason"], "dig_area_depleted")
 
+    def test_primitive_planner_coverage_keeps_legacy_percentile_grid_without_cells(self) -> None:
+        policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
+
+        policy._ensure_coverage_corridors()
+
+        self.assertEqual(len(policy._coverage_corridors), 9)
+        self.assertEqual(
+            sorted({policy._coverage_cell_id(c) for c in policy._coverage_corridors}),
+            [0, 1, 2, 3, 4, 5],
+        )
+        self.assertEqual(
+            policy.debug_state()["coverage_candidate_layout"],
+            "percentile_grid",
+        )
+
+    def test_primitive_planner_qc6_cell_weighted_prior_builds_six_cells(self) -> None:
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            prior_path=YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH,
+            coverage_extra={
+                "candidate_layout": "cell_weighted_3x2",
+                "rare_cell_source_fraction_threshold": 0.05,
+                "rare_cell_max_attempts": 1,
+            },
+        )
+
+        policy._ensure_coverage_corridors()
+
+        self.assertEqual(len(policy._coverage_corridors), 6)
+        self.assertEqual(
+            [policy._coverage_cell_id(c) for c in policy._coverage_corridors],
+            [0, 1, 2, 3, 4, 5],
+        )
+        rare = policy._coverage_corridors[4]
+        self.assertEqual(rare.cell_id, 4)
+        self.assertLess(rare.source_fraction, 0.05)
+        self.assertEqual(policy._coverage_corridor_attempt_limit(rare), 1)
+        self.assertEqual(policy._coverage_corridor_attempt_limit(policy._coverage_corridors[3]), 3)
+
+    def test_primitive_planner_qc6_rare_cell_not_first_until_others_depleted(self) -> None:
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            prior_path=YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH,
+            coverage_extra={
+                "candidate_layout": "cell_weighted_3x2",
+                "rare_cell_source_fraction_threshold": 0.05,
+                "rare_cell_max_attempts": 1,
+                "first_dig_strategy": "nearest_entry",
+                "first_dig_proximity_weight": 100.0,
+            },
+        )
+        obs = _coverage_obs(
+            mass=0.0,
+            dig_distance=0.0,
+            bucket_pose=(0.8023, 0.0, 0.5011),
+        )
+
+        selected = policy._select_next_coverage_corridor(obs)
+        self.assertNotEqual(policy._coverage_cell_id(selected), 4)
+        rare_debug = [
+            item
+            for item in policy._coverage_candidate_scores
+            if int(item["cell_id"]) == 4
+        ][0]
+        self.assertEqual(rare_debug["rare_first_dig_gated_out"], 1)
+
+        for corridor in policy._coverage_corridors:
+            if policy._coverage_cell_id(corridor) != 4:
+                corridor.depleted = True
+        selected = policy._select_next_coverage_corridor(obs)
+        self.assertEqual(policy._coverage_cell_id(selected), 4)
+
     def test_primitive_planner_injects_return_target_only_for_return_and_reuses_for_dig(self) -> None:
         dig_policy = _RecordingPolicy(0)
         return_policy = _RecordingPolicy(3)
@@ -2402,6 +2478,61 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertEqual(state["skill_switch_reason"], "dig_to_carry_target_payload_loaded")
         self.assertIsNone(carry_policy.last_dig_cut_tokens)
 
+    def test_primitive_planner_semantic_boundary_events_drive_skill_sequence(self) -> None:
+        detector = _FakeBoundaryDetector(
+            [
+                _FakeBoundaryEvent(dig_complete=True),
+                _FakeBoundaryEvent(dump_committed_start=True),
+                _FakeBoundaryEvent(dump_complete=True),
+                _FakeBoundaryEvent(next_dig_entry_ready=True),
+            ],
+            boundary_profile="v2_4_5_spatial_mass",
+        )
+        policy = PrimitivePlannerACTPolicy(
+            dig_policy=_ConstantPolicy(0),
+            carry_policy=_ConstantPolicy(1),
+            dump_policy=_ConstantPolicy(2),
+            return_policy=_ConstantPolicy(3),
+            boundary_detector=detector,
+            dig_to_carry_min_bucket_mass_kg=999.0,
+            dump_ready_hold_steps=3,
+            dump_done_hold_steps=30,
+        )
+
+        self.assertEqual(float(policy.predict(_obs(mass=0.0, dig_distance=0.0))[0]), 0.0)
+
+        action = policy.predict(_obs(mass=0.0, dig_distance=0.0))
+        self.assertEqual(float(action[0]), 1.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "carry")
+        self.assertEqual(
+            policy.debug_state()["skill_switch_reason"],
+            "dig_to_carry_dig_complete_boundary",
+        )
+
+        action = policy.predict(_obs(mass=0.0, dig_distance=0.0, dump_ready=False))
+        self.assertEqual(float(action[0]), 2.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "dump")
+        self.assertEqual(
+            policy.debug_state()["skill_switch_reason"],
+            "carry_to_dump_dump_committed_boundary",
+        )
+
+        action = policy.predict(_obs(mass=500.0, dig_distance=0.0, deposited=0.0))
+        self.assertEqual(float(action[0]), 3.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "return")
+        self.assertEqual(
+            policy.debug_state()["skill_switch_reason"],
+            "dump_to_return_dump_complete_boundary",
+        )
+
+        action = policy.predict(_obs(mass=0.0, dig_distance=0.0))
+        self.assertEqual(float(action[0]), 0.0)
+        self.assertEqual(policy.debug_state()["skill_name"], "dig")
+        self.assertEqual(
+            policy.debug_state()["skill_switch_reason"],
+            "return_to_dig_next_dig_entry_ready",
+        )
+
     def test_primitive_planner_bad_dig_replans_instead_of_entering_carry(self) -> None:
         policy = _coverage_planner_policy(
             dig_policy=_RecordingPolicy(0),
@@ -2568,7 +2699,7 @@ class TestPrimitivesV22(unittest.TestCase):
         }
 
         policy.boundary_detector = _FakeBoundaryDetector(
-            [_FakeBoundaryEvent(qualified_dig_start=True)]
+            [_FakeBoundaryEvent(next_dig_entry_ready=True)]
         )
         action = policy.predict(
             _dig_cut_obs(mass=0.0, dig_distance=0.0, pose=(-0.6, 0.0, -1.4))
@@ -2579,7 +2710,7 @@ class TestPrimitivesV22(unittest.TestCase):
 
         policy._prev_action = action.copy()
         policy.boundary_detector = _FakeBoundaryDetector(
-            [_FakeBoundaryEvent(qualified_dig_start=True)]
+            [_FakeBoundaryEvent(next_dig_entry_ready=True)]
         )
         action = policy.predict(
             _dig_cut_obs(mass=0.0, dig_distance=0.0, pose=(0.45, 0.0, -0.55))
@@ -3338,17 +3469,35 @@ class _FakeBoundaryEvent:
         self,
         *,
         qualified_dig_start: bool = False,
+        dig_complete: bool = False,
+        dump_committed_start: bool = False,
+        dump_complete: bool = False,
+        next_dig_entry_ready: bool = False,
         dump_end: bool = False,
         metrics: dict | None = None,
     ) -> None:
         self.qualified_dig_start = bool(qualified_dig_start)
+        self.dig_complete = bool(dig_complete)
+        self.dump_committed_start = bool(dump_committed_start)
+        self.dump_complete = bool(dump_complete)
+        self.next_dig_entry_ready = bool(next_dig_entry_ready)
         self.dump_end = bool(dump_end)
         self.metrics = dict(metrics or {})
 
 
 class _FakeBoundaryDetector:
-    def __init__(self, events: list[_FakeBoundaryEvent]) -> None:
+    def __init__(
+        self,
+        events: list[_FakeBoundaryEvent],
+        *,
+        boundary_profile: str = "legacy",
+    ) -> None:
         self.events = list(events)
+        self.config = type(
+            "_FakeBoundaryConfig",
+            (),
+            {"boundary_profile": str(boundary_profile)},
+        )()
 
     def reset(self) -> None:
         pass
@@ -3526,6 +3675,7 @@ def _coverage_planner_policy(
     pre_dig_align_extra: dict | None = None,
     return_target_enabled: bool = False,
     dig_cut_mode: str = "operator_prior_coverage",
+    prior_path: Path | str | None = None,
     coverage_extra: dict | None = None,
 ) -> PrimitivePlannerACTPolicy:
     pre_dig_align_cfg = {
@@ -3566,7 +3716,7 @@ def _coverage_planner_policy(
         dig_cut_planner={
             "enabled": True,
             "mode": dig_cut_mode,
-            "prior_path": str(YULONG_DIG_CUT_PRIOR_PATH),
+            "prior_path": str(prior_path or YULONG_DIG_CUT_PRIOR_PATH),
             "fallback_mode": "conservative_pose",
             "hold_token_until_skill_exit": True,
             "coverage": dict(coverage_extra or {}),

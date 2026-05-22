@@ -259,6 +259,25 @@ p50/mean/p90/p95 为 `3/6.8/10.7/36` steps；dump pre-release lead 从
 `>0.30m` 从 `143` 降到 `105`，`>0.35m` 从 `128` 降到 `81`。剩余 high-outside
 样本大多是 release 本身也在该几何距离上发生，需要按视频和 mass/deposit 曲线人工确认。
 
+后续 planner/eval 不再把 qc6 的自然语义边界重新拆成 planner 内部阈值。`BoundaryDetector`
+新增 `boundary_profile=legacy|v2_4_5_spatial_mass`：legacy 保持旧的
+`qualified_dig_start/dump_start/dump_end`，V2.4.5 profile 则在线输出
+`dig_start`、`dig_complete`、`dump_committed_start`、`release_onset`、
+`dump_complete`、`next_dig_entry_ready`。其中 `dump_committed_start` 表示带料 bucket
+进入 dump-area committed aiming band 且空间变化已经是微调级别，不需要等 deposit；
+`release_onset` 才是 mass drop 或 dump/target deposit gain；`dump_complete`
+在 release 后用 residual bucket mass 与 deposit plateau 判定。planner 只消费这些
+事件、skill 顺序、coverage 状态和 pending target entry-close gate，不再知道
+committed band 的具体几何阈值。
+
+qc6 训练/eval 的 coverage prior 也同步收敛到 3x2 cell：`yulong_removed_depth_dig_cut_prior_v3.json`
+新增 `coverage_cells`，每个 cell 写入 `source_count/source_fraction`、entry/exit、
+cut depth、payload 和 effective deposit。`PrimitivePlannerACTPolicy` 的
+`coverage.candidate_layout=cell_weighted_3x2` 使用这 6 条候选直接对应
+removed-depth grid，旧 prior 缺少 `coverage_cells` 时仍回到 3x3 percentile grid。
+cell 4 的 source fraction 低于 `0.05`，默认 `max_attempts=1`，且不会作为 first-dig
+候选，除非其它 cell 已耗尽。
+
 ## Return Ownership
 
 `return` 表示倒料完成后，空斗从 dump 区回到下一轮 dig 可接管状态。

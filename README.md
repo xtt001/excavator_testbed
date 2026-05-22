@@ -997,6 +997,33 @@ copy 与指向它的 current symlink，并只保留本轮 `policy_best.ckpt`。�
 可用 `tail -f runs/jobs/yulong_v2_4_removed_depth_<tag>/pipeline.log` 或
 `tail -f runs/jobs/yulong_v2_4_removed_depth_<tag>/logs/*.log` 看进度。
 
+当前 V2.4.5 训练主线已经接受 qc6 boundary split 作为唯一数据源：
+
+```bash
+chmod +x runs/jobs/yulong_v2_4_5_process_boundary_qc6_20260522/run_qc6_materialize_train_eval.sh
+TRAIN_AFTER_QC=1 RUN_EVAL_AFTER_TRAIN=0 \
+  runs/jobs/yulong_v2_4_5_process_boundary_qc6_20260522/run_qc6_materialize_train_eval.sh
+```
+
+该脚本从
+`/fastdata/pingfan/excavator_testbed_data_hot/yulong_v2_4_removed_depth_hindsight_goal_primitives_vds_v2_4_5_process_boundary_qc6_20260522`
+materialize 到
+`/fastdata/pingfan/excavator_testbed_data_hot/yulong_v2_4_removed_depth_hindsight_goal_primitives_copy_v2_4_5_process_boundary_qc6_20260522`，
+先检查四个 primitive 都不是 VDS、episode/gold 数匹配、return max len `<=512`、
+gold depth source fraction `>=0.95`、depth token saturation `<=0.02`，再按
+`dig -> return -> carry -> dump` 训练到
+`runs/ckpts/yulong_v2_4_5_process_boundary_qc6_20260522/{dig,return,carry,dump}`。
+
+Planner 同步切到 qc6 的语义边界和 3x2 weighted coverage：`BoundaryDetector`
+在 `boundary.profile: v2_4_5_spatial_mass` 下输出
+`dig_complete / dump_committed_start / release_onset / dump_complete /
+next_dig_entry_ready`，planner 只消费事件、目标 token 和 coverage 状态；新的
+`coverage.candidate_layout: cell_weighted_3x2` 读取
+`yulong_removed_depth_dig_cut_prior_v3.json` 的 `coverage_cells` 生成 6 条
+cell corridor。旧 prior 没有 `coverage_cells` 时仍走 3x3 percentile grid。
+qc6 人工复核分布记录为 `0:64, 1:163, 2:142, 3:180, 4:18, 5:82`，其中 cell 4
+默认作为稀缺 cell 限制 first-dig 和 attempt 次数。
+
 ---
 
 ## 文档入口

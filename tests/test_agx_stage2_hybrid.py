@@ -12,10 +12,23 @@ import numpy as np
 
 from testbed.eval.suite import EvalSuite
 from testbed.planner.boundary_detector import (
+    BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS,
     BoundaryDetector,
     BoundaryDetectorConfig,
     QUALIFIED_DIG_START_MODE_CONTACT_DEPTH,
     build_boundary_detector_from_config,
+)
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
+    ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
+    ENV_STATE_DEPOSITED_MASS_IN_DUMP_AREA_IDX,
+    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+    ENV_STATE_DUMP_CLEARANCE_OK_IDX,
+    ENV_STATE_MASS_IN_BUCKET_IDX,
+    ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
 )
 from testbed.planner.corridor_servo import (
     TRANSITION_SUBMODE_WAIT_NEXT_DIG,
@@ -450,6 +463,128 @@ class Stage2BoundaryDetectorTests(unittest.TestCase):
 
         assert dump_end_event is not None
         self.assertTrue(dump_end_seen)
+
+    def test_v2_4_5_spatial_mass_events_are_causal_and_pre_deposit(self) -> None:
+        detector = BoundaryDetector(
+            BoundaryDetectorConfig(
+                boundary_profile=BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS,
+                qualified_dig_start_mode=QUALIFIED_DIG_START_MODE_CONTACT_DEPTH,
+                residual_bucket_mass_thresh=15.0,
+                deposit_plateau_steps=1,
+                dig_complete_min_bucket_mass_kg=15.0,
+                dig_complete_mass_plateau_hold_steps=1,
+                dig_complete_departed_hold_steps=1,
+                dump_committed_hold_steps=1,
+            )
+        )
+        action = np.zeros(4, dtype=np.float32)
+        qpos = np.asarray([0.5, 0.6, 0.5, 0.6], dtype=np.float32)
+
+        def env(
+            *,
+            mass: float,
+            dig_distance: float,
+            depth: float,
+            deposited_target: float = 0.0,
+            deposited_dump_area: float = 0.0,
+            outside: float = 9.0,
+            relative_x: float = 9.0,
+            relative_z: float = 9.0,
+            height: float = 0.0,
+        ) -> np.ndarray:
+            state = np.zeros(64, dtype=np.float32)
+            state[ENV_STATE_MASS_IN_BUCKET_IDX] = float(mass)
+            state[ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX] = float(dig_distance)
+            state[ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX] = float(depth)
+            state[ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX] = float(deposited_target)
+            state[ENV_STATE_DEPOSITED_MASS_IN_DUMP_AREA_IDX] = float(deposited_dump_area)
+            state[ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = float(outside)
+            state[ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX] = float(relative_x)
+            state[ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX] = float(relative_z)
+            state[ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX] = float(height)
+            state[ENV_STATE_DUMP_CLEARANCE_OK_IDX] = 1.0
+            return state
+
+        first = detector.update(
+            env_state=env(mass=0.0, dig_distance=0.04, depth=0.03),
+            action=action,
+            qpos=qpos,
+        )
+        self.assertTrue(first.dig_start)
+
+        detector.update(
+            env_state=env(mass=30.0, dig_distance=0.12, depth=0.0),
+            action=action,
+            qpos=qpos,
+        )
+        dig_complete = detector.update(
+            env_state=env(mass=30.0, dig_distance=0.12, depth=0.0),
+            action=action,
+            qpos=qpos,
+        )
+        self.assertTrue(dig_complete.dig_complete)
+
+        committed = detector.update(
+            env_state=env(
+                mass=30.0,
+                dig_distance=0.30,
+                depth=0.0,
+                outside=0.10,
+                relative_x=0.75,
+                relative_z=1.20,
+                height=0.70,
+            ),
+            action=action,
+            qpos=qpos,
+        )
+        self.assertTrue(committed.dump_committed_start)
+        self.assertTrue(committed.dump_start)
+        self.assertFalse(committed.release_onset)
+
+        release = detector.update(
+            env_state=env(
+                mass=28.5,
+                dig_distance=0.30,
+                depth=0.0,
+                deposited_dump_area=0.6,
+                outside=0.10,
+                relative_x=0.75,
+                relative_z=1.20,
+                height=0.70,
+            ),
+            action=action,
+            qpos=qpos,
+        )
+        self.assertTrue(release.release_onset)
+        self.assertFalse(release.dump_complete)
+
+        complete = detector.update(
+            env_state=env(
+                mass=0.0,
+                dig_distance=0.30,
+                depth=0.0,
+                deposited_dump_area=0.6,
+                outside=0.10,
+                relative_x=0.75,
+                relative_z=1.20,
+                height=0.70,
+            ),
+            action=action,
+            qpos=qpos,
+        )
+        self.assertTrue(complete.dump_complete)
+        self.assertTrue(complete.dump_end)
+
+    def test_build_boundary_detector_accepts_boundary_profile_config(self) -> None:
+        detector = build_boundary_detector_from_config(
+            reward_cfg={"qualified_dig_start_mode": QUALIFIED_DIG_START_MODE_CONTACT_DEPTH},
+            boundary_cfg={"profile": BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS},
+        )
+
+        self.assertEqual(
+            detector.config.boundary_profile,
+            BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS,
+        )
 
 
 class Stage2HybridPolicyTests(unittest.TestCase):

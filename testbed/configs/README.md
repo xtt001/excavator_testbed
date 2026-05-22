@@ -182,6 +182,9 @@
     第一版 `qpos + qvel`，只在 carry QC/人工审阅通过后训练。
   - `act_yulong_v2_4_5_spatial_mass_dump_qvel.yaml`:
     第一版 `qpos + qvel`，只在 dump QC/人工审阅通过后训练。
+  - `act_yulong_v2_4_5_process_boundary_qc6_*_qvel.yaml`:
+    qc6 accepted split 的正式训练入口，路径指向 `/fastdata/..._copy_v2_4_5_process_boundary_qc6_20260522`，
+    ckpt 写入 `runs/ckpts/yulong_v2_4_5_process_boundary_qc6_20260522`。
   `return_start_envelope_tokens_v1` 为 18D low-dim key，对应
   `/v2/step/return_start_envelope_tokens_v1` 与
   `/v2/step/return_start_envelope_valid_mask`；builder 从下一轮 dig-start 附近 40-step
@@ -234,11 +237,26 @@
   p50/mean/p95 从 `131/128.4/196` 降到 `125.5/121.6/191`。Gate 2 contact sheet
   位于 qc6 primitive root 的 `boundary_audit/contact_sheets/index.html` 和
   `boundary_audit/contact_sheets_clean_gold/index.html`。
+- qc6 已被接受为后续 copy/train/eval 源。训练配置为
+  `act_yulong_v2_4_5_process_boundary_qc6_{dig,return_envelope,carry,dump}_qvel.yaml`，
+  dataset 指向
+  `/fastdata/pingfan/excavator_testbed_data_hot/yulong_v2_4_removed_depth_hindsight_goal_primitives_copy_v2_4_5_process_boundary_qc6_20260522`，
+  ckpt root 为 `runs/ckpts/yulong_v2_4_5_process_boundary_qc6_20260522`，且全部保留
+  `metadata_filters.training_tier: gold`。训练顺序固定为
+  `dig -> return -> carry -> dump`。
+- qc6 eval 配置为
+  `eval_yulong_v2_4_5_qc6_cell_weighted_{3cycle_smoke,15cycle_probe,30cycle_probe}.yaml`。
+  这些配置显式设置 `boundary.profile: v2_4_5_spatial_mass` 和
+  `coverage.candidate_layout: cell_weighted_3x2`，从
+  `yulong_removed_depth_dig_cut_prior_v3.json` 的 `coverage_cells` 生成 6 条 3x2
+  corridor；旧 prior 没有 `coverage_cells` 时 planner 仍兼容 3x3 percentile grid。
+  qc6 人工复核分布为 `0:64, 1:163, 2:142, 3:180, 4:18, 5:82`，cell 4 默认按
+  rare cell 限制 first-dig 和 attempt 次数。
 - YuLong operator-first rollout 默认使用 `dig_cut_planner.mode=operator_prior`，
   prior 文件为
   `testbed/configs/planner_priors/yulong_removed_depth_dig_cut_prior_v3.json`。
-  该 prior 固定来自 26 条专业操作 operator-first relabel 数据中的 640 条 gold
-  cycle，记录 P10/P50/P90 与 lineage；旧固定模板 planner 保留为
+  该 prior 当前来自 qc6 V2.4.5 spatial-mass gold dig 样本，记录 P10/P50/P90、
+  3x2 `coverage_cells` 与 lineage；旧固定模板 planner 保留为
   `dig_cut_planner.mode=conservative_pose`，baseline tag 为
   `planner-baseline-conservative-pose-20260516`。
 - YuLong V2.4 在同一 10D `dig_cut_tokens` contract 上新增
