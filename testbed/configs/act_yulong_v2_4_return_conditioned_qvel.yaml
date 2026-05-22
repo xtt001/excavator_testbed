@@ -1,0 +1,52 @@
+# YuLong V2.4 conditioned return ACT.
+
+task:
+  task_name: agx_excavation_teleop
+  equipment_model: yulong
+  dataset_dir: data/yulong_v2_4_return_conditioned_primitives_copy/return
+  num_episodes: 0
+  episode_len: 512
+  camera_names:
+    - fpv
+  backend:
+    name: agx
+    dt: 0.02
+
+policy:
+  class: ACT
+  device: cuda
+  low_dim_keys:
+    - qpos
+    - qvel
+    - return_target_tokens
+  act_params:
+    chunk_size: 100
+    kl_weight: 10.0
+    hidden_dim: 512
+    dim_feedforward: 3200
+
+train:
+  lr: 1.0e-5
+  num_epochs: 500
+  batch_size: 24
+  seed: 0
+  device: cuda
+  num_workers: 8
+  prefetch_factor: 4
+  persistent_workers: true
+  pin_memory: true
+  hdf5_cache_size: 32
+  split_seed: 0
+  train_split_ratio: 0.8
+  reuse_split: true
+  val_every: 20
+  save_latest_every: 25
+  checkpoint_every: 50
+  plot_every: 100
+  keep_only_best_ckpt: true
+  amp: true
+  amp_dtype: auto
+  cudnn_benchmark: true
+  allow_tf32: true
+  matmul_precision: high
+  ckpt_dir: runs/ckpts/yulong_v2_4_conditioned_return_500e_20260519/return

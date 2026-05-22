@@ -66,7 +66,6 @@ def write_episode(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    kwargs = {"compression": "lzf"} if compress else {}
     str_dtype = h5py.special_dtype(vlen=str)
 
     with h5py.File(path, "w") as f:
@@ -94,8 +93,11 @@ def write_episode(
         if images:
             img_grp = obs_grp.create_group("images")
             for cam, arr in images.items():
+                image_arr = arr.astype(np.uint8)
                 img_grp.create_dataset(
-                    cam, data=arr.astype(np.uint8), **kwargs
+                    cam,
+                    data=image_arr,
+                    **_image_dataset_kwargs(image_arr, compress=compress),
                 )
 
         # ── action ───────────────────────────────────────────────────────────
@@ -274,6 +276,16 @@ def _write_dataset_group(group: h5py.Group, payload: dict[str, np.ndarray]) -> N
                 ds[index] = str(item)
             continue
         group.create_dataset(str(key), data=arr)
+
+
+def _image_dataset_kwargs(arr: np.ndarray, *, compress: bool) -> dict[str, Any]:
+    """Return HDF5 options for training-friendly image frame reads."""
+    if not compress:
+        return {}
+    kwargs: dict[str, Any] = {"compression": "lzf"}
+    if arr.ndim >= 4 and int(arr.shape[0]) > 0:
+        kwargs["chunks"] = (1,) + tuple(int(value) for value in arr.shape[1:])
+    return kwargs
 
 
 def _read_v2_group(h5_file: h5py.File) -> dict[str, dict[str, Any]] | None:

@@ -1,0 +1,78 @@
+{
+  "prior_id": "yulong_removed_depth_dig_cut_prior_v3",
+  "schema_version": "v3",
+  "dig_cut_token_contract": "v2_4_removed_depth_cut_v3",
+  "dig_cut_depth_scale_m": 0.25,
+  "token_order": [
+    "entry_x",
+    "entry_z",
+    "exit_x",
+    "exit_z",
+    "cut_direction_x",
+    "cut_direction_z",
+    "cut_length",
+    "cut_depth_peak",
+    "payload_gain",
+    "valid"
+  ],
+  "source": {
+    "source_dataset": "/fastdata/pingfan/excavator_testbed_data_hot/yulong_v2_4_removed_depth_hindsight_goal_primitives_vds_scale022_20260522/dig",
+    "source_job": "runs/jobs/yulong_removed_depth_scale022_20260522",
+    "source_cycle_count_used": 114,
+    "tier_filter": "gold",
+    "created_at": "2026-05-22",
+    "notes": "Gold dig primitive prior after Unity removed-depth replay. cut_depth_peak_m stores max(actual_removed_depth_delta_grid), not legacy bucket peak depth. Scale v3 is 0.25m: gold depth-token saturation is about 1.75%, below the 2% pre-train QC gate."
+  },
+  "fields": {
+    "entry_x_m": {
+      "p10": 0.4148,
+      "p50": 0.9226,
+      "p90": 1.3053
+    },
+    "entry_z_m": {
+      "p10": -1.0327,
+      "p50": -0.3382,
+      "p90": 0.6171
+    },
+    "exit_x_m": {
+      "p10": -0.5777,
+      "p50": 0.0595,
+      "p90": 0.8601
+    },
+    "exit_z_m": {
+      "p10": -0.8376,
+      "p50": -0.2309,
+      "p90": 0.54
+    },
+    "cut_direction_x": {
+      "p10": -0.9726,
+      "p50": -0.8189,
+      "p90": 0.2026
+    },
+    "cut_direction_z": {
+      "p10": -0.1904,
+      "p50": 0.0655,
+      "p90": 0.3364
+    },
+    "cut_length_m": {
+      "p10": 0.7381,
+      "p50": 1.1568,
+      "p90": 1.6275
+    },
+    "cut_depth_peak_m": {
+      "p10": 0.0462,
+      "p50": 0.0847,
+      "p90": 0.1567
+    },
+    "payload_gain_kg": {
+      "p10": 48.3301,
+      "p50": 59.0535,
+      "p90": 74.2262
+    },
+    "effective_deposit_delta_kg": {
+      "p10": 42.4849,
+      "p50": 56.7207,
+      "p90": 68.7807
+    }
+  }
+}

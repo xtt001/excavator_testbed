@@ -10,7 +10,11 @@ from typing import Any
 
 import torch
 
-from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_DIM
+from testbed.data.operator_first_v2_2 import (
+    DIG_CUT_TOKEN_DIM,
+    RETURN_START_ENVELOPE_TOKEN_DIM,
+    RETURN_TARGET_TOKEN_DIM,
+)
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 
@@ -28,6 +32,10 @@ def train_policy(config: dict[str, Any]) -> None:
     episode_len   = int(task_cfg.get("episode_len", config.get("episode_len", 400)))
     camera_names  = task_cfg.get("camera_names", config.get("camera_names", []))
     low_dim_keys  = list(policy_cfg.get("low_dim_keys", ["qpos"]))
+    supervision_keys = list(
+        policy_cfg.get("supervision_keys", train_cfg.get("supervision_keys", []))
+        or []
+    )
     image_mask_config = copy.deepcopy(
         policy_cfg.get("image_mask", task_cfg.get("image_mask", {}))
     )
@@ -39,6 +47,9 @@ def train_policy(config: dict[str, Any]) -> None:
     train_split_ratio = float(train_cfg.get("train_split_ratio", 0.8))
     reuse_split = bool(train_cfg.get("reuse_split", True))
     split_path = Path(train_cfg.get("split_path", ckpt_dir / "train_val_split.yaml"))
+    metadata_filters = dict(
+        train_cfg.get("metadata_filters", task_cfg.get("metadata_filters", {})) or {}
+    )
 
     if policy_class != "ACT":
         raise NotImplementedError(f"Trainer for policy class {policy_class!r} not yet implemented.")
@@ -53,6 +64,14 @@ def train_policy(config: dict[str, Any]) -> None:
 
     # build policy_config dict for ACTAdapter / detr
     act_params = policy_cfg.get("act_params", {})
+    outcome_head_cfg = dict(policy_cfg.get("outcome_head") or {})
+    outcome_head_enabled = bool(outcome_head_cfg.get("enabled", False))
+    outcome_dim = int(
+        outcome_head_cfg.get(
+            "dim",
+            10 if outcome_head_enabled or supervision_keys else 0,
+        )
+    )
     policy_config = {
         "lr":            float(train_cfg.get("lr", 1e-5)),
         "num_queries":   int(act_params.get("chunk_size", 100)),
@@ -67,8 +86,15 @@ def train_policy(config: dict[str, Any]) -> None:
         "camera_names":  camera_names,
         "equipment_model": equipment_model,
         "low_dim_keys":  low_dim_keys,
+        "supervision_keys": supervision_keys,
         "state_dim":     _resolve_low_dim_state_dim(low_dim_keys, equipment_model),
         "image_mask":    image_mask_config,
+        "outcome_head": outcome_head_cfg,
+        "outcome_dim": outcome_dim if outcome_head_enabled else 0,
+        "outcome_action_horizon": int(
+            outcome_head_cfg.get("action_horizon", act_params.get("chunk_size", 100))
+        ),
+        "outcome_hidden_dim": outcome_head_cfg.get("hidden_dim"),
     }
 
     full_config = {
@@ -85,6 +111,7 @@ def train_policy(config: dict[str, Any]) -> None:
         "save_latest_every": int(train_cfg.get("save_latest_every", 1)),
         "checkpoint_every": int(train_cfg.get("checkpoint_every", 100)),
         "plot_every":     int(train_cfg.get("plot_every", train_cfg.get("checkpoint_every", 100))),
+        "keep_only_best_ckpt": bool(train_cfg.get("keep_only_best_ckpt", False)),
         "amp":            bool(train_cfg.get("amp", False)),
         "amp_dtype":      str(train_cfg.get("amp_dtype", "auto")),
         "cudnn_benchmark": bool(train_cfg.get("cudnn_benchmark", True)),
@@ -94,6 +121,9 @@ def train_policy(config: dict[str, Any]) -> None:
         "train_split_ratio": train_split_ratio,
         "reuse_split":    reuse_split,
         "split_path":     str(split_path),
+        "supervision_keys": supervision_keys,
+        "outcome_head": outcome_head_cfg,
+        "metadata_filters": metadata_filters,
     }
 
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -119,6 +149,8 @@ def train_policy(config: dict[str, Any]) -> None:
         split_path         = split_path,
         reuse_split        = reuse_split,
         low_dim_keys       = low_dim_keys,
+        supervision_keys   = supervision_keys,
+        metadata_filters   = metadata_filters,
         image_mask_config  = image_mask_config,
         hdf5_cache_size    = int(train_cfg.get("hdf5_cache_size", 0)),
     )
@@ -184,15 +216,23 @@ def _build_resolved_train_config(
     train_cfg = resolved.setdefault("train", {})
 
     task_cfg["dataset_dir"] = str(dataset_dir)
+    policy_cfg = resolved.setdefault("policy", {})
+    policy_cfg["supervision_keys"] = list(full_config.get("supervision_keys", []))
+    if full_config.get("outcome_head"):
+        policy_cfg["outcome_head"] = copy.deepcopy(full_config["outcome_head"])
     train_cfg["ckpt_dir"] = str(ckpt_dir)
     train_cfg["split_path"] = str(split_path)
     train_cfg["split_seed"] = int(full_config["split_seed"])
     train_cfg["train_split_ratio"] = float(full_config["train_split_ratio"])
     train_cfg["reuse_split"] = bool(full_config["reuse_split"])
+    train_cfg["metadata_filters"] = copy.deepcopy(
+        full_config.get("metadata_filters", {})
+    )
     train_cfg["val_every"] = int(full_config["val_every"])
     train_cfg["save_latest_every"] = int(full_config["save_latest_every"])
     train_cfg["checkpoint_every"] = int(full_config["checkpoint_every"])
     train_cfg["plot_every"] = int(full_config["plot_every"])
+    train_cfg["keep_only_best_ckpt"] = bool(full_config["keep_only_best_ckpt"])
     train_cfg["amp"] = bool(full_config["amp"])
     train_cfg["amp_dtype"] = str(full_config["amp_dtype"])
     train_cfg["cudnn_benchmark"] = bool(full_config["cudnn_benchmark"])
@@ -228,6 +268,12 @@ def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) ->
         "dig_cut_tokens": _resolve_single_low_dim_dim(
             "dig_cut_tokens", equipment_model
         ),
+        "return_target_tokens": _resolve_single_low_dim_dim(
+            "return_target_tokens", equipment_model
+        ),
+        "return_start_envelope_tokens_v1": _resolve_single_low_dim_dim(
+            "return_start_envelope_tokens_v1", equipment_model
+        ),
     }
     return int(sum(dims[key] for key in low_dim_keys))
 
@@ -240,6 +286,10 @@ def _resolve_single_low_dim_dim(key: str, equipment_model: str) -> int:
         return int(CELL_ENTRY_TOKEN_DIM)
     if key == "dig_cut_tokens":
         return int(DIG_CUT_TOKEN_DIM)
+    if key == "return_target_tokens":
+        return int(RETURN_TARGET_TOKEN_DIM)
+    if key == "return_start_envelope_tokens_v1":
+        return int(RETURN_START_ENVELOPE_TOKEN_DIM)
     if key in ("qpos", "qvel"):
         if "bimanual" in equipment_model:
             return 14

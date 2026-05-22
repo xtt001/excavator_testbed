@@ -29,7 +29,9 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_DUMP_AREA_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+    ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
+    ENV_STATE_V2_2_DIM,
 )
 from testbed.data.vds import (
     EPISODE_STORAGE_MODES,
@@ -42,12 +44,17 @@ from testbed.data.v2_1 import WORK_STAGE_NAME_TO_ID
 
 
 DIG_CUT_TOKEN_DIM = 10
-OPERATOR_FIRST_VERSION = "v2_2_operator_first_cut_v1"
+RETURN_TARGET_TOKEN_DIM = DIG_CUT_TOKEN_DIM
+RETURN_START_ENVELOPE_TOKEN_DIM = 18
+OPERATOR_FIRST_VERSION = "v2_4_operator_first_removed_depth_cut_v3"
+DIG_CUT_TOKEN_CONTRACT = "v2_4_removed_depth_cut_v3"
 
 DIG_CUT_POSITION_SCALE_M = 2.0
 DIG_CUT_LENGTH_SCALE_M = 2.0
-DIG_CUT_DEPTH_SCALE_M = 0.8
+DIG_CUT_DEPTH_SCALE_M = 0.25
 DIG_CUT_PAYLOAD_SCALE_KG = 60.0
+REMOVED_DEPTH_DELTA_EPS_M = 1.0e-4
+REMOVED_DEPTH_GRID_CELL_COUNT = 6
 
 
 @dataclass(frozen=True)
@@ -101,11 +108,19 @@ def build_operator_first_dataset(
             {
                 "operator_first_version": OPERATOR_FIRST_VERSION,
                 "operator_first_storage_mode": storage_mode,
+                "storage_mode": storage_mode,
                 "dig_cut_token_dim": int(DIG_CUT_TOKEN_DIM),
+                "return_target_token_dim": int(RETURN_TARGET_TOKEN_DIM),
                 "dig_cut_token_contract": (
                     "entry_x,entry_z,exit_x,exit_z,dir_x,dir_z,"
-                    "length,depth,payload,valid; normalized"
+                    "length,actual_removed_depth_delta,payload,valid; normalized"
                 ),
+                "return_target_token_contract": (
+                    "next entry_x,entry_z,exit_x,exit_z,dir_x,dir_z,"
+                    "length,actual_removed_depth_delta,payload,valid; normalized"
+                ),
+                "dig_cut_token_contract_version": DIG_CUT_TOKEN_CONTRACT,
+                "dig_cut_depth_scale_m": float(DIG_CUT_DEPTH_SCALE_M),
                 "legacy_cell_entry_use": "diagnostic_only",
                 ATTR_GOAL_TOKEN_DIM: metadata.get(ATTR_GOAL_TOKEN_DIM, 10),
             }
@@ -162,6 +177,9 @@ def build_operator_first_dataset(
         },
         extra={
             "dig_cut_token_dim": int(DIG_CUT_TOKEN_DIM),
+            "return_target_token_dim": int(RETURN_TARGET_TOKEN_DIM),
+            "dig_cut_token_contract_version": DIG_CUT_TOKEN_CONTRACT,
+            "dig_cut_depth_scale_m": float(DIG_CUT_DEPTH_SCALE_M),
             "legacy_cell_entry_use": "diagnostic_only",
         },
     )
@@ -198,6 +216,10 @@ def enrich_episode_operator_first(
     )
 
     dig_cut_tokens = np.zeros((n_steps, DIG_CUT_TOKEN_DIM), dtype=np.float32)
+    return_target_tokens = np.zeros(
+        (n_steps, RETURN_TARGET_TOKEN_DIM),
+        dtype=np.float32,
+    )
     cycle_payload = dict(cycle_existing)
     computed_cycle = _init_cycle_payload(len(windows))
     for idx, window in enumerate(windows):
@@ -215,9 +237,20 @@ def enrich_episode_operator_first(
         dig_cut_tokens[start:end] = token.reshape(1, -1)
 
     _fill_return_targets(computed_cycle, env_arr)
+    _fill_return_target_tokens(
+        return_target_tokens=return_target_tokens,
+        windows=windows,
+        cycle_payload=computed_cycle,
+        n_steps=n_steps,
+    )
 
     step_payload = dict(step_existing)
-    step_payload.update({"dig_cut_tokens": dig_cut_tokens})
+    step_payload.update(
+        {
+            "dig_cut_tokens": dig_cut_tokens,
+            "return_target_tokens": return_target_tokens,
+        }
+    )
     cycle_payload.update(computed_cycle)
 
     summary = _build_episode_summary(
@@ -234,7 +267,7 @@ def build_live_dig_cut_tokens_from_pose(
     pose_xyz: tuple[float, float, float] | None,
     *,
     cut_length_m: float = 1.2,
-    cut_depth_peak_m: float = 0.18,
+    cut_depth_peak_m: float = 0.08,
     payload_gain_kg: float = 55.0,
 ) -> np.ndarray:
     """Build a live planner token from the current bucket pose.
@@ -271,7 +304,7 @@ def _computed_step_fields(step_payload: dict[str, np.ndarray]) -> dict[str, np.n
     return {
         key: value
         for key, value in step_payload.items()
-        if key == "dig_cut_tokens"
+        if key in {"dig_cut_tokens", "return_target_tokens"}
     }
 
 
@@ -295,17 +328,33 @@ def _init_cycle_payload(n_cycles: int) -> dict[str, np.ndarray]:
         "operator_cut_direction_z": float_default.copy(),
         "operator_cut_length_m": float_default.copy(),
         "operator_cut_depth_peak_m": float_default.copy(),
+        "operator_cut_depth_source": np.asarray(["none"] * n_cycles, dtype=object),
         "operator_cut_payload_gain_kg": float_default.copy(),
         "operator_cut_valid": np.zeros(n_cycles, dtype=np.uint8),
         "next_operator_entry_step": int_default.copy(),
         "next_operator_entry_x_m": float_default.copy(),
         "next_operator_entry_y_m": float_default.copy(),
         "next_operator_entry_z_m": float_default.copy(),
+        "next_operator_exit_step": int_default.copy(),
+        "next_operator_exit_x_m": float_default.copy(),
+        "next_operator_exit_y_m": float_default.copy(),
+        "next_operator_exit_z_m": float_default.copy(),
+        "next_operator_cut_direction_x": float_default.copy(),
+        "next_operator_cut_direction_y": float_default.copy(),
+        "next_operator_cut_direction_z": float_default.copy(),
+        "next_operator_cut_length_m": float_default.copy(),
+        "next_operator_cut_depth_peak_m": float_default.copy(),
+        "next_operator_cut_depth_source": np.asarray(
+            ["none"] * n_cycles,
+            dtype=object,
+        ),
+        "next_operator_cut_payload_gain_kg": float_default.copy(),
+        "next_operator_cut_valid": np.zeros(n_cycles, dtype=np.uint8),
         "return_entry_delta_x_m": float_default.copy(),
         "return_entry_delta_y_m": float_default.copy(),
         "return_entry_delta_z_m": float_default.copy(),
         "return_entry_delta_norm_m": float_default.copy(),
-        "return_target_source": np.asarray(["none"] * n_cycles, dtype=str),
+        "return_target_source": np.asarray(["none"] * n_cycles, dtype=object),
         "training_tier": np.asarray(["silver"] * n_cycles, dtype=str),
     }
 
@@ -319,7 +368,12 @@ def _fill_cycle_payload(
     for key, value in fields.items():
         if key not in cycle_payload:
             continue
-        if key in {"return_target_source", "training_tier"}:
+        if key in {
+            "return_target_source",
+            "training_tier",
+            "operator_cut_depth_source",
+            "next_operator_cut_depth_source",
+        }:
             cycle_payload[key][idx] = str(value)
         elif cycle_payload[key].dtype.kind in {"i", "u"}:
             cycle_payload[key][idx] = int(value)
@@ -364,12 +418,22 @@ def _derive_cycle_fields(
 
     direction = _direction(entry_pose, exit_pose)
     cut_length = _distance(entry_pose, exit_pose)
-    depth_peak = _range_max(
+    bucket_depth_peak = _range_max(
         env_state,
         start,
         max(start + 1, exit_step + 1),
         ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
         fallback_idx=ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+    )
+    actual_removed_depth_peak, depth_source = _actual_removed_depth_delta_max(
+        env_state,
+        start,
+        end,
+    )
+    depth_peak = (
+        actual_removed_depth_peak
+        if depth_source == "env_state_removed_depth_delta"
+        else bucket_depth_peak
     )
     payload_gain = _mass_delta(
         env_state,
@@ -427,6 +491,7 @@ def _derive_cycle_fields(
         "operator_cut_direction_z": float(direction[2]),
         "operator_cut_length_m": max(0.0, cut_length),
         "operator_cut_depth_peak_m": max(0.0, depth_peak),
+        "operator_cut_depth_source": depth_source,
         "operator_cut_payload_gain_kg": max(0.0, payload_gain),
         "operator_cut_valid": 1 if valid else 0,
         "training_tier": _training_tier(
@@ -434,6 +499,7 @@ def _derive_cycle_fields(
             effective_deposit_delta_kg=max(0.0, effective_deposit),
             cut_length_m=max(0.0, cut_length),
             cut_depth_peak_m=max(0.0, depth_peak),
+            depth_reliable=depth_source == "env_state_removed_depth_delta",
             valid=bool(valid),
         ),
     }
@@ -459,11 +525,70 @@ def _fill_return_targets(
         cycle_payload["next_operator_entry_x_m"][idx] = float(next_pose[0])
         cycle_payload["next_operator_entry_y_m"][idx] = float(next_pose[1])
         cycle_payload["next_operator_entry_z_m"][idx] = float(next_pose[2])
+        cycle_payload["next_operator_exit_step"][idx] = int(
+            cycle_payload["operator_exit_step"][idx + 1]
+        )
+        cycle_payload["next_operator_exit_x_m"][idx] = float(
+            cycle_payload["operator_exit_x_m"][idx + 1]
+        )
+        cycle_payload["next_operator_exit_y_m"][idx] = float(
+            cycle_payload["operator_exit_y_m"][idx + 1]
+        )
+        cycle_payload["next_operator_exit_z_m"][idx] = float(
+            cycle_payload["operator_exit_z_m"][idx + 1]
+        )
+        cycle_payload["next_operator_cut_direction_x"][idx] = float(
+            cycle_payload["operator_cut_direction_x"][idx + 1]
+        )
+        cycle_payload["next_operator_cut_direction_y"][idx] = float(
+            cycle_payload["operator_cut_direction_y"][idx + 1]
+        )
+        cycle_payload["next_operator_cut_direction_z"][idx] = float(
+            cycle_payload["operator_cut_direction_z"][idx + 1]
+        )
+        cycle_payload["next_operator_cut_length_m"][idx] = float(
+            cycle_payload["operator_cut_length_m"][idx + 1]
+        )
+        cycle_payload["next_operator_cut_depth_peak_m"][idx] = float(
+            cycle_payload["operator_cut_depth_peak_m"][idx + 1]
+        )
+        cycle_payload["next_operator_cut_depth_source"][idx] = str(
+            cycle_payload["operator_cut_depth_source"][idx + 1]
+        )
+        cycle_payload["next_operator_cut_payload_gain_kg"][idx] = float(
+            cycle_payload["operator_cut_payload_gain_kg"][idx + 1]
+        )
+        cycle_payload["next_operator_cut_valid"][idx] = int(
+            cycle_payload["operator_cut_valid"][idx + 1]
+        )
         cycle_payload["return_entry_delta_x_m"][idx] = float(delta[0])
         cycle_payload["return_entry_delta_y_m"][idx] = float(delta[1])
         cycle_payload["return_entry_delta_z_m"][idx] = float(delta[2])
         cycle_payload["return_entry_delta_norm_m"][idx] = float(_norm(delta))
         cycle_payload["return_target_source"][idx] = "operator_next_entry"
+    if n_cycles > 0:
+        cycle_payload["return_target_source"][n_cycles - 1] = "terminal_none"
+
+
+def _fill_return_target_tokens(
+    *,
+    return_target_tokens: np.ndarray,
+    windows: list[CycleWindow],
+    cycle_payload: dict[str, np.ndarray],
+    n_steps: int,
+) -> None:
+    for idx in range(max(0, len(windows) - 1)):
+        if int(cycle_payload["next_operator_cut_valid"][idx]) <= 0:
+            continue
+        token = _build_return_target_token(cycle_payload, idx)
+        start = max(0, min(n_steps, int(windows[idx].dump_end_step)))
+        end = max(
+            start,
+            min(n_steps, int(cycle_payload["next_operator_entry_step"][idx]) + 1),
+        )
+        if end <= start:
+            continue
+        return_target_tokens[start:end] = token.reshape(1, -1)
 
 
 def _infer_cycle_windows(
@@ -598,15 +723,50 @@ def _build_dig_cut_token(fields: dict[str, float | int | str]) -> np.ndarray:
     return token
 
 
+def _build_return_target_token(
+    cycle_payload: dict[str, np.ndarray],
+    idx: int,
+) -> np.ndarray:
+    fields = {
+        "operator_entry_x_m": float(cycle_payload["next_operator_entry_x_m"][idx]),
+        "operator_entry_y_m": float(cycle_payload["next_operator_entry_y_m"][idx]),
+        "operator_entry_z_m": float(cycle_payload["next_operator_entry_z_m"][idx]),
+        "operator_exit_x_m": float(cycle_payload["next_operator_exit_x_m"][idx]),
+        "operator_exit_y_m": float(cycle_payload["next_operator_exit_y_m"][idx]),
+        "operator_exit_z_m": float(cycle_payload["next_operator_exit_z_m"][idx]),
+        "operator_cut_direction_x": float(
+            cycle_payload["next_operator_cut_direction_x"][idx]
+        ),
+        "operator_cut_direction_y": float(
+            cycle_payload["next_operator_cut_direction_y"][idx]
+        ),
+        "operator_cut_direction_z": float(
+            cycle_payload["next_operator_cut_direction_z"][idx]
+        ),
+        "operator_cut_length_m": float(
+            cycle_payload["next_operator_cut_length_m"][idx]
+        ),
+        "operator_cut_depth_peak_m": float(
+            cycle_payload["next_operator_cut_depth_peak_m"][idx]
+        ),
+        "operator_cut_payload_gain_kg": float(
+            cycle_payload["next_operator_cut_payload_gain_kg"][idx]
+        ),
+        "operator_cut_valid": int(cycle_payload["next_operator_cut_valid"][idx]),
+    }
+    return _build_dig_cut_token(fields)
+
+
 def _training_tier(
     *,
     payload_gain_kg: float,
     effective_deposit_delta_kg: float,
     cut_length_m: float,
     cut_depth_peak_m: float,
+    depth_reliable: bool,
     valid: bool,
 ) -> str:
-    if not valid:
+    if not valid or not depth_reliable:
         return "silver"
     if (
         payload_gain_kg >= 35.0
@@ -616,6 +776,30 @@ def _training_tier(
     ):
         return "gold"
     return "silver"
+
+
+def _actual_removed_depth_delta_max(
+    env_state: np.ndarray,
+    start: int,
+    end: int,
+) -> tuple[float, str]:
+    if env_state.ndim != 2 or env_state.shape[1] < ENV_STATE_V2_2_DIM:
+        return 0.0, "unavailable_or_legacy_zero"
+    start = int(np.clip(start, 0, max(0, env_state.shape[0] - 1)))
+    end = int(np.clip(end, start + 1, env_state.shape[0]))
+    sl = slice(
+        ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
+        ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX + REMOVED_DEPTH_GRID_CELL_COUNT,
+    )
+    baseline = np.asarray(env_state[start, sl], dtype=np.float32)
+    peak = np.nanmax(np.asarray(env_state[start:end, sl], dtype=np.float32), axis=0)
+    delta = np.maximum(0.0, peak - baseline)
+    if not np.isfinite(delta).all():
+        return 0.0, "unavailable_or_legacy_zero"
+    value = float(np.max(delta))
+    if value <= REMOVED_DEPTH_DELTA_EPS_M:
+        return 0.0, "unavailable_or_legacy_zero"
+    return value, "env_state_removed_depth_delta"
 
 
 def _range_max(
@@ -770,12 +954,18 @@ def _build_episode_summary(
         np.sum(np.asarray(old_cycle.get("cell_entry_target_cell_match", []), dtype=np.uint8))
     )
     tier_counts = Counter(str(value) for value in cycle_payload["training_tier"])
+    return_target_source_counts = Counter(
+        str(value) for value in cycle_payload["return_target_source"]
+    )
     return {
         "source_episode": str(source_episode),
         "episode_len": int(n_steps),
         "cycle_count": int(len(windows)),
         "legacy_cell_entry_target_cell_match_count": int(legacy_matches),
         "training_tier_counts": dict(sorted(tier_counts.items())),
+        "return_target_source_counts": dict(
+            sorted(return_target_source_counts.items())
+        ),
         "effective_deposit_delta_kg": _numeric_stats(
             cycle_payload["cycle_effective_deposit_delta_kg"]
         ),
@@ -787,6 +977,16 @@ def _build_episode_summary(
         ),
         "operator_cut_length_m": _numeric_stats(cycle_payload["operator_cut_length_m"]),
         "operator_cut_depth_peak_m": _numeric_stats(
+            cycle_payload["operator_cut_depth_peak_m"]
+        ),
+        "operator_cut_depth_source_counts": dict(
+            sorted(
+                Counter(
+                    str(value) for value in cycle_payload["operator_cut_depth_source"]
+                ).items()
+            )
+        ),
+        "operator_cut_depth_token_stats": _depth_token_stats(
             cycle_payload["operator_cut_depth_peak_m"]
         ),
     }
@@ -811,7 +1011,22 @@ def _build_dataset_summary(
         "episode_count": int(len(episode_summaries)),
         "cycle_count": int(cycle_count),
         "dig_cut_token_dim": int(DIG_CUT_TOKEN_DIM),
+        "return_target_token_dim": int(RETURN_TARGET_TOKEN_DIM),
+        "dig_cut_token_contract_version": DIG_CUT_TOKEN_CONTRACT,
+        "dig_cut_depth_scale_m": float(DIG_CUT_DEPTH_SCALE_M),
         "training_tier_counts": dict(sorted(tier_counts.items())),
+        "operator_cut_depth_source_counts": _aggregate_counter(
+            episode_summaries,
+            "operator_cut_depth_source_counts",
+        ),
+        "operator_cut_depth_token_stats": _aggregate_depth_token_stats(
+            episode_summaries,
+            "operator_cut_depth_token_stats",
+        ),
+        "return_target_source_counts": _aggregate_counter(
+            episode_summaries,
+            "return_target_source_counts",
+        ),
         "effective_deposit_delta_kg": _aggregate_numeric(
             episode_summaries,
             "effective_deposit_delta_kg",
@@ -829,13 +1044,44 @@ def _numeric_stats(values: np.ndarray) -> dict[str, Any]:
     arr = np.asarray(values, dtype=np.float32).reshape(-1)
     arr = arr[np.isfinite(arr)]
     if arr.size <= 0:
-        return {"count": 0, "min": None, "median": None, "p90": None, "max": None}
+        return {
+            "count": 0,
+            "min": None,
+            "p10": None,
+            "median": None,
+            "p90": None,
+            "max": None,
+        }
     return {
         "count": int(arr.size),
         "min": float(np.min(arr)),
+        "p10": float(np.percentile(arr, 10)),
         "median": float(np.median(arr)),
         "p90": float(np.percentile(arr, 90)),
         "max": float(np.max(arr)),
+    }
+
+
+def _depth_token_stats(values: np.ndarray) -> dict[str, Any]:
+    arr = np.asarray(values, dtype=np.float32).reshape(-1)
+    arr = arr[np.isfinite(arr)]
+    if arr.size <= 0:
+        return {
+            "count": 0,
+            "scale_m": float(DIG_CUT_DEPTH_SCALE_M),
+            "p10": None,
+            "p50": None,
+            "p90": None,
+            "saturation_rate": None,
+        }
+    norm = np.clip(arr / float(DIG_CUT_DEPTH_SCALE_M), -1.0, 1.0)
+    return {
+        "count": int(arr.size),
+        "scale_m": float(DIG_CUT_DEPTH_SCALE_M),
+        "p10": float(np.percentile(norm, 10)),
+        "p50": float(np.percentile(norm, 50)),
+        "p90": float(np.percentile(norm, 90)),
+        "saturation_rate": float(np.mean(np.abs(norm) >= 0.999)),
     }
 
 
@@ -863,6 +1109,45 @@ def _aggregate_numeric(
         if not max_values
         else float(np.max(np.asarray(max_values, dtype=np.float32))),
     }
+
+
+def _aggregate_depth_token_stats(
+    episode_summaries: list[dict[str, Any]],
+    key: str,
+) -> dict[str, Any]:
+    values = [
+        float(item[key][name])
+        for item in episode_summaries
+        if item.get(key, {}).get("count", 0)
+        for name in ("p10", "p50", "p90", "saturation_rate")
+        if item.get(key, {}).get(name) is not None
+    ]
+    if not values:
+        return {
+            "scale_m": float(DIG_CUT_DEPTH_SCALE_M),
+            "episode_count": 0,
+        }
+    summaries = [item[key] for item in episode_summaries if item.get(key, {}).get("count", 0)]
+    return {
+        "scale_m": float(DIG_CUT_DEPTH_SCALE_M),
+        "episode_count": int(len(summaries)),
+        "episode_median_p10": float(np.median([float(s["p10"]) for s in summaries])),
+        "episode_median_p50": float(np.median([float(s["p50"]) for s in summaries])),
+        "episode_median_p90": float(np.median([float(s["p90"]) for s in summaries])),
+        "episode_max_saturation_rate": float(
+            np.max([float(s["saturation_rate"]) for s in summaries])
+        ),
+    }
+
+
+def _aggregate_counter(
+    episode_summaries: list[dict[str, Any]],
+    key: str,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for item in episode_summaries:
+        counts.update(dict(item.get(key, {}) or {}))
+    return {str(name): int(value) for name, value in sorted(counts.items())}
 
 
 def _jsonable(value: Any) -> Any:

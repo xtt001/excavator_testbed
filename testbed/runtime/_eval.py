@@ -7,7 +7,11 @@ from typing import Any
 
 import numpy as np
 
-from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_DIM
+from testbed.data.operator_first_v2_2 import (
+    DIG_CUT_TOKEN_DIM,
+    RETURN_START_ENVELOPE_TOKEN_DIM,
+    RETURN_TARGET_TOKEN_DIM,
+)
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 
@@ -504,6 +508,10 @@ def eval_policy(config: dict[str, Any]) -> None:
                     f"{primitive_name}_act_params",
                     policy_cfg.get("act_params", {}),
                 ),
+                outcome_head_config=policy_cfg.get(
+                    f"{primitive_name}_outcome_head",
+                    policy_cfg.get("outcome_head", {}),
+                ),
                 image_mask_config=policy_cfg.get(
                     f"{primitive_name}_image_mask",
                     policy_cfg.get("image_mask", {}),
@@ -511,6 +519,57 @@ def eval_policy(config: dict[str, Any]) -> None:
             )
             primitive_ckpt_paths[primitive_name] = str(primitive_ckpt_path)
             primitive_ckpt_dirs[primitive_name] = str(primitive_ckpt_dir)
+
+        first_dig_ckpt_path_value = (
+            eval_cfg.get("first_dig_ckpt_path")
+            or policy_cfg.get("first_dig_ckpt_path")
+        )
+        first_dig_ckpt_dir_value = (
+            eval_cfg.get("first_dig_ckpt_dir")
+            or policy_cfg.get("first_dig_ckpt_dir")
+        )
+        first_dig_policy = None
+        if first_dig_ckpt_path_value or first_dig_ckpt_dir_value:
+            first_dig_ckpt_path, first_dig_ckpt_dir = _resolve_checkpoint_paths(
+                ckpt_path_value=first_dig_ckpt_path_value,
+                explicit_ckpt_dir=first_dig_ckpt_dir_value,
+            )
+            first_dig_low_dim_keys = list(
+                policy_cfg.get(
+                    "first_dig_low_dim_keys",
+                    policy_cfg.get("dig_low_dim_keys", primitive_low_dim_keys),
+                )
+            )
+            if "goal_tokens" in first_dig_low_dim_keys and not scenario_id:
+                raise ValueError(
+                    "policy.first_dig_low_dim_keys includes 'goal_tokens' "
+                    "for live eval, but task.scenario_id is missing."
+                )
+            first_dig_policy = _build_act_eval_policy(
+                config=config,
+                ckpt_path=first_dig_ckpt_path,
+                ckpt_dir=first_dig_ckpt_dir,
+                camera_names=camera_names,
+                equipment_model=equipment_model,
+                max_episode_len=max_episode_len,
+                low_dim_keys=first_dig_low_dim_keys,
+                temporal_agg=temporal_agg,
+                device=device,
+                act_params=policy_cfg.get(
+                    "first_dig_act_params",
+                    policy_cfg.get("dig_act_params", policy_cfg.get("act_params", {})),
+                ),
+                outcome_head_config=policy_cfg.get(
+                    "first_dig_outcome_head",
+                    policy_cfg.get("dig_outcome_head", policy_cfg.get("outcome_head", {})),
+                ),
+                image_mask_config=policy_cfg.get(
+                    "first_dig_image_mask",
+                    policy_cfg.get("dig_image_mask", policy_cfg.get("image_mask", {})),
+                ),
+            )
+            primitive_ckpt_paths["first_dig"] = str(first_dig_ckpt_path)
+            primitive_ckpt_dirs["first_dig"] = str(first_dig_ckpt_dir)
 
         bootstrap_ckpt_path_value = (
             eval_cfg.get("bootstrap_ckpt_path")
@@ -567,6 +626,8 @@ def eval_policy(config: dict[str, Any]) -> None:
         scripted_bootstrap_cfg = dict(policy_cfg.get("scripted_bootstrap", {}))
         cell_entry_cfg = dict(policy_cfg.get("cell_entry", {}))
         dig_cut_planner_cfg = dict(policy_cfg.get("dig_cut_planner", {}))
+        return_target_planner_cfg = dict(policy_cfg.get("return_target_planner", {}))
+        pre_dig_align_cfg = dict(policy_cfg.get("pre_dig_align", {}))
         boundary_detector = build_boundary_detector_from_config(
             reward_cfg=reward_cfg,
             success_cfg=success_cfg,
@@ -578,6 +639,7 @@ def eval_policy(config: dict[str, Any]) -> None:
             ),
         )
         common_kwargs = {
+            "first_dig_policy": first_dig_policy,
             "bootstrap_policy": bootstrap_policy,
             "bootstrap_end_mode": str(policy_cfg.get("bootstrap_end_mode", "disabled")),
             "bootstrap_end_min_bucket_mass_kg": float(
@@ -591,6 +653,45 @@ def eval_policy(config: dict[str, Any]) -> None:
             ),
             "dig_to_carry_min_distance_to_dig_area_m": float(
                 switch_cfg.get("dig_to_carry_min_distance_to_dig_area_m", 0.20)
+            ),
+            "dig_to_carry_target_bucket_mass_kg": _optional_float(
+                switch_cfg.get("dig_to_carry_target_bucket_mass_kg")
+            ),
+            "dig_to_carry_mass_plateau_enabled": bool(
+                switch_cfg.get("dig_to_carry_mass_plateau_enabled", False)
+            ),
+            "dig_to_carry_mass_plateau_min_bucket_mass_kg": float(
+                switch_cfg.get("dig_to_carry_mass_plateau_min_bucket_mass_kg", 20.0)
+            ),
+            "dig_to_carry_mass_plateau_epsilon_kg": float(
+                switch_cfg.get("dig_to_carry_mass_plateau_epsilon_kg", 1.0)
+            ),
+            "dig_to_carry_mass_plateau_hold_steps": int(
+                switch_cfg.get("dig_to_carry_mass_plateau_hold_steps", 25)
+            ),
+            "dig_to_carry_mass_plateau_min_steps": int(
+                switch_cfg.get("dig_to_carry_mass_plateau_min_steps", 80)
+            ),
+            "dig_bad_replan_enabled": bool(
+                switch_cfg.get("dig_bad_replan_enabled", False)
+            ),
+            "dig_bad_replan_max_steps": int(
+                switch_cfg.get("dig_bad_replan_max_steps", 180)
+            ),
+            "dig_bad_replan_min_bucket_mass_kg": float(
+                switch_cfg.get("dig_bad_replan_min_bucket_mass_kg", 15.0)
+            ),
+            "dig_exit_guard_enabled": bool(
+                switch_cfg.get("dig_exit_guard_enabled", False)
+            ),
+            "dig_exit_guard_min_steps": int(
+                switch_cfg.get("dig_exit_guard_min_steps", 80)
+            ),
+            "dig_exit_guard_overshoot_m": float(
+                switch_cfg.get("dig_exit_guard_overshoot_m", 0.65)
+            ),
+            "dig_exit_guard_min_bucket_mass_kg": float(
+                switch_cfg.get("dig_exit_guard_min_bucket_mass_kg", 20.0)
             ),
             "dump_done_max_bucket_mass_kg": float(
                 switch_cfg.get("dump_done_max_bucket_mass_kg", 100.0)
@@ -638,6 +739,11 @@ def eval_policy(config: dict[str, Any]) -> None:
             "return_to_dig_max_depth_m": float(
                 switch_cfg.get("return_to_dig_max_depth_m", 0.12)
             ),
+            "return_to_dig_max_entry_error_m": (
+                None
+                if switch_cfg.get("return_to_dig_max_entry_error_m") is None
+                else float(switch_cfg.get("return_to_dig_max_entry_error_m"))
+            ),
             "return_max_steps": int(
                 switch_cfg.get(
                     "return_max_steps",
@@ -669,6 +775,8 @@ def eval_policy(config: dict[str, Any]) -> None:
                 cell_entry_cfg.get("low_productivity_payload_gain_kg", 100.0)
             ),
             "dig_cut_planner": dig_cut_planner_cfg,
+            "return_target_planner": return_target_planner_cfg,
+            "pre_dig_align": pre_dig_align_cfg,
             "scripted_bootstrap_target_qpos": scripted_bootstrap_cfg.get("target_qpos"),
             "scripted_bootstrap_kp": float(scripted_bootstrap_cfg.get("kp", 2.0)),
             "scripted_bootstrap_kd": float(scripted_bootstrap_cfg.get("kd", 0.25)),
@@ -988,6 +1096,12 @@ def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) ->
         "dig_cut_tokens": _resolve_single_low_dim_dim(
             "dig_cut_tokens", equipment_model
         ),
+        "return_target_tokens": _resolve_single_low_dim_dim(
+            "return_target_tokens", equipment_model
+        ),
+        "return_start_envelope_tokens_v1": _resolve_single_low_dim_dim(
+            "return_start_envelope_tokens_v1", equipment_model
+        ),
     }
     return int(sum(dims[key] for key in low_dim_keys))
 
@@ -1004,6 +1118,10 @@ def _resolve_single_low_dim_dim(key: str, equipment_model: str) -> int:
         return int(CELL_ENTRY_TOKEN_DIM)
     if key == "dig_cut_tokens":
         return int(DIG_CUT_TOKEN_DIM)
+    if key == "return_target_tokens":
+        return int(RETURN_TARGET_TOKEN_DIM)
+    if key == "return_start_envelope_tokens_v1":
+        return int(RETURN_START_ENVELOPE_TOKEN_DIM)
     if key in ("qpos", "qvel"):
         if "bimanual" in equipment_model:
             return 14
@@ -1044,9 +1162,15 @@ def _build_act_eval_policy(
     temporal_agg: bool,
     device: str,
     act_params: dict[str, Any] | None = None,
+    outcome_head_config: dict[str, Any] | None = None,
     image_mask_config: dict[str, Any] | None = None,
 ):
     act_params = dict(act_params or {})
+    outcome_head_config = dict(outcome_head_config or {})
+    outcome_head_enabled = bool(outcome_head_config.get("enabled", False))
+    outcome_dim = int(
+        outcome_head_config.get("dim", 10 if outcome_head_enabled else 0)
+    )
     policy_config = {
         "lr": float(config.get("train", {}).get("lr", 1e-5)),
         "num_queries": int(act_params.get("chunk_size", 100)),
@@ -1064,6 +1188,12 @@ def _build_act_eval_policy(
         "low_dim_keys": list(low_dim_keys),
         "state_dim": _resolve_low_dim_state_dim(low_dim_keys, equipment_model),
         "image_mask": dict(image_mask_config or {}),
+        "outcome_head": outcome_head_config,
+        "outcome_dim": outcome_dim if outcome_head_enabled else 0,
+        "outcome_action_horizon": int(
+            outcome_head_config.get("action_horizon", act_params.get("chunk_size", 100))
+        ),
+        "outcome_hidden_dim": outcome_head_config.get("hidden_dim"),
     }
     from testbed.policies.act.adapter import ACTAdapter
 

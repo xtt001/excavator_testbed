@@ -127,6 +127,13 @@ Optional Repo A `/v2` extension group (still schema_version="1.1")
 │   ├── dump_end_mask        (T,)    uint8
 │   ├── cell_entry_tokens    (T, 10) float32 optional
 │   ├── dig_cut_tokens       (T, 10) float32 optional operator-first dig target
+│   ├── return_target_tokens (T, 10) float32 optional next dig cut target
+│   ├── return_start_envelope_tokens_v1 (T, 18) float32 optional next dig start envelope
+│   ├── return_start_envelope_valid_mask (T, 18) uint8 optional envelope validity
+│   ├── dig_outcome_targets  (T, 10) float32 optional V2.4 hindsight outcome
+│   ├── return_outcome_targets (T, 10) float32 optional V2.4 hindsight outcome
+│   ├── dig_goal_valid_mask  (T, 10) uint8 optional V2.4 target validity
+│   ├── return_goal_valid_mask (T, 10) uint8 optional V2.4 target validity
 │   ├── pause_mask           (T,)    uint8
 │   └── boundary_mask        (T,)    uint8
 └── cycle/
@@ -195,6 +202,17 @@ DS_V2_STEP_WORK_STAGE_ID  = "v2/step/work_stage_id"
 DS_V2_STEP_GOAL_TOKENS    = "v2/step/goal_tokens"
 DS_V2_STEP_CELL_ENTRY_TOKENS = "v2/step/cell_entry_tokens"
 DS_V2_STEP_DIG_CUT_TOKENS = "v2/step/dig_cut_tokens"
+DS_V2_STEP_RETURN_TARGET_TOKENS = "v2/step/return_target_tokens"
+DS_V2_STEP_RETURN_START_ENVELOPE_TOKENS_V1 = (
+    "v2/step/return_start_envelope_tokens_v1"
+)
+DS_V2_STEP_RETURN_START_ENVELOPE_VALID_MASK = (
+    "v2/step/return_start_envelope_valid_mask"
+)
+DS_V2_STEP_DIG_OUTCOME_TARGETS = "v2/step/dig_outcome_targets"
+DS_V2_STEP_RETURN_OUTCOME_TARGETS = "v2/step/return_outcome_targets"
+DS_V2_STEP_DIG_GOAL_VALID_MASK = "v2/step/dig_goal_valid_mask"
+DS_V2_STEP_RETURN_GOAL_VALID_MASK = "v2/step/return_goal_valid_mask"
 DS_V2_STEP_ACTION_LOSS_MASK = "v2/step/action_loss_mask"
 DS_V2_STEP_PLANNER_REPLAN_MASK = "v2/step/planner_replan_mask"
 DS_V2_STEP_QUALIFIED_DIG_START_MASK = "v2/step/qualified_dig_start_mask"
@@ -238,6 +256,21 @@ DS_V2_CYCLE_LEGACY_DUMP_END_DEPOSIT_DELTA_KG = (
     "v2/cycle/legacy_dump_end_deposit_delta_kg"
 )
 DS_V2_CYCLE_DUMP_WINDOW_DEPOSIT_DELTA_KG = "v2/cycle/dump_window_deposit_delta_kg"
+DS_V2_CYCLE_ACTUAL_REMOVED_DEPTH_DELTA_GRID = (
+    "v2/cycle/actual_removed_depth_delta_grid"
+)
+DS_V2_CYCLE_DOMINANT_REMOVED_DEPTH_CELL_ID = (
+    "v2/cycle/dominant_removed_depth_cell_id"
+)
+DS_V2_CYCLE_DEPTH_OUTCOME_SOURCE = "v2/cycle/depth_outcome_source"
+DS_V2_CYCLE_DIG_OUTCOME_PAYLOAD_GAIN_KG = "v2/cycle/dig_outcome_payload_gain_kg"
+DS_V2_CYCLE_DIG_OUTCOME_EFFECTIVE_DEPOSIT_DELTA_KG = (
+    "v2/cycle/dig_outcome_effective_deposit_delta_kg"
+)
+DS_V2_CYCLE_RETURN_OUTCOME_ENTRY_DELTA_NORM_M = (
+    "v2/cycle/return_outcome_entry_delta_norm_m"
+)
+DS_V2_CYCLE_HANDOFF_OUTCOME_SOURCE = "v2/cycle/handoff_outcome_source"
 
 # ── Metadata attribute names — v1.0 ──────────────────────────────────────────
 ATTR_SCHEMA_VERSION = "schema_version"

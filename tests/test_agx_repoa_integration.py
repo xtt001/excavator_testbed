@@ -1277,6 +1277,26 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
             self.assertIn("episode_1", summary["warnings"]["missing_image_ids"])
             self.assertIn("episode_2", summary["warnings"]["unreadable_episode_ids"])
 
+    def test_write_episode_chunks_images_by_frame_for_random_training_reads(self) -> None:
+        import h5py
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "episode_0.hdf5"
+
+            write_episode(
+                path,
+                qpos=np.zeros((3, 4), dtype=np.float32),
+                qvel=np.zeros((3, 4), dtype=np.float32),
+                actions=np.zeros((3, 4), dtype=np.float32),
+                images={"fpv": np.zeros((3, 8, 8, 3), dtype=np.uint8)},
+                rewards=np.zeros(3, dtype=np.float32),
+            )
+
+            with h5py.File(path, "r") as f:
+                image_ds = f["observations/images/fpv"]
+                self.assertEqual(image_ds.compression, "lzf")
+                self.assertEqual(image_ds.chunks, (1, 8, 8, 3))
+
     def test_load_data_supports_variable_length_success_truncated_episodes(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             dataset_dir = Path(tmpdir) / "dataset"

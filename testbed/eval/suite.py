@@ -54,6 +54,14 @@ from testbed.eval.rollout_hdf5 import (
     build_rollout_v2_payload,
     enrich_rollout_hdf5_in_place,
 )
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
+)
 from testbed.policies.base import Policy
 from testbed.tasks.logic.excavator_reward import (
     build_agx_excavation_mission_overrides,
@@ -336,7 +344,16 @@ class EvalSuite:
                         if hasattr(self.policy, "debug_state")
                         else {}
                     )
-                    ts     = env.step(action)
+                    planner_debug_json = self._planner_debug_json(
+                        policy_debug,
+                        obs=obs,
+                    )
+                    ts = self._env_step_with_optional_planner_debug(
+                        env=env,
+                        task=task,
+                        action=action,
+                        planner_debug_json=planner_debug_json,
+                    )
                     post_obs = ts.observation
                     boundary_event = boundary_detector.update(
                         env_state=post_obs.get("env_state", np.zeros(9, dtype=np.float32)),
@@ -453,6 +470,159 @@ class EvalSuite:
                             ),
                             "cell_entry_seen_cell_id": int(
                                 policy_debug.get("cell_entry_seen_cell_id", -1)
+                            ),
+                            "dig_cut_token_injected": bool(
+                                policy_debug.get("dig_cut_token_injected", False)
+                            ),
+                            "dig_cut_planner_mode": str(
+                                policy_debug.get("dig_cut_planner_mode", "")
+                            ),
+                            "dig_cut_prior_id": str(
+                                policy_debug.get("dig_cut_prior_id", "")
+                            ),
+                            "dig_cut_token_source": str(
+                                policy_debug.get("dig_cut_token_source", "")
+                            ),
+                            "dig_cut_tokens": (
+                                None
+                                if policy_debug.get("dig_cut_tokens") is None
+                                else np.array(
+                                    policy_debug.get("dig_cut_tokens"),
+                                    dtype=np.float32,
+                                )
+                            ),
+                            "return_target_token_injected": bool(
+                                policy_debug.get(
+                                    "return_target_token_injected", False
+                                )
+                            ),
+                            "return_target_token_source": str(
+                                policy_debug.get("return_target_token_source", "")
+                            ),
+                            "return_target_tokens": (
+                                None
+                                if policy_debug.get("return_target_tokens") is None
+                                else np.array(
+                                    policy_debug.get("return_target_tokens"),
+                                    dtype=np.float32,
+                                )
+                            ),
+                            "return_to_dig_entry_error_m": float(
+                                policy_debug.get(
+                                    "return_to_dig_entry_error_m", np.nan
+                                )
+                            ),
+                            "return_to_dig_entry_close": bool(
+                                policy_debug.get(
+                                    "return_to_dig_entry_close", True
+                                )
+                            ),
+                            "coverage_corridor_id": int(
+                                policy_debug.get("coverage_corridor_id", -1)
+                            ),
+                            "coverage_entry_x_m": float(
+                                policy_debug.get("coverage_entry_x_m", np.nan)
+                            ),
+                            "coverage_entry_z_m": float(
+                                policy_debug.get("coverage_entry_z_m", np.nan)
+                            ),
+                            "coverage_exit_x_m": float(
+                                policy_debug.get("coverage_exit_x_m", np.nan)
+                            ),
+                            "coverage_exit_z_m": float(
+                                policy_debug.get("coverage_exit_z_m", np.nan)
+                            ),
+                            "coverage_corridor_score": float(
+                                policy_debug.get("coverage_corridor_score", np.nan)
+                            ),
+                            "coverage_depleted_count": int(
+                                policy_debug.get("coverage_depleted_count", 0)
+                            ),
+                            "coverage_last_payload_gain_kg": float(
+                                policy_debug.get("coverage_last_payload_gain_kg", 0.0)
+                            ),
+                            "coverage_last_effective_deposit_delta_kg": float(
+                                policy_debug.get(
+                                    "coverage_last_effective_deposit_delta_kg",
+                                    0.0,
+                                )
+                            ),
+                            "coverage_global_low_productivity_streak": int(
+                                policy_debug.get(
+                                    "coverage_global_low_productivity_streak",
+                                    0,
+                                )
+                            ),
+                            "coverage_terminal_stop_requested": bool(
+                                policy_debug.get(
+                                    "coverage_terminal_stop_requested",
+                                    False,
+                                )
+                            ),
+                            "coverage_terminal_stop_reason": str(
+                                policy_debug.get("coverage_terminal_stop_reason", "")
+                            ),
+                            "dig_step_count": int(
+                                policy_debug.get("dig_step_count", 0)
+                            ),
+                            "dig_best_mass_kg": float(
+                                policy_debug.get("dig_best_mass_kg", 0.0)
+                            ),
+                            "dig_mass_plateau_count": int(
+                                policy_debug.get("dig_mass_plateau_count", 0)
+                            ),
+                            "dig_to_carry_reason": str(
+                                policy_debug.get("dig_to_carry_reason", "")
+                            ),
+                            "dig_bad_replan_count": int(
+                                policy_debug.get("dig_bad_replan_count", 0)
+                            ),
+                            "dig_exit_guard_replan_count": int(
+                                policy_debug.get("dig_exit_guard_replan_count", 0)
+                            ),
+                            "pre_dig_align_enabled": bool(
+                                policy_debug.get("pre_dig_align_enabled", False)
+                            ),
+                            "pre_dig_align_first_dig_only": bool(
+                                policy_debug.get(
+                                    "pre_dig_align_first_dig_only", False
+                                )
+                            ),
+                            "pre_dig_align_active_for_next_dig": bool(
+                                policy_debug.get(
+                                    "pre_dig_align_active_for_next_dig", False
+                                )
+                            ),
+                            "pre_dig_align_step_count": int(
+                                policy_debug.get("pre_dig_align_step_count", 0)
+                            ),
+                            "pre_dig_align_hold_count": int(
+                                policy_debug.get("pre_dig_align_hold_count", 0)
+                            ),
+                            "pre_dig_align_timeout_count": int(
+                                policy_debug.get("pre_dig_align_timeout_count", 0)
+                            ),
+                            "pre_dig_align_completed_count": int(
+                                policy_debug.get("pre_dig_align_completed_count", 0)
+                            ),
+                            "pre_dig_align_replan_count": int(
+                                policy_debug.get("pre_dig_align_replan_count", 0)
+                            ),
+                            "pre_dig_align_controlled_dims": list(
+                                policy_debug.get("pre_dig_align_controlled_dims", [])
+                            ),
+                            "pre_dig_align_bucket_target_qpos": float(
+                                policy_debug.get(
+                                    "pre_dig_align_bucket_target_qpos", np.nan
+                                )
+                            ),
+                            "pre_dig_align_entry_error_m": float(
+                                policy_debug.get("pre_dig_align_entry_error_m", np.nan)
+                            ),
+                            "pre_dig_align_start_envelope_ready": bool(
+                                policy_debug.get(
+                                    "pre_dig_align_start_envelope_ready", False
+                                )
                             ),
                             "cycle_id": int(boundary_event.cycle_id),
                             "mode_id": int(boundary_event.mode_id),
@@ -586,6 +756,16 @@ class EvalSuite:
 
                     if bool(policy_debug.get("transition_timeout", False)):
                         rollout_stop_reason = "transition_timeout"
+                        break
+                    if bool(
+                        policy_debug.get("planner_terminal_stop_requested", False)
+                    ):
+                        rollout_stop_reason = str(
+                            policy_debug.get(
+                                "planner_terminal_stop_reason",
+                                "planner_terminal_stop",
+                            )
+                        )
                         break
                     (
                         target_cycle_gate_reached_step,
@@ -947,6 +1127,236 @@ class EvalSuite:
         if self.ckpt_path:
             return f"policy:{policy_name}:{self.ckpt_path}"
         return f"policy:{policy_name}"
+
+    @staticmethod
+    def _env_step_with_optional_planner_debug(
+        *,
+        env,
+        task: EvalTaskDef,
+        action: np.ndarray,
+        planner_debug_json: str | None,
+    ):
+        if task.backend_type == "agx" and planner_debug_json is not None:
+            return env.step(action, planner_debug_json=planner_debug_json)
+        return env.step(action)
+
+    @staticmethod
+    def _planner_debug_json(
+        policy_debug: dict[str, object],
+        *,
+        obs: dict[str, object] | None = None,
+    ) -> str | None:
+        mode = str(policy_debug.get("dig_cut_planner_mode", ""))
+        if not mode:
+            return None
+
+        def _finite_float(name: str, default: float = 0.0) -> float:
+            try:
+                value = float(policy_debug.get(name, default))
+            except (TypeError, ValueError):
+                return float(default)
+            return value if np.isfinite(value) else float(default)
+
+        def _finite_list(name: str) -> list[float]:
+            values = policy_debug.get(name)
+            if values is None:
+                return []
+            arr = np.asarray(values, dtype=np.float32).reshape(-1)
+            return [
+                float(value) if np.isfinite(float(value)) else 0.0
+                for value in arr
+            ]
+
+        def _finite_payload_float(value: object, default: float = 0.0) -> float:
+            try:
+                float_value = float(value)
+            except (TypeError, ValueError):
+                return float(default)
+            return float_value if np.isfinite(float_value) else float(default)
+
+        env_state = np.asarray(
+            (obs or {}).get("env_state", []),
+            dtype=np.float32,
+        ).reshape(-1)
+
+        def _env_state_float(index: int, default: float = 0.0) -> float:
+            if index < 0 or index >= env_state.size:
+                return float(default)
+            value = float(env_state[index])
+            return value if np.isfinite(value) else float(default)
+
+        current_tip_valid = bool(
+            env_state.size > ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX
+            and np.all(
+                np.isfinite(
+                    env_state[
+                        [
+                            ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
+                            ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
+                            ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
+                        ]
+                    ]
+                )
+            )
+        )
+
+        candidate_scores = []
+        for item in list(policy_debug.get("coverage_candidate_scores", []) or []):
+            if not isinstance(item, dict):
+                continue
+            candidate_scores.append(
+                {
+                    "corridor_id": int(item.get("corridor_id", -1)),
+                    "cell_id": int(item.get("cell_id", -1)),
+                    "score": _finite_payload_float(item.get("score", 0.0)),
+                    "attempts": int(item.get("attempts", 0)),
+                    "depleted": int(item.get("depleted", 0)),
+                    "remaining_depth_m": _finite_payload_float(
+                        item.get("remaining_depth_m", 0.0)
+                    ),
+                    "first_dig_bonus": _finite_payload_float(
+                        item.get("first_dig_bonus", 0.0)
+                    ),
+                    "recent_row_penalty": _finite_payload_float(
+                        item.get("recent_row_penalty", 0.0)
+                    ),
+                    "first_dig_entry_distance_m": _finite_payload_float(
+                        item.get("first_dig_entry_distance_m", 0.0)
+                    ),
+                    "low_productivity_streak": int(
+                        item.get("low_productivity_streak", 0)
+                    ),
+                }
+            )
+        corridors = []
+        for item in list(policy_debug.get("coverage_corridors", []) or []):
+            if not isinstance(item, dict):
+                continue
+            corridors.append(
+                {
+                    "corridor_id": int(item.get("corridor_id", -1)),
+                    "cell_id": int(item.get("cell_id", -1)),
+                    "entry_x_m": _finite_payload_float(
+                        item.get("entry_x_m", 0.0)
+                    ),
+                    "entry_z_m": _finite_payload_float(
+                        item.get("entry_z_m", 0.0)
+                    ),
+                    "exit_x_m": _finite_payload_float(item.get("exit_x_m", 0.0)),
+                    "exit_z_m": _finite_payload_float(item.get("exit_z_m", 0.0)),
+                    "score": _finite_payload_float(item.get("score", 0.0)),
+                    "attempts": int(item.get("attempts", 0)),
+                    "depleted": int(item.get("depleted", 0)),
+                    "low_productivity_streak": int(
+                        item.get("low_productivity_streak", 0)
+                    ),
+                    "last_payload_gain_kg": _finite_payload_float(
+                        item.get("last_payload_gain_kg", 0.0)
+                    ),
+                    "last_effective_deposit_delta_kg": _finite_payload_float(
+                        item.get("last_effective_deposit_delta_kg", 0.0)
+                    ),
+                    "last_remaining_depth_m": _finite_payload_float(
+                        item.get("last_remaining_depth_m", 0.0)
+                    ),
+                    "last_reason": str(item.get("last_reason", "")),
+                }
+            )
+
+        payload = {
+            "valid": True,
+            "mode": mode,
+            "cycle": int(policy_debug.get("primitive_cycle_index", -1)),
+            "skill": str(policy_debug.get("skill_name", "")),
+            "selected_corridor_id": int(
+                policy_debug.get("coverage_corridor_id", -1)
+            ),
+            "entry_x_m": _finite_float("coverage_entry_x_m"),
+            "entry_z_m": _finite_float("coverage_entry_z_m"),
+            "exit_x_m": _finite_float("coverage_exit_x_m"),
+            "exit_z_m": _finite_float("coverage_exit_z_m"),
+            "score": _finite_float("coverage_corridor_score"),
+            "depleted_count": int(policy_debug.get("coverage_depleted_count", 0)),
+            "last_payload_gain_kg": _finite_float(
+                "coverage_last_payload_gain_kg"
+            ),
+            "last_effective_deposit_delta_kg": _finite_float(
+                "coverage_last_effective_deposit_delta_kg"
+            ),
+            "global_low_productivity_streak": int(
+                policy_debug.get("coverage_global_low_productivity_streak", 0)
+            ),
+            "stop_reason": str(
+                policy_debug.get("coverage_terminal_stop_reason", "")
+            ),
+            "terminal_stop_requested": bool(
+                policy_debug.get("coverage_terminal_stop_requested", False)
+            ),
+            "token_source": str(policy_debug.get("dig_cut_token_source", "")),
+            "prior_id": str(policy_debug.get("dig_cut_prior_id", "")),
+            "dig_cut_tokens": _finite_list("dig_cut_tokens"),
+            "current_bucket_dig_area_x_m": _env_state_float(
+                ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX
+            ),
+            "current_bucket_dig_area_y_m": _env_state_float(
+                ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX
+            ),
+            "current_bucket_dig_area_z_m": _env_state_float(
+                ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX
+            ),
+            "current_bucket_tip_valid": current_tip_valid,
+            "current_bucket_tip_dig_area_x_m": _env_state_float(
+                ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX
+            ),
+            "current_bucket_tip_dig_area_y_m": _env_state_float(
+                ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX
+            ),
+            "current_bucket_tip_dig_area_z_m": _env_state_float(
+                ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX
+            ),
+            "pre_dig_align_enabled": bool(
+                policy_debug.get("pre_dig_align_enabled", False)
+            ),
+            "pre_dig_align_first_dig_only": bool(
+                policy_debug.get("pre_dig_align_first_dig_only", False)
+            ),
+            "pre_dig_align_active_for_next_dig": bool(
+                policy_debug.get("pre_dig_align_active_for_next_dig", False)
+            ),
+            "pre_dig_align_step_count": int(
+                policy_debug.get("pre_dig_align_step_count", 0)
+            ),
+            "pre_dig_align_hold_count": int(
+                policy_debug.get("pre_dig_align_hold_count", 0)
+            ),
+            "pre_dig_align_replan_count": int(
+                policy_debug.get("pre_dig_align_replan_count", 0)
+            ),
+            "pre_dig_align_entry_error_m": _finite_float(
+                "pre_dig_align_entry_error_m"
+            ),
+            "pre_dig_align_start_envelope_ready": bool(
+                policy_debug.get("pre_dig_align_start_envelope_ready", False)
+            ),
+            "pre_dig_align_target_qpos": _finite_list("pre_dig_align_target_qpos"),
+            "pre_dig_align_controlled_dims": list(
+                policy_debug.get("pre_dig_align_controlled_dims", [])
+            ),
+            "pre_dig_align_bucket_target_qpos": _finite_float(
+                "pre_dig_align_bucket_target_qpos"
+            ),
+            "dig_step_count": int(policy_debug.get("dig_step_count", 0)),
+            "dig_best_mass_kg": _finite_float("dig_best_mass_kg"),
+            "dig_bad_replan_count": int(
+                policy_debug.get("dig_bad_replan_count", 0)
+            ),
+            "dig_exit_guard_replan_count": int(
+                policy_debug.get("dig_exit_guard_replan_count", 0)
+            ),
+            "candidate_scores": candidate_scores,
+            "corridors": corridors,
+        }
+        return json.dumps(payload, separators=(",", ":"), allow_nan=False)
 
     def _should_log_step_progress(self, step_index: int, episode_len: int) -> bool:
         if self.step_log_interval <= 0:

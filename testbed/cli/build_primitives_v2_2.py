@@ -112,15 +112,13 @@ def main() -> None:
             "Primitive ownership boundary profile. The default keeps the strict "
             "middle-handoff rule; v2_2_effect_release_fallback can be used for "
             "new-env pilots where no approach_dump label is emitted but a stable "
-            "release onset and good final dump are present."
+            "release onset and good final dump are present; v2_4_5_spatial_mass "
+            "uses material-cycle mass/geometry ownership and emits return envelopes."
         ),
     )
     args = parser.parse_args()
     if args.workskill_dir is None and not args.raw_dir:
         parser.error("Either --workskill-dir or at least one --raw-dir is required.")
-    if args.storage_mode == STORAGE_MODE_COPY and args.workskill_dir is None:
-        parser.error("--storage-mode copy requires --workskill-dir.")
-
     output_root = (
         args.output_root
         if args.output_root is not None
@@ -156,6 +154,7 @@ def main() -> None:
                 "window_manifest_path": summary.get("window_manifest_path"),
                 "carry_qc": summary.get("carry_qc", {}),
                 "dump_qc": summary.get("dump_qc", {}),
+                "return_qc": summary.get("return_qc", {}),
                 "training_tier_counts": summary.get("training_tier_counts", {}),
                 "reject_counts": summary["reject_counts"],
             },

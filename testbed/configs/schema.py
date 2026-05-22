@@ -127,6 +127,7 @@ class TrainConfig(BaseModel):
     save_latest_every: int = 1
     checkpoint_every: int = 100
     plot_every: int = 100
+    keep_only_best_ckpt: bool = False
     amp: bool = False
     amp_dtype: Literal["auto", "bf16", "fp16"] = "auto"
     resume_ckpt: str | None = None

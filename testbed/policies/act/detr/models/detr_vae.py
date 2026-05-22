@@ -30,7 +30,19 @@ def get_sinusoid_encoding_table(n_position, d_hid):
 
 class DETRVAE(nn.Module):
     """ This is the DETR module that performs object detection """
-    def __init__(self, backbones, transformer, encoder, robot_state_dim, action_dim, num_queries, camera_names):
+    def __init__(
+        self,
+        backbones,
+        transformer,
+        encoder,
+        robot_state_dim,
+        action_dim,
+        num_queries,
+        camera_names,
+        outcome_dim=0,
+        outcome_action_horizon=None,
+        outcome_hidden_dim=None,
+    ):
         """ Initializes the model.
         Parameters:
             backbones: torch module of the backbone to be used. See backbone.py
@@ -49,6 +61,22 @@ class DETRVAE(nn.Module):
         hidden_dim = transformer.d_model
         self.action_head = nn.Linear(hidden_dim, action_dim)
         self.is_pad_head = nn.Linear(hidden_dim, 1)
+        self.outcome_dim = int(outcome_dim or 0)
+        self.outcome_action_horizon = int(
+            outcome_action_horizon
+            if outcome_action_horizon is not None
+            else num_queries
+        )
+        self.outcome_action_horizon = max(1, min(self.outcome_action_horizon, num_queries))
+        if self.outcome_dim > 0:
+            head_hidden = int(outcome_hidden_dim or hidden_dim)
+            self.outcome_head = nn.Sequential(
+                nn.Linear(self.outcome_action_horizon * action_dim, head_hidden),
+                nn.ReLU(inplace=True),
+                nn.Linear(head_hidden, self.outcome_dim),
+            )
+        else:
+            self.outcome_head = None
         self.query_embed = nn.Embedding(num_queries, hidden_dim)
         if backbones is not None:
             self.input_proj = nn.Conv2d(backbones[0].num_channels, hidden_dim, kernel_size=1)
@@ -134,7 +162,22 @@ class DETRVAE(nn.Module):
             hs = self.transformer(transformer_input, None, self.query_embed.weight, self.pos.weight)[0]
         a_hat = self.action_head(hs)
         is_pad_hat = self.is_pad_head(hs)
+        if self.outcome_head is not None:
+            outcome_hat = self._predict_outcome_from_actions(a_hat)
+            return a_hat, is_pad_hat, [mu, logvar], outcome_hat
         return a_hat, is_pad_hat, [mu, logvar]
+
+    def _predict_outcome_from_actions(self, a_hat):
+        horizon = int(self.outcome_action_horizon)
+        action_chunk = a_hat[:, :horizon]
+        if action_chunk.shape[1] < horizon:
+            pad = action_chunk.new_zeros(
+                action_chunk.shape[0],
+                horizon - action_chunk.shape[1],
+                action_chunk.shape[2],
+            )
+            action_chunk = torch.cat([action_chunk, pad], dim=1)
+        return self.outcome_head(action_chunk.reshape(action_chunk.shape[0], -1))
 
 
 
@@ -265,6 +308,9 @@ def build(args):
         action_dim=action_dim,
         num_queries=args.num_queries,
         camera_names=args.camera_names,
+        outcome_dim=getattr(args, "outcome_dim", 0),
+        outcome_action_horizon=getattr(args, "outcome_action_horizon", None),
+        outcome_hidden_dim=getattr(args, "outcome_hidden_dim", None),
     )
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)

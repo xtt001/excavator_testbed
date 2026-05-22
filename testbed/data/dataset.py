@@ -27,9 +27,19 @@ from testbed.data.schema import (
     DS_V2_STEP_ACTION_LOSS_MASK,
     DS_V2_STEP_CELL_ENTRY_TOKENS,
     DS_V2_STEP_DIG_CUT_TOKENS,
+    DS_V2_STEP_DIG_GOAL_VALID_MASK,
+    DS_V2_STEP_DIG_OUTCOME_TARGETS,
     DS_V2_STEP_GOAL_TOKENS,
+    DS_V2_STEP_RETURN_GOAL_VALID_MASK,
+    DS_V2_STEP_RETURN_START_ENVELOPE_TOKENS_V1,
+    DS_V2_STEP_RETURN_OUTCOME_TARGETS,
+    DS_V2_STEP_RETURN_TARGET_TOKENS,
 )
-from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_DIM
+from testbed.data.operator_first_v2_2 import (
+    DIG_CUT_TOKEN_DIM,
+    RETURN_START_ENVELOPE_TOKEN_DIM,
+    RETURN_TARGET_TOKEN_DIM,
+)
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 
@@ -39,7 +49,24 @@ SUPPORTED_LOW_DIM_KEYS = (
     "goal_tokens",
     "cell_entry_tokens",
     "dig_cut_tokens",
+    "return_target_tokens",
+    "return_start_envelope_tokens_v1",
 )
+
+SUPPORTED_SUPERVISION_KEYS = (
+    "dig_outcome_targets",
+    "return_outcome_targets",
+)
+
+_SUPERVISION_DATASET_PATHS = {
+    "dig_outcome_targets": DS_V2_STEP_DIG_OUTCOME_TARGETS,
+    "return_outcome_targets": DS_V2_STEP_RETURN_OUTCOME_TARGETS,
+}
+
+_SUPERVISION_MASK_PATHS = {
+    "dig_outcome_targets": DS_V2_STEP_DIG_GOAL_VALID_MASK,
+    "return_outcome_targets": DS_V2_STEP_RETURN_GOAL_VALID_MASK,
+}
 
 
 def _normalize_low_dim_keys(
@@ -55,6 +82,24 @@ def _normalize_low_dim_keys(
     return keys
 
 
+def _normalize_supervision_keys(
+    supervision_keys: list[str] | tuple[str, ...] | None,
+) -> list[str]:
+    keys = [] if not supervision_keys else [str(key) for key in supervision_keys]
+    invalid = [key for key in keys if key not in SUPPORTED_SUPERVISION_KEYS]
+    if invalid:
+        raise ValueError(
+            f"Unsupported supervision_keys {invalid}. "
+            f"Supported keys: {SUPPORTED_SUPERVISION_KEYS}."
+        )
+    if len(keys) > 1:
+        raise ValueError(
+            "Only one supervision key is supported per ACT run for now. "
+            f"Got {keys}."
+        )
+    return keys
+
+
 def _assemble_low_dim_observation(
     *,
     qpos: np.ndarray,
@@ -62,6 +107,8 @@ def _assemble_low_dim_observation(
     goal_tokens: np.ndarray | None = None,
     cell_entry_tokens: np.ndarray | None = None,
     dig_cut_tokens: np.ndarray | None = None,
+    return_target_tokens: np.ndarray | None = None,
+    return_start_envelope_tokens_v1: np.ndarray | None = None,
     low_dim_keys: list[str],
 ) -> np.ndarray:
     qpos_arr = np.asarray(qpos, dtype=np.float32)
@@ -77,12 +124,30 @@ def _assemble_low_dim_observation(
     dig_cut_tokens_arr = (
         None if dig_cut_tokens is None else np.asarray(dig_cut_tokens, dtype=np.float32)
     )
+    return_target_tokens_arr = (
+        None
+        if return_target_tokens is None
+        else np.asarray(return_target_tokens, dtype=np.float32)
+    )
+    return_start_envelope_tokens_arr = (
+        None
+        if return_start_envelope_tokens_v1 is None
+        else np.asarray(return_start_envelope_tokens_v1, dtype=np.float32)
+    )
     sequence_mode = (
         qpos_arr.ndim > 1
         or qvel_arr.ndim > 1
         or (goal_tokens_arr is not None and goal_tokens_arr.ndim > 1)
         or (cell_entry_tokens_arr is not None and cell_entry_tokens_arr.ndim > 1)
         or (dig_cut_tokens_arr is not None and dig_cut_tokens_arr.ndim > 1)
+        or (
+            return_target_tokens_arr is not None
+            and return_target_tokens_arr.ndim > 1
+        )
+        or (
+            return_start_envelope_tokens_arr is not None
+            and return_start_envelope_tokens_arr.ndim > 1
+        )
     )
     parts: list[np.ndarray] = []
     for key in low_dim_keys:
@@ -110,6 +175,20 @@ def _assemble_low_dim_observation(
                     "/v2/step/dig_cut_tokens is missing."
                 )
             part = dig_cut_tokens_arr
+        elif key == "return_target_tokens":
+            if return_target_tokens_arr is None:
+                raise KeyError(
+                    "Requested low_dim key 'return_target_tokens' but "
+                    "/v2/step/return_target_tokens is missing."
+                )
+            part = return_target_tokens_arr
+        elif key == "return_start_envelope_tokens_v1":
+            if return_start_envelope_tokens_arr is None:
+                raise KeyError(
+                    "Requested low_dim key 'return_start_envelope_tokens_v1' but "
+                    "/v2/step/return_start_envelope_tokens_v1 is missing."
+                )
+            part = return_start_envelope_tokens_arr
         else:
             continue
         if sequence_mode:
@@ -192,12 +271,24 @@ def get_norm_stats(
                 if "dig_cut_tokens" in selected_low_dim_keys
                 else None
             )
+            return_target_tokens = (
+                _read_return_target_tokens_dataset(f)
+                if "return_target_tokens" in selected_low_dim_keys
+                else None
+            )
+            return_start_envelope_tokens = (
+                _read_return_start_envelope_tokens_dataset(f)
+                if "return_start_envelope_tokens_v1" in selected_low_dim_keys
+                else None
+            )
         proprio = _assemble_low_dim_observation(
             qpos=qpos,
             qvel=qvel,
             goal_tokens=goal_tokens,
             cell_entry_tokens=cell_entry_tokens,
             dig_cut_tokens=dig_cut_tokens,
+            return_target_tokens=return_target_tokens,
+            return_start_envelope_tokens_v1=return_start_envelope_tokens,
             low_dim_keys=selected_low_dim_keys,
         )
         all_proprio_data.append(torch.from_numpy(proprio))
@@ -278,6 +369,7 @@ class EpisodicDataset(Dataset):
         norm_stats: dict[str, np.ndarray],
         episode_len: int | None = None,
         low_dim_keys: list[str] | tuple[str, ...] | None = None,
+        supervision_keys: list[str] | tuple[str, ...] | None = None,
         image_mask_config: dict[str, Any] | None = None,
         hdf5_cache_size: int = 0,
     ):
@@ -288,6 +380,7 @@ class EpisodicDataset(Dataset):
         self.norm_stats = norm_stats
         self.episode_len = int(episode_len) if episode_len is not None else None
         self.low_dim_keys = _normalize_low_dim_keys(low_dim_keys)
+        self.supervision_keys = _normalize_supervision_keys(supervision_keys)
         self.image_mask_config = dict(image_mask_config or {})
         self.hdf5_cache_size = max(0, int(hdf5_cache_size))
         self._h5_cache: OrderedDict[int, Any] = OrderedDict()
@@ -333,12 +426,32 @@ class EpisodicDataset(Dataset):
                 if "dig_cut_tokens" in self.low_dim_keys
                 else None
             )
+            return_target_tokens = (
+                _read_return_target_tokens_dataset(f, index=t0)
+                if "return_target_tokens" in self.low_dim_keys
+                else None
+            )
+            return_start_envelope_tokens = (
+                _read_return_start_envelope_tokens_dataset(f, index=t0)
+                if "return_start_envelope_tokens_v1" in self.low_dim_keys
+                else None
+            )
+            supervision_target = None
+            supervision_mask = None
+            if self.supervision_keys:
+                supervision_target, supervision_mask = _read_supervision_at_step(
+                    f,
+                    key=self.supervision_keys[0],
+                    index=t0,
+                )
             proprio = _assemble_low_dim_observation(
                 qpos=qpos,
                 qvel=qvel,
                 goal_tokens=goal_tokens,
                 cell_entry_tokens=cell_entry_tokens,
                 dig_cut_tokens=dig_cut_tokens,
+                return_target_tokens=return_target_tokens,
+                return_start_envelope_tokens_v1=return_start_envelope_tokens,
                 low_dim_keys=self.low_dim_keys,
             )
             image_dict = {}
@@ -430,6 +543,21 @@ class EpisodicDataset(Dataset):
             proprio_data - torch.from_numpy(self.norm_stats["proprio_mean"])
         ) / torch.from_numpy(self.norm_stats["proprio_std"])
 
+        if self.supervision_keys:
+            return {
+                "image": image_data,
+                "proprio": proprio_data,
+                "action": action_data,
+                "is_pad": is_pad_t,
+                "outcome_target": torch.from_numpy(
+                    np.asarray(supervision_target, dtype=np.float32)
+                ).float(),
+                "outcome_mask": torch.from_numpy(
+                    np.asarray(supervision_mask, dtype=np.float32)
+                ).float(),
+                "supervision_key": self.supervision_keys[0],
+            }
+
         return image_data, proprio_data, action_data, is_pad_t
 
     def close(self) -> None:
@@ -483,6 +611,8 @@ def load_data(
     split_path: str | Path | None = None,
     reuse_split: bool = True,
     low_dim_keys: list[str] | tuple[str, ...] | None = None,
+    supervision_keys: list[str] | tuple[str, ...] | None = None,
+    metadata_filters: dict[str, Any] | None = None,
     image_mask_config: dict[str, Any] | None = None,
     hdf5_cache_size: int = 0,
 ) -> tuple[DataLoader, DataLoader, dict, bool, dict[str, Any]]:
@@ -516,14 +646,28 @@ def load_data(
 
     dim_info = {}
     length_info = {}
+    metadata_filters = dict(metadata_filters or {})
+    metadata_filter_rejects = 0
     for ep_id in available:
         p = dataset_dir / f"episode_{ep_id}.hdf5"
         with h5py.File(p, "r") as f:
+            if metadata_filters and not _episode_matches_metadata_filters(
+                f,
+                metadata_filters,
+            ):
+                metadata_filter_rejects += 1
+                continue
             dim_info[ep_id] = (
                 f["/action"].shape[1],
                 f["/observations/qpos"].shape[1],
             )
             length_info[ep_id] = int(f["/action"].shape[0])
+    available = [ep_id for ep_id in available if ep_id in dim_info]
+    if metadata_filter_rejects:
+        print(
+            f"Metadata filters skipped {metadata_filter_rejects} episode(s): "
+            f"{metadata_filters}"
+        )
     filtered = [i for i in available if dim_info[i][0] == dim_info[i][1]]
     dropped = len(available) - len(filtered)
     if dropped:
@@ -562,6 +706,7 @@ def load_data(
     )
 
     selected_low_dim_keys = _normalize_low_dim_keys(low_dim_keys)
+    selected_supervision_keys = _normalize_supervision_keys(supervision_keys)
     norm_stats = get_norm_stats(
         dataset_dir,
         num_episodes,
@@ -576,6 +721,7 @@ def load_data(
         norm_stats,
         episode_len=target_episode_len,
         low_dim_keys=selected_low_dim_keys,
+        supervision_keys=selected_supervision_keys,
         image_mask_config=image_mask_config,
         hdf5_cache_size=hdf5_cache_size,
     )
@@ -586,6 +732,7 @@ def load_data(
         norm_stats,
         episode_len=target_episode_len,
         low_dim_keys=selected_low_dim_keys,
+        supervision_keys=selected_supervision_keys,
         image_mask_config=image_mask_config,
         hdf5_cache_size=hdf5_cache_size,
     )
@@ -593,6 +740,8 @@ def load_data(
     split_info["dataset_max_episode_len"] = int(max_episode_len)
     split_info["loader_episode_len"] = int(target_episode_len)
     split_info["low_dim_keys"] = list(selected_low_dim_keys)
+    split_info["supervision_keys"] = list(selected_supervision_keys)
+    split_info["metadata_filters"] = metadata_filters
     split_info["low_dim_dim"] = int(norm_stats["proprio_dim"])
     split_info["image_mask_enabled"] = bool(image_mask_config)
     split_info["hdf5_cache_size"] = int(hdf5_cache_size)
@@ -610,6 +759,27 @@ def load_data(
     )
 
     return train_loader, val_loader, norm_stats, train_ds.is_sim, split_info
+
+
+def _episode_matches_metadata_filters(h5_file, filters: dict[str, Any]) -> bool:
+    metadata_attrs = {}
+    if "metadata" in h5_file:
+        metadata_attrs.update(dict(h5_file["metadata"].attrs))
+    metadata_attrs.update(dict(h5_file.attrs))
+    for key, expected in filters.items():
+        actual = metadata_attrs.get(str(key))
+        if isinstance(actual, bytes):
+            actual = actual.decode()
+        if isinstance(actual, np.generic):
+            actual = actual.item()
+        actual_str = str(actual)
+        if isinstance(expected, (list, tuple, set)):
+            expected_values = {str(item) for item in expected}
+            if actual_str not in expected_values:
+                return False
+        elif actual_str != str(expected):
+            return False
+    return True
 
 
 def _select_episode_ids(dataset_dir: str | Path, num_episodes: int) -> list[int]:
@@ -787,6 +957,78 @@ def _read_dig_cut_tokens_dataset(h5_file, index: int | None = None) -> np.ndarra
             f"{expected_dim}, got {arr.shape}."
         )
     return arr
+
+
+def _read_return_target_tokens_dataset(h5_file, index: int | None = None) -> np.ndarray:
+    if DS_V2_STEP_RETURN_TARGET_TOKENS not in h5_file:
+        raise KeyError(
+            "Requested low_dim key 'return_target_tokens' but "
+            "/v2/step/return_target_tokens is missing."
+        )
+    dataset = h5_file[DS_V2_STEP_RETURN_TARGET_TOKENS]
+    value = dataset[()] if index is None else dataset[index]
+    arr = np.asarray(value, dtype=np.float32)
+    expected_dim = RETURN_TARGET_TOKEN_DIM
+    if arr.shape[-1] != expected_dim:
+        raise ValueError(
+            "/v2/step/return_target_tokens must have last dimension "
+            f"{expected_dim}, got {arr.shape}."
+        )
+    return arr
+
+
+def _read_return_start_envelope_tokens_dataset(
+    h5_file,
+    index: int | None = None,
+) -> np.ndarray:
+    if DS_V2_STEP_RETURN_START_ENVELOPE_TOKENS_V1 not in h5_file:
+        raise KeyError(
+            "Requested low_dim key 'return_start_envelope_tokens_v1' but "
+            "/v2/step/return_start_envelope_tokens_v1 is missing."
+        )
+    dataset = h5_file[DS_V2_STEP_RETURN_START_ENVELOPE_TOKENS_V1]
+    value = dataset[()] if index is None else dataset[index]
+    arr = np.asarray(value, dtype=np.float32)
+    expected_dim = RETURN_START_ENVELOPE_TOKEN_DIM
+    if arr.shape[-1] != expected_dim:
+        raise ValueError(
+            "/v2/step/return_start_envelope_tokens_v1 must have last dimension "
+            f"{expected_dim}, got {arr.shape}."
+        )
+    return arr
+
+
+def _read_supervision_at_step(
+    h5_file,
+    *,
+    key: str,
+    index: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    dataset_path = _SUPERVISION_DATASET_PATHS[key]
+    mask_path = _SUPERVISION_MASK_PATHS[key]
+    if dataset_path not in h5_file:
+        raise KeyError(
+            f"Requested supervision key {key!r} but {dataset_path} is missing."
+        )
+    target = np.asarray(h5_file[dataset_path][index], dtype=np.float32).reshape(-1)
+    expected_dim = (
+        DIG_CUT_TOKEN_DIM
+        if key == "dig_outcome_targets"
+        else RETURN_TARGET_TOKEN_DIM
+    )
+    if target.shape[-1] != expected_dim:
+        raise ValueError(
+            f"{dataset_path} must have last dimension {expected_dim}, got {target.shape}."
+        )
+    if mask_path in h5_file:
+        mask = np.asarray(h5_file[mask_path][index], dtype=np.float32).reshape(-1)
+    else:
+        mask = np.ones_like(target, dtype=np.float32)
+    if mask.shape != target.shape:
+        raise ValueError(
+            f"{mask_path} shape {mask.shape} does not match target shape {target.shape}."
+        )
+    return target.astype(np.float32), mask.astype(np.float32)
 
 
 def _read_action_loss_mask(h5_file, *, start: int) -> np.ndarray | None:

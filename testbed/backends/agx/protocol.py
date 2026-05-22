@@ -56,6 +56,8 @@ class MessageType(IntEnum):
     RESET_RESP = 4
     STEP_REQ = 5
     STEP_RESP = 6
+    REALIGN_POSE_REQ = 7
+    REALIGN_POSE_RESP = 8
 
 
 @dataclass(frozen=True)
@@ -271,13 +273,45 @@ def encode_step_request(
     action: np.ndarray | list[float] | tuple[float, ...],
     *,
     client_time_ns: int | None = None,
+    planner_debug_json: str | None = None,
 ) -> bytes:
     payload = io.BytesIO()
     payload.write(struct.pack("<q", int(step_id)))
     payload.write(_pack_float_array(action))
-    if client_time_ns is not None:
-        payload.write(struct.pack("<q", int(client_time_ns)))
+    if client_time_ns is not None or planner_debug_json is not None:
+        payload.write(
+            struct.pack(
+                "<q",
+                int(client_time_ns if client_time_ns is not None else -1),
+            )
+        )
+    if planner_debug_json is not None:
+        payload.write(_pack_string(str(planner_debug_json)))
     return encode_frame(MessageType.STEP_REQ, payload.getvalue())
+
+
+def encode_realign_pose_request(
+    step_id: int,
+    qpos: np.ndarray | list[float] | tuple[float, ...],
+    *,
+    qvel: np.ndarray | list[float] | tuple[float, ...] | None = None,
+    burn_in_steps: int = 0,
+    client_time_ns: int | None = None,
+    reason: str | None = None,
+) -> bytes:
+    payload = io.BytesIO()
+    payload.write(struct.pack("<q", int(step_id)))
+    payload.write(_pack_float_array(qpos))
+    payload.write(_pack_float_array([] if qvel is None else qvel))
+    payload.write(struct.pack("<i", int(burn_in_steps)))
+    payload.write(
+        struct.pack(
+            "<q",
+            int(client_time_ns if client_time_ns is not None else -1),
+        )
+    )
+    payload.write(_pack_string("" if reason is None else str(reason)))
+    return encode_frame(MessageType.REALIGN_POSE_REQ, payload.getvalue())
 
 
 def _read_exact(sock: socket.socket, n_bytes: int) -> bytes:
@@ -501,6 +535,8 @@ class AgxSimClient:
         self,
         step_id: int,
         action: np.ndarray | list[float] | tuple[float, ...],
+        *,
+        planner_debug_json: str | None = None,
     ) -> StepResponse:
         action_arr = np.asarray(action, dtype=np.float32).reshape(-1)
         if action_arr.size < 4:
@@ -513,8 +549,45 @@ class AgxSimClient:
                 step_id=step_id,
                 action=action_arr,
                 client_time_ns=time.time_ns(),
+                planner_debug_json=planner_debug_json,
             ),
             expected=MessageType.STEP_RESP,
+        )
+        parsed = decode_step_response(response)
+        if not parsed.success:
+            raise AgxServerError(parsed.error, parsed.warnings)
+        if parsed.step_id != int(step_id):
+            raise AgxProtocolError(
+                f"step_id mismatch: requested {step_id}, received {parsed.step_id}"
+            )
+        return parsed
+
+    def realign_pose(
+        self,
+        step_id: int,
+        qpos: np.ndarray | list[float] | tuple[float, ...],
+        *,
+        qvel: np.ndarray | list[float] | tuple[float, ...] | None = None,
+        burn_in_steps: int = 0,
+        reason: str | None = None,
+    ) -> StepResponse:
+        qpos_arr = np.asarray(qpos, dtype=np.float32).reshape(-1)
+        if qpos_arr.size < 4:
+            raise ValueError(
+                "AGX Unity backend expects at least 4 qpos values, "
+                f"got {qpos_arr.size}"
+            )
+        qvel_arr = None if qvel is None else np.asarray(qvel, dtype=np.float32).reshape(-1)
+        response = self._roundtrip(
+            encode_realign_pose_request(
+                step_id=step_id,
+                qpos=qpos_arr,
+                qvel=qvel_arr,
+                burn_in_steps=int(burn_in_steps),
+                client_time_ns=time.time_ns(),
+                reason=reason,
+            ),
+            expected=MessageType.REALIGN_POSE_RESP,
         )
         parsed = decode_step_response(response)
         if not parsed.success:

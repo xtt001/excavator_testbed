@@ -65,6 +65,7 @@ class ACTTrainer(Trainer):
         save_latest_every = max(1, int(cfg.get("save_latest_every", 1)))
         checkpoint_every = max(1, int(cfg.get("checkpoint_every", 100)))
         plot_every = max(1, int(cfg.get("plot_every", checkpoint_every)))
+        keep_only_best_ckpt = bool(cfg.get("keep_only_best_ckpt", False))
         amp_enabled = bool(cfg.get("amp", False))
         amp_dtype_name = str(cfg.get("amp_dtype", "auto"))
         resume_optimizer = bool(cfg.get("resume_optimizer", True))
@@ -134,7 +135,11 @@ class ACTTrainer(Trainer):
                     epoch_val_loss = ep_summary["loss"]
                     if epoch_val_loss < min_val_loss:
                         min_val_loss = epoch_val_loss
-                        best_ckpt = (epoch, min_val_loss, deepcopy(adapter.state_dict()))
+                        best_ckpt = (
+                            epoch,
+                            min_val_loss,
+                            self._state_dict_to_cpu(adapter.state_dict()),
+                        )
 
                 self._print_summary("Val", epoch, ep_summary)
             else:
@@ -204,6 +209,12 @@ class ACTTrainer(Trainer):
             adapter, optimizer, best_epoch, bvl, cfg, sd_override=best_sd,
         )
         self._plot_history(train_history, val_history, val_epochs, num_epochs, ckpt_dir, seed)
+        if keep_only_best_ckpt:
+            removed_count, removed_bytes = self._cleanup_nonbest_checkpoints(ckpt_dir)
+            print(
+                "Removed non-best checkpoints:"
+                f" count={removed_count}, bytes={removed_bytes}"
+            )
         print(f"Training done. Best epoch={best_epoch}, val loss={bvl:.6f}")
         return best_epoch, bvl, best_sd
 
@@ -231,13 +242,34 @@ class ACTTrainer(Trainer):
         amp_enabled: bool = False,
         amp_dtype: torch.dtype | None = None,
     ) -> dict:
-        image_data, proprio_data, action_data, is_pad = data
+        outcome_target = None
+        outcome_mask = None
+        if isinstance(data, dict):
+            image_data = data["image"]
+            proprio_data = data["proprio"]
+            action_data = data["action"]
+            is_pad = data["is_pad"]
+            outcome_target = data.get("outcome_target")
+            outcome_mask = data.get("outcome_mask")
+        else:
+            image_data, proprio_data, action_data, is_pad = data
         image_data  = image_data.to(adapter.device)
         proprio_data = proprio_data.to(adapter.device)
         action_data = action_data.to(adapter.device)
         is_pad      = is_pad.to(adapter.device)
+        if outcome_target is not None:
+            outcome_target = outcome_target.to(adapter.device)
+        if outcome_mask is not None:
+            outcome_mask = outcome_mask.to(adapter.device)
         with ACTTrainer._autocast_context(adapter.device, amp_enabled, amp_dtype):
-            return adapter.forward_loss(proprio_data, image_data, action_data, is_pad)
+            return adapter.forward_loss(
+                proprio_data,
+                image_data,
+                action_data,
+                is_pad,
+                outcome_target=outcome_target,
+                outcome_mask=outcome_mask,
+            )
 
     @staticmethod
     def _save_ckpt(path, adapter, optimizer, epoch, val_loss, config, sd_override=None):
@@ -251,10 +283,41 @@ class ACTTrainer(Trainer):
                     "task_name":    config.get("task_name", ""),
                     "seed":         config.get("seed", 0),
                     "policy_class": "ACT",
+                    "supervision_keys": list(config.get("supervision_keys", [])),
+                    "outcome_head": dict(config.get("outcome_head", {}) or {}),
+                    "keep_only_best_ckpt": bool(config.get("keep_only_best_ckpt", False)),
                 },
             },
             path,
         )
+
+    @staticmethod
+    def _state_dict_to_cpu(state_dict):
+        """Clone a state_dict to CPU so best-checkpoint tracking does not hold VRAM."""
+        return {
+            key: value.detach().cpu().clone() if torch.is_tensor(value) else deepcopy(value)
+            for key, value in state_dict.items()
+        }
+
+    @staticmethod
+    def _cleanup_nonbest_checkpoints(ckpt_dir: Path) -> tuple[int, int]:
+        """Remove periodic/latest ACT checkpoints after policy_best.ckpt is saved."""
+        removable: list[Path] = []
+        removable.extend(sorted(ckpt_dir.glob("policy_epoch_*_seed_*.ckpt")))
+        removable.extend([ckpt_dir / "policy_latest.ckpt", ckpt_dir / "policy_last.ckpt"])
+
+        removed_count = 0
+        removed_bytes = 0
+        for path in removable:
+            if path.name == "policy_best.ckpt" or not path.exists():
+                continue
+            try:
+                removed_bytes += int(path.stat().st_size)
+                path.unlink()
+                removed_count += 1
+            except FileNotFoundError:
+                continue
+        return removed_count, removed_bytes
 
     @staticmethod
     def _infer_start_epoch(resume_path: str, ckpt_obj: dict, cfg: dict) -> int:

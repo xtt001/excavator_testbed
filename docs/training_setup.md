@@ -205,6 +205,13 @@ tb-replay \
   --episode data/agx_teleop_v1/episode_0.hdf5 \
   --config testbed/configs/teleop_v1.yaml \
   --record-output-dir data/agx_teleop_v1_replayed_current
+
+# replay 逐 step 诊断：定位 qpos/swing 跳变、碰撞和接触触发点
+tb-replay \
+  --episode data/agx_teleop_v1/episode_0.hdf5 \
+  --config testbed/configs/teleop_v1.yaml \
+  --diagnostic-log runs/diagnostics/episode_0_replay_diagnostics.jsonl \
+  --diagnostic-every 1
 ```
 
 `tb-replay` 支持单文件或目录输入。批量回放时会自动按 episode 编号排序，共享同一个 backend 连接，最后输出 qpos diff 汇总表。加上 `--record-output-dir` 后，会把 source episode 的 actions 在当前 Unity 后端里重新执行并写成新的 HDF5，可用于 Unity 侧 `env_state` 或相机观测变更后的数据刷新。
@@ -212,7 +219,23 @@ tb-replay \
 刷新写新 HDF5 时，`tb-replay` 会默认读取 config 里的
 `teleop.post_success_tail_steps`，当前 V2.1 是 `50` 步，并在 source
 actions 后追加 zero-action hold tail。这个 tail 保留 terminal dump 后的
-plateau / `dump_end` 观测；可用 `--post-tail-steps <N>` 临时覆盖。
+plateau / `dump_end` 观测；可用 `--post-tail-steps <N>` 临时覆盖。刷新
+replay 会跳过 source episode 里的旧 image dataset，只读取 actions/qpos/metadata，
+并把当前 Unity 后端返回的新图像写入输出 HDF5。
+
+需要查 swing 或 AGX 碰撞导致的 replay 漂移时，加
+`--diagnostic-log <path.jsonl>`。JSONL 会记录每步 action、source/replay
+qpos/qvel、qpos 误差、bucket 相对 DigArea 坐标、contact/collision、
+removed-depth 和 bucket mass delta 等关键量；`tb-replay-diagnostics --input
+<path-or-dir> --top 20` 可快速汇总首个/最大的 qpos error、qpos jump、碰撞和
+接触 step。
+
+旧 YuLong 原始数据如果包含已修复、随机且无法原样复现的 actuator pose 跳变，刷新
+removed-depth 时可在 replay 期间启用对齐，而不是事后改旧 HDF5：
+`--realign-on-qpos-error --realign-axis all --realign-error-threshold 0.04`。
+该模式会在持续 qpos 偏差后通过 Unity `REALIGN_POSE` 协议把当前仿真 4D
+qpos 拉回 source，并继续用当前 Unity 重写 image/env_state/depth；诊断 JSONL
+会写 `pose_realign` 事件。`swing` 模式只保留作窄范围调试。
 
 两者区别：`tb-dataset-videos` 直接读 HDF5 中已存储的图片帧，速度快且无需 AGX；`tb-replay` 重新通过 AGX 执行动作序列，用于验证 action→observation 的可重放性。
 
@@ -420,6 +443,18 @@ print('done, rows:', len(records))
 - `policy_latest.ckpt` 由 `save_latest_every` 控制，训练结束时额外写一次
 - `policy_epoch_{n}_seed_{s}.ckpt` 由 `checkpoint_every` 控制
 - 训练曲线图由 `plot_every` 控制
+- 如果 `keep_only_best_ckpt: true`，trainer 会在 `policy_best.ckpt`
+  写入后删除 `policy_epoch_*_seed_*.ckpt`、`policy_latest.ckpt` 和
+  `policy_last.ckpt`，只保留 best checkpoint 与 metadata/曲线文件。
+- 对 image-VDS 中间数据，使用 `tb-materialize-vds --recursive --workers N`
+  可以把 primitive VDS 并行落成训练用 copy；建议只在 primitive/window
+  级数据上开多 worker，不要对完整 20000-step raw relabel 直接并行复制。
+- 训练结束后的空间回收使用 `tb-cleanup-training-artifacts --delete`。V2.4
+  hindsight pipeline 在 `--train` 成功后默认自动调用它：删除可由
+  primitive VDS 重建的 materialized primitive copy、清掉指向该 copy 的
+  current symlink，并扫描本次 dig/return `ckpt_dir` 删除非
+  `policy_best.ckpt` 的 checkpoint。需要保留训练 copy 做诊断时，用
+  `--no-cleanup-after-train` 显式关闭。
 - AMP：`amp_dtype=auto` 时 CUDA 优先 bf16，否则回退 fp16；fp16 路径启用 GradScaler
 
 ---

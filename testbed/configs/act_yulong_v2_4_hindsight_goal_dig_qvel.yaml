@@ -1,0 +1,66 @@
+# YuLong V2.4 outcome-grounded hindsight goal dig ACT.
+#
+# The operator records naturally; this run teaches dig ACT to respond to the
+# hindsight cut outcome token instead of only cloning the average pro habit.
+
+task:
+  task_name: agx_excavation_teleop
+  equipment_model: yulong
+  dataset_dir: data/yulong_v2_4_hindsight_goal_primitives_copy/dig
+  num_episodes: 0
+  episode_len: 128
+  camera_names:
+    - fpv
+  backend:
+    name: agx
+    dt: 0.02
+
+policy:
+  class: ACT
+  device: cuda
+  low_dim_keys:
+    - qpos
+    - qvel
+    - dig_cut_tokens
+  supervision_keys:
+    - dig_outcome_targets
+  outcome_head:
+    enabled: true
+    dim: 10
+    action_horizon: 100
+    hidden_dim: 512
+    loss_weight: 2.0
+    token_swap_loss_weight: 1.0
+  act_params:
+    chunk_size: 100
+    kl_weight: 10.0
+    hidden_dim: 512
+    dim_feedforward: 3200
+
+train:
+  lr: 1.0e-5
+  num_epochs: 500
+  batch_size: 24
+  seed: 0
+  device: cuda
+  num_workers: 8
+  prefetch_factor: 4
+  persistent_workers: true
+  pin_memory: true
+  hdf5_cache_size: 32
+  split_seed: 0
+  train_split_ratio: 0.8
+  reuse_split: true
+  metadata_filters:
+    training_tier: gold
+  val_every: 20
+  save_latest_every: 25
+  checkpoint_every: 50
+  plot_every: 100
+  keep_only_best_ckpt: true
+  amp: true
+  amp_dtype: auto
+  cudnn_benchmark: true
+  allow_tf32: true
+  matmul_precision: high
+  ckpt_dir: runs/ckpts/yulong_v2_4_hindsight_goal_20260520/dig

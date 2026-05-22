@@ -26,6 +26,8 @@ from testbed.data.schema import (
     ENV_STATE_DIG_AREA_GRID_LONG_COUNT_IDX,
     ENV_STATE_DIG_AREA_GRID_SHORT_COUNT_IDX,
     ENV_STATE_DIG_AREA_LONG_AXIS_IDX,
+    ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX,
+    ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX,
 )
@@ -551,10 +553,19 @@ def _build_outcome(
     actual_bite = _first_mass_gain_step(
         env_state, actual_start if actual_start >= 0 else start, end
     )
-    actual_removal = actual_bite
+    depth_removal = _first_removed_depth_delta_step_and_cell(
+        env_state, actual_start if actual_start >= 0 else start, end
+    )
+    actual_removal = (
+        int(depth_removal[0]) if depth_removal is not None else actual_bite
+    )
     start_cell = _cell_id_at(env_state, actual_start)
     bite_cell = _cell_id_at(env_state, actual_bite)
-    removal_cell = _cell_id_at(env_state, actual_removal)
+    removal_cell = (
+        int(depth_removal[1])
+        if depth_removal is not None
+        else _cell_id_at(env_state, actual_removal)
+    )
 
     mass = _env_series(env_state, ENV_STATE_MASS_IN_BUCKET_IDX, start, end)
     payload_gain = float(np.nanmax(mass) - np.nanmin(mass)) if mass.size else 0.0
@@ -597,6 +608,72 @@ def _first_mask_step(
         if bool(mask[step]):
             return int(step)
     return None
+
+
+def _first_removed_depth_delta_step_and_cell(
+    env_state: np.ndarray,
+    start: int,
+    end: int,
+    *,
+    min_depth_delta_m: float = 0.01,
+) -> tuple[int, int] | None:
+    """Infer actual removal from reset-relative 3x2 removed-depth delta.
+
+    Old YuLong raw roots had a broken all-zero depth grid, so callers must still
+    fall back to the first bucket mass-gain/bite proxy when this returns None.
+    """
+
+    if (
+        env_state.ndim != 2
+        or env_state.shape[1] < ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX + 6
+    ):
+        return None
+    start = max(0, int(start))
+    end = min(int(end), int(env_state.shape[0]))
+    if end <= start + 1:
+        return None
+
+    removed = np.asarray(
+        env_state[
+            start:end,
+            ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX : ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX
+            + 6,
+        ],
+        dtype=np.float32,
+    )
+    if removed.size == 0 or not np.isfinite(removed).any():
+        return None
+
+    valid = np.ones(6, dtype=bool)
+    if env_state.shape[1] >= ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX + 6:
+        valid_values = np.asarray(
+            env_state[
+                max(start, end - 1),
+                ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX : ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX
+                + 6,
+            ],
+            dtype=np.float32,
+        )
+        valid = np.isfinite(valid_values) & (valid_values > 0.5)
+
+    baseline = removed[0]
+    delta = removed - baseline.reshape(1, -1)
+    delta = np.where(np.isfinite(delta), delta, 0.0)
+    delta = np.maximum(delta, 0.0)
+    max_delta_by_cell = np.max(delta, axis=0)
+    max_delta_by_cell = np.where(valid, max_delta_by_cell, 0.0)
+    cell_id = int(np.argmax(max_delta_by_cell))
+    max_delta = float(max_delta_by_cell[cell_id])
+    if max_delta < min_depth_delta_m:
+        return None
+
+    trigger_delta = max(min_depth_delta_m, 0.3 * max_delta)
+    cell_series = delta[:, cell_id]
+    trigger_indices = np.flatnonzero(cell_series >= trigger_delta)
+    if trigger_indices.size == 0:
+        return None
+
+    return int(start + int(trigger_indices[0])), int(cell_id)
 
 
 def _first_geometry_step(env_state: np.ndarray, start: int, end: int) -> int:

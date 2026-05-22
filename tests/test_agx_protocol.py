@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import io
 import socket
+import struct
 import threading
 import unittest
+import zlib
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -16,12 +18,15 @@ from testbed.backends.agx.protocol import (
     AgxSimClient,
     MessageType,
     StepResponse,
+    _PayloadReader,
     _pack_bool,
     _pack_bytes,
     _pack_float_array,
     _pack_string,
     _pack_string_array,
     encode_frame,
+    encode_realign_pose_request,
+    encode_step_request,
     read_frame,
 )
 from testbed.tasks.logic.excavator_reward import (
@@ -99,6 +104,7 @@ def _build_reset_response() -> bytes:
 def _build_step_response(
     step_id: int,
     image_bytes: bytes = b"\x01\x02\x03\x04\x05\x06",
+    message_type: MessageType = MessageType.STEP_RESP,
 ) -> bytes:
     payload = io.BytesIO()
     payload.write(_pack_bool(True))
@@ -114,7 +120,7 @@ def _build_step_response(
     payload.write(np.float32(0.0).astype("<f4").tobytes())
     payload.write(np.int64(123456789).astype("<i8").tobytes())
     payload.write(_pack_string_array(["auto_stepping_disabled_by_server"]))
-    return encode_frame(MessageType.STEP_RESP, payload.getvalue())
+    return encode_frame(message_type, payload.getvalue())
 
 
 def _serve_scripted(
@@ -146,7 +152,73 @@ def _serve_scripted(
     return host, port, thread
 
 
+def _decode_request_frame(frame: bytes) -> tuple[MessageType, bytes]:
+    magic, version, raw_message_type, payload_len, expected_crc = struct.unpack(
+        "<IHHII",
+        frame[:16],
+    )
+    self_crc = zlib.crc32(frame[16:]) & 0xFFFFFFFF
+    if magic != 0xA6A6A6A6 or version != 1:
+        raise AssertionError("invalid encoded test frame header")
+    if payload_len != len(frame) - 16:
+        raise AssertionError("invalid encoded test frame payload length")
+    if self_crc != expected_crc:
+        raise AssertionError("invalid encoded test frame crc")
+    return MessageType(raw_message_type), frame[16:]
+
+
 class AgxProtocolTests(unittest.TestCase):
+    def test_step_request_encoder_keeps_legacy_layout_without_debug(self) -> None:
+        frame = encode_step_request(7, np.zeros(4, dtype=np.float32))
+        message_type, payload = _decode_request_frame(frame)
+        self.assertEqual(message_type, MessageType.STEP_REQ)
+
+        reader = _PayloadReader(payload)
+        self.assertEqual(reader.read_int64(), 7)
+        np.testing.assert_allclose(reader.read_float_array(), np.zeros(4))
+        reader.ensure_fully_consumed()
+
+    def test_step_request_encoder_appends_planner_debug_json(self) -> None:
+        frame = encode_step_request(
+            8,
+            np.ones(4, dtype=np.float32),
+            client_time_ns=123,
+            planner_debug_json='{"mode":"operator_prior_coverage"}',
+        )
+        message_type, payload = _decode_request_frame(frame)
+        self.assertEqual(message_type, MessageType.STEP_REQ)
+
+        reader = _PayloadReader(payload)
+        self.assertEqual(reader.read_int64(), 8)
+        np.testing.assert_allclose(reader.read_float_array(), np.ones(4))
+        self.assertEqual(reader.read_int64(), 123)
+        self.assertEqual(
+            reader.read_string(),
+            '{"mode":"operator_prior_coverage"}',
+        )
+        reader.ensure_fully_consumed()
+
+    def test_realign_pose_request_encoder(self) -> None:
+        frame = encode_realign_pose_request(
+            9,
+            [0.5, 0.2, 0.3, 0.4],
+            qvel=[0.0, 1.0, 2.0, 3.0],
+            burn_in_steps=7,
+            client_time_ns=456,
+            reason="swing_jump_replay",
+        )
+        message_type, payload = _decode_request_frame(frame)
+        self.assertEqual(message_type, MessageType.REALIGN_POSE_REQ)
+
+        reader = _PayloadReader(payload)
+        self.assertEqual(reader.read_int64(), 9)
+        np.testing.assert_allclose(reader.read_float_array(), [0.5, 0.2, 0.3, 0.4])
+        np.testing.assert_allclose(reader.read_float_array(), [0.0, 1.0, 2.0, 3.0])
+        self.assertEqual(reader.read_int32(), 7)
+        self.assertEqual(reader.read_int64(), 456)
+        self.assertEqual(reader.read_string(), "swing_jump_replay")
+        reader.ensure_fully_consumed()
+
     def test_client_roundtrip(self) -> None:
         host, port, thread = _serve_scripted(
             [
@@ -173,6 +245,32 @@ class AgxProtocolTests(unittest.TestCase):
                 [5.0, 6.0, 7.0, 8.0, 1.5, 0.0, 0.0, 0.25, 0.0],
             )
             self.assertEqual(step.decode_rgb_image().shape, (1, 2, 3))
+
+        thread.join(timeout=1.0)
+        self.assertFalse(thread.is_alive())
+
+    def test_client_realign_pose_roundtrip(self) -> None:
+        host, port, thread = _serve_scripted(
+            [
+                (
+                    MessageType.REALIGN_POSE_REQ,
+                    _build_step_response(
+                        step_id=9,
+                        message_type=MessageType.REALIGN_POSE_RESP,
+                    ),
+                ),
+            ]
+        )
+
+        with AgxSimClient(host=host, port=port, timeout_s=1.0) as client:
+            response = client.realign_pose(
+                9,
+                np.array([0.5, 0.2, 0.3, 0.4], dtype=np.float32),
+                burn_in_steps=3,
+                reason="unit_test",
+            )
+            self.assertEqual(response.step_id, 9)
+            np.testing.assert_allclose(response.qpos, [0.1, 0.2, 0.3, 0.4])
 
         thread.join(timeout=1.0)
         self.assertFalse(thread.is_alive())

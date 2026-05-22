@@ -11,6 +11,7 @@ from testbed.data.dataset import get_norm_stats
 from testbed.data.hdf5_io import read_episode, write_episode
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_TOKEN_DIM,
+    RETURN_TARGET_TOKEN_DIM,
     build_operator_first_dataset,
     enrich_episode_operator_first,
 )
@@ -20,6 +21,7 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
     ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+    ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_V2_2_DIM,
 )
@@ -34,12 +36,36 @@ class OperatorFirstV22Tests(unittest.TestCase):
 
         self.assertEqual(summary["cycle_count"], 1)
         self.assertEqual(v2["step"]["dig_cut_tokens"].shape, (8, DIG_CUT_TOKEN_DIM))
+        self.assertEqual(
+            v2["step"]["return_target_tokens"].shape,
+            (8, RETURN_TARGET_TOKEN_DIM),
+        )
         self.assertAlmostEqual(float(v2["cycle"]["deposit_delta_kg"][0]), 7.0)
         self.assertGreater(
             float(v2["cycle"]["cycle_effective_deposit_delta_kg"][0]),
             float(v2["cycle"]["deposit_delta_kg"][0]),
         )
         self.assertEqual(str(v2["cycle"]["training_tier"][0]), "gold")
+        self.assertEqual(str(v2["cycle"]["return_target_source"][0]), "terminal_none")
+        self.assertEqual(
+            str(v2["cycle"]["operator_cut_depth_source"][0]),
+            "env_state_removed_depth_delta",
+        )
+        self.assertLess(float(v2["step"]["dig_cut_tokens"][1, 7]), 1.0)
+
+    def test_enrichment_adds_next_cut_return_target_tokens(self) -> None:
+        episode = _operator_two_cycle_episode()
+
+        v2, summary = enrich_episode_operator_first(episode=episode)
+
+        self.assertEqual(summary["cycle_count"], 2)
+        tokens = v2["step"]["return_target_tokens"]
+        self.assertEqual(tokens.shape, (16, RETURN_TARGET_TOKEN_DIM))
+        self.assertTrue(np.all(np.isfinite(tokens)))
+        self.assertGreater(float(np.max(np.abs(tokens[7:9, :9]))), 0.0)
+        self.assertEqual(float(tokens[7, -1]), 1.0)
+        self.assertEqual(str(v2["cycle"]["return_target_source"][0]), "operator_next_entry")
+        self.assertEqual(str(v2["cycle"]["return_target_source"][1]), "terminal_none")
 
     def test_vds_builder_and_loader_support_dig_cut_tokens(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -62,9 +88,14 @@ class OperatorFirstV22Tests(unittest.TestCase):
                 enriched["v2"]["step"]["dig_cut_tokens"].shape,
                 (8, DIG_CUT_TOKEN_DIM),
             )
+            self.assertEqual(
+                enriched["v2"]["step"]["return_target_tokens"].shape,
+                (8, RETURN_TARGET_TOKEN_DIM),
+            )
             with h5py.File(output_dir / "episode_0.hdf5", "r") as f:
                 self.assertTrue(f["observations/qpos"].is_virtual)
                 self.assertFalse(f["v2/step/dig_cut_tokens"].is_virtual)
+                self.assertFalse(f["v2/step/return_target_tokens"].is_virtual)
                 self.assertEqual(f["metadata"].attrs["storage_mode"], "vds")
 
             stats = get_norm_stats(
@@ -73,6 +104,47 @@ class OperatorFirstV22Tests(unittest.TestCase):
                 low_dim_keys=["qpos", "qvel", "dig_cut_tokens"],
             )
             self.assertEqual(stats["proprio_mean"].shape[0], 8 + DIG_CUT_TOKEN_DIM)
+
+    def test_copy_builder_and_loader_support_return_target_tokens(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            source_dir = tmp / "relabeled"
+            output_dir = tmp / "operator_copy"
+            source_dir.mkdir()
+            episode = _operator_two_cycle_episode()
+            write_episode(
+                source_dir / "episode_0.hdf5",
+                qpos=episode["qpos"],
+                qvel=episode["qvel"],
+                actions=episode["actions"],
+                images={"fpv": np.zeros((16, 2, 2, 3), dtype=np.uint8)},
+                rewards=np.zeros(16, dtype=np.float32),
+                env_state=episode["env_state"],
+                v2=episode["v2"],
+                metadata={"task_name": "agx_excavation_teleop"},
+            )
+
+            summary = build_operator_first_dataset(
+                dataset_dir=source_dir,
+                output_dir=output_dir,
+                storage_mode="copy",
+            )
+            self.assertEqual(summary["storage_mode"], "copy")
+
+            with h5py.File(output_dir / "episode_0.hdf5", "r") as f:
+                self.assertFalse(f["observations/qpos"].is_virtual)
+                self.assertFalse(f["v2/step/return_target_tokens"].is_virtual)
+                self.assertEqual(f["metadata"].attrs["operator_first_storage_mode"], "copy")
+
+            stats = get_norm_stats(
+                output_dir,
+                num_episodes=1,
+                low_dim_keys=["qpos", "qvel", "return_target_tokens"],
+            )
+            self.assertEqual(
+                stats["proprio_mean"].shape[0],
+                8 + RETURN_TARGET_TOKEN_DIM,
+            )
 
 
 def _write_operator_episode(path: Path) -> None:
@@ -104,6 +176,10 @@ def _operator_episode() -> dict:
         env_state[step, ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = (
             0.02 * step
         )
+        env_state[
+            step,
+            ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX + 2,
+        ] = 0.01 * min(step, 4)
     work_stage = np.asarray(
         [
             WORK_STAGE_NAME_TO_ID["entry_to_bite"],
@@ -130,6 +206,79 @@ def _operator_episode() -> dict:
             "end_step": np.asarray([7], dtype=np.int32),
             "deposit_delta_kg": np.asarray([7.0], dtype=np.float32),
             "cell_entry_target_cell_match": np.asarray([0], dtype=np.uint8),
+        },
+    }
+    return {
+        "qpos": np.zeros((n_steps, 4), dtype=np.float32),
+        "qvel": np.zeros((n_steps, 4), dtype=np.float32),
+        "actions": np.zeros((n_steps, 4), dtype=np.float32),
+        "env_state": env_state,
+        "v2": v2,
+        "metadata": {},
+    }
+
+
+def _operator_two_cycle_episode() -> dict:
+    n_steps = 16
+    env_state = np.zeros((n_steps, ENV_STATE_V2_2_DIM), dtype=np.float32)
+    for step in range(n_steps):
+        cycle_offset = 0 if step < 8 else 8
+        local_step = step - cycle_offset
+        env_state[step, ENV_STATE_MASS_IN_BUCKET_IDX] = float(min(local_step, 4) * 15)
+        env_state[step, ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX] = float(
+            (0 if step < 8 else 50) + max(0, local_step - 4) * 12
+        )
+        env_state[step, ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX] = (
+            1.0 - 0.18 * local_step - 0.15 * (step >= 8)
+        )
+        env_state[step, ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX] = -0.05 * local_step
+        env_state[step, ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX] = (
+            0.3 + 0.2 * (step >= 8)
+        )
+        env_state[step, ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = (
+            0.02 * local_step
+        )
+        env_state[
+            step,
+            ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX + (2 if step < 8 else 3),
+        ] = 0.01 * min(local_step, 4)
+    work_stage = np.asarray(
+        [
+            WORK_STAGE_NAME_TO_ID["entry_to_bite"],
+            WORK_STAGE_NAME_TO_ID["first_bite"],
+            WORK_STAGE_NAME_TO_ID["first_bite"],
+            WORK_STAGE_NAME_TO_ID["carry"],
+            WORK_STAGE_NAME_TO_ID["approach_dump"],
+            WORK_STAGE_NAME_TO_ID["dump"],
+            WORK_STAGE_NAME_TO_ID["dump"],
+            WORK_STAGE_NAME_TO_ID["dump"],
+            WORK_STAGE_NAME_TO_ID["entry_to_bite"],
+            WORK_STAGE_NAME_TO_ID["first_bite"],
+            WORK_STAGE_NAME_TO_ID["first_bite"],
+            WORK_STAGE_NAME_TO_ID["carry"],
+            WORK_STAGE_NAME_TO_ID["approach_dump"],
+            WORK_STAGE_NAME_TO_ID["dump"],
+            WORK_STAGE_NAME_TO_ID["dump"],
+            WORK_STAGE_NAME_TO_ID["dump"],
+        ],
+        dtype=np.uint8,
+    )
+    v2 = {
+        "step": {
+            "cycle_id": np.asarray([0] * 8 + [1] * 8, dtype=np.int32),
+            "work_stage_id": work_stage,
+            "dump_start_mask": np.asarray(
+                [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+                dtype=np.uint8,
+            ),
+        },
+        "cycle": {
+            "cycle_id": np.asarray([0, 1], dtype=np.int32),
+            "start_step": np.asarray([0, 8], dtype=np.int32),
+            "dump_end_step": np.asarray([7, 15], dtype=np.int32),
+            "end_step": np.asarray([7, 15], dtype=np.int32),
+            "deposit_delta_kg": np.asarray([7.0, 7.0], dtype=np.float32),
+            "cell_entry_target_cell_match": np.asarray([0, 0], dtype=np.uint8),
         },
     }
     return {

@@ -76,6 +76,10 @@ def main() -> None:
                 "episode_count": summary["episode_count"],
                 "cycle_count": summary["cycle_count"],
                 "dig_cut_token_dim": summary["dig_cut_token_dim"],
+                "return_target_token_dim": summary["return_target_token_dim"],
+                "return_target_source_counts": summary[
+                    "return_target_source_counts"
+                ],
                 "training_tier_counts": summary["training_tier_counts"],
                 "effective_deposit_delta_kg": summary[
                     "effective_deposit_delta_kg"

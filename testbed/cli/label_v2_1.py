@@ -42,6 +42,77 @@ def _load_label_config_sections(
     return dict(config.get("success", {}) or {}), dict(config.get("reward", {}) or {})
 
 
+_TRANSFER_LABEL_METADATA_KEYS = (
+    "scenario_id",
+    "goal_token_dim",
+    "goal_token_version",
+    "phase_version",
+    "work_stage_version",
+    "scenario_manifest_version",
+    "v2_enabled",
+    "transition_source",
+    "qualified_dig_start_mode",
+    "stage_success_version",
+    "stage_success_dig_min_payload_gain_kg",
+    "stage_success_dig_min_depth_m",
+    "stage_success_dump_min_deposit_delta_kg",
+    "stage_success_dump_min_deposited_fraction",
+    "label_config_path",
+)
+
+
+def _metadata_for_transferred_v2_labels(
+    *,
+    replay_metadata: dict[str, Any],
+    label_metadata: dict[str, Any],
+    label_source_path: Path,
+) -> dict[str, Any]:
+    metadata = dict(replay_metadata)
+    for key in _TRANSFER_LABEL_METADATA_KEYS:
+        if key in label_metadata:
+            metadata[key] = label_metadata[key]
+    metadata.update(
+        {
+            "label_storage_mode": "transfer",
+            "v2_label_source_path": str(label_source_path.resolve()),
+            "v2_label_source_dataset": str(label_source_path.parent.resolve()),
+        }
+    )
+    return metadata
+
+
+def _validate_transferred_v2_payload(
+    *,
+    source_path: Path,
+    replay_episode: dict[str, Any],
+    label_episode: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    v2_payload = label_episode.get("v2")
+    if not v2_payload:
+        raise ValueError(
+            f"Label-source episode {source_path} is missing /v2; "
+            "run tb-label-v2_1 on the source dataset first."
+        )
+    step_payload = dict(v2_payload.get("step", {}) or {})
+    replay_len = int(len(replay_episode["actions"]))
+    source_len = int(len(label_episode["actions"]))
+    if replay_len != source_len:
+        raise ValueError(
+            f"Cannot transfer /v2 labels from {source_path.name}: replay length "
+            f"{replay_len} != label-source length {source_len}."
+        )
+    for key, value in step_payload.items():
+        if len(value) != replay_len:
+            raise ValueError(
+                f"Cannot transfer /v2/step/{key} from {source_path.name}: "
+                f"length {len(value)} != episode length {replay_len}."
+            )
+    return {
+        "step": step_payload,
+        "cycle": dict(v2_payload.get("cycle", {}) or {}),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="tb-label-v2_1",
@@ -105,6 +176,17 @@ def main() -> None:
         default=STORAGE_MODE_COPY,
         help="copy writes relabeled HDF5 copies; vds writes lightweight wrappers.",
     )
+    parser.add_argument(
+        "--v2-label-source-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Optional already-relabeled source root whose /v2 labels are "
+            "transferred by episode filename instead of recomputing boundaries. "
+            "Use this when a replay only refreshes env_state/images but must "
+            "preserve previously QC-accepted cycle boundaries."
+        ),
+    )
     args = parser.parse_args()
     success_cfg, reward_cfg = _load_label_config_sections(args.config)
     reward_cfg["qualified_dig_start_mode"] = args.qualified_dig_start_mode
@@ -120,45 +202,74 @@ def main() -> None:
     episode_paths = list_episodes(dataset_dir)
     if not episode_paths:
         raise FileNotFoundError(f"No episode_*.hdf5 files found under {dataset_dir}")
+    label_source_dir = args.v2_label_source_dir
+    label_source_by_name: dict[str, Path] = {}
+    if label_source_dir is not None:
+        label_source_paths = list_episodes(label_source_dir)
+        if not label_source_paths:
+            raise FileNotFoundError(
+                f"No episode_*.hdf5 files found under label source {label_source_dir}"
+            )
+        label_source_by_name = {path.name: path for path in label_source_paths}
 
     labeled = 0
     for source_path in episode_paths:
         episode = read_episode(source_path, load_images=False)
         metadata = dict(episode.get("metadata", {}))
-        scenario_id = (
-            str(args.scenario_id)
-            if args.scenario_id
-            else str(metadata.get("scenario_id", "")).strip()
-        )
-        if not scenario_id:
-            raise KeyError(
-                f"Episode {source_path.name} is missing metadata.scenario_id; "
-                "pass --scenario-id to label it explicitly."
+        if label_source_dir is not None:
+            try:
+                label_source_path = label_source_by_name[source_path.name]
+            except KeyError as exc:
+                raise FileNotFoundError(
+                    f"Label source {label_source_dir} has no episode matching "
+                    f"{source_path.name}."
+                ) from exc
+            label_episode = read_episode(label_source_path, load_images=False)
+            v2_payload = _validate_transferred_v2_payload(
+                source_path=label_source_path,
+                replay_episode=episode,
+                label_episode=label_episode,
             )
-        env_state = episode.get("env_state")
-        if env_state is None:
-            raise ValueError(
-                f"Episode {source_path.name} is missing env_state; cannot generate /v2 labels."
+            metadata_updates = _metadata_for_transferred_v2_labels(
+                replay_metadata=metadata,
+                label_metadata=dict(label_episode.get("metadata", {})),
+                label_source_path=label_source_path,
             )
+        else:
+            scenario_id = (
+                str(args.scenario_id)
+                if args.scenario_id
+                else str(metadata.get("scenario_id", "")).strip()
+            )
+            if not scenario_id:
+                raise KeyError(
+                    f"Episode {source_path.name} is missing metadata.scenario_id; "
+                    "pass --scenario-id to label it explicitly."
+                )
+            env_state = episode.get("env_state")
+            if env_state is None:
+                raise ValueError(
+                    f"Episode {source_path.name} is missing env_state; cannot generate /v2 labels."
+                )
 
-        v2_payload, metadata_updates = label_episode_v2_1(
-            qpos=episode["qpos"],
-            actions=episode["actions"],
-            env_state=env_state,
-            metadata=metadata,
-            scenario_id=scenario_id,
-            pause_action_eps=args.pause_eps,
-            reward_cfg=reward_cfg,
-            success_cfg=success_cfg,
-        )
-        if args.config is not None:
-            metadata_updates["label_config_path"] = str(args.config.resolve())
+            v2_payload, metadata_updates = label_episode_v2_1(
+                qpos=episode["qpos"],
+                actions=episode["actions"],
+                env_state=env_state,
+                metadata=metadata,
+                scenario_id=scenario_id,
+                pause_action_eps=args.pause_eps,
+                reward_cfg=reward_cfg,
+                success_cfg=success_cfg,
+            )
+            if args.config is not None:
+                metadata_updates["label_config_path"] = str(args.config.resolve())
 
         target_path = output_dir / source_path.name
         if str(args.storage_mode) == STORAGE_MODE_VDS:
             relabeled_metadata = dict(metadata)
             relabeled_metadata.update(metadata_updates)
-            relabeled_metadata["label_storage_mode"] = STORAGE_MODE_VDS
+            relabeled_metadata.setdefault("label_storage_mode", STORAGE_MODE_VDS)
             write_vds_episode(
                 target_path,
                 source_path=source_path,
@@ -187,6 +298,9 @@ def main() -> None:
             "scenario_id": str(args.scenario_id or ""),
             "qualified_dig_start_mode": str(args.qualified_dig_start_mode),
             "config": "" if args.config is None else str(args.config.resolve()),
+            "v2_label_source_dir": (
+                "" if label_source_dir is None else str(label_source_dir.resolve())
+            ),
         },
     )
     print(

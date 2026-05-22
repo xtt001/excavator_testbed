@@ -38,11 +38,15 @@ Repo A 负责：
 | `tb-build-cell-entry-v2_2` | 已实现 | 从 raw 数据生成 enriched raw，追加 3x2 Cell Entry planned/actual/audit `/v2` 字段与 JSON summary |
 | `tb-build-operator-first-v2_2` | 已实现 | 从 relabeled VDS 数据生成 operator-first wrapper，追加 effective deposit、professional cut corridor、return target 与 `/v2/step/dig_cut_tokens`，不修改 raw |
 | `tb-build-primitives-v2_2` | 已实现 | 从 V2.1 workskill/raw 数据集中裁出 V2.2 `dig/carry/dump/return` 四个 primitive sibling 数据集；new-env pilot 可用 effect-release fallback profile |
+| `tb-build-v2_4-hindsight-pipeline` | 已实现 | 串联 V2.4 label/operator-first/hindsight/primitive VDS 与并行 materialize copy，每个阶段写 tail-friendly log |
+| `tb-materialize-vds` | 已实现 | 把 VDS wrapper 解析成实体 HDF5，并按完整 frame chunk 写图像，用于训练吞吐对照 |
+| `tb-cleanup-training-artifacts` | 已实现 | 训练成功后删除可由 primitive VDS 重建的 materialized copy，并只保留 `policy_best.ckpt` |
+| `tb-virtualize-images` | 已实现 | 把历史 copy HDF5 的 `/observations/images/*` 反向改成 VDS 引用，只保留低维数组本地化，用于低损归档 |
 | `tb-audit-target-geometry` | 已实现 | 检查数据集是否带齐 target-safety 训练所需的 7 个 target/dump-area geometry 字段 |
 | `tb-train` / ACT trainer | 已实现 | 已完成 `fulltest(qpos)`、`fulltest(qpos+qvel)` 与 `v1(qpos)` 三条训练线 |
 | `tb-eval` | 已实现 | 已完成正式 live eval；当前支持 V2.1 Stage 1 多轮 boundary / continuity 指标 |
 | `hybrid_planner_act` | 已实现 | 已接入最小 Stage 2 deploy 链；当前已在 `s0_truck` 上通过 live `2-cycle` gate，并完成一次 `3-cycle smoke` |
-| `primitive_planner_act` | 已实现（V2.2 smoke 入口） | 加载 `dig/carry/dump/return` 四个 ACT checkpoint；YuLong operator-first 主线只给 `dig` 注入 `dig_cut_tokens`，carry/dump/return 保持 `qpos+qvel` |
+| `primitive_planner_act` | 已实现（V2.2/V2.4 smoke 入口） | 加载 `dig/carry/dump/return` 四个 ACT checkpoint；YuLong operator-first 主线只给 `dig` 注入 `dig_cut_tokens`，carry/dump/return 保持 `qpos+qvel`；V2.4 可用 `operator_prior_coverage` 在不改 checkpoint 的情况下按 corridor 覆盖选择 dig token |
 | Stage 3 bootstrap work-skill | 已实现 | 已完成 `agx_teleop_v1 -> v2_1_relabeled -> v2_1_workskill`，并跑通 `qvel/gcact` smoke train；`qvel e50 + loaded_and_clear bootstrap` 已通过单轮 live success gate |
 | Stage 4 rule planner | 已实现（首版目标已完成） | 已把 `RuleTaskPlanner / PlannerGoal / CycleSummary / SectorBelief` 接入现有 `hybrid_planner_act`，并完成 `planner_trace.json` 回放；正式主配置下 `3` 条 live rollout 已达到 `cycle2_success_rate = 1.0`，官方 `3-cycle smoke` 也已达到 `cycle3_success_rate = 1.0` |
 | rollout timestep logs | 已实现 | `tb-eval` 现可写 `rollout_XXX.jsonl / summary / manifest` |
@@ -104,6 +108,27 @@ Repo A 负责：
     已在 dump footprint 上方、离 rim 足够高、bucket mass 仍高于 `15kg` 时即可切
     dump；signed x/z window 保留为旧规则兼容，避免长 rollout 后段因土量下降或
     target-relative 坐标漂移一直停留在 carry
+  - YuLong V2.4 coverage planner 保留 V2.2 4P checkpoint 和 10D
+    `dig_cut_tokens` contract，只把 live `dig_cut_planner.mode` 切到
+    `operator_prior_coverage`。planner 从 64D `env_state` 的 3x2
+    removed/target/valid grid 与 payload/deposit outcome 维护 9 条 corridor
+    (`entry_x=p10/p50/p90` × `entry_z=p10/p50/p90`)，用 attempt limit、冷却惩罚、
+    低产 streak 和耗尽判断避免反复挖同一区域，并通过 optional `planner_debug_json`
+    在 Unity HUD 与 DigArea 上实时显示决策。30cycle 配置是 depletion/probe，
+    不是新的成功标准。
+  - 2026-05-22 removed-depth 修复主线 bump token contract 到
+    `v2_4_removed_depth_cut_v3`：10D 维度保留，第 8 维改为真实 removed-depth
+    delta，depth scale 为 `0.25m`，旧 checkpoint 不再兼容；没有可靠 removed-depth
+    的 cycle 不进入 gold training tier。
+  - `policy.pre_dig_align` 仅保留为诊断开关，V2.4 coverage 主线默认关闭。
+    实测证明手写 align 在 strict / loose gate 之间很难同时满足“到点”和“自然进入
+    dig”，容易形成 gap 或把对齐动作变成半个 dig primitive。长期方案是训练
+    conditioned return：planner 决定下一次 entry/corridor，return policy 负责把空斗
+    回到适合 dig ACT 接管的 next-entry 状态。
+  - YuLong V2.4 `dig -> carry` handoff 使用 target payload / mass plateau /
+    bad-dig replan：默认目标斗内质量为 `45kg`，`>=35kg` 后的 plateau 才允许半斗
+    收尾；低产 bad dig 会回到 planner/replan，
+    防止 carry 过早开始并继续承担挖土。
   - live eval 入口：`eval_agx_v2_2_4primitives_qvel_3cycle_smoke.yaml`
   - 首轮 reset 仍可配置 `bootstrap_policy` 到 `loaded_and_clear`；YuLong pilot
     也支持 `bootstrap_end_mode=scripted_qpos`，只用于 smoke 时进入首个
@@ -600,13 +625,34 @@ tb-replay \
   --episode data/agx_teleop_v2_1_multi_raw/episode_0.hdf5 \
   --config testbed/configs/teleop_v2_1_multi_raw.yaml \
   --record-output-dir data/agx_teleop_v2_1_multi_raw_replayed_current
+
+# 记录逐 step 诊断 JSONL，用于定位 replay 中 qpos/swing 跳变
+tb-replay \
+  --episode data/agx_teleop_v2_1_multi_raw/episode_0.hdf5 \
+  --config testbed/configs/teleop_v2_1_multi_raw.yaml \
+  --diagnostic-log runs/diagnostics/episode_0_replay_diagnostics.jsonl \
+  --diagnostic-every 1
 ```
 
 使用 `--record-output-dir` 做数据刷新时，`tb-replay` 会读取 teleop config
 里的 `post_success_tail_steps`，当前 V2.1 默认是 `50` 步，并在 source
 actions 结束后追加 zero-action hold tail。这样旧数据刷新成 13D
 `env_state` 时不会把 terminal dump 的 plateau / `dump_end` 观察截断。
-需要临时覆盖时可用 `--post-tail-steps <N>`。
+需要临时覆盖时可用 `--post-tail-steps <N>`。刷新 replay 只读取 source
+episode 的 actions/qpos/metadata，不加载旧 image dataset；新的 image
+帧来自当前 Unity 后端。
+
+`--diagnostic-log` 会写 JSONL，每行记录 replay step 的 action、Unity 返回的
+qpos/qvel、与 source qpos 的误差、bucket 相对 DigArea 位置、contact/collision、
+removed-depth grid 等字段。日志可用 `tail -f` 实时看，也可用
+`tb-replay-diagnostics --input <jsonl-or-dir> --top 20` 汇总首个/最大的 qpos
+误差、qpos jump、碰撞和接触点。
+
+如果旧 source episode 自身包含已修复且随机的 actuator pose 跳变，刷新
+removed-depth 时可以加 `--realign-on-qpos-error --realign-axis all`。这会在
+replay 过程中通过 Unity `REALIGN_POSE` 对齐当前仿真 4D qpos，再继续生成新的
+image/env_state/depth；不要事后直接改旧 HDF5 qpos，因为旧 image/action/env_state
+不会随之同步。
 
 ### 4.1 数据质检
 
@@ -878,6 +924,78 @@ Unity 侧需要保证：
 - `GET_INFO` 能及时返回
 - `RESET` 后第一帧可被 Python 同步取回
 - terrain reset 与 episode reset 只走一条清晰路径
+
+Unity / C# telemetry 修改后，推荐先跑自动重启与 strict smoke 门闩：
+
+```bash
+tb-unity-restart-smoke \
+  --host 127.0.0.1 \
+  --port 5057
+```
+
+如果 Unity Editor 已经打开，wrapper 会写入
+`Temp/CodexPlayModeBootstrap.request`，由 Editor 退出 Play Mode、等待编译、
+打开 YuLong 主场景、重新进入 Play Mode 并确认 `AgxSimStepAckServer`
+listening；如果 Editor 没开，wrapper 会用 `UNITY_EDITOR` 或常见 Unity
+安装路径通过 `-executeMethod` 触发同一个入口。随后它会自动执行
+`scripts/agx_smoke.py --strict --host 127.0.0.1 --port 5057`。
+
+需要同时刷新少量 replay 并检查 removed-depth 时：
+
+```bash
+tb-unity-restart-smoke \
+  --replay-episode data/<raw_yulong_root>/episode_0.hdf5 \
+  --replay-config testbed/configs/teleop_yulong_v2_2_pro_full_task.yaml \
+  --record-output-dir data/<new_replayed_root> \
+  --replay-diagnostic-dir runs/diagnostics/yulong_replay_probe \
+  --check-removed-depth
+```
+
+`--check-removed-depth` 会要求刷新后的 HDF5 中 `env_state[:,39:45]`
+出现非零时间变化；不通过时流程直接失败，不进入后续 relabel / train。
+`--replay-diagnostic-dir` 会给每个被刷新的 episode 写
+`*_diagnostics.jsonl`，便于在 Unity/AGX 断连或 swing 误差复现后直接分析最后
+一段 step 对齐数据。
+如果 source episode 已知含随机 actuator pose 跳变，可在 wrapper 上加
+`--replay-realign-on-qpos-error --replay-realign-axis all`，它会转发到
+`tb-replay` 并在 JSONL 中记录 `pose_realign` 事件。
+刷新后的 HDF5 metadata 会保留 `replay_pose_realign_steps`；后续
+`tb-build-primitives-v2_2` 把它当作高敏感数据质量信号，任何覆盖该 step 的
+完整逻辑 cycle 都只写入 reject summary，不产出对应训练 primitive。这里的完整
+cycle 指本轮 dig start 到 return 完成/下一次 qualified dig start 之前的半开窗口；
+realign 如果正好落在下一轮 qualified dig start 帧，只归属下一轮。实际写
+`dig/carry/dump` 片段时仍只裁到 `dump_end_step`，避免 `dump` 吞入 return。
+覆盖该 step 的 return transition window 也会单独 reject。
+
+刷新后的 raw/replay root 通过 depth QC 后，可以用 V2.4 pipeline 走“先 VDS、后并行
+materialize”的数据链：
+
+```bash
+tb-build-v2_4-hindsight-pipeline \
+  --raw-dir data/<replayed_raw_root> \
+  --tag yulong_removed_depth_$(date +%Y%m%d_%H%M%S) \
+  --materialize-workers 16 \
+  --update-current-symlinks \
+  --detach
+```
+
+V2.4 pipeline 默认向 primitive builder 转发 `--return-max-transition-len 512`，
+与 return ACT 的 `episode_len=512` 对齐；更长的 dump-end -> next-dig gap
+会被当成长等待/恢复片段丢进 reject summary，不进入 return 训练。
+pipeline 在 primitive VDS 写完后会先跑 pre-materialize QC，并把结果写到
+`04_pre_materialize_qc.json`。这个 QC 会在写 image copy 和训练前检查 depth token
+饱和率、p10/p50/p90 分离、可靠 `env_state_removed_depth_delta` 占比、return
+window 最大长度、dump max/p95 长度以及 dump 是否混入 transition mode/phase；
+不通过时流程直接停止，不进入 materialize/train。
+如果同时传入 `--train`，dig/return 训练全部成功后会自动运行
+`tb-cleanup-training-artifacts --delete`，删除本轮 materialized primitive
+copy 与指向它的 current symlink，并只保留本轮 `policy_best.ckpt`。需要在训练后
+继续对 copy 做诊断时，给 pipeline 加 `--no-cleanup-after-train`。
+长任务默认用 `--detach` 后台运行，不建议和 Cursor 前台交互、image materialize
+同时抢内存。
+脚本会在 `runs/jobs/yulong_v2_4_removed_depth_<tag>/logs/` 写每个阶段的日志；
+可用 `tail -f runs/jobs/yulong_v2_4_removed_depth_<tag>/pipeline.log` 或
+`tail -f runs/jobs/yulong_v2_4_removed_depth_<tag>/logs/*.log` 看进度。
 
 ---
 

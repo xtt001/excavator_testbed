@@ -118,6 +118,15 @@
   可直接从 operator-first enriched raw 切 `dig/carry/dump/return`，不再需要复制大型
   workskill 图像 root；`--storage-mode manifest` 只产出 `window_manifest.json` 和
   `summary.json`，用于 dry-run QC。
+- `tb-materialize-vds --input <vds-dir> --output <copy-dir>` 可把已有 VDS wrapper
+  解析成实体 HDF5，保留 metadata/lineage，并把图像写成完整 frame chunk。它适合在
+  SSD 空间充裕时给训练做 I/O 对照：牺牲空间，换取更少的 VDS 追源和更好的随机单帧读取。
+- `tb-virtualize-images --input <copy-dir> --output <archive-dir>` 可做反向归档：
+  低维数组、动作、标签和 metadata 留在输出 HDF5 中，`/observations/images/*`
+  改成指向 canonical source episode 的 VDS。它适合历史数据瘦身，不建议作为训练热入口；
+  需要重新训练时再用 `tb-materialize-vds` 落到 SSD copy root。早期 full-episode
+  relabeled 数据如果没有 provenance，可显式加
+  `--fallback-source-dir <raw-dir>` 按 episode id 追到 raw。
 - 两个 builder 都会写 `lineage.json`，默认拒绝覆盖已有 episode；只有显式
   `--overwrite` 才会替换 builder output。需要在 `data/` 下保留当前候选入口时，
   使用 `--current-symlink <path>` 更新 symlink；如果该路径是真实目录，builder 会拒绝替换。
@@ -127,13 +136,207 @@
   `qpos + qvel + dig_cut_tokens` 的 dig；`carry/dump/return` 继续保持
   `qpos + qvel`。live 时 `primitive_planner_act` 只在调用 `dig` policy 时注入
   `dig_cut_tokens`，不会把 dig token 喂给 carry/dump/return。
+- 2026-05-22 起，YuLong V2.4 token contract 版本为
+  `v2_4_removed_depth_cut_v3`。10D 维度不变，但第 8 维改为本铲
+  `max(actual_removed_depth_delta_grid)`，depth scale 为 `0.25m`；旧 checkpoint
+  视为不兼容。没有可靠 `env_state_removed_depth_delta` 的 cycle 不进入 gold tier，
+  hindsight goal 会把对应 valid mask 置 0。
+- 全部 planner 配置遵循同一条边界：planner 只提出任务级 goal/token、维护 coverage
+  belief、决定 skill 切换和少量 readiness/safety gate；不手写 joystick/qpos 轨迹，
+  不要求 ACT 命中精确姿态，不用姿态补丁替代低层 skill 学习。未来多模态 planner 也应只
+  产出同类 high-level intent，而不是直接指挥挖机摇杆。
+- V2.4 removed-depth 数据链统一用 `tb-build-v2_4-hindsight-pipeline`：
+  前段生成 label/operator-first/hindsight/primitive VDS，随后先跑
+  `04_pre_materialize_qc.json` 对 token/source、return 长度、dump 长度和 dump
+  transition 污染做训练前 QC，通过后再用 `tb-materialize-vds --recursive
+  --workers <N>` 并行落含 image 的 primitive copy。
+  每个阶段写入 `runs/jobs/<job>/logs/*.log`，适合全量重建时用 `tail -f` 看进度。
+  对 replay 刷新出来的 removed-depth raw root，使用
+  `--v2-label-source-dir data/yulong_v2_2_current_relabeled` 转移原始 QC 过的
+  `/v2` cycle boundary；不要重新 detector relabel，否则容易漏掉下一次
+  `qualified_dig_start`，把多个 cycle 粘成超长 return 并丢掉大部分 return 训练窗。
+  raw-direct primitive split 写 `dig/carry/dump` 时只裁到 `dump_end_step`，避免
+  `dump` 吞入 return；但 realign 判废按完整逻辑 cycle 执行，即从本轮 dig start
+  到 return 完成/下一次 qualified dig start 之前的半开窗口，任一 step 覆盖
+  `replay_pose_realign_steps` 都会丢弃该轮 work primitive；如果 realign 正好落在
+  下一轮 qualified dig start 帧，只归属下一轮。
+- V2.4.5 四 primitive 重切使用同一个 pipeline，但必须显式传
+  `--boundary-profile v2_4_5_spatial_mass`。该 profile 以 material cycle 的空间/质量事件
+  为 ownership 真相：`dig` 看 dig-box contact/depth、removed-depth/payload gain；
+  refined 版 `dig_end` 还要求历史 bucket-mass 峰值已出现、后续无显著新增 mass、
+  无 dig contact/有效深度，并稳定离开 dig area box；`carry` 允许带料运输、向
+  dump area 移动和 dump 前预姿态调整，但明显实际倒土会 reject；`dump` 从 committed
+  release/deposit 附近开始，`dump_start` 最多提前到 `release_onset - 120`，并会继续
+  后移到 dump-area 稳定 aiming band。如果 dump-area outside distance 仍在大幅变化，
+  该过程仍归 carry。`dump_end` 用 release 后 bucket 残余低位 + mass/deposit plateau
+  的物理完成点，旧 `work_end` 只是搜索上界。
+  `return` 从物理 dump end 接到下一轮 dig-start envelope，terminal return 只写 reject。
+  V2.4.5 下 pipeline 默认停在 Gate 2 boundary audit，除非传 `--ack-feedback-gates`
+  表示已人工审阅。
+- V2.4.5 新增训练配置：
+  - `act_yulong_v2_4_5_spatial_mass_dig_qvel.yaml`:
+    `qpos + qvel + dig_cut_tokens`，带 `dig_outcome_targets` 和 token-swap/outcome head。
+  - `act_yulong_v2_4_5_spatial_mass_return_envelope_qvel.yaml`:
+    `qpos + qvel + return_start_envelope_tokens_v1`，带 `return_outcome_targets`。
+  - `act_yulong_v2_4_5_spatial_mass_carry_qvel.yaml`:
+    第一版 `qpos + qvel`，只在 carry QC/人工审阅通过后训练。
+  - `act_yulong_v2_4_5_spatial_mass_dump_qvel.yaml`:
+    第一版 `qpos + qvel`，只在 dump QC/人工审阅通过后训练。
+  `return_start_envelope_tokens_v1` 为 18D low-dim key，对应
+  `/v2/step/return_start_envelope_tokens_v1` 与
+  `/v2/step/return_start_envelope_valid_mask`；builder 从下一轮 dig-start 附近 40-step
+  窗口抽取 envelope。valid mask 是 per-dim mask，token 第 16 维表示 qpos/qvel 核心
+  状态可用，Gate 1 用它判定 episode-level envelope valid；dataset、train/eval runtime、
+  ACT adapter 和 `primitive_planner_act` 都已接入。
+- 2026-05-22 data-only run
+  `runs/jobs/yulong_v2_4_5_physical_dump_qc_20260522` 已从最新 removed-depth replay root
+  跑完 label transfer/operator-first/hindsight/primitive VDS 和 Gate 1/2，没有进入
+  materialize/train。Gate 1 数字 QC 通过：`dig/carry/dump=644`，`return=589`；
+  dump length max `315`、p95 `228.7`，release lead max `120`，transition contamination
+  `0`；carry deposit contamination `0`；return/dig ratio `0.915`，return envelope valid
+  `1.0`。Gate 2 正常暂停等待人工看 selected videos，风险标记集中在
+  `carry_mass_loss`、少量 `low_dig_payload/low_effective_deposit` 和 non-gold/short
+  window 样本。
+- 根据人工关键帧反馈，`runs/jobs/yulong_v2_4_5_process_boundary_qc4_20260522` 把
+  边界判断改成过程式 ownership，仍只跑到 Gate 2，没有
+  materialize/train。Gate 1 通过：`dig/carry/dump=644`，`return=589`；dump length
+  max/p95/p50 为 `293/204.85/154`，pre-release lead mean/p50 为 `45.0/32`；
+  carry deposit contamination `0`，`carry_mass_loss` audit flag 从上一版 `54` 降到
+  `26`，`short_window` 从 `12` 降到 `4`。新的主要待审项是
+  `carry_dump_transition_tight=106`，需要人工确认 dump_start 没有后移过度。
+  `tb-audit-primitive-boundaries` 默认在 primitive VDS 写
+  `boundary_audit/contact_sheets/index.html` 和
+  `boundary_audit/contact_sheets_clean_gold/index.html`；sheet 同时包含边界帧、
+  bucket mass/deposit、signed dump-area `relative_x/z`、outside distance、
+  `bucket_over_target_footprint_mask`、`dump_clearance_ok_mask`、height above rim 和
+  target horizontal distance。carry/dump 边界审阅不能只看无符号 outside-distance。
+  最新 refined builder 也采用这个语义：`dump_start` 仍不早于
+  `release_onset - 120`，但必须进入 committed aiming band，要求 dump-area 接近、
+  signed `relative_x/z` 在宽 corridor 内且短窗口变化量下降到微调级别；区域内 release
+  前的 swing/姿态微调归 dump，仍在大幅赶往 dump area 的横向/纵向运动归 carry。
+- `runs/jobs/yulong_v2_4_5_process_boundary_qc5_20260522` 是当前 refined
+  committed-aiming data-only 候选，同样只跑到 Gate 2，没有 materialize/train。
+  Gate 1 通过：`dig/carry/dump=644`、`return=589`，carry deposit contamination
+  仍为 `0`。相比 qc4，395/644 个 carry/dump 边界被后移，后移量 p50/mean/p90/p95
+  为 `16.5/28.0/78/86` steps；dump pre-release lead mean/p50/p90/p95 从
+  `45.0/32/105.7/117.85` 降到 `17.0/12/39.4/64.85`，dump length p50/mean/p95
+  从 `154/156.4/204.85` 降到 `131/128.4/196`。carry length p50/mean/p95 从
+  `106/110.7/169` 增到 `135.5/138.6/218`，说明此前被 dump 吞掉的 transport 已回到
+  carry；mass-loss p95 保持 `3.361kg`。Gate 2 contact sheet 位于 qc5 primitive root
+  的 `boundary_audit/contact_sheets/index.html` 和
+  `boundary_audit/contact_sheets_clean_gold/index.html`。
+- `runs/jobs/yulong_v2_4_5_process_boundary_qc6_20260522` 是当前更严格 outside 的
+  data-only 候选：stable outside `0.30m`、fallback max outside `0.35m`，no-candidate
+  fallback 贴近 `release_onset`。Gate 1 通过：`dig/carry/dump=644`、`return=589`，
+  carry deposit contamination 仍为 `0`。相比 qc5，622/644 个 carry/dump 边界继续
+  后移，后移量 p50/mean/p90/p95 为 `3/6.8/10.7/36` steps；dump pre-release lead
+  mean/p50/p90/p95 从 `17.0/12/39.4/64.85` 降到 `10.2/9/15/26.85`，dump length
+  p50/mean/p95 从 `131/128.4/196` 降到 `125.5/121.6/191`。Gate 2 contact sheet
+  位于 qc6 primitive root 的 `boundary_audit/contact_sheets/index.html` 和
+  `boundary_audit/contact_sheets_clean_gold/index.html`。
 - YuLong operator-first rollout 默认使用 `dig_cut_planner.mode=operator_prior`，
   prior 文件为
-  `testbed/configs/planner_priors/yulong_operator_first_dig_cut_prior_v1.json`。
+  `testbed/configs/planner_priors/yulong_removed_depth_dig_cut_prior_v3.json`。
   该 prior 固定来自 26 条专业操作 operator-first relabel 数据中的 640 条 gold
   cycle，记录 P10/P50/P90 与 lineage；旧固定模板 planner 保留为
   `dig_cut_planner.mode=conservative_pose`，baseline tag 为
   `planner-baseline-conservative-pose-20260516`。
+- YuLong V2.4 在同一 10D `dig_cut_tokens` contract 上新增
+  `dig_cut_planner.mode=operator_prior_coverage`：planner 从现有 64D
+  `env_state` 的 3x2 removed/target/valid grid 和质量/入箱结果维护 9 条候选
+  cut corridor 的 attempts、低产 streak、depleted 标志与 score。候选覆盖
+  `entry_x=p10/p50/p90` 与 `entry_z=p10/p50/p90`，并用 max-attempt、attempt
+  penalty、recent-selection penalty 以及 `recent_row_selection_penalty` 防止长
+  rollout 后段继续挖空区或在同一 entry-z row 上反复横移。它只改变 live dig token
+  的选择，不改 checkpoint 和训练 schema。V2.4 hindsight eval 还可用
+  `coverage.cut_depth_percentile` / `coverage.payload_percentile` 在专家 prior
+  内请求更深、更高 payload 的 cut intent，避免用“继续推到边界”补偿装土不足。
+  每步可把压缩的 `planner_debug_json` 作为 `STEP_REQ` optional tail 发给 Unity，让 HUD 和
+  DigArea 上方的细竖针/entry-to-exit 箭头实时显示 planner 入铲点与方向。V2.4
+  eval 现在还会把当前 bucket tip 的 DigArea-local 位置放进同一个 debug JSON，
+  Unity 以洋红十字显示实际铲尖位置，便于判断 dig 是否真的从绿色 entry marker
+  附近接管。
+- YuLong V2.4 coverage eval 保留 `policy.pre_dig_align` 作为诊断开关。长期
+  `return -> dig` 主线仍由 conditioned return 学会回到 next-entry 状态；手写 align
+  不替代后续铲的 learned transition。V2.4 conditioned-return / hindsight-goal eval
+  只在第 0 铲启用 `pre_dig_align.first_dig_only=true`，用于补上第一铲没有上一轮
+  return、固定 bootstrap 会落到 exit/orange 侧的盲点。第 0 铲的 coverage planner
+  使用 `coverage.first_dig_strategy=nearest_entry`，按当前 bucket-tip 到候选
+  entry 的距离选择更容易接上的 corridor；同时用
+  `coverage.first_dig_max_entry_distance_m` 做第一铲 reachability gate：只要存在
+  entry 距离在阈值内的专家 corridor，超出阈值的第一铲候选就会被排除。若 replan 后
+  新 entry 已经足够近，会直接 handoff 给 dig，避免 open-loop qpos align 又把 bucket
+  推离可挖位置。第一铲候选还可配置
+  `coverage.first_dig_max_qpos_delta` 与 `coverage.first_dig_qpos_delta_weight`：
+  前者排除需要大幅关节迁移的候选，后者在 nearest-entry 评分中惩罚会让
+  pre-dig handoff 过度抬/收大小臂的 corridor，使第一铲 handoff 只承担接近正常
+  dig-start 的小范围调整。2026-05-22 起第一铲 handoff 还启用
+  `pre_dig_align.first_dig_entry_close_handoff=true`：当实际 bucket-tip 已进入
+  `max_entry_error_m` 且受控轴速度低于
+  `first_dig_entry_close_handoff_qvel_abs_max` 时，即使 qpos 代理目标还没完全 close，
+  也允许交给 dig，避免静态 qpos servo 越过 entry 后继续追点。后续铲次不再插入手写
+  align，继续使用 return policy 产生的 next-entry handoff。
+  live eval 还应显式设置 `switch.dig_to_carry_min_distance_to_dig_area_m: 0.0`：
+  第一铲达到 target payload 时要及时交给 carry，不能再要求 bucket 先离开 DigArea，
+  否则容易在装满后继续挖/漏料或卡在 dig。
+  该 handoff 的专家 dig-start envelope 只作为诊断和宽安全边界：当前 scale025 配置把
+  `pre_dig_align.qpos_min/qpos_max` 与 `start_qpos_min/start_qpos_max` 收紧到
+  replay 后 dig primitive 起点 qpos 的近似 p05/p95，并把 `bucket_target_qpos`
+  设为 `null`，让 token->qpos prior 决定铲斗起始姿态，避免固定把 bucket 压到
+  `0.0` 这种不属于正常 dig-start 的姿态；它不应演化成通用 qpos servo 或精确姿态规则。
+- 诊断 learned first-handoff 时，可以把旧 dig checkpoint 挂到
+  `policy.bootstrap_ckpt_path`，并设置 `bootstrap_low_dim_keys: [qpos, qvel,
+  dig_cut_tokens]` 与 `bootstrap_end_mode: first_qualified_dig_start`。planner 会在
+  bootstrap policy 存在时给 bootstrap 阶段注入同一个 `dig_cut_tokens`，这样
+  10D-conditioned dig ckpt 可以作为第 0 铲之前的 learned bootstrap 做 A/B 测试；
+  若同时启用 `pre_dig_align`，scripted handoff 仍会接在 bootstrap 后面，因此该实验
+  通常需要先关闭 `pre_dig_align.enabled`。
+- 若只想替换第 0 铲实际 dig，而保留现有 handoff，可设置
+  `policy.first_dig_ckpt_path` 和可选 `policy.first_dig_low_dim_keys`。planner 只会在
+  cycle 0 且尚未完成 dump 前用 `first_dig_policy`，从第二铲开始自动回到普通
+  `dig_ckpt_path`。
+- YuLong V2.4 return handoff 额外使用 `return_to_dig_max_entry_error_m` 约束：
+  return 只有在 planned next-entry 附近才允许切回 dig。若 entry 已经 close，
+  shallow guard 可覆盖很窄的 `return_to_dig_max_depth_m` 上限，防止 return 已到点后
+  继续把 bucket 压进土里等待 `qualified_dig_start`。V2.4.5 的
+  `return_start_envelope_tokens_v1` 是 return 训练条件和 QC 目标，不表示 planner 要用
+  qpos 规则强行规定姿态；live handoff 第一版只保留 entry/tip 接近、空斗/低质量、
+  浅接触/深度安全、速度不过大、无 hard collision 这类轻量 readiness 检查。
+- YuLong V2.4 conditioned return 当前使用固定 10D `return_target_tokens`，语义与
+  `dig_cut_tokens` 对齐，但只表示“下一铲”的 cut intent。最近 live 结果说明这对
+  return 不够：return 还需要 next dig-start state envelope，显式描述 bucket tip
+  容差、浅接触/深度范围、bucket curl/pitch、boom/stick/bucket qpos、qvel 近零和专家
+  dig-start pose 分布。训练入口使用
+  `data/yulong_v2_4_return_conditioned_primitives_copy/return`，该 root 必须是
+  materialized copy，关键数据集不能是 VDS。没有下一铲目标的 terminal return
+  window 必须 reject，不进入 conditioned return 训练。live 时 planner 在 return
+  阶段注入 return conditioning token；V2.4.5 应改为
+  `return_start_envelope_tokens_v1`，下一次 dig 继续复用同一个 pending
+  `dig_cut_tokens`，避免 return 追一个目标、dig 又重新规划另一个目标。
+- YuLong V2.4 reconstructed-belief sweep planner 使用
+  `dig_cut_planner.mode=operator_prior_sweep_belief`。它不依赖当前全零的
+  Unity `removed_depth`，而是根据历史 cut corridor、payload、effective deposit
+  与低产 streak 更新 coverage belief。低产 dig 不应无限卡在 dig：当前 sweep
+  eval 在 45kg target payload 之外允许 `15kg` 以上的 plateau payload 超时进入
+  carry，并在当前 bucket mass 低于 15kg 的长 dig 后 reject 当前 corridor、重选下一条
+  cut intent。bad-dig 判据使用当前保留质量，不使用 transient best mass，避免 bucket
+  曾短暂碰到土但最后空斗时继续卡在 dig。V2.4 hindsight eval 还启用
+  `dig_exit_guard_*`：当 bucket tip 已沿 planned entry→exit 方向越过 yellow exit
+  一定距离但 payload 仍过低时，将当前 cut 判为 `exit_overshoot_low_payload` 并 replan，
+  防止 ACT 继续把 bucket 推向 DigArea 边界刚体壁。
+- 当前 depth 控制仍是 open-loop token conditioning：`cut_depth_percentile=p90` 会把
+  depth token 推到专家 prior 的深挖端，但并不等价于 closed-loop depth controller。
+  若 Unity depth/soil response 不支持或 ACT 未学会对应姿态，planner 只能通过 bad-dig /
+  exit guard 早停重选，不能手写每一步 bucket 轨迹。
+  与 low-productivity streak 维护覆盖 belief；30cycle 是 depletion/probe，不是
+  固定成功门槛。
+- YuLong V2.4 coverage smoke 的 `dig -> carry` 不再以 `15kg` 作为正式离开条件。
+  `15kg` 只作为最低有效质量和 bad-dig 判据；正式 target payload 为 `45kg`，
+  或者 `>=35kg` 后质量 plateau 才允许切 carry。`220` step 仍低于 `35kg` 的 dig
+  会标记 `bad_dig_low_payload` 并回到 planner/replan，避免 carry 被污染成继续挖土。
+- YuLong V2.4 hindsight-goal 1cycle smoke 先把 `dig_bad_replan_min_bucket_mass_kg`
+  提高到 `25kg`。当前没有 false-recovery 数据，eval 更偏向早重选坏起点，而不是让
+  dig policy 在低 payload 起点里长时间空转。
 
 ## 今天优先用哪些文件
 
@@ -157,12 +360,23 @@
 | YuLong V2.2 operator-first relabel VDS | `tb-build-operator-first-v2_2 --dataset-dir data/yulong_v2_2_current_relabeled --output-dir <operator-first-root> --storage-mode vds` | 追加 effective deposit、operator cut corridor、return target 与 `dig_cut_tokens`；不覆盖 legacy `deposit_delta_kg` |
 | YuLong V2.2 primitive VDS dry-run | `tb-build-primitives-v2_2 --raw-dir <cell-entry-root> --output-root <primitive-root> --storage-mode manifest --skip-return` | 只生成 window manifest/summary，用于切分 QC |
 | YuLong V2.2 primitive VDS build | `tb-build-primitives-v2_2 --raw-dir <operator-first-root> --output-root <primitive-root> --storage-mode vds --boundary-profile v2_2_effect_release_fallback` | 从 operator-first enriched raw 直接切 `dig/carry/dump/return`，写 VDS primitive wrapper、tier 和 lineage |
+| YuLong V2.4 primitive copy build | `tb-build-primitives-v2_2 --raw-dir <operator-first-copy-root> --output-root <primitive-copy-root> --storage-mode copy --boundary-profile v2_2_effect_release_fallback` | 从 operator-first enriched raw 直接切实体 HDF5 primitive；用于 conditioned return 训练热入口 |
+| YuLong V2.2 primitive materialized copy | `tb-materialize-vds --input <primitive-vds-dir> --output <primitive-copy-dir>` | 从 VDS wrapper 落成实体 HDF5；用于新 SSD 上的训练吞吐 A/B |
+| YuLong V2.2 primitive image-VDS archive | `tb-virtualize-images --input <primitive-copy-dir> --output <primitive-image-vds-dir> --recursive` | 历史归档入口：只把图像反向 VDS 化，低维状态和标签仍在 wrapper 内 |
 | YuLong V2.2 conditioned dig 训练 | `testbed/configs/act_yulong_v2_2_pro_conditioned_dig_cell_entry_qvel.yaml` | dig 使用 `qpos + qvel + cell_entry_tokens`，读取 VDS primitive dig root |
 | YuLong V2.2 operator-first 4P 500 epoch 训练 | `testbed/configs/act_yulong_v2_2_operator_first_4p_{dig_cut,carry,dump,return}_qvel.yaml` | dig 使用 `qpos + qvel + dig_cut_tokens`；carry/dump/return 使用 `qpos + qvel` |
 | YuLong V2.2 operator-first primitive planner smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_smoke.yaml` | 加载 4 个 operator-first checkpoint；live 只给 dig 注入 operator-prior `dig_cut_tokens` |
 | YuLong V2.2 conservative planner baseline smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_conservative_pose_smoke.yaml` | 回放旧 `conservative_pose` dig token 模板，用于 A/B 和 git baseline 对照 |
 | YuLong V2.2 5-cycle clean-dump smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_5cycle_clean_dump_smoke.yaml` | 5 dig 压力测试；bucket 残余阈值 `15kg`，dump/terminal hold 约 `2s`，默认不写 HDF5 |
 | YuLong V2.2 10-cycle clean-dump smoke | `testbed/configs/eval_yulong_v2_2_operator_first_primitive_planner_4p_500e_10cycle_clean_dump_smoke.yaml` | 10 dig 压力测试；bucket 残余阈值 `15kg`，no post-dump hold，smooth dump 用累计入箱质量识别，return 浅接触 entry 后切 dig，默认不写 HDF5 |
+| YuLong V2.4 coverage planner 15-cycle smoke | `testbed/configs/eval_yulong_v2_4_operator_prior_coverage_15cycle_smoke.yaml` | 保住 15cycle milestone 的 A/B 入口；仍用 V2.2 4P checkpoint，只把 live dig planner 换成 coverage corridor，并把 planner decision 发到 Unity HUD/入铲点竖针 |
+| YuLong V2.4 coverage planner 30-cycle probe | `testbed/configs/eval_yulong_v2_4_operator_prior_coverage_30cycle_probe.yaml` | 30cycle 是 depletion/probe，不是固定 success 标准；期望覆盖更多 corridor，并在低产/耗尽/疑似穿模时用 planner terminal reason 停止 |
+| YuLong V2.4 conditioned-return sweep 15-cycle | `testbed/configs/eval_yulong_v2_4_conditioned_return_sweep_15cycle.yaml` | dig/carry/dump 复用 V2.2 checkpoint，return 使用 conditioned checkpoint；planner 用 reconstructed belief，不读全零 removed-depth |
+| YuLong V2.4 conditioned-return sweep 30-cycle | `testbed/configs/eval_yulong_v2_4_conditioned_return_sweep_30cycle.yaml` | 30cycle probe 入口；看 coverage belief、return target gap、payload/deposit 和 terminal reason |
+| YuLong V2.4 copy-root conditioned dig retrain | `testbed/configs/act_yulong_v2_4_dig_conditioned_copy_qvel.yaml` | 用 materialized copy `dig` primitive 重训 `qpos + qvel + dig_cut_tokens`，用于比较新旧 dig ACT 是否真正对 token 敏感 |
+| YuLong V2.4 hindsight-goal relabel | `tb-build-hindsight-goal-v2_4 --dataset-dir <operator-first-copy-root> --output-dir data/yulong_v2_4_hindsight_goal_relabel_copy` | 从自然 pro 数据反推 `dig_outcome_targets` / `return_outcome_targets`，materialized copy，不改 raw |
+| YuLong V2.4 hindsight-goal dig/return 训练 | `testbed/configs/act_yulong_v2_4_hindsight_goal_{dig,return}_qvel.yaml` | 只训练 dig/return；action BC + KL + outcome loss + token-swap outcome loss，默认 `training_tier=gold` |
+| YuLong V2.4 hindsight-goal rollout | `testbed/configs/eval_yulong_v2_4_hindsight_goal_{1,3,5}cycle_smoke.yaml`、`..._10cycle.yaml`、`..._15cycle.yaml`、`..._30cycle_probe.yaml` | planner 仍是 rule/belief proposer，只替换 dig/return hindsight-goal checkpoint；30cycle 仍为 depletion probe |
 | YuLong V2.2 conditioned dig primitive planner smoke | `testbed/configs/eval_yulong_v2_2_pro_primitive_planner_conditioned_dig_smoke.yaml` | `primitive_planner_act` 只给 dig 注入 Cell Entry token；carry/dump/return 仍为 `qpos + qvel` |
 | YuLong FarmStick replayx20 rollout smoke | `testbed/configs/eval_yulong_farmstick_3cycle_replay20_workskill_qvel_smoke.yaml` | 单 rollout 接回 Unity；无 YuLong bootstrap，直接 smoke work policy |
 | YuLong V2.2 四 primitive contact-depth 训练 | `testbed/configs/act_yulong_farmstick_3cycle_replay20_contact_depth_v2_2_4p_{dig,carry,dump,return}_qvel.yaml` | 小斗 YuLong 主训练入口；`qualified_dig_start=contact_depth` 后重切，四类各 40 条且无 reject |
@@ -171,6 +385,13 @@ YuLong operator-first 训练优化不改变图像分辨率或推理输入语义�
 `fpv` 图像，只通过 `batch_size`、`num_workers`、`prefetch_factor`、
 `hdf5_cache_size`、TF32/cudnn benchmark 和较低频率的 validation/plot 来提高吞吐；
 如果出现 CUDA OOM，优先把对应 primitive 的 `batch_size` 下调。
+同一轮的 conditioned dig 与 5/10/15-dig GC-ACT VDS diagnostic 配置也默认打开
+4 个 DataLoader worker、`persistent_workers` 和 HDF5 handle cache；迁到新 SSD
+时要把 VDS wrapper 及其 sibling source roots 一起放在同一个新 archive root 下，
+否则 wrapper 仍可能通过旧 `/data` 上的源 HDF5 读图像。
+新写出的 HDF5 图像默认按完整 frame chunk：`(1, H, W, C)` + `lzf`，避免 h5py
+自动 chunk 成跨很多 timestep 的小空间 tile。训练时每个 sample 只随机读一个
+`fpv` frame，这个布局比旧 `(625, 15, 45, 1)` 一类 chunk 更贴合 DataLoader 的访问模式。
 ACT live temporal aggregation 使用 rolling query window：当前动作只会被最近
 `chunk_size` 个预测 chunk 影响，因此 eval 端只保留 `(chunk_size, chunk_size, action_dim)`
 buffer，而不是按 `episode_len^2` 分配显存。这保持 temporal aggregation 语义，同时允许
@@ -220,7 +441,9 @@ tb-replay \
 刷新写新 HDF5 时，`tb-replay` 会把 `teleop.post_success_tail_steps`
 作为 source actions 后的 zero-action tail；当前 V2.1 默认 `50` 步。这个
 tail 用来保留 terminal dump 后的 plateau / `dump_end` 观测，避免刚倒完就
-截断。可用 `--post-tail-steps <N>` 临时覆盖。
+截断。可用 `--post-tail-steps <N>` 临时覆盖。刷新 replay 只读 source
+episode 的 actions/qpos/metadata，不读旧 image dataset；输出图像来自当前
+Unity 后端。
 
 当前这三份 `teleop` 配置共享同一套 FarmStick 默认臂控映射，已按真机控制习惯对齐为：
 
@@ -278,6 +501,10 @@ V1/FarmStick 的 `task_success_tail` 录制在 success 后补完 tail 自动停�
 | `act_yulong_v2_2_pro_conditioned_dig_cell_entry_qvel.yaml` | YuLong V2.2 conditioned dig 主线 | `qpos + qvel + cell_entry_tokens`，读取 VDS primitive dig root |
 | `act_yulong_v2_2_operator_first_4p_dig_cut_qvel.yaml` | YuLong V2.2 operator-first dig 主线 | `qpos + qvel + dig_cut_tokens`，读取 `data/yulong_v2_2_current_primitives_operator_first/dig` |
 | `act_yulong_v2_2_operator_first_4p_{carry,dump,return}_qvel.yaml` | YuLong V2.2 operator-first 其他 primitive 主线 | `qpos + qvel`，读取 `data/yulong_v2_2_current_primitives_operator_first/{carry,dump,return}` |
+| `act_yulong_v2_4_dig_conditioned_copy_qvel.yaml` | YuLong V2.4 conditioned dig 诊断重训 | `qpos + qvel + dig_cut_tokens`，读取 materialized copy dig root；训练前后用 `python -m testbed.cli.dig_token_sensitivity` 比较 token sensitivity |
+| `act_yulong_v2_4_return_conditioned_qvel.yaml` | YuLong V2.4 conditioned return 主线 | 当前为 `qpos + qvel + return_target_tokens`，读取 materialized copy return root；V2.4.5 计划改为 `qpos + qvel + return_start_envelope_tokens_v1` |
+| `act_yulong_v2_4_hindsight_goal_dig_qvel.yaml` | YuLong V2.4 outcome-grounded dig 主线 | `qpos + qvel + dig_cut_tokens`，读取 hindsight-goal copy dig root；supervision 为 `dig_outcome_targets`，只用 gold tier |
+| `act_yulong_v2_4_hindsight_goal_return_qvel.yaml` | YuLong V2.4 outcome-grounded return 主线 | 当前为 `qpos + qvel + return_target_tokens`，读取 hindsight-goal copy return root；supervision 为 `return_outcome_targets`，只用 gold tier；V2.4.5 需要 `return_start_envelope_tokens_v1` 与 endpoint envelope QC |
 | `act_agx_v2_1_workskill_gcact.yaml` | Stage 3 held-out 对照 | `qpos + qvel + goal_tokens`，本阶段不进 live |
 | `act_agx_v2_1_multi_raw_workskill_qvel.yaml` | 当前多轮 raw 主训练线 | `qpos + qvel`，默认读取 `data/agx_teleop_v2_1_multi_raw_workskill` |
 | `act_agx_v2_1_multi_raw_workskill_gcact.yaml` | 当前多轮 raw goal-token 对照线 | `qpos + qvel + goal_tokens`，默认读取 `data/agx_teleop_v2_1_multi_raw_workskill` |

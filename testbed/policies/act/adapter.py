@@ -63,9 +63,15 @@ class ACTAdapter(Policy):
         from testbed.policies.act.detr.main import build_ACT_model_and_optimizer
 
         self.device       = torch.device(device if torch.cuda.is_available() else "cpu")
+        self.policy_config = dict(policy_config)
         self.norm_stats   = norm_stats
         self.temporal_agg = temporal_agg
         self.kl_weight    = policy_config.get("kl_weight", 10)
+        outcome_cfg = dict(policy_config.get("outcome_head") or {})
+        self.outcome_loss_weight = float(outcome_cfg.get("loss_weight", 0.0))
+        self.token_swap_outcome_loss_weight = float(
+            outcome_cfg.get("token_swap_loss_weight", 0.0)
+        )
         self._camera_names = list(policy_config.get("camera_names", []))
         self._low_dim_keys = list(policy_config.get("low_dim_keys", ["qpos"]))
         self._image_mask_config = dict(policy_config.get("image_mask") or {})
@@ -86,6 +92,7 @@ class ACTAdapter(Policy):
             std=[0.229, 0.224, 0.225],
         )
         self._proprio_mean, self._proprio_std = self._resolve_proprio_norm_stats()
+        self._token_slice = self._resolve_goal_token_slice()
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -161,7 +168,8 @@ class ACTAdapter(Policy):
 
         self._model.eval()
         with torch.no_grad():
-            a_hat, _, _ = self._model(proprio, image, None)   # (1, C, Na)
+            model_out = self._model(proprio, image, None)   # (1, C, Na)
+            a_hat, _, _, _ = self._unpack_model_output(model_out)
 
         if self.temporal_agg:
             action = self._aggregate(a_hat)
@@ -181,6 +189,52 @@ class ACTAdapter(Policy):
             + self.norm_stats["action_mean"]
         )
         return action.astype(np.float32)
+
+    def predict_with_outcome(self, obs: dict) -> tuple[np.ndarray, np.ndarray | None]:
+        """Return the first action plus optional outcome-head prediction."""
+        proprio = self._build_proprio(obs)
+        proprio = (proprio - self._proprio_mean) / self._proprio_std
+
+        cam_images: list[np.ndarray] = []
+        for cam in self._camera_names:
+            key = f"image_{cam}"
+            if key not in obs:
+                raise ValueError(
+                    f"ACTAdapter.predict_with_outcome(): missing required camera input {key!r}."
+                )
+            cam_img = apply_image_mask(
+                np.asarray(obs[key]),
+                camera_name=cam,
+                mask_config=self._image_mask_config,
+                mask=obs.get(f"image_mask_{cam}"),
+            )
+            cam_img = np.asarray(cam_img, dtype=np.float32)
+            if cam_img.shape[0] == 3:
+                pass
+            elif cam_img.shape[-1] == 3:
+                cam_img = np.transpose(cam_img, (2, 0, 1))
+                if cam_img.max() > 1.0:
+                    cam_img = cam_img / 255.0
+            else:
+                raise ValueError(
+                    f"ACTAdapter.predict_with_outcome(): expected {key!r} to have 3 channels."
+                )
+            cam_images.append(cam_img)
+
+        image = torch.from_numpy(np.stack(cam_images, axis=0)).float()
+        image = image.to(self.device).unsqueeze(0)
+        image = self._normalize(image)
+
+        self._model.eval()
+        with torch.no_grad():
+            model_out = self._model(proprio, image, None)
+            a_hat, _, _, outcome_hat = self._unpack_model_output(model_out)
+        action = a_hat[:, 0].squeeze(0).cpu().numpy()
+        action = action * self.norm_stats["action_std"] + self.norm_stats["action_mean"]
+        outcome = None
+        if outcome_hat is not None:
+            outcome = outcome_hat.squeeze(0).detach().cpu().numpy().astype(np.float32)
+        return action.astype(np.float32), outcome
 
     def _build_proprio(self, obs: dict) -> torch.Tensor:
         parts: list[np.ndarray] = []
@@ -282,6 +336,8 @@ class ACTAdapter(Policy):
         image: torch.Tensor,
         actions: torch.Tensor,
         is_pad: torch.Tensor,
+        outcome_target: torch.Tensor | None = None,
+        outcome_mask: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """
         Training-time forward pass.
@@ -301,17 +357,59 @@ class ACTAdapter(Policy):
         actions = actions[:, : self._model.num_queries]
         is_pad  = is_pad[:,  : self._model.num_queries]
 
-        a_hat, _, (mu, logvar) = self._model(proprio, image, None, actions, is_pad)
+        model_out = self._model(proprio, image, None, actions, is_pad)
+        a_hat, _, (mu, logvar), outcome_hat = self._unpack_model_output(model_out)
         total_kld, _, _        = _kl_divergence(mu, logvar)
 
         import torch.nn.functional as F
         all_l1 = F.l1_loss(actions, a_hat, reduction="none")
         l1     = (all_l1 * ~is_pad.unsqueeze(-1)).mean()
+        loss = l1 + total_kld[0] * self.kl_weight
+
+        zero = loss.new_tensor(0.0)
+        outcome_loss = zero
+        token_swap_outcome_loss = zero
+        if outcome_hat is not None and outcome_target is not None:
+            outcome_target = outcome_target.to(outcome_hat.device).float()
+            if outcome_mask is None:
+                outcome_mask = torch.ones_like(outcome_target, device=outcome_hat.device)
+            else:
+                outcome_mask = outcome_mask.to(outcome_hat.device).float()
+            raw = F.smooth_l1_loss(outcome_hat, outcome_target, reduction="none")
+            denom = outcome_mask.sum().clamp(min=1.0)
+            outcome_loss = (raw * outcome_mask).sum() / denom
+            loss = loss + outcome_loss * self.outcome_loss_weight
+
+            if (
+                self.token_swap_outcome_loss_weight > 0.0
+                and proprio.shape[0] > 1
+                and self._token_slice is not None
+            ):
+                swapped_proprio = self._swap_goal_token_in_batch(proprio)
+                swapped_target = torch.roll(outcome_target, shifts=1, dims=0)
+                swapped_mask = torch.roll(outcome_mask, shifts=1, dims=0)
+                swap_out = self._model(swapped_proprio, image, None)
+                _, _, _, swapped_outcome_hat = self._unpack_model_output(swap_out)
+                if swapped_outcome_hat is not None:
+                    raw_swap = F.smooth_l1_loss(
+                        swapped_outcome_hat,
+                        swapped_target,
+                        reduction="none",
+                    )
+                    token_swap_outcome_loss = (
+                        raw_swap * swapped_mask
+                    ).sum() / swapped_mask.sum().clamp(min=1.0)
+                    loss = loss + (
+                        token_swap_outcome_loss
+                        * self.token_swap_outcome_loss_weight
+                    )
 
         return {
             "l1":   l1,
             "kl":   total_kld[0],
-            "loss": l1 + total_kld[0] * self.kl_weight,
+            "outcome": outcome_loss,
+            "token_swap": token_swap_outcome_loss,
+            "loss": loss,
         }
 
     def configure_optimizers(self):
@@ -322,6 +420,63 @@ class ACTAdapter(Policy):
 
     def load_state_dict(self, sd, strict: bool = True):
         return self._model.load_state_dict(sd, strict=strict)
+
+    @staticmethod
+    def _unpack_model_output(model_out):
+        if isinstance(model_out, tuple) and len(model_out) == 4:
+            a_hat, is_pad_hat, latent, outcome_hat = model_out
+            return a_hat, is_pad_hat, latent, outcome_hat
+        a_hat, is_pad_hat, latent = model_out
+        return a_hat, is_pad_hat, latent, None
+
+    def _resolve_goal_token_slice(self) -> slice | None:
+        start = 0
+        for key in self._low_dim_keys:
+            dim = self._low_dim_key_dim(key)
+            if key in {
+                "dig_cut_tokens",
+                "return_target_tokens",
+                "return_start_envelope_tokens_v1",
+                "goal_tokens",
+            }:
+                return slice(start, start + dim)
+            start += dim
+        return None
+
+    def _low_dim_key_dim(self, key: str) -> int:
+        if key in {"dig_cut_tokens", "return_target_tokens", "goal_tokens"}:
+            return 10
+        if key == "return_start_envelope_tokens_v1":
+            return 18
+        if key == "cell_entry_tokens":
+            return 10
+        if key in {"qpos", "qvel"}:
+            equipment_model = str(self.policy_config.get("equipment_model", "")).lower()
+            if "bimanual" in equipment_model:
+                return 14
+            if (
+                "excavator_simple" in equipment_model
+                or "agxunity" in equipment_model
+                or "agx" in equipment_model
+                or "yulong" in equipment_model
+            ):
+                return 4
+            return 7
+        raise ValueError(f"Unsupported low_dim key {key!r}.")
+
+    def _swap_goal_token_in_batch(self, proprio: torch.Tensor) -> torch.Tensor:
+        if self._token_slice is None:
+            return proprio
+        mean = self._proprio_mean.to(proprio.device)
+        std = self._proprio_std.to(proprio.device)
+        unnorm = proprio * std + mean
+        swapped = unnorm.clone()
+        swapped[:, self._token_slice] = torch.roll(
+            unnorm[:, self._token_slice],
+            shifts=1,
+            dims=0,
+        )
+        return (swapped - mean) / std
 
     # ── checkpoint helpers ────────────────────────────────────────────────────
 

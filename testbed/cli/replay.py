@@ -33,15 +33,37 @@ Outputs (when --record-output-dir)
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import re
 import time
 from pathlib import Path
+from typing import Any, TextIO
 
 import numpy as np
 import yaml
 
 log = logging.getLogger(__name__)
+
+DIAGNOSTIC_ENV_STATE_FIELDS = {
+    0: "mass_in_bucket_kg",
+    5: "target_hard_collision_count",
+    6: "target_contact_max_normal_force_n",
+    7: "min_distance_to_dig_area_m",
+    8: "bucket_depth_below_dig_area_plane_m",
+    20: "bucket_dig_area_relative_x_m",
+    21: "bucket_dig_area_relative_y_m",
+    22: "bucket_dig_area_relative_z_m",
+    28: "bucket_tip_dig_area_x_m",
+    29: "bucket_tip_dig_area_y_m",
+    30: "bucket_tip_dig_area_z_m",
+    31: "bucket_depth_below_local_surface_m",
+    57: "bucket_mass_delta_kg",
+    61: "bucket_contact_dig_area_mask",
+    62: "bucket_contact_dump_area_mask",
+    63: "hard_collision_count",
+}
+REMOVED_DEPTH_SLICE = slice(39, 45)
 
 
 def _episode_sort_key(path: Path) -> tuple[int, str]:
@@ -89,6 +111,42 @@ def main() -> None:
                         help="Optional zero-action hold steps to append when "
                              "recording regenerated HDF5. Defaults to "
                              "teleop.post_success_tail_steps from --config.")
+    parser.add_argument("--diagnostic-log", type=Path, default=None,
+                        help="Optional JSONL replay diagnostic log. With a "
+                             "single episode and a .jsonl path, writes that "
+                             "file; otherwise writes per-episode files under "
+                             "the given directory.")
+    parser.add_argument("--diagnostic-every", type=int, default=1,
+                        help="Write one diagnostic row every N replay steps "
+                             "when --diagnostic-log is set. Use 0 for event-only.")
+    parser.add_argument("--diagnostic-error-threshold", type=float, default=0.02,
+                        help="Always log steps whose qpos max error exceeds "
+                             "this threshold.")
+    parser.add_argument("--diagnostic-jump-threshold", type=float, default=0.05,
+                        help="Always log steps whose replay qpos delta exceeds "
+                             "this threshold.")
+    parser.add_argument("--realign-on-qpos-error", action="store_true",
+                        help="When replay qpos diverges from the source for "
+                             "several steps, ask Unity to realign actuator pose "
+                             "before continuing replay.")
+    parser.add_argument("--realign-error-threshold", type=float, default=0.04,
+                        help="Normalized qpos error threshold used by "
+                             "--realign-on-qpos-error.")
+    parser.add_argument("--realign-axis", choices=("swing", "all"), default="all",
+                        help="Pose dimensions to realign. 'swing' preserves "
+                             "current boom/stick/bucket state and only replaces "
+                             "axis 0 from the source; default 'all' uses the "
+                             "full 4D source qpos.")
+    parser.add_argument("--realign-hold-steps", type=int, default=3,
+                        help="Require this many consecutive above-threshold "
+                             "steps before realigning.")
+    parser.add_argument("--realign-min-steps-between", type=int, default=200,
+                        help="Minimum source steps between pose realignment events.")
+    parser.add_argument("--realign-burn-in-steps", type=int, default=15,
+                        help="Unity simulation steps to run after applying the "
+                             "LockController pose target.")
+    parser.add_argument("--realign-max-count", type=int, default=20,
+                        help="Maximum pose realignment events per episode.")
     args = parser.parse_args()
 
     episodes = _resolve_episodes(args.episode)
@@ -162,6 +220,21 @@ def main() -> None:
                 record_episode_idx=record_start_idx + ep_idx,
                 config_path=args.config,
                 post_tail_steps=post_tail_steps,
+                diagnostic_log_path=_resolve_diagnostic_log_path(
+                    args.diagnostic_log,
+                    ep_path,
+                    total=len(episodes),
+                ),
+                diagnostic_every=max(0, int(args.diagnostic_every)),
+                diagnostic_error_threshold=float(args.diagnostic_error_threshold),
+                diagnostic_jump_threshold=float(args.diagnostic_jump_threshold),
+                realign_on_qpos_error=bool(args.realign_on_qpos_error),
+                realign_error_threshold=float(args.realign_error_threshold),
+                realign_axis=str(args.realign_axis),
+                realign_hold_steps=max(1, int(args.realign_hold_steps)),
+                realign_min_steps_between=max(0, int(args.realign_min_steps_between)),
+                realign_burn_in_steps=max(0, int(args.realign_burn_in_steps)),
+                realign_max_count=max(0, int(args.realign_max_count)),
             )
             summary.append(result)
     finally:
@@ -176,11 +249,488 @@ def main() -> None:
 
 def _peek_metadata(ep_path: Path, task_cfg: dict) -> dict:
     from testbed.data.hdf5_io import read_episode
-    ep = read_episode(ep_path)
+    ep = read_episode(ep_path, load_images=False)
     meta = ep.get("metadata", {})
     return {
         "task_name": str(meta.get("task_name", task_cfg.get("task_name", "agx_excavation_teleop"))),
     }
+
+
+def _resolve_diagnostic_log_path(
+    base_path: Path | None,
+    ep_path: Path,
+    *,
+    total: int,
+) -> Path | None:
+    if base_path is None:
+        return None
+    path = base_path.expanduser()
+    if total == 1 and path.suffix.lower() == ".jsonl":
+        return path
+    return path / f"{ep_path.stem}_diagnostics.jsonl"
+
+
+def _open_diagnostic_log(
+    path: Path | None,
+    *,
+    source_episode: Path,
+    meta: dict,
+    control_hz: float,
+    seed: int,
+    scenario_id: str | None,
+    qpos_ref_shape: tuple[int, ...],
+    qvel_ref_shape: tuple[int, ...] | None,
+    actions_shape: tuple[int, ...],
+    diagnostic_every: int,
+    diagnostic_error_threshold: float,
+    diagnostic_jump_threshold: float,
+    realign_config: dict[str, Any],
+) -> TextIO | None:
+    if path is None:
+        return None
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sink = path.open("w", encoding="utf-8", buffering=1)
+    _write_jsonl(
+        sink,
+        {
+            "event": "episode_start",
+            "source_episode": str(source_episode),
+            "source_dataset": str(source_episode.parent),
+            "control_hz": float(control_hz),
+            "seed": int(seed),
+            "scenario_id": scenario_id,
+            "qpos_order": _metadata_text(meta.get("qpos_order")),
+            "qvel_order": _metadata_text(meta.get("qvel_order")),
+            "action_order": _metadata_text(meta.get("action_order")),
+            "env_state_order": _metadata_text(meta.get("env_state_order")),
+            "qpos_ref_shape": qpos_ref_shape,
+            "qvel_ref_shape": qvel_ref_shape,
+            "actions_shape": actions_shape,
+            "diagnostic_every": int(diagnostic_every),
+            "diagnostic_error_threshold": float(diagnostic_error_threshold),
+            "diagnostic_jump_threshold": float(diagnostic_jump_threshold),
+            "realign_config": realign_config,
+            "env_state_fields": DIAGNOSTIC_ENV_STATE_FIELDS,
+            "removed_depth_slice": [REMOVED_DEPTH_SLICE.start, REMOVED_DEPTH_SLICE.stop],
+        },
+    )
+    log.info("Replay diagnostics JSONL → %s", path)
+    return sink
+
+
+def _write_step_exception_diagnostic(
+    *,
+    sink: TextIO | None,
+    ep_path: Path,
+    obs_before: dict,
+    action: np.ndarray,
+    record_step_index: int,
+    progress_index: int,
+    progress_label: str,
+    action_src_id: str,
+    qpos_ref: np.ndarray,
+    qvel_ref: np.ndarray | None,
+    exception: Exception,
+) -> None:
+    if sink is None:
+        return
+    source_qpos = _source_vector(qpos_ref, record_step_index)
+    source_qvel = _source_vector(qvel_ref, record_step_index)
+    replay_qpos_before = _obs_vector(obs_before, "qpos")
+    replay_qvel_before = _obs_vector(obs_before, "qvel")
+    before_error = _qpos_error(replay_qpos_before, source_qpos)
+    _write_jsonl(
+        sink,
+        {
+            "event": "step_exception",
+            "source_episode": str(ep_path),
+            "record_step_index": int(record_step_index),
+            "progress_index": int(progress_index),
+            "progress_label": progress_label,
+            "action_src_id": action_src_id,
+            "diagnostic_reason": ["step_exception"],
+            "exception_type": type(exception).__name__,
+            "exception": repr(exception),
+            "step_id_before": _obs_int(obs_before, "step_id"),
+            "action": action,
+            "source_qpos": source_qpos,
+            "source_qvel": source_qvel,
+            "replay_qpos_before": replay_qpos_before,
+            "replay_qvel_before": replay_qvel_before,
+            "qpos_abs_error_before": None if before_error is None else before_error["abs"],
+            "qpos_signed_error_before": None if before_error is None else before_error["signed"],
+            "qpos_max_error_before": None if before_error is None else before_error["max"],
+            "qpos_max_error_axis_before": None if before_error is None else before_error["axis"],
+            "env_state_before": _env_state_snapshot(obs_before.get("env_state")),
+        },
+    )
+
+
+def _write_realign_diagnostic(
+    *,
+    sink: TextIO | None,
+    ep_path: Path,
+    record_step_index: int,
+    progress_index: int,
+    progress_label: str,
+    realign_axis: str,
+    realign_count: int,
+    obs_before: dict,
+    obs_after: dict,
+    target_qpos: np.ndarray,
+    target_qvel: np.ndarray | None,
+    qpos_ref: np.ndarray,
+    qvel_ref: np.ndarray | None,
+    burn_in_steps: int,
+    warnings: list[str],
+) -> None:
+    if sink is None:
+        return
+
+    source_qpos = _source_vector(qpos_ref, record_step_index)
+    source_qvel = _source_vector(qvel_ref, record_step_index)
+    replay_qpos_before = _obs_vector(obs_before, "qpos")
+    replay_qpos_after = _obs_vector(obs_after, "qpos")
+    replay_qvel_before = _obs_vector(obs_before, "qvel")
+    replay_qvel_after = _obs_vector(obs_after, "qvel")
+    before_error = _qpos_error(replay_qpos_before, source_qpos)
+    after_error = _qpos_error(replay_qpos_after, source_qpos)
+    _write_jsonl(
+        sink,
+        {
+            "event": "pose_realign",
+            "source_episode": str(ep_path),
+            "record_step_index": int(record_step_index),
+            "progress_index": int(progress_index),
+            "progress_label": progress_label,
+            "realign_axis": realign_axis,
+            "realign_count": int(realign_count),
+            "burn_in_steps": int(burn_in_steps),
+            "step_id_before": _obs_int(obs_before, "step_id"),
+            "step_id_after": _obs_int(obs_after, "step_id"),
+            "source_qpos": source_qpos,
+            "source_qvel": source_qvel,
+            "target_qpos": target_qpos,
+            "target_qvel": target_qvel,
+            "replay_qpos_before": replay_qpos_before,
+            "replay_qpos_after": replay_qpos_after,
+            "replay_qvel_before": replay_qvel_before,
+            "replay_qvel_after": replay_qvel_after,
+            "qpos_abs_error_before": None if before_error is None else before_error["abs"],
+            "qpos_signed_error_before": None if before_error is None else before_error["signed"],
+            "qpos_max_error_before": None if before_error is None else before_error["max"],
+            "qpos_max_error_axis_before": None if before_error is None else before_error["axis"],
+            "qpos_abs_error_after": None if after_error is None else after_error["abs"],
+            "qpos_signed_error_after": None if after_error is None else after_error["signed"],
+            "qpos_max_error_after": None if after_error is None else after_error["max"],
+            "qpos_max_error_axis_after": None if after_error is None else after_error["axis"],
+            "env_state_before": _env_state_snapshot(obs_before.get("env_state")),
+            "env_state_after": _env_state_snapshot(obs_after.get("env_state")),
+            "warnings": warnings,
+        },
+    )
+
+
+def _write_step_diagnostic_if_needed(
+    *,
+    sink: TextIO | None,
+    ep_path: Path,
+    obs_before: dict,
+    obs_after: dict,
+    action: np.ndarray,
+    record_step_index: int,
+    progress_index: int,
+    progress_label: str,
+    action_src_id: str,
+    qpos_ref: np.ndarray,
+    qvel_ref: np.ndarray | None,
+    include_in_qpos_qa: bool,
+    diagnostic_every: int,
+    diagnostic_error_threshold: float,
+    diagnostic_jump_threshold: float,
+) -> None:
+    if sink is None:
+        return
+
+    source_qpos = _source_vector(qpos_ref, record_step_index)
+    source_qpos_next = (
+        _source_vector(qpos_ref, record_step_index + 1)
+        if include_in_qpos_qa
+        else None
+    )
+    source_qvel = _source_vector(qvel_ref, record_step_index)
+    source_qvel_next = (
+        _source_vector(qvel_ref, record_step_index + 1)
+        if include_in_qpos_qa
+        else None
+    )
+    replay_qpos_before = _obs_vector(obs_before, "qpos")
+    replay_qpos_after = _obs_vector(obs_after, "qpos")
+    replay_qvel_before = _obs_vector(obs_before, "qvel")
+    replay_qvel_after = _obs_vector(obs_after, "qvel")
+    before_error = _qpos_error(replay_qpos_before, source_qpos)
+    after_error = _qpos_error(replay_qpos_after, source_qpos_next)
+    qpos_delta = _vector_delta(replay_qpos_after, replay_qpos_before)
+    qvel_delta = _vector_delta(replay_qvel_after, replay_qvel_before)
+    env_before = _env_state_snapshot(obs_before.get("env_state"))
+    env_after = _env_state_snapshot(obs_after.get("env_state"))
+
+    reasons: list[str] = []
+    if diagnostic_every > 0 and progress_index % diagnostic_every == 0:
+        reasons.append("periodic")
+
+    qpos_error_max = max(
+        value
+        for value in (
+            None if before_error is None else before_error["max"],
+            None if after_error is None else after_error["max"],
+        )
+        if value is not None
+    ) if before_error is not None or after_error is not None else None
+    if qpos_error_max is not None and qpos_error_max >= diagnostic_error_threshold:
+        reasons.append("qpos_error")
+
+    qpos_jump_max = _max_abs(qpos_delta)
+    if qpos_jump_max is not None and qpos_jump_max >= diagnostic_jump_threshold:
+        reasons.append("qpos_jump")
+
+    if _env_value(env_after, "hard_collision_count") > _env_value(env_before, "hard_collision_count"):
+        reasons.append("hard_collision")
+    if _env_value(env_after, "target_hard_collision_count") > _env_value(env_before, "target_hard_collision_count"):
+        reasons.append("target_hard_collision")
+    if (
+        _env_value(env_before, "bucket_contact_dig_area_mask") > 0.0
+        or _env_value(env_after, "bucket_contact_dig_area_mask") > 0.0
+        or _env_value(env_before, "bucket_contact_dump_area_mask") > 0.0
+        or _env_value(env_after, "bucket_contact_dump_area_mask") > 0.0
+    ):
+        reasons.append("bucket_contact")
+
+    depth_delta = _vector_delta(
+        env_after.get("removed_depth_m_grid_3x2"),
+        env_before.get("removed_depth_m_grid_3x2"),
+    )
+    if _max_abs(depth_delta) is not None and _max_abs(depth_delta) >= 1.0e-5:
+        reasons.append("removed_depth_change")
+
+    if not reasons:
+        return
+
+    _write_jsonl(
+        sink,
+        {
+            "event": "step",
+            "source_episode": str(ep_path),
+            "record_step_index": int(record_step_index),
+            "progress_index": int(progress_index),
+            "progress_label": progress_label,
+            "action_src_id": action_src_id,
+            "diagnostic_reason": reasons,
+            "step_id_before": _obs_int(obs_before, "step_id"),
+            "step_id_after": _obs_int(obs_after, "step_id"),
+            "action": action,
+            "source_qpos": source_qpos,
+            "source_qpos_next": source_qpos_next,
+            "source_qvel": source_qvel,
+            "source_qvel_next": source_qvel_next,
+            "replay_qpos_before": replay_qpos_before,
+            "replay_qpos_after": replay_qpos_after,
+            "replay_qvel_before": replay_qvel_before,
+            "replay_qvel_after": replay_qvel_after,
+            "replay_qpos_delta": qpos_delta,
+            "replay_qvel_delta": qvel_delta,
+            "replay_qpos_delta_max_abs": qpos_jump_max,
+            "qpos_abs_error_before": None if before_error is None else before_error["abs"],
+            "qpos_signed_error_before": None if before_error is None else before_error["signed"],
+            "qpos_max_error_before": None if before_error is None else before_error["max"],
+            "qpos_max_error_axis_before": None if before_error is None else before_error["axis"],
+            "qpos_abs_error_after": None if after_error is None else after_error["abs"],
+            "qpos_signed_error_after": None if after_error is None else after_error["signed"],
+            "qpos_max_error_after": None if after_error is None else after_error["max"],
+            "qpos_max_error_axis_after": None if after_error is None else after_error["axis"],
+            "env_state_before": env_before,
+            "env_state_after": env_after,
+            "removed_depth_delta_grid_3x2": depth_delta,
+        },
+    )
+
+
+def _write_jsonl(sink: TextIO | None, payload: dict[str, Any]) -> None:
+    if sink is None:
+        return
+    sink.write(json.dumps(_json_ready(payload), ensure_ascii=True, allow_nan=False) + "\n")
+
+
+def _json_ready(value: Any) -> Any:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, bytes):
+        return value.decode(errors="replace")
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, np.ndarray):
+        return _json_ready(value.tolist())
+    if isinstance(value, np.generic):
+        return _json_ready(value.item())
+    if isinstance(value, float):
+        return value if np.isfinite(value) else None
+    if isinstance(value, dict):
+        return {str(k): _json_ready(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_ready(item) for item in value]
+    return str(value)
+
+
+def _metadata_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode(errors="replace")
+    if isinstance(value, (list, tuple)):
+        return ",".join(_metadata_text(item) for item in value)
+    return str(value)
+
+
+def _source_vector(array: np.ndarray | None, index: int) -> np.ndarray | None:
+    if array is None or index < 0 or index >= len(array):
+        return None
+    return np.asarray(array[index], dtype=np.float32)
+
+
+def _obs_vector(obs: dict, key: str) -> np.ndarray | None:
+    value = obs.get(key)
+    if value is None:
+        return None
+    arr = np.asarray(value, dtype=np.float32)
+    return arr.reshape(-1)
+
+
+def _obs_int(obs: dict, key: str) -> int | None:
+    value = obs.get(key)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _qpos_error(qpos: np.ndarray | None, ref: np.ndarray | None) -> dict[str, Any] | None:
+    if qpos is None or ref is None:
+        return None
+    qpos_arr = np.asarray(qpos, dtype=np.float32).reshape(-1)
+    ref_arr = np.asarray(ref, dtype=np.float32).reshape(-1)
+    dim = min(qpos_arr.size, ref_arr.size)
+    if dim <= 0:
+        return None
+    signed = qpos_arr[:dim] - ref_arr[:dim]
+    abs_err = np.abs(signed)
+    axis = int(np.argmax(abs_err))
+    return {
+        "signed": signed,
+        "abs": abs_err,
+        "max": float(abs_err[axis]),
+        "axis": axis,
+    }
+
+
+def _vector_delta(
+    after: np.ndarray | list[float] | None,
+    before: np.ndarray | list[float] | None,
+) -> np.ndarray | None:
+    if after is None or before is None:
+        return None
+    after_arr = np.asarray(after, dtype=np.float32).reshape(-1)
+    before_arr = np.asarray(before, dtype=np.float32).reshape(-1)
+    dim = min(after_arr.size, before_arr.size)
+    if dim <= 0:
+        return None
+    return after_arr[:dim] - before_arr[:dim]
+
+
+def _max_abs(value: np.ndarray | list[float] | None) -> float | None:
+    if value is None:
+        return None
+    arr = np.asarray(value, dtype=np.float32).reshape(-1)
+    if arr.size == 0:
+        return None
+    return float(np.max(np.abs(arr)))
+
+
+def _selected_realign_error(error: dict[str, Any] | None, axis: str) -> float | None:
+    if error is None:
+        return None
+    if axis == "swing":
+        abs_err = error.get("abs")
+        if abs_err is None:
+            return None
+        arr = np.asarray(abs_err, dtype=np.float32).reshape(-1)
+        if arr.size == 0:
+            return None
+        return float(abs(arr[0]))
+    value = error.get("max")
+    return None if value is None else float(value)
+
+
+def _make_realign_target_qpos(
+    *,
+    source_qpos: np.ndarray,
+    replay_qpos: np.ndarray,
+    axis: str,
+) -> np.ndarray:
+    source = np.asarray(source_qpos, dtype=np.float32).reshape(-1)
+    replay = np.asarray(replay_qpos, dtype=np.float32).reshape(-1)
+    dim = min(source.size, replay.size)
+    if axis == "swing":
+        target = replay.copy()
+        if dim > 0:
+            target[0] = source[0]
+        return target.astype(np.float32, copy=False)
+    return source[:dim].astype(np.float32, copy=True)
+
+
+def _make_realign_target_qvel(
+    *,
+    source_qvel: np.ndarray | None,
+    replay_qvel: np.ndarray | None,
+    axis: str,
+) -> np.ndarray | None:
+    if source_qvel is None and replay_qvel is None:
+        return None
+    if source_qvel is None:
+        return np.asarray(replay_qvel, dtype=np.float32).reshape(-1).copy()
+    if replay_qvel is None or axis == "all":
+        return np.asarray(source_qvel, dtype=np.float32).reshape(-1).copy()
+
+    source = np.asarray(source_qvel, dtype=np.float32).reshape(-1)
+    replay = np.asarray(replay_qvel, dtype=np.float32).reshape(-1)
+    target = replay.copy()
+    if source.size > 0 and target.size > 0:
+        target[0] = source[0]
+    return target.astype(np.float32, copy=False)
+
+
+def _env_state_snapshot(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    arr = np.asarray(value, dtype=np.float32)
+    flat = arr.reshape(-1)
+    snapshot: dict[str, Any] = {"shape": list(arr.shape)}
+    for idx, name in DIAGNOSTIC_ENV_STATE_FIELDS.items():
+        if idx < flat.size:
+            snapshot[name] = float(flat[idx])
+    if REMOVED_DEPTH_SLICE.stop <= flat.size:
+        snapshot["removed_depth_m_grid_3x2"] = flat[REMOVED_DEPTH_SLICE].copy()
+    return snapshot
+
+
+def _env_value(snapshot: dict[str, Any], name: str) -> float:
+    value = snapshot.get(name, 0.0)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _replay_one(
@@ -199,15 +749,35 @@ def _replay_one(
     record_episode_idx: int,
     config_path: Path | None,
     post_tail_steps: int,
+    diagnostic_log_path: Path | None,
+    diagnostic_every: int,
+    diagnostic_error_threshold: float,
+    diagnostic_jump_threshold: float,
+    realign_on_qpos_error: bool,
+    realign_error_threshold: float,
+    realign_axis: str,
+    realign_hold_steps: int,
+    realign_min_steps_between: int,
+    realign_burn_in_steps: int,
+    realign_max_count: int,
 ) -> dict:
     from testbed.data.hdf5_io import read_episode
     from testbed.data.recorder import EpisodeRecorder
     from testbed.planner.boundary_detector import build_boundary_detector_from_config
 
-    ep = read_episode(ep_path)
+    log.info(
+        "[%d/%d] Loading source episode without source images: %s",
+        ep_idx + 1,
+        total,
+        ep_path,
+    )
+    ep = read_episode(ep_path, load_images=False)
 
     actions:  np.ndarray = ep["actions"]
     qpos_ref: np.ndarray = ep["qpos"]
+    qvel_ref: np.ndarray | None = (
+        np.asarray(ep["qvel"], dtype=np.float32) if ep.get("qvel") is not None else None
+    )
     meta:     dict       = ep.get("metadata", {})
     T = len(actions)
 
@@ -220,6 +790,15 @@ def _replay_one(
         "[%d/%d] Episode: %s  T=%d  control_hz=%.0f  seed=%d  scenario_id=%s",
         ep_idx + 1, total, ep_path.name, T, control_hz, seed, scenario_id or "",
     )
+    realign_config = {
+        "enabled": bool(realign_on_qpos_error),
+        "error_threshold": float(realign_error_threshold),
+        "axis": str(realign_axis),
+        "hold_steps": int(realign_hold_steps),
+        "min_steps_between": int(realign_min_steps_between),
+        "burn_in_steps": int(realign_burn_in_steps),
+        "max_count": int(realign_max_count),
+    }
 
     frames: list[np.ndarray] = []
     qpos_replay: list[np.ndarray] = []
@@ -237,6 +816,7 @@ def _replay_one(
                 camera_names=camera_names,
                 config_path=config_path,
                 post_tail_steps=post_tail_steps,
+                realign_config=realign_config,
             ),
             camera_names=camera_names,
         )
@@ -251,7 +831,26 @@ def _replay_one(
     )
     target_dump_count = _metadata_int(meta.get("target_dump_count"), default=0)
     episode_success = False
+    realign_count = 0
+    realign_steps: list[int] = []
+    last_realign_step = -10**9
+    qpos_error_hold_count = 0
     ts = backend.reset(seed=seed, scenario_id=scenario_id)
+    diagnostic_sink = _open_diagnostic_log(
+        diagnostic_log_path,
+        source_episode=ep_path,
+        meta=meta,
+        control_hz=control_hz,
+        seed=seed,
+        scenario_id=scenario_id,
+        qpos_ref_shape=qpos_ref.shape,
+        qvel_ref_shape=None if qvel_ref is None else qvel_ref.shape,
+        actions_shape=actions.shape,
+        diagnostic_every=diagnostic_every,
+        diagnostic_error_threshold=diagnostic_error_threshold,
+        diagnostic_jump_threshold=diagnostic_jump_threshold,
+        realign_config=realign_config,
+    )
 
     def _advance(
         *,
@@ -263,14 +862,117 @@ def _replay_one(
         action_src_id: str,
         include_in_qpos_qa: bool,
     ):
-        nonlocal ts, episode_success
+        nonlocal ts, episode_success, realign_count, last_realign_step, qpos_error_hold_count
 
         obs_before = ts.observation
+        if include_in_qpos_qa and realign_on_qpos_error:
+            source_qpos = _source_vector(qpos_ref, record_step_index)
+            source_qvel = _source_vector(qvel_ref, record_step_index)
+            replay_qpos = _obs_vector(obs_before, "qpos")
+            replay_qvel = _obs_vector(obs_before, "qvel")
+            qpos_error = _qpos_error(replay_qpos, source_qpos)
+            selected_error = _selected_realign_error(qpos_error, realign_axis)
+            if selected_error is not None and selected_error >= realign_error_threshold:
+                qpos_error_hold_count += 1
+            else:
+                qpos_error_hold_count = 0
+
+            can_realign = (
+                source_qpos is not None
+                and replay_qpos is not None
+                and qpos_error_hold_count >= realign_hold_steps
+                and realign_count < realign_max_count
+                and record_step_index - last_realign_step >= realign_min_steps_between
+            )
+            if can_realign:
+                target_qpos = _make_realign_target_qpos(
+                    source_qpos=source_qpos,
+                    replay_qpos=replay_qpos,
+                    axis=realign_axis,
+                )
+                target_qvel = _make_realign_target_qvel(
+                    source_qvel=source_qvel,
+                    replay_qvel=replay_qvel,
+                    axis=realign_axis,
+                )
+                log.info(
+                    "  pose realign #%d at replay step %d: axis=%s error=%.4f",
+                    realign_count + 1,
+                    record_step_index,
+                    realign_axis,
+                    selected_error,
+                )
+                realign_before = obs_before
+                ts = backend.realign_pose(
+                    target_qpos,
+                    qvel=target_qvel,
+                    burn_in_steps=realign_burn_in_steps,
+                    reason=(
+                        f"tb-replay qpos error at source step {record_step_index}; "
+                        f"axis={realign_axis}"
+                    ),
+                )
+                obs_before = ts.observation
+                realign_count += 1
+                realign_steps.append(int(record_step_index))
+                last_realign_step = int(record_step_index)
+                qpos_error_hold_count = 0
+                _write_realign_diagnostic(
+                    sink=diagnostic_sink,
+                    ep_path=ep_path,
+                    record_step_index=record_step_index,
+                    progress_index=progress_index,
+                    progress_label=progress_label,
+                    realign_axis=realign_axis,
+                    realign_count=realign_count,
+                    obs_before=realign_before,
+                    obs_after=obs_before,
+                    target_qpos=target_qpos,
+                    target_qvel=target_qvel,
+                    qpos_ref=qpos_ref,
+                    qvel_ref=qvel_ref,
+                    burn_in_steps=realign_burn_in_steps,
+                    warnings=list(ts.info.get("warnings", [])),
+                )
+
         if include_in_qpos_qa:
             qpos_replay.append(np.asarray(obs_before["qpos"], dtype=np.float32).copy())
 
-        ts = backend.step(action)
+        try:
+            ts = backend.step(action)
+        except Exception as exc:
+            _write_step_exception_diagnostic(
+                sink=diagnostic_sink,
+                ep_path=ep_path,
+                obs_before=obs_before,
+                action=action,
+                record_step_index=record_step_index,
+                progress_index=progress_index,
+                progress_label=progress_label,
+                action_src_id=action_src_id,
+                qpos_ref=qpos_ref,
+                qvel_ref=qvel_ref,
+                exception=exc,
+            )
+            raise
         obs_after = ts.observation
+        _write_step_diagnostic_if_needed(
+            sink=diagnostic_sink,
+            ep_path=ep_path,
+            obs_before=obs_before,
+            obs_after=obs_after,
+            action=action,
+            record_step_index=record_step_index,
+            progress_index=progress_index,
+            progress_label=progress_label,
+            action_src_id=action_src_id,
+            qpos_ref=qpos_ref,
+            qvel_ref=qvel_ref,
+            include_in_qpos_qa=include_in_qpos_qa,
+            diagnostic_every=diagnostic_every,
+            diagnostic_error_threshold=diagnostic_error_threshold,
+            diagnostic_jump_threshold=diagnostic_jump_threshold,
+        )
         if recorder is not None:
             recorder.record(
                 obs=obs_before,
@@ -314,75 +1016,100 @@ def _replay_one(
             )
         return boundary_event
 
-    for t in range(T):
-        action = np.asarray(actions[t], dtype=np.float32)
-        _advance(
-            action=action,
-            record_step_index=t,
-            progress_index=t,
-            progress_total=T,
-            progress_label="step",
-            action_src_id=f"replay:{ep_path.name}",
-            include_in_qpos_qa=True,
-        )
-
-    if recorder is not None and post_tail_steps > 0:
-        tail_action_dim = int(actions.shape[1]) if actions.ndim == 2 else 4
-        tail_action = np.zeros(tail_action_dim, dtype=np.float32)
-        log.info(
-            "[%d/%d] Appending %d zero-action tail step(s).",
-            ep_idx + 1,
-            total,
-            post_tail_steps,
-        )
-        for tail_idx in range(post_tail_steps):
+    try:
+        for t in range(T):
+            action = np.asarray(actions[t], dtype=np.float32)
             _advance(
-                action=tail_action,
-                record_step_index=T + tail_idx,
-                progress_index=tail_idx,
-                progress_total=post_tail_steps,
-                progress_label="tail step",
-                action_src_id=f"replay_tail:{ep_path.name}",
-                include_in_qpos_qa=False,
+                action=action,
+                record_step_index=t,
+                progress_index=t,
+                progress_total=T,
+                progress_label="step",
+                action_src_id=f"replay:{ep_path.name}",
+                include_in_qpos_qa=True,
             )
 
-    qpos_arr = np.stack(qpos_replay)
-    min_T = min(len(qpos_ref), len(qpos_arr))
-    diff = np.abs(qpos_ref[:min_T] - qpos_arr[:min_T])
-    mean_diff, max_diff = float(diff.mean()), float(diff.max())
-    log.info(
-        "[%d/%d] QA — qpos diff: mean=%.4f  max=%.4f  (%d steps)",
-        ep_idx + 1, total, mean_diff, max_diff, min_T,
-    )
+        if recorder is not None and post_tail_steps > 0:
+            tail_action_dim = int(actions.shape[1]) if actions.ndim == 2 else 4
+            tail_action = np.zeros(tail_action_dim, dtype=np.float32)
+            log.info(
+                "[%d/%d] Appending %d zero-action tail step(s).",
+                ep_idx + 1,
+                total,
+                post_tail_steps,
+            )
+            for tail_idx in range(post_tail_steps):
+                _advance(
+                    action=tail_action,
+                    record_step_index=T + tail_idx,
+                    progress_index=tail_idx,
+                    progress_total=post_tail_steps,
+                    progress_label="tail step",
+                    action_src_id=f"replay_tail:{ep_path.name}",
+                    include_in_qpos_qa=False,
+                )
 
-    if save_video and frames:
-        video_dir.mkdir(parents=True, exist_ok=True)
-        out_path = video_dir / f"{ep_path.stem}_replay.mp4"
-        _save_video(frames, out_path, fps=int(control_hz))
-        log.info("[%d/%d] Video saved → %s", ep_idx + 1, total, out_path)
+        qpos_arr = np.stack(qpos_replay)
+        min_T = min(len(qpos_ref), len(qpos_arr))
+        diff = np.abs(qpos_ref[:min_T] - qpos_arr[:min_T])
+        mean_diff, max_diff = float(diff.mean()), float(diff.max())
+        log.info(
+            "[%d/%d] QA — qpos diff: mean=%.4f  max=%.4f  (%d steps)",
+            ep_idx + 1, total, mean_diff, max_diff, min_T,
+        )
 
-    recorded_path = None
-    if recorder is not None and len(recorder) > 0:
-        completed_dump_count = int(boundary_detector.completed_dump_count)
-        recorder.metadata["completed_dump_count"] = completed_dump_count
-        if target_dump_count > 0:
-            recorder.metadata["target_dump_count"] = int(target_dump_count)
-        if target_dump_count > 0 and completed_dump_count >= target_dump_count:
-            recorder.metadata["stop_reason"] = "target_dump_count_reached"
-            episode_success = True
-        else:
-            recorder.metadata["stop_reason"] = "replay_complete"
-        recorded_path = recorder.save(success=episode_success)
-        log.info("[%d/%d] Regenerated episode saved → %s", ep_idx + 1, total, recorded_path)
+        if save_video and frames:
+            video_dir.mkdir(parents=True, exist_ok=True)
+            out_path = video_dir / f"{ep_path.stem}_replay.mp4"
+            _save_video(frames, out_path, fps=int(control_hz))
+            log.info("[%d/%d] Video saved → %s", ep_idx + 1, total, out_path)
 
-    return {
-        "episode": ep_path.name,
-        "steps": T,
-        "recorded_steps": 0 if recorder is None else len(recorder),
-        "qpos_mean_diff": mean_diff,
-        "qpos_max_diff": max_diff,
-        "recorded_episode": "" if recorded_path is None else str(recorded_path),
-    }
+        recorded_path = None
+        if recorder is not None and len(recorder) > 0:
+            completed_dump_count = int(boundary_detector.completed_dump_count)
+            recorder.metadata["completed_dump_count"] = completed_dump_count
+            recorder.metadata["replay_pose_realign_count"] = int(realign_count)
+            recorder.metadata["replay_pose_realign_steps"] = ",".join(
+                str(step) for step in realign_steps
+            )
+            if target_dump_count > 0:
+                recorder.metadata["target_dump_count"] = int(target_dump_count)
+            if target_dump_count > 0 and completed_dump_count >= target_dump_count:
+                recorder.metadata["stop_reason"] = "target_dump_count_reached"
+                episode_success = True
+            else:
+                recorder.metadata["stop_reason"] = "replay_complete"
+            recorded_path = recorder.save(success=episode_success)
+            log.info("[%d/%d] Regenerated episode saved → %s", ep_idx + 1, total, recorded_path)
+
+        _write_jsonl(
+            diagnostic_sink,
+            {
+                "event": "episode_end",
+                "source_episode": str(ep_path),
+                "steps": int(T),
+                "recorded_steps": 0 if recorder is None else len(recorder),
+                "qpos_mean_diff": mean_diff,
+                "qpos_max_diff": max_diff,
+                "pose_realign_count": int(realign_count),
+                "pose_realign_steps": realign_steps,
+                "recorded_episode": "" if recorded_path is None else str(recorded_path),
+            },
+        )
+        return {
+            "episode": ep_path.name,
+            "steps": T,
+            "recorded_steps": 0 if recorder is None else len(recorder),
+            "qpos_mean_diff": mean_diff,
+            "qpos_max_diff": max_diff,
+            "pose_realign_count": int(realign_count),
+            "pose_realign_steps": list(realign_steps),
+            "recorded_episode": "" if recorded_path is None else str(recorded_path),
+            "diagnostic_log": "" if diagnostic_log_path is None else str(diagnostic_log_path),
+        }
+    finally:
+        if diagnostic_sink is not None:
+            diagnostic_sink.close()
 
 
 def _print_batch_summary(summary: list[dict]) -> None:
@@ -390,15 +1117,17 @@ def _print_batch_summary(summary: list[dict]) -> None:
         return
     log.info("=" * 60)
     log.info("Batch replay summary: %d episode(s)", len(summary))
-    log.info("%-25s %6s %12s %12s", "episode", "steps", "mean_diff", "max_diff")
+    log.info("%-25s %6s %12s %12s %8s", "episode", "steps", "mean_diff", "max_diff", "realign")
     for s in summary:
         log.info(
-            "%-25s %6d %12.4f %12.4f",
+            "%-25s %6d %12.4f %12.4f %8d",
             s["episode"], s["steps"], s["qpos_mean_diff"], s["qpos_max_diff"],
+            int(s.get("pose_realign_count", 0)),
         )
     all_mean = np.mean([s["qpos_mean_diff"] for s in summary])
     all_max  = np.max([s["qpos_max_diff"]  for s in summary])
-    log.info("%-25s %6s %12.4f %12.4f", "OVERALL", "", all_mean, all_max)
+    all_realign = sum(int(s.get("pose_realign_count", 0)) for s in summary)
+    log.info("%-25s %6s %12.4f %12.4f %8d", "OVERALL", "", all_mean, all_max, all_realign)
     log.info("=" * 60)
 
 
@@ -455,6 +1184,7 @@ def _build_replay_metadata(
     camera_names: list[str],
     config_path: Path | None,
     post_tail_steps: int,
+    realign_config: dict[str, Any] | None = None,
 ) -> dict:
     from testbed.data.schema import (
         ATTR_ACTION_ORDER,
@@ -509,6 +1239,16 @@ def _build_replay_metadata(
             ATTR_REPLAY_SOURCE_EPISODE: str(source_episode),
             ATTR_REPLAY_SOURCE_DATASET: str(source_episode.parent),
             ATTR_REPLAY_POST_TAIL_STEPS: int(post_tail_steps),
+            "replay_pose_realign_enabled": bool(
+                (realign_config or {}).get("enabled", False)
+            ),
+            "replay_pose_realign_axis": str((realign_config or {}).get("axis", "")),
+            "replay_pose_realign_error_threshold": float(
+                (realign_config or {}).get("error_threshold", 0.0)
+            ),
+            "replay_pose_realign_burn_in_steps": int(
+                (realign_config or {}).get("burn_in_steps", 0)
+            ),
         }
     )
     metadata.setdefault(ATTR_SCENE_VERSION, "yulong_cad_v2_2")

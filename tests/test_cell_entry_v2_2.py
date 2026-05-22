@@ -28,7 +28,10 @@ from testbed.data.schema import (
     ENV_STATE_DIG_AREA_GRID_LONG_COUNT_IDX,
     ENV_STATE_DIG_AREA_GRID_SHORT_COUNT_IDX,
     ENV_STATE_DIG_AREA_LONG_AXIS_IDX,
+    ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX,
+    ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
+    ENV_STATE_V2_2_DIM,
 )
 from testbed.planner.cell_entry import (
     AUDIT_REASON_GEOMETRY_UNAVAILABLE,
@@ -191,6 +194,17 @@ class TestCellEntryV22(unittest.TestCase):
             AUDIT_REASON_TO_ID[AUDIT_REASON_GEOMETRY_UNAVAILABLE],
         )
 
+    def test_actual_removal_prefers_removed_depth_delta_when_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "episode_0.hdf5"
+            _write_cell_entry_episode(path, with_removed_depth=True)
+
+            episode = read_episode(path)
+            v2, _summary = enrich_episode_cell_entry(episode=episode)
+
+            self.assertEqual(int(v2["cycle"]["actual_removal_step"][0]), 3)
+            self.assertEqual(int(v2["cycle"]["actual_removal_cell_id"][0]), 5)
+
     def test_builder_vds_mode_virtualizes_source_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
@@ -220,9 +234,10 @@ class TestCellEntryV22(unittest.TestCase):
             self.assertTrue((output_dir / "lineage.json").exists())
 
 
-def _write_cell_entry_episode(path: Path) -> None:
+def _write_cell_entry_episode(path: Path, *, with_removed_depth: bool = False) -> None:
     n_steps = 6
-    env_state = np.zeros((n_steps, 28), dtype=np.float32)
+    env_dim = ENV_STATE_V2_2_DIM if with_removed_depth else 28
+    env_state = np.zeros((n_steps, env_dim), dtype=np.float32)
     env_state[:, ENV_STATE_MASS_IN_BUCKET_IDX] = [0.0, 0.0, 180.0, 180.0, 90.0, 10.0]
     env_state[:, ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX] = [
         0.0,
@@ -244,6 +259,16 @@ def _write_cell_entry_episode(path: Path) -> None:
     env_state[:, ENV_STATE_BUCKET_DIG_AREA_LONG_INDEX_IDX] = 1.0
     env_state[:, ENV_STATE_BUCKET_DIG_AREA_SHORT_INDEX_IDX] = 0.0
     env_state[:, ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX] = 2.0
+    if with_removed_depth:
+        env_state[:, ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX : ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX + 6] = 1.0
+        env_state[:, ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX + 5] = [
+            0.0,
+            0.0,
+            0.002,
+            0.03,
+            0.05,
+            0.05,
+        ]
 
     v2_step = {
         "cycle_id": np.zeros(n_steps, dtype=np.int32),

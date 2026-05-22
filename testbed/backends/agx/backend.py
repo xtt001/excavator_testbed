@@ -154,10 +154,56 @@ class AgxSimBackend(SimBackend):
         ts.observation["reset_warnings"] = list(reset_response.warnings)
         return ts
 
-    def step(self, action: np.ndarray) -> Any:
-        ts = self._step_with_id(step_id=self._next_step_id, action=action)
+    def step(self, action: np.ndarray, *, planner_debug_json: str | None = None) -> Any:
+        ts = self._step_with_id(
+            step_id=self._next_step_id,
+            action=action,
+            planner_debug_json=planner_debug_json,
+        )
         self._next_step_id += 1
         return ts
+
+    def realign_pose(
+        self,
+        qpos: np.ndarray,
+        *,
+        qvel: np.ndarray | None = None,
+        burn_in_steps: int = 0,
+        reason: str | None = None,
+    ) -> Any:
+        self.get_info()
+        response = self._client.realign_pose(
+            step_id=self._next_step_id,
+            qpos=qpos,
+            qvel=qvel,
+            burn_in_steps=burn_in_steps,
+            reason=reason,
+        )
+        obs = self._obs_from_step_response(response)
+        self._last_obs = obs
+        info = {
+            "step_id": int(response.step_id),
+            "sim_time_ns": int(response.sim_time_ns),
+            "image_format": response.image_format,
+            "warnings": list(response.warnings),
+            "raw_reward_unity": float(response.reward),
+            "reward_phase": "pose_realign",
+            "task_success": False,
+            "task_step_successes": [],
+            "task_step_failures": [],
+            "task_metrics": {},
+        }
+        obs["reward_phase"] = "pose_realign"
+        obs["task_success"] = False
+        obs["task_step_successes"] = []
+        obs["task_step_failures"] = []
+        obs["task_metrics"] = {}
+        return AgxTimeStep(
+            observation=obs,
+            reward=0.0,
+            done=False,
+            info=info,
+        )
 
     def render(self, camera_id: str, height: int = 480, width: int = 640) -> np.ndarray:
         if self._last_obs is None:
@@ -188,9 +234,19 @@ class AgxSimBackend(SimBackend):
             "Unity AGX backend does not support direct object-pose injection."
         )
 
-    def _step_with_id(self, step_id: int, action: np.ndarray) -> AgxTimeStep:
+    def _step_with_id(
+        self,
+        step_id: int,
+        action: np.ndarray,
+        *,
+        planner_debug_json: str | None = None,
+    ) -> AgxTimeStep:
         self.get_info()
-        response = self._client.step(step_id=step_id, action=action)
+        response = self._client.step(
+            step_id=step_id,
+            action=action,
+            planner_debug_json=planner_debug_json,
+        )
         obs = self._obs_from_step_response(response)
         self._last_obs = obs
         reward = float(response.reward)
