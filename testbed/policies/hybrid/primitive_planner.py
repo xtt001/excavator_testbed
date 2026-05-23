@@ -395,6 +395,24 @@ class PrimitivePlannerACTPolicy(Policy):
         self.dig_cut_prior_path = str(self.dig_cut_planner_cfg.get("prior_path", ""))
         self.dig_cut_prior = self._load_dig_cut_prior(self.dig_cut_prior_path)
         self.dig_cut_prior_id = str(self.dig_cut_prior.get("prior_id", ""))
+        dig_depth_profile_cfg = dict(
+            self.dig_cut_planner_cfg.get("dig_depth_profile", {}) or {}
+        )
+        self.dig_depth_profile_source = str(
+            dig_depth_profile_cfg.get("source", "live_plan")
+        ).strip().lower()
+        self.dig_depth_profile_required = bool(
+            dig_depth_profile_cfg.get("required", False)
+        )
+        self.dig_depth_profile_allow_live_fallback = bool(
+            dig_depth_profile_cfg.get(
+                "allow_live_fallback",
+                self.dig_depth_profile_source != "prior_profile",
+            )
+        )
+        self.dig_depth_profile_allow_global_fallback = bool(
+            dig_depth_profile_cfg.get("allow_global_fallback", True)
+        )
         self.return_target_planner_cfg = dict(return_target_planner or {})
         self.return_target_planner_enabled = bool(
             self.return_target_planner_cfg.get("enabled", False)
@@ -706,6 +724,8 @@ class PrimitivePlannerACTPolicy(Policy):
             dtype=np.float32,
         )
         self._dig_depth_profile_token_injected = False
+        self._dig_depth_profile_token_source = "none"
+        self._dig_depth_profile_fallback_reason = ""
         self._return_target_tokens = np.zeros(RETURN_TARGET_TOKEN_DIM, dtype=np.float32)
         self._return_target_token_injected = False
         self._return_start_envelope_tokens = np.zeros(
@@ -835,6 +855,14 @@ class PrimitivePlannerACTPolicy(Policy):
                 self._dig_depth_profile_token_injected
             ),
             "dig_depth_profile_token_dim": int(DIG_DEPTH_PROFILE_TOKEN_DIM),
+            "dig_depth_profile_source": str(self.dig_depth_profile_source),
+            "dig_depth_profile_required": bool(self.dig_depth_profile_required),
+            "dig_depth_profile_token_source": str(
+                self._dig_depth_profile_token_source
+            ),
+            "dig_depth_profile_fallback_reason": str(
+                self._dig_depth_profile_fallback_reason
+            ),
             "return_target_token_injected": bool(self._return_target_token_injected),
             "return_target_token_dim": int(RETURN_TARGET_TOKEN_DIM),
             "return_target_token_source": str(self._return_target_token_source),
@@ -893,6 +921,7 @@ class PrimitivePlannerACTPolicy(Policy):
             "coverage_entry_z_m": float(self._coverage_active_value("entry_z_m")),
             "coverage_exit_x_m": float(self._coverage_active_value("exit_x_m")),
             "coverage_exit_z_m": float(self._coverage_active_value("exit_z_m")),
+            "coverage_cell_id": int(self._coverage_active_cell_id()),
             "coverage_corridor_score": float(self._coverage_active_corridor_score()),
             "coverage_depleted_count": int(self._coverage_depleted_count()),
             "coverage_last_payload_gain_kg": float(
@@ -2603,10 +2632,46 @@ class PrimitivePlannerACTPolicy(Policy):
         self._dig_cut_planned_cycle_id = int(self._cycle_index)
 
     def _build_dig_depth_profile_tokens_for_obs(self, obs: dict) -> np.ndarray:
+        cell_id = self._dig_depth_profile_cell_id(obs)
+        if self.dig_depth_profile_source == "prior_profile":
+            token, source, reason = self._dig_depth_profile_prior_token(cell_id)
+            if token is not None:
+                self._dig_depth_profile_token_source = source
+                self._dig_depth_profile_fallback_reason = ""
+                return token.astype(np.float32)
+            if (
+                self.dig_depth_profile_required
+                or not self.dig_depth_profile_allow_live_fallback
+            ):
+                self._dig_depth_profile_token_source = "missing_required_prior"
+                self._dig_depth_profile_fallback_reason = reason
+                raise ValueError(
+                    "dig_depth_profile.source='prior_profile' requires a matching "
+                    f"dig_depth_profile prior for cell {int(cell_id)}; {reason}"
+                )
+            self._dig_depth_profile_token_source = "fallback_live_plan"
+            self._dig_depth_profile_fallback_reason = reason
+            return self._build_live_dig_depth_profile_tokens_for_obs(obs, cell_id=cell_id)
+        if self.dig_depth_profile_source != "live_plan":
+            raise ValueError(
+                "Unsupported dig_depth_profile.source "
+                f"{self.dig_depth_profile_source!r}; expected 'live_plan' or "
+                "'prior_profile'."
+            )
+        self._dig_depth_profile_token_source = "live_plan"
+        self._dig_depth_profile_fallback_reason = ""
+        return self._build_live_dig_depth_profile_tokens_for_obs(obs, cell_id=cell_id)
+
+    def _build_live_dig_depth_profile_tokens_for_obs(
+        self,
+        obs: dict,
+        *,
+        cell_id: int,
+    ) -> np.ndarray:
         raw_fields = self._dig_depth_profile_raw_fields(obs)
         return build_dig_depth_profile_token_from_plan(
             raw_fields=raw_fields,
-            cell_id=self._dig_depth_profile_cell_id(obs),
+            cell_id=cell_id,
             env_state=self._env_state(obs),
             effective_deposit_delta_kg=float(
                 raw_fields.get(
@@ -2615,6 +2680,62 @@ class PrimitivePlannerACTPolicy(Policy):
                 )
             ),
         )
+
+    def _dig_depth_profile_prior_token(
+        self,
+        cell_id: int,
+    ) -> tuple[np.ndarray | None, str, str]:
+        mapping, source, reason = self._dig_depth_profile_prior_mapping(cell_id)
+        if mapping is None:
+            return None, source, reason
+        token = self._dig_depth_profile_token_from_prior_mapping(mapping)
+        if token is None:
+            return None, source, f"{source} prior has no token_median/token field"
+        if source == "cell":
+            return token, f"qc6_dig_depth_profile_cell_{int(cell_id)}", ""
+        return token, "qc6_dig_depth_profile_global", ""
+
+    def _dig_depth_profile_prior_mapping(
+        self,
+        cell_id: int,
+    ) -> tuple[dict[str, object] | None, str, str]:
+        if not self.dig_cut_prior:
+            return None, "missing_dig_cut_prior", "missing dig_cut_prior"
+        cells = self.dig_cut_prior.get("dig_depth_profile_cells", [])
+        if isinstance(cells, list):
+            for item in cells:
+                if not isinstance(item, dict):
+                    continue
+                cell = dict(item)
+                if int(cell.get("cell_id", -999999)) == int(cell_id):
+                    return cell, "cell", ""
+        if self.dig_depth_profile_allow_global_fallback:
+            global_prior = self.dig_cut_prior.get("dig_depth_profile_global")
+            if isinstance(global_prior, dict):
+                return dict(global_prior), "global", ""
+        return (
+            None,
+            "missing_dig_depth_profile_prior",
+            f"missing dig_depth_profile_cells entry for cell {int(cell_id)}",
+        )
+
+    @staticmethod
+    def _dig_depth_profile_token_from_prior_mapping(
+        mapping: dict[str, object],
+    ) -> np.ndarray | None:
+        for key in ("token_median", "token", "median"):
+            if key not in mapping:
+                continue
+            token = np.asarray(mapping[key], dtype=np.float32).reshape(-1)
+            if token.shape[0] != DIG_DEPTH_PROFILE_TOKEN_DIM:
+                raise ValueError(
+                    "dig_depth_profile prior token must have "
+                    f"{DIG_DEPTH_PROFILE_TOKEN_DIM} values, got {token.shape[0]}"
+                )
+            if not np.all(np.isfinite(token)):
+                raise ValueError("dig_depth_profile prior token contains non-finite values")
+            return token.copy()
+        return None
 
     def _dig_depth_profile_raw_fields(self, obs: dict) -> dict[str, float | int]:
         if (
@@ -3908,6 +4029,12 @@ class PrimitivePlannerACTPolicy(Policy):
             return float("nan")
         return float(getattr(corridor, name, float("nan")))
 
+    def _coverage_active_cell_id(self) -> int:
+        corridor = self._coverage_active_corridor()
+        if corridor is None:
+            return -1
+        return int(self._coverage_cell_id(corridor))
+
     def _coverage_depleted_count(self) -> int:
         return int(sum(1 for corridor in self._coverage_corridors if corridor.depleted))
 
@@ -3979,6 +4106,31 @@ class PrimitivePlannerACTPolicy(Policy):
                 f"{self.coverage_candidate_layout!r}; expected one of "
                 f"{sorted(supported_layouts)}."
             )
+        supported_profile_sources = {"live_plan", "prior_profile"}
+        if self.dig_depth_profile_source not in supported_profile_sources:
+            raise ValueError(
+                "Unsupported dig_depth_profile.source "
+                f"{self.dig_depth_profile_source!r}; expected one of "
+                f"{sorted(supported_profile_sources)}."
+            )
+        if self.dig_depth_profile_source == "prior_profile":
+            if not self.dig_cut_prior_path:
+                raise ValueError(
+                    "dig_depth_profile.source='prior_profile' requires prior_path."
+                )
+            if "dig_depth_profile_cells" not in self.dig_cut_prior:
+                raise ValueError(
+                    "dig_depth_profile.source='prior_profile' requires "
+                    "dig_depth_profile_cells in the dig cut prior."
+                )
+            if (
+                self.dig_depth_profile_required
+                and self.dig_depth_profile_allow_live_fallback
+            ):
+                raise ValueError(
+                    "dig_depth_profile.required=true must set "
+                    "allow_live_fallback=false so missing prior profiles fail fast."
+                )
 
     @staticmethod
     def _coverage_percentile_list(

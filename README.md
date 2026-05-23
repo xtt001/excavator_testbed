@@ -1206,6 +1206,11 @@ schema 规则：
   payload/effective-deposit、entry/exit/peak reference depth、surface/plane offset、
   contact fraction 等 profile 语义。qc6 gold dig copy 已写入该字段；新训练配置为
   `testbed/configs/act_yulong_v2_4_5_process_boundary_qc6_dig_depth_profile_qvel.yaml`。
+  qc6 prior 同步追加 `dig_depth_profile_cells/global`。depth-profile eval 配置使用
+  strict prior mode：`source=prior_profile`、`required=true`、
+  `allow_live_fallback=false`、`allow_global_fallback=false`，并且
+  `dig_low_dim_keys` 必须包含 `dig_depth_profile_tokens_v1`，否则 eval 在构建
+  policy 时直接报错，避免新 profile token 被旧 checkpoint 静默跳过。
 - 未放进 `low_dim_keys` 的 `qvel / rewards / timestamps / metadata` 仍主要用于：
   - replay
   - dataset QC

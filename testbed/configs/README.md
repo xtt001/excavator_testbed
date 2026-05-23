@@ -256,6 +256,13 @@
   plane-depth 或 reconstructed penetration 直接写成 planner 阈值。qc6 copy 可用
   `tb-build-dig-depth-profile-tokens-v1 --dataset-dir <qc6-copy>/dig --training-tier gold`
   写入该 token。
+- depth-profile planner/eval 不允许静默 fallback。使用
+  `eval_yulong_v2_4_5_qc6_cell_weighted_depth_profile_{3cycle_smoke,15cycle_probe,30cycle_probe}.yaml`
+  时，`dig_cut_planner.dig_depth_profile` 固定为 prior-driven strict mode：
+  `source: prior_profile`、`required: true`、`allow_live_fallback: false`、
+  `allow_global_fallback: false`。这些配置的 `dig_low_dim_keys` 显式包含
+  `dig_depth_profile_tokens_v1`，并指向 `dig_depth_profile` checkpoint；如果 low-dim
+  key 缺失或 prior cell 缺失，eval/planner 会 fail fast。
 - qc6 live return envelope 已改为 prior-driven：`yulong_removed_depth_dig_cut_prior_v3.json`
   里新增 `return_start_envelope_cells/global`，planner 按当前 coverage cell 注入 qc6
   gold return 的 median envelope；只有缺少 prior 时才回退旧的 current-observation
@@ -552,6 +559,7 @@ V1/FarmStick 的 `task_success_tail` 录制在 success 后补完 tail 自动停�
 | `act_yulong_v2_4_return_conditioned_qvel.yaml` | YuLong V2.4 conditioned return 主线 | 当前为 `qpos + qvel + return_target_tokens`，读取 materialized copy return root；V2.4.5 计划改为 `qpos + qvel + return_start_envelope_tokens_v1` |
 | `act_yulong_v2_4_hindsight_goal_dig_qvel.yaml` | YuLong V2.4 outcome-grounded dig 主线 | `qpos + qvel + dig_cut_tokens`，读取 hindsight-goal copy dig root；supervision 为 `dig_outcome_targets`，只用 gold tier |
 | `act_yulong_v2_4_5_process_boundary_qc6_dig_depth_profile_qvel.yaml` | YuLong V2.4.5 qc6 depth-profile dig 诊断重训 | `qpos + qvel + dig_cut_tokens + dig_depth_profile_tokens_v1`，读取 qc6 materialized dig copy；用于验证 ACT 是否能把 removed-depth target 与姿态深度 profile 分开学习 |
+| `eval_yulong_v2_4_5_qc6_cell_weighted_depth_profile_{3cycle_smoke,15cycle_probe,30cycle_probe}.yaml` | YuLong V2.4.5 qc6 depth-profile eval | dig 指向 `runs/ckpts/.../dig_depth_profile`，planner 使用 qc6 per-cell `dig_depth_profile_cells` strict prior，不允许 live/global fallback |
 | `act_yulong_v2_4_hindsight_goal_return_qvel.yaml` | YuLong V2.4 outcome-grounded return 主线 | 当前为 `qpos + qvel + return_target_tokens`，读取 hindsight-goal copy return root；supervision 为 `return_outcome_targets`，只用 gold tier；V2.4.5 需要 `return_start_envelope_tokens_v1` 与 endpoint envelope QC |
 | `act_agx_v2_1_workskill_gcact.yaml` | Stage 3 held-out 对照 | `qpos + qvel + goal_tokens`，本阶段不进 live |
 | `act_agx_v2_1_multi_raw_workskill_qvel.yaml` | 当前多轮 raw 主训练线 | `qpos + qvel`，默认读取 `data/agx_teleop_v2_1_multi_raw_workskill` |

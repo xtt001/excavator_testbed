@@ -491,6 +491,27 @@ class EvalSuite:
                                     dtype=np.float32,
                                 )
                             ),
+                            "dig_depth_profile_token_injected": bool(
+                                policy_debug.get(
+                                    "dig_depth_profile_token_injected", False
+                                )
+                            ),
+                            "dig_depth_profile_token_source": str(
+                                policy_debug.get("dig_depth_profile_token_source", "")
+                            ),
+                            "dig_depth_profile_fallback_reason": str(
+                                policy_debug.get(
+                                    "dig_depth_profile_fallback_reason", ""
+                                )
+                            ),
+                            "dig_depth_profile_tokens": (
+                                None
+                                if policy_debug.get("dig_depth_profile_tokens") is None
+                                else np.array(
+                                    policy_debug.get("dig_depth_profile_tokens"),
+                                    dtype=np.float32,
+                                )
+                            ),
                             "return_target_token_injected": bool(
                                 policy_debug.get(
                                     "return_target_token_injected", False

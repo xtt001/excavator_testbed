@@ -225,6 +225,14 @@ scale022 派生训练 copy：
   训练配置 `act_yulong_v2_4_5_process_boundary_qc6_dig_depth_profile_qvel.yaml`
   使用 `qpos + qvel + dig_cut_tokens + dig_depth_profile_tokens_v1`。planner 会在
   dig 阶段同步注入该 token，但旧 checkpoint 不读取它，旧 rollout 不受影响。
+  follow-up 已把 qc6 gold 的 12D profile 分布写入
+  `yulong_removed_depth_dig_cut_prior_v3.json` 的
+  `dig_depth_profile_cells/global`；depth-profile eval 配置使用
+  `dig_depth_profile.source: prior_profile`、`required: true`、
+  `allow_live_fallback: false`、`allow_global_fallback: false`。这保证 live
+  planner 按当前 coverage cell 消费 qc6 median profile，缺失 cell prior 时直接
+  fail fast，不会悄悄回退到 live-current 估算，也不会因为 ACT low-dim 没配置该
+  token 而被旧 checkpoint 静默忽略。
 - `BoundaryDetectorConfig.boundary_profile=v2_4_5_spatial_mass` 会输出
   `dig_complete / dump_committed_start / release_onset / dump_complete /
   next_dig_entry_ready` 等语义事件。planner 在该 profile 下优先消费事件完成

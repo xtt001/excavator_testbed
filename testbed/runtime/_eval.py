@@ -628,6 +628,12 @@ def eval_policy(config: dict[str, Any]) -> None:
         scripted_bootstrap_cfg = dict(policy_cfg.get("scripted_bootstrap", {}))
         cell_entry_cfg = dict(policy_cfg.get("cell_entry", {}))
         dig_cut_planner_cfg = dict(policy_cfg.get("dig_cut_planner", {}))
+        _validate_dig_depth_profile_eval_low_dim(
+            policy_cfg=policy_cfg,
+            dig_cut_planner_cfg=dig_cut_planner_cfg,
+            primitive_low_dim_keys=primitive_low_dim_keys,
+            first_dig_policy_enabled=first_dig_policy is not None,
+        )
         return_target_planner_cfg = dict(policy_cfg.get("return_target_planner", {}))
         pre_dig_align_cfg = dict(policy_cfg.get("pre_dig_align", {}))
         boundary_detector = build_boundary_detector_from_config(
@@ -1140,6 +1146,39 @@ def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) ->
         ),
     }
     return int(sum(dims[key] for key in low_dim_keys))
+
+
+def _validate_dig_depth_profile_eval_low_dim(
+    *,
+    policy_cfg: dict[str, Any],
+    dig_cut_planner_cfg: dict[str, Any],
+    primitive_low_dim_keys: list[str],
+    first_dig_policy_enabled: bool,
+) -> None:
+    profile_cfg = dict(dig_cut_planner_cfg.get("dig_depth_profile", {}) or {})
+    if not bool(profile_cfg.get("required", False)):
+        return
+    required_key = "dig_depth_profile_tokens_v1"
+    dig_low_dim_keys = list(policy_cfg.get("dig_low_dim_keys", primitive_low_dim_keys))
+    if required_key not in dig_low_dim_keys:
+        raise ValueError(
+            "dig_cut_planner.dig_depth_profile.required=true, but "
+            f"policy.dig_low_dim_keys does not include {required_key!r}. "
+            "Without this key the ACT checkpoint would silently ignore the "
+            "strict prior-driven profile token."
+        )
+    if first_dig_policy_enabled:
+        first_dig_low_dim_keys = list(
+            policy_cfg.get(
+                "first_dig_low_dim_keys",
+                policy_cfg.get("dig_low_dim_keys", primitive_low_dim_keys),
+            )
+        )
+        if required_key not in first_dig_low_dim_keys:
+            raise ValueError(
+                "dig_cut_planner.dig_depth_profile.required=true, but "
+                f"policy.first_dig_low_dim_keys does not include {required_key!r}."
+            )
 
 
 def _optional_float(value: Any | None) -> float | None:

@@ -1731,6 +1731,107 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertGreaterEqual(state["coverage_entry_z_m"], -1.0327 - 1.0e-4)
         self.assertLessEqual(state["coverage_entry_z_m"], 0.6171 + 1.0e-4)
 
+    def test_primitive_planner_strict_depth_profile_uses_qc6_cell_prior(self) -> None:
+        dig_policy = _RecordingPolicy(0)
+        policy = _coverage_planner_policy(
+            dig_policy=dig_policy,
+            dig_cut_mode="operator_prior_sweep_belief",
+            prior_path=YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH,
+            coverage_extra={
+                "candidate_layout": "cell_weighted_3x2",
+                "use_env_removed_depth": False,
+            },
+            dig_depth_profile_extra={
+                "source": "prior_profile",
+                "required": True,
+                "allow_live_fallback": False,
+                "allow_global_fallback": False,
+            },
+        )
+
+        policy.predict(_coverage_obs(mass=0.0, dig_distance=0.0))
+
+        state = policy.debug_state()
+        cell_id = int(state["coverage_cell_id"])
+        with open(YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH, "r", encoding="utf-8") as f:
+            prior = json.load(f)
+        expected = np.asarray(
+            next(
+                cell["token_median"]
+                for cell in prior["dig_depth_profile_cells"]
+                if int(cell["cell_id"]) == cell_id
+            ),
+            dtype=np.float32,
+        )
+        np.testing.assert_allclose(dig_policy.last_dig_depth_profile_tokens, expected)
+        self.assertEqual(
+            state["dig_depth_profile_token_source"],
+            f"qc6_dig_depth_profile_cell_{cell_id}",
+        )
+        self.assertEqual(state["dig_depth_profile_fallback_reason"], "")
+        self.assertTrue(state["dig_depth_profile_required"])
+
+    def test_primitive_planner_strict_depth_profile_missing_cell_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            prior_path = Path(tmp) / "prior.json"
+            with open(YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH, "r", encoding="utf-8") as f:
+                prior = json.load(f)
+            prior["dig_depth_profile_cells"] = []
+            prior_path.write_text(json.dumps(prior), encoding="utf-8")
+            policy = _coverage_planner_policy(
+                dig_policy=_RecordingPolicy(0),
+                dig_cut_mode="operator_prior_sweep_belief",
+                prior_path=prior_path,
+                coverage_extra={
+                    "candidate_layout": "cell_weighted_3x2",
+                    "use_env_removed_depth": False,
+                },
+                dig_depth_profile_extra={
+                    "source": "prior_profile",
+                    "required": True,
+                    "allow_live_fallback": False,
+                    "allow_global_fallback": False,
+                },
+            )
+
+            with self.assertRaisesRegex(ValueError, "requires a matching"):
+                policy.predict(_coverage_obs(mass=0.0, dig_distance=0.0))
+
+    def test_eval_config_rejects_required_depth_profile_without_low_dim_key(self) -> None:
+        from testbed.runtime._eval import _validate_dig_depth_profile_eval_low_dim
+
+        with self.assertRaisesRegex(ValueError, "silently ignore"):
+            _validate_dig_depth_profile_eval_low_dim(
+                policy_cfg={"dig_low_dim_keys": ["qpos", "qvel", "dig_cut_tokens"]},
+                dig_cut_planner_cfg={
+                    "dig_depth_profile": {
+                        "source": "prior_profile",
+                        "required": True,
+                    }
+                },
+                primitive_low_dim_keys=["qpos", "qvel"],
+                first_dig_policy_enabled=False,
+            )
+
+        _validate_dig_depth_profile_eval_low_dim(
+            policy_cfg={
+                "dig_low_dim_keys": [
+                    "qpos",
+                    "qvel",
+                    "dig_cut_tokens",
+                    "dig_depth_profile_tokens_v1",
+                ]
+            },
+            dig_cut_planner_cfg={
+                "dig_depth_profile": {
+                    "source": "prior_profile",
+                    "required": True,
+                }
+            },
+            primitive_low_dim_keys=["qpos", "qvel"],
+            first_dig_policy_enabled=False,
+        )
+
     def test_primitive_planner_coverage_first_dig_prefers_bootstrap_friendly_corridor(
         self,
     ) -> None:
@@ -3925,6 +4026,7 @@ def _coverage_planner_policy(
     dig_cut_mode: str = "operator_prior_coverage",
     prior_path: Path | str | None = None,
     coverage_extra: dict | None = None,
+    dig_depth_profile_extra: dict | None = None,
 ) -> PrimitivePlannerACTPolicy:
     pre_dig_align_cfg = {
         "enabled": bool(pre_dig_align_enabled),
@@ -3977,6 +4079,7 @@ def _coverage_planner_policy(
             "fallback_mode": "conservative_pose",
             "hold_token_until_skill_exit": True,
             "coverage": dict(coverage_extra or {}),
+            "dig_depth_profile": dict(dig_depth_profile_extra or {}),
         },
         return_target_planner={
             "enabled": bool(return_target_enabled),

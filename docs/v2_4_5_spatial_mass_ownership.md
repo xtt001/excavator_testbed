@@ -62,6 +62,10 @@ V2.4.5 不能再把 depth 当成可选辅助信号。新的 dig ownership 和 to
   因此后续 dig ACT 使用可选 `dig_depth_profile_tokens_v1` 补充 cell、payload、
   entry/exit/peak reference depth、surface/plane offset 和 contact fraction，
   不把这些诊断量硬编码成 planner 的动作阈值。
+- planner 侧必须优先消费 qc6 prior 中的 `dig_depth_profile_cells`。在 depth-profile
+  eval 中，缺失当前 coverage cell 的 profile prior 是配置错误，应 fail fast；不能回退
+  到 live-current 估算或 global profile，否则会重新引入 dataset token 与 rollout token
+  的语义错配。
 
 这意味着 V2.4.5 的 dig 边界不只看 bucket mass/payload，也要验证该窗口内是否产生了
 合理的 removed-depth delta。payload 可以作为装料事实，removed-depth 才是“切了哪里、
