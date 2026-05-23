@@ -185,6 +185,46 @@ scale022 派生训练 copy：
   时 planner 只生成 6 条 corridor，直接对应 3x2 removed-depth cell；旧 prior
   没有 `coverage_cells` 时仍按 3x3 percentile grid 生成 9 条候选，保证旧 eval
   和测试兼容。
+- 2026-05-23 return live token 修复：qc6 prior 追加
+  `return_start_envelope_cells` 与 `return_start_envelope_global`，均来自 qc6 gold
+  return primitive 的 `return_start_envelope_tokens_v1` 分布。live return 不再用
+  return 刚开始那一帧的当前 `qpos/env_state` 拼目标 envelope；planner 先按已选
+  coverage cell 取 cell median envelope，缺失时才回退 global，再缺失才使用旧
+  live-current fallback。rollout JSONL 同步写出实际注入的
+  `return_start_envelope_tokens` 和 source，便于检查 live token 是否仍在训练分布内。
+- 2026-05-23 第二轮 dig 卡住诊断：第二轮 live `dig_cut_tokens` 本身落在 qc6 cell 1
+  gold 分布中位附近，问题是 handoff 当前状态尚未进入该 cell 的 dig-start
+  envelope。qc6 eval 因此打开 `return_to_dig_start_envelope_gate_enabled`：
+  `return -> dig` 既要满足 pending target entry-close，也要满足
+  `return_start_envelope_tokens_v1` 对应的 long/short、local depth/contact 和 qpos
+  分布 gate。这个 gate 是 skill 边界语义检查，不是 planner 手写 qpos 轨迹。
+  depth gate 使用 token 内的显式 min/max，而不是 prior p05/p95；qc6 的少量 return
+  envelope depth p05 接近 0，会把尚未进入可切深度的状态误放给 dig。
+  进一步 rollout 对照显示，第二铲 0 mass 的关键差异是 plane depth：live handoff
+  约 `0.30m`，而 qc6 cell1 gold dig-start 的 p05/p50 约 `0.57/0.59m`。因此 prior
+  记录 `dig_start_plane_depth_m`，readiness gate 使用该物理语义而不是只看
+  local-surface depth。2026-05-23 follow-up 将 qc6 eval 的 plane-depth gate 从
+  p05-p95 range 改为 `p50_floor`：下界锚定 cell-wise p50，p95 只作为过深保护，
+  避免 return 刚达到分布尾部就把控制权交给 dig。`next_dig_entry_ready` 作为
+  one-shot detector event 会被 return 阶段 latch，直到 envelope gate 也 ready；
+  legacy shallow guard 不再参与 V2.4.5 语义交接。
+- 2026-05-23 carry 卡住诊断：第二轮 dig 虽进入 plane-depth envelope，但
+  `dig_complete` 时当前 bucket mass 只有约 `12kg`，低于 carry/dump 最低可用载荷，
+  planner 却允许切到 carry，导致 carry policy 在 underloaded 状态下自己完成 release，
+  而 planner 没有及时进入 dump/return。修复后 V2.4.5 planner 会拒绝这种
+  low-current-payload `dig_complete` 并重新规划；carry 中若已经检测到 release 完成，
+  则通过 release safety 转 return，避免继续卡在 carry。
+- 2026-05-23 dig 深度语义补充：`bucket_depth_below_dig_area_plane` 已降级为
+  handoff/诊断参考，不能当真实入土深度真值。新增
+  `tb-audit-dig-depth-semantics` 对 qc6 dig gold 做离线审计：removed-depth/token
+  p50 约 `0.047m`，而 relative-y/surface-depth 几何 profile 峰值 p50 约 `1.07m`，
+  与 payload 的相关性弱。这说明问题不是单纯把一个阈值调深，而是当前 dig ACT
+  缺少“姿态深度 profile + removed-depth outcome”分离语义。短期方案新增
+  `/v2/step/dig_depth_profile_tokens_v1`，由
+  `tb-build-dig-depth-profile-tokens-v1` 写入 qc6 materialized dig copy；新 dig
+  训练配置 `act_yulong_v2_4_5_process_boundary_qc6_dig_depth_profile_qvel.yaml`
+  使用 `qpos + qvel + dig_cut_tokens + dig_depth_profile_tokens_v1`。planner 会在
+  dig 阶段同步注入该 token，但旧 checkpoint 不读取它，旧 rollout 不受影响。
 - `BoundaryDetectorConfig.boundary_profile=v2_4_5_spatial_mass` 会输出
   `dig_complete / dump_committed_start / release_onset / dump_complete /
   next_dig_entry_ready` 等语义事件。planner 在该 profile 下优先消费事件完成
@@ -315,6 +355,13 @@ python -m testbed.cli.build_v2_4_hindsight_pipeline \
   - `dig_token_sensitivity` 升级为同时输出 action delta 与 predicted outcome delta。
   - 同一 obs 下换 left/middle/right token，要求 predicted outcome 明显变化，action 的 swing/boom/stick/bucket 至少有可测变化。
   - 若 token-swap 仍几乎不改变 action，不进入 live rollout，先调高 token-swap/outcome loss 或重新检查 token/data 分布。
+  - return 出现提前下铲、卡 DigArea 壁或疑似混合动作时，先跑
+    `tb-audit-return-ckpt`：
+    `python -m testbed.cli.audit_return_ckpt --config testbed/configs/act_yulong_v2_4_5_process_boundary_qc6_return_envelope_qvel.yaml --ckpt runs/ckpts/yulong_v2_4_5_process_boundary_qc6_20260522/return/policy_best.ckpt --output runs/jobs/yulong_v2_4_5_process_boundary_qc6_20260522/return_ckpt_offline_audit.json`。
+    它在 recorded return stream 上比较原始 envelope token、depth mask、spatial mask
+    和 qpos-only envelope。若原始 token 下预测贴近专家，优先查 planner/live token
+    数值；若原始 token 下也偏离，才回头查 ckpt 或训练分布。这个诊断不否定
+    V2.4.5 的物理直觉边界，只把问题定位到 ckpt、token 数值或在线 planner。
 
 - Live acceptance：
   - 1cycle：能正常 dig/carry/dump/return，无明显 handoff regression。

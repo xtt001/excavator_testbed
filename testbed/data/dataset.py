@@ -27,6 +27,7 @@ from testbed.data.schema import (
     DS_V2_STEP_ACTION_LOSS_MASK,
     DS_V2_STEP_CELL_ENTRY_TOKENS,
     DS_V2_STEP_DIG_CUT_TOKENS,
+    DS_V2_STEP_DIG_DEPTH_PROFILE_TOKENS_V1,
     DS_V2_STEP_DIG_GOAL_VALID_MASK,
     DS_V2_STEP_DIG_OUTCOME_TARGETS,
     DS_V2_STEP_GOAL_TOKENS,
@@ -35,6 +36,7 @@ from testbed.data.schema import (
     DS_V2_STEP_RETURN_OUTCOME_TARGETS,
     DS_V2_STEP_RETURN_TARGET_TOKENS,
 )
+from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_TOKEN_DIM,
     RETURN_START_ENVELOPE_TOKEN_DIM,
@@ -49,6 +51,7 @@ SUPPORTED_LOW_DIM_KEYS = (
     "goal_tokens",
     "cell_entry_tokens",
     "dig_cut_tokens",
+    "dig_depth_profile_tokens_v1",
     "return_target_tokens",
     "return_start_envelope_tokens_v1",
 )
@@ -107,6 +110,7 @@ def _assemble_low_dim_observation(
     goal_tokens: np.ndarray | None = None,
     cell_entry_tokens: np.ndarray | None = None,
     dig_cut_tokens: np.ndarray | None = None,
+    dig_depth_profile_tokens_v1: np.ndarray | None = None,
     return_target_tokens: np.ndarray | None = None,
     return_start_envelope_tokens_v1: np.ndarray | None = None,
     low_dim_keys: list[str],
@@ -124,6 +128,11 @@ def _assemble_low_dim_observation(
     dig_cut_tokens_arr = (
         None if dig_cut_tokens is None else np.asarray(dig_cut_tokens, dtype=np.float32)
     )
+    dig_depth_profile_tokens_arr = (
+        None
+        if dig_depth_profile_tokens_v1 is None
+        else np.asarray(dig_depth_profile_tokens_v1, dtype=np.float32)
+    )
     return_target_tokens_arr = (
         None
         if return_target_tokens is None
@@ -140,6 +149,10 @@ def _assemble_low_dim_observation(
         or (goal_tokens_arr is not None and goal_tokens_arr.ndim > 1)
         or (cell_entry_tokens_arr is not None and cell_entry_tokens_arr.ndim > 1)
         or (dig_cut_tokens_arr is not None and dig_cut_tokens_arr.ndim > 1)
+        or (
+            dig_depth_profile_tokens_arr is not None
+            and dig_depth_profile_tokens_arr.ndim > 1
+        )
         or (
             return_target_tokens_arr is not None
             and return_target_tokens_arr.ndim > 1
@@ -175,6 +188,13 @@ def _assemble_low_dim_observation(
                     "/v2/step/dig_cut_tokens is missing."
                 )
             part = dig_cut_tokens_arr
+        elif key == "dig_depth_profile_tokens_v1":
+            if dig_depth_profile_tokens_arr is None:
+                raise KeyError(
+                    "Requested low_dim key 'dig_depth_profile_tokens_v1' but "
+                    "/v2/step/dig_depth_profile_tokens_v1 is missing."
+                )
+            part = dig_depth_profile_tokens_arr
         elif key == "return_target_tokens":
             if return_target_tokens_arr is None:
                 raise KeyError(
@@ -271,6 +291,11 @@ def get_norm_stats(
                 if "dig_cut_tokens" in selected_low_dim_keys
                 else None
             )
+            dig_depth_profile_tokens = (
+                _read_dig_depth_profile_tokens_dataset(f)
+                if "dig_depth_profile_tokens_v1" in selected_low_dim_keys
+                else None
+            )
             return_target_tokens = (
                 _read_return_target_tokens_dataset(f)
                 if "return_target_tokens" in selected_low_dim_keys
@@ -287,6 +312,7 @@ def get_norm_stats(
             goal_tokens=goal_tokens,
             cell_entry_tokens=cell_entry_tokens,
             dig_cut_tokens=dig_cut_tokens,
+            dig_depth_profile_tokens_v1=dig_depth_profile_tokens,
             return_target_tokens=return_target_tokens,
             return_start_envelope_tokens_v1=return_start_envelope_tokens,
             low_dim_keys=selected_low_dim_keys,
@@ -426,6 +452,11 @@ class EpisodicDataset(Dataset):
                 if "dig_cut_tokens" in self.low_dim_keys
                 else None
             )
+            dig_depth_profile_tokens = (
+                _read_dig_depth_profile_tokens_dataset(f, index=t0)
+                if "dig_depth_profile_tokens_v1" in self.low_dim_keys
+                else None
+            )
             return_target_tokens = (
                 _read_return_target_tokens_dataset(f, index=t0)
                 if "return_target_tokens" in self.low_dim_keys
@@ -450,6 +481,7 @@ class EpisodicDataset(Dataset):
                 goal_tokens=goal_tokens,
                 cell_entry_tokens=cell_entry_tokens,
                 dig_cut_tokens=dig_cut_tokens,
+                dig_depth_profile_tokens_v1=dig_depth_profile_tokens,
                 return_target_tokens=return_target_tokens,
                 return_start_envelope_tokens_v1=return_start_envelope_tokens,
                 low_dim_keys=self.low_dim_keys,
@@ -954,6 +986,27 @@ def _read_dig_cut_tokens_dataset(h5_file, index: int | None = None) -> np.ndarra
     if arr.shape[-1] != expected_dim:
         raise ValueError(
             "/v2/step/dig_cut_tokens must have last dimension "
+            f"{expected_dim}, got {arr.shape}."
+        )
+    return arr
+
+
+def _read_dig_depth_profile_tokens_dataset(
+    h5_file,
+    index: int | None = None,
+) -> np.ndarray:
+    if DS_V2_STEP_DIG_DEPTH_PROFILE_TOKENS_V1 not in h5_file:
+        raise KeyError(
+            "Requested low_dim key 'dig_depth_profile_tokens_v1' but "
+            "/v2/step/dig_depth_profile_tokens_v1 is missing."
+        )
+    dataset = h5_file[DS_V2_STEP_DIG_DEPTH_PROFILE_TOKENS_V1]
+    value = dataset[()] if index is None else dataset[index]
+    arr = np.asarray(value, dtype=np.float32)
+    expected_dim = DIG_DEPTH_PROFILE_TOKEN_DIM
+    if arr.shape[-1] != expected_dim:
+        raise ValueError(
+            "/v2/step/dig_depth_profile_tokens_v1 must have last dimension "
             f"{expected_dim}, got {arr.shape}."
         )
     return arr

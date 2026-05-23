@@ -24,6 +24,7 @@ import torch
 from einops import rearrange
 import torchvision.transforms as transforms
 
+from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.image_masks import apply_image_mask
 from testbed.policies.base import Policy, register_policy
 
@@ -435,6 +436,7 @@ class ACTAdapter(Policy):
             dim = self._low_dim_key_dim(key)
             if key in {
                 "dig_cut_tokens",
+                "dig_depth_profile_tokens_v1",
                 "return_target_tokens",
                 "return_start_envelope_tokens_v1",
                 "goal_tokens",
@@ -446,6 +448,8 @@ class ACTAdapter(Policy):
     def _low_dim_key_dim(self, key: str) -> int:
         if key in {"dig_cut_tokens", "return_target_tokens", "goal_tokens"}:
             return 10
+        if key == "dig_depth_profile_tokens_v1":
+            return int(DIG_DEPTH_PROFILE_TOKEN_DIM)
         if key == "return_start_envelope_tokens_v1":
             return 18
         if key == "cell_entry_tokens":

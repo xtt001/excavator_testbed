@@ -43,6 +43,9 @@ Repo A 负责：
 | `tb-cleanup-training-artifacts` | 已实现 | 训练成功后删除可由 primitive VDS 重建的 materialized copy，并只保留 `policy_best.ckpt` |
 | `tb-virtualize-images` | 已实现 | 把历史 copy HDF5 的 `/observations/images/*` 反向改成 VDS 引用，只保留低维数组本地化，用于低损归档 |
 | `tb-audit-target-geometry` | 已实现 | 检查数据集是否带齐 target-safety 训练所需的 7 个 target/dump-area geometry 字段 |
+| `tb-audit-return-ckpt` | 已实现 | 对 conditioned return checkpoint 做离线 teacher-forcing 审计，比较原始 `return_start_envelope_tokens_v1` 与 depth/spatial mask 变体，用于区分 ckpt、token 数值和 planner 在线状态问题 |
+| `tb-audit-dig-depth-semantics` | 已实现 | 对 dig primitive 离线重构 relative-y/surface-depth depth profile，比较 removed-depth token、payload 和 plane-depth 偏差 |
+| `tb-build-dig-depth-profile-tokens-v1` | 已实现 | 给 qc6 dig copy 追加 `/v2/step/dig_depth_profile_tokens_v1`，用于后续 dig depth-profile ACT 重训 |
 | `tb-train` / ACT trainer | 已实现 | 已完成 `fulltest(qpos)`、`fulltest(qpos+qvel)` 与 `v1(qpos)` 三条训练线 |
 | `tb-eval` | 已实现 | 已完成正式 live eval；当前支持 V2.1 Stage 1 多轮 boundary / continuity 指标 |
 | `hybrid_planner_act` | 已实现 | 已接入最小 Stage 2 deploy 链；当前已在 `s0_truck` 上通过 live `2-cycle` gate，并完成一次 `3-cycle smoke` |
@@ -1157,7 +1160,8 @@ schema 规则：
   - `qpos`
   - `images`
   - `action`
-  - 可选 low-dim：`qvel`、`goal_tokens`、`cell_entry_tokens`、`dig_cut_tokens`
+  - 可选 low-dim：`qvel`、`goal_tokens`、`cell_entry_tokens`、`dig_cut_tokens`、
+    `dig_depth_profile_tokens_v1`、`return_start_envelope_tokens_v1`
 - 视觉输入可以通过 `policy.image_mask` 做 masked RGB 预处理：仍然保持
   3-channel RGB，不改 ACT/ResNet 结构。当前支持按 camera 配置 binary rectangle
   mask，或从 HDF5 的 `/observations/image_masks/...` 读取 mask；mask 外像素会置零。
@@ -1165,6 +1169,43 @@ schema 规则：
   Unity `env_state` 当成 policy 输入。
 - `env_state` 不作为 policy 输入；它保留给 label、data filtering、reward/QC 和 rollout
   诊断，避免把仿真/Unity 特权信息直接喂给可迁移模型
+- V2.4.5 return 的 `return_start_envelope_tokens_v1` 是由下一轮 dig-start 附近
+  专家状态和 `env_state` 派生出的条件 token；如果 return rollout 提前下铲，应先用
+  `tb-audit-return-ckpt` 在离线 recorded stream 上比较原始 token、depth mask 与 spatial
+  mask，而不是直接否定物理直觉切分出来的连续 return 边界。
+- qc6 live eval 的 return envelope 不再由当前 return-start `qpos/env_state` 拼接；
+  `primitive_planner_act` 会优先从 qc6 prior 的 `return_start_envelope_cells` 按
+  coverage cell 注入 median envelope，并在 rollout JSONL 写出 token/source 方便复查。
+- qc6 `return -> dig` handoff 不能只看 2D entry error。planner 现在可开启
+  `return_to_dig_start_envelope_gate_enabled`，用同一个
+  `return_start_envelope_tokens_v1` 的 long/short、local depth/contact 和 qpos
+  p05-p95 envelope 判断 return 是否真的到达下一轮 dig-start 分布；这避免把一个
+  合法的 `dig_cut_tokens` 交给一个还没到 entry envelope 的当前状态。
+- `local depth` gate 使用 token 内显式的 depth min/max，而不是 qc6 prior p05/p95；
+  后者在少量 return window 中会出现接近 0 的浅接触值，容易过早把第二铲交给 dig。
+- qc6 第二铲复现进一步确认，dig ACT 的可切起点更稳定对应
+  `bucket_depth_below_dig_area_plane`，而不是 local-surface depth。prior 因此记录
+  每个 cell 的 qc6 gold dig-start plane-depth 分布，并在 `return -> dig` readiness
+  中作为语义 gate。最新 qc6 eval 使用
+  `return_to_dig_start_envelope_plane_depth_mode: p50_floor`，要求 return 至少回到
+  cell-wise plane-depth 中位起挖带；p05 只保留作分布诊断，不再作为 live handoff
+  的有效下界。`next_dig_entry_ready` 是 one-shot 事件，planner 会在 return 阶段
+  latch 住它，等 envelope gate 也通过后再交接，避免旧 shallow guard 抢走
+  V2.4.5 语义。
+- V2.4.5 planner 不再允许低载荷 `dig_complete` 直接进入 carry：如果 detector 报
+  `dig_complete` 但当前 bucket mass 低于 carry/dump 最低可用载荷，planner 会按
+  bad dig 重新规划，而不是让 underloaded carry 自己执行 dump 语义。若 carry 中
+  已经出现 release 完成，planner 会通过 release safety 尽快转入 return，避免继续卡
+  在 carry。
+- 2026-05-23 dig 深度语义审计结论：`bucket_depth_below_dig_area_plane` 不能继续作为
+  “真实入土深度”真值；用 `bucket_tip_dig_area_y - surface_depth` 重构的几何
+  penetration 在 qc6 gold 中峰值 p50 约 `1.07m`，但 removed-depth/token p50 约
+  `0.047m`，且 penetration AUC 与 payload 相关性仅约 `0.16`。因此短期不把该数值
+  直接塞回 planner 阈值，而是新增 12D `dig_depth_profile_tokens_v1`：保留原
+  `dig_cut_tokens` 的 entry/exit/removed-depth intent，再额外给 dig ACT 提供 cell、
+  payload/effective-deposit、entry/exit/peak reference depth、surface/plane offset、
+  contact fraction 等 profile 语义。qc6 gold dig copy 已写入该字段；新训练配置为
+  `testbed/configs/act_yulong_v2_4_5_process_boundary_qc6_dig_depth_profile_qvel.yaml`。
 - 未放进 `low_dim_keys` 的 `qvel / rewards / timestamps / metadata` 仍主要用于：
   - replay
   - dataset QC

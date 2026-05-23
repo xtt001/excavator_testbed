@@ -10,6 +10,7 @@ from typing import Any
 
 import torch
 
+from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_TOKEN_DIM,
     RETURN_START_ENVELOPE_TOKEN_DIM,
@@ -268,6 +269,9 @@ def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) ->
         "dig_cut_tokens": _resolve_single_low_dim_dim(
             "dig_cut_tokens", equipment_model
         ),
+        "dig_depth_profile_tokens_v1": _resolve_single_low_dim_dim(
+            "dig_depth_profile_tokens_v1", equipment_model
+        ),
         "return_target_tokens": _resolve_single_low_dim_dim(
             "return_target_tokens", equipment_model
         ),
@@ -286,6 +290,8 @@ def _resolve_single_low_dim_dim(key: str, equipment_model: str) -> int:
         return int(CELL_ENTRY_TOKEN_DIM)
     if key == "dig_cut_tokens":
         return int(DIG_CUT_TOKEN_DIM)
+    if key == "dig_depth_profile_tokens_v1":
+        return int(DIG_DEPTH_PROFILE_TOKEN_DIM)
     if key == "return_target_tokens":
         return int(RETURN_TARGET_TOKEN_DIM)
     if key == "return_start_envelope_tokens_v1":

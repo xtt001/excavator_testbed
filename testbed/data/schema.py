@@ -127,6 +127,7 @@ Optional Repo A `/v2` extension group (still schema_version="1.1")
 │   ├── dump_end_mask        (T,)    uint8
 │   ├── cell_entry_tokens    (T, 10) float32 optional
 │   ├── dig_cut_tokens       (T, 10) float32 optional operator-first dig target
+│   ├── dig_depth_profile_tokens_v1 (T, 12) float32 optional V2.4.5 dig depth/profile target
 │   ├── return_target_tokens (T, 10) float32 optional next dig cut target
 │   ├── return_start_envelope_tokens_v1 (T, 18) float32 optional next dig start envelope
 │   ├── return_start_envelope_valid_mask (T, 18) uint8 optional envelope validity
@@ -202,6 +203,7 @@ DS_V2_STEP_WORK_STAGE_ID  = "v2/step/work_stage_id"
 DS_V2_STEP_GOAL_TOKENS    = "v2/step/goal_tokens"
 DS_V2_STEP_CELL_ENTRY_TOKENS = "v2/step/cell_entry_tokens"
 DS_V2_STEP_DIG_CUT_TOKENS = "v2/step/dig_cut_tokens"
+DS_V2_STEP_DIG_DEPTH_PROFILE_TOKENS_V1 = "v2/step/dig_depth_profile_tokens_v1"
 DS_V2_STEP_RETURN_TARGET_TOKENS = "v2/step/return_target_tokens"
 DS_V2_STEP_RETURN_START_ENVELOPE_TOKENS_V1 = (
     "v2/step/return_start_envelope_tokens_v1"

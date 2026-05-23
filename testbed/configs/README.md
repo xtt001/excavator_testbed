@@ -244,6 +244,35 @@
   ckpt root 为 `runs/ckpts/yulong_v2_4_5_process_boundary_qc6_20260522`，且全部保留
   `metadata_filters.training_tier: gold`。训练顺序固定为
   `dig -> return -> carry -> dump`。
+- 如果 qc6 return rollout 出现提前下铲或卡 DigArea 壁，先跑离线 ckpt 审计：
+  `python -m testbed.cli.audit_return_ckpt --config testbed/configs/act_yulong_v2_4_5_process_boundary_qc6_return_envelope_qvel.yaml --ckpt runs/ckpts/yulong_v2_4_5_process_boundary_qc6_20260522/return/policy_best.ckpt --output runs/jobs/yulong_v2_4_5_process_boundary_qc6_20260522/return_ckpt_offline_audit.json`。
+  该工具在 recorded return stream 上比较原始 `return_start_envelope_tokens_v1`、
+  depth mask、spatial mask 和 qpos-only envelope，先区分 ckpt 分布问题与
+  planner/live token 数值问题。
+- 如果 qc6 dig rollout 继续偏浅，先跑深度语义审计：
+  `python -m testbed.cli.audit_dig_depth_semantics --dataset-dir /fastdata/pingfan/excavator_testbed_data_hot/yulong_v2_4_removed_depth_hindsight_goal_primitives_copy_v2_4_5_process_boundary_qc6_20260522/dig --training-tier gold --output runs/jobs/yulong_v2_4_5_process_boundary_qc6_20260522/dig_depth_semantics_audit.json`。
+  当前 qc6 结果显示 removed-depth/token 与 relative-y/surface-depth 几何 profile
+  不是同一个量，因此新增 `dig_depth_profile_tokens_v1` 作为 ACT 训练输入，而不是把
+  plane-depth 或 reconstructed penetration 直接写成 planner 阈值。qc6 copy 可用
+  `tb-build-dig-depth-profile-tokens-v1 --dataset-dir <qc6-copy>/dig --training-tier gold`
+  写入该 token。
+- qc6 live return envelope 已改为 prior-driven：`yulong_removed_depth_dig_cut_prior_v3.json`
+  里新增 `return_start_envelope_cells/global`，planner 按当前 coverage cell 注入 qc6
+  gold return 的 median envelope；只有缺少 prior 时才回退旧的 current-observation
+  拼接。eval JSONL 会写 `return_start_envelope_token_source` 和
+  `return_start_envelope_tokens`，后续可直接对比 live token 是否 OOD。
+- qc6 eval 同时打开 `return_to_dig_start_envelope_gate_enabled`。这会在
+  `return -> dig` handoff 时复用上述 envelope 的 qc6 p05-p95 范围，检查
+  long/short、local depth/contact 和 qpos 是否已进入下一轮 dig-start 分布；否则即使
+  2D entry error 接近，也继续留在 return。local depth 例外使用 token 自身的
+  min/max 字段，避免 prior p05 中的浅接触尾部过早放行；同时用 prior 中的
+  `dig_start_plane_depth_m` 检查 `bucket_depth_below_dig_area_plane`，因为 qc6 dig
+  ACT 的成功起点更稳定落在 plane-depth 分布内。qc6 configs 显式设置
+  `return_to_dig_start_envelope_plane_depth_mode: p50_floor`，让 handoff 至少达到
+  cell-wise p50 起挖深度；旧 `range` mode 仍保留给 legacy/诊断配置。V2.4.5
+  planner 会 latch `next_dig_entry_ready`，等 plane-depth/qpos/spatial envelope
+  同步 ready 再交接，并会拒绝低于 carry/dump 最低载荷的 `dig_complete` 直接进入
+  carry。
 - qc6 eval 配置为
   `eval_yulong_v2_4_5_qc6_cell_weighted_{3cycle_smoke,15cycle_probe,30cycle_probe}.yaml`。
   这些配置显式设置 `boundary.profile: v2_4_5_spatial_mass` 和
@@ -318,8 +347,8 @@
   shallow guard 可覆盖很窄的 `return_to_dig_max_depth_m` 上限，防止 return 已到点后
   继续把 bucket 压进土里等待 `qualified_dig_start`。V2.4.5 的
   `return_start_envelope_tokens_v1` 是 return 训练条件和 QC 目标，不表示 planner 要用
-  qpos 规则强行规定姿态；live handoff 第一版只保留 entry/tip 接近、空斗/低质量、
-  浅接触/深度安全、速度不过大、无 hard collision 这类轻量 readiness 检查。
+  qpos 规则强行规定姿态；qc6 handoff 会用 envelope 分布做 readiness gate，确保
+  pending `dig_cut_tokens` 只在当前状态已进入对应 dig-start envelope 后交给 dig。
 - YuLong V2.4 conditioned return 当前使用固定 10D `return_target_tokens`，语义与
   `dig_cut_tokens` 对齐，但只表示“下一铲”的 cut intent。最近 live 结果说明这对
   return 不够：return 还需要 next dig-start state envelope，显式描述 bucket tip
@@ -522,6 +551,7 @@ V1/FarmStick 的 `task_success_tail` 录制在 success 后补完 tail 自动停�
 | `act_yulong_v2_4_dig_conditioned_copy_qvel.yaml` | YuLong V2.4 conditioned dig 诊断重训 | `qpos + qvel + dig_cut_tokens`，读取 materialized copy dig root；训练前后用 `python -m testbed.cli.dig_token_sensitivity` 比较 token sensitivity |
 | `act_yulong_v2_4_return_conditioned_qvel.yaml` | YuLong V2.4 conditioned return 主线 | 当前为 `qpos + qvel + return_target_tokens`，读取 materialized copy return root；V2.4.5 计划改为 `qpos + qvel + return_start_envelope_tokens_v1` |
 | `act_yulong_v2_4_hindsight_goal_dig_qvel.yaml` | YuLong V2.4 outcome-grounded dig 主线 | `qpos + qvel + dig_cut_tokens`，读取 hindsight-goal copy dig root；supervision 为 `dig_outcome_targets`，只用 gold tier |
+| `act_yulong_v2_4_5_process_boundary_qc6_dig_depth_profile_qvel.yaml` | YuLong V2.4.5 qc6 depth-profile dig 诊断重训 | `qpos + qvel + dig_cut_tokens + dig_depth_profile_tokens_v1`，读取 qc6 materialized dig copy；用于验证 ACT 是否能把 removed-depth target 与姿态深度 profile 分开学习 |
 | `act_yulong_v2_4_hindsight_goal_return_qvel.yaml` | YuLong V2.4 outcome-grounded return 主线 | 当前为 `qpos + qvel + return_target_tokens`，读取 hindsight-goal copy return root；supervision 为 `return_outcome_targets`，只用 gold tier；V2.4.5 需要 `return_start_envelope_tokens_v1` 与 endpoint envelope QC |
 | `act_agx_v2_1_workskill_gcact.yaml` | Stage 3 held-out 对照 | `qpos + qvel + goal_tokens`，本阶段不进 live |
 | `act_agx_v2_1_multi_raw_workskill_qvel.yaml` | 当前多轮 raw 主训练线 | `qpos + qvel`，默认读取 `data/agx_teleop_v2_1_multi_raw_workskill` |

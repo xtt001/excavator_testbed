@@ -9,7 +9,15 @@ from typing import Any
 
 import numpy as np
 
+from testbed.data.dig_depth_profile_v2_4 import (
+    DIG_DEPTH_PROFILE_TOKEN_DIM,
+    build_dig_depth_profile_token_from_plan,
+)
 from testbed.data.operator_first_v2_2 import (
+    DIG_CUT_DEPTH_SCALE_M,
+    DIG_CUT_LENGTH_SCALE_M,
+    DIG_CUT_PAYLOAD_SCALE_KG,
+    DIG_CUT_POSITION_SCALE_M,
     DIG_CUT_TOKEN_DIM,
     DIG_CUT_TOKEN_CONTRACT,
     RETURN_START_ENVELOPE_TOKEN_DIM,
@@ -19,7 +27,9 @@ from testbed.data.operator_first_v2_2 import (
 )
 from testbed.data.v2_1 import build_goal_tokens
 from testbed.data.schema import (
+    ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+    ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
     ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX,
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
@@ -178,6 +188,13 @@ class PrimitivePlannerACTPolicy(Policy):
         return_to_dig_min_depth_m: float = 0.02,
         return_to_dig_max_depth_m: float = 0.12,
         return_to_dig_max_entry_error_m: float | None = None,
+        return_to_dig_start_envelope_gate_enabled: bool = False,
+        return_to_dig_start_envelope_spatial_tolerance: float = 0.10,
+        return_to_dig_start_envelope_depth_tolerance_m: float = 0.08,
+        return_to_dig_start_envelope_plane_depth_tolerance_m: float = 0.05,
+        return_to_dig_start_envelope_plane_depth_mode: str = "range",
+        return_to_dig_start_envelope_qpos_tolerance: float = 0.04,
+        return_to_dig_start_envelope_require_contact: bool = True,
         return_max_steps: int = 420,
         action_dim: int = 4,
         primitive_checkpoint_paths: dict[str, str] | None = None,
@@ -310,6 +327,29 @@ class PrimitivePlannerACTPolicy(Policy):
         self.return_to_dig_max_depth_m = float(return_to_dig_max_depth_m)
         self.return_to_dig_max_entry_error_m = self._optional_float(
             return_to_dig_max_entry_error_m
+        )
+        self.return_to_dig_start_envelope_gate_enabled = bool(
+            return_to_dig_start_envelope_gate_enabled
+        )
+        self.return_to_dig_start_envelope_spatial_tolerance = float(
+            return_to_dig_start_envelope_spatial_tolerance
+        )
+        self.return_to_dig_start_envelope_depth_tolerance_m = float(
+            return_to_dig_start_envelope_depth_tolerance_m
+        )
+        self.return_to_dig_start_envelope_plane_depth_tolerance_m = float(
+            return_to_dig_start_envelope_plane_depth_tolerance_m
+        )
+        self.return_to_dig_start_envelope_plane_depth_mode = (
+            self._normalize_plane_depth_mode(
+                return_to_dig_start_envelope_plane_depth_mode
+            )
+        )
+        self.return_to_dig_start_envelope_qpos_tolerance = float(
+            return_to_dig_start_envelope_qpos_tolerance
+        )
+        self.return_to_dig_start_envelope_require_contact = bool(
+            return_to_dig_start_envelope_require_contact
         )
         self.return_max_steps = int(return_max_steps)
         self.action_dim = int(action_dim)
@@ -661,6 +701,11 @@ class PrimitivePlannerACTPolicy(Policy):
         self._cell_entry_token_injected = False
         self._dig_cut_tokens = np.zeros(DIG_CUT_TOKEN_DIM, dtype=np.float32)
         self._dig_cut_token_injected = False
+        self._dig_depth_profile_tokens = np.zeros(
+            DIG_DEPTH_PROFILE_TOKEN_DIM,
+            dtype=np.float32,
+        )
+        self._dig_depth_profile_token_injected = False
         self._return_target_tokens = np.zeros(RETURN_TARGET_TOKEN_DIM, dtype=np.float32)
         self._return_target_token_injected = False
         self._return_start_envelope_tokens = np.zeros(
@@ -668,11 +713,16 @@ class PrimitivePlannerACTPolicy(Policy):
             dtype=np.float32,
         )
         self._return_start_envelope_token_injected = False
+        self._return_start_envelope_token_source = "none"
         self._return_target_planned_cycle_id = -1
         self._return_target_token_source = "none"
         self._return_target_fallback_reason = ""
         self._return_to_dig_entry_error_m = float("nan")
         self._return_to_dig_entry_close_state = True
+        self._return_next_dig_event_seen = False
+        self._return_to_dig_start_envelope_ready_state = True
+        self._return_to_dig_start_envelope_error = float("nan")
+        self._return_to_dig_start_envelope_checks: dict[str, Any] = {}
         self._pending_dig_cut_cycle_id = -1
         self._pending_dig_cut_corridor_id = -1
         self._pending_dig_cut_raw_fields: dict[str, float | int] | None = None
@@ -781,6 +831,10 @@ class PrimitivePlannerACTPolicy(Policy):
             "cell_entry_token_dim": int(CELL_ENTRY_TOKEN_DIM),
             "dig_cut_token_injected": bool(self._dig_cut_token_injected),
             "dig_cut_token_dim": int(DIG_CUT_TOKEN_DIM),
+            "dig_depth_profile_token_injected": bool(
+                self._dig_depth_profile_token_injected
+            ),
+            "dig_depth_profile_token_dim": int(DIG_DEPTH_PROFILE_TOKEN_DIM),
             "return_target_token_injected": bool(self._return_target_token_injected),
             "return_target_token_dim": int(RETURN_TARGET_TOKEN_DIM),
             "return_target_token_source": str(self._return_target_token_source),
@@ -792,6 +846,9 @@ class PrimitivePlannerACTPolicy(Policy):
                 self._return_start_envelope_token_injected
             ),
             "return_start_envelope_token_dim": int(RETURN_START_ENVELOPE_TOKEN_DIM),
+            "return_start_envelope_token_source": str(
+                self._return_start_envelope_token_source
+            ),
             "return_start_envelope_tokens": (
                 self._return_start_envelope_tokens.astype(float).tolist()
             ),
@@ -799,12 +856,31 @@ class PrimitivePlannerACTPolicy(Policy):
                 self._return_to_dig_entry_error_m
             ),
             "return_to_dig_entry_close": bool(self._return_to_dig_entry_close_state),
+            "return_next_dig_event_seen": bool(self._return_next_dig_event_seen),
+            "return_to_dig_start_envelope_gate_enabled": bool(
+                self.return_to_dig_start_envelope_gate_enabled
+            ),
+            "return_to_dig_start_envelope_ready": bool(
+                self._return_to_dig_start_envelope_ready_state
+            ),
+            "return_to_dig_start_envelope_plane_depth_mode": str(
+                self.return_to_dig_start_envelope_plane_depth_mode
+            ),
+            "return_to_dig_start_envelope_error": float(
+                self._return_to_dig_start_envelope_error
+            ),
+            "return_to_dig_start_envelope_checks": dict(
+                self._return_to_dig_start_envelope_checks
+            ),
             "pending_dig_cut_cycle_id": int(self._pending_dig_cut_cycle_id),
             "pending_dig_cut_corridor_id": int(self._pending_dig_cut_corridor_id),
             "dig_cut_planner_mode": str(self.dig_cut_planner_mode),
             "dig_cut_prior_id": str(self.dig_cut_prior_id),
             "dig_cut_token_source": str(self._dig_cut_token_source),
             "dig_cut_tokens": self._dig_cut_tokens.astype(float).tolist(),
+            "dig_depth_profile_tokens": (
+                self._dig_depth_profile_tokens.astype(float).tolist()
+            ),
             "token_in_prior_p10_p90": bool(self._dig_cut_token_in_prior_p10_p90),
             "dig_cut_token_in_prior_p10_p90": bool(
                 self._dig_cut_token_in_prior_p10_p90
@@ -981,6 +1057,19 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             "return_to_dig_entry_error_m": float(self._return_to_dig_entry_error_m),
             "return_to_dig_entry_close": int(self._return_to_dig_entry_close_state),
+            "return_next_dig_event_seen": int(self._return_next_dig_event_seen),
+            "return_to_dig_start_envelope_gate_enabled": int(
+                self.return_to_dig_start_envelope_gate_enabled
+            ),
+            "return_to_dig_start_envelope_ready": int(
+                self._return_to_dig_start_envelope_ready_state
+            ),
+            "return_to_dig_start_envelope_plane_depth_mode": str(
+                self.return_to_dig_start_envelope_plane_depth_mode
+            ),
+            "return_to_dig_start_envelope_error": float(
+                self._return_to_dig_start_envelope_error
+            ),
             "pending_dig_cut_cycle_id": int(self._pending_dig_cut_cycle_id),
             "pending_dig_cut_corridor_id": int(self._pending_dig_cut_corridor_id),
             "dig_cut_token_injected": int(self._dig_cut_token_injected),
@@ -1139,6 +1228,21 @@ class PrimitivePlannerACTPolicy(Policy):
                 else:
                     self._restart_dig_with_new_cut("dig_retry_bad_dig_low_payload")
                 return
+            if self._dig_complete_boundary_low_payload(obs, boundary_event):
+                self._dig_bad_replan_count += 1
+                self._reject_active_coverage_corridor(
+                    obs,
+                    reason="dig_complete_low_current_payload",
+                )
+                if self._should_pre_dig_align_before_dig():
+                    self._restart_pre_dig_align(
+                        "dig_to_pre_dig_align_complete_low_payload"
+                    )
+                else:
+                    self._restart_dig_with_new_cut(
+                        "dig_retry_complete_low_payload"
+                    )
+                return
             if self._dig_to_carry_ready(obs=obs, boundary_event=boundary_event):
                 self._complete_cell_entry_dig(obs)
                 self._complete_coverage_dig(obs)
@@ -1147,16 +1251,32 @@ class PrimitivePlannerACTPolicy(Policy):
             return
 
         if self._skill_name == "carry":
+            if self._carry_release_safety_done(obs):
+                self._complete_coverage_dump(obs, reason="carry_release_safety")
+                self._set_skill("return", "carry_to_return_release_safety")
+                return
             dump_committed_event = bool(
                 boundary_event is not None
                 and getattr(boundary_event, "dump_committed_start", False)
             )
+            release_onset_event = bool(
+                boundary_event is not None
+                and getattr(boundary_event, "release_onset", False)
+            )
+            dump_complete_event = bool(
+                boundary_event is not None
+                and getattr(boundary_event, "dump_complete", False)
+            )
+            if dump_complete_event:
+                self._complete_coverage_dump(obs, reason="carry_dump_complete_boundary")
+                self._set_skill("return", "carry_to_return_dump_complete_boundary")
+                return
             legacy_dump_start_event = bool(
                 boundary_event is not None
                 and getattr(boundary_event, "dump_start", False)
                 and not self._semantic_boundary_profile_active()
             )
-            if dump_committed_event or legacy_dump_start_event:
+            if dump_committed_event or release_onset_event or legacy_dump_start_event:
                 self._dump_ready_hold_count = self.dump_ready_hold_steps
             elif (
                 not self._semantic_boundary_profile_active()
@@ -1170,6 +1290,8 @@ class PrimitivePlannerACTPolicy(Policy):
                 reason = (
                     "dump_committed_boundary"
                     if dump_committed_event
+                    else "release_onset_boundary"
+                    if release_onset_event
                     else "dump_start_boundary"
                     if legacy_dump_start_event
                     else "target_ready"
@@ -1212,7 +1334,7 @@ class PrimitivePlannerACTPolicy(Policy):
             return
 
         if self._skill_name == "return":
-            self._return_to_dig_entry_close(obs)
+            handoff_ready = self._return_to_dig_handoff_ready(obs)
             next_dig_event = bool(
                 boundary_event is not None
                 and (
@@ -1220,7 +1342,9 @@ class PrimitivePlannerACTPolicy(Policy):
                     or getattr(boundary_event, "qualified_dig_start", False)
                 )
             )
-            if next_dig_event and self._return_to_dig_entry_close(obs):
+            if next_dig_event:
+                self._return_next_dig_event_seen = True
+            if (next_dig_event or self._return_next_dig_event_seen) and handoff_ready:
                 self._completed_transition_count += 1
                 self._cycle_index += 1
                 next_skill = (
@@ -1233,10 +1357,14 @@ class PrimitivePlannerACTPolicy(Policy):
                     f"return_to_{next_skill}_next_dig_entry_ready",
                 )
                 return
-            if self._return_to_dig_shallow_guard_ready(
-                obs=obs,
-                boundary_event=boundary_event,
-            ) and self._return_to_dig_entry_close(obs):
+            if (
+                not self._semantic_boundary_profile_active()
+                and self._return_to_dig_shallow_guard_ready(
+                    obs=obs,
+                    boundary_event=boundary_event,
+                )
+                and handoff_ready
+            ):
                 self._completed_transition_count += 1
                 self._cycle_index += 1
                 next_skill = (
@@ -1263,11 +1391,13 @@ class PrimitivePlannerACTPolicy(Policy):
             self._dump_done_hold_count = 0
         elif skill_name == "return":
             self._return_step_count = 0
+            self._return_next_dig_event_seen = False
         elif skill_name == PRE_DIG_ALIGN_SKILL_NAME:
             self._pre_dig_align_step_count = 0
             self._pre_dig_align_hold_count = 0
             self._pre_dig_align_entry_close_handoff_ready = False
         elif skill_name == "dig":
+            self._return_next_dig_event_seen = False
             self._dump_ready_hold_count = 0
             self._dump_done_hold_count = 0
             self._coverage_current_payload_gain_kg = 0.0
@@ -1290,6 +1420,7 @@ class PrimitivePlannerACTPolicy(Policy):
         self._dig_to_carry_reason = ""
         self._coverage_current_payload_gain_kg = 0.0
         self._coverage_active_corridor_id = -1
+        self._return_next_dig_event_seen = False
         self._clear_dig_cut_plan()
 
     def _try_replan_pre_dig_align_handoff(self, obs: dict) -> bool:
@@ -1746,6 +1877,23 @@ class PrimitivePlannerACTPolicy(Policy):
         self._dig_to_carry_reason = ""
         return False
 
+    def _dig_complete_boundary_low_payload(
+        self,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> bool:
+        if not self._semantic_boundary_profile_active():
+            return False
+        if boundary_event is None or not bool(
+            getattr(boundary_event, "dig_complete", False)
+        ):
+            return False
+        min_carry_mass = max(
+            float(self.dig_to_carry_min_bucket_mass_kg),
+            float(self.dump_ready_min_bucket_mass_kg),
+        )
+        return bool(self._mass_in_bucket(obs) < min_carry_mass)
+
     def _semantic_boundary_profile_active(self) -> bool:
         config = getattr(self.boundary_detector, "config", None)
         profile = str(getattr(config, "boundary_profile", "legacy"))
@@ -1933,6 +2081,17 @@ class PrimitivePlannerACTPolicy(Policy):
         deposit_delta = self._deposited_mass(obs) - self._dump_start_deposited_mass_kg
         return bool(mass_low and deposit_delta >= self.dump_done_min_deposit_delta_kg)
 
+    def _carry_release_safety_done(self, obs: dict) -> bool:
+        if not self._semantic_boundary_profile_active():
+            return False
+        deposit_delta = self._deposited_mass(obs) - float(
+            self._coverage_cycle_start_deposit_kg
+        )
+        return bool(
+            self._mass_in_bucket(obs) <= self.dump_done_max_bucket_mass_kg
+            and deposit_delta >= self.dump_done_min_deposit_delta_kg
+        )
+
     def _return_to_dig_shallow_guard_ready(
         self,
         *,
@@ -1978,6 +2137,189 @@ class PrimitivePlannerACTPolicy(Policy):
         close = bool(float(entry_error) <= float(self.return_to_dig_max_entry_error_m))
         self._return_to_dig_entry_close_state = close
         return close
+
+    def _return_to_dig_handoff_ready(self, obs: dict) -> bool:
+        entry_close = self._return_to_dig_entry_close(obs)
+        envelope_ready = self._return_to_dig_start_envelope_ready(obs)
+        return bool(entry_close and envelope_ready)
+
+    def _return_to_dig_start_envelope_ready(self, obs: dict) -> bool:
+        if not self.return_to_dig_start_envelope_gate_enabled:
+            self._return_to_dig_start_envelope_ready_state = True
+            self._return_to_dig_start_envelope_error = float("nan")
+            self._return_to_dig_start_envelope_checks = {}
+            return True
+
+        token = np.asarray(
+            self._return_start_envelope_tokens,
+            dtype=np.float32,
+        ).reshape(-1)
+        if token.shape[0] != RETURN_START_ENVELOPE_TOKEN_DIM:
+            self._return_to_dig_start_envelope_ready_state = True
+            self._return_to_dig_start_envelope_error = float("nan")
+            self._return_to_dig_start_envelope_checks = {"missing_token": True}
+            return True
+        if float(token[16]) <= 0.5 and float(token[17]) <= 0.5:
+            self._return_to_dig_start_envelope_ready_state = True
+            self._return_to_dig_start_envelope_error = float("nan")
+            self._return_to_dig_start_envelope_checks = {"invalid_token": True}
+            return True
+
+        lower, upper = self._return_start_envelope_prior_bounds(
+            int(self._pending_dig_cut_corridor_id)
+        )
+        prior_mapping, _ = self._return_start_envelope_prior_mapping(
+            corridor_id=int(self._pending_dig_cut_corridor_id)
+        )
+        checks: dict[str, Any] = {}
+        max_error = 0.0
+        ready = True
+
+        def bounds_for(index: int, tolerance: float) -> tuple[float, float]:
+            if lower is not None and upper is not None:
+                low = float(lower[index]) - float(tolerance)
+                high = float(upper[index]) + float(tolerance)
+            else:
+                low = float(token[index]) - float(tolerance)
+                high = float(token[index]) + float(tolerance)
+            return low, high
+
+        def add_check(name: str, value: float, low: float, high: float) -> None:
+            nonlocal max_error, ready
+            finite = bool(np.isfinite(value) and np.isfinite(low) and np.isfinite(high))
+            if not finite:
+                ok = False
+                error = float("inf")
+            else:
+                error = max(float(low) - float(value), float(value) - float(high), 0.0)
+                ok = bool(error <= 1.0e-6)
+                max_error = max(max_error, float(error))
+            ready = bool(ready and ok)
+            checks[name] = {
+                "value": float(value),
+                "min": float(low),
+                "max": float(high),
+                "ok": bool(ok),
+                "error": float(error),
+            }
+
+        env_state = self._env_state(obs)
+        if float(token[17]) > 0.5:
+            if len(env_state) > ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX:
+                spatial_tol = self.return_to_dig_start_envelope_spatial_tolerance
+                low, high = bounds_for(0, spatial_tol)
+                add_check(
+                    "long_norm",
+                    float(env_state[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX]),
+                    low,
+                    high,
+                )
+                low, high = bounds_for(1, spatial_tol)
+                add_check(
+                    "short_norm",
+                    float(env_state[ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX]),
+                    low,
+                    high,
+                )
+            else:
+                ready = False
+                checks["spatial_missing"] = True
+
+            if len(env_state) > ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX:
+                depth_tol = self.return_to_dig_start_envelope_depth_tolerance_m
+                # The token carries an explicit shallow contact/depth envelope
+                # (center plus min/max).  Prior p05 can be zero for some qc6
+                # return windows and is too permissive for the learned dig
+                # start state, so depth uses the token's physical bounds.
+                low = float(token[4]) - depth_tol
+                high = float(token[5]) + depth_tol
+                add_check(
+                    "local_depth_m",
+                    float(env_state[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX]),
+                    low,
+                    high,
+                )
+            else:
+                ready = False
+                checks["local_depth_missing"] = True
+
+            plane_depth_prior = (
+                None
+                if prior_mapping is None
+                else prior_mapping.get("dig_start_plane_depth_m")
+            )
+            if isinstance(plane_depth_prior, dict):
+                plane_tol = self.return_to_dig_start_envelope_plane_depth_tolerance_m
+                p05 = float(plane_depth_prior.get("p05", token[2]))
+                p50 = float(plane_depth_prior.get("p50", token[2]))
+                p95 = float(plane_depth_prior.get("p95", token[5]))
+                mode = self.return_to_dig_start_envelope_plane_depth_mode
+                if mode == "target_band":
+                    low = p50 - plane_tol
+                    high = p50 + plane_tol
+                elif mode == "p50_floor":
+                    low = p50 - plane_tol
+                    high = p95 + plane_tol
+                else:
+                    low = p05 - plane_tol
+                    high = p95 + plane_tol
+                add_check(
+                    "plane_depth_m",
+                    float(env_state[ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX]),
+                    low,
+                    high,
+                )
+                checks["plane_depth_m"].update(
+                    {
+                        "mode": str(mode),
+                        "target": float(p50),
+                        "p05": float(p05),
+                        "p50": float(p50),
+                        "p95": float(p95),
+                    }
+                )
+
+            if (
+                self.return_to_dig_start_envelope_require_contact
+                and float(token[6]) > 0.5
+            ):
+                if len(env_state) > ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX:
+                    contact = float(env_state[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX])
+                    ok = bool(contact > 0.5)
+                    ready = bool(ready and ok)
+                    checks["dig_contact"] = {
+                        "value": contact,
+                        "ok": ok,
+                    }
+                else:
+                    ready = False
+                    checks["dig_contact_missing"] = True
+
+        if float(token[16]) > 0.5:
+            qpos = np.asarray(
+                obs.get("qpos", np.zeros(self.action_dim)),
+                dtype=np.float32,
+            ).reshape(-1)
+            if qpos.shape[0] >= 4:
+                qpos_tol = self.return_to_dig_start_envelope_qpos_tolerance
+                for offset in range(4):
+                    index = 7 + offset
+                    if lower is not None and upper is not None:
+                        low = float(lower[index]) - qpos_tol
+                        high = float(upper[index]) + qpos_tol
+                    else:
+                        half_width = max(float(token[11 + offset]), qpos_tol)
+                        low = float(token[index]) - half_width - qpos_tol
+                        high = float(token[index]) + half_width + qpos_tol
+                    add_check(f"qpos_{offset}", float(qpos[offset]), low, high)
+            else:
+                ready = False
+                checks["qpos_missing"] = True
+
+        self._return_to_dig_start_envelope_ready_state = bool(ready)
+        self._return_to_dig_start_envelope_error = float(max_error)
+        self._return_to_dig_start_envelope_checks = checks
+        return bool(ready)
 
     def _return_to_dig_entry_error_for_obs(self, obs: dict) -> float:
         target = self._return_to_dig_entry_target()
@@ -2129,11 +2471,13 @@ class PrimitivePlannerACTPolicy(Policy):
     def _policy_obs(self, obs: dict) -> dict:
         self._cell_entry_token_injected = False
         self._dig_cut_token_injected = False
+        self._dig_depth_profile_token_injected = False
         self._return_target_token_injected = False
         self._return_start_envelope_token_injected = False
         goal_tokens = self._goal_tokens()
         cell_entry_tokens = self._cell_entry_tokens_for_obs(obs)
         dig_cut_tokens = self._dig_cut_tokens_for_obs(obs)
+        dig_depth_profile_tokens = self._dig_depth_profile_tokens_for_obs(obs)
         return_target_tokens = self._return_target_tokens_for_obs(obs)
         return_start_envelope_tokens = (
             self._return_start_envelope_tokens_for_obs(obs)
@@ -2142,6 +2486,7 @@ class PrimitivePlannerACTPolicy(Policy):
             goal_tokens is None
             and cell_entry_tokens is None
             and dig_cut_tokens is None
+            and dig_depth_profile_tokens is None
             and return_target_tokens is None
             and return_start_envelope_tokens is None
         ):
@@ -2155,6 +2500,9 @@ class PrimitivePlannerACTPolicy(Policy):
         if dig_cut_tokens is not None:
             policy_obs["dig_cut_tokens"] = dig_cut_tokens
             self._dig_cut_token_injected = True
+        if dig_depth_profile_tokens is not None:
+            policy_obs["dig_depth_profile_tokens_v1"] = dig_depth_profile_tokens
+            self._dig_depth_profile_token_injected = True
         if return_target_tokens is not None:
             policy_obs["return_target_tokens"] = return_target_tokens
             self._return_target_token_injected = True
@@ -2189,7 +2537,11 @@ class PrimitivePlannerACTPolicy(Policy):
             )
             self._return_target_tokens = token.astype(np.float32)
             self._return_start_envelope_tokens = (
-                self._build_return_start_envelope_tokens_for_obs(obs, raw_fields)
+                self._build_return_start_envelope_tokens_for_obs(
+                    obs,
+                    raw_fields,
+                    corridor_id=corridor_id,
+                )
             )
             self._return_target_token_source = str(source)
             self._return_target_fallback_reason = str(fallback_reason)
@@ -2208,6 +2560,7 @@ class PrimitivePlannerACTPolicy(Policy):
                 dtype=np.float32,
             )
             self._return_target_token_source = "fallback_zero"
+            self._return_start_envelope_token_source = "fallback_zero"
             self._return_target_fallback_reason = str(exc)
             self._return_target_planned_cycle_id = int(self._cycle_index)
 
@@ -2223,6 +2576,18 @@ class PrimitivePlannerACTPolicy(Policy):
         self._ensure_dig_cut_plan_for_cycle(obs)
         return self._dig_cut_tokens.copy()
 
+    def _dig_depth_profile_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
+        if not self.dig_cut_planner_enabled:
+            return None
+        if self._skill_name != "dig":
+            if (
+                self._skill_name != BOOTSTRAP_SKILL_NAME
+                or self.bootstrap_policy is None
+            ):
+                return None
+        self._ensure_dig_cut_plan_for_cycle(obs)
+        return self._dig_depth_profile_tokens.copy()
+
     def _ensure_dig_cut_plan_for_cycle(self, obs: dict) -> None:
         if not self.dig_cut_planner_enabled:
             return
@@ -2232,7 +2597,72 @@ class PrimitivePlannerACTPolicy(Policy):
         ):
             return
         self._dig_cut_tokens = self._build_dig_cut_tokens_for_obs(obs)
+        self._dig_depth_profile_tokens = self._build_dig_depth_profile_tokens_for_obs(
+            obs
+        )
         self._dig_cut_planned_cycle_id = int(self._cycle_index)
+
+    def _build_dig_depth_profile_tokens_for_obs(self, obs: dict) -> np.ndarray:
+        raw_fields = self._dig_depth_profile_raw_fields(obs)
+        return build_dig_depth_profile_token_from_plan(
+            raw_fields=raw_fields,
+            cell_id=self._dig_depth_profile_cell_id(obs),
+            env_state=self._env_state(obs),
+            effective_deposit_delta_kg=float(
+                raw_fields.get(
+                    "operator_effective_deposit_delta_kg",
+                    raw_fields.get("operator_cut_payload_gain_kg", 0.0),
+                )
+            ),
+        )
+
+    def _dig_depth_profile_raw_fields(self, obs: dict) -> dict[str, float | int]:
+        if (
+            self._pending_dig_cut_raw_fields is not None
+            and self._pending_dig_cut_cycle_id == int(self._cycle_index)
+        ):
+            return dict(self._pending_dig_cut_raw_fields)
+        corridor = self._coverage_active_corridor()
+        if corridor is not None:
+            return self._coverage_raw_fields(corridor)
+        raw_fields = self._raw_fields_from_live_pose(obs)
+        token = np.asarray(self._dig_cut_tokens, dtype=np.float32).reshape(-1)
+        if token.size >= DIG_CUT_TOKEN_DIM:
+            raw_fields.update(
+                {
+                    "operator_entry_x_m": float(token[0]) * DIG_CUT_POSITION_SCALE_M,
+                    "operator_entry_z_m": float(token[1]) * DIG_CUT_POSITION_SCALE_M,
+                    "operator_exit_x_m": float(token[2]) * DIG_CUT_POSITION_SCALE_M,
+                    "operator_exit_z_m": float(token[3]) * DIG_CUT_POSITION_SCALE_M,
+                    "operator_cut_direction_x": float(token[4]),
+                    "operator_cut_direction_z": float(token[5]),
+                    "operator_cut_length_m": float(token[6]) * DIG_CUT_LENGTH_SCALE_M,
+                    "operator_cut_depth_peak_m": float(token[7])
+                    * DIG_CUT_DEPTH_SCALE_M,
+                    "operator_cut_payload_gain_kg": float(token[8])
+                    * DIG_CUT_PAYLOAD_SCALE_KG,
+                    "operator_cut_valid": int(float(token[9]) > 0.5),
+                }
+            )
+        return raw_fields
+
+    def _dig_depth_profile_cell_id(self, obs: dict) -> int:
+        if (
+            int(self._pending_dig_cut_corridor_id) >= 0
+            and self._pending_dig_cut_cycle_id == int(self._cycle_index)
+        ):
+            corridor = self._coverage_corridor_by_id(int(self._pending_dig_cut_corridor_id))
+            if corridor is not None:
+                return int(corridor.cell_id)
+        corridor = self._coverage_active_corridor()
+        if corridor is not None:
+            return int(corridor.cell_id)
+        env_state = self._env_state(obs)
+        if len(env_state) > ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX:
+            value = float(env_state[ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX])
+            if np.isfinite(value):
+                return int(max(0, min(5, round(value))))
+        return 0
 
     def _build_dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray:
         self._dig_cut_fallback_reason = ""
@@ -2368,7 +2798,17 @@ class PrimitivePlannerACTPolicy(Policy):
         self,
         obs: dict,
         raw_fields: dict[str, float | int],
+        *,
+        corridor_id: int | None = None,
     ) -> np.ndarray:
+        prior_token, prior_source = self._return_start_envelope_prior_token(
+            corridor_id=corridor_id,
+        )
+        if prior_token is not None:
+            self._return_start_envelope_token_source = prior_source
+            return prior_token.astype(np.float32)
+
+        self._return_start_envelope_token_source = "live_current_obs_fallback"
         token = np.zeros(RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.float32)
         env_state = self._env_state(obs)
         if len(env_state) > ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX:
@@ -2393,6 +2833,109 @@ class PrimitivePlannerACTPolicy(Policy):
         token[17] = 1.0
         return token.astype(np.float32)
 
+    def _return_start_envelope_prior_token(
+        self,
+        *,
+        corridor_id: int | None,
+    ) -> tuple[np.ndarray | None, str]:
+        cell_id = self._return_start_envelope_cell_id(corridor_id)
+        mapping, source = self._return_start_envelope_prior_mapping(
+            corridor_id=corridor_id
+        )
+        if mapping is not None:
+            token = self._return_start_envelope_token_from_prior_mapping(mapping)
+            if token is not None:
+                if cell_id is not None and source == "cell":
+                    return token, f"qc6_return_start_envelope_cell_{int(cell_id)}"
+                return token, "qc6_return_start_envelope_global"
+        return None, "missing_return_start_envelope_prior"
+
+    def _return_start_envelope_prior_mapping(
+        self,
+        *,
+        corridor_id: int | None,
+    ) -> tuple[dict[str, object] | None, str]:
+        if not self.dig_cut_prior:
+            return None, "missing_dig_cut_prior"
+        cell_id = self._return_start_envelope_cell_id(corridor_id)
+        cells = self.dig_cut_prior.get("return_start_envelope_cells", [])
+        if cell_id is not None and isinstance(cells, list):
+            for cell in cells:
+                cell_dict = dict(cell)
+                if int(cell_dict.get("cell_id", -999999)) == int(cell_id):
+                    return cell_dict, "cell"
+        global_prior = self.dig_cut_prior.get("return_start_envelope_global")
+        if isinstance(global_prior, dict):
+            return dict(global_prior), "global"
+        return None, "missing_return_start_envelope_prior"
+
+    def _return_start_envelope_prior_bounds(
+        self,
+        corridor_id: int | None,
+    ) -> tuple[np.ndarray | None, np.ndarray | None]:
+        mapping, _ = self._return_start_envelope_prior_mapping(
+            corridor_id=corridor_id
+        )
+        if mapping is None:
+            return None, None
+        if "token_p05" not in mapping or "token_p95" not in mapping:
+            return None, None
+        lower = np.asarray(mapping["token_p05"], dtype=np.float32).reshape(-1)
+        upper = np.asarray(mapping["token_p95"], dtype=np.float32).reshape(-1)
+        if (
+            lower.shape[0] != RETURN_START_ENVELOPE_TOKEN_DIM
+            or upper.shape[0] != RETURN_START_ENVELOPE_TOKEN_DIM
+        ):
+            return None, None
+        return lower.copy(), upper.copy()
+
+    def _return_start_envelope_cell_id(self, corridor_id: int | None) -> int | None:
+        if corridor_id is None:
+            return None
+        try:
+            corridor = self._coverage_corridor_by_id(int(corridor_id))
+        except Exception:
+            corridor = None
+        if corridor is not None:
+            return int(corridor.cell_id)
+        if int(corridor_id) >= 0:
+            return int(corridor_id)
+        return None
+
+    @staticmethod
+    def _return_start_envelope_token_from_prior_mapping(
+        mapping: dict[str, object],
+    ) -> np.ndarray | None:
+        for key in ("token_median", "token", "median"):
+            if key not in mapping:
+                continue
+            token = np.asarray(mapping[key], dtype=np.float32).reshape(-1)
+            if token.shape[0] != RETURN_START_ENVELOPE_TOKEN_DIM:
+                raise ValueError(
+                    "return_start_envelope prior token must have "
+                    f"{RETURN_START_ENVELOPE_TOKEN_DIM} values, got {token.shape[0]}"
+                )
+            return token.copy()
+        return None
+
+    @staticmethod
+    def _normalize_plane_depth_mode(value: object) -> str:
+        mode = str(value or "range").strip().lower().replace("-", "_")
+        aliases = {
+            "legacy": "range",
+            "p05_p95": "range",
+            "median_floor": "p50_floor",
+            "target_floor": "p50_floor",
+            "median_band": "target_band",
+        }
+        mode = aliases.get(mode, mode)
+        if mode not in {"range", "p50_floor", "target_band"}:
+            raise ValueError(
+                "return_to_dig_start_envelope_plane_depth_mode must be one of "
+                "'range', 'p50_floor', or 'target_band'"
+            )
+        return mode
+
     def _raw_fields_from_live_pose(self, obs: dict) -> dict[str, float | int]:
         pose = self._bucket_dig_area_pose(obs)
         if pose is None:
@@ -2409,6 +2952,7 @@ class PrimitivePlannerACTPolicy(Policy):
                 "operator_cut_length_m": 0.0,
                 "operator_cut_depth_peak_m": 0.0,
                 "operator_cut_payload_gain_kg": 0.0,
+                "operator_effective_deposit_delta_kg": 0.0,
                 "operator_cut_valid": 0,
             }
         entry_x, entry_y, entry_z = float(pose[0]), float(pose[1]), float(pose[2])
@@ -2427,6 +2971,7 @@ class PrimitivePlannerACTPolicy(Policy):
             "operator_cut_length_m": 1.2,
             "operator_cut_depth_peak_m": 0.08,
             "operator_cut_payload_gain_kg": 55.0,
+            "operator_effective_deposit_delta_kg": 55.0,
             "operator_cut_valid": 1,
         }
 
@@ -2491,6 +3036,9 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             "operator_cut_payload_gain_kg": float(
                 self._prior_percentile(fields, "payload_gain_kg", "p50")
+            ),
+            "operator_effective_deposit_delta_kg": float(
+                self._prior_percentile(fields, "effective_deposit_delta_kg", "p50")
             ),
             "operator_cut_valid": 1,
         }
@@ -3115,6 +3663,19 @@ class PrimitivePlannerACTPolicy(Policy):
                     ),
                 )
             ),
+            "operator_effective_deposit_delta_kg": float(
+                self._clamp_to_prior(
+                    fields,
+                    "effective_deposit_delta_kg",
+                    float(corridor.effective_deposit_delta_kg)
+                    if np.isfinite(corridor.effective_deposit_delta_kg)
+                    else self._prior_percentile(
+                        fields,
+                        "effective_deposit_delta_kg",
+                        "p50",
+                    ),
+                )
+            ),
             "operator_cut_valid": 1,
         }
 
@@ -3381,6 +3942,10 @@ class PrimitivePlannerACTPolicy(Policy):
     def _clear_dig_cut_plan(self) -> None:
         self._dig_cut_planned_cycle_id = -1
         self._dig_cut_tokens = np.zeros(DIG_CUT_TOKEN_DIM, dtype=np.float32)
+        self._dig_depth_profile_tokens = np.zeros(
+            DIG_DEPTH_PROFILE_TOKEN_DIM,
+            dtype=np.float32,
+        )
         self._dig_cut_token_source = "none"
         self._dig_cut_fallback_reason = ""
         self._dig_cut_token_in_prior_p10_p90 = False
@@ -3852,6 +4417,13 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
         return_to_dig_min_depth_m: float = 0.02,
         return_to_dig_max_depth_m: float = 0.12,
         return_to_dig_max_entry_error_m: float | None = None,
+        return_to_dig_start_envelope_gate_enabled: bool = False,
+        return_to_dig_start_envelope_spatial_tolerance: float = 0.10,
+        return_to_dig_start_envelope_depth_tolerance_m: float = 0.08,
+        return_to_dig_start_envelope_plane_depth_tolerance_m: float = 0.05,
+        return_to_dig_start_envelope_plane_depth_mode: str = "range",
+        return_to_dig_start_envelope_qpos_tolerance: float = 0.04,
+        return_to_dig_start_envelope_require_contact: bool = True,
         return_max_steps: int = 420,
         action_dim: int = 4,
         primitive_checkpoint_paths: dict[str, str] | None = None,
@@ -3970,6 +4542,27 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             return_to_dig_min_depth_m=return_to_dig_min_depth_m,
             return_to_dig_max_depth_m=return_to_dig_max_depth_m,
             return_to_dig_max_entry_error_m=return_to_dig_max_entry_error_m,
+            return_to_dig_start_envelope_gate_enabled=(
+                return_to_dig_start_envelope_gate_enabled
+            ),
+            return_to_dig_start_envelope_spatial_tolerance=(
+                return_to_dig_start_envelope_spatial_tolerance
+            ),
+            return_to_dig_start_envelope_depth_tolerance_m=(
+                return_to_dig_start_envelope_depth_tolerance_m
+            ),
+            return_to_dig_start_envelope_plane_depth_tolerance_m=(
+                return_to_dig_start_envelope_plane_depth_tolerance_m
+            ),
+            return_to_dig_start_envelope_plane_depth_mode=(
+                return_to_dig_start_envelope_plane_depth_mode
+            ),
+            return_to_dig_start_envelope_qpos_tolerance=(
+                return_to_dig_start_envelope_qpos_tolerance
+            ),
+            return_to_dig_start_envelope_require_contact=(
+                return_to_dig_start_envelope_require_contact
+            ),
             return_max_steps=return_max_steps,
             action_dim=action_dim,
             primitive_checkpoint_paths=primitive_checkpoint_paths,

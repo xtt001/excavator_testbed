@@ -56,6 +56,12 @@ V2.4.5 不能再把 depth 当成可选辅助信号。新的 dig ownership 和 to
 - 没有可靠 removed-depth 的样本不能进入 gold tier；只能进入 silver/diagnostic 或 reject。
 - dig QC 必须检查 depth token 饱和率、非零比例、p10/p50/p90 spread，以及 raw meter
   delta 的分布。
+- `bucket_depth_below_dig_area_plane_m` 只作为 handoff/readiness 参考，不再作为真实
+  入土深度真值。qc6 审计显示 relative-y/surface-depth 几何 profile 与 removed-depth
+  outcome 是两个不同语义：前者更像姿态/高度 envelope，后者才是本轮地形变化。
+  因此后续 dig ACT 使用可选 `dig_depth_profile_tokens_v1` 补充 cell、payload、
+  entry/exit/peak reference depth、surface/plane offset 和 contact fraction，
+  不把这些诊断量硬编码成 planner 的动作阈值。
 
 这意味着 V2.4.5 的 dig 边界不只看 bucket mass/payload，也要验证该窗口内是否产生了
 合理的 removed-depth delta。payload 可以作为装料事实，removed-depth 才是“切了哪里、
@@ -348,6 +354,38 @@ envelope”。推荐新增一个独立 token contract，例如
 这里的 envelope 首先是训练输入和 QC 目标，不是 planner 低层姿态控制器。planner 只选择
 下一铲 cut intent / start envelope，并决定何时切 skill；return policy 自己学习如何把机器
 带到这个 envelope。不要让 planner 通过 qpos 规则逐步规定 boom/stick/bucket 的动作轨迹。
+如果 live return 出现提前下铲或卡住 DigArea 壁，第一排查对象应是
+`return_start_envelope_tokens_v1` 中由 env_state/下一轮状态派生出的数值条件，或者
+planner 在线生成 token 的方式；这不等价于否定物理直觉切出来的连续 return 窗口。
+`tb-audit-return-ckpt` 可在 recorded return stream 上离线比较原始 token、depth mask、
+spatial mask 和 qpos-only envelope：原始 token 下若贴近专家，优先查 live token/planner；
+原始 token 下也偏离专家，再查 checkpoint 和训练分布。
+2026-05-23 live 对比确认：旧 planner 在 return 刚开始时用当前 `qpos/env_state`
+构造 envelope，和训练时“下一轮 dig-start 窗口”的 token contract 不一致。qc6 修复版把
+`return_start_envelope_cells/global` 写入 dig-cut prior，live 按已选 coverage cell 使用
+qc6 gold return 的 median envelope；这仍然只是任务级 target token，不是手写动作轨迹。
+同一轮诊断也确认：第二次 dig 失败时注入的 `dig_cut_tokens` 数值并不离群，离群的是
+handoff 状态和该 token 描述的 entry envelope 不一致。qc6 planner 因此把
+`return_start_envelope_tokens_v1` 同时作为 return policy 输入和 `return -> dig`
+readiness gate：只有 long/short、local depth/contact 和 qpos 落在对应 cell 的 qc6
+p05-p95 envelope 附近时，才允许把 pending `dig_cut_tokens` 交给 dig primitive。
+其中 local depth 使用 token 自身的 min/max 字段；qc6 prior depth p05 在部分 return
+窗口中接近 0，只适合描述分布尾部，不适合作为 live handoff 下界。
+第二铲复现还暴露了一个更底层的字段语义问题：`bucket_depth_below_local_surface`
+在被挖过的局部表面附近会变浅，而 qc6 dig-start 的稳定边界是
+`bucket_depth_below_dig_area_plane`。因此 qc6 prior 额外记录每个 coverage cell 的
+gold dig-start plane-depth 分布，planner readiness 用它确认机器已进入 ACT dig
+训练时的可切起点。live qc6 配置使用 `p50_floor` plane-depth mode：交接下界来自
+对应 cell 的 dig-start p50，而不是 p05；这样 return 的任务是回到可重复起挖流形，
+不是只达到最低可接受接触深度。由于 detector 的 `next_dig_entry_ready` 是边沿事件，
+planner 会 latch 住该事件并等待 envelope gate 同步 ready；V2.4.5 下不再让旧
+shallow guard 单独触发 `return -> dig`。
+
+另一个闭环保护是 primitive ownership 不能被低载荷状态绕开：`dig_complete` 只说明
+一次 dig 轨迹已结束，不代表 carry 有足够 payload 可执行。如果当前 bucket mass 低于
+carry/dump 最低可用载荷，planner 会把该 cell 记为低质量尝试并重新规划；如果 carry
+阶段已经实际发生 release，则 safety latch 直接转 return，避免 carry 长时间停留在
+dump 后姿态。
 
 离线生成方式：
 

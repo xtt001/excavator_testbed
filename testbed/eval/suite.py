@@ -507,6 +507,29 @@ class EvalSuite:
                                     dtype=np.float32,
                                 )
                             ),
+                            "return_start_envelope_token_injected": bool(
+                                policy_debug.get(
+                                    "return_start_envelope_token_injected", False
+                                )
+                            ),
+                            "return_start_envelope_token_source": str(
+                                policy_debug.get(
+                                    "return_start_envelope_token_source", ""
+                                )
+                            ),
+                            "return_start_envelope_tokens": (
+                                None
+                                if policy_debug.get(
+                                    "return_start_envelope_tokens"
+                                )
+                                is None
+                                else np.array(
+                                    policy_debug.get(
+                                        "return_start_envelope_tokens"
+                                    ),
+                                    dtype=np.float32,
+                                )
+                            ),
                             "return_to_dig_entry_error_m": float(
                                 policy_debug.get(
                                     "return_to_dig_entry_error_m", np.nan
@@ -516,6 +539,29 @@ class EvalSuite:
                                 policy_debug.get(
                                     "return_to_dig_entry_close", True
                                 )
+                            ),
+                            "return_to_dig_start_envelope_gate_enabled": bool(
+                                policy_debug.get(
+                                    "return_to_dig_start_envelope_gate_enabled",
+                                    False,
+                                )
+                            ),
+                            "return_to_dig_start_envelope_ready": bool(
+                                policy_debug.get(
+                                    "return_to_dig_start_envelope_ready", True
+                                )
+                            ),
+                            "return_to_dig_start_envelope_error": float(
+                                policy_debug.get(
+                                    "return_to_dig_start_envelope_error",
+                                    np.nan,
+                                )
+                            ),
+                            "return_to_dig_start_envelope_checks": dict(
+                                policy_debug.get(
+                                    "return_to_dig_start_envelope_checks", {}
+                                )
+                                or {}
                             ),
                             "coverage_corridor_id": int(
                                 policy_debug.get("coverage_corridor_id", -1)

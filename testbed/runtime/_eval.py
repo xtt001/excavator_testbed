@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 
+from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_TOKEN_DIM,
     RETURN_START_ENVELOPE_TOKEN_DIM,
@@ -746,6 +747,36 @@ def eval_policy(config: dict[str, Any]) -> None:
                 if switch_cfg.get("return_to_dig_max_entry_error_m") is None
                 else float(switch_cfg.get("return_to_dig_max_entry_error_m"))
             ),
+            "return_to_dig_start_envelope_gate_enabled": bool(
+                switch_cfg.get("return_to_dig_start_envelope_gate_enabled", False)
+            ),
+            "return_to_dig_start_envelope_spatial_tolerance": float(
+                switch_cfg.get("return_to_dig_start_envelope_spatial_tolerance", 0.10)
+            ),
+            "return_to_dig_start_envelope_depth_tolerance_m": float(
+                switch_cfg.get(
+                    "return_to_dig_start_envelope_depth_tolerance_m",
+                    0.08,
+                )
+            ),
+            "return_to_dig_start_envelope_plane_depth_tolerance_m": float(
+                switch_cfg.get(
+                    "return_to_dig_start_envelope_plane_depth_tolerance_m",
+                    0.05,
+                )
+            ),
+            "return_to_dig_start_envelope_plane_depth_mode": str(
+                switch_cfg.get(
+                    "return_to_dig_start_envelope_plane_depth_mode",
+                    "range",
+                )
+            ),
+            "return_to_dig_start_envelope_qpos_tolerance": float(
+                switch_cfg.get("return_to_dig_start_envelope_qpos_tolerance", 0.04)
+            ),
+            "return_to_dig_start_envelope_require_contact": bool(
+                switch_cfg.get("return_to_dig_start_envelope_require_contact", True)
+            ),
             "return_max_steps": int(
                 switch_cfg.get(
                     "return_max_steps",
@@ -1098,6 +1129,9 @@ def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) ->
         "dig_cut_tokens": _resolve_single_low_dim_dim(
             "dig_cut_tokens", equipment_model
         ),
+        "dig_depth_profile_tokens_v1": _resolve_single_low_dim_dim(
+            "dig_depth_profile_tokens_v1", equipment_model
+        ),
         "return_target_tokens": _resolve_single_low_dim_dim(
             "return_target_tokens", equipment_model
         ),
@@ -1120,6 +1154,8 @@ def _resolve_single_low_dim_dim(key: str, equipment_model: str) -> int:
         return int(CELL_ENTRY_TOKEN_DIM)
     if key == "dig_cut_tokens":
         return int(DIG_CUT_TOKEN_DIM)
+    if key == "dig_depth_profile_tokens_v1":
+        return int(DIG_DEPTH_PROFILE_TOKEN_DIM)
     if key == "return_target_tokens":
         return int(RETURN_TARGET_TOKEN_DIM)
     if key == "return_start_envelope_tokens_v1":

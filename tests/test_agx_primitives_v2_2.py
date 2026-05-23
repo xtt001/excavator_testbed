@@ -1712,9 +1712,17 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertEqual(token.shape, (10,))
         self.assertTrue(np.all(np.isfinite(token)))
         self.assertEqual(float(token[-1]), 1.0)
+        profile_token = np.asarray(
+            dig_policy.last_dig_depth_profile_tokens,
+            dtype=np.float32,
+        )
+        self.assertEqual(profile_token.shape, (12,))
+        self.assertTrue(np.all(np.isfinite(profile_token)))
+        self.assertEqual(float(profile_token[-1]), 1.0)
         state = policy.debug_state()
         self.assertEqual(state["dig_cut_planner_mode"], "operator_prior_coverage")
         self.assertEqual(state["dig_cut_token_source"], "operator_prior_coverage")
+        self.assertTrue(state["dig_depth_profile_token_injected"])
         self.assertTrue(state["dig_cut_token_in_prior_p10_p90"])
         self.assertEqual(state["coverage_corridor_id"], 0)
         self.assertEqual(len(state["coverage_corridors"]), 9)
@@ -2086,6 +2094,190 @@ class TestPrimitivesV22(unittest.TestCase):
         policy.predict(_coverage_obs(mass=0.0, dig_distance=0.0))
         np.testing.assert_allclose(dig_policy.last_dig_cut_tokens, return_token)
         self.assertEqual(policy.debug_state()["dig_cut_token_source"], "pending_return_target")
+
+    def test_primitive_planner_uses_qc6_return_envelope_prior_for_live_return(self) -> None:
+        with YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH.open(
+            "r",
+            encoding="utf-8",
+        ) as handle:
+            prior = json.load(handle)
+        expected = np.asarray(
+            prior["return_start_envelope_cells"][1]["token_median"],
+            dtype=np.float32,
+        )
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            prior_path=YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH,
+            coverage_extra={"candidate_layout": "cell_weighted_3x2"},
+        )
+        policy._ensure_coverage_corridors()
+        corridor = policy._coverage_corridor_by_id(1)
+        self.assertIsNotNone(corridor)
+        raw_fields = policy._coverage_raw_fields(corridor)
+        obs = _coverage_obs(mass=0.0, dig_distance=0.0)
+        obs["qpos"] = np.asarray([0.9, 0.1, 0.9, 0.9], dtype=np.float32)
+
+        token = policy._build_return_start_envelope_tokens_for_obs(
+            obs,
+            raw_fields,
+            corridor_id=1,
+        )
+
+        np.testing.assert_allclose(token, expected, atol=1.0e-6)
+        self.assertEqual(
+            policy.debug_state()["return_start_envelope_token_source"],
+            "qc6_return_start_envelope_cell_1",
+        )
+        self.assertNotAlmostEqual(float(token[7]), float(obs["qpos"][0]))
+
+    def test_return_to_dig_gate_requires_qc6_start_envelope(self) -> None:
+        with YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH.open(
+            "r",
+            encoding="utf-8",
+        ) as handle:
+            prior = json.load(handle)
+        cell = prior["return_start_envelope_cells"][1]
+        token = np.asarray(cell["token_median"], dtype=np.float32)
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            prior_path=YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH,
+            coverage_extra={"candidate_layout": "cell_weighted_3x2"},
+            return_to_dig_shallow_guard_enabled=True,
+            return_to_dig_max_entry_error_m=0.55,
+            return_to_dig_start_envelope_gate_enabled=True,
+            return_to_dig_start_envelope_plane_depth_tolerance_m=0.005,
+            return_to_dig_start_envelope_plane_depth_mode="p50_floor",
+        )
+        policy._return_start_envelope_tokens = token.copy()
+        policy._pending_dig_cut_corridor_id = 1
+        policy._pending_dig_cut_cycle_id = int(policy._cycle_index) + 1
+        policy._pending_dig_cut_raw_fields = {
+            "operator_entry_x_m": 1.0088,
+            "operator_entry_z_m": -0.8830,
+        }
+
+        bad_obs = _coverage_obs(
+            mass=0.0,
+            dig_distance=0.0,
+            bucket_depth=0.17,
+            bucket_pose=(0.4823, -0.1727, -0.8927),
+        )
+        bad_env = np.asarray(bad_obs["env_state"], dtype=np.float32)
+        bad_env[ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX] = 1.0
+        bad_env[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX] = -0.5951
+        bad_env[ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX] = 0.3859
+        bad_env[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = 0.1370
+        bad_env[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX] = 1.0
+        bad_obs["env_state"] = bad_env
+        bad_obs["qpos"] = np.asarray([0.5342, 0.4644, 0.3084, 0.1546], dtype=np.float32)
+
+        self.assertTrue(policy._return_to_dig_entry_close(bad_obs))
+        self.assertFalse(policy._return_to_dig_handoff_ready(bad_obs))
+        checks = policy.debug_state()["return_to_dig_start_envelope_checks"]
+        self.assertFalse(checks["short_norm"]["ok"])
+        self.assertFalse(checks["qpos_1"]["ok"])
+        self.assertFalse(checks["qpos_2"]["ok"])
+        self.assertFalse(checks["plane_depth_m"]["ok"])
+
+        shallow_obs = _coverage_obs(
+            mass=0.0,
+            dig_distance=0.0,
+            bucket_depth=0.15,
+            bucket_pose=(1.0088, -0.15, -0.8830),
+        )
+        shallow_env = np.asarray(shallow_obs["env_state"], dtype=np.float32)
+        shallow_env[ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX] = 1.0
+        shallow_env[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX] = float(token[0])
+        shallow_env[ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX] = float(token[1])
+        shallow_env[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = 0.112
+        shallow_env[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX] = 1.0
+        shallow_obs["env_state"] = shallow_env
+        shallow_obs["qpos"] = token[7:11].astype(np.float32)
+
+        self.assertTrue(policy._return_to_dig_entry_close(shallow_obs))
+        self.assertFalse(policy._return_to_dig_handoff_ready(shallow_obs))
+        checks = policy.debug_state()["return_to_dig_start_envelope_checks"]
+        self.assertFalse(checks["local_depth_m"]["ok"])
+        self.assertFalse(checks["plane_depth_m"]["ok"])
+
+        local_only_obs = _coverage_obs(
+            mass=0.0,
+            dig_distance=0.0,
+            bucket_depth=0.31,
+            bucket_pose=(1.0088, -0.31, -0.8830),
+        )
+        local_only_env = np.asarray(local_only_obs["env_state"], dtype=np.float32)
+        local_only_env[ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX] = 1.0
+        local_only_env[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX] = float(token[0])
+        local_only_env[ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX] = float(token[1])
+        local_only_env[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = 0.269
+        local_only_env[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX] = 1.0
+        local_only_obs["env_state"] = local_only_env
+        local_only_obs["qpos"] = token[7:11].astype(np.float32)
+
+        self.assertTrue(policy._return_to_dig_entry_close(local_only_obs))
+        self.assertFalse(policy._return_to_dig_handoff_ready(local_only_obs))
+        checks = policy.debug_state()["return_to_dig_start_envelope_checks"]
+        self.assertTrue(checks["local_depth_m"]["ok"])
+        self.assertFalse(checks["plane_depth_m"]["ok"])
+        self.assertEqual(checks["plane_depth_m"]["mode"], "p50_floor")
+
+        p05_only_obs = _coverage_obs(
+            mass=0.0,
+            dig_distance=0.0,
+            bucket_depth=float(cell["dig_start_plane_depth_m"]["p05"]),
+            bucket_pose=(1.0088, -0.5744, -0.8830),
+        )
+        p05_only_env = np.asarray(p05_only_obs["env_state"], dtype=np.float32)
+        p05_only_env[ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX] = 1.0
+        p05_only_env[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX] = float(token[0])
+        p05_only_env[ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX] = float(token[1])
+        p05_only_env[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = float(token[2])
+        p05_only_env[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX] = 1.0
+        p05_only_obs["env_state"] = p05_only_env
+        p05_only_obs["qpos"] = token[7:11].astype(np.float32)
+
+        self.assertFalse(policy._return_to_dig_handoff_ready(p05_only_obs))
+        checks = policy.debug_state()["return_to_dig_start_envelope_checks"]
+        self.assertFalse(checks["plane_depth_m"]["ok"])
+        self.assertGreater(
+            checks["plane_depth_m"]["min"],
+            float(cell["dig_start_plane_depth_m"]["p05"]),
+        )
+
+        good_obs = _coverage_obs(
+            mass=0.0,
+            dig_distance=0.0,
+            bucket_depth=float(cell["dig_start_plane_depth_m"]["p50"]),
+            bucket_pose=(1.0088, -0.5864, -0.8830),
+        )
+        good_env = np.asarray(good_obs["env_state"], dtype=np.float32)
+        good_env[ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX] = 1.0
+        good_env[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX] = float(token[0])
+        good_env[ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX] = float(token[1])
+        good_env[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = float(token[2])
+        good_env[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX] = 1.0
+        good_obs["env_state"] = good_env
+        good_obs["qpos"] = token[7:11].astype(np.float32)
+
+        self.assertTrue(policy._return_to_dig_handoff_ready(good_obs))
+
+        policy._skill_name = "return"
+        policy._switch_reason = "unit_test_return_latch"
+        policy._return_next_dig_event_seen = False
+        policy._maybe_switch_skill(
+            obs=local_only_obs,
+            boundary_event=_FakeBoundaryEvent(next_dig_entry_ready=True),
+        )
+        self.assertEqual(policy._skill_name, "return")
+        self.assertTrue(policy._return_next_dig_event_seen)
+
+        policy._maybe_switch_skill(obs=good_obs, boundary_event=_FakeBoundaryEvent())
+        self.assertEqual(policy._skill_name, "dig")
+        self.assertEqual(
+            policy._switch_reason,
+            "return_to_dig_next_dig_entry_ready",
+        )
 
     def test_primitive_planner_sweep_belief_does_not_depend_on_removed_depth(self) -> None:
         dig_policy = _RecordingPolicy(0)
@@ -2501,7 +2693,7 @@ class TestPrimitivesV22(unittest.TestCase):
 
         self.assertEqual(float(policy.predict(_obs(mass=0.0, dig_distance=0.0))[0]), 0.0)
 
-        action = policy.predict(_obs(mass=0.0, dig_distance=0.0))
+        action = policy.predict(_obs(mass=1000.0, dig_distance=0.0))
         self.assertEqual(float(action[0]), 1.0)
         self.assertEqual(policy.debug_state()["skill_name"], "carry")
         self.assertEqual(
@@ -2532,6 +2724,53 @@ class TestPrimitivesV22(unittest.TestCase):
             policy.debug_state()["skill_switch_reason"],
             "return_to_dig_next_dig_entry_ready",
         )
+
+    def test_semantic_dig_complete_low_payload_replans_before_carry(self) -> None:
+        detector = _FakeBoundaryDetector(
+            [_FakeBoundaryEvent(dig_complete=True)],
+            boundary_profile="v2_4_5_spatial_mass",
+        )
+        policy = PrimitivePlannerACTPolicy(
+            dig_policy=_ConstantPolicy(0),
+            carry_policy=_ConstantPolicy(1),
+            dump_policy=_ConstantPolicy(2),
+            return_policy=_ConstantPolicy(3),
+            boundary_detector=detector,
+            dig_to_carry_min_bucket_mass_kg=15.0,
+            dump_ready_min_bucket_mass_kg=15.0,
+        )
+
+        policy.predict(_obs(mass=0.0, dig_distance=0.0))
+        policy.predict(_obs(mass=12.0, dig_distance=0.0))
+
+        state = policy.debug_state()
+        self.assertEqual(state["skill_name"], "dig")
+        self.assertEqual(state["skill_switch_reason"], "dig_retry_complete_low_payload")
+        self.assertEqual(state["dig_bad_replan_count"], 1)
+
+    def test_semantic_carry_release_safety_exits_carry_after_unplanned_release(
+        self,
+    ) -> None:
+        policy = PrimitivePlannerACTPolicy(
+            dig_policy=_ConstantPolicy(0),
+            carry_policy=_ConstantPolicy(1),
+            dump_policy=_ConstantPolicy(2),
+            return_policy=_ConstantPolicy(3),
+            boundary_detector=_FakeBoundaryDetector(
+                [],
+                boundary_profile="v2_4_5_spatial_mass",
+            ),
+            dump_done_max_bucket_mass_kg=15.0,
+            dump_done_min_deposit_delta_kg=5.0,
+        )
+        policy._set_skill("carry", "unit_test_carry")
+        policy._coverage_cycle_start_deposit_kg = 10.0
+
+        policy.predict(_obs(mass=0.0, dig_distance=2.0, deposited=16.0))
+
+        state = policy.debug_state()
+        self.assertEqual(state["skill_name"], "return")
+        self.assertEqual(state["skill_switch_reason"], "carry_to_return_release_safety")
 
     def test_primitive_planner_bad_dig_replans_instead_of_entering_carry(self) -> None:
         policy = _coverage_planner_policy(
@@ -3434,6 +3673,7 @@ class _RecordingPolicy(_ConstantPolicy):
         self.last_goal_tokens: np.ndarray | None = None
         self.last_cell_entry_tokens: np.ndarray | None = None
         self.last_dig_cut_tokens: np.ndarray | None = None
+        self.last_dig_depth_profile_tokens: np.ndarray | None = None
         self.last_return_target_tokens: np.ndarray | None = None
         self.last_return_start_envelope_tokens: np.ndarray | None = None
         self.call_count = 0
@@ -3450,6 +3690,11 @@ class _RecordingPolicy(_ConstantPolicy):
             None
             if "dig_cut_tokens" not in obs
             else np.asarray(obs.get("dig_cut_tokens"), dtype=np.float32)
+        )
+        self.last_dig_depth_profile_tokens = (
+            None
+            if "dig_depth_profile_tokens_v1" not in obs
+            else np.asarray(obs.get("dig_depth_profile_tokens_v1"), dtype=np.float32)
         )
         self.last_return_target_tokens = (
             None
@@ -3671,6 +3916,9 @@ def _coverage_planner_policy(
     dig_exit_guard_enabled: bool = False,
     return_to_dig_shallow_guard_enabled: bool = False,
     return_to_dig_max_entry_error_m: float | None = None,
+    return_to_dig_start_envelope_gate_enabled: bool = False,
+    return_to_dig_start_envelope_plane_depth_tolerance_m: float = 0.05,
+    return_to_dig_start_envelope_plane_depth_mode: str = "range",
     pre_dig_align_enabled: bool = False,
     pre_dig_align_extra: dict | None = None,
     return_target_enabled: bool = False,
@@ -3712,6 +3960,15 @@ def _coverage_planner_policy(
         return_to_dig_min_depth_m=0.02,
         return_to_dig_max_depth_m=0.12,
         return_to_dig_max_entry_error_m=return_to_dig_max_entry_error_m,
+        return_to_dig_start_envelope_gate_enabled=(
+            return_to_dig_start_envelope_gate_enabled
+        ),
+        return_to_dig_start_envelope_plane_depth_tolerance_m=(
+            return_to_dig_start_envelope_plane_depth_tolerance_m
+        ),
+        return_to_dig_start_envelope_plane_depth_mode=(
+            return_to_dig_start_envelope_plane_depth_mode
+        ),
         dig_to_carry_min_distance_to_dig_area_m=0.0,
         dig_cut_planner={
             "enabled": True,
