@@ -196,7 +196,6 @@ class PrimitivePlannerACTPolicy(Policy):
         return_to_dig_start_envelope_plane_depth_tolerance_m: float = 0.05,
         return_to_dig_start_envelope_plane_depth_mode: str = "range",
         return_to_dig_start_envelope_qpos_tolerance: float = 0.04,
-        return_to_dig_start_envelope_soft_tolerance: float = 0.0,
         return_to_dig_start_envelope_require_contact: bool = True,
         return_to_dig_start_envelope_direct_handoff_enabled: bool = False,
         return_max_steps: int = 420,
@@ -351,10 +350,6 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         self.return_to_dig_start_envelope_qpos_tolerance = float(
             return_to_dig_start_envelope_qpos_tolerance
-        )
-        self.return_to_dig_start_envelope_soft_tolerance = max(
-            0.0,
-            float(return_to_dig_start_envelope_soft_tolerance),
         )
         self.return_to_dig_start_envelope_require_contact = bool(
             return_to_dig_start_envelope_require_contact
@@ -1068,9 +1063,6 @@ class PrimitivePlannerACTPolicy(Policy):
             "return_to_dig_start_envelope_error": float(
                 self._return_to_dig_start_envelope_error
             ),
-            "return_to_dig_start_envelope_soft_tolerance": float(
-                self.return_to_dig_start_envelope_soft_tolerance
-            ),
             "return_to_dig_start_envelope_checks": dict(
                 self._return_to_dig_start_envelope_checks
             ),
@@ -1326,9 +1318,6 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             "return_to_dig_start_envelope_error": float(
                 self._return_to_dig_start_envelope_error
-            ),
-            "return_to_dig_start_envelope_soft_tolerance": float(
-                self.return_to_dig_start_envelope_soft_tolerance
             ),
             "pending_dig_cut_cycle_id": int(self._pending_dig_cut_cycle_id),
             "pending_dig_cut_corridor_id": int(self._pending_dig_cut_corridor_id),
@@ -2795,50 +2784,10 @@ class PrimitivePlannerACTPolicy(Policy):
                 ready = False
                 checks["qpos_missing"] = True
 
-        if not ready:
-            soft_ready, soft_error, soft_names = (
-                self._return_to_dig_start_envelope_soft_ready(checks)
-            )
-            if soft_ready:
-                ready = True
-                checks["soft_envelope_handoff"] = {
-                    "ok": True,
-                    "tolerance": float(
-                        self.return_to_dig_start_envelope_soft_tolerance
-                    ),
-                    "max_error": float(soft_error),
-                    "relaxed_checks": list(soft_names),
-                }
-
         self._return_to_dig_start_envelope_ready_state = bool(ready)
         self._return_to_dig_start_envelope_error = float(max_error)
         self._return_to_dig_start_envelope_checks = checks
         return bool(ready)
-
-    def _return_to_dig_start_envelope_soft_ready(
-        self,
-        checks: dict[str, Any],
-    ) -> tuple[bool, float, list[str]]:
-        soft_tolerance = float(self.return_to_dig_start_envelope_soft_tolerance)
-        if soft_tolerance <= 0.0:
-            return False, 0.0, []
-        relaxed: list[str] = []
-        max_soft_error = 0.0
-        for name, check in checks.items():
-            if not isinstance(check, dict) or "ok" not in check:
-                return False, 0.0, []
-            if bool(check.get("ok", False)):
-                continue
-            if name not in {"long_norm", "short_norm"} and not name.startswith(
-                "qpos_"
-            ):
-                return False, 0.0, []
-            error = float(check.get("error", float("inf")))
-            if not np.isfinite(error) or error > soft_tolerance:
-                return False, 0.0, []
-            relaxed.append(str(name))
-            max_soft_error = max(max_soft_error, error)
-        return bool(relaxed), float(max_soft_error), relaxed
 
     def _return_to_dig_entry_error_for_obs(self, obs: dict) -> float:
         target = self._return_to_dig_entry_target()
@@ -5762,7 +5711,6 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
         return_to_dig_start_envelope_plane_depth_tolerance_m: float = 0.05,
         return_to_dig_start_envelope_plane_depth_mode: str = "range",
         return_to_dig_start_envelope_qpos_tolerance: float = 0.04,
-        return_to_dig_start_envelope_soft_tolerance: float = 0.0,
         return_to_dig_start_envelope_require_contact: bool = True,
         return_to_dig_start_envelope_direct_handoff_enabled: bool = False,
         return_max_steps: int = 420,
@@ -5900,9 +5848,6 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             ),
             return_to_dig_start_envelope_qpos_tolerance=(
                 return_to_dig_start_envelope_qpos_tolerance
-            ),
-            return_to_dig_start_envelope_soft_tolerance=(
-                return_to_dig_start_envelope_soft_tolerance
             ),
             return_to_dig_start_envelope_require_contact=(
                 return_to_dig_start_envelope_require_contact
