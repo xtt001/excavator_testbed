@@ -405,7 +405,18 @@
   `return_target_tokens` 的派生 low-dim key，只保留 entry/exit/direction/length/valid，
   depth 和 payload 固定为 0。当前 surface-depth return-only 重训使用
   `qpos + qvel + return_start_envelope_tokens_v1 + return_relocate_tokens_v1`，
-  不重切数据、不重训 dig/carry/dump。
+  不重切数据、不重训 dig/carry/dump。该输入组合训练时的
+  `token_swap_outcome_loss` 需要同步交换 envelope 与 relocate 两个 token slice；
+  只交换 envelope 会把 relocation 监督变弱，live 更容易回到全局 median 姿态。
+  return-relocate 重训应使用 `return_relocate_outcome_targets_v1`
+  supervision：它从 `return_outcome_targets` 派生，但屏蔽 depth/payload 维度，
+  保证 return 只学回到下一铲位置/方向附近，不承担下一段 dig 的挖深或装料目标。
+- live return 默认 global `return_start_envelope_tokens_v1` 会把 qpos center 固定在
+  qc6 gold return 的全局 median dig-start 姿态附近；如果希望 return ACT 自己回到
+  下一铲 entry 附近，而不是靠 `pre_dig_align` 脚本补偿，应启用
+  `dig_cut_planner.return_start_envelope.{spatial,qpos}_from_relocate`，用
+  `return_relocate_tokens_v1` 派生 target-specific envelope spatial long/short 和
+  qpos center。
 - YuLong V2.4 reconstructed-belief sweep planner 使用
   `dig_cut_planner.mode=operator_prior_sweep_belief`。它不依赖当前全零的
   Unity `removed_depth`，而是根据历史 cut corridor、payload、effective deposit

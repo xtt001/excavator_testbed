@@ -7,7 +7,7 @@ import h5py
 import numpy as np
 import torch
 
-from testbed.data.dataset import load_data
+from testbed.data.dataset import _read_supervision_at_step, load_data
 from testbed.data.hdf5_io import read_episode, write_episode
 from testbed.data.hindsight_goal_v2_4 import (
     DEPTH_OUTCOME_SOURCE_REMOVED_DEPTH,
@@ -16,7 +16,11 @@ from testbed.data.hindsight_goal_v2_4 import (
 )
 from testbed.data.operator_first_v2_2 import DIG_CUT_DEPTH_SCALE_M, DIG_CUT_TOKEN_DIM
 from testbed.data.primitives_v2_2 import build_primitive_v2_payload
-from testbed.data.schema import ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX
+from testbed.data.schema import (
+    DS_V2_STEP_RETURN_GOAL_VALID_MASK,
+    DS_V2_STEP_RETURN_OUTCOME_TARGETS,
+    ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
+)
 from testbed.policies.act.adapter import ACTAdapter
 
 
@@ -188,6 +192,65 @@ def test_act_forward_loss_accepts_outcome_supervision_and_token_swap() -> None:
 
     assert set(loss) >= {"l1", "kl", "outcome", "token_swap", "loss"}
     assert torch.isfinite(loss["loss"])
+
+
+def test_act_token_swap_resolves_all_return_conditioning_tokens() -> None:
+    adapter = object.__new__(ACTAdapter)
+    adapter.policy_config = {"equipment_model": "yulong"}
+    adapter._low_dim_keys = [
+        "qpos",
+        "qvel",
+        "return_start_envelope_tokens_v1",
+        "return_relocate_tokens_v1",
+    ]
+
+    assert adapter._resolve_goal_token_slice() == (slice(8, 26), slice(26, 36))
+
+
+def test_act_token_swap_rolls_each_goal_token_slice_together() -> None:
+    adapter = object.__new__(ACTAdapter)
+    adapter._token_slice = (slice(2, 4), slice(6, 8))
+    adapter._proprio_mean = torch.zeros(8)
+    adapter._proprio_std = torch.ones(8)
+    proprio = torch.tensor(
+        [
+            [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
+            [20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0],
+        ]
+    )
+
+    swapped = adapter._swap_goal_token_in_batch(proprio)
+
+    torch.testing.assert_close(swapped[:, :2], proprio[:, :2])
+    torch.testing.assert_close(swapped[:, 4:6], proprio[:, 4:6])
+    torch.testing.assert_close(swapped[0, 2:4], proprio[1, 2:4])
+    torch.testing.assert_close(swapped[0, 6:8], proprio[1, 6:8])
+    torch.testing.assert_close(swapped[1, 2:4], proprio[0, 2:4])
+    torch.testing.assert_close(swapped[1, 6:8], proprio[0, 6:8])
+
+
+def test_return_relocate_supervision_masks_depth_and_payload() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "episode.hdf5"
+        target = np.arange(10, dtype=np.float32).reshape(1, 10)
+        target[0, 9] = 1.0
+        mask = np.ones((1, 10), dtype=np.uint8)
+        with h5py.File(path, "w") as handle:
+            handle.create_dataset(DS_V2_STEP_RETURN_OUTCOME_TARGETS, data=target)
+            handle.create_dataset(DS_V2_STEP_RETURN_GOAL_VALID_MASK, data=mask)
+        with h5py.File(path, "r") as handle:
+            relocate_target, relocate_mask = _read_supervision_at_step(
+                handle,
+                key="return_relocate_outcome_targets_v1",
+                index=0,
+            )
+
+    assert relocate_target[7] == 0.0
+    assert relocate_target[8] == 0.0
+    assert relocate_mask[7] == 0.0
+    assert relocate_mask[8] == 0.0
+    np.testing.assert_allclose(relocate_target[:7], target[0, :7])
+    assert relocate_target[9] == 1.0
 
 
 class _TinyOutcomeModel(torch.nn.Module):

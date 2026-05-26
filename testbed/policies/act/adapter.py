@@ -430,8 +430,9 @@ class ACTAdapter(Policy):
         a_hat, is_pad_hat, latent = model_out
         return a_hat, is_pad_hat, latent, None
 
-    def _resolve_goal_token_slice(self) -> slice | None:
+    def _resolve_goal_token_slice(self) -> tuple[slice, ...] | None:
         start = 0
+        token_slices: list[slice] = []
         for key in self._low_dim_keys:
             dim = self._low_dim_key_dim(key)
             if key in {
@@ -442,9 +443,11 @@ class ACTAdapter(Policy):
                 "return_start_envelope_tokens_v1",
                 "goal_tokens",
             }:
-                return slice(start, start + dim)
+                token_slices.append(slice(start, start + dim))
             start += dim
-        return None
+        if not token_slices:
+            return None
+        return tuple(token_slices)
 
     def _low_dim_key_dim(self, key: str) -> int:
         if key in {
@@ -477,15 +480,21 @@ class ACTAdapter(Policy):
     def _swap_goal_token_in_batch(self, proprio: torch.Tensor) -> torch.Tensor:
         if self._token_slice is None:
             return proprio
+        token_slices = (
+            (self._token_slice,)
+            if isinstance(self._token_slice, slice)
+            else tuple(self._token_slice)
+        )
         mean = self._proprio_mean.to(proprio.device)
         std = self._proprio_std.to(proprio.device)
         unnorm = proprio * std + mean
         swapped = unnorm.clone()
-        swapped[:, self._token_slice] = torch.roll(
-            unnorm[:, self._token_slice],
-            shifts=1,
-            dims=0,
-        )
+        for token_slice in token_slices:
+            swapped[:, token_slice] = torch.roll(
+                unnorm[:, token_slice],
+                shifts=1,
+                dims=0,
+            )
         return (swapped - mean) / std
 
     # ── checkpoint helpers ────────────────────────────────────────────────────

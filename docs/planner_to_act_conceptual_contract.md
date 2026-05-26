@@ -74,9 +74,9 @@ ACT。
 | 当前 primitive | active skill id/name | scheduler / log | 决定调用 dig、carry、dump 还是 return ACT |
 | 当前 dig cut intent | `dig_cut_tokens` | dig ACT | entry/exit/direction/length/depth/payload/valid |
 | 扩展 dig depth profile | `dig_depth_profile_tokens_v1` | depth-profile dig ACT | cell、目标深度、payload、reference depth、surface penetration、contact fraction |
-| return-start envelope | `return_start_envelope_tokens_v1` | return ACT 和 handoff gate | dig-start 状态分布，不是下一铲 dig command；当前主线默认用 global prior，不按 cell-specific prior 条件化 |
+| return-start envelope | `return_start_envelope_tokens_v1` | return ACT 和 handoff gate | dig-start 状态分布；若只用 global prior，会把 return 拉向平均 dig-start 姿态 |
 | pending 下一轮 dig plan | planner 内部 held `dig_cut_tokens` | scheduler / handoff / 下一轮 dig ACT | 用于 entry-close gate 和下一轮 dig；当前主线不作为 return ACT low-dim 输入 |
-| legacy/ablation return 目标 | `return_target_tokens` 或 `return_relocate_tokens_v1` | 旧实验或单独 ablation | 下一铲 entry/exit/direction/length；当前 surface-depth 主线训练不读取这些 key |
+| return relocation intent | `return_relocate_tokens_v1` | return-relocate ACT / envelope conditioner | 下一铲 entry/exit/direction/length；不能替代安全 handoff gate |
 | 交接/重规划信号 | switch reason、timeout、terminal reason | scheduler / eval log | 解释为什么切 skill、重试、终止 |
 
 token 是 ACT 的条件输入，不是硬约束。比如 `dig_cut_tokens` 指定希望的切削意图，但 ACT
@@ -293,7 +293,7 @@ token、outcome/QC 指标和 reject reason；训练 loader 只读取已经通过
 
 ### 当前 surface-depth 训练配置
 
-最新 surface-depth/qc6labels scale080 训练里，return 的 low-dim 契约已经收窄为：
+基础 surface-depth/qc6labels scale080 训练里，return 的 low-dim 契约曾收窄为：
 
 ```yaml
 low_dim_keys:
@@ -321,6 +321,15 @@ eval 侧的 `return_low_dim_keys` 也是同一组 key。
 所以当前主线里，return 的任务是回到“dig ACT 可以接管的状态分布”，而不是执行下一铲
 dig plan 的前半段。下一铲 plan 仍然存在，但它停留在 planner/scheduler 侧，等真正切回
 `dig` 后才作为 `dig_cut_tokens` 给 dig ACT。
+
+2026-05-26 的 return-relocate 诊断表明：如果 live return 继续只注入
+`qc6_return_start_envelope_global`，token 内 qpos center 会固定在全局 median
+dig-start 姿态附近，rollout 视觉上就会像“回到平均点再挖”。新的
+`dig_cut_planner.return_start_envelope.{spatial,qpos}_from_relocate` 选项不会脚本化
+对齐动作，只是用下一铲 `return_relocate_tokens_v1` 派生 target-specific spatial
+long/short 和 qpos center 覆盖 envelope token 对应字段，让 return ACT 自己执行
+“回到下一铲附近”。开启这些选项时，handoff gate 对应字段默认围绕派生 token，而不是
+继续使用 global prior bounds。
 
 ### `dig_cut_tokens` / `return_target_tokens`
 
@@ -390,10 +399,18 @@ depth/contact/qpos 是否进入下一轮 dig ACT 的训练分布。
 entry/exit/direction/length/valid。它适合做 return relocation ablation，让 return 学会
 “回到下一铲附近”，而不是让 return 承担挖深或装料目标。
 
-注意：这不是当前 surface-depth 全 primitive 训练的主线 low-dim。当前
-`act_return_surface_depth_qvel.yaml` 只读 `qpos + qvel + return_start_envelope_tokens_v1`。
-如果单独启动 return-relocate 重训，才应把 `return_relocate_tokens_v1` 放回 return
-low-dim，并在实验记录里明确区分。
+注意：它仍然不是手写对齐轨迹。return-relocate 重训可以把
+`return_relocate_tokens_v1` 放回 return low-dim；live 侧也可以只把它用于
+`qpos_from_relocate` envelope conditioning。两种做法都必须在实验记录里明确区分。
+当 return low-dim 同时包含 `return_start_envelope_tokens_v1` 和
+`return_relocate_tokens_v1` 时，ACT 的 `token_swap_outcome_loss` 必须把这两个
+conditioning token slice 一起交换；只交换第一个 token 会让模型继续偏向全局
+envelope，削弱 relocation 对动作的约束。
+return-relocate 训练的 outcome supervision 应使用
+`return_relocate_outcome_targets_v1` 这类 relocation-only 目标：只监督
+entry/exit/direction/length/valid，不监督 depth/payload。return 可以用 shallow
+depth/contact 字段判断是否仍在安全 handoff envelope 内，但不应该把下一铲的挖深或
+装料目标当成自己要执行的动作目标。
 
 ## 信息边界
 

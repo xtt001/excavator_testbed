@@ -62,16 +62,19 @@ SUPPORTED_LOW_DIM_KEYS = (
 SUPPORTED_SUPERVISION_KEYS = (
     "dig_outcome_targets",
     "return_outcome_targets",
+    "return_relocate_outcome_targets_v1",
 )
 
 _SUPERVISION_DATASET_PATHS = {
     "dig_outcome_targets": DS_V2_STEP_DIG_OUTCOME_TARGETS,
     "return_outcome_targets": DS_V2_STEP_RETURN_OUTCOME_TARGETS,
+    "return_relocate_outcome_targets_v1": DS_V2_STEP_RETURN_OUTCOME_TARGETS,
 }
 
 _SUPERVISION_MASK_PATHS = {
     "dig_outcome_targets": DS_V2_STEP_DIG_GOAL_VALID_MASK,
     "return_outcome_targets": DS_V2_STEP_RETURN_GOAL_VALID_MASK,
+    "return_relocate_outcome_targets_v1": DS_V2_STEP_RETURN_GOAL_VALID_MASK,
 }
 
 
@@ -1231,6 +1234,11 @@ def _read_supervision_at_step(
         raise ValueError(
             f"{mask_path} shape {mask.shape} does not match target shape {target.shape}."
         )
+    if key == "return_relocate_outcome_targets_v1":
+        target = _mask_return_relocate_tokens(target)
+        mask = mask.copy()
+        mask[7] = 0.0
+        mask[8] = 0.0
     return target.astype(np.float32), mask.astype(np.float32)
 
 

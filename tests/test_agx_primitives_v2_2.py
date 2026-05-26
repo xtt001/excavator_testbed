@@ -10,6 +10,7 @@ import numpy as np
 
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_DEPTH_SCALE_M,
+    _build_dig_cut_token,
     build_live_dig_cut_tokens_from_pose,
 )
 from testbed.data.dataset import get_norm_stats
@@ -2559,6 +2560,115 @@ class TestPrimitivesV22(unittest.TestCase):
             policy.debug_state()["return_start_envelope_token_source"],
             "qc6_return_start_envelope_global",
         )
+
+    def test_return_envelope_can_condition_qpos_from_relocate_token(self) -> None:
+        with YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH.open(
+            "r",
+            encoding="utf-8",
+        ) as handle:
+            prior = json.load(handle)
+        expected_base = np.asarray(
+            prior["return_start_envelope_global"]["token_median"],
+            dtype=np.float32,
+        )
+        coefficients = np.zeros((4, 8), dtype=np.float32)
+        coefficients[:, 0] = np.asarray([0.49, 0.62, 0.10, 0.12], dtype=np.float32)
+        coefficients[0, 2] = -0.08
+        coefficients[1, 1] = 0.16
+        coefficients[2, 1] = -0.20
+        coefficients[3, 7] = 0.12
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            prior_path=YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH,
+            coverage_extra={"candidate_layout": "cell_weighted_3x2"},
+            return_start_envelope_extra={
+                "qpos_from_relocate": {
+                    "enabled": True,
+                    "coefficients": coefficients.tolist(),
+                    "qpos_min": [0.40, 0.40, 0.00, 0.00],
+                    "qpos_max": [0.80, 0.90, 0.60, 0.60],
+                },
+            },
+        )
+        policy._ensure_coverage_corridors()
+        corridor = policy._coverage_corridor_by_id(1)
+        self.assertIsNotNone(corridor)
+        raw_fields = policy._coverage_raw_fields(corridor)
+        obs = _coverage_obs(mass=0.0, dig_distance=0.0)
+
+        token = policy._build_return_start_envelope_tokens_for_obs(
+            obs,
+            raw_fields,
+            corridor_id=1,
+        )
+
+        relocate_token = _build_dig_cut_token(raw_fields).astype(np.float32)
+        relocate_token[7] = 0.0
+        relocate_token[8] = 0.0
+        features = np.concatenate(
+            [np.ones(1, dtype=np.float32), relocate_token[:7]]
+        )
+        expected_qpos = np.clip(
+            coefficients @ features,
+            np.asarray([0.40, 0.40, 0.00, 0.00], dtype=np.float32),
+            np.asarray([0.80, 0.90, 0.60, 0.60], dtype=np.float32),
+        )
+        np.testing.assert_allclose(token[:7], expected_base[:7], atol=1.0e-6)
+        np.testing.assert_allclose(token[7:11], expected_qpos, atol=1.0e-6)
+        self.assertEqual(
+            policy.debug_state()["return_start_envelope_token_source"],
+            "qc6_return_start_envelope_global+relocate_qpos_linear",
+        )
+        self.assertFalse(policy._return_start_envelope_use_prior_qpos_bounds)
+
+    def test_return_envelope_can_condition_spatial_from_relocate_token(self) -> None:
+        spatial_coefficients = np.zeros((2, 8), dtype=np.float32)
+        spatial_coefficients[:, 0] = np.asarray([-0.2, 0.5], dtype=np.float32)
+        spatial_coefficients[0, 1] = 0.4
+        spatial_coefficients[1, 2] = 0.3
+        qpos_coefficients = np.zeros((4, 8), dtype=np.float32)
+        qpos_coefficients[:, 0] = np.asarray([0.5, 0.7, 0.1, 0.15], dtype=np.float32)
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            prior_path=YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH,
+            coverage_extra={"candidate_layout": "cell_weighted_3x2"},
+            return_start_envelope_extra={
+                "qpos_from_relocate": {
+                    "enabled": True,
+                    "coefficients": qpos_coefficients.tolist(),
+                },
+                "spatial_from_relocate": {
+                    "enabled": True,
+                    "coefficients": spatial_coefficients.tolist(),
+                    "spatial_min": [-1.0, -1.0],
+                    "spatial_max": [1.0, 1.0],
+                },
+            },
+        )
+        policy._ensure_coverage_corridors()
+        corridor = policy._coverage_corridor_by_id(1)
+        self.assertIsNotNone(corridor)
+        raw_fields = policy._coverage_raw_fields(corridor)
+
+        token = policy._build_return_start_envelope_tokens_for_obs(
+            _coverage_obs(mass=0.0, dig_distance=0.0),
+            raw_fields,
+            corridor_id=1,
+        )
+
+        relocate_token = _build_dig_cut_token(raw_fields).astype(np.float32)
+        relocate_token[7] = 0.0
+        relocate_token[8] = 0.0
+        features = np.concatenate(
+            [np.ones(1, dtype=np.float32), relocate_token[:7]]
+        )
+        expected_spatial = spatial_coefficients @ features
+        np.testing.assert_allclose(token[:2], expected_spatial, atol=1.0e-6)
+        self.assertEqual(
+            policy.debug_state()["return_start_envelope_token_source"],
+            "qc6_return_start_envelope_global+relocate_spatial_linear+relocate_qpos_linear",
+        )
+        self.assertFalse(policy._return_start_envelope_use_prior_spatial_bounds)
 
     def test_return_to_dig_gate_requires_qc6_start_envelope(self) -> None:
         with YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH.open(

@@ -410,6 +410,52 @@ class PrimitivePlannerACTPolicy(Policy):
             0.0,
             float(return_start_envelope_cfg.get("min_source_fraction", 0.0)),
         )
+        qpos_from_relocate_cfg = dict(
+            return_start_envelope_cfg.get("qpos_from_relocate", {}) or {}
+        )
+        self.return_start_envelope_qpos_from_relocate_enabled = bool(
+            qpos_from_relocate_cfg.get("enabled", False)
+        )
+        raw_relocate_coefficients = qpos_from_relocate_cfg.get("coefficients")
+        self.return_start_envelope_qpos_from_relocate_coefficients = (
+            None
+            if raw_relocate_coefficients is None
+            else np.asarray(raw_relocate_coefficients, dtype=np.float32).reshape(4, 8)
+        )
+        self.return_start_envelope_qpos_from_relocate_min = self._align_vector(
+            qpos_from_relocate_cfg.get("qpos_min", [0.44, 0.50, 0.0, 0.0]),
+            default=[0.44, 0.50, 0.0, 0.0],
+        )
+        self.return_start_envelope_qpos_from_relocate_max = self._align_vector(
+            qpos_from_relocate_cfg.get("qpos_max", [0.56, 0.80, 0.56, 0.48]),
+            default=[0.56, 0.80, 0.56, 0.48],
+        )
+        self.return_start_envelope_qpos_from_relocate_use_prior_qpos_bounds = bool(
+            qpos_from_relocate_cfg.get("use_prior_qpos_bounds", False)
+        )
+        spatial_from_relocate_cfg = dict(
+            return_start_envelope_cfg.get("spatial_from_relocate", {}) or {}
+        )
+        self.return_start_envelope_spatial_from_relocate_enabled = bool(
+            spatial_from_relocate_cfg.get("enabled", False)
+        )
+        raw_spatial_coefficients = spatial_from_relocate_cfg.get("coefficients")
+        self.return_start_envelope_spatial_from_relocate_coefficients = (
+            None
+            if raw_spatial_coefficients is None
+            else np.asarray(raw_spatial_coefficients, dtype=np.float32).reshape(2, 8)
+        )
+        self.return_start_envelope_spatial_from_relocate_min = np.asarray(
+            spatial_from_relocate_cfg.get("spatial_min", [-1.0, -0.10]),
+            dtype=np.float32,
+        ).reshape(2)
+        self.return_start_envelope_spatial_from_relocate_max = np.asarray(
+            spatial_from_relocate_cfg.get("spatial_max", [1.0, 1.0]),
+            dtype=np.float32,
+        ).reshape(2)
+        self.return_start_envelope_spatial_from_relocate_use_prior_spatial_bounds = bool(
+            spatial_from_relocate_cfg.get("use_prior_spatial_bounds", False)
+        )
         dig_depth_profile_cfg = dict(
             self.dig_cut_planner_cfg.get("dig_depth_profile", {}) or {}
         )
@@ -829,6 +875,8 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         self._return_start_envelope_token_injected = False
         self._return_start_envelope_token_source = "none"
+        self._return_start_envelope_use_prior_spatial_bounds = True
+        self._return_start_envelope_use_prior_qpos_bounds = True
         self._return_target_planned_cycle_id = -1
         self._return_target_token_source = "none"
         self._return_target_fallback_reason = ""
@@ -2515,8 +2563,13 @@ class PrimitivePlannerACTPolicy(Policy):
         max_error = 0.0
         ready = True
 
-        def bounds_for(index: int, tolerance: float) -> tuple[float, float]:
-            if lower is not None and upper is not None:
+        def bounds_for(
+            index: int,
+            tolerance: float,
+            *,
+            use_prior_bounds: bool = True,
+        ) -> tuple[float, float]:
+            if use_prior_bounds and lower is not None and upper is not None:
                 low = float(lower[index]) - float(tolerance)
                 high = float(upper[index]) + float(tolerance)
             else:
@@ -2547,14 +2600,22 @@ class PrimitivePlannerACTPolicy(Policy):
         if float(token[17]) > 0.5:
             if len(env_state) > ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX:
                 spatial_tol = self.return_to_dig_start_envelope_spatial_tolerance
-                low, high = bounds_for(0, spatial_tol)
+                low, high = bounds_for(
+                    0,
+                    spatial_tol,
+                    use_prior_bounds=self._return_start_envelope_use_prior_spatial_bounds,
+                )
                 add_check(
                     "long_norm",
                     float(env_state[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX]),
                     low,
                     high,
                 )
-                low, high = bounds_for(1, spatial_tol)
+                low, high = bounds_for(
+                    1,
+                    spatial_tol,
+                    use_prior_bounds=self._return_start_envelope_use_prior_spatial_bounds,
+                )
                 add_check(
                     "short_norm",
                     float(env_state[ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX]),
@@ -2644,7 +2705,11 @@ class PrimitivePlannerACTPolicy(Policy):
                 qpos_tol = self.return_to_dig_start_envelope_qpos_tolerance
                 for offset in range(4):
                     index = 7 + offset
-                    if lower is not None and upper is not None:
+                    if (
+                        self._return_start_envelope_use_prior_qpos_bounds
+                        and lower is not None
+                        and upper is not None
+                    ):
                         low = float(lower[index]) - qpos_tol
                         high = float(upper[index]) + qpos_tol
                     else:
@@ -3314,9 +3379,19 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         if prior_token is not None:
             self._return_start_envelope_token_source = prior_source
-            return prior_token.astype(np.float32)
+            self._return_start_envelope_use_prior_spatial_bounds = True
+            self._return_start_envelope_use_prior_qpos_bounds = True
+            token = prior_token.astype(np.float32)
+            token = self._maybe_condition_return_start_envelope_qpos_from_relocate(
+                token,
+                raw_fields=raw_fields,
+                source=prior_source,
+            )
+            return token.astype(np.float32)
 
         self._return_start_envelope_token_source = "live_current_obs_fallback"
+        self._return_start_envelope_use_prior_spatial_bounds = True
+        self._return_start_envelope_use_prior_qpos_bounds = True
         token = np.zeros(RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.float32)
         env_state = self._env_state(obs)
         if len(env_state) > ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX:
@@ -3339,7 +3414,72 @@ class PrimitivePlannerACTPolicy(Policy):
         if qvel.size >= 4:
             token[15] = float(np.max(np.abs(qvel[:4])))
         token[17] = 1.0
+        token = self._maybe_condition_return_start_envelope_qpos_from_relocate(
+            token,
+            raw_fields=raw_fields,
+            source="live_current_obs_fallback",
+        )
         return token.astype(np.float32)
+
+    def _maybe_condition_return_start_envelope_qpos_from_relocate(
+        self,
+        token: np.ndarray,
+        *,
+        raw_fields: dict[str, float | int],
+        source: str,
+    ) -> np.ndarray:
+        if not self.return_start_envelope_qpos_from_relocate_enabled:
+            return token
+        coefficients = self.return_start_envelope_qpos_from_relocate_coefficients
+        if coefficients is None:
+            return token
+        relocate_token = _build_dig_cut_token(raw_fields).astype(np.float32)
+        relocate_token[7] = 0.0
+        relocate_token[8] = 0.0
+        if float(relocate_token[9]) <= 0.5 or np.linalg.norm(relocate_token[:7]) <= 1.0e-6:
+            return token
+        features = np.concatenate(
+            [
+                np.ones(1, dtype=np.float32),
+                relocate_token[:7].astype(np.float32),
+            ]
+        )
+        qpos = np.asarray(coefficients @ features, dtype=np.float32).reshape(4)
+        qpos = np.clip(
+            qpos,
+            self.return_start_envelope_qpos_from_relocate_min,
+            self.return_start_envelope_qpos_from_relocate_max,
+        )
+        conditioned = np.asarray(token, dtype=np.float32).copy()
+        source_suffixes: list[str] = []
+        spatial_coefficients = (
+            self.return_start_envelope_spatial_from_relocate_coefficients
+        )
+        if (
+            self.return_start_envelope_spatial_from_relocate_enabled
+            and spatial_coefficients is not None
+        ):
+            spatial = np.asarray(
+                spatial_coefficients @ features,
+                dtype=np.float32,
+            ).reshape(2)
+            spatial = np.clip(
+                spatial,
+                self.return_start_envelope_spatial_from_relocate_min,
+                self.return_start_envelope_spatial_from_relocate_max,
+            )
+            conditioned[0:2] = spatial
+            source_suffixes.append("relocate_spatial_linear")
+            self._return_start_envelope_use_prior_spatial_bounds = bool(
+                self.return_start_envelope_spatial_from_relocate_use_prior_spatial_bounds
+            )
+        conditioned[7:11] = qpos
+        source_suffixes.append("relocate_qpos_linear")
+        self._return_start_envelope_token_source = f"{source}+{'+'.join(source_suffixes)}"
+        self._return_start_envelope_use_prior_qpos_bounds = bool(
+            self.return_start_envelope_qpos_from_relocate_use_prior_qpos_bounds
+        )
+        return conditioned
 
     def _return_start_envelope_prior_token(
         self,
