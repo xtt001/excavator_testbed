@@ -60,7 +60,16 @@ def main() -> None:
         "--output-dir",
         type=Path,
         default=None,
-        help="Override eval.results_dir and eval.video_dir root.",
+        help=(
+            "Override eval results/video root and keep rollout/HDF5 logs "
+            "under that results directory."
+        ),
+    )
+    parser.add_argument(
+        "--target-cycle-gate",
+        type=int,
+        default=None,
+        help="Override eval.target_cycle_gate for multi-cycle smoke/probe runs.",
     )
     args = parser.parse_args()
 
@@ -81,9 +90,14 @@ def main() -> None:
         eval_cfg["save_video"] = False
     if args.temporal_agg:
         eval_cfg["temporal_agg"] = True
+    if args.target_cycle_gate is not None:
+        eval_cfg["target_cycle_gate"] = int(args.target_cycle_gate)
     if args.output_dir:
-        eval_cfg["results_dir"] = str(args.output_dir / "results")
-        eval_cfg["video_dir"]   = str(args.output_dir / "videos")
+        results_dir = args.output_dir / "results"
+        eval_cfg["results_dir"] = str(results_dir)
+        eval_cfg["video_dir"] = str(args.output_dir / "videos")
+        eval_cfg["rollout_log_dir"] = str(results_dir / "rollouts")
+        eval_cfg["hdf5_dir"] = str(results_dir / "hdf5_rollouts")
 
     from testbed.runtime.runner import Runner
     Runner(config).eval()

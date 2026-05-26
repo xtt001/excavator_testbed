@@ -66,13 +66,18 @@ class BoundaryDetectorConfig:
     dig_complete_departed_hold_steps: int = 3
     dump_committed_min_bucket_mass_kg: float = 15.0
     dump_committed_min_height_above_rim_m: float = 0.45
-    dump_committed_max_outside_distance_m: float = 0.45
-    dump_committed_min_relative_x_m: float = -0.4
-    dump_committed_max_relative_x_m: float = 2.1
-    dump_committed_min_relative_z_m: float = 0.3
-    dump_committed_max_relative_z_m: float = 2.3
+    dump_committed_max_outside_distance_m: float = 0.25
+    dump_committed_min_relative_x_m: float = -0.2
+    dump_committed_max_relative_x_m: float = 1.9
+    dump_committed_min_relative_z_m: float = 0.45
+    dump_committed_max_relative_z_m: float = 2.1
     dump_committed_require_clearance: bool = False
     dump_committed_hold_steps: int = 3
+    dump_committed_stable_window_steps: int = 8
+    dump_committed_outside_range_tol_m: float = 0.06
+    dump_committed_relative_x_range_tol_m: float = 0.16
+    dump_committed_relative_z_range_tol_m: float = 0.10
+    release_onset_max_outside_distance_m: float = 0.45
     release_onset_min_bucket_mass_drop_kg: float = 0.5
     release_onset_min_deposit_gain_kg: float = 0.5
 
@@ -178,25 +183,40 @@ def build_boundary_detector_from_config(
                 boundary_cfg.get("dump_committed_min_height_above_rim_m", 0.45)
             ),
             dump_committed_max_outside_distance_m=float(
-                boundary_cfg.get("dump_committed_max_outside_distance_m", 0.45)
+                boundary_cfg.get("dump_committed_max_outside_distance_m", 0.25)
             ),
             dump_committed_min_relative_x_m=float(
-                boundary_cfg.get("dump_committed_min_relative_x_m", -0.4)
+                boundary_cfg.get("dump_committed_min_relative_x_m", -0.2)
             ),
             dump_committed_max_relative_x_m=float(
-                boundary_cfg.get("dump_committed_max_relative_x_m", 2.1)
+                boundary_cfg.get("dump_committed_max_relative_x_m", 1.9)
             ),
             dump_committed_min_relative_z_m=float(
-                boundary_cfg.get("dump_committed_min_relative_z_m", 0.3)
+                boundary_cfg.get("dump_committed_min_relative_z_m", 0.45)
             ),
             dump_committed_max_relative_z_m=float(
-                boundary_cfg.get("dump_committed_max_relative_z_m", 2.3)
+                boundary_cfg.get("dump_committed_max_relative_z_m", 2.1)
             ),
             dump_committed_require_clearance=bool(
                 boundary_cfg.get("dump_committed_require_clearance", False)
             ),
             dump_committed_hold_steps=int(
                 boundary_cfg.get("dump_committed_hold_steps", 3)
+            ),
+            dump_committed_stable_window_steps=int(
+                boundary_cfg.get("dump_committed_stable_window_steps", 8)
+            ),
+            dump_committed_outside_range_tol_m=float(
+                boundary_cfg.get("dump_committed_outside_range_tol_m", 0.06)
+            ),
+            dump_committed_relative_x_range_tol_m=float(
+                boundary_cfg.get("dump_committed_relative_x_range_tol_m", 0.16)
+            ),
+            dump_committed_relative_z_range_tol_m=float(
+                boundary_cfg.get("dump_committed_relative_z_range_tol_m", 0.10)
+            ),
+            release_onset_max_outside_distance_m=float(
+                boundary_cfg.get("release_onset_max_outside_distance_m", 0.45)
             ),
             release_onset_min_bucket_mass_drop_kg=float(
                 boundary_cfg.get("release_onset_min_bucket_mass_drop_kg", 0.5)
@@ -242,6 +262,7 @@ class BoundaryDetector:
         self._dig_mass_plateau_count = 0
         self._dig_departed_hold_count = 0
         self._dump_committed_hold_count = 0
+        self._dump_committed_history: list[dict[str, float]] = []
         self._release_onset_seen = False
         self._last_metrics: dict[str, float] | None = None
 
@@ -381,6 +402,7 @@ class BoundaryDetector:
             self._dig_mass_plateau_count = 0
             self._dig_departed_hold_count = 0
             self._dump_committed_hold_count = 0
+            self._dump_committed_history = []
             self._release_onset_seen = False
             self._cycle_start_deposited_mass_kg = metrics[
                 "deposited_mass_in_target_box_kg"
@@ -394,15 +416,15 @@ class BoundaryDetector:
 
         if self._current_cycle_id >= 0 and not self._awaiting_next_dig:
             dig_complete = self._update_dig_complete_state(metrics)
-            committed_condition = self._is_dump_committed_condition(metrics)
             if (
                 not self._dump_started
                 and self._dig_complete_seen
-                and committed_condition
             ):
-                self._dump_committed_hold_count += 1
+                self._update_dump_committed_state(metrics)
             elif not self._dump_started:
                 self._dump_committed_hold_count = 0
+                if not self._dig_complete_seen:
+                    self._dump_committed_history = []
             if (
                 not self._dump_started
                 and self._dump_committed_hold_count
@@ -438,6 +460,7 @@ class BoundaryDetector:
                     self._dump_started = False
                     self._plateau_count = 0
                     self._dump_committed_hold_count = 0
+                    self._dump_committed_history = []
                     self._completed_dump_count += 1
 
         pause = bool(np.sum(np.abs(action_arr)) < self.config.pause_action_eps)
@@ -543,8 +566,11 @@ class BoundaryDetector:
         )
         bucket_contact_dig_area = float(
             task_metrics.get(
-                "bucket_contact_dig_area_mask",
-                _read_env(ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX),
+                "bucket_dig_area_penetration_contact_mask",
+                task_metrics.get(
+                    "bucket_contact_dig_area_mask",
+                    _read_env(ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX),
+                ),
             )
         )
         bucket_contact_dump_area = float(
@@ -650,7 +676,7 @@ class BoundaryDetector:
             "dump_clearance_ok": float(dump_clearance_ok),
             "min_distance_to_dig_area_m": min_distance_to_dig_area,
             "bucket_depth_below_dig_area_plane_m": bucket_depth,
-            "bucket_contact_dig_area_mask": bucket_contact_dig_area,
+            "bucket_dig_area_penetration_contact_mask": bucket_contact_dig_area,
             "bucket_contact_dump_area_mask": bucket_contact_dump_area,
             "target_hard_collision_count": collision_count,
             "delta_mass_in_bucket_kg": _delta("delta_mass_in_bucket_kg", mass_in_bucket),
@@ -763,8 +789,69 @@ class BoundaryDetector:
             return False
         return True
 
-    def _is_release_onset_condition(self, metrics: dict[str, float]) -> bool:
+    def _update_dump_committed_state(self, metrics: dict[str, float]) -> bool:
+        window_steps = max(1, int(self.config.dump_committed_stable_window_steps))
+        self._dump_committed_history.append(dict(metrics))
+        if len(self._dump_committed_history) > window_steps:
+            self._dump_committed_history = self._dump_committed_history[-window_steps:]
         if not self._is_dump_committed_condition(metrics):
+            self._dump_committed_hold_count = 0
+            return False
+        if not self._dump_committed_stability_ready(window_steps):
+            self._dump_committed_hold_count = 0
+            return False
+        self._dump_committed_hold_count += 1
+        return True
+
+    def _dump_committed_stability_ready(self, window_steps: int) -> bool:
+        if window_steps <= 1:
+            return True
+        if len(self._dump_committed_history) < window_steps:
+            return False
+        outside_range = self._metric_range(
+            self._dump_committed_history,
+            "bucket_dump_area_footprint_outside_distance_m",
+        )
+        relative_x_range = self._metric_range(
+            self._dump_committed_history,
+            "bucket_dump_area_relative_x_m",
+        )
+        relative_z_range = self._metric_range(
+            self._dump_committed_history,
+            "bucket_dump_area_relative_z_m",
+        )
+        return bool(
+            outside_range <= self.config.dump_committed_outside_range_tol_m
+            and relative_x_range
+            <= self.config.dump_committed_relative_x_range_tol_m
+            and relative_z_range
+            <= self.config.dump_committed_relative_z_range_tol_m
+        )
+
+    @staticmethod
+    def _metric_range(history: list[dict[str, float]], key: str) -> float:
+        values = np.asarray(
+            [float(item.get(key, float("nan"))) for item in history],
+            dtype=np.float32,
+        )
+        values = values[np.isfinite(values)]
+        if values.size == 0:
+            return float("inf")
+        return float(np.max(values) - np.min(values))
+
+    def _is_release_onset_condition(self, metrics: dict[str, float]) -> bool:
+        if metrics["dump_area_geometry_available"] <= 0.0:
+            return False
+        outside = metrics["bucket_dump_area_footprint_outside_distance_m"]
+        over_footprint = metrics["bucket_over_target_footprint_mask"] > 0.5
+        near_release_area = bool(
+            (
+                np.isfinite(outside)
+                and 0.0 <= outside <= self.config.release_onset_max_outside_distance_m
+            )
+            or over_footprint
+        )
+        if not near_release_area:
             return False
         bucket_drop = -float(metrics["delta_mass_in_bucket_kg"])
         deposit_gain = max(

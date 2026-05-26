@@ -475,6 +475,7 @@ class Stage2BoundaryDetectorTests(unittest.TestCase):
                 dig_complete_mass_plateau_hold_steps=1,
                 dig_complete_departed_hold_steps=1,
                 dump_committed_hold_steps=1,
+                dump_committed_stable_window_steps=1,
             )
         )
         action = np.zeros(4, dtype=np.float32)
@@ -547,7 +548,7 @@ class Stage2BoundaryDetectorTests(unittest.TestCase):
                 dig_distance=0.30,
                 depth=0.0,
                 deposited_dump_area=0.6,
-                outside=0.10,
+                outside=0.40,
                 relative_x=0.75,
                 relative_z=1.20,
                 height=0.70,
@@ -574,6 +575,97 @@ class Stage2BoundaryDetectorTests(unittest.TestCase):
         )
         self.assertTrue(complete.dump_complete)
         self.assertTrue(complete.dump_end)
+
+    def test_v2_4_5_dump_committed_requires_stable_aiming_band(self) -> None:
+        detector = BoundaryDetector(
+            BoundaryDetectorConfig(
+                boundary_profile=BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS,
+                qualified_dig_start_mode=QUALIFIED_DIG_START_MODE_CONTACT_DEPTH,
+                residual_bucket_mass_thresh=15.0,
+                dig_complete_min_bucket_mass_kg=15.0,
+                dig_complete_mass_plateau_hold_steps=1,
+                dig_complete_departed_hold_steps=1,
+                dump_committed_hold_steps=1,
+                dump_committed_stable_window_steps=4,
+                dump_committed_outside_range_tol_m=0.03,
+                dump_committed_relative_x_range_tol_m=0.06,
+                dump_committed_relative_z_range_tol_m=0.04,
+            )
+        )
+        action = np.zeros(4, dtype=np.float32)
+        qpos = np.asarray([0.5, 0.6, 0.5, 0.6], dtype=np.float32)
+
+        def env(
+            *,
+            mass: float,
+            dig_distance: float,
+            depth: float,
+            outside: float = 9.0,
+            relative_x: float = 9.0,
+            relative_z: float = 9.0,
+            height: float = 0.0,
+        ) -> np.ndarray:
+            state = np.zeros(64, dtype=np.float32)
+            state[ENV_STATE_MASS_IN_BUCKET_IDX] = float(mass)
+            state[ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX] = float(dig_distance)
+            state[ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX] = float(depth)
+            state[ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX] = float(outside)
+            state[ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX] = float(relative_x)
+            state[ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX] = float(relative_z)
+            state[ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX] = float(height)
+            state[ENV_STATE_DUMP_CLEARANCE_OK_IDX] = 1.0
+            return state
+
+        detector.update(
+            env_state=env(mass=0.0, dig_distance=0.04, depth=0.03),
+            action=action,
+            qpos=qpos,
+        )
+        detector.update(
+            env_state=env(mass=30.0, dig_distance=0.12, depth=0.0),
+            action=action,
+            qpos=qpos,
+        )
+        detector.update(
+            env_state=env(mass=30.0, dig_distance=0.12, depth=0.0),
+            action=action,
+            qpos=qpos,
+        )
+
+        for relative_x in (0.50, 0.58, 0.66, 0.74):
+            event = detector.update(
+                env_state=env(
+                    mass=30.0,
+                    dig_distance=0.30,
+                    depth=0.0,
+                    outside=0.20,
+                    relative_x=relative_x,
+                    relative_z=1.20,
+                    height=0.70,
+                ),
+                action=action,
+                qpos=qpos,
+            )
+            self.assertFalse(event.dump_committed_start)
+
+        committed_seen = False
+        for _ in range(4):
+            committed = detector.update(
+                env_state=env(
+                    mass=30.0,
+                    dig_distance=0.30,
+                    depth=0.0,
+                    outside=0.19,
+                    relative_x=0.74,
+                    relative_z=1.20,
+                    height=0.70,
+                ),
+                action=action,
+                qpos=qpos,
+            )
+            committed_seen = committed_seen or bool(committed.dump_committed_start)
+
+        self.assertTrue(committed_seen)
 
     def test_build_boundary_detector_accepts_boundary_profile_config(self) -> None:
         detector = build_boundary_detector_from_config(

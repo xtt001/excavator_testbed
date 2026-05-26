@@ -438,6 +438,7 @@ class ACTAdapter(Policy):
                 "dig_cut_tokens",
                 "dig_depth_profile_tokens_v1",
                 "return_target_tokens",
+                "return_relocate_tokens_v1",
                 "return_start_envelope_tokens_v1",
                 "goal_tokens",
             }:
@@ -446,7 +447,12 @@ class ACTAdapter(Policy):
         return None
 
     def _low_dim_key_dim(self, key: str) -> int:
-        if key in {"dig_cut_tokens", "return_target_tokens", "goal_tokens"}:
+        if key in {
+            "dig_cut_tokens",
+            "return_target_tokens",
+            "return_relocate_tokens_v1",
+            "goal_tokens",
+        }:
             return 10
         if key == "dig_depth_profile_tokens_v1":
             return int(DIG_DEPTH_PROFILE_TOKEN_DIM)

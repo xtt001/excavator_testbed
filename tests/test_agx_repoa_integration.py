@@ -854,6 +854,182 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
             self.assertEqual(manifest["n_rollouts"], 1)
             self.assertEqual(len(manifest["rollouts"]), 1)
 
+    def test_eval_suite_can_keep_planner_debug_out_of_backend_camera(self) -> None:
+        class FakePolicy:
+            def reset(self) -> None:
+                pass
+
+            def predict(self, _obs) -> np.ndarray:
+                return np.zeros(4, dtype=np.float32)
+
+            def debug_state(self) -> dict[str, object]:
+                return {
+                    "dig_cut_planner_mode": "operator_prior_coverage",
+                    "skill_name": "dig",
+                    "primitive_cycle_index": 0,
+                    "dig_cut_tokens": [0.0] * 10,
+                }
+
+        class FakeTimeStep:
+            def __init__(self, observation, reward: float, info: dict[str, object]) -> None:
+                self.observation = observation
+                self.reward = reward
+                self.info = info
+
+        class FakeEnv:
+            dt = 0.02
+
+            def __init__(self) -> None:
+                self.step_kwargs: list[dict[str, object]] = []
+
+            def reset(self, seed=None):
+                return FakeTimeStep(
+                    observation={
+                        "qpos": np.zeros(4, dtype=np.float32),
+                        "qvel": np.zeros(4, dtype=np.float32),
+                        "images": {},
+                        "env_state": np.zeros(64, dtype=np.float32),
+                        "step_id": 0,
+                        "sim_time_ns": 0,
+                    },
+                    reward=0.0,
+                    info={},
+                )
+
+            def step(self, action, **kwargs):
+                self.step_kwargs.append(dict(kwargs))
+                return FakeTimeStep(
+                    observation={
+                        "qpos": np.zeros(4, dtype=np.float32),
+                        "qvel": np.zeros(4, dtype=np.float32),
+                        "images": {},
+                        "env_state": np.zeros(64, dtype=np.float32),
+                        "step_id": len(self.step_kwargs),
+                        "sim_time_ns": len(self.step_kwargs) * 20_000_000,
+                    },
+                    reward=0.0,
+                    info={
+                        "reward_phase": "idle",
+                        "task_success": False,
+                        "task_step_successes": [],
+                        "task_step_failures": [],
+                        "task_metrics": {},
+                        "warnings": [],
+                    },
+                )
+
+            def close(self) -> None:
+                pass
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = FakeEnv()
+            suite = EvalSuite(
+                policy=FakePolicy(),
+                task_name="agx_excavation_teleop",
+                num_rollouts=1,
+                save_video=False,
+                results_dir=Path(tmpdir) / "results",
+                save_rollout_logs=True,
+                rollout_log_dir=Path(tmpdir) / "results" / "rollouts",
+                send_planner_debug_to_backend=False,
+            )
+            suite.task_def = replace(suite.task_def, episode_len=1)
+            suite._make_env = lambda _task: env
+
+            suite.run()
+
+            self.assertEqual(env.step_kwargs, [{}])
+            jsonl_path = Path(tmpdir) / "results" / "rollouts" / "rollout_000.jsonl"
+            with open(jsonl_path) as f:
+                row = json.loads(next(f))
+            self.assertEqual(row["dig_cut_planner_mode"], "operator_prior_coverage")
+
+    def test_eval_suite_sends_planner_debug_to_backend_by_default(self) -> None:
+        class FakePolicy:
+            def reset(self) -> None:
+                pass
+
+            def predict(self, _obs) -> np.ndarray:
+                return np.zeros(4, dtype=np.float32)
+
+            def debug_state(self) -> dict[str, object]:
+                return {
+                    "dig_cut_planner_mode": "operator_prior_coverage",
+                    "skill_name": "dig",
+                    "primitive_cycle_index": 0,
+                    "dig_cut_tokens": [0.0] * 10,
+                }
+
+        class FakeTimeStep:
+            def __init__(self, observation, reward: float, info: dict[str, object]) -> None:
+                self.observation = observation
+                self.reward = reward
+                self.info = info
+
+        class FakeEnv:
+            dt = 0.02
+
+            def __init__(self) -> None:
+                self.step_kwargs: list[dict[str, object]] = []
+
+            def reset(self, seed=None):
+                return FakeTimeStep(
+                    observation={
+                        "qpos": np.zeros(4, dtype=np.float32),
+                        "qvel": np.zeros(4, dtype=np.float32),
+                        "images": {},
+                        "env_state": np.zeros(64, dtype=np.float32),
+                        "step_id": 0,
+                        "sim_time_ns": 0,
+                    },
+                    reward=0.0,
+                    info={},
+                )
+
+            def step(self, action, **kwargs):
+                self.step_kwargs.append(dict(kwargs))
+                return FakeTimeStep(
+                    observation={
+                        "qpos": np.zeros(4, dtype=np.float32),
+                        "qvel": np.zeros(4, dtype=np.float32),
+                        "images": {},
+                        "env_state": np.zeros(64, dtype=np.float32),
+                        "step_id": len(self.step_kwargs),
+                        "sim_time_ns": len(self.step_kwargs) * 20_000_000,
+                    },
+                    reward=0.0,
+                    info={
+                        "reward_phase": "idle",
+                        "task_success": False,
+                        "task_step_successes": [],
+                        "task_step_failures": [],
+                        "task_metrics": {},
+                        "warnings": [],
+                    },
+                )
+
+            def close(self) -> None:
+                pass
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = FakeEnv()
+            suite = EvalSuite(
+                policy=FakePolicy(),
+                task_name="agx_excavation_teleop",
+                num_rollouts=1,
+                save_video=False,
+                results_dir=Path(tmpdir) / "results",
+                save_rollout_logs=False,
+            )
+            suite.task_def = replace(suite.task_def, episode_len=1)
+            suite._make_env = lambda _task: env
+
+            suite.run()
+
+            self.assertEqual(len(env.step_kwargs), 1)
+            self.assertIn("planner_debug_json", env.step_kwargs[0])
+            self.assertIn("operator_prior_coverage", env.step_kwargs[0]["planner_debug_json"])
+
     def test_eval_suite_reports_continuity_metrics(self) -> None:
         class FakePolicy:
             def reset(self) -> None:

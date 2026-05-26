@@ -83,7 +83,7 @@ Schema v1.1 layout (add-only on top of v1.0)
 │   │                                      bucket_dump_area_relative_x_m,
 │   │                                      bucket_dump_area_relative_z_m,
 │   │                                      bucket_dump_area_footprint_outside_distance_m,
-│   │                                      dig_area_geometry_available,
+│   │                                      bucket_dig_area_cell_in_bounds_mask,
 │   │                                      dig_area_long_axis,
 │   │                                      dig_area_grid_long_count,
 │   │                                      dig_area_grid_short_count,
@@ -129,6 +129,8 @@ Optional Repo A `/v2` extension group (still schema_version="1.1")
 │   ├── dig_cut_tokens       (T, 10) float32 optional operator-first dig target
 │   ├── dig_depth_profile_tokens_v1 (T, 12) float32 optional V2.4.5 dig depth/profile target
 │   ├── return_target_tokens (T, 10) float32 optional next dig cut target
+│   ├── return_relocate_tokens_v1 (T, 10) float32 derived loader view, not stored:
+│   │   return_target_tokens with depth/payload masked for return relocation
 │   ├── return_start_envelope_tokens_v1 (T, 18) float32 optional next dig start envelope
 │   ├── return_start_envelope_valid_mask (T, 18) uint8 optional envelope validity
 │   ├── dig_outcome_targets  (T, 10) float32 optional V2.4 hindsight outcome
@@ -369,7 +371,9 @@ ENV_STATE_DUMP_CLEARANCE_OK_IDX = 12
 ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX = 13
 ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX = 14
 ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX = 15
-ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX = 16
+ENV_STATE_BUCKET_DIG_AREA_CELL_IN_BOUNDS_MASK_IDX = 16
+# Legacy alias: the value is a bucket-in-cell mask, not global DigArea geometry.
+ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX = ENV_STATE_BUCKET_DIG_AREA_CELL_IN_BOUNDS_MASK_IDX
 ENV_STATE_DIG_AREA_LONG_AXIS_IDX = 17
 ENV_STATE_DIG_AREA_GRID_LONG_COUNT_IDX = 18
 ENV_STATE_DIG_AREA_GRID_SHORT_COUNT_IDX = 19
@@ -394,7 +398,9 @@ ENV_STATE_BUCKET_MASS_DELTA_IDX = 57
 ENV_STATE_DEPOSITED_MASS_IN_DUMP_AREA_IDX = 58
 ENV_STATE_OFFTARGET_DEPOSITED_MASS_IDX = 59
 ENV_STATE_TARGET_GEOMETRY_AVAILABLE_IDX = 60
-ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX = 61
+ENV_STATE_BUCKET_DIG_AREA_PENETRATION_CONTACT_MASK_IDX = 61
+# Legacy alias: the value is penetration/contact readiness, not a raw touch sensor.
+ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX = ENV_STATE_BUCKET_DIG_AREA_PENETRATION_CONTACT_MASK_IDX
 ENV_STATE_BUCKET_CONTACT_DUMP_AREA_MASK_IDX = 62
 ENV_STATE_HARD_COLLISION_COUNT_IDX = 63
 ENV_STATE_V2_2_DIM = 64
@@ -416,7 +422,7 @@ ENV_STATE_ORDER_V2_2 = (
     "bucket_dump_area_relative_x_m",
     "bucket_dump_area_relative_z_m",
     "bucket_dump_area_footprint_outside_distance_m",
-    "dig_area_geometry_available",
+    "bucket_dig_area_cell_in_bounds_mask",
     "dig_area_long_axis",
     "dig_area_grid_long_count",
     "dig_area_grid_short_count",
@@ -461,7 +467,7 @@ ENV_STATE_ORDER_V2_2 = (
     "deposited_mass_in_dump_area_kg",
     "offtarget_deposited_mass_kg",
     "target_geometry_available",
-    "bucket_contact_dig_area_mask",
+    "bucket_dig_area_penetration_contact_mask",
     "bucket_contact_dump_area_mask",
     "hard_collision_count",
 )

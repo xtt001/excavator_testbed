@@ -59,7 +59,7 @@ DIAGNOSTIC_ENV_STATE_FIELDS = {
     30: "bucket_tip_dig_area_z_m",
     31: "bucket_depth_below_local_surface_m",
     57: "bucket_mass_delta_kg",
-    61: "bucket_contact_dig_area_mask",
+    61: "bucket_dig_area_penetration_contact_mask",
     62: "bucket_contact_dump_area_mask",
     63: "hard_collision_count",
 }
@@ -500,8 +500,8 @@ def _write_step_diagnostic_if_needed(
     if _env_value(env_after, "target_hard_collision_count") > _env_value(env_before, "target_hard_collision_count"):
         reasons.append("target_hard_collision")
     if (
-        _env_value(env_before, "bucket_contact_dig_area_mask") > 0.0
-        or _env_value(env_after, "bucket_contact_dig_area_mask") > 0.0
+        _env_value(env_before, "bucket_dig_area_penetration_contact_mask") > 0.0
+        or _env_value(env_after, "bucket_dig_area_penetration_contact_mask") > 0.0
         or _env_value(env_before, "bucket_contact_dump_area_mask") > 0.0
         or _env_value(env_after, "bucket_contact_dump_area_mask") > 0.0
     ):

@@ -18,6 +18,7 @@ eval:
   stream_rollout_logs: true
   rollout_log_dir: runs/eval/yulong_v2_4_5_qc6_cell_weighted_30cycle_probe_20260522/results/rollouts
   record_hdf5: false
+  send_planner_debug_to_backend: false
   step_log_interval: 100
   target_cycle_gate: 30
   target_cycle_gate_terminal_hold_steps: 1
@@ -114,7 +115,7 @@ policy:
     hold_token_until_skill_exit: true
     token_source_prefix: conditioned_return
   pre_dig_align:
-    enabled: true
+    enabled: false
     first_dig_only: true
     controlled_dims:
     - 1
@@ -143,6 +144,14 @@ policy:
     hold_steps: 3
     max_steps: 340
     max_entry_error_m: 0.35
+    entry_intent_controlled_dims:
+    - 1
+    - 0
+    - 0
+    - 0
+    surface_guard_enabled: true
+    surface_guard_max_penetration_m: 0.005
+    surface_guard_handoff_entry_error_m: 0.35
     first_dig_entry_close_handoff: true
     first_dig_entry_close_handoff_qvel_abs_max: 0.15
     timeout_accept_entry_error_m: 0.45
@@ -257,7 +266,7 @@ policy:
     dump_ready_require_over_footprint: true
     dump_ready_require_clearance: false
     dump_ready_position_mode: footprint_or_dump_area_relative
-    dump_ready_max_dump_area_footprint_outside_distance_m: 0.45
+    dump_ready_max_dump_area_footprint_outside_distance_m: 0.25
     dump_ready_min_dump_area_relative_x_m: 0.0
     dump_ready_max_dump_area_relative_x_m: 1.2
     dump_ready_min_dump_area_relative_z_m: 1.0
@@ -295,12 +304,17 @@ boundary:
   dig_complete_departed_hold_steps: 3
   dump_committed_min_bucket_mass_kg: 15.0
   dump_committed_min_height_above_rim_m: 0.45
-  dump_committed_max_outside_distance_m: 0.45
-  dump_committed_min_relative_x_m: -0.4
-  dump_committed_max_relative_x_m: 2.1
-  dump_committed_min_relative_z_m: 0.3
-  dump_committed_max_relative_z_m: 2.3
+  dump_committed_max_outside_distance_m: 0.25
+  dump_committed_min_relative_x_m: -0.2
+  dump_committed_max_relative_x_m: 1.9
+  dump_committed_min_relative_z_m: 0.45
+  dump_committed_max_relative_z_m: 2.1
   dump_committed_require_clearance: false
   dump_committed_hold_steps: 3
+  dump_committed_stable_window_steps: 8
+  dump_committed_outside_range_tol_m: 0.06
+  dump_committed_relative_x_range_tol_m: 0.16
+  dump_committed_relative_z_range_tol_m: 0.10
+  release_onset_max_outside_distance_m: 0.45
   release_onset_min_bucket_mass_drop_kg: 0.5
   release_onset_min_deposit_gain_kg: 0.5

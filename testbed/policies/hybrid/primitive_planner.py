@@ -122,6 +122,8 @@ class CoverageCorridorState:
     last_effective_deposit_delta_kg: float = 0.0
     last_remaining_depth_m: float = float("nan")
     last_reason: str = ""
+    state_exemplar_id: str = ""
+    state_exemplar_distance: float = float("nan")
 
 
 @register_policy("primitive_planner_act")
@@ -395,6 +397,19 @@ class PrimitivePlannerACTPolicy(Policy):
         self.dig_cut_prior_path = str(self.dig_cut_planner_cfg.get("prior_path", ""))
         self.dig_cut_prior = self._load_dig_cut_prior(self.dig_cut_prior_path)
         self.dig_cut_prior_id = str(self.dig_cut_prior.get("prior_id", ""))
+        return_start_envelope_cfg = dict(
+            self.dig_cut_planner_cfg.get("return_start_envelope", {}) or {}
+        )
+        self.return_start_envelope_use_cell_prior = bool(
+            return_start_envelope_cfg.get("use_cell_prior", False)
+        )
+        self.return_start_envelope_min_source_count = max(
+            1, int(return_start_envelope_cfg.get("min_source_count", 1))
+        )
+        self.return_start_envelope_min_source_fraction = max(
+            0.0,
+            float(return_start_envelope_cfg.get("min_source_fraction", 0.0)),
+        )
         dig_depth_profile_cfg = dict(
             self.dig_cut_planner_cfg.get("dig_depth_profile", {}) or {}
         )
@@ -478,6 +493,42 @@ class PrimitivePlannerACTPolicy(Policy):
         self.coverage_cell_confidence_weight = float(
             coverage_cfg.get("cell_confidence_weight", 0.75)
         )
+        state_exemplar_cfg = dict(
+            coverage_cfg.get("state_conditioned_exemplars", {}) or {}
+        )
+        self.coverage_state_exemplars_enabled = bool(
+            state_exemplar_cfg.get("enabled", False)
+        )
+        self.coverage_state_exemplar_path = str(
+            state_exemplar_cfg.get(
+                "path",
+                self.dig_cut_prior.get("coverage_state_exemplars_path", ""),
+            )
+        )
+        self.coverage_state_exemplar_k = max(
+            1, int(state_exemplar_cfg.get("k", 5))
+        )
+        self.coverage_state_exemplar_removed_depth_scale_m = max(
+            1.0e-6,
+            float(state_exemplar_cfg.get("removed_depth_scale_m", 0.12)),
+        )
+        self.coverage_state_exemplar_target_cell_weight = max(
+            0.0,
+            float(state_exemplar_cfg.get("target_cell_weight", 2.0)),
+        )
+        self.coverage_state_exemplar_score_weight = float(
+            state_exemplar_cfg.get("score_weight", 0.75)
+        )
+        self.coverage_state_exemplar_temperature = max(
+            1.0e-6,
+            float(state_exemplar_cfg.get("temperature", 0.35)),
+        )
+        self.coverage_state_exemplar_skip_rejected = bool(
+            state_exemplar_cfg.get("skip_rejected", True)
+        )
+        self.coverage_state_exemplars_by_cell = (
+            self._load_coverage_state_exemplars()
+        )
         self.coverage_first_dig_strategy = str(
             coverage_cfg.get("first_dig_strategy", "coverage_score")
         ).strip().lower()
@@ -531,6 +582,9 @@ class PrimitivePlannerACTPolicy(Policy):
         self.pre_dig_align_enabled = bool(self.pre_dig_align_cfg.get("enabled", False))
         self.pre_dig_align_first_dig_only = bool(
             self.pre_dig_align_cfg.get("first_dig_only", False)
+        )
+        self.pre_dig_align_replan_after_failed_dig = bool(
+            self.pre_dig_align_cfg.get("replan_after_failed_dig", False)
         )
         self.pre_dig_align_kp = float(self.pre_dig_align_cfg.get("kp", 2.0))
         self.pre_dig_align_kd = float(self.pre_dig_align_cfg.get("kd", 0.25))
@@ -592,6 +646,37 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         self.pre_dig_align_start_envelope_max_entry_error_m = float(
             self.pre_dig_align_cfg.get("start_envelope_max_entry_error_m", 0.65)
+        )
+        raw_entry_intent_dims = self.pre_dig_align_cfg.get(
+            "entry_intent_controlled_dims"
+        )
+        self.pre_dig_align_entry_intent_controlled_dims = (
+            None
+            if raw_entry_intent_dims is None
+            else (
+                np.asarray(raw_entry_intent_dims, dtype=np.float32).reshape(
+                    self.action_dim
+                )
+                > 0.5
+            )
+        )
+        self.pre_dig_align_entry_intent_handoff_enabled = bool(
+            self.pre_dig_align_cfg.get(
+                "entry_intent_handoff_enabled",
+                self.pre_dig_align_entry_intent_controlled_dims is not None,
+            )
+        )
+        self.pre_dig_align_surface_guard_enabled = bool(
+            self.pre_dig_align_cfg.get("surface_guard_enabled", False)
+        )
+        self.pre_dig_align_surface_guard_max_penetration_m = float(
+            self.pre_dig_align_cfg.get("surface_guard_max_penetration_m", 0.005)
+        )
+        self.pre_dig_align_surface_guard_handoff_entry_error_m = self._optional_float(
+            self.pre_dig_align_cfg.get("surface_guard_handoff_entry_error_m")
+        )
+        self.pre_dig_align_surface_guard_use_contact_fallback = bool(
+            self.pre_dig_align_cfg.get("surface_guard_use_contact_fallback", True)
         )
         self.pre_dig_align_start_qpos_min = self._align_vector(
             self.pre_dig_align_cfg.get(
@@ -701,6 +786,11 @@ class PrimitivePlannerACTPolicy(Policy):
         self._pre_dig_align_entry_error_m = float("nan")
         self._pre_dig_align_start_envelope_ready = False
         self._pre_dig_align_entry_close_handoff_ready = False
+        self._pre_dig_align_entry_intent_handoff_ready = False
+        self._pre_dig_align_timeout_handoff_reason = ""
+        self._pre_dig_align_surface_depth_m = float("nan")
+        self._pre_dig_align_surface_guard_triggered = False
+        self._pre_dig_align_surface_guard_count = 0
         self._dig_step_count = 0
         self._dig_best_mass_kg = 0.0
         self._dig_mass_plateau_count = 0
@@ -728,6 +818,11 @@ class PrimitivePlannerACTPolicy(Policy):
         self._dig_depth_profile_fallback_reason = ""
         self._return_target_tokens = np.zeros(RETURN_TARGET_TOKEN_DIM, dtype=np.float32)
         self._return_target_token_injected = False
+        self._return_relocate_tokens = np.zeros(
+            RETURN_TARGET_TOKEN_DIM,
+            dtype=np.float32,
+        )
+        self._return_relocate_token_injected = False
         self._return_start_envelope_tokens = np.zeros(
             RETURN_START_ENVELOPE_TOKEN_DIM,
             dtype=np.float32,
@@ -747,6 +842,9 @@ class PrimitivePlannerACTPolicy(Policy):
         self._pending_dig_cut_corridor_id = -1
         self._pending_dig_cut_raw_fields: dict[str, float | int] | None = None
         self._pending_dig_cut_tokens: np.ndarray | None = None
+        self._pending_dig_depth_profile_tokens: np.ndarray | None = None
+        self._pending_dig_state_exemplar_ids: list[str] = []
+        self._pending_dig_state_exemplar_distance = float("nan")
         self._cell_entry_seen_cell_id = -1
         self._cell_entry_trace: list[dict[str, Any]] = []
         self._dig_cut_planned_cycle_id = -1
@@ -765,6 +863,10 @@ class PrimitivePlannerACTPolicy(Policy):
         self._coverage_terminal_stop_requested = False
         self._coverage_terminal_stop_reason = ""
         self._coverage_candidate_scores: list[dict[str, float | int | str]] = []
+        self._coverage_active_state_exemplar_ids: list[str] = []
+        self._coverage_rejected_state_exemplar_ids: set[str] = set()
+        self._coverage_active_state_exemplar_distance = float("nan")
+        self._coverage_active_state_exemplar_profile_token: np.ndarray | None = None
         self._debug_state = self._make_debug_state(
             transition_timeout=False,
             transition_completed=False,
@@ -870,6 +972,14 @@ class PrimitivePlannerACTPolicy(Policy):
             "return_target_fallback_reason": str(
                 self._return_target_fallback_reason
             ),
+            "return_relocate_token_injected": bool(
+                self._return_relocate_token_injected
+            ),
+            "return_relocate_token_dim": int(RETURN_TARGET_TOKEN_DIM),
+            "return_relocate_token_source": str(self._return_target_token_source),
+            "return_relocate_tokens": (
+                self._return_relocate_tokens.astype(float).tolist()
+            ),
             "return_start_envelope_token_injected": bool(
                 self._return_start_envelope_token_injected
             ),
@@ -923,6 +1033,15 @@ class PrimitivePlannerACTPolicy(Policy):
             "coverage_exit_z_m": float(self._coverage_active_value("exit_z_m")),
             "coverage_cell_id": int(self._coverage_active_cell_id()),
             "coverage_corridor_score": float(self._coverage_active_corridor_score()),
+            "coverage_state_exemplar_enabled": bool(
+                self.coverage_state_exemplars_enabled
+            ),
+            "coverage_state_exemplar_ids": list(
+                self._coverage_active_state_exemplar_ids
+            ),
+            "coverage_state_exemplar_distance": float(
+                self._coverage_active_state_exemplar_distance
+            ),
             "coverage_depleted_count": int(self._coverage_depleted_count()),
             "coverage_last_payload_gain_kg": float(
                 self._coverage_last_payload_gain_kg
@@ -1027,6 +1146,29 @@ class PrimitivePlannerACTPolicy(Policy):
             "pre_dig_align_first_dig_only": bool(
                 self.pre_dig_align_first_dig_only
             ),
+            "pre_dig_align_replan_after_failed_dig": bool(
+                self.pre_dig_align_replan_after_failed_dig
+            ),
+            "pre_dig_align_entry_intent_controlled_dims": (
+                None
+                if self.pre_dig_align_entry_intent_controlled_dims is None
+                else [
+                    int(value)
+                    for value in self.pre_dig_align_entry_intent_controlled_dims.tolist()
+                ]
+            ),
+            "pre_dig_align_surface_guard_enabled": bool(
+                self.pre_dig_align_surface_guard_enabled
+            ),
+            "pre_dig_align_surface_depth_m": float(
+                self._pre_dig_align_surface_depth_m
+            ),
+            "pre_dig_align_surface_guard_triggered": bool(
+                self._pre_dig_align_surface_guard_triggered
+            ),
+            "pre_dig_align_surface_guard_count": int(
+                self._pre_dig_align_surface_guard_count
+            ),
             "pre_dig_align_active_for_next_dig": bool(
                 self._should_pre_dig_align_before_dig()
             ),
@@ -1046,6 +1188,12 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             "pre_dig_align_entry_close_handoff_ready": bool(
                 self._pre_dig_align_entry_close_handoff_ready
+            ),
+            "pre_dig_align_entry_intent_handoff_enabled": bool(
+                self.pre_dig_align_entry_intent_handoff_enabled
+            ),
+            "pre_dig_align_entry_intent_handoff_ready": bool(
+                self._pre_dig_align_entry_intent_handoff_ready
             ),
             "pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max": float(
                 np.nan
@@ -1143,6 +1291,15 @@ class PrimitivePlannerACTPolicy(Policy):
             "pre_dig_align_first_dig_only": int(
                 self.pre_dig_align_first_dig_only
             ),
+            "pre_dig_align_replan_after_failed_dig": int(
+                self.pre_dig_align_replan_after_failed_dig
+            ),
+            "pre_dig_align_surface_guard_enabled": int(
+                self.pre_dig_align_surface_guard_enabled
+            ),
+            "pre_dig_align_surface_guard_count": int(
+                self._pre_dig_align_surface_guard_count
+            ),
             "pre_dig_align_timeout_count": int(self._pre_dig_align_timeout_count),
             "pre_dig_align_completed_count": int(self._pre_dig_align_completed_count),
             "pre_dig_align_replan_count": int(self._pre_dig_align_replan_count),
@@ -1156,7 +1313,7 @@ class PrimitivePlannerACTPolicy(Policy):
             "dig_cut_token_contract_version": DIG_CUT_TOKEN_CONTRACT,
             "dig_cut_token_contract": (
                 "entry_x,entry_z,exit_x,exit_z,dir_x,dir_z,"
-                "length,actual_removed_depth_delta,payload,valid"
+                "length,cut_depth_semantic,payload,valid"
             ),
             "dig_cut_planner_mode": str(self.dig_cut_planner_mode),
             "dig_cut_prior_id": str(self.dig_cut_prior_id),
@@ -1164,7 +1321,7 @@ class PrimitivePlannerACTPolicy(Policy):
             "return_target_token_contract_version": DIG_CUT_TOKEN_CONTRACT,
             "return_target_token_contract": (
                 "next entry_x,entry_z,exit_x,exit_z,dir_x,dir_z,"
-                "length,actual_removed_depth_delta,payload,valid"
+                "length,cut_depth_semantic,payload,valid"
             ),
             "return_start_envelope_token_contract_version": "return_start_envelope_tokens_v1",
             "return_start_envelope_token_contract": (
@@ -1212,13 +1369,31 @@ class PrimitivePlannerACTPolicy(Policy):
             return
 
         if self._skill_name == PRE_DIG_ALIGN_SKILL_NAME:
-            if self._pre_dig_align_ready(obs):
+            if self._pre_dig_align_surface_guard_triggered_for_state(obs):
+                self._pre_dig_align_surface_guard_count += 1
+                self._pre_dig_align_hold_count = 0
+                if self._pre_dig_align_surface_guard_can_handoff(obs):
+                    self._pre_dig_align_completed_count += 1
+                    self._set_skill("dig", "pre_dig_align_to_dig_surface_guard")
+                else:
+                    self._reject_active_coverage_corridor(
+                        obs,
+                        reason="pre_align_surface_penetration_entry_gap",
+                    )
+                    self._restart_dig_with_new_cut(
+                        "pre_dig_align_to_dig_surface_guard_replan"
+                    )
+            elif self._pre_dig_align_ready(obs):
                 self._pre_dig_align_completed_count += 1
                 self._set_skill("dig", "pre_dig_align_to_dig_ready")
             elif self._pre_dig_align_step_count >= self.pre_dig_align_max_steps:
                 self._pre_dig_align_timeout_count += 1
                 if self._pre_dig_align_timeout_can_handoff(obs):
-                    self._set_skill("dig", "pre_dig_align_to_dig_timeout_close_enough")
+                    reason = (
+                        self._pre_dig_align_timeout_handoff_reason
+                        or "pre_dig_align_to_dig_timeout_close_enough"
+                    )
+                    self._set_skill("dig", reason)
                 else:
                     self._reject_active_coverage_corridor(
                         obs,
@@ -1235,14 +1410,9 @@ class PrimitivePlannerACTPolicy(Policy):
                     obs,
                     reason="exit_overshoot_low_payload",
                 )
-                if self._should_pre_dig_align_before_dig():
-                    self._restart_pre_dig_align(
-                        "dig_to_pre_dig_align_exit_overshoot_low_payload"
-                    )
-                else:
-                    self._restart_dig_with_new_cut(
-                        "dig_retry_exit_overshoot_low_payload"
-                    )
+                self._restart_after_failed_dig(
+                    "exit_overshoot_low_payload",
+                )
                 return
             if self._dig_bad_replan_ready(obs):
                 self._dig_bad_replan_count += 1
@@ -1250,12 +1420,7 @@ class PrimitivePlannerACTPolicy(Policy):
                     obs,
                     reason="bad_dig_low_payload",
                 )
-                if self._should_pre_dig_align_before_dig():
-                    self._restart_pre_dig_align(
-                        "dig_to_pre_dig_align_bad_dig_low_payload"
-                    )
-                else:
-                    self._restart_dig_with_new_cut("dig_retry_bad_dig_low_payload")
+                self._restart_after_failed_dig("bad_dig_low_payload")
                 return
             if self._dig_complete_boundary_low_payload(obs, boundary_event):
                 self._dig_bad_replan_count += 1
@@ -1263,14 +1428,7 @@ class PrimitivePlannerACTPolicy(Policy):
                     obs,
                     reason="dig_complete_low_current_payload",
                 )
-                if self._should_pre_dig_align_before_dig():
-                    self._restart_pre_dig_align(
-                        "dig_to_pre_dig_align_complete_low_payload"
-                    )
-                else:
-                    self._restart_dig_with_new_cut(
-                        "dig_retry_complete_low_payload"
-                    )
+                self._restart_after_failed_dig("complete_low_payload")
                 return
             if self._dig_to_carry_ready(obs=obs, boundary_event=boundary_event):
                 self._complete_cell_entry_dig(obs)
@@ -1425,6 +1583,9 @@ class PrimitivePlannerACTPolicy(Policy):
             self._pre_dig_align_step_count = 0
             self._pre_dig_align_hold_count = 0
             self._pre_dig_align_entry_close_handoff_ready = False
+            self._pre_dig_align_entry_intent_handoff_ready = False
+            self._pre_dig_align_timeout_handoff_reason = ""
+            self._pre_dig_align_surface_guard_triggered = False
         elif skill_name == "dig":
             self._return_next_dig_event_seen = False
             self._dump_ready_hold_count = 0
@@ -1443,6 +1604,9 @@ class PrimitivePlannerACTPolicy(Policy):
         self._pre_dig_align_step_count = 0
         self._pre_dig_align_hold_count = 0
         self._pre_dig_align_replan_count += 1
+        self._pre_dig_align_entry_intent_handoff_ready = False
+        self._pre_dig_align_timeout_handoff_reason = ""
+        self._pre_dig_align_surface_guard_triggered = False
         self._dig_step_count = 0
         self._dig_best_mass_kg = 0.0
         self._dig_mass_plateau_count = 0
@@ -1450,6 +1614,7 @@ class PrimitivePlannerACTPolicy(Policy):
         self._coverage_current_payload_gain_kg = 0.0
         self._coverage_active_corridor_id = -1
         self._return_next_dig_event_seen = False
+        self._invalidate_pending_dig_cut_plan()
         self._clear_dig_cut_plan()
 
     def _try_replan_pre_dig_align_handoff(self, obs: dict) -> bool:
@@ -1459,6 +1624,7 @@ class PrimitivePlannerACTPolicy(Policy):
         }:
             return False
         self._coverage_active_corridor_id = -1
+        self._invalidate_pending_dig_cut_plan()
         self._clear_dig_cut_plan()
         try:
             token, raw_fields, source, fallback_reason = (
@@ -1493,7 +1659,17 @@ class PrimitivePlannerACTPolicy(Policy):
         self._dig_to_carry_reason = ""
         self._coverage_current_payload_gain_kg = 0.0
         self._coverage_active_corridor_id = -1
+        self._invalidate_pending_dig_cut_plan()
         self._clear_dig_cut_plan()
+
+    def _restart_after_failed_dig(self, reason: str) -> None:
+        if (
+            self._should_pre_dig_align_before_dig()
+            or self._should_pre_dig_align_after_failed_dig()
+        ):
+            self._restart_pre_dig_align(f"dig_to_pre_dig_align_{reason}")
+            return
+        self._restart_dig_with_new_cut(f"dig_retry_{reason}")
 
     def _should_pre_dig_align_before_dig(self) -> bool:
         if not self.pre_dig_align_enabled:
@@ -1501,6 +1677,12 @@ class PrimitivePlannerACTPolicy(Policy):
         if not self.pre_dig_align_first_dig_only:
             return True
         return int(getattr(self, "_cycle_index", 0)) == 0
+
+    def _should_pre_dig_align_after_failed_dig(self) -> bool:
+        return bool(
+            self.pre_dig_align_enabled
+            and self.pre_dig_align_replan_after_failed_dig
+        )
 
     def _should_end_bootstrap(self, *, obs: dict, boundary_event: Any | None) -> bool:
         if self._scripted_bootstrap_enabled():
@@ -1575,6 +1757,43 @@ class PrimitivePlannerACTPolicy(Policy):
             action_signs=self.scripted_bootstrap_action_signs,
         )
 
+    def _pre_dig_align_surface_guard_triggered_for_state(self, obs: dict) -> bool:
+        self._pre_dig_align_surface_depth_m = float(
+            self._bucket_depth_below_local_surface(obs)
+        )
+        self._pre_dig_align_surface_guard_triggered = False
+        if not (
+            self.pre_dig_align_enabled
+            and self.pre_dig_align_surface_guard_enabled
+        ):
+            return False
+        if (
+            np.isfinite(self._pre_dig_align_surface_depth_m)
+            and self._pre_dig_align_surface_depth_m
+            > self.pre_dig_align_surface_guard_max_penetration_m
+        ):
+            self._pre_dig_align_surface_guard_triggered = True
+            return True
+        if (
+            not np.isfinite(self._pre_dig_align_surface_depth_m)
+            and self.pre_dig_align_surface_guard_use_contact_fallback
+            and self._bucket_dig_area_contact_mask(obs)
+        ):
+            self._pre_dig_align_surface_guard_triggered = True
+            return True
+        return False
+
+    def _pre_dig_align_surface_guard_can_handoff(self, obs: dict) -> bool:
+        self._ensure_dig_cut_plan_for_cycle(obs)
+        threshold = self.pre_dig_align_surface_guard_handoff_entry_error_m
+        if threshold is None:
+            threshold = self.pre_dig_align_max_entry_error_m
+        if threshold is None:
+            threshold = self.pre_dig_align_start_envelope_max_entry_error_m
+        entry_error = self._pre_dig_align_entry_error(obs)
+        self._pre_dig_align_entry_error_m = float(entry_error)
+        return self._pre_dig_align_entry_close(entry_error, threshold=threshold)
+
     def _pre_dig_align_ready(self, obs: dict) -> bool:
         if not self.pre_dig_align_enabled:
             return True
@@ -1624,7 +1843,16 @@ class PrimitivePlannerACTPolicy(Policy):
         self._pre_dig_align_entry_close_handoff_ready = bool(
             entry_close_handoff_ready
         )
-        if entry_close_handoff_ready or (
+        entry_intent_handoff_ready = (
+            self._pre_dig_align_entry_intent_handoff_ready_for_state(
+                qpos_close=qpos_close,
+                qvel_small=qvel_small,
+            )
+        )
+        self._pre_dig_align_entry_intent_handoff_ready = bool(
+            entry_intent_handoff_ready
+        )
+        if entry_close_handoff_ready or entry_intent_handoff_ready or (
             qpos_close and qvel_small and (entry_close or start_envelope_ready)
         ):
             self._pre_dig_align_hold_count += 1
@@ -1671,11 +1899,36 @@ class PrimitivePlannerACTPolicy(Policy):
             return True
         return bool(np.all(np.abs(qvel[controlled]) <= float(qvel_abs_max)))
 
+    def _pre_dig_align_entry_intent_mode_enabled(self) -> bool:
+        if not self.pre_dig_align_entry_intent_handoff_enabled:
+            return False
+        intent_dims = self.pre_dig_align_entry_intent_controlled_dims
+        if intent_dims is None:
+            return False
+        controlled = self.pre_dig_align_controlled_dims
+        return bool(np.any(controlled & intent_dims) and np.any(controlled & ~intent_dims))
+
+    def _pre_dig_align_entry_intent_handoff_ready_for_state(
+        self,
+        *,
+        qpos_close: bool,
+        qvel_small: bool,
+    ) -> bool:
+        return bool(
+            self._pre_dig_align_entry_intent_mode_enabled()
+            and qpos_close
+            and qvel_small
+        )
+
     def _pre_dig_align_timeout_can_handoff(self, obs: dict) -> bool:
+        self._pre_dig_align_timeout_handoff_reason = ""
         threshold = self.pre_dig_align_timeout_accept_entry_error_m
         if threshold is None:
             threshold = self.pre_dig_align_max_entry_error_m
         if threshold is None:
+            self._pre_dig_align_timeout_handoff_reason = (
+                "pre_dig_align_to_dig_timeout_no_entry_gate"
+            )
             return True
         entry_error = self._pre_dig_align_entry_error(obs)
         self._pre_dig_align_entry_error_m = float(entry_error)
@@ -1689,6 +1942,19 @@ class PrimitivePlannerACTPolicy(Policy):
             entry_error=entry_error,
         )
         self._pre_dig_align_start_envelope_ready = bool(start_envelope_ready)
+        if self._pre_dig_align_entry_intent_mode_enabled():
+            self._pre_dig_align_entry_intent_handoff_ready = True
+            self._pre_dig_align_timeout_handoff_reason = (
+                "pre_dig_align_to_dig_timeout_intent_aligned"
+            )
+            return True
+        if (
+            self._pre_dig_align_entry_close(entry_error, threshold=threshold)
+            or start_envelope_ready
+        ):
+            self._pre_dig_align_timeout_handoff_reason = (
+                "pre_dig_align_to_dig_timeout_close_enough"
+            )
         return bool(
             self._pre_dig_align_entry_close(entry_error, threshold=threshold)
             or start_envelope_ready
@@ -1725,6 +1991,8 @@ class PrimitivePlannerACTPolicy(Policy):
         if not self.pre_dig_align_enabled:
             raise RuntimeError("pre-dig align action requested while disabled.")
         self._pre_dig_align_step_count += 1
+        if self._pre_dig_align_surface_guard_triggered_for_state(obs):
+            return np.zeros(self.action_dim, dtype=np.float32)
         target_qpos = self._pre_dig_align_target(obs)
         qpos = np.asarray(
             obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
@@ -1784,6 +2052,14 @@ class PrimitivePlannerACTPolicy(Policy):
             obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
             dtype=np.float32,
         ).reshape(self.action_dim)
+        if self.pre_dig_align_entry_intent_controlled_dims is not None:
+            # Pre-align may consume the planned entry point, but not the dig-depth
+            # posture implied by a full dig-start token.
+            hold_dims = (
+                self.pre_dig_align_controlled_dims
+                & ~self.pre_dig_align_entry_intent_controlled_dims
+            )
+            target[hold_dims] = qpos[hold_dims]
         target[~self.pre_dig_align_controlled_dims] = qpos[
             ~self.pre_dig_align_controlled_dims
         ]
@@ -1871,6 +2147,11 @@ class PrimitivePlannerACTPolicy(Policy):
             self._dig_to_carry_reason = "dig_complete_boundary"
             return True
         if self._semantic_boundary_profile_active():
+            if self._semantic_dig_to_carry_liveness_ready(
+                obs=obs,
+                boundary_event=boundary_event,
+            ):
+                return True
             self._dig_to_carry_reason = ""
             return False
         metrics = dict(getattr(boundary_event, "metrics", {}) or {})
@@ -1904,6 +2185,36 @@ class PrimitivePlannerACTPolicy(Policy):
             self._dig_to_carry_reason = "mass_plateau"
             return True
         self._dig_to_carry_reason = ""
+        return False
+
+    def _semantic_dig_to_carry_liveness_ready(
+        self,
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> bool:
+        metrics = dict(getattr(boundary_event, "metrics", {}) or {})
+        mass = float(metrics.get("mass_in_bucket_kg", self._mass_in_bucket(obs)))
+        dig_distance = float(
+            metrics.get("min_distance_to_dig_area_m", self._min_distance_to_dig_area(obs))
+        )
+        distance_ready = bool(
+            dig_distance >= self.dig_to_carry_min_distance_to_dig_area_m
+        )
+        if not distance_ready:
+            return False
+        if mass >= self.dig_to_carry_target_bucket_mass_kg:
+            self._dig_to_carry_reason = "semantic_material_loaded"
+            return True
+        if (
+            self.dig_to_carry_mass_plateau_enabled
+            and self._dig_step_count >= self.dig_to_carry_mass_plateau_min_steps
+            and mass >= self.dig_to_carry_mass_plateau_min_bucket_mass_kg
+            and self._dig_mass_plateau_count
+            >= self.dig_to_carry_mass_plateau_hold_steps
+        ):
+            self._dig_to_carry_reason = "semantic_material_plateau"
+            return True
         return False
 
     def _dig_complete_boundary_low_payload(
@@ -2491,6 +2802,29 @@ class PrimitivePlannerACTPolicy(Policy):
             else 0.0
         )
 
+    def _bucket_depth_below_local_surface(self, obs: dict) -> float:
+        task_metrics = dict(obs.get("task_metrics", {}) or {})
+        if "bucket_depth_below_local_surface_m" in task_metrics:
+            return float(task_metrics["bucket_depth_below_local_surface_m"])
+        env_state = self._env_state(obs)
+        return (
+            float(env_state[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX])
+            if len(env_state) > ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX
+            else float("nan")
+        )
+
+    def _bucket_dig_area_contact_mask(self, obs: dict) -> bool:
+        task_metrics = dict(obs.get("task_metrics", {}) or {})
+        if "bucket_dig_area_penetration_contact_mask" in task_metrics:
+            return bool(float(task_metrics["bucket_dig_area_penetration_contact_mask"]) > 0.5)
+        if "bucket_contact_dig_area_mask" in task_metrics:
+            return bool(float(task_metrics["bucket_contact_dig_area_mask"]) > 0.5)
+        env_state = self._env_state(obs)
+        return bool(
+            len(env_state) > ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX
+            and float(env_state[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX]) > 0.5
+        )
+
     def _env_state(self, obs: dict) -> np.ndarray:
         return np.asarray(
             obs.get("env_state", np.zeros(13, dtype=np.float32)),
@@ -2502,12 +2836,14 @@ class PrimitivePlannerACTPolicy(Policy):
         self._dig_cut_token_injected = False
         self._dig_depth_profile_token_injected = False
         self._return_target_token_injected = False
+        self._return_relocate_token_injected = False
         self._return_start_envelope_token_injected = False
         goal_tokens = self._goal_tokens()
         cell_entry_tokens = self._cell_entry_tokens_for_obs(obs)
         dig_cut_tokens = self._dig_cut_tokens_for_obs(obs)
         dig_depth_profile_tokens = self._dig_depth_profile_tokens_for_obs(obs)
         return_target_tokens = self._return_target_tokens_for_obs(obs)
+        return_relocate_tokens = self._return_relocate_tokens_for_obs(obs)
         return_start_envelope_tokens = (
             self._return_start_envelope_tokens_for_obs(obs)
         )
@@ -2517,6 +2853,7 @@ class PrimitivePlannerACTPolicy(Policy):
             and dig_cut_tokens is None
             and dig_depth_profile_tokens is None
             and return_target_tokens is None
+            and return_relocate_tokens is None
             and return_start_envelope_tokens is None
         ):
             return obs
@@ -2535,6 +2872,9 @@ class PrimitivePlannerACTPolicy(Policy):
         if return_target_tokens is not None:
             policy_obs["return_target_tokens"] = return_target_tokens
             self._return_target_token_injected = True
+        if return_relocate_tokens is not None:
+            policy_obs["return_relocate_tokens_v1"] = return_relocate_tokens
+            self._return_relocate_token_injected = True
         if return_start_envelope_tokens is not None:
             policy_obs["return_start_envelope_tokens_v1"] = return_start_envelope_tokens
             self._return_start_envelope_token_injected = True
@@ -2545,6 +2885,16 @@ class PrimitivePlannerACTPolicy(Policy):
             return None
         self._ensure_return_target_plan_for_cycle(obs)
         return self._return_target_tokens.copy()
+
+    def _return_relocate_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
+        if self._skill_name != "return" or not self.return_target_planner_enabled:
+            return None
+        self._ensure_return_target_plan_for_cycle(obs)
+        token = self._return_target_tokens.astype(np.float32).copy()
+        token[7] = 0.0
+        token[8] = 0.0
+        self._return_relocate_tokens = token
+        return token
 
     def _return_start_envelope_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
         if self._skill_name != "return" or not self.return_target_planner_enabled:
@@ -2579,6 +2929,19 @@ class PrimitivePlannerACTPolicy(Policy):
             self._pending_dig_cut_raw_fields = dict(raw_fields)
             self._pending_dig_cut_tokens = token.astype(np.float32)
             self._pending_dig_cut_corridor_id = int(corridor_id)
+            self._pending_dig_depth_profile_tokens = (
+                None
+                if self._coverage_active_state_exemplar_profile_token is None
+                else self._coverage_active_state_exemplar_profile_token.astype(
+                    np.float32
+                ).copy()
+            )
+            self._pending_dig_state_exemplar_ids = list(
+                self._coverage_active_state_exemplar_ids
+            )
+            self._pending_dig_state_exemplar_distance = float(
+                self._coverage_active_state_exemplar_distance
+            )
         except Exception as exc:
             self._return_target_tokens = np.zeros(
                 RETURN_TARGET_TOKEN_DIM,
@@ -2592,6 +2955,7 @@ class PrimitivePlannerACTPolicy(Policy):
             self._return_start_envelope_token_source = "fallback_zero"
             self._return_target_fallback_reason = str(exc)
             self._return_target_planned_cycle_id = int(self._cycle_index)
+            self._invalidate_pending_dig_cut_plan()
 
     def _dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
         if not self.dig_cut_planner_enabled:
@@ -2634,6 +2998,14 @@ class PrimitivePlannerACTPolicy(Policy):
     def _build_dig_depth_profile_tokens_for_obs(self, obs: dict) -> np.ndarray:
         cell_id = self._dig_depth_profile_cell_id(obs)
         if self.dig_depth_profile_source == "prior_profile":
+            if self._coverage_active_state_exemplar_profile_token is not None:
+                self._dig_depth_profile_token_source = (
+                    "qc6_state_conditioned_exemplar"
+                )
+                self._dig_depth_profile_fallback_reason = ""
+                return self._coverage_active_state_exemplar_profile_token.astype(
+                    np.float32
+                )
             token, source, reason = self._dig_depth_profile_prior_token(cell_id)
             if token is not None:
                 self._dig_depth_profile_token_source = source
@@ -2745,7 +3117,7 @@ class PrimitivePlannerACTPolicy(Policy):
             return dict(self._pending_dig_cut_raw_fields)
         corridor = self._coverage_active_corridor()
         if corridor is not None:
-            return self._coverage_raw_fields(corridor)
+            return self._coverage_raw_fields(corridor, obs=obs)
         raw_fields = self._raw_fields_from_live_pose(obs)
         token = np.asarray(self._dig_cut_tokens, dtype=np.float32).reshape(-1)
         if token.size >= DIG_CUT_TOKEN_DIM:
@@ -2804,6 +3176,17 @@ class PrimitivePlannerACTPolicy(Policy):
             )
             self._coverage_current_payload_gain_kg = 0.0
             self._coverage_cycle_start_deposit_kg = self._deposited_mass(obs)
+            self._coverage_active_state_exemplar_ids = list(
+                self._pending_dig_state_exemplar_ids
+            )
+            self._coverage_active_state_exemplar_distance = float(
+                self._pending_dig_state_exemplar_distance
+            )
+            self._coverage_active_state_exemplar_profile_token = (
+                None
+                if self._pending_dig_depth_profile_tokens is None
+                else self._pending_dig_depth_profile_tokens.astype(np.float32).copy()
+            )
             return np.asarray(self._pending_dig_cut_tokens, dtype=np.float32).copy()
         if self.dig_cut_planner_mode == "conservative_pose":
             self._dig_cut_token_source = "conservative_pose"
@@ -2905,7 +3288,11 @@ class PrimitivePlannerACTPolicy(Policy):
         }:
             corridor = self._select_next_coverage_corridor(obs)
             self._coverage_active_corridor_id = int(corridor.corridor_id)
-            raw_fields = self._coverage_raw_fields(corridor)
+            raw_fields = self._coverage_raw_fields(
+                corridor,
+                obs=obs,
+                update_state=True,
+            )
             return (
                 _build_dig_cut_token(raw_fields),
                 raw_fields,
@@ -2968,6 +3355,11 @@ class PrimitivePlannerACTPolicy(Policy):
             if token is not None:
                 if cell_id is not None and source == "cell":
                     return token, f"qc6_return_start_envelope_cell_{int(cell_id)}"
+                if cell_id is not None and source == "global_low_support_cell":
+                    return (
+                        token,
+                        f"qc6_return_start_envelope_global_low_support_cell_{int(cell_id)}",
+                    )
                 return token, "qc6_return_start_envelope_global"
         return None, "missing_return_start_envelope_prior"
 
@@ -2980,13 +3372,33 @@ class PrimitivePlannerACTPolicy(Policy):
             return None, "missing_dig_cut_prior"
         cell_id = self._return_start_envelope_cell_id(corridor_id)
         cells = self.dig_cut_prior.get("return_start_envelope_cells", [])
-        if cell_id is not None and isinstance(cells, list):
+        if (
+            self.return_start_envelope_use_cell_prior
+            and cell_id is not None
+            and isinstance(cells, list)
+        ):
             for cell in cells:
                 cell_dict = dict(cell)
                 if int(cell_dict.get("cell_id", -999999)) == int(cell_id):
-                    return cell_dict, "cell"
+                    source_count = int(cell_dict.get("source_count", 0) or 0)
+                    source_fraction = float(
+                        cell_dict.get("source_fraction", 0.0) or 0.0
+                    )
+                    if (
+                        source_count >= self.return_start_envelope_min_source_count
+                        and source_fraction
+                        >= self.return_start_envelope_min_source_fraction
+                    ):
+                        return cell_dict, "cell"
+                    break
         global_prior = self.dig_cut_prior.get("return_start_envelope_global")
         if isinstance(global_prior, dict):
+            if (
+                self.return_start_envelope_use_cell_prior
+                and cell_id is not None
+                and isinstance(cells, list)
+            ):
+                return dict(global_prior), "global_low_support_cell"
             return dict(global_prior), "global"
         return None, "missing_return_start_envelope_prior"
 
@@ -3171,7 +3583,11 @@ class PrimitivePlannerACTPolicy(Policy):
         corridor = self._select_next_coverage_corridor(obs)
         self._coverage_current_payload_gain_kg = 0.0
         self._coverage_cycle_start_deposit_kg = self._deposited_mass(obs)
-        raw_fields = self._coverage_raw_fields(corridor)
+        raw_fields = self._coverage_raw_fields(
+            corridor,
+            obs=obs,
+            update_state=True,
+        )
         return (
             _build_dig_cut_token(raw_fields),
             raw_fields,
@@ -3380,7 +3796,14 @@ class PrimitivePlannerACTPolicy(Policy):
             rare_first_dig_gated_out = self._coverage_rare_first_dig_gated_out(
                 corridor
             )
-            score = self._coverage_score(corridor, remaining_depth) + first_dig_bonus
+            state_exemplar_distance = self._coverage_state_exemplar_distance(
+                corridor,
+                obs,
+            )
+            score = (
+                self._coverage_score(corridor, remaining_depth, obs=obs)
+                + first_dig_bonus
+            )
             if first_dig_gated_out or rare_first_dig_gated_out:
                 score = -1.0e12 + float(score)
             corridor.score = float(score)
@@ -3396,6 +3819,10 @@ class PrimitivePlannerACTPolicy(Policy):
                     "source_count": int(corridor.source_count),
                     "source_fraction": float(corridor.source_fraction),
                     "cell_confidence": float(self._coverage_cell_confidence(corridor)),
+                    "state_exemplar_distance": float(state_exemplar_distance),
+                    "state_exemplar_id": str(
+                        self._coverage_state_exemplar_id(corridor, obs)
+                    ),
                     "belief_coverage": float(corridor.belief_coverage),
                     "remaining_depth_m": float(remaining_depth),
                     "first_dig_bonus": float(first_dig_bonus),
@@ -3482,6 +3909,8 @@ class PrimitivePlannerACTPolicy(Policy):
         self,
         corridor: CoverageCorridorState,
         remaining_depth_m: float,
+        *,
+        obs: dict | None = None,
     ) -> float:
         if corridor.depleted:
             return -1.0e9 - float(corridor.attempts)
@@ -3533,6 +3962,13 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         attempt_penalty = self.coverage_attempt_penalty * float(corridor.attempts)
         cell_confidence = self._coverage_cell_confidence(corridor)
+        state_exemplar_penalty = 0.0
+        if obs is not None and self.coverage_state_exemplars_enabled:
+            distance = self._coverage_state_exemplar_distance(corridor, obs)
+            if np.isfinite(distance):
+                state_exemplar_penalty = (
+                    self.coverage_state_exemplar_score_weight * float(distance)
+                )
         return (
             2.0 * remaining_ratio
             + productivity
@@ -3541,6 +3977,7 @@ class PrimitivePlannerACTPolicy(Policy):
             - repeat_penalty
             - row_penalty
             - attempt_penalty
+            - state_exemplar_penalty
             - 0.5 * float(corridor.low_productivity_streak)
         )
 
@@ -3664,7 +4101,7 @@ class PrimitivePlannerACTPolicy(Policy):
     ) -> np.ndarray:
         if not self._coverage_first_dig_active() or not self.pre_dig_align_enabled:
             return np.zeros(self.action_dim, dtype=np.float32)
-        raw_fields = self._coverage_raw_fields(corridor)
+        raw_fields = self._coverage_raw_fields(corridor, obs=obs)
         token = _build_dig_cut_token(raw_fields)
         target = self._pre_dig_align_target_from_token(
             token=token,
@@ -3712,8 +4149,20 @@ class PrimitivePlannerACTPolicy(Policy):
         return float(np.linalg.norm(delta))
 
     def _coverage_raw_fields(
-        self, corridor: CoverageCorridorState
+        self,
+        corridor: CoverageCorridorState,
+        *,
+        obs: dict | None = None,
+        update_state: bool = False,
     ) -> dict[str, float | int]:
+        if obs is not None:
+            state_plan = self._coverage_state_conditioned_plan(
+                corridor,
+                obs,
+                update_state=update_state,
+            )
+            if state_plan is not None:
+                return dict(state_plan["raw_fields"])
         fields = dict(self.dig_cut_prior.get("fields", {}))
         entry_x = self._clamp_to_prior(fields, "entry_x_m", corridor.entry_x_m)
         entry_z = self._clamp_to_prior(fields, "entry_z_m", corridor.entry_z_m)
@@ -3799,6 +4248,274 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             "operator_cut_valid": 1,
         }
+
+    def _load_coverage_state_exemplars(self) -> dict[int, list[dict[str, Any]]]:
+        if not self.coverage_state_exemplars_enabled:
+            return {}
+        raw_path = str(self.coverage_state_exemplar_path).strip()
+        if not raw_path:
+            raise ValueError(
+                "coverage.state_conditioned_exemplars.enabled=true requires a path."
+            )
+        path = Path(raw_path).expanduser()
+        if not path.is_absolute() and not path.exists():
+            prior_path = Path(self.dig_cut_prior_path).expanduser()
+            if not prior_path.is_absolute():
+                prior_path = Path.cwd() / prior_path
+            path = prior_path.parent / path
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        raw_exemplars = payload.get("exemplars", [])
+        if not isinstance(raw_exemplars, list):
+            raise ValueError(
+                f"coverage state exemplar file {path} must contain an exemplars list."
+            )
+        exemplars_by_cell: dict[int, list[dict[str, Any]]] = {
+            cell_id: [] for cell_id in range(6)
+        }
+        for item in raw_exemplars:
+            if not isinstance(item, dict):
+                continue
+            try:
+                cell_id = int(item.get("cell_id", -1))
+            except (TypeError, ValueError):
+                continue
+            if cell_id < 0 or cell_id > 5:
+                continue
+            raw_fields = item.get("raw_fields", {})
+            if not isinstance(raw_fields, dict):
+                continue
+            exemplar = dict(item)
+            exemplar["raw_fields"] = dict(raw_fields)
+            exemplar["exemplar_id"] = str(
+                exemplar.get("exemplar_id", f"cell_{cell_id}_{len(exemplars_by_cell[cell_id])}")
+            )
+            exemplars_by_cell[cell_id].append(exemplar)
+        if not any(exemplars_by_cell.values()):
+            raise ValueError(f"coverage state exemplar file {path} has no usable rows.")
+        return exemplars_by_cell
+
+    def _coverage_state_conditioned_plan(
+        self,
+        corridor: CoverageCorridorState,
+        obs: dict,
+        *,
+        update_state: bool,
+    ) -> dict[str, object] | None:
+        if not self.coverage_state_exemplars_enabled:
+            return None
+        cell_id = self._coverage_cell_id(corridor)
+        exemplars = list(self.coverage_state_exemplars_by_cell.get(cell_id, []))
+        if not exemplars:
+            return None
+        removed_grid = self._coverage_removed_depth_grid(obs)
+        if removed_grid is None:
+            return None
+        scored: list[tuple[float, dict[str, Any]]] = []
+        for exemplar in exemplars:
+            distance = self._coverage_state_exemplar_distance_for_grid(
+                removed_grid,
+                exemplar,
+                cell_id=cell_id,
+            )
+            if np.isfinite(distance):
+                scored.append((float(distance), exemplar))
+        if not scored:
+            return None
+        scored.sort(key=lambda item: item[0])
+        if self.coverage_state_exemplar_skip_rejected:
+            filtered = [
+                item
+                for item in scored
+                if str(item[1].get("exemplar_id", ""))
+                not in self._coverage_rejected_state_exemplar_ids
+            ]
+            if filtered:
+                scored = filtered
+        selected = scored[: self.coverage_state_exemplar_k]
+        raw_fields = self._weighted_state_exemplar_raw_fields(selected)
+        profile_token = self._weighted_state_exemplar_profile_token(selected)
+        exemplar_ids = [str(exemplar.get("exemplar_id", "")) for _, exemplar in selected]
+        best_distance = float(selected[0][0])
+        if update_state:
+            self._coverage_active_state_exemplar_ids = exemplar_ids
+            self._coverage_active_state_exemplar_distance = best_distance
+            self._coverage_active_state_exemplar_profile_token = (
+                None
+                if profile_token is None
+                else profile_token.astype(np.float32).copy()
+            )
+            corridor.state_exemplar_id = ",".join(exemplar_ids)
+            corridor.state_exemplar_distance = best_distance
+        return {
+            "raw_fields": raw_fields,
+            "profile_token": profile_token,
+            "exemplar_ids": exemplar_ids,
+            "distance": best_distance,
+        }
+
+    def _coverage_state_exemplar_distance(
+        self,
+        corridor: CoverageCorridorState,
+        obs: dict,
+    ) -> float:
+        state_plan = self._coverage_state_conditioned_plan(
+            corridor,
+            obs,
+            update_state=False,
+        )
+        if state_plan is None:
+            return float("nan")
+        return float(state_plan["distance"])
+
+    def _coverage_state_exemplar_id(
+        self,
+        corridor: CoverageCorridorState,
+        obs: dict,
+    ) -> str:
+        state_plan = self._coverage_state_conditioned_plan(
+            corridor,
+            obs,
+            update_state=False,
+        )
+        if state_plan is None:
+            return ""
+        exemplar_ids = state_plan.get("exemplar_ids", [])
+        if not exemplar_ids:
+            return ""
+        return str(exemplar_ids[0])
+
+    def _coverage_removed_depth_grid(self, obs: dict) -> np.ndarray | None:
+        env_state = self._env_state(obs)
+        start = ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX
+        end = start + 6
+        if len(env_state) < end:
+            return None
+        grid = np.asarray(env_state[start:end], dtype=np.float32).reshape(6)
+        if not np.all(np.isfinite(grid)):
+            return None
+        return np.maximum(grid, 0.0).astype(np.float32)
+
+    def _coverage_state_exemplar_distance_for_grid(
+        self,
+        removed_grid: np.ndarray,
+        exemplar: dict[str, Any],
+        *,
+        cell_id: int,
+    ) -> float:
+        exemplar_grid = np.asarray(
+            exemplar.get("start_removed_depth_grid_m", []),
+            dtype=np.float32,
+        ).reshape(-1)
+        if exemplar_grid.size < 6 or not np.all(np.isfinite(exemplar_grid[:6])):
+            return float("nan")
+        scale = float(self.coverage_state_exemplar_removed_depth_scale_m)
+        diff = (
+            np.asarray(removed_grid, dtype=np.float32).reshape(6)
+            - exemplar_grid[:6].astype(np.float32)
+        ) / scale
+        cell_index = int(max(0, min(5, cell_id)))
+        diff[cell_index] *= float(self.coverage_state_exemplar_target_cell_weight)
+        return float(np.sqrt(np.mean(np.square(diff.astype(np.float32)))))
+
+    def _state_exemplar_weights(
+        self,
+        selected: list[tuple[float, dict[str, Any]]],
+    ) -> np.ndarray:
+        distances = np.asarray([distance for distance, _ in selected], dtype=np.float32)
+        if distances.size == 0:
+            return np.zeros(0, dtype=np.float32)
+        if not np.all(np.isfinite(distances)):
+            return np.full(distances.shape, 1.0 / float(distances.size), dtype=np.float32)
+        shifted = distances - float(np.min(distances))
+        weights = np.exp(-shifted / float(self.coverage_state_exemplar_temperature))
+        weight_sum = float(np.sum(weights))
+        if not np.isfinite(weight_sum) or weight_sum <= 1.0e-8:
+            return np.full(distances.shape, 1.0 / float(distances.size), dtype=np.float32)
+        return (weights / weight_sum).astype(np.float32)
+
+    def _weighted_state_exemplar_raw_fields(
+        self,
+        selected: list[tuple[float, dict[str, Any]]],
+    ) -> dict[str, float | int]:
+        weights = self._state_exemplar_weights(selected)
+
+        def weighted(name: str, default: float = 0.0) -> float:
+            values: list[float] = []
+            for _, exemplar in selected:
+                raw_fields = dict(exemplar.get("raw_fields", {}) or {})
+                try:
+                    value = float(raw_fields.get(name, default))
+                except (TypeError, ValueError):
+                    value = float(default)
+                values.append(value if np.isfinite(value) else float(default))
+            return float(np.dot(weights, np.asarray(values, dtype=np.float32)))
+
+        entry_x = weighted("operator_entry_x_m")
+        entry_y = weighted("operator_entry_y_m")
+        entry_z = weighted("operator_entry_z_m")
+        exit_x = weighted("operator_exit_x_m")
+        exit_y = weighted("operator_exit_y_m", default=entry_y)
+        exit_z = weighted("operator_exit_z_m")
+        delta_x = exit_x - entry_x
+        delta_y = exit_y - entry_y
+        delta_z = exit_z - entry_z
+        length = float(np.sqrt(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z))
+        if length <= 1.0e-6:
+            dir_x = weighted("operator_cut_direction_x", default=-1.0)
+            dir_y = weighted("operator_cut_direction_y", default=0.0)
+            dir_z = weighted("operator_cut_direction_z", default=0.0)
+            length = weighted("operator_cut_length_m", default=1.0)
+        else:
+            dir_x = delta_x / length
+            dir_y = delta_y / length
+            dir_z = delta_z / length
+        return {
+            "operator_entry_x_m": float(entry_x),
+            "operator_entry_y_m": float(entry_y),
+            "operator_entry_z_m": float(entry_z),
+            "operator_exit_x_m": float(exit_x),
+            "operator_exit_y_m": float(exit_y),
+            "operator_exit_z_m": float(exit_z),
+            "operator_cut_direction_x": float(dir_x),
+            "operator_cut_direction_y": float(dir_y),
+            "operator_cut_direction_z": float(dir_z),
+            "operator_cut_length_m": float(length),
+            "operator_cut_depth_peak_m": weighted("operator_cut_depth_peak_m"),
+            "operator_cut_payload_gain_kg": weighted("operator_cut_payload_gain_kg"),
+            "operator_effective_deposit_delta_kg": weighted(
+                "operator_effective_deposit_delta_kg",
+                default=weighted("operator_cut_payload_gain_kg"),
+            ),
+            "operator_cut_valid": 1,
+        }
+
+    def _weighted_state_exemplar_profile_token(
+        self,
+        selected: list[tuple[float, dict[str, Any]]],
+    ) -> np.ndarray | None:
+        weights = self._state_exemplar_weights(selected)
+        tokens: list[np.ndarray] = []
+        for _, exemplar in selected:
+            if "dig_depth_profile_token" not in exemplar:
+                return None
+            token = np.asarray(
+                exemplar.get("dig_depth_profile_token", []),
+                dtype=np.float32,
+            ).reshape(-1)
+            if token.shape[0] != DIG_DEPTH_PROFILE_TOKEN_DIM:
+                return None
+            if not np.all(np.isfinite(token)):
+                return None
+            tokens.append(token)
+        if not tokens:
+            return None
+        stacked = np.stack(tokens, axis=0)
+        merged = np.sum(stacked * weights.reshape(-1, 1), axis=0)
+        merged[-1] = 1.0
+        return merged.astype(np.float32)
 
     def _coverage_remaining_depth_for_corridor(
         self,
@@ -3936,6 +4653,11 @@ class PrimitivePlannerACTPolicy(Policy):
         corridor = self._coverage_active_corridor()
         if corridor is None:
             return
+        self._coverage_rejected_state_exemplar_ids.update(
+            exemplar_id
+            for exemplar_id in self._coverage_active_state_exemplar_ids
+            if exemplar_id
+        )
         payload_gain = max(
             float(self._coverage_current_payload_gain_kg),
             float(self._dig_best_mass_kg),
@@ -3946,6 +4668,14 @@ class PrimitivePlannerACTPolicy(Policy):
             0.0, self._deposited_mass(obs) - float(self._coverage_cycle_start_deposit_kg)
         )
         remaining_depth = self._coverage_remaining_depth_for_corridor(obs, corridor)
+        if str(reason) == "align_entry_gap_timeout":
+            corridor.last_payload_gain_kg = float(payload_gain)
+            corridor.last_effective_deposit_delta_kg = float(effective_deposit)
+            corridor.last_remaining_depth_m = float(remaining_depth)
+            corridor.last_reason = str(reason)
+            self._coverage_last_payload_gain_kg = float(payload_gain)
+            self._coverage_last_effective_deposit_delta_kg = float(effective_deposit)
+            return
         corridor.attempts += 1
         corridor.low_productivity_streak += 1
         corridor.last_payload_gain_kg = float(payload_gain)
@@ -4064,6 +4794,8 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             "last_remaining_depth_m": float(corridor.last_remaining_depth_m),
             "last_reason": str(corridor.last_reason),
+            "state_exemplar_id": str(corridor.state_exemplar_id),
+            "state_exemplar_distance": float(corridor.state_exemplar_distance),
         }
 
     def _clear_dig_cut_plan(self) -> None:
@@ -4076,6 +4808,18 @@ class PrimitivePlannerACTPolicy(Policy):
         self._dig_cut_token_source = "none"
         self._dig_cut_fallback_reason = ""
         self._dig_cut_token_in_prior_p10_p90 = False
+        self._coverage_active_state_exemplar_ids = []
+        self._coverage_active_state_exemplar_distance = float("nan")
+        self._coverage_active_state_exemplar_profile_token = None
+
+    def _invalidate_pending_dig_cut_plan(self) -> None:
+        self._pending_dig_cut_cycle_id = -1
+        self._pending_dig_cut_corridor_id = -1
+        self._pending_dig_cut_raw_fields = None
+        self._pending_dig_cut_tokens = None
+        self._pending_dig_depth_profile_tokens = None
+        self._pending_dig_state_exemplar_ids = []
+        self._pending_dig_state_exemplar_distance = float("nan")
 
     def _validate_dig_cut_planner_config(self) -> None:
         if not self.dig_cut_planner_enabled:
@@ -4269,7 +5013,7 @@ class PrimitivePlannerACTPolicy(Policy):
             goal=self._cell_entry_goal,
             outcome=outcome,
             current_bucket_pose=self._bucket_dig_area_pose(obs),
-            geometry_available=self._dig_area_geometry_available(obs),
+            geometry_available=self._bucket_dig_area_cell_in_bounds_mask(obs),
         )
         self._cell_entry_tokens = build_cell_entry_tokens(
             grid=self.cell_entry_grid,
@@ -4317,7 +5061,7 @@ class PrimitivePlannerACTPolicy(Policy):
             }
         )
 
-    def _dig_area_geometry_available(self, obs: dict) -> bool:
+    def _bucket_dig_area_cell_in_bounds_mask(self, obs: dict) -> bool:
         env_state = self._env_state(obs)
         return bool(
             len(env_state) > ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX

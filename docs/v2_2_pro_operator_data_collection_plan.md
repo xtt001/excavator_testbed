@@ -167,6 +167,29 @@ boundary 分析的数据。
 - 如果操作失误严重，可以丢弃该 episode 重来；
 - 每个 session 开始先做短 warmup，不进入训练集。
 
+### 覆盖多样性提示
+
+2026-05-19 诊断显示，YuLong pro 数据里专业 cut motion 覆盖了左侧区域，但
+`dig start` / `next entry` 明显集中在中右侧。后续采集仍应保持师傅自然操作，
+不做 live token 或逐 cell 指挥；但 observer 可以在 episode 之间给 task-level
+覆盖提示，让数据包含更多可训练的 start pose 与 cut corridor 多样性。
+
+推荐提示方式：
+
+- 不要求“每铲从某个格子开始”，只要求这一条 episode 的总体清理方向不同；
+- 一条 episode 重点从左向右清理，下一条从右向左清理；
+- 一条 episode 重点从前向后清理，下一条从后向前清理；
+- 允许师傅使用自然的“中右入铲、向左刮削”动作，但也要采集少量左侧或不同
+  `z` 带的有效 dig start；
+- 如果某一区域已经低产，鼓励师傅自然换到另一条 cut corridor，而不是继续反复挖空区；
+- observer 在 `observer_notes` 中记录本条 episode 的覆盖意图，例如
+  `coverage_prompt=left_to_right`、`right_to_left`、`front_to_back`、
+  `back_to_front`、`free_natural`。
+
+这条约束的目的不是让专业师傅按外行规则操作，而是让自然专业操作覆盖更多
+entry / exit / swept-area 组合，便于后续 planner 学会根据当前作业区状态选择更聪明的
+cut corridor。
+
 ## 推荐 episode 设计
 
 ### Episode 单位
@@ -238,12 +261,22 @@ pilot 通过后，第一轮专业数据建议分三批：
 | --- | --- | ---: | --- |
 | calibration / warmup | 调手柄、确认场景、让师傅熟悉仿真 | 5-10 episodes | 默认不进训练 |
 | main natural full-task | 主训练数据，自然连续作业 | 30-50 episodes | 进训练和 relabel |
-| targeted coverage | 补齐稀缺 cell、深度、边界状态 | 10-20 episodes | 进训练，但单独标记 |
+| targeted coverage | 补齐稀缺 dig start、cut corridor、深度、边界状态 | 10-20 episodes | 进训练，但单独标记 |
 
 如果每个 full task 很长，可以先录：
 
 - 15-20 条 full-task；
 - 30-40 条 6-10 scoop subtask。
+
+targeted coverage 不应变成逐铲命令。建议按 episode 轮换覆盖提示：
+
+- `left_to_right`：整体从左侧可达区域开始，逐步清到右侧；
+- `right_to_left`：整体从右侧开始，逐步清到左侧；
+- `front_to_back` / `back_to_front`：补齐不同 `z` 带；
+- `free_natural`：完全自由发挥，用来保持主数据分布不过度人工化。
+
+每个方向至少保留若干条高质量 episode。QC 时同时检查 dig start 覆盖和
+entry->exit swept cut segment 覆盖，不能只看 start point。
 
 ### 场景 reset 分布
 
@@ -317,8 +350,8 @@ dump area：
 事件辅助：
 
 - `target_geometry_available`
-- `dig_area_geometry_available`
-- `bucket_contact_dig_area_mask`
+- `bucket_dig_area_cell_in_bounds_mask`
+- `bucket_dig_area_penetration_contact_mask`
 - `bucket_contact_dump_area_mask`
 - `hard_collision_count`
 - `target_contact_max_normal_force_n`

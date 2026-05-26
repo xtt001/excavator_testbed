@@ -339,6 +339,252 @@ next actual bite point after dig already starts
 
 这是 V2.3.5 的关键教训。
 
+2026-05-19 YuLong operator-first 诊断后的补充：`next_entry_target` 不应只是粗粒度
+`left/middle/right` 区域，也不应是一个必须精确追到的单点。更稳的 contract 是
+**next cut intent + dig-start envelope**：
+
+- `return_target_tokens` 表达下一铲的 entry envelope / start pose prior / planned
+  cut corridor 摘要；
+- return 负责把空斗带到 planner 指定 cut intent 对应的可接管 start region；
+- dig ACT 继续读取 `dig_cut_tokens`，根据当前作业区状态执行 entry->exit swept cut；
+- target 在一个 return window 内 latch，不逐步漂移；
+- planner 可以按当前 `removed_depth/target_depth/valid_mask` 选择 left/middle/right
+  区域或更细 corridor，但喂给 return 的不是离散区域 id，而是该区域对应的
+  next-entry envelope。
+
+2026-05-19 YuLong 2.4 执行更新：当前 Unity `removed_depth` 在这批数据中不可作为
+真实覆盖信号，因此 sweep planner 的第一版默认使用 reconstructed belief，而不是
+直接使用 soil-depth grid。belief 由每轮 planned/actual cut corridor、payload gain、
+effective deposit 与 low-productivity streak 更新；`return_target_tokens` 和
+`dig_cut_tokens` 共用 10D cut-intent contract，但分别在 return/dig 阶段注入。
+本轮重建数据使用 materialized copy root 训练，不把 VDS primitive episode 作为热训练
+入口。没有下一铲目标的 terminal return window 只作为审计/reject 记录，不进入
+conditioned return 训练集。live sweep 评测中，低产 dig 不能无限停留在 dig：
+如果已经有 `15kg` 以上 partial payload 且长时间 plateau，则允许进入 carry；
+如果长时间低于 `15kg`，则把当前 corridor 标为 low-productivity reject 并重新选择
+下一条 cut intent。
+
+2026-05-20 诊断补充：在进一步扩大 planner 覆盖范围前，必须先验证 dig ACT 是否
+真正响应 `dig_cut_tokens`。当前流程先用固定观测替换多组 token 做 sensitivity
+诊断，再用 materialized copy `dig` primitive 重训
+`qpos + qvel + dig_cut_tokens`，最后用同一诊断比较新旧 checkpoint。只有当新 dig
+在训练分布内对 token 有稳定响应时，才继续做更激进的 sweep / shape-conditioned
+planner。
+
+这样既避免 V2.3.5 的动态目标抖动，也允许挖掘动作根据当前未挖区域调整
+swept cut corridor。
+
+2026-05-20 指哪挖哪诊断结论：到这里为止，原计划的阶段性工程链路已经基本走通，
+但它没有交付我们真正想要的能力。
+
+已经完成的部分：
+
+- 64D `env_state`、operator-first relabel、effective deposit、operator cut corridor、
+  `dig_cut_tokens`、`return_target_tokens` 都已能从当前自然 pro raw 数据离线推导；
+- raw -> enriched -> 4 primitive 的 VDS / materialized copy 数据链路已经可用；
+- 四 primitive ACT、conditioned dig、conditioned return 都训练并接入过 live rollout；
+- Unity planner debug / HUD / DigArea 入铲点显示已经用于区分 planner intent 与实际执行；
+- `pre_dig_align` 已作为诊断验证过，并明确不进入长期主线；
+- 5/10/15cycle milestone 证明旧安全 planner + 旧 primitive 组合可以形成可用作业循环；
+- 新 copy-root conditioned dig 做过 token sensitivity 诊断，新旧 checkpoint 对
+  `dig_cut_tokens` 都有反应，但反应幅度接近，不能证明已经学会稳定 command following。
+
+未达到的目标：
+
+- 系统还不能可靠做到“planner 指哪，ACT 就挖哪”；
+- coverage / sweep planner 一旦选择训练分布外或少见 corridor，return / dig / carry
+  很容易出现状态分布偏移；
+- 新 dig checkpoint 在 5cycle live test 中没有立刻解决覆盖问题，反而导致后续
+  `carry -> dump` handoff 漏切：土已经在 carry 阶段有效入箱，但 dump-ready gate 没接住，
+  carry 继续执行并撞墙；
+- 当前 `removed_depth` / actual removal 仍不足以作为真实作业区覆盖事实，planner 只能用
+  payload/deposit 历史 belief，无法真正知道哪里还剩可挖土。
+
+2026-05-20 depth bug 修复优先级：先把 Unity DigArea 3x2 surface/depth telemetry
+修成可靠事实源，再继续扩大 planner 自由度。旧实现主要读取 Unity `TerrainData`
+高度图；YuLong 场景的真实挖掘形变由 AGX `DeformableTerrainBase` native terrain
+驱动，静态/未同步 heightmap 会导致 `removed_depth` 长期接近 0。修正后的 contract 是：
+
+- Unity `DigAreaMeasurement` 使用与 `bucket_depth_below_dig_area_plane_m`
+  相同的 DigArea Box 平面定义：terrain 上表面采样点先转到 DigArea local frame，
+  再用 `max(0, -local_y)` 表示低于该平面的深度；
+- 每个 3x2 cell 采多个 cell 内部点并取平均 surface depth；
+- surface source 优先用从 DigArea 平面上方向下 raycast 到 `DigTerrain`
+  collider 的几何命中点；live AGX deformable terrain native height 和旧 Unity
+  `TerrainData` 只作为兼容 fallback；
+- reset 后首次有效采样写入 baseline；
+- `removed_depth = max(0, current_surface_depth - baseline_surface_depth)`，单位 m，
+  正值表示 DigArea 平面下方被挖深；
+- 质量归因 removal fallback 只允许作为显式 opt-in 诊断代理，默认关闭，不能当作
+  几何真实土面；
+- `actual_removal` 后续要从 dig window 前后 `removed_depth` delta 推导，而不是继续只用
+  first bite bucket cell proxy。
+
+2026-05-21 执行补充：Unity telemetry 修改后不再手动监督 Play Mode。Repo B 新增
+`CodexPlayModeBootstrap` Editor automation；Repo A 新增 `tb-unity-restart-smoke`
+wrapper，固定执行“退出 Play Mode -> 等待编译/domain reload -> 打开 YuLong 主场景 ->
+进入 Play Mode -> 等待 step-ack server listening -> strict `agx_smoke`”。可选
+`--replay-episode/--record-output-dir/--check-removed-depth` 会继续刷新 1-2 条 HDF5，
+并要求 `env_state[:,39:45]` 产生 removed-depth 时间变化，不通过就停止。
+
+同日 swing 误差归因补充：不在 replay/rollout 侧加 guard 掩盖问题，而是在
+`tb-replay` 增加 `--diagnostic-log` JSONL。每个 step 记录 action、source/replay
+qpos/qvel、qpos error、bucket 相对 DigArea 坐标、contact/collision、
+removed-depth grid 和 bucket mass delta；`tb-unity-restart-smoke` 可通过
+`--replay-diagnostic-dir` 给每个刷新 episode 写独立诊断文件。复现误差后先用
+`tb-replay-diagnostics --input <jsonl-or-dir>` 找首个 qpos error/jump 与接触、
+碰撞、surface delta 的时间关系，再回到 Unity/AGX 参数层修真实原因。
+对已确认来自旧原始数据、且修复后无法随机复现的 actuator pose 跳变，replay 刷
+removed-depth 时允许启用 `--realign-on-qpos-error --realign-axis all`：
+在持续 qpos 偏差后通过 Unity `REALIGN_POSE` 把当前仿真 4D qpos 拉回 source，
+再继续生成新的 image/env_state/depth。这个入口只用于保护重新生成的数据一致性，
+不支持事后批量篡改旧 HDF5 qpos；`swing` 单轴模式只作为调试保留。
+replay 写入的 `replay_pose_realign_steps` 是高敏感弃置信号：primitive split 时，
+只要某个完整逻辑 cycle 覆盖 realign step，就把该 cycle 写入 reject summary，
+不进入对应 primitive 训练集。完整逻辑 cycle 指本轮 dig start 到 return
+完成/下一次 qualified dig start 之前的半开窗口；如果 realign 正好落在下一轮
+qualified dig start 帧，只归属下一轮。实际写 `dig/carry/dump` 训练片段时仍只
+裁到 `dump_end_step`，避免 `dump` 吞入 return。覆盖 realign step 的 return
+transition window 也会单独 reject，但同样不包含下一轮 qualified dig start 帧。
+
+标注与重建数据链时沿用过去高 CPU 利用率的两段式脚本风格：先多进程/多线程切 VDS，
+再从 primitive VDS 并行 materialize 带 image 信息的 primitive copy，避免在 relabel、
+primitive build 和 image materialize 阶段串行等待。
+
+同日 token contract 收口：`dig_cut_tokens` / `return_target_tokens` 维度仍是 10D，
+但版本 bump 为 `v2_4_removed_depth_cut_v3`。第 8 维不再表示 bucket peak depth，
+而是本铲 `max(actual_removed_depth_delta_grid)`，按 `0.25m` 归一化；旧 checkpoint
+视为不兼容。operator-first gold tier 和 hindsight valid mask 只接受
+`depth_outcome_source=env_state_removed_depth_delta` 的 cycle，没有可靠 removed-depth 的
+cycle 只能作为 silver/无效 outcome 留作诊断。
+
+2026-05-22 QC 流程补充：第一轮 `0.15m` scale 虽然让 p10/p50/p90 分离，但 depth
+token 饱和率约 `8%`，高于 `<2%` 验收线；`0.22m` 在 gold-only 训练集上仍约
+`2.6%`。用 replay 后 gold dig cycle 统计重估后，真实 removed-depth p10/p50/p90
+约为 `0.046/0.085/0.157m`，因此 scale 改为 `0.25m` 并新增
+`yulong_removed_depth_dig_cut_prior_v3.json`；旧 v1/v2 checkpoint 不进入 live rollout。
+
+新增 `tb-build-v2_4-hindsight-pipeline` 作为这条链路的统一 job runner。它支持从
+raw、relabeled 或 operator-first root 接入，阶段日志固定写到
+`runs/jobs/<job>/logs/*.log`，长任务可用 `--detach` 后 `tail -f` 观察；数据落盘顺序是
+label/operator-first/hindsight VDS -> primitive VDS -> parallel materialized primitive
+copy。正式跑全流程时必须用 `--detach` 后台执行，避免 Cursor 和数据保存/materialize
+同时占用内存。
+primitive VDS 完成后必须先跑 pre-materialize QC：检查 gold depth token 饱和率、
+depth p10/p50/p90 分离、可靠 `env_state_removed_depth_delta` 占比和 return window
+最大长度。QC 不通过时直接停止，不写 image copy、不训练。
+return window 必须与训练 horizon 对齐：V2.4 return ACT 当前 `episode_len=512`，
+所以 pipeline 默认 `--return-max-transition-len 512`。超过该长度的 dump-end 到下一次
+qualified-dig-start gap 多半是长等待、恢复或重新找下一铲，不应作为干净 return
+primitive 训练样本。
+
+失败原因不是“专业师傅没按规则操作”，也不是“需要给师傅更多 live target”。大规模真实
+采集必须尽量保持专业师傅自然操作。真正的问题是：我们把自然数据 hindsight 得到的
+`dig_cut_tokens` 当成了 live command token，但普通 BC/ACT 没有被强制学习“同一观测下，
+不同 token 应该导致不同目标动作”。在自然数据里，token 和当前状态、师傅习惯、上一铲位置
+高度相关；模型可以主要靠图像/qpos/qvel 复现平均专业动作，而把 token 当成弱相关辅助量。
+因此 planner 在 live 时给一个合理但分布少见的 token，模型不一定会按它执行。
+
+这说明原计划需要增加一个新的中间阶段：**outcome-grounded hindsight goal-conditioned
+learning**。它仍然使用自然 pro 数据，不要求师傅按外部 token 操作，但训练时必须把
+“目标 token -> 实际 outcome”变成显式监督，而不是只把 token 拼到 low-dim 输入里。
+
+下一阶段修订：
+
+1. 保持自然采集原则：
+   - 不要求专业师傅挖指定 cell；
+   - 不要求 live overlay 指挥师傅；
+   - raw 数据只记录自然完整作业；
+   - 离线用 hindsight relabel 抽取实际 entry、exit、swept corridor、payload、deposit、
+     handoff pose 和下一次 return target。
+
+2. 升级数据语义：
+   - `dig_cut_tokens` 不再只作为输入 token，还必须有对应的 realized outcome 字段；
+   - 每个 dig 样本记录 commanded/hindsight token、actual entry、actual exit、actual swept
+     segment、payload gain、bucket start/end pose、handoff pose；
+   - 每个 return 样本记录 target next-entry envelope、actual return end pose、entry gap、
+     是否进入 dig 可接管状态；
+   - 每个 carry/dump 样本记录 smooth release onset、first effective deposit、dump ownership
+     start，避免专业连续开斗被错误留在 carry。
+
+3. 训练不再只是 BC：
+   - `dig` 使用 `qpos + qvel + image + dig_cut_tokens` 做 action BC；
+   - 同时增加 outcome 辅助头，预测 entry/exit/payload/handoff pose；
+   - 增加 token consistency loss：模型预测 outcome 必须接近输入 token 所描述的目标；
+   - 增加 contrastive / token-swap 诊断：同一观测替换不同 token，动作和预测 outcome
+     必须发生方向一致的变化；
+   - 如果 token-swap 下动作几乎不变，该 checkpoint 不允许进入 coverage planner live eval。
+
+4. planner 先降级为分布内 intent generator：
+   - 不再把 coverage planner 当成强规则控制器；
+   - planner 只选择训练数据支持的 intent family，并输出分布内 token；
+   - 对未覆盖区域的推进先通过 learned belief / outcome predictor 排序，而不是直接强行
+     选极端 corridor；
+   - token 超出训练支持或 return 起点离 target envelope 太远时，进入 replan / recover，
+     不强交给 dig ACT。
+
+5. primitive ownership 继续收紧：
+   - `carry -> dump` 必须 outcome-first：一旦 bucket 到达 dump footprint/near window 且
+     deposit 开始，就把 ownership 转给 dump；
+   - 不再用过窄 signed x/z window 阻止专业 smooth release；
+   - `dig -> carry` 要以 payload / plateau / handoff pose 共同决定，避免半斗或 bad pose
+     污染 carry；
+   - 所有 ownership failure 都进入 structured attribution，而不是只看 episode success。
+
+6. 下一轮验证顺序：
+   - 先离线做 token-swap + outcome-prediction 验证；
+   - 再做 1-cycle / 3-cycle command-following smoke；
+   - 再回归 5cycle milestone；
+   - 只有 5cycle 不退化，才重新测试 15cycle；
+   - 30cycle 仍只作为 depletion / coverage probe，不作为当前 success 标准。
+
+因此，当前结论是：原计划的 staged layered-control 方向仍然正确，但“conditioned ACT =
+把 token 拼进输入然后做 BC”这个实现假设不够。下一阶段必须让 token 通过 outcome loss、
+counterfactual token-swap 和 ownership outcome gate 变成 ACT 必须遵守的任务条件。
+
+2026-05-20 boundary / label 第一性原理补充：这是后续必须持续处理的设计风险，
+但不阻塞当前 V2.4 hindsight-goal 训练流水线。当前 relabel 和 primitive split 的输出
+必须被视为 **rule-derived weak label**，不是绝对 ground truth。`env_state`、mass、
+deposit、stage event 和 boundary rule 都是强证据，但它们可能提前、滞后、受 physics
+artifact 影响，或者无法表达专业师傅的连续动作语义。后续每次重建训练数据前都应先问：
+“这个窗口的动作因果责任是不是确实属于这个 primitive？”
+
+因此新增一层 boundary audit：
+
+- primitive boundary 不是一个无厚度瞬间，而是可能存在过渡区间；
+- builder 仍输出确定的 `source_start_step` / `source_end_step_exclusive`，但 audit
+  需要记录 `boundary_start_candidate`、`boundary_end_candidate`、`boundary_confidence`、
+  `boundary_sources` 和 `boundary_or_label_uncertain`；
+- 判断依据优先按因果责任：
+  - `dig`：导致 bucket mass 增加和 soil removal 的主要切削动作；
+  - `carry`：保持 payload 并把 bucket 送向 dump area 的 loaded transport；
+  - `dump`：导致有效 deposit 的 release / alignment / post-release 动作；
+  - `return`：回到下一次 dig start envelope 的动作；
+- 如果视觉上已经开始 release 或 deposit，即使旧 official dump_start 还没到，也不应继续把
+  这段动作训练给 carry；
+- 如果视觉上 return 还没进入下一次 dig 可接管姿态，就不应把后续 dig 的失败完全归因给
+  dig policy；
+- 过渡窗口可以丢弃、降权或标记为 uncertain，不能硬塞进某个 primitive 当作干净 gold。
+
+第一版工具入口：
+
+```bash
+tb-audit-primitive-boundaries \
+  --primitive-root data/yulong_v2_4_hindsight_goal_primitives_vds \
+  --output-dir runs/audit/yulong_v2_4_boundary_audit_20260520 \
+  --camera fpv \
+  --pre-steps 100 \
+  --post-steps 100 \
+  --max-videos 24 \
+  --sample top-risk
+```
+
+该工具读取 `window_manifest.json`，从 source episode / VDS 图像中导出边界前后短视频，
+并写 `summary.json`、`boundary_audit.csv`、`selected_boundary_videos.json`。
+视频叠加 primitive、cycle、boundary step、payload/deposit/return gap 和风险 flags。
+这不是最终自动视觉标注器，而是第一层人工可审计证据：先看 label/split 是否视觉上成立，
+再决定修 rule、增加 transition drop window、降权 uncertain 样本，或重建 primitive。
+
 ## Internal Phase / BT Skeleton
 
 当前不建议把控制 ownership 直接拆成更多独立 ACT policy。外层仍保持四 primitive：
@@ -489,7 +735,8 @@ dump_end + post_dump_hold -> next accepted dig start
 每个 return 样本要记录：
 
 - return start pose；
-- next entry target local x/z/depth；
+- next entry envelope local x/z/depth；
+- next cut corridor summary，用于区分同一 entry 下不同 swept-area 意图；
 - next accepted start local x/z/depth；
 - next accepted start cell；
 - target miss / timeout / repeated-cell 标记。
@@ -589,8 +836,8 @@ wrapper；新增字段包括 `cycle_effective_deposit_delta_kg`、`legacy_dump_e
 `/v2/step/dig_cut_tokens`。该 builder 不覆盖旧 `/v2/cycle/deposit_delta_kg`，
 也不修改 immutable raw。
 
-planner 同步采用 operator-first live token：`dig_cut_tokens` 的 10D contract
-保持不变，训练侧无需重训；rollout 侧默认使用
+planner 同步采用 operator-first live token：这一版历史 baseline 的
+`dig_cut_tokens` 10D schema 保持不变，训练侧无需重训；rollout 侧默认使用
 `dig_cut_planner.mode=operator_prior`，读取
 `testbed/configs/planner_priors/yulong_operator_first_dig_cut_prior_v1.json`。该 prior
 来自当前 26 条 YuLong 专业操作 operator-first relabel 数据中的 640 条 gold cycle，
@@ -598,11 +845,104 @@ planner 同步采用 operator-first live token：`dig_cut_tokens` 的 10D contra
 `dig_cut_planner.mode=conservative_pose`，baseline tag 为
 `planner-baseline-conservative-pose-20260516`，用于 A/B 和回溯。
 
+2026-05-19 起，YuLong V2.4 planner 优化在不改 ACT checkpoint、不改
+`dig_cut_tokens` 10D schema 的前提下增加 `operator_prior_coverage` 模式。
+它从现有 64D `env_state` 读取 3x2 DigArea `removed_depth/target_depth/valid_mask`
+和当前 payload/deposit outcome，维护 9 条 operator-prior corridor
+(`entry_x=p10/p50/p90` × `entry_z=p10/p50/p90`) 的 attempts、last payload、
+last effective deposit、low-productivity streak、depleted flag 和 score，并通过
+max-attempt、attempt penalty、recent-selection penalty 以及 recent-row penalty 避免长
+rollout 后段继续挖空区，或在一次低产后继续沿同一 entry-z row 的相邻 corridor 反复挖。
+连续低产、remaining depth 低于阈值或疑似穿模进土时，planner 输出 terminal stop
+reason；30cycle 配置因此是 depletion/probe，不是新的任务成功标准。Repo A 会把压缩后的
+`planner_debug_json` 作为 `STEP_REQ` optional tail 发给 Unity，用 HUD 和 DigArea
+细竖针实时显示 planner 入铲点，方便区分 planner 选点问题、ACT 跟随问题和
+物理伪进土。
+
+2026-05-19 决议：`pre_dig_align` 只保留为诊断/兼容开关，不能作为长期
+layered-control 方案替代 learned transition。2026-05-21 补充：conditioned return
+只覆盖第二铲开始的 `return -> dig` handoff，第一铲没有上一轮 return，因此 V2.4
+conditioned-return / hindsight-goal live eval 允许
+`pre_dig_align.first_dig_only=true` 只在 `bootstrap -> dig` 前做一次友好的 entry
+handoff，并用 `coverage.first_dig_strategy=nearest_entry` 按当前 bucket-tip 到
+候选 entry 的距离选择更容易接上的 corridor；`coverage.first_dig_max_entry_distance_m`
+进一步作为第一铲 reachability gate：只要有专家 corridor 在当前 bucket-tip 阈值内，
+第一铲 planner 就排除更远的候选，避免把 bootstrap 位置强交给远处 green entry。
+如果 replan 后新 entry 已经 close，直接 handoff 给 dig，避免 qpos proxy align 又把
+bucket 推远。2026-05-22 评测暴露出另一层问题：第一铲 handoff 容易把选择
+entry 的任务和大幅调整大小臂的任务混在一起，因此新增
+`coverage.first_dig_max_qpos_delta` / `coverage.first_dig_qpos_delta_weight`：第一铲
+候选除了 entry 距离外，还会检查该 corridor 对应的 pre-dig qpos target 离当前
+qpos 有多远；需要大幅抬臂、收臂或改变 bucket 姿态的候选会被排除或降权。
+同日评测还暴露出第一铲 pre-dig align 用静态 qpos
+target 伺服，实际 bucket-tip 曾进入 entry close window 后又被继续推过 entry。因此新增
+`pre_dig_align.first_dig_entry_close_handoff`：第 0 铲实际 entry close 且受控轴速度低于
+`first_dig_entry_close_handoff_qvel_abs_max` 时，允许 handoff 给 dig，不再等待 qpos
+proxy target 完全 close。但 entry close 不是充分条件，handoff 还必须满足专家
+dig-start qpos envelope；scale025 eval 配置把 first-dig align 的 qpos clamp 收紧到
+dig primitive 起点 qpos 近似 p05/p95，并取消固定 `bucket_target_qpos=0.0`，避免
+把大小臂或铲斗带到不属于正常 dig-start 的姿态。后续铲次仍回到原计划：planner 选择 next entry/corridor，
+conditioned return 学会把空斗回到适合 conditioned dig ACT 接管的 next-entry 状态；
+return 切回 dig 时还要满足
+`return_to_dig_max_entry_error_m`，且 entry close 时 shallow guard 可越过很窄的
+max-depth 上限，防止 return 到位后继续把 bucket 压进土里。
+如果第 0 铲 scripted handoff 仍承担过多抬/收大小臂动作，可以用旧 dig checkpoint
+做 learned first-handoff A/B：`bootstrap_ckpt_path` 指向旧 dig，`bootstrap_low_dim_keys`
+设为 `[qpos, qvel, dig_cut_tokens]`，`bootstrap_end_mode=first_qualified_dig_start`，
+并关闭 `pre_dig_align`；planner 在 bootstrap policy 存在时会复用同一套 dig-cut token，
+让 learned bootstrap 到达 qualified dig start 后直接交给新的 V2.4 dig。
+也可以只替换第 0 铲实际 dig：配置 `first_dig_ckpt_path` 后，planner 在 cycle 0 且尚未
+完成 dump 前使用该 checkpoint，第二铲起恢复普通 V2.4 dig。
+本轮 live eval 还需要显式设置 `dig_to_carry_min_distance_to_dig_area_m=0.0`：
+第一铲 target payload 达标即可交给 carry，不再要求 bucket 先离开 DigArea；否则旧
+first-dig ckpt 会在装满后继续留在 dig，V2.4 dig 也会在峰值后继续漏料。
+
+YuLong V2.4 live layered-control ownership:
+
+| 对象 | 当前 owner | 不应该由谁决定 | 诊断字段 / 显示 | 当前风险与修正方向 |
+|---|---|---|---|---|
+| Dig area 几何与坐标系 | Unity scene + `DigAreaMeasurement` + 64D `env_state` | ACT / planner 不应改变 dig area 本身 | `env_state` bucket DigArea local pose、3x2 removed/target/valid grid | 若 DigArea 坐标方向或深度传感错误，planner 会系统性选错；需要先修 Unity/测量，不应靠 ACT 补偿 |
+| Dig point / corridor | Python `operator_prior_coverage` planner | dig ACT 不应自己决定全局挖哪块 | Unity HUD + DigArea 细竖针；`coverage_corridor_id`、entry/exit、score | planner 只给未挖区域的 intent；若 ACT 没到点，是执行层问题，不应把 planner target rebind 成成功 |
+| Pre-dig pose / entry execution | 第 0 铲使用 nearest-entry first corridor + first-dig reachability gate + entry-close handoff；后续铲使用 planned conditioned `return` policy + entry-error gate | planner 不直接输出完整关节轨迹；dig ACT 不应负责长距离回到目标点 | `return_target_tokens`、`coverage_first_dig_strategy`、`coverage_first_dig_max_entry_distance_m`、`pre_dig_align_first_dig_entry_close_handoff`、`return_to_dig_entry_error_m`、actual bucket-tip marker | 第一铲没有上一轮 return，需选择当前 bucket-tip 附近、可达、专家分布内的 entry，并在实际 entry close 后及时交给 dig；后续 return 应根据下一次 dig intent 回到目标 entry 附近，entry close 后要及时 handoff，避免 return 继续插土 |
+| Bucket start attitude | planned conditioned `return` 准备 entry-ready 姿态，dig ACT 接管最终卷斗 | 不能用固定 `bucket qpos=1` 当 good dig start | 专业 dig start qpos 分布、bucket qpos、bucket depth | 当前专业数据 dig start bucket qpos 是低 curl 小范围；应由 conditioned return 学这个分布，而不是手写锁定 bucket |
+| Local cut / scooping motion | conditioned `dig` ACT | coverage planner 不应手写完整挖掘轨迹 | `dig_cut_token_injected`、payload gain、bucket depth、mass curve | 如果 entry 到位后仍挖不满，才说明 dig ACT 对 token/pose 学得不够，需要补训或改 conditioning |
+| `dig -> carry` handoff | primitive planner switch rule | carry 不应继续承担大量挖土 | bucket mass、mass plateau、dig step count、depth | 低阈值会导致半斗就切 carry，污染 ownership 并降低效率；应使用更高有效载荷目标或 mass plateau + bad-dig replan |
+
+2026-05-19 后续修正：`dig -> carry` 不再只看 `15kg` 最低质量。正式 target
+payload 提高到 `45kg`，只有达到 target 或出现 `>=35kg` 后的质量 plateau 才进入
+carry；如果 dig 已运行 `220` step 仍低于 `35kg`，记为 `bad_dig_low_payload` 并
+回到 planner/replan。这保证 carry 不再承担挖土职责，也避免 bad pose 让 dig ACT
+在错误位置空挖几千步。`pre_dig_align` 实验结论保留为诊断记录：它能暴露
+return-to-entry 的需求，但不能替代 conditioned return；当前仅作为 first-dig-only
+handoff 修补第一铲没有 return 的启动空洞。
+
+2026-05-21 5cycle live probe 补充：第 4 铲卡住时，corridor 曾短暂达到约 19kg
+best mass，但当前 bucket mass 已经掉回 0kg，旧 bad-dig 判据因为只看 best mass
+而没有 reject，导致 dig 在同一位置空转数千步。修正后 bad-dig replan 使用当前保留
+bucket mass 判断，同时 `recent_row_selection_penalty` 会惩罚刚挖过 row 的相邻
+corridor，减少低产后在同一横排反复挖的概率。
+
+2026-05-21 dig 轨迹审计补充：yellow exit marker 已经进入 `dig_cut_tokens`，
+但它目前只是 goal/diagnostic，不是手写轨迹终止条件。V2.4 hindsight eval 中 ACT
+常能经过 planned exit 附近，但如果此时 bucket mass 仍低，状态机会继续等待 payload
+或 plateau，造成“从前挖到后、继续推到 DigArea 边界”的长动作。修正方向不是让 planner
+规定专家每一步动作，而是在专家 prior 内更正确地选 goal：coverage planner 支持配置
+`cut_depth_percentile` / `payload_percentile`，当前 V2.4 hindsight eval 默认请求 p90
+depth/payload；同时 `dig_exit_guard_*` 会在 bucket tip 已明显越过 planned exit
+但 payload 仍过低时标记 `exit_overshoot_low_payload` 并 replan。
+
+depth 控制现状：`dig_cut_tokens` 里已有 depth field，V2.4 hindsight eval 默认请求
+p90 depth/payload；但这仍是 open-loop conditioning，不是闭环深度 controller。
+如果 ACT 没学会把 depth token 转成更深且及时离土的姿态，或 Unity soil/depth 反馈不足，
+状态机只能通过 bad-dig / exit-overshoot guard 早停重选。后续要真正控制深度，需要将
+depth trajectory/outcome 纳入训练或引入独立 depth guard。
+
 2026-05-19 live primitive 状态机同步 operator-first dump/return 语义：YuLong
 10-cycle clean-dump rollout 不再用 post-dump hold 作为主要稳定手段；smooth dump
 由累计有效入箱质量触发 `dump_start/dump_end`，避免专业师傅缓慢开斗时单步
-deposit spike 低于旧阈值而漏记 dump。return 阶段增加浅接触 entry handoff：空斗回到
-dig-area 且 bucket 只浅入土时立即切回 dig，避免 return primitive 在错误状态下继续向下压。
+deposit spike 低于旧阈值而漏记 dump。return 阶段增加 entry-gated shallow handoff：
+空斗回到 planned next-entry 附近并接触 dig-area 时立即切回 dig；entry 已 close 时不再
+被过窄 shallow max-depth 卡住，避免 return primitive 到位后继续向下压。
 30-cycle stress 暴露出 `carry -> dump` signed window 和 `20kg` dump-ready payload
 阈值会在后段造成卡死：bucket 已在 dump footprint 上方、离 rim 足够高、bucket 里
 仍有约 `15-20kg` 土，但 target-relative x/z 漂到窗口另一侧或 payload 低于旧阈值，
@@ -629,6 +969,76 @@ tb-build-primitives-v2_2 \
 
 具体录制入口、episode 长度、stop mode、字段需求、QC 和专业师傅现场规则，以
 `docs/v2_2_pro_operator_data_collection_plan.md` 为准。本文不重复录制规则。
+
+## V2.4 Outcome-Grounded Hindsight Goal-Conditioned Learning
+
+当前 V2.2/operator-first 主线已经完成了自然 pro raw、operator-first relabel、
+四 primitive split、conditioned dig、conditioned return 和 coverage/sweep planner
+实验。但 live rollout 暴露出一个根本问题：planner 改目标以后，低层 ACT 不一定真的
+跟随目标，常常仍复现训练集中最常见的专业动作习惯。结果是“planner 指哪”和“ACT 挖哪”
+脱节；规则式 align 又容易制造抖动和不自然 handoff，不能作为长期方案。
+
+V2.4 的修正原则：
+
+- 不要求专业师傅按 token 操作，录制仍保持自然；
+- 离线从自然数据反推 actual entry/exit/cut/payload/deposit/return target，作为
+  hindsight goal；
+- `dig_cut_tokens` 与 `return_target_tokens` 保留 10D 维度，但 depth 语义后续
+  bump 为 removed-depth delta contract；
+- 新增 `dig_outcome_targets`、`return_outcome_targets` 和对应 valid mask；
+- `dig`、`return` 训练时在原 ACT action BC + KL 上增加 outcome head；
+- outcome head 直接从 predicted action chunk 预测 hindsight outcome，loss 会通过
+  predicted action 反传，迫使动作随 token 改变；
+- token-swap loss 对同一 observation 换另一个 goal token，不做 action BC，只要求
+  predicted action chunk 对应 swapped hindsight outcome；
+- 离线 sensitivity 必须同时看 action delta 和 predicted outcome delta。若 token
+  swap 后二者仍几乎不动，不进入 live rollout。
+
+V2.4 数据与训练入口：
+
+```bash
+tb-build-hindsight-goal-v2_4 \
+  --dataset-dir data/yulong_v2_4_return_target_operator_relabel_copy \
+  --output-dir data/yulong_v2_4_hindsight_goal_relabel_copy
+
+tb-build-primitives-v2_2 \
+  --raw-dir data/yulong_v2_4_hindsight_goal_relabel_copy \
+  --output-root data/yulong_v2_4_hindsight_goal_primitives_copy \
+  --storage-mode copy \
+  --boundary-profile v2_2_effect_release_fallback
+
+tb-train --config testbed/configs/act_yulong_v2_4_hindsight_goal_dig_qvel.yaml
+tb-train --config testbed/configs/act_yulong_v2_4_hindsight_goal_return_qvel.yaml
+```
+
+训练配置默认只读取 `training_tier=gold` primitive episode；terminal return 没有
+下一次 operator target 时仍由 primitive builder 排除。`carry/dump` 本轮不重训，
+继续使用 V2.2 500e milestone checkpoint。旧 raw 若没有可靠 removed-depth，
+`actual_removed_depth_delta_grid` 写 0，`depth_outcome_source` 写
+`unavailable_or_legacy_zero`；修复后新录或 replay-derived root 才启用真实 depth-delta
+监督。
+
+2026-05-20 训练运行记录：hindsight dig/return 的 outcome head 会在每个 train
+batch 上额外执行 token-swap forward。16GB 级 GPU 在桌面、Unity 或远程桌面占用显存时，
+早先 `batch_size=24` 在 Step 7 dig 训练首个 train batch OOM。该 OOM 的一个放大因素是
+validation 后 best-checkpoint snapshot 曾在 GPU 上常驻一份模型权重；trainer 已改为
+CPU clone。当前先恢复 `batch_size=24`、`prefetch_factor=4` 重训，保持和既有 YuLong
+conditioned runs 一致；只有再次确认 OOM 后，才降到 `batch_size=16`。
+
+V2.4 rollout 顺序：
+
+```bash
+tb-eval --config testbed/configs/eval_yulong_v2_4_hindsight_goal_1cycle_smoke.yaml
+tb-eval --config testbed/configs/eval_yulong_v2_4_hindsight_goal_3cycle_smoke.yaml
+tb-eval --config testbed/configs/eval_yulong_v2_4_hindsight_goal_5cycle_smoke.yaml
+tb-eval --config testbed/configs/eval_yulong_v2_4_hindsight_goal_10cycle.yaml
+tb-eval --config testbed/configs/eval_yulong_v2_4_hindsight_goal_15cycle.yaml
+tb-eval --config testbed/configs/eval_yulong_v2_4_hindsight_goal_30cycle_probe.yaml
+```
+
+30cycle 仍然只是 depletion probe，不是固定成功标准。若 V2.4 dig/return 离线证明
+开始听 token，planner 才逐步放大自由度；短期 planner 仍是 rule/belief goal proposer，
+不是 learned planner。
 
 ## 下一阶段最小实施顺序
 

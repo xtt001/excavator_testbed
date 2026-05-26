@@ -107,6 +107,9 @@ def eval_policy(config: dict[str, Any]) -> None:
     record_hdf5_with_cell_entry = bool(
         eval_cfg.get("record_hdf5_with_cell_entry", True)
     )
+    send_planner_debug_to_backend = bool(
+        eval_cfg.get("send_planner_debug_to_backend", True)
+    )
     step_log_interval = int(eval_cfg.get("step_log_interval", 50))
     agx_host        = str(agx_cfg.get("host", "127.0.0.1"))
     agx_port        = int(agx_cfg.get("port", 5057))
@@ -1022,6 +1025,9 @@ def eval_policy(config: dict[str, Any]) -> None:
         "dir": str(record_hdf5_dir),
         "with_cell_entry": record_hdf5_with_cell_entry,
     }
+    eval_run_metadata["send_planner_debug_to_backend"] = bool(
+        send_planner_debug_to_backend
+    )
     eval_run_metadata_path = write_json(results_dir / "eval_run_metadata.json", eval_run_metadata)
     repo_a_snapshot = dict(eval_run_metadata.get("repo_snapshots", {}).get("repo_a", {}))
     record_hdf5_metadata = dict(eval_cfg.get("record_hdf5_metadata", {}) or {})
@@ -1062,6 +1068,7 @@ def eval_policy(config: dict[str, Any]) -> None:
         record_hdf5_dir = record_hdf5_dir,
         record_hdf5_metadata = record_hdf5_metadata,
         record_hdf5_with_cell_entry = record_hdf5_with_cell_entry,
+        send_planner_debug_to_backend = send_planner_debug_to_backend,
         step_log_interval = step_log_interval,
         agx_host     = agx_host,
         agx_port     = agx_port,
@@ -1141,6 +1148,9 @@ def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) ->
         "return_target_tokens": _resolve_single_low_dim_dim(
             "return_target_tokens", equipment_model
         ),
+        "return_relocate_tokens_v1": _resolve_single_low_dim_dim(
+            "return_relocate_tokens_v1", equipment_model
+        ),
         "return_start_envelope_tokens_v1": _resolve_single_low_dim_dim(
             "return_start_envelope_tokens_v1", equipment_model
         ),
@@ -1196,6 +1206,8 @@ def _resolve_single_low_dim_dim(key: str, equipment_model: str) -> int:
     if key == "dig_depth_profile_tokens_v1":
         return int(DIG_DEPTH_PROFILE_TOKEN_DIM)
     if key == "return_target_tokens":
+        return int(RETURN_TARGET_TOKEN_DIM)
+    if key == "return_relocate_tokens_v1":
         return int(RETURN_TARGET_TOKEN_DIM)
     if key == "return_start_envelope_tokens_v1":
         return int(RETURN_START_ENVELOPE_TOKEN_DIM)

@@ -45,27 +45,25 @@ V2.2/V2.4 当前 primitive split 主要信任 `/v2` relabel 的事件和阶段�
 ## Removed-Depth 最新标准
 
 当前 V2.4 replay 刷新后已经有可靠的 64D `env_state` removed-depth 信息，
-V2.4.5 不能再把 depth 当成可选辅助信号。新的 dig ownership 和 token/QC 必须按
-`v2_4_removed_depth_cut_v3` 标准使用真实 removed-depth：
+V2.4.5 不能再把 depth 当成可选辅助信号。Unity DigArea 几何修复后，新的 dig
+ownership 和 token/QC 按 `v2_4_removed_depth_cut_v3` 复用 10D `dig_cut_tokens`，
+但第 8 维使用更可信的 surface-relative command depth：
 
-- `dig_area_removed_depth_m_r{0..2}_c{0..1}` 是本轮挖深事实源。
-- `actual_removed_depth_delta_grid = removed_depth[end] - removed_depth[start]`。
-- `dig_cut_tokens` 第 8 维使用 `max(actual_removed_depth_delta_grid)`，depth scale 为
-  `0.25m`。
-- gold dig 样本要求 depth source 为 `env_state_removed_depth_delta`。
-- 没有可靠 removed-depth 的样本不能进入 gold tier；只能进入 silver/diagnostic 或 reject。
+- `dig_cut_tokens` 第 8 维仍是 depth slot，但内部语义是
+  `cut_depth_semantic_m`，优先使用 `bucket_depth_below_local_surface_m` 的窗口 peak，
+  depth scale 为 `0.80m`。这个尺度来自修复后 realign replay 的 gold
+  surface-depth 分布，避免旧 `0.25m` removed-depth 尺度造成 depth token 饱和。
+- `dig_area_removed_depth_m_r{0..2}_c{0..1}` 与
+  `actual_removed_depth_delta_grid = removed_depth[end] - removed_depth[start]`
+  保留为本轮地形变化 outcome/audit，不再作为默认 command-depth source。
+- gold dig 样本要求 `operator_cut_depth_source=env_state_surface_penetration`。
+- 没有可靠 surface-relative depth 的样本不能进入 gold tier；只能进入 silver/diagnostic 或 reject。
 - dig QC 必须检查 depth token 饱和率、非零比例、p10/p50/p90 spread，以及 raw meter
   delta 的分布。
-- `bucket_depth_below_dig_area_plane_m` 只作为 handoff/readiness 参考，不再作为真实
-  入土深度真值。qc6 审计显示 relative-y/surface-depth 几何 profile 与 removed-depth
-  outcome 是两个不同语义：前者更像姿态/高度 envelope，后者才是本轮地形变化。
-  因此后续 dig ACT 使用可选 `dig_depth_profile_tokens_v1` 补充 cell、payload、
-  entry/exit/peak reference depth、surface/plane offset 和 contact fraction，
-  不把这些诊断量硬编码成 planner 的动作阈值。
-- planner 侧必须优先消费 qc6 prior 中的 `dig_depth_profile_cells`。在 depth-profile
-  eval 中，缺失当前 coverage cell 的 profile prior 是配置错误，应 fail fast；不能回退
-  到 live-current 估算或 global profile，否则会重新引入 dataset token 与 rollout token
-  的语义错配。
+- `bucket_depth_below_dig_area_plane_m` 只作为 handoff/readiness 参考，不再作为首选
+  入土深度真值。`dig_depth_profile_tokens_v1` 保留为 ablation/探针，用于验证拆开的
+  cell、payload、entry/exit/peak reference depth、surface/plane offset 和 contact
+  fraction 是否比紧凑 depth slot 更有用；默认主线不再堆 12D profile。
 
 这意味着 V2.4.5 的 dig 边界不只看 bucket mass/payload，也要验证该窗口内是否产生了
 合理的 removed-depth delta。payload 可以作为装料事实，removed-depth 才是“切了哪里、
@@ -79,7 +77,7 @@ V2.4.5 依赖 `agx_env_state_v2_2_64`。当前数据已经包含需要的主要�
 | --- | --- |
 | bucket 质量 | `mass_in_bucket_kg`, `bucket_mass_delta_kg` |
 | dump/target 沉积 | `deposited_mass_in_target_box_kg`, `deposited_mass_in_dump_area_kg`, `offtarget_deposited_mass_kg` |
-| dig virtual box | `dig_area_geometry_available`, `bucket_dig_area_cell_id`, `bucket_dig_area_long_norm`, `bucket_dig_area_short_norm`, `bucket_tip_dig_area_x_m`, `bucket_tip_dig_area_y_m`, `bucket_tip_dig_area_z_m`, `bucket_depth_below_local_surface_m`, `bucket_contact_dig_area_mask` |
+| dig virtual box | `bucket_dig_area_cell_in_bounds_mask`, `bucket_dig_area_cell_id`, `bucket_dig_area_long_norm`, `bucket_dig_area_short_norm`, `bucket_tip_dig_area_x_m`, `bucket_tip_dig_area_y_m`, `bucket_tip_dig_area_z_m`, `bucket_depth_below_local_surface_m`, `bucket_dig_area_penetration_contact_mask` |
 | removed-depth grid | `dig_area_surface_depth_m_*`, `dig_area_removed_depth_m_*`, `dig_area_target_depth_m_*`, `dig_area_cell_valid_mask_*` |
 | dump virtual box | `target_geometry_available`, `bucket_dump_area_footprint_outside_distance_m`, `bucket_over_target_footprint_mask`, `bucket_height_above_target_rim_m`, `dump_clearance_ok_mask`, `bucket_contact_dump_area_mask` |
 | 安全 | `hard_collision_count`, `target_contact_max_normal_force_n` |
@@ -200,6 +198,12 @@ p95 约 `1.35kg`，p99 约 `3.21kg`，最大约 `10.10kg`；同时超过 `5kg` �
   变化量已经下降到微调级别。区域内 release 前的 swing/boom/stick/bucket 姿态微调归
   dump；仍在大幅向 dump area 移动的横向/纵向过程归 carry。找不到 committed aiming
   band 时，只 fallback 到 release 前短窗口，不再单靠无符号 outside-distance 提前切入。
+  surface-depth 主线进一步按 7x7m 小场景尺度收紧这个 band：stable outside
+  `<=0.25m`、fallback outside `<=0.30m`、relative corridor
+  `x=[-0.2,1.9]`、`z=[0.45,2.1]`，窗口变化量限制为 outside/relative-x/relative-z
+  `0.06/0.16/0.10m`。这个阈值取代旧 live planner 的 `0.45m + hold3` 宽门；
+  release_onset 仍使用 `0.45m` release-area 近邻门，因为它描述的是已经进入 dump
+  ownership 后的真实掉料事件，而不是 carry->dump 的提前切换条件。
 - `dump_end`: bucket mass 达到 release 后低位并稳定，deposit plateau，再加有限 post-hold。
   这里的 `dump_end` 是物理意义上的“倒料完成/桶内残余低位稳定”，不是旧 cycle 的
   `work_end`。`work_end` 只作为旧标注给出的搜索上界，避免算法向后吞掉 return。
@@ -279,6 +283,13 @@ p50/mean/p90/p95 为 `3/6.8/10.7/36` steps；dump pre-release lead 从
 在 release 后用 residual bucket mass 与 deposit plateau 判定。planner 只消费这些
 事件、skill 顺序、coverage 状态和 pending target entry-close gate，不再知道
 committed band 的具体几何阈值。
+在线 detector 的 V2.4.5 profile 使用 causal rolling window 复现离线语义：只有当前
+frame 满足 tightened committed band，且最近窗口内 outside/relative-x/relative-z
+变化量足够小，才累计 `dump_committed_hold_steps` 并发出 `dump_committed_start`。
+`release_onset` 不复用 tightened band，而是在 dump 已接管后用 `0.45m` 近邻门捕捉
+bucket mass drop 或 deposit gain，避免 release 过程中的小幅位置漂移让 completion
+状态机失去掉料起点。
+legacy profile 保持旧 `dump_start/dump_end` 行为。
 
 qc6 训练/eval 的 coverage prior 也同步收敛到 3x2 cell：`yulong_removed_depth_dig_cut_prior_v3.json`
 新增 `coverage_cells`，每个 cell 写入 `source_count/source_fraction`、entry/exit、
@@ -288,6 +299,29 @@ removed-depth grid，旧 prior 缺少 `coverage_cells` 时仍回到 3x3 percenti
 cell 4 的 source fraction 低于 `0.05`，默认 `max_attempts=1`，且不会作为 first-dig
 候选，除非其它 cell 已耗尽。
 
+2026-05-23 进一步把 qc6 gold dig 样本做成 state-conditioned exemplar library：
+`yulong_removed_depth_dig_cut_state_exemplars_qc6.json` 按 cell 保存每条样本的
+起始 6-cell removed-depth grid、expert entry/exit/depth/payload raw fields 和
+12D depth profile token。planner live 时只根据当前 removed-depth grid 在同一 cell
+内找 KNN 专家样本，输出任务级 cut/profile token；它不读取专家动作轨迹，也不把
+“平地加深”这类阈值写进动作规划。若某次 dig 被 bad-dig 或 exit-guard 拒绝，当前
+active exemplar 会进入 rejected set，replan 会跳过它并清掉 return 预置的 pending
+dig token，保证下一次选择真正来自当前地形状态。
+失败 replan 不应假设 dig policy 会自己完成 entry 对齐：`dig` 训练窗口从可接管的
+dig-start/envelope 开始，它没有学习“先移动到新 entry 再入土”。因此 live eval 可开启
+`pre_dig_align.replan_after_failed_dig=true`，在 bad-dig/exit-guard 后即使
+`first_dig_only=true` 也先进入 align skill，再把对齐后的状态交给 dig。
+当 `pre_dig_align.entry_intent_controlled_dims` 屏蔽深度相关轴时，align skill 只表达
+水平 entry intent：handoff 不再等待完整 bucket-entry distance close，bounded timeout
+也不会把 coverage cell 记为低产或耗尽。真正的 entry/depth 执行仍归 dig ACT 负责，
+surface guard 只负责阻止 scripted align 自己入土。
+
+`dig_complete` 的 detector 语义仍是“有效装料 + 质量 plateau + 稳定离开 dig box”。
+但 live skill handoff 不能因此形成循环等待：如果 dig ACT 已经获得目标载荷或稳定
+material plateau，却因为 carry 尚未接管而没有产生 departed hold，planner 允许以
+`semantic_material_loaded/plateau` 作为 liveness escape 切到 carry。这个 escape 只看
+material ownership，不重新引入 dump/carry 几何阈值，也不改变离线 qc6 边界标签。
+
 ## Return Ownership
 
 `return` 表示倒料完成后，空斗从 dump 区回到下一轮 dig 可接管状态。
@@ -295,13 +329,18 @@ cell 4 的 source fraction 低于 `0.05`，默认 `max_attempts=1`，且不会�
 建议边界：
 
 - `return_start = dump_end`
-- `return_end`: 下一轮 material cycle 的 `dig_start`，或可靠 `qualified_dig_start`。
+- `return_end`: 首选下一轮 `dig_start` envelope 已可接管的
+  `first_next_dig_entry_ready`，而不是过晚的 material-cycle `dig_start` 标签。
+  当前实现从 `dump_end` 后向前找 DigArea 几何有效且 bucket 测量代理触达/接近
+  DigArea 或产生 surface-relative 入土深度的第一帧；只有找不到该帧时才回退到
+  下一轮 material start。
 
 必要证据：
 
 - bucket mass 处于 release 后低位。
 - return window 内不应出现新的 payload acquisition 或 dump deposit。
-- 不包含 realign step。
+- 不包含发生在 `dump_end -> first_next_dig_entry_ready` 之间的 realign step；如果
+  realign 晚于 handoff，则归属下一轮，不应把前一段 clean return 丢掉。
 
 建议 QC：
 
@@ -326,13 +365,17 @@ V2.4.5 不要求推翻现有 `dig_cut_tokens`。相反，ownership 变干净后�
 被 ACT 学到。但最近 live 结果说明：把同一个 cut-intent token 直接用于 return 不够。
 
 - `dig_cut_tokens` 仍描述本轮 dig 的 entry/exit/cut/depth/payload/outcome intent；
-  其中 depth 必须使用 `v2_4_removed_depth_cut_v3` 的真实 removed-depth delta。
+  其中 depth 必须使用 `v2_4_removed_depth_cut_v3` 的 surface-relative
+  `cut_depth_semantic_m`。
 - 旧 10D `return_target_tokens` 只描述下一轮 cut intent：entry/exit/direction/length/depth/payload。
   这对 return 不够，因为 return 的任务不是“怎么切”，而是“把空斗带到下一个 dig
   可以稳定接管的 start envelope”。
 - material cycle 重建后，token 应绑定到对应 material cycle，而不是旧 `/v2/cycle`。
 - `carry/dump` 可以继续只用 `qpos + qvel` 作为第一版；它们的参数化问题主要来自 handoff
   和 ownership 污染，而不一定需要马上新增 token。
+- return reject 诊断优先使用 `tb-audit-return-windows --primitive-root <root>`，
+  它会比较 accepted/rejected/overlong tail 窗口内的 action、qpos、dig-area distance、
+  bucket mass 和 surface depth，避免把真实 return 运动误判为空等待。
 - 后续如需给 `carry/dump` 加 token，应先通过 QC/可视化确认它们的窗口语义稳定。
 
 ## Return Start Envelope Token
@@ -366,21 +409,34 @@ spatial mask 和 qpos-only envelope：原始 token 下若贴近专家，优先�
 原始 token 下也偏离专家，再查 checkpoint 和训练分布。
 2026-05-23 live 对比确认：旧 planner 在 return 刚开始时用当前 `qpos/env_state`
 构造 envelope，和训练时“下一轮 dig-start 窗口”的 token contract 不一致。qc6 修复版把
-`return_start_envelope_cells/global` 写入 dig-cut prior，live 按已选 coverage cell 使用
-qc6 gold return 的 median envelope；这仍然只是任务级 target token，不是手写动作轨迹。
+`return_start_envelope_cells/global` 写入 dig-cut prior，但 live 默认只使用
+`return_start_envelope_global` 的 median envelope；coverage cell 继续由 planner
+pending `dig_cut_tokens` 和 entry gate 表达，不再默认塞进 return-start envelope。
+如需复现旧 cell-conditioned return 实验，必须显式设置
+`dig_cut_planner.return_start_envelope.use_cell_prior: true`。这仍然只是任务级 target
+token，不是手写动作轨迹。
 同一轮诊断也确认：第二次 dig 失败时注入的 `dig_cut_tokens` 数值并不离群，离群的是
 handoff 状态和该 token 描述的 entry envelope 不一致。qc6 planner 因此把
 `return_start_envelope_tokens_v1` 同时作为 return policy 输入和 `return -> dig`
-readiness gate：只有 long/short、local depth/contact 和 qpos 落在对应 cell 的 qc6
-p05-p95 envelope 附近时，才允许把 pending `dig_cut_tokens` 交给 dig primitive。
+readiness gate：只有 long/short、local depth/contact 和 qpos 落在当前注入 envelope
+的 qc6 p05-p95 附近时，才允许把 pending `dig_cut_tokens` 交给 dig primitive。
 其中 local depth 使用 token 自身的 min/max 字段；qc6 prior depth p05 在部分 return
 窗口中接近 0，只适合描述分布尾部，不适合作为 live handoff 下界。
+当 live 第二铲仍然浅挖时，先用 `tb-audit-dig-ckpt` 审计 dig checkpoint，而不是继续
+调 handoff 阈值。该审计比较 recorded stream 的 first-action 和从 primitive 起点预测的
+ACT chunk：离线 chunk 已偏离专家时，问题在 dig ckpt、训练分布或 ACT chunk 机制；离线
+贴近专家但 live 仍浅时，问题更可能在 live observation/action scaling、camera、
+temporal aggregation 或 handoff 后的真实状态。
+planner marker/debug geometry 属于人工可视化通道，不能进入 ACT 的 FPV observation。
+V2.4.5 visual-policy eval 因此默认关闭 `eval.send_planner_debug_to_backend`，只在
+JSONL 中保留同样的 planner/debug 数值；需要人眼看 marker 时可临时打开，但该 rollout
+不用于评估 policy 行为。
 第二铲复现还暴露了一个更底层的字段语义问题：`bucket_depth_below_local_surface`
 在被挖过的局部表面附近会变浅，而 qc6 dig-start 的稳定边界是
-`bucket_depth_below_dig_area_plane`。因此 qc6 prior 额外记录每个 coverage cell 的
-gold dig-start plane-depth 分布，planner readiness 用它确认机器已进入 ACT dig
-训练时的可切起点。live qc6 配置使用 `p50_floor` plane-depth mode：交接下界来自
-对应 cell 的 dig-start p50，而不是 p05；这样 return 的任务是回到可重复起挖流形，
+`bucket_depth_below_dig_area_plane`。因此 qc6 prior 额外记录 gold dig-start
+plane-depth 分布，planner readiness 用它确认机器已进入 ACT dig 训练时的可切起点。
+live qc6 配置使用 `p50_floor` plane-depth mode：交接下界来自当前注入 envelope 的
+dig-start p50，而不是 p05；这样 return 的任务是回到可重复起挖流形，
 不是只达到最低可接受接触深度。由于 detector 的 `next_dig_entry_ready` 是边沿事件，
 planner 会 latch 住该事件并等待 envelope gate 同步 ready；V2.4.5 下不再让旧
 shallow guard 单独触发 `return -> dig`。
@@ -432,6 +488,15 @@ dataset/runtime/ACT adapter/eval planner 均已识别该 low-dim key。训练配
 可训练 envelope。这样做的目的，是避免一个空间传感维度临时缺失就把整条 return 训练窗
 丢掉，同时仍让训练/诊断知道哪些 envelope 维度不能监督。
 
+2026-05-25 return relocation 训练不重新定义 primitive 边界，也不把完整
+`return_target_tokens` 重新塞回 return ACT。新增的 `return_relocate_tokens_v1` 是
+loader/runtime 派生 view：从 `return_target_tokens` 保留 entry/exit/direction/length
+和 valid，但把 depth/payload 固定为 0，避免 return 学到 dig 深度或载荷语义。若
+step-level token 因旧 materialization bug 全 0，而 metadata 已有 `next_operator_*`
+字段，loader 会从 metadata 重建这个 masked view；该修复只影响 return relocation
+conditioning，不改 HDF5、不改切分标签。当前 return 训练输入为
+`qpos + qvel + return_start_envelope_tokens_v1 + return_relocate_tokens_v1`。
+
 ## 已接入的 Builder Profile
 
 `tb-build-primitives-v2_2` 新增 `--boundary-profile v2_4_5_spatial_mass`：
@@ -443,7 +508,9 @@ dataset/runtime/ACT adapter/eval planner 均已识别该 low-dim key。训练配
 - `release_onset` 使用当前步的 bucket mass drop 或 dump/target deposit increase；不会因为
   “未来若干步会掉料”提前把 long aiming window 划进 dump。
 - `dump_start` 先限制在 `release_onset - 120` 以内，再从这个上界向后找 dump-area
-  稳定 aiming band；如果 distance-to-dump-area 仍在明显变化，更早的
+  稳定 aiming band；surface-depth 后续主线使用 `0.25m` stable outside、
+  `0.30m` fallback outside 和 `0.06/0.16/0.10m` 窗口变化阈值。如果
+  distance-to-dump-area 仍在明显变化，更早的
   curl-out/alignment/approach 仍归 carry。
 - `dump_end` 使用 release 后 bucket residual low、bucket mass plateau 和
   target/dump deposit plateau 的物理完成点；旧 `work_end` 只作为搜索上界和诊断字段。
@@ -508,8 +575,9 @@ above rim 和 target horizontal distance 放在同一页，避免把无符号 ou
 2026-05-22 `runs/jobs/yulong_v2_4_5_physical_dump_qc_20260522` 的 Gate 1 数字 QC：
 
 - `dig/carry/dump` 各 644 条，`return` 589 条；return/dig ratio `0.915`。
-- dig gold 样本 595 条，depth source 全部为 `env_state_removed_depth_delta`，depth token
-  无饱和，gold token p10/p50/p90 为 `0.105/0.189/0.374`。
+- qc6 基线中 dig gold 样本 595 条，旧 depth source 为
+  `env_state_removed_depth_delta`；几何修复后的重放数据应改为
+  `env_state_surface_penetration`，并重新核对 depth token 分布。
 - carry deposit contamination 为 `0`；target deposit delta p95 为 `0`，max `5.03kg`。
 - dump length max `315`、p95 `228.7`；release lead max `120`；transition
   contamination 为 `0`。

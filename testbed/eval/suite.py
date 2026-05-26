@@ -95,6 +95,10 @@ class EvalSuite:
                       rollout so interrupted runs still leave timestep evidence.
     record_hdf5   If True, write each policy rollout as a trainable HDF5 episode.
     record_hdf5_dir Directory for policy-rollout HDF5 episodes.
+    send_planner_debug_to_backend
+                  If True, forward planner debug JSON to AGX/Unity.  Disable
+                  this for visual-policy eval when debug markers must not enter
+                  ACT camera observations.
     step_log_interval  Print step progress every N steps during rollout.
     mass_thresh  Override task.mass_thresh (AGX success threshold).
     hold_steps   Override task.hold_steps for AGX success.
@@ -135,6 +139,7 @@ class EvalSuite:
         record_hdf5_dir: str | Path | None = None,
         record_hdf5_metadata: dict[str, object] | None = None,
         record_hdf5_with_cell_entry: bool = True,
+        send_planner_debug_to_backend: bool = True,
         step_log_interval: int = 50,
         agx_host: str = "127.0.0.1",
         agx_port: int = 5057,
@@ -171,6 +176,7 @@ class EvalSuite:
         self.record_hdf5_dir = None if record_hdf5_dir is None else Path(record_hdf5_dir)
         self.record_hdf5_metadata = dict(record_hdf5_metadata or {})
         self.record_hdf5_with_cell_entry = bool(record_hdf5_with_cell_entry)
+        self.send_planner_debug_to_backend = bool(send_planner_debug_to_backend)
         self.step_log_interval = max(0, int(step_log_interval))
         self.agx_host     = agx_host
         self.agx_port     = agx_port
@@ -344,10 +350,12 @@ class EvalSuite:
                         if hasattr(self.policy, "debug_state")
                         else {}
                     )
-                    planner_debug_json = self._planner_debug_json(
-                        policy_debug,
-                        obs=obs,
-                    )
+                    planner_debug_json = None
+                    if self.send_planner_debug_to_backend:
+                        planner_debug_json = self._planner_debug_json(
+                            policy_debug,
+                            obs=obs,
+                        )
                     ts = self._env_step_with_optional_planner_debug(
                         env=env,
                         task=task,
@@ -525,6 +533,22 @@ class EvalSuite:
                                 if policy_debug.get("return_target_tokens") is None
                                 else np.array(
                                     policy_debug.get("return_target_tokens"),
+                                    dtype=np.float32,
+                                )
+                            ),
+                            "return_relocate_token_injected": bool(
+                                policy_debug.get(
+                                    "return_relocate_token_injected", False
+                                )
+                            ),
+                            "return_relocate_token_source": str(
+                                policy_debug.get("return_relocate_token_source", "")
+                            ),
+                            "return_relocate_tokens": (
+                                None
+                                if policy_debug.get("return_relocate_tokens") is None
+                                else np.array(
+                                    policy_debug.get("return_relocate_tokens"),
                                     dtype=np.float32,
                                 )
                             ),

@@ -51,7 +51,7 @@ DIG_CUT_TOKEN_CONTRACT = "v2_4_removed_depth_cut_v3"
 
 DIG_CUT_POSITION_SCALE_M = 2.0
 DIG_CUT_LENGTH_SCALE_M = 2.0
-DIG_CUT_DEPTH_SCALE_M = 0.25
+DIG_CUT_DEPTH_SCALE_M = 0.80
 DIG_CUT_PAYLOAD_SCALE_KG = 60.0
 REMOVED_DEPTH_DELTA_EPS_M = 1.0e-4
 REMOVED_DEPTH_GRID_CELL_COUNT = 6
@@ -113,11 +113,11 @@ def build_operator_first_dataset(
                 "return_target_token_dim": int(RETURN_TARGET_TOKEN_DIM),
                 "dig_cut_token_contract": (
                     "entry_x,entry_z,exit_x,exit_z,dir_x,dir_z,"
-                    "length,actual_removed_depth_delta,payload,valid; normalized"
+                    "length,cut_depth_semantic,payload,valid; normalized"
                 ),
                 "return_target_token_contract": (
                     "next entry_x,entry_z,exit_x,exit_z,dir_x,dir_z,"
-                    "length,actual_removed_depth_delta,payload,valid; normalized"
+                    "length,cut_depth_semantic,payload,valid; normalized"
                 ),
                 "dig_cut_token_contract_version": DIG_CUT_TOKEN_CONTRACT,
                 "dig_cut_depth_scale_m": float(DIG_CUT_DEPTH_SCALE_M),
@@ -418,23 +418,12 @@ def _derive_cycle_fields(
 
     direction = _direction(entry_pose, exit_pose)
     cut_length = _distance(entry_pose, exit_pose)
-    bucket_depth_peak = _range_max(
+    surface_depth_peak, depth_source = _cut_depth_semantic_peak(
         env_state,
         start,
         max(start + 1, exit_step + 1),
-        ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
-        fallback_idx=ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
     )
-    actual_removed_depth_peak, depth_source = _actual_removed_depth_delta_max(
-        env_state,
-        start,
-        end,
-    )
-    depth_peak = (
-        actual_removed_depth_peak
-        if depth_source == "env_state_removed_depth_delta"
-        else bucket_depth_peak
-    )
+    depth_peak = surface_depth_peak
     payload_gain = _mass_delta(
         env_state,
         start,
@@ -499,7 +488,7 @@ def _derive_cycle_fields(
             effective_deposit_delta_kg=max(0.0, effective_deposit),
             cut_length_m=max(0.0, cut_length),
             cut_depth_peak_m=max(0.0, depth_peak),
-            depth_reliable=depth_source == "env_state_removed_depth_delta",
+            depth_reliable=depth_source == "env_state_surface_penetration",
             valid=bool(valid),
         ),
     }
@@ -660,7 +649,7 @@ def _infer_operator_exit_step(
     fallback_end: int,
 ) -> int:
     work_stage = np.asarray(v2_step.get("work_stage_id", []), dtype=np.int32).reshape(-1)
-    if work_stage.size > end:
+    if work_stage.size >= end:
         carry_like = {
             WORK_STAGE_NAME_TO_ID["carry"],
             WORK_STAGE_NAME_TO_ID["approach_dump"],
@@ -800,6 +789,41 @@ def _actual_removed_depth_delta_max(
     if value <= REMOVED_DEPTH_DELTA_EPS_M:
         return 0.0, "unavailable_or_legacy_zero"
     return value, "env_state_removed_depth_delta"
+
+
+def _cut_depth_semantic_peak(
+    env_state: np.ndarray,
+    start: int,
+    end: int,
+) -> tuple[float, str]:
+    """Return the compact dig depth command carried by dig_cut_tokens[7].
+
+    The command depth is a surface-relative penetration target when the repaired
+    Unity geometry exposes it. Removed-depth deltas remain outcome/audit fields;
+    they are no longer the default command-depth source.
+    """
+    local_surface = _range_max_single(
+        env_state,
+        start,
+        end,
+        ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+    )
+    if np.isfinite(local_surface) and local_surface > REMOVED_DEPTH_DELTA_EPS_M:
+        return float(local_surface), "env_state_surface_penetration"
+
+    plane_depth = _range_max_single(
+        env_state,
+        start,
+        end,
+        ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+    )
+    if np.isfinite(plane_depth) and plane_depth > REMOVED_DEPTH_DELTA_EPS_M:
+        return float(plane_depth), "env_state_plane_penetration_fallback"
+
+    removed_depth, source = _actual_removed_depth_delta_max(env_state, start, end)
+    if source == "env_state_removed_depth_delta":
+        return float(removed_depth), "env_state_removed_depth_delta_fallback"
+    return 0.0, "unavailable_or_legacy_zero"
 
 
 def _range_max(

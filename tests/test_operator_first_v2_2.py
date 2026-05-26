@@ -49,8 +49,9 @@ class OperatorFirstV22Tests(unittest.TestCase):
         self.assertEqual(str(v2["cycle"]["return_target_source"][0]), "terminal_none")
         self.assertEqual(
             str(v2["cycle"]["operator_cut_depth_source"][0]),
-            "env_state_removed_depth_delta",
+            "env_state_surface_penetration",
         )
+        self.assertAlmostEqual(float(v2["cycle"]["operator_cut_depth_peak_m"][0]), 0.04)
         self.assertLess(float(v2["step"]["dig_cut_tokens"][1, 7]), 1.0)
 
     def test_enrichment_adds_next_cut_return_target_tokens(self) -> None:
@@ -145,6 +146,63 @@ class OperatorFirstV22Tests(unittest.TestCase):
                 stats["proprio_mean"].shape[0],
                 8 + RETURN_TARGET_TOKEN_DIM,
             )
+
+            relocate_stats = get_norm_stats(
+                output_dir,
+                num_episodes=1,
+                low_dim_keys=["qpos", "qvel", "return_relocate_tokens_v1"],
+            )
+            relocate_tokens = relocate_stats["example_proprio"][:, 8:]
+            self.assertEqual(relocate_tokens.shape[1], RETURN_TARGET_TOKEN_DIM)
+            self.assertTrue(np.allclose(relocate_tokens[:, 7], 0.0))
+            self.assertTrue(np.allclose(relocate_tokens[:, 8], 0.0))
+            self.assertGreater(float(np.max(relocate_tokens[:, -1])), 0.0)
+
+    def test_return_relocate_tokens_repair_zero_step_tokens_from_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            source_dir = tmp / "relabeled"
+            output_dir = tmp / "operator_copy"
+            source_dir.mkdir()
+            episode = _operator_two_cycle_episode()
+            write_episode(
+                source_dir / "episode_0.hdf5",
+                qpos=episode["qpos"],
+                qvel=episode["qvel"],
+                actions=episode["actions"],
+                images={"fpv": np.zeros((16, 2, 2, 3), dtype=np.uint8)},
+                rewards=np.zeros(16, dtype=np.float32),
+                env_state=episode["env_state"],
+                v2=episode["v2"],
+                metadata={"task_name": "agx_excavation_teleop"},
+            )
+            build_operator_first_dataset(
+                dataset_dir=source_dir,
+                output_dir=output_dir,
+                storage_mode="copy",
+            )
+
+            with h5py.File(output_dir / "episode_0.hdf5", "r+") as f:
+                f["v2/step/return_target_tokens"][:] = 0.0
+                f["metadata"].attrs["next_operator_cut_valid"] = 1
+                f["metadata"].attrs["next_operator_entry_x_m"] = 0.4
+                f["metadata"].attrs["next_operator_entry_z_m"] = -0.2
+                f["metadata"].attrs["next_operator_exit_x_m"] = -0.1
+                f["metadata"].attrs["next_operator_exit_z_m"] = -0.2
+                f["metadata"].attrs["next_operator_cut_direction_x"] = -1.0
+                f["metadata"].attrs["next_operator_cut_direction_z"] = 0.0
+                f["metadata"].attrs["next_operator_cut_length_m"] = 0.5
+
+            stats = get_norm_stats(
+                output_dir,
+                num_episodes=1,
+                low_dim_keys=["qpos", "qvel", "return_relocate_tokens_v1"],
+            )
+            relocate_tokens = stats["example_proprio"][:, 8:]
+            self.assertGreater(float(np.max(np.abs(relocate_tokens[:, :7]))), 0.0)
+            self.assertTrue(np.allclose(relocate_tokens[:, 7], 0.0))
+            self.assertTrue(np.allclose(relocate_tokens[:, 8], 0.0))
+            self.assertTrue(np.allclose(relocate_tokens[:, 9], 1.0))
 
 
 def _write_operator_episode(path: Path) -> None:

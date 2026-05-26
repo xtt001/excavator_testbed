@@ -196,7 +196,7 @@ def _format_row(row: dict[str, Any]) -> str:
         f"action={action} qpos_after={qpos} "
         f"bucket_rel={_compact_vector(rel, max_items=3)} "
         f"bucket_tip={_compact_vector(tip, max_items=3)} "
-        f"dig_contact={_fmt(env_after.get('bucket_contact_dig_area_mask'))} "
+        f"dig_contact={_fmt(env_after.get('bucket_dig_area_penetration_contact_mask'))} "
         f"dump_contact={_fmt(env_after.get('bucket_contact_dump_area_mask'))} "
         f"hard_collision={_fmt(env_after.get('hard_collision_count'))} "
         f"target_hard_collision={_fmt(env_after.get('target_hard_collision_count'))}"

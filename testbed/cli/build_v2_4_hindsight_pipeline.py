@@ -40,7 +40,7 @@ DEFAULT_DEPTH_TOKEN_MAX_SATURATION = 0.02
 DEFAULT_DEPTH_TOKEN_MIN_P90_P10 = 0.05
 DEFAULT_DEPTH_TOKEN_MIN_NONZERO_FRAC = 0.90
 DEFAULT_DEPTH_SOURCE_MIN_FRACTION = 0.95
-DEFAULT_REQUIRED_DEPTH_SOURCE = "env_state_removed_depth_delta"
+DEFAULT_REQUIRED_DEPTH_SOURCE = "env_state_surface_penetration"
 DEFAULT_RETURN_MIN_DIG_RATIO = 0.75
 DEFAULT_RETURN_MAX_OVERLONG_REJECT_RATIO = 0.10
 DEFAULT_DUMP_MAX_LEN = 768
@@ -862,6 +862,9 @@ def _run_pre_materialize_qc(
 
     dig_payload = payload["primitives"]["dig"]
     dig_payload["training_tier_counts"] = tier_counts
+    dig_payload["dig_cut_depth_source_counts"] = source_counts
+    dig_payload["gold_dig_cut_depth_source_counts"] = gold_source_counts
+    # Backward-compatible keys for older QC readers.
     dig_payload["depth_outcome_source_counts"] = source_counts
     dig_payload["gold_depth_outcome_source_counts"] = gold_source_counts
     dig_payload["dig_cut_token_contract_versions"] = contract_versions
@@ -1314,9 +1317,16 @@ def _h5_training_tier(handle: Any) -> str:
 
 def _h5_depth_source(handle: Any) -> str:
     metadata = handle["metadata"].attrs if "metadata" in handle else handle.attrs
+    source = _h5_text(metadata.get("operator_cut_depth_source", ""))
+    if source:
+        return source
     source = _h5_text(metadata.get("depth_outcome_source", ""))
     if source:
         return source
+    if "v2/cycle/operator_cut_depth_source" in handle:
+        data = handle["v2/cycle/operator_cut_depth_source"]
+        if data.shape[0] > 0:
+            return _h5_text(data[0])
     if "v2/cycle/depth_outcome_source" in handle:
         data = handle["v2/cycle/depth_outcome_source"]
         if data.shape[0] > 0:

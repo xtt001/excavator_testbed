@@ -275,6 +275,9 @@ def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) ->
         "return_target_tokens": _resolve_single_low_dim_dim(
             "return_target_tokens", equipment_model
         ),
+        "return_relocate_tokens_v1": _resolve_single_low_dim_dim(
+            "return_relocate_tokens_v1", equipment_model
+        ),
         "return_start_envelope_tokens_v1": _resolve_single_low_dim_dim(
             "return_start_envelope_tokens_v1", equipment_model
         ),
@@ -293,6 +296,8 @@ def _resolve_single_low_dim_dim(key: str, equipment_model: str) -> int:
     if key == "dig_depth_profile_tokens_v1":
         return int(DIG_DEPTH_PROFILE_TOKEN_DIM)
     if key == "return_target_tokens":
+        return int(RETURN_TARGET_TOKEN_DIM)
+    if key == "return_relocate_tokens_v1":
         return int(RETURN_TARGET_TOKEN_DIM)
     if key == "return_start_envelope_tokens_v1":
         return int(RETURN_START_ENVELOPE_TOKEN_DIM)

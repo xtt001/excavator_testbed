@@ -39,6 +39,8 @@ from testbed.data.schema import (
 from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_TOKEN_DIM,
+    DIG_CUT_LENGTH_SCALE_M,
+    DIG_CUT_POSITION_SCALE_M,
     RETURN_START_ENVELOPE_TOKEN_DIM,
     RETURN_TARGET_TOKEN_DIM,
 )
@@ -53,6 +55,7 @@ SUPPORTED_LOW_DIM_KEYS = (
     "dig_cut_tokens",
     "dig_depth_profile_tokens_v1",
     "return_target_tokens",
+    "return_relocate_tokens_v1",
     "return_start_envelope_tokens_v1",
 )
 
@@ -112,6 +115,7 @@ def _assemble_low_dim_observation(
     dig_cut_tokens: np.ndarray | None = None,
     dig_depth_profile_tokens_v1: np.ndarray | None = None,
     return_target_tokens: np.ndarray | None = None,
+    return_relocate_tokens_v1: np.ndarray | None = None,
     return_start_envelope_tokens_v1: np.ndarray | None = None,
     low_dim_keys: list[str],
 ) -> np.ndarray:
@@ -138,6 +142,11 @@ def _assemble_low_dim_observation(
         if return_target_tokens is None
         else np.asarray(return_target_tokens, dtype=np.float32)
     )
+    return_relocate_tokens_arr = (
+        None
+        if return_relocate_tokens_v1 is None
+        else np.asarray(return_relocate_tokens_v1, dtype=np.float32)
+    )
     return_start_envelope_tokens_arr = (
         None
         if return_start_envelope_tokens_v1 is None
@@ -156,6 +165,10 @@ def _assemble_low_dim_observation(
         or (
             return_target_tokens_arr is not None
             and return_target_tokens_arr.ndim > 1
+        )
+        or (
+            return_relocate_tokens_arr is not None
+            and return_relocate_tokens_arr.ndim > 1
         )
         or (
             return_start_envelope_tokens_arr is not None
@@ -202,6 +215,14 @@ def _assemble_low_dim_observation(
                     "/v2/step/return_target_tokens is missing."
                 )
             part = return_target_tokens_arr
+        elif key == "return_relocate_tokens_v1":
+            if return_relocate_tokens_arr is None:
+                raise KeyError(
+                    "Requested low_dim key 'return_relocate_tokens_v1' but "
+                    "a relocate target could not be derived from "
+                    "/v2/step/return_target_tokens or metadata next_operator fields."
+                )
+            part = return_relocate_tokens_arr
         elif key == "return_start_envelope_tokens_v1":
             if return_start_envelope_tokens_arr is None:
                 raise KeyError(
@@ -301,6 +322,11 @@ def get_norm_stats(
                 if "return_target_tokens" in selected_low_dim_keys
                 else None
             )
+            return_relocate_tokens = (
+                _read_return_relocate_tokens_dataset(f)
+                if "return_relocate_tokens_v1" in selected_low_dim_keys
+                else None
+            )
             return_start_envelope_tokens = (
                 _read_return_start_envelope_tokens_dataset(f)
                 if "return_start_envelope_tokens_v1" in selected_low_dim_keys
@@ -314,6 +340,7 @@ def get_norm_stats(
             dig_cut_tokens=dig_cut_tokens,
             dig_depth_profile_tokens_v1=dig_depth_profile_tokens,
             return_target_tokens=return_target_tokens,
+            return_relocate_tokens_v1=return_relocate_tokens,
             return_start_envelope_tokens_v1=return_start_envelope_tokens,
             low_dim_keys=selected_low_dim_keys,
         )
@@ -462,6 +489,11 @@ class EpisodicDataset(Dataset):
                 if "return_target_tokens" in self.low_dim_keys
                 else None
             )
+            return_relocate_tokens = (
+                _read_return_relocate_tokens_dataset(f, index=t0)
+                if "return_relocate_tokens_v1" in self.low_dim_keys
+                else None
+            )
             return_start_envelope_tokens = (
                 _read_return_start_envelope_tokens_dataset(f, index=t0)
                 if "return_start_envelope_tokens_v1" in self.low_dim_keys
@@ -483,6 +515,7 @@ class EpisodicDataset(Dataset):
                 dig_cut_tokens=dig_cut_tokens,
                 dig_depth_profile_tokens_v1=dig_depth_profile_tokens,
                 return_target_tokens=return_target_tokens,
+                return_relocate_tokens_v1=return_relocate_tokens,
                 return_start_envelope_tokens_v1=return_start_envelope_tokens,
                 low_dim_keys=self.low_dim_keys,
             )
@@ -1028,6 +1061,123 @@ def _read_return_target_tokens_dataset(h5_file, index: int | None = None) -> np.
             f"{expected_dim}, got {arr.shape}."
         )
     return arr
+
+
+def _read_return_relocate_tokens_dataset(
+    h5_file,
+    index: int | None = None,
+) -> np.ndarray:
+    target_tokens = _read_return_target_tokens_or_zeros(h5_file, index=index)
+    relocate_tokens = _mask_return_relocate_tokens(target_tokens)
+    metadata_token = _return_relocate_token_from_metadata(h5_file)
+    if metadata_token is None:
+        return relocate_tokens
+    if relocate_tokens.ndim == 1:
+        if _return_token_invalid(relocate_tokens):
+            return metadata_token
+        return relocate_tokens
+    invalid = _return_token_invalid(relocate_tokens)
+    if np.any(invalid):
+        relocate_tokens = relocate_tokens.copy()
+        relocate_tokens[invalid] = metadata_token.reshape(1, -1)
+    return relocate_tokens
+
+
+def _read_return_target_tokens_or_zeros(
+    h5_file,
+    *,
+    index: int | None,
+) -> np.ndarray:
+    if DS_V2_STEP_RETURN_TARGET_TOKENS in h5_file:
+        return _read_return_target_tokens_dataset(h5_file, index=index)
+    if "/observations/qpos" not in h5_file:
+        raise KeyError(
+            "Requested low_dim key 'return_relocate_tokens_v1' but "
+            "/v2/step/return_target_tokens and /observations/qpos are missing."
+        )
+    length = int(h5_file["/observations/qpos"].shape[0])
+    if index is None:
+        return np.zeros((length, RETURN_TARGET_TOKEN_DIM), dtype=np.float32)
+    return np.zeros((RETURN_TARGET_TOKEN_DIM,), dtype=np.float32)
+
+
+def _mask_return_relocate_tokens(tokens: np.ndarray) -> np.ndarray:
+    arr = np.asarray(tokens, dtype=np.float32).copy()
+    if arr.shape[-1] != RETURN_TARGET_TOKEN_DIM:
+        raise ValueError(
+            "return_relocate_tokens_v1 must be derived from 10D "
+            f"return_target_tokens, got {arr.shape}."
+        )
+    arr[~np.isfinite(arr)] = 0.0
+    arr[..., 7] = 0.0
+    arr[..., 8] = 0.0
+    return arr
+
+
+def _return_token_invalid(tokens: np.ndarray) -> np.ndarray | bool:
+    arr = np.asarray(tokens, dtype=np.float32)
+    finite = np.all(np.isfinite(arr), axis=-1)
+    valid = arr[..., 9] > 0.5
+    spatial_nonzero = np.linalg.norm(arr[..., :7], axis=-1) > 1e-6
+    return np.logical_not(finite & valid & spatial_nonzero)
+
+
+def _return_relocate_token_from_metadata(h5_file) -> np.ndarray | None:
+    if "metadata" not in h5_file:
+        return None
+    attrs = h5_file["metadata"].attrs
+    if int(_metadata_scalar(attrs, "next_operator_cut_valid", default=0)) <= 0:
+        return None
+    required = (
+        "next_operator_entry_x_m",
+        "next_operator_entry_z_m",
+        "next_operator_exit_x_m",
+        "next_operator_exit_z_m",
+        "next_operator_cut_direction_x",
+        "next_operator_cut_direction_z",
+        "next_operator_cut_length_m",
+    )
+    values = [_metadata_scalar(attrs, key, default=np.nan) for key in required]
+    if not all(np.isfinite(float(value)) for value in values):
+        return None
+    entry_x, entry_z, exit_x, exit_z, direction_x, direction_z, length_m = values
+    token = np.asarray(
+        [
+            _clip_norm(float(entry_x), DIG_CUT_POSITION_SCALE_M),
+            _clip_norm(float(entry_z), DIG_CUT_POSITION_SCALE_M),
+            _clip_norm(float(exit_x), DIG_CUT_POSITION_SCALE_M),
+            _clip_norm(float(exit_z), DIG_CUT_POSITION_SCALE_M),
+            float(direction_x),
+            float(direction_z),
+            _clip_norm(float(length_m), DIG_CUT_LENGTH_SCALE_M),
+            0.0,
+            0.0,
+            1.0,
+        ],
+        dtype=np.float32,
+    )
+    token[~np.isfinite(token)] = 0.0
+    return token
+
+
+def _metadata_scalar(attrs, key: str, *, default: float) -> float:
+    if key not in attrs:
+        return float(default)
+    value = attrs[key]
+    if isinstance(value, bytes):
+        value = value.decode("utf-8")
+    arr = np.asarray(value)
+    if arr.shape == ():
+        return float(arr.item())
+    if arr.size <= 0:
+        return float(default)
+    return float(arr.reshape(-1)[0])
+
+
+def _clip_norm(value: float, scale: float) -> float:
+    if scale <= 0.0:
+        return 0.0
+    return float(np.clip(float(value) / float(scale), -1.0, 1.0))
 
 
 def _read_return_start_envelope_tokens_dataset(

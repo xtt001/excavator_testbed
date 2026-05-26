@@ -109,17 +109,17 @@ GOOD_DUMP_MIN_DEPOSITED_FRACTION_OF_BUCKET_LOSS = 0.50
 GOOD_DUMP_MAX_HARD_COLLISION_DELTA = 0
 DUMP_RELEASE_POST_HOLD_STEPS = 30
 SPATIAL_MASS_DUMP_PRE_RELEASE_LEAD_MAX_STEPS = 120
-SPATIAL_MASS_DUMP_START_MAX_OUTSIDE_DISTANCE_M = 0.35
-SPATIAL_MASS_DUMP_START_STABLE_OUTSIDE_DISTANCE_M = 0.30
+SPATIAL_MASS_DUMP_START_MAX_OUTSIDE_DISTANCE_M = 0.30
+SPATIAL_MASS_DUMP_START_STABLE_OUTSIDE_DISTANCE_M = 0.25
 SPATIAL_MASS_DUMP_START_STABLE_WINDOW_STEPS = 20
-SPATIAL_MASS_DUMP_START_OUTSIDE_RANGE_TOL_M = 0.08
-SPATIAL_MASS_DUMP_START_TOTAL_APPROACH_TOL_M = 0.12
-SPATIAL_MASS_DUMP_START_RELATIVE_X_MIN_M = -0.40
-SPATIAL_MASS_DUMP_START_RELATIVE_X_MAX_M = 2.10
-SPATIAL_MASS_DUMP_START_RELATIVE_Z_MIN_M = 0.30
-SPATIAL_MASS_DUMP_START_RELATIVE_Z_MAX_M = 2.30
-SPATIAL_MASS_DUMP_START_RELATIVE_X_RANGE_TOL_M = 0.20
-SPATIAL_MASS_DUMP_START_RELATIVE_Z_RANGE_TOL_M = 0.12
+SPATIAL_MASS_DUMP_START_OUTSIDE_RANGE_TOL_M = 0.06
+SPATIAL_MASS_DUMP_START_TOTAL_APPROACH_TOL_M = 0.10
+SPATIAL_MASS_DUMP_START_RELATIVE_X_MIN_M = -0.20
+SPATIAL_MASS_DUMP_START_RELATIVE_X_MAX_M = 1.90
+SPATIAL_MASS_DUMP_START_RELATIVE_Z_MIN_M = 0.45
+SPATIAL_MASS_DUMP_START_RELATIVE_Z_MAX_M = 2.10
+SPATIAL_MASS_DUMP_START_RELATIVE_X_RANGE_TOL_M = 0.16
+SPATIAL_MASS_DUMP_START_RELATIVE_Z_RANGE_TOL_M = 0.10
 SPATIAL_MASS_DUMP_START_MIN_HEIGHT_ABOVE_RIM_M = 0.45
 SPATIAL_MASS_DUMP_START_FALLBACK_PRE_RELEASE_STEPS = 15
 SPATIAL_MASS_DUMP_END_RESIDUAL_BUCKET_MASS_KG = 15.0
@@ -138,6 +138,8 @@ SPATIAL_MASS_DIG_EXIT_MAX_DEPTH_M = 0.02
 SPATIAL_MASS_DIG_BOX_LONG_ABS_MAX = 1.05
 SPATIAL_MASS_DIG_BOX_SHORT_MIN = -0.15
 SPATIAL_MASS_DIG_BOX_SHORT_MAX = 1.15
+SPATIAL_MASS_RETURN_ENTRY_READY_DISTANCE_M = 0.05
+SPATIAL_MASS_RETURN_ENTRY_READY_DEPTH_M = 0.005
 RETURN_START_ENVELOPE_WINDOW_STEPS = 40
 SPATIAL_MASS_CARRY_MAX_DEPOSIT_DELTA_KG = 5.0
 SPATIAL_MASS_CARRY_MAX_DEPOSIT_TO_PAYLOAD_LOSS_FRAC = 0.10
@@ -188,6 +190,7 @@ PRIMITIVE_CYCLE_METADATA_KEYS = (
     "operator_cut_direction_z",
     "operator_cut_length_m",
     "operator_cut_depth_peak_m",
+    "operator_cut_depth_source",
     "operator_cut_payload_gain_kg",
     "operator_cut_valid",
     "next_operator_entry_step",
@@ -1352,6 +1355,9 @@ def extract_spatial_mass_primitive_slices_from_raw(
     for index, (cycle_id, start, work_end, _realign_end) in enumerate(windows):
         source_cycle_id = int(cycle_id)
         next_start = int(windows[index + 1][1]) if index + 1 < len(windows) else None
+        next_work_end = (
+            int(windows[index + 1][2]) if index + 1 < len(windows) else None
+        )
         work_realign = _window_pose_realign_steps(
             realign_steps=realign_steps,
             start_step=start,
@@ -1481,11 +1487,17 @@ def extract_spatial_mass_primitive_slices_from_raw(
                 details={"policy": "return requires a next material dig start"},
             )
             continue
-        return_end = min(int(len(episode["actions"])), int(next_start) + 1)
+        return_handoff_step, return_end_qc = _find_spatial_mass_return_entry_ready(
+            episode=episode,
+            start=int(dump_end),
+            next_start=int(next_start),
+            next_work_end=int(next_work_end if next_work_end is not None else next_start),
+        )
+        return_end = min(int(len(episode["actions"])), int(return_handoff_step) + 1)
         return_realign = _window_pose_realign_steps(
             realign_steps=realign_steps,
             start_step=int(dump_end),
-            end_step_exclusive=int(next_start),
+            end_step_exclusive=int(return_end),
         )
         if return_realign:
             _reject(
@@ -1493,7 +1505,7 @@ def extract_spatial_mass_primitive_slices_from_raw(
                 reason=POSE_REALIGN_TRANSITION_REJECT_REASON,
                 source_cycle_id=source_cycle_id,
                 start=int(dump_end),
-                end=int(next_start),
+                end=int(return_end),
                 details={
                     "realign_steps_in_window": [
                         int(step) for step in return_realign
@@ -1502,6 +1514,7 @@ def extract_spatial_mass_primitive_slices_from_raw(
                     "realign_metadata_key": POSE_REALIGN_METADATA_KEY,
                     "policy": "discard_return_transition_window",
                     "next_cycle_id": int(windows[index + 1][0]),
+                    **return_end_qc,
                 },
             )
             continue
@@ -1518,13 +1531,15 @@ def extract_spatial_mass_primitive_slices_from_raw(
                 details={
                     "window_len": int(return_end) - int(dump_end),
                     "max_transition_len": int(return_max_transition_len),
+                    **return_end_qc,
                 },
             )
             continue
         token, valid_mask, return_qc = _build_return_start_envelope_token(
             episode=episode,
-            next_start_step=int(next_start),
+            next_start_step=int(return_handoff_step),
         )
+        return_qc.update(return_end_qc)
         return_len = int(return_end) - int(dump_end)
         return_qc.update(
             {
@@ -1532,6 +1547,8 @@ def extract_spatial_mass_primitive_slices_from_raw(
                 "return_end_step_exclusive": int(return_end),
                 "return_window_len": int(return_len),
                 "return_next_material_cycle_id": int(windows[index + 1][0]),
+                "return_next_material_start_step": int(next_start),
+                "return_handoff_step": int(return_handoff_step),
                 "return_start_envelope_schema": "return_start_envelope_tokens_v1",
             }
         )
@@ -1617,6 +1634,95 @@ def _find_spatial_mass_dig_start(
         "dig_start_depth_m": float(np.nan_to_num(depth[dig_start], nan=0.0)),
         "dig_start_contact_mask": int(contact[dig_start] > 0.5),
     }
+
+
+def _find_spatial_mass_return_entry_ready(
+    *,
+    episode: dict[str, Any],
+    start: int,
+    next_start: int,
+    next_work_end: int,
+) -> tuple[int, dict[str, Any]]:
+    """Find the first next-dig entry/envelope frame after dump completion.
+
+    V2.4.5 return ownership ends when the bucket reaches the next dig-start
+    envelope, not when the later material-cycle label finally says the dig is
+    underway. This keeps return data from swallowing early next-dig motion when
+    replay/relabel has a delayed material start.
+    """
+
+    fallback = int(next_start)
+    qc: dict[str, Any] = {
+        "return_end_source": "fallback_next_material_start",
+        "return_entry_ready_distance_m": float(SPATIAL_MASS_RETURN_ENTRY_READY_DISTANCE_M),
+        "return_entry_ready_depth_m": float(SPATIAL_MASS_RETURN_ENTRY_READY_DEPTH_M),
+        "return_entry_ready_search_start_step": int(start),
+        "return_entry_ready_search_end_step": int(next_work_end),
+        "return_entry_ready_selected_step": int(fallback),
+    }
+    env_state = _env_state_or_none(episode)
+    if env_state is None:
+        qc["return_end_source"] = "fallback_missing_env_state"
+        return fallback, qc
+
+    search_start = max(0, int(start) + 1)
+    search_end = min(
+        int(env_state.shape[0]),
+        max(int(next_start) + 1, int(next_work_end)),
+    )
+    if search_end <= search_start:
+        qc["return_end_source"] = "fallback_empty_search_window"
+        return fallback, qc
+
+    geometry = _optional_env_col(
+        env_state,
+        ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
+        default=0.0,
+    )
+    distance = _optional_env_col(
+        env_state,
+        ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
+        default=float("inf"),
+    )
+    contact = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
+        default=0.0,
+    )
+    depth = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+        default=0.0,
+    )
+
+    indices = np.arange(search_start, search_end, dtype=np.int32)
+    finite_geometry = geometry[indices] > 0.5
+    finite_distance = np.isfinite(distance[indices])
+    finite_depth = np.isfinite(depth[indices])
+    ready = finite_geometry & (
+        (finite_distance & (distance[indices] <= SPATIAL_MASS_RETURN_ENTRY_READY_DISTANCE_M))
+        | (contact[indices] > 0.5)
+        | (finite_depth & (depth[indices] >= SPATIAL_MASS_RETURN_ENTRY_READY_DEPTH_M))
+    )
+    ready_indices = indices[ready]
+    if len(ready_indices) <= 0:
+        return fallback, qc
+
+    selected = int(ready_indices[0])
+    qc.update(
+        {
+            "return_end_source": "first_next_dig_entry_ready",
+            "return_entry_ready_selected_step": int(selected),
+            "return_entry_ready_offset_from_dump_end": int(selected) - int(start),
+            "return_entry_ready_offset_from_next_material_start": int(selected)
+            - int(next_start),
+            "return_entry_ready_min_distance_m": float(distance[selected]),
+            "return_entry_ready_contact_mask": int(contact[selected] > 0.5),
+            "return_entry_ready_local_surface_depth_m": float(depth[selected]),
+            "return_entry_ready_geometry_available": int(geometry[selected] > 0.5),
+        }
+    )
+    return selected, qc
 
 
 def _spatial_mass_material_windows(
