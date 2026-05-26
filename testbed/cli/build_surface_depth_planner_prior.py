@@ -19,6 +19,8 @@ import numpy as np
 
 from testbed.data.operator_first_v2_2 import RETURN_START_ENVELOPE_TOKEN_DIM
 from testbed.data.schema import (
+    ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+    ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
     ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
     ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
 )
@@ -241,6 +243,12 @@ def _build_coverage_cells(
                     ),
                     6,
                 ),
+                "dig_start_plane_depth_m": _stats_05_50_95(
+                    [r["start_plane_depth_m"] for r in rows]
+                ),
+                "dig_start_local_depth_m": _stats_05_50_95(
+                    [r["start_local_depth_m"] for r in rows]
+                ),
             }
         )
     return coverage_cells
@@ -253,6 +261,7 @@ def _build_return_start_envelope_prior(
 ) -> dict[str, Any]:
     return_tokens: list[np.ndarray] = []
     return_tokens_by_cell: dict[int, list[np.ndarray]] = defaultdict(list)
+    coverage_by_cell = {int(cell["cell_id"]): cell for cell in coverage_cells}
     skipped_missing_next_entry = 0
     for path in _episode_paths(return_root):
         with h5py.File(path, "r") as handle:
@@ -301,11 +310,12 @@ def _build_return_start_envelope_prior(
         },
         "return_start_envelope_global": _token_summary(return_tokens, len(return_tokens)),
         "return_start_envelope_cells": [
-            {
-                "cell_id": cell_id,
-                "match_source": RETURN_ENVELOPE_MATCH_SOURCE,
-                **_token_summary(tokens, len(return_tokens)),
-            }
+            _return_envelope_cell_summary(
+                cell_id=cell_id,
+                tokens=tokens,
+                total_count=len(return_tokens),
+                coverage_cell=coverage_by_cell.get(int(cell_id), {}),
+            )
             for cell_id, tokens in sorted(return_tokens_by_cell.items())
             if tokens
         ],
@@ -382,6 +392,14 @@ def _load_gold_dig_records(dig_root: Path) -> list[dict[str, Any]]:
                         ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX :
                         ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX + CELL_COUNT,
                     ].astype(float).tolist(),
+                    "start_plane_depth_m": _env_scalar(
+                        env,
+                        ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+                    ),
+                    "start_local_depth_m": _env_scalar(
+                        env,
+                        ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+                    ),
                     "start_qpos": qpos.astype(float).tolist(),
                     "start_qvel": qvel.astype(float).tolist(),
                     "profile_token": (
@@ -467,6 +485,32 @@ def _token_summary(tokens: list[np.ndarray], total_count: int) -> dict[str, Any]
     }
 
 
+def _return_envelope_cell_summary(
+    *,
+    cell_id: int,
+    tokens: list[np.ndarray],
+    total_count: int,
+    coverage_cell: dict[str, Any],
+) -> dict[str, Any]:
+    summary = {
+        "cell_id": int(cell_id),
+        "match_source": RETURN_ENVELOPE_MATCH_SOURCE,
+        **_token_summary(tokens, total_count),
+    }
+    for key in ("dig_start_plane_depth_m", "dig_start_local_depth_m"):
+        stats = coverage_cell.get(key)
+        if isinstance(stats, dict):
+            summary[key] = dict(stats)
+    return summary
+
+
+def _env_scalar(env: np.ndarray, index: int) -> float:
+    if env.ndim != 2 or env.shape[0] <= 0 or env.shape[1] <= index:
+        return 0.0
+    value = float(env[0, index])
+    return value if np.isfinite(value) else 0.0
+
+
 def _episode_paths(path: Path) -> list[Path]:
     return sorted(path.glob("episode_*.hdf5"), key=lambda p: int(p.stem.split("_")[-1]))
 
@@ -518,6 +562,13 @@ def _stats(values: list[float]) -> dict[str, float]:
     return {
         key: round(_percentile(values, q), 6)
         for key, q in (("p10", 10), ("p50", 50), ("p90", 90))
+    }
+
+
+def _stats_05_50_95(values: list[float]) -> dict[str, float]:
+    return {
+        key: round(_percentile(values, q), 6)
+        for key, q in (("p05", 5), ("p50", 50), ("p95", 95))
     }
 
 

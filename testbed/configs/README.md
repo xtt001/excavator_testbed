@@ -438,6 +438,11 @@
   `dig_cut_planner.return_start_envelope.{spatial,qpos}_from_relocate`，用
   `return_relocate_tokens_v1` 派生 target-specific envelope spatial long/short 和
   qpos center。
+- surface-depth planner prior 的 `return_start_envelope_cells` 会随 cell 写入
+  `dig_start_plane_depth_m` / `dig_start_local_depth_m`，来源是对应 gold dig primitive
+  的真实起始状态。`return_to_dig_start_envelope_plane_depth_mode=p50_floor` 依赖这些
+  stats，避免 return 只满足 qpos/spatial envelope、但 bucket 仍在 plane depth `0`
+  附近时过早 handoff 给 dig。
 - YuLong V2.4 reconstructed-belief sweep planner 使用
   `dig_cut_planner.mode=operator_prior_sweep_belief`。它不依赖当前全零的
   Unity `removed_depth`，而是根据历史 cut corridor、payload、effective deposit

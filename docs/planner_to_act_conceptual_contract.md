@@ -245,7 +245,10 @@ planner 决策：
 - 当前 surface-depth 主线把 return 当成“回到可接管分布”的 skill，不是“按下一铲 cell
   精确导航”的 skill。
 - planner latch `next_dig_entry_ready`，但不会只凭一个事件切 dig；还要检查 entry error、
-  spatial/depth/contact/qpos envelope。
+  spatial/depth/contact/qpos envelope。surface-depth prior 的
+  `return_start_envelope_cells` 应携带从 gold dig primitive start 统计出的
+  `dig_start_plane_depth_m`；handoff gate 在 `p50_floor` 模式下用它防止
+  return 在 bucket 仍未压到 dig-start 深度时过早交给 dig。
 
 输出：
 
