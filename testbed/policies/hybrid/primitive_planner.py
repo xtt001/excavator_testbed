@@ -915,6 +915,7 @@ class PrimitivePlannerACTPolicy(Policy):
         self._coverage_terminal_stop_requested = False
         self._coverage_terminal_stop_reason = ""
         self._coverage_candidate_scores: list[dict[str, float | int | str]] = []
+        self._coverage_decision_trace: list[dict[str, Any]] = []
         self._coverage_active_state_exemplar_ids: list[str] = []
         self._coverage_rejected_state_exemplar_ids: set[str] = set()
         self._coverage_active_state_exemplar_distance = float("nan")
@@ -1404,6 +1405,8 @@ class PrimitivePlannerACTPolicy(Policy):
                 self._coverage_corridor_to_debug(corridor)
                 for corridor in self._coverage_corridors
             ],
+            "coverage_decision_trace": list(self._coverage_decision_trace),
+            "coverage_decision_trace_count": int(len(self._coverage_decision_trace)),
             "coverage_terminal_stop_requested": bool(
                 self._coverage_terminal_stop_requested
             ),
@@ -4046,6 +4049,16 @@ class PrimitivePlannerACTPolicy(Policy):
 
         if best is None:
             raise ValueError("operator_prior_coverage has no selectable corridors.")
+        self._record_coverage_decision_event(
+            "select_corridor",
+            obs=obs,
+            corridor=best,
+            extra={
+                "selected_score": float(best_score),
+                "candidate_scores": list(self._coverage_candidate_scores),
+                "first_dig_gate_available": int(first_dig_gate_available),
+            },
+        )
         if all(corridor.depleted for corridor in self._coverage_corridors):
             self._request_coverage_terminal_stop("dig_area_depleted")
         return best
@@ -4817,6 +4830,20 @@ class PrimitivePlannerACTPolicy(Policy):
             corridor.depleted = True
             corridor.last_reason = "belief_coverage_complete"
 
+        self._record_coverage_decision_event(
+            "complete_dump",
+            obs=obs,
+            corridor=corridor,
+            extra={
+                "reason": str(reason),
+                "final_reason": str(corridor.last_reason),
+                "payload_gain_kg": float(payload_gain),
+                "effective_deposit_delta_kg": float(effective_deposit),
+                "remaining_depth_m": float(remaining_depth),
+                "low_productivity": int(low_productivity),
+                "completed_dump_count": int(self._coverage_completed_dump_count),
+            },
+        )
         if all(candidate.depleted for candidate in self._coverage_corridors):
             self._request_coverage_terminal_stop("dig_area_depleted")
         elif (
@@ -4862,6 +4889,18 @@ class PrimitivePlannerACTPolicy(Policy):
             corridor.last_reason = str(reason)
             self._coverage_last_payload_gain_kg = float(payload_gain)
             self._coverage_last_effective_deposit_delta_kg = float(effective_deposit)
+            self._record_coverage_decision_event(
+                "reject_corridor",
+                obs=obs,
+                corridor=corridor,
+                extra={
+                    "reason": str(reason),
+                    "payload_gain_kg": float(payload_gain),
+                    "effective_deposit_delta_kg": float(effective_deposit),
+                    "remaining_depth_m": float(remaining_depth),
+                    "counted_attempt": 0,
+                },
+            )
             return
         corridor.attempts += 1
         corridor.low_productivity_streak += 1
@@ -4884,6 +4923,18 @@ class PrimitivePlannerACTPolicy(Policy):
             or corridor.attempts >= self._coverage_corridor_attempt_limit(corridor)
         ):
             corridor.depleted = True
+        self._record_coverage_decision_event(
+            "reject_corridor",
+            obs=obs,
+            corridor=corridor,
+            extra={
+                "reason": str(reason),
+                "payload_gain_kg": float(payload_gain),
+                "effective_deposit_delta_kg": float(effective_deposit),
+                "remaining_depth_m": float(remaining_depth),
+                "counted_attempt": 1,
+            },
+        )
         if all(candidate.depleted for candidate in self._coverage_corridors):
             self._request_coverage_terminal_stop("dig_area_depleted")
         elif (
@@ -4918,11 +4969,81 @@ class PrimitivePlannerACTPolicy(Policy):
             np.clip(float(corridor.belief_coverage) + gain, 0.0, 1.5)
         )
 
+    def _record_coverage_decision_event(
+        self,
+        event: str,
+        *,
+        obs: dict | None = None,
+        corridor: CoverageCorridorState | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "event": str(event),
+            "cycle_index": int(self._cycle_index),
+            "skill_name": str(self._skill_name),
+            "active_corridor_id": int(self._coverage_active_corridor_id),
+            "depleted_count": int(self._coverage_depleted_count()),
+            "global_low_productivity_streak": int(
+                self._coverage_global_low_productivity_streak
+            ),
+            "terminal_stop_requested": int(self._coverage_terminal_stop_requested),
+            "terminal_stop_reason": str(self._coverage_terminal_stop_reason),
+        }
+        if corridor is not None:
+            payload["corridor"] = self._coverage_corridor_to_debug(corridor)
+        if obs is not None:
+            env_state = self._env_state(obs)
+            payload["bucket"] = {
+                "mass_kg": float(self._mass_in_bucket(obs)),
+                "deposited_mass_kg": float(self._deposited_mass(obs)),
+                "dig_area_x_m": self._env_state_value(
+                    env_state,
+                    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+                ),
+                "dig_area_y_m": self._env_state_value(
+                    env_state,
+                    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+                ),
+                "dig_area_z_m": self._env_state_value(
+                    env_state,
+                    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
+                ),
+                "long_norm": self._env_state_value(
+                    env_state,
+                    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
+                ),
+                "short_norm": self._env_state_value(
+                    env_state,
+                    ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
+                ),
+                "plane_depth_m": self._env_state_value(
+                    env_state,
+                    ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+                ),
+                "local_depth_m": self._env_state_value(
+                    env_state,
+                    ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+                ),
+            }
+        payload.update(dict(extra or {}))
+        self._coverage_decision_trace.append(payload)
+
+    @staticmethod
+    def _env_state_value(env_state: np.ndarray, index: int) -> float:
+        if len(env_state) <= int(index):
+            return float("nan")
+        return float(env_state[int(index)])
+
     def _request_coverage_terminal_stop(self, reason: str) -> None:
         if self._coverage_terminal_stop_requested:
             return
         self._coverage_terminal_stop_requested = True
         self._coverage_terminal_stop_reason = str(reason)
+        self._record_coverage_decision_event(
+            "terminal_stop",
+            corridor=self._coverage_active_corridor(),
+            extra={"reason": str(reason)},
+        )
 
     def _coverage_active_corridor(self) -> CoverageCorridorState | None:
         return self._coverage_corridor_by_id(self._coverage_active_corridor_id)

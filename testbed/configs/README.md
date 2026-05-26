@@ -307,6 +307,11 @@
   `return_to_dig_start_envelope_direct_handoff_enabled: true`。这不是 predig scripted
   align；它只允许“空斗、entry-close、envelope-ready”的状态直接从 return 交给 dig，
   避免 semantic boundary 还在等待接触/深度事件时错过浅层起挖窗口。
+- planner trace 现在会输出 `coverage_decision_trace`。该事件流覆盖
+  `select_corridor`、`complete_dump`、`reject_corridor` 和 `terminal_stop`，并保存每次
+  选择时的 candidate score、remaining depth、attempt/depleted、bucket 几何位置以及
+  payload/deposit 结果。调 10cycle 覆盖时优先看它，而不是只看最终
+  `coverage_corridors` 快照。
 - qc6 eval 配置为
   `eval_yulong_v2_4_5_qc6_cell_weighted_{3cycle_smoke,15cycle_probe,30cycle_probe}.yaml`。
   这些配置显式设置 `boundary.profile: v2_4_5_spatial_mass` 和

@@ -466,4 +466,5 @@ depth/contact 字段判断是否仍在安全 handoff envelope 内，但不应该
 | online state machine | `PrimitivePlannerACTPolicy._maybe_switch_skill` |
 | offline primitive slicer | `tb-build-primitives-v2_2 --boundary-profile v2_4_5_spatial_mass` |
 | coverage belief | `coverage_corridors`、attempts、low-productivity streak、depleted |
+| coverage decision trace | `coverage_decision_trace`，记录 `select_corridor` / `complete_dump` / `reject_corridor` / `terminal_stop` 的候选分数、remaining depth、payload/deposit 与 depleted reason |
 | old coarse planner | `RuleTaskPlanner`，用于 Stage-4 sector/depth rule planner |

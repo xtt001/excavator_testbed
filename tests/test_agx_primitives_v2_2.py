@@ -2922,6 +2922,47 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertGreater(corridor.low_productivity_streak, 0)
         self.assertGreater(corridor.belief_coverage, 0.0)
 
+    def test_primitive_planner_records_coverage_decision_trace(self) -> None:
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            dig_cut_mode="operator_prior_sweep_belief",
+            coverage_extra={"use_env_removed_depth": False},
+        )
+        obs = _coverage_obs(mass=0.0, dig_distance=0.0)
+
+        policy.predict(obs)
+
+        trace = policy.planner_trace()["coverage_decision_trace"]
+        self.assertGreaterEqual(len(trace), 1)
+        self.assertEqual(trace[0]["event"], "select_corridor")
+        self.assertIn("candidate_scores", trace[0])
+        self.assertGreaterEqual(len(trace[0]["candidate_scores"]), 1)
+        self.assertIn("bucket", trace[0])
+
+        policy._complete_coverage_dump(
+            _coverage_obs(mass=0.0, dig_distance=0.0, deposited=7.0),
+            reason="unit_test_low_productivity",
+        )
+        trace = policy.planner_trace()["coverage_decision_trace"]
+        self.assertEqual(trace[-1]["event"], "complete_dump")
+        self.assertEqual(trace[-1]["reason"], "unit_test_low_productivity")
+
+    def test_primitive_planner_trace_records_terminal_depletion(self) -> None:
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            dig_cut_mode="operator_prior_sweep_belief",
+        )
+        policy._ensure_coverage_corridors()
+        for corridor in policy._coverage_corridors:
+            corridor.depleted = True
+
+        policy._select_coverage_corridor(_coverage_obs(mass=0.0, dig_distance=0.0))
+
+        trace = policy.planner_trace()["coverage_decision_trace"]
+        self.assertEqual(trace[-1]["event"], "terminal_stop")
+        self.assertEqual(trace[-1]["reason"], "dig_area_depleted")
+        self.assertTrue(policy.planner_trace()["coverage_terminal_stop_requested"])
+
     def test_primitive_planner_bad_dig_replans_without_align(self) -> None:
         policy = _coverage_planner_policy(
             dig_policy=_RecordingPolicy(0),
