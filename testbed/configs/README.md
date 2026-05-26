@@ -302,6 +302,11 @@
   planner 会 latch `next_dig_entry_ready`，等 plane-depth/qpos/spatial envelope
   同步 ready 再交接，并会拒绝低于 carry/dump 最低载荷的 `dig_complete` 直接进入
   carry。
+- 对于 return relocation ACT，若 `return_start_envelope_tokens_v1` 已经给出目标相关的
+  spatial/qpos 起挖包络，可在 eval 的 `policy.switch` 中显式打开
+  `return_to_dig_start_envelope_direct_handoff_enabled: true`。这不是 predig scripted
+  align；它只允许“空斗、entry-close、envelope-ready”的状态直接从 return 交给 dig，
+  避免 semantic boundary 还在等待接触/深度事件时错过浅层起挖窗口。
 - qc6 eval 配置为
   `eval_yulong_v2_4_5_qc6_cell_weighted_{3cycle_smoke,15cycle_probe,30cycle_probe}.yaml`。
   这些配置显式设置 `boundary.profile: v2_4_5_spatial_mass` 和

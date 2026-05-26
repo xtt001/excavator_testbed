@@ -786,6 +786,12 @@ def eval_policy(config: dict[str, Any]) -> None:
             "return_to_dig_start_envelope_require_contact": bool(
                 switch_cfg.get("return_to_dig_start_envelope_require_contact", True)
             ),
+            "return_to_dig_start_envelope_direct_handoff_enabled": bool(
+                switch_cfg.get(
+                    "return_to_dig_start_envelope_direct_handoff_enabled",
+                    False,
+                )
+            ),
             "return_max_steps": int(
                 switch_cfg.get(
                     "return_max_steps",

@@ -2820,6 +2820,72 @@ class TestPrimitivesV22(unittest.TestCase):
             "return_to_dig_next_dig_entry_ready",
         )
 
+    def test_return_to_dig_direct_handoff_uses_envelope_without_boundary_event(
+        self,
+    ) -> None:
+        token = np.zeros(18, dtype=np.float32)
+        token[0:2] = np.asarray([-0.48, 0.67], dtype=np.float32)
+        token[2] = 0.0
+        token[3] = 0.20
+        token[4] = 0.0
+        token[5] = 0.08
+        token[6] = 0.0
+        token[7:11] = np.asarray([0.520, 0.732, 0.067, 0.166], dtype=np.float32)
+        token[11:15] = np.asarray([0.02, 0.02, 0.02, 0.03], dtype=np.float32)
+        token[15] = 0.45
+        token[16] = 1.0
+        token[17] = 1.0
+
+        def make_policy(*, direct_handoff_enabled: bool) -> PrimitivePlannerACTPolicy:
+            policy = _coverage_planner_policy(
+                dig_policy=_RecordingPolicy(0),
+                boundary_profile=PRIMITIVE_BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS,
+                return_to_dig_max_entry_error_m=0.55,
+                return_to_dig_start_envelope_gate_enabled=True,
+                return_to_dig_start_envelope_direct_handoff_enabled=(
+                    direct_handoff_enabled
+                ),
+                return_to_dig_start_envelope_plane_depth_tolerance_m=10.0,
+            )
+            policy._skill_name = "return"
+            policy._switch_reason = "unit_test_return_direct_handoff"
+            policy._return_start_envelope_tokens = token.copy()
+            policy._return_start_envelope_use_prior_spatial_bounds = False
+            policy._return_start_envelope_use_prior_qpos_bounds = False
+            policy._pending_dig_cut_raw_fields = {
+                "operator_entry_x_m": 0.0,
+                "operator_entry_z_m": 0.0,
+            }
+            return policy
+
+        obs = _coverage_obs(
+            mass=0.0,
+            dig_distance=0.20,
+            bucket_depth=0.0,
+            bucket_pose=(0.0, 0.0, 0.0),
+        )
+        env = np.asarray(obs["env_state"], dtype=np.float32)
+        env[ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX] = 1.0
+        env[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX] = float(token[0])
+        env[ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX] = float(token[1])
+        env[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = 0.0
+        env[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX] = 0.0
+        obs["env_state"] = env
+        obs["qpos"] = token[7:11].astype(np.float32)
+
+        legacy_policy = make_policy(direct_handoff_enabled=False)
+        self.assertTrue(legacy_policy._return_to_dig_handoff_ready(obs))
+        legacy_policy._maybe_switch_skill(obs=obs, boundary_event=_FakeBoundaryEvent())
+        self.assertEqual(legacy_policy._skill_name, "return")
+
+        direct_policy = make_policy(direct_handoff_enabled=True)
+        direct_policy._maybe_switch_skill(obs=obs, boundary_event=_FakeBoundaryEvent())
+        self.assertEqual(direct_policy._skill_name, "dig")
+        self.assertEqual(
+            direct_policy._switch_reason,
+            "return_to_dig_start_envelope_ready",
+        )
+
     def test_primitive_planner_sweep_belief_does_not_depend_on_removed_depth(self) -> None:
         dig_policy = _RecordingPolicy(0)
         policy = _coverage_planner_policy(
@@ -4627,6 +4693,7 @@ def _coverage_planner_policy(
     return_to_dig_shallow_guard_enabled: bool = False,
     return_to_dig_max_entry_error_m: float | None = None,
     return_to_dig_start_envelope_gate_enabled: bool = False,
+    return_to_dig_start_envelope_direct_handoff_enabled: bool = False,
     return_to_dig_start_envelope_plane_depth_tolerance_m: float = 0.05,
     return_to_dig_start_envelope_plane_depth_mode: str = "range",
     pre_dig_align_enabled: bool = False,
@@ -4675,6 +4742,9 @@ def _coverage_planner_policy(
         return_to_dig_max_entry_error_m=return_to_dig_max_entry_error_m,
         return_to_dig_start_envelope_gate_enabled=(
             return_to_dig_start_envelope_gate_enabled
+        ),
+        return_to_dig_start_envelope_direct_handoff_enabled=(
+            return_to_dig_start_envelope_direct_handoff_enabled
         ),
         return_to_dig_start_envelope_plane_depth_tolerance_m=(
             return_to_dig_start_envelope_plane_depth_tolerance_m

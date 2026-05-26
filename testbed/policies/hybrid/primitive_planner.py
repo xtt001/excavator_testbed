@@ -197,6 +197,7 @@ class PrimitivePlannerACTPolicy(Policy):
         return_to_dig_start_envelope_plane_depth_mode: str = "range",
         return_to_dig_start_envelope_qpos_tolerance: float = 0.04,
         return_to_dig_start_envelope_require_contact: bool = True,
+        return_to_dig_start_envelope_direct_handoff_enabled: bool = False,
         return_max_steps: int = 420,
         action_dim: int = 4,
         primitive_checkpoint_paths: dict[str, str] | None = None,
@@ -352,6 +353,9 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         self.return_to_dig_start_envelope_require_contact = bool(
             return_to_dig_start_envelope_require_contact
+        )
+        self.return_to_dig_start_envelope_direct_handoff_enabled = bool(
+            return_to_dig_start_envelope_direct_handoff_enabled
         )
         self.return_max_steps = int(return_max_steps)
         self.action_dim = int(action_dim)
@@ -1046,6 +1050,9 @@ class PrimitivePlannerACTPolicy(Policy):
             "return_to_dig_start_envelope_gate_enabled": bool(
                 self.return_to_dig_start_envelope_gate_enabled
             ),
+            "return_to_dig_start_envelope_direct_handoff_enabled": bool(
+                self.return_to_dig_start_envelope_direct_handoff_enabled
+            ),
             "return_to_dig_start_envelope_ready": bool(
                 self._return_to_dig_start_envelope_ready_state
             ),
@@ -1285,6 +1292,9 @@ class PrimitivePlannerACTPolicy(Policy):
             "return_next_dig_event_seen": int(self._return_next_dig_event_seen),
             "return_to_dig_start_envelope_gate_enabled": int(
                 self.return_to_dig_start_envelope_gate_enabled
+            ),
+            "return_to_dig_start_envelope_direct_handoff_enabled": int(
+                self.return_to_dig_start_envelope_direct_handoff_enabled
             ),
             "return_to_dig_start_envelope_ready": int(
                 self._return_to_dig_start_envelope_ready_state
@@ -1590,6 +1600,22 @@ class PrimitivePlannerACTPolicy(Policy):
                 self._set_skill(
                     next_skill,
                     f"return_to_{next_skill}_next_dig_entry_ready",
+                )
+                return
+            if self._return_to_dig_direct_handoff_ready(
+                obs,
+                handoff_ready=handoff_ready,
+            ):
+                self._completed_transition_count += 1
+                self._cycle_index += 1
+                next_skill = (
+                    PRE_DIG_ALIGN_SKILL_NAME
+                    if self._should_pre_dig_align_before_dig()
+                    else "dig"
+                )
+                self._set_skill(
+                    next_skill,
+                    f"return_to_{next_skill}_start_envelope_ready",
                 )
                 return
             if (
@@ -2530,6 +2556,27 @@ class PrimitivePlannerACTPolicy(Policy):
         entry_close = self._return_to_dig_entry_close(obs)
         envelope_ready = self._return_to_dig_start_envelope_ready(obs)
         return bool(entry_close and envelope_ready)
+
+    def _return_to_dig_direct_handoff_ready(
+        self,
+        obs: dict,
+        *,
+        handoff_ready: bool | None = None,
+    ) -> bool:
+        if not self.return_to_dig_start_envelope_direct_handoff_enabled:
+            return False
+        if not self.return_to_dig_start_envelope_gate_enabled:
+            return False
+        ready = (
+            self._return_to_dig_handoff_ready(obs)
+            if handoff_ready is None
+            else bool(handoff_ready)
+        )
+        if not ready:
+            return False
+        return bool(
+            self._mass_in_bucket(obs) <= self.return_to_dig_max_bucket_mass_kg
+        )
 
     def _return_to_dig_start_envelope_ready(self, obs: dict) -> bool:
         if not self.return_to_dig_start_envelope_gate_enabled:
@@ -5460,6 +5507,7 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
         return_to_dig_start_envelope_plane_depth_mode: str = "range",
         return_to_dig_start_envelope_qpos_tolerance: float = 0.04,
         return_to_dig_start_envelope_require_contact: bool = True,
+        return_to_dig_start_envelope_direct_handoff_enabled: bool = False,
         return_max_steps: int = 420,
         action_dim: int = 4,
         primitive_checkpoint_paths: dict[str, str] | None = None,
@@ -5599,6 +5647,9 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             return_to_dig_start_envelope_require_contact=(
                 return_to_dig_start_envelope_require_contact
             ),
+            return_to_dig_start_envelope_direct_handoff_enabled=(
+                return_to_dig_start_envelope_direct_handoff_enabled
+            ),
             return_max_steps=return_max_steps,
             action_dim=action_dim,
             primitive_checkpoint_paths=primitive_checkpoint_paths,
@@ -5687,6 +5738,11 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
                 self._completed_transition_count += 1
                 self._cycle_index += 1
                 self._set_skill("dig", "return_to_dig_qualified_dig_start")
+                return
+            if self._return_to_dig_direct_handoff_ready(obs):
+                self._completed_transition_count += 1
+                self._cycle_index += 1
+                self._set_skill("dig", "return_to_dig_start_envelope_ready")
                 return
             if self._return_to_dig_shallow_guard_ready(
                 obs=obs,
