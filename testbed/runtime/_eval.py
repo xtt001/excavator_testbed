@@ -771,6 +771,12 @@ def eval_policy(config: dict[str, Any]) -> None:
                     0.08,
                 )
             ),
+            "return_to_dig_start_envelope_local_depth_tolerance_m": float(
+                switch_cfg.get(
+                    "return_to_dig_start_envelope_local_depth_tolerance_m",
+                    0.005,
+                )
+            ),
             "return_to_dig_start_envelope_plane_depth_tolerance_m": float(
                 switch_cfg.get(
                     "return_to_dig_start_envelope_plane_depth_tolerance_m",

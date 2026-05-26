@@ -194,6 +194,7 @@ class PrimitivePlannerACTPolicy(Policy):
         return_to_dig_start_envelope_gate_enabled: bool = False,
         return_to_dig_start_envelope_spatial_tolerance: float = 0.10,
         return_to_dig_start_envelope_depth_tolerance_m: float = 0.08,
+        return_to_dig_start_envelope_local_depth_tolerance_m: float = 0.005,
         return_to_dig_start_envelope_plane_depth_tolerance_m: float = 0.05,
         return_to_dig_start_envelope_plane_depth_mode: str = "range",
         return_to_dig_start_envelope_qpos_tolerance: float = 0.04,
@@ -343,6 +344,9 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         self.return_to_dig_start_envelope_depth_tolerance_m = float(
             return_to_dig_start_envelope_depth_tolerance_m
+        )
+        self.return_to_dig_start_envelope_local_depth_tolerance_m = float(
+            return_to_dig_start_envelope_local_depth_tolerance_m
         )
         self.return_to_dig_start_envelope_plane_depth_tolerance_m = float(
             return_to_dig_start_envelope_plane_depth_tolerance_m
@@ -1078,6 +1082,9 @@ class PrimitivePlannerACTPolicy(Policy):
             "return_to_dig_start_envelope_plane_depth_mode": str(
                 self.return_to_dig_start_envelope_plane_depth_mode
             ),
+            "return_to_dig_start_envelope_local_depth_tolerance_m": float(
+                self.return_to_dig_start_envelope_local_depth_tolerance_m
+            ),
             "return_to_dig_start_envelope_error": float(
                 self._return_to_dig_start_envelope_error
             ),
@@ -1339,6 +1346,9 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             "return_to_dig_start_envelope_plane_depth_mode": str(
                 self.return_to_dig_start_envelope_plane_depth_mode
+            ),
+            "return_to_dig_start_envelope_local_depth_tolerance_m": float(
+                self.return_to_dig_start_envelope_local_depth_tolerance_m
             ),
             "return_to_dig_start_envelope_error": float(
                 self._return_to_dig_start_envelope_error
@@ -2703,7 +2713,7 @@ class PrimitivePlannerACTPolicy(Policy):
                 high = float(token[index]) + float(tolerance)
             return low, high
 
-        def add_check(name: str, value: float, low: float, high: float) -> None:
+        def add_check(name: str, value: float, low: float, high: float) -> bool:
             nonlocal max_error, ready
             finite = bool(np.isfinite(value) and np.isfinite(low) and np.isfinite(high))
             if not finite:
@@ -2721,8 +2731,19 @@ class PrimitivePlannerACTPolicy(Policy):
                 "ok": bool(ok),
                 "error": float(error),
             }
+            return bool(ok)
 
         env_state = self._env_state(obs)
+        local_depth_prior = (
+            None
+            if prior_mapping is None
+            else prior_mapping.get("dig_start_local_depth_m")
+        )
+        local_depth_prior_used = False
+        require_contact = bool(
+            self.return_to_dig_start_envelope_require_contact
+            or float(token[6]) > 0.5
+        )
         if float(token[17]) > 0.5:
             if len(env_state) > ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX:
                 spatial_tol = self.return_to_dig_start_envelope_spatial_tolerance
@@ -2753,19 +2774,35 @@ class PrimitivePlannerACTPolicy(Policy):
                 checks["spatial_missing"] = True
 
             if len(env_state) > ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX:
-                depth_tol = self.return_to_dig_start_envelope_depth_tolerance_m
-                # The token carries an explicit shallow contact/depth envelope
-                # (center plus min/max).  Prior p05 can be zero for some qc6
-                # return windows and is too permissive for the learned dig
-                # start state, so depth uses the token's physical bounds.
-                low = float(token[4]) - depth_tol
-                high = float(token[5]) + depth_tol
-                add_check(
-                    "local_depth_m",
-                    float(env_state[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX]),
-                    low,
-                    high,
+                local_value = float(
+                    env_state[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX]
                 )
+                if isinstance(local_depth_prior, dict):
+                    local_depth_prior_used = True
+                    local_tol = (
+                        self.return_to_dig_start_envelope_local_depth_tolerance_m
+                    )
+                    p05 = float(local_depth_prior.get("p05", token[4]))
+                    p50 = float(local_depth_prior.get("p50", token[2]))
+                    p95 = float(local_depth_prior.get("p95", token[5]))
+                    low = p05 - local_tol
+                    high = p95 + local_tol
+                    add_check("local_depth_m", local_value, low, high)
+                    checks["local_depth_m"].update(
+                        {
+                            "mode": "prior_range",
+                            "target": float(p50),
+                            "p05": float(p05),
+                            "p50": float(p50),
+                            "p95": float(p95),
+                        }
+                    )
+                else:
+                    depth_tol = self.return_to_dig_start_envelope_depth_tolerance_m
+                    low = float(token[4]) - depth_tol
+                    high = float(token[5]) + depth_tol
+                    add_check("local_depth_m", local_value, low, high)
+                    checks["local_depth_m"].update({"mode": "token_range"})
             else:
                 ready = False
                 checks["local_depth_missing"] = True
@@ -2785,7 +2822,10 @@ class PrimitivePlannerACTPolicy(Policy):
                     low = p50 - plane_tol
                     high = p50 + plane_tol
                 elif mode == "p50_floor":
-                    low = p50 - plane_tol
+                    plane_floor = (
+                        p05 if local_depth_prior_used and require_contact else p50
+                    )
+                    low = plane_floor - plane_tol
                     high = p95 + plane_tol
                 else:
                     low = p05 - plane_tol
@@ -2803,13 +2843,19 @@ class PrimitivePlannerACTPolicy(Policy):
                         "p05": float(p05),
                         "p50": float(p50),
                         "p95": float(p95),
+                        "floor_source": (
+                            "p05_local_contact_prior"
+                            if mode == "p50_floor"
+                            and local_depth_prior_used
+                            and require_contact
+                            else "p50"
+                            if mode == "p50_floor"
+                            else "range"
+                        ),
                     }
                 )
 
-            if (
-                self.return_to_dig_start_envelope_require_contact
-                and float(token[6]) > 0.5
-            ):
+            if require_contact:
                 if len(env_state) > ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX:
                     contact = float(env_state[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX])
                     ok = bool(contact > 0.5)
@@ -2817,6 +2863,10 @@ class PrimitivePlannerACTPolicy(Policy):
                     checks["dig_contact"] = {
                         "value": contact,
                         "ok": ok,
+                        "required_by_config": bool(
+                            self.return_to_dig_start_envelope_require_contact
+                        ),
+                        "required_by_token": bool(float(token[6]) > 0.5),
                     }
                 else:
                     ready = False
@@ -5887,6 +5937,7 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
         return_to_dig_start_envelope_gate_enabled: bool = False,
         return_to_dig_start_envelope_spatial_tolerance: float = 0.10,
         return_to_dig_start_envelope_depth_tolerance_m: float = 0.08,
+        return_to_dig_start_envelope_local_depth_tolerance_m: float = 0.005,
         return_to_dig_start_envelope_plane_depth_tolerance_m: float = 0.05,
         return_to_dig_start_envelope_plane_depth_mode: str = "range",
         return_to_dig_start_envelope_qpos_tolerance: float = 0.04,
@@ -6019,6 +6070,9 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             ),
             return_to_dig_start_envelope_depth_tolerance_m=(
                 return_to_dig_start_envelope_depth_tolerance_m
+            ),
+            return_to_dig_start_envelope_local_depth_tolerance_m=(
+                return_to_dig_start_envelope_local_depth_tolerance_m
             ),
             return_to_dig_start_envelope_plane_depth_tolerance_m=(
                 return_to_dig_start_envelope_plane_depth_tolerance_m

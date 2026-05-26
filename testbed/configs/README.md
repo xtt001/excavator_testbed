@@ -297,12 +297,14 @@
 - qc6 eval 同时打开 `return_to_dig_start_envelope_gate_enabled`。这会在
   `return -> dig` handoff 时复用上述 envelope 的 qc6 p05-p95 范围，检查
   long/short、local depth/contact 和 qpos 是否已进入下一轮 dig-start 分布；否则即使
-  2D entry error 接近，也继续留在 return。local depth 例外使用 token 自身的
-  min/max 字段，避免 prior p05 中的浅接触尾部过早放行；同时用 prior 中的
-  `dig_start_plane_depth_m` 检查 `bucket_depth_below_dig_area_plane`，因为 qc6 dig
-  ACT 的成功起点更稳定落在 plane-depth 分布内。qc6 configs 显式设置
-  `return_to_dig_start_envelope_plane_depth_mode: p50_floor`，让 handoff 至少达到
-  cell-wise p50 起挖深度；旧 `range` mode 仍保留给 legacy/诊断配置。V2.4.5
+  2D entry error 接近，也继续留在 return。若 prior cell 带
+  `dig_start_local_depth_m`，local depth gate 使用真实 dig-start local-depth
+  p05-p95 加 `return_to_dig_start_envelope_local_depth_tolerance_m`，并且
+  `return_to_dig_start_envelope_require_contact: true` 会独立要求 dig contact，
+  不再依赖 token[6]。`dig_start_plane_depth_m` 仍用于检查
+  `bucket_depth_below_dig_area_plane`；在 `p50_floor` 下，若 local prior+contact
+  gate 可用，plane depth 使用 p05-p95 作 terrain-offset 范围，否则才用 p50 floor
+  防止零深度 handoff。旧 `range` mode 仍保留给 legacy/诊断配置。V2.4.5
   planner 会 latch `next_dig_entry_ready`，等 plane-depth/qpos/spatial envelope
   同步 ready 再交接，并会拒绝低于 carry/dump 最低载荷的 `dig_complete` 直接进入
   carry。
@@ -444,9 +446,10 @@
   qpos center。
 - surface-depth planner prior 的 `return_start_envelope_cells` 会随 cell 写入
   `dig_start_plane_depth_m` / `dig_start_local_depth_m`，来源是对应 gold dig primitive
-  的真实起始状态。`return_to_dig_start_envelope_plane_depth_mode=p50_floor` 依赖这些
-  stats，避免 return 只满足 qpos/spatial envelope、但 bucket 仍在 plane depth `0`
-  附近时过早 handoff 给 dig。
+  的真实起始状态。handoff gate 优先用 local-depth stats 加 contact 判断是否真正进入
+  surface-relative dig-start 分布，再用 plane-depth stats 做 terrain-offset 检查，
+  避免 return 只满足 qpos/spatial envelope、但 bucket 仍未接触有效起挖 surface 时
+  过早 handoff 给 dig。
 - YuLong V2.4 reconstructed-belief sweep planner 使用
   `dig_cut_planner.mode=operator_prior_sweep_belief`。它不依赖当前全零的
   Unity `removed_depth`，而是根据历史 cut corridor、payload、effective deposit

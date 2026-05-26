@@ -306,6 +306,7 @@ policy:
     return_to_dig_start_envelope_gate_enabled: true
     return_to_dig_start_envelope_spatial_tolerance: 0.1
     return_to_dig_start_envelope_depth_tolerance_m: 0.08
+    return_to_dig_start_envelope_local_depth_tolerance_m: 0.005
     return_to_dig_start_envelope_plane_depth_tolerance_m: 0.0
     return_to_dig_start_envelope_plane_depth_mode: p50_floor
     return_to_dig_start_envelope_qpos_tolerance: 0.04

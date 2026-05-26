@@ -2840,10 +2840,21 @@ class TestPrimitivesV22(unittest.TestCase):
         ) as handle:
             prior = json.load(handle)
         cell = prior["return_start_envelope_cells"][1]
+        cell["dig_start_local_depth_m"] = {"p05": 0.006, "p50": 0.011, "p95": 0.021}
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".json",
+            encoding="utf-8",
+            delete=False,
+        ) as handle:
+            json.dump(prior, handle)
+            prior_path = Path(handle.name)
         token = np.asarray(cell["token_median"], dtype=np.float32)
+        token[6] = 0.0
+        self.addCleanup(prior_path.unlink, missing_ok=True)
         policy = _coverage_planner_policy(
             dig_policy=_RecordingPolicy(0),
-            prior_path=YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH,
+            prior_path=prior_path,
             coverage_extra={"candidate_layout": "cell_weighted_3x2"},
             return_to_dig_shallow_guard_enabled=True,
             return_to_dig_max_entry_error_m=0.55,
@@ -2907,7 +2918,7 @@ class TestPrimitivesV22(unittest.TestCase):
         local_only_obs = _coverage_obs(
             mass=0.0,
             dig_distance=0.0,
-            bucket_depth=0.31,
+            bucket_depth=float(cell["dig_start_plane_depth_m"]["p50"]),
             bucket_pose=(1.0088, -0.31, -0.8830),
         )
         local_only_env = np.asarray(local_only_obs["env_state"], dtype=np.float32)
@@ -2922,9 +2933,13 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertTrue(policy._return_to_dig_entry_close(local_only_obs))
         self.assertFalse(policy._return_to_dig_handoff_ready(local_only_obs))
         checks = policy.debug_state()["return_to_dig_start_envelope_checks"]
-        self.assertTrue(checks["local_depth_m"]["ok"])
-        self.assertFalse(checks["plane_depth_m"]["ok"])
+        self.assertFalse(checks["local_depth_m"]["ok"])
+        self.assertTrue(checks["plane_depth_m"]["ok"])
         self.assertEqual(checks["plane_depth_m"]["mode"], "p50_floor")
+        self.assertEqual(
+            checks["plane_depth_m"]["floor_source"],
+            "p05_local_contact_prior",
+        )
 
         p05_only_obs = _coverage_obs(
             mass=0.0,
@@ -2943,11 +2958,36 @@ class TestPrimitivesV22(unittest.TestCase):
 
         self.assertFalse(policy._return_to_dig_handoff_ready(p05_only_obs))
         checks = policy.debug_state()["return_to_dig_start_envelope_checks"]
-        self.assertFalse(checks["plane_depth_m"]["ok"])
-        self.assertGreater(
+        self.assertFalse(checks["local_depth_m"]["ok"])
+        self.assertTrue(checks["plane_depth_m"]["ok"])
+        self.assertAlmostEqual(
             checks["plane_depth_m"]["min"],
-            float(cell["dig_start_plane_depth_m"]["p05"]),
+            float(cell["dig_start_plane_depth_m"]["p05"]) - 0.005,
+            places=6,
         )
+
+        no_contact_obs = _coverage_obs(
+            mass=0.0,
+            dig_distance=0.0,
+            bucket_depth=float(cell["dig_start_plane_depth_m"]["p50"]),
+            bucket_pose=(1.0088, -0.5864, -0.8830),
+        )
+        no_contact_env = np.asarray(no_contact_obs["env_state"], dtype=np.float32)
+        no_contact_env[ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX] = 1.0
+        no_contact_env[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX] = float(token[0])
+        no_contact_env[ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX] = float(token[1])
+        no_contact_env[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = float(
+            cell["dig_start_local_depth_m"]["p50"]
+        )
+        no_contact_env[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX] = 0.0
+        no_contact_obs["env_state"] = no_contact_env
+        no_contact_obs["qpos"] = token[7:11].astype(np.float32)
+
+        self.assertFalse(policy._return_to_dig_handoff_ready(no_contact_obs))
+        checks = policy.debug_state()["return_to_dig_start_envelope_checks"]
+        self.assertFalse(checks["dig_contact"]["ok"])
+        self.assertTrue(checks["dig_contact"]["required_by_config"])
+        self.assertFalse(checks["dig_contact"]["required_by_token"])
 
         good_obs = _coverage_obs(
             mass=0.0,
@@ -2959,7 +2999,9 @@ class TestPrimitivesV22(unittest.TestCase):
         good_env[ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX] = 1.0
         good_env[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX] = float(token[0])
         good_env[ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX] = float(token[1])
-        good_env[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = float(token[2])
+        good_env[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = float(
+            cell["dig_start_local_depth_m"]["p50"]
+        )
         good_env[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX] = 1.0
         good_obs["env_state"] = good_env
         good_obs["qpos"] = token[7:11].astype(np.float32)
@@ -3032,7 +3074,7 @@ class TestPrimitivesV22(unittest.TestCase):
         env[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX] = float(token[0])
         env[ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX] = float(token[1])
         env[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = 0.0
-        env[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX] = 0.0
+        env[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX] = 1.0
         obs["env_state"] = env
         obs["qpos"] = token[7:11].astype(np.float32)
 
@@ -4945,6 +4987,7 @@ def _coverage_planner_policy(
     return_to_dig_max_entry_error_m: float | None = None,
     return_to_dig_start_envelope_gate_enabled: bool = False,
     return_to_dig_start_envelope_direct_handoff_enabled: bool = False,
+    return_to_dig_start_envelope_local_depth_tolerance_m: float = 0.005,
     return_to_dig_start_envelope_plane_depth_tolerance_m: float = 0.05,
     return_to_dig_start_envelope_plane_depth_mode: str = "range",
     pre_dig_align_enabled: bool = False,
@@ -4997,6 +5040,9 @@ def _coverage_planner_policy(
         ),
         return_to_dig_start_envelope_direct_handoff_enabled=(
             return_to_dig_start_envelope_direct_handoff_enabled
+        ),
+        return_to_dig_start_envelope_local_depth_tolerance_m=(
+            return_to_dig_start_envelope_local_depth_tolerance_m
         ),
         return_to_dig_start_envelope_plane_depth_tolerance_m=(
             return_to_dig_start_envelope_plane_depth_tolerance_m

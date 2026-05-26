@@ -156,7 +156,7 @@ handoff/replan，不负责直接输出连续动作。
 | `dump_committed_start` | bucket mass `>= 15kg`，dump 几何有效，bucket footprint outside distance 在 `[0, 0.25m]`，relative x 在 `[-0.2, 1.9]`，relative z 在 `[0.45, 2.1]`，height above rim `>= 0.45m`；短窗口稳定性要求 8-step range: outside `<= 0.06m`、relative x `<= 0.16m`、relative z `<= 0.10m`；条件 hold `3` step。 |
 | `release_onset` | 已进入 dump ownership 后，bucket 位于 dump area 附近：outside distance `<= 0.45m` 或 over target footprint；同时当前步 bucket mass drop `>= 0.5kg` 或 dump/target deposit gain `>= 0.5kg`。 |
 | `dump_complete` / `dump -> return` | `release_onset` 已见后，bucket residual mass 低于 success 配置阈值，当前 qc6 配置为 `15kg`，且 target/dump deposit 进入 plateau。planner 在 `dump_done_use_boundary_event=true` 时优先消费该 boundary event。 |
-| `return -> dig` | 不是单纯等 `qualified_dig_start`。状态机先 latch `next_dig_entry_ready` 或 qualified dig start，然后要求 `_return_to_dig_handoff_ready` 成立：pending entry error `<= 0.55m`，并通过 `return_start_envelope_tokens_v1` 的 spatial/depth/contact/qpos gate。当前 gate 使用 long/short tolerance `0.10`，local depth tolerance `0.08m`，plane depth mode `p50_floor`，qpos tolerance `0.04`；contact 只在 envelope token 标记需要接触时检查。若显式打开 `return_to_dig_start_envelope_direct_handoff_enabled`，return 在空斗低质量且 entry/envelope 已 ready 时可不等新的接触式 boundary event，直接交给下一轮 dig/pre-dig-align，避免错过零深度浅层起挖窗口后继续由 return policy 吃土。 |
+| `return -> dig` | 不是单纯等 `qualified_dig_start`。状态机先 latch `next_dig_entry_ready` 或 qualified dig start，然后要求 `_return_to_dig_handoff_ready` 成立：pending entry error `<= 0.55m`，并通过 `return_start_envelope_tokens_v1` 的 spatial/depth/contact/qpos gate。当前 gate 使用 long/short tolerance `0.10`、qpos tolerance `0.04`；若 prior cell 带 `dig_start_local_depth_m`，local depth 使用该训练分布的 p05-p95 加 `0.005m` tolerance，否则才退回 token depth min/max 加 `0.08m`。`return_to_dig_start_envelope_require_contact=true` 会独立要求 dig contact，不再依赖 token[6]。`p50_floor` 在有 local-depth prior 且要求 contact 时使用 plane-depth p05-p95 作 terrain-offset 检查，否则继续用 p50 floor 防止零深度 handoff。若显式打开 `return_to_dig_start_envelope_direct_handoff_enabled`，return 在空斗低质量且 entry/envelope 已 ready 时可不等新的接触式 boundary event，直接交给下一轮 dig/pre-dig-align，避免错过浅接触窗口后继续由 return policy 吃土。 |
 
 这里有两个容易混淆的点：
 
@@ -247,8 +247,10 @@ planner 决策：
 - planner latch `next_dig_entry_ready`，但不会只凭一个事件切 dig；还要检查 entry error、
   spatial/depth/contact/qpos envelope。surface-depth prior 的
   `return_start_envelope_cells` 应携带从 gold dig primitive start 统计出的
-  `dig_start_plane_depth_m`；handoff gate 在 `p50_floor` 模式下用它防止
-  return 在 bucket 仍未压到 dig-start 深度时过早交给 dig。
+  `dig_start_plane_depth_m` 和 `dig_start_local_depth_m`；handoff gate 优先用
+  local-depth prior 与 contact 判断是否进入 surface-relative dig-start 分布，再用
+  plane-depth prior 检查当前 terrain offset，避免 return 在 bucket 仍未接触有效
+  dig-start surface 时过早交给 dig。
 
 输出：
 
