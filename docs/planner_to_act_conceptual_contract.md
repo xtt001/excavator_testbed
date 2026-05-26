@@ -179,6 +179,9 @@ planner 决策：
 - 选择 cell/corridor。
 - 选择 entry/exit、cut depth、target payload。
 - 在一个 dig skill 内通常 hold 住 token，避免每步抖动目标。
+- coverage planner 的 `recent_row_selection_penalty` 按 3x2 coverage cell 的 row id
+  生效；对 cell-weighted prior 不能用浮点 `entry_z` 是否相等来判断同一行，因为相邻 cell
+  的统计 entry 可能并不完全共线。
 - 如果长时间低载荷、越过 planned exit 仍低载荷、或 `dig_complete` 但当前质量太低，则 reject 当前
   corridor 并 replan。
 

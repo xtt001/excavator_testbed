@@ -332,11 +332,12 @@
   `planner-baseline-conservative-pose-20260516`。
 - YuLong V2.4 在同一 10D `dig_cut_tokens` contract 上新增
   `dig_cut_planner.mode=operator_prior_coverage`：planner 从现有 64D
-  `env_state` 的 3x2 removed/target/valid grid 和质量/入箱结果维护 9 条候选
-  cut corridor 的 attempts、低产 streak、depleted 标志与 score。候选覆盖
-  `entry_x=p10/p50/p90` 与 `entry_z=p10/p50/p90`，并用 max-attempt、attempt
+  `env_state` 的 3x2 removed/target/valid grid 和质量/入箱结果维护候选
+  cut corridor 的 attempts、低产 streak、depleted 标志与 score。旧 percentile
+  grid 覆盖 `entry_x=p10/p50/p90` 与 `entry_z=p10/p50/p90`；带
+  `coverage_cells` 的 qc6 prior 使用 3x2 cell-weighted 六候选。planner 用 max-attempt、attempt
   penalty、recent-selection penalty 以及 `recent_row_selection_penalty` 防止长
-  rollout 后段继续挖空区或在同一 entry-z row 上反复横移。它只改变 live dig token
+  rollout 后段继续挖空区或在同一个 3x2 coverage-cell row 上反复横移。它只改变 live dig token
   的选择，不改 checkpoint 和训练 schema。V2.4 hindsight eval 还可用
   `coverage.cut_depth_percentile` / `coverage.payload_percentile` 在专家 prior
   内请求更深、更高 payload 的 cut intent，避免用“继续推到边界”补偿装土不足。

@@ -2255,6 +2255,38 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertEqual(penalty_by_corridor[2], 1.5)
         self.assertEqual(penalty_by_corridor[3], 0.0)
 
+    def test_primitive_planner_cell_weighted_penalizes_recent_cell_row(self) -> None:
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            prior_path=YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH,
+            coverage_extra={
+                "candidate_layout": "cell_weighted_3x2",
+                "use_env_removed_depth": False,
+                "recent_row_selection_penalty": 1.5,
+            },
+        )
+        policy._ensure_coverage_corridors()
+        previous = policy._coverage_corridors[1]
+        same_row_neighbor = policy._coverage_corridors[0]
+        self.assertEqual(policy._coverage_cell_id(previous), 1)
+        self.assertEqual(policy._coverage_cell_id(same_row_neighbor), 0)
+        self.assertNotAlmostEqual(previous.entry_z_m, same_row_neighbor.entry_z_m)
+        policy._coverage_last_selected_corridor_id = int(previous.corridor_id)
+
+        policy._select_coverage_corridor(_coverage_obs(mass=0.0, dig_distance=0.0))
+
+        candidate_by_cell = {
+            int(item["cell_id"]): item for item in policy._coverage_candidate_scores
+        }
+        self.assertEqual(candidate_by_cell[0]["recent_row_penalty"], 1.5)
+        self.assertEqual(candidate_by_cell[0]["same_recent_row"], 1)
+        self.assertEqual(
+            candidate_by_cell[0]["recent_row_reference_corridor_id"],
+            int(previous.corridor_id),
+        )
+        self.assertEqual(candidate_by_cell[2]["recent_row_penalty"], 0.0)
+        self.assertEqual(candidate_by_cell[2]["same_recent_row"], 0)
+
     def test_primitive_planner_coverage_attempt_limit_depletes_corridor(self) -> None:
         policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
         policy._ensure_coverage_corridors()

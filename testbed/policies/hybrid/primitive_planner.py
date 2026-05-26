@@ -1083,6 +1083,19 @@ class PrimitivePlannerACTPolicy(Policy):
             "dig_cut_fallback_reason": str(self._dig_cut_fallback_reason),
             "coverage_corridor_id": int(self._coverage_active_corridor_id),
             "coverage_selected_corridor_id": int(self._coverage_active_corridor_id),
+            "coverage_last_selected_corridor_id": int(
+                self._coverage_last_selected_corridor_id
+            ),
+            "coverage_last_selected_cell_id": int(
+                self._coverage_corridor_cell_id_by_id(
+                    self._coverage_last_selected_corridor_id
+                )
+            ),
+            "coverage_last_selected_row_id": int(
+                self._coverage_corridor_row_id_by_id(
+                    self._coverage_last_selected_corridor_id
+                )
+            ),
             "coverage_entry_x_m": float(self._coverage_active_value("entry_x_m")),
             "coverage_entry_z_m": float(self._coverage_active_value("entry_z_m")),
             "coverage_exit_x_m": float(self._coverage_active_value("exit_x_m")),
@@ -3998,10 +4011,34 @@ class PrimitivePlannerACTPolicy(Policy):
                 score = -1.0e12 + float(score)
             corridor.score = float(score)
             corridor.last_remaining_depth_m = float(remaining_depth)
+            recent_row_reference = self._coverage_recent_row_reference_corridor()
+            recent_row_reference_id = (
+                -1
+                if recent_row_reference is None
+                else int(recent_row_reference.corridor_id)
+            )
+            recent_row_reference_cell_id = (
+                -1
+                if recent_row_reference is None
+                else int(self._coverage_cell_id(recent_row_reference))
+            )
+            recent_row_reference_row_id = (
+                -1
+                if recent_row_reference is None
+                else int(self._coverage_corridor_row_id(recent_row_reference))
+            )
+            row_id = int(self._coverage_corridor_row_id(corridor))
+            same_recent_row = bool(
+                recent_row_reference is not None
+                and int(recent_row_reference.corridor_id)
+                != int(corridor.corridor_id)
+                and row_id == recent_row_reference_row_id
+            )
             self._coverage_candidate_scores.append(
                 {
                     "corridor_id": int(corridor.corridor_id),
                     "cell_id": int(self._coverage_cell_id(corridor)),
+                    "row_id": int(row_id),
                     "score": float(score),
                     "attempts": int(corridor.attempts),
                     "attempt_limit": int(self._coverage_corridor_attempt_limit(corridor)),
@@ -4019,6 +4056,16 @@ class PrimitivePlannerACTPolicy(Policy):
                     "recent_row_penalty": float(
                         self._coverage_recent_row_penalty(corridor)
                     ),
+                    "recent_row_reference_corridor_id": int(
+                        recent_row_reference_id
+                    ),
+                    "recent_row_reference_cell_id": int(
+                        recent_row_reference_cell_id
+                    ),
+                    "recent_row_reference_row_id": int(
+                        recent_row_reference_row_id
+                    ),
+                    "same_recent_row": int(same_recent_row),
                     "first_dig_entry_distance_m": float(first_dig_distance),
                     "first_dig_entry_reachable": int(first_dig_entry_reachable),
                     "first_dig_qpos_delta_norm": float(first_dig_qpos_penalty),
@@ -4229,15 +4276,24 @@ class PrimitivePlannerACTPolicy(Policy):
     def _coverage_recent_row_penalty(self, corridor: CoverageCorridorState) -> float:
         if self.coverage_recent_row_selection_penalty <= 0.0:
             return 0.0
-        previous = self._coverage_corridor_by_id(self._coverage_last_selected_corridor_id)
+        previous = self._coverage_recent_row_reference_corridor()
         if previous is None:
             return 0.0
         if int(previous.corridor_id) == int(corridor.corridor_id):
             return 0.0
         same_row = bool(
-            abs(float(previous.entry_z_m) - float(corridor.entry_z_m)) <= 1.0e-4
+            self._coverage_corridor_row_id(previous)
+            == self._coverage_corridor_row_id(corridor)
         )
         return float(self.coverage_recent_row_selection_penalty if same_row else 0.0)
+
+    def _coverage_recent_row_reference_corridor(
+        self,
+    ) -> CoverageCorridorState | None:
+        previous = self._coverage_corridor_by_id(self._coverage_last_selected_corridor_id)
+        if previous is not None:
+            return previous
+        return self._coverage_active_corridor()
 
     def _coverage_first_dig_bonus(
         self,
@@ -4746,6 +4802,9 @@ class PrimitivePlannerACTPolicy(Policy):
         x_index = corridor_id % 2
         return int(z_index * 2 + x_index)
 
+    def _coverage_corridor_row_id(self, corridor: CoverageCorridorState) -> int:
+        return int(self._coverage_cell_id(corridor) // 2)
+
     @staticmethod
     def _coverage_cell_id_from_percentile_indices(
         *,
@@ -4982,6 +5041,19 @@ class PrimitivePlannerACTPolicy(Policy):
             "cycle_index": int(self._cycle_index),
             "skill_name": str(self._skill_name),
             "active_corridor_id": int(self._coverage_active_corridor_id),
+            "last_selected_corridor_id": int(
+                self._coverage_last_selected_corridor_id
+            ),
+            "last_selected_cell_id": int(
+                self._coverage_corridor_cell_id_by_id(
+                    self._coverage_last_selected_corridor_id
+                )
+            ),
+            "last_selected_row_id": int(
+                self._coverage_corridor_row_id_by_id(
+                    self._coverage_last_selected_corridor_id
+                )
+            ),
             "depleted_count": int(self._coverage_depleted_count()),
             "global_low_productivity_streak": int(
                 self._coverage_global_low_productivity_streak
@@ -5072,6 +5144,18 @@ class PrimitivePlannerACTPolicy(Policy):
         if corridor is None:
             return -1
         return int(self._coverage_cell_id(corridor))
+
+    def _coverage_corridor_cell_id_by_id(self, corridor_id: int) -> int:
+        corridor = self._coverage_corridor_by_id(corridor_id)
+        if corridor is None:
+            return -1
+        return int(self._coverage_cell_id(corridor))
+
+    def _coverage_corridor_row_id_by_id(self, corridor_id: int) -> int:
+        corridor = self._coverage_corridor_by_id(corridor_id)
+        if corridor is None:
+            return -1
+        return int(self._coverage_corridor_row_id(corridor))
 
     def _coverage_depleted_count(self) -> int:
         return int(sum(1 for corridor in self._coverage_corridors if corridor.depleted))
