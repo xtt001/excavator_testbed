@@ -41,17 +41,21 @@ def build_multicycle_summary(
             gaps.append(int(next_dig - dump_step))
 
     completed_dump_count = len(dump_end_steps)
-    terminal_dump_complete = bool(
-        (success_summary or {}).get("dump_complete_final_hold_success", False)
-    )
-    completed_transition_count = int(
-        (hybrid_summary or {}).get("completed_transition_count", 0)
-    )
-    if terminal_dump_complete:
-        completed_dump_count = max(
-            int(completed_dump_count),
-            int(completed_transition_count) + 1,
+    coverage_completed = (hybrid_summary or {}).get("coverage_completed_dump_count")
+    if coverage_completed is not None:
+        completed_dump_count = int(coverage_completed)
+    else:
+        terminal_dump_complete = bool(
+            (success_summary or {}).get("dump_complete_final_hold_success", False)
         )
+        completed_transition_count = int(
+            (hybrid_summary or {}).get("completed_transition_count", 0)
+        )
+        if terminal_dump_complete:
+            completed_dump_count = max(
+                int(completed_dump_count),
+                int(completed_transition_count) + 1,
+            )
     return {
         "dump_to_next_dig_gap_steps": float(np.mean(gaps)) if gaps else 0.0,
         "dump_to_next_dig_gap_count": int(len(gaps)),

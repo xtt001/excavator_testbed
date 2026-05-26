@@ -424,6 +424,24 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         self.assertEqual(summary["cycle2_success"], 1)
         self.assertEqual(summary["cycle3_success"], 1)
 
+    def test_multicycle_metrics_prefers_coverage_completed_dump_count(self) -> None:
+        summary = build_multicycle_summary(
+            [
+                {"t": 0, "qualified_dig_start_mask": 1, "dump_end_mask": 0},
+                {"t": 1, "qualified_dig_start_mask": 0, "dump_end_mask": 1},
+            ],
+            success_summary={"dump_complete_final_hold_success": True},
+            hybrid_summary={
+                "completed_transition_count": 1,
+                "coverage_completed_dump_count": 1,
+            },
+        )
+
+        self.assertEqual(summary["completed_dump_count"], 1)
+        self.assertEqual(summary["cycle1_success"], 1)
+        self.assertEqual(summary["cycle2_success"], 0)
+        self.assertEqual(summary["cycle3_success"], 0)
+
     def test_eval_policy_uses_task_defaults_for_act_camera_setup(self) -> None:
         captured: dict[str, object] = {}
         fake_metrics = _FakeMetrics()
