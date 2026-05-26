@@ -256,6 +256,8 @@ class EvalSuite:
         strict_successes: list[bool]  = []
         dump_complete_successes: list[bool] = []
         strict_dump_complete_successes: list[bool] = []
+        target_cycle_gate_successes: list[bool] = []
+        target_cycle_completed_counts: list[int] = []
         final_signal_values: list[float] = []
         max_signal_values: list[float] = []
         final_bucket_values: list[float] = []
@@ -965,6 +967,20 @@ class EvalSuite:
                         success_summary=success_summary if task.backend_type == "agx" else None,
                         hybrid_summary=hybrid_summary,
                     )
+                    if task.backend_type == "agx":
+                        target_gate_summary = self._target_cycle_gate_summary(
+                            hybrid_summary=hybrid_summary,
+                            multicycle_summary=multicycle_summary,
+                            rollout_stop_reason=rollout_stop_reason,
+                        )
+                        if target_gate_summary:
+                            target_cycle_gate_successes.append(
+                                bool(target_gate_summary["target_cycle_gate_success"])
+                            )
+                            target_cycle_completed_counts.append(
+                                int(target_gate_summary["target_cycle_completed_dump_count"])
+                            )
+                            summary.update(target_gate_summary)
                     summary.update(multicycle_summary)
                     summary.update(hybrid_summary)
                     quality_summary = build_quality_summary(step_records)
@@ -1004,12 +1020,24 @@ class EvalSuite:
                     if hasattr(self.policy, "rollout_summary"):
                         hybrid_summary.update(dict(self.policy.rollout_summary()))
                     multicycle_summaries.append(
-                        build_multicycle_summary(
+                        multicycle_summary := build_multicycle_summary(
                             step_records,
                             success_summary=success_summary,
                             hybrid_summary=hybrid_summary,
                         )
                     )
+                    target_gate_summary = self._target_cycle_gate_summary(
+                        hybrid_summary=hybrid_summary,
+                        multicycle_summary=multicycle_summary,
+                        rollout_stop_reason=rollout_stop_reason,
+                    )
+                    if target_gate_summary:
+                        target_cycle_gate_successes.append(
+                            bool(target_gate_summary["target_cycle_gate_success"])
+                        )
+                        target_cycle_completed_counts.append(
+                            int(target_gate_summary["target_cycle_completed_dump_count"])
+                        )
                     hybrid_summaries.append(hybrid_summary)
                     planner_summaries.append(hybrid_summary)
                     quality_summaries.append(build_quality_summary(step_records))
@@ -1089,6 +1117,18 @@ class EvalSuite:
                     "target_cycle_gate_terminal_hold_steps": int(
                         self._target_cycle_gate_terminal_hold_steps
                     ),
+                    "target_cycle_gate_success_count": int(
+                        sum(target_cycle_gate_successes)
+                    ),
+                    "target_cycle_gate_success_rate": _safe_rate(
+                        sum(target_cycle_gate_successes),
+                        len(target_cycle_gate_successes),
+                    ),
+                    "target_cycle_completed_dump_mean": (
+                        float(np.mean(target_cycle_completed_counts))
+                        if target_cycle_completed_counts
+                        else 0.0
+                    ),
                 }
             )
         extra_metrics.update(_aggregate_continuity_metrics(continuity_summaries))
@@ -1110,6 +1150,32 @@ class EvalSuite:
         )
         print("\n" + metrics.summary())
         return metrics
+
+    def _target_cycle_gate_summary(
+        self,
+        *,
+        hybrid_summary: dict[str, Any],
+        multicycle_summary: dict[str, Any],
+        rollout_stop_reason: str,
+    ) -> dict[str, int | str]:
+        if self._target_cycle_gate is None:
+            return {}
+        gate = int(self._target_cycle_gate)
+        completed_raw = hybrid_summary.get(
+            "coverage_completed_dump_count",
+            multicycle_summary.get("completed_dump_count", 0),
+        )
+        completed = int(completed_raw or 0)
+        gate_success = int(completed >= gate)
+        stop_reason = str(rollout_stop_reason)
+        return {
+            "target_cycle_gate": gate,
+            "target_cycle_completed_dump_count": completed,
+            "target_cycle_gate_success": gate_success,
+            "target_cycle_gate_stop_reason": (
+                stop_reason if stop_reason.startswith("target_cycle_gate") else ""
+            ),
+        }
 
     def _build_rollout_hdf5_metadata(
         self,

@@ -1758,6 +1758,17 @@ class Stage2EvalIntegrationTests(unittest.TestCase):
                 manifest = json.load(f)
             self.assertEqual(summary["rollout_stop_reason"], "target_cycle_gate_reached")
             self.assertEqual(summary["transition_source"], "scripted_band_servo")
+            self.assertEqual(summary["target_cycle_gate"], 1)
+            self.assertEqual(summary["target_cycle_gate_success"], 1)
+            self.assertEqual(summary["target_cycle_completed_dump_count"], 1)
+            self.assertAlmostEqual(
+                metrics.extra["target_cycle_gate_success_rate"],
+                1.0,
+            )
+            self.assertAlmostEqual(
+                manifest["success_rates_by_mode"]["target_cycle_gate_success"],
+                1.0,
+            )
             self.assertIn("hybrid_means", manifest)
 
     def test_eval_suite_target_cycle_gate_can_wait_for_terminal_hold(self) -> None:

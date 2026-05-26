@@ -107,6 +107,7 @@ def build_rollout_manifest(
             "strict_final_hold_success",
             "dump_complete_final_hold_success",
             "strict_dump_complete_success",
+            "target_cycle_gate_success",
         ]
         n_rollouts = len(rollouts)
         for key in success_keys:
@@ -128,6 +129,9 @@ def build_rollout_manifest(
         multicycle_keys = [
             "dump_to_next_dig_gap_steps",
             "completed_dump_count",
+            "target_cycle_gate",
+            "target_cycle_completed_dump_count",
+            "target_cycle_gate_success",
             "cycle1_success",
             "cycle2_success",
             "cycle3_success",

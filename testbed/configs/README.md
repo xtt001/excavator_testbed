@@ -1006,6 +1006,10 @@ entry / exit / depth token 的执行误差。聚合后的 `metrics.json` 会输�
 - `dig_area_escape_cycle_rate`
 
 聚合后的 `metrics.json` 会以 `avg_*` 前缀输出这些质量指标和 rate 指标，方便直接比较不同策略的动作质量。
+当配置 `eval.target_cycle_gate` 时，报告会额外输出 `target_cycle_gate_success`、
+`target_cycle_completed_dump_count`、`target_cycle_gate_success_rate` 和
+`target_cycle_completed_dump_mean`。这些字段才表示 N-cycle gate 是否真正达成；
+AGX 的 `success_rate` 仍按 `success.mode` 表示物料/倒土成功，不能单独当作 10cycle 成功。
 
 当前 Stage 2 live 默认调参值已经按 `2026-04-19` 的 Unity 联调结果固定为：
 
