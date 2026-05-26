@@ -625,6 +625,77 @@ class EvalSuite:
                             "coverage_exit_z_m": float(
                                 policy_debug.get("coverage_exit_z_m", np.nan)
                             ),
+                            "coverage_entry_x_p05_m": float(
+                                policy_debug.get("coverage_entry_x_p05_m", np.nan)
+                            ),
+                            "coverage_entry_x_p50_m": float(
+                                policy_debug.get("coverage_entry_x_p50_m", np.nan)
+                            ),
+                            "coverage_entry_x_p95_m": float(
+                                policy_debug.get("coverage_entry_x_p95_m", np.nan)
+                            ),
+                            "coverage_entry_z_p05_m": float(
+                                policy_debug.get("coverage_entry_z_p05_m", np.nan)
+                            ),
+                            "coverage_entry_z_p50_m": float(
+                                policy_debug.get("coverage_entry_z_p50_m", np.nan)
+                            ),
+                            "coverage_entry_z_p95_m": float(
+                                policy_debug.get("coverage_entry_z_p95_m", np.nan)
+                            ),
+                            "coverage_entry_radial_p75_m": float(
+                                policy_debug.get(
+                                    "coverage_entry_radial_p75_m", np.nan
+                                )
+                            ),
+                            "coverage_entry_radial_p95_m": float(
+                                policy_debug.get(
+                                    "coverage_entry_radial_p95_m", np.nan
+                                )
+                            ),
+                            "coverage_exit_x_p05_m": float(
+                                policy_debug.get("coverage_exit_x_p05_m", np.nan)
+                            ),
+                            "coverage_exit_x_p50_m": float(
+                                policy_debug.get("coverage_exit_x_p50_m", np.nan)
+                            ),
+                            "coverage_exit_x_p95_m": float(
+                                policy_debug.get("coverage_exit_x_p95_m", np.nan)
+                            ),
+                            "coverage_exit_z_p05_m": float(
+                                policy_debug.get("coverage_exit_z_p05_m", np.nan)
+                            ),
+                            "coverage_exit_z_p50_m": float(
+                                policy_debug.get("coverage_exit_z_p50_m", np.nan)
+                            ),
+                            "coverage_exit_z_p95_m": float(
+                                policy_debug.get("coverage_exit_z_p95_m", np.nan)
+                            ),
+                            "coverage_exit_radial_p75_m": float(
+                                policy_debug.get(
+                                    "coverage_exit_radial_p75_m", np.nan
+                                )
+                            ),
+                            "coverage_exit_radial_p95_m": float(
+                                policy_debug.get(
+                                    "coverage_exit_radial_p95_m", np.nan
+                                )
+                            ),
+                            "coverage_cut_depth_peak_p05_m": float(
+                                policy_debug.get(
+                                    "coverage_cut_depth_peak_p05_m", np.nan
+                                )
+                            ),
+                            "coverage_cut_depth_peak_p50_m": float(
+                                policy_debug.get(
+                                    "coverage_cut_depth_peak_p50_m", np.nan
+                                )
+                            ),
+                            "coverage_cut_depth_peak_p95_m": float(
+                                policy_debug.get(
+                                    "coverage_cut_depth_peak_p95_m", np.nan
+                                )
+                            ),
                             "coverage_corridor_score": float(
                                 policy_debug.get("coverage_corridor_score", np.nan)
                             ),
@@ -1404,6 +1475,15 @@ class EvalSuite:
                     ),
                     "exit_x_m": _finite_payload_float(item.get("exit_x_m", 0.0)),
                     "exit_z_m": _finite_payload_float(item.get("exit_z_m", 0.0)),
+                    "entry_radial_p95_m": _finite_payload_float(
+                        item.get("entry_radial_p95_m", 0.0)
+                    ),
+                    "exit_radial_p95_m": _finite_payload_float(
+                        item.get("exit_radial_p95_m", 0.0)
+                    ),
+                    "cut_depth_peak_p95_m": _finite_payload_float(
+                        item.get("cut_depth_peak_p95_m", 0.0)
+                    ),
                     "score": _finite_payload_float(item.get("score", 0.0)),
                     "attempts": int(item.get("attempts", 0)),
                     "depleted": int(item.get("depleted", 0)),
@@ -1435,6 +1515,31 @@ class EvalSuite:
             "entry_z_m": _finite_float("coverage_entry_z_m"),
             "exit_x_m": _finite_float("coverage_exit_x_m"),
             "exit_z_m": _finite_float("coverage_exit_z_m"),
+            "entry_x_p05_m": _finite_float("coverage_entry_x_p05_m"),
+            "entry_x_p50_m": _finite_float("coverage_entry_x_p50_m"),
+            "entry_x_p95_m": _finite_float("coverage_entry_x_p95_m"),
+            "entry_z_p05_m": _finite_float("coverage_entry_z_p05_m"),
+            "entry_z_p50_m": _finite_float("coverage_entry_z_p50_m"),
+            "entry_z_p95_m": _finite_float("coverage_entry_z_p95_m"),
+            "entry_radial_p75_m": _finite_float("coverage_entry_radial_p75_m"),
+            "entry_radial_p95_m": _finite_float("coverage_entry_radial_p95_m"),
+            "exit_x_p05_m": _finite_float("coverage_exit_x_p05_m"),
+            "exit_x_p50_m": _finite_float("coverage_exit_x_p50_m"),
+            "exit_x_p95_m": _finite_float("coverage_exit_x_p95_m"),
+            "exit_z_p05_m": _finite_float("coverage_exit_z_p05_m"),
+            "exit_z_p50_m": _finite_float("coverage_exit_z_p50_m"),
+            "exit_z_p95_m": _finite_float("coverage_exit_z_p95_m"),
+            "exit_radial_p75_m": _finite_float("coverage_exit_radial_p75_m"),
+            "exit_radial_p95_m": _finite_float("coverage_exit_radial_p95_m"),
+            "cut_depth_peak_p05_m": _finite_float(
+                "coverage_cut_depth_peak_p05_m"
+            ),
+            "cut_depth_peak_p50_m": _finite_float(
+                "coverage_cut_depth_peak_p50_m"
+            ),
+            "cut_depth_peak_p95_m": _finite_float(
+                "coverage_cut_depth_peak_p95_m"
+            ),
             "score": _finite_float("coverage_corridor_score"),
             "depleted_count": int(policy_debug.get("coverage_depleted_count", 0)),
             "last_payload_gain_kg": _finite_float(

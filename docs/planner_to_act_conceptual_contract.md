@@ -194,6 +194,15 @@ planner 决策：
   和 `cycleN_depth_error_m`，并汇总 `dig_entry_error_*`、`dig_exit_error_*`、
   `dig_exit_signed_error_*`、`dig_depth_*_error_*`。这些字段只观测 ACT 相对
   planner token 的执行精度，不参与在线补救或重新规划。
+- surface-depth prior 的 `coverage_cells` 还携带每个 cell 的专家分布：
+  entry/exit 的 x/z `p05/p50/p95`、相对 p50 的 radial `p75/p95`，以及
+  `cut_depth_peak_m` 的 `p05/p50/p95`。rollout summary 会把每铲的 planner
+  原始意图点、实际 bucket-tip 点、专家容忍范围和 hit/rate 一起输出，例如
+  `cycleN_entry_planned_x_m`、`cycleN_entry_actual_x_m`、
+  `cycleN_entry_expert_radial_p95_m`、`cycleN_entry_expert_radial_p95_hit`、
+  `cycleN_exit_expert_*`、`cycleN_depth_expert_p95_m` 和
+  `cycleN_depth_expert_p95_overshoot_m`。这些字段用于区分“没有命中 p50 但仍在专家
+  支持范围内”和“真的偏离训练分布”，同样不参与在线控制。
 
 ### carry 阶段
 

@@ -978,9 +978,14 @@ V2.1 Stage 4 在保留 Stage 2 指标的同时，还会额外输出：
 - `dig_exit_error_mean_m` / `dig_exit_error_max_m`
 - `dig_exit_signed_error_mean_m`
 - `dig_exit_abs_overshoot_mean_m` / `dig_exit_abs_overshoot_max_m`
+- `dig_entry_expert_box_hit_rate` / `dig_entry_expert_radial_p95_hit_rate`
+- `dig_exit_expert_box_hit_rate` / `dig_exit_expert_radial_p95_hit_rate`
+- `dig_entry_error_over_expert_p95_mean` / `dig_exit_error_over_expert_p95_mean`
 - `dig_depth_target_mean_m` / `dig_depth_peak_mean_m`
 - `dig_depth_error_mean_m`
 - `dig_depth_abs_error_mean_m` / `dig_depth_abs_error_max_m`
+- `dig_depth_expert_range_hit_rate`
+- `dig_depth_expert_p95_overshoot_mean_m` / `dig_depth_expert_p95_overshoot_max_m`
 - `dump_start_distance_mean` / `dump_start_distance_max`
 - `dump_start_horizontal_distance_mean` / `dump_start_horizontal_distance_max`
 - `dump_start_geometry_missing_count`
@@ -1006,6 +1011,14 @@ V2.1 Stage 4 在保留 Stage 2 指标的同时，还会额外输出：
 `cycleN_depth_peak_m` 和 `cycleN_depth_error_m`，用于直接观察每一铲相对 planner
 entry / exit / depth token 的执行误差。聚合后的 `metrics.json` 会输出对应
 `avg_cycleN_*` 字段，默认覆盖 `1..30` cycle。
+
+如果 planner prior 的 `coverage_cells` 带专家分布，单条 rollout summary / manifest
+还会输出每铲的 intent-vs-execution-vs-prior 字段，例如
+`cycleN_entry_planned_x_m`、`cycleN_entry_actual_x_m`、
+`cycleN_entry_expert_x_p05_m` / `p50_m` / `p95_m`、
+`cycleN_entry_expert_radial_p95_m`、`cycleN_entry_expert_radial_p95_hit`，
+以及对应的 `exit` 和 `depth_expert_*` 字段。它们用于判断 ACT 是没有严格命中
+planner p50 点，还是已经偏离当前 cell 的专家分布。
 
 对应的关键 rate 版本也会一起输出，例如：
 

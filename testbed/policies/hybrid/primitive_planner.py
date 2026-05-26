@@ -110,6 +110,25 @@ class CoverageCorridorState:
     cell_id: int = -1
     source_count: int = 0
     source_fraction: float = 0.0
+    entry_x_p05_m: float = float("nan")
+    entry_x_p50_m: float = float("nan")
+    entry_x_p95_m: float = float("nan")
+    entry_z_p05_m: float = float("nan")
+    entry_z_p50_m: float = float("nan")
+    entry_z_p95_m: float = float("nan")
+    entry_radial_p75_m: float = float("nan")
+    entry_radial_p95_m: float = float("nan")
+    exit_x_p05_m: float = float("nan")
+    exit_x_p50_m: float = float("nan")
+    exit_x_p95_m: float = float("nan")
+    exit_z_p05_m: float = float("nan")
+    exit_z_p50_m: float = float("nan")
+    exit_z_p95_m: float = float("nan")
+    exit_radial_p75_m: float = float("nan")
+    exit_radial_p95_m: float = float("nan")
+    cut_depth_peak_p05_m: float = float("nan")
+    cut_depth_peak_p50_m: float = float("nan")
+    cut_depth_peak_p95_m: float = float("nan")
     cut_depth_peak_m: float = float("nan")
     payload_gain_kg: float = float("nan")
     effective_deposit_delta_kg: float = float("nan")
@@ -1125,6 +1144,63 @@ class PrimitivePlannerACTPolicy(Policy):
             "coverage_entry_z_m": float(self._coverage_active_value("entry_z_m")),
             "coverage_exit_x_m": float(self._coverage_active_value("exit_x_m")),
             "coverage_exit_z_m": float(self._coverage_active_value("exit_z_m")),
+            "coverage_entry_x_p05_m": float(
+                self._coverage_active_value("entry_x_p05_m")
+            ),
+            "coverage_entry_x_p50_m": float(
+                self._coverage_active_value("entry_x_p50_m")
+            ),
+            "coverage_entry_x_p95_m": float(
+                self._coverage_active_value("entry_x_p95_m")
+            ),
+            "coverage_entry_z_p05_m": float(
+                self._coverage_active_value("entry_z_p05_m")
+            ),
+            "coverage_entry_z_p50_m": float(
+                self._coverage_active_value("entry_z_p50_m")
+            ),
+            "coverage_entry_z_p95_m": float(
+                self._coverage_active_value("entry_z_p95_m")
+            ),
+            "coverage_entry_radial_p75_m": float(
+                self._coverage_active_value("entry_radial_p75_m")
+            ),
+            "coverage_entry_radial_p95_m": float(
+                self._coverage_active_value("entry_radial_p95_m")
+            ),
+            "coverage_exit_x_p05_m": float(
+                self._coverage_active_value("exit_x_p05_m")
+            ),
+            "coverage_exit_x_p50_m": float(
+                self._coverage_active_value("exit_x_p50_m")
+            ),
+            "coverage_exit_x_p95_m": float(
+                self._coverage_active_value("exit_x_p95_m")
+            ),
+            "coverage_exit_z_p05_m": float(
+                self._coverage_active_value("exit_z_p05_m")
+            ),
+            "coverage_exit_z_p50_m": float(
+                self._coverage_active_value("exit_z_p50_m")
+            ),
+            "coverage_exit_z_p95_m": float(
+                self._coverage_active_value("exit_z_p95_m")
+            ),
+            "coverage_exit_radial_p75_m": float(
+                self._coverage_active_value("exit_radial_p75_m")
+            ),
+            "coverage_exit_radial_p95_m": float(
+                self._coverage_active_value("exit_radial_p95_m")
+            ),
+            "coverage_cut_depth_peak_p05_m": float(
+                self._coverage_active_value("cut_depth_peak_p05_m")
+            ),
+            "coverage_cut_depth_peak_p50_m": float(
+                self._coverage_active_value("cut_depth_peak_p50_m")
+            ),
+            "coverage_cut_depth_peak_p95_m": float(
+                self._coverage_active_value("cut_depth_peak_p95_m")
+            ),
             "coverage_cell_id": int(self._coverage_active_cell_id()),
             "coverage_corridor_score": float(self._coverage_active_corridor_score()),
             "coverage_state_exemplar_enabled": bool(
@@ -4052,6 +4128,9 @@ class PrimitivePlannerACTPolicy(Policy):
         ):
             entry = dict(cell.get("entry", {}) or {})
             exit_point = dict(cell.get("exit", {}) or {})
+            entry_stats = dict(cell.get("entry_stats", {}) or {})
+            exit_stats = dict(cell.get("exit_stats", {}) or {})
+            depth_stats = dict(cell.get("cut_depth_peak_m_stats", {}) or {})
             entry_x = self._coverage_cell_float(
                 entry,
                 "x_m",
@@ -4085,6 +4164,69 @@ class PrimitivePlannerACTPolicy(Policy):
                     cell_id=int(cell.get("cell_id", corridor_id)),
                     source_count=max(0, int(cell.get("source_count", 0))),
                     source_fraction=max(0.0, float(cell.get("source_fraction", 0.0))),
+                    entry_x_p05_m=self._coverage_stat_float(
+                        entry_stats, "x_m", "p05", float(entry_x)
+                    ),
+                    entry_x_p50_m=self._coverage_stat_float(
+                        entry_stats, "x_m", "p50", float(entry_x)
+                    ),
+                    entry_x_p95_m=self._coverage_stat_float(
+                        entry_stats, "x_m", "p95", float(entry_x)
+                    ),
+                    entry_z_p05_m=self._coverage_stat_float(
+                        entry_stats, "z_m", "p05", float(entry_z)
+                    ),
+                    entry_z_p50_m=self._coverage_stat_float(
+                        entry_stats, "z_m", "p50", float(entry_z)
+                    ),
+                    entry_z_p95_m=self._coverage_stat_float(
+                        entry_stats, "z_m", "p95", float(entry_z)
+                    ),
+                    entry_radial_p75_m=self._coverage_stat_float(
+                        entry_stats, "radial_error_m", "p75", float("nan")
+                    ),
+                    entry_radial_p95_m=self._coverage_stat_float(
+                        entry_stats, "radial_error_m", "p95", float("nan")
+                    ),
+                    exit_x_p05_m=self._coverage_stat_float(
+                        exit_stats, "x_m", "p05", float(exit_x)
+                    ),
+                    exit_x_p50_m=self._coverage_stat_float(
+                        exit_stats, "x_m", "p50", float(exit_x)
+                    ),
+                    exit_x_p95_m=self._coverage_stat_float(
+                        exit_stats, "x_m", "p95", float(exit_x)
+                    ),
+                    exit_z_p05_m=self._coverage_stat_float(
+                        exit_stats, "z_m", "p05", float(exit_z)
+                    ),
+                    exit_z_p50_m=self._coverage_stat_float(
+                        exit_stats, "z_m", "p50", float(exit_z)
+                    ),
+                    exit_z_p95_m=self._coverage_stat_float(
+                        exit_stats, "z_m", "p95", float(exit_z)
+                    ),
+                    exit_radial_p75_m=self._coverage_stat_float(
+                        exit_stats, "radial_error_m", "p75", float("nan")
+                    ),
+                    exit_radial_p95_m=self._coverage_stat_float(
+                        exit_stats, "radial_error_m", "p95", float("nan")
+                    ),
+                    cut_depth_peak_p05_m=self._coverage_cell_float(
+                        depth_stats,
+                        "p05",
+                        self._prior_percentile(fields, "cut_depth_peak_m", "p10"),
+                    ),
+                    cut_depth_peak_p50_m=self._coverage_cell_float(
+                        depth_stats,
+                        "p50",
+                        self._prior_percentile(fields, "cut_depth_peak_m", "p50"),
+                    ),
+                    cut_depth_peak_p95_m=self._coverage_cell_float(
+                        depth_stats,
+                        "p95",
+                        self._prior_percentile(fields, "cut_depth_peak_m", "p90"),
+                    ),
                     cut_depth_peak_m=self._coverage_cell_float(
                         cell,
                         "cut_depth_peak_m",
@@ -4127,6 +4269,19 @@ class PrimitivePlannerACTPolicy(Policy):
         except (TypeError, ValueError):
             value = float(default)
         return float(value if np.isfinite(value) else default)
+
+    @classmethod
+    def _coverage_stat_float(
+        cls,
+        mapping: dict[str, object],
+        section: str,
+        name: str,
+        default: float,
+    ) -> float:
+        section_mapping = mapping.get(section, {})
+        if not isinstance(section_mapping, dict):
+            return float(default)
+        return cls._coverage_cell_float(section_mapping, name, default)
 
     def _coverage_exit_from_entry(self, entry_x: float, entry_z: float) -> tuple[float, float]:
         fields = dict(self.dig_cut_prior.get("fields", {}))
@@ -5440,6 +5595,25 @@ class PrimitivePlannerACTPolicy(Policy):
             "entry_z_m": float(corridor.entry_z_m),
             "exit_x_m": float(corridor.exit_x_m),
             "exit_z_m": float(corridor.exit_z_m),
+            "entry_x_p05_m": float(corridor.entry_x_p05_m),
+            "entry_x_p50_m": float(corridor.entry_x_p50_m),
+            "entry_x_p95_m": float(corridor.entry_x_p95_m),
+            "entry_z_p05_m": float(corridor.entry_z_p05_m),
+            "entry_z_p50_m": float(corridor.entry_z_p50_m),
+            "entry_z_p95_m": float(corridor.entry_z_p95_m),
+            "entry_radial_p75_m": float(corridor.entry_radial_p75_m),
+            "entry_radial_p95_m": float(corridor.entry_radial_p95_m),
+            "exit_x_p05_m": float(corridor.exit_x_p05_m),
+            "exit_x_p50_m": float(corridor.exit_x_p50_m),
+            "exit_x_p95_m": float(corridor.exit_x_p95_m),
+            "exit_z_p05_m": float(corridor.exit_z_p05_m),
+            "exit_z_p50_m": float(corridor.exit_z_p50_m),
+            "exit_z_p95_m": float(corridor.exit_z_p95_m),
+            "exit_radial_p75_m": float(corridor.exit_radial_p75_m),
+            "exit_radial_p95_m": float(corridor.exit_radial_p95_m),
+            "cut_depth_peak_p05_m": float(corridor.cut_depth_peak_p05_m),
+            "cut_depth_peak_p50_m": float(corridor.cut_depth_peak_p50_m),
+            "cut_depth_peak_p95_m": float(corridor.cut_depth_peak_p95_m),
             "cell_id": int(max(0, min(5, corridor.cell_id))),
             "source_count": int(corridor.source_count),
             "source_fraction": float(corridor.source_fraction),

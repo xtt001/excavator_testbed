@@ -171,6 +171,53 @@ def _coverage_point(
     return float(point_x), float(point_z)
 
 
+def _coverage_point_stats(
+    record: dict[str, Any],
+    *,
+    prefix: str,
+) -> dict[str, float | None]:
+    return {
+        "x_p05": _safe_record_scalar(record, f"coverage_{prefix}_x_p05_m"),
+        "x_p50": _safe_record_scalar(record, f"coverage_{prefix}_x_p50_m"),
+        "x_p95": _safe_record_scalar(record, f"coverage_{prefix}_x_p95_m"),
+        "z_p05": _safe_record_scalar(record, f"coverage_{prefix}_z_p05_m"),
+        "z_p50": _safe_record_scalar(record, f"coverage_{prefix}_z_p50_m"),
+        "z_p95": _safe_record_scalar(record, f"coverage_{prefix}_z_p95_m"),
+        "radial_p75": _safe_record_scalar(record, f"coverage_{prefix}_radial_p75_m"),
+        "radial_p95": _safe_record_scalar(record, f"coverage_{prefix}_radial_p95_m"),
+    }
+
+
+def _inside_expert_box(
+    point: tuple[float, float] | None,
+    stats: dict[str, float | None],
+) -> bool | None:
+    if point is None:
+        return None
+    required = ("x_p05", "x_p95", "z_p05", "z_p95")
+    if any(stats.get(key) is None for key in required):
+        return None
+    x, z = point
+    return bool(
+        float(stats["x_p05"]) <= x <= float(stats["x_p95"])
+        and float(stats["z_p05"]) <= z <= float(stats["z_p95"])
+    )
+
+
+def _inside_radial_tolerance(error: float | None, tolerance: float | None) -> bool | None:
+    if error is None or tolerance is None:
+        return None
+    if tolerance < 0.0:
+        return None
+    return bool(error <= tolerance)
+
+
+def _safe_ratio(numerator: float | None, denominator: float | None) -> float | None:
+    if numerator is None or denominator is None or denominator <= 1.0e-6:
+        return None
+    return float(numerator) / float(denominator)
+
+
 def _point_distance_xz(
     record: dict[str, Any],
     target: tuple[float, float] | None,
@@ -431,11 +478,25 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
             "dig_exit_signed_error_mean_m": 0.0,
             "dig_exit_abs_overshoot_mean_m": 0.0,
             "dig_exit_abs_overshoot_max_m": 0.0,
+            "dig_entry_expert_box_hit_count": 0,
+            "dig_entry_expert_box_hit_rate": 0.0,
+            "dig_entry_expert_radial_p95_hit_count": 0,
+            "dig_entry_expert_radial_p95_hit_rate": 0.0,
+            "dig_entry_error_over_expert_p95_mean": 0.0,
+            "dig_exit_expert_box_hit_count": 0,
+            "dig_exit_expert_box_hit_rate": 0.0,
+            "dig_exit_expert_radial_p95_hit_count": 0,
+            "dig_exit_expert_radial_p95_hit_rate": 0.0,
+            "dig_exit_error_over_expert_p95_mean": 0.0,
             "dig_depth_target_mean_m": 0.0,
             "dig_depth_peak_mean_m": 0.0,
             "dig_depth_error_mean_m": 0.0,
             "dig_depth_abs_error_mean_m": 0.0,
             "dig_depth_abs_error_max_m": 0.0,
+            "dig_depth_expert_range_hit_count": 0,
+            "dig_depth_expert_range_hit_rate": 0.0,
+            "dig_depth_expert_p95_overshoot_mean_m": 0.0,
+            "dig_depth_expert_p95_overshoot_max_m": 0.0,
             "dump_start_distance_mean": 0.0,
             "dump_start_distance_max": 0.0,
             "dump_start_horizontal_distance_mean": 0.0,
@@ -482,10 +543,18 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
     exit_error_values: list[float] = []
     exit_signed_error_values: list[float] = []
     exit_abs_overshoot_values: list[float] = []
+    entry_expert_box_values: list[bool] = []
+    entry_expert_radial_p95_values: list[bool] = []
+    entry_error_over_expert_p95_values: list[float] = []
+    exit_expert_box_values: list[bool] = []
+    exit_expert_radial_p95_values: list[bool] = []
+    exit_error_over_expert_p95_values: list[float] = []
     depth_target_values: list[float] = []
     depth_peak_values: list[float] = []
     depth_error_values: list[float] = []
     depth_abs_error_values: list[float] = []
+    depth_expert_range_values: list[bool] = []
+    depth_expert_p95_overshoot_values: list[float] = []
     dump_start_distance_values: list[float] = []
     carry_efficiency_values: list[float] = []
     dump_end_residual_bucket_mass_values: list[float] = []
@@ -519,6 +588,10 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
 
         entry_point = _coverage_point(first_dig_record, prefix="entry")
         exit_point = _coverage_point(last_dig_record, prefix="exit")
+        actual_entry_point = _bucket_tip_xz(first_dig_record)
+        actual_exit_point = _bucket_tip_xz(last_dig_record)
+        entry_stats = _coverage_point_stats(first_dig_record, prefix="entry")
+        exit_stats = _coverage_point_stats(last_dig_record, prefix="exit")
         entry_error = _point_distance_xz(first_dig_record, entry_point)
         exit_error = _point_distance_xz(last_dig_record, exit_point)
         exit_signed_error = _exit_signed_error_m(
@@ -526,12 +599,88 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
             _coverage_point(last_dig_record, prefix="entry"),
             exit_point,
         )
+        if entry_point is not None:
+            per_cycle_precision_metrics[f"{prefix}_entry_planned_x_m"] = float(
+                entry_point[0]
+            )
+            per_cycle_precision_metrics[f"{prefix}_entry_planned_z_m"] = float(
+                entry_point[1]
+            )
+        if actual_entry_point is not None:
+            per_cycle_precision_metrics[f"{prefix}_entry_actual_x_m"] = float(
+                actual_entry_point[0]
+            )
+            per_cycle_precision_metrics[f"{prefix}_entry_actual_z_m"] = float(
+                actual_entry_point[1]
+            )
+        if exit_point is not None:
+            per_cycle_precision_metrics[f"{prefix}_exit_planned_x_m"] = float(
+                exit_point[0]
+            )
+            per_cycle_precision_metrics[f"{prefix}_exit_planned_z_m"] = float(
+                exit_point[1]
+            )
+        if actual_exit_point is not None:
+            per_cycle_precision_metrics[f"{prefix}_exit_actual_x_m"] = float(
+                actual_exit_point[0]
+            )
+            per_cycle_precision_metrics[f"{prefix}_exit_actual_z_m"] = float(
+                actual_exit_point[1]
+            )
+        for metric_name, metric_value in entry_stats.items():
+            if metric_value is not None:
+                per_cycle_precision_metrics[
+                    f"{prefix}_entry_expert_{metric_name}_m"
+                ] = float(metric_value)
+        for metric_name, metric_value in exit_stats.items():
+            if metric_value is not None:
+                per_cycle_precision_metrics[
+                    f"{prefix}_exit_expert_{metric_name}_m"
+                ] = float(metric_value)
         if entry_error is not None:
             entry_error_values.append(entry_error)
             per_cycle_precision_metrics[f"{prefix}_entry_error_m"] = float(entry_error)
+            radial_p95 = entry_stats.get("radial_p95")
+            radial_hit = _inside_radial_tolerance(entry_error, radial_p95)
+            if radial_hit is not None:
+                entry_expert_radial_p95_values.append(radial_hit)
+                per_cycle_precision_metrics[
+                    f"{prefix}_entry_expert_radial_p95_hit"
+                ] = int(radial_hit)
+            ratio = _safe_ratio(entry_error, radial_p95)
+            if ratio is not None:
+                entry_error_over_expert_p95_values.append(ratio)
+                per_cycle_precision_metrics[
+                    f"{prefix}_entry_error_over_expert_p95"
+                ] = float(ratio)
         if exit_error is not None:
             exit_error_values.append(exit_error)
             per_cycle_precision_metrics[f"{prefix}_exit_error_m"] = float(exit_error)
+            radial_p95 = exit_stats.get("radial_p95")
+            radial_hit = _inside_radial_tolerance(exit_error, radial_p95)
+            if radial_hit is not None:
+                exit_expert_radial_p95_values.append(radial_hit)
+                per_cycle_precision_metrics[
+                    f"{prefix}_exit_expert_radial_p95_hit"
+                ] = int(radial_hit)
+            ratio = _safe_ratio(exit_error, radial_p95)
+            if ratio is not None:
+                exit_error_over_expert_p95_values.append(ratio)
+                per_cycle_precision_metrics[
+                    f"{prefix}_exit_error_over_expert_p95"
+                ] = float(ratio)
+        entry_box_hit = _inside_expert_box(actual_entry_point, entry_stats)
+        if entry_box_hit is not None:
+            entry_expert_box_values.append(entry_box_hit)
+            per_cycle_precision_metrics[f"{prefix}_entry_expert_box_hit"] = int(
+                entry_box_hit
+            )
+        exit_box_hit = _inside_expert_box(actual_exit_point, exit_stats)
+        if exit_box_hit is not None:
+            exit_expert_box_values.append(exit_box_hit)
+            per_cycle_precision_metrics[f"{prefix}_exit_expert_box_hit"] = int(
+                exit_box_hit
+            )
         if exit_signed_error is not None:
             exit_signed_error_values.append(exit_signed_error)
             exit_abs_overshoot_values.append(abs(exit_signed_error))
@@ -561,6 +710,38 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
             peak_depth = float(np.max(bucket_depths))
             peak_bucket_depth_values.append(peak_depth)
             planned_depth = _planned_depth_m(first_dig_record)
+            expert_depth_p05 = _safe_record_scalar(
+                first_dig_record,
+                "coverage_cut_depth_peak_p05_m",
+            )
+            expert_depth_p50 = _safe_record_scalar(
+                first_dig_record,
+                "coverage_cut_depth_peak_p50_m",
+            )
+            expert_depth_p95 = _safe_record_scalar(
+                first_dig_record,
+                "coverage_cut_depth_peak_p95_m",
+            )
+            for depth_name, depth_value in (
+                ("p05", expert_depth_p05),
+                ("p50", expert_depth_p50),
+                ("p95", expert_depth_p95),
+            ):
+                if depth_value is not None:
+                    per_cycle_precision_metrics[
+                        f"{prefix}_depth_expert_{depth_name}_m"
+                    ] = float(depth_value)
+            if expert_depth_p05 is not None and expert_depth_p95 is not None:
+                depth_hit = bool(expert_depth_p05 <= peak_depth <= expert_depth_p95)
+                depth_expert_range_values.append(depth_hit)
+                per_cycle_precision_metrics[
+                    f"{prefix}_depth_expert_range_hit"
+                ] = int(depth_hit)
+                depth_p95_overshoot = max(0.0, peak_depth - expert_depth_p95)
+                depth_expert_p95_overshoot_values.append(depth_p95_overshoot)
+                per_cycle_precision_metrics[
+                    f"{prefix}_depth_expert_p95_overshoot_m"
+                ] = float(depth_p95_overshoot)
             if planned_depth is not None:
                 depth_target_values.append(planned_depth)
                 depth_peak_values.append(peak_depth)
@@ -703,11 +884,60 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
         "dig_exit_signed_error_mean_m": _safe_array_mean(exit_signed_error_values),
         "dig_exit_abs_overshoot_mean_m": _safe_array_mean(exit_abs_overshoot_values),
         "dig_exit_abs_overshoot_max_m": _safe_array_max(exit_abs_overshoot_values),
+        "dig_entry_expert_box_hit_count": int(sum(entry_expert_box_values)),
+        "dig_entry_expert_box_hit_rate": (
+            float(sum(entry_expert_box_values)) / float(len(entry_expert_box_values))
+            if entry_expert_box_values
+            else 0.0
+        ),
+        "dig_entry_expert_radial_p95_hit_count": int(
+            sum(entry_expert_radial_p95_values)
+        ),
+        "dig_entry_expert_radial_p95_hit_rate": (
+            float(sum(entry_expert_radial_p95_values))
+            / float(len(entry_expert_radial_p95_values))
+            if entry_expert_radial_p95_values
+            else 0.0
+        ),
+        "dig_entry_error_over_expert_p95_mean": _safe_array_mean(
+            entry_error_over_expert_p95_values
+        ),
+        "dig_exit_expert_box_hit_count": int(sum(exit_expert_box_values)),
+        "dig_exit_expert_box_hit_rate": (
+            float(sum(exit_expert_box_values)) / float(len(exit_expert_box_values))
+            if exit_expert_box_values
+            else 0.0
+        ),
+        "dig_exit_expert_radial_p95_hit_count": int(
+            sum(exit_expert_radial_p95_values)
+        ),
+        "dig_exit_expert_radial_p95_hit_rate": (
+            float(sum(exit_expert_radial_p95_values))
+            / float(len(exit_expert_radial_p95_values))
+            if exit_expert_radial_p95_values
+            else 0.0
+        ),
+        "dig_exit_error_over_expert_p95_mean": _safe_array_mean(
+            exit_error_over_expert_p95_values
+        ),
         "dig_depth_target_mean_m": _safe_array_mean(depth_target_values),
         "dig_depth_peak_mean_m": _safe_array_mean(depth_peak_values),
         "dig_depth_error_mean_m": _safe_array_mean(depth_error_values),
         "dig_depth_abs_error_mean_m": _safe_array_mean(depth_abs_error_values),
         "dig_depth_abs_error_max_m": _safe_array_max(depth_abs_error_values),
+        "dig_depth_expert_range_hit_count": int(sum(depth_expert_range_values)),
+        "dig_depth_expert_range_hit_rate": (
+            float(sum(depth_expert_range_values))
+            / float(len(depth_expert_range_values))
+            if depth_expert_range_values
+            else 0.0
+        ),
+        "dig_depth_expert_p95_overshoot_mean_m": _safe_array_mean(
+            depth_expert_p95_overshoot_values
+        ),
+        "dig_depth_expert_p95_overshoot_max_m": _safe_array_max(
+            depth_expert_p95_overshoot_values
+        ),
         "dump_start_distance_mean": _safe_array_mean(dump_start_distance_values),
         "dump_start_distance_max": _safe_array_max(dump_start_distance_values),
         "dump_start_horizontal_distance_mean": _safe_array_mean(dump_start_distance_values),
@@ -808,11 +1038,49 @@ def aggregate_quality_metrics(
             "dig_exit_abs_overshoot_mean_m"
         ),
         "avg_dig_exit_abs_overshoot_max_m": _avg("dig_exit_abs_overshoot_max_m"),
+        "avg_dig_entry_expert_box_hit_count": _avg(
+            "dig_entry_expert_box_hit_count"
+        ),
+        "avg_dig_entry_expert_box_hit_rate": _avg("dig_entry_expert_box_hit_rate"),
+        "avg_dig_entry_expert_radial_p95_hit_count": _avg(
+            "dig_entry_expert_radial_p95_hit_count"
+        ),
+        "avg_dig_entry_expert_radial_p95_hit_rate": _avg(
+            "dig_entry_expert_radial_p95_hit_rate"
+        ),
+        "avg_dig_entry_error_over_expert_p95_mean": _avg(
+            "dig_entry_error_over_expert_p95_mean"
+        ),
+        "avg_dig_exit_expert_box_hit_count": _avg(
+            "dig_exit_expert_box_hit_count"
+        ),
+        "avg_dig_exit_expert_box_hit_rate": _avg("dig_exit_expert_box_hit_rate"),
+        "avg_dig_exit_expert_radial_p95_hit_count": _avg(
+            "dig_exit_expert_radial_p95_hit_count"
+        ),
+        "avg_dig_exit_expert_radial_p95_hit_rate": _avg(
+            "dig_exit_expert_radial_p95_hit_rate"
+        ),
+        "avg_dig_exit_error_over_expert_p95_mean": _avg(
+            "dig_exit_error_over_expert_p95_mean"
+        ),
         "avg_dig_depth_target_mean_m": _avg("dig_depth_target_mean_m"),
         "avg_dig_depth_peak_mean_m": _avg("dig_depth_peak_mean_m"),
         "avg_dig_depth_error_mean_m": _avg("dig_depth_error_mean_m"),
         "avg_dig_depth_abs_error_mean_m": _avg("dig_depth_abs_error_mean_m"),
         "avg_dig_depth_abs_error_max_m": _avg("dig_depth_abs_error_max_m"),
+        "avg_dig_depth_expert_range_hit_count": _avg(
+            "dig_depth_expert_range_hit_count"
+        ),
+        "avg_dig_depth_expert_range_hit_rate": _avg(
+            "dig_depth_expert_range_hit_rate"
+        ),
+        "avg_dig_depth_expert_p95_overshoot_mean_m": _avg(
+            "dig_depth_expert_p95_overshoot_mean_m"
+        ),
+        "avg_dig_depth_expert_p95_overshoot_max_m": _avg(
+            "dig_depth_expert_p95_overshoot_max_m"
+        ),
         "avg_dump_start_distance_mean": _avg("dump_start_distance_mean"),
         "avg_dump_start_distance_max": _avg("dump_start_distance_max"),
         "avg_dump_start_horizontal_distance_mean": _avg(
@@ -879,13 +1147,48 @@ def aggregate_quality_metrics(
     for cycle_idx in range(1, 31):
         for suffix in (
             "entry_error_m",
+            "entry_planned_x_m",
+            "entry_planned_z_m",
+            "entry_actual_x_m",
+            "entry_actual_z_m",
+            "entry_expert_x_p05_m",
+            "entry_expert_x_p50_m",
+            "entry_expert_x_p95_m",
+            "entry_expert_z_p05_m",
+            "entry_expert_z_p50_m",
+            "entry_expert_z_p95_m",
+            "entry_expert_radial_p75_m",
+            "entry_expert_radial_p95_m",
+            "entry_expert_box_hit",
+            "entry_expert_radial_p95_hit",
+            "entry_error_over_expert_p95",
             "exit_error_m",
+            "exit_planned_x_m",
+            "exit_planned_z_m",
+            "exit_actual_x_m",
+            "exit_actual_z_m",
+            "exit_expert_x_p05_m",
+            "exit_expert_x_p50_m",
+            "exit_expert_x_p95_m",
+            "exit_expert_z_p05_m",
+            "exit_expert_z_p50_m",
+            "exit_expert_z_p95_m",
+            "exit_expert_radial_p75_m",
+            "exit_expert_radial_p95_m",
+            "exit_expert_box_hit",
+            "exit_expert_radial_p95_hit",
+            "exit_error_over_expert_p95",
             "exit_signed_error_m",
             "exit_abs_overshoot_m",
             "depth_target_m",
             "depth_peak_m",
             "depth_error_m",
             "depth_abs_error_m",
+            "depth_expert_p05_m",
+            "depth_expert_p50_m",
+            "depth_expert_p95_m",
+            "depth_expert_range_hit",
+            "depth_expert_p95_overshoot_m",
         ):
             key = f"cycle{cycle_idx}_{suffix}"
             metrics[f"avg_{key}"] = _avg(key)

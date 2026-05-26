@@ -197,6 +197,11 @@ def _build_coverage_cells(
         rows = by_cell.get(cell_id, [])
         if not rows:
             continue
+        entry_x_values = [r["raw"]["operator_entry_x_m"] for r in rows]
+        entry_z_values = [r["raw"]["operator_entry_z_m"] for r in rows]
+        exit_x_values = [r["raw"]["operator_exit_x_m"] for r in rows]
+        exit_z_values = [r["raw"]["operator_exit_z_m"] for r in rows]
+        cut_depth_values = [r["raw"]["operator_cut_depth_peak_m"] for r in rows]
         coverage_cells.append(
             {
                 "cell_id": cell_id,
@@ -204,34 +209,47 @@ def _build_coverage_cells(
                 "source_fraction": round(len(rows) / max(1, record_count), 6),
                 "entry": {
                     "x_m": round(
-                        _percentile(
-                            [r["raw"]["operator_entry_x_m"] for r in rows],
-                            50,
-                        ),
+                        _percentile(entry_x_values, 50),
                         6,
                     ),
                     "z_m": round(
-                        _percentile(
-                            [r["raw"]["operator_entry_z_m"] for r in rows],
-                            50,
-                        ),
+                        _percentile(entry_z_values, 50),
                         6,
                     ),
                 },
                 "exit": {
                     "x_m": round(
-                        _percentile([r["raw"]["operator_exit_x_m"] for r in rows], 50),
+                        _percentile(exit_x_values, 50),
                         6,
                     ),
                     "z_m": round(
-                        _percentile([r["raw"]["operator_exit_z_m"] for r in rows], 50),
+                        _percentile(exit_z_values, 50),
                         6,
                     ),
                 },
+                "entry_stats": {
+                    "x_m": _stats_05_50_95(entry_x_values),
+                    "z_m": _stats_05_50_95(entry_z_values),
+                    "radial_error_m": _radial_stats_50_75_95(
+                        rows,
+                        x_key="operator_entry_x_m",
+                        z_key="operator_entry_z_m",
+                    ),
+                },
+                "exit_stats": {
+                    "x_m": _stats_05_50_95(exit_x_values),
+                    "z_m": _stats_05_50_95(exit_z_values),
+                    "radial_error_m": _radial_stats_50_75_95(
+                        rows,
+                        x_key="operator_exit_x_m",
+                        z_key="operator_exit_z_m",
+                    ),
+                },
                 "cut_depth_peak_m": round(
-                    _percentile([r["raw"]["operator_cut_depth_peak_m"] for r in rows], 50),
+                    _percentile(cut_depth_values, 50),
                     6,
                 ),
+                "cut_depth_peak_m_stats": _stats_05_50_95(cut_depth_values),
                 "payload_gain_kg": round(
                     _percentile([r["raw"]["operator_cut_payload_gain_kg"] for r in rows], 50),
                     6,
@@ -569,6 +587,26 @@ def _stats_05_50_95(values: list[float]) -> dict[str, float]:
     return {
         key: round(_percentile(values, q), 6)
         for key, q in (("p05", 5), ("p50", 50), ("p95", 95))
+    }
+
+
+def _radial_stats_50_75_95(
+    rows: list[dict[str, Any]],
+    *,
+    x_key: str,
+    z_key: str,
+) -> dict[str, float]:
+    xs = [float(row["raw"][x_key]) for row in rows]
+    zs = [float(row["raw"][z_key]) for row in rows]
+    center_x = _percentile(xs, 50)
+    center_z = _percentile(zs, 50)
+    distances = [
+        float(np.hypot(float(x) - center_x, float(z) - center_z))
+        for x, z in zip(xs, zs, strict=False)
+    ]
+    return {
+        key: round(_percentile(distances, q), 6)
+        for key, q in (("p50", 50), ("p75", 75), ("p95", 95))
     }
 
 

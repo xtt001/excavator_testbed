@@ -38,6 +38,9 @@ def _record(
     bucket_tip: tuple[float, float] | None = None,
     coverage_entry: tuple[float, float] | None = None,
     coverage_exit: tuple[float, float] | None = None,
+    coverage_entry_stats: dict[str, float] | None = None,
+    coverage_exit_stats: dict[str, float] | None = None,
+    coverage_depth_stats: dict[str, float] | None = None,
     dig_depth_target: float | None = None,
 ) -> dict[str, object]:
     values = [
@@ -88,6 +91,12 @@ def _record(
     if coverage_exit is not None:
         record["coverage_exit_x_m"] = float(coverage_exit[0])
         record["coverage_exit_z_m"] = float(coverage_exit[1])
+    for key, value in (coverage_entry_stats or {}).items():
+        record[f"coverage_entry_{key}_m"] = float(value)
+    for key, value in (coverage_exit_stats or {}).items():
+        record[f"coverage_exit_{key}_m"] = float(value)
+    for key, value in (coverage_depth_stats or {}).items():
+        record[f"coverage_cut_depth_peak_{key}_m"] = float(value)
     if dig_depth_target is not None:
         dig_cut_tokens = np.zeros(10, dtype=np.float32)
         dig_cut_tokens[7] = float(dig_depth_target) / float(DIG_CUT_DEPTH_SCALE_M)
@@ -249,6 +258,27 @@ class TestQualityMetrics(unittest.TestCase):
                 bucket_tip=(0.10, 0.02),
                 coverage_entry=(0.0, 0.0),
                 coverage_exit=(1.0, 0.0),
+                coverage_entry_stats={
+                    "x_p05": -0.2,
+                    "x_p50": 0.0,
+                    "x_p95": 0.2,
+                    "z_p05": -0.2,
+                    "z_p50": 0.0,
+                    "z_p95": 0.2,
+                    "radial_p75": 0.2,
+                    "radial_p95": 0.3,
+                },
+                coverage_exit_stats={
+                    "x_p05": 0.8,
+                    "x_p50": 1.0,
+                    "x_p95": 1.2,
+                    "z_p05": -0.2,
+                    "z_p50": 0.0,
+                    "z_p95": 0.2,
+                    "radial_p75": 0.2,
+                    "radial_p95": 0.25,
+                },
+                coverage_depth_stats={"p05": 0.10, "p50": 0.20, "p95": 0.24},
                 dig_depth_target=0.20,
                 bucket_depth=0.05,
             ),
@@ -259,6 +289,27 @@ class TestQualityMetrics(unittest.TestCase):
                 bucket_tip=(0.70, 0.10),
                 coverage_entry=(0.0, 0.0),
                 coverage_exit=(1.0, 0.0),
+                coverage_entry_stats={
+                    "x_p05": -0.2,
+                    "x_p50": 0.0,
+                    "x_p95": 0.2,
+                    "z_p05": -0.2,
+                    "z_p50": 0.0,
+                    "z_p95": 0.2,
+                    "radial_p75": 0.2,
+                    "radial_p95": 0.3,
+                },
+                coverage_exit_stats={
+                    "x_p05": 0.8,
+                    "x_p50": 1.0,
+                    "x_p95": 1.2,
+                    "z_p05": -0.2,
+                    "z_p50": 0.0,
+                    "z_p95": 0.2,
+                    "radial_p75": 0.2,
+                    "radial_p95": 0.25,
+                },
+                coverage_depth_stats={"p05": 0.10, "p50": 0.20, "p95": 0.24},
                 dig_depth_target=0.20,
                 bucket_depth=0.22,
             ),
@@ -269,6 +320,27 @@ class TestQualityMetrics(unittest.TestCase):
                 bucket_tip=(1.10, 0.05),
                 coverage_entry=(0.0, 0.0),
                 coverage_exit=(1.0, 0.0),
+                coverage_entry_stats={
+                    "x_p05": -0.2,
+                    "x_p50": 0.0,
+                    "x_p95": 0.2,
+                    "z_p05": -0.2,
+                    "z_p50": 0.0,
+                    "z_p95": 0.2,
+                    "radial_p75": 0.2,
+                    "radial_p95": 0.3,
+                },
+                coverage_exit_stats={
+                    "x_p05": 0.8,
+                    "x_p50": 1.0,
+                    "x_p95": 1.2,
+                    "z_p05": -0.2,
+                    "z_p50": 0.0,
+                    "z_p95": 0.2,
+                    "radial_p75": 0.2,
+                    "radial_p95": 0.25,
+                },
+                coverage_depth_stats={"p05": 0.10, "p50": 0.20, "p95": 0.24},
                 dig_depth_target=0.20,
                 bucket_depth=0.25,
             ),
@@ -295,10 +367,26 @@ class TestQualityMetrics(unittest.TestCase):
         )
         self.assertAlmostEqual(float(summary["cycle1_exit_signed_error_m"]), 0.10)
         self.assertAlmostEqual(float(summary["cycle1_exit_abs_overshoot_m"]), 0.10)
+        self.assertAlmostEqual(float(summary["cycle1_entry_planned_x_m"]), 0.0)
+        self.assertAlmostEqual(float(summary["cycle1_entry_actual_x_m"]), 0.10)
+        self.assertAlmostEqual(float(summary["cycle1_exit_planned_x_m"]), 1.0)
+        self.assertAlmostEqual(float(summary["cycle1_exit_actual_x_m"]), 1.10)
+        self.assertEqual(summary["cycle1_entry_expert_box_hit"], 1)
+        self.assertEqual(summary["cycle1_entry_expert_radial_p95_hit"], 1)
+        self.assertEqual(summary["cycle1_exit_expert_box_hit"], 1)
+        self.assertEqual(summary["cycle1_exit_expert_radial_p95_hit"], 1)
+        self.assertAlmostEqual(float(summary["cycle1_entry_expert_x_p95_m"]), 0.2)
+        self.assertAlmostEqual(float(summary["cycle1_exit_expert_radial_p95_m"]), 0.25)
         self.assertAlmostEqual(float(summary["cycle1_depth_target_m"]), 0.20)
         self.assertAlmostEqual(float(summary["cycle1_depth_peak_m"]), 0.25)
         self.assertAlmostEqual(float(summary["cycle1_depth_error_m"]), 0.05)
         self.assertAlmostEqual(float(summary["cycle1_depth_abs_error_m"]), 0.05)
+        self.assertAlmostEqual(float(summary["cycle1_depth_expert_p95_m"]), 0.24)
+        self.assertEqual(summary["cycle1_depth_expert_range_hit"], 0)
+        self.assertAlmostEqual(
+            float(summary["cycle1_depth_expert_p95_overshoot_m"]),
+            0.01,
+        )
         self.assertAlmostEqual(
             float(summary["dig_entry_error_mean_m"]),
             float(np.hypot(0.10, 0.02)),
@@ -308,10 +396,20 @@ class TestQualityMetrics(unittest.TestCase):
             float(np.hypot(0.10, 0.05)),
         )
         self.assertAlmostEqual(float(summary["dig_depth_error_mean_m"]), 0.05)
+        self.assertEqual(summary["dig_entry_expert_box_hit_count"], 1)
+        self.assertAlmostEqual(float(summary["dig_entry_expert_box_hit_rate"]), 1.0)
+        self.assertEqual(summary["dig_exit_expert_radial_p95_hit_count"], 1)
+        self.assertAlmostEqual(float(summary["dig_depth_expert_range_hit_rate"]), 0.0)
+        self.assertAlmostEqual(
+            float(summary["dig_depth_expert_p95_overshoot_max_m"]),
+            0.01,
+        )
 
         metrics = aggregate_quality_metrics([summary])
         self.assertAlmostEqual(metrics["avg_dig_precision_cycle_count"], 1.0)
         self.assertAlmostEqual(metrics["avg_cycle1_entry_error_m"], float(np.hypot(0.10, 0.02)))
+        self.assertAlmostEqual(metrics["avg_cycle1_entry_expert_box_hit"], 1.0)
+        self.assertAlmostEqual(metrics["avg_cycle1_depth_expert_p95_overshoot_m"], 0.01)
         self.assertAlmostEqual(metrics["avg_cycle1_depth_error_m"], 0.05)
         self.assertAlmostEqual(
             metrics["avg_dig_entry_error_mean_m"],
