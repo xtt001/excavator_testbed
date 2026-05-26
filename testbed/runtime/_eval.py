@@ -783,6 +783,9 @@ def eval_policy(config: dict[str, Any]) -> None:
             "return_to_dig_start_envelope_qpos_tolerance": float(
                 switch_cfg.get("return_to_dig_start_envelope_qpos_tolerance", 0.04)
             ),
+            "return_to_dig_start_envelope_soft_tolerance": float(
+                switch_cfg.get("return_to_dig_start_envelope_soft_tolerance", 0.0)
+            ),
             "return_to_dig_start_envelope_require_contact": bool(
                 switch_cfg.get("return_to_dig_start_envelope_require_contact", True)
             ),
