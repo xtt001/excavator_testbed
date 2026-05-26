@@ -320,6 +320,12 @@ eval 侧的 `return_low_dim_keys` 也是同一组 key。
 - `dig_cut_planner.return_start_envelope.use_cell_prior=false` 时，live return envelope 使用
   qc6 gold return 的 global envelope prior；cell/corridor 只影响下一轮 dig token 和
   entry-close gate，不再默认影响 return-start envelope token。
+- 生成 cell-conditioned `return_start_envelope_cells` 时，cell 归属必须来自下一铲
+  `next_operator_entry_x/z` 到 `coverage_cells.entry` 的最近匹配，而不是
+  `return_start_envelope_tokens_v1` 自己的 long/short 值。后者只是 return 抵达的
+  start-state 描述，直接用它分桶会把左侧 cell0 的 return 姿态错分到其它 bucket，
+  造成 live planner 看起来回到平均位置。`tb-build-surface-depth-planner-prior`
+  固化了这个规则。
 
 所以当前主线里，return 的任务是回到“dig ACT 可以接管的状态分布”，而不是执行下一铲
 dig plan 的前半段。下一铲 plan 仍然存在，但它停留在 planner/scheduler 侧，等真正切回

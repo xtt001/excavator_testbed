@@ -290,6 +290,10 @@
   prior 时才回退旧的 current-observation 拼接。eval JSONL 会写
   `return_start_envelope_token_source` 和 `return_start_envelope_tokens`，后续可直接对比
   live token 是否 OOD。
+- surface-depth job-local prior 应使用 `tb-build-surface-depth-planner-prior` 或同等逻辑
+  生成。`return_start_envelope_cells` 的 cell id 必须由下一铲
+  `next_operator_entry_x/z` 最近匹配到 `coverage_cells.entry`，不能由 envelope token
+  的 long/short 反推；否则 cell0/cell4 这类边缘姿态会被错分到中间 bucket。
 - qc6 eval 同时打开 `return_to_dig_start_envelope_gate_enabled`。这会在
   `return -> dig` handoff 时复用上述 envelope 的 qc6 p05-p95 范围，检查
   long/short、local depth/contact 和 qpos 是否已进入下一轮 dig-start 分布；否则即使

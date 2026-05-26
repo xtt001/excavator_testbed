@@ -56,6 +56,10 @@ from testbed.data.primitives_v2_2 import (
     extract_workskill_primitive_slices_5p,
 )
 from testbed.data.v2_1 import GOAL_TOKEN_VERSION, WORK_STAGE_NAME_TO_ID, build_goal_tokens
+from testbed.cli.build_surface_depth_planner_prior import (
+    RETURN_ENVELOPE_MATCH_SOURCE,
+    match_return_envelope_cell_by_next_entry,
+)
 from testbed.policies.base import Policy
 from testbed.policies.hybrid.primitive_planner import (
     PrimitivePlannerACT5PPolicy,
@@ -118,6 +122,37 @@ class TestPrimitivesV22(unittest.TestCase):
             self.assertAlmostEqual(float(stats["p10"]), p10, places=4)
             self.assertAlmostEqual(float(stats["p50"]), p50, places=4)
             self.assertAlmostEqual(float(stats["p90"]), p90, places=4)
+
+    def test_return_envelope_cell_match_uses_next_entry_not_token_bucket(self) -> None:
+        coverage_cells = [
+            {"cell_id": 0, "entry": {"x_m": -1.0, "z_m": -1.0}},
+            {"cell_id": 1, "entry": {"x_m": -1.0, "z_m": 1.0}},
+            {"cell_id": 2, "entry": {"x_m": 1.0, "z_m": -1.0}},
+        ]
+
+        matched_cell = match_return_envelope_cell_by_next_entry(
+            next_entry_x_m=-0.92,
+            next_entry_z_m=-0.76,
+            coverage_cells=coverage_cells,
+        )
+
+        self.assertEqual(matched_cell, 0)
+
+    def test_committed_qc6_return_envelope_prior_keeps_cell0_support(self) -> None:
+        with YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH.open(
+            "r",
+            encoding="utf-8",
+        ) as handle:
+            prior = json.load(handle)
+
+        source = prior["return_start_envelope_source"]
+        self.assertEqual(source["match_source"], RETURN_ENVELOPE_MATCH_SOURCE)
+        cells = {
+            int(cell["cell_id"]): cell
+            for cell in prior["return_start_envelope_cells"]
+        }
+        self.assertEqual(set(cells), {0, 1, 2, 3, 4, 5})
+        self.assertGreaterEqual(int(cells[0]["source_count"]), 100)
 
     def test_build_primitive_datasets_creates_four_sibling_datasets(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
