@@ -176,6 +176,19 @@ def build_rollout_manifest(
             "peak_bucket_depth_mean",
             "shallow_peak_bucket_depth_count",
             "shallow_peak_bucket_depth_rate",
+            "dig_precision_cycle_count",
+            "dig_entry_error_mean_m",
+            "dig_entry_error_max_m",
+            "dig_exit_error_mean_m",
+            "dig_exit_error_max_m",
+            "dig_exit_signed_error_mean_m",
+            "dig_exit_abs_overshoot_mean_m",
+            "dig_exit_abs_overshoot_max_m",
+            "dig_depth_target_mean_m",
+            "dig_depth_peak_mean_m",
+            "dig_depth_error_mean_m",
+            "dig_depth_abs_error_mean_m",
+            "dig_depth_abs_error_max_m",
             "dump_start_distance_mean",
             "dump_start_distance_max",
             "far_dump_start_count",
@@ -209,6 +222,18 @@ def build_rollout_manifest(
             "cycle3_post_dump_target_mass_drop_kg",
             "quality_issue_count",
         ]
+        for cycle_idx in range(1, 31):
+            for suffix in (
+                "entry_error_m",
+                "exit_error_m",
+                "exit_signed_error_m",
+                "exit_abs_overshoot_m",
+                "depth_target_m",
+                "depth_peak_m",
+                "depth_error_m",
+                "depth_abs_error_m",
+            ):
+                quality_keys.append(f"cycle{cycle_idx}_{suffix}")
         for key in quality_keys:
             values = [float(rollout.get(key, 0.0)) for rollout in rollouts if key in rollout]
             if values:

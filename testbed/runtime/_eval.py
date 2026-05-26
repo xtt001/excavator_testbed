@@ -705,6 +705,9 @@ def eval_policy(config: dict[str, Any]) -> None:
             "dig_exit_guard_min_bucket_mass_kg": float(
                 switch_cfg.get("dig_exit_guard_min_bucket_mass_kg", 20.0)
             ),
+            "dig_failed_replan_next_skill": str(
+                switch_cfg.get("dig_failed_replan_next_skill", "dig")
+            ),
             "dump_done_max_bucket_mass_kg": float(
                 switch_cfg.get("dump_done_max_bucket_mass_kg", 100.0)
             ),

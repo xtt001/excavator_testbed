@@ -4,6 +4,11 @@ import unittest
 
 import numpy as np
 
+from testbed.data.operator_first_v2_2 import DIG_CUT_DEPTH_SCALE_M
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
+)
 from testbed.eval.quality_metrics import (
     aggregate_quality_metrics,
     build_quality_summary,
@@ -29,6 +34,11 @@ def _record(
     bucket_depth: float = 0.0,
     failures: list[str] | None = None,
     include_target_geometry: bool = True,
+    skill_name: str | None = None,
+    bucket_tip: tuple[float, float] | None = None,
+    coverage_entry: tuple[float, float] | None = None,
+    coverage_exit: tuple[float, float] | None = None,
+    dig_depth_target: float | None = None,
 ) -> dict[str, object]:
     values = [
         mass_in_bucket,
@@ -52,8 +62,15 @@ def _record(
                 dump_clearance_ok,
             ]
         )
-    env_state = np.asarray(values, dtype=np.float32)
-    return {
+    env_len = len(values)
+    if bucket_tip is not None:
+        env_len = max(env_len, ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX + 1)
+    env_state = np.zeros(env_len, dtype=np.float32)
+    env_state[: len(values)] = np.asarray(values, dtype=np.float32)
+    if bucket_tip is not None:
+        env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX] = float(bucket_tip[0])
+        env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX] = float(bucket_tip[1])
+    record: dict[str, object] = {
         "t": int(t),
         "cycle_id": int(cycle_id),
         "qualified_dig_start_mask": int(qds),
@@ -63,6 +80,20 @@ def _record(
         "env_state": env_state,
         "task_step_failures": list(failures or []),
     }
+    if skill_name is not None:
+        record["skill_name"] = str(skill_name)
+    if coverage_entry is not None:
+        record["coverage_entry_x_m"] = float(coverage_entry[0])
+        record["coverage_entry_z_m"] = float(coverage_entry[1])
+    if coverage_exit is not None:
+        record["coverage_exit_x_m"] = float(coverage_exit[0])
+        record["coverage_exit_z_m"] = float(coverage_exit[1])
+    if dig_depth_target is not None:
+        dig_cut_tokens = np.zeros(10, dtype=np.float32)
+        dig_cut_tokens[7] = float(dig_depth_target) / float(DIG_CUT_DEPTH_SCALE_M)
+        dig_cut_tokens[9] = 1.0
+        record["dig_cut_tokens"] = dig_cut_tokens
+    return record
 
 
 class TestQualityMetrics(unittest.TestCase):
@@ -207,6 +238,87 @@ class TestQualityMetrics(unittest.TestCase):
         self.assertAlmostEqual(float(summary["cycle_deposited_fraction_min"]), 0.4)
         self.assertEqual(summary["low_cycle_deposited_fraction_count"], 1)
         self.assertEqual(summary["high_cycle_post_dump_drop_count"], 1)
+
+    def test_build_quality_summary_reports_dig_precision_errors(self) -> None:
+        records = [
+            _record(
+                t=0,
+                cycle_id=0,
+                qds=1,
+                skill_name="dig",
+                bucket_tip=(0.10, 0.02),
+                coverage_entry=(0.0, 0.0),
+                coverage_exit=(1.0, 0.0),
+                dig_depth_target=0.20,
+                bucket_depth=0.05,
+            ),
+            _record(
+                t=1,
+                cycle_id=0,
+                skill_name="dig",
+                bucket_tip=(0.70, 0.10),
+                coverage_entry=(0.0, 0.0),
+                coverage_exit=(1.0, 0.0),
+                dig_depth_target=0.20,
+                bucket_depth=0.22,
+            ),
+            _record(
+                t=2,
+                cycle_id=0,
+                skill_name="dig",
+                bucket_tip=(1.10, 0.05),
+                coverage_entry=(0.0, 0.0),
+                coverage_exit=(1.0, 0.0),
+                dig_depth_target=0.20,
+                bucket_depth=0.25,
+            ),
+            _record(
+                t=3,
+                cycle_id=0,
+                dump_start=1,
+                skill_name="carry",
+                bucket_tip=(1.20, 0.05),
+                bucket_depth=0.10,
+            ),
+        ]
+
+        summary = build_quality_summary(records)
+
+        self.assertEqual(summary["dig_precision_cycle_count"], 1)
+        self.assertAlmostEqual(
+            float(summary["cycle1_entry_error_m"]),
+            float(np.hypot(0.10, 0.02)),
+        )
+        self.assertAlmostEqual(
+            float(summary["cycle1_exit_error_m"]),
+            float(np.hypot(0.10, 0.05)),
+        )
+        self.assertAlmostEqual(float(summary["cycle1_exit_signed_error_m"]), 0.10)
+        self.assertAlmostEqual(float(summary["cycle1_exit_abs_overshoot_m"]), 0.10)
+        self.assertAlmostEqual(float(summary["cycle1_depth_target_m"]), 0.20)
+        self.assertAlmostEqual(float(summary["cycle1_depth_peak_m"]), 0.25)
+        self.assertAlmostEqual(float(summary["cycle1_depth_error_m"]), 0.05)
+        self.assertAlmostEqual(float(summary["cycle1_depth_abs_error_m"]), 0.05)
+        self.assertAlmostEqual(
+            float(summary["dig_entry_error_mean_m"]),
+            float(np.hypot(0.10, 0.02)),
+        )
+        self.assertAlmostEqual(
+            float(summary["dig_exit_error_mean_m"]),
+            float(np.hypot(0.10, 0.05)),
+        )
+        self.assertAlmostEqual(float(summary["dig_depth_error_mean_m"]), 0.05)
+
+        metrics = aggregate_quality_metrics([summary])
+        self.assertAlmostEqual(metrics["avg_dig_precision_cycle_count"], 1.0)
+        self.assertAlmostEqual(metrics["avg_cycle1_entry_error_m"], float(np.hypot(0.10, 0.02)))
+        self.assertAlmostEqual(metrics["avg_cycle1_depth_error_m"], 0.05)
+        self.assertAlmostEqual(
+            metrics["avg_dig_entry_error_mean_m"],
+            float(np.hypot(0.10, 0.02)),
+        )
+        self.assertAlmostEqual(metrics["avg_dig_exit_signed_error_mean_m"], 0.10)
+        self.assertAlmostEqual(metrics["avg_dig_depth_abs_error_mean_m"], 0.05)
 
     def test_aggregate_quality_metrics_averages_rollout_summaries(self) -> None:
         metrics = aggregate_quality_metrics(

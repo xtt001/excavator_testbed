@@ -2351,6 +2351,72 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertTrue(state["planner_terminal_stop_requested"])
         self.assertEqual(state["planner_terminal_stop_reason"], "dig_area_depleted")
 
+    def test_primitive_planner_coverage_multi_pass_reopens_remaining_depth(self) -> None:
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            coverage_extra={
+                "use_env_removed_depth": True,
+                "multi_pass_enabled": True,
+                "multi_pass_max_passes": 2,
+                "multi_pass_min_remaining_depth_m": 0.04,
+            },
+        )
+        policy._ensure_coverage_corridors()
+        for corridor in policy._coverage_corridors:
+            corridor.depleted = True
+            corridor.attempts = 2
+            corridor.low_productivity_streak = 2
+            corridor.last_reason = "unit_test_pass_local_depleted"
+
+        selected = policy._select_coverage_corridor(
+            _coverage_obs(mass=0.0, dig_distance=0.0, removed_cell0=0.02)
+        )
+
+        state = policy.debug_state()
+        self.assertEqual(state["coverage_pass_index"], 1)
+        self.assertFalse(state["planner_terminal_stop_requested"])
+        self.assertFalse(selected.depleted)
+        self.assertLess(
+            state["coverage_depleted_count"],
+            len(policy._coverage_corridors),
+        )
+        reopen_events = [
+            event
+            for event in policy.planner_trace()["coverage_decision_trace"]
+            if event["event"] == "reopen_coverage_pass"
+        ]
+        self.assertEqual(len(reopen_events), 1)
+        self.assertGreater(len(reopen_events[0]["reopened_corridors"]), 0)
+
+    def test_primitive_planner_coverage_multi_pass_stops_without_remaining_depth(
+        self,
+    ) -> None:
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            coverage_extra={
+                "use_env_removed_depth": True,
+                "multi_pass_enabled": True,
+                "multi_pass_max_passes": 2,
+                "multi_pass_min_remaining_depth_m": 0.04,
+            },
+        )
+        policy._ensure_coverage_corridors()
+        for corridor in policy._coverage_corridors:
+            corridor.depleted = True
+        obs = _coverage_obs(mass=0.0, dig_distance=0.0)
+        env_state = np.asarray(obs["env_state"], dtype=np.float32)
+        start = ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX
+        target_start = ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX
+        env_state[start : start + 6] = env_state[target_start : target_start + 6]
+        obs["env_state"] = env_state
+
+        policy._select_coverage_corridor(obs)
+
+        state = policy.debug_state()
+        self.assertEqual(state["coverage_pass_index"], 0)
+        self.assertTrue(state["planner_terminal_stop_requested"])
+        self.assertEqual(state["planner_terminal_stop_reason"], "dig_area_depleted")
+
     def test_primitive_planner_coverage_keeps_legacy_percentile_grid_without_cells(self) -> None:
         policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
 
@@ -3142,6 +3208,52 @@ class TestPrimitivesV22(unittest.TestCase):
             "dig_to_pre_dig_align_exit_overshoot_low_payload",
         )
         self.assertEqual(state["pre_dig_align_replan_after_failed_dig"], True)
+
+    def test_failed_dig_can_stop_rollout_with_reason(self) -> None:
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            dig_to_carry_min_bucket_mass_kg=100.0,
+            dig_bad_replan_enabled=False,
+            dig_exit_guard_enabled=True,
+            dig_failed_replan_next_skill="stop",
+            coverage_extra={"use_env_removed_depth": False},
+        )
+        policy._ensure_coverage_corridors()
+        policy._coverage_active_corridor_id = 0
+        policy._coverage_last_selected_corridor_id = 0
+        policy._cycle_index = 1
+        policy._skill_name = "dig"
+        policy._dig_step_count = policy.dig_exit_guard_min_steps
+
+        policy.predict(
+            _coverage_obs(
+                mass=5.0,
+                dig_distance=0.0,
+                bucket_tip_pose=(-1.05, 0.0, -0.74),
+            )
+        )
+
+        state = policy.debug_state()
+        self.assertEqual(state["dig_exit_guard_replan_count"], 1)
+        self.assertEqual(state["skill_name"], "dig")
+        self.assertEqual(
+            state["skill_switch_reason"],
+            "dig_failed_stop_exit_overshoot_low_payload",
+        )
+        self.assertEqual(state["dig_failed_replan_next_skill"], "stop")
+        self.assertTrue(state["planner_terminal_stop_requested"])
+        self.assertEqual(
+            state["planner_terminal_stop_reason"],
+            "dig_failed_exit_overshoot_low_payload",
+        )
+        trace = policy.planner_trace()["coverage_decision_trace"]
+        self.assertEqual(trace[-2]["event"], "failed_dig_stop")
+        self.assertEqual(trace[-2]["reason"], "exit_overshoot_low_payload")
+        self.assertEqual(trace[-1]["event"], "terminal_stop")
+        self.assertEqual(
+            trace[-1]["reason"],
+            "dig_failed_exit_overshoot_low_payload",
+        )
 
     def test_primitive_planner_pre_dig_align_plans_before_dig(self) -> None:
         dig_policy = _RecordingPolicy(0)
@@ -4798,6 +4910,7 @@ def _coverage_planner_policy(
     dig_to_carry_mass_plateau_enabled: bool = False,
     dig_bad_replan_enabled: bool = False,
     dig_exit_guard_enabled: bool = False,
+    dig_failed_replan_next_skill: str = "dig",
     return_to_dig_shallow_guard_enabled: bool = False,
     return_to_dig_max_entry_error_m: float | None = None,
     return_to_dig_start_envelope_gate_enabled: bool = False,
@@ -4842,6 +4955,7 @@ def _coverage_planner_policy(
         dig_exit_guard_min_steps=3,
         dig_exit_guard_overshoot_m=0.20,
         dig_exit_guard_min_bucket_mass_kg=20.0,
+        dig_failed_replan_next_skill=dig_failed_replan_next_skill,
         return_to_dig_shallow_guard_enabled=return_to_dig_shallow_guard_enabled,
         return_to_dig_max_bucket_mass_kg=15.0,
         return_to_dig_touch_tolerance_m=0.05,

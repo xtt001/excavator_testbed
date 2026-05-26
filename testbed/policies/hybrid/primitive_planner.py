@@ -163,6 +163,7 @@ class PrimitivePlannerACTPolicy(Policy):
         dig_exit_guard_min_steps: int = 80,
         dig_exit_guard_overshoot_m: float = 0.65,
         dig_exit_guard_min_bucket_mass_kg: float = 20.0,
+        dig_failed_replan_next_skill: str = "dig",
         dump_ready_min_bucket_mass_kg: float = 150.0,
         dump_ready_min_height_above_rim_m: float = 0.45,
         dump_ready_require_over_footprint: bool = True,
@@ -267,6 +268,9 @@ class PrimitivePlannerACTPolicy(Policy):
         self.dig_exit_guard_overshoot_m = float(dig_exit_guard_overshoot_m)
         self.dig_exit_guard_min_bucket_mass_kg = float(
             dig_exit_guard_min_bucket_mass_kg
+        )
+        self.dig_failed_replan_next_skill = self._normalize_failed_dig_replan_skill(
+            dig_failed_replan_next_skill
         )
         self.dump_ready_min_bucket_mass_kg = float(dump_ready_min_bucket_mass_kg)
         self.dump_ready_min_height_above_rim_m = float(dump_ready_min_height_above_rim_m)
@@ -521,6 +525,18 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         self.coverage_max_attempts_per_corridor = max(
             1, int(coverage_cfg.get("max_attempts_per_corridor", 3))
+        )
+        self.coverage_multi_pass_enabled = bool(
+            coverage_cfg.get("multi_pass_enabled", False)
+        )
+        self.coverage_multi_pass_max_passes = max(
+            1, int(coverage_cfg.get("multi_pass_max_passes", 1))
+        )
+        self.coverage_multi_pass_min_remaining_depth_m = float(
+            coverage_cfg.get(
+                "multi_pass_min_remaining_depth_m",
+                self.coverage_min_remaining_depth_m,
+            )
         )
         self.coverage_unattempted_bonus = float(
             coverage_cfg.get("unattempted_bonus", 2.0)
@@ -912,6 +928,7 @@ class PrimitivePlannerACTPolicy(Policy):
         self._coverage_last_effective_deposit_delta_kg = 0.0
         self._coverage_global_low_productivity_streak = 0
         self._coverage_completed_dump_count = 0
+        self._coverage_pass_index = 0
         self._coverage_terminal_stop_requested = False
         self._coverage_terminal_stop_reason = ""
         self._coverage_candidate_scores: list[dict[str, float | int | str]] = []
@@ -1018,6 +1035,7 @@ class PrimitivePlannerACTPolicy(Policy):
             "dig_depth_profile_fallback_reason": str(
                 self._dig_depth_profile_fallback_reason
             ),
+            "dig_failed_replan_next_skill": str(self.dig_failed_replan_next_skill),
             "return_target_token_injected": bool(self._return_target_token_injected),
             "return_target_token_dim": int(RETURN_TARGET_TOKEN_DIM),
             "return_target_token_source": str(self._return_target_token_source),
@@ -1112,6 +1130,12 @@ class PrimitivePlannerACTPolicy(Policy):
                 self._coverage_active_state_exemplar_distance
             ),
             "coverage_depleted_count": int(self._coverage_depleted_count()),
+            "coverage_pass_index": int(self._coverage_pass_index),
+            "coverage_multi_pass_enabled": bool(self.coverage_multi_pass_enabled),
+            "coverage_multi_pass_max_passes": int(self.coverage_multi_pass_max_passes),
+            "coverage_multi_pass_min_remaining_depth_m": float(
+                self.coverage_multi_pass_min_remaining_depth_m
+            ),
             "coverage_last_payload_gain_kg": float(
                 self._coverage_last_payload_gain_kg
             ),
@@ -1329,9 +1353,12 @@ class PrimitivePlannerACTPolicy(Policy):
                 self._dig_cut_token_in_prior_p10_p90
             ),
             "dig_cut_fallback_reason": str(self._dig_cut_fallback_reason),
+            "dig_failed_replan_next_skill": str(self.dig_failed_replan_next_skill),
             "coverage_selected_corridor_id": int(self._coverage_active_corridor_id),
             "coverage_depleted_count": int(self._coverage_depleted_count()),
             "coverage_completed_dump_count": int(self._coverage_completed_dump_count),
+            "coverage_pass_index": int(self._coverage_pass_index),
+            "coverage_multi_pass_enabled": int(self.coverage_multi_pass_enabled),
             "coverage_use_env_removed_depth": int(
                 self.coverage_use_env_removed_depth
             ),
@@ -1409,6 +1436,12 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             "coverage_candidate_layout": str(self.coverage_candidate_layout),
             "coverage_first_dig_strategy": str(self.coverage_first_dig_strategy),
+            "coverage_pass_index": int(self._coverage_pass_index),
+            "coverage_multi_pass_enabled": bool(self.coverage_multi_pass_enabled),
+            "coverage_multi_pass_max_passes": int(self.coverage_multi_pass_max_passes),
+            "coverage_multi_pass_min_remaining_depth_m": float(
+                self.coverage_multi_pass_min_remaining_depth_m
+            ),
             "coverage_first_dig_preferred_corridor_id": int(
                 -1
                 if self.coverage_first_dig_preferred_corridor_id is None
@@ -1486,6 +1519,7 @@ class PrimitivePlannerACTPolicy(Policy):
                 )
                 self._restart_after_failed_dig(
                     "exit_overshoot_low_payload",
+                    obs,
                 )
                 return
             if self._dig_bad_replan_ready(obs):
@@ -1494,7 +1528,7 @@ class PrimitivePlannerACTPolicy(Policy):
                     obs,
                     reason="bad_dig_low_payload",
                 )
-                self._restart_after_failed_dig("bad_dig_low_payload")
+                self._restart_after_failed_dig("bad_dig_low_payload", obs)
                 return
             if self._dig_complete_boundary_low_payload(obs, boundary_event):
                 self._dig_bad_replan_count += 1
@@ -1502,7 +1536,7 @@ class PrimitivePlannerACTPolicy(Policy):
                     obs,
                     reason="dig_complete_low_current_payload",
                 )
-                self._restart_after_failed_dig("complete_low_payload")
+                self._restart_after_failed_dig("complete_low_payload", obs)
                 return
             if self._dig_to_carry_ready(obs=obs, boundary_event=boundary_event):
                 self._complete_cell_entry_dig(obs)
@@ -1752,12 +1786,41 @@ class PrimitivePlannerACTPolicy(Policy):
         self._invalidate_pending_dig_cut_plan()
         self._clear_dig_cut_plan()
 
-    def _restart_after_failed_dig(self, reason: str) -> None:
+    def _stop_after_failed_dig(self, reason: str, obs: dict) -> None:
+        corridor = self._coverage_active_corridor()
+        payload_gain = max(
+            float(self._coverage_current_payload_gain_kg),
+            float(self._dig_best_mass_kg),
+            self._mass_in_bucket(obs),
+            0.0,
+        )
+        self._switch_reason = f"dig_failed_stop_{reason}"
+        self._record_coverage_decision_event(
+            "failed_dig_stop",
+            obs=obs,
+            corridor=corridor,
+            extra={
+                "reason": str(reason),
+                "payload_gain_kg": float(payload_gain),
+                "current_bucket_mass_kg": float(self._mass_in_bucket(obs)),
+                "dig_best_mass_kg": float(self._dig_best_mass_kg),
+                "dig_step_count": int(self._dig_step_count),
+            },
+        )
+        self._request_coverage_terminal_stop(
+            f"dig_failed_{reason}",
+            replace=True,
+        )
+
+    def _restart_after_failed_dig(self, reason: str, obs: dict) -> None:
         if (
             self._should_pre_dig_align_before_dig()
             or self._should_pre_dig_align_after_failed_dig()
         ):
             self._restart_pre_dig_align(f"dig_to_pre_dig_align_{reason}")
+            return
+        if self.dig_failed_replan_next_skill == "stop":
+            self._stop_after_failed_dig(reason, obs)
             return
         self._restart_dig_with_new_cut(f"dig_retry_{reason}")
 
@@ -3088,6 +3151,8 @@ class PrimitivePlannerACTPolicy(Policy):
     def _dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
         if not self.dig_cut_planner_enabled:
             return None
+        if self._coverage_terminal_stop_requested:
+            return self._dig_cut_tokens.copy() if self._skill_name == "dig" else None
         if self._skill_name != "dig":
             if (
                 self._skill_name != BOOTSTRAP_SKILL_NAME
@@ -3100,6 +3165,12 @@ class PrimitivePlannerACTPolicy(Policy):
     def _dig_depth_profile_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
         if not self.dig_cut_planner_enabled:
             return None
+        if self._coverage_terminal_stop_requested:
+            return (
+                self._dig_depth_profile_tokens.copy()
+                if self._skill_name == "dig"
+                else None
+            )
         if self._skill_name != "dig":
             if (
                 self._skill_name != BOOTSTRAP_SKILL_NAME
@@ -3672,6 +3743,25 @@ class PrimitivePlannerACTPolicy(Policy):
             )
         return mode
 
+    @staticmethod
+    def _normalize_failed_dig_replan_skill(value: object) -> str:
+        skill = str(value or "dig").strip().lower().replace("-", "_")
+        aliases = {
+            "fail": "stop",
+            "fail_fast": "stop",
+            "terminal": "stop",
+            "terminal_stop": "stop",
+            "same": "dig",
+            "same_dig": "dig",
+            "new_dig": "dig",
+        }
+        skill = aliases.get(skill, skill)
+        if skill not in {"dig", "stop"}:
+            raise ValueError(
+                "dig_failed_replan_next_skill must be 'dig' or 'stop'."
+            )
+        return skill
+
     def _raw_fields_from_live_pose(self, obs: dict) -> dict[str, float | int]:
         pose = self._bucket_dig_area_pose(obs)
         if pose is None:
@@ -3974,6 +4064,8 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _select_coverage_corridor(self, obs: dict) -> CoverageCorridorState:
+        if self._coverage_all_depleted():
+            self._maybe_reopen_coverage_pass(obs, reason="select_all_depleted")
         best: CoverageCorridorState | None = None
         best_score = -float("inf")
         self._coverage_candidate_scores = []
@@ -4106,8 +4198,9 @@ class PrimitivePlannerACTPolicy(Policy):
                 "first_dig_gate_available": int(first_dig_gate_available),
             },
         )
-        if all(corridor.depleted for corridor in self._coverage_corridors):
-            self._request_coverage_terminal_stop("dig_area_depleted")
+        if self._coverage_all_depleted():
+            if not self._maybe_reopen_coverage_pass(obs, reason="select_all_depleted"):
+                self._request_coverage_terminal_stop("dig_area_depleted")
         return best
 
     def _coverage_first_dig_active(self) -> bool:
@@ -4903,8 +4996,9 @@ class PrimitivePlannerACTPolicy(Policy):
                 "completed_dump_count": int(self._coverage_completed_dump_count),
             },
         )
-        if all(candidate.depleted for candidate in self._coverage_corridors):
-            self._request_coverage_terminal_stop("dig_area_depleted")
+        if self._coverage_all_depleted():
+            if not self._maybe_reopen_coverage_pass(obs, reason="complete_all_depleted"):
+                self._request_coverage_terminal_stop("dig_area_depleted")
         elif (
             self._coverage_global_low_productivity_streak
             >= self.coverage_global_low_productivity_stop
@@ -4994,8 +5088,9 @@ class PrimitivePlannerACTPolicy(Policy):
                 "counted_attempt": 1,
             },
         )
-        if all(candidate.depleted for candidate in self._coverage_corridors):
-            self._request_coverage_terminal_stop("dig_area_depleted")
+        if self._coverage_all_depleted():
+            if not self._maybe_reopen_coverage_pass(obs, reason="reject_all_depleted"):
+                self._request_coverage_terminal_stop("dig_area_depleted")
         elif (
             self._coverage_global_low_productivity_streak
             >= self.coverage_global_low_productivity_stop
@@ -5055,6 +5150,7 @@ class PrimitivePlannerACTPolicy(Policy):
                 )
             ),
             "depleted_count": int(self._coverage_depleted_count()),
+            "pass_index": int(self._coverage_pass_index),
             "global_low_productivity_streak": int(
                 self._coverage_global_low_productivity_streak
             ),
@@ -5106,8 +5202,82 @@ class PrimitivePlannerACTPolicy(Policy):
             return float("nan")
         return float(env_state[int(index)])
 
-    def _request_coverage_terminal_stop(self, reason: str) -> None:
+    def _coverage_all_depleted(self) -> bool:
+        return bool(
+            self._coverage_corridors
+            and all(corridor.depleted for corridor in self._coverage_corridors)
+        )
+
+    def _maybe_reopen_coverage_pass(self, obs: dict, *, reason: str) -> bool:
+        if not self.coverage_multi_pass_enabled:
+            return False
         if self._coverage_terminal_stop_requested:
+            return False
+        if not self.coverage_use_env_removed_depth:
+            return False
+        if not self._coverage_all_depleted():
+            return False
+        if (
+            int(self._coverage_pass_index) + 1
+            >= int(self.coverage_multi_pass_max_passes)
+        ):
+            return False
+
+        threshold = float(self.coverage_multi_pass_min_remaining_depth_m)
+        reopened: list[dict[str, float | int | str]] = []
+        for corridor in self._coverage_corridors:
+            remaining_depth = self._coverage_remaining_depth_for_corridor(obs, corridor)
+            if not (
+                np.isfinite(remaining_depth)
+                and float(remaining_depth) >= threshold
+            ):
+                corridor.last_remaining_depth_m = float(remaining_depth)
+                continue
+            reopened.append(
+                {
+                    "corridor_id": int(corridor.corridor_id),
+                    "cell_id": int(self._coverage_cell_id(corridor)),
+                    "previous_attempts": int(corridor.attempts),
+                    "previous_low_productivity_streak": int(
+                        corridor.low_productivity_streak
+                    ),
+                    "previous_reason": str(corridor.last_reason),
+                    "remaining_depth_m": float(remaining_depth),
+                }
+            )
+            corridor.depleted = False
+            corridor.attempts = 0
+            corridor.low_productivity_streak = 0
+            corridor.last_remaining_depth_m = float(remaining_depth)
+            corridor.last_reason = f"multi_pass_reopened:{reason}"
+
+        if not reopened:
+            return False
+
+        self._coverage_pass_index += 1
+        self._coverage_active_corridor_id = -1
+        self._coverage_global_low_productivity_streak = 0
+        self._coverage_rejected_state_exemplar_ids.clear()
+        self._record_coverage_decision_event(
+            "reopen_coverage_pass",
+            obs=obs,
+            extra={
+                "reason": str(reason),
+                "pass_index": int(self._coverage_pass_index),
+                "max_passes": int(self.coverage_multi_pass_max_passes),
+                "min_remaining_depth_m": float(threshold),
+                "reopened_corridors": reopened,
+            },
+        )
+        return True
+
+    def _request_coverage_terminal_stop(
+        self,
+        reason: str,
+        *,
+        replace: bool = False,
+    ) -> None:
+        if self._coverage_terminal_stop_requested and not replace:
             return
         self._coverage_terminal_stop_requested = True
         self._coverage_terminal_stop_reason = str(reason)
@@ -5673,6 +5843,7 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
         dig_exit_guard_min_steps: int = 80,
         dig_exit_guard_overshoot_m: float = 0.65,
         dig_exit_guard_min_bucket_mass_kg: float = 20.0,
+        dig_failed_replan_next_skill: str = "dig",
         approach_ready_min_bucket_mass_kg: float = 150.0,
         approach_ready_max_horizontal_distance_m: float | None = 1.25,
         approach_ready_min_height_above_rim_m: float = -0.20,
@@ -5778,6 +5949,7 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             dig_exit_guard_min_steps=dig_exit_guard_min_steps,
             dig_exit_guard_overshoot_m=dig_exit_guard_overshoot_m,
             dig_exit_guard_min_bucket_mass_kg=dig_exit_guard_min_bucket_mass_kg,
+            dig_failed_replan_next_skill=dig_failed_replan_next_skill,
             dump_ready_min_bucket_mass_kg=dump_release_ready_min_bucket_mass_kg,
             dump_ready_min_height_above_rim_m=(
                 dump_release_ready_min_height_above_rim_m

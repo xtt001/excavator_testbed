@@ -345,6 +345,12 @@
   的选择，不改 checkpoint 和训练 schema。V2.4 hindsight eval 还可用
   `coverage.cut_depth_percentile` / `coverage.payload_percentile` 在专家 prior
   内请求更深、更高 payload 的 cut intent，避免用“继续推到边界”补偿装土不足。
+  `coverage.depleted` 是 planner 的 pass-local 尝试状态，不等价于物理土量已经清零。
+  若配置 `coverage.multi_pass_enabled=true`、`coverage.multi_pass_max_passes>1`，
+  当所有候选都因低产/attempt limit 被标记 depleted，但 env removed-depth grid 显示仍有
+  `coverage.multi_pass_min_remaining_depth_m` 以上余量时，planner 会记录
+  `reopen_coverage_pass` 并重开这些 cell；只有没有可重开的余量或 pass 用尽时才报告
+  `dig_area_depleted`。
   每步可把压缩的 `planner_debug_json` 作为 `STEP_REQ` optional tail 发给 Unity，让 HUD 和
   DigArea 上方的细竖针/entry-to-exit 箭头实时显示 planner 入铲点与方向。V2.4
   eval 现在还会把当前 bucket tip 的 DigArea-local 位置放进同一个 debug JSON，
@@ -441,8 +447,11 @@
   cut intent。bad-dig 判据使用当前保留质量，不使用 transient best mass，避免 bucket
   曾短暂碰到土但最后空斗时继续卡在 dig。V2.4 hindsight eval 还启用
   `dig_exit_guard_*`：当 bucket tip 已沿 planned entry→exit 方向越过 yellow exit
-  一定距离但 payload 仍过低时，将当前 cut 判为 `exit_overshoot_low_payload` 并 replan，
-  防止 ACT 继续把 bucket 推向 DigArea 边界刚体壁。
+  一定距离但 payload 仍过低时，将当前 cut 判为 `exit_overshoot_low_payload`。
+  默认 replan 仍兼容旧行为，在 dig skill 内重选 cut；诊断/eval 应配置
+  `policy.switch.dig_failed_replan_next_skill: stop`，失败时直接结束 rollout，
+  并在 rollout summary / planner trace 中留下 `dig_failed_*` 退出原因，避免补救动作掩盖
+  planner/ACT 的真实根因。
 - 当前 depth 控制仍是 open-loop token conditioning：`cut_depth_percentile=p90` 会把
   depth token 推到专家 prior 的深挖端，但并不等价于 closed-loop depth controller。
   若 Unity depth/soil response 不支持或 ACT 未学会对应姿态，planner 只能通过 bad-dig /
@@ -948,6 +957,14 @@ V2.1 Stage 4 在保留 Stage 2 指标的同时，还会额外输出：
 - `flat_bucket_qds_count`
 - `peak_bucket_depth_mean`
 - `shallow_peak_bucket_depth_count`
+- `dig_precision_cycle_count`
+- `dig_entry_error_mean_m` / `dig_entry_error_max_m`
+- `dig_exit_error_mean_m` / `dig_exit_error_max_m`
+- `dig_exit_signed_error_mean_m`
+- `dig_exit_abs_overshoot_mean_m` / `dig_exit_abs_overshoot_max_m`
+- `dig_depth_target_mean_m` / `dig_depth_peak_mean_m`
+- `dig_depth_error_mean_m`
+- `dig_depth_abs_error_mean_m` / `dig_depth_abs_error_max_m`
 - `dump_start_distance_mean` / `dump_start_distance_max`
 - `dump_start_horizontal_distance_mean` / `dump_start_horizontal_distance_max`
 - `dump_start_geometry_missing_count`
@@ -967,6 +984,12 @@ V2.1 Stage 4 在保留 Stage 2 指标的同时，还会额外输出：
 - `low_cycle_deposited_fraction_count`
 - `high_cycle_post_dump_drop_count`
 - `quality_issue_count`
+
+单条 rollout summary / manifest 还会输出 `cycleN_entry_error_m`、
+`cycleN_exit_error_m`、`cycleN_exit_signed_error_m`、`cycleN_depth_target_m`、
+`cycleN_depth_peak_m` 和 `cycleN_depth_error_m`，用于直接观察每一铲相对 planner
+entry / exit / depth token 的执行误差。聚合后的 `metrics.json` 会输出对应
+`avg_cycleN_*` 字段，默认覆盖 `1..30` cycle。
 
 对应的关键 rate 版本也会一起输出，例如：
 

@@ -151,7 +151,7 @@ handoff/replan，不负责直接输出连续动作。
 | `qualified_dig_start` / `dig_start` | bucket 到 dig area 的最小距离 `<= 0.05m`，并且 bucket 低于 dig-area plane `>= 0.02m`。如果使用 legacy progress 模式，还要求 reward/load progress 或 bucket/excavated mass 增量。 |
 | `dig_complete` | 本轮历史 bucket mass 峰值 `>= 15kg`；当前质量相对峰值进入 plateau，epsilon `1kg`、hold `8` step；bucket 稳定离开 dig area，min-distance `>= 0.08m`、hold `3` step。 |
 | `dig -> carry` | 优先消费 `dig_complete`。为避免“必须先离开 dig box 才能切 carry，但离开动作又由 carry 负责”的循环等待，semantic profile 下还有 material liveness escape：bucket mass `>= 45kg` 直接切，或 step `>= 160` 且 mass `>= 15kg`、plateau epsilon `1kg`、hold `25` step 后切。当前 `dig_to_carry_min_distance_to_dig_area_m=0.0`。 |
-| dig 低产重规划 | `dig_bad_replan`：dig 超过 `220` step 但当前 bucket mass `< 15kg`，reject 当前 corridor。`dig_exit_guard`：dig 至少 `80` step，bucket tip 沿 entry->exit 方向越过 planned exit `0.65m`，但 mass `< 20kg`，reject/replan。若 `dig_complete` 发生但当前质量低于 carry/dump 最低需求，也按低载荷完成处理。 |
+| dig 低产失败 | `dig_bad_replan`：dig 超过 `220` step 但当前 bucket mass `< 15kg`，reject 当前 corridor。`dig_exit_guard`：dig 至少 `80` step，bucket tip 沿 entry->exit 方向越过 planned exit `0.65m`，但 mass `< 20kg`，判为失败。若 `dig_complete` 发生但当前质量低于 carry/dump 最低需求，也按低载荷失败处理。默认兼容旧行为，直接在 dig skill 内换 cut；诊断/eval 应配置 `dig_failed_replan_next_skill=stop`，失败时退出 rollout 并在 planner trace 记录 `failed_dig_stop` 与 `dig_failed_*` terminal reason。 |
 | `carry -> dump` | semantic profile 下优先消费 `dump_committed_start` 或 `release_onset`。非 semantic profile 才回退到 planner 内部 `target_ready`/legacy `dump_start`。 |
 | `dump_committed_start` | bucket mass `>= 15kg`，dump 几何有效，bucket footprint outside distance 在 `[0, 0.25m]`，relative x 在 `[-0.2, 1.9]`，relative z 在 `[0.45, 2.1]`，height above rim `>= 0.45m`；短窗口稳定性要求 8-step range: outside `<= 0.06m`、relative x `<= 0.16m`、relative z `<= 0.10m`；条件 hold `3` step。 |
 | `release_onset` | 已进入 dump ownership 后，bucket 位于 dump area 附近：outside distance `<= 0.45m` 或 over target footprint；同时当前步 bucket mass drop `>= 0.5kg` 或 dump/target deposit gain `>= 0.5kg`。 |
@@ -189,6 +189,10 @@ planner 决策：
 
 - dig ACT 的 4D action。
 - 若成功，记录 payload/effective deposit/removed-depth outcome，进入 carry。
+- rollout quality report 会记录每铲的 `cycleN_entry_error_m`、`cycleN_exit_error_m`
+  和 `cycleN_depth_error_m`，并汇总 `dig_entry_error_*`、`dig_exit_error_*`、
+  `dig_exit_signed_error_*`、`dig_depth_*_error_*`。这些字段只观测 ACT 相对
+  planner token 的执行精度，不参与在线补救或重新规划。
 
 ### carry 阶段
 
@@ -331,6 +335,10 @@ eval 侧的 `return_low_dim_keys` 也是同一组 key。
 dig plan 的前半段。下一铲 plan 仍然存在，但它停留在 planner/scheduler 侧，等真正切回
 `dig` 后才作为 `dig_cut_tokens` 给 dig ACT。
 
+同理，已经进入 dig skill 后再因为低载荷/exit guard 失败而换 cut，不能默认假设当前状态仍然
+落在新 cut 的 dig-start 分布里。诊断/eval 主线用 `dig_failed_replan_next_skill=stop`
+把这种情况当作真实失败暴露出来，而不是让后续 replan/return 掩盖根因。
+
 2026-05-26 的 return-relocate 诊断表明：如果 live return 继续只注入
 `qc6_return_start_envelope_global`，token 内 qpos center 会固定在全局 median
 dig-start 姿态附近，rollout 视觉上就会像“回到平均点再挖”。新的
@@ -456,6 +464,7 @@ depth/contact 字段判断是否仍在安全 handoff envelope 内，但不应该
 | dig 很久低载荷 | ACT 或 entry 状态，也可能是 planner 选点 | `dig_bad_replan_count`、exit overshoot、payload trace、entry error |
 | return 到点附近但不切 dig | handoff gate | entry error、envelope checks、plane depth、qpos envelope |
 | return 太早切 dig 导致第二铲浅挖 | handoff gate 过宽 | `return_to_dig_start_envelope_checks`、`next_dig_entry_ready` latch 状态 |
+| planner 报 `dig_area_depleted` 但 depth grid 仍有余量 | coverage pass 语义 | `coverage_pass_index`、`reopen_coverage_pass` trace、remaining depth grid |
 | carry 提前切 dump | boundary/profile gate | dump committed band、outside distance、relative x/z stability |
 | ACT 动作突然错向 | ACT/action scaling 或 checkpoint | low_dim stats、action order、temporal aggregation、ckpt config |
 

@@ -9,14 +9,19 @@ import numpy as np
 
 from testbed.data.schema import (
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
     ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
+from testbed.data.operator_first_v2_2 import DIG_CUT_DEPTH_SCALE_M
 
 FLAT_BUCKET_QPOS_THRESH = 0.20
 FAR_DUMP_START_DISTANCE_M = 1.25
@@ -116,6 +121,114 @@ def _safe_bucket_qpos(record: dict[str, Any]) -> float | None:
     if not np.isfinite(value):
         return None
     return value
+
+
+def _safe_record_scalar(record: dict[str, Any], key: str) -> float | None:
+    if key not in record:
+        return None
+    try:
+        value = float(record[key])
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(value):
+        return None
+    return value
+
+
+def _safe_sequence_scalar(value: object, index: int) -> float | None:
+    if value is None:
+        return None
+    arr = np.asarray(value, dtype=np.float32).reshape(-1)
+    if index < 0 or index >= len(arr):
+        return None
+    scalar = float(arr[index])
+    if not np.isfinite(scalar):
+        return None
+    return scalar
+
+
+def _bucket_tip_xz(record: dict[str, Any]) -> tuple[float, float] | None:
+    tip_x = _safe_env_scalar(record, ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX)
+    tip_z = _safe_env_scalar(record, ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX)
+    if tip_x is not None and tip_z is not None:
+        return float(tip_x), float(tip_z)
+    bucket_x = _safe_env_scalar(record, ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX)
+    bucket_z = _safe_env_scalar(record, ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX)
+    if bucket_x is not None and bucket_z is not None:
+        return float(bucket_x), float(bucket_z)
+    return None
+
+
+def _coverage_point(
+    record: dict[str, Any],
+    *,
+    prefix: str,
+) -> tuple[float, float] | None:
+    point_x = _safe_record_scalar(record, f"coverage_{prefix}_x_m")
+    point_z = _safe_record_scalar(record, f"coverage_{prefix}_z_m")
+    if point_x is None or point_z is None:
+        return None
+    return float(point_x), float(point_z)
+
+
+def _point_distance_xz(
+    record: dict[str, Any],
+    target: tuple[float, float] | None,
+) -> float | None:
+    tip = _bucket_tip_xz(record)
+    if tip is None or target is None:
+        return None
+    return float(np.hypot(float(tip[0]) - target[0], float(tip[1]) - target[1]))
+
+
+def _exit_signed_error_m(
+    record: dict[str, Any],
+    entry: tuple[float, float] | None,
+    exit_point: tuple[float, float] | None,
+) -> float | None:
+    tip = _bucket_tip_xz(record)
+    if tip is None or entry is None or exit_point is None:
+        return None
+    entry_arr = np.asarray(entry, dtype=np.float32)
+    exit_arr = np.asarray(exit_point, dtype=np.float32)
+    tip_arr = np.asarray(tip, dtype=np.float32)
+    direction = exit_arr - entry_arr
+    length = float(np.linalg.norm(direction))
+    if not np.isfinite(length) or length <= 1.0e-6:
+        return None
+    progress = float(np.dot(tip_arr - entry_arr, direction / length))
+    return float(progress - length)
+
+
+def _planned_depth_m(record: dict[str, Any]) -> float | None:
+    depth_norm = _safe_sequence_scalar(record.get("dig_cut_tokens"), 7)
+    valid = _safe_sequence_scalar(record.get("dig_cut_tokens"), 9)
+    if depth_norm is None:
+        return None
+    if valid is not None and valid <= 0.5:
+        return None
+    return float(depth_norm) * float(DIG_CUT_DEPTH_SCALE_M)
+
+
+def _dig_stage_indices(
+    step_records: list[dict[str, Any]],
+    window: _CycleWindow,
+) -> list[int]:
+    search_end = (
+        int(window.dump_start_idx) - 1
+        if window.dump_start_idx is not None
+        else int(window.end_idx)
+    )
+    search_end = max(int(window.qds_idx), min(search_end, len(step_records) - 1))
+    indices = list(range(int(window.qds_idx), search_end + 1))
+    skill_tagged = [
+        idx
+        for idx in indices
+        if str(step_records[idx].get("skill_name", "")) == "dig"
+    ]
+    if skill_tagged:
+        return skill_tagged
+    return indices
 
 
 def _count_failure(step_records: list[dict[str, Any]], failure_name: str) -> int:
@@ -310,6 +423,19 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
             "peak_bucket_depth_mean": 0.0,
             "shallow_peak_bucket_depth_count": 0,
             "shallow_peak_bucket_depth_rate": 0.0,
+            "dig_precision_cycle_count": 0,
+            "dig_entry_error_mean_m": 0.0,
+            "dig_entry_error_max_m": 0.0,
+            "dig_exit_error_mean_m": 0.0,
+            "dig_exit_error_max_m": 0.0,
+            "dig_exit_signed_error_mean_m": 0.0,
+            "dig_exit_abs_overshoot_mean_m": 0.0,
+            "dig_exit_abs_overshoot_max_m": 0.0,
+            "dig_depth_target_mean_m": 0.0,
+            "dig_depth_peak_mean_m": 0.0,
+            "dig_depth_error_mean_m": 0.0,
+            "dig_depth_abs_error_mean_m": 0.0,
+            "dig_depth_abs_error_max_m": 0.0,
             "dump_start_distance_mean": 0.0,
             "dump_start_distance_max": 0.0,
             "dump_start_horizontal_distance_mean": 0.0,
@@ -352,6 +478,14 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
     windows = _build_cycle_windows(step_records)
     qds_bucket_qpos_values: list[float] = []
     peak_bucket_depth_values: list[float] = []
+    entry_error_values: list[float] = []
+    exit_error_values: list[float] = []
+    exit_signed_error_values: list[float] = []
+    exit_abs_overshoot_values: list[float] = []
+    depth_target_values: list[float] = []
+    depth_peak_values: list[float] = []
+    depth_error_values: list[float] = []
+    depth_abs_error_values: list[float] = []
     dump_start_distance_values: list[float] = []
     carry_efficiency_values: list[float] = []
     dump_end_residual_bucket_mass_values: list[float] = []
@@ -370,10 +504,44 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
     cycle_post_dump_drop_values: list[float] = []
     low_cycle_deposited_fraction_count = 0
     high_cycle_post_dump_drop_count = 0
+    per_cycle_precision_metrics: dict[str, float] = {}
     per_cycle_deposit_metrics: dict[str, float] = {}
 
     for window in windows:
         qds_record = step_records[window.qds_idx]
+        display_cycle = int(window.cycle_id) + 1
+        prefix = f"cycle{display_cycle}"
+        dig_indices = _dig_stage_indices(step_records, window)
+        first_dig_idx = dig_indices[0] if dig_indices else int(window.qds_idx)
+        last_dig_idx = dig_indices[-1] if dig_indices else int(window.qds_idx)
+        first_dig_record = step_records[first_dig_idx]
+        last_dig_record = step_records[last_dig_idx]
+
+        entry_point = _coverage_point(first_dig_record, prefix="entry")
+        exit_point = _coverage_point(last_dig_record, prefix="exit")
+        entry_error = _point_distance_xz(first_dig_record, entry_point)
+        exit_error = _point_distance_xz(last_dig_record, exit_point)
+        exit_signed_error = _exit_signed_error_m(
+            last_dig_record,
+            _coverage_point(last_dig_record, prefix="entry"),
+            exit_point,
+        )
+        if entry_error is not None:
+            entry_error_values.append(entry_error)
+            per_cycle_precision_metrics[f"{prefix}_entry_error_m"] = float(entry_error)
+        if exit_error is not None:
+            exit_error_values.append(exit_error)
+            per_cycle_precision_metrics[f"{prefix}_exit_error_m"] = float(exit_error)
+        if exit_signed_error is not None:
+            exit_signed_error_values.append(exit_signed_error)
+            exit_abs_overshoot_values.append(abs(exit_signed_error))
+            per_cycle_precision_metrics[f"{prefix}_exit_signed_error_m"] = float(
+                exit_signed_error
+            )
+            per_cycle_precision_metrics[f"{prefix}_exit_abs_overshoot_m"] = float(
+                abs(exit_signed_error)
+            )
+
         qds_bucket_qpos = _safe_bucket_qpos(qds_record)
         if qds_bucket_qpos is not None:
             qds_bucket_qpos_values.append(qds_bucket_qpos)
@@ -392,6 +560,25 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
         if bucket_depths:
             peak_depth = float(np.max(bucket_depths))
             peak_bucket_depth_values.append(peak_depth)
+            planned_depth = _planned_depth_m(first_dig_record)
+            if planned_depth is not None:
+                depth_target_values.append(planned_depth)
+                depth_peak_values.append(peak_depth)
+                depth_error = float(peak_depth) - float(planned_depth)
+                depth_error_values.append(depth_error)
+                depth_abs_error_values.append(abs(depth_error))
+                per_cycle_precision_metrics[f"{prefix}_depth_target_m"] = float(
+                    planned_depth
+                )
+                per_cycle_precision_metrics[f"{prefix}_depth_peak_m"] = float(
+                    peak_depth
+                )
+                per_cycle_precision_metrics[f"{prefix}_depth_error_m"] = float(
+                    depth_error
+                )
+                per_cycle_precision_metrics[f"{prefix}_depth_abs_error_m"] = float(
+                    abs(depth_error)
+                )
             if peak_depth < SHALLOW_PEAK_BUCKET_DEPTH_THRESH_M:
                 shallow_peak_bucket_depth_count += 1
 
@@ -447,8 +634,6 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
 
         cycle_deposit_metrics = _build_cycle_deposit_metrics(step_records, window)
         if cycle_deposit_metrics is not None:
-            display_cycle = int(window.cycle_id) + 1
-            prefix = f"cycle{display_cycle}"
             deposited_fraction = float(cycle_deposit_metrics["deposited_fraction"])
             post_drop = float(cycle_deposit_metrics["post_dump_target_mass_drop_kg"])
             cycle_deposited_fraction_values.append(deposited_fraction)
@@ -504,6 +689,25 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
         "shallow_peak_bucket_depth_count": int(shallow_peak_bucket_depth_count),
         "shallow_peak_bucket_depth_rate": float(shallow_peak_bucket_depth_count)
         / float(qds_count),
+        "dig_precision_cycle_count": int(
+            max(
+                len(entry_error_values),
+                len(exit_error_values),
+                len(depth_abs_error_values),
+            )
+        ),
+        "dig_entry_error_mean_m": _safe_array_mean(entry_error_values),
+        "dig_entry_error_max_m": _safe_array_max(entry_error_values),
+        "dig_exit_error_mean_m": _safe_array_mean(exit_error_values),
+        "dig_exit_error_max_m": _safe_array_max(exit_error_values),
+        "dig_exit_signed_error_mean_m": _safe_array_mean(exit_signed_error_values),
+        "dig_exit_abs_overshoot_mean_m": _safe_array_mean(exit_abs_overshoot_values),
+        "dig_exit_abs_overshoot_max_m": _safe_array_max(exit_abs_overshoot_values),
+        "dig_depth_target_mean_m": _safe_array_mean(depth_target_values),
+        "dig_depth_peak_mean_m": _safe_array_mean(depth_peak_values),
+        "dig_depth_error_mean_m": _safe_array_mean(depth_error_values),
+        "dig_depth_abs_error_mean_m": _safe_array_mean(depth_abs_error_values),
+        "dig_depth_abs_error_max_m": _safe_array_max(depth_abs_error_values),
         "dump_start_distance_mean": _safe_array_mean(dump_start_distance_values),
         "dump_start_distance_max": _safe_array_max(dump_start_distance_values),
         "dump_start_horizontal_distance_mean": _safe_array_mean(dump_start_distance_values),
@@ -564,6 +768,7 @@ def build_quality_summary(step_records: list[dict[str, Any]]) -> dict[str, float
         ),
         "quality_issue_count": quality_issue_count,
     }
+    summary.update(per_cycle_precision_metrics)
     summary.update(per_cycle_deposit_metrics)
     return summary
 
@@ -577,7 +782,7 @@ def aggregate_quality_metrics(
     def _avg(key: str) -> float:
         return float(np.mean([float(item.get(key, 0.0)) for item in summaries]))
 
-    return {
+    metrics = {
         "avg_spill_before_target_count": _avg("spill_before_target_count"),
         "avg_spill_before_target_rate": _avg("spill_before_target_rate"),
         "avg_unsafe_target_distance_count": _avg("unsafe_target_distance_count"),
@@ -593,6 +798,21 @@ def aggregate_quality_metrics(
         "avg_peak_bucket_depth_mean": _avg("peak_bucket_depth_mean"),
         "avg_shallow_peak_bucket_depth_count": _avg("shallow_peak_bucket_depth_count"),
         "avg_shallow_peak_bucket_depth_rate": _avg("shallow_peak_bucket_depth_rate"),
+        "avg_dig_precision_cycle_count": _avg("dig_precision_cycle_count"),
+        "avg_dig_entry_error_mean_m": _avg("dig_entry_error_mean_m"),
+        "avg_dig_entry_error_max_m": _avg("dig_entry_error_max_m"),
+        "avg_dig_exit_error_mean_m": _avg("dig_exit_error_mean_m"),
+        "avg_dig_exit_error_max_m": _avg("dig_exit_error_max_m"),
+        "avg_dig_exit_signed_error_mean_m": _avg("dig_exit_signed_error_mean_m"),
+        "avg_dig_exit_abs_overshoot_mean_m": _avg(
+            "dig_exit_abs_overshoot_mean_m"
+        ),
+        "avg_dig_exit_abs_overshoot_max_m": _avg("dig_exit_abs_overshoot_max_m"),
+        "avg_dig_depth_target_mean_m": _avg("dig_depth_target_mean_m"),
+        "avg_dig_depth_peak_mean_m": _avg("dig_depth_peak_mean_m"),
+        "avg_dig_depth_error_mean_m": _avg("dig_depth_error_mean_m"),
+        "avg_dig_depth_abs_error_mean_m": _avg("dig_depth_abs_error_mean_m"),
+        "avg_dig_depth_abs_error_max_m": _avg("dig_depth_abs_error_max_m"),
         "avg_dump_start_distance_mean": _avg("dump_start_distance_mean"),
         "avg_dump_start_distance_max": _avg("dump_start_distance_max"),
         "avg_dump_start_horizontal_distance_mean": _avg(
@@ -656,3 +876,17 @@ def aggregate_quality_metrics(
         ),
         "avg_quality_issue_count": _avg("quality_issue_count"),
     }
+    for cycle_idx in range(1, 31):
+        for suffix in (
+            "entry_error_m",
+            "exit_error_m",
+            "exit_signed_error_m",
+            "exit_abs_overshoot_m",
+            "depth_target_m",
+            "depth_peak_m",
+            "depth_error_m",
+            "depth_abs_error_m",
+        ):
+            key = f"cycle{cycle_idx}_{suffix}"
+            metrics[f"avg_{key}"] = _avg(key)
+    return metrics
