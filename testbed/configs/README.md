@@ -329,6 +329,8 @@
   (`outside<=0.25m`, `x=[-0.2,1.9]`, `z=[0.45,2.1]`, rolling range
   `0.06/0.16/0.10m`)，`release_onset_max_outside_distance_m=0.45` 只用于
   已进入 dump 后的 release/drop 识别；旧 prior 没有 `coverage_cells` 时 planner 仍兼容 3x3 percentile grid。
+  `target_cycle_gate_terminal_hold_steps=100`，让达成 N-cycle gate 后继续 tail
+  100 step，给 dump/coverage summary 和视频尾段留出稳定刷新窗口。
   qc6 人工复核分布为 `0:64, 1:163, 2:142, 3:180, 4:18, 5:82`，cell 4 默认按
   rare cell 限制 first-dig 和 attempt 次数。
 - YuLong operator-first rollout 默认使用 `dig_cut_planner.mode=operator_prior`，
@@ -1023,6 +1025,8 @@ entry / exit / depth token 的执行误差。聚合后的 `metrics.json` 会输�
 当配置 `eval.target_cycle_gate` 时，报告会额外输出 `target_cycle_gate_success`、
 `target_cycle_completed_dump_count`、`target_cycle_gate_success_rate` 和
 `target_cycle_completed_dump_mean`。这些字段才表示 N-cycle gate 是否真正达成；
+qc6 N-cycle 配置会在 gate 后 tail 100 step，避免停止当帧截断末尾
+dump/coverage 刷新。
 AGX 的 `success_rate` 仍按 `success.mode` 表示物料/倒土成功，不能单独当作 10cycle 成功。
 
 当前 Stage 2 live 默认调参值已经按 `2026-04-19` 的 Unity 联调结果固定为：

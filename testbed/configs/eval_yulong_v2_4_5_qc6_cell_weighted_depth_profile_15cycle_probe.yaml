@@ -21,7 +21,7 @@ eval:
   send_planner_debug_to_backend: false
   step_log_interval: 100
   target_cycle_gate: 15
-  target_cycle_gate_terminal_hold_steps: 1
+  target_cycle_gate_terminal_hold_steps: 100
   temporal_agg: true
 success:
   mode: dump_complete_final_hold
