@@ -346,6 +346,10 @@
   `coverage.cut_depth_percentile` / `coverage.payload_percentile` 在专家 prior
   内请求更深、更高 payload 的 cut intent，避免用“继续推到边界”补偿装土不足。
   `coverage.depleted` 是 planner 的 pass-local 尝试状态，不等价于物理土量已经清零。
+  当 `coverage.use_env_removed_depth=true` 且对应 cell 的 remaining depth 仍高于
+  `coverage.min_remaining_depth_m` 时，planner 不会仅因为 `max_attempts_per_corridor`
+  或 `rare_cell_max_attempts` 命中就把该 corridor 标为 depleted；attempt limit 只在缺少
+  可挖深度证据或 remaining depth 已低于阈值时终止该 corridor。
   若配置 `coverage.multi_pass_enabled=true`、`coverage.multi_pass_max_passes>1`，
   当所有候选都因低产/attempt limit 被标记 depleted，但 env removed-depth grid 显示仍有
   `coverage.multi_pass_min_remaining_depth_m` 以上余量时，planner 会记录

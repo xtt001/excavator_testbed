@@ -468,6 +468,7 @@ depth/contact 字段判断是否仍在安全 handoff envelope 内，但不应该
 | return 到点附近但不切 dig | handoff gate | entry error、envelope checks、plane depth、qpos envelope |
 | return 太早切 dig 导致第二铲浅挖 | handoff gate 过宽 | `return_to_dig_start_envelope_checks`、`next_dig_entry_ready` latch 状态 |
 | planner 报 `dig_area_depleted` 但 depth grid 仍有余量 | coverage pass 语义 | `coverage_pass_index`、`reopen_coverage_pass` trace、remaining depth grid |
+| 稀有 cell 成功一铲后过早 depleted | attempt limit 与实时 depth 冲突 | `last_reason=attempt_limit_reached`、`last_remaining_depth_m`、`rare_cell_max_attempts` |
 | carry 提前切 dump | boundary/profile gate | dump committed band、outside distance、relative x/z stability |
 | ACT 动作突然错向 | ACT/action scaling 或 checkpoint | low_dim stats、action order、temporal aggregation、ckpt config |
 

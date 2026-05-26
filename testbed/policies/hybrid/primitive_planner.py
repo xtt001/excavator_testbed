@@ -4966,7 +4966,15 @@ class PrimitivePlannerACTPolicy(Policy):
         ):
             corridor.depleted = True
             corridor.last_reason = "low_productivity_consecutive"
-        if corridor.attempts >= self._coverage_corridor_attempt_limit(corridor):
+        remaining_depth_available = bool(
+            self.coverage_use_env_removed_depth
+            and np.isfinite(remaining_depth)
+            and float(remaining_depth) >= self.coverage_min_remaining_depth_m
+        )
+        if (
+            corridor.attempts >= self._coverage_corridor_attempt_limit(corridor)
+            and not remaining_depth_available
+        ):
             corridor.depleted = True
             corridor.last_reason = "attempt_limit_reached"
         if (

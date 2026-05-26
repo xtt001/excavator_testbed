@@ -2323,7 +2323,13 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertEqual(candidate_by_cell[2]["same_recent_row"], 0)
 
     def test_primitive_planner_coverage_attempt_limit_depletes_corridor(self) -> None:
-        policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            coverage_extra={
+                "use_env_removed_depth": False,
+                "belief_depleted_score": 100.0,
+            },
+        )
         policy._ensure_coverage_corridors()
         corridor = policy._coverage_corridors[0]
         policy._coverage_active_corridor_id = int(corridor.corridor_id)
@@ -2338,6 +2344,30 @@ class TestPrimitivesV22(unittest.TestCase):
 
         self.assertTrue(corridor.depleted)
         self.assertEqual(corridor.last_reason, "attempt_limit_reached")
+
+    def test_primitive_planner_coverage_attempt_limit_keeps_remaining_depth(self) -> None:
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            coverage_extra={
+                "use_env_removed_depth": True,
+                "max_attempts_per_corridor": 1,
+                "min_remaining_depth_m": 0.05,
+            },
+        )
+        policy._ensure_coverage_corridors()
+        corridor = policy._coverage_corridors[0]
+        policy._coverage_active_corridor_id = int(corridor.corridor_id)
+        policy._coverage_current_payload_gain_kg = 50.0
+        policy._coverage_cycle_start_deposit_kg = 0.0
+
+        policy._complete_coverage_dump(
+            _coverage_obs(mass=0.0, dig_distance=0.0, removed_cell0=0.01),
+            reason="unit_test",
+        )
+
+        self.assertEqual(corridor.attempts, 1)
+        self.assertFalse(corridor.depleted)
+        self.assertGreater(corridor.last_remaining_depth_m, 0.05)
 
     def test_primitive_planner_coverage_terminal_stop_when_all_depleted(self) -> None:
         policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
