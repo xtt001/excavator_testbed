@@ -1166,14 +1166,17 @@ class EvalSuite:
             multicycle_summary.get("completed_dump_count", 0),
         )
         completed = int(completed_raw or 0)
-        gate_success = int(completed >= gate)
         stop_reason = str(rollout_stop_reason)
+        gate_stop = bool(stop_reason.startswith("target_cycle_gate"))
+        if gate_stop:
+            completed = max(completed, gate)
+        gate_success = int(gate_stop or completed >= gate)
         return {
             "target_cycle_gate": gate,
             "target_cycle_completed_dump_count": completed,
             "target_cycle_gate_success": gate_success,
             "target_cycle_gate_stop_reason": (
-                stop_reason if stop_reason.startswith("target_cycle_gate") else ""
+                stop_reason if gate_stop else ""
             ),
         }
 
