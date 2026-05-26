@@ -3091,6 +3091,66 @@ class TestPrimitivesV22(unittest.TestCase):
             "return_to_dig_start_envelope_ready",
         )
 
+    def test_return_entry_frame_can_direct_handoff_without_return_action(self) -> None:
+        token = np.zeros(18, dtype=np.float32)
+        token[0:2] = np.asarray([-0.48, 0.67], dtype=np.float32)
+        token[2] = 0.0
+        token[3] = 0.20
+        token[4] = 0.0
+        token[5] = 0.08
+        token[7:11] = np.asarray([0.520, 0.732, 0.067, 0.166], dtype=np.float32)
+        token[11:15] = np.asarray([0.02, 0.02, 0.02, 0.03], dtype=np.float32)
+        token[16] = 1.0
+        token[17] = 1.0
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            boundary_profile=PRIMITIVE_BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS,
+            return_target_enabled=True,
+            return_to_dig_max_entry_error_m=0.55,
+            return_to_dig_start_envelope_gate_enabled=True,
+            return_to_dig_start_envelope_direct_handoff_enabled=True,
+            return_to_dig_start_envelope_plane_depth_tolerance_m=10.0,
+        )
+        policy._skill_name = "dump"
+        policy._return_start_envelope_tokens = token.copy()
+        policy._return_start_envelope_use_prior_spatial_bounds = False
+        policy._return_start_envelope_use_prior_qpos_bounds = False
+        policy._pending_dig_cut_cycle_id = int(policy._cycle_index) + 1
+        policy._pending_dig_cut_corridor_id = -1
+        policy._pending_dig_cut_raw_fields = {
+            "operator_entry_x_m": 0.0,
+            "operator_entry_z_m": 0.0,
+        }
+        policy._ensure_return_target_plan_for_cycle = lambda obs: None  # type: ignore[method-assign]
+
+        obs = _coverage_obs(
+            mass=0.0,
+            dig_distance=0.0,
+            bucket_depth=0.02,
+            bucket_pose=(0.0, 0.0, 0.0),
+        )
+        env = np.asarray(obs["env_state"], dtype=np.float32)
+        env[ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX] = 1.0
+        env[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX] = float(token[0])
+        env[ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX] = float(token[1])
+        env[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = 0.02
+        env[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX] = 1.0
+        obs["env_state"] = env
+        obs["qpos"] = token[7:11].astype(np.float32)
+
+        policy._set_return_or_direct_handoff(
+            obs,
+            reason="dump_to_return_dump_complete_boundary",
+        )
+
+        self.assertEqual(policy._skill_name, "dig")
+        self.assertEqual(policy._cycle_index, 1)
+        self.assertEqual(policy._completed_transition_count, 1)
+        self.assertEqual(
+            policy._switch_reason,
+            "return_to_dig_start_envelope_ready",
+        )
+
     def test_primitive_planner_sweep_belief_does_not_depend_on_removed_depth(self) -> None:
         dig_policy = _RecordingPolicy(0)
         policy = _coverage_planner_policy(

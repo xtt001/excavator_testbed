@@ -1558,7 +1558,10 @@ class PrimitivePlannerACTPolicy(Policy):
         if self._skill_name == "carry":
             if self._carry_release_safety_done(obs):
                 self._complete_coverage_dump(obs, reason="carry_release_safety")
-                self._set_skill("return", "carry_to_return_release_safety")
+                self._set_return_or_direct_handoff(
+                    obs,
+                    reason="carry_to_return_release_safety",
+                )
                 return
             dump_committed_event = bool(
                 boundary_event is not None
@@ -1574,7 +1577,10 @@ class PrimitivePlannerACTPolicy(Policy):
             )
             if dump_complete_event:
                 self._complete_coverage_dump(obs, reason="carry_dump_complete_boundary")
-                self._set_skill("return", "carry_to_return_dump_complete_boundary")
+                self._set_return_or_direct_handoff(
+                    obs,
+                    reason="carry_to_return_dump_complete_boundary",
+                )
                 return
             legacy_dump_start_event = bool(
                 boundary_event is not None
@@ -1622,11 +1628,13 @@ class PrimitivePlannerACTPolicy(Policy):
                     else "dump_end_boundary"
                 )
                 self._complete_coverage_dump(obs, reason=reason)
-                self._set_skill(
-                    "return",
-                    "dump_to_return_dump_complete_boundary"
-                    if reason == "dump_complete_boundary"
-                    else "dump_to_return_dump_end",
+                self._set_return_or_direct_handoff(
+                    obs,
+                    reason=(
+                        "dump_to_return_dump_complete_boundary"
+                        if reason == "dump_complete_boundary"
+                        else "dump_to_return_dump_end"
+                    ),
                 )
                 return
             if not self._semantic_boundary_profile_active() and self._dump_done(obs):
@@ -1635,7 +1643,10 @@ class PrimitivePlannerACTPolicy(Policy):
                 self._dump_done_hold_count = 0
             if self._dump_done_hold_count >= self.dump_done_hold_steps:
                 self._complete_coverage_dump(obs, reason="dump_mass_low")
-                self._set_skill("return", "dump_to_return_mass_low")
+                self._set_return_or_direct_handoff(
+                    obs,
+                    reason="dump_to_return_mass_low",
+                )
             return
 
         if self._skill_name == "return":
@@ -1698,6 +1709,37 @@ class PrimitivePlannerACTPolicy(Policy):
                     f"return_to_{next_skill}_shallow_entry_guard",
                 )
                 return
+
+    def _set_return_or_direct_handoff(self, obs: dict, *, reason: str) -> None:
+        self._set_skill("return", reason)
+        self._try_return_direct_handoff_at_current_obs(obs)
+
+    def _try_return_direct_handoff_at_current_obs(self, obs: dict) -> bool:
+        if self._skill_name != "return":
+            return False
+        if not self.return_target_planner_enabled:
+            return False
+        if not self.return_to_dig_start_envelope_direct_handoff_enabled:
+            return False
+        self._ensure_return_target_plan_for_cycle(obs)
+        handoff_ready = self._return_to_dig_handoff_ready(obs)
+        if not self._return_to_dig_direct_handoff_ready(
+            obs,
+            handoff_ready=handoff_ready,
+        ):
+            return False
+        self._completed_transition_count += 1
+        self._cycle_index += 1
+        next_skill = (
+            PRE_DIG_ALIGN_SKILL_NAME
+            if self._should_pre_dig_align_before_dig()
+            else "dig"
+        )
+        self._set_skill(
+            next_skill,
+            f"return_to_{next_skill}_start_envelope_ready",
+        )
+        return True
 
     def _set_skill(self, skill_name: str, reason: str) -> None:
         if skill_name == self._skill_name:

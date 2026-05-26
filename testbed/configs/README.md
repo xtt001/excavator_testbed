@@ -312,7 +312,9 @@
   spatial/qpos 起挖包络，可在 eval 的 `policy.switch` 中显式打开
   `return_to_dig_start_envelope_direct_handoff_enabled: true`。这不是 predig scripted
   align；它只允许“空斗、entry-close、envelope-ready”的状态直接从 return 交给 dig，
-  避免 semantic boundary 还在等待接触/深度事件时错过浅层起挖窗口。
+  避免 semantic boundary 还在等待接触/深度事件时错过浅层起挖窗口。若 dump/carry
+  完成当帧已经满足同一 gate，状态机也允许不执行 return ACT 而直接交接，防止 return
+  policy 把已经合格的浅接触状态带离训练分布。
 - planner trace 现在会输出 `coverage_decision_trace`。该事件流覆盖
   `select_corridor`、`complete_dump`、`reject_corridor` 和 `terminal_stop`，并保存每次
   选择时的 candidate score、remaining depth、attempt/depleted、bucket 几何位置以及
