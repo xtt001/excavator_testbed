@@ -711,12 +711,14 @@ class AgxExcavationRewardTracker:
             and not observation.dump_clearance_ok
         )
         hard_target_collision = delta_target_hard_collision_count > 0.0
+        release_in_target_geometry = observation.dump_clearance_ok
         spill_detected = (
             good_dig_gate_open
             and previous.mass_in_bucket_kg >= mission.load_mass_threshold_kg * 0.5
             and (previous.mass_in_bucket_kg - observation.mass_in_bucket_kg)
             >= mission.bucket_mass_delta_tol_kg
             and not deposit_progress
+            and not release_in_target_geometry
         )
 
         success_condition_met, success_signal_value = self._success_condition_met(observation)

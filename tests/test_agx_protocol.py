@@ -626,6 +626,139 @@ class AgxProtocolTests(unittest.TestCase):
         self.assertIn("load_outside_dig_area", result.step_failures)
         self.assertNotIn("good_dig_start", result.step_successes)
 
+    def test_reward_tracker_does_not_flag_spill_inside_valid_dump_geometry(self) -> None:
+        mission = get_agx_excavation_mission(
+            "agx_excavation_teleop",
+            load_mass_threshold_kg=20.0,
+            bucket_mass_delta_tol_kg=5.0,
+            target_mass_delta_tol_kg=2.0,
+        )
+        env_state_order = (
+            "mass_in_bucket_kg",
+            "excavated_mass_kg",
+            "mass_in_target_box_kg",
+            "deposited_mass_in_target_box_kg",
+            "min_distance_to_target_m",
+            "target_hard_collision_count",
+            "target_contact_max_normal_force_n",
+            "min_distance_to_dig_area_m",
+            "bucket_depth_below_dig_area_plane_m",
+            "target_horizontal_distance_m",
+            "bucket_height_above_target_rim_m",
+            "bucket_over_target_footprint_mask",
+            "dump_clearance_ok_mask",
+            "bucket_dump_area_relative_x_m",
+            "bucket_dump_area_relative_z_m",
+            "bucket_dump_area_footprint_outside_distance_m",
+        )
+
+        tracker = AgxExcavationRewardTracker(
+            mission=mission,
+            env_state_order=env_state_order,
+        )
+        tracker.update(
+            np.array(
+                [
+                    30.0,
+                    30.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.01,
+                    0.05,
+                    0.0,
+                    0.80,
+                    1.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                ],
+                dtype=np.float32,
+            )
+        )
+
+        release_in_target = tracker.update(
+            np.array(
+                [
+                    20.0,
+                    30.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.30,
+                    0.0,
+                    0.0,
+                    0.80,
+                    1.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                ],
+                dtype=np.float32,
+            )
+        )
+        self.assertNotIn("spill_before_target", release_in_target.step_failures)
+        self.assertEqual(release_in_target.metrics["dump_clearance_ok"], 1.0)
+
+        tracker = AgxExcavationRewardTracker(
+            mission=mission,
+            env_state_order=env_state_order,
+        )
+        tracker.update(
+            np.array(
+                [
+                    30.0,
+                    30.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.01,
+                    0.05,
+                    0.50,
+                    0.20,
+                    0.0,
+                    0.0,
+                    0.8,
+                    1.2,
+                    0.5,
+                ],
+                dtype=np.float32,
+            )
+        )
+
+        release_outside_target = tracker.update(
+            np.array(
+                [
+                    20.0,
+                    30.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.30,
+                    0.0,
+                    0.50,
+                    0.20,
+                    0.0,
+                    0.0,
+                    0.8,
+                    1.2,
+                    0.5,
+                ],
+                dtype=np.float32,
+            )
+        )
+        self.assertIn("spill_before_target", release_outside_target.step_failures)
+
     def test_reward_tracker_defaults_missing_collision_signals_for_legacy_env_state(self) -> None:
         mission = get_agx_excavation_mission("agx_excavation_teleop")
         tracker = AgxExcavationRewardTracker(
