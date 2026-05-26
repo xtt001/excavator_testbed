@@ -163,6 +163,7 @@ class PrimitivePlannerACTPolicy(Policy):
         dig_exit_guard_min_steps: int = 80,
         dig_exit_guard_overshoot_m: float = 0.65,
         dig_exit_guard_min_bucket_mass_kg: float = 20.0,
+        dig_failed_replan_next_skill: str = "dig",
         dump_ready_min_bucket_mass_kg: float = 150.0,
         dump_ready_min_height_above_rim_m: float = 0.45,
         dump_ready_require_over_footprint: bool = True,
@@ -267,6 +268,9 @@ class PrimitivePlannerACTPolicy(Policy):
         self.dig_exit_guard_overshoot_m = float(dig_exit_guard_overshoot_m)
         self.dig_exit_guard_min_bucket_mass_kg = float(
             dig_exit_guard_min_bucket_mass_kg
+        )
+        self.dig_failed_replan_next_skill = self._normalize_failed_dig_replan_skill(
+            dig_failed_replan_next_skill
         )
         self.dump_ready_min_bucket_mass_kg = float(dump_ready_min_bucket_mass_kg)
         self.dump_ready_min_height_above_rim_m = float(dump_ready_min_height_above_rim_m)
@@ -1197,6 +1201,7 @@ class PrimitivePlannerACTPolicy(Policy):
             "dig_to_carry_reason": str(self._dig_to_carry_reason),
             "dig_bad_replan_count": int(self._dig_bad_replan_count),
             "dig_exit_guard_replan_count": int(self._dig_exit_guard_replan_count),
+            "dig_failed_replan_next_skill": str(self.dig_failed_replan_next_skill),
             "pre_dig_align_enabled": bool(self.pre_dig_align_enabled),
             "pre_dig_align_first_dig_only": bool(
                 self.pre_dig_align_first_dig_only
@@ -1363,6 +1368,7 @@ class PrimitivePlannerACTPolicy(Policy):
             "pre_dig_align_replan_count": int(self._pre_dig_align_replan_count),
             "dig_bad_replan_count": int(self._dig_bad_replan_count),
             "dig_exit_guard_replan_count": int(self._dig_exit_guard_replan_count),
+            "dig_failed_replan_next_skill": str(self.dig_failed_replan_next_skill),
         }
 
     def planner_trace(self) -> dict[str, object]:
@@ -1736,12 +1742,26 @@ class PrimitivePlannerACTPolicy(Policy):
         self._invalidate_pending_dig_cut_plan()
         self._clear_dig_cut_plan()
 
+    def _restart_return_after_failed_dig(self, reason: str) -> None:
+        self._coverage_active_corridor_id = -1
+        self._invalidate_pending_dig_cut_plan()
+        self._clear_dig_cut_plan()
+        self._coverage_current_payload_gain_kg = 0.0
+        self._dig_step_count = 0
+        self._dig_best_mass_kg = 0.0
+        self._dig_mass_plateau_count = 0
+        self._dig_to_carry_reason = ""
+        self._set_skill("return", f"dig_to_return_{reason}")
+
     def _restart_after_failed_dig(self, reason: str) -> None:
         if (
             self._should_pre_dig_align_before_dig()
             or self._should_pre_dig_align_after_failed_dig()
         ):
             self._restart_pre_dig_align(f"dig_to_pre_dig_align_{reason}")
+            return
+        if self.dig_failed_replan_next_skill == "return":
+            self._restart_return_after_failed_dig(reason)
             return
         self._restart_dig_with_new_cut(f"dig_retry_{reason}")
 
@@ -5114,6 +5134,17 @@ class PrimitivePlannerACTPolicy(Policy):
         return float(value)
 
     @staticmethod
+    def _normalize_failed_dig_replan_skill(value: object) -> str:
+        text = str(value).strip().lower()
+        if text in {"", "none", "dig", "retry"}:
+            return "dig"
+        if text in {"return", "relocate"}:
+            return "return"
+        raise ValueError(
+            "dig_failed_replan_next_skill must be one of 'dig' or 'return'."
+        )
+
+    @staticmethod
     def _load_dig_cut_prior(path: str) -> dict[str, Any]:
         if not path:
             return {}
@@ -5468,6 +5499,7 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
         dig_exit_guard_min_steps: int = 80,
         dig_exit_guard_overshoot_m: float = 0.65,
         dig_exit_guard_min_bucket_mass_kg: float = 20.0,
+        dig_failed_replan_next_skill: str = "dig",
         approach_ready_min_bucket_mass_kg: float = 150.0,
         approach_ready_max_horizontal_distance_m: float | None = 1.25,
         approach_ready_min_height_above_rim_m: float = -0.20,
@@ -5573,6 +5605,7 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             dig_exit_guard_min_steps=dig_exit_guard_min_steps,
             dig_exit_guard_overshoot_m=dig_exit_guard_overshoot_m,
             dig_exit_guard_min_bucket_mass_kg=dig_exit_guard_min_bucket_mass_kg,
+            dig_failed_replan_next_skill=dig_failed_replan_next_skill,
             dump_ready_min_bucket_mass_kg=dump_release_ready_min_bucket_mass_kg,
             dump_ready_min_height_above_rim_m=(
                 dump_release_ready_min_height_above_rim_m

@@ -165,6 +165,10 @@ handoff/replan，不负责直接输出连续动作。
 - `next_dig_entry_ready` 是物理事件或 detector latch，真正切 dig 还要过 pending target 的
   entry-close gate 和 return-start envelope gate。这个设计是为了避免 return 只是“碰到土”
   就把不在 dig 起始分布里的状态交给 dig ACT。
+- 低产 dig 后的 replan 可以配置 `dig_failed_replan_next_skill: return`。这会先 reject
+  当前 corridor，再用 return relocation 规划下一次 entry/envelope，而不是在同一个 dig
+  skill 中直接换新 corridor token；适合多区域覆盖 eval，避免 ACT 在非起挖姿态下被要求
+  立即挖另一个区域。
 
 ### dig 阶段
 

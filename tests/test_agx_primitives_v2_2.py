@@ -2998,6 +2998,46 @@ class TestPrimitivesV22(unittest.TestCase):
             "exit_overshoot_low_payload",
         )
 
+    def test_failed_dig_replan_can_return_before_next_cut(self) -> None:
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            dig_to_carry_min_bucket_mass_kg=100.0,
+            dig_bad_replan_enabled=False,
+            dig_exit_guard_enabled=True,
+            dig_failed_replan_next_skill="return",
+            return_target_enabled=True,
+            coverage_extra={"use_env_removed_depth": False},
+        )
+        policy._ensure_coverage_corridors()
+        policy._coverage_active_corridor_id = 0
+        policy._coverage_last_selected_corridor_id = 0
+        policy._cycle_index = 1
+        policy._skill_name = "dig"
+        policy._dig_step_count = policy.dig_exit_guard_min_steps
+
+        policy.predict(
+            _coverage_obs(
+                mass=5.0,
+                dig_distance=0.0,
+                bucket_tip_pose=(-1.05, 0.0, -0.74),
+            )
+        )
+
+        state = policy.debug_state()
+        self.assertEqual(state["dig_exit_guard_replan_count"], 1)
+        self.assertEqual(state["skill_name"], "return")
+        self.assertEqual(
+            state["skill_switch_reason"],
+            "dig_to_return_exit_overshoot_low_payload",
+        )
+        self.assertEqual(state["dig_failed_replan_next_skill"], "return")
+        self.assertEqual(
+            policy._coverage_corridors[0].last_reason,
+            "exit_overshoot_low_payload",
+        )
+        self.assertEqual(policy._pending_dig_cut_cycle_id, int(policy._cycle_index) + 1)
+        self.assertGreaterEqual(policy._pending_dig_cut_corridor_id, 0)
+
     def test_failed_dig_replan_can_align_after_first_cycle(self) -> None:
         policy = _coverage_planner_policy(
             dig_policy=_RecordingPolicy(0),
@@ -4690,6 +4730,7 @@ def _coverage_planner_policy(
     dig_to_carry_mass_plateau_enabled: bool = False,
     dig_bad_replan_enabled: bool = False,
     dig_exit_guard_enabled: bool = False,
+    dig_failed_replan_next_skill: str = "dig",
     return_to_dig_shallow_guard_enabled: bool = False,
     return_to_dig_max_entry_error_m: float | None = None,
     return_to_dig_start_envelope_gate_enabled: bool = False,
@@ -4734,6 +4775,7 @@ def _coverage_planner_policy(
         dig_exit_guard_min_steps=3,
         dig_exit_guard_overshoot_m=0.20,
         dig_exit_guard_min_bucket_mass_kg=20.0,
+        dig_failed_replan_next_skill=dig_failed_replan_next_skill,
         return_to_dig_shallow_guard_enabled=return_to_dig_shallow_guard_enabled,
         return_to_dig_max_bucket_mass_kg=15.0,
         return_to_dig_touch_tolerance_m=0.05,
