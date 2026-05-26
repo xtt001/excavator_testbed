@@ -307,10 +307,6 @@
   `return_to_dig_start_envelope_direct_handoff_enabled: true`。这不是 predig scripted
   align；它只允许“空斗、entry-close、envelope-ready”的状态直接从 return 交给 dig，
   避免 semantic boundary 还在等待接触/深度事件时错过浅层起挖窗口。
-- 多区域 coverage eval 若启用 `dig_bad_replan` 或 `dig_exit_guard`，可把
-  `policy.switch.dig_failed_replan_next_skill` 设为 `return`。这样低产/越界失败会先回到
-  return relocation，再由下一轮 target-conditioned envelope 交给 dig；默认值 `dig`
-  保持旧的原地换 token 重试行为。
 - qc6 eval 配置为
   `eval_yulong_v2_4_5_qc6_cell_weighted_{3cycle_smoke,15cycle_probe,30cycle_probe}.yaml`。
   这些配置显式设置 `boundary.profile: v2_4_5_spatial_mass` 和
