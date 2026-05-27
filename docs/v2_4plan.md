@@ -2,13 +2,17 @@
 
 ## Summary
 - 目标是让低层 ACT 真正“听 goal token”，而不是继续复现专业师傅的平均动作习惯。
+- 当前工程状态：四 primitive 闭环已经能跑通 10-cycle smooth milestone；最新主线重点已从
+  “能连续跑完”转到“planner 点位是否合理、ACT 是否严格跟随 token、coverage/depleted
+  是否反映真实 remaining depth”的诊断和收口。
 - 不要求专业师傅按 planner 录制；从自然操作数据中离线反推 actual cut / payload / deposit / return target，作为 hindsight goal 和 outcome supervision。
 - V2.4.5 本轮改为重切 `dig/carry/dump/return` 全部 primitive；如果 Gate 1/2 显示
   `carry/dump` 窗口语义干净，则按 `dig -> return -> carry -> dump` 一并训练。
 - Planner 短期保持 rule/belief goal proposer，不上 learned planner；等离线 token-swap 证明 `dig/return` 会响应 goal 后，再放大 planner 自由度。
 - 全部 planner 设计都遵循同一条边界：planner 只提出任务级 goal/token、维护 coverage
-  belief、决定 skill 切换和少量 readiness/safety gate；不手写 joystick/qpos 轨迹，不要求
-  skill 命中精确姿态，不用姿态补丁替代低层 ACT 学习。
+  belief、决定 skill 切换和少量 readiness/safety gate；不手写 joystick/qpos 轨迹，不用
+  姿态补丁替代低层 ACT 学习。最终验收仍要求 ACT 对 planner token 呈现足够精准的
+  entry/exit/depth 跟随，而不是在参考位置附近自行找地方干活。
 
 ## V2.4.5 闭环执行状态
 
@@ -257,6 +261,35 @@ scale022 派生训练 copy：
   loader 从 metadata 修复这个派生 view。本轮只重训 return，输入为
   `qpos + qvel + return_start_envelope_tokens_v1 + return_relocate_tokens_v1`，
   dig/carry/dump 继续使用上一轮 surface-depth checkpoint。
+- 2026-05-25/26 live rollout 探索确认：`return_start_envelope_tokens_v1` 若只用
+  qc6 global median，会把 return 拉回平均 dig-start 姿态，视觉上表现为多轮回到同一
+  区域附近再挖。`return_relocate_tokens_v1` 的作用不是把 return 变成脚本对齐器，而是把
+  下一铲 entry/exit/direction/length 作为 target-specific conditioning 暴露给 return；
+  对应 live envelope 可以开启 `spatial_from_relocate` / `qpos_from_relocate`，用
+  relocate token 派生 spatial long/short 与 qpos center。这个路径实现了 10-cycle
+  smooth rollout：`runs/jobs/yulong_v2_4_5_return_relocate_train_eval_20260525/eval/10cycle_return_relocate`
+  完成 10 次 dump，`rollout_stop_reason=target_cycle_gate_terminal_hold_reached`，
+  无 spill/hard target collision，mean/min deposited fraction 为 `0.877/0.654`。但该
+  rollout 是 milestone，不是“严格指哪挖哪”的最终证明：它使用旧的 1-step gate tail，
+  且当时还没有 per-cycle intent/execution/prior 精度表。
+- 2026-05-26 之后的诊断方向收敛为“失败就暴露根因”。dig 低载荷、exit guard、
+  entry/envelope 不 ready 或 depleted 判断异常时，诊断/eval 配置应 fail fast 或记录
+  terminal reason，不再用 pre-dig align、宽 handoff、return 内 replan 等补救逻辑把问题
+  糊过去。当前报告会输出每铲 planner intent、actual bucket-tip/peak depth 和 expert
+  prior p05/p50/p95/radial p95；这些误差相对的是 planner 本轮 token，不是相对 expert
+  p50。expert prior 只用来说明“planner 点位本身是否在训练分布支持内”和“ACT 偏差是否
+  超出该 cell 的专家容忍范围”。
+- 2026-05-26 depleted/长 rollout 语义修正：`coverage.depleted` 是 planner 的
+  pass-local 尝试状态，不等于物理土量已经清零。若 `coverage.use_env_removed_depth=true`
+  且 env removed-depth/target-depth grid 显示某 cell 的 remaining depth 仍高于阈值，
+  attempt limit 不应单独把该 cell 终止；`coverage.multi_pass_enabled` 会在所有候选都
+  被 pass-local depleted 后检查 remaining depth，记录 `reopen_coverage_pass` 并重开仍有
+  余量的 cell。只有没有可重开余量或 pass 用尽时才报告 `dig_area_depleted`。
+- 当前 N-cycle qc6 eval 配置已把 `target_cycle_gate_terminal_hold_steps` 提到 `100`，
+  让达到目标 cycle 后继续保留 100 step 尾段，避免最后一次 dump/coverage/summary 在停止
+  当帧被截断。15/30-cycle 现在主要是 depletion/remaining-depth probe；若 10-cycle 就因
+  `dig_area_depleted` 提前结束，优先分析阈值、remaining-depth grid 和 coverage pass
+  语义，而不是直接拉长 rollout 预算。
 - operator-first 的 cut-depth 窗口必须在进入 carry/approach/dump 前停止；当 cycle
   window 刚好延伸到 episode 末尾时也要扫描 work-stage，否则 depth peak 会把后续
   carry/dump 姿态误计入 dig token。

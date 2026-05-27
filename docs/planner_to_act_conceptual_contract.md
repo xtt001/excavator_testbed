@@ -57,7 +57,7 @@ primitive ACT
 | --- | --- | --- | --- | --- |
 | 任务 planner | 这个任务下一轮 material cycle 应该推进哪里？ | 任务配置、目标区域、dump 目标、历史 cycle outcome、coverage belief、失败/碰撞记录 | 下一轮目标 cell/corridor、目标深度/载荷、终止或继续信号、更新后的 belief | 不输出 4D action，不手写 qpos 轨迹 |
 | 地形/coverage belief | 哪些区域已挖、哪些区域低产或耗尽？ | 6-cell removed-depth grid、目标深度 grid、上轮 payload/deposit、attempts、low-productivity streak | 每个 cell/corridor 的 remaining/depleted/attempt score | 不代替 ACT 做动作修正 |
-| dig 意图 planner | 当前 dig ACT 应该朝哪个 cut intent 工作？ | 当前 belief、专家 prior、state exemplars、bucket 相对 dig area 状态、当前/历史失败原因 | entry、exit、direction、length、cut depth、target payload、candidate score、token source | 不要求 ACT 精确命中 entry 点，只给紧凑意图 |
+| dig 意图 planner | 当前 dig ACT 应该朝哪个 cut intent 工作？ | 当前 belief、专家 prior、state exemplars、bucket 相对 dig area 状态、当前/历史失败原因 | entry、exit、direction、length、cut depth、target payload、candidate score、token source | 不手写 entry/exit 对齐轨迹；执行精度由 ACT/token 训练和 rollout report 负责 |
 | return 意图 planner | return ACT 应该把空斗带回怎样的 dig-start 分布？ | return-start envelope prior、当前 qpos/qvel、当前 bucket 与 dig area 相对状态；下一轮 dig intent 只给 handoff/debug 使用 | return conditioning token、return->dig readiness 所需 envelope、planner 侧 pending dig token | 不把 return 变成硬编码位置控制器，不把下一铲 depth/payload/cell 直接塞给 return ACT |
 | boundary/event detector | 物理事件是否发生？ | 当前和上一帧 env facts、上一帧 action、qpos、质量/沉积/接触/深度/几何指标 | `dig_start`、`dig_complete`、`dump_committed_start`、`release_onset`、`dump_complete`、`next_dig_entry_ready` | 不选择目标，不维护长周期策略 |
 | skill scheduler | 现在该调用哪个 ACT？ | active skill、boundary event、handoff gates、timeout、replan/terminal 状态 | active primitive、switch reason、policy reset 信号、debug state | 不生成动作，只选择谁生成动作 |
@@ -79,9 +79,11 @@ ACT。
 | return relocation intent | `return_relocate_tokens_v1` | return-relocate ACT / envelope conditioner | 下一铲 entry/exit/direction/length；不能替代安全 handoff gate |
 | 交接/重规划信号 | switch reason、timeout、terminal reason | scheduler / eval log | 解释为什么切 skill、重试、终止 |
 
-token 是 ACT 的条件输入，不是硬约束。比如 `dig_cut_tokens` 指定希望的切削意图，但 ACT
-仍然通过视觉和当前姿态学习如何连续动作；如果 ACT 没学会，planner 只能通过 bad-dig、
-exit-guard、attempt/depleted belief 重选目标，而不是直接补一段手写挖掘轨迹。
+token 是 ACT 的条件输入，不是 planner 写出的逐步轨迹。目标状态不是“planner 给一个参考
+位置，ACT 在附近自己找地方干活”，而是让 ACT 把 token 当成可执行命令来跟随；差别在于这个
+跟随能力必须通过数据、训练和报告度量获得，而不是由 planner 临时插入 joystick/qpos 补丁。
+如果 ACT 没学会，planner 可以通过 bad-dig、exit-guard、attempt/depleted belief 重选目标
+或 fail fast 暴露问题，但不能补一段手写挖掘轨迹来伪装成功。
 
 ## 向上传递的信息
 
@@ -203,6 +205,9 @@ planner 决策：
   `cycleN_exit_expert_*`、`cycleN_depth_expert_p95_m` 和
   `cycleN_depth_expert_p95_overshoot_m`。这些字段用于区分“没有命中 p50 但仍在专家
   支持范围内”和“真的偏离训练分布”，同样不参与在线控制。
+- 这些 per-cycle 误差的参考点是 planner 本轮实际发出的 token intent，而不是 expert
+  p50。expert p05/p50/p95/radial p95 是旁路 prior，用来解释 intent 是否合理、ACT
+  偏差是否超过训练数据支持；它不改变在线动作，也不在失败时触发补救动作。
 
 ### carry 阶段
 
@@ -469,6 +474,29 @@ depth/contact 字段判断是否仍在安全 handoff envelope 内，但不应该
 - 每步 joystick command。
 - 每步 qpos setpoint 轨迹。
 - 为了补偿 ACT 失败而写死的 bucket/boom/stick 运动脚本。
+
+## 当前设计状态
+
+截至 2026-05-26/27，当前实现可以分成三条已收敛的主线：
+
+1. 10-cycle smooth milestone 已经通过
+   `runs/jobs/yulong_v2_4_5_return_relocate_train_eval_20260525/eval/10cycle_return_relocate`
+   跑通：10 次 dump 后由 `target_cycle_gate_terminal_hold_reached` 停止，且没有 spill 或
+   hard target collision。这个结果证明四 primitive 闭环和 return-relocate 路径能连续运转，
+   但它不是严格“指哪挖哪”的最终验收，因为当时还没有新加的 per-cycle
+   intent/execution/prior 精度表，且 gate tail 只有 1 step。
+2. 最新报告契约已经能输出每铲 intent vs execution vs expert prior：planner planned
+   entry/exit/depth、实际 bucket-tip/peak depth、expert box/radial p95 hit、depth range
+   hit 和 overshoot。它的用途是定位问题属于 planner 点位不合理、token 没接上、handoff
+   初始状态不对、ACT 不按 token，还是 boundary 让 dig 挖太久。
+3. coverage/depletion 已改成 pass-local 语义：`depleted` 只是当前 pass 的尝试状态。
+   当 env removed-depth grid 仍显示 remaining depth 时，planner 可以记录
+   `reopen_coverage_pass` 并重开 cell；只有没有 remaining-depth 证据或 multi-pass 用尽时，
+   `dig_area_depleted` 才是终止理由。
+
+当前未完成的目标也很明确：planner 已经能规划覆盖和输出精度诊断，但 ACT 对 entry/exit/depth
+token 的跟随还不是严格的命令式控制。后续要提升的是 ACT 条件化和 handoff 起点一致性，而不是
+在 planner 里加入新的手写补救动作。
 
 ## 典型失败与职责归因
 
