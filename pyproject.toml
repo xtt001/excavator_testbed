@@ -56,6 +56,7 @@ tb-build-operator-first-v2_2 = "testbed.cli.build_operator_first_v2_2:main"
 tb-build-primitives-v2_2 = "testbed.cli.build_primitives_v2_2:main"
 tb-build-primitives-v2_2_5p = "testbed.cli.build_primitives_v2_2_5p:main"
 tb-audit-target-geometry = "testbed.cli.audit_target_geometry:main"
+tb-lidar-heightmap = "testbed.cli.lidar_heightmap:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

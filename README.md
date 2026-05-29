@@ -47,6 +47,7 @@ Repo A 负责：
 | Stage 4 rule planner | 已实现（首版目标已完成） | 已把 `RuleTaskPlanner / PlannerGoal / CycleSummary / SectorBelief` 接入现有 `hybrid_planner_act`，并完成 `planner_trace.json` 回放；正式主配置下 `3` 条 live rollout 已达到 `cycle2_success_rate = 1.0`，官方 `3-cycle smoke` 也已达到 `cycle3_success_rate = 1.0` |
 | rollout timestep logs | 已实现 | `tb-eval` 现可写 `rollout_XXX.jsonl / summary / manifest` |
 | `tb-dataset-qc` | 已实现 | 可写 `summary.json / episodes.csv / QC plots` |
+| `tb-lidar-heightmap` | 初版 | 将 AGX `/lidar/pointcloud` 转成 local heightmap/depth/elevation grid；先用于可视化和规划前处理，不进入旧 HDF5 schema |
 | demo-level metadata | 已实现 | `tb-record-teleop` 支持 `operator_id / session_id / notes / config snapshot` |
 | MuJoCo backend | 保留 | 仅作 legacy / 对照，不是当前主路径 |
 
@@ -314,6 +315,38 @@ python scripts/agx_smoke.py --host 127.0.0.1 --port 5057 --steps 200 --strict
 - 不要继续跑 `tb-record-teleop`
 - 不要继续跑 `tb-eval`
 - 先回到 Repo B / Unity 修 step-ack 响应
+
+### 2.5. LiDAR heightmap 预处理
+
+当前新感知主线从 Repo B 的 AGX 原生 `sensor_msgs/msg/PointCloud2` 开始，
+Repo A 负责把 `/lidar/pointcloud` 转成 local heightmap / depth / elevation
+grid。纯转换逻辑在 `testbed/perception/lidar_heightmap.py`，live/离线入口是
+`tb-lidar-heightmap`。
+
+分阶段执行计划见 [docs/lidar_heightmap_execution_plan.md](docs/lidar_heightmap_execution_plan.md)。
+
+离线 smoke：
+
+```bash
+tb-lidar-heightmap \
+  --input-npy /path/to/points_xyz.npy \
+  --output-dir runs/lidar_heightmap/offline_smoke \
+  --png
+```
+
+ROS 2 live 预览：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+tb-lidar-heightmap \
+  --topic /lidar/pointcloud \
+  --output-dir runs/lidar_heightmap/live_preview \
+  --max-frames 10 \
+  --png
+```
+
+这一步只验证感知前处理质量：grid 是否非空、坐标系和 RoI 是否合理、铲斗和
+地形变化是否能被看见。固定落铲点/RRT*/RL 轨迹跟踪都应等这个输出稳定后再接。
 
 ### 3. 录制新的 9D 数据
 
