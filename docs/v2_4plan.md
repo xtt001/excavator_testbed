@@ -464,8 +464,12 @@ python -m testbed.cli.build_v2_4_hindsight_pipeline \
   out-of-distribution 姿态被证明确认会稳定导致失败时，才考虑很宽的 safety veto。
 - 当前 26 条 pro 数据可以先训练 entry/exit/payload/deposit hindsight goal；修复后的 depth grid 主要服务未来新录数据或 replay-derived root。
 - 不恢复通用 pre-dig align；return 仍应通过 conditioned return 学会回到 next dig
-  start envelope。例外是第一铲：因为没有上一轮 return，live eval 允许
-  `pre_dig_align.first_dig_only=true` 在 `bootstrap -> dig` 前做一次友好的 entry
+  start envelope。第一铲主线也不再使用 scripted bootstrap 做动作级姿态控制：
+  Unity reset pose 负责给出可挖的起始姿态，planner 从 reset 后直接进入 `dig`，
+  并由 `dig_cut_tokens` / depth token 指定第一铲目标。旧
+  `bootstrap_end_mode=scripted_qpos` 只保留作 legacy smoke 或诊断配置，不应作为
+  return-relocate 主线 eval 的默认第一铲路径。若需要做第一铲 A/B，可用
+  `pre_dig_align.first_dig_only=true` 做一次友好的 entry
   handoff，并用 `coverage.first_dig_strategy=nearest_entry` 按当前 bucket-tip 到
   entry 的距离选择更容易接上的 corridor；`coverage.first_dig_max_entry_distance_m`
   是第一铲 reachability gate，只要存在阈值内的专家 corridor，就排除距离更远的
@@ -491,6 +495,12 @@ python -m testbed.cli.build_v2_4_hindsight_pipeline \
   conditioned dig。另一个 A/B 是保留 handoff 但替换第 0 铲实际 dig：设置
   `first_dig_ckpt_path` 后，planner 只在 cycle 0 且尚未完成 dump 前使用该 policy，
   后续自动回到主线 V2.4 dig。
+  2026-05-29 检查确认最新 return-relocate eval 的 scripted bootstrap target 已等于
+  surface-depth gold dig-start qpos p50
+  `[0.5057, 0.7376, 0.1194, 0.1740]`。因此第一铲观感 A/B 先不改 target 语义，
+  而是新增 `eval_1cycle_bootstrap_p50_fast_handoff.yaml`：保持 p50 target，只放宽
+  qpos/qvel hold 并提高 scripted bootstrap clip，以验证较早交给 dig 是否改善第一铲
+  表现。
 - return handoff 不是单纯等 `qualified_dig_start`：live eval 配置
   `return_to_dig_max_entry_error_m`，确保 bucket 回到 planned next-entry 附近才切回
   dig；entry 已经 close 时允许 bypass 很窄的 shallow max-depth 上限，避免 return

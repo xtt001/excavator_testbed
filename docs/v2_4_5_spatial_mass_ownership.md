@@ -18,9 +18,9 @@ V2.2/V2.4 当前 primitive split 主要信任 `/v2` relabel 的事件和阶段�
 这套规则在干净 label 上可用，但对当前 removed-depth replay 数据暴露出两个问题：
 
 1. 旧 cycle boundary 可能漏掉中间真实的装料/倒料物料事件，把多个 material cycle 压进
-   一个 `/v2/cycle`。
+  一个 `/v2/cycle`。
 2. `pre_approach_stable_curl_out_good_dump` 会把 dump 起点提前到 official dump 前很远，
-   让 dump primitive 吞入大量空间移动、等待和预姿态调整。
+  让 dump primitive 吞入大量空间移动、等待和预姿态调整。
 
 因此 V2.4.5 的核心改动不是增加 primitive，而是把 ownership 根标准从
 “标签/阶段驱动”切换为“几何/质量物理事件驱动”。
@@ -33,14 +33,14 @@ V2.2/V2.4 当前 primitive split 主要信任 `/v2` relabel 的事件和阶段�
 - `dump` 只负责进入 dump area 后的 committed release/deposit。
 - `/v2` 标签只作为候选和诊断参考；最终窗口由 `env_state` 的空间和质量事件验证。
 - 所有 planner 只做任务级决策：选择 goal/token、维护 coverage belief、切换 skill、做少量
-  readiness/safety gate；不手写 joystick/qpos 轨迹，不把专家姿态 envelope 变成精确动作
-  约束。
+readiness/safety gate；不手写 joystick/qpos 轨迹，不把专家姿态 envelope 变成精确动作
+约束。
 - 如果一个旧 `/v2/cycle` 内出现多个 material pulse，应拆成多个 material cycle；拆不清楚时
-  reject，不能把整段糊进一个 primitive。
+reject，不能把整段糊进一个 primitive。
 - realign 是高敏感弃置信号：只丢弃覆盖 realign step 的 material cycle。窗口采用半开区间，
-  realign 正好落在下一轮 start 帧时只归属下一轮。
+realign 正好落在下一轮 start 帧时只归属下一轮。
 - 第一版人工审核以 timeline + 关键帧为主；短视频作为二阶段 outlier 复核工具，不作为
-  第一版 QC 必需产物。
+第一版 QC 必需产物。
 
 ## Removed-Depth 最新标准
 
@@ -50,20 +50,20 @@ ownership 和 token/QC 按 `v2_4_removed_depth_cut_v3` 复用 10D `dig_cut_token
 但第 8 维使用更可信的 surface-relative command depth：
 
 - `dig_cut_tokens` 第 8 维仍是 depth slot，但内部语义是
-  `cut_depth_semantic_m`，优先使用 `bucket_depth_below_local_surface_m` 的窗口 peak，
-  depth scale 为 `0.80m`。这个尺度来自修复后 realign replay 的 gold
-  surface-depth 分布，避免旧 `0.25m` removed-depth 尺度造成 depth token 饱和。
+`cut_depth_semantic_m`，优先使用 `bucket_depth_below_local_surface_m` 的窗口 peak，
+depth scale 为 `0.80m`。这个尺度来自修复后 realign replay 的 gold
+surface-depth 分布，避免旧 `0.25m` removed-depth 尺度造成 depth token 饱和。
 - `dig_area_removed_depth_m_r{0..2}_c{0..1}` 与
-  `actual_removed_depth_delta_grid = removed_depth[end] - removed_depth[start]`
-  保留为本轮地形变化 outcome/audit，不再作为默认 command-depth source。
+`actual_removed_depth_delta_grid = removed_depth[end] - removed_depth[start]`
+保留为本轮地形变化 outcome/audit，不再作为默认 command-depth source。
 - gold dig 样本要求 `operator_cut_depth_source=env_state_surface_penetration`。
 - 没有可靠 surface-relative depth 的样本不能进入 gold tier；只能进入 silver/diagnostic 或 reject。
 - dig QC 必须检查 depth token 饱和率、非零比例、p10/p50/p90 spread，以及 raw meter
-  delta 的分布。
+delta 的分布。
 - `bucket_depth_below_dig_area_plane_m` 只作为 handoff/readiness 参考，不再作为首选
-  入土深度真值。`dig_depth_profile_tokens_v1` 保留为 ablation/探针，用于验证拆开的
-  cell、payload、entry/exit/peak reference depth、surface/plane offset 和 contact
-  fraction 是否比紧凑 depth slot 更有用；默认主线不再堆 12D profile。
+入土深度真值。`dig_depth_profile_tokens_v1` 保留为 ablation/探针，用于验证拆开的
+cell、payload、entry/exit/peak reference depth、surface/plane offset 和 contact
+fraction 是否比紧凑 depth slot 更有用；默认主线不再堆 12D profile。
 
 这意味着 V2.4.5 的 dig 边界不只看 bucket mass/payload，也要验证该窗口内是否产生了
 合理的 removed-depth delta。payload 可以作为装料事实，removed-depth 才是“切了哪里、
@@ -73,15 +73,17 @@ ownership 和 token/QC 按 `v2_4_removed_depth_cut_v3` 复用 10D `dig_cut_token
 
 V2.4.5 依赖 `agx_env_state_v2_2_64`。当前数据已经包含需要的主要字段：
 
-| 用途 | 字段 |
-| --- | --- |
-| bucket 质量 | `mass_in_bucket_kg`, `bucket_mass_delta_kg` |
-| dump/target 沉积 | `deposited_mass_in_target_box_kg`, `deposited_mass_in_dump_area_kg`, `offtarget_deposited_mass_kg` |
-| dig virtual box | `bucket_dig_area_cell_in_bounds_mask`, `bucket_dig_area_cell_id`, `bucket_dig_area_long_norm`, `bucket_dig_area_short_norm`, `bucket_tip_dig_area_x_m`, `bucket_tip_dig_area_y_m`, `bucket_tip_dig_area_z_m`, `bucket_depth_below_local_surface_m`, `bucket_dig_area_penetration_contact_mask` |
-| removed-depth grid | `dig_area_surface_depth_m_*`, `dig_area_removed_depth_m_*`, `dig_area_target_depth_m_*`, `dig_area_cell_valid_mask_*` |
-| dump virtual box | `target_geometry_available`, `bucket_dump_area_footprint_outside_distance_m`, `bucket_over_target_footprint_mask`, `bucket_height_above_target_rim_m`, `dump_clearance_ok_mask`, `bucket_contact_dump_area_mask` |
-| 安全 | `hard_collision_count`, `target_contact_max_normal_force_n` |
-| 参考标签 | `qualified_dig_start_mask`, `dump_start_mask`, `dump_end_mask`, `work_stage_id`, `/v2/cycle/*` |
+
+| 用途                 | 字段                                                                                                                                                                                                                                                                                             |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| bucket 质量          | `mass_in_bucket_kg`, `bucket_mass_delta_kg`                                                                                                                                                                                                                                                    |
+| dump/target 沉积     | `deposited_mass_in_target_box_kg`, `deposited_mass_in_dump_area_kg`, `offtarget_deposited_mass_kg`                                                                                                                                                                                             |
+| dig virtual box    | `bucket_dig_area_cell_in_bounds_mask`, `bucket_dig_area_cell_id`, `bucket_dig_area_long_norm`, `bucket_dig_area_short_norm`, `bucket_tip_dig_area_x_m`, `bucket_tip_dig_area_y_m`, `bucket_tip_dig_area_z_m`, `bucket_depth_below_local_surface_m`, `bucket_dig_area_penetration_contact_mask` |
+| removed-depth grid | `dig_area_surface_depth_m_*`, `dig_area_removed_depth_m_*`, `dig_area_target_depth_m_*`, `dig_area_cell_valid_mask_*`                                                                                                                                                                          |
+| dump virtual box   | `target_geometry_available`, `bucket_dump_area_footprint_outside_distance_m`, `bucket_over_target_footprint_mask`, `bucket_height_above_target_rim_m`, `dump_clearance_ok_mask`, `bucket_contact_dump_area_mask`                                                                               |
+| 安全                 | `hard_collision_count`, `target_contact_max_normal_force_n`                                                                                                                                                                                                                                    |
+| 参考标签               | `qualified_dig_start_mask`, `dump_start_mask`, `dump_end_mask`, `work_stage_id`, `/v2/cycle/*`                                                                                                                                                                                                 |
+
 
 ## Material Cycle
 
@@ -106,7 +108,7 @@ reject。拆分后的每个 material cycle 独立检查 realign：只有覆盖
 
 - 675 个旧 `/v2/cycle` 窗口中检测到 36 个 multi-pulse 旧 cycle。
 - multi-pulse 旧 cycle 内共检测到 75 个 deposit pulse，其中 73 个子轮未覆盖 realign，
-  只有 2 个子轮应因 realign reject。
+只有 2 个子轮应因 realign reject。
 - 这说明第一版采用“拆 pulse + 子轮 realign 清理”比整段 reject 更符合当前数据状态。
 
 ## Dig Ownership
@@ -116,11 +118,11 @@ reject。拆分后的每个 material cycle 独立检查 realign：只有覆盖
 建议边界：
 
 - `dig_start`: 优先使用 material cycle 内的 first stable dig-box contact/depth step；
-  若与可靠 `qualified_dig_start` 对齐，则可直接使用 qds。
+若与可靠 `qualified_dig_start` 对齐，则可直接使用 qds。
 - `dig_end`: bucket 获得有效 payload/removed-depth 后，历史 bucket mass 已接近本轮峰值，
-  后续短窗口内无显著新增 mass，并且 bucket 无 dig contact/有效下挖、稳定离开 dig
-  virtual box 的第一段。在这些条件同时成立前，即使视觉上已经在从 return 接入 dig，
-  或旧 label 认为已经 handoff，仍归 dig。
+后续短窗口内无显著新增 mass，并且 bucket 无 dig contact/有效下挖、稳定离开 dig
+virtual box 的第一段。在这些条件同时成立前，即使视觉上已经在从 return 接入 dig，
+或旧 label 认为已经 handoff，仍归 dig。
 
 必要证据：
 
@@ -129,16 +131,16 @@ reject。拆分后的每个 material cycle 独立检查 realign：只有覆盖
 - bucket 有接触/下挖，或 `bucket_depth_below_local_surface_m` 达到阈值。
 - removed-depth grid 出现有效增加；bucket mass/payload gain 作为装料辅助事实。
 - bucket mass 的增长过程已经结束：不是要求当前帧质量一定等于峰值，而是要求历史峰值
-  已经出现，并且未来窗口没有继续装料迹象。
+已经出现，并且未来窗口没有继续装料迹象。
 - dig end 附近同时满足物理离开：contact mask 低、depth 接近 0，且 dig-area
-  min-distance 或 long/short normalized coordinate 显示已经离开 box。
+min-distance 或 long/short normalized coordinate 显示已经离开 box。
 - dig window 内不应出现 dump/target deposit 增加。
 
 建议 QC：
 
 - 最短/最长长度分布必须稳定，过短和极长都进入审计。
 - `actual_removed_depth_delta_grid`、`max_removed_depth_delta_m`、payload gain、
-  dig-box fraction、hard collision delta 写入 summary。
+dig-box fraction、hard collision delta 写入 summary。
 - 没有可靠 removed-depth source 的样本降为 silver 或从 gold 中排除。
 
 ## Carry Ownership
@@ -157,7 +159,7 @@ reject。拆分后的每个 material cycle 独立检查 realign：只有覆盖
 - 进入 dump area 附近。
 - bucket 预开斗或 release-like action，只要没有实际明显倒土。
 - 向 dump area 移动过程本身。只要 dump-area footprint outside distance 仍在明显下降
-  或位置仍在大幅调整，即使 bucket 姿态已经开始为倒土做准备，也优先归 carry。
+或位置仍在大幅调整，即使 bucket 姿态已经开始为倒土做准备，也优先归 carry。
 
 禁止：
 
@@ -168,14 +170,14 @@ reject。拆分后的每个 material cycle 独立检查 realign：只有覆盖
 建议 QC：
 
 - carry 内 deposit delta 不应超过小阈值。初始红线采用
-  `deposit_delta > 5kg AND deposit_delta / payload > 10%`；只超过绝对值或只超过比例时先
-  进入黄色审计，不直接 reject。
+`deposit_delta > 5kg AND deposit_delta / payload > 10%`；只超过绝对值或只超过比例时先
+进入黄色审计，不直接 reject。
 - carry 内 mass loss 不应超过小阈值，初始可审计 `10kg` 或 payload 的 `20%`。
 - carry end 不能太早：如果 carry 末端到 dump start 后，dump-area outside distance
-  还在大幅变化，说明 dump 占用了运输/对准的一部分，应把 `dump_start` 后移到稳定接近段。
+还在大幅变化，说明 dump 占用了运输/对准的一部分，应把 `dump_start` 后移到稳定接近段。
 - release-like bucket action fraction 只作为风格指标，不直接判死。
 - 输出 `dig_box_fraction`, `dump_box_fraction`, `mass_loss`, `deposit_delta`,
-  `bucket_release_like_fraction`, `hard_collision_delta`。
+`bucket_release_like_fraction`, `hard_collision_delta`。
 
 当前数据分布支持这条红线：599 条 carry 中，target deposit delta 的 p50 为 `0kg`，
 p95 约 `1.35kg`，p99 约 `3.21kg`，最大约 `10.10kg`；同时超过 `5kg` 和 payload
@@ -190,30 +192,30 @@ p95 约 `1.35kg`，p99 约 `3.21kg`，最大约 `10.10kg`；同时超过 `5kg` �
 - 先找 `release_onset`: bucket mass 从局部峰值持续下降，且 dump/target deposit 持续增加。
 - `release_onset` 需要发生在 dump virtual box 内或附近，并满足 clearance/height 安全条件。
 - `dump_start`: 从 `release_onset` 向前取有限 committed aiming window。默认
-  `dump_pre_release_lead_max_steps = 120`，即 `dump_start >= release_onset - 120`。
-  早于该上限的长距离 transport/alignment 归入 carry；不能因为最终 good dump 把几百上千
-  steps 划入 dump。当前 refined 实现还要求 `dump_start` 进入 committed aiming band：
-  bucket footprint 距 dump box 不远或已 over-target，height above rim 不明显异常，
-  signed dump-area `relative_x/z` 在宽 corridor 内，并且短窗口内 `relative_x/z`
-  变化量已经下降到微调级别。区域内 release 前的 swing/boom/stick/bucket 姿态微调归
-  dump；仍在大幅向 dump area 移动的横向/纵向过程归 carry。找不到 committed aiming
-  band 时，只 fallback 到 release 前短窗口，不再单靠无符号 outside-distance 提前切入。
-  surface-depth 主线进一步按 7x7m 小场景尺度收紧这个 band：stable outside
-  `<=0.25m`、fallback outside `<=0.30m`、relative corridor
-  `x=[-0.2,1.9]`、`z=[0.45,2.1]`，窗口变化量限制为 outside/relative-x/relative-z
-  `0.06/0.16/0.10m`。这个阈值取代旧 live planner 的 `0.45m + hold3` 宽门；
-  release_onset 仍使用 `0.45m` release-area 近邻门，因为它描述的是已经进入 dump
-  ownership 后的真实掉料事件，而不是 carry->dump 的提前切换条件。
+`dump_pre_release_lead_max_steps = 120`，即 `dump_start >= release_onset - 120`。
+早于该上限的长距离 transport/alignment 归入 carry；不能因为最终 good dump 把几百上千
+steps 划入 dump。当前 refined 实现还要求 `dump_start` 进入 committed aiming band：
+bucket footprint 距 dump box 不远或已 over-target，height above rim 不明显异常，
+signed dump-area `relative_x/z` 在宽 corridor 内，并且短窗口内 `relative_x/z`
+变化量已经下降到微调级别。区域内 release 前的 swing/boom/stick/bucket 姿态微调归
+dump；仍在大幅向 dump area 移动的横向/纵向过程归 carry。找不到 committed aiming
+band 时，只 fallback 到 release 前短窗口，不再单靠无符号 outside-distance 提前切入。
+surface-depth 主线进一步按 7x7m 小场景尺度收紧这个 band：stable outside
+`<=0.25m`、fallback outside `<=0.30m`、relative corridor
+`x=[-0.2,1.9]`、`z=[0.45,2.1]`，窗口变化量限制为 outside/relative-x/relative-z
+`0.06/0.16/0.10m`。这个阈值取代旧 live planner 的 `0.45m + hold3` 宽门；
+release_onset 仍使用 `0.45m` release-area 近邻门，因为它描述的是已经进入 dump
+ownership 后的真实掉料事件，而不是 carry->dump 的提前切换条件。
 - `dump_end`: bucket mass 达到 release 后低位并稳定，deposit plateau，再加有限 post-hold。
-  这里的 `dump_end` 是物理意义上的“倒料完成/桶内残余低位稳定”，不是旧 cycle 的
-  `work_end`。`work_end` 只作为旧标注给出的搜索上界，避免算法向后吞掉 return。
+这里的 `dump_end` 是物理意义上的“倒料完成/桶内残余低位稳定”，不是旧 cycle 的
+`work_end`。`work_end` 只作为旧标注给出的搜索上界，避免算法向后吞掉 return。
 
 必要证据：
 
 - dump-area geometry 可用。
 - dump box fraction 高。
 - `mass_in_bucket_kg` 下降与 `deposited_mass_in_dump_area_kg` 或
-  `deposited_mass_in_target_box_kg` 增加同时出现。
+`deposited_mass_in_target_box_kg` 增加同时出现。
 - hard collision delta 为 0。
 
 建议 QC：
@@ -221,8 +223,8 @@ p95 约 `1.35kg`，p99 约 `3.21kg`，最大约 `10.10kg`；同时超过 `5kg` �
 - dump length max/p95。
 - release lead steps，即 `release_onset - dump_start`。
 - release lead 超过 120 steps 时，builder 应优先把 `dump_start` 后移到
-  `release_onset - 120`；如果后移后仍出现超长 dump，说明不是单纯 lead 问题，而要继续
-  检查 multi-pulse 或 dump_end 识别。
+`release_onset - 120`；如果后移后仍出现超长 dump，说明不是单纯 lead 问题，而要继续
+检查 multi-pulse 或 dump_end 识别。
 - dump window 内 mass drop、deposit delta、dump-box fraction、clearance-ok fraction。
 - official `dump_start_mask/dump_end_mask` 与 material release/dump end 的偏移。
 - 如果一个旧 dump window 内出现多个 release pulse，必须拆分或 reject。
@@ -330,17 +332,17 @@ material ownership，不重新引入 dump/carry 几何阈值，也不改变离�
 
 - `return_start = dump_end`
 - `return_end`: 首选下一轮 `dig_start` envelope 已可接管的
-  `first_next_dig_entry_ready`，而不是过晚的 material-cycle `dig_start` 标签。
-  当前实现从 `dump_end` 后向前找 DigArea 几何有效且 bucket 测量代理触达/接近
-  DigArea 或产生 surface-relative 入土深度的第一帧；只有找不到该帧时才回退到
-  下一轮 material start。
+`first_next_dig_entry_ready`，而不是过晚的 material-cycle `dig_start` 标签。
+当前实现从 `dump_end` 后向前找 DigArea 几何有效且 bucket 测量代理触达/接近
+DigArea 或产生 surface-relative 入土深度的第一帧；只有找不到该帧时才回退到
+下一轮 material start。
 
 必要证据：
 
 - bucket mass 处于 release 后低位。
 - return window 内不应出现新的 payload acquisition 或 dump deposit。
 - 不包含发生在 `dump_end -> first_next_dig_entry_ready` 之间的 realign step；如果
-  realign 晚于 handoff，则归属下一轮，不应把前一段 clean return 丢掉。
+realign 晚于 handoff，则归属下一轮，不应把前一段 clean return 丢掉。
 
 建议 QC：
 
@@ -365,17 +367,17 @@ V2.4.5 不要求推翻现有 `dig_cut_tokens`。相反，ownership 变干净后�
 被 ACT 学到。但最近 live 结果说明：把同一个 cut-intent token 直接用于 return 不够。
 
 - `dig_cut_tokens` 仍描述本轮 dig 的 entry/exit/cut/depth/payload/outcome intent；
-  其中 depth 必须使用 `v2_4_removed_depth_cut_v3` 的 surface-relative
-  `cut_depth_semantic_m`。
+其中 depth 必须使用 `v2_4_removed_depth_cut_v3` 的 surface-relative
+`cut_depth_semantic_m`。
 - 旧 10D `return_target_tokens` 只描述下一轮 cut intent：entry/exit/direction/length/depth/payload。
-  这对 return 不够，因为 return 的任务不是“怎么切”，而是“把空斗带到下一个 dig
-  可以稳定接管的 start envelope”。
+这对 return 不够，因为 return 的任务不是“怎么切”，而是“把空斗带到下一个 dig
+可以稳定接管的 start envelope”。
 - material cycle 重建后，token 应绑定到对应 material cycle，而不是旧 `/v2/cycle`。
 - `carry/dump` 可以继续只用 `qpos + qvel` 作为第一版；它们的参数化问题主要来自 handoff
-  和 ownership 污染，而不一定需要马上新增 token。
+和 ownership 污染，而不一定需要马上新增 token。
 - return reject 诊断优先使用 `tb-audit-return-windows --primitive-root <root>`，
-  它会比较 accepted/rejected/overlong tail 窗口内的 action、qpos、dig-area distance、
-  bucket mass 和 surface depth，避免把真实 return 运动误判为空等待。
+它会比较 accepted/rejected/overlong tail 窗口内的 action、qpos、dig-area distance、
+bucket mass 和 surface depth，避免把真实 return 运动误判为空等待。
 - 后续如需给 `carry/dump` 加 token，应先通过 QC/可视化确认它们的窗口语义稳定。
 
 ## Return Start Envelope Token
@@ -389,14 +391,16 @@ envelope”。推荐新增一个独立 token contract，例如
 
 初始 contract 建议覆盖以下信息：
 
-| 类别 | 信息 |
-| --- | --- |
-| bucket tip envelope | next dig-start bucket tip 在 DigArea local frame 的 `x/y/z` 或 long/short/depth 坐标，以及容差半径 |
-| shallow contact/depth | 允许的浅接触深度范围，避免 return 提前插土或压深 |
-| expert qpos envelope | next dig-start 的 swing/boom/stick/bucket qpos 中心与容差，尤其 bucket curl/pitch |
-| velocity gate | next dig-start qvel norm 目标接近 0，或各轴速度容差 |
-| distribution validity | 该 envelope 是否来自 gold expert distribution、是否在专家 qds pose 分布内 |
-| safety hints | 是否要求 dig-area contact、是否禁止 dump-area contact、hard-collision guard |
+
+| 类别                    | 信息                                                                                     |
+| --------------------- | -------------------------------------------------------------------------------------- |
+| bucket tip envelope   | next dig-start bucket tip 在 DigArea local frame 的 `x/y/z` 或 long/short/depth 坐标，以及容差半径 |
+| shallow contact/depth | 允许的浅接触深度范围，避免 return 提前插土或压深                                                           |
+| expert qpos envelope  | next dig-start 的 swing/boom/stick/bucket qpos 中心与容差，尤其 bucket curl/pitch               |
+| velocity gate         | next dig-start qvel norm 目标接近 0，或各轴速度容差                                                |
+| distribution validity | 该 envelope 是否来自 gold expert distribution、是否在专家 qds pose 分布内                            |
+| safety hints          | 是否要求 dig-area contact、是否禁止 dump-area contact、hard-collision guard                      |
+
 
 这里的 envelope 首先是训练输入和 QC 目标，不是 planner 低层姿态控制器。planner 只选择
 下一铲 cut intent / start envelope，并决定何时切 skill；return policy 自己学习如何把机器
@@ -450,28 +454,30 @@ dump 后姿态。
 离线生成方式：
 
 1. 对每个 material cycle，读取下一轮 `dig_start` 附近的专家状态窗口；当前实现使用
-   40-step window，而不是只信一个 exact frame。
+  40-step window，而不是只信一个 exact frame。
 2. 从该窗口提取 bucket tip DigArea local 坐标、bucket depth/contact、4D qpos、4D qvel。
 3. 按 corridor/cell 或 token bucket 聚合专家分布，得到中心、p05/p95 或 robust radius。
 4. return 训练时在整个 return window 注入对应 envelope token。
 5. live 时 planner 先选择 next cut intent，再从专家分布/当前 DigArea 状态派生 next
-   start envelope；return 追 envelope，dig 仍读 cut intent。
+  start envelope；return 追 envelope，dig 仍读 cut intent。
 
 当前代码实现的第一版 token contract 固定为 18D，并在 return window 内逐步重复写入：
 
-| index | 含义 |
-| --- | --- |
-| 0 | next dig-start 的 `bucket_dig_area_long_norm` |
-| 1 | next dig-start 的 `bucket_dig_area_short_norm` |
-| 2 | next dig-start depth center，优先 `bucket_depth_below_local_surface_m` |
-| 3 | bucket tip tolerance radius，第一版固定 `0.20m` |
-| 4-5 | shallow depth min/max |
-| 6 | contact allowed flag |
-| 7-10 | next dig-start 4D qpos center |
-| 11-14 | next dig-start qpos robust half-width |
-| 15 | next dig-start qvel abs max |
-| 16 | expert/envelope core valid flag；当前表示 qpos/qvel 核心状态可用 |
-| 17 | no dump contact required flag |
+
+| index | 含义                                                                  |
+| ----- | ------------------------------------------------------------------- |
+| 0     | next dig-start 的 `bucket_dig_area_long_norm`                        |
+| 1     | next dig-start 的 `bucket_dig_area_short_norm`                       |
+| 2     | next dig-start depth center，优先 `bucket_depth_below_local_surface_m` |
+| 3     | bucket tip tolerance radius，第一版固定 `0.20m`                           |
+| 4-5   | shallow depth min/max                                               |
+| 6     | contact allowed flag                                                |
+| 7-10  | next dig-start 4D qpos center                                       |
+| 11-14 | next dig-start qpos robust half-width                               |
+| 15    | next dig-start qvel abs max                                         |
+| 16    | expert/envelope core valid flag；当前表示 qpos/qvel 核心状态可用               |
+| 17    | no dump contact required flag                                       |
+
 
 对应 HDF5 字段为：
 
@@ -504,22 +510,22 @@ conditioning，不改 HDF5、不改切分标签。当前 return 训练输入为
 - 从 raw/hindsight episode 直接切 `dig/carry/dump/return`，不走旧 workskill crop。
 - `dig_start` 优先找 dig-box contact/depth；找不到时才回退到 material cycle start。
 - `dig_end` 使用过程式条件：历史 mass 峰值已经出现、未来窗口无显著增量，并且
-  bucket 无 contact/有效 depth、稳定离开 dig area box。
+bucket 无 contact/有效 depth、稳定离开 dig area box。
 - `release_onset` 使用当前步的 bucket mass drop 或 dump/target deposit increase；不会因为
-  “未来若干步会掉料”提前把 long aiming window 划进 dump。
+“未来若干步会掉料”提前把 long aiming window 划进 dump。
 - `dump_start` 先限制在 `release_onset - 120` 以内，再从这个上界向后找 dump-area
-  稳定 aiming band；surface-depth 后续主线使用 `0.25m` stable outside、
-  `0.30m` fallback outside 和 `0.06/0.16/0.10m` 窗口变化阈值。如果
-  distance-to-dump-area 仍在明显变化，更早的
-  curl-out/alignment/approach 仍归 carry。
+稳定 aiming band；surface-depth 后续主线使用 `0.25m` stable outside、
+`0.30m` fallback outside 和 `0.06/0.16/0.10m` 窗口变化阈值。如果
+distance-to-dump-area 仍在明显变化，更早的
+curl-out/alignment/approach 仍归 carry。
 - `dump_end` 使用 release 后 bucket residual low、bucket mass plateau 和
-  target/dump deposit plateau 的物理完成点；旧 `work_end` 只作为搜索上界和诊断字段。
+target/dump deposit plateau 的物理完成点；旧 `work_end` 只作为搜索上界和诊断字段。
 - carry 若出现 `deposit_delta > 5kg AND deposit_delta / payload_loss > 10%`，作为
-  `carry_deposit_contamination_before_dump` reject。
+`carry_deposit_contamination_before_dump` reject。
 - return 只在存在下一轮 material dig-start 时生成；最后一轮写
-  `return:terminal_return_reject`。
+`return:terminal_return_reject`。
 - realign policy 使用半开窗口：work realign 只 reject 当前 cycle 的
-  `dig/carry/dump`，return realign 只 reject 对应 return window，下一轮 start 帧不被前一轮吞掉。
+`dig/carry/dump`，return realign 只 reject 对应 return window，下一轮 start 帧不被前一轮吞掉。
 
 第一版实现仍以旧 `/v2/cycle` 限定 material-cycle 搜索窗口，但会在旧 cycle 内发现多个
 `qualified_dig_start_mask` 时拆成多个 material 子窗口。仅靠质量/沉积曲线、但没有可靠
@@ -529,11 +535,11 @@ cycle 粘连、multi-pulse 和长 dump outlier，不能因为 profile 已接入�
 live `return -> dig` handoff gate 必须保持轻量：
 
 - 第一版硬 gate 只检查 task-level readiness：entry/tip 误差、空斗或低质量、浅接触/深度
-  不危险、速度不要明显过大、无 hard collision。
+不危险、速度不要明显过大、无 hard collision。
 - qpos / bucket pitch / expert pose envelope 默认作为 QC、debug 和训练目标；只有在确认某类
-  极端 out-of-distribution 姿态会稳定导致 dig 失败后，才作为很宽的 safety veto。
+极端 out-of-distribution 姿态会稳定导致 dig 失败后，才作为很宽的 safety veto。
 - gate 不应要求 policy 命中某个精确姿态，也不应在 return 后插入手写 qpos servo。否则会把
-  planner 变成动作级控制器，和未来多模态 planner 的接口方向相冲突。
+planner 变成动作级控制器，和未来多模态 planner 的接口方向相冲突。
 
 当前失败应归因于两件事叠加：
 
@@ -555,11 +561,11 @@ V2.4.5 builder 或 audit 工具至少应输出：
 - 每类 primitive 的数量、长度分布、tier 分布。
 - dig: removed-depth/payload/dig-box fraction。
 - carry: mass loss、deposit delta、deposit/payload ratio、release-like action fraction、
-  dig/dump box fraction，并标出 `>5kg AND >10% payload` 的红线 outlier。
+dig/dump box fraction，并标出 `>5kg AND >10% payload` 的红线 outlier。
 - dump: release onset、lead steps、mass drop、deposit delta、dump-box fraction、clearance
-  fraction，并标出 `release_onset - dump_start > 120` 的 outlier。
+fraction，并标出 `release_onset - dump_start > 120` 的 outlier。
 - return: length、empty-bucket fraction、next-dig entry error、next-start qpos/qvel
-  envelope error、shallow depth/contact error。
+envelope error、shallow depth/contact error。
 - realign overlap summary。
 
 QC gate 不应只给 pass/fail，还应给出 top outliers 和可视化索引，方便人工复核。
@@ -576,13 +582,13 @@ above rim 和 target horizontal distance 放在同一页，避免把无符号 ou
 
 - `dig/carry/dump` 各 644 条，`return` 589 条；return/dig ratio `0.915`。
 - qc6 基线中 dig gold 样本 595 条，旧 depth source 为
-  `env_state_removed_depth_delta`；几何修复后的重放数据应改为
-  `env_state_surface_penetration`，并重新核对 depth token 分布。
+`env_state_removed_depth_delta`；几何修复后的重放数据应改为
+`env_state_surface_penetration`，并重新核对 depth token 分布。
 - carry deposit contamination 为 `0`；target deposit delta p95 为 `0`，max `5.03kg`。
 - dump length max `315`、p95 `228.7`；release lead max `120`；transition
-  contamination 为 `0`。
+contamination 为 `0`。
 - return length max `437`、p95 `302.6`；overlong return reject ratio `0.0469`；
-  return envelope episode valid fraction `1.0`。
+return envelope episode valid fraction `1.0`。
 
 Gate 2 已按设计暂停：boundary audit 生成 5042 条边界记录和 24 个 selected videos，
 主要风险标记为 `carry_mass_loss=54`、`low_dig_payload=2`、`low_effective_deposit=4`、
@@ -607,13 +613,13 @@ Gate 2 已按设计暂停：boundary audit 生成 5042 条边界记录和 24 个
 每个 outlier 由 `tb-audit-primitive-boundaries` 自动生成关键帧 contact sheet，优先取：
 
 - `dig_start`, `dig_end/carry_start`, `dump_start`, `release_onset`, `dump_end/return_start`,
-  `return_end/next_dig_start`。
+`return_end/next_dig_start`。
 - 对 multi-pulse 旧 cycle，每个 detected pulse 至少取 `pulse_start` 和 `release_onset`。
 - 对 realign reject，额外取 realign step 前后各一帧。
 - carry/dump 边界审阅时，先看 signed dump-area `relative_x/z` corridor、
-  `bucket_over_target_footprint_mask`、`dump_clearance_ok_mask`、height above rim、
-  mass drop、deposit gain，再结合关键帧/视频直觉；`outside-distance` 只说明离 footprint
-  多近，不能表达 bucket 在 dump area 的前/中/后位置。
+`bucket_over_target_footprint_mask`、`dump_clearance_ok_mask`、height above rim、
+mass drop、deposit gain，再结合关键帧/视频直觉；`outside-distance` 只说明离 footprint
+多近，不能表达 bucket 在 dump area 的前/中/后位置。
 
 批量 dashboard 应至少包含：
 
@@ -625,7 +631,7 @@ Gate 2 已按设计暂停：boundary audit 生成 5042 条边界记录和 24 个
 - dump purity scatter: `dump_box_fraction` vs `deposit_delta/mass_drop`。
 - token distribution 与 outcome distribution，确认 token 没有塌缩。
 - return start-envelope token distribution，以及 live/validation 中 return end state 到 expert
-  envelope 的误差分布。
+envelope 的误差分布。
 
 人工审核第一版优先看 timeline + 关键帧：
 
