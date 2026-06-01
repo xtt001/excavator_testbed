@@ -8,7 +8,7 @@
 - 分析 rollout 失败时知道从哪一层开始排查
 - 追踪"数据变了"还是"超参数变了"还是"eval 口径变了"
 
-状态日期：`2026-04-14`
+状态日期：`2026-06-01`
 
 ---
 
@@ -61,6 +61,9 @@
 |---|---|
 | 当前业务 baseline 训练 | `testbed/configs/act_agx_v1.yaml` |
 | 当前业务 baseline 评测 | `testbed/configs/eval_agx_v1.yaml` |
+| real-domain one-dig smoke 训练 | `testbed/configs/act_real_one_dig_v1_smoke.yaml` |
+| real-domain one-dig 第一轮训练 | `testbed/configs/act_real_one_dig_v1_train.yaml` |
+| real-domain one-dig overfit 诊断 | `testbed/configs/act_real_one_dig_v1_ep8_overfit.yaml`、`testbed/configs/act_real_one_dig_v1_ep8_zero_latent_overfit.yaml`、`testbed/configs/act_real_one_dig_v1_ep8_zero_latent_dense_overfit.yaml`、`testbed/configs/act_real_one_dig_v1_all9_zero_latent_dense_overfit.yaml`、`testbed/configs/act_real_one_dig_v1_all9_overfit.yaml` |
 | fulltest baseline（qpos）| `testbed/configs/act_agx_fulltest.yaml` |
 | fulltest 对照（qpos+qvel）| `testbed/configs/act_agx_fulltest_qvel.yaml` |
 | smoke 训练 | `testbed/configs/act_agx_smoke.yaml` |
@@ -94,13 +97,59 @@
 
 当前 ACT BC 训练直接使用：
 - `observations/qpos`
+- 配置 `policy.low_dim_keys` 包含 `qvel` 时，也使用 `observations/qvel`
 - `observations/images/<camera>`
 - `action`
 
 **不进入** ACT loss 的字段（仅用于 replay、QC、rollout 诊断、failure analysis）：
-- `qvel`、`env_state`、`rewards`、`task_success`、`timestamps`
+- `env_state`、`rewards`、`task_success`、`timestamps`
 
 `qpos + qvel` 对照实验路径已就位（`act_agx_fulltest_qvel.yaml`），当前仍保留在 `fulltest` 线上，和 `v1(qpos)` baseline 是独立 checkpoint，不共用。
+
+#### Real One-Dig v1 Offline Imitation
+
+真机 one-dig v1 是一条独立 smoke 链路，不引入 V2 planner、primitive、phase label、boundary label 或 token。
+
+数据准备：
+```bash
+tb-build-real-one-dig-v1 \
+  --source-dir /media/pingfan/EXTERNAL_USB/real_teleop_v1 \
+  --output-dir data/real_one_dig_v1_windows
+```
+
+默认只使用移动硬盘里的成功源数据 `episode_13..21`，输出为 `episode_0..8`，便于 `tb-train` 的 `num_episodes: 9` 直接读取。裁剪窗口是 `first_nonzero(raw_action)-25` 到 `first_nonzero(go_home_commanded_action)-25`，用于去掉开始前静止段和 go-home 自动回中段。输出保留 `qpos(rad)`、`qvel(rad/s)`、`action`、`diagnostics/raw_action`、`diagnostics/commanded_action`、timestamps 和 source metadata，并把 JPEG FPV 解码成 raw RGB。
+
+第一轮 smoke train：
+```bash
+tb-train --config testbed/configs/act_real_one_dig_v1_smoke.yaml
+```
+
+第一轮较长 train：
+```bash
+tb-train --config testbed/configs/act_real_one_dig_v1_train.yaml
+```
+
+overfit 诊断：
+```bash
+tb-train --config testbed/configs/act_real_one_dig_v1_ep8_overfit.yaml
+tb-train --config testbed/configs/act_real_one_dig_v1_ep8_zero_latent_overfit.yaml
+tb-train --config testbed/configs/act_real_one_dig_v1_ep8_zero_latent_dense_overfit.yaml
+tb-train --config testbed/configs/act_real_one_dig_v1_all9_zero_latent_dense_overfit.yaml
+tb-train --config testbed/configs/act_real_one_dig_v1_all9_overfit.yaml
+```
+
+第一轮 offline eval：
+```bash
+tb-offline-real-one-dig-eval \
+  --config testbed/configs/act_real_one_dig_v1_train.yaml \
+  --output-dir runs/eval/real_one_dig_v1_offline_train
+```
+
+回真机候选只走 `act_real_one_dig_v1_smoke.yaml`：输入是真实 FPV + real `qpos/qvel`，标签是 `action`。`raw_action` 和 `commanded_action` 仅用于诊断 joystick 偏移、底层命令裁剪和安全对照，不进入训练 loss。移动硬盘中的 raw real-world 数据不修改，所有裁剪和解码都写入派生目录 `data/real_one_dig_v1_windows/`。
+
+本轮 real2sim replay 尝试的结论是：真实位置和 Unity 位置需要处理零点、方向、范围，以及 boom/stick/bucket 从“相对水平面的绝对角”到“相邻连杆关节角”的映射；同一 normalized `action` 在真机和 AGX target-speed controller 下也有执行增益差异。由于这些 gap 会让 Unity replay 变成 adapter 调参问题，第一轮训练和评测不再依赖 replay 后的 sim 数据，而是先看真实 FPV 下 `policy_action` 是否贴近专家 `action`。
+
+`*_overfit.yaml` 最初只用于诊断。如果 `episode_8` 单条或 9 条同 train/val 都无法贴近专家 action，优先查训练接口、action normalization、chunk size、loss 和采样方式。当前阶段不要求泛化，只要求 9 条成功 demo 的动作模仿，因此 `act_real_one_dig_v1_all9_zero_latent_dense_overfit.yaml` 产出的 checkpoint 可作为第一版 live shadow / 低幅度 guarded 真机测试候选；单条 `episode_8` overfit 配置仍只作诊断。ACT 默认 train/val 使用 teacher-forced CVAE latent，而 eval/inference 使用 zero latent；`*_zero_latent*_overfit.yaml` 用来让训练目标和真实推理路径一致，专门排查“val 低但 policy_action 接近均值”的情况。`train.sample_repeats` 用于把每条 episode 在一个 epoch 内重复随机采样多个 chunk，避免 overfit 诊断被“每条 episode 每 epoch 只看一个 chunk”限制。
 
 ### 3.2 模型
 

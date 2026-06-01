@@ -12,6 +12,9 @@
 | 历史 fulltest 基线 | `testbed/configs/act_agx_fulltest.yaml` + `testbed/configs/eval_agx_fulltest.yaml` | 保留为 `qpos` 历史对照 |
 | `qpos + qvel` 对照 | `testbed/configs/act_agx_fulltest_qvel.yaml` + `testbed/configs/eval_agx_fulltest_qvel.yaml` | 当前输入消融对照线 |
 | smoke 验证 | `testbed/configs/act_agx_smoke.yaml` + `testbed/configs/eval_agx_smoke.yaml` | 只用来验证 train/eval 链路 |
+| real-domain one-dig smoke | `testbed/configs/act_real_one_dig_v1_smoke.yaml` | 快速验证真实 FPV + real `qpos/qvel` 训练链路 |
+| real-domain one-dig train | `testbed/configs/act_real_one_dig_v1_train.yaml` | 第一轮较长 real-domain 训练，用于 offline imitation eval / shadow |
+| real-domain one-dig overfit probes | `testbed/configs/act_real_one_dig_v1_ep8_overfit.yaml` / `act_real_one_dig_v1_ep8_zero_latent_overfit.yaml` / `act_real_one_dig_v1_ep8_zero_latent_dense_overfit.yaml` / `act_real_one_dig_v1_all9_zero_latent_dense_overfit.yaml` / `act_real_one_dig_v1_all9_overfit.yaml` | 诊断模型是否能记住单条或全部 9 条真实 demo；当前不要求泛化时，all9 zero-latent dense checkpoint 可作为 shadow / guarded 真机测试候选 |
 
 ## 1. 文件族怎么区分
 
@@ -21,6 +24,7 @@
 |---|---|---|
 | `teleop_*.yaml` | `tb-record-teleop`、`tb-replay` | 录制和回放配置 |
 | `act_agx_*.yaml` | `tb-train` | AGX 挖掘机 ACT 训练配置 |
+| `act_real_*.yaml` | `tb-train`、`tb-offline-real-one-dig-eval` | 真机录制数据的 real-domain ACT 训练和离线评测配置 |
 | `eval_agx_*.yaml` | `tb-eval` | AGX 挖掘机 live eval 配置 |
 | `act_v0.yaml` / `eval_v0.yaml` / `task_v0.yaml` | `tb-train`、`tb-eval`、`tb-record` | 早期 MuJoCo transfer-cube 验证链路 |
 | `agx_v0.yaml` | 手动参考 | AGX 连接参数和向量维度说明 |
@@ -54,6 +58,13 @@
 | `act_agx_v1.yaml` | `tb-train` | 当前业务 baseline | `data/agx_teleop_v1/`，`30` 条 demo，`num_epochs = 2000`，`batch_size = 4`，checkpoint 写到 `runs/ckpts/agx_excavation_act_v1/` |
 | `act_agx_fulltest.yaml` | `tb-train` | 历史 `qpos` 基线 | `data/agx_teleop_fulltest/`，`20` 条 demo，`num_epochs = 500`，作为 `fulltest(qpos)` 对照 |
 | `act_agx_fulltest_qvel.yaml` | `tb-train` | 当前输入消融对照 | 与 `act_agx_fulltest.yaml` 使用同一批数据和超参；额外设置 `policy.low_dim_keys = [qpos, qvel]` |
+| `act_real_one_dig_v1_smoke.yaml` | `tb-train` | real-domain smoke | 指向 `data/real_one_dig_v1_windows/`；5 epoch 快速检查真实 FPV + real `qpos(rad)` + `qvel(rad/s)` 训练链路 |
+| `act_real_one_dig_v1_train.yaml` | `tb-train` | real-domain train | 同一数据入口；100 epoch，checkpoint 频率更疏，作为第一轮 offline shadow/eval 候选 |
+| `act_real_one_dig_v1_ep8_overfit.yaml` | `tb-train` | diagnostic overfit | 只用 converted `episode_8`，`chunk_size=25`，用于验证模型/数据接口是否能记住一条成功 one-dig |
+| `act_real_one_dig_v1_ep8_zero_latent_overfit.yaml` | `tb-train` | diagnostic overfit | 只用 converted `episode_8`，训练时也使用 inference 的 zero-latent 路径，避免 teacher-forced CVAE val loss 掩盖推理时动作塌缩 |
+| `act_real_one_dig_v1_ep8_zero_latent_dense_overfit.yaml` | `tb-train` | diagnostic overfit | 在 zero-latent 基础上使用 `sample_repeats`，让每个 epoch 从同一条 episode 采多个随机 chunk，检查完整轨迹能否被记住 |
+| `act_real_one_dig_v1_all9_zero_latent_dense_overfit.yaml` | `tb-train` | imitation candidate | 9 条 real one-dig 同时作为 train/val，使用 zero-latent + `sample_repeats`；当前可作为第一版 live shadow / 低幅度 guarded 真机测试候选 |
+| `act_real_one_dig_v1_all9_overfit.yaml` | `tb-train` | diagnostic overfit | 9 条 real one-dig 同时作为 train/val，`chunk_size=25`，用于判断当前数据是否可被模型记住 |
 | `act_agx_smoke.yaml` | `tb-train` | smoke 配置 | 只跑 `5` 条 demo、`5` 个 epoch，用来验证 train/eval 链路 |
 | `act_agx_v0.yaml` | `tb-train` | legacy AGX 训练配置 | 指向 `data/agx_teleop/`，保留早期默认值；适合复现旧 run，今天不作为默认入口 |
 
@@ -73,6 +84,40 @@
 | `task.dataset_dir` | 训练读哪一批 demo，先看这个字段就能判断是 `v1`、`fulltest` 还是 `v0` |
 | `policy.low_dim_keys` | 控制 ACT 低维输入，默认只有 `qpos`；只有 `act_agx_fulltest_qvel.yaml` 扩成 `qpos + qvel` |
 | `train.ckpt_dir` | 决定 checkpoint、`run_metadata.json`、`resolved_config.yaml` 的落盘目录 |
+
+### 3.1 Real One-Dig 数据入口和离线评测
+
+真机 one-dig v1 不经过 V2 planner、primitive、phase label 或 token。数据入口和顺序是：
+
+```bash
+tb-build-real-one-dig-v1 \
+  --source-dir /media/pingfan/EXTERNAL_USB/real_teleop_v1 \
+  --output-dir data/real_one_dig_v1_windows
+
+tb-train --config testbed/configs/act_real_one_dig_v1_smoke.yaml
+
+tb-train --config testbed/configs/act_real_one_dig_v1_train.yaml
+
+tb-train --config testbed/configs/act_real_one_dig_v1_ep8_overfit.yaml
+tb-train --config testbed/configs/act_real_one_dig_v1_ep8_zero_latent_overfit.yaml
+tb-train --config testbed/configs/act_real_one_dig_v1_ep8_zero_latent_dense_overfit.yaml
+tb-train --config testbed/configs/act_real_one_dig_v1_all9_zero_latent_dense_overfit.yaml
+tb-train --config testbed/configs/act_real_one_dig_v1_all9_overfit.yaml
+
+tb-offline-real-one-dig-eval \
+  --config testbed/configs/act_real_one_dig_v1_train.yaml \
+  --output-dir runs/eval/real_one_dig_v1_offline_train
+```
+
+`tb-build-real-one-dig-v1` 默认只取源 `episode_13..21`，并重映射成训练友好的 `episode_0..8`。每条输出在 metadata 中保留 `source_episode_id`、`source_episode_index`、裁剪窗口和原始单位。裁剪规则为 `first_nonzero(raw_action)-25` 到 `first_nonzero(go_home_commanded_action)-25`，并把 `/observations/encoded_images/fpv` JPEG 解码成 `/observations/images/fpv` raw RGB。
+
+`tb-offline-real-one-dig-eval` 读取同一份 real-domain 配置和 checkpoint，在真实 FPV/qpos/qvel 上只预测、不下发，逐帧比较专家 `action` 和模型 `policy_action`。每条 episode 输出 overlay MP4、四轴 action 曲线、metrics JSON 和 actions CSV；汇总输出 `summary.csv`、`summary.json` 与 `offline_eval_resolved_config.yaml`。
+
+本轮 real2sim replay 已确认两个主要 gap：位置需要做零点、方向、范围和绝对角/相对关节角映射；命令执行还受真机底层控制器、负载、摩擦和 AGX target-speed controller 影响。第一轮不再用 replay 后的 sim 数据训练或评测，先判断真实数据上 imitation learning 是否能学到 FPV 到 action 的映射。
+
+`*_overfit.yaml` 最初是诊断配置：如果单条 episode 或全部 9 条都不能把专家 action 曲线贴住，应先查 action normalization、chunk size、loss 和采样方式。当前阶段不要求泛化，只要求 9 条成功 demo 的动作模仿，因此 `act_real_one_dig_v1_all9_zero_latent_dense_overfit.yaml` 对应 checkpoint 可作为第一版 live shadow / 低幅度 guarded 真机测试候选；单条 episode overfit 配置仍只作诊断。ACT 默认训练/val 使用 teacher-forced CVAE latent，而 eval/inference 使用 zero latent；`*_zero_latent*_overfit.yaml` 专门让训练也走 zero-latent 路径，用来判断真实推理链路能否记住专家动作。`train.sample_repeats` 会把同一批 episode 在一个 epoch 内重复采样多次，避免每条 episode 每个 epoch 只有一个随机 chunk。
+
+raw real-world 数据不修改。`raw_action` 和 `commanded_action` 只用于诊断 joystick 偏移和底层命令差异，训练主标签仍是转换窗口中的 `action`。
 
 ## 4. AGX Live Eval 配置
 

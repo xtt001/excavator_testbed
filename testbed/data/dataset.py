@@ -8,7 +8,6 @@ docstrings. Public API is backward-compatible with legacy callers.
 from __future__ import annotations
 
 import datetime
-import os
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +17,6 @@ import yaml
 from torch.utils.data import DataLoader, Dataset
 
 from testbed.data.hdf5_io import list_episodes
-
 
 SUPPORTED_LOW_DIM_KEYS = ("qpos", "qvel")
 
@@ -194,6 +192,7 @@ class EpisodicDataset(Dataset):
         norm_stats: dict[str, np.ndarray],
         episode_len: int | None = None,
         low_dim_keys: list[str] | tuple[str, ...] | None = None,
+        sample_repeats: int = 1,
     ):
         super().__init__()
         self.episode_ids  = episode_ids
@@ -202,17 +201,18 @@ class EpisodicDataset(Dataset):
         self.norm_stats   = norm_stats
         self.episode_len  = int(episode_len) if episode_len is not None else None
         self.low_dim_keys = _normalize_low_dim_keys(low_dim_keys)
+        self.sample_repeats = max(1, int(sample_repeats))
         self.is_sim: bool | None = None
         # Warm-up to populate self.is_sim
         self.__getitem__(0)
 
     def __len__(self) -> int:
-        return len(self.episode_ids)
+        return len(self.episode_ids) * self.sample_repeats
 
     def __getitem__(self, index: int):
         import h5py
 
-        ep_id  = self.episode_ids[index]
+        ep_id  = self.episode_ids[index % len(self.episode_ids)]
         path   = self.dataset_dir / f"episode_{ep_id}.hdf5"
 
         with h5py.File(path, "r") as f:
@@ -306,6 +306,8 @@ def load_data(
     split_path: str | Path | None = None,
     reuse_split: bool = True,
     low_dim_keys: list[str] | tuple[str, ...] | None = None,
+    train_sample_repeats: int = 1,
+    val_sample_repeats: int = 1,
 ) -> tuple[DataLoader, DataLoader, dict, bool, dict[str, Any]]:
     """
     Build train/val DataLoaders from an HDF5 dataset directory.
@@ -399,6 +401,7 @@ def load_data(
         norm_stats,
         episode_len=target_episode_len,
         low_dim_keys=selected_low_dim_keys,
+        sample_repeats=train_sample_repeats,
     )
     val_ds = EpisodicDataset(
         val_ids,
@@ -407,12 +410,15 @@ def load_data(
         norm_stats,
         episode_len=target_episode_len,
         low_dim_keys=selected_low_dim_keys,
+        sample_repeats=val_sample_repeats,
     )
 
     split_info["dataset_max_episode_len"] = int(max_episode_len)
     split_info["loader_episode_len"] = int(target_episode_len)
     split_info["low_dim_keys"] = list(selected_low_dim_keys)
     split_info["low_dim_dim"] = int(norm_stats["proprio_dim"])
+    split_info["train_sample_repeats"] = int(max(1, train_sample_repeats))
+    split_info["val_sample_repeats"] = int(max(1, val_sample_repeats))
 
     loader_kw: dict = {"pin_memory": pin_memory, "num_workers": num_workers}
     if num_workers > 0:

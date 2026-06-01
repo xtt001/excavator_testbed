@@ -1,0 +1,60 @@
+# Diagnostic ACT overfit config for all 9 converted real one-dig windows.
+# This matches inference by training with the zero-latent path and repeats
+# each episode per epoch so random chunk sampling covers full trajectories.
+
+task:
+  task_name: real_one_dig_v1_all9_zero_latent_dense_overfit
+  equipment_model: agxunity
+  dataset_dir: data/real_one_dig_v1_windows
+  num_episodes: 9
+  episode_len: 3400
+  camera_names:
+    - fpv
+  backend:
+    name: real
+    dt: 0.02
+
+policy:
+  class: ACT
+  device: cuda
+  low_dim_keys:
+    - qpos
+    - qvel
+  act_params:
+    chunk_size: 25
+    kl_weight: 0.0
+    train_with_zero_latent: true
+    hidden_dim: 512
+    dim_feedforward: 3200
+
+train:
+  lr: 1.0e-5
+  num_epochs: 200
+  batch_size: 8
+  seed: 0
+  device: cuda
+  num_workers: 0
+  prefetch_factor:
+  persistent_workers: false
+  pin_memory: true
+  split_seed: 0
+  train_split_ratio: 1.0
+  split_path: testbed/configs/splits/real_one_dig_v1_all9_overfit.yaml
+  reuse_split: true
+  sample_repeats: 8
+  val_sample_repeats: 4
+  val_every: 10
+  save_latest_every: 25
+  checkpoint_every: 100
+  plot_every: 25
+  amp: false
+  amp_dtype: auto
+  ckpt_dir: runs/ckpts/real_one_dig_v1_all9_zero_latent_dense_overfit
+
+eval:
+  ckpt_dir: runs/ckpts/real_one_dig_v1_all9_zero_latent_dense_overfit
+  ckpt_path: runs/ckpts/real_one_dig_v1_all9_zero_latent_dense_overfit/policy_best.ckpt
+  num_rollouts: 0
+  save_video: false
+  video_dir: runs/eval/real_one_dig_v1_all9_zero_latent_dense_overfit/videos
+  results_dir: runs/eval/real_one_dig_v1_all9_zero_latent_dense_overfit/results

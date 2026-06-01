@@ -1,0 +1,58 @@
+# Diagnostic ACT overfit config for converted real one-dig episode_8 only.
+# This trains with the same zero-latent path used at inference, avoiding
+# teacher-forced CVAE reconstruction hiding inference-time action collapse.
+
+task:
+  task_name: real_one_dig_v1_ep8_zero_latent_overfit
+  equipment_model: agxunity
+  dataset_dir: data/real_one_dig_v1_windows
+  num_episodes: 9
+  episode_len: 3400
+  camera_names:
+    - fpv
+  backend:
+    name: real
+    dt: 0.02
+
+policy:
+  class: ACT
+  device: cuda
+  low_dim_keys:
+    - qpos
+    - qvel
+  act_params:
+    chunk_size: 25
+    kl_weight: 0.0
+    train_with_zero_latent: true
+    hidden_dim: 512
+    dim_feedforward: 3200
+
+train:
+  lr: 1.0e-5
+  num_epochs: 500
+  batch_size: 1
+  seed: 0
+  device: cuda
+  num_workers: 0
+  prefetch_factor:
+  persistent_workers: false
+  pin_memory: true
+  split_seed: 0
+  train_split_ratio: 1.0
+  split_path: testbed/configs/splits/real_one_dig_v1_episode8_overfit.yaml
+  reuse_split: true
+  val_every: 25
+  save_latest_every: 50
+  checkpoint_every: 250
+  plot_every: 50
+  amp: false
+  amp_dtype: auto
+  ckpt_dir: runs/ckpts/real_one_dig_v1_ep8_zero_latent_overfit
+
+eval:
+  ckpt_dir: runs/ckpts/real_one_dig_v1_ep8_zero_latent_overfit
+  ckpt_path: runs/ckpts/real_one_dig_v1_ep8_zero_latent_overfit/policy_best.ckpt
+  num_rollouts: 0
+  save_video: false
+  video_dir: runs/eval/real_one_dig_v1_ep8_zero_latent_overfit/videos
+  results_dir: runs/eval/real_one_dig_v1_ep8_zero_latent_overfit/results

@@ -29,6 +29,8 @@ def train_policy(config: dict[str, Any]) -> None:
     train_split_ratio = float(train_cfg.get("train_split_ratio", 0.8))
     reuse_split = bool(train_cfg.get("reuse_split", True))
     split_path = Path(train_cfg.get("split_path", ckpt_dir / "train_val_split.yaml"))
+    train_sample_repeats = int(train_cfg.get("sample_repeats", 1))
+    val_sample_repeats = int(train_cfg.get("val_sample_repeats", 1))
 
     if policy_class != "ACT":
         raise NotImplementedError(f"Trainer for policy class {policy_class!r} not yet implemented.")
@@ -58,6 +60,7 @@ def train_policy(config: dict[str, Any]) -> None:
         "equipment_model": equipment_model,
         "low_dim_keys":  low_dim_keys,
         "state_dim":     _resolve_low_dim_state_dim(low_dim_keys, equipment_model),
+        "train_with_zero_latent": bool(act_params.get("train_with_zero_latent", False)),
     }
 
     full_config = {
@@ -78,6 +81,8 @@ def train_policy(config: dict[str, Any]) -> None:
         "train_split_ratio": train_split_ratio,
         "reuse_split":    reuse_split,
         "split_path":     str(split_path),
+        "sample_repeats": train_sample_repeats,
+        "val_sample_repeats": val_sample_repeats,
     }
 
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -102,6 +107,8 @@ def train_policy(config: dict[str, Any]) -> None:
         split_path         = split_path,
         reuse_split        = reuse_split,
         low_dim_keys       = low_dim_keys,
+        train_sample_repeats = train_sample_repeats,
+        val_sample_repeats   = val_sample_repeats,
     )
 
     # save normalisation stats so trainer can load them
@@ -174,6 +181,8 @@ def _build_resolved_train_config(
     train_cfg["save_latest_every"] = int(full_config["save_latest_every"])
     train_cfg["checkpoint_every"] = int(full_config["checkpoint_every"])
     train_cfg["plot_every"] = int(full_config["plot_every"])
+    train_cfg["sample_repeats"] = int(full_config["sample_repeats"])
+    train_cfg["val_sample_repeats"] = int(full_config["val_sample_repeats"])
     train_cfg["amp"] = bool(full_config["amp"])
     train_cfg["amp_dtype"] = str(full_config["amp_dtype"])
     return resolved

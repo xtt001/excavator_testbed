@@ -27,6 +27,7 @@ dependencies = [
     "einops>=0.7",
     "tqdm>=4.65",
     "pyquaternion>=0.9",
+    "IPython>=8.0",
 ]
 
 [project.optional-dependencies]
@@ -47,6 +48,8 @@ tb-train          = "testbed.cli.train:main"
 tb-eval           = "testbed.cli.eval:main"
 tb-dataset-videos = "testbed.cli.dataset_videos:main"
 tb-experiment-record = "testbed.cli.experiment_record:main"
+tb-build-real-one-dig-v1 = "testbed.cli.build_real_one_dig_v1:main"
+tb-offline-real-one-dig-eval = "testbed.cli.offline_real_one_dig_eval:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

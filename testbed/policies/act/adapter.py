@@ -17,11 +17,9 @@ from __future__ import annotations
 
 import pickle
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import torch
-from einops import rearrange
 import torchvision.transforms as transforms
 
 from testbed.policies.base import Policy, register_policy
@@ -67,6 +65,7 @@ class ACTAdapter(Policy):
         self.kl_weight    = policy_config.get("kl_weight", 10)
         self._camera_names = list(policy_config.get("camera_names", []))
         self._low_dim_keys = list(policy_config.get("low_dim_keys", ["qpos"]))
+        self._train_with_zero_latent = bool(policy_config.get("train_with_zero_latent", False))
 
         model, optimizer = build_ACT_model_and_optimizer(policy_config)
         self._model     = model.to(self.device)
@@ -274,8 +273,12 @@ class ACTAdapter(Policy):
         actions = actions[:, : self._model.num_queries]
         is_pad  = is_pad[:,  : self._model.num_queries]
 
-        a_hat, _, (mu, logvar) = self._model(proprio, image, None, actions, is_pad)
-        total_kld, _, _        = _kl_divergence(mu, logvar)
+        if self._train_with_zero_latent:
+            a_hat, _, _ = self._model(proprio, image, None, None, None)
+            total_kld = torch.zeros(1, device=actions.device, dtype=actions.dtype)
+        else:
+            a_hat, _, (mu, logvar) = self._model(proprio, image, None, actions, is_pad)
+            total_kld, _, _        = _kl_divergence(mu, logvar)
 
         import torch.nn.functional as F
         all_l1 = F.l1_loss(actions, a_hat, reduction="none")
@@ -306,7 +309,7 @@ class ACTAdapter(Policy):
         norm_stats_path: str | Path,
         temporal_agg: bool = False,
         device: str = "cuda",
-    ) -> "ACTAdapter":
+    ) -> ACTAdapter:
         """
         Convenience factory: load an ACT policy from a checkpoint file.
 

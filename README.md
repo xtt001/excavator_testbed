@@ -19,7 +19,7 @@ Repo A 负责：
 
 ## 当前状态
 
-状态日期：`2026-04-14`
+状态日期：`2026-06-01`
 
 | 组件 | 实现状态 | 当前验证状态 |
 |---|---|---|
@@ -30,6 +30,8 @@ Repo A 负责：
 | `tb-record-teleop` | 已实现 | 已按 `teleop_v1` 重录 `30` 条正式 success demo，落盘到 `data/agx_teleop_v1/` |
 | `tb-replay` | 已实现 | 支持单文件或整个目录批量回放；`fulltest` 已验证，`v1` 仍建议补一轮正式 batch QA |
 | `tb-dataset-videos` | 已实现 | 从 HDF5 离线导出 MP4 视频（无需连 AGX） |
+| `tb-build-real-one-dig-v1` | 已实现 | 将真机 `episode_13..21` 裁剪成 real one-dig 训练窗口，并把 JPEG FPV 解码成 raw RGB |
+| `tb-offline-real-one-dig-eval` | 已实现 | 在真实 FPV/qpos/qvel 上只预测不下发，输出 expert vs policy 视频、曲线和指标 |
 | `tb-train` / ACT trainer | 已实现 | 已完成 `fulltest(qpos)`、`fulltest(qpos+qvel)` 与 `v1(qpos)` 三条训练线 |
 | `tb-eval` | 已实现 | 已完成正式 live eval；当前最好结果是 `v1(qpos)` 在主口径下 `10/10` 成功 |
 | rollout timestep logs | 已实现 | `tb-eval` 现可写 `rollout_XXX.jsonl / summary / manifest` |
@@ -41,6 +43,7 @@ Repo A 负责：
 - 冻结 `data/agx_teleop_v1`、`act_agx_v1.yaml`、`eval_agx_v1.yaml` 作为当前业务 baseline
 - 补一次 `v1` 数据集的正式 `tb-replay` QA，把数据闭环补完整
 - 围绕 `strict_dump_complete` 和 `spill_before_target` 做 failure analysis，决定下一轮该改数据还是改输入
+- real one-dig 分支只使用 v1 one-dig 语义：`tb-build-real-one-dig-v1` 生成 `data/real_one_dig_v1_windows/`；下一步主线是 real-domain 训练、offline imitation eval 和 shadow 验证，不再把 Unity real2sim replay 作为第一轮训练或评测依据
 
 ---
 
@@ -70,6 +73,7 @@ Repo A 负责：
                                         ▼
                                 CLI / Runner 层
       tb-record-teleop / tb-replay / tb-dataset-videos / tb-dataset-qc / tb-train / tb-eval
+      tb-build-real-one-dig-v1 / tb-offline-real-one-dig-eval
                                         │
                                         ▼
                      testbed/configs/ + docs/training_setup.md
@@ -91,6 +95,56 @@ Repo A 负责：
 也就是说，它们属于“实验管理层”，不是“核心接口层”。
 
 如果你想快速弄清楚每个 YAML 的角色、入口命令和当前推荐用法，直接看 [testbed/configs/README.md](/home/pingfan/PACT/excavator_testbed/testbed/configs/README.md)。
+
+---
+
+## Real One-Dig Offline Imitation
+
+真机 one-dig v1 不使用 V2 planner、primitive、phase label、boundary label 或 token。源数据固定为移动硬盘 `/media/pingfan/EXTERNAL_USB/real_teleop_v1` 中的成功 `episode_13..21`。
+
+```bash
+tb-build-real-one-dig-v1 \
+  --source-dir /media/pingfan/EXTERNAL_USB/real_teleop_v1 \
+  --output-dir data/real_one_dig_v1_windows
+
+tb-train --config testbed/configs/act_real_one_dig_v1_smoke.yaml
+
+tb-train --config testbed/configs/act_real_one_dig_v1_train.yaml
+
+tb-train --config testbed/configs/act_real_one_dig_v1_ep8_overfit.yaml
+tb-train --config testbed/configs/act_real_one_dig_v1_ep8_zero_latent_overfit.yaml
+tb-train --config testbed/configs/act_real_one_dig_v1_ep8_zero_latent_dense_overfit.yaml
+tb-train --config testbed/configs/act_real_one_dig_v1_all9_zero_latent_dense_overfit.yaml
+tb-train --config testbed/configs/act_real_one_dig_v1_all9_overfit.yaml
+
+tb-offline-real-one-dig-eval \
+  --config testbed/configs/act_real_one_dig_v1_train.yaml \
+  --output-dir runs/eval/real_one_dig_v1_offline_train
+```
+
+converter 默认把源 `episode_13..21` 重映射成 `episode_0..8`，裁剪掉开头静止段和 go-home 自动回中段，保留 `qpos(rad)`、`qvel(rad/s)`、`action`、`raw_action`、`commanded_action` 与 timestamps，并把 JPEG FPV 写成 `/observations/images/fpv` raw RGB。
+
+本轮 real2sim replay 尝试留下的结论：
+
+- 坐标 gap：真机 swing 以左侧限位为 `0`、中心约 `2.2 rad`；boom/stick/bucket 是相对水平面的绝对角；Unity 侧是 normalized actuator pose。已用首帧 real qpos realign、swing invert、relative joint mapping 和 offset 做过初始姿态对齐。
+- 执行 gap：同一 normalized `action` 在真机控制器、负载、摩擦、液压/电机响应和 AGX target-speed controller 下产生的关节速度不同。axis scale、deadband、bucket invert 这类 replay adapter 只适合诊断，不应改写真实标签。
+- 时间 gap：真机窗口、训练样本和评测样本以记录的 step index / `timestamps/step_ns` 为准；Unity live 展示受 step-ack 通信、采图和写盘影响，容易表现成慢放，不能直接作为 imitation 质量判断。
+- 当前决策：第一轮不再追求高保真 Unity replay，也不把 replay 后的 sim 数据作为主要训练依据。学习效果判断转向 real-domain offline imitation eval。
+
+下一步主线是 offline imitation eval：在 `data/real_one_dig_v1_windows/` 上训练或加载 real one-dig policy，然后在 9 条真实记录上只预测不下发，逐帧对齐可视化：
+
+- 当前真实 FPV frame。
+- 专家 `action`，以及诊断用 `commanded_action`、`raw_action`。
+- 模型输出 `policy_action`。
+- 四轴 action trace、误差曲线和按时间对齐的 overlay video。
+
+这个评测直接回答“同一个真实 FPV 下，专家想怎么动，模型想怎么动”，更适合判断 imitation learning 是否学会 one-dig 行为；通过 offline shadow 后，再进入 live shadow 和低幅度 guarded 真机测试。
+
+当前真机测试候选 checkpoint、temporal aggregation 评测口径和上线安全流程见 [docs/real_one_dig_real_machine_test_plan.md](/home/pingfan/PACT/excavator_testbed/docs/real_one_dig_real_machine_test_plan.md)。
+
+`*_overfit.yaml` 最初用于诊断：如果单条或 9 条同 train/val 都贴不住专家动作，先查训练接口、action normalization、chunk size、loss 和采样。当前阶段不要求泛化，只要求 9 条成功 demo 的动作模仿，因此 `act_real_one_dig_v1_all9_zero_latent_dense_overfit.yaml` 产出的 checkpoint 可作为第一版 live shadow / 低幅度 guarded 真机测试候选；单条 `episode_8` overfit 配置仍只作诊断。ACT 默认 train/val 使用 teacher-forced CVAE latent，而 eval/inference 使用 zero latent；`*_zero_latent*_overfit.yaml` 用来让训练目标和真实推理路径一致。`train.sample_repeats` 会让每条 episode 每个 epoch 采多个随机 chunk，用于更可靠的 overfit 诊断。
+
+注意：移动硬盘中的 raw real-world 数据不修改。`raw_action` 和 `commanded_action` 只做诊断与安全对照，训练主标签仍然是转换窗口中的 `action`。
 
 ---
 
