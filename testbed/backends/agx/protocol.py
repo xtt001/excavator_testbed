@@ -56,6 +56,10 @@ class MessageType(IntEnum):
     RESET_RESP = 4
     STEP_REQ = 5
     STEP_RESP = 6
+    DEPTH_CAPTURE_START_REQ = 7
+    DEPTH_CAPTURE_START_RESP = 8
+    DEPTH_CAPTURE_STOP_REQ = 9
+    DEPTH_CAPTURE_STOP_RESP = 10
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,13 @@ class ResetResponse:
     reset_applied: bool
     dt: float
     control_hz: float
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DepthCaptureControlResponse:
+    success: bool
+    error: str
     warnings: tuple[str, ...]
 
 
@@ -280,6 +291,29 @@ def encode_step_request(
     return encode_frame(MessageType.STEP_REQ, payload.getvalue())
 
 
+def encode_depth_capture_start_request(
+    *,
+    session_id: str,
+    episode_index: int,
+    first_step_id: int = 0,
+    capture_hz: float = 1.0,
+    control_hz: float = 50.0,
+    output_dir: str = "",
+) -> bytes:
+    payload = io.BytesIO()
+    payload.write(_pack_string(str(session_id)))
+    payload.write(struct.pack("<i", int(episode_index)))
+    payload.write(struct.pack("<q", int(first_step_id)))
+    payload.write(struct.pack("<f", float(capture_hz)))
+    payload.write(struct.pack("<f", float(control_hz)))
+    payload.write(_pack_string(str(output_dir)))
+    return encode_frame(MessageType.DEPTH_CAPTURE_START_REQ, payload.getvalue())
+
+
+def encode_depth_capture_stop_request() -> bytes:
+    return encode_frame(MessageType.DEPTH_CAPTURE_STOP_REQ)
+
+
 def _read_exact(sock: socket.socket, n_bytes: int) -> bytes:
     chunks: list[bytes] = []
     remaining = n_bytes
@@ -389,6 +423,18 @@ def decode_reset_response(payload: bytes) -> ResetResponse:
         reset_applied=reset_applied,
         dt=dt,
         control_hz=control_hz,
+        warnings=warnings,
+    )
+
+
+def decode_depth_capture_control_response(payload: bytes) -> DepthCaptureControlResponse:
+    reader = _PayloadReader(payload)
+    success, error = _parse_common_prefix(reader)
+    warnings = reader.read_string_array()
+    reader.ensure_fully_consumed()
+    return DepthCaptureControlResponse(
+        success=success,
+        error=error,
         warnings=warnings,
     )
 
@@ -523,6 +569,42 @@ class AgxSimClient:
             raise AgxProtocolError(
                 f"step_id mismatch: requested {step_id}, received {parsed.step_id}"
             )
+        return parsed
+
+    def start_depth_capture(
+        self,
+        *,
+        session_id: str,
+        episode_index: int,
+        first_step_id: int = 0,
+        capture_hz: float = 1.0,
+        control_hz: float = 50.0,
+        output_dir: str = "",
+    ) -> DepthCaptureControlResponse:
+        response = self._roundtrip(
+            encode_depth_capture_start_request(
+                session_id=session_id,
+                episode_index=episode_index,
+                first_step_id=first_step_id,
+                capture_hz=capture_hz,
+                control_hz=control_hz,
+                output_dir=output_dir,
+            ),
+            expected=MessageType.DEPTH_CAPTURE_START_RESP,
+        )
+        parsed = decode_depth_capture_control_response(response)
+        if not parsed.success:
+            raise AgxServerError(parsed.error, parsed.warnings)
+        return parsed
+
+    def stop_depth_capture(self) -> DepthCaptureControlResponse:
+        response = self._roundtrip(
+            encode_depth_capture_stop_request(),
+            expected=MessageType.DEPTH_CAPTURE_STOP_RESP,
+        )
+        parsed = decode_depth_capture_control_response(response)
+        if not parsed.success:
+            raise AgxServerError(parsed.error, parsed.warnings)
         return parsed
 
     def _roundtrip(self, request_frame: bytes, *, expected: MessageType) -> bytes:

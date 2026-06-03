@@ -1,0 +1,82 @@
+# Long-horizon ACT_GRAPH eval config.
+#
+# Purpose:
+#   Run one 5000-step rollout to check whether the policy can keep working
+#   beyond the 1200-step demonstrations used for training.
+
+task:
+  task_name: agx_excavation_teleop
+  equipment_model: agxunity
+  dataset_dir: data/graph_sessions/act_graph_50/graph_time_v1
+  num_episodes: 50
+  episode_len: 5000
+  camera_names:
+    - fpv
+  backend:
+    name: agx
+    dt: 0.02
+
+policy:
+  class: ACT_GRAPH
+  device: cuda
+  low_dim_keys:
+    - qpos
+    - qvel
+  act_params:
+    chunk_size: 100
+    kl_weight: 10.0
+    hidden_dim: 512
+    dim_feedforward: 3200
+  graph_params:
+    node_feature_dim: 8
+    edge_feature_dim: 5
+    graph_global_dim: 6
+    hidden_dim: 128
+    embedding_dim: 64
+    message_passing_steps: 2
+    dropout: 0.0
+
+train:
+  lr: 1.0e-5
+  num_epochs: 2000
+  batch_size: 4
+  seed: 0
+  device: cuda
+  num_workers: 0
+  prefetch_factor:
+  persistent_workers: false
+  pin_memory: true
+  split_seed: 0
+  train_split_ratio: 0.8
+  reuse_split: true
+  val_every: 5
+  save_latest_every: 10
+  checkpoint_every: 50
+  plot_every: 50
+  amp: true
+  amp_dtype: auto
+  ckpt_dir: runs/ckpts/agx_excavation_act_graph_50
+
+eval:
+  ckpt_dir: runs/ckpts/agx_excavation_act_graph_50
+  ckpt_path: runs/ckpts/agx_excavation_act_graph_50/policy_best.ckpt
+  num_rollouts: 1
+  save_video: true
+  video_dir: runs/eval/agx_excavation_act_graph_50_long_5000/videos
+  results_dir: runs/eval/agx_excavation_act_graph_50_long_5000/results
+  step_log_interval: 100
+  graph_observation:
+    enabled: true
+    type: latest_snapshot
+    start_depth_capture: true
+    session_id: act_graph_eval_long_5000
+    snapshot_dir: /home/zhaoshuai/workspace_uinty/GraphPerceptionPrj/output/DepthCameraSnapshots/act_graph_eval_long_5000
+    capture_hz: 1
+    control_hz: 50
+    wait_for_first_timeout_s: 10
+    poll_interval_s: 0.05
+    reuse_last_graph: true
+    max_nodes: 256
+    max_edges: 1024
+    knn_k: 4
+    gradient_node_ratio: 0.5

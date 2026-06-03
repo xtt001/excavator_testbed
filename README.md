@@ -48,6 +48,9 @@ Repo A 负责：
 | rollout timestep logs | 已实现 | `tb-eval` 现可写 `rollout_XXX.jsonl / summary / manifest` |
 | `tb-dataset-qc` | 已实现 | 可写 `summary.json / episodes.csv / QC plots` |
 | `tb-lidar-heightmap` | 初版 | 将 AGX `/lidar/pointcloud` 转成 local heightmap/depth/elevation grid；先用于可视化和规划前处理，不进入旧 HDF5 schema |
+| sensor-derived graph observation | 初版 schema | HDF5 可选组 `/observations/graph` 已预留给 depth/LiDAR/RGB 提取出的 GNN 图；当前只完成读写透传，不代表 ACT 已经使用 graph |
+| depth graph converter | 初版 | `testbed.perception.depth_graph.depth_frame_to_graph` / `tb-depth-graph` 可将 Unity 深度帧 JSON 转为 padded GNN graph tensors；节点选择已切到 hybrid keypoint + uniform sampling；`tb-depth-graph-preview` 可导出深度图和 graph overlay 预览；CLI 自动从 snapshot metadata 读 `fx_px/fy_px/cx_px/cy_px`，缺失则退回 `pixel_size` 启发式（stdout 用 `intrinsics_used` 标记）；当前用于离线 smoke，不代表 ACT 已消费 graph |
+| graph dataset attach | 新增 | `tb-build-graph-snapshot-map` 可从 Repo B depth JSON 序列生成 `graph_attach_*.yaml`；`tb-build-graph-dataset` 离线读取 depth snapshot 序列并按 `--graph-every-step` / `--graph-stride` / `--graph-rate-hz` 生成 time-aligned graph dataset；原 teleop 数据不变，新老 yaml 可并存训练 |
 | demo-level metadata | 已实现 | `tb-record-teleop` 支持 `operator_id / session_id / notes / config snapshot` |
 | MuJoCo backend | 保留 | 仅作 legacy / 对照，不是当前主路径 |
 
@@ -187,6 +190,7 @@ Repo A 负责：
 - `qpos (4,)`：`[swing, boom, stick, bucket]`，归一化位置
 - `qvel (4,)`：`[swing, boom, stick, bucket]`，速度
 - `images["fpv"]`：`(H, W, 3)`，`uint8`
+- `observation_graph`：可选 `/observations/graph` 组，用于保存由深度相机、LiDAR 点云或 RGB 关键点提取出来的 GNN 图；不是 Unity 几何真值的替代称呼，也不是 PNG/JPG 图像。
 - `env_state`：旧数据保持 `28D`；2026-05-14 起 Unity V2.2 bridge
   对 YuLong/AGX 采用 add-only `64D` contract，前 0-27 位顺序完全不变。
 

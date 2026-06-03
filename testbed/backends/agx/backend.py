@@ -159,6 +159,36 @@ class AgxSimBackend(SimBackend):
         self._next_step_id += 1
         return ts
 
+    def start_depth_capture(
+        self,
+        *,
+        session_id: str,
+        episode_index: int,
+        first_step_id: int = 0,
+        capture_hz: float = 1.0,
+        control_hz: float | None = None,
+        output_dir: str = "",
+    ) -> None:
+        if control_hz is None:
+            control_hz = self.get_info().control_hz
+        self._call_with_resync(
+            lambda: self._client.start_depth_capture(
+                session_id=session_id,
+                episode_index=episode_index,
+                first_step_id=first_step_id,
+                capture_hz=capture_hz,
+                control_hz=float(control_hz),
+                output_dir=output_dir,
+            ),
+            action_name="start_depth_capture",
+        )
+
+    def stop_depth_capture(self) -> None:
+        self._call_with_resync(
+            self._client.stop_depth_capture,
+            action_name="stop_depth_capture",
+        )
+
     def render(self, camera_id: str, height: int = 480, width: int = 640) -> np.ndarray:
         if self._last_obs is None:
             raise RuntimeError("No observation available yet; call reset() first.")

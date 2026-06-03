@@ -1,0 +1,59 @@
+# Long-horizon ACT baseline eval config.
+#
+# Purpose:
+#   Run one 5000-step rollout with the ACT baseline trained on the same
+#   demonstrations as ACT_GRAPH, without online graph/depth observation.
+
+task:
+  task_name: agx_excavation_teleop
+  equipment_model: agxunity
+  dataset_dir: data/graph_sessions/act_graph_50/graph_time_v1
+  num_episodes: 50
+  episode_len: 5000
+  camera_names:
+    - fpv
+  backend:
+    name: agx
+    dt: 0.02
+
+policy:
+  class: ACT
+  device: cuda
+  low_dim_keys:
+    - qpos
+    - qvel
+  act_params:
+    chunk_size: 100
+    kl_weight: 10.0
+    hidden_dim: 512
+    dim_feedforward: 3200
+
+train:
+  lr: 1.0e-5
+  num_epochs: 2000
+  batch_size: 4
+  seed: 0
+  device: cuda
+  num_workers: 0
+  prefetch_factor:
+  persistent_workers: false
+  pin_memory: true
+  split_seed: 0
+  train_split_ratio: 0.8
+  reuse_split: true
+  val_every: 5
+  save_latest_every: 10
+  checkpoint_every: 50
+  plot_every: 50
+  amp: true
+  amp_dtype: auto
+  ckpt_dir: runs/ckpts/agx_excavation_act_50_same_data
+
+eval:
+  ckpt_dir: runs/ckpts/agx_excavation_act_50_same_data
+  ckpt_path: runs/ckpts/agx_excavation_act_50_same_data/policy_best.ckpt
+  num_rollouts: 1
+  save_video: true
+  video_dir: runs/eval/agx_excavation_act_50_same_data_long_5000/videos
+  results_dir: runs/eval/agx_excavation_act_50_same_data_long_5000/results
+  step_log_interval: 100

@@ -29,9 +29,9 @@ teleop:
     # stick <- left stick left/right (reversed),
     # boom <- right stick front/back,
     # bucket <- right stick left/right (reversed).
-    axis_map:  [1, 1, 0, 0]
-    invert:    [true, false, true, true]
-    reset_button: 10
+    axis_map: [0, 1, 1, 0]
+    invert:    [false, false, false, true]
+    reset_button: 30
     deadzone:  0.05
     scale:     [0.6, 0.3, 0.7, 0.7]
     clip:      1.0
@@ -56,7 +56,7 @@ task:
   # Runtime image resolution comes from Unity GET_INFO camera descriptors and is
   # saved into each episode's metadata as camera_width / camera_height / camera_fps.
   # Keep this fixed across a baseline run.
-  max_steps:     1000
+  max_steps:     1200
   control_hz:    50
   dt:            0.02
   seed:          -1

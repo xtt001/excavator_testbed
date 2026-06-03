@@ -40,19 +40,30 @@ def train_policy(config: dict[str, Any]) -> None:
     reuse_split = bool(train_cfg.get("reuse_split", True))
     split_path = Path(train_cfg.get("split_path", ckpt_dir / "train_val_split.yaml"))
 
-    if policy_class != "ACT":
+    if policy_class not in {"ACT", "ACT_GRAPH", "ACTGRAPH", "GRAPH_ACT"}:
         raise NotImplementedError(f"Trainer for policy class {policy_class!r} not yet implemented.")
 
-    from testbed.data.dataset import load_data
-    from testbed.policies.act.trainer import ACTTrainer
     from testbed.runtime.run_metadata import (
         build_train_run_metadata,
         write_json,
         write_resolved_config,
     )
+    if policy_class == "ACT":
+        from testbed.data.dataset import load_data as selected_load_data
+        from testbed.policies.act.trainer import ACTTrainer as selected_trainer_cls
+    else:
+        from testbed.policies.act_graph.dataset import load_graph_data as selected_load_data
+        from testbed.policies.act_graph.trainer import ACTGraphTrainer as selected_trainer_cls
 
     # build policy_config dict for ACTAdapter / detr
     act_params = policy_cfg.get("act_params", {})
+    graph_params = policy_cfg.get("graph_params", {})
+    graph_embedding_dim = (
+        0
+        if policy_class == "ACT"
+        else int(graph_params.get("embedding_dim", graph_params.get("output_dim", 64)))
+    )
+    base_state_dim = _resolve_low_dim_state_dim(low_dim_keys, equipment_model)
     policy_config = {
         "lr":            float(train_cfg.get("lr", 1e-5)),
         "num_queries":   int(act_params.get("chunk_size", 100)),
@@ -67,9 +78,11 @@ def train_policy(config: dict[str, Any]) -> None:
         "camera_names":  camera_names,
         "equipment_model": equipment_model,
         "low_dim_keys":  low_dim_keys,
-        "state_dim":     _resolve_low_dim_state_dim(low_dim_keys, equipment_model),
+        "state_dim":     int(base_state_dim + graph_embedding_dim),
         "image_mask":    image_mask_config,
     }
+    if policy_class != "ACT":
+        policy_config["graph_params"] = dict(graph_params or {})
 
     full_config = {
         "num_epochs":     int(train_cfg.get("num_epochs", 2000)),
@@ -103,7 +116,7 @@ def train_policy(config: dict[str, Any]) -> None:
     num_workers  = int(train_cfg.get("num_workers", 4))
     pf_raw       = train_cfg.get("prefetch_factor", 2)
     prefetch_factor = int(pf_raw) if pf_raw is not None and num_workers > 0 else None
-    train_loader, val_loader, norm_stats, _, split_info = load_data(
+    train_loader, val_loader, norm_stats, _, split_info = selected_load_data(
         dataset_dir  = dataset_dir,
         num_episodes = num_episodes,
         camera_names = camera_names,
@@ -152,7 +165,7 @@ def train_policy(config: dict[str, Any]) -> None:
     print(f"Saved resolved config to {resolved_config_path}")
     print(f"Saved run metadata to {run_metadata_path}")
 
-    trainer = ACTTrainer(policy_config=policy_config, config=full_config)
+    trainer = selected_trainer_cls(policy_config=policy_config, config=full_config)
     try:
         best_epoch, best_val_loss, _ = trainer.fit(train_loader, val_loader, full_config)
     except Exception as exc:

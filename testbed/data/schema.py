@@ -98,6 +98,13 @@ Schema v1.1 layout (add-only on top of v1.0)
 │   │                                      ← v1.1 add-only
 │   └── images/
 │       └── fpv              (T, H, W, 3) uint8                        ← v1.1
+│   └── graph/                                                          ← optional
+│       ├── node_features     (T, N, F) float32 padded sensor-derived graph nodes
+│       ├── node_mask         (T, N)    uint8   1=valid node
+│       ├── edge_indices      (T, E, 2) int64   source/destination node indices
+│       ├── edge_features     (T, E, G) float32 padded edge features
+│       ├── edge_mask         (T, E)    uint8   1=valid edge
+│       └── graph_globals     (T, K)    float32 optional global graph features
 │
 ├── action                   (T, 4)  float32  [swing, boom, stick, bucket]
 ├── rewards                  (T,)    float32  optional
@@ -185,6 +192,15 @@ DS_STEP_ID         = "timestamps/step_id"            # (T,) int64
 DS_STEP_NS         = "timestamps/step_ns"            # (T,) int64
 DS_ACTION_SRC_TYPE = "action_source/type"            # (T,) variable-length str
 DS_ACTION_SRC_ID   = "action_source/id"              # (T,) variable-length str
+
+# ── Optional sensor-derived graph observation paths ─────────────────────────
+GRP_OBS_GRAPH              = "observations/graph"
+DS_OBS_GRAPH_NODE_FEATURES = "observations/graph/node_features"
+DS_OBS_GRAPH_NODE_MASK     = "observations/graph/node_mask"
+DS_OBS_GRAPH_EDGE_INDICES  = "observations/graph/edge_indices"
+DS_OBS_GRAPH_EDGE_FEATURES = "observations/graph/edge_features"
+DS_OBS_GRAPH_EDGE_MASK     = "observations/graph/edge_mask"
+DS_OBS_GRAPH_GLOBALS       = "observations/graph/graph_globals"
 
 # ── Dataset paths — optional Repo A /v2 extension ───────────────────────────
 DS_V2_STEP_CYCLE_ID       = "v2/step/cycle_id"

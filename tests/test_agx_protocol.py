@@ -16,6 +16,8 @@ from testbed.backends.agx.protocol import (
     AgxSimClient,
     MessageType,
     StepResponse,
+    decode_depth_capture_control_response,
+    encode_depth_capture_start_request,
     _pack_bool,
     _pack_bytes,
     _pack_float_array,
@@ -117,6 +119,24 @@ def _build_step_response(
     return encode_frame(MessageType.STEP_RESP, payload.getvalue())
 
 
+def _build_depth_capture_response(
+    message_type: MessageType = MessageType.DEPTH_CAPTURE_START_RESP,
+) -> bytes:
+    payload = io.BytesIO()
+    payload.write(_pack_bool(True))
+    payload.write(_pack_string(""))
+    payload.write(_pack_string_array([]))
+    return encode_frame(message_type, payload.getvalue())
+
+
+class _InMemorySocket:
+    def __init__(self, payload: bytes) -> None:
+        self._stream = io.BytesIO(payload)
+
+    def recv(self, n_bytes: int) -> bytes:
+        return self._stream.read(n_bytes)
+
+
 def _serve_scripted(
     script: list[tuple[MessageType, bytes | list[bytes] | tuple[bytes, ...]]]
 ) -> tuple[str, int, threading.Thread]:
@@ -176,6 +196,68 @@ class AgxProtocolTests(unittest.TestCase):
 
         thread.join(timeout=1.0)
         self.assertFalse(thread.is_alive())
+
+    def test_client_depth_capture_control_roundtrip(self) -> None:
+        host, port, thread = _serve_scripted(
+            [
+                (
+                    MessageType.DEPTH_CAPTURE_START_REQ,
+                    _build_depth_capture_response(MessageType.DEPTH_CAPTURE_START_RESP),
+                ),
+                (
+                    MessageType.DEPTH_CAPTURE_STOP_REQ,
+                    _build_depth_capture_response(MessageType.DEPTH_CAPTURE_STOP_RESP),
+                ),
+            ]
+        )
+
+        with AgxSimClient(host=host, port=port, timeout_s=1.0) as client:
+            started = client.start_depth_capture(
+                session_id="graph_smoke_001",
+                episode_index=2,
+                first_step_id=0,
+                capture_hz=1.0,
+                control_hz=50.0,
+                output_dir="DepthCameraSnapshots/graph_smoke_001",
+            )
+            self.assertTrue(started.success)
+
+            stopped = client.stop_depth_capture()
+            self.assertTrue(stopped.success)
+
+        thread.join(timeout=1.0)
+        self.assertFalse(thread.is_alive())
+
+    def test_depth_capture_start_request_payload_is_stable(self) -> None:
+        frame = encode_depth_capture_start_request(
+            session_id="graph_smoke_001",
+            episode_index=3,
+            first_step_id=7,
+            capture_hz=2.0,
+            control_hz=50.0,
+            output_dir="/tmp/depth",
+        )
+        sock_a, sock_b = socket.socketpair()
+        try:
+            sock_a.sendall(frame)
+            message_type, payload = read_frame(sock_b)
+        finally:
+            sock_a.close()
+            sock_b.close()
+
+        self.assertEqual(message_type, MessageType.DEPTH_CAPTURE_START_REQ)
+        reader = io.BytesIO(payload)
+        self.assertEqual(reader.read(4), (15).to_bytes(4, "little", signed=True))
+        self.assertEqual(reader.read(15), b"graph_smoke_001")
+
+    def test_depth_capture_control_response_decode(self) -> None:
+        message_type, payload = read_frame(
+            _InMemorySocket(_build_depth_capture_response())
+        )
+        self.assertEqual(message_type, MessageType.DEPTH_CAPTURE_START_RESP)
+        decoded = decode_depth_capture_control_response(payload)
+        self.assertTrue(decoded.success)
+        self.assertEqual(decoded.warnings, ())
 
     def test_client_roundtrip_skips_one_stale_response_frame(self) -> None:
         host, port, thread = _serve_scripted(
@@ -295,6 +377,32 @@ class AgxProtocolTests(unittest.TestCase):
             reset_terrain=True,
             reset_pose=True,
             scenario_id="s0_baseline",
+        )
+
+    def test_backend_depth_capture_delegates_to_client(self) -> None:
+        backend = AgxSimBackend(host="127.0.0.1", port=5057, timeout_s=1.0)
+        backend._info = SimpleNamespace(control_hz=50.0)
+
+        with patch.object(
+            backend._client,
+            "start_depth_capture",
+            return_value=SimpleNamespace(success=True, warnings=()),
+        ) as mock_start:
+            backend.start_depth_capture(
+                session_id="graph_smoke_001",
+                episode_index=1,
+                first_step_id=0,
+                capture_hz=2.0,
+                output_dir="/tmp/depth",
+            )
+
+        mock_start.assert_called_once_with(
+            session_id="graph_smoke_001",
+            episode_index=1,
+            first_step_id=0,
+            capture_hz=2.0,
+            control_hz=50.0,
+            output_dir="/tmp/depth",
         )
 
     def test_backend_get_info_retries_once_after_unexpected_response_type(self) -> None:

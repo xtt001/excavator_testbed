@@ -36,6 +36,8 @@ class ACTTrainer(Trainer):
     config         Training hyperparameters (see __init__).
     """
 
+    adapter_cls = ACTAdapter
+
     def __init__(self, policy_config: dict, config: dict):
         self.policy_config = policy_config
         self.config = config
@@ -78,7 +80,7 @@ class ACTTrainer(Trainer):
         with open(norm_stats_path, "rb") as f:
             norm_stats = pickle.load(f)
 
-        adapter   = ACTAdapter(self.policy_config, norm_stats, device=device)
+        adapter   = self.adapter_cls(self.policy_config, norm_stats, device=device)
         optimizer = adapter.configure_optimizers()
 
         min_val_loss  = float("inf")
@@ -215,7 +217,7 @@ class ACTTrainer(Trainer):
         """Load a checkpoint and return a ready-to-use ACTAdapter."""
         ckpt_dir = Path(ckpt_path).parent
         norm_stats_path = ckpt_dir / "dataset_stats.pkl"
-        return ACTAdapter.from_checkpoint(
+        return self.adapter_cls.from_checkpoint(
             ckpt_path=ckpt_path,
             policy_config=self.policy_config,
             norm_stats_path=norm_stats_path,

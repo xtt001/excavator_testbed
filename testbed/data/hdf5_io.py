@@ -22,6 +22,7 @@ from testbed.data.schema import (
     DS_ACTION_SRC_ID,
     DS_ACTION_SRC_TYPE,
     DS_ENV_STATE,
+    DS_OBS_GRAPH_GLOBALS,
     DS_QPOS,
     DS_QVEL,
     DS_REWARDS,
@@ -29,6 +30,7 @@ from testbed.data.schema import (
     DS_STEP_NS,
     GRP_METADATA,
     GRP_ACTION_SOURCE,
+    GRP_OBS_GRAPH,
     GRP_TIMESTAMPS,
     GRP_V2,
     GRP_V2_CYCLE,
@@ -55,6 +57,7 @@ def write_episode(
     step_ns: np.ndarray | None = None,            # (T,) int64
     action_src_types: list[str] | None = None,    # (T,) str
     action_src_ids: list[str] | None = None,      # (T,) str
+    observation_graph: dict[str, np.ndarray] | None = None,
     v2: dict[str, dict[str, np.ndarray]] | None = None,
 ) -> None:
     """
@@ -97,6 +100,9 @@ def write_episode(
                 img_grp.create_dataset(
                     cam, data=arr.astype(np.uint8), **kwargs
                 )
+
+        if observation_graph:
+            _write_observation_graph(obs_grp, observation_graph)
 
         # ── action ───────────────────────────────────────────────────────────
         f.create_dataset("action", data=actions.astype(np.float32))
@@ -165,6 +171,7 @@ def read_episode(path: str | Path, *, load_images: bool = True) -> dict[str, Any
       "images":           {cam: (T, H, W, 3) uint8}, or {} when load_images=False
       "rewards":          (T,) float32 | None,
       "env_state":        (T, M) float32 | None,    # v1.1
+      "observation_graph": dict | None,             # optional sensor-derived graph
       "step_ids":         (T,) int64 | None,        # v1.1
       "step_ns":          (T,) int64 | None,        # v1.1
       "action_src_types": list[str] | None,         # v1.1
@@ -197,6 +204,8 @@ def read_episode(path: str | Path, *, load_images: bool = True) -> dict[str, Any
             f[DS_ENV_STATE][()].astype(np.float32)
             if DS_ENV_STATE in f else None
         )
+
+        result["observation_graph"] = _read_observation_graph(f)
 
         # v1.1 — timestamps
         result["step_ids"] = f[DS_STEP_ID][()] if DS_STEP_ID in f else None
@@ -274,6 +283,41 @@ def _write_dataset_group(group: h5py.Group, payload: dict[str, np.ndarray]) -> N
                 ds[index] = str(item)
             continue
         group.create_dataset(str(key), data=arr)
+
+
+def _write_observation_graph(
+    observations_group: h5py.Group,
+    payload: dict[str, np.ndarray],
+) -> None:
+    graph_group = observations_group.create_group("graph")
+    for key, value in payload.items():
+        arr = np.asarray(value)
+        if arr.dtype.kind == "f":
+            arr = arr.astype(np.float32)
+        elif key in {"node_mask", "edge_mask"}:
+            arr = arr.astype(np.uint8)
+        elif key == "edge_indices":
+            arr = arr.astype(np.int64)
+        graph_group.create_dataset(str(key), data=arr)
+
+
+def _read_observation_graph(h5_file: h5py.File) -> dict[str, Any] | None:
+    if GRP_OBS_GRAPH not in h5_file:
+        return None
+    graph_group = h5_file[GRP_OBS_GRAPH]
+    result: dict[str, Any] = {}
+    for dataset_name in graph_group:
+        value = graph_group[dataset_name][()]
+        if dataset_name == "edge_indices":
+            value = value.astype(np.int64)
+        elif dataset_name in {"node_mask", "edge_mask"}:
+            value = value.astype(np.uint8)
+        elif dataset_name == "graph_globals" or dataset_name.endswith("_features"):
+            value = value.astype(np.float32)
+        result[dataset_name] = value
+    if "graph_globals" not in result and DS_OBS_GRAPH_GLOBALS in h5_file:
+        result["graph_globals"] = h5_file[DS_OBS_GRAPH_GLOBALS][()].astype(np.float32)
+    return result or None
 
 
 def _read_v2_group(h5_file: h5py.File) -> dict[str, dict[str, Any]] | None:

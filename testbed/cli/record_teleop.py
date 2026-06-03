@@ -93,6 +93,11 @@ from testbed.data.v2_1 import (
     build_v2_1_metadata_attrs,
 )
 from testbed.planner.boundary_detector import build_boundary_detector_from_config
+from testbed.cli.graph_session_paths import (
+    default_depth_snapshot_root_base,
+    depth_snapshot_dir_for_session,
+    teleop_dir_for_session,
+)
 
 log = logging.getLogger(__name__)
 
@@ -177,6 +182,18 @@ def main() -> None:
                         help="Optional session ID saved into episode metadata.")
     parser.add_argument("--notes", type=str, default=None,
                         help="Optional notes saved into episode metadata.")
+    parser.add_argument("--graph-session", type=str, default=None,
+                        help="Convenience session id for graph smoke collection. Derives teleop/depth output paths and enables depth capture.")
+    parser.add_argument("--depth-capture", action="store_true",
+                        help="Ask Unity to start/stop depth sequence capture around each episode.")
+    parser.add_argument("--depth-capture-hz", type=float, default=1.0,
+                        help="Unity depth sequence capture frequency in Hz.")
+    parser.add_argument("--depth-capture-root", type=Path, default=None,
+                        help="Base Unity depth JSON root. With --graph-session, output dir becomes <root>/<session>.")
+    parser.add_argument("--depth-capture-output-dir", type=str, default=None,
+                        help="Unity-side depth JSON output directory. Omit to derive from --graph-session or keep Unity Inspector setting.")
+    parser.add_argument("--depth-capture-session-id", type=str, default=None,
+                        help="Optional Unity depth capture session id. Defaults to --session-id or metadata session_id.")
     args = parser.parse_args()
 
     # ── Load config ───────────────────────────────────────────────────────────
@@ -186,6 +203,14 @@ def main() -> None:
     teleop_cfg = cfg.setdefault("teleop", {})
     task_cfg = cfg.setdefault("task", {})
     teleop_meta_cfg = teleop_cfg.setdefault("metadata", {})
+    depth_capture_cfg = cfg.setdefault("depth_capture", {})
+    graph_session = str(args.graph_session).strip() if args.graph_session else ""
+    if graph_session:
+        args.depth_capture = True
+        if args.session_id is None:
+            args.session_id = graph_session
+        if args.output_dir is None:
+            args.output_dir = teleop_dir_for_session(graph_session)
     if args.num_episodes is not None:
         teleop_cfg["num_episodes"] = int(args.num_episodes)
     if args.output_dir is not None:
@@ -220,6 +245,30 @@ def main() -> None:
     recording_mode = str(task_cfg.get("recording_mode", "")).strip()
     target_dump_count = int(teleop_cfg.get("target_dump_count", 3))
     manual_save_key = str(teleop_cfg.get("manual_save_key", "s")).strip()
+    depth_capture_enabled = bool(args.depth_capture or depth_capture_cfg.get("enabled", False))
+    depth_capture_hz = float(args.depth_capture_hz)
+    configured_depth_root = (
+        args.depth_capture_root
+        if args.depth_capture_root is not None
+        else depth_capture_cfg.get("snapshot_root")
+    )
+    depth_capture_output_dir = str(args.depth_capture_output_dir or "")
+    depth_capture_session_id = (
+        args.depth_capture_session_id
+        if args.depth_capture_session_id is not None
+        else str(teleop_meta_cfg.get("session_id", ""))
+    )
+    if depth_capture_enabled and not depth_capture_session_id:
+        depth_capture_session_id = f"teleop_{int(time.time())}"
+    if depth_capture_enabled and not depth_capture_output_dir and graph_session:
+        depth_capture_output_dir = str(
+            depth_snapshot_dir_for_session(
+                graph_session,
+                root=default_depth_snapshot_root_base(
+                    configured_root=configured_depth_root
+                ),
+            )
+        )
 
     if stop_mode not in (
         STOP_MODE_TASK_SUCCESS_TAIL,
@@ -315,6 +364,8 @@ def main() -> None:
     dataset_dir.mkdir(parents=True, exist_ok=True)
     episode_idx = _next_episode_idx(dataset_dir)
     saved = 0
+    depth_capture_active = False
+    depth_capture_episode_idx = -1
 
     try:
         while saved < num_episodes and not _abort:
@@ -334,6 +385,27 @@ def main() -> None:
 
             ts = backend.reset(seed=ep_seed)
             action_source.reset()
+            if depth_capture_enabled:
+                backend.start_depth_capture(
+                    session_id=depth_capture_session_id,
+                    episode_index=episode_idx,
+                    first_step_id=0,
+                    capture_hz=depth_capture_hz,
+                    control_hz=float(task_cfg.get("control_hz", info.control_hz)),
+                    output_dir=depth_capture_output_dir,
+                )
+                depth_capture_active = True
+                depth_capture_episode_idx = episode_idx
+                log.info(
+                    (
+                        "Unity depth capture started: session_id=%s "
+                        "episode_index=%d capture_hz=%.3f output_dir=%s"
+                    ),
+                    depth_capture_session_id,
+                    episode_idx,
+                    depth_capture_hz,
+                    depth_capture_output_dir or "<unity-default>",
+                )
 
             discard = False
             reset_requested = False
@@ -523,6 +595,18 @@ def main() -> None:
                     )
             if stop_reason:
                 recorder.metadata[ATTR_STOP_REASON] = str(stop_reason)
+            if depth_capture_enabled:
+                recorder.metadata["depth_capture_enabled"] = True
+                recorder.metadata["depth_capture_session_id"] = str(depth_capture_session_id)
+                recorder.metadata["depth_capture_hz"] = float(depth_capture_hz)
+                recorder.metadata["depth_capture_output_dir"] = str(depth_capture_output_dir)
+
+            if depth_capture_active:
+                try:
+                    backend.stop_depth_capture()
+                    log.info("Unity depth capture stopped for episode_%06d.", episode_idx)
+                finally:
+                    depth_capture_active = False
 
             if not discard and len(recorder) > 0:
                 save_success = (
@@ -540,6 +624,15 @@ def main() -> None:
                 # don't advance episode_idx
 
     finally:
+        if depth_capture_active:
+            try:
+                backend.stop_depth_capture()
+                log.info(
+                    "Unity depth capture stopped during shutdown for episode_%06d.",
+                    depth_capture_episode_idx,
+                )
+            except Exception as exc:
+                log.warning("Failed to stop Unity depth capture during shutdown: %s", exc)
         backend.close()
         action_source.close()
 

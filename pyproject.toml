@@ -57,6 +57,10 @@ tb-build-primitives-v2_2 = "testbed.cli.build_primitives_v2_2:main"
 tb-build-primitives-v2_2_5p = "testbed.cli.build_primitives_v2_2_5p:main"
 tb-audit-target-geometry = "testbed.cli.audit_target_geometry:main"
 tb-lidar-heightmap = "testbed.cli.lidar_heightmap:main"
+tb-depth-graph = "testbed.cli.depth_graph:main"
+tb-depth-graph-preview = "testbed.cli.depth_graph_preview:main"
+tb-build-graph-dataset = "testbed.cli.build_graph_dataset:main"
+tb-build-graph-snapshot-map = "testbed.cli.build_graph_snapshot_map:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

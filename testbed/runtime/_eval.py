@@ -102,6 +102,13 @@ def eval_policy(config: dict[str, Any]) -> None:
     record_hdf5_with_cell_entry = bool(
         eval_cfg.get("record_hdf5_with_cell_entry", True)
     )
+    graph_observation_config = dict(
+        eval_cfg.get(
+            "graph_observation",
+            policy_cfg.get("graph_observation", {}),
+        )
+        or {}
+    )
     step_log_interval = int(eval_cfg.get("step_log_interval", 50))
     agx_host        = str(agx_cfg.get("host", "127.0.0.1"))
     agx_port        = int(agx_cfg.get("port", 5057))
@@ -144,6 +151,22 @@ def eval_policy(config: dict[str, Any]) -> None:
             temporal_agg=temporal_agg,
             device=device,
             act_params=policy_cfg.get("act_params", {}),
+            image_mask_config=policy_cfg.get("image_mask", {}),
+        )
+
+    elif policy_class in {"ACT_GRAPH", "ACTGRAPH", "GRAPH_ACT"}:
+        policy = _build_act_graph_eval_policy(
+            config=config,
+            ckpt_path=ckpt_path,
+            ckpt_dir=ckpt_dir,
+            camera_names=camera_names,
+            equipment_model=equipment_model,
+            max_episode_len=max_episode_len,
+            low_dim_keys=low_dim_keys,
+            temporal_agg=temporal_agg,
+            device=device,
+            act_params=policy_cfg.get("act_params", {}),
+            graph_params=policy_cfg.get("graph_params", {}),
             image_mask_config=policy_cfg.get("image_mask", {}),
         )
 
@@ -933,6 +956,7 @@ def eval_policy(config: dict[str, Any]) -> None:
         record_hdf5_dir = record_hdf5_dir,
         record_hdf5_metadata = record_hdf5_metadata,
         record_hdf5_with_cell_entry = record_hdf5_with_cell_entry,
+        graph_observation_config = graph_observation_config,
         step_log_interval = step_log_interval,
         agx_host     = agx_host,
         agx_port     = agx_port,
@@ -1086,6 +1110,59 @@ def _build_act_eval_policy(
     from testbed.policies.act.adapter import ACTAdapter
 
     return ACTAdapter.from_checkpoint(
+        ckpt_path=ckpt_path,
+        policy_config=policy_config,
+        norm_stats_path=ckpt_dir / "dataset_stats.pkl",
+        temporal_agg=temporal_agg,
+        device=device,
+    )
+
+
+def _build_act_graph_eval_policy(
+    *,
+    config: dict[str, Any],
+    ckpt_path: Path,
+    ckpt_dir: Path,
+    camera_names: list[str],
+    equipment_model: str,
+    max_episode_len: int,
+    low_dim_keys: list[str],
+    temporal_agg: bool,
+    device: str,
+    act_params: dict[str, Any] | None = None,
+    graph_params: dict[str, Any] | None = None,
+    image_mask_config: dict[str, Any] | None = None,
+):
+    act_params = dict(act_params or {})
+    graph_params = dict(graph_params or {})
+    graph_embedding_dim = int(
+        graph_params.get("embedding_dim", graph_params.get("output_dim", 64))
+    )
+    policy_config = {
+        "lr": float(config.get("train", {}).get("lr", 1e-5)),
+        "num_queries": int(act_params.get("chunk_size", 100)),
+        "kl_weight": float(act_params.get("kl_weight", 10)),
+        "hidden_dim": int(act_params.get("hidden_dim", 512)),
+        "dim_feedforward": int(act_params.get("dim_feedforward", 3200)),
+        "lr_backbone": 1e-5,
+        "backbone": "resnet18",
+        "enc_layers": 4,
+        "dec_layers": 7,
+        "nheads": 8,
+        "camera_names": camera_names,
+        "equipment_model": equipment_model,
+        "max_episode_len": max_episode_len,
+        "low_dim_keys": list(low_dim_keys),
+        "state_dim": int(
+            _resolve_low_dim_state_dim(low_dim_keys, equipment_model)
+            + graph_embedding_dim
+        ),
+        "image_mask": dict(image_mask_config or {}),
+        "graph_params": graph_params,
+    }
+    from testbed.policies.act_graph.adapter import ACTGraphAdapter
+
+    return ACTGraphAdapter.from_checkpoint(
         ckpt_path=ckpt_path,
         policy_config=policy_config,
         norm_stats_path=ckpt_dir / "dataset_stats.pkl",

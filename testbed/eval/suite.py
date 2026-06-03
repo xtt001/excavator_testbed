@@ -127,6 +127,7 @@ class EvalSuite:
         record_hdf5_dir: str | Path | None = None,
         record_hdf5_metadata: dict[str, object] | None = None,
         record_hdf5_with_cell_entry: bool = True,
+        graph_observation_config: dict[str, object] | None = None,
         step_log_interval: int = 50,
         agx_host: str = "127.0.0.1",
         agx_port: int = 5057,
@@ -163,6 +164,7 @@ class EvalSuite:
         self.record_hdf5_dir = None if record_hdf5_dir is None else Path(record_hdf5_dir)
         self.record_hdf5_metadata = dict(record_hdf5_metadata or {})
         self.record_hdf5_with_cell_entry = bool(record_hdf5_with_cell_entry)
+        self.graph_observation_config = dict(graph_observation_config or {})
         self.step_log_interval = max(0, int(step_log_interval))
         self.agx_host     = agx_host
         self.agx_port     = agx_port
@@ -257,6 +259,8 @@ class EvalSuite:
         hdf5_paths: list[str] = []
         if self.record_hdf5 and self.record_hdf5_dir is not None:
             self.record_hdf5_dir.mkdir(parents=True, exist_ok=True)
+        graph_provider = self._build_graph_provider()
+        depth_capture_active_env = None
 
         try:
             for rollout_id in range(self.num_rollouts):
@@ -268,6 +272,15 @@ class EvalSuite:
 
                 ts = env.reset(seed=EVAL_SEED + rollout_id)
                 self.policy.reset()
+                depth_capture_started = False
+                if graph_provider is not None:
+                    graph_provider.reset(start_time_ns=time.time_ns())
+                    depth_capture_started = self._start_graph_depth_capture(
+                        env=env,
+                        rollout_id=rollout_id,
+                    )
+                    if depth_capture_started:
+                        depth_capture_active_env = env
                 rollout_recorder = None
                 if self.record_hdf5:
                     from testbed.data.recorder import EpisodeRecorder
@@ -329,6 +342,10 @@ class EvalSuite:
                         )
                         if goal_tokens is not None:
                             policy_input["goal_tokens"] = goal_tokens
+                    if graph_provider is not None:
+                        policy_input["observation_graph"] = graph_provider.get_graph(
+                            require_first=(t == 0)
+                        )
 
                     action = self.policy.predict(policy_input)
                     policy_debug = (
@@ -540,6 +557,9 @@ class EvalSuite:
                             "primitive_goal_next_sector_id": int(
                                 policy_debug.get("primitive_goal_next_sector_id", -1)
                             ),
+                            "graph_observation_present": bool(
+                                policy_input.get("observation_graph") is not None
+                            ),
                             "dump_ready_hold_count": int(
                                 policy_debug.get("dump_ready_hold_count", 0)
                             ),
@@ -600,6 +620,9 @@ class EvalSuite:
                         break
 
                 # ── Success detection ─────────────────────────────────────────
+                if depth_capture_started:
+                    self._stop_graph_depth_capture(env)
+                    depth_capture_active_env = None
                 if task.backend_type == "agx":
                     success_summary = self._evaluate_agx_success(
                         env=env,
@@ -760,6 +783,8 @@ class EvalSuite:
                     planner_summaries.append(hybrid_summary)
                     quality_summaries.append(build_quality_summary(step_records))
         finally:
+            if depth_capture_active_env is not None:
+                self._stop_graph_depth_capture(depth_capture_active_env)
             if hasattr(env, "close"):
                 env.close()
 
@@ -839,6 +864,51 @@ class EvalSuite:
         )
         print("\n" + metrics.summary())
         return metrics
+
+    def _build_graph_provider(self):
+        cfg = dict(self.graph_observation_config or {})
+        if not bool(cfg.get("enabled", False)):
+            return None
+        provider_type = str(cfg.get("type", "latest_snapshot")).strip().lower()
+        if provider_type not in {"latest_snapshot", "latest_depth_snapshot"}:
+            raise ValueError(
+                "eval.graph_observation.type must be 'latest_snapshot' "
+                f"or 'latest_depth_snapshot', got {provider_type!r}."
+            )
+        from testbed.perception.live_graph_provider import (
+            build_latest_snapshot_graph_provider,
+        )
+
+        return build_latest_snapshot_graph_provider(cfg)
+
+    def _start_graph_depth_capture(self, *, env, rollout_id: int) -> bool:
+        cfg = dict(self.graph_observation_config or {})
+        if not bool(cfg.get("start_depth_capture", True)):
+            return False
+        if not hasattr(env, "start_depth_capture"):
+            raise RuntimeError(
+                "eval.graph_observation.start_depth_capture requires an environment "
+                "with start_depth_capture()."
+            )
+        snapshot_dir = cfg.get("snapshot_dir") or cfg.get("snapshot_root") or ""
+        session_id = str(cfg.get("session_id", "act_graph_eval"))
+        env.start_depth_capture(
+            session_id=session_id,
+            episode_index=int(rollout_id),
+            first_step_id=int(cfg.get("first_step_id", 0)),
+            capture_hz=float(cfg.get("capture_hz", cfg.get("depth_capture_hz", 1.0))),
+            control_hz=(
+                None
+                if cfg.get("control_hz") is None
+                else float(cfg.get("control_hz"))
+            ),
+            output_dir=str(snapshot_dir),
+        )
+        return True
+
+    def _stop_graph_depth_capture(self, env) -> None:
+        if hasattr(env, "stop_depth_capture"):
+            env.stop_depth_capture()
 
     def _build_rollout_hdf5_metadata(
         self,
