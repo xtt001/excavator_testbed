@@ -7,14 +7,10 @@ from typing import Any
 
 import numpy as np
 
-from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
-from testbed.data.operator_first_v2_2 import (
-    DIG_CUT_TOKEN_DIM,
-    RETURN_START_ENVELOPE_TOKEN_DIM,
-    RETURN_TARGET_TOKEN_DIM,
+from testbed.contracts.low_dim import (
+    low_dim_key_dim,
+    resolve_low_dim_state_dim,
 )
-from testbed.data.v2_1 import GOAL_TOKEN_DIM
-from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 
 
 def eval_policy(config: dict[str, Any]) -> None:
@@ -637,6 +633,11 @@ def eval_policy(config: dict[str, Any]) -> None:
             primitive_low_dim_keys=primitive_low_dim_keys,
             first_dig_policy_enabled=first_dig_policy is not None,
         )
+        _validate_return_start_envelope_eval_low_dim(
+            policy_cfg=policy_cfg,
+            switch_cfg=switch_cfg,
+            primitive_low_dim_keys=primitive_low_dim_keys,
+        )
         return_target_planner_cfg = dict(policy_cfg.get("return_target_planner", {}))
         pre_dig_align_cfg = dict(policy_cfg.get("pre_dig_align", {}))
         boundary_detector = build_boundary_detector_from_config(
@@ -1147,30 +1148,7 @@ def eval_policy(config: dict[str, Any]) -> None:
 
 
 def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) -> int:
-    dims = {
-        "qpos": _resolve_single_low_dim_dim("qpos", equipment_model),
-        "qvel": _resolve_single_low_dim_dim("qvel", equipment_model),
-        "goal_tokens": _resolve_single_low_dim_dim("goal_tokens", equipment_model),
-        "cell_entry_tokens": _resolve_single_low_dim_dim(
-            "cell_entry_tokens", equipment_model
-        ),
-        "dig_cut_tokens": _resolve_single_low_dim_dim(
-            "dig_cut_tokens", equipment_model
-        ),
-        "dig_depth_profile_tokens_v1": _resolve_single_low_dim_dim(
-            "dig_depth_profile_tokens_v1", equipment_model
-        ),
-        "return_target_tokens": _resolve_single_low_dim_dim(
-            "return_target_tokens", equipment_model
-        ),
-        "return_relocate_tokens_v1": _resolve_single_low_dim_dim(
-            "return_relocate_tokens_v1", equipment_model
-        ),
-        "return_start_envelope_tokens_v1": _resolve_single_low_dim_dim(
-            "return_start_envelope_tokens_v1", equipment_model
-        ),
-    }
-    return int(sum(dims[key] for key in low_dim_keys))
+    return resolve_low_dim_state_dim(low_dim_keys, equipment_model)
 
 
 def _validate_dig_depth_profile_eval_low_dim(
@@ -1206,38 +1184,39 @@ def _validate_dig_depth_profile_eval_low_dim(
             )
 
 
+def _validate_return_start_envelope_eval_low_dim(
+    *,
+    policy_cfg: dict[str, Any],
+    switch_cfg: dict[str, Any],
+    primitive_low_dim_keys: list[str],
+) -> None:
+    gate_enabled = bool(
+        switch_cfg.get("return_to_dig_start_envelope_gate_enabled", False)
+    )
+    direct_handoff_enabled = bool(
+        switch_cfg.get("return_to_dig_start_envelope_direct_handoff_enabled", False)
+    )
+    if not (gate_enabled or direct_handoff_enabled):
+        return
+    required_key = "return_start_envelope_tokens_v1"
+    return_low_dim_keys = list(
+        policy_cfg.get("return_low_dim_keys", primitive_low_dim_keys)
+    )
+    if required_key not in return_low_dim_keys:
+        raise ValueError(
+            "return_to_dig_start_envelope gate is enabled, but "
+            f"policy.return_low_dim_keys does not include {required_key!r}. "
+            "Without this key the return ACT checkpoint would silently ignore "
+            "the start-envelope token used by the handoff gate."
+        )
+
+
 def _optional_float(value: Any | None) -> float | None:
     return None if value is None else float(value)
 
 
 def _resolve_single_low_dim_dim(key: str, equipment_model: str) -> int:
-    equipment_model = str(equipment_model).lower()
-    if key == "goal_tokens":
-        return int(GOAL_TOKEN_DIM)
-    if key == "cell_entry_tokens":
-        return int(CELL_ENTRY_TOKEN_DIM)
-    if key == "dig_cut_tokens":
-        return int(DIG_CUT_TOKEN_DIM)
-    if key == "dig_depth_profile_tokens_v1":
-        return int(DIG_DEPTH_PROFILE_TOKEN_DIM)
-    if key == "return_target_tokens":
-        return int(RETURN_TARGET_TOKEN_DIM)
-    if key == "return_relocate_tokens_v1":
-        return int(RETURN_TARGET_TOKEN_DIM)
-    if key == "return_start_envelope_tokens_v1":
-        return int(RETURN_START_ENVELOPE_TOKEN_DIM)
-    if key in ("qpos", "qvel"):
-        if "bimanual" in equipment_model:
-            return 14
-        if (
-            "excavator_simple" in equipment_model
-            or "agxunity" in equipment_model
-            or "agx" in equipment_model
-            or "yulong" in equipment_model
-        ):
-            return 4
-        return 7
-    raise ValueError(f"Unsupported low-dim key {key!r}.")
+    return low_dim_key_dim(key, equipment_model)
 
 
 def _resolve_checkpoint_paths(

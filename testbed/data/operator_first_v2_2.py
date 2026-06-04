@@ -16,6 +16,14 @@ from typing import Any
 
 import numpy as np
 
+from testbed.contracts.primitive_tokens import (
+    DIG_CUT_TOKEN_DIM,
+    DIG_CUT_TOKEN_KEY,
+    RETURN_START_ENVELOPE_TOKEN_DIM,
+    RETURN_TARGET_TOKEN_KEY,
+    RETURN_TARGET_TOKEN_DIM,
+    token_contract_string,
+)
 from testbed.data.hdf5_io import list_episodes, read_episode, write_episode
 from testbed.data.schema import (
     ATTR_GOAL_TOKEN_DIM,
@@ -43,9 +51,6 @@ from testbed.data.vds import (
 from testbed.data.v2_1 import WORK_STAGE_NAME_TO_ID
 
 
-DIG_CUT_TOKEN_DIM = 10
-RETURN_TARGET_TOKEN_DIM = DIG_CUT_TOKEN_DIM
-RETURN_START_ENVELOPE_TOKEN_DIM = 18
 OPERATOR_FIRST_VERSION = "v2_4_operator_first_removed_depth_cut_v3"
 DIG_CUT_TOKEN_CONTRACT = "v2_4_removed_depth_cut_v3"
 
@@ -112,12 +117,11 @@ def build_operator_first_dataset(
                 "dig_cut_token_dim": int(DIG_CUT_TOKEN_DIM),
                 "return_target_token_dim": int(RETURN_TARGET_TOKEN_DIM),
                 "dig_cut_token_contract": (
-                    "entry_x,entry_z,exit_x,exit_z,dir_x,dir_z,"
-                    "length,cut_depth_semantic,payload,valid; normalized"
+                    f"{token_contract_string(DIG_CUT_TOKEN_KEY)}; normalized"
                 ),
                 "return_target_token_contract": (
-                    "next entry_x,entry_z,exit_x,exit_z,dir_x,dir_z,"
-                    "length,cut_depth_semantic,payload,valid; normalized"
+                    f"{token_contract_string(RETURN_TARGET_TOKEN_KEY, prefix='next')}; "
+                    "normalized"
                 ),
                 "dig_cut_token_contract_version": DIG_CUT_TOKEN_CONTRACT,
                 "dig_cut_depth_scale_m": float(DIG_CUT_DEPTH_SCALE_M),

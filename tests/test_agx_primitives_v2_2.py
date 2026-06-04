@@ -8,6 +8,14 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from testbed.contracts.primitive_tokens import (
+    RETURN_ENVELOPE_QPOS_CENTER_SLICE,
+    RETURN_ENVELOPE_QPOS_HALF_WIDTH_SLICE,
+    RETURN_ENVELOPE_QPOS_VALID_IDX,
+    RETURN_ENVELOPE_QVEL_ABS_MAX_IDX,
+    RETURN_ENVELOPE_SPATIAL_DEPTH_VALID_IDX,
+    RETURN_START_ENVELOPE_TOKEN_DIM,
+)
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_DEPTH_SCALE_M,
     _build_dig_cut_token,
@@ -573,7 +581,7 @@ class TestPrimitivesV22(unittest.TestCase):
             return_episode = read_episode(output_root / "return" / "episode_0.hdf5")
             envelope = return_episode["v2"]["step"]["return_start_envelope_tokens_v1"]
             valid_mask = return_episode["v2"]["step"]["return_start_envelope_valid_mask"]
-            self.assertEqual(envelope.shape[-1], 18)
+            self.assertEqual(envelope.shape[-1], RETURN_START_ENVELOPE_TOKEN_DIM)
             self.assertEqual(valid_mask.shape, envelope.shape)
             self.assertTrue(np.all(valid_mask == 1))
             self.assertAlmostEqual(float(envelope[0, 0]), 0.35, places=4)
@@ -795,9 +803,24 @@ class TestPrimitivesV22(unittest.TestCase):
             return_episode = read_episode(output_root / "return" / "episode_0.hdf5")
             envelope = return_episode["v2"]["step"]["return_start_envelope_tokens_v1"]
             valid_mask = return_episode["v2"]["step"]["return_start_envelope_valid_mask"]
-            self.assertEqual(float(envelope[0, 16]), 1.0)
+            self.assertEqual(float(envelope[0, RETURN_ENVELOPE_QPOS_VALID_IDX]), 1.0)
+            self.assertEqual(
+                float(envelope[0, RETURN_ENVELOPE_SPATIAL_DEPTH_VALID_IDX]),
+                1.0,
+            )
             self.assertEqual(int(valid_mask[0, 0]), 1)
-            self.assertTrue(np.all(valid_mask[0, 7:18] == 1))
+            self.assertTrue(
+                np.all(valid_mask[0, RETURN_ENVELOPE_QPOS_CENTER_SLICE] == 1)
+            )
+            self.assertTrue(
+                np.all(valid_mask[0, RETURN_ENVELOPE_QPOS_HALF_WIDTH_SLICE] == 1)
+            )
+            self.assertEqual(int(valid_mask[0, RETURN_ENVELOPE_QVEL_ABS_MAX_IDX]), 1)
+            self.assertEqual(int(valid_mask[0, RETURN_ENVELOPE_QPOS_VALID_IDX]), 1)
+            self.assertEqual(
+                int(valid_mask[0, RETURN_ENVELOPE_SPATIAL_DEPTH_VALID_IDX]),
+                1,
+            )
 
     def test_spatial_mass_return_ends_at_entry_ready_before_delayed_material_start(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

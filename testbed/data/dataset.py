@@ -17,6 +17,27 @@ import torch
 import yaml
 from torch.utils.data import DataLoader, Dataset
 
+from testbed.contracts.low_dim import (
+    SUPPORTED_LOW_DIM_KEYS,
+    assemble_low_dim_observation,
+    normalize_low_dim_keys,
+)
+from testbed.contracts.primitive_tokens import (
+    CUT_DEPTH_SEMANTIC_IDX,
+    CUT_PAYLOAD_IDX,
+    CUT_RELOCATION_SLICE,
+    CUT_VALID_IDX,
+    DIG_CUT_TOKEN_DIM,
+    DIG_CUT_TOKEN_KEY,
+    DIG_DEPTH_PROFILE_TOKEN_DIM,
+    DIG_DEPTH_PROFILE_TOKEN_KEY,
+    RETURN_START_ENVELOPE_TOKEN_DIM,
+    RETURN_START_ENVELOPE_TOKEN_KEY,
+    RETURN_TARGET_TOKEN_DIM,
+    RETURN_TARGET_TOKEN_KEY,
+    derive_return_relocate_token,
+    primitive_token_dataset_path,
+)
 from testbed.data.hdf5_io import list_episodes
 from testbed.data.image_masks import (
     apply_image_mask,
@@ -26,38 +47,18 @@ from testbed.data.image_masks import (
 from testbed.data.schema import (
     DS_V2_STEP_ACTION_LOSS_MASK,
     DS_V2_STEP_CELL_ENTRY_TOKENS,
-    DS_V2_STEP_DIG_CUT_TOKENS,
-    DS_V2_STEP_DIG_DEPTH_PROFILE_TOKENS_V1,
     DS_V2_STEP_DIG_GOAL_VALID_MASK,
     DS_V2_STEP_DIG_OUTCOME_TARGETS,
     DS_V2_STEP_GOAL_TOKENS,
     DS_V2_STEP_RETURN_GOAL_VALID_MASK,
-    DS_V2_STEP_RETURN_START_ENVELOPE_TOKENS_V1,
     DS_V2_STEP_RETURN_OUTCOME_TARGETS,
-    DS_V2_STEP_RETURN_TARGET_TOKENS,
 )
-from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.operator_first_v2_2 import (
-    DIG_CUT_TOKEN_DIM,
     DIG_CUT_LENGTH_SCALE_M,
     DIG_CUT_POSITION_SCALE_M,
-    RETURN_START_ENVELOPE_TOKEN_DIM,
-    RETURN_TARGET_TOKEN_DIM,
 )
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
-
-SUPPORTED_LOW_DIM_KEYS = (
-    "qpos",
-    "qvel",
-    "goal_tokens",
-    "cell_entry_tokens",
-    "dig_cut_tokens",
-    "dig_depth_profile_tokens_v1",
-    "return_target_tokens",
-    "return_relocate_tokens_v1",
-    "return_start_envelope_tokens_v1",
-)
 
 SUPPORTED_SUPERVISION_KEYS = (
     "dig_outcome_targets",
@@ -81,14 +82,7 @@ _SUPERVISION_MASK_PATHS = {
 def _normalize_low_dim_keys(
     low_dim_keys: list[str] | tuple[str, ...] | None,
 ) -> list[str]:
-    keys = ["qpos"] if not low_dim_keys else [str(key) for key in low_dim_keys]
-    invalid = [key for key in keys if key not in SUPPORTED_LOW_DIM_KEYS]
-    if invalid:
-        raise ValueError(
-            f"Unsupported low_dim_keys {invalid}. "
-            f"Supported keys: {SUPPORTED_LOW_DIM_KEYS}."
-        )
-    return keys
+    return normalize_low_dim_keys(low_dim_keys)
 
 
 def _normalize_supervision_keys(
@@ -122,128 +116,20 @@ def _assemble_low_dim_observation(
     return_start_envelope_tokens_v1: np.ndarray | None = None,
     low_dim_keys: list[str],
 ) -> np.ndarray:
-    qpos_arr = np.asarray(qpos, dtype=np.float32)
-    qvel_arr = np.asarray(qvel, dtype=np.float32)
-    goal_tokens_arr = (
-        None if goal_tokens is None else np.asarray(goal_tokens, dtype=np.float32)
+    return assemble_low_dim_observation(
+        {
+            "qpos": qpos,
+            "qvel": qvel,
+            "goal_tokens": goal_tokens,
+            "cell_entry_tokens": cell_entry_tokens,
+            "dig_cut_tokens": dig_cut_tokens,
+            "dig_depth_profile_tokens_v1": dig_depth_profile_tokens_v1,
+            "return_target_tokens": return_target_tokens,
+            "return_relocate_tokens_v1": return_relocate_tokens_v1,
+            "return_start_envelope_tokens_v1": return_start_envelope_tokens_v1,
+        },
+        low_dim_keys,
     )
-    cell_entry_tokens_arr = (
-        None
-        if cell_entry_tokens is None
-        else np.asarray(cell_entry_tokens, dtype=np.float32)
-    )
-    dig_cut_tokens_arr = (
-        None if dig_cut_tokens is None else np.asarray(dig_cut_tokens, dtype=np.float32)
-    )
-    dig_depth_profile_tokens_arr = (
-        None
-        if dig_depth_profile_tokens_v1 is None
-        else np.asarray(dig_depth_profile_tokens_v1, dtype=np.float32)
-    )
-    return_target_tokens_arr = (
-        None
-        if return_target_tokens is None
-        else np.asarray(return_target_tokens, dtype=np.float32)
-    )
-    return_relocate_tokens_arr = (
-        None
-        if return_relocate_tokens_v1 is None
-        else np.asarray(return_relocate_tokens_v1, dtype=np.float32)
-    )
-    return_start_envelope_tokens_arr = (
-        None
-        if return_start_envelope_tokens_v1 is None
-        else np.asarray(return_start_envelope_tokens_v1, dtype=np.float32)
-    )
-    sequence_mode = (
-        qpos_arr.ndim > 1
-        or qvel_arr.ndim > 1
-        or (goal_tokens_arr is not None and goal_tokens_arr.ndim > 1)
-        or (cell_entry_tokens_arr is not None and cell_entry_tokens_arr.ndim > 1)
-        or (dig_cut_tokens_arr is not None and dig_cut_tokens_arr.ndim > 1)
-        or (
-            dig_depth_profile_tokens_arr is not None
-            and dig_depth_profile_tokens_arr.ndim > 1
-        )
-        or (
-            return_target_tokens_arr is not None
-            and return_target_tokens_arr.ndim > 1
-        )
-        or (
-            return_relocate_tokens_arr is not None
-            and return_relocate_tokens_arr.ndim > 1
-        )
-        or (
-            return_start_envelope_tokens_arr is not None
-            and return_start_envelope_tokens_arr.ndim > 1
-        )
-    )
-    parts: list[np.ndarray] = []
-    for key in low_dim_keys:
-        if key == "qpos":
-            part = qpos_arr
-        elif key == "qvel":
-            part = qvel_arr
-        elif key == "goal_tokens":
-            if goal_tokens_arr is None:
-                raise KeyError(
-                    "Requested low_dim key 'goal_tokens' but /v2/step/goal_tokens is missing."
-                )
-            part = goal_tokens_arr
-        elif key == "cell_entry_tokens":
-            if cell_entry_tokens_arr is None:
-                raise KeyError(
-                    "Requested low_dim key 'cell_entry_tokens' but "
-                    "/v2/step/cell_entry_tokens is missing."
-                )
-            part = cell_entry_tokens_arr
-        elif key == "dig_cut_tokens":
-            if dig_cut_tokens_arr is None:
-                raise KeyError(
-                    "Requested low_dim key 'dig_cut_tokens' but "
-                    "/v2/step/dig_cut_tokens is missing."
-                )
-            part = dig_cut_tokens_arr
-        elif key == "dig_depth_profile_tokens_v1":
-            if dig_depth_profile_tokens_arr is None:
-                raise KeyError(
-                    "Requested low_dim key 'dig_depth_profile_tokens_v1' but "
-                    "/v2/step/dig_depth_profile_tokens_v1 is missing."
-                )
-            part = dig_depth_profile_tokens_arr
-        elif key == "return_target_tokens":
-            if return_target_tokens_arr is None:
-                raise KeyError(
-                    "Requested low_dim key 'return_target_tokens' but "
-                    "/v2/step/return_target_tokens is missing."
-                )
-            part = return_target_tokens_arr
-        elif key == "return_relocate_tokens_v1":
-            if return_relocate_tokens_arr is None:
-                raise KeyError(
-                    "Requested low_dim key 'return_relocate_tokens_v1' but "
-                    "a relocate target could not be derived from "
-                    "/v2/step/return_target_tokens or metadata next_operator fields."
-                )
-            part = return_relocate_tokens_arr
-        elif key == "return_start_envelope_tokens_v1":
-            if return_start_envelope_tokens_arr is None:
-                raise KeyError(
-                    "Requested low_dim key 'return_start_envelope_tokens_v1' but "
-                    "/v2/step/return_start_envelope_tokens_v1 is missing."
-                )
-            part = return_start_envelope_tokens_arr
-        else:
-            continue
-        if sequence_mode:
-            part = part.reshape(part.shape[0], -1)
-        else:
-            part = part.reshape(-1)
-        parts.append(part)
-    if not parts:
-        raise ValueError("low_dim_keys must contain at least one supported key.")
-    axis = 1 if sequence_mode else 0
-    return np.concatenate(parts, axis=axis).astype(np.float32)
 
 
 # ─── Normalization stats ──────────────────────────────────────────────────────
@@ -1010,12 +896,13 @@ def _read_cell_entry_tokens_dataset(h5_file, index: int | None = None) -> np.nda
 
 
 def _read_dig_cut_tokens_dataset(h5_file, index: int | None = None) -> np.ndarray:
-    if DS_V2_STEP_DIG_CUT_TOKENS not in h5_file:
+    dataset_path = primitive_token_dataset_path(DIG_CUT_TOKEN_KEY)
+    if dataset_path not in h5_file:
         raise KeyError(
             "Requested low_dim key 'dig_cut_tokens' but "
             "/v2/step/dig_cut_tokens is missing."
         )
-    dataset = h5_file[DS_V2_STEP_DIG_CUT_TOKENS]
+    dataset = h5_file[dataset_path]
     value = dataset[()] if index is None else dataset[index]
     arr = np.asarray(value, dtype=np.float32)
     expected_dim = DIG_CUT_TOKEN_DIM
@@ -1031,12 +918,13 @@ def _read_dig_depth_profile_tokens_dataset(
     h5_file,
     index: int | None = None,
 ) -> np.ndarray:
-    if DS_V2_STEP_DIG_DEPTH_PROFILE_TOKENS_V1 not in h5_file:
+    dataset_path = primitive_token_dataset_path(DIG_DEPTH_PROFILE_TOKEN_KEY)
+    if dataset_path not in h5_file:
         raise KeyError(
             "Requested low_dim key 'dig_depth_profile_tokens_v1' but "
             "/v2/step/dig_depth_profile_tokens_v1 is missing."
         )
-    dataset = h5_file[DS_V2_STEP_DIG_DEPTH_PROFILE_TOKENS_V1]
+    dataset = h5_file[dataset_path]
     value = dataset[()] if index is None else dataset[index]
     arr = np.asarray(value, dtype=np.float32)
     expected_dim = DIG_DEPTH_PROFILE_TOKEN_DIM
@@ -1049,12 +937,13 @@ def _read_dig_depth_profile_tokens_dataset(
 
 
 def _read_return_target_tokens_dataset(h5_file, index: int | None = None) -> np.ndarray:
-    if DS_V2_STEP_RETURN_TARGET_TOKENS not in h5_file:
+    dataset_path = primitive_token_dataset_path(RETURN_TARGET_TOKEN_KEY)
+    if dataset_path not in h5_file:
         raise KeyError(
             "Requested low_dim key 'return_target_tokens' but "
             "/v2/step/return_target_tokens is missing."
         )
-    dataset = h5_file[DS_V2_STEP_RETURN_TARGET_TOKENS]
+    dataset = h5_file[dataset_path]
     value = dataset[()] if index is None else dataset[index]
     arr = np.asarray(value, dtype=np.float32)
     expected_dim = RETURN_TARGET_TOKEN_DIM
@@ -1091,7 +980,8 @@ def _read_return_target_tokens_or_zeros(
     *,
     index: int | None,
 ) -> np.ndarray:
-    if DS_V2_STEP_RETURN_TARGET_TOKENS in h5_file:
+    dataset_path = primitive_token_dataset_path(RETURN_TARGET_TOKEN_KEY)
+    if dataset_path in h5_file:
         return _read_return_target_tokens_dataset(h5_file, index=index)
     if "/observations/qpos" not in h5_file:
         raise KeyError(
@@ -1105,23 +995,20 @@ def _read_return_target_tokens_or_zeros(
 
 
 def _mask_return_relocate_tokens(tokens: np.ndarray) -> np.ndarray:
-    arr = np.asarray(tokens, dtype=np.float32).copy()
-    if arr.shape[-1] != RETURN_TARGET_TOKEN_DIM:
+    try:
+        return derive_return_relocate_token(tokens)
+    except ValueError as exc:
         raise ValueError(
             "return_relocate_tokens_v1 must be derived from 10D "
-            f"return_target_tokens, got {arr.shape}."
-        )
-    arr[~np.isfinite(arr)] = 0.0
-    arr[..., 7] = 0.0
-    arr[..., 8] = 0.0
-    return arr
+            f"return_target_tokens, got {np.asarray(tokens).shape}."
+        ) from exc
 
 
 def _return_token_invalid(tokens: np.ndarray) -> np.ndarray | bool:
     arr = np.asarray(tokens, dtype=np.float32)
     finite = np.all(np.isfinite(arr), axis=-1)
-    valid = arr[..., 9] > 0.5
-    spatial_nonzero = np.linalg.norm(arr[..., :7], axis=-1) > 1e-6
+    valid = arr[..., CUT_VALID_IDX] > 0.5
+    spatial_nonzero = np.linalg.norm(arr[..., CUT_RELOCATION_SLICE], axis=-1) > 1e-6
     return np.logical_not(finite & valid & spatial_nonzero)
 
 
@@ -1187,12 +1074,13 @@ def _read_return_start_envelope_tokens_dataset(
     h5_file,
     index: int | None = None,
 ) -> np.ndarray:
-    if DS_V2_STEP_RETURN_START_ENVELOPE_TOKENS_V1 not in h5_file:
+    dataset_path = primitive_token_dataset_path(RETURN_START_ENVELOPE_TOKEN_KEY)
+    if dataset_path not in h5_file:
         raise KeyError(
             "Requested low_dim key 'return_start_envelope_tokens_v1' but "
             "/v2/step/return_start_envelope_tokens_v1 is missing."
         )
-    dataset = h5_file[DS_V2_STEP_RETURN_START_ENVELOPE_TOKENS_V1]
+    dataset = h5_file[dataset_path]
     value = dataset[()] if index is None else dataset[index]
     arr = np.asarray(value, dtype=np.float32)
     expected_dim = RETURN_START_ENVELOPE_TOKEN_DIM
@@ -1237,8 +1125,8 @@ def _read_supervision_at_step(
     if key == "return_relocate_outcome_targets_v1":
         target = _mask_return_relocate_tokens(target)
         mask = mask.copy()
-        mask[7] = 0.0
-        mask[8] = 0.0
+        mask[CUT_DEPTH_SEMANTIC_IDX] = 0.0
+        mask[CUT_PAYLOAD_IDX] = 0.0
     return target.astype(np.float32), mask.astype(np.float32)
 
 

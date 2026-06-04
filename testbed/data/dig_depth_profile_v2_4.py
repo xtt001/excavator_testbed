@@ -11,6 +11,11 @@ from typing import Any
 
 import numpy as np
 
+from testbed.contracts.primitive_tokens import (
+    DIG_DEPTH_PROFILE_TOKEN_DIM,
+    DIG_DEPTH_PROFILE_TOKEN_KEY,
+    DIG_DEPTH_PROFILE_TOKEN_ORDER,
+)
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_DEPTH_SCALE_M,
     DIG_CUT_LENGTH_SCALE_M,
@@ -18,24 +23,9 @@ from testbed.data.operator_first_v2_2 import (
 )
 
 
-DIG_DEPTH_PROFILE_TOKEN_DIM = 12
 DIG_DEPTH_REFERENCE_SCALE_M = 1.5
 DIG_DEPTH_PROFILE_SURFACE_OFFSET_SCALE_M = 0.75
-DIG_DEPTH_PROFILE_CONTRACT_VERSION = "dig_depth_profile_tokens_v1"
-DIG_DEPTH_PROFILE_TOKEN_ORDER = (
-    "dominant_cell_id_norm",
-    "removed_depth_target_norm",
-    "payload_target_norm",
-    "effective_deposit_target_norm",
-    "cut_length_norm",
-    "entry_reference_depth_norm",
-    "exit_reference_depth_norm",
-    "peak_reference_depth_norm",
-    "peak_surface_penetration_est_norm",
-    "plane_minus_surface_penetration_offset_norm",
-    "contact_fraction",
-    "valid",
-)
+DIG_DEPTH_PROFILE_CONTRACT_VERSION = DIG_DEPTH_PROFILE_TOKEN_KEY
 
 
 def build_dig_depth_profile_token_from_metrics(

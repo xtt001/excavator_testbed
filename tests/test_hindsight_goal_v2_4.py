@@ -7,7 +7,7 @@ import h5py
 import numpy as np
 import torch
 
-from testbed.data.dataset import _read_supervision_at_step, load_data
+from testbed.data.dataset import _read_supervision_at_step, get_norm_stats, load_data
 from testbed.data.hdf5_io import read_episode, write_episode
 from testbed.data.hindsight_goal_v2_4 import (
     DEPTH_OUTCOME_SOURCE_REMOVED_DEPTH,
@@ -156,6 +156,81 @@ def test_primitive_payload_preserves_hindsight_step_fields() -> None:
         assert primitive_v2["step"]["dig_outcome_targets"].shape == (
             4,
             DIG_CUT_TOKEN_DIM,
+        )
+
+
+def test_mini_hindsight_primitive_pipeline_preserves_low_dim_contract() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        src = root / "src"
+        hindsight = root / "hindsight"
+        primitive = root / "primitive"
+        _write_source_episode(src / "episode_0.hdf5")
+        build_hindsight_goal_dataset(
+            dataset_dir=src,
+            output_dir=hindsight,
+            overwrite=True,
+        )
+        episode = read_episode(hindsight / "episode_0.hdf5")
+        crop = slice(0, 4)
+        primitive_v2 = build_primitive_v2_payload(
+            source_episode=episode,
+            crop=crop,
+            source_cycle_id=0,
+        )
+        write_episode(
+            primitive / "episode_0.hdf5",
+            qpos=episode["qpos"][crop],
+            qvel=episode["qvel"][crop],
+            actions=episode["actions"][crop],
+            images={name: frames[crop] for name, frames in episode["images"].items()},
+            metadata=episode["metadata"],
+            env_state=episode["env_state"][crop],
+            v2=primitive_v2,
+        )
+
+        low_dim_keys = ["qpos", "qvel", "dig_cut_tokens"]
+        stats = get_norm_stats(
+            primitive,
+            num_episodes=1,
+            low_dim_keys=low_dim_keys,
+        )
+        train_loader, _, _, _, split_info = load_data(
+            dataset_dir=primitive,
+            num_episodes=1,
+            camera_names=["fpv"],
+            episode_len=4,
+            batch_size_train=1,
+            batch_size_val=1,
+            num_workers=0,
+            pin_memory=False,
+            low_dim_keys=low_dim_keys,
+        )
+        image, proprio, action, is_pad = next(iter(train_loader))
+        assert image.shape == (1, 1, 3, 4, 4)
+        assert proprio.shape == (1, 8 + DIG_CUT_TOKEN_DIM)
+        assert action.shape == (1, 4, 4)
+        assert is_pad.shape == (1, 4)
+        assert split_info["low_dim_keys"] == low_dim_keys
+        assert split_info["low_dim_dim"] == 8 + DIG_CUT_TOKEN_DIM
+
+        adapter = object.__new__(ACTAdapter)
+        adapter.device = torch.device("cpu")
+        adapter.policy_config = {
+            "equipment_model": "yulong",
+            "state_dim": 8 + DIG_CUT_TOKEN_DIM,
+        }
+        adapter.norm_stats = stats
+        adapter._low_dim_keys = low_dim_keys
+        with h5py.File(primitive / "episode_0.hdf5", "r") as handle:
+            obs = {
+                "qpos": handle["observations/qpos"][0],
+                "qvel": handle["observations/qvel"][0],
+                "dig_cut_tokens": handle["v2/step/dig_cut_tokens"][0],
+            }
+        assert tuple(adapter._build_proprio(obs).shape) == (
+            1,
+            8 + DIG_CUT_TOKEN_DIM,
         )
 
 
