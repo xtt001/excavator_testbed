@@ -283,6 +283,32 @@ debug schema 和 rollout trace。
 失败信息、live token 数值、pending dig plan、coverage state exemplar 选择、
 debug_state 字段或 rollout 行为。
 
+## Return Target Plan State Slice
+
+新增模块：
+
+- `testbed/planner/return_target_plan.py`
+
+`ReturnTargetPlanService` 负责 return target planner 的状态结果组装，而不负责
+target/corridor selection。它只接收 planner 已经构造好的 `ReturnTargetPlanBuild`
+和 `ReturnTargetExemplarSnapshot`，返回成功或失败后的
+`ReturnTargetPlanState`：`return_target_tokens`、`return_start_envelope_tokens`、
+return target source/fallback reason、planned cycle id、pending dig cut token/raw
+fields/corridor id、pending dig depth-profile token，以及 pending state exemplar
+metadata。service 还提供 hold-token 判断，避免该判断继续散落在 planner shell。
+
+planner 大文件仍负责：
+
+- `_build_next_dig_cut_plan_for_return()` 的 target/corridor selection
+- `_build_return_start_envelope_tokens_for_obs()` 的 envelope facade
+- coverage selection、raw fields、state exemplar selection
+- pending state 的最终字段写回
+- branch order、switch reason、policy dispatch、debug schema 和 rollout trace
+
+本切片不改变 return target token、return relocate token、pending dig plan、
+coverage corridor selection、return start-envelope token/source、fallback_zero 语义、
+debug_state 字段、policy dispatch 或 switch 行为。
+
 ## Policy Observation Assembly Slice
 
 新增模块：
@@ -327,6 +353,7 @@ pytest tests/test_bootstrap_service.py tests/test_agx_primitives_v2_2.py -k "boo
 pytest tests/test_primitive_planner_debug_schema.py tests/test_planner_golden_traces.py
 pytest tests/test_policy_observation.py tests/test_eval_rollout_records.py
 pytest tests/test_dig_depth_profile_service.py tests/test_agx_primitives_v2_2.py -k "dig_depth_profile or state_conditioned_exemplar"
+pytest tests/test_return_target_plan_service.py tests/test_agx_primitives_v2_2.py -k "return_target or pending_return_target"
 ```
 
 ## 回滚策略

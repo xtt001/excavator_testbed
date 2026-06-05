@@ -442,6 +442,16 @@ coverage/pending dig state、debug 字段写回和 ACT dispatch。此次迁移�
 不改变 `dig_depth_profile_tokens_v1` contract、source string、fallback reason、
 coverage exemplar 选择或 rollout 行为。
 
+当前 return target planner 的 result assembly source-of-truth 是
+`testbed.planner.return_target_plan.ReturnTargetPlanService`。该 service 只负责把
+planner 已经选出的 next-dig target token、return start-envelope token、source /
+fallback reason 和 exemplar snapshot 组装成 return target state 与 pending dig state；
+它不选择 coverage corridor，不生成 dig cut token，不构造 return envelope，也不写 planner
+字段。`PrimitivePlannerACTPolicy` 仍负责 target/corridor selection、pending state
+最终写回、return->dig handoff context、policy dispatch 和 debug schema。此次迁移不改变
+return target token、pending dig cut 生命周期、source string、fallback_zero 行为或
+rollout trace。
+
 当前 dig coverage / corridor planning 的实现 source-of-truth 是
 `testbed.planner.dig_coverage.CoverageService`。该 service object 负责 coverage
 corridor candidate 构造、cell-weighted prior 和 percentile-grid fallback、corridor

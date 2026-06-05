@@ -154,6 +154,12 @@ from testbed.planner.return_start_envelope import (
 from testbed.planner.return_start_envelope import (
     return_start_envelope_prior_token as resolve_return_start_envelope_prior_token,
 )
+from testbed.planner.return_target_plan import (
+    ReturnTargetExemplarSnapshot,
+    ReturnTargetPlanBuild,
+    ReturnTargetPlanService,
+    ReturnTargetPlanState,
+)
 from testbed.planner.snapshots import PlannerSnapshot, build_planner_snapshot
 from testbed.policies.base import Policy, register_policy
 from testbed.policies.hybrid.adapter import HYBRID_MODE_TRANSITION, HYBRID_MODE_WORK
@@ -298,6 +304,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self.dump_lifecycle_gate = DumpLifecycleGateService()
         self.policy_observation_assembler = PolicyObservationAssembler()
         self.dig_depth_profile_service = DigDepthProfileService()
+        self.return_target_plan_service = ReturnTargetPlanService()
         self.bootstrap_end_mode = str(bootstrap_end_mode)
         self.bootstrap_end_min_bucket_mass_kg = float(bootstrap_end_min_bucket_mass_kg)
         self.bootstrap_end_min_distance_to_dig_area_m = float(
@@ -2584,57 +2591,92 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
     def _ensure_return_target_plan_for_cycle(self, obs: dict) -> None:
         if not self.return_target_planner_enabled:
             return
-        if (
-            self.return_target_hold_token_until_skill_exit
-            and self._return_target_planned_cycle_id == int(self._cycle_index)
+        if self.return_target_plan_service.should_hold_plan(
+            hold_until_skill_exit=self.return_target_hold_token_until_skill_exit,
+            planned_cycle_id=self._return_target_planned_cycle_id,
+            cycle_index=self._cycle_index,
         ):
             return
         try:
             token, raw_fields, source, fallback_reason, corridor_id = (
                 self._build_next_dig_cut_plan_for_return(obs)
             )
-            self._return_target_tokens = token.astype(np.float32)
-            self._return_start_envelope_tokens = (
-                self._build_return_start_envelope_tokens_for_obs(
-                    obs,
-                    raw_fields,
+            envelope_tokens = self._build_return_start_envelope_tokens_for_obs(
+                obs,
+                raw_fields,
+                corridor_id=corridor_id,
+            )
+            state = self.return_target_plan_service.success_state(
+                cycle_index=self._cycle_index,
+                plan=ReturnTargetPlanBuild(
+                    token=token,
+                    raw_fields=raw_fields,
+                    return_start_envelope_tokens=envelope_tokens,
+                    source=source,
+                    fallback_reason=fallback_reason,
                     corridor_id=corridor_id,
-                )
-            )
-            self._return_target_token_source = str(source)
-            self._return_target_fallback_reason = str(fallback_reason)
-            self._return_target_planned_cycle_id = int(self._cycle_index)
-            self._pending_dig_cut_cycle_id = int(self._cycle_index) + 1
-            self._pending_dig_cut_raw_fields = dict(raw_fields)
-            self._pending_dig_cut_tokens = token.astype(np.float32)
-            self._pending_dig_cut_corridor_id = int(corridor_id)
-            self._pending_dig_depth_profile_tokens = (
-                None
-                if self._coverage_active_state_exemplar_profile_token is None
-                else self._coverage_active_state_exemplar_profile_token.astype(
-                    np.float32
-                ).copy()
-            )
-            self._pending_dig_state_exemplar_ids = list(
-                self._coverage_active_state_exemplar_ids
-            )
-            self._pending_dig_state_exemplar_distance = float(
-                self._coverage_active_state_exemplar_distance
+                ),
+                exemplar=ReturnTargetExemplarSnapshot(
+                    depth_profile_token=(
+                        self._coverage_active_state_exemplar_profile_token
+                    ),
+                    state_exemplar_ids=self._coverage_active_state_exemplar_ids,
+                    state_exemplar_distance=(
+                        self._coverage_active_state_exemplar_distance
+                    ),
+                ),
             )
         except Exception as exc:
-            self._return_target_tokens = np.zeros(
-                RETURN_TARGET_TOKEN_DIM,
-                dtype=np.float32,
+            state = self.return_target_plan_service.failure_state(
+                cycle_index=self._cycle_index,
+                reason=exc,
             )
-            self._return_start_envelope_tokens = np.zeros(
-                RETURN_START_ENVELOPE_TOKEN_DIM,
-                dtype=np.float32,
+        self._apply_return_target_plan_state(state)
+
+    def _apply_return_target_plan_state(self, state: ReturnTargetPlanState) -> None:
+        self._return_target_tokens = np.asarray(
+            state.return_target_tokens,
+            dtype=np.float32,
+        )
+        self._return_start_envelope_tokens = np.asarray(
+            state.return_start_envelope_tokens,
+            dtype=np.float32,
+        )
+        self._return_target_token_source = str(state.return_target_token_source)
+        if state.return_start_envelope_token_source is not None:
+            self._return_start_envelope_token_source = str(
+                state.return_start_envelope_token_source
             )
-            self._return_target_token_source = "fallback_zero"
-            self._return_start_envelope_token_source = "fallback_zero"
-            self._return_target_fallback_reason = str(exc)
-            self._return_target_planned_cycle_id = int(self._cycle_index)
-            self._invalidate_pending_dig_cut_plan()
+        self._return_target_fallback_reason = str(state.return_target_fallback_reason)
+        self._return_target_planned_cycle_id = int(
+            state.return_target_planned_cycle_id
+        )
+        self._pending_dig_cut_cycle_id = int(state.pending_dig_cut_cycle_id)
+        self._pending_dig_cut_raw_fields = (
+            None
+            if state.pending_dig_cut_raw_fields is None
+            else dict(state.pending_dig_cut_raw_fields)
+        )
+        self._pending_dig_cut_tokens = (
+            None
+            if state.pending_dig_cut_tokens is None
+            else np.asarray(state.pending_dig_cut_tokens, dtype=np.float32).copy()
+        )
+        self._pending_dig_cut_corridor_id = int(state.pending_dig_cut_corridor_id)
+        self._pending_dig_depth_profile_tokens = (
+            None
+            if state.pending_dig_depth_profile_tokens is None
+            else np.asarray(
+                state.pending_dig_depth_profile_tokens,
+                dtype=np.float32,
+            ).copy()
+        )
+        self._pending_dig_state_exemplar_ids = list(
+            state.pending_dig_state_exemplar_ids
+        )
+        self._pending_dig_state_exemplar_distance = float(
+            state.pending_dig_state_exemplar_distance
+        )
 
     def _dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
         if not self.dig_cut_planner_enabled:
