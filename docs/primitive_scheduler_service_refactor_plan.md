@@ -55,6 +55,33 @@ planner 大文件只增加薄 facade：
 
 本阶段不改 threshold、不改 branch order、不改默认 config、不改 switch reason、不改 policy reset 语义、不改 debug/summary schema。
 
+## Planner Observation Facts Slice
+
+`testbed/planner/snapshots.py` 作为 planner observation facts 的 source-of-truth。
+除 `PlannerSnapshot` / `PlannerObservationView` 外，该模块还负责从 `obs`、
+`task_metrics` 和 `env_state` 解析 scheduler legacy helper 所需事实：
+bucket mass、deposited mass、dig-area distance/depth/contact、bucket/tip pose、
+dig cell id、dig-area geometry availability，以及 carry->dump target geometry。
+
+planner 大文件只保留旧 private facade：
+
+- `_env_state()`
+- `_target_geometry()`
+- `_mass_in_bucket()`
+- `_deposited_mass()`
+- `_min_distance_to_dig_area()`
+- `_bucket_depth_below_dig_area_plane()`
+- `_bucket_depth_below_local_surface()`
+- `_bucket_dig_area_contact_mask()`
+- `_bucket_dig_area_cell_in_bounds_mask()`
+- `_dig_cell_id()`
+- `_bucket_dig_area_pose()`
+- `_bucket_tip_dig_area_pose()`
+
+本切片只移动 observation parsing，不改变 snapshot view 既有 missing-env fallback、
+legacy planner helper 的 zero/NaN fallback、target geometry error message、branch
+order、threshold、switch reason、policy dispatch、debug schema 或 rollout 行为。
+
 ## Dump Lifecycle Gate Slice
 
 新增模块：

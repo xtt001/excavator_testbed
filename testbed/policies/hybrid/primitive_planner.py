@@ -22,29 +22,6 @@ from testbed.contracts.primitive_tokens import (
 )
 from testbed.data.operator_first_v2_2 import _build_dig_cut_token
 from testbed.data.schema import (
-    ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
-    ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
-    ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
-    ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
-    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
-    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
-    ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
-    ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
-    ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
-    ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
-    ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
-    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
-    ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
-    ENV_STATE_DUMP_CLEARANCE_OK_IDX,
-    ENV_STATE_MASS_IN_BUCKET_IDX,
-    ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
-    ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
-)
-from testbed.data.schema import (
     ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX as ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
 )
 from testbed.data.schema import (
@@ -161,7 +138,22 @@ from testbed.planner.return_target_plan import (
     ReturnTargetPlanService,
     ReturnTargetPlanState,
 )
-from testbed.planner.snapshots import PlannerSnapshot, build_planner_snapshot
+from testbed.planner.snapshots import (
+    PlannerSnapshot,
+    bucket_depth_below_dig_area_plane_from_obs,
+    bucket_depth_below_local_surface_from_obs,
+    bucket_dig_area_cell_in_bounds_mask_from_obs,
+    bucket_dig_area_contact_mask_from_obs,
+    bucket_dig_area_pose_from_obs,
+    bucket_tip_dig_area_pose_from_obs,
+    build_planner_snapshot,
+    deposited_mass_from_obs,
+    dig_cell_id_from_obs,
+    env_state_from_obs,
+    mass_in_bucket_from_obs,
+    min_distance_to_dig_area_from_obs,
+    target_geometry_from_obs,
+)
 from testbed.policies.base import Policy, register_policy
 from testbed.policies.hybrid.adapter import HYBRID_MODE_TRANSITION, HYBRID_MODE_WORK
 
@@ -2424,146 +2416,28 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         return float(corridor.entry_x_m), float(corridor.entry_z_m)
 
     def _target_geometry(self, obs: dict) -> dict[str, float]:
-        task_metrics = dict(obs.get("task_metrics", {}) or {})
-
-        def _metric(name: str, index: int) -> float:
-            if name in task_metrics:
-                value = float(task_metrics[name])
-                if np.isfinite(value):
-                    return value
-            env_state = self._env_state(obs)
-            if len(env_state) <= index:
-                raise RuntimeError(
-                    "primitive carry->dump switch requires Unity target geometry "
-                    f"field {name!r}; no legacy fallback is used."
-                )
-            value = float(env_state[index])
-            if not np.isfinite(value):
-                raise RuntimeError(
-                    "primitive carry->dump switch received non-finite target geometry "
-                    f"field {name!r}."
-                )
-            return value
-
-        def _optional_metric(name: str, index: int) -> float:
-            if name in task_metrics:
-                value = float(task_metrics[name])
-                return value if np.isfinite(value) else float("nan")
-            env_state = self._env_state(obs)
-            if len(env_state) <= index:
-                return float("nan")
-            value = float(env_state[index])
-            return value if np.isfinite(value) else float("nan")
-
-        available = task_metrics.get("target_geometry_available")
-        if available is not None and float(available) <= 0.5:
-            raise RuntimeError(
-                "primitive carry->dump switch requires target_geometry_available=1."
-            )
-
-        return {
-            "target_horizontal_distance_m": _metric(
-                "target_horizontal_distance_m",
-                ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
-            ),
-            "bucket_height_above_target_rim_m": _metric(
-                "bucket_height_above_target_rim_m",
-                ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
-            ),
-            "bucket_over_target_footprint_mask": _metric(
-                "bucket_over_target_footprint_mask",
-                ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
-            ),
-            "dump_clearance_ok_mask": _metric(
-                "dump_clearance_ok_mask",
-                ENV_STATE_DUMP_CLEARANCE_OK_IDX,
-            ),
-            "bucket_dump_area_relative_x_m": _optional_metric(
-                "bucket_dump_area_relative_x_m",
-                ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
-            ),
-            "bucket_dump_area_relative_z_m": _optional_metric(
-                "bucket_dump_area_relative_z_m",
-                ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
-            ),
-            "bucket_dump_area_footprint_outside_distance_m": _optional_metric(
-                "bucket_dump_area_footprint_outside_distance_m",
-                ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
-            ),
-        }
+        return target_geometry_from_obs(obs)
 
     def _mass_in_bucket(self, obs: dict) -> float:
-        task_metrics = dict(obs.get("task_metrics", {}) or {})
-        if "mass_in_bucket_kg" in task_metrics:
-            return float(task_metrics["mass_in_bucket_kg"])
-        env_state = self._env_state(obs)
-        return (
-            float(env_state[ENV_STATE_MASS_IN_BUCKET_IDX])
-            if len(env_state) > ENV_STATE_MASS_IN_BUCKET_IDX
-            else 0.0
-        )
+        return mass_in_bucket_from_obs(obs)
 
     def _deposited_mass(self, obs: dict) -> float:
-        task_metrics = dict(obs.get("task_metrics", {}) or {})
-        if "deposited_mass_in_target_box_kg" in task_metrics:
-            return float(task_metrics["deposited_mass_in_target_box_kg"])
-        env_state = self._env_state(obs)
-        return (
-            float(env_state[ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX])
-            if len(env_state) > ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX
-            else 0.0
-        )
+        return deposited_mass_from_obs(obs)
 
     def _min_distance_to_dig_area(self, obs: dict) -> float:
-        task_metrics = dict(obs.get("task_metrics", {}) or {})
-        if "min_distance_to_dig_area_m" in task_metrics:
-            return float(task_metrics["min_distance_to_dig_area_m"])
-        env_state = self._env_state(obs)
-        return (
-            float(env_state[ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX])
-            if len(env_state) > ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX
-            else 0.0
-        )
+        return min_distance_to_dig_area_from_obs(obs)
 
     def _bucket_depth_below_dig_area_plane(self, obs: dict) -> float:
-        task_metrics = dict(obs.get("task_metrics", {}) or {})
-        if "bucket_depth_below_dig_area_plane_m" in task_metrics:
-            return float(task_metrics["bucket_depth_below_dig_area_plane_m"])
-        env_state = self._env_state(obs)
-        return (
-            float(env_state[ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX])
-            if len(env_state) > ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX
-            else 0.0
-        )
+        return bucket_depth_below_dig_area_plane_from_obs(obs)
 
     def _bucket_depth_below_local_surface(self, obs: dict) -> float:
-        task_metrics = dict(obs.get("task_metrics", {}) or {})
-        if "bucket_depth_below_local_surface_m" in task_metrics:
-            return float(task_metrics["bucket_depth_below_local_surface_m"])
-        env_state = self._env_state(obs)
-        return (
-            float(env_state[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX])
-            if len(env_state) > ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX
-            else float("nan")
-        )
+        return bucket_depth_below_local_surface_from_obs(obs)
 
     def _bucket_dig_area_contact_mask(self, obs: dict) -> bool:
-        task_metrics = dict(obs.get("task_metrics", {}) or {})
-        if "bucket_dig_area_penetration_contact_mask" in task_metrics:
-            return bool(float(task_metrics["bucket_dig_area_penetration_contact_mask"]) > 0.5)
-        if "bucket_contact_dig_area_mask" in task_metrics:
-            return bool(float(task_metrics["bucket_contact_dig_area_mask"]) > 0.5)
-        env_state = self._env_state(obs)
-        return bool(
-            len(env_state) > ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX
-            and float(env_state[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX]) > 0.5
-        )
+        return bucket_dig_area_contact_mask_from_obs(obs)
 
     def _env_state(self, obs: dict) -> np.ndarray:
-        return np.asarray(
-            obs.get("env_state", np.zeros(13, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(-1)
+        return env_state_from_obs(obs)
 
     def _policy_obs(self, obs: dict) -> dict:
         assembly = self.policy_observation_assembler.assemble(
@@ -3493,45 +3367,16 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         )
 
     def _bucket_dig_area_cell_in_bounds_mask(self, obs: dict) -> bool:
-        env_state = self._env_state(obs)
-        return bool(
-            len(env_state) > ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX
-            and float(env_state[ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX]) > 0.5
-        )
+        return bucket_dig_area_cell_in_bounds_mask_from_obs(obs)
 
     def _dig_cell_id(self, obs: dict) -> int:
-        env_state = self._env_state(obs)
-        if len(env_state) <= ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX:
-            return -1
-        value = float(env_state[ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX])
-        if not np.isfinite(value):
-            return -1
-        return int(round(value))
+        return dig_cell_id_from_obs(obs)
 
     def _bucket_dig_area_pose(self, obs: dict) -> tuple[float, float, float] | None:
-        env_state = self._env_state(obs)
-        if len(env_state) <= ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX:
-            return None
-        values = (
-            float(env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX]),
-            float(env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX]),
-            float(env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX]),
-        )
-        if not all(np.isfinite(value) for value in values):
-            return None
-        return values
+        return bucket_dig_area_pose_from_obs(obs)
 
     def _bucket_tip_dig_area_pose(self, obs: dict) -> tuple[float, float, float] | None:
-        env_state = self._env_state(obs)
-        if len(env_state) > ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX:
-            values = (
-                float(env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX]),
-                float(env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX]),
-                float(env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX]),
-            )
-            if all(np.isfinite(value) for value in values):
-                return values
-        return self._bucket_dig_area_pose(obs)
+        return bucket_tip_dig_area_pose_from_obs(obs)
 
     def _goal_tokens(self) -> np.ndarray | None:
         if not self.goal_sequence:

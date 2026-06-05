@@ -179,6 +179,14 @@ fallback-mode 执行、prior-range debug flag、policy dispatch 和 debug/rollou
 该边界让 dig-cut token builder 成为可复用 capability，但不把状态机拆成多个互相抢状态的
 planner。
 
+当前在线 observation facts 解析的实现 source-of-truth 是
+`testbed.planner.snapshots`。该模块负责把 `obs`、`task_metrics` 和 `env_state`
+解析成 planner/scheduler 所需事实，包括 bucket mass、deposit、dig-area
+distance/depth/contact、bucket/tip pose、dig cell id、target geometry，以及
+`PlannerSnapshot` / `PlannerObservationView`。`PrimitivePlannerACTPolicy` 仍负责何时
+构造 snapshot、如何把这些 facts 交给 lifecycle/handoff services、以及所有状态写回和
+transition 语义；observation parser 不做 gate 判断或状态机跳转。
+
 当前在线 dump lifecycle gate 的实现 source-of-truth 是
 `testbed.planner.dump_lifecycle.DumpLifecycleGateService`。该 service 负责
 4P legacy dump readiness、dump-area relative / near-window geometry gate、

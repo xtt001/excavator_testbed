@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -12,15 +13,24 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX,
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
+    ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
+    ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
     ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
     ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
     ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+    ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
+    ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
+    ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
 
 
@@ -116,6 +126,192 @@ def build_planner_snapshot(
         prev_action=prev,
         boundary_event=boundary_event,
     )
+
+
+def env_state_from_obs(
+    obs: Mapping[str, Any],
+    *,
+    default_dim: int = 13,
+) -> NDArray[np.float32]:
+    return np.asarray(
+        obs.get("env_state", np.zeros(int(default_dim), dtype=np.float32)),
+        dtype=np.float32,
+    ).reshape(-1)
+
+
+def target_geometry_from_obs(obs: Mapping[str, Any]) -> dict[str, float]:
+    task_metrics = _legacy_task_metrics(obs)
+    env_state = env_state_from_obs(obs)
+
+    def metric(name: str, index: int) -> float:
+        if name in task_metrics:
+            value = float(task_metrics[name])
+            if np.isfinite(value):
+                return value
+        if len(env_state) <= index:
+            raise RuntimeError(
+                "primitive carry->dump switch requires Unity target geometry "
+                f"field {name!r}; no legacy fallback is used."
+            )
+        value = float(env_state[index])
+        if not np.isfinite(value):
+            raise RuntimeError(
+                "primitive carry->dump switch received non-finite target geometry "
+                f"field {name!r}."
+            )
+        return value
+
+    def optional_metric(name: str, index: int) -> float:
+        if name in task_metrics:
+            value = float(task_metrics[name])
+            return value if np.isfinite(value) else float("nan")
+        if len(env_state) <= index:
+            return float("nan")
+        value = float(env_state[index])
+        return value if np.isfinite(value) else float("nan")
+
+    available = task_metrics.get("target_geometry_available")
+    if available is not None and float(available) <= 0.5:
+        raise RuntimeError(
+            "primitive carry->dump switch requires target_geometry_available=1."
+        )
+
+    return {
+        "target_horizontal_distance_m": metric(
+            "target_horizontal_distance_m",
+            ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
+        ),
+        "bucket_height_above_target_rim_m": metric(
+            "bucket_height_above_target_rim_m",
+            ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
+        ),
+        "bucket_over_target_footprint_mask": metric(
+            "bucket_over_target_footprint_mask",
+            ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+        ),
+        "dump_clearance_ok_mask": metric(
+            "dump_clearance_ok_mask",
+            ENV_STATE_DUMP_CLEARANCE_OK_IDX,
+        ),
+        "bucket_dump_area_relative_x_m": optional_metric(
+            "bucket_dump_area_relative_x_m",
+            ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
+        ),
+        "bucket_dump_area_relative_z_m": optional_metric(
+            "bucket_dump_area_relative_z_m",
+            ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
+        ),
+        "bucket_dump_area_footprint_outside_distance_m": optional_metric(
+            "bucket_dump_area_footprint_outside_distance_m",
+            ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+        ),
+    }
+
+
+def mass_in_bucket_from_obs(obs: Mapping[str, Any]) -> float:
+    return _legacy_metric_or_env(
+        obs,
+        "mass_in_bucket_kg",
+        ENV_STATE_MASS_IN_BUCKET_IDX,
+        missing_default=0.0,
+    )
+
+
+def deposited_mass_from_obs(obs: Mapping[str, Any]) -> float:
+    return _legacy_metric_or_env(
+        obs,
+        "deposited_mass_in_target_box_kg",
+        ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+        missing_default=0.0,
+    )
+
+
+def min_distance_to_dig_area_from_obs(obs: Mapping[str, Any]) -> float:
+    return _legacy_metric_or_env(
+        obs,
+        "min_distance_to_dig_area_m",
+        ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
+        missing_default=0.0,
+    )
+
+
+def bucket_depth_below_dig_area_plane_from_obs(obs: Mapping[str, Any]) -> float:
+    return _legacy_metric_or_env(
+        obs,
+        "bucket_depth_below_dig_area_plane_m",
+        ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+        missing_default=0.0,
+    )
+
+
+def bucket_depth_below_local_surface_from_obs(obs: Mapping[str, Any]) -> float:
+    return _legacy_metric_or_env(
+        obs,
+        "bucket_depth_below_local_surface_m",
+        ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+        missing_default=float("nan"),
+    )
+
+
+def bucket_dig_area_contact_mask_from_obs(obs: Mapping[str, Any]) -> bool:
+    task_metrics = _legacy_task_metrics(obs)
+    if "bucket_dig_area_penetration_contact_mask" in task_metrics:
+        return bool(float(task_metrics["bucket_dig_area_penetration_contact_mask"]) > 0.5)
+    if "bucket_contact_dig_area_mask" in task_metrics:
+        return bool(float(task_metrics["bucket_contact_dig_area_mask"]) > 0.5)
+    env_state = env_state_from_obs(obs)
+    return bool(
+        len(env_state) > ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX
+        and float(env_state[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX]) > 0.5
+    )
+
+
+def bucket_dig_area_cell_in_bounds_mask_from_obs(obs: Mapping[str, Any]) -> bool:
+    env_state = env_state_from_obs(obs)
+    return bool(
+        len(env_state) > ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX
+        and float(env_state[ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX]) > 0.5
+    )
+
+
+def dig_cell_id_from_obs(obs: Mapping[str, Any]) -> int:
+    env_state = env_state_from_obs(obs)
+    if len(env_state) <= ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX:
+        return -1
+    value = float(env_state[ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX])
+    if not np.isfinite(value):
+        return -1
+    return int(round(value))
+
+
+def bucket_dig_area_pose_from_obs(
+    obs: Mapping[str, Any],
+) -> tuple[float, float, float] | None:
+    return _bucket_pose(env_state_from_obs(obs))
+
+
+def bucket_tip_dig_area_pose_from_obs(
+    obs: Mapping[str, Any],
+) -> tuple[float, float, float] | None:
+    return _bucket_tip_pose(env_state_from_obs(obs))
+
+
+def _legacy_task_metrics(obs: Mapping[str, Any]) -> dict[str, Any]:
+    return dict(obs.get("task_metrics", {}) or {})
+
+
+def _legacy_metric_or_env(
+    obs: Mapping[str, Any],
+    key: str,
+    index: int,
+    *,
+    missing_default: float,
+) -> float:
+    task_metrics = _legacy_task_metrics(obs)
+    if key in task_metrics:
+        return float(task_metrics[key])
+    env_state = env_state_from_obs(obs)
+    return float(env_state[index]) if len(env_state) > index else float(missing_default)
 
 
 def _env_state_value(env_state: NDArray[np.float32], index: int) -> float:
