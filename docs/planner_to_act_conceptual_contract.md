@@ -205,6 +205,14 @@ count 的建议更新；`PrimitivePlannerACTPolicy` 仍负责 pre-dig-align 分�
 surface/timeout/completed/replan counters、hold counter 写回、coverage reject/replan、
 token rebuild、skill transition、switch reason、policy reset 和 debug schema。
 
+当前 ACT policy observation 装配的实现 source-of-truth 是
+`testbed.planner.policy_observation.PolicyObservationAssembler`。该 service 只负责把
+已经生成的 optional low-dim token 合并进 policy observation，并返回
+`*_token_injected` debug 标志；`PrimitivePlannerACTPolicy` 仍负责决定当前 skill 下哪些
+token 应该存在、调用 token builder、写回 debug state、选择 policy 并 dispatch action。
+这次迁移不改变 token contract、low-dim key、return envelope gate、pending dig plan 或
+状态机跳转语义。
+
 | 事件或跳转 | 当前判定逻辑 |
 | --- | --- |
 | `qualified_dig_start` / `dig_start` | bucket 到 dig area 的最小距离 `<= 0.05m`，并且 bucket 低于 dig-area plane `>= 0.02m`。如果使用 legacy progress 模式，还要求 reward/load progress 或 bucket/excavated mass 增量。 |

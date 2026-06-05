@@ -115,6 +115,10 @@ from testbed.planner.dump_lifecycle import (
     DumpLifecycleFacts,
     DumpLifecycleGateService,
 )
+from testbed.planner.policy_observation import (
+    PolicyObservationAssembler,
+    PolicyObservationTokens,
+)
 from testbed.planner.primitive_debug import (
     TRANSITION_POLICY_MODE_PRIMITIVE as TRANSITION_POLICY_MODE_PRIMITIVE,
 )
@@ -290,6 +294,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self.dig_lifecycle_gate = DigLifecycleGateService()
         self.dig_start_alignment_service = DigStartAlignmentService()
         self.dump_lifecycle_gate = DumpLifecycleGateService()
+        self.policy_observation_assembler = PolicyObservationAssembler()
         self.bootstrap_end_mode = str(bootstrap_end_mode)
         self.bootstrap_end_min_bucket_mass_kg = float(bootstrap_end_min_bucket_mass_kg)
         self.bootstrap_end_min_distance_to_dig_area_m = float(
@@ -2527,53 +2532,31 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         ).reshape(-1)
 
     def _policy_obs(self, obs: dict) -> dict:
-        self._cell_entry_token_injected = False
-        self._dig_cut_token_injected = False
-        self._dig_depth_profile_token_injected = False
-        self._return_target_token_injected = False
-        self._return_relocate_token_injected = False
-        self._return_start_envelope_token_injected = False
-        goal_tokens = self._goal_tokens()
-        cell_entry_tokens = self._cell_entry_tokens_for_obs(obs)
-        dig_cut_tokens = self._dig_cut_tokens_for_obs(obs)
-        dig_depth_profile_tokens = self._dig_depth_profile_tokens_for_obs(obs)
-        return_target_tokens = self._return_target_tokens_for_obs(obs)
-        return_relocate_tokens = self._return_relocate_tokens_for_obs(obs)
-        return_start_envelope_tokens = (
-            self._return_start_envelope_tokens_for_obs(obs)
+        assembly = self.policy_observation_assembler.assemble(
+            obs,
+            PolicyObservationTokens(
+                goal_tokens=self._goal_tokens(),
+                cell_entry_tokens=self._cell_entry_tokens_for_obs(obs),
+                dig_cut_tokens=self._dig_cut_tokens_for_obs(obs),
+                dig_depth_profile_tokens=self._dig_depth_profile_tokens_for_obs(obs),
+                return_target_tokens=self._return_target_tokens_for_obs(obs),
+                return_relocate_tokens=self._return_relocate_tokens_for_obs(obs),
+                return_start_envelope_tokens=(
+                    self._return_start_envelope_tokens_for_obs(obs)
+                ),
+            ),
         )
-        if (
-            goal_tokens is None
-            and cell_entry_tokens is None
-            and dig_cut_tokens is None
-            and dig_depth_profile_tokens is None
-            and return_target_tokens is None
-            and return_relocate_tokens is None
-            and return_start_envelope_tokens is None
-        ):
-            return obs
-        policy_obs = dict(obs)
-        if goal_tokens is not None:
-            policy_obs["goal_tokens"] = goal_tokens
-        if cell_entry_tokens is not None:
-            policy_obs["cell_entry_tokens"] = cell_entry_tokens
-            self._cell_entry_token_injected = True
-        if dig_cut_tokens is not None:
-            policy_obs["dig_cut_tokens"] = dig_cut_tokens
-            self._dig_cut_token_injected = True
-        if dig_depth_profile_tokens is not None:
-            policy_obs["dig_depth_profile_tokens_v1"] = dig_depth_profile_tokens
-            self._dig_depth_profile_token_injected = True
-        if return_target_tokens is not None:
-            policy_obs["return_target_tokens"] = return_target_tokens
-            self._return_target_token_injected = True
-        if return_relocate_tokens is not None:
-            policy_obs["return_relocate_tokens_v1"] = return_relocate_tokens
-            self._return_relocate_token_injected = True
-        if return_start_envelope_tokens is not None:
-            policy_obs["return_start_envelope_tokens_v1"] = return_start_envelope_tokens
-            self._return_start_envelope_token_injected = True
-        return policy_obs
+        self._cell_entry_token_injected = assembly.cell_entry_token_injected
+        self._dig_cut_token_injected = assembly.dig_cut_token_injected
+        self._dig_depth_profile_token_injected = (
+            assembly.dig_depth_profile_token_injected
+        )
+        self._return_target_token_injected = assembly.return_target_token_injected
+        self._return_relocate_token_injected = assembly.return_relocate_token_injected
+        self._return_start_envelope_token_injected = (
+            assembly.return_start_envelope_token_injected
+        )
+        return assembly.obs
 
     def _return_target_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
         if self._skill_name != "return" or not self.return_target_planner_enabled:

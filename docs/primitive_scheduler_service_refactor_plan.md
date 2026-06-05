@@ -12,7 +12,9 @@
 
 schema index 只从 `testbed.data.schema` 读取。primitive token dimension、token
 order、contract version 和 contract string 只从 `testbed.contracts.primitive_tokens`
-读取。boundary profile name 由 boundary detector 配置或后续 canonical registry 提供。
+读取。low-dim observation key 名称从 `testbed.contracts.low_dim` 和
+`testbed.contracts.primitive_tokens` 读取。boundary profile name 由 boundary
+detector 配置或后续 canonical registry 提供。
 
 新增模块只能引用这些 source of truth，不能在 service 内复制 index、token order、profile 字符串或默认 contract 语义。
 
@@ -25,8 +27,9 @@ order、contract version 和 contract string 只从 `testbed.contracts.primitive
 5. 逐步拆 `DigCoverageMixin` 为 coverage candidate、scoring、target selection、progress。
 6. 抽出 dig-start alignment，先锁 scripted action 数值，再迁 decision。
 7. 抽出 debug/trace builder，保持 debug schema 不变。
-8. ACT commitment 先 shadow 记录，不默认拦截 switch。
-9. option scheduler 只作为 experimental mode，在同一 public facade 下接入。
+8. 抽出 policy observation assembly，保持 token 生成和 policy dispatch 不变。
+9. ACT commitment 先 shadow 记录，不默认拦截 switch。
+10. option scheduler 只作为 experimental mode，在同一 public facade 下接入。
 
 ## Phase 1 范围
 
@@ -218,6 +221,29 @@ token contract string、coverage decision trace payload、rollout JSONL 消费�
 planner 分支顺序、switch reason、counter、policy reset timing 或 active policy
 dispatch。
 
+## Policy Observation Assembly Slice
+
+新增模块：
+
+- `testbed/planner/policy_observation.py`
+
+`PolicyObservationAssembler` 负责把 planner 已经生成的 optional low-dim token
+合并进 ACT policy observation，并返回 debug 注入标志。service 只接收显式
+`PolicyObservationTokens` 和当前 observation，不接收 planner `self`，不调用
+token builder，不改变 active skill，不 dispatch policy，不 reset policy，不写 debug
+schema，也不决定哪些 token 应该存在。
+
+planner 大文件只保留薄 facade：`_policy_obs()` 继续按原顺序调用
+`_goal_tokens()`、`_cell_entry_tokens_for_obs()`、`_dig_cut_tokens_for_obs()`、
+`_dig_depth_profile_tokens_for_obs()`、`_return_target_tokens_for_obs()`、
+`_return_relocate_tokens_for_obs()` 和 `_return_start_envelope_tokens_for_obs()`；
+随后调用 assembler，并把 `*_token_injected` 标志写回 planner state 供
+debug/trace builder 使用。
+
+本切片不改变 token 生成语义、low-dim key、policy dispatch 目标、active skill、
+branch order、switch reason、debug schema 或 rollout record 行为。无 token 时仍返回
+原 observation 对象；只有 `goal_tokens` 时仍不设置 planner debug injected flag。
+
 ## 测试锁定规则
 
 Phase 1 必须覆盖：
@@ -237,6 +263,7 @@ pytest tests/test_dig_lifecycle_service.py tests/test_agx_primitives_v2_2.py -k 
 pytest tests/test_dig_start_alignment_service.py tests/test_agx_primitives_v2_2.py -k "pre_dig_align"
 pytest tests/test_bootstrap_service.py tests/test_agx_primitives_v2_2.py -k "bootstrap"
 pytest tests/test_primitive_planner_debug_schema.py tests/test_planner_golden_traces.py
+pytest tests/test_policy_observation.py tests/test_eval_rollout_records.py
 ```
 
 ## 回滚策略

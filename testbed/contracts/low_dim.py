@@ -9,73 +9,83 @@ import numpy as np
 
 from testbed.contracts.primitive_tokens import (
     DIG_CUT_TOKEN_DIM,
+    DIG_CUT_TOKEN_KEY,
     DIG_DEPTH_PROFILE_TOKEN_DIM,
+    DIG_DEPTH_PROFILE_TOKEN_KEY,
+    RETURN_RELOCATE_TOKEN_DIM,
+    RETURN_RELOCATE_TOKEN_KEY,
     RETURN_START_ENVELOPE_TOKEN_DIM,
+    RETURN_START_ENVELOPE_TOKEN_KEY,
     RETURN_TARGET_TOKEN_DIM,
+    RETURN_TARGET_TOKEN_KEY,
 )
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 
-
 LOW_DIM_CONTRACT_VERSION = "v2_4_5_low_dim_v1"
 
+QPOS_LOW_DIM_KEY = "qpos"
+QVEL_LOW_DIM_KEY = "qvel"
+GOAL_TOKEN_KEY = "goal_tokens"
+CELL_ENTRY_TOKEN_KEY = "cell_entry_tokens"
+
 SUPPORTED_LOW_DIM_KEYS = (
-    "qpos",
-    "qvel",
-    "goal_tokens",
-    "cell_entry_tokens",
-    "dig_cut_tokens",
-    "dig_depth_profile_tokens_v1",
-    "return_target_tokens",
-    "return_relocate_tokens_v1",
-    "return_start_envelope_tokens_v1",
+    QPOS_LOW_DIM_KEY,
+    QVEL_LOW_DIM_KEY,
+    GOAL_TOKEN_KEY,
+    CELL_ENTRY_TOKEN_KEY,
+    DIG_CUT_TOKEN_KEY,
+    DIG_DEPTH_PROFILE_TOKEN_KEY,
+    RETURN_TARGET_TOKEN_KEY,
+    RETURN_RELOCATE_TOKEN_KEY,
+    RETURN_START_ENVELOPE_TOKEN_KEY,
 )
 
 TOKEN_LOW_DIM_KEYS = (
-    "goal_tokens",
-    "dig_cut_tokens",
-    "dig_depth_profile_tokens_v1",
-    "return_target_tokens",
-    "return_relocate_tokens_v1",
-    "return_start_envelope_tokens_v1",
+    GOAL_TOKEN_KEY,
+    DIG_CUT_TOKEN_KEY,
+    DIG_DEPTH_PROFILE_TOKEN_KEY,
+    RETURN_TARGET_TOKEN_KEY,
+    RETURN_RELOCATE_TOKEN_KEY,
+    RETURN_START_ENVELOPE_TOKEN_KEY,
 )
 
 _TOKEN_DIMS = {
-    "goal_tokens": int(GOAL_TOKEN_DIM),
-    "cell_entry_tokens": int(CELL_ENTRY_TOKEN_DIM),
-    "dig_cut_tokens": int(DIG_CUT_TOKEN_DIM),
-    "dig_depth_profile_tokens_v1": int(DIG_DEPTH_PROFILE_TOKEN_DIM),
-    "return_target_tokens": int(RETURN_TARGET_TOKEN_DIM),
-    "return_relocate_tokens_v1": int(RETURN_TARGET_TOKEN_DIM),
-    "return_start_envelope_tokens_v1": int(RETURN_START_ENVELOPE_TOKEN_DIM),
+    GOAL_TOKEN_KEY: int(GOAL_TOKEN_DIM),
+    CELL_ENTRY_TOKEN_KEY: int(CELL_ENTRY_TOKEN_DIM),
+    DIG_CUT_TOKEN_KEY: int(DIG_CUT_TOKEN_DIM),
+    DIG_DEPTH_PROFILE_TOKEN_KEY: int(DIG_DEPTH_PROFILE_TOKEN_DIM),
+    RETURN_TARGET_TOKEN_KEY: int(RETURN_TARGET_TOKEN_DIM),
+    RETURN_RELOCATE_TOKEN_KEY: int(RETURN_RELOCATE_TOKEN_DIM),
+    RETURN_START_ENVELOPE_TOKEN_KEY: int(RETURN_START_ENVELOPE_TOKEN_DIM),
 }
 
 _MISSING_MESSAGES = {
-    "goal_tokens": (
+    GOAL_TOKEN_KEY: (
         "Requested low_dim key 'goal_tokens' but /v2/step/goal_tokens is missing."
     ),
-    "cell_entry_tokens": (
+    CELL_ENTRY_TOKEN_KEY: (
         "Requested low_dim key 'cell_entry_tokens' but "
         "/v2/step/cell_entry_tokens is missing."
     ),
-    "dig_cut_tokens": (
+    DIG_CUT_TOKEN_KEY: (
         "Requested low_dim key 'dig_cut_tokens' but "
         "/v2/step/dig_cut_tokens is missing."
     ),
-    "dig_depth_profile_tokens_v1": (
+    DIG_DEPTH_PROFILE_TOKEN_KEY: (
         "Requested low_dim key 'dig_depth_profile_tokens_v1' but "
         "/v2/step/dig_depth_profile_tokens_v1 is missing."
     ),
-    "return_target_tokens": (
+    RETURN_TARGET_TOKEN_KEY: (
         "Requested low_dim key 'return_target_tokens' but "
         "/v2/step/return_target_tokens is missing."
     ),
-    "return_relocate_tokens_v1": (
+    RETURN_RELOCATE_TOKEN_KEY: (
         "Requested low_dim key 'return_relocate_tokens_v1' but "
         "a relocate target could not be derived from "
         "/v2/step/return_target_tokens or metadata next_operator fields."
     ),
-    "return_start_envelope_tokens_v1": (
+    RETURN_START_ENVELOPE_TOKEN_KEY: (
         "Requested low_dim key 'return_start_envelope_tokens_v1' but "
         "/v2/step/return_start_envelope_tokens_v1 is missing."
     ),
