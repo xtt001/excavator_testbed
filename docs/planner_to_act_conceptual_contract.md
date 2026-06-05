@@ -187,6 +187,13 @@ distance/depth/contact、bucket/tip pose、dig cell id、target geometry，以�
 构造 snapshot、如何把这些 facts 交给 lifecycle/handoff services、以及所有状态写回和
 transition 语义；observation parser 不做 gate 判断或状态机跳转。
 
+当前 primitive planner 初始化配置 helper 的实现 source-of-truth 是
+`testbed.planner.primitive_config`。该模块只负责 mode/name/vector/optional
+value normalization、dig-cut prior loading、dig-cut / coverage / dig-depth-profile
+config validation，以及 legacy goal-sequence normalization；`PrimitivePlannerACTPolicy`
+仍负责 `__init__` 中的配置写回、service 实例创建、active state 初始化和 reset timing。
+该边界避免把配置解析散落在状态机 shell 内，但不改变默认配置、错误文本或在线调度语义。
+
 当前在线 dump lifecycle gate 的实现 source-of-truth 是
 `testbed.planner.dump_lifecycle.DumpLifecycleGateService`。该 service 负责
 4P legacy dump readiness、dump-area relative / near-window geometry gate、

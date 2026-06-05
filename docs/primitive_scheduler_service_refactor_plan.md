@@ -82,6 +82,35 @@ planner 大文件只保留旧 private facade：
 legacy planner helper 的 zero/NaN fallback、target geometry error message、branch
 order、threshold、switch reason、policy dispatch、debug schema 或 rollout 行为。
 
+## Primitive Planner Config Helper Slice
+
+新增模块：
+
+- `testbed/planner/primitive_config.py`
+
+`primitive_config` 负责 primitive planner 初始化期间的纯配置解析/校验 helper：
+return-start envelope plane-depth mode normalization、failed-dig replan next-skill
+normalization、optional float/vector parsing、dig-cut prior JSON loading、dig-cut /
+coverage / dig-depth-profile config validation，以及 legacy goal-sequence
+normalization。
+
+planner 大文件只保留旧 private facade：
+
+- `_normalize_plane_depth_mode()`
+- `_normalize_failed_dig_replan_skill()`
+- `_align_vector()`
+- `_optional_align_vector()`
+- `_optional_float()`
+- `_load_dig_cut_prior()`
+- `_validate_dig_cut_planner_config()`
+- `_normalize_goal_sequence()`
+
+本切片不改变默认 config、validation error text、prior token-order validation、
+goal sector id mapping、threshold、branch order、switch reason、policy dispatch、
+debug schema 或 rollout 行为。初始化仍由 `PrimitivePlannerACTPolicy.__init__`
+负责把解析后的配置写入 planner state；config helper 不接收 planner `self`，不创建
+service，不读取 runtime observation，也不参与状态机跳转。
+
 ## Dump Lifecycle Gate Slice
 
 新增模块：
@@ -436,6 +465,7 @@ pytest tests/test_policy_observation.py tests/test_eval_rollout_records.py
 pytest tests/test_dig_depth_profile_service.py tests/test_agx_primitives_v2_2.py -k "dig_depth_profile or state_conditioned_exemplar"
 pytest tests/test_return_target_plan_service.py tests/test_agx_primitives_v2_2.py -k "return_target or pending_return_target"
 pytest tests/test_dig_cut_plan_service.py tests/test_agx_primitives_v2_2.py -k "dig_cut or operator_prior or pending_return_target"
+pytest tests/test_primitive_planner_config.py tests/test_agx_primitives_v2_2.py -k "goal_sequence or failed_dig_replan or dig_depth_profile or return_envelope"
 ```
 
 ## 回滚策略
