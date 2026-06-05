@@ -221,6 +221,35 @@ token contract string、coverage decision trace payload、rollout JSONL 消费�
 planner 分支顺序、switch reason、counter、policy reset timing 或 active policy
 dispatch。
 
+## Return Start-Envelope Builder Slice
+
+`testbed.planner.return_start_envelope` 继续作为 return start-envelope token 和
+handoff gate 的 source-of-truth。本切片新增
+`ReturnStartEnvelopeBuildRequest` 和 `build_return_start_envelope_for_plan()`，
+负责把 cell/global prior fallback、live-current-observation fallback、relocate
+qpos/spatial conditioning、source string 和 prior-bounds usage flags 组合成一个
+`ReturnStartEnvelopeState`。
+
+planner 大文件只保留旧 private facade：
+
+- `_build_return_start_envelope_tokens_for_obs()`
+- `_maybe_condition_return_start_envelope_qpos_from_relocate()`
+- `_return_start_envelope_prior_token()`
+- `_return_start_envelope_prior_mapping()`
+- `_return_start_envelope_prior_bounds()`
+- `_return_start_envelope_token_from_prior_mapping()`
+
+其中 `_build_return_start_envelope_tokens_for_obs()` 只负责从 planner state 装配
+request、调用 service，并写回 `_return_start_envelope_token_source`、
+`_return_start_envelope_use_prior_spatial_bounds` 和
+`_return_start_envelope_use_prior_qpos_bounds`。planner shell 仍负责 return target
+plan 生成、pending dig cut state 写回、handoff context 装配、branch order、switch
+reason、policy dispatch、debug schema 和 rollout trace。
+
+本切片不改变 token dim/order、prior cell/global fallback 策略、source string、
+relocate conditioning 数值、start-envelope handoff gate、pending dig plan、
+return->dig branch order、debug_state 字段或 rollout 行为。
+
 ## Policy Observation Assembly Slice
 
 新增模块：

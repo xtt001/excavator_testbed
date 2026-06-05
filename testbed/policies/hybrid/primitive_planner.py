@@ -138,8 +138,9 @@ from testbed.planner.return_handoff import (
     ReturnToDigHandoffGateService,
 )
 from testbed.planner.return_start_envelope import (
+    ReturnStartEnvelopeBuildRequest,
     ReturnStartEnvelopeConfig,
-    build_live_return_start_envelope_token,
+    build_return_start_envelope_for_plan,
     condition_return_start_envelope_from_relocate,
     return_start_envelope_token_from_prior_mapping,
 )
@@ -3004,37 +3005,28 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         *,
         corridor_id: int | None = None,
     ) -> np.ndarray:
-        prior_token, prior_source = self._return_start_envelope_prior_token(
-            corridor_id=corridor_id,
-        )
-        if prior_token is not None:
-            self._return_start_envelope_token_source = prior_source
-            self._return_start_envelope_use_prior_spatial_bounds = True
-            self._return_start_envelope_use_prior_qpos_bounds = True
-            token = prior_token.astype(np.float32)
-            token = self._maybe_condition_return_start_envelope_qpos_from_relocate(
-                token,
+        state = build_return_start_envelope_for_plan(
+            ReturnStartEnvelopeBuildRequest(
+                env_state=self._env_state(obs),
+                qpos=obs.get("qpos", np.zeros(self.action_dim)),
+                qvel=obs.get("qvel", np.zeros(self.action_dim)),
                 raw_fields=raw_fields,
-                source=prior_source,
+                action_dim=self.action_dim,
+                dig_cut_prior=self.dig_cut_prior,
+                config=self._current_return_start_envelope_config(),
+                cell_id=self._return_start_envelope_cell_id(corridor_id),
             )
-            return token.astype(np.float32)
-
-        self._return_start_envelope_token_source = "live_current_obs_fallback"
-        self._return_start_envelope_use_prior_spatial_bounds = True
-        self._return_start_envelope_use_prior_qpos_bounds = True
-        token = build_live_return_start_envelope_token(
-            env_state=self._env_state(obs),
-            qpos=obs.get("qpos", np.zeros(self.action_dim)),
-            qvel=obs.get("qvel", np.zeros(self.action_dim)),
-            raw_fields=raw_fields,
-            action_dim=self.action_dim,
         )
-        token = self._maybe_condition_return_start_envelope_qpos_from_relocate(
-            token,
-            raw_fields=raw_fields,
-            source="live_current_obs_fallback",
+        self._return_start_envelope_token_source = str(state.source)
+        self._return_start_envelope_use_prior_spatial_bounds = bool(
+            state.use_prior_spatial_bounds
         )
-        return token.astype(np.float32)
+        self._return_start_envelope_use_prior_qpos_bounds = bool(
+            state.use_prior_qpos_bounds
+        )
+        if state.token is None:
+            raise RuntimeError("return start-envelope builder returned no token.")
+        return np.asarray(state.token, dtype=np.float32)
 
     def _maybe_condition_return_start_envelope_qpos_from_relocate(
         self,

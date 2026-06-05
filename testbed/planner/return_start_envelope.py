@@ -163,6 +163,60 @@ class ReturnStartEnvelopeState:
     checks: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class ReturnStartEnvelopeBuildRequest:
+    env_state: Any
+    qpos: Any | None
+    qvel: Any | None
+    raw_fields: dict[str, float | int]
+    action_dim: int
+    dig_cut_prior: dict[str, Any] | None = None
+    config: ReturnStartEnvelopeConfig = field(
+        default_factory=ReturnStartEnvelopeConfig
+    )
+    cell_id: int | None = None
+
+
+def build_return_start_envelope_for_plan(
+    request: ReturnStartEnvelopeBuildRequest,
+) -> ReturnStartEnvelopeState:
+    mapping, mapping_source = return_start_envelope_prior_mapping(
+        request.dig_cut_prior,
+        config=request.config,
+        cell_id=request.cell_id,
+    )
+    prior_token, prior_source = return_start_envelope_prior_token(
+        mapping,
+        source=mapping_source,
+        cell_id=request.cell_id,
+    )
+    if prior_token is not None:
+        return condition_return_start_envelope_from_relocate(
+            prior_token.astype(np.float32),
+            raw_fields=request.raw_fields,
+            config=request.config,
+            source=prior_source,
+            use_prior_spatial_bounds=True,
+            use_prior_qpos_bounds=True,
+        )
+
+    token = build_live_return_start_envelope_token(
+        env_state=request.env_state,
+        qpos=request.qpos,
+        qvel=request.qvel,
+        raw_fields=request.raw_fields,
+        action_dim=request.action_dim,
+    )
+    return condition_return_start_envelope_from_relocate(
+        token,
+        raw_fields=request.raw_fields,
+        config=request.config,
+        source="live_current_obs_fallback",
+        use_prior_spatial_bounds=True,
+        use_prior_qpos_bounds=True,
+    )
+
+
 def build_live_return_start_envelope_token(
     *,
     env_state: Any,

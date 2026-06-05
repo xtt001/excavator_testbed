@@ -428,7 +428,8 @@ helper 作为 facade，不再复制 token 下标或 path。
 当前 return start-envelope / handoff gate 的实现 source-of-truth 是
 `testbed.planner.return_start_envelope`。该模块负责 live fallback token 构造、
 relocate-conditioned qpos/spatial conditioning、cell/global prior fallback、prior
-bounds 读取，以及 return->dig spatial/depth/contact/qpos gate 检查；
+bounds 读取、`build_return_start_envelope_for_plan()` 的 prior/live/conditioning
+组合，以及 return->dig spatial/depth/contact/qpos gate 检查；
 `PrimitivePlannerACTPolicy` 中的旧方法名只作为 facade 转调。此次迁移只移动职责边界，
 不改变 token dim/order、prior fallback、gate 判定、debug_state 字段或 rollout 行为。
 

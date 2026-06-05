@@ -28,8 +28,10 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
 )
 from testbed.planner.return_start_envelope import (
+    ReturnStartEnvelopeBuildRequest,
     ReturnStartEnvelopeConfig,
     build_live_return_start_envelope_token,
+    build_return_start_envelope_for_plan,
     condition_return_start_envelope_from_relocate,
     return_start_envelope_prior_bounds,
     return_start_envelope_prior_mapping,
@@ -173,6 +175,83 @@ def test_prior_token_and_bounds_fail_fast_on_wrong_shapes() -> None:
     )
     assert lower is None
     assert upper is None
+
+
+def test_build_return_start_envelope_for_plan_prefers_prior_and_conditions() -> None:
+    prior_token = _ready_token()
+    qpos_coefficients = np.zeros((4, 8), dtype=np.float32)
+    qpos_coefficients[:, 0] = np.asarray([0.45, 0.60, 0.20, 0.10], dtype=np.float32)
+    config = ReturnStartEnvelopeConfig(
+        use_cell_prior=True,
+        qpos_from_relocate_enabled=True,
+        qpos_from_relocate_coefficients=qpos_coefficients,
+        qpos_from_relocate_use_prior_qpos_bounds=False,
+    )
+
+    state = build_return_start_envelope_for_plan(
+        ReturnStartEnvelopeBuildRequest(
+            env_state=_env_state(long_norm=0.99, short_norm=0.88),
+            qpos=[0.1, 0.2, 0.3, 0.4],
+            qvel=[0.0, 0.0, 0.0, 0.0],
+            raw_fields=_valid_raw_fields(),
+            action_dim=4,
+            dig_cut_prior={
+                "return_start_envelope_cells": [
+                    {
+                        "cell_id": 3,
+                        "source_count": 4,
+                        "source_fraction": 0.5,
+                        "token_median": prior_token,
+                    }
+                ],
+                "return_start_envelope_global": {"token_median": prior_token + 1.0},
+            },
+            config=config,
+            cell_id=3,
+        )
+    )
+
+    assert state.source == "qc6_return_start_envelope_cell_3+relocate_qpos_linear"
+    assert state.use_prior_spatial_bounds is True
+    assert state.use_prior_qpos_bounds is False
+    assert state.token is not None
+    np.testing.assert_allclose(
+        state.token[RETURN_ENVELOPE_LONG_NORM_IDX],
+        prior_token[RETURN_ENVELOPE_LONG_NORM_IDX],
+        atol=1.0e-6,
+    )
+    np.testing.assert_allclose(
+        state.token[RETURN_ENVELOPE_QPOS_CENTER_SLICE],
+        np.asarray([0.45, 0.60, 0.20, 0.10], dtype=np.float32),
+        atol=1.0e-6,
+    )
+
+
+def test_build_return_start_envelope_for_plan_uses_live_fallback_without_prior() -> None:
+    state = build_return_start_envelope_for_plan(
+        ReturnStartEnvelopeBuildRequest(
+            env_state=_env_state(long_norm=0.25, short_norm=0.40),
+            qpos=[0.51, 0.62, 0.22, 0.18],
+            qvel=[-0.1, 0.3, -0.2, 0.05],
+            raw_fields={"operator_cut_depth_peak_m": 0.12},
+            action_dim=4,
+            dig_cut_prior=None,
+            config=ReturnStartEnvelopeConfig(),
+            cell_id=None,
+        )
+    )
+
+    assert state.source == "live_current_obs_fallback"
+    assert state.use_prior_spatial_bounds is True
+    assert state.use_prior_qpos_bounds is True
+    assert state.token is not None
+    assert state.token[RETURN_ENVELOPE_LONG_NORM_IDX] == pytest.approx(0.25)
+    assert state.token[RETURN_ENVELOPE_SHORT_NORM_IDX] == pytest.approx(0.40)
+    assert state.token[RETURN_ENVELOPE_DEPTH_CENTER_IDX] == pytest.approx(0.12)
+    np.testing.assert_allclose(
+        state.token[RETURN_ENVELOPE_QPOS_CENTER_SLICE],
+        np.asarray([0.51, 0.62, 0.22, 0.18], dtype=np.float32),
+    )
 
 
 def test_return_to_dig_start_envelope_gate_checks_ready_and_qpos_failure() -> None:
