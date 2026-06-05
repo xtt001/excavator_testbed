@@ -113,6 +113,29 @@ planner 大文件只保留薄 facade 和 facts/config 装配：
 cell-entry/coverage dig completion、failed-dig stop/retry/pre-dig-align 选择、
 switch reason 拼接、policy reset timing 和 debug schema 仍由 planner shell 控制。
 
+## Dig-Start Alignment Numeric Slice
+
+新增模块：
+
+- `testbed/planner/dig_start_alignment.py`
+
+`DigStartAlignmentService` 负责 pre-dig alignment 的纯数值 helper：从
+`dig_cut_tokens` 计算 target qpos、应用 qpos min/max、bucket target、
+controlled-dim / entry-intent mask，并生成 PD servo action。`pd_servo_action`
+是该数值计算的 source of truth；planner 中的 `_pd_servo_action()` 只保留为旧
+private facade。
+
+planner 大文件只保留薄 facade 和状态写回：
+
+- `_dig_start_alignment_config()`
+- `_pre_dig_align_target_from_token()`
+- `_pre_dig_align_action()`
+- `_pd_servo_action()`
+
+本切片不迁 pre-dig-align readiness decision，不改 surface guard、start envelope、
+entry-close handoff、entry-intent handoff、timeout handoff、hold counter、coverage
+reject/replan、switch reason、policy reset timing 或 debug schema。
+
 ## 测试锁定规则
 
 Phase 1 必须覆盖：
@@ -129,10 +152,12 @@ pytest tests/test_return_handoff_service.py tests/test_return_start_envelope.py 
 pytest tests/test_agx_primitives_v2_2.py -k "return_to_dig or direct_handoff or shallow_guard or pre_dig_align or spatial_mass_boundary"
 pytest tests/test_dump_lifecycle_service.py tests/test_planner_golden_traces.py tests/test_primitive_planner_debug_schema.py tests/test_agx_primitives_v2_2.py -k "dump_ready or dump_done or dump_end or dump_release or approach_dump or release_safety or near_window or dump_area_relative or carry_to_dump or dump_to_return"
 pytest tests/test_dig_lifecycle_service.py tests/test_agx_primitives_v2_2.py -k "dig_bad_replan or exit_guard or failed_dig or dig_complete or pre_dig_align or dig_to_carry"
+pytest tests/test_dig_start_alignment_service.py tests/test_agx_primitives_v2_2.py -k "pre_dig_align"
 ```
 
 ## 回滚策略
 
-Phase 1、dump lifecycle gate slice 和 dig lifecycle gate slice 的旧 private method
-均保留为 facade。如果 service extraction 发现行为漂移，可以让 facade 临时回到
-旧实现，同时保留新增 service unit tests 和 golden trace 作为后续迁移的行为锁。
+Phase 1、dump lifecycle gate slice、dig lifecycle gate slice 和 dig-start
+alignment numeric slice 的旧 private method 均保留为 facade。如果 service extraction
+发现行为漂移，可以让 facade 临时回到旧实现，同时保留新增 service unit tests 和
+golden trace 作为后续迁移的行为锁。

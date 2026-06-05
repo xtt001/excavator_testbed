@@ -105,6 +105,11 @@ from testbed.planner.dig_lifecycle import (
     DigLifecycleFacts,
     DigLifecycleGateService,
 )
+from testbed.planner.dig_start_alignment import (
+    DigStartAlignmentConfig,
+    DigStartAlignmentService,
+    pd_servo_action,
+)
 from testbed.planner.dump_lifecycle import (
     DumpLifecycleConfig,
     DumpLifecycleFacts,
@@ -281,6 +286,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self.boundary_detector = boundary_detector
         self.return_handoff_gate = ReturnToDigHandoffGateService()
         self.dig_lifecycle_gate = DigLifecycleGateService()
+        self.dig_start_alignment_service = DigStartAlignmentService()
         self.dump_lifecycle_gate = DumpLifecycleGateService()
         self.bootstrap_end_mode = str(bootstrap_end_mode)
         self.bootstrap_end_min_bucket_mass_kg = float(bootstrap_end_min_bucket_mass_kg)
@@ -1632,6 +1638,25 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self._pre_dig_align_entry_error_m = float(entry_error)
         return self._pre_dig_align_entry_close(entry_error, threshold=threshold)
 
+    def _dig_start_alignment_config(self) -> DigStartAlignmentConfig:
+        return DigStartAlignmentConfig(
+            action_dim=int(self.action_dim),
+            qpos_min=self.pre_dig_align_qpos_min,
+            qpos_max=self.pre_dig_align_qpos_max,
+            qpos_from_token_coefficients=self.pre_dig_align_qpos_from_token_coefficients,
+            controlled_dims=self.pre_dig_align_controlled_dims,
+            entry_intent_controlled_dims=(
+                None
+                if self.pre_dig_align_entry_intent_controlled_dims is None
+                else self.pre_dig_align_entry_intent_controlled_dims
+            ),
+            bucket_target_qpos=self.pre_dig_align_bucket_target_qpos,
+            kp=float(self.pre_dig_align_kp),
+            kd=float(self.pre_dig_align_kd),
+            action_clip=self.pre_dig_align_action_clip,
+            action_signs=self.pre_dig_align_action_signs,
+        )
+
     def _pre_dig_align_ready(self, obs: dict) -> bool:
         if not self.pre_dig_align_enabled:
             return True
@@ -1844,16 +1869,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self._pre_dig_align_entry_error_m = float(
             self._pre_dig_align_entry_error(obs)
         )
-        action = _pd_servo_action(
+        action = self.dig_start_alignment_service.action_for_target(
             qpos=qpos,
             qvel=qvel,
             target_qpos=target_qpos,
-            kp=self.pre_dig_align_kp,
-            kd=self.pre_dig_align_kd,
-            action_clip=self.pre_dig_align_action_clip,
-            action_signs=self.pre_dig_align_action_signs,
+            config=self._dig_start_alignment_config(),
         )
-        action[~self.pre_dig_align_controlled_dims] = 0.0
         return action
 
     def _pre_dig_align_target(self, obs: dict) -> np.ndarray:
@@ -1872,43 +1893,15 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         obs: dict,
         update_state: bool,
     ) -> np.ndarray:
-        token = np.asarray(token, dtype=np.float32).reshape(-1)
-        if len(token) < 2:
-            token = np.zeros(DIG_CUT_TOKEN_DIM, dtype=np.float32)
-        features = np.asarray(
-            [
-                1.0,
-                float(token[CUT_ENTRY_X_IDX]),
-                float(token[CUT_ENTRY_Z_IDX]),
-            ],
-            dtype=np.float32,
-        )
-        target = self.pre_dig_align_qpos_from_token_coefficients @ features
-        target = np.clip(target, self.pre_dig_align_qpos_min, self.pre_dig_align_qpos_max)
-        if self.pre_dig_align_bucket_target_qpos is not None and self.action_dim >= 4:
-            target[3] = float(
-                np.clip(
-                    self.pre_dig_align_bucket_target_qpos,
-                    self.pre_dig_align_qpos_min[3],
-                    self.pre_dig_align_qpos_max[3],
-                )
-            )
         qpos = np.asarray(
             obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
             dtype=np.float32,
         ).reshape(self.action_dim)
-        if self.pre_dig_align_entry_intent_controlled_dims is not None:
-            # Pre-align may consume the planned entry point, but not the dig-depth
-            # posture implied by a full dig-start token.
-            hold_dims = (
-                self.pre_dig_align_controlled_dims
-                & ~self.pre_dig_align_entry_intent_controlled_dims
-            )
-            target[hold_dims] = qpos[hold_dims]
-        target[~self.pre_dig_align_controlled_dims] = qpos[
-            ~self.pre_dig_align_controlled_dims
-        ]
-        target = target.astype(np.float32)
+        target = self.dig_start_alignment_service.target_from_token(
+            token=token,
+            qpos=qpos,
+            config=self._dig_start_alignment_config(),
+        )
         if update_state:
             self._pre_dig_align_target_qpos = target.copy()
         return target.copy()
@@ -3788,13 +3781,15 @@ def _pd_servo_action(
     action_clip: float | np.ndarray | list[float] | tuple[float, ...],
     action_signs: np.ndarray | list[float] | tuple[float, ...] | None = None,
 ) -> np.ndarray:
-    action = float(kp) * (target_qpos - qpos) - float(kd) * qvel
-    if action_signs is not None:
-        action = np.asarray(action_signs, dtype=np.float32).reshape(action.shape) * action
-    action_clip_arr = np.asarray(action_clip, dtype=np.float32)
-    if action_clip_arr.ndim == 0:
-        action_clip_arr = np.full_like(action, float(action_clip_arr))
-    return np.clip(action, -action_clip_arr, action_clip_arr).astype(np.float32)
+    return pd_servo_action(
+        qpos=qpos,
+        qvel=qvel,
+        target_qpos=target_qpos,
+        kp=kp,
+        kd=kd,
+        action_clip=action_clip,
+        action_signs=action_signs,
+    )
 
 
 @register_policy("primitive_planner_act_5p")
