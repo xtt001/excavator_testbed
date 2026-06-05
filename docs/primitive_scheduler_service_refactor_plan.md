@@ -50,6 +50,38 @@ planner 大文件只增加薄 facade：
 
 本阶段不改 threshold、不改 branch order、不改默认 config、不改 switch reason、不改 policy reset 语义、不改 debug/summary schema。
 
+## Dump Lifecycle Gate Slice
+
+新增模块：
+
+- `testbed/planner/dump_lifecycle.py`
+
+`DumpLifecycleGateService` 负责纯 gate 判断：4P `dump_ready`、
+dump-area relative position / near-window helper、`dump_done`、
+`carry_release_safety_done`，以及 5P `approach_ready`。service 只接收显式
+`DumpLifecycleFacts` 和 `DumpLifecycleConfig`，不接收 planner `self`，不调用
+`_set_skill()`，不更新 hold counter，不 reset policy，不完成 coverage，不决定
+return direct handoff。
+
+planner 大文件只保留薄 facade 和 facts/config 装配：
+
+- `_dump_lifecycle_config()`
+- `_dump_lifecycle_facts()`
+- `_dump_ready()`
+- `_dump_area_relative_dump_position_ok()`
+- `_dump_area_relative_near_window_ok()`
+- `_optional_range_ok()`
+- `_optional_range_near_ok()`
+- `_dump_ready_position_ok()`
+- `_dump_done()`
+- `_carry_release_safety_done()`
+- 5P `_approach_ready()`
+
+本切片保留 carry/dump/dump_release/return 的 branch order、threshold、hold
+counter、switch reason、coverage completion reason、policy reset timing 和 debug
+schema。semantic profile 下 legacy `_dump_ready()` / `_dump_done()` fallback 仍由
+planner shell 的原有分支控制，service 不提升实验语义为默认行为。
+
 ## 测试锁定规则
 
 Phase 1 必须覆盖：
@@ -64,8 +96,11 @@ Phase 1 必须覆盖：
 ```bash
 pytest tests/test_return_handoff_service.py tests/test_return_start_envelope.py tests/test_planner_golden_traces.py tests/test_primitive_planner_debug_schema.py
 pytest tests/test_agx_primitives_v2_2.py -k "return_to_dig or direct_handoff or shallow_guard or pre_dig_align or spatial_mass_boundary"
+pytest tests/test_dump_lifecycle_service.py tests/test_planner_golden_traces.py tests/test_primitive_planner_debug_schema.py tests/test_agx_primitives_v2_2.py -k "dump_ready or dump_done or dump_end or dump_release or approach_dump or release_safety or near_window or dump_area_relative or carry_to_dump or dump_to_return"
 ```
 
 ## 回滚策略
 
-Phase 1 的旧 private method 均保留为 facade。如果 service extraction 发现行为漂移，可以让 facade 临时回到旧实现，同时保留新增 service unit tests 和 golden trace 作为后续迁移的行为锁。
+Phase 1 和 dump lifecycle gate slice 的旧 private method 均保留为 facade。如果
+service extraction 发现行为漂移，可以让 facade 临时回到旧实现，同时保留新增
+service unit tests 和 golden trace 作为后续迁移的行为锁。

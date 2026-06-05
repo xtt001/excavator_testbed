@@ -46,7 +46,6 @@ from testbed.data.operator_first_v2_2 import (
     _build_dig_cut_token,
     build_live_dig_cut_tokens_from_pose,
 )
-from testbed.data.v2_1 import build_goal_tokens
 from testbed.data.schema import (
     ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
@@ -55,31 +54,38 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
-    ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
-    ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
-    ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
-    ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
-    ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
-    ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
     ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
     ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
-from testbed.planner.boundary_detector import BoundaryDetector
-from testbed.planner.dig_coverage import (
-    CoverageCorridorState,
-    DigCoverageMixin,
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX as ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
 )
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX as ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
+)
+from testbed.data.schema import (
+    ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX as ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX,
+)
+from testbed.data.schema import (
+    ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX as ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
+)
+from testbed.data.schema import (
+    ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX as ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
+)
+from testbed.data.v2_1 import build_goal_tokens
+from testbed.planner.boundary_detector import BoundaryDetector
 from testbed.planner.cell_entry import (
     CELL_ENTRY_TOKEN_DIM,
     CellEntryGoal,
@@ -90,9 +96,22 @@ from testbed.planner.cell_entry import (
     PrimitiveCycleOutcome,
     build_cell_entry_tokens,
 )
+from testbed.planner.dig_coverage import (
+    CoverageCorridorState,
+    DigCoverageMixin,
+)
+from testbed.planner.dump_lifecycle import (
+    DumpLifecycleConfig,
+    DumpLifecycleFacts,
+    DumpLifecycleGateService,
+)
 from testbed.planner.primitive_debug import (
-    TRANSITION_POLICY_MODE_PRIMITIVE,
-    TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
+    TRANSITION_POLICY_MODE_PRIMITIVE as TRANSITION_POLICY_MODE_PRIMITIVE,
+)
+from testbed.planner.primitive_debug import (
+    TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY as TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
+)
+from testbed.planner.primitive_debug import (
     build_primitive_debug_state,
     build_primitive_rollout_summary,
 )
@@ -107,15 +126,20 @@ from testbed.planner.return_start_envelope import (
     ReturnStartEnvelopeConfig,
     build_live_return_start_envelope_token,
     condition_return_start_envelope_from_relocate,
-    return_start_envelope_prior_bounds as resolve_return_start_envelope_prior_bounds,
-    return_start_envelope_prior_mapping as resolve_return_start_envelope_prior_mapping,
-    return_start_envelope_prior_token as resolve_return_start_envelope_prior_token,
     return_start_envelope_token_from_prior_mapping,
+)
+from testbed.planner.return_start_envelope import (
+    return_start_envelope_prior_bounds as resolve_return_start_envelope_prior_bounds,
+)
+from testbed.planner.return_start_envelope import (
+    return_start_envelope_prior_mapping as resolve_return_start_envelope_prior_mapping,
+)
+from testbed.planner.return_start_envelope import (
+    return_start_envelope_prior_token as resolve_return_start_envelope_prior_token,
 )
 from testbed.planner.snapshots import PlannerSnapshot, build_planner_snapshot
 from testbed.policies.base import Policy, register_policy
 from testbed.policies.hybrid.adapter import HYBRID_MODE_TRANSITION, HYBRID_MODE_WORK
-
 
 PRIMITIVE_SKILL_NAMES = ("dig", "carry", "dump", "return")
 PRIMITIVE_SKILL_IDS = {name: index for index, name in enumerate(PRIMITIVE_SKILL_NAMES)}
@@ -251,6 +275,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self.bootstrap_policy = bootstrap_policy
         self.boundary_detector = boundary_detector
         self.return_handoff_gate = ReturnToDigHandoffGateService()
+        self.dump_lifecycle_gate = DumpLifecycleGateService()
         self.bootstrap_end_mode = str(bootstrap_end_mode)
         self.bootstrap_end_min_bucket_mass_kg = float(bootstrap_end_min_bucket_mass_kg)
         self.bootstrap_end_min_distance_to_dig_area_m = float(
@@ -2053,67 +2078,100 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         profile = str(getattr(config, "boundary_profile", "legacy"))
         return profile == "v2_4_5_spatial_mass"
 
+    def _dump_lifecycle_config(self) -> DumpLifecycleConfig:
+        return DumpLifecycleConfig(
+            dump_ready_min_bucket_mass_kg=float(self.dump_ready_min_bucket_mass_kg),
+            dump_ready_min_height_above_rim_m=float(
+                self.dump_ready_min_height_above_rim_m
+            ),
+            dump_ready_require_over_footprint=bool(
+                self.dump_ready_require_over_footprint
+            ),
+            dump_ready_require_clearance=bool(self.dump_ready_require_clearance),
+            dump_ready_max_horizontal_distance_m=(
+                None
+                if self.dump_ready_max_horizontal_distance_m is None
+                else float(self.dump_ready_max_horizontal_distance_m)
+            ),
+            dump_ready_position_mode=str(self.dump_ready_position_mode),
+            dump_ready_max_dump_area_footprint_outside_distance_m=(
+                None
+                if self.dump_ready_max_dump_area_footprint_outside_distance_m is None
+                else float(self.dump_ready_max_dump_area_footprint_outside_distance_m)
+            ),
+            dump_ready_min_dump_area_relative_x_m=(
+                None
+                if self.dump_ready_min_dump_area_relative_x_m is None
+                else float(self.dump_ready_min_dump_area_relative_x_m)
+            ),
+            dump_ready_max_dump_area_relative_x_m=(
+                None
+                if self.dump_ready_max_dump_area_relative_x_m is None
+                else float(self.dump_ready_max_dump_area_relative_x_m)
+            ),
+            dump_ready_min_dump_area_relative_z_m=(
+                None
+                if self.dump_ready_min_dump_area_relative_z_m is None
+                else float(self.dump_ready_min_dump_area_relative_z_m)
+            ),
+            dump_ready_max_dump_area_relative_z_m=(
+                None
+                if self.dump_ready_max_dump_area_relative_z_m is None
+                else float(self.dump_ready_max_dump_area_relative_z_m)
+            ),
+            dump_ready_near_window_enabled=bool(self.dump_ready_near_window_enabled),
+            dump_ready_near_window_x_tolerance_m=float(
+                self.dump_ready_near_window_x_tolerance_m
+            ),
+            dump_ready_near_window_z_tolerance_m=float(
+                self.dump_ready_near_window_z_tolerance_m
+            ),
+            dump_ready_near_window_outside_tolerance_m=float(
+                self.dump_ready_near_window_outside_tolerance_m
+            ),
+            dump_ready_near_window_require_over_footprint=bool(
+                self.dump_ready_near_window_require_over_footprint
+            ),
+            dump_done_max_bucket_mass_kg=float(self.dump_done_max_bucket_mass_kg),
+            dump_done_min_deposit_delta_kg=float(self.dump_done_min_deposit_delta_kg),
+            approach_ready_min_bucket_mass_kg=float(
+                getattr(self, "approach_ready_min_bucket_mass_kg", 0.0)
+            ),
+            approach_ready_max_horizontal_distance_m=(
+                None
+                if getattr(self, "approach_ready_max_horizontal_distance_m", None)
+                is None
+                else float(self.approach_ready_max_horizontal_distance_m)
+            ),
+            approach_ready_min_height_above_rim_m=float(
+                getattr(self, "approach_ready_min_height_above_rim_m", 0.0)
+            ),
+            approach_ready_require_clearance=bool(
+                getattr(self, "approach_ready_require_clearance", True)
+            ),
+        )
+
+    def _dump_lifecycle_facts(self, obs: dict) -> DumpLifecycleFacts:
+        return DumpLifecycleFacts(
+            mass_in_bucket_kg=self._mass_in_bucket(obs),
+            deposited_mass_kg=self._deposited_mass(obs),
+            target_geometry=self._target_geometry(obs),
+            semantic_boundary_profile_active=self._semantic_boundary_profile_active(),
+            coverage_cycle_start_deposit_kg=float(
+                self._coverage_cycle_start_deposit_kg
+            ),
+        )
+
     def _dump_ready(self, obs: dict) -> bool:
-        mass = self._mass_in_bucket(obs)
-        if mass < self.dump_ready_min_bucket_mass_kg:
-            return False
-        geometry = self._target_geometry(obs)
-        over_footprint = geometry["bucket_over_target_footprint_mask"] > 0.5
-        height_ok = (
-            geometry["bucket_height_above_target_rim_m"]
-            >= self.dump_ready_min_height_above_rim_m - 1.0e-6
-        )
-        clearance_ok = geometry["dump_clearance_ok_mask"] > 0.5
-        horizontal_ok = False
-        if self.dump_ready_max_horizontal_distance_m is not None:
-            horizontal_ok = (
-                geometry["target_horizontal_distance_m"]
-                <= self.dump_ready_max_horizontal_distance_m + 1.0e-6
-            )
-        dump_area_relative_ok = self._dump_area_relative_dump_position_ok(geometry)
-        position_ok = self._dump_ready_position_ok(
-            over_footprint=over_footprint,
-            dump_area_relative_ok=dump_area_relative_ok,
-            horizontal_ok=horizontal_ok,
-        )
-        if not position_ok:
-            position_ok = self._dump_area_relative_near_window_ok(
-                geometry=geometry,
-                over_footprint=over_footprint,
-            )
-        return bool(
-            height_ok
-            and position_ok
-            and (clearance_ok or not self.dump_ready_require_clearance)
+        return self.dump_lifecycle_gate.dump_ready(
+            self._dump_lifecycle_facts(obs),
+            self._dump_lifecycle_config(),
         )
 
     def _dump_area_relative_dump_position_ok(self, geometry: dict[str, float]) -> bool:
-        if self.dump_ready_max_dump_area_footprint_outside_distance_m is None:
-            return False
-        outside_distance = float(
-            geometry.get("bucket_dump_area_footprint_outside_distance_m", np.nan)
-        )
-        outside_ok = bool(
-            np.isfinite(outside_distance)
-            and outside_distance >= 0.0
-            and outside_distance
-            <= self.dump_ready_max_dump_area_footprint_outside_distance_m + 1.0e-6
-        )
-        if not outside_ok:
-            return False
-        return bool(
-            self._optional_range_ok(
-                geometry=geometry,
-                name="bucket_dump_area_relative_x_m",
-                min_value=self.dump_ready_min_dump_area_relative_x_m,
-                max_value=self.dump_ready_max_dump_area_relative_x_m,
-            )
-            and self._optional_range_ok(
-                geometry=geometry,
-                name="bucket_dump_area_relative_z_m",
-                min_value=self.dump_ready_min_dump_area_relative_z_m,
-                max_value=self.dump_ready_max_dump_area_relative_z_m,
-            )
+        return self.dump_lifecycle_gate.dump_area_relative_dump_position_ok(
+            geometry,
+            self._dump_lifecycle_config(),
         )
 
     def _dump_area_relative_near_window_ok(
@@ -2122,41 +2180,10 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         geometry: dict[str, float],
         over_footprint: bool,
     ) -> bool:
-        if not self.dump_ready_near_window_enabled:
-            return False
-        if self.dump_ready_near_window_require_over_footprint and not over_footprint:
-            return False
-        if self.dump_ready_max_dump_area_footprint_outside_distance_m is None:
-            return False
-        outside_distance = float(
-            geometry.get("bucket_dump_area_footprint_outside_distance_m", np.nan)
-        )
-        outside_limit = (
-            self.dump_ready_max_dump_area_footprint_outside_distance_m
-            + self.dump_ready_near_window_outside_tolerance_m
-        )
-        outside_ok = bool(
-            np.isfinite(outside_distance)
-            and outside_distance >= 0.0
-            and outside_distance <= outside_limit + 1.0e-6
-        )
-        if not outside_ok:
-            return False
-        return bool(
-            self._optional_range_near_ok(
-                geometry=geometry,
-                name="bucket_dump_area_relative_x_m",
-                min_value=self.dump_ready_min_dump_area_relative_x_m,
-                max_value=self.dump_ready_max_dump_area_relative_x_m,
-                tolerance=self.dump_ready_near_window_x_tolerance_m,
-            )
-            and self._optional_range_near_ok(
-                geometry=geometry,
-                name="bucket_dump_area_relative_z_m",
-                min_value=self.dump_ready_min_dump_area_relative_z_m,
-                max_value=self.dump_ready_max_dump_area_relative_z_m,
-                tolerance=self.dump_ready_near_window_z_tolerance_m,
-            )
+        return self.dump_lifecycle_gate.dump_area_relative_near_window_ok(
+            geometry=geometry,
+            over_footprint=over_footprint,
+            config=self._dump_lifecycle_config(),
         )
 
     @staticmethod
@@ -2167,16 +2194,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         min_value: float | None,
         max_value: float | None,
     ) -> bool:
-        if min_value is None and max_value is None:
-            return True
-        value = float(geometry.get(name, np.nan))
-        if not np.isfinite(value):
-            return False
-        if min_value is not None and value < min_value - 1.0e-6:
-            return False
-        if max_value is not None and value > max_value + 1.0e-6:
-            return False
-        return True
+        return DumpLifecycleGateService.optional_range_ok(
+            geometry=geometry,
+            name=name,
+            min_value=min_value,
+            max_value=max_value,
+        )
 
     @staticmethod
     def _optional_range_near_ok(
@@ -2187,18 +2210,13 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         max_value: float | None,
         tolerance: float,
     ) -> bool:
-        if min_value is None and max_value is None:
-            return True
-        value = float(geometry.get(name, np.nan))
-        if not np.isfinite(value):
-            return False
-        tol = max(0.0, float(tolerance))
-        if min_value is not None and value < min_value - tol - 1.0e-6:
-            return False
-        if max_value is not None and value > max_value + tol + 1.0e-6:
-            return False
-        return True
-
+        return DumpLifecycleGateService.optional_range_near_ok(
+            geometry=geometry,
+            name=name,
+            min_value=min_value,
+            max_value=max_value,
+            tolerance=tolerance,
+        )
 
     def _dump_ready_position_ok(
         self,
@@ -2207,43 +2225,24 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         dump_area_relative_ok: bool,
         horizontal_ok: bool,
     ) -> bool:
-        # `dump_ready_require_over_footprint=False` relaxes the footprint mask
-        # only; it must not disable the selected target-relative position rule.
-        mode = self.dump_ready_position_mode
-        if mode == "footprint_or_dump_area_relative":
-            return bool(
-                dump_area_relative_ok
-                or (over_footprint and self.dump_ready_require_over_footprint)
-            )
-        if mode == "dump_area_relative":
-            return bool(dump_area_relative_ok)
-        if mode == "footprint":
-            return bool(over_footprint or not self.dump_ready_require_over_footprint)
-        if mode == "footprint_or_horizontal":
-            return bool(
-                horizontal_ok
-                or (over_footprint and self.dump_ready_require_over_footprint)
-            )
-        raise ValueError(
-            f"Unsupported dump_ready_position_mode {mode!r}. Expected one of "
-            "footprint_or_dump_area_relative, dump_area_relative, footprint, "
-            "footprint_or_horizontal."
+        return self.dump_lifecycle_gate.dump_ready_position_ok(
+            over_footprint=over_footprint,
+            dump_area_relative_ok=dump_area_relative_ok,
+            horizontal_ok=horizontal_ok,
+            config=self._dump_lifecycle_config(),
         )
 
     def _dump_done(self, obs: dict) -> bool:
-        mass_low = self._mass_in_bucket(obs) <= self.dump_done_max_bucket_mass_kg
-        deposit_delta = self._deposited_mass(obs) - self._dump_start_deposited_mass_kg
-        return bool(mass_low and deposit_delta >= self.dump_done_min_deposit_delta_kg)
+        return self.dump_lifecycle_gate.dump_done(
+            self._dump_lifecycle_facts(obs),
+            self._dump_lifecycle_config(),
+            dump_start_deposited_mass_kg=self._dump_start_deposited_mass_kg,
+        )
 
     def _carry_release_safety_done(self, obs: dict) -> bool:
-        if not self._semantic_boundary_profile_active():
-            return False
-        deposit_delta = self._deposited_mass(obs) - float(
-            self._coverage_cycle_start_deposit_kg
-        )
-        return bool(
-            self._mass_in_bucket(obs) <= self.dump_done_max_bucket_mass_kg
-            and deposit_delta >= self.dump_done_min_deposit_delta_kg
+        return self.dump_lifecycle_gate.carry_release_safety_done(
+            self._dump_lifecycle_facts(obs),
+            self._dump_lifecycle_config(),
         )
 
     def _make_snapshot(
@@ -4151,24 +4150,9 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             self._clear_dig_cut_plan()
 
     def _approach_ready(self, obs: dict) -> bool:
-        if self._mass_in_bucket(obs) < self.approach_ready_min_bucket_mass_kg:
-            return False
-        geometry = self._target_geometry(obs)
-        horizontal_ok = True
-        if self.approach_ready_max_horizontal_distance_m is not None:
-            horizontal_ok = (
-                geometry["target_horizontal_distance_m"]
-                <= self.approach_ready_max_horizontal_distance_m + 1.0e-6
-            )
-        height_ok = (
-            geometry["bucket_height_above_target_rim_m"]
-            >= self.approach_ready_min_height_above_rim_m - 1.0e-6
-        )
-        clearance_ok = geometry["dump_clearance_ok_mask"] > 0.5
-        return bool(
-            horizontal_ok
-            and height_ok
-            and (clearance_ok or not self.approach_ready_require_clearance)
+        return self.dump_lifecycle_gate.approach_ready(
+            self._dump_lifecycle_facts(obs),
+            self._dump_lifecycle_config(),
         )
 
     def _active_policy(self) -> Policy:

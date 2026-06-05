@@ -170,6 +170,15 @@ spatial-mass boundary finder、carry/dump QC、return-start envelope token build
 HDF5 写入和 summary aggregation，并保留旧 helper 名称作为 facade。此次迁移只移动职责边界，
 不改变 primitive window、reject reason、metadata key、return envelope token 或输出 layout。
 
+当前在线 dump lifecycle gate 的实现 source-of-truth 是
+`testbed.planner.dump_lifecycle.DumpLifecycleGateService`。该 service 负责
+4P legacy dump readiness、dump-area relative / near-window geometry gate、
+dump mass/deposit completion gate、carry release safety gate，以及 5P
+approach-to-dump readiness gate。`PrimitivePlannerACTPolicy` 仍负责 branch order、
+hold counter、coverage completion、skill transition、switch reason、policy reset
+和 return direct handoff；此次迁移不改变 threshold、boundary event 优先级或 debug
+schema。
+
 | 事件或跳转 | 当前判定逻辑 |
 | --- | --- |
 | `qualified_dig_start` / `dig_start` | bucket 到 dig area 的最小距离 `<= 0.05m`，并且 bucket 低于 dig-area plane `>= 0.02m`。如果使用 legacy progress 模式，还要求 reward/load progress 或 bucket/excavated mass 增量。 |
