@@ -13,16 +13,6 @@ from testbed.contracts.primitive_profile import (
     CYCLE_BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS,
 )
 from testbed.contracts.primitive_tokens import (
-    CUT_DEPTH_SEMANTIC_IDX,
-    CUT_DIR_X_IDX,
-    CUT_DIR_Z_IDX,
-    CUT_ENTRY_X_IDX,
-    CUT_ENTRY_Z_IDX,
-    CUT_EXIT_X_IDX,
-    CUT_EXIT_Z_IDX,
-    CUT_LENGTH_IDX,
-    CUT_PAYLOAD_IDX,
-    CUT_VALID_IDX,
     DIG_CUT_TOKEN_DIM,
     DIG_DEPTH_PROFILE_TOKEN_DIM,
     RETURN_ENVELOPE_QPOS_VALID_IDX,
@@ -32,10 +22,6 @@ from testbed.contracts.primitive_tokens import (
     derive_return_relocate_token,
 )
 from testbed.data.operator_first_v2_2 import (
-    DIG_CUT_DEPTH_SCALE_M,
-    DIG_CUT_LENGTH_SCALE_M,
-    DIG_CUT_PAYLOAD_SCALE_KG,
-    DIG_CUT_POSITION_SCALE_M,
     _build_dig_cut_token,
     build_live_dig_cut_tokens_from_pose,
 )
@@ -97,6 +83,7 @@ from testbed.planner.dig_coverage import (
 from testbed.planner.dig_depth_profile import (
     DigDepthProfileBuildRequest,
     DigDepthProfileConfig,
+    DigDepthProfileInputFacts,
     DigDepthProfileMissingPriorError,
     DigDepthProfileService,
 )
@@ -2797,57 +2784,58 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         )
 
     def _dig_depth_profile_raw_fields(self, obs: dict) -> dict[str, float | int]:
+        pending_raw_fields = None
         if (
             self._pending_dig_cut_raw_fields is not None
             and self._pending_dig_cut_cycle_id == int(self._cycle_index)
         ):
-            return dict(self._pending_dig_cut_raw_fields)
-        corridor = self._coverage_active_corridor()
-        if corridor is not None:
-            return self._coverage_raw_fields(corridor, obs=obs)
-        raw_fields = self._raw_fields_from_live_pose(obs)
-        token = np.asarray(self._dig_cut_tokens, dtype=np.float32).reshape(-1)
-        if token.size >= DIG_CUT_TOKEN_DIM:
-            raw_fields.update(
-                {
-                    "operator_entry_x_m": float(token[CUT_ENTRY_X_IDX])
-                    * DIG_CUT_POSITION_SCALE_M,
-                    "operator_entry_z_m": float(token[CUT_ENTRY_Z_IDX])
-                    * DIG_CUT_POSITION_SCALE_M,
-                    "operator_exit_x_m": float(token[CUT_EXIT_X_IDX])
-                    * DIG_CUT_POSITION_SCALE_M,
-                    "operator_exit_z_m": float(token[CUT_EXIT_Z_IDX])
-                    * DIG_CUT_POSITION_SCALE_M,
-                    "operator_cut_direction_x": float(token[CUT_DIR_X_IDX]),
-                    "operator_cut_direction_z": float(token[CUT_DIR_Z_IDX]),
-                    "operator_cut_length_m": float(token[CUT_LENGTH_IDX])
-                    * DIG_CUT_LENGTH_SCALE_M,
-                    "operator_cut_depth_peak_m": float(token[CUT_DEPTH_SEMANTIC_IDX])
-                    * DIG_CUT_DEPTH_SCALE_M,
-                    "operator_cut_payload_gain_kg": float(token[CUT_PAYLOAD_IDX])
-                    * DIG_CUT_PAYLOAD_SCALE_KG,
-                    "operator_cut_valid": int(float(token[CUT_VALID_IDX]) > 0.5),
-                }
+            pending_raw_fields = self._pending_dig_cut_raw_fields
+        active_raw_fields = None
+        live_raw_fields = None
+        if pending_raw_fields is None:
+            corridor = self._coverage_active_corridor()
+            if corridor is not None:
+                active_raw_fields = self._coverage_raw_fields(corridor, obs=obs)
+            else:
+                live_raw_fields = self._raw_fields_from_live_pose(obs)
+        return self.dig_depth_profile_service.resolve_raw_fields(
+            DigDepthProfileInputFacts(
+                cycle_index=int(self._cycle_index),
+                pending_cycle_id=int(self._pending_dig_cut_cycle_id),
+                pending_raw_fields=pending_raw_fields,
+                active_corridor_raw_fields=active_raw_fields,
+                live_raw_fields=live_raw_fields,
+                current_dig_cut_tokens=self._dig_cut_tokens,
             )
-        return raw_fields
+        )
 
     def _dig_depth_profile_cell_id(self, obs: dict) -> int:
+        pending_corridor_cell_id = None
         if (
             int(self._pending_dig_cut_corridor_id) >= 0
             and self._pending_dig_cut_cycle_id == int(self._cycle_index)
         ):
             corridor = self._coverage_corridor_by_id(int(self._pending_dig_cut_corridor_id))
             if corridor is not None:
-                return int(corridor.cell_id)
-        corridor = self._coverage_active_corridor()
-        if corridor is not None:
-            return int(corridor.cell_id)
-        env_state = self._env_state(obs)
-        if len(env_state) > ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX:
-            value = float(env_state[ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX])
-            if np.isfinite(value):
-                return int(max(0, min(5, round(value))))
-        return 0
+                pending_corridor_cell_id = int(corridor.cell_id)
+        active_corridor_cell_id = None
+        if pending_corridor_cell_id is None:
+            corridor = self._coverage_active_corridor()
+            if corridor is not None:
+                active_corridor_cell_id = int(corridor.cell_id)
+        env_state = None
+        if pending_corridor_cell_id is None and active_corridor_cell_id is None:
+            env_state = self._env_state(obs)
+        return self.dig_depth_profile_service.resolve_cell_id(
+            DigDepthProfileInputFacts(
+                cycle_index=int(self._cycle_index),
+                pending_cycle_id=int(self._pending_dig_cut_cycle_id),
+                pending_corridor_id=int(self._pending_dig_cut_corridor_id),
+                pending_corridor_cell_id=pending_corridor_cell_id,
+                active_corridor_cell_id=active_corridor_cell_id,
+                env_state=env_state,
+            )
+        )
 
     def _build_dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray:
         self._dig_cut_fallback_reason = ""

@@ -8,6 +8,17 @@ from typing import Any
 import numpy as np
 
 from testbed.contracts.primitive_tokens import (
+    CUT_DEPTH_SEMANTIC_IDX,
+    CUT_DIR_X_IDX,
+    CUT_DIR_Z_IDX,
+    CUT_ENTRY_X_IDX,
+    CUT_ENTRY_Z_IDX,
+    CUT_EXIT_X_IDX,
+    CUT_EXIT_Z_IDX,
+    CUT_LENGTH_IDX,
+    CUT_PAYLOAD_IDX,
+    CUT_VALID_IDX,
+    DIG_CUT_TOKEN_DIM,
     DIG_DEPTH_PROFILE_TOKEN_DIM,
     DIG_DEPTH_PROFILE_TOKEN_KEY,
     validate_primitive_token_shape,
@@ -15,6 +26,13 @@ from testbed.contracts.primitive_tokens import (
 from testbed.data.dig_depth_profile_v2_4 import (
     build_dig_depth_profile_token_from_plan,
 )
+from testbed.data.operator_first_v2_2 import (
+    DIG_CUT_DEPTH_SCALE_M,
+    DIG_CUT_LENGTH_SCALE_M,
+    DIG_CUT_PAYLOAD_SCALE_KG,
+    DIG_CUT_POSITION_SCALE_M,
+)
+from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX
 
 
 @dataclass(frozen=True)
@@ -52,6 +70,20 @@ class DigDepthProfileState:
     fallback_reason: str = ""
 
 
+@dataclass(frozen=True)
+class DigDepthProfileInputFacts:
+    cycle_index: int
+    pending_cycle_id: int = -1
+    pending_corridor_id: int = -1
+    pending_raw_fields: dict[str, float | int] | None = None
+    pending_corridor_cell_id: int | None = None
+    active_corridor_raw_fields: dict[str, float | int] | None = None
+    active_corridor_cell_id: int | None = None
+    live_raw_fields: dict[str, float | int] | None = None
+    current_dig_cut_tokens: Any | None = None
+    env_state: Any | None = None
+
+
 class DigDepthProfileMissingPriorError(ValueError):
     def __init__(self, *, cell_id: int, reason: str) -> None:
         super().__init__(
@@ -64,6 +96,65 @@ class DigDepthProfileMissingPriorError(ValueError):
 
 class DigDepthProfileService:
     """Builds dig depth-profile tokens without owning planner state."""
+
+    @staticmethod
+    def resolve_raw_fields(
+        facts: DigDepthProfileInputFacts,
+    ) -> dict[str, float | int]:
+        if (
+            facts.pending_raw_fields is not None
+            and int(facts.pending_cycle_id) == int(facts.cycle_index)
+        ):
+            return dict(facts.pending_raw_fields)
+        if facts.active_corridor_raw_fields is not None:
+            return dict(facts.active_corridor_raw_fields)
+
+        raw_fields = dict(facts.live_raw_fields or {})
+        if facts.current_dig_cut_tokens is None:
+            return raw_fields
+        token = np.asarray(facts.current_dig_cut_tokens, dtype=np.float32).reshape(-1)
+        if token.size < DIG_CUT_TOKEN_DIM:
+            return raw_fields
+        raw_fields.update(
+            {
+                "operator_entry_x_m": float(token[CUT_ENTRY_X_IDX])
+                * DIG_CUT_POSITION_SCALE_M,
+                "operator_entry_z_m": float(token[CUT_ENTRY_Z_IDX])
+                * DIG_CUT_POSITION_SCALE_M,
+                "operator_exit_x_m": float(token[CUT_EXIT_X_IDX])
+                * DIG_CUT_POSITION_SCALE_M,
+                "operator_exit_z_m": float(token[CUT_EXIT_Z_IDX])
+                * DIG_CUT_POSITION_SCALE_M,
+                "operator_cut_direction_x": float(token[CUT_DIR_X_IDX]),
+                "operator_cut_direction_z": float(token[CUT_DIR_Z_IDX]),
+                "operator_cut_length_m": float(token[CUT_LENGTH_IDX])
+                * DIG_CUT_LENGTH_SCALE_M,
+                "operator_cut_depth_peak_m": float(token[CUT_DEPTH_SEMANTIC_IDX])
+                * DIG_CUT_DEPTH_SCALE_M,
+                "operator_cut_payload_gain_kg": float(token[CUT_PAYLOAD_IDX])
+                * DIG_CUT_PAYLOAD_SCALE_KG,
+                "operator_cut_valid": int(float(token[CUT_VALID_IDX]) > 0.5),
+            }
+        )
+        return raw_fields
+
+    @staticmethod
+    def resolve_cell_id(facts: DigDepthProfileInputFacts) -> int:
+        if (
+            int(facts.pending_corridor_id) >= 0
+            and int(facts.pending_cycle_id) == int(facts.cycle_index)
+            and facts.pending_corridor_cell_id is not None
+        ):
+            return int(facts.pending_corridor_cell_id)
+        if facts.active_corridor_cell_id is not None:
+            return int(facts.active_corridor_cell_id)
+        if facts.env_state is not None:
+            env_state = np.asarray(facts.env_state, dtype=np.float32).reshape(-1)
+            if len(env_state) > ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX:
+                value = float(env_state[ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX])
+                if np.isfinite(value):
+                    return int(max(0, min(5, round(value))))
+        return 0
 
     def build_token(
         self,

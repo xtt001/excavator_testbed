@@ -437,10 +437,12 @@ bounds 读取、`build_return_start_envelope_for_plan()` 的 prior/live/conditio
 `testbed.planner.dig_depth_profile.DigDepthProfileService`。该 service 负责
 `live_plan` / `prior_profile` 选择、state-conditioned exemplar 优先级、cell/global
 prior fallback、prior token validation、required-prior 失败，以及 live plan token
-构造；`PrimitivePlannerACTPolicy` 仍负责 raw-fields 来源、cell id 解析、
-coverage/pending dig state、debug 字段写回和 ACT dispatch。此次迁移只移动职责边界，
-不改变 `dig_depth_profile_tokens_v1` contract、source string、fallback reason、
-coverage exemplar 选择或 rollout 行为。
+构造，并从 caller-provided facts 解析 raw-fields 与 cell id fallback 级联；
+`PrimitivePlannerACTPolicy` 仍负责提供 pending dig、active coverage corridor、
+live pose/current dig token、env-state facts，以及 coverage/pending dig state、
+debug 字段写回和 ACT dispatch。此次迁移只移动职责边界，不改变
+`dig_depth_profile_tokens_v1` contract、source string、fallback reason、coverage
+exemplar 选择或 rollout 行为。
 
 当前 return target planner 的 result assembly source-of-truth 是
 `testbed.planner.return_target_plan.ReturnTargetPlanService`。该 service 只负责把

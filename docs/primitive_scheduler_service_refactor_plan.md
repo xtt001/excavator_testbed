@@ -259,7 +259,8 @@ return->dig branch order、debug_state 字段或 rollout 行为。
 `DigDepthProfileService` 负责 dig depth-profile token 的 source selection 和
 token 构造：`live_plan`、`prior_profile`、state-conditioned exemplar 优先级、
 cell/global prior fallback、prior token shape/finite validation、required prior
-缺失错误，以及 live plan token build。service 只接收显式
+缺失错误、live plan token build，以及从 caller-provided facts 解析 raw-fields /
+cell id 的 fallback 级联。service 只接收显式 `DigDepthProfileInputFacts`、
 `DigDepthProfileBuildRequest`、`DigDepthProfileConfig`、prior/raw-fields/env-state
 和可选 exemplar token，不接收 planner `self`，不读取 coverage state，不写 pending
 dig state，不 dispatch policy，不 reset policy，也不写 debug schema。
@@ -271,13 +272,16 @@ planner 大文件只保留旧 private facade：
 - `_dig_depth_profile_prior_token()`
 - `_dig_depth_profile_prior_mapping()`
 - `_dig_depth_profile_token_from_prior_mapping()`
+- `_dig_depth_profile_raw_fields()`
+- `_dig_depth_profile_cell_id()`
 
 其中 `_build_dig_depth_profile_tokens_for_obs()` 只负责解析当前 cell id、装配
 raw fields/env state/config/exemplar request、调用 service，并写回
 `_dig_depth_profile_token_source` 与 `_dig_depth_profile_fallback_reason`。planner
-shell 仍负责 `_dig_depth_profile_raw_fields()`、`_dig_depth_profile_cell_id()`、
-coverage/pending dig state、return target plan、branch order、switch reason、
-debug schema 和 rollout trace。
+shell 的 `_dig_depth_profile_raw_fields()` 与 `_dig_depth_profile_cell_id()` 只收集
+pending dig、active coverage corridor、live pose/current dig token 和 env-state facts
+并转调 service resolver；planner 仍负责 coverage/pending dig state、return target
+plan、branch order、switch reason、debug schema 和 rollout trace。
 
 本切片不改变 token dim/order、source string、prior fallback 策略、required prior
 失败信息、live token 数值、pending dig plan、coverage state exemplar 选择、
