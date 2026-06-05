@@ -31,6 +31,15 @@ detector 配置或后续 canonical registry 提供。
 9. ACT commitment 先 shadow 记录，不默认拦截 switch。
 10. option scheduler 只作为 experimental mode，在同一 public facade 下接入。
 
+## 优先级与已知失败支线
+
+5P 已被验证为失败支线，当前重构主线不以 5P 行为改进或 5P service 拆分为优先目标。
+涉及 5P 的现有代码只作为兼容路径保留：如果迁移主线 service 时顺带触达 5P helper，
+只能做 behavior-preserving facade / pass-through / deletion-after-migration，不新增
+5P 调度语义、不围绕 5P 扩展测试矩阵，也不把 5P 作为后续切片的主要验收路径。后续
+优先级仍放在 4P / semantic profile 主线的 dig、carry、dump、return lifecycle 和
+planner shell 瘦身。
+
 ## Phase 1 范围
 
 新增模块：
@@ -144,7 +153,8 @@ planner 大文件只保留薄 facade 和 facts/config 装配：
 counter 写回、dump start deposit 写回、coverage completion 执行、skill transition、
 return direct handoff、policy reset timing 和 debug schema。semantic profile 下
 legacy `_dump_ready()` / `_dump_done()` fallback 仍由 planner shell 的原有分支控制，
-service 不提升实验语义为默认行为。
+service 不提升实验语义为默认行为。5P `_approach_ready()` 在本切片中只是兼容 facade，
+不代表 5P 被提升为当前重构优先级。
 
 ## Dig Lifecycle Gate Slice
 
