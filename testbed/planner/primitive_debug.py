@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -21,6 +23,73 @@ from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 
 TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY = "v2_2_primitive_return_policy"
 TRANSITION_POLICY_MODE_PRIMITIVE = "primitive_return_policy"
+
+
+@dataclass(frozen=True)
+class PrimitivePlannerDebugState:
+    skill_name: str
+    skill_id: int
+    skill_switch_reason: str
+    primitive_checkpoint_path: str
+    hybrid_mode: str
+    transition_timeout: bool
+    transition_completed: bool
+    completed_transition_count: int
+    transition_timeout_count: int
+    dump_ready_hold_count: int
+    dump_done_hold_count: int
+    primitive_cycle_index: int
+    approach_ready_hold_count: int = 0
+    dump_release_ready_hold_count: int = 0
+
+
+def build_primitive_debug_state_snapshot(
+    *,
+    skill_name: str,
+    skill_ids: Mapping[str, int],
+    transition_skill_names: tuple[str, ...],
+    transition_hybrid_mode: str,
+    work_hybrid_mode: str,
+    skill_switch_reason: str,
+    primitive_checkpoint_paths: Mapping[str, str],
+    first_dig_policy_active: bool,
+    transition_timeout: bool,
+    transition_completed: bool,
+    completed_transition_count: int,
+    transition_timeout_count: int,
+    dump_ready_hold_count: int,
+    dump_done_hold_count: int,
+    primitive_cycle_index: int,
+    approach_ready_hold_count: int = 0,
+    dump_release_ready_hold_count: int = 0,
+) -> PrimitivePlannerDebugState:
+    """Build the planner-owned debug-state snapshot without side effects."""
+    normalized_skill_name = str(skill_name)
+    checkpoint_key = (
+        "first_dig" if bool(first_dig_policy_active) else normalized_skill_name
+    )
+    return PrimitivePlannerDebugState(
+        skill_name=normalized_skill_name,
+        skill_id=int(skill_ids.get(normalized_skill_name, -1)),
+        skill_switch_reason=str(skill_switch_reason),
+        primitive_checkpoint_path=str(
+            primitive_checkpoint_paths.get(checkpoint_key, "")
+        ),
+        hybrid_mode=(
+            str(transition_hybrid_mode)
+            if normalized_skill_name in set(transition_skill_names)
+            else str(work_hybrid_mode)
+        ),
+        transition_timeout=bool(transition_timeout),
+        transition_completed=bool(transition_completed),
+        completed_transition_count=int(completed_transition_count),
+        transition_timeout_count=int(transition_timeout_count),
+        dump_ready_hold_count=int(dump_ready_hold_count),
+        dump_done_hold_count=int(dump_done_hold_count),
+        primitive_cycle_index=int(primitive_cycle_index),
+        approach_ready_hold_count=int(approach_ready_hold_count),
+        dump_release_ready_hold_count=int(dump_release_ready_hold_count),
+    )
 
 
 def build_primitive_debug_state(policy: Any) -> dict[str, Any]:

@@ -230,9 +230,10 @@ counters、active policy dispatch、policy reset timing 和 debug schema。
 ## Debug / Trace Builder Slice
 
 `testbed.planner.primitive_debug` 负责 primitive planner 的 debug-state、
-rollout-summary 和 planner-trace payload builder。`PrimitivePlannerACTPolicy`
-中的 `debug_state()`、`rollout_summary()` 和 `planner_trace()` 只保留为 public
-facade，转调对应 builder。
+rollout-summary 和 planner-trace payload builder。`PrimitivePlannerDebugState`
+及其 side-effect-free snapshot builder 也由该模块定义；`PrimitivePlannerACTPolicy`
+中的 `_make_debug_state()`、`debug_state()`、`rollout_summary()` 和
+`planner_trace()` 只保留为 facade，转调对应 builder。
 
 本切片只移动 schema/payload 构造位置，不改变 key、key order、字段类型、默认值、
 token contract string、coverage decision trace payload、rollout JSONL 消费语义、

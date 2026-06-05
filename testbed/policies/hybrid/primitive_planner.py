@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -116,7 +115,9 @@ from testbed.planner.primitive_debug import (
     TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY as TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
 )
 from testbed.planner.primitive_debug import (
+    PrimitivePlannerDebugState,
     build_primitive_debug_state,
+    build_primitive_debug_state_snapshot,
     build_primitive_planner_trace,
     build_primitive_rollout_summary,
 )
@@ -162,24 +163,6 @@ PRIMITIVE_SKILL_IDS_5P = {
 BOOTSTRAP_SKILL_NAME = "bootstrap"
 PRE_DIG_ALIGN_SKILL_NAME = "pre_dig_align"
 PRIMITIVE_GOAL_SECTOR_IDS = {"left": 0, "mid": 1, "right": 2}
-
-
-@dataclass(frozen=True)
-class PrimitivePlannerDebugState:
-    skill_name: str
-    skill_id: int
-    skill_switch_reason: str
-    primitive_checkpoint_path: str
-    hybrid_mode: str
-    transition_timeout: bool
-    transition_completed: bool
-    completed_transition_count: int
-    transition_timeout_count: int
-    dump_ready_hold_count: int
-    dump_done_hold_count: int
-    primitive_cycle_index: int
-    approach_ready_hold_count: int = 0
-    dump_release_ready_hold_count: int = 0
 
 
 @register_policy("primitive_planner_act")
@@ -3708,24 +3691,15 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         transition_timeout: bool,
         transition_completed: bool,
     ) -> PrimitivePlannerDebugState:
-        skill_name = str(self._skill_name)
-        skill_id = PRIMITIVE_SKILL_IDS.get(skill_name, -1)
-        hybrid_mode = (
-            HYBRID_MODE_TRANSITION
-            if skill_name in {"return", PRE_DIG_ALIGN_SKILL_NAME}
-            else HYBRID_MODE_WORK
-        )
-        return PrimitivePlannerDebugState(
-            skill_name=skill_name,
-            skill_id=int(skill_id),
+        return build_primitive_debug_state_snapshot(
+            skill_name=str(self._skill_name),
+            skill_ids=PRIMITIVE_SKILL_IDS,
+            transition_skill_names=("return", PRE_DIG_ALIGN_SKILL_NAME),
+            transition_hybrid_mode=HYBRID_MODE_TRANSITION,
+            work_hybrid_mode=HYBRID_MODE_WORK,
             skill_switch_reason=str(self._switch_reason),
-            primitive_checkpoint_path=str(
-                self.primitive_checkpoint_paths.get(
-                    "first_dig" if self._first_dig_policy_active() else skill_name,
-                    "",
-                )
-            ),
-            hybrid_mode=hybrid_mode,
+            primitive_checkpoint_paths=self.primitive_checkpoint_paths,
+            first_dig_policy_active=self._first_dig_policy_active(),
             transition_timeout=bool(transition_timeout),
             transition_completed=bool(transition_completed),
             completed_transition_count=int(self._completed_transition_count),
@@ -4153,20 +4127,15 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
         transition_timeout: bool,
         transition_completed: bool,
     ) -> PrimitivePlannerDebugState:
-        skill_name = str(self._skill_name)
-        skill_id = PRIMITIVE_SKILL_IDS_5P.get(skill_name, -1)
-        hybrid_mode = HYBRID_MODE_TRANSITION if skill_name == "return" else HYBRID_MODE_WORK
-        return PrimitivePlannerDebugState(
-            skill_name=skill_name,
-            skill_id=int(skill_id),
+        return build_primitive_debug_state_snapshot(
+            skill_name=str(self._skill_name),
+            skill_ids=PRIMITIVE_SKILL_IDS_5P,
+            transition_skill_names=("return",),
+            transition_hybrid_mode=HYBRID_MODE_TRANSITION,
+            work_hybrid_mode=HYBRID_MODE_WORK,
             skill_switch_reason=str(self._switch_reason),
-            primitive_checkpoint_path=str(
-                self.primitive_checkpoint_paths.get(
-                    "first_dig" if self._first_dig_policy_active() else skill_name,
-                    "",
-                )
-            ),
-            hybrid_mode=hybrid_mode,
+            primitive_checkpoint_paths=self.primitive_checkpoint_paths,
+            first_dig_policy_active=self._first_dig_policy_active(),
             transition_timeout=bool(transition_timeout),
             transition_completed=bool(transition_completed),
             completed_transition_count=int(self._completed_transition_count),

@@ -474,10 +474,11 @@ state exemplar 语义、reject/deplete/terminal reason 或 planner trace/debug �
 
 当前 primitive planner debug/summary schema 的实现 source-of-truth 是
 `testbed.planner.primitive_debug`。该模块负责 `PrimitivePlannerACTPolicy.debug_state()`
-、`rollout_summary()` 和 `planner_trace()` 的字段组装；planner 类中的同名方法只保留
-为 facade。此次迁移只移动职责边界，不改变字段名、字段顺序、默认值、字段类型、
-token contract string、coverage decision trace payload、rollout JSONL 消费语义或
-planner 状态机行为。
+、`rollout_summary()` 和 `planner_trace()` 的字段组装，也负责 planner debug-state
+snapshot 的 dataclass 和 side-effect-free 构造 helper；planner 类中的
+`_make_debug_state()` 及同名 public 方法只保留为 facade。此次迁移只移动职责边界，
+不改变字段名、字段顺序、默认值、字段类型、token contract string、coverage decision
+trace payload、rollout JSONL 消费语义或 planner 状态机行为。
 
 当前 rollout step/debug schema 的实现 source-of-truth 是
 `testbed.eval.rollout_step_records`。该模块负责 eval policy input 组装、
