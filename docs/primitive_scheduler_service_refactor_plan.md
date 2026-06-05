@@ -136,6 +136,33 @@ planner 大文件只保留薄 facade 和状态写回：
 entry-close handoff、entry-intent handoff、timeout handoff、hold counter、coverage
 reject/replan、switch reason、policy reset timing 或 debug schema。
 
+## Dig-Start Alignment Readiness Slice
+
+`DigStartAlignmentService` 继续负责 pre-dig alignment 的纯 readiness checks：
+surface-guard trigger/can-handoff、entry-close threshold、start-envelope qpos/pose
+gate、first-dig entry-close handoff、entry-intent mode/handoff、timeout handoff
+reason，以及 ready sample 对 hold count 的建议更新。service 只接收显式
+`DigStartAlignmentFacts` 和 `DigStartAlignmentConfig`，不调用
+`_ensure_dig_cut_plan_for_cycle()`，不写 planner debug 字段，不更新 counter，不
+reject/complete coverage，不选择下一 skill。
+
+planner 大文件只保留薄 facade 和状态写回：
+
+- `_dig_start_alignment_facts()`
+- `_pre_dig_align_surface_guard_triggered_for_state()`
+- `_pre_dig_align_surface_guard_can_handoff()`
+- `_pre_dig_align_ready()`
+- `_pre_dig_align_entry_close()`
+- `_pre_dig_align_entry_close_handoff_ready_for_state()`
+- `_pre_dig_align_entry_intent_mode_enabled()`
+- `_pre_dig_align_entry_intent_handoff_ready_for_state()`
+- `_pre_dig_align_timeout_can_handoff()`
+- `_pre_dig_align_start_envelope_ready_for_state()`
+
+本切片仍保留 `_maybe_switch_skill()` 的 pre-dig-align 分支顺序、surface/timeout/
+completed/replan counters、hold counter 写回、coverage reject/replan、token rebuild、
+switch reason、policy reset timing 和 debug schema 在 planner shell。
+
 ## 测试锁定规则
 
 Phase 1 必须覆盖：
@@ -153,11 +180,12 @@ pytest tests/test_agx_primitives_v2_2.py -k "return_to_dig or direct_handoff or 
 pytest tests/test_dump_lifecycle_service.py tests/test_planner_golden_traces.py tests/test_primitive_planner_debug_schema.py tests/test_agx_primitives_v2_2.py -k "dump_ready or dump_done or dump_end or dump_release or approach_dump or release_safety or near_window or dump_area_relative or carry_to_dump or dump_to_return"
 pytest tests/test_dig_lifecycle_service.py tests/test_agx_primitives_v2_2.py -k "dig_bad_replan or exit_guard or failed_dig or dig_complete or pre_dig_align or dig_to_carry"
 pytest tests/test_dig_start_alignment_service.py tests/test_agx_primitives_v2_2.py -k "pre_dig_align"
+pytest tests/test_primitive_planner_debug_schema.py tests/test_planner_golden_traces.py
 ```
 
 ## 回滚策略
 
 Phase 1、dump lifecycle gate slice、dig lifecycle gate slice 和 dig-start
-alignment numeric slice 的旧 private method 均保留为 facade。如果 service extraction
-发现行为漂移，可以让 facade 临时回到旧实现，同时保留新增 service unit tests 和
-golden trace 作为后续迁移的行为锁。
+alignment numeric/readiness slice 的旧 private method 均保留为 facade。如果 service
+extraction 发现行为漂移，可以让 facade 临时回到旧实现，同时保留新增 service unit
+tests 和 golden trace 作为后续迁移的行为锁。

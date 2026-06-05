@@ -107,6 +107,7 @@ from testbed.planner.dig_lifecycle import (
 )
 from testbed.planner.dig_start_alignment import (
     DigStartAlignmentConfig,
+    DigStartAlignmentFacts,
     DigStartAlignmentService,
     pd_servo_action,
 )
@@ -1602,41 +1603,22 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         )
 
     def _pre_dig_align_surface_guard_triggered_for_state(self, obs: dict) -> bool:
-        self._pre_dig_align_surface_depth_m = float(
-            self._bucket_depth_below_local_surface(obs)
+        decision = self.dig_start_alignment_service.surface_guard_triggered(
+            self._dig_start_alignment_facts(obs),
+            self._dig_start_alignment_config(),
         )
-        self._pre_dig_align_surface_guard_triggered = False
-        if not (
-            self.pre_dig_align_enabled
-            and self.pre_dig_align_surface_guard_enabled
-        ):
-            return False
-        if (
-            np.isfinite(self._pre_dig_align_surface_depth_m)
-            and self._pre_dig_align_surface_depth_m
-            > self.pre_dig_align_surface_guard_max_penetration_m
-        ):
-            self._pre_dig_align_surface_guard_triggered = True
-            return True
-        if (
-            not np.isfinite(self._pre_dig_align_surface_depth_m)
-            and self.pre_dig_align_surface_guard_use_contact_fallback
-            and self._bucket_dig_area_contact_mask(obs)
-        ):
-            self._pre_dig_align_surface_guard_triggered = True
-            return True
-        return False
+        self._pre_dig_align_surface_depth_m = float(decision.surface_depth_m)
+        self._pre_dig_align_surface_guard_triggered = bool(decision.triggered)
+        return bool(decision.triggered)
 
     def _pre_dig_align_surface_guard_can_handoff(self, obs: dict) -> bool:
         self._ensure_dig_cut_plan_for_cycle(obs)
-        threshold = self.pre_dig_align_surface_guard_handoff_entry_error_m
-        if threshold is None:
-            threshold = self.pre_dig_align_max_entry_error_m
-        if threshold is None:
-            threshold = self.pre_dig_align_start_envelope_max_entry_error_m
         entry_error = self._pre_dig_align_entry_error(obs)
         self._pre_dig_align_entry_error_m = float(entry_error)
-        return self._pre_dig_align_entry_close(entry_error, threshold=threshold)
+        return self.dig_start_alignment_service.surface_guard_can_handoff(
+            self._dig_start_alignment_facts(obs, entry_error=entry_error),
+            self._dig_start_alignment_config(),
+        )
 
     def _dig_start_alignment_config(self) -> DigStartAlignmentConfig:
         return DigStartAlignmentConfig(
@@ -1655,6 +1637,87 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             kd=float(self.pre_dig_align_kd),
             action_clip=self.pre_dig_align_action_clip,
             action_signs=self.pre_dig_align_action_signs,
+            enabled=bool(self.pre_dig_align_enabled),
+            qpos_tolerance=self.pre_dig_align_qpos_tolerance,
+            qvel_abs_max=float(self.pre_dig_align_qvel_abs_max),
+            hold_steps=int(self.pre_dig_align_hold_steps),
+            max_entry_error_m=self.pre_dig_align_max_entry_error_m,
+            timeout_accept_entry_error_m=(
+                self.pre_dig_align_timeout_accept_entry_error_m
+            ),
+            start_envelope_enabled=bool(self.pre_dig_align_start_envelope_enabled),
+            start_envelope_max_entry_error_m=float(
+                self.pre_dig_align_start_envelope_max_entry_error_m
+            ),
+            first_dig_entry_close_handoff=bool(
+                self.pre_dig_align_first_dig_entry_close_handoff
+            ),
+            first_dig_entry_close_handoff_qvel_abs_max=(
+                self.pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max
+            ),
+            entry_intent_handoff_enabled=bool(
+                self.pre_dig_align_entry_intent_handoff_enabled
+            ),
+            surface_guard_enabled=bool(self.pre_dig_align_surface_guard_enabled),
+            surface_guard_max_penetration_m=float(
+                self.pre_dig_align_surface_guard_max_penetration_m
+            ),
+            surface_guard_handoff_entry_error_m=(
+                self.pre_dig_align_surface_guard_handoff_entry_error_m
+            ),
+            surface_guard_use_contact_fallback=bool(
+                self.pre_dig_align_surface_guard_use_contact_fallback
+            ),
+            start_qpos_min=self.pre_dig_align_start_qpos_min,
+            start_qpos_max=self.pre_dig_align_start_qpos_max,
+            start_pose_min=self.pre_dig_align_start_pose_min,
+            start_pose_max=self.pre_dig_align_start_pose_max,
+        )
+
+    def _dig_start_alignment_facts(
+        self,
+        obs: dict,
+        *,
+        target_qpos: np.ndarray | None = None,
+        entry_error: float | None = None,
+        qpos: np.ndarray | None = None,
+        qvel: np.ndarray | None = None,
+    ) -> DigStartAlignmentFacts:
+        qpos_arr = (
+            np.asarray(qpos, dtype=np.float32).reshape(self.action_dim)
+            if qpos is not None
+            else np.asarray(
+                obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
+                dtype=np.float32,
+            ).reshape(self.action_dim)
+        )
+        qvel_arr = (
+            np.asarray(qvel, dtype=np.float32).reshape(self.action_dim)
+            if qvel is not None
+            else np.asarray(
+                obs.get("qvel", np.zeros(self.action_dim, dtype=np.float32)),
+                dtype=np.float32,
+            ).reshape(self.action_dim)
+        )
+        target = (
+            None
+            if target_qpos is None
+            else np.asarray(target_qpos, dtype=np.float32).reshape(self.action_dim)
+        )
+        return DigStartAlignmentFacts(
+            qpos=qpos_arr,
+            qvel=qvel_arr,
+            target_qpos=target,
+            entry_error_m=(
+                self._pre_dig_align_entry_error(obs)
+                if entry_error is None
+                else float(entry_error)
+            ),
+            bucket_pose=self._bucket_dig_area_pose(obs),
+            surface_depth_m=self._bucket_depth_below_local_surface(obs),
+            contact_mask=self._bucket_dig_area_contact_mask(obs),
+            cycle_index=int(getattr(self, "_cycle_index", 0)),
+            hold_count=int(self._pre_dig_align_hold_count),
         )
 
     def _pre_dig_align_ready(self, obs: dict) -> bool:
@@ -1669,59 +1732,30 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             obs.get("qvel", np.zeros(self.action_dim, dtype=np.float32)),
             dtype=np.float32,
         ).reshape(self.action_dim)
-        self._pre_dig_align_error = (target_qpos - qpos).astype(np.float32)
         entry_error = self._pre_dig_align_entry_error(obs)
         self._pre_dig_align_entry_error_m = float(entry_error)
-        controlled = self.pre_dig_align_controlled_dims
-        qpos_close = bool(
-            np.all(
-                np.abs(self._pre_dig_align_error[controlled])
-                <= self.pre_dig_align_qpos_tolerance[controlled]
-            )
-            if np.any(controlled)
-            else True
-        )
-        qvel_small = bool(
-            np.all(np.abs(qvel[controlled]) <= self.pre_dig_align_qvel_abs_max)
-            if np.any(controlled)
-            else True
-        )
-        entry_close = self._pre_dig_align_entry_close(
-            entry_error,
-            threshold=self.pre_dig_align_max_entry_error_m,
-        )
-        start_envelope_ready = self._pre_dig_align_start_envelope_ready_for_state(
-            obs=obs,
-            qpos=qpos,
-            entry_error=entry_error,
-        )
-        self._pre_dig_align_start_envelope_ready = bool(start_envelope_ready)
-        entry_close_handoff_ready = (
-            self._pre_dig_align_entry_close_handoff_ready_for_state(
+        decision = self.dig_start_alignment_service.ready(
+            self._dig_start_alignment_facts(
+                obs,
+                target_qpos=target_qpos,
                 entry_error=entry_error,
+                qpos=qpos,
                 qvel=qvel,
-                start_envelope_ready=start_envelope_ready,
-            )
+            ),
+            self._dig_start_alignment_config(),
+        )
+        self._pre_dig_align_error = decision.error.astype(np.float32)
+        self._pre_dig_align_start_envelope_ready = bool(
+            decision.start_envelope_ready
         )
         self._pre_dig_align_entry_close_handoff_ready = bool(
-            entry_close_handoff_ready
-        )
-        entry_intent_handoff_ready = (
-            self._pre_dig_align_entry_intent_handoff_ready_for_state(
-                qpos_close=qpos_close,
-                qvel_small=qvel_small,
-            )
+            decision.entry_close_handoff_ready
         )
         self._pre_dig_align_entry_intent_handoff_ready = bool(
-            entry_intent_handoff_ready
+            decision.entry_intent_handoff_ready
         )
-        if entry_close_handoff_ready or entry_intent_handoff_ready or (
-            qpos_close and qvel_small and (entry_close or start_envelope_ready)
-        ):
-            self._pre_dig_align_hold_count += 1
-        else:
-            self._pre_dig_align_hold_count = 0
-        return bool(self._pre_dig_align_hold_count >= self.pre_dig_align_hold_steps)
+        self._pre_dig_align_hold_count = int(decision.hold_count)
+        return bool(decision.ready)
 
     def _pre_dig_align_entry_close(
         self,
@@ -1729,9 +1763,10 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         *,
         threshold: float | None,
     ) -> bool:
-        if threshold is None:
-            return True
-        return bool(np.isfinite(entry_error) and float(entry_error) <= float(threshold))
+        return self.dig_start_alignment_service.entry_close(
+            entry_error,
+            threshold=threshold,
+        )
 
     def _pre_dig_align_entry_close_handoff_ready_for_state(
         self,
@@ -1740,36 +1775,22 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         qvel: np.ndarray,
         start_envelope_ready: bool,
     ) -> bool:
-        if not self.pre_dig_align_first_dig_entry_close_handoff:
-            return False
-        if int(getattr(self, "_cycle_index", 0)) != 0:
-            return False
-        if (
-            self.pre_dig_align_start_envelope_enabled
-            and not bool(start_envelope_ready)
-        ):
-            return False
-        if not self._pre_dig_align_entry_close(
-            entry_error,
-            threshold=self.pre_dig_align_max_entry_error_m,
-        ):
-            return False
-        qvel_abs_max = self.pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max
-        if qvel_abs_max is None:
-            qvel_abs_max = self.pre_dig_align_qvel_abs_max
-        controlled = self.pre_dig_align_controlled_dims
-        if not np.any(controlled):
-            return True
-        return bool(np.all(np.abs(qvel[controlled]) <= float(qvel_abs_max)))
+        facts = DigStartAlignmentFacts(
+            qpos=np.zeros(self.action_dim, dtype=np.float32),
+            qvel=qvel,
+            entry_error_m=float(entry_error),
+            cycle_index=int(getattr(self, "_cycle_index", 0)),
+        )
+        return self.dig_start_alignment_service.entry_close_handoff_ready(
+            facts=facts,
+            config=self._dig_start_alignment_config(),
+            start_envelope_ready=start_envelope_ready,
+        )
 
     def _pre_dig_align_entry_intent_mode_enabled(self) -> bool:
-        if not self.pre_dig_align_entry_intent_handoff_enabled:
-            return False
-        intent_dims = self.pre_dig_align_entry_intent_controlled_dims
-        if intent_dims is None:
-            return False
-        controlled = self.pre_dig_align_controlled_dims
-        return bool(np.any(controlled & intent_dims) and np.any(controlled & ~intent_dims))
+        return self.dig_start_alignment_service.entry_intent_mode_enabled(
+            self._dig_start_alignment_config()
+        )
 
     def _pre_dig_align_entry_intent_handoff_ready_for_state(
         self,
@@ -1777,51 +1798,50 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         qpos_close: bool,
         qvel_small: bool,
     ) -> bool:
-        return bool(
-            self._pre_dig_align_entry_intent_mode_enabled()
-            and qpos_close
-            and qvel_small
+        return self.dig_start_alignment_service.entry_intent_handoff_ready(
+            qpos_close=qpos_close,
+            qvel_small=qvel_small,
+            config=self._dig_start_alignment_config(),
         )
 
     def _pre_dig_align_timeout_can_handoff(self, obs: dict) -> bool:
         self._pre_dig_align_timeout_handoff_reason = ""
-        threshold = self.pre_dig_align_timeout_accept_entry_error_m
+        config = self._dig_start_alignment_config()
+        threshold = config.timeout_accept_entry_error_m
         if threshold is None:
-            threshold = self.pre_dig_align_max_entry_error_m
+            threshold = config.max_entry_error_m
         if threshold is None:
-            self._pre_dig_align_timeout_handoff_reason = (
-                "pre_dig_align_to_dig_timeout_no_entry_gate"
+            decision = self.dig_start_alignment_service.timeout_can_handoff(
+                DigStartAlignmentFacts(
+                    qpos=np.zeros(self.action_dim, dtype=np.float32),
+                    qvel=np.zeros(self.action_dim, dtype=np.float32),
+                    entry_error_m=self._pre_dig_align_entry_error_m,
+                ),
+                config,
             )
-            return True
+            self._pre_dig_align_timeout_handoff_reason = str(decision.reason)
+            return bool(decision.ready)
         entry_error = self._pre_dig_align_entry_error(obs)
         self._pre_dig_align_entry_error_m = float(entry_error)
         qpos = np.asarray(
             obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
             dtype=np.float32,
         ).reshape(self.action_dim)
-        start_envelope_ready = self._pre_dig_align_start_envelope_ready_for_state(
-            obs=obs,
-            qpos=qpos,
-            entry_error=entry_error,
+        decision = self.dig_start_alignment_service.timeout_can_handoff(
+            self._dig_start_alignment_facts(
+                obs,
+                entry_error=entry_error,
+                qpos=qpos,
+            ),
+            config,
         )
-        self._pre_dig_align_start_envelope_ready = bool(start_envelope_ready)
-        if self._pre_dig_align_entry_intent_mode_enabled():
+        self._pre_dig_align_start_envelope_ready = bool(
+            decision.start_envelope_ready
+        )
+        if decision.entry_intent_handoff_ready:
             self._pre_dig_align_entry_intent_handoff_ready = True
-            self._pre_dig_align_timeout_handoff_reason = (
-                "pre_dig_align_to_dig_timeout_intent_aligned"
-            )
-            return True
-        if (
-            self._pre_dig_align_entry_close(entry_error, threshold=threshold)
-            or start_envelope_ready
-        ):
-            self._pre_dig_align_timeout_handoff_reason = (
-                "pre_dig_align_to_dig_timeout_close_enough"
-            )
-        return bool(
-            self._pre_dig_align_entry_close(entry_error, threshold=threshold)
-            or start_envelope_ready
-        )
+        self._pre_dig_align_timeout_handoff_reason = str(decision.reason)
+        return bool(decision.ready)
 
     def _pre_dig_align_start_envelope_ready_for_state(
         self,
@@ -1830,24 +1850,13 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         qpos: np.ndarray,
         entry_error: float,
     ) -> bool:
-        if not self.pre_dig_align_start_envelope_enabled:
-            return False
-        if (
-            not np.isfinite(entry_error)
-            or float(entry_error) > self.pre_dig_align_start_envelope_max_entry_error_m
-        ):
-            return False
-        if not np.all(qpos >= self.pre_dig_align_start_qpos_min):
-            return False
-        if not np.all(qpos <= self.pre_dig_align_start_qpos_max):
-            return False
-        pose = self._bucket_dig_area_pose(obs)
-        if pose is None:
-            return False
-        pose_arr = np.asarray(pose, dtype=np.float32).reshape(3)
-        return bool(
-            np.all(pose_arr >= self.pre_dig_align_start_pose_min)
-            and np.all(pose_arr <= self.pre_dig_align_start_pose_max)
+        return self.dig_start_alignment_service.start_envelope_ready(
+            self._dig_start_alignment_facts(
+                obs,
+                qpos=qpos,
+                entry_error=entry_error,
+            ),
+            self._dig_start_alignment_config(),
         )
 
     def _pre_dig_align_action(self, obs: dict) -> np.ndarray:

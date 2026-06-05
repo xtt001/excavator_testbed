@@ -9,6 +9,7 @@ from testbed.contracts.primitive_tokens import (
 )
 from testbed.planner.dig_start_alignment import (
     DigStartAlignmentConfig,
+    DigStartAlignmentFacts,
     DigStartAlignmentService,
     pd_servo_action,
 )
@@ -126,4 +127,223 @@ def test_pd_servo_action_preserves_legacy_clip_and_sign_semantics() -> None:
         action,
         np.asarray([1.0, -1.0, 0.5, 1.0], dtype=np.float32),
         atol=1.0e-6,
+    )
+
+
+def test_entry_close_threshold_handles_none_and_nan() -> None:
+    service = DigStartAlignmentService()
+    assert service.entry_close(float("nan"), threshold=None)
+    assert not service.entry_close(float("nan"), threshold=0.1)
+    assert service.entry_close(0.1, threshold=0.1)
+    assert not service.entry_close(0.11, threshold=0.1)
+
+
+def test_start_envelope_requires_entry_qpos_and_pose() -> None:
+    service = DigStartAlignmentService()
+    config = _config(
+        start_envelope_enabled=True,
+        start_envelope_max_entry_error_m=0.65,
+        start_qpos_min=np.asarray([0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+        start_qpos_max=np.asarray([1.0, 1.0, 1.0, 1.0], dtype=np.float32),
+        start_pose_min=np.asarray([-0.6, -0.3, -1.5], dtype=np.float32),
+        start_pose_max=np.asarray([1.65, 0.25, 1.2], dtype=np.float32),
+    )
+    facts = DigStartAlignmentFacts(
+        qpos=np.asarray([0.5, 0.6, 0.1, 0.0], dtype=np.float32),
+        qvel=np.zeros(4, dtype=np.float32),
+        entry_error_m=0.4,
+        bucket_pose=(0.5, 0.0, -0.5),
+    )
+    assert service.start_envelope_ready(facts, config)
+    assert not service.start_envelope_ready(
+        DigStartAlignmentFacts(
+            qpos=np.asarray([1.2, 0.6, 0.1, 0.0], dtype=np.float32),
+            qvel=np.zeros(4, dtype=np.float32),
+            entry_error_m=0.4,
+            bucket_pose=(0.5, 0.0, -0.5),
+        ),
+        config,
+    )
+    assert not service.start_envelope_ready(
+        DigStartAlignmentFacts(
+            qpos=np.asarray([0.5, 0.6, 0.1, 0.0], dtype=np.float32),
+            qvel=np.zeros(4, dtype=np.float32),
+            entry_error_m=0.8,
+            bucket_pose=(0.5, 0.0, -0.5),
+        ),
+        config,
+    )
+    assert not service.start_envelope_ready(
+        DigStartAlignmentFacts(
+            qpos=np.asarray([0.5, 0.6, 0.1, 0.0], dtype=np.float32),
+            qvel=np.zeros(4, dtype=np.float32),
+            entry_error_m=0.4,
+            bucket_pose=(2.0, 0.0, -0.5),
+        ),
+        config,
+    )
+
+
+def test_first_dig_entry_close_handoff_requires_cycle_start_envelope_and_qvel() -> None:
+    service = DigStartAlignmentService()
+    config = _config(
+        start_envelope_enabled=True,
+        first_dig_entry_close_handoff=True,
+        first_dig_entry_close_handoff_qvel_abs_max=0.15,
+        max_entry_error_m=0.35,
+    )
+    facts = DigStartAlignmentFacts(
+        qpos=np.zeros(4, dtype=np.float32),
+        qvel=np.asarray([0.0, 0.03, -0.10, -0.02], dtype=np.float32),
+        entry_error_m=0.20,
+        cycle_index=0,
+    )
+    assert service.entry_close_handoff_ready(
+        facts=facts,
+        config=config,
+        start_envelope_ready=True,
+    )
+    assert not service.entry_close_handoff_ready(
+        facts=DigStartAlignmentFacts(
+            qpos=np.zeros(4, dtype=np.float32),
+            qvel=facts.qvel,
+            entry_error_m=0.20,
+            cycle_index=1,
+        ),
+        config=config,
+        start_envelope_ready=True,
+    )
+    assert not service.entry_close_handoff_ready(
+        facts=facts,
+        config=config,
+        start_envelope_ready=False,
+    )
+    assert not service.entry_close_handoff_ready(
+        facts=DigStartAlignmentFacts(
+            qpos=np.zeros(4, dtype=np.float32),
+            qvel=np.asarray([0.0, 0.03, -0.20, -0.02], dtype=np.float32),
+            entry_error_m=0.20,
+            cycle_index=0,
+        ),
+        config=config,
+        start_envelope_ready=True,
+    )
+
+
+def test_entry_intent_handoff_ignores_entry_close_when_intent_axes_stable() -> None:
+    service = DigStartAlignmentService()
+    config = _config(
+        enabled=True,
+        controlled_dims=np.asarray([True, True, True, True]),
+        entry_intent_controlled_dims=np.asarray(
+            [True, False, False, False],
+            dtype=bool,
+        ),
+        entry_intent_handoff_enabled=True,
+        qpos_tolerance=np.asarray([0.05, 0.05, 0.05, 0.05], dtype=np.float32),
+        max_entry_error_m=0.01,
+        hold_steps=1,
+    )
+    decision = service.ready(
+        DigStartAlignmentFacts(
+            qpos=np.zeros(4, dtype=np.float32),
+            qvel=np.zeros(4, dtype=np.float32),
+            target_qpos=np.zeros(4, dtype=np.float32),
+            entry_error_m=0.20,
+            hold_count=0,
+        ),
+        config,
+    )
+    assert decision.ready
+    assert decision.entry_intent_handoff_ready
+    assert not decision.entry_close
+
+
+def test_timeout_decision_returns_no_gate_intent_and_close_enough_reasons() -> None:
+    service = DigStartAlignmentService()
+    no_gate = service.timeout_can_handoff(
+        DigStartAlignmentFacts(
+            qpos=np.zeros(4, dtype=np.float32),
+            qvel=np.zeros(4, dtype=np.float32),
+            entry_error_m=float("nan"),
+        ),
+        _config(timeout_accept_entry_error_m=None, max_entry_error_m=None),
+    )
+    assert no_gate.ready
+    assert no_gate.reason == "pre_dig_align_to_dig_timeout_no_entry_gate"
+
+    intent = service.timeout_can_handoff(
+        DigStartAlignmentFacts(
+            qpos=np.zeros(4, dtype=np.float32),
+            qvel=np.zeros(4, dtype=np.float32),
+            entry_error_m=1.0,
+        ),
+        _config(
+            timeout_accept_entry_error_m=0.01,
+            entry_intent_handoff_enabled=True,
+            entry_intent_controlled_dims=np.asarray(
+                [True, False, False, False],
+                dtype=bool,
+            ),
+            controlled_dims=np.asarray([True, True, True, True]),
+        ),
+    )
+    assert intent.ready
+    assert intent.reason == "pre_dig_align_to_dig_timeout_intent_aligned"
+
+    close = service.timeout_can_handoff(
+        DigStartAlignmentFacts(
+            qpos=np.zeros(4, dtype=np.float32),
+            qvel=np.zeros(4, dtype=np.float32),
+            entry_error_m=0.01,
+        ),
+        _config(timeout_accept_entry_error_m=0.01),
+    )
+    assert close.ready
+    assert close.reason == "pre_dig_align_to_dig_timeout_close_enough"
+
+
+def test_surface_guard_trigger_and_handoff_threshold() -> None:
+    service = DigStartAlignmentService()
+    config = _config(
+        enabled=True,
+        surface_guard_enabled=True,
+        surface_guard_max_penetration_m=0.005,
+        surface_guard_handoff_entry_error_m=0.35,
+    )
+    triggered = service.surface_guard_triggered(
+        DigStartAlignmentFacts(
+            qpos=np.zeros(4, dtype=np.float32),
+            qvel=np.zeros(4, dtype=np.float32),
+            surface_depth_m=0.03,
+        ),
+        config,
+    )
+    assert triggered.triggered
+    assert np.isclose(triggered.surface_depth_m, 0.03)
+    fallback = service.surface_guard_triggered(
+        DigStartAlignmentFacts(
+            qpos=np.zeros(4, dtype=np.float32),
+            qvel=np.zeros(4, dtype=np.float32),
+            surface_depth_m=float("nan"),
+            contact_mask=True,
+        ),
+        config,
+    )
+    assert fallback.triggered
+    assert service.surface_guard_can_handoff(
+        DigStartAlignmentFacts(
+            qpos=np.zeros(4, dtype=np.float32),
+            qvel=np.zeros(4, dtype=np.float32),
+            entry_error_m=0.20,
+        ),
+        config,
+    )
+    assert not service.surface_guard_can_handoff(
+        DigStartAlignmentFacts(
+            qpos=np.zeros(4, dtype=np.float32),
+            qvel=np.zeros(4, dtype=np.float32),
+            entry_error_m=0.40,
+        ),
+        config,
     )

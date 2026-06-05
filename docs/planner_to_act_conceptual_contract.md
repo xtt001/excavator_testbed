@@ -187,11 +187,14 @@ reason。`PrimitivePlannerACTPolicy` 仍负责 dig 分支顺序、coverage rejec
 failed-dig stop/retry/pre-dig-align 选择、skill transition、switch reason 拼接、
 policy reset 和 debug schema。
 
-当前 pre-dig alignment 数值 helper 的实现 source-of-truth 是
-`testbed.planner.dig_start_alignment.DigStartAlignmentService`。该 service 只负责
-target qpos 和 PD servo action 的数值计算；`PrimitivePlannerACTPolicy` 仍负责
-surface guard、start envelope、entry-close / entry-intent / timeout handoff、hold
-counter、coverage reject/replan、skill transition、switch reason 和 debug schema。
+当前 pre-dig alignment 数值和纯 readiness helper 的实现 source-of-truth 是
+`testbed.planner.dig_start_alignment.DigStartAlignmentService`。该 service 负责
+target qpos、PD servo action、surface-guard trigger / can-handoff、entry-close
+threshold、start-envelope qpos / pose gate、first-dig entry-close handoff、
+entry-intent mode / handoff、timeout handoff reason，以及 ready sample 对 hold
+count 的建议更新；`PrimitivePlannerACTPolicy` 仍负责 pre-dig-align 分支顺序、
+surface/timeout/completed/replan counters、hold counter 写回、coverage reject/replan、
+token rebuild、skill transition、switch reason、policy reset 和 debug schema。
 
 | 事件或跳转 | 当前判定逻辑 |
 | --- | --- |
