@@ -413,7 +413,7 @@ ACT checkpoint 加载也必须保持同一份 low-dim 契约：`policy_config.st
 `dig_depth_profile_tokens_v1`、`return_target_tokens`、
 `return_relocate_tokens_v1`、`return_start_envelope_tokens_v1` 和
 `return_start_envelope_valid_mask` 的 dim、field order、HDF5 dataset path、
-metadata dim attr aliases、index/slice 和 relocation 派生规则都应从该模块引用；
+metadata dim attr aliases、contract version、index/slice 和 relocation 派生规则都应从该模块引用；
 data builder、dataset loader、runtime/eval、ACT adapter 和 planner 只保留旧常量或
 helper 作为 facade，不再复制 token 下标或 path。
 
@@ -436,8 +436,9 @@ state exemplar 语义、reject/deplete/terminal 行为或 planner trace/debug �
 
 当前 primitive planner debug/summary schema 的实现 source-of-truth 是
 `testbed.planner.primitive_debug`。该模块负责 `PrimitivePlannerACTPolicy.debug_state()`
-和 `rollout_summary()` 的字段组装；planner 类中的同名方法只保留为 facade。此次迁移
-只移动职责边界，不改变字段名、字段顺序、默认值、字段类型、rollout JSONL 消费语义或
+、`rollout_summary()` 和 `planner_trace()` 的字段组装；planner 类中的同名方法只保留
+为 facade。此次迁移只移动职责边界，不改变字段名、字段顺序、默认值、字段类型、
+token contract string、coverage decision trace payload、rollout JSONL 消费语义或
 planner 状态机行为。
 
 当前 rollout step/debug schema 的实现 source-of-truth 是

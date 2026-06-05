@@ -15,8 +15,8 @@ from testbed.data.schema import (
     DS_V2_STEP_RETURN_TARGET_TOKENS,
 )
 
-
 PRIMITIVE_TOKEN_CONTRACT_VERSION = "v2_4_5_primitive_tokens_v1"
+DIG_CUT_TOKEN_CONTRACT = "v2_4_removed_depth_cut_v3"
 
 DIG_CUT_TOKEN_KEY = "dig_cut_tokens"
 DIG_DEPTH_PROFILE_TOKEN_KEY = "dig_depth_profile_tokens_v1"

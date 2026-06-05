@@ -21,6 +21,7 @@ from testbed.eval.rollout_step_records import (
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 from testbed.planner.primitive_debug import (
     build_primitive_debug_state,
+    build_primitive_planner_trace,
     build_primitive_rollout_summary,
 )
 from testbed.policies.hybrid.primitive_planner import (
@@ -28,7 +29,6 @@ from testbed.policies.hybrid.primitive_planner import (
     TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
     PrimitivePlannerACTPolicy,
 )
-
 
 EXPECTED_DEBUG_STATE_KEYS = (
     "skill_name",
@@ -260,6 +260,33 @@ EXPECTED_ROLLOUT_SUMMARY_KEYS = (
     "dig_exit_guard_replan_count",
 )
 
+EXPECTED_PLANNER_TRACE_KEYS = (
+    "cell_entry_trace",
+    "dig_cut_token_contract_version",
+    "dig_cut_token_contract",
+    "dig_cut_planner_mode",
+    "dig_cut_prior_id",
+    "dig_cut_prior_path",
+    "return_target_token_contract_version",
+    "return_target_token_contract",
+    "return_start_envelope_token_contract_version",
+    "return_start_envelope_token_contract",
+    "return_target_planner_enabled",
+    "coverage_use_env_removed_depth",
+    "coverage_candidate_layout",
+    "coverage_first_dig_strategy",
+    "coverage_pass_index",
+    "coverage_multi_pass_enabled",
+    "coverage_multi_pass_max_passes",
+    "coverage_multi_pass_min_remaining_depth_m",
+    "coverage_first_dig_preferred_corridor_id",
+    "coverage_corridors",
+    "coverage_decision_trace",
+    "coverage_decision_trace_count",
+    "coverage_terminal_stop_requested",
+    "coverage_terminal_stop_reason",
+)
+
 EXPECTED_COVERAGE_CORRIDOR_DEBUG_KEYS = (
     "corridor_id",
     "entry_x_m",
@@ -454,6 +481,25 @@ def test_rollout_summary_schema_is_stable() -> None:
     _assert_exact_type(summary, "coverage_multi_pass_enabled", int)
     _assert_exact_type(summary, "pre_dig_align_enabled", int)
     _assert_exact_type(summary, "return_to_dig_max_entry_error_m", float)
+
+
+def test_planner_trace_schema_is_stable() -> None:
+    policy = _make_configured_policy()
+    policy._ensure_coverage_corridors()
+
+    trace = policy.planner_trace()
+
+    _assert_nested_equal(trace, build_primitive_planner_trace(policy))
+    assert tuple(trace) == EXPECTED_PLANNER_TRACE_KEYS
+    assert trace["dig_cut_planner_mode"] == "operator_prior_coverage"
+    assert trace["dig_cut_prior_id"] == "yulong_operator_first_dig_cut_prior_v1"
+    assert trace["return_target_planner_enabled"] is True
+    assert trace["coverage_use_env_removed_depth"] is True
+    assert trace["coverage_candidate_layout"] == "percentile_grid"
+    assert trace["coverage_multi_pass_enabled"] is True
+    assert len(trace["coverage_corridors"]) == 9
+    assert trace["coverage_decision_trace"] == []
+    assert trace["coverage_decision_trace_count"] == 0
 
 
 def test_debug_state_json_safe_after_sanitization_path() -> None:

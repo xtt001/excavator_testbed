@@ -10,7 +10,9 @@
 
 ## Source Of Truth
 
-schema index 只从 `testbed.data.schema` 读取。primitive token dimension、token order 和 contract string 只从 `testbed.contracts.primitive_tokens` 读取。boundary profile name 由 boundary detector 配置或后续 canonical registry 提供。
+schema index 只从 `testbed.data.schema` 读取。primitive token dimension、token
+order、contract version 和 contract string 只从 `testbed.contracts.primitive_tokens`
+读取。boundary profile name 由 boundary detector 配置或后续 canonical registry 提供。
 
 新增模块只能引用这些 source of truth，不能在 service 内复制 index、token order、profile 字符串或默认 contract 语义。
 
@@ -204,6 +206,18 @@ diagnostic / learned first-handoff compatibility layer；planner shell 继续负
 bootstrap branch order、`bootstrap_to_*` switch reason、scripted step/hold/timeout
 counters、active policy dispatch、policy reset timing 和 debug schema。
 
+## Debug / Trace Builder Slice
+
+`testbed.planner.primitive_debug` 负责 primitive planner 的 debug-state、
+rollout-summary 和 planner-trace payload builder。`PrimitivePlannerACTPolicy`
+中的 `debug_state()`、`rollout_summary()` 和 `planner_trace()` 只保留为 public
+facade，转调对应 builder。
+
+本切片只移动 schema/payload 构造位置，不改变 key、key order、字段类型、默认值、
+token contract string、coverage decision trace payload、rollout JSONL 消费语义、
+planner 分支顺序、switch reason、counter、policy reset timing 或 active policy
+dispatch。
+
 ## 测试锁定规则
 
 Phase 1 必须覆盖：
@@ -211,7 +225,7 @@ Phase 1 必须覆盖：
 - return handoff service unit tests：entry-close、non-finite fallback、start-envelope ready/fail/missing-token fallback、direct handoff、shallow guard。
 - golden trace：active skill trace、switch reason trace、completed transition count、policy reset count。
 - legacy planner tests：return-to-dig、direct handoff、same-frame dump/carry -> dig、return -> pre_dig_align 的旧 reason 字符串。
-- debug schema：keys、types、ordering 保持不变。
+- debug/trace schema：keys、types、ordering 保持不变。
 
 验证命令：
 
@@ -228,7 +242,7 @@ pytest tests/test_primitive_planner_debug_schema.py tests/test_planner_golden_tr
 ## 回滚策略
 
 Phase 1、dump lifecycle gate slice、dig lifecycle gate slice、dig-start
-alignment numeric/readiness slice 和 scripted bootstrap compatibility slice 的旧
-private method 均保留为 facade。如果 service extraction 发现行为漂移，可以让
-facade 临时回到旧实现，同时保留新增 service unit tests 和 golden trace 作为后续
-迁移的行为锁。
+alignment numeric/readiness slice、scripted bootstrap compatibility slice 和
+debug/trace builder slice 的旧 private/public method 均保留为 facade。如果 service
+extraction 发现行为漂移，可以让 facade 临时回到旧实现，同时保留新增 service unit
+tests 和 golden trace 作为后续迁移的行为锁。

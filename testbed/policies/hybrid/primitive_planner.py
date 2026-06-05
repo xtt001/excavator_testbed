@@ -24,17 +24,13 @@ from testbed.contracts.primitive_tokens import (
     CUT_PAYLOAD_IDX,
     CUT_VALID_IDX,
     DIG_CUT_TOKEN_DIM,
-    DIG_CUT_TOKEN_KEY,
     DIG_DEPTH_PROFILE_TOKEN_DIM,
     DIG_DEPTH_PROFILE_TOKEN_KEY,
     RETURN_ENVELOPE_QPOS_VALID_IDX,
     RETURN_ENVELOPE_SPATIAL_DEPTH_VALID_IDX,
     RETURN_START_ENVELOPE_TOKEN_DIM,
-    RETURN_START_ENVELOPE_TOKEN_KEY,
     RETURN_TARGET_TOKEN_DIM,
-    RETURN_TARGET_TOKEN_KEY,
     derive_return_relocate_token,
-    token_contract_string,
     validate_primitive_token_shape,
 )
 from testbed.data.dig_depth_profile_v2_4 import (
@@ -45,7 +41,6 @@ from testbed.data.operator_first_v2_2 import (
     DIG_CUT_LENGTH_SCALE_M,
     DIG_CUT_PAYLOAD_SCALE_KG,
     DIG_CUT_POSITION_SCALE_M,
-    DIG_CUT_TOKEN_CONTRACT,
     _build_dig_cut_token,
     build_live_dig_cut_tokens_from_pose,
 )
@@ -128,6 +123,7 @@ from testbed.planner.primitive_debug import (
 )
 from testbed.planner.primitive_debug import (
     build_primitive_debug_state,
+    build_primitive_planner_trace,
     build_primitive_rollout_summary,
 )
 from testbed.planner.primitive_decisions import primitive_boundary_facts_from_event
@@ -1065,56 +1061,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         return build_primitive_rollout_summary(self)
 
     def planner_trace(self) -> dict[str, object]:
-        return {
-            "cell_entry_trace": list(self._cell_entry_trace),
-            "dig_cut_token_contract_version": DIG_CUT_TOKEN_CONTRACT,
-            "dig_cut_token_contract": token_contract_string(DIG_CUT_TOKEN_KEY),
-            "dig_cut_planner_mode": str(self.dig_cut_planner_mode),
-            "dig_cut_prior_id": str(self.dig_cut_prior_id),
-            "dig_cut_prior_path": str(self.dig_cut_prior_path),
-            "return_target_token_contract_version": DIG_CUT_TOKEN_CONTRACT,
-            "return_target_token_contract": token_contract_string(
-                RETURN_TARGET_TOKEN_KEY,
-                prefix="next",
-            ),
-            "return_start_envelope_token_contract_version": (
-                RETURN_START_ENVELOPE_TOKEN_KEY
-            ),
-            "return_start_envelope_token_contract": token_contract_string(
-                RETURN_START_ENVELOPE_TOKEN_KEY
-            ),
-            "return_target_planner_enabled": bool(
-                self.return_target_planner_enabled
-            ),
-            "coverage_use_env_removed_depth": bool(
-                self.coverage_use_env_removed_depth
-            ),
-            "coverage_candidate_layout": str(self.coverage_candidate_layout),
-            "coverage_first_dig_strategy": str(self.coverage_first_dig_strategy),
-            "coverage_pass_index": int(self._coverage_pass_index),
-            "coverage_multi_pass_enabled": bool(self.coverage_multi_pass_enabled),
-            "coverage_multi_pass_max_passes": int(self.coverage_multi_pass_max_passes),
-            "coverage_multi_pass_min_remaining_depth_m": float(
-                self.coverage_multi_pass_min_remaining_depth_m
-            ),
-            "coverage_first_dig_preferred_corridor_id": int(
-                -1
-                if self.coverage_first_dig_preferred_corridor_id is None
-                else self.coverage_first_dig_preferred_corridor_id
-            ),
-            "coverage_corridors": [
-                self._coverage_corridor_to_debug(corridor)
-                for corridor in self._coverage_corridors
-            ],
-            "coverage_decision_trace": list(self._coverage_decision_trace),
-            "coverage_decision_trace_count": int(len(self._coverage_decision_trace)),
-            "coverage_terminal_stop_requested": bool(
-                self._coverage_terminal_stop_requested
-            ),
-            "coverage_terminal_stop_reason": str(
-                self._coverage_terminal_stop_reason
-            ),
-        }
+        return build_primitive_planner_trace(self)
 
     def _maybe_switch_skill(self, *, obs: dict, boundary_event: Any | None) -> None:
         if self._skill_name == BOOTSTRAP_SKILL_NAME:

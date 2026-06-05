@@ -7,13 +7,17 @@ from typing import Any
 import numpy as np
 
 from testbed.contracts.primitive_tokens import (
+    DIG_CUT_TOKEN_CONTRACT,
     DIG_CUT_TOKEN_DIM,
+    DIG_CUT_TOKEN_KEY,
     DIG_DEPTH_PROFILE_TOKEN_DIM,
     RETURN_START_ENVELOPE_TOKEN_DIM,
+    RETURN_START_ENVELOPE_TOKEN_KEY,
     RETURN_TARGET_TOKEN_DIM,
+    RETURN_TARGET_TOKEN_KEY,
+    token_contract_string,
 )
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
-
 
 TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY = "v2_2_primitive_return_policy"
 TRANSITION_POLICY_MODE_PRIMITIVE = "primitive_return_policy"
@@ -381,6 +385,52 @@ def build_primitive_debug_state(policy: Any) -> dict[str, Any]:
             if policy.pre_dig_align_bucket_target_qpos is None
             else policy.pre_dig_align_bucket_target_qpos
         ),
+    }
+
+
+def build_primitive_planner_trace(policy: Any) -> dict[str, object]:
+    """Build the planner trace payload without changing planner ownership."""
+    return {
+        "cell_entry_trace": list(policy._cell_entry_trace),
+        "dig_cut_token_contract_version": DIG_CUT_TOKEN_CONTRACT,
+        "dig_cut_token_contract": token_contract_string(DIG_CUT_TOKEN_KEY),
+        "dig_cut_planner_mode": str(policy.dig_cut_planner_mode),
+        "dig_cut_prior_id": str(policy.dig_cut_prior_id),
+        "dig_cut_prior_path": str(policy.dig_cut_prior_path),
+        "return_target_token_contract_version": DIG_CUT_TOKEN_CONTRACT,
+        "return_target_token_contract": token_contract_string(
+            RETURN_TARGET_TOKEN_KEY,
+            prefix="next",
+        ),
+        "return_start_envelope_token_contract_version": RETURN_START_ENVELOPE_TOKEN_KEY,
+        "return_start_envelope_token_contract": token_contract_string(
+            RETURN_START_ENVELOPE_TOKEN_KEY
+        ),
+        "return_target_planner_enabled": bool(policy.return_target_planner_enabled),
+        "coverage_use_env_removed_depth": bool(policy.coverage_use_env_removed_depth),
+        "coverage_candidate_layout": str(policy.coverage_candidate_layout),
+        "coverage_first_dig_strategy": str(policy.coverage_first_dig_strategy),
+        "coverage_pass_index": int(policy._coverage_pass_index),
+        "coverage_multi_pass_enabled": bool(policy.coverage_multi_pass_enabled),
+        "coverage_multi_pass_max_passes": int(policy.coverage_multi_pass_max_passes),
+        "coverage_multi_pass_min_remaining_depth_m": float(
+            policy.coverage_multi_pass_min_remaining_depth_m
+        ),
+        "coverage_first_dig_preferred_corridor_id": int(
+            -1
+            if policy.coverage_first_dig_preferred_corridor_id is None
+            else policy.coverage_first_dig_preferred_corridor_id
+        ),
+        "coverage_corridors": [
+            policy._coverage_corridor_to_debug(corridor)
+            for corridor in policy._coverage_corridors
+        ],
+        "coverage_decision_trace": list(policy._coverage_decision_trace),
+        "coverage_decision_trace_count": int(len(policy._coverage_decision_trace)),
+        "coverage_terminal_stop_requested": bool(
+            policy._coverage_terminal_stop_requested
+        ),
+        "coverage_terminal_stop_reason": str(policy._coverage_terminal_stop_reason),
     }
 
 

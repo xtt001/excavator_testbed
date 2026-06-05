@@ -17,12 +17,15 @@ from typing import Any
 import numpy as np
 
 from testbed.contracts.primitive_tokens import (
+    DIG_CUT_TOKEN_CONTRACT,
     DIG_CUT_TOKEN_DIM,
     DIG_CUT_TOKEN_KEY,
-    RETURN_START_ENVELOPE_TOKEN_DIM,
-    RETURN_TARGET_TOKEN_KEY,
     RETURN_TARGET_TOKEN_DIM,
+    RETURN_TARGET_TOKEN_KEY,
     token_contract_string,
+)
+from testbed.contracts.primitive_tokens import (
+    RETURN_START_ENVELOPE_TOKEN_DIM as RETURN_START_ENVELOPE_TOKEN_DIM,
 )
 from testbed.data.hdf5_io import list_episodes, read_episode, write_episode
 from testbed.data.schema import (
@@ -41,6 +44,7 @@ from testbed.data.schema import (
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_V2_2_DIM,
 )
+from testbed.data.v2_1 import WORK_STAGE_NAME_TO_ID
 from testbed.data.vds import (
     EPISODE_STORAGE_MODES,
     STORAGE_MODE_COPY,
@@ -48,11 +52,8 @@ from testbed.data.vds import (
     write_lineage_json,
     write_vds_episode,
 )
-from testbed.data.v2_1 import WORK_STAGE_NAME_TO_ID
-
 
 OPERATOR_FIRST_VERSION = "v2_4_operator_first_removed_depth_cut_v3"
-DIG_CUT_TOKEN_CONTRACT = "v2_4_removed_depth_cut_v3"
 
 DIG_CUT_POSITION_SCALE_M = 2.0
 DIG_CUT_LENGTH_SCALE_M = 2.0
