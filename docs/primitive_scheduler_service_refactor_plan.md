@@ -191,10 +191,14 @@ scoring 和 progress/depletion 更新；`DigCoverageMixin` 作为
 private entry points 和旧 state/debug property names。
 
 该 package 已符合本计划第 5 步的主要方向：service owns coverage candidate、
-scoring、target selection、progress；planner shell 仍负责何时 reject/complete
-coverage、何时 `_set_skill()`、何时 reset policy，以及 rollout/debug/trace 的最终
-编排。后续 coverage 迁移应继续保持 behavior-preserving，不改 candidate layout、
-score weight、attempt/depletion、multi-pass、state exemplar 或 trace schema。
+scoring、target selection、progress/depletion state updates；planner shell 仍负责
+何时 reject/complete coverage、何时执行 terminal stop 请求、何时 `_set_skill()`、
+何时 reset policy，以及 rollout/debug/trace 的最终编排。coverage service 不直接
+触发 terminal stop；它返回 deferred `CoverageActionResult`，由
+`DigCoverageMixin` facade 在 planner shell 调用链中执行旧 terminal-stop side effect
+并保留旧 trace event。后续 coverage 迁移应继续保持 behavior-preserving，不改
+candidate layout、score weight、attempt/depletion、multi-pass、state exemplar、
+terminal-stop reason 或 trace schema。
 
 ## Scripted Bootstrap Compatibility Slice
 

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 
@@ -82,6 +83,22 @@ class CoverageObservationFacts:
     cycle_index: int
     skill_name: str
     dig_best_mass_kg: float = 0.0
+
+
+@dataclass(frozen=True)
+class CoverageActionResult:
+    """Coverage state update result for planner-shell side effects."""
+
+    terminal_stop_reason: str = ""
+    terminal_stop_replace: bool = False
+
+
+@dataclass(frozen=True)
+class CoverageSelectionResult:
+    """Selected coverage corridor plus deferred planner-shell side effects."""
+
+    corridor: CoverageCorridorState
+    action: CoverageActionResult = field(default_factory=CoverageActionResult)
 
 
 @dataclass

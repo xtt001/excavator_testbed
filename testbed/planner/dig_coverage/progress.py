@@ -6,26 +6,32 @@ from .models import *
 
 
 class CoverageProgressMixin:
-    def _complete_coverage_dig(self, obs: dict) -> None:
+    def _complete_coverage_dig(self, obs: dict) -> CoverageActionResult:
         if self.dig_cut_planner_mode not in {
             "operator_prior_coverage",
             "operator_prior_sweep_belief",
         }:
-            return
+            return CoverageActionResult()
         self._coverage_current_payload_gain_kg = max(
             float(self._coverage_current_payload_gain_kg),
             self._mass_in_bucket(obs),
         )
+        return CoverageActionResult()
 
-    def _complete_coverage_dump(self, obs: dict, *, reason: str) -> None:
+    def _complete_coverage_dump(
+        self,
+        obs: dict,
+        *,
+        reason: str,
+    ) -> CoverageActionResult:
         if self.dig_cut_planner_mode not in {
             "operator_prior_coverage",
             "operator_prior_sweep_belief",
         }:
-            return
+            return CoverageActionResult()
         corridor = self._coverage_active_corridor()
         if corridor is None:
-            return
+            return CoverageActionResult()
         payload_gain = max(float(self._coverage_current_payload_gain_kg), 0.0)
         effective_deposit = max(
             0.0, self._deposited_mass(obs) - float(self._coverage_cycle_start_deposit_kg)
@@ -100,30 +106,38 @@ class CoverageProgressMixin:
                 "completed_dump_count": int(self._coverage_completed_dump_count),
             },
         )
+        terminal_stop_reason = ""
         if self._coverage_all_depleted():
             if not self._maybe_reopen_coverage_pass(obs, reason="complete_all_depleted"):
-                self._request_coverage_terminal_stop("dig_area_depleted")
+                terminal_stop_reason = "dig_area_depleted"
         elif (
             self._coverage_global_low_productivity_streak
             >= self.coverage_global_low_productivity_stop
         ):
-            self._request_coverage_terminal_stop("low_productivity_consecutive")
+            terminal_stop_reason = "low_productivity_consecutive"
         if (
             low_productivity
             and payload_gain < self.coverage_low_productivity_payload_kg
             and effective_deposit >= self.coverage_low_productivity_deposit_kg
+            and not terminal_stop_reason
         ):
-            self._request_coverage_terminal_stop("physics_artifact_suspected")
+            terminal_stop_reason = "physics_artifact_suspected"
+        return CoverageActionResult(terminal_stop_reason=terminal_stop_reason)
 
-    def _reject_active_coverage_corridor(self, obs: dict, *, reason: str) -> None:
+    def _reject_active_coverage_corridor(
+        self,
+        obs: dict,
+        *,
+        reason: str,
+    ) -> CoverageActionResult:
         if self.dig_cut_planner_mode not in {
             "operator_prior_coverage",
             "operator_prior_sweep_belief",
         }:
-            return
+            return CoverageActionResult()
         corridor = self._coverage_active_corridor()
         if corridor is None:
-            return
+            return CoverageActionResult()
         self._coverage_rejected_state_exemplar_ids.update(
             exemplar_id
             for exemplar_id in self._coverage_active_state_exemplar_ids
@@ -158,7 +172,7 @@ class CoverageProgressMixin:
                     "counted_attempt": 0,
                 },
             )
-            return
+            return CoverageActionResult()
         corridor.attempts += 1
         corridor.low_productivity_streak += 1
         corridor.last_payload_gain_kg = float(payload_gain)
@@ -192,14 +206,16 @@ class CoverageProgressMixin:
                 "counted_attempt": 1,
             },
         )
+        terminal_stop_reason = ""
         if self._coverage_all_depleted():
             if not self._maybe_reopen_coverage_pass(obs, reason="reject_all_depleted"):
-                self._request_coverage_terminal_stop("dig_area_depleted")
+                terminal_stop_reason = "dig_area_depleted"
         elif (
             self._coverage_global_low_productivity_streak
             >= self.coverage_global_low_productivity_stop
         ):
-            self._request_coverage_terminal_stop("low_productivity_consecutive")
+            terminal_stop_reason = "low_productivity_consecutive"
+        return CoverageActionResult(terminal_stop_reason=terminal_stop_reason)
 
     def _update_corridor_belief(
         self,

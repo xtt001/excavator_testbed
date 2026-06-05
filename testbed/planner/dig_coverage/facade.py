@@ -331,17 +331,21 @@ class DigCoverageMixin:
         self._coverage_service()._coverage_active_state_exemplar_profile_token = value
 
     def _select_next_coverage_corridor(self, obs: dict) -> CoverageCorridorState:
-        return self._coverage_service().select_next_corridor(
+        result = self._coverage_service().select_next_corridor_result(
             self._coverage_observation_facts(obs)
         )
+        self._apply_coverage_action_result(result.action)
+        return result.corridor
 
     def _ensure_coverage_corridors(self) -> None:
         self._coverage_service().ensure_corridors()
 
     def _select_coverage_corridor(self, obs: dict) -> CoverageCorridorState:
-        return self._coverage_service()._select_coverage_corridor(
+        result = self._coverage_service()._select_coverage_corridor_result(
             self._coverage_observation_facts(obs)
         )
+        self._apply_coverage_action_result(result.action)
+        return result.corridor
 
     def _coverage_first_dig_gate_available(self, obs: dict) -> bool:
         return self._coverage_service()._coverage_first_dig_gate_available(
@@ -453,18 +457,32 @@ class DigCoverageMixin:
         )
 
     def _complete_coverage_dig(self, obs: dict) -> None:
-        self._coverage_service().complete_dig(self._coverage_observation_facts(obs))
+        result = self._coverage_service().complete_dig(
+            self._coverage_observation_facts(obs)
+        )
+        self._apply_coverage_action_result(result)
 
     def _complete_coverage_dump(self, obs: dict, *, reason: str) -> None:
-        self._coverage_service().complete_dump(
+        result = self._coverage_service().complete_dump(
             self._coverage_observation_facts(obs),
             reason=reason,
         )
+        self._apply_coverage_action_result(result)
 
     def _reject_active_coverage_corridor(self, obs: dict, *, reason: str) -> None:
-        self._coverage_service().reject_active_corridor(
+        result = self._coverage_service().reject_active_corridor(
             self._coverage_observation_facts(obs),
             reason=reason,
+        )
+        self._apply_coverage_action_result(result)
+
+    def _apply_coverage_action_result(self, result: CoverageActionResult) -> None:
+        reason = str(getattr(result, "terminal_stop_reason", "") or "")
+        if not reason:
+            return
+        self._request_coverage_terminal_stop(
+            reason,
+            replace=bool(getattr(result, "terminal_stop_replace", False)),
         )
 
     def _record_coverage_decision_event(

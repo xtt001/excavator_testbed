@@ -292,6 +292,82 @@ def test_coverage_completion_and_rejection_update_belief_and_trace() -> None:
     assert reject_policy._coverage_decision_trace[-1]["counted_attempt"] == 1
 
 
+def test_coverage_service_defers_terminal_stop_to_policy_facade() -> None:
+    policy = _coverage_policy(
+        coverage_extra={
+            "use_env_removed_depth": False,
+            "belief_depleted_score": 100.0,
+            "max_attempts_per_corridor": 1,
+        }
+    )
+    direct_service = CoverageService(
+        config=policy._coverage_service_config(),
+        state=CoverageServiceState(),
+        first_dig_alignment_target_fn=policy._coverage_first_dig_alignment_target,
+    )
+    direct_service.ensure_corridors()
+    policy._ensure_coverage_corridors()
+
+    for corridor in direct_service._coverage_corridors[1:]:
+        corridor.depleted = True
+    for corridor in policy._coverage_corridors[1:]:
+        corridor.depleted = True
+
+    direct_corridor = direct_service._coverage_corridors[0]
+    facade_corridor = policy._coverage_corridors[0]
+    direct_service._coverage_active_corridor_id = int(direct_corridor.corridor_id)
+    policy._coverage_active_corridor_id = int(facade_corridor.corridor_id)
+    direct_service._coverage_current_payload_gain_kg = 50.0
+    policy._coverage_current_payload_gain_kg = 50.0
+
+    obs = _coverage_obs(deposited=25.0)
+    result = direct_service.complete_dump(
+        policy._coverage_observation_facts(obs),
+        reason="unit_complete",
+    )
+
+    assert result.terminal_stop_reason == "dig_area_depleted"
+    assert direct_service._coverage_terminal_stop_requested is False
+    assert direct_service.decision_trace[-1]["event"] == "complete_dump"
+
+    policy._complete_coverage_dump(obs, reason="unit_complete")
+
+    assert policy._coverage_terminal_stop_requested is True
+    assert policy._coverage_terminal_stop_reason == "dig_area_depleted"
+    assert policy._coverage_decision_trace[-1]["event"] == "terminal_stop"
+
+
+def test_coverage_terminal_stop_reason_preserves_first_request() -> None:
+    policy = _coverage_policy(
+        coverage_extra={
+            "use_env_removed_depth": False,
+            "belief_depleted_score": 100.0,
+            "low_productivity_payload_kg": 100.0,
+            "low_productivity_deposit_kg": 10.0,
+            "global_low_productivity_stop": 1,
+            "deplete_after_low_streak": 99,
+            "max_attempts_per_corridor": 99,
+        }
+    )
+    direct_service = CoverageService(
+        config=policy._coverage_service_config(),
+        state=CoverageServiceState(),
+        first_dig_alignment_target_fn=policy._coverage_first_dig_alignment_target,
+    )
+    direct_service.ensure_corridors()
+    direct_corridor = direct_service._coverage_corridors[0]
+    direct_service._coverage_active_corridor_id = int(direct_corridor.corridor_id)
+    direct_service._coverage_current_payload_gain_kg = 0.0
+
+    result = direct_service.complete_dump(
+        policy._coverage_observation_facts(_coverage_obs(deposited=25.0)),
+        reason="unit_complete",
+    )
+
+    assert result.terminal_stop_reason == "low_productivity_consecutive"
+    assert direct_service._coverage_terminal_stop_requested is False
+
+
 def _coverage_policy(
     *,
     prior_path: Path = YULONG_DIG_CUT_PRIOR_PATH,

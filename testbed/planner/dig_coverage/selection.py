@@ -9,6 +9,12 @@ from .models import *
 
 class CoverageSelectionMixin:
     def _select_coverage_corridor(self, obs: dict) -> CoverageCorridorState:
+        return self._select_coverage_corridor_result(obs).corridor
+
+    def _select_coverage_corridor_result(
+        self,
+        obs: dict,
+    ) -> CoverageSelectionResult:
         if self._coverage_all_depleted():
             self._maybe_reopen_coverage_pass(obs, reason="select_all_depleted")
         best: CoverageCorridorState | None = None
@@ -143,10 +149,14 @@ class CoverageSelectionMixin:
                 "first_dig_gate_available": int(first_dig_gate_available),
             },
         )
+        terminal_stop_reason = ""
         if self._coverage_all_depleted():
             if not self._maybe_reopen_coverage_pass(obs, reason="select_all_depleted"):
-                self._request_coverage_terminal_stop("dig_area_depleted")
-        return best
+                terminal_stop_reason = "dig_area_depleted"
+        return CoverageSelectionResult(
+            corridor=best,
+            action=CoverageActionResult(terminal_stop_reason=terminal_stop_reason),
+        )
 
     def _coverage_first_dig_active(self) -> bool:
         return bool(

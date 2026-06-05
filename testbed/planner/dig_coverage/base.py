@@ -35,7 +35,13 @@ class CoverageServiceBase:
         self,
         facts: CoverageObservationFacts,
     ) -> CoverageCorridorState:
-        return self._select_next_coverage_corridor(facts)
+        return self.select_next_corridor_result(facts).corridor
+
+    def select_next_corridor_result(
+        self,
+        facts: CoverageObservationFacts,
+    ) -> CoverageSelectionResult:
+        return self._select_next_coverage_corridor_result(facts)
 
     def raw_fields(
         self,
@@ -50,24 +56,24 @@ class CoverageServiceBase:
             update_state=update_state,
         )
 
-    def complete_dig(self, facts: CoverageObservationFacts) -> None:
-        self._complete_coverage_dig(facts)
+    def complete_dig(self, facts: CoverageObservationFacts) -> CoverageActionResult:
+        return self._complete_coverage_dig(facts)
 
     def complete_dump(
         self,
         facts: CoverageObservationFacts,
         *,
         reason: str,
-    ) -> None:
-        self._complete_coverage_dump(facts, reason=reason)
+    ) -> CoverageActionResult:
+        return self._complete_coverage_dump(facts, reason=reason)
 
     def reject_active_corridor(
         self,
         facts: CoverageObservationFacts,
         *,
         reason: str,
-    ) -> None:
-        self._reject_active_coverage_corridor(facts, reason=reason)
+    ) -> CoverageActionResult:
+        return self._reject_active_coverage_corridor(facts, reason=reason)
 
     def corridor_debug(
         self,

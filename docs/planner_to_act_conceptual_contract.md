@@ -464,11 +464,13 @@ rollout trace。
 `testbed.planner.dig_coverage.CoverageService`。该 service object 负责 coverage
 corridor candidate 构造、cell-weighted prior 和 percentile-grid fallback、corridor
 scoring、first-dig gate、state exemplar conditioning、coverage raw fields、
-belief/depletion 更新，以及 coverage decision trace payload；`DigCoverageMixin`
-和 `PrimitivePlannerACTPolicy` 继续保留旧 `_coverage_*` /
+belief/depletion 更新，以及 coverage decision trace payload。terminal-stop 请求不由
+service 直接触发；service 返回 deferred coverage action result，`DigCoverageMixin`
+facade 在 planner shell 调用链中执行旧 terminal-stop side effect 并保留旧 trace
+event。`DigCoverageMixin` 和 `PrimitivePlannerACTPolicy` 继续保留旧 `_coverage_*` /
 `_ensure_coverage_corridors()` / `_select_coverage_corridor()` 等 private 入口作为
 facade 兼容层。此次迁移只移动职责边界，不改变 coverage scoring、candidate layout、
-state exemplar 语义、reject/deplete/terminal 行为或 planner trace/debug 字段。
+state exemplar 语义、reject/deplete/terminal reason 或 planner trace/debug 字段。
 
 当前 primitive planner debug/summary schema 的实现 source-of-truth 是
 `testbed.planner.primitive_debug`。该模块负责 `PrimitivePlannerACTPolicy.debug_state()`
