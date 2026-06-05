@@ -163,6 +163,47 @@ planner 大文件只保留薄 facade 和状态写回：
 completed/replan counters、hold counter 写回、coverage reject/replan、token rebuild、
 switch reason、policy reset timing 和 debug schema 在 planner shell。
 
+## Coverage Service Package Status
+
+`testbed/planner/dig_coverage/` 已作为 dig coverage / corridor planning 的
+service package。`CoverageService` 组合 candidate 构造、raw-field 组装、selection
+scoring 和 progress/depletion 更新；`DigCoverageMixin` 作为
+`PrimitivePlannerACTPolicy` 的 compatibility facade，保留旧 `_coverage_*`
+private entry points 和旧 state/debug property names。
+
+该 package 已符合本计划第 5 步的主要方向：service owns coverage candidate、
+scoring、target selection、progress；planner shell 仍负责何时 reject/complete
+coverage、何时 `_set_skill()`、何时 reset policy，以及 rollout/debug/trace 的最终
+编排。后续 coverage 迁移应继续保持 behavior-preserving，不改 candidate layout、
+score weight、attempt/depletion、multi-pass、state exemplar 或 trace schema。
+
+## Scripted Bootstrap Compatibility Slice
+
+新增模块：
+
+- `testbed/planner/bootstrap.py`
+
+`BootstrapService` 只负责 legacy/diagnostic bootstrap compatibility 的纯判断和
+动作数值：`scripted_qpos` 是否启用、scripted target/qvel hold gate、scripted
+timeout end gate、learned bootstrap 的 `first_qualified_dig_start` /
+`loaded_and_clear` end gate，以及 scripted qpos PD action。service 只接收显式
+`BootstrapFacts` 和 `BootstrapConfig`，不接收 planner `self`，不调用
+`_set_skill()`，不 reset policy，不写 debug schema，不决定下一 skill。
+
+planner 大文件只保留薄 facade 和状态写回：
+
+- `_bootstrap_config()`
+- `_bootstrap_facts()`
+- `_should_end_bootstrap()`
+- `_scripted_bootstrap_enabled()`
+- `_scripted_bootstrap_target_reached()`
+- `_scripted_bootstrap_action()`
+
+本切片不提升 bootstrap 为 mainline 语义。bootstrap 仍按既有文档作为 legacy smoke /
+diagnostic / learned first-handoff compatibility layer；planner shell 继续负责
+bootstrap branch order、`bootstrap_to_*` switch reason、scripted step/hold/timeout
+counters、active policy dispatch、policy reset timing 和 debug schema。
+
 ## 测试锁定规则
 
 Phase 1 必须覆盖：
@@ -180,12 +221,14 @@ pytest tests/test_agx_primitives_v2_2.py -k "return_to_dig or direct_handoff or 
 pytest tests/test_dump_lifecycle_service.py tests/test_planner_golden_traces.py tests/test_primitive_planner_debug_schema.py tests/test_agx_primitives_v2_2.py -k "dump_ready or dump_done or dump_end or dump_release or approach_dump or release_safety or near_window or dump_area_relative or carry_to_dump or dump_to_return"
 pytest tests/test_dig_lifecycle_service.py tests/test_agx_primitives_v2_2.py -k "dig_bad_replan or exit_guard or failed_dig or dig_complete or pre_dig_align or dig_to_carry"
 pytest tests/test_dig_start_alignment_service.py tests/test_agx_primitives_v2_2.py -k "pre_dig_align"
+pytest tests/test_bootstrap_service.py tests/test_agx_primitives_v2_2.py -k "bootstrap"
 pytest tests/test_primitive_planner_debug_schema.py tests/test_planner_golden_traces.py
 ```
 
 ## 回滚策略
 
-Phase 1、dump lifecycle gate slice、dig lifecycle gate slice 和 dig-start
-alignment numeric/readiness slice 的旧 private method 均保留为 facade。如果 service
-extraction 发现行为漂移，可以让 facade 临时回到旧实现，同时保留新增 service unit
-tests 和 golden trace 作为后续迁移的行为锁。
+Phase 1、dump lifecycle gate slice、dig lifecycle gate slice、dig-start
+alignment numeric/readiness slice 和 scripted bootstrap compatibility slice 的旧
+private method 均保留为 facade。如果 service extraction 发现行为漂移，可以让
+facade 临时回到旧实现，同时保留新增 service unit tests 和 golden trace 作为后续
+迁移的行为锁。

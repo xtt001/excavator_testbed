@@ -187,6 +187,15 @@ reason。`PrimitivePlannerACTPolicy` 仍负责 dig 分支顺序、coverage rejec
 failed-dig stop/retry/pre-dig-align 选择、skill transition、switch reason 拼接、
 policy reset 和 debug schema。
 
+当前 scripted bootstrap compatibility 的实现 source-of-truth 是
+`testbed.planner.bootstrap.BootstrapService`。该 service 只负责 legacy/diagnostic
+bootstrap compatibility 的纯判断和动作数值：`scripted_qpos` enable 判断、
+scripted target/qvel hold gate、scripted timeout end gate、learned bootstrap 的
+`first_qualified_dig_start` / `loaded_and_clear` end gate，以及 scripted qpos PD
+action；`PrimitivePlannerACTPolicy` 仍负责 bootstrap 分支顺序、`bootstrap_to_*`
+switch reason、scripted step/hold/timeout counter 写回、active policy dispatch、
+policy reset 和 debug schema。bootstrap 不因此成为 V2.4.5 mainline 调度语义。
+
 当前 pre-dig alignment 数值和纯 readiness helper 的实现 source-of-truth 是
 `testbed.planner.dig_start_alignment.DigStartAlignmentService`。该 service 负责
 target qpos、PD servo action、surface-guard trigger / can-handoff、entry-close

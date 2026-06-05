@@ -9,6 +9,9 @@ from typing import Any
 
 import numpy as np
 
+from testbed.contracts.primitive_profile import (
+    CYCLE_BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS,
+)
 from testbed.contracts.primitive_tokens import (
     CUT_DEPTH_SEMANTIC_IDX,
     CUT_DIR_X_IDX,
@@ -85,6 +88,7 @@ from testbed.data.schema import (
     ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX as ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
 )
 from testbed.data.v2_1 import build_goal_tokens
+from testbed.planner.bootstrap import BootstrapConfig, BootstrapFacts, BootstrapService
 from testbed.planner.boundary_detector import BoundaryDetector
 from testbed.planner.cell_entry import (
     CELL_ENTRY_TOKEN_DIM,
@@ -286,6 +290,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self.bootstrap_policy = bootstrap_policy
         self.boundary_detector = boundary_detector
         self.return_handoff_gate = ReturnToDigHandoffGateService()
+        self.bootstrap_service = BootstrapService()
         self.dig_lifecycle_gate = DigLifecycleGateService()
         self.dig_start_alignment_service = DigStartAlignmentService()
         self.dump_lifecycle_gate = DumpLifecycleGateService()
@@ -1530,76 +1535,78 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         )
 
     def _should_end_bootstrap(self, *, obs: dict, boundary_event: Any | None) -> bool:
-        if self._scripted_bootstrap_enabled():
-            if self._scripted_bootstrap_target_reached(obs):
-                return True
-            if self._scripted_bootstrap_step_count >= self.scripted_bootstrap_max_steps:
-                self._scripted_bootstrap_timeout_count += 1
-                return True
-            return False
-        if self.bootstrap_policy is None:
-            return False
-        if self.bootstrap_end_mode == "first_qualified_dig_start":
-            return bool(
+        decision = self.bootstrap_service.should_end(
+            self._bootstrap_facts(obs=obs, boundary_event=boundary_event),
+            self._bootstrap_config(),
+        )
+        self._scripted_bootstrap_hold_count = int(decision.hold_count)
+        if decision.timeout_increment:
+            self._scripted_bootstrap_timeout_count += 1
+        return bool(decision.should_end)
+
+    def _bootstrap_config(self) -> BootstrapConfig:
+        return BootstrapConfig(
+            action_dim=int(self.action_dim),
+            end_mode=str(self.bootstrap_end_mode),
+            end_min_bucket_mass_kg=float(self.bootstrap_end_min_bucket_mass_kg),
+            end_min_distance_to_dig_area_m=float(
+                self.bootstrap_end_min_distance_to_dig_area_m
+            ),
+            scripted_target_qpos=self.scripted_bootstrap_target_qpos,
+            scripted_kp=float(self.scripted_bootstrap_kp),
+            scripted_kd=float(self.scripted_bootstrap_kd),
+            scripted_action_clip=self.scripted_bootstrap_action_clip,
+            scripted_action_signs=self.scripted_bootstrap_action_signs,
+            scripted_qpos_tolerance=float(self.scripted_bootstrap_qpos_tolerance),
+            scripted_qvel_abs_max=float(self.scripted_bootstrap_qvel_abs_max),
+            scripted_hold_steps=int(self.scripted_bootstrap_hold_steps),
+            scripted_max_steps=int(self.scripted_bootstrap_max_steps),
+        )
+
+    def _bootstrap_facts(
+        self,
+        *,
+        obs: dict,
+        boundary_event: Any | None = None,
+    ) -> BootstrapFacts:
+        return BootstrapFacts(
+            qpos=np.asarray(
+                obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
+                dtype=np.float32,
+            ).reshape(self.action_dim),
+            qvel=np.asarray(
+                obs.get("qvel", np.zeros(self.action_dim, dtype=np.float32)),
+                dtype=np.float32,
+            ).reshape(self.action_dim),
+            mass_in_bucket_kg=self._mass_in_bucket(obs),
+            min_distance_to_dig_area_m=self._min_distance_to_dig_area(obs),
+            qualified_dig_start=bool(
                 boundary_event is not None
                 and getattr(boundary_event, "qualified_dig_start", False)
-            )
-        if self.bootstrap_end_mode == "loaded_and_clear":
-            return self._mass_in_bucket(obs) >= self.bootstrap_end_min_bucket_mass_kg and (
-                self._min_distance_to_dig_area(obs)
-                >= self.bootstrap_end_min_distance_to_dig_area_m
-            )
-        if self.bootstrap_end_mode == "disabled":
-            return False
-        raise ValueError(f"Unsupported bootstrap_end_mode {self.bootstrap_end_mode!r}.")
+            ),
+            step_count=int(self._scripted_bootstrap_step_count),
+            hold_count=int(self._scripted_bootstrap_hold_count),
+            bootstrap_policy_present=self.bootstrap_policy is not None,
+        )
 
     def _scripted_bootstrap_enabled(self) -> bool:
-        return bool(
-            self.bootstrap_end_mode == "scripted_qpos"
-            and self.scripted_bootstrap_target_qpos is not None
-        )
+        return self.bootstrap_service.scripted_enabled(self._bootstrap_config())
 
     def _scripted_bootstrap_target_reached(self, obs: dict) -> bool:
-        if self.scripted_bootstrap_target_qpos is None:
-            return False
-        qpos = np.asarray(
-            obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
-        qvel = np.asarray(
-            obs.get("qvel", np.zeros(self.action_dim, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
-        qpos_close = bool(
-            np.all(np.abs(qpos - self.scripted_bootstrap_target_qpos) <= self.scripted_bootstrap_qpos_tolerance)
+        decision = self.bootstrap_service.scripted_target_reached(
+            self._bootstrap_facts(obs=obs),
+            self._bootstrap_config(),
         )
-        qvel_small = bool(np.all(np.abs(qvel) <= self.scripted_bootstrap_qvel_abs_max))
-        if qpos_close and qvel_small:
-            self._scripted_bootstrap_hold_count += 1
-        else:
-            self._scripted_bootstrap_hold_count = 0
-        return bool(self._scripted_bootstrap_hold_count >= self.scripted_bootstrap_hold_steps)
+        self._scripted_bootstrap_hold_count = int(decision.hold_count)
+        return bool(decision.ready)
 
     def _scripted_bootstrap_action(self, obs: dict) -> np.ndarray:
         if self.scripted_bootstrap_target_qpos is None:
             raise RuntimeError("scripted bootstrap is active without target qpos.")
         self._scripted_bootstrap_step_count += 1
-        qpos = np.asarray(
-            obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
-        qvel = np.asarray(
-            obs.get("qvel", np.zeros(self.action_dim, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
-        return _pd_servo_action(
-            qpos=qpos,
-            qvel=qvel,
-            target_qpos=self.scripted_bootstrap_target_qpos,
-            kp=self.scripted_bootstrap_kp,
-            kd=self.scripted_bootstrap_kd,
-            action_clip=self.scripted_bootstrap_action_clip,
-            action_signs=self.scripted_bootstrap_action_signs,
+        return self.bootstrap_service.scripted_action(
+            self._bootstrap_facts(obs=obs),
+            self._bootstrap_config(),
         )
 
     def _pre_dig_align_surface_guard_triggered_for_state(self, obs: dict) -> bool:
@@ -2075,7 +2082,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
     def _semantic_boundary_profile_active(self) -> bool:
         config = getattr(self.boundary_detector, "config", None)
         profile = str(getattr(config, "boundary_profile", "legacy"))
-        return profile == "v2_4_5_spatial_mass"
+        return profile == CYCLE_BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS
 
     def _dump_lifecycle_config(self) -> DumpLifecycleConfig:
         return DumpLifecycleConfig(
