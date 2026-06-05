@@ -96,10 +96,13 @@ planner shell 的原有分支控制，service 不提升实验语义为默认行�
 `DigLifecycleGateService` 负责纯 gate/progress 判断：dig progress 的
 step/best-mass/plateau/payload-gain 更新、`dig_bad_replan` readiness、
 `dig_exit_guard` overshoot readiness、`dig_complete` low-payload guard，以及
-legacy / semantic `dig -> carry` readiness reason。service 只接收显式
-`DigLifecycleFacts` 和 `DigLifecycleConfig`，不接收 planner `self`，不调用
-`_set_skill()`，不 reject/complete coverage，不选择 pre-dig-align，不请求 terminal
-stop，不 reset policy，也不写 planner trace。
+legacy / semantic `dig -> carry` readiness reason。service 也负责 failed-dig
+recovery 的纯 decision：基于 `FailedDigRecoveryFacts` / `DigLifecycleConfig`
+选择 `pre_dig_align`、`stop` 或 `dig` retry，并返回旧 switch/terminal reason
+字符串。service 只接收显式 `DigLifecycleFacts`、`FailedDigRecoveryFacts` 和
+`DigLifecycleConfig`，不接收 planner `self`，不调用 `_set_skill()`，不
+reject/complete coverage，不请求 terminal stop，不 reset policy，也不写 planner
+trace。
 
 planner 大文件只保留薄 facade 和 facts/config 装配：
 
@@ -112,11 +115,15 @@ planner 大文件只保留薄 facade 和 facts/config 装配：
 - `_dig_to_carry_ready()`
 - `_semantic_dig_to_carry_liveness_ready()`
 - `_dig_complete_boundary_low_payload()`
+- `_restart_after_failed_dig()`
+- `_should_pre_dig_align_before_dig()`
+- `_should_pre_dig_align_after_failed_dig()`
 
 本切片保留 dig 分支顺序：
 `exit_guard -> bad_replan -> complete_low_payload -> carry`。coverage reject、
-cell-entry/coverage dig completion、failed-dig stop/retry/pre-dig-align 选择、
-switch reason 拼接、policy reset timing 和 debug schema 仍由 planner shell 控制。
+cell-entry/coverage dig completion、failed-dig stop/retry/pre-dig-align 执行、
+policy reset timing 和 debug schema 仍由 planner shell 控制；failed-dig recovery
+decision 不改变旧 switch reason、terminal reason 或 planner trace schema。
 
 ## Dig-Start Alignment Numeric Slice
 

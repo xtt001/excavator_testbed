@@ -6,6 +6,7 @@ from testbed.planner.dig_lifecycle import (
     DigLifecycleConfig,
     DigLifecycleFacts,
     DigLifecycleGateService,
+    FailedDigRecoveryFacts,
 )
 
 
@@ -223,3 +224,73 @@ def test_dig_complete_low_payload_uses_semantic_boundary_and_min_carry_mass() ->
         ),
         config,
     )
+
+
+def test_failed_dig_recovery_defaults_to_dig_retry() -> None:
+    decision = DigLifecycleGateService().failed_dig_recovery(
+        reason="bad_dig_low_payload",
+        facts=FailedDigRecoveryFacts(cycle_index=1),
+        config=_config(),
+    )
+
+    assert decision.next_skill == "dig"
+    assert decision.switch_reason == "dig_retry_bad_dig_low_payload"
+    assert decision.terminal_reason == ""
+
+
+def test_failed_dig_recovery_can_stop_with_terminal_reason() -> None:
+    decision = DigLifecycleGateService().failed_dig_recovery(
+        reason="exit_overshoot_low_payload",
+        facts=FailedDigRecoveryFacts(cycle_index=1),
+        config=_config(dig_failed_replan_next_skill="stop"),
+    )
+
+    assert decision.next_skill == "stop"
+    assert decision.switch_reason == "dig_failed_stop_exit_overshoot_low_payload"
+    assert decision.terminal_reason == "dig_failed_exit_overshoot_low_payload"
+
+
+def test_failed_dig_recovery_prefers_first_cycle_pre_dig_align() -> None:
+    service = DigLifecycleGateService()
+    config = _config(
+        pre_dig_align_enabled=True,
+        pre_dig_align_first_dig_only=True,
+    )
+
+    assert service.pre_dig_align_before_dig(
+        FailedDigRecoveryFacts(cycle_index=0),
+        config,
+    )
+    assert not service.pre_dig_align_before_dig(
+        FailedDigRecoveryFacts(cycle_index=1),
+        config,
+    )
+    decision = service.failed_dig_recovery(
+        reason="bad_dig_low_payload",
+        facts=FailedDigRecoveryFacts(cycle_index=0),
+        config=config,
+    )
+
+    assert decision.next_skill == "pre_dig_align"
+    assert decision.switch_reason == "dig_to_pre_dig_align_bad_dig_low_payload"
+
+
+def test_failed_dig_recovery_can_align_after_failed_dig() -> None:
+    service = DigLifecycleGateService()
+    config = _config(
+        pre_dig_align_enabled=True,
+        pre_dig_align_first_dig_only=True,
+        pre_dig_align_replan_after_failed_dig=True,
+        dig_failed_replan_next_skill="stop",
+    )
+
+    assert service.pre_dig_align_after_failed_dig(config)
+    decision = service.failed_dig_recovery(
+        reason="exit_overshoot_low_payload",
+        facts=FailedDigRecoveryFacts(cycle_index=1),
+        config=config,
+    )
+
+    assert decision.next_skill == "pre_dig_align"
+    assert decision.switch_reason == "dig_to_pre_dig_align_exit_overshoot_low_payload"
+    assert decision.terminal_reason == ""

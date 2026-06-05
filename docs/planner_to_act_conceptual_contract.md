@@ -183,9 +183,11 @@ schema。
 `testbed.planner.dig_lifecycle.DigLifecycleGateService`。该 service 负责 dig
 progress 状态更新、bad-dig readiness、exit-guard overshoot readiness、
 `dig_complete` low-payload guard，以及 legacy / semantic `dig -> carry` readiness
-reason。`PrimitivePlannerACTPolicy` 仍负责 dig 分支顺序、coverage reject/complete、
-failed-dig stop/retry/pre-dig-align 选择、skill transition、switch reason 拼接、
-policy reset 和 debug schema。
+reason。该 service 还负责 failed-dig recovery 的纯 decision，返回
+`pre_dig_align` / `stop` / `dig` retry 目标和旧 switch/terminal reason。
+`PrimitivePlannerACTPolicy` 仍负责 dig 分支顺序、coverage reject/complete、
+failed-dig recovery 执行、skill transition、policy reset、terminal stop 请求、
+planner trace 和 debug schema。
 
 当前 scripted bootstrap compatibility 的实现 source-of-truth 是
 `testbed.planner.bootstrap.BootstrapService`。该 service 只负责 legacy/diagnostic

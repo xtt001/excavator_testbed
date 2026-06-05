@@ -91,6 +91,7 @@ from testbed.planner.dig_lifecycle import (
     DigLifecycleConfig,
     DigLifecycleFacts,
     DigLifecycleGateService,
+    FailedDigRecoveryFacts,
 )
 from testbed.planner.dig_start_alignment import (
     DigStartAlignmentConfig,
@@ -1432,7 +1433,14 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self._invalidate_pending_dig_cut_plan()
         self._clear_dig_cut_plan()
 
-    def _stop_after_failed_dig(self, reason: str, obs: dict) -> None:
+    def _stop_after_failed_dig(
+        self,
+        reason: str,
+        obs: dict,
+        *,
+        switch_reason: str | None = None,
+        terminal_reason: str | None = None,
+    ) -> None:
         corridor = self._coverage_active_corridor()
         payload_gain = max(
             float(self._coverage_current_payload_gain_kg),
@@ -1440,7 +1448,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             self._mass_in_bucket(obs),
             0.0,
         )
-        self._switch_reason = f"dig_failed_stop_{reason}"
+        self._switch_reason = str(switch_reason or f"dig_failed_stop_{reason}")
         self._record_coverage_decision_event(
             "failed_dig_stop",
             obs=obs,
@@ -1454,33 +1462,40 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             },
         )
         self._request_coverage_terminal_stop(
-            f"dig_failed_{reason}",
+            str(terminal_reason or f"dig_failed_{reason}"),
             replace=True,
         )
 
     def _restart_after_failed_dig(self, reason: str, obs: dict) -> None:
-        if (
-            self._should_pre_dig_align_before_dig()
-            or self._should_pre_dig_align_after_failed_dig()
-        ):
-            self._restart_pre_dig_align(f"dig_to_pre_dig_align_{reason}")
+        decision = self.dig_lifecycle_gate.failed_dig_recovery(
+            reason=reason,
+            facts=FailedDigRecoveryFacts(
+                cycle_index=int(getattr(self, "_cycle_index", 0))
+            ),
+            config=self._dig_lifecycle_config(),
+        )
+        if decision.next_skill == PRE_DIG_ALIGN_SKILL_NAME:
+            self._restart_pre_dig_align(decision.switch_reason)
             return
-        if self.dig_failed_replan_next_skill == "stop":
-            self._stop_after_failed_dig(reason, obs)
+        if decision.next_skill == "stop":
+            self._stop_after_failed_dig(
+                reason,
+                obs,
+                switch_reason=decision.switch_reason,
+                terminal_reason=decision.terminal_reason,
+            )
             return
-        self._restart_dig_with_new_cut(f"dig_retry_{reason}")
+        self._restart_dig_with_new_cut(decision.switch_reason)
 
     def _should_pre_dig_align_before_dig(self) -> bool:
-        if not self.pre_dig_align_enabled:
-            return False
-        if not self.pre_dig_align_first_dig_only:
-            return True
-        return int(getattr(self, "_cycle_index", 0)) == 0
+        return self.dig_lifecycle_gate.pre_dig_align_before_dig(
+            FailedDigRecoveryFacts(cycle_index=int(getattr(self, "_cycle_index", 0))),
+            self._dig_lifecycle_config(),
+        )
 
     def _should_pre_dig_align_after_failed_dig(self) -> bool:
-        return bool(
-            self.pre_dig_align_enabled
-            and self.pre_dig_align_replan_after_failed_dig
+        return self.dig_lifecycle_gate.pre_dig_align_after_failed_dig(
+            self._dig_lifecycle_config()
         )
 
     def _should_end_bootstrap(self, *, obs: dict, boundary_event: Any | None) -> bool:
@@ -1918,6 +1933,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                 self.dig_exit_guard_min_bucket_mass_kg
             ),
             dump_ready_min_bucket_mass_kg=float(self.dump_ready_min_bucket_mass_kg),
+            dig_failed_replan_next_skill=str(self.dig_failed_replan_next_skill),
+            pre_dig_align_enabled=bool(self.pre_dig_align_enabled),
+            pre_dig_align_first_dig_only=bool(self.pre_dig_align_first_dig_only),
+            pre_dig_align_replan_after_failed_dig=bool(
+                self.pre_dig_align_replan_after_failed_dig
+            ),
         )
 
     def _dig_lifecycle_facts(

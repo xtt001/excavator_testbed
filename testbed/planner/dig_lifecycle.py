@@ -25,6 +25,10 @@ class DigLifecycleConfig:
     dig_exit_guard_overshoot_m: float
     dig_exit_guard_min_bucket_mass_kg: float
     dump_ready_min_bucket_mass_kg: float
+    dig_failed_replan_next_skill: str = "dig"
+    pre_dig_align_enabled: bool = False
+    pre_dig_align_first_dig_only: bool = False
+    pre_dig_align_replan_after_failed_dig: bool = False
 
 
 @dataclass(frozen=True)
@@ -57,6 +61,18 @@ class DigProgressState:
 class DigGateDecision:
     ready: bool
     reason: str = ""
+
+
+@dataclass(frozen=True)
+class FailedDigRecoveryFacts:
+    cycle_index: int
+
+
+@dataclass(frozen=True)
+class FailedDigRecoveryDecision:
+    next_skill: str
+    switch_reason: str
+    terminal_reason: str = ""
 
 
 class DigLifecycleGateService:
@@ -221,3 +237,48 @@ class DigLifecycleGateService:
             float(config.dump_ready_min_bucket_mass_kg),
         )
         return bool(float(facts.mass_in_bucket_kg) < min_carry_mass)
+
+    def pre_dig_align_before_dig(
+        self,
+        facts: FailedDigRecoveryFacts,
+        config: DigLifecycleConfig,
+    ) -> bool:
+        if not bool(config.pre_dig_align_enabled):
+            return False
+        if not bool(config.pre_dig_align_first_dig_only):
+            return True
+        return int(facts.cycle_index) == 0
+
+    @staticmethod
+    def pre_dig_align_after_failed_dig(config: DigLifecycleConfig) -> bool:
+        return bool(
+            config.pre_dig_align_enabled
+            and config.pre_dig_align_replan_after_failed_dig
+        )
+
+    def failed_dig_recovery(
+        self,
+        *,
+        reason: str,
+        facts: FailedDigRecoveryFacts,
+        config: DigLifecycleConfig,
+    ) -> FailedDigRecoveryDecision:
+        reason = str(reason)
+        if self.pre_dig_align_before_dig(
+            facts,
+            config,
+        ) or self.pre_dig_align_after_failed_dig(config):
+            return FailedDigRecoveryDecision(
+                next_skill="pre_dig_align",
+                switch_reason=f"dig_to_pre_dig_align_{reason}",
+            )
+        if str(config.dig_failed_replan_next_skill) == "stop":
+            return FailedDigRecoveryDecision(
+                next_skill="stop",
+                switch_reason=f"dig_failed_stop_{reason}",
+                terminal_reason=f"dig_failed_{reason}",
+            )
+        return FailedDigRecoveryDecision(
+            next_skill="dig",
+            switch_reason=f"dig_retry_{reason}",
+        )
