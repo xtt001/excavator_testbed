@@ -259,6 +259,72 @@ def test_entry_intent_handoff_ignores_entry_close_when_intent_axes_stable() -> N
     assert not decision.entry_close
 
 
+def test_pre_dig_align_outcome_classifies_surface_guard_paths() -> None:
+    handoff = DigStartAlignmentService.classify_outcome(
+        surface_guard_triggered=True,
+        surface_guard_can_handoff=True,
+    )
+    assert handoff.action == "surface_guard_handoff"
+    assert handoff.switch_reason == "pre_dig_align_to_dig_surface_guard"
+    assert handoff.reject_reason == ""
+
+    replan = DigStartAlignmentService.classify_outcome(
+        surface_guard_triggered=True,
+        surface_guard_can_handoff=False,
+    )
+    assert replan.action == "surface_guard_replan"
+    assert replan.switch_reason == "pre_dig_align_to_dig_surface_guard_replan"
+    assert replan.reject_reason == "pre_align_surface_penetration_entry_gap"
+
+
+def test_pre_dig_align_outcome_classifies_ready_and_timeout_paths() -> None:
+    ready = DigStartAlignmentService.classify_outcome(
+        surface_guard_triggered=False,
+        ready=True,
+    )
+    assert ready.action == "ready"
+    assert ready.switch_reason == "pre_dig_align_to_dig_ready"
+
+    timeout_handoff = DigStartAlignmentService.classify_outcome(
+        surface_guard_triggered=False,
+        timed_out=True,
+        timeout_can_handoff=True,
+        timeout_reason="pre_dig_align_to_dig_timeout_intent_aligned",
+    )
+    assert timeout_handoff.action == "timeout_handoff"
+    assert (
+        timeout_handoff.switch_reason
+        == "pre_dig_align_to_dig_timeout_intent_aligned"
+    )
+
+    timeout_default = DigStartAlignmentService.classify_outcome(
+        surface_guard_triggered=False,
+        timed_out=True,
+        timeout_can_handoff=True,
+    )
+    assert timeout_default.action == "timeout_handoff"
+    assert (
+        timeout_default.switch_reason
+        == "pre_dig_align_to_dig_timeout_close_enough"
+    )
+
+    timeout_replan = DigStartAlignmentService.classify_outcome(
+        surface_guard_triggered=False,
+        timed_out=True,
+        timeout_can_handoff=False,
+    )
+    assert timeout_replan.action == "timeout_replan"
+    assert timeout_replan.switch_reason == "pre_dig_align_retry_entry_gap"
+    assert timeout_replan.reject_reason == "align_entry_gap_timeout"
+
+    assert (
+        DigStartAlignmentService.classify_outcome(
+            surface_guard_triggered=False,
+        ).action
+        == "none"
+    )
+
+
 def test_timeout_decision_returns_no_gate_intent_and_close_enough_reasons() -> None:
     service = DigStartAlignmentService()
     no_gate = service.timeout_can_handoff(

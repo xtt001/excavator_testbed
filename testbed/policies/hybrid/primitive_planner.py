@@ -97,6 +97,7 @@ from testbed.planner.dig_start_alignment import (
     DigStartAlignmentConfig,
     DigStartAlignmentFacts,
     DigStartAlignmentService,
+    PreDigAlignOutcome,
     pd_servo_action,
 )
 from testbed.planner.dump_lifecycle import (
@@ -1081,38 +1082,34 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             return
 
         if self._skill_name == PRE_DIG_ALIGN_SKILL_NAME:
-            if self._pre_dig_align_surface_guard_triggered_for_state(obs):
+            outcome = self._pre_dig_align_outcome(obs)
+            if outcome.action == "surface_guard_handoff":
                 self._pre_dig_align_surface_guard_count += 1
                 self._pre_dig_align_hold_count = 0
-                if self._pre_dig_align_surface_guard_can_handoff(obs):
-                    self._pre_dig_align_completed_count += 1
-                    self._set_skill("dig", "pre_dig_align_to_dig_surface_guard")
-                else:
-                    self._reject_active_coverage_corridor(
-                        obs,
-                        reason="pre_align_surface_penetration_entry_gap",
-                    )
-                    self._restart_dig_with_new_cut(
-                        "pre_dig_align_to_dig_surface_guard_replan"
-                    )
-            elif self._pre_dig_align_ready(obs):
                 self._pre_dig_align_completed_count += 1
-                self._set_skill("dig", "pre_dig_align_to_dig_ready")
-            elif self._pre_dig_align_step_count >= self.pre_dig_align_max_steps:
+                self._set_skill("dig", outcome.switch_reason)
+            elif outcome.action == "surface_guard_replan":
+                self._pre_dig_align_surface_guard_count += 1
+                self._pre_dig_align_hold_count = 0
+                self._reject_active_coverage_corridor(
+                    obs,
+                    reason=outcome.reject_reason,
+                )
+                self._restart_dig_with_new_cut(outcome.switch_reason)
+            elif outcome.action == "ready":
+                self._pre_dig_align_completed_count += 1
+                self._set_skill("dig", outcome.switch_reason)
+            elif outcome.action == "timeout_handoff":
                 self._pre_dig_align_timeout_count += 1
-                if self._pre_dig_align_timeout_can_handoff(obs):
-                    reason = (
-                        self._pre_dig_align_timeout_handoff_reason
-                        or "pre_dig_align_to_dig_timeout_close_enough"
-                    )
-                    self._set_skill("dig", reason)
-                else:
-                    self._reject_active_coverage_corridor(
-                        obs,
-                        reason="align_entry_gap_timeout",
-                    )
-                    if not self._try_replan_pre_dig_align_handoff(obs):
-                        self._restart_pre_dig_align("pre_dig_align_retry_entry_gap")
+                self._set_skill("dig", outcome.switch_reason)
+            elif outcome.action == "timeout_replan":
+                self._pre_dig_align_timeout_count += 1
+                self._reject_active_coverage_corridor(
+                    obs,
+                    reason=outcome.reject_reason,
+                )
+                if not self._try_replan_pre_dig_align_handoff(obs):
+                    self._restart_pre_dig_align(outcome.switch_reason)
             return
 
         if self._skill_name == "dig":
@@ -1589,6 +1586,34 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         return self.dig_start_alignment_service.surface_guard_can_handoff(
             self._dig_start_alignment_facts(obs, entry_error=entry_error),
             self._dig_start_alignment_config(),
+        )
+
+    def _pre_dig_align_outcome(self, obs: dict) -> PreDigAlignOutcome:
+        surface_guard_triggered = self._pre_dig_align_surface_guard_triggered_for_state(
+            obs
+        )
+        if surface_guard_triggered:
+            return self.dig_start_alignment_service.classify_outcome(
+                surface_guard_triggered=True,
+                surface_guard_can_handoff=self._pre_dig_align_surface_guard_can_handoff(
+                    obs
+                ),
+            )
+        if self._pre_dig_align_ready(obs):
+            return self.dig_start_alignment_service.classify_outcome(
+                surface_guard_triggered=False,
+                ready=True,
+            )
+        timed_out = bool(self._pre_dig_align_step_count >= self.pre_dig_align_max_steps)
+        if timed_out:
+            return self.dig_start_alignment_service.classify_outcome(
+                surface_guard_triggered=False,
+                timed_out=True,
+                timeout_can_handoff=self._pre_dig_align_timeout_can_handoff(obs),
+                timeout_reason=self._pre_dig_align_timeout_handoff_reason,
+            )
+        return self.dig_start_alignment_service.classify_outcome(
+            surface_guard_triggered=False,
         )
 
     def _dig_start_alignment_config(self) -> DigStartAlignmentConfig:

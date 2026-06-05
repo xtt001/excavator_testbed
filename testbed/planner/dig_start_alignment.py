@@ -87,6 +87,13 @@ class TimeoutHandoffDecision:
     entry_intent_handoff_ready: bool
 
 
+@dataclass(frozen=True)
+class PreDigAlignOutcome:
+    action: str
+    switch_reason: str = ""
+    reject_reason: str = ""
+
+
 class DigStartAlignmentService:
     """Computes pre-dig alignment targets and actions without scheduler state."""
 
@@ -354,6 +361,46 @@ class DigStartAlignmentService:
             start_envelope_ready=start_ready,
             entry_intent_handoff_ready=False,
         )
+
+    @staticmethod
+    def classify_outcome(
+        *,
+        surface_guard_triggered: bool,
+        surface_guard_can_handoff: bool = False,
+        ready: bool = False,
+        timed_out: bool = False,
+        timeout_can_handoff: bool = False,
+        timeout_reason: str = "",
+    ) -> PreDigAlignOutcome:
+        if bool(surface_guard_triggered):
+            if bool(surface_guard_can_handoff):
+                return PreDigAlignOutcome(
+                    action="surface_guard_handoff",
+                    switch_reason="pre_dig_align_to_dig_surface_guard",
+                )
+            return PreDigAlignOutcome(
+                action="surface_guard_replan",
+                switch_reason="pre_dig_align_to_dig_surface_guard_replan",
+                reject_reason="pre_align_surface_penetration_entry_gap",
+            )
+        if bool(ready):
+            return PreDigAlignOutcome(
+                action="ready",
+                switch_reason="pre_dig_align_to_dig_ready",
+            )
+        if bool(timed_out):
+            if bool(timeout_can_handoff):
+                reason = str(timeout_reason or "pre_dig_align_to_dig_timeout_close_enough")
+                return PreDigAlignOutcome(
+                    action="timeout_handoff",
+                    switch_reason=reason,
+                )
+            return PreDigAlignOutcome(
+                action="timeout_replan",
+                switch_reason="pre_dig_align_retry_entry_gap",
+                reject_reason="align_entry_gap_timeout",
+            )
+        return PreDigAlignOutcome(action="none")
 
     def start_envelope_ready(
         self,

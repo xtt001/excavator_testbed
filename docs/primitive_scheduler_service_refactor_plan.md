@@ -153,10 +153,12 @@ reject/replan、switch reason、policy reset timing 或 debug schema。
 `DigStartAlignmentService` 继续负责 pre-dig alignment 的纯 readiness checks：
 surface-guard trigger/can-handoff、entry-close threshold、start-envelope qpos/pose
 gate、first-dig entry-close handoff、entry-intent mode/handoff、timeout handoff
-reason，以及 ready sample 对 hold count 的建议更新。service 只接收显式
-`DigStartAlignmentFacts` 和 `DigStartAlignmentConfig`，不调用
-`_ensure_dig_cut_plan_for_cycle()`，不写 planner debug 字段，不更新 counter，不
-reject/complete coverage，不选择下一 skill。
+reason，以及 ready sample 对 hold count 的建议更新。service 还负责
+pre-dig-align 的纯 outcome classification：根据已计算的 surface/ready/timeout
+gate 结果返回 `PreDigAlignOutcome` 的 action、旧 switch reason 和 reject reason。
+service 只接收显式 `DigStartAlignmentFacts`、`DigStartAlignmentConfig` 和
+caller-provided gate booleans，不调用 `_ensure_dig_cut_plan_for_cycle()`，不写
+planner debug 字段，不更新 counter，不 reject/complete coverage，不 dispatch policy。
 
 planner 大文件只保留薄 facade 和状态写回：
 
@@ -170,10 +172,12 @@ planner 大文件只保留薄 facade 和状态写回：
 - `_pre_dig_align_entry_intent_handoff_ready_for_state()`
 - `_pre_dig_align_timeout_can_handoff()`
 - `_pre_dig_align_start_envelope_ready_for_state()`
+- `_pre_dig_align_outcome()`
 
 本切片仍保留 `_maybe_switch_skill()` 的 pre-dig-align 分支顺序、surface/timeout/
 completed/replan counters、hold counter 写回、coverage reject/replan、token rebuild、
-switch reason、policy reset timing 和 debug schema 在 planner shell。
+skill transition、policy reset timing 和 debug schema 在 planner shell；outcome
+classification 不改变旧 switch reason、reject reason 或 debug schema。
 
 ## Coverage Service Package Status
 

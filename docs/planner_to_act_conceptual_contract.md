@@ -203,9 +203,11 @@ policy reset 和 debug schema。bootstrap 不因此成为 V2.4.5 mainline 调度
 target qpos、PD servo action、surface-guard trigger / can-handoff、entry-close
 threshold、start-envelope qpos / pose gate、first-dig entry-close handoff、
 entry-intent mode / handoff、timeout handoff reason，以及 ready sample 对 hold
-count 的建议更新；`PrimitivePlannerACTPolicy` 仍负责 pre-dig-align 分支顺序、
+count 的建议更新；该 service 还根据 caller-provided surface/ready/timeout gate
+结果做纯 outcome classification，返回旧 action/reason 字符串。
+`PrimitivePlannerACTPolicy` 仍负责 pre-dig-align 分支顺序、
 surface/timeout/completed/replan counters、hold counter 写回、coverage reject/replan、
-token rebuild、skill transition、switch reason、policy reset 和 debug schema。
+token rebuild、skill transition、policy reset 和 debug schema。
 
 当前 ACT policy observation 装配的实现 source-of-truth 是
 `testbed.planner.policy_observation.PolicyObservationAssembler`。该 service 只负责把
