@@ -179,6 +179,14 @@ hold counter、coverage completion、skill transition、switch reason、policy r
 和 return direct handoff；此次迁移不改变 threshold、boundary event 优先级或 debug
 schema。
 
+当前在线 dig lifecycle gate 的实现 source-of-truth 是
+`testbed.planner.dig_lifecycle.DigLifecycleGateService`。该 service 负责 dig
+progress 状态更新、bad-dig readiness、exit-guard overshoot readiness、
+`dig_complete` low-payload guard，以及 legacy / semantic `dig -> carry` readiness
+reason。`PrimitivePlannerACTPolicy` 仍负责 dig 分支顺序、coverage reject/complete、
+failed-dig stop/retry/pre-dig-align 选择、skill transition、switch reason 拼接、
+policy reset 和 debug schema。
+
 | 事件或跳转 | 当前判定逻辑 |
 | --- | --- |
 | `qualified_dig_start` / `dig_start` | bucket 到 dig area 的最小距离 `<= 0.05m`，并且 bucket 低于 dig-area plane `>= 0.02m`。如果使用 legacy progress 模式，还要求 reward/load progress 或 bucket/excavated mass 增量。 |

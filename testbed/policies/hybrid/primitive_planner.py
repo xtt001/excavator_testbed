@@ -100,6 +100,11 @@ from testbed.planner.dig_coverage import (
     CoverageCorridorState,
     DigCoverageMixin,
 )
+from testbed.planner.dig_lifecycle import (
+    DigLifecycleConfig,
+    DigLifecycleFacts,
+    DigLifecycleGateService,
+)
 from testbed.planner.dump_lifecycle import (
     DumpLifecycleConfig,
     DumpLifecycleFacts,
@@ -275,6 +280,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self.bootstrap_policy = bootstrap_policy
         self.boundary_detector = boundary_detector
         self.return_handoff_gate = ReturnToDigHandoffGateService()
+        self.dig_lifecycle_gate = DigLifecycleGateService()
         self.dump_lifecycle_gate = DumpLifecycleGateService()
         self.bootstrap_end_mode = str(bootstrap_end_mode)
         self.bootstrap_end_min_bucket_mass_kg = float(bootstrap_end_min_bucket_mass_kg)
@@ -1916,115 +1922,130 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         dz = float(pose[2]) - float(corridor.entry_z_m)
         return float(np.hypot(dx, dz))
 
-    def _update_dig_progress(self, obs: dict) -> None:
-        self._dig_step_count += 1
+    def _dig_lifecycle_config(self) -> DigLifecycleConfig:
+        return DigLifecycleConfig(
+            dig_to_carry_min_bucket_mass_kg=float(
+                self.dig_to_carry_min_bucket_mass_kg
+            ),
+            dig_to_carry_min_distance_to_dig_area_m=float(
+                self.dig_to_carry_min_distance_to_dig_area_m
+            ),
+            dig_to_carry_target_bucket_mass_kg=float(
+                self.dig_to_carry_target_bucket_mass_kg
+            ),
+            dig_to_carry_mass_plateau_enabled=bool(
+                self.dig_to_carry_mass_plateau_enabled
+            ),
+            dig_to_carry_mass_plateau_min_bucket_mass_kg=float(
+                self.dig_to_carry_mass_plateau_min_bucket_mass_kg
+            ),
+            dig_to_carry_mass_plateau_epsilon_kg=float(
+                self.dig_to_carry_mass_plateau_epsilon_kg
+            ),
+            dig_to_carry_mass_plateau_hold_steps=int(
+                self.dig_to_carry_mass_plateau_hold_steps
+            ),
+            dig_to_carry_mass_plateau_min_steps=int(
+                self.dig_to_carry_mass_plateau_min_steps
+            ),
+            dig_bad_replan_enabled=bool(self.dig_bad_replan_enabled),
+            dig_bad_replan_max_steps=int(self.dig_bad_replan_max_steps),
+            dig_bad_replan_min_bucket_mass_kg=float(
+                self.dig_bad_replan_min_bucket_mass_kg
+            ),
+            dig_exit_guard_enabled=bool(self.dig_exit_guard_enabled),
+            dig_exit_guard_min_steps=int(self.dig_exit_guard_min_steps),
+            dig_exit_guard_overshoot_m=float(self.dig_exit_guard_overshoot_m),
+            dig_exit_guard_min_bucket_mass_kg=float(
+                self.dig_exit_guard_min_bucket_mass_kg
+            ),
+            dump_ready_min_bucket_mass_kg=float(self.dump_ready_min_bucket_mass_kg),
+        )
+
+    def _dig_lifecycle_facts(
+        self,
+        obs: dict,
+        boundary_event: Any | None = None,
+    ) -> DigLifecycleFacts:
         mass = self._mass_in_bucket(obs)
-        previous_best = float(self._dig_best_mass_kg)
-        if mass > previous_best + self.dig_to_carry_mass_plateau_epsilon_kg:
-            self._dig_best_mass_kg = float(mass)
-            self._dig_mass_plateau_count = 0
-        else:
-            self._dig_best_mass_kg = max(previous_best, float(mass))
-            self._dig_mass_plateau_count += 1
-        self._coverage_current_payload_gain_kg = max(
-            float(self._coverage_current_payload_gain_kg),
-            float(mass),
+        dig_distance = self._min_distance_to_dig_area(obs)
+        metrics = dict(getattr(boundary_event, "metrics", {}) or {})
+        carry_mass = float(metrics.get("mass_in_bucket_kg", mass))
+        carry_distance = float(
+            metrics.get("min_distance_to_dig_area_m", dig_distance)
+        )
+        corridor = self._coverage_active_corridor()
+        entry_xz: tuple[float, float] | None = None
+        exit_xz: tuple[float, float] | None = None
+        if corridor is not None:
+            entry_xz = (float(corridor.entry_x_m), float(corridor.entry_z_m))
+            exit_xz = (float(corridor.exit_x_m), float(corridor.exit_z_m))
+        tip_pose = self._bucket_tip_dig_area_pose(obs)
+        tip_xz = (
+            None
+            if tip_pose is None
+            else (float(tip_pose[0]), float(tip_pose[2]))
+        )
+        return DigLifecycleFacts(
+            mass_in_bucket_kg=mass,
+            min_distance_to_dig_area_m=dig_distance,
+            carry_mass_in_bucket_kg=carry_mass,
+            carry_min_distance_to_dig_area_m=carry_distance,
+            semantic_boundary_profile_active=self._semantic_boundary_profile_active(),
+            boundary_dig_complete=bool(
+                boundary_event is not None
+                and getattr(boundary_event, "dig_complete", False)
+            ),
+            coverage_terminal_stop_requested=bool(
+                self._coverage_terminal_stop_requested
+            ),
+            dig_step_count=int(self._dig_step_count),
+            dig_best_mass_kg=float(self._dig_best_mass_kg),
+            dig_mass_plateau_count=int(self._dig_mass_plateau_count),
+            coverage_current_payload_gain_kg=float(
+                self._coverage_current_payload_gain_kg
+            ),
+            active_corridor_entry_xz=entry_xz,
+            active_corridor_exit_xz=exit_xz,
+            bucket_tip_xz=tip_xz,
+        )
+
+    def _update_dig_progress(self, obs: dict) -> None:
+        progress = self.dig_lifecycle_gate.update_progress(
+            self._dig_lifecycle_facts(obs),
+            self._dig_lifecycle_config(),
+        )
+        self._dig_step_count = int(progress.step_count)
+        self._dig_best_mass_kg = float(progress.best_mass_kg)
+        self._dig_mass_plateau_count = int(progress.mass_plateau_count)
+        self._coverage_current_payload_gain_kg = float(
+            progress.coverage_payload_gain_kg
         )
 
     def _dig_bad_replan_ready(self, obs: dict) -> bool:
-        if not self.dig_bad_replan_enabled:
-            return False
-        if self._coverage_terminal_stop_requested:
-            return False
-        if self._dig_step_count < self.dig_bad_replan_max_steps:
-            return False
-        return bool(self._mass_in_bucket(obs) < self.dig_bad_replan_min_bucket_mass_kg)
+        return self.dig_lifecycle_gate.bad_replan_ready(
+            self._dig_lifecycle_facts(obs),
+            self._dig_lifecycle_config(),
+        )
 
     def _dig_exit_guard_ready(self, obs: dict) -> bool:
-        if not self.dig_exit_guard_enabled:
-            return False
-        if self._coverage_terminal_stop_requested:
-            return False
-        if self._dig_step_count < self.dig_exit_guard_min_steps:
-            return False
-        if self._mass_in_bucket(obs) >= self.dig_exit_guard_min_bucket_mass_kg:
-            return False
-        overshoot = self._dig_exit_overshoot_m(obs)
-        return bool(
-            np.isfinite(overshoot)
-            and overshoot >= self.dig_exit_guard_overshoot_m
+        return self.dig_lifecycle_gate.exit_guard_ready(
+            self._dig_lifecycle_facts(obs),
+            self._dig_lifecycle_config(),
         )
 
     def _dig_exit_overshoot_m(self, obs: dict) -> float:
-        corridor = self._coverage_active_corridor()
-        if corridor is None:
-            return float("nan")
-        pose = self._bucket_tip_dig_area_pose(obs)
-        if pose is None:
-            return float("nan")
-        entry = np.asarray(
-            [float(corridor.entry_x_m), float(corridor.entry_z_m)],
-            dtype=np.float32,
+        return self.dig_lifecycle_gate.exit_overshoot_m(
+            self._dig_lifecycle_facts(obs),
         )
-        exit_point = np.asarray(
-            [float(corridor.exit_x_m), float(corridor.exit_z_m)],
-            dtype=np.float32,
-        )
-        tip = np.asarray([float(pose[0]), float(pose[2])], dtype=np.float32)
-        direction = exit_point - entry
-        length = float(np.linalg.norm(direction))
-        if length <= 1.0e-6 or not np.all(np.isfinite(tip)):
-            return float("nan")
-        unit = direction / length
-        progress = float(np.dot(tip - entry, unit))
-        return float(progress - length)
 
     def _dig_to_carry_ready(self, *, obs: dict, boundary_event: Any | None) -> bool:
-        if boundary_event is not None and bool(
-            getattr(boundary_event, "dig_complete", False)
-        ):
-            self._dig_to_carry_reason = "dig_complete_boundary"
-            return True
-        if self._semantic_boundary_profile_active():
-            if self._semantic_dig_to_carry_liveness_ready(
-                obs=obs,
-                boundary_event=boundary_event,
-            ):
-                return True
-            self._dig_to_carry_reason = ""
-            return False
-        metrics = dict(getattr(boundary_event, "metrics", {}) or {})
-        mass = float(metrics.get("mass_in_bucket_kg", self._mass_in_bucket(obs)))
-        dig_distance = float(
-            metrics.get("min_distance_to_dig_area_m", self._min_distance_to_dig_area(obs))
+        decision = self.dig_lifecycle_gate.dig_to_carry_ready(
+            self._dig_lifecycle_facts(obs, boundary_event),
+            self._dig_lifecycle_config(),
         )
-        distance_ready = bool(
-            dig_distance >= self.dig_to_carry_min_distance_to_dig_area_m
-        )
-        if mass >= self.dig_to_carry_target_bucket_mass_kg and distance_ready:
-            if (
-                abs(
-                    self.dig_to_carry_target_bucket_mass_kg
-                    - self.dig_to_carry_min_bucket_mass_kg
-                )
-                <= 1.0e-6
-            ):
-                self._dig_to_carry_reason = "loaded"
-            else:
-                self._dig_to_carry_reason = "target_payload_loaded"
-            return True
-        if (
-            self.dig_to_carry_mass_plateau_enabled
-            and self._dig_step_count >= self.dig_to_carry_mass_plateau_min_steps
-            and mass >= self.dig_to_carry_mass_plateau_min_bucket_mass_kg
-            and self._dig_mass_plateau_count
-            >= self.dig_to_carry_mass_plateau_hold_steps
-            and distance_ready
-        ):
-            self._dig_to_carry_reason = "mass_plateau"
-            return True
-        self._dig_to_carry_reason = ""
-        return False
+        self._dig_to_carry_reason = str(decision.reason)
+        return bool(decision.ready)
 
     def _semantic_dig_to_carry_liveness_ready(
         self,
@@ -2032,46 +2053,22 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         obs: dict,
         boundary_event: Any | None,
     ) -> bool:
-        metrics = dict(getattr(boundary_event, "metrics", {}) or {})
-        mass = float(metrics.get("mass_in_bucket_kg", self._mass_in_bucket(obs)))
-        dig_distance = float(
-            metrics.get("min_distance_to_dig_area_m", self._min_distance_to_dig_area(obs))
+        decision = self.dig_lifecycle_gate.semantic_liveness_ready(
+            self._dig_lifecycle_facts(obs, boundary_event),
+            self._dig_lifecycle_config(),
         )
-        distance_ready = bool(
-            dig_distance >= self.dig_to_carry_min_distance_to_dig_area_m
-        )
-        if not distance_ready:
-            return False
-        if mass >= self.dig_to_carry_target_bucket_mass_kg:
-            self._dig_to_carry_reason = "semantic_material_loaded"
-            return True
-        if (
-            self.dig_to_carry_mass_plateau_enabled
-            and self._dig_step_count >= self.dig_to_carry_mass_plateau_min_steps
-            and mass >= self.dig_to_carry_mass_plateau_min_bucket_mass_kg
-            and self._dig_mass_plateau_count
-            >= self.dig_to_carry_mass_plateau_hold_steps
-        ):
-            self._dig_to_carry_reason = "semantic_material_plateau"
-            return True
-        return False
+        self._dig_to_carry_reason = str(decision.reason)
+        return bool(decision.ready)
 
     def _dig_complete_boundary_low_payload(
         self,
         obs: dict,
         boundary_event: Any | None,
     ) -> bool:
-        if not self._semantic_boundary_profile_active():
-            return False
-        if boundary_event is None or not bool(
-            getattr(boundary_event, "dig_complete", False)
-        ):
-            return False
-        min_carry_mass = max(
-            float(self.dig_to_carry_min_bucket_mass_kg),
-            float(self.dump_ready_min_bucket_mass_kg),
+        return self.dig_lifecycle_gate.complete_boundary_low_payload(
+            self._dig_lifecycle_facts(obs, boundary_event),
+            self._dig_lifecycle_config(),
         )
-        return bool(self._mass_in_bucket(obs) < min_carry_mass)
 
     def _semantic_boundary_profile_active(self) -> bool:
         config = getattr(self.boundary_detector, "config", None)

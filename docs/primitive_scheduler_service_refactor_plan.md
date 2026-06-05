@@ -82,6 +82,37 @@ counter、switch reason、coverage completion reason、policy reset timing 和 d
 schema。semantic profile 下 legacy `_dump_ready()` / `_dump_done()` fallback 仍由
 planner shell 的原有分支控制，service 不提升实验语义为默认行为。
 
+## Dig Lifecycle Gate Slice
+
+新增模块：
+
+- `testbed/planner/dig_lifecycle.py`
+
+`DigLifecycleGateService` 负责纯 gate/progress 判断：dig progress 的
+step/best-mass/plateau/payload-gain 更新、`dig_bad_replan` readiness、
+`dig_exit_guard` overshoot readiness、`dig_complete` low-payload guard，以及
+legacy / semantic `dig -> carry` readiness reason。service 只接收显式
+`DigLifecycleFacts` 和 `DigLifecycleConfig`，不接收 planner `self`，不调用
+`_set_skill()`，不 reject/complete coverage，不选择 pre-dig-align，不请求 terminal
+stop，不 reset policy，也不写 planner trace。
+
+planner 大文件只保留薄 facade 和 facts/config 装配：
+
+- `_dig_lifecycle_config()`
+- `_dig_lifecycle_facts()`
+- `_update_dig_progress()`
+- `_dig_bad_replan_ready()`
+- `_dig_exit_guard_ready()`
+- `_dig_exit_overshoot_m()`
+- `_dig_to_carry_ready()`
+- `_semantic_dig_to_carry_liveness_ready()`
+- `_dig_complete_boundary_low_payload()`
+
+本切片保留 dig 分支顺序：
+`exit_guard -> bad_replan -> complete_low_payload -> carry`。coverage reject、
+cell-entry/coverage dig completion、failed-dig stop/retry/pre-dig-align 选择、
+switch reason 拼接、policy reset timing 和 debug schema 仍由 planner shell 控制。
+
 ## 测试锁定规则
 
 Phase 1 必须覆盖：
@@ -97,10 +128,11 @@ Phase 1 必须覆盖：
 pytest tests/test_return_handoff_service.py tests/test_return_start_envelope.py tests/test_planner_golden_traces.py tests/test_primitive_planner_debug_schema.py
 pytest tests/test_agx_primitives_v2_2.py -k "return_to_dig or direct_handoff or shallow_guard or pre_dig_align or spatial_mass_boundary"
 pytest tests/test_dump_lifecycle_service.py tests/test_planner_golden_traces.py tests/test_primitive_planner_debug_schema.py tests/test_agx_primitives_v2_2.py -k "dump_ready or dump_done or dump_end or dump_release or approach_dump or release_safety or near_window or dump_area_relative or carry_to_dump or dump_to_return"
+pytest tests/test_dig_lifecycle_service.py tests/test_agx_primitives_v2_2.py -k "dig_bad_replan or exit_guard or failed_dig or dig_complete or pre_dig_align or dig_to_carry"
 ```
 
 ## 回滚策略
 
-Phase 1 和 dump lifecycle gate slice 的旧 private method 均保留为 facade。如果
-service extraction 发现行为漂移，可以让 facade 临时回到旧实现，同时保留新增
-service unit tests 和 golden trace 作为后续迁移的行为锁。
+Phase 1、dump lifecycle gate slice 和 dig lifecycle gate slice 的旧 private method
+均保留为 facade。如果 service extraction 发现行为漂移，可以让 facade 临时回到
+旧实现，同时保留新增 service unit tests 和 golden trace 作为后续迁移的行为锁。
