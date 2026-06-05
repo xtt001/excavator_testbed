@@ -269,6 +269,37 @@ reason、policy dispatch、debug schema 和 rollout trace。
 relocate conditioning 数值、start-envelope handoff gate、pending dig plan、
 return->dig branch order、debug_state 字段或 rollout 行为。
 
+## Dig-Cut Plan Assembly Slice
+
+新增模块：
+
+- `testbed/planner/dig_cut_plan.py`
+
+`dig_cut_plan` 负责 dig-cut raw fields、token、source string 和 fallback reason
+的纯组装：conservative live-pose raw fields/token、operator-prior pose clamp、
+missing-pose median fallback，以及 prior percentile/clamp helper。该模块不选择
+coverage corridor，不更新 coverage/current-cycle state，不写 pending return-target
+plan，不决定 planner mode fallback，也不 dispatch policy。
+
+planner 大文件只保留旧 private facade：
+
+- `_raw_fields_from_live_pose()`
+- `_build_operator_prior_dig_cut_tokens()`
+- `_prior_percentile()`
+- `_clamp_to_prior()`
+
+`_build_dig_cut_tokens_for_obs()` 和 `_build_next_dig_cut_plan_for_return()` 仍留在
+planner shell，因为它们负责 mode 分支顺序、pending return-target plan 复用、
+fallback-mode 执行、coverage active corridor 写回、prior-range debug flag 写回和
+return target source prefix。coverage mode 的 corridor selection / raw-fields 仍由
+`testbed/planner/dig_coverage/` 负责；不把通用 operator-prior dig-cut 组装塞进
+coverage package。
+
+本切片不改变 dig-cut token dim/order、operator-prior source string、
+`missing_bucket_dig_area_pose` fallback reason、fallback conservative token、pending
+return-target source、coverage corridor selection、prior-range debug flag、policy
+dispatch、branch order 或 rollout/debug schema。
+
 ## Dig Depth-Profile Builder Slice
 
 新增模块：
@@ -377,6 +408,7 @@ pytest tests/test_primitive_planner_debug_schema.py tests/test_planner_golden_tr
 pytest tests/test_policy_observation.py tests/test_eval_rollout_records.py
 pytest tests/test_dig_depth_profile_service.py tests/test_agx_primitives_v2_2.py -k "dig_depth_profile or state_conditioned_exemplar"
 pytest tests/test_return_target_plan_service.py tests/test_agx_primitives_v2_2.py -k "return_target or pending_return_target"
+pytest tests/test_dig_cut_plan_service.py tests/test_agx_primitives_v2_2.py -k "dig_cut or operator_prior or pending_return_target"
 ```
 
 ## 回滚策略

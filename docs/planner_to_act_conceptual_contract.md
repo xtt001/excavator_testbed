@@ -170,6 +170,15 @@ spatial-mass boundary finder、carry/dump QC、return-start envelope token build
 HDF5 写入和 summary aggregation，并保留旧 helper 名称作为 facade。此次迁移只移动职责边界，
 不改变 primitive window、reject reason、metadata key、return envelope token 或输出 layout。
 
+当前在线 dig-cut intent 组装的实现 source-of-truth 是
+`testbed.planner.dig_cut_plan`。该模块负责 conservative live-pose raw fields/token、
+operator-prior pose clamp、missing-pose median fallback、source string 和 fallback
+reason 的纯组装；`PrimitivePlannerACTPolicy` 仍负责 dig-cut planner mode 分支顺序、
+pending return-target plan 复用、coverage corridor selection、coverage state 写回、
+fallback-mode 执行、prior-range debug flag、policy dispatch 和 debug/rollout schema。
+该边界让 dig-cut token builder 成为可复用 capability，但不把状态机拆成多个互相抢状态的
+planner。
+
 当前在线 dump lifecycle gate 的实现 source-of-truth 是
 `testbed.planner.dump_lifecycle.DumpLifecycleGateService`。该 service 负责
 4P legacy dump readiness、dump-area relative / near-window geometry gate、

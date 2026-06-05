@@ -20,10 +20,7 @@ from testbed.contracts.primitive_tokens import (
     RETURN_TARGET_TOKEN_DIM,
     derive_return_relocate_token,
 )
-from testbed.data.operator_first_v2_2 import (
-    _build_dig_cut_token,
-    build_live_dig_cut_tokens_from_pose,
-)
+from testbed.data.operator_first_v2_2 import _build_dig_cut_token
 from testbed.data.schema import (
     ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
@@ -78,6 +75,20 @@ from testbed.planner.cell_entry import (
 from testbed.planner.dig_coverage import (
     CoverageCorridorState,
     DigCoverageMixin,
+)
+from testbed.planner.dig_cut_plan import (
+    OperatorPriorDigCutPlanRequest,
+    build_conservative_pose_dig_cut_plan,
+    build_operator_prior_dig_cut_plan,
+)
+from testbed.planner.dig_cut_plan import (
+    clamp_to_prior as clamp_dig_cut_prior,
+)
+from testbed.planner.dig_cut_plan import (
+    prior_percentile as dig_cut_prior_percentile,
+)
+from testbed.planner.dig_cut_plan import (
+    raw_fields_from_live_pose as dig_cut_raw_fields_from_live_pose,
 )
 from testbed.planner.dig_depth_profile import (
     DigDepthProfileBuildRequest,
@@ -2895,10 +2906,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             )
             return np.asarray(self._pending_dig_cut_tokens, dtype=np.float32).copy()
         if self.dig_cut_planner_mode == "conservative_pose":
-            self._dig_cut_token_source = "conservative_pose"
-            token = build_live_dig_cut_tokens_from_pose(self._bucket_dig_area_pose(obs))
+            plan = build_conservative_pose_dig_cut_plan(
+                self._bucket_dig_area_pose(obs)
+            )
+            self._dig_cut_token_source = plan.source
             self._dig_cut_token_in_prior_p10_p90 = False
-            return token
+            return np.asarray(plan.token, dtype=np.float32)
         if self.dig_cut_planner_mode == "operator_prior":
             try:
                 token, raw_fields, source, fallback_reason = (
@@ -2915,9 +2928,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                     raise
                 self._dig_cut_token_source = "fallback_conservative_pose"
                 self._dig_cut_fallback_reason = str(exc)
-                token = build_live_dig_cut_tokens_from_pose(
-                    self._bucket_dig_area_pose(obs)
+                plan = build_conservative_pose_dig_cut_plan(
+                    self._bucket_dig_area_pose(obs),
+                    source="fallback_conservative_pose",
+                    fallback_reason=str(exc),
                 )
+                token = np.asarray(plan.token, dtype=np.float32)
                 self._dig_cut_token_in_prior_p10_p90 = False
                 return token
         if self.dig_cut_planner_mode == "operator_prior_coverage":
@@ -2936,9 +2952,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                     raise
                 self._dig_cut_token_source = "fallback_conservative_pose"
                 self._dig_cut_fallback_reason = str(exc)
-                token = build_live_dig_cut_tokens_from_pose(
-                    self._bucket_dig_area_pose(obs)
+                plan = build_conservative_pose_dig_cut_plan(
+                    self._bucket_dig_area_pose(obs),
+                    source="fallback_conservative_pose",
+                    fallback_reason=str(exc),
                 )
+                token = np.asarray(plan.token, dtype=np.float32)
                 self._dig_cut_token_in_prior_p10_p90 = False
                 return token
         if self.dig_cut_planner_mode == "operator_prior_sweep_belief":
@@ -2957,9 +2976,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                     raise
                 self._dig_cut_token_source = "fallback_conservative_pose"
                 self._dig_cut_fallback_reason = str(exc)
-                token = build_live_dig_cut_tokens_from_pose(
-                    self._bucket_dig_area_pose(obs)
+                plan = build_conservative_pose_dig_cut_plan(
+                    self._bucket_dig_area_pose(obs),
+                    source="fallback_conservative_pose",
+                    fallback_reason=str(exc),
                 )
+                token = np.asarray(plan.token, dtype=np.float32)
                 self._dig_cut_token_in_prior_p10_p90 = False
                 return token
         raise ValueError(f"Unsupported dig_cut_planner mode {self.dig_cut_planner_mode!r}.")
@@ -2969,12 +2991,15 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         obs: dict,
     ) -> tuple[np.ndarray, dict[str, float | int], str, str, int]:
         if self.dig_cut_planner_mode == "conservative_pose":
-            raw_fields = self._raw_fields_from_live_pose(obs)
+            plan = build_conservative_pose_dig_cut_plan(
+                self._bucket_dig_area_pose(obs),
+                source=f"{self.return_target_token_source_prefix}_conservative_pose",
+            )
             return (
-                _build_dig_cut_token(raw_fields),
-                raw_fields,
-                f"{self.return_target_token_source_prefix}_conservative_pose",
-                "",
+                np.asarray(plan.token, dtype=np.float32),
+                plan.raw_fields,
+                plan.source,
+                plan.fallback_reason,
                 -1,
             )
         if self.dig_cut_planner_mode == "operator_prior":
@@ -3202,112 +3227,23 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         return skill
 
     def _raw_fields_from_live_pose(self, obs: dict) -> dict[str, float | int]:
-        pose = self._bucket_dig_area_pose(obs)
-        if pose is None:
-            return {
-                "operator_entry_x_m": 0.0,
-                "operator_entry_y_m": 0.0,
-                "operator_entry_z_m": 0.0,
-                "operator_exit_x_m": 0.0,
-                "operator_exit_y_m": 0.0,
-                "operator_exit_z_m": 0.0,
-                "operator_cut_direction_x": 0.0,
-                "operator_cut_direction_y": 0.0,
-                "operator_cut_direction_z": 0.0,
-                "operator_cut_length_m": 0.0,
-                "operator_cut_depth_peak_m": 0.0,
-                "operator_cut_payload_gain_kg": 0.0,
-                "operator_effective_deposit_delta_kg": 0.0,
-                "operator_cut_valid": 0,
-            }
-        entry_x, entry_y, entry_z = float(pose[0]), float(pose[1]), float(pose[2])
-        exit_x = entry_x - 1.2
-        exit_z = entry_z
-        return {
-            "operator_entry_x_m": entry_x,
-            "operator_entry_y_m": entry_y,
-            "operator_entry_z_m": entry_z,
-            "operator_exit_x_m": exit_x,
-            "operator_exit_y_m": entry_y,
-            "operator_exit_z_m": exit_z,
-            "operator_cut_direction_x": -1.0,
-            "operator_cut_direction_y": 0.0,
-            "operator_cut_direction_z": 0.0,
-            "operator_cut_length_m": 1.2,
-            "operator_cut_depth_peak_m": 0.08,
-            "operator_cut_payload_gain_kg": 55.0,
-            "operator_effective_deposit_delta_kg": 55.0,
-            "operator_cut_valid": 1,
-        }
+        return dig_cut_raw_fields_from_live_pose(self._bucket_dig_area_pose(obs))
 
     def _build_operator_prior_dig_cut_tokens(
         self, obs: dict
     ) -> tuple[np.ndarray, dict[str, float | int], str, str]:
-        if not self.dig_cut_prior:
-            raise ValueError("operator_prior mode requires a dig cut prior JSON.")
-        fields = dict(self.dig_cut_prior.get("fields", {}))
-        pose = self._bucket_dig_area_pose(obs)
-        fallback_reason = ""
-        if pose is None:
-            entry_x = self._prior_percentile(fields, "entry_x_m", "p50")
-            entry_y = 0.0
-            entry_z = self._prior_percentile(fields, "entry_z_m", "p50")
-            source = "operator_prior_median_pose_fallback"
-            fallback_reason = "missing_bucket_dig_area_pose"
-        else:
-            entry_x = self._clamp_to_prior(fields, "entry_x_m", float(pose[0]))
-            entry_y = float(pose[1])
-            entry_z = self._clamp_to_prior(fields, "entry_z_m", float(pose[2]))
-            source = "operator_prior_pose_clamped"
-
-        dir_x = self._prior_percentile(fields, "cut_direction_x", "p50")
-        dir_z = self._prior_percentile(fields, "cut_direction_z", "p50")
-        norm = float(np.hypot(dir_x, dir_z))
-        if norm <= 1.0e-6:
-            dir_x, dir_z = -1.0, 0.0
-        else:
-            dir_x, dir_z = dir_x / norm, dir_z / norm
-        length = self._prior_percentile(fields, "cut_length_m", "p50")
-        exit_x = self._clamp_to_prior(fields, "exit_x_m", entry_x + dir_x * length)
-        exit_z = self._clamp_to_prior(fields, "exit_z_m", entry_z + dir_z * length)
-
-        delta_x = exit_x - entry_x
-        delta_z = exit_z - entry_z
-        generated_length = float(np.hypot(delta_x, delta_z))
-        if generated_length > 1.0e-6:
-            dir_x = delta_x / generated_length
-            dir_z = delta_z / generated_length
-            length = generated_length
-
-        raw_fields = {
-            "operator_entry_x_m": float(entry_x),
-            "operator_entry_y_m": float(entry_y),
-            "operator_entry_z_m": float(entry_z),
-            "operator_exit_x_m": float(exit_x),
-            "operator_exit_y_m": float(entry_y),
-            "operator_exit_z_m": float(exit_z),
-            "operator_cut_direction_x": float(
-                self._clamp_to_prior(fields, "cut_direction_x", dir_x)
-            ),
-            "operator_cut_direction_y": 0.0,
-            "operator_cut_direction_z": float(
-                self._clamp_to_prior(fields, "cut_direction_z", dir_z)
-            ),
-            "operator_cut_length_m": float(
-                self._clamp_to_prior(fields, "cut_length_m", length)
-            ),
-            "operator_cut_depth_peak_m": float(
-                self._prior_percentile(fields, "cut_depth_peak_m", "p50")
-            ),
-            "operator_cut_payload_gain_kg": float(
-                self._prior_percentile(fields, "payload_gain_kg", "p50")
-            ),
-            "operator_effective_deposit_delta_kg": float(
-                self._prior_percentile(fields, "effective_deposit_delta_kg", "p50")
-            ),
-            "operator_cut_valid": 1,
-        }
-        return _build_dig_cut_token(raw_fields), raw_fields, source, fallback_reason
+        plan = build_operator_prior_dig_cut_plan(
+            OperatorPriorDigCutPlanRequest(
+                dig_cut_prior=dict(self.dig_cut_prior),
+                bucket_dig_area_pose=self._bucket_dig_area_pose(obs),
+            )
+        )
+        return (
+            np.asarray(plan.token, dtype=np.float32),
+            dict(plan.raw_fields),
+            str(plan.source),
+            str(plan.fallback_reason),
+        )
 
     def _build_operator_prior_coverage_dig_cut_tokens(
         self, obs: dict
@@ -3465,12 +3401,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
     def _prior_percentile(
         fields: dict[str, Any], field_name: str, percentile: str
     ) -> float:
-        return DigCoverageMixin._prior_percentile(fields, field_name, percentile)
+        return dig_cut_prior_percentile(fields, field_name, percentile)
 
     def _clamp_to_prior(
         self, fields: dict[str, Any], field_name: str, value: float
     ) -> float:
-        return self._coverage_service()._clamp_to_prior(fields, field_name, value)
+        return clamp_dig_cut_prior(fields, field_name, value)
 
     def _raw_fields_in_prior_range(self, raw_fields: dict[str, float | int]) -> bool:
         return self._coverage_service().raw_fields_in_prior_range(raw_fields)
