@@ -133,6 +133,15 @@ handoff/replan，不负责直接输出连续动作。
 因此状态机的状态不是“机械臂姿态状态”，而是“当前由哪个 primitive ACT 接管控制”。状态机
 不学习动作，也不生成 joystick；它只判断什么时候交接、什么时候拒绝当前目标并重规划。
 
+长期代码结构上，`PrimitivePlannerACTPolicy` 应逐步收敛成 state machine shell：
+它保留 active state、transition reason、state lifecycle、policy dispatch 和 service
+调用顺序，但不再承载所有几何计算、gate 细节、token conditioning、diagnostic payload
+或 schema 组装。和状态机耦合但不是调度核心的能力应迁到 service object 或 capability
+模块，例如 coverage、dig-start alignment、return envelope、handoff gate、token builder
+和 debug/summary schema。当前已经拆出的 facade/mixin 兼容层只是低风险过渡；长期目标是让
+这些 capability 能被显式 FSM 之外的架构复用。后续迁移仍遵循同一原则：只移动职责边界，
+不改变 token 语义、gate 阈值、switch reason、debug 字段或 rollout 行为。
+
 | 状态 | 动作来源 | 进入时携带的信息 | 主要退出方向 |
 | --- | --- | --- | --- |
 | `bootstrap` optional | scripted qpos 或 bootstrap ACT | 第一铲 pending `dig_cut_tokens`，可选目标 qpos | 达到 scripted qpos、timeout close-enough 或首次 qualified dig start 后进入 `dig` 或 `pre_dig_align` |
@@ -148,6 +157,19 @@ handoff/replan，不负责直接输出连续动作。
 `v2_4_5_spatial_mass` profile 作为语义事件源。下面的数值是当前配置里的主要阈值；
 它们是配置项，不是概念上不可变的常数。
 
+当前 primitive profile/version contract 的代码 source-of-truth 是
+`testbed.contracts.primitive_profile`。`boundary_profile` 名称、primitive version、
+4P/5P primitive name 列表，以及 `v2_4_5_spatial_mass -> v2_4_5_spatial_mass_4primitives`
+映射都应从该模块引用；primitive builder、`BoundaryDetector` 和 V2.4 pipeline CLI
+只保留旧常量名作为 facade，不再各自复制 profile/version 字符串。
+
+当前 V2.4.5 spatial-mass primitive slicing 的实现 source-of-truth 是
+`testbed.data.primitive_spatial_mass`。该模块负责 material-cycle 窗口拆分、
+spatial-mass boundary finder、carry/dump QC、return-start envelope token builder
+以及 return overlay 组装；`testbed.data.primitives_v2_2` 继续负责 raw episode discovery、
+HDF5 写入和 summary aggregation，并保留旧 helper 名称作为 facade。此次迁移只移动职责边界，
+不改变 primitive window、reject reason、metadata key、return envelope token 或输出 layout。
+
 | 事件或跳转 | 当前判定逻辑 |
 | --- | --- |
 | `qualified_dig_start` / `dig_start` | bucket 到 dig area 的最小距离 `<= 0.05m`，并且 bucket 低于 dig-area plane `>= 0.02m`。如果使用 legacy progress 模式，还要求 reward/load progress 或 bucket/excavated mass 增量。 |
@@ -159,7 +181,7 @@ handoff/replan，不负责直接输出连续动作。
 | `release_onset` | 已进入 dump ownership 后，bucket 位于 dump area 附近：outside distance `<= 0.45m` 或 over target footprint；同时当前步 bucket mass drop `>= 0.5kg` 或 dump/target deposit gain `>= 0.5kg`。 |
 | `dump_complete` / `dump -> return` | `release_onset` 已见后，bucket residual mass 低于 success 配置阈值，当前 qc6 配置为 `15kg`，且 target/dump deposit 进入 plateau。planner 在 `dump_done_use_boundary_event=true` 时优先消费该 boundary event。 |
 | `spill_before_target` | 作为质量诊断，只在 bucket mass 明显下降、同帧没有 target/dump deposit progress，并且当前不在有效 dump geometry 时计数。若 `bucket_over_target_footprint_mask=1` 且 `dump_clearance_ok_mask=1`，允许 Unity/AGX 的 bucket mass 与 deposit 传感存在 1 帧左右的更新时序差，不把这种目标内释放误报为漏土。 |
-| `return -> dig` | 不是单纯等 `qualified_dig_start`。状态机先 latch `next_dig_entry_ready` 或 qualified dig start，然后要求 `_return_to_dig_handoff_ready` 成立：pending entry error `<= 0.55m`，并通过 `return_start_envelope_tokens_v1` 的 spatial/depth/contact/qpos gate。当前 gate 使用 long/short tolerance `0.10`、qpos tolerance `0.04`；若 prior cell 带 `dig_start_local_depth_m`，local depth 使用该训练分布的 p05-p95 加 `0.005m` tolerance，否则才退回 token depth min/max 加 `0.08m`。`return_to_dig_start_envelope_require_contact=true` 会独立要求 dig contact，不再依赖 token[6]。`p50_floor` 在有 local-depth prior 且要求 contact 时使用 plane-depth p05-p95 作 terrain-offset 检查，否则继续用 p50 floor 防止零深度 handoff。若显式打开 `return_to_dig_start_envelope_direct_handoff_enabled`，return 在空斗低质量且 entry/envelope 已 ready 时可不等新的接触式 boundary event，直接交给下一轮 dig/pre-dig-align；如果 dump/carry 完成当帧已经满足该 gate，状态机也允许同帧 `dump/carry -> dig`，避免先执行一帧 return ACT 后错过浅接触窗口。 |
+| `return -> dig` | 不是单纯等 `qualified_dig_start`。状态机先 latch `next_dig_entry_ready` 或 qualified dig start，然后要求 `_return_to_dig_handoff_ready` 成立：pending entry error `<= 0.55m`，并通过 `return_start_envelope_tokens_v1` 的 spatial/depth/contact/qpos gate。当前 gate 使用 long/short tolerance `0.10`、qpos tolerance `0.04`；若 prior cell 带 `dig_start_local_depth_m`，local depth 使用该训练分布的 p05-p95 加 `0.005m` tolerance，否则才退回 token depth min/max 加 `0.08m`。`return_to_dig_start_envelope_require_contact=true` 会独立要求 dig contact，不再依赖 token 的 `contact_flag`。`p50_floor` 在有 local-depth prior 且要求 contact 时使用 plane-depth p05-p95 作 terrain-offset 检查，否则继续用 p50 floor 防止零深度 handoff。若显式打开 `return_to_dig_start_envelope_direct_handoff_enabled`，return 在空斗低质量且 entry/envelope 已 ready 时可不等新的接触式 boundary event，直接交给下一轮 dig/pre-dig-align；如果 dump/carry 完成当帧已经满足该 gate，状态机也允许同帧 `dump/carry -> dig`，避免先执行一帧 return ACT 后错过浅接触窗口。 |
 
 这里有两个容易混淆的点：
 
@@ -334,6 +356,63 @@ supervision_keys:
 对应配置是
 `runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/train_configs/act_return_surface_depth_qvel.yaml`。
 eval 侧的 `return_low_dim_keys` 也是同一组 key。
+如果 eval 打开 `return_to_dig_start_envelope_gate_enabled` 或
+`return_to_dig_start_envelope_direct_handoff_enabled`，`return_low_dim_keys` 必须包含
+`return_start_envelope_tokens_v1`；否则启动时应直接失败，避免 handoff gate 使用了
+start-envelope 语义而 return ACT checkpoint 实际没有读入该 token。
+
+ACT checkpoint 加载也必须保持同一份 low-dim 契约：`policy_config.state_dim`、
+`dataset_stats.pkl` 里的 `proprio_dim` / `proprio_keys` / `proprio_mean` /
+`proprio_std` 必须和当前 `low_dim_keys` 推导出的维度一致。只有 legacy
+`low_dim_keys=["qpos"]` 可以显式使用旧的 `qpos_mean` / `qpos_std` stats；其它组合
+缺少 `proprio_mean` / `proprio_std` 时不得静默加载。
+
+当前 low-dim observation contract 的代码 source-of-truth 是
+`testbed.contracts.low_dim`。`LOW_DIM_CONTRACT_VERSION`、supported key 列表、
+每个 key 的 dim、token slice、observation assembly，以及 stats/checkpoint
+兼容性校验都应从该模块引用；`dataset`、`runtime/_train.py`、`runtime/_eval.py`
+和 `ACTAdapter` 只保留旧入口作为 facade，不再各自复制一份 low-dim 语义。
+
+当前 primitive token contract 的代码 source-of-truth 是
+`testbed.contracts.primitive_tokens`。`dig_cut_tokens`、
+`dig_depth_profile_tokens_v1`、`return_target_tokens`、
+`return_relocate_tokens_v1`、`return_start_envelope_tokens_v1` 和
+`return_start_envelope_valid_mask` 的 dim、field order、HDF5 dataset path、
+metadata dim attr aliases、index/slice 和 relocation 派生规则都应从该模块引用；
+data builder、dataset loader、runtime/eval、ACT adapter 和 planner 只保留旧常量或
+helper 作为 facade，不再复制 token 下标或 path。
+
+当前 return start-envelope / handoff gate 的实现 source-of-truth 是
+`testbed.planner.return_start_envelope`。该模块负责 live fallback token 构造、
+relocate-conditioned qpos/spatial conditioning、cell/global prior fallback、prior
+bounds 读取，以及 return->dig spatial/depth/contact/qpos gate 检查；
+`PrimitivePlannerACTPolicy` 中的旧方法名只作为 facade 转调。此次迁移只移动职责边界，
+不改变 token dim/order、prior fallback、gate 判定、debug_state 字段或 rollout 行为。
+
+当前 dig coverage / corridor planning 的实现 source-of-truth 是
+`testbed.planner.dig_coverage.CoverageService`。该 service object 负责 coverage
+corridor candidate 构造、cell-weighted prior 和 percentile-grid fallback、corridor
+scoring、first-dig gate、state exemplar conditioning、coverage raw fields、
+belief/depletion 更新，以及 coverage decision trace payload；`DigCoverageMixin`
+和 `PrimitivePlannerACTPolicy` 继续保留旧 `_coverage_*` /
+`_ensure_coverage_corridors()` / `_select_coverage_corridor()` 等 private 入口作为
+facade 兼容层。此次迁移只移动职责边界，不改变 coverage scoring、candidate layout、
+state exemplar 语义、reject/deplete/terminal 行为或 planner trace/debug 字段。
+
+当前 primitive planner debug/summary schema 的实现 source-of-truth 是
+`testbed.planner.primitive_debug`。该模块负责 `PrimitivePlannerACTPolicy.debug_state()`
+和 `rollout_summary()` 的字段组装；planner 类中的同名方法只保留为 facade。此次迁移
+只移动职责边界，不改变字段名、字段顺序、默认值、字段类型、rollout JSONL 消费语义或
+planner 状态机行为。
+
+当前 rollout step/debug schema 的实现 source-of-truth 是
+`testbed.eval.rollout_step_records`。该模块负责 eval policy input 组装、
+逐 timestep JSONL record 字段和发送给 AGX/Unity 的 planner debug payload；
+`EvalSuite._planner_debug_json` 只保留为 facade。每条 rollout 的 JSONL、summary
+和 planner trace 写出编排由 `testbed.eval.rollout_artifacts` 承担，并继续复用
+现有 `rollout_logs` schema helper。此次迁移只移动 EvalSuite 内部职责边界，
+不改变 rollout loop、HDF5 layout、JSONL 字段、summary/manifest 字段或 planner
+debug JSON 语义。
 
 这意味着：
 
@@ -420,12 +499,12 @@ long/short 和 qpos center 覆盖 envelope token 对应字段，让 return ACT �
 | 2 | depth_center | 目标 dig-start depth center |
 | 3 | tip_radius | bucket tip 允许半径 |
 | 4-5 | depth_min, depth_max | local depth gate |
-| 6 | contact_allowed | 是否要求/允许 dig contact |
+| 6 | contact_flag | 当前 token 要求/记录 dig contact |
 | 7-10 | qpos_center[4] | dig-start 姿态中心 |
 | 11-14 | qpos_half_width[4] | 姿态 envelope 半宽 |
 | 15 | qvel_abs_max | 交接时速度上限 |
-| 16 | valid | qpos envelope 是否有效 |
-| 17 | no_dump_contact_required | spatial/depth envelope 是否有效 |
+| 16 | qpos_valid | qpos/qvel envelope 是否有效 |
+| 17 | spatial_depth_valid | spatial/depth envelope 是否有效 |
 
 return->dig 交接不能只看 2D entry error；它还要看 envelope gate 是否成立，尤其是
 depth/contact/qpos 是否进入下一轮 dig ACT 的训练分布。
