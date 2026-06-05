@@ -63,10 +63,12 @@ planner 大文件只增加薄 facade：
 
 `DumpLifecycleGateService` 负责纯 gate 判断：4P `dump_ready`、
 dump-area relative position / near-window helper、`dump_done`、
-`carry_release_safety_done`，以及 5P `approach_ready`。service 只接收显式
-`DumpLifecycleFacts` 和 `DumpLifecycleConfig`，不接收 planner `self`，不调用
-`_set_skill()`，不更新 hold counter，不 reset policy，不完成 coverage，不决定
-return direct handoff。
+`carry_release_safety_done`，以及 5P `approach_ready`。service 还负责 carry/dump
+分支的纯 outcome classification，基于 caller-provided boundary/gate/hold-ready
+布尔值返回旧 switch reason 和 coverage completion reason。service 只接收显式
+`DumpLifecycleFacts`、`DumpLifecycleConfig` 和 caller-provided booleans，不接收
+planner `self`，不调用 `_set_skill()`，不更新 hold counter，不 reset policy，
+不完成 coverage，不决定 return direct handoff。
 
 planner 大文件只保留薄 facade 和 facts/config 装配：
 
@@ -83,9 +85,10 @@ planner 大文件只保留薄 facade 和 facts/config 装配：
 - 5P `_approach_ready()`
 
 本切片保留 carry/dump/dump_release/return 的 branch order、threshold、hold
-counter、switch reason、coverage completion reason、policy reset timing 和 debug
-schema。semantic profile 下 legacy `_dump_ready()` / `_dump_done()` fallback 仍由
-planner shell 的原有分支控制，service 不提升实验语义为默认行为。
+counter 写回、dump start deposit 写回、coverage completion 执行、skill transition、
+return direct handoff、policy reset timing 和 debug schema。semantic profile 下
+legacy `_dump_ready()` / `_dump_done()` fallback 仍由 planner shell 的原有分支控制，
+service 不提升实验语义为默认行为。
 
 ## Dig Lifecycle Gate Slice
 

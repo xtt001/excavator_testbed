@@ -174,9 +174,11 @@ HDF5 写入和 summary aggregation，并保留旧 helper 名称作为 facade。�
 `testbed.planner.dump_lifecycle.DumpLifecycleGateService`。该 service 负责
 4P legacy dump readiness、dump-area relative / near-window geometry gate、
 dump mass/deposit completion gate、carry release safety gate，以及 5P
-approach-to-dump readiness gate。`PrimitivePlannerACTPolicy` 仍负责 branch order、
-hold counter、coverage completion、skill transition、switch reason、policy reset
-和 return direct handoff；此次迁移不改变 threshold、boundary event 优先级或 debug
+approach-to-dump readiness gate。该 service 还负责 carry/dump 分支的纯 outcome
+classification，返回旧 switch reason 和 coverage completion reason。
+`PrimitivePlannerACTPolicy` 仍负责 branch order、hold counter、dump start deposit
+写回、coverage completion 执行、skill transition、policy reset 和 return direct
+handoff；此次迁移不改变 threshold、boundary event 优先级、reason 字符串或 debug
 schema。
 
 当前在线 dig lifecycle gate 的实现 source-of-truth 是

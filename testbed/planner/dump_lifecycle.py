@@ -43,6 +43,13 @@ class DumpLifecycleFacts:
     coverage_cycle_start_deposit_kg: float = 0.0
 
 
+@dataclass(frozen=True)
+class DumpLifecycleOutcome:
+    action: str
+    switch_reason: str = ""
+    coverage_reason: str = ""
+
+
 class DumpLifecycleGateService:
     """Evaluates dump lifecycle gates without owning planner state."""
 
@@ -269,6 +276,75 @@ class DumpLifecycleGateService:
             float(facts.mass_in_bucket_kg) <= float(config.dump_done_max_bucket_mass_kg)
             and deposit_delta >= float(config.dump_done_min_deposit_delta_kg)
         )
+
+    @staticmethod
+    def carry_outcome(
+        *,
+        release_safety_done: bool,
+        dump_complete_event: bool,
+        dump_committed_event: bool,
+        release_onset_event: bool,
+        legacy_dump_start_event: bool,
+        dump_ready_hold_ready: bool,
+    ) -> DumpLifecycleOutcome:
+        if bool(release_safety_done):
+            return DumpLifecycleOutcome(
+                action="return",
+                switch_reason="carry_to_return_release_safety",
+                coverage_reason="carry_release_safety",
+            )
+        if bool(dump_complete_event):
+            return DumpLifecycleOutcome(
+                action="return",
+                switch_reason="carry_to_return_dump_complete_boundary",
+                coverage_reason="carry_dump_complete_boundary",
+            )
+        if bool(dump_ready_hold_ready):
+            reason = (
+                "dump_committed_boundary"
+                if bool(dump_committed_event)
+                else "release_onset_boundary"
+                if bool(release_onset_event)
+                else "dump_start_boundary"
+                if bool(legacy_dump_start_event)
+                else "target_ready"
+            )
+            return DumpLifecycleOutcome(
+                action="dump",
+                switch_reason=f"carry_to_dump_{reason}",
+            )
+        return DumpLifecycleOutcome(action="none")
+
+    @staticmethod
+    def dump_outcome(
+        *,
+        dump_complete_event: bool,
+        legacy_dump_end_event: bool,
+        dump_done_hold_ready: bool,
+    ) -> DumpLifecycleOutcome:
+        if bool(dump_complete_event) or bool(legacy_dump_end_event):
+            coverage_reason = (
+                "dump_complete_boundary"
+                if bool(dump_complete_event)
+                else "dump_end_boundary"
+            )
+            switch_reason = (
+                "dump_to_return_dump_complete_boundary"
+                if coverage_reason == "dump_complete_boundary"
+                else "dump_to_return_dump_end"
+            )
+            return DumpLifecycleOutcome(
+                action="return",
+                switch_reason=switch_reason,
+                coverage_reason=coverage_reason,
+            )
+        if bool(dump_done_hold_ready):
+            return DumpLifecycleOutcome(
+                action="return",
+                switch_reason="dump_to_return_mass_low",
+                coverage_reason="dump_mass_low",
+            )
+        return DumpLifecycleOutcome(action="none")
 
     def approach_ready(
         self,

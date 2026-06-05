@@ -150,6 +150,107 @@ def test_dump_done_and_carry_release_safety_use_same_mass_deposit_gate() -> None
     )
 
 
+def test_carry_outcome_preserves_return_and_dump_reasons() -> None:
+    release = DumpLifecycleGateService.carry_outcome(
+        release_safety_done=True,
+        dump_complete_event=True,
+        dump_committed_event=True,
+        release_onset_event=True,
+        legacy_dump_start_event=True,
+        dump_ready_hold_ready=True,
+    )
+    assert release.action == "return"
+    assert release.coverage_reason == "carry_release_safety"
+    assert release.switch_reason == "carry_to_return_release_safety"
+
+    dump_complete = DumpLifecycleGateService.carry_outcome(
+        release_safety_done=False,
+        dump_complete_event=True,
+        dump_committed_event=True,
+        release_onset_event=False,
+        legacy_dump_start_event=False,
+        dump_ready_hold_ready=True,
+    )
+    assert dump_complete.action == "return"
+    assert dump_complete.coverage_reason == "carry_dump_complete_boundary"
+    assert dump_complete.switch_reason == "carry_to_return_dump_complete_boundary"
+
+    committed = DumpLifecycleGateService.carry_outcome(
+        release_safety_done=False,
+        dump_complete_event=False,
+        dump_committed_event=True,
+        release_onset_event=False,
+        legacy_dump_start_event=False,
+        dump_ready_hold_ready=True,
+    )
+    assert committed.action == "dump"
+    assert committed.switch_reason == "carry_to_dump_dump_committed_boundary"
+
+    release_onset = DumpLifecycleGateService.carry_outcome(
+        release_safety_done=False,
+        dump_complete_event=False,
+        dump_committed_event=False,
+        release_onset_event=True,
+        legacy_dump_start_event=False,
+        dump_ready_hold_ready=True,
+    )
+    assert release_onset.switch_reason == "carry_to_dump_release_onset_boundary"
+
+    legacy_start = DumpLifecycleGateService.carry_outcome(
+        release_safety_done=False,
+        dump_complete_event=False,
+        dump_committed_event=False,
+        release_onset_event=False,
+        legacy_dump_start_event=True,
+        dump_ready_hold_ready=True,
+    )
+    assert legacy_start.switch_reason == "carry_to_dump_dump_start_boundary"
+
+    target_ready = DumpLifecycleGateService.carry_outcome(
+        release_safety_done=False,
+        dump_complete_event=False,
+        dump_committed_event=False,
+        release_onset_event=False,
+        legacy_dump_start_event=False,
+        dump_ready_hold_ready=True,
+    )
+    assert target_ready.switch_reason == "carry_to_dump_target_ready"
+
+
+def test_dump_outcome_preserves_boundary_and_mass_low_reasons() -> None:
+    complete = DumpLifecycleGateService.dump_outcome(
+        dump_complete_event=True,
+        legacy_dump_end_event=True,
+        dump_done_hold_ready=True,
+    )
+    assert complete.action == "return"
+    assert complete.coverage_reason == "dump_complete_boundary"
+    assert complete.switch_reason == "dump_to_return_dump_complete_boundary"
+
+    legacy_end = DumpLifecycleGateService.dump_outcome(
+        dump_complete_event=False,
+        legacy_dump_end_event=True,
+        dump_done_hold_ready=True,
+    )
+    assert legacy_end.coverage_reason == "dump_end_boundary"
+    assert legacy_end.switch_reason == "dump_to_return_dump_end"
+
+    mass_low = DumpLifecycleGateService.dump_outcome(
+        dump_complete_event=False,
+        legacy_dump_end_event=False,
+        dump_done_hold_ready=True,
+    )
+    assert mass_low.coverage_reason == "dump_mass_low"
+    assert mass_low.switch_reason == "dump_to_return_mass_low"
+
+    none = DumpLifecycleGateService.dump_outcome(
+        dump_complete_event=False,
+        legacy_dump_end_event=False,
+        dump_done_hold_ready=False,
+    )
+    assert none.action == "none"
+
+
 def test_approach_ready_checks_mass_distance_height_and_clearance() -> None:
     service = DumpLifecycleGateService()
     config = _config(

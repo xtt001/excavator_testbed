@@ -1148,96 +1148,93 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             return
 
         if self._skill_name == "carry":
-            if self._carry_release_safety_done(obs):
-                self._complete_coverage_dump(obs, reason="carry_release_safety")
-                self._set_return_or_direct_handoff(
-                    obs,
-                    reason="carry_to_return_release_safety",
+            release_safety_done = self._carry_release_safety_done(obs)
+            dump_committed_event = False
+            release_onset_event = False
+            dump_complete_event = False
+            legacy_dump_start_event = False
+            if not release_safety_done:
+                dump_committed_event = bool(
+                    boundary_event is not None
+                    and getattr(boundary_event, "dump_committed_start", False)
                 )
-                return
-            dump_committed_event = bool(
-                boundary_event is not None
-                and getattr(boundary_event, "dump_committed_start", False)
-            )
-            release_onset_event = bool(
-                boundary_event is not None
-                and getattr(boundary_event, "release_onset", False)
-            )
-            dump_complete_event = bool(
-                boundary_event is not None
-                and getattr(boundary_event, "dump_complete", False)
-            )
-            if dump_complete_event:
-                self._complete_coverage_dump(obs, reason="carry_dump_complete_boundary")
-                self._set_return_or_direct_handoff(
-                    obs,
-                    reason="carry_to_return_dump_complete_boundary",
+                release_onset_event = bool(
+                    boundary_event is not None
+                    and getattr(boundary_event, "release_onset", False)
                 )
-                return
-            legacy_dump_start_event = bool(
-                boundary_event is not None
-                and getattr(boundary_event, "dump_start", False)
-                and not self._semantic_boundary_profile_active()
+                dump_complete_event = bool(
+                    boundary_event is not None
+                    and getattr(boundary_event, "dump_complete", False)
+                )
+            if not (release_safety_done or dump_complete_event):
+                legacy_dump_start_event = bool(
+                    boundary_event is not None
+                    and getattr(boundary_event, "dump_start", False)
+                    and not self._semantic_boundary_profile_active()
+                )
+                if (
+                    dump_committed_event
+                    or release_onset_event
+                    or legacy_dump_start_event
+                ):
+                    self._dump_ready_hold_count = self.dump_ready_hold_steps
+                elif (
+                    not self._semantic_boundary_profile_active()
+                    and self._dump_ready(obs)
+                ):
+                    self._dump_ready_hold_count += 1
+                else:
+                    self._dump_ready_hold_count = 0
+            outcome = self.dump_lifecycle_gate.carry_outcome(
+                release_safety_done=release_safety_done,
+                dump_complete_event=dump_complete_event,
+                dump_committed_event=dump_committed_event,
+                release_onset_event=release_onset_event,
+                legacy_dump_start_event=legacy_dump_start_event,
+                dump_ready_hold_ready=(
+                    self._dump_ready_hold_count >= self.dump_ready_hold_steps
+                ),
             )
-            if dump_committed_event or release_onset_event or legacy_dump_start_event:
-                self._dump_ready_hold_count = self.dump_ready_hold_steps
-            elif (
-                not self._semantic_boundary_profile_active()
-                and self._dump_ready(obs)
-            ):
-                self._dump_ready_hold_count += 1
-            else:
-                self._dump_ready_hold_count = 0
-            if self._dump_ready_hold_count >= self.dump_ready_hold_steps:
+            if outcome.action == "return":
+                self._complete_coverage_dump(obs, reason=outcome.coverage_reason)
+                self._set_return_or_direct_handoff(obs, reason=outcome.switch_reason)
+                return
+            if outcome.action == "dump":
                 self._dump_start_deposited_mass_kg = self._deposited_mass(obs)
-                reason = (
-                    "dump_committed_boundary"
-                    if dump_committed_event
-                    else "release_onset_boundary"
-                    if release_onset_event
-                    else "dump_start_boundary"
-                    if legacy_dump_start_event
-                    else "target_ready"
-                )
-                self._set_skill("dump", f"carry_to_dump_{reason}")
+                self._set_skill("dump", outcome.switch_reason)
             return
 
         if self._skill_name == "dump":
-            if (
+            dump_complete_event = bool(
                 self.dump_done_use_boundary_event
                 and boundary_event is not None
-                and bool(
-                    getattr(boundary_event, "dump_complete", False)
-                    or (
-                        getattr(boundary_event, "dump_end", False)
-                        and not self._semantic_boundary_profile_active()
-                    )
+                and bool(getattr(boundary_event, "dump_complete", False))
+            )
+            legacy_dump_end_event = False
+            if not dump_complete_event:
+                legacy_dump_end_event = bool(
+                    self.dump_done_use_boundary_event
+                    and boundary_event is not None
+                    and bool(getattr(boundary_event, "dump_end", False))
+                    and not self._semantic_boundary_profile_active()
                 )
-            ):
-                reason = (
-                    "dump_complete_boundary"
-                    if bool(getattr(boundary_event, "dump_complete", False))
-                    else "dump_end_boundary"
-                )
-                self._complete_coverage_dump(obs, reason=reason)
+            if not (dump_complete_event or legacy_dump_end_event):
+                if not self._semantic_boundary_profile_active() and self._dump_done(obs):
+                    self._dump_done_hold_count += 1
+                else:
+                    self._dump_done_hold_count = 0
+            outcome = self.dump_lifecycle_gate.dump_outcome(
+                dump_complete_event=dump_complete_event,
+                legacy_dump_end_event=legacy_dump_end_event,
+                dump_done_hold_ready=(
+                    self._dump_done_hold_count >= self.dump_done_hold_steps
+                ),
+            )
+            if outcome.action == "return":
+                self._complete_coverage_dump(obs, reason=outcome.coverage_reason)
                 self._set_return_or_direct_handoff(
                     obs,
-                    reason=(
-                        "dump_to_return_dump_complete_boundary"
-                        if reason == "dump_complete_boundary"
-                        else "dump_to_return_dump_end"
-                    ),
-                )
-                return
-            if not self._semantic_boundary_profile_active() and self._dump_done(obs):
-                self._dump_done_hold_count += 1
-            else:
-                self._dump_done_hold_count = 0
-            if self._dump_done_hold_count >= self.dump_done_hold_steps:
-                self._complete_coverage_dump(obs, reason="dump_mass_low")
-                self._set_return_or_direct_handoff(
-                    obs,
-                    reason="dump_to_return_mass_low",
+                    reason=outcome.switch_reason,
                 )
             return
 
