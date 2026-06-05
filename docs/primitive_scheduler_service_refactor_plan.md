@@ -250,6 +250,39 @@ reason、policy dispatch、debug schema 和 rollout trace。
 relocate conditioning 数值、start-envelope handoff gate、pending dig plan、
 return->dig branch order、debug_state 字段或 rollout 行为。
 
+## Dig Depth-Profile Builder Slice
+
+新增模块：
+
+- `testbed/planner/dig_depth_profile.py`
+
+`DigDepthProfileService` 负责 dig depth-profile token 的 source selection 和
+token 构造：`live_plan`、`prior_profile`、state-conditioned exemplar 优先级、
+cell/global prior fallback、prior token shape/finite validation、required prior
+缺失错误，以及 live plan token build。service 只接收显式
+`DigDepthProfileBuildRequest`、`DigDepthProfileConfig`、prior/raw-fields/env-state
+和可选 exemplar token，不接收 planner `self`，不读取 coverage state，不写 pending
+dig state，不 dispatch policy，不 reset policy，也不写 debug schema。
+
+planner 大文件只保留旧 private facade：
+
+- `_build_dig_depth_profile_tokens_for_obs()`
+- `_build_live_dig_depth_profile_tokens_for_obs()`
+- `_dig_depth_profile_prior_token()`
+- `_dig_depth_profile_prior_mapping()`
+- `_dig_depth_profile_token_from_prior_mapping()`
+
+其中 `_build_dig_depth_profile_tokens_for_obs()` 只负责解析当前 cell id、装配
+raw fields/env state/config/exemplar request、调用 service，并写回
+`_dig_depth_profile_token_source` 与 `_dig_depth_profile_fallback_reason`。planner
+shell 仍负责 `_dig_depth_profile_raw_fields()`、`_dig_depth_profile_cell_id()`、
+coverage/pending dig state、return target plan、branch order、switch reason、
+debug schema 和 rollout trace。
+
+本切片不改变 token dim/order、source string、prior fallback 策略、required prior
+失败信息、live token 数值、pending dig plan、coverage state exemplar 选择、
+debug_state 字段或 rollout 行为。
+
 ## Policy Observation Assembly Slice
 
 新增模块：
@@ -293,6 +326,7 @@ pytest tests/test_dig_start_alignment_service.py tests/test_agx_primitives_v2_2.
 pytest tests/test_bootstrap_service.py tests/test_agx_primitives_v2_2.py -k "bootstrap"
 pytest tests/test_primitive_planner_debug_schema.py tests/test_planner_golden_traces.py
 pytest tests/test_policy_observation.py tests/test_eval_rollout_records.py
+pytest tests/test_dig_depth_profile_service.py tests/test_agx_primitives_v2_2.py -k "dig_depth_profile or state_conditioned_exemplar"
 ```
 
 ## 回滚策略

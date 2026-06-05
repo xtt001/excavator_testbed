@@ -433,6 +433,15 @@ bounds 读取、`build_return_start_envelope_for_plan()` 的 prior/live/conditio
 `PrimitivePlannerACTPolicy` 中的旧方法名只作为 facade 转调。此次迁移只移动职责边界，
 不改变 token dim/order、prior fallback、gate 判定、debug_state 字段或 rollout 行为。
 
+当前在线 dig depth-profile token source selection 的实现 source-of-truth 是
+`testbed.planner.dig_depth_profile.DigDepthProfileService`。该 service 负责
+`live_plan` / `prior_profile` 选择、state-conditioned exemplar 优先级、cell/global
+prior fallback、prior token validation、required-prior 失败，以及 live plan token
+构造；`PrimitivePlannerACTPolicy` 仍负责 raw-fields 来源、cell id 解析、
+coverage/pending dig state、debug 字段写回和 ACT dispatch。此次迁移只移动职责边界，
+不改变 `dig_depth_profile_tokens_v1` contract、source string、fallback reason、
+coverage exemplar 选择或 rollout 行为。
+
 当前 dig coverage / corridor planning 的实现 source-of-truth 是
 `testbed.planner.dig_coverage.CoverageService`。该 service object 负责 coverage
 corridor candidate 构造、cell-weighted prior 和 percentile-grid fallback、corridor

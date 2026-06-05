@@ -25,16 +25,11 @@ from testbed.contracts.primitive_tokens import (
     CUT_VALID_IDX,
     DIG_CUT_TOKEN_DIM,
     DIG_DEPTH_PROFILE_TOKEN_DIM,
-    DIG_DEPTH_PROFILE_TOKEN_KEY,
     RETURN_ENVELOPE_QPOS_VALID_IDX,
     RETURN_ENVELOPE_SPATIAL_DEPTH_VALID_IDX,
     RETURN_START_ENVELOPE_TOKEN_DIM,
     RETURN_TARGET_TOKEN_DIM,
     derive_return_relocate_token,
-    validate_primitive_token_shape,
-)
-from testbed.data.dig_depth_profile_v2_4 import (
-    build_dig_depth_profile_token_from_plan,
 )
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_DEPTH_SCALE_M,
@@ -98,6 +93,12 @@ from testbed.planner.cell_entry import (
 from testbed.planner.dig_coverage import (
     CoverageCorridorState,
     DigCoverageMixin,
+)
+from testbed.planner.dig_depth_profile import (
+    DigDepthProfileBuildRequest,
+    DigDepthProfileConfig,
+    DigDepthProfileMissingPriorError,
+    DigDepthProfileService,
 )
 from testbed.planner.dig_lifecycle import (
     DigLifecycleConfig,
@@ -296,6 +297,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self.dig_start_alignment_service = DigStartAlignmentService()
         self.dump_lifecycle_gate = DumpLifecycleGateService()
         self.policy_observation_assembler = PolicyObservationAssembler()
+        self.dig_depth_profile_service = DigDepthProfileService()
         self.bootstrap_end_mode = str(bootstrap_end_mode)
         self.bootstrap_end_min_bucket_mass_kg = float(bootstrap_end_min_bucket_mass_kg)
         self.bootstrap_end_min_distance_to_dig_area_m = float(
@@ -2682,42 +2684,26 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
 
     def _build_dig_depth_profile_tokens_for_obs(self, obs: dict) -> np.ndarray:
         cell_id = self._dig_depth_profile_cell_id(obs)
-        if self.dig_depth_profile_source == "prior_profile":
-            if self._coverage_active_state_exemplar_profile_token is not None:
-                self._dig_depth_profile_token_source = (
-                    "qc6_state_conditioned_exemplar"
+        try:
+            state = self.dig_depth_profile_service.build_token(
+                DigDepthProfileBuildRequest(
+                    cell_id=cell_id,
+                    raw_fields=self._dig_depth_profile_raw_fields(obs),
+                    env_state=self._env_state(obs),
+                    config=self._current_dig_depth_profile_config(),
+                    dig_cut_prior=self.dig_cut_prior,
+                    state_exemplar_profile_token=(
+                        self._coverage_active_state_exemplar_profile_token
+                    ),
                 )
-                self._dig_depth_profile_fallback_reason = ""
-                return self._coverage_active_state_exemplar_profile_token.astype(
-                    np.float32
-                )
-            token, source, reason = self._dig_depth_profile_prior_token(cell_id)
-            if token is not None:
-                self._dig_depth_profile_token_source = source
-                self._dig_depth_profile_fallback_reason = ""
-                return token.astype(np.float32)
-            if (
-                self.dig_depth_profile_required
-                or not self.dig_depth_profile_allow_live_fallback
-            ):
-                self._dig_depth_profile_token_source = "missing_required_prior"
-                self._dig_depth_profile_fallback_reason = reason
-                raise ValueError(
-                    "dig_depth_profile.source='prior_profile' requires a matching "
-                    f"dig_depth_profile prior for cell {int(cell_id)}; {reason}"
-                )
-            self._dig_depth_profile_token_source = "fallback_live_plan"
-            self._dig_depth_profile_fallback_reason = reason
-            return self._build_live_dig_depth_profile_tokens_for_obs(obs, cell_id=cell_id)
-        if self.dig_depth_profile_source != "live_plan":
-            raise ValueError(
-                "Unsupported dig_depth_profile.source "
-                f"{self.dig_depth_profile_source!r}; expected 'live_plan' or "
-                "'prior_profile'."
             )
-        self._dig_depth_profile_token_source = "live_plan"
-        self._dig_depth_profile_fallback_reason = ""
-        return self._build_live_dig_depth_profile_tokens_for_obs(obs, cell_id=cell_id)
+        except DigDepthProfileMissingPriorError as exc:
+            self._dig_depth_profile_token_source = "missing_required_prior"
+            self._dig_depth_profile_fallback_reason = str(exc.reason)
+            raise
+        self._dig_depth_profile_token_source = str(state.source)
+        self._dig_depth_profile_fallback_reason = str(state.fallback_reason)
+        return np.asarray(state.token, dtype=np.float32)
 
     def _build_live_dig_depth_profile_tokens_for_obs(
         self,
@@ -2725,16 +2711,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         *,
         cell_id: int,
     ) -> np.ndarray:
-        raw_fields = self._dig_depth_profile_raw_fields(obs)
-        return build_dig_depth_profile_token_from_plan(
-            raw_fields=raw_fields,
-            cell_id=cell_id,
-            env_state=self._env_state(obs),
-            effective_deposit_delta_kg=float(
-                raw_fields.get(
-                    "operator_effective_deposit_delta_kg",
-                    raw_fields.get("operator_cut_payload_gain_kg", 0.0),
-                )
+        return self.dig_depth_profile_service.build_live_token(
+            DigDepthProfileBuildRequest(
+                cell_id=cell_id,
+                raw_fields=self._dig_depth_profile_raw_fields(obs),
+                env_state=self._env_state(obs),
+                config=self._current_dig_depth_profile_config(),
             ),
         )
 
@@ -2742,63 +2724,35 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self,
         cell_id: int,
     ) -> tuple[np.ndarray | None, str, str]:
-        mapping, source, reason = self._dig_depth_profile_prior_mapping(cell_id)
-        if mapping is None:
-            return None, source, reason
-        token = self._dig_depth_profile_token_from_prior_mapping(mapping)
-        if token is None:
-            return None, source, f"{source} prior has no token_median/token field"
-        if source == "cell":
-            return token, f"qc6_dig_depth_profile_cell_{int(cell_id)}", ""
-        return token, "qc6_dig_depth_profile_global", ""
+        return self.dig_depth_profile_service.prior_token(
+            self.dig_cut_prior,
+            cell_id=cell_id,
+            allow_global_fallback=self.dig_depth_profile_allow_global_fallback,
+        )
 
     def _dig_depth_profile_prior_mapping(
         self,
         cell_id: int,
     ) -> tuple[dict[str, object] | None, str, str]:
-        if not self.dig_cut_prior:
-            return None, "missing_dig_cut_prior", "missing dig_cut_prior"
-        cells = self.dig_cut_prior.get("dig_depth_profile_cells", [])
-        if isinstance(cells, list):
-            for item in cells:
-                if not isinstance(item, dict):
-                    continue
-                cell = dict(item)
-                if int(cell.get("cell_id", -999999)) == int(cell_id):
-                    return cell, "cell", ""
-        if self.dig_depth_profile_allow_global_fallback:
-            global_prior = self.dig_cut_prior.get("dig_depth_profile_global")
-            if isinstance(global_prior, dict):
-                return dict(global_prior), "global", ""
-        return (
-            None,
-            "missing_dig_depth_profile_prior",
-            f"missing dig_depth_profile_cells entry for cell {int(cell_id)}",
+        return self.dig_depth_profile_service.prior_mapping(
+            self.dig_cut_prior,
+            cell_id=cell_id,
+            allow_global_fallback=self.dig_depth_profile_allow_global_fallback,
         )
 
     @staticmethod
     def _dig_depth_profile_token_from_prior_mapping(
         mapping: dict[str, object],
     ) -> np.ndarray | None:
-        for key in ("token_median", "token", "median"):
-            if key not in mapping:
-                continue
-            token = np.asarray(mapping[key], dtype=np.float32).reshape(-1)
-            try:
-                token = validate_primitive_token_shape(
-                    DIG_DEPTH_PROFILE_TOKEN_KEY,
-                    token,
-                    allow_sequence=False,
-                ).reshape(-1)
-            except ValueError as exc:
-                raise ValueError(
-                    "dig_depth_profile prior token must have "
-                    f"{DIG_DEPTH_PROFILE_TOKEN_DIM} values, got {token.shape[0]}"
-                ) from exc
-            if not np.all(np.isfinite(token)):
-                raise ValueError("dig_depth_profile prior token contains non-finite values")
-            return token.copy()
-        return None
+        return DigDepthProfileService.token_from_prior_mapping(mapping)
+
+    def _current_dig_depth_profile_config(self) -> DigDepthProfileConfig:
+        return DigDepthProfileConfig(
+            source=self.dig_depth_profile_source,
+            required=self.dig_depth_profile_required,
+            allow_live_fallback=self.dig_depth_profile_allow_live_fallback,
+            allow_global_fallback=self.dig_depth_profile_allow_global_fallback,
+        )
 
     def _dig_depth_profile_raw_fields(self, obs: dict) -> dict[str, float | int]:
         if (
