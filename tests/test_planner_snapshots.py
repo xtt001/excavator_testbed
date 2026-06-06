@@ -27,6 +27,7 @@ from testbed.data.schema import (
     ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
 from testbed.planner.snapshots import (
+    boundary_detector_update_facts_from_obs,
     bucket_depth_below_dig_area_plane_from_obs,
     bucket_depth_below_local_surface_from_obs,
     bucket_dig_area_cell_in_bounds_mask_from_obs,
@@ -61,6 +62,52 @@ def test_snapshot_missing_env_keeps_nan_view_but_legacy_helpers_keep_defaults() 
     assert bucket_depth_below_dig_area_plane_from_obs({}) == pytest.approx(0.0)
     assert np.isnan(bucket_depth_below_local_surface_from_obs({}))
     assert env_state_from_obs({}).shape == (13,)
+
+
+def test_boundary_detector_update_facts_preserve_raw_obs_values() -> None:
+    env_state = np.ones(64, dtype=np.float32)
+    qpos = np.asarray([1.0, 2.0], dtype=np.float32)
+    action = np.asarray([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
+    successes = {"dig": 1}
+    metrics = {"mass_in_bucket_kg": 3.0}
+
+    facts = boundary_detector_update_facts_from_obs(
+        {
+            "env_state": env_state,
+            "qpos": qpos,
+            "reward_phase": "digging",
+            "task_step_successes": successes,
+            "task_metrics": metrics,
+        },
+        action=action,
+        action_dim=4,
+    )
+
+    assert facts.env_state is env_state
+    assert facts.qpos is qpos
+    assert facts.action is action
+    assert facts.reward_phase == "digging"
+    assert facts.task_step_successes is successes
+    assert facts.task_metrics is metrics
+
+
+def test_boundary_detector_update_facts_keep_legacy_missing_defaults() -> None:
+    facts = boundary_detector_update_facts_from_obs(
+        {},
+        action=None,
+        action_dim=4,
+    )
+
+    assert isinstance(facts.env_state, np.ndarray)
+    assert isinstance(facts.qpos, np.ndarray)
+    assert facts.env_state.shape == (13,)
+    assert facts.qpos.shape == (4,)
+    assert facts.env_state.dtype == np.float32
+    assert facts.qpos.dtype == np.float32
+    assert facts.action is None
+    assert facts.reward_phase is None
+    assert facts.task_step_successes is None
+    assert facts.task_metrics is None
 
 
 def test_legacy_helpers_prefer_task_metrics_then_env_state() -> None:

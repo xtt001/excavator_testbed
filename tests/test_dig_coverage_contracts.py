@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pytest
 
 from testbed.data.operator_first_v2_2 import DIG_CUT_DEPTH_SCALE_M
 from testbed.data.schema import (
@@ -13,18 +14,26 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
     ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
     ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
+    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX,
     ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
     ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
-    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
 )
 from testbed.planner.dig_coverage import (
+    COVERAGE_OBSERVATION_FACT_FIELDS,
+    COVERAGE_SERVICE_CONFIG_FIELDS,
+    CoverageActiveStateExemplarState,
+    CoverageCorridorState,
+    CoverageObservationFacts,
     CoverageService,
+    CoverageServiceConfig,
     CoverageServiceState,
     DigCoverageMixin,
+    build_coverage_context_facts_from_mapping,
+    build_coverage_observation_facts_from_mapping,
+    build_coverage_service_config_from_mapping,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 YULONG_DIG_CUT_PRIOR_PATH = (
@@ -70,6 +79,479 @@ def test_coverage_private_methods_are_service_facades() -> None:
         policy._coverage_corridor_to_debug(policy._coverage_corridors[0])
         == policy.coverage_service.corridor_debug(policy._coverage_corridors[0])
     )
+    assert (
+        PrimitivePlannerACTPolicy._coverage_trace_snapshot
+        is DigCoverageMixin._coverage_trace_snapshot
+    )
+    assert (
+        PrimitivePlannerACTPolicy._coverage_rollout_summary_snapshot
+        is DigCoverageMixin._coverage_rollout_summary_snapshot
+    )
+    assert (
+        PrimitivePlannerACTPolicy._clear_coverage_active_state_exemplar
+        is DigCoverageMixin._clear_coverage_active_state_exemplar
+    )
+
+
+def test_coverage_service_initial_runtime_state_preserves_legacy_reset_defaults() -> None:
+    state = CoverageService.initial_runtime_state()
+
+    assert isinstance(state, CoverageServiceState)
+    assert state.corridors == []
+    assert state.active_corridor_id == -1
+    assert state.last_selected_corridor_id == -1
+    assert state.current_payload_gain_kg == 0.0
+    assert state.cycle_start_deposit_kg == 0.0
+    assert state.last_payload_gain_kg == 0.0
+    assert state.last_effective_deposit_delta_kg == 0.0
+    assert state.global_low_productivity_streak == 0
+    assert state.completed_dump_count == 0
+    assert state.pass_index == 0
+    assert state.terminal_stop_requested is False
+    assert state.terminal_stop_reason == ""
+    assert state.candidate_scores == []
+    assert state.decision_trace == []
+    assert state.active_state_exemplar_ids == []
+    assert state.rejected_state_exemplar_ids == set()
+    assert np.isnan(state.active_state_exemplar_distance)
+    assert state.active_state_exemplar_profile_token is None
+
+
+def test_coverage_service_config_mapping_preserves_legacy_projection() -> None:
+    prior = {"dig_cut": {"token": [1.0]}}
+    exemplars = {2: [{"id": "cell2"}]}
+    values = {
+        "dig_cut_planner_mode": 123,
+        "dig_cut_prior": prior,
+        "dig_cut_prior_path": 456,
+        "action_dim": "4",
+        "candidate_layout": "cell_weighted_3x2",
+        "use_env_removed_depth": 1,
+        "belief_gain_scale": "0.55",
+        "belief_depleted_score": "1.0",
+        "low_productivity_payload_kg": "15.0",
+        "low_productivity_deposit_kg": "16.0",
+        "deplete_after_low_streak": "2",
+        "min_remaining_depth_m": "0.05",
+        "global_low_productivity_stop": "3",
+        "max_attempts_per_corridor": "4",
+        "multi_pass_enabled": 1,
+        "multi_pass_max_passes": "5",
+        "multi_pass_min_remaining_depth_m": "0.06",
+        "unattempted_bonus": "2.0",
+        "attempt_penalty": "0.65",
+        "recent_selection_penalty": "1.25",
+        "recent_row_selection_penalty": "0.5",
+        "rare_cell_source_fraction_threshold": "0.05",
+        "rare_cell_max_attempts": "1",
+        "cell_confidence_weight": "0.75",
+        "state_exemplars_enabled": 1,
+        "state_exemplar_path": 789,
+        "state_exemplar_k": "6",
+        "state_exemplar_removed_depth_scale_m": "0.12",
+        "state_exemplar_target_cell_weight": "2.0",
+        "state_exemplar_score_weight": "0.75",
+        "state_exemplar_temperature": "0.35",
+        "state_exemplar_skip_rejected": 0,
+        "state_exemplars_by_cell": exemplars,
+        "first_dig_strategy": "nearest_entry",
+        "first_dig_preferred_corridor_id": "7",
+        "first_dig_preferred_bonus": "10000.0",
+        "first_dig_proximity_weight": "100.0",
+        "first_dig_max_entry_distance_m": "0.75",
+        "first_dig_qpos_delta_weight": "0.5",
+        "first_dig_max_qpos_delta": [0.1, 0.2, 0.3, 0.4],
+        "first_dig_alignment_enabled": 1,
+        "first_dig_controlled_dims": [1, 0, 1, 0],
+        "entry_x_percentiles": ["p10", "p50", "p90"],
+        "entry_z_percentiles": ["p05", "p50", "p95"],
+        "cut_direction_percentile": "p50",
+        "cut_length_percentile": "p75",
+        "cut_depth_percentile": "p90",
+        "payload_percentile": "p95",
+    }
+
+    config = build_coverage_service_config_from_mapping(values)
+
+    assert isinstance(config, CoverageServiceConfig)
+    assert {key for key, _ in COVERAGE_SERVICE_CONFIG_FIELDS} == set(values)
+    assert config.dig_cut_planner_mode == "123"
+    assert config.dig_cut_prior == prior
+    assert config.dig_cut_prior is not prior
+    assert config.dig_cut_prior_path == "456"
+    assert config.action_dim == 4
+    assert config.candidate_layout == "cell_weighted_3x2"
+    assert config.use_env_removed_depth is True
+    assert config.multi_pass_enabled is True
+    assert config.multi_pass_max_passes == 5
+    assert config.state_exemplars_enabled is True
+    assert config.state_exemplar_path == "789"
+    assert config.state_exemplars_by_cell == exemplars
+    assert config.state_exemplars_by_cell is not exemplars
+    assert config.state_exemplar_skip_rejected is False
+    assert config.first_dig_preferred_corridor_id == 7
+    assert config.first_dig_max_entry_distance_m == 0.75
+    np.testing.assert_allclose(
+        config.first_dig_max_qpos_delta,
+        np.asarray([0.1, 0.2, 0.3, 0.4], dtype=np.float32),
+    )
+    assert config.first_dig_max_qpos_delta.dtype == np.float32
+    np.testing.assert_array_equal(
+        config.first_dig_controlled_dims,
+        np.asarray([True, False, True, False], dtype=bool),
+    )
+    assert config.entry_x_percentiles == ("p10", "p50", "p90")
+    assert config.entry_z_percentiles == ("p05", "p50", "p95")
+    assert config.payload_percentile == "p95"
+
+    missing_exemplars_values = dict(values)
+    missing_exemplars_values.pop("state_exemplars_by_cell")
+    missing_exemplars_config = build_coverage_service_config_from_mapping(
+        missing_exemplars_values
+    )
+    assert missing_exemplars_config.state_exemplars_by_cell == {}
+
+    optional_none_values = {
+        **values,
+        "first_dig_preferred_corridor_id": None,
+        "first_dig_max_entry_distance_m": None,
+        "first_dig_max_qpos_delta": None,
+    }
+    optional_none_config = build_coverage_service_config_from_mapping(
+        optional_none_values
+    )
+    assert optional_none_config.first_dig_preferred_corridor_id is None
+    assert optional_none_config.first_dig_max_entry_distance_m is None
+    assert optional_none_config.first_dig_max_qpos_delta is None
+
+
+def test_coverage_observation_facts_mapping_preserves_legacy_projection() -> None:
+    env_state = np.asarray([1.0, 2.0, 3.0], dtype=np.float32)
+    bucket_pose = (0.1, 0.2, 0.3)
+    values = {
+        "cycle_index": "7",
+        "skill_name": 123,
+        "dig_best_mass_kg": "12.5",
+    }
+
+    facts = build_coverage_observation_facts_from_mapping(
+        values,
+        action_dim=4,
+        env_state=env_state,
+        qpos=np.asarray([[0.5, 0.6], [0.7, 0.8]], dtype=np.float64),
+        bucket_tip_dig_area_pose=bucket_pose,
+        mass_in_bucket_kg=np.float64(4.5),
+        deposited_mass_kg=np.float64(6.5),
+    )
+
+    assert isinstance(facts, CoverageObservationFacts)
+    assert {key for key, _, _ in COVERAGE_OBSERVATION_FACT_FIELDS} == set(values)
+    assert facts.env_state is env_state
+    np.testing.assert_allclose(
+        facts.qpos,
+        np.asarray([0.5, 0.6, 0.7, 0.8], dtype=np.float32),
+    )
+    assert facts.qpos.dtype == np.float32
+    assert facts.bucket_tip_dig_area_pose is bucket_pose
+    assert facts.mass_in_bucket_kg == np.float64(4.5)
+    assert facts.deposited_mass_kg == np.float64(6.5)
+    assert facts.cycle_index == 7
+    assert facts.skill_name == "123"
+    assert facts.dig_best_mass_kg == 12.5
+
+    missing_qpos_facts = build_coverage_observation_facts_from_mapping(
+        values,
+        action_dim=4,
+        env_state=env_state,
+        bucket_tip_dig_area_pose=None,
+        mass_in_bucket_kg=0.0,
+        deposited_mass_kg=0.0,
+    )
+    np.testing.assert_array_equal(
+        missing_qpos_facts.qpos,
+        np.zeros(4, dtype=np.float32),
+    )
+
+    with pytest.raises(ValueError):
+        build_coverage_observation_facts_from_mapping(
+            values,
+            action_dim=4,
+            env_state=env_state,
+            qpos=None,
+            bucket_tip_dig_area_pose=None,
+            mass_in_bucket_kg=0.0,
+            deposited_mass_kg=0.0,
+        )
+
+
+def test_policy_coverage_observation_facts_facade_matches_builder() -> None:
+    policy = _coverage_policy()
+    policy._cycle_index = 9
+    policy._skill_name = "dump"
+    policy._dig_best_mass_kg = 18.5
+    obs = _coverage_obs(mass=4.5, deposited=6.5, bucket_pose=(0.8, 0.0, 0.5))
+    obs["qpos"] = np.asarray([[0.5, 0.6], [0.7, 0.8]], dtype=np.float64)
+    values = {
+        fact_key: getattr(policy, attr_name, default)
+        for fact_key, attr_name, default in COVERAGE_OBSERVATION_FACT_FIELDS
+    }
+
+    direct = build_coverage_observation_facts_from_mapping(
+        values,
+        action_dim=policy.action_dim,
+        env_state=policy._env_state(obs),
+        qpos=obs["qpos"],
+        bucket_tip_dig_area_pose=policy._bucket_tip_dig_area_pose(obs),
+        mass_in_bucket_kg=policy._mass_in_bucket(obs),
+        deposited_mass_kg=policy._deposited_mass(obs),
+    )
+    facade = policy._coverage_observation_facts(obs)
+
+    np.testing.assert_array_equal(facade.env_state, direct.env_state)
+    np.testing.assert_array_equal(facade.qpos, direct.qpos)
+    assert facade.qpos.dtype == np.float32
+    assert facade.bucket_tip_dig_area_pose == direct.bucket_tip_dig_area_pose
+    assert facade.mass_in_bucket_kg == direct.mass_in_bucket_kg
+    assert facade.deposited_mass_kg == direct.deposited_mass_kg
+    assert facade.cycle_index == direct.cycle_index == 9
+    assert facade.skill_name == direct.skill_name == "dump"
+    assert facade.dig_best_mass_kg == direct.dig_best_mass_kg == 18.5
+
+    missing_qpos_obs = dict(obs)
+    missing_qpos_obs.pop("qpos")
+    missing_qpos_facade = policy._coverage_observation_facts(missing_qpos_obs)
+    np.testing.assert_array_equal(
+        missing_qpos_facade.qpos,
+        np.zeros(policy.action_dim, dtype=np.float32),
+    )
+
+
+def test_coverage_context_facts_mapping_preserves_legacy_defaults() -> None:
+    policy = _coverage_policy()
+    policy._cycle_index = 11
+    policy._skill_name = "return"
+    policy._dig_best_mass_kg = 21.0
+    values = {
+        fact_key: getattr(policy, attr_name, default)
+        for fact_key, attr_name, default in COVERAGE_OBSERVATION_FACT_FIELDS
+    }
+
+    direct = build_coverage_context_facts_from_mapping(
+        values,
+        action_dim=policy.action_dim,
+    )
+    facade = policy._coverage_context_facts()
+
+    assert direct.env_state.dtype == np.float32
+    assert direct.env_state.shape == (0,)
+    np.testing.assert_array_equal(facade.env_state, direct.env_state)
+    np.testing.assert_array_equal(
+        facade.qpos,
+        np.zeros(policy.action_dim, dtype=np.float32),
+    )
+    np.testing.assert_array_equal(facade.qpos, direct.qpos)
+    assert facade.bucket_tip_dig_area_pose is None
+    assert direct.bucket_tip_dig_area_pose is None
+    assert facade.mass_in_bucket_kg == direct.mass_in_bucket_kg == 0.0
+    assert facade.deposited_mass_kg == direct.deposited_mass_kg == 0.0
+    assert facade.cycle_index == direct.cycle_index == 11
+    assert facade.skill_name == direct.skill_name == "return"
+    assert facade.dig_best_mass_kg == direct.dig_best_mass_kg == 21.0
+
+
+def test_coverage_service_cleared_active_state_exemplar_preserves_legacy_defaults() -> None:
+    state = CoverageService.cleared_active_state_exemplar_state()
+
+    assert isinstance(state, CoverageActiveStateExemplarState)
+    assert state.ids == ()
+    assert np.isnan(state.distance)
+    assert state.profile_token is None
+
+
+def test_policy_clear_coverage_active_state_exemplar_applies_service_state(
+    monkeypatch,
+) -> None:
+    policy = _coverage_policy()
+    profile_token = np.arange(12, dtype=np.float64) + 30.0
+
+    def cleared_active_state_exemplar_state() -> CoverageActiveStateExemplarState:
+        return CoverageActiveStateExemplarState(
+            ids=("cell7_deep",),
+            distance=0.25,
+            profile_token=profile_token,
+        )
+
+    monkeypatch.setattr(
+        policy._coverage_service(),
+        "cleared_active_state_exemplar_state",
+        cleared_active_state_exemplar_state,
+    )
+
+    policy._clear_coverage_active_state_exemplar()
+    profile_token[0] = 99.0
+
+    assert policy._coverage_active_state_exemplar_ids == ["cell7_deep"]
+    assert policy._coverage_active_state_exemplar_distance == 0.25
+    np.testing.assert_allclose(
+        policy._coverage_active_state_exemplar_profile_token,
+        np.arange(12, dtype=np.float32) + 30.0,
+    )
+    assert policy._coverage_active_state_exemplar_profile_token.dtype == np.float32
+
+
+def test_policy_reset_rebuilds_coverage_service_from_initial_runtime_state(
+    monkeypatch,
+) -> None:
+    policy = _coverage_policy()
+    corridor = CoverageCorridorState(
+        corridor_id=7,
+        entry_x_m=0.1,
+        entry_z_m=0.2,
+        exit_x_m=0.3,
+        exit_z_m=0.4,
+        cell_id=2,
+    )
+    profile_token = np.asarray([0.2, 0.4, 0.6], dtype=np.float32)
+
+    def initial_runtime_state() -> CoverageServiceState:
+        return CoverageServiceState(
+            corridors=[corridor],
+            active_corridor_id=7,
+            last_selected_corridor_id=6,
+            current_payload_gain_kg=12.5,
+            cycle_start_deposit_kg=3.0,
+            last_payload_gain_kg=9.5,
+            last_effective_deposit_delta_kg=4.5,
+            global_low_productivity_streak=2,
+            completed_dump_count=3,
+            pass_index=1,
+            terminal_stop_requested=True,
+            terminal_stop_reason="unit_terminal",
+            candidate_scores=[{"corridor_id": 7, "score": 1.25}],
+            decision_trace=[{"event": "unit_trace"}],
+            active_state_exemplar_ids=["cell7_deep"],
+            rejected_state_exemplar_ids={"cell3_shallow"},
+            active_state_exemplar_distance=0.25,
+            active_state_exemplar_profile_token=profile_token,
+        )
+
+    monkeypatch.setattr(
+        CoverageService,
+        "initial_runtime_state",
+        staticmethod(initial_runtime_state),
+    )
+
+    policy.reset()
+
+    assert policy._coverage_corridors == [corridor]
+    assert policy._coverage_active_corridor_id == 7
+    assert policy._coverage_last_selected_corridor_id == 6
+    assert policy._coverage_current_payload_gain_kg == 12.5
+    assert policy._coverage_cycle_start_deposit_kg == 3.0
+    assert policy._coverage_last_payload_gain_kg == 9.5
+    assert policy._coverage_last_effective_deposit_delta_kg == 4.5
+    assert policy._coverage_global_low_productivity_streak == 2
+    assert policy._coverage_completed_dump_count == 3
+    assert policy._coverage_pass_index == 1
+    assert policy._coverage_terminal_stop_requested is True
+    assert policy._coverage_terminal_stop_reason == "unit_terminal"
+    assert policy._coverage_candidate_scores == [{"corridor_id": 7, "score": 1.25}]
+    assert policy._coverage_decision_trace == [{"event": "unit_trace"}]
+    assert policy._coverage_active_state_exemplar_ids == ["cell7_deep"]
+    assert policy._coverage_rejected_state_exemplar_ids == {"cell3_shallow"}
+    assert policy._coverage_active_state_exemplar_distance == 0.25
+    assert policy._coverage_active_state_exemplar_profile_token is profile_token
+
+
+def test_coverage_trace_snapshot_matches_facade_and_preserves_trace_payload() -> None:
+    policy = _coverage_policy(
+        coverage_extra={
+            "multi_pass_enabled": True,
+            "multi_pass_max_passes": 3,
+            "multi_pass_min_remaining_depth_m": 0.125,
+            "first_dig_strategy": "nearest_entry",
+            "first_dig_preferred_corridor_id": 2,
+        },
+    )
+    policy._ensure_coverage_corridors()
+    policy._record_coverage_decision_event(
+        "unit_trace_event",
+        corridor=policy._coverage_corridors[0],
+        extra={"score_delta": float("nan")},
+    )
+    policy._request_coverage_terminal_stop("unit_terminal", replace=True)
+
+    direct = policy.coverage_service.coverage_trace_snapshot()
+    facade = policy._coverage_trace_snapshot()
+
+    assert direct.use_env_removed_depth == facade.use_env_removed_depth
+    assert direct.candidate_layout == facade.candidate_layout
+    assert direct.first_dig_strategy == facade.first_dig_strategy
+    assert direct.pass_index == facade.pass_index
+    assert direct.multi_pass_enabled == facade.multi_pass_enabled
+    assert direct.multi_pass_max_passes == facade.multi_pass_max_passes
+    assert (
+        direct.multi_pass_min_remaining_depth_m
+        == facade.multi_pass_min_remaining_depth_m
+    )
+    assert direct.first_dig_preferred_corridor_id == 2
+    assert facade.first_dig_preferred_corridor_id == 2
+    assert _canonicalize(direct.corridors) == _canonicalize(facade.corridors)
+    assert _canonicalize(direct.decision_trace) == _canonicalize(
+        facade.decision_trace
+    )
+    assert direct.terminal_stop_requested is True
+    assert facade.terminal_stop_requested is True
+    assert direct.terminal_stop_reason == "unit_terminal"
+    assert facade.terminal_stop_reason == "unit_terminal"
+
+
+def test_coverage_rollout_summary_snapshot_matches_facade() -> None:
+    policy = _coverage_policy(
+        coverage_extra={
+            "multi_pass_enabled": True,
+            "multi_pass_max_passes": 3,
+            "multi_pass_min_remaining_depth_m": 0.125,
+            "first_dig_strategy": "nearest_entry",
+            "first_dig_preferred_corridor_id": 2,
+            "first_dig_max_entry_distance_m": 0.75,
+            "first_dig_qpos_delta_weight": 0.5,
+        },
+    )
+    policy._ensure_coverage_corridors()
+    policy._coverage_active_corridor_id = int(policy._coverage_corridors[0].corridor_id)
+    policy._coverage_completed_dump_count = 4
+    policy._coverage_pass_index = 2
+    policy._coverage_corridors[1].depleted = True
+    policy._request_coverage_terminal_stop("unit_terminal", replace=True)
+
+    direct = policy.coverage_service.coverage_rollout_summary_snapshot()
+    facade = policy._coverage_rollout_summary_snapshot()
+
+    assert direct.selected_corridor_id == facade.selected_corridor_id
+    assert direct.selected_corridor_id == int(policy._coverage_corridors[0].corridor_id)
+    assert direct.depleted_count == 1
+    assert facade.depleted_count == 1
+    assert direct.completed_dump_count == 4
+    assert facade.completed_dump_count == 4
+    assert direct.pass_index == 2
+    assert facade.pass_index == 2
+    assert direct.multi_pass_enabled is True
+    assert facade.multi_pass_enabled is True
+    assert direct.use_env_removed_depth == facade.use_env_removed_depth
+    assert direct.candidate_layout == facade.candidate_layout
+    assert direct.first_dig_strategy == "nearest_entry"
+    assert facade.first_dig_strategy == "nearest_entry"
+    assert direct.first_dig_preferred_corridor_id == 2
+    assert facade.first_dig_preferred_corridor_id == 2
+    assert direct.first_dig_max_entry_distance_m == 0.75
+    assert facade.first_dig_max_entry_distance_m == 0.75
+    assert direct.first_dig_qpos_delta_weight == 0.5
+    assert facade.first_dig_qpos_delta_weight == 0.5
+    assert direct.terminal_stop_requested is True
+    assert facade.terminal_stop_requested is True
+    assert direct.terminal_stop_reason == "unit_terminal"
+    assert facade.terminal_stop_reason == "unit_terminal"
 
 
 def test_coverage_service_direct_selection_matches_policy_facade() -> None:

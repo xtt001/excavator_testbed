@@ -61,6 +61,16 @@ class PlannerSnapshot:
     boundary_event: object | None
 
 
+@dataclass(frozen=True)
+class BoundaryDetectorUpdateFacts:
+    env_state: object
+    action: object
+    qpos: object
+    reward_phase: object | None
+    task_step_successes: object | None
+    task_metrics: object | None
+
+
 def build_planner_snapshot(
     obs: Mapping[str, Any],
     *,
@@ -125,6 +135,28 @@ def build_planner_snapshot(
         cycle_index=int(cycle_index),
         prev_action=prev,
         boundary_event=boundary_event,
+    )
+
+
+def boundary_detector_update_facts_from_obs(
+    obs: Mapping[str, Any],
+    *,
+    action: Any,
+    action_dim: int,
+    env_state_default_dim: int = 13,
+) -> BoundaryDetectorUpdateFacts:
+    """Project raw observation fields for the boundary detector update call."""
+
+    return BoundaryDetectorUpdateFacts(
+        env_state=obs.get(
+            "env_state",
+            np.zeros(int(env_state_default_dim), dtype=np.float32),
+        ),
+        action=action,
+        qpos=obs.get("qpos", np.zeros(int(action_dim), dtype=np.float32)),
+        reward_phase=obs.get("reward_phase"),
+        task_step_successes=obs.get("task_step_successes"),
+        task_metrics=obs.get("task_metrics"),
     )
 
 

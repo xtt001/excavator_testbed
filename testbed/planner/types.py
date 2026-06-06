@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
+from testbed.planner.goal_sequence import (
+    GOAL_SECTOR_ID_TO_NAME,
+    GOAL_SECTOR_NAME_TO_ID,
+)
 
-SECTOR_NAME_TO_ID = {
-    "left": 0,
-    "mid": 1,
-    "right": 2,
-}
-SECTOR_ID_TO_NAME = {value: key for key, value in SECTOR_NAME_TO_ID.items()}
+SECTOR_NAME_TO_ID = GOAL_SECTOR_NAME_TO_ID
+SECTOR_ID_TO_NAME = GOAL_SECTOR_ID_TO_NAME
 
 DEPTH_CLASS_SHALLOW = 0
 DEPTH_CLASS_MEDIUM = 1

@@ -7,6 +7,8 @@ from typing import Any
 
 import numpy as np
 
+import testbed.planner.return_start_envelope_config as _return_start_envelope_config
+import testbed.planner.return_start_envelope_prior as _return_start_envelope_prior
 from testbed.contracts.primitive_tokens import (
     CUT_RELOCATION_SLICE,
     CUT_VALID_IDX,
@@ -23,9 +25,7 @@ from testbed.contracts.primitive_tokens import (
     RETURN_ENVELOPE_SPATIAL_DEPTH_VALID_IDX,
     RETURN_ENVELOPE_TIP_RADIUS_IDX,
     RETURN_START_ENVELOPE_TOKEN_DIM,
-    RETURN_START_ENVELOPE_TOKEN_KEY,
     derive_return_relocate_token,
-    validate_primitive_token_shape,
 )
 from testbed.data.operator_first_v2_2 import _build_dig_cut_token
 from testbed.data.schema import (
@@ -35,122 +35,40 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
     ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
 )
+from testbed.planner.snapshots import PlannerObservationView, env_state_from_obs
 
-
-@dataclass(frozen=True)
-class ReturnStartEnvelopeConfig:
-    use_cell_prior: bool = False
-    min_source_count: int = 1
-    min_source_fraction: float = 0.0
-    qpos_from_relocate_enabled: bool = False
-    qpos_from_relocate_coefficients: Any | None = None
-    qpos_from_relocate_min: Any = (0.44, 0.50, 0.0, 0.0)
-    qpos_from_relocate_max: Any = (0.56, 0.80, 0.56, 0.48)
-    qpos_from_relocate_use_prior_qpos_bounds: bool = False
-    spatial_from_relocate_enabled: bool = False
-    spatial_from_relocate_coefficients: Any | None = None
-    spatial_from_relocate_min: Any = (-1.0, -0.10)
-    spatial_from_relocate_max: Any = (1.0, 1.0)
-    spatial_from_relocate_use_prior_spatial_bounds: bool = False
-    gate_enabled: bool = False
-    spatial_tolerance: float = 0.10
-    depth_tolerance_m: float = 0.08
-    local_depth_tolerance_m: float = 0.005
-    plane_depth_tolerance_m: float = 0.05
-    plane_depth_mode: str = "range"
-    qpos_tolerance: float = 0.04
-    require_contact: bool = True
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "use_cell_prior", bool(self.use_cell_prior))
-        object.__setattr__(
-            self,
-            "min_source_count",
-            max(1, int(self.min_source_count)),
-        )
-        object.__setattr__(
-            self,
-            "min_source_fraction",
-            max(0.0, float(self.min_source_fraction)),
-        )
-        object.__setattr__(
-            self,
-            "qpos_from_relocate_enabled",
-            bool(self.qpos_from_relocate_enabled),
-        )
-        object.__setattr__(
-            self,
-            "qpos_from_relocate_coefficients",
-            _optional_matrix(self.qpos_from_relocate_coefficients, shape=(4, 8)),
-        )
-        object.__setattr__(
-            self,
-            "qpos_from_relocate_min",
-            _vector(self.qpos_from_relocate_min, shape=(4,)),
-        )
-        object.__setattr__(
-            self,
-            "qpos_from_relocate_max",
-            _vector(self.qpos_from_relocate_max, shape=(4,)),
-        )
-        object.__setattr__(
-            self,
-            "qpos_from_relocate_use_prior_qpos_bounds",
-            bool(self.qpos_from_relocate_use_prior_qpos_bounds),
-        )
-        object.__setattr__(
-            self,
-            "spatial_from_relocate_enabled",
-            bool(self.spatial_from_relocate_enabled),
-        )
-        object.__setattr__(
-            self,
-            "spatial_from_relocate_coefficients",
-            _optional_matrix(
-                self.spatial_from_relocate_coefficients,
-                shape=(2, 8),
-            ),
-        )
-        object.__setattr__(
-            self,
-            "spatial_from_relocate_min",
-            _vector(self.spatial_from_relocate_min, shape=(2,)),
-        )
-        object.__setattr__(
-            self,
-            "spatial_from_relocate_max",
-            _vector(self.spatial_from_relocate_max, shape=(2,)),
-        )
-        object.__setattr__(
-            self,
-            "spatial_from_relocate_use_prior_spatial_bounds",
-            bool(self.spatial_from_relocate_use_prior_spatial_bounds),
-        )
-        object.__setattr__(self, "gate_enabled", bool(self.gate_enabled))
-        object.__setattr__(
-            self,
-            "spatial_tolerance",
-            float(self.spatial_tolerance),
-        )
-        object.__setattr__(
-            self,
-            "depth_tolerance_m",
-            float(self.depth_tolerance_m),
-        )
-        object.__setattr__(
-            self,
-            "local_depth_tolerance_m",
-            float(self.local_depth_tolerance_m),
-        )
-        object.__setattr__(
-            self,
-            "plane_depth_tolerance_m",
-            float(self.plane_depth_tolerance_m),
-        )
-        object.__setattr__(self, "plane_depth_mode", str(self.plane_depth_mode))
-        object.__setattr__(self, "qpos_tolerance", float(self.qpos_tolerance))
-        object.__setattr__(self, "require_contact", bool(self.require_contact))
-
+RETURN_START_ENVELOPE_RUNTIME_CONFIG_FIELDS = (
+    _return_start_envelope_config.RETURN_START_ENVELOPE_RUNTIME_CONFIG_FIELDS
+)
+ReturnStartEnvelopeGatePriorContext = (
+    _return_start_envelope_prior.ReturnStartEnvelopeGatePriorContext
+)
+ReturnStartEnvelopeConfig = _return_start_envelope_config.ReturnStartEnvelopeConfig
+build_return_start_envelope_config = (
+    _return_start_envelope_config.build_return_start_envelope_config
+)
+build_return_start_envelope_config_from_mapping = (
+    _return_start_envelope_config.build_return_start_envelope_config_from_mapping
+)
+normalize_plane_depth_mode = _return_start_envelope_config.normalize_plane_depth_mode
+return_start_envelope_gate_prior_context = (
+    _return_start_envelope_prior.return_start_envelope_gate_prior_context
+)
+return_start_envelope_prior_bounds = (
+    _return_start_envelope_prior.return_start_envelope_prior_bounds
+)
+return_start_envelope_prior_mapping = (
+    _return_start_envelope_prior.return_start_envelope_prior_mapping
+)
+return_start_envelope_prior_token = (
+    _return_start_envelope_prior.return_start_envelope_prior_token
+)
+return_start_envelope_token_from_prior_mapping = (
+    _return_start_envelope_prior.return_start_envelope_token_from_prior_mapping
+)
+return_start_envelope_token_has_gate_bounds = (
+    _return_start_envelope_prior.return_start_envelope_token_has_gate_bounds
+)
 
 @dataclass(frozen=True)
 class ReturnStartEnvelopeState:
@@ -161,6 +79,14 @@ class ReturnStartEnvelopeState:
     ready: bool = True
     error: float = float("nan")
     checks: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ReturnStartEnvelopeTokenResult:
+    token: np.ndarray
+    source: str
+    use_prior_spatial_bounds: bool
+    use_prior_qpos_bounds: bool
 
 
 @dataclass(frozen=True)
@@ -175,6 +101,63 @@ class ReturnStartEnvelopeBuildRequest:
         default_factory=ReturnStartEnvelopeConfig
     )
     cell_id: int | None = None
+
+
+def build_return_start_envelope_request(
+    *,
+    env_state: Any,
+    qpos: Any | None,
+    qvel: Any | None,
+    raw_fields: dict[str, float | int],
+    action_dim: int,
+    dig_cut_prior: dict[str, Any] | None = None,
+    config: ReturnStartEnvelopeConfig | None = None,
+    cell_id: int | None = None,
+) -> ReturnStartEnvelopeBuildRequest:
+    dim = int(action_dim)
+    return ReturnStartEnvelopeBuildRequest(
+        env_state=env_state,
+        qpos=np.zeros(dim) if qpos is None else qpos,
+        qvel=np.zeros(dim) if qvel is None else qvel,
+        raw_fields=raw_fields,
+        action_dim=dim,
+        dig_cut_prior=dig_cut_prior,
+        config=ReturnStartEnvelopeConfig() if config is None else config,
+        cell_id=None if cell_id is None else int(cell_id),
+    )
+
+
+def build_return_start_envelope_request_from_observation_view(
+    view: PlannerObservationView,
+    *,
+    raw_fields: dict[str, float | int],
+    dig_cut_prior: dict[str, Any] | None = None,
+    config: ReturnStartEnvelopeConfig | None = None,
+    cell_id: int | None = None,
+) -> ReturnStartEnvelopeBuildRequest:
+    return build_return_start_envelope_request(
+        env_state=env_state_from_obs(view.obs),
+        qpos=view.obs.get("qpos", np.zeros(int(view.action_dim))),
+        qvel=view.obs.get("qvel", np.zeros(int(view.action_dim))),
+        raw_fields=raw_fields,
+        action_dim=int(view.action_dim),
+        dig_cut_prior=dig_cut_prior,
+        config=config,
+        cell_id=cell_id,
+    )
+
+
+def require_return_start_envelope_token_result(
+    state: ReturnStartEnvelopeState,
+) -> ReturnStartEnvelopeTokenResult:
+    if state.token is None:
+        raise RuntimeError("return start-envelope builder returned no token.")
+    return ReturnStartEnvelopeTokenResult(
+        token=np.asarray(state.token, dtype=np.float32),
+        source=str(state.source),
+        use_prior_spatial_bounds=bool(state.use_prior_spatial_bounds),
+        use_prior_qpos_bounds=bool(state.use_prior_qpos_bounds),
+    )
 
 
 def build_return_start_envelope_for_plan(
@@ -343,91 +326,18 @@ def condition_return_start_envelope_from_relocate(
     )
 
 
-def return_start_envelope_prior_mapping(
-    dig_cut_prior: dict[str, Any] | None,
+def resolve_return_start_envelope_cell_id(
     *,
-    config: ReturnStartEnvelopeConfig,
-    cell_id: int | None,
-) -> tuple[dict[str, object] | None, str]:
-    if not dig_cut_prior:
-        return None, "missing_dig_cut_prior"
-    cells = dig_cut_prior.get("return_start_envelope_cells", [])
-    if config.use_cell_prior and cell_id is not None and isinstance(cells, list):
-        for cell in cells:
-            cell_dict = dict(cell)
-            if int(cell_dict.get("cell_id", -999999)) == int(cell_id):
-                source_count = int(cell_dict.get("source_count", 0) or 0)
-                source_fraction = float(cell_dict.get("source_fraction", 0.0) or 0.0)
-                if (
-                    source_count >= config.min_source_count
-                    and source_fraction >= config.min_source_fraction
-                ):
-                    return cell_dict, "cell"
-                break
-    global_prior = dig_cut_prior.get("return_start_envelope_global")
-    if isinstance(global_prior, dict):
-        if config.use_cell_prior and cell_id is not None and isinstance(cells, list):
-            return dict(global_prior), "global_low_support_cell"
-        return dict(global_prior), "global"
-    return None, "missing_return_start_envelope_prior"
-
-
-def return_start_envelope_prior_token(
-    mapping: dict[str, object] | None,
-    *,
-    source: str,
-    cell_id: int | None,
-) -> tuple[np.ndarray | None, str]:
-    if mapping is not None:
-        token = return_start_envelope_token_from_prior_mapping(mapping)
-        if token is not None:
-            if cell_id is not None and source == "cell":
-                return token, f"qc6_return_start_envelope_cell_{int(cell_id)}"
-            if cell_id is not None and source == "global_low_support_cell":
-                return (
-                    token,
-                    f"qc6_return_start_envelope_global_low_support_cell_{int(cell_id)}",
-                )
-            return token, "qc6_return_start_envelope_global"
-    return None, "missing_return_start_envelope_prior"
-
-
-def return_start_envelope_prior_bounds(
-    mapping: dict[str, object] | None,
-) -> tuple[np.ndarray | None, np.ndarray | None]:
-    if mapping is None:
-        return None, None
-    if "token_p05" not in mapping or "token_p95" not in mapping:
-        return None, None
-    lower = np.asarray(mapping["token_p05"], dtype=np.float32).reshape(-1)
-    upper = np.asarray(mapping["token_p95"], dtype=np.float32).reshape(-1)
-    if (
-        lower.shape[0] != RETURN_START_ENVELOPE_TOKEN_DIM
-        or upper.shape[0] != RETURN_START_ENVELOPE_TOKEN_DIM
-    ):
-        return None, None
-    return lower.copy(), upper.copy()
-
-
-def return_start_envelope_token_from_prior_mapping(
-    mapping: dict[str, object],
-) -> np.ndarray | None:
-    for key in ("token_median", "token", "median"):
-        if key not in mapping:
-            continue
-        token = np.asarray(mapping[key], dtype=np.float32).reshape(-1)
-        try:
-            token = validate_primitive_token_shape(
-                RETURN_START_ENVELOPE_TOKEN_KEY,
-                token,
-                allow_sequence=False,
-            ).reshape(-1)
-        except ValueError as exc:
-            raise ValueError(
-                "return_start_envelope prior token must have "
-                f"{RETURN_START_ENVELOPE_TOKEN_DIM} values, got {token.shape[0]}"
-            ) from exc
-        return token.copy()
+    corridor_id: int | None,
+    corridor_cell_id: int | None = None,
+) -> int | None:
+    if corridor_id is None:
+        return None
+    if corridor_cell_id is not None:
+        return int(corridor_cell_id)
+    normalized = int(corridor_id)
+    if normalized >= 0:
+        return normalized
     return None
 
 
@@ -686,16 +596,6 @@ def return_to_dig_start_envelope_ready(
         error=float(max_error),
         checks=checks,
     )
-
-
-def _optional_matrix(value: Any, *, shape: tuple[int, int]) -> np.ndarray | None:
-    if value is None:
-        return None
-    return np.asarray(value, dtype=np.float32).reshape(shape)
-
-
-def _vector(value: Any, *, shape: tuple[int, ...]) -> np.ndarray:
-    return np.asarray(value, dtype=np.float32).reshape(shape)
 
 
 def _state_vector(value: Any | None, action_dim: int) -> np.ndarray:

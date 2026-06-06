@@ -28,17 +28,274 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
 )
 from testbed.planner.return_start_envelope import (
+    RETURN_START_ENVELOPE_RUNTIME_CONFIG_FIELDS,
     ReturnStartEnvelopeBuildRequest,
     ReturnStartEnvelopeConfig,
+    ReturnStartEnvelopeGatePriorContext,
+    ReturnStartEnvelopeState,
     build_live_return_start_envelope_token,
+    build_return_start_envelope_config,
+    build_return_start_envelope_config_from_mapping,
     build_return_start_envelope_for_plan,
+    build_return_start_envelope_request,
+    build_return_start_envelope_request_from_observation_view,
     condition_return_start_envelope_from_relocate,
+    require_return_start_envelope_token_result,
+    resolve_return_start_envelope_cell_id,
+    return_start_envelope_gate_prior_context,
     return_start_envelope_prior_bounds,
     return_start_envelope_prior_mapping,
     return_start_envelope_prior_token,
     return_start_envelope_token_from_prior_mapping,
+    return_start_envelope_token_has_gate_bounds,
     return_to_dig_start_envelope_ready,
 )
+from testbed.planner.return_start_envelope_config import (
+    RETURN_START_ENVELOPE_RUNTIME_CONFIG_FIELDS as config_fields,
+)
+from testbed.planner.return_start_envelope_config import (
+    ReturnStartEnvelopeConfig as ConfigReturnStartEnvelopeConfig,
+)
+from testbed.planner.return_start_envelope_config import (
+    build_return_start_envelope_config as config_builder,
+)
+from testbed.planner.return_start_envelope_config import (
+    build_return_start_envelope_config_from_mapping as config_mapping_builder,
+)
+from testbed.planner.return_start_envelope_config import (
+    normalize_plane_depth_mode as config_normalize_plane_depth_mode,
+)
+from testbed.planner.return_start_envelope_prior import (
+    ReturnStartEnvelopeGatePriorContext as PriorReturnStartEnvelopeGatePriorContext,
+)
+from testbed.planner.return_start_envelope_prior import (
+    return_start_envelope_gate_prior_context as prior_gate_prior_context,
+)
+from testbed.planner.return_start_envelope_prior import (
+    return_start_envelope_prior_bounds as prior_bounds,
+)
+from testbed.planner.return_start_envelope_prior import (
+    return_start_envelope_prior_mapping as prior_mapping,
+)
+from testbed.planner.return_start_envelope_prior import (
+    return_start_envelope_prior_token as prior_token,
+)
+from testbed.planner.return_start_envelope_prior import (
+    return_start_envelope_token_from_prior_mapping as prior_token_from_mapping,
+)
+from testbed.planner.return_start_envelope_prior import (
+    return_start_envelope_token_has_gate_bounds as prior_token_has_gate_bounds,
+)
+from testbed.planner.snapshots import build_planner_snapshot
+
+
+def test_return_start_envelope_prior_symbols_remain_compatible_facades() -> None:
+    assert ReturnStartEnvelopeGatePriorContext is PriorReturnStartEnvelopeGatePriorContext
+    assert return_start_envelope_token_has_gate_bounds is prior_token_has_gate_bounds
+    assert return_start_envelope_gate_prior_context is prior_gate_prior_context
+    assert return_start_envelope_prior_mapping is prior_mapping
+    assert return_start_envelope_prior_token is prior_token
+    assert return_start_envelope_prior_bounds is prior_bounds
+    assert return_start_envelope_token_from_prior_mapping is prior_token_from_mapping
+
+
+def test_return_start_envelope_config_symbols_remain_compatible_facades() -> None:
+    from testbed.planner.return_start_envelope import normalize_plane_depth_mode
+
+    assert RETURN_START_ENVELOPE_RUNTIME_CONFIG_FIELDS is config_fields
+    assert ReturnStartEnvelopeConfig is ConfigReturnStartEnvelopeConfig
+    assert build_return_start_envelope_config is config_builder
+    assert build_return_start_envelope_config_from_mapping is config_mapping_builder
+    assert normalize_plane_depth_mode is config_normalize_plane_depth_mode
+
+
+def test_build_return_start_envelope_config_projects_conditioning_and_gate_fields() -> None:
+    qpos_coefficients = np.arange(32, dtype=np.float64).reshape(4, 8)
+    spatial_coefficients = np.arange(16, dtype=np.float64).reshape(2, 8)
+
+    values = {
+        "use_cell_prior": 1,
+        "min_source_count": 0,
+        "min_source_fraction": "-0.5",
+        "qpos_from_relocate_enabled": 1,
+        "qpos_from_relocate_coefficients": qpos_coefficients,
+        "qpos_from_relocate_min": ["0.1", "0.2", "0.3", "0.4"],
+        "qpos_from_relocate_max": ["0.5", "0.6", "0.7", "0.8"],
+        "qpos_from_relocate_use_prior_qpos_bounds": 1,
+        "spatial_from_relocate_enabled": 1,
+        "spatial_from_relocate_coefficients": spatial_coefficients,
+        "spatial_from_relocate_min": ["-0.2", "-0.1"],
+        "spatial_from_relocate_max": ["0.9", "1.1"],
+        "spatial_from_relocate_use_prior_spatial_bounds": 1,
+        "gate_enabled": 1,
+        "spatial_tolerance": "0.12",
+        "depth_tolerance_m": "0.07",
+        "local_depth_tolerance_m": "0.006",
+        "plane_depth_tolerance_m": "0.03",
+        "plane_depth_mode": "target_band",
+        "qpos_tolerance": "0.05",
+        "require_contact": 0,
+    }
+
+    direct = build_return_start_envelope_config(**values)
+    config = build_return_start_envelope_config_from_mapping(
+        {**values, "ignored": object()}
+    )
+    assert {key for key, _ in RETURN_START_ENVELOPE_RUNTIME_CONFIG_FIELDS} == set(
+        values
+    )
+    for key in values:
+        actual = getattr(config, key)
+        expected = getattr(direct, key)
+        if isinstance(expected, np.ndarray):
+            np.testing.assert_allclose(actual, expected)
+        else:
+            assert actual == expected
+
+    assert config.use_cell_prior is True
+    assert config.min_source_count == 1
+    assert config.min_source_fraction == pytest.approx(0.0)
+    assert config.qpos_from_relocate_enabled is True
+    np.testing.assert_allclose(config.qpos_from_relocate_coefficients, qpos_coefficients)
+    np.testing.assert_allclose(config.qpos_from_relocate_min, [0.1, 0.2, 0.3, 0.4])
+    np.testing.assert_allclose(config.qpos_from_relocate_max, [0.5, 0.6, 0.7, 0.8])
+    assert config.qpos_from_relocate_use_prior_qpos_bounds is True
+    assert config.spatial_from_relocate_enabled is True
+    np.testing.assert_allclose(
+        config.spatial_from_relocate_coefficients,
+        spatial_coefficients,
+    )
+    np.testing.assert_allclose(config.spatial_from_relocate_min, [-0.2, -0.1])
+    np.testing.assert_allclose(config.spatial_from_relocate_max, [0.9, 1.1])
+    assert config.spatial_from_relocate_use_prior_spatial_bounds is True
+    assert config.gate_enabled is True
+    assert config.spatial_tolerance == pytest.approx(0.12)
+    assert config.depth_tolerance_m == pytest.approx(0.07)
+    assert config.local_depth_tolerance_m == pytest.approx(0.006)
+    assert config.plane_depth_tolerance_m == pytest.approx(0.03)
+    assert config.plane_depth_mode == "target_band"
+    assert config.qpos_tolerance == pytest.approx(0.05)
+    assert config.require_contact is False
+
+
+def test_build_return_start_envelope_request_preserves_legacy_fallbacks() -> None:
+    env_state = _env_state(long_norm=0.25, short_norm=0.40)
+    raw_fields = _valid_raw_fields()
+    config = ReturnStartEnvelopeConfig(use_cell_prior=True)
+    prior = {
+        "return_start_envelope_global": {
+            "token_median": np.zeros(RETURN_START_ENVELOPE_TOKEN_DIM),
+        },
+    }
+
+    request = build_return_start_envelope_request(
+        env_state=env_state,
+        qpos=None,
+        qvel=None,
+        raw_fields=raw_fields,
+        action_dim=4,
+        dig_cut_prior=prior,
+        config=config,
+        cell_id=np.int64(3),
+    )
+
+    assert request.env_state is env_state
+    np.testing.assert_array_equal(request.qpos, np.zeros(4))
+    np.testing.assert_array_equal(request.qvel, np.zeros(4))
+    assert request.raw_fields is raw_fields
+    assert request.action_dim == 4
+    assert request.dig_cut_prior is prior
+    assert request.config is config
+    assert request.cell_id == 3
+
+
+def test_build_return_start_envelope_request_from_view_preserves_raw_qpos_qvel() -> None:
+    obs = {
+        "env_state": _env_state(long_norm=0.25, short_norm=0.40),
+        "qpos": np.asarray([[0.51, 0.62, 0.22, 0.18]], dtype=np.float64),
+        "qvel": np.asarray([[-0.1, 0.3, -0.2, 0.05]], dtype=np.float64),
+    }
+    raw_fields = _valid_raw_fields()
+    config = ReturnStartEnvelopeConfig(use_cell_prior=True)
+    prior = {"return_start_envelope_global": {"token_median": np.zeros(4)}}
+    view = build_planner_snapshot(
+        obs,
+        active_skill="return",
+        cycle_index=2,
+        prev_action=None,
+        boundary_event=None,
+        action_dim=4,
+    ).view
+
+    request = build_return_start_envelope_request_from_observation_view(
+        view,
+        raw_fields=raw_fields,
+        dig_cut_prior=prior,
+        config=config,
+        cell_id=np.int64(3),
+    )
+
+    np.testing.assert_allclose(request.env_state, obs["env_state"])
+    assert request.qpos is obs["qpos"]
+    assert request.qvel is obs["qvel"]
+    assert request.raw_fields is raw_fields
+    assert request.action_dim == 4
+    assert request.dig_cut_prior is prior
+    assert request.config is config
+    assert request.cell_id == 3
+
+
+def test_build_return_start_envelope_request_from_view_keeps_missing_defaults() -> None:
+    view = build_planner_snapshot(
+        {},
+        active_skill="return",
+        cycle_index=2,
+        prev_action=None,
+        boundary_event=None,
+        action_dim=4,
+    ).view
+
+    request = build_return_start_envelope_request_from_observation_view(
+        view,
+        raw_fields=_valid_raw_fields(),
+    )
+
+    assert request.env_state.shape == (13,)
+    assert request.env_state.dtype == np.float32
+    np.testing.assert_array_equal(request.qpos, np.zeros(4))
+    np.testing.assert_array_equal(request.qvel, np.zeros(4))
+    assert request.qpos.dtype == np.float64
+    assert request.qvel.dtype == np.float64
+    assert request.action_dim == 4
+    assert request.dig_cut_prior is None
+    assert isinstance(request.config, ReturnStartEnvelopeConfig)
+    assert request.cell_id is None
+
+
+def test_require_token_result_projects_state_and_reuses_float32_token() -> None:
+    token = np.arange(RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.float32)
+
+    result = require_return_start_envelope_token_result(
+        ReturnStartEnvelopeState(
+            token=token,
+            source="qc6_return_start_envelope_cell_3",
+            use_prior_spatial_bounds=False,
+            use_prior_qpos_bounds=True,
+        )
+    )
+
+    assert result.token is token
+    assert result.source == "qc6_return_start_envelope_cell_3"
+    assert result.use_prior_spatial_bounds is False
+    assert result.use_prior_qpos_bounds is True
+
+
+def test_require_token_result_preserves_legacy_missing_token_error() -> None:
+    with pytest.raises(
+        RuntimeError,
+        match="return start-envelope builder returned no token",
+    ):
+        require_return_start_envelope_token_result(ReturnStartEnvelopeState())
 
 
 def test_live_return_start_envelope_token_locks_current_fallback_fields() -> None:
@@ -175,6 +432,88 @@ def test_prior_token_and_bounds_fail_fast_on_wrong_shapes() -> None:
     )
     assert lower is None
     assert upper is None
+
+
+def test_gate_prior_context_resolves_mapping_and_bounds_only_for_valid_gate_token() -> None:
+    token = _ready_token()
+    lower = np.linspace(-0.25, 0.25, RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.float32)
+    upper = lower + 1.0
+    prior = {
+        "return_start_envelope_cells": [
+            {
+                "cell_id": 4,
+                "source_count": 3,
+                "source_fraction": 0.4,
+                "token_median": token,
+                "token_p05": lower,
+                "token_p95": upper,
+            }
+        ],
+        "return_start_envelope_global": {"token_median": token + 2.0},
+    }
+    config = ReturnStartEnvelopeConfig(
+        gate_enabled=True,
+        use_cell_prior=True,
+        min_source_count=2,
+        min_source_fraction=0.25,
+    )
+
+    assert return_start_envelope_token_has_gate_bounds(token, config)
+    context = return_start_envelope_gate_prior_context(
+        token=token,
+        dig_cut_prior=prior,
+        config=config,
+        cell_id=4,
+    )
+
+    assert context.token_has_bounds
+    assert context.cell_id == 4
+    assert context.prior_mapping is not None
+    assert context.prior_mapping["cell_id"] == 4
+    np.testing.assert_allclose(context.lower, lower)
+    np.testing.assert_allclose(context.upper, upper)
+
+    invalid_token = np.zeros(RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.float32)
+    disabled = return_start_envelope_gate_prior_context(
+        token=token,
+        dig_cut_prior=prior,
+        config=ReturnStartEnvelopeConfig(gate_enabled=False),
+        cell_id=4,
+    )
+    invalid = return_start_envelope_gate_prior_context(
+        token=invalid_token,
+        dig_cut_prior=prior,
+        config=config,
+        cell_id=4,
+    )
+    assert not disabled.token_has_bounds
+    assert disabled.prior_mapping is None
+    assert disabled.lower is None
+    assert disabled.upper is None
+    assert not invalid.token_has_bounds
+    assert invalid.prior_mapping is None
+    assert invalid.lower is None
+    assert invalid.upper is None
+
+
+def test_return_start_envelope_cell_id_resolution_preserves_corridor_fallback() -> None:
+    assert resolve_return_start_envelope_cell_id(corridor_id=None) is None
+    assert resolve_return_start_envelope_cell_id(corridor_id=-1) is None
+    assert resolve_return_start_envelope_cell_id(corridor_id=3) == 3
+    assert (
+        resolve_return_start_envelope_cell_id(
+            corridor_id=3,
+            corridor_cell_id=8,
+        )
+        == 8
+    )
+    assert (
+        resolve_return_start_envelope_cell_id(
+            corridor_id=3,
+            corridor_cell_id=-1,
+        )
+        == -1
+    )
 
 
 def test_build_return_start_envelope_for_plan_prefers_prior_and_conditions() -> None:

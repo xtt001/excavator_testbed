@@ -7,6 +7,7 @@ from testbed.contracts.primitive_profile import (
     CYCLE_BOUNDARY_PROFILE_LEGACY,
     CYCLE_BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS,
     CYCLE_BOUNDARY_PROFILES,
+    is_v2_4_5_cycle_boundary_profile,
     normalize_cycle_boundary_profile,
 )
 from testbed.data.schema import (
@@ -47,6 +48,15 @@ def test_cycle_boundary_profile_contract_is_shared_by_detector() -> None:
         BoundaryDetector(
             BoundaryDetectorConfig(boundary_profile="unknown_profile")
         )
+
+
+def test_cycle_boundary_profile_predicate_preserves_legacy_tolerance() -> None:
+    assert is_v2_4_5_cycle_boundary_profile(
+        CYCLE_BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS
+    )
+    assert not is_v2_4_5_cycle_boundary_profile(CYCLE_BOUNDARY_PROFILE_LEGACY)
+    assert not is_v2_4_5_cycle_boundary_profile("unknown_profile")
+    assert not is_v2_4_5_cycle_boundary_profile(None)
 
 
 def test_spatial_mass_profile_event_table_for_one_cycle() -> None:

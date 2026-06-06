@@ -63,9 +63,13 @@ from testbed.tasks.logic.excavator_reward import (
 )
 from testbed.data.v2_1 import build_goal_tokens
 from testbed.planner.boundary_detector import build_boundary_detector_from_config
+from testbed.planner.goal_sequence import (
+    GOAL_SECTOR_NAME_TO_ID,
+    normalize_goal_sequence as normalize_goal_sequence_values,
+)
 
 DEFAULT_PAUSE_EPS = 0.05
-LIVE_GOAL_SECTOR_IDS = {"left": 0, "mid": 1, "right": 2}
+LIVE_GOAL_SECTOR_IDS = GOAL_SECTOR_NAME_TO_ID
 
 
 class EvalSuite:
@@ -898,25 +902,11 @@ class EvalSuite:
     def _normalize_live_goal_sequence(
         goal_sequence: list[str] | tuple[str, ...] | list[int] | tuple[int, ...] | None,
     ) -> tuple[int, ...]:
-        if not goal_sequence:
-            return ()
-        normalized: list[int] = []
-        for item in goal_sequence:
-            if isinstance(item, str):
-                key = item.strip().lower()
-                if key not in LIVE_GOAL_SECTOR_IDS:
-                    raise ValueError(
-                        f"Unknown live goal sector {item!r}. Expected left, mid, or right."
-                    )
-                normalized.append(LIVE_GOAL_SECTOR_IDS[key])
-            else:
-                value = int(item)
-                if value < 0 or value > 2:
-                    raise ValueError(
-                        f"Live goal sector id must be 0, 1, or 2, got {item!r}."
-                    )
-                normalized.append(value)
-        return tuple(normalized)
+        return normalize_goal_sequence_values(
+            goal_sequence,
+            unknown_message_prefix="Unknown live goal sector",
+            id_message_prefix="Live goal sector id",
+        )
 
     # ── Environment factory ───────────────────────────────────────────────────
 

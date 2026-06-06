@@ -69,3 +69,8 @@ def normalize_cycle_boundary_profile(profile: str) -> str:
             f"{sorted(CYCLE_BOUNDARY_PROFILES)}."
         )
     return value
+
+
+def is_v2_4_5_cycle_boundary_profile(profile: object | None) -> bool:
+    """Return true for the online 2.4.5 cycle boundary detector profile."""
+    return str(profile) == CYCLE_BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS

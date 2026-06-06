@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, replace
+from typing import Any
 
 import numpy as np
+
+from testbed.planner import cell_entry_runtime as _cell_entry_runtime
 
 CELL_ENTRY_TOKEN_DIM = 10
 CELL_ENTRY_VERSION = "v2_2_cell_entry_3x2"
@@ -36,6 +40,26 @@ RISK_ENTRY_DELTA_TOO_LARGE = 1 << 2
 RISK_TARGET_CELL_MISS = 1 << 3
 RISK_DIG_LOW_PRODUCTIVITY = 1 << 4
 RISK_RETURN_MISS = 1 << 5
+
+CELL_ENTRY_RUNTIME_FACT_FIELDS = _cell_entry_runtime.CELL_ENTRY_RUNTIME_FACT_FIELDS
+CELL_ENTRY_RUNTIME_STATE_FIELDS = _cell_entry_runtime.CELL_ENTRY_RUNTIME_STATE_FIELDS
+CellEntryDebugSnapshot = _cell_entry_runtime.CellEntryDebugSnapshot
+CellEntryRuntimeCompletionResult = _cell_entry_runtime.CellEntryRuntimeCompletionResult
+CellEntryRuntimeConfig = _cell_entry_runtime.CellEntryRuntimeConfig
+CellEntryRuntimeFacts = _cell_entry_runtime.CellEntryRuntimeFacts
+CellEntryRuntimeService = _cell_entry_runtime.CellEntryRuntimeService
+CellEntryRuntimeState = _cell_entry_runtime.CellEntryRuntimeState
+CellEntryRuntimeTokenResult = _cell_entry_runtime.CellEntryRuntimeTokenResult
+build_cell_entry_runtime_facts_from_mapping = (
+    _cell_entry_runtime.build_cell_entry_runtime_facts_from_mapping
+)
+build_cell_entry_runtime_facts_from_observation_view = (
+    _cell_entry_runtime.build_cell_entry_runtime_facts_from_observation_view
+)
+build_cell_entry_runtime_state_from_mapping = (
+    _cell_entry_runtime.build_cell_entry_runtime_state_from_mapping
+)
+_runtime_outcome = _cell_entry_runtime._runtime_outcome
 
 
 @dataclass(frozen=True)
@@ -172,6 +196,48 @@ class CellGridSpec:
                 short_index=short_index,
             ),
         )
+
+
+@dataclass(frozen=True)
+class CellEntryPlannerConfig:
+    cell_entry_enabled: bool
+    cell_entry_grid: CellGridSpec
+    cell_entry_low_productivity_payload_gain_kg: float
+
+    def planner_items(self) -> tuple[tuple[str, Any], ...]:
+        return tuple(self.__dict__.items())
+
+
+CELL_ENTRY_CONFIG_KEYS: tuple[str, ...] = (
+    "cell_entry_enabled",
+    "cell_entry_grid",
+    "cell_entry_low_productivity_payload_gain_kg",
+)
+
+
+def build_cell_entry_planner_config_from_mapping(
+    values: Mapping[str, Any],
+) -> CellEntryPlannerConfig:
+    return build_cell_entry_planner_config(
+        **{key: values[key] for key in CELL_ENTRY_CONFIG_KEYS}
+    )
+
+
+def build_cell_entry_planner_config(
+    *,
+    cell_entry_enabled: bool,
+    cell_entry_grid: Mapping[str, Any] | None,
+    cell_entry_low_productivity_payload_gain_kg: float,
+) -> CellEntryPlannerConfig:
+    grid = CellGridSpec(**dict(cell_entry_grid or {}))
+    grid.validate()
+    return CellEntryPlannerConfig(
+        cell_entry_enabled=bool(cell_entry_enabled),
+        cell_entry_grid=grid,
+        cell_entry_low_productivity_payload_gain_kg=float(
+            cell_entry_low_productivity_payload_gain_kg
+        ),
+    )
 
 
 @dataclass(frozen=True)

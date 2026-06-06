@@ -194,23 +194,47 @@ config validation，以及 legacy goal-sequence normalization；`PrimitivePlanne
 仍负责 `__init__` 中的配置写回、service 实例创建、active state 初始化和 reset timing。
 该边界避免把配置解析散落在状态机 shell 内，但不改变默认配置、错误文本或在线调度语义。
 
+当前 cell-entry grid、online planner、auditor 和 token builder 的实现 source-of-truth 是
+`testbed.planner.cell_entry`；cell-entry online runtime facts/state projection、
+token/audit service、completion trace projection 和 debug snapshot projection 的
+source-of-truth 是 `testbed.planner.cell_entry_runtime`。`cell_entry` 保留 runtime
+symbols 的 compatibility re-export，保护旧 import path。cell-entry runtime facts
+的 source projection 也由该 service 从 `PlannerObservationView` 的原始 observation
+复用 `snapshots` legacy helpers 构建，避免 planner shell 复制 cell id、bucket pose、
+geometry availability 和 bucket mass 投影。`PrimitivePlannerACTPolicy` 仍负责
+cell-entry reset 时机、何时请求 token、runtime state 写回、trace append、
+policy-observation injection flag、debug/summary schema 和 policy dispatch。
+
 当前在线 dump lifecycle gate 的实现 source-of-truth 是
 `testbed.planner.dump_lifecycle.DumpLifecycleGateService`。该 service 负责
 4P legacy dump readiness、dump-area relative / near-window geometry gate、
 dump mass/deposit completion gate、carry release safety gate，以及 5P
 approach-to-dump readiness gate。该 service 还负责 carry/dump 分支的纯 outcome
-classification，返回旧 switch reason 和 coverage completion reason。
+classification，返回旧 switch reason 和 coverage completion reason。dump lifecycle
+facts 的 source projection 也由该 service 从 `PlannerObservationView` 的原始
+observation 复用 `snapshots` legacy helpers 构建，避免 planner shell 复制
+mass/deposit/target-geometry 投影。
 `PrimitivePlannerACTPolicy` 仍负责 branch order、hold counter、dump start deposit
 写回、coverage completion 执行、skill transition、policy reset 和 return direct
 handoff；此次迁移不改变 threshold、boundary event 优先级、reason 字符串或 debug
 schema。
+5P compatibility path 仍保留自己的 state-machine override，但 debug-state 的 dump
+lifecycle hold-count projection 同样通过 `DumpLifecycleGateService` status snapshot
+facade；5P 的 `dump_release_ready_hold_count` 继续作为 public debug schema 中兼容的
+dump-ready hold count 输出，不改变 5P 调度语义。
 
 当前在线 dig lifecycle gate 的实现 source-of-truth 是
 `testbed.planner.dig_lifecycle.DigLifecycleGateService`。该 service 负责 dig
 progress 状态更新、bad-dig readiness、exit-guard overshoot readiness、
 `dig_complete` low-payload guard，以及 legacy / semantic `dig -> carry` readiness
-reason。该 service 还负责 failed-dig recovery 的纯 decision，返回
-`pre_dig_align` / `stop` / `dig` retry 目标和旧 switch/terminal reason。
+reason。dig lifecycle facts 的 source projection 也由该 service 从
+`PlannerObservationView`、boundary event、coverage state 和 shell-owned runtime
+counters 纯组装；planner shell 不再在大文件内展开这些 facts 字段。dig branch
+transition request、outcome classification、counter projection
+和 failed-dig stop payload projection 的 source-of-truth 是
+`testbed.planner.dig_lifecycle_transition`；`dig_lifecycle` 保留 compatibility re-export
+和 inherited method API。`dig_lifecycle` 仍负责 failed-dig recovery 的纯 decision，
+返回 `pre_dig_align` / `stop` / `dig` retry 目标和旧 switch/terminal reason。
 `PrimitivePlannerACTPolicy` 仍负责 dig 分支顺序、coverage reject/complete、
 failed-dig recovery 执行、skill transition、policy reset、terminal stop 请求、
 planner trace 和 debug schema。
@@ -220,9 +244,12 @@ planner trace 和 debug schema。
 bootstrap compatibility 的纯判断和动作数值：`scripted_qpos` enable 判断、
 scripted target/qvel hold gate、scripted timeout end gate、learned bootstrap 的
 `first_qualified_dig_start` / `loaded_and_clear` end gate，以及 scripted qpos PD
-action；`PrimitivePlannerACTPolicy` 仍负责 bootstrap 分支顺序、`bootstrap_to_*`
-switch reason、scripted step/hold/timeout counter 写回、active policy dispatch、
-policy reset 和 debug schema。bootstrap 不因此成为 V2.4.5 mainline 调度语义。
+action。bootstrap facts 的 source projection 也由该 service 从
+`PlannerObservationView` 的原始 observation 复用 `snapshots` legacy helpers 构建，
+避免 planner shell 复制 qpos/qvel、mass/distance 和 boundary flag 投影。
+`PrimitivePlannerACTPolicy` 仍负责 bootstrap 分支顺序、`bootstrap_to_*` switch
+reason、scripted step/hold/timeout counter 写回、active policy dispatch、policy reset
+和 debug schema。bootstrap 不因此成为 V2.4.5 mainline 调度语义。
 
 当前 pre-dig alignment 数值和纯 readiness helper 的实现 source-of-truth 是
 `testbed.planner.dig_start_alignment.DigStartAlignmentService`。该 service 负责
@@ -236,12 +263,14 @@ surface/timeout/completed/replan counters、hold counter 写回、coverage rejec
 token rebuild、skill transition、policy reset 和 debug schema。
 
 当前 ACT policy observation 装配的实现 source-of-truth 是
-`testbed.planner.policy_observation.PolicyObservationAssembler`。该 service 只负责把
-已经生成的 optional low-dim token 合并进 policy observation，并返回
-`*_token_injected` debug 标志；`PrimitivePlannerACTPolicy` 仍负责决定当前 skill 下哪些
-token 应该存在、调用 token builder、写回 debug state、选择 policy 并 dispatch action。
-这次迁移不改变 token contract、low-dim key、return envelope gate、pending dig plan 或
-状态机跳转语义。
+`testbed.planner.policy_observation.PolicyObservationAssembler`。该 service 负责
+optional token helper 的纯 request gate，以及把已经生成的 optional low-dim token
+合并进 policy observation，并返回 `*_token_injected` debug 标志。request gate 只基于
+显式 facts/config 判断当前 active skill 下哪些 helper 应被请求；它不生成 token，也
+不决定实际 token 是否存在。`PrimitivePlannerACTPolicy` 仍负责调用 token builder、
+写回 token/pending/debug state、选择 policy 并 dispatch action；实际 injected flag
+仍由合并时 token 是否非 `None` 决定。这次迁移不改变 token contract、low-dim key、
+return envelope gate、pending dig plan 或状态机跳转语义。
 
 | 事件或跳转 | 当前判定逻辑 |
 | --- | --- |
@@ -455,21 +484,27 @@ metadata dim attr aliases、contract version、index/slice 和 relocation 派生
 data builder、dataset loader、runtime/eval、ACT adapter 和 planner 只保留旧常量或
 helper 作为 facade，不再复制 token 下标或 path。
 
-当前 return start-envelope / handoff gate 的实现 source-of-truth 是
-`testbed.planner.return_start_envelope`。该模块负责 live fallback token 构造、
-relocate-conditioned qpos/spatial conditioning、cell/global prior fallback、prior
-bounds 读取、`build_return_start_envelope_for_plan()` 的 prior/live/conditioning
-组合，以及 return->dig spatial/depth/contact/qpos gate 检查；
-`PrimitivePlannerACTPolicy` 中的旧方法名只作为 facade 转调。此次迁移只移动职责边界，
-不改变 token dim/order、prior fallback、gate 判定、debug_state 字段或 rollout 行为。
+当前 return start-envelope / handoff gate 的实现 source-of-truth 分为三个稳定
+capability：`testbed.planner.return_start_envelope_config` 负责 runtime config
+dataclass、field table、config builder 和 plane-depth mode normalization；
+`testbed.planner.return_start_envelope_prior` 负责 cell/global prior
+fallback、prior token source、prior bounds 读取和 gate-prior context；
+`testbed.planner.return_start_envelope` 负责 live fallback token 构造、
+relocate-conditioned qpos/spatial conditioning、`build_return_start_envelope_for_plan()`
+的 prior/live/conditioning 组合，以及 return->dig spatial/depth/contact/qpos gate
+检查。`return_start_envelope` 继续 re-export config 与 prior-context symbols，保护旧 import
+path；`PrimitivePlannerACTPolicy` 中的旧方法名只作为 facade 转调。此次迁移只移动
+职责边界，不改变 token dim/order、prior fallback、gate 判定、debug_state 字段或
+rollout 行为。
 
 当前在线 dig depth-profile token source selection 的实现 source-of-truth 是
 `testbed.planner.dig_depth_profile.DigDepthProfileService`。该 service 负责
 `live_plan` / `prior_profile` 选择、state-conditioned exemplar 优先级、cell/global
 prior fallback、prior token validation、required-prior 失败，以及 live plan token
-构造，并从 caller-provided facts 解析 raw-fields 与 cell id fallback 级联；
+构造，并从 caller-provided facts 解析 raw-fields 与 cell id fallback 级联。该 service
+也通过显式 callbacks 统一 pending/active/live/env input source sampling 顺序；
 `PrimitivePlannerACTPolicy` 仍负责提供 pending dig、active coverage corridor、
-live pose/current dig token、env-state facts，以及 coverage/pending dig state、
+live pose/current dig token、env-state facts callbacks，以及 coverage/pending dig state、
 debug 字段写回和 ACT dispatch。此次迁移只移动职责边界，不改变
 `dig_depth_profile_tokens_v1` contract、source string、fallback reason、coverage
 exemplar 选择或 rollout 行为。
@@ -497,12 +532,20 @@ facade 兼容层。此次迁移只移动职责边界，不改变 coverage scorin
 state exemplar 语义、reject/deplete/terminal reason 或 planner trace/debug 字段。
 
 当前 primitive planner debug/summary schema 的实现 source-of-truth 是
-`testbed.planner.primitive_debug`。该模块负责 `PrimitivePlannerACTPolicy.debug_state()`
-、`rollout_summary()` 和 `planner_trace()` 的字段组装，也负责 planner debug-state
-snapshot 的 dataclass 和 side-effect-free 构造 helper；planner 类中的
-`_make_debug_state()` 及同名 public 方法只保留为 facade。此次迁移只移动职责边界，
-不改变字段名、字段顺序、默认值、字段类型、token contract string、coverage decision
-trace payload、rollout JSONL 消费语义或 planner 状态机行为。
+`testbed.planner.primitive_debug`；debug-state、planner-trace 和 rollout-summary 的
+explicit facts contract 与 facts assembly source-of-truth 是
+`testbed.planner.primitive_debug_facts`。
+`primitive_debug` 负责 `PrimitivePlannerACTPolicy.debug_state()`、
+`rollout_summary()` 和 `planner_trace()` 的 public schema builder、key order、
+coercion、planner debug-state snapshot dataclass 和 side-effect-free 构造 helper。
+`primitive_debug` 也 re-export explicit facts dataclass，保护旧 import path。
+`primitive_debug_facts` 负责定义 explicit facts dataclass，并把 planner shell 已采样的
+scalar fields 与各 service snapshot 投影成 facts contract。planner 类中的
+`_make_debug_state()`、
+`_debug_state_facts()`、`_planner_trace_facts()`、`_rollout_summary_facts()` 及同名
+public 方法只保留为 facade。此次迁移只移动职责边界，不改变字段名、字段顺序、
+默认值、字段类型、token contract string、coverage decision trace payload、
+rollout JSONL 消费语义或 planner 状态机行为。
 
 当前 rollout step/debug schema 的实现 source-of-truth 是
 `testbed.eval.rollout_step_records`。该模块负责 eval policy input 组装、

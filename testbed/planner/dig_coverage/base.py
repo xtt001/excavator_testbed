@@ -24,6 +24,18 @@ class CoverageServiceBase:
         self.first_dig_alignment_target_fn = first_dig_alignment_target_fn
         self._active_facts: CoverageObservationFacts | None = None
 
+    @staticmethod
+    def initial_runtime_state() -> CoverageServiceState:
+        return CoverageServiceState()
+
+    @staticmethod
+    def cleared_active_state_exemplar_state() -> CoverageActiveStateExemplarState:
+        return CoverageActiveStateExemplarState(
+            ids=(),
+            distance=float("nan"),
+            profile_token=None,
+        )
+
     @property
     def decision_trace(self) -> list[dict[str, Any]]:
         return self.state.decision_trace or []

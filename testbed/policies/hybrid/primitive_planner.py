@@ -2,23 +2,15 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 import numpy as np
 
 from testbed.contracts.primitive_profile import (
-    CYCLE_BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS,
+    CYCLE_BOUNDARY_PROFILE_LEGACY,
+    is_v2_4_5_cycle_boundary_profile,
 )
-from testbed.contracts.primitive_tokens import (
-    DIG_CUT_TOKEN_DIM,
-    DIG_DEPTH_PROFILE_TOKEN_DIM,
-    RETURN_ENVELOPE_QPOS_VALID_IDX,
-    RETURN_ENVELOPE_SPATIAL_DEPTH_VALID_IDX,
-    RETURN_START_ENVELOPE_TOKEN_DIM,
-    RETURN_TARGET_TOKEN_DIM,
-    derive_return_relocate_token,
-)
-from testbed.data.operator_first_v2_2 import _build_dig_cut_token
 from testbed.data.schema import (
     ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX as ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
 )
@@ -34,28 +26,60 @@ from testbed.data.schema import (
 from testbed.data.schema import (
     ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX as ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
 )
-from testbed.data.v2_1 import build_goal_tokens
 from testbed.planner import primitive_config as primitive_config_helpers
-from testbed.planner.bootstrap import BootstrapConfig, BootstrapFacts, BootstrapService
+from testbed.planner.bootstrap import (
+    BOOTSTRAP_CONFIG_KEYS,
+    BOOTSTRAP_RUNTIME_CONFIG_FIELDS,
+    BOOTSTRAP_RUNTIME_STATUS_FIELDS,
+    BootstrapConfig,
+    BootstrapEndDecision,
+    BootstrapFacts,
+    BootstrapPlannerConfig,
+    BootstrapRuntimeStatusSnapshot,
+    BootstrapRuntimeStatusState,
+    BootstrapService,
+    BootstrapTargetDecision,
+    BootstrapTransitionDecision,
+    build_bootstrap_config_from_mapping,
+    build_bootstrap_planner_config_from_mapping,
+    build_bootstrap_runtime_status_state_from_mapping,
+)
 from testbed.planner.boundary_detector import BoundaryDetector
 from testbed.planner.cell_entry import (
+    CELL_ENTRY_CONFIG_KEYS,
+    CELL_ENTRY_RUNTIME_STATE_FIELDS,
     CELL_ENTRY_TOKEN_DIM,
-    CellEntryGoal,
+    CellEntryDebugSnapshot,
     CellEntryPlanner,
-    CellGridSpec,
-    PlannerDecisionAudit,
+    CellEntryPlannerConfig,
+    CellEntryRuntimeCompletionResult,
+    CellEntryRuntimeConfig,
+    CellEntryRuntimeFacts,
+    CellEntryRuntimeService,
+    CellEntryRuntimeState,
+    CellEntryRuntimeTokenResult,
     PlannerDecisionAuditor,
-    PrimitiveCycleOutcome,
-    build_cell_entry_tokens,
+    build_cell_entry_planner_config_from_mapping,
+    build_cell_entry_runtime_state_from_mapping,
 )
-from testbed.planner.dig_coverage import (
-    CoverageCorridorState,
-    DigCoverageMixin,
-)
+from testbed.planner.dig_coverage import DigCoverageMixin
 from testbed.planner.dig_cut_plan import (
+    DIG_CUT_PLAN_DISPATCH_FACT_FIELDS,
+    DIG_CUT_RUNTIME_STATUS_CONFIG_FIELDS,
+    DIG_CUT_RUNTIME_STATUS_STATE_FIELDS,
+    DigCutPlanClearState,
+    DigCutPlanCycleApplyState,
+    DigCutPlanDispatchFacts,
+    DigCutPlanService,
+    DigCutPlanState,
+    DigCutPlanTokenResult,
+    DigCutRuntimeState,
+    DigCutRuntimeStatusSnapshot,
     OperatorPriorDigCutPlanRequest,
     build_conservative_pose_dig_cut_plan,
+    build_dig_cut_plan_dispatch_facts_from_mapping,
     build_operator_prior_dig_cut_plan,
+    build_raw_fields_dig_cut_plan,
 )
 from testbed.planner.dig_cut_plan import (
     clamp_to_prior as clamp_dig_cut_prior,
@@ -67,32 +91,108 @@ from testbed.planner.dig_cut_plan import (
     raw_fields_from_live_pose as dig_cut_raw_fields_from_live_pose,
 )
 from testbed.planner.dig_depth_profile import (
+    DIG_DEPTH_PROFILE_CONFIG_FIELDS,
+    DIG_DEPTH_PROFILE_RUNTIME_STATUS_STATE_FIELDS,
     DigDepthProfileBuildRequest,
     DigDepthProfileConfig,
     DigDepthProfileInputFacts,
+    DigDepthProfileInputSourceCallbacks,
     DigDepthProfileMissingPriorError,
+    DigDepthProfileRuntimeState,
+    DigDepthProfileRuntimeStatusSnapshot,
     DigDepthProfileService,
+    DigDepthProfileState,
+    DigDepthProfileTokenResult,
+    build_dig_depth_profile_config_from_mapping,
 )
 from testbed.planner.dig_lifecycle import (
+    DIG_LIFECYCLE_CONFIG_KEYS,
+    DIG_LIFECYCLE_ENTRY_RUNTIME_FACT_FIELDS,
+    DIG_LIFECYCLE_RUNTIME_CONFIG_KEYS,
+    DIG_LIFECYCLE_RUNTIME_STATUS_FIELDS,
     DigLifecycleConfig,
+    DigLifecycleEntryRuntimeState,
     DigLifecycleFacts,
     DigLifecycleGateService,
+    DigLifecyclePlannerConfig,
+    DigLifecycleRuntimeStatusSnapshot,
+    DigLifecycleRuntimeStatusState,
+    DigProgressState,
+    DigTransitionRuntimeProjection,
+    FailedDigRecoveryDecision,
     FailedDigRecoveryFacts,
+    FailedDigStopState,
+    build_dig_lifecycle_config_from_mapping,
+    build_dig_lifecycle_entry_runtime_facts_from_mapping,
+    build_dig_lifecycle_runtime_config_from_mapping,
+    build_dig_lifecycle_runtime_status_state_from_mapping,
+    build_failed_dig_stop_facts_from_runtime,
 )
 from testbed.planner.dig_start_alignment import (
-    DigStartAlignmentConfig,
-    DigStartAlignmentFacts,
+    DIG_START_ALIGNMENT_DEBUG_STATE_FIELDS,
+    DIG_START_ALIGNMENT_RUNTIME_STATE_FIELDS,
+    DigStartAlignmentDebugSnapshot,
+    DigStartAlignmentRuntimeState,
     DigStartAlignmentService,
-    PreDigAlignOutcome,
+    debug_state_from_mapping,
+    runtime_state_from_mapping,
+)
+from testbed.planner.dig_start_alignment_action import (
+    AlignmentActionDecision,
     pd_servo_action,
 )
+from testbed.planner.dig_start_alignment_context import (
+    DIG_START_ALIGNMENT_RUNTIME_CONFIG_FIELDS,
+    DigStartAlignmentConfig,
+    DigStartAlignmentFacts,
+    build_dig_start_alignment_runtime_config_from_mapping,
+)
+from testbed.planner.dig_start_alignment_outcome import (
+    PreDigAlignOutcome,
+)
+from testbed.planner.dig_start_alignment_readiness import (
+    AlignmentReadyDecision,
+    SurfaceGuardDecision,
+    TimeoutHandoffDecision,
+)
+from testbed.planner.dig_start_alignment_runtime import (
+    PreDigAlignOutcomeRuntimeProjection,
+)
 from testbed.planner.dump_lifecycle import (
+    DUMP_LIFECYCLE_CONFIG_KEYS,
+    DUMP_LIFECYCLE_RUNTIME_CONFIG_KEYS,
+    DUMP_LIFECYCLE_RUNTIME_STATUS_FIELDS,
+    CarryTransitionRuntimeState,
     DumpLifecycleConfig,
     DumpLifecycleFacts,
     DumpLifecycleGateService,
+    DumpLifecyclePlannerConfig,
+    DumpLifecycleRuntimeState,
+    DumpLifecycleRuntimeStatusSnapshot,
+    DumpLifecycleRuntimeStatusState,
+    DumpTransitionRuntimeState,
+    build_carry_transition_runtime_request,
+    build_dump_lifecycle_config_from_mapping,
+    build_dump_lifecycle_runtime_config_from_mapping,
+    build_dump_lifecycle_runtime_status_state_from_mapping,
+    build_dump_transition_runtime_request,
+)
+from testbed.planner.goal_sequence import (
+    GOAL_SEQUENCE_CONFIG_KEYS,
+    GoalSequenceConfig,
+    GoalSequenceFacts,
+    GoalSequencePlannerConfig,
+    GoalSequenceService,
+    build_goal_sequence_planner_config_from_mapping,
 )
 from testbed.planner.policy_observation import (
+    DIG_CONDITIONING_TOKEN_GATE_FACT_FIELDS,
+    POLICY_OBSERVATION_REQUEST_FACT_FIELDS,
+    DigConditioningObservationTokenGateDecision,
     PolicyObservationAssembler,
+    PolicyObservationAssembly,
+    PolicyObservationRequestConfig,
+    PolicyObservationTokenRequest,
     PolicyObservationTokens,
 )
 from testbed.planner.primitive_debug import (
@@ -102,24 +202,56 @@ from testbed.planner.primitive_debug import (
     TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY as TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
 )
 from testbed.planner.primitive_debug import (
+    PrimitiveDebugStateFacts,
+    PrimitiveDebugStateSnapshotConfig,
+    PrimitiveDebugStateSnapshotFacts,
     PrimitivePlannerDebugState,
-    build_primitive_debug_state,
-    build_primitive_debug_state_snapshot,
-    build_primitive_planner_trace,
-    build_primitive_rollout_summary,
+    PrimitivePlannerTraceFacts,
+    PrimitiveRolloutSummaryFacts,
+    build_primitive_debug_state_from_facts,
+    build_primitive_debug_state_snapshot_from_runtime,
+    build_primitive_planner_trace_from_facts,
+    build_primitive_rollout_summary_from_facts,
+)
+from testbed.planner.primitive_debug_facts import (
+    PRIMITIVE_DEBUG_STATE_ASSEMBLY_FIELDS,
+    PRIMITIVE_PLANNER_TRACE_ASSEMBLY_FIELDS,
+    PRIMITIVE_ROLLOUT_SUMMARY_ASSEMBLY_FIELDS,
+    build_primitive_debug_state_facts_from_mapping,
+    build_primitive_planner_trace_facts_from_mapping,
+    build_primitive_rollout_summary_facts_from_mapping,
 )
 from testbed.planner.primitive_decisions import primitive_boundary_facts_from_event
 from testbed.planner.return_handoff import (
+    RETURN_TO_DIG_CONFIG_KEYS,
+    RETURN_TO_DIG_HANDOFF_CONFIG_FIELDS,
+    RETURN_TO_DIG_HANDOFF_STATUS_FIELDS,
+    ReturnNextDigEntryTargetResolver,
+    ReturnToDigEntryErrorFacts,
     ReturnToDigHandoffConfig,
     ReturnToDigHandoffContext,
     ReturnToDigHandoffDecision,
     ReturnToDigHandoffGateService,
+    ReturnToDigHandoffStatusSnapshot,
+    ReturnToDigHandoffStatusState,
+    ReturnToDigPlannerConfig,
+    build_return_next_dig_entry_target_facts_from_runtime,
+    build_return_to_dig_config_from_mapping,
+    build_return_to_dig_handoff_config_from_mapping,
+    build_return_to_dig_handoff_context_from_runtime,
+    build_return_to_dig_handoff_status_state_from_mapping,
 )
 from testbed.planner.return_start_envelope import (
+    RETURN_START_ENVELOPE_RUNTIME_CONFIG_FIELDS,
     ReturnStartEnvelopeBuildRequest,
     ReturnStartEnvelopeConfig,
+    ReturnStartEnvelopeState,
+    build_return_start_envelope_config_from_mapping,
     build_return_start_envelope_for_plan,
+    build_return_start_envelope_request_from_observation_view,
     condition_return_start_envelope_from_relocate,
+    require_return_start_envelope_token_result,
+    resolve_return_start_envelope_cell_id,
     return_start_envelope_token_from_prior_mapping,
 )
 from testbed.planner.return_start_envelope import (
@@ -132,13 +264,31 @@ from testbed.planner.return_start_envelope import (
     return_start_envelope_prior_token as resolve_return_start_envelope_prior_token,
 )
 from testbed.planner.return_target_plan import (
-    ReturnTargetExemplarSnapshot,
-    ReturnTargetPlanBuild,
+    PENDING_RETURN_TARGET_ACTIVATION_FACT_FIELDS,
+    RETURN_TARGET_CONDITIONING_STATUS_FIELDS,
+    PendingDigCutPlanState,
+    PendingReturnTargetActivation,
+    PendingReturnTargetActivationFacts,
+    ReturnRelocateObservationTokenResult,
+    ReturnTargetConditioningRuntimeState,
+    ReturnTargetConditioningStatusSnapshot,
+    ReturnTargetDigCutBuildCallbacks,
+    ReturnTargetDigCutBuildResult,
+    ReturnTargetPlanBuildFacts,
     ReturnTargetPlanService,
     ReturnTargetPlanState,
+    build_pending_return_target_activation_facts_from_mapping,
+)
+from testbed.planner.return_to_dig_transition import (
+    ReturnDirectHandoffRuntimeProjection,
+    ReturnToDigTransitionCompletion,
+    ReturnToDigTransitionRuntimeProjection,
+    ReturnToDigTransitionService,
 )
 from testbed.planner.snapshots import (
+    BoundaryDetectorUpdateFacts,
     PlannerSnapshot,
+    boundary_detector_update_facts_from_obs,
     bucket_depth_below_dig_area_plane_from_obs,
     bucket_depth_below_local_surface_from_obs,
     bucket_dig_area_cell_in_bounds_mask_from_obs,
@@ -270,603 +420,98 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self.return_policy = return_policy
         self.bootstrap_policy = bootstrap_policy
         self.boundary_detector = boundary_detector
+        self.return_entry_target_resolver = ReturnNextDigEntryTargetResolver()
         self.return_handoff_gate = ReturnToDigHandoffGateService()
+        self.return_transition_service = ReturnToDigTransitionService()
         self.bootstrap_service = BootstrapService()
         self.dig_lifecycle_gate = DigLifecycleGateService()
         self.dig_start_alignment_service = DigStartAlignmentService()
         self.dump_lifecycle_gate = DumpLifecycleGateService()
+        self.goal_sequence_service = GoalSequenceService()
         self.policy_observation_assembler = PolicyObservationAssembler()
+        self.dig_cut_plan_service = DigCutPlanService()
         self.dig_depth_profile_service = DigDepthProfileService()
         self.return_target_plan_service = ReturnTargetPlanService()
-        self.bootstrap_end_mode = str(bootstrap_end_mode)
-        self.bootstrap_end_min_bucket_mass_kg = float(bootstrap_end_min_bucket_mass_kg)
-        self.bootstrap_end_min_distance_to_dig_area_m = float(
-            bootstrap_end_min_distance_to_dig_area_m
+        init_values = locals()
+        dig_lifecycle_values = {
+            key: init_values[key]
+            for key in DIG_LIFECYCLE_CONFIG_KEYS
+        }
+        self._apply_dig_lifecycle_config(
+            build_dig_lifecycle_config_from_mapping(dig_lifecycle_values)
         )
-        self.dig_to_carry_min_bucket_mass_kg = float(dig_to_carry_min_bucket_mass_kg)
-        self.dig_to_carry_min_distance_to_dig_area_m = float(
-            dig_to_carry_min_distance_to_dig_area_m
+        dump_lifecycle_values = {
+            key: init_values[key]
+            for key in DUMP_LIFECYCLE_CONFIG_KEYS
+        }
+        self._apply_dump_lifecycle_config(
+            build_dump_lifecycle_config_from_mapping(dump_lifecycle_values)
         )
-        self.dig_to_carry_target_bucket_mass_kg = float(
-            self.dig_to_carry_min_bucket_mass_kg
-            if dig_to_carry_target_bucket_mass_kg is None
-            else dig_to_carry_target_bucket_mass_kg
+        init_values = locals()
+        return_to_dig_values = {
+            key: init_values[key]
+            for key in RETURN_TO_DIG_CONFIG_KEYS
+        }
+        self._apply_return_to_dig_config(
+            build_return_to_dig_config_from_mapping(return_to_dig_values)
         )
-        self.dig_to_carry_mass_plateau_enabled = bool(
-            dig_to_carry_mass_plateau_enabled
-        )
-        self.dig_to_carry_mass_plateau_min_bucket_mass_kg = float(
-            dig_to_carry_mass_plateau_min_bucket_mass_kg
-        )
-        self.dig_to_carry_mass_plateau_epsilon_kg = float(
-            dig_to_carry_mass_plateau_epsilon_kg
-        )
-        self.dig_to_carry_mass_plateau_hold_steps = max(
-            1, int(dig_to_carry_mass_plateau_hold_steps)
-        )
-        self.dig_to_carry_mass_plateau_min_steps = max(
-            1, int(dig_to_carry_mass_plateau_min_steps)
-        )
-        self.dig_bad_replan_enabled = bool(dig_bad_replan_enabled)
-        self.dig_bad_replan_max_steps = max(1, int(dig_bad_replan_max_steps))
-        self.dig_bad_replan_min_bucket_mass_kg = float(
-            dig_bad_replan_min_bucket_mass_kg
-        )
-        self.dig_exit_guard_enabled = bool(dig_exit_guard_enabled)
-        self.dig_exit_guard_min_steps = max(1, int(dig_exit_guard_min_steps))
-        self.dig_exit_guard_overshoot_m = float(dig_exit_guard_overshoot_m)
-        self.dig_exit_guard_min_bucket_mass_kg = float(
-            dig_exit_guard_min_bucket_mass_kg
-        )
-        self.dig_failed_replan_next_skill = self._normalize_failed_dig_replan_skill(
-            dig_failed_replan_next_skill
-        )
-        self.dump_ready_min_bucket_mass_kg = float(dump_ready_min_bucket_mass_kg)
-        self.dump_ready_min_height_above_rim_m = float(dump_ready_min_height_above_rim_m)
-        self.dump_ready_require_over_footprint = bool(dump_ready_require_over_footprint)
-        self.dump_ready_require_clearance = bool(dump_ready_require_clearance)
-        self.dump_ready_max_horizontal_distance_m = (
-            None
-            if dump_ready_max_horizontal_distance_m is None
-            else float(dump_ready_max_horizontal_distance_m)
-        )
-        self.dump_ready_position_mode = str(dump_ready_position_mode)
-        self.dump_ready_max_dump_area_footprint_outside_distance_m = (
-            None
-            if dump_ready_max_dump_area_footprint_outside_distance_m is None
-            else float(dump_ready_max_dump_area_footprint_outside_distance_m)
-        )
-        self.dump_ready_min_dump_area_relative_x_m = (
-            None
-            if dump_ready_min_dump_area_relative_x_m is None
-            else float(dump_ready_min_dump_area_relative_x_m)
-        )
-        self.dump_ready_max_dump_area_relative_x_m = (
-            None
-            if dump_ready_max_dump_area_relative_x_m is None
-            else float(dump_ready_max_dump_area_relative_x_m)
-        )
-        self.dump_ready_min_dump_area_relative_z_m = (
-            None
-            if dump_ready_min_dump_area_relative_z_m is None
-            else float(dump_ready_min_dump_area_relative_z_m)
-        )
-        self.dump_ready_max_dump_area_relative_z_m = (
-            None
-            if dump_ready_max_dump_area_relative_z_m is None
-            else float(dump_ready_max_dump_area_relative_z_m)
-        )
-        self.dump_ready_hold_steps = max(1, int(dump_ready_hold_steps))
-        self.dump_ready_near_window_enabled = bool(dump_ready_near_window_enabled)
-        self.dump_ready_near_window_x_tolerance_m = float(
-            dump_ready_near_window_x_tolerance_m
-        )
-        self.dump_ready_near_window_z_tolerance_m = float(
-            dump_ready_near_window_z_tolerance_m
-        )
-        self.dump_ready_near_window_outside_tolerance_m = float(
-            dump_ready_near_window_outside_tolerance_m
-        )
-        self.dump_ready_near_window_require_over_footprint = bool(
-            dump_ready_near_window_require_over_footprint
-        )
-        self.dump_done_max_bucket_mass_kg = float(dump_done_max_bucket_mass_kg)
-        self.dump_done_min_deposit_delta_kg = float(dump_done_min_deposit_delta_kg)
-        self.dump_done_hold_steps = max(1, int(dump_done_hold_steps))
-        self.dump_done_use_boundary_event = bool(dump_done_use_boundary_event)
-        self.return_to_dig_shallow_guard_enabled = bool(
-            return_to_dig_shallow_guard_enabled
-        )
-        self.return_to_dig_max_bucket_mass_kg = float(return_to_dig_max_bucket_mass_kg)
-        self.return_to_dig_touch_tolerance_m = float(return_to_dig_touch_tolerance_m)
-        self.return_to_dig_min_depth_m = float(return_to_dig_min_depth_m)
-        self.return_to_dig_max_depth_m = float(return_to_dig_max_depth_m)
-        self.return_to_dig_max_entry_error_m = self._optional_float(
-            return_to_dig_max_entry_error_m
-        )
-        self.return_to_dig_start_envelope_gate_enabled = bool(
-            return_to_dig_start_envelope_gate_enabled
-        )
-        self.return_to_dig_start_envelope_spatial_tolerance = float(
-            return_to_dig_start_envelope_spatial_tolerance
-        )
-        self.return_to_dig_start_envelope_depth_tolerance_m = float(
-            return_to_dig_start_envelope_depth_tolerance_m
-        )
-        self.return_to_dig_start_envelope_local_depth_tolerance_m = float(
-            return_to_dig_start_envelope_local_depth_tolerance_m
-        )
-        self.return_to_dig_start_envelope_plane_depth_tolerance_m = float(
-            return_to_dig_start_envelope_plane_depth_tolerance_m
-        )
-        self.return_to_dig_start_envelope_plane_depth_mode = (
-            self._normalize_plane_depth_mode(
-                return_to_dig_start_envelope_plane_depth_mode
-            )
-        )
-        self.return_to_dig_start_envelope_qpos_tolerance = float(
-            return_to_dig_start_envelope_qpos_tolerance
-        )
-        self.return_to_dig_start_envelope_require_contact = bool(
-            return_to_dig_start_envelope_require_contact
-        )
-        self.return_to_dig_start_envelope_direct_handoff_enabled = bool(
-            return_to_dig_start_envelope_direct_handoff_enabled
-        )
-        self.return_max_steps = int(return_max_steps)
         self.action_dim = int(action_dim)
         self.primitive_checkpoint_paths = {
             str(name): str(path)
             for name, path in dict(primitive_checkpoint_paths or {}).items()
         }
-        self.goal_sequence = self._normalize_goal_sequence(goal_sequence)
-        self.goal_scenario_id = str(goal_scenario_id)
-        self.goal_depth_norm = float(goal_depth_norm)
-        self.goal_dump_target_norm = float(goal_dump_target_norm)
-        self.cell_entry_enabled = bool(cell_entry_enabled)
-        self.cell_entry_grid = CellGridSpec(**dict(cell_entry_grid or {}))
-        self.cell_entry_grid.validate()
+        bootstrap_values = {
+            key: init_values[key]
+            for key in BOOTSTRAP_CONFIG_KEYS
+        }
+        self._apply_bootstrap_config(
+            build_bootstrap_planner_config_from_mapping(
+                bootstrap_values,
+                action_dim=self.action_dim,
+            )
+        )
+        goal_sequence_values = {
+            key: init_values[key]
+            for key in GOAL_SEQUENCE_CONFIG_KEYS
+        }
+        self._apply_goal_sequence_config(
+            build_goal_sequence_planner_config_from_mapping(goal_sequence_values)
+        )
+        cell_entry_values = {
+            key: init_values[key]
+            for key in CELL_ENTRY_CONFIG_KEYS
+        }
+        self._apply_cell_entry_config(
+            build_cell_entry_planner_config_from_mapping(cell_entry_values)
+        )
         self.cell_entry_planner = CellEntryPlanner(grid=self.cell_entry_grid)
         self.cell_entry_auditor = PlannerDecisionAuditor(
             grid=self.cell_entry_grid,
             low_productivity_payload_gain_kg=(
-                cell_entry_low_productivity_payload_gain_kg
+                self.cell_entry_low_productivity_payload_gain_kg
             ),
         )
-        self.dig_cut_planner_cfg = dict(dig_cut_planner or {})
-        self.dig_cut_planner_enabled = bool(
-            self.dig_cut_planner_cfg.get("enabled", True)
-        )
-        self.dig_cut_planner_mode = str(
-            self.dig_cut_planner_cfg.get("mode", "conservative_pose")
-        )
-        self.dig_cut_planner_fallback_mode = str(
-            self.dig_cut_planner_cfg.get("fallback_mode", "conservative_pose")
-        )
-        self.dig_cut_hold_token_until_skill_exit = bool(
-            self.dig_cut_planner_cfg.get(
-                "hold_token_until_skill_exit",
-                self.dig_cut_planner_mode
-                in {
-                    "operator_prior",
-                    "operator_prior_coverage",
-                    "operator_prior_sweep_belief",
-                },
+        self.cell_entry_runtime_service = CellEntryRuntimeService()
+        self._apply_conditioning_config(
+            primitive_config_helpers.build_conditioning_config(
+                dig_cut_planner=dig_cut_planner,
+                return_target_planner=return_target_planner,
+                action_dim=self.action_dim,
+                coverage_percentile_list_fn=self._coverage_percentile_list,
+                coverage_percentile_name_fn=self._coverage_percentile_name,
             )
-        )
-        self.dig_cut_prior_path = str(self.dig_cut_planner_cfg.get("prior_path", ""))
-        self.dig_cut_prior = self._load_dig_cut_prior(self.dig_cut_prior_path)
-        self.dig_cut_prior_id = str(self.dig_cut_prior.get("prior_id", ""))
-        return_start_envelope_cfg = dict(
-            self.dig_cut_planner_cfg.get("return_start_envelope", {}) or {}
-        )
-        self.return_start_envelope_use_cell_prior = bool(
-            return_start_envelope_cfg.get("use_cell_prior", False)
-        )
-        self.return_start_envelope_min_source_count = max(
-            1, int(return_start_envelope_cfg.get("min_source_count", 1))
-        )
-        self.return_start_envelope_min_source_fraction = max(
-            0.0,
-            float(return_start_envelope_cfg.get("min_source_fraction", 0.0)),
-        )
-        qpos_from_relocate_cfg = dict(
-            return_start_envelope_cfg.get("qpos_from_relocate", {}) or {}
-        )
-        self.return_start_envelope_qpos_from_relocate_enabled = bool(
-            qpos_from_relocate_cfg.get("enabled", False)
-        )
-        raw_relocate_coefficients = qpos_from_relocate_cfg.get("coefficients")
-        self.return_start_envelope_qpos_from_relocate_coefficients = (
-            None
-            if raw_relocate_coefficients is None
-            else np.asarray(raw_relocate_coefficients, dtype=np.float32).reshape(4, 8)
-        )
-        self.return_start_envelope_qpos_from_relocate_min = self._align_vector(
-            qpos_from_relocate_cfg.get("qpos_min", [0.44, 0.50, 0.0, 0.0]),
-            default=[0.44, 0.50, 0.0, 0.0],
-        )
-        self.return_start_envelope_qpos_from_relocate_max = self._align_vector(
-            qpos_from_relocate_cfg.get("qpos_max", [0.56, 0.80, 0.56, 0.48]),
-            default=[0.56, 0.80, 0.56, 0.48],
-        )
-        self.return_start_envelope_qpos_from_relocate_use_prior_qpos_bounds = bool(
-            qpos_from_relocate_cfg.get("use_prior_qpos_bounds", False)
-        )
-        spatial_from_relocate_cfg = dict(
-            return_start_envelope_cfg.get("spatial_from_relocate", {}) or {}
-        )
-        self.return_start_envelope_spatial_from_relocate_enabled = bool(
-            spatial_from_relocate_cfg.get("enabled", False)
-        )
-        raw_spatial_coefficients = spatial_from_relocate_cfg.get("coefficients")
-        self.return_start_envelope_spatial_from_relocate_coefficients = (
-            None
-            if raw_spatial_coefficients is None
-            else np.asarray(raw_spatial_coefficients, dtype=np.float32).reshape(2, 8)
-        )
-        self.return_start_envelope_spatial_from_relocate_min = np.asarray(
-            spatial_from_relocate_cfg.get("spatial_min", [-1.0, -0.10]),
-            dtype=np.float32,
-        ).reshape(2)
-        self.return_start_envelope_spatial_from_relocate_max = np.asarray(
-            spatial_from_relocate_cfg.get("spatial_max", [1.0, 1.0]),
-            dtype=np.float32,
-        ).reshape(2)
-        self.return_start_envelope_spatial_from_relocate_use_prior_spatial_bounds = bool(
-            spatial_from_relocate_cfg.get("use_prior_spatial_bounds", False)
-        )
-        dig_depth_profile_cfg = dict(
-            self.dig_cut_planner_cfg.get("dig_depth_profile", {}) or {}
-        )
-        self.dig_depth_profile_source = str(
-            dig_depth_profile_cfg.get("source", "live_plan")
-        ).strip().lower()
-        self.dig_depth_profile_required = bool(
-            dig_depth_profile_cfg.get("required", False)
-        )
-        self.dig_depth_profile_allow_live_fallback = bool(
-            dig_depth_profile_cfg.get(
-                "allow_live_fallback",
-                self.dig_depth_profile_source != "prior_profile",
-            )
-        )
-        self.dig_depth_profile_allow_global_fallback = bool(
-            dig_depth_profile_cfg.get("allow_global_fallback", True)
-        )
-        self.return_target_planner_cfg = dict(return_target_planner or {})
-        self.return_target_planner_enabled = bool(
-            self.return_target_planner_cfg.get("enabled", False)
-        )
-        self.return_target_hold_token_until_skill_exit = bool(
-            self.return_target_planner_cfg.get("hold_token_until_skill_exit", True)
-        )
-        self.return_target_token_source_prefix = str(
-            self.return_target_planner_cfg.get("token_source_prefix", "return_target")
-        )
-        coverage_cfg = dict(self.dig_cut_planner_cfg.get("coverage", {}) or {})
-        self.coverage_candidate_layout = str(
-            coverage_cfg.get("candidate_layout", "percentile_grid")
-        ).strip().lower()
-        self.coverage_use_env_removed_depth = bool(
-            coverage_cfg.get(
-                "use_env_removed_depth",
-                self.dig_cut_planner_mode == "operator_prior_coverage",
-            )
-        )
-        self.coverage_belief_gain_scale = float(
-            coverage_cfg.get("belief_gain_scale", 0.55)
-        )
-        self.coverage_belief_depleted_score = float(
-            coverage_cfg.get("belief_depleted_score", 1.0)
-        )
-        self.coverage_low_productivity_payload_kg = float(
-            coverage_cfg.get("low_productivity_payload_kg", 15.0)
-        )
-        self.coverage_low_productivity_deposit_kg = float(
-            coverage_cfg.get("low_productivity_deposit_kg", 15.0)
-        )
-        self.coverage_deplete_after_low_streak = max(
-            1, int(coverage_cfg.get("deplete_after_low_streak", 2))
-        )
-        self.coverage_min_remaining_depth_m = float(
-            coverage_cfg.get("min_remaining_depth_m", 0.05)
-        )
-        self.coverage_global_low_productivity_stop = max(
-            1, int(coverage_cfg.get("global_low_productivity_stop", 3))
-        )
-        self.coverage_max_attempts_per_corridor = max(
-            1, int(coverage_cfg.get("max_attempts_per_corridor", 3))
-        )
-        self.coverage_multi_pass_enabled = bool(
-            coverage_cfg.get("multi_pass_enabled", False)
-        )
-        self.coverage_multi_pass_max_passes = max(
-            1, int(coverage_cfg.get("multi_pass_max_passes", 1))
-        )
-        self.coverage_multi_pass_min_remaining_depth_m = float(
-            coverage_cfg.get(
-                "multi_pass_min_remaining_depth_m",
-                self.coverage_min_remaining_depth_m,
-            )
-        )
-        self.coverage_unattempted_bonus = float(
-            coverage_cfg.get("unattempted_bonus", 2.0)
-        )
-        self.coverage_attempt_penalty = float(
-            coverage_cfg.get("attempt_penalty", 0.65)
-        )
-        self.coverage_recent_selection_penalty = float(
-            coverage_cfg.get("recent_selection_penalty", 1.25)
-        )
-        self.coverage_recent_row_selection_penalty = float(
-            coverage_cfg.get("recent_row_selection_penalty", 0.0)
-        )
-        self.coverage_rare_cell_source_fraction_threshold = float(
-            coverage_cfg.get("rare_cell_source_fraction_threshold", 0.05)
-        )
-        self.coverage_rare_cell_max_attempts = max(
-            1, int(coverage_cfg.get("rare_cell_max_attempts", 1))
-        )
-        self.coverage_cell_confidence_weight = float(
-            coverage_cfg.get("cell_confidence_weight", 0.75)
-        )
-        state_exemplar_cfg = dict(
-            coverage_cfg.get("state_conditioned_exemplars", {}) or {}
-        )
-        self.coverage_state_exemplars_enabled = bool(
-            state_exemplar_cfg.get("enabled", False)
-        )
-        self.coverage_state_exemplar_path = str(
-            state_exemplar_cfg.get(
-                "path",
-                self.dig_cut_prior.get("coverage_state_exemplars_path", ""),
-            )
-        )
-        self.coverage_state_exemplar_k = max(
-            1, int(state_exemplar_cfg.get("k", 5))
-        )
-        self.coverage_state_exemplar_removed_depth_scale_m = max(
-            1.0e-6,
-            float(state_exemplar_cfg.get("removed_depth_scale_m", 0.12)),
-        )
-        self.coverage_state_exemplar_target_cell_weight = max(
-            0.0,
-            float(state_exemplar_cfg.get("target_cell_weight", 2.0)),
-        )
-        self.coverage_state_exemplar_score_weight = float(
-            state_exemplar_cfg.get("score_weight", 0.75)
-        )
-        self.coverage_state_exemplar_temperature = max(
-            1.0e-6,
-            float(state_exemplar_cfg.get("temperature", 0.35)),
-        )
-        self.coverage_state_exemplar_skip_rejected = bool(
-            state_exemplar_cfg.get("skip_rejected", True)
         )
         self.coverage_state_exemplars_by_cell = (
             self._load_coverage_state_exemplars()
         )
-        self.coverage_first_dig_strategy = str(
-            coverage_cfg.get("first_dig_strategy", "coverage_score")
-        ).strip().lower()
-        raw_first_dig_corridor = coverage_cfg.get("first_dig_preferred_corridor_id")
-        self.coverage_first_dig_preferred_corridor_id = (
-            None
-            if raw_first_dig_corridor is None
-            or str(raw_first_dig_corridor).strip().lower() in {"", "none", "null"}
-            else int(raw_first_dig_corridor)
-        )
-        self.coverage_first_dig_preferred_bonus = float(
-            coverage_cfg.get("first_dig_preferred_bonus", 10000.0)
-        )
-        self.coverage_first_dig_proximity_weight = float(
-            coverage_cfg.get("first_dig_proximity_weight", 0.0)
-        )
-        self.coverage_first_dig_max_entry_distance_m = self._optional_float(
-            coverage_cfg.get("first_dig_max_entry_distance_m")
-        )
-        self.coverage_first_dig_qpos_delta_weight = float(
-            coverage_cfg.get("first_dig_qpos_delta_weight", 0.0)
-        )
-        self.coverage_first_dig_max_qpos_delta = self._optional_align_vector(
-            coverage_cfg.get("first_dig_max_qpos_delta")
-        )
-        self.coverage_entry_x_percentiles = self._coverage_percentile_list(
-            coverage_cfg.get("entry_x_percentiles", ["p10", "p50", "p90"]),
-            default=("p10", "p50", "p90"),
-        )
-        self.coverage_entry_z_percentiles = self._coverage_percentile_list(
-            coverage_cfg.get("entry_z_percentiles", ["p10", "p50", "p90"]),
-            default=("p10", "p50", "p90"),
-        )
-        self.coverage_cut_direction_percentile = self._coverage_percentile_name(
-            coverage_cfg.get("cut_direction_percentile", "p50"),
-            default="p50",
-        )
-        self.coverage_cut_length_percentile = self._coverage_percentile_name(
-            coverage_cfg.get("cut_length_percentile", "p50"),
-            default="p50",
-        )
-        self.coverage_cut_depth_percentile = self._coverage_percentile_name(
-            coverage_cfg.get("cut_depth_percentile", "p50"),
-            default="p50",
-        )
-        self.coverage_payload_percentile = self._coverage_percentile_name(
-            coverage_cfg.get("payload_percentile", "p50"),
-            default="p50",
-        )
-        self.pre_dig_align_cfg = dict(pre_dig_align or {})
-        self.pre_dig_align_enabled = bool(self.pre_dig_align_cfg.get("enabled", False))
-        self.pre_dig_align_first_dig_only = bool(
-            self.pre_dig_align_cfg.get("first_dig_only", False)
-        )
-        self.pre_dig_align_replan_after_failed_dig = bool(
-            self.pre_dig_align_cfg.get("replan_after_failed_dig", False)
-        )
-        self.pre_dig_align_kp = float(self.pre_dig_align_cfg.get("kp", 2.0))
-        self.pre_dig_align_kd = float(self.pre_dig_align_cfg.get("kd", 0.25))
-        self.pre_dig_align_action_clip = self.pre_dig_align_cfg.get(
-            "action_clip",
-            [0.55, 0.35, 0.35, 0.35],
-        )
-        self.pre_dig_align_action_signs = np.asarray(
-            self.pre_dig_align_cfg.get("action_signs", [1.0, -1.0, 1.0, 1.0]),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
-        self.pre_dig_align_controlled_dims = (
-            np.asarray(
-                self.pre_dig_align_cfg.get("controlled_dims", [1, 1, 1, 0]),
-                dtype=np.float32,
-            ).reshape(self.action_dim)
-            > 0.5
-        )
-        self.pre_dig_align_bucket_target_qpos = self._optional_float(
-            self.pre_dig_align_cfg.get("bucket_target_qpos")
-        )
-        self.pre_dig_align_qpos_tolerance = self._align_vector(
-            self.pre_dig_align_cfg.get(
-                "qpos_tolerance",
-                [0.025, 0.04, 0.05, 0.06],
-            ),
-            default=[0.025, 0.04, 0.05, 0.06],
-        )
-        self.pre_dig_align_qvel_abs_max = float(
-            self.pre_dig_align_cfg.get("qvel_abs_max", 0.12)
-        )
-        self.pre_dig_align_hold_steps = max(
-            1, int(self.pre_dig_align_cfg.get("hold_steps", 3))
-        )
-        self.pre_dig_align_max_steps = max(
-            1, int(self.pre_dig_align_cfg.get("max_steps", 140))
-        )
-        self.pre_dig_align_max_entry_error_m = self._optional_float(
-            self.pre_dig_align_cfg.get("max_entry_error_m")
-        )
-        self.pre_dig_align_timeout_accept_entry_error_m = self._optional_float(
-            self.pre_dig_align_cfg.get("timeout_accept_entry_error_m")
-        )
-        self.pre_dig_align_timeout_replan_entry_error_m = self._optional_float(
-            self.pre_dig_align_cfg.get("timeout_replan_entry_error_m")
-        )
-        self.pre_dig_align_start_envelope_enabled = bool(
-            self.pre_dig_align_cfg.get("start_envelope_enabled", False)
-        )
-        self.pre_dig_align_first_dig_entry_close_handoff = bool(
-            self.pre_dig_align_cfg.get("first_dig_entry_close_handoff", False)
-        )
-        self.pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max = (
-            self._optional_float(
-                self.pre_dig_align_cfg.get(
-                    "first_dig_entry_close_handoff_qvel_abs_max"
-                )
+        self._apply_pre_dig_align_config(
+            primitive_config_helpers.build_pre_dig_alignment_config(
+                pre_dig_align=pre_dig_align,
+                action_dim=self.action_dim,
             )
         )
-        self.pre_dig_align_start_envelope_max_entry_error_m = float(
-            self.pre_dig_align_cfg.get("start_envelope_max_entry_error_m", 0.65)
-        )
-        raw_entry_intent_dims = self.pre_dig_align_cfg.get(
-            "entry_intent_controlled_dims"
-        )
-        self.pre_dig_align_entry_intent_controlled_dims = (
-            None
-            if raw_entry_intent_dims is None
-            else (
-                np.asarray(raw_entry_intent_dims, dtype=np.float32).reshape(
-                    self.action_dim
-                )
-                > 0.5
-            )
-        )
-        self.pre_dig_align_entry_intent_handoff_enabled = bool(
-            self.pre_dig_align_cfg.get(
-                "entry_intent_handoff_enabled",
-                self.pre_dig_align_entry_intent_controlled_dims is not None,
-            )
-        )
-        self.pre_dig_align_surface_guard_enabled = bool(
-            self.pre_dig_align_cfg.get("surface_guard_enabled", False)
-        )
-        self.pre_dig_align_surface_guard_max_penetration_m = float(
-            self.pre_dig_align_cfg.get("surface_guard_max_penetration_m", 0.005)
-        )
-        self.pre_dig_align_surface_guard_handoff_entry_error_m = self._optional_float(
-            self.pre_dig_align_cfg.get("surface_guard_handoff_entry_error_m")
-        )
-        self.pre_dig_align_surface_guard_use_contact_fallback = bool(
-            self.pre_dig_align_cfg.get("surface_guard_use_contact_fallback", True)
-        )
-        self.pre_dig_align_start_qpos_min = self._align_vector(
-            self.pre_dig_align_cfg.get(
-                "start_qpos_min",
-                [0.45, 0.52, 0.0, 0.0],
-            ),
-            default=[0.45, 0.52, 0.0, 0.0],
-        )
-        self.pre_dig_align_start_qpos_max = self._align_vector(
-            self.pre_dig_align_cfg.get(
-                "start_qpos_max",
-                [0.57, 0.78, 0.40, 0.12],
-            ),
-            default=[0.57, 0.78, 0.40, 0.12],
-        )
-        self.pre_dig_align_start_pose_min = np.asarray(
-            self.pre_dig_align_cfg.get("start_pose_min", [-0.60, -0.30, -1.50]),
-            dtype=np.float32,
-        ).reshape(3)
-        self.pre_dig_align_start_pose_max = np.asarray(
-            self.pre_dig_align_cfg.get("start_pose_max", [1.65, 0.25, 1.20]),
-            dtype=np.float32,
-        ).reshape(3)
-        self.pre_dig_align_qpos_min = self._align_vector(
-            self.pre_dig_align_cfg.get(
-                "qpos_min",
-                [0.44, 0.50, 0.0, 0.0],
-            ),
-            default=[0.44, 0.50, 0.0, 0.0],
-        )
-        self.pre_dig_align_qpos_max = self._align_vector(
-            self.pre_dig_align_cfg.get(
-                "qpos_max",
-                [0.56, 0.79, 0.42, 0.36],
-            ),
-            default=[0.56, 0.79, 0.42, 0.36],
-        )
-        self.pre_dig_align_qpos_from_token_coefficients = np.asarray(
-            self.pre_dig_align_cfg.get(
-                "qpos_from_token_coefficients",
-                [
-                    [0.49761536, -0.00324577, -0.07974796],
-                    [0.48509995, 0.34124863, -0.02063946],
-                    [0.39998216, -0.50266185, 0.04142020],
-                    [0.21223230, -0.14153491, -0.01244724],
-                ],
-            ),
-            dtype=np.float32,
-        ).reshape(self.action_dim, 3)
         self.coverage_service = self._create_coverage_service()
         self._validate_dig_cut_planner_config()
-        self.scripted_bootstrap_target_qpos = (
-            None
-            if scripted_bootstrap_target_qpos is None
-            else np.asarray(scripted_bootstrap_target_qpos, dtype=np.float32).reshape(
-                self.action_dim
-            )
-        )
-        self.scripted_bootstrap_kp = float(scripted_bootstrap_kp)
-        self.scripted_bootstrap_kd = float(scripted_bootstrap_kd)
-        self.scripted_bootstrap_action_clip = scripted_bootstrap_action_clip
-        self.scripted_bootstrap_action_signs = (
-            np.ones(self.action_dim, dtype=np.float32)
-            if scripted_bootstrap_action_signs is None
-            else np.asarray(scripted_bootstrap_action_signs, dtype=np.float32).reshape(
-                self.action_dim
-            )
-        )
-        self.scripted_bootstrap_qpos_tolerance = float(scripted_bootstrap_qpos_tolerance)
-        self.scripted_bootstrap_qvel_abs_max = float(scripted_bootstrap_qvel_abs_max)
-        self.scripted_bootstrap_hold_steps = max(1, int(scripted_bootstrap_hold_steps))
-        self.scripted_bootstrap_max_steps = max(1, int(scripted_bootstrap_max_steps))
         self.reset()
 
     def reset(self) -> None:
@@ -890,107 +535,19 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         )
         self._prev_action: np.ndarray | None = None
         self._switch_reason = "reset"
-        self._dump_ready_hold_count = 0
-        self._dump_done_hold_count = 0
+        self._reset_dump_lifecycle_runtime()
         self._return_step_count = 0
-        self._scripted_bootstrap_step_count = 0
-        self._scripted_bootstrap_hold_count = 0
-        self._scripted_bootstrap_timeout_count = 0
-        self._pre_dig_align_step_count = 0
-        self._pre_dig_align_hold_count = 0
-        self._pre_dig_align_timeout_count = 0
-        self._pre_dig_align_completed_count = 0
-        self._pre_dig_align_replan_count = 0
-        self._pre_dig_align_target_qpos = np.zeros(self.action_dim, dtype=np.float32)
-        self._pre_dig_align_error = np.zeros(self.action_dim, dtype=np.float32)
-        self._pre_dig_align_entry_error_m = float("nan")
-        self._pre_dig_align_start_envelope_ready = False
-        self._pre_dig_align_entry_close_handoff_ready = False
-        self._pre_dig_align_entry_intent_handoff_ready = False
-        self._pre_dig_align_timeout_handoff_reason = ""
-        self._pre_dig_align_surface_depth_m = float("nan")
-        self._pre_dig_align_surface_guard_triggered = False
-        self._pre_dig_align_surface_guard_count = 0
-        self._dig_step_count = 0
-        self._dig_best_mass_kg = 0.0
-        self._dig_mass_plateau_count = 0
-        self._dig_to_carry_reason = ""
-        self._dig_bad_replan_count = 0
-        self._dig_exit_guard_replan_count = 0
+        self._reset_bootstrap_runtime()
+        self._reset_pre_dig_align_runtime()
+        self._reset_dig_lifecycle_runtime()
         self._completed_transition_count = 0
         self._transition_timeout_count = 0
         self._cycle_index = 0
-        self._dump_start_deposited_mass_kg = 0.0
-        self.cell_entry_planner.reset()
-        self._cell_entry_goal: CellEntryGoal | None = None
-        self._cell_entry_goal_cycle_id = -1
-        self._cell_entry_audit: PlannerDecisionAudit | None = None
-        self._cell_entry_tokens = np.zeros(CELL_ENTRY_TOKEN_DIM, dtype=np.float32)
-        self._cell_entry_token_injected = False
-        self._dig_cut_tokens = np.zeros(DIG_CUT_TOKEN_DIM, dtype=np.float32)
-        self._dig_cut_token_injected = False
-        self._dig_depth_profile_tokens = np.zeros(
-            DIG_DEPTH_PROFILE_TOKEN_DIM,
-            dtype=np.float32,
-        )
-        self._dig_depth_profile_token_injected = False
-        self._dig_depth_profile_token_source = "none"
-        self._dig_depth_profile_fallback_reason = ""
-        self._return_target_tokens = np.zeros(RETURN_TARGET_TOKEN_DIM, dtype=np.float32)
-        self._return_target_token_injected = False
-        self._return_relocate_tokens = np.zeros(
-            RETURN_TARGET_TOKEN_DIM,
-            dtype=np.float32,
-        )
-        self._return_relocate_token_injected = False
-        self._return_start_envelope_tokens = np.zeros(
-            RETURN_START_ENVELOPE_TOKEN_DIM,
-            dtype=np.float32,
-        )
-        self._return_start_envelope_token_injected = False
-        self._return_start_envelope_token_source = "none"
-        self._return_start_envelope_use_prior_spatial_bounds = True
-        self._return_start_envelope_use_prior_qpos_bounds = True
-        self._return_target_planned_cycle_id = -1
-        self._return_target_token_source = "none"
-        self._return_target_fallback_reason = ""
-        self._return_to_dig_entry_error_m = float("nan")
-        self._return_to_dig_entry_close_state = True
-        self._return_next_dig_event_seen = False
-        self._return_to_dig_start_envelope_ready_state = True
-        self._return_to_dig_start_envelope_error = float("nan")
-        self._return_to_dig_start_envelope_checks: dict[str, Any] = {}
-        self._pending_dig_cut_cycle_id = -1
-        self._pending_dig_cut_corridor_id = -1
-        self._pending_dig_cut_raw_fields: dict[str, float | int] | None = None
-        self._pending_dig_cut_tokens: np.ndarray | None = None
-        self._pending_dig_depth_profile_tokens: np.ndarray | None = None
-        self._pending_dig_state_exemplar_ids: list[str] = []
-        self._pending_dig_state_exemplar_distance = float("nan")
-        self._cell_entry_seen_cell_id = -1
-        self._cell_entry_trace: list[dict[str, Any]] = []
-        self._dig_cut_planned_cycle_id = -1
-        self._dig_cut_token_source = "none"
-        self._dig_cut_fallback_reason = ""
-        self._dig_cut_token_in_prior_p10_p90 = False
-        self._coverage_corridors: list[CoverageCorridorState] = []
-        self._coverage_active_corridor_id = -1
-        self._coverage_last_selected_corridor_id = -1
-        self._coverage_current_payload_gain_kg = 0.0
-        self._coverage_cycle_start_deposit_kg = 0.0
-        self._coverage_last_payload_gain_kg = 0.0
-        self._coverage_last_effective_deposit_delta_kg = 0.0
-        self._coverage_global_low_productivity_streak = 0
-        self._coverage_completed_dump_count = 0
-        self._coverage_pass_index = 0
-        self._coverage_terminal_stop_requested = False
-        self._coverage_terminal_stop_reason = ""
-        self._coverage_candidate_scores: list[dict[str, float | int | str]] = []
-        self._coverage_decision_trace: list[dict[str, Any]] = []
-        self._coverage_active_state_exemplar_ids: list[str] = []
-        self._coverage_rejected_state_exemplar_ids: set[str] = set()
-        self._coverage_active_state_exemplar_distance = float("nan")
-        self._coverage_active_state_exemplar_profile_token: np.ndarray | None = None
+        self._reset_cell_entry_runtime()
+        self._reset_dig_cut_runtime()
+        self._reset_dig_depth_profile_runtime()
+        self._reset_return_target_conditioning_runtime()
+        self._reset_return_to_dig_handoff_runtime()
         self._debug_state = self._make_debug_state(
             transition_timeout=False,
             transition_completed=False,
@@ -999,13 +556,14 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
     def predict(self, obs: dict) -> np.ndarray:
         boundary_event = None
         if self._prev_action is not None:
+            detector_facts = self._boundary_detector_update_facts(obs)
             boundary_event = self.boundary_detector.update(
-                env_state=obs.get("env_state", np.zeros(13, dtype=np.float32)),
-                action=self._prev_action,
-                qpos=obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
-                reward_phase=obs.get("reward_phase"),
-                task_step_successes=obs.get("task_step_successes"),
-                task_metrics=obs.get("task_metrics"),
+                env_state=detector_facts.env_state,
+                action=detector_facts.action,
+                qpos=detector_facts.qpos,
+                reward_phase=detector_facts.reward_phase,
+                task_step_successes=detector_facts.task_step_successes,
+                task_metrics=detector_facts.task_metrics,
             )
 
         self._switch_reason = ""
@@ -1043,276 +601,218 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         return action
 
     def debug_state(self) -> dict[str, Any]:
-        return build_primitive_debug_state(self)
+        return build_primitive_debug_state_from_facts(self._debug_state_facts())
 
     def rollout_summary(self) -> dict[str, float | int | str | list[str]]:
-        return build_primitive_rollout_summary(self)
+        return build_primitive_rollout_summary_from_facts(
+            self._rollout_summary_facts()
+        )
 
     def planner_trace(self) -> dict[str, object]:
-        return build_primitive_planner_trace(self)
+        return build_primitive_planner_trace_from_facts(self._planner_trace_facts())
 
     def _maybe_switch_skill(self, *, obs: dict, boundary_event: Any | None) -> None:
         if self._skill_name == BOOTSTRAP_SKILL_NAME:
             if self._should_end_bootstrap(obs=obs, boundary_event=boundary_event):
-                if self.bootstrap_end_mode in {"first_qualified_dig_start", "scripted_qpos"}:
-                    next_skill = (
-                        PRE_DIG_ALIGN_SKILL_NAME
-                        if self._should_pre_dig_align_before_dig()
-                        else "dig"
-                    )
-                else:
-                    next_skill = "carry"
-                self._set_skill(next_skill, f"bootstrap_to_{next_skill}")
+                transition_request = self.bootstrap_service.end_transition_request(
+                    pre_dig_align_before_dig=(
+                        self._should_pre_dig_align_before_dig()
+                    ),
+                    pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
+                )
+                transition = self.bootstrap_service.end_transition(
+                    transition_request.facts,
+                    self._bootstrap_config(),
+                    transition_request.transition_config,
+                )
+                self._apply_bootstrap_transition_decision(transition)
             return
 
         if self._skill_name == PRE_DIG_ALIGN_SKILL_NAME:
             outcome = self._pre_dig_align_outcome(obs)
-            if outcome.action == "surface_guard_handoff":
-                self._pre_dig_align_surface_guard_count += 1
-                self._pre_dig_align_hold_count = 0
-                self._pre_dig_align_completed_count += 1
-                self._set_skill("dig", outcome.switch_reason)
-            elif outcome.action == "surface_guard_replan":
-                self._pre_dig_align_surface_guard_count += 1
-                self._pre_dig_align_hold_count = 0
-                self._reject_active_coverage_corridor(
-                    obs,
-                    reason=outcome.reject_reason,
-                )
-                self._restart_dig_with_new_cut(outcome.switch_reason)
-            elif outcome.action == "ready":
-                self._pre_dig_align_completed_count += 1
-                self._set_skill("dig", outcome.switch_reason)
-            elif outcome.action == "timeout_handoff":
-                self._pre_dig_align_timeout_count += 1
-                self._set_skill("dig", outcome.switch_reason)
-            elif outcome.action == "timeout_replan":
-                self._pre_dig_align_timeout_count += 1
-                self._reject_active_coverage_corridor(
-                    obs,
-                    reason=outcome.reject_reason,
-                )
-                if not self._try_replan_pre_dig_align_handoff(obs):
-                    self._restart_pre_dig_align(outcome.switch_reason)
+            if self._apply_pre_dig_align_outcome(outcome, obs):
+                return
             return
 
         if self._skill_name == "dig":
-            if self._dig_exit_guard_ready(obs):
-                self._dig_exit_guard_replan_count += 1
-                self._reject_active_coverage_corridor(
-                    obs,
-                    reason="exit_overshoot_low_payload",
+            exit_guard_ready = self._dig_exit_guard_ready(obs)
+            request = self.dig_lifecycle_gate.dig_transition_runtime_request(
+                exit_guard_ready=exit_guard_ready,
+            )
+            bad_replan_ready = False
+            complete_boundary_low_payload = False
+            dig_to_carry_ready = False
+            dig_to_carry_reason = ""
+            if request.should_check_bad_replan:
+                bad_replan_ready = self._dig_bad_replan_ready(obs)
+            if request.should_check_complete_boundary_low_payload(bad_replan_ready):
+                complete_boundary_low_payload = (
+                    self._dig_complete_boundary_low_payload(obs, boundary_event)
                 )
-                self._restart_after_failed_dig(
-                    "exit_overshoot_low_payload",
-                    obs,
+            if request.should_check_dig_to_carry(
+                bad_replan_ready=bad_replan_ready,
+                complete_boundary_low_payload=complete_boundary_low_payload,
+            ):
+                dig_to_carry_ready = self._dig_to_carry_ready(
+                    obs=obs,
+                    boundary_event=boundary_event,
                 )
+                if dig_to_carry_ready:
+                    dig_to_carry_reason = str(self._dig_to_carry_reason)
+            outcome = self.dig_lifecycle_gate.dig_transition_runtime(
+                request.facts_with_gate_results(
+                    bad_replan_ready=bad_replan_ready,
+                    dig_to_carry_reason=dig_to_carry_reason,
+                    complete_boundary_low_payload=complete_boundary_low_payload,
+                    dig_to_carry_ready=dig_to_carry_ready,
+                )
+            )
+            projection = self.dig_lifecycle_gate.dig_transition_runtime_projection(
+                outcome
+            )
+            if self._apply_dig_transition_runtime_projection(projection, obs):
                 return
-            if self._dig_bad_replan_ready(obs):
-                self._dig_bad_replan_count += 1
-                self._reject_active_coverage_corridor(
-                    obs,
-                    reason="bad_dig_low_payload",
-                )
-                self._restart_after_failed_dig("bad_dig_low_payload", obs)
-                return
-            if self._dig_complete_boundary_low_payload(obs, boundary_event):
-                self._dig_bad_replan_count += 1
-                self._reject_active_coverage_corridor(
-                    obs,
-                    reason="dig_complete_low_current_payload",
-                )
-                self._restart_after_failed_dig("complete_low_payload", obs)
-                return
-            if self._dig_to_carry_ready(obs=obs, boundary_event=boundary_event):
-                self._complete_cell_entry_dig(obs)
-                self._complete_coverage_dig(obs)
-                reason = self._dig_to_carry_reason or "loaded"
-                self._set_skill("carry", f"dig_to_carry_{reason}")
             return
 
         if self._skill_name == "carry":
             release_safety_done = self._carry_release_safety_done(obs)
-            dump_committed_event = False
-            release_onset_event = False
-            dump_complete_event = False
-            legacy_dump_start_event = False
-            if not release_safety_done:
-                dump_committed_event = bool(
-                    boundary_event is not None
-                    and getattr(boundary_event, "dump_committed_start", False)
-                )
-                release_onset_event = bool(
-                    boundary_event is not None
-                    and getattr(boundary_event, "release_onset", False)
-                )
-                dump_complete_event = bool(
-                    boundary_event is not None
-                    and getattr(boundary_event, "dump_complete", False)
-                )
-            if not (release_safety_done or dump_complete_event):
-                legacy_dump_start_event = bool(
-                    boundary_event is not None
-                    and getattr(boundary_event, "dump_start", False)
-                    and not self._semantic_boundary_profile_active()
-                )
-                if (
-                    dump_committed_event
-                    or release_onset_event
-                    or legacy_dump_start_event
-                ):
-                    self._dump_ready_hold_count = self.dump_ready_hold_steps
-                elif (
-                    not self._semantic_boundary_profile_active()
-                    and self._dump_ready(obs)
-                ):
-                    self._dump_ready_hold_count += 1
-                else:
-                    self._dump_ready_hold_count = 0
-            outcome = self.dump_lifecycle_gate.carry_outcome(
+            request = build_carry_transition_runtime_request(
                 release_safety_done=release_safety_done,
-                dump_complete_event=dump_complete_event,
-                dump_committed_event=dump_committed_event,
-                release_onset_event=release_onset_event,
-                legacy_dump_start_event=legacy_dump_start_event,
-                dump_ready_hold_ready=(
-                    self._dump_ready_hold_count >= self.dump_ready_hold_steps
+                boundary_event=boundary_event,
+                semantic_boundary_profile_active=(
+                    self._semantic_boundary_profile_active()
                 ),
+                current_dump_ready_hold_count=self._dump_ready_hold_count,
             )
-            if outcome.action == "return":
-                self._complete_coverage_dump(obs, reason=outcome.coverage_reason)
-                self._set_return_or_direct_handoff(obs, reason=outcome.switch_reason)
+            dump_ready = False
+            if request.should_check_dump_ready and self._dump_ready(obs):
+                dump_ready = True
+            runtime = self.dump_lifecycle_gate.carry_transition_runtime(
+                request.facts_with_dump_ready(dump_ready),
+                dump_ready_hold_steps=self.dump_ready_hold_steps,
+            )
+            if self._apply_carry_transition_runtime(runtime, obs):
                 return
-            if outcome.action == "dump":
-                self._dump_start_deposited_mass_kg = self._deposited_mass(obs)
-                self._set_skill("dump", outcome.switch_reason)
             return
 
         if self._skill_name == "dump":
-            dump_complete_event = bool(
-                self.dump_done_use_boundary_event
-                and boundary_event is not None
-                and bool(getattr(boundary_event, "dump_complete", False))
-            )
-            legacy_dump_end_event = False
-            if not dump_complete_event:
-                legacy_dump_end_event = bool(
-                    self.dump_done_use_boundary_event
-                    and boundary_event is not None
-                    and bool(getattr(boundary_event, "dump_end", False))
-                    and not self._semantic_boundary_profile_active()
-                )
-            if not (dump_complete_event or legacy_dump_end_event):
-                if not self._semantic_boundary_profile_active() and self._dump_done(obs):
-                    self._dump_done_hold_count += 1
-                else:
-                    self._dump_done_hold_count = 0
-            outcome = self.dump_lifecycle_gate.dump_outcome(
-                dump_complete_event=dump_complete_event,
-                legacy_dump_end_event=legacy_dump_end_event,
-                dump_done_hold_ready=(
-                    self._dump_done_hold_count >= self.dump_done_hold_steps
+            request = build_dump_transition_runtime_request(
+                dump_done_use_boundary_event=self.dump_done_use_boundary_event,
+                boundary_event=boundary_event,
+                semantic_boundary_profile_active=(
+                    self._semantic_boundary_profile_active()
                 ),
+                current_dump_done_hold_count=self._dump_done_hold_count,
             )
-            if outcome.action == "return":
-                self._complete_coverage_dump(obs, reason=outcome.coverage_reason)
-                self._set_return_or_direct_handoff(
-                    obs,
-                    reason=outcome.switch_reason,
-                )
+            dump_done = False
+            if request.should_check_dump_done and self._dump_done(obs):
+                dump_done = True
+            runtime = self.dump_lifecycle_gate.dump_transition_runtime(
+                request.facts_with_dump_done(dump_done),
+                dump_done_hold_steps=self.dump_done_hold_steps,
+            )
+            if self._apply_dump_transition_runtime(runtime, obs):
+                return
             return
 
         if self._skill_name == "return":
             handoff_ready = self._return_to_dig_handoff_ready(obs)
-            next_dig_event = bool(
-                boundary_event is not None
-                and (
-                    getattr(boundary_event, "next_dig_entry_ready", False)
-                    or getattr(boundary_event, "qualified_dig_start", False)
-                )
-            )
-            if next_dig_event:
-                self._return_next_dig_event_seen = True
-            if (next_dig_event or self._return_next_dig_event_seen) and handoff_ready:
-                self._completed_transition_count += 1
-                self._cycle_index += 1
-                next_skill = (
-                    PRE_DIG_ALIGN_SKILL_NAME
-                    if self._should_pre_dig_align_before_dig()
-                    else "dig"
-                )
-                self._set_skill(
-                    next_skill,
-                    f"return_to_{next_skill}_next_dig_entry_ready",
-                )
-                return
-            if self._return_to_dig_direct_handoff_ready(
-                obs,
+            request = self.return_transition_service.transition_request(
                 handoff_ready=handoff_ready,
-            ):
-                self._completed_transition_count += 1
-                self._cycle_index += 1
-                next_skill = (
-                    PRE_DIG_ALIGN_SKILL_NAME
-                    if self._should_pre_dig_align_before_dig()
-                    else "dig"
+                boundary_event=boundary_event,
+                previous_next_dig_event_seen=self._return_next_dig_event_seen,
+                semantic_boundary_profile_active=(
+                    self._semantic_boundary_profile_active()
+                ),
+            )
+            direct_handoff_ready = False
+            shallow_guard_ready = False
+            if request.should_check_direct_handoff:
+                direct_handoff_ready = self._return_to_dig_direct_handoff_ready(
+                    obs,
+                    handoff_ready=handoff_ready,
                 )
-                self._set_skill(
-                    next_skill,
-                    f"return_to_{next_skill}_start_envelope_ready",
-                )
-                return
-            if (
-                not self._semantic_boundary_profile_active()
-                and self._return_to_dig_shallow_guard_ready(
+            if request.should_check_shallow_guard(direct_handoff_ready):
+                shallow_guard_ready = self._return_to_dig_shallow_guard_ready(
                     obs=obs,
                     boundary_event=boundary_event,
                 )
-                and handoff_ready
+            outcome = self.return_transition_service.classify(
+                request.facts_with_gate_results(
+                    direct_handoff_ready=direct_handoff_ready,
+                    shallow_guard_ready=shallow_guard_ready,
+                ),
+                request.config,
+            )
+            projection = self.return_transition_service.transition_runtime_projection(
+                outcome
+            )
+            if not self._apply_return_to_dig_transition_runtime_projection(
+                projection
             ):
-                self._completed_transition_count += 1
-                self._cycle_index += 1
-                next_skill = (
-                    PRE_DIG_ALIGN_SKILL_NAME
-                    if self._should_pre_dig_align_before_dig()
-                    else "dig"
-                )
-                self._set_skill(
-                    next_skill,
-                    f"return_to_{next_skill}_shallow_entry_guard",
-                )
                 return
+            completion_request = self.return_transition_service.completion_request(
+                pre_dig_align_before_dig=self._should_pre_dig_align_before_dig(),
+                pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
+            )
+            completion = self.return_transition_service.transition_completion(
+                outcome,
+                completion_request.facts,
+                completion_request.config,
+            )
+            self._apply_return_to_dig_transition_completion(completion)
+            return
 
     def _set_return_or_direct_handoff(self, obs: dict, *, reason: str) -> None:
         self._set_skill("return", reason)
         self._try_return_direct_handoff_at_current_obs(obs)
 
     def _try_return_direct_handoff_at_current_obs(self, obs: dict) -> bool:
-        if self._skill_name != "return":
-            return False
-        if not self.return_target_planner_enabled:
-            return False
-        if not self.return_to_dig_start_envelope_direct_handoff_enabled:
+        request = self.return_transition_service.direct_handoff_attempt_request(
+            active_skill_name=self._skill_name,
+            return_target_planner_enabled=self.return_target_planner_enabled,
+            direct_handoff_enabled=(
+                self.return_to_dig_start_envelope_direct_handoff_enabled
+            ),
+        )
+        if not request.should_prepare_return_target:
             return False
         self._ensure_return_target_plan_for_cycle(obs)
         handoff_ready = self._return_to_dig_handoff_ready(obs)
-        if not self._return_to_dig_direct_handoff_ready(
+        direct_handoff_ready = self._return_to_dig_direct_handoff_ready(
             obs,
             handoff_ready=handoff_ready,
-        ):
+        )
+        attempt = self.return_transition_service.direct_handoff_attempt(
+            request.facts_with_gate_results(
+                handoff_ready=handoff_ready,
+                direct_handoff_ready=direct_handoff_ready,
+            ),
+            request.config,
+        )
+        if attempt.action != "direct_handoff":
             return False
-        self._completed_transition_count += 1
-        self._cycle_index += 1
-        next_skill = (
-            PRE_DIG_ALIGN_SKILL_NAME
-            if self._should_pre_dig_align_before_dig()
-            else "dig"
+        projection = self.return_transition_service.direct_handoff_runtime_projection(
+            attempt
         )
-        self._set_skill(
-            next_skill,
-            f"return_to_{next_skill}_start_envelope_ready",
+        if not self._apply_return_to_dig_transition_runtime_projection(projection):
+            return False
+        completion_request = self.return_transition_service.completion_request(
+            pre_dig_align_before_dig=self._should_pre_dig_align_before_dig(),
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
         )
-        return True
+        completion = self.return_transition_service.direct_handoff_completion(
+            attempt,
+            completion_request.facts,
+            completion_request.config,
+        )
+        return self._apply_return_to_dig_transition_completion(completion)
+
+    def _apply_bootstrap_transition_decision(
+        self,
+        decision: BootstrapTransitionDecision,
+    ) -> None:
+        self._set_skill(decision.next_skill, decision.switch_reason)
 
     def _set_skill(self, skill_name: str, reason: str) -> None:
         if skill_name == self._skill_name:
@@ -1329,38 +829,20 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             self._return_step_count = 0
             self._return_next_dig_event_seen = False
         elif skill_name == PRE_DIG_ALIGN_SKILL_NAME:
-            self._pre_dig_align_step_count = 0
-            self._pre_dig_align_hold_count = 0
-            self._pre_dig_align_entry_close_handoff_ready = False
-            self._pre_dig_align_entry_intent_handoff_ready = False
-            self._pre_dig_align_timeout_handoff_reason = ""
-            self._pre_dig_align_surface_guard_triggered = False
+            self._apply_pre_dig_align_enter_runtime_state()
         elif skill_name == "dig":
             self._return_next_dig_event_seen = False
             self._dump_ready_hold_count = 0
             self._dump_done_hold_count = 0
-            self._coverage_current_payload_gain_kg = 0.0
-            self._dig_step_count = 0
-            self._dig_best_mass_kg = 0.0
-            self._dig_mass_plateau_count = 0
-            self._dig_to_carry_reason = ""
+            self._reset_dig_entry_runtime()
         if skill_name not in {"dig", PRE_DIG_ALIGN_SKILL_NAME}:
             self._clear_dig_cut_plan()
 
     def _restart_pre_dig_align(self, reason: str) -> None:
         self._skill_name = PRE_DIG_ALIGN_SKILL_NAME
         self._switch_reason = str(reason)
-        self._pre_dig_align_step_count = 0
-        self._pre_dig_align_hold_count = 0
-        self._pre_dig_align_replan_count += 1
-        self._pre_dig_align_entry_intent_handoff_ready = False
-        self._pre_dig_align_timeout_handoff_reason = ""
-        self._pre_dig_align_surface_guard_triggered = False
-        self._dig_step_count = 0
-        self._dig_best_mass_kg = 0.0
-        self._dig_mass_plateau_count = 0
-        self._dig_to_carry_reason = ""
-        self._coverage_current_payload_gain_kg = 0.0
+        self._apply_pre_dig_align_restart_runtime_state()
+        self._reset_dig_entry_runtime()
         self._coverage_active_corridor_id = -1
         self._return_next_dig_event_seen = False
         self._invalidate_pending_dig_cut_plan()
@@ -1388,13 +870,13 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self._dig_cut_token_in_prior_p10_p90 = self._raw_fields_in_prior_range(
             raw_fields
         )
-        self._pre_dig_align_entry_error_m = float(self._pre_dig_align_entry_error(obs))
+        entry_error = self._pre_dig_align_entry_error(obs)
+        self._apply_pre_dig_align_entry_error_runtime_state(
+            entry_error_m=entry_error
+        )
         if not self._pre_dig_align_timeout_can_handoff(obs):
             return False
-        self._pre_dig_align_replan_count += 1
-        self._pre_dig_align_completed_count += 1
-        self._pre_dig_align_step_count = 0
-        self._pre_dig_align_hold_count = 0
+        self._apply_pre_dig_align_replan_handoff_runtime_state()
         self._set_skill("dig", "pre_dig_align_replan_to_dig_entry_close")
         return True
 
@@ -1402,11 +884,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self._skill_name = "dig"
         self._switch_reason = str(reason)
         self._active_policy().reset()
-        self._dig_step_count = 0
-        self._dig_best_mass_kg = 0.0
-        self._dig_mass_plateau_count = 0
-        self._dig_to_carry_reason = ""
-        self._coverage_current_payload_gain_kg = 0.0
+        self._reset_dig_entry_runtime()
         self._coverage_active_corridor_id = -1
         self._invalidate_pending_dig_cut_plan()
         self._clear_dig_cut_plan()
@@ -1420,28 +898,38 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         terminal_reason: str | None = None,
     ) -> None:
         corridor = self._coverage_active_corridor()
-        payload_gain = max(
-            float(self._coverage_current_payload_gain_kg),
-            float(self._dig_best_mass_kg),
-            self._mass_in_bucket(obs),
-            0.0,
+        stop_state = self.dig_lifecycle_gate.failed_dig_stop_state(
+            build_failed_dig_stop_facts_from_runtime(
+                reason=reason,
+                coverage_current_payload_gain_kg=(
+                    self._coverage_current_payload_gain_kg
+                ),
+                dig_best_mass_kg=self._dig_best_mass_kg,
+                current_bucket_mass_kg=self._mass_in_bucket(obs),
+                dig_step_count=self._dig_step_count,
+                switch_reason=switch_reason,
+                terminal_reason=terminal_reason,
+            )
         )
-        self._switch_reason = str(switch_reason or f"dig_failed_stop_{reason}")
+        self._apply_failed_dig_stop_state(stop_state, obs=obs, corridor=corridor)
+
+    def _apply_failed_dig_stop_state(
+        self,
+        state: FailedDigStopState,
+        *,
+        obs: dict,
+        corridor: Any | None,
+    ) -> None:
+        self._switch_reason = str(state.switch_reason)
         self._record_coverage_decision_event(
-            "failed_dig_stop",
+            state.coverage_event,
             obs=obs,
             corridor=corridor,
-            extra={
-                "reason": str(reason),
-                "payload_gain_kg": float(payload_gain),
-                "current_bucket_mass_kg": float(self._mass_in_bucket(obs)),
-                "dig_best_mass_kg": float(self._dig_best_mass_kg),
-                "dig_step_count": int(self._dig_step_count),
-            },
+            extra=state.coverage_event_extra,
         )
         self._request_coverage_terminal_stop(
-            str(terminal_reason or f"dig_failed_{reason}"),
-            replace=True,
+            state.terminal_reason,
+            replace=bool(state.terminal_stop_replace),
         )
 
     def _restart_after_failed_dig(self, reason: str, obs: dict) -> None:
@@ -1452,6 +940,19 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             ),
             config=self._dig_lifecycle_config(),
         )
+        self._apply_failed_dig_recovery_decision(
+            decision,
+            reason=reason,
+            obs=obs,
+        )
+
+    def _apply_failed_dig_recovery_decision(
+        self,
+        decision: FailedDigRecoveryDecision,
+        *,
+        reason: str,
+        obs: dict,
+    ) -> None:
         if decision.next_skill == PRE_DIG_ALIGN_SKILL_NAME:
             self._restart_pre_dig_align(decision.switch_reason)
             return
@@ -1481,28 +982,31 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             self._bootstrap_facts(obs=obs, boundary_event=boundary_event),
             self._bootstrap_config(),
         )
+        return self._apply_bootstrap_end_decision(decision)
+
+    def _apply_bootstrap_end_decision(
+        self,
+        decision: BootstrapEndDecision,
+    ) -> bool:
         self._scripted_bootstrap_hold_count = int(decision.hold_count)
         if decision.timeout_increment:
             self._scripted_bootstrap_timeout_count += 1
         return bool(decision.should_end)
 
+    def _apply_bootstrap_target_decision(
+        self,
+        decision: BootstrapTargetDecision,
+    ) -> bool:
+        self._scripted_bootstrap_hold_count = int(decision.hold_count)
+        return bool(decision.ready)
+
     def _bootstrap_config(self) -> BootstrapConfig:
-        return BootstrapConfig(
+        return build_bootstrap_config_from_mapping(
+            {
+                config_key: getattr(self, attr_name)
+                for config_key, attr_name in BOOTSTRAP_RUNTIME_CONFIG_FIELDS
+            },
             action_dim=int(self.action_dim),
-            end_mode=str(self.bootstrap_end_mode),
-            end_min_bucket_mass_kg=float(self.bootstrap_end_min_bucket_mass_kg),
-            end_min_distance_to_dig_area_m=float(
-                self.bootstrap_end_min_distance_to_dig_area_m
-            ),
-            scripted_target_qpos=self.scripted_bootstrap_target_qpos,
-            scripted_kp=float(self.scripted_bootstrap_kp),
-            scripted_kd=float(self.scripted_bootstrap_kd),
-            scripted_action_clip=self.scripted_bootstrap_action_clip,
-            scripted_action_signs=self.scripted_bootstrap_action_signs,
-            scripted_qpos_tolerance=float(self.scripted_bootstrap_qpos_tolerance),
-            scripted_qvel_abs_max=float(self.scripted_bootstrap_qvel_abs_max),
-            scripted_hold_steps=int(self.scripted_bootstrap_hold_steps),
-            scripted_max_steps=int(self.scripted_bootstrap_max_steps),
         )
 
     def _bootstrap_facts(
@@ -1511,25 +1015,136 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         obs: dict,
         boundary_event: Any | None = None,
     ) -> BootstrapFacts:
-        return BootstrapFacts(
-            qpos=np.asarray(
-                obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
-                dtype=np.float32,
-            ).reshape(self.action_dim),
-            qvel=np.asarray(
-                obs.get("qvel", np.zeros(self.action_dim, dtype=np.float32)),
-                dtype=np.float32,
-            ).reshape(self.action_dim),
-            mass_in_bucket_kg=self._mass_in_bucket(obs),
-            min_distance_to_dig_area_m=self._min_distance_to_dig_area(obs),
-            qualified_dig_start=bool(
-                boundary_event is not None
-                and getattr(boundary_event, "qualified_dig_start", False)
-            ),
-            step_count=int(self._scripted_bootstrap_step_count),
-            hold_count=int(self._scripted_bootstrap_hold_count),
+        snapshot = self._make_snapshot(obs, boundary_event=boundary_event)
+        return self.bootstrap_service.facts_from_observation_view(
+            view=snapshot.view,
+            boundary_event=boundary_event,
+            step_count=self._scripted_bootstrap_step_count,
+            hold_count=self._scripted_bootstrap_hold_count,
             bootstrap_policy_present=self.bootstrap_policy is not None,
         )
+
+    def _bootstrap_runtime_status_snapshot(self) -> BootstrapRuntimeStatusSnapshot:
+        return self.bootstrap_service.runtime_status_snapshot(
+            build_bootstrap_runtime_status_state_from_mapping(
+                {
+                    field_name: getattr(self, attr_name)
+                    for field_name, attr_name in BOOTSTRAP_RUNTIME_STATUS_FIELDS
+                }
+            )
+        )
+
+    def _reset_bootstrap_runtime(self) -> None:
+        state = self.bootstrap_service.initial_runtime_state()
+        self._apply_bootstrap_runtime_state(state)
+
+    def _apply_bootstrap_runtime_state(
+        self,
+        state: BootstrapRuntimeStatusState,
+    ) -> None:
+        self._scripted_bootstrap_step_count = int(state.step_count)
+        self._scripted_bootstrap_hold_count = int(state.hold_count)
+        self._scripted_bootstrap_timeout_count = int(state.timeout_count)
+
+    def _reset_dump_lifecycle_runtime(self) -> None:
+        state = self.dump_lifecycle_gate.initial_runtime_state()
+        self._apply_dump_lifecycle_runtime_state(state)
+
+    def _dump_lifecycle_runtime_status_snapshot(
+        self,
+    ) -> DumpLifecycleRuntimeStatusSnapshot:
+        return self.dump_lifecycle_gate.runtime_status_snapshot(
+            build_dump_lifecycle_runtime_status_state_from_mapping(
+                {
+                    field_name: getattr(self, attr_name)
+                    for (
+                        field_name,
+                        attr_name,
+                    ) in DUMP_LIFECYCLE_RUNTIME_STATUS_FIELDS
+                }
+            )
+        )
+
+    def _apply_dump_lifecycle_runtime_state(
+        self,
+        state: DumpLifecycleRuntimeState,
+    ) -> None:
+        self._dump_ready_hold_count = int(state.ready_hold_count)
+        self._dump_done_hold_count = int(state.done_hold_count)
+        self._dump_start_deposited_mass_kg = float(state.start_deposited_mass_kg)
+
+    def _apply_carry_transition_runtime(
+        self,
+        runtime: CarryTransitionRuntimeState,
+        obs: dict,
+    ) -> bool:
+        self._dump_ready_hold_count = int(runtime.dump_ready_hold_count)
+        outcome = runtime.outcome
+        if outcome.action == "return":
+            self._complete_coverage_dump(obs, reason=outcome.coverage_reason)
+            self._set_return_or_direct_handoff(obs, reason=outcome.switch_reason)
+            return True
+        if outcome.action == "dump":
+            self._dump_start_deposited_mass_kg = self._deposited_mass(obs)
+            self._set_skill("dump", outcome.switch_reason)
+            return True
+        return False
+
+    def _apply_dump_transition_runtime(
+        self,
+        runtime: DumpTransitionRuntimeState,
+        obs: dict,
+    ) -> bool:
+        self._dump_done_hold_count = int(runtime.dump_done_hold_count)
+        outcome = runtime.outcome
+        if outcome.action == "return":
+            self._complete_coverage_dump(obs, reason=outcome.coverage_reason)
+            self._set_return_or_direct_handoff(
+                obs,
+                reason=outcome.switch_reason,
+            )
+            return True
+        return False
+
+    def _apply_pre_dig_align_outcome_runtime_projection(
+        self,
+        projection: PreDigAlignOutcomeRuntimeProjection,
+        obs: dict,
+    ) -> bool:
+        if projection.transition_action != "none":
+            self._apply_pre_dig_align_runtime_state(projection.runtime_state)
+        if projection.should_handoff_to_dig:
+            self._set_skill("dig", projection.switch_reason)
+            return True
+        if projection.should_restart_dig_with_new_cut:
+            self._reject_active_coverage_corridor(
+                obs,
+                reason=projection.reject_reason,
+            )
+            self._restart_dig_with_new_cut(projection.switch_reason)
+            return True
+        if projection.should_try_replan_handoff:
+            self._reject_active_coverage_corridor(
+                obs,
+                reason=projection.reject_reason,
+            )
+            if not self._try_replan_pre_dig_align_handoff(obs):
+                self._restart_pre_dig_align(projection.switch_reason)
+            return True
+        return False
+
+    def _apply_pre_dig_align_outcome(
+        self,
+        outcome: PreDigAlignOutcome,
+        obs: dict,
+    ) -> bool:
+        projection = (
+            self.dig_start_alignment_service.outcome_runtime_projection_from_state(
+                outcome=outcome,
+                state=self._pre_dig_align_runtime_state(),
+            )
+        )
+        return self._apply_pre_dig_align_outcome_runtime_projection(projection, obs)
 
     def _scripted_bootstrap_enabled(self) -> bool:
         return self.bootstrap_service.scripted_enabled(self._bootstrap_config())
@@ -1539,8 +1154,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             self._bootstrap_facts(obs=obs),
             self._bootstrap_config(),
         )
-        self._scripted_bootstrap_hold_count = int(decision.hold_count)
-        return bool(decision.ready)
+        return self._apply_bootstrap_target_decision(decision)
 
     def _scripted_bootstrap_action(self, obs: dict) -> np.ndarray:
         if self.scripted_bootstrap_target_qpos is None:
@@ -1552,103 +1166,87 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         )
 
     def _pre_dig_align_surface_guard_triggered_for_state(self, obs: dict) -> bool:
-        decision = self.dig_start_alignment_service.surface_guard_triggered(
-            self._dig_start_alignment_facts(obs),
-            self._dig_start_alignment_config(),
+        snapshot = build_planner_snapshot(
+            obs,
+            active_skill=self._skill_name,
+            cycle_index=int(self._cycle_index),
+            prev_action=None,
+            boundary_event=None,
+            action_dim=self.action_dim,
         )
-        self._pre_dig_align_surface_depth_m = float(decision.surface_depth_m)
-        self._pre_dig_align_surface_guard_triggered = bool(decision.triggered)
-        return bool(decision.triggered)
+        entry_error = self._pre_dig_align_entry_error(obs)
+        decision = (
+            self.dig_start_alignment_service.surface_guard_triggered_from_observation_view(
+                view=snapshot.view,
+                config=self._dig_start_alignment_config(),
+                entry_error_m=entry_error,
+                cycle_index=getattr(self, "_cycle_index", 0),
+                hold_count=self._pre_dig_align_hold_count,
+            )
+        )
+        return self._apply_pre_dig_align_surface_guard_decision(decision)
 
     def _pre_dig_align_surface_guard_can_handoff(self, obs: dict) -> bool:
         self._ensure_dig_cut_plan_for_cycle(obs)
         entry_error = self._pre_dig_align_entry_error(obs)
-        self._pre_dig_align_entry_error_m = float(entry_error)
-        return self.dig_start_alignment_service.surface_guard_can_handoff(
-            self._dig_start_alignment_facts(obs, entry_error=entry_error),
-            self._dig_start_alignment_config(),
+        self._apply_pre_dig_align_entry_error_runtime_state(
+            entry_error_m=entry_error
+        )
+        snapshot = build_planner_snapshot(
+            obs,
+            active_skill=self._skill_name,
+            cycle_index=int(self._cycle_index),
+            prev_action=None,
+            boundary_event=None,
+            action_dim=self.action_dim,
+        )
+        return (
+            self.dig_start_alignment_service.surface_guard_can_handoff_from_observation_view(
+                view=snapshot.view,
+                entry_error_m=entry_error,
+                config=self._dig_start_alignment_config(),
+                cycle_index=getattr(self, "_cycle_index", 0),
+                hold_count=self._pre_dig_align_hold_count,
+            )
         )
 
     def _pre_dig_align_outcome(self, obs: dict) -> PreDigAlignOutcome:
         surface_guard_triggered = self._pre_dig_align_surface_guard_triggered_for_state(
             obs
         )
-        if surface_guard_triggered:
-            return self.dig_start_alignment_service.classify_outcome(
-                surface_guard_triggered=True,
-                surface_guard_can_handoff=self._pre_dig_align_surface_guard_can_handoff(
-                    obs
-                ),
+        request = self.dig_start_alignment_service.outcome_request(
+            surface_guard_triggered=surface_guard_triggered,
+            step_count=int(self._pre_dig_align_step_count),
+            max_steps=int(self.pre_dig_align_max_steps),
+        )
+        surface_guard_can_handoff = False
+        ready = False
+        timeout_can_handoff = False
+        timeout_reason = ""
+        if request.should_check_surface_guard_handoff:
+            surface_guard_can_handoff = (
+                self._pre_dig_align_surface_guard_can_handoff(obs)
             )
-        if self._pre_dig_align_ready(obs):
-            return self.dig_start_alignment_service.classify_outcome(
-                surface_guard_triggered=False,
-                ready=True,
-            )
-        timed_out = bool(self._pre_dig_align_step_count >= self.pre_dig_align_max_steps)
-        if timed_out:
-            return self.dig_start_alignment_service.classify_outcome(
-                surface_guard_triggered=False,
-                timed_out=True,
-                timeout_can_handoff=self._pre_dig_align_timeout_can_handoff(obs),
-                timeout_reason=self._pre_dig_align_timeout_handoff_reason,
-            )
-        return self.dig_start_alignment_service.classify_outcome(
-            surface_guard_triggered=False,
+        elif request.should_check_ready:
+            ready = self._pre_dig_align_ready(obs)
+        if request.should_check_timeout(ready=ready):
+            timeout_can_handoff = self._pre_dig_align_timeout_can_handoff(obs)
+            timeout_reason = self._pre_dig_align_timeout_handoff_reason
+        return request.outcome_with_gate_results(
+            surface_guard_can_handoff=surface_guard_can_handoff,
+            ready=ready,
+            timeout_can_handoff=timeout_can_handoff,
+            timeout_reason=timeout_reason,
         )
 
     def _dig_start_alignment_config(self) -> DigStartAlignmentConfig:
-        return DigStartAlignmentConfig(
-            action_dim=int(self.action_dim),
-            qpos_min=self.pre_dig_align_qpos_min,
-            qpos_max=self.pre_dig_align_qpos_max,
-            qpos_from_token_coefficients=self.pre_dig_align_qpos_from_token_coefficients,
-            controlled_dims=self.pre_dig_align_controlled_dims,
-            entry_intent_controlled_dims=(
-                None
-                if self.pre_dig_align_entry_intent_controlled_dims is None
-                else self.pre_dig_align_entry_intent_controlled_dims
-            ),
-            bucket_target_qpos=self.pre_dig_align_bucket_target_qpos,
-            kp=float(self.pre_dig_align_kp),
-            kd=float(self.pre_dig_align_kd),
-            action_clip=self.pre_dig_align_action_clip,
-            action_signs=self.pre_dig_align_action_signs,
-            enabled=bool(self.pre_dig_align_enabled),
-            qpos_tolerance=self.pre_dig_align_qpos_tolerance,
-            qvel_abs_max=float(self.pre_dig_align_qvel_abs_max),
-            hold_steps=int(self.pre_dig_align_hold_steps),
-            max_entry_error_m=self.pre_dig_align_max_entry_error_m,
-            timeout_accept_entry_error_m=(
-                self.pre_dig_align_timeout_accept_entry_error_m
-            ),
-            start_envelope_enabled=bool(self.pre_dig_align_start_envelope_enabled),
-            start_envelope_max_entry_error_m=float(
-                self.pre_dig_align_start_envelope_max_entry_error_m
-            ),
-            first_dig_entry_close_handoff=bool(
-                self.pre_dig_align_first_dig_entry_close_handoff
-            ),
-            first_dig_entry_close_handoff_qvel_abs_max=(
-                self.pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max
-            ),
-            entry_intent_handoff_enabled=bool(
-                self.pre_dig_align_entry_intent_handoff_enabled
-            ),
-            surface_guard_enabled=bool(self.pre_dig_align_surface_guard_enabled),
-            surface_guard_max_penetration_m=float(
-                self.pre_dig_align_surface_guard_max_penetration_m
-            ),
-            surface_guard_handoff_entry_error_m=(
-                self.pre_dig_align_surface_guard_handoff_entry_error_m
-            ),
-            surface_guard_use_contact_fallback=bool(
-                self.pre_dig_align_surface_guard_use_contact_fallback
-            ),
-            start_qpos_min=self.pre_dig_align_start_qpos_min,
-            start_qpos_max=self.pre_dig_align_start_qpos_max,
-            start_pose_min=self.pre_dig_align_start_pose_min,
-            start_pose_max=self.pre_dig_align_start_pose_max,
+        return build_dig_start_alignment_runtime_config_from_mapping(
+            {
+                config_key: getattr(self, attr_name)
+                for config_key, attr_name in (
+                    DIG_START_ALIGNMENT_RUNTIME_CONFIG_FIELDS
+                )
+            }
         )
 
     def _dig_start_alignment_facts(
@@ -1660,79 +1258,226 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         qpos: np.ndarray | None = None,
         qvel: np.ndarray | None = None,
     ) -> DigStartAlignmentFacts:
-        qpos_arr = (
-            np.asarray(qpos, dtype=np.float32).reshape(self.action_dim)
-            if qpos is not None
-            else np.asarray(
-                obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
-                dtype=np.float32,
-            ).reshape(self.action_dim)
+        snapshot_obs = obs
+        if qpos is not None or qvel is not None:
+            snapshot_obs = dict(obs)
+            if qpos is not None:
+                snapshot_obs["qpos"] = qpos
+            if qvel is not None:
+                snapshot_obs["qvel"] = qvel
+        snapshot = build_planner_snapshot(
+            snapshot_obs,
+            active_skill=self._skill_name,
+            cycle_index=int(self._cycle_index),
+            prev_action=None,
+            boundary_event=None,
+            action_dim=self.action_dim,
         )
-        qvel_arr = (
-            np.asarray(qvel, dtype=np.float32).reshape(self.action_dim)
-            if qvel is not None
-            else np.asarray(
-                obs.get("qvel", np.zeros(self.action_dim, dtype=np.float32)),
-                dtype=np.float32,
-            ).reshape(self.action_dim)
-        )
-        target = (
-            None
-            if target_qpos is None
-            else np.asarray(target_qpos, dtype=np.float32).reshape(self.action_dim)
-        )
-        return DigStartAlignmentFacts(
-            qpos=qpos_arr,
-            qvel=qvel_arr,
-            target_qpos=target,
+        return self.dig_start_alignment_service.facts_from_observation_view(
+            view=snapshot.view,
+            target_qpos=target_qpos,
             entry_error_m=(
                 self._pre_dig_align_entry_error(obs)
                 if entry_error is None
-                else float(entry_error)
+                else entry_error
             ),
-            bucket_pose=self._bucket_dig_area_pose(obs),
-            surface_depth_m=self._bucket_depth_below_local_surface(obs),
-            contact_mask=self._bucket_dig_area_contact_mask(obs),
-            cycle_index=int(getattr(self, "_cycle_index", 0)),
-            hold_count=int(self._pre_dig_align_hold_count),
+            qpos=qpos,
+            qvel=qvel,
+            cycle_index=getattr(self, "_cycle_index", 0),
+            hold_count=self._pre_dig_align_hold_count,
+        )
+
+    def _reset_pre_dig_align_runtime(self) -> None:
+        self._apply_pre_dig_align_initial_runtime_state()
+
+    def _pre_dig_align_runtime_state(self) -> DigStartAlignmentRuntimeState:
+        return runtime_state_from_mapping(
+            {
+                field_name: getattr(self, attr_name)
+                for field_name, attr_name in DIG_START_ALIGNMENT_RUNTIME_STATE_FIELDS
+            }
+        )
+
+    def _apply_pre_dig_align_runtime_state(
+        self,
+        state: DigStartAlignmentRuntimeState,
+    ) -> None:
+        self._pre_dig_align_step_count = int(state.step_count)
+        self._pre_dig_align_hold_count = int(state.hold_count)
+        self._pre_dig_align_timeout_count = int(state.timeout_count)
+        self._pre_dig_align_completed_count = int(state.completed_count)
+        self._pre_dig_align_replan_count = int(state.replan_count)
+        self._pre_dig_align_target_qpos = (
+            np.asarray(state.target_qpos, dtype=np.float32)
+            .reshape(self.action_dim)
+            .copy()
+        )
+        self._pre_dig_align_error = (
+            np.asarray(state.error, dtype=np.float32).reshape(self.action_dim).copy()
+        )
+        self._pre_dig_align_entry_error_m = float(state.entry_error_m)
+        self._pre_dig_align_start_envelope_ready = bool(state.start_envelope_ready)
+        self._pre_dig_align_entry_close_handoff_ready = bool(
+            state.entry_close_handoff_ready
+        )
+        self._pre_dig_align_entry_intent_handoff_ready = bool(
+            state.entry_intent_handoff_ready
+        )
+        self._pre_dig_align_timeout_handoff_reason = str(
+            state.timeout_handoff_reason
+        )
+        self._pre_dig_align_surface_depth_m = float(state.surface_depth_m)
+        self._pre_dig_align_surface_guard_triggered = bool(
+            state.surface_guard_triggered
+        )
+        self._pre_dig_align_surface_guard_count = int(state.surface_guard_count)
+
+    def _apply_pre_dig_align_initial_runtime_state(self) -> None:
+        self._apply_pre_dig_align_runtime_state(
+            self.dig_start_alignment_service.initial_runtime_state(
+                self._dig_start_alignment_config()
+            )
+        )
+
+    def _apply_pre_dig_align_enter_runtime_state(self) -> None:
+        self._apply_pre_dig_align_runtime_state(
+            self.dig_start_alignment_service.enter_runtime_state(
+                self._pre_dig_align_runtime_state(),
+                self._dig_start_alignment_config(),
+            )
+        )
+
+    def _apply_pre_dig_align_restart_runtime_state(self) -> None:
+        self._apply_pre_dig_align_runtime_state(
+            self.dig_start_alignment_service.restart_runtime_state(
+                self._pre_dig_align_runtime_state(),
+                self._dig_start_alignment_config(),
+            )
+        )
+
+    def _apply_pre_dig_align_replan_handoff_runtime_state(self) -> None:
+        self._apply_pre_dig_align_runtime_state(
+            self.dig_start_alignment_service.replan_handoff_runtime_state(
+                self._pre_dig_align_runtime_state(),
+                self._dig_start_alignment_config(),
+            )
+        )
+
+    def _apply_pre_dig_align_surface_guard_decision(
+        self,
+        decision: SurfaceGuardDecision,
+    ) -> bool:
+        self._apply_pre_dig_align_runtime_state(
+            self.dig_start_alignment_service.surface_guard_runtime_state(
+                self._pre_dig_align_runtime_state(),
+                decision,
+            )
+        )
+        return bool(decision.triggered)
+
+    def _apply_pre_dig_align_entry_error_runtime_state(
+        self,
+        *,
+        entry_error_m: float,
+    ) -> None:
+        self._apply_pre_dig_align_runtime_state(
+            self.dig_start_alignment_service.entry_error_runtime_state(
+                self._pre_dig_align_runtime_state(),
+                entry_error_m=entry_error_m,
+            )
+        )
+
+    def _apply_pre_dig_align_ready_decision(
+        self,
+        decision: AlignmentReadyDecision,
+        *,
+        entry_error_m: float,
+    ) -> bool:
+        self._apply_pre_dig_align_runtime_state(
+            self.dig_start_alignment_service.ready_runtime_state(
+                self._pre_dig_align_runtime_state(),
+                decision,
+                entry_error_m=entry_error_m,
+            )
+        )
+        return bool(decision.ready)
+
+    def _apply_pre_dig_align_timeout_handoff_decision(
+        self,
+        decision: TimeoutHandoffDecision,
+        *,
+        sampled_entry_error_m: float | None = None,
+    ) -> bool:
+        self._apply_pre_dig_align_runtime_state(
+            self.dig_start_alignment_service.timeout_handoff_runtime_state(
+                self._pre_dig_align_runtime_state(),
+                decision,
+                sampled_entry_error_m=sampled_entry_error_m,
+            )
+        )
+        return bool(decision.ready)
+
+    def _apply_pre_dig_align_action_decision(
+        self,
+        decision: AlignmentActionDecision,
+    ) -> np.ndarray:
+        self._apply_pre_dig_align_runtime_state(
+            self.dig_start_alignment_service.action_runtime_state(
+                self._pre_dig_align_runtime_state(),
+                decision,
+            )
+        )
+        return decision.action
+
+    def _apply_pre_dig_align_target_runtime_state(
+        self,
+        *,
+        target_qpos: object,
+    ) -> None:
+        self._apply_pre_dig_align_runtime_state(
+            self.dig_start_alignment_service.target_runtime_state(
+                self._pre_dig_align_runtime_state(),
+                target_qpos=target_qpos,
+                config=self._dig_start_alignment_config(),
+            )
+        )
+
+    def _pre_dig_align_debug_snapshot(self) -> DigStartAlignmentDebugSnapshot:
+        return self.dig_start_alignment_service.debug_snapshot(
+            config=self._dig_start_alignment_config(),
+            state=debug_state_from_mapping(
+                {
+                    field_name: getattr(self, attr_name)
+                    for field_name, attr_name in DIG_START_ALIGNMENT_DEBUG_STATE_FIELDS
+                }
+            ),
         )
 
     def _pre_dig_align_ready(self, obs: dict) -> bool:
         if not self.pre_dig_align_enabled:
             return True
         target_qpos = self._pre_dig_align_target(obs)
-        qpos = np.asarray(
-            obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
-        qvel = np.asarray(
-            obs.get("qvel", np.zeros(self.action_dim, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
         entry_error = self._pre_dig_align_entry_error(obs)
-        self._pre_dig_align_entry_error_m = float(entry_error)
-        decision = self.dig_start_alignment_service.ready(
-            self._dig_start_alignment_facts(
-                obs,
-                target_qpos=target_qpos,
-                entry_error=entry_error,
-                qpos=qpos,
-                qvel=qvel,
-            ),
-            self._dig_start_alignment_config(),
+        snapshot = build_planner_snapshot(
+            obs,
+            active_skill=self._skill_name,
+            cycle_index=int(self._cycle_index),
+            prev_action=None,
+            boundary_event=None,
+            action_dim=self.action_dim,
         )
-        self._pre_dig_align_error = decision.error.astype(np.float32)
-        self._pre_dig_align_start_envelope_ready = bool(
-            decision.start_envelope_ready
+        decision = self.dig_start_alignment_service.ready_from_observation_view(
+            view=snapshot.view,
+            target_qpos=target_qpos,
+            entry_error_m=entry_error,
+            config=self._dig_start_alignment_config(),
+            cycle_index=getattr(self, "_cycle_index", 0),
+            hold_count=self._pre_dig_align_hold_count,
         )
-        self._pre_dig_align_entry_close_handoff_ready = bool(
-            decision.entry_close_handoff_ready
+        return self._apply_pre_dig_align_ready_decision(
+            decision,
+            entry_error_m=entry_error,
         )
-        self._pre_dig_align_entry_intent_handoff_ready = bool(
-            decision.entry_intent_handoff_ready
-        )
-        self._pre_dig_align_hold_count = int(decision.hold_count)
-        return bool(decision.ready)
 
     def _pre_dig_align_entry_close(
         self,
@@ -1752,16 +1497,15 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         qvel: np.ndarray,
         start_envelope_ready: bool,
     ) -> bool:
-        facts = DigStartAlignmentFacts(
-            qpos=np.zeros(self.action_dim, dtype=np.float32),
-            qvel=qvel,
-            entry_error_m=float(entry_error),
-            cycle_index=int(getattr(self, "_cycle_index", 0)),
-        )
-        return self.dig_start_alignment_service.entry_close_handoff_ready(
-            facts=facts,
-            config=self._dig_start_alignment_config(),
-            start_envelope_ready=start_envelope_ready,
+        return (
+            self.dig_start_alignment_service.entry_close_handoff_ready_from_runtime_values(
+                action_dim=int(self.action_dim),
+                qvel=qvel,
+                entry_error_m=entry_error,
+                cycle_index=getattr(self, "_cycle_index", 0),
+                config=self._dig_start_alignment_config(),
+                start_envelope_ready=start_envelope_ready,
+            )
         )
 
     def _pre_dig_align_entry_intent_mode_enabled(self) -> bool:
@@ -1784,41 +1528,35 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
     def _pre_dig_align_timeout_can_handoff(self, obs: dict) -> bool:
         self._pre_dig_align_timeout_handoff_reason = ""
         config = self._dig_start_alignment_config()
-        threshold = config.timeout_accept_entry_error_m
-        if threshold is None:
-            threshold = config.max_entry_error_m
-        if threshold is None:
-            decision = self.dig_start_alignment_service.timeout_can_handoff(
-                DigStartAlignmentFacts(
-                    qpos=np.zeros(self.action_dim, dtype=np.float32),
-                    qvel=np.zeros(self.action_dim, dtype=np.float32),
-                    entry_error_m=self._pre_dig_align_entry_error_m,
-                ),
-                config,
-            )
-            self._pre_dig_align_timeout_handoff_reason = str(decision.reason)
-            return bool(decision.ready)
-        entry_error = self._pre_dig_align_entry_error(obs)
-        self._pre_dig_align_entry_error_m = float(entry_error)
-        qpos = np.asarray(
-            obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
-        decision = self.dig_start_alignment_service.timeout_can_handoff(
-            self._dig_start_alignment_facts(
+        request = self.dig_start_alignment_service.timeout_handoff_request(
+            current_entry_error_m=float(self._pre_dig_align_entry_error_m),
+            config=config,
+        )
+        view = None
+        if request.should_sample_entry_error:
+            entry_error = self._pre_dig_align_entry_error(obs)
+            snapshot = build_planner_snapshot(
                 obs,
-                entry_error=entry_error,
-                qpos=qpos,
-            ),
-            config,
+                active_skill=self._skill_name,
+                cycle_index=int(self._cycle_index),
+                prev_action=None,
+                boundary_event=None,
+                action_dim=self.action_dim,
+            )
+            view = snapshot.view
+        else:
+            entry_error = None
+        decision = self.dig_start_alignment_service.timeout_handoff_decision(
+            request=request,
+            config=config,
+            action_dim=int(self.action_dim),
+            view=view,
+            sampled_entry_error_m=entry_error,
         )
-        self._pre_dig_align_start_envelope_ready = bool(
-            decision.start_envelope_ready
+        return self._apply_pre_dig_align_timeout_handoff_decision(
+            decision,
+            sampled_entry_error_m=entry_error,
         )
-        if decision.entry_intent_handoff_ready:
-            self._pre_dig_align_entry_intent_handoff_ready = True
-        self._pre_dig_align_timeout_handoff_reason = str(decision.reason)
-        return bool(decision.ready)
 
     def _pre_dig_align_start_envelope_ready_for_state(
         self,
@@ -1827,13 +1565,22 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         qpos: np.ndarray,
         entry_error: float,
     ) -> bool:
-        return self.dig_start_alignment_service.start_envelope_ready(
-            self._dig_start_alignment_facts(
-                obs,
-                qpos=qpos,
-                entry_error=entry_error,
-            ),
-            self._dig_start_alignment_config(),
+        snapshot_obs = dict(obs)
+        snapshot_obs["qpos"] = qpos
+        snapshot_obs["qvel"] = np.zeros(self.action_dim, dtype=np.float32)
+        snapshot = build_planner_snapshot(
+            snapshot_obs,
+            active_skill=self._skill_name,
+            cycle_index=int(self._cycle_index),
+            prev_action=None,
+            boundary_event=None,
+            action_dim=self.action_dim,
+        )
+        return self.dig_start_alignment_service.start_envelope_ready_from_observation_view(
+            view=snapshot.view,
+            qpos=qpos,
+            entry_error_m=entry_error,
+            config=self._dig_start_alignment_config(),
         )
 
     def _pre_dig_align_action(self, obs: dict) -> np.ndarray:
@@ -1843,25 +1590,26 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         if self._pre_dig_align_surface_guard_triggered_for_state(obs):
             return np.zeros(self.action_dim, dtype=np.float32)
         target_qpos = self._pre_dig_align_target(obs)
-        qpos = np.asarray(
-            obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
-        qvel = np.asarray(
-            obs.get("qvel", np.zeros(self.action_dim, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
-        self._pre_dig_align_error = (target_qpos - qpos).astype(np.float32)
-        self._pre_dig_align_entry_error_m = float(
-            self._pre_dig_align_entry_error(obs)
+        entry_error = self._pre_dig_align_entry_error(obs)
+        snapshot = build_planner_snapshot(
+            obs,
+            active_skill=self._skill_name,
+            cycle_index=int(self._cycle_index),
+            prev_action=None,
+            boundary_event=None,
+            action_dim=self.action_dim,
         )
-        action = self.dig_start_alignment_service.action_for_target(
-            qpos=qpos,
-            qvel=qvel,
-            target_qpos=target_qpos,
-            config=self._dig_start_alignment_config(),
+        decision = (
+            self.dig_start_alignment_service.action_decision_from_observation_view(
+                view=snapshot.view,
+                target_qpos=target_qpos,
+                entry_error_m=entry_error,
+                config=self._dig_start_alignment_config(),
+                cycle_index=getattr(self, "_cycle_index", 0),
+                hold_count=self._pre_dig_align_hold_count,
+            )
         )
-        return action
+        return self._apply_pre_dig_align_action_decision(decision)
 
     def _pre_dig_align_target(self, obs: dict) -> np.ndarray:
         self._ensure_dig_cut_plan_for_cycle(obs)
@@ -1879,71 +1627,66 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         obs: dict,
         update_state: bool,
     ) -> np.ndarray:
-        qpos = np.asarray(
-            obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
-        target = self.dig_start_alignment_service.target_from_token(
-            token=token,
-            qpos=qpos,
-            config=self._dig_start_alignment_config(),
+        snapshot = build_planner_snapshot(
+            obs,
+            active_skill=self._skill_name,
+            cycle_index=int(self._cycle_index),
+            prev_action=None,
+            boundary_event=None,
+            action_dim=self.action_dim,
+        )
+        target = (
+            self.dig_start_alignment_service.target_from_token_from_observation_view(
+                view=snapshot.view,
+                token=token,
+                entry_error_m=float("nan"),
+                config=self._dig_start_alignment_config(),
+                cycle_index=getattr(self, "_cycle_index", 0),
+                hold_count=self._pre_dig_align_hold_count,
+            )
         )
         if update_state:
-            self._pre_dig_align_target_qpos = target.copy()
+            self._apply_pre_dig_align_target_runtime_state(target_qpos=target)
         return target.copy()
 
     def _pre_dig_align_entry_error(self, obs: dict) -> float:
-        pose = self._bucket_tip_dig_area_pose(obs)
         corridor = self._coverage_active_corridor()
-        if pose is None or corridor is None:
-            return float("nan")
-        dx = float(pose[0]) - float(corridor.entry_x_m)
-        dz = float(pose[2]) - float(corridor.entry_z_m)
-        return float(np.hypot(dx, dz))
+        active_entry_xz = (
+            None
+            if corridor is None
+            else (float(corridor.entry_x_m), float(corridor.entry_z_m))
+        )
+        snapshot = build_planner_snapshot(
+            obs,
+            active_skill=self._skill_name,
+            cycle_index=int(self._cycle_index),
+            prev_action=None,
+            boundary_event=None,
+            action_dim=self.action_dim,
+        )
+        return self.dig_start_alignment_service.entry_error_from_observation_view(
+            view=snapshot.view,
+            active_corridor_entry_xz=active_entry_xz,
+        )
 
     def _dig_lifecycle_config(self) -> DigLifecycleConfig:
-        return DigLifecycleConfig(
-            dig_to_carry_min_bucket_mass_kg=float(
-                self.dig_to_carry_min_bucket_mass_kg
-            ),
-            dig_to_carry_min_distance_to_dig_area_m=float(
-                self.dig_to_carry_min_distance_to_dig_area_m
-            ),
-            dig_to_carry_target_bucket_mass_kg=float(
-                self.dig_to_carry_target_bucket_mass_kg
-            ),
-            dig_to_carry_mass_plateau_enabled=bool(
-                self.dig_to_carry_mass_plateau_enabled
-            ),
-            dig_to_carry_mass_plateau_min_bucket_mass_kg=float(
-                self.dig_to_carry_mass_plateau_min_bucket_mass_kg
-            ),
-            dig_to_carry_mass_plateau_epsilon_kg=float(
-                self.dig_to_carry_mass_plateau_epsilon_kg
-            ),
-            dig_to_carry_mass_plateau_hold_steps=int(
-                self.dig_to_carry_mass_plateau_hold_steps
-            ),
-            dig_to_carry_mass_plateau_min_steps=int(
-                self.dig_to_carry_mass_plateau_min_steps
-            ),
-            dig_bad_replan_enabled=bool(self.dig_bad_replan_enabled),
-            dig_bad_replan_max_steps=int(self.dig_bad_replan_max_steps),
-            dig_bad_replan_min_bucket_mass_kg=float(
-                self.dig_bad_replan_min_bucket_mass_kg
-            ),
-            dig_exit_guard_enabled=bool(self.dig_exit_guard_enabled),
-            dig_exit_guard_min_steps=int(self.dig_exit_guard_min_steps),
-            dig_exit_guard_overshoot_m=float(self.dig_exit_guard_overshoot_m),
-            dig_exit_guard_min_bucket_mass_kg=float(
-                self.dig_exit_guard_min_bucket_mass_kg
-            ),
-            dump_ready_min_bucket_mass_kg=float(self.dump_ready_min_bucket_mass_kg),
-            dig_failed_replan_next_skill=str(self.dig_failed_replan_next_skill),
-            pre_dig_align_enabled=bool(self.pre_dig_align_enabled),
-            pre_dig_align_first_dig_only=bool(self.pre_dig_align_first_dig_only),
-            pre_dig_align_replan_after_failed_dig=bool(
-                self.pre_dig_align_replan_after_failed_dig
+        return build_dig_lifecycle_runtime_config_from_mapping(
+            {
+                key: getattr(self, key)
+                for key in DIG_LIFECYCLE_RUNTIME_CONFIG_KEYS
+            }
+        )
+
+    def _dig_lifecycle_runtime_status_snapshot(
+        self,
+    ) -> DigLifecycleRuntimeStatusSnapshot:
+        return self.dig_lifecycle_gate.runtime_status_snapshot(
+            config=self._dig_lifecycle_config(),
+            state=build_dig_lifecycle_runtime_status_state_from_mapping(
+                {
+                    field_name: getattr(self, attr_name)
+                    for field_name, attr_name in DIG_LIFECYCLE_RUNTIME_STATUS_FIELDS
+                }
             ),
         )
 
@@ -1952,36 +1695,14 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         obs: dict,
         boundary_event: Any | None = None,
     ) -> DigLifecycleFacts:
-        mass = self._mass_in_bucket(obs)
-        dig_distance = self._min_distance_to_dig_area(obs)
-        metrics = dict(getattr(boundary_event, "metrics", {}) or {})
-        carry_mass = float(metrics.get("mass_in_bucket_kg", mass))
-        carry_distance = float(
-            metrics.get("min_distance_to_dig_area_m", dig_distance)
-        )
-        corridor = self._coverage_active_corridor()
-        entry_xz: tuple[float, float] | None = None
-        exit_xz: tuple[float, float] | None = None
-        if corridor is not None:
-            entry_xz = (float(corridor.entry_x_m), float(corridor.entry_z_m))
-            exit_xz = (float(corridor.exit_x_m), float(corridor.exit_z_m))
-        tip_pose = self._bucket_tip_dig_area_pose(obs)
-        tip_xz = (
-            None
-            if tip_pose is None
-            else (float(tip_pose[0]), float(tip_pose[2]))
-        )
-        return DigLifecycleFacts(
-            mass_in_bucket_kg=mass,
-            min_distance_to_dig_area_m=dig_distance,
-            carry_mass_in_bucket_kg=carry_mass,
-            carry_min_distance_to_dig_area_m=carry_distance,
-            semantic_boundary_profile_active=self._semantic_boundary_profile_active(),
-            boundary_dig_complete=bool(
-                boundary_event is not None
-                and getattr(boundary_event, "dig_complete", False)
+        snapshot = self._make_snapshot(obs, boundary_event=boundary_event)
+        return self.dig_lifecycle_gate.facts_from_observation_view(
+            view=snapshot.view,
+            boundary_event=boundary_event,
+            semantic_boundary_profile_active=(
+                self._semantic_boundary_profile_active()
             ),
-            coverage_terminal_stop_requested=bool(
+            coverage_terminal_stop_requested=(
                 self._coverage_terminal_stop_requested
             ),
             dig_step_count=int(self._dig_step_count),
@@ -1990,9 +1711,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             coverage_current_payload_gain_kg=float(
                 self._coverage_current_payload_gain_kg
             ),
-            active_corridor_entry_xz=entry_xz,
-            active_corridor_exit_xz=exit_xz,
-            bucket_tip_xz=tip_xz,
+            active_corridor=self._coverage_active_corridor(),
         )
 
     def _update_dig_progress(self, obs: dict) -> None:
@@ -2000,6 +1719,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             self._dig_lifecycle_facts(obs),
             self._dig_lifecycle_config(),
         )
+        self._apply_dig_progress_state(progress)
+
+    def _apply_dig_progress_state(
+        self,
+        progress: DigProgressState,
+    ) -> None:
         self._dig_step_count = int(progress.step_count)
         self._dig_best_mass_kg = float(progress.best_mass_kg)
         self._dig_mass_plateau_count = int(progress.mass_plateau_count)
@@ -2057,89 +1782,27 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
 
     def _semantic_boundary_profile_active(self) -> bool:
         config = getattr(self.boundary_detector, "config", None)
-        profile = str(getattr(config, "boundary_profile", "legacy"))
-        return profile == CYCLE_BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS
+        return is_v2_4_5_cycle_boundary_profile(
+            getattr(config, "boundary_profile", CYCLE_BOUNDARY_PROFILE_LEGACY)
+        )
 
     def _dump_lifecycle_config(self) -> DumpLifecycleConfig:
-        return DumpLifecycleConfig(
-            dump_ready_min_bucket_mass_kg=float(self.dump_ready_min_bucket_mass_kg),
-            dump_ready_min_height_above_rim_m=float(
-                self.dump_ready_min_height_above_rim_m
-            ),
-            dump_ready_require_over_footprint=bool(
-                self.dump_ready_require_over_footprint
-            ),
-            dump_ready_require_clearance=bool(self.dump_ready_require_clearance),
-            dump_ready_max_horizontal_distance_m=(
-                None
-                if self.dump_ready_max_horizontal_distance_m is None
-                else float(self.dump_ready_max_horizontal_distance_m)
-            ),
-            dump_ready_position_mode=str(self.dump_ready_position_mode),
-            dump_ready_max_dump_area_footprint_outside_distance_m=(
-                None
-                if self.dump_ready_max_dump_area_footprint_outside_distance_m is None
-                else float(self.dump_ready_max_dump_area_footprint_outside_distance_m)
-            ),
-            dump_ready_min_dump_area_relative_x_m=(
-                None
-                if self.dump_ready_min_dump_area_relative_x_m is None
-                else float(self.dump_ready_min_dump_area_relative_x_m)
-            ),
-            dump_ready_max_dump_area_relative_x_m=(
-                None
-                if self.dump_ready_max_dump_area_relative_x_m is None
-                else float(self.dump_ready_max_dump_area_relative_x_m)
-            ),
-            dump_ready_min_dump_area_relative_z_m=(
-                None
-                if self.dump_ready_min_dump_area_relative_z_m is None
-                else float(self.dump_ready_min_dump_area_relative_z_m)
-            ),
-            dump_ready_max_dump_area_relative_z_m=(
-                None
-                if self.dump_ready_max_dump_area_relative_z_m is None
-                else float(self.dump_ready_max_dump_area_relative_z_m)
-            ),
-            dump_ready_near_window_enabled=bool(self.dump_ready_near_window_enabled),
-            dump_ready_near_window_x_tolerance_m=float(
-                self.dump_ready_near_window_x_tolerance_m
-            ),
-            dump_ready_near_window_z_tolerance_m=float(
-                self.dump_ready_near_window_z_tolerance_m
-            ),
-            dump_ready_near_window_outside_tolerance_m=float(
-                self.dump_ready_near_window_outside_tolerance_m
-            ),
-            dump_ready_near_window_require_over_footprint=bool(
-                self.dump_ready_near_window_require_over_footprint
-            ),
-            dump_done_max_bucket_mass_kg=float(self.dump_done_max_bucket_mass_kg),
-            dump_done_min_deposit_delta_kg=float(self.dump_done_min_deposit_delta_kg),
-            approach_ready_min_bucket_mass_kg=float(
-                getattr(self, "approach_ready_min_bucket_mass_kg", 0.0)
-            ),
-            approach_ready_max_horizontal_distance_m=(
-                None
-                if getattr(self, "approach_ready_max_horizontal_distance_m", None)
-                is None
-                else float(self.approach_ready_max_horizontal_distance_m)
-            ),
-            approach_ready_min_height_above_rim_m=float(
-                getattr(self, "approach_ready_min_height_above_rim_m", 0.0)
-            ),
-            approach_ready_require_clearance=bool(
-                getattr(self, "approach_ready_require_clearance", True)
-            ),
+        return build_dump_lifecycle_runtime_config_from_mapping(
+            {
+                key: getattr(self, key)
+                for key in DUMP_LIFECYCLE_RUNTIME_CONFIG_KEYS
+                if hasattr(self, key)
+            }
         )
 
     def _dump_lifecycle_facts(self, obs: dict) -> DumpLifecycleFacts:
-        return DumpLifecycleFacts(
-            mass_in_bucket_kg=self._mass_in_bucket(obs),
-            deposited_mass_kg=self._deposited_mass(obs),
-            target_geometry=self._target_geometry(obs),
-            semantic_boundary_profile_active=self._semantic_boundary_profile_active(),
-            coverage_cycle_start_deposit_kg=float(
+        snapshot = self._make_snapshot(obs)
+        return self.dump_lifecycle_gate.facts_from_observation_view(
+            view=snapshot.view,
+            semantic_boundary_profile_active=(
+                self._semantic_boundary_profile_active()
+            ),
+            coverage_cycle_start_deposit_kg=(
                 self._coverage_cycle_start_deposit_kg
             ),
         )
@@ -2242,18 +1905,24 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         )
 
     def _return_to_dig_handoff_config(self) -> ReturnToDigHandoffConfig:
-        return ReturnToDigHandoffConfig(
-            shallow_guard_enabled=self.return_to_dig_shallow_guard_enabled,
-            max_bucket_mass_kg=self.return_to_dig_max_bucket_mass_kg,
-            touch_tolerance_m=self.return_to_dig_touch_tolerance_m,
-            min_depth_m=self.return_to_dig_min_depth_m,
-            max_depth_m=self.return_to_dig_max_depth_m,
-            max_entry_error_m=self.return_to_dig_max_entry_error_m,
-            start_envelope_gate_enabled=(
-                self.return_to_dig_start_envelope_gate_enabled
-            ),
-            direct_handoff_enabled=(
-                self.return_to_dig_start_envelope_direct_handoff_enabled
+        return build_return_to_dig_handoff_config_from_mapping(
+            {
+                config_key: getattr(self, attr_name)
+                for config_key, attr_name in RETURN_TO_DIG_HANDOFF_CONFIG_FIELDS
+            }
+        )
+
+    def _return_to_dig_handoff_status_snapshot(
+        self,
+    ) -> ReturnToDigHandoffStatusSnapshot:
+        return self.return_handoff_gate.status_snapshot(
+            handoff_config=self._return_to_dig_handoff_config(),
+            envelope_config=self._current_return_start_envelope_config(),
+            state=build_return_to_dig_handoff_status_state_from_mapping(
+                {
+                    field_name: getattr(self, attr_name)
+                    for field_name, attr_name in RETURN_TO_DIG_HANDOFF_STATUS_FIELDS
+                }
             ),
         )
 
@@ -2270,38 +1939,30 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         ):
             self._ensure_return_target_plan_for_cycle(obs)
 
-        config = self._current_return_start_envelope_config()
-        token = np.asarray(
-            self._return_start_envelope_tokens,
-            dtype=np.float32,
-        ).reshape(-1)
-        lower = None
-        upper = None
-        prior_mapping = None
-        if config.gate_enabled and token.shape[0] == RETURN_START_ENVELOPE_TOKEN_DIM:
-            token_has_bounds = not (
-                float(token[RETURN_ENVELOPE_QPOS_VALID_IDX]) <= 0.5
-                and float(token[RETURN_ENVELOPE_SPATIAL_DEPTH_VALID_IDX]) <= 0.5
-            )
-            if token_has_bounds:
-                lower, upper = self._return_start_envelope_prior_bounds(
-                    int(self._pending_dig_cut_corridor_id)
-                )
-                prior_mapping, _ = self._return_start_envelope_prior_mapping(
-                    corridor_id=int(self._pending_dig_cut_corridor_id)
-                )
-        return ReturnToDigHandoffContext(
+        return build_return_to_dig_handoff_context_from_runtime(
             entry_target=self._return_to_dig_entry_target(),
-            envelope_token=token,
-            envelope_config=config,
-            prior_lower=lower,
-            prior_upper=upper,
-            prior_mapping=prior_mapping,
+            envelope_token=self._return_start_envelope_tokens,
+            envelope_config=self._current_return_start_envelope_config(),
+            dig_cut_prior=self.dig_cut_prior,
+            pending_corridor_id=int(self._pending_dig_cut_corridor_id),
+            corridor_cell_id_resolver=self._return_start_envelope_cell_id,
             use_prior_spatial_bounds=(
                 self._return_start_envelope_use_prior_spatial_bounds
             ),
             use_prior_qpos_bounds=self._return_start_envelope_use_prior_qpos_bounds,
         )
+
+    def _return_start_envelope_corridor_cell_id(
+        self,
+        corridor_id: int,
+    ) -> int | None:
+        try:
+            corridor = self._coverage_corridor_by_id(int(corridor_id))
+        except Exception:
+            return None
+        if corridor is None:
+            return None
+        return int(corridor.cell_id)
 
     def _evaluate_return_to_dig_handoff(
         self,
@@ -2328,15 +1989,11 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             config=self._return_to_dig_handoff_config(),
             handoff_ready_override=handoff_ready_override,
         )
-        self._return_to_dig_entry_error_m = float(decision.entry_error_m)
-        self._return_to_dig_entry_close_state = bool(decision.entry_close)
-        self._return_to_dig_start_envelope_ready_state = bool(
-            decision.envelope_state.ready
+        state = self.return_handoff_gate.runtime_state_from_decision(
+            decision,
+            next_dig_event_seen=self._return_next_dig_event_seen,
         )
-        self._return_to_dig_start_envelope_error = float(decision.envelope_state.error)
-        self._return_to_dig_start_envelope_checks = dict(
-            decision.envelope_state.checks
-        )
+        self._apply_return_to_dig_handoff_runtime_state(state)
         return decision
 
     def _return_to_dig_shallow_guard_ready(
@@ -2386,32 +2043,23 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         )
 
     def _return_to_dig_entry_error_for_obs(self, obs: dict) -> float:
-        target = self._return_to_dig_entry_target()
-        pose = self._bucket_dig_area_pose(obs)
-        if target is None or pose is None:
-            return float("nan")
-        bucket_x, _, bucket_z = pose
-        entry_x, entry_z = target
-        if not all(np.isfinite(value) for value in (bucket_x, bucket_z, entry_x, entry_z)):
-            return float("nan")
-        return float(
-            np.hypot(float(bucket_x) - float(entry_x), float(bucket_z) - float(entry_z))
+        return self.return_handoff_gate.entry_error(
+            ReturnToDigEntryErrorFacts(
+                entry_target=self._return_to_dig_entry_target(),
+                bucket_dig_area_pose=self._bucket_dig_area_pose(obs),
+            )
         )
 
     def _return_to_dig_entry_target(self) -> tuple[float, float] | None:
-        raw_fields = self._pending_dig_cut_raw_fields
-        if (
-            raw_fields is not None
-            and int(self._pending_dig_cut_cycle_id) == int(self._cycle_index) + 1
-        ):
-            entry_x = float(raw_fields.get("operator_entry_x_m", float("nan")))
-            entry_z = float(raw_fields.get("operator_entry_z_m", float("nan")))
-            if np.isfinite(entry_x) and np.isfinite(entry_z):
-                return entry_x, entry_z
-        corridor = self._coverage_active_corridor()
-        if corridor is None:
-            return None
-        return float(corridor.entry_x_m), float(corridor.entry_z_m)
+        resolution = self.return_entry_target_resolver.resolve(
+            build_return_next_dig_entry_target_facts_from_runtime(
+                cycle_index=self._cycle_index,
+                pending_dig_cut_cycle_id=self._pending_dig_cut_cycle_id,
+                pending_dig_cut_raw_fields=self._pending_dig_cut_raw_fields,
+                active_corridor=self._coverage_active_corridor(),
+            )
+        )
+        return resolution.entry_target
 
     def _target_geometry(self, obs: dict) -> dict[str, float]:
         return target_geometry_from_obs(obs)
@@ -2437,21 +2085,62 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
     def _env_state(self, obs: dict) -> np.ndarray:
         return env_state_from_obs(obs)
 
+    def _boundary_detector_update_facts(
+        self,
+        obs: dict,
+    ) -> BoundaryDetectorUpdateFacts:
+        return boundary_detector_update_facts_from_obs(
+            obs,
+            action=self._prev_action,
+            action_dim=self.action_dim,
+        )
+
     def _policy_obs(self, obs: dict) -> dict:
+        token_request = self._policy_observation_token_request()
         assembly = self.policy_observation_assembler.assemble(
             obs,
             PolicyObservationTokens(
-                goal_tokens=self._goal_tokens(),
-                cell_entry_tokens=self._cell_entry_tokens_for_obs(obs),
-                dig_cut_tokens=self._dig_cut_tokens_for_obs(obs),
-                dig_depth_profile_tokens=self._dig_depth_profile_tokens_for_obs(obs),
-                return_target_tokens=self._return_target_tokens_for_obs(obs),
-                return_relocate_tokens=self._return_relocate_tokens_for_obs(obs),
+                goal_tokens=(
+                    self._goal_tokens() if token_request.goal_tokens else None
+                ),
+                cell_entry_tokens=(
+                    self._cell_entry_tokens_for_obs(obs, token_request)
+                    if token_request.cell_entry_tokens
+                    else None
+                ),
+                dig_cut_tokens=(
+                    self._dig_cut_tokens_for_obs(obs, token_request)
+                    if token_request.dig_cut_tokens
+                    else None
+                ),
+                dig_depth_profile_tokens=(
+                    self._dig_depth_profile_tokens_for_obs(obs, token_request)
+                    if token_request.dig_depth_profile_tokens
+                    else None
+                ),
+                return_target_tokens=(
+                    self._return_target_tokens_for_obs(obs, token_request)
+                    if token_request.return_target_tokens
+                    else None
+                ),
+                return_relocate_tokens=(
+                    self._return_relocate_tokens_for_obs(obs, token_request)
+                    if token_request.return_relocate_tokens
+                    else None
+                ),
                 return_start_envelope_tokens=(
-                    self._return_start_envelope_tokens_for_obs(obs)
+                    self._return_start_envelope_tokens_for_obs(obs, token_request)
+                    if token_request.return_start_envelope_tokens
+                    else None
                 ),
             ),
         )
+        return self._apply_policy_observation_assembly(assembly)
+
+    def _apply_policy_observation_assembly(
+        self,
+        assembly: PolicyObservationAssembly,
+    ) -> dict:
         self._cell_entry_token_injected = assembly.cell_entry_token_injected
         self._dig_cut_token_injected = assembly.dig_cut_token_injected
         self._dig_depth_profile_token_injected = (
@@ -2464,36 +2153,296 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         )
         return assembly.obs
 
-    def _return_target_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        if self._skill_name != "return" or not self.return_target_planner_enabled:
-            return None
-        self._ensure_return_target_plan_for_cycle(obs)
-        return self._return_target_tokens.copy()
+    def _reset_cell_entry_runtime(self) -> None:
+        self.cell_entry_planner.reset()
+        state = self.cell_entry_runtime_service.initial_runtime_state()
+        self._apply_cell_entry_runtime_state(state)
 
-    def _return_relocate_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        if self._skill_name != "return" or not self.return_target_planner_enabled:
-            return None
-        self._ensure_return_target_plan_for_cycle(obs)
-        token = derive_return_relocate_token(self._return_target_tokens)
-        self._return_relocate_tokens = token
-        return token
+    def _apply_cell_entry_runtime_state(
+        self,
+        state: CellEntryRuntimeState,
+    ) -> None:
+        self._cell_entry_goal = state.goal
+        self._cell_entry_goal_cycle_id = int(state.goal_cycle_id)
+        self._cell_entry_audit = state.audit
+        tokens = (
+            np.zeros(CELL_ENTRY_TOKEN_DIM, dtype=np.float32)
+            if state.tokens is None
+            else np.asarray(state.tokens, dtype=np.float32)
+        )
+        self._cell_entry_tokens = tokens.copy()
+        self._cell_entry_token_injected = bool(state.token_injected)
+        self._cell_entry_seen_cell_id = int(state.seen_cell_id)
+        self._cell_entry_trace = [dict(event) for event in state.trace_events]
 
-    def _return_start_envelope_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        if self._skill_name != "return" or not self.return_target_planner_enabled:
+    def _reset_dig_lifecycle_runtime(self) -> None:
+        state = self.dig_lifecycle_gate.initial_runtime_state()
+        self._apply_dig_lifecycle_runtime_state(state)
+
+    def _reset_dig_entry_runtime(self) -> None:
+        state = self.dig_lifecycle_gate.entry_runtime_state(
+            build_dig_lifecycle_entry_runtime_facts_from_mapping(
+                {
+                    field_name: getattr(self, attr_name)
+                    for field_name, attr_name in (
+                        DIG_LIFECYCLE_ENTRY_RUNTIME_FACT_FIELDS
+                    )
+                }
+            )
+        )
+        self._apply_dig_lifecycle_entry_runtime_state(state)
+
+    def _apply_dig_lifecycle_entry_runtime_state(
+        self,
+        state: DigLifecycleEntryRuntimeState,
+    ) -> None:
+        self._dig_step_count = int(state.step_count)
+        self._dig_best_mass_kg = float(state.best_mass_kg)
+        self._dig_mass_plateau_count = int(state.mass_plateau_count)
+        self._dig_to_carry_reason = str(state.dig_to_carry_reason)
+        self._coverage_current_payload_gain_kg = float(
+            state.coverage_payload_gain_kg
+        )
+        self._dig_bad_replan_count = int(state.bad_replan_count)
+        self._dig_exit_guard_replan_count = int(state.exit_guard_replan_count)
+
+    def _apply_dig_transition_runtime_projection(
+        self,
+        projection: DigTransitionRuntimeProjection,
+        obs: dict,
+    ) -> bool:
+        outcome = projection.outcome
+        self._dig_exit_guard_replan_count += int(
+            projection.exit_guard_replan_count_increment
+        )
+        self._dig_bad_replan_count += int(
+            projection.bad_replan_count_increment
+        )
+        if projection.should_restart_after_failed_dig:
+            self._reject_active_coverage_corridor(
+                obs,
+                reason=outcome.coverage_reject_reason,
+            )
+            self._restart_after_failed_dig(
+                outcome.failed_dig_reason,
+                obs,
+            )
+            return True
+        if projection.should_handoff_to_carry:
+            self._complete_cell_entry_dig(obs)
+            self._complete_coverage_dig(obs)
+            self._set_skill("carry", outcome.switch_reason)
+            return True
+        return False
+
+    def _apply_dig_lifecycle_runtime_state(
+        self,
+        state: DigLifecycleRuntimeStatusState,
+    ) -> None:
+        self._dig_step_count = int(state.step_count)
+        self._dig_best_mass_kg = float(state.best_mass_kg)
+        self._dig_mass_plateau_count = int(state.mass_plateau_count)
+        self._dig_to_carry_reason = str(state.dig_to_carry_reason)
+        self._dig_bad_replan_count = int(state.bad_replan_count)
+        self._dig_exit_guard_replan_count = int(state.exit_guard_replan_count)
+
+    def _reset_dig_cut_runtime(self) -> None:
+        state = self.dig_cut_plan_service.initial_runtime_state()
+        self._apply_dig_cut_runtime_state(state)
+
+    def _apply_dig_cut_runtime_state(
+        self,
+        state: DigCutRuntimeState,
+    ) -> None:
+        self._dig_cut_tokens = np.asarray(
+            state.tokens,
+            dtype=np.float32,
+        ).copy()
+        self._dig_cut_token_injected = bool(state.token_injected)
+        self._dig_cut_planned_cycle_id = int(state.planned_cycle_id)
+        self._dig_cut_token_source = str(state.token_source)
+        self._dig_cut_fallback_reason = str(state.fallback_reason)
+        self._dig_cut_token_in_prior_p10_p90 = bool(state.token_in_prior_p10_p90)
+
+    def _reset_dig_depth_profile_runtime(self) -> None:
+        state = self.dig_depth_profile_service.initial_runtime_state()
+        self._apply_dig_depth_profile_runtime_state(state)
+
+    def _apply_dig_depth_profile_runtime_state(
+        self,
+        state: DigDepthProfileRuntimeState,
+    ) -> None:
+        self._dig_depth_profile_tokens = np.asarray(
+            state.tokens,
+            dtype=np.float32,
+        ).copy()
+        self._dig_depth_profile_token_injected = bool(state.token_injected)
+        self._dig_depth_profile_token_source = str(state.token_source)
+        self._dig_depth_profile_fallback_reason = str(state.fallback_reason)
+
+    def _reset_return_target_conditioning_runtime(self) -> None:
+        state = self.return_target_plan_service.initial_conditioning_state()
+        self._apply_return_target_conditioning_runtime_state(state)
+
+    def _apply_return_target_conditioning_runtime_state(
+        self,
+        state: ReturnTargetConditioningRuntimeState,
+    ) -> None:
+        self._return_target_tokens = np.asarray(
+            state.target_tokens,
+            dtype=np.float32,
+        ).copy()
+        self._return_target_token_injected = bool(state.target_token_injected)
+        self._return_target_token_source = str(state.target_token_source)
+        self._return_target_fallback_reason = str(state.target_fallback_reason)
+        self._return_relocate_tokens = np.asarray(
+            state.relocate_tokens,
+            dtype=np.float32,
+        ).copy()
+        self._return_relocate_token_injected = bool(state.relocate_token_injected)
+        self._return_start_envelope_tokens = np.asarray(
+            state.start_envelope_tokens,
+            dtype=np.float32,
+        ).copy()
+        self._return_start_envelope_token_injected = bool(
+            state.start_envelope_token_injected
+        )
+        self._return_start_envelope_token_source = str(
+            state.start_envelope_token_source
+        )
+        self._return_start_envelope_use_prior_spatial_bounds = bool(
+            state.start_envelope_use_prior_spatial_bounds
+        )
+        self._return_start_envelope_use_prior_qpos_bounds = bool(
+            state.start_envelope_use_prior_qpos_bounds
+        )
+        self._return_target_planned_cycle_id = int(state.planned_cycle_id)
+        self._apply_pending_dig_cut_plan_state(
+            self.return_target_plan_service.pending_plan_state_from_conditioning_state(
+                state
+            )
+        )
+
+    def _reset_return_to_dig_handoff_runtime(self) -> None:
+        state = self.return_handoff_gate.initial_runtime_state()
+        self._apply_return_to_dig_handoff_runtime_state(state)
+
+    def _apply_return_to_dig_handoff_runtime_state(
+        self,
+        state: ReturnToDigHandoffStatusState,
+    ) -> None:
+        self._return_to_dig_entry_error_m = float(state.entry_error_m)
+        self._return_to_dig_entry_close_state = bool(state.entry_close)
+        self._return_next_dig_event_seen = bool(state.next_dig_event_seen)
+        self._return_to_dig_start_envelope_ready_state = bool(
+            state.start_envelope_ready
+        )
+        self._return_to_dig_start_envelope_error = float(state.start_envelope_error)
+        self._return_to_dig_start_envelope_checks = deepcopy(
+            state.start_envelope_checks
+        )
+
+    def _apply_return_to_dig_transition_runtime_projection(
+        self,
+        projection: (
+            ReturnToDigTransitionRuntimeProjection
+            | ReturnDirectHandoffRuntimeProjection
+        ),
+    ) -> bool:
+        if isinstance(projection, ReturnToDigTransitionRuntimeProjection):
+            self._return_next_dig_event_seen = bool(projection.next_dig_event_seen)
+        if not projection.should_transition:
+            return False
+        self._completed_transition_count += int(
+            projection.completed_transition_increment
+        )
+        self._cycle_index += int(projection.cycle_index_increment)
+        return True
+
+    def _apply_return_to_dig_transition_completion(
+        self,
+        completion: ReturnToDigTransitionCompletion,
+    ) -> bool:
+        if not completion.should_transition:
+            return False
+        self._set_skill(completion.next_skill, completion.switch_reason)
+        return True
+
+    def _policy_observation_token_request(self) -> PolicyObservationTokenRequest:
+        return self.policy_observation_assembler.token_request_from_mapping(
+            {
+                config_key: getattr(self, attr_name)
+                for config_key, attr_name in POLICY_OBSERVATION_REQUEST_FACT_FIELDS
+            },
+            PolicyObservationRequestConfig(
+                dig_skill_name="dig",
+                return_skill_name="return",
+                bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
+            ),
+        )
+
+    def _return_target_tokens_for_obs(
+        self,
+        obs: dict,
+        token_request: PolicyObservationTokenRequest | None = None,
+    ) -> np.ndarray | None:
+        token_request = token_request or self._policy_observation_token_request()
+        if not token_request.return_target_tokens:
             return None
         self._ensure_return_target_plan_for_cycle(obs)
-        return self._return_start_envelope_tokens.copy()
+        return self.return_target_plan_service.return_target_token_result(
+            self._return_target_tokens
+        ).tokens
+
+    def _return_relocate_tokens_for_obs(
+        self,
+        obs: dict,
+        token_request: PolicyObservationTokenRequest | None = None,
+    ) -> np.ndarray | None:
+        token_request = token_request or self._policy_observation_token_request()
+        if not token_request.return_relocate_tokens:
+            return None
+        self._ensure_return_target_plan_for_cycle(obs)
+        return self._apply_return_relocate_token_result(
+            self.return_target_plan_service.return_relocate_token_result(
+                self._return_target_tokens
+            )
+        )
+
+    def _apply_return_relocate_token_result(
+        self,
+        result: ReturnRelocateObservationTokenResult,
+    ) -> np.ndarray:
+        self._return_relocate_tokens = result.tokens
+        return result.tokens
+
+    def _return_start_envelope_tokens_for_obs(
+        self,
+        obs: dict,
+        token_request: PolicyObservationTokenRequest | None = None,
+    ) -> np.ndarray | None:
+        token_request = token_request or self._policy_observation_token_request()
+        if not token_request.return_start_envelope_tokens:
+            return None
+        self._ensure_return_target_plan_for_cycle(obs)
+        return self.return_target_plan_service.return_start_envelope_token_result(
+            self._return_start_envelope_tokens
+        ).tokens
 
     def _ensure_return_target_plan_for_cycle(self, obs: dict) -> None:
-        if not self.return_target_planner_enabled:
-            return
-        if self.return_target_plan_service.should_hold_plan(
+        request = self.return_target_plan_service.plan_request_from_runtime(
+            enabled=self.return_target_planner_enabled,
             hold_until_skill_exit=self.return_target_hold_token_until_skill_exit,
             planned_cycle_id=self._return_target_planned_cycle_id,
             cycle_index=self._cycle_index,
-        ):
+            depth_profile_token=(self._coverage_active_state_exemplar_profile_token),
+            state_exemplar_ids=self._coverage_active_state_exemplar_ids,
+            state_exemplar_distance=(self._coverage_active_state_exemplar_distance),
+        )
+        if not request.should_build:
             return
-        try:
+
+        def build_facts() -> ReturnTargetPlanBuildFacts:
             token, raw_fields, source, fallback_reason, corridor_id = (
                 self._build_next_dig_cut_plan_for_return(obs)
             )
@@ -2502,146 +2451,149 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                 raw_fields,
                 corridor_id=corridor_id,
             )
-            state = self.return_target_plan_service.success_state(
-                cycle_index=self._cycle_index,
-                plan=ReturnTargetPlanBuild(
-                    token=token,
-                    raw_fields=raw_fields,
-                    return_start_envelope_tokens=envelope_tokens,
-                    source=source,
-                    fallback_reason=fallback_reason,
-                    corridor_id=corridor_id,
-                ),
-                exemplar=ReturnTargetExemplarSnapshot(
-                    depth_profile_token=(
-                        self._coverage_active_state_exemplar_profile_token
-                    ),
-                    state_exemplar_ids=self._coverage_active_state_exemplar_ids,
-                    state_exemplar_distance=(
-                        self._coverage_active_state_exemplar_distance
-                    ),
-                ),
+            return self.return_target_plan_service.plan_build_facts_from_parts(
+                token=token,
+                raw_fields=raw_fields,
+                return_start_envelope_tokens=envelope_tokens,
+                source=source,
+                fallback_reason=fallback_reason,
+                corridor_id=corridor_id,
             )
-        except Exception as exc:
-            state = self.return_target_plan_service.failure_state(
-                cycle_index=self._cycle_index,
-                reason=exc,
-            )
+
+        state = self.return_target_plan_service.state_from_build_facts_callback(
+            request=request,
+            build_facts=build_facts,
+        )
         self._apply_return_target_plan_state(state)
 
     def _apply_return_target_plan_state(self, state: ReturnTargetPlanState) -> None:
-        self._return_target_tokens = np.asarray(
-            state.return_target_tokens,
-            dtype=np.float32,
-        )
-        self._return_start_envelope_tokens = np.asarray(
-            state.return_start_envelope_tokens,
-            dtype=np.float32,
-        )
-        self._return_target_token_source = str(state.return_target_token_source)
-        if state.return_start_envelope_token_source is not None:
-            self._return_start_envelope_token_source = str(
-                state.return_start_envelope_token_source
+        update = self.return_target_plan_service.runtime_update_from_plan_state(state)
+        self._return_target_tokens = update.return_target_tokens
+        self._return_start_envelope_tokens = update.return_start_envelope_tokens
+        self._return_target_token_source = update.return_target_token_source
+        if update.return_start_envelope_token_source is not None:
+            self._return_start_envelope_token_source = (
+                update.return_start_envelope_token_source
             )
-        self._return_target_fallback_reason = str(state.return_target_fallback_reason)
-        self._return_target_planned_cycle_id = int(
-            state.return_target_planned_cycle_id
-        )
-        self._pending_dig_cut_cycle_id = int(state.pending_dig_cut_cycle_id)
-        self._pending_dig_cut_raw_fields = (
-            None
-            if state.pending_dig_cut_raw_fields is None
-            else dict(state.pending_dig_cut_raw_fields)
-        )
-        self._pending_dig_cut_tokens = (
-            None
-            if state.pending_dig_cut_tokens is None
-            else np.asarray(state.pending_dig_cut_tokens, dtype=np.float32).copy()
-        )
-        self._pending_dig_cut_corridor_id = int(state.pending_dig_cut_corridor_id)
-        self._pending_dig_depth_profile_tokens = (
-            None
-            if state.pending_dig_depth_profile_tokens is None
-            else np.asarray(
-                state.pending_dig_depth_profile_tokens,
-                dtype=np.float32,
-            ).copy()
-        )
-        self._pending_dig_state_exemplar_ids = list(
-            state.pending_dig_state_exemplar_ids
-        )
-        self._pending_dig_state_exemplar_distance = float(
-            state.pending_dig_state_exemplar_distance
+        self._return_target_fallback_reason = update.return_target_fallback_reason
+        self._return_target_planned_cycle_id = update.return_target_planned_cycle_id
+        self._apply_pending_dig_cut_plan_state(update.pending_plan)
+
+    def _return_target_conditioning_status_snapshot(
+        self,
+    ) -> ReturnTargetConditioningStatusSnapshot:
+        return self.return_target_plan_service.conditioning_status_snapshot_from_mapping(
+            {
+                field_name: getattr(self, attr_name)
+                for field_name, attr_name in RETURN_TARGET_CONDITIONING_STATUS_FIELDS
+            }
         )
 
-    def _dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        if not self.dig_cut_planner_enabled:
+    def _dig_cut_tokens_for_obs(
+        self,
+        obs: dict,
+        token_request: PolicyObservationTokenRequest | None = None,
+    ) -> np.ndarray | None:
+        token_request = token_request or self._policy_observation_token_request()
+        decision = self._dig_conditioning_token_gate(
+            token_requested=bool(token_request.dig_cut_tokens)
+        )
+        if not decision.return_token:
             return None
-        if self._coverage_terminal_stop_requested:
-            return self._dig_cut_tokens.copy() if self._skill_name == "dig" else None
-        if self._skill_name != "dig":
-            if (
-                self._skill_name != BOOTSTRAP_SKILL_NAME
-                or self.bootstrap_policy is None
-            ):
-                return None
-        self._ensure_dig_cut_plan_for_cycle(obs)
-        return self._dig_cut_tokens.copy()
+        if decision.should_build_plan:
+            self._ensure_dig_cut_plan_for_cycle(obs)
+        return self.dig_cut_plan_service.observation_token_result(
+            self._dig_cut_tokens
+        ).token
 
-    def _dig_depth_profile_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        if not self.dig_cut_planner_enabled:
+    def _dig_depth_profile_tokens_for_obs(
+        self,
+        obs: dict,
+        token_request: PolicyObservationTokenRequest | None = None,
+    ) -> np.ndarray | None:
+        token_request = token_request or self._policy_observation_token_request()
+        decision = self._dig_conditioning_token_gate(
+            token_requested=bool(token_request.dig_depth_profile_tokens)
+        )
+        if not decision.return_token:
             return None
-        if self._coverage_terminal_stop_requested:
-            return (
-                self._dig_depth_profile_tokens.copy()
-                if self._skill_name == "dig"
-                else None
-            )
-        if self._skill_name != "dig":
-            if (
-                self._skill_name != BOOTSTRAP_SKILL_NAME
-                or self.bootstrap_policy is None
-            ):
-                return None
-        self._ensure_dig_cut_plan_for_cycle(obs)
-        return self._dig_depth_profile_tokens.copy()
+        if decision.should_build_plan:
+            self._ensure_dig_cut_plan_for_cycle(obs)
+        return self.dig_depth_profile_service.observation_token_result(
+            self._dig_depth_profile_tokens
+        ).token
+
+    def _dig_conditioning_token_gate(
+        self,
+        *,
+        token_requested: bool,
+    ) -> DigConditioningObservationTokenGateDecision:
+        return self.policy_observation_assembler.dig_conditioning_token_gate_from_mapping(
+            {
+                field_name: getattr(self, attr_name)
+                for (
+                    field_name,
+                    attr_name,
+                ) in DIG_CONDITIONING_TOKEN_GATE_FACT_FIELDS
+            },
+            token_requested=bool(token_requested),
+            config=PolicyObservationRequestConfig(dig_skill_name="dig"),
+        )
 
     def _ensure_dig_cut_plan_for_cycle(self, obs: dict) -> None:
-        if not self.dig_cut_planner_enabled:
-            return
-        if (
-            self.dig_cut_hold_token_until_skill_exit
-            and self._dig_cut_planned_cycle_id == int(self._cycle_index)
-        ):
-            return
-        self._dig_cut_tokens = self._build_dig_cut_tokens_for_obs(obs)
-        self._dig_depth_profile_tokens = self._build_dig_depth_profile_tokens_for_obs(
-            obs
+        decision = self.dig_cut_plan_service.cycle_decision_from_runtime(
+            enabled=self.dig_cut_planner_enabled,
+            hold_until_skill_exit=self.dig_cut_hold_token_until_skill_exit,
+            planned_cycle_id=self._dig_cut_planned_cycle_id,
+            cycle_index=self._cycle_index,
         )
-        self._dig_cut_planned_cycle_id = int(self._cycle_index)
+        if not decision.should_build:
+            return
+        dig_cut_tokens = self._build_dig_cut_tokens_for_obs(obs)
+        self._dig_cut_tokens = dig_cut_tokens
+        cycle_state = self.dig_cut_plan_service.cycle_apply_state(
+            dig_cut_tokens=dig_cut_tokens,
+            dig_depth_profile_tokens=self._build_dig_depth_profile_tokens_for_obs(
+                obs
+            ),
+            cycle_index=int(self._cycle_index),
+        )
+        self._apply_dig_cut_plan_cycle_state(cycle_state)
+
+    def _apply_dig_cut_plan_cycle_state(
+        self,
+        state: DigCutPlanCycleApplyState,
+    ) -> None:
+        self._dig_cut_tokens = state.dig_cut_tokens
+        self._dig_depth_profile_tokens = state.dig_depth_profile_tokens
+        self._dig_cut_planned_cycle_id = int(state.planned_cycle_id)
 
     def _build_dig_depth_profile_tokens_for_obs(self, obs: dict) -> np.ndarray:
-        cell_id = self._dig_depth_profile_cell_id(obs)
         try:
-            state = self.dig_depth_profile_service.build_token(
-                DigDepthProfileBuildRequest(
-                    cell_id=cell_id,
-                    raw_fields=self._dig_depth_profile_raw_fields(obs),
-                    env_state=self._env_state(obs),
-                    config=self._current_dig_depth_profile_config(),
-                    dig_cut_prior=self.dig_cut_prior,
-                    state_exemplar_profile_token=(
-                        self._coverage_active_state_exemplar_profile_token
-                    ),
-                )
+            state = self.dig_depth_profile_service.build_token_from_input_facts(
+                self._dig_depth_profile_input_facts(obs, include_env_state=True),
+                config=self._current_dig_depth_profile_config(),
+                dig_cut_prior=self.dig_cut_prior,
+                state_exemplar_profile_token=(
+                    self._coverage_active_state_exemplar_profile_token
+                ),
             )
         except DigDepthProfileMissingPriorError as exc:
             self._dig_depth_profile_token_source = "missing_required_prior"
             self._dig_depth_profile_fallback_reason = str(exc.reason)
             raise
-        self._dig_depth_profile_token_source = str(state.source)
-        self._dig_depth_profile_fallback_reason = str(state.fallback_reason)
-        return np.asarray(state.token, dtype=np.float32)
+        return self._apply_dig_depth_profile_token_result(state)
+
+    def _apply_dig_depth_profile_token_result(
+        self,
+        state: DigDepthProfileState,
+    ) -> np.ndarray:
+        result: DigDepthProfileTokenResult = (
+            self.dig_depth_profile_service.token_result(state)
+        )
+        self._dig_depth_profile_token_source = str(result.source)
+        self._dig_depth_profile_fallback_reason = str(result.fallback_reason)
+        return result.token
 
     def _build_live_dig_depth_profile_tokens_for_obs(
         self,
@@ -2685,210 +2637,210 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         return DigDepthProfileService.token_from_prior_mapping(mapping)
 
     def _current_dig_depth_profile_config(self) -> DigDepthProfileConfig:
-        return DigDepthProfileConfig(
-            source=self.dig_depth_profile_source,
-            required=self.dig_depth_profile_required,
-            allow_live_fallback=self.dig_depth_profile_allow_live_fallback,
-            allow_global_fallback=self.dig_depth_profile_allow_global_fallback,
+        return build_dig_depth_profile_config_from_mapping(
+            {
+                field_name: getattr(self, attr_name)
+                for field_name, attr_name in DIG_DEPTH_PROFILE_CONFIG_FIELDS
+            }
+        )
+
+    def _dig_depth_profile_runtime_status_snapshot(
+        self,
+    ) -> DigDepthProfileRuntimeStatusSnapshot:
+        return self.dig_depth_profile_service.runtime_status_snapshot_from_mappings(
+            config_values={
+                field_name: getattr(self, attr_name)
+                for field_name, attr_name in DIG_DEPTH_PROFILE_CONFIG_FIELDS
+            },
+            state_values={
+                field_name: getattr(self, attr_name)
+                for (
+                    field_name,
+                    attr_name,
+                ) in DIG_DEPTH_PROFILE_RUNTIME_STATUS_STATE_FIELDS
+            },
+        )
+
+    def _dig_depth_profile_input_facts(
+        self,
+        obs: dict,
+        *,
+        include_env_state: bool = False,
+    ) -> DigDepthProfileInputFacts:
+        def pending_corridor_cell_id(pending_corridor_id: int) -> int | None:
+            corridor = self._coverage_corridor_by_id(pending_corridor_id)
+            if corridor is not None:
+                return int(corridor.cell_id)
+            return None
+
+        return self.dig_depth_profile_service.input_facts_from_source_callbacks(
+            cycle_index=int(self._cycle_index),
+            pending_cycle_id=int(self._pending_dig_cut_cycle_id),
+            pending_corridor_id=int(self._pending_dig_cut_corridor_id),
+            pending_raw_fields=self._pending_dig_cut_raw_fields,
+            current_dig_cut_tokens=self._dig_cut_tokens,
+            include_env_state=bool(include_env_state),
+            callbacks=DigDepthProfileInputSourceCallbacks(
+                pending_corridor_cell_id=pending_corridor_cell_id,
+                active_corridor=self._coverage_active_corridor,
+                active_corridor_raw_fields=lambda corridor: self._coverage_raw_fields(
+                    corridor,
+                    obs=obs,
+                ),
+                active_corridor_cell_id=lambda corridor: int(corridor.cell_id),
+                live_raw_fields=lambda: self._raw_fields_from_live_pose(obs),
+                env_state=lambda: self._env_state(obs),
+            ),
         )
 
     def _dig_depth_profile_raw_fields(self, obs: dict) -> dict[str, float | int]:
-        pending_raw_fields = None
-        if (
-            self._pending_dig_cut_raw_fields is not None
-            and self._pending_dig_cut_cycle_id == int(self._cycle_index)
-        ):
-            pending_raw_fields = self._pending_dig_cut_raw_fields
-        active_raw_fields = None
-        live_raw_fields = None
-        if pending_raw_fields is None:
-            corridor = self._coverage_active_corridor()
-            if corridor is not None:
-                active_raw_fields = self._coverage_raw_fields(corridor, obs=obs)
-            else:
-                live_raw_fields = self._raw_fields_from_live_pose(obs)
         return self.dig_depth_profile_service.resolve_raw_fields(
-            DigDepthProfileInputFacts(
-                cycle_index=int(self._cycle_index),
-                pending_cycle_id=int(self._pending_dig_cut_cycle_id),
-                pending_raw_fields=pending_raw_fields,
-                active_corridor_raw_fields=active_raw_fields,
-                live_raw_fields=live_raw_fields,
-                current_dig_cut_tokens=self._dig_cut_tokens,
-            )
+            self._dig_depth_profile_input_facts(obs)
         )
 
     def _dig_depth_profile_cell_id(self, obs: dict) -> int:
-        pending_corridor_cell_id = None
-        if (
-            int(self._pending_dig_cut_corridor_id) >= 0
-            and self._pending_dig_cut_cycle_id == int(self._cycle_index)
-        ):
-            corridor = self._coverage_corridor_by_id(int(self._pending_dig_cut_corridor_id))
-            if corridor is not None:
-                pending_corridor_cell_id = int(corridor.cell_id)
-        active_corridor_cell_id = None
-        if pending_corridor_cell_id is None:
-            corridor = self._coverage_active_corridor()
-            if corridor is not None:
-                active_corridor_cell_id = int(corridor.cell_id)
-        env_state = None
-        if pending_corridor_cell_id is None and active_corridor_cell_id is None:
-            env_state = self._env_state(obs)
         return self.dig_depth_profile_service.resolve_cell_id(
-            DigDepthProfileInputFacts(
-                cycle_index=int(self._cycle_index),
-                pending_cycle_id=int(self._pending_dig_cut_cycle_id),
-                pending_corridor_id=int(self._pending_dig_cut_corridor_id),
-                pending_corridor_cell_id=pending_corridor_cell_id,
-                active_corridor_cell_id=active_corridor_cell_id,
-                env_state=env_state,
-            )
+            self._dig_depth_profile_input_facts(obs)
         )
 
     def _build_dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray:
         self._dig_cut_fallback_reason = ""
-        if (
-            self._pending_dig_cut_tokens is not None
-            and self._pending_dig_cut_cycle_id == int(self._cycle_index)
-        ):
-            self._dig_cut_token_source = "pending_return_target"
-            self._dig_cut_fallback_reason = ""
-            self._dig_cut_token_in_prior_p10_p90 = (
-                False
-                if self._pending_dig_cut_raw_fields is None
-                else self._raw_fields_in_prior_range(self._pending_dig_cut_raw_fields)
+        decision = self.dig_cut_plan_service.dispatch_decision(
+            self._dig_cut_plan_dispatch_facts()
+        )
+        if decision.action == "pending_return_target":
+            activation = self.return_target_plan_service.pending_activation(
+                self._pending_return_target_activation_facts(obs)
             )
-            self._coverage_active_corridor_id = int(self._pending_dig_cut_corridor_id)
-            self._coverage_last_selected_corridor_id = int(
-                self._pending_dig_cut_corridor_id
-            )
-            self._coverage_current_payload_gain_kg = 0.0
-            self._coverage_cycle_start_deposit_kg = self._deposited_mass(obs)
-            self._coverage_active_state_exemplar_ids = list(
-                self._pending_dig_state_exemplar_ids
-            )
-            self._coverage_active_state_exemplar_distance = float(
-                self._pending_dig_state_exemplar_distance
-            )
-            self._coverage_active_state_exemplar_profile_token = (
-                None
-                if self._pending_dig_depth_profile_tokens is None
-                else self._pending_dig_depth_profile_tokens.astype(np.float32).copy()
-            )
-            return np.asarray(self._pending_dig_cut_tokens, dtype=np.float32).copy()
-        if self.dig_cut_planner_mode == "conservative_pose":
+            return self._apply_pending_return_target_activation(activation)
+        if decision.builder_kind == "conservative_pose":
             plan = build_conservative_pose_dig_cut_plan(
                 self._bucket_dig_area_pose(obs)
             )
-            self._dig_cut_token_source = plan.source
-            self._dig_cut_token_in_prior_p10_p90 = False
-            return np.asarray(plan.token, dtype=np.float32)
-        if self.dig_cut_planner_mode == "operator_prior":
-            try:
-                token, raw_fields, source, fallback_reason = (
-                    self._build_operator_prior_dig_cut_tokens(obs)
-                )
-                self._dig_cut_token_source = source
-                self._dig_cut_fallback_reason = fallback_reason
-                self._dig_cut_token_in_prior_p10_p90 = self._raw_fields_in_prior_range(
-                    raw_fields
-                )
-                return token
-            except Exception as exc:
-                if self.dig_cut_planner_fallback_mode != "conservative_pose":
-                    raise
-                self._dig_cut_token_source = "fallback_conservative_pose"
-                self._dig_cut_fallback_reason = str(exc)
-                plan = build_conservative_pose_dig_cut_plan(
-                    self._bucket_dig_area_pose(obs),
-                    source="fallback_conservative_pose",
-                    fallback_reason=str(exc),
-                )
-                token = np.asarray(plan.token, dtype=np.float32)
-                self._dig_cut_token_in_prior_p10_p90 = False
-                return token
-        if self.dig_cut_planner_mode == "operator_prior_coverage":
-            try:
-                token, raw_fields, source, fallback_reason = (
-                    self._build_operator_prior_coverage_dig_cut_tokens(obs)
-                )
-                self._dig_cut_token_source = source
-                self._dig_cut_fallback_reason = fallback_reason
-                self._dig_cut_token_in_prior_p10_p90 = self._raw_fields_in_prior_range(
-                    raw_fields
-                )
-                return token
-            except Exception as exc:
-                if self.dig_cut_planner_fallback_mode != "conservative_pose":
-                    raise
-                self._dig_cut_token_source = "fallback_conservative_pose"
-                self._dig_cut_fallback_reason = str(exc)
-                plan = build_conservative_pose_dig_cut_plan(
-                    self._bucket_dig_area_pose(obs),
-                    source="fallback_conservative_pose",
-                    fallback_reason=str(exc),
-                )
-                token = np.asarray(plan.token, dtype=np.float32)
-                self._dig_cut_token_in_prior_p10_p90 = False
-                return token
-        if self.dig_cut_planner_mode == "operator_prior_sweep_belief":
-            try:
-                token, raw_fields, source, fallback_reason = (
-                    self._build_operator_prior_coverage_dig_cut_tokens(obs)
-                )
-                self._dig_cut_token_source = source
-                self._dig_cut_fallback_reason = fallback_reason
-                self._dig_cut_token_in_prior_p10_p90 = self._raw_fields_in_prior_range(
-                    raw_fields
-                )
-                return token
-            except Exception as exc:
-                if self.dig_cut_planner_fallback_mode != "conservative_pose":
-                    raise
-                self._dig_cut_token_source = "fallback_conservative_pose"
-                self._dig_cut_fallback_reason = str(exc)
-                plan = build_conservative_pose_dig_cut_plan(
-                    self._bucket_dig_area_pose(obs),
-                    source="fallback_conservative_pose",
-                    fallback_reason=str(exc),
-                )
-                token = np.asarray(plan.token, dtype=np.float32)
-                self._dig_cut_token_in_prior_p10_p90 = False
-                return token
-        raise ValueError(f"Unsupported dig_cut_planner mode {self.dig_cut_planner_mode!r}.")
+            state = self.dig_cut_plan_service.state_from_success_plan(
+                plan,
+                raw_fields_in_prior_range=False,
+            )
+            return self._apply_dig_cut_plan_state(state)
+        if decision.builder_kind == "operator_prior":
+            state = self._dig_cut_plan_state_from_builder(
+                obs,
+                self._build_operator_prior_dig_cut_tokens,
+            )
+            return self._apply_dig_cut_plan_state(state)
+        if decision.builder_kind == "operator_prior_coverage":
+            state = self._dig_cut_plan_state_from_builder(
+                obs,
+                self._build_operator_prior_coverage_dig_cut_tokens,
+            )
+            return self._apply_dig_cut_plan_state(state)
+        raise ValueError(
+            f"Unsupported dig_cut_planner mode {self.dig_cut_planner_mode!r}."
+        )
+
+    def _pending_return_target_activation_facts(
+        self,
+        obs: dict,
+    ) -> PendingReturnTargetActivationFacts:
+        raw_fields_in_prior_range = (
+            False
+            if self._pending_dig_cut_raw_fields is None
+            else self._raw_fields_in_prior_range(self._pending_dig_cut_raw_fields)
+        )
+        return build_pending_return_target_activation_facts_from_mapping(
+            {
+                field_name: getattr(self, attr_name)
+                for (
+                    field_name,
+                    attr_name,
+                ) in PENDING_RETURN_TARGET_ACTIVATION_FACT_FIELDS
+            },
+            raw_fields_in_prior_range=raw_fields_in_prior_range,
+            cycle_start_deposit_kg=self._deposited_mass(obs),
+        )
+
+    def _apply_pending_return_target_activation(
+        self,
+        activation: PendingReturnTargetActivation,
+    ) -> np.ndarray:
+        self._dig_cut_token_source = activation.dig_cut_token_source
+        self._dig_cut_fallback_reason = activation.dig_cut_fallback_reason
+        self._dig_cut_token_in_prior_p10_p90 = (
+            activation.dig_cut_token_in_prior_p10_p90
+        )
+        self._coverage_active_corridor_id = activation.coverage_active_corridor_id
+        self._coverage_last_selected_corridor_id = (
+            activation.coverage_last_selected_corridor_id
+        )
+        self._coverage_current_payload_gain_kg = (
+            activation.coverage_current_payload_gain_kg
+        )
+        self._coverage_cycle_start_deposit_kg = (
+            activation.coverage_cycle_start_deposit_kg
+        )
+        self._coverage_active_state_exemplar_ids = list(
+            activation.active_state_exemplar_ids
+        )
+        self._coverage_active_state_exemplar_distance = float(
+            activation.active_state_exemplar_distance
+        )
+        self._coverage_active_state_exemplar_profile_token = (
+            None
+            if activation.active_state_exemplar_profile_token is None
+            else activation.active_state_exemplar_profile_token.copy()
+        )
+        return np.asarray(activation.dig_cut_tokens, dtype=np.float32).copy()
+
+    def _dig_cut_plan_state_from_builder(
+        self,
+        obs: dict,
+        builder: Any,
+    ) -> DigCutPlanState:
+        return self.dig_cut_plan_service.state_from_builder_attempt(
+            build_plan=lambda: builder(obs),
+            raw_fields_in_prior_range=self._raw_fields_in_prior_range,
+            fallback_mode=str(self.dig_cut_planner_fallback_mode),
+            fallback_plan=lambda exc: build_conservative_pose_dig_cut_plan(
+                self._bucket_dig_area_pose(obs),
+                source="fallback_conservative_pose",
+                fallback_reason=str(exc),
+            ),
+        )
+
+    def _apply_dig_cut_plan_state(self, state: DigCutPlanState) -> np.ndarray:
+        result: DigCutPlanTokenResult = self.dig_cut_plan_service.token_result(state)
+        self._dig_cut_token_source = str(result.source)
+        self._dig_cut_fallback_reason = str(result.fallback_reason)
+        self._dig_cut_token_in_prior_p10_p90 = bool(result.token_in_prior_p10_p90)
+        return result.token
 
     def _build_next_dig_cut_plan_for_return(
         self,
         obs: dict,
     ) -> tuple[np.ndarray, dict[str, float | int], str, str, int]:
-        if self.dig_cut_planner_mode == "conservative_pose":
-            plan = build_conservative_pose_dig_cut_plan(
-                self._bucket_dig_area_pose(obs),
-                source=f"{self.return_target_token_source_prefix}_conservative_pose",
+        decision = self.dig_cut_plan_service.dispatch_decision(
+            self._dig_cut_plan_dispatch_facts(pending_tokens_present=False)
+        )
+        context = self.return_target_plan_service.dig_cut_build_context(
+            source_prefix=self.return_target_token_source_prefix,
+            builder_kind=decision.builder_kind,
+            planner_mode=self.dig_cut_planner_mode,
+        )
+
+        def conservative_pose_plan() -> Any:
+            return build_conservative_pose_dig_cut_plan(
+                self._bucket_dig_area_pose(obs)
             )
-            return (
-                np.asarray(plan.token, dtype=np.float32),
-                plan.raw_fields,
-                plan.source,
-                plan.fallback_reason,
-                -1,
-            )
-        if self.dig_cut_planner_mode == "operator_prior":
-            token, raw_fields, source, fallback_reason = (
-                self._build_operator_prior_dig_cut_tokens(obs)
-            )
-            return (
-                token,
-                raw_fields,
-                f"{self.return_target_token_source_prefix}_{source}",
-                fallback_reason,
-                -1,
-            )
-        if self.dig_cut_planner_mode in {
-            "operator_prior_coverage",
-            "operator_prior_sweep_belief",
-        }:
+
+        def operator_prior_parts() -> tuple[
+            np.ndarray,
+            dict[str, float | int],
+            str,
+            str,
+        ]:
+            return self._build_operator_prior_dig_cut_tokens(obs)
+
+        def coverage_plan() -> tuple[Any, int]:
             corridor = self._select_next_coverage_corridor(obs)
             self._coverage_active_corridor_id = int(corridor.corridor_id)
             raw_fields = self._coverage_raw_fields(
@@ -2896,14 +2848,39 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                 obs=obs,
                 update_state=True,
             )
-            return (
-                _build_dig_cut_token(raw_fields),
+            plan = build_raw_fields_dig_cut_plan(
                 raw_fields,
-                f"{self.return_target_token_source_prefix}_{self.dig_cut_planner_mode}",
-                "",
-                int(corridor.corridor_id),
+                source=context.planner_mode,
             )
-        raise ValueError(f"Unsupported dig_cut_planner mode {self.dig_cut_planner_mode!r}.")
+            return plan, int(corridor.corridor_id)
+
+        result: ReturnTargetDigCutBuildResult = (
+            self.return_target_plan_service.dig_cut_build_result_from_callbacks(
+                context,
+                ReturnTargetDigCutBuildCallbacks(
+                    conservative_pose_plan=conservative_pose_plan,
+                    operator_prior_parts=operator_prior_parts,
+                    coverage_plan=coverage_plan,
+                ),
+            )
+        )
+        return result.legacy_tuple()
+
+    def _dig_cut_plan_dispatch_facts(
+        self,
+        *,
+        pending_tokens_present: object | None = None,
+    ) -> DigCutPlanDispatchFacts:
+        return build_dig_cut_plan_dispatch_facts_from_mapping(
+            {
+                field_name: getattr(self, attr_name)
+                for (
+                    field_name,
+                    attr_name,
+                ) in DIG_CUT_PLAN_DISPATCH_FACT_FIELDS
+            },
+            pending_tokens_present=pending_tokens_present,
+        )
 
     def _build_return_start_envelope_tokens_for_obs(
         self,
@@ -2913,27 +2890,28 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         corridor_id: int | None = None,
     ) -> np.ndarray:
         state = build_return_start_envelope_for_plan(
-            ReturnStartEnvelopeBuildRequest(
-                env_state=self._env_state(obs),
-                qpos=obs.get("qpos", np.zeros(self.action_dim)),
-                qvel=obs.get("qvel", np.zeros(self.action_dim)),
-                raw_fields=raw_fields,
-                action_dim=self.action_dim,
-                dig_cut_prior=self.dig_cut_prior,
-                config=self._current_return_start_envelope_config(),
-                cell_id=self._return_start_envelope_cell_id(corridor_id),
+            self._return_start_envelope_build_request(
+                obs,
+                raw_fields,
+                corridor_id=corridor_id,
             )
         )
-        self._return_start_envelope_token_source = str(state.source)
-        self._return_start_envelope_use_prior_spatial_bounds = bool(
-            state.use_prior_spatial_bounds
+        return self._apply_return_start_envelope_token_result(state)
+
+    def _return_start_envelope_build_request(
+        self,
+        obs: dict,
+        raw_fields: dict[str, float | int],
+        *,
+        corridor_id: int | None = None,
+    ) -> ReturnStartEnvelopeBuildRequest:
+        return build_return_start_envelope_request_from_observation_view(
+            self._make_snapshot(obs).view,
+            raw_fields=raw_fields,
+            dig_cut_prior=self.dig_cut_prior,
+            config=self._current_return_start_envelope_config(),
+            cell_id=self._return_start_envelope_cell_id(corridor_id),
         )
-        self._return_start_envelope_use_prior_qpos_bounds = bool(
-            state.use_prior_qpos_bounds
-        )
-        if state.token is None:
-            raise RuntimeError("return start-envelope builder returned no token.")
-        return np.asarray(state.token, dtype=np.float32)
 
     def _maybe_condition_return_start_envelope_qpos_from_relocate(
         self,
@@ -2952,14 +2930,21 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             ),
             use_prior_qpos_bounds=self._return_start_envelope_use_prior_qpos_bounds,
         )
-        self._return_start_envelope_token_source = str(state.source)
-        self._return_start_envelope_use_prior_spatial_bounds = bool(
-            state.use_prior_spatial_bounds
+        return self._apply_return_start_envelope_token_result(state)
+
+    def _apply_return_start_envelope_token_result(
+        self,
+        state: ReturnStartEnvelopeState,
+    ) -> np.ndarray:
+        result = require_return_start_envelope_token_result(state)
+        self._return_start_envelope_token_source = result.source
+        self._return_start_envelope_use_prior_spatial_bounds = (
+            result.use_prior_spatial_bounds
         )
-        self._return_start_envelope_use_prior_qpos_bounds = bool(
-            state.use_prior_qpos_bounds
+        self._return_start_envelope_use_prior_qpos_bounds = (
+            result.use_prior_qpos_bounds
         )
-        return np.asarray(state.token, dtype=np.float32)
+        return result.token
 
     def _return_start_envelope_prior_token(
         self,
@@ -3000,15 +2985,17 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
     def _return_start_envelope_cell_id(self, corridor_id: int | None) -> int | None:
         if corridor_id is None:
             return None
+        corridor_cell_id = None
         try:
             corridor = self._coverage_corridor_by_id(int(corridor_id))
         except Exception:
             corridor = None
         if corridor is not None:
-            return int(corridor.cell_id)
-        if int(corridor_id) >= 0:
-            return int(corridor_id)
-        return None
+            corridor_cell_id = int(corridor.cell_id)
+        return resolve_return_start_envelope_cell_id(
+            corridor_id=corridor_id,
+            corridor_cell_id=corridor_cell_id,
+        )
 
     @staticmethod
     def _return_start_envelope_token_from_prior_mapping(
@@ -3017,48 +3004,13 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         return return_start_envelope_token_from_prior_mapping(mapping)
 
     def _current_return_start_envelope_config(self) -> ReturnStartEnvelopeConfig:
-        return ReturnStartEnvelopeConfig(
-            use_cell_prior=self.return_start_envelope_use_cell_prior,
-            min_source_count=self.return_start_envelope_min_source_count,
-            min_source_fraction=self.return_start_envelope_min_source_fraction,
-            qpos_from_relocate_enabled=(
-                self.return_start_envelope_qpos_from_relocate_enabled
-            ),
-            qpos_from_relocate_coefficients=(
-                self.return_start_envelope_qpos_from_relocate_coefficients
-            ),
-            qpos_from_relocate_min=self.return_start_envelope_qpos_from_relocate_min,
-            qpos_from_relocate_max=self.return_start_envelope_qpos_from_relocate_max,
-            qpos_from_relocate_use_prior_qpos_bounds=(
-                self.return_start_envelope_qpos_from_relocate_use_prior_qpos_bounds
-            ),
-            spatial_from_relocate_enabled=(
-                self.return_start_envelope_spatial_from_relocate_enabled
-            ),
-            spatial_from_relocate_coefficients=(
-                self.return_start_envelope_spatial_from_relocate_coefficients
-            ),
-            spatial_from_relocate_min=(
-                self.return_start_envelope_spatial_from_relocate_min
-            ),
-            spatial_from_relocate_max=(
-                self.return_start_envelope_spatial_from_relocate_max
-            ),
-            spatial_from_relocate_use_prior_spatial_bounds=(
-                self.return_start_envelope_spatial_from_relocate_use_prior_spatial_bounds
-            ),
-            gate_enabled=self.return_to_dig_start_envelope_gate_enabled,
-            spatial_tolerance=self.return_to_dig_start_envelope_spatial_tolerance,
-            depth_tolerance_m=self.return_to_dig_start_envelope_depth_tolerance_m,
-            local_depth_tolerance_m=(
-                self.return_to_dig_start_envelope_local_depth_tolerance_m
-            ),
-            plane_depth_tolerance_m=(
-                self.return_to_dig_start_envelope_plane_depth_tolerance_m
-            ),
-            plane_depth_mode=self.return_to_dig_start_envelope_plane_depth_mode,
-            qpos_tolerance=self.return_to_dig_start_envelope_qpos_tolerance,
-            require_contact=self.return_to_dig_start_envelope_require_contact,
+        return build_return_start_envelope_config_from_mapping(
+            {
+                config_key: getattr(self, attr_name)
+                for config_key, attr_name in (
+                    RETURN_START_ENVELOPE_RUNTIME_CONFIG_FIELDS
+                )
+            }
         )
 
     @staticmethod
@@ -3099,36 +3051,136 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             obs=obs,
             update_state=True,
         )
-        return (
-            _build_dig_cut_token(raw_fields),
+        plan = build_raw_fields_dig_cut_plan(
             raw_fields,
-            "operator_prior_coverage",
-            "",
+            source="operator_prior_coverage",
+        )
+        return (
+            plan.token,
+            plan.raw_fields,
+            plan.source,
+            plan.fallback_reason,
         )
 
+    def _dig_cut_runtime_status_snapshot(self) -> DigCutRuntimeStatusSnapshot:
+        return self.dig_cut_plan_service.runtime_status_snapshot_from_mappings(
+            config_values={
+                field_name: getattr(self, attr_name)
+                for field_name, attr_name in DIG_CUT_RUNTIME_STATUS_CONFIG_FIELDS
+            },
+            state_values={
+                field_name: getattr(self, attr_name)
+                for field_name, attr_name in DIG_CUT_RUNTIME_STATUS_STATE_FIELDS
+            },
+        )
 
     def _clear_dig_cut_plan(self) -> None:
-        self._dig_cut_planned_cycle_id = -1
-        self._dig_cut_tokens = np.zeros(DIG_CUT_TOKEN_DIM, dtype=np.float32)
-        self._dig_depth_profile_tokens = np.zeros(
-            DIG_DEPTH_PROFILE_TOKEN_DIM,
-            dtype=np.float32,
+        self._apply_dig_cut_plan_clear_state(
+            self.dig_cut_plan_service.cleared_plan_state()
         )
-        self._dig_cut_token_source = "none"
-        self._dig_cut_fallback_reason = ""
-        self._dig_cut_token_in_prior_p10_p90 = False
-        self._coverage_active_state_exemplar_ids = []
-        self._coverage_active_state_exemplar_distance = float("nan")
-        self._coverage_active_state_exemplar_profile_token = None
+        self._clear_coverage_active_state_exemplar()
+
+    def _apply_dig_cut_plan_clear_state(
+        self,
+        state: DigCutPlanClearState,
+    ) -> None:
+        self._dig_cut_planned_cycle_id = int(state.planned_cycle_id)
+        self._dig_cut_tokens = np.asarray(
+            state.dig_cut_tokens,
+            dtype=np.float32,
+        ).copy()
+        self._dig_depth_profile_tokens = np.asarray(
+            state.dig_depth_profile_tokens,
+            dtype=np.float32,
+        ).copy()
+        self._dig_cut_token_source = str(state.token_source)
+        self._dig_cut_fallback_reason = str(state.fallback_reason)
+        self._dig_cut_token_in_prior_p10_p90 = bool(state.token_in_prior_p10_p90)
 
     def _invalidate_pending_dig_cut_plan(self) -> None:
-        self._pending_dig_cut_cycle_id = -1
-        self._pending_dig_cut_corridor_id = -1
-        self._pending_dig_cut_raw_fields = None
-        self._pending_dig_cut_tokens = None
-        self._pending_dig_depth_profile_tokens = None
-        self._pending_dig_state_exemplar_ids = []
-        self._pending_dig_state_exemplar_distance = float("nan")
+        self._apply_pending_dig_cut_plan_state(
+            self.return_target_plan_service.invalidated_pending_dig_cut_plan()
+        )
+
+    def _apply_pending_dig_cut_plan_state(
+        self,
+        state: PendingDigCutPlanState,
+    ) -> None:
+        self._pending_dig_cut_cycle_id = int(state.cycle_id)
+        self._pending_dig_cut_corridor_id = int(state.corridor_id)
+        self._pending_dig_cut_raw_fields = (
+            None if state.raw_fields is None else dict(state.raw_fields)
+        )
+        self._pending_dig_cut_tokens = (
+            None
+            if state.tokens is None
+            else np.asarray(state.tokens, dtype=np.float32).copy()
+        )
+        self._pending_dig_depth_profile_tokens = (
+            None
+            if state.depth_profile_tokens is None
+            else np.asarray(state.depth_profile_tokens, dtype=np.float32).copy()
+        )
+        self._pending_dig_state_exemplar_ids = list(state.state_exemplar_ids)
+        self._pending_dig_state_exemplar_distance = float(
+            state.state_exemplar_distance
+        )
+
+    def _apply_conditioning_config(
+        self,
+        config: primitive_config_helpers.PrimitiveConditioningConfig,
+    ) -> None:
+        for name, value in config.planner_items():
+            setattr(self, name, value)
+
+    def _apply_dig_lifecycle_config(
+        self,
+        config: DigLifecyclePlannerConfig,
+    ) -> None:
+        for name, value in config.planner_items():
+            setattr(self, name, value)
+
+    def _apply_dump_lifecycle_config(
+        self,
+        config: DumpLifecyclePlannerConfig,
+    ) -> None:
+        for name, value in config.planner_items():
+            setattr(self, name, value)
+
+    def _apply_return_to_dig_config(
+        self,
+        config: ReturnToDigPlannerConfig,
+    ) -> None:
+        for name, value in config.planner_items():
+            setattr(self, name, value)
+
+    def _apply_bootstrap_config(
+        self,
+        config: BootstrapPlannerConfig,
+    ) -> None:
+        for name, value in config.planner_items():
+            setattr(self, name, value)
+
+    def _apply_goal_sequence_config(
+        self,
+        config: GoalSequencePlannerConfig,
+    ) -> None:
+        for name, value in config.planner_items():
+            setattr(self, name, value)
+
+    def _apply_cell_entry_config(
+        self,
+        config: CellEntryPlannerConfig,
+    ) -> None:
+        for name, value in config.planner_items():
+            setattr(self, name, value)
+
+    def _apply_pre_dig_align_config(
+        self,
+        config: primitive_config_helpers.PreDigAlignmentPlannerConfig,
+    ) -> None:
+        for name, value in config.planner_items():
+            setattr(self, name, value)
 
     def _validate_dig_cut_planner_config(self) -> None:
         primitive_config_helpers.validate_dig_cut_planner_config(
@@ -3196,84 +3248,72 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
     def _raw_fields_in_prior_range(self, raw_fields: dict[str, float | int]) -> bool:
         return self._coverage_service().raw_fields_in_prior_range(raw_fields)
 
-    def _cell_entry_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        if not self.cell_entry_enabled or self._skill_name != "dig":
+    def _cell_entry_tokens_for_obs(
+        self,
+        obs: dict,
+        token_request: PolicyObservationTokenRequest | None = None,
+    ) -> np.ndarray | None:
+        token_request = token_request or self._policy_observation_token_request()
+        if not token_request.cell_entry_tokens:
             return None
-        if (
-            self._cell_entry_goal is None
-            or self._cell_entry_goal_cycle_id != int(self._cycle_index)
-        ):
-            self._cell_entry_goal = self.cell_entry_planner.plan(
-                cycle_id=int(self._cycle_index)
-            )
-            self._cell_entry_goal_cycle_id = int(self._cycle_index)
-            self._cell_entry_seen_cell_id = -1
+        result = self.cell_entry_runtime_service.tokens_for_obs(
+            planner=self.cell_entry_planner,
+            auditor=self.cell_entry_auditor,
+            facts=self._cell_entry_runtime_facts(obs),
+            config=CellEntryRuntimeConfig(enabled=self.cell_entry_enabled),
+            state=self._cell_entry_runtime_state(),
+        )
+        return self._apply_cell_entry_runtime_token_result(result)
 
-        cell_id = self._dig_cell_id(obs)
-        if cell_id >= 0 and self._cell_entry_seen_cell_id < 0:
-            self._cell_entry_seen_cell_id = int(cell_id)
-        outcome = PrimitiveCycleOutcome(
-            cycle_id=int(self._cycle_index),
-            actual_start_step=-1,
-            actual_bite_step=-1,
-            actual_removal_step=-1,
-            actual_start_cell_id=int(cell_id),
-            actual_bite_cell_id=int(cell_id),
-            actual_removal_cell_id=int(cell_id),
-            payload_gain_kg=float(self.cell_entry_auditor.low_productivity_payload_gain_kg),
-            deposit_delta_kg=0.0,
-            collision_count_delta=0,
-            return_miss=False,
-        )
-        self._cell_entry_audit = self.cell_entry_auditor.audit(
-            goal=self._cell_entry_goal,
-            outcome=outcome,
-            current_bucket_pose=self._bucket_dig_area_pose(obs),
-            geometry_available=self._bucket_dig_area_cell_in_bounds_mask(obs),
-        )
-        self._cell_entry_tokens = build_cell_entry_tokens(
-            grid=self.cell_entry_grid,
-            goal=self._cell_entry_goal,
-            audit=self._cell_entry_audit,
-        )
+    def _apply_cell_entry_runtime_token_result(
+        self,
+        result: CellEntryRuntimeTokenResult,
+    ) -> np.ndarray | None:
+        if result.tokens is None:
+            return None
+        self._cell_entry_goal = result.state.goal
+        self._cell_entry_goal_cycle_id = int(result.state.goal_cycle_id)
+        self._cell_entry_audit = result.state.audit
+        self._cell_entry_seen_cell_id = int(result.state.seen_cell_id)
+        self._cell_entry_tokens = np.asarray(result.tokens, dtype=np.float32).copy()
         return self._cell_entry_tokens.copy()
 
     def _complete_cell_entry_dig(self, obs: dict) -> None:
         if not self.cell_entry_enabled or self._cell_entry_goal is None:
             return
-        cell_id = self._dig_cell_id(obs)
-        if cell_id < 0:
-            cell_id = int(self._cell_entry_seen_cell_id)
-        outcome = PrimitiveCycleOutcome(
-            cycle_id=int(self._cycle_index),
-            actual_start_step=-1,
-            actual_bite_step=-1,
-            actual_removal_step=-1,
-            actual_start_cell_id=int(cell_id),
-            actual_bite_cell_id=int(cell_id),
-            actual_removal_cell_id=int(cell_id),
-            payload_gain_kg=float(self._mass_in_bucket(obs)),
-            deposit_delta_kg=0.0,
-            collision_count_delta=0,
-            return_miss=False,
+        result = self.cell_entry_runtime_service.complete_dig(
+            planner=self.cell_entry_planner,
+            facts=self._cell_entry_runtime_facts(obs),
+            config=CellEntryRuntimeConfig(enabled=self.cell_entry_enabled),
+            state=self._cell_entry_runtime_state(),
         )
-        self.cell_entry_planner.update(outcome)
-        self._cell_entry_trace.append(
+        self._apply_cell_entry_runtime_completion_result(result)
+
+    def _apply_cell_entry_runtime_completion_result(
+        self,
+        result: CellEntryRuntimeCompletionResult,
+    ) -> None:
+        if result.trace_event is not None:
+            self._cell_entry_trace.append(result.trace_event)
+
+    def _cell_entry_debug_snapshot(self) -> CellEntryDebugSnapshot:
+        return self.cell_entry_runtime_service.debug_snapshot(
+            state=self._cell_entry_runtime_state()
+        )
+
+    def _cell_entry_runtime_facts(self, obs: dict) -> CellEntryRuntimeFacts:
+        snapshot = self._make_snapshot(obs)
+        return self.cell_entry_runtime_service.facts_from_observation_view(
+            view=snapshot.view,
+            cycle_index=self._cycle_index,
+            active_skill=self._skill_name,
+        )
+
+    def _cell_entry_runtime_state(self) -> CellEntryRuntimeState:
+        return build_cell_entry_runtime_state_from_mapping(
             {
-                "cycle_id": int(self._cycle_index),
-                "selected_cell_id": int(self._cell_entry_goal.selected_cell_id),
-                "actual_cell_id": int(cell_id),
-                "payload_gain_kg": float(outcome.payload_gain_kg),
-                "audit_reason_code": int(
-                    -1
-                    if self._cell_entry_audit is None
-                    else self._cell_entry_audit.reason_code
-                ),
-                "audit_reason": str(
-                    ""
-                    if self._cell_entry_audit is None
-                    else self._cell_entry_audit.reason
-                ),
+                field_name: getattr(self, attr_name)
+                for field_name, attr_name in CELL_ENTRY_RUNTIME_STATE_FIELDS
             }
         )
 
@@ -3290,33 +3330,27 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         return bucket_tip_dig_area_pose_from_obs(obs)
 
     def _goal_tokens(self) -> np.ndarray | None:
-        if not self.goal_sequence:
-            return None
-        curr_sector_id = self._goal_sector_id(self._cycle_index)
-        next_sector_id = self._next_goal_sector_id()
-        return build_goal_tokens(
-            self.goal_scenario_id,
-            curr_sector_id=curr_sector_id,
-            curr_cut_depth_norm=self.goal_depth_norm,
-            next_sector_id=next_sector_id,
-            next_cut_depth_norm=self.goal_depth_norm,
-            dst_target_norm=self.goal_dump_target_norm,
-            has_lookahead=next_sector_id >= 0,
-        )
+        return self.goal_sequence_service.tokens_for_cycle(
+            sequence=self.goal_sequence,
+            facts=GoalSequenceFacts(cycle_index=int(self._cycle_index)),
+            config=GoalSequenceConfig(
+                scenario_id=self.goal_scenario_id,
+                depth_norm=self.goal_depth_norm,
+                dump_target_norm=self.goal_dump_target_norm,
+            ),
+        ).tokens
 
     def _goal_sector_id(self, cycle_index: int) -> int:
-        if not self.goal_sequence:
-            return -1
-        index = max(0, min(int(cycle_index), len(self.goal_sequence) - 1))
-        return int(self.goal_sequence[index])
+        return self.goal_sequence_service.sector_id_for_cycle(
+            sequence=self.goal_sequence,
+            cycle_index=int(cycle_index),
+        )
 
     def _next_goal_sector_id(self) -> int:
-        if not self.goal_sequence:
-            return -1
-        next_index = int(self._cycle_index) + 1
-        if next_index >= len(self.goal_sequence):
-            return -1
-        return int(self.goal_sequence[next_index])
+        return self.goal_sequence_service.next_sector_id(
+            sequence=self.goal_sequence,
+            cycle_index=int(self._cycle_index),
+        )
 
     @staticmethod
     def _normalize_goal_sequence(
@@ -3365,22 +3399,81 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         transition_timeout: bool,
         transition_completed: bool,
     ) -> PrimitivePlannerDebugState:
-        return build_primitive_debug_state_snapshot(
-            skill_name=str(self._skill_name),
-            skill_ids=PRIMITIVE_SKILL_IDS,
-            transition_skill_names=("return", PRE_DIG_ALIGN_SKILL_NAME),
-            transition_hybrid_mode=HYBRID_MODE_TRANSITION,
-            work_hybrid_mode=HYBRID_MODE_WORK,
-            skill_switch_reason=str(self._switch_reason),
-            primitive_checkpoint_paths=self.primitive_checkpoint_paths,
-            first_dig_policy_active=self._first_dig_policy_active(),
-            transition_timeout=bool(transition_timeout),
-            transition_completed=bool(transition_completed),
-            completed_transition_count=int(self._completed_transition_count),
-            transition_timeout_count=int(self._transition_timeout_count),
-            dump_ready_hold_count=int(self._dump_ready_hold_count),
-            dump_done_hold_count=int(self._dump_done_hold_count),
-            primitive_cycle_index=int(self._cycle_index),
+        dump_status = self._dump_lifecycle_runtime_status_snapshot()
+        return build_primitive_debug_state_snapshot_from_runtime(
+            config=PrimitiveDebugStateSnapshotConfig(
+                skill_ids=PRIMITIVE_SKILL_IDS,
+                transition_skill_names=("return", PRE_DIG_ALIGN_SKILL_NAME),
+                transition_hybrid_mode=HYBRID_MODE_TRANSITION,
+                work_hybrid_mode=HYBRID_MODE_WORK,
+                primitive_checkpoint_paths=self.primitive_checkpoint_paths,
+            ),
+            facts=PrimitiveDebugStateSnapshotFacts(
+                skill_name=str(self._skill_name),
+                skill_switch_reason=str(self._switch_reason),
+                first_dig_policy_active=self._first_dig_policy_active(),
+                transition_timeout=bool(transition_timeout),
+                transition_completed=bool(transition_completed),
+                completed_transition_count=int(self._completed_transition_count),
+                transition_timeout_count=int(self._transition_timeout_count),
+                dump_ready_hold_count=int(dump_status.ready_hold_count),
+                dump_done_hold_count=int(dump_status.done_hold_count),
+                primitive_cycle_index=int(self._cycle_index),
+            ),
+        )
+
+    def _debug_state_facts(self) -> PrimitiveDebugStateFacts:
+        return build_primitive_debug_state_facts_from_mapping(
+            {
+                field_name: getattr(self, attr_name)
+                for field_name, attr_name in PRIMITIVE_DEBUG_STATE_ASSEMBLY_FIELDS
+            },
+            primitive_goal_curr_sector_id=self._goal_sector_id(self._cycle_index),
+            primitive_goal_next_sector_id=self._next_goal_sector_id(),
+            pre_dig_align_active_for_next_dig=(
+                self._should_pre_dig_align_before_dig()
+            ),
+            coverage_debug=self._coverage_debug_snapshot(),
+            return_handoff_status=self._return_to_dig_handoff_status_snapshot(),
+            dig_cut_status=self._dig_cut_runtime_status_snapshot(),
+            dig_depth_profile_status=(
+                self._dig_depth_profile_runtime_status_snapshot()
+            ),
+            return_target_status=self._return_target_conditioning_status_snapshot(),
+            dig_lifecycle_status=self._dig_lifecycle_runtime_status_snapshot(),
+            bootstrap_status=self._bootstrap_runtime_status_snapshot(),
+            cell_entry_debug=self._cell_entry_debug_snapshot(),
+            pre_dig_align_debug=self._pre_dig_align_debug_snapshot(),
+        )
+
+    def _planner_trace_facts(self) -> PrimitivePlannerTraceFacts:
+        return build_primitive_planner_trace_facts_from_mapping(
+            {
+                field_name: getattr(self, attr_name)
+                for (
+                    field_name,
+                    attr_name,
+                ) in PRIMITIVE_PLANNER_TRACE_ASSEMBLY_FIELDS
+            },
+            coverage_trace=self._coverage_trace_snapshot(),
+        )
+
+    def _rollout_summary_facts(self) -> PrimitiveRolloutSummaryFacts:
+        return build_primitive_rollout_summary_facts_from_mapping(
+            {
+                field_name: getattr(self, attr_name)
+                for (
+                    field_name,
+                    attr_name,
+                ) in PRIMITIVE_ROLLOUT_SUMMARY_ASSEMBLY_FIELDS
+            },
+            coverage_summary=self._coverage_rollout_summary_snapshot(),
+            return_handoff_status=self._return_to_dig_handoff_status_snapshot(),
+            dig_cut_status=self._dig_cut_runtime_status_snapshot(),
+            return_target_status=self._return_target_conditioning_status_snapshot(),
+            dig_lifecycle_status=self._dig_lifecycle_runtime_status_snapshot(),
+            bootstrap_status=self._bootstrap_runtime_status_snapshot(),
+            pre_dig_align_debug=self._pre_dig_align_debug_snapshot(),
         )
 
 
@@ -3795,28 +3888,43 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             policies.append(self.first_dig_policy)
         return policies
 
+    def _dump_lifecycle_runtime_status_snapshot(
+        self,
+    ) -> DumpLifecycleRuntimeStatusSnapshot:
+        return self.dump_lifecycle_gate.runtime_status_snapshot(
+            DumpLifecycleRuntimeStatusState(
+                ready_hold_count=int(self._dump_release_ready_hold_count),
+                done_hold_count=int(self._dump_done_hold_count),
+            )
+        )
+
     def _make_debug_state(
         self,
         *,
         transition_timeout: bool,
         transition_completed: bool,
     ) -> PrimitivePlannerDebugState:
-        return build_primitive_debug_state_snapshot(
-            skill_name=str(self._skill_name),
-            skill_ids=PRIMITIVE_SKILL_IDS_5P,
-            transition_skill_names=("return",),
-            transition_hybrid_mode=HYBRID_MODE_TRANSITION,
-            work_hybrid_mode=HYBRID_MODE_WORK,
-            skill_switch_reason=str(self._switch_reason),
-            primitive_checkpoint_paths=self.primitive_checkpoint_paths,
-            first_dig_policy_active=self._first_dig_policy_active(),
-            transition_timeout=bool(transition_timeout),
-            transition_completed=bool(transition_completed),
-            completed_transition_count=int(self._completed_transition_count),
-            transition_timeout_count=int(self._transition_timeout_count),
-            dump_ready_hold_count=int(self._dump_release_ready_hold_count),
-            dump_done_hold_count=int(self._dump_done_hold_count),
-            primitive_cycle_index=int(self._cycle_index),
-            approach_ready_hold_count=int(self._approach_ready_hold_count),
-            dump_release_ready_hold_count=int(self._dump_release_ready_hold_count),
+        dump_status = self._dump_lifecycle_runtime_status_snapshot()
+        return build_primitive_debug_state_snapshot_from_runtime(
+            config=PrimitiveDebugStateSnapshotConfig(
+                skill_ids=PRIMITIVE_SKILL_IDS_5P,
+                transition_skill_names=("return",),
+                transition_hybrid_mode=HYBRID_MODE_TRANSITION,
+                work_hybrid_mode=HYBRID_MODE_WORK,
+                primitive_checkpoint_paths=self.primitive_checkpoint_paths,
+            ),
+            facts=PrimitiveDebugStateSnapshotFacts(
+                skill_name=str(self._skill_name),
+                skill_switch_reason=str(self._switch_reason),
+                first_dig_policy_active=self._first_dig_policy_active(),
+                transition_timeout=bool(transition_timeout),
+                transition_completed=bool(transition_completed),
+                completed_transition_count=int(self._completed_transition_count),
+                transition_timeout_count=int(self._transition_timeout_count),
+                dump_ready_hold_count=int(dump_status.ready_hold_count),
+                dump_done_hold_count=int(dump_status.done_hold_count),
+                primitive_cycle_index=int(self._cycle_index),
+                approach_ready_hold_count=int(self._approach_ready_hold_count),
+                dump_release_ready_hold_count=int(dump_status.ready_hold_count),
+            ),
         )
