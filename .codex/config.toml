@@ -1,0 +1,11 @@
+# Project-local Codex settings for long-running planner refactor work.
+# Keep this scoped to excavator_testbed so normal projects do not default to
+# GPT-5.5 long-context pricing.
+model_context_window = 1050000
+model_auto_compact_token_limit = 850000
+
+[features]
+goals = true
+multi_agent = true
+memories = true
+hooks = true

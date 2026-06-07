@@ -247,11 +247,22 @@ planner 决策：
 
 ### return 阶段
 
-输入：
+这里要区分两类东西：**return ACT 真正读取的 low-dim 输入**，以及
+**planner/scheduler 在 return 阶段暂存的下一铲计划**。后者服务于 handoff
+和下一轮 dig，不等于当前 return policy 的输入。
+
+return ACT 输入：
 
 - 图像、`qpos`、`qvel`
 - `return_start_envelope_tokens_v1`
-- planner 侧 pending 下一轮 `dig_cut_tokens`，但它不进入当前 return ACT low-dim
+- return-relocate 训练/评测线可额外读取 `return_relocate_tokens_v1`。这是从
+  `return_target_tokens` 派生的 relocation-only view，只保留 entry/exit/direction/length
+  和 valid，depth/payload 固定为 0；它不是完整下一铲 cut token。
+
+planner 侧上下文：
+
+- pending 下一轮 `dig_cut_tokens`。它在 return 阶段生成或保持，用于下一轮 dig 和
+  handoff entry-close / envelope 对齐，但不进入当前 return ACT low-dim。
 
 planner 决策：
 
@@ -272,49 +283,13 @@ planner 决策：
 - return ACT 的 4D action。
 - 通过 gate 后进入下一轮 dig，并复用 pending dig plan。
 
-## 离线数据切分逻辑
+## 数据处理、HDF5 字段与 QC
 
-离线 primitive 数据切分不是简单复用旧 `/v2/cycle`，也不是按在线状态机逐步 replay 一遍。
-当前 V2.4.5 的 source of truth 是 material cycle：用 `env_state` 里的空间、质量、沉积、
-removed-depth 事件验证一轮真实 material movement，再把它切成四个 ACT 训练窗口。
+数据录制、relabel、离线 primitive 切分、HDF5 字段、VDS/materialize、`qc6` 和具体 QC
+gate 已迁移到独立文档：[data_processing_hdf5_qc_contract.md](data_processing_hdf5_qc_contract.md)。
 
-核心原则：
-
-- 仍然只产出四个 primitive：`dig -> carry -> dump -> return`。
-- 旧 `/v2/cycle` 只作为搜索窗口和诊断参考；最终边界由 material pulse、dig/dump 几何、
-  bucket mass、deposit 和 removed-depth 决定。
-- 离线 builder 可以用局部未来窗口确认 plateau、未来无新增装料、release 后稳定等事实；
-  这些 oracle 只用于切数据和 QC，不能作为在线 ACT 输入。
-- window 采用半开区间语义理解：某个 realign 或 material event 属于哪个窗口，要按
-  `[start, end)` 归属，避免前一轮吞掉下一轮起点。
-
-| Primitive | 起点 | 终点 | 接受/拒绝重点 |
-| --- | --- | --- | --- |
-| `dig` | material cycle 内 first stable dig-box contact/depth；若可靠则使用 `qualified_dig_start` | payload/removed-depth 已出现、bucket mass 峰值已出现、未来短窗口无显著新增 mass，且 bucket contact/depth 低、稳定离开 dig box | gold dig 必须有可靠 surface-relative depth / removed-depth outcome；dig 内不能出现 dump/target deposit 增加 |
-| `carry` | `dig_end` | `dump_start` | 包含带料运输和 dump 前预姿态调整；只要还在接近/对准 dump area，movement 仍归 carry。若 dump 前已有明显 deposit contamination，当前红线为 `deposit_delta > 5kg AND deposit_delta / payload_loss > 10%`，reject |
-| `dump` | 从 `release_onset` 向前找有限 committed aiming window；上限为 `release_onset - 120`，并要求进入 stable aiming band | release 后 bucket residual mass 低位稳定，deposit plateau | `dump_start` 不能因为未来会倒土就提前吞掉长距离 transport；当前 surface-depth band 使用 stable outside `<= 0.25m`、fallback outside `<= 0.30m`、relative x/z corridor 和 8-step 稳定阈值 |
-| `return` | `dump_end` | 下一轮 first next-dig-start envelope ready / `first_next_dig_entry_ready` | return 只在存在下一轮 material dig-start 时生成；terminal cycle 不产 return，只写 reject/summary |
-
-material cycle 的基本证据链是：
-
-1. bucket 在 dig virtual box 内开始接触/入土。
-2. removed-depth grid 或 bucket mass 出现有效增加；gold 样本要求可靠 removed-depth delta。
-3. 带料离开 dig box 并接近 dump area。
-4. 在 dump area 内发生 bucket mass drop，并伴随 dump/target deposit increase。
-5. bucket residual mass 回到低位并稳定，然后进入 return。
-
-多 pulse 和 realign 的处理规则：
-
-- 如果旧 `/v2/cycle` 内出现多个 `load -> release` material pulse，优先拆成多个 material
-  sub-cycle；空间/质量证据对不上时才 reject。
-- material cycle 内有 `replay_pose_realign_steps`，则该子轮的 `dig/carry/dump` reject。
-- realign 落在 return window 内，只 reject 对应 return。
-- realign 正好落在下一轮 start/qds 帧时，只归属下一轮，不应把前一轮 clean return 丢掉。
-
-当前实现入口是 `tb-build-primitives-v2_2 --boundary-profile v2_4_5_spatial_mass`，
-上层流水线是 `tb-build-v2_4-hindsight-pipeline`。builder 输出接受的 primitive windows、
-token、outcome/QC 指标和 reject reason；训练 loader 只读取已经通过这些边界和 QC 的
-窗口。
+本文件只保留 planner-to-ACT 的概念契约：planner 决定何时切换 primitive、如何构造 token、
+handoff gate 何时允许把 pending dig plan 交给 dig ACT。离线数据如何产生和验收，以独立数据文档为准。
 
 ## token 契约
 
@@ -339,8 +314,11 @@ eval 侧的 `return_low_dim_keys` 也是同一组 key。
 
 - return ACT 不读取 `dig_cut_tokens`。
 - return ACT 不读取 `return_target_tokens`。
-- return ACT 不读取 `return_relocate_tokens_v1`。
-- return ACT 不直接拿下一铲的 cell、cut depth、target payload 或 removed-depth goal。
+- 基础 surface-depth/qc6labels scale080 配置中，return ACT 不读取
+  `return_relocate_tokens_v1`；return-relocate 训练/评测线可以额外加入这个 masked
+  relocation token。
+- return ACT 不直接拿下一铲的完整 cell、cut depth、target payload 或 removed-depth
+  goal。即使使用 `return_relocate_tokens_v1`，depth/payload 也应被屏蔽。
 - `dig_cut_planner.return_start_envelope.use_cell_prior=false` 时，live return envelope 使用
   qc6 gold return 的 global envelope prior；cell/corridor 只影响下一轮 dig token 和
   entry-close gate，不再默认影响 return-start envelope token。
