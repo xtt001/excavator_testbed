@@ -173,6 +173,47 @@ timing、debug/summary schema、token contract 或 rollout 输出。pre-dig-alig
 runtime reset、active-for-next-dig 判断、surface/ready/timeout gate、outcome
 classification、counter 写回和 debug-state 展开仍在既有 service/facade 边界内。
 
+## Planner Config Application Facade Consolidation Slice
+
+`primitive_config` 新增 `apply_planner_config_items()`，把 planner shell 中重复的
+`for name, value in config.planner_items(): setattr(self, name, value)` 写回循环收回
+已有 config capability。`PrimitivePlannerACTPolicy` 中的
+`_apply_conditioning_config()`、`_apply_dig_lifecycle_config()`、
+`_apply_dump_lifecycle_config()`、`_apply_return_to_dig_config()`、
+`_apply_bootstrap_config()`、`_apply_goal_sequence_config()`、
+`_apply_cell_entry_config()` 和 `_apply_pre_dig_align_config()` 保持旧 private facade
+入口，只转调 shared helper。
+
+该 helper 只负责按 `planner_items()` 给出的顺序把原值写到 caller-provided target；
+它不解析配置、不验证 dig-cut planner mode、不读取 prior、不创建 service、不 reset
+policy、不读取 observation、不调用 `_set_skill()`，也不写 debug schema。行为锁由
+`tests/test_primitive_planner_config.py::test_apply_planner_config_items_preserves_order_and_identity`
+覆盖，要求写入顺序和对象 identity 与旧循环一致。
+
+本切片不改变默认 config、validation error text、prior token-order validation、
+goal sector id mapping、threshold、branch order、switch reason、policy dispatch、
+debug schema、token contract 或 rollout 行为；只是把重复的配置写回机制集中到已有
+`primitive_config` source-of-truth。
+
+### Planner Config Application Self-Review 2026-06-16
+
+Reflection Gate: `先合并/回收过细模块`。本阶段不新增 code slice，也不把 config
+application 再拆成 `config_application.py` 或 service object；`apply_planner_config_items()`
+留在已有 `primitive_config` capability 内，因为它只表达 config dataclass 到 planner
+facade target 的机械写回，不拥有 scheduler state、planner decision、policy adapter、
+training loop 或 HDF5/checkpoint 语义。
+
+本次审查确认 8 个 planner `_apply_*_config()` private facades 仍只保留兼容入口，并且
+都精确转调 `primitive_config_helpers.apply_planner_config_items(self, config)`。仓库中唯一的
+`for name, value in config.planner_items(): setattr(...)` 写回循环位于
+`primitive_config.apply_planner_config_items()`；planner 大文件不再重复该循环。
+
+该 helper 的边界保持为纯 config application：不解析/验证 config、不加载 dig-cut prior、
+不读取 observation、不调用 `_set_skill()`、不 reset policy、不组装 debug/summary schema，
+也不定义 token order、dataset path、boundary profile name 或 checkpoint compatibility。
+因此它不需要独立成新长期模块；继续把语义来源收束到 `primitive_config` 比新增一层贫血
+facade 更符合当前 thin-shell 目标。
+
 ## Dig-Start Alignment Runtime Config Assembly Slice
 
 `dig_start_alignment` 新增 `build_dig_start_alignment_runtime_config()`，负责把
@@ -2032,8 +2073,10 @@ token contract 或 rollout 输出。
 ## Coverage Service Package Status
 
 `testbed/planner/dig_coverage/` 已作为 dig coverage / corridor planning 的
-service package。`CoverageService` 组合 candidate 构造、raw-field 组装、selection
-scoring 和 progress/depletion 更新；`DigCoverageMixin` 作为
+service package。`CoverageService` 组合 base/state lookup、candidate 构造、
+raw-field 组装/prior-range validation、state-exemplar conditioning、selection
+orchestration、scoring/first-dig gate、snapshot assembly 和 progress/depletion 更新；
+`DigCoverageMixin` 作为
 `PrimitivePlannerACTPolicy` 的 compatibility facade，保留旧 `_coverage_*`
 private entry points 和旧 state/debug property names。
 
@@ -2046,6 +2089,160 @@ scoring、target selection、progress/depletion state updates；planner shell �
 并保留旧 trace event。后续 coverage 迁移应继续保持 behavior-preserving，不改
 candidate layout、score weight、attempt/depletion、multi-pass、state exemplar、
 terminal-stop reason 或 trace schema。
+
+## Coverage State Lookup Boundary Consolidation Slice
+
+`CoverageServiceBase` 现在作为 coverage service 内只读 state/corridor lookup 的实现
+source-of-truth：active corridor lookup、corridor-by-id、active value/cell/score、
+depleted count、all-depleted 判断，以及 coverage cell-id / row-id / percentile-index
+resolution、remaining-depth lookup 和 decision-trace event recording。
+`CoverageProgressMixin` 回到 progress、reject、multi-pass reopen 和 terminal-stop
+request 的状态推进责任边界，不再同时拥有 snapshot/scoring/selection 也依赖的共享
+lookup/trace helper。
+
+本切片刻意不新增 `lookup.py` 或新的 mixin 文件；这些 helper 是 `CoverageServiceState`
+上的公共 service accessors，放入现有 base/state-access 层比制造一个小模块更符合
+consolidation 目标。迁移方法体与旧实现 AST 等价，不改变 active-corridor fallback、
+negative-id fallback、cell/row id fallback、depleted-count 统计、all-depleted 判断、
+multi-pass reopen、terminal-stop reason、decision trace payload、debug/trace/summary
+schema、branch order、policy reset timing 或 rollout 输出。行为锁由
+`tests/test_dig_coverage_contracts.py::test_coverage_state_lookup_methods_have_base_source_of_truth`
+确认 lookup 方法来自 base，并继续由 coverage contract tests 覆盖 facade、snapshot、
+terminal-stop 和 multi-pass 行为。
+
+## Coverage Cell Identity Source Consolidation Slice
+
+`CoverageServiceBase` 继续作为 coverage service 内共享 lookup/accessor 的实现
+source-of-truth。本切片把 `_coverage_cell_id()`、`_coverage_corridor_row_id()` 和
+`_coverage_cell_id_from_percentile_indices()` 从 `CoverageRawFieldsMixin` 收回 base，
+因为 cell identity resolution 被 candidate construction、state-exemplar conditioning、
+scoring、selection、snapshot 和 progress 共同使用，不属于 raw-field assembly 的稳定
+责任边界。
+
+本切片不新增 `cell_identity.py` 或新的 mixin 文件；这 3 个 helper 是
+`CoverageCorridorState` 与 coverage grid indexing 的共享 service accessor，放入已有
+base/state-access 层比制造单 helper module 更符合 consolidation 目标。迁移方法体与
+旧实现 AST 等价，不改变 explicit `cell_id` clamp、corridor-id fallback、row-id division、
+percentile index interpolation、candidate layout、candidate score payload、debug/trace/
+summary schema、branch order、policy reset timing、token contract 或 rollout 输出。行为锁由
+`tests/test_dig_coverage_contracts.py::test_coverage_state_lookup_methods_have_base_source_of_truth`
+确认 cell identity helper 来自 base，并继续由 coverage contract tests 覆盖 percentile
+candidate cell ids、cell-weighted candidate cell ids、selection parity 和 debug schema。
+
+## Coverage Remaining-Depth Lookup Source Consolidation Slice
+
+`CoverageServiceBase` 继续作为 coverage service 内共享 observation/state lookup 的实现
+source-of-truth。本切片把 `_coverage_remaining_depth_for_corridor()` 从
+`CoverageRawFieldsMixin` 收回 base，因为 remaining-depth lookup 读取 env-state target /
+removed-depth / valid-mask fields，并被 selection scoring、progress completion/rejection
+和 multi-pass reopen 共同使用；它不是 operator raw-field assembly 的稳定责任。
+
+本切片不新增 `remaining_depth.py` 或新的 mixin 文件；该 helper 是 coverage cell identity
+和 env-state accessors 的共享派生查询，放入已有 base/state-access 层比制造单 helper
+module 更符合 consolidation 目标。迁移方法体与旧实现 AST 等价，不改变 target-depth /
+removed-depth / valid-mask index、invalid-grid fallback、non-finite fallback、min-depth
+threshold 调用方语义、candidate score payload、completion/rejection trace payload、
+multi-pass reopen trace payload、debug/trace/summary schema、branch order、policy reset
+timing、token contract 或 rollout 输出。行为锁由
+`tests/test_dig_coverage_contracts.py::test_coverage_state_lookup_methods_have_base_source_of_truth`
+确认 remaining-depth helper 来自 base，并继续由 coverage contract tests 覆盖 selection
+parity、candidate scores、completion/rejection belief update、terminal-stop 和 multi-pass
+行为。
+
+## Coverage Decision-Trace Event Source Consolidation Slice
+
+`CoverageServiceBase` 继续作为 coverage service 内 shared state accessor 与 trace-state
+mutation 的实现 source-of-truth。本切片把 `_record_coverage_decision_event()` 和它使用的
+`_env_state_value()` 从 `CoverageProgressMixin` 收回 base，因为 decision-trace event
+payload 被 selection、completion/rejection、multi-pass reopen 和 terminal-stop request
+共同使用；它是 coverage trace schema assembly，不是 progress/depletion 状态推进本身。
+
+本切片不新增 `trace.py` 或新的 mixin 文件；decision trace list 本来由
+`CoverageServiceState` 持有，event recorder 放入已有 base/state-access 层比制造单 helper
+module 更符合 consolidation 目标。迁移方法体与旧实现 AST 等价，不改变 trace payload
+key/order、bucket env-state indexes、corridor debug payload、extra payload overwrite order、
+candidate score payload、completion/rejection trace payload、multi-pass reopen trace payload、
+terminal-stop trace payload、debug/trace/summary schema、branch order、policy reset timing、
+token contract 或 rollout 输出。行为锁由
+`tests/test_dig_coverage_contracts.py::test_coverage_decision_trace_event_methods_have_base_source_of_truth`
+确认 event recorder 来自 base，并继续由 coverage contract tests 覆盖 trace snapshot、
+selection parity、completion/rejection trace、terminal-stop trace 和 multi-pass behavior。
+
+## Coverage Raw-Field Prior-Range Source Consolidation Slice
+
+`CoverageRawFieldsMixin` 现在作为 coverage raw-field assembly 和 raw-field prior-range
+validation 的实现 source-of-truth。`raw_fields_in_prior_range()` 从 `CoverageServiceBase`
+迁入 `raw_fields.py`，让 base 保持 coverage service 的 config/state/facts accessors，
+不再同时拥有 raw-field contract 校验。`DigCoverageMixin._raw_fields_in_prior_range()`
+compatibility facade 保持不变，仍转调 coverage service。
+
+本切片不改变 raw-field/prior field mapping、p10/p90 边界、non-finite fallback、缺失
+prior 的返回值、`_prior_percentile()` error text、pending-return-target prior-range
+fact、debug/summary schema、branch order、policy reset timing、token contract 或 rollout
+输出。迁移方法体与旧实现 AST 等价。行为锁由
+`tests/test_dig_coverage_contracts.py::test_coverage_raw_field_prior_range_has_raw_fields_source_of_truth`
+确认 prior-range 方法来自 raw-fields mixin，并继续由 coverage / return-target contract
+tests 覆盖 raw-field prior-range flag 的调用面。
+
+## Coverage Facade Duplicate Recovery Slice
+
+`PrimitivePlannerACTPolicy` 不再复制 `_coverage_percentile_list()`、
+`_coverage_percentile_name()`、`_prior_percentile()`、`_clamp_to_prior()` 和
+`_raw_fields_in_prior_range()` 的 pass-through 实现。这些 compatibility entry points
+统一由 `DigCoverageMixin` 继承提供，再转调 `CoverageService` / coverage raw-fields
+source-of-truth。
+
+本切片是重复 facade 回收，不新增 service、不改变 dig-cut prior percentile/clamp error
+text、不改变 coverage percentile filtering/name fallback、不改变 prior-range p10/p90
+判断、不改变 pending return-target prior-range fact、不改变 branch order、policy reset
+timing、token contract、debug/summary schema 或 rollout 输出。行为锁由
+`tests/test_dig_coverage_contracts.py::test_coverage_private_methods_are_service_facades`
+确认这些旧 private entry points 的方法来源已经统一到 `DigCoverageMixin`。
+
+## Coverage State-Exemplar Conditioning Source Consolidation Slice
+
+`dig_coverage.state_exemplars.CoverageStateExemplarMixin` 现在作为 coverage
+state-exemplar conditioning 的实现 source-of-truth：state exemplar 加载 wrapper、
+state-conditioned plan 选择、removed-depth grid 投影、exemplar distance、rejected-exemplar
+过滤、加权 raw-fields、加权 depth-profile token、active exemplar runtime state 写回，以及
+distance/id facade helper。`CoverageRawFieldsMixin` 回到 raw-field fallback assembly、
+prior-range validation 的责任边界；`CoverageScoringMixin` 与 `CoverageSelectionMixin`
+继续只消费 state-exemplar distance/id，不拥有 state-exemplar 选择和加权语义。
+
+本切片不改变 state-exemplar enable flag、path fallback、cell-id lookup、removed-depth
+grid shape、distance formula、temperature weighting、skip-rejected fallback、profile-token
+shape/dtype、active exemplar ids/distance/profile-token 写回、corridor exemplar fields、
+candidate score payload、debug/trace/summary schema、branch order、policy reset timing、
+token contract 或 rollout 输出。迁移的 9 个方法与旧实现 AST 等价。行为锁由
+`tests/test_dig_coverage_contracts.py::test_coverage_state_exemplar_methods_have_focused_source_of_truth`
+确认 state-exemplar 方法来自 focused mixin，并继续由 coverage contract tests 覆盖
+selection parity、candidate scores、raw-fields、debug schema 和 state-exemplar runtime
+state。
+
+`DigCoverageMixin._load_coverage_state_exemplars()` 仍保留 pre-service init compatibility
+loader，因为 `PrimitivePlannerACTPolicy.__init__()` 必须先加载
+`coverage_state_exemplars_by_cell`，再创建 `CoverageService`。该 facade 只转调 shared
+loader，不拥有 state-exemplar conditioning runtime 语义。
+
+## Coverage Scoring Source Consolidation Slice
+
+`dig_coverage.scoring.CoverageScoringMixin` 现在作为 coverage scoring、rare-cell
+attempt limit、recent-row penalty、first-dig entry/qpos gate、first-dig target-from-token
+wrapper 和 first-dig bonus 的实现 source-of-truth。`CoverageService` 组合该 mixin；
+`CoverageSelectionMixin` 回到
+selection loop / candidate-score payload / selected-corridor event 的 orchestration
+责任边界。`DigCoverageMixin` 中 `_coverage_score()`、`_coverage_first_dig_bonus()`、
+`_coverage_first_dig_gate_available()` 等 compatibility facade 保持不变，仍转调
+coverage service。
+
+本切片不改变 coverage score formula、remaining-depth/belief fallback、rare-cell gate、
+attempt limit、recent-row penalty、first-dig entry distance gate、first-dig qpos gate、
+first-dig alignment target callback fallback、qpos dtype/shape、candidate score payload、
+selected corridor branch order、terminal-stop reason、debug/trace/summary schema、
+policy reset timing 或 rollout 输出。行为锁由
+`tests/test_dig_coverage_contracts.py::test_coverage_scoring_methods_have_focused_source_of_truth`
+确认 scoring/gate 方法来自 focused mixin，并继续由 coverage contract tests 覆盖
+selection parity、candidate scores、rare-cell attempt limit 和 first-dig gating。
 
 ## Coverage Runtime Reset Slice
 
@@ -2113,6 +2310,28 @@ shape 的旧错误行为、cycle/skill/dig-best coercion、terminal-stop context
 candidate layout、score weight、attempt/depletion、multi-pass、state exemplar、
 terminal-stop reason、coverage decision trace payload、debug/summary schema、branch
 order、switch reason、policy reset timing 或 rollout 输出。
+
+## Coverage Observation Facts Boundary Naming Slice
+
+`DigCoverageMixin` 继续作为 raw observation compatibility facade：它从 planner shell
+读取 raw `obs`，调用 `_coverage_observation_facts()` / `_coverage_context_facts()` 构造
+`CoverageObservationFacts`，再调用 `CoverageService`。`testbed/planner/dig_coverage/`
+service implementation modules 不再把 service-internal 参数命名为 `obs`，也不再把
+`CoverageObservationFacts` 标注为 `dict` union；内部 candidate / selection / scoring /
+progress / raw-fields / state-exemplar / trace helper 均使用 `facts` 参数表达已解析
+observation facts。
+
+本切片不改变 raw observation parsing、qpos missing fallback、env-state indexes、
+mass/deposit sampling、candidate score payload、decision trace payload、terminal-stop
+reason、branch order、policy reset timing、debug/summary schema、token contract 或 rollout
+输出。它只修正 service/facade 边界的命名和类型表达，防止后续维护者误以为 coverage
+service 可以直接读取 raw observation dict。行为锁由
+`tests/test_dig_coverage_contracts.py::test_coverage_service_internals_use_observation_facts_boundary`
+确认 `base` / `candidates` / `progress` / `raw_fields` / `scoring` / `selection` /
+`state_exemplars` 中不再定义 `obs` 参数，也不再出现
+`CoverageObservationFacts | dict` / `dict | CoverageObservationFacts` 或 `facts: dict`
+这类 service-internal type 回退；raw `obs` 参数仍只保留在 `DigCoverageMixin`
+compatibility facade。
 
 ## Bootstrap Config Assembly Slice
 
@@ -2625,6 +2844,26 @@ planner `self`，不调用 `_set_skill()`，不 reset policy，不写 HDF5/check
 本切片不改变 debug-state key、key order、coverage corridor debug payload、
 state-exemplar id 类型、terminal-stop mirror 字段、candidate score payload、branch
 order、threshold、switch reason、policy reset timing 或 rollout 输出。
+
+### Coverage Snapshot Source Consolidation Slice
+
+`dig_coverage.snapshots.CoverageSnapshotMixin` 现在作为 coverage debug / trace /
+rollout-summary snapshot assembly 的实现 source-of-truth。`CoverageService` 组合该
+mixin；`CoverageProgressMixin` 回到 progress、reject、multi-pass reopen、
+terminal-stop request 的状态推进责任边界，不再同时拥有 snapshot schema assembly。
+state/corridor lookup 与 decision-trace event recording 仍由 `CoverageServiceBase`
+统一提供。`DigCoverageMixin` 的 `_coverage_debug_snapshot()`、
+`_coverage_trace_snapshot()` 和 `_coverage_rollout_summary_snapshot()` compatibility
+facade 保持不变，planner shell 仍只调用这些旧入口并展开既有 debug/trace/summary
+facts。
+
+本切片不改变 coverage debug/trace/rollout-summary dataclass 字段、key/order、
+corridor debug payload、decision trace payload、candidate scores、terminal-stop
+fields、multi-pass fields、first-dig fields、branch order、switch reason、policy
+reset timing 或 rollout 输出。行为锁由
+`tests/test_dig_coverage_contracts.py::test_coverage_snapshot_methods_have_focused_source_of_truth`
+确认 snapshot 方法来自 focused mixin，并继续由 coverage contract tests 覆盖 facade 与
+service snapshot payload parity。
 
 ### Cell Entry Debug Snapshot Slice
 
@@ -3309,12 +3548,14 @@ corridor selection、`_coverage_raw_fields(..., update_state=True)`、
 该 helper 不复制 raw fields，以保持 return-target build projection 的既有对象身份
 语义。
 
-planner 大文件只保留旧 private facade：
+planner 只保留旧 private facade：
 
 - `_raw_fields_from_live_pose()`
 - `_build_operator_prior_dig_cut_tokens()`
-- `_prior_percentile()`
-- `_clamp_to_prior()`
+
+prior percentile / clamp compatibility entry points 由 `DigCoverageMixin` 继承提供并继续
+转调 coverage service / dig-cut prior helper；`PrimitivePlannerACTPolicy` 不再在大文件中
+复制 `_prior_percentile()` 或 `_clamp_to_prior()` 的 pass-through 实现。
 
 `_build_dig_cut_tokens_for_obs()` 和 `_build_next_dig_cut_plan_for_return()` 仍保留为
 planner shell facade：它们调用 dig-cut service 做纯 dispatch classification，并继续
@@ -4560,6 +4801,172 @@ service 拆分目标。
 后续 slice selection 规则：只有当候选迁移能移除 planner 中仍存在的完整领域能力
 时才新增 service/capability 代码；若候选只减少几行字段映射、只组合已有 builder 与
 service call，或需要改变 5P / token / debug / rollout 语义，必须停止并重新审视边界。
+
+## Reflection Check 2026-06-16
+
+本轮判断：先合并/回收过细模块，不新增 service-object 代码 slice。
+
+状态审计确认当前 `PrimitivePlannerACTPolicy` 仍是大文件，但剩余内容大多已经是
+thin shell 应保留的职责：active skill、branch order、service 调用顺序、runtime
+side-effect 写回、`_set_skill()`、policy dispatch、reset timing、debug/summary
+facade 和 legacy compatibility facade。`dig_lifecycle`、`dump_lifecycle`、
+`return_handoff`、`return_to_dig_transition`、`dig_start_alignment_*`、
+`dig_cut_plan`、`dig_depth_profile`、`return_target_plan`、`policy_observation`、
+`primitive_debug_facts`、`bootstrap` 和 `dig_coverage` 已经承担各自稳定 capability
+的 source-of-truth。
+
+本轮拒绝的候选：
+
+- return-target next dig-cut build orchestration：核心 dispatch、context 和 result
+  projection 已在 `return_target_plan` / `return_target_dig_cut_build`。planner 中剩余
+  逻辑主要是 coverage corridor selection、raw-fields side effect 和 active corridor
+  写回；继续外迁会把 coverage/planner side effect 推入 service。
+- policy-observation token request / injection：`PolicyObservationAssembler` 已拥有
+  request 与 token gate；planner 剩余内容是按旧顺序调用 token helpers 并写回 injection
+  flags。继续拆只会制造 pass-through facade。
+- scripted bootstrap action counter：`BootstrapService` 只拥有 legacy/diagnostic
+  bootstrap gate 与 action 数值；scripted step/hold/timeout counter 写回按计划仍属于
+  planner shell。
+- `PrimitivePlannerACT5PPolicy` 状态机：5P 已定义为 compatibility-only 失败支线，
+  不应在未重新确认语义前成为主线 service 拆分目标。
+
+下一步应先做 consolidation audit，而不是继续从 `PrimitivePlannerACTPolicy` 盲目抽
+小 helper。候选 audit 方向包括：检查 `dig_coverage` package 是否存在过细或过宽边界；
+检查 return-target / dig-cut 相关 projection wrapper 是否已经稳定到可以合并或删除旧
+compatibility facade；检查计划文档中已完成的细粒度 slice 是否需要标记为收敛状态。
+只有当 audit 找到仍嵌在 planner 内的完整领域能力，并且能用现有 focused parity /
+golden / debug-schema tests 锁住行为，才恢复 `继续当前 service-object 路线`。
+
+### Planner Shell Hotspot Audit 2026-06-16
+
+Reflection Gate: `先合并/回收过细模块`。本轮不新增 production code slice。
+
+当前 AST 方法长度审计显示 `PrimitivePlannerACTPolicy` 的最长剩余方法为
+`__init__()`、`_maybe_switch_skill()`、`predict()`、`reset()`、
+`_policy_obs()`、`_build_next_dig_cut_plan_for_return()`、runtime projection
+apply helpers 和 debug/trace facts facade；`PrimitivePlannerACT5PPolicy` 的最长剩余
+方法为 legacy `__init__()` 与 `_maybe_switch_skill()`。这些热点本身不能作为
+“继续 service-object 路线”的充分理由：从第一性原则看，目标不是降低单个方法行数，
+而是把仍嵌在 planner 内的完整领域能力移到稳定 capability，同时保留 shell 对 branch
+order、service call order、runtime side-effect order、`_set_skill()`、policy reset timing
+和 reason string 的所有权。
+
+本轮逐项拒绝以下非合格切片：
+
+- `_maybe_switch_skill()`：当前内容是 bootstrap / pre-dig-align / dig / carry / dump /
+  return 的旧分支顺序、gate 检查顺序、service projection 应用顺序和 `_set_skill()`
+  side effect 顺序。把该方法拆成 state service 会把 planner shell 的核心生命周期所有权
+  推进 service，并增加 branch-order / reason-string 漂移风险。
+- `reset()`：当前内容是 policy reset、boundary detector reset、coverage reset、active
+  skill 初始选择、各 runtime state reset 和初始 debug-state 组装的顺序定义。该顺序是
+  observable runtime contract，不适合用 reset service 包起来。
+- `_policy_obs()`：`PolicyObservationAssembler` 已拥有 token request / token gate /
+  observation assembly 语义；planner 剩余内容只是按旧顺序调用各 token source helper，
+  再写回 injection flags。继续抽一层只会制造 pass-through facade。
+- `_build_next_dig_cut_plan_for_return()`：return-target dig-cut build 的 context /
+  callback dispatch / result projection 已在 `return_target_plan` 与
+  `return_target_dig_cut_build`。planner 剩余闭包负责采样 observation、选择 coverage
+  corridor、写回 active corridor state，以及保留 conservative/operator-prior builder
+  的旧调用顺序；这些是 shell 与 coverage side effect 交界，不应推入 return-target
+  service。
+- debug/trace facts facade：`primitive_debug_facts`、coverage snapshots、return handoff
+  status、dig-cut / depth-profile / return-target / bootstrap / cell-entry / pre-dig-align
+  status 已分别有 source-of-truth。planner 中剩余 facade 负责采样当前 runtime state 并
+  组合既有 schema；继续拆会增加 debug/summary schema drift，而不减少真实领域语义。
+- `PrimitivePlannerACT5PPolicy`：5P 已明确为 compatibility-only 失败支线。除非用户重新
+  确认 5P 语义和兼容策略，否则不把 5P 状态机作为当前主线重构对象。
+
+因此本轮推进方式是收束而不是迁移：记录上述 shell 热点的保留理由，防止后续仅以
+method length 为目标继续拆分。后续若要恢复 code slice，候选必须先证明它不是 shell
+生命周期、不是单纯 mapping/facade、不是已有 service 的 callback glue，并且能用现有
+focused parity、golden trace 或 debug-schema tests 锁住行为。
+
+### Consolidation Audit 2026-06-16
+
+本轮 audit 结论：暂不合并现有 focused modules，也不删除 compatibility facade。
+
+- `testbed/planner/dig_coverage/service.py` 只有 composition class，但它是
+  `CoverageService` 的公开组合根，不是单个 helper wrapper。`base`、`candidates`、
+  `raw_fields`、`scoring`、`selection`、`progress` 和 `snapshots` 的边界分别覆盖
+  配置/兼容属性/state lookup、候选构造、raw-fields 投影/prior-range validation、
+  scoring/first-dig gate、corridor 选择、progress/terminal-stop 更新和
+  debug/trace/summary snapshot 逻辑；
+  这些文件存在继续收敛的可能，但不能在没有 focused parity tests 和 schema lock 的
+  情况下直接合并。
+- `testbed/planner/return_target_dig_cut_build.py` 虽然很小，但它拥有
+  return-target dig-cut build 的 context、callback dispatch、legacy result projection
+  和 object-identity 保留语义。`return_target_plan.py` 中的同名方法是稳定公共 facade，
+  已被 planner 和 tests 使用；把该文件并回 `return_target_plan.py` 只会增加主 service
+  体量，并破坏已记录的 return-target/dig-cut projection 边界。
+- planner 中剩余的 coverage raw-fields update、active corridor 写回、return-start
+  envelope source 传递、pending-state copy、policy reset timing、debug/summary facade
+  和 legacy 私有方法仍属于 thin shell 或兼容 surface。它们不是当前可独立外迁的完整
+  domain capability。
+
+因此 Reflection Gate 继续保持 `先合并/回收过细模块`：本阶段目标不是新增更细 service，
+而是先阻止在已拆出的 capability 上继续制造 pass-through 层。本轮没有找到满足“可回收、
+不改变公共 imports、测试替身、branch order、side effects、reason strings、debug/schema
+输出”的代码合并点，所以本轮只同步计划文档。后续若继续代码层面收敛，应先选择一个
+真实的边界修正候选，例如 `CoverageProgressMixin` 与 `CoverageSelectionMixin` 之间是否
+存在过宽责任，再用 focused parity / golden / debug-schema tests 锁住行为后做最小变更。
+
+### Coverage Consolidation Self-Review 2026-06-16
+
+本轮总 diff 审查结论：暂不新增 coverage 代码切片，先保留当前 focused mixin 组合。
+
+当前 `CoverageService` MRO 为 `CoverageSnapshotMixin -> CoverageProgressMixin ->
+CoverageStateExemplarMixin -> CoverageRawFieldsMixin -> CoverageScoringMixin ->
+CoverageSelectionMixin -> CoverageCandidateBuilderMixin -> CoverageServiceBase`。已迁移的
+45 个方法与旧实现 AST
+等价；source-of-truth 断言确认：
+
+- snapshot assembly 只在 `CoverageSnapshotMixin`；
+- scoring、rare-cell、first-dig gate 和 first-dig target wrapper 只在
+  `CoverageScoringMixin`；
+- raw-field prior-range validation 只在 `CoverageRawFieldsMixin`；
+- state-exemplar conditioning 只在 `CoverageStateExemplarMixin`；
+- state/corridor lookup、cell identity resolution、remaining-depth lookup 和
+  decision-trace event recording 只在 `CoverageServiceBase`；
+- `DigCoverageMixin` 和 planner `_coverage_*` methods 仍是 compatibility facade。
+
+`CoverageServiceBase` 仍然较长，但主要由 config projection、runtime-state property、
+public service wrappers 和 shared observation/prior accessors 构成；这些 accessors 被
+candidates、state-exemplars、raw-fields、scoring、progress、snapshots 共同使用。继续
+把它拆成新的 `facts.py` / `prior.py` / `lookup.py` 目前只会制造小型 pass-through
+模块，除非后续能证明某一组 helper 已经拥有稳定独立边界和 focused parity tests。
+
+### Coverage Terminal-Stop Boundary Stop Review 2026-06-16
+
+Reflection Gate: `先合并/回收过细模块`。本轮不新增 coverage 代码切片。
+
+`CoverageProgressMixin` 剩余的 `_complete_coverage_dig()`、`_complete_coverage_dump()`、
+`_reject_active_coverage_corridor()`、`_update_corridor_belief()`、
+`_maybe_reopen_coverage_pass()` 和 `_request_coverage_terminal_stop()` 仍共同构成
+coverage progress / depletion / multi-pass / terminal-stop request 的状态推进边界。
+这些方法不只是共享 accessor：它们拥有 attempts、low-productivity streak、belief
+coverage、pass index、depleted flag、terminal-stop replace policy、terminal-stop reason
+和 final `CoverageActionResult` 的更新语义。
+
+因此本轮拒绝继续把 `_request_coverage_terminal_stop()` 移入 `CoverageServiceBase`。
+虽然它调用了 base-owned decision-trace recorder，但它本身会执行 terminal-stop state
+transition，并且 facade 通过 `_apply_coverage_action_result()` 在 planner shell 调用链中
+触发该 request，以保持旧 terminal-stop side effect 顺序。把该方法迁到 base 会让 base
+从 shared state/accessor 层漂移成 progress lifecycle owner；这不符合 thin-shell /
+focused-service 的第一性目标。
+
+后续如果继续 coverage 方向，应先寻找仍然混在 progress 中的完整、可独立测试的领域能力；
+若候选只是为了降低 `progress.py` 行数而移动 terminal-stop request、single-field state
+updates、或 already-centralized trace/accessor helper，应停止并回到 consolidation audit。
+
+因此后续 coverage 方向应保持：
+
+- 不再为降低 `base.py` 行数而创建单一 helper 文件；
+- 不把 terminal-stop side effect、terminal-stop request lifecycle、`_set_skill()`、
+  policy reset timing 或 public debug/summary schema 迁入 base/accessor layer；
+- 若继续代码切片，优先寻找真实过宽责任或重复实现，并先用 source-of-truth /
+  golden / debug-schema tests 锁住行为；
+- 若连续候选只是 facade、mapping 或 already-centralized helper，应停止并回到
+  consolidation audit。
 
 ## 测试锁定规则
 

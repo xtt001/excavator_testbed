@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import importlib
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +35,10 @@ from testbed.planner.dig_coverage import (
     build_coverage_observation_facts_from_mapping,
     build_coverage_service_config_from_mapping,
 )
+from testbed.planner.dig_coverage.base import CoverageServiceBase
+from testbed.planner.dig_coverage.raw_fields import CoverageRawFieldsMixin
+from testbed.planner.dig_coverage.scoring import CoverageScoringMixin
+from testbed.planner.dig_coverage.snapshots import CoverageSnapshotMixin
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -60,6 +66,26 @@ def test_coverage_private_methods_are_service_facades() -> None:
     assert (
         PrimitivePlannerACTPolicy._coverage_raw_fields
         is DigCoverageMixin._coverage_raw_fields
+    )
+    assert (
+        PrimitivePlannerACTPolicy._coverage_percentile_list
+        is DigCoverageMixin._coverage_percentile_list
+    )
+    assert (
+        PrimitivePlannerACTPolicy._coverage_percentile_name
+        is DigCoverageMixin._coverage_percentile_name
+    )
+    assert (
+        PrimitivePlannerACTPolicy._prior_percentile
+        is DigCoverageMixin._prior_percentile
+    )
+    assert (
+        PrimitivePlannerACTPolicy._clamp_to_prior
+        is DigCoverageMixin._clamp_to_prior
+    )
+    assert (
+        PrimitivePlannerACTPolicy._raw_fields_in_prior_range
+        is DigCoverageMixin._raw_fields_in_prior_range
     )
     assert (
         PrimitivePlannerACTPolicy._complete_coverage_dump
@@ -90,6 +116,195 @@ def test_coverage_private_methods_are_service_facades() -> None:
     assert (
         PrimitivePlannerACTPolicy._clear_coverage_active_state_exemplar
         is DigCoverageMixin._clear_coverage_active_state_exemplar
+    )
+
+
+def test_coverage_service_internals_use_observation_facts_boundary() -> None:
+    service_paths = [
+        REPO_ROOT / "testbed/planner/dig_coverage/base.py",
+        REPO_ROOT / "testbed/planner/dig_coverage/candidates.py",
+        REPO_ROOT / "testbed/planner/dig_coverage/progress.py",
+        REPO_ROOT / "testbed/planner/dig_coverage/raw_fields.py",
+        REPO_ROOT / "testbed/planner/dig_coverage/scoring.py",
+        REPO_ROOT / "testbed/planner/dig_coverage/selection.py",
+        REPO_ROOT / "testbed/planner/dig_coverage/state_exemplars.py",
+    ]
+    offenders: list[str] = []
+    forbidden_type_fragments = (
+        "CoverageObservationFacts | dict",
+        "dict | CoverageObservationFacts",
+        "facts: dict",
+    )
+    for path in service_paths:
+        source = path.read_text()
+        tree = ast.parse(source)
+        rel_path = path.relative_to(REPO_ROOT)
+        for fragment in forbidden_type_fragments:
+            if fragment in source:
+                offenders.append(f"{rel_path}:forbidden-fragment:{fragment}")
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            args = [
+                *node.args.posonlyargs,
+                *node.args.args,
+                *node.args.kwonlyargs,
+            ]
+            if any(arg.arg == "obs" for arg in args):
+                offenders.append(f"{rel_path}:{node.lineno}:{node.name}")
+
+    assert offenders == []
+
+
+def test_coverage_snapshot_methods_have_focused_source_of_truth() -> None:
+    assert (
+        CoverageService.coverage_debug_snapshot
+        is CoverageSnapshotMixin.coverage_debug_snapshot
+    )
+    assert (
+        CoverageService.coverage_trace_snapshot
+        is CoverageSnapshotMixin.coverage_trace_snapshot
+    )
+    assert (
+        CoverageService.coverage_rollout_summary_snapshot
+        is CoverageSnapshotMixin.coverage_rollout_summary_snapshot
+    )
+    assert (
+        CoverageService._coverage_corridor_to_debug
+        is CoverageSnapshotMixin._coverage_corridor_to_debug
+    )
+
+
+def test_coverage_scoring_methods_have_focused_source_of_truth() -> None:
+    assert CoverageService._coverage_score is CoverageScoringMixin._coverage_score
+    assert (
+        CoverageService._coverage_first_dig_gate_available
+        is CoverageScoringMixin._coverage_first_dig_gate_available
+    )
+    assert (
+        CoverageService._coverage_first_dig_bonus
+        is CoverageScoringMixin._coverage_first_dig_bonus
+    )
+    assert (
+        CoverageService._coverage_corridor_attempt_limit
+        is CoverageScoringMixin._coverage_corridor_attempt_limit
+    )
+    assert (
+        CoverageService._coverage_rare_first_dig_gated_out
+        is CoverageScoringMixin._coverage_rare_first_dig_gated_out
+    )
+    assert (
+        CoverageService._pre_dig_align_target_from_token
+        is CoverageScoringMixin._pre_dig_align_target_from_token
+    )
+
+
+def test_coverage_state_lookup_methods_have_base_source_of_truth() -> None:
+    assert (
+        CoverageService._coverage_all_depleted
+        is CoverageServiceBase._coverage_all_depleted
+    )
+    assert (
+        CoverageService._coverage_active_corridor
+        is CoverageServiceBase._coverage_active_corridor
+    )
+    assert (
+        CoverageService._coverage_corridor_by_id
+        is CoverageServiceBase._coverage_corridor_by_id
+    )
+    assert (
+        CoverageService._coverage_active_corridor_score
+        is CoverageServiceBase._coverage_active_corridor_score
+    )
+    assert (
+        CoverageService._coverage_active_value
+        is CoverageServiceBase._coverage_active_value
+    )
+    assert (
+        CoverageService._coverage_active_cell_id
+        is CoverageServiceBase._coverage_active_cell_id
+    )
+    assert (
+        CoverageService._coverage_corridor_cell_id_by_id
+        is CoverageServiceBase._coverage_corridor_cell_id_by_id
+    )
+    assert (
+        CoverageService._coverage_corridor_row_id_by_id
+        is CoverageServiceBase._coverage_corridor_row_id_by_id
+    )
+    assert (
+        CoverageService._coverage_depleted_count
+        is CoverageServiceBase._coverage_depleted_count
+    )
+    assert CoverageService._coverage_cell_id is CoverageServiceBase._coverage_cell_id
+    assert (
+        CoverageService._coverage_corridor_row_id
+        is CoverageServiceBase._coverage_corridor_row_id
+    )
+    assert (
+        CoverageService._coverage_cell_id_from_percentile_indices
+        is CoverageServiceBase._coverage_cell_id_from_percentile_indices
+    )
+    assert (
+        CoverageService._coverage_remaining_depth_for_corridor
+        is CoverageServiceBase._coverage_remaining_depth_for_corridor
+    )
+
+
+def test_coverage_raw_field_prior_range_has_raw_fields_source_of_truth() -> None:
+    assert (
+        CoverageService.raw_fields_in_prior_range
+        is CoverageRawFieldsMixin.raw_fields_in_prior_range
+    )
+
+
+def test_coverage_decision_trace_event_methods_have_base_source_of_truth() -> None:
+    assert (
+        CoverageService._record_coverage_decision_event
+        is CoverageServiceBase._record_coverage_decision_event
+    )
+    assert CoverageService._env_state_value is CoverageServiceBase._env_state_value
+
+
+def test_coverage_state_exemplar_methods_have_focused_source_of_truth() -> None:
+    module = importlib.import_module("testbed.planner.dig_coverage.state_exemplars")
+    state_exemplar_mixin = module.CoverageStateExemplarMixin
+
+    assert (
+        CoverageService._load_coverage_state_exemplars
+        is state_exemplar_mixin._load_coverage_state_exemplars
+    )
+    assert (
+        CoverageService._coverage_state_conditioned_plan
+        is state_exemplar_mixin._coverage_state_conditioned_plan
+    )
+    assert (
+        CoverageService._coverage_state_exemplar_distance
+        is state_exemplar_mixin._coverage_state_exemplar_distance
+    )
+    assert (
+        CoverageService._coverage_state_exemplar_id
+        is state_exemplar_mixin._coverage_state_exemplar_id
+    )
+    assert (
+        CoverageService._coverage_removed_depth_grid
+        is state_exemplar_mixin._coverage_removed_depth_grid
+    )
+    assert (
+        CoverageService._coverage_state_exemplar_distance_for_grid
+        is state_exemplar_mixin._coverage_state_exemplar_distance_for_grid
+    )
+    assert (
+        CoverageService._state_exemplar_weights
+        is state_exemplar_mixin._state_exemplar_weights
+    )
+    assert (
+        CoverageService._weighted_state_exemplar_raw_fields
+        is state_exemplar_mixin._weighted_state_exemplar_raw_fields
+    )
+    assert (
+        CoverageService._weighted_state_exemplar_profile_token
+        is state_exemplar_mixin._weighted_state_exemplar_profile_token
     )
 
 

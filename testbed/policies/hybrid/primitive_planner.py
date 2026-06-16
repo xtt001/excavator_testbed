@@ -82,12 +82,6 @@ from testbed.planner.dig_cut_plan import (
     build_raw_fields_dig_cut_plan,
 )
 from testbed.planner.dig_cut_plan import (
-    clamp_to_prior as clamp_dig_cut_prior,
-)
-from testbed.planner.dig_cut_plan import (
-    prior_percentile as dig_cut_prior_percentile,
-)
-from testbed.planner.dig_cut_plan import (
     raw_fields_from_live_pose as dig_cut_raw_fields_from_live_pose,
 )
 from testbed.planner.dig_depth_profile import (
@@ -3130,57 +3124,49 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self,
         config: primitive_config_helpers.PrimitiveConditioningConfig,
     ) -> None:
-        for name, value in config.planner_items():
-            setattr(self, name, value)
+        primitive_config_helpers.apply_planner_config_items(self, config)
 
     def _apply_dig_lifecycle_config(
         self,
         config: DigLifecyclePlannerConfig,
     ) -> None:
-        for name, value in config.planner_items():
-            setattr(self, name, value)
+        primitive_config_helpers.apply_planner_config_items(self, config)
 
     def _apply_dump_lifecycle_config(
         self,
         config: DumpLifecyclePlannerConfig,
     ) -> None:
-        for name, value in config.planner_items():
-            setattr(self, name, value)
+        primitive_config_helpers.apply_planner_config_items(self, config)
 
     def _apply_return_to_dig_config(
         self,
         config: ReturnToDigPlannerConfig,
     ) -> None:
-        for name, value in config.planner_items():
-            setattr(self, name, value)
+        primitive_config_helpers.apply_planner_config_items(self, config)
 
     def _apply_bootstrap_config(
         self,
         config: BootstrapPlannerConfig,
     ) -> None:
-        for name, value in config.planner_items():
-            setattr(self, name, value)
+        primitive_config_helpers.apply_planner_config_items(self, config)
 
     def _apply_goal_sequence_config(
         self,
         config: GoalSequencePlannerConfig,
     ) -> None:
-        for name, value in config.planner_items():
-            setattr(self, name, value)
+        primitive_config_helpers.apply_planner_config_items(self, config)
 
     def _apply_cell_entry_config(
         self,
         config: CellEntryPlannerConfig,
     ) -> None:
-        for name, value in config.planner_items():
-            setattr(self, name, value)
+        primitive_config_helpers.apply_planner_config_items(self, config)
 
     def _apply_pre_dig_align_config(
         self,
         config: primitive_config_helpers.PreDigAlignmentPlannerConfig,
     ) -> None:
-        for name, value in config.planner_items():
-            setattr(self, name, value)
+        primitive_config_helpers.apply_planner_config_items(self, config)
 
     def _validate_dig_cut_planner_config(self) -> None:
         primitive_config_helpers.validate_dig_cut_planner_config(
@@ -3195,18 +3181,6 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                 self.dig_depth_profile_allow_live_fallback
             ),
         )
-
-    @staticmethod
-    def _coverage_percentile_list(
-        value: object,
-        *,
-        default: tuple[str, ...],
-    ) -> tuple[str, ...]:
-        return DigCoverageMixin._coverage_percentile_list(value, default=default)
-
-    @staticmethod
-    def _coverage_percentile_name(value: object, *, default: str) -> str:
-        return DigCoverageMixin._coverage_percentile_name(value, default=default)
 
     def _align_vector(
         self,
@@ -3233,20 +3207,6 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
     @staticmethod
     def _load_dig_cut_prior(path: str) -> dict[str, Any]:
         return primitive_config_helpers.load_dig_cut_prior(path)
-
-    @staticmethod
-    def _prior_percentile(
-        fields: dict[str, Any], field_name: str, percentile: str
-    ) -> float:
-        return dig_cut_prior_percentile(fields, field_name, percentile)
-
-    def _clamp_to_prior(
-        self, fields: dict[str, Any], field_name: str, value: float
-    ) -> float:
-        return clamp_dig_cut_prior(fields, field_name, value)
-
-    def _raw_fields_in_prior_range(self, raw_fields: dict[str, float | int]) -> bool:
-        return self._coverage_service().raw_fields_in_prior_range(raw_fields)
 
     def _cell_entry_tokens_for_obs(
         self,

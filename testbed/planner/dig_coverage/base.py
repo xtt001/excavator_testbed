@@ -64,7 +64,7 @@ class CoverageServiceBase:
     ) -> dict[str, float | int]:
         return self._coverage_raw_fields(
             corridor,
-            obs=facts,
+            facts=facts,
             update_state=update_state,
         )
 
@@ -408,6 +408,83 @@ class CoverageServiceBase:
     def _coverage_decision_trace(self, value: list[dict[str, Any]]) -> None:
         self.state.decision_trace = list(value)
 
+    def _record_coverage_decision_event(
+        self,
+        event: str,
+        *,
+        facts: CoverageObservationFacts | None = None,
+        corridor: CoverageCorridorState | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "event": str(event),
+            "cycle_index": int(self._cycle_index),
+            "skill_name": str(self._skill_name),
+            "active_corridor_id": int(self._coverage_active_corridor_id),
+            "last_selected_corridor_id": int(self._coverage_last_selected_corridor_id),
+            "last_selected_cell_id": int(
+                self._coverage_corridor_cell_id_by_id(
+                    self._coverage_last_selected_corridor_id
+                )
+            ),
+            "last_selected_row_id": int(
+                self._coverage_corridor_row_id_by_id(
+                    self._coverage_last_selected_corridor_id
+                )
+            ),
+            "depleted_count": int(self._coverage_depleted_count()),
+            "pass_index": int(self._coverage_pass_index),
+            "global_low_productivity_streak": int(
+                self._coverage_global_low_productivity_streak
+            ),
+            "terminal_stop_requested": int(self._coverage_terminal_stop_requested),
+            "terminal_stop_reason": str(self._coverage_terminal_stop_reason),
+        }
+        if corridor is not None:
+            payload["corridor"] = self._coverage_corridor_to_debug(corridor)
+        if facts is not None:
+            env_state = self._env_state(facts)
+            payload["bucket"] = {
+                "mass_kg": float(self._mass_in_bucket(facts)),
+                "deposited_mass_kg": float(self._deposited_mass(facts)),
+                "dig_area_x_m": self._env_state_value(
+                    env_state,
+                    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+                ),
+                "dig_area_y_m": self._env_state_value(
+                    env_state,
+                    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+                ),
+                "dig_area_z_m": self._env_state_value(
+                    env_state,
+                    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
+                ),
+                "long_norm": self._env_state_value(
+                    env_state,
+                    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
+                ),
+                "short_norm": self._env_state_value(
+                    env_state,
+                    ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
+                ),
+                "plane_depth_m": self._env_state_value(
+                    env_state,
+                    ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+                ),
+                "local_depth_m": self._env_state_value(
+                    env_state,
+                    ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+                ),
+            }
+        payload.update(dict(extra or {}))
+        self._coverage_decision_trace.append(payload)
+
+    @staticmethod
+    def _env_state_value(env_state: np.ndarray, index: int) -> float:
+        if len(env_state) <= int(index):
+            return float("nan")
+        return float(env_state[int(index)])
+
     @property
     def _coverage_active_state_exemplar_ids(self) -> list[str]:
         if self.state.active_state_exemplar_ids is None:
@@ -446,6 +523,99 @@ class CoverageServiceBase:
         value: np.ndarray | None,
     ) -> None:
         self.state.active_state_exemplar_profile_token = value
+
+    def _coverage_all_depleted(self) -> bool:
+        return bool(
+            self._coverage_corridors
+            and all(corridor.depleted for corridor in self._coverage_corridors)
+        )
+
+    def _coverage_active_corridor(self) -> CoverageCorridorState | None:
+        return self._coverage_corridor_by_id(self._coverage_active_corridor_id)
+
+    def _coverage_corridor_by_id(
+        self,
+        corridor_id: int,
+    ) -> CoverageCorridorState | None:
+        for corridor in self._coverage_corridors:
+            if int(corridor.corridor_id) == int(corridor_id):
+                return corridor
+        return None
+
+    def _coverage_active_corridor_score(self) -> float:
+        corridor = self._coverage_active_corridor()
+        return float("nan") if corridor is None else float(corridor.score)
+
+    def _coverage_active_value(self, name: str) -> float:
+        corridor = self._coverage_active_corridor()
+        if corridor is None:
+            return float("nan")
+        return float(getattr(corridor, name, float("nan")))
+
+    @staticmethod
+    def _coverage_cell_id(corridor: CoverageCorridorState) -> int:
+        if corridor.cell_id >= 0:
+            return max(0, min(5, int(corridor.cell_id)))
+        corridor_id = max(0, min(5, int(corridor.corridor_id)))
+        z_index = corridor_id // 2
+        x_index = corridor_id % 2
+        return int(z_index * 2 + x_index)
+
+    def _coverage_corridor_row_id(self, corridor: CoverageCorridorState) -> int:
+        return int(self._coverage_cell_id(corridor) // 2)
+
+    def _coverage_remaining_depth_for_corridor(
+        self,
+        facts: CoverageObservationFacts,
+        corridor: CoverageCorridorState,
+    ) -> float:
+        env_state = self._env_state(facts)
+        cell_id = self._coverage_cell_id(corridor)
+        target_idx = ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX + cell_id
+        removed_idx = ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX + cell_id
+        valid_idx = ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX + cell_id
+        if len(env_state) <= max(target_idx, removed_idx, valid_idx):
+            return float("nan")
+        if float(env_state[valid_idx]) <= 0.5:
+            return float("nan")
+        target_depth = float(env_state[target_idx])
+        removed_depth = float(env_state[removed_idx])
+        if not np.isfinite(target_depth) or not np.isfinite(removed_depth):
+            return float("nan")
+        return float(max(0.0, target_depth - removed_depth))
+
+    def _coverage_active_cell_id(self) -> int:
+        corridor = self._coverage_active_corridor()
+        if corridor is None:
+            return -1
+        return int(self._coverage_cell_id(corridor))
+
+    def _coverage_corridor_cell_id_by_id(self, corridor_id: int) -> int:
+        corridor = self._coverage_corridor_by_id(corridor_id)
+        if corridor is None:
+            return -1
+        return int(self._coverage_cell_id(corridor))
+
+    def _coverage_corridor_row_id_by_id(self, corridor_id: int) -> int:
+        corridor = self._coverage_corridor_by_id(corridor_id)
+        if corridor is None:
+            return -1
+        return int(self._coverage_corridor_row_id(corridor))
+
+    def _coverage_depleted_count(self) -> int:
+        return int(sum(1 for corridor in self._coverage_corridors if corridor.depleted))
+
+    @staticmethod
+    def _coverage_cell_id_from_percentile_indices(
+        *,
+        x_index: int,
+        x_count: int,
+        z_index: int,
+        z_count: int,
+    ) -> int:
+        long_index = int(round(np.interp(z_index, [0, max(1, z_count - 1)], [0, 2])))
+        short_index = int(round(np.interp(x_index, [0, max(1, x_count - 1)], [0, 1])))
+        return int(np.clip(long_index, 0, 2) * 2 + int(np.clip(short_index, 0, 1)))
 
     @staticmethod
     def coverage_percentile_list(
@@ -498,35 +668,9 @@ class CoverageServiceBase:
         hi = self._prior_percentile(fields, field_name, "p90")
         return float(np.clip(float(value), lo, hi))
 
-    def raw_fields_in_prior_range(
-        self,
-        raw_fields: dict[str, float | int],
-    ) -> bool:
-        if not self.dig_cut_prior:
-            return False
-        fields = dict(self.dig_cut_prior.get("fields", {}))
-        mapping = {
-            "operator_entry_x_m": "entry_x_m",
-            "operator_entry_z_m": "entry_z_m",
-            "operator_exit_x_m": "exit_x_m",
-            "operator_exit_z_m": "exit_z_m",
-            "operator_cut_direction_x": "cut_direction_x",
-            "operator_cut_direction_z": "cut_direction_z",
-            "operator_cut_length_m": "cut_length_m",
-            "operator_cut_depth_peak_m": "cut_depth_peak_m",
-            "operator_cut_payload_gain_kg": "payload_gain_kg",
-        }
-        for raw_name, prior_name in mapping.items():
-            value = float(raw_fields.get(raw_name, np.nan))
-            lo = self._prior_percentile(fields, prior_name, "p10")
-            hi = self._prior_percentile(fields, prior_name, "p90")
-            if not np.isfinite(value) or value < lo - 1.0e-6 or value > hi + 1.0e-6:
-                return False
-        return True
-
     def _coerce_facts(
         self,
-        value: CoverageObservationFacts | dict,
+        value: CoverageObservationFacts,
     ) -> CoverageObservationFacts:
         if isinstance(value, CoverageObservationFacts):
             self._active_facts = value
@@ -554,32 +698,17 @@ class CoverageServiceBase:
             return 0.0
         return float(self._active_facts.dig_best_mass_kg)
 
-    def _env_state(self, facts: CoverageObservationFacts | dict) -> np.ndarray:
+    def _env_state(self, facts: CoverageObservationFacts) -> np.ndarray:
         return np.asarray(self._coerce_facts(facts).env_state, dtype=np.float32)
 
-    def _mass_in_bucket(self, facts: CoverageObservationFacts | dict) -> float:
+    def _mass_in_bucket(self, facts: CoverageObservationFacts) -> float:
         return float(self._coerce_facts(facts).mass_in_bucket_kg)
 
-    def _deposited_mass(self, facts: CoverageObservationFacts | dict) -> float:
+    def _deposited_mass(self, facts: CoverageObservationFacts) -> float:
         return float(self._coerce_facts(facts).deposited_mass_kg)
 
     def _bucket_tip_dig_area_pose(
         self,
-        facts: CoverageObservationFacts | dict,
+        facts: CoverageObservationFacts,
     ) -> tuple[float, float, float] | None:
         return self._coerce_facts(facts).bucket_tip_dig_area_pose
-
-    def _pre_dig_align_target_from_token(
-        self,
-        *,
-        token: np.ndarray,
-        obs: CoverageObservationFacts | dict,
-        update_state: bool,
-    ) -> np.ndarray:
-        facts = self._coerce_facts(obs)
-        if self.first_dig_alignment_target_fn is None:
-            return np.asarray(facts.qpos, dtype=np.float32).reshape(self.action_dim)
-        return np.asarray(
-            self.first_dig_alignment_target_fn(np.asarray(token, dtype=np.float32), facts),
-            dtype=np.float32,
-        ).reshape(self.action_dim)

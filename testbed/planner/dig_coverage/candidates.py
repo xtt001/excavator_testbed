@@ -6,12 +6,15 @@ from .models import *
 
 
 class CoverageCandidateBuilderMixin:
-    def _select_next_coverage_corridor(self, obs: dict) -> CoverageCorridorState:
-        return self._select_next_coverage_corridor_result(obs).corridor
+    def _select_next_coverage_corridor(
+        self,
+        facts: CoverageObservationFacts,
+    ) -> CoverageCorridorState:
+        return self._select_next_coverage_corridor_result(facts).corridor
 
     def _select_next_coverage_corridor_result(
         self,
-        obs: dict,
+        facts: CoverageObservationFacts,
     ) -> CoverageSelectionResult:
         if not self.dig_cut_prior:
             raise ValueError(
@@ -22,7 +25,7 @@ class CoverageCandidateBuilderMixin:
             raise ValueError(
                 f"{self.dig_cut_planner_mode} could not build candidate corridors."
             )
-        result = self._select_coverage_corridor_result(obs)
+        result = self._select_coverage_corridor_result(facts)
         corridor = result.corridor
         self._coverage_active_corridor_id = int(corridor.corridor_id)
         self._coverage_last_selected_corridor_id = int(corridor.corridor_id)

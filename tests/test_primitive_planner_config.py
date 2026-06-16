@@ -9,6 +9,7 @@ from testbed.contracts.primitive_tokens import DIG_CUT_TOKEN_DIM
 from testbed.planner.dig_coverage import CoverageService
 from testbed.planner.primitive_config import (
     align_vector,
+    apply_planner_config_items,
     build_conditioning_config,
     build_dig_lifecycle_config,
     build_pre_dig_alignment_config,
@@ -70,6 +71,40 @@ def test_optional_and_align_vector_helpers_match_planner_facade_semantics() -> N
     assert optional_float(None) is None
     assert optional_float("null") is None
     assert optional_float("1.25") == pytest.approx(1.25)
+
+
+def test_apply_planner_config_items_preserves_order_and_identity() -> None:
+    class Target:
+        def __init__(self) -> None:
+            super().__setattr__("assigned", [])
+
+        def __setattr__(self, name: str, value: object) -> None:
+            self.assigned.append((name, value))
+            super().__setattr__(name, value)
+
+    class Config:
+        def __init__(self, first: object, second: object) -> None:
+            self.first = first
+            self.second = second
+
+        def planner_items(self) -> tuple[tuple[str, object], ...]:
+            return (("first_value", self.first), ("second_value", self.second))
+
+    target = Target()
+    first_value = np.asarray([1.0, 2.0], dtype=np.float32)
+    second_value = {"mode": "operator_prior_coverage"}
+
+    apply_planner_config_items(
+        target,
+        Config(first=first_value, second=second_value),
+    )
+
+    assert target.assigned == [
+        ("first_value", first_value),
+        ("second_value", second_value),
+    ]
+    assert target.first_value is first_value
+    assert target.second_value is second_value
 
 
 def test_build_dig_lifecycle_config_preserves_legacy_defaults() -> None:

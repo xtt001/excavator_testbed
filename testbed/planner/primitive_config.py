@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Protocol
 
 import numpy as np
 
@@ -152,6 +152,16 @@ class PreDigAlignmentPlannerConfig:
 
 CoveragePercentileListFn = Callable[..., tuple[str, ...]]
 CoveragePercentileNameFn = Callable[..., str]
+
+
+class PlannerConfigItems(Protocol):
+    def planner_items(self) -> tuple[tuple[str, Any], ...]:
+        ...
+
+
+def apply_planner_config_items(target: Any, config: PlannerConfigItems) -> None:
+    for name, value in config.planner_items():
+        setattr(target, name, value)
 
 
 def build_pre_dig_alignment_config(

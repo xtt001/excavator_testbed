@@ -317,7 +317,7 @@ class DigCoverageMixin:
         return self._coverage_service()._coverage_score(
             corridor,
             remaining_depth_m,
-            obs=None if obs is None else self._coverage_observation_facts(obs),
+            facts=None if obs is None else self._coverage_observation_facts(obs),
         )
 
     def _coverage_first_dig_bonus(
@@ -439,7 +439,7 @@ class DigCoverageMixin:
     ) -> None:
         self._coverage_service()._record_coverage_decision_event(
             event,
-            obs=None if obs is None else self._coverage_observation_facts(obs),
+            facts=None if obs is None else self._coverage_observation_facts(obs),
             corridor=corridor,
             extra=extra,
         )
