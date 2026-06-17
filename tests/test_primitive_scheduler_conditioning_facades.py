@@ -36,6 +36,7 @@ from testbed.planner.dig_depth_profile import (
 from testbed.planner.return_target_plan import (
     PendingDigCutPlanState,
     ReturnTargetConditioningRuntimeState,
+    ReturnTargetDigCutBuildCallbacks,
     ReturnTargetDigCutBuildContext,
     ReturnTargetDigCutBuildResult,
     ReturnTargetPlanRuntimeUpdate,
@@ -157,18 +158,16 @@ def test_build_next_dig_cut_plan_for_return_delegates_result_projection() -> Non
             planner_mode=str(planner_mode),
         )
 
-    def dig_cut_build_result_from_parts(
+    def dig_cut_build_result_from_callbacks(
         context: ReturnTargetDigCutBuildContext,
-        *,
-        token: np.ndarray,
-        raw_fields: dict[str, float | int],
-        source_suffix: object,
-        fallback_reason: object = "",
-        corridor_id: object = -1,
+        callbacks: ReturnTargetDigCutBuildCallbacks,
     ) -> ReturnTargetDigCutBuildResult:
+        token, raw_fields, source_suffix, fallback_reason = (
+            callbacks.operator_prior_parts()
+        )
         assert token is token_for_assert
         assert raw_fields is raw_fields_for_assert
-        calls.append((context, str(source_suffix), int(corridor_id)))
+        calls.append((context, str(source_suffix), -1))
         return ReturnTargetDigCutBuildResult(
             token=token,
             raw_fields=raw_fields,
@@ -183,8 +182,8 @@ def test_build_next_dig_cut_plan_for_return_delegates_result_projection() -> Non
     policy.return_target_plan_service.dig_cut_build_context = (  # type: ignore[method-assign]
         dig_cut_build_context
     )
-    policy.return_target_plan_service.dig_cut_build_result_from_parts = (  # type: ignore[method-assign]
-        dig_cut_build_result_from_parts
+    policy.return_target_plan_service.dig_cut_build_result_from_callbacks = (  # type: ignore[method-assign]
+        dig_cut_build_result_from_callbacks
     )
 
     result_token, result_fields, source, fallback_reason, corridor_id = (
