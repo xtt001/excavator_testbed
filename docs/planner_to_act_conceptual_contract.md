@@ -118,10 +118,12 @@ dig --loaded / dig_complete--> carry --dump committed / target ready--> dump
              dig
 ```
 
-### 我们现在是不是状态机
+### 当前状态机与未来行为树
 
-是。当前在线控制可以理解为一个显式有限状态机，但状态机只负责 primitive 调度和
-handoff/replan，不负责直接输出连续动作。
+是。当前在线控制仍可以理解为一个显式有限状态机，但它只是当前 public facade
+采用的调度外壳。长期重构目标不是把这个状态机本身打磨成最终架构，而是把状态机里
+可复用的 condition、action、context、token 和 reporting 语义沉淀成行为树也能直接
+调用的 capability 层。
 
 更准确地说，系统由两部分叠在一起：
 
@@ -130,16 +132,29 @@ handoff/replan，不负责直接输出连续动作。
 2. 在线 scheduler 是状态机：在 `bootstrap/pre_dig_align/dig/carry/dump/return` 之间切换，
    每个状态把观测和 token 交给对应 ACT，ACT 再输出 4D action。
 
-因此状态机的状态不是“机械臂姿态状态”，而是“当前由哪个 primitive ACT 接管控制”。状态机
-不学习动作，也不生成 joystick；它只判断什么时候交接、什么时候拒绝当前目标并重规划。
+因此状态机的状态不是“机械臂姿态状态”，而是“当前由哪个 primitive ACT 接管控制”。
+状态机不学习动作，也不生成 joystick；它只判断什么时候交接、什么时候拒绝当前目标并
+重规划。
 
-长期代码结构上，`PrimitivePlannerACTPolicy` 应逐步收敛成 state machine shell：
-它保留 active state、transition reason、state lifecycle、policy dispatch 和 service
-调用顺序，但不再承载所有几何计算、gate 细节、token conditioning、diagnostic payload
-或 schema 组装。和状态机耦合但不是调度核心的能力应迁到 service object 或 capability
-模块，例如 coverage、dig-start alignment、return envelope、handoff gate、token builder
-和 debug/summary schema。当前已经拆出的 facade/mixin 兼容层只是低风险过渡；长期目标是让
-这些 capability 能被显式 FSM 之外的架构复用。后续迁移仍遵循同一原则：只移动职责边界，
+长期代码结构上，`PrimitivePlannerACTPolicy` 应逐步收敛成 compatibility adapter：
+它保留现有 public API、active skill、switch reason、policy dispatch、reset timing、
+debug/rollout 输出和旧配置入口，但不再是决策语义的 source-of-truth。状态机分支中可复用
+的能力应迁到 behavior-tree friendly capability，例如 coverage selection、dig/dump/return
+gate、dig-start alignment、return envelope、token builder、policy observation assembly
+和 debug/summary facts。
+
+这些 capability 的目标输入输出是 `snapshot + blackboard + config -> result/effect`：
+
+- `snapshot` 来自 `PlannerSnapshot` / `PlannerObservationView`，负责 raw observation
+  解析。
+- `blackboard` 保存当前 cycle、held token、pending dig plan、coverage state、runtime
+  counters 和最近 transition reason。
+- `result` 表示 condition/action 的判断结果，例如 ready/fail/running、reason 和诊断。
+- `effect` 显式表达需要 shell 应用的副作用，例如 set skill、reset policy、更新 counter、
+  hold/clear token、record trace 或 request terminal stop。
+
+行为树、decision tree 或当前状态机都只能组合这些 capability，不能复制 token/profile/
+schema 语义，也不能直接读写旧 planner 私有字段。后续迁移仍遵循同一原则：只移动职责边界，
 不改变 token 语义、gate 阈值、switch reason、debug 字段或 rollout 行为。
 
 | 状态 | 动作来源 | 进入时携带的信息 | 主要退出方向 |
