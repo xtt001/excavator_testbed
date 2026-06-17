@@ -41,6 +41,155 @@ dig/dump/return facts assembly 中复制 `v2_4_5_spatial_mass` 字符串比较�
 9. ACT commitment 先 shadow 记录，不默认拦截 switch。
 10. option scheduler 只作为 experimental mode，在同一 public facade 下接入。
 
+## Shadow Action Tree Experiment
+
+方案 B 的 legacy-equivalent action tree 以 `testbed/planner/primitive_action_tree.py`
+作为独立 shadow runner 实现。它不接入
+`PrimitivePlannerACTPolicy.predict()` / `_maybe_switch_skill()` 的 class-level 生产路径，
+默认也不接管 live rollout 行为。需要实验时，通过 eval policy config 显式选择 runner；
+默认值仍是 legacy FSM：
+
+```yaml
+policy:
+  class: PRIMITIVE_PLANNER_ACT
+  primitive_scheduler_runner: legacy_fsm        # 默认，可省略
+  # primitive_scheduler_runner: action_tree_shadow
+```
+
+`action_tree_shadow` 只包裹当前 policy 实例的 `predict()`，不会 monkeypatch
+`PrimitivePlannerACTPolicy` class；5P 仍保持 compatibility-only，显式选择
+`action_tree_shadow` 会报错而不是静默改变 5P 语义。
+
+第一版 `PrimitiveActionTreeRunner` 只复刻现有 FSM tick 编排：保留 active skill
+commitment，每 tick 只执行当前 `_skill_name` 对应的 subtree，不做 root priority
+selector、不扫描其他 skill，也不引入方案 C 的全局抢占、并行 monitor 或新的 BT
+gate 语义。
+
+runner 只调用既有 planner private facade 与 focused service，因而不改变 branch
+order、threshold、switch reason / terminal reason string、policy reset timing、
+debug/summary schema、planner trace schema、token contract 或 rollout 输出语义。5P
+仍保持 compatibility-only，不纳入本 shadow runner 第一版验收。
+
+eval metadata 会记录 `primitive_scheduler_runner`，HDF5 rollout metadata 也会带上同名
+字段，便于后续比较 legacy FSM 与 action-tree shadow。历史 eval 目录缺少该字段时，
+`experiment_record` 解析会把缺失值视为默认 `legacy_fsm`，不能因为旧 metadata 缺字段失败。
+
+## Shadow Action Tree Gap Report
+
+截至 2026-06-17，`PrimitiveActionTreeRunner` 仍应视为方案 B 的
+legacy-equivalent shadow runner，而不是新的生产调度架构。它的价值是把现有 FSM tick
+顺序显式展开为按 active skill 分派的 action-tree subtree，并通过同一 policy 实例复用
+现有 private facade / service source of truth。它尚未拥有独立 gate 语义、root
+priority selector、并行 monitor 或全局抢占。
+
+当前证据：
+
+- `testbed/planner/primitive_action_tree.py` 约 534 行，主要是 runner shell 与按 skill
+  分派的 transition leaves。runner trace 额外记录 shadow-only 诊断字段：
+  `node_status`、`service_outcome`、`guard_facts`、`policy_dispatch`、
+  `reset_count_delta`、`return_step_count_delta` 和
+  `transition_timeout_count_delta`。
+- `policy.primitive_scheduler_runner` 提供配置选择入口：默认 `legacy_fsm`，显式
+  `action_tree_shadow` 时只包裹当前 4P policy 实例。
+- `testbed/cli/eval_primitive_action_tree_shadow.py` 仍提供兼容的稳定实验入口，复用普通
+  `tb-eval` 参数，只在进程上下文内 patch `PrimitivePlannerACTPolicy.predict()`。
+- `tests/test_primitive_action_tree.py` 覆盖 legacy golden trace、bootstrap、
+  bootstrap-to-pre-dig-align、pre-dig-align ready / surface guard replan /
+  timeout replan、dig/carry/dump/return chain、dig bad replan、dig complete
+  boundary low payload、carry-to-return、return direct handoff、shallow guard、
+  return timeout counter trace、reset delta trace 和 shadow eval CLI patch restore。
+- Unity GUI/Xorg 有效渲染下的一轮现场对比结果均成功：
+  - `tx/2_4-YuLong_Planner` 聚合版：return `19296.0`，`9` dumps，`8`
+    transitions，stop reason `dig_area_depleted`。
+  - 当前 refactored FSM：return `21560.0`，`10` dumps，`9` transitions，stop
+    reason `dig_area_depleted`。
+  - action-tree shadow：return `19616.0`，`9` dumps，`8` transitions，stop reason
+    `dig_area_depleted`。
+- 上述 rollout 只能证明 live path 没有明显断裂；单 rollout 不能证明语义等价或性能优劣。
+  语义等价仍以 focused parity / golden trace / debug schema tests 为主。
+
+### Still Missing
+
+1. Parity lock 仍需要扩到真实 trace 矩阵。
+
+当前测试已覆盖第一版计划中的主要 transition-only 场景和 action tick counter/reset trace。
+后续还应把真实 golden trace 中的 debug/summary/planner_trace 关键字段矩阵扩大到更多
+rollout fragment，尤其是 coverage terminal stop、return-to-pre-dig-align、direct handoff
+与 failed-dig recovery 的组合路径。不能只靠 live rollout 成功来判断行为树等价。
+
+2. Trace 仍是 shadow 诊断，不是生产 schema。
+
+`PrimitiveActionTreeTrace` 已记录 node status、service outcome、guard facts、policy
+dispatch 和 counter/reset deltas，但这些字段只供 shadow runner 使用。生产
+`debug_state()`、`rollout_summary()` 和 `planner_trace()` schema 仍不得因行为树实验改变。
+如果后续需要更细的诊断，可以继续追加 shadow-only 字段，但不能把它们写入 rollout 主 schema。
+
+3. Runner 不是独立行为树 framework。
+
+当前实现是 hard-coded subtree methods，而不是 `Sequence` / `Selector` / `Leaf` / `Status`
+抽象。对方案 B 来说这是正确取舍，因为它降低了框架化风险；但如果后续要表达多个树、共享
+monitor、或做方案 C 的 priority root，就需要先定义最小 node contract，否则逻辑会重新散落到
+runner 方法里。
+
+4. Shadow 接入方式仍是实验性的。
+
+`policy.primitive_scheduler_runner` 已支持显式 opt-in，`testbed.cli.eval_primitive_action_tree_shadow`
+仍保留为兼容实验入口。这符合“不改 class-level 生产入口”的边界，但仍不适合作为默认 live
+path；不要把 `action_tree_shadow` 写进默认 config，也不要把 shadow runner 接管为 live 默认路径。
+
+5. 方案 C 语义尚未确认。
+
+真正的行为树优化通常意味着 root priority selector、全局 monitor 或中途抢占，例如 target
+collision guard、spill guard、dig-area escape、return emergency、low payload replan 等。这些
+都会改变 active skill commitment、branch order、switch reason、policy reset timing 和
+rollout trace。它们不能作为“重构优化”偷偷进入方案 B，必须先确认语义。
+
+6. Live evidence 不足以排序三版优劣。
+
+三版在有效 Unity 渲染下都成功，但 episode length、dump count 和 return 不同。闭环 Unity
+rollout 本身可能受初始状态、物理积分、相机渲染和边界事件时序影响。后续评估至少需要同一
+config、同一 Unity display mode、同一 checkpoint、同一 target-cycle gate 下的多轮结果，并同时
+保存 planner trace、video、metrics 和 manifest。
+
+### Optimization Direction
+
+第一阶段只做方案 B 工程补强，不改生产语义：
+
+- 继续扩展 focused parity tests，优先覆盖真实 golden trace fragment 中尚未组合覆盖的
+  debug/summary/planner_trace 关键字段。
+- 继续保持 `PrimitiveActionTreeTrace` 为 shadow-only 诊断结构，生产
+  `debug_state()`、`rollout_summary()` 和 `planner_trace()` schema 不变。
+- 使用 `policy.primitive_scheduler_runner: action_tree_shadow` 作为首选实验入口，使
+  action-tree rollout 能进入 eval metadata；`python -m testbed.cli.eval_primitive_action_tree_shadow ...`
+  仅作为兼容入口保留。
+- 把 Unity 对比矩阵固定成可重复命令：聚合旧分支、当前 FSM、action-tree shadow，同一 config、
+  同一 checkpoint、同一 target-cycle gate、同一 GUI/Xorg 渲染条件，至少跑多轮 smoke。
+
+第二阶段才考虑最小行为树抽象：
+
+- 只在重复 hard-coded subtree 开始阻碍测试和 trace 时引入 `Leaf`、`Sequence` 和 `NodeResult`。
+- `NodeResult` 应表达 `RUNNING`、`SUCCESS`、`FAILURE`、`SWITCHED`、`TIMED_OUT` 这类状态，
+  并携带 reason、node path、diagnostic facts 和 side-effect marker。
+- 抽象层只组织 control flow，不拥有 gate 阈值、不调用 `_set_skill()`、不 reset policy。gate
+  判断继续由现有 service / facade 作为 source of truth。
+
+第三阶段如要走方案 C，必须先写语义 RFC，而不是直接改 runner：
+
+- 明确哪些 monitor 可以打断 active skill，哪些只能记录 shadow warning。
+- 明确抢占优先级，例如 safety emergency 是否高于 dump completion，coverage terminal stop
+  是否高于 return handoff。
+- 明确抢占后的 switch reason 字符串、policy reset timing、counter 更新、trace schema 和
+  rollout summary 兼容策略。
+- 明确失败时的 fallback policy：保持 FSM、回退方案 B runner、还是允许 experimental C runner
+  单独失败。
+
+### Recommended Next Step
+
+短期建议继续保持方案 B opt-in shadow-only：用 focused tests 继续扩大真实 trace fragment 覆盖面，
+并用 3 到 5 轮有效 Unity GUI rollout 比较当前 FSM 与 action-tree shadow。只有当这些证据稳定后，
+才讨论方案 C 的 root priority selector / global preemption 语义。此阶段不要把行为树接入生产
+`PrimitivePlannerACTPolicy.predict()` class 默认路径，也不要扩大 5P 范围。
+
 ## 优先级与已知失败支线
 
 5P 已被验证为失败支线，当前重构主线不以 5P 行为改进或 5P service 拆分为优先目标。

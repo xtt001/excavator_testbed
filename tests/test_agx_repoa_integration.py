@@ -25,23 +25,25 @@ from testbed.data.qc import run_dataset_qc
 from testbed.data.recorder import EpisodeRecorder
 from testbed.data.v2_1 import (
     GOAL_TOKEN_VERSION,
-    build_goal_tokens as build_goal_tokens_v2_1,
     label_episode_v2_1,
 )
-from testbed.eval.suite import EvalSuite
+from testbed.data.v2_1 import (
+    build_goal_tokens as build_goal_tokens_v2_1,
+)
 from testbed.eval.multi_cycle_metrics import (
     aggregate_multicycle_metrics,
     build_multicycle_summary,
 )
+from testbed.eval.suite import EvalSuite
 from testbed.planner.boundary_detector import BoundaryDetector
 from testbed.policies.act.adapter import ACTAdapter
+from testbed.runtime._eval import eval_policy
+from testbed.runtime._train import train_policy
 from testbed.runtime.experiment_record import (
     append_experiment_registry,
     build_experiment_record,
     write_experiment_record,
 )
-from testbed.runtime._train import train_policy
-from testbed.runtime._eval import eval_policy
 
 
 class _FakeMetrics:
@@ -104,6 +106,9 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
                 patch("testbed.eval.metrics.EvalMetrics.append_to_csv") as append_csv,
             ):
                 eval_policy(config)
+            eval_metadata = json.loads(
+                (Path(tmpdir) / "eval_run_metadata.json").read_text()
+            )
 
         suite_kwargs = captured["suite_kwargs"]
         self.assertEqual(suite_kwargs["task_name"], "agx_excavation_teleop")
@@ -131,6 +136,7 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         self.assertFalse(suite_kwargs["save_video"])
         self.assertEqual(type(suite_kwargs["policy"]).__name__, "DummyPolicy")
         self.assertEqual(suite_kwargs["policy"].mode, "random")
+        self.assertEqual(eval_metadata["primitive_scheduler_runner"], "not_applicable")
         self.assertIsNotNone(fake_metrics.saved_json)
         append_csv.assert_called_once()
 
@@ -1961,6 +1967,10 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
                 dataset_dir=dataset_dir,
                 experiment_name="fulltest_round1",
                 notes="first baseline",
+            )
+            self.assertEqual(
+                record["eval"]["primitive_scheduler_runner"],
+                "legacy_fsm",
             )
             json_path, md_path = write_experiment_record(
                 record=record,

@@ -23,6 +23,15 @@ def eval_policy(config: dict[str, Any]) -> None:
     low_dim_keys = list(policy_cfg.get("low_dim_keys", ["qpos"]))
 
     policy_class = str(policy_cfg.get("class", policy_cfg.get("name", "ACT"))).upper()
+    primitive_scheduler_runner = "not_applicable"
+    if policy_class in {"PRIMITIVE_PLANNER_ACT", "PRIMITIVE_PLANNER_ACT_5P"}:
+        from testbed.planner.primitive_scheduler_runner import (
+            primitive_scheduler_runner_from_policy_config,
+        )
+
+        primitive_scheduler_runner = primitive_scheduler_runner_from_policy_config(
+            policy_cfg
+        )
     task_name = task_cfg.get("name", task_cfg.get("task_name", config.get("task_name", "")))
     from testbed.eval.tasks import get_eval_task
 
@@ -265,7 +274,9 @@ def eval_policy(config: dict[str, Any]) -> None:
                 ),
             )
 
-        from testbed.planner.boundary_detector import build_boundary_detector_from_config
+        from testbed.planner.boundary_detector import (
+            build_boundary_detector_from_config,
+        )
         from testbed.planner.corridor_servo import (
             EntryCorridorBand,
             TransitionController,
@@ -616,7 +627,9 @@ def eval_policy(config: dict[str, Any]) -> None:
             primitive_ckpt_paths["bootstrap"] = str(bootstrap_ckpt_path)
             primitive_ckpt_dirs["bootstrap"] = str(bootstrap_ckpt_dir)
 
-        from testbed.planner.boundary_detector import build_boundary_detector_from_config
+        from testbed.planner.boundary_detector import (
+            build_boundary_detector_from_config,
+        )
         from testbed.policies.hybrid.primitive_planner import (
             PrimitivePlannerACT5PPolicy,
             PrimitivePlannerACTPolicy,
@@ -972,14 +985,23 @@ def eval_policy(config: dict[str, Any]) -> None:
                 dump_ready_hold_steps=int(switch_cfg.get("dump_ready_hold_steps", 3)),
                 **common_kwargs,
             )
+        from testbed.planner.primitive_scheduler_runner import (
+            apply_primitive_scheduler_runner,
+        )
+
+        primitive_scheduler_runner = apply_primitive_scheduler_runner(
+            policy=policy,
+            policy_class=policy_class,
+            runner=primitive_scheduler_runner,
+        )
 
     else:
         from testbed.policies.base import PolicyRegistry
         policy_cls = PolicyRegistry.get(policy_class.lower())
         policy = policy_cls(**policy_cfg.get("init_kwargs", {}))
 
-    from testbed.eval.suite import EvalSuite
     from testbed.eval.metrics import EvalMetrics
+    from testbed.eval.suite import EvalSuite
     from testbed.runtime.run_metadata import (
         build_eval_run_metadata,
         write_json,
@@ -1044,6 +1066,7 @@ def eval_policy(config: dict[str, Any]) -> None:
     eval_run_metadata["send_planner_debug_to_backend"] = bool(
         send_planner_debug_to_backend
     )
+    eval_run_metadata["primitive_scheduler_runner"] = str(primitive_scheduler_runner)
     eval_run_metadata_path = write_json(results_dir / "eval_run_metadata.json", eval_run_metadata)
     repo_a_snapshot = dict(eval_run_metadata.get("repo_snapshots", {}).get("repo_a", {}))
     record_hdf5_metadata = dict(eval_cfg.get("record_hdf5_metadata", {}) or {})
@@ -1056,6 +1079,7 @@ def eval_policy(config: dict[str, Any]) -> None:
             "git_branch": str(repo_a_snapshot.get("branch", "")),
             "git_dirty": int(bool(repo_a_snapshot.get("dirty", False))),
             "policy_class": str(policy_class),
+            "primitive_scheduler_runner": str(primitive_scheduler_runner),
             "device_requested": str(device),
         }
     )
