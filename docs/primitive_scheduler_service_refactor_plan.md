@@ -70,6 +70,14 @@ Recent checkpoint:
   `_pre_dig_align_entry_close_handoff_ready_for_state()`、policy dispatch、reset timing、
   `_set_skill()`、debug/trace/summary assembly，以及仍被 runtime 使用的 pose/env/mass
   observation helpers。
+- 2026-06-17: private-test dependency audit 显示下一步高风险绑定集中在三类：
+  coverage `_coverage_*` runtime state/proxy、pre-dig-align `_pre_dig_align_*`
+  runtime fields、return-target/dig-cut/depth-profile pending state。coverage 第一刀已把
+  dig-cut activation 的 corridor selection、payload/deposit cycle metric 初始化和
+  raw_fields(update_state=True) 收进 `CoverageService.activate_dig_cut_corridor()`；
+  planner shell 只保留 obs->facts adapter、coverage action effect application 和
+  dig-cut token construction。coverage row 仍未完成：`DigCoverageMixin.__getattr__`
+  和大量 `_coverage_*` compatibility properties 还需要后续测试迁移后再收窄。
 
 ## Methodology Correction
 

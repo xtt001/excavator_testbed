@@ -22,6 +22,7 @@ from testbed.planner.cell_entry import CellGridSpec
 from testbed.planner.dig_coverage.models import (
     CoverageActiveStateExemplarState,
     CoverageCorridorState,
+    CoverageDigCutActivationResult,
 )
 from testbed.planner.dig_cut_plan import (
     DIG_CUT_PLAN_DISPATCH_FACT_FIELDS,
@@ -267,29 +268,28 @@ def test_build_next_dig_cut_plan_for_return_coverage_updates_corridor_state(
         exit_x_m=-0.5,
         exit_z_m=-0.25,
     )
-    calls: list[tuple[int, bool]] = []
+    reset_cycle_metrics_values: list[bool] = []
     raw_fields = _raw_fields()
 
-    def select_corridor(_obs: dict[str, np.ndarray]) -> CoverageCorridorState:
-        return corridor
-
-    def coverage_raw_fields(
-        selected: CoverageCorridorState,
+    def activate_coverage_dig_cut(
+        _obs: dict[str, np.ndarray],
         *,
-        obs: dict[str, np.ndarray],
-        update_state: bool = False,
-    ) -> dict[str, float | int]:
-        calls.append((int(selected.corridor_id), bool(update_state)))
-        return raw_fields
+        reset_cycle_metrics: bool,
+    ) -> CoverageDigCutActivationResult:
+        reset_cycle_metrics_values.append(bool(reset_cycle_metrics))
+        policy._coverage_active_corridor_id = int(corridor.corridor_id)
+        return CoverageDigCutActivationResult(
+            corridor=corridor,
+            raw_fields=raw_fields,
+        )
 
-    policy._select_next_coverage_corridor = select_corridor  # type: ignore[method-assign]
-    policy._coverage_raw_fields = coverage_raw_fields  # type: ignore[method-assign]
+    policy._activate_coverage_dig_cut = activate_coverage_dig_cut  # type: ignore[method-assign]
 
     token, result_fields, source, fallback_reason, corridor_id = (
         policy._build_next_dig_cut_plan_for_return(_obs())
     )
 
-    assert calls == [(7, True)]
+    assert reset_cycle_metrics_values == [False]
     assert policy._coverage_active_corridor_id == 7
     np.testing.assert_allclose(token, _build_dig_cut_token(raw_fields))
     assert result_fields is raw_fields

@@ -343,6 +343,19 @@ class DigCoverageMixin:
             update_state=update_state,
         )
 
+    def _activate_coverage_dig_cut(
+        self,
+        obs: dict,
+        *,
+        reset_cycle_metrics: bool,
+    ) -> CoverageDigCutActivationResult:
+        result = self._coverage_service().activate_dig_cut_corridor(
+            self._coverage_observation_facts(obs),
+            reset_cycle_metrics=reset_cycle_metrics,
+        )
+        self._apply_coverage_action_result(result.action)
+        return result
+
     def _coverage_state_conditioned_plan(
         self,
         corridor: CoverageCorridorState,

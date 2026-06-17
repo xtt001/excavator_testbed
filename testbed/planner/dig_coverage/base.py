@@ -68,6 +68,27 @@ class CoverageServiceBase:
             update_state=update_state,
         )
 
+    def activate_dig_cut_corridor(
+        self,
+        facts: CoverageObservationFacts,
+        *,
+        reset_cycle_metrics: bool,
+    ) -> CoverageDigCutActivationResult:
+        selection = self.select_next_corridor_result(facts)
+        if reset_cycle_metrics:
+            self._coverage_current_payload_gain_kg = 0.0
+            self._coverage_cycle_start_deposit_kg = self._deposited_mass(facts)
+        raw_fields = self.raw_fields(
+            selection.corridor,
+            facts=facts,
+            update_state=True,
+        )
+        return CoverageDigCutActivationResult(
+            corridor=selection.corridor,
+            raw_fields=raw_fields,
+            action=selection.action,
+        )
+
     def complete_dig(self, facts: CoverageObservationFacts) -> CoverageActionResult:
         return self._complete_coverage_dig(facts)
 

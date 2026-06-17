@@ -150,6 +150,15 @@ class CoverageSelectionResult:
 
 
 @dataclass(frozen=True)
+class CoverageDigCutActivationResult:
+    """Coverage corridor activation result for dig-cut token construction."""
+
+    corridor: CoverageCorridorState
+    raw_fields: dict[str, float | int]
+    action: CoverageActionResult = field(default_factory=CoverageActionResult)
+
+
+@dataclass(frozen=True)
 class CoverageDebugSnapshot:
     """Coverage state snapshot for debug-state payload assembly."""
 

@@ -2631,18 +2631,15 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             return self._build_operator_prior_dig_cut_tokens(obs)
 
         def coverage_plan() -> tuple[Any, int]:
-            corridor = self._select_next_coverage_corridor(obs)
-            self._coverage_active_corridor_id = int(corridor.corridor_id)
-            raw_fields = self._coverage_raw_fields(
-                corridor,
-                obs=obs,
-                update_state=True,
+            activation = self._activate_coverage_dig_cut(
+                obs,
+                reset_cycle_metrics=False,
             )
             plan = build_raw_fields_dig_cut_plan(
-                raw_fields,
+                activation.raw_fields,
                 source=context.planner_mode,
             )
-            return plan, int(corridor.corridor_id)
+            return plan, int(activation.corridor.corridor_id)
 
         result: ReturnTargetDigCutBuildResult = (
             self.return_target_plan_service.dig_cut_build_result_from_callbacks(
@@ -2764,16 +2761,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
     def _build_operator_prior_coverage_dig_cut_tokens(
         self, obs: dict
     ) -> tuple[np.ndarray, dict[str, float | int], str, str]:
-        corridor = self._select_next_coverage_corridor(obs)
-        self._coverage_current_payload_gain_kg = 0.0
-        self._coverage_cycle_start_deposit_kg = self._deposited_mass(obs)
-        raw_fields = self._coverage_raw_fields(
-            corridor,
-            obs=obs,
-            update_state=True,
+        activation = self._activate_coverage_dig_cut(
+            obs,
+            reset_cycle_metrics=True,
         )
         plan = build_raw_fields_dig_cut_plan(
-            raw_fields,
+            activation.raw_fields,
             source="operator_prior_coverage",
         )
         return (

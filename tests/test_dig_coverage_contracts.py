@@ -802,6 +802,86 @@ def test_coverage_service_direct_selection_matches_policy_facade() -> None:
     )
 
 
+def test_coverage_service_direct_dig_cut_activation_matches_policy_facade() -> None:
+    policy = _coverage_policy(
+        prior_path=YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH,
+        coverage_extra={
+            "candidate_layout": "cell_weighted_3x2",
+            "rare_cell_source_fraction_threshold": 0.05,
+            "rare_cell_max_attempts": 1,
+            "first_dig_strategy": "nearest_entry",
+            "first_dig_proximity_weight": 100.0,
+            "recent_row_selection_penalty": 0.5,
+        },
+    )
+    direct_service = CoverageService(
+        config=policy._coverage_service_config(),
+        state=CoverageServiceState(),
+        first_dig_alignment_target_fn=policy._coverage_first_dig_alignment_target,
+    )
+    obs = _coverage_obs(bucket_pose=(0.8023, 0.0, 0.5011), deposited=25.0)
+    facts = policy._coverage_observation_facts(obs)
+
+    direct = direct_service.activate_dig_cut_corridor(
+        facts,
+        reset_cycle_metrics=True,
+    )
+    facade = policy._activate_coverage_dig_cut(
+        obs,
+        reset_cycle_metrics=True,
+    )
+
+    assert direct.corridor.corridor_id == facade.corridor.corridor_id
+    assert direct.corridor.cell_id == facade.corridor.cell_id
+    assert _canonicalize(direct.raw_fields) == _canonicalize(facade.raw_fields)
+    assert direct_service._coverage_current_payload_gain_kg == pytest.approx(0.0)
+    assert policy._coverage_current_payload_gain_kg == pytest.approx(0.0)
+    assert direct_service._coverage_cycle_start_deposit_kg == pytest.approx(25.0)
+    assert policy._coverage_cycle_start_deposit_kg == pytest.approx(25.0)
+    assert _canonicalize(direct_service._coverage_candidate_scores) == _canonicalize(
+        policy._coverage_candidate_scores
+    )
+    assert _canonicalize(direct_service.decision_trace) == _canonicalize(
+        policy._coverage_decision_trace
+    )
+
+
+def test_coverage_dig_cut_activation_can_preserve_cycle_metrics() -> None:
+    policy = _coverage_policy(
+        prior_path=YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH,
+        coverage_extra={
+            "candidate_layout": "cell_weighted_3x2",
+            "first_dig_strategy": "nearest_entry",
+            "first_dig_proximity_weight": 100.0,
+        },
+    )
+    direct_service = CoverageService(
+        config=policy._coverage_service_config(),
+        state=CoverageServiceState(),
+        first_dig_alignment_target_fn=policy._coverage_first_dig_alignment_target,
+    )
+    direct_service._coverage_current_payload_gain_kg = 7.5
+    direct_service._coverage_cycle_start_deposit_kg = 3.25
+    policy._coverage_current_payload_gain_kg = 7.5
+    policy._coverage_cycle_start_deposit_kg = 3.25
+    obs = _coverage_obs(bucket_pose=(0.8023, 0.0, 0.5011), deposited=25.0)
+    facts = policy._coverage_observation_facts(obs)
+
+    direct_service.activate_dig_cut_corridor(
+        facts,
+        reset_cycle_metrics=False,
+    )
+    policy._activate_coverage_dig_cut(
+        obs,
+        reset_cycle_metrics=False,
+    )
+
+    assert direct_service._coverage_current_payload_gain_kg == pytest.approx(7.5)
+    assert direct_service._coverage_cycle_start_deposit_kg == pytest.approx(3.25)
+    assert policy._coverage_current_payload_gain_kg == pytest.approx(7.5)
+    assert policy._coverage_cycle_start_deposit_kg == pytest.approx(3.25)
+
+
 def test_coverage_service_direct_completion_matches_facade_state_update() -> None:
     policy = _coverage_policy(
         coverage_extra={
