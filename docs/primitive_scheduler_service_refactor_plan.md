@@ -279,17 +279,20 @@ service，不执行 runtime reset，不组装 policy observation，不构造 tok
 dig plan，也不迁 pre-dig-align config。coverage state-exemplar 的实际加载仍通过
 coverage capability/facade 执行，避免 config helper 拥有 coverage I/O。
 
-planner 大文件只保留旧 private facade：
+planner 大文件只保留仍有调用面或稳定诊断价值的 private facade：
 
-- `_normalize_plane_depth_mode()`
-- `_normalize_failed_dig_replan_skill()`
 - `_align_vector()`
 - `_optional_align_vector()`
 - `_optional_float()`
-- `_load_dig_cut_prior()`
 - `_validate_dig_cut_planner_config()`
 - `_normalize_goal_sequence()`
 - `_apply_conditioning_config()`
+
+后续 consolidation cleanup 已删除零调用的 config helper pass-through：
+`_normalize_plane_depth_mode()`、`_normalize_failed_dig_replan_skill()` 和
+`_load_dig_cut_prior()`。这些语义的 source of truth 保留在
+`testbed.planner.primitive_config` 及其领域 helper alias 中；planner shell 不再为它们
+保留未使用的旧 private wrapper。
 
 本切片不改变默认 config、validation error text、prior token-order validation、
 goal sector id mapping、threshold、branch order、switch reason、policy dispatch、
@@ -5058,6 +5061,29 @@ focused parity、golden trace 或 debug-schema tests 锁住行为。
 输出”的代码合并点，所以本轮只同步计划文档。后续若继续代码层面收敛，应先选择一个
 真实的边界修正候选，例如 `CoverageProgressMixin` 与 `CoverageSelectionMixin` 之间是否
 存在过宽责任，再用 focused parity / golden / debug-schema tests 锁住行为后做最小变更。
+
+### 5P Compatibility Physical Split And Facade Cleanup 2026-06-17
+
+Reflection Gate: `先合并/回收过细模块`。本轮不新增 5P 调度语义，也不把 5P 重新提升为
+主线验收对象。
+
+`PrimitivePlannerACT5PPolicy`、`PRIMITIVE_SKILL_NAMES_5P` 和
+`PRIMITIVE_SKILL_IDS_5P` 已从 `primitive_planner.py` 物理移到
+`testbed/policies/hybrid/primitive_planner_5p.py`。旧
+`testbed.policies.hybrid.primitive_planner` 路径通过 lazy compatibility facade 继续暴露
+这些名称，避免直接导入新模块时出现循环导入，同时保留旧测试、runtime import 和用户脚本的
+兼容性。
+
+本切片只改变代码组织，不改变 5P branch order、switch reason、policy dispatch、policy
+reset timing、debug-state key/key order、hold-count 投影、token contract 或 rollout 输出。
+`primitive_planner_5p.py` 是 compatibility-only shell 的实现源；4P 主线 planner shell 和
+service-object 路线仍保持优先。
+
+同一轮还删除了三个确认零调用的 planner private config helper pass-through：
+`_normalize_plane_depth_mode()`、`_normalize_failed_dig_replan_skill()` 和
+`_load_dig_cut_prior()`。未删除 `_apply_*_config`、return handoff facade、policy dispatch、
+`_set_skill()`、reset 或 debug schema 相关入口，因为这些仍是 shell 合同、测试注入点或计划中
+明确保留的兼容面。
 
 ### Coverage Consolidation Self-Review 2026-06-16
 

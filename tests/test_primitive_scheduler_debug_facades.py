@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 
@@ -41,9 +44,60 @@ from testbed.policies.hybrid.primitive_planner import (
     HYBRID_MODE_WORK,
     PRE_DIG_ALIGN_SKILL_NAME,
     PRIMITIVE_SKILL_IDS,
+    PRIMITIVE_SKILL_IDS_5P,
+    PRIMITIVE_SKILL_NAMES_5P,
     PrimitivePlannerACT5PPolicy,
     PrimitivePlannerACTPolicy,
 )
+from testbed.policies.hybrid.primitive_planner_5p import (
+    PRIMITIVE_SKILL_IDS_5P as PRIMITIVE_SKILL_IDS_5P_FROM_MODULE,
+    PRIMITIVE_SKILL_NAMES_5P as PRIMITIVE_SKILL_NAMES_5P_FROM_MODULE,
+    PrimitivePlannerACT5PPolicy as PrimitivePlannerACT5PPolicyFromModule,
+)
+
+
+def test_5p_policy_module_import_matches_legacy_facade() -> None:
+    assert PrimitivePlannerACT5PPolicyFromModule is PrimitivePlannerACT5PPolicy
+
+
+def test_5p_policy_module_can_be_imported_before_legacy_facade() -> None:
+    code = (
+        "from testbed.policies.hybrid.primitive_planner_5p "
+        "import PrimitivePlannerACT5PPolicy as direct\n"
+        "from testbed.policies.hybrid.primitive_planner "
+        "import PrimitivePlannerACT5PPolicy as legacy\n"
+        "assert direct is legacy\n"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_5p_policy_registry_is_available_after_legacy_module_import() -> None:
+    code = (
+        "import testbed.policies.hybrid.primitive_planner\n"
+        "from testbed.policies.base import PolicyRegistry\n"
+        "cls = PolicyRegistry.get('primitive_planner_act_5p')\n"
+        "assert cls.__name__ == 'PrimitivePlannerACT5PPolicy'\n"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_5p_skill_constants_match_legacy_facade() -> None:
+    assert PRIMITIVE_SKILL_NAMES_5P_FROM_MODULE == (
+        "dig",
+        "carry",
+        "approach_dump",
+        "dump_release",
+        "return",
+    )
+    assert PRIMITIVE_SKILL_NAMES_5P_FROM_MODULE is PRIMITIVE_SKILL_NAMES_5P
+    assert PRIMITIVE_SKILL_IDS_5P_FROM_MODULE == {
+        "dig": 0,
+        "carry": 1,
+        "approach_dump": 2,
+        "dump_release": 3,
+        "return": 4,
+    }
+    assert PRIMITIVE_SKILL_IDS_5P_FROM_MODULE is PRIMITIVE_SKILL_IDS_5P
 
 
 def test_debug_state_snapshot_runtime_builder_matches_legacy_builder() -> None:
