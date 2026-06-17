@@ -56,7 +56,20 @@ Recent checkpoint:
 - 2026-06-17: planner shell 删除了确认零调用的 private config helper
   pass-through：`_normalize_plane_depth_mode()`、
   `_normalize_failed_dig_replan_skill()` 和 `_load_dig_cut_prior()`。相关语义的
-  source of truth 保留在 `testbed.planner.primitive_config` 及其领域 helper alias。
+  source of truth 保留在 `testbed.planner.primitive_config` 及其领域 helper alias；
+  原 private facade code 已归档到
+  `deprecated/primitive_scheduler/primitive_planner_deprecated_facades.py.txt`。
+- 2026-06-17: deprecated artifact policy 已建立。负结果实验和待移除 private
+  facade 必须先记录到 `deprecated/primitive_scheduler/`，说明原设计动机、实验或迁移结果、
+  替代 source-of-truth，以及为什么不应继续作为 live planner 语义。
+- 2026-06-17: 在完整备份
+  `deprecated/primitive_scheduler/primitive_planner_pre_facade_cleanup_2026_06_17.py.txt`
+  后，live planner shell 删除了 295 行确认零调用 private facade，覆盖 dump readiness、
+  pre-dig-align entry、dig lifecycle、dig-depth-profile prior/live、return-start-envelope
+  prior/conditioning、snapshot projection 和 config parsing pass-through。保留
+  `_pre_dig_align_entry_close_handoff_ready_for_state()`、policy dispatch、reset timing、
+  `_set_skill()`、debug/trace/summary assembly，以及仍被 runtime 使用的 pose/env/mass
+  observation helpers。
 
 ## Methodology Correction
 
@@ -150,6 +163,7 @@ Accept a slice when it satisfies at least one high-value condition:
 - It centralizes duplicated token/profile/schema/env-state semantics.
 - It allows a capability to be tested without constructing `PrimitivePlannerACTPolicy`.
 - It deletes or narrows old private facade surface after migration.
+- It archives deprecated code and rationale before removing a live private facade.
 
 Reject or postpone a slice when:
 
@@ -159,6 +173,8 @@ Reject or postpone a slice when:
   rollout output, primitive boundaries or checkpoint compatibility without user confirmation.
 - It promotes 5P, legacy or diagnostic behavior into mainline semantics without confirmation.
 - It creates an orchestrator before blackboard/result/effect contracts are stable.
+- It deletes legacy/private facade code without first adding a deprecated artifact
+  record when the old code documents a real design attempt or migration seam.
 
 ## Migration Ticket Template
 
@@ -231,6 +247,9 @@ For future Codex work:
 
 6. After migration, remove or demote private facade tests when safe.
    - Do not let old private tests define long-term semantics.
+   - Before deleting a live private facade, archive the old code and rationale under
+     `deprecated/primitive_scheduler/` unless the change is only formatting or an
+     unreachable typo fix.
 
 ## Phase Plan
 
@@ -365,6 +384,7 @@ Do:
 - Use `result/effect` as target output shape.
 - Add capability tests before or with adapter changes.
 - Delete or narrow private facade surface when compatibility no longer needs it.
+- Archive deprecated design/code before deleting it from live modules.
 - Keep docs and tests synchronized with every code migration.
 
 Don't:
@@ -376,6 +396,8 @@ Don't:
 - Do not change thresholds, branch order, switch reasons, token contracts, debug fields,
   rollout records, primitive boundaries or checkpoint compatibility without confirmation.
 - Do not keep adding tests that make private shell fields the semantic source-of-truth.
+- Do not delete historically meaningful failed branches or migration seams without a
+  deprecated artifact that explains why the live path should not use them.
 
 ## Test Strategy
 

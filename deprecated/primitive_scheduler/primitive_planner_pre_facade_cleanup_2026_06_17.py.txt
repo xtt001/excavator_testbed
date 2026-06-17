@@ -88,6 +88,7 @@ from testbed.planner.dig_cut_plan import (
 from testbed.planner.dig_depth_profile import (
     DIG_DEPTH_PROFILE_CONFIG_FIELDS,
     DIG_DEPTH_PROFILE_RUNTIME_STATUS_STATE_FIELDS,
+    DigDepthProfileBuildRequest,
     DigDepthProfileConfig,
     DigDepthProfileInputFacts,
     DigDepthProfileInputSourceCallbacks,
@@ -242,8 +243,19 @@ from testbed.planner.return_start_envelope import (
     build_return_start_envelope_config_from_mapping,
     build_return_start_envelope_for_plan,
     build_return_start_envelope_request_from_observation_view,
+    condition_return_start_envelope_from_relocate,
     require_return_start_envelope_token_result,
     resolve_return_start_envelope_cell_id,
+    return_start_envelope_token_from_prior_mapping,
+)
+from testbed.planner.return_start_envelope import (
+    return_start_envelope_prior_bounds as resolve_return_start_envelope_prior_bounds,
+)
+from testbed.planner.return_start_envelope import (
+    return_start_envelope_prior_mapping as resolve_return_start_envelope_prior_mapping,
+)
+from testbed.planner.return_start_envelope import (
+    return_start_envelope_prior_token as resolve_return_start_envelope_prior_token,
 )
 from testbed.planner.return_target_plan import (
     PENDING_RETURN_TARGET_ACTIVATION_FACT_FIELDS,
@@ -271,12 +283,19 @@ from testbed.planner.snapshots import (
     BoundaryDetectorUpdateFacts,
     PlannerSnapshot,
     boundary_detector_update_facts_from_obs,
+    bucket_depth_below_dig_area_plane_from_obs,
+    bucket_depth_below_local_surface_from_obs,
+    bucket_dig_area_cell_in_bounds_mask_from_obs,
+    bucket_dig_area_contact_mask_from_obs,
     bucket_dig_area_pose_from_obs,
     bucket_tip_dig_area_pose_from_obs,
     build_planner_snapshot,
     deposited_mass_from_obs,
+    dig_cell_id_from_obs,
     env_state_from_obs,
     mass_in_bucket_from_obs,
+    min_distance_to_dig_area_from_obs,
+    target_geometry_from_obs,
 )
 from testbed.policies.base import Policy, register_policy
 from testbed.policies.hybrid.adapter import HYBRID_MODE_TRANSITION, HYBRID_MODE_WORK
@@ -943,6 +962,11 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             self._dig_lifecycle_config(),
         )
 
+    def _should_pre_dig_align_after_failed_dig(self) -> bool:
+        return self.dig_lifecycle_gate.pre_dig_align_after_failed_dig(
+            self._dig_lifecycle_config()
+        )
+
     def _should_end_bootstrap(self, *, obs: dict, boundary_event: Any | None) -> bool:
         decision = self.bootstrap_service.should_end(
             self._bootstrap_facts(obs=obs, boundary_event=boundary_event),
@@ -1445,6 +1469,17 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             entry_error_m=entry_error,
         )
 
+    def _pre_dig_align_entry_close(
+        self,
+        entry_error: float,
+        *,
+        threshold: float | None,
+    ) -> bool:
+        return self.dig_start_alignment_service.entry_close(
+            entry_error,
+            threshold=threshold,
+        )
+
     def _pre_dig_align_entry_close_handoff_ready_for_state(
         self,
         *,
@@ -1461,6 +1496,23 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                 config=self._dig_start_alignment_config(),
                 start_envelope_ready=start_envelope_ready,
             )
+        )
+
+    def _pre_dig_align_entry_intent_mode_enabled(self) -> bool:
+        return self.dig_start_alignment_service.entry_intent_mode_enabled(
+            self._dig_start_alignment_config()
+        )
+
+    def _pre_dig_align_entry_intent_handoff_ready_for_state(
+        self,
+        *,
+        qpos_close: bool,
+        qvel_small: bool,
+    ) -> bool:
+        return self.dig_start_alignment_service.entry_intent_handoff_ready(
+            qpos_close=qpos_close,
+            qvel_small=qvel_small,
+            config=self._dig_start_alignment_config(),
         )
 
     def _pre_dig_align_timeout_can_handoff(self, obs: dict) -> bool:
@@ -1682,8 +1734,26 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             self._dig_lifecycle_config(),
         )
 
+    def _dig_exit_overshoot_m(self, obs: dict) -> float:
+        return self.dig_lifecycle_gate.exit_overshoot_m(
+            self._dig_lifecycle_facts(obs),
+        )
+
     def _dig_to_carry_ready(self, *, obs: dict, boundary_event: Any | None) -> bool:
         decision = self.dig_lifecycle_gate.dig_to_carry_ready(
+            self._dig_lifecycle_facts(obs, boundary_event),
+            self._dig_lifecycle_config(),
+        )
+        self._dig_to_carry_reason = str(decision.reason)
+        return bool(decision.ready)
+
+    def _semantic_dig_to_carry_liveness_ready(
+        self,
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> bool:
+        decision = self.dig_lifecycle_gate.semantic_liveness_ready(
             self._dig_lifecycle_facts(obs, boundary_event),
             self._dig_lifecycle_config(),
         )
@@ -1731,6 +1801,70 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         return self.dump_lifecycle_gate.dump_ready(
             self._dump_lifecycle_facts(obs),
             self._dump_lifecycle_config(),
+        )
+
+    def _dump_area_relative_dump_position_ok(self, geometry: dict[str, float]) -> bool:
+        return self.dump_lifecycle_gate.dump_area_relative_dump_position_ok(
+            geometry,
+            self._dump_lifecycle_config(),
+        )
+
+    def _dump_area_relative_near_window_ok(
+        self,
+        *,
+        geometry: dict[str, float],
+        over_footprint: bool,
+    ) -> bool:
+        return self.dump_lifecycle_gate.dump_area_relative_near_window_ok(
+            geometry=geometry,
+            over_footprint=over_footprint,
+            config=self._dump_lifecycle_config(),
+        )
+
+    @staticmethod
+    def _optional_range_ok(
+        *,
+        geometry: dict[str, float],
+        name: str,
+        min_value: float | None,
+        max_value: float | None,
+    ) -> bool:
+        return DumpLifecycleGateService.optional_range_ok(
+            geometry=geometry,
+            name=name,
+            min_value=min_value,
+            max_value=max_value,
+        )
+
+    @staticmethod
+    def _optional_range_near_ok(
+        *,
+        geometry: dict[str, float],
+        name: str,
+        min_value: float | None,
+        max_value: float | None,
+        tolerance: float,
+    ) -> bool:
+        return DumpLifecycleGateService.optional_range_near_ok(
+            geometry=geometry,
+            name=name,
+            min_value=min_value,
+            max_value=max_value,
+            tolerance=tolerance,
+        )
+
+    def _dump_ready_position_ok(
+        self,
+        *,
+        over_footprint: bool,
+        dump_area_relative_ok: bool,
+        horizontal_ok: bool,
+    ) -> bool:
+        return self.dump_lifecycle_gate.dump_ready_position_ok(
+            over_footprint=over_footprint,
+            dump_area_relative_ok=dump_area_relative_ok,
+            horizontal_ok=horizontal_ok,
+            config=self._dump_lifecycle_config(),
         )
 
     def _dump_done(self, obs: dict) -> bool:
@@ -1917,11 +2051,26 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         )
         return resolution.entry_target
 
+    def _target_geometry(self, obs: dict) -> dict[str, float]:
+        return target_geometry_from_obs(obs)
+
     def _mass_in_bucket(self, obs: dict) -> float:
         return mass_in_bucket_from_obs(obs)
 
     def _deposited_mass(self, obs: dict) -> float:
         return deposited_mass_from_obs(obs)
+
+    def _min_distance_to_dig_area(self, obs: dict) -> float:
+        return min_distance_to_dig_area_from_obs(obs)
+
+    def _bucket_depth_below_dig_area_plane(self, obs: dict) -> float:
+        return bucket_depth_below_dig_area_plane_from_obs(obs)
+
+    def _bucket_depth_below_local_surface(self, obs: dict) -> float:
+        return bucket_depth_below_local_surface_from_obs(obs)
+
+    def _bucket_dig_area_contact_mask(self, obs: dict) -> bool:
+        return bucket_dig_area_contact_mask_from_obs(obs)
 
     def _env_state(self, obs: dict) -> np.ndarray:
         return env_state_from_obs(obs)
@@ -2436,6 +2585,47 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self._dig_depth_profile_fallback_reason = str(result.fallback_reason)
         return result.token
 
+    def _build_live_dig_depth_profile_tokens_for_obs(
+        self,
+        obs: dict,
+        *,
+        cell_id: int,
+    ) -> np.ndarray:
+        return self.dig_depth_profile_service.build_live_token(
+            DigDepthProfileBuildRequest(
+                cell_id=cell_id,
+                raw_fields=self._dig_depth_profile_raw_fields(obs),
+                env_state=self._env_state(obs),
+                config=self._current_dig_depth_profile_config(),
+            ),
+        )
+
+    def _dig_depth_profile_prior_token(
+        self,
+        cell_id: int,
+    ) -> tuple[np.ndarray | None, str, str]:
+        return self.dig_depth_profile_service.prior_token(
+            self.dig_cut_prior,
+            cell_id=cell_id,
+            allow_global_fallback=self.dig_depth_profile_allow_global_fallback,
+        )
+
+    def _dig_depth_profile_prior_mapping(
+        self,
+        cell_id: int,
+    ) -> tuple[dict[str, object] | None, str, str]:
+        return self.dig_depth_profile_service.prior_mapping(
+            self.dig_cut_prior,
+            cell_id=cell_id,
+            allow_global_fallback=self.dig_depth_profile_allow_global_fallback,
+        )
+
+    @staticmethod
+    def _dig_depth_profile_token_from_prior_mapping(
+        mapping: dict[str, object],
+    ) -> np.ndarray | None:
+        return DigDepthProfileService.token_from_prior_mapping(mapping)
+
     def _current_dig_depth_profile_config(self) -> DigDepthProfileConfig:
         return build_dig_depth_profile_config_from_mapping(
             {
@@ -2491,6 +2681,16 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                 live_raw_fields=lambda: self._raw_fields_from_live_pose(obs),
                 env_state=lambda: self._env_state(obs),
             ),
+        )
+
+    def _dig_depth_profile_raw_fields(self, obs: dict) -> dict[str, float | int]:
+        return self.dig_depth_profile_service.resolve_raw_fields(
+            self._dig_depth_profile_input_facts(obs)
+        )
+
+    def _dig_depth_profile_cell_id(self, obs: dict) -> int:
+        return self.dig_depth_profile_service.resolve_cell_id(
+            self._dig_depth_profile_input_facts(obs)
         )
 
     def _build_dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray:
@@ -2703,6 +2903,25 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             cell_id=self._return_start_envelope_cell_id(corridor_id),
         )
 
+    def _maybe_condition_return_start_envelope_qpos_from_relocate(
+        self,
+        token: np.ndarray,
+        *,
+        raw_fields: dict[str, float | int],
+        source: str,
+    ) -> np.ndarray:
+        state = condition_return_start_envelope_from_relocate(
+            token,
+            raw_fields=raw_fields,
+            config=self._current_return_start_envelope_config(),
+            source=source,
+            use_prior_spatial_bounds=(
+                self._return_start_envelope_use_prior_spatial_bounds
+            ),
+            use_prior_qpos_bounds=self._return_start_envelope_use_prior_qpos_bounds,
+        )
+        return self._apply_return_start_envelope_token_result(state)
+
     def _apply_return_start_envelope_token_result(
         self,
         state: ReturnStartEnvelopeState,
@@ -2716,6 +2935,42 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             result.use_prior_qpos_bounds
         )
         return result.token
+
+    def _return_start_envelope_prior_token(
+        self,
+        *,
+        corridor_id: int | None,
+    ) -> tuple[np.ndarray | None, str]:
+        cell_id = self._return_start_envelope_cell_id(corridor_id)
+        mapping, source = self._return_start_envelope_prior_mapping(
+            corridor_id=corridor_id
+        )
+        return resolve_return_start_envelope_prior_token(
+            mapping,
+            source=source,
+            cell_id=cell_id,
+        )
+
+    def _return_start_envelope_prior_mapping(
+        self,
+        *,
+        corridor_id: int | None,
+    ) -> tuple[dict[str, object] | None, str]:
+        cell_id = self._return_start_envelope_cell_id(corridor_id)
+        return resolve_return_start_envelope_prior_mapping(
+            self.dig_cut_prior,
+            config=self._current_return_start_envelope_config(),
+            cell_id=cell_id,
+        )
+
+    def _return_start_envelope_prior_bounds(
+        self,
+        corridor_id: int | None,
+    ) -> tuple[np.ndarray | None, np.ndarray | None]:
+        mapping, _ = self._return_start_envelope_prior_mapping(
+            corridor_id=corridor_id
+        )
+        return resolve_return_start_envelope_prior_bounds(mapping)
 
     def _return_start_envelope_cell_id(self, corridor_id: int | None) -> int | None:
         if corridor_id is None:
@@ -2731,6 +2986,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             corridor_id=corridor_id,
             corridor_cell_id=corridor_cell_id,
         )
+
+    @staticmethod
+    def _return_start_envelope_token_from_prior_mapping(
+        mapping: dict[str, object],
+    ) -> np.ndarray | None:
+        return return_start_envelope_token_from_prior_mapping(mapping)
 
     def _current_return_start_envelope_config(self) -> ReturnStartEnvelopeConfig:
         return build_return_start_envelope_config_from_mapping(
@@ -2909,6 +3170,28 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             ),
         )
 
+    def _align_vector(
+        self,
+        value: object,
+        *,
+        default: list[float] | tuple[float, ...],
+    ) -> np.ndarray:
+        return primitive_config_helpers.align_vector(
+            value,
+            default=default,
+            action_dim=self.action_dim,
+        )
+
+    def _optional_align_vector(self, value: object) -> np.ndarray | None:
+        return primitive_config_helpers.optional_align_vector(
+            value,
+            action_dim=self.action_dim,
+        )
+
+    @staticmethod
+    def _optional_float(value: object) -> float | None:
+        return primitive_config_helpers.optional_float(value)
+
     def _cell_entry_tokens_for_obs(
         self,
         obs: dict,
@@ -2978,6 +3261,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             }
         )
 
+    def _bucket_dig_area_cell_in_bounds_mask(self, obs: dict) -> bool:
+        return bucket_dig_area_cell_in_bounds_mask_from_obs(obs)
+
+    def _dig_cell_id(self, obs: dict) -> int:
+        return dig_cell_id_from_obs(obs)
+
     def _bucket_dig_area_pose(self, obs: dict) -> tuple[float, float, float] | None:
         return bucket_dig_area_pose_from_obs(obs)
 
@@ -3006,6 +3295,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             sequence=self.goal_sequence,
             cycle_index=int(self._cycle_index),
         )
+
+    @staticmethod
+    def _normalize_goal_sequence(
+        goal_sequence: list[str] | tuple[str, ...] | None,
+    ) -> tuple[int, ...]:
+        return primitive_config_helpers.normalize_goal_sequence(goal_sequence)
 
     def _active_policy(self) -> Policy:
         if self._skill_name == BOOTSTRAP_SKILL_NAME:
