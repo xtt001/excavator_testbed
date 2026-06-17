@@ -30,13 +30,13 @@ from testbed.planner.primitive_action_tree import (
     PrimitiveActionTreeRunner,
     patch_primitive_action_tree_predict,
 )
-from testbed.planner.primitive_scheduler_runner import (
-    ACTION_TREE_SHADOW_RUNNER,
-    LEGACY_FSM_RUNNER,
-    NOT_APPLICABLE_RUNNER,
-    apply_primitive_scheduler_runner,
-    primitive_scheduler_runner_from_metadata,
-    primitive_scheduler_runner_from_policy_config,
+from testbed.planner.planner_backend_config import (
+    ACTION_TREE_SHADOW_BACKEND,
+    LEGACY_FSM_BACKEND,
+    NOT_APPLICABLE_BACKEND,
+    apply_planner_backend,
+    planner_backend_from_metadata,
+    planner_backend_from_policy_config,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
@@ -539,22 +539,22 @@ def test_action_tree_shadow_eval_cli_patches_predict_for_eval_only(
     assert PrimitivePlannerACTPolicy.predict is original_predict
 
 
-def test_primitive_scheduler_runner_config_defaults_to_legacy() -> None:
+def test_planner_backend_config_defaults_to_legacy() -> None:
     policy = _make_policy(boundary_events=[], boundary_profile="legacy")
 
-    selected = primitive_scheduler_runner_from_policy_config({})
-    applied = apply_primitive_scheduler_runner(
+    selected = planner_backend_from_policy_config({})
+    applied = apply_planner_backend(
         policy=policy,
         policy_class="PRIMITIVE_PLANNER_ACT",
-        runner=selected,
+        backend=selected,
     )
 
-    assert selected == LEGACY_FSM_RUNNER
-    assert applied == LEGACY_FSM_RUNNER
+    assert selected == LEGACY_FSM_BACKEND
+    assert applied == LEGACY_FSM_BACKEND
     assert not hasattr(policy, "_primitive_action_tree_runner")
 
 
-def test_primitive_scheduler_runner_config_attaches_action_tree_per_instance() -> None:
+def test_planner_backend_config_attaches_action_tree_per_instance() -> None:
     original_predict = PrimitivePlannerACTPolicy.predict
     tree_policy = _make_policy(
         boundary_events=[_FakeBoundaryEvent(dig_complete=True)],
@@ -567,16 +567,16 @@ def test_primitive_scheduler_runner_config_attaches_action_tree_per_instance() -
     tree_policy._prev_action = np.zeros(4, dtype=np.float32)
     legacy_policy._prev_action = np.zeros(4, dtype=np.float32)
 
-    selected = primitive_scheduler_runner_from_policy_config(
-        {"primitive_scheduler_runner": "action_tree_shadow"}
+    selected = planner_backend_from_policy_config(
+        {"planner_backend": "action_tree_shadow"}
     )
-    applied = apply_primitive_scheduler_runner(
+    applied = apply_planner_backend(
         policy=tree_policy,
         policy_class="PRIMITIVE_PLANNER_ACT",
-        runner=selected,
+        backend=selected,
     )
 
-    assert applied == ACTION_TREE_SHADOW_RUNNER
+    assert applied == ACTION_TREE_SHADOW_BACKEND
     assert PrimitivePlannerACTPolicy.predict is original_predict
     assert hasattr(tree_policy, "_primitive_action_tree_runner")
     assert not hasattr(legacy_policy, "_primitive_action_tree_runner")
@@ -589,41 +589,35 @@ def test_primitive_scheduler_runner_config_attaches_action_tree_per_instance() -
     assert legacy_policy.debug_state()["skill_name"] == "carry"
 
 
-def test_primitive_scheduler_runner_config_rejects_action_tree_for_5p() -> None:
+def test_planner_backend_config_rejects_action_tree_for_5p() -> None:
     policy = _make_policy(boundary_events=[], boundary_profile="legacy")
 
     with pytest.raises(ValueError, match="5P"):
-        apply_primitive_scheduler_runner(
+        apply_planner_backend(
             policy=policy,
             policy_class="PRIMITIVE_PLANNER_ACT_5P",
-            runner=ACTION_TREE_SHADOW_RUNNER,
+            backend=ACTION_TREE_SHADOW_BACKEND,
         )
-    with pytest.raises(ValueError, match="Unsupported primitive_scheduler_runner"):
-        primitive_scheduler_runner_from_policy_config(
-            {"primitive_scheduler_runner": "not_applicable"}
-        )
+    with pytest.raises(ValueError, match="Unsupported planner_backend"):
+        planner_backend_from_policy_config({"planner_backend": "not_applicable"})
 
 
-def test_primitive_scheduler_runner_metadata_defaults_missing_legacy() -> None:
-    assert primitive_scheduler_runner_from_metadata({}) == LEGACY_FSM_RUNNER
+def test_planner_backend_metadata_defaults_missing_legacy() -> None:
+    assert planner_backend_from_metadata({}) == LEGACY_FSM_BACKEND
     assert (
-        primitive_scheduler_runner_from_metadata(
+        planner_backend_from_metadata(
             {},
-            {"policy": {"primitive_scheduler_runner": "action_tree_shadow"}},
+            {"policy": {"planner_backend": "action_tree_shadow"}},
         )
-        == LEGACY_FSM_RUNNER
+        == LEGACY_FSM_BACKEND
     )
     assert (
-        primitive_scheduler_runner_from_metadata(
-            {"primitive_scheduler_runner": "not_applicable"}
-        )
-        == NOT_APPLICABLE_RUNNER
+        planner_backend_from_metadata({"planner_backend": "not_applicable"})
+        == NOT_APPLICABLE_BACKEND
     )
     assert (
-        primitive_scheduler_runner_from_metadata(
-            {"primitive_scheduler_runner": "action_tree_shadow"}
-        )
-        == ACTION_TREE_SHADOW_RUNNER
+        planner_backend_from_metadata({"planner_backend": "action_tree_shadow"})
+        == ACTION_TREE_SHADOW_BACKEND
     )
 
 

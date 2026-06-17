@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from testbed.planner.runtime.coverage import (
+    apply_coverage_runtime_effects,
+    project_coverage_action_result,
+)
+
 from .models import *
 from .service import CoverageService
 
@@ -434,12 +439,9 @@ class DigCoverageMixin:
         self._apply_coverage_action_result(result)
 
     def _apply_coverage_action_result(self, result: CoverageActionResult) -> None:
-        reason = str(getattr(result, "terminal_stop_reason", "") or "")
-        if not reason:
-            return
-        self._request_coverage_terminal_stop(
-            reason,
-            replace=bool(getattr(result, "terminal_stop_replace", False)),
+        apply_coverage_runtime_effects(
+            project_coverage_action_result(result),
+            request_coverage_terminal_stop=self._request_coverage_terminal_stop,
         )
 
     def _record_coverage_decision_event(

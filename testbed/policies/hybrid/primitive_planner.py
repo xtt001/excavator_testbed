@@ -264,8 +264,14 @@ from testbed.planner.return_target_plan import (
 from testbed.planner.return_to_dig_transition import (
     ReturnDirectHandoffRuntimeProjection,
     ReturnToDigTransitionCompletion,
+    ReturnToDigTransitionOutcome,
     ReturnToDigTransitionRuntimeProjection,
     ReturnToDigTransitionService,
+)
+from testbed.planner.runtime import PlannerTickContext, PlannerTickResult
+from testbed.planner.runtime.legacy_fsm import (
+    LegacyStateMachineBackend,
+    apply_legacy_fsm_runtime_effects,
 )
 from testbed.planner.snapshots import (
     BoundaryDetectorUpdateFacts,
@@ -397,6 +403,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self.bootstrap_service = BootstrapService()
         self.dig_lifecycle_gate = DigLifecycleGateService()
         self.dig_start_alignment_service = DigStartAlignmentService()
+        self._legacy_fsm_backend = LegacyStateMachineBackend()
         self.dump_lifecycle_gate = DumpLifecycleGateService()
         self.goal_sequence_service = GoalSequenceService()
         self.policy_observation_assembler = PolicyObservationAssembler()
@@ -583,156 +590,124 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         return build_primitive_planner_trace_from_facts(self._planner_trace_facts())
 
     def _maybe_switch_skill(self, *, obs: dict, boundary_event: Any | None) -> None:
-        if self._skill_name == BOOTSTRAP_SKILL_NAME:
-            if self._should_end_bootstrap(obs=obs, boundary_event=boundary_event):
-                transition_request = self.bootstrap_service.end_transition_request(
-                    pre_dig_align_before_dig=(
-                        self._should_pre_dig_align_before_dig()
-                    ),
-                    pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
-                )
-                transition = self.bootstrap_service.end_transition(
-                    transition_request.facts,
-                    self._bootstrap_config(),
-                    transition_request.transition_config,
-                )
-                self._apply_bootstrap_transition_decision(transition)
-            return
+        self._tick_legacy_fsm_backend(obs=obs, boundary_event=boundary_event)
 
-        if self._skill_name == PRE_DIG_ALIGN_SKILL_NAME:
-            outcome = self._pre_dig_align_outcome(obs)
-            if self._apply_pre_dig_align_outcome(outcome, obs):
-                return
-            return
+    def _tick_legacy_fsm_backend(
+        self,
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> None:
+        result = self._legacy_fsm_backend.tick(
+            self._legacy_fsm_tick_context(obs=obs, boundary_event=boundary_event)
+        )
+        self._apply_legacy_fsm_tick_result(result)
 
-        if self._skill_name == "dig":
-            exit_guard_ready = self._dig_exit_guard_ready(obs)
-            request = self.dig_lifecycle_gate.dig_transition_runtime_request(
-                exit_guard_ready=exit_guard_ready,
-            )
-            bad_replan_ready = False
-            complete_boundary_low_payload = False
-            dig_to_carry_ready = False
-            dig_to_carry_reason = ""
-            if request.should_check_bad_replan:
-                bad_replan_ready = self._dig_bad_replan_ready(obs)
-            if request.should_check_complete_boundary_low_payload(bad_replan_ready):
-                complete_boundary_low_payload = (
-                    self._dig_complete_boundary_low_payload(obs, boundary_event)
-                )
-            if request.should_check_dig_to_carry(
-                bad_replan_ready=bad_replan_ready,
-                complete_boundary_low_payload=complete_boundary_low_payload,
-            ):
-                dig_to_carry_ready = self._dig_to_carry_ready(
-                    obs=obs,
-                    boundary_event=boundary_event,
-                )
-                if dig_to_carry_ready:
-                    dig_to_carry_reason = str(self._dig_to_carry_reason)
-            outcome = self.dig_lifecycle_gate.dig_transition_runtime(
-                request.facts_with_gate_results(
-                    bad_replan_ready=bad_replan_ready,
-                    dig_to_carry_reason=dig_to_carry_reason,
-                    complete_boundary_low_payload=complete_boundary_low_payload,
-                    dig_to_carry_ready=dig_to_carry_ready,
-                )
-            )
-            projection = self.dig_lifecycle_gate.dig_transition_runtime_projection(
-                outcome
-            )
-            if self._apply_dig_transition_runtime_projection(projection, obs):
-                return
-            return
-
-        if self._skill_name == "carry":
-            release_safety_done = self._carry_release_safety_done(obs)
-            request = build_carry_transition_runtime_request(
-                release_safety_done=release_safety_done,
-                boundary_event=boundary_event,
-                semantic_boundary_profile_active=(
-                    self._semantic_boundary_profile_active()
+    def _legacy_fsm_tick_context(
+        self,
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> PlannerTickContext:
+        return PlannerTickContext(
+            obs=obs,
+            boundary_event=boundary_event,
+            coverage_state=self.coverage_service.state,
+            blackboard={"skill_name": self._skill_name},
+            services={
+                "bootstrap_skill_name": BOOTSTRAP_SKILL_NAME,
+                "bootstrap_service": self.bootstrap_service,
+                "should_end_bootstrap": self._should_end_bootstrap,
+                "should_pre_dig_align_before_dig": (
+                    self._should_pre_dig_align_before_dig
                 ),
-                current_dump_ready_hold_count=self._dump_ready_hold_count,
-            )
-            dump_ready = False
-            if request.should_check_dump_ready and self._dump_ready(obs):
-                dump_ready = True
-            runtime = self.dump_lifecycle_gate.carry_transition_runtime(
-                request.facts_with_dump_ready(dump_ready),
-                dump_ready_hold_steps=self.dump_ready_hold_steps,
-            )
-            if self._apply_carry_transition_runtime(runtime, obs):
-                return
-            return
+                "bootstrap_config": self._bootstrap_config,
+                "pre_dig_align_skill_name": PRE_DIG_ALIGN_SKILL_NAME,
+                "pre_dig_align_outcome": self._pre_dig_align_outcome,
+                "dig_skill_name": "dig",
+                "dig_lifecycle_gate": self.dig_lifecycle_gate,
+                "dig_exit_guard_ready": self._dig_exit_guard_ready,
+                "dig_bad_replan_ready": self._dig_bad_replan_ready,
+                "dig_complete_boundary_low_payload": (
+                    self._dig_complete_boundary_low_payload
+                ),
+                "dig_to_carry_ready": self._dig_to_carry_ready,
+                "dig_to_carry_reason": lambda: self._dig_to_carry_reason,
+                "carry_skill_name": "carry",
+                "build_carry_transition_runtime_request": (
+                    build_carry_transition_runtime_request
+                ),
+                "dump_lifecycle_gate": self.dump_lifecycle_gate,
+                "carry_release_safety_done": self._carry_release_safety_done,
+                "semantic_boundary_profile_active": (
+                    self._semantic_boundary_profile_active
+                ),
+                "dump_ready_hold_count": lambda: self._dump_ready_hold_count,
+                "dump_ready_hold_steps": lambda: self.dump_ready_hold_steps,
+                "dump_ready": self._dump_ready,
+                "dump_skill_name": "dump",
+                "build_dump_transition_runtime_request": (
+                    build_dump_transition_runtime_request
+                ),
+                "dump_done_use_boundary_event": (
+                    lambda: self.dump_done_use_boundary_event
+                ),
+                "dump_done_hold_count": lambda: self._dump_done_hold_count,
+                "dump_done_hold_steps": lambda: self.dump_done_hold_steps,
+                "dump_done": self._dump_done,
+                "return_skill_name": "return",
+                "return_transition_service": self.return_transition_service,
+                "return_to_dig_handoff_ready": self._return_to_dig_handoff_ready,
+                "return_next_dig_event_seen": (
+                    lambda: self._return_next_dig_event_seen
+                ),
+                "return_to_dig_direct_handoff_ready": (
+                    self._return_to_dig_direct_handoff_ready
+                ),
+                "return_to_dig_shallow_guard_ready": (
+                    self._return_to_dig_shallow_guard_ready
+                ),
+            },
+        )
 
-        if self._skill_name == "dump":
-            request = build_dump_transition_runtime_request(
-                dump_done_use_boundary_event=self.dump_done_use_boundary_event,
-                boundary_event=boundary_event,
-                semantic_boundary_profile_active=(
-                    self._semantic_boundary_profile_active()
-                ),
-                current_dump_done_hold_count=self._dump_done_hold_count,
-            )
-            dump_done = False
-            if request.should_check_dump_done and self._dump_done(obs):
-                dump_done = True
-            runtime = self.dump_lifecycle_gate.dump_transition_runtime(
-                request.facts_with_dump_done(dump_done),
-                dump_done_hold_steps=self.dump_done_hold_steps,
-            )
-            if self._apply_dump_transition_runtime(runtime, obs):
-                return
-            return
+    def _apply_legacy_fsm_tick_result(self, result: PlannerTickResult) -> None:
+        apply_legacy_fsm_runtime_effects(
+            result.effects,
+            run_legacy_fsm_transition=self._run_legacy_fsm_transition,
+            apply_bootstrap_transition_decision=(
+                self._apply_bootstrap_transition_decision
+            ),
+            apply_pre_dig_align_outcome=self._apply_pre_dig_align_outcome,
+            apply_dig_transition_runtime_projection=(
+                self._apply_dig_transition_runtime_projection
+            ),
+            apply_carry_transition_runtime=self._apply_carry_transition_runtime,
+            apply_dump_transition_runtime=self._apply_dump_transition_runtime,
+            apply_return_to_dig_transition_runtime=(
+                self._apply_return_to_dig_transition_runtime
+            ),
+        )
 
-        if self._skill_name == "return":
-            handoff_ready = self._return_to_dig_handoff_ready(obs)
-            request = self.return_transition_service.transition_request(
-                handoff_ready=handoff_ready,
-                boundary_event=boundary_event,
-                previous_next_dig_event_seen=self._return_next_dig_event_seen,
-                semantic_boundary_profile_active=(
-                    self._semantic_boundary_profile_active()
-                ),
+    def _run_legacy_fsm_transition(
+        self,
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> None:
+        del obs, boundary_event
+        if self._skill_name in (
+            BOOTSTRAP_SKILL_NAME,
+            PRE_DIG_ALIGN_SKILL_NAME,
+            "dig",
+            "carry",
+            "dump",
+            "return",
+        ):
+            raise ValueError(
+                "Legacy FSM fallback cannot handle explicit legacy FSM branch "
+                f"{self._skill_name!r}; the backend must return the branch's "
+                "adapter-applied runtime effect."
             )
-            direct_handoff_ready = False
-            shallow_guard_ready = False
-            if request.should_check_direct_handoff:
-                direct_handoff_ready = self._return_to_dig_direct_handoff_ready(
-                    obs,
-                    handoff_ready=handoff_ready,
-                )
-            if request.should_check_shallow_guard(direct_handoff_ready):
-                shallow_guard_ready = self._return_to_dig_shallow_guard_ready(
-                    obs=obs,
-                    boundary_event=boundary_event,
-                )
-            outcome = self.return_transition_service.classify(
-                request.facts_with_gate_results(
-                    direct_handoff_ready=direct_handoff_ready,
-                    shallow_guard_ready=shallow_guard_ready,
-                ),
-                request.config,
-            )
-            projection = self.return_transition_service.transition_runtime_projection(
-                outcome
-            )
-            if not self._apply_return_to_dig_transition_runtime_projection(
-                projection
-            ):
-                return
-            completion_request = self.return_transition_service.completion_request(
-                pre_dig_align_before_dig=self._should_pre_dig_align_before_dig(),
-                pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
-            )
-            completion = self.return_transition_service.transition_completion(
-                outcome,
-                completion_request.facts,
-                completion_request.config,
-            )
-            self._apply_return_to_dig_transition_completion(completion)
-            return
 
     def _set_return_or_direct_handoff(self, obs: dict, *, reason: str) -> None:
         self._set_skill("return", reason)
@@ -2199,6 +2174,24 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         )
         self._cycle_index += int(projection.cycle_index_increment)
         return True
+
+    def _apply_return_to_dig_transition_runtime(
+        self,
+        outcome: ReturnToDigTransitionOutcome,
+        projection: ReturnToDigTransitionRuntimeProjection,
+    ) -> bool:
+        if not self._apply_return_to_dig_transition_runtime_projection(projection):
+            return False
+        completion_request = self.return_transition_service.completion_request(
+            pre_dig_align_before_dig=self._should_pre_dig_align_before_dig(),
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
+        )
+        completion = self.return_transition_service.transition_completion(
+            outcome,
+            completion_request.facts,
+            completion_request.config,
+        )
+        return self._apply_return_to_dig_transition_completion(completion)
 
     def _apply_return_to_dig_transition_completion(
         self,

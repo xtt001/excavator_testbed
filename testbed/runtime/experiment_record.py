@@ -10,8 +10,8 @@ from typing import Any
 
 import yaml
 
-from testbed.planner.primitive_scheduler_runner import (
-    primitive_scheduler_runner_from_metadata,
+from testbed.planner.planner_backend_config import (
+    planner_backend_from_metadata,
 )
 
 # ── CSV column order ────────────────────────────────────────────────────────
@@ -27,7 +27,7 @@ _REGISTRY_COLUMNS: list[str] = [
     "train_best_epoch",
     "train_best_val_loss",
     "eval_results_dir",
-    "primitive_scheduler_runner",
+    "planner_backend",
     "success_mode",
     "n_rollouts",
     "eval_ckpt_path",
@@ -78,7 +78,7 @@ def build_experiment_record(
     success_rates = dict(rollout_manifest.get("success_rates_by_mode", {}))
     success_counts = dict(rollout_manifest.get("success_counts_by_mode", {}))
     metrics_extra = dict(eval_metrics.get("extra", {}))
-    primitive_scheduler_runner = primitive_scheduler_runner_from_metadata(
+    planner_backend = planner_backend_from_metadata(
         eval_run_metadata,
         eval_resolved_config,
     )
@@ -136,7 +136,7 @@ def build_experiment_record(
             "metrics_path": _existing_path_str(eval_results_dir / "metrics.json"),
             "results_csv_path": _existing_path_str(eval_results_dir / "results.csv"),
             "rollout_manifest_path": _existing_path_str(eval_results_dir / "rollout_manifest.json"),
-            "primitive_scheduler_runner": primitive_scheduler_runner,
+            "planner_backend": planner_backend,
             "ckpt_path": (
                 eval_metrics.get("ckpt_path")
                 or _nested_get(eval_resolved_config, "policy", "ckpt_path", default="")
@@ -254,7 +254,7 @@ def _build_registry_row(record: dict[str, Any]) -> dict[str, Any]:
         "train_best_epoch": _nested_get(record, "train", "best_epoch", default=""),
         "train_best_val_loss": _nested_get(record, "train", "best_val_loss", default=""),
         "eval_results_dir": _nested_get(record, "eval", "results_dir", default=""),
-        "primitive_scheduler_runner": _nested_get(record, "eval", "primitive_scheduler_runner", default=""),
+        "planner_backend": _nested_get(record, "eval", "planner_backend", default=""),
         "success_mode": _nested_get(record, "eval", "success_mode", default=""),
         "n_rollouts": _nested_get(record, "eval", "n_rollouts", default=""),
         "eval_ckpt_path": _nested_get(record, "eval", "ckpt_path", default=""),
@@ -314,7 +314,7 @@ def render_experiment_record_markdown(record: dict[str, Any]) -> str:
         "",
         f"- Results dir: `{eval_record.get('results_dir', '')}`",
         f"- Eval resolved config: `{eval_record.get('resolved_config_path', '')}`",
-        f"- Primitive scheduler runner: `{eval_record.get('primitive_scheduler_runner', '')}`",
+        f"- Planner backend: `{eval_record.get('planner_backend', '')}`",
         f"- Checkpoint evaluated: `{eval_record.get('ckpt_path', '')}`",
         f"- N rollouts: `{eval_record.get('n_rollouts', '')}`",
         f"- Success mode: `{eval_record.get('success_mode', '')}`",

@@ -136,7 +136,8 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         self.assertFalse(suite_kwargs["save_video"])
         self.assertEqual(type(suite_kwargs["policy"]).__name__, "DummyPolicy")
         self.assertEqual(suite_kwargs["policy"].mode, "random")
-        self.assertEqual(eval_metadata["primitive_scheduler_runner"], "not_applicable")
+        self.assertEqual(eval_metadata["planner_backend"], "not_applicable")
+        self.assertNotIn("primitive_scheduler_runner", eval_metadata)
         self.assertIsNotNone(fake_metrics.saved_json)
         append_csv.assert_called_once()
 
@@ -1969,7 +1970,7 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
                 notes="first baseline",
             )
             self.assertEqual(
-                record["eval"]["primitive_scheduler_runner"],
+                record["eval"]["planner_backend"],
                 "legacy_fsm",
             )
             json_path, md_path = write_experiment_record(
@@ -1984,6 +1985,7 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
             self.assertEqual(record["experiment_name"], "fulltest_round1")
             self.assertEqual(record["train"]["best_epoch"], 42)
             self.assertEqual(record["eval"]["primary_success_rate"], 0.2)
+            self.assertNotIn("primitive_scheduler_runner", record["eval"])
             self.assertEqual(record["eval"]["legacy_success_rate"], 0.3)
             self.assertEqual(record["eval"]["dump_complete_final_hold_success_rate"], 0.1)
             self.assertEqual(record["eval"]["strict_dump_complete_success_rate"], 0.0)
@@ -1992,7 +1994,13 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
             self.assertTrue(json_path.exists())
             self.assertTrue(md_path.exists())
             self.assertTrue(registry_path.exists())
-            self.assertIn("fulltest_round1", md_path.read_text())
+            markdown = md_path.read_text()
+            registry_text = registry_path.read_text()
+            self.assertIn("fulltest_round1", markdown)
+            self.assertIn("Planner backend", markdown)
+            self.assertIn("planner_backend", registry_text.splitlines()[0])
+            self.assertNotIn("Primitive scheduler runner", markdown)
+            self.assertNotIn("primitive_scheduler_runner", registry_text)
 
 
 if __name__ == "__main__":

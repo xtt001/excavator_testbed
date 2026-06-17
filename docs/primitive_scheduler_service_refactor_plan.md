@@ -1,9 +1,23 @@
 # Primitive Scheduler Refactor Plan
 
-本文档是 primitive planner 重构的执行手册。它替代旧的长篇 service extraction
-日志，目标是帮助人类和 agent 用同一套规则推进后续切片。
+Status: **historical / closed for the current backend-runtime migration**.
 
-当前方向：**沉淀行为树可复用的决策语义层**，而不是单纯把
+This document records the earlier primitive scheduler service-refactor context,
+constraints, and lessons. Do not use the `Phase Plan` section below as the
+active route for the 2026-06-17 planner backend/runtime migration. The active
+backend/runtime phase authority is:
+
+- `docs/superpowers/specs/2026-06-17-planner-backend-interface-design.md`
+
+Agents may still read this file for historical guardrails such as large-file
+policy, semantic-drift risks, and prior capability ownership, but backend phase
+selection and Definition of Done must come from the backend interface design
+spec unless a human explicitly reopens this plan.
+
+本文档保留早期 primitive planner 重构背景；它不再作为当前 backend/runtime
+migration 的活跃执行手册。
+
+历史方向：**沉淀行为树可复用的决策语义层**，而不是单纯把
 `PrimitivePlannerACTPolicy` 拆成更多文件。现有状态机仍是兼容入口；长期目标是让
 状态机、行为树、decision tree 或 option scheduler 都复用同一批 capability。
 
@@ -78,6 +92,119 @@ Recent checkpoint:
   planner shell 只保留 obs->facts adapter、coverage action effect application 和
   dig-cut token construction。coverage row 仍未完成：`DigCoverageMixin.__getattr__`
   和大量 `_coverage_*` compatibility properties 还需要后续测试迁移后再收窄。
+- 2026-06-17: backend runtime contract Phase 2 的第一小刀已添加
+  `testbed.planner.runtime.coverage.project_coverage_action_result()`，将
+  `CoverageActionResult` 的 deferred terminal-stop request 投影为
+  backend-neutral `PlannerRuntimeEffect`。这只是 effect projection contract；尚未把
+  `DigCoverageMixin` 或 `PrimitivePlannerACTPolicy` 改为通过 runtime effect applier
+  执行，也未改变 terminal-stop reason、debug/trace/rollout schema 或默认 planner 行为。
+- 2026-06-17: backend runtime contract Phase 2 的第二小刀已让
+  `DigCoverageMixin._apply_coverage_action_result()` 通过
+  `project_coverage_action_result()` 和 `apply_coverage_runtime_effects()` 执行
+  terminal-stop adapter callback。该切片只迁移 adapter 内部应用路径；没有改变
+  `CoverageService` 决策、terminal-stop reason、trace/debug/rollout schema、
+  `_maybe_switch_skill()` 或默认 planner 行为。
+- 2026-06-17: backend runtime contract Phase 2 已补齐 completion gate：
+  `tests/test_coverage_service_runtime_domain.py` 直接构造 `CoverageService`、
+  `CoverageServiceConfig`、`CoverageServiceState` 和 `CoverageObservationFacts`，
+  在不构造 `PrimitivePlannerACTPolicy` 的情况下覆盖 coverage selection 与
+  dig-cut activation。Phase 2 只完成 coverage runtime effect contract 与
+  service-level testability 证据；未迁移 `_maybe_switch_skill()`，也未改变默认 planner
+  语义。
+- 2026-06-17: backend runtime contract Phase 3 的第一小刀已添加
+  `testbed.planner.runtime.legacy_fsm.LegacyStateMachineBackend` 和
+  `run_legacy_fsm_transition` runtime effect。`PrimitivePlannerACTPolicy`
+  的 `_maybe_switch_skill()` 现在只负责构造 `PlannerTickContext`、调用 legacy
+  backend、应用返回 effect；原有 branch/order/reset/reason 逻辑保存在
+  `_run_legacy_fsm_transition()` 作为兼容实现。该切片只建立 backend entry/effect
+  path，尚未逐个迁移 active-skill branch。验证覆盖新增 backend tests、golden trace、
+  primitive action tree、primitive scheduler facades 和 AGX primitive legacy tests。
+- 2026-06-17: backend runtime contract Phase 3 的第二小刀已把默认 FSM 的
+  `bootstrap` active-skill end-transition orchestration 接到
+  `LegacyStateMachineBackend.tick()`。backend 通过
+  `PlannerTickContext.services` 调用现有 bootstrap service/callback，并返回
+  `apply_bootstrap_transition_decision` effect；`PrimitivePlannerACTPolicy` 仍通过
+  现有 `_apply_bootstrap_transition_decision()` 和 `_set_skill()` 应用实际副作用。
+  该切片没有迁移 `pre_dig_align`、`dig`、`carry`、`dump` 或 `return` 分支，没有改变
+  bootstrap end condition、reason string、pre-dig-align selection、reset timing、
+  debug/trace/rollout schema 或默认行为。
+- 2026-06-17: backend runtime contract Phase 3 的第三小刀已把默认 FSM 的
+  `pre_dig_align` active-skill outcome orchestration 接到
+  `LegacyStateMachineBackend.tick()`。backend 通过
+  `PlannerTickContext.services["pre_dig_align_outcome"]` 调用现有 facade 计算
+  `PreDigAlignOutcome`，并返回 `apply_pre_dig_align_outcome` effect；
+  `PrimitivePlannerACTPolicy` 仍通过现有 `_apply_pre_dig_align_outcome()` 应用
+  projection 和实际副作用。该切片没有迁移 `dig`、`carry`、`dump` 或 `return`
+  分支，没有改变 pre-dig-align readiness、surface guard、timeout、replan、restart、
+  switch reason、branch order、reset timing、debug/trace/rollout schema 或默认行为。
+- 2026-06-17: backend runtime contract Phase 3 的第四小刀已把默认 FSM 的
+  `dig` active-skill gate orchestration 接到 `LegacyStateMachineBackend.tick()`。
+  backend 通过 `PlannerTickContext.services` 调用现有 adapter gate callbacks，并返回
+  `apply_dig_transition_runtime_projection` effect；`PrimitivePlannerACTPolicy`
+  仍通过现有 `_apply_dig_transition_runtime_projection()` 应用 counter、coverage
+  reject、failed-dig restart、cell-entry/coverage completion 和 `_set_skill("carry", ...)`
+  等实际副作用。该切片特意保留 `_dig_to_carry_ready()` 的 adapter callback 路径，
+  以保持 `_dig_to_carry_reason` 写入时机；没有迁移 `carry`、`dump` 或 `return`
+  分支，没有改变 dig exit guard、bad replan、complete-low-payload、dig-to-carry、
+  switch reason、branch order、reset timing、debug/trace/rollout schema 或默认行为。
+- 2026-06-17: backend runtime contract Phase 3 的第五小刀已把默认 FSM 的
+  `carry` active-skill request/gate orchestration 接到
+  `LegacyStateMachineBackend.tick()`。backend 通过
+  `PlannerTickContext.services` 调用现有 adapter callbacks 和
+  `DumpLifecycleGateService.carry_transition_runtime()`，并返回
+  `apply_carry_transition_runtime` effect；`PrimitivePlannerACTPolicy` 仍通过现有
+  `_apply_carry_transition_runtime()` 应用 hold count、coverage dump completion、
+  return/direct handoff、dump-start mass capture 和 `_set_skill("dump", ...)`
+  等实际副作用。该切片没有迁移 `dump` 或 `return` 分支，没有改变 release-safety、
+  dump-ready、boundary-event short-circuit、hold count、switch reason、branch order、
+  reset timing、debug/trace/rollout schema 或默认行为；验证覆盖新增 carry backend
+  contract tests、carry facade locks、golden/action-tree、primitive scheduler facades
+  和 AGX primitive legacy tests。
+- 2026-06-17: backend runtime contract Phase 3 的第六小刀已把默认 FSM 的
+  `dump` active-skill request/gate orchestration 接到
+  `LegacyStateMachineBackend.tick()`。backend 通过
+  `PlannerTickContext.services` 调用现有 adapter callbacks 和
+  `DumpLifecycleGateService.dump_transition_runtime()`，并返回
+  `apply_dump_transition_runtime` effect；`PrimitivePlannerACTPolicy` 仍通过现有
+  `_apply_dump_transition_runtime()` 应用 hold count、coverage dump completion、
+  return/direct handoff 和 `_set_skill("return", ...)` 等实际副作用。该切片没有迁移
+  `return` 分支，没有改变 dump-done threshold、boundary-event short-circuit、
+  hold count、switch reason、branch order、reset timing、debug/trace/rollout schema
+  或默认行为；验证覆盖新增 dump backend contract tests、dump facade locks、
+  golden/action-tree、primitive scheduler facades 和 AGX primitive legacy tests。
+- 2026-06-17: backend runtime contract Phase 3 的第七小刀已把默认 FSM 的
+  `return` active-skill gate orchestration 接到
+  `LegacyStateMachineBackend.tick()`。backend 通过 `PlannerTickContext.services`
+  以原顺序调用现有 adapter callbacks，并用 `ReturnToDigTransitionService` 生成
+  `ReturnToDigTransitionOutcome` 与 runtime projection；`PrimitivePlannerACTPolicy`
+  仍通过新增的薄 adapter applier 先应用 projection，再构造/apply completion，确保
+  `_should_pre_dig_align_before_dig()` 仍在 cycle/completed-transition counters 更新后
+  执行。该切片没有迁移 `_try_return_direct_handoff_at_current_obs()`，没有改变
+  return handoff/direct/shallow gate、next-dig latch、switch reason、branch order、
+  reset timing、debug/trace/rollout schema 或默认行为；验证覆盖新增 return backend
+  contract tests、return service/facade locks、golden/action-tree、primitive scheduler
+  facades 和 AGX primitive legacy tests。
+- 2026-06-17: backend runtime contract Phase 3 已做 closure pass：所有默认
+  active-skill branch (`bootstrap`、`pre_dig_align`、`dig`、`carry`、`dump`、`return`)
+  都有 explicit backend branch；`run_legacy_fsm_transition` effect 保留为
+  unsupported non-explicit context 的兼容 fallback。显式默认 FSM skill 如果收到
+  generic fallback 会被拒绝，避免 under-wired backend 递归重入 adapter。
+  `PrimitivePlannerACTPolicy`
+  里的重复 backend tick/apply 兼容分发被收敛为薄 helper，return-specific 和
+  effect-application backend tests 从 `tests/test_legacy_fsm_backend.py` 拆到
+  focused files，使主 backend test 文件回到大文件阈值以下。该 pass 没有改变 branch
+  order、thresholds、reason strings、reset timing、debug/trace/rollout schema、默认
+  backend 选择或 behavior-tree 默认状态。
+- 2026-06-17: backend runtime contract Phase 3 post-closure review 修正了一个
+  测试置信度问题：`_run_legacy_fsm_transition()` 在所有默认 skill 迁到 backend 后不再是
+  独立 old-inline FSM source-of-truth，因此旧的 backend-versus-direct private method
+  parity test 被替换为 fallback recursion guard test。该修正只改变 under-wired
+  fallback 的错误边界，不改变默认 planner 行为。
+- 2026-06-17: backend interface spec 的 Phase 4 pre-slice 已添加
+  `testbed.planner.runtime.behavior_tree.BehaviorTreeBackend` 实验性 fail-closed
+  contract skeleton 和 contract tests。该记录属于 backend-interface phase numbering，
+  不是本计划下方 broader Phase 4 `Reporting Capability Cleanup`；没有把
+  `PrimitiveActionTreeRunner` 提升为 backend，也没有改默认 planner 行为。
 
 ## Methodology Correction
 
