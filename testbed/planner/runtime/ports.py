@@ -148,14 +148,17 @@ class LegacyFsmPreDigAlignmentPorts:
 
 
 @dataclass(frozen=True, slots=True)
-class LegacyFsmDigTransitionPorts:
-    """Dig transition gate dependencies used by the legacy FSM backend."""
+class PlannerDigTransitionPorts:
+    """Dig transition dependencies shared by planner backends."""
 
     lifecycle_gate: Any
     exit_guard_ready: ObservationPredicate
     bad_replan_ready: ObservationPredicate
     complete_boundary_low_payload: BoundaryObservationPredicate
     dig_to_carry_decision: DigToCarryDecisionProvider
+
+
+LegacyFsmDigTransitionPorts = PlannerDigTransitionPorts
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,6 +197,7 @@ class PlannerBackendPorts:
 
     legacy_fsm: LegacyFsmBackendPorts | None = None
     skill_names: PlannerSkillNames | None = None
+    dig_transition: PlannerDigTransitionPorts | None = None
     return_transition: PlannerReturnTransitionPorts | None = None
 
 
@@ -218,6 +222,7 @@ __all__ = [
     "ObservationOutcomeBuilder",
     "ObservationPredicate",
     "PlannerBackendPorts",
+    "PlannerDigTransitionPorts",
     "PlannerReturnTransitionPorts",
     "PlannerSkillNames",
     "ReturnTransitionRuntime",

@@ -6,15 +6,15 @@ from dataclasses import dataclass
 
 from typing import Any
 
-from testbed.planner.runtime.contracts import (
-    PlannerRuntimeEffect,
-    PlannerTickContext,
-    PlannerTickResult,
+from testbed.planner.runtime.contracts import PlannerTickContext, PlannerTickResult
+from testbed.planner.runtime.ports import (
+    PlannerDigTransitionPorts,
+    PlannerReturnTransitionPorts,
 )
-from testbed.planner.runtime.effects import (
-    APPLY_RETURN_TO_DIG_TRANSITION_RUNTIME_EFFECT,
+from testbed.planner.runtime.transition_nodes import (
+    build_dig_transition_result,
+    build_return_transition_result,
 )
-from testbed.planner.runtime.ports import PlannerReturnTransitionPorts
 
 BEHAVIOR_TREE_EXPERIMENTAL_BACKEND_NAME = "behavior_tree_experimental"
 
@@ -29,8 +29,20 @@ class BehaviorTreeBackend:
         """Run one experimental behavior-tree runtime node when wired."""
 
         skill_names = context.ports.skill_names
-        if skill_names is not None and (
-            context.blackboard.current_skill == skill_names.return_skill
+        if (
+            skill_names is not None
+            and context.blackboard.current_skill == skill_names.dig
+        ):
+            return self._tick_dig(
+                context,
+                active_skill=context.blackboard.current_skill,
+                ports=_required_port(
+                    context.ports.dig_transition,
+                    "dig_transition",
+                ),
+            )
+        if skill_names is not None and context.blackboard.current_skill == (
+            skill_names.return_skill
         ):
             return self._tick_return(
                 context,
@@ -45,6 +57,20 @@ class BehaviorTreeBackend:
             f"for skill {context.blackboard.current_skill!r}."
         )
 
+    def _tick_dig(
+        self,
+        context: PlannerTickContext,
+        *,
+        active_skill: str,
+        ports: PlannerDigTransitionPorts,
+    ) -> PlannerTickResult:
+        return build_dig_transition_result(
+            context,
+            active_skill=active_skill,
+            node_root="behavior_tree",
+            ports=ports,
+        )
+
     def _tick_return(
         self,
         context: PlannerTickContext,
@@ -52,34 +78,11 @@ class BehaviorTreeBackend:
         active_skill: str,
         ports: PlannerReturnTransitionPorts,
     ) -> PlannerTickResult:
-        obs = dict(context.obs)
-        runtime = ports.return_transition_runtime(
-            obs=obs,
-            boundary_event=context.boundary_event,
-            previous_next_dig_event_seen=(
-                context.blackboard.return_next_dig_event_seen
-            ),
-        )
-        outcome = runtime.outcome
-        projection = runtime.projection
-        return PlannerTickResult(
-            node_path=("behavior_tree", "transition", active_skill),
-            status="running",
-            reason=str(getattr(outcome, "reason_suffix", "")),
-            effects=(
-                PlannerRuntimeEffect(
-                    APPLY_RETURN_TO_DIG_TRANSITION_RUNTIME_EFFECT,
-                    {"outcome": outcome, "projection": projection},
-                ),
-            ),
-            diagnostics={
-                "active_skill": active_skill,
-                "action": str(getattr(outcome, "action", "")),
-                "reason_suffix": str(getattr(outcome, "reason_suffix", "")),
-                "next_dig_event_seen": bool(
-                    getattr(outcome, "next_dig_event_seen", False)
-                ),
-            },
+        return build_return_transition_result(
+            context,
+            active_skill=active_skill,
+            node_root="behavior_tree",
+            ports=ports,
         )
 
 

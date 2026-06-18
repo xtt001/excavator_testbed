@@ -22,11 +22,11 @@ from testbed.planner.return_to_dig_transition import (
 )
 from testbed.planner.runtime import (
     LegacyFsmBackendPorts,
-    LegacyFsmDigTransitionPorts,
     LegacyFsmDumpLifecyclePorts,
     LegacyFsmSkillNames,
     PlannerBackendPorts,
     PlannerBlackboard,
+    PlannerDigTransitionPorts,
     PlannerReturnTransitionPorts,
     PlannerTickContext,
 )
@@ -86,17 +86,17 @@ def test_legacy_fsm_backend_dig_uses_typed_ports_preserving_gate_order() -> None
             boundary_event=_FakeBoundaryEvent(dig_complete=True),
             blackboard=PlannerBlackboard(current_skill="dig"),
             ports=PlannerBackendPorts(
+                dig_transition=PlannerDigTransitionPorts(
+                    lifecycle_gate=DigLifecycleGateService(),
+                    exit_guard_ready=exit_guard_ready,
+                    bad_replan_ready=bad_replan_ready,
+                    complete_boundary_low_payload=(
+                        complete_boundary_low_payload
+                    ),
+                    dig_to_carry_decision=dig_to_carry_decision,
+                ),
                 legacy_fsm=LegacyFsmBackendPorts(
                     skill_names=_skill_names(),
-                    dig_transition=LegacyFsmDigTransitionPorts(
-                        lifecycle_gate=DigLifecycleGateService(),
-                        exit_guard_ready=exit_guard_ready,
-                        bad_replan_ready=bad_replan_ready,
-                        complete_boundary_low_payload=(
-                            complete_boundary_low_payload
-                        ),
-                        dig_to_carry_decision=dig_to_carry_decision,
-                    ),
                 )
             ),
         )

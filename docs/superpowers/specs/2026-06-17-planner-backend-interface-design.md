@@ -1395,6 +1395,81 @@ Verification run for this slice:
 - `git diff --check` -> no whitespace errors.
 - `rg "context\\.services|services\\[|LegacyFsmBoundaryProfilePorts|ports\\.boundary_profile|boundary_ports" testbed/planner testbed/policies/hybrid tests -n`
   -> no matches.
+- `rg -n "legacy_fsm|primitive_action_tree|primitive_planner|policy\\._" testbed/planner/runtime/behavior_tree.py testbed/planner/runtime/transition_nodes.py`
+  -> no matches.
+
+#### Phase 4 Slice 2 Dig Runtime Node 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/runtime/ports.py`: added top-level
+  `PlannerDigTransitionPorts` so behavior-tree and legacy-FSM backends can
+  share the dig transition dependency without routing through
+  `LegacyFsmBackendPorts`. `LegacyFsmDigTransitionPorts` remains a
+  compatibility alias.
+- `testbed/planner/runtime/transition_nodes.py`: added shared backend-neutral
+  dig and return transition result builders. These builders own result/effect
+  construction for the migrated nodes and do not apply side effects or import
+  the planner shell, shadow action-tree runner, or legacy FSM backend.
+- `testbed/planner/runtime/behavior_tree.py`: implemented the `dig` transition
+  runtime node. It reads `PlannerTickContext.blackboard`,
+  `PlannerBackendPorts.skill_names`, and `PlannerBackendPorts.dig_transition`,
+  then delegates result construction to the shared transition-node builder.
+- `testbed/planner/runtime/legacy_fsm.py`: changed the legacy dig branch to
+  prefer the top-level `PlannerBackendPorts.dig_transition` dependency while
+  retaining the old legacy-bundle field as a compatibility fallback. Its dig
+  and return branches now use the shared transition-node builders so the
+  migrated BT nodes do not duplicate branch-order/effect construction logic.
+- `testbed/policies/hybrid/primitive_planner.py`: thin adapter wiring only.
+  `_legacy_fsm_tick_context()` now builds top-level `PlannerDigTransitionPorts`;
+  dig side effects still run through the adapter effect applier.
+- `tests/test_behavior_tree_backend_contract.py` and
+  `tests/test_planner_backend_ports.py`: added and updated focused contracts
+  proving the behavior-tree dig node and legacy FSM dig branch can run from the
+  same neutral dig port.
+
+Scope guardrails kept:
+
+- No default backend selection, config default, dig gate branch order, dig
+  thresholds, switch reason strings, policy reset timing, debug/trace/rollout
+  schema, or token contract changed.
+- `BehaviorTreeBackend` remains experimental and is not enabled by
+  `planner_backend` config. This slice only adds the explicitly wired dig node;
+  unwired skills still fail closed.
+- `PrimitiveActionTreeRunner` remains the shadow-only compatibility reference
+  and was not promoted to a runtime backend.
+- The behavior-tree dig node only returns the existing runtime effect. It does
+  not apply side effects, mutate `PrimitivePlannerACTPolicy`, or own coverage
+  completion/reject application.
+
+Verification run for this slice:
+
+- Initial RED:
+  `python -m pytest -p no:cacheprovider -q tests/test_behavior_tree_backend_contract.py`
+  -> failed with
+  `AttributeError: module 'testbed.planner.runtime' has no attribute 'PlannerDigTransitionPorts'`.
+- Focused GREEN:
+  `python -m pytest -p no:cacheprovider -q tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_ports.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_return.py`
+  -> `29 passed`.
+- `python -m compileall -q testbed/planner/runtime testbed/policies/hybrid/primitive_planner.py tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_ports.py`
+  -> no output.
+- `rg -n "legacy_fsm|primitive_action_tree|primitive_planner|policy\\._" testbed/planner/runtime/behavior_tree.py testbed/planner/runtime/transition_nodes.py`
+  -> no matches.
+- Backend/runtime/config/BT:
+  `python -m pytest -p no:cacheprovider -q tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_planner_backend_config.py`
+  -> `72 passed`.
+- Golden/action-tree/facade/debug schema:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_golden_traces.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py tests/test_primitive_planner_debug_schema.py`
+  -> `168 passed`.
+- Token/data/config contract check:
+  `python -m pytest -p no:cacheprovider -q tests/test_primitive_token_contracts.py tests/test_policy_data_contracts.py tests/test_config_semantic_matrix.py`
+  -> `25 passed, 1 warning` from the existing `datetime.utcnow()` deprecation in
+  `testbed/data/dataset.py`.
+- `python -m compileall -q testbed/planner/runtime testbed/planner/return_to_dig_transition.py testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_action_tree.py tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_primitive_scheduler_facades.py`
+  -> no output.
+- `git diff --check` -> no whitespace errors.
+- `rg "context\\.services|services\\[|LegacyFsmBoundaryProfilePorts|ports\\.boundary_profile|boundary_ports" testbed/planner testbed/policies/hybrid tests -n`
+  -> no matches.
 - `rg -n "legacy_fsm|primitive_action_tree|primitive_planner|policy\\._" testbed/planner/runtime/behavior_tree.py`
   -> no matches.
 

@@ -277,12 +277,12 @@ from testbed.planner.return_to_dig_transition import (
 from testbed.planner.runtime import (
     LegacyFsmBackendPorts,
     LegacyFsmBootstrapPorts,
-    LegacyFsmDigTransitionPorts,
     LegacyFsmDumpLifecyclePorts,
     LegacyFsmPreDigAlignmentPorts,
     PlannerBackendPorts,
     PlannerBlackboard,
     PlannerConditioningState,
+    PlannerDigTransitionPorts,
     PlannerReturnTransitionPorts,
     PlannerSkillNames,
     PlannerTickContext,
@@ -1125,6 +1125,15 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         return_transition = PlannerReturnTransitionPorts(
             return_transition_runtime=self._return_transition_runtime,
         )
+        dig_transition = PlannerDigTransitionPorts(
+            lifecycle_gate=self.dig_lifecycle_gate,
+            exit_guard_ready=self._dig_exit_guard_ready,
+            bad_replan_ready=self._dig_bad_replan_ready,
+            complete_boundary_low_payload=(
+                self._dig_complete_boundary_low_payload
+            ),
+            dig_to_carry_decision=self._dig_to_carry_decision,
+        )
         return PlannerTickContext(
             obs=obs,
             boundary_event=boundary_event,
@@ -1132,6 +1141,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             blackboard=self._planner_lifecycle_blackboard(),
             ports=PlannerBackendPorts(
                 skill_names=skill_names,
+                dig_transition=dig_transition,
                 return_transition=return_transition,
                 legacy_fsm=LegacyFsmBackendPorts(
                     skill_names=skill_names,
@@ -1145,15 +1155,6 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                     ),
                     pre_dig_alignment=LegacyFsmPreDigAlignmentPorts(
                         compute_outcome=self._pre_dig_align_outcome,
-                    ),
-                    dig_transition=LegacyFsmDigTransitionPorts(
-                        lifecycle_gate=self.dig_lifecycle_gate,
-                        exit_guard_ready=self._dig_exit_guard_ready,
-                        bad_replan_ready=self._dig_bad_replan_ready,
-                        complete_boundary_low_payload=(
-                            self._dig_complete_boundary_low_payload
-                        ),
-                        dig_to_carry_decision=self._dig_to_carry_decision,
                     ),
                     dump_lifecycle=LegacyFsmDumpLifecyclePorts(
                         carry_transition_runtime=self._carry_transition_runtime,
