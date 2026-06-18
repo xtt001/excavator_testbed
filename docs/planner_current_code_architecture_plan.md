@@ -540,24 +540,25 @@ Implementation history is tracked in
 established the current-code parity harness, public tick execution template,
 and decision/effect result contracts.
 
-The current implementation route is **Slice 5: Token And Return Planning
-Services**. Slice 4 status records have been established through
-`TokenStatus`; Phase 5.1 has extracted the goal token provider; and Phase 5.2
-has extracted dig-cut token planning result construction; Phase 5.3 has
-extracted dig-depth-profile token planning; Phase 5.4 has extracted
-return-target token planning result construction; Phase 5.5 has extracted
-return-relocate token planning; Phase 5.6 has extracted return-start-envelope
-token planning; Phase 6.1 has extracted coverage corridor candidate
-construction; Phase 6.2 has extracted coverage scoring/selection; Phase 6.3
-has extracted coverage completion/rejection state updates; Phase 6.4 has
-extracted coverage terminal-stop and multi-pass reopen request ownership; Phase
-6.5 has extracted coverage corridor debug and decision-event payload
-projection; Phase 7.1 has introduced the legacy FSM backend protocol/adapter
-boundary without moving branch bodies; Phase 7.2 has migrated only the 4P
-bootstrap branch behind the backend adapter; Phase 7.3 has migrated only the
-4P dig branch behind the backend adapter. Continue with Phase 7.4 by migrating
-exactly one additional mainline legacy FSM branch chain, likely the 4P carry
-branch, with a focused service-versus-facade parity test. Keep pre-dig-align
-in legacy parking unless explicitly re-approved, and do not move dump/return
-branches, change branch order, change reason strings, or apply unrelated
-effects through the new backend boundary in the same slice.
+The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
+Protocol**. Slice 4 status records have been established through `TokenStatus`;
+Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut
+token planning result construction; Phase 5.3 has extracted dig-depth-profile
+token planning; Phase 5.4 has extracted return-target token planning result
+construction; Phase 5.5 has extracted return-relocate token planning; Phase 5.6
+has extracted return-start-envelope token planning; Phase 6.1 has extracted
+coverage corridor candidate construction; Phase 6.2 has extracted coverage
+scoring/selection; Phase 6.3 has extracted coverage completion/rejection state
+updates; Phase 6.4 has extracted coverage terminal-stop and multi-pass reopen
+request ownership; Phase 6.5 has extracted coverage corridor debug and
+decision-event payload projection; Phase 7.1 has introduced the legacy FSM
+backend protocol/adapter boundary without moving branch bodies; Phase 7.2 has
+migrated only the 4P bootstrap branch behind the backend adapter; Phase 7.3 has
+migrated only the 4P dig branch behind the backend adapter; Phase 7.4 has
+migrated only the 4P carry branch behind the backend adapter. Continue with
+Phase 7.5 by migrating exactly one additional mainline legacy FSM branch chain,
+likely the 4P dump branch, with a focused service-versus-facade parity test.
+Keep pre-dig-align in legacy parking unless explicitly re-approved, and do not
+move return branches, direct-handoff helper internals, change branch order,
+change reason strings, or apply unrelated effects through the new backend
+boundary in the same slice.

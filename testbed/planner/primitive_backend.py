@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from testbed.planner.primitive_capabilities import CarryTransitionStatus
 from testbed.planner.primitive_decision import PrimitiveDecisionResult
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
@@ -138,10 +139,57 @@ class LegacyFSMDigBranch:
         return True
 
 
+@dataclass(frozen=True)
+class LegacyFSMCarryConfig:
+    carry_skill_name: str
+
+
+@dataclass(frozen=True)
+class LegacyFSMCarryBranch:
+    """Carry branch of the legacy FSM with explicit callbacks."""
+
+    config: LegacyFSMCarryConfig
+    current_skill_name: Callable[[], str]
+    carry_transition_status: Callable[[dict[str, Any], Any | None], CarryTransitionStatus]
+    complete_coverage_dump: Callable[..., None]
+    set_return_or_direct_handoff: Callable[..., None]
+    set_dump_ready_hold_count: Callable[[int], None]
+    deposited_mass: Callable[[dict[str, Any]], float]
+    set_dump_start_deposited_mass: Callable[[float], None]
+    set_skill: Callable[[str, str], None]
+
+    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
+        if str(self.current_skill_name()) != str(self.config.carry_skill_name):
+            return False
+        status = self.carry_transition_status(obs, boundary_event)
+        if status.carry_release_safety_done:
+            self.complete_coverage_dump(obs, reason="carry_release_safety")
+            self.set_return_or_direct_handoff(
+                obs,
+                reason="carry_to_return_release_safety",
+            )
+            return True
+        if status.dump_complete_event:
+            self.complete_coverage_dump(obs, reason="carry_dump_complete_boundary")
+            self.set_return_or_direct_handoff(
+                obs,
+                reason="carry_to_return_dump_complete_boundary",
+            )
+            return True
+        self.set_dump_ready_hold_count(int(status.next_dump_ready_hold_count))
+        if status.ready_to_dump:
+            self.set_dump_start_deposited_mass(float(self.deposited_mass(obs)))
+            reason = status.carry_to_dump_reason or "target_ready"
+            self.set_skill("dump", f"carry_to_dump_{reason}")
+        return True
+
+
 __all__ = [
     "LegacyFSMBackendAdapter",
     "LegacyFSMBootstrapBranch",
     "LegacyFSMBootstrapConfig",
+    "LegacyFSMCarryBranch",
+    "LegacyFSMCarryConfig",
     "LegacyFSMDigBranch",
     "LegacyFSMDigConfig",
     "PrimitiveDecisionBackend",

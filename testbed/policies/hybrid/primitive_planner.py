@@ -66,8 +66,14 @@ from testbed.planner.primitive_backend import (
     LegacyFSMBackendAdapter,
     LegacyFSMBootstrapBranch,
     LegacyFSMBootstrapConfig,
+    LegacyFSMCarryBranch,
+    LegacyFSMCarryConfig,
     LegacyFSMDigBranch,
     LegacyFSMDigConfig,
+)
+from testbed.planner.primitive_capabilities import (
+    CarryTransitionStatus,
+    PrimitiveObservationFacts,
 )
 from testbed.planner.primitive_coverage import (
     CoverageCandidateBuilder,
@@ -1075,6 +1081,80 @@ class PrimitivePlannerACTPolicy(Policy):
             set_skill=self._set_skill,
         )
 
+    def _legacy_fsm_carry_branch(self) -> LegacyFSMCarryBranch:
+        return LegacyFSMCarryBranch(
+            config=LegacyFSMCarryConfig(carry_skill_name="carry"),
+            current_skill_name=lambda: str(self._skill_name),
+            carry_transition_status=self._carry_transition_status_for_backend,
+            complete_coverage_dump=self._complete_coverage_dump,
+            set_return_or_direct_handoff=self._set_return_or_direct_handoff,
+            set_dump_ready_hold_count=self._set_dump_ready_hold_count,
+            deposited_mass=self._deposited_mass,
+            set_dump_start_deposited_mass=self._set_dump_start_deposited_mass,
+            set_skill=self._set_skill,
+        )
+
+    def _carry_transition_status_for_backend(
+        self,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> CarryTransitionStatus:
+        return CarryTransitionStatus.from_inputs(
+            observation=PrimitiveObservationFacts.from_obs(
+                obs,
+                action_dim=self.action_dim,
+            ),
+            boundary_event=boundary_event,
+            semantic_boundary_profile_active=self._semantic_boundary_profile_active(),
+            coverage_cycle_start_deposit_kg=self._coverage_cycle_start_deposit_kg,
+            dump_ready_hold_count=self._dump_ready_hold_count,
+            dump_ready_hold_steps=self.dump_ready_hold_steps,
+            dump_ready_min_bucket_mass_kg=self.dump_ready_min_bucket_mass_kg,
+            dump_ready_min_height_above_rim_m=self.dump_ready_min_height_above_rim_m,
+            dump_ready_require_over_footprint=self.dump_ready_require_over_footprint,
+            dump_ready_require_clearance=self.dump_ready_require_clearance,
+            dump_ready_max_horizontal_distance_m=(
+                self.dump_ready_max_horizontal_distance_m
+            ),
+            dump_ready_position_mode=self.dump_ready_position_mode,
+            dump_ready_max_dump_area_footprint_outside_distance_m=(
+                self.dump_ready_max_dump_area_footprint_outside_distance_m
+            ),
+            dump_ready_min_dump_area_relative_x_m=(
+                self.dump_ready_min_dump_area_relative_x_m
+            ),
+            dump_ready_max_dump_area_relative_x_m=(
+                self.dump_ready_max_dump_area_relative_x_m
+            ),
+            dump_ready_min_dump_area_relative_z_m=(
+                self.dump_ready_min_dump_area_relative_z_m
+            ),
+            dump_ready_max_dump_area_relative_z_m=(
+                self.dump_ready_max_dump_area_relative_z_m
+            ),
+            dump_ready_near_window_enabled=self.dump_ready_near_window_enabled,
+            dump_ready_near_window_x_tolerance_m=(
+                self.dump_ready_near_window_x_tolerance_m
+            ),
+            dump_ready_near_window_z_tolerance_m=(
+                self.dump_ready_near_window_z_tolerance_m
+            ),
+            dump_ready_near_window_outside_tolerance_m=(
+                self.dump_ready_near_window_outside_tolerance_m
+            ),
+            dump_ready_near_window_require_over_footprint=(
+                self.dump_ready_near_window_require_over_footprint
+            ),
+            dump_done_max_bucket_mass_kg=self.dump_done_max_bucket_mass_kg,
+            dump_done_min_deposit_delta_kg=self.dump_done_min_deposit_delta_kg,
+        )
+
+    def _set_dump_ready_hold_count(self, value: int) -> None:
+        self._dump_ready_hold_count = int(value)
+
+    def _set_dump_start_deposited_mass(self, value: float) -> None:
+        self._dump_start_deposited_mass_kg = float(value)
+
     def _increment_dig_exit_guard_replan_count(self) -> None:
         self._dig_exit_guard_replan_count += 1
 
@@ -1685,59 +1765,10 @@ class PrimitivePlannerACTPolicy(Policy):
         ):
             return
 
-        if self._skill_name == "carry":
-            if self._carry_release_safety_done(obs):
-                self._complete_coverage_dump(obs, reason="carry_release_safety")
-                self._set_return_or_direct_handoff(
-                    obs,
-                    reason="carry_to_return_release_safety",
-                )
-                return
-            dump_committed_event = bool(
-                boundary_event is not None
-                and getattr(boundary_event, "dump_committed_start", False)
-            )
-            release_onset_event = bool(
-                boundary_event is not None
-                and getattr(boundary_event, "release_onset", False)
-            )
-            dump_complete_event = bool(
-                boundary_event is not None
-                and getattr(boundary_event, "dump_complete", False)
-            )
-            if dump_complete_event:
-                self._complete_coverage_dump(obs, reason="carry_dump_complete_boundary")
-                self._set_return_or_direct_handoff(
-                    obs,
-                    reason="carry_to_return_dump_complete_boundary",
-                )
-                return
-            legacy_dump_start_event = bool(
-                boundary_event is not None
-                and getattr(boundary_event, "dump_start", False)
-                and not self._semantic_boundary_profile_active()
-            )
-            if dump_committed_event or release_onset_event or legacy_dump_start_event:
-                self._dump_ready_hold_count = self.dump_ready_hold_steps
-            elif (
-                not self._semantic_boundary_profile_active()
-                and self._dump_ready(obs)
-            ):
-                self._dump_ready_hold_count += 1
-            else:
-                self._dump_ready_hold_count = 0
-            if self._dump_ready_hold_count >= self.dump_ready_hold_steps:
-                self._dump_start_deposited_mass_kg = self._deposited_mass(obs)
-                reason = (
-                    "dump_committed_boundary"
-                    if dump_committed_event
-                    else "release_onset_boundary"
-                    if release_onset_event
-                    else "dump_start_boundary"
-                    if legacy_dump_start_event
-                    else "target_ready"
-                )
-                self._set_skill("dump", f"carry_to_dump_{reason}")
+        if self._legacy_fsm_carry_branch().maybe_handle(
+            obs=obs,
+            boundary_event=boundary_event,
+        ):
             return
 
         if self._skill_name == "dump":

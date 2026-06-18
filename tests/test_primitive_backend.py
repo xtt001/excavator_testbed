@@ -6,9 +6,12 @@ from testbed.planner.primitive_backend import (
     LegacyFSMBackendAdapter,
     LegacyFSMBootstrapBranch,
     LegacyFSMBootstrapConfig,
+    LegacyFSMCarryBranch,
+    LegacyFSMCarryConfig,
     LegacyFSMDigBranch,
     LegacyFSMDigConfig,
 )
+from testbed.planner.primitive_capabilities import CarryTransitionStatus
 from testbed.planner.primitive_decision import LEGACY_FSM_DECISION_SOURCE
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
@@ -137,6 +140,130 @@ def test_legacy_fsm_dig_branch_ignores_non_dig_skill() -> None:
         complete_cell_entry_dig=lambda obs: None,
         complete_coverage_dig=lambda obs: None,
         dig_to_carry_reason=lambda: "",
+        set_skill=lambda skill, reason: None,
+    )
+
+    assert branch.maybe_handle(obs={}, boundary_event=None) is False
+
+
+def test_legacy_fsm_carry_branch_release_safety_handoffs_to_return() -> None:
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    events: list[tuple[str, str]] = []
+    status = CarryTransitionStatus(
+        mass_in_bucket_kg=0.0,
+        deposited_mass_in_target_box_kg=20.0,
+        deposit_delta_since_cycle_start_kg=10.0,
+        semantic_boundary_profile_active=True,
+        dump_committed_event=False,
+        release_onset_event=False,
+        dump_complete_event=False,
+        legacy_dump_start_event=False,
+        carry_release_safety_done=True,
+        dump_ready=False,
+        next_dump_ready_hold_count=0,
+        ready_to_dump=False,
+        carry_to_dump_reason="",
+        carry_to_return_reason="carry_to_return_release_safety",
+    )
+    branch = LegacyFSMCarryBranch(
+        config=LegacyFSMCarryConfig(carry_skill_name="carry"),
+        current_skill_name=lambda: "carry",
+        carry_transition_status=lambda obs, boundary_event: status,
+        complete_coverage_dump=lambda obs, reason: events.append(
+            ("complete_dump", reason)
+        ),
+        set_return_or_direct_handoff=lambda obs, reason: events.append(
+            ("return", reason)
+        ),
+        set_dump_ready_hold_count=lambda value: events.append(("hold", str(value))),
+        deposited_mass=lambda obs: 20.0,
+        set_dump_start_deposited_mass=lambda value: events.append(
+            ("deposit", str(value))
+        ),
+        set_skill=lambda skill, reason: events.append((skill, reason)),
+    )
+
+    handled = branch.maybe_handle(obs=obs, boundary_event=None)
+
+    assert handled is True
+    assert events == [
+        ("complete_dump", "carry_release_safety"),
+        ("return", "carry_to_return_release_safety"),
+    ]
+
+
+def test_legacy_fsm_carry_branch_committed_boundary_switches_to_dump() -> None:
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    boundary_event = object()
+    state = {"hold": 0, "deposit": 0.0}
+    events: list[tuple[str, str]] = []
+    status = CarryTransitionStatus(
+        mass_in_bucket_kg=120.0,
+        deposited_mass_in_target_box_kg=8.5,
+        deposit_delta_since_cycle_start_kg=8.5,
+        semantic_boundary_profile_active=True,
+        dump_committed_event=True,
+        release_onset_event=False,
+        dump_complete_event=False,
+        legacy_dump_start_event=False,
+        carry_release_safety_done=False,
+        dump_ready=False,
+        next_dump_ready_hold_count=3,
+        ready_to_dump=True,
+        carry_to_dump_reason="dump_committed_boundary",
+        carry_to_return_reason="",
+    )
+    branch = LegacyFSMCarryBranch(
+        config=LegacyFSMCarryConfig(carry_skill_name="carry"),
+        current_skill_name=lambda: "carry",
+        carry_transition_status=lambda obs, boundary_event: status,
+        complete_coverage_dump=lambda obs, reason: events.append(
+            ("complete_dump", reason)
+        ),
+        set_return_or_direct_handoff=lambda obs, reason: events.append(
+            ("return", reason)
+        ),
+        set_dump_ready_hold_count=lambda value: state.__setitem__("hold", value),
+        deposited_mass=lambda obs: 8.5,
+        set_dump_start_deposited_mass=lambda value: state.__setitem__(
+            "deposit",
+            value,
+        ),
+        set_skill=lambda skill, reason: events.append((skill, reason)),
+    )
+
+    handled = branch.maybe_handle(obs=obs, boundary_event=boundary_event)
+
+    assert handled is True
+    assert state == {"hold": 3, "deposit": 8.5}
+    assert events == [("dump", "carry_to_dump_dump_committed_boundary")]
+
+
+def test_legacy_fsm_carry_branch_ignores_non_carry_skill() -> None:
+    branch = LegacyFSMCarryBranch(
+        config=LegacyFSMCarryConfig(carry_skill_name="carry"),
+        current_skill_name=lambda: "dump",
+        carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
+            mass_in_bucket_kg=0.0,
+            deposited_mass_in_target_box_kg=0.0,
+            deposit_delta_since_cycle_start_kg=0.0,
+            semantic_boundary_profile_active=False,
+            dump_committed_event=False,
+            release_onset_event=False,
+            dump_complete_event=False,
+            legacy_dump_start_event=False,
+            carry_release_safety_done=True,
+            dump_ready=False,
+            next_dump_ready_hold_count=0,
+            ready_to_dump=False,
+            carry_to_dump_reason="",
+            carry_to_return_reason="carry_to_return_release_safety",
+        ),
+        complete_coverage_dump=lambda obs, reason: None,
+        set_return_or_direct_handoff=lambda obs, reason: None,
+        set_dump_ready_hold_count=lambda value: None,
+        deposited_mass=lambda obs: 0.0,
+        set_dump_start_deposited_mass=lambda value: None,
         set_skill=lambda skill, reason: None,
     )
 
