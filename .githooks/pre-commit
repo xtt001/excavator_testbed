@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+mapfile -t STAGED_PATHS < <(git diff --cached --name-only)
+
+python scripts/planner_refactor_guard.py --check-historical-files "${STAGED_PATHS[@]}"
+python scripts/planner_refactor_guard.py --check-plan-contract
+python scripts/planner_refactor_guard.py --check-skill-contract

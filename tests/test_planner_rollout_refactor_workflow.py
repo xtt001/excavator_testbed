@@ -145,6 +145,15 @@ def test_pre_commit_config_wires_planner_refactor_hooks() -> None:
         assert hook_id in config
 
 
+def test_git_hooks_pre_commit_fallback_runs_planner_refactor_guards() -> None:
+    root = Path(__file__).resolve().parents[1]
+    hook = (root / ".githooks/pre-commit").read_text(encoding="utf-8")
+
+    assert "scripts/planner_refactor_guard.py --check-plan-contract" in hook
+    assert "scripts/planner_refactor_guard.py --check-skill-contract" in hook
+    assert "scripts/planner_refactor_guard.py --check-historical-files" in hook
+
+
 def test_goal_prompt_exists_for_rollout_evidence_goal_mode() -> None:
     root = Path(__file__).resolve().parents[1]
     prompt = (
