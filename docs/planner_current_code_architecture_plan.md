@@ -537,7 +537,8 @@ Services**. Slice 4 status records have been established through
 has extracted dig-cut token planning result construction; Phase 5.3 has
 extracted dig-depth-profile token planning; Phase 5.4 has extracted
 return-target token planning result construction; Phase 5.5 has extracted
-return-relocate token planning. Continue with Phase 5.6,
-return-start-envelope token planning only. Do not migrate coverage
-planning/runtime, `_maybe_switch_skill()` branch bodies, or effect application
-in the same slice.
+return-relocate token planning; Phase 5.6 has extracted return-start-envelope
+token planning. Continue with Phase 6.1, coverage corridor candidate
+construction only. Do not migrate scoring/selection, completion/rejection
+updates, terminal-stop requests, decision trace/report projection,
+`_maybe_switch_skill()` branch bodies, or effect application in the same slice.

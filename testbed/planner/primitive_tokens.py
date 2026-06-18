@@ -13,8 +13,13 @@ from testbed.data.dig_depth_profile_v2_4 import (
     build_dig_depth_profile_token_from_plan,
 )
 from testbed.data.operator_first_v2_2 import (
+    RETURN_START_ENVELOPE_TOKEN_DIM,
     _build_dig_cut_token,
     build_live_dig_cut_tokens_from_pose,
+)
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
 )
 from testbed.data.v2_1 import build_goal_tokens
 
@@ -444,6 +449,280 @@ class ReturnRelocateTokenPlanner:
         return token
 
 
+@dataclass(frozen=True)
+class ReturnStartEnvelopeConditioningConfig:
+    """Linear conditioning settings for return-start-envelope tokens."""
+
+    qpos_enabled: bool = False
+    qpos_coefficients: np.ndarray | None = None
+    qpos_min: np.ndarray | None = None
+    qpos_max: np.ndarray | None = None
+    qpos_use_prior_bounds: bool = False
+    spatial_enabled: bool = False
+    spatial_coefficients: np.ndarray | None = None
+    spatial_min: np.ndarray | None = None
+    spatial_max: np.ndarray | None = None
+    spatial_use_prior_bounds: bool = False
+
+
+@dataclass(frozen=True)
+class ReturnStartEnvelopeTokenPlan:
+    """Result of planning one return-start-envelope token."""
+
+    token: np.ndarray
+    source: str
+    use_prior_spatial_bounds: bool
+    use_prior_qpos_bounds: bool
+
+
+@dataclass(frozen=True)
+class ReturnStartEnvelopeTokenPlanner:
+    """Build return-start-envelope tokens from priors or current observation."""
+
+    prior: dict[str, Any]
+    use_cell_prior: bool = False
+    min_source_count: int = 1
+    min_source_fraction: float = 0.0
+    conditioning: ReturnStartEnvelopeConditioningConfig = (
+        ReturnStartEnvelopeConditioningConfig()
+    )
+
+    def plan(
+        self,
+        *,
+        raw_fields: dict[str, float | int],
+        env_state: np.ndarray,
+        qpos: np.ndarray,
+        qvel: np.ndarray,
+        cell_id: int | None,
+    ) -> ReturnStartEnvelopeTokenPlan:
+        prior_token, prior_source = self.prior_token(cell_id=cell_id)
+        if prior_token is not None:
+            return self.condition_token(
+                prior_token,
+                raw_fields=raw_fields,
+                source=prior_source,
+                use_prior_spatial_bounds=True,
+                use_prior_qpos_bounds=True,
+            )
+
+        token = self.live_current_obs_token(
+            raw_fields=raw_fields,
+            env_state=env_state,
+            qpos=qpos,
+            qvel=qvel,
+        )
+        return self.condition_token(
+            token,
+            raw_fields=raw_fields,
+            source="live_current_obs_fallback",
+            use_prior_spatial_bounds=True,
+            use_prior_qpos_bounds=True,
+        )
+
+    def condition_token(
+        self,
+        token: np.ndarray,
+        *,
+        raw_fields: dict[str, float | int],
+        source: str,
+        use_prior_spatial_bounds: bool,
+        use_prior_qpos_bounds: bool,
+    ) -> ReturnStartEnvelopeTokenPlan:
+        if not self.conditioning.qpos_enabled:
+            return self._plan(
+                token=token,
+                source=source,
+                use_prior_spatial_bounds=use_prior_spatial_bounds,
+                use_prior_qpos_bounds=use_prior_qpos_bounds,
+            )
+        coefficients = self.conditioning.qpos_coefficients
+        if coefficients is None:
+            return self._plan(
+                token=token,
+                source=source,
+                use_prior_spatial_bounds=use_prior_spatial_bounds,
+                use_prior_qpos_bounds=use_prior_qpos_bounds,
+            )
+        relocate_token = ReturnRelocateTokenPlanner().plan(_build_dig_cut_token(raw_fields))
+        if float(relocate_token[9]) <= 0.5 or np.linalg.norm(relocate_token[:7]) <= 1.0e-6:
+            return self._plan(
+                token=token,
+                source=source,
+                use_prior_spatial_bounds=use_prior_spatial_bounds,
+                use_prior_qpos_bounds=use_prior_qpos_bounds,
+            )
+
+        features = np.concatenate(
+            [np.ones(1, dtype=np.float32), relocate_token[:7].astype(np.float32)]
+        )
+        qpos = np.asarray(coefficients @ features, dtype=np.float32).reshape(4)
+        qpos = np.clip(
+            qpos,
+            self._vector_or_default(self.conditioning.qpos_min, 4, -np.inf),
+            self._vector_or_default(self.conditioning.qpos_max, 4, np.inf),
+        )
+        conditioned = np.asarray(token, dtype=np.float32).reshape(-1).copy()
+        source_suffixes: list[str] = []
+        spatial_bounds = bool(use_prior_spatial_bounds)
+        spatial_coefficients = self.conditioning.spatial_coefficients
+        if self.conditioning.spatial_enabled and spatial_coefficients is not None:
+            spatial = np.asarray(
+                spatial_coefficients @ features,
+                dtype=np.float32,
+            ).reshape(2)
+            spatial = np.clip(
+                spatial,
+                self._vector_or_default(self.conditioning.spatial_min, 2, -np.inf),
+                self._vector_or_default(self.conditioning.spatial_max, 2, np.inf),
+            )
+            conditioned[0:2] = spatial
+            source_suffixes.append("relocate_spatial_linear")
+            spatial_bounds = bool(self.conditioning.spatial_use_prior_bounds)
+        conditioned[7:11] = qpos
+        source_suffixes.append("relocate_qpos_linear")
+        return self._plan(
+            token=conditioned,
+            source=f"{source}+{'+'.join(source_suffixes)}",
+            use_prior_spatial_bounds=spatial_bounds,
+            use_prior_qpos_bounds=bool(self.conditioning.qpos_use_prior_bounds),
+        )
+
+    def live_current_obs_token(
+        self,
+        *,
+        raw_fields: dict[str, float | int],
+        env_state: np.ndarray,
+        qpos: np.ndarray,
+        qvel: np.ndarray,
+    ) -> np.ndarray:
+        token = np.zeros(RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.float32)
+        env = np.asarray(env_state, dtype=np.float32).reshape(-1)
+        if len(env) > ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX:
+            token[0] = float(env[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX])
+        if len(env) > ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX:
+            token[1] = float(env[ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX])
+        token[2] = float(
+            max(0.0, float(raw_fields.get("operator_cut_depth_peak_m", 0.08)))
+        )
+        token[3] = 0.20
+        token[4] = float(max(0.0, token[2] - 0.08))
+        token[5] = float(token[2] + 0.08)
+        token[6] = 0.0
+        qpos_array = np.asarray(qpos, dtype=np.float32).reshape(-1)
+        qvel_array = np.asarray(qvel, dtype=np.float32).reshape(-1)
+        if qpos_array.size >= 4 and np.all(np.isfinite(qpos_array[:4])):
+            token[7:11] = qpos_array[:4]
+            token[11:15] = np.asarray([0.05, 0.05, 0.05, 0.05], dtype=np.float32)
+            token[16] = 1.0
+        if qvel_array.size >= 4:
+            token[15] = float(np.max(np.abs(qvel_array[:4])))
+        token[17] = 1.0
+        return token
+
+    def prior_token(self, *, cell_id: int | None) -> tuple[np.ndarray | None, str]:
+        mapping, source = self.prior_mapping(cell_id=cell_id)
+        if mapping is not None:
+            token = self.token_from_prior_mapping(mapping)
+            if token is not None:
+                if cell_id is not None and source == "cell":
+                    return token, f"qc6_return_start_envelope_cell_{int(cell_id)}"
+                if cell_id is not None and source == "global_low_support_cell":
+                    return (
+                        token,
+                        f"qc6_return_start_envelope_global_low_support_cell_{int(cell_id)}",
+                    )
+                return token, "qc6_return_start_envelope_global"
+        return None, "missing_return_start_envelope_prior"
+
+    def prior_mapping(
+        self,
+        *,
+        cell_id: int | None,
+    ) -> tuple[dict[str, object] | None, str]:
+        if not self.prior:
+            return None, "missing_dig_cut_prior"
+        cells = self.prior.get("return_start_envelope_cells", [])
+        if self.use_cell_prior and cell_id is not None and isinstance(cells, list):
+            for cell in cells:
+                cell_dict = dict(cell)
+                if int(cell_dict.get("cell_id", -999999)) == int(cell_id):
+                    source_count = int(cell_dict.get("source_count", 0) or 0)
+                    source_fraction = float(cell_dict.get("source_fraction", 0.0) or 0.0)
+                    if (
+                        source_count >= int(self.min_source_count)
+                        and source_fraction >= float(self.min_source_fraction)
+                    ):
+                        return cell_dict, "cell"
+                    break
+        global_prior = self.prior.get("return_start_envelope_global")
+        if isinstance(global_prior, dict):
+            if self.use_cell_prior and cell_id is not None and isinstance(cells, list):
+                return dict(global_prior), "global_low_support_cell"
+            return dict(global_prior), "global"
+        return None, "missing_return_start_envelope_prior"
+
+    def prior_bounds(
+        self,
+        *,
+        cell_id: int | None,
+    ) -> tuple[np.ndarray | None, np.ndarray | None]:
+        mapping, _ = self.prior_mapping(cell_id=cell_id)
+        if mapping is None:
+            return None, None
+        if "token_p05" not in mapping or "token_p95" not in mapping:
+            return None, None
+        lower = np.asarray(mapping["token_p05"], dtype=np.float32).reshape(-1)
+        upper = np.asarray(mapping["token_p95"], dtype=np.float32).reshape(-1)
+        if (
+            lower.shape[0] != RETURN_START_ENVELOPE_TOKEN_DIM
+            or upper.shape[0] != RETURN_START_ENVELOPE_TOKEN_DIM
+        ):
+            return None, None
+        return lower.copy(), upper.copy()
+
+    @staticmethod
+    def token_from_prior_mapping(mapping: dict[str, object]) -> np.ndarray | None:
+        for key in ("token_median", "token", "median"):
+            if key not in mapping:
+                continue
+            token = np.asarray(mapping[key], dtype=np.float32).reshape(-1)
+            if token.shape[0] != RETURN_START_ENVELOPE_TOKEN_DIM:
+                raise ValueError(
+                    "return_start_envelope prior token must have "
+                    f"{RETURN_START_ENVELOPE_TOKEN_DIM} values, got {token.shape[0]}"
+                )
+            return token.copy()
+        return None
+
+    @staticmethod
+    def _vector_or_default(
+        value: np.ndarray | None,
+        size: int,
+        fill: float,
+    ) -> np.ndarray:
+        if value is None:
+            return np.full(size, fill, dtype=np.float32)
+        return np.asarray(value, dtype=np.float32).reshape(size)
+
+    @staticmethod
+    def _plan(
+        *,
+        token: np.ndarray,
+        source: str,
+        use_prior_spatial_bounds: bool,
+        use_prior_qpos_bounds: bool,
+    ) -> ReturnStartEnvelopeTokenPlan:
+        token_array = np.asarray(token, dtype=np.float32).reshape(-1).copy()
+        token_array.setflags(write=False)
+        return ReturnStartEnvelopeTokenPlan(
+            token=token_array,
+            source=str(source),
+            use_prior_spatial_bounds=bool(use_prior_spatial_bounds),
+            use_prior_qpos_bounds=bool(use_prior_qpos_bounds),
+        )
+
+
 class DigDepthProfileTokenPlanningError(ValueError):
     """Raised when a required dig-depth-profile token cannot be planned."""
 
@@ -629,6 +908,9 @@ __all__ = [
     "GoalTokenProvider",
     "PRIMITIVE_GOAL_SECTOR_IDS",
     "ReturnRelocateTokenPlanner",
+    "ReturnStartEnvelopeConditioningConfig",
+    "ReturnStartEnvelopeTokenPlan",
+    "ReturnStartEnvelopeTokenPlanner",
     "ReturnTargetTokenPlan",
     "ReturnTargetTokenPlanner",
 ]
