@@ -398,4 +398,384 @@ class DigTransitionStatus:
         )
 
 
-__all__ = ["BootstrapStatus", "DigTransitionStatus", "PrimitiveObservationFacts"]
+@dataclass(frozen=True)
+class CarryTransitionStatus:
+    """Read-only carry transition facts for the legacy FSM."""
+
+    mass_in_bucket_kg: float
+    deposited_mass_in_target_box_kg: float
+    deposit_delta_since_cycle_start_kg: float
+    semantic_boundary_profile_active: bool
+    dump_committed_event: bool
+    release_onset_event: bool
+    dump_complete_event: bool
+    legacy_dump_start_event: bool
+    carry_release_safety_done: bool
+    dump_ready: bool
+    next_dump_ready_hold_count: int
+    ready_to_dump: bool
+    carry_to_dump_reason: str
+    carry_to_return_reason: str
+
+    @classmethod
+    def from_inputs(
+        cls,
+        *,
+        observation: PrimitiveObservationFacts,
+        boundary_event: Any | None,
+        semantic_boundary_profile_active: bool = False,
+        coverage_cycle_start_deposit_kg: float = 0.0,
+        dump_ready_hold_count: int = 0,
+        dump_ready_hold_steps: int = 1,
+        dump_ready_min_bucket_mass_kg: float = 0.0,
+        dump_ready_min_height_above_rim_m: float = 0.0,
+        dump_ready_require_over_footprint: bool = True,
+        dump_ready_require_clearance: bool = True,
+        dump_ready_max_horizontal_distance_m: float | None = None,
+        dump_ready_position_mode: str = "footprint_or_dump_area_relative",
+        dump_ready_max_dump_area_footprint_outside_distance_m: float | None = None,
+        dump_ready_min_dump_area_relative_x_m: float | None = None,
+        dump_ready_max_dump_area_relative_x_m: float | None = None,
+        dump_ready_min_dump_area_relative_z_m: float | None = None,
+        dump_ready_max_dump_area_relative_z_m: float | None = None,
+        dump_ready_near_window_enabled: bool = False,
+        dump_ready_near_window_x_tolerance_m: float = 0.0,
+        dump_ready_near_window_z_tolerance_m: float = 0.0,
+        dump_ready_near_window_outside_tolerance_m: float = 0.0,
+        dump_ready_near_window_require_over_footprint: bool = True,
+        dump_done_max_bucket_mass_kg: float = 0.0,
+        dump_done_min_deposit_delta_kg: float = 0.0,
+    ) -> "CarryTransitionStatus":
+        semantic = bool(semantic_boundary_profile_active)
+        mass = observation.mass_in_bucket_kg
+        deposited = observation.deposited_mass_in_target_box_kg
+        deposit_delta = deposited - float(coverage_cycle_start_deposit_kg)
+        dump_committed_event = bool(
+            boundary_event is not None
+            and getattr(boundary_event, "dump_committed_start", False)
+        )
+        release_onset_event = bool(
+            boundary_event is not None and getattr(boundary_event, "release_onset", False)
+        )
+        dump_complete_event = bool(
+            boundary_event is not None and getattr(boundary_event, "dump_complete", False)
+        )
+        legacy_dump_start_event = bool(
+            boundary_event is not None
+            and getattr(boundary_event, "dump_start", False)
+            and not semantic
+        )
+        carry_release_safety_done = bool(
+            semantic
+            and mass <= float(dump_done_max_bucket_mass_kg)
+            and deposit_delta >= float(dump_done_min_deposit_delta_kg)
+        )
+        dump_ready = False
+        if (
+            not semantic
+            and not dump_committed_event
+            and not release_onset_event
+            and not legacy_dump_start_event
+        ):
+            dump_ready = _dump_ready_from_observation(
+                observation=observation,
+                dump_ready_min_bucket_mass_kg=dump_ready_min_bucket_mass_kg,
+                dump_ready_min_height_above_rim_m=dump_ready_min_height_above_rim_m,
+                dump_ready_require_over_footprint=dump_ready_require_over_footprint,
+                dump_ready_require_clearance=dump_ready_require_clearance,
+                dump_ready_max_horizontal_distance_m=(
+                    dump_ready_max_horizontal_distance_m
+                ),
+                dump_ready_position_mode=dump_ready_position_mode,
+                dump_ready_max_dump_area_footprint_outside_distance_m=(
+                    dump_ready_max_dump_area_footprint_outside_distance_m
+                ),
+                dump_ready_min_dump_area_relative_x_m=(
+                    dump_ready_min_dump_area_relative_x_m
+                ),
+                dump_ready_max_dump_area_relative_x_m=(
+                    dump_ready_max_dump_area_relative_x_m
+                ),
+                dump_ready_min_dump_area_relative_z_m=(
+                    dump_ready_min_dump_area_relative_z_m
+                ),
+                dump_ready_max_dump_area_relative_z_m=(
+                    dump_ready_max_dump_area_relative_z_m
+                ),
+                dump_ready_near_window_enabled=dump_ready_near_window_enabled,
+                dump_ready_near_window_x_tolerance_m=(
+                    dump_ready_near_window_x_tolerance_m
+                ),
+                dump_ready_near_window_z_tolerance_m=(
+                    dump_ready_near_window_z_tolerance_m
+                ),
+                dump_ready_near_window_outside_tolerance_m=(
+                    dump_ready_near_window_outside_tolerance_m
+                ),
+                dump_ready_near_window_require_over_footprint=(
+                    dump_ready_near_window_require_over_footprint
+                ),
+            )
+        hold_steps = max(1, int(dump_ready_hold_steps))
+        if dump_committed_event or release_onset_event or legacy_dump_start_event:
+            next_hold_count = hold_steps
+        elif not semantic and dump_ready:
+            next_hold_count = int(dump_ready_hold_count) + 1
+        else:
+            next_hold_count = 0
+        ready_to_dump = bool(next_hold_count >= hold_steps)
+        if not ready_to_dump:
+            carry_to_dump_reason = ""
+        elif dump_committed_event:
+            carry_to_dump_reason = "dump_committed_boundary"
+        elif release_onset_event:
+            carry_to_dump_reason = "release_onset_boundary"
+        elif legacy_dump_start_event:
+            carry_to_dump_reason = "dump_start_boundary"
+        else:
+            carry_to_dump_reason = "target_ready"
+
+        carry_to_return_reason = ""
+        if carry_release_safety_done:
+            carry_to_return_reason = "carry_to_return_release_safety"
+        elif dump_complete_event:
+            carry_to_return_reason = "carry_to_return_dump_complete_boundary"
+
+        return cls(
+            mass_in_bucket_kg=mass,
+            deposited_mass_in_target_box_kg=deposited,
+            deposit_delta_since_cycle_start_kg=deposit_delta,
+            semantic_boundary_profile_active=semantic,
+            dump_committed_event=dump_committed_event,
+            release_onset_event=release_onset_event,
+            dump_complete_event=dump_complete_event,
+            legacy_dump_start_event=legacy_dump_start_event,
+            carry_release_safety_done=carry_release_safety_done,
+            dump_ready=dump_ready,
+            next_dump_ready_hold_count=next_hold_count,
+            ready_to_dump=ready_to_dump,
+            carry_to_dump_reason=carry_to_dump_reason,
+            carry_to_return_reason=carry_to_return_reason,
+        )
+
+
+def _dump_ready_from_observation(
+    *,
+    observation: PrimitiveObservationFacts,
+    dump_ready_min_bucket_mass_kg: float,
+    dump_ready_min_height_above_rim_m: float,
+    dump_ready_require_over_footprint: bool,
+    dump_ready_require_clearance: bool,
+    dump_ready_max_horizontal_distance_m: float | None,
+    dump_ready_position_mode: str,
+    dump_ready_max_dump_area_footprint_outside_distance_m: float | None,
+    dump_ready_min_dump_area_relative_x_m: float | None,
+    dump_ready_max_dump_area_relative_x_m: float | None,
+    dump_ready_min_dump_area_relative_z_m: float | None,
+    dump_ready_max_dump_area_relative_z_m: float | None,
+    dump_ready_near_window_enabled: bool,
+    dump_ready_near_window_x_tolerance_m: float,
+    dump_ready_near_window_z_tolerance_m: float,
+    dump_ready_near_window_outside_tolerance_m: float,
+    dump_ready_near_window_require_over_footprint: bool,
+) -> bool:
+    if observation.mass_in_bucket_kg < float(dump_ready_min_bucket_mass_kg):
+        return False
+    geometry = observation.target_geometry()
+    over_footprint = geometry["bucket_over_target_footprint_mask"] > 0.5
+    height_ok = bool(
+        geometry["bucket_height_above_target_rim_m"]
+        >= float(dump_ready_min_height_above_rim_m) - 1.0e-6
+    )
+    clearance_ok = geometry["dump_clearance_ok_mask"] > 0.5
+    horizontal_ok = False
+    if dump_ready_max_horizontal_distance_m is not None:
+        horizontal_ok = bool(
+            geometry["target_horizontal_distance_m"]
+            <= float(dump_ready_max_horizontal_distance_m) + 1.0e-6
+        )
+    dump_area_relative_ok = _dump_area_relative_position_ok(
+        geometry=geometry,
+        max_outside_distance=dump_ready_max_dump_area_footprint_outside_distance_m,
+        min_x=dump_ready_min_dump_area_relative_x_m,
+        max_x=dump_ready_max_dump_area_relative_x_m,
+        min_z=dump_ready_min_dump_area_relative_z_m,
+        max_z=dump_ready_max_dump_area_relative_z_m,
+    )
+    position_ok = _dump_ready_position_ok(
+        mode=dump_ready_position_mode,
+        over_footprint=over_footprint,
+        dump_area_relative_ok=dump_area_relative_ok,
+        horizontal_ok=horizontal_ok,
+        require_over_footprint=bool(dump_ready_require_over_footprint),
+    )
+    if not position_ok:
+        position_ok = _dump_area_relative_near_window_ok(
+            geometry=geometry,
+            over_footprint=over_footprint,
+            enabled=dump_ready_near_window_enabled,
+            require_over_footprint=dump_ready_near_window_require_over_footprint,
+            max_outside_distance=dump_ready_max_dump_area_footprint_outside_distance_m,
+            outside_tolerance=dump_ready_near_window_outside_tolerance_m,
+            min_x=dump_ready_min_dump_area_relative_x_m,
+            max_x=dump_ready_max_dump_area_relative_x_m,
+            x_tolerance=dump_ready_near_window_x_tolerance_m,
+            min_z=dump_ready_min_dump_area_relative_z_m,
+            max_z=dump_ready_max_dump_area_relative_z_m,
+            z_tolerance=dump_ready_near_window_z_tolerance_m,
+        )
+    return bool(
+        height_ok
+        and position_ok
+        and (clearance_ok or not bool(dump_ready_require_clearance))
+    )
+
+
+def _dump_area_relative_position_ok(
+    *,
+    geometry: dict[str, float],
+    max_outside_distance: float | None,
+    min_x: float | None,
+    max_x: float | None,
+    min_z: float | None,
+    max_z: float | None,
+) -> bool:
+    if max_outside_distance is None:
+        return False
+    outside_distance = float(
+        geometry.get("bucket_dump_area_footprint_outside_distance_m", np.nan)
+    )
+    outside_ok = bool(
+        np.isfinite(outside_distance)
+        and outside_distance >= 0.0
+        and outside_distance <= float(max_outside_distance) + 1.0e-6
+    )
+    if not outside_ok:
+        return False
+    return bool(
+        _optional_range_ok(
+            value=float(geometry.get("bucket_dump_area_relative_x_m", np.nan)),
+            min_value=min_x,
+            max_value=max_x,
+        )
+        and _optional_range_ok(
+            value=float(geometry.get("bucket_dump_area_relative_z_m", np.nan)),
+            min_value=min_z,
+            max_value=max_z,
+        )
+    )
+
+
+def _dump_area_relative_near_window_ok(
+    *,
+    geometry: dict[str, float],
+    over_footprint: bool,
+    enabled: bool,
+    require_over_footprint: bool,
+    max_outside_distance: float | None,
+    outside_tolerance: float,
+    min_x: float | None,
+    max_x: float | None,
+    x_tolerance: float,
+    min_z: float | None,
+    max_z: float | None,
+    z_tolerance: float,
+) -> bool:
+    if not enabled:
+        return False
+    if require_over_footprint and not over_footprint:
+        return False
+    if max_outside_distance is None:
+        return False
+    outside_distance = float(
+        geometry.get("bucket_dump_area_footprint_outside_distance_m", np.nan)
+    )
+    outside_limit = float(max_outside_distance) + float(outside_tolerance)
+    outside_ok = bool(
+        np.isfinite(outside_distance)
+        and outside_distance >= 0.0
+        and outside_distance <= outside_limit + 1.0e-6
+    )
+    if not outside_ok:
+        return False
+    return bool(
+        _optional_range_near_ok(
+            value=float(geometry.get("bucket_dump_area_relative_x_m", np.nan)),
+            min_value=min_x,
+            max_value=max_x,
+            tolerance=x_tolerance,
+        )
+        and _optional_range_near_ok(
+            value=float(geometry.get("bucket_dump_area_relative_z_m", np.nan)),
+            min_value=min_z,
+            max_value=max_z,
+            tolerance=z_tolerance,
+        )
+    )
+
+
+def _dump_ready_position_ok(
+    *,
+    mode: str,
+    over_footprint: bool,
+    dump_area_relative_ok: bool,
+    horizontal_ok: bool,
+    require_over_footprint: bool,
+) -> bool:
+    if mode == "footprint_or_dump_area_relative":
+        return bool(dump_area_relative_ok or (over_footprint and require_over_footprint))
+    if mode == "dump_area_relative":
+        return bool(dump_area_relative_ok)
+    if mode == "footprint":
+        return bool(over_footprint or not require_over_footprint)
+    if mode == "footprint_or_horizontal":
+        return bool(horizontal_ok or (over_footprint and require_over_footprint))
+    raise ValueError(
+        f"Unsupported dump_ready_position_mode {mode!r}. Expected one of "
+        "footprint_or_dump_area_relative, dump_area_relative, footprint, "
+        "footprint_or_horizontal."
+    )
+
+
+def _optional_range_ok(
+    *,
+    value: float,
+    min_value: float | None,
+    max_value: float | None,
+) -> bool:
+    if min_value is None and max_value is None:
+        return True
+    if not np.isfinite(value):
+        return False
+    if min_value is not None and value < float(min_value) - 1.0e-6:
+        return False
+    if max_value is not None and value > float(max_value) + 1.0e-6:
+        return False
+    return True
+
+
+def _optional_range_near_ok(
+    *,
+    value: float,
+    min_value: float | None,
+    max_value: float | None,
+    tolerance: float,
+) -> bool:
+    if min_value is None and max_value is None:
+        return True
+    if not np.isfinite(value):
+        return False
+    tol = max(0.0, float(tolerance))
+    if min_value is not None and value < float(min_value) - tol - 1.0e-6:
+        return False
+    if max_value is not None and value > float(max_value) + tol + 1.0e-6:
+        return False
+    return True
+
+
+__all__ = [
+    "BootstrapStatus",
+    "CarryTransitionStatus",
+    "DigTransitionStatus",
+    "PrimitiveObservationFacts",
+]

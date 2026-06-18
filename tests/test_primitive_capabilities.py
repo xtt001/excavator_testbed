@@ -19,6 +19,7 @@ from testbed.data.schema import (
 )
 from testbed.planner.primitive_capabilities import (
     BootstrapStatus,
+    CarryTransitionStatus,
     DigTransitionStatus,
     PrimitiveObservationFacts,
 )
@@ -30,10 +31,18 @@ class _BoundaryEvent:
         *,
         qualified_dig_start: bool = False,
         dig_complete: bool = False,
+        dump_committed_start: bool = False,
+        release_onset: bool = False,
+        dump_complete: bool = False,
+        dump_start: bool = False,
         metrics: dict[str, float] | None = None,
     ) -> None:
         self.qualified_dig_start = qualified_dig_start
         self.dig_complete = dig_complete
+        self.dump_committed_start = dump_committed_start
+        self.release_onset = release_onset
+        self.dump_complete = dump_complete
+        self.dump_start = dump_start
         self.metrics = metrics
 
 
@@ -303,3 +312,84 @@ def test_dig_transition_status_records_replan_and_exit_guard_without_mutation() 
 
     assert status.dig_bad_replan_ready is True
     assert status.dig_exit_guard_ready is True
+
+
+def test_carry_transition_status_records_committed_boundary_as_dump_ready() -> None:
+    facts = PrimitiveObservationFacts.from_obs({}, action_dim=4)
+
+    status = CarryTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=_BoundaryEvent(dump_committed_start=True),
+        dump_ready_hold_count=0,
+        dump_ready_hold_steps=3,
+    )
+
+    assert status.dump_committed_event is True
+    assert status.next_dump_ready_hold_count == 3
+    assert status.ready_to_dump is True
+    assert status.carry_to_dump_reason == "dump_committed_boundary"
+
+
+def test_carry_transition_status_records_semantic_release_safety() -> None:
+    facts = PrimitiveObservationFacts.from_obs(
+        {"task_metrics": {"mass_in_bucket_kg": 10.0, "deposited_mass_in_target_box_kg": 40.0}},
+        action_dim=4,
+    )
+
+    status = CarryTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=None,
+        semantic_boundary_profile_active=True,
+        coverage_cycle_start_deposit_kg=15.0,
+        dump_done_max_bucket_mass_kg=20.0,
+        dump_done_min_deposit_delta_kg=10.0,
+    )
+
+    assert status.deposit_delta_since_cycle_start_kg == 25.0
+    assert status.carry_release_safety_done is True
+    assert status.carry_to_return_reason == "carry_to_return_release_safety"
+
+
+def test_carry_transition_status_records_legacy_target_ready_hold() -> None:
+    env_state = np.zeros(64, dtype=np.float32)
+    env_state[ENV_STATE_MASS_IN_BUCKET_IDX] = 150.0
+    env_state[ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX] = 0.30
+    env_state[ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX] = 0.50
+    env_state[ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX] = 1.0
+    env_state[ENV_STATE_DUMP_CLEARANCE_OK_IDX] = 1.0
+    facts = PrimitiveObservationFacts.from_obs({"env_state": env_state}, action_dim=4)
+
+    status = CarryTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=None,
+        semantic_boundary_profile_active=False,
+        dump_ready_hold_count=1,
+        dump_ready_hold_steps=2,
+        dump_ready_min_bucket_mass_kg=100.0,
+        dump_ready_min_height_above_rim_m=0.45,
+        dump_ready_require_over_footprint=True,
+        dump_ready_require_clearance=True,
+        dump_ready_max_horizontal_distance_m=0.60,
+        dump_ready_position_mode="footprint",
+    )
+
+    assert status.dump_ready is True
+    assert status.next_dump_ready_hold_count == 2
+    assert status.ready_to_dump is True
+    assert status.carry_to_dump_reason == "target_ready"
+
+
+def test_carry_transition_status_keeps_legacy_dump_start_out_of_semantic_profile() -> None:
+    facts = PrimitiveObservationFacts.from_obs({}, action_dim=4)
+
+    status = CarryTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=_BoundaryEvent(dump_start=True),
+        semantic_boundary_profile_active=True,
+        dump_ready_hold_count=1,
+        dump_ready_hold_steps=2,
+    )
+
+    assert status.legacy_dump_start_event is False
+    assert status.next_dump_ready_hold_count == 0
+    assert status.ready_to_dump is False
