@@ -51,7 +51,6 @@ from testbed.planner.dig_cut_plan import DigCutPlanCycleApplyState, DigCutPlanSt
 from testbed.planner.dig_lifecycle import (
     DIG_LIFECYCLE_ENTRY_RUNTIME_FACT_FIELDS,
     DIG_LIFECYCLE_RUNTIME_CONFIG_KEYS,
-    DigGateDecision,
     DigLifecycleEntryRuntimeState,
     DigProgressState,
     DigTransitionRuntimeOutcome,
@@ -2690,32 +2689,29 @@ def test_ensure_return_target_plan_failure_path_writes_fallback_zero() -> None:
     assert np.isnan(policy._pending_dig_state_exemplar_distance)
 
 
-def test_dig_exit_guard_transition_does_not_call_later_gates() -> None:
+def test_dig_exit_guard_projection_preserves_reject_and_restart_reasons() -> None:
     policy = _make_policy()
     policy._skill_name = "dig"
     calls: list[str] = []
     rejected: list[str] = []
     restarted: list[str] = []
 
-    def exit_guard_ready(_obs: dict[str, np.ndarray]) -> bool:
-        calls.append("exit_guard")
-        return True
-
-    def fail_bad_replan(_obs: dict[str, np.ndarray]) -> bool:
-        raise AssertionError("bad_replan must not be checked after exit guard")
-
-    def fail_complete_low(
-        _obs: dict[str, np.ndarray],
-        _boundary_event: Any | None,
-    ) -> bool:
-        raise AssertionError("complete_low must not be checked after exit guard")
-
-    def fail_dig_to_carry(
+    def dig_transition_runtime(
         *,
         obs: dict[str, np.ndarray],
         boundary_event: Any | None,
-    ) -> DigGateDecision:
-        raise AssertionError("dig_to_carry must not be checked after exit guard")
+    ) -> DigTransitionRuntimeProjection:
+        calls.append("exit_guard")
+        return DigTransitionRuntimeProjection(
+            outcome=DigTransitionRuntimeOutcome(
+                action="failed_dig",
+                counter="exit_guard_replan",
+                failed_dig_reason="exit_overshoot_low_payload",
+                coverage_reject_reason="exit_overshoot_low_payload",
+            ),
+            exit_guard_replan_count_increment=1,
+            bad_replan_count_increment=0,
+        )
 
     def reject_corridor(_obs: dict[str, np.ndarray], *, reason: str) -> None:
         assert policy._dig_exit_guard_replan_count == 1
@@ -2727,10 +2723,7 @@ def test_dig_exit_guard_transition_does_not_call_later_gates() -> None:
         assert policy._dig_bad_replan_count == 0
         restarted.append(reason)
 
-    policy._dig_exit_guard_ready = exit_guard_ready  # type: ignore[method-assign]
-    policy._dig_bad_replan_ready = fail_bad_replan  # type: ignore[method-assign]
-    policy._dig_complete_boundary_low_payload = fail_complete_low  # type: ignore[method-assign]
-    policy._dig_to_carry_decision = fail_dig_to_carry  # type: ignore[method-assign]
+    policy._dig_transition_runtime = dig_transition_runtime  # type: ignore[method-assign]
     policy._reject_active_coverage_corridor = reject_corridor  # type: ignore[method-assign]
     policy._restart_after_failed_dig = restart_after_failed_dig  # type: ignore[method-assign]
 
@@ -2743,34 +2736,31 @@ def test_dig_exit_guard_transition_does_not_call_later_gates() -> None:
     assert restarted == ["exit_overshoot_low_payload"]
 
 
-def test_dig_complete_low_payload_preserves_reject_and_restart_reasons() -> None:
+def test_dig_complete_low_payload_projection_preserves_reject_and_restart_reasons() -> None:
     policy = _make_policy()
     policy._skill_name = "dig"
     calls: list[str] = []
     rejected: list[str] = []
     restarted: list[str] = []
 
-    def exit_guard_ready(_obs: dict[str, np.ndarray]) -> bool:
-        calls.append("exit_guard")
-        return False
-
-    def bad_replan_ready(_obs: dict[str, np.ndarray]) -> bool:
-        calls.append("bad_replan")
-        return False
-
-    def complete_low(
-        _obs: dict[str, np.ndarray],
-        _boundary_event: Any | None,
-    ) -> bool:
-        calls.append("complete_low")
-        return True
-
-    def fail_dig_to_carry(
+    def dig_transition_runtime(
         *,
         obs: dict[str, np.ndarray],
         boundary_event: Any | None,
-    ) -> DigGateDecision:
-        raise AssertionError("dig_to_carry must not be checked after complete_low")
+    ) -> DigTransitionRuntimeProjection:
+        calls.append("exit_guard")
+        calls.append("bad_replan")
+        calls.append("complete_low")
+        return DigTransitionRuntimeProjection(
+            outcome=DigTransitionRuntimeOutcome(
+                action="failed_dig",
+                counter="bad_replan",
+                failed_dig_reason="complete_low_payload",
+                coverage_reject_reason="dig_complete_low_current_payload",
+            ),
+            bad_replan_count_increment=1,
+            exit_guard_replan_count_increment=0,
+        )
 
     def reject_corridor(_obs: dict[str, np.ndarray], *, reason: str) -> None:
         assert policy._dig_exit_guard_replan_count == 0
@@ -2782,10 +2772,7 @@ def test_dig_complete_low_payload_preserves_reject_and_restart_reasons() -> None
         assert policy._dig_bad_replan_count == 1
         restarted.append(reason)
 
-    policy._dig_exit_guard_ready = exit_guard_ready  # type: ignore[method-assign]
-    policy._dig_bad_replan_ready = bad_replan_ready  # type: ignore[method-assign]
-    policy._dig_complete_boundary_low_payload = complete_low  # type: ignore[method-assign]
-    policy._dig_to_carry_decision = fail_dig_to_carry  # type: ignore[method-assign]
+    policy._dig_transition_runtime = dig_transition_runtime  # type: ignore[method-assign]
     policy._reject_active_coverage_corridor = reject_corridor  # type: ignore[method-assign]
     policy._restart_after_failed_dig = restart_after_failed_dig  # type: ignore[method-assign]
 
@@ -2885,33 +2872,28 @@ def test_dig_transition_runtime_projection_apply_facade_preserves_side_effect_or
     ]
 
 
-def test_dig_to_carry_transition_preserves_completion_order_and_reason() -> None:
+def test_dig_to_carry_projection_preserves_completion_order_and_reason() -> None:
     policy = _make_policy()
     policy._skill_name = "dig"
     events: list[str] = []
 
-    def exit_guard_ready(_obs: dict[str, np.ndarray]) -> bool:
-        events.append("exit_guard")
-        return False
-
-    def bad_replan_ready(_obs: dict[str, np.ndarray]) -> bool:
-        events.append("bad_replan")
-        return False
-
-    def complete_low(
-        _obs: dict[str, np.ndarray],
-        _boundary_event: Any | None,
-    ) -> bool:
-        events.append("complete_low")
-        return False
-
-    def dig_to_carry_decision(
+    def dig_transition_runtime(
         *,
         obs: dict[str, np.ndarray],
         boundary_event: Any | None,
-    ) -> DigGateDecision:
+    ) -> DigTransitionRuntimeProjection:
+        events.append("exit_guard")
+        events.append("bad_replan")
+        events.append("complete_low")
         events.append("dig_to_carry")
-        return DigGateDecision(True, "target_payload_loaded")
+        return DigTransitionRuntimeProjection(
+            outcome=DigTransitionRuntimeOutcome(
+                action="carry",
+                switch_reason="dig_to_carry_target_payload_loaded",
+            ),
+            dig_to_carry_checked=True,
+            dig_to_carry_reason="target_payload_loaded",
+        )
 
     def complete_cell_entry(_obs: dict[str, np.ndarray]) -> None:
         events.append("complete_cell_entry")
@@ -2919,10 +2901,7 @@ def test_dig_to_carry_transition_preserves_completion_order_and_reason() -> None
     def complete_coverage(_obs: dict[str, np.ndarray]) -> None:
         events.append("complete_coverage")
 
-    policy._dig_exit_guard_ready = exit_guard_ready  # type: ignore[method-assign]
-    policy._dig_bad_replan_ready = bad_replan_ready  # type: ignore[method-assign]
-    policy._dig_complete_boundary_low_payload = complete_low  # type: ignore[method-assign]
-    policy._dig_to_carry_decision = dig_to_carry_decision  # type: ignore[method-assign]
+    policy._dig_transition_runtime = dig_transition_runtime  # type: ignore[method-assign]
     policy._complete_cell_entry_dig = complete_cell_entry  # type: ignore[method-assign]
     policy._complete_coverage_dig = complete_coverage  # type: ignore[method-assign]
 
@@ -2938,6 +2917,7 @@ def test_dig_to_carry_transition_preserves_completion_order_and_reason() -> None
     ]
     assert policy._skill_name == "carry"
     assert policy._switch_reason == "dig_to_carry_target_payload_loaded"
+    assert policy._dig_to_carry_reason == "target_payload_loaded"
 
 
 def test_dig_progress_state_apply_updates_runtime_fields() -> None:

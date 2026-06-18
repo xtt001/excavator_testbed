@@ -7,8 +7,6 @@ from typing import Any
 import pytest
 
 from testbed.planner.dig_lifecycle import (
-    DigGateDecision,
-    DigLifecycleGateService,
     DigTransitionRuntimeOutcome,
     DigTransitionRuntimeProjection,
 )
@@ -146,28 +144,20 @@ def test_behavior_tree_return_node_uses_runtime_ports_without_shell() -> None:
 def test_behavior_tree_dig_node_uses_runtime_ports_without_shell() -> None:
     calls: list[str] = []
 
-    def exit_guard_ready(obs: dict) -> bool:
-        calls.append(f"exit_guard:{obs['step']}")
-        return False
-
-    def bad_replan_ready(obs: dict) -> bool:
-        calls.append(f"bad_replan:{obs['step']}")
-        return False
-
-    def complete_boundary_low_payload(
-        obs: dict,
-        boundary_event: Any | None,
-    ) -> bool:
-        calls.append(f"complete_low:{obs['step']}:{boundary_event is not None}")
-        return False
-
-    def dig_to_carry_decision(
+    def transition_runtime(
         *,
         obs: dict,
         boundary_event: Any | None,
-    ) -> DigGateDecision:
-        calls.append(f"dig_to_carry:{obs['step']}:{boundary_event is not None}")
-        return DigGateDecision(True, "target_payload_loaded")
+    ) -> DigTransitionRuntimeProjection:
+        calls.append(f"dig_runtime:{obs['step']}:{boundary_event is not None}")
+        return DigTransitionRuntimeProjection(
+            outcome=DigTransitionRuntimeOutcome(
+                action="carry",
+                switch_reason="dig_to_carry_target_payload_loaded",
+            ),
+            dig_to_carry_checked=True,
+            dig_to_carry_reason="target_payload_loaded",
+        )
 
     result = BehaviorTreeBackend().tick(
         PlannerTickContext(
@@ -184,24 +174,13 @@ def test_behavior_tree_dig_node_uses_runtime_ports_without_shell() -> None:
                     return_skill="return",
                 ),
                 dig_transition=PlannerDigTransitionPorts(
-                    lifecycle_gate=DigLifecycleGateService(),
-                    exit_guard_ready=exit_guard_ready,
-                    bad_replan_ready=bad_replan_ready,
-                    complete_boundary_low_payload=(
-                        complete_boundary_low_payload
-                    ),
-                    dig_to_carry_decision=dig_to_carry_decision,
+                    transition_runtime=transition_runtime,
                 ),
             ),
         )
     )
 
-    assert calls == [
-        "exit_guard:15",
-        "bad_replan:15",
-        "complete_low:15:True",
-        "dig_to_carry:15:True",
-    ]
+    assert calls == ["dig_runtime:15:True"]
     assert result.node_path == ("behavior_tree", "transition", "dig")
     assert result.status == "running"
     assert result.reason == "dig_to_carry_target_payload_loaded"
@@ -215,6 +194,8 @@ def test_behavior_tree_dig_node_uses_runtime_ports_without_shell() -> None:
         action="carry",
         switch_reason="dig_to_carry_target_payload_loaded",
     )
+    assert projection.dig_to_carry_checked is True
+    assert projection.dig_to_carry_reason == "target_payload_loaded"
     assert dict(result.diagnostics) == {
         "active_skill": "dig",
         "action": "carry",

@@ -24,7 +24,6 @@ from testbed.planner.bootstrap import (
     BootstrapTransitionDecision,
 )
 from testbed.planner.dig_lifecycle import (
-    DigGateDecision,
     DigLifecycleGateService,
     DigTransitionRuntimeOutcome,
     DigTransitionRuntimeProjection,
@@ -504,24 +503,24 @@ def test_policy_maybe_switch_skill_applies_dig_backend_projection_without_fallba
     policy._skill_name = "dig"
     applied: list[tuple[DigTransitionRuntimeProjection, dict[str, Any]]] = []
 
-    def dig_to_carry_decision(
+    def dig_transition_runtime(
         *,
         obs: dict,
         boundary_event: Any | None,
-    ) -> DigGateDecision:
-        return DigGateDecision(True, "target_payload_loaded")
+    ) -> DigTransitionRuntimeProjection:
+        return DigTransitionRuntimeProjection(
+            outcome=DigTransitionRuntimeOutcome(
+                action="carry",
+                switch_reason="dig_to_carry_target_payload_loaded",
+            ),
+            dig_to_carry_checked=True,
+            dig_to_carry_reason="target_payload_loaded",
+        )
 
     def fail_fallback(*, obs: dict, boundary_event: Any | None) -> None:
         raise AssertionError("dig should be handled by backend projection effect")
 
-    monkeypatch.setattr(policy, "_dig_exit_guard_ready", lambda obs: False)
-    monkeypatch.setattr(policy, "_dig_bad_replan_ready", lambda obs: False)
-    monkeypatch.setattr(
-        policy,
-        "_dig_complete_boundary_low_payload",
-        lambda obs, boundary_event: False,
-    )
-    monkeypatch.setattr(policy, "_dig_to_carry_decision", dig_to_carry_decision)
+    monkeypatch.setattr(policy, "_dig_transition_runtime", dig_transition_runtime)
     monkeypatch.setattr(
         policy,
         "_apply_dig_transition_runtime_projection",

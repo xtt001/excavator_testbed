@@ -6,8 +6,6 @@ from typing import Any
 import pytest
 
 from testbed.planner.dig_lifecycle import (
-    DigGateDecision,
-    DigLifecycleGateService,
     DigTransitionRuntimeOutcome,
     DigTransitionRuntimeProjection,
 )
@@ -54,31 +52,45 @@ def test_tick_context_uses_typed_backend_ports_and_rejects_services_mapping() ->
         PlannerTickContext(services={"dig_skill_name": "dig"})  # type: ignore[call-arg]
 
 
-def test_legacy_fsm_backend_dig_uses_typed_ports_preserving_gate_order() -> None:
+def test_policy_dig_port_uses_transition_runtime_provider_not_shell_gate_callbacks() -> None:
+    from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+
+    policy = PrimitivePlannerACTPolicy(
+        dig_policy=_ConstantPolicy(),
+        carry_policy=_ConstantPolicy(),
+        dump_policy=_ConstantPolicy(),
+        return_policy=_ConstantPolicy(),
+        boundary_detector=_FakeBoundaryDetector(),
+    )
+
+    context = policy._legacy_fsm_tick_context(obs={"step": 3}, boundary_event=None)
+    dig_ports = context.ports.dig_transition
+
+    assert dig_ports is not None
+    assert dig_ports.transition_runtime is not None
+    assert dig_ports.exit_guard_ready is None
+    assert dig_ports.bad_replan_ready is None
+    assert dig_ports.complete_boundary_low_payload is None
+    assert dig_ports.dig_to_carry_decision is None
+
+
+def test_legacy_fsm_backend_dig_uses_typed_transition_runtime_port() -> None:
     calls: list[str] = []
 
-    def exit_guard_ready(obs: dict) -> bool:
-        calls.append(f"exit_guard:{obs['step']}")
-        return False
-
-    def bad_replan_ready(obs: dict) -> bool:
-        calls.append(f"bad_replan:{obs['step']}")
-        return False
-
-    def complete_boundary_low_payload(
-        obs: dict,
-        boundary_event: Any | None,
-    ) -> bool:
-        calls.append(f"complete_low:{obs['step']}:{boundary_event is not None}")
-        return False
-
-    def dig_to_carry_decision(
+    def transition_runtime(
         *,
         obs: dict,
         boundary_event: Any | None,
-    ) -> DigGateDecision:
-        calls.append(f"dig_to_carry:{obs['step']}:{boundary_event is not None}")
-        return DigGateDecision(True, "target_payload_loaded")
+    ) -> DigTransitionRuntimeProjection:
+        calls.append(f"dig_runtime:{obs['step']}:{boundary_event is not None}")
+        return DigTransitionRuntimeProjection(
+            outcome=DigTransitionRuntimeOutcome(
+                action="carry",
+                switch_reason="dig_to_carry_target_payload_loaded",
+            ),
+            dig_to_carry_checked=True,
+            dig_to_carry_reason="target_payload_loaded",
+        )
 
     result = LegacyStateMachineBackend().tick(
         PlannerTickContext(
@@ -87,13 +99,7 @@ def test_legacy_fsm_backend_dig_uses_typed_ports_preserving_gate_order() -> None
             blackboard=PlannerBlackboard(current_skill="dig"),
             ports=PlannerBackendPorts(
                 dig_transition=PlannerDigTransitionPorts(
-                    lifecycle_gate=DigLifecycleGateService(),
-                    exit_guard_ready=exit_guard_ready,
-                    bad_replan_ready=bad_replan_ready,
-                    complete_boundary_low_payload=(
-                        complete_boundary_low_payload
-                    ),
-                    dig_to_carry_decision=dig_to_carry_decision,
+                    transition_runtime=transition_runtime,
                 ),
                 legacy_fsm=LegacyFsmBackendPorts(
                     skill_names=_skill_names(),
@@ -105,12 +111,7 @@ def test_legacy_fsm_backend_dig_uses_typed_ports_preserving_gate_order() -> None
     assert result.node_path == ("legacy_fsm", "transition", "dig")
     assert result.status == "running"
     assert result.reason == "dig_to_carry_target_payload_loaded"
-    assert calls == [
-        "exit_guard:15",
-        "bad_replan:15",
-        "complete_low:15:True",
-        "dig_to_carry:15:True",
-    ]
+    assert calls == ["dig_runtime:15:True"]
     effect = result.effects[0]
     assert effect.effect_type == APPLY_DIG_TRANSITION_RUNTIME_PROJECTION_EFFECT
     assert dict(effect.payload["obs"]) == {"step": 15}
@@ -120,6 +121,8 @@ def test_legacy_fsm_backend_dig_uses_typed_ports_preserving_gate_order() -> None
         action="carry",
         switch_reason="dig_to_carry_target_payload_loaded",
     )
+    assert projection.dig_to_carry_checked is True
+    assert projection.dig_to_carry_reason == "target_payload_loaded"
 
 
 def test_legacy_fsm_backend_carry_dump_use_typed_runtime_ports() -> None:
@@ -310,3 +313,21 @@ class _FakeBoundaryEvent:
 
     def __getattr__(self, name: str) -> bool:
         return bool(self.flags.get(name, False))
+
+
+class _ConstantPolicy:
+    def reset(self) -> None:
+        pass
+
+    def predict(self, obs: dict[str, Any]) -> list[float]:
+        return [0.0, 0.0, 0.0, 0.0]
+
+
+class _FakeBoundaryDetector:
+    config = type("_Config", (), {"boundary_profile": "legacy"})()
+
+    def reset(self) -> None:
+        pass
+
+    def update(self, **_kwargs: object) -> None:
+        return None

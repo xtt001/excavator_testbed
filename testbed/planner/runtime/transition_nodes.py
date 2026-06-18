@@ -30,18 +30,43 @@ def build_dig_transition_result(
     """Build a dig transition tick result without applying side effects."""
 
     obs = dict(context.obs)
-    exit_guard_ready = ports.exit_guard_ready(obs)
-    request = ports.lifecycle_gate.dig_transition_runtime_request(
+    if ports.transition_runtime is not None:
+        projection = ports.transition_runtime(
+            obs=obs,
+            boundary_event=context.boundary_event,
+        )
+        outcome = projection.outcome
+        return _dig_transition_result_from_projection(
+            active_skill=active_skill,
+            node_root=node_root,
+            obs=obs,
+            outcome=outcome,
+            projection=projection,
+        )
+
+    lifecycle_gate = _required_component(ports.lifecycle_gate, "lifecycle_gate")
+    exit_guard_ready = _required_component(
+        ports.exit_guard_ready,
+        "exit_guard_ready",
+    )(obs)
+    request = lifecycle_gate.dig_transition_runtime_request(
         exit_guard_ready=exit_guard_ready,
     )
     bad_replan_ready = False
     complete_boundary_low_payload = False
+    dig_to_carry_checked = False
     dig_to_carry_ready = False
     dig_to_carry_reason = ""
     if request.should_check_bad_replan:
-        bad_replan_ready = ports.bad_replan_ready(obs)
+        bad_replan_ready = _required_component(
+            ports.bad_replan_ready,
+            "bad_replan_ready",
+        )(obs)
     if request.should_check_complete_boundary_low_payload(bad_replan_ready):
-        complete_boundary_low_payload = ports.complete_boundary_low_payload(
+        complete_boundary_low_payload = _required_component(
+            ports.complete_boundary_low_payload,
+            "complete_boundary_low_payload",
+        )(
             obs,
             context.boundary_event,
         )
@@ -49,22 +74,48 @@ def build_dig_transition_result(
         bad_replan_ready=bad_replan_ready,
         complete_boundary_low_payload=complete_boundary_low_payload,
     ):
-        dig_to_carry_decision = ports.dig_to_carry_decision(
+        dig_to_carry_checked = True
+        dig_to_carry_decision = _required_component(
+            ports.dig_to_carry_decision,
+            "dig_to_carry_decision",
+        )(
             obs=obs,
             boundary_event=context.boundary_event,
         )
         dig_to_carry_ready = bool(dig_to_carry_decision.ready)
-        if dig_to_carry_ready:
-            dig_to_carry_reason = str(dig_to_carry_decision.reason)
-    outcome = ports.lifecycle_gate.dig_transition_runtime(
+        dig_to_carry_reason = str(dig_to_carry_decision.reason)
+    outcome = lifecycle_gate.dig_transition_runtime(
         request.facts_with_gate_results(
             bad_replan_ready=bad_replan_ready,
-            dig_to_carry_reason=dig_to_carry_reason,
+            dig_to_carry_reason=(
+                dig_to_carry_reason if dig_to_carry_ready else ""
+            ),
             complete_boundary_low_payload=complete_boundary_low_payload,
             dig_to_carry_ready=dig_to_carry_ready,
         )
     )
-    projection = ports.lifecycle_gate.dig_transition_runtime_projection(outcome)
+    projection = lifecycle_gate.dig_transition_runtime_projection(
+        outcome,
+        dig_to_carry_checked=dig_to_carry_checked,
+        dig_to_carry_reason=dig_to_carry_reason,
+    )
+    return _dig_transition_result_from_projection(
+        active_skill=active_skill,
+        node_root=node_root,
+        obs=obs,
+        outcome=outcome,
+        projection=projection,
+    )
+
+
+def _dig_transition_result_from_projection(
+    *,
+    active_skill: str,
+    node_root: str,
+    obs: dict,
+    outcome: object,
+    projection: object,
+) -> PlannerTickResult:
     return PlannerTickResult(
         node_path=(node_root, "transition", active_skill),
         status="running",
@@ -81,6 +132,12 @@ def build_dig_transition_result(
             "switch_reason": str(getattr(outcome, "switch_reason", "")),
         },
     )
+
+
+def _required_component(component: object | None, name: str) -> object:
+    if component is None:
+        raise ValueError(f"Dig transition port requires component {name!r}.")
+    return component
 
 
 def build_return_transition_result(

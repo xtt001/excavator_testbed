@@ -527,6 +527,55 @@ def build_dig_lifecycle_runtime_status_state_from_mapping(
     )
 
 
+def dig_transition_runtime_projection_from_facts(
+    *,
+    service: DigLifecycleGateService,
+    facts: DigLifecycleFacts,
+    config: DigLifecycleConfig,
+) -> DigTransitionRuntimeProjection:
+    """Evaluate dig transition gates and return a runtime projection."""
+
+    exit_guard_ready = service.exit_guard_ready(facts, config)
+    request = service.dig_transition_runtime_request(
+        exit_guard_ready=exit_guard_ready,
+    )
+    bad_replan_ready = False
+    complete_boundary_low_payload = False
+    dig_to_carry_ready = False
+    dig_to_carry_checked = False
+    dig_to_carry_reason = ""
+    if request.should_check_bad_replan:
+        bad_replan_ready = service.bad_replan_ready(facts, config)
+    if request.should_check_complete_boundary_low_payload(bad_replan_ready):
+        complete_boundary_low_payload = service.complete_boundary_low_payload(
+            facts,
+            config,
+        )
+    if request.should_check_dig_to_carry(
+        bad_replan_ready=bad_replan_ready,
+        complete_boundary_low_payload=complete_boundary_low_payload,
+    ):
+        dig_to_carry_checked = True
+        dig_to_carry_decision = service.dig_to_carry_ready(facts, config)
+        dig_to_carry_ready = bool(dig_to_carry_decision.ready)
+        dig_to_carry_reason = str(dig_to_carry_decision.reason)
+    outcome = service.dig_transition_runtime(
+        request.facts_with_gate_results(
+            bad_replan_ready=bad_replan_ready,
+            dig_to_carry_reason=(
+                dig_to_carry_reason if dig_to_carry_ready else ""
+            ),
+            complete_boundary_low_payload=complete_boundary_low_payload,
+            dig_to_carry_ready=dig_to_carry_ready,
+        )
+    )
+    return service.dig_transition_runtime_projection(
+        outcome,
+        dig_to_carry_checked=dig_to_carry_checked,
+        dig_to_carry_reason=dig_to_carry_reason,
+    )
+
+
 class DigLifecycleGateService(DigLifecycleTransitionService):
     """Evaluates dig lifecycle gates without owning scheduler state."""
 

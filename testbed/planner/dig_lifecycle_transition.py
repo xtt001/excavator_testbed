@@ -68,6 +68,8 @@ class DigTransitionRuntimeProjection:
     outcome: DigTransitionRuntimeOutcome
     bad_replan_count_increment: int = 0
     exit_guard_replan_count_increment: int = 0
+    dig_to_carry_checked: bool = False
+    dig_to_carry_reason: str = ""
 
     @property
     def should_restart_after_failed_dig(self) -> bool:
@@ -201,6 +203,9 @@ class DigLifecycleTransitionService:
     @staticmethod
     def dig_transition_runtime_projection(
         outcome: DigTransitionRuntimeOutcome,
+        *,
+        dig_to_carry_checked: bool = False,
+        dig_to_carry_reason: str = "",
     ) -> DigTransitionRuntimeProjection:
         bad_replan_increment = 0
         exit_guard_increment = 0
@@ -213,6 +218,8 @@ class DigLifecycleTransitionService:
             outcome=outcome,
             bad_replan_count_increment=bad_replan_increment,
             exit_guard_replan_count_increment=exit_guard_increment,
+            dig_to_carry_checked=bool(dig_to_carry_checked),
+            dig_to_carry_reason=str(dig_to_carry_reason),
         )
 
     @staticmethod

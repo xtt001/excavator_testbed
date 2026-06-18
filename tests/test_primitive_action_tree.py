@@ -26,6 +26,10 @@ from testbed.data.schema import (
     ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
 from testbed.planner.dig_start_alignment_outcome import PreDigAlignOutcome
+from testbed.planner.dig_lifecycle import (
+    DigTransitionRuntimeOutcome,
+    DigTransitionRuntimeProjection,
+)
 from testbed.planner.primitive_action_tree import (
     PrimitiveActionTreeRunner,
     patch_primitive_action_tree_predict,
@@ -316,8 +320,21 @@ def test_action_tree_tick_transition_matches_legacy_dig_bad_replan(
     tree_policy = _make_policy(boundary_events=[], boundary_profile="legacy")
     for policy in (legacy, tree_policy):
         policy._skill_name = "dig"
-        monkeypatch.setattr(policy, "_dig_exit_guard_ready", lambda _obs: False)
-        monkeypatch.setattr(policy, "_dig_bad_replan_ready", lambda _obs: True)
+    monkeypatch.setattr(
+        legacy,
+        "_dig_transition_runtime",
+        lambda **_kwargs: DigTransitionRuntimeProjection(
+            outcome=DigTransitionRuntimeOutcome(
+                action="failed_dig",
+                counter="bad_replan",
+                failed_dig_reason="bad_dig_low_payload",
+                coverage_reject_reason="bad_dig_low_payload",
+            ),
+            bad_replan_count_increment=1,
+        ),
+    )
+    monkeypatch.setattr(tree_policy, "_dig_exit_guard_ready", lambda _obs: False)
+    monkeypatch.setattr(tree_policy, "_dig_bad_replan_ready", lambda _obs: True)
 
     trace = _run_transition_pair(
         legacy,
@@ -339,13 +356,26 @@ def test_action_tree_tick_transition_matches_legacy_dig_complete_low_payload(
     tree_policy = _make_policy(boundary_events=[], boundary_profile="v2_4_5_spatial_mass")
     for policy in (legacy, tree_policy):
         policy._skill_name = "dig"
-        monkeypatch.setattr(policy, "_dig_exit_guard_ready", lambda _obs: False)
-        monkeypatch.setattr(policy, "_dig_bad_replan_ready", lambda _obs: False)
-        monkeypatch.setattr(
-            policy,
-            "_dig_complete_boundary_low_payload",
-            lambda _obs, _event: True,
-        )
+    monkeypatch.setattr(
+        legacy,
+        "_dig_transition_runtime",
+        lambda **_kwargs: DigTransitionRuntimeProjection(
+            outcome=DigTransitionRuntimeOutcome(
+                action="failed_dig",
+                counter="bad_replan",
+                failed_dig_reason="complete_low_payload",
+                coverage_reject_reason="dig_complete_low_current_payload",
+            ),
+            bad_replan_count_increment=1,
+        ),
+    )
+    monkeypatch.setattr(tree_policy, "_dig_exit_guard_ready", lambda _obs: False)
+    monkeypatch.setattr(tree_policy, "_dig_bad_replan_ready", lambda _obs: False)
+    monkeypatch.setattr(
+        tree_policy,
+        "_dig_complete_boundary_low_payload",
+        lambda _obs, _event: True,
+    )
 
     trace = _run_transition_pair(
         legacy,

@@ -36,6 +36,24 @@ class DigToCarryDecisionProvider(Protocol):
         """Return a dig-to-carry decision with explicit ready/reason fields."""
 
 
+class DigTransitionRuntimeProjection(Protocol):
+    outcome: Any
+    bad_replan_count_increment: int
+    exit_guard_replan_count_increment: int
+    dig_to_carry_checked: bool
+    dig_to_carry_reason: str
+
+
+class DigTransitionRuntimeProvider(Protocol):
+    def __call__(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> DigTransitionRuntimeProjection:
+        """Return the dig transition runtime projection for one tick."""
+
+
 class CarryTransitionRuntime(Protocol):
     dump_ready_hold_count: int
     outcome: Any
@@ -151,11 +169,12 @@ class LegacyFsmPreDigAlignmentPorts:
 class PlannerDigTransitionPorts:
     """Dig transition dependencies shared by planner backends."""
 
-    lifecycle_gate: Any
-    exit_guard_ready: ObservationPredicate
-    bad_replan_ready: ObservationPredicate
-    complete_boundary_low_payload: BoundaryObservationPredicate
-    dig_to_carry_decision: DigToCarryDecisionProvider
+    transition_runtime: DigTransitionRuntimeProvider | None = None
+    lifecycle_gate: Any | None = None
+    exit_guard_ready: ObservationPredicate | None = None
+    bad_replan_ready: ObservationPredicate | None = None
+    complete_boundary_low_payload: BoundaryObservationPredicate | None = None
+    dig_to_carry_decision: DigToCarryDecisionProvider | None = None
 
 
 LegacyFsmDigTransitionPorts = PlannerDigTransitionPorts
@@ -213,6 +232,8 @@ __all__ = [
     "CarryTransitionRuntimeProvider",
     "DigToCarryDecision",
     "DigToCarryDecisionProvider",
+    "DigTransitionRuntimeProjection",
+    "DigTransitionRuntimeProvider",
     "DumpTransitionRuntime",
     "DumpTransitionRuntimeProvider",
     "IntProvider",

@@ -122,6 +122,7 @@ from testbed.planner.dig_lifecycle import (
     build_dig_lifecycle_runtime_config_from_mapping,
     build_dig_lifecycle_runtime_status_state_from_mapping,
     build_failed_dig_stop_facts_from_runtime,
+    dig_transition_runtime_projection_from_facts,
 )
 from testbed.planner.dig_start_alignment import (
     DIG_START_ALIGNMENT_DEBUG_STATE_FIELDS,
@@ -1126,13 +1127,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             return_transition_runtime=self._return_transition_runtime,
         )
         dig_transition = PlannerDigTransitionPorts(
-            lifecycle_gate=self.dig_lifecycle_gate,
-            exit_guard_ready=self._dig_exit_guard_ready,
-            bad_replan_ready=self._dig_bad_replan_ready,
-            complete_boundary_low_payload=(
-                self._dig_complete_boundary_low_payload
-            ),
-            dig_to_carry_decision=self._dig_to_carry_decision,
+            transition_runtime=self._dig_transition_runtime,
         )
         dump_lifecycle = PlannerDumpLifecyclePorts(
             carry_transition_runtime=self._carry_transition_runtime,
@@ -2193,6 +2188,18 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             self._dig_lifecycle_config(),
         )
 
+    def _dig_transition_runtime(
+        self,
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> DigTransitionRuntimeProjection:
+        return dig_transition_runtime_projection_from_facts(
+            service=self.dig_lifecycle_gate,
+            facts=self._dig_lifecycle_facts(obs, boundary_event),
+            config=self._dig_lifecycle_config(),
+        )
+
     def _dig_to_carry_decision(
         self,
         *,
@@ -2664,6 +2671,10 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self._dig_bad_replan_count += int(
             projection.bad_replan_count_increment
         )
+        if bool(getattr(projection, "dig_to_carry_checked", False)):
+            self._dig_to_carry_reason = str(
+                getattr(projection, "dig_to_carry_reason", "")
+            )
         if projection.should_restart_after_failed_dig:
             self._reject_active_coverage_corridor(
                 obs,

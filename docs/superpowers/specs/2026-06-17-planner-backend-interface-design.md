@@ -1547,6 +1547,85 @@ Verification run for this slice:
 - `rg -n "legacy_fsm|primitive_action_tree|primitive_planner|policy\\._" testbed/planner/runtime/behavior_tree.py testbed/planner/runtime/transition_nodes.py`
   -> no matches.
 
+#### Phase 4 Slice 4 Dig Transition Runtime Capability 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/dig_lifecycle_transition.py`: extended
+  `DigTransitionRuntimeProjection` with explicit `dig_to_carry_checked` and
+  `dig_to_carry_reason` fields. This replaces the old hidden side effect where
+  `_dig_to_carry_decision()` wrote `_dig_to_carry_reason` while a backend tick
+  was still evaluating gates.
+- `testbed/planner/dig_lifecycle.py`: added
+  `dig_transition_runtime_projection_from_facts()`, a backend-neutral
+  capability function that owns dig transition gate order and produces a
+  runtime projection from explicit `DigLifecycleFacts` and
+  `DigLifecycleConfig`.
+- `testbed/planner/runtime/ports.py`: added
+  `DigTransitionRuntimeProvider` and changed `PlannerDigTransitionPorts` so the
+  stable preferred dependency is a single `transition_runtime` provider. The
+  previous four gate callbacks remain as a compatibility fallback only.
+- `testbed/planner/runtime/transition_nodes.py`: changed the shared dig node
+  builder to prefer `PlannerDigTransitionPorts.transition_runtime`; the legacy
+  callback path is only used for compatibility ports.
+- `testbed/policies/hybrid/primitive_planner.py`: thin adapter wiring only.
+  `_legacy_fsm_tick_context()` now wires `transition_runtime=self._dig_transition_runtime`;
+  `_dig_transition_runtime()` builds facts/config and calls the dig lifecycle
+  capability. `_apply_dig_transition_runtime_projection()` explicitly applies
+  the returned `dig_to_carry_reason` state when the gate was checked.
+- `tests/test_dig_transition_runtime_capability.py`: new focused tests for dig
+  transition gate priority and reason-state projection without constructing
+  `PrimitivePlannerACTPolicy`.
+- `tests/test_behavior_tree_backend_contract.py`,
+  `tests/test_planner_backend_ports.py`, `tests/test_legacy_fsm_backend.py`,
+  `tests/test_primitive_scheduler_facades.py`, and
+  `tests/test_primitive_action_tree.py`: updated contracts so default backend
+  wiring no longer depends on monkeypatching shell-private dig gate callbacks.
+
+Scope guardrails kept:
+
+- No default backend selection, config default, dig gate branch order, dig
+  thresholds, switch reason strings, policy reset timing, debug/trace/rollout
+  schema, or token contract changed.
+- `BehaviorTreeBackend` remains experimental and is not enabled by
+  `planner_backend` config.
+- `PrimitiveActionTreeRunner` remains the shadow-only compatibility reference.
+  It still has legacy shell callback reads for shadow parity; this slice moves
+  the runtime backend dependency first and does not promote or rewrite the
+  shadow runner.
+- Existing private shell methods such as `_dig_exit_guard_ready()` remain as
+  compatibility facades, but they are no longer the default
+  `PlannerDigTransitionPorts` dependency.
+
+Verification run for this slice:
+
+- Initial RED:
+  `python -m pytest -p no:cacheprovider -q tests/test_dig_transition_runtime_capability.py tests/test_planner_backend_ports.py`
+  -> failed with missing `dig_transition_runtime_projection_from_facts` and
+  missing `PlannerDigTransitionPorts.transition_runtime`.
+- Focused GREEN:
+  `python -m pytest -p no:cacheprovider -q tests/test_dig_transition_runtime_capability.py tests/test_planner_backend_ports.py tests/test_behavior_tree_backend_contract.py tests/test_legacy_fsm_backend.py tests/test_primitive_scheduler_facades.py tests/test_primitive_action_tree.py`
+  -> `170 passed`.
+- Dig capability/service focused regression:
+  `python -m pytest -p no:cacheprovider -q tests/test_dig_transition_runtime_capability.py tests/test_dig_lifecycle_service.py tests/test_planner_backend_ports.py tests/test_behavior_tree_backend_contract.py tests/test_legacy_fsm_backend.py tests/test_primitive_scheduler_facades.py tests/test_primitive_action_tree.py`
+  -> `200 passed`.
+- Backend/runtime/config/BT:
+  `python -m pytest -p no:cacheprovider -q tests/test_dig_transition_runtime_capability.py tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_planner_backend_config.py`
+  -> `77 passed`.
+- Golden/action-tree/facade/debug schema:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_golden_traces.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py tests/test_primitive_planner_debug_schema.py`
+  -> `168 passed`.
+- Token/data/config contract check:
+  `python -m pytest -p no:cacheprovider -q tests/test_primitive_token_contracts.py tests/test_policy_data_contracts.py tests/test_config_semantic_matrix.py`
+  -> `25 passed, 1 warning` from the existing `datetime.utcnow()`
+  deprecation in `testbed/data/dataset.py`.
+- AGX semantic dig-to-carry reason spot check:
+  `python -m pytest -p no:cacheprovider -q tests/test_agx_primitives_v2_2.py::TestPrimitivesV22::test_semantic_profile_keeps_material_liveness_dig_to_carry`
+  -> `1 passed`.
+- `python -m compileall -q testbed/planner/dig_lifecycle.py testbed/planner/dig_lifecycle_transition.py testbed/planner/runtime testbed/policies/hybrid/primitive_planner.py tests/test_dig_transition_runtime_capability.py tests/test_planner_backend_ports.py tests/test_behavior_tree_backend_contract.py tests/test_legacy_fsm_backend.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py`
+  -> no output.
+- `git diff --check` -> no whitespace errors.
+
 ### Phase 5: Default Backend Migration
 
 Once `LegacyStateMachineBackend` is behavior-identical and the adapter applies
