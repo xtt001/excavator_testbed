@@ -557,10 +557,18 @@ migrated only the 4P bootstrap branch behind the backend adapter; Phase 7.3 has
 migrated only the 4P dig branch behind the backend adapter; Phase 7.4 has
 migrated only the 4P carry branch behind the backend adapter; Phase 7.5 has
 migrated only the 4P dump branch behind the backend adapter; Phase 7.6 has
-migrated only the 4P return branch behind the backend adapter. Continue with
-Phase 7.7 by auditing the residual 4P `_maybe_switch_skill()` shell and legacy
-parking boundary after all confirmed-live mainline branches have moved to
-backend branch objects. Keep pre-dig-align in legacy parking unless explicitly
-re-approved, and do not move 5P override, direct-handoff helper internals, change
-branch order, change reason strings, or apply unrelated effects through the new
-backend boundary in the same slice.
+migrated only the 4P return branch behind the backend adapter; Phase 7.7 has
+audited the residual 4P `_maybe_switch_skill()` shell and legacy parking
+boundary. The confirmed-live mainline branches now delegate to backend branch
+objects in the original order. The remaining inline 4P branch body is
+`pre_dig_align`, which stays legacy parking because the selected successful
+evidence packet classifies `gate.pre_dig_align` as
+`dead-candidate` / `retain-legacy-parking`.
+
+Stop further Slice 7 code migration at this verified boundary unless the user
+approves a new scope. Valid next scopes are a legacy pre-dig parking extraction,
+5P compatibility audit, direct-handoff helper extraction, or backend selection
+cleanup. Do not move `pre_dig_align`, the 5P override, direct-handoff helper
+internals, change branch order, change reason strings, or apply unrelated
+effects through the backend boundary without that separate evidence and
+compatibility decision.

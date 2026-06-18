@@ -1855,3 +1855,40 @@ Each completed refactor round should append:
   branch objects. Do not migrate `pre_dig_align`, 5P override, direct-handoff
   helper internals, or alternate backend behavior without a separate evidence
   and compatibility decision.
+
+### 2026-06-19 Phase 7.7 Residual FSM Shell Audit
+
+- Scope: audit and documentation only. No planner runtime code, tests, default
+  config, branch order, reason string, token schema, debug schema, rollout
+  summary schema, policy reset timing, 5P override, or `pre_dig_align` behavior
+  was changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `7cc74f3ee6cad3a5496cc7b724d084e76d823a2e`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Audit result:
+  - The 4P `_maybe_switch_skill()` shell now delegates the confirmed-live
+    mainline branches to backend branch objects in the original order:
+    bootstrap, dig, carry, dump, and return.
+  - The only remaining inline 4P branch body is `pre_dig_align`. The selected
+    successful evidence packet classifies `gate.pre_dig_align` as
+    `dead-candidate` / `retain-legacy-parking`, so it must not be promoted into
+    the mainline backend without explicit re-approval.
+  - The 5P compatibility override and direct-handoff helper internals remain
+    compatibility/helper owners. Moving them now would mix responsibility chains
+    or create a pass-through abstraction.
+- Completion decision: stop code migration for Slice 7 at the last verified
+  mainline branch commit. Further planner code movement needs a separate user
+  decision for one of these scopes: legacy pre-dig parking extraction, 5P
+  compatibility audit, direct-handoff helper extraction, or backend selection
+  cleanup.
+- Verification completed during this audit round:
+  - `git diff --check` completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract` completed
+    with no output.
+  - `python scripts/planner_refactor_guard.py --check-skill-contract` completed
+    with no output.
+- Next action: prepare a handoff manifest from committed Phase 4 through Phase 7
+  work. Do not migrate `pre_dig_align`, the 5P override, direct-handoff helper
+  internals, or alternate backend behavior without a new evidence and
+  compatibility decision.
