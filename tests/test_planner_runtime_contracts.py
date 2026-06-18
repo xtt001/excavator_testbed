@@ -46,6 +46,45 @@ def test_planner_blackboard_is_immutable_and_hashable_snapshot() -> None:
         blackboard.current_skill = "return"  # type: ignore[misc]
 
 
+def test_planner_blackboard_updates_return_new_lifecycle_snapshots() -> None:
+    blackboard = PlannerBlackboard(
+        current_skill="return",
+        switch_reason="before",
+        cycle_index=4,
+        completed_transition_count=2,
+        transition_timeout_count=1,
+    )
+
+    skill = blackboard.with_skill("dig", "return_to_dig_ready")
+    reason = blackboard.with_switch_reason("cleared")
+    timeout = blackboard.with_transition_timeout_increment()
+    transition = blackboard.with_return_transition_counts(
+        completed_increment=3,
+        cycle_increment=5,
+    )
+
+    assert blackboard == PlannerBlackboard(
+        current_skill="return",
+        switch_reason="before",
+        cycle_index=4,
+        completed_transition_count=2,
+        transition_timeout_count=1,
+    )
+    assert skill == PlannerBlackboard(
+        current_skill="dig",
+        switch_reason="return_to_dig_ready",
+        cycle_index=4,
+        completed_transition_count=2,
+        transition_timeout_count=1,
+    )
+    assert reason.switch_reason == "cleared"
+    assert reason.current_skill == "return"
+    assert timeout.transition_timeout_count == 2
+    assert timeout.cycle_index == 4
+    assert transition.completed_transition_count == 5
+    assert transition.cycle_index == 9
+
+
 def test_tick_context_references_coverage_state_without_copying() -> None:
     coverage_state = CoverageServiceState(active_corridor_id=7)
     blackboard = PlannerBlackboard(current_skill="dig")

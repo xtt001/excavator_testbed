@@ -497,6 +497,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         )
         self.coverage_service = self._create_coverage_service()
         self._validate_dig_cut_planner_config()
+        self._planner_blackboard = PlannerBlackboard()
         self.reset()
 
     def reset(self) -> None:
@@ -511,23 +512,23 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                 or self._scripted_bootstrap_enabled()
             )
         )
-        self._skill_name = (
+        initial_skill_name = (
             BOOTSTRAP_SKILL_NAME
             if has_bootstrap
             else PRE_DIG_ALIGN_SKILL_NAME
             if self._should_pre_dig_align_before_dig()
             else "dig"
         )
+        self._planner_blackboard = PlannerBlackboard(
+            current_skill=initial_skill_name,
+            switch_reason="reset",
+        )
         self._prev_action: np.ndarray | None = None
-        self._switch_reason = "reset"
         self._reset_dump_lifecycle_runtime()
         self._return_step_count = 0
         self._reset_bootstrap_runtime()
         self._reset_pre_dig_align_runtime()
         self._reset_dig_lifecycle_runtime()
-        self._completed_transition_count = 0
-        self._transition_timeout_count = 0
-        self._cycle_index = 0
         self._reset_cell_entry_runtime()
         self._reset_dig_cut_runtime()
         self._reset_dig_depth_profile_runtime()
@@ -537,6 +538,70 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             transition_timeout=False,
             transition_completed=False,
         )
+
+    def _planner_lifecycle_blackboard(self) -> PlannerBlackboard:
+        blackboard = getattr(self, "_planner_blackboard", None)
+        if isinstance(blackboard, PlannerBlackboard):
+            return blackboard
+        blackboard = PlannerBlackboard()
+        self._planner_blackboard = blackboard
+        return blackboard
+
+    def _replace_planner_lifecycle_state(self, **updates: object) -> None:
+        blackboard = self._planner_lifecycle_blackboard()
+        self._planner_blackboard = PlannerBlackboard(
+            current_skill=updates.get("current_skill", blackboard.current_skill),
+            switch_reason=updates.get("switch_reason", blackboard.switch_reason),
+            cycle_index=updates.get("cycle_index", blackboard.cycle_index),
+            completed_transition_count=updates.get(
+                "completed_transition_count",
+                blackboard.completed_transition_count,
+            ),
+            transition_timeout_count=updates.get(
+                "transition_timeout_count",
+                blackboard.transition_timeout_count,
+            ),
+        )
+
+    @property
+    def _skill_name(self) -> str:
+        return self._planner_lifecycle_blackboard().current_skill
+
+    @_skill_name.setter
+    def _skill_name(self, value: object) -> None:
+        self._replace_planner_lifecycle_state(current_skill=value)
+
+    @property
+    def _switch_reason(self) -> str:
+        return self._planner_lifecycle_blackboard().switch_reason
+
+    @_switch_reason.setter
+    def _switch_reason(self, value: object) -> None:
+        self._replace_planner_lifecycle_state(switch_reason=value)
+
+    @property
+    def _cycle_index(self) -> int:
+        return self._planner_lifecycle_blackboard().cycle_index
+
+    @_cycle_index.setter
+    def _cycle_index(self, value: object) -> None:
+        self._replace_planner_lifecycle_state(cycle_index=value)
+
+    @property
+    def _completed_transition_count(self) -> int:
+        return self._planner_lifecycle_blackboard().completed_transition_count
+
+    @_completed_transition_count.setter
+    def _completed_transition_count(self, value: object) -> None:
+        self._replace_planner_lifecycle_state(completed_transition_count=value)
+
+    @property
+    def _transition_timeout_count(self) -> int:
+        return self._planner_lifecycle_blackboard().transition_timeout_count
+
+    @_transition_timeout_count.setter
+    def _transition_timeout_count(self, value: object) -> None:
+        self._replace_planner_lifecycle_state(transition_timeout_count=value)
 
     def predict(self, obs: dict) -> np.ndarray:
         boundary_event = None
@@ -551,7 +616,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                 task_metrics=detector_facts.task_metrics,
             )
 
-        self._switch_reason = ""
+        self._planner_blackboard = self._planner_blackboard.with_switch_reason("")
         transition_timeout = False
         transition_completed = False
         if self._skill_name == "dig":
@@ -562,7 +627,9 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             self._return_step_count += 1
             if self.return_max_steps > 0 and self._return_step_count >= self.return_max_steps:
                 transition_timeout = True
-                self._transition_timeout_count += 1
+                self._planner_blackboard = (
+                    self._planner_blackboard.with_transition_timeout_increment()
+                )
 
         if self._skill_name == BOOTSTRAP_SKILL_NAME and self._scripted_bootstrap_enabled():
             action = self._scripted_bootstrap_action(obs)
@@ -620,13 +687,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             obs=obs,
             boundary_event=boundary_event,
             coverage_state=self.coverage_service.state,
-            blackboard=PlannerBlackboard(
-                current_skill=self._skill_name,
-                switch_reason=self._switch_reason,
-                cycle_index=self._cycle_index,
-                completed_transition_count=self._completed_transition_count,
-                transition_timeout_count=self._transition_timeout_count,
-            ),
+            blackboard=self._planner_lifecycle_blackboard(),
             services={
                 "bootstrap_skill_name": BOOTSTRAP_SKILL_NAME,
                 "bootstrap_service": self.bootstrap_service,
@@ -776,8 +837,11 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
     def _set_skill(self, skill_name: str, reason: str) -> None:
         if skill_name == self._skill_name:
             return
-        self._skill_name = str(skill_name)
-        self._switch_reason = str(reason)
+        skill_name = str(skill_name)
+        self._planner_blackboard = self._planner_blackboard.with_skill(
+            skill_name,
+            reason,
+        )
         if skill_name != PRE_DIG_ALIGN_SKILL_NAME:
             self._active_policy().reset()
         if skill_name == "carry":
@@ -798,8 +862,10 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             self._clear_dig_cut_plan()
 
     def _restart_pre_dig_align(self, reason: str) -> None:
-        self._skill_name = PRE_DIG_ALIGN_SKILL_NAME
-        self._switch_reason = str(reason)
+        self._planner_blackboard = self._planner_blackboard.with_skill(
+            PRE_DIG_ALIGN_SKILL_NAME,
+            reason,
+        )
         self._apply_pre_dig_align_restart_runtime_state()
         self._reset_dig_entry_runtime()
         self._coverage_active_corridor_id = -1
@@ -840,8 +906,10 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         return True
 
     def _restart_dig_with_new_cut(self, reason: str) -> None:
-        self._skill_name = "dig"
-        self._switch_reason = str(reason)
+        self._planner_blackboard = self._planner_blackboard.with_skill(
+            "dig",
+            reason,
+        )
         self._active_policy().reset()
         self._reset_dig_entry_runtime()
         self._coverage_active_corridor_id = -1
@@ -879,7 +947,9 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         obs: dict,
         corridor: Any | None,
     ) -> None:
-        self._switch_reason = str(state.switch_reason)
+        self._planner_blackboard = self._planner_blackboard.with_switch_reason(
+            state.switch_reason
+        )
         self._record_coverage_decision_event(
             state.coverage_event,
             obs=obs,
@@ -2182,10 +2252,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             self._return_next_dig_event_seen = bool(projection.next_dig_event_seen)
         if not projection.should_transition:
             return False
-        self._completed_transition_count += int(
-            projection.completed_transition_increment
+        self._planner_blackboard = (
+            self._planner_blackboard.with_return_transition_counts(
+                completed_increment=projection.completed_transition_increment,
+                cycle_increment=projection.cycle_index_increment,
+            )
         )
-        self._cycle_index += int(projection.cycle_index_increment)
         return True
 
     def _apply_return_to_dig_transition_runtime(

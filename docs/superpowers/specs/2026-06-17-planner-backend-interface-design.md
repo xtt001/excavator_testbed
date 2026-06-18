@@ -251,6 +251,60 @@ Verification run for this cleanup:
 - `python -m pytest -p no:cacheprovider -q tests/test_planner_golden_traces.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py`
   -> `141 passed`.
 
+#### PlannerBlackboard Lifecycle Ownership Record 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/runtime/blackboard.py`: added immutable update methods for
+  planner lifecycle state: `with_skill()`, `with_switch_reason()`,
+  `with_transition_timeout_increment()`, and
+  `with_return_transition_counts()`.
+- `testbed/policies/hybrid/primitive_planner.py`: made
+  `self._planner_blackboard` the canonical owner for active skill, switch
+  reason, primitive cycle index, completed transition count, and transition
+  timeout count. The previous private fields remain as property shims for tests,
+  diagnostics, and compatibility callers.
+- `PrimitivePlannerACTPolicy.reset()`, `predict()`, `_set_skill()`,
+  `_restart_pre_dig_align()`, `_restart_dig_with_new_cut()`,
+  `_apply_failed_dig_stop_state()`, and
+  `_apply_return_to_dig_transition_runtime_projection()` now update lifecycle
+  state through `PlannerBlackboard` snapshots.
+- `PrimitivePlannerACTPolicy._legacy_fsm_tick_context()` now passes the
+  canonical `self._planner_blackboard` into `PlannerTickContext` instead of
+  constructing a per-tick shadow copy.
+- `tests/test_planner_runtime_contracts.py` and
+  `tests/test_legacy_fsm_backend.py`: added tests for blackboard update methods,
+  old private-field compatibility shims, reset initialization, and context
+  identity with the canonical blackboard.
+
+Scope guardrails kept:
+
+- No `_maybe_switch_skill()` branch order, thresholds, reason strings, policy
+  reset timing, token source, debug schema, rollout schema, default backend
+  behavior, or behavior-tree wiring changed.
+- No coverage state, dig/dump/return runtime state, token flags, pending
+  dig-cut state, return-target state, depth-profile state, metadata, or
+  diagnostics were moved into `PlannerBlackboard`.
+- `PrimitivePlannerACTPolicy` remains the adapter, compatibility owner,
+  low-level policy dispatch owner, and runtime effect applier.
+- `planner_backend` remains the canonical config key; the removed
+  `primitive_scheduler_runner` key remains rejected.
+
+Verification run for this ownership pass:
+
+- Initial RED:
+  `python -m pytest -q tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py`
+  failed because `PlannerBlackboard` had no lifecycle update methods and the
+  policy private fields still owned the lifecycle values.
+- `python -m pytest -q tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py`
+  -> `29 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py`
+  -> `45 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_planner_golden_traces.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py`
+  -> `141 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_primitive_planner_debug_schema.py`
+  -> `26 passed`.
+
 ### Phase 2: Coverage As First Blackboard Domain
 
 Use the recent coverage dig-cut activation work as the first state-domain

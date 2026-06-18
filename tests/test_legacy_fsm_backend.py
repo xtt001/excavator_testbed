@@ -525,6 +525,79 @@ def test_policy_maybe_switch_skill_applies_legacy_backend_effect(
     assert calls == [({"step": 7}, boundary_event)]
 
 
+def test_policy_lifecycle_private_fields_are_blackboard_shims() -> None:
+    policy = _make_policy()
+    policy._planner_blackboard = PlannerBlackboard(
+        current_skill="carry",
+        switch_reason="from_blackboard",
+        cycle_index=4,
+        completed_transition_count=3,
+        transition_timeout_count=2,
+    )
+
+    assert policy._skill_name == "carry"
+    assert policy._switch_reason == "from_blackboard"
+    assert policy._cycle_index == 4
+    assert policy._completed_transition_count == 3
+    assert policy._transition_timeout_count == 2
+
+    policy._skill_name = "return"
+    policy._switch_reason = "unit_reason"
+    policy._cycle_index = np.int64(7)
+    policy._completed_transition_count = np.int64(5)
+    policy._transition_timeout_count = np.int64(6)
+
+    assert policy._planner_blackboard == PlannerBlackboard(
+        current_skill="return",
+        switch_reason="unit_reason",
+        cycle_index=7,
+        completed_transition_count=5,
+        transition_timeout_count=6,
+    )
+
+
+def test_policy_tick_context_uses_canonical_planner_blackboard() -> None:
+    policy = _make_policy()
+    policy._planner_blackboard = PlannerBlackboard(
+        current_skill="dump",
+        switch_reason="unit_reason",
+        cycle_index=8,
+        completed_transition_count=3,
+        transition_timeout_count=1,
+    )
+
+    context = policy._legacy_fsm_tick_context(
+        obs={"step": 10},
+        boundary_event=_FakeBoundaryEvent(dump_complete=True),
+    )
+
+    assert context.blackboard is policy._planner_blackboard
+    assert context.blackboard.current_skill == "dump"
+    assert context.blackboard.switch_reason == "unit_reason"
+    assert context.coverage_state is policy.coverage_service.state
+
+
+def test_policy_reset_initializes_planner_blackboard_lifecycle_state() -> None:
+    policy = _make_policy()
+    policy._planner_blackboard = PlannerBlackboard(
+        current_skill="return",
+        switch_reason="stale",
+        cycle_index=99,
+        completed_transition_count=88,
+        transition_timeout_count=77,
+    )
+
+    policy.reset()
+
+    assert policy._planner_blackboard == PlannerBlackboard(
+        current_skill=policy._skill_name,
+        switch_reason="reset",
+        cycle_index=0,
+        completed_transition_count=0,
+        transition_timeout_count=0,
+    )
+
+
 def test_policy_maybe_switch_skill_applies_bootstrap_backend_decision_without_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

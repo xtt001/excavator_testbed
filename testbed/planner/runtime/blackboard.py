@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,4 +28,46 @@ class PlannerBlackboard:
             self,
             "transition_timeout_count",
             int(self.transition_timeout_count),
+        )
+
+    def with_skill(
+        self,
+        skill_name: object,
+        switch_reason: object,
+    ) -> PlannerBlackboard:
+        """Return a blackboard snapshot after switching active skill."""
+
+        return replace(
+            self,
+            current_skill=str(skill_name),
+            switch_reason=str(switch_reason),
+        )
+
+    def with_switch_reason(self, reason: object) -> PlannerBlackboard:
+        """Return a blackboard snapshot with an updated switch reason."""
+
+        return replace(self, switch_reason=str(reason))
+
+    def with_transition_timeout_increment(self) -> PlannerBlackboard:
+        """Return a blackboard snapshot after recording one timeout."""
+
+        return replace(
+            self,
+            transition_timeout_count=self.transition_timeout_count + 1,
+        )
+
+    def with_return_transition_counts(
+        self,
+        *,
+        completed_increment: object,
+        cycle_increment: object,
+    ) -> PlannerBlackboard:
+        """Return a snapshot after applying return-to-dig transition counters."""
+
+        return replace(
+            self,
+            completed_transition_count=(
+                self.completed_transition_count + int(completed_increment)
+            ),
+            cycle_index=self.cycle_index + int(cycle_increment),
         )
