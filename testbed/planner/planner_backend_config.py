@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from testbed.planner.runtime import PlannerBackend
@@ -21,6 +22,31 @@ _BACKEND_ALIASES = {
     "action_tree": ACTION_TREE_SHADOW_BACKEND,
     "action_tree_shadow": ACTION_TREE_SHADOW_BACKEND,
 }
+
+
+@dataclass(frozen=True, slots=True)
+class PlannerBackendSelection:
+    """Resolved planner backend execution path for eval/runtime wiring."""
+
+    name: str
+    uses_runtime_backend: bool
+    uses_shadow_adapter: bool
+
+
+def _selection_from_normalized_backend(normalized: str) -> PlannerBackendSelection:
+    if normalized == LEGACY_FSM_BACKEND:
+        return PlannerBackendSelection(
+            name=normalized,
+            uses_runtime_backend=True,
+            uses_shadow_adapter=False,
+        )
+    if normalized == ACTION_TREE_SHADOW_BACKEND:
+        return PlannerBackendSelection(
+            name=normalized,
+            uses_runtime_backend=False,
+            uses_shadow_adapter=True,
+        )
+    raise ValueError(f"Unsupported {PLANNER_BACKEND_CONFIG_KEY} {normalized!r}.")
 
 
 def _reject_removed_runner_key(mapping: Mapping[str, Any]) -> None:
@@ -55,14 +81,24 @@ def normalize_planner_backend(
     return aliases[key]
 
 
+def planner_backend_selection_from_policy_config(
+    policy_cfg: Mapping[str, Any],
+) -> PlannerBackendSelection:
+    """Resolve planner backend config into an execution path selection."""
+
+    cfg = dict(policy_cfg)
+    _reject_removed_runner_key(cfg)
+    return _selection_from_normalized_backend(
+        normalize_planner_backend(cfg.get(PLANNER_BACKEND_CONFIG_KEY))
+    )
+
+
 def planner_backend_from_policy_config(
     policy_cfg: Mapping[str, Any],
 ) -> str:
     """Read the planner backend from policy config."""
 
-    cfg = dict(policy_cfg)
-    _reject_removed_runner_key(cfg)
-    return normalize_planner_backend(cfg.get(PLANNER_BACKEND_CONFIG_KEY))
+    return planner_backend_selection_from_policy_config(policy_cfg).name
 
 
 def planner_backend_from_metadata(
@@ -88,9 +124,10 @@ def apply_planner_backend(
 ) -> str:
     """Apply a planner backend selection to one policy instance."""
 
-    normalized = normalize_planner_backend(backend)
+    selection = _selection_from_normalized_backend(normalize_planner_backend(backend))
+    normalized = selection.name
     setattr(policy, "_planner_backend", normalized)
-    if normalized == LEGACY_FSM_BACKEND:
+    if selection.uses_runtime_backend:
         return normalized
 
     policy_class_name = str(policy_class).strip().upper()
@@ -115,8 +152,8 @@ def apply_planner_backend(
 def make_planner_backend(backend: object = None) -> PlannerBackend:
     """Create a runtime planner backend for supported backend names."""
 
-    normalized = normalize_planner_backend(backend)
-    if normalized == ACTION_TREE_SHADOW_BACKEND:
+    selection = _selection_from_normalized_backend(normalize_planner_backend(backend))
+    if selection.uses_shadow_adapter:
         raise ValueError(
             "planner_backend=action_tree_shadow is a shadow adapter, not a "
             "runtime backend; use apply_planner_backend for the opt-in shadow "

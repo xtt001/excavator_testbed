@@ -876,6 +876,47 @@ Verification run for this pre-slice:
   -> no output.
 - `git diff --check` -> no whitespace errors.
 
+#### Phase 5 Selection Cleanup Record 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/planner_backend_config.py`: added
+  `PlannerBackendSelection` and
+  `planner_backend_selection_from_policy_config()` so eval/runtime selection
+  can explicitly distinguish runtime backends from shadow adapters while the
+  existing string-returning API remains the compatibility surface.
+- `tests/test_planner_backend_config.py`: added focused tests for the default
+  legacy runtime selection, action-tree shadow adapter selection, selection
+  immutability/hashability, and preservation of the existing string API.
+
+Scope guardrails kept:
+
+- Default backend remains `legacy_fsm`.
+- `planner_backend_from_policy_config()` still returns the canonical backend
+  string for existing eval/runtime metadata callers.
+- `action_tree_shadow` remains the opt-in shadow adapter path and is still
+  rejected by `make_planner_backend()`.
+- `BehaviorTreeBackend` remains fail-closed and is not enabled by config.
+- No `_eval.py`, `_maybe_switch_skill()` branch order, thresholds, reason
+  strings, policy reset timing, debug/rollout schema, token contract, or
+  planner behavior changed.
+
+Verification run for this cleanup:
+
+- Initial RED:
+  `python -m pytest -q tests/test_planner_backend_config.py` failed during
+  collection because `PlannerBackendSelection` did not exist yet.
+- `python -m pytest -q tests/test_planner_backend_config.py` -> `17 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_config.py tests/test_primitive_action_tree.py tests/test_planner_runtime_contracts.py tests/test_behavior_tree_backend_contract.py`
+  -> `43 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_agx_repoa_integration.py::RepoAAgxIntegrationTests::test_eval_policy_uses_agx_and_success_config tests/test_agx_repoa_integration.py::RepoAAgxIntegrationTests::test_experiment_record_collects_train_eval_and_qc_artifacts`
+  -> `2 passed, 2 warnings` from existing `datetime.utcnow()` deprecations.
+- `python -m pytest -p no:cacheprovider -q tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_planner_golden_traces.py`
+  -> `35 passed`.
+- `python -m compileall -q testbed/planner/planner_backend_config.py tests/test_planner_backend_config.py`
+  -> no output.
+- `git diff --check` -> no whitespace errors.
+
 ## Testing Strategy
 
 Use layered tests in this order:

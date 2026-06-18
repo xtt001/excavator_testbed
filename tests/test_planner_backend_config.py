@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 import importlib
 
 import pytest
@@ -8,13 +9,49 @@ from testbed.planner.planner_backend_config import (
     ACTION_TREE_SHADOW_BACKEND,
     LEGACY_FSM_BACKEND,
     NOT_APPLICABLE_BACKEND,
+    PlannerBackendSelection,
     apply_planner_backend,
     make_planner_backend,
     normalize_planner_backend,
     planner_backend_from_metadata,
     planner_backend_from_policy_config,
+    planner_backend_selection_from_policy_config,
 )
 from testbed.planner.runtime import LegacyStateMachineBackend, PlannerBackend
+
+
+def test_planner_backend_selection_defaults_to_legacy_runtime_backend() -> None:
+    selection = planner_backend_selection_from_policy_config({})
+
+    assert selection == PlannerBackendSelection(
+        name=LEGACY_FSM_BACKEND,
+        uses_runtime_backend=True,
+        uses_shadow_adapter=False,
+    )
+    assert hash(selection) == hash(
+        PlannerBackendSelection(
+            name=LEGACY_FSM_BACKEND,
+            uses_runtime_backend=True,
+            uses_shadow_adapter=False,
+        )
+    )
+
+
+def test_planner_backend_selection_marks_action_tree_as_shadow_adapter() -> None:
+    selection = planner_backend_selection_from_policy_config(
+        {"planner_backend": "action_tree"}
+    )
+
+    assert selection.name == ACTION_TREE_SHADOW_BACKEND
+    assert selection.uses_shadow_adapter is True
+    assert selection.uses_runtime_backend is False
+
+
+def test_planner_backend_selection_is_immutable() -> None:
+    selection = planner_backend_selection_from_policy_config({})
+
+    with pytest.raises(FrozenInstanceError):
+        selection.name = ACTION_TREE_SHADOW_BACKEND  # type: ignore[misc]
 
 
 def test_planner_backend_policy_config_defaults_to_legacy() -> None:
