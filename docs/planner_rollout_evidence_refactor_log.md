@@ -1619,7 +1619,60 @@ Each completed refactor round should append:
   - `python scripts/planner_refactor_guard.py --check-plan-contract`,
     `python scripts/planner_refactor_guard.py --check-skill-contract`, and
     `git diff --check` completed with no output.
-- Next action: Phase 7.3 may migrate exactly one additional legacy FSM branch
-  chain behind the backend adapter, likely the 4P pre-dig-align branch. Do not
-  move dig/carry/dump/return branches, change branch order, or change reason
+- Next action: Phase 7.3 may migrate exactly one additional mainline legacy FSM
+  branch chain behind the backend adapter, starting with the 4P dig branch.
+  Keep pre-dig-align in legacy parking unless explicitly re-approved. Do not
+  move carry/dump/return branches, change branch order, or change reason
   strings in the same commit.
+
+### 2026-06-19 Phase 7.3 Legacy FSM Dig Branch
+
+- Scope: migrated the 4P legacy FSM `dig` branch only. No 5P override,
+  pre-dig-align legacy parking branch, carry, dump, return, direct-handoff
+  branch body, branch order, reason string, threshold, backend selection,
+  runtime package, behavior tree, VLM/LLM packet, token schema, debug schema,
+  rollout summary schema, or policy reset timing was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `4f5472b6a6a1802d1967cc0225ffad5628bd14cf`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 3 focused tests remained the compatibility baseline:
+    `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; the
+    golden-window parity contract locks public tick/report behavior.
+  - The migrated branch is mainline `dig`, not the legacy parked
+    `pre_dig_align` branch. The pre-dig-align branch stays in the shell unless
+    explicitly re-approved.
+- Extended `testbed/planner/primitive_backend.py` with `LegacyFSMDigConfig` and
+  `LegacyFSMDigBranch`. The branch object receives explicit callbacks and owns
+  the original `dig` branch order: exit guard, bad-dig replan, complete-boundary
+  low-payload replan, then dig-to-carry handoff.
+- Updated the 4P `PrimitivePlannerACTPolicy._maybe_switch_skill()` `dig` check
+  to delegate to `self._legacy_fsm_dig_branch().maybe_handle(...)`. Existing
+  callbacks still apply legacy side effects, so reason strings and reset timing
+  stay unchanged.
+- Extended `tests/test_primitive_backend.py` with direct dig branch coverage for
+  the dig-to-carry path and non-dig no-op path. The TDD red test failed with
+  `ImportError` before the backend dig branch classes were implemented.
+- Old code parked/reclassified: carry, dump, return, direct-handoff,
+  pre-dig-align, 5P override, backend selection, and alternate backend behavior
+  remain legacy source-of-truth until later slices.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_decision_contract.py tests/test_agx_primitives_v2_2.py -k "dig_to_carry or bad_dig_replans or dig_exit_guard or complete_low_payload or first_dig_policy_for_cycle_zero"`
+    returned `9 passed, 119 deselected`.
+  - `python -m pytest -q tests/test_primitive_execution_template.py tests/test_planner_current_code_parity.py`
+    returned `5 passed`.
+  - `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_runtime.py tests/test_primitive_coverage_updates.py tests/test_primitive_coverage_selection.py tests/test_primitive_coverage_candidates.py tests/test_primitive_return_start_envelope_token_planner.py tests/test_primitive_return_relocate_token_planner.py tests/test_primitive_return_target_token_planner.py tests/test_primitive_dig_depth_profile_token_planner.py tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_goal_token_provider.py tests/test_primitive_token_status.py tests/test_primitive_coverage_status.py tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `73 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_backend.py testbed/policies/hybrid/primitive_planner.py tests/test_primitive_backend.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 7.4 may migrate exactly one additional mainline legacy FSM
+  branch chain, likely the 4P carry branch. Do not move dump/return branches,
+  direct-handoff helpers, pre-dig-align, 5P override, change branch order, or
+  change reason strings in the same commit.

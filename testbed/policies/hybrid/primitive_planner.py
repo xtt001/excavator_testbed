@@ -66,6 +66,8 @@ from testbed.planner.primitive_backend import (
     LegacyFSMBackendAdapter,
     LegacyFSMBootstrapBranch,
     LegacyFSMBootstrapConfig,
+    LegacyFSMDigBranch,
+    LegacyFSMDigConfig,
 )
 from testbed.planner.primitive_coverage import (
     CoverageCandidateBuilder,
@@ -1053,6 +1055,32 @@ class PrimitivePlannerACTPolicy(Policy):
             set_skill=self._set_skill,
         )
 
+    def _legacy_fsm_dig_branch(self) -> LegacyFSMDigBranch:
+        return LegacyFSMDigBranch(
+            config=LegacyFSMDigConfig(dig_skill_name="dig"),
+            current_skill_name=lambda: str(self._skill_name),
+            dig_exit_guard_ready=self._dig_exit_guard_ready,
+            increment_dig_exit_guard_replan_count=(
+                self._increment_dig_exit_guard_replan_count
+            ),
+            reject_active_coverage_corridor=self._reject_active_coverage_corridor,
+            restart_after_failed_dig=self._restart_after_failed_dig,
+            dig_bad_replan_ready=self._dig_bad_replan_ready,
+            increment_dig_bad_replan_count=self._increment_dig_bad_replan_count,
+            dig_complete_boundary_low_payload=self._dig_complete_boundary_low_payload,
+            dig_to_carry_ready=self._dig_to_carry_ready,
+            complete_cell_entry_dig=self._complete_cell_entry_dig,
+            complete_coverage_dig=self._complete_coverage_dig,
+            dig_to_carry_reason=lambda: str(self._dig_to_carry_reason),
+            set_skill=self._set_skill,
+        )
+
+    def _increment_dig_exit_guard_replan_count(self) -> None:
+        self._dig_exit_guard_replan_count += 1
+
+    def _increment_dig_bad_replan_count(self) -> None:
+        self._dig_bad_replan_count += 1
+
     def _tick_execution_hooks(self) -> PrimitiveTickCallbacks:
         return PrimitiveTickCallbacks(
             update_boundary_event=self._tick_boundary_event,
@@ -1651,39 +1679,10 @@ class PrimitivePlannerACTPolicy(Policy):
                         self._restart_pre_dig_align("pre_dig_align_retry_entry_gap")
             return
 
-        if self._skill_name == "dig":
-            if self._dig_exit_guard_ready(obs):
-                self._dig_exit_guard_replan_count += 1
-                self._reject_active_coverage_corridor(
-                    obs,
-                    reason="exit_overshoot_low_payload",
-                )
-                self._restart_after_failed_dig(
-                    "exit_overshoot_low_payload",
-                    obs,
-                )
-                return
-            if self._dig_bad_replan_ready(obs):
-                self._dig_bad_replan_count += 1
-                self._reject_active_coverage_corridor(
-                    obs,
-                    reason="bad_dig_low_payload",
-                )
-                self._restart_after_failed_dig("bad_dig_low_payload", obs)
-                return
-            if self._dig_complete_boundary_low_payload(obs, boundary_event):
-                self._dig_bad_replan_count += 1
-                self._reject_active_coverage_corridor(
-                    obs,
-                    reason="dig_complete_low_current_payload",
-                )
-                self._restart_after_failed_dig("complete_low_payload", obs)
-                return
-            if self._dig_to_carry_ready(obs=obs, boundary_event=boundary_event):
-                self._complete_cell_entry_dig(obs)
-                self._complete_coverage_dig(obs)
-                reason = self._dig_to_carry_reason or "loaded"
-                self._set_skill("carry", f"dig_to_carry_{reason}")
+        if self._legacy_fsm_dig_branch().maybe_handle(
+            obs=obs,
+            boundary_event=boundary_event,
+        ):
             return
 
         if self._skill_name == "carry":

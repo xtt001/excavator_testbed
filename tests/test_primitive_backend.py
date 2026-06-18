@@ -6,6 +6,8 @@ from testbed.planner.primitive_backend import (
     LegacyFSMBackendAdapter,
     LegacyFSMBootstrapBranch,
     LegacyFSMBootstrapConfig,
+    LegacyFSMDigBranch,
+    LegacyFSMDigConfig,
 )
 from testbed.planner.primitive_decision import LEGACY_FSM_DECISION_SOURCE
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
@@ -79,6 +81,62 @@ def test_legacy_fsm_bootstrap_branch_ignores_non_bootstrap_skill() -> None:
         should_end_bootstrap=lambda *, obs, boundary_event: True,
         bootstrap_end_mode=lambda: "disabled",
         should_pre_dig_align_before_dig=lambda: False,
+        set_skill=lambda skill, reason: None,
+    )
+
+    assert branch.maybe_handle(obs={}, boundary_event=None) is False
+
+
+def test_legacy_fsm_dig_branch_completes_dig_to_carry_in_order() -> None:
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    boundary_event = object()
+    events: list[tuple[str, str]] = []
+    branch = LegacyFSMDigBranch(
+        config=LegacyFSMDigConfig(dig_skill_name="dig"),
+        current_skill_name=lambda: "dig",
+        dig_exit_guard_ready=lambda obs: False,
+        increment_dig_exit_guard_replan_count=lambda: events.append(("inc", "exit")),
+        reject_active_coverage_corridor=lambda obs, reason: events.append(
+            ("reject", reason)
+        ),
+        restart_after_failed_dig=lambda reason, obs: events.append(
+            ("restart", reason)
+        ),
+        dig_bad_replan_ready=lambda obs: False,
+        increment_dig_bad_replan_count=lambda: events.append(("inc", "bad")),
+        dig_complete_boundary_low_payload=lambda obs, boundary_event: False,
+        dig_to_carry_ready=lambda *, obs, boundary_event: True,
+        complete_cell_entry_dig=lambda obs: events.append(("complete", "cell")),
+        complete_coverage_dig=lambda obs: events.append(("complete", "coverage")),
+        dig_to_carry_reason=lambda: "boundary_confirmed",
+        set_skill=lambda skill, reason: events.append((skill, reason)),
+    )
+
+    handled = branch.maybe_handle(obs=obs, boundary_event=boundary_event)
+
+    assert handled is True
+    assert events == [
+        ("complete", "cell"),
+        ("complete", "coverage"),
+        ("carry", "dig_to_carry_boundary_confirmed"),
+    ]
+
+
+def test_legacy_fsm_dig_branch_ignores_non_dig_skill() -> None:
+    branch = LegacyFSMDigBranch(
+        config=LegacyFSMDigConfig(dig_skill_name="dig"),
+        current_skill_name=lambda: "carry",
+        dig_exit_guard_ready=lambda obs: True,
+        increment_dig_exit_guard_replan_count=lambda: None,
+        reject_active_coverage_corridor=lambda obs, reason: None,
+        restart_after_failed_dig=lambda reason, obs: None,
+        dig_bad_replan_ready=lambda obs: True,
+        increment_dig_bad_replan_count=lambda: None,
+        dig_complete_boundary_low_payload=lambda obs, boundary_event: True,
+        dig_to_carry_ready=lambda *, obs, boundary_event: True,
+        complete_cell_entry_dig=lambda obs: None,
+        complete_coverage_dig=lambda obs: None,
+        dig_to_carry_reason=lambda: "",
         set_skill=lambda skill, reason: None,
     )
 
