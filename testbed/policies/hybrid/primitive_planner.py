@@ -75,6 +75,8 @@ from testbed.planner.primitive_tokens import (
     DigCutTokenPlan,
     DigCutTokenPlanner,
     GoalTokenProvider,
+    ReturnTargetTokenPlan,
+    ReturnTargetTokenPlanner,
 )
 from testbed.policies.base import Policy, register_policy
 from testbed.policies.hybrid.adapter import HYBRID_MODE_TRANSITION, HYBRID_MODE_WORK
@@ -3624,25 +3626,14 @@ class PrimitivePlannerACTPolicy(Policy):
         self,
         obs: dict,
     ) -> tuple[np.ndarray, dict[str, float | int], str, str, int]:
+        planner = self._return_target_token_planner()
         if self.dig_cut_planner_mode == "conservative_pose":
-            raw_fields = self._raw_fields_from_live_pose(obs)
-            return (
-                _build_dig_cut_token(raw_fields),
-                raw_fields,
-                f"{self.return_target_token_source_prefix}_conservative_pose",
-                "",
-                -1,
+            return self._unpack_return_target_token_plan(
+                planner.plan_conservative_pose(self._bucket_dig_area_pose(obs))
             )
         if self.dig_cut_planner_mode == "operator_prior":
-            token, raw_fields, source, fallback_reason = (
-                self._build_operator_prior_dig_cut_tokens(obs)
-            )
-            return (
-                token,
-                raw_fields,
-                f"{self.return_target_token_source_prefix}_{source}",
-                fallback_reason,
-                -1,
+            return self._unpack_return_target_token_plan(
+                planner.plan_operator_prior(self._bucket_dig_area_pose(obs))
             )
         if self.dig_cut_planner_mode in {
             "operator_prior_coverage",
@@ -3655,14 +3646,26 @@ class PrimitivePlannerACTPolicy(Policy):
                 obs=obs,
                 update_state=True,
             )
-            return (
-                _build_dig_cut_token(raw_fields),
-                raw_fields,
-                f"{self.return_target_token_source_prefix}_{self.dig_cut_planner_mode}",
-                "",
-                int(corridor.corridor_id),
+            return self._unpack_return_target_token_plan(
+                planner.plan_from_coverage_raw_fields(
+                    raw_fields,
+                    dig_cut_planner_mode=self.dig_cut_planner_mode,
+                    corridor_id=int(corridor.corridor_id),
+                )
             )
         raise ValueError(f"Unsupported dig_cut_planner mode {self.dig_cut_planner_mode!r}.")
+
+    @staticmethod
+    def _unpack_return_target_token_plan(
+        plan: ReturnTargetTokenPlan,
+    ) -> tuple[np.ndarray, dict[str, float | int], str, str, int]:
+        return (
+            plan.token.copy(),
+            dict(plan.raw_fields),
+            str(plan.source),
+            str(plan.fallback_reason),
+            int(plan.corridor_id),
+        )
 
     def _build_return_start_envelope_tokens_for_obs(
         self,
@@ -5844,6 +5847,12 @@ class PrimitivePlannerACTPolicy(Policy):
             required=bool(self.dig_depth_profile_required),
             allow_live_fallback=bool(self.dig_depth_profile_allow_live_fallback),
             allow_global_fallback=bool(self.dig_depth_profile_allow_global_fallback),
+        )
+
+    def _return_target_token_planner(self) -> ReturnTargetTokenPlanner:
+        return ReturnTargetTokenPlanner(
+            dig_cut_planner=self._dig_cut_token_planner(),
+            source_prefix=str(self.return_target_token_source_prefix),
         )
 
     @staticmethod

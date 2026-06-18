@@ -355,6 +355,81 @@ class DigCutTokenPlanner:
         )
 
 
+@dataclass(frozen=True)
+class ReturnTargetTokenPlan:
+    """Result of planning one return-target token."""
+
+    token: np.ndarray
+    raw_fields: MappingProxyType[str, float | int]
+    source: str
+    fallback_reason: str
+    corridor_id: int
+
+
+@dataclass(frozen=True)
+class ReturnTargetTokenPlanner:
+    """Build return-target tokens while preserving source prefix semantics."""
+
+    dig_cut_planner: DigCutTokenPlanner
+    source_prefix: str
+
+    def plan_conservative_pose(
+        self,
+        pose: tuple[float, float, float] | None,
+    ) -> ReturnTargetTokenPlan:
+        dig_cut_plan = self.dig_cut_planner.plan_conservative_pose(pose)
+        return self._from_dig_cut_plan(
+            dig_cut_plan,
+            source=f"{self.source_prefix}_conservative_pose",
+            corridor_id=-1,
+        )
+
+    def plan_operator_prior(
+        self,
+        pose: tuple[float, float, float] | None,
+    ) -> ReturnTargetTokenPlan:
+        dig_cut_plan = self.dig_cut_planner.plan_operator_prior(pose)
+        return self._from_dig_cut_plan(
+            dig_cut_plan,
+            source=f"{self.source_prefix}_{dig_cut_plan.source}",
+            corridor_id=-1,
+        )
+
+    def plan_from_coverage_raw_fields(
+        self,
+        raw_fields: dict[str, float | int],
+        *,
+        dig_cut_planner_mode: str,
+        corridor_id: int,
+    ) -> ReturnTargetTokenPlan:
+        dig_cut_plan = self.dig_cut_planner.plan_from_raw_fields(
+            raw_fields,
+            source=str(dig_cut_planner_mode),
+        )
+        return self._from_dig_cut_plan(
+            dig_cut_plan,
+            source=f"{self.source_prefix}_{dig_cut_planner_mode}",
+            corridor_id=int(corridor_id),
+        )
+
+    @staticmethod
+    def _from_dig_cut_plan(
+        dig_cut_plan: DigCutTokenPlan,
+        *,
+        source: str,
+        corridor_id: int,
+    ) -> ReturnTargetTokenPlan:
+        token = np.asarray(dig_cut_plan.token, dtype=np.float32).reshape(-1).copy()
+        token.setflags(write=False)
+        return ReturnTargetTokenPlan(
+            token=token,
+            raw_fields=MappingProxyType(dict(dig_cut_plan.raw_fields)),
+            source=str(source),
+            fallback_reason=str(dig_cut_plan.fallback_reason),
+            corridor_id=int(corridor_id),
+        )
+
+
 class DigDepthProfileTokenPlanningError(ValueError):
     """Raised when a required dig-depth-profile token cannot be planned."""
 
@@ -539,4 +614,6 @@ __all__ = [
     "DigCutTokenPlanner",
     "GoalTokenProvider",
     "PRIMITIVE_GOAL_SECTOR_IDS",
+    "ReturnTargetTokenPlan",
+    "ReturnTargetTokenPlanner",
 ]

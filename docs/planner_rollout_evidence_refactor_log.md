@@ -1071,3 +1071,61 @@ Each completed refactor round should append:
 - Next action: Phase 5.4 should continue with return-target token planning
   only. Do not migrate return-relocate, return-start-envelope, coverage
   planning/runtime, or backend behavior in the same commit.
+
+### 2026-06-19 Phase 5.4 Return-Target Token Planning
+
+- Scope: extracted return-target token planning result construction only. No
+  return-relocate planning, return-start-envelope planning, observation
+  injection key changes, coverage candidate construction, coverage
+  scoring/selection ownership, coverage state update ownership, backend
+  selection, runtime package, behavior tree, VLM/LLM packet, default config,
+  threshold, branch order, reason string, token schema, debug schema, rollout
+  summary schema, or policy reset timing was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `b35493a9d8e425f851d68a4846e2da0e042c0be8`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 3 focused tests passed before Phase 5.4 edits:
+    `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `8 passed`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; its
+    evidence report classifies `token.return_target` as confirmed-live and
+    observes source `conditioned_return_operator_prior_sweep_belief`.
+  - The only responsibility slice was return-target token planning.
+  - The stable focused owner for this slice is
+    `testbed/planner/primitive_tokens.py`; it now owns `ReturnTargetTokenPlan`
+    and `ReturnTargetTokenPlanner`, while reusing `DigCutTokenPlanner` and the
+    existing data token contract builders.
+- Updated `PrimitivePlannerACTPolicy._build_next_dig_cut_plan_for_return()` to
+  delegate return-target token/source/corridor result construction to
+  `ReturnTargetTokenPlanner`. The legacy shell still owns call timing,
+  return-cycle caching, pending next-dig state writes, return-start-envelope
+  planning invocation, coverage corridor selection, coverage state updates, and
+  observation injection.
+- Added `tests/test_primitive_return_target_token_planner.py` with focused
+  coverage for conservative-pose return target planning, operator-prior source
+  prefixing, and coverage raw-field source/corridor projection. The TDD red
+  test failed with `ImportError` before `ReturnTargetTokenPlanner` was
+  implemented.
+- Old code parked/reclassified: no code was deleted. Return-relocate and
+  return-start-envelope planning remain in the legacy shell until their own
+  Phase 5 slices. Coverage selection/update helpers remain legacy
+  source-of-truth until Phase 6.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_return_target_token_planner.py`
+    returned `3 passed`.
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "injects_return_target_only_for_return_and_reuses_for_dig or replan_invalidates_pending_return_target"`
+    returned `2 passed, 118 deselected`.
+  - `python -m pytest -q tests/test_primitive_return_target_token_planner.py tests/test_primitive_dig_depth_profile_token_planner.py tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_goal_token_provider.py tests/test_primitive_token_status.py tests/test_primitive_coverage_status.py tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `55 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_tokens.py testbed/policies/hybrid/primitive_planner.py tests/test_primitive_return_target_token_planner.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 5.5 should continue with return-relocate token planning
+  only. Do not migrate return-start-envelope, coverage planning/runtime, or
+  backend behavior in the same commit.
