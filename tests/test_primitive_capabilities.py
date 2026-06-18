@@ -14,9 +14,18 @@ from testbed.data.schema import (
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
+    ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
     ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
-from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
+from testbed.planner.primitive_capabilities import (
+    BootstrapStatus,
+    PrimitiveObservationFacts,
+)
+
+
+class _BoundaryEvent:
+    def __init__(self, *, qualified_dig_start: bool) -> None:
+        self.qualified_dig_start = qualified_dig_start
 
 
 def test_observation_facts_extract_obs_values_without_mutating_inputs() -> None:
@@ -111,3 +120,95 @@ def test_observation_facts_target_geometry_preserves_legacy_unavailable_error() 
 
     with pytest.raises(RuntimeError, match="target_geometry_available=1"):
         facts.target_geometry()
+
+
+def test_bootstrap_status_records_first_qualified_dig_start_gate() -> None:
+    facts = PrimitiveObservationFacts.from_obs({}, action_dim=4)
+
+    ready = BootstrapStatus.from_inputs(
+        observation=facts,
+        boundary_event=_BoundaryEvent(qualified_dig_start=True),
+        bootstrap_policy_present=True,
+        bootstrap_end_mode="first_qualified_dig_start",
+    )
+    no_policy = BootstrapStatus.from_inputs(
+        observation=facts,
+        boundary_event=_BoundaryEvent(qualified_dig_start=True),
+        bootstrap_policy_present=False,
+        bootstrap_end_mode="first_qualified_dig_start",
+    )
+
+    assert ready.qualified_dig_start is True
+    assert ready.should_end is True
+    assert no_policy.should_end is False
+
+
+def test_bootstrap_status_records_loaded_and_clear_gate_from_observation_facts() -> None:
+    env_state = np.zeros(64, dtype=np.float32)
+    env_state[ENV_STATE_MASS_IN_BUCKET_IDX] = 120.0
+    env_state[ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX] = 0.75
+    facts = PrimitiveObservationFacts.from_obs({"env_state": env_state}, action_dim=4)
+
+    status = BootstrapStatus.from_inputs(
+        observation=facts,
+        boundary_event=None,
+        bootstrap_policy_present=True,
+        bootstrap_end_mode="loaded_and_clear",
+        bootstrap_end_min_bucket_mass_kg=100.0,
+        bootstrap_end_min_distance_to_dig_area_m=0.5,
+    )
+
+    assert status.mass_in_bucket_kg == 120.0
+    assert status.min_distance_to_dig_area_m == 0.75
+    assert status.loaded_and_clear_ready is True
+    assert status.should_end is True
+
+
+def test_bootstrap_status_records_scripted_qpos_gate_without_mutating_inputs() -> None:
+    qpos = np.asarray([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+    qvel = np.asarray([0.01, -0.02, 0.03, -0.04], dtype=np.float32)
+    facts = PrimitiveObservationFacts.from_obs(
+        {"qpos": qpos, "qvel": qvel},
+        action_dim=4,
+    )
+
+    status = BootstrapStatus.from_inputs(
+        observation=facts,
+        boundary_event=None,
+        bootstrap_policy_present=True,
+        bootstrap_end_mode="scripted_qpos",
+        scripted_bootstrap_target_qpos=np.asarray([1.0, 2.0, 3.0, 4.0]),
+        scripted_bootstrap_qpos_tolerance=0.02,
+        scripted_bootstrap_qvel_abs_max=0.08,
+        scripted_bootstrap_hold_count=4,
+        scripted_bootstrap_hold_steps=5,
+        scripted_bootstrap_step_count=10,
+        scripted_bootstrap_max_steps=240,
+    )
+
+    assert status.scripted_bootstrap_enabled is True
+    assert status.scripted_qpos_close is True
+    assert status.scripted_qvel_small is True
+    assert status.scripted_target_reached is True
+    assert status.scripted_timeout_reached is False
+    assert status.should_end is True
+    assert np.array_equal(qpos, np.asarray([1.0, 2.0, 3.0, 4.0], dtype=np.float32))
+    assert np.array_equal(qvel, np.asarray([0.01, -0.02, 0.03, -0.04], dtype=np.float32))
+
+
+def test_bootstrap_status_records_scripted_timeout_gate() -> None:
+    facts = PrimitiveObservationFacts.from_obs({}, action_dim=4)
+
+    status = BootstrapStatus.from_inputs(
+        observation=facts,
+        boundary_event=None,
+        bootstrap_policy_present=True,
+        bootstrap_end_mode="scripted_qpos",
+        scripted_bootstrap_target_qpos=np.ones(4, dtype=np.float32),
+        scripted_bootstrap_step_count=240,
+        scripted_bootstrap_max_steps=240,
+    )
+
+    assert status.scripted_target_reached is False
+    assert status.scripted_timeout_reached is True
+    assert status.should_end is True

@@ -513,3 +513,57 @@ Each completed refactor round should append:
   migrate dig/carry/dump/return status records, token status, coverage status,
   token planning, coverage planning, or legacy FSM backend behavior in the same
   commit.
+
+### 2026-06-19 Phase 4B.1 BootstrapStatus
+
+- Scope: introduced `BootstrapStatus` only. No FSM branch body, transition gate
+  side effect, token planning, coverage planning, return planning, `cell_entry`,
+  `pre_dig_align`, backend selection, runtime package, behavior tree, VLM/LLM
+  packet, default config, threshold, branch order, reason string, token schema,
+  debug schema, rollout summary schema, or policy reset timing was intentionally
+  changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `81da6d9f7fc63debb8768fc48bebc3fc0c79b951`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1, Phase 2, Phase 3, and Phase 4A focused tests passed before
+    Phase 4B.1 edits:
+    `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py tests/test_primitive_capabilities.py`
+    returned `12 passed`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; the
+    golden-window switch sequence includes bootstrap to dig with
+    `bootstrap_to_dig`.
+  - The only responsibility slice was read-only bootstrap transition status.
+  - `BootstrapStatus` mirrors current bootstrap gate facts without calling
+    `_should_end_bootstrap()` or `_scripted_bootstrap_target_reached()`, so it
+    does not increment scripted hold or timeout counters.
+  - Existing `_maybe_switch_skill()` bootstrap branch remains the decision and
+    side-effect source of truth.
+- Updated `testbed/planner/primitive_capabilities.py` with `BootstrapStatus`
+  and a `PrimitiveObservationFacts.min_distance_to_dig_area_m` accessor needed
+  by the legacy `loaded_and_clear` bootstrap gate.
+- Updated `tests/test_primitive_capabilities.py` with focused coverage for
+  first-qualified-dig-start, loaded-and-clear, scripted-qpos target reach, and
+  scripted timeout facts. The TDD red test failed with `ImportError` before
+  `BootstrapStatus` was implemented.
+- Old code parked/reclassified: no code was deleted. `_should_end_bootstrap()`,
+  `_scripted_bootstrap_enabled()`, `_scripted_bootstrap_target_reached()`, and
+  the `_maybe_switch_skill()` bootstrap branch remain compatibility and
+  source-of-truth paths until a later legacy FSM backend phase bridges them with
+  parity tests.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_capabilities.py` returned
+    `8 passed`.
+  - `python -m pytest -q tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `16 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_capabilities.py tests/test_primitive_capabilities.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 4B.2 should continue with `DigTransitionStatus` only. Do
+  not migrate carry, dump, return, coverage, token, token planning, coverage
+  planning, or backend behavior in the same commit.
