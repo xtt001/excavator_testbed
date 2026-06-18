@@ -1787,3 +1787,71 @@ Each completed refactor round should append:
   branch chain, likely the 4P return branch. Do not move direct-handoff helper
   internals, pre-dig-align, 5P override, change branch order, or change reason
   strings in the same commit.
+
+### 2026-06-19 Phase 7.6 Legacy FSM Return Branch
+
+- Scope: migrated the 4P legacy FSM `return` branch only. No 5P override,
+  pre-dig-align legacy parking branch, direct-handoff helper body, branch order,
+  threshold, backend selection, runtime package, behavior tree, VLM/LLM packet,
+  token schema, debug schema, rollout summary schema, or policy reset timing was
+  intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `76e9c9f0ab8e0fb79fc56d16fe4203c70b01d612`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 3 focused tests remained the compatibility baseline:
+    `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; the
+    evidence matrix marks `gate.return_to_dig` as confirmed-live and the golden
+    window contains both `return_to_dig_next_dig_entry_ready` and
+    `return_to_dig_start_envelope_ready` transitions.
+  - The migrated branch is mainline `return` only. The `pre_dig_align` branch,
+    direct-handoff helper internals, and the 5P override remain outside this
+    slice.
+- Extended `testbed/planner/primitive_backend.py` with `LegacyFSMReturnConfig`
+  and `LegacyFSMReturnBranch`. The branch object receives explicit callbacks,
+  consumes `ReturnTransitionStatus`, latches next-dig events, completes return
+  transitions, and applies the original next-dig/direct-handoff/shallow-guard
+  reason suffix priority.
+- Updated the 4P `PrimitivePlannerACTPolicy._maybe_switch_skill()` `return`
+  check to delegate to `self._legacy_fsm_return_branch().maybe_handle(...)`.
+  The policy shell still calls the existing return-to-dig entry and
+  start-envelope helpers before status construction so their debug-state side
+  effects remain in the shell.
+- Extended `tests/test_primitive_backend.py` with direct return branch coverage
+  for next-dig event latching, completion ordering, after-completion next-skill
+  selection, and non-return no-op. The TDD red test failed with `ImportError`
+  before the backend return branch classes were implemented.
+- Verification found and fixed one ordering regression: the first full
+  `tests/test_agx_primitives_v2_2.py` run failed
+  `test_primitive_planner_pre_dig_align_first_dig_only_skips_after_return`
+  because `next_skill` was computed before incrementing `_cycle_index`. The fix
+  moved next-skill selection into a callback executed after
+  `_complete_return_transition_for_backend()`, matching the old branch order.
+- Old code parked/reclassified: pre-dig-align, direct-handoff helper internals,
+  5P override, backend selection, and alternate backend behavior remain legacy
+  source-of-truth until a later explicit audit or user approval.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_backend.py -k "return_branch"`
+    first failed with an unexpected `next_skill_after_return_transition`
+    argument before the backend API fix, then returned `4 passed, 11 deselected`.
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py::TestPrimitivesV22::test_primitive_planner_pre_dig_align_first_dig_only_skips_after_return`
+    returned `1 passed` after the ordering fix.
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "return_to_dig or return_entry_frame_can_direct_handoff_without_return_action or semantic_boundary_events_drive_skill_sequence or shallow_guard"`
+    returned `5 passed, 115 deselected`.
+  - `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_decision_contract.py`
+    returned `18 passed`.
+  - `python -m pytest -q tests/test_primitive_execution_template.py tests/test_planner_current_code_parity.py`
+    returned `5 passed`.
+  - `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_runtime.py tests/test_primitive_coverage_updates.py tests/test_primitive_coverage_selection.py tests/test_primitive_coverage_candidates.py tests/test_primitive_return_start_envelope_token_planner.py tests/test_primitive_return_relocate_token_planner.py tests/test_primitive_return_target_token_planner.py tests/test_primitive_dig_depth_profile_token_planner.py tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_goal_token_provider.py tests/test_primitive_token_status.py tests/test_primitive_coverage_status.py tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `83 passed`.
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py` returned
+    `120 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+- Next action: Phase 7.7 should audit the residual 4P `_maybe_switch_skill()`
+  shell after all confirmed-live mainline branches have moved behind backend
+  branch objects. Do not migrate `pre_dig_align`, 5P override, direct-handoff
+  helper internals, or alternate backend behavior without a separate evidence
+  and compatibility decision.

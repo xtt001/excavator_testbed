@@ -72,11 +72,14 @@ from testbed.planner.primitive_backend import (
     LegacyFSMDigConfig,
     LegacyFSMDumpBranch,
     LegacyFSMDumpConfig,
+    LegacyFSMReturnBranch,
+    LegacyFSMReturnConfig,
 )
 from testbed.planner.primitive_capabilities import (
     CarryTransitionStatus,
     DumpTransitionStatus,
     PrimitiveObservationFacts,
+    ReturnTransitionStatus,
 )
 from testbed.planner.primitive_coverage import (
     CoverageCandidateBuilder,
@@ -1191,6 +1194,66 @@ class PrimitivePlannerACTPolicy(Policy):
     def _set_dump_done_hold_count(self, value: int) -> None:
         self._dump_done_hold_count = int(value)
 
+    def _legacy_fsm_return_branch(self) -> LegacyFSMReturnBranch:
+        return LegacyFSMReturnBranch(
+            config=LegacyFSMReturnConfig(return_skill_name="return"),
+            current_skill_name=lambda: str(self._skill_name),
+            return_transition_status=self._return_transition_status_for_backend,
+            mark_return_next_dig_event_seen=self._mark_return_next_dig_event_seen,
+            complete_return_transition=self._complete_return_transition_for_backend,
+            next_skill_after_return_transition=(
+                self._next_skill_after_return_transition
+            ),
+            set_skill=self._set_skill,
+        )
+
+    def _return_transition_status_for_backend(
+        self,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> ReturnTransitionStatus:
+        self._return_to_dig_handoff_ready(obs)
+        return ReturnTransitionStatus.from_inputs(
+            observation=PrimitiveObservationFacts.from_obs(
+                obs,
+                action_dim=self.action_dim,
+            ),
+            boundary_event=boundary_event,
+            semantic_boundary_profile_active=self._semantic_boundary_profile_active(),
+            return_next_dig_event_seen=self._return_next_dig_event_seen,
+            entry_close=self._return_to_dig_entry_close_state,
+            start_envelope_ready=self._return_to_dig_start_envelope_ready_state,
+            pre_dig_align_before_dig=self._should_pre_dig_align_before_dig(),
+            return_to_dig_start_envelope_direct_handoff_enabled=(
+                self.return_to_dig_start_envelope_direct_handoff_enabled
+            ),
+            return_to_dig_start_envelope_gate_enabled=(
+                self.return_to_dig_start_envelope_gate_enabled
+            ),
+            return_to_dig_shallow_guard_enabled=(
+                self.return_to_dig_shallow_guard_enabled
+            ),
+            return_to_dig_max_bucket_mass_kg=self.return_to_dig_max_bucket_mass_kg,
+            return_to_dig_touch_tolerance_m=self.return_to_dig_touch_tolerance_m,
+            return_to_dig_min_depth_m=self.return_to_dig_min_depth_m,
+            return_to_dig_max_depth_m=self.return_to_dig_max_depth_m,
+            return_to_dig_max_entry_error_m=self.return_to_dig_max_entry_error_m,
+        )
+
+    def _mark_return_next_dig_event_seen(self) -> None:
+        self._return_next_dig_event_seen = True
+
+    def _complete_return_transition_for_backend(self) -> None:
+        self._completed_transition_count += 1
+        self._cycle_index += 1
+
+    def _next_skill_after_return_transition(self) -> str:
+        return (
+            PRE_DIG_ALIGN_SKILL_NAME
+            if self._should_pre_dig_align_before_dig()
+            else "dig"
+        )
+
     def _increment_dig_exit_guard_replan_count(self) -> None:
         self._dig_exit_guard_replan_count += 1
 
@@ -1813,66 +1876,11 @@ class PrimitivePlannerACTPolicy(Policy):
         ):
             return
 
-        if self._skill_name == "return":
-            handoff_ready = self._return_to_dig_handoff_ready(obs)
-            next_dig_event = bool(
-                boundary_event is not None
-                and (
-                    getattr(boundary_event, "next_dig_entry_ready", False)
-                    or getattr(boundary_event, "qualified_dig_start", False)
-                )
-            )
-            if next_dig_event:
-                self._return_next_dig_event_seen = True
-            if (next_dig_event or self._return_next_dig_event_seen) and handoff_ready:
-                self._completed_transition_count += 1
-                self._cycle_index += 1
-                next_skill = (
-                    PRE_DIG_ALIGN_SKILL_NAME
-                    if self._should_pre_dig_align_before_dig()
-                    else "dig"
-                )
-                self._set_skill(
-                    next_skill,
-                    f"return_to_{next_skill}_next_dig_entry_ready",
-                )
-                return
-            if self._return_to_dig_direct_handoff_ready(
-                obs,
-                handoff_ready=handoff_ready,
-            ):
-                self._completed_transition_count += 1
-                self._cycle_index += 1
-                next_skill = (
-                    PRE_DIG_ALIGN_SKILL_NAME
-                    if self._should_pre_dig_align_before_dig()
-                    else "dig"
-                )
-                self._set_skill(
-                    next_skill,
-                    f"return_to_{next_skill}_start_envelope_ready",
-                )
-                return
-            if (
-                not self._semantic_boundary_profile_active()
-                and self._return_to_dig_shallow_guard_ready(
-                    obs=obs,
-                    boundary_event=boundary_event,
-                )
-                and handoff_ready
-            ):
-                self._completed_transition_count += 1
-                self._cycle_index += 1
-                next_skill = (
-                    PRE_DIG_ALIGN_SKILL_NAME
-                    if self._should_pre_dig_align_before_dig()
-                    else "dig"
-                )
-                self._set_skill(
-                    next_skill,
-                    f"return_to_{next_skill}_shallow_entry_guard",
-                )
-                return
+        if self._legacy_fsm_return_branch().maybe_handle(
+            obs=obs,
+            boundary_event=boundary_event,
+        ):
+            return
 
     def _set_return_or_direct_handoff(self, obs: dict, *, reason: str) -> None:
         self._set_skill("return", reason)

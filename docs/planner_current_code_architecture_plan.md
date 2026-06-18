@@ -556,10 +556,11 @@ backend protocol/adapter boundary without moving branch bodies; Phase 7.2 has
 migrated only the 4P bootstrap branch behind the backend adapter; Phase 7.3 has
 migrated only the 4P dig branch behind the backend adapter; Phase 7.4 has
 migrated only the 4P carry branch behind the backend adapter; Phase 7.5 has
-migrated only the 4P dump branch behind the backend adapter. Continue with
-Phase 7.6 by migrating exactly one additional mainline legacy FSM branch chain,
-likely the 4P return branch, with a focused service-versus-facade parity test.
-Keep pre-dig-align in legacy parking unless explicitly re-approved, and do not
-move direct-handoff helper internals, change branch order, change reason
-strings, or apply unrelated effects through the new backend boundary in the same
-slice.
+migrated only the 4P dump branch behind the backend adapter; Phase 7.6 has
+migrated only the 4P return branch behind the backend adapter. Continue with
+Phase 7.7 by auditing the residual 4P `_maybe_switch_skill()` shell and legacy
+parking boundary after all confirmed-live mainline branches have moved to
+backend branch objects. Keep pre-dig-align in legacy parking unless explicitly
+re-approved, and do not move 5P override, direct-handoff helper internals, change
+branch order, change reason strings, or apply unrelated effects through the new
+backend boundary in the same slice.

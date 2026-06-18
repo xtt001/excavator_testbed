@@ -12,10 +12,13 @@ from testbed.planner.primitive_backend import (
     LegacyFSMDumpConfig,
     LegacyFSMDigBranch,
     LegacyFSMDigConfig,
+    LegacyFSMReturnBranch,
+    LegacyFSMReturnConfig,
 )
 from testbed.planner.primitive_capabilities import (
     CarryTransitionStatus,
     DumpTransitionStatus,
+    ReturnTransitionStatus,
 )
 from testbed.planner.primitive_decision import LEGACY_FSM_DECISION_SOURCE
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
@@ -376,6 +379,155 @@ def test_legacy_fsm_dump_branch_ignores_non_dump_skill() -> None:
         complete_coverage_dump=lambda obs, reason: None,
         set_return_or_direct_handoff=lambda obs, reason: None,
         set_dump_done_hold_count=lambda value: None,
+    )
+
+    assert branch.maybe_handle(obs={}, boundary_event=None) is False
+
+
+def test_legacy_fsm_return_branch_latches_next_dig_event_without_switch() -> None:
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    events: list[str] = []
+    status = ReturnTransitionStatus(
+        mass_in_bucket_kg=0.0,
+        min_distance_to_dig_area_m=0.0,
+        bucket_depth_below_dig_area_plane_m=0.0,
+        semantic_boundary_profile_active=True,
+        next_dig_event=True,
+        next_or_seen_dig_event=True,
+        entry_close=False,
+        start_envelope_ready=False,
+        handoff_ready=False,
+        direct_handoff_ready=False,
+        shallow_guard_ready=False,
+        shallow_guard_allowed=False,
+        completed_transition=False,
+        next_skill="",
+        switch_reason="",
+    )
+    branch = LegacyFSMReturnBranch(
+        config=LegacyFSMReturnConfig(return_skill_name="return"),
+        current_skill_name=lambda: "return",
+        return_transition_status=lambda obs, boundary_event: status,
+        mark_return_next_dig_event_seen=lambda: events.append("seen"),
+        complete_return_transition=lambda: events.append("complete"),
+        next_skill_after_return_transition=lambda: "dig",
+        set_skill=lambda skill, reason: events.append(f"{skill}:{reason}"),
+    )
+
+    handled = branch.maybe_handle(obs=obs, boundary_event=object())
+
+    assert handled is True
+    assert events == ["seen"]
+
+
+def test_legacy_fsm_return_branch_completes_next_dig_handoff_in_order() -> None:
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    events: list[str] = []
+    status = ReturnTransitionStatus(
+        mass_in_bucket_kg=0.0,
+        min_distance_to_dig_area_m=0.0,
+        bucket_depth_below_dig_area_plane_m=0.0,
+        semantic_boundary_profile_active=True,
+        next_dig_event=True,
+        next_or_seen_dig_event=True,
+        entry_close=True,
+        start_envelope_ready=True,
+        handoff_ready=True,
+        direct_handoff_ready=True,
+        shallow_guard_ready=False,
+        shallow_guard_allowed=False,
+        completed_transition=True,
+        next_skill="dig",
+        switch_reason="return_to_dig_next_dig_entry_ready",
+    )
+    branch = LegacyFSMReturnBranch(
+        config=LegacyFSMReturnConfig(return_skill_name="return"),
+        current_skill_name=lambda: "return",
+        return_transition_status=lambda obs, boundary_event: status,
+        mark_return_next_dig_event_seen=lambda: events.append("seen"),
+        complete_return_transition=lambda: events.append("complete"),
+        next_skill_after_return_transition=lambda: "dig",
+        set_skill=lambda skill, reason: events.append(f"{skill}:{reason}"),
+    )
+
+    handled = branch.maybe_handle(obs=obs, boundary_event=object())
+
+    assert handled is True
+    assert events == [
+        "seen",
+        "complete",
+        "dig:return_to_dig_next_dig_entry_ready",
+    ]
+
+
+def test_legacy_fsm_return_branch_selects_next_skill_after_completion() -> None:
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    state = {"cycle": 0}
+    events: list[str] = []
+    status = ReturnTransitionStatus(
+        mass_in_bucket_kg=0.0,
+        min_distance_to_dig_area_m=0.0,
+        bucket_depth_below_dig_area_plane_m=0.0,
+        semantic_boundary_profile_active=True,
+        next_dig_event=True,
+        next_or_seen_dig_event=True,
+        entry_close=True,
+        start_envelope_ready=True,
+        handoff_ready=True,
+        direct_handoff_ready=False,
+        shallow_guard_ready=False,
+        shallow_guard_allowed=False,
+        completed_transition=True,
+        next_skill="pre_dig_align",
+        switch_reason="return_to_pre_dig_align_next_dig_entry_ready",
+    )
+    branch = LegacyFSMReturnBranch(
+        config=LegacyFSMReturnConfig(return_skill_name="return"),
+        current_skill_name=lambda: "return",
+        return_transition_status=lambda obs, boundary_event: status,
+        mark_return_next_dig_event_seen=lambda: events.append("seen"),
+        complete_return_transition=lambda: state.__setitem__(
+            "cycle",
+            state["cycle"] + 1,
+        ),
+        next_skill_after_return_transition=lambda: (
+            "pre_dig_align" if state["cycle"] == 0 else "dig"
+        ),
+        set_skill=lambda skill, reason: events.append(f"{skill}:{reason}"),
+    )
+
+    handled = branch.maybe_handle(obs=obs, boundary_event=object())
+
+    assert handled is True
+    assert state == {"cycle": 1}
+    assert events == ["seen", "dig:return_to_dig_next_dig_entry_ready"]
+
+
+def test_legacy_fsm_return_branch_ignores_non_return_skill() -> None:
+    branch = LegacyFSMReturnBranch(
+        config=LegacyFSMReturnConfig(return_skill_name="return"),
+        current_skill_name=lambda: "dig",
+        return_transition_status=lambda obs, boundary_event: ReturnTransitionStatus(
+            mass_in_bucket_kg=0.0,
+            min_distance_to_dig_area_m=0.0,
+            bucket_depth_below_dig_area_plane_m=0.0,
+            semantic_boundary_profile_active=False,
+            next_dig_event=True,
+            next_or_seen_dig_event=True,
+            entry_close=True,
+            start_envelope_ready=True,
+            handoff_ready=True,
+            direct_handoff_ready=False,
+            shallow_guard_ready=False,
+            shallow_guard_allowed=False,
+            completed_transition=True,
+            next_skill="dig",
+            switch_reason="return_to_dig_next_dig_entry_ready",
+        ),
+        mark_return_next_dig_event_seen=lambda: None,
+        complete_return_transition=lambda: None,
+        next_skill_after_return_transition=lambda: "dig",
+        set_skill=lambda skill, reason: None,
     )
 
     assert branch.maybe_handle(obs={}, boundary_event=None) is False

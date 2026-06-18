@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from testbed.planner.primitive_capabilities import (
     CarryTransitionStatus,
     DumpTransitionStatus,
+    ReturnTransitionStatus,
 )
 from testbed.planner.primitive_decision import PrimitiveDecisionResult
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
@@ -230,6 +231,40 @@ class LegacyFSMDumpBranch:
         return True
 
 
+@dataclass(frozen=True)
+class LegacyFSMReturnConfig:
+    return_skill_name: str
+
+
+@dataclass(frozen=True)
+class LegacyFSMReturnBranch:
+    """Return branch of the legacy FSM with explicit callbacks."""
+
+    config: LegacyFSMReturnConfig
+    current_skill_name: Callable[[], str]
+    return_transition_status: Callable[
+        [dict[str, Any], Any | None],
+        ReturnTransitionStatus,
+    ]
+    mark_return_next_dig_event_seen: Callable[[], None]
+    complete_return_transition: Callable[[], None]
+    next_skill_after_return_transition: Callable[[], str]
+    set_skill: Callable[[str, str], None]
+
+    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
+        if str(self.current_skill_name()) != str(self.config.return_skill_name):
+            return False
+        status = self.return_transition_status(obs, boundary_event)
+        if status.next_dig_event:
+            self.mark_return_next_dig_event_seen()
+        if status.completed_transition:
+            self.complete_return_transition()
+            next_skill = str(self.next_skill_after_return_transition())
+            reason_suffix = _return_transition_reason_suffix(status)
+            self.set_skill(next_skill, f"return_to_{next_skill}_{reason_suffix}")
+        return True
+
+
 __all__ = [
     "LegacyFSMBackendAdapter",
     "LegacyFSMBootstrapBranch",
@@ -240,5 +275,17 @@ __all__ = [
     "LegacyFSMDigConfig",
     "LegacyFSMDumpBranch",
     "LegacyFSMDumpConfig",
+    "LegacyFSMReturnBranch",
+    "LegacyFSMReturnConfig",
     "PrimitiveDecisionBackend",
 ]
+
+
+def _return_transition_reason_suffix(status: ReturnTransitionStatus) -> str:
+    if status.next_or_seen_dig_event and status.handoff_ready:
+        return "next_dig_entry_ready"
+    if status.direct_handoff_ready:
+        return "start_envelope_ready"
+    if status.shallow_guard_allowed:
+        return "shallow_entry_guard"
+    return ""
