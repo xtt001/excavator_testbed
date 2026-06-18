@@ -74,8 +74,8 @@ PrimitivePlannerACTPolicy
   debug/rollout compatibility, and effect application
 
 PlannerRuntime
-  builds PlannerTickContext from obs, boundary event, blackboard, services,
-  policies, and compatibility config
+  builds PlannerTickContext from obs, boundary event, blackboard, typed backend
+  ports, policies, and compatibility config
 
 PlannerBackend
   LegacyStateMachineBackend
@@ -435,6 +435,72 @@ Verification run for this ownership pass:
   -> no output.
 - `git diff --check` -> no whitespace errors.
 
+#### Typed Backend Ports Boundary Record 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/runtime/ports.py`: added the typed backend dependency
+  boundary. `PlannerBackendPorts` is the tick-context port bundle, and
+  `LegacyFsmBackendPorts` groups the default FSM dependencies into stable
+  semantic ports: `skill_names`, `bootstrap_transition`, `pre_dig_alignment`,
+  `dig_transition`, `dump_lifecycle`, `return_transition`, and
+  `boundary_profile`.
+- `testbed/planner/runtime/contracts.py`: replaced the old tick-context
+  untyped service registry with
+  `PlannerTickContext.ports: PlannerBackendPorts`. Passing the old `services=`
+  keyword is now rejected by the dataclass constructor; the focused ports test
+  covers this as the compatibility break for backend internals.
+- `testbed/planner/runtime/legacy_fsm.py`: changed
+  `LegacyStateMachineBackend` to read external dependencies through
+  `context.ports.legacy_fsm` and typed semantic port fields instead of string
+  lookups. The generic `run_legacy_fsm_transition` fallback remains only for
+  contexts with no legacy-FSM port bundle or non-default active skills.
+- `testbed/policies/hybrid/primitive_planner.py`: kept
+  `_legacy_fsm_tick_context()` as thin adapter wiring. It constructs typed ports
+  from existing constants, services, adapter callbacks, and config suppliers,
+  then leaves side-effect application in `_apply_legacy_fsm_tick_result()`.
+- `tests/test_planner_backend_ports.py`: added focused contract coverage for
+  typed ports construction, rejection of the old `services` registry, and the
+  dig branch gate order through typed ports. The duplicate dig projection case
+  was moved out of `tests/test_legacy_fsm_backend.py` so that file stays below
+  the 1000-line large-file threshold.
+
+Scope guardrails kept:
+
+- No branch order, thresholds, reason strings, policy reset timing,
+  debug/trace/rollout schema, token contract, default backend selection, or
+  behavior-tree default changed.
+- `dig_to_carry_reason` remains an adapter-provided port because
+  `_dig_to_carry_ready()` still owns the legacy reason write timing.
+- Return completion remains adapter-owned; the backend still returns only the
+  return transition outcome/projection effect.
+- Coverage state remains `PlannerTickContext.coverage_state`, and
+  `PlannerBlackboard` / `PlannerConditioningState` remain the state owners for
+  their existing domains. This slice did not migrate token contract/schema
+  generation or coverage runtime state.
+
+Verification run for this boundary pass:
+
+- Initial RED:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_ports.py`
+  failed during collection because the typed ports classes were not exported.
+- Focused GREEN:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_return.py`
+  -> `38 passed`.
+- Backend/runtime/config/BT:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_planner_backend_config.py tests/test_behavior_tree_backend_contract.py`
+  -> `68 passed`.
+- Golden/action-tree/facade/debug schema:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_golden_traces.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py tests/test_primitive_planner_debug_schema.py`
+  -> `168 passed`.
+- Token/data/config contract check:
+  `python -m pytest -p no:cacheprovider -q tests/test_primitive_token_contracts.py tests/test_policy_data_contracts.py tests/test_config_semantic_matrix.py`
+  -> `25 passed, 1 warning` from the existing `datetime.utcnow()` deprecation in
+  `testbed/data/dataset.py`.
+- `python -m compileall -q testbed/planner/runtime testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_action_tree.py tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py`
+  -> no output.
+- `git diff --check` -> no whitespace errors.
+
 ### Phase 2: Coverage As First Blackboard Domain
 
 Use the recent coverage dig-cut activation work as the first state-domain
@@ -619,9 +685,10 @@ Implemented files:
 - `testbed/planner/runtime/legacy_fsm.py`: added the
   `apply_bootstrap_transition_decision` runtime effect and moved the
   `bootstrap` active-skill end-transition orchestration into
-  `LegacyStateMachineBackend.tick()`. The backend still uses explicit adapter
-  services/callbacks from `PlannerTickContext.services`; it does not mutate
-  `PrimitivePlannerACTPolicy` directly.
+  `LegacyStateMachineBackend.tick()`. At landing time the backend used explicit
+  adapter services/callbacks from the tick context; it did not mutate
+  `PrimitivePlannerACTPolicy` directly. This untyped registry was superseded by
+  the typed backend ports record below.
 - `testbed/planner/runtime/__init__.py`: package exports for the bootstrap
   decision effect and callback protocol.
 - `testbed/policies/hybrid/primitive_planner.py`: thin adapter wiring for
@@ -645,9 +712,9 @@ Scope guardrails kept:
 - `bootstrap` end-condition, transition request, transition decision, switch
   reason, pre-dig-align selection, branch order, thresholds, debug/trace/rollout
   schemas, default config, and behavior-tree defaults were not changed.
-- The backend recognizes the bootstrap branch only through explicit
-  `PlannerTickContext.services["bootstrap_skill_name"]` wiring from the adapter,
-  rather than introducing a new skill-name source of truth in the runtime module.
+- The backend recognizes the bootstrap branch only through explicit adapter
+  skill-name wiring, rather than introducing a new skill-name source of truth in
+  the runtime module.
 
 Verification run for this slice:
 
@@ -675,9 +742,10 @@ Implemented files:
 - `testbed/planner/runtime/legacy_fsm.py`: added the
   `apply_pre_dig_align_outcome` runtime effect and moved the
   `pre_dig_align` active-skill outcome orchestration into
-  `LegacyStateMachineBackend.tick()`. The backend calls the explicit
-  `pre_dig_align_outcome` service callback from `PlannerTickContext.services`
-  and returns an adapter-applied outcome effect.
+  `LegacyStateMachineBackend.tick()`. At landing time the backend called an
+  explicit `pre_dig_align_outcome` adapter callback from the tick context and
+  returned an adapter-applied outcome effect. This untyped registry was
+  superseded by the typed backend ports record below.
 - `testbed/planner/runtime/__init__.py`: package exports for the pre-dig-align
   outcome effect and callback protocol.
 - `testbed/policies/hybrid/primitive_planner.py`: thin adapter wiring for
@@ -698,9 +766,8 @@ Scope guardrails kept:
 - No pre-dig-align readiness, surface-guard, timeout, replan, restart,
   threshold, switch reason, branch order, reset timing, debug/trace/rollout
   schema, default config, or behavior-tree default changed.
-- The backend recognizes the pre-dig-align branch only through explicit
-  `PlannerTickContext.services["pre_dig_align_skill_name"]` wiring from the
-  adapter.
+- The backend recognizes the pre-dig-align branch only through explicit adapter
+  skill-name wiring.
 
 Verification run for this slice:
 

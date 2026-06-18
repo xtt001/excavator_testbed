@@ -38,6 +38,14 @@ from testbed.planner.dump_lifecycle import (
     build_dump_transition_runtime_request,
 )
 from testbed.planner.runtime import (
+    LegacyFsmBackendPorts,
+    LegacyFsmBootstrapPorts,
+    LegacyFsmBoundaryProfilePorts,
+    LegacyFsmDigTransitionPorts,
+    LegacyFsmDumpLifecyclePorts,
+    LegacyFsmPreDigAlignmentPorts,
+    LegacyFsmSkillNames,
+    PlannerBackendPorts,
     PlannerBlackboard,
     PlannerRuntimeEffect,
     PlannerTickContext,
@@ -46,13 +54,60 @@ from testbed.planner.runtime import (
 from testbed.planner.runtime.legacy_fsm import (
     APPLY_BOOTSTRAP_TRANSITION_DECISION_EFFECT,
     APPLY_CARRY_TRANSITION_RUNTIME_EFFECT,
-    APPLY_DIG_TRANSITION_RUNTIME_PROJECTION_EFFECT,
     APPLY_DUMP_TRANSITION_RUNTIME_EFFECT,
     APPLY_PRE_DIG_ALIGN_OUTCOME_EFFECT,
     LEGACY_FSM_TRANSITION_EFFECT,
     LegacyStateMachineBackend,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+
+
+def _skill_names() -> LegacyFsmSkillNames:
+    return LegacyFsmSkillNames(
+        bootstrap="bootstrap",
+        pre_dig_align="pre_dig_align",
+        dig="dig",
+        carry="carry",
+        dump="dump",
+        return_skill="return",
+    )
+
+
+def _ports(**legacy_ports: object) -> PlannerBackendPorts:
+    return PlannerBackendPorts(
+        legacy_fsm=LegacyFsmBackendPorts(
+            skill_names=_skill_names(),
+            **legacy_ports,
+        )
+    )
+
+
+def _boundary_ports(
+    semantic_boundary_profile_active=lambda: False,
+) -> LegacyFsmBoundaryProfilePorts:
+    return LegacyFsmBoundaryProfilePorts(
+        semantic_boundary_profile_active=semantic_boundary_profile_active,
+    )
+
+
+def _bootstrap_ports(
+    *,
+    should_end,
+    service=None,
+    should_pre_dig_align_before_dig=lambda: False,
+    config=lambda: BootstrapConfig(
+        action_dim=4,
+        end_mode="first_qualified_dig_start",
+        end_min_bucket_mass_kg=300.0,
+        end_min_distance_to_dig_area_m=0.25,
+    ),
+) -> LegacyFsmBootstrapPorts:
+    return LegacyFsmBootstrapPorts(
+        service=BootstrapService() if service is None else service,
+        should_end=should_end,
+        should_pre_dig_align_before_dig=should_pre_dig_align_before_dig,
+        config=config,
+    )
 
 
 def test_legacy_fsm_backend_returns_transition_effect_contract() -> None:
@@ -99,10 +154,11 @@ def test_legacy_fsm_backend_bootstrap_running_returns_no_effects() -> None:
             obs={"step": 11},
             boundary_event=boundary_event,
             blackboard=PlannerBlackboard(current_skill="bootstrap"),
-            services={
-                "bootstrap_skill_name": "bootstrap",
-                "should_end_bootstrap": should_end_bootstrap,
-            },
+            ports=_ports(
+                bootstrap_transition=_bootstrap_ports(
+                    should_end=should_end_bootstrap,
+                ),
+            ),
         )
     )
 
@@ -123,19 +179,19 @@ def test_legacy_fsm_backend_bootstrap_end_returns_apply_decision_effect() -> Non
             obs={"step": 12},
             boundary_event=boundary_event,
             blackboard=PlannerBlackboard(current_skill="bootstrap"),
-            services={
-                "bootstrap_skill_name": "bootstrap",
-                "bootstrap_service": bootstrap_service,
-                "should_end_bootstrap": lambda *, obs, boundary_event: True,
-                "should_pre_dig_align_before_dig": lambda: True,
-                "bootstrap_config": lambda: BootstrapConfig(
-                    action_dim=4,
-                    end_mode="first_qualified_dig_start",
-                    end_min_bucket_mass_kg=300.0,
-                    end_min_distance_to_dig_area_m=0.25,
+            ports=_ports(
+                bootstrap_transition=_bootstrap_ports(
+                    service=bootstrap_service,
+                    should_end=lambda *, obs, boundary_event: True,
+                    should_pre_dig_align_before_dig=lambda: True,
+                    config=lambda: BootstrapConfig(
+                        action_dim=4,
+                        end_mode="first_qualified_dig_start",
+                        end_min_bucket_mass_kg=300.0,
+                        end_min_distance_to_dig_area_m=0.25,
+                    ),
                 ),
-                "pre_dig_align_skill_name": "pre_dig_align",
-            },
+            ),
         )
     )
 
@@ -171,10 +227,11 @@ def test_legacy_fsm_backend_pre_dig_align_returns_apply_outcome_effect() -> None
         PlannerTickContext(
             obs={"step": 13},
             blackboard=PlannerBlackboard(current_skill="pre_dig_align"),
-            services={
-                "pre_dig_align_skill_name": "pre_dig_align",
-                "pre_dig_align_outcome": pre_dig_align_outcome,
-            },
+            ports=_ports(
+                pre_dig_alignment=LegacyFsmPreDigAlignmentPorts(
+                    compute_outcome=pre_dig_align_outcome,
+                ),
+            ),
         )
     )
 
@@ -194,75 +251,6 @@ def test_legacy_fsm_backend_pre_dig_align_returns_apply_outcome_effect() -> None
     }
 
 
-def test_legacy_fsm_backend_dig_returns_apply_projection_effect() -> None:
-    calls: list[str] = []
-
-    def exit_guard_ready(obs: dict) -> bool:
-        calls.append(f"exit_guard:{obs['step']}")
-        return False
-
-    def bad_replan_ready(obs: dict) -> bool:
-        calls.append(f"bad_replan:{obs['step']}")
-        return False
-
-    def complete_boundary_low_payload(
-        obs: dict,
-        boundary_event: Any | None,
-    ) -> bool:
-        calls.append(f"complete_low:{obs['step']}:{boundary_event is not None}")
-        return False
-
-    def dig_to_carry_ready(
-        *,
-        obs: dict,
-        boundary_event: Any | None,
-    ) -> bool:
-        calls.append(f"dig_to_carry:{obs['step']}:{boundary_event is not None}")
-        return True
-
-    result = LegacyStateMachineBackend().tick(
-        PlannerTickContext(
-            obs={"step": 15},
-            boundary_event=_FakeBoundaryEvent(dig_complete=True),
-            blackboard=PlannerBlackboard(current_skill="dig"),
-            services={
-                "dig_skill_name": "dig",
-                "dig_lifecycle_gate": DigLifecycleGateService(),
-                "dig_exit_guard_ready": exit_guard_ready,
-                "dig_bad_replan_ready": bad_replan_ready,
-                "dig_complete_boundary_low_payload": complete_boundary_low_payload,
-                "dig_to_carry_ready": dig_to_carry_ready,
-                "dig_to_carry_reason": lambda: "target_payload_loaded",
-            },
-        )
-    )
-
-    assert result.node_path == ("legacy_fsm", "transition", "dig")
-    assert result.status == "running"
-    assert result.reason == "dig_to_carry_target_payload_loaded"
-    assert calls == [
-        "exit_guard:15",
-        "bad_replan:15",
-        "complete_low:15:True",
-        "dig_to_carry:15:True",
-    ]
-    assert len(result.effects) == 1
-    effect = result.effects[0]
-    assert effect.effect_type == APPLY_DIG_TRANSITION_RUNTIME_PROJECTION_EFFECT
-    assert dict(effect.payload["obs"]) == {"step": 15}
-    projection = effect.payload["projection"]
-    assert isinstance(projection, DigTransitionRuntimeProjection)
-    assert projection.outcome == DigTransitionRuntimeOutcome(
-        action="carry",
-        switch_reason="dig_to_carry_target_payload_loaded",
-    )
-    assert dict(result.diagnostics) == {
-        "active_skill": "dig",
-        "action": "carry",
-        "switch_reason": "dig_to_carry_target_payload_loaded",
-    }
-
-
 def test_legacy_fsm_backend_dig_exit_guard_skips_later_gates() -> None:
     calls: list[str] = []
 
@@ -277,15 +265,16 @@ def test_legacy_fsm_backend_dig_exit_guard_skips_later_gates() -> None:
         PlannerTickContext(
             obs={"step": 16},
             blackboard=PlannerBlackboard(current_skill="dig"),
-            services={
-                "dig_skill_name": "dig",
-                "dig_lifecycle_gate": DigLifecycleGateService(),
-                "dig_exit_guard_ready": exit_guard_ready,
-                "dig_bad_replan_ready": fail_later_gate,
-                "dig_complete_boundary_low_payload": fail_later_gate,
-                "dig_to_carry_ready": fail_later_gate,
-                "dig_to_carry_reason": lambda: "",
-            },
+            ports=_ports(
+                dig_transition=LegacyFsmDigTransitionPorts(
+                    lifecycle_gate=DigLifecycleGateService(),
+                    exit_guard_ready=exit_guard_ready,
+                    bad_replan_ready=fail_later_gate,
+                    complete_boundary_low_payload=fail_later_gate,
+                    dig_to_carry_ready=fail_later_gate,
+                    dig_to_carry_reason=lambda: "",
+                ),
+            ),
         )
     )
 
@@ -320,17 +309,24 @@ def test_legacy_fsm_backend_carry_returns_apply_runtime_effect() -> None:
                 current_skill="carry",
                 dump_ready_hold_count=1,
             ),
-            services={
-                "carry_skill_name": "carry",
-                "build_carry_transition_runtime_request": (
-                    build_carry_transition_runtime_request
+            ports=_ports(
+                dump_lifecycle=LegacyFsmDumpLifecyclePorts(
+                    lifecycle_gate=DumpLifecycleGateService(),
+                    build_carry_transition_runtime_request=(
+                        build_carry_transition_runtime_request
+                    ),
+                    build_dump_transition_runtime_request=(
+                        build_dump_transition_runtime_request
+                    ),
+                    carry_release_safety_done=carry_release_safety_done,
+                    dump_ready_hold_steps=lambda: 2,
+                    dump_done_hold_steps=lambda: 1,
+                    dump_done_use_boundary_event=lambda: True,
+                    dump_ready=dump_ready,
+                    dump_done=lambda obs: False,
                 ),
-                "dump_lifecycle_gate": DumpLifecycleGateService(),
-                "carry_release_safety_done": carry_release_safety_done,
-                "semantic_boundary_profile_active": lambda: False,
-                "dump_ready_hold_steps": lambda: 2,
-                "dump_ready": dump_ready,
-            },
+                boundary_profile=_boundary_ports(),
+            ),
         )
     )
 
@@ -368,17 +364,24 @@ def test_legacy_fsm_backend_carry_boundary_event_skips_dump_ready_gate() -> None
                 current_skill="carry",
                 dump_ready_hold_count=0,
             ),
-            services={
-                "carry_skill_name": "carry",
-                "build_carry_transition_runtime_request": (
-                    build_carry_transition_runtime_request
+            ports=_ports(
+                dump_lifecycle=LegacyFsmDumpLifecyclePorts(
+                    lifecycle_gate=DumpLifecycleGateService(),
+                    build_carry_transition_runtime_request=(
+                        build_carry_transition_runtime_request
+                    ),
+                    build_dump_transition_runtime_request=(
+                        build_dump_transition_runtime_request
+                    ),
+                    carry_release_safety_done=lambda obs: False,
+                    dump_ready_hold_steps=lambda: 3,
+                    dump_done_hold_steps=lambda: 1,
+                    dump_done_use_boundary_event=lambda: True,
+                    dump_ready=dump_ready,
+                    dump_done=lambda obs: False,
                 ),
-                "dump_lifecycle_gate": DumpLifecycleGateService(),
-                "carry_release_safety_done": lambda obs: False,
-                "semantic_boundary_profile_active": lambda: False,
-                "dump_ready_hold_steps": lambda: 3,
-                "dump_ready": dump_ready,
-            },
+                boundary_profile=_boundary_ports(),
+            ),
         )
     )
 
@@ -408,17 +411,24 @@ def test_legacy_fsm_backend_dump_returns_apply_runtime_effect() -> None:
                 current_skill="dump",
                 dump_done_hold_count=1,
             ),
-            services={
-                "dump_skill_name": "dump",
-                "build_dump_transition_runtime_request": (
-                    build_dump_transition_runtime_request
+            ports=_ports(
+                dump_lifecycle=LegacyFsmDumpLifecyclePorts(
+                    lifecycle_gate=DumpLifecycleGateService(),
+                    build_carry_transition_runtime_request=(
+                        build_carry_transition_runtime_request
+                    ),
+                    build_dump_transition_runtime_request=(
+                        build_dump_transition_runtime_request
+                    ),
+                    carry_release_safety_done=lambda obs: True,
+                    dump_ready_hold_steps=lambda: 1,
+                    dump_done_hold_steps=lambda: 2,
+                    dump_done_use_boundary_event=lambda: True,
+                    dump_ready=lambda obs: False,
+                    dump_done=dump_done,
                 ),
-                "dump_lifecycle_gate": DumpLifecycleGateService(),
-                "dump_done_use_boundary_event": lambda: True,
-                "semantic_boundary_profile_active": lambda: False,
-                "dump_done_hold_steps": lambda: 2,
-                "dump_done": dump_done,
-            },
+                boundary_profile=_boundary_ports(),
+            ),
         )
     )
 
@@ -457,17 +467,24 @@ def test_legacy_fsm_backend_dump_complete_event_skips_dump_done_gate() -> None:
                 current_skill="dump",
                 dump_done_hold_count=1,
             ),
-            services={
-                "dump_skill_name": "dump",
-                "build_dump_transition_runtime_request": (
-                    build_dump_transition_runtime_request
+            ports=_ports(
+                dump_lifecycle=LegacyFsmDumpLifecyclePorts(
+                    lifecycle_gate=DumpLifecycleGateService(),
+                    build_carry_transition_runtime_request=(
+                        build_carry_transition_runtime_request
+                    ),
+                    build_dump_transition_runtime_request=(
+                        build_dump_transition_runtime_request
+                    ),
+                    carry_release_safety_done=lambda obs: True,
+                    dump_ready_hold_steps=lambda: 1,
+                    dump_done_hold_steps=lambda: 3,
+                    dump_done_use_boundary_event=lambda: True,
+                    dump_ready=lambda obs: False,
+                    dump_done=dump_done,
                 ),
-                "dump_lifecycle_gate": DumpLifecycleGateService(),
-                "dump_done_use_boundary_event": lambda: True,
-                "semantic_boundary_profile_active": lambda: False,
-                "dump_done_hold_steps": lambda: 3,
-                "dump_done": dump_done,
-            },
+                boundary_profile=_boundary_ports(),
+            ),
         )
     )
 
@@ -534,6 +551,8 @@ def test_policy_maybe_switch_skill_applies_legacy_backend_effect(
         dump_ready_hold_count=policy._dump_ready_hold_count,
         dump_done_hold_count=policy._dump_done_hold_count,
     )
+    assert isinstance(seen_contexts[0].ports.legacy_fsm, LegacyFsmBackendPorts)
+    assert not hasattr(seen_contexts[0], "services")
     assert calls == [({"step": 7}, boundary_event)]
 
 
@@ -611,6 +630,10 @@ def test_policy_tick_context_uses_canonical_planner_blackboard() -> None:
     assert context.blackboard.dump_ready_hold_count == 5
     assert context.blackboard.dump_done_hold_count == 6
     assert context.coverage_state is policy.coverage_service.state
+    assert isinstance(context.ports.legacy_fsm, LegacyFsmBackendPorts)
+    assert context.ports.legacy_fsm.dig_transition is not None
+    assert context.ports.legacy_fsm.return_transition is not None
+    assert not hasattr(context, "services")
 
 
 def test_policy_reset_initializes_planner_blackboard_lifecycle_state() -> None:

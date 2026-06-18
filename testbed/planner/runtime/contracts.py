@@ -8,6 +8,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from testbed.planner.runtime.blackboard import PlannerBlackboard
+from testbed.planner.runtime.ports import PlannerBackendPorts
 
 if TYPE_CHECKING:
     from testbed.planner.dig_coverage import CoverageServiceState
@@ -26,7 +27,7 @@ class PlannerTickContext:
     boundary_event: Any | None = None
     coverage_state: CoverageServiceState | None = None
     blackboard: PlannerBlackboard = field(default_factory=PlannerBlackboard)
-    services: Mapping[str, Any] = field(default_factory=dict)
+    ports: PlannerBackendPorts = field(default_factory=PlannerBackendPorts)
     policies: Mapping[str, Any] = field(default_factory=dict)
     config: Mapping[str, Any] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
@@ -35,7 +36,8 @@ class PlannerTickContext:
         object.__setattr__(self, "obs", _immutable_mapping(self.obs))
         if not isinstance(self.blackboard, PlannerBlackboard):
             raise TypeError("PlannerTickContext.blackboard must be PlannerBlackboard.")
-        object.__setattr__(self, "services", _immutable_mapping(self.services))
+        if not isinstance(self.ports, PlannerBackendPorts):
+            raise TypeError("PlannerTickContext.ports must be PlannerBackendPorts.")
         object.__setattr__(self, "policies", _immutable_mapping(self.policies))
         object.__setattr__(self, "config", _immutable_mapping(self.config))
         object.__setattr__(self, "metadata", _immutable_mapping(self.metadata))

@@ -10,6 +10,15 @@ from testbed.planner.runtime.contracts import (
     PlannerTickContext,
     PlannerTickResult,
 )
+from testbed.planner.runtime.ports import (
+    LegacyFsmBootstrapPorts,
+    LegacyFsmBoundaryProfilePorts,
+    LegacyFsmDigTransitionPorts,
+    LegacyFsmDumpLifecyclePorts,
+    LegacyFsmPreDigAlignmentPorts,
+    LegacyFsmReturnTransitionPorts,
+    LegacyFsmSkillNames,
+)
 
 LEGACY_FSM_TRANSITION_EFFECT = "run_legacy_fsm_transition"
 APPLY_BOOTSTRAP_TRANSITION_DECISION_EFFECT = "apply_bootstrap_transition_decision"
@@ -71,30 +80,77 @@ class LegacyStateMachineBackend:
 
     def tick(self, context: PlannerTickContext) -> PlannerTickResult:
         active_skill = context.blackboard.current_skill
-        bootstrap_skill_name = context.services.get("bootstrap_skill_name")
-        if (
-            bootstrap_skill_name is not None
-            and active_skill == str(bootstrap_skill_name)
-        ):
-            return self._tick_bootstrap(context, active_skill=active_skill)
-        pre_dig_align_skill_name = context.services.get("pre_dig_align_skill_name")
-        if (
-            pre_dig_align_skill_name is not None
-            and active_skill == str(pre_dig_align_skill_name)
-        ):
-            return self._tick_pre_dig_align(context, active_skill=active_skill)
-        dig_skill_name = context.services.get("dig_skill_name")
-        if dig_skill_name is not None and active_skill == str(dig_skill_name):
-            return self._tick_dig(context, active_skill=active_skill)
-        carry_skill_name = context.services.get("carry_skill_name")
-        if carry_skill_name is not None and active_skill == str(carry_skill_name):
-            return self._tick_carry(context, active_skill=active_skill)
-        dump_skill_name = context.services.get("dump_skill_name")
-        if dump_skill_name is not None and active_skill == str(dump_skill_name):
-            return self._tick_dump(context, active_skill=active_skill)
-        return_skill_name = context.services.get("return_skill_name")
-        if return_skill_name is not None and active_skill == str(return_skill_name):
-            return self._tick_return(context, active_skill=active_skill)
+        ports = context.ports.legacy_fsm
+        if ports is None:
+            return self._fallback_tick(context, active_skill=active_skill)
+
+        skill_names = ports.skill_names
+        if active_skill == skill_names.bootstrap:
+            return self._tick_bootstrap(
+                context,
+                active_skill=active_skill,
+                ports=_required_port(
+                    ports.bootstrap_transition,
+                    "bootstrap_transition",
+                ),
+                skill_names=skill_names,
+            )
+        if active_skill == skill_names.pre_dig_align:
+            return self._tick_pre_dig_align(
+                context,
+                active_skill=active_skill,
+                ports=_required_port(
+                    ports.pre_dig_alignment,
+                    "pre_dig_alignment",
+                ),
+            )
+        if active_skill == skill_names.dig:
+            return self._tick_dig(
+                context,
+                active_skill=active_skill,
+                ports=_required_port(ports.dig_transition, "dig_transition"),
+            )
+        if active_skill == skill_names.carry:
+            return self._tick_carry(
+                context,
+                active_skill=active_skill,
+                ports=_required_port(ports.dump_lifecycle, "dump_lifecycle"),
+                boundary_ports=_required_port(
+                    ports.boundary_profile,
+                    "boundary_profile",
+                ),
+            )
+        if active_skill == skill_names.dump:
+            return self._tick_dump(
+                context,
+                active_skill=active_skill,
+                ports=_required_port(ports.dump_lifecycle, "dump_lifecycle"),
+                boundary_ports=_required_port(
+                    ports.boundary_profile,
+                    "boundary_profile",
+                ),
+            )
+        if active_skill == skill_names.return_skill:
+            return self._tick_return(
+                context,
+                active_skill=active_skill,
+                ports=_required_port(
+                    ports.return_transition,
+                    "return_transition",
+                ),
+                boundary_ports=_required_port(
+                    ports.boundary_profile,
+                    "boundary_profile",
+                ),
+            )
+        return self._fallback_tick(context, active_skill=active_skill)
+
+    def _fallback_tick(
+        self,
+        context: PlannerTickContext,
+        *,
+        active_skill: str,
+    ) -> PlannerTickResult:
         return PlannerTickResult(
             node_path=("legacy_fsm", "transition", active_skill),
             status="running",
@@ -116,13 +172,11 @@ class LegacyStateMachineBackend:
         context: PlannerTickContext,
         *,
         active_skill: str,
+        ports: LegacyFsmBootstrapPorts,
+        skill_names: LegacyFsmSkillNames,
     ) -> PlannerTickResult:
         obs = dict(context.obs)
-        should_end_bootstrap = _required_service(
-            context.services,
-            "should_end_bootstrap",
-        )
-        if not should_end_bootstrap(obs=obs, boundary_event=context.boundary_event):
+        if not ports.should_end(obs=obs, boundary_event=context.boundary_event):
             return PlannerTickResult(
                 node_path=("legacy_fsm", "transition", active_skill),
                 status="running",
@@ -131,21 +185,13 @@ class LegacyStateMachineBackend:
                 diagnostics={"active_skill": active_skill},
             )
 
-        bootstrap_service = _required_service(context.services, "bootstrap_service")
-        should_pre_dig_align_before_dig = _required_service(
-            context.services,
-            "should_pre_dig_align_before_dig",
+        transition_request = ports.service.end_transition_request(
+            pre_dig_align_before_dig=ports.should_pre_dig_align_before_dig(),
+            pre_dig_align_skill_name=skill_names.pre_dig_align,
         )
-        bootstrap_config = _required_service(context.services, "bootstrap_config")
-        transition_request = bootstrap_service.end_transition_request(
-            pre_dig_align_before_dig=should_pre_dig_align_before_dig(),
-            pre_dig_align_skill_name=str(
-                context.services.get("pre_dig_align_skill_name", "pre_dig_align")
-            ),
-        )
-        decision = bootstrap_service.end_transition(
+        decision = ports.service.end_transition(
             transition_request.facts,
-            bootstrap_config(),
+            ports.config(),
             transition_request.transition_config,
         )
         return PlannerTickResult(
@@ -170,13 +216,10 @@ class LegacyStateMachineBackend:
         context: PlannerTickContext,
         *,
         active_skill: str,
+        ports: LegacyFsmPreDigAlignmentPorts,
     ) -> PlannerTickResult:
         obs = dict(context.obs)
-        pre_dig_align_outcome = _required_service(
-            context.services,
-            "pre_dig_align_outcome",
-        )
-        outcome = pre_dig_align_outcome(obs)
+        outcome = ports.compute_outcome(obs)
         return PlannerTickResult(
             node_path=("legacy_fsm", "transition", active_skill),
             status="running",
@@ -199,17 +242,11 @@ class LegacyStateMachineBackend:
         context: PlannerTickContext,
         *,
         active_skill: str,
+        ports: LegacyFsmDigTransitionPorts,
     ) -> PlannerTickResult:
         obs = dict(context.obs)
-        dig_lifecycle_gate = _required_service(
-            context.services,
-            "dig_lifecycle_gate",
-        )
-        exit_guard_ready = _required_service(
-            context.services,
-            "dig_exit_guard_ready",
-        )(obs)
-        request = dig_lifecycle_gate.dig_transition_runtime_request(
+        exit_guard_ready = ports.exit_guard_ready(obs)
+        request = ports.lifecycle_gate.dig_transition_runtime_request(
             exit_guard_ready=exit_guard_ready,
         )
         bad_replan_ready = False
@@ -217,28 +254,23 @@ class LegacyStateMachineBackend:
         dig_to_carry_ready = False
         dig_to_carry_reason = ""
         if request.should_check_bad_replan:
-            bad_replan_ready = _required_service(
-                context.services,
-                "dig_bad_replan_ready",
-            )(obs)
+            bad_replan_ready = ports.bad_replan_ready(obs)
         if request.should_check_complete_boundary_low_payload(bad_replan_ready):
-            complete_boundary_low_payload = _required_service(
-                context.services,
-                "dig_complete_boundary_low_payload",
-            )(obs, context.boundary_event)
+            complete_boundary_low_payload = ports.complete_boundary_low_payload(
+                obs,
+                context.boundary_event,
+            )
         if request.should_check_dig_to_carry(
             bad_replan_ready=bad_replan_ready,
             complete_boundary_low_payload=complete_boundary_low_payload,
         ):
-            dig_to_carry_ready = _required_service(
-                context.services,
-                "dig_to_carry_ready",
-            )(obs=obs, boundary_event=context.boundary_event)
+            dig_to_carry_ready = ports.dig_to_carry_ready(
+                obs=obs,
+                boundary_event=context.boundary_event,
+            )
             if dig_to_carry_ready:
-                dig_to_carry_reason = str(
-                    _required_service(context.services, "dig_to_carry_reason")()
-                )
-        outcome = dig_lifecycle_gate.dig_transition_runtime(
+                dig_to_carry_reason = str(ports.dig_to_carry_reason())
+        outcome = ports.lifecycle_gate.dig_transition_runtime(
             request.facts_with_gate_results(
                 bad_replan_ready=bad_replan_ready,
                 dig_to_carry_reason=dig_to_carry_reason,
@@ -246,7 +278,7 @@ class LegacyStateMachineBackend:
                 dig_to_carry_ready=dig_to_carry_ready,
             )
         )
-        projection = dig_lifecycle_gate.dig_transition_runtime_projection(outcome)
+        projection = ports.lifecycle_gate.dig_transition_runtime_projection(outcome)
         return PlannerTickResult(
             node_path=("legacy_fsm", "transition", active_skill),
             status="running",
@@ -269,37 +301,25 @@ class LegacyStateMachineBackend:
         context: PlannerTickContext,
         *,
         active_skill: str,
+        ports: LegacyFsmDumpLifecyclePorts,
+        boundary_ports: LegacyFsmBoundaryProfilePorts,
     ) -> PlannerTickResult:
         obs = dict(context.obs)
-        release_safety_done = _required_service(
-            context.services,
-            "carry_release_safety_done",
-        )(obs)
-        build_request = _required_service(
-            context.services,
-            "build_carry_transition_runtime_request",
-        )
-        request = build_request(
+        release_safety_done = ports.carry_release_safety_done(obs)
+        request = ports.build_carry_transition_runtime_request(
             release_safety_done=release_safety_done,
             boundary_event=context.boundary_event,
-            semantic_boundary_profile_active=_required_service(
-                context.services,
-                "semantic_boundary_profile_active",
-            )(),
+            semantic_boundary_profile_active=(
+                boundary_ports.semantic_boundary_profile_active()
+            ),
             current_dump_ready_hold_count=context.blackboard.dump_ready_hold_count,
         )
         dump_ready = False
         if request.should_check_dump_ready:
-            dump_ready = bool(_required_service(context.services, "dump_ready")(obs))
-        runtime = _required_service(
-            context.services,
-            "dump_lifecycle_gate",
-        ).carry_transition_runtime(
+            dump_ready = bool(ports.dump_ready(obs))
+        runtime = ports.lifecycle_gate.carry_transition_runtime(
             request.facts_with_dump_ready(dump_ready),
-            dump_ready_hold_steps=_required_service(
-                context.services,
-                "dump_ready_hold_steps",
-            )(),
+            dump_ready_hold_steps=ports.dump_ready_hold_steps(),
         )
         outcome = runtime.outcome
         return PlannerTickResult(
@@ -324,36 +344,24 @@ class LegacyStateMachineBackend:
         context: PlannerTickContext,
         *,
         active_skill: str,
+        ports: LegacyFsmDumpLifecyclePorts,
+        boundary_ports: LegacyFsmBoundaryProfilePorts,
     ) -> PlannerTickResult:
         obs = dict(context.obs)
-        build_request = _required_service(
-            context.services,
-            "build_dump_transition_runtime_request",
-        )
-        request = build_request(
-            dump_done_use_boundary_event=_required_service(
-                context.services,
-                "dump_done_use_boundary_event",
-            )(),
+        request = ports.build_dump_transition_runtime_request(
+            dump_done_use_boundary_event=ports.dump_done_use_boundary_event(),
             boundary_event=context.boundary_event,
-            semantic_boundary_profile_active=_required_service(
-                context.services,
-                "semantic_boundary_profile_active",
-            )(),
+            semantic_boundary_profile_active=(
+                boundary_ports.semantic_boundary_profile_active()
+            ),
             current_dump_done_hold_count=context.blackboard.dump_done_hold_count,
         )
         dump_done = False
         if request.should_check_dump_done:
-            dump_done = bool(_required_service(context.services, "dump_done")(obs))
-        runtime = _required_service(
-            context.services,
-            "dump_lifecycle_gate",
-        ).dump_transition_runtime(
+            dump_done = bool(ports.dump_done(obs))
+        runtime = ports.lifecycle_gate.dump_transition_runtime(
             request.facts_with_dump_done(dump_done),
-            dump_done_hold_steps=_required_service(
-                context.services,
-                "dump_done_hold_steps",
-            )(),
+            dump_done_hold_steps=ports.dump_done_hold_steps(),
         )
         outcome = runtime.outcome
         return PlannerTickResult(
@@ -378,47 +386,41 @@ class LegacyStateMachineBackend:
         context: PlannerTickContext,
         *,
         active_skill: str,
+        ports: LegacyFsmReturnTransitionPorts,
+        boundary_ports: LegacyFsmBoundaryProfilePorts,
     ) -> PlannerTickResult:
         obs = dict(context.obs)
-        return_transition_service = _required_service(
-            context.services,
-            "return_transition_service",
-        )
-        handoff_ready = _required_service(
-            context.services,
-            "return_to_dig_handoff_ready",
-        )(obs)
-        request = return_transition_service.transition_request(
+        handoff_ready = ports.handoff_ready(obs)
+        request = ports.service.transition_request(
             handoff_ready=handoff_ready,
             boundary_event=context.boundary_event,
             previous_next_dig_event_seen=(
                 context.blackboard.return_next_dig_event_seen
             ),
-            semantic_boundary_profile_active=_required_service(
-                context.services,
-                "semantic_boundary_profile_active",
-            )(),
+            semantic_boundary_profile_active=(
+                boundary_ports.semantic_boundary_profile_active()
+            ),
         )
         direct_handoff_ready = False
         shallow_guard_ready = False
         if request.should_check_direct_handoff:
-            direct_handoff_ready = _required_service(
-                context.services,
-                "return_to_dig_direct_handoff_ready",
-            )(obs, handoff_ready=handoff_ready)
+            direct_handoff_ready = ports.direct_handoff_ready(
+                obs,
+                handoff_ready=handoff_ready,
+            )
         if request.should_check_shallow_guard(direct_handoff_ready):
-            shallow_guard_ready = _required_service(
-                context.services,
-                "return_to_dig_shallow_guard_ready",
-            )(obs=obs, boundary_event=context.boundary_event)
-        outcome = return_transition_service.classify(
+            shallow_guard_ready = ports.shallow_guard_ready(
+                obs=obs,
+                boundary_event=context.boundary_event,
+            )
+        outcome = ports.service.classify(
             request.facts_with_gate_results(
                 direct_handoff_ready=direct_handoff_ready,
                 shallow_guard_ready=shallow_guard_ready,
             ),
             request.config,
         )
-        projection = return_transition_service.transition_runtime_projection(outcome)
+        projection = ports.service.transition_runtime_projection(outcome)
         return PlannerTickResult(
             node_path=("legacy_fsm", "transition", active_skill),
             status="running",
@@ -529,11 +531,10 @@ def apply_legacy_fsm_runtime_effects(
         raise ValueError(f"Unsupported legacy FSM effect {effect.effect_type!r}.")
 
 
-def _required_service(services: Mapping[str, Any], name: str) -> Any:
-    try:
-        return services[name]
-    except KeyError as exc:
-        raise ValueError(f"Legacy FSM backend requires service {name!r}.") from exc
+def _required_port(port: Any | None, name: str) -> Any:
+    if port is None:
+        raise ValueError(f"Legacy FSM backend requires typed port {name!r}.")
+    return port
 
 
 __all__ = [

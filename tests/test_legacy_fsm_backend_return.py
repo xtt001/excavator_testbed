@@ -11,6 +11,11 @@ from testbed.planner.return_to_dig_transition import (
     ReturnToDigTransitionService,
 )
 from testbed.planner.runtime import (
+    LegacyFsmBackendPorts,
+    LegacyFsmBoundaryProfilePorts,
+    LegacyFsmReturnTransitionPorts,
+    LegacyFsmSkillNames,
+    PlannerBackendPorts,
     PlannerBlackboard,
     PlannerRuntimeEffect,
     PlannerTickContext,
@@ -22,6 +27,32 @@ from testbed.planner.runtime.legacy_fsm import (
     apply_legacy_fsm_runtime_effects,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+
+
+def _skill_names() -> LegacyFsmSkillNames:
+    return LegacyFsmSkillNames(
+        bootstrap="bootstrap",
+        pre_dig_align="pre_dig_align",
+        dig="dig",
+        carry="carry",
+        dump="dump",
+        return_skill="return",
+    )
+
+
+def _ports(
+    return_transition: LegacyFsmReturnTransitionPorts,
+    semantic_boundary_profile_active=lambda: False,
+) -> PlannerBackendPorts:
+    return PlannerBackendPorts(
+        legacy_fsm=LegacyFsmBackendPorts(
+            skill_names=_skill_names(),
+            return_transition=return_transition,
+            boundary_profile=LegacyFsmBoundaryProfilePorts(
+                semantic_boundary_profile_active=semantic_boundary_profile_active,
+            ),
+        )
+    )
 
 
 def test_legacy_fsm_backend_return_returns_apply_runtime_effect() -> None:
@@ -45,14 +76,14 @@ def test_legacy_fsm_backend_return_returns_apply_runtime_effect() -> None:
                 current_skill="return",
                 return_next_dig_event_seen=False,
             ),
-            services={
-                "return_skill_name": "return",
-                "return_transition_service": ReturnToDigTransitionService(),
-                "return_to_dig_handoff_ready": handoff_ready,
-                "semantic_boundary_profile_active": lambda: False,
-                "return_to_dig_direct_handoff_ready": fail_direct,
-                "return_to_dig_shallow_guard_ready": fail_shallow,
-            },
+            ports=_ports(
+                LegacyFsmReturnTransitionPorts(
+                    service=ReturnToDigTransitionService(),
+                    handoff_ready=handoff_ready,
+                    direct_handoff_ready=fail_direct,
+                    shallow_guard_ready=fail_shallow,
+                ),
+            ),
         )
     )
 
@@ -108,14 +139,14 @@ def test_legacy_fsm_backend_return_direct_handoff_preserves_gate_order() -> None
                 current_skill="return",
                 return_next_dig_event_seen=False,
             ),
-            services={
-                "return_skill_name": "return",
-                "return_transition_service": ReturnToDigTransitionService(),
-                "return_to_dig_handoff_ready": handoff_ready,
-                "semantic_boundary_profile_active": lambda: False,
-                "return_to_dig_direct_handoff_ready": direct_handoff_ready,
-                "return_to_dig_shallow_guard_ready": fail_shallow,
-            },
+            ports=_ports(
+                LegacyFsmReturnTransitionPorts(
+                    service=ReturnToDigTransitionService(),
+                    handoff_ready=handoff_ready,
+                    direct_handoff_ready=direct_handoff_ready,
+                    shallow_guard_ready=fail_shallow,
+                ),
+            ),
         )
     )
 

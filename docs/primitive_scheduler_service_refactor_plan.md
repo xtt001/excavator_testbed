@@ -121,8 +121,8 @@ Recent checkpoint:
   primitive action tree、primitive scheduler facades 和 AGX primitive legacy tests。
 - 2026-06-17: backend runtime contract Phase 3 的第二小刀已把默认 FSM 的
   `bootstrap` active-skill end-transition orchestration 接到
-  `LegacyStateMachineBackend.tick()`。backend 通过
-  `PlannerTickContext.services` 调用现有 bootstrap service/callback，并返回
+  `LegacyStateMachineBackend.tick()`。backend 通过当时的 untyped tick-context
+  registry 调用现有 bootstrap service/callback，并返回
   `apply_bootstrap_transition_decision` effect；`PrimitivePlannerACTPolicy` 仍通过
   现有 `_apply_bootstrap_transition_decision()` 和 `_set_skill()` 应用实际副作用。
   该切片没有迁移 `pre_dig_align`、`dig`、`carry`、`dump` 或 `return` 分支，没有改变
@@ -130,8 +130,8 @@ Recent checkpoint:
   debug/trace/rollout schema 或默认行为。
 - 2026-06-17: backend runtime contract Phase 3 的第三小刀已把默认 FSM 的
   `pre_dig_align` active-skill outcome orchestration 接到
-  `LegacyStateMachineBackend.tick()`。backend 通过
-  `PlannerTickContext.services["pre_dig_align_outcome"]` 调用现有 facade 计算
+  `LegacyStateMachineBackend.tick()`。backend 通过当时的 untyped tick-context
+  registry 调用现有 facade 计算
   `PreDigAlignOutcome`，并返回 `apply_pre_dig_align_outcome` effect；
   `PrimitivePlannerACTPolicy` 仍通过现有 `_apply_pre_dig_align_outcome()` 应用
   projection 和实际副作用。该切片没有迁移 `dig`、`carry`、`dump` 或 `return`
@@ -139,7 +139,7 @@ Recent checkpoint:
   switch reason、branch order、reset timing、debug/trace/rollout schema 或默认行为。
 - 2026-06-17: backend runtime contract Phase 3 的第四小刀已把默认 FSM 的
   `dig` active-skill gate orchestration 接到 `LegacyStateMachineBackend.tick()`。
-  backend 通过 `PlannerTickContext.services` 调用现有 adapter gate callbacks，并返回
+  backend 通过当时的 untyped tick-context registry 调用现有 adapter gate callbacks，并返回
   `apply_dig_transition_runtime_projection` effect；`PrimitivePlannerACTPolicy`
   仍通过现有 `_apply_dig_transition_runtime_projection()` 应用 counter、coverage
   reject、failed-dig restart、cell-entry/coverage completion 和 `_set_skill("carry", ...)`
@@ -149,8 +149,8 @@ Recent checkpoint:
   switch reason、branch order、reset timing、debug/trace/rollout schema 或默认行为。
 - 2026-06-17: backend runtime contract Phase 3 的第五小刀已把默认 FSM 的
   `carry` active-skill request/gate orchestration 接到
-  `LegacyStateMachineBackend.tick()`。backend 通过
-  `PlannerTickContext.services` 调用现有 adapter callbacks 和
+  `LegacyStateMachineBackend.tick()`。backend 通过当时的 untyped tick-context
+  registry 调用现有 adapter callbacks 和
   `DumpLifecycleGateService.carry_transition_runtime()`，并返回
   `apply_carry_transition_runtime` effect；`PrimitivePlannerACTPolicy` 仍通过现有
   `_apply_carry_transition_runtime()` 应用 hold count、coverage dump completion、
@@ -162,8 +162,8 @@ Recent checkpoint:
   和 AGX primitive legacy tests。
 - 2026-06-17: backend runtime contract Phase 3 的第六小刀已把默认 FSM 的
   `dump` active-skill request/gate orchestration 接到
-  `LegacyStateMachineBackend.tick()`。backend 通过
-  `PlannerTickContext.services` 调用现有 adapter callbacks 和
+  `LegacyStateMachineBackend.tick()`。backend 通过当时的 untyped tick-context
+  registry 调用现有 adapter callbacks 和
   `DumpLifecycleGateService.dump_transition_runtime()`，并返回
   `apply_dump_transition_runtime` effect；`PrimitivePlannerACTPolicy` 仍通过现有
   `_apply_dump_transition_runtime()` 应用 hold count、coverage dump completion、
@@ -174,7 +174,7 @@ Recent checkpoint:
   golden/action-tree、primitive scheduler facades 和 AGX primitive legacy tests。
 - 2026-06-17: backend runtime contract Phase 3 的第七小刀已把默认 FSM 的
   `return` active-skill gate orchestration 接到
-  `LegacyStateMachineBackend.tick()`。backend 通过 `PlannerTickContext.services`
+  `LegacyStateMachineBackend.tick()`。backend 通过当时的 untyped tick-context registry
   以原顺序调用现有 adapter callbacks，并用 `ReturnToDigTransitionService` 生成
   `ReturnToDigTransitionOutcome` 与 runtime projection；`PrimitivePlannerACTPolicy`
   仍通过新增的薄 adapter applier 先应用 projection，再构造/apply completion，确保
@@ -200,6 +200,13 @@ Recent checkpoint:
   独立 old-inline FSM source-of-truth，因此旧的 backend-versus-direct private method
   parity test 被替换为 fallback recursion guard test。该修正只改变 under-wired
   fallback 的错误边界，不改变默认 planner 行为。
+- 2026-06-18: backend runtime contract 已把旧的 untyped tick-context registry
+  收敛为 typed backend ports。当前 source of truth 是
+  `testbed.planner.runtime.ports.PlannerBackendPorts` /
+  `LegacyFsmBackendPorts` 和
+  `docs/superpowers/specs/2026-06-17-planner-backend-interface-design.md` 的
+  typed ports landing record。旧记录中提到的 untyped registry 只描述历史落地过程，
+  不再是当前 backend dependency boundary。
 - 2026-06-17: backend interface spec 的 Phase 4 pre-slice 已添加
   `testbed.planner.runtime.behavior_tree.BehaviorTreeBackend` 实验性 fail-closed
   contract skeleton 和 contract tests。该记录属于 backend-interface phase numbering，

@@ -273,6 +273,15 @@ from testbed.planner.return_to_dig_transition import (
     ReturnToDigTransitionService,
 )
 from testbed.planner.runtime import (
+    LegacyFsmBackendPorts,
+    LegacyFsmBootstrapPorts,
+    LegacyFsmBoundaryProfilePorts,
+    LegacyFsmDigTransitionPorts,
+    LegacyFsmDumpLifecyclePorts,
+    LegacyFsmPreDigAlignmentPorts,
+    LegacyFsmReturnTransitionPorts,
+    LegacyFsmSkillNames,
+    PlannerBackendPorts,
     PlannerBlackboard,
     PlannerConditioningState,
     PlannerTickContext,
@@ -1109,55 +1118,73 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             boundary_event=boundary_event,
             coverage_state=self.coverage_service.state,
             blackboard=self._planner_lifecycle_blackboard(),
-            services={
-                "bootstrap_skill_name": BOOTSTRAP_SKILL_NAME,
-                "bootstrap_service": self.bootstrap_service,
-                "should_end_bootstrap": self._should_end_bootstrap,
-                "should_pre_dig_align_before_dig": (
-                    self._should_pre_dig_align_before_dig
+            ports=PlannerBackendPorts(
+                legacy_fsm=LegacyFsmBackendPorts(
+                    skill_names=LegacyFsmSkillNames(
+                        bootstrap=BOOTSTRAP_SKILL_NAME,
+                        pre_dig_align=PRE_DIG_ALIGN_SKILL_NAME,
+                        dig="dig",
+                        carry="carry",
+                        dump="dump",
+                        return_skill="return",
+                    ),
+                    bootstrap_transition=LegacyFsmBootstrapPorts(
+                        service=self.bootstrap_service,
+                        should_end=self._should_end_bootstrap,
+                        should_pre_dig_align_before_dig=(
+                            self._should_pre_dig_align_before_dig
+                        ),
+                        config=self._bootstrap_config,
+                    ),
+                    pre_dig_alignment=LegacyFsmPreDigAlignmentPorts(
+                        compute_outcome=self._pre_dig_align_outcome,
+                    ),
+                    dig_transition=LegacyFsmDigTransitionPorts(
+                        lifecycle_gate=self.dig_lifecycle_gate,
+                        exit_guard_ready=self._dig_exit_guard_ready,
+                        bad_replan_ready=self._dig_bad_replan_ready,
+                        complete_boundary_low_payload=(
+                            self._dig_complete_boundary_low_payload
+                        ),
+                        dig_to_carry_ready=self._dig_to_carry_ready,
+                        dig_to_carry_reason=lambda: self._dig_to_carry_reason,
+                    ),
+                    dump_lifecycle=LegacyFsmDumpLifecyclePorts(
+                        lifecycle_gate=self.dump_lifecycle_gate,
+                        build_carry_transition_runtime_request=(
+                            build_carry_transition_runtime_request
+                        ),
+                        build_dump_transition_runtime_request=(
+                            build_dump_transition_runtime_request
+                        ),
+                        carry_release_safety_done=(
+                            self._carry_release_safety_done
+                        ),
+                        dump_ready_hold_steps=lambda: self.dump_ready_hold_steps,
+                        dump_done_hold_steps=lambda: self.dump_done_hold_steps,
+                        dump_done_use_boundary_event=(
+                            lambda: self.dump_done_use_boundary_event
+                        ),
+                        dump_ready=self._dump_ready,
+                        dump_done=self._dump_done,
+                    ),
+                    return_transition=LegacyFsmReturnTransitionPorts(
+                        service=self.return_transition_service,
+                        handoff_ready=self._return_to_dig_handoff_ready,
+                        direct_handoff_ready=(
+                            self._return_to_dig_direct_handoff_ready
+                        ),
+                        shallow_guard_ready=(
+                            self._return_to_dig_shallow_guard_ready
+                        ),
+                    ),
+                    boundary_profile=LegacyFsmBoundaryProfilePorts(
+                        semantic_boundary_profile_active=(
+                            self._semantic_boundary_profile_active
+                        ),
+                    ),
                 ),
-                "bootstrap_config": self._bootstrap_config,
-                "pre_dig_align_skill_name": PRE_DIG_ALIGN_SKILL_NAME,
-                "pre_dig_align_outcome": self._pre_dig_align_outcome,
-                "dig_skill_name": "dig",
-                "dig_lifecycle_gate": self.dig_lifecycle_gate,
-                "dig_exit_guard_ready": self._dig_exit_guard_ready,
-                "dig_bad_replan_ready": self._dig_bad_replan_ready,
-                "dig_complete_boundary_low_payload": (
-                    self._dig_complete_boundary_low_payload
-                ),
-                "dig_to_carry_ready": self._dig_to_carry_ready,
-                "dig_to_carry_reason": lambda: self._dig_to_carry_reason,
-                "carry_skill_name": "carry",
-                "build_carry_transition_runtime_request": (
-                    build_carry_transition_runtime_request
-                ),
-                "dump_lifecycle_gate": self.dump_lifecycle_gate,
-                "carry_release_safety_done": self._carry_release_safety_done,
-                "semantic_boundary_profile_active": (
-                    self._semantic_boundary_profile_active
-                ),
-                "dump_ready_hold_steps": lambda: self.dump_ready_hold_steps,
-                "dump_ready": self._dump_ready,
-                "dump_skill_name": "dump",
-                "build_dump_transition_runtime_request": (
-                    build_dump_transition_runtime_request
-                ),
-                "dump_done_use_boundary_event": (
-                    lambda: self.dump_done_use_boundary_event
-                ),
-                "dump_done_hold_steps": lambda: self.dump_done_hold_steps,
-                "dump_done": self._dump_done,
-                "return_skill_name": "return",
-                "return_transition_service": self.return_transition_service,
-                "return_to_dig_handoff_ready": self._return_to_dig_handoff_ready,
-                "return_to_dig_direct_handoff_ready": (
-                    self._return_to_dig_direct_handoff_ready
-                ),
-                "return_to_dig_shallow_guard_ready": (
-                    self._return_to_dig_shallow_guard_ready
-                ),
-            },
+            ),
         )
 
     def _apply_legacy_fsm_tick_result(self, result: PlannerTickResult) -> None:
