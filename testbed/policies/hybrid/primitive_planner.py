@@ -69,6 +69,12 @@ from testbed.planner.primitive_coverage import (
     CoverageSelectionConfig,
     CoverageSelectionService,
 )
+from testbed.planner.primitive_coverage_updates import (
+    CoverageCompletionFacts,
+    CoverageRejectionFacts,
+    CoverageUpdateConfig,
+    CoverageUpdateService,
+)
 from testbed.planner.primitive_execution import (
     PrimitiveTickCallbacks,
     PrimitiveTickPreparation,
@@ -4503,15 +4509,94 @@ class PrimitivePlannerACTPolicy(Policy):
             z_count=z_count,
         )
 
+    def _coverage_update_config(self) -> CoverageUpdateConfig:
+        return CoverageUpdateConfig(
+            prior_fields=dict(self.dig_cut_prior.get("fields", {})),
+            use_env_removed_depth=bool(self.coverage_use_env_removed_depth),
+            low_productivity_payload_kg=float(
+                self.coverage_low_productivity_payload_kg
+            ),
+            low_productivity_deposit_kg=float(
+                self.coverage_low_productivity_deposit_kg
+            ),
+            deplete_after_low_streak=int(self.coverage_deplete_after_low_streak),
+            min_remaining_depth_m=float(self.coverage_min_remaining_depth_m),
+            belief_depleted_score=float(self.coverage_belief_depleted_score),
+            belief_gain_scale=float(self.coverage_belief_gain_scale),
+        )
+
+    def _coverage_update_service(self) -> CoverageUpdateService:
+        return CoverageUpdateService(self._coverage_update_config())
+
+    def _coverage_completion_facts(
+        self,
+        obs: dict,
+        corridor: CoverageCorridorState,
+        *,
+        reason: str,
+    ) -> CoverageCompletionFacts:
+        return CoverageCompletionFacts(
+            payload_gain_kg=max(float(self._coverage_current_payload_gain_kg), 0.0),
+            effective_deposit_delta_kg=max(
+                0.0,
+                self._deposited_mass(obs)
+                - float(self._coverage_cycle_start_deposit_kg),
+            ),
+            remaining_depth_m=float(
+                self._coverage_remaining_depth_for_corridor(obs, corridor)
+            ),
+            reason=str(reason),
+            attempt_limit=int(self._coverage_corridor_attempt_limit(corridor)),
+            completed_dump_count=int(self._coverage_completed_dump_count),
+            global_low_productivity_streak=int(
+                self._coverage_global_low_productivity_streak
+            ),
+        )
+
+    def _coverage_rejection_facts(
+        self,
+        obs: dict,
+        corridor: CoverageCorridorState,
+        *,
+        reason: str,
+    ) -> CoverageRejectionFacts:
+        return CoverageRejectionFacts(
+            payload_gain_kg=max(
+                float(self._coverage_current_payload_gain_kg),
+                float(self._dig_best_mass_kg),
+                self._mass_in_bucket(obs),
+                0.0,
+            ),
+            effective_deposit_delta_kg=max(
+                0.0,
+                self._deposited_mass(obs)
+                - float(self._coverage_cycle_start_deposit_kg),
+            ),
+            remaining_depth_m=float(
+                self._coverage_remaining_depth_for_corridor(obs, corridor)
+            ),
+            reason=str(reason),
+            attempt_limit=int(self._coverage_corridor_attempt_limit(corridor)),
+            global_low_productivity_streak=int(
+                self._coverage_global_low_productivity_streak
+            ),
+            active_state_exemplar_ids=tuple(
+                str(exemplar_id)
+                for exemplar_id in self._coverage_active_state_exemplar_ids
+            ),
+        )
+
     def _complete_coverage_dig(self, obs: dict) -> None:
         if self.dig_cut_planner_mode not in {
             "operator_prior_coverage",
             "operator_prior_sweep_belief",
         }:
             return
-        self._coverage_current_payload_gain_kg = max(
-            float(self._coverage_current_payload_gain_kg),
-            self._mass_in_bucket(obs),
+        self._coverage_current_payload_gain_kg = (
+            self._coverage_update_service().record_dig_payload(
+                float(self._coverage_current_payload_gain_kg),
+                self._mass_in_bucket(obs),
+            )
         )
 
     def _complete_coverage_dump(self, obs: dict, *, reason: str) -> None:
@@ -4523,65 +4608,18 @@ class PrimitivePlannerACTPolicy(Policy):
         corridor = self._coverage_active_corridor()
         if corridor is None:
             return
-        payload_gain = max(float(self._coverage_current_payload_gain_kg), 0.0)
-        effective_deposit = max(
-            0.0, self._deposited_mass(obs) - float(self._coverage_cycle_start_deposit_kg)
-        )
-        remaining_depth = self._coverage_remaining_depth_for_corridor(obs, corridor)
-        low_productivity = (
-            payload_gain < self.coverage_low_productivity_payload_kg
-            or effective_deposit < self.coverage_low_productivity_deposit_kg
-        )
-        corridor.attempts += 1
-        corridor.last_payload_gain_kg = float(payload_gain)
-        corridor.last_effective_deposit_delta_kg = float(effective_deposit)
-        corridor.last_remaining_depth_m = float(remaining_depth)
-        corridor.last_reason = str(reason)
-        self._update_corridor_belief(
+        result = self._coverage_update_service().complete_dump(
             corridor,
-            payload_gain_kg=payload_gain,
-            effective_deposit_delta_kg=effective_deposit,
+            self._coverage_completion_facts(obs, corridor, reason=reason),
         )
-        self._coverage_last_payload_gain_kg = float(payload_gain)
-        self._coverage_last_effective_deposit_delta_kg = float(effective_deposit)
-        self._coverage_completed_dump_count += 1
-
-        if low_productivity:
-            corridor.low_productivity_streak += 1
-            self._coverage_global_low_productivity_streak += 1
-        else:
-            corridor.low_productivity_streak = 0
-            self._coverage_global_low_productivity_streak = 0
-
-        if (
-            corridor.low_productivity_streak
-            >= self.coverage_deplete_after_low_streak
-        ):
-            corridor.depleted = True
-            corridor.last_reason = "low_productivity_consecutive"
-        remaining_depth_available = bool(
-            self.coverage_use_env_removed_depth
-            and np.isfinite(remaining_depth)
-            and float(remaining_depth) >= self.coverage_min_remaining_depth_m
+        self._coverage_last_payload_gain_kg = float(result.payload_gain_kg)
+        self._coverage_last_effective_deposit_delta_kg = float(
+            result.effective_deposit_delta_kg
         )
-        if (
-            corridor.attempts >= self._coverage_corridor_attempt_limit(corridor)
-            and not remaining_depth_available
-        ):
-            corridor.depleted = True
-            corridor.last_reason = "attempt_limit_reached"
-        if (
-            np.isfinite(remaining_depth)
-            and remaining_depth < self.coverage_min_remaining_depth_m
-        ):
-            corridor.depleted = True
-            corridor.last_reason = "remaining_depth_below_threshold"
-        if (
-            not self.coverage_use_env_removed_depth
-            and corridor.belief_coverage >= self.coverage_belief_depleted_score
-        ):
-            corridor.depleted = True
-            corridor.last_reason = "belief_coverage_complete"
+        self._coverage_completed_dump_count = int(result.completed_dump_count)
+        self._coverage_global_low_productivity_streak = int(
+            result.global_low_productivity_streak
+        )
 
         self._record_coverage_decision_event(
             "complete_dump",
@@ -4589,11 +4627,13 @@ class PrimitivePlannerACTPolicy(Policy):
             corridor=corridor,
             extra={
                 "reason": str(reason),
-                "final_reason": str(corridor.last_reason),
-                "payload_gain_kg": float(payload_gain),
-                "effective_deposit_delta_kg": float(effective_deposit),
-                "remaining_depth_m": float(remaining_depth),
-                "low_productivity": int(low_productivity),
+                "final_reason": str(result.final_reason),
+                "payload_gain_kg": float(result.payload_gain_kg),
+                "effective_deposit_delta_kg": float(
+                    result.effective_deposit_delta_kg
+                ),
+                "remaining_depth_m": float(result.remaining_depth_m),
+                "low_productivity": int(result.low_productivity),
                 "completed_dump_count": int(self._coverage_completed_dump_count),
             },
         )
@@ -4606,9 +4646,10 @@ class PrimitivePlannerACTPolicy(Policy):
         ):
             self._request_coverage_terminal_stop("low_productivity_consecutive")
         if (
-            low_productivity
-            and payload_gain < self.coverage_low_productivity_payload_kg
-            and effective_deposit >= self.coverage_low_productivity_deposit_kg
+            result.low_productivity
+            and result.payload_gain_kg < self.coverage_low_productivity_payload_kg
+            and result.effective_deposit_delta_kg
+            >= self.coverage_low_productivity_deposit_kg
         ):
             self._request_coverage_terminal_stop("physics_artifact_suspected")
 
@@ -4621,74 +4662,36 @@ class PrimitivePlannerACTPolicy(Policy):
         corridor = self._coverage_active_corridor()
         if corridor is None:
             return
-        self._coverage_rejected_state_exemplar_ids.update(
-            exemplar_id
-            for exemplar_id in self._coverage_active_state_exemplar_ids
-            if exemplar_id
-        )
-        payload_gain = max(
-            float(self._coverage_current_payload_gain_kg),
-            float(self._dig_best_mass_kg),
-            self._mass_in_bucket(obs),
-            0.0,
-        )
-        effective_deposit = max(
-            0.0, self._deposited_mass(obs) - float(self._coverage_cycle_start_deposit_kg)
-        )
-        remaining_depth = self._coverage_remaining_depth_for_corridor(obs, corridor)
-        if str(reason) == "align_entry_gap_timeout":
-            corridor.last_payload_gain_kg = float(payload_gain)
-            corridor.last_effective_deposit_delta_kg = float(effective_deposit)
-            corridor.last_remaining_depth_m = float(remaining_depth)
-            corridor.last_reason = str(reason)
-            self._coverage_last_payload_gain_kg = float(payload_gain)
-            self._coverage_last_effective_deposit_delta_kg = float(effective_deposit)
-            self._record_coverage_decision_event(
-                "reject_corridor",
-                obs=obs,
-                corridor=corridor,
-                extra={
-                    "reason": str(reason),
-                    "payload_gain_kg": float(payload_gain),
-                    "effective_deposit_delta_kg": float(effective_deposit),
-                    "remaining_depth_m": float(remaining_depth),
-                    "counted_attempt": 0,
-                },
-            )
-            return
-        corridor.attempts += 1
-        corridor.low_productivity_streak += 1
-        corridor.last_payload_gain_kg = float(payload_gain)
-        corridor.last_effective_deposit_delta_kg = float(effective_deposit)
-        corridor.last_remaining_depth_m = float(remaining_depth)
-        corridor.last_reason = str(reason)
-        self._update_corridor_belief(
+        result = self._coverage_update_service().reject_corridor(
             corridor,
-            payload_gain_kg=payload_gain,
-            effective_deposit_delta_kg=effective_deposit,
+            self._coverage_rejection_facts(obs, corridor, reason=reason),
         )
-        self._coverage_last_payload_gain_kg = float(payload_gain)
-        self._coverage_last_effective_deposit_delta_kg = float(effective_deposit)
-        if str(reason) != "align_entry_gap_timeout":
-            self._coverage_global_low_productivity_streak += 1
-        if (
-            corridor.low_productivity_streak
-            >= self.coverage_deplete_after_low_streak
-            or corridor.attempts >= self._coverage_corridor_attempt_limit(corridor)
-        ):
-            corridor.depleted = True
+        self._coverage_rejected_state_exemplar_ids.update(
+            result.rejected_state_exemplar_ids
+        )
+        self._coverage_last_payload_gain_kg = float(result.payload_gain_kg)
+        self._coverage_last_effective_deposit_delta_kg = float(
+            result.effective_deposit_delta_kg
+        )
+        self._coverage_global_low_productivity_streak = int(
+            result.global_low_productivity_streak
+        )
         self._record_coverage_decision_event(
             "reject_corridor",
             obs=obs,
             corridor=corridor,
             extra={
                 "reason": str(reason),
-                "payload_gain_kg": float(payload_gain),
-                "effective_deposit_delta_kg": float(effective_deposit),
-                "remaining_depth_m": float(remaining_depth),
-                "counted_attempt": 1,
+                "payload_gain_kg": float(result.payload_gain_kg),
+                "effective_deposit_delta_kg": float(
+                    result.effective_deposit_delta_kg
+                ),
+                "remaining_depth_m": float(result.remaining_depth_m),
+                "counted_attempt": int(result.counted_attempt),
             },
         )
+        if not result.counted_attempt:
+            return
         if self._coverage_all_depleted():
             if not self._maybe_reopen_coverage_pass(obs, reason="reject_all_depleted"):
                 self._request_coverage_terminal_stop("dig_area_depleted")
@@ -4705,23 +4708,10 @@ class PrimitivePlannerACTPolicy(Policy):
         payload_gain_kg: float,
         effective_deposit_delta_kg: float,
     ) -> None:
-        if self.coverage_use_env_removed_depth:
-            return
-        fields = dict(self.dig_cut_prior.get("fields", {}))
-        payload_p50 = max(self._prior_percentile(fields, "payload_gain_kg", "p50"), 1.0)
-        deposit_p50 = max(
-            self._prior_percentile(fields, "effective_deposit_delta_kg", "p50"),
-            1.0,
-        )
-        payload_score = float(np.clip(float(payload_gain_kg) / payload_p50, 0.0, 1.5))
-        deposit_score = float(
-            np.clip(float(effective_deposit_delta_kg) / deposit_p50, 0.0, 1.5)
-        )
-        gain = self.coverage_belief_gain_scale * max(payload_score, deposit_score)
-        if gain <= 0.0:
-            return
-        corridor.belief_coverage = float(
-            np.clip(float(corridor.belief_coverage) + gain, 0.0, 1.5)
+        self._coverage_update_service().update_belief(
+            corridor,
+            payload_gain_kg=payload_gain_kg,
+            effective_deposit_delta_kg=effective_deposit_delta_kg,
         )
 
     def _record_coverage_decision_event(

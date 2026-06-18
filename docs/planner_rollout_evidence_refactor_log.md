@@ -1355,3 +1355,63 @@ Each completed refactor round should append:
   state updates only. Do not migrate terminal-stop request ownership, decision
   trace/report projection, `_maybe_switch_skill()` branch bodies, backend
   behavior, or runtime effects in the same commit.
+
+### 2026-06-19 Phase 6.3 Coverage Completion And Rejection Updates
+
+- Scope: extracted coverage completion/rejection state updates only. No
+  terminal-stop request ownership, multi-pass reopen ownership, decision
+  trace/report projection, backend selection, runtime package, behavior tree,
+  VLM/LLM packet, default config, threshold, branch order, reason string, token
+  schema, debug schema, rollout summary schema, or policy reset timing was
+  intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `7d4147e5e92d43cd1b80f78a017a3f4adc580984`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 3 focused tests remained the compatibility baseline:
+    `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; its
+    golden-window contract locks coverage selected corridor fields and trace
+    surfaces.
+  - The only responsibility slice was completion/rejection state mutation:
+    payload/deposit accounting, belief update, low-productivity streaks,
+    attempt count, depletion flags, final corridor reason, and rejected state
+    exemplar ids. Trace recording, all-depleted reopen, and terminal-stop
+    requests stayed in the legacy shell.
+  - `testbed/planner/primitive_coverage.py` stayed at 813 lines after Phase
+    6.2. To avoid pushing that focused module over the 1000-line large-file
+    threshold, this slice introduced the stable owner
+    `testbed/planner/primitive_coverage_updates.py` for
+    `CoverageUpdateService` and its explicit completion/rejection facts.
+- Updated `PrimitivePlannerACTPolicy._complete_coverage_dig()`,
+  `_complete_coverage_dump()`, `_reject_active_coverage_corridor()`, and
+  `_update_corridor_belief()` to delegate mutation to `CoverageUpdateService`.
+  The planner shell still prepares observation facts, records the existing
+  `complete_dump`/`reject_corridor` trace payloads, and owns all terminal-stop
+  and reopen side effects.
+- Added `tests/test_primitive_coverage_updates.py` with service-versus-facade
+  parity coverage for dump completion and counted rejection. The TDD red test
+  first failed with `ImportError` before `CoverageUpdateService` was
+  implemented.
+- Old code parked/reclassified: terminal-stop request ownership, multi-pass
+  reopen, coverage decision trace/report projection, and backend behavior
+  remain legacy source-of-truth until later Phase 6/7 slices.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_coverage_updates.py` returned
+    `2 passed`.
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_attempt_limit or coverage_terminal_stop_when_all_depleted or coverage_multi_pass or sweep_belief_updates_corridor_on_dump or records_coverage_decision_trace or trace_records_terminal_depletion or bad_dig_replans"`
+    returned `11 passed, 109 deselected`.
+  - `python -m pytest -q tests/test_primitive_coverage_updates.py tests/test_primitive_coverage_selection.py tests/test_primitive_coverage_candidates.py tests/test_primitive_return_start_envelope_token_planner.py tests/test_primitive_return_relocate_token_planner.py tests/test_primitive_return_target_token_planner.py tests/test_primitive_dig_depth_profile_token_planner.py tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_goal_token_provider.py tests/test_primitive_token_status.py tests/test_primitive_coverage_status.py tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `64 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_coverage.py testbed/planner/primitive_coverage_updates.py testbed/policies/hybrid/primitive_planner.py tests/test_primitive_coverage_updates.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 6.4 should continue with coverage terminal-stop and
+  multi-pass reopen request ownership only. Do not migrate decision
+  trace/report projection, `_maybe_switch_skill()` branch bodies, backend
+  behavior, or runtime effects in the same commit.

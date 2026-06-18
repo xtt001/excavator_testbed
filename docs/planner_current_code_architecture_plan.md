@@ -434,6 +434,8 @@ completion, rejection, and terminal-stop requests.
 Candidate file:
 
 - `testbed/planner/primitive_coverage.py`
+- `testbed/planner/primitive_coverage_updates.py` for completion/rejection
+  mutation once `primitive_coverage.py` approaches the large-file threshold
 
 This service must own real coverage state, not return temporary copies. Direct
 service-versus-facade parity tests should compare candidate scores, selected
@@ -539,8 +541,8 @@ extracted dig-depth-profile token planning; Phase 5.4 has extracted
 return-target token planning result construction; Phase 5.5 has extracted
 return-relocate token planning; Phase 5.6 has extracted return-start-envelope
 token planning; Phase 6.1 has extracted coverage corridor candidate
-construction; Phase 6.2 has extracted coverage scoring/selection. Continue
-with Phase 6.3, coverage completion/rejection state updates only. Do not
-migrate terminal-stop requests, decision trace/report projection,
-`_maybe_switch_skill()` branch bodies, backend behavior, or effect application
-in the same slice.
+construction; Phase 6.2 has extracted coverage scoring/selection; Phase 6.3
+has extracted coverage completion/rejection state updates. Continue with Phase
+6.4, coverage terminal-stop and multi-pass reopen request ownership only. Do
+not migrate decision trace/report projection, `_maybe_switch_skill()` branch
+bodies, backend behavior, or effect application in the same slice.
