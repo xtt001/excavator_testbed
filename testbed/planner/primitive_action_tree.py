@@ -366,36 +366,16 @@ class PrimitiveActionTreeRunner:
         boundary_event: Any | None,
     ) -> _ActionTreeTickResult:
         active_skill_before = str(policy._skill_name)
-        handoff_ready = policy._return_to_dig_handoff_ready(obs)
-        request = policy.return_transition_service.transition_request(
-            handoff_ready=handoff_ready,
+        runtime = policy._return_transition_runtime(
+            obs=obs,
             boundary_event=boundary_event,
             previous_next_dig_event_seen=policy._return_next_dig_event_seen,
-            semantic_boundary_profile_active=policy._semantic_boundary_profile_active(),
         )
-        direct_handoff_ready = False
-        shallow_guard_ready = False
-        if request.should_check_direct_handoff:
-            direct_handoff_ready = policy._return_to_dig_direct_handoff_ready(
-                obs,
-                handoff_ready=handoff_ready,
-            )
-        if request.should_check_shallow_guard(direct_handoff_ready):
-            shallow_guard_ready = policy._return_to_dig_shallow_guard_ready(
-                obs=obs,
-                boundary_event=boundary_event,
-            )
-        outcome = policy.return_transition_service.classify(
-            request.facts_with_gate_results(
-                direct_handoff_ready=direct_handoff_ready,
-                shallow_guard_ready=shallow_guard_ready,
-            ),
-            request.config,
-        )
-        projection = policy.return_transition_service.transition_runtime_projection(
-            outcome
-        )
-        if not policy._apply_return_to_dig_transition_runtime_projection(projection):
+        outcome = runtime.outcome
+        guard_facts = _return_transition_guard_facts(runtime)
+        if not policy._apply_return_to_dig_transition_runtime_projection(
+            runtime.projection
+        ):
             return _ActionTreeTickResult(
                 node_path=(str(outcome.action),),
                 node_status=_node_status(
@@ -405,11 +385,7 @@ class PrimitiveActionTreeRunner:
                     service_outcome=str(outcome.action),
                 ),
                 service_outcome=str(outcome.action),
-                guard_facts={
-                    "handoff_ready": bool(handoff_ready),
-                    "direct_handoff_ready": bool(direct_handoff_ready),
-                    "shallow_guard_ready": bool(shallow_guard_ready),
-                },
+                guard_facts=guard_facts,
             )
         completion_request = policy.return_transition_service.completion_request(
             pre_dig_align_before_dig=policy._should_pre_dig_align_before_dig(),
@@ -430,11 +406,7 @@ class PrimitiveActionTreeRunner:
                 service_outcome=str(outcome.action),
             ),
             service_outcome=str(outcome.action),
-            guard_facts={
-                "handoff_ready": bool(handoff_ready),
-                "direct_handoff_ready": bool(direct_handoff_ready),
-                "shallow_guard_ready": bool(shallow_guard_ready),
-            },
+            guard_facts=guard_facts,
         )
 
 
@@ -481,6 +453,26 @@ def _node_status(
     if str(switch_reason) or str(service_outcome) not in {"", "none", "running"}:
         return "handled"
     return "running"
+
+
+def _return_transition_guard_facts(runtime: Any) -> dict[str, object]:
+    facts = getattr(runtime, "facts", None)
+    if facts is not None:
+        return {
+            "handoff_ready": bool(getattr(facts, "handoff_ready", False)),
+            "direct_handoff_ready": bool(
+                getattr(facts, "direct_handoff_ready", False)
+            ),
+            "shallow_guard_ready": bool(
+                getattr(facts, "shallow_guard_ready", False)
+            ),
+        }
+    action = str(getattr(getattr(runtime, "outcome", None), "action", ""))
+    return {
+        "handoff_ready": action != "wait",
+        "direct_handoff_ready": action == "direct_handoff",
+        "shallow_guard_ready": action == "shallow_guard",
+    }
 
 
 def _policy_reset_count_total(policy: PrimitivePlannerACTPolicy) -> int:

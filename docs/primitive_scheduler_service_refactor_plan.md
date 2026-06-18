@@ -212,6 +212,12 @@ Recent checkpoint:
   contract skeleton 和 contract tests。该记录属于 backend-interface phase numbering，
   不是本计划下方 broader Phase 4 `Reporting Capability Cleanup`；没有把
   `PrimitiveActionTreeRunner` 提升为 backend，也没有改默认 planner 行为。
+- 2026-06-18: backend interface Phase 4 已开始按“复用逻辑而不是复用
+  `PrimitivePlannerACTPolicy` 大文件函数”的方向清理默认分支重复实现。dig、
+  carry/dump 和 return transition runtime 已分别有 focused capability 函数；默认
+  FSM backend 和 action-tree shadow 节点消费这些 runtime providers，不再复制完整的
+  primitive-planner gate/classify/projection 流程。旧 facades 只在仍有 5P、AGX 或
+  diagnostic tests 明确绑定时保留。
 
 ## Methodology Correction
 

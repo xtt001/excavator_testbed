@@ -1703,6 +1703,71 @@ Verification run for this cleanup:
   -> `53 passed, 1 warning` from the existing `datetime.utcnow()`
   deprecation in `testbed/data/dataset.py`.
 
+#### Phase 4 Slice 6 Return Runtime Capability Cleanup 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/return_to_dig_transition.py`: added typed provider
+  protocols and `return_transition_runtime_from_gate_providers()`. This
+  capability owns return transition request construction, next-dig event
+  short-circuit behavior, direct-handoff versus shallow-guard gate order,
+  classification, evaluated runtime facts, and runtime projection generation.
+- `testbed/policies/hybrid/primitive_planner.py`:
+  `_return_transition_runtime()` now only wires the existing return handoff,
+  direct-handoff, and shallow-guard providers into the capability function.
+  The planner shell no longer duplicates return transition classification or
+  projection construction.
+- `testbed/planner/primitive_action_tree.py`: the shadow return node now
+  consumes `_return_transition_runtime()` instead of reconstructing the
+  handoff/direct/shallow gate sequence from primitive-planner private methods.
+- `tests/test_return_transition_runtime_capability.py`: new focused tests for
+  return transition gate ordering and for the action-tree return node using
+  the runtime provider. This keeps new tests out of the already-large
+  `tests/test_primitive_action_tree.py`.
+- `tests/test_legacy_fsm_backend_return.py`: the test-local return provider
+  now delegates to the same capability function instead of preserving a second
+  copy of the legacy gate-order algorithm.
+
+Scope guardrails kept:
+
+- No default backend selection, config default, return handoff/direct/shallow
+  threshold, next-dig latch behavior, switch reason string, branch order, policy
+  reset timing, debug/trace/rollout schema, or token contract changed.
+- `BehaviorTreeBackend` remains experimental and is not enabled by
+  `planner_backend` config.
+- Return completion remains adapter-owned: backends and action-tree return
+  nodes still produce or consume the existing return runtime projection, then
+  the adapter applies completion and side effects.
+- `_return_to_dig_handoff_ready()`, `_return_to_dig_direct_handoff_ready()`,
+  and `_return_to_dig_shallow_guard_ready()` remain compatibility/adapter gate
+  providers because AGX and facade tests still cover those public diagnostic
+  seams. The default FSM backend and action-tree shadow path no longer duplicate
+  the full transition algorithm from those methods.
+- `_try_return_direct_handoff_at_current_obs()` was not migrated in this slice;
+  it remains a separate return-entry handoff attempt path.
+
+Verification run for this cleanup:
+
+- Initial RED:
+  `python -m pytest -q tests/test_return_transition_runtime_capability.py`
+  -> failed during collection because
+  `return_transition_runtime_from_gate_providers` did not exist yet.
+- Focused GREEN:
+  `python -m pytest -q tests/test_return_transition_runtime_capability.py tests/test_legacy_fsm_backend_return.py`
+  -> `8 passed`.
+- Focused/action-tree/facade/return service regression:
+  `python -m pytest -q tests/test_return_transition_runtime_capability.py tests/test_legacy_fsm_backend_return.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py tests/test_return_handoff_service.py`
+  -> `201 passed`.
+- Backend/runtime/config/BT:
+  `python -m pytest -p no:cacheprovider -q tests/test_return_transition_runtime_capability.py tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_planner_backend_config.py`
+  -> `79 passed`.
+- Golden/debug/token/data/config/AGX spot check:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_golden_traces.py tests/test_primitive_planner_debug_schema.py tests/test_primitive_token_contracts.py tests/test_policy_data_contracts.py tests/test_config_semantic_matrix.py tests/test_agx_primitives_v2_2.py::TestPrimitivesV22::test_semantic_profile_keeps_material_liveness_dig_to_carry`
+  -> `53 passed, 1 warning` from the existing `datetime.utcnow()`
+  deprecation in `testbed/data/dataset.py`.
+- `python -m compileall -q testbed/planner/runtime testbed/planner/return_to_dig_transition.py testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_action_tree.py tests/test_return_transition_runtime_capability.py tests/test_legacy_fsm_backend_return.py`
+  -> no output.
+
 ### Phase 5: Default Backend Migration
 
 Once `LegacyStateMachineBackend` is behavior-identical and the adapter applies

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 
 @dataclass(frozen=True)
@@ -124,6 +124,29 @@ class ReturnToDigTransitionRuntimeProjection:
 class ReturnToDigTransitionRuntime:
     outcome: ReturnToDigTransitionOutcome
     projection: ReturnToDigTransitionRuntimeProjection
+    facts: ReturnToDigTransitionFacts | None = None
+
+
+class ReturnTransitionHandoffReadyProvider(Protocol):
+    def __call__(self, obs: dict) -> bool: ...
+
+
+class ReturnTransitionDirectHandoffReadyProvider(Protocol):
+    def __call__(
+        self,
+        obs: dict,
+        *,
+        handoff_ready: bool | None = None,
+    ) -> bool: ...
+
+
+class ReturnTransitionShallowGuardReadyProvider(Protocol):
+    def __call__(
+        self,
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -426,3 +449,52 @@ class ReturnToDigTransitionService:
             reason_suffix="",
             next_dig_event_seen=next_dig_event_seen,
         )
+
+
+def return_transition_runtime_from_gate_providers(
+    *,
+    service: ReturnToDigTransitionService,
+    obs: dict,
+    boundary_event: Any | None,
+    previous_next_dig_event_seen: bool,
+    semantic_boundary_profile_active: bool,
+    handoff_ready: ReturnTransitionHandoffReadyProvider,
+    direct_handoff_ready: ReturnTransitionDirectHandoffReadyProvider,
+    shallow_guard_ready: ReturnTransitionShallowGuardReadyProvider,
+) -> ReturnToDigTransitionRuntime:
+    """Build the return transition runtime while preserving legacy gate order."""
+
+    handoff = bool(handoff_ready(obs))
+    request = service.transition_request(
+        handoff_ready=handoff,
+        boundary_event=boundary_event,
+        previous_next_dig_event_seen=previous_next_dig_event_seen,
+        semantic_boundary_profile_active=semantic_boundary_profile_active,
+    )
+    direct = False
+    shallow = False
+    if request.should_check_direct_handoff:
+        direct = bool(
+            direct_handoff_ready(
+                obs,
+                handoff_ready=handoff,
+            )
+        )
+    if request.should_check_shallow_guard(direct):
+        shallow = bool(
+            shallow_guard_ready(
+                obs=obs,
+                boundary_event=boundary_event,
+            )
+        )
+    facts = request.facts_with_gate_results(
+        direct_handoff_ready=direct,
+        shallow_guard_ready=shallow,
+    )
+    outcome = service.classify(facts, request.config)
+    projection = service.transition_runtime_projection(outcome)
+    return ReturnToDigTransitionRuntime(
+        outcome=outcome,
+        projection=projection,
+        facts=facts,
+    )

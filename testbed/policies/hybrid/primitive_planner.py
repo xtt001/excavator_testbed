@@ -273,6 +273,7 @@ from testbed.planner.return_to_dig_transition import (
     ReturnToDigTransitionRuntime,
     ReturnToDigTransitionRuntimeProjection,
     ReturnToDigTransitionService,
+    return_transition_runtime_from_gate_providers,
 )
 from testbed.planner.runtime import (
     LegacyFsmBackendPorts,
@@ -2407,38 +2408,18 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         boundary_event: Any | None,
         previous_next_dig_event_seen: bool,
     ) -> ReturnToDigTransitionRuntime:
-        handoff_ready = self._return_to_dig_handoff_ready(obs)
-        request = self.return_transition_service.transition_request(
-            handoff_ready=handoff_ready,
+        return return_transition_runtime_from_gate_providers(
+            service=self.return_transition_service,
+            obs=obs,
             boundary_event=boundary_event,
             previous_next_dig_event_seen=previous_next_dig_event_seen,
             semantic_boundary_profile_active=(
                 self._semantic_boundary_profile_active()
             ),
+            handoff_ready=self._return_to_dig_handoff_ready,
+            direct_handoff_ready=self._return_to_dig_direct_handoff_ready,
+            shallow_guard_ready=self._return_to_dig_shallow_guard_ready,
         )
-        direct_handoff_ready = False
-        shallow_guard_ready = False
-        if request.should_check_direct_handoff:
-            direct_handoff_ready = self._return_to_dig_direct_handoff_ready(
-                obs,
-                handoff_ready=handoff_ready,
-            )
-        if request.should_check_shallow_guard(direct_handoff_ready):
-            shallow_guard_ready = self._return_to_dig_shallow_guard_ready(
-                obs=obs,
-                boundary_event=boundary_event,
-            )
-        outcome = self.return_transition_service.classify(
-            request.facts_with_gate_results(
-                direct_handoff_ready=direct_handoff_ready,
-                shallow_guard_ready=shallow_guard_ready,
-            ),
-            request.config,
-        )
-        projection = self.return_transition_service.transition_runtime_projection(
-            outcome
-        )
-        return ReturnToDigTransitionRuntime(outcome=outcome, projection=projection)
 
     def _return_to_dig_direct_handoff_ready(
         self,
