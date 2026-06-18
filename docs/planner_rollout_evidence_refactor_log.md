@@ -567,3 +567,59 @@ Each completed refactor round should append:
 - Next action: Phase 4B.2 should continue with `DigTransitionStatus` only. Do
   not migrate carry, dump, return, coverage, token, token planning, coverage
   planning, or backend behavior in the same commit.
+
+### 2026-06-19 Phase 4B.2 DigTransitionStatus
+
+- Scope: introduced `DigTransitionStatus` only. No FSM branch body, transition
+  gate side effect, coverage-corridor geometry calculation, token planning,
+  coverage planning, return planning, `cell_entry`, `pre_dig_align`, backend
+  selection, runtime package, behavior tree, VLM/LLM packet, default config,
+  threshold, branch order, reason string, token schema, debug schema, rollout
+  summary schema, or policy reset timing was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `4051b33e0b2bc1bc490dfec41c7070d3f6b1e5d8`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1, Phase 2, Phase 3, Phase 4A, and Phase 4B.1 focused tests passed
+    before Phase 4B.2 edits:
+    `python -m pytest -q tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `16 passed`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; the
+    golden-window switch sequence includes repeated dig to carry switches with
+    `dig_to_carry_dig_complete_boundary` and
+    `dig_to_carry_semantic_material_loaded`.
+  - The only responsibility slice was read-only dig transition status.
+  - `DigTransitionStatus` records dig bad-replan, exit-guard,
+    dig-complete-low-payload, dig-to-carry readiness, and dig-to-carry reason
+    facts without calling `_dig_to_carry_ready()` or mutating
+    `_dig_to_carry_reason`.
+  - Overshoot, semantic-boundary-profile state, and coverage terminal-stop state
+    remain explicit inputs so this slice does not absorb coverage, geometry, or
+    planner-shell ownership.
+- Updated `testbed/planner/primitive_capabilities.py` with
+  `DigTransitionStatus`.
+- Updated `tests/test_primitive_capabilities.py` with focused coverage for
+  boundary completion, legacy loaded reason, semantic loaded reason from
+  boundary metrics, bad-replan readiness, and exit-guard readiness. The TDD red
+  test failed with `ImportError` before `DigTransitionStatus` was implemented.
+- Old code parked/reclassified: no code was deleted. `_update_dig_progress()`,
+  `_dig_bad_replan_ready()`, `_dig_exit_guard_ready()`,
+  `_dig_complete_boundary_low_payload()`, `_dig_to_carry_ready()`, and the
+  `_maybe_switch_skill()` dig branch remain compatibility/source-of-truth paths
+  until a later legacy FSM backend phase bridges them with parity tests.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_capabilities.py` returned
+    `12 passed`.
+  - `python -m pytest -q tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `20 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_capabilities.py tests/test_primitive_capabilities.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 4B.3 should continue with `CarryTransitionStatus` only. Do
+  not migrate dump, return, coverage, token, token planning, coverage planning,
+  or backend behavior in the same commit.

@@ -19,13 +19,22 @@ from testbed.data.schema import (
 )
 from testbed.planner.primitive_capabilities import (
     BootstrapStatus,
+    DigTransitionStatus,
     PrimitiveObservationFacts,
 )
 
 
 class _BoundaryEvent:
-    def __init__(self, *, qualified_dig_start: bool) -> None:
+    def __init__(
+        self,
+        *,
+        qualified_dig_start: bool = False,
+        dig_complete: bool = False,
+        metrics: dict[str, float] | None = None,
+    ) -> None:
         self.qualified_dig_start = qualified_dig_start
+        self.dig_complete = dig_complete
+        self.metrics = metrics
 
 
 def test_observation_facts_extract_obs_values_without_mutating_inputs() -> None:
@@ -212,3 +221,85 @@ def test_bootstrap_status_records_scripted_timeout_gate() -> None:
     assert status.scripted_target_reached is False
     assert status.scripted_timeout_reached is True
     assert status.should_end is True
+
+
+def test_dig_transition_status_records_boundary_completion_reason() -> None:
+    facts = PrimitiveObservationFacts.from_obs({}, action_dim=4)
+
+    status = DigTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=_BoundaryEvent(dig_complete=True),
+        dig_step_count=8,
+    )
+
+    assert status.dig_complete_boundary is True
+    assert status.dig_to_carry_ready is True
+    assert status.dig_to_carry_reason == "dig_complete_boundary"
+
+
+def test_dig_transition_status_records_legacy_loaded_reason() -> None:
+    facts = PrimitiveObservationFacts.from_obs(
+        {"task_metrics": {"mass_in_bucket_kg": 120.0, "min_distance_to_dig_area_m": 0.75}},
+        action_dim=4,
+    )
+
+    status = DigTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=None,
+        dig_step_count=10,
+        dig_to_carry_min_bucket_mass_kg=100.0,
+        dig_to_carry_target_bucket_mass_kg=100.0,
+        dig_to_carry_min_distance_to_dig_area_m=0.5,
+    )
+
+    assert status.distance_ready is True
+    assert status.dig_to_carry_ready is True
+    assert status.dig_to_carry_reason == "loaded"
+
+
+def test_dig_transition_status_records_semantic_loaded_reason_from_boundary_metrics() -> None:
+    facts = PrimitiveObservationFacts.from_obs(
+        {"task_metrics": {"mass_in_bucket_kg": 10.0, "min_distance_to_dig_area_m": 0.1}},
+        action_dim=4,
+    )
+
+    status = DigTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=_BoundaryEvent(
+            metrics={"mass_in_bucket_kg": 130.0, "min_distance_to_dig_area_m": 0.8}
+        ),
+        semantic_boundary_profile_active=True,
+        dig_step_count=10,
+        dig_to_carry_target_bucket_mass_kg=100.0,
+        dig_to_carry_min_distance_to_dig_area_m=0.5,
+    )
+
+    assert status.transition_mass_in_bucket_kg == 130.0
+    assert status.transition_min_distance_to_dig_area_m == 0.8
+    assert status.dig_to_carry_ready is True
+    assert status.dig_to_carry_reason == "semantic_material_loaded"
+
+
+def test_dig_transition_status_records_replan_and_exit_guard_without_mutation() -> None:
+    facts = PrimitiveObservationFacts.from_obs(
+        {"task_metrics": {"mass_in_bucket_kg": 5.0, "min_distance_to_dig_area_m": 0.75}},
+        action_dim=4,
+    )
+
+    status = DigTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=None,
+        coverage_terminal_stop_requested=False,
+        dig_step_count=20,
+        dig_bad_replan_enabled=True,
+        dig_bad_replan_max_steps=10,
+        dig_bad_replan_min_bucket_mass_kg=15.0,
+        dig_exit_guard_enabled=True,
+        dig_exit_guard_min_steps=10,
+        dig_exit_guard_min_bucket_mass_kg=20.0,
+        dig_exit_guard_overshoot_m=0.3,
+        dig_exit_overshoot_m=0.4,
+    )
+
+    assert status.dig_bad_replan_ready is True
+    assert status.dig_exit_guard_ready is True

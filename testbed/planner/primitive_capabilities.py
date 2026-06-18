@@ -258,4 +258,144 @@ class BootstrapStatus:
         )
 
 
-__all__ = ["BootstrapStatus", "PrimitiveObservationFacts"]
+@dataclass(frozen=True)
+class DigTransitionStatus:
+    """Read-only dig transition facts for the legacy FSM."""
+
+    dig_step_count: int
+    mass_in_bucket_kg: float
+    min_distance_to_dig_area_m: float
+    transition_mass_in_bucket_kg: float
+    transition_min_distance_to_dig_area_m: float
+    distance_ready: bool
+    semantic_boundary_profile_active: bool
+    coverage_terminal_stop_requested: bool
+    dig_complete_boundary: bool
+    dig_complete_boundary_low_payload: bool
+    dig_bad_replan_ready: bool
+    dig_exit_guard_ready: bool
+    dig_mass_plateau_ready: bool
+    dig_to_carry_ready: bool
+    dig_to_carry_reason: str
+
+    @classmethod
+    def from_inputs(
+        cls,
+        *,
+        observation: PrimitiveObservationFacts,
+        boundary_event: Any | None,
+        semantic_boundary_profile_active: bool = False,
+        coverage_terminal_stop_requested: bool = False,
+        dig_step_count: int = 0,
+        dig_mass_plateau_count: int = 0,
+        dig_to_carry_min_distance_to_dig_area_m: float = 0.0,
+        dig_to_carry_min_bucket_mass_kg: float = 0.0,
+        dig_to_carry_target_bucket_mass_kg: float = 0.0,
+        dig_to_carry_mass_plateau_enabled: bool = False,
+        dig_to_carry_mass_plateau_min_bucket_mass_kg: float = 0.0,
+        dig_to_carry_mass_plateau_hold_steps: int = 1,
+        dig_to_carry_mass_plateau_min_steps: int = 1,
+        dump_ready_min_bucket_mass_kg: float = 0.0,
+        dig_bad_replan_enabled: bool = False,
+        dig_bad_replan_max_steps: int = 1,
+        dig_bad_replan_min_bucket_mass_kg: float = 0.0,
+        dig_exit_guard_enabled: bool = False,
+        dig_exit_guard_min_steps: int = 1,
+        dig_exit_guard_min_bucket_mass_kg: float = 0.0,
+        dig_exit_guard_overshoot_m: float = 0.0,
+        dig_exit_overshoot_m: float = float("nan"),
+    ) -> "DigTransitionStatus":
+        step_count = int(dig_step_count)
+        mass = observation.mass_in_bucket_kg
+        min_distance = observation.min_distance_to_dig_area_m
+        metrics = dict(getattr(boundary_event, "metrics", {}) or {})
+        transition_mass = float(metrics.get("mass_in_bucket_kg", mass))
+        transition_min_distance = float(
+            metrics.get("min_distance_to_dig_area_m", min_distance)
+        )
+        distance_ready = bool(
+            transition_min_distance >= float(dig_to_carry_min_distance_to_dig_area_m)
+        )
+        terminal_stop = bool(coverage_terminal_stop_requested)
+        dig_complete_boundary = bool(
+            boundary_event is not None and getattr(boundary_event, "dig_complete", False)
+        )
+        dig_bad_replan_ready = bool(
+            dig_bad_replan_enabled
+            and not terminal_stop
+            and step_count >= max(1, int(dig_bad_replan_max_steps))
+            and mass < float(dig_bad_replan_min_bucket_mass_kg)
+        )
+        dig_exit_guard_ready = bool(
+            dig_exit_guard_enabled
+            and not terminal_stop
+            and step_count >= max(1, int(dig_exit_guard_min_steps))
+            and mass < float(dig_exit_guard_min_bucket_mass_kg)
+            and np.isfinite(float(dig_exit_overshoot_m))
+            and float(dig_exit_overshoot_m) >= float(dig_exit_guard_overshoot_m)
+        )
+        low_payload_threshold = max(
+            float(dig_to_carry_min_bucket_mass_kg),
+            float(dump_ready_min_bucket_mass_kg),
+        )
+        dig_complete_boundary_low_payload = bool(
+            semantic_boundary_profile_active
+            and dig_complete_boundary
+            and mass < low_payload_threshold
+        )
+        plateau_ready = bool(
+            dig_to_carry_mass_plateau_enabled
+            and step_count >= max(1, int(dig_to_carry_mass_plateau_min_steps))
+            and transition_mass >= float(dig_to_carry_mass_plateau_min_bucket_mass_kg)
+            and int(dig_mass_plateau_count)
+            >= max(1, int(dig_to_carry_mass_plateau_hold_steps))
+            and distance_ready
+        )
+        dig_to_carry_ready = False
+        dig_to_carry_reason = ""
+        if dig_complete_boundary:
+            dig_to_carry_ready = True
+            dig_to_carry_reason = "dig_complete_boundary"
+        elif semantic_boundary_profile_active:
+            if transition_mass >= float(dig_to_carry_target_bucket_mass_kg) and distance_ready:
+                dig_to_carry_ready = True
+                dig_to_carry_reason = "semantic_material_loaded"
+            elif plateau_ready:
+                dig_to_carry_ready = True
+                dig_to_carry_reason = "semantic_material_plateau"
+        elif transition_mass >= float(dig_to_carry_target_bucket_mass_kg) and distance_ready:
+            dig_to_carry_ready = True
+            if (
+                abs(
+                    float(dig_to_carry_target_bucket_mass_kg)
+                    - float(dig_to_carry_min_bucket_mass_kg)
+                )
+                <= 1.0e-6
+            ):
+                dig_to_carry_reason = "loaded"
+            else:
+                dig_to_carry_reason = "target_payload_loaded"
+        elif plateau_ready:
+            dig_to_carry_ready = True
+            dig_to_carry_reason = "mass_plateau"
+
+        return cls(
+            dig_step_count=step_count,
+            mass_in_bucket_kg=mass,
+            min_distance_to_dig_area_m=min_distance,
+            transition_mass_in_bucket_kg=transition_mass,
+            transition_min_distance_to_dig_area_m=transition_min_distance,
+            distance_ready=distance_ready,
+            semantic_boundary_profile_active=bool(semantic_boundary_profile_active),
+            coverage_terminal_stop_requested=terminal_stop,
+            dig_complete_boundary=dig_complete_boundary,
+            dig_complete_boundary_low_payload=dig_complete_boundary_low_payload,
+            dig_bad_replan_ready=dig_bad_replan_ready,
+            dig_exit_guard_ready=dig_exit_guard_ready,
+            dig_mass_plateau_ready=plateau_ready,
+            dig_to_carry_ready=dig_to_carry_ready,
+            dig_to_carry_reason=dig_to_carry_reason,
+        )
+
+
+__all__ = ["BootstrapStatus", "DigTransitionStatus", "PrimitiveObservationFacts"]
