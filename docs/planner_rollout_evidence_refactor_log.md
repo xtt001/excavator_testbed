@@ -837,3 +837,59 @@ Each completed refactor round should append:
 - Next action: Phase 4C.2 should continue with `TokenStatus` only. Do not
   migrate token generation, token planning, coverage planning/runtime, or
   backend behavior in the same commit.
+
+### 2026-06-19 Phase 4C.2 TokenStatus
+
+- Scope: introduced `TokenStatus` and `TokenVectorStatus` only. No token
+  generation, token planning, observation injection, return planning, coverage
+  planning/runtime, backend selection, runtime package, behavior tree, VLM/LLM
+  packet, default config, threshold, branch order, reason string, token schema,
+  debug schema, rollout summary schema, or policy reset timing was intentionally
+  changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `e25c70c2bfce945a0d824a802990efde91fe2aab`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 4C.1 focused tests passed before Phase 4C.2 edits:
+    `python -m pytest -q tests/test_primitive_coverage_status.py tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `36 passed`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; the
+    golden-window contract locks token contract versions, dig/return low-dim
+    keys, token source fields, and debug/summary surfaces.
+  - The only responsibility slice was read-only token status.
+  - `testbed/planner/primitive_capabilities.py` was already 998 lines before
+    Phase 4C.1, so the stable focused owner for this slice is
+    `testbed/planner/primitive_token_status.py`.
+- Added `testbed/planner/primitive_token_status.py` with `TokenStatus` and
+  `TokenVectorStatus`. The records freeze injected flags, dimensions,
+  source/fallback strings, prior-range status, and current token arrays, and
+  can project the legacy debug-state field names without owning token
+  construction.
+- Added `tests/test_primitive_token_status.py` with focused coverage for token
+  array freezing, source/fallback/injected facts, and legacy debug field names.
+  The TDD red test failed with `ModuleNotFoundError` before
+  `testbed.planner.primitive_token_status` was implemented.
+- Old code parked/reclassified: no code was deleted. `_policy_obs()`,
+  `_goal_tokens()`, `_dig_cut_tokens_for_obs()`,
+  `_dig_depth_profile_tokens_for_obs()`, `_return_target_tokens_for_obs()`,
+  `_return_relocate_tokens_for_obs()`, and
+  `_return_start_envelope_tokens_for_obs()` remain
+  compatibility/source-of-truth paths until the Phase 5 token/return planning
+  service slices bridge them with parity tests.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_token_status.py` returned
+    `3 passed`.
+  - `python -m pytest -q tests/test_primitive_token_status.py tests/test_primitive_coverage_status.py tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `39 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_token_status.py tests/test_primitive_token_status.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 5.1 should continue with the goal token provider only.
+  Do not migrate dig-cut, dig-depth-profile, return-target, return-relocate,
+  return-start-envelope, coverage planning/runtime, or backend behavior in the
+  same commit.

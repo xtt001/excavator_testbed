@@ -531,8 +531,9 @@ Implementation history is tracked in
 established the current-code parity harness, public tick execution template,
 and decision/effect result contracts.
 
-The current implementation route is **Slice 4: Extract Capability Status
-Records**. Continue one read-only status record at a time, starting from
-`PrimitiveObservationFacts`, then the transition status records. Do not move
-`_maybe_switch_skill()` branch bodies, token generation, coverage planning, or
-effect application during Slice 4.
+The current implementation route is **Slice 5: Token And Return Planning
+Services**. Slice 4 status records have been established through
+`TokenStatus`. Continue with Phase 5.1, the goal token provider only. Do not
+migrate dig-cut, dig-depth-profile, return-target, return-relocate,
+return-start-envelope, coverage planning/runtime, `_maybe_switch_skill()`
+branch bodies, or effect application in the same slice.
