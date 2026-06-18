@@ -12,7 +12,6 @@ from testbed.planner.runtime.contracts import (
 )
 from testbed.planner.runtime.ports import (
     LegacyFsmBootstrapPorts,
-    LegacyFsmBoundaryProfilePorts,
     LegacyFsmDigTransitionPorts,
     LegacyFsmDumpLifecyclePorts,
     LegacyFsmPreDigAlignmentPorts,
@@ -129,10 +128,6 @@ class LegacyStateMachineBackend:
                 ports=_required_port(
                     ports.return_transition,
                     "return_transition",
-                ),
-                boundary_ports=_required_port(
-                    ports.boundary_profile,
-                    "boundary_profile",
                 ),
             )
         return self._fallback_tick(context, active_skill=active_skill)
@@ -357,40 +352,17 @@ class LegacyStateMachineBackend:
         *,
         active_skill: str,
         ports: LegacyFsmReturnTransitionPorts,
-        boundary_ports: LegacyFsmBoundaryProfilePorts,
     ) -> PlannerTickResult:
         obs = dict(context.obs)
-        handoff_ready = ports.handoff_ready(obs)
-        request = ports.service.transition_request(
-            handoff_ready=handoff_ready,
+        runtime = ports.return_transition_runtime(
+            obs=obs,
             boundary_event=context.boundary_event,
             previous_next_dig_event_seen=(
                 context.blackboard.return_next_dig_event_seen
             ),
-            semantic_boundary_profile_active=(
-                boundary_ports.semantic_boundary_profile_active()
-            ),
         )
-        direct_handoff_ready = False
-        shallow_guard_ready = False
-        if request.should_check_direct_handoff:
-            direct_handoff_ready = ports.direct_handoff_ready(
-                obs,
-                handoff_ready=handoff_ready,
-            )
-        if request.should_check_shallow_guard(direct_handoff_ready):
-            shallow_guard_ready = ports.shallow_guard_ready(
-                obs=obs,
-                boundary_event=context.boundary_event,
-            )
-        outcome = ports.service.classify(
-            request.facts_with_gate_results(
-                direct_handoff_ready=direct_handoff_ready,
-                shallow_guard_ready=shallow_guard_ready,
-            ),
-            request.config,
-        )
-        projection = ports.service.transition_runtime_projection(outcome)
+        outcome = runtime.outcome
+        projection = runtime.projection
         return PlannerTickResult(
             node_path=("legacy_fsm", "transition", active_skill),
             status="running",

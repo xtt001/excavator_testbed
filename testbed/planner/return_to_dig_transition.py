@@ -121,6 +121,12 @@ class ReturnToDigTransitionRuntimeProjection:
 
 
 @dataclass(frozen=True)
+class ReturnToDigTransitionRuntime:
+    outcome: ReturnToDigTransitionOutcome
+    projection: ReturnToDigTransitionRuntimeProjection
+
+
+@dataclass(frozen=True)
 class ReturnDirectHandoffRuntimeProjection:
     should_transition: bool
     completed_transition_increment: int = 0

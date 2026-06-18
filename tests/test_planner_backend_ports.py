@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -15,10 +16,15 @@ from testbed.planner.dump_lifecycle import (
     DumpLifecycleOutcome,
     DumpTransitionRuntimeState,
 )
+from testbed.planner.return_to_dig_transition import (
+    ReturnToDigTransitionOutcome,
+    ReturnToDigTransitionRuntimeProjection,
+)
 from testbed.planner.runtime import (
     LegacyFsmBackendPorts,
     LegacyFsmDigTransitionPorts,
     LegacyFsmDumpLifecyclePorts,
+    LegacyFsmReturnTransitionPorts,
     LegacyFsmSkillNames,
     PlannerBackendPorts,
     PlannerBlackboard,
@@ -28,6 +34,7 @@ from testbed.planner.runtime.legacy_fsm import (
     APPLY_CARRY_TRANSITION_RUNTIME_EFFECT,
     APPLY_DIG_TRANSITION_RUNTIME_PROJECTION_EFFECT,
     APPLY_DUMP_TRANSITION_RUNTIME_EFFECT,
+    APPLY_RETURN_TO_DIG_TRANSITION_RUNTIME_EFFECT,
     LegacyStateMachineBackend,
 )
 
@@ -212,6 +219,78 @@ def test_legacy_fsm_backend_carry_dump_use_typed_runtime_ports() -> None:
             coverage_reason="dump_mass_low",
         ),
     )
+
+
+def test_legacy_fsm_backend_return_uses_typed_runtime_port() -> None:
+    calls: list[str] = []
+
+    outcome = ReturnToDigTransitionOutcome(
+        action="next_dig_event",
+        reason_suffix="next_dig_entry_ready",
+        next_dig_event_seen=True,
+    )
+    projection = ReturnToDigTransitionRuntimeProjection(
+        next_dig_event_seen=True,
+        should_transition=True,
+        completed_transition_increment=1,
+        cycle_index_increment=1,
+    )
+
+    @dataclass(frozen=True)
+    class ReturnRuntime:
+        outcome: ReturnToDigTransitionOutcome
+        projection: ReturnToDigTransitionRuntimeProjection
+
+    def return_transition_runtime(
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+        previous_next_dig_event_seen: bool,
+    ) -> ReturnRuntime:
+        calls.append(
+            "return:"
+            f"{obs['step']}:"
+            f"{boundary_event is not None}:"
+            f"{previous_next_dig_event_seen}"
+        )
+        return ReturnRuntime(outcome=outcome, projection=projection)
+
+    result = LegacyStateMachineBackend().tick(
+        PlannerTickContext(
+            obs={"step": 24},
+            boundary_event=_FakeBoundaryEvent(next_dig_entry_ready=True),
+            blackboard=PlannerBlackboard(
+                current_skill="return",
+                return_next_dig_event_seen=True,
+            ),
+            ports=PlannerBackendPorts(
+                legacy_fsm=LegacyFsmBackendPorts(
+                    skill_names=_skill_names(),
+                    return_transition=LegacyFsmReturnTransitionPorts(
+                        return_transition_runtime=return_transition_runtime,
+                    ),
+                )
+            ),
+        )
+    )
+
+    assert calls == ["return:24:True:True"]
+    assert result.node_path == ("legacy_fsm", "transition", "return")
+    assert result.status == "running"
+    assert result.reason == "next_dig_entry_ready"
+    assert result.effects[0].effect_type == (
+        APPLY_RETURN_TO_DIG_TRANSITION_RUNTIME_EFFECT
+    )
+    assert result.effects[0].payload == {
+        "outcome": outcome,
+        "projection": projection,
+    }
+    assert dict(result.diagnostics) == {
+        "active_skill": "return",
+        "action": "next_dig_event",
+        "reason_suffix": "next_dig_entry_ready",
+        "next_dig_event_seen": True,
+    }
 
 
 def _skill_names() -> LegacyFsmSkillNames:

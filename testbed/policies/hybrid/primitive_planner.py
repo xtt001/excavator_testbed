@@ -270,13 +270,13 @@ from testbed.planner.return_to_dig_transition import (
     ReturnDirectHandoffRuntimeProjection,
     ReturnToDigTransitionCompletion,
     ReturnToDigTransitionOutcome,
+    ReturnToDigTransitionRuntime,
     ReturnToDigTransitionRuntimeProjection,
     ReturnToDigTransitionService,
 )
 from testbed.planner.runtime import (
     LegacyFsmBackendPorts,
     LegacyFsmBootstrapPorts,
-    LegacyFsmBoundaryProfilePorts,
     LegacyFsmDigTransitionPorts,
     LegacyFsmDumpLifecyclePorts,
     LegacyFsmPreDigAlignmentPorts,
@@ -1154,19 +1154,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                         dump_transition_runtime=self._dump_transition_runtime,
                     ),
                     return_transition=LegacyFsmReturnTransitionPorts(
-                        service=self.return_transition_service,
-                        handoff_ready=self._return_to_dig_handoff_ready,
-                        direct_handoff_ready=(
-                            self._return_to_dig_direct_handoff_ready
-                        ),
-                        shallow_guard_ready=(
-                            self._return_to_dig_shallow_guard_ready
-                        ),
-                    ),
-                    boundary_profile=LegacyFsmBoundaryProfilePorts(
-                        semantic_boundary_profile_active=(
-                            self._semantic_boundary_profile_active
-                        ),
+                        return_transition_runtime=self._return_transition_runtime,
                     ),
                 ),
             ),
@@ -2448,6 +2436,46 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
 
     def _return_to_dig_handoff_ready(self, obs: dict) -> bool:
         return bool(self._evaluate_return_to_dig_handoff(obs).handoff_ready)
+
+    def _return_transition_runtime(
+        self,
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+        previous_next_dig_event_seen: bool,
+    ) -> ReturnToDigTransitionRuntime:
+        handoff_ready = self._return_to_dig_handoff_ready(obs)
+        request = self.return_transition_service.transition_request(
+            handoff_ready=handoff_ready,
+            boundary_event=boundary_event,
+            previous_next_dig_event_seen=previous_next_dig_event_seen,
+            semantic_boundary_profile_active=(
+                self._semantic_boundary_profile_active()
+            ),
+        )
+        direct_handoff_ready = False
+        shallow_guard_ready = False
+        if request.should_check_direct_handoff:
+            direct_handoff_ready = self._return_to_dig_direct_handoff_ready(
+                obs,
+                handoff_ready=handoff_ready,
+            )
+        if request.should_check_shallow_guard(direct_handoff_ready):
+            shallow_guard_ready = self._return_to_dig_shallow_guard_ready(
+                obs=obs,
+                boundary_event=boundary_event,
+            )
+        outcome = self.return_transition_service.classify(
+            request.facts_with_gate_results(
+                direct_handoff_ready=direct_handoff_ready,
+                shallow_guard_ready=shallow_guard_ready,
+            ),
+            request.config,
+        )
+        projection = self.return_transition_service.transition_runtime_projection(
+            outcome
+        )
+        return ReturnToDigTransitionRuntime(outcome=outcome, projection=projection)
 
     def _return_to_dig_direct_handoff_ready(
         self,

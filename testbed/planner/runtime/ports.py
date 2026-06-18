@@ -21,11 +21,6 @@ class BoundaryObservationPredicate(Protocol):
         """Return a boolean gate decision using observation and boundary event."""
 
 
-class KeywordBoundaryObservationPredicate(Protocol):
-    def __call__(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
-        """Return a boolean gate decision using keyword-only tick inputs."""
-
-
 class DigToCarryDecision(Protocol):
     ready: bool
     reason: str
@@ -39,16 +34,6 @@ class DigToCarryDecisionProvider(Protocol):
         boundary_event: Any | None,
     ) -> DigToCarryDecision:
         """Return a dig-to-carry decision with explicit ready/reason fields."""
-
-
-class DirectHandoffPredicate(Protocol):
-    def __call__(
-        self,
-        obs: dict[str, Any],
-        *,
-        handoff_ready: bool | None = None,
-    ) -> bool:
-        """Return whether return-to-dig direct handoff is ready."""
 
 
 class CarryTransitionRuntime(Protocol):
@@ -81,6 +66,22 @@ class DumpTransitionRuntimeProvider(Protocol):
         current_dump_done_hold_count: int,
     ) -> DumpTransitionRuntime:
         """Return the dump transition runtime state for one tick."""
+
+
+class ReturnTransitionRuntime(Protocol):
+    outcome: Any
+    projection: Any
+
+
+class ReturnTransitionRuntimeProvider(Protocol):
+    def __call__(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        previous_next_dig_event_seen: bool,
+    ) -> ReturnTransitionRuntime:
+        """Return the return-to-dig transition runtime state for one tick."""
 
 
 class BoolProvider(Protocol):
@@ -155,13 +156,6 @@ class LegacyFsmDigTransitionPorts:
 
 
 @dataclass(frozen=True, slots=True)
-class LegacyFsmBoundaryProfilePorts:
-    """Boundary profile dependency shared by dump and return transitions."""
-
-    semantic_boundary_profile_active: BoolProvider
-
-
-@dataclass(frozen=True, slots=True)
 class LegacyFsmDumpLifecyclePorts:
     """Carry/dump lifecycle dependencies used by the legacy FSM backend."""
 
@@ -173,10 +167,7 @@ class LegacyFsmDumpLifecyclePorts:
 class LegacyFsmReturnTransitionPorts:
     """Return-to-dig transition dependencies used by the legacy FSM backend."""
 
-    service: Any
-    handoff_ready: ObservationPredicate
-    direct_handoff_ready: DirectHandoffPredicate
-    shallow_guard_ready: KeywordBoundaryObservationPredicate
+    return_transition_runtime: ReturnTransitionRuntimeProvider
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,7 +180,6 @@ class LegacyFsmBackendPorts:
     dig_transition: LegacyFsmDigTransitionPorts | None = None
     dump_lifecycle: LegacyFsmDumpLifecyclePorts | None = None
     return_transition: LegacyFsmReturnTransitionPorts | None = None
-    boundary_profile: LegacyFsmBoundaryProfilePorts | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,16 +195,13 @@ __all__ = [
     "BoundaryObservationPredicate",
     "CarryTransitionRuntime",
     "CarryTransitionRuntimeProvider",
-    "DirectHandoffPredicate",
     "DigToCarryDecision",
     "DigToCarryDecisionProvider",
     "DumpTransitionRuntime",
     "DumpTransitionRuntimeProvider",
     "IntProvider",
-    "KeywordBoundaryObservationPredicate",
     "LegacyFsmBackendPorts",
     "LegacyFsmBootstrapPorts",
-    "LegacyFsmBoundaryProfilePorts",
     "LegacyFsmDigTransitionPorts",
     "LegacyFsmDumpLifecyclePorts",
     "LegacyFsmPreDigAlignmentPorts",
@@ -223,5 +210,7 @@ __all__ = [
     "ObservationOutcomeBuilder",
     "ObservationPredicate",
     "PlannerBackendPorts",
+    "ReturnTransitionRuntime",
+    "ReturnTransitionRuntimeProvider",
     "RuntimeConfigProvider",
 ]

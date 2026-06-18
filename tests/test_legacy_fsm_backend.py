@@ -38,7 +38,6 @@ from testbed.planner.dump_lifecycle import (
 from testbed.planner.runtime import (
     LegacyFsmBackendPorts,
     LegacyFsmBootstrapPorts,
-    LegacyFsmBoundaryProfilePorts,
     LegacyFsmDigTransitionPorts,
     LegacyFsmPreDigAlignmentPorts,
     LegacyFsmSkillNames,
@@ -74,14 +73,6 @@ def _ports(**legacy_ports: object) -> PlannerBackendPorts:
             skill_names=_skill_names(),
             **legacy_ports,
         )
-    )
-
-
-def _boundary_ports(
-    semantic_boundary_profile_active=lambda: False,
-) -> LegacyFsmBoundaryProfilePorts:
-    return LegacyFsmBoundaryProfilePorts(
-        semantic_boundary_profile_active=semantic_boundary_profile_active,
     )
 
 

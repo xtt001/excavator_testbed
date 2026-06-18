@@ -7,12 +7,12 @@ import pytest
 
 from testbed.planner.return_to_dig_transition import (
     ReturnToDigTransitionOutcome,
+    ReturnToDigTransitionRuntime,
     ReturnToDigTransitionRuntimeProjection,
     ReturnToDigTransitionService,
 )
 from testbed.planner.runtime import (
     LegacyFsmBackendPorts,
-    LegacyFsmBoundaryProfilePorts,
     LegacyFsmReturnTransitionPorts,
     LegacyFsmSkillNames,
     PlannerBackendPorts,
@@ -42,15 +42,11 @@ def _skill_names() -> LegacyFsmSkillNames:
 
 def _ports(
     return_transition: LegacyFsmReturnTransitionPorts,
-    semantic_boundary_profile_active=lambda: False,
 ) -> PlannerBackendPorts:
     return PlannerBackendPorts(
         legacy_fsm=LegacyFsmBackendPorts(
             skill_names=_skill_names(),
             return_transition=return_transition,
-            boundary_profile=LegacyFsmBoundaryProfilePorts(
-                semantic_boundary_profile_active=semantic_boundary_profile_active,
-            ),
         )
     )
 
@@ -78,10 +74,11 @@ def test_legacy_fsm_backend_return_returns_apply_runtime_effect() -> None:
             ),
             ports=_ports(
                 LegacyFsmReturnTransitionPorts(
-                    service=ReturnToDigTransitionService(),
-                    handoff_ready=handoff_ready,
-                    direct_handoff_ready=fail_direct,
-                    shallow_guard_ready=fail_shallow,
+                    return_transition_runtime=_return_transition_runtime_provider(
+                        handoff_ready=handoff_ready,
+                        direct_handoff_ready=fail_direct,
+                        shallow_guard_ready=fail_shallow,
+                    ),
                 ),
             ),
         )
@@ -141,10 +138,11 @@ def test_legacy_fsm_backend_return_direct_handoff_preserves_gate_order() -> None
             ),
             ports=_ports(
                 LegacyFsmReturnTransitionPorts(
-                    service=ReturnToDigTransitionService(),
-                    handoff_ready=handoff_ready,
-                    direct_handoff_ready=direct_handoff_ready,
-                    shallow_guard_ready=fail_shallow,
+                    return_transition_runtime=_return_transition_runtime_provider(
+                        handoff_ready=handoff_ready,
+                        direct_handoff_ready=direct_handoff_ready,
+                        shallow_guard_ready=fail_shallow,
+                    ),
                 ),
             ),
         )
@@ -290,6 +288,53 @@ def _make_policy(**overrides: Any) -> PrimitivePlannerACTPolicy:
     }
     kwargs.update(overrides)
     return PrimitivePlannerACTPolicy(**kwargs)
+
+
+def _return_transition_runtime_provider(
+    *,
+    handoff_ready,
+    direct_handoff_ready,
+    shallow_guard_ready,
+    semantic_boundary_profile_active: bool = False,
+):
+    service = ReturnToDigTransitionService()
+
+    def provider(
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+        previous_next_dig_event_seen: bool,
+    ) -> ReturnToDigTransitionRuntime:
+        handoff = handoff_ready(obs)
+        request = service.transition_request(
+            handoff_ready=handoff,
+            boundary_event=boundary_event,
+            previous_next_dig_event_seen=previous_next_dig_event_seen,
+            semantic_boundary_profile_active=semantic_boundary_profile_active,
+        )
+        direct = False
+        shallow = False
+        if request.should_check_direct_handoff:
+            direct = direct_handoff_ready(obs, handoff_ready=handoff)
+        if request.should_check_shallow_guard(direct):
+            shallow = shallow_guard_ready(
+                obs=obs,
+                boundary_event=boundary_event,
+            )
+        outcome = service.classify(
+            request.facts_with_gate_results(
+                direct_handoff_ready=direct,
+                shallow_guard_ready=shallow,
+            ),
+            request.config,
+        )
+        projection = service.transition_runtime_projection(outcome)
+        return ReturnToDigTransitionRuntime(
+            outcome=outcome,
+            projection=projection,
+        )
+
+    return provider
 
 
 class _ConstantPolicy:

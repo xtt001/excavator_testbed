@@ -17,13 +17,14 @@ from testbed.planner.runtime.ports import (
     DumpTransitionRuntimeProvider,
     LegacyFsmBackendPorts,
     LegacyFsmBootstrapPorts,
-    LegacyFsmBoundaryProfilePorts,
     LegacyFsmDigTransitionPorts,
     LegacyFsmDumpLifecyclePorts,
     LegacyFsmPreDigAlignmentPorts,
     LegacyFsmReturnTransitionPorts,
     LegacyFsmSkillNames,
     PlannerBackendPorts,
+    ReturnTransitionRuntime,
+    ReturnTransitionRuntimeProvider,
 )
 from testbed.planner.runtime.behavior_tree import (
     BEHAVIOR_TREE_EXPERIMENTAL_BACKEND_NAME,
@@ -71,7 +72,6 @@ __all__ = [
     "LegacyFsmTransitionRunner",
     "LegacyFsmBackendPorts",
     "LegacyFsmBootstrapPorts",
-    "LegacyFsmBoundaryProfilePorts",
     "LegacyFsmDigTransitionPorts",
     "LegacyFsmDumpLifecyclePorts",
     "LegacyFsmPreDigAlignmentPorts",
@@ -86,6 +86,8 @@ __all__ = [
     "PlannerRuntimeEffect",
     "PlannerTickContext",
     "PlannerTickResult",
+    "ReturnTransitionRuntime",
+    "ReturnTransitionRuntimeProvider",
     "ReturnToDigTransitionRuntimeApplier",
     "apply_legacy_fsm_runtime_effects",
 ]

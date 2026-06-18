@@ -585,8 +585,8 @@ Implemented files:
 - `testbed/planner/runtime/legacy_fsm.py`: changed the carry and dump branches
   to call the typed runtime providers and emit the existing
   `apply_carry_transition_runtime` / `apply_dump_transition_runtime` effects.
-  Carry/dump no longer require `LegacyFsmBoundaryProfilePorts`; return still
-  uses that boundary-profile port.
+  Carry/dump no longer require `LegacyFsmBoundaryProfilePorts`; at this point
+  return still used that boundary-profile port.
 - `testbed/policies/hybrid/primitive_planner.py`: kept adapter work thin by
   wiring `LegacyFsmDumpLifecyclePorts` to `_carry_transition_runtime()` and
   `_dump_transition_runtime()`. Those helpers preserve the existing request
@@ -635,6 +635,76 @@ Verification run for this slice:
 - `python -m compileall -q testbed/planner/runtime testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_action_tree.py tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_primitive_scheduler_facades.py`
   -> no output.
 - `git diff --check` -> no whitespace errors.
+
+#### Return Transition Runtime Port Record 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/return_to_dig_transition.py`: added
+  `ReturnToDigTransitionRuntime` as the typed runtime record that carries the
+  existing return transition `outcome` and runtime `projection` together.
+- `testbed/planner/runtime/ports.py`: replaced the legacy FSM return port group
+  of `service`, `handoff_ready`, `direct_handoff_ready`, and
+  `shallow_guard_ready` callbacks with the stable
+  `return_transition_runtime` provider. `LegacyFsmBoundaryProfilePorts` was
+  removed because return no longer reads boundary-profile state through a
+  separate backend port.
+- `testbed/planner/runtime/__init__.py`: exports the return runtime provider
+  and runtime protocols with the other typed backend port contracts.
+- `testbed/planner/runtime/legacy_fsm.py`: changed the return branch to consume
+  the typed runtime record from `context.ports.legacy_fsm.return_transition` and
+  emit the existing `apply_return_to_dig_transition_runtime` effect payload.
+  The backend no longer orchestrates handoff/direct/shallow callbacks or reads a
+  boundary-profile provider.
+- `testbed/policies/hybrid/primitive_planner.py`: wires
+  `LegacyFsmReturnTransitionPorts` to `_return_transition_runtime()`. That
+  adapter method preserves the existing handoff, transition request,
+  direct-handoff, shallow-guard, classify, and projection order.
+- `tests/test_planner_backend_ports.py` and
+  `tests/test_legacy_fsm_backend_return.py`: added and updated focused backend
+  contract tests for the typed return runtime provider, while preserving the
+  branch-order assertions for the adapter-built provider.
+
+Scope guardrails kept:
+
+- No branch order, return gate thresholds, switch reasons, next-dig latch
+  semantics, policy reset timing, debug/trace/rollout schema, token contract,
+  default backend selection, or behavior-tree default changed.
+- The backend still does not own return handoff/direct/shallow gate facts or
+  thresholds. It consumes the typed outcome/projection runtime record and emits
+  the existing runtime effect payload.
+- Return completion remains adapter-owned. The effect applier still applies the
+  runtime projection first, then builds and applies completion so the existing
+  counter-sensitive pre-dig-align timing is preserved.
+- `_try_return_direct_handoff_at_current_obs()` remains adapter-owned and was
+  not migrated in this slice.
+- `PlannerBlackboard`, `PlannerConditioningState`, coverage state, token schema,
+  and source generation ownership are unchanged.
+
+Verification run for this slice:
+
+- Initial RED:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_ports.py`
+  -> failed with
+  `TypeError: LegacyFsmReturnTransitionPorts.__init__() got an unexpected keyword argument 'return_transition_runtime'`.
+- Focused GREEN:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_ports.py tests/test_legacy_fsm_backend_return.py tests/test_legacy_fsm_backend.py`
+  -> `25 passed`.
+- Backend/runtime/config/BT:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_planner_backend_config.py tests/test_behavior_tree_backend_contract.py`
+  -> `70 passed`.
+- Golden/action-tree/facade/debug schema:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_golden_traces.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py tests/test_primitive_planner_debug_schema.py`
+  -> `168 passed`.
+- Token/data/config contract check:
+  `python -m pytest -p no:cacheprovider -q tests/test_primitive_token_contracts.py tests/test_policy_data_contracts.py tests/test_config_semantic_matrix.py`
+  -> `25 passed, 1 warning` from the existing `datetime.utcnow()` deprecation in
+  `testbed/data/dataset.py`.
+- `python -m compileall -q testbed/planner/runtime testbed/planner/return_to_dig_transition.py testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_action_tree.py tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_primitive_scheduler_facades.py`
+  -> no output.
+- `git diff --check` -> no whitespace errors.
+- `rg "context\\.services|services\\[|LegacyFsmBoundaryProfilePorts|ports\\.boundary_profile|boundary_ports" testbed/planner testbed/policies/hybrid tests -n`
+  -> no matches.
 
 ### Phase 2: Coverage As First Blackboard Domain
 
