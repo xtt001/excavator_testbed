@@ -11,31 +11,6 @@ class BootstrapEndPredicate(Protocol):
         """Return whether the bootstrap skill should end for this tick."""
 
 
-class ObservationPredicate(Protocol):
-    def __call__(self, obs: dict[str, Any]) -> bool:
-        """Return a boolean gate decision for one observation."""
-
-
-class BoundaryObservationPredicate(Protocol):
-    def __call__(self, obs: dict[str, Any], boundary_event: Any | None) -> bool:
-        """Return a boolean gate decision using observation and boundary event."""
-
-
-class DigToCarryDecision(Protocol):
-    ready: bool
-    reason: str
-
-
-class DigToCarryDecisionProvider(Protocol):
-    def __call__(
-        self,
-        *,
-        obs: dict[str, Any],
-        boundary_event: Any | None,
-    ) -> DigToCarryDecision:
-        """Return a dig-to-carry decision with explicit ready/reason fields."""
-
-
 class DigTransitionRuntimeProjection(Protocol):
     outcome: Any
     bad_replan_count_increment: int
@@ -169,12 +144,7 @@ class LegacyFsmPreDigAlignmentPorts:
 class PlannerDigTransitionPorts:
     """Dig transition dependencies shared by planner backends."""
 
-    transition_runtime: DigTransitionRuntimeProvider | None = None
-    lifecycle_gate: Any | None = None
-    exit_guard_ready: ObservationPredicate | None = None
-    bad_replan_ready: ObservationPredicate | None = None
-    complete_boundary_low_payload: BoundaryObservationPredicate | None = None
-    dig_to_carry_decision: DigToCarryDecisionProvider | None = None
+    transition_runtime: DigTransitionRuntimeProvider
 
 
 LegacyFsmDigTransitionPorts = PlannerDigTransitionPorts
@@ -227,11 +197,8 @@ class PlannerBackendPorts:
 __all__ = [
     "BoolProvider",
     "BootstrapEndPredicate",
-    "BoundaryObservationPredicate",
     "CarryTransitionRuntime",
     "CarryTransitionRuntimeProvider",
-    "DigToCarryDecision",
-    "DigToCarryDecisionProvider",
     "DigTransitionRuntimeProjection",
     "DigTransitionRuntimeProvider",
     "DumpTransitionRuntime",
@@ -245,7 +212,6 @@ __all__ = [
     "LegacyFsmReturnTransitionPorts",
     "LegacyFsmSkillNames",
     "ObservationOutcomeBuilder",
-    "ObservationPredicate",
     "PlannerBackendPorts",
     "PlannerDigTransitionPorts",
     "PlannerDumpLifecyclePorts",

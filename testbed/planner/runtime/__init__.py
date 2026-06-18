@@ -20,8 +20,6 @@ from testbed.planner.runtime.effects import (
 from testbed.planner.runtime.ports import (
     CarryTransitionRuntime,
     CarryTransitionRuntimeProvider,
-    DigToCarryDecision,
-    DigToCarryDecisionProvider,
     DigTransitionRuntimeProjection,
     DigTransitionRuntimeProvider,
     DumpTransitionRuntime,
@@ -70,8 +68,6 @@ __all__ = [
     "CarryTransitionRuntimeApplier",
     "CarryTransitionRuntime",
     "CarryTransitionRuntimeProvider",
-    "DigToCarryDecision",
-    "DigToCarryDecisionProvider",
     "DigTransitionRuntimeProjection",
     "DigTransitionRuntimeProvider",
     "DigTransitionRuntimeProjectionApplier",

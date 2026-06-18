@@ -1563,11 +1563,9 @@ Implemented files:
   `DigLifecycleConfig`.
 - `testbed/planner/runtime/ports.py`: added
   `DigTransitionRuntimeProvider` and changed `PlannerDigTransitionPorts` so the
-  stable preferred dependency is a single `transition_runtime` provider. The
-  previous four gate callbacks remain as a compatibility fallback only.
+  stable dependency is a single `transition_runtime` provider.
 - `testbed/planner/runtime/transition_nodes.py`: changed the shared dig node
-  builder to prefer `PlannerDigTransitionPorts.transition_runtime`; the legacy
-  callback path is only used for compatibility ports.
+  builder to call `PlannerDigTransitionPorts.transition_runtime`.
 - `testbed/policies/hybrid/primitive_planner.py`: thin adapter wiring only.
   `_legacy_fsm_tick_context()` now wires `transition_runtime=self._dig_transition_runtime`;
   `_dig_transition_runtime()` builds facts/config and calls the dig lifecycle
@@ -1590,12 +1588,15 @@ Scope guardrails kept:
 - `BehaviorTreeBackend` remains experimental and is not enabled by
   `planner_backend` config.
 - `PrimitiveActionTreeRunner` remains the shadow-only compatibility reference.
-  It still has legacy shell callback reads for shadow parity; this slice moves
-  the runtime backend dependency first and does not promote or rewrite the
-  shadow runner.
-- Existing private shell methods such as `_dig_exit_guard_ready()` remain as
-  compatibility facades, but they are no longer the default
-  `PlannerDigTransitionPorts` dependency.
+  Its dig node now consumes `_dig_transition_runtime()` so it no longer
+  reconstructs dig gate order through shell-private dig callbacks. It still
+  applies effects through the existing shadow runner adapter path and is not
+  promoted to the default backend.
+- The old `PlannerDigTransitionPorts` fallback fields
+  (`lifecycle_gate`, `exit_guard_ready`, `bad_replan_ready`,
+  `complete_boundary_low_payload`, and `dig_to_carry_decision`) were removed
+  after parity tests passed. `_dig_to_carry_ready()` remains only because the
+  5P compatibility planner still calls it.
 
 Verification run for this slice:
 
@@ -1625,6 +1626,22 @@ Verification run for this slice:
 - `python -m compileall -q testbed/planner/dig_lifecycle.py testbed/planner/dig_lifecycle_transition.py testbed/planner/runtime testbed/policies/hybrid/primitive_planner.py tests/test_dig_transition_runtime_capability.py tests/test_planner_backend_ports.py tests/test_behavior_tree_backend_contract.py tests/test_legacy_fsm_backend.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py`
   -> no output.
 - `git diff --check` -> no whitespace errors.
+
+Cleanup verification for removing the old dig fallback:
+
+- Initial RED:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_ports.py::test_dig_transition_ports_require_runtime_provider`
+  -> failed because `PlannerDigTransitionPorts()` still accepted a missing
+  `transition_runtime`.
+- Initial RED:
+  `python -m pytest -p no:cacheprovider -q tests/test_primitive_action_tree.py::test_action_tree_dig_uses_transition_runtime_provider`
+  -> failed because the action-tree dig node still called
+  `_dig_exit_guard_ready()`.
+- Focused GREEN:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_ports.py tests/test_primitive_action_tree.py tests/test_legacy_fsm_backend.py tests/test_dig_transition_runtime_capability.py`
+  -> `45 passed`.
+- `python -m compileall -q testbed/planner/runtime testbed/planner/primitive_action_tree.py testbed/policies/hybrid/primitive_planner.py tests/test_planner_backend_ports.py tests/test_primitive_action_tree.py tests/test_legacy_fsm_backend.py`
+  -> no output.
 
 ### Phase 5: Default Backend Migration
 

@@ -68,10 +68,11 @@ def test_policy_dig_port_uses_transition_runtime_provider_not_shell_gate_callbac
 
     assert dig_ports is not None
     assert dig_ports.transition_runtime is not None
-    assert dig_ports.exit_guard_ready is None
-    assert dig_ports.bad_replan_ready is None
-    assert dig_ports.complete_boundary_low_payload is None
-    assert dig_ports.dig_to_carry_decision is None
+
+
+def test_dig_transition_ports_require_runtime_provider() -> None:
+    with pytest.raises(TypeError, match="transition_runtime"):
+        PlannerDigTransitionPorts()  # type: ignore[call-arg]
 
 
 def test_legacy_fsm_backend_dig_uses_typed_transition_runtime_port() -> None:

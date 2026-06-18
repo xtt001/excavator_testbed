@@ -320,10 +320,8 @@ def test_action_tree_tick_transition_matches_legacy_dig_bad_replan(
     tree_policy = _make_policy(boundary_events=[], boundary_profile="legacy")
     for policy in (legacy, tree_policy):
         policy._skill_name = "dig"
-    monkeypatch.setattr(
-        legacy,
-        "_dig_transition_runtime",
-        lambda **_kwargs: DigTransitionRuntimeProjection(
+    def transition_runtime(**_kwargs: object) -> DigTransitionRuntimeProjection:
+        return DigTransitionRuntimeProjection(
             outcome=DigTransitionRuntimeOutcome(
                 action="failed_dig",
                 counter="bad_replan",
@@ -331,10 +329,10 @@ def test_action_tree_tick_transition_matches_legacy_dig_bad_replan(
                 coverage_reject_reason="bad_dig_low_payload",
             ),
             bad_replan_count_increment=1,
-        ),
-    )
-    monkeypatch.setattr(tree_policy, "_dig_exit_guard_ready", lambda _obs: False)
-    monkeypatch.setattr(tree_policy, "_dig_bad_replan_ready", lambda _obs: True)
+        )
+
+    monkeypatch.setattr(legacy, "_dig_transition_runtime", transition_runtime)
+    monkeypatch.setattr(tree_policy, "_dig_transition_runtime", transition_runtime)
 
     trace = _run_transition_pair(
         legacy,
@@ -349,6 +347,45 @@ def test_action_tree_tick_transition_matches_legacy_dig_bad_replan(
     assert trace.node_path[-1] == "failed_dig"
 
 
+def test_action_tree_dig_uses_transition_runtime_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree_policy = _make_policy(boundary_events=[], boundary_profile="legacy")
+    tree_policy._skill_name = "dig"
+    calls: list[str] = []
+
+    def transition_runtime(**_kwargs: object) -> DigTransitionRuntimeProjection:
+        calls.append("transition_runtime")
+        return DigTransitionRuntimeProjection(
+            outcome=DigTransitionRuntimeOutcome(
+                action="failed_dig",
+                counter="bad_replan",
+                failed_dig_reason="bad_dig_low_payload",
+                coverage_reject_reason="bad_dig_low_payload",
+            ),
+            bad_replan_count_increment=1,
+        )
+
+    monkeypatch.setattr(
+        tree_policy,
+        "_dig_transition_runtime",
+        transition_runtime,
+    )
+
+    runner = PrimitiveActionTreeRunner()
+    trace = runner.tick_transition(
+        tree_policy,
+        _obs(mass=0.0, dig_distance=0.0),
+        None,
+    )
+
+    assert calls == ["transition_runtime"]
+    assert trace.active_skill_before == "dig"
+    assert trace.active_skill_after == "dig"
+    assert trace.switch_reason == "dig_retry_bad_dig_low_payload"
+    assert trace.node_path[-1] == "failed_dig"
+
+
 def test_action_tree_tick_transition_matches_legacy_dig_complete_low_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -356,10 +393,8 @@ def test_action_tree_tick_transition_matches_legacy_dig_complete_low_payload(
     tree_policy = _make_policy(boundary_events=[], boundary_profile="v2_4_5_spatial_mass")
     for policy in (legacy, tree_policy):
         policy._skill_name = "dig"
-    monkeypatch.setattr(
-        legacy,
-        "_dig_transition_runtime",
-        lambda **_kwargs: DigTransitionRuntimeProjection(
+    def transition_runtime(**_kwargs: object) -> DigTransitionRuntimeProjection:
+        return DigTransitionRuntimeProjection(
             outcome=DigTransitionRuntimeOutcome(
                 action="failed_dig",
                 counter="bad_replan",
@@ -367,15 +402,10 @@ def test_action_tree_tick_transition_matches_legacy_dig_complete_low_payload(
                 coverage_reject_reason="dig_complete_low_current_payload",
             ),
             bad_replan_count_increment=1,
-        ),
-    )
-    monkeypatch.setattr(tree_policy, "_dig_exit_guard_ready", lambda _obs: False)
-    monkeypatch.setattr(tree_policy, "_dig_bad_replan_ready", lambda _obs: False)
-    monkeypatch.setattr(
-        tree_policy,
-        "_dig_complete_boundary_low_payload",
-        lambda _obs, _event: True,
-    )
+        )
+
+    monkeypatch.setattr(legacy, "_dig_transition_runtime", transition_runtime)
+    monkeypatch.setattr(tree_policy, "_dig_transition_runtime", transition_runtime)
 
     trace = _run_transition_pair(
         legacy,

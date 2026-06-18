@@ -24,7 +24,6 @@ from testbed.planner.bootstrap import (
     BootstrapTransitionDecision,
 )
 from testbed.planner.dig_lifecycle import (
-    DigLifecycleGateService,
     DigTransitionRuntimeOutcome,
     DigTransitionRuntimeProjection,
 )
@@ -237,15 +236,24 @@ def test_legacy_fsm_backend_pre_dig_align_returns_apply_outcome_effect() -> None
     }
 
 
-def test_legacy_fsm_backend_dig_exit_guard_skips_later_gates() -> None:
+def test_legacy_fsm_backend_dig_consumes_transition_runtime_projection() -> None:
     calls: list[str] = []
 
-    def exit_guard_ready(_obs: dict) -> bool:
-        calls.append("exit_guard")
-        return True
-
-    def fail_later_gate(*_args: Any, **_kwargs: Any) -> bool:
-        raise AssertionError("later dig gates must not be checked after exit guard")
+    def transition_runtime(
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> DigTransitionRuntimeProjection:
+        calls.append(f"transition_runtime:{obs['step']}:{boundary_event is None}")
+        return DigTransitionRuntimeProjection(
+            outcome=DigTransitionRuntimeOutcome(
+                action="failed_dig",
+                counter="exit_guard_replan",
+                failed_dig_reason="exit_overshoot_low_payload",
+                coverage_reject_reason="exit_overshoot_low_payload",
+            ),
+            exit_guard_replan_count_increment=1,
+        )
 
     result = LegacyStateMachineBackend().tick(
         PlannerTickContext(
@@ -253,17 +261,13 @@ def test_legacy_fsm_backend_dig_exit_guard_skips_later_gates() -> None:
             blackboard=PlannerBlackboard(current_skill="dig"),
             ports=_ports(
                 dig_transition=LegacyFsmDigTransitionPorts(
-                    lifecycle_gate=DigLifecycleGateService(),
-                    exit_guard_ready=exit_guard_ready,
-                    bad_replan_ready=fail_later_gate,
-                    complete_boundary_low_payload=fail_later_gate,
-                    dig_to_carry_decision=fail_later_gate,
+                    transition_runtime=transition_runtime,
                 ),
             ),
         )
     )
 
-    assert calls == ["exit_guard"]
+    assert calls == ["transition_runtime:16:True"]
     projection = result.effects[0].payload["projection"]
     assert projection.outcome == DigTransitionRuntimeOutcome(
         action="failed_dig",

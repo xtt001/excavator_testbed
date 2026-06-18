@@ -111,7 +111,6 @@ from testbed.planner.dig_lifecycle import (
     DigLifecyclePlannerConfig,
     DigLifecycleRuntimeStatusSnapshot,
     DigLifecycleRuntimeStatusState,
-    DigGateDecision,
     DigProgressState,
     DigTransitionRuntimeProjection,
     FailedDigRecoveryDecision,
@@ -2176,18 +2175,6 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             progress.coverage_payload_gain_kg
         )
 
-    def _dig_bad_replan_ready(self, obs: dict) -> bool:
-        return self.dig_lifecycle_gate.bad_replan_ready(
-            self._dig_lifecycle_facts(obs),
-            self._dig_lifecycle_config(),
-        )
-
-    def _dig_exit_guard_ready(self, obs: dict) -> bool:
-        return self.dig_lifecycle_gate.exit_guard_ready(
-            self._dig_lifecycle_facts(obs),
-            self._dig_lifecycle_config(),
-        )
-
     def _dig_transition_runtime(
         self,
         *,
@@ -2200,36 +2187,13 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             config=self._dig_lifecycle_config(),
         )
 
-    def _dig_to_carry_decision(
-        self,
-        *,
-        obs: dict,
-        boundary_event: Any | None,
-    ) -> DigGateDecision:
+    def _dig_to_carry_ready(self, *, obs: dict, boundary_event: Any | None) -> bool:
         decision = self.dig_lifecycle_gate.dig_to_carry_ready(
             self._dig_lifecycle_facts(obs, boundary_event),
             self._dig_lifecycle_config(),
         )
         self._dig_to_carry_reason = str(decision.reason)
-        return decision
-
-    def _dig_to_carry_ready(self, *, obs: dict, boundary_event: Any | None) -> bool:
-        return bool(
-            self._dig_to_carry_decision(
-                obs=obs,
-                boundary_event=boundary_event,
-            ).ready
-        )
-
-    def _dig_complete_boundary_low_payload(
-        self,
-        obs: dict,
-        boundary_event: Any | None,
-    ) -> bool:
-        return self.dig_lifecycle_gate.complete_boundary_low_payload(
-            self._dig_lifecycle_facts(obs, boundary_event),
-            self._dig_lifecycle_config(),
-        )
+        return bool(decision.ready)
 
     def _semantic_boundary_profile_active(self) -> bool:
         config = getattr(self.boundary_detector, "config", None)

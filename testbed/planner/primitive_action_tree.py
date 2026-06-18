@@ -265,60 +265,38 @@ class PrimitiveActionTreeRunner:
         boundary_event: Any | None,
     ) -> _ActionTreeTickResult:
         active_skill_before = str(policy._skill_name)
-        exit_guard_ready = policy._dig_exit_guard_ready(obs)
-        request = policy.dig_lifecycle_gate.dig_transition_runtime_request(
-            exit_guard_ready=exit_guard_ready,
+        projection = policy._dig_transition_runtime(
+            obs=obs,
+            boundary_event=boundary_event,
         )
-        bad_replan_ready = False
-        complete_boundary_low_payload = False
-        dig_to_carry_ready = False
-        dig_to_carry_reason = ""
-        if request.should_check_bad_replan:
-            bad_replan_ready = policy._dig_bad_replan_ready(obs)
-        if request.should_check_complete_boundary_low_payload(bad_replan_ready):
-            complete_boundary_low_payload = policy._dig_complete_boundary_low_payload(
-                obs,
-                boundary_event,
-            )
-        if request.should_check_dig_to_carry(
-            bad_replan_ready=bad_replan_ready,
-            complete_boundary_low_payload=complete_boundary_low_payload,
-        ):
-            dig_to_carry_ready = policy._dig_to_carry_ready(
-                obs=obs,
-                boundary_event=boundary_event,
-            )
-            if dig_to_carry_ready:
-                dig_to_carry_reason = str(policy._dig_to_carry_reason)
-        outcome = policy.dig_lifecycle_gate.dig_transition_runtime(
-            request.facts_with_gate_results(
-                bad_replan_ready=bad_replan_ready,
-                dig_to_carry_reason=dig_to_carry_reason,
-                complete_boundary_low_payload=complete_boundary_low_payload,
-                dig_to_carry_ready=dig_to_carry_ready,
-            )
-        )
-        projection = policy.dig_lifecycle_gate.dig_transition_runtime_projection(
-            outcome
-        )
+        outcome = projection.outcome
         policy._apply_dig_transition_runtime_projection(projection, obs)
+        action = str(getattr(outcome, "action", ""))
+        failed_dig_reason = str(getattr(outcome, "failed_dig_reason", ""))
+        dig_to_carry_reason = str(
+            getattr(projection, "dig_to_carry_reason", "")
+        )
         return _ActionTreeTickResult(
-            node_path=(str(outcome.action),),
+            node_path=(action,),
             node_status=_node_status(
                 active_skill_before=active_skill_before,
                 active_skill_after=str(policy._skill_name),
                 switch_reason=str(policy._switch_reason),
-                service_outcome=str(outcome.action),
+                service_outcome=action,
             ),
-            service_outcome=str(outcome.action),
+            service_outcome=action,
             guard_facts={
-                "exit_guard_ready": bool(exit_guard_ready),
-                "bad_replan_ready": bool(bad_replan_ready),
-                "complete_boundary_low_payload": bool(
-                    complete_boundary_low_payload
+                "exit_guard_ready": (
+                    failed_dig_reason == "exit_overshoot_low_payload"
                 ),
-                "dig_to_carry_ready": bool(dig_to_carry_ready),
-                "dig_to_carry_reason": str(dig_to_carry_reason),
+                "bad_replan_ready": failed_dig_reason == "bad_dig_low_payload",
+                "complete_boundary_low_payload": (
+                    failed_dig_reason == "complete_low_payload"
+                ),
+                "dig_to_carry_ready": action == "carry",
+                "dig_to_carry_reason": (
+                    dig_to_carry_reason if action == "carry" else ""
+                ),
             },
         )
 
