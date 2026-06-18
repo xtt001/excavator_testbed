@@ -7,10 +7,13 @@ import pytest
 
 from testbed.planner.primitive_action_tree import PrimitiveActionTreeRunner
 from testbed.planner.return_to_dig_transition import (
+    ReturnDirectHandoffAttemptOutcome,
+    ReturnDirectHandoffRuntimeProjection,
     ReturnToDigTransitionOutcome,
     ReturnToDigTransitionRuntime,
     ReturnToDigTransitionRuntimeProjection,
     ReturnToDigTransitionService,
+    return_direct_handoff_runtime_from_gate_providers,
     return_transition_runtime_from_gate_providers,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
@@ -171,6 +174,121 @@ def test_action_tree_return_uses_transition_runtime_provider(
     assert trace.active_skill_after == "dig"
     assert trace.switch_reason == "return_to_dig_next_dig_entry_ready"
     assert trace.node_path[-2:] == ("next_dig_event", "completion")
+
+
+def test_return_direct_handoff_runtime_skips_prepare_and_gates_before_return() -> None:
+    calls: list[str] = []
+
+    def fail_prepare(_obs: dict) -> None:
+        raise AssertionError("prepare must not run when direct handoff is skipped")
+
+    def fail_handoff(_obs: dict) -> bool:
+        raise AssertionError("handoff gate must not run when direct handoff is skipped")
+
+    def fail_direct(*_args: Any, **_kwargs: Any) -> bool:
+        raise AssertionError("direct gate must not run when direct handoff is skipped")
+
+    runtime = return_direct_handoff_runtime_from_gate_providers(
+        service=ReturnToDigTransitionService(),
+        obs={"step": 11},
+        active_skill_name="dump",
+        return_target_planner_enabled=True,
+        direct_handoff_enabled=True,
+        prepare_return_target_plan=fail_prepare,
+        handoff_ready=fail_handoff,
+        direct_handoff_ready=fail_direct,
+    )
+
+    assert calls == []
+    assert runtime.outcome == ReturnDirectHandoffAttemptOutcome(action="skip")
+    assert runtime.projection == ReturnDirectHandoffRuntimeProjection(
+        should_transition=False,
+    )
+    assert runtime.facts.active_skill_name == "dump"
+    assert runtime.facts.handoff_evaluated is False
+
+
+def test_return_direct_handoff_runtime_preserves_prepare_and_gate_order() -> None:
+    calls: list[str] = []
+
+    def prepare_return_target_plan(obs: dict) -> None:
+        calls.append(f"prepare:{obs['step']}")
+
+    def handoff_ready(obs: dict) -> bool:
+        calls.append(f"handoff:{obs['step']}")
+        return True
+
+    def direct_handoff_ready(
+        obs: dict,
+        *,
+        handoff_ready: bool | None = None,
+    ) -> bool:
+        calls.append(f"direct:{obs['step']}:{handoff_ready}")
+        return bool(handoff_ready)
+
+    runtime = return_direct_handoff_runtime_from_gate_providers(
+        service=ReturnToDigTransitionService(),
+        obs={"step": 12},
+        active_skill_name="return",
+        return_target_planner_enabled=True,
+        direct_handoff_enabled=True,
+        prepare_return_target_plan=prepare_return_target_plan,
+        handoff_ready=handoff_ready,
+        direct_handoff_ready=direct_handoff_ready,
+    )
+
+    assert calls == ["prepare:12", "handoff:12", "direct:12:True"]
+    assert runtime.outcome == ReturnDirectHandoffAttemptOutcome(
+        action="direct_handoff",
+        reason_suffix="start_envelope_ready",
+    )
+    assert runtime.projection == ReturnDirectHandoffRuntimeProjection(
+        should_transition=True,
+        completed_transition_increment=1,
+        cycle_index_increment=1,
+    )
+    assert runtime.facts.handoff_evaluated is True
+    assert runtime.facts.handoff_ready is True
+    assert runtime.facts.direct_handoff_ready is True
+
+
+def test_return_direct_handoff_runtime_waits_when_direct_gate_is_not_ready() -> None:
+    calls: list[str] = []
+
+    def prepare_return_target_plan(obs: dict) -> None:
+        calls.append(f"prepare:{obs['step']}")
+
+    def handoff_ready(obs: dict) -> bool:
+        calls.append(f"handoff:{obs['step']}")
+        return True
+
+    def direct_handoff_ready(
+        obs: dict,
+        *,
+        handoff_ready: bool | None = None,
+    ) -> bool:
+        calls.append(f"direct:{obs['step']}:{handoff_ready}")
+        return False
+
+    runtime = return_direct_handoff_runtime_from_gate_providers(
+        service=ReturnToDigTransitionService(),
+        obs={"step": 13},
+        active_skill_name="return",
+        return_target_planner_enabled=True,
+        direct_handoff_enabled=True,
+        prepare_return_target_plan=prepare_return_target_plan,
+        handoff_ready=handoff_ready,
+        direct_handoff_ready=direct_handoff_ready,
+    )
+
+    assert calls == ["prepare:13", "handoff:13", "direct:13:True"]
+    assert runtime.outcome == ReturnDirectHandoffAttemptOutcome(action="wait")
+    assert runtime.projection == ReturnDirectHandoffRuntimeProjection(
+        should_transition=False,
+    )
+    assert runtime.facts.handoff_evaluated is True
+    assert runtime.facts.handoff_ready is True
+    assert runtime.facts.direct_handoff_ready is False
 
 
 class _BoundaryEvent:

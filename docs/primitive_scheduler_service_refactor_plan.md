@@ -218,6 +218,12 @@ Recent checkpoint:
   FSM backend 和 action-tree shadow 节点消费这些 runtime providers，不再复制完整的
   primitive-planner gate/classify/projection 流程。旧 facades 只在仍有 5P、AGX 或
   diagnostic tests 明确绑定时保留。
+- 2026-06-18: backend interface Phase 4 继续收完同一类
+  transition/gate orchestration：direct return handoff、pre-dig-align outcome
+  和 pre-dig-align replan handoff 的 request/gate-order/facts/outcome/projection
+  生成已移入 focused capability。`PrimitivePlannerACTPolicy` 只保留 provider wiring
+  和 adapter-side effect application。completion、`_set_skill()`、projection
+  application、token/observation/plan-builder cleanup 仍按各自责任边界留待后续切片。
 
 ## Methodology Correction
 

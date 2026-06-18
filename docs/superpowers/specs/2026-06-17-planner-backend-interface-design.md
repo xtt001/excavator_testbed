@@ -1768,6 +1768,77 @@ Verification run for this cleanup:
 - `python -m compileall -q testbed/planner/runtime testbed/planner/return_to_dig_transition.py testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_action_tree.py tests/test_return_transition_runtime_capability.py tests/test_legacy_fsm_backend_return.py`
   -> no output.
 
+#### Phase 4 Slice 7 Transition/Gate Orchestration Cleanup 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/return_to_dig_transition.py`: added
+  `return_direct_handoff_runtime_from_gate_providers()`. The capability owns
+  direct return-handoff attempt request construction, return-target preparation
+  timing, handoff/direct-gate order, outcome classification, runtime facts, and
+  projection generation.
+- `testbed/planner/dig_start_alignment_outcome.py`: added
+  `pre_dig_align_outcome_from_gate_providers()` and
+  `pre_dig_align_replan_handoff_runtime_from_providers()`. These capabilities
+  own pre-dig-align surface/ready/timeout gate ordering and replan handoff
+  plan-build, entry-error, timeout-gate ordering.
+- `testbed/policies/hybrid/primitive_planner.py`: the affected methods now wire
+  providers into capability functions, then apply returned runtime/projection
+  side effects in the adapter. The policy shell no longer repeats these
+  multi-step transition/gate orchestration chains inline.
+- `tests/test_return_transition_runtime_capability.py`: added focused direct
+  handoff runtime tests for skipped, direct-handoff, and wait paths.
+- `tests/test_pre_dig_align_runtime_capability.py`: new focused tests for
+  pre-dig-align outcome and replan handoff gate order.
+
+Scope guardrails kept:
+
+- No default backend selection, config default, branch order, threshold, reason
+  string, policy reset timing, debug/trace/rollout schema, token contract, or
+  rollout output changed.
+- `BehaviorTreeBackend` remains experimental and is not enabled by config.
+- Direct return completion remains adapter-owned. It must run after the adapter
+  applies the direct-handoff projection so completion can see the updated
+  runtime counters.
+- Return transition completion remains adapter-owned for the same reason.
+- `_set_skill()` and projection application stay in the policy adapter because
+  they reset low-level policies and mutate shell/runtime state.
+- Token/observation/plan-builder cleanup was intentionally not started in this
+  slice. That is the next responsibility group, not part of this transition/gate
+  orchestration cleanup.
+
+Verification run for this cleanup:
+
+- Initial RED for direct return handoff:
+  `python -m pytest -q tests/test_return_transition_runtime_capability.py`
+  -> failed during collection because
+  `return_direct_handoff_runtime_from_gate_providers` did not exist yet.
+- Initial RED for pre-dig-align outcome:
+  `python -m pytest -q tests/test_pre_dig_align_runtime_capability.py`
+  -> failed during collection because `PreDigAlignTimeoutHandoffResult` did not
+  exist yet.
+- Initial RED for pre-dig-align replan handoff:
+  `python -m pytest -q tests/test_pre_dig_align_runtime_capability.py`
+  -> failed during collection because `PreDigAlignReplanHandoffRequest` did not
+  exist yet.
+
+- Focused category tests:
+  `python -m pytest -q tests/test_return_transition_runtime_capability.py tests/test_pre_dig_align_runtime_capability.py tests/test_primitive_scheduler_facades.py tests/test_primitive_action_tree.py tests/test_dig_start_alignment_service.py tests/test_return_handoff_service.py`
+  -> `262 passed`.
+- Backend/runtime/config/BT:
+  `python -m pytest -p no:cacheprovider -q tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_planner_backend_config.py`
+  -> `76 passed`.
+- Golden/debug/token/data/config/AGX spot check:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_golden_traces.py tests/test_primitive_planner_debug_schema.py tests/test_primitive_token_contracts.py tests/test_policy_data_contracts.py tests/test_config_semantic_matrix.py tests/test_agx_primitives_v2_2.py::TestPrimitivesV22::test_semantic_profile_keeps_material_liveness_dig_to_carry`
+  -> `53 passed, 1 warning` from the existing `datetime.utcnow()`
+  deprecation in `testbed/data/dataset.py`.
+- Compile:
+  `python -m compileall -q testbed/planner/runtime testbed/planner/dig_start_alignment_outcome.py testbed/planner/return_to_dig_transition.py testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_action_tree.py tests/test_return_transition_runtime_capability.py tests/test_pre_dig_align_runtime_capability.py`
+  -> no output.
+- Diff hygiene:
+  `git diff --check`
+  -> no output.
+
 ### Phase 5: Default Backend Migration
 
 Once `LegacyStateMachineBackend` is behavior-identical and the adapter applies

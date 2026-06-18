@@ -195,6 +195,17 @@ class ReturnDirectHandoffAttemptRequest:
         )
 
 
+@dataclass(frozen=True)
+class ReturnDirectHandoffRuntime:
+    outcome: ReturnDirectHandoffAttemptOutcome
+    projection: ReturnDirectHandoffRuntimeProjection
+    facts: ReturnDirectHandoffAttemptFacts
+
+
+class ReturnTargetPlanPreparer(Protocol):
+    def __call__(self, obs: dict) -> None: ...
+
+
 class ReturnToDigTransitionService:
     """Classify return-to-dig transition outcomes from precomputed gates."""
 
@@ -494,6 +505,48 @@ def return_transition_runtime_from_gate_providers(
     outcome = service.classify(facts, request.config)
     projection = service.transition_runtime_projection(outcome)
     return ReturnToDigTransitionRuntime(
+        outcome=outcome,
+        projection=projection,
+        facts=facts,
+    )
+
+
+def return_direct_handoff_runtime_from_gate_providers(
+    *,
+    service: ReturnToDigTransitionService,
+    obs: dict,
+    active_skill_name: str,
+    return_target_planner_enabled: bool,
+    direct_handoff_enabled: bool,
+    prepare_return_target_plan: ReturnTargetPlanPreparer,
+    handoff_ready: ReturnTransitionHandoffReadyProvider,
+    direct_handoff_ready: ReturnTransitionDirectHandoffReadyProvider,
+) -> ReturnDirectHandoffRuntime:
+    """Build direct return-to-dig handoff runtime while preserving gate order."""
+
+    request = service.direct_handoff_attempt_request(
+        active_skill_name=active_skill_name,
+        return_target_planner_enabled=return_target_planner_enabled,
+        direct_handoff_enabled=direct_handoff_enabled,
+    )
+    facts = request.facts
+    if request.should_prepare_return_target:
+        prepare_return_target_plan(obs)
+    if request.should_evaluate_handoff:
+        handoff = bool(handoff_ready(obs))
+        direct = bool(
+            direct_handoff_ready(
+                obs,
+                handoff_ready=handoff,
+            )
+        )
+        facts = request.facts_with_gate_results(
+            handoff_ready=handoff,
+            direct_handoff_ready=direct,
+        )
+    outcome = service.direct_handoff_attempt(facts, request.config)
+    projection = service.direct_handoff_runtime_projection(outcome)
+    return ReturnDirectHandoffRuntime(
         outcome=outcome,
         projection=projection,
         facts=facts,

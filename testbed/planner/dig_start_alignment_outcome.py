@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, Protocol
 
 from testbed.planner.dig_start_alignment_runtime import (
     DigStartAlignmentRuntimeState,
@@ -60,6 +61,64 @@ class PreDigAlignOutcomeRequest:
             timeout_can_handoff=bool(timeout_can_handoff),
             timeout_reason=str(timeout_reason),
         )
+
+
+@dataclass(frozen=True)
+class PreDigAlignTimeoutHandoffResult:
+    ready: bool
+    reason: str = ""
+
+
+class PreDigAlignBoolGateProvider(Protocol):
+    def __call__(self, obs: dict[str, Any]) -> bool: ...
+
+
+class PreDigAlignTimeoutHandoffProvider(Protocol):
+    def __call__(self, obs: dict[str, Any]) -> PreDigAlignTimeoutHandoffResult: ...
+
+
+class PreDigAlignReplanTimeoutHandoffProvider(Protocol):
+    def __call__(
+        self,
+        obs: dict[str, Any],
+        *,
+        entry_error_m: float,
+    ) -> PreDigAlignTimeoutHandoffResult: ...
+
+
+class PreDigAlignPlanBuilder(Protocol):
+    def __call__(self, obs: dict[str, Any]) -> Any: ...
+
+
+class PreDigAlignEntryErrorProvider(Protocol):
+    def __call__(self, obs: dict[str, Any]) -> float: ...
+
+
+@dataclass(frozen=True)
+class PreDigAlignReplanHandoffRequest:
+    should_attempt: bool
+
+
+@dataclass(frozen=True)
+class PreDigAlignReplanHandoffRuntime:
+    action: str
+    dig_cut_plan_state: Any | None = None
+    entry_error_m: float | None = None
+    timeout: PreDigAlignTimeoutHandoffResult = PreDigAlignTimeoutHandoffResult(
+        ready=False
+    )
+
+    @property
+    def should_apply_dig_cut_plan(self) -> bool:
+        return self.dig_cut_plan_state is not None
+
+    @property
+    def should_apply_entry_error(self) -> bool:
+        return self.entry_error_m is not None
+
+    @property
+    def should_handoff_to_dig(self) -> bool:
+        return self.action == "handoff"
 
 
 class DigStartAlignmentOutcomeService:
@@ -143,3 +202,71 @@ class DigStartAlignmentOutcomeService:
                 reject_reason="align_entry_gap_timeout",
             )
         return PreDigAlignOutcome(action="none")
+
+
+def pre_dig_align_outcome_from_gate_providers(
+    *,
+    service: DigStartAlignmentOutcomeService,
+    obs: dict[str, Any],
+    step_count: int,
+    max_steps: int,
+    surface_guard_triggered: PreDigAlignBoolGateProvider,
+    surface_guard_can_handoff: PreDigAlignBoolGateProvider,
+    ready: PreDigAlignBoolGateProvider,
+    timeout_can_handoff: PreDigAlignTimeoutHandoffProvider,
+) -> PreDigAlignOutcome:
+    """Build a pre-dig-align outcome while preserving legacy gate order."""
+
+    triggered = bool(surface_guard_triggered(obs))
+    request = service.outcome_request(
+        surface_guard_triggered=triggered,
+        step_count=step_count,
+        max_steps=max_steps,
+    )
+    surface_handoff = False
+    ready_result = False
+    timeout_result = PreDigAlignTimeoutHandoffResult(ready=False)
+    if request.should_check_surface_guard_handoff:
+        surface_handoff = bool(surface_guard_can_handoff(obs))
+    elif request.should_check_ready:
+        ready_result = bool(ready(obs))
+    if request.should_check_timeout(ready=ready_result):
+        timeout_result = timeout_can_handoff(obs)
+    return request.outcome_with_gate_results(
+        surface_guard_can_handoff=surface_handoff,
+        ready=ready_result,
+        timeout_can_handoff=bool(timeout_result.ready),
+        timeout_reason=str(timeout_result.reason),
+    )
+
+
+def pre_dig_align_replan_handoff_request(
+    *,
+    planner_mode: str,
+) -> PreDigAlignReplanHandoffRequest:
+    return PreDigAlignReplanHandoffRequest(
+        should_attempt=str(planner_mode)
+        in {"operator_prior_coverage", "operator_prior_sweep_belief"}
+    )
+
+
+def pre_dig_align_replan_handoff_runtime_from_providers(
+    *,
+    obs: dict[str, Any],
+    build_dig_cut_plan: PreDigAlignPlanBuilder,
+    entry_error: PreDigAlignEntryErrorProvider,
+    timeout_can_handoff: PreDigAlignReplanTimeoutHandoffProvider,
+) -> PreDigAlignReplanHandoffRuntime:
+    try:
+        dig_cut_plan_state = build_dig_cut_plan(obs)
+    except Exception:
+        return PreDigAlignReplanHandoffRuntime(action="build_failed")
+    entry_error_m = float(entry_error(obs))
+    timeout = timeout_can_handoff(obs, entry_error_m=entry_error_m)
+    action = "handoff" if bool(timeout.ready) else "wait"
+    return PreDigAlignReplanHandoffRuntime(
+        action=action,
+        dig_cut_plan_state=dig_cut_plan_state,
+        entry_error_m=entry_error_m,
+        timeout=timeout,
+    )

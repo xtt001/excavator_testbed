@@ -144,6 +144,11 @@ from testbed.planner.dig_start_alignment_context import (
 )
 from testbed.planner.dig_start_alignment_outcome import (
     PreDigAlignOutcome,
+    PreDigAlignReplanHandoffRuntime,
+    PreDigAlignTimeoutHandoffResult,
+    pre_dig_align_outcome_from_gate_providers,
+    pre_dig_align_replan_handoff_request,
+    pre_dig_align_replan_handoff_runtime_from_providers,
 )
 from testbed.planner.dig_start_alignment_readiness import (
     AlignmentReadyDecision,
@@ -273,6 +278,7 @@ from testbed.planner.return_to_dig_transition import (
     ReturnToDigTransitionRuntime,
     ReturnToDigTransitionRuntimeProjection,
     ReturnToDigTransitionService,
+    return_direct_handoff_runtime_from_gate_providers,
     return_transition_runtime_from_gate_providers,
 )
 from testbed.planner.runtime import (
@@ -1204,41 +1210,30 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self._try_return_direct_handoff_at_current_obs(obs)
 
     def _try_return_direct_handoff_at_current_obs(self, obs: dict) -> bool:
-        request = self.return_transition_service.direct_handoff_attempt_request(
+        runtime = return_direct_handoff_runtime_from_gate_providers(
+            service=self.return_transition_service,
+            obs=obs,
             active_skill_name=self._skill_name,
             return_target_planner_enabled=self.return_target_planner_enabled,
             direct_handoff_enabled=(
                 self.return_to_dig_start_envelope_direct_handoff_enabled
             ),
+            prepare_return_target_plan=self._ensure_return_target_plan_for_cycle,
+            handoff_ready=self._return_to_dig_handoff_ready,
+            direct_handoff_ready=self._return_to_dig_direct_handoff_ready,
         )
-        if not request.should_prepare_return_target:
+        if runtime.outcome.action != "direct_handoff":
             return False
-        self._ensure_return_target_plan_for_cycle(obs)
-        handoff_ready = self._return_to_dig_handoff_ready(obs)
-        direct_handoff_ready = self._return_to_dig_direct_handoff_ready(
-            obs,
-            handoff_ready=handoff_ready,
-        )
-        attempt = self.return_transition_service.direct_handoff_attempt(
-            request.facts_with_gate_results(
-                handoff_ready=handoff_ready,
-                direct_handoff_ready=direct_handoff_ready,
-            ),
-            request.config,
-        )
-        if attempt.action != "direct_handoff":
-            return False
-        projection = self.return_transition_service.direct_handoff_runtime_projection(
-            attempt
-        )
-        if not self._apply_return_to_dig_transition_runtime_projection(projection):
+        if not self._apply_return_to_dig_transition_runtime_projection(
+            runtime.projection
+        ):
             return False
         completion_request = self.return_transition_service.completion_request(
             pre_dig_align_before_dig=self._should_pre_dig_align_before_dig(),
             pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
         )
         completion = self.return_transition_service.direct_handoff_completion(
-            attempt,
+            runtime.outcome,
             completion_request.facts,
             completion_request.config,
         )
@@ -1306,32 +1301,47 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self._clear_dig_cut_plan()
 
     def _try_replan_pre_dig_align_handoff(self, obs: dict) -> bool:
-        if self.dig_cut_planner_mode not in {
-            "operator_prior_coverage",
-            "operator_prior_sweep_belief",
-        }:
+        request = pre_dig_align_replan_handoff_request(
+            planner_mode=self.dig_cut_planner_mode,
+        )
+        if not request.should_attempt:
             return False
         self._coverage_active_corridor_id = -1
         self._invalidate_pending_dig_cut_plan()
         self._clear_dig_cut_plan()
-        try:
-            token, raw_fields, source, fallback_reason = (
-                self._build_operator_prior_coverage_dig_cut_tokens(obs)
-            )
-        except Exception:
+        runtime = pre_dig_align_replan_handoff_runtime_from_providers(
+            obs=obs,
+            build_dig_cut_plan=self._build_pre_dig_align_replan_dig_cut_plan_state,
+            entry_error=self._pre_dig_align_entry_error,
+            timeout_can_handoff=self._pre_dig_align_replan_timeout_handoff_result,
+        )
+        return self._apply_pre_dig_align_replan_handoff_runtime(runtime)
+
+    def _build_pre_dig_align_replan_dig_cut_plan_state(
+        self,
+        obs: dict,
+    ) -> DigCutPlanState:
+        token, raw_fields, source, fallback_reason = (
+            self._build_operator_prior_coverage_dig_cut_tokens(obs)
+        )
+        return DigCutPlanState(
+            token=np.asarray(token, dtype=np.float32).copy(),
+            source=str(source),
+            fallback_reason=str(fallback_reason),
+            token_in_prior_p10_p90=self._raw_fields_in_prior_range(raw_fields),
+        )
+
+    def _apply_pre_dig_align_replan_handoff_runtime(
+        self,
+        runtime: PreDigAlignReplanHandoffRuntime,
+    ) -> bool:
+        if not runtime.should_apply_dig_cut_plan:
             return False
-        self._dig_cut_tokens = np.asarray(token, dtype=np.float32).copy()
+        self._dig_cut_tokens = self._apply_dig_cut_plan_state(
+            runtime.dig_cut_plan_state
+        )
         self._dig_cut_planned_cycle_id = int(self._cycle_index)
-        self._dig_cut_token_source = str(source)
-        self._dig_cut_fallback_reason = str(fallback_reason)
-        self._dig_cut_token_in_prior_p10_p90 = self._raw_fields_in_prior_range(
-            raw_fields
-        )
-        entry_error = self._pre_dig_align_entry_error(obs)
-        self._apply_pre_dig_align_entry_error_runtime_state(
-            entry_error_m=entry_error
-        )
-        if not self._pre_dig_align_timeout_can_handoff(obs):
+        if not runtime.should_handoff_to_dig:
             return False
         self._apply_pre_dig_align_replan_handoff_runtime_state()
         self._set_skill("dig", "pre_dig_align_replan_to_dig_entry_close")
@@ -1683,33 +1693,41 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         )
 
     def _pre_dig_align_outcome(self, obs: dict) -> PreDigAlignOutcome:
-        surface_guard_triggered = self._pre_dig_align_surface_guard_triggered_for_state(
-            obs
-        )
-        request = self.dig_start_alignment_service.outcome_request(
-            surface_guard_triggered=surface_guard_triggered,
+        return pre_dig_align_outcome_from_gate_providers(
+            service=self.dig_start_alignment_service,
+            obs=obs,
             step_count=int(self._pre_dig_align_step_count),
             max_steps=int(self.pre_dig_align_max_steps),
+            surface_guard_triggered=(
+                self._pre_dig_align_surface_guard_triggered_for_state
+            ),
+            surface_guard_can_handoff=(
+                self._pre_dig_align_surface_guard_can_handoff
+            ),
+            ready=self._pre_dig_align_ready,
+            timeout_can_handoff=self._pre_dig_align_timeout_handoff_result,
         )
-        surface_guard_can_handoff = False
-        ready = False
-        timeout_can_handoff = False
-        timeout_reason = ""
-        if request.should_check_surface_guard_handoff:
-            surface_guard_can_handoff = (
-                self._pre_dig_align_surface_guard_can_handoff(obs)
-            )
-        elif request.should_check_ready:
-            ready = self._pre_dig_align_ready(obs)
-        if request.should_check_timeout(ready=ready):
-            timeout_can_handoff = self._pre_dig_align_timeout_can_handoff(obs)
-            timeout_reason = self._pre_dig_align_timeout_handoff_reason
-        return request.outcome_with_gate_results(
-            surface_guard_can_handoff=surface_guard_can_handoff,
+
+    def _pre_dig_align_timeout_handoff_result(
+        self,
+        obs: dict,
+    ) -> PreDigAlignTimeoutHandoffResult:
+        ready = self._pre_dig_align_timeout_can_handoff(obs)
+        return PreDigAlignTimeoutHandoffResult(
             ready=ready,
-            timeout_can_handoff=timeout_can_handoff,
-            timeout_reason=timeout_reason,
+            reason=self._pre_dig_align_timeout_handoff_reason,
         )
+
+    def _pre_dig_align_replan_timeout_handoff_result(
+        self,
+        obs: dict,
+        *,
+        entry_error_m: float,
+    ) -> PreDigAlignTimeoutHandoffResult:
+        self._apply_pre_dig_align_entry_error_runtime_state(
+            entry_error_m=entry_error_m
+        )
+        return self._pre_dig_align_timeout_handoff_result(obs)
 
     def _dig_start_alignment_config(self) -> DigStartAlignmentConfig:
         return build_dig_start_alignment_runtime_config_from_mapping(
