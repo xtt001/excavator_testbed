@@ -228,9 +228,153 @@ class CoverageUpdateService:
         )
 
 
+@dataclass(frozen=True)
+class CoverageRuntimeConfig:
+    multi_pass_enabled: bool
+    use_env_removed_depth: bool
+    multi_pass_max_passes: int
+    multi_pass_min_remaining_depth_m: float
+
+
+@dataclass(frozen=True)
+class CoverageReopenFacts:
+    reason: str
+    pass_index: int
+    terminal_stop_requested: bool
+    remaining_depth_by_corridor_id: dict[int, float]
+
+
+@dataclass(frozen=True)
+class CoverageReopenResult:
+    reopened: bool
+    reason: str
+    pass_index: int
+    active_corridor_id: int
+    global_low_productivity_streak: int
+    clear_rejected_state_exemplar_ids: bool
+    max_passes: int
+    min_remaining_depth_m: float
+    reopened_corridors: list[dict[str, float | int | str]]
+
+
+@dataclass(frozen=True)
+class CoverageTerminalFacts:
+    reason: str
+    replace: bool
+    terminal_stop_requested: bool
+    terminal_stop_reason: str
+
+
+@dataclass(frozen=True)
+class CoverageTerminalResult:
+    terminal_stop_requested: bool
+    terminal_stop_reason: str
+    record_event: bool
+
+
+class CoverageRuntimeService:
+    """Gate coverage reopen and terminal-stop requests without trace side effects."""
+
+    def __init__(self, config: CoverageRuntimeConfig) -> None:
+        self.config = config
+
+    def maybe_reopen_pass(
+        self,
+        corridors: list[CoverageCorridorState],
+        facts: CoverageReopenFacts,
+    ) -> CoverageReopenResult:
+        threshold = float(self.config.multi_pass_min_remaining_depth_m)
+        blocked_result = CoverageReopenResult(
+            reopened=False,
+            reason=str(facts.reason),
+            pass_index=int(facts.pass_index),
+            active_corridor_id=-1,
+            global_low_productivity_streak=0,
+            clear_rejected_state_exemplar_ids=False,
+            max_passes=int(self.config.multi_pass_max_passes),
+            min_remaining_depth_m=float(threshold),
+            reopened_corridors=[],
+        )
+        if not self.config.multi_pass_enabled:
+            return blocked_result
+        if facts.terminal_stop_requested:
+            return blocked_result
+        if not self.config.use_env_removed_depth:
+            return blocked_result
+        if not corridors or not all(corridor.depleted for corridor in corridors):
+            return blocked_result
+        if int(facts.pass_index) + 1 >= int(self.config.multi_pass_max_passes):
+            return blocked_result
+
+        reopened: list[dict[str, float | int | str]] = []
+        for corridor in corridors:
+            remaining_depth = float(
+                facts.remaining_depth_by_corridor_id.get(
+                    int(corridor.corridor_id),
+                    float("nan"),
+                )
+            )
+            if not (np.isfinite(remaining_depth) and remaining_depth >= threshold):
+                corridor.last_remaining_depth_m = float(remaining_depth)
+                continue
+            reopened.append(
+                {
+                    "corridor_id": int(corridor.corridor_id),
+                    "cell_id": int(CoverageSelectionService.cell_id(corridor)),
+                    "previous_attempts": int(corridor.attempts),
+                    "previous_low_productivity_streak": int(
+                        corridor.low_productivity_streak
+                    ),
+                    "previous_reason": str(corridor.last_reason),
+                    "remaining_depth_m": float(remaining_depth),
+                }
+            )
+            corridor.depleted = False
+            corridor.attempts = 0
+            corridor.low_productivity_streak = 0
+            corridor.last_remaining_depth_m = float(remaining_depth)
+            corridor.last_reason = f"multi_pass_reopened:{facts.reason}"
+
+        if not reopened:
+            return blocked_result
+        return CoverageReopenResult(
+            reopened=True,
+            reason=str(facts.reason),
+            pass_index=int(facts.pass_index) + 1,
+            active_corridor_id=-1,
+            global_low_productivity_streak=0,
+            clear_rejected_state_exemplar_ids=True,
+            max_passes=int(self.config.multi_pass_max_passes),
+            min_remaining_depth_m=float(threshold),
+            reopened_corridors=reopened,
+        )
+
+    @staticmethod
+    def request_terminal_stop(
+        facts: CoverageTerminalFacts,
+    ) -> CoverageTerminalResult:
+        if facts.terminal_stop_requested and not facts.replace:
+            return CoverageTerminalResult(
+                terminal_stop_requested=True,
+                terminal_stop_reason=str(facts.terminal_stop_reason),
+                record_event=False,
+            )
+        return CoverageTerminalResult(
+            terminal_stop_requested=True,
+            terminal_stop_reason=str(facts.reason),
+            record_event=True,
+        )
+
+
 __all__ = [
     "CoverageCompletionFacts",
+    "CoverageReopenFacts",
+    "CoverageReopenResult",
     "CoverageRejectionFacts",
+    "CoverageRuntimeConfig",
+    "CoverageRuntimeService",
+    "CoverageTerminalFacts",
+    "CoverageTerminalResult",
     "CoverageUpdateConfig",
     "CoverageUpdateResult",
     "CoverageUpdateService",

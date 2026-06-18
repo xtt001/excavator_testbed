@@ -71,7 +71,11 @@ from testbed.planner.primitive_coverage import (
 )
 from testbed.planner.primitive_coverage_updates import (
     CoverageCompletionFacts,
+    CoverageReopenFacts,
     CoverageRejectionFacts,
+    CoverageRuntimeConfig,
+    CoverageRuntimeService,
+    CoverageTerminalFacts,
     CoverageUpdateConfig,
     CoverageUpdateService,
 )
@@ -4528,6 +4532,54 @@ class PrimitivePlannerACTPolicy(Policy):
     def _coverage_update_service(self) -> CoverageUpdateService:
         return CoverageUpdateService(self._coverage_update_config())
 
+    def _coverage_runtime_config(self) -> CoverageRuntimeConfig:
+        return CoverageRuntimeConfig(
+            multi_pass_enabled=bool(self.coverage_multi_pass_enabled),
+            use_env_removed_depth=bool(self.coverage_use_env_removed_depth),
+            multi_pass_max_passes=int(self.coverage_multi_pass_max_passes),
+            multi_pass_min_remaining_depth_m=float(
+                self.coverage_multi_pass_min_remaining_depth_m
+            ),
+        )
+
+    def _coverage_runtime_service(self) -> CoverageRuntimeService:
+        return CoverageRuntimeService(self._coverage_runtime_config())
+
+    def _coverage_reopen_facts(
+        self,
+        obs: dict,
+        corridors: list[CoverageCorridorState] | None = None,
+        *,
+        reason: str,
+    ) -> CoverageReopenFacts:
+        target_corridors = list(
+            self._coverage_corridors if corridors is None else corridors
+        )
+        return CoverageReopenFacts(
+            reason=str(reason),
+            pass_index=int(self._coverage_pass_index),
+            terminal_stop_requested=bool(self._coverage_terminal_stop_requested),
+            remaining_depth_by_corridor_id={
+                int(corridor.corridor_id): float(
+                    self._coverage_remaining_depth_for_corridor(obs, corridor)
+                )
+                for corridor in target_corridors
+            },
+        )
+
+    def _coverage_terminal_facts(
+        self,
+        reason: str,
+        *,
+        replace: bool,
+    ) -> CoverageTerminalFacts:
+        return CoverageTerminalFacts(
+            reason=str(reason),
+            replace=bool(replace),
+            terminal_stop_requested=bool(self._coverage_terminal_stop_requested),
+            terminal_stop_reason=str(self._coverage_terminal_stop_reason),
+        )
+
     def _coverage_completion_facts(
         self,
         obs: dict,
@@ -4800,64 +4852,29 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _maybe_reopen_coverage_pass(self, obs: dict, *, reason: str) -> bool:
-        if not self.coverage_multi_pass_enabled:
-            return False
-        if self._coverage_terminal_stop_requested:
-            return False
-        if not self.coverage_use_env_removed_depth:
-            return False
-        if not self._coverage_all_depleted():
-            return False
-        if (
-            int(self._coverage_pass_index) + 1
-            >= int(self.coverage_multi_pass_max_passes)
-        ):
+        result = self._coverage_runtime_service().maybe_reopen_pass(
+            self._coverage_corridors,
+            self._coverage_reopen_facts(obs, reason=reason),
+        )
+        if not result.reopened:
             return False
 
-        threshold = float(self.coverage_multi_pass_min_remaining_depth_m)
-        reopened: list[dict[str, float | int | str]] = []
-        for corridor in self._coverage_corridors:
-            remaining_depth = self._coverage_remaining_depth_for_corridor(obs, corridor)
-            if not (
-                np.isfinite(remaining_depth)
-                and float(remaining_depth) >= threshold
-            ):
-                corridor.last_remaining_depth_m = float(remaining_depth)
-                continue
-            reopened.append(
-                {
-                    "corridor_id": int(corridor.corridor_id),
-                    "cell_id": int(self._coverage_cell_id(corridor)),
-                    "previous_attempts": int(corridor.attempts),
-                    "previous_low_productivity_streak": int(
-                        corridor.low_productivity_streak
-                    ),
-                    "previous_reason": str(corridor.last_reason),
-                    "remaining_depth_m": float(remaining_depth),
-                }
-            )
-            corridor.depleted = False
-            corridor.attempts = 0
-            corridor.low_productivity_streak = 0
-            corridor.last_remaining_depth_m = float(remaining_depth)
-            corridor.last_reason = f"multi_pass_reopened:{reason}"
-
-        if not reopened:
-            return False
-
-        self._coverage_pass_index += 1
-        self._coverage_active_corridor_id = -1
-        self._coverage_global_low_productivity_streak = 0
-        self._coverage_rejected_state_exemplar_ids.clear()
+        self._coverage_pass_index = int(result.pass_index)
+        self._coverage_active_corridor_id = int(result.active_corridor_id)
+        self._coverage_global_low_productivity_streak = int(
+            result.global_low_productivity_streak
+        )
+        if result.clear_rejected_state_exemplar_ids:
+            self._coverage_rejected_state_exemplar_ids.clear()
         self._record_coverage_decision_event(
             "reopen_coverage_pass",
             obs=obs,
             extra={
-                "reason": str(reason),
+                "reason": str(result.reason),
                 "pass_index": int(self._coverage_pass_index),
-                "max_passes": int(self.coverage_multi_pass_max_passes),
-                "min_remaining_depth_m": float(threshold),
-                "reopened_corridors": reopened,
+                "max_passes": int(result.max_passes),
+                "min_remaining_depth_m": float(result.min_remaining_depth_m),
+                "reopened_corridors": list(result.reopened_corridors),
             },
         )
         return True
@@ -4868,14 +4885,19 @@ class PrimitivePlannerACTPolicy(Policy):
         *,
         replace: bool = False,
     ) -> None:
-        if self._coverage_terminal_stop_requested and not replace:
+        result = self._coverage_runtime_service().request_terminal_stop(
+            self._coverage_terminal_facts(reason, replace=replace)
+        )
+        if not result.record_event:
             return
-        self._coverage_terminal_stop_requested = True
-        self._coverage_terminal_stop_reason = str(reason)
+        self._coverage_terminal_stop_requested = bool(
+            result.terminal_stop_requested
+        )
+        self._coverage_terminal_stop_reason = str(result.terminal_stop_reason)
         self._record_coverage_decision_event(
             "terminal_stop",
             corridor=self._coverage_active_corridor(),
-            extra={"reason": str(reason)},
+            extra={"reason": str(result.terminal_stop_reason)},
         )
 
     def _coverage_active_corridor(self) -> CoverageCorridorState | None:

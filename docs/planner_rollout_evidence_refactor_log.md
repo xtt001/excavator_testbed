@@ -1415,3 +1415,54 @@ Each completed refactor round should append:
   multi-pass reopen request ownership only. Do not migrate decision
   trace/report projection, `_maybe_switch_skill()` branch bodies, backend
   behavior, or runtime effects in the same commit.
+
+### 2026-06-19 Phase 6.4 Coverage Runtime Requests
+
+- Scope: extracted coverage multi-pass reopen and terminal-stop request gating
+  only. No decision trace/report projection ownership, backend selection,
+  runtime package, behavior tree, VLM/LLM packet, default config, threshold,
+  branch order, reason string, token schema, debug schema, rollout summary
+  schema, or policy reset timing was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `4e06e6d6230d844e2bdbabe9598e0aaae1b91ac5`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 3 focused tests remained the compatibility baseline:
+    `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; its
+    golden-window contract locks coverage selected corridor fields and trace
+    surfaces.
+  - The only responsibility slice was runtime request gating/state mutation:
+    multi-pass reopen eligibility, reopened corridor reset, pass/global streak
+    reset, rejected-exemplar clear signal, and terminal-stop replace gating.
+    Trace event construction stayed in the legacy shell.
+- Extended `testbed/planner/primitive_coverage_updates.py` with
+  `CoverageRuntimeService`, explicit reopen/terminal facts, and result records.
+  The planner shell now prepares remaining-depth facts, applies returned
+  pass/terminal state, and records the existing `reopen_coverage_pass` and
+  `terminal_stop` trace events without changing their schema.
+- Added `tests/test_primitive_coverage_runtime.py` with service-versus-facade
+  parity coverage for multi-pass reopen and terminal-stop replace gating. The
+  TDD red test failed with `ImportError` before `CoverageRuntimeService` was
+  implemented.
+- Old code parked/reclassified: coverage decision trace/report projection,
+  `_maybe_switch_skill()` branch bodies, backend behavior, and runtime effects
+  remain legacy source-of-truth until later slices.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_coverage_runtime.py` returned
+    `2 passed`.
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_multi_pass or coverage_terminal_stop_when_all_depleted or trace_records_terminal_depletion or coverage_attempt_limit or records_coverage_decision_trace"`
+    returned `7 passed, 113 deselected`.
+  - `python -m pytest -q tests/test_primitive_coverage_runtime.py tests/test_primitive_coverage_updates.py tests/test_primitive_coverage_selection.py tests/test_primitive_coverage_candidates.py tests/test_primitive_return_start_envelope_token_planner.py tests/test_primitive_return_relocate_token_planner.py tests/test_primitive_return_target_token_planner.py tests/test_primitive_dig_depth_profile_token_planner.py tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_goal_token_provider.py tests/test_primitive_token_status.py tests/test_primitive_coverage_status.py tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `66 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_coverage_updates.py testbed/policies/hybrid/primitive_planner.py tests/test_primitive_coverage_runtime.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 6.5 should continue with coverage decision trace/report
+  projection only. Do not migrate `_maybe_switch_skill()` branch bodies,
+  backend behavior, or runtime effects in the same commit.
