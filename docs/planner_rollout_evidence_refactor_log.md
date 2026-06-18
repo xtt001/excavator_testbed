@@ -453,3 +453,63 @@ Each completed refactor round should append:
   Do not move `_maybe_switch_skill()` branch bodies or apply effects outside the
   old shell until the result contract is expanded with explicitly validated
   effect application tests.
+
+### 2026-06-19 Phase 4A PrimitiveObservationFacts
+
+- Scope: introduced `PrimitiveObservationFacts` only. No FSM branch body,
+  transition gate, token planning, coverage planning, return planning,
+  `cell_entry`, `pre_dig_align`, backend selection, runtime package, behavior
+  tree, VLM/LLM packet, default config, threshold, branch order, reason string,
+  token schema, debug schema, rollout summary schema, or policy reset timing was
+  intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `5dfa6225b9480abc7d4750039e7ddcb7a943a0b2`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1, Phase 2, and Phase 3 focused tests passed before Phase 4A edits:
+    `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `8 passed`.
+  - Live evidence remains the successful
+    `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl`
+    packet and paired planner trace / summary / resolved config.
+  - The only responsibility slice was read-only primitive observation facts from
+    `qpos`, `qvel`, `env_state`, `task_metrics`, `reward_phase`, and task step
+    success events.
+  - `PrimitiveObservationFacts` owns typed observation projection and lazy
+    target-geometry reads. Target geometry remains lazy so non-dump ticks do not
+    see earlier geometry exceptions.
+  - No planner `self` is passed into the capability module, and this slice does
+    not wrap `_maybe_switch_skill()` or old private branch methods.
+- Added `testbed/planner/primitive_capabilities.py` with
+  `PrimitiveObservationFacts`. The record copies observation arrays into
+  non-writeable `float32` arrays, freezes `task_metrics` behind a mapping proxy,
+  preserves current missing defaults, keeps task event fields, and exposes
+  legacy-compatible mass, deposited-mass, env-state scalar, and target-geometry
+  accessors.
+- Added `tests/test_primitive_capabilities.py`. The TDD red test failed with
+  `ModuleNotFoundError` before `testbed.planner.primitive_capabilities` was
+  implemented.
+- Updated `docs/planner_current_code_architecture_plan.md` so the immediate next
+  action no longer points at already-completed Slice 1; it now points at Slice 4
+  capability status records.
+- Old code parked/reclassified: no code was deleted. Existing planner helper
+  methods and `_maybe_switch_skill()` remain compatibility/source-of-truth
+  paths until later status or backend phases explicitly bridge them with parity
+  tests.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_capabilities.py` returned
+    `4 passed`.
+  - `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `8 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_capabilities.py tests/test_primitive_capabilities.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 4B should continue with `BootstrapStatus` only. Do not
+  migrate dig/carry/dump/return status records, token status, coverage status,
+  token planning, coverage planning, or legacy FSM backend behavior in the same
+  commit.

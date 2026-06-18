@@ -526,7 +526,13 @@ python scripts/planner_refactor_guard.py --check-skill-contract
 
 ## Immediate Next Action
 
-The next code round should implement **Slice 1: Current-Code Parity Harness**.
-Do not start extracting `predict()` until the selected successful rollout has a
-small parity test that locks skill/reason/token/debug surfaces against the
-current baseline-shaped planner.
+Implementation history is tracked in
+`docs/planner_rollout_evidence_refactor_log.md`. Slices 1-3 have already
+established the current-code parity harness, public tick execution template,
+and decision/effect result contracts.
+
+The current implementation route is **Slice 4: Extract Capability Status
+Records**. Continue one read-only status record at a time, starting from
+`PrimitiveObservationFacts`, then the transition status records. Do not move
+`_maybe_switch_skill()` branch bodies, token generation, coverage planning, or
+effect application during Slice 4.
