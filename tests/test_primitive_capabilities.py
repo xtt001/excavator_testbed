@@ -21,6 +21,7 @@ from testbed.planner.primitive_capabilities import (
     BootstrapStatus,
     CarryTransitionStatus,
     DigTransitionStatus,
+    DumpTransitionStatus,
     PrimitiveObservationFacts,
 )
 
@@ -35,6 +36,7 @@ class _BoundaryEvent:
         release_onset: bool = False,
         dump_complete: bool = False,
         dump_start: bool = False,
+        dump_end: bool = False,
         metrics: dict[str, float] | None = None,
     ) -> None:
         self.qualified_dig_start = qualified_dig_start
@@ -43,6 +45,7 @@ class _BoundaryEvent:
         self.release_onset = release_onset
         self.dump_complete = dump_complete
         self.dump_start = dump_start
+        self.dump_end = dump_end
         self.metrics = metrics
 
 
@@ -393,3 +396,80 @@ def test_carry_transition_status_keeps_legacy_dump_start_out_of_semantic_profile
     assert status.legacy_dump_start_event is False
     assert status.next_dump_ready_hold_count == 0
     assert status.ready_to_dump is False
+
+
+def test_dump_transition_status_records_dump_complete_boundary() -> None:
+    facts = PrimitiveObservationFacts.from_obs({}, action_dim=4)
+
+    status = DumpTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=_BoundaryEvent(dump_complete=True),
+        dump_done_use_boundary_event=True,
+    )
+
+    assert status.dump_complete_event is True
+    assert status.boundary_dump_done is True
+    assert status.coverage_completion_reason == "dump_complete_boundary"
+    assert status.dump_to_return_reason == "dump_to_return_dump_complete_boundary"
+
+
+def test_dump_transition_status_records_legacy_dump_end_boundary() -> None:
+    facts = PrimitiveObservationFacts.from_obs({}, action_dim=4)
+
+    status = DumpTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=_BoundaryEvent(dump_end=True),
+        semantic_boundary_profile_active=False,
+        dump_done_use_boundary_event=True,
+    )
+
+    assert status.legacy_dump_end_event is True
+    assert status.boundary_dump_done is True
+    assert status.coverage_completion_reason == "dump_end_boundary"
+    assert status.dump_to_return_reason == "dump_to_return_dump_end"
+
+
+def test_dump_transition_status_records_mass_low_hold() -> None:
+    facts = PrimitiveObservationFacts.from_obs(
+        {"task_metrics": {"mass_in_bucket_kg": 8.0, "deposited_mass_in_target_box_kg": 35.0}},
+        action_dim=4,
+    )
+
+    status = DumpTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=None,
+        semantic_boundary_profile_active=False,
+        dump_start_deposited_mass_kg=20.0,
+        dump_done_hold_count=1,
+        dump_done_hold_steps=2,
+        dump_done_max_bucket_mass_kg=10.0,
+        dump_done_min_deposit_delta_kg=5.0,
+    )
+
+    assert status.dump_done_mass_low is True
+    assert status.next_dump_done_hold_count == 2
+    assert status.ready_to_return is True
+    assert status.coverage_completion_reason == "dump_mass_low"
+    assert status.dump_to_return_reason == "dump_to_return_mass_low"
+
+
+def test_dump_transition_status_keeps_mass_low_hold_out_of_semantic_profile() -> None:
+    facts = PrimitiveObservationFacts.from_obs(
+        {"task_metrics": {"mass_in_bucket_kg": 8.0, "deposited_mass_in_target_box_kg": 35.0}},
+        action_dim=4,
+    )
+
+    status = DumpTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=None,
+        semantic_boundary_profile_active=True,
+        dump_start_deposited_mass_kg=20.0,
+        dump_done_hold_count=1,
+        dump_done_hold_steps=2,
+        dump_done_max_bucket_mass_kg=10.0,
+        dump_done_min_deposit_delta_kg=5.0,
+    )
+
+    assert status.dump_done_mass_low is False
+    assert status.next_dump_done_hold_count == 0
+    assert status.ready_to_return is False

@@ -677,3 +677,52 @@ Each completed refactor round should append:
 - Next action: Phase 4B.4 should continue with `DumpTransitionStatus` only. Do
   not migrate return, coverage, token, token planning, coverage planning, or
   backend behavior in the same commit.
+
+### 2026-06-19 Phase 4B.4 DumpTransitionStatus
+
+- Scope: introduced `DumpTransitionStatus` only. No FSM branch body, transition
+  gate side effect, coverage completion, return handoff, token planning,
+  coverage planning, return branch behavior, `cell_entry`, `pre_dig_align`,
+  backend selection, runtime package, behavior tree, VLM/LLM packet, default
+  config, threshold, branch order, reason string, token schema, debug schema,
+  rollout summary schema, or policy reset timing was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `7d969fd0cdabb728d7e845b417234f1d95b700b6`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 4B.3 focused tests passed before Phase 4B.4 edits:
+    `python -m pytest -q tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `24 passed`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; the
+    golden-window switch sequence includes repeated dump to return switches with
+    `dump_to_return_dump_complete_boundary`.
+  - The only responsibility slice was read-only dump transition status.
+  - `DumpTransitionStatus` records dump-complete / legacy dump-end boundary
+    facts and mass-low hold projection without calling `_dump_done()` or
+    mutating `_dump_done_hold_count`.
+  - Return handoff and coverage completion effects remain in the planner shell.
+- Updated `testbed/planner/primitive_capabilities.py` with
+  `DumpTransitionStatus`.
+- Updated `tests/test_primitive_capabilities.py` with focused coverage for
+  dump-complete boundary, legacy dump-end boundary, mass-low hold readiness, and
+  keeping mass-low hold out of semantic profile mode. The TDD red test failed
+  with `ImportError` before `DumpTransitionStatus` was implemented.
+- Old code parked/reclassified: no code was deleted. `_dump_done()` and the
+  `_maybe_switch_skill()` dump branch remain compatibility/source-of-truth paths
+  until a later legacy FSM backend phase bridges them with parity tests.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_capabilities.py` returned
+    `20 passed`.
+  - `python -m pytest -q tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `28 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_capabilities.py tests/test_primitive_capabilities.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 4B.5 should continue with `ReturnTransitionStatus` only.
+  Do not migrate coverage, token, token planning, coverage planning, or backend
+  behavior in the same commit.

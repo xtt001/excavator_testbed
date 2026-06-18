@@ -559,6 +559,97 @@ class CarryTransitionStatus:
         )
 
 
+@dataclass(frozen=True)
+class DumpTransitionStatus:
+    """Read-only dump transition facts for the legacy FSM."""
+
+    mass_in_bucket_kg: float
+    deposited_mass_in_target_box_kg: float
+    deposit_delta_since_dump_start_kg: float
+    semantic_boundary_profile_active: bool
+    dump_complete_event: bool
+    legacy_dump_end_event: bool
+    boundary_dump_done: bool
+    dump_done_mass_low: bool
+    next_dump_done_hold_count: int
+    ready_to_return: bool
+    coverage_completion_reason: str
+    dump_to_return_reason: str
+
+    @classmethod
+    def from_inputs(
+        cls,
+        *,
+        observation: PrimitiveObservationFacts,
+        boundary_event: Any | None,
+        semantic_boundary_profile_active: bool = False,
+        dump_done_use_boundary_event: bool = True,
+        dump_start_deposited_mass_kg: float = 0.0,
+        dump_done_hold_count: int = 0,
+        dump_done_hold_steps: int = 1,
+        dump_done_max_bucket_mass_kg: float = 0.0,
+        dump_done_min_deposit_delta_kg: float = 0.0,
+    ) -> "DumpTransitionStatus":
+        semantic = bool(semantic_boundary_profile_active)
+        mass = observation.mass_in_bucket_kg
+        deposited = observation.deposited_mass_in_target_box_kg
+        deposit_delta = deposited - float(dump_start_deposited_mass_kg)
+        dump_complete_event = bool(
+            boundary_event is not None and getattr(boundary_event, "dump_complete", False)
+        )
+        legacy_dump_end_event = bool(
+            boundary_event is not None
+            and getattr(boundary_event, "dump_end", False)
+            and not semantic
+        )
+        boundary_dump_done = bool(
+            dump_done_use_boundary_event
+            and (dump_complete_event or legacy_dump_end_event)
+        )
+        dump_done_mass_low = bool(
+            not semantic
+            and mass <= float(dump_done_max_bucket_mass_kg)
+            and deposit_delta >= float(dump_done_min_deposit_delta_kg)
+        )
+        hold_steps = max(1, int(dump_done_hold_steps))
+        if boundary_dump_done:
+            next_hold_count = int(dump_done_hold_count)
+        elif dump_done_mass_low:
+            next_hold_count = int(dump_done_hold_count) + 1
+        else:
+            next_hold_count = 0
+        mass_low_ready = bool(not boundary_dump_done and next_hold_count >= hold_steps)
+        ready_to_return = bool(boundary_dump_done or mass_low_ready)
+
+        coverage_completion_reason = ""
+        dump_to_return_reason = ""
+        if boundary_dump_done:
+            if dump_complete_event:
+                coverage_completion_reason = "dump_complete_boundary"
+                dump_to_return_reason = "dump_to_return_dump_complete_boundary"
+            else:
+                coverage_completion_reason = "dump_end_boundary"
+                dump_to_return_reason = "dump_to_return_dump_end"
+        elif mass_low_ready:
+            coverage_completion_reason = "dump_mass_low"
+            dump_to_return_reason = "dump_to_return_mass_low"
+
+        return cls(
+            mass_in_bucket_kg=mass,
+            deposited_mass_in_target_box_kg=deposited,
+            deposit_delta_since_dump_start_kg=deposit_delta,
+            semantic_boundary_profile_active=semantic,
+            dump_complete_event=dump_complete_event,
+            legacy_dump_end_event=legacy_dump_end_event,
+            boundary_dump_done=boundary_dump_done,
+            dump_done_mass_low=dump_done_mass_low,
+            next_dump_done_hold_count=next_hold_count,
+            ready_to_return=ready_to_return,
+            coverage_completion_reason=coverage_completion_reason,
+            dump_to_return_reason=dump_to_return_reason,
+        )
+
+
 def _dump_ready_from_observation(
     *,
     observation: PrimitiveObservationFacts,
@@ -777,5 +868,6 @@ __all__ = [
     "BootstrapStatus",
     "CarryTransitionStatus",
     "DigTransitionStatus",
+    "DumpTransitionStatus",
     "PrimitiveObservationFacts",
 ]
