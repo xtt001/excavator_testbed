@@ -6,7 +6,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from testbed.planner.primitive_capabilities import CarryTransitionStatus
+from testbed.planner.primitive_capabilities import (
+    CarryTransitionStatus,
+    DumpTransitionStatus,
+)
 from testbed.planner.primitive_decision import PrimitiveDecisionResult
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
@@ -184,6 +187,49 @@ class LegacyFSMCarryBranch:
         return True
 
 
+@dataclass(frozen=True)
+class LegacyFSMDumpConfig:
+    dump_skill_name: str
+
+
+@dataclass(frozen=True)
+class LegacyFSMDumpBranch:
+    """Dump branch of the legacy FSM with explicit callbacks."""
+
+    config: LegacyFSMDumpConfig
+    current_skill_name: Callable[[], str]
+    dump_transition_status: Callable[[dict[str, Any], Any | None], DumpTransitionStatus]
+    complete_coverage_dump: Callable[..., None]
+    set_return_or_direct_handoff: Callable[..., None]
+    set_dump_done_hold_count: Callable[[int], None]
+
+    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
+        if str(self.current_skill_name()) != str(self.config.dump_skill_name):
+            return False
+        status = self.dump_transition_status(obs, boundary_event)
+        if status.boundary_dump_done:
+            self.complete_coverage_dump(
+                obs,
+                reason=status.coverage_completion_reason,
+            )
+            self.set_return_or_direct_handoff(
+                obs,
+                reason=status.dump_to_return_reason,
+            )
+            return True
+        self.set_dump_done_hold_count(int(status.next_dump_done_hold_count))
+        if status.ready_to_return:
+            self.complete_coverage_dump(
+                obs,
+                reason=status.coverage_completion_reason,
+            )
+            self.set_return_or_direct_handoff(
+                obs,
+                reason=status.dump_to_return_reason,
+            )
+        return True
+
+
 __all__ = [
     "LegacyFSMBackendAdapter",
     "LegacyFSMBootstrapBranch",
@@ -192,5 +238,7 @@ __all__ = [
     "LegacyFSMCarryConfig",
     "LegacyFSMDigBranch",
     "LegacyFSMDigConfig",
+    "LegacyFSMDumpBranch",
+    "LegacyFSMDumpConfig",
     "PrimitiveDecisionBackend",
 ]

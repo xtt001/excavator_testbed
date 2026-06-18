@@ -70,9 +70,12 @@ from testbed.planner.primitive_backend import (
     LegacyFSMCarryConfig,
     LegacyFSMDigBranch,
     LegacyFSMDigConfig,
+    LegacyFSMDumpBranch,
+    LegacyFSMDumpConfig,
 )
 from testbed.planner.primitive_capabilities import (
     CarryTransitionStatus,
+    DumpTransitionStatus,
     PrimitiveObservationFacts,
 )
 from testbed.planner.primitive_coverage import (
@@ -1155,6 +1158,39 @@ class PrimitivePlannerACTPolicy(Policy):
     def _set_dump_start_deposited_mass(self, value: float) -> None:
         self._dump_start_deposited_mass_kg = float(value)
 
+    def _legacy_fsm_dump_branch(self) -> LegacyFSMDumpBranch:
+        return LegacyFSMDumpBranch(
+            config=LegacyFSMDumpConfig(dump_skill_name="dump"),
+            current_skill_name=lambda: str(self._skill_name),
+            dump_transition_status=self._dump_transition_status_for_backend,
+            complete_coverage_dump=self._complete_coverage_dump,
+            set_return_or_direct_handoff=self._set_return_or_direct_handoff,
+            set_dump_done_hold_count=self._set_dump_done_hold_count,
+        )
+
+    def _dump_transition_status_for_backend(
+        self,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> DumpTransitionStatus:
+        return DumpTransitionStatus.from_inputs(
+            observation=PrimitiveObservationFacts.from_obs(
+                obs,
+                action_dim=self.action_dim,
+            ),
+            boundary_event=boundary_event,
+            semantic_boundary_profile_active=self._semantic_boundary_profile_active(),
+            dump_done_use_boundary_event=self.dump_done_use_boundary_event,
+            dump_start_deposited_mass_kg=self._dump_start_deposited_mass_kg,
+            dump_done_hold_count=self._dump_done_hold_count,
+            dump_done_hold_steps=self.dump_done_hold_steps,
+            dump_done_max_bucket_mass_kg=self.dump_done_max_bucket_mass_kg,
+            dump_done_min_deposit_delta_kg=self.dump_done_min_deposit_delta_kg,
+        )
+
+    def _set_dump_done_hold_count(self, value: int) -> None:
+        self._dump_done_hold_count = int(value)
+
     def _increment_dig_exit_guard_replan_count(self) -> None:
         self._dig_exit_guard_replan_count += 1
 
@@ -1771,43 +1807,10 @@ class PrimitivePlannerACTPolicy(Policy):
         ):
             return
 
-        if self._skill_name == "dump":
-            if (
-                self.dump_done_use_boundary_event
-                and boundary_event is not None
-                and bool(
-                    getattr(boundary_event, "dump_complete", False)
-                    or (
-                        getattr(boundary_event, "dump_end", False)
-                        and not self._semantic_boundary_profile_active()
-                    )
-                )
-            ):
-                reason = (
-                    "dump_complete_boundary"
-                    if bool(getattr(boundary_event, "dump_complete", False))
-                    else "dump_end_boundary"
-                )
-                self._complete_coverage_dump(obs, reason=reason)
-                self._set_return_or_direct_handoff(
-                    obs,
-                    reason=(
-                        "dump_to_return_dump_complete_boundary"
-                        if reason == "dump_complete_boundary"
-                        else "dump_to_return_dump_end"
-                    ),
-                )
-                return
-            if not self._semantic_boundary_profile_active() and self._dump_done(obs):
-                self._dump_done_hold_count += 1
-            else:
-                self._dump_done_hold_count = 0
-            if self._dump_done_hold_count >= self.dump_done_hold_steps:
-                self._complete_coverage_dump(obs, reason="dump_mass_low")
-                self._set_return_or_direct_handoff(
-                    obs,
-                    reason="dump_to_return_mass_low",
-                )
+        if self._legacy_fsm_dump_branch().maybe_handle(
+            obs=obs,
+            boundary_event=boundary_event,
+        ):
             return
 
         if self._skill_name == "return":

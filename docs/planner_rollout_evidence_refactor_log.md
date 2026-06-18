@@ -1732,3 +1732,58 @@ Each completed refactor round should append:
   branch chain, likely the 4P dump branch. Do not move return branches,
   direct-handoff helper internals, pre-dig-align, 5P override, change branch
   order, or change reason strings in the same commit.
+
+### 2026-06-19 Phase 7.5 Legacy FSM Dump Branch
+
+- Scope: migrated the 4P legacy FSM `dump` branch only. No 5P override,
+  pre-dig-align legacy parking branch, return branch, direct-handoff helper
+  body, branch order, reason string, threshold, backend selection, runtime
+  package, behavior tree, VLM/LLM packet, token schema, debug schema, rollout
+  summary schema, or policy reset timing was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `85c28e6a0f050c620d9ce61878bf3c873fb93c3c`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 3 focused tests remained the compatibility baseline:
+    `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; the
+    evidence matrix marks `gate.dump_to_return` as confirmed-live and the golden
+    window contains `dump_to_return_dump_complete_boundary` transitions.
+  - The migrated branch is mainline `dump` only. The `return` branch,
+    `pre_dig_align`, direct-handoff helper internals, and the 5P override remain
+    outside this slice.
+- Extended `testbed/planner/primitive_backend.py` with `LegacyFSMDumpConfig` and
+  `LegacyFSMDumpBranch`. The branch object receives explicit callbacks,
+  consumes `DumpTransitionStatus`, and preserves the old priority order:
+  boundary dump completion first, then legacy mass-low hold completion.
+- Updated the 4P `PrimitivePlannerACTPolicy._maybe_switch_skill()` `dump` check
+  to delegate to `self._legacy_fsm_dump_branch().maybe_handle(...)`. The policy
+  shell now constructs `DumpTransitionStatus` from explicit observation facts
+  and existing dump-done config values, then applies only the legacy side effects
+  requested by the branch.
+- Extended `tests/test_primitive_backend.py` with direct dump branch coverage for
+  boundary return handoff, mass-low hold return handoff, and non-dump no-op. The
+  TDD red test failed with `ImportError` before the backend dump branch classes
+  were implemented.
+- Old code parked/reclassified: return branch, direct-handoff helper internals,
+  pre-dig-align, 5P override, backend selection, and alternate backend behavior
+  remain legacy source-of-truth until later slices.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_backend.py` returned `11 passed`.
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or can_wait_past_dump_end_boundary_for_hold or uses_dump_end_boundary_by_default or dump_to_return or mass_low"`
+    returned `3 passed, 117 deselected`.
+  - `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_decision_contract.py`
+    returned `14 passed`.
+  - `python -m pytest -q tests/test_primitive_execution_template.py tests/test_planner_current_code_parity.py`
+    returned `5 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_runtime.py tests/test_primitive_coverage_updates.py tests/test_primitive_coverage_selection.py tests/test_primitive_coverage_candidates.py tests/test_primitive_return_start_envelope_token_planner.py tests/test_primitive_return_relocate_token_planner.py tests/test_primitive_return_target_token_planner.py tests/test_primitive_dig_depth_profile_token_planner.py tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_goal_token_provider.py tests/test_primitive_token_status.py tests/test_primitive_coverage_status.py tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `79 passed`.
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py` returned
+    `120 passed`.
+- Next action: Phase 7.6 may migrate exactly one additional mainline legacy FSM
+  branch chain, likely the 4P return branch. Do not move direct-handoff helper
+  internals, pre-dig-align, 5P override, change branch order, or change reason
+  strings in the same commit.

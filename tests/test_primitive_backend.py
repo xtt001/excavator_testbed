@@ -8,10 +8,15 @@ from testbed.planner.primitive_backend import (
     LegacyFSMBootstrapConfig,
     LegacyFSMCarryBranch,
     LegacyFSMCarryConfig,
+    LegacyFSMDumpBranch,
+    LegacyFSMDumpConfig,
     LegacyFSMDigBranch,
     LegacyFSMDigConfig,
 )
-from testbed.planner.primitive_capabilities import CarryTransitionStatus
+from testbed.planner.primitive_capabilities import (
+    CarryTransitionStatus,
+    DumpTransitionStatus,
+)
 from testbed.planner.primitive_decision import LEGACY_FSM_DECISION_SOURCE
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
@@ -265,6 +270,112 @@ def test_legacy_fsm_carry_branch_ignores_non_carry_skill() -> None:
         deposited_mass=lambda obs: 0.0,
         set_dump_start_deposited_mass=lambda value: None,
         set_skill=lambda skill, reason: None,
+    )
+
+    assert branch.maybe_handle(obs={}, boundary_event=None) is False
+
+
+def test_legacy_fsm_dump_branch_boundary_handoffs_to_return() -> None:
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    events: list[tuple[str, str]] = []
+    status = DumpTransitionStatus(
+        mass_in_bucket_kg=0.0,
+        deposited_mass_in_target_box_kg=20.0,
+        deposit_delta_since_dump_start_kg=10.0,
+        semantic_boundary_profile_active=True,
+        dump_complete_event=True,
+        legacy_dump_end_event=False,
+        boundary_dump_done=True,
+        dump_done_mass_low=False,
+        next_dump_done_hold_count=0,
+        ready_to_return=True,
+        coverage_completion_reason="dump_complete_boundary",
+        dump_to_return_reason="dump_to_return_dump_complete_boundary",
+    )
+    branch = LegacyFSMDumpBranch(
+        config=LegacyFSMDumpConfig(dump_skill_name="dump"),
+        current_skill_name=lambda: "dump",
+        dump_transition_status=lambda obs, boundary_event: status,
+        complete_coverage_dump=lambda obs, reason: events.append(
+            ("complete_dump", reason)
+        ),
+        set_return_or_direct_handoff=lambda obs, reason: events.append(
+            ("return", reason)
+        ),
+        set_dump_done_hold_count=lambda value: events.append(("hold", str(value))),
+    )
+
+    handled = branch.maybe_handle(obs=obs, boundary_event=object())
+
+    assert handled is True
+    assert events == [
+        ("complete_dump", "dump_complete_boundary"),
+        ("return", "dump_to_return_dump_complete_boundary"),
+    ]
+
+
+def test_legacy_fsm_dump_branch_mass_low_hold_switches_to_return() -> None:
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    state = {"hold": 0}
+    events: list[tuple[str, str]] = []
+    status = DumpTransitionStatus(
+        mass_in_bucket_kg=5.0,
+        deposited_mass_in_target_box_kg=20.0,
+        deposit_delta_since_dump_start_kg=10.0,
+        semantic_boundary_profile_active=False,
+        dump_complete_event=False,
+        legacy_dump_end_event=False,
+        boundary_dump_done=False,
+        dump_done_mass_low=True,
+        next_dump_done_hold_count=2,
+        ready_to_return=True,
+        coverage_completion_reason="dump_mass_low",
+        dump_to_return_reason="dump_to_return_mass_low",
+    )
+    branch = LegacyFSMDumpBranch(
+        config=LegacyFSMDumpConfig(dump_skill_name="dump"),
+        current_skill_name=lambda: "dump",
+        dump_transition_status=lambda obs, boundary_event: status,
+        complete_coverage_dump=lambda obs, reason: events.append(
+            ("complete_dump", reason)
+        ),
+        set_return_or_direct_handoff=lambda obs, reason: events.append(
+            ("return", reason)
+        ),
+        set_dump_done_hold_count=lambda value: state.__setitem__("hold", value),
+    )
+
+    handled = branch.maybe_handle(obs=obs, boundary_event=None)
+
+    assert handled is True
+    assert state == {"hold": 2}
+    assert events == [
+        ("complete_dump", "dump_mass_low"),
+        ("return", "dump_to_return_mass_low"),
+    ]
+
+
+def test_legacy_fsm_dump_branch_ignores_non_dump_skill() -> None:
+    branch = LegacyFSMDumpBranch(
+        config=LegacyFSMDumpConfig(dump_skill_name="dump"),
+        current_skill_name=lambda: "return",
+        dump_transition_status=lambda obs, boundary_event: DumpTransitionStatus(
+            mass_in_bucket_kg=0.0,
+            deposited_mass_in_target_box_kg=0.0,
+            deposit_delta_since_dump_start_kg=0.0,
+            semantic_boundary_profile_active=False,
+            dump_complete_event=True,
+            legacy_dump_end_event=False,
+            boundary_dump_done=True,
+            dump_done_mass_low=False,
+            next_dump_done_hold_count=0,
+            ready_to_return=True,
+            coverage_completion_reason="dump_complete_boundary",
+            dump_to_return_reason="dump_to_return_dump_complete_boundary",
+        ),
+        complete_coverage_dump=lambda obs, reason: None,
+        set_return_or_direct_handoff=lambda obs, reason: None,
+        set_dump_done_hold_count=lambda value: None,
     )
 
     assert branch.maybe_handle(obs={}, boundary_event=None) is False
