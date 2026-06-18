@@ -316,7 +316,10 @@ def test_legacy_fsm_backend_carry_returns_apply_runtime_effect() -> None:
         PlannerTickContext(
             obs={"step": 18},
             boundary_event=None,
-            blackboard=PlannerBlackboard(current_skill="carry"),
+            blackboard=PlannerBlackboard(
+                current_skill="carry",
+                dump_ready_hold_count=1,
+            ),
             services={
                 "carry_skill_name": "carry",
                 "build_carry_transition_runtime_request": (
@@ -325,7 +328,6 @@ def test_legacy_fsm_backend_carry_returns_apply_runtime_effect() -> None:
                 "dump_lifecycle_gate": DumpLifecycleGateService(),
                 "carry_release_safety_done": carry_release_safety_done,
                 "semantic_boundary_profile_active": lambda: False,
-                "dump_ready_hold_count": lambda: 1,
                 "dump_ready_hold_steps": lambda: 2,
                 "dump_ready": dump_ready,
             },
@@ -362,7 +364,10 @@ def test_legacy_fsm_backend_carry_boundary_event_skips_dump_ready_gate() -> None
         PlannerTickContext(
             obs={"step": 19},
             boundary_event=_FakeBoundaryEvent(dump_committed_start=True),
-            blackboard=PlannerBlackboard(current_skill="carry"),
+            blackboard=PlannerBlackboard(
+                current_skill="carry",
+                dump_ready_hold_count=0,
+            ),
             services={
                 "carry_skill_name": "carry",
                 "build_carry_transition_runtime_request": (
@@ -371,7 +376,6 @@ def test_legacy_fsm_backend_carry_boundary_event_skips_dump_ready_gate() -> None
                 "dump_lifecycle_gate": DumpLifecycleGateService(),
                 "carry_release_safety_done": lambda obs: False,
                 "semantic_boundary_profile_active": lambda: False,
-                "dump_ready_hold_count": lambda: 0,
                 "dump_ready_hold_steps": lambda: 3,
                 "dump_ready": dump_ready,
             },
@@ -400,7 +404,10 @@ def test_legacy_fsm_backend_dump_returns_apply_runtime_effect() -> None:
         PlannerTickContext(
             obs={"step": 21},
             boundary_event=None,
-            blackboard=PlannerBlackboard(current_skill="dump"),
+            blackboard=PlannerBlackboard(
+                current_skill="dump",
+                dump_done_hold_count=1,
+            ),
             services={
                 "dump_skill_name": "dump",
                 "build_dump_transition_runtime_request": (
@@ -409,7 +416,6 @@ def test_legacy_fsm_backend_dump_returns_apply_runtime_effect() -> None:
                 "dump_lifecycle_gate": DumpLifecycleGateService(),
                 "dump_done_use_boundary_event": lambda: True,
                 "semantic_boundary_profile_active": lambda: False,
-                "dump_done_hold_count": lambda: 1,
                 "dump_done_hold_steps": lambda: 2,
                 "dump_done": dump_done,
             },
@@ -447,7 +453,10 @@ def test_legacy_fsm_backend_dump_complete_event_skips_dump_done_gate() -> None:
         PlannerTickContext(
             obs={"step": 22},
             boundary_event=_FakeBoundaryEvent(dump_complete=True),
-            blackboard=PlannerBlackboard(current_skill="dump"),
+            blackboard=PlannerBlackboard(
+                current_skill="dump",
+                dump_done_hold_count=1,
+            ),
             services={
                 "dump_skill_name": "dump",
                 "build_dump_transition_runtime_request": (
@@ -456,7 +465,6 @@ def test_legacy_fsm_backend_dump_complete_event_skips_dump_done_gate() -> None:
                 "dump_lifecycle_gate": DumpLifecycleGateService(),
                 "dump_done_use_boundary_event": lambda: True,
                 "semantic_boundary_profile_active": lambda: False,
-                "dump_done_hold_count": lambda: 1,
                 "dump_done_hold_steps": lambda: 3,
                 "dump_done": dump_done,
             },
@@ -521,6 +529,10 @@ def test_policy_maybe_switch_skill_applies_legacy_backend_effect(
         cycle_index=policy._cycle_index,
         completed_transition_count=policy._completed_transition_count,
         transition_timeout_count=policy._transition_timeout_count,
+        return_step_count=policy._return_step_count,
+        return_next_dig_event_seen=policy._return_next_dig_event_seen,
+        dump_ready_hold_count=policy._dump_ready_hold_count,
+        dump_done_hold_count=policy._dump_done_hold_count,
     )
     assert calls == [({"step": 7}, boundary_event)]
 
@@ -533,6 +545,10 @@ def test_policy_lifecycle_private_fields_are_blackboard_shims() -> None:
         cycle_index=4,
         completed_transition_count=3,
         transition_timeout_count=2,
+        return_step_count=6,
+        return_next_dig_event_seen=True,
+        dump_ready_hold_count=7,
+        dump_done_hold_count=8,
     )
 
     assert policy._skill_name == "carry"
@@ -540,12 +556,20 @@ def test_policy_lifecycle_private_fields_are_blackboard_shims() -> None:
     assert policy._cycle_index == 4
     assert policy._completed_transition_count == 3
     assert policy._transition_timeout_count == 2
+    assert policy._return_step_count == 6
+    assert policy._return_next_dig_event_seen is True
+    assert policy._dump_ready_hold_count == 7
+    assert policy._dump_done_hold_count == 8
 
     policy._skill_name = "return"
     policy._switch_reason = "unit_reason"
     policy._cycle_index = np.int64(7)
     policy._completed_transition_count = np.int64(5)
     policy._transition_timeout_count = np.int64(6)
+    policy._return_step_count = np.int64(9)
+    policy._return_next_dig_event_seen = False
+    policy._dump_ready_hold_count = np.int64(10)
+    policy._dump_done_hold_count = np.int64(11)
 
     assert policy._planner_blackboard == PlannerBlackboard(
         current_skill="return",
@@ -553,6 +577,10 @@ def test_policy_lifecycle_private_fields_are_blackboard_shims() -> None:
         cycle_index=7,
         completed_transition_count=5,
         transition_timeout_count=6,
+        return_step_count=9,
+        return_next_dig_event_seen=False,
+        dump_ready_hold_count=10,
+        dump_done_hold_count=11,
     )
 
 
@@ -564,6 +592,10 @@ def test_policy_tick_context_uses_canonical_planner_blackboard() -> None:
         cycle_index=8,
         completed_transition_count=3,
         transition_timeout_count=1,
+        return_step_count=4,
+        return_next_dig_event_seen=True,
+        dump_ready_hold_count=5,
+        dump_done_hold_count=6,
     )
 
     context = policy._legacy_fsm_tick_context(
@@ -574,6 +606,10 @@ def test_policy_tick_context_uses_canonical_planner_blackboard() -> None:
     assert context.blackboard is policy._planner_blackboard
     assert context.blackboard.current_skill == "dump"
     assert context.blackboard.switch_reason == "unit_reason"
+    assert context.blackboard.return_step_count == 4
+    assert context.blackboard.return_next_dig_event_seen is True
+    assert context.blackboard.dump_ready_hold_count == 5
+    assert context.blackboard.dump_done_hold_count == 6
     assert context.coverage_state is policy.coverage_service.state
 
 
@@ -585,6 +621,10 @@ def test_policy_reset_initializes_planner_blackboard_lifecycle_state() -> None:
         cycle_index=99,
         completed_transition_count=88,
         transition_timeout_count=77,
+        return_step_count=66,
+        return_next_dig_event_seen=True,
+        dump_ready_hold_count=55,
+        dump_done_hold_count=44,
     )
 
     policy.reset()
@@ -595,6 +635,10 @@ def test_policy_reset_initializes_planner_blackboard_lifecycle_state() -> None:
         cycle_index=0,
         completed_transition_count=0,
         transition_timeout_count=0,
+        return_step_count=0,
+        return_next_dig_event_seen=False,
+        dump_ready_hold_count=0,
+        dump_done_hold_count=0,
     )
 
 

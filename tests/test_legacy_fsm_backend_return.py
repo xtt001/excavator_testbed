@@ -41,12 +41,14 @@ def test_legacy_fsm_backend_return_returns_apply_runtime_effect() -> None:
         PlannerTickContext(
             obs={"step": 24},
             boundary_event=_FakeBoundaryEvent(next_dig_entry_ready=True),
-            blackboard=PlannerBlackboard(current_skill="return"),
+            blackboard=PlannerBlackboard(
+                current_skill="return",
+                return_next_dig_event_seen=False,
+            ),
             services={
                 "return_skill_name": "return",
                 "return_transition_service": ReturnToDigTransitionService(),
                 "return_to_dig_handoff_ready": handoff_ready,
-                "return_next_dig_event_seen": lambda: False,
                 "semantic_boundary_profile_active": lambda: False,
                 "return_to_dig_direct_handoff_ready": fail_direct,
                 "return_to_dig_shallow_guard_ready": fail_shallow,
@@ -102,12 +104,14 @@ def test_legacy_fsm_backend_return_direct_handoff_preserves_gate_order() -> None
         PlannerTickContext(
             obs={"step": 25},
             boundary_event=None,
-            blackboard=PlannerBlackboard(current_skill="return"),
+            blackboard=PlannerBlackboard(
+                current_skill="return",
+                return_next_dig_event_seen=False,
+            ),
             services={
                 "return_skill_name": "return",
                 "return_transition_service": ReturnToDigTransitionService(),
                 "return_to_dig_handoff_ready": handoff_ready,
-                "return_next_dig_event_seen": lambda: False,
                 "semantic_boundary_profile_active": lambda: False,
                 "return_to_dig_direct_handoff_ready": direct_handoff_ready,
                 "return_to_dig_shallow_guard_ready": fail_shallow,

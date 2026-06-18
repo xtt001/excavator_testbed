@@ -525,7 +525,6 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         )
         self._prev_action: np.ndarray | None = None
         self._reset_dump_lifecycle_runtime()
-        self._return_step_count = 0
         self._reset_bootstrap_runtime()
         self._reset_pre_dig_align_runtime()
         self._reset_dig_lifecycle_runtime()
@@ -560,6 +559,22 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             transition_timeout_count=updates.get(
                 "transition_timeout_count",
                 blackboard.transition_timeout_count,
+            ),
+            return_step_count=updates.get(
+                "return_step_count",
+                blackboard.return_step_count,
+            ),
+            return_next_dig_event_seen=updates.get(
+                "return_next_dig_event_seen",
+                blackboard.return_next_dig_event_seen,
+            ),
+            dump_ready_hold_count=updates.get(
+                "dump_ready_hold_count",
+                blackboard.dump_ready_hold_count,
+            ),
+            dump_done_hold_count=updates.get(
+                "dump_done_hold_count",
+                blackboard.dump_done_hold_count,
             ),
         )
 
@@ -603,6 +618,38 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
     def _transition_timeout_count(self, value: object) -> None:
         self._replace_planner_lifecycle_state(transition_timeout_count=value)
 
+    @property
+    def _return_step_count(self) -> int:
+        return self._planner_lifecycle_blackboard().return_step_count
+
+    @_return_step_count.setter
+    def _return_step_count(self, value: object) -> None:
+        self._replace_planner_lifecycle_state(return_step_count=value)
+
+    @property
+    def _return_next_dig_event_seen(self) -> bool:
+        return self._planner_lifecycle_blackboard().return_next_dig_event_seen
+
+    @_return_next_dig_event_seen.setter
+    def _return_next_dig_event_seen(self, value: object) -> None:
+        self._replace_planner_lifecycle_state(return_next_dig_event_seen=value)
+
+    @property
+    def _dump_ready_hold_count(self) -> int:
+        return self._planner_lifecycle_blackboard().dump_ready_hold_count
+
+    @_dump_ready_hold_count.setter
+    def _dump_ready_hold_count(self, value: object) -> None:
+        self._replace_planner_lifecycle_state(dump_ready_hold_count=value)
+
+    @property
+    def _dump_done_hold_count(self) -> int:
+        return self._planner_lifecycle_blackboard().dump_done_hold_count
+
+    @_dump_done_hold_count.setter
+    def _dump_done_hold_count(self, value: object) -> None:
+        self._replace_planner_lifecycle_state(dump_done_hold_count=value)
+
     def predict(self, obs: dict) -> np.ndarray:
         boundary_event = None
         if self._prev_action is not None:
@@ -624,7 +671,9 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self._maybe_switch_skill(obs=obs, boundary_event=boundary_event)
 
         if self._skill_name == "return":
-            self._return_step_count += 1
+            self._planner_blackboard = (
+                self._planner_blackboard.with_return_step_increment()
+            )
             if self.return_max_steps > 0 and self._return_step_count >= self.return_max_steps:
                 transition_timeout = True
                 self._planner_blackboard = (
@@ -716,7 +765,6 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                 "semantic_boundary_profile_active": (
                     self._semantic_boundary_profile_active
                 ),
-                "dump_ready_hold_count": lambda: self._dump_ready_hold_count,
                 "dump_ready_hold_steps": lambda: self.dump_ready_hold_steps,
                 "dump_ready": self._dump_ready,
                 "dump_skill_name": "dump",
@@ -726,15 +774,11 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                 "dump_done_use_boundary_event": (
                     lambda: self.dump_done_use_boundary_event
                 ),
-                "dump_done_hold_count": lambda: self._dump_done_hold_count,
                 "dump_done_hold_steps": lambda: self.dump_done_hold_steps,
                 "dump_done": self._dump_done,
                 "return_skill_name": "return",
                 "return_transition_service": self.return_transition_service,
                 "return_to_dig_handoff_ready": self._return_to_dig_handoff_ready,
-                "return_next_dig_event_seen": (
-                    lambda: self._return_next_dig_event_seen
-                ),
                 "return_to_dig_direct_handoff_ready": (
                     self._return_to_dig_direct_handoff_ready
                 ),
@@ -845,18 +889,32 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         if skill_name != PRE_DIG_ALIGN_SKILL_NAME:
             self._active_policy().reset()
         if skill_name == "carry":
-            self._dump_ready_hold_count = 0
+            self._planner_blackboard = (
+                self._planner_blackboard.with_dump_ready_hold_count(0)
+            )
         elif skill_name == "dump":
-            self._dump_done_hold_count = 0
+            self._planner_blackboard = (
+                self._planner_blackboard.with_dump_done_hold_count(0)
+            )
         elif skill_name == "return":
-            self._return_step_count = 0
-            self._return_next_dig_event_seen = False
+            self._planner_blackboard = (
+                self._planner_blackboard.with_return_step_count(0)
+            )
+            self._planner_blackboard = (
+                self._planner_blackboard.with_return_next_dig_event_seen(False)
+            )
         elif skill_name == PRE_DIG_ALIGN_SKILL_NAME:
             self._apply_pre_dig_align_enter_runtime_state()
         elif skill_name == "dig":
-            self._return_next_dig_event_seen = False
-            self._dump_ready_hold_count = 0
-            self._dump_done_hold_count = 0
+            self._planner_blackboard = (
+                self._planner_blackboard.with_return_next_dig_event_seen(False)
+            )
+            self._planner_blackboard = (
+                self._planner_blackboard.with_dump_ready_hold_count(0)
+            )
+            self._planner_blackboard = (
+                self._planner_blackboard.with_dump_done_hold_count(0)
+            )
             self._reset_dig_entry_runtime()
         if skill_name not in {"dig", PRE_DIG_ALIGN_SKILL_NAME}:
             self._clear_dig_cut_plan()
@@ -869,7 +927,9 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self._apply_pre_dig_align_restart_runtime_state()
         self._reset_dig_entry_runtime()
         self._coverage_active_corridor_id = -1
-        self._return_next_dig_event_seen = False
+        self._planner_blackboard = (
+            self._planner_blackboard.with_return_next_dig_event_seen(False)
+        )
         self._invalidate_pending_dig_cut_plan()
         self._clear_dig_cut_plan()
 
@@ -1093,8 +1153,16 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self,
         state: DumpLifecycleRuntimeState,
     ) -> None:
-        self._dump_ready_hold_count = int(state.ready_hold_count)
-        self._dump_done_hold_count = int(state.done_hold_count)
+        self._planner_blackboard = (
+            self._planner_blackboard.with_dump_ready_hold_count(
+                state.ready_hold_count,
+            )
+        )
+        self._planner_blackboard = (
+            self._planner_blackboard.with_dump_done_hold_count(
+                state.done_hold_count,
+            )
+        )
         self._dump_start_deposited_mass_kg = float(state.start_deposited_mass_kg)
 
     def _apply_carry_transition_runtime(
@@ -1102,7 +1170,11 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         runtime: CarryTransitionRuntimeState,
         obs: dict,
     ) -> bool:
-        self._dump_ready_hold_count = int(runtime.dump_ready_hold_count)
+        self._planner_blackboard = (
+            self._planner_blackboard.with_dump_ready_hold_count(
+                runtime.dump_ready_hold_count,
+            )
+        )
         outcome = runtime.outcome
         if outcome.action == "return":
             self._complete_coverage_dump(obs, reason=outcome.coverage_reason)
@@ -1119,7 +1191,11 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         runtime: DumpTransitionRuntimeState,
         obs: dict,
     ) -> bool:
-        self._dump_done_hold_count = int(runtime.dump_done_hold_count)
+        self._planner_blackboard = (
+            self._planner_blackboard.with_dump_done_hold_count(
+                runtime.dump_done_hold_count,
+            )
+        )
         outcome = runtime.outcome
         if outcome.action == "return":
             self._complete_coverage_dump(obs, reason=outcome.coverage_reason)
@@ -2232,7 +2308,11 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
     ) -> None:
         self._return_to_dig_entry_error_m = float(state.entry_error_m)
         self._return_to_dig_entry_close_state = bool(state.entry_close)
-        self._return_next_dig_event_seen = bool(state.next_dig_event_seen)
+        self._planner_blackboard = (
+            self._planner_blackboard.with_return_next_dig_event_seen(
+                state.next_dig_event_seen,
+            )
+        )
         self._return_to_dig_start_envelope_ready_state = bool(
             state.start_envelope_ready
         )
@@ -2249,7 +2329,11 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         ),
     ) -> bool:
         if isinstance(projection, ReturnToDigTransitionRuntimeProjection):
-            self._return_next_dig_event_seen = bool(projection.next_dig_event_seen)
+            self._planner_blackboard = (
+                self._planner_blackboard.with_return_next_dig_event_seen(
+                    projection.next_dig_event_seen,
+                )
+            )
         if not projection.should_transition:
             return False
         self._planner_blackboard = (

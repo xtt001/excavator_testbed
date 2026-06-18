@@ -286,10 +286,7 @@ class LegacyStateMachineBackend:
                 context.services,
                 "semantic_boundary_profile_active",
             )(),
-            current_dump_ready_hold_count=_required_service(
-                context.services,
-                "dump_ready_hold_count",
-            )(),
+            current_dump_ready_hold_count=context.blackboard.dump_ready_hold_count,
         )
         dump_ready = False
         if request.should_check_dump_ready:
@@ -343,10 +340,7 @@ class LegacyStateMachineBackend:
                 context.services,
                 "semantic_boundary_profile_active",
             )(),
-            current_dump_done_hold_count=_required_service(
-                context.services,
-                "dump_done_hold_count",
-            )(),
+            current_dump_done_hold_count=context.blackboard.dump_done_hold_count,
         )
         dump_done = False
         if request.should_check_dump_done:
@@ -397,10 +391,9 @@ class LegacyStateMachineBackend:
         request = return_transition_service.transition_request(
             handoff_ready=handoff_ready,
             boundary_event=context.boundary_event,
-            previous_next_dig_event_seen=_required_service(
-                context.services,
-                "return_next_dig_event_seen",
-            )(),
+            previous_next_dig_event_seen=(
+                context.blackboard.return_next_dig_event_seen
+            ),
             semantic_boundary_profile_active=_required_service(
                 context.services,
                 "semantic_boundary_profile_active",

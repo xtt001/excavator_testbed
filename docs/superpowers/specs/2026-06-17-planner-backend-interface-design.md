@@ -305,6 +305,65 @@ Verification run for this ownership pass:
 - `python -m pytest -p no:cacheprovider -q tests/test_primitive_planner_debug_schema.py`
   -> `26 passed`.
 
+#### PlannerBlackboard Transition Runtime Ownership Record 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/runtime/blackboard.py`: extended typed
+  `PlannerBlackboard` with the first transition runtime state fields needed by
+  the default FSM backend: `return_step_count`,
+  `return_next_dig_event_seen`, `dump_ready_hold_count`, and
+  `dump_done_hold_count`. Added immutable update methods for return tick
+  counting, return-to-dig event latch updates, and dump hold-count updates.
+- `testbed/planner/runtime/legacy_fsm.py`: changed carry, dump, and return
+  transition requests to read those transition runtime values directly from
+  `context.blackboard` instead of adapter-provided service lambdas.
+- `testbed/policies/hybrid/primitive_planner.py`: kept the old private fields
+  as property shims while making `self._planner_blackboard` the canonical
+  owner for return step count, return next-dig latch, dump-ready hold count,
+  and dump-done hold count. Reset, skill-switch, dump runtime, carry runtime,
+  and return-to-dig runtime projection paths update the blackboard snapshot.
+- `tests/test_planner_runtime_contracts.py`,
+  `tests/test_legacy_fsm_backend.py`, and
+  `tests/test_legacy_fsm_backend_return.py`: added/updated contract and
+  backend tests proving typed transition runtime construction, immutable
+  updates, private-field shim compatibility, and backend reads from
+  `PlannerBlackboard` instead of service callbacks.
+
+Scope guardrails kept:
+
+- No `_maybe_switch_skill()` branch order, thresholds, reason strings, policy
+  reset timing, token source, debug schema, rollout schema, default backend
+  behavior, or behavior-tree wiring changed.
+- Coverage state remains `PlannerTickContext.coverage_state`; it was not
+  copied into `PlannerBlackboard`.
+- No pending dig-cut state, return-target state, depth-profile state, token
+  injection flags, metadata, or diagnostics were moved into
+  `PlannerBlackboard`.
+- `PrimitivePlannerACTPolicy` remains the adapter, compatibility owner,
+  low-level policy dispatch owner, and runtime effect applier.
+- The removed `primitive_scheduler_runner` key remains rejected; this slice did
+  not add compatibility aliases.
+
+Verification run for this ownership pass:
+
+- Initial RED:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_return.py`
+  -> `13 failed, 22 passed` because `PlannerBlackboard` did not yet expose the
+  transition runtime fields and backend tests no longer provided old service
+  callbacks.
+- `python -m pytest -p no:cacheprovider -q tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_return.py`
+  -> `35 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py`
+  -> `46 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_planner_golden_traces.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py`
+  -> `141 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_primitive_planner_debug_schema.py tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_config.py`
+  -> `45 passed`.
+- `python -m compileall -q testbed/planner/runtime/blackboard.py testbed/planner/runtime/legacy_fsm.py testbed/policies/hybrid/primitive_planner.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_return.py`
+  -> no output.
+- `git diff --check` -> no whitespace errors.
+
 ### Phase 2: Coverage As First Blackboard Domain
 
 Use the recent coverage dig-cut activation work as the first state-domain

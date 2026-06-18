@@ -22,6 +22,10 @@ def test_planner_blackboard_defaults_are_minimal_runtime_state() -> None:
     assert blackboard.cycle_index == 0
     assert blackboard.completed_transition_count == 0
     assert blackboard.transition_timeout_count == 0
+    assert blackboard.return_step_count == 0
+    assert blackboard.return_next_dig_event_seen is False
+    assert blackboard.dump_ready_hold_count == 0
+    assert blackboard.dump_done_hold_count == 0
 
 
 def test_planner_blackboard_is_immutable_and_hashable_snapshot() -> None:
@@ -31,6 +35,10 @@ def test_planner_blackboard_is_immutable_and_hashable_snapshot() -> None:
         cycle_index=3,
         completed_transition_count=2,
         transition_timeout_count=1,
+        return_step_count=6,
+        return_next_dig_event_seen=True,
+        dump_ready_hold_count=4,
+        dump_done_hold_count=5,
     )
 
     assert hash(blackboard) == hash(
@@ -40,6 +48,10 @@ def test_planner_blackboard_is_immutable_and_hashable_snapshot() -> None:
             cycle_index=3,
             completed_transition_count=2,
             transition_timeout_count=1,
+            return_step_count=6,
+            return_next_dig_event_seen=True,
+            dump_ready_hold_count=4,
+            dump_done_hold_count=5,
         )
     )
     with pytest.raises(FrozenInstanceError):
@@ -83,6 +95,37 @@ def test_planner_blackboard_updates_return_new_lifecycle_snapshots() -> None:
     assert timeout.cycle_index == 4
     assert transition.completed_transition_count == 5
     assert transition.cycle_index == 9
+
+
+def test_planner_blackboard_updates_return_new_transition_runtime_snapshots() -> None:
+    blackboard = PlannerBlackboard(
+        current_skill="return",
+        return_step_count=4,
+        return_next_dig_event_seen=False,
+        dump_ready_hold_count=2,
+        dump_done_hold_count=3,
+    )
+
+    return_step = blackboard.with_return_step_increment()
+    return_latch = blackboard.with_return_next_dig_event_seen(True)
+    ready_hold = blackboard.with_dump_ready_hold_count(7)
+    done_hold = blackboard.with_dump_done_hold_count(8)
+
+    assert blackboard == PlannerBlackboard(
+        current_skill="return",
+        return_step_count=4,
+        return_next_dig_event_seen=False,
+        dump_ready_hold_count=2,
+        dump_done_hold_count=3,
+    )
+    assert return_step.return_step_count == 5
+    assert return_step.return_next_dig_event_seen is False
+    assert return_latch.return_next_dig_event_seen is True
+    assert return_latch.return_step_count == 4
+    assert ready_hold.dump_ready_hold_count == 7
+    assert ready_hold.dump_done_hold_count == 3
+    assert done_hold.dump_done_hold_count == 8
+    assert done_hold.dump_ready_hold_count == 2
 
 
 def test_tick_context_references_coverage_state_without_copying() -> None:
