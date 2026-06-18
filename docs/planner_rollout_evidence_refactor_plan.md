@@ -11,8 +11,9 @@ looks smaller, and not to treat the current partially-refactored HEAD as the
 architecture source of truth. The active goal is to reconstruct the branch
 baseline planner logic from the earliest branch baseline, overlay real rollout
 evidence, draw the intended architecture, then move confirmed-live behavior
-directly into new focused runtime modules and delete the old shell path once
-parity is proven.
+directly into new focused runtime modules. Code without mainline evidence is
+kept out of the target architecture and parked as legacy/diagnostic material
+until an explicit later cleanup review decides whether removal is warranted.
 
 Change records do not belong in this file. Record execution history in
 `docs/planner_rollout_evidence_refactor_log.md`.
@@ -20,7 +21,10 @@ Change records do not belong in this file. Record execution history in
 ## Priority Rule
 
 The primary goal is refactoring: reduce coupling, extract the useful live
-logic, clarify abstraction boundaries, and delete old inline paths after parity.
+logic, and clarify abstraction boundaries. Removing functions is not the
+primary goal; non-mainline code should first be isolated, reclassified, or
+parked so the architecture can be split cleanly without treating deletion as
+the measure of progress.
 
 Protection is secondary. It exists to keep confirmed-live behavior intact while
 the refactor happens. Protection must not preserve abandoned, unobserved,
@@ -28,17 +32,20 @@ test-only, or obsolete code by default, and it must not justify adding adapter
 layers that make the main logic harder to understand.
 
 When these goals conflict, prefer the smallest evidence-backed refactor that can
-delete or reclassify old code. Stop for user confirmation if the only way to
-"protect" behavior is to keep unclear old logic alive.
+move live behavior behind a clear boundary and park unclear legacy code outside
+the mainline. Stop for user confirmation if the only way to "protect" behavior
+is to keep unclear old logic entangled with the new architecture.
 
 ## Baseline Architecture Reconstruction Gate
 
-Every migration round must start from the branch baseline, not from whatever
-shape the current refactor stack has accumulated. The current branch baseline is
-`f004d5ae2b38630456e3b1a58c602f655eb5de12`; confirm it with
-`git merge-base HEAD origin/fs/v2_4-refactor-tests` when remote refs are already
-available locally. Do not fetch or pull just to refresh this value during a
-no-remote round.
+Every migration round must start from the branch-created baseline, not from
+whatever shape the current refactor stack or latest pushed branch ref has
+accumulated. The current branch-created baseline is
+`152350e3ed9a8816ca8d685195fc8f297ab3fcec`, recorded in the local reflog as
+`branch: Created from tx/2_4-YuLong_Planner` for `fs/v2_4-refactor-tests`.
+Do not substitute `origin/fs/v2_4-refactor-tests`, a later pushed checkpoint, or
+`git merge-base HEAD origin/fs/v2_4-refactor-tests` for this creation baseline.
+Do not fetch or pull just to refresh this value during a no-remote round.
 
 Before choosing a migration slice, update
 `docs/planner_baseline_architecture_map.md` with:
@@ -51,6 +58,26 @@ Before choosing a migration slice, update
   toward
 - code that is not observed and should be treated as `not-observed`,
   `test-only`, `compatibility`, or `dead-candidate`
+
+The current code-grounded architecture target is
+`docs/planner_current_code_architecture_plan.md`. The earlier
+`docs/planner_execution_backend_abstraction_plan.md` and
+`docs/planner_execution_abstraction_flow.svg` remain supporting concept
+references, but the current-code plan is the implementation source of truth.
+
+The plan intentionally starts with the public tick execution template before
+introducing pluggable decision backends. Do not jump straight to behavior-tree,
+VLM, or legacy-FSM backend migration while the baseline execution loop remains
+implicit in `PrimitivePlannerACTPolicy.predict()`.
+
+Use `docs/planner_evidence_trace_tool.md` and the `tb-planner-evidence`
+classifier to turn rollout JSONL, planner trace, rollout summary, or future
+instrumented evidence JSONL into a retention decision table before selecting a
+migration slice. Successful mainline evidence that does not show a capability
+contributing, or failure evidence that does not highlight it as a missing cause,
+is enough to classify non-compatibility code as `dead-candidate`; the immediate
+action is to keep it out of the mainline migration and park it as legacy or
+diagnostic material, not to make deletion the current task.
 
 The architecture map is not a change log. Do not record round-by-round changes
 there. Record execution history in
@@ -71,7 +98,8 @@ notes or handoff before code edits:
   was observed?
 - What user-visible behavior must remain identical?
 - What new file will own the live responsibility?
-- Which old code will be deleted after parity passes?
+- Which old code will be reclassified, parked, or later cleanup-reviewed after
+  parity passes?
 - Are we reducing coupling, or only adding another adapter layer?
 - Are we following this plan, or drifting back into patching the large file?
 
@@ -91,14 +119,18 @@ A path is eligible for migration only when it has at least one evidence packet:
 Classify code before moving it:
 
 - `confirmed-live`: observed in a real rollout log and eligible for extraction
-- `not-observed`: present in code but absent from the selected rollout evidence
+- `not-observed`: absent from selected evidence but not yet eligible for a
+  cleanup decision because evidence is below threshold or explicit protection
+  exists
 - `test-only`: required only by tests, diagnostics, or compatibility facades
 - `compatibility`: public or legacy entry that must remain as a thin wrapper
 - `dead-candidate`: no rollout evidence and no required compatibility owner
 
 Only `confirmed-live` paths should receive new runtime implementation work.
 `test-only`, `compatibility`, and `dead-candidate` paths should be documented in
-the round record and removed when their owner is no longer needed.
+the round record. `dead-candidate` paths should not be migrated into the
+execution-kernel/backend architecture; keep them in legacy parking until legacy
+config, diagnostic, test-only, and compatibility owners are audited.
 
 ## New-File Extraction Rule
 
@@ -109,25 +141,30 @@ Do not implement new planner behavior inside large legacy files. For
 - build explicit input data for the new module
 - call the new module
 - apply returned adapter-side effects
-- delete old implementation after parity passes
+- replace old inline ownership with a thin facade, compatibility owner, or
+  legacy parking record after parity passes
 
 The new file must be named by stable responsibility, not by the old method name.
 It must accept explicit inputs and return explicit results or effects. It must
 not receive `PrimitivePlannerACTPolicy`, call shell-private lifecycle methods,
 or become a pass-through wrapper around old private methods.
 
-## Deletion Rule
+## Parking And Reclassification Rule
 
-Extraction is incomplete until the old live implementation path is removed or
-reclassified. After tests and rollout parity pass:
+Extraction is incomplete until the old live implementation path is either moved
+behind the new boundary or explicitly reclassified. After tests and rollout
+parity pass:
 
-- delete the old inline logic from the large file
-- keep only the public compatibility entry if still required
+- keep only a thin public compatibility entry if still required
+- park non-mainline code as legacy, diagnostic, test-only, or compatibility
+  material with a documented owner
 - move test coverage from private facade tests to the new module contract
-- document any retained compatibility wrapper and its removal condition
+- document any retained compatibility wrapper, parking owner, and later cleanup
+  condition
 
-If parity passes and no compatibility owner remains, do not preserve the old
-code for comfort.
+Do not preserve old code only for comfort, but also do not make removal the
+current architecture goal. Removal is a later cleanup action after the owner
+audit and architecture split make the old path clearly unnecessary.
 
 ## Workflow
 
@@ -149,7 +186,8 @@ code for comfort.
    apply returned effects.
 9. Parity: run focused tests, golden/debug/token/config checks, and the rollout
    comparison required by the evidence packet.
-10. Delete: remove old inline implementation when parity passes.
+10. Park/reclassify: leave only the thin compatibility facade or legacy parking
+    owner for old code that is no longer part of the mainline architecture.
 11. Record: append the round result to
     `docs/planner_rollout_evidence_refactor_log.md`.
 
@@ -162,7 +200,8 @@ Stop and ask for a decision when:
 - a proposed module would mainly wrap old private methods
 - preserving branch order, threshold, reason string, token schema, debug schema,
   rollout schema, or reset timing is uncertain
-- the old path cannot be deleted or reclassified after the migration
+- the old path cannot be parked, reclassified, or assigned a compatibility owner
+  after the migration
 - the work starts expanding across multiple responsibility chains
 
 ## Required Verification
@@ -171,7 +210,7 @@ Each migration round chooses the smallest useful subset, but must justify the
 choice:
 
 - new focused tests for the new runtime module
-- deletion or compatibility tests for the old path
+- parking, reclassification, or compatibility tests for the old path
 - backend/runtime/config tests when backend contracts are touched
 - golden trace, debug schema, token contract, and rollout parity checks when
   those surfaces are touched

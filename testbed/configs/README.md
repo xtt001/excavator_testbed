@@ -192,12 +192,9 @@
   `return_start_envelope_tokens_v1` 为 18D low-dim key，对应
   `/v2/step/return_start_envelope_tokens_v1` 与
   `/v2/step/return_start_envelope_valid_mask`；builder 从下一轮 dig-start 附近 40-step
-  窗口抽取 envelope。primitive token 的 dim、field order、dataset path 和 index/slice
-  source-of-truth 是 `testbed.contracts.primitive_tokens`；其中第 16 维
-  `qpos_valid` 表示 qpos/qvel 核心状态可用，第 17 维 `spatial_depth_valid`
-  表示 spatial/depth envelope 可用。Gate 1 用 `qpos_valid` 判定 episode-level
-  envelope valid；dataset、train/eval runtime、ACT adapter 和
-  `primitive_planner_act` 都已接入。
+  窗口抽取 envelope。valid mask 是 per-dim mask，token 第 16 维表示 qpos/qvel 核心
+  状态可用，Gate 1 用它判定 episode-level envelope valid；dataset、train/eval runtime、
+  ACT adapter 和 `primitive_planner_act` 都已接入。
 - 2026-05-22 data-only run
   `runs/jobs/yulong_v2_4_5_physical_dump_qc_20260522` 已从最新 removed-depth replay root
   跑完 label transfer/operator-first/hindsight/primitive VDS 和 Gate 1/2，没有进入
@@ -304,7 +301,7 @@
   `dig_start_local_depth_m`，local depth gate 使用真实 dig-start local-depth
   p05-p95 加 `return_to_dig_start_envelope_local_depth_tolerance_m`，并且
   `return_to_dig_start_envelope_require_contact: true` 会独立要求 dig contact，
-  不再依赖 token 的 `contact_flag`。`dig_start_plane_depth_m` 仍用于检查
+  不再依赖 token[6]。`dig_start_plane_depth_m` 仍用于检查
   `bucket_depth_below_dig_area_plane`；在 `p50_floor` 下，若 local prior+contact
   gate 可用，plane depth 使用 p05-p95 作 terrain-offset 范围，否则才用 p50 floor
   防止零深度 handoff。旧 `range` mode 仍保留给 legacy/诊断配置。V2.4.5

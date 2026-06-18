@@ -24,13 +24,7 @@ import torch
 from einops import rearrange
 import torchvision.transforms as transforms
 
-from testbed.contracts.low_dim import (
-    low_dim_key_dim,
-    resolve_low_dim_state_dim,
-    resolve_token_slices,
-    validate_checkpoint_state_dim_contract,
-    validate_low_dim_stats_contract,
-)
+from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.image_masks import apply_image_mask
 from testbed.policies.base import Policy, register_policy
 
@@ -82,7 +76,6 @@ class ACTAdapter(Policy):
         self._camera_names = list(policy_config.get("camera_names", []))
         self._low_dim_keys = list(policy_config.get("low_dim_keys", ["qpos"]))
         self._image_mask_config = dict(policy_config.get("image_mask") or {})
-        self._validate_low_dim_stats_contract()
 
         model, optimizer = build_ACT_model_and_optimizer(policy_config)
         self._model     = model.to(self.device)
@@ -277,15 +270,6 @@ class ACTAdapter(Policy):
             torch.from_numpy(np.asarray(std, dtype=np.float32)).to(self.device),
         )
 
-    def _expected_low_dim_state_dim(self) -> int:
-        return resolve_low_dim_state_dim(
-            self._low_dim_keys,
-            str(self.policy_config.get("equipment_model", "")),
-        )
-
-    def _validate_low_dim_stats_contract(self) -> None:
-        validate_low_dim_stats_contract(self.policy_config, self.norm_stats)
-
     def _aggregate(self, a_hat: torch.Tensor) -> np.ndarray:
         """
         Temporal aggregation from the ACT paper.
@@ -447,16 +431,51 @@ class ACTAdapter(Policy):
         return a_hat, is_pad_hat, latent, None
 
     def _resolve_goal_token_slice(self) -> tuple[slice, ...] | None:
-        return resolve_token_slices(
-            self._low_dim_keys,
-            str(self.policy_config.get("equipment_model", "")),
-        )
+        start = 0
+        token_slices: list[slice] = []
+        for key in self._low_dim_keys:
+            dim = self._low_dim_key_dim(key)
+            if key in {
+                "dig_cut_tokens",
+                "dig_depth_profile_tokens_v1",
+                "return_target_tokens",
+                "return_relocate_tokens_v1",
+                "return_start_envelope_tokens_v1",
+                "goal_tokens",
+            }:
+                token_slices.append(slice(start, start + dim))
+            start += dim
+        if not token_slices:
+            return None
+        return tuple(token_slices)
 
     def _low_dim_key_dim(self, key: str) -> int:
-        return low_dim_key_dim(
-            key,
-            str(self.policy_config.get("equipment_model", "")),
-        )
+        if key in {
+            "dig_cut_tokens",
+            "return_target_tokens",
+            "return_relocate_tokens_v1",
+            "goal_tokens",
+        }:
+            return 10
+        if key == "dig_depth_profile_tokens_v1":
+            return int(DIG_DEPTH_PROFILE_TOKEN_DIM)
+        if key == "return_start_envelope_tokens_v1":
+            return 18
+        if key == "cell_entry_tokens":
+            return 10
+        if key in {"qpos", "qvel"}:
+            equipment_model = str(self.policy_config.get("equipment_model", "")).lower()
+            if "bimanual" in equipment_model:
+                return 14
+            if (
+                "excavator_simple" in equipment_model
+                or "agxunity" in equipment_model
+                or "agx" in equipment_model
+                or "yulong" in equipment_model
+            ):
+                return 4
+            return 7
+        raise ValueError(f"Unsupported low_dim key {key!r}.")
 
     def _swap_goal_token_in_batch(self, proprio: torch.Tensor) -> torch.Tensor:
         if self._token_slice is None:
@@ -504,9 +523,6 @@ class ACTAdapter(Policy):
         with open(norm_stats_path, "rb") as f:
             norm_stats = pickle.load(f)
 
-        raw = torch.load(ckpt_path, map_location="cpu")
-        cls._validate_checkpoint_config_contract(raw, policy_config)
-
         adapter = cls(
             policy_config=policy_config,
             norm_stats=norm_stats,
@@ -514,6 +530,7 @@ class ACTAdapter(Policy):
             device=device,
         )
 
+        raw = torch.load(ckpt_path, map_location="cpu")
         if isinstance(raw, dict) and "model_state_dict" in raw:
             sd = raw["model_state_dict"]
         elif isinstance(raw, dict):
@@ -525,7 +542,3 @@ class ACTAdapter(Policy):
         adapter._model.to(adapter.device)
         adapter._model.eval()
         return adapter
-
-    @staticmethod
-    def _validate_checkpoint_config_contract(raw: Any, policy_config: dict) -> None:
-        validate_checkpoint_state_dim_contract(raw, policy_config)

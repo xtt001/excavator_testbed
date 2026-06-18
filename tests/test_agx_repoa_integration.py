@@ -25,25 +25,23 @@ from testbed.data.qc import run_dataset_qc
 from testbed.data.recorder import EpisodeRecorder
 from testbed.data.v2_1 import (
     GOAL_TOKEN_VERSION,
+    build_goal_tokens as build_goal_tokens_v2_1,
     label_episode_v2_1,
 )
-from testbed.data.v2_1 import (
-    build_goal_tokens as build_goal_tokens_v2_1,
-)
+from testbed.eval.suite import EvalSuite
 from testbed.eval.multi_cycle_metrics import (
     aggregate_multicycle_metrics,
     build_multicycle_summary,
 )
-from testbed.eval.suite import EvalSuite
 from testbed.planner.boundary_detector import BoundaryDetector
 from testbed.policies.act.adapter import ACTAdapter
-from testbed.runtime._eval import eval_policy
-from testbed.runtime._train import train_policy
 from testbed.runtime.experiment_record import (
     append_experiment_registry,
     build_experiment_record,
     write_experiment_record,
 )
+from testbed.runtime._train import train_policy
+from testbed.runtime._eval import eval_policy
 
 
 class _FakeMetrics:
@@ -106,9 +104,6 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
                 patch("testbed.eval.metrics.EvalMetrics.append_to_csv") as append_csv,
             ):
                 eval_policy(config)
-            eval_metadata = json.loads(
-                (Path(tmpdir) / "eval_run_metadata.json").read_text()
-            )
 
         suite_kwargs = captured["suite_kwargs"]
         self.assertEqual(suite_kwargs["task_name"], "agx_excavation_teleop")
@@ -136,8 +131,6 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         self.assertFalse(suite_kwargs["save_video"])
         self.assertEqual(type(suite_kwargs["policy"]).__name__, "DummyPolicy")
         self.assertEqual(suite_kwargs["policy"].mode, "random")
-        self.assertEqual(eval_metadata["planner_backend"], "not_applicable")
-        self.assertNotIn("primitive_scheduler_runner", eval_metadata)
         self.assertIsNotNone(fake_metrics.saved_json)
         append_csv.assert_called_once()
 
@@ -1969,10 +1962,6 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
                 experiment_name="fulltest_round1",
                 notes="first baseline",
             )
-            self.assertEqual(
-                record["eval"]["planner_backend"],
-                "legacy_fsm",
-            )
             json_path, md_path = write_experiment_record(
                 record=record,
                 output_root=tmp / "experiments",
@@ -1985,7 +1974,6 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
             self.assertEqual(record["experiment_name"], "fulltest_round1")
             self.assertEqual(record["train"]["best_epoch"], 42)
             self.assertEqual(record["eval"]["primary_success_rate"], 0.2)
-            self.assertNotIn("primitive_scheduler_runner", record["eval"])
             self.assertEqual(record["eval"]["legacy_success_rate"], 0.3)
             self.assertEqual(record["eval"]["dump_complete_final_hold_success_rate"], 0.1)
             self.assertEqual(record["eval"]["strict_dump_complete_success_rate"], 0.0)
@@ -1994,13 +1982,7 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
             self.assertTrue(json_path.exists())
             self.assertTrue(md_path.exists())
             self.assertTrue(registry_path.exists())
-            markdown = md_path.read_text()
-            registry_text = registry_path.read_text()
-            self.assertIn("fulltest_round1", markdown)
-            self.assertIn("Planner backend", markdown)
-            self.assertIn("planner_backend", registry_text.splitlines()[0])
-            self.assertNotIn("Primitive scheduler runner", markdown)
-            self.assertNotIn("primitive_scheduler_runner", registry_text)
+            self.assertIn("fulltest_round1", md_path.read_text())
 
 
 if __name__ == "__main__":

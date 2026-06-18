@@ -18,7 +18,6 @@ from testbed.data.dig_depth_profile_v2_4 import (
     DIG_DEPTH_PROFILE_TOKEN_DIM,
     build_dig_depth_profile_token_from_metrics,
 )
-from testbed.data.operator_first_v2_2 import DIG_CUT_DEPTH_SCALE_M
 from testbed.data.schema import (
     ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
@@ -46,11 +45,7 @@ class DigDepthSemanticsAuditTest(unittest.TestCase):
         self.assertAlmostEqual(metrics["entry_surface_penetration_m"], 0.10, places=6)
         self.assertAlmostEqual(metrics["peak_surface_penetration_m"], 0.40, places=6)
         self.assertAlmostEqual(metrics["exit_surface_penetration_m"], 0.20, places=6)
-        self.assertAlmostEqual(
-            metrics["token_depth_target_m"],
-            0.2 * DIG_CUT_DEPTH_SCALE_M,
-            places=6,
-        )
+        self.assertAlmostEqual(metrics["token_depth_target_m"], 0.05, places=6)
         self.assertAlmostEqual(
             metrics["plane_minus_surface_penetration_median_m"],
             0.70,

@@ -1,5 +1,19 @@
 # Planner 到 ACT 的概念控制契约
 
+Status: historical conceptual note.
+
+Current implementation planning source of truth:
+`docs/planner_current_code_architecture_plan.md`.
+
+This document is still useful for the high-level control contract between the
+planner and ACT policies. However, sections below that name concrete modules as
+"source-of-truth" reflect the pre-rollback partial refactor history and are not
+current file-ownership guidance. In particular, do not treat references to
+`testbed.planner.runtime`, `testbed.planner.cell_entry_runtime`, extracted
+coverage/dig/dump/return services, or old backend contracts as current
+implementation targets unless they are reintroduced through the current-code
+architecture plan.
+
 本文不按当前仓库的代码模块分层，而按控制系统里的概念职责说明：
 上层 planner 如何把任务目标逐层变成低层 ACT 可以执行的条件输入，以及每层需要什么
 输入、输出什么信息。

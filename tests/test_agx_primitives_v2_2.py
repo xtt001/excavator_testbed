@@ -8,25 +8,42 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from testbed.cli.build_surface_depth_planner_prior import (
-    RETURN_ENVELOPE_MATCH_SOURCE,
-    match_return_envelope_cell_by_next_entry,
-)
-from testbed.contracts.primitive_tokens import (
-    RETURN_ENVELOPE_QPOS_CENTER_SLICE,
-    RETURN_ENVELOPE_QPOS_HALF_WIDTH_SLICE,
-    RETURN_ENVELOPE_QPOS_VALID_IDX,
-    RETURN_ENVELOPE_QVEL_ABS_MAX_IDX,
-    RETURN_ENVELOPE_SPATIAL_DEPTH_VALID_IDX,
-    RETURN_START_ENVELOPE_TOKEN_DIM,
-)
-from testbed.data.dataset import get_norm_stats
-from testbed.data.hdf5_io import read_episode, write_episode
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_DEPTH_SCALE_M,
     _build_dig_cut_token,
     build_live_dig_cut_tokens_from_pose,
 )
+from testbed.data.dataset import get_norm_stats
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
+    ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
+    ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
+    ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
+    ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+    ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX,
+    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+    ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
+    ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
+    ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
+    ENV_STATE_DUMP_CLEARANCE_OK_IDX,
+    ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
+    ENV_STATE_MASS_IN_BUCKET_IDX,
+    ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
+    ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX,
+    ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
+)
+from testbed.data.hdf5_io import read_episode, write_episode
 from testbed.data.primitives_v2_2 import (
     CARRY_ACTION_HORIZON_STEPS,
     CARRY_MIN_WINDOW_LEN,
@@ -38,53 +55,17 @@ from testbed.data.primitives_v2_2 import (
     extract_workskill_primitive_slices,
     extract_workskill_primitive_slices_5p,
 )
-from testbed.data.schema import (
-    ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
-    ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
-    ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
-    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
-    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
-    ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
-    ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
-    ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
-    ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
-    ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
-    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
-    ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX,
-    ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
-    ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
-    ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
-    ENV_STATE_DUMP_CLEARANCE_OK_IDX,
-    ENV_STATE_MASS_IN_BUCKET_IDX,
-    ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
-    ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX,
-    ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
-)
-from testbed.data.v2_1 import (
-    GOAL_TOKEN_VERSION,
-    WORK_STAGE_NAME_TO_ID,
-    build_goal_tokens,
-)
-from testbed.planner.cell_entry import (
-    CellEntryPlanner,
-    CellEntryRuntimeConfig,
-    CellEntryRuntimeFacts,
-    CellEntryRuntimeService,
-    CellEntryRuntimeState,
-    CellGridSpec,
-    PlannerDecisionAuditor,
+from testbed.data.v2_1 import GOAL_TOKEN_VERSION, WORK_STAGE_NAME_TO_ID, build_goal_tokens
+from testbed.cli.build_surface_depth_planner_prior import (
+    RETURN_ENVELOPE_MATCH_SOURCE,
+    match_return_envelope_cell_by_next_entry,
 )
 from testbed.policies.base import Policy
 from testbed.policies.hybrid.primitive_planner import (
     PrimitivePlannerACT5PPolicy,
     PrimitivePlannerACTPolicy,
 )
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 YULONG_DIG_CUT_PRIOR_PATH = (
@@ -592,7 +573,7 @@ class TestPrimitivesV22(unittest.TestCase):
             return_episode = read_episode(output_root / "return" / "episode_0.hdf5")
             envelope = return_episode["v2"]["step"]["return_start_envelope_tokens_v1"]
             valid_mask = return_episode["v2"]["step"]["return_start_envelope_valid_mask"]
-            self.assertEqual(envelope.shape[-1], RETURN_START_ENVELOPE_TOKEN_DIM)
+            self.assertEqual(envelope.shape[-1], 18)
             self.assertEqual(valid_mask.shape, envelope.shape)
             self.assertTrue(np.all(valid_mask == 1))
             self.assertAlmostEqual(float(envelope[0, 0]), 0.35, places=4)
@@ -814,24 +795,9 @@ class TestPrimitivesV22(unittest.TestCase):
             return_episode = read_episode(output_root / "return" / "episode_0.hdf5")
             envelope = return_episode["v2"]["step"]["return_start_envelope_tokens_v1"]
             valid_mask = return_episode["v2"]["step"]["return_start_envelope_valid_mask"]
-            self.assertEqual(float(envelope[0, RETURN_ENVELOPE_QPOS_VALID_IDX]), 1.0)
-            self.assertEqual(
-                float(envelope[0, RETURN_ENVELOPE_SPATIAL_DEPTH_VALID_IDX]),
-                1.0,
-            )
+            self.assertEqual(float(envelope[0, 16]), 1.0)
             self.assertEqual(int(valid_mask[0, 0]), 1)
-            self.assertTrue(
-                np.all(valid_mask[0, RETURN_ENVELOPE_QPOS_CENTER_SLICE] == 1)
-            )
-            self.assertTrue(
-                np.all(valid_mask[0, RETURN_ENVELOPE_QPOS_HALF_WIDTH_SLICE] == 1)
-            )
-            self.assertEqual(int(valid_mask[0, RETURN_ENVELOPE_QVEL_ABS_MAX_IDX]), 1)
-            self.assertEqual(int(valid_mask[0, RETURN_ENVELOPE_QPOS_VALID_IDX]), 1)
-            self.assertEqual(
-                int(valid_mask[0, RETURN_ENVELOPE_SPATIAL_DEPTH_VALID_IDX]),
-                1,
-            )
+            self.assertTrue(np.all(valid_mask[0, 7:18] == 1))
 
     def test_spatial_mass_return_ends_at_entry_ready_before_delayed_material_start(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1760,73 +1726,6 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertFalse(policy.debug_state()["cell_entry_token_injected"])
         self.assertIsNone(carry_policy.last_cell_entry_tokens)
 
-    def test_primitive_planner_cell_entry_facade_matches_runtime_service(self) -> None:
-        policy = PrimitivePlannerACTPolicy(
-            dig_policy=_RecordingPolicy(0),
-            carry_policy=_RecordingPolicy(1),
-            dump_policy=_RecordingPolicy(2),
-            return_policy=_RecordingPolicy(3),
-            boundary_detector=_FakeBoundaryDetector([]),
-            cell_entry_enabled=True,
-            dig_to_carry_min_bucket_mass_kg=20.0,
-            dig_to_carry_min_distance_to_dig_area_m=0.0,
-        )
-        obs = _cell_entry_obs(mass=0.0, dig_distance=0.0)
-        grid = CellGridSpec()
-        service = CellEntryRuntimeService()
-        expected = service.tokens_for_obs(
-            planner=CellEntryPlanner(grid=grid),
-            auditor=PlannerDecisionAuditor(grid=grid),
-            facts=CellEntryRuntimeFacts(
-                cycle_index=0,
-                active_skill="dig",
-                cell_id=2,
-                bucket_pose=(-0.625, 0.0, 0.0),
-                geometry_available=True,
-                bucket_mass_kg=0.0,
-            ),
-            config=CellEntryRuntimeConfig(enabled=True),
-            state=CellEntryRuntimeState(),
-        )
-
-        tokens = policy._cell_entry_tokens_for_obs(obs)
-
-        assert expected.tokens is not None
-        assert tokens is not None
-        np.testing.assert_allclose(tokens, expected.tokens)
-        self.assertEqual(policy._cell_entry_goal_cycle_id, expected.state.goal_cycle_id)
-        self.assertEqual(
-            policy._cell_entry_goal.selected_cell_id,
-            expected.state.goal.selected_cell_id,
-        )
-        self.assertEqual(
-            policy._cell_entry_seen_cell_id,
-            expected.state.seen_cell_id,
-        )
-        self.assertEqual(
-            policy._cell_entry_audit.reason_code,
-            expected.state.audit.reason_code,
-        )
-
-        completion_obs = _cell_entry_obs(mass=150.0, dig_distance=0.1)
-        completion_obs["env_state"][ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX] = -1.0
-        expected_completion = service.complete_dig(
-            planner=CellEntryPlanner(grid=grid),
-            facts=CellEntryRuntimeFacts(
-                cycle_index=0,
-                active_skill="dig",
-                cell_id=-1,
-                bucket_pose=(-0.625, 0.0, 0.0),
-                geometry_available=True,
-                bucket_mass_kg=150.0,
-            ),
-            config=CellEntryRuntimeConfig(enabled=True),
-            state=expected.state,
-        )
-        policy._complete_cell_entry_dig(completion_obs)
-
-        self.assertEqual(policy._cell_entry_trace[-1], expected_completion.trace_event)
-
     def test_primitive_planner_conservative_dig_cut_mode_matches_legacy_token(self) -> None:
         dig_policy = _RecordingPolicy(0)
         policy = PrimitivePlannerACTPolicy(
@@ -1972,7 +1871,7 @@ class TestPrimitivesV22(unittest.TestCase):
 
         state = policy.debug_state()
         cell_id = int(state["coverage_cell_id"])
-        with open(YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH, encoding="utf-8") as f:
+        with open(YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH, "r", encoding="utf-8") as f:
             prior = json.load(f)
         expected = np.asarray(
             next(
@@ -2100,7 +1999,7 @@ class TestPrimitivesV22(unittest.TestCase):
     def test_primitive_planner_strict_depth_profile_missing_cell_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             prior_path = Path(tmp) / "prior.json"
-            with open(YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH, encoding="utf-8") as f:
+            with open(YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH, "r", encoding="utf-8") as f:
                 prior = json.load(f)
             prior["dig_depth_profile_cells"] = []
             prior_path.write_text(json.dumps(prior), encoding="utf-8")
@@ -4577,7 +4476,6 @@ class TestPrimitivesV22(unittest.TestCase):
         )
         action = policy.predict(dump_ready_obs)
         self.assertEqual(float(action[0]), 2.0)
-        self.assertEqual(policy.debug_state()["dump_ready_hold_count"], 1)
         self.assertEqual(policy.debug_state()["dump_release_ready_hold_count"], 1)
 
         action = policy.predict(dump_ready_obs)

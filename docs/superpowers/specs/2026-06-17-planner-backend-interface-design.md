@@ -1,5 +1,19 @@
 # Planner Backend Interface Migration Design
 
+Status: historical reference from the superseded 2026-06-17 partial backend
+migration.
+
+Current implementation planning source of truth:
+`docs/planner_current_code_architecture_plan.md`.
+
+This document records useful design lessons and failure modes from the
+pre-rollback backend migration attempt. It must not be used as the current file
+inventory, implementation checklist, or proof that modules such as
+`testbed/planner/runtime/`, `LegacyStateMachineBackend`, `PlannerBlackboard`, or
+`BehaviorTreeBackend` exist in the current worktree. If this document conflicts
+with the current-code architecture plan, the current-code architecture plan
+wins.
+
 ## Purpose
 
 Migrate the default primitive planner toward a backend-neutral runtime so the

@@ -101,6 +101,20 @@ Code changes must update the closest source-of-truth documentation. If a change
 is only an internal rearrangement and needs no documentation update, the final
 response must explain why.
 
+Test strategy should be proportional to semantic risk. Use strict
+test-first/TDD for new behavior, bug fixes, risky refactors, public contracts,
+planner gates, token schemas, training/eval data semantics, and other changes
+where a failing test is needed to prove the intended behavior. Do not perform a
+ceremonial red-green cycle for simple documentation edits, mechanical renames,
+comment/help-text updates, one-line mapping changes, or other obvious
+low-risk changes where the existing contract is already clear.
+
+For low-risk changes that skip test-first development, explicitly choose the
+smallest useful verification instead: for example `git diff --check` for docs,
+compile/lint for touched Python modules, or focused existing tests for a small
+code path. Do not use "simple change" as a reason to skip verification
+entirely.
+
 7. Refactoring Direction
 
 Extract central facts and pure functions first, then migrate callers. Preserve

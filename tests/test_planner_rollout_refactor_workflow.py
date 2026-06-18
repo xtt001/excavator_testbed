@@ -30,7 +30,7 @@ def test_plan_contract_requires_separate_plan_log_and_no_legacy_plan_files(
                 "## First-Principles Reflection Gate",
                 "## Rollout Evidence Gate",
                 "## New-File Extraction Rule",
-                "## Deletion Rule",
+                "## Parking And Reclassification Rule",
                 "docs/planner_baseline_architecture_map.md",
                 "branch baseline",
             ]
@@ -59,6 +59,19 @@ def test_plan_contract_requires_separate_plan_log_and_no_legacy_plan_files(
             ]
         ),
     )
+    _write(
+        tmp_path / "docs/planner_current_code_architecture_plan.md",
+        "\n".join(
+            [
+                "# Planner Current-Code Architecture Plan",
+                "## Current Code Reality",
+                "## Primitive Planner Responsibility Map",
+                "## Evidence-Based Retention Matrix",
+                "## Legacy Parking Catalog",
+                "## Verification Matrix",
+            ]
+        ),
+    )
     check_plan_contract(tmp_path)
 
 
@@ -83,7 +96,7 @@ def test_plan_contract_rejects_renamed_historical_plan_file(tmp_path: Path) -> N
                 "## First-Principles Reflection Gate",
                 "## Rollout Evidence Gate",
                 "## New-File Extraction Rule",
-                "## Deletion Rule",
+                "## Parking And Reclassification Rule",
             ]
         ),
     )
@@ -112,7 +125,7 @@ def test_plan_contract_rejects_change_records_in_active_plan(tmp_path: Path) -> 
                 "## First-Principles Reflection Gate",
                 "## Rollout Evidence Gate",
                 "## New-File Extraction Rule",
-                "## Deletion Rule",
+                "## Parking And Reclassification Rule",
                 "## Change Record 2026-06-18",
             ]
         ),
@@ -131,6 +144,19 @@ def test_plan_contract_rejects_change_records_in_active_plan(tmp_path: Path) -> 
                 "```mermaid",
                 "flowchart TD",
                 "```",
+            ]
+        ),
+    )
+    _write(
+        tmp_path / "docs/planner_current_code_architecture_plan.md",
+        "\n".join(
+            [
+                "# Planner Current-Code Architecture Plan",
+                "## Current Code Reality",
+                "## Primitive Planner Responsibility Map",
+                "## Evidence-Based Retention Matrix",
+                "## Legacy Parking Catalog",
+                "## Verification Matrix",
             ]
         ),
     )
@@ -172,6 +198,7 @@ def test_skill_contract_points_to_rollout_evidence_plan(tmp_path: Path) -> None:
                 "Read docs/planner_rollout_evidence_refactor_plan.md first.",
                 "Keep docs/planner_rollout_evidence_refactor_log.md separate.",
                 "Update docs/planner_baseline_architecture_map.md before migration.",
+                "Read docs/planner_current_code_architecture_plan.md before migration.",
                 "Use real rollout log evidence before extracting code.",
                 "Reconstruct the branch baseline architecture first.",
                 "Run the first-principles reflection gate every round.",
@@ -230,6 +257,7 @@ def test_goal_prompt_exists_for_rollout_evidence_goal_mode() -> None:
     assert "first-principles" in prompt.lower()
     assert "branch baseline" in prompt.lower()
     assert "docs/planner_baseline_architecture_map.md" in prompt
+    assert "docs/planner_current_code_architecture_plan.md" in prompt
     assert "primitive_scheduler_service_refactor_plan" not in prompt
 
 
@@ -243,3 +271,17 @@ def test_architecture_map_template_exists_separate_from_plan() -> None:
     assert "branch baseline" in architecture_map.lower()
     assert "```mermaid" in architecture_map
     assert "Do not record round-by-round changes here" in architecture_map
+
+
+def test_current_code_architecture_plan_exists_as_source_of_truth() -> None:
+    root = Path(__file__).resolve().parents[1]
+    current_code_plan = (
+        root / "docs/planner_current_code_architecture_plan.md"
+    ).read_text(encoding="utf-8")
+
+    assert "# Planner Current-Code Architecture Plan" in current_code_plan
+    assert "## Current Code Reality" in current_code_plan
+    assert "## Primitive Planner Responsibility Map" in current_code_plan
+    assert "## Evidence-Based Retention Matrix" in current_code_plan
+    assert "## Legacy Parking Catalog" in current_code_plan
+    assert "## Verification Matrix" in current_code_plan

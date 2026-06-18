@@ -7,10 +7,14 @@ from typing import Any
 
 import numpy as np
 
-from testbed.contracts.low_dim import (
-    low_dim_key_dim,
-    resolve_low_dim_state_dim,
+from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
+from testbed.data.operator_first_v2_2 import (
+    DIG_CUT_TOKEN_DIM,
+    RETURN_START_ENVELOPE_TOKEN_DIM,
+    RETURN_TARGET_TOKEN_DIM,
 )
+from testbed.data.v2_1 import GOAL_TOKEN_DIM
+from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 
 
 def eval_policy(config: dict[str, Any]) -> None:
@@ -23,13 +27,6 @@ def eval_policy(config: dict[str, Any]) -> None:
     low_dim_keys = list(policy_cfg.get("low_dim_keys", ["qpos"]))
 
     policy_class = str(policy_cfg.get("class", policy_cfg.get("name", "ACT"))).upper()
-    planner_backend = "not_applicable"
-    if policy_class in {"PRIMITIVE_PLANNER_ACT", "PRIMITIVE_PLANNER_ACT_5P"}:
-        from testbed.planner.planner_backend_config import (
-            planner_backend_from_policy_config,
-        )
-
-        planner_backend = planner_backend_from_policy_config(policy_cfg)
     task_name = task_cfg.get("name", task_cfg.get("task_name", config.get("task_name", "")))
     from testbed.eval.tasks import get_eval_task
 
@@ -272,9 +269,7 @@ def eval_policy(config: dict[str, Any]) -> None:
                 ),
             )
 
-        from testbed.planner.boundary_detector import (
-            build_boundary_detector_from_config,
-        )
+        from testbed.planner.boundary_detector import build_boundary_detector_from_config
         from testbed.planner.corridor_servo import (
             EntryCorridorBand,
             TransitionController,
@@ -625,9 +620,7 @@ def eval_policy(config: dict[str, Any]) -> None:
             primitive_ckpt_paths["bootstrap"] = str(bootstrap_ckpt_path)
             primitive_ckpt_dirs["bootstrap"] = str(bootstrap_ckpt_dir)
 
-        from testbed.planner.boundary_detector import (
-            build_boundary_detector_from_config,
-        )
+        from testbed.planner.boundary_detector import build_boundary_detector_from_config
         from testbed.policies.hybrid.primitive_planner import (
             PrimitivePlannerACT5PPolicy,
             PrimitivePlannerACTPolicy,
@@ -643,11 +636,6 @@ def eval_policy(config: dict[str, Any]) -> None:
             dig_cut_planner_cfg=dig_cut_planner_cfg,
             primitive_low_dim_keys=primitive_low_dim_keys,
             first_dig_policy_enabled=first_dig_policy is not None,
-        )
-        _validate_return_start_envelope_eval_low_dim(
-            policy_cfg=policy_cfg,
-            switch_cfg=switch_cfg,
-            primitive_low_dim_keys=primitive_low_dim_keys,
         )
         return_target_planner_cfg = dict(policy_cfg.get("return_target_planner", {}))
         pre_dig_align_cfg = dict(policy_cfg.get("pre_dig_align", {}))
@@ -983,23 +971,14 @@ def eval_policy(config: dict[str, Any]) -> None:
                 dump_ready_hold_steps=int(switch_cfg.get("dump_ready_hold_steps", 3)),
                 **common_kwargs,
             )
-        from testbed.planner.planner_backend_config import (
-            apply_planner_backend,
-        )
-
-        planner_backend = apply_planner_backend(
-            policy=policy,
-            policy_class=policy_class,
-            backend=planner_backend,
-        )
 
     else:
         from testbed.policies.base import PolicyRegistry
         policy_cls = PolicyRegistry.get(policy_class.lower())
         policy = policy_cls(**policy_cfg.get("init_kwargs", {}))
 
-    from testbed.eval.metrics import EvalMetrics
     from testbed.eval.suite import EvalSuite
+    from testbed.eval.metrics import EvalMetrics
     from testbed.runtime.run_metadata import (
         build_eval_run_metadata,
         write_json,
@@ -1064,7 +1043,6 @@ def eval_policy(config: dict[str, Any]) -> None:
     eval_run_metadata["send_planner_debug_to_backend"] = bool(
         send_planner_debug_to_backend
     )
-    eval_run_metadata["planner_backend"] = str(planner_backend)
     eval_run_metadata_path = write_json(results_dir / "eval_run_metadata.json", eval_run_metadata)
     repo_a_snapshot = dict(eval_run_metadata.get("repo_snapshots", {}).get("repo_a", {}))
     record_hdf5_metadata = dict(eval_cfg.get("record_hdf5_metadata", {}) or {})
@@ -1077,7 +1055,6 @@ def eval_policy(config: dict[str, Any]) -> None:
             "git_branch": str(repo_a_snapshot.get("branch", "")),
             "git_dirty": int(bool(repo_a_snapshot.get("dirty", False))),
             "policy_class": str(policy_class),
-            "planner_backend": str(planner_backend),
             "device_requested": str(device),
         }
     )
@@ -1170,7 +1147,30 @@ def eval_policy(config: dict[str, Any]) -> None:
 
 
 def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) -> int:
-    return resolve_low_dim_state_dim(low_dim_keys, equipment_model)
+    dims = {
+        "qpos": _resolve_single_low_dim_dim("qpos", equipment_model),
+        "qvel": _resolve_single_low_dim_dim("qvel", equipment_model),
+        "goal_tokens": _resolve_single_low_dim_dim("goal_tokens", equipment_model),
+        "cell_entry_tokens": _resolve_single_low_dim_dim(
+            "cell_entry_tokens", equipment_model
+        ),
+        "dig_cut_tokens": _resolve_single_low_dim_dim(
+            "dig_cut_tokens", equipment_model
+        ),
+        "dig_depth_profile_tokens_v1": _resolve_single_low_dim_dim(
+            "dig_depth_profile_tokens_v1", equipment_model
+        ),
+        "return_target_tokens": _resolve_single_low_dim_dim(
+            "return_target_tokens", equipment_model
+        ),
+        "return_relocate_tokens_v1": _resolve_single_low_dim_dim(
+            "return_relocate_tokens_v1", equipment_model
+        ),
+        "return_start_envelope_tokens_v1": _resolve_single_low_dim_dim(
+            "return_start_envelope_tokens_v1", equipment_model
+        ),
+    }
+    return int(sum(dims[key] for key in low_dim_keys))
 
 
 def _validate_dig_depth_profile_eval_low_dim(
@@ -1206,39 +1206,38 @@ def _validate_dig_depth_profile_eval_low_dim(
             )
 
 
-def _validate_return_start_envelope_eval_low_dim(
-    *,
-    policy_cfg: dict[str, Any],
-    switch_cfg: dict[str, Any],
-    primitive_low_dim_keys: list[str],
-) -> None:
-    gate_enabled = bool(
-        switch_cfg.get("return_to_dig_start_envelope_gate_enabled", False)
-    )
-    direct_handoff_enabled = bool(
-        switch_cfg.get("return_to_dig_start_envelope_direct_handoff_enabled", False)
-    )
-    if not (gate_enabled or direct_handoff_enabled):
-        return
-    required_key = "return_start_envelope_tokens_v1"
-    return_low_dim_keys = list(
-        policy_cfg.get("return_low_dim_keys", primitive_low_dim_keys)
-    )
-    if required_key not in return_low_dim_keys:
-        raise ValueError(
-            "return_to_dig_start_envelope gate is enabled, but "
-            f"policy.return_low_dim_keys does not include {required_key!r}. "
-            "Without this key the return ACT checkpoint would silently ignore "
-            "the start-envelope token used by the handoff gate."
-        )
-
-
 def _optional_float(value: Any | None) -> float | None:
     return None if value is None else float(value)
 
 
 def _resolve_single_low_dim_dim(key: str, equipment_model: str) -> int:
-    return low_dim_key_dim(key, equipment_model)
+    equipment_model = str(equipment_model).lower()
+    if key == "goal_tokens":
+        return int(GOAL_TOKEN_DIM)
+    if key == "cell_entry_tokens":
+        return int(CELL_ENTRY_TOKEN_DIM)
+    if key == "dig_cut_tokens":
+        return int(DIG_CUT_TOKEN_DIM)
+    if key == "dig_depth_profile_tokens_v1":
+        return int(DIG_DEPTH_PROFILE_TOKEN_DIM)
+    if key == "return_target_tokens":
+        return int(RETURN_TARGET_TOKEN_DIM)
+    if key == "return_relocate_tokens_v1":
+        return int(RETURN_TARGET_TOKEN_DIM)
+    if key == "return_start_envelope_tokens_v1":
+        return int(RETURN_START_ENVELOPE_TOKEN_DIM)
+    if key in ("qpos", "qvel"):
+        if "bimanual" in equipment_model:
+            return 14
+        if (
+            "excavator_simple" in equipment_model
+            or "agxunity" in equipment_model
+            or "agx" in equipment_model
+            or "yulong" in equipment_model
+        ):
+            return 4
+        return 7
+    raise ValueError(f"Unsupported low-dim key {key!r}.")
 
 
 def _resolve_checkpoint_paths(

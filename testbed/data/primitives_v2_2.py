@@ -15,102 +15,10 @@ from typing import Any, Iterable
 
 import numpy as np
 
-from testbed.contracts.primitive_profile import (
-    PRIMITIVE_BOUNDARY_PROFILE_DEFAULT,
-    PRIMITIVE_BOUNDARY_PROFILE_EFFECT_RELEASE_FALLBACK,
-    PRIMITIVE_BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS,
-    PRIMITIVE_BOUNDARY_PROFILES,
-    PRIMITIVE_NAMES,
-    PRIMITIVE_NAMES_5P,
-    PRIMITIVE_VERSION,
-    PRIMITIVE_VERSION_5P,
-    PRIMITIVE_VERSION_V2_4_5_SPATIAL_MASS,
-    normalize_primitive_boundary_profile,
-    primitive_version_for_boundary_profile,
-)
-from testbed.contracts.primitive_tokens import (
-    RETURN_ENVELOPE_CONTACT_FLAG_IDX,
-    RETURN_ENVELOPE_DEPTH_CENTER_IDX,
-    RETURN_ENVELOPE_DEPTH_MAX_IDX,
-    RETURN_ENVELOPE_DEPTH_MIN_IDX,
-    RETURN_ENVELOPE_LONG_NORM_IDX,
-    RETURN_ENVELOPE_QPOS_CENTER_SLICE,
-    RETURN_ENVELOPE_QPOS_HALF_WIDTH_SLICE,
-    RETURN_ENVELOPE_QPOS_VALID_IDX,
-    RETURN_ENVELOPE_QVEL_ABS_MAX_IDX,
-    RETURN_ENVELOPE_SHORT_NORM_IDX,
-    RETURN_ENVELOPE_SPATIAL_DEPTH_VALID_IDX,
-    RETURN_ENVELOPE_SPATIAL_SLICE,
-    RETURN_ENVELOPE_TIP_RADIUS_IDX,
-    RETURN_START_ENVELOPE_TOKEN_DIM,
-    RETURN_START_ENVELOPE_TOKEN_KEY,
-    RETURN_START_ENVELOPE_VALID_MASK_KEY,
-    primitive_token_dataset_path,
-)
 from testbed.data.hdf5_io import episode_id_from_path, list_episodes, read_episode, write_episode
-from testbed.data.primitive_records import PrimitiveRejectRecord, PrimitiveSlice
-from testbed.data.primitive_spatial_mass import (
-    POSE_REALIGN_CYCLE_REJECT_REASON,
-    POSE_REALIGN_METADATA_KEY,
-    POSE_REALIGN_TRANSITION_REJECT_REASON,
-    RETURN_START_ENVELOPE_WINDOW_STEPS,
-    SPATIAL_MASS_CARRY_MAX_DEPOSIT_DELTA_KG,
-    SPATIAL_MASS_CARRY_MAX_DEPOSIT_TO_PAYLOAD_LOSS_FRAC,
-    SPATIAL_MASS_CARRY_WINDOW_NAME,
-    SPATIAL_MASS_DIG_BOX_LONG_ABS_MAX,
-    SPATIAL_MASS_DIG_BOX_SHORT_MAX,
-    SPATIAL_MASS_DIG_BOX_SHORT_MIN,
-    SPATIAL_MASS_DIG_EXIT_HOLD_STEPS,
-    SPATIAL_MASS_DIG_EXIT_MAX_DEPTH_M,
-    SPATIAL_MASS_DIG_EXIT_MIN_DISTANCE_M,
-    SPATIAL_MASS_DIG_FUTURE_GAIN_TOL_KG,
-    SPATIAL_MASS_DIG_MASS_GAIN_EPS_KG,
-    SPATIAL_MASS_DIG_MASS_PLATEAU_STEPS,
-    SPATIAL_MASS_DIG_NEAR_PEAK_TOL_KG,
-    SPATIAL_MASS_DIG_PEAK_GAIN_FRACTION,
-    SPATIAL_MASS_DIG_WINDOW_NAME,
-    SPATIAL_MASS_DUMP_END_DEPOSIT_GAIN_TOL_KG,
-    SPATIAL_MASS_DUMP_END_MASS_RANGE_TOL_KG,
-    SPATIAL_MASS_DUMP_END_MAX_POST_RELEASE_STEPS,
-    SPATIAL_MASS_DUMP_END_PLATEAU_STEPS,
-    SPATIAL_MASS_DUMP_END_RESIDUAL_BUCKET_MASS_KG,
-    SPATIAL_MASS_DUMP_PRE_RELEASE_LEAD_MAX_STEPS,
-    SPATIAL_MASS_DUMP_START_FALLBACK_PRE_RELEASE_STEPS,
-    SPATIAL_MASS_DUMP_START_MAX_OUTSIDE_DISTANCE_M,
-    SPATIAL_MASS_DUMP_START_MIN_HEIGHT_ABOVE_RIM_M,
-    SPATIAL_MASS_DUMP_START_OUTSIDE_RANGE_TOL_M,
-    SPATIAL_MASS_DUMP_START_RELATIVE_X_MAX_M,
-    SPATIAL_MASS_DUMP_START_RELATIVE_X_MIN_M,
-    SPATIAL_MASS_DUMP_START_RELATIVE_X_RANGE_TOL_M,
-    SPATIAL_MASS_DUMP_START_RELATIVE_Z_MAX_M,
-    SPATIAL_MASS_DUMP_START_RELATIVE_Z_MIN_M,
-    SPATIAL_MASS_DUMP_START_RELATIVE_Z_RANGE_TOL_M,
-    SPATIAL_MASS_DUMP_START_STABLE_OUTSIDE_DISTANCE_M,
-    SPATIAL_MASS_DUMP_START_STABLE_WINDOW_STEPS,
-    SPATIAL_MASS_DUMP_START_TOTAL_APPROACH_TOL_M,
-    SPATIAL_MASS_DUMP_WINDOW_NAME,
-    SPATIAL_MASS_RETURN_ENTRY_READY_DEPTH_M,
-    SPATIAL_MASS_RETURN_ENTRY_READY_DISTANCE_M,
-    SPATIAL_MASS_RETURN_WINDOW_NAME,
-    build_return_start_envelope_token as _spatial_mass_build_return_start_envelope_token,
-    env_state_or_none as _spatial_mass_env_state_or_none,
-    find_spatial_mass_dig_end as _spatial_mass_find_dig_end,
-    find_spatial_mass_dig_start as _spatial_mass_find_dig_start,
-    find_spatial_mass_dump_end as _spatial_mass_find_dump_end,
-    find_spatial_mass_dump_start as _spatial_mass_find_dump_start,
-    find_spatial_mass_release_onset as _spatial_mass_find_release_onset,
-    find_spatial_mass_return_entry_ready as _spatial_mass_find_return_entry_ready,
-    finite_range as _spatial_mass_finite_range,
-    optional_env_col as _spatial_mass_optional_env_col,
-    spatial_mass_carry_contaminated as _spatial_mass_resolve_carry_contaminated,
-    spatial_mass_carry_qc as _spatial_mass_resolve_carry_qc,
-    spatial_mass_deposit_trace as _spatial_mass_resolve_deposit_trace,
-    spatial_mass_dig_area_departed_mask as _spatial_mass_resolve_dig_area_departed_mask,
-    spatial_mass_dump_qc as _spatial_mass_resolve_dump_qc,
-    spatial_mass_material_windows as _resolve_spatial_mass_material_windows,
-    split_spatial_mass_primitive_slices,
-)
 from testbed.data.schema import (
+    DS_V2_STEP_RETURN_START_ENVELOPE_TOKENS_V1,
+    DS_V2_STEP_RETURN_START_ENVELOPE_VALID_MASK,
     ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
@@ -130,6 +38,7 @@ from testbed.data.schema import (
     ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX,
     ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
+from testbed.data.operator_first_v2_2 import RETURN_START_ENVELOPE_TOKEN_DIM
 from testbed.data.transition_v2_1 import extract_transition_slices
 from testbed.data.v2_1 import WORK_STAGE_NAME_TO_ID
 from testbed.data.vds import (
@@ -143,14 +52,34 @@ from testbed.data.vds import (
 
 
 PRIMITIVE_RECORDING_MODE = "primitive_relabel"
+PRIMITIVE_VERSION = "v2_2_4primitives"
+PRIMITIVE_VERSION_V2_4_5_SPATIAL_MASS = "v2_4_5_spatial_mass_4primitives"
+PRIMITIVE_VERSION_5P = "v2_2_5primitives"
+PRIMITIVE_NAMES = ("dig", "carry", "dump", "return")
+PRIMITIVE_NAMES_5P = ("dig", "carry", "approach_dump", "dump_release", "return")
+PRIMITIVE_BOUNDARY_PROFILE_DEFAULT = "v2_2_middle_handoff"
+PRIMITIVE_BOUNDARY_PROFILE_EFFECT_RELEASE_FALLBACK = "v2_2_effect_release_fallback"
+PRIMITIVE_BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS = "v2_4_5_spatial_mass"
+PRIMITIVE_BOUNDARY_PROFILES = (
+    PRIMITIVE_BOUNDARY_PROFILE_DEFAULT,
+    PRIMITIVE_BOUNDARY_PROFILE_EFFECT_RELEASE_FALLBACK,
+    PRIMITIVE_BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS,
+)
 
 DIG_WINDOW_NAME = "qualified_dig_start_to_before_carry"
 CARRY_WINDOW_NAME = "carry_to_before_dump_ownership"
 DUMP_WINDOW_NAME = "dump_approach_to_dump_end"
 RETURN_WINDOW_NAME = "dump_end_to_next_qualified_dig_start"
+SPATIAL_MASS_DIG_WINDOW_NAME = "material_cycle_dig_contact_depth_payload_gain"
+SPATIAL_MASS_CARRY_WINDOW_NAME = "loaded_transport_to_pre_release"
+SPATIAL_MASS_DUMP_WINDOW_NAME = "dump_area_committed_release_deposit"
+SPATIAL_MASS_RETURN_WINDOW_NAME = "dump_end_to_next_dig_start_envelope"
 FIVEP_CARRY_WINDOW_NAME = "carry_to_before_approach_dump"
 APPROACH_DUMP_WINDOW_NAME = "approach_dump_to_before_dump_release"
 DUMP_RELEASE_WINDOW_NAME = "dump_release_to_dump_end_hold"
+POSE_REALIGN_METADATA_KEY = "replay_pose_realign_steps"
+POSE_REALIGN_CYCLE_REJECT_REASON = "cycle_contains_pose_realign"
+POSE_REALIGN_TRANSITION_REJECT_REASON = "return_window_contains_pose_realign"
 
 BUCKET_QPOS_INDEX = 3
 BUCKET_ACTION_INDEX = 3
@@ -179,6 +108,41 @@ GOOD_DUMP_MIN_DEPOSIT_DELTA_KG = 80.0
 GOOD_DUMP_MIN_DEPOSITED_FRACTION_OF_BUCKET_LOSS = 0.50
 GOOD_DUMP_MAX_HARD_COLLISION_DELTA = 0
 DUMP_RELEASE_POST_HOLD_STEPS = 30
+SPATIAL_MASS_DUMP_PRE_RELEASE_LEAD_MAX_STEPS = 120
+SPATIAL_MASS_DUMP_START_MAX_OUTSIDE_DISTANCE_M = 0.30
+SPATIAL_MASS_DUMP_START_STABLE_OUTSIDE_DISTANCE_M = 0.25
+SPATIAL_MASS_DUMP_START_STABLE_WINDOW_STEPS = 20
+SPATIAL_MASS_DUMP_START_OUTSIDE_RANGE_TOL_M = 0.06
+SPATIAL_MASS_DUMP_START_TOTAL_APPROACH_TOL_M = 0.10
+SPATIAL_MASS_DUMP_START_RELATIVE_X_MIN_M = -0.20
+SPATIAL_MASS_DUMP_START_RELATIVE_X_MAX_M = 1.90
+SPATIAL_MASS_DUMP_START_RELATIVE_Z_MIN_M = 0.45
+SPATIAL_MASS_DUMP_START_RELATIVE_Z_MAX_M = 2.10
+SPATIAL_MASS_DUMP_START_RELATIVE_X_RANGE_TOL_M = 0.16
+SPATIAL_MASS_DUMP_START_RELATIVE_Z_RANGE_TOL_M = 0.10
+SPATIAL_MASS_DUMP_START_MIN_HEIGHT_ABOVE_RIM_M = 0.45
+SPATIAL_MASS_DUMP_START_FALLBACK_PRE_RELEASE_STEPS = 15
+SPATIAL_MASS_DUMP_END_RESIDUAL_BUCKET_MASS_KG = 15.0
+SPATIAL_MASS_DUMP_END_PLATEAU_STEPS = DUMP_RELEASE_POST_HOLD_STEPS
+SPATIAL_MASS_DUMP_END_MASS_RANGE_TOL_KG = 2.0
+SPATIAL_MASS_DUMP_END_DEPOSIT_GAIN_TOL_KG = 2.0
+SPATIAL_MASS_DUMP_END_MAX_POST_RELEASE_STEPS = 480
+SPATIAL_MASS_DIG_MASS_GAIN_EPS_KG = 0.35
+SPATIAL_MASS_DIG_PEAK_GAIN_FRACTION = 0.90
+SPATIAL_MASS_DIG_NEAR_PEAK_TOL_KG = 3.0
+SPATIAL_MASS_DIG_FUTURE_GAIN_TOL_KG = 2.0
+SPATIAL_MASS_DIG_MASS_PLATEAU_STEPS = 8
+SPATIAL_MASS_DIG_EXIT_HOLD_STEPS = 3
+SPATIAL_MASS_DIG_EXIT_MIN_DISTANCE_M = 0.08
+SPATIAL_MASS_DIG_EXIT_MAX_DEPTH_M = 0.02
+SPATIAL_MASS_DIG_BOX_LONG_ABS_MAX = 1.05
+SPATIAL_MASS_DIG_BOX_SHORT_MIN = -0.15
+SPATIAL_MASS_DIG_BOX_SHORT_MAX = 1.15
+SPATIAL_MASS_RETURN_ENTRY_READY_DISTANCE_M = 0.05
+SPATIAL_MASS_RETURN_ENTRY_READY_DEPTH_M = 0.005
+RETURN_START_ENVELOPE_WINDOW_STEPS = 40
+SPATIAL_MASS_CARRY_MAX_DEPOSIT_DELTA_KG = 5.0
+SPATIAL_MASS_CARRY_MAX_DEPOSIT_TO_PAYLOAD_LOSS_FRAC = 0.10
 APPROACH_DUMP_ACTION_HORIZON_STEPS = 100
 APPROACH_DUMP_MIN_WINDOW_LEN = 20
 APPROACH_DUMP_MAX_BUCKET_MASS_LOSS_KG = 150.0
@@ -260,7 +224,54 @@ PRIMITIVE_CYCLE_METADATA_KEYS = (
 
 
 def _normalise_boundary_profile(profile: str | None) -> str:
-    return normalize_primitive_boundary_profile(profile)
+    if profile in (None, ""):
+        return PRIMITIVE_BOUNDARY_PROFILE_DEFAULT
+    value = str(profile).strip()
+    if value not in PRIMITIVE_BOUNDARY_PROFILES:
+        raise ValueError(
+            f"Unsupported V2.2 primitive boundary profile {profile!r}. "
+            f"Expected one of {', '.join(PRIMITIVE_BOUNDARY_PROFILES)}."
+        )
+    return value
+
+
+@dataclass(frozen=True)
+class PrimitiveSlice:
+    primitive_name: str
+    window_name: str
+    source_episode_id: int
+    source_cycle_id: int
+    start_step: int
+    end_step_exclusive: int
+    dump_intent_step: int | None = None
+    official_dump_start_step: int | None = None
+    source_dataset_dir: str | None = None
+    source_prev_cycle_id: int | None = None
+    source_next_cycle_id: int | None = None
+    carry_qc: dict[str, Any] | None = None
+    approach_qc: dict[str, Any] | None = None
+    dump_qc: dict[str, Any] | None = None
+    return_qc: dict[str, Any] | None = None
+    v2_step_overlay: dict[str, np.ndarray] | None = None
+    dump_release_step: int | None = None
+    dump_end_step: int | None = None
+    boundary_profile: str | None = None
+
+    @property
+    def window_len(self) -> int:
+        return int(self.end_step_exclusive - self.start_step)
+
+
+@dataclass(frozen=True)
+class PrimitiveRejectRecord:
+    primitive_name: str
+    reason: str
+    source_dataset_dir: str
+    source_episode_id: int
+    source_cycle_id: int
+    start_step: int
+    end_step_exclusive: int
+    details: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -319,8 +330,10 @@ def build_primitive_datasets(
         shutil.rmtree(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
     primitive_dirs = {name: output_root / name for name in PRIMITIVE_NAMES}
-    primitive_version_for_output = primitive_version_for_boundary_profile(
-        boundary_profile
+    primitive_version_for_output = (
+        PRIMITIVE_VERSION_V2_4_5_SPATIAL_MASS
+        if boundary_profile == PRIMITIVE_BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS
+        else PRIMITIVE_VERSION
     )
     if storage_mode != STORAGE_MODE_MANIFEST:
         for primitive_dir in primitive_dirs.values():
@@ -1247,18 +1260,324 @@ def extract_spatial_mass_primitive_slices_from_raw(
     source_dataset_dir: str | Path,
     return_max_transition_len: int | None = None,
 ) -> tuple[list[PrimitiveSlice], list[PrimitiveRejectRecord]]:
+    """Split a full V2.4/V2.4.5 raw episode using material-cycle ownership."""
     source_path = Path(source_path)
-    return split_spatial_mass_primitive_slices(
+    source_dataset_dir = Path(source_dataset_dir)
+    source_episode_id = _source_episode_id(episode=episode, source_path=source_path)
+    windows = _spatial_mass_material_windows(
         episode=episode,
-        source_episode_id=_source_episode_id(
-            episode=episode,
-            source_path=source_path,
-        ),
-        source_dataset_dir=source_dataset_dir,
-        raw_cycle_windows=_raw_cycle_windows(episode=episode),
-        pose_realign_steps=_metadata_pose_realign_steps(episode=episode),
-        return_max_transition_len=return_max_transition_len,
+        windows=_raw_cycle_windows(episode=episode),
     )
+    slices: list[PrimitiveSlice] = []
+    rejects: list[PrimitiveRejectRecord] = []
+    if not windows:
+        rejects.append(
+            PrimitiveRejectRecord(
+                primitive_name="cycle",
+                reason="missing_material_cycle_windows",
+                source_dataset_dir=str(source_dataset_dir.resolve()),
+                source_episode_id=int(source_episode_id),
+                source_cycle_id=-1,
+                start_step=0,
+                end_step_exclusive=int(len(episode.get("actions", []))),
+            )
+        )
+        return slices, rejects
+
+    realign_steps = _metadata_pose_realign_steps(episode=episode)
+
+    def _reject(
+        *,
+        primitive_name: str,
+        reason: str,
+        source_cycle_id: int,
+        start: int,
+        end: int,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        rejects.append(
+            PrimitiveRejectRecord(
+                primitive_name=primitive_name,
+                reason=reason,
+                source_dataset_dir=str(source_dataset_dir.resolve()),
+                source_episode_id=int(source_episode_id),
+                source_cycle_id=int(source_cycle_id),
+                start_step=int(start),
+                end_step_exclusive=int(end),
+                details=details,
+            )
+        )
+
+    def _append(
+        *,
+        primitive_name: str,
+        window_name: str,
+        source_cycle_id: int,
+        start: int,
+        end: int,
+        source_prev_cycle_id: int | None = None,
+        source_next_cycle_id: int | None = None,
+        carry_qc: dict[str, Any] | None = None,
+        dump_qc: dict[str, Any] | None = None,
+        return_qc: dict[str, Any] | None = None,
+        overlay: dict[str, np.ndarray] | None = None,
+        reject_reason: str = "invalid_spatial_mass_window",
+    ) -> None:
+        if int(end) <= int(start):
+            _reject(
+                primitive_name=primitive_name,
+                reason=reject_reason,
+                source_cycle_id=source_cycle_id,
+                start=start,
+                end=end,
+                details=carry_qc or dump_qc or return_qc,
+            )
+            return
+        slices.append(
+            PrimitiveSlice(
+                primitive_name=primitive_name,
+                window_name=window_name,
+                source_episode_id=int(source_episode_id),
+                source_cycle_id=int(source_cycle_id),
+                start_step=int(start),
+                end_step_exclusive=int(end),
+                source_dataset_dir=str(source_dataset_dir.resolve()),
+                source_prev_cycle_id=source_prev_cycle_id,
+                source_next_cycle_id=source_next_cycle_id,
+                carry_qc=carry_qc,
+                dump_qc=dump_qc,
+                return_qc=return_qc,
+                v2_step_overlay=overlay,
+                boundary_profile=PRIMITIVE_BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS,
+            )
+        )
+
+    for index, (cycle_id, start, work_end, _realign_end) in enumerate(windows):
+        source_cycle_id = int(cycle_id)
+        next_start = int(windows[index + 1][1]) if index + 1 < len(windows) else None
+        next_work_end = (
+            int(windows[index + 1][2]) if index + 1 < len(windows) else None
+        )
+        work_realign = _window_pose_realign_steps(
+            realign_steps=realign_steps,
+            start_step=start,
+            end_step_exclusive=work_end,
+        )
+        if work_realign:
+            details = {
+                "realign_steps_in_window": [int(step) for step in work_realign],
+                "realign_all_steps": [int(step) for step in realign_steps],
+                "realign_metadata_key": POSE_REALIGN_METADATA_KEY,
+                "policy": "discard_spatial_mass_work_windows_only",
+            }
+            for primitive_name in ("dig", "carry", "dump"):
+                _reject(
+                    primitive_name=primitive_name,
+                    reason=POSE_REALIGN_CYCLE_REJECT_REASON,
+                    source_cycle_id=source_cycle_id,
+                    start=start,
+                    end=work_end,
+                    details=details,
+                )
+            continue
+
+        release_onset, release_qc = _find_spatial_mass_release_onset(
+            episode=episode,
+            start=int(start),
+            end=int(work_end),
+        )
+        if release_onset is None:
+            for primitive_name in ("carry", "dump"):
+                _reject(
+                    primitive_name=primitive_name,
+                    reason="missing_spatial_mass_release_onset",
+                    source_cycle_id=source_cycle_id,
+                    start=start,
+                    end=work_end,
+                    details=release_qc,
+                )
+            release_onset = int(work_end)
+
+        dig_start, dig_qc = _find_spatial_mass_dig_start(
+            episode=episode,
+            start=int(start),
+            end=int(work_end),
+        )
+        dump_start, dump_start_qc = _find_spatial_mass_dump_start(
+            episode=episode,
+            cycle_start=int(start),
+            release_onset=int(release_onset),
+        )
+        dump_start = min(int(dump_start), int(work_end))
+        dump_end, dump_end_qc = _find_spatial_mass_dump_end(
+            episode=episode,
+            search_end=int(work_end),
+            release_onset=int(release_onset),
+        )
+        dump_end = max(int(dump_start) + 1, min(int(dump_end), int(work_end)))
+        dig_end, dig_end_qc = _find_spatial_mass_dig_end(
+            episode=episode,
+            start=int(dig_start),
+            end=int(dump_start),
+        )
+        dig_end = max(int(dig_start) + 1, min(int(dig_end), int(dump_start)))
+        dig_qc.update(dig_end_qc)
+        carry_start = int(dig_end)
+
+        _append(
+            primitive_name="dig",
+            window_name=SPATIAL_MASS_DIG_WINDOW_NAME,
+            source_cycle_id=source_cycle_id,
+            start=int(dig_start),
+            end=int(dig_end),
+            dump_qc=dig_qc,
+            reject_reason="invalid_spatial_mass_dig_window",
+        )
+
+        carry_qc = _spatial_mass_carry_qc(
+            episode=episode,
+            start=int(carry_start),
+            end=int(dump_start),
+            release_onset=int(release_onset),
+        )
+        if _spatial_mass_carry_contaminated(carry_qc):
+            _reject(
+                primitive_name="carry",
+                reason="carry_deposit_contamination_before_dump",
+                source_cycle_id=source_cycle_id,
+                start=carry_start,
+                end=dump_start,
+                details=carry_qc,
+            )
+        else:
+            _append(
+                primitive_name="carry",
+                window_name=SPATIAL_MASS_CARRY_WINDOW_NAME,
+                source_cycle_id=source_cycle_id,
+                start=int(carry_start),
+                end=int(dump_start),
+                carry_qc=carry_qc,
+                reject_reason="invalid_spatial_mass_carry_window",
+            )
+
+        dump_qc = _spatial_mass_dump_qc(
+            episode=episode,
+            start=int(dump_start),
+            end=int(dump_end),
+            release_onset=int(release_onset),
+            release_qc={**release_qc, **dump_start_qc, **dump_end_qc},
+        )
+        _append(
+            primitive_name="dump",
+            window_name=SPATIAL_MASS_DUMP_WINDOW_NAME,
+            source_cycle_id=source_cycle_id,
+            start=int(dump_start),
+            end=int(dump_end),
+            dump_qc=dump_qc,
+            reject_reason="invalid_spatial_mass_dump_window",
+        )
+
+        if next_start is None:
+            _reject(
+                primitive_name="return",
+                reason="terminal_return_reject",
+                source_cycle_id=source_cycle_id,
+                start=int(dump_end),
+                end=int(dump_end),
+                details={"policy": "return requires a next material dig start"},
+            )
+            continue
+        return_handoff_step, return_end_qc = _find_spatial_mass_return_entry_ready(
+            episode=episode,
+            start=int(dump_end),
+            next_start=int(next_start),
+            next_work_end=int(next_work_end if next_work_end is not None else next_start),
+        )
+        return_end = min(int(len(episode["actions"])), int(return_handoff_step) + 1)
+        return_realign = _window_pose_realign_steps(
+            realign_steps=realign_steps,
+            start_step=int(dump_end),
+            end_step_exclusive=int(return_end),
+        )
+        if return_realign:
+            _reject(
+                primitive_name="return",
+                reason=POSE_REALIGN_TRANSITION_REJECT_REASON,
+                source_cycle_id=source_cycle_id,
+                start=int(dump_end),
+                end=int(return_end),
+                details={
+                    "realign_steps_in_window": [
+                        int(step) for step in return_realign
+                    ],
+                    "realign_all_steps": [int(step) for step in realign_steps],
+                    "realign_metadata_key": POSE_REALIGN_METADATA_KEY,
+                    "policy": "discard_return_transition_window",
+                    "next_cycle_id": int(windows[index + 1][0]),
+                    **return_end_qc,
+                },
+            )
+            continue
+        if (
+            return_max_transition_len is not None
+            and int(return_end) - int(dump_end) > int(return_max_transition_len)
+        ):
+            _reject(
+                primitive_name="return",
+                reason="overlong_transition_len",
+                source_cycle_id=source_cycle_id,
+                start=int(dump_end),
+                end=int(return_end),
+                details={
+                    "window_len": int(return_end) - int(dump_end),
+                    "max_transition_len": int(return_max_transition_len),
+                    **return_end_qc,
+                },
+            )
+            continue
+        token, valid_mask, return_qc = _build_return_start_envelope_token(
+            episode=episode,
+            next_start_step=int(return_handoff_step),
+        )
+        return_qc.update(return_end_qc)
+        return_len = int(return_end) - int(dump_end)
+        return_qc.update(
+            {
+                "return_start_step": int(dump_end),
+                "return_end_step_exclusive": int(return_end),
+                "return_window_len": int(return_len),
+                "return_next_material_cycle_id": int(windows[index + 1][0]),
+                "return_next_material_start_step": int(next_start),
+                "return_handoff_step": int(return_handoff_step),
+                "return_start_envelope_schema": "return_start_envelope_tokens_v1",
+            }
+        )
+        overlay = {
+            DS_V2_STEP_RETURN_START_ENVELOPE_TOKENS_V1.rsplit("/", 1)[-1]: np.repeat(
+                token.reshape(1, -1),
+                return_len,
+                axis=0,
+            ).astype(np.float32),
+            DS_V2_STEP_RETURN_START_ENVELOPE_VALID_MASK.rsplit("/", 1)[-1]: np.repeat(
+                valid_mask.reshape(1, -1),
+                return_len,
+                axis=0,
+            ).astype(np.uint8),
+        }
+        _append(
+            primitive_name="return",
+            window_name=SPATIAL_MASS_RETURN_WINDOW_NAME,
+            source_cycle_id=source_cycle_id,
+            source_prev_cycle_id=source_cycle_id,
+            source_next_cycle_id=int(windows[index + 1][0]),
+            start=int(dump_end),
+            end=int(return_end),
+            return_qc=return_qc,
+            overlay=overlay,
+            reject_reason="invalid_spatial_mass_return_window",
+        )
+
+    return slices, rejects
 
 
 def _find_spatial_mass_dig_start(
@@ -1267,7 +1586,54 @@ def _find_spatial_mass_dig_start(
     start: int,
     end: int,
 ) -> tuple[int, dict[str, Any]]:
-    return _spatial_mass_find_dig_start(episode=episode, start=start, end=end)
+    env_state = _env_state_or_none(episode)
+    if env_state is None:
+        return int(start), {
+            "dig_start_step": int(start),
+            "dig_start_source": "cycle_start_missing_env_state",
+        }
+    search_start = max(0, int(start))
+    search_end = min(int(end), len(env_state))
+    if search_end <= search_start:
+        return int(start), {"dig_start_step": int(start), "dig_start_source": "empty_window"}
+    geometry = _optional_env_col(
+        env_state,
+        ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
+        default=1.0,
+    )
+    contact = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
+        default=0.0,
+    )
+    depth = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+        default=float("nan"),
+    )
+    if not np.any(np.isfinite(depth)):
+        depth = _optional_env_col(
+            env_state,
+            8,
+            default=0.0,
+        )
+    mask = (
+        (geometry > 0.5)
+        & ((contact > 0.5) | (np.nan_to_num(depth, nan=0.0) > 0.005))
+    )
+    indices = np.flatnonzero(mask[search_start:search_end])
+    if len(indices) <= 0:
+        return int(start), {
+            "dig_start_step": int(start),
+            "dig_start_source": "cycle_start_no_contact_depth_match",
+        }
+    dig_start = int(search_start + indices[0])
+    return dig_start, {
+        "dig_start_step": int(dig_start),
+        "dig_start_source": "first_dig_contact_or_depth",
+        "dig_start_depth_m": float(np.nan_to_num(depth[dig_start], nan=0.0)),
+        "dig_start_contact_mask": int(contact[dig_start] > 0.5),
+    }
 
 
 def _find_spatial_mass_return_entry_ready(
@@ -1277,12 +1643,86 @@ def _find_spatial_mass_return_entry_ready(
     next_start: int,
     next_work_end: int,
 ) -> tuple[int, dict[str, Any]]:
-    return _spatial_mass_find_return_entry_ready(
-        episode=episode,
-        start=start,
-        next_start=next_start,
-        next_work_end=next_work_end,
+    """Find the first next-dig entry/envelope frame after dump completion.
+
+    V2.4.5 return ownership ends when the bucket reaches the next dig-start
+    envelope, not when the later material-cycle label finally says the dig is
+    underway. This keeps return data from swallowing early next-dig motion when
+    replay/relabel has a delayed material start.
+    """
+
+    fallback = int(next_start)
+    qc: dict[str, Any] = {
+        "return_end_source": "fallback_next_material_start",
+        "return_entry_ready_distance_m": float(SPATIAL_MASS_RETURN_ENTRY_READY_DISTANCE_M),
+        "return_entry_ready_depth_m": float(SPATIAL_MASS_RETURN_ENTRY_READY_DEPTH_M),
+        "return_entry_ready_search_start_step": int(start),
+        "return_entry_ready_search_end_step": int(next_work_end),
+        "return_entry_ready_selected_step": int(fallback),
+    }
+    env_state = _env_state_or_none(episode)
+    if env_state is None:
+        qc["return_end_source"] = "fallback_missing_env_state"
+        return fallback, qc
+
+    search_start = max(0, int(start) + 1)
+    search_end = min(
+        int(env_state.shape[0]),
+        max(int(next_start) + 1, int(next_work_end)),
     )
+    if search_end <= search_start:
+        qc["return_end_source"] = "fallback_empty_search_window"
+        return fallback, qc
+
+    geometry = _optional_env_col(
+        env_state,
+        ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
+        default=0.0,
+    )
+    distance = _optional_env_col(
+        env_state,
+        ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
+        default=float("inf"),
+    )
+    contact = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
+        default=0.0,
+    )
+    depth = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+        default=0.0,
+    )
+
+    indices = np.arange(search_start, search_end, dtype=np.int32)
+    finite_geometry = geometry[indices] > 0.5
+    finite_distance = np.isfinite(distance[indices])
+    finite_depth = np.isfinite(depth[indices])
+    ready = finite_geometry & (
+        (finite_distance & (distance[indices] <= SPATIAL_MASS_RETURN_ENTRY_READY_DISTANCE_M))
+        | (contact[indices] > 0.5)
+        | (finite_depth & (depth[indices] >= SPATIAL_MASS_RETURN_ENTRY_READY_DEPTH_M))
+    )
+    ready_indices = indices[ready]
+    if len(ready_indices) <= 0:
+        return fallback, qc
+
+    selected = int(ready_indices[0])
+    qc.update(
+        {
+            "return_end_source": "first_next_dig_entry_ready",
+            "return_entry_ready_selected_step": int(selected),
+            "return_entry_ready_offset_from_dump_end": int(selected) - int(start),
+            "return_entry_ready_offset_from_next_material_start": int(selected)
+            - int(next_start),
+            "return_entry_ready_min_distance_m": float(distance[selected]),
+            "return_entry_ready_contact_mask": int(contact[selected] > 0.5),
+            "return_entry_ready_local_surface_depth_m": float(depth[selected]),
+            "return_entry_ready_geometry_available": int(geometry[selected] > 0.5),
+        }
+    )
+    return selected, qc
 
 
 def _spatial_mass_material_windows(
@@ -1290,7 +1730,43 @@ def _spatial_mass_material_windows(
     episode: dict[str, Any],
     windows: list[tuple[int, int, int, int]],
 ) -> list[tuple[int, int, int, int]]:
-    return _resolve_spatial_mass_material_windows(episode=episode, windows=windows)
+    step = dict(dict(episode.get("v2") or {}).get("step", {}) or {})
+    qds = np.asarray(step.get("qualified_dig_start_mask", []), dtype=np.uint8).reshape(-1)
+    dump_end = np.asarray(step.get("dump_end_mask", []), dtype=np.uint8).reshape(-1)
+    if qds.size <= 0 or not windows:
+        return windows
+    material_windows: list[tuple[int, int, int, int]] = []
+    for cycle_id, start, work_end, realign_end in windows:
+        qds_indices = np.flatnonzero(qds.astype(bool))
+        qds_indices = qds_indices[(qds_indices >= int(start)) & (qds_indices < int(work_end))]
+        if len(qds_indices) <= 1:
+            material_windows.append((cycle_id, start, work_end, realign_end))
+            continue
+        if int(qds_indices[0]) != int(start):
+            qds_indices = np.concatenate(
+                [np.asarray([int(start)], dtype=np.int64), qds_indices]
+            )
+        for sub_index, sub_start_value in enumerate(qds_indices):
+            sub_start = int(sub_start_value)
+            next_start = (
+                int(qds_indices[sub_index + 1])
+                if sub_index + 1 < len(qds_indices)
+                else None
+            )
+            sub_limit = int(work_end if next_start is None else next_start)
+            sub_end = sub_limit
+            if dump_end.size:
+                dump_candidates = np.flatnonzero(dump_end.astype(bool))
+                dump_candidates = dump_candidates[
+                    (dump_candidates >= sub_start) & (dump_candidates < sub_limit)
+                ]
+                if len(dump_candidates) > 0:
+                    sub_end = min(sub_limit, int(dump_candidates[0]) + 1)
+            if sub_end <= sub_start:
+                continue
+            sub_realign_end = int(realign_end if next_start is None else next_start)
+            material_windows.append((int(cycle_id), sub_start, sub_end, sub_realign_end))
+    return sorted(material_windows, key=lambda item: item[1])
 
 
 def _find_spatial_mass_dig_end(
@@ -1299,11 +1775,168 @@ def _find_spatial_mass_dig_end(
     start: int,
     end: int,
 ) -> tuple[int, dict[str, Any]]:
-    return _spatial_mass_find_dig_end(episode=episode, start=start, end=end)
+    start = int(start)
+    end = int(end)
+    qc: dict[str, Any] = {
+        "dig_end_search_start_step": int(start),
+        "dig_end_search_end_step": int(end),
+        "dig_end_source": "fallback_search_end",
+        "dig_mass_gain_eps_kg": float(SPATIAL_MASS_DIG_MASS_GAIN_EPS_KG),
+        "dig_peak_gain_fraction": float(SPATIAL_MASS_DIG_PEAK_GAIN_FRACTION),
+        "dig_near_peak_tol_kg": float(SPATIAL_MASS_DIG_NEAR_PEAK_TOL_KG),
+        "dig_future_gain_tol_kg": float(SPATIAL_MASS_DIG_FUTURE_GAIN_TOL_KG),
+        "dig_mass_plateau_steps": int(SPATIAL_MASS_DIG_MASS_PLATEAU_STEPS),
+        "dig_exit_hold_steps": int(SPATIAL_MASS_DIG_EXIT_HOLD_STEPS),
+    }
+    if end <= start + 1:
+        qc["dig_end_selected_step"] = int(end)
+        qc["dig_end_source"] = "empty_search_window"
+        return int(end), qc
+
+    env_state = _env_state_or_none(episode)
+    if env_state is None:
+        selected = int(min(end, start + 120))
+        qc["dig_end_selected_step"] = int(selected)
+        qc["dig_end_source"] = "fallback_missing_env_state"
+        return selected, qc
+
+    n_steps = int(env_state.shape[0])
+    search_start = max(0, min(start, n_steps - 1))
+    search_end = max(search_start + 1, min(end, n_steps))
+    mass = _optional_env_col(env_state, ENV_STATE_MASS_IN_BUCKET_IDX, default=0.0)
+    departed = _spatial_mass_dig_area_departed_mask(env_state)
+
+    mass_delta = np.diff(mass, prepend=mass[0])
+    growth_indices = np.flatnonzero(
+        mass_delta[search_start + 1 : search_end] >= SPATIAL_MASS_DIG_MASS_GAIN_EPS_KG
+    )
+    if len(growth_indices) > 0:
+        last_growth = int(search_start + 1 + growth_indices[-1])
+        first_growth = int(search_start + 1 + growth_indices[0])
+    else:
+        last_growth = int(search_start)
+        first_growth = -1
+    start_mass = float(mass[search_start])
+    peak_mass = float(np.nanmax(mass[search_start:search_end]))
+    total_gain = float(max(0.0, peak_mass - start_mass))
+    near_peak_tolerance = max(
+        float(SPATIAL_MASS_DIG_NEAR_PEAK_TOL_KG),
+        total_gain * (1.0 - float(SPATIAL_MASS_DIG_PEAK_GAIN_FRACTION)),
+    )
+    future_gain_tolerance = max(
+        float(SPATIAL_MASS_DIG_FUTURE_GAIN_TOL_KG),
+        total_gain * 0.03,
+    )
+    qc.update(
+        {
+            "dig_first_mass_growth_step": int(first_growth),
+            "dig_last_mass_growth_step": int(last_growth),
+            "dig_start_bucket_mass_kg": start_mass,
+            "dig_peak_bucket_mass_kg": peak_mass,
+            "dig_total_mass_gain_kg": total_gain,
+            "dig_near_peak_tolerance_kg": float(near_peak_tolerance),
+            "dig_future_gain_tolerance_kg": float(future_gain_tolerance),
+        }
+    )
+
+    hold = max(1, int(SPATIAL_MASS_DIG_EXIT_HOLD_STEPS))
+    plateau_steps = max(0, int(SPATIAL_MASS_DIG_MASS_PLATEAU_STEPS))
+    candidate_start = search_start + 1
+    latest_candidate = max(candidate_start, search_end - hold)
+    for idx in range(candidate_start, latest_candidate + 1):
+        exit_window = departed[idx : idx + hold]
+        if len(exit_window) < hold or not bool(np.all(exit_window)):
+            continue
+        past_peak = float(np.nanmax(mass[search_start : idx + 1]))
+        if total_gain > SPATIAL_MASS_DIG_NEAR_PEAK_TOL_KG and past_peak < (
+            peak_mass - near_peak_tolerance
+        ):
+            continue
+        plateau_end = min(search_end, idx + plateau_steps + 1)
+        future_peak = float(np.nanmax(mass[idx:plateau_end])) if plateau_end > idx else float(mass[idx])
+        future_gain = float(max(0.0, future_peak - float(mass[idx])))
+        if future_gain > future_gain_tolerance:
+            continue
+        qc.update(
+            {
+                "dig_end_source": "mass_plateau_and_dig_area_departure",
+                "dig_end_selected_step": int(idx),
+                "dig_end_departure_hold_end_step": int(idx + hold),
+                "dig_end_past_peak_bucket_mass_kg": float(past_peak),
+                "dig_end_future_gain_kg": float(future_gain),
+                "dig_end_mass_at_start_kg": start_mass,
+                "dig_end_mass_at_selected_kg": float(mass[idx]),
+            }
+        )
+        return int(idx), qc
+
+    selected = int(search_end)
+    qc.update(
+        {
+            "dig_end_source": "search_end_no_confirmed_departure",
+            "dig_end_selected_step": int(selected),
+            "dig_end_departed_fraction_after_growth": float(
+                np.mean(departed[candidate_start:search_end])
+                if search_end > candidate_start
+                else 0.0
+            ),
+        }
+    )
+    return selected, qc
 
 
 def _spatial_mass_dig_area_departed_mask(env_state: np.ndarray) -> np.ndarray:
-    return _spatial_mass_resolve_dig_area_departed_mask(env_state)
+    geometry = _optional_env_col(
+        env_state,
+        ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
+        default=1.0,
+    )
+    contact = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
+        default=0.0,
+    )
+    depth = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+        default=float("nan"),
+    )
+    if not np.any(np.isfinite(depth)):
+        depth = _optional_env_col(env_state, 8, default=0.0)
+    min_distance = _optional_env_col(
+        env_state,
+        ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
+        default=float("nan"),
+    )
+    long_norm = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
+        default=float("nan"),
+    )
+    short_norm = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
+        default=float("nan"),
+    )
+    finite_norm = np.isfinite(long_norm) & np.isfinite(short_norm)
+    inside_norm_box = (
+        (geometry > 0.5)
+        & finite_norm
+        & (np.abs(long_norm) <= SPATIAL_MASS_DIG_BOX_LONG_ABS_MAX)
+        & (short_norm >= SPATIAL_MASS_DIG_BOX_SHORT_MIN)
+        & (short_norm <= SPATIAL_MASS_DIG_BOX_SHORT_MAX)
+    )
+    finite_distance = np.isfinite(min_distance)
+    outside_by_distance = finite_distance & (
+        min_distance > SPATIAL_MASS_DIG_EXIT_MIN_DISTANCE_M
+    )
+    outside_by_norm = finite_norm & (~inside_norm_box)
+    outside_spatial = outside_by_norm | outside_by_distance
+    no_contact_depth = (
+        (contact <= 0.5)
+        & (np.nan_to_num(depth, nan=0.0) <= SPATIAL_MASS_DIG_EXIT_MAX_DEPTH_M)
+    )
+    return np.asarray(outside_spatial & no_contact_depth, dtype=bool)
 
 
 def _find_spatial_mass_release_onset(
@@ -1312,7 +1945,67 @@ def _find_spatial_mass_release_onset(
     start: int,
     end: int,
 ) -> tuple[int | None, dict[str, Any]]:
-    return _spatial_mass_find_release_onset(episode=episode, start=start, end=end)
+    start = max(0, int(start))
+    end = min(int(end), int(len(episode.get("actions", []))))
+    env_state = _env_state_or_none(episode)
+    if env_state is not None and end > start + 1:
+        mass = _optional_env_col(env_state, ENV_STATE_MASS_IN_BUCKET_IDX, default=0.0)
+        deposit = np.zeros(len(env_state), dtype=np.float32)
+        for col in (
+            ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+            ENV_STATE_DEPOSITED_MASS_IN_DUMP_AREA_IDX,
+            ENV_STATE_OFFTARGET_DEPOSITED_MASS_IDX,
+        ):
+            if col < env_state.shape[1]:
+                deposit = deposit + np.nan_to_num(env_state[:, col], nan=0.0)
+        outside = _optional_env_col(
+            env_state,
+            ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+            default=0.0,
+        )
+        over = _optional_env_col(
+            env_state,
+            ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+            default=0.0,
+        )
+        for idx in range(start + 1, end):
+            mass_drop = float(max(0.0, mass[idx - 1] - mass[idx]))
+            deposit_gain = float(max(0.0, deposit[idx] - deposit[idx - 1]))
+            near_dump_area = bool(outside[idx] <= 0.45 or over[idx] > 0.5)
+            if near_dump_area and (mass_drop >= 0.5 or deposit_gain >= 0.5):
+                return int(idx), {
+                    "release_onset_step": int(idx),
+                    "release_onset_source": "instant_mass_or_deposit_delta",
+                    "release_instant_mass_drop_kg": mass_drop,
+                    "release_instant_deposit_gain_kg": deposit_gain,
+                    "release_dump_area_outside_distance_m": float(outside[idx]),
+                }
+
+    step = dict(dict(episode.get("v2") or {}).get("step", {}) or {})
+    dump_start_mask = np.asarray(step.get("dump_start_mask", []), dtype=np.uint8)
+    if dump_start_mask.size:
+        candidates = np.flatnonzero(dump_start_mask.astype(bool))
+        candidates = candidates[(candidates >= start) & (candidates < end)]
+        if len(candidates) > 0:
+            idx = int(candidates[0])
+            return idx, {
+                "release_onset_step": int(idx),
+                "release_onset_source": "dump_start_mask_fallback",
+            }
+    work_stage_id = np.asarray(step.get("work_stage_id", []), dtype=np.int32)
+    if work_stage_id.size:
+        candidates = np.flatnonzero(work_stage_id == WORK_STAGE_NAME_TO_ID["dump"])
+        candidates = candidates[(candidates >= start) & (candidates < end)]
+        if len(candidates) > 0:
+            idx = int(candidates[0])
+            return idx, {
+                "release_onset_step": int(idx),
+                "release_onset_source": "dump_stage_fallback",
+            }
+    return None, {
+        "release_onset_step": -1,
+        "release_onset_source": "missing",
+    }
 
 
 def _find_spatial_mass_dump_start(
@@ -1321,11 +2014,231 @@ def _find_spatial_mass_dump_start(
     cycle_start: int,
     release_onset: int,
 ) -> tuple[int, dict[str, Any]]:
-    return _spatial_mass_find_dump_start(
-        episode=episode,
-        cycle_start=cycle_start,
-        release_onset=release_onset,
+    release_i = max(0, int(release_onset))
+    lead_start = max(
+        int(cycle_start),
+        release_i - int(SPATIAL_MASS_DUMP_PRE_RELEASE_LEAD_MAX_STEPS),
     )
+    qc: dict[str, Any] = {
+        "dump_start_lead_cap_candidate_step": int(lead_start),
+        "dump_start_max_outside_distance_m": float(
+            SPATIAL_MASS_DUMP_START_MAX_OUTSIDE_DISTANCE_M
+        ),
+        "dump_start_stable_outside_distance_m": float(
+            SPATIAL_MASS_DUMP_START_STABLE_OUTSIDE_DISTANCE_M
+        ),
+        "dump_start_stable_window_steps": int(
+            SPATIAL_MASS_DUMP_START_STABLE_WINDOW_STEPS
+        ),
+        "dump_start_outside_range_tol_m": float(
+            SPATIAL_MASS_DUMP_START_OUTSIDE_RANGE_TOL_M
+        ),
+        "dump_start_total_approach_tol_m": float(
+            SPATIAL_MASS_DUMP_START_TOTAL_APPROACH_TOL_M
+        ),
+        "dump_start_relative_x_range_tol_m": float(
+            SPATIAL_MASS_DUMP_START_RELATIVE_X_RANGE_TOL_M
+        ),
+        "dump_start_relative_z_range_tol_m": float(
+            SPATIAL_MASS_DUMP_START_RELATIVE_Z_RANGE_TOL_M
+        ),
+        "dump_start_relative_x_min_m": float(
+            SPATIAL_MASS_DUMP_START_RELATIVE_X_MIN_M
+        ),
+        "dump_start_relative_x_max_m": float(
+            SPATIAL_MASS_DUMP_START_RELATIVE_X_MAX_M
+        ),
+        "dump_start_relative_z_min_m": float(
+            SPATIAL_MASS_DUMP_START_RELATIVE_Z_MIN_M
+        ),
+        "dump_start_relative_z_max_m": float(
+            SPATIAL_MASS_DUMP_START_RELATIVE_Z_MAX_M
+        ),
+        "dump_start_min_height_above_rim_m": float(
+            SPATIAL_MASS_DUMP_START_MIN_HEIGHT_ABOVE_RIM_M
+        ),
+        "dump_start_source": "release_lead_cap",
+    }
+    env_state = _env_state_or_none(episode)
+    if env_state is None or env_state.shape[0] <= lead_start:
+        qc["dump_start_source"] = "release_lead_cap_missing_env_state"
+        return int(lead_start), qc
+    end_i = min(int(release_i), int(env_state.shape[0] - 1))
+    if end_i < lead_start:
+        return int(lead_start), qc
+    outside = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+        default=float("inf"),
+    )
+    over = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+        default=0.0,
+    )
+    relative_x = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
+        default=float("nan"),
+    )
+    relative_z = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
+        default=float("nan"),
+    )
+    height_above_rim = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
+        default=float("nan"),
+    )
+    clearance = _optional_env_col(
+        env_state,
+        ENV_STATE_DUMP_CLEARANCE_OK_IDX,
+        default=0.0,
+    )
+    has_relative_geometry = bool(
+        env_state.shape[1] > ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX
+    )
+    selected = int(lead_start)
+    release_outside = float(outside[end_i])
+    for idx in range(int(lead_start), int(end_i) + 1):
+        outside_value = float(outside[idx])
+        over_value = float(over[idx])
+        height_value = float(height_above_rim[idx])
+        near_dump_area = (
+            np.isfinite(outside_value)
+            and outside_value <= SPATIAL_MASS_DUMP_START_STABLE_OUTSIDE_DISTANCE_M
+        ) or over_value > 0.5
+        height_ok = (
+            not np.isfinite(height_value)
+            or height_value >= SPATIAL_MASS_DUMP_START_MIN_HEIGHT_ABOVE_RIM_M
+        )
+        if not near_dump_area or not height_ok:
+            continue
+        window_end = min(
+            int(end_i) + 1,
+            int(idx) + int(SPATIAL_MASS_DUMP_START_STABLE_WINDOW_STEPS),
+        )
+        outside_window = outside[int(idx) : window_end]
+        finite_window = outside_window[np.isfinite(outside_window)]
+        outside_range = (
+            float(np.max(finite_window) - np.min(finite_window))
+            if len(finite_window) > 0
+            else float("inf")
+        )
+        total_approach = (
+            abs(outside_value - release_outside)
+            if np.isfinite(outside_value) and np.isfinite(release_outside)
+            else 0.0 if over_value > 0.5 else float("inf")
+        )
+        relative_x_value = float(relative_x[idx])
+        relative_z_value = float(relative_z[idx])
+        relative_corridor_ok = (
+            not has_relative_geometry
+            or (
+                np.isfinite(relative_x_value)
+                and np.isfinite(relative_z_value)
+                and SPATIAL_MASS_DUMP_START_RELATIVE_X_MIN_M
+                <= relative_x_value
+                <= SPATIAL_MASS_DUMP_START_RELATIVE_X_MAX_M
+                and SPATIAL_MASS_DUMP_START_RELATIVE_Z_MIN_M
+                <= relative_z_value
+                <= SPATIAL_MASS_DUMP_START_RELATIVE_Z_MAX_M
+            )
+        )
+        relative_x_window = relative_x[int(idx) : window_end]
+        relative_z_window = relative_z[int(idx) : window_end]
+        relative_x_range = (
+            _finite_range(relative_x_window)
+            if has_relative_geometry
+            else 0.0
+        )
+        relative_z_range = (
+            _finite_range(relative_z_window)
+            if has_relative_geometry
+            else 0.0
+        )
+        if (
+            outside_range <= SPATIAL_MASS_DUMP_START_OUTSIDE_RANGE_TOL_M
+            and total_approach <= SPATIAL_MASS_DUMP_START_TOTAL_APPROACH_TOL_M
+            and relative_corridor_ok
+            and relative_x_range <= SPATIAL_MASS_DUMP_START_RELATIVE_X_RANGE_TOL_M
+            and relative_z_range <= SPATIAL_MASS_DUMP_START_RELATIVE_Z_RANGE_TOL_M
+        ):
+            selected = int(idx)
+            qc["dump_start_source"] = "dump_area_committed_aiming_band"
+            qc["dump_start_selected_outside_range_m"] = float(outside_range)
+            qc["dump_start_selected_total_approach_m"] = float(total_approach)
+            qc["dump_start_selected_relative_x_range_m"] = float(relative_x_range)
+            qc["dump_start_selected_relative_z_range_m"] = float(relative_z_range)
+            break
+    else:
+        candidates: list[int] = []
+        for idx in range(int(lead_start), int(end_i) + 1):
+            outside_value = float(outside[idx])
+            over_value = float(over[idx])
+            height_value = float(height_above_rim[idx])
+            height_ok = (
+                not np.isfinite(height_value)
+                or height_value >= SPATIAL_MASS_DUMP_START_MIN_HEIGHT_ABOVE_RIM_M
+            )
+            relative_corridor_ok = (
+                not has_relative_geometry
+                or (
+                    np.isfinite(float(relative_x[idx]))
+                    and np.isfinite(float(relative_z[idx]))
+                    and SPATIAL_MASS_DUMP_START_RELATIVE_X_MIN_M
+                    <= float(relative_x[idx])
+                    <= SPATIAL_MASS_DUMP_START_RELATIVE_X_MAX_M
+                    and SPATIAL_MASS_DUMP_START_RELATIVE_Z_MIN_M
+                    <= float(relative_z[idx])
+                    <= SPATIAL_MASS_DUMP_START_RELATIVE_Z_MAX_M
+                )
+            )
+            if height_ok and relative_corridor_ok and (
+                np.isfinite(outside_value)
+                and outside_value <= SPATIAL_MASS_DUMP_START_MAX_OUTSIDE_DISTANCE_M
+                or over_value > 0.5
+            ):
+                candidates.append(int(idx))
+        if candidates:
+            fallback_floor = int(end_i) - int(
+                SPATIAL_MASS_DUMP_START_FALLBACK_PRE_RELEASE_STEPS
+            )
+            late_candidates = [idx for idx in candidates if idx >= fallback_floor]
+            selected = int(late_candidates[0] if late_candidates else candidates[-1])
+            qc["dump_start_source"] = "late_pre_release_aiming_fallback"
+            qc["dump_start_fallback_pre_release_steps"] = int(
+                SPATIAL_MASS_DUMP_START_FALLBACK_PRE_RELEASE_STEPS
+            )
+        else:
+            selected = int(end_i)
+            qc["dump_start_source"] = "release_onset_no_aiming_candidate"
+    qc["dump_start_selected_step"] = int(selected)
+    qc["dump_start_selected_outside_distance_m"] = float(
+        np.nan_to_num(outside[selected], nan=float("nan"), posinf=float("inf"))
+    )
+    qc["dump_start_release_outside_distance_m"] = float(
+        np.nan_to_num(release_outside, nan=float("nan"), posinf=float("inf"))
+    )
+    qc["dump_start_selected_relative_x_m"] = float(
+        np.nan_to_num(relative_x[selected], nan=float("nan"))
+    )
+    qc["dump_start_selected_relative_z_m"] = float(
+        np.nan_to_num(relative_z[selected], nan=float("nan"))
+    )
+    qc["dump_start_release_relative_x_m"] = float(
+        np.nan_to_num(relative_x[end_i], nan=float("nan"))
+    )
+    qc["dump_start_release_relative_z_m"] = float(
+        np.nan_to_num(relative_z[end_i], nan=float("nan"))
+    )
+    qc["dump_start_selected_height_above_rim_m"] = float(
+        np.nan_to_num(height_above_rim[selected], nan=float("nan"))
+    )
+    qc["dump_start_selected_over_target_footprint"] = int(over[selected] > 0.5)
+    qc["dump_start_selected_clearance_ok"] = int(clearance[selected] > 0.5)
+    return int(selected), qc
 
 
 def _find_spatial_mass_dump_end(
@@ -1334,15 +2247,104 @@ def _find_spatial_mass_dump_end(
     search_end: int,
     release_onset: int,
 ) -> tuple[int, dict[str, Any]]:
-    return _spatial_mass_find_dump_end(
-        episode=episode,
-        search_end=search_end,
-        release_onset=release_onset,
+    work_end = int(search_end)
+    release_i = max(0, int(release_onset))
+    qc: dict[str, Any] = {
+        "dump_legacy_work_end_step": int(work_end),
+        "dump_end_source": "legacy_work_end",
+        "dump_end_residual_bucket_mass_kg": float(
+            SPATIAL_MASS_DUMP_END_RESIDUAL_BUCKET_MASS_KG
+        ),
+        "dump_end_plateau_steps": int(SPATIAL_MASS_DUMP_END_PLATEAU_STEPS),
+    }
+    env_state = _env_state_or_none(episode)
+    if env_state is None or work_end <= release_i + 1:
+        qc["dump_end_source"] = "legacy_work_end_missing_env_state"
+        return int(work_end), qc
+
+    n_steps = int(env_state.shape[0])
+    end_i = min(max(0, work_end - 1), n_steps - 1)
+    release_i = min(release_i, end_i)
+    mass = _optional_env_col(env_state, ENV_STATE_MASS_IN_BUCKET_IDX, default=0.0)
+    deposit = _spatial_mass_deposit_trace(env_state)
+    release_mass = max(0.0, float(mass[release_i]))
+    residual_limit = max(
+        5.0,
+        min(
+            float(SPATIAL_MASS_DUMP_END_RESIDUAL_BUCKET_MASS_KG),
+            release_mass * 0.35,
+        ),
     )
+    hold = max(1, int(SPATIAL_MASS_DUMP_END_PLATEAU_STEPS))
+    search_limit_exclusive = min(
+        end_i + 1,
+        release_i + int(SPATIAL_MASS_DUMP_END_MAX_POST_RELEASE_STEPS),
+    )
+    latest_plateau_start = max(release_i + 1, search_limit_exclusive - hold)
+    low_mass_candidates: list[int] = []
+    for idx in range(release_i + 1, latest_plateau_start + 1):
+        if float(mass[idx]) > residual_limit:
+            continue
+        low_mass_candidates.append(int(idx))
+        plateau_end = int(idx) + hold
+        mass_window = mass[idx:plateau_end]
+        deposit_window = deposit[idx:plateau_end]
+        mass_range = float(np.nanmax(mass_window) - np.nanmin(mass_window))
+        deposit_gain = float(max(0.0, deposit_window[-1] - deposit_window[0]))
+        if (
+            mass_range <= SPATIAL_MASS_DUMP_END_MASS_RANGE_TOL_KG
+            and deposit_gain <= SPATIAL_MASS_DUMP_END_DEPOSIT_GAIN_TOL_KG
+        ):
+            qc.update(
+                {
+                    "dump_end_source": "residual_mass_deposit_plateau",
+                    "dump_end_selected_step": int(plateau_end),
+                    "dump_end_low_mass_step": int(idx),
+                    "dump_end_residual_limit_kg": float(residual_limit),
+                    "dump_end_plateau_mass_range_kg": mass_range,
+                    "dump_end_plateau_deposit_gain_kg": deposit_gain,
+                }
+            )
+            return int(plateau_end), qc
+
+    if low_mass_candidates:
+        selected = min(end_i + 1, int(low_mass_candidates[0]) + hold)
+        qc.update(
+            {
+                "dump_end_source": "residual_mass_post_hold_fallback",
+                "dump_end_selected_step": int(selected),
+                "dump_end_low_mass_step": int(low_mass_candidates[0]),
+                "dump_end_residual_limit_kg": float(residual_limit),
+            }
+        )
+        return int(selected), qc
+
+    capped = min(end_i + 1, release_i + int(SPATIAL_MASS_DUMP_END_MAX_POST_RELEASE_STEPS))
+    if capped < work_end:
+        qc.update(
+            {
+                "dump_end_source": "post_release_cap_fallback",
+                "dump_end_selected_step": int(capped),
+                "dump_end_post_release_cap_steps": int(
+                    SPATIAL_MASS_DUMP_END_MAX_POST_RELEASE_STEPS
+                ),
+            }
+        )
+        return int(capped), qc
+    qc["dump_end_selected_step"] = int(work_end)
+    return int(work_end), qc
 
 
 def _spatial_mass_deposit_trace(env_state: np.ndarray) -> np.ndarray:
-    return _spatial_mass_resolve_deposit_trace(env_state)
+    deposit = np.zeros(len(env_state), dtype=np.float32)
+    for col in (
+        ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+        ENV_STATE_DEPOSITED_MASS_IN_DUMP_AREA_IDX,
+        ENV_STATE_OFFTARGET_DEPOSITED_MASS_IDX,
+    ):
+        if col < env_state.shape[1]:
+            deposit = deposit + np.nan_to_num(env_state[:, col], nan=0.0)
+    return deposit
 
 
 def _spatial_mass_carry_qc(
@@ -1352,16 +2354,54 @@ def _spatial_mass_carry_qc(
     end: int,
     release_onset: int,
 ) -> dict[str, Any]:
-    return _spatial_mass_resolve_carry_qc(
-        episode=episode,
-        start=start,
-        end=end,
-        release_onset=release_onset,
+    qc = {
+        "carry_start_step": int(start),
+        "carry_end_step": int(end),
+        "carry_window_len": int(end) - int(start),
+        "carry_release_onset_step": int(release_onset),
+        "carry_steps_before_release": int(release_onset) - int(end),
+    }
+    env_state = _env_state_or_none(episode)
+    if env_state is None or int(end) <= int(start):
+        qc["carry_qc_missing_env_state"] = True
+        return qc
+    start_i = max(0, min(int(start), len(env_state) - 1))
+    end_i = max(start_i, min(int(end) - 1, len(env_state) - 1))
+    mass = _optional_env_col(env_state, ENV_STATE_MASS_IN_BUCKET_IDX, default=0.0)
+    deposit = np.zeros(len(env_state), dtype=np.float32)
+    for col in (
+        ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+        ENV_STATE_DEPOSITED_MASS_IN_DUMP_AREA_IDX,
+        ENV_STATE_OFFTARGET_DEPOSITED_MASS_IDX,
+    ):
+        if col < env_state.shape[1]:
+            deposit = deposit + np.nan_to_num(env_state[:, col], nan=0.0)
+    mass_loss = float(max(0.0, mass[start_i] - mass[end_i]))
+    deposit_delta = float(max(0.0, deposit[end_i] - deposit[start_i]))
+    ratio = float(0.0 if mass_loss <= 1.0e-6 else deposit_delta / mass_loss)
+    qc.update(
+        {
+            "carry_start_bucket_mass_kg": float(mass[start_i]),
+            "carry_end_bucket_mass_kg": float(mass[end_i]),
+            "carry_bucket_mass_loss_kg": mass_loss,
+            "carry_deposit_delta_kg": deposit_delta,
+            "carry_deposit_to_payload_loss_frac": ratio,
+            "carry_max_deposit_delta_kg": float(SPATIAL_MASS_CARRY_MAX_DEPOSIT_DELTA_KG),
+            "carry_max_deposit_to_payload_loss_frac": float(
+                SPATIAL_MASS_CARRY_MAX_DEPOSIT_TO_PAYLOAD_LOSS_FRAC
+            ),
+        }
     )
+    return qc
 
 
 def _spatial_mass_carry_contaminated(qc: dict[str, Any]) -> bool:
-    return _spatial_mass_resolve_carry_contaminated(qc)
+    deposit_delta = float(qc.get("carry_deposit_delta_kg", 0.0))
+    ratio = float(qc.get("carry_deposit_to_payload_loss_frac", 0.0))
+    return bool(
+        deposit_delta > SPATIAL_MASS_CARRY_MAX_DEPOSIT_DELTA_KG
+        and ratio > SPATIAL_MASS_CARRY_MAX_DEPOSIT_TO_PAYLOAD_LOSS_FRAC
+    )
 
 
 def _spatial_mass_dump_qc(
@@ -1372,13 +2412,102 @@ def _spatial_mass_dump_qc(
     release_onset: int,
     release_qc: dict[str, Any],
 ) -> dict[str, Any]:
-    return _spatial_mass_resolve_dump_qc(
-        episode=episode,
-        start=start,
-        end=end,
-        release_onset=release_onset,
-        release_qc=release_qc,
+    qc = dict(release_qc)
+    qc.update(
+        {
+            "dump_start_step": int(start),
+            "dump_end_step": int(end),
+            "dump_window_len": int(end) - int(start),
+            "dump_release_onset_step": int(release_onset),
+            "dump_pre_release_lead_steps": int(release_onset) - int(start),
+            "dump_pre_release_lead_cap_steps": int(
+                SPATIAL_MASS_DUMP_PRE_RELEASE_LEAD_MAX_STEPS
+            ),
+        }
     )
+    env_state = _env_state_or_none(episode)
+    if env_state is None or int(end) <= int(start):
+        qc["dump_qc_missing_env_state"] = True
+        return qc
+    start_i = max(0, min(int(start), len(env_state) - 1))
+    end_i = max(start_i, min(int(end) - 1, len(env_state) - 1))
+    release_i = max(start_i, min(int(release_onset), end_i))
+    mass = _optional_env_col(env_state, ENV_STATE_MASS_IN_BUCKET_IDX, default=0.0)
+    deposit = np.zeros(len(env_state), dtype=np.float32)
+    for col in (
+        ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+        ENV_STATE_DEPOSITED_MASS_IN_DUMP_AREA_IDX,
+        ENV_STATE_OFFTARGET_DEPOSITED_MASS_IDX,
+    ):
+        if col < env_state.shape[1]:
+            deposit = deposit + np.nan_to_num(env_state[:, col], nan=0.0)
+    window_mass_loss = float(max(0.0, mass[start_i] - mass[end_i]))
+    release_mass_loss = float(max(0.0, mass[release_i] - mass[end_i]))
+    deposit_delta = float(max(0.0, deposit[end_i] - deposit[start_i]))
+    outside = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+        default=float("nan"),
+    )
+    relative_x = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
+        default=float("nan"),
+    )
+    relative_z = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
+        default=float("nan"),
+    )
+    height_above_rim = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
+        default=float("nan"),
+    )
+    over = _optional_env_col(
+        env_state,
+        ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+        default=0.0,
+    )
+    clearance = _optional_env_col(
+        env_state,
+        ENV_STATE_DUMP_CLEARANCE_OK_IDX,
+        default=0.0,
+    )
+    qc.update(
+        {
+            "dump_window_mass_loss_kg": window_mass_loss,
+            "dump_release_mass_loss_kg": release_mass_loss,
+            "dump_deposit_delta_kg": deposit_delta,
+            "dump_release_deposit_fraction": float(
+                0.0 if release_mass_loss <= 1.0e-6 else deposit_delta / release_mass_loss
+            ),
+            "dump_start_dump_area_footprint_outside_distance_m": float(
+                np.nan_to_num(outside[start_i], nan=float("nan"))
+            ),
+            "dump_release_dump_area_footprint_outside_distance_m": float(
+                np.nan_to_num(outside[release_i], nan=float("nan"))
+            ),
+            "dump_start_dump_area_relative_x_m": float(
+                np.nan_to_num(relative_x[start_i], nan=float("nan"))
+            ),
+            "dump_start_dump_area_relative_z_m": float(
+                np.nan_to_num(relative_z[start_i], nan=float("nan"))
+            ),
+            "dump_release_dump_area_relative_x_m": float(
+                np.nan_to_num(relative_x[release_i], nan=float("nan"))
+            ),
+            "dump_release_dump_area_relative_z_m": float(
+                np.nan_to_num(relative_z[release_i], nan=float("nan"))
+            ),
+            "dump_start_height_above_rim_m": float(
+                np.nan_to_num(height_above_rim[start_i], nan=float("nan"))
+            ),
+            "dump_start_over_target_footprint": int(over[start_i] > 0.5),
+            "dump_start_clearance_ok": int(clearance[start_i] > 0.5),
+        }
+    )
+    return qc
 
 
 def _build_return_start_envelope_token(
@@ -1386,14 +2515,151 @@ def _build_return_start_envelope_token(
     episode: dict[str, Any],
     next_start_step: int,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-    return _spatial_mass_build_return_start_envelope_token(
-        episode=episode,
-        next_start_step=next_start_step,
+    token = np.zeros(RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.float32)
+    valid_mask = np.zeros(RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.uint8)
+    qpos = np.asarray(episode.get("qpos", []), dtype=np.float32)
+    qvel = np.asarray(episode.get("qvel", []), dtype=np.float32)
+    env_state = _env_state_or_none(episode)
+    next_start = int(next_start_step)
+    qpos_valid = (
+        qpos.ndim == 2
+        and qpos.shape[0] > next_start
+        and qpos.shape[1] >= 4
+        and np.all(np.isfinite(qpos[next_start, :4]))
     )
+    window_end = min(
+        qpos.shape[0] if qpos.ndim == 2 else next_start,
+        next_start + int(RETURN_START_ENVELOPE_WINDOW_STEPS),
+    )
+    qvel_valid = False
+    if qpos_valid:
+        qpos_window = qpos[next_start:window_end, :4]
+        qpos_center = qpos[next_start, :4]
+        if qpos_window.shape[0] > 1:
+            half_width = 0.5 * (
+                np.percentile(qpos_window, 90, axis=0)
+                - np.percentile(qpos_window, 10, axis=0)
+            )
+        else:
+            half_width = np.zeros(4, dtype=np.float32)
+        half_width = np.clip(np.maximum(half_width, 0.02), 0.02, 0.35)
+        token[7:11] = qpos_center.astype(np.float32)
+        token[11:15] = half_width.astype(np.float32)
+        valid_mask[7:15] = 1
+        if qvel.ndim == 2 and qvel.shape[0] > next_start:
+            qvel_window = qvel[
+                next_start : min(
+                    qvel.shape[0],
+                    next_start + int(RETURN_START_ENVELOPE_WINDOW_STEPS),
+                ),
+                :4,
+            ]
+            qvel_valid = bool(qvel_window.size and np.all(np.isfinite(qvel_window)))
+            token[15] = float(np.max(np.abs(qvel_window))) if qvel_valid else 0.0
+            if qvel_valid:
+                valid_mask[15] = 1
+    selected_env_step: int | None = None
+    selected_env_source = "missing_env_state"
+    geometry_available = False
+    if env_state is not None and env_state.shape[0] > next_start:
+        geometry = _optional_env_col(
+            env_state,
+            ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
+            default=0.0,
+        )
+        long_norm = _optional_env_col(
+            env_state,
+            ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
+            default=0.0,
+        )
+        short_norm = _optional_env_col(
+            env_state,
+            ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
+            default=0.0,
+        )
+        depth = _optional_env_col(
+            env_state,
+            ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+            default=0.0,
+        )
+        contact = _optional_env_col(
+            env_state,
+            ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
+            default=0.0,
+        )
+        env_window_end = min(
+            env_state.shape[0],
+            next_start + int(RETURN_START_ENVELOPE_WINDOW_STEPS),
+        )
+        candidate_indices = np.arange(next_start, env_window_end, dtype=np.int32)
+        finite_spatial = (
+            np.isfinite(long_norm[candidate_indices])
+            & np.isfinite(short_norm[candidate_indices])
+            & np.isfinite(depth[candidate_indices])
+        )
+        geometry_candidates = candidate_indices[
+            finite_spatial & (geometry[candidate_indices] > 0.5)
+        ]
+        finite_candidates = candidate_indices[finite_spatial]
+        if len(geometry_candidates) > 0:
+            selected_env_step = int(geometry_candidates[0])
+            selected_env_source = "first_geometry_available_in_window"
+            geometry_available = True
+        elif len(finite_candidates) > 0:
+            selected_env_step = int(finite_candidates[0])
+            selected_env_source = "first_finite_spatial_in_window"
+            geometry_available = bool(geometry[selected_env_step] > 0.5)
+
+    if selected_env_step is not None:
+        token[0] = float(long_norm[selected_env_step])
+        token[1] = float(short_norm[selected_env_step])
+        token[2] = float(max(0.0, depth[selected_env_step]))
+        token[3] = 0.20
+        token[4] = float(max(0.0, token[2] - 0.08))
+        token[5] = float(token[2] + 0.08)
+        token[6] = float(contact[selected_env_step] > 0.5)
+        valid_mask[0:7] = 1
+        valid_mask[17] = 1
+        token[17] = 1.0
+    elif qpos_valid:
+        token[3] = 0.20
+        token[5] = 0.08
+        valid_mask[3] = 1
+        valid_mask[5] = 1
+        valid_mask[17] = 1
+        token[17] = 1.0
+    token[16] = float(qpos_valid)
+    if qpos_valid:
+        valid_mask[16] = 1
+    qc = {
+        "return_start_envelope_valid": bool(token[16] > 0.5),
+        "return_start_envelope_selected_step": (
+            -1 if selected_env_step is None else int(selected_env_step)
+        ),
+        "return_start_envelope_selected_offset": (
+            -1 if selected_env_step is None else int(selected_env_step) - int(next_start)
+        ),
+        "return_start_envelope_selected_source": selected_env_source,
+        "return_start_envelope_geometry_available": bool(geometry_available),
+        "return_start_envelope_window_steps": int(RETURN_START_ENVELOPE_WINDOW_STEPS),
+        "return_start_envelope_valid_dim_count": int(np.sum(valid_mask > 0)),
+        "return_start_envelope_long_norm": float(token[0]),
+        "return_start_envelope_short_norm": float(token[1]),
+        "return_start_envelope_depth_center_m": float(token[2]),
+        "return_start_envelope_qpos_half_width_max": float(np.max(token[11:15])),
+        "return_start_envelope_qvel_abs_max": float(token[15]),
+    }
+    return token, valid_mask, qc
 
 
 def _env_state_or_none(episode: dict[str, Any]) -> np.ndarray | None:
-    return _spatial_mass_env_state_or_none(episode)
+    value = episode.get("env_state")
+    if value is None:
+        return None
+    arr = np.asarray(value, dtype=np.float32)
+    if arr.ndim != 2:
+        return None
+    return arr
 
 
 def _optional_env_col(
@@ -1402,11 +2668,17 @@ def _optional_env_col(
     *,
     default: float,
 ) -> np.ndarray:
-    return _spatial_mass_optional_env_col(env_state, index, default=default)
+    if int(index) < env_state.shape[1]:
+        return np.asarray(env_state[:, int(index)], dtype=np.float32)
+    return np.full(env_state.shape[0], float(default), dtype=np.float32)
 
 
 def _finite_range(values: np.ndarray) -> float:
-    return _spatial_mass_finite_range(values)
+    arr = np.asarray(values, dtype=np.float32)
+    finite = arr[np.isfinite(arr)]
+    if len(finite) <= 0:
+        return float("inf")
+    return float(np.max(finite) - np.min(finite))
 
 
 def extract_workskill_primitive_slices_5p(

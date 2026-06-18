@@ -1,0 +1,105 @@
+"""Execution ordering for one primitive planner tick."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any, Protocol
+
+
+class PrimitiveTickHooks(Protocol):
+    """Narrow callbacks needed to execute one public planner tick."""
+
+    def update_boundary_event(self, obs: dict[str, Any]) -> Any | None: ...
+
+    def reset_switch_reason(self) -> None: ...
+
+    def current_skill_name(self) -> str: ...
+
+    def update_dig_progress(self, obs: dict[str, Any]) -> None: ...
+
+    def maybe_switch_skill(self, *, obs: dict[str, Any], boundary_event: Any | None) -> None: ...
+
+    def account_return_timeout(self) -> bool: ...
+
+    def dispatch_action(self, obs: dict[str, Any]) -> Any: ...
+
+    def record_previous_action(self, action: Any) -> None: ...
+
+    def transition_completed_after_dispatch(self) -> bool: ...
+
+    def finalize_debug_state(
+        self,
+        *,
+        transition_timeout: bool,
+        transition_completed: bool,
+    ) -> None: ...
+
+
+@dataclass(frozen=True)
+class PrimitiveTickPreparation:
+    boundary_event: Any | None
+    skill_name_before_decision: str
+    dig_progress_updated: bool
+
+
+@dataclass(frozen=True)
+class PrimitiveTickResult:
+    action: Any
+    preparation: PrimitiveTickPreparation
+    boundary_event: Any | None
+    transition_timeout: bool
+    transition_completed: bool
+
+
+@dataclass(frozen=True)
+class PrimitiveTickCallbacks:
+    update_boundary_event: Callable[[dict[str, Any]], Any | None]
+    reset_switch_reason: Callable[[], None]
+    current_skill_name: Callable[[], str]
+    update_dig_progress: Callable[[dict[str, Any]], None]
+    maybe_switch_skill: Callable[..., None]
+    account_return_timeout: Callable[[], bool]
+    dispatch_action: Callable[[dict[str, Any]], Any]
+    record_previous_action: Callable[[Any], None]
+    transition_completed_after_dispatch: Callable[[], bool]
+    finalize_debug_state: Callable[..., None]
+
+
+def run_primitive_tick(
+    *,
+    hooks: PrimitiveTickHooks,
+    obs: dict[str, Any],
+    dig_skill_name: str = "dig",
+) -> PrimitiveTickResult:
+    """Run one planner tick while keeping behavior inside the supplied hooks."""
+
+    boundary_event = hooks.update_boundary_event(obs)
+    hooks.reset_switch_reason()
+    skill_name_before_decision = hooks.current_skill_name()
+    dig_progress_updated = skill_name_before_decision == dig_skill_name
+    if dig_progress_updated:
+        hooks.update_dig_progress(obs)
+    preparation = PrimitiveTickPreparation(
+        boundary_event=boundary_event,
+        skill_name_before_decision=skill_name_before_decision,
+        dig_progress_updated=dig_progress_updated,
+    )
+    hooks.maybe_switch_skill(obs=obs, boundary_event=boundary_event)
+
+    transition_timeout = hooks.account_return_timeout()
+    action = hooks.dispatch_action(obs)
+    hooks.record_previous_action(action)
+
+    transition_completed = hooks.transition_completed_after_dispatch()
+    hooks.finalize_debug_state(
+        transition_timeout=transition_timeout,
+        transition_completed=transition_completed,
+    )
+    return PrimitiveTickResult(
+        action=action,
+        preparation=preparation,
+        boundary_event=boundary_event,
+        transition_timeout=transition_timeout,
+        transition_completed=transition_completed,
+    )

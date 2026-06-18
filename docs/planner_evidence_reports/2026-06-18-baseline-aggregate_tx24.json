@@ -1,0 +1,436 @@
+{
+  "classification_counts": {
+    "compatibility": 2,
+    "confirmed-live": 14,
+    "dead-candidate": 2,
+    "report-only": 3,
+    "support-live": 1
+  },
+  "dead_candidate_min_packets": 1,
+  "event_count": 75902,
+  "evidence_packet_count": 3,
+  "rows": [
+    {
+      "capability_id": "execution.predict_tick",
+      "category": "execution",
+      "classification": "confirmed-live",
+      "consumed_by_decision_count": 5584,
+      "first_tick_id": 0,
+      "last_tick_id": 5583,
+      "observed_count": 5584,
+      "owner": "PrimitivePlannerACTPolicy.predict",
+      "producers": [
+        "PrimitivePlannerACTPolicy.predict"
+      ],
+      "reasons": [],
+      "reported_count": 5584,
+      "retention_decision": "retain-and-migrate",
+      "supported_live_count": 0
+    },
+    {
+      "capability_id": "fsm.skill_switch",
+      "category": "decision",
+      "classification": "confirmed-live",
+      "consumed_by_decision_count": 5584,
+      "first_tick_id": 0,
+      "last_tick_id": 5583,
+      "observed_count": 5584,
+      "owner": "PrimitivePlannerACTPolicy._maybe_switch_skill/_set_skill",
+      "producers": [
+        "PrimitivePlannerACTPolicy._maybe_switch_skill/_set_skill"
+      ],
+      "reasons": [
+        "bootstrap_to_dig",
+        "carry_to_dump_dump_committed_boundary",
+        "dig_to_carry_dig_complete_boundary",
+        "dig_to_carry_semantic_material_loaded",
+        "dump_to_return_dump_complete_boundary",
+        "return_to_dig_next_dig_entry_ready",
+        "return_to_dig_start_envelope_ready"
+      ],
+      "reported_count": 5584,
+      "retention_decision": "retain-and-migrate",
+      "supported_live_count": 0
+    },
+    {
+      "capability_id": "action.dispatch",
+      "category": "execution",
+      "classification": "confirmed-live",
+      "consumed_by_decision_count": 5584,
+      "first_tick_id": 0,
+      "last_tick_id": 5583,
+      "observed_count": 5584,
+      "owner": "PrimitivePlannerACTPolicy.predict/_active_policy",
+      "producers": [
+        "PrimitivePlannerACTPolicy.predict/_active_policy"
+      ],
+      "reasons": [],
+      "reported_count": 5584,
+      "retention_decision": "retain-and-migrate",
+      "supported_live_count": 0
+    },
+    {
+      "capability_id": "token.goal",
+      "category": "token",
+      "classification": "confirmed-live",
+      "consumed_by_decision_count": 5584,
+      "first_tick_id": 0,
+      "last_tick_id": 5583,
+      "observed_count": 5584,
+      "owner": "PrimitivePlannerACTPolicy._goal_tokens/_policy_obs",
+      "producers": [
+        "PrimitivePlannerACTPolicy._goal_tokens/_policy_obs"
+      ],
+      "reasons": [
+        "goal_tokens"
+      ],
+      "reported_count": 5584,
+      "retention_decision": "retain-and-migrate",
+      "supported_live_count": 5584
+    },
+    {
+      "capability_id": "token.cell_entry",
+      "category": "token",
+      "classification": "dead-candidate",
+      "consumed_by_decision_count": 0,
+      "first_tick_id": null,
+      "last_tick_id": null,
+      "observed_count": 0,
+      "owner": "PrimitivePlannerACTPolicy._cell_entry_tokens_for_obs",
+      "producers": [],
+      "reasons": [],
+      "reported_count": 0,
+      "retention_decision": "retain-legacy-parking",
+      "supported_live_count": 0
+    },
+    {
+      "capability_id": "token.dig_cut",
+      "category": "token",
+      "classification": "confirmed-live",
+      "consumed_by_decision_count": 520,
+      "first_tick_id": 267,
+      "last_tick_id": 5261,
+      "observed_count": 520,
+      "owner": "PrimitivePlannerACTPolicy._ensure_dig_cut_plan_for_cycle",
+      "producers": [
+        "PrimitivePlannerACTPolicy._ensure_dig_cut_plan_for_cycle"
+      ],
+      "reasons": [
+        "operator_prior_coverage",
+        "pending_return_target"
+      ],
+      "reported_count": 520,
+      "retention_decision": "retain-and-migrate",
+      "supported_live_count": 520
+    },
+    {
+      "capability_id": "token.dig_depth_profile",
+      "category": "token",
+      "classification": "confirmed-live",
+      "consumed_by_decision_count": 5317,
+      "first_tick_id": 267,
+      "last_tick_id": 5583,
+      "observed_count": 5317,
+      "owner": "PrimitivePlannerACTPolicy._dig_depth_profile_tokens_for_obs",
+      "producers": [
+        "PrimitivePlannerACTPolicy._dig_depth_profile_tokens_for_obs"
+      ],
+      "reasons": [
+        "live_plan"
+      ],
+      "reported_count": 5317,
+      "retention_decision": "retain-and-migrate",
+      "supported_live_count": 5317
+    },
+    {
+      "capability_id": "token.return_target",
+      "category": "token",
+      "classification": "confirmed-live",
+      "consumed_by_decision_count": 4833,
+      "first_tick_id": 751,
+      "last_tick_id": 5583,
+      "observed_count": 4833,
+      "owner": "PrimitivePlannerACTPolicy._ensure_return_target_plan_for_cycle",
+      "producers": [
+        "PrimitivePlannerACTPolicy._ensure_return_target_plan_for_cycle"
+      ],
+      "reasons": [
+        "conditioned_return_operator_prior_sweep_belief"
+      ],
+      "reported_count": 4833,
+      "retention_decision": "retain-and-migrate",
+      "supported_live_count": 4833
+    },
+    {
+      "capability_id": "token.return_relocate",
+      "category": "token",
+      "classification": "confirmed-live",
+      "consumed_by_decision_count": 4833,
+      "first_tick_id": 751,
+      "last_tick_id": 5583,
+      "observed_count": 4833,
+      "owner": "PrimitivePlannerACTPolicy._return_relocate_tokens_for_obs",
+      "producers": [
+        "PrimitivePlannerACTPolicy._return_relocate_tokens_for_obs"
+      ],
+      "reasons": [
+        "conditioned_return_operator_prior_sweep_belief"
+      ],
+      "reported_count": 4833,
+      "retention_decision": "retain-and-migrate",
+      "supported_live_count": 4833
+    },
+    {
+      "capability_id": "token.return_start_envelope",
+      "category": "token",
+      "classification": "confirmed-live",
+      "consumed_by_decision_count": 4833,
+      "first_tick_id": 751,
+      "last_tick_id": 5583,
+      "observed_count": 4833,
+      "owner": "PrimitivePlannerACTPolicy._return_start_envelope_tokens_for_obs",
+      "producers": [
+        "PrimitivePlannerACTPolicy._return_start_envelope_tokens_for_obs"
+      ],
+      "reasons": [
+        "qc6_return_start_envelope_cell_0+relocate_spatial_linear+relocate_qpos_linear",
+        "qc6_return_start_envelope_cell_1+relocate_spatial_linear+relocate_qpos_linear",
+        "qc6_return_start_envelope_cell_2+relocate_spatial_linear+relocate_qpos_linear",
+        "qc6_return_start_envelope_cell_4+relocate_spatial_linear+relocate_qpos_linear",
+        "qc6_return_start_envelope_cell_5+relocate_spatial_linear+relocate_qpos_linear"
+      ],
+      "reported_count": 4833,
+      "retention_decision": "retain-and-migrate",
+      "supported_live_count": 4833
+    },
+    {
+      "capability_id": "gate.pre_dig_align",
+      "category": "gate",
+      "classification": "dead-candidate",
+      "consumed_by_decision_count": 0,
+      "first_tick_id": null,
+      "last_tick_id": null,
+      "observed_count": 0,
+      "owner": "PrimitivePlannerACTPolicy._maybe_switch_skill/pre_dig_align",
+      "producers": [],
+      "reasons": [],
+      "reported_count": 0,
+      "retention_decision": "retain-legacy-parking",
+      "supported_live_count": 0
+    },
+    {
+      "capability_id": "metric.dig_progress",
+      "category": "metric",
+      "classification": "support-live",
+      "consumed_by_decision_count": 0,
+      "first_tick_id": 267,
+      "last_tick_id": 5583,
+      "observed_count": 5317,
+      "owner": "PrimitivePlannerACTPolicy._update_dig_progress",
+      "producers": [
+        "PrimitivePlannerACTPolicy._update_dig_progress"
+      ],
+      "reasons": [],
+      "reported_count": 5317,
+      "retention_decision": "retain-and-migrate",
+      "supported_live_count": 5317
+    },
+    {
+      "capability_id": "gate.dig_to_carry",
+      "category": "gate",
+      "classification": "confirmed-live",
+      "consumed_by_decision_count": 5317,
+      "first_tick_id": 267,
+      "last_tick_id": 5583,
+      "observed_count": 5317,
+      "owner": "PrimitivePlannerACTPolicy._maybe_switch_skill/dig",
+      "producers": [
+        "PrimitivePlannerACTPolicy._maybe_switch_skill/dig"
+      ],
+      "reasons": [
+        "bootstrap_to_dig",
+        "carry_to_dump_dump_committed_boundary",
+        "dig_complete_boundary",
+        "dig_to_carry_dig_complete_boundary",
+        "dig_to_carry_semantic_material_loaded",
+        "dump_to_return_dump_complete_boundary",
+        "return_to_dig_next_dig_entry_ready",
+        "return_to_dig_start_envelope_ready",
+        "semantic_material_loaded"
+      ],
+      "reported_count": 5317,
+      "retention_decision": "retain-and-migrate",
+      "supported_live_count": 0
+    },
+    {
+      "capability_id": "gate.carry_to_dump",
+      "category": "gate",
+      "classification": "confirmed-live",
+      "consumed_by_decision_count": 1745,
+      "first_tick_id": 417,
+      "last_tick_id": 5583,
+      "observed_count": 4797,
+      "owner": "PrimitivePlannerACTPolicy._maybe_switch_skill/carry",
+      "producers": [
+        "PrimitivePlannerACTPolicy._maybe_switch_skill/carry"
+      ],
+      "reasons": [
+        "carry_to_dump_dump_committed_boundary",
+        "dig_to_carry_dig_complete_boundary",
+        "dig_to_carry_semantic_material_loaded",
+        "dump_to_return_dump_complete_boundary"
+      ],
+      "reported_count": 4797,
+      "retention_decision": "retain-and-migrate",
+      "supported_live_count": 0
+    },
+    {
+      "capability_id": "gate.dump_to_return",
+      "category": "gate",
+      "classification": "confirmed-live",
+      "consumed_by_decision_count": 1310,
+      "first_tick_id": 571,
+      "last_tick_id": 5583,
+      "observed_count": 1310,
+      "owner": "PrimitivePlannerACTPolicy._maybe_switch_skill/dump",
+      "producers": [
+        "PrimitivePlannerACTPolicy._maybe_switch_skill/dump"
+      ],
+      "reasons": [
+        "carry_to_dump_dump_committed_boundary",
+        "dump_to_return_dump_complete_boundary"
+      ],
+      "reported_count": 1310,
+      "retention_decision": "retain-and-migrate",
+      "supported_live_count": 0
+    },
+    {
+      "capability_id": "gate.return_to_dig",
+      "category": "gate",
+      "classification": "confirmed-live",
+      "consumed_by_decision_count": 1768,
+      "first_tick_id": 0,
+      "last_tick_id": 5583,
+      "observed_count": 5584,
+      "owner": "PrimitivePlannerACTPolicy._maybe_switch_skill/return",
+      "producers": [
+        "PrimitivePlannerACTPolicy._maybe_switch_skill/return"
+      ],
+      "reasons": [
+        "bootstrap_to_dig",
+        "carry_to_dump_dump_committed_boundary",
+        "dig_to_carry_dig_complete_boundary",
+        "dig_to_carry_semantic_material_loaded",
+        "dump_to_return_dump_complete_boundary",
+        "return_to_dig_next_dig_entry_ready",
+        "return_to_dig_start_envelope_ready"
+      ],
+      "reported_count": 5584,
+      "retention_decision": "retain-and-migrate",
+      "supported_live_count": 0
+    },
+    {
+      "capability_id": "coverage.corridor",
+      "category": "coverage",
+      "classification": "confirmed-live",
+      "consumed_by_decision_count": 5319,
+      "first_tick_id": -1,
+      "last_tick_id": 5583,
+      "observed_count": 5319,
+      "owner": "PrimitivePlannerACTPolicy coverage corridor helpers",
+      "producers": [
+        "PrimitivePlannerACTPolicy coverage corridor helpers",
+        "PrimitivePlannerACTPolicy.planner_trace/coverage",
+        "PrimitivePlannerACTPolicy.rollout_summary/coverage"
+      ],
+      "reasons": [
+        "dig_area_depleted"
+      ],
+      "reported_count": 5319,
+      "retention_decision": "retain-and-migrate",
+      "supported_live_count": 5317
+    },
+    {
+      "capability_id": "debug.debug_state",
+      "category": "report",
+      "classification": "report-only",
+      "consumed_by_decision_count": 0,
+      "first_tick_id": 0,
+      "last_tick_id": 5583,
+      "observed_count": 5584,
+      "owner": "PrimitivePlannerACTPolicy.debug_state/_make_debug_state",
+      "producers": [
+        "PrimitivePlannerACTPolicy.debug_state/_make_debug_state"
+      ],
+      "reasons": [],
+      "reported_count": 5584,
+      "retention_decision": "retain-report-boundary",
+      "supported_live_count": 0
+    },
+    {
+      "capability_id": "report.rollout_summary",
+      "category": "report",
+      "classification": "report-only",
+      "consumed_by_decision_count": 0,
+      "first_tick_id": -1,
+      "last_tick_id": -1,
+      "observed_count": 1,
+      "owner": "PrimitivePlannerACTPolicy.rollout_summary",
+      "producers": [
+        "PrimitivePlannerACTPolicy.rollout_summary"
+      ],
+      "reasons": [],
+      "reported_count": 1,
+      "retention_decision": "retain-report-boundary",
+      "supported_live_count": 0
+    },
+    {
+      "capability_id": "trace.planner_trace",
+      "category": "report",
+      "classification": "report-only",
+      "consumed_by_decision_count": 0,
+      "first_tick_id": -1,
+      "last_tick_id": -1,
+      "observed_count": 1,
+      "owner": "PrimitivePlannerACTPolicy.planner_trace",
+      "producers": [
+        "PrimitivePlannerACTPolicy.planner_trace"
+      ],
+      "reasons": [],
+      "reported_count": 1,
+      "retention_decision": "retain-report-boundary",
+      "supported_live_count": 0
+    },
+    {
+      "capability_id": "policy.public_adapter",
+      "category": "compatibility",
+      "classification": "compatibility",
+      "consumed_by_decision_count": 0,
+      "first_tick_id": null,
+      "last_tick_id": null,
+      "observed_count": 0,
+      "owner": "PrimitivePlannerACTPolicy",
+      "producers": [],
+      "reasons": [],
+      "reported_count": 0,
+      "retention_decision": "retain-compatibility",
+      "supported_live_count": 0
+    },
+    {
+      "capability_id": "compat.5p_policy",
+      "category": "compatibility",
+      "classification": "compatibility",
+      "consumed_by_decision_count": 0,
+      "first_tick_id": null,
+      "last_tick_id": null,
+      "observed_count": 0,
+      "owner": "PrimitivePlannerACT5PPolicy",
+      "producers": [],
+      "reasons": [],
+      "reported_count": 0,
+      "retention_decision": "retain-compatibility",
+      "supported_live_count": 0
+    }
+  ],
+  "schema_version": 1
+}

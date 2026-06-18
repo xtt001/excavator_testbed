@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+from testbed.planner.primitive_execution import (
+    PrimitiveTickHooks,
+    run_primitive_tick,
+)
+
+
+@dataclass
+class FakeTickHooks(PrimitiveTickHooks):
+    active_skill_name: str
+    action: list[float] = field(default_factory=lambda: [0.1, 0.2, 0.3, 0.4])
+    return_timeout: bool = False
+    transition_completed: bool = False
+    previous_action_present: bool = True
+    events: list[str] = field(default_factory=list)
+
+    def update_boundary_event(self, obs: dict[str, Any]) -> str | None:
+        self.events.append("boundary_update")
+        return "boundary-event" if self.previous_action_present else None
+
+    def reset_switch_reason(self) -> None:
+        self.events.append("switch_reason_reset")
+
+    def current_skill_name(self) -> str:
+        self.events.append("current_skill_before_progress")
+        return self.active_skill_name
+
+    def update_dig_progress(self, obs: dict[str, Any]) -> None:
+        self.events.append("dig_progress_update")
+
+    def maybe_switch_skill(self, *, obs: dict[str, Any], boundary_event: Any | None) -> None:
+        self.events.append(f"maybe_switch:{boundary_event}")
+
+    def account_return_timeout(self) -> bool:
+        self.events.append("return_timeout_accounting")
+        return self.return_timeout
+
+    def dispatch_action(self, obs: dict[str, Any]) -> list[float]:
+        self.events.append("dispatch_action")
+        return self.action
+
+    def record_previous_action(self, action: Any) -> None:
+        self.events.append(f"prev_action_update:{action}")
+
+    def transition_completed_after_dispatch(self) -> bool:
+        self.events.append("transition_completed_check")
+        return self.transition_completed
+
+    def finalize_debug_state(
+        self,
+        *,
+        transition_timeout: bool,
+        transition_completed: bool,
+    ) -> None:
+        self.events.append(
+            f"debug_finalize:timeout={transition_timeout}:completed={transition_completed}"
+        )
+
+
+def test_run_primitive_tick_orders_dig_tick_hooks_and_returns_result() -> None:
+    hooks = FakeTickHooks(
+        active_skill_name="dig",
+        return_timeout=True,
+        transition_completed=True,
+    )
+
+    result = run_primitive_tick(hooks=hooks, obs={"qpos": [1.0]})
+
+    assert result.action == [0.1, 0.2, 0.3, 0.4]
+    assert result.boundary_event == "boundary-event"
+    assert result.preparation.boundary_event == "boundary-event"
+    assert result.preparation.skill_name_before_decision == "dig"
+    assert result.preparation.dig_progress_updated is True
+    assert result.transition_timeout is True
+    assert result.transition_completed is True
+    assert hooks.events == [
+        "boundary_update",
+        "switch_reason_reset",
+        "current_skill_before_progress",
+        "dig_progress_update",
+        "maybe_switch:boundary-event",
+        "return_timeout_accounting",
+        "dispatch_action",
+        "prev_action_update:[0.1, 0.2, 0.3, 0.4]",
+        "transition_completed_check",
+        "debug_finalize:timeout=True:completed=True",
+    ]
+
+
+def test_run_primitive_tick_skips_dig_progress_for_non_dig_skill() -> None:
+    hooks = FakeTickHooks(active_skill_name="return")
+
+    result = run_primitive_tick(hooks=hooks, obs={})
+
+    assert result.transition_timeout is False
+    assert "dig_progress_update" not in hooks.events
+    assert hooks.events == [
+        "boundary_update",
+        "switch_reason_reset",
+        "current_skill_before_progress",
+        "maybe_switch:boundary-event",
+        "return_timeout_accounting",
+        "dispatch_action",
+        "prev_action_update:[0.1, 0.2, 0.3, 0.4]",
+        "transition_completed_check",
+        "debug_finalize:timeout=False:completed=False",
+    ]

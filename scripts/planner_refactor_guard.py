@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
-
 
 ACTIVE_PLAN = Path("docs/planner_rollout_evidence_refactor_plan.md")
 CHANGE_LOG = Path("docs/planner_rollout_evidence_refactor_log.md")
 ARCHITECTURE_MAP = Path("docs/planner_baseline_architecture_map.md")
+CURRENT_CODE_ARCHITECTURE_PLAN = Path("docs/planner_current_code_architecture_plan.md")
 OLD_ACTIVE_PLAN = Path("docs/primitive_scheduler_service_refactor_plan.md")
 HISTORICAL_PLAN = Path(
     "docs/primitive_scheduler_service_refactor_plan_DO_NOT_EXTEND_HISTORY.md"
@@ -76,9 +76,11 @@ def check_plan_contract(root: str | Path = ".") -> None:
     active_path = root_path / ACTIVE_PLAN
     log_path = root_path / CHANGE_LOG
     architecture_map_path = root_path / ARCHITECTURE_MAP
+    current_code_plan_path = root_path / CURRENT_CODE_ARCHITECTURE_PLAN
     active = _read(active_path)
     log = _read(log_path)
     architecture_map = _read(architecture_map_path)
+    current_code_plan = _read(current_code_plan_path)
 
     for heading in (
         "# Rollout Evidence Driven Planner Refactor Plan",
@@ -87,7 +89,7 @@ def check_plan_contract(root: str | Path = ".") -> None:
         "## First-Principles Reflection Gate",
         "## Rollout Evidence Gate",
         "## New-File Extraction Rule",
-        "## Deletion Rule",
+        "## Parking And Reclassification Rule",
     ):
         _require(active, heading, path=active_path)
 
@@ -117,6 +119,16 @@ def check_plan_contract(root: str | Path = ".") -> None:
                 f"architecture map must not contain change records: {forbidden}"
             )
 
+    for needle in (
+        "# Planner Current-Code Architecture Plan",
+        "Current Code Reality",
+        "Primitive Planner Responsibility Map",
+        "Evidence-Based Retention Matrix",
+        "Legacy Parking Catalog",
+        "Verification Matrix",
+    ):
+        _require(current_code_plan, needle, path=current_code_plan_path)
+
     _require(log, "# Rollout Evidence Driven Planner Refactor Log", path=log_path)
     _require(log, "## Change Record Protocol", path=log_path)
     for text, path in (
@@ -137,6 +149,7 @@ def check_skill_contract(skill_path: str | Path = SKILL_PATH) -> None:
         "docs/planner_rollout_evidence_refactor_plan.md",
         "docs/planner_rollout_evidence_refactor_log.md",
         "docs/planner_baseline_architecture_map.md",
+        "docs/planner_current_code_architecture_plan.md",
         "branch baseline",
         "rollout log",
         "first-principles",
