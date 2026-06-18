@@ -783,3 +783,57 @@ Each completed refactor round should append:
 - Next action: Phase 4C should continue with `CoverageStatus` only. Do not
   migrate token status, token planning, coverage planning/runtime, or backend
   behavior in the same commit.
+
+### 2026-06-19 Phase 4C.1 CoverageStatus
+
+- Scope: introduced `CoverageStatus` only. No coverage candidate construction,
+  scoring, selection, completion update, rejection update, terminal-stop update,
+  token planning, backend selection, runtime package, behavior tree, VLM/LLM
+  packet, default config, threshold, branch order, reason string, token schema,
+  debug schema, rollout summary schema, or policy reset timing was intentionally
+  changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `ac62bad468aeb0211b50bca297a99d2554dada8d`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 4B.5 focused tests passed before Phase 4C.1 edits:
+    `python -m pytest -q tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `33 passed`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; the
+    golden-window contract locks selected corridor id/score, coverage terminal
+    stop requested/reason, depleted count, payload gain, and effective deposit
+    delta fields.
+  - The only responsibility slice was read-only coverage status.
+  - `testbed/planner/primitive_capabilities.py` was already 998 lines before
+    this slice, so adding coverage status there would cross the repository
+    large-file threshold. The stable focused owner for this slice is
+    `testbed/planner/primitive_coverage_status.py`.
+- Added `testbed/planner/primitive_coverage_status.py` with `CoverageStatus`.
+  The record freezes selected corridor, candidate scores, terminal-stop,
+  depleted, completion, and rejection observable state without owning coverage
+  planning/runtime mutation.
+- Added `tests/test_primitive_coverage_status.py` with focused coverage for
+  selected corridor and candidate-score freezing, terminal-stop state, and
+  completion/rejection observables. The TDD red test failed with
+  `ModuleNotFoundError` before `testbed.planner.primitive_coverage_status` was
+  implemented.
+- Old code parked/reclassified: no code was deleted. Existing coverage
+  candidate/scoring/update helpers and coverage fields remain
+  compatibility/source-of-truth paths until the later coverage planning/runtime
+  service phase bridges them with parity tests.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_coverage_status.py` returned
+    `3 passed`.
+  - `python -m pytest -q tests/test_primitive_coverage_status.py tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `36 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_coverage_status.py tests/test_primitive_coverage_status.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 4C.2 should continue with `TokenStatus` only. Do not
+  migrate token generation, token planning, coverage planning/runtime, or
+  backend behavior in the same commit.
