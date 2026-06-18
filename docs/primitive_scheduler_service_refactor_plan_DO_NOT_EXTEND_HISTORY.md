@@ -1,21 +1,24 @@
-# Primitive Scheduler Refactor Plan
+# Primitive Scheduler Refactor Plan - DO NOT EXTEND HISTORY
 
-Status: **historical / closed for the current backend-runtime migration**.
+Status: **historical / closed / do not extend**.
 
 This document records the earlier primitive scheduler service-refactor context,
-constraints, and lessons. Do not use the `Phase Plan` section below as the
-active route for the 2026-06-17 planner backend/runtime migration. The active
-backend/runtime phase authority is:
+constraints, and lessons. Do not add new plan phases or landing records here.
+The current active refactor route is rollout-evidence-driven and lives in:
 
-- `docs/superpowers/specs/2026-06-17-planner-backend-interface-design.md`
+- `docs/planner_rollout_evidence_refactor_plan.md`
+
+Change records for the active route live separately in:
+
+- `docs/planner_rollout_evidence_refactor_log.md`
 
 Agents may still read this file for historical guardrails such as large-file
-policy, semantic-drift risks, and prior capability ownership, but backend phase
-selection and Definition of Done must come from the backend interface design
-spec unless a human explicitly reopens this plan.
+policy, semantic-drift risks, and prior capability ownership, but slice
+selection and Definition of Done must come from the active rollout-evidence
+plan unless a human explicitly reopens this historical plan.
 
 本文档保留早期 primitive planner 重构背景；它不再作为当前 backend/runtime
-migration 的活跃执行手册。
+migration 的活跃执行手册。不要继续往本文件追加新阶段或新 landing record。
 
 历史方向：**沉淀行为树可复用的决策语义层**，而不是单纯把
 `PrimitivePlannerACTPolicy` 拆成更多文件。现有状态机仍是兼容入口；长期目标是让

@@ -6,7 +6,8 @@ before removal from the live planner shell.
 These files are not runtime modules. Do not import from this directory, do not
 extend these snippets, and do not treat them as source-of-truth. Live semantics
 must continue to come from `testbed/`, especially the contract, planner service,
-and capability modules listed in `docs/primitive_scheduler_service_refactor_plan.md`.
+and capability modules listed in
+`docs/primitive_scheduler_service_refactor_plan_DO_NOT_EXTEND_HISTORY.md`.
 
 ## Why This Exists
 
