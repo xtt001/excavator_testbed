@@ -51,6 +51,38 @@ class DirectHandoffPredicate(Protocol):
         """Return whether return-to-dig direct handoff is ready."""
 
 
+class CarryTransitionRuntime(Protocol):
+    dump_ready_hold_count: int
+    outcome: Any
+
+
+class CarryTransitionRuntimeProvider(Protocol):
+    def __call__(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        current_dump_ready_hold_count: int,
+    ) -> CarryTransitionRuntime:
+        """Return the carry transition runtime state for one tick."""
+
+
+class DumpTransitionRuntime(Protocol):
+    dump_done_hold_count: int
+    outcome: Any
+
+
+class DumpTransitionRuntimeProvider(Protocol):
+    def __call__(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        current_dump_done_hold_count: int,
+    ) -> DumpTransitionRuntime:
+        """Return the dump transition runtime state for one tick."""
+
+
 class BoolProvider(Protocol):
     def __call__(self) -> bool:
         """Return a boolean runtime/config value."""
@@ -69,30 +101,6 @@ class RuntimeConfigProvider(Protocol):
 class ObservationOutcomeBuilder(Protocol):
     def __call__(self, obs: dict[str, Any]) -> Any:
         """Return a domain outcome for one observation."""
-
-
-class CarryTransitionRuntimeRequestBuilder(Protocol):
-    def __call__(
-        self,
-        *,
-        release_safety_done: bool,
-        boundary_event: Any | None,
-        semantic_boundary_profile_active: bool,
-        current_dump_ready_hold_count: int,
-    ) -> Any:
-        """Build a carry-to-dump transition runtime request."""
-
-
-class DumpTransitionRuntimeRequestBuilder(Protocol):
-    def __call__(
-        self,
-        *,
-        dump_done_use_boundary_event: bool,
-        boundary_event: Any | None,
-        semantic_boundary_profile_active: bool,
-        current_dump_done_hold_count: int,
-    ) -> Any:
-        """Build a dump-to-return transition runtime request."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,15 +165,8 @@ class LegacyFsmBoundaryProfilePorts:
 class LegacyFsmDumpLifecyclePorts:
     """Carry/dump lifecycle dependencies used by the legacy FSM backend."""
 
-    lifecycle_gate: Any
-    build_carry_transition_runtime_request: CarryTransitionRuntimeRequestBuilder
-    build_dump_transition_runtime_request: DumpTransitionRuntimeRequestBuilder
-    carry_release_safety_done: ObservationPredicate
-    dump_ready_hold_steps: IntProvider
-    dump_done_hold_steps: IntProvider
-    dump_done_use_boundary_event: BoolProvider
-    dump_ready: ObservationPredicate
-    dump_done: ObservationPredicate
+    carry_transition_runtime: CarryTransitionRuntimeProvider
+    dump_transition_runtime: DumpTransitionRuntimeProvider
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,11 +203,13 @@ __all__ = [
     "BoolProvider",
     "BootstrapEndPredicate",
     "BoundaryObservationPredicate",
-    "CarryTransitionRuntimeRequestBuilder",
+    "CarryTransitionRuntime",
+    "CarryTransitionRuntimeProvider",
     "DirectHandoffPredicate",
     "DigToCarryDecision",
     "DigToCarryDecisionProvider",
-    "DumpTransitionRuntimeRequestBuilder",
+    "DumpTransitionRuntime",
+    "DumpTransitionRuntimeProvider",
     "IntProvider",
     "KeywordBoundaryObservationPredicate",
     "LegacyFsmBackendPorts",

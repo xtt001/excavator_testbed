@@ -1150,23 +1150,8 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                         dig_to_carry_decision=self._dig_to_carry_decision,
                     ),
                     dump_lifecycle=LegacyFsmDumpLifecyclePorts(
-                        lifecycle_gate=self.dump_lifecycle_gate,
-                        build_carry_transition_runtime_request=(
-                            build_carry_transition_runtime_request
-                        ),
-                        build_dump_transition_runtime_request=(
-                            build_dump_transition_runtime_request
-                        ),
-                        carry_release_safety_done=(
-                            self._carry_release_safety_done
-                        ),
-                        dump_ready_hold_steps=lambda: self.dump_ready_hold_steps,
-                        dump_done_hold_steps=lambda: self.dump_done_hold_steps,
-                        dump_done_use_boundary_event=(
-                            lambda: self.dump_done_use_boundary_event
-                        ),
-                        dump_ready=self._dump_ready,
-                        dump_done=self._dump_done,
+                        carry_transition_runtime=self._carry_transition_runtime,
+                        dump_transition_runtime=self._dump_transition_runtime,
                     ),
                     return_transition=LegacyFsmReturnTransitionPorts(
                         service=self.return_transition_service,
@@ -2279,11 +2264,58 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             self._dump_lifecycle_config(),
         )
 
+    def _carry_transition_runtime(
+        self,
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+        current_dump_ready_hold_count: int,
+    ) -> CarryTransitionRuntimeState:
+        release_safety_done = self._carry_release_safety_done(obs)
+        request = build_carry_transition_runtime_request(
+            release_safety_done=release_safety_done,
+            boundary_event=boundary_event,
+            semantic_boundary_profile_active=(
+                self._semantic_boundary_profile_active()
+            ),
+            current_dump_ready_hold_count=current_dump_ready_hold_count,
+        )
+        dump_ready = False
+        if request.should_check_dump_ready:
+            dump_ready = bool(self._dump_ready(obs))
+        return self.dump_lifecycle_gate.carry_transition_runtime(
+            request.facts_with_dump_ready(dump_ready),
+            dump_ready_hold_steps=self.dump_ready_hold_steps,
+        )
+
     def _dump_done(self, obs: dict) -> bool:
         return self.dump_lifecycle_gate.dump_done(
             self._dump_lifecycle_facts(obs),
             self._dump_lifecycle_config(),
             dump_start_deposited_mass_kg=self._dump_start_deposited_mass_kg,
+        )
+
+    def _dump_transition_runtime(
+        self,
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+        current_dump_done_hold_count: int,
+    ) -> DumpTransitionRuntimeState:
+        request = build_dump_transition_runtime_request(
+            dump_done_use_boundary_event=self.dump_done_use_boundary_event,
+            boundary_event=boundary_event,
+            semantic_boundary_profile_active=(
+                self._semantic_boundary_profile_active()
+            ),
+            current_dump_done_hold_count=current_dump_done_hold_count,
+        )
+        dump_done = False
+        if request.should_check_dump_done:
+            dump_done = bool(self._dump_done(obs))
+        return self.dump_lifecycle_gate.dump_transition_runtime(
+            request.facts_with_dump_done(dump_done),
+            dump_done_hold_steps=self.dump_done_hold_steps,
         )
 
     def _carry_release_safety_done(self, obs: dict) -> bool:

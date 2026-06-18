@@ -115,20 +115,12 @@ class LegacyStateMachineBackend:
                 context,
                 active_skill=active_skill,
                 ports=_required_port(ports.dump_lifecycle, "dump_lifecycle"),
-                boundary_ports=_required_port(
-                    ports.boundary_profile,
-                    "boundary_profile",
-                ),
             )
         if active_skill == skill_names.dump:
             return self._tick_dump(
                 context,
                 active_skill=active_skill,
                 ports=_required_port(ports.dump_lifecycle, "dump_lifecycle"),
-                boundary_ports=_required_port(
-                    ports.boundary_profile,
-                    "boundary_profile",
-                ),
             )
         if active_skill == skill_names.return_skill:
             return self._tick_return(
@@ -303,24 +295,12 @@ class LegacyStateMachineBackend:
         *,
         active_skill: str,
         ports: LegacyFsmDumpLifecyclePorts,
-        boundary_ports: LegacyFsmBoundaryProfilePorts,
     ) -> PlannerTickResult:
         obs = dict(context.obs)
-        release_safety_done = ports.carry_release_safety_done(obs)
-        request = ports.build_carry_transition_runtime_request(
-            release_safety_done=release_safety_done,
+        runtime = ports.carry_transition_runtime(
+            obs=obs,
             boundary_event=context.boundary_event,
-            semantic_boundary_profile_active=(
-                boundary_ports.semantic_boundary_profile_active()
-            ),
             current_dump_ready_hold_count=context.blackboard.dump_ready_hold_count,
-        )
-        dump_ready = False
-        if request.should_check_dump_ready:
-            dump_ready = bool(ports.dump_ready(obs))
-        runtime = ports.lifecycle_gate.carry_transition_runtime(
-            request.facts_with_dump_ready(dump_ready),
-            dump_ready_hold_steps=ports.dump_ready_hold_steps(),
         )
         outcome = runtime.outcome
         return PlannerTickResult(
@@ -346,23 +326,12 @@ class LegacyStateMachineBackend:
         *,
         active_skill: str,
         ports: LegacyFsmDumpLifecyclePorts,
-        boundary_ports: LegacyFsmBoundaryProfilePorts,
     ) -> PlannerTickResult:
         obs = dict(context.obs)
-        request = ports.build_dump_transition_runtime_request(
-            dump_done_use_boundary_event=ports.dump_done_use_boundary_event(),
+        runtime = ports.dump_transition_runtime(
+            obs=obs,
             boundary_event=context.boundary_event,
-            semantic_boundary_profile_active=(
-                boundary_ports.semantic_boundary_profile_active()
-            ),
             current_dump_done_hold_count=context.blackboard.dump_done_hold_count,
-        )
-        dump_done = False
-        if request.should_check_dump_done:
-            dump_done = bool(ports.dump_done(obs))
-        runtime = ports.lifecycle_gate.dump_transition_runtime(
-            request.facts_with_dump_done(dump_done),
-            dump_done_hold_steps=ports.dump_done_hold_steps(),
         )
         outcome = runtime.outcome
         return PlannerTickResult(

@@ -569,6 +569,73 @@ Verification run for this slice:
   -> no output.
 - `git diff --check` -> no whitespace errors.
 
+#### Carry/Dump Runtime Port Record 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/runtime/ports.py`: replaced the legacy FSM dump-lifecycle
+  port group of request builders, gate callbacks, hold-step providers, and
+  dump config providers with two stable semantic providers:
+  `carry_transition_runtime` and `dump_transition_runtime`. Their structural
+  return protocols expose the runtime state fields consumed by the backend:
+  `dump_ready_hold_count` plus `outcome`, and `dump_done_hold_count` plus
+  `outcome`.
+- `testbed/planner/runtime/__init__.py`: exports the carry/dump runtime
+  provider and runtime protocols with the other typed backend port contracts.
+- `testbed/planner/runtime/legacy_fsm.py`: changed the carry and dump branches
+  to call the typed runtime providers and emit the existing
+  `apply_carry_transition_runtime` / `apply_dump_transition_runtime` effects.
+  Carry/dump no longer require `LegacyFsmBoundaryProfilePorts`; return still
+  uses that boundary-profile port.
+- `testbed/policies/hybrid/primitive_planner.py`: kept adapter work thin by
+  wiring `LegacyFsmDumpLifecyclePorts` to `_carry_transition_runtime()` and
+  `_dump_transition_runtime()`. Those helpers preserve the existing request
+  builder, boundary-profile input, gate-call order, hold-step config, and
+  lifecycle service calls.
+- `tests/test_planner_backend_ports.py`: added the RED/GREEN contract for the
+  new carry/dump typed runtime providers.
+- `tests/test_legacy_fsm_backend_dump_lifecycle.py`: moved focused carry/dump
+  backend behavior locks out of `tests/test_legacy_fsm_backend.py`, keeping the
+  original branch-order and boundary-event skip assertions while returning the
+  large backend test file below the 1000-line threshold.
+
+Scope guardrails kept:
+
+- No branch order, thresholds, switch reasons, coverage reasons, hold-count
+  semantics, policy reset timing, debug/trace/rollout schema, token contract,
+  default backend selection, or behavior-tree default changed.
+- The backend still does not own dump lifecycle thresholds or observation facts.
+  It consumes typed runtime states returned through explicit ports and emits
+  the existing runtime effect payloads.
+- `PrimitivePlannerACTPolicy` remains the adapter and effect applier. Carry/dump
+  side effects still run through `_apply_carry_transition_runtime()` and
+  `_apply_dump_transition_runtime()`.
+- `PlannerBlackboard` remains the source of truth for dump-ready and dump-done
+  hold counts. Coverage state and token state ownership are unchanged.
+
+Verification run for this slice:
+
+- Initial RED:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_ports.py`
+  -> failed with
+  `TypeError: LegacyFsmDumpLifecyclePorts.__init__() got an unexpected keyword argument 'carry_transition_runtime'`.
+- Focused GREEN:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_ports.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py`
+  -> `23 passed`.
+- Backend/runtime/config/BT:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_planner_backend_config.py tests/test_behavior_tree_backend_contract.py`
+  -> `69 passed`.
+- Golden/action-tree/facade/debug schema:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_golden_traces.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py tests/test_primitive_planner_debug_schema.py`
+  -> `168 passed`.
+- Token/data/config contract check:
+  `python -m pytest -p no:cacheprovider -q tests/test_primitive_token_contracts.py tests/test_policy_data_contracts.py tests/test_config_semantic_matrix.py`
+  -> `25 passed, 1 warning` from the existing `datetime.utcnow()` deprecation in
+  `testbed/data/dataset.py`.
+- `python -m compileall -q testbed/planner/runtime testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_action_tree.py tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_primitive_scheduler_facades.py`
+  -> no output.
+- `git diff --check` -> no whitespace errors.
+
 ### Phase 2: Coverage As First Blackboard Domain
 
 Use the recent coverage dig-cut activation work as the first state-domain

@@ -10,16 +10,24 @@ from testbed.planner.dig_lifecycle import (
     DigTransitionRuntimeOutcome,
     DigTransitionRuntimeProjection,
 )
+from testbed.planner.dump_lifecycle import (
+    CarryTransitionRuntimeState,
+    DumpLifecycleOutcome,
+    DumpTransitionRuntimeState,
+)
 from testbed.planner.runtime import (
     LegacyFsmBackendPorts,
     LegacyFsmDigTransitionPorts,
+    LegacyFsmDumpLifecyclePorts,
     LegacyFsmSkillNames,
     PlannerBackendPorts,
     PlannerBlackboard,
     PlannerTickContext,
 )
 from testbed.planner.runtime.legacy_fsm import (
+    APPLY_CARRY_TRANSITION_RUNTIME_EFFECT,
     APPLY_DIG_TRANSITION_RUNTIME_PROJECTION_EFFECT,
+    APPLY_DUMP_TRANSITION_RUNTIME_EFFECT,
     LegacyStateMachineBackend,
 )
 
@@ -104,6 +112,105 @@ def test_legacy_fsm_backend_dig_uses_typed_ports_preserving_gate_order() -> None
     assert projection.outcome == DigTransitionRuntimeOutcome(
         action="carry",
         switch_reason="dig_to_carry_target_payload_loaded",
+    )
+
+
+def test_legacy_fsm_backend_carry_dump_use_typed_runtime_ports() -> None:
+    calls: list[str] = []
+
+    def carry_transition_runtime(
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+        current_dump_ready_hold_count: int,
+    ) -> CarryTransitionRuntimeState:
+        calls.append(
+            "carry:"
+            f"{obs['step']}:"
+            f"{boundary_event is not None}:"
+            f"{current_dump_ready_hold_count}"
+        )
+        return CarryTransitionRuntimeState(
+            dump_ready_hold_count=current_dump_ready_hold_count + 1,
+            outcome=DumpLifecycleOutcome(
+                action="dump",
+                switch_reason="carry_to_dump_target_ready",
+            ),
+        )
+
+    def dump_transition_runtime(
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+        current_dump_done_hold_count: int,
+    ) -> DumpTransitionRuntimeState:
+        calls.append(
+            "dump:"
+            f"{obs['step']}:"
+            f"{boundary_event is not None}:"
+            f"{current_dump_done_hold_count}"
+        )
+        return DumpTransitionRuntimeState(
+            dump_done_hold_count=current_dump_done_hold_count + 1,
+            outcome=DumpLifecycleOutcome(
+                action="return",
+                switch_reason="dump_to_return_mass_low",
+                coverage_reason="dump_mass_low",
+            ),
+        )
+
+    ports = PlannerBackendPorts(
+        legacy_fsm=LegacyFsmBackendPorts(
+            skill_names=_skill_names(),
+            dump_lifecycle=LegacyFsmDumpLifecyclePorts(
+                carry_transition_runtime=carry_transition_runtime,
+                dump_transition_runtime=dump_transition_runtime,
+            ),
+        )
+    )
+
+    carry_result = LegacyStateMachineBackend().tick(
+        PlannerTickContext(
+            obs={"step": 18},
+            boundary_event=None,
+            blackboard=PlannerBlackboard(
+                current_skill="carry",
+                dump_ready_hold_count=1,
+            ),
+            ports=ports,
+        )
+    )
+    dump_result = LegacyStateMachineBackend().tick(
+        PlannerTickContext(
+            obs={"step": 21},
+            boundary_event=_FakeBoundaryEvent(dump_complete=True),
+            blackboard=PlannerBlackboard(
+                current_skill="dump",
+                dump_done_hold_count=2,
+            ),
+            ports=ports,
+        )
+    )
+
+    assert calls == ["carry:18:False:1", "dump:21:True:2"]
+    assert carry_result.reason == "carry_to_dump_target_ready"
+    assert carry_result.effects[0].effect_type == APPLY_CARRY_TRANSITION_RUNTIME_EFFECT
+    assert carry_result.effects[0].payload["runtime"] == CarryTransitionRuntimeState(
+        dump_ready_hold_count=2,
+        outcome=DumpLifecycleOutcome(
+            action="dump",
+            switch_reason="carry_to_dump_target_ready",
+        ),
+    )
+    assert dump_result.reason == "dump_to_return_mass_low"
+    assert dump_result.effects[0].effect_type == APPLY_DUMP_TRANSITION_RUNTIME_EFFECT
+    assert dump_result.effects[0].payload["runtime"] == DumpTransitionRuntimeState(
+        dump_done_hold_count=3,
+        outcome=DumpLifecycleOutcome(
+            action="return",
+            switch_reason="dump_to_return_mass_low",
+            coverage_reason="dump_mass_low",
+        ),
     )
 
 
