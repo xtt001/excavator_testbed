@@ -62,7 +62,11 @@ from testbed.planner.cell_entry import (
     PrimitiveCycleOutcome,
     build_cell_entry_tokens,
 )
-from testbed.planner.primitive_backend import LegacyFSMBackendAdapter
+from testbed.planner.primitive_backend import (
+    LegacyFSMBackendAdapter,
+    LegacyFSMBootstrapBranch,
+    LegacyFSMBootstrapConfig,
+)
 from testbed.planner.primitive_coverage import (
     CoverageCandidateBuilder,
     CoverageCandidateSelectionFacts,
@@ -1036,6 +1040,19 @@ class PrimitivePlannerACTPolicy(Policy):
             current_switch_reason=lambda: str(self._switch_reason),
         )
 
+    def _legacy_fsm_bootstrap_branch(self) -> LegacyFSMBootstrapBranch:
+        return LegacyFSMBootstrapBranch(
+            config=LegacyFSMBootstrapConfig(
+                bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
+                pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
+            ),
+            current_skill_name=lambda: str(self._skill_name),
+            should_end_bootstrap=self._should_end_bootstrap,
+            bootstrap_end_mode=lambda: str(self.bootstrap_end_mode),
+            should_pre_dig_align_before_dig=self._should_pre_dig_align_before_dig,
+            set_skill=self._set_skill,
+        )
+
     def _tick_execution_hooks(self) -> PrimitiveTickCallbacks:
         return PrimitiveTickCallbacks(
             update_boundary_event=self._tick_boundary_event,
@@ -1593,17 +1610,10 @@ class PrimitivePlannerACTPolicy(Policy):
         }
 
     def _maybe_switch_skill(self, *, obs: dict, boundary_event: Any | None) -> None:
-        if self._skill_name == BOOTSTRAP_SKILL_NAME:
-            if self._should_end_bootstrap(obs=obs, boundary_event=boundary_event):
-                if self.bootstrap_end_mode in {"first_qualified_dig_start", "scripted_qpos"}:
-                    next_skill = (
-                        PRE_DIG_ALIGN_SKILL_NAME
-                        if self._should_pre_dig_align_before_dig()
-                        else "dig"
-                    )
-                else:
-                    next_skill = "carry"
-                self._set_skill(next_skill, f"bootstrap_to_{next_skill}")
+        if self._legacy_fsm_bootstrap_branch().maybe_handle(
+            obs=obs,
+            boundary_event=boundary_event,
+        ):
             return
 
         if self._skill_name == PRE_DIG_ALIGN_SKILL_NAME:

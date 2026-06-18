@@ -1573,3 +1573,53 @@ Each completed refactor round should append:
   the backend adapter, starting with a focused service-vs-facade parity test.
   Do not move multiple branches, change branch order, or change reason strings
   in the same commit.
+
+### 2026-06-19 Phase 7.2 Legacy FSM Bootstrap Branch
+
+- Scope: migrated the 4P legacy FSM bootstrap branch only. No 5P override,
+  pre-dig-align, dig, carry, dump, return, direct-handoff branch body, branch
+  order, reason string, threshold, effect application, backend selection,
+  runtime package, behavior tree, VLM/LLM packet, token schema, debug schema,
+  rollout summary schema, or policy reset timing was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `3b10ef2b2f50708f876ff8662268f9ff94f21403`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 3 focused tests remained the compatibility baseline:
+    `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; the
+    golden-window parity contract locks public tick/report behavior.
+  - The only responsibility slice was the first branch in the 4P
+    `_maybe_switch_skill()` order: bootstrap handling. It still calls the same
+    `_should_end_bootstrap()`, pre-dig-align gate, and `_set_skill()` callbacks.
+- Extended `testbed/planner/primitive_backend.py` with
+  `LegacyFSMBootstrapConfig` and `LegacyFSMBootstrapBranch`. The branch object
+  receives explicit callbacks and does not receive planner `self`.
+- Updated the 4P `PrimitivePlannerACTPolicy._maybe_switch_skill()` first check
+  to delegate to `self._legacy_fsm_bootstrap_branch().maybe_handle(...)` and
+  return when handled. The 5P compatibility override remains unchanged.
+- Extended `tests/test_primitive_backend.py` with direct bootstrap branch
+  coverage for the pre-dig-align path and non-bootstrap no-op path. The TDD red
+  test failed with `ImportError` before the backend branch classes were
+  implemented.
+- Old code parked/reclassified: every non-bootstrap FSM branch and the 5P
+  override remain legacy source-of-truth until later Phase 7 slices.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_decision_contract.py tests/test_agx_primitives_v2_2.py -k "bootstrap or first_dig_policy_for_cycle_zero"`
+    returned `7 passed, 119 deselected`.
+  - `python -m pytest -q tests/test_primitive_execution_template.py tests/test_planner_current_code_parity.py`
+    returned `5 passed`.
+  - `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_runtime.py tests/test_primitive_coverage_updates.py tests/test_primitive_coverage_selection.py tests/test_primitive_coverage_candidates.py tests/test_primitive_return_start_envelope_token_planner.py tests/test_primitive_return_relocate_token_planner.py tests/test_primitive_return_target_token_planner.py tests/test_primitive_dig_depth_profile_token_planner.py tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_goal_token_provider.py tests/test_primitive_token_status.py tests/test_primitive_coverage_status.py tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `71 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_backend.py testbed/policies/hybrid/primitive_planner.py tests/test_primitive_backend.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 7.3 may migrate exactly one additional legacy FSM branch
+  chain behind the backend adapter, likely the 4P pre-dig-align branch. Do not
+  move dig/carry/dump/return branches, change branch order, or change reason
+  strings in the same commit.

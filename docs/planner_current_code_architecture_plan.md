@@ -553,8 +553,10 @@ has extracted coverage completion/rejection state updates; Phase 6.4 has
 extracted coverage terminal-stop and multi-pass reopen request ownership; Phase
 6.5 has extracted coverage corridor debug and decision-event payload
 projection; Phase 7.1 has introduced the legacy FSM backend protocol/adapter
-boundary without moving branch bodies. Continue with Phase 7.2 by migrating
-exactly one legacy FSM branch chain behind the backend adapter with a focused
-service-versus-facade parity test. Do not move multiple branches, change branch
-order, change reason strings, or apply effects through the new backend boundary
-in the same slice.
+boundary without moving branch bodies; Phase 7.2 has migrated only the 4P
+bootstrap branch behind the backend adapter. Continue with Phase 7.3 by
+migrating exactly one additional legacy FSM branch chain, likely the 4P
+pre-dig-align branch, with a focused service-versus-facade parity test. Do not
+move dig/carry/dump/return branches, change branch order, change reason
+strings, or apply unrelated effects through the new backend boundary in the
+same slice.

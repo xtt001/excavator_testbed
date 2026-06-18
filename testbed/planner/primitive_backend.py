@@ -46,4 +46,45 @@ class LegacyFSMBackendAdapter:
         )
 
 
-__all__ = ["LegacyFSMBackendAdapter", "PrimitiveDecisionBackend"]
+@dataclass(frozen=True)
+class LegacyFSMBootstrapConfig:
+    bootstrap_skill_name: str
+    pre_dig_align_skill_name: str
+
+
+@dataclass(frozen=True)
+class LegacyFSMBootstrapBranch:
+    """Bootstrap branch of the legacy FSM with explicit callbacks."""
+
+    config: LegacyFSMBootstrapConfig
+    current_skill_name: Callable[[], str]
+    should_end_bootstrap: Callable[..., bool]
+    bootstrap_end_mode: Callable[[], str]
+    should_pre_dig_align_before_dig: Callable[[], bool]
+    set_skill: Callable[[str, str], None]
+
+    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
+        if str(self.current_skill_name()) != str(self.config.bootstrap_skill_name):
+            return False
+        if self.should_end_bootstrap(obs=obs, boundary_event=boundary_event):
+            if self.bootstrap_end_mode() in {
+                "first_qualified_dig_start",
+                "scripted_qpos",
+            }:
+                next_skill = (
+                    str(self.config.pre_dig_align_skill_name)
+                    if self.should_pre_dig_align_before_dig()
+                    else "dig"
+                )
+            else:
+                next_skill = "carry"
+            self.set_skill(next_skill, f"bootstrap_to_{next_skill}")
+        return True
+
+
+__all__ = [
+    "LegacyFSMBackendAdapter",
+    "LegacyFSMBootstrapBranch",
+    "LegacyFSMBootstrapConfig",
+    "PrimitiveDecisionBackend",
+]
