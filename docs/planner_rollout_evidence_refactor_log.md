@@ -1237,3 +1237,57 @@ Each completed refactor round should append:
   with corridor candidate construction only. Do not migrate scoring/selection,
   completion/rejection updates, terminal-stop requests, decision trace/report
   projection, or backend behavior in the same commit.
+
+### 2026-06-19 Phase 6.1 Coverage Candidate Construction
+
+- Scope: extracted coverage corridor candidate construction only. No scoring/
+  selection ownership, completion/rejection state updates, terminal-stop
+  requests, decision trace/report projection, backend selection, runtime
+  package, behavior tree, VLM/LLM packet, default config, threshold, branch
+  order, reason string, token schema, debug schema, rollout summary schema, or
+  policy reset timing was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `d1ad00c56d9d0a73d5af85e045e051960f77bed4`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 3 focused tests passed before Phase 6.1 edits:
+    `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `8 passed`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; its
+    resolved config uses `coverage.candidate_layout=cell_weighted_3x2`, and the
+    golden-window contract locks coverage selected corridor fields and trace
+    surfaces.
+  - The only responsibility slice was coverage corridor candidate construction.
+  - The stable focused owner for this slice is
+    `testbed/planner/primitive_coverage.py`; it owns `CoverageCorridorState`
+    and `CoverageCandidateBuilder`.
+- Updated `PrimitivePlannerACTPolicy._ensure_coverage_corridors()` and related
+  compatibility helpers to delegate candidate construction to
+  `CoverageCandidateBuilder`. The legacy shell still owns when candidates are
+  built, scoring/selection, candidate score payloads, coverage state updates,
+  terminal-stop decisions, and trace/report projection.
+- Added `tests/test_primitive_coverage_candidates.py` with focused coverage for
+  percentile-grid candidate construction and `cell_weighted_3x2` prior-backed
+  candidate construction. The TDD red test failed with `ModuleNotFoundError`
+  before `testbed.planner.primitive_coverage` was implemented.
+- Old code parked/reclassified: no code was deleted. Coverage scoring,
+  selection, completion/rejection updates, terminal stop, and trace/report
+  projection remain legacy source-of-truth until their own Phase 6 slices.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_coverage_candidates.py` returned
+    `2 passed`.
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_keeps_legacy_percentile_grid_without_cells or coverage_outputs_finite_token_in_prior_range or coverage_first_dig_prefers_nearest_entry or coverage_first_dig_prefers_bootstrap_friendly_corridor"`
+    returned `4 passed, 116 deselected`.
+  - `python -m pytest -q tests/test_primitive_coverage_candidates.py tests/test_primitive_return_start_envelope_token_planner.py tests/test_primitive_return_relocate_token_planner.py tests/test_primitive_return_target_token_planner.py tests/test_primitive_dig_depth_profile_token_planner.py tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_goal_token_provider.py tests/test_primitive_token_status.py tests/test_primitive_coverage_status.py tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `61 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_coverage.py testbed/policies/hybrid/primitive_planner.py tests/test_primitive_coverage_candidates.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 6.2 should continue with coverage scoring/selection only.
+  Do not migrate completion/rejection updates, terminal-stop requests,
+  decision trace/report projection, or backend behavior in the same commit.
