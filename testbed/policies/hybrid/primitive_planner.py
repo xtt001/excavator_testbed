@@ -25,7 +25,6 @@ from testbed.data.operator_first_v2_2 import (
     _build_dig_cut_token,
     build_live_dig_cut_tokens_from_pose,
 )
-from testbed.data.v2_1 import build_goal_tokens
 from testbed.data.schema import (
     ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
@@ -71,6 +70,7 @@ from testbed.planner.primitive_execution import (
     run_primitive_tick,
 )
 from testbed.planner.primitive_decision import PrimitiveDecisionResult
+from testbed.planner.primitive_tokens import GoalTokenProvider
 from testbed.policies.base import Policy, register_policy
 from testbed.policies.hybrid.adapter import HYBRID_MODE_TRANSITION, HYBRID_MODE_WORK
 
@@ -85,7 +85,6 @@ TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY = "v2_2_primitive_return_policy"
 TRANSITION_POLICY_MODE_PRIMITIVE = "primitive_return_policy"
 BOOTSTRAP_SKILL_NAME = "bootstrap"
 PRE_DIG_ALIGN_SKILL_NAME = "pre_dig_align"
-PRIMITIVE_GOAL_SECTOR_IDS = {"left": 0, "mid": 1, "right": 2}
 
 
 @dataclass(frozen=True)
@@ -5991,57 +5990,27 @@ class PrimitivePlannerACTPolicy(Policy):
         return self._bucket_dig_area_pose(obs)
 
     def _goal_tokens(self) -> np.ndarray | None:
-        if not self.goal_sequence:
-            return None
-        curr_sector_id = self._goal_sector_id(self._cycle_index)
-        next_sector_id = self._next_goal_sector_id()
-        return build_goal_tokens(
-            self.goal_scenario_id,
-            curr_sector_id=curr_sector_id,
-            curr_cut_depth_norm=self.goal_depth_norm,
-            next_sector_id=next_sector_id,
-            next_cut_depth_norm=self.goal_depth_norm,
-            dst_target_norm=self.goal_dump_target_norm,
-            has_lookahead=next_sector_id >= 0,
-        )
+        return self._goal_token_provider().tokens_for_cycle(self._cycle_index)
 
     def _goal_sector_id(self, cycle_index: int) -> int:
-        if not self.goal_sequence:
-            return -1
-        index = max(0, min(int(cycle_index), len(self.goal_sequence) - 1))
-        return int(self.goal_sequence[index])
+        return self._goal_token_provider().sector_id(cycle_index)
 
     def _next_goal_sector_id(self) -> int:
-        if not self.goal_sequence:
-            return -1
-        next_index = int(self._cycle_index) + 1
-        if next_index >= len(self.goal_sequence):
-            return -1
-        return int(self.goal_sequence[next_index])
+        return self._goal_token_provider().next_sector_id(self._cycle_index)
+
+    def _goal_token_provider(self) -> GoalTokenProvider:
+        return GoalTokenProvider(
+            goal_sequence=tuple(self.goal_sequence),
+            scenario_id=self.goal_scenario_id,
+            depth_norm=self.goal_depth_norm,
+            dump_target_norm=self.goal_dump_target_norm,
+        )
 
     @staticmethod
     def _normalize_goal_sequence(
         goal_sequence: list[str] | tuple[str, ...] | None,
     ) -> tuple[int, ...]:
-        if not goal_sequence:
-            return ()
-        normalized: list[int] = []
-        for item in goal_sequence:
-            if isinstance(item, str):
-                key = item.strip().lower()
-                if key not in PRIMITIVE_GOAL_SECTOR_IDS:
-                    raise ValueError(
-                        f"Unknown primitive goal sector {item!r}. Expected left, mid, or right."
-                    )
-                normalized.append(PRIMITIVE_GOAL_SECTOR_IDS[key])
-            else:
-                value = int(item)
-                if value < 0 or value > 2:
-                    raise ValueError(
-                        f"Primitive goal sector id must be 0, 1, or 2, got {item!r}."
-                    )
-                normalized.append(value)
-        return tuple(normalized)
+        return GoalTokenProvider.normalize_goal_sequence(goal_sequence)
 
     def _active_policy(self) -> Policy:
         if self._skill_name == BOOTSTRAP_SKILL_NAME:

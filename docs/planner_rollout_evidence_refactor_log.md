@@ -893,3 +893,59 @@ Each completed refactor round should append:
   Do not migrate dig-cut, dig-depth-profile, return-target, return-relocate,
   return-start-envelope, coverage planning/runtime, or backend behavior in the
   same commit.
+
+### 2026-06-19 Phase 5.1 Goal Token Provider
+
+- Scope: extracted the goal token provider only. No dig-cut token planning,
+  dig-depth-profile token planning, return-target planning, return-relocate
+  planning, return-start-envelope planning, observation injection key changes,
+  coverage planning/runtime, backend selection, runtime package, behavior tree,
+  VLM/LLM packet, default config, threshold, branch order, reason string, token
+  schema, debug schema, rollout summary schema, or policy reset timing was
+  intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `f806f84bd757b51cfd66d852a7b35061c100c0b2`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 3 focused tests passed before Phase 5.1 edits:
+    `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `8 passed`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; the
+    golden-window contract locks the goal token presence in selected windows
+    and the config token/low-dim contract used by the current rollout evidence.
+  - The only responsibility slice was the goal token provider.
+  - The stable focused owner for this slice is
+    `testbed/planner/primitive_tokens.py`; it owns goal sequence normalization,
+    current/lookahead sector lookup, and `build_goal_tokens()` delegation.
+- Added `GoalTokenProvider` in `testbed/planner/primitive_tokens.py`.
+  `PrimitivePlannerACTPolicy._goal_tokens()`, `_goal_sector_id()`,
+  `_next_goal_sector_id()`, and `_normalize_goal_sequence()` remain compatibility
+  facade entry points and now delegate to the provider without passing planner
+  `self` into the module.
+- Added `tests/test_primitive_goal_token_provider.py` with focused coverage for
+  empty sequence behavior, current/lookahead token construction, current-sector
+  clamping, final lookahead, and invalid sector validation. The TDD red test
+  failed with `ModuleNotFoundError` before `testbed.planner.primitive_tokens`
+  was implemented.
+- Old code parked/reclassified: no code was deleted. `_policy_obs()` remains the
+  source-of-truth injection path for the `goal_tokens` observation key until a
+  later observation assembly slice is explicitly approved.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_goal_token_provider.py` returned
+    `4 passed`.
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k goal_tokens`
+    returned `1 passed, 119 deselected`.
+  - `python -m pytest -q tests/test_primitive_goal_token_provider.py tests/test_primitive_token_status.py tests/test_primitive_coverage_status.py tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `43 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_tokens.py testbed/policies/hybrid/primitive_planner.py tests/test_primitive_goal_token_provider.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 5.2 should continue with dig-cut token planning only. Do
+  not migrate dig-depth-profile, return-target, return-relocate,
+  return-start-envelope, coverage planning/runtime, or backend behavior in the
+  same commit.
