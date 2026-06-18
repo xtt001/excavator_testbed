@@ -37,37 +37,49 @@ def _require(text: str, needle: str, *, path: Path) -> None:
         raise PlannerRefactorGuardError(f"{path} must mention {needle!r}")
 
 
-def check_historical_file_guard(paths: Iterable[str | Path]) -> None:
+def check_historical_file_guard(
+    paths: Iterable[str | Path],
+    *,
+    root: str | Path = ".",
+) -> None:
     blocked = {
         str(HISTORICAL_PLAN),
         str(OLD_ACTIVE_PLAN),
     }
+    root_path = Path(root)
     touched = {str(Path(path)) for path in paths}
-    blocked_touched = sorted(blocked.intersection(touched))
+    blocked_touched = sorted(
+        path
+        for path in blocked.intersection(touched)
+        if (root_path / path).exists()
+    )
     if blocked_touched:
         raise PlannerRefactorGuardError(
-            "historical plan files are closed; do not edit: "
+            "historical plan files are closed; do not recreate or edit: "
             + ", ".join(blocked_touched)
         )
 
 
 def check_plan_contract(root: str | Path = ".") -> None:
     root_path = Path(root)
-    old_path = root_path / OLD_ACTIVE_PLAN
-    if old_path.exists():
+    legacy_paths = (OLD_ACTIVE_PLAN, HISTORICAL_PLAN)
+    existing_legacy_paths = [
+        str(path) for path in legacy_paths if (root_path / path).exists()
+    ]
+    if existing_legacy_paths:
         raise PlannerRefactorGuardError(
-            f"old active plan path must not exist: {OLD_ACTIVE_PLAN}"
+            "legacy plan files must not exist in the working tree: "
+            + ", ".join(existing_legacy_paths)
         )
 
     active_path = root_path / ACTIVE_PLAN
     log_path = root_path / CHANGE_LOG
-    historical_path = root_path / HISTORICAL_PLAN
     active = _read(active_path)
     log = _read(log_path)
-    historical = _read(historical_path)
 
     for heading in (
         "# Rollout Evidence Driven Planner Refactor Plan",
+        "## Priority Rule",
         "## First-Principles Reflection Gate",
         "## Rollout Evidence Gate",
         "## New-File Extraction Rule",
@@ -83,12 +95,11 @@ def check_plan_contract(root: str | Path = ".") -> None:
 
     _require(log, "# Rollout Evidence Driven Planner Refactor Log", path=log_path)
     _require(log, "## Change Record Protocol", path=log_path)
-    if "DO_NOT_EXTEND" not in str(HISTORICAL_PLAN):
-        raise PlannerRefactorGuardError("historical plan filename must say DO_NOT_EXTEND")
-    if "historical" not in historical.lower() or "do not extend" not in historical.lower():
-        raise PlannerRefactorGuardError(
-            f"{historical_path} must state it is historical and do not extend"
-        )
+    for text, path in ((active, active_path), (log, log_path)):
+        if "primitive_scheduler_service_refactor_plan" in text:
+            raise PlannerRefactorGuardError(
+                f"{path} must not point agents at the old primitive scheduler plan"
+            )
 
 
 def check_skill_contract(skill_path: str | Path = SKILL_PATH) -> None:
@@ -99,9 +110,10 @@ def check_skill_contract(skill_path: str | Path = SKILL_PATH) -> None:
         "docs/planner_rollout_evidence_refactor_log.md",
         "rollout log",
         "first-principles",
+        "primary goal",
     ):
         _require(text.lower(), needle.lower(), path=path)
-    if "primitive_scheduler_service_refactor_plan.md first" in text:
+    if "primitive_scheduler_service_refactor_plan" in text:
         raise PlannerRefactorGuardError(
             "skill must not treat the old primitive scheduler plan as active"
         )

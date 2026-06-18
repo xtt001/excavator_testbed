@@ -24,7 +24,6 @@ objective:
 - AGENTS.md
 - docs/planner_rollout_evidence_refactor_plan.md
 - docs/planner_rollout_evidence_refactor_log.md
-- docs/primitive_scheduler_service_refactor_plan_DO_NOT_EXTEND_HISTORY.md 仅作历史参考，不追加内容
 - docs/superpowers/specs/2026-06-17-planner-backend-interface-design.md
 - /home/pingfan/.codex/skills/excavator-planner-safe-refactor/SKILL.md
 
@@ -36,8 +35,10 @@ objective:
 4. 新文件的稳定责任是什么？
 5. parity 通过后要删除哪段旧代码？
 6. 当前动作是否偏离 docs/planner_rollout_evidence_refactor_plan.md？
+7. 这轮是否把“保护旧代码”放到了“重构和理顺逻辑”之上？如果是，停止并重选切片。
 
 执行规则：
+- 主目标是重构、抽象层封装、保留真实 rollout 用到的有用代码；保护行为只是约束，不是主目标。
 - 没有 rollout log 证据时，只做 audit，不做迁移。
 - 新实现先进 focused module，不在 primitive_planner.py 里新增算法逻辑。
 - primitive_planner.py 只允许 import、显式输入构造、调用新模块、应用 effect、删除旧实现。

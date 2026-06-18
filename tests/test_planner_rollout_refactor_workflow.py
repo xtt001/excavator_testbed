@@ -17,7 +17,7 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def test_plan_contract_requires_separate_plan_log_and_historical_filename(
+def test_plan_contract_requires_separate_plan_log_and_no_legacy_plan_files(
     tmp_path: Path,
 ) -> None:
     _write(
@@ -25,6 +25,7 @@ def test_plan_contract_requires_separate_plan_log_and_historical_filename(
         "\n".join(
             [
                 "# Rollout Evidence Driven Planner Refactor Plan",
+                "## Priority Rule",
                 "## First-Principles Reflection Gate",
                 "## Rollout Evidence Gate",
                 "## New-File Extraction Rule",
@@ -42,12 +43,6 @@ def test_plan_contract_requires_separate_plan_log_and_historical_filename(
             ]
         ),
     )
-    _write(
-        tmp_path
-        / "docs/primitive_scheduler_service_refactor_plan_DO_NOT_EXTEND_HISTORY.md",
-        "# Historical Plan\n\nStatus: historical / do not extend.\n",
-    )
-
     check_plan_contract(tmp_path)
 
 
@@ -57,7 +52,35 @@ def test_plan_contract_rejects_old_active_plan_path(tmp_path: Path) -> None:
         "# Old active-looking plan\n",
     )
 
-    with pytest.raises(PlannerRefactorGuardError, match="old active plan path"):
+    with pytest.raises(PlannerRefactorGuardError, match="legacy plan"):
+        check_plan_contract(tmp_path)
+
+
+def test_plan_contract_rejects_renamed_historical_plan_file(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "docs/planner_rollout_evidence_refactor_plan.md",
+        "\n".join(
+            [
+                "# Rollout Evidence Driven Planner Refactor Plan",
+                "## Priority Rule",
+                "## First-Principles Reflection Gate",
+                "## Rollout Evidence Gate",
+                "## New-File Extraction Rule",
+                "## Deletion Rule",
+            ]
+        ),
+    )
+    _write(
+        tmp_path / "docs/planner_rollout_evidence_refactor_log.md",
+        "# Rollout Evidence Driven Planner Refactor Log\n\n## Change Record Protocol\n",
+    )
+    _write(
+        tmp_path
+        / "docs/primitive_scheduler_service_refactor_plan_DO_NOT_EXTEND_HISTORY.md",
+        "# Historical Plan\n",
+    )
+
+    with pytest.raises(PlannerRefactorGuardError, match="legacy plan"):
         check_plan_contract(tmp_path)
 
 
@@ -67,6 +90,7 @@ def test_plan_contract_rejects_change_records_in_active_plan(tmp_path: Path) -> 
         "\n".join(
             [
                 "# Rollout Evidence Driven Planner Refactor Plan",
+                "## Priority Rule",
                 "## First-Principles Reflection Gate",
                 "## Rollout Evidence Gate",
                 "## New-File Extraction Rule",
@@ -79,22 +103,28 @@ def test_plan_contract_rejects_change_records_in_active_plan(tmp_path: Path) -> 
         tmp_path / "docs/planner_rollout_evidence_refactor_log.md",
         "# Rollout Evidence Driven Planner Refactor Log\n\n## Change Record Protocol\n",
     )
-    _write(
-        tmp_path
-        / "docs/primitive_scheduler_service_refactor_plan_DO_NOT_EXTEND_HISTORY.md",
-        "# Historical Plan\n\nStatus: historical / do not extend.\n",
-    )
-
     with pytest.raises(PlannerRefactorGuardError, match="change records"):
         check_plan_contract(tmp_path)
 
 
-def test_historical_file_guard_blocks_future_edits_to_do_not_extend_plan() -> None:
+def test_historical_file_guard_allows_deleting_absent_legacy_plan(tmp_path: Path) -> None:
+    check_historical_file_guard(
+        ["docs/primitive_scheduler_service_refactor_plan_DO_NOT_EXTEND_HISTORY.md"],
+        root=tmp_path,
+    )
+
+
+def test_historical_file_guard_blocks_recreating_legacy_plan(tmp_path: Path) -> None:
+    _write(
+        tmp_path
+        / "docs/primitive_scheduler_service_refactor_plan_DO_NOT_EXTEND_HISTORY.md",
+        "# Historical Plan\n",
+    )
+
     with pytest.raises(PlannerRefactorGuardError, match="historical plan"):
         check_historical_file_guard(
-            [
-                "docs/primitive_scheduler_service_refactor_plan_DO_NOT_EXTEND_HISTORY.md"
-            ]
+            ["docs/primitive_scheduler_service_refactor_plan_DO_NOT_EXTEND_HISTORY.md"],
+            root=tmp_path,
         )
 
 
@@ -112,6 +142,7 @@ def test_skill_contract_points_to_rollout_evidence_plan(tmp_path: Path) -> None:
                 "Keep docs/planner_rollout_evidence_refactor_log.md separate.",
                 "Use real rollout log evidence before extracting code.",
                 "Run the first-principles reflection gate every round.",
+                "The primary goal is refactoring and abstraction.",
             ]
         ),
         encoding="utf-8",
@@ -164,3 +195,4 @@ def test_goal_prompt_exists_for_rollout_evidence_goal_mode() -> None:
     assert "$excavator-planner-safe-refactor" in prompt
     assert "rollout log" in prompt.lower()
     assert "first-principles" in prompt.lower()
+    assert "primitive_scheduler_service_refactor_plan" not in prompt

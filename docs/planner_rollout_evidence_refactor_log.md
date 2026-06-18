@@ -25,12 +25,20 @@ Each completed refactor round should append:
 
 - Replaced the active primitive planner refactor route with rollout-evidence
   driven extraction.
-- Moved the old service-object-first plan to
-  `docs/primitive_scheduler_service_refactor_plan_DO_NOT_EXTEND_HISTORY.md`.
+- Backed up the old service-object-first plan in git history, then removed it
+  from the live tree so future agents do not read stale guidance.
 - Added `docs/planner_rollout_evidence_refactor_plan.md` as the active plan.
 - Kept this separate log file for execution records.
 - Added `scripts/planner_refactor_guard.py` and matching tests to keep future
-  rounds from writing new records into the plan or extending the closed
-  historical plan.
+  rounds from writing new records into the plan or recreating the old plan path.
 - Updated the `excavator-planner-safe-refactor` skill to point to the new plan
   and require rollout log evidence before migration.
+
+### 2026-06-18 Priority Correction
+
+- Clarified that refactoring, abstraction, and useful live-code extraction are
+  the primary goals.
+- Reframed behavior protection as a secondary constraint for confirmed-live
+  rollout behavior, not a reason to preserve abandoned or unobserved paths.
+- Removed the old historical plan document from the live tree. The backup is git
+  history, not a file agents should read before acting.

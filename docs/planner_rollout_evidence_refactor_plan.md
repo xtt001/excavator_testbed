@@ -3,8 +3,8 @@
 Status: **active source of truth**.
 
 This plan replaces the older service-object-first planner refactor route. The
-old route is kept only as history in
-`docs/primitive_scheduler_service_refactor_plan_DO_NOT_EXTEND_HISTORY.md`.
+old route is kept only in git history, not as a live repository document. Do not
+read or extend the old plan during future refactor rounds.
 
 The active goal is not to keep editing `PrimitivePlannerACTPolicy` until it
 looks smaller. The active goal is to identify planner behavior that is proven
@@ -13,6 +13,20 @@ and delete the old shell path once parity is proven.
 
 Change records do not belong in this file. Record execution history in
 `docs/planner_rollout_evidence_refactor_log.md`.
+
+## Priority Rule
+
+The primary goal is refactoring: reduce coupling, extract the useful live
+logic, clarify abstraction boundaries, and delete old inline paths after parity.
+
+Protection is secondary. It exists to keep confirmed-live behavior intact while
+the refactor happens. Protection must not preserve abandoned, unobserved,
+test-only, or obsolete code by default, and it must not justify adding adapter
+layers that make the main logic harder to understand.
+
+When these goals conflict, prefer the smallest evidence-backed refactor that can
+delete or reclassify old code. Stop for user confirmation if the only way to
+"protect" behavior is to keep unclear old logic alive.
 
 ## First-Principles Reflection Gate
 
