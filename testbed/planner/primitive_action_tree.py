@@ -9,11 +9,6 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-
-from testbed.planner.dump_lifecycle import (
-    build_carry_transition_runtime_request,
-    build_dump_transition_runtime_request,
-)
 from testbed.policies.hybrid.primitive_planner import (
     BOOTSTRAP_SKILL_NAME,
     PRE_DIG_ALIGN_SKILL_NAME,
@@ -307,33 +302,28 @@ class PrimitiveActionTreeRunner:
         boundary_event: Any | None,
     ) -> _ActionTreeTickResult:
         active_skill_before = str(policy._skill_name)
-        release_safety_done = policy._carry_release_safety_done(obs)
-        request = build_carry_transition_runtime_request(
-            release_safety_done=release_safety_done,
+        runtime = policy._carry_transition_runtime(
+            obs=obs,
             boundary_event=boundary_event,
-            semantic_boundary_profile_active=policy._semantic_boundary_profile_active(),
             current_dump_ready_hold_count=policy._dump_ready_hold_count,
         )
-        dump_ready = False
-        if request.should_check_dump_ready and policy._dump_ready(obs):
-            dump_ready = True
-        runtime = policy.dump_lifecycle_gate.carry_transition_runtime(
-            request.facts_with_dump_ready(dump_ready),
-            dump_ready_hold_steps=policy.dump_ready_hold_steps,
-        )
         policy._apply_carry_transition_runtime(runtime, obs)
+        action = str(getattr(runtime.outcome, "action", ""))
+        switch_reason = str(getattr(runtime.outcome, "switch_reason", ""))
         return _ActionTreeTickResult(
-            node_path=(str(runtime.outcome.action),),
+            node_path=(action,),
             node_status=_node_status(
                 active_skill_before=active_skill_before,
                 active_skill_after=str(policy._skill_name),
                 switch_reason=str(policy._switch_reason),
-                service_outcome=str(runtime.outcome.action),
+                service_outcome=action,
             ),
-            service_outcome=str(runtime.outcome.action),
+            service_outcome=action,
             guard_facts={
-                "release_safety_done": bool(release_safety_done),
-                "dump_ready": bool(dump_ready),
+                "release_safety_done": switch_reason.endswith(
+                    "release_safety"
+                ),
+                "dump_ready": switch_reason.endswith("target_ready"),
             },
         )
 
@@ -344,31 +334,25 @@ class PrimitiveActionTreeRunner:
         boundary_event: Any | None,
     ) -> _ActionTreeTickResult:
         active_skill_before = str(policy._skill_name)
-        request = build_dump_transition_runtime_request(
-            dump_done_use_boundary_event=policy.dump_done_use_boundary_event,
+        runtime = policy._dump_transition_runtime(
+            obs=obs,
             boundary_event=boundary_event,
-            semantic_boundary_profile_active=policy._semantic_boundary_profile_active(),
             current_dump_done_hold_count=policy._dump_done_hold_count,
         )
-        dump_done = False
-        if request.should_check_dump_done and policy._dump_done(obs):
-            dump_done = True
-        runtime = policy.dump_lifecycle_gate.dump_transition_runtime(
-            request.facts_with_dump_done(dump_done),
-            dump_done_hold_steps=policy.dump_done_hold_steps,
-        )
         policy._apply_dump_transition_runtime(runtime, obs)
+        action = str(getattr(runtime.outcome, "action", ""))
+        switch_reason = str(getattr(runtime.outcome, "switch_reason", ""))
         return _ActionTreeTickResult(
-            node_path=(str(runtime.outcome.action),),
+            node_path=(action,),
             node_status=_node_status(
                 active_skill_before=active_skill_before,
                 active_skill_after=str(policy._skill_name),
                 switch_reason=str(policy._switch_reason),
-                service_outcome=str(runtime.outcome.action),
+                service_outcome=action,
             ),
-            service_outcome=str(runtime.outcome.action),
+            service_outcome=action,
             guard_facts={
-                "dump_done": bool(dump_done),
+                "dump_done": switch_reason == "dump_to_return_mass_low",
                 "dump_done_use_boundary_event": bool(
                     policy.dump_done_use_boundary_event
                 ),

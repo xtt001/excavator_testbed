@@ -1643,6 +1643,66 @@ Cleanup verification for removing the old dig fallback:
 - `python -m compileall -q testbed/planner/runtime testbed/planner/primitive_action_tree.py testbed/policies/hybrid/primitive_planner.py tests/test_planner_backend_ports.py tests/test_primitive_action_tree.py tests/test_legacy_fsm_backend.py`
   -> no output.
 
+#### Phase 4 Slice 5 Carry/Dump Runtime Capability Cleanup 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/dump_lifecycle.py`: added
+  `carry_transition_runtime_from_facts()` and
+  `dump_transition_runtime_from_facts()`. These capability functions own
+  carry/dump request construction, boundary-event short-circuit behavior, gate
+  ordering, and transition runtime projection from explicit
+  `DumpLifecycleFacts` and `DumpLifecycleConfig`.
+- `testbed/policies/hybrid/primitive_planner.py`: `_carry_transition_runtime()`
+  and `_dump_transition_runtime()` now only build facts/config and call the
+  dump lifecycle capability functions. `_carry_release_safety_done()` was
+  removed because no live default/backend/shadow path requires it after the
+  provider migration.
+- `testbed/planner/primitive_action_tree.py`: carry and dump shadow nodes now
+  consume `_carry_transition_runtime()` and `_dump_transition_runtime()`
+  providers instead of reconstructing request/gate ordering through shell
+  private methods.
+- `tests/test_dump_transition_runtime_capability.py`: new focused tests for
+  carry/dump boundary-event skip behavior without constructing
+  `PrimitivePlannerACTPolicy`.
+- `tests/test_primitive_action_tree.py` and
+  `tests/test_primitive_scheduler_facades.py`: updated tests to lock the new
+  provider/capability boundary and stop monkeypatching primitive-planner
+  request-builder imports.
+
+Scope guardrails kept:
+
+- No default backend selection, config default, dump-ready/dump-done
+  thresholds, switch reason strings, policy reset timing, debug/trace/rollout
+  schema, or token contract changed.
+- `BehaviorTreeBackend` remains experimental and is not enabled by
+  `planner_backend` config.
+- `_dump_ready()` and `_dump_done()` remain only because the explicit 5P
+  compatibility planner still calls them. The default FSM backend and
+  action-tree shadow path no longer call those facades for carry/dump runtime
+  transitions.
+
+Verification run for this cleanup:
+
+- Initial RED:
+  `python -m pytest -p no:cacheprovider -q tests/test_dump_transition_runtime_capability.py`
+  -> failed with missing `carry_transition_runtime_from_facts` and
+  `dump_transition_runtime_from_facts`.
+- Initial RED:
+  `python -m pytest -p no:cacheprovider -q tests/test_primitive_action_tree.py::test_action_tree_carry_uses_transition_runtime_provider tests/test_primitive_action_tree.py::test_action_tree_dump_uses_transition_runtime_provider`
+  -> failed because the action-tree carry/dump nodes still called old shell
+  gates.
+- Focused GREEN:
+  `python -m pytest -p no:cacheprovider -q tests/test_dump_transition_runtime_capability.py tests/test_dump_lifecycle_service.py tests/test_legacy_fsm_backend_dump_lifecycle.py tests/test_planner_backend_ports.py tests/test_behavior_tree_backend_contract.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py`
+  -> `185 passed`.
+- Backend/runtime/config:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_planner_backend_config.py`
+  -> `60 passed`.
+- Golden/debug/token/data/config/AGX spot check:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_golden_traces.py tests/test_primitive_planner_debug_schema.py tests/test_primitive_token_contracts.py tests/test_policy_data_contracts.py tests/test_config_semantic_matrix.py tests/test_agx_primitives_v2_2.py::TestPrimitivesV22::test_semantic_profile_keeps_material_liveness_dig_to_carry`
+  -> `53 passed, 1 warning` from the existing `datetime.utcnow()`
+  deprecation in `testbed/data/dataset.py`.
+
 ### Phase 5: Default Backend Migration
 
 Once `LegacyStateMachineBackend` is behavior-identical and the adapter applies

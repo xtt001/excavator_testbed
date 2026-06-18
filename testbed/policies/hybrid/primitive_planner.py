@@ -165,11 +165,11 @@ from testbed.planner.dump_lifecycle import (
     DumpLifecycleRuntimeState,
     DumpLifecycleRuntimeStatusSnapshot,
     DumpTransitionRuntimeState,
-    build_carry_transition_runtime_request,
     build_dump_lifecycle_config_from_mapping,
     build_dump_lifecycle_runtime_config_from_mapping,
     build_dump_lifecycle_runtime_status_state_from_mapping,
-    build_dump_transition_runtime_request,
+    carry_transition_runtime_from_facts,
+    dump_transition_runtime_from_facts,
 )
 from testbed.planner.goal_sequence import (
     GOAL_SEQUENCE_CONFIG_KEYS,
@@ -2235,20 +2235,15 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         boundary_event: Any | None,
         current_dump_ready_hold_count: int,
     ) -> CarryTransitionRuntimeState:
-        release_safety_done = self._carry_release_safety_done(obs)
-        request = build_carry_transition_runtime_request(
-            release_safety_done=release_safety_done,
+        return carry_transition_runtime_from_facts(
+            service=self.dump_lifecycle_gate,
+            facts=self._dump_lifecycle_facts(obs),
+            config=self._dump_lifecycle_config(),
             boundary_event=boundary_event,
             semantic_boundary_profile_active=(
                 self._semantic_boundary_profile_active()
             ),
             current_dump_ready_hold_count=current_dump_ready_hold_count,
-        )
-        dump_ready = False
-        if request.should_check_dump_ready:
-            dump_ready = bool(self._dump_ready(obs))
-        return self.dump_lifecycle_gate.carry_transition_runtime(
-            request.facts_with_dump_ready(dump_ready),
             dump_ready_hold_steps=self.dump_ready_hold_steps,
         )
 
@@ -2266,26 +2261,18 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         boundary_event: Any | None,
         current_dump_done_hold_count: int,
     ) -> DumpTransitionRuntimeState:
-        request = build_dump_transition_runtime_request(
-            dump_done_use_boundary_event=self.dump_done_use_boundary_event,
+        return dump_transition_runtime_from_facts(
+            service=self.dump_lifecycle_gate,
+            facts=self._dump_lifecycle_facts(obs),
+            config=self._dump_lifecycle_config(),
             boundary_event=boundary_event,
             semantic_boundary_profile_active=(
                 self._semantic_boundary_profile_active()
             ),
             current_dump_done_hold_count=current_dump_done_hold_count,
-        )
-        dump_done = False
-        if request.should_check_dump_done:
-            dump_done = bool(self._dump_done(obs))
-        return self.dump_lifecycle_gate.dump_transition_runtime(
-            request.facts_with_dump_done(dump_done),
             dump_done_hold_steps=self.dump_done_hold_steps,
-        )
-
-    def _carry_release_safety_done(self, obs: dict) -> bool:
-        return self.dump_lifecycle_gate.carry_release_safety_done(
-            self._dump_lifecycle_facts(obs),
-            self._dump_lifecycle_config(),
+            dump_done_use_boundary_event=self.dump_done_use_boundary_event,
+            dump_start_deposited_mass_kg=self._dump_start_deposited_mass_kg,
         )
 
     def _make_snapshot(

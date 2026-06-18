@@ -439,6 +439,73 @@ def build_dump_lifecycle_facts_from_observation_view(
     )
 
 
+def carry_transition_runtime_from_facts(
+    *,
+    service: DumpLifecycleGateService,
+    facts: DumpLifecycleFacts,
+    config: DumpLifecycleConfig,
+    boundary_event: Any | None,
+    semantic_boundary_profile_active: bool,
+    current_dump_ready_hold_count: int,
+    dump_ready_hold_steps: int,
+) -> CarryTransitionRuntimeState:
+    """Evaluate carry-to-dump/return runtime gates from explicit facts."""
+
+    release_safety_done = service.carry_release_safety_done(facts, config)
+    request = service.carry_transition_runtime_request(
+        CarryTransitionRuntimeRequestFacts(
+            release_safety_done=release_safety_done,
+            boundary_event=boundary_event,
+            semantic_boundary_profile_active=semantic_boundary_profile_active,
+            current_dump_ready_hold_count=current_dump_ready_hold_count,
+        )
+    )
+    dump_ready = False
+    if request.should_check_dump_ready:
+        dump_ready = bool(service.dump_ready(facts, config))
+    return service.carry_transition_runtime(
+        request.facts_with_dump_ready(dump_ready),
+        dump_ready_hold_steps=dump_ready_hold_steps,
+    )
+
+
+def dump_transition_runtime_from_facts(
+    *,
+    service: DumpLifecycleGateService,
+    facts: DumpLifecycleFacts,
+    config: DumpLifecycleConfig,
+    boundary_event: Any | None,
+    semantic_boundary_profile_active: bool,
+    current_dump_done_hold_count: int,
+    dump_done_hold_steps: int,
+    dump_done_use_boundary_event: bool,
+    dump_start_deposited_mass_kg: float,
+) -> DumpTransitionRuntimeState:
+    """Evaluate dump-to-return runtime gates from explicit facts."""
+
+    request = service.dump_transition_runtime_request(
+        DumpTransitionRuntimeRequestFacts(
+            dump_done_use_boundary_event=dump_done_use_boundary_event,
+            boundary_event=boundary_event,
+            semantic_boundary_profile_active=semantic_boundary_profile_active,
+            current_dump_done_hold_count=current_dump_done_hold_count,
+        )
+    )
+    dump_done = False
+    if request.should_check_dump_done:
+        dump_done = bool(
+            service.dump_done(
+                facts,
+                config,
+                dump_start_deposited_mass_kg=dump_start_deposited_mass_kg,
+            )
+        )
+    return service.dump_transition_runtime(
+        request.facts_with_dump_done(dump_done),
+        dump_done_hold_steps=dump_done_hold_steps,
+    )
+
+
 @dataclass(frozen=True)
 class DumpLifecycleRuntimeState:
     ready_hold_count: int

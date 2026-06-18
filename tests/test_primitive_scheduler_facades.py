@@ -3659,7 +3659,7 @@ def test_dump_transition_runtime_apply_facades_preserve_side_effect_order() -> N
     ]
 
 
-def test_carry_transition_request_uses_lifecycle_builder(
+def test_carry_transition_runtime_uses_lifecycle_capability(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     policy = _make_policy()
@@ -3674,16 +3674,21 @@ def test_carry_transition_request_uses_lifecycle_builder(
         {"dump_complete": True},
     )()
     captured: dict[str, object] = {}
-    original_builder = primitive_planner_module.build_carry_transition_runtime_request
 
-    def build_request(**kwargs: Any) -> Any:
+    def transition_runtime(**kwargs: Any) -> CarryTransitionRuntimeState:
         captured.update(kwargs)
-        return original_builder(**kwargs)
+        return CarryTransitionRuntimeState(
+            dump_ready_hold_count=2,
+            outcome=DumpLifecycleOutcome(
+                action="return",
+                switch_reason="carry_to_return_dump_complete_boundary",
+                coverage_reason="carry_dump_complete_boundary",
+            ),
+        )
 
     def fail_dump_ready(_obs: dict[str, np.ndarray]) -> bool:
-        raise AssertionError("dump_ready must not be checked after boundary event")
+        raise AssertionError("legacy dump_ready facade must not be checked")
 
-    policy._carry_release_safety_done = lambda _obs: False  # type: ignore[method-assign]
     policy._dump_ready = fail_dump_ready  # type: ignore[method-assign]
     policy._complete_coverage_dump = (  # type: ignore[method-assign]
         lambda *_args, **_kwargs: None
@@ -3693,8 +3698,8 @@ def test_carry_transition_request_uses_lifecycle_builder(
     )
     monkeypatch.setattr(
         primitive_planner_module,
-        "build_carry_transition_runtime_request",
-        build_request,
+        "carry_transition_runtime_from_facts",
+        transition_runtime,
     )
 
     policy._maybe_switch_skill(
@@ -3702,10 +3707,11 @@ def test_carry_transition_request_uses_lifecycle_builder(
         boundary_event=boundary_event,
     )
 
-    assert captured["release_safety_done"] is False
+    assert captured["service"] is policy.dump_lifecycle_gate
     assert captured["boundary_event"] is boundary_event
     assert captured["semantic_boundary_profile_active"] is True
     assert captured["current_dump_ready_hold_count"] == 2
+    assert captured["dump_ready_hold_steps"] == policy.dump_ready_hold_steps
 
 
 def test_carry_boundary_event_does_not_call_dump_ready_gate() -> None:
@@ -3761,7 +3767,7 @@ def test_carry_dump_complete_event_preserves_ready_hold_count() -> None:
     assert policy._switch_reason == "carry_to_return_dump_complete_boundary"
 
 
-def test_dump_transition_request_uses_lifecycle_builder(
+def test_dump_transition_runtime_uses_lifecycle_capability(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     policy = _make_policy()
@@ -3777,14 +3783,20 @@ def test_dump_transition_request_uses_lifecycle_builder(
         {"dump_complete": True},
     )()
     captured: dict[str, object] = {}
-    original_builder = primitive_planner_module.build_dump_transition_runtime_request
 
-    def build_request(**kwargs: Any) -> Any:
+    def transition_runtime(**kwargs: Any) -> DumpTransitionRuntimeState:
         captured.update(kwargs)
-        return original_builder(**kwargs)
+        return DumpTransitionRuntimeState(
+            dump_done_hold_count=3,
+            outcome=DumpLifecycleOutcome(
+                action="return",
+                switch_reason="dump_to_return_dump_complete_boundary",
+                coverage_reason="dump_complete_boundary",
+            ),
+        )
 
     def fail_dump_done(_obs: dict[str, np.ndarray]) -> bool:
-        raise AssertionError("dump_done must not be checked after boundary event")
+        raise AssertionError("legacy dump_done facade must not be checked")
 
     policy._dump_done = fail_dump_done  # type: ignore[method-assign]
     policy._complete_coverage_dump = (  # type: ignore[method-assign]
@@ -3795,8 +3807,8 @@ def test_dump_transition_request_uses_lifecycle_builder(
     )
     monkeypatch.setattr(
         primitive_planner_module,
-        "build_dump_transition_runtime_request",
-        build_request,
+        "dump_transition_runtime_from_facts",
+        transition_runtime,
     )
 
     policy._maybe_switch_skill(
@@ -3804,10 +3816,15 @@ def test_dump_transition_request_uses_lifecycle_builder(
         boundary_event=boundary_event,
     )
 
-    assert captured["dump_done_use_boundary_event"] is True
+    assert captured["service"] is policy.dump_lifecycle_gate
     assert captured["boundary_event"] is boundary_event
     assert captured["semantic_boundary_profile_active"] is True
     assert captured["current_dump_done_hold_count"] == 3
+    assert captured["dump_done_hold_steps"] == policy.dump_done_hold_steps
+    assert captured["dump_done_use_boundary_event"] is True
+    assert captured["dump_start_deposited_mass_kg"] == pytest.approx(
+        policy._dump_start_deposited_mass_kg
+    )
 
 
 def test_dump_complete_event_does_not_call_dump_done_gate() -> None:

@@ -30,6 +30,11 @@ from testbed.planner.dig_lifecycle import (
     DigTransitionRuntimeOutcome,
     DigTransitionRuntimeProjection,
 )
+from testbed.planner.dump_lifecycle import (
+    CarryTransitionRuntimeState,
+    DumpLifecycleOutcome,
+    DumpTransitionRuntimeState,
+)
 from testbed.planner.primitive_action_tree import (
     PrimitiveActionTreeRunner,
     patch_primitive_action_tree_predict,
@@ -320,6 +325,7 @@ def test_action_tree_tick_transition_matches_legacy_dig_bad_replan(
     tree_policy = _make_policy(boundary_events=[], boundary_profile="legacy")
     for policy in (legacy, tree_policy):
         policy._skill_name = "dig"
+
     def transition_runtime(**_kwargs: object) -> DigTransitionRuntimeProjection:
         return DigTransitionRuntimeProjection(
             outcome=DigTransitionRuntimeOutcome(
@@ -393,6 +399,7 @@ def test_action_tree_tick_transition_matches_legacy_dig_complete_low_payload(
     tree_policy = _make_policy(boundary_events=[], boundary_profile="v2_4_5_spatial_mass")
     for policy in (legacy, tree_policy):
         policy._skill_name = "dig"
+
     def transition_runtime(**_kwargs: object) -> DigTransitionRuntimeProjection:
         return DigTransitionRuntimeProjection(
             outcome=DigTransitionRuntimeOutcome(
@@ -436,6 +443,107 @@ def test_action_tree_tick_transition_matches_legacy_carry_to_return() -> None:
     assert trace.active_skill_before == "carry"
     assert trace.active_skill_after == "return"
     assert trace.switch_reason == "carry_to_return_dump_complete_boundary"
+    assert trace.node_path[-1] == "return"
+
+
+def test_action_tree_carry_uses_transition_runtime_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree_policy = _make_policy(boundary_events=[], boundary_profile="legacy")
+    tree_policy._skill_name = "carry"
+    tree_policy._dump_ready_hold_count = 2
+    calls: list[str] = []
+
+    def carry_transition_runtime(
+        *,
+        obs: dict,
+        boundary_event: object | None,
+        current_dump_ready_hold_count: int,
+    ) -> CarryTransitionRuntimeState:
+        calls.append(
+            f"carry_runtime:{obs['env_state'].shape[0]}:"
+            f"{boundary_event is None}:{current_dump_ready_hold_count}"
+        )
+        return CarryTransitionRuntimeState(
+            dump_ready_hold_count=current_dump_ready_hold_count + 1,
+            outcome=DumpLifecycleOutcome(
+                action="dump",
+                switch_reason="carry_to_dump_target_ready",
+            ),
+        )
+
+    def fail_old_gate(_obs: dict) -> bool:
+        raise AssertionError("carry action tree must not call old shell gates")
+
+    monkeypatch.setattr(
+        tree_policy,
+        "_carry_transition_runtime",
+        carry_transition_runtime,
+    )
+    monkeypatch.setattr(tree_policy, "_dump_ready", fail_old_gate)
+
+    runner = PrimitiveActionTreeRunner()
+    trace = runner.tick_transition(
+        tree_policy,
+        _obs(mass=500.0, dig_distance=0.0),
+        None,
+    )
+
+    assert calls == ["carry_runtime:64:True:2"]
+    assert trace.active_skill_before == "carry"
+    assert trace.active_skill_after == "dump"
+    assert trace.switch_reason == "carry_to_dump_target_ready"
+    assert trace.node_path[-1] == "dump"
+
+
+def test_action_tree_dump_uses_transition_runtime_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree_policy = _make_policy(boundary_events=[], boundary_profile="legacy")
+    tree_policy._skill_name = "dump"
+    tree_policy._dump_done_hold_count = 3
+    calls: list[str] = []
+
+    def dump_transition_runtime(
+        *,
+        obs: dict,
+        boundary_event: object | None,
+        current_dump_done_hold_count: int,
+    ) -> DumpTransitionRuntimeState:
+        calls.append(
+            f"dump_runtime:{obs['env_state'].shape[0]}:"
+            f"{boundary_event is None}:{current_dump_done_hold_count}"
+        )
+        return DumpTransitionRuntimeState(
+            dump_done_hold_count=current_dump_done_hold_count + 1,
+            outcome=DumpLifecycleOutcome(
+                action="return",
+                switch_reason="dump_to_return_mass_low",
+                coverage_reason="dump_mass_low",
+            ),
+        )
+
+    def fail_old_gate(_obs: dict) -> bool:
+        raise AssertionError("dump action tree must not call old shell gates")
+
+    monkeypatch.setattr(
+        tree_policy,
+        "_dump_transition_runtime",
+        dump_transition_runtime,
+    )
+    monkeypatch.setattr(tree_policy, "_dump_done", fail_old_gate)
+
+    runner = PrimitiveActionTreeRunner()
+    trace = runner.tick_transition(
+        tree_policy,
+        _obs(mass=50.0, dig_distance=0.0),
+        None,
+    )
+
+    assert calls == ["dump_runtime:64:True:3"]
+    assert trace.active_skill_before == "dump"
+    assert trace.active_skill_after == "return"
+    assert trace.switch_reason == "dump_to_return_mass_low"
     assert trace.node_path[-1] == "return"
 
 
