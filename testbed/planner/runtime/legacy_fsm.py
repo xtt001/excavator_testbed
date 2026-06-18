@@ -264,12 +264,13 @@ class LegacyStateMachineBackend:
             bad_replan_ready=bad_replan_ready,
             complete_boundary_low_payload=complete_boundary_low_payload,
         ):
-            dig_to_carry_ready = ports.dig_to_carry_ready(
+            dig_to_carry_decision = ports.dig_to_carry_decision(
                 obs=obs,
                 boundary_event=context.boundary_event,
             )
+            dig_to_carry_ready = bool(dig_to_carry_decision.ready)
             if dig_to_carry_ready:
-                dig_to_carry_reason = str(ports.dig_to_carry_reason())
+                dig_to_carry_reason = str(dig_to_carry_decision.reason)
         outcome = ports.lifecycle_gate.dig_transition_runtime(
             request.facts_with_gate_results(
                 bad_replan_ready=bad_replan_ready,

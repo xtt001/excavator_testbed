@@ -470,8 +470,10 @@ Scope guardrails kept:
 - No branch order, thresholds, reason strings, policy reset timing,
   debug/trace/rollout schema, token contract, default backend selection, or
   behavior-tree default changed.
-- `dig_to_carry_reason` remains an adapter-provided port because
-  `_dig_to_carry_ready()` still owns the legacy reason write timing.
+- At this boundary pass, `dig_to_carry_reason` remained an adapter-provided
+  port because `_dig_to_carry_ready()` still owned the legacy reason write
+  timing. The follow-up dig-to-carry decision port record below supersedes that
+  interim shape.
 - Return completion remains adapter-owned; the backend still returns only the
   return transition outcome/projection effect.
 - Coverage state remains `PlannerTickContext.coverage_state`, and
@@ -498,6 +500,72 @@ Verification run for this boundary pass:
   -> `25 passed, 1 warning` from the existing `datetime.utcnow()` deprecation in
   `testbed/data/dataset.py`.
 - `python -m compileall -q testbed/planner/runtime testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_action_tree.py tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py`
+  -> no output.
+- `git diff --check` -> no whitespace errors.
+
+#### Dig-To-Carry Decision Port Record 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/runtime/ports.py`: replaced the default FSM dig transition
+  port pair `dig_to_carry_ready` plus `dig_to_carry_reason` with one stable
+  semantic port, `dig_to_carry_decision`. The provider returns the structural
+  `DigToCarryDecision` protocol with explicit `ready` and `reason` fields,
+  currently satisfied by the existing `DigGateDecision` produced by
+  `DigLifecycleGateService`.
+- `testbed/planner/runtime/__init__.py`: exports
+  `DigToCarryDecision` and `DigToCarryDecisionProvider` with the other typed
+  runtime port contracts.
+- `testbed/planner/runtime/legacy_fsm.py`: changed the dig branch to consume
+  `context.ports.legacy_fsm.dig_transition.dig_to_carry_decision(...)` and
+  build the same `dig_to_carry_<reason>` transition projection from the returned
+  decision. The earlier gate order is unchanged: exit guard, bad replan,
+  complete-low-payload, then dig-to-carry decision.
+- `testbed/policies/hybrid/primitive_planner.py`: kept adapter behavior thin by
+  adding `_dig_to_carry_decision()` as the legacy lifecycle-service wiring
+  point. The old `_dig_to_carry_ready()` method remains a compatibility facade
+  for action-tree and diagnostic callers, and still updates
+  `_dig_to_carry_reason` through the decision helper.
+- `tests/test_planner_backend_ports.py`,
+  `tests/test_legacy_fsm_backend.py`, and
+  `tests/test_primitive_scheduler_facades.py`: updated focused backend-port and
+  facade tests so backend-path tests assert the explicit decision object rather
+  than relying on a ready callback followed by a separate reason callback.
+
+Scope guardrails kept:
+
+- No branch order, thresholds, reason strings, policy reset timing,
+  debug/trace/rollout schema, token contract, default backend selection, or
+  behavior-tree default changed.
+- The backend still does not own dig lifecycle thresholds or facts assembly; it
+  consumes the typed decision returned through the port and emits the existing
+  dig transition runtime projection effect.
+- `PrimitivePlannerACTPolicy` remains the adapter and effect applier. The new
+  `_dig_to_carry_decision()` method only wires existing lifecycle service input
+  and preserves the legacy reason write timing.
+- `PlannerBlackboard`, `PlannerConditioningState`, coverage state, token schema,
+  and source generation ownership are unchanged.
+
+Verification run for this slice:
+
+- Initial RED:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_ports.py`
+  -> failed with
+  `TypeError: LegacyFsmDigTransitionPorts.__init__() got an unexpected keyword argument 'dig_to_carry_decision'`.
+- Focused GREEN:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_ports.py tests/test_legacy_fsm_backend.py tests/test_primitive_scheduler_facades.py::test_dig_exit_guard_transition_does_not_call_later_gates tests/test_primitive_scheduler_facades.py::test_dig_complete_low_payload_preserves_reject_and_restart_reasons tests/test_primitive_scheduler_facades.py::test_dig_to_carry_transition_preserves_completion_order_and_reason`
+  -> `25 passed`.
+- Backend/runtime/config/BT:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_planner_backend_config.py tests/test_behavior_tree_backend_contract.py`
+  -> `68 passed`.
+- Golden/action-tree/facade/debug schema:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_golden_traces.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py tests/test_primitive_planner_debug_schema.py`
+  -> `168 passed`.
+- Token/data/config contract check:
+  `python -m pytest -p no:cacheprovider -q tests/test_primitive_token_contracts.py tests/test_policy_data_contracts.py tests/test_config_semantic_matrix.py`
+  -> `25 passed, 1 warning` from the existing `datetime.utcnow()` deprecation in
+  `testbed/data/dataset.py`.
+- `python -m compileall -q testbed/planner/runtime testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_action_tree.py tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_primitive_scheduler_facades.py`
   -> no output.
 - `git diff --check` -> no whitespace errors.
 

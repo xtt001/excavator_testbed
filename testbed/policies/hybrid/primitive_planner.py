@@ -111,6 +111,7 @@ from testbed.planner.dig_lifecycle import (
     DigLifecyclePlannerConfig,
     DigLifecycleRuntimeStatusSnapshot,
     DigLifecycleRuntimeStatusState,
+    DigGateDecision,
     DigProgressState,
     DigTransitionRuntimeProjection,
     FailedDigRecoveryDecision,
@@ -1146,8 +1147,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                         complete_boundary_low_payload=(
                             self._dig_complete_boundary_low_payload
                         ),
-                        dig_to_carry_ready=self._dig_to_carry_ready,
-                        dig_to_carry_reason=lambda: self._dig_to_carry_reason,
+                        dig_to_carry_decision=self._dig_to_carry_decision,
                     ),
                     dump_lifecycle=LegacyFsmDumpLifecyclePorts(
                         lifecycle_gate=self.dump_lifecycle_gate,
@@ -2215,13 +2215,26 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             self._dig_lifecycle_config(),
         )
 
-    def _dig_to_carry_ready(self, *, obs: dict, boundary_event: Any | None) -> bool:
+    def _dig_to_carry_decision(
+        self,
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> DigGateDecision:
         decision = self.dig_lifecycle_gate.dig_to_carry_ready(
             self._dig_lifecycle_facts(obs, boundary_event),
             self._dig_lifecycle_config(),
         )
         self._dig_to_carry_reason = str(decision.reason)
-        return bool(decision.ready)
+        return decision
+
+    def _dig_to_carry_ready(self, *, obs: dict, boundary_event: Any | None) -> bool:
+        return bool(
+            self._dig_to_carry_decision(
+                obs=obs,
+                boundary_event=boundary_event,
+            ).ready
+        )
 
     def _dig_complete_boundary_low_payload(
         self,

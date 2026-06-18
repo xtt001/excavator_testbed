@@ -26,6 +26,21 @@ class KeywordBoundaryObservationPredicate(Protocol):
         """Return a boolean gate decision using keyword-only tick inputs."""
 
 
+class DigToCarryDecision(Protocol):
+    ready: bool
+    reason: str
+
+
+class DigToCarryDecisionProvider(Protocol):
+    def __call__(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> DigToCarryDecision:
+        """Return a dig-to-carry decision with explicit ready/reason fields."""
+
+
 class DirectHandoffPredicate(Protocol):
     def __call__(
         self,
@@ -44,11 +59,6 @@ class BoolProvider(Protocol):
 class IntProvider(Protocol):
     def __call__(self) -> int:
         """Return an integer runtime/config value."""
-
-
-class StringProvider(Protocol):
-    def __call__(self) -> str:
-        """Return a string runtime value."""
 
 
 class RuntimeConfigProvider(Protocol):
@@ -133,8 +143,7 @@ class LegacyFsmDigTransitionPorts:
     exit_guard_ready: ObservationPredicate
     bad_replan_ready: ObservationPredicate
     complete_boundary_low_payload: BoundaryObservationPredicate
-    dig_to_carry_ready: KeywordBoundaryObservationPredicate
-    dig_to_carry_reason: StringProvider
+    dig_to_carry_decision: DigToCarryDecisionProvider
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,6 +204,8 @@ __all__ = [
     "BoundaryObservationPredicate",
     "CarryTransitionRuntimeRequestBuilder",
     "DirectHandoffPredicate",
+    "DigToCarryDecision",
+    "DigToCarryDecisionProvider",
     "DumpTransitionRuntimeRequestBuilder",
     "IntProvider",
     "KeywordBoundaryObservationPredicate",
@@ -210,5 +221,4 @@ __all__ = [
     "ObservationPredicate",
     "PlannerBackendPorts",
     "RuntimeConfigProvider",
-    "StringProvider",
 ]

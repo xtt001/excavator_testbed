@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from testbed.planner.dig_lifecycle import (
+    DigGateDecision,
     DigLifecycleGateService,
     DigTransitionRuntimeOutcome,
     DigTransitionRuntimeProjection,
@@ -56,13 +57,13 @@ def test_legacy_fsm_backend_dig_uses_typed_ports_preserving_gate_order() -> None
         calls.append(f"complete_low:{obs['step']}:{boundary_event is not None}")
         return False
 
-    def dig_to_carry_ready(
+    def dig_to_carry_decision(
         *,
         obs: dict,
         boundary_event: Any | None,
-    ) -> bool:
+    ) -> DigGateDecision:
         calls.append(f"dig_to_carry:{obs['step']}:{boundary_event is not None}")
-        return True
+        return DigGateDecision(True, "target_payload_loaded")
 
     result = LegacyStateMachineBackend().tick(
         PlannerTickContext(
@@ -79,8 +80,7 @@ def test_legacy_fsm_backend_dig_uses_typed_ports_preserving_gate_order() -> None
                         complete_boundary_low_payload=(
                             complete_boundary_low_payload
                         ),
-                        dig_to_carry_ready=dig_to_carry_ready,
-                        dig_to_carry_reason=lambda: "target_payload_loaded",
+                        dig_to_carry_decision=dig_to_carry_decision,
                     ),
                 )
             ),

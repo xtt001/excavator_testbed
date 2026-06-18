@@ -9,6 +9,8 @@ from testbed.planner.runtime.contracts import (
     PlannerTickResult,
 )
 from testbed.planner.runtime.ports import (
+    DigToCarryDecision,
+    DigToCarryDecisionProvider,
     LegacyFsmBackendPorts,
     LegacyFsmBootstrapPorts,
     LegacyFsmBoundaryProfilePorts,
@@ -53,6 +55,8 @@ __all__ = [
     "BehaviorTreeBackend",
     "BootstrapTransitionDecisionApplier",
     "CarryTransitionRuntimeApplier",
+    "DigToCarryDecision",
+    "DigToCarryDecisionProvider",
     "DigTransitionRuntimeProjectionApplier",
     "DumpTransitionRuntimeApplier",
     "LEGACY_FSM_TRANSITION_EFFECT",
