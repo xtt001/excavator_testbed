@@ -10,7 +10,11 @@ from testbed.planner.return_to_dig_transition import (
     ReturnToDigTransitionRuntimeProjection,
     ReturnToDigTransitionService,
 )
-from testbed.planner.runtime import PlannerRuntimeEffect, PlannerTickContext
+from testbed.planner.runtime import (
+    PlannerBlackboard,
+    PlannerRuntimeEffect,
+    PlannerTickContext,
+)
 from testbed.planner.runtime.legacy_fsm import (
     APPLY_RETURN_TO_DIG_TRANSITION_RUNTIME_EFFECT,
     LEGACY_FSM_TRANSITION_EFFECT,
@@ -37,7 +41,7 @@ def test_legacy_fsm_backend_return_returns_apply_runtime_effect() -> None:
         PlannerTickContext(
             obs={"step": 24},
             boundary_event=_FakeBoundaryEvent(next_dig_entry_ready=True),
-            blackboard={"skill_name": "return"},
+            blackboard=PlannerBlackboard(current_skill="return"),
             services={
                 "return_skill_name": "return",
                 "return_transition_service": ReturnToDigTransitionService(),
@@ -98,7 +102,7 @@ def test_legacy_fsm_backend_return_direct_handoff_preserves_gate_order() -> None
         PlannerTickContext(
             obs={"step": 25},
             boundary_event=None,
-            blackboard={"skill_name": "return"},
+            blackboard=PlannerBlackboard(current_skill="return"),
             services={
                 "return_skill_name": "return",
                 "return_transition_service": ReturnToDigTransitionService(),

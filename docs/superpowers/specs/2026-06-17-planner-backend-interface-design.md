@@ -205,6 +205,52 @@ Verification run for this landing record:
 - `git diff --check --no-index /dev/null <new runtime/test file>` -> no
   whitespace errors in the new files.
 
+#### PlannerBlackboard Skeleton Record 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/runtime/blackboard.py`: added the first typed
+  `PlannerBlackboard` contract as a frozen snapshot with only the default FSM
+  tick state currently needed by the backend boundary: `current_skill`,
+  `switch_reason`, `cycle_index`, `completed_transition_count`, and
+  `transition_timeout_count`.
+- `testbed/planner/runtime/contracts.py`: changed
+  `PlannerTickContext.blackboard` from a generic mapping to
+  `PlannerBlackboard` and rejects untyped dict blackboards.
+- `testbed/planner/runtime/legacy_fsm.py`: changed the legacy backend to read
+  `context.blackboard.current_skill` instead of dict-style `skill_name`.
+- `testbed/policies/hybrid/primitive_planner.py`: thin adapter wiring only;
+  `_legacy_fsm_tick_context()` builds `PlannerBlackboard` from existing shell
+  fields while keeping `coverage_state=self.coverage_service.state` as a
+  separate reference.
+- `tests/test_planner_runtime_contracts.py`, `tests/test_legacy_fsm_backend.py`,
+  and `tests/test_behavior_tree_backend_contract.py`: added and updated
+  contract tests for typed blackboard construction, immutability/hashability,
+  context rejection of old dict blackboards, and backend branch selection from
+  `current_skill`.
+
+Scope guardrails kept:
+
+- No `_maybe_switch_skill()` branch order, thresholds, reason strings, policy
+  reset timing, token source, debug schema, rollout schema, or default backend
+  behavior changed.
+- No dig/dump/return runtime state, token flags, pending-plan state, metadata,
+  diagnostics, or coverage fields were added to `PlannerBlackboard`.
+- `CoverageServiceState` remains referenced by `PlannerTickContext.coverage_state`
+  and is not copied into the blackboard.
+- `BehaviorTreeBackend` remains experimental/fail-closed; only its test context
+  construction was updated to the typed blackboard contract.
+
+Verification run for this cleanup:
+
+- Initial RED:
+  `python -m pytest -q tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_behavior_tree_backend_contract.py`
+  failed during collection because `PlannerBlackboard` did not exist yet.
+- `python -m pytest -p no:cacheprovider -q tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_config.py`
+  -> `60 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_planner_golden_traces.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py`
+  -> `141 passed`.
+
 ### Phase 2: Coverage As First Blackboard Domain
 
 Use the recent coverage dig-cut activation work as the first state-domain

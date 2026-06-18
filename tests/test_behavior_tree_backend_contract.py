@@ -4,7 +4,11 @@ import inspect
 
 import pytest
 
-from testbed.planner.runtime import PlannerBackend, PlannerTickContext
+from testbed.planner.runtime import (
+    PlannerBackend,
+    PlannerBlackboard,
+    PlannerTickContext,
+)
 from testbed.planner.runtime import behavior_tree
 from testbed.planner.runtime.behavior_tree import (
     BEHAVIOR_TREE_EXPERIMENTAL_BACKEND_NAME,
@@ -21,7 +25,7 @@ def test_behavior_tree_backend_is_experimental_backend_contract() -> None:
         backend.tick(
             PlannerTickContext(
                 obs={"step": 1},
-                blackboard={"skill_name": "dig"},
+                blackboard=PlannerBlackboard(current_skill="dig"),
             )
         )
 

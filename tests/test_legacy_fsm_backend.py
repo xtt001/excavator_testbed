@@ -38,6 +38,7 @@ from testbed.planner.dump_lifecycle import (
     build_dump_transition_runtime_request,
 )
 from testbed.planner.runtime import (
+    PlannerBlackboard,
     PlannerRuntimeEffect,
     PlannerTickContext,
     PlannerTickResult,
@@ -59,7 +60,7 @@ def test_legacy_fsm_backend_returns_transition_effect_contract() -> None:
     context = PlannerTickContext(
         obs={"step": 3},
         boundary_event=boundary_event,
-        blackboard={"skill_name": "dig"},
+        blackboard=PlannerBlackboard(current_skill="dig"),
     )
 
     result = LegacyStateMachineBackend().tick(context)
@@ -76,7 +77,7 @@ def test_legacy_fsm_backend_returns_transition_effect_contract() -> None:
 
 
 def test_legacy_fsm_backend_without_bootstrap_skill_name_uses_generic_effect() -> None:
-    context = PlannerTickContext(blackboard={"skill_name": ""})
+    context = PlannerTickContext(blackboard=PlannerBlackboard(current_skill=""))
 
     result = LegacyStateMachineBackend().tick(context)
 
@@ -97,7 +98,7 @@ def test_legacy_fsm_backend_bootstrap_running_returns_no_effects() -> None:
         PlannerTickContext(
             obs={"step": 11},
             boundary_event=boundary_event,
-            blackboard={"skill_name": "bootstrap"},
+            blackboard=PlannerBlackboard(current_skill="bootstrap"),
             services={
                 "bootstrap_skill_name": "bootstrap",
                 "should_end_bootstrap": should_end_bootstrap,
@@ -121,7 +122,7 @@ def test_legacy_fsm_backend_bootstrap_end_returns_apply_decision_effect() -> Non
         PlannerTickContext(
             obs={"step": 12},
             boundary_event=boundary_event,
-            blackboard={"skill_name": "bootstrap"},
+            blackboard=PlannerBlackboard(current_skill="bootstrap"),
             services={
                 "bootstrap_skill_name": "bootstrap",
                 "bootstrap_service": bootstrap_service,
@@ -169,7 +170,7 @@ def test_legacy_fsm_backend_pre_dig_align_returns_apply_outcome_effect() -> None
     result = LegacyStateMachineBackend().tick(
         PlannerTickContext(
             obs={"step": 13},
-            blackboard={"skill_name": "pre_dig_align"},
+            blackboard=PlannerBlackboard(current_skill="pre_dig_align"),
             services={
                 "pre_dig_align_skill_name": "pre_dig_align",
                 "pre_dig_align_outcome": pre_dig_align_outcome,
@@ -223,7 +224,7 @@ def test_legacy_fsm_backend_dig_returns_apply_projection_effect() -> None:
         PlannerTickContext(
             obs={"step": 15},
             boundary_event=_FakeBoundaryEvent(dig_complete=True),
-            blackboard={"skill_name": "dig"},
+            blackboard=PlannerBlackboard(current_skill="dig"),
             services={
                 "dig_skill_name": "dig",
                 "dig_lifecycle_gate": DigLifecycleGateService(),
@@ -275,7 +276,7 @@ def test_legacy_fsm_backend_dig_exit_guard_skips_later_gates() -> None:
     result = LegacyStateMachineBackend().tick(
         PlannerTickContext(
             obs={"step": 16},
-            blackboard={"skill_name": "dig"},
+            blackboard=PlannerBlackboard(current_skill="dig"),
             services={
                 "dig_skill_name": "dig",
                 "dig_lifecycle_gate": DigLifecycleGateService(),
@@ -315,7 +316,7 @@ def test_legacy_fsm_backend_carry_returns_apply_runtime_effect() -> None:
         PlannerTickContext(
             obs={"step": 18},
             boundary_event=None,
-            blackboard={"skill_name": "carry"},
+            blackboard=PlannerBlackboard(current_skill="carry"),
             services={
                 "carry_skill_name": "carry",
                 "build_carry_transition_runtime_request": (
@@ -361,7 +362,7 @@ def test_legacy_fsm_backend_carry_boundary_event_skips_dump_ready_gate() -> None
         PlannerTickContext(
             obs={"step": 19},
             boundary_event=_FakeBoundaryEvent(dump_committed_start=True),
-            blackboard={"skill_name": "carry"},
+            blackboard=PlannerBlackboard(current_skill="carry"),
             services={
                 "carry_skill_name": "carry",
                 "build_carry_transition_runtime_request": (
@@ -399,7 +400,7 @@ def test_legacy_fsm_backend_dump_returns_apply_runtime_effect() -> None:
         PlannerTickContext(
             obs={"step": 21},
             boundary_event=None,
-            blackboard={"skill_name": "dump"},
+            blackboard=PlannerBlackboard(current_skill="dump"),
             services={
                 "dump_skill_name": "dump",
                 "build_dump_transition_runtime_request": (
@@ -446,7 +447,7 @@ def test_legacy_fsm_backend_dump_complete_event_skips_dump_done_gate() -> None:
         PlannerTickContext(
             obs={"step": 22},
             boundary_event=_FakeBoundaryEvent(dump_complete=True),
-            blackboard={"skill_name": "dump"},
+            blackboard=PlannerBlackboard(current_skill="dump"),
             services={
                 "dump_skill_name": "dump",
                 "build_dump_transition_runtime_request": (
@@ -514,7 +515,13 @@ def test_policy_maybe_switch_skill_applies_legacy_backend_effect(
     assert len(seen_contexts) == 1
     assert dict(seen_contexts[0].obs) == {"step": 7}
     assert seen_contexts[0].boundary_event is boundary_event
-    assert dict(seen_contexts[0].blackboard) == {"skill_name": "carry"}
+    assert seen_contexts[0].blackboard == PlannerBlackboard(
+        current_skill="carry",
+        switch_reason=policy._switch_reason,
+        cycle_index=policy._cycle_index,
+        completed_transition_count=policy._completed_transition_count,
+        transition_timeout_count=policy._transition_timeout_count,
+    )
     assert calls == [({"step": 7}, boundary_event)]
 
 

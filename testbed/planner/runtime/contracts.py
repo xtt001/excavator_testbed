@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from testbed.planner.runtime.blackboard import PlannerBlackboard
+
 if TYPE_CHECKING:
     from testbed.planner.dig_coverage import CoverageServiceState
 
@@ -23,7 +25,7 @@ class PlannerTickContext:
     obs: Mapping[str, Any] = field(default_factory=dict)
     boundary_event: Any | None = None
     coverage_state: CoverageServiceState | None = None
-    blackboard: Mapping[str, Any] = field(default_factory=dict)
+    blackboard: PlannerBlackboard = field(default_factory=PlannerBlackboard)
     services: Mapping[str, Any] = field(default_factory=dict)
     policies: Mapping[str, Any] = field(default_factory=dict)
     config: Mapping[str, Any] = field(default_factory=dict)
@@ -31,7 +33,8 @@ class PlannerTickContext:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "obs", _immutable_mapping(self.obs))
-        object.__setattr__(self, "blackboard", _immutable_mapping(self.blackboard))
+        if not isinstance(self.blackboard, PlannerBlackboard):
+            raise TypeError("PlannerTickContext.blackboard must be PlannerBlackboard.")
         object.__setattr__(self, "services", _immutable_mapping(self.services))
         object.__setattr__(self, "policies", _immutable_mapping(self.policies))
         object.__setattr__(self, "config", _immutable_mapping(self.config))

@@ -70,7 +70,7 @@ class LegacyStateMachineBackend:
     name = "legacy_fsm"
 
     def tick(self, context: PlannerTickContext) -> PlannerTickResult:
-        active_skill = str(context.blackboard.get("skill_name", ""))
+        active_skill = context.blackboard.current_skill
         bootstrap_skill_name = context.services.get("bootstrap_skill_name")
         if (
             bootstrap_skill_name is not None

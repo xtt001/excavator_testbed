@@ -6,6 +6,7 @@ import pytest
 
 from testbed.planner.dig_coverage import CoverageServiceState
 from testbed.planner.runtime import (
+    PlannerBlackboard,
     PlannerBackend,
     PlannerRuntimeEffect,
     PlannerTickContext,
@@ -13,18 +14,52 @@ from testbed.planner.runtime import (
 )
 
 
+def test_planner_blackboard_defaults_are_minimal_runtime_state() -> None:
+    blackboard = PlannerBlackboard()
+
+    assert blackboard.current_skill == ""
+    assert blackboard.switch_reason == ""
+    assert blackboard.cycle_index == 0
+    assert blackboard.completed_transition_count == 0
+    assert blackboard.transition_timeout_count == 0
+
+
+def test_planner_blackboard_is_immutable_and_hashable_snapshot() -> None:
+    blackboard = PlannerBlackboard(
+        current_skill="dig",
+        switch_reason="reset",
+        cycle_index=3,
+        completed_transition_count=2,
+        transition_timeout_count=1,
+    )
+
+    assert hash(blackboard) == hash(
+        PlannerBlackboard(
+            current_skill="dig",
+            switch_reason="reset",
+            cycle_index=3,
+            completed_transition_count=2,
+            transition_timeout_count=1,
+        )
+    )
+    with pytest.raises(FrozenInstanceError):
+        blackboard.current_skill = "return"  # type: ignore[misc]
+
+
 def test_tick_context_references_coverage_state_without_copying() -> None:
     coverage_state = CoverageServiceState(active_corridor_id=7)
+    blackboard = PlannerBlackboard(current_skill="dig")
 
     context = PlannerTickContext(
         obs={"step": 3},
         coverage_state=coverage_state,
-        blackboard={"skill_name": "dig"},
+        blackboard=blackboard,
     )
 
     assert context.coverage_state is coverage_state
     assert dict(context.obs) == {"step": 3}
-    assert dict(context.blackboard) == {"skill_name": "dig"}
+    assert context.blackboard is blackboard
+    assert context.blackboard.current_skill == "dig"
     with pytest.raises(TypeError):
         context.obs["step"] = 4  # type: ignore[index]
     with pytest.raises(FrozenInstanceError):
@@ -32,6 +67,11 @@ def test_tick_context_references_coverage_state_without_copying() -> None:
 
     coverage_state.active_corridor_id = 9
     assert context.coverage_state.active_corridor_id == 9
+
+
+def test_tick_context_rejects_untyped_blackboard_mapping() -> None:
+    with pytest.raises(TypeError, match="PlannerBlackboard"):
+        PlannerTickContext(blackboard={"skill_name": "dig"})  # type: ignore[arg-type]
 
 
 def test_runtime_effect_payload_is_an_immutable_hashable_copy() -> None:

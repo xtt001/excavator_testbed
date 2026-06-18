@@ -1,5 +1,6 @@
 """Backend-neutral runtime contracts for primitive planner ticks."""
 
+from testbed.planner.runtime.blackboard import PlannerBlackboard
 from testbed.planner.runtime.contracts import (
     PlannerBackend,
     PlannerRuntimeEffect,
@@ -46,6 +47,7 @@ __all__ = [
     "LegacyFsmTransitionRunner",
     "LegacyStateMachineBackend",
     "PreDigAlignOutcomeApplier",
+    "PlannerBlackboard",
     "PlannerBackend",
     "PlannerRuntimeEffect",
     "PlannerTickContext",

@@ -272,7 +272,11 @@ from testbed.planner.return_to_dig_transition import (
     ReturnToDigTransitionRuntimeProjection,
     ReturnToDigTransitionService,
 )
-from testbed.planner.runtime import PlannerTickContext, PlannerTickResult
+from testbed.planner.runtime import (
+    PlannerBlackboard,
+    PlannerTickContext,
+    PlannerTickResult,
+)
 from testbed.planner.runtime.legacy_fsm import (
     apply_legacy_fsm_runtime_effects,
 )
@@ -616,7 +620,13 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             obs=obs,
             boundary_event=boundary_event,
             coverage_state=self.coverage_service.state,
-            blackboard={"skill_name": self._skill_name},
+            blackboard=PlannerBlackboard(
+                current_skill=self._skill_name,
+                switch_reason=self._switch_reason,
+                cycle_index=self._cycle_index,
+                completed_transition_count=self._completed_transition_count,
+                transition_timeout_count=self._transition_timeout_count,
+            ),
             services={
                 "bootstrap_skill_name": BOOTSTRAP_SKILL_NAME,
                 "bootstrap_service": self.bootstrap_service,
