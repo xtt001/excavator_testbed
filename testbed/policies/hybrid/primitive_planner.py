@@ -69,6 +69,11 @@ from testbed.planner.primitive_coverage import (
     CoverageSelectionConfig,
     CoverageSelectionService,
 )
+from testbed.planner.primitive_coverage_reports import (
+    CoverageBucketSnapshot,
+    CoverageReportService,
+    CoverageReportState,
+)
 from testbed.planner.primitive_coverage_updates import (
     CoverageCompletionFacts,
     CoverageReopenFacts,
@@ -4766,6 +4771,70 @@ class PrimitivePlannerACTPolicy(Policy):
             effective_deposit_delta_kg=effective_deposit_delta_kg,
         )
 
+    @staticmethod
+    def _coverage_report_service() -> CoverageReportService:
+        return CoverageReportService()
+
+    def _coverage_report_state(self) -> CoverageReportState:
+        return CoverageReportState(
+            cycle_index=int(self._cycle_index),
+            skill_name=str(self._skill_name),
+            active_corridor_id=int(self._coverage_active_corridor_id),
+            last_selected_corridor_id=int(self._coverage_last_selected_corridor_id),
+            last_selected_cell_id=int(
+                self._coverage_corridor_cell_id_by_id(
+                    self._coverage_last_selected_corridor_id
+                )
+            ),
+            last_selected_row_id=int(
+                self._coverage_corridor_row_id_by_id(
+                    self._coverage_last_selected_corridor_id
+                )
+            ),
+            depleted_count=int(self._coverage_depleted_count()),
+            pass_index=int(self._coverage_pass_index),
+            global_low_productivity_streak=int(
+                self._coverage_global_low_productivity_streak
+            ),
+            terminal_stop_requested=bool(self._coverage_terminal_stop_requested),
+            terminal_stop_reason=str(self._coverage_terminal_stop_reason),
+        )
+
+    def _coverage_bucket_snapshot(self, obs: dict) -> CoverageBucketSnapshot:
+        env_state = self._env_state(obs)
+        return CoverageBucketSnapshot(
+            mass_kg=float(self._mass_in_bucket(obs)),
+            deposited_mass_kg=float(self._deposited_mass(obs)),
+            dig_area_x_m=self._env_state_value(
+                env_state,
+                ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+            ),
+            dig_area_y_m=self._env_state_value(
+                env_state,
+                ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+            ),
+            dig_area_z_m=self._env_state_value(
+                env_state,
+                ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
+            ),
+            long_norm=self._env_state_value(
+                env_state,
+                ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
+            ),
+            short_norm=self._env_state_value(
+                env_state,
+                ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
+            ),
+            plane_depth_m=self._env_state_value(
+                env_state,
+                ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+            ),
+            local_depth_m=self._env_state_value(
+                env_state,
+                ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+            ),
+        )
+
     def _record_coverage_decision_event(
         self,
         event: str,
@@ -4774,70 +4843,19 @@ class PrimitivePlannerACTPolicy(Policy):
         corridor: CoverageCorridorState | None = None,
         extra: dict[str, Any] | None = None,
     ) -> None:
-        payload: dict[str, Any] = {
-            "event": str(event),
-            "cycle_index": int(self._cycle_index),
-            "skill_name": str(self._skill_name),
-            "active_corridor_id": int(self._coverage_active_corridor_id),
-            "last_selected_corridor_id": int(
-                self._coverage_last_selected_corridor_id
-            ),
-            "last_selected_cell_id": int(
-                self._coverage_corridor_cell_id_by_id(
-                    self._coverage_last_selected_corridor_id
-                )
-            ),
-            "last_selected_row_id": int(
-                self._coverage_corridor_row_id_by_id(
-                    self._coverage_last_selected_corridor_id
-                )
-            ),
-            "depleted_count": int(self._coverage_depleted_count()),
-            "pass_index": int(self._coverage_pass_index),
-            "global_low_productivity_streak": int(
-                self._coverage_global_low_productivity_streak
-            ),
-            "terminal_stop_requested": int(self._coverage_terminal_stop_requested),
-            "terminal_stop_reason": str(self._coverage_terminal_stop_reason),
-        }
-        if corridor is not None:
-            payload["corridor"] = self._coverage_corridor_to_debug(corridor)
-        if obs is not None:
-            env_state = self._env_state(obs)
-            payload["bucket"] = {
-                "mass_kg": float(self._mass_in_bucket(obs)),
-                "deposited_mass_kg": float(self._deposited_mass(obs)),
-                "dig_area_x_m": self._env_state_value(
-                    env_state,
-                    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+        self._coverage_decision_trace.append(
+            self._coverage_report_service().decision_event(
+                str(event),
+                state=self._coverage_report_state(),
+                corridor=(
+                    None
+                    if corridor is None
+                    else self._coverage_corridor_to_debug(corridor)
                 ),
-                "dig_area_y_m": self._env_state_value(
-                    env_state,
-                    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
-                ),
-                "dig_area_z_m": self._env_state_value(
-                    env_state,
-                    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
-                ),
-                "long_norm": self._env_state_value(
-                    env_state,
-                    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
-                ),
-                "short_norm": self._env_state_value(
-                    env_state,
-                    ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
-                ),
-                "plane_depth_m": self._env_state_value(
-                    env_state,
-                    ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
-                ),
-                "local_depth_m": self._env_state_value(
-                    env_state,
-                    ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
-                ),
-            }
-        payload.update(dict(extra or {}))
-        self._coverage_decision_trace.append(payload)
+                bucket=None if obs is None else self._coverage_bucket_snapshot(obs),
+                extra=dict(extra or {}),
+            )
+        )
 
     @staticmethod
     def _env_state_value(env_state: np.ndarray, index: int) -> float:
@@ -4947,50 +4965,11 @@ class PrimitivePlannerACTPolicy(Policy):
         self,
         corridor: CoverageCorridorState,
     ) -> dict[str, float | int | str]:
-        return {
-            "corridor_id": int(corridor.corridor_id),
-            "entry_x_m": float(corridor.entry_x_m),
-            "entry_z_m": float(corridor.entry_z_m),
-            "exit_x_m": float(corridor.exit_x_m),
-            "exit_z_m": float(corridor.exit_z_m),
-            "entry_x_p05_m": float(corridor.entry_x_p05_m),
-            "entry_x_p50_m": float(corridor.entry_x_p50_m),
-            "entry_x_p95_m": float(corridor.entry_x_p95_m),
-            "entry_z_p05_m": float(corridor.entry_z_p05_m),
-            "entry_z_p50_m": float(corridor.entry_z_p50_m),
-            "entry_z_p95_m": float(corridor.entry_z_p95_m),
-            "entry_radial_p75_m": float(corridor.entry_radial_p75_m),
-            "entry_radial_p95_m": float(corridor.entry_radial_p95_m),
-            "exit_x_p05_m": float(corridor.exit_x_p05_m),
-            "exit_x_p50_m": float(corridor.exit_x_p50_m),
-            "exit_x_p95_m": float(corridor.exit_x_p95_m),
-            "exit_z_p05_m": float(corridor.exit_z_p05_m),
-            "exit_z_p50_m": float(corridor.exit_z_p50_m),
-            "exit_z_p95_m": float(corridor.exit_z_p95_m),
-            "exit_radial_p75_m": float(corridor.exit_radial_p75_m),
-            "exit_radial_p95_m": float(corridor.exit_radial_p95_m),
-            "cut_depth_peak_p05_m": float(corridor.cut_depth_peak_p05_m),
-            "cut_depth_peak_p50_m": float(corridor.cut_depth_peak_p50_m),
-            "cut_depth_peak_p95_m": float(corridor.cut_depth_peak_p95_m),
-            "cell_id": int(max(0, min(5, corridor.cell_id))),
-            "source_count": int(corridor.source_count),
-            "source_fraction": float(corridor.source_fraction),
-            "attempt_limit": int(self._coverage_corridor_attempt_limit(corridor)),
-            "cell_confidence": float(self._coverage_cell_confidence(corridor)),
-            "score": float(corridor.score),
-            "attempts": int(corridor.attempts),
-            "low_productivity_streak": int(corridor.low_productivity_streak),
-            "depleted": int(corridor.depleted),
-            "belief_coverage": float(corridor.belief_coverage),
-            "last_payload_gain_kg": float(corridor.last_payload_gain_kg),
-            "last_effective_deposit_delta_kg": float(
-                corridor.last_effective_deposit_delta_kg
-            ),
-            "last_remaining_depth_m": float(corridor.last_remaining_depth_m),
-            "last_reason": str(corridor.last_reason),
-            "state_exemplar_id": str(corridor.state_exemplar_id),
-            "state_exemplar_distance": float(corridor.state_exemplar_distance),
-        }
+        return self._coverage_report_service().corridor_to_debug(
+            corridor,
+            attempt_limit=self._coverage_corridor_attempt_limit(corridor),
+            cell_confidence=self._coverage_cell_confidence(corridor),
+        )
 
     def _clear_dig_cut_plan(self) -> None:
         self._dig_cut_planned_cycle_id = -1

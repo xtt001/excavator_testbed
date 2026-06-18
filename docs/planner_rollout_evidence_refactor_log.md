@@ -1466,3 +1466,59 @@ Each completed refactor round should append:
 - Next action: Phase 6.5 should continue with coverage decision trace/report
   projection only. Do not migrate `_maybe_switch_skill()` branch bodies,
   backend behavior, or runtime effects in the same commit.
+
+### 2026-06-19 Phase 6.5 Coverage Report Projection
+
+- Scope: extracted coverage corridor debug payloads and coverage decision-event
+  payload construction only. No `_maybe_switch_skill()` branch bodies, backend
+  selection, runtime package, behavior tree, VLM/LLM packet, default config,
+  threshold, branch order, reason string, token schema, debug schema, rollout
+  summary schema, or policy reset timing was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `5805e0dbde1ad6b8400f85c79cb70ced87b12b53`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 3 focused tests remained the compatibility baseline:
+    `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; its
+    golden-window contract locks coverage selected corridor fields and trace
+    surfaces.
+  - The only responsibility slice was pure projection: `CoverageCorridorState`
+    to debug dict and explicit coverage event snapshots to trace payload dict.
+    Event append timing and top-level policy report composition stayed in the
+    planner shell.
+- Added `testbed/planner/primitive_coverage_reports.py` with
+  `CoverageReportService`, `CoverageReportState`, and
+  `CoverageBucketSnapshot`. The service receives explicit snapshots and returns
+  dictionaries with the same keys and values as the legacy trace/debug payloads.
+- Updated `PrimitivePlannerACTPolicy._coverage_corridor_to_debug()` and
+  `_record_coverage_decision_event()` to delegate payload construction to
+  `CoverageReportService`. The shell still decides when to append events and
+  still owns the public `debug_state()`, `planner_trace()`, and rollout summary
+  surfaces.
+- Added `tests/test_primitive_coverage_reports.py` with service-versus-facade
+  parity coverage for corridor debug dicts and decision-event payload dicts.
+  The TDD red test failed with `ModuleNotFoundError` before
+  `primitive_coverage_reports.py` was implemented.
+- Old code parked/reclassified: `_maybe_switch_skill()` branch bodies, backend
+  behavior, runtime effects, and top-level public report composition remain
+  legacy source-of-truth until later slices.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_coverage_reports.py` returned
+    `2 passed`.
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "records_coverage_decision_trace or trace_records_terminal_depletion or coverage_first_dig or coverage_multi_pass or coverage_terminal_stop_when_all_depleted" tests/test_planner_current_code_parity.py`
+    returned `9 passed, 114 deselected`.
+  - `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_runtime.py tests/test_primitive_coverage_updates.py tests/test_primitive_coverage_selection.py tests/test_primitive_coverage_candidates.py tests/test_primitive_return_start_envelope_token_planner.py tests/test_primitive_return_relocate_token_planner.py tests/test_primitive_return_target_token_planner.py tests/test_primitive_dig_depth_profile_token_planner.py tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_goal_token_provider.py tests/test_primitive_token_status.py tests/test_primitive_coverage_status.py tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `68 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_coverage_reports.py testbed/policies/hybrid/primitive_planner.py tests/test_primitive_coverage_reports.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 7.1 should begin Slice 7 with the legacy FSM backend
+  protocol/adapter boundary only. Do not move branch bodies, change branch
+  order, change reason strings, or apply effects through the new boundary until
+  a focused parity test is in place.
