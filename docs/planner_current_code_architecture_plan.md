@@ -454,6 +454,10 @@ Default backend:
 
 - `legacy_fsm`
 
+Backend boundary file:
+
+- `testbed/planner/primitive_backend.py`
+
 Behavior to preserve:
 
 - branch order
@@ -548,6 +552,9 @@ construction; Phase 6.2 has extracted coverage scoring/selection; Phase 6.3
 has extracted coverage completion/rejection state updates; Phase 6.4 has
 extracted coverage terminal-stop and multi-pass reopen request ownership; Phase
 6.5 has extracted coverage corridor debug and decision-event payload
-projection. Continue with Phase 7.1, the legacy FSM backend protocol/adapter
-boundary only. Do not move branch bodies, change branch order, change reason
-strings, or apply effects through the new backend boundary in the same slice.
+projection; Phase 7.1 has introduced the legacy FSM backend protocol/adapter
+boundary without moving branch bodies. Continue with Phase 7.2 by migrating
+exactly one legacy FSM branch chain behind the backend adapter with a focused
+service-versus-facade parity test. Do not move multiple branches, change branch
+order, change reason strings, or apply effects through the new backend boundary
+in the same slice.

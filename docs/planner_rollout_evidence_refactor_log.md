@@ -1522,3 +1522,54 @@ Each completed refactor round should append:
   protocol/adapter boundary only. Do not move branch bodies, change branch
   order, change reason strings, or apply effects through the new boundary until
   a focused parity test is in place.
+
+### 2026-06-19 Phase 7.1 Legacy FSM Backend Adapter Boundary
+
+- Scope: introduced the legacy FSM backend protocol/adapter boundary only. No
+  `_maybe_switch_skill()` branch body, branch order, reason string, threshold,
+  effect application, backend selection, runtime package, behavior tree,
+  VLM/LLM packet, token schema, debug schema, rollout summary schema, or policy
+  reset timing was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `e87ef02d6203451ce8959ed3c73c8526765bb111`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 3 focused tests remained the compatibility baseline:
+    `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; the
+    golden-window parity contract locks public tick/report behavior.
+  - The only responsibility slice was the backend call boundary: call the
+    existing already-mutating legacy FSM once, then wrap the observable outcome
+    as `PrimitiveDecisionResult`.
+- Added `testbed/planner/primitive_backend.py` with `PrimitiveDecisionBackend`
+  and `LegacyFSMBackendAdapter`. The adapter receives explicit callbacks for
+  `maybe_switch_skill`, current skill name, and current switch reason. It does
+  not receive planner `self` and does not own any branch logic yet.
+- Updated `PrimitivePlannerACTPolicy._decide_tick_with_legacy_fsm()` to
+  delegate to `_legacy_fsm_backend().decide_tick(...)`. `_maybe_switch_skill()`
+  and the 5P compatibility override remain unchanged legacy source-of-truth.
+- Added `tests/test_primitive_backend.py` with direct adapter coverage. The TDD
+  red test failed with `ModuleNotFoundError` before `primitive_backend.py` was
+  implemented.
+- Old code parked/reclassified: all branch bodies, effect application, backend
+  selection, and alternate backend behavior remain legacy source-of-truth until
+  later Phase 7 slices.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_decision_contract.py`
+    returned `4 passed`.
+  - `python -m pytest -q tests/test_primitive_execution_template.py tests/test_planner_current_code_parity.py`
+    returned `5 passed`.
+  - `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_runtime.py tests/test_primitive_coverage_updates.py tests/test_primitive_coverage_selection.py tests/test_primitive_coverage_candidates.py tests/test_primitive_return_start_envelope_token_planner.py tests/test_primitive_return_relocate_token_planner.py tests/test_primitive_return_target_token_planner.py tests/test_primitive_dig_depth_profile_token_planner.py tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_goal_token_provider.py tests/test_primitive_token_status.py tests/test_primitive_coverage_status.py tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `69 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_backend.py testbed/policies/hybrid/primitive_planner.py tests/test_primitive_backend.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 7.2 may migrate exactly one legacy FSM branch chain behind
+  the backend adapter, starting with a focused service-vs-facade parity test.
+  Do not move multiple branches, change branch order, or change reason strings
+  in the same commit.

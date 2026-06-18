@@ -62,6 +62,7 @@ from testbed.planner.cell_entry import (
     PrimitiveCycleOutcome,
     build_cell_entry_tokens,
 )
+from testbed.planner.primitive_backend import LegacyFSMBackendAdapter
 from testbed.planner.primitive_coverage import (
     CoverageCandidateBuilder,
     CoverageCandidateSelectionFacts,
@@ -1022,12 +1023,17 @@ class PrimitivePlannerACTPolicy(Policy):
         boundary_event: Any | None,
         preparation: PrimitiveTickPreparation,
     ) -> PrimitiveDecisionResult:
-        skill_before = str(preparation.skill_name_before_decision)
-        self._maybe_switch_skill(obs=obs, boundary_event=boundary_event)
-        return PrimitiveDecisionResult.from_legacy_fsm_outcome(
-            skill_before=skill_before,
-            skill_after=str(self._skill_name),
-            switch_reason=str(self._switch_reason),
+        return self._legacy_fsm_backend().decide_tick(
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=preparation,
+        )
+
+    def _legacy_fsm_backend(self) -> LegacyFSMBackendAdapter:
+        return LegacyFSMBackendAdapter(
+            maybe_switch_skill=self._maybe_switch_skill,
+            current_skill_name=lambda: str(self._skill_name),
+            current_switch_reason=lambda: str(self._switch_reason),
         )
 
     def _tick_execution_hooks(self) -> PrimitiveTickCallbacks:
