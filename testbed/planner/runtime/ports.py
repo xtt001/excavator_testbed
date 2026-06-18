@@ -105,8 +105,8 @@ class ObservationOutcomeBuilder(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class LegacyFsmSkillNames:
-    """Active-skill names used by the legacy FSM backend branch boundary."""
+class PlannerSkillNames:
+    """Active-skill names shared by planner backend branch boundaries."""
 
     bootstrap: str
     pre_dig_align: str
@@ -125,6 +125,9 @@ class LegacyFsmSkillNames:
             "return_skill",
         ):
             object.__setattr__(self, field_name, str(getattr(self, field_name)))
+
+
+LegacyFsmSkillNames = PlannerSkillNames
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,10 +167,13 @@ class LegacyFsmDumpLifecyclePorts:
 
 
 @dataclass(frozen=True, slots=True)
-class LegacyFsmReturnTransitionPorts:
-    """Return-to-dig transition dependencies used by the legacy FSM backend."""
+class PlannerReturnTransitionPorts:
+    """Return-to-dig transition dependency shared by planner backends."""
 
     return_transition_runtime: ReturnTransitionRuntimeProvider
+
+
+LegacyFsmReturnTransitionPorts = PlannerReturnTransitionPorts
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +193,8 @@ class PlannerBackendPorts:
     """Typed backend dependency ports carried by one planner tick context."""
 
     legacy_fsm: LegacyFsmBackendPorts | None = None
+    skill_names: PlannerSkillNames | None = None
+    return_transition: PlannerReturnTransitionPorts | None = None
 
 
 __all__ = [
@@ -210,6 +218,8 @@ __all__ = [
     "ObservationOutcomeBuilder",
     "ObservationPredicate",
     "PlannerBackendPorts",
+    "PlannerReturnTransitionPorts",
+    "PlannerSkillNames",
     "ReturnTransitionRuntime",
     "ReturnTransitionRuntimeProvider",
     "RuntimeConfigProvider",

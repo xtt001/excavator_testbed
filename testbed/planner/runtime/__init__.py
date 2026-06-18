@@ -8,6 +8,15 @@ from testbed.planner.runtime.contracts import (
     PlannerTickContext,
     PlannerTickResult,
 )
+from testbed.planner.runtime.effects import (
+    APPLY_BOOTSTRAP_TRANSITION_DECISION_EFFECT,
+    APPLY_CARRY_TRANSITION_RUNTIME_EFFECT,
+    APPLY_DIG_TRANSITION_RUNTIME_PROJECTION_EFFECT,
+    APPLY_DUMP_TRANSITION_RUNTIME_EFFECT,
+    APPLY_PRE_DIG_ALIGN_OUTCOME_EFFECT,
+    APPLY_RETURN_TO_DIG_TRANSITION_RUNTIME_EFFECT,
+    LEGACY_FSM_TRANSITION_EFFECT,
+)
 from testbed.planner.runtime.ports import (
     CarryTransitionRuntime,
     CarryTransitionRuntimeProvider,
@@ -23,6 +32,8 @@ from testbed.planner.runtime.ports import (
     LegacyFsmReturnTransitionPorts,
     LegacyFsmSkillNames,
     PlannerBackendPorts,
+    PlannerReturnTransitionPorts,
+    PlannerSkillNames,
     ReturnTransitionRuntime,
     ReturnTransitionRuntimeProvider,
 )
@@ -31,13 +42,6 @@ from testbed.planner.runtime.behavior_tree import (
     BehaviorTreeBackend,
 )
 from testbed.planner.runtime.legacy_fsm import (
-    APPLY_BOOTSTRAP_TRANSITION_DECISION_EFFECT,
-    APPLY_CARRY_TRANSITION_RUNTIME_EFFECT,
-    APPLY_DIG_TRANSITION_RUNTIME_PROJECTION_EFFECT,
-    APPLY_DUMP_TRANSITION_RUNTIME_EFFECT,
-    APPLY_PRE_DIG_ALIGN_OUTCOME_EFFECT,
-    APPLY_RETURN_TO_DIG_TRANSITION_RUNTIME_EFFECT,
-    LEGACY_FSM_TRANSITION_EFFECT,
     BootstrapTransitionDecisionApplier,
     CarryTransitionRuntimeApplier,
     DigTransitionRuntimeProjectionApplier,
@@ -83,6 +87,8 @@ __all__ = [
     "PlannerBackend",
     "PlannerBackendPorts",
     "PlannerConditioningState",
+    "PlannerReturnTransitionPorts",
+    "PlannerSkillNames",
     "PlannerRuntimeEffect",
     "PlannerTickContext",
     "PlannerTickResult",

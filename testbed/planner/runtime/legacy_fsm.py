@@ -10,6 +10,15 @@ from testbed.planner.runtime.contracts import (
     PlannerTickContext,
     PlannerTickResult,
 )
+from testbed.planner.runtime.effects import (
+    APPLY_BOOTSTRAP_TRANSITION_DECISION_EFFECT,
+    APPLY_CARRY_TRANSITION_RUNTIME_EFFECT,
+    APPLY_DIG_TRANSITION_RUNTIME_PROJECTION_EFFECT,
+    APPLY_DUMP_TRANSITION_RUNTIME_EFFECT,
+    APPLY_PRE_DIG_ALIGN_OUTCOME_EFFECT,
+    APPLY_RETURN_TO_DIG_TRANSITION_RUNTIME_EFFECT,
+    LEGACY_FSM_TRANSITION_EFFECT,
+)
 from testbed.planner.runtime.ports import (
     LegacyFsmBootstrapPorts,
     LegacyFsmDigTransitionPorts,
@@ -18,19 +27,6 @@ from testbed.planner.runtime.ports import (
     LegacyFsmReturnTransitionPorts,
     LegacyFsmSkillNames,
 )
-
-LEGACY_FSM_TRANSITION_EFFECT = "run_legacy_fsm_transition"
-APPLY_BOOTSTRAP_TRANSITION_DECISION_EFFECT = "apply_bootstrap_transition_decision"
-APPLY_PRE_DIG_ALIGN_OUTCOME_EFFECT = "apply_pre_dig_align_outcome"
-APPLY_DIG_TRANSITION_RUNTIME_PROJECTION_EFFECT = (
-    "apply_dig_transition_runtime_projection"
-)
-APPLY_CARRY_TRANSITION_RUNTIME_EFFECT = "apply_carry_transition_runtime"
-APPLY_DUMP_TRANSITION_RUNTIME_EFFECT = "apply_dump_transition_runtime"
-APPLY_RETURN_TO_DIG_TRANSITION_RUNTIME_EFFECT = (
-    "apply_return_to_dig_transition_runtime"
-)
-
 
 class LegacyFsmTransitionRunner(Protocol):
     def __call__(
@@ -83,7 +79,7 @@ class LegacyStateMachineBackend:
         if ports is None:
             return self._fallback_tick(context, active_skill=active_skill)
 
-        skill_names = ports.skill_names
+        skill_names = context.ports.skill_names or ports.skill_names
         if active_skill == skill_names.bootstrap:
             return self._tick_bootstrap(
                 context,
@@ -126,7 +122,7 @@ class LegacyStateMachineBackend:
                 context,
                 active_skill=active_skill,
                 ports=_required_port(
-                    ports.return_transition,
+                    context.ports.return_transition or ports.return_transition,
                     "return_transition",
                 ),
             )

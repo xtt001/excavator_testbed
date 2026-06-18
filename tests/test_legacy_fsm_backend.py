@@ -405,9 +405,10 @@ def test_policy_tick_context_uses_canonical_planner_blackboard() -> None:
     assert context.blackboard.dump_ready_hold_count == 5
     assert context.blackboard.dump_done_hold_count == 6
     assert context.coverage_state is policy.coverage_service.state
+    assert context.ports.skill_names is not None
+    assert context.ports.return_transition is not None
     assert isinstance(context.ports.legacy_fsm, LegacyFsmBackendPorts)
     assert context.ports.legacy_fsm.dig_transition is not None
-    assert context.ports.legacy_fsm.return_transition is not None
     assert not hasattr(context, "services")
 
 

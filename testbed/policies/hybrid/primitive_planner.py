@@ -280,11 +280,11 @@ from testbed.planner.runtime import (
     LegacyFsmDigTransitionPorts,
     LegacyFsmDumpLifecyclePorts,
     LegacyFsmPreDigAlignmentPorts,
-    LegacyFsmReturnTransitionPorts,
-    LegacyFsmSkillNames,
     PlannerBackendPorts,
     PlannerBlackboard,
     PlannerConditioningState,
+    PlannerReturnTransitionPorts,
+    PlannerSkillNames,
     PlannerTickContext,
     PlannerTickResult,
 )
@@ -1114,21 +1114,27 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         obs: dict,
         boundary_event: Any | None,
     ) -> PlannerTickContext:
+        skill_names = PlannerSkillNames(
+            bootstrap=BOOTSTRAP_SKILL_NAME,
+            pre_dig_align=PRE_DIG_ALIGN_SKILL_NAME,
+            dig="dig",
+            carry="carry",
+            dump="dump",
+            return_skill="return",
+        )
+        return_transition = PlannerReturnTransitionPorts(
+            return_transition_runtime=self._return_transition_runtime,
+        )
         return PlannerTickContext(
             obs=obs,
             boundary_event=boundary_event,
             coverage_state=self.coverage_service.state,
             blackboard=self._planner_lifecycle_blackboard(),
             ports=PlannerBackendPorts(
+                skill_names=skill_names,
+                return_transition=return_transition,
                 legacy_fsm=LegacyFsmBackendPorts(
-                    skill_names=LegacyFsmSkillNames(
-                        bootstrap=BOOTSTRAP_SKILL_NAME,
-                        pre_dig_align=PRE_DIG_ALIGN_SKILL_NAME,
-                        dig="dig",
-                        carry="carry",
-                        dump="dump",
-                        return_skill="return",
-                    ),
+                    skill_names=skill_names,
                     bootstrap_transition=LegacyFsmBootstrapPorts(
                         service=self.bootstrap_service,
                         should_end=self._should_end_bootstrap,
@@ -1152,9 +1158,6 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                     dump_lifecycle=LegacyFsmDumpLifecyclePorts(
                         carry_transition_runtime=self._carry_transition_runtime,
                         dump_transition_runtime=self._dump_transition_runtime,
-                    ),
-                    return_transition=LegacyFsmReturnTransitionPorts(
-                        return_transition_runtime=self._return_transition_runtime,
                     ),
                 ),
             ),

@@ -24,10 +24,10 @@ from testbed.planner.runtime import (
     LegacyFsmBackendPorts,
     LegacyFsmDigTransitionPorts,
     LegacyFsmDumpLifecyclePorts,
-    LegacyFsmReturnTransitionPorts,
     LegacyFsmSkillNames,
     PlannerBackendPorts,
     PlannerBlackboard,
+    PlannerReturnTransitionPorts,
     PlannerTickContext,
 )
 from testbed.planner.runtime.legacy_fsm import (
@@ -264,11 +264,11 @@ def test_legacy_fsm_backend_return_uses_typed_runtime_port() -> None:
                 return_next_dig_event_seen=True,
             ),
             ports=PlannerBackendPorts(
+                return_transition=PlannerReturnTransitionPorts(
+                    return_transition_runtime=return_transition_runtime,
+                ),
                 legacy_fsm=LegacyFsmBackendPorts(
                     skill_names=_skill_names(),
-                    return_transition=LegacyFsmReturnTransitionPorts(
-                        return_transition_runtime=return_transition_runtime,
-                    ),
                 )
             ),
         )

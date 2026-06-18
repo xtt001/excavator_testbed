@@ -1321,6 +1321,83 @@ Scope guardrails kept:
 - This is the backend-interface Phase 4 pre-slice; it is not the separate
   reporting-cleanup Phase 4 listed in the broader scheduler refactor plan.
 
+#### Phase 4 Slice 1 Return Runtime Node 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/runtime/effects.py`: added the backend-neutral source of
+  truth for runtime effect type names. `legacy_fsm.py` still re-exports these
+  constants for compatibility, but `BehaviorTreeBackend` no longer imports the
+  legacy FSM module to build an effect.
+- `testbed/planner/runtime/ports.py`: added top-level `PlannerSkillNames` and
+  `PlannerReturnTransitionPorts` so behavior-tree and legacy-FSM backends can
+  share the return transition dependency without going through
+  `LegacyFsmBackendPorts`. The old `LegacyFsmSkillNames` and
+  `LegacyFsmReturnTransitionPorts` names remain compatibility aliases.
+- `testbed/planner/runtime/behavior_tree.py`: implemented the first real
+  behavior-tree runtime node for the `return` transition. It reads
+  `PlannerTickContext.blackboard`, `PlannerBackendPorts.skill_names`, and
+  `PlannerBackendPorts.return_transition`, then returns the same
+  `apply_return_to_dig_transition_runtime` effect payload used by the legacy
+  backend. Other skills remain fail-closed.
+- `testbed/planner/runtime/legacy_fsm.py`: changed the legacy return branch to
+  prefer the top-level `PlannerBackendPorts.return_transition` dependency while
+  retaining the old legacy-bundle field as a compatibility fallback.
+- `testbed/policies/hybrid/primitive_planner.py`: thin adapter wiring only.
+  `_legacy_fsm_tick_context()` now builds top-level `PlannerSkillNames` and
+  `PlannerReturnTransitionPorts`; return completion and effect application stay
+  adapter-owned.
+- `tests/test_behavior_tree_backend_contract.py` and
+  `tests/test_planner_backend_ports.py`: added focused contracts proving the
+  behavior-tree return node and legacy FSM return branch can run from the same
+  neutral return port, and that the behavior-tree runtime module does not import
+  the shadow action-tree runner, legacy FSM backend, or planner shell.
+
+Scope guardrails kept:
+
+- No default backend selection, config default, branch order, return gate
+  threshold, reason string, next-dig latch semantics, policy reset timing,
+  debug/trace/rollout schema, or token contract changed.
+- `BehaviorTreeBackend` remains experimental and is not enabled by
+  `planner_backend` config. Only the explicitly wired return node can run; all
+  other skills still fail closed.
+- `PrimitiveActionTreeRunner` remains the shadow-only compatibility reference
+  and was not promoted to a runtime backend.
+- Return completion remains adapter-owned. The behavior-tree return node only
+  returns the existing runtime effect; it does not apply side effects or mutate
+  `PrimitivePlannerACTPolicy`.
+
+Verification run for this slice:
+
+- Initial RED:
+  `python -m pytest -p no:cacheprovider -q tests/test_behavior_tree_backend_contract.py`
+  -> failed with
+  `AttributeError: module 'testbed.planner.runtime' has no attribute 'PlannerSkillNames'`.
+- Boundary RED:
+  `python -m pytest -p no:cacheprovider -q tests/test_behavior_tree_backend_contract.py`
+  -> failed because `testbed/planner/runtime/behavior_tree.py` imported
+  `legacy_fsm`.
+- Focused GREEN:
+  `python -m pytest -p no:cacheprovider -q tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_ports.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_return.py`
+  -> `28 passed`.
+- Backend/runtime/config/BT:
+  `python -m pytest -p no:cacheprovider -q tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_planner_backend_config.py`
+  -> `71 passed`.
+- Golden/action-tree/facade/debug schema:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_golden_traces.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py tests/test_primitive_planner_debug_schema.py`
+  -> `168 passed`.
+- Token/data/config contract check:
+  `python -m pytest -p no:cacheprovider -q tests/test_primitive_token_contracts.py tests/test_policy_data_contracts.py tests/test_config_semantic_matrix.py`
+  -> `25 passed, 1 warning` from the existing `datetime.utcnow()` deprecation in
+  `testbed/data/dataset.py`.
+- `python -m compileall -q testbed/planner/runtime testbed/planner/return_to_dig_transition.py testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_action_tree.py tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_primitive_scheduler_facades.py`
+  -> no output.
+- `git diff --check` -> no whitespace errors.
+- `rg "context\\.services|services\\[|LegacyFsmBoundaryProfilePorts|ports\\.boundary_profile|boundary_ports" testbed/planner testbed/policies/hybrid tests -n`
+  -> no matches.
+- `rg -n "legacy_fsm|primitive_action_tree|primitive_planner|policy\\._" testbed/planner/runtime/behavior_tree.py`
+  -> no matches.
+
 ### Phase 5: Default Backend Migration
 
 Once `LegacyStateMachineBackend` is behavior-identical and the adapter applies
