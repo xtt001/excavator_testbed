@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from testbed.planner.primitive_decision import PrimitiveDecisionResult
 from testbed.planner.primitive_execution import (
     PrimitiveTickHooks,
     run_primitive_tick,
@@ -32,8 +33,21 @@ class FakeTickHooks(PrimitiveTickHooks):
     def update_dig_progress(self, obs: dict[str, Any]) -> None:
         self.events.append("dig_progress_update")
 
-    def maybe_switch_skill(self, *, obs: dict[str, Any], boundary_event: Any | None) -> None:
-        self.events.append(f"maybe_switch:{boundary_event}")
+    def decide_tick(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        preparation: Any,
+    ) -> PrimitiveDecisionResult:
+        self.events.append(
+            f"decide:{boundary_event}:{preparation.skill_name_before_decision}"
+        )
+        return PrimitiveDecisionResult.from_legacy_fsm_outcome(
+            skill_before=preparation.skill_name_before_decision,
+            skill_after=preparation.skill_name_before_decision,
+            switch_reason="",
+        )
 
     def account_return_timeout(self) -> bool:
         self.events.append("return_timeout_accounting")
@@ -75,6 +89,9 @@ def test_run_primitive_tick_orders_dig_tick_hooks_and_returns_result() -> None:
     assert result.preparation.boundary_event == "boundary-event"
     assert result.preparation.skill_name_before_decision == "dig"
     assert result.preparation.dig_progress_updated is True
+    assert result.decision.status == "no_change"
+    assert result.decision.skill_before == "dig"
+    assert result.decision.skill_after == "dig"
     assert result.transition_timeout is True
     assert result.transition_completed is True
     assert hooks.events == [
@@ -82,7 +99,7 @@ def test_run_primitive_tick_orders_dig_tick_hooks_and_returns_result() -> None:
         "switch_reason_reset",
         "current_skill_before_progress",
         "dig_progress_update",
-        "maybe_switch:boundary-event",
+        "decide:boundary-event:dig",
         "return_timeout_accounting",
         "dispatch_action",
         "prev_action_update:[0.1, 0.2, 0.3, 0.4]",
@@ -102,7 +119,7 @@ def test_run_primitive_tick_skips_dig_progress_for_non_dig_skill() -> None:
         "boundary_update",
         "switch_reason_reset",
         "current_skill_before_progress",
-        "maybe_switch:boundary-event",
+        "decide:boundary-event:return",
         "return_timeout_accounting",
         "dispatch_action",
         "prev_action_update:[0.1, 0.2, 0.3, 0.4]",

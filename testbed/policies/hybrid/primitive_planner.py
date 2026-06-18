@@ -67,8 +67,10 @@ from testbed.planner.cell_entry import (
 )
 from testbed.planner.primitive_execution import (
     PrimitiveTickCallbacks,
+    PrimitiveTickPreparation,
     run_primitive_tick,
 )
+from testbed.planner.primitive_decision import PrimitiveDecisionResult
 from testbed.policies.base import Policy, register_policy
 from testbed.policies.hybrid.adapter import HYBRID_MODE_TRANSITION, HYBRID_MODE_WORK
 
@@ -1026,13 +1028,28 @@ class PrimitivePlannerACTPolicy(Policy):
             transition_completed=transition_completed,
         )
 
+    def _decide_tick_with_legacy_fsm(
+        self,
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+        preparation: PrimitiveTickPreparation,
+    ) -> PrimitiveDecisionResult:
+        skill_before = str(preparation.skill_name_before_decision)
+        self._maybe_switch_skill(obs=obs, boundary_event=boundary_event)
+        return PrimitiveDecisionResult.from_legacy_fsm_outcome(
+            skill_before=skill_before,
+            skill_after=str(self._skill_name),
+            switch_reason=str(self._switch_reason),
+        )
+
     def _tick_execution_hooks(self) -> PrimitiveTickCallbacks:
         return PrimitiveTickCallbacks(
             update_boundary_event=self._tick_boundary_event,
             reset_switch_reason=self._reset_tick_switch_reason,
             current_skill_name=self._current_tick_skill_name,
             update_dig_progress=self._update_dig_progress,
-            maybe_switch_skill=self._maybe_switch_skill,
+            decide_tick=self._decide_tick_with_legacy_fsm,
             account_return_timeout=self._account_return_timeout_for_tick,
             dispatch_action=self._dispatch_tick_action,
             record_previous_action=self._record_tick_previous_action,

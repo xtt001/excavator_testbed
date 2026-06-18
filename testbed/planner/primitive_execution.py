@@ -6,6 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from testbed.planner.primitive_decision import PrimitiveDecisionResult
+
 
 class PrimitiveTickHooks(Protocol):
     """Narrow callbacks needed to execute one public planner tick."""
@@ -18,7 +20,13 @@ class PrimitiveTickHooks(Protocol):
 
     def update_dig_progress(self, obs: dict[str, Any]) -> None: ...
 
-    def maybe_switch_skill(self, *, obs: dict[str, Any], boundary_event: Any | None) -> None: ...
+    def decide_tick(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        preparation: "PrimitiveTickPreparation",
+    ) -> PrimitiveDecisionResult: ...
 
     def account_return_timeout(self) -> bool: ...
 
@@ -47,6 +55,7 @@ class PrimitiveTickPreparation:
 class PrimitiveTickResult:
     action: Any
     preparation: PrimitiveTickPreparation
+    decision: PrimitiveDecisionResult
     boundary_event: Any | None
     transition_timeout: bool
     transition_completed: bool
@@ -58,7 +67,7 @@ class PrimitiveTickCallbacks:
     reset_switch_reason: Callable[[], None]
     current_skill_name: Callable[[], str]
     update_dig_progress: Callable[[dict[str, Any]], None]
-    maybe_switch_skill: Callable[..., None]
+    decide_tick: Callable[..., PrimitiveDecisionResult]
     account_return_timeout: Callable[[], bool]
     dispatch_action: Callable[[dict[str, Any]], Any]
     record_previous_action: Callable[[Any], None]
@@ -85,7 +94,11 @@ def run_primitive_tick(
         skill_name_before_decision=skill_name_before_decision,
         dig_progress_updated=dig_progress_updated,
     )
-    hooks.maybe_switch_skill(obs=obs, boundary_event=boundary_event)
+    decision = hooks.decide_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=preparation,
+    )
 
     transition_timeout = hooks.account_return_timeout()
     action = hooks.dispatch_action(obs)
@@ -99,6 +112,7 @@ def run_primitive_tick(
     return PrimitiveTickResult(
         action=action,
         preparation=preparation,
+        decision=decision,
         boundary_event=boundary_event,
         transition_timeout=transition_timeout,
         transition_completed=transition_completed,

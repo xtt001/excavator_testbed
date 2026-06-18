@@ -389,3 +389,67 @@ Each completed refactor round should append:
   after this execution template and Phase 1 parity continue to pass. Do not
   introduce backend/runtime/behavior-tree/VLM material before the decision and
   effect boundary is explicitly tested.
+
+### 2026-06-19 Phase 3 Decision/Effect Result Contracts
+
+- Scope: introduced typed decision/effect result contracts only. No FSM branch
+  body, token planning, coverage planning, return planning, `cell_entry`,
+  `pre_dig_align`, backend selection, runtime package, behavior tree, VLM/LLM
+  packet, default config, threshold, branch order, reason string, token schema,
+  debug schema, rollout summary schema, or policy reset timing was intentionally
+  changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `5b75124ad4f9839f94d7f5da834a7cdde38568f6`, no fetch, pull, or push. The
+  earlier prompt expected `e306eb3be2ffb20db28785d2c0576398e5f49c84`, but the
+  user confirmed a Phase 2 commit had just advanced the branch.
+- Reflection gate:
+  - Phase 1 and Phase 2 focused tests existed and passed before Phase 3 edits:
+    `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py`
+    returned `5 passed`.
+  - Live evidence remains the successful
+    `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl`
+    packet and paired planner trace / summary / resolved config.
+  - The only responsibility slice was the decision result contract that the
+    Phase 2 tick template receives.
+  - The new contract records the legacy FSM outcome after side effects have
+    already been applied; it does not pretend `_maybe_switch_skill()` has been
+    split into pure decision plus validated effects.
+  - Side effects remain owned by `_maybe_switch_skill()`, `_set_skill()`, and
+    the existing planner shell helpers they call.
+  - If representing a field required guessing hidden private effects, this
+    phase kept it out of the contract.
+- Added `testbed/planner/primitive_decision.py` with
+  `LEGACY_FSM_DECISION_SOURCE`, `PlannerEffect`,
+  `LegacyDecisionOutcomeEffect`, and `PrimitiveDecisionResult`.
+- Modified `testbed/planner/primitive_execution.py` so the decision hook is
+  `decide_tick(...) -> PrimitiveDecisionResult` and
+  `PrimitiveTickResult` carries `decision`.
+- Modified `testbed/policies/hybrid/primitive_planner.py` only as a thin
+  bridge: `_decide_tick_with_legacy_fsm()` captures skill before/after and
+  switch reason, calls `_maybe_switch_skill()` exactly once, then returns
+  `PrimitiveDecisionResult.from_legacy_fsm_outcome(...)`.
+- Added `tests/test_primitive_decision_contract.py` for the contract and legacy
+  bridge. The TDD red test failed with `ModuleNotFoundError` before
+  `testbed.planner.primitive_decision` was implemented.
+- Updated `tests/test_primitive_execution_template.py` so fake hooks prove the
+  tick order still runs decision before return-timeout accounting and action
+  dispatch, while the result object records the returned decision.
+- Phase 1 golden-window parity remained the migration guard for observable
+  rollout/debug/trace/summary behavior.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_decision_contract.py tests/test_primitive_execution_template.py`
+    returned `5 passed` after implementation.
+  - `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `8 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_decision.py testbed/planner/primitive_execution.py testbed/policies/hybrid/primitive_planner.py tests/test_primitive_decision_contract.py tests/test_primitive_execution_template.py`
+    completed with no output.
+- Old code parked/reclassified: no code was deleted. `_maybe_switch_skill()`
+  remains the sole FSM decision and side-effect source of truth; the new
+  contract is an observable-outcome adapter for the execution template.
+- Next action: Phase 4 should extract read-only capability status records only.
+  Do not move `_maybe_switch_skill()` branch bodies or apply effects outside the
+  old shell until the result contract is expanded with explicitly validated
+  effect application tests.
