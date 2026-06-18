@@ -430,6 +430,20 @@ class ReturnTargetTokenPlanner:
         )
 
 
+@dataclass(frozen=True)
+class ReturnRelocateTokenPlanner:
+    """Derive return-relocate tokens from return-target tokens."""
+
+    def plan(self, return_target_tokens: np.ndarray) -> np.ndarray:
+        token = np.asarray(return_target_tokens, dtype=np.float32).reshape(-1).copy()
+        if token.size > 7:
+            token[7] = 0.0
+        if token.size > 8:
+            token[8] = 0.0
+        token.setflags(write=False)
+        return token
+
+
 class DigDepthProfileTokenPlanningError(ValueError):
     """Raised when a required dig-depth-profile token cannot be planned."""
 
@@ -614,6 +628,7 @@ __all__ = [
     "DigCutTokenPlanner",
     "GoalTokenProvider",
     "PRIMITIVE_GOAL_SECTOR_IDS",
+    "ReturnRelocateTokenPlanner",
     "ReturnTargetTokenPlan",
     "ReturnTargetTokenPlanner",
 ]

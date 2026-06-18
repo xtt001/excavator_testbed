@@ -75,6 +75,7 @@ from testbed.planner.primitive_tokens import (
     DigCutTokenPlan,
     DigCutTokenPlanner,
     GoalTokenProvider,
+    ReturnRelocateTokenPlanner,
     ReturnTargetTokenPlan,
     ReturnTargetTokenPlanner,
 )
@@ -3307,11 +3308,9 @@ class PrimitivePlannerACTPolicy(Policy):
         if self._skill_name != "return" or not self.return_target_planner_enabled:
             return None
         self._ensure_return_target_plan_for_cycle(obs)
-        token = self._return_target_tokens.astype(np.float32).copy()
-        token[7] = 0.0
-        token[8] = 0.0
+        token = self._return_relocate_token_planner().plan(self._return_target_tokens)
         self._return_relocate_tokens = token
-        return token
+        return token.copy()
 
     def _return_start_envelope_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
         if self._skill_name != "return" or not self.return_target_planner_enabled:
@@ -5854,6 +5853,10 @@ class PrimitivePlannerACTPolicy(Policy):
             dig_cut_planner=self._dig_cut_token_planner(),
             source_prefix=str(self.return_target_token_source_prefix),
         )
+
+    @staticmethod
+    def _return_relocate_token_planner() -> ReturnRelocateTokenPlanner:
+        return ReturnRelocateTokenPlanner()
 
     @staticmethod
     def _normalize_goal_sequence(
