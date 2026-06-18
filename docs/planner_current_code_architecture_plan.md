@@ -533,8 +533,8 @@ and decision/effect result contracts.
 
 The current implementation route is **Slice 5: Token And Return Planning
 Services**. Slice 4 status records have been established through
-`TokenStatus`, and Phase 5.1 has extracted the goal token provider. Continue
-with Phase 5.2, dig-cut token planning only. Do not migrate dig-depth-profile,
-return-target, return-relocate, return-start-envelope, coverage
-planning/runtime, `_maybe_switch_skill()` branch bodies, or effect application
-in the same slice.
+`TokenStatus`; Phase 5.1 has extracted the goal token provider; and Phase 5.2
+has extracted dig-cut token planning result construction. Continue with Phase
+5.3, dig-depth-profile token planning only. Do not migrate return-target,
+return-relocate, return-start-envelope, coverage planning/runtime,
+`_maybe_switch_skill()` branch bodies, or effect application in the same slice.

@@ -949,3 +949,65 @@ Each completed refactor round should append:
   not migrate dig-depth-profile, return-target, return-relocate,
   return-start-envelope, coverage planning/runtime, or backend behavior in the
   same commit.
+
+### 2026-06-19 Phase 5.2 Dig-Cut Token Planning
+
+- Scope: extracted dig-cut token planning result construction only. No
+  dig-depth-profile token planning, return-target planning, return-relocate
+  planning, return-start-envelope planning, observation injection key changes,
+  coverage candidate construction, coverage scoring/selection ownership,
+  coverage state update ownership, backend selection, runtime package, behavior
+  tree, VLM/LLM packet, default config, threshold, branch order, reason string,
+  token schema, debug schema, rollout summary schema, or policy reset timing was
+  intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `9278e79e2de021272f2598f168fd61f5a74a32bc`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 3 focused tests passed before Phase 5.2 edits:
+    `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `8 passed`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; its
+    evidence report classifies `token.dig_cut` as confirmed-live with observed
+    sources `operator_prior_coverage` and `pending_return_target`, and its
+    resolved config uses `dig_cut_planner.mode=operator_prior_sweep_belief`.
+  - The only responsibility slice was dig-cut token planning.
+  - The stable focused owner for this slice is
+    `testbed/planner/primitive_tokens.py`; it now owns `DigCutTokenPlan` and
+    `DigCutTokenPlanner`, including live-pose raw fields, operator-prior raw
+    fields, prior-range checking, pending-return token projection, fallback
+    conservative token projection, and raw-field-to-token projection through the
+    existing data contract builders.
+- Updated `PrimitivePlannerACTPolicy` so `_build_dig_cut_tokens_for_obs()` and
+  compatibility helpers delegate token/prior calculations to
+  `DigCutTokenPlanner`. The legacy shell still owns call timing, skill gating,
+  pending-return coverage state writes, coverage corridor selection, coverage
+  state updates, and observation injection.
+- Added `tests/test_primitive_dig_cut_token_planner.py` with focused coverage
+  for conservative pose planning, operator-prior pose-clamped planning,
+  operator-prior median fallback, pending-return target token copying, and
+  coverage raw-field token projection. The TDD red test failed with
+  `ImportError` before `DigCutTokenPlanner` was implemented.
+- Old code parked/reclassified: no code was deleted. Return-target next-dig
+  planning and return-start-envelope helper paths still call their existing
+  planner-shell code until the later Phase 5 return-planning slices migrate
+  them with parity tests. Coverage selection/update helpers remain legacy
+  source-of-truth until Phase 6.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_dig_cut_token_planner.py`
+    returned `5 passed`.
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "conservative_dig_cut_mode or operator_prior_locks_token or operator_prior_uses_median or coverage_outputs_finite_token_in_prior_range or coverage_locks_token_within_dig_cycle or injects_return_target_only_for_return_and_reuses_for_dig or replan_invalidates_pending_return_target or bootstrap_policy_can_receive_dig_cut_tokens"`
+    returned `8 passed, 112 deselected`.
+  - `python -m pytest -q tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_goal_token_provider.py tests/test_primitive_token_status.py tests/test_primitive_coverage_status.py tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `48 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_tokens.py testbed/policies/hybrid/primitive_planner.py tests/test_primitive_dig_cut_token_planner.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 5.3 should continue with dig-depth-profile token planning
+  only. Do not migrate return-target, return-relocate, return-start-envelope,
+  coverage planning/runtime, or backend behavior in the same commit.
