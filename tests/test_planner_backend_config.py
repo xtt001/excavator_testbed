@@ -9,10 +9,12 @@ from testbed.planner.planner_backend_config import (
     LEGACY_FSM_BACKEND,
     NOT_APPLICABLE_BACKEND,
     apply_planner_backend,
+    make_planner_backend,
     normalize_planner_backend,
     planner_backend_from_metadata,
     planner_backend_from_policy_config,
 )
+from testbed.planner.runtime import LegacyStateMachineBackend, PlannerBackend
 
 
 def test_planner_backend_policy_config_defaults_to_legacy() -> None:
@@ -74,6 +76,29 @@ def test_apply_planner_backend_keeps_legacy_without_shadow_runner() -> None:
     assert applied == LEGACY_FSM_BACKEND
     assert not hasattr(policy, "_primitive_action_tree_runner")
     assert getattr(policy, "_planner_backend") == LEGACY_FSM_BACKEND
+
+
+def test_make_planner_backend_defaults_to_legacy_runtime_backend() -> None:
+    backend = make_planner_backend()
+
+    assert isinstance(backend, LegacyStateMachineBackend)
+    assert isinstance(backend, PlannerBackend)
+    assert backend.name == LEGACY_FSM_BACKEND
+
+
+def test_make_planner_backend_accepts_legacy_aliases() -> None:
+    assert make_planner_backend("legacy").name == LEGACY_FSM_BACKEND
+    assert make_planner_backend("fsm").name == LEGACY_FSM_BACKEND
+
+
+def test_make_planner_backend_rejects_action_tree_shadow_runtime_backend() -> None:
+    with pytest.raises(ValueError, match="action_tree_shadow.*shadow adapter"):
+        make_planner_backend(ACTION_TREE_SHADOW_BACKEND)
+
+
+def test_make_planner_backend_rejects_behavior_tree_experimental_config() -> None:
+    with pytest.raises(ValueError, match="Unsupported planner_backend"):
+        make_planner_backend("behavior_tree_experimental")
 
 
 def test_old_primitive_scheduler_runner_module_is_removed() -> None:

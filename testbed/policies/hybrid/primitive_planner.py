@@ -188,6 +188,10 @@ from testbed.planner.policy_observation import (
     PolicyObservationTokenRequest,
     PolicyObservationTokens,
 )
+from testbed.planner.planner_backend_config import (
+    LEGACY_FSM_BACKEND,
+    make_planner_backend,
+)
 from testbed.planner.primitive_debug import (
     TRANSITION_POLICY_MODE_PRIMITIVE as TRANSITION_POLICY_MODE_PRIMITIVE,
 )
@@ -270,7 +274,6 @@ from testbed.planner.return_to_dig_transition import (
 )
 from testbed.planner.runtime import PlannerTickContext, PlannerTickResult
 from testbed.planner.runtime.legacy_fsm import (
-    LegacyStateMachineBackend,
     apply_legacy_fsm_runtime_effects,
 )
 from testbed.planner.snapshots import (
@@ -403,7 +406,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self.bootstrap_service = BootstrapService()
         self.dig_lifecycle_gate = DigLifecycleGateService()
         self.dig_start_alignment_service = DigStartAlignmentService()
-        self._legacy_fsm_backend = LegacyStateMachineBackend()
+        self._legacy_fsm_backend = make_planner_backend(LEGACY_FSM_BACKEND)
         self.dump_lifecycle_gate = DumpLifecycleGateService()
         self.goal_sequence_service = GoalSequenceService()
         self.policy_observation_assembler = PolicyObservationAssembler()

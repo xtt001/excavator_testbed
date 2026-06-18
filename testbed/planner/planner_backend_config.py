@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from testbed.planner.runtime import PlannerBackend
+
 LEGACY_FSM_BACKEND = "legacy_fsm"
 ACTION_TREE_SHADOW_BACKEND = "action_tree_shadow"
 NOT_APPLICABLE_BACKEND = "not_applicable"
@@ -108,3 +110,18 @@ def apply_planner_backend(
     setattr(policy, "_primitive_action_tree_runner", action_tree_runner)
     setattr(policy, "predict", _predict_with_action_tree)
     return normalized
+
+
+def make_planner_backend(backend: object = None) -> PlannerBackend:
+    """Create a runtime planner backend for supported backend names."""
+
+    normalized = normalize_planner_backend(backend)
+    if normalized == ACTION_TREE_SHADOW_BACKEND:
+        raise ValueError(
+            "planner_backend=action_tree_shadow is a shadow adapter, not a "
+            "runtime backend; use apply_planner_backend for the opt-in shadow "
+            "path."
+        )
+    from testbed.planner.runtime import LegacyStateMachineBackend
+
+    return LegacyStateMachineBackend()

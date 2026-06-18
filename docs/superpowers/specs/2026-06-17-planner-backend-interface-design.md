@@ -834,6 +834,48 @@ effects through the adapter. Remaining Phase 5 work should therefore focus on
 backend selection/config cleanup, not re-moving the same default FSM branch
 logic.
 
+#### Phase 5 Pre-Slice Landing Record 2026-06-17
+
+Implemented files:
+
+- `testbed/planner/planner_backend_config.py`: added
+  `make_planner_backend()` as the runtime backend factory boundary. It creates
+  `LegacyStateMachineBackend` for the default `legacy_fsm` backend and rejects
+  `action_tree_shadow` as a shadow adapter rather than a runtime backend.
+- `testbed/policies/hybrid/primitive_planner.py`: changed the default
+  `_legacy_fsm_backend` construction to call `make_planner_backend()`. This is
+  thin interface wiring only; all transition side effects remain adapter-owned.
+- `tests/test_planner_backend_config.py`: added factory tests for default
+  legacy backend construction, legacy aliases, action-tree shadow rejection, and
+  fail-closed behavior-tree experimental config.
+
+Scope guardrails kept:
+
+- Default backend remains `legacy_fsm`.
+- `action_tree_shadow` remains opt-in through the existing shadow adapter path;
+  it is not treated as a runtime backend.
+- `BehaviorTreeBackend` remains fail-closed and is not enabled by
+  `planner_backend` config.
+- No `_maybe_switch_skill()` branch order, thresholds, reason strings, policy
+  reset timing, debug/rollout schema, token contract, or planner behavior
+  changed.
+
+Verification run for this pre-slice:
+
+- Initial RED:
+  `python -m pytest -q tests/test_planner_backend_config.py` failed during
+  collection because `make_planner_backend` did not exist yet.
+- `python -m pytest -q tests/test_planner_backend_config.py` -> `14 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_planner_backend_config.py tests/test_planner_runtime_contracts.py tests/test_behavior_tree_backend_contract.py`
+  -> `20 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_primitive_action_tree.py tests/test_planner_golden_traces.py`
+  -> `55 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_primitive_scheduler_facades.py`
+  -> `120 passed`.
+- `python -m compileall -q testbed/planner/planner_backend_config.py testbed/policies/hybrid/primitive_planner.py`
+  -> no output.
+- `git diff --check` -> no whitespace errors.
+
 ## Testing Strategy
 
 Use layered tests in this order:
