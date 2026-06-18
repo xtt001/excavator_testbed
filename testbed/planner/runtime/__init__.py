@@ -1,6 +1,7 @@
 """Backend-neutral runtime contracts for primitive planner ticks."""
 
 from testbed.planner.runtime.blackboard import PlannerBlackboard
+from testbed.planner.runtime.conditioning import PlannerConditioningState
 from testbed.planner.runtime.contracts import (
     PlannerBackend,
     PlannerRuntimeEffect,
@@ -49,6 +50,7 @@ __all__ = [
     "PreDigAlignOutcomeApplier",
     "PlannerBlackboard",
     "PlannerBackend",
+    "PlannerConditioningState",
     "PlannerRuntimeEffect",
     "PlannerTickContext",
     "PlannerTickResult",

@@ -364,6 +364,77 @@ Verification run for this ownership pass:
   -> no output.
 - `git diff --check` -> no whitespace errors.
 
+#### Policy Observation Token Runtime Ownership Record 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/runtime/conditioning.py`: added typed
+  `PlannerConditioningState` for policy-observation token runtime ownership.
+  The state composes existing domain state contracts instead of redefining
+  token semantics: `DigCutRuntimeState`, `DigDepthProfileRuntimeState`, and
+  `ReturnTargetConditioningRuntimeState`, plus the cell-entry injection flag.
+- `testbed/planner/runtime/__init__.py`: exports `PlannerConditioningState`.
+- `testbed/policies/hybrid/primitive_planner.py`: added
+  `self._planner_conditioning_state` as the canonical owner for dig-cut,
+  dig-depth-profile, return-target, return-relocate, return-start-envelope,
+  pending dig-cut, and policy-observation injection runtime fields. The old
+  private `_xxx` fields remain property shims for compatibility tests,
+  diagnostics, and existing adapter callers.
+- `PrimitivePlannerACTPolicy._apply_policy_observation_assembly()` now updates
+  injection flags through `PlannerConditioningState` instead of writing six
+  shell fields directly.
+- Reset/apply entry points for dig-cut runtime state, dig-depth-profile runtime
+  state, and return-target conditioning runtime state now update typed
+  conditioning state. Return-target conditioning still calls the existing
+  service pending-plan projection to preserve pending dig-cut projection
+  semantics and copy/cast behavior.
+- `tests/test_planner_runtime_contracts.py` and
+  `tests/test_primitive_scheduler_facades.py`: added contract and adapter tests
+  for typed conditioning defaults, runtime-state copy behavior,
+  policy-observation assembly updates, and old private-field shim compatibility.
+
+Scope guardrails kept:
+
+- No token contract key, token order, token dimension, low-dimensional key,
+  debug schema, rollout schema, reason string, branch order, policy reset
+  timing, default backend, or behavior-tree wiring changed.
+- Token request/gating remains owned by `PolicyObservationAssembler`; source
+  and fallback-string generation remains in the existing capability services
+  and builders.
+- Coverage state and `_coverage_active_state_exemplar_*` stay outside
+  `PlannerConditioningState`; coverage remains referenced through
+  `CoverageServiceState`.
+- Old private field direct-assignment compatibility is preserved. Runtime
+  service apply paths still copy/cast arrays to `float32`; direct private
+  shim assignment still preserves object identity where existing facade tests
+  require it.
+
+Verification run for this ownership pass:
+
+- Initial RED:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_runtime_contracts.py tests/test_primitive_scheduler_facades.py::test_policy_observation_assembly_apply_updates_injection_flags tests/test_primitive_scheduler_facades.py::test_policy_conditioning_private_fields_are_runtime_state_shims`
+  failed during collection because `PlannerConditioningState` did not exist.
+- After adding `PlannerConditioningState`, the same RED set failed because
+  `PrimitivePlannerACTPolicy` had no canonical `_planner_conditioning_state`
+  and old private token fields were still plain shell attributes.
+- `python -m pytest -p no:cacheprovider -q tests/test_planner_runtime_contracts.py tests/test_primitive_scheduler_facades.py::test_policy_observation_assembly_apply_updates_injection_flags tests/test_primitive_scheduler_facades.py::test_policy_conditioning_private_fields_are_runtime_state_shims`
+  -> `13 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_planner_runtime_contracts.py tests/test_policy_observation.py tests/test_dig_cut_plan_facade.py tests/test_return_target_conditioning_token_facade.py tests/test_return_target_pending_activation_facade.py tests/test_primitive_scheduler_conditioning_facades.py`
+  -> `66 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_primitive_scheduler_facades.py tests/test_primitive_planner_debug_schema.py`
+  -> `147 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_planner_runtime_contracts.py tests/test_policy_observation.py tests/test_dig_cut_plan_facade.py tests/test_return_target_conditioning_token_facade.py tests/test_return_target_pending_activation_facade.py tests/test_primitive_scheduler_conditioning_facades.py tests/test_primitive_scheduler_facades.py tests/test_primitive_planner_debug_schema.py tests/test_eval_rollout_records.py`
+  -> `217 passed, 1 warning` from existing `datetime.utcnow()` deprecation in
+  `testbed/eval/rollout_logs.py`.
+- `python -m pytest -p no:cacheprovider -q tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_planner_golden_traces.py tests/test_primitive_action_tree.py tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_config.py`
+  -> `77 passed`.
+- `python -m pytest -p no:cacheprovider -q tests/test_primitive_token_contracts.py tests/test_policy_data_contracts.py tests/test_config_semantic_matrix.py`
+  -> `25 passed, 1 warning` from existing `datetime.utcnow()` deprecation in
+  `testbed/data/dataset.py`.
+- `python -m compileall -q testbed/planner/runtime/conditioning.py testbed/planner/runtime/__init__.py testbed/policies/hybrid/primitive_planner.py tests/test_planner_runtime_contracts.py tests/test_primitive_scheduler_facades.py`
+  -> no output.
+- `git diff --check` -> no whitespace errors.
+
 ### Phase 2: Coverage As First Blackboard Domain
 
 Use the recent coverage dig-cut activation work as the first state-domain

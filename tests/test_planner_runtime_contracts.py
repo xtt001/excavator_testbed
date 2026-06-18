@@ -2,12 +2,24 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
 
+import numpy as np
 import pytest
 
+from testbed.contracts.primitive_tokens import (
+    DIG_CUT_TOKEN_DIM,
+    DIG_DEPTH_PROFILE_TOKEN_DIM,
+    RETURN_START_ENVELOPE_TOKEN_DIM,
+    RETURN_TARGET_TOKEN_DIM,
+)
+from testbed.planner.dig_cut_plan import DigCutRuntimeState
+from testbed.planner.dig_depth_profile import DigDepthProfileRuntimeState
+from testbed.planner.policy_observation import PolicyObservationAssembly
+from testbed.planner.return_target_plan import ReturnTargetConditioningRuntimeState
 from testbed.planner.dig_coverage import CoverageServiceState
 from testbed.planner.runtime import (
     PlannerBlackboard,
     PlannerBackend,
+    PlannerConditioningState,
     PlannerRuntimeEffect,
     PlannerTickContext,
     PlannerTickResult,
@@ -126,6 +138,131 @@ def test_planner_blackboard_updates_return_new_transition_runtime_snapshots() ->
     assert ready_hold.dump_done_hold_count == 3
     assert done_hold.dump_done_hold_count == 8
     assert done_hold.dump_ready_hold_count == 2
+
+
+def test_planner_conditioning_state_defaults_are_backend_neutral_tokens() -> None:
+    state = PlannerConditioningState()
+
+    assert state.cell_entry_token_injected is False
+    assert state.dig_cut.token_injected is False
+    assert state.dig_cut.planned_cycle_id == -1
+    assert state.dig_cut.token_source == "none"
+    assert state.dig_cut.fallback_reason == ""
+    assert state.dig_cut.token_in_prior_p10_p90 is False
+    np.testing.assert_allclose(
+        state.dig_cut.tokens,
+        np.zeros(DIG_CUT_TOKEN_DIM, dtype=np.float32),
+    )
+    assert state.dig_depth_profile.token_injected is False
+    assert state.dig_depth_profile.token_source == "none"
+    np.testing.assert_allclose(
+        state.dig_depth_profile.tokens,
+        np.zeros(DIG_DEPTH_PROFILE_TOKEN_DIM, dtype=np.float32),
+    )
+    assert state.return_target.target_token_injected is False
+    assert state.return_target.target_token_source == "none"
+    assert state.return_target.relocate_token_injected is False
+    assert state.return_target.start_envelope_token_injected is False
+    assert state.return_target.start_envelope_token_source == "none"
+    assert state.return_target.pending_dig_cut_cycle_id == -1
+    assert state.return_target.pending_dig_cut_tokens is None
+    np.testing.assert_allclose(
+        state.return_target.target_tokens,
+        np.zeros(RETURN_TARGET_TOKEN_DIM, dtype=np.float32),
+    )
+    np.testing.assert_allclose(
+        state.return_target.start_envelope_tokens,
+        np.zeros(RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.float32),
+    )
+
+
+def test_planner_conditioning_state_updates_are_immutable_copies() -> None:
+    dig_cut_tokens = np.arange(DIG_CUT_TOKEN_DIM, dtype=np.float32)
+    depth_tokens = np.arange(DIG_DEPTH_PROFILE_TOKEN_DIM, dtype=np.float32)
+    target_tokens = np.arange(RETURN_TARGET_TOKEN_DIM, dtype=np.float32)
+    envelope_tokens = np.arange(RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.float32)
+    state = PlannerConditioningState()
+
+    updated = (
+        state.with_dig_cut_runtime_state(
+            DigCutRuntimeState(
+                tokens=dig_cut_tokens,
+                token_injected=True,
+                planned_cycle_id=3,
+                token_source="dig_source",
+                fallback_reason="dig_fallback",
+                token_in_prior_p10_p90=True,
+            )
+        )
+        .with_dig_depth_profile_runtime_state(
+            DigDepthProfileRuntimeState(
+                tokens=depth_tokens,
+                token_injected=True,
+                token_source="depth_source",
+                fallback_reason="depth_fallback",
+            )
+        )
+        .with_return_target_conditioning_state(
+            ReturnTargetConditioningRuntimeState(
+                target_tokens=target_tokens,
+                target_token_injected=True,
+                target_token_source="target_source",
+                target_fallback_reason="target_fallback",
+                relocate_tokens=target_tokens + 10.0,
+                relocate_token_injected=True,
+                start_envelope_tokens=envelope_tokens,
+                start_envelope_token_injected=True,
+                start_envelope_token_source="envelope_source",
+                start_envelope_use_prior_spatial_bounds=False,
+                start_envelope_use_prior_qpos_bounds=True,
+                planned_cycle_id=5,
+                pending_dig_cut_cycle_id=6,
+                pending_dig_cut_corridor_id=7,
+                pending_dig_cut_raw_fields={"operator_entry_x_m": 1.5},
+                pending_dig_cut_tokens=dig_cut_tokens + 20.0,
+                pending_dig_depth_profile_tokens=depth_tokens + 30.0,
+                pending_dig_state_exemplar_ids=("cell7_deep",),
+                pending_dig_state_exemplar_distance=0.25,
+            )
+        )
+        .with_policy_observation_assembly(
+            PolicyObservationAssembly(
+                obs={},
+                cell_entry_token_injected=True,
+                dig_cut_token_injected=False,
+                dig_depth_profile_token_injected=True,
+                return_target_token_injected=False,
+                return_relocate_token_injected=True,
+                return_start_envelope_token_injected=False,
+            )
+        )
+    )
+
+    dig_cut_tokens[0] = 99.0
+    depth_tokens[0] = 99.0
+    target_tokens[0] = 99.0
+    envelope_tokens[0] = 99.0
+
+    assert state.cell_entry_token_injected is False
+    assert updated.cell_entry_token_injected is True
+    assert updated.dig_cut.token_injected is False
+    assert updated.dig_cut.planned_cycle_id == 3
+    assert updated.dig_cut.token_source == "dig_source"
+    assert updated.dig_cut.token_in_prior_p10_p90 is True
+    np.testing.assert_allclose(updated.dig_cut.tokens[0], 0.0)
+    assert updated.dig_depth_profile.token_injected is True
+    assert updated.dig_depth_profile.token_source == "depth_source"
+    np.testing.assert_allclose(updated.dig_depth_profile.tokens[0], 0.0)
+    assert updated.return_target.target_token_injected is False
+    assert updated.return_target.relocate_token_injected is True
+    assert updated.return_target.start_envelope_token_injected is False
+    assert updated.return_target.target_token_source == "target_source"
+    assert updated.return_target.pending_dig_cut_raw_fields == {
+        "operator_entry_x_m": 1.5
+    }
+    np.testing.assert_allclose(updated.return_target.target_tokens[0], 0.0)
+    np.testing.assert_allclose(updated.return_target.start_envelope_tokens[0], 0.0)
+    assert updated.return_target.pending_dig_state_exemplar_ids == ("cell7_deep",)
 
 
 def test_tick_context_references_coverage_state_without_copying() -> None:

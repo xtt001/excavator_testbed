@@ -127,6 +127,7 @@ from testbed.planner.return_to_dig_transition import (
     ReturnToDigTransitionCompletionRequest,
     ReturnToDigTransitionRuntimeProjection,
 )
+from testbed.planner.runtime import PlannerConditioningState
 from testbed.policies.base import Policy
 from testbed.policies.hybrid import primitive_planner as primitive_planner_module
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
@@ -3905,6 +3906,7 @@ def test_policy_obs_uses_request_gate_before_calling_token_helpers() -> None:
 
 def test_policy_observation_assembly_apply_updates_injection_flags() -> None:
     policy = _make_policy()
+    previous_state = policy._planner_conditioning_state
     obs = {"qpos": np.asarray([1.0], dtype=np.float32)}
     assembly = PolicyObservationAssembly(
         obs=obs,
@@ -3919,12 +3921,99 @@ def test_policy_observation_assembly_apply_updates_injection_flags() -> None:
     returned = policy._apply_policy_observation_assembly(assembly)
 
     assert returned is obs
+    assert policy._planner_conditioning_state is not previous_state
+    assert policy._planner_conditioning_state.cell_entry_token_injected is True
+    assert policy._planner_conditioning_state.dig_cut.token_injected is False
+    assert (
+        policy._planner_conditioning_state.dig_depth_profile.token_injected
+        is True
+    )
+    assert (
+        policy._planner_conditioning_state.return_target.target_token_injected
+        is False
+    )
+    assert (
+        policy._planner_conditioning_state.return_target.relocate_token_injected
+        is True
+    )
+    assert (
+        policy._planner_conditioning_state.return_target.start_envelope_token_injected
+        is False
+    )
     assert policy._cell_entry_token_injected is True
     assert policy._dig_cut_token_injected is False
     assert policy._dig_depth_profile_token_injected is True
     assert policy._return_target_token_injected is False
     assert policy._return_relocate_token_injected is True
     assert policy._return_start_envelope_token_injected is False
+
+
+def test_policy_conditioning_private_fields_are_runtime_state_shims() -> None:
+    policy = _make_policy()
+    policy._planner_conditioning_state = PlannerConditioningState()
+    dig_cut_tokens = np.arange(DIG_CUT_TOKEN_DIM, dtype=np.float32)
+    depth_tokens = np.arange(DIG_DEPTH_PROFILE_TOKEN_DIM, dtype=np.float32)
+    target_tokens = np.arange(RETURN_TARGET_TOKEN_DIM, dtype=np.float32)
+    relocate_tokens = target_tokens + 10.0
+    envelope_tokens = np.arange(RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.float32)
+    pending_tokens = dig_cut_tokens + 20.0
+    pending_depth_tokens = depth_tokens + 30.0
+
+    policy._cell_entry_token_injected = True
+    policy._dig_cut_tokens = dig_cut_tokens
+    policy._dig_cut_token_injected = True
+    policy._dig_cut_planned_cycle_id = np.int64(4)
+    policy._dig_cut_token_source = "dig_source"
+    policy._dig_cut_fallback_reason = "dig_fallback"
+    policy._dig_cut_token_in_prior_p10_p90 = True
+    policy._dig_depth_profile_tokens = depth_tokens
+    policy._dig_depth_profile_token_injected = True
+    policy._dig_depth_profile_token_source = "depth_source"
+    policy._dig_depth_profile_fallback_reason = "depth_fallback"
+    policy._return_target_tokens = target_tokens
+    policy._return_target_token_injected = True
+    policy._return_target_token_source = "target_source"
+    policy._return_target_fallback_reason = "target_fallback"
+    policy._return_relocate_tokens = relocate_tokens
+    policy._return_relocate_token_injected = True
+    policy._return_start_envelope_tokens = envelope_tokens
+    policy._return_start_envelope_token_injected = True
+    policy._return_start_envelope_token_source = "envelope_source"
+    policy._return_start_envelope_use_prior_spatial_bounds = False
+    policy._return_start_envelope_use_prior_qpos_bounds = True
+    policy._return_target_planned_cycle_id = np.int64(8)
+    policy._pending_dig_cut_cycle_id = np.int64(9)
+    policy._pending_dig_cut_corridor_id = np.int64(10)
+    policy._pending_dig_cut_raw_fields = {"operator_entry_x_m": 1.5}
+    policy._pending_dig_cut_tokens = pending_tokens
+    policy._pending_dig_depth_profile_tokens = pending_depth_tokens
+    policy._pending_dig_state_exemplar_ids = ["cell7_deep"]
+    policy._pending_dig_state_exemplar_distance = np.float64(0.25)
+
+    assert policy._cell_entry_token_injected is True
+    assert policy._dig_cut_tokens is dig_cut_tokens
+    assert policy._dig_cut_token_injected is True
+    assert policy._dig_cut_planned_cycle_id == 4
+    assert policy._dig_cut_token_source == "dig_source"
+    assert policy._dig_cut_fallback_reason == "dig_fallback"
+    assert policy._dig_cut_token_in_prior_p10_p90 is True
+    assert policy._dig_depth_profile_tokens is depth_tokens
+    assert policy._dig_depth_profile_token_source == "depth_source"
+    assert policy._return_target_tokens is target_tokens
+    assert policy._return_target_token_source == "target_source"
+    assert policy._return_relocate_tokens is relocate_tokens
+    assert policy._return_start_envelope_tokens is envelope_tokens
+    assert policy._return_start_envelope_token_source == "envelope_source"
+    assert policy._return_start_envelope_use_prior_spatial_bounds is False
+    assert policy._return_start_envelope_use_prior_qpos_bounds is True
+    assert policy._return_target_planned_cycle_id == 8
+    assert policy._pending_dig_cut_cycle_id == 9
+    assert policy._pending_dig_cut_corridor_id == 10
+    assert policy._pending_dig_cut_raw_fields == {"operator_entry_x_m": 1.5}
+    assert policy._pending_dig_cut_tokens is pending_tokens
+    assert policy._pending_dig_depth_profile_tokens is pending_depth_tokens
+    assert policy._pending_dig_state_exemplar_ids == ["cell7_deep"]
+    assert policy._pending_dig_state_exemplar_distance == pytest.approx(0.25)
 
 
 def test_policy_obs_delegates_assembly_application(

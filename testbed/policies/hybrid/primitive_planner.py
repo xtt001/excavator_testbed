@@ -274,6 +274,7 @@ from testbed.planner.return_to_dig_transition import (
 )
 from testbed.planner.runtime import (
     PlannerBlackboard,
+    PlannerConditioningState,
     PlannerTickContext,
     PlannerTickResult,
 )
@@ -498,6 +499,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self.coverage_service = self._create_coverage_service()
         self._validate_dig_cut_planner_config()
         self._planner_blackboard = PlannerBlackboard()
+        self._planner_conditioning_state = PlannerConditioningState()
         self.reset()
 
     def reset(self) -> None:
@@ -523,6 +525,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             current_skill=initial_skill_name,
             switch_reason="reset",
         )
+        self._planner_conditioning_state = PlannerConditioningState()
         self._prev_action: np.ndarray | None = None
         self._reset_dump_lifecycle_runtime()
         self._reset_bootstrap_runtime()
@@ -649,6 +652,375 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
     @_dump_done_hold_count.setter
     def _dump_done_hold_count(self, value: object) -> None:
         self._replace_planner_lifecycle_state(dump_done_hold_count=value)
+
+    def _planner_conditioning_runtime_state(self) -> PlannerConditioningState:
+        state = getattr(self, "_planner_conditioning_state", None)
+        if isinstance(state, PlannerConditioningState):
+            return state
+        state = PlannerConditioningState()
+        self._planner_conditioning_state = state
+        return state
+
+    def _update_dig_cut_conditioning(self, **updates: object) -> None:
+        self._planner_conditioning_state = (
+            self._planner_conditioning_runtime_state().with_dig_cut_updates(
+                **updates
+            )
+        )
+
+    def _update_dig_depth_profile_conditioning(self, **updates: object) -> None:
+        self._planner_conditioning_state = (
+            self._planner_conditioning_runtime_state()
+            .with_dig_depth_profile_updates(**updates)
+        )
+
+    def _update_return_target_conditioning(self, **updates: object) -> None:
+        self._planner_conditioning_state = (
+            self._planner_conditioning_runtime_state().with_return_target_updates(
+                **updates
+            )
+        )
+
+    @property
+    def _cell_entry_token_injected(self) -> bool:
+        return self._planner_conditioning_runtime_state().cell_entry_token_injected
+
+    @_cell_entry_token_injected.setter
+    def _cell_entry_token_injected(self, value: object) -> None:
+        self._planner_conditioning_state = (
+            self._planner_conditioning_runtime_state()
+            .with_cell_entry_token_injected(value)
+        )
+
+    @property
+    def _dig_cut_tokens(self) -> np.ndarray:
+        return self._planner_conditioning_runtime_state().dig_cut.tokens
+
+    @_dig_cut_tokens.setter
+    def _dig_cut_tokens(self, value: object) -> None:
+        self._update_dig_cut_conditioning(tokens=value)
+
+    @property
+    def _dig_cut_token_injected(self) -> bool:
+        return self._planner_conditioning_runtime_state().dig_cut.token_injected
+
+    @_dig_cut_token_injected.setter
+    def _dig_cut_token_injected(self, value: object) -> None:
+        self._update_dig_cut_conditioning(token_injected=value)
+
+    @property
+    def _dig_cut_planned_cycle_id(self) -> int:
+        return self._planner_conditioning_runtime_state().dig_cut.planned_cycle_id
+
+    @_dig_cut_planned_cycle_id.setter
+    def _dig_cut_planned_cycle_id(self, value: object) -> None:
+        self._update_dig_cut_conditioning(planned_cycle_id=value)
+
+    @property
+    def _dig_cut_token_source(self) -> str:
+        return self._planner_conditioning_runtime_state().dig_cut.token_source
+
+    @_dig_cut_token_source.setter
+    def _dig_cut_token_source(self, value: object) -> None:
+        self._update_dig_cut_conditioning(token_source=value)
+
+    @property
+    def _dig_cut_fallback_reason(self) -> str:
+        return self._planner_conditioning_runtime_state().dig_cut.fallback_reason
+
+    @_dig_cut_fallback_reason.setter
+    def _dig_cut_fallback_reason(self, value: object) -> None:
+        self._update_dig_cut_conditioning(fallback_reason=value)
+
+    @property
+    def _dig_cut_token_in_prior_p10_p90(self) -> bool:
+        return (
+            self._planner_conditioning_runtime_state()
+            .dig_cut
+            .token_in_prior_p10_p90
+        )
+
+    @_dig_cut_token_in_prior_p10_p90.setter
+    def _dig_cut_token_in_prior_p10_p90(self, value: object) -> None:
+        self._update_dig_cut_conditioning(token_in_prior_p10_p90=value)
+
+    @property
+    def _dig_depth_profile_tokens(self) -> np.ndarray:
+        return self._planner_conditioning_runtime_state().dig_depth_profile.tokens
+
+    @_dig_depth_profile_tokens.setter
+    def _dig_depth_profile_tokens(self, value: object) -> None:
+        self._update_dig_depth_profile_conditioning(tokens=value)
+
+    @property
+    def _dig_depth_profile_token_injected(self) -> bool:
+        return (
+            self._planner_conditioning_runtime_state()
+            .dig_depth_profile
+            .token_injected
+        )
+
+    @_dig_depth_profile_token_injected.setter
+    def _dig_depth_profile_token_injected(self, value: object) -> None:
+        self._update_dig_depth_profile_conditioning(token_injected=value)
+
+    @property
+    def _dig_depth_profile_token_source(self) -> str:
+        return self._planner_conditioning_runtime_state().dig_depth_profile.token_source
+
+    @_dig_depth_profile_token_source.setter
+    def _dig_depth_profile_token_source(self, value: object) -> None:
+        self._update_dig_depth_profile_conditioning(token_source=value)
+
+    @property
+    def _dig_depth_profile_fallback_reason(self) -> str:
+        return (
+            self._planner_conditioning_runtime_state()
+            .dig_depth_profile
+            .fallback_reason
+        )
+
+    @_dig_depth_profile_fallback_reason.setter
+    def _dig_depth_profile_fallback_reason(self, value: object) -> None:
+        self._update_dig_depth_profile_conditioning(fallback_reason=value)
+
+    @property
+    def _return_target_tokens(self) -> np.ndarray:
+        return self._planner_conditioning_runtime_state().return_target.target_tokens
+
+    @_return_target_tokens.setter
+    def _return_target_tokens(self, value: object) -> None:
+        self._update_return_target_conditioning(target_tokens=value)
+
+    @property
+    def _return_target_token_injected(self) -> bool:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .target_token_injected
+        )
+
+    @_return_target_token_injected.setter
+    def _return_target_token_injected(self, value: object) -> None:
+        self._update_return_target_conditioning(target_token_injected=value)
+
+    @property
+    def _return_target_token_source(self) -> str:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .target_token_source
+        )
+
+    @_return_target_token_source.setter
+    def _return_target_token_source(self, value: object) -> None:
+        self._update_return_target_conditioning(target_token_source=value)
+
+    @property
+    def _return_target_fallback_reason(self) -> str:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .target_fallback_reason
+        )
+
+    @_return_target_fallback_reason.setter
+    def _return_target_fallback_reason(self, value: object) -> None:
+        self._update_return_target_conditioning(target_fallback_reason=value)
+
+    @property
+    def _return_relocate_tokens(self) -> np.ndarray:
+        return self._planner_conditioning_runtime_state().return_target.relocate_tokens
+
+    @_return_relocate_tokens.setter
+    def _return_relocate_tokens(self, value: object) -> None:
+        self._update_return_target_conditioning(relocate_tokens=value)
+
+    @property
+    def _return_relocate_token_injected(self) -> bool:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .relocate_token_injected
+        )
+
+    @_return_relocate_token_injected.setter
+    def _return_relocate_token_injected(self, value: object) -> None:
+        self._update_return_target_conditioning(relocate_token_injected=value)
+
+    @property
+    def _return_start_envelope_tokens(self) -> np.ndarray:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .start_envelope_tokens
+        )
+
+    @_return_start_envelope_tokens.setter
+    def _return_start_envelope_tokens(self, value: object) -> None:
+        self._update_return_target_conditioning(start_envelope_tokens=value)
+
+    @property
+    def _return_start_envelope_token_injected(self) -> bool:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .start_envelope_token_injected
+        )
+
+    @_return_start_envelope_token_injected.setter
+    def _return_start_envelope_token_injected(self, value: object) -> None:
+        self._update_return_target_conditioning(
+            start_envelope_token_injected=value
+        )
+
+    @property
+    def _return_start_envelope_token_source(self) -> str:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .start_envelope_token_source
+        )
+
+    @_return_start_envelope_token_source.setter
+    def _return_start_envelope_token_source(self, value: object) -> None:
+        self._update_return_target_conditioning(
+            start_envelope_token_source=value
+        )
+
+    @property
+    def _return_start_envelope_use_prior_spatial_bounds(self) -> bool:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .start_envelope_use_prior_spatial_bounds
+        )
+
+    @_return_start_envelope_use_prior_spatial_bounds.setter
+    def _return_start_envelope_use_prior_spatial_bounds(
+        self,
+        value: object,
+    ) -> None:
+        self._update_return_target_conditioning(
+            start_envelope_use_prior_spatial_bounds=value
+        )
+
+    @property
+    def _return_start_envelope_use_prior_qpos_bounds(self) -> bool:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .start_envelope_use_prior_qpos_bounds
+        )
+
+    @_return_start_envelope_use_prior_qpos_bounds.setter
+    def _return_start_envelope_use_prior_qpos_bounds(
+        self,
+        value: object,
+    ) -> None:
+        self._update_return_target_conditioning(
+            start_envelope_use_prior_qpos_bounds=value
+        )
+
+    @property
+    def _return_target_planned_cycle_id(self) -> int:
+        return self._planner_conditioning_runtime_state().return_target.planned_cycle_id
+
+    @_return_target_planned_cycle_id.setter
+    def _return_target_planned_cycle_id(self, value: object) -> None:
+        self._update_return_target_conditioning(planned_cycle_id=value)
+
+    @property
+    def _pending_dig_cut_cycle_id(self) -> int:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .pending_dig_cut_cycle_id
+        )
+
+    @_pending_dig_cut_cycle_id.setter
+    def _pending_dig_cut_cycle_id(self, value: object) -> None:
+        self._update_return_target_conditioning(pending_dig_cut_cycle_id=value)
+
+    @property
+    def _pending_dig_cut_corridor_id(self) -> int:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .pending_dig_cut_corridor_id
+        )
+
+    @_pending_dig_cut_corridor_id.setter
+    def _pending_dig_cut_corridor_id(self, value: object) -> None:
+        self._update_return_target_conditioning(pending_dig_cut_corridor_id=value)
+
+    @property
+    def _pending_dig_cut_raw_fields(self) -> dict[str, float | int] | None:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .pending_dig_cut_raw_fields
+        )
+
+    @_pending_dig_cut_raw_fields.setter
+    def _pending_dig_cut_raw_fields(self, value: object | None) -> None:
+        self._update_return_target_conditioning(
+            pending_dig_cut_raw_fields=value
+        )
+
+    @property
+    def _pending_dig_cut_tokens(self) -> np.ndarray | None:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .pending_dig_cut_tokens
+        )
+
+    @_pending_dig_cut_tokens.setter
+    def _pending_dig_cut_tokens(self, value: object | None) -> None:
+        self._update_return_target_conditioning(pending_dig_cut_tokens=value)
+
+    @property
+    def _pending_dig_depth_profile_tokens(self) -> np.ndarray | None:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .pending_dig_depth_profile_tokens
+        )
+
+    @_pending_dig_depth_profile_tokens.setter
+    def _pending_dig_depth_profile_tokens(self, value: object | None) -> None:
+        self._update_return_target_conditioning(
+            pending_dig_depth_profile_tokens=value
+        )
+
+    @property
+    def _pending_dig_state_exemplar_ids(self) -> object:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .pending_dig_state_exemplar_ids
+        )
+
+    @_pending_dig_state_exemplar_ids.setter
+    def _pending_dig_state_exemplar_ids(self, value: object) -> None:
+        self._update_return_target_conditioning(
+            pending_dig_state_exemplar_ids=value
+        )
+
+    @property
+    def _pending_dig_state_exemplar_distance(self) -> float:
+        return (
+            self._planner_conditioning_runtime_state()
+            .return_target
+            .pending_dig_state_exemplar_distance
+        )
+
+    @_pending_dig_state_exemplar_distance.setter
+    def _pending_dig_state_exemplar_distance(self, value: object) -> None:
+        self._update_return_target_conditioning(
+            pending_dig_state_exemplar_distance=value
+        )
 
     def predict(self, obs: dict) -> np.ndarray:
         boundary_event = None
@@ -2116,15 +2488,9 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self,
         assembly: PolicyObservationAssembly,
     ) -> dict:
-        self._cell_entry_token_injected = assembly.cell_entry_token_injected
-        self._dig_cut_token_injected = assembly.dig_cut_token_injected
-        self._dig_depth_profile_token_injected = (
-            assembly.dig_depth_profile_token_injected
-        )
-        self._return_target_token_injected = assembly.return_target_token_injected
-        self._return_relocate_token_injected = assembly.return_relocate_token_injected
-        self._return_start_envelope_token_injected = (
-            assembly.return_start_envelope_token_injected
+        self._planner_conditioning_state = (
+            self._planner_conditioning_runtime_state()
+            .with_policy_observation_assembly(assembly)
         )
         return assembly.obs
 
@@ -2229,15 +2595,10 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self,
         state: DigCutRuntimeState,
     ) -> None:
-        self._dig_cut_tokens = np.asarray(
-            state.tokens,
-            dtype=np.float32,
-        ).copy()
-        self._dig_cut_token_injected = bool(state.token_injected)
-        self._dig_cut_planned_cycle_id = int(state.planned_cycle_id)
-        self._dig_cut_token_source = str(state.token_source)
-        self._dig_cut_fallback_reason = str(state.fallback_reason)
-        self._dig_cut_token_in_prior_p10_p90 = bool(state.token_in_prior_p10_p90)
+        self._planner_conditioning_state = (
+            self._planner_conditioning_runtime_state()
+            .with_dig_cut_runtime_state(state)
+        )
 
     def _reset_dig_depth_profile_runtime(self) -> None:
         state = self.dig_depth_profile_service.initial_runtime_state()
@@ -2247,13 +2608,10 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self,
         state: DigDepthProfileRuntimeState,
     ) -> None:
-        self._dig_depth_profile_tokens = np.asarray(
-            state.tokens,
-            dtype=np.float32,
-        ).copy()
-        self._dig_depth_profile_token_injected = bool(state.token_injected)
-        self._dig_depth_profile_token_source = str(state.token_source)
-        self._dig_depth_profile_fallback_reason = str(state.fallback_reason)
+        self._planner_conditioning_state = (
+            self._planner_conditioning_runtime_state()
+            .with_dig_depth_profile_runtime_state(state)
+        )
 
     def _reset_return_target_conditioning_runtime(self) -> None:
         state = self.return_target_plan_service.initial_conditioning_state()
@@ -2263,35 +2621,12 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
         self,
         state: ReturnTargetConditioningRuntimeState,
     ) -> None:
-        self._return_target_tokens = np.asarray(
-            state.target_tokens,
-            dtype=np.float32,
-        ).copy()
-        self._return_target_token_injected = bool(state.target_token_injected)
-        self._return_target_token_source = str(state.target_token_source)
-        self._return_target_fallback_reason = str(state.target_fallback_reason)
-        self._return_relocate_tokens = np.asarray(
-            state.relocate_tokens,
-            dtype=np.float32,
-        ).copy()
-        self._return_relocate_token_injected = bool(state.relocate_token_injected)
-        self._return_start_envelope_tokens = np.asarray(
-            state.start_envelope_tokens,
-            dtype=np.float32,
-        ).copy()
-        self._return_start_envelope_token_injected = bool(
-            state.start_envelope_token_injected
+        self._planner_conditioning_state = (
+            self._planner_conditioning_runtime_state()
+            .with_return_target_conditioning_state(
+                state
+            )
         )
-        self._return_start_envelope_token_source = str(
-            state.start_envelope_token_source
-        )
-        self._return_start_envelope_use_prior_spatial_bounds = bool(
-            state.start_envelope_use_prior_spatial_bounds
-        )
-        self._return_start_envelope_use_prior_qpos_bounds = bool(
-            state.start_envelope_use_prior_qpos_bounds
-        )
-        self._return_target_planned_cycle_id = int(state.planned_cycle_id)
         self._apply_pending_dig_cut_plan_state(
             self.return_target_plan_service.pending_plan_state_from_conditioning_state(
                 state
