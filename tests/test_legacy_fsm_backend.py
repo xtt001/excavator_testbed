@@ -43,6 +43,7 @@ from testbed.planner.runtime import (
     LegacyFsmSkillNames,
     PlannerBackendPorts,
     PlannerBlackboard,
+    PlannerDumpLifecyclePorts,
     PlannerRuntimeEffect,
     PlannerTickContext,
     PlannerTickResult,
@@ -327,6 +328,10 @@ def test_policy_maybe_switch_skill_applies_legacy_backend_effect(
         dump_done_hold_count=policy._dump_done_hold_count,
     )
     assert isinstance(seen_contexts[0].ports.legacy_fsm, LegacyFsmBackendPorts)
+    assert isinstance(
+        seen_contexts[0].ports.dump_lifecycle,
+        PlannerDumpLifecyclePorts,
+    )
     assert not hasattr(seen_contexts[0], "services")
     assert calls == [({"step": 7}, boundary_event)]
 

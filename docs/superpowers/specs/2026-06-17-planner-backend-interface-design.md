@@ -1473,6 +1473,80 @@ Verification run for this slice:
 - `rg -n "legacy_fsm|primitive_action_tree|primitive_planner|policy\\._" testbed/planner/runtime/behavior_tree.py`
   -> no matches.
 
+#### Phase 4 Slice 3 Carry/Dump Runtime Nodes 2026-06-18
+
+Implemented files:
+
+- `testbed/planner/runtime/ports.py`: added top-level
+  `PlannerDumpLifecyclePorts` so behavior-tree and legacy-FSM backends can
+  share carry/dump lifecycle runtime providers without routing through
+  `LegacyFsmBackendPorts`. `LegacyFsmDumpLifecyclePorts` remains a
+  compatibility alias for existing legacy tests and callers.
+- `testbed/planner/runtime/transition_nodes.py`: added shared backend-neutral
+  carry and dump transition result builders. These builders own the existing
+  `apply_carry_transition_runtime` and `apply_dump_transition_runtime` effect
+  payload construction for migrated nodes, but do not apply side effects.
+- `testbed/planner/runtime/behavior_tree.py`: implemented experimental
+  behavior-tree runtime nodes for `carry` and `dump`. They read
+  `PlannerTickContext.blackboard`, `PlannerBackendPorts.skill_names`, and
+  `PlannerBackendPorts.dump_lifecycle`, then delegate result construction to
+  the shared transition-node builders.
+- `testbed/planner/runtime/legacy_fsm.py`: changed legacy carry/dump branches
+  to prefer the top-level `PlannerBackendPorts.dump_lifecycle` dependency while
+  retaining `LegacyFsmBackendPorts.dump_lifecycle` as a compatibility fallback.
+  The legacy branches now reuse the same shared transition-node builders as the
+  behavior-tree nodes.
+- `testbed/policies/hybrid/primitive_planner.py`: thin adapter wiring only.
+  `_legacy_fsm_tick_context()` now builds top-level
+  `PlannerDumpLifecyclePorts`; carry/dump lifecycle runtime calculation and
+  effect application remain adapter/service-owned.
+- `tests/test_behavior_tree_backend_contract.py`,
+  `tests/test_planner_backend_ports.py`, and `tests/test_legacy_fsm_backend.py`:
+  added focused contracts proving carry/dump nodes can run from the neutral
+  runtime port and that the policy adapter wires the port at the top-level tick
+  context boundary.
+
+Scope guardrails kept:
+
+- No default backend selection, config default, carry/dump branch order, hold
+  thresholds, switch reason strings, policy reset timing, debug/trace/rollout
+  schema, or token contract changed.
+- `BehaviorTreeBackend` remains experimental and is not enabled by
+  `planner_backend` config. This slice only adds explicitly wired carry/dump
+  nodes; any unwired behavior still fails closed.
+- `PrimitiveActionTreeRunner` remains the shadow-only compatibility reference
+  and was not promoted to a runtime backend.
+- Carry/dump runtime providers remain adapter-built callables backed by the
+  existing dump lifecycle service. The backend returns runtime effects; it does
+  not mutate `PrimitivePlannerACTPolicy` or own effect application.
+
+Verification run for this slice:
+
+- Initial RED:
+  `python -m pytest -p no:cacheprovider -q tests/test_behavior_tree_backend_contract.py`
+  -> failed with
+  `AttributeError: module 'testbed.planner.runtime' has no attribute 'PlannerDumpLifecyclePorts'`.
+- Focused GREEN:
+  `python -m pytest -p no:cacheprovider -q tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_ports.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py`
+  -> `30 passed`.
+- Backend/runtime/config/BT:
+  `python -m pytest -p no:cacheprovider -q tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_planner_backend_config.py`
+  -> `74 passed`.
+- Golden/action-tree/facade/debug schema:
+  `python -m pytest -p no:cacheprovider -q tests/test_planner_golden_traces.py tests/test_primitive_action_tree.py tests/test_primitive_scheduler_facades.py tests/test_primitive_planner_debug_schema.py`
+  -> `168 passed`.
+- Token/data/config contract check:
+  `python -m pytest -p no:cacheprovider -q tests/test_primitive_token_contracts.py tests/test_policy_data_contracts.py tests/test_config_semantic_matrix.py`
+  -> `25 passed, 1 warning` from the existing `datetime.utcnow()`
+  deprecation in `testbed/data/dataset.py`.
+- `python -m compileall -q testbed/planner/runtime testbed/planner/return_to_dig_transition.py testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_action_tree.py tests/test_behavior_tree_backend_contract.py tests/test_planner_backend_ports.py tests/test_planner_runtime_contracts.py tests/test_legacy_fsm_backend.py tests/test_legacy_fsm_backend_dump_lifecycle.py tests/test_legacy_fsm_backend_effects.py tests/test_legacy_fsm_backend_return.py tests/test_primitive_scheduler_facades.py`
+  -> no output.
+- `git diff --check` -> no whitespace errors.
+- `rg "context\\.services|services\\[|LegacyFsmBoundaryProfilePorts|ports\\.boundary_profile|boundary_ports" testbed/planner testbed/policies/hybrid tests -n`
+  -> no matches.
+- `rg -n "legacy_fsm|primitive_action_tree|primitive_planner|policy\\._" testbed/planner/runtime/behavior_tree.py testbed/planner/runtime/transition_nodes.py`
+  -> no matches.
+
 ### Phase 5: Default Backend Migration
 
 Once `LegacyStateMachineBackend` is behavior-identical and the adapter applies

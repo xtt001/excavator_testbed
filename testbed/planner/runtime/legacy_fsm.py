@@ -28,9 +28,12 @@ from testbed.planner.runtime.ports import (
     LegacyFsmSkillNames,
 )
 from testbed.planner.runtime.transition_nodes import (
+    build_carry_transition_result,
     build_dig_transition_result,
+    build_dump_transition_result,
     build_return_transition_result,
 )
+
 
 class LegacyFsmTransitionRunner(Protocol):
     def __call__(
@@ -116,13 +119,19 @@ class LegacyStateMachineBackend:
             return self._tick_carry(
                 context,
                 active_skill=active_skill,
-                ports=_required_port(ports.dump_lifecycle, "dump_lifecycle"),
+                ports=_required_port(
+                    context.ports.dump_lifecycle or ports.dump_lifecycle,
+                    "dump_lifecycle",
+                ),
             )
         if active_skill == skill_names.dump:
             return self._tick_dump(
                 context,
                 active_skill=active_skill,
-                ports=_required_port(ports.dump_lifecycle, "dump_lifecycle"),
+                ports=_required_port(
+                    context.ports.dump_lifecycle or ports.dump_lifecycle,
+                    "dump_lifecycle",
+                ),
             )
         if active_skill == skill_names.return_skill:
             return self._tick_return(
@@ -248,28 +257,11 @@ class LegacyStateMachineBackend:
         active_skill: str,
         ports: LegacyFsmDumpLifecyclePorts,
     ) -> PlannerTickResult:
-        obs = dict(context.obs)
-        runtime = ports.carry_transition_runtime(
-            obs=obs,
-            boundary_event=context.boundary_event,
-            current_dump_ready_hold_count=context.blackboard.dump_ready_hold_count,
-        )
-        outcome = runtime.outcome
-        return PlannerTickResult(
-            node_path=("legacy_fsm", "transition", active_skill),
-            status="running",
-            reason=str(getattr(outcome, "switch_reason", "")),
-            effects=(
-                PlannerRuntimeEffect(
-                    APPLY_CARRY_TRANSITION_RUNTIME_EFFECT,
-                    {"runtime": runtime, "obs": obs},
-                ),
-            ),
-            diagnostics={
-                "active_skill": active_skill,
-                "action": str(getattr(outcome, "action", "")),
-                "switch_reason": str(getattr(outcome, "switch_reason", "")),
-            },
+        return build_carry_transition_result(
+            context,
+            active_skill=active_skill,
+            node_root="legacy_fsm",
+            ports=ports,
         )
 
     def _tick_dump(
@@ -279,28 +271,11 @@ class LegacyStateMachineBackend:
         active_skill: str,
         ports: LegacyFsmDumpLifecyclePorts,
     ) -> PlannerTickResult:
-        obs = dict(context.obs)
-        runtime = ports.dump_transition_runtime(
-            obs=obs,
-            boundary_event=context.boundary_event,
-            current_dump_done_hold_count=context.blackboard.dump_done_hold_count,
-        )
-        outcome = runtime.outcome
-        return PlannerTickResult(
-            node_path=("legacy_fsm", "transition", active_skill),
-            status="running",
-            reason=str(getattr(outcome, "switch_reason", "")),
-            effects=(
-                PlannerRuntimeEffect(
-                    APPLY_DUMP_TRANSITION_RUNTIME_EFFECT,
-                    {"runtime": runtime, "obs": obs},
-                ),
-            ),
-            diagnostics={
-                "active_skill": active_skill,
-                "action": str(getattr(outcome, "action", "")),
-                "switch_reason": str(getattr(outcome, "switch_reason", "")),
-            },
+        return build_dump_transition_result(
+            context,
+            active_skill=active_skill,
+            node_root="legacy_fsm",
+            ports=ports,
         )
 
     def _tick_return(

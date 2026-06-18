@@ -162,11 +162,14 @@ LegacyFsmDigTransitionPorts = PlannerDigTransitionPorts
 
 
 @dataclass(frozen=True, slots=True)
-class LegacyFsmDumpLifecyclePorts:
-    """Carry/dump lifecycle dependencies used by the legacy FSM backend."""
+class PlannerDumpLifecyclePorts:
+    """Carry/dump lifecycle dependencies shared by planner backends."""
 
     carry_transition_runtime: CarryTransitionRuntimeProvider
     dump_transition_runtime: DumpTransitionRuntimeProvider
+
+
+LegacyFsmDumpLifecyclePorts = PlannerDumpLifecyclePorts
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +201,7 @@ class PlannerBackendPorts:
     legacy_fsm: LegacyFsmBackendPorts | None = None
     skill_names: PlannerSkillNames | None = None
     dig_transition: PlannerDigTransitionPorts | None = None
+    dump_lifecycle: PlannerDumpLifecyclePorts | None = None
     return_transition: PlannerReturnTransitionPorts | None = None
 
 
@@ -223,6 +227,7 @@ __all__ = [
     "ObservationPredicate",
     "PlannerBackendPorts",
     "PlannerDigTransitionPorts",
+    "PlannerDumpLifecyclePorts",
     "PlannerReturnTransitionPorts",
     "PlannerSkillNames",
     "ReturnTransitionRuntime",

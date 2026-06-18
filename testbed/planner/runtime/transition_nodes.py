@@ -8,11 +8,14 @@ from testbed.planner.runtime.contracts import (
     PlannerTickResult,
 )
 from testbed.planner.runtime.effects import (
+    APPLY_CARRY_TRANSITION_RUNTIME_EFFECT,
     APPLY_DIG_TRANSITION_RUNTIME_PROJECTION_EFFECT,
+    APPLY_DUMP_TRANSITION_RUNTIME_EFFECT,
     APPLY_RETURN_TO_DIG_TRANSITION_RUNTIME_EFFECT,
 )
 from testbed.planner.runtime.ports import (
     PlannerDigTransitionPorts,
+    PlannerDumpLifecyclePorts,
     PlannerReturnTransitionPorts,
 )
 
@@ -120,7 +123,77 @@ def build_return_transition_result(
     )
 
 
+def build_carry_transition_result(
+    context: PlannerTickContext,
+    *,
+    active_skill: str,
+    node_root: str,
+    ports: PlannerDumpLifecyclePorts,
+) -> PlannerTickResult:
+    """Build a carry transition tick result without applying side effects."""
+
+    obs = dict(context.obs)
+    runtime = ports.carry_transition_runtime(
+        obs=obs,
+        boundary_event=context.boundary_event,
+        current_dump_ready_hold_count=context.blackboard.dump_ready_hold_count,
+    )
+    outcome = runtime.outcome
+    return PlannerTickResult(
+        node_path=(node_root, "transition", active_skill),
+        status="running",
+        reason=str(getattr(outcome, "switch_reason", "")),
+        effects=(
+            PlannerRuntimeEffect(
+                APPLY_CARRY_TRANSITION_RUNTIME_EFFECT,
+                {"runtime": runtime, "obs": obs},
+            ),
+        ),
+        diagnostics={
+            "active_skill": active_skill,
+            "action": str(getattr(outcome, "action", "")),
+            "switch_reason": str(getattr(outcome, "switch_reason", "")),
+        },
+    )
+
+
+def build_dump_transition_result(
+    context: PlannerTickContext,
+    *,
+    active_skill: str,
+    node_root: str,
+    ports: PlannerDumpLifecyclePorts,
+) -> PlannerTickResult:
+    """Build a dump transition tick result without applying side effects."""
+
+    obs = dict(context.obs)
+    runtime = ports.dump_transition_runtime(
+        obs=obs,
+        boundary_event=context.boundary_event,
+        current_dump_done_hold_count=context.blackboard.dump_done_hold_count,
+    )
+    outcome = runtime.outcome
+    return PlannerTickResult(
+        node_path=(node_root, "transition", active_skill),
+        status="running",
+        reason=str(getattr(outcome, "switch_reason", "")),
+        effects=(
+            PlannerRuntimeEffect(
+                APPLY_DUMP_TRANSITION_RUNTIME_EFFECT,
+                {"runtime": runtime, "obs": obs},
+            ),
+        ),
+        diagnostics={
+            "active_skill": active_skill,
+            "action": str(getattr(outcome, "action", "")),
+            "switch_reason": str(getattr(outcome, "switch_reason", "")),
+        },
+    )
+
+
 __all__ = [
+    "build_carry_transition_result",
     "build_dig_transition_result",
+    "build_dump_transition_result",
     "build_return_transition_result",
 ]

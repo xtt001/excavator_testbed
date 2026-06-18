@@ -22,11 +22,11 @@ from testbed.planner.return_to_dig_transition import (
 )
 from testbed.planner.runtime import (
     LegacyFsmBackendPorts,
-    LegacyFsmDumpLifecyclePorts,
     LegacyFsmSkillNames,
     PlannerBackendPorts,
     PlannerBlackboard,
     PlannerDigTransitionPorts,
+    PlannerDumpLifecyclePorts,
     PlannerReturnTransitionPorts,
     PlannerTickContext,
 )
@@ -167,12 +167,12 @@ def test_legacy_fsm_backend_carry_dump_use_typed_runtime_ports() -> None:
         )
 
     ports = PlannerBackendPorts(
+        dump_lifecycle=PlannerDumpLifecyclePorts(
+            carry_transition_runtime=carry_transition_runtime,
+            dump_transition_runtime=dump_transition_runtime,
+        ),
         legacy_fsm=LegacyFsmBackendPorts(
             skill_names=_skill_names(),
-            dump_lifecycle=LegacyFsmDumpLifecyclePorts(
-                carry_transition_runtime=carry_transition_runtime,
-                dump_transition_runtime=dump_transition_runtime,
-            ),
         )
     )
 

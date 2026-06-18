@@ -12,6 +12,11 @@ from testbed.planner.dig_lifecycle import (
     DigTransitionRuntimeOutcome,
     DigTransitionRuntimeProjection,
 )
+from testbed.planner.dump_lifecycle import (
+    CarryTransitionRuntimeState,
+    DumpLifecycleOutcome,
+    DumpTransitionRuntimeState,
+)
 from testbed.planner.return_to_dig_transition import (
     ReturnToDigTransitionOutcome,
     ReturnToDigTransitionRuntimeProjection,
@@ -21,6 +26,7 @@ from testbed.planner.runtime import (
     PlannerBackend,
     PlannerBlackboard,
     PlannerDigTransitionPorts,
+    PlannerDumpLifecyclePorts,
     PlannerReturnTransitionPorts,
     PlannerSkillNames,
     PlannerTickContext,
@@ -32,7 +38,9 @@ from testbed.planner.runtime.behavior_tree import (
     BehaviorTreeBackend,
 )
 from testbed.planner.runtime.effects import (
+    APPLY_CARRY_TRANSITION_RUNTIME_EFFECT,
     APPLY_DIG_TRANSITION_RUNTIME_PROJECTION_EFFECT,
+    APPLY_DUMP_TRANSITION_RUNTIME_EFFECT,
     APPLY_RETURN_TO_DIG_TRANSITION_RUNTIME_EFFECT,
 )
 
@@ -212,3 +220,153 @@ def test_behavior_tree_dig_node_uses_runtime_ports_without_shell() -> None:
         "action": "carry",
         "switch_reason": "dig_to_carry_target_payload_loaded",
     }
+
+
+def test_behavior_tree_carry_node_uses_runtime_ports_without_shell() -> None:
+    calls: list[str] = []
+
+    def carry_transition_runtime(
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+        current_dump_ready_hold_count: int,
+    ) -> CarryTransitionRuntimeState:
+        calls.append(
+            "carry:"
+            f"{obs['step']}:"
+            f"{boundary_event is not None}:"
+            f"{current_dump_ready_hold_count}"
+        )
+        return CarryTransitionRuntimeState(
+            dump_ready_hold_count=current_dump_ready_hold_count + 1,
+            outcome=DumpLifecycleOutcome(
+                action="dump",
+                switch_reason="carry_to_dump_target_ready",
+            ),
+        )
+
+    result = BehaviorTreeBackend().tick(
+        PlannerTickContext(
+            obs={"step": 21},
+            boundary_event=object(),
+            blackboard=PlannerBlackboard(
+                current_skill="carry",
+                dump_ready_hold_count=4,
+            ),
+            ports=PlannerBackendPorts(
+                skill_names=PlannerSkillNames(
+                    bootstrap="bootstrap",
+                    pre_dig_align="pre_dig_align",
+                    dig="dig",
+                    carry="carry",
+                    dump="dump",
+                    return_skill="return",
+                ),
+                dump_lifecycle=PlannerDumpLifecyclePorts(
+                    carry_transition_runtime=carry_transition_runtime,
+                    dump_transition_runtime=_unused_dump_transition_runtime,
+                ),
+            ),
+        )
+    )
+
+    assert calls == ["carry:21:True:4"]
+    assert result.node_path == ("behavior_tree", "transition", "carry")
+    assert result.status == "running"
+    assert result.reason == "carry_to_dump_target_ready"
+    assert result.effects[0].effect_type == APPLY_CARRY_TRANSITION_RUNTIME_EFFECT
+    assert result.effects[0].payload == {
+        "runtime": CarryTransitionRuntimeState(
+            dump_ready_hold_count=5,
+            outcome=DumpLifecycleOutcome(
+                action="dump",
+                switch_reason="carry_to_dump_target_ready",
+            ),
+        ),
+        "obs": {"step": 21},
+    }
+    assert dict(result.diagnostics) == {
+        "active_skill": "carry",
+        "action": "dump",
+        "switch_reason": "carry_to_dump_target_ready",
+    }
+
+
+def test_behavior_tree_dump_node_uses_runtime_ports_without_shell() -> None:
+    calls: list[str] = []
+
+    def dump_transition_runtime(
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+        current_dump_done_hold_count: int,
+    ) -> DumpTransitionRuntimeState:
+        calls.append(
+            "dump:"
+            f"{obs['step']}:"
+            f"{boundary_event is not None}:"
+            f"{current_dump_done_hold_count}"
+        )
+        return DumpTransitionRuntimeState(
+            dump_done_hold_count=current_dump_done_hold_count + 1,
+            outcome=DumpLifecycleOutcome(
+                action="return",
+                switch_reason="dump_to_return_mass_low",
+                coverage_reason="dump_mass_low",
+            ),
+        )
+
+    result = BehaviorTreeBackend().tick(
+        PlannerTickContext(
+            obs={"step": 27},
+            boundary_event=object(),
+            blackboard=PlannerBlackboard(
+                current_skill="dump",
+                dump_done_hold_count=6,
+            ),
+            ports=PlannerBackendPorts(
+                skill_names=PlannerSkillNames(
+                    bootstrap="bootstrap",
+                    pre_dig_align="pre_dig_align",
+                    dig="dig",
+                    carry="carry",
+                    dump="dump",
+                    return_skill="return",
+                ),
+                dump_lifecycle=PlannerDumpLifecyclePorts(
+                    carry_transition_runtime=_unused_carry_transition_runtime,
+                    dump_transition_runtime=dump_transition_runtime,
+                ),
+            ),
+        )
+    )
+
+    assert calls == ["dump:27:True:6"]
+    assert result.node_path == ("behavior_tree", "transition", "dump")
+    assert result.status == "running"
+    assert result.reason == "dump_to_return_mass_low"
+    assert result.effects[0].effect_type == APPLY_DUMP_TRANSITION_RUNTIME_EFFECT
+    assert result.effects[0].payload == {
+        "runtime": DumpTransitionRuntimeState(
+            dump_done_hold_count=7,
+            outcome=DumpLifecycleOutcome(
+                action="return",
+                switch_reason="dump_to_return_mass_low",
+                coverage_reason="dump_mass_low",
+            ),
+        ),
+        "obs": {"step": 27},
+    }
+    assert dict(result.diagnostics) == {
+        "active_skill": "dump",
+        "action": "return",
+        "switch_reason": "dump_to_return_mass_low",
+    }
+
+
+def _unused_carry_transition_runtime(**_kwargs: object) -> CarryTransitionRuntimeState:
+    raise AssertionError("carry transition runtime should not be called")
+
+
+def _unused_dump_transition_runtime(**_kwargs: object) -> DumpTransitionRuntimeState:
+    raise AssertionError("dump transition runtime should not be called")

@@ -277,12 +277,12 @@ from testbed.planner.return_to_dig_transition import (
 from testbed.planner.runtime import (
     LegacyFsmBackendPorts,
     LegacyFsmBootstrapPorts,
-    LegacyFsmDumpLifecyclePorts,
     LegacyFsmPreDigAlignmentPorts,
     PlannerBackendPorts,
     PlannerBlackboard,
     PlannerConditioningState,
     PlannerDigTransitionPorts,
+    PlannerDumpLifecyclePorts,
     PlannerReturnTransitionPorts,
     PlannerSkillNames,
     PlannerTickContext,
@@ -1134,6 +1134,10 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             ),
             dig_to_carry_decision=self._dig_to_carry_decision,
         )
+        dump_lifecycle = PlannerDumpLifecyclePorts(
+            carry_transition_runtime=self._carry_transition_runtime,
+            dump_transition_runtime=self._dump_transition_runtime,
+        )
         return PlannerTickContext(
             obs=obs,
             boundary_event=boundary_event,
@@ -1142,6 +1146,7 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
             ports=PlannerBackendPorts(
                 skill_names=skill_names,
                 dig_transition=dig_transition,
+                dump_lifecycle=dump_lifecycle,
                 return_transition=return_transition,
                 legacy_fsm=LegacyFsmBackendPorts(
                     skill_names=skill_names,
@@ -1155,10 +1160,6 @@ class PrimitivePlannerACTPolicy(DigCoverageMixin, Policy):
                     ),
                     pre_dig_alignment=LegacyFsmPreDigAlignmentPorts(
                         compute_outcome=self._pre_dig_align_outcome,
-                    ),
-                    dump_lifecycle=LegacyFsmDumpLifecyclePorts(
-                        carry_transition_runtime=self._carry_transition_runtime,
-                        dump_transition_runtime=self._dump_transition_runtime,
                     ),
                 ),
             ),

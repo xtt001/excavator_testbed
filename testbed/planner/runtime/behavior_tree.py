@@ -9,10 +9,13 @@ from typing import Any
 from testbed.planner.runtime.contracts import PlannerTickContext, PlannerTickResult
 from testbed.planner.runtime.ports import (
     PlannerDigTransitionPorts,
+    PlannerDumpLifecyclePorts,
     PlannerReturnTransitionPorts,
 )
 from testbed.planner.runtime.transition_nodes import (
+    build_carry_transition_result,
     build_dig_transition_result,
+    build_dump_transition_result,
     build_return_transition_result,
 )
 
@@ -41,6 +44,30 @@ class BehaviorTreeBackend:
                     "dig_transition",
                 ),
             )
+        if (
+            skill_names is not None
+            and context.blackboard.current_skill == skill_names.carry
+        ):
+            return self._tick_carry(
+                context,
+                active_skill=context.blackboard.current_skill,
+                ports=_required_port(
+                    context.ports.dump_lifecycle,
+                    "dump_lifecycle",
+                ),
+            )
+        if (
+            skill_names is not None
+            and context.blackboard.current_skill == skill_names.dump
+        ):
+            return self._tick_dump(
+                context,
+                active_skill=context.blackboard.current_skill,
+                ports=_required_port(
+                    context.ports.dump_lifecycle,
+                    "dump_lifecycle",
+                ),
+            )
         if skill_names is not None and context.blackboard.current_skill == (
             skill_names.return_skill
         ):
@@ -65,6 +92,34 @@ class BehaviorTreeBackend:
         ports: PlannerDigTransitionPorts,
     ) -> PlannerTickResult:
         return build_dig_transition_result(
+            context,
+            active_skill=active_skill,
+            node_root="behavior_tree",
+            ports=ports,
+        )
+
+    def _tick_carry(
+        self,
+        context: PlannerTickContext,
+        *,
+        active_skill: str,
+        ports: PlannerDumpLifecyclePorts,
+    ) -> PlannerTickResult:
+        return build_carry_transition_result(
+            context,
+            active_skill=active_skill,
+            node_root="behavior_tree",
+            ports=ports,
+        )
+
+    def _tick_dump(
+        self,
+        context: PlannerTickContext,
+        *,
+        active_skill: str,
+        ports: PlannerDumpLifecyclePorts,
+    ) -> PlannerTickResult:
+        return build_dump_transition_result(
             context,
             active_skill=active_skill,
             node_root="behavior_tree",
