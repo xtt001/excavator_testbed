@@ -539,7 +539,8 @@ extracted dig-depth-profile token planning; Phase 5.4 has extracted
 return-target token planning result construction; Phase 5.5 has extracted
 return-relocate token planning; Phase 5.6 has extracted return-start-envelope
 token planning; Phase 6.1 has extracted coverage corridor candidate
-construction. Continue with Phase 6.2, coverage scoring/selection only. Do not
-migrate completion/rejection updates, terminal-stop requests, decision
-trace/report projection, `_maybe_switch_skill()` branch bodies, or effect
-application in the same slice.
+construction; Phase 6.2 has extracted coverage scoring/selection. Continue
+with Phase 6.3, coverage completion/rejection state updates only. Do not
+migrate terminal-stop requests, decision trace/report projection,
+`_maybe_switch_skill()` branch bodies, backend behavior, or effect application
+in the same slice.
