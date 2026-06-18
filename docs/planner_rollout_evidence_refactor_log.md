@@ -42,3 +42,13 @@ Each completed refactor round should append:
   rollout behavior, not a reason to preserve abandoned or unobserved paths.
 - Removed the old historical plan document from the live tree. The backup is git
   history, not a file agents should read before acting.
+
+### 2026-06-18 Baseline Architecture Correction
+
+- Added a required branch baseline reconstruction gate before future planner
+  migration slices.
+- Added `docs/planner_baseline_architecture_map.md` as a separate architecture
+  map so target design is rebuilt from baseline code and rollout evidence
+  instead of inferred from the current partially-refactored HEAD.
+- Updated the goal prompt, skill, guard, and workflow tests to require the
+  baseline architecture map before planner code migration.

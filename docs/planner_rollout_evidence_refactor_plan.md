@@ -7,9 +7,12 @@ old route is kept only in git history, not as a live repository document. Do not
 read or extend the old plan during future refactor rounds.
 
 The active goal is not to keep editing `PrimitivePlannerACTPolicy` until it
-looks smaller. The active goal is to identify planner behavior that is proven
-live by real rollout logs, move that behavior into new focused runtime modules,
-and delete the old shell path once parity is proven.
+looks smaller, and not to treat the current partially-refactored HEAD as the
+architecture source of truth. The active goal is to reconstruct the branch
+baseline planner logic from the earliest branch baseline, overlay real rollout
+evidence, draw the intended architecture, then move confirmed-live behavior
+directly into new focused runtime modules and delete the old shell path once
+parity is proven.
 
 Change records do not belong in this file. Record execution history in
 `docs/planner_rollout_evidence_refactor_log.md`.
@@ -27,6 +30,36 @@ layers that make the main logic harder to understand.
 When these goals conflict, prefer the smallest evidence-backed refactor that can
 delete or reclassify old code. Stop for user confirmation if the only way to
 "protect" behavior is to keep unclear old logic alive.
+
+## Baseline Architecture Reconstruction Gate
+
+Every migration round must start from the branch baseline, not from whatever
+shape the current refactor stack has accumulated. The current branch baseline is
+`f004d5ae2b38630456e3b1a58c602f655eb5de12`; confirm it with
+`git merge-base HEAD origin/fs/v2_4-refactor-tests` when remote refs are already
+available locally. Do not fetch or pull just to refresh this value during a
+no-remote round.
+
+Before choosing a migration slice, update
+`docs/planner_baseline_architecture_map.md` with:
+
+- the branch baseline commit used
+- the baseline call graph from rollout entry to planner decision, tokens,
+  low-level policy dispatch, effects, and debug reporting
+- the rollout evidence that proves which baseline paths are live
+- the target module boundaries and data flow that the next refactor should move
+  toward
+- code that is not observed and should be treated as `not-observed`,
+  `test-only`, `compatibility`, or `dead-candidate`
+
+The architecture map is not a change log. Do not record round-by-round changes
+there. Record execution history in
+`docs/planner_rollout_evidence_refactor_log.md`.
+
+Current HEAD can be inspected as a patch queue or implementation history, but it
+must not define the target architecture by itself. If the architecture map is
+missing, stale, or based mainly on the current messy refactor state, stop and do
+an architecture reconstruction round before touching planner code.
 
 ## First-Principles Reflection Gate
 
@@ -52,7 +85,7 @@ A path is eligible for migration only when it has at least one evidence packet:
 - rollout artifact path or command that produced it
 - observed skill sequence and switch reasons
 - relevant debug keys, token source, or runtime effect payload
-- method chain from the log-observed behavior back to current code
+- method chain from the log-observed behavior back to branch baseline code
 - parity command that can compare old and new behavior
 
 Classify code before moving it:
@@ -100,21 +133,24 @@ code for comfort.
 
 1. Target lock: record host, branch, clean/dirty status, HEAD, and no-push
    policy.
-2. Evidence selection: choose one rollout log or artifact and record the exact
+2. Branch baseline: confirm the baseline commit and reconstruct the baseline
+   planner call graph in `docs/planner_baseline_architecture_map.md`.
+3. Evidence selection: choose one rollout log or artifact and record the exact
    path.
-3. Runtime trace: map observed rollout behavior to skill/reason/effect/token
-   path and current methods.
-4. Slice decision: choose one `confirmed-live` responsibility chain.
-5. Contract tests first: add tests for the new file API, deletion guard, and
+4. Runtime trace: map observed rollout behavior to skill/reason/effect/token
+   path and branch-baseline methods.
+5. Slice decision: choose one `confirmed-live` responsibility chain from the
+   architecture map.
+6. Contract tests first: add tests for the new file API, deletion guard, and
    parity surface.
-6. New module first: implement the focused runtime module outside the large
+7. New module first: implement the focused runtime module outside the large
    policy file.
-7. Thin bridge: update the old policy shell only to call the new module and
+8. Thin bridge: update the old policy shell only to call the new module and
    apply returned effects.
-8. Parity: run focused tests, golden/debug/token/config checks, and the rollout
+9. Parity: run focused tests, golden/debug/token/config checks, and the rollout
    comparison required by the evidence packet.
-9. Delete: remove old inline implementation when parity passes.
-10. Record: append the round result to
+10. Delete: remove old inline implementation when parity passes.
+11. Record: append the round result to
     `docs/planner_rollout_evidence_refactor_log.md`.
 
 ## Stop Conditions
@@ -122,6 +158,7 @@ code for comfort.
 Stop and ask for a decision when:
 
 - no real rollout log proves the path is live
+- branch baseline architecture has not been reconstructed for the slice
 - a proposed module would mainly wrap old private methods
 - preserving branch order, threshold, reason string, token schema, debug schema,
   rollout schema, or reset timing is uncertain

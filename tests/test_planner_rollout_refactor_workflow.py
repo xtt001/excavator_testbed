@@ -26,10 +26,13 @@ def test_plan_contract_requires_separate_plan_log_and_no_legacy_plan_files(
             [
                 "# Rollout Evidence Driven Planner Refactor Plan",
                 "## Priority Rule",
+                "## Baseline Architecture Reconstruction Gate",
                 "## First-Principles Reflection Gate",
                 "## Rollout Evidence Gate",
                 "## New-File Extraction Rule",
                 "## Deletion Rule",
+                "docs/planner_baseline_architecture_map.md",
+                "branch baseline",
             ]
         ),
     )
@@ -40,6 +43,19 @@ def test_plan_contract_requires_separate_plan_log_and_no_legacy_plan_files(
                 "# Rollout Evidence Driven Planner Refactor Log",
                 "## Change Record Protocol",
                 "## Records",
+            ]
+        ),
+    )
+    _write(
+        tmp_path / "docs/planner_baseline_architecture_map.md",
+        "\n".join(
+            [
+                "# Planner Baseline Architecture Map",
+                "branch baseline",
+                "Do not record round-by-round changes here.",
+                "```mermaid",
+                "flowchart TD",
+                "```",
             ]
         ),
     )
@@ -63,6 +79,7 @@ def test_plan_contract_rejects_renamed_historical_plan_file(tmp_path: Path) -> N
             [
                 "# Rollout Evidence Driven Planner Refactor Plan",
                 "## Priority Rule",
+                "## Baseline Architecture Reconstruction Gate",
                 "## First-Principles Reflection Gate",
                 "## Rollout Evidence Gate",
                 "## New-File Extraction Rule",
@@ -91,6 +108,7 @@ def test_plan_contract_rejects_change_records_in_active_plan(tmp_path: Path) -> 
             [
                 "# Rollout Evidence Driven Planner Refactor Plan",
                 "## Priority Rule",
+                "## Baseline Architecture Reconstruction Gate",
                 "## First-Principles Reflection Gate",
                 "## Rollout Evidence Gate",
                 "## New-File Extraction Rule",
@@ -102,6 +120,19 @@ def test_plan_contract_rejects_change_records_in_active_plan(tmp_path: Path) -> 
     _write(
         tmp_path / "docs/planner_rollout_evidence_refactor_log.md",
         "# Rollout Evidence Driven Planner Refactor Log\n\n## Change Record Protocol\n",
+    )
+    _write(
+        tmp_path / "docs/planner_baseline_architecture_map.md",
+        "\n".join(
+            [
+                "# Planner Baseline Architecture Map",
+                "branch baseline",
+                "Do not record round-by-round changes here.",
+                "```mermaid",
+                "flowchart TD",
+                "```",
+            ]
+        ),
     )
     with pytest.raises(PlannerRefactorGuardError, match="change records"):
         check_plan_contract(tmp_path)
@@ -140,7 +171,9 @@ def test_skill_contract_points_to_rollout_evidence_plan(tmp_path: Path) -> None:
                 "# Excavator Planner Safe Refactor",
                 "Read docs/planner_rollout_evidence_refactor_plan.md first.",
                 "Keep docs/planner_rollout_evidence_refactor_log.md separate.",
+                "Update docs/planner_baseline_architecture_map.md before migration.",
                 "Use real rollout log evidence before extracting code.",
+                "Reconstruct the branch baseline architecture first.",
                 "Run the first-principles reflection gate every round.",
                 "The primary goal is refactoring and abstraction.",
             ]
@@ -195,4 +228,18 @@ def test_goal_prompt_exists_for_rollout_evidence_goal_mode() -> None:
     assert "$excavator-planner-safe-refactor" in prompt
     assert "rollout log" in prompt.lower()
     assert "first-principles" in prompt.lower()
+    assert "branch baseline" in prompt.lower()
+    assert "docs/planner_baseline_architecture_map.md" in prompt
     assert "primitive_scheduler_service_refactor_plan" not in prompt
+
+
+def test_architecture_map_template_exists_separate_from_plan() -> None:
+    root = Path(__file__).resolve().parents[1]
+    architecture_map = (
+        root / "docs/planner_baseline_architecture_map.md"
+    ).read_text(encoding="utf-8")
+
+    assert "# Planner Baseline Architecture Map" in architecture_map
+    assert "branch baseline" in architecture_map.lower()
+    assert "```mermaid" in architecture_map
+    assert "Do not record round-by-round changes here" in architecture_map

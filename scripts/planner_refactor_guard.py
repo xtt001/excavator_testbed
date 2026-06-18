@@ -8,6 +8,7 @@ from typing import Iterable
 
 ACTIVE_PLAN = Path("docs/planner_rollout_evidence_refactor_plan.md")
 CHANGE_LOG = Path("docs/planner_rollout_evidence_refactor_log.md")
+ARCHITECTURE_MAP = Path("docs/planner_baseline_architecture_map.md")
 OLD_ACTIVE_PLAN = Path("docs/primitive_scheduler_service_refactor_plan.md")
 HISTORICAL_PLAN = Path(
     "docs/primitive_scheduler_service_refactor_plan_DO_NOT_EXTEND_HISTORY.md"
@@ -74,12 +75,15 @@ def check_plan_contract(root: str | Path = ".") -> None:
 
     active_path = root_path / ACTIVE_PLAN
     log_path = root_path / CHANGE_LOG
+    architecture_map_path = root_path / ARCHITECTURE_MAP
     active = _read(active_path)
     log = _read(log_path)
+    architecture_map = _read(architecture_map_path)
 
     for heading in (
         "# Rollout Evidence Driven Planner Refactor Plan",
         "## Priority Rule",
+        "## Baseline Architecture Reconstruction Gate",
         "## First-Principles Reflection Gate",
         "## Rollout Evidence Gate",
         "## New-File Extraction Rule",
@@ -93,9 +97,33 @@ def check_plan_contract(root: str | Path = ".") -> None:
                 f"active plan must not contain change records: {forbidden}"
             )
 
+    for needle in (
+        "docs/planner_baseline_architecture_map.md",
+        "branch baseline",
+    ):
+        _require(active.lower(), needle.lower(), path=active_path)
+
+    for needle in (
+        "# Planner Baseline Architecture Map",
+        "branch baseline",
+        "```mermaid",
+        "Do not record round-by-round changes here",
+    ):
+        _require(architecture_map, needle, path=architecture_map_path)
+
+    for forbidden in ("## Change Record", "Landing Record"):
+        if forbidden in architecture_map:
+            raise PlannerRefactorGuardError(
+                f"architecture map must not contain change records: {forbidden}"
+            )
+
     _require(log, "# Rollout Evidence Driven Planner Refactor Log", path=log_path)
     _require(log, "## Change Record Protocol", path=log_path)
-    for text, path in ((active, active_path), (log, log_path)):
+    for text, path in (
+        (active, active_path),
+        (log, log_path),
+        (architecture_map, architecture_map_path),
+    ):
         if "primitive_scheduler_service_refactor_plan" in text:
             raise PlannerRefactorGuardError(
                 f"{path} must not point agents at the old primitive scheduler plan"
@@ -108,6 +136,8 @@ def check_skill_contract(skill_path: str | Path = SKILL_PATH) -> None:
     for needle in (
         "docs/planner_rollout_evidence_refactor_plan.md",
         "docs/planner_rollout_evidence_refactor_log.md",
+        "docs/planner_baseline_architecture_map.md",
+        "branch baseline",
         "rollout log",
         "first-principles",
         "primary goal",
