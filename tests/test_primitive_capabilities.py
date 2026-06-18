@@ -23,6 +23,7 @@ from testbed.planner.primitive_capabilities import (
     DigTransitionStatus,
     DumpTransitionStatus,
     PrimitiveObservationFacts,
+    ReturnTransitionStatus,
 )
 
 
@@ -37,6 +38,7 @@ class _BoundaryEvent:
         dump_complete: bool = False,
         dump_start: bool = False,
         dump_end: bool = False,
+        next_dig_entry_ready: bool = False,
         metrics: dict[str, float] | None = None,
     ) -> None:
         self.qualified_dig_start = qualified_dig_start
@@ -46,6 +48,7 @@ class _BoundaryEvent:
         self.dump_complete = dump_complete
         self.dump_start = dump_start
         self.dump_end = dump_end
+        self.next_dig_entry_ready = next_dig_entry_ready
         self.metrics = metrics
 
 
@@ -473,3 +476,120 @@ def test_dump_transition_status_keeps_mass_low_hold_out_of_semantic_profile() ->
     assert status.dump_done_mass_low is False
     assert status.next_dump_done_hold_count == 0
     assert status.ready_to_return is False
+
+
+def test_return_transition_status_records_next_dig_event_handoff() -> None:
+    facts = PrimitiveObservationFacts.from_obs({}, action_dim=4)
+
+    status = ReturnTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=_BoundaryEvent(next_dig_entry_ready=True),
+        return_next_dig_event_seen=False,
+        entry_close=True,
+        start_envelope_ready=True,
+    )
+
+    assert status.next_dig_event is True
+    assert status.handoff_ready is True
+    assert status.completed_transition is True
+    assert status.next_skill == "dig"
+    assert status.switch_reason == "return_to_dig_next_dig_entry_ready"
+
+
+def test_return_transition_status_records_seen_next_dig_event_handoff() -> None:
+    facts = PrimitiveObservationFacts.from_obs({}, action_dim=4)
+
+    status = ReturnTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=None,
+        return_next_dig_event_seen=True,
+        entry_close=True,
+        start_envelope_ready=True,
+    )
+
+    assert status.next_or_seen_dig_event is True
+    assert status.switch_reason == "return_to_dig_next_dig_entry_ready"
+
+
+def test_return_transition_status_records_direct_handoff_to_pre_dig_align() -> None:
+    facts = PrimitiveObservationFacts.from_obs(
+        {"task_metrics": {"mass_in_bucket_kg": 8.0}},
+        action_dim=4,
+    )
+
+    status = ReturnTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=None,
+        entry_close=True,
+        start_envelope_ready=True,
+        pre_dig_align_before_dig=True,
+        return_to_dig_start_envelope_direct_handoff_enabled=True,
+        return_to_dig_start_envelope_gate_enabled=True,
+        return_to_dig_max_bucket_mass_kg=10.0,
+    )
+
+    assert status.direct_handoff_ready is True
+    assert status.next_skill == "pre_dig_align"
+    assert status.switch_reason == "return_to_pre_dig_align_start_envelope_ready"
+
+
+def test_return_transition_status_records_legacy_shallow_guard() -> None:
+    facts = PrimitiveObservationFacts.from_obs(
+        {
+            "task_metrics": {
+                "mass_in_bucket_kg": 8.0,
+                "min_distance_to_dig_area_m": 0.03,
+                "bucket_depth_below_dig_area_plane_m": 0.04,
+            }
+        },
+        action_dim=4,
+    )
+
+    status = ReturnTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=None,
+        semantic_boundary_profile_active=False,
+        entry_close=True,
+        start_envelope_ready=True,
+        return_to_dig_shallow_guard_enabled=True,
+        return_to_dig_max_bucket_mass_kg=10.0,
+        return_to_dig_touch_tolerance_m=0.05,
+        return_to_dig_min_depth_m=0.02,
+        return_to_dig_max_depth_m=0.12,
+        return_to_dig_max_entry_error_m=0.2,
+    )
+
+    assert status.shallow_guard_ready is True
+    assert status.shallow_guard_allowed is True
+    assert status.switch_reason == "return_to_dig_shallow_entry_guard"
+
+
+def test_return_transition_status_keeps_shallow_guard_out_of_semantic_profile() -> None:
+    facts = PrimitiveObservationFacts.from_obs(
+        {
+            "task_metrics": {
+                "mass_in_bucket_kg": 8.0,
+                "min_distance_to_dig_area_m": 0.03,
+                "bucket_depth_below_dig_area_plane_m": 0.04,
+            }
+        },
+        action_dim=4,
+    )
+
+    status = ReturnTransitionStatus.from_inputs(
+        observation=facts,
+        boundary_event=None,
+        semantic_boundary_profile_active=True,
+        entry_close=True,
+        start_envelope_ready=True,
+        return_to_dig_shallow_guard_enabled=True,
+        return_to_dig_max_bucket_mass_kg=10.0,
+        return_to_dig_touch_tolerance_m=0.05,
+        return_to_dig_min_depth_m=0.02,
+        return_to_dig_max_depth_m=0.12,
+        return_to_dig_max_entry_error_m=0.2,
+    )
+
+    assert status.shallow_guard_ready is True
+    assert status.shallow_guard_allowed is False
+    assert status.completed_transition is False

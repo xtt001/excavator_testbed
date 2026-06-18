@@ -726,3 +726,60 @@ Each completed refactor round should append:
 - Next action: Phase 4B.5 should continue with `ReturnTransitionStatus` only.
   Do not migrate coverage, token, token planning, coverage planning, or backend
   behavior in the same commit.
+
+### 2026-06-19 Phase 4B.5 ReturnTransitionStatus
+
+- Scope: introduced `ReturnTransitionStatus` only. No FSM branch body,
+  transition side effect, return-start-envelope token validation, return-target
+  planning, coverage planning, token planning, `cell_entry`, `pre_dig_align`,
+  backend selection, runtime package, behavior tree, VLM/LLM packet, default
+  config, threshold, branch order, reason string, token schema, debug schema,
+  rollout summary schema, or policy reset timing was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `fd488397759b3f2895c87ff5b13cc3e48c97216f`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Reflection gate:
+  - Phase 1 through Phase 4B.4 focused tests passed before Phase 4B.5 edits:
+    `python -m pytest -q tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `28 passed`.
+  - Live evidence remains the successful `aggregate_tx24` rollout packet; the
+    golden-window switch sequence includes return to dig switches with
+    `return_to_dig_start_envelope_ready` and
+    `return_to_dig_next_dig_entry_ready`.
+  - The only responsibility slice was read-only return transition status.
+  - `ReturnTransitionStatus` takes `entry_close` and `start_envelope_ready` as
+    explicit inputs instead of migrating return-start-envelope token checks,
+    which remain Phase 5 work.
+  - The status records next-dig event, remembered next-dig event, direct
+    handoff, shallow guard, selected next skill, and switch reason facts without
+    mutating counters or planner state.
+- Updated `testbed/planner/primitive_capabilities.py` with
+  `ReturnTransitionStatus` and
+  `PrimitiveObservationFacts.bucket_depth_below_dig_area_plane_m`.
+- Updated `tests/test_primitive_capabilities.py` with focused coverage for
+  next-dig event handoff, remembered next-dig event handoff, direct handoff to
+  pre-dig-align, legacy shallow guard, and keeping shallow guard out of semantic
+  profile mode. The TDD red test failed with `ImportError` before
+  `ReturnTransitionStatus` was implemented.
+- Old code parked/reclassified: no code was deleted.
+  `_return_to_dig_handoff_ready()`, `_return_to_dig_direct_handoff_ready()`,
+  `_return_to_dig_shallow_guard_ready()`,
+  `_return_to_dig_start_envelope_ready()`, and the `_maybe_switch_skill()`
+  return branch remain compatibility/source-of-truth paths until a later legacy
+  FSM backend phase bridges them with parity tests.
+- Verification completed during this round:
+  - `python -m pytest -q tests/test_primitive_capabilities.py` returned
+    `25 passed`.
+  - `python -m pytest -q tests/test_primitive_capabilities.py tests/test_planner_current_code_parity.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py`
+    returned `33 passed`.
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    returned `5 passed`.
+  - `python -m compileall -q testbed/planner/primitive_capabilities.py tests/test_primitive_capabilities.py`
+    completed with no output.
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`,
+    `python scripts/planner_refactor_guard.py --check-skill-contract`, and
+    `git diff --check` completed with no output.
+- Next action: Phase 4C should continue with `CoverageStatus` only. Do not
+  migrate token status, token planning, coverage planning/runtime, or backend
+  behavior in the same commit.

@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 
 from testbed.data.schema import (
+    ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
@@ -75,6 +76,15 @@ class PrimitiveObservationFacts:
         if "min_distance_to_dig_area_m" in self.task_metrics:
             return float(self.task_metrics["min_distance_to_dig_area_m"])
         return self.env_state_value(ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX, default=0.0)
+
+    @property
+    def bucket_depth_below_dig_area_plane_m(self) -> float:
+        if "bucket_depth_below_dig_area_plane_m" in self.task_metrics:
+            return float(self.task_metrics["bucket_depth_below_dig_area_plane_m"])
+        return self.env_state_value(
+            ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+            default=0.0,
+        )
 
     def target_geometry(self) -> dict[str, float]:
         available = self.task_metrics.get("target_geometry_available")
@@ -650,6 +660,120 @@ class DumpTransitionStatus:
         )
 
 
+@dataclass(frozen=True)
+class ReturnTransitionStatus:
+    """Read-only return transition facts for the legacy FSM."""
+
+    mass_in_bucket_kg: float
+    min_distance_to_dig_area_m: float
+    bucket_depth_below_dig_area_plane_m: float
+    semantic_boundary_profile_active: bool
+    next_dig_event: bool
+    next_or_seen_dig_event: bool
+    entry_close: bool
+    start_envelope_ready: bool
+    handoff_ready: bool
+    direct_handoff_ready: bool
+    shallow_guard_ready: bool
+    shallow_guard_allowed: bool
+    completed_transition: bool
+    next_skill: str
+    switch_reason: str
+
+    @classmethod
+    def from_inputs(
+        cls,
+        *,
+        observation: PrimitiveObservationFacts,
+        boundary_event: Any | None,
+        semantic_boundary_profile_active: bool = False,
+        return_next_dig_event_seen: bool = False,
+        entry_close: bool = False,
+        start_envelope_ready: bool = False,
+        pre_dig_align_before_dig: bool = False,
+        return_to_dig_start_envelope_direct_handoff_enabled: bool = False,
+        return_to_dig_start_envelope_gate_enabled: bool = False,
+        return_to_dig_shallow_guard_enabled: bool = False,
+        return_to_dig_max_bucket_mass_kg: float = 0.0,
+        return_to_dig_touch_tolerance_m: float = 0.0,
+        return_to_dig_min_depth_m: float = 0.0,
+        return_to_dig_max_depth_m: float = 0.0,
+        return_to_dig_max_entry_error_m: float | None = None,
+    ) -> "ReturnTransitionStatus":
+        semantic = bool(semantic_boundary_profile_active)
+        metrics = dict(getattr(boundary_event, "metrics", {}) or {})
+        mass = float(metrics.get("mass_in_bucket_kg", observation.mass_in_bucket_kg))
+        distance = float(
+            metrics.get(
+                "min_distance_to_dig_area_m",
+                observation.min_distance_to_dig_area_m,
+            )
+        )
+        depth = float(
+            metrics.get(
+                "bucket_depth_below_dig_area_plane_m",
+                observation.bucket_depth_below_dig_area_plane_m,
+            )
+        )
+        next_dig_event = bool(
+            boundary_event is not None
+            and (
+                getattr(boundary_event, "next_dig_entry_ready", False)
+                or getattr(boundary_event, "qualified_dig_start", False)
+            )
+        )
+        next_or_seen = bool(next_dig_event or return_next_dig_event_seen)
+        handoff_ready = bool(entry_close and start_envelope_ready)
+        direct_handoff_ready = bool(
+            return_to_dig_start_envelope_direct_handoff_enabled
+            and return_to_dig_start_envelope_gate_enabled
+            and handoff_ready
+            and mass <= float(return_to_dig_max_bucket_mass_kg)
+        )
+        entry_guard_ready = bool(
+            return_to_dig_max_entry_error_m is not None and bool(entry_close)
+        )
+        depth_below_max = bool(depth <= float(return_to_dig_max_depth_m))
+        shallow_guard_ready = bool(
+            return_to_dig_shallow_guard_enabled
+            and mass <= float(return_to_dig_max_bucket_mass_kg)
+            and distance <= float(return_to_dig_touch_tolerance_m)
+            and depth >= float(return_to_dig_min_depth_m)
+            and (depth_below_max or entry_guard_ready)
+        )
+        shallow_guard_allowed = bool(not semantic and shallow_guard_ready and handoff_ready)
+        next_skill = "pre_dig_align" if pre_dig_align_before_dig else "dig"
+        reason_suffix = ""
+        if next_or_seen and handoff_ready:
+            reason_suffix = "next_dig_entry_ready"
+        elif direct_handoff_ready:
+            reason_suffix = "start_envelope_ready"
+        elif shallow_guard_allowed:
+            reason_suffix = "shallow_entry_guard"
+        completed = bool(reason_suffix)
+        switch_reason = (
+            f"return_to_{next_skill}_{reason_suffix}" if completed else ""
+        )
+
+        return cls(
+            mass_in_bucket_kg=mass,
+            min_distance_to_dig_area_m=distance,
+            bucket_depth_below_dig_area_plane_m=depth,
+            semantic_boundary_profile_active=semantic,
+            next_dig_event=next_dig_event,
+            next_or_seen_dig_event=next_or_seen,
+            entry_close=bool(entry_close),
+            start_envelope_ready=bool(start_envelope_ready),
+            handoff_ready=handoff_ready,
+            direct_handoff_ready=direct_handoff_ready,
+            shallow_guard_ready=shallow_guard_ready,
+            shallow_guard_allowed=shallow_guard_allowed,
+            completed_transition=completed,
+            next_skill=next_skill if completed else "",
+            switch_reason=switch_reason,
+        )
+
+
 def _dump_ready_from_observation(
     *,
     observation: PrimitiveObservationFacts,
@@ -870,4 +994,5 @@ __all__ = [
     "DigTransitionStatus",
     "DumpTransitionStatus",
     "PrimitiveObservationFacts",
+    "ReturnTransitionStatus",
 ]
