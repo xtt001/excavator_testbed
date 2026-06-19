@@ -1892,3 +1892,42 @@ Each completed refactor round should append:
   work. Do not migrate `pre_dig_align`, the 5P override, direct-handoff helper
   internals, or alternate backend behavior without a new evidence and
   compatibility decision.
+
+### 2026-06-19 Phase 8 Effect Boundary Design
+
+- Scope: documentation and architecture design only. No planner runtime code,
+  tests, default config, branch order, reason string, token schema, debug
+  schema, rollout summary schema, policy reset timing, 5P override,
+  `pre_dig_align`, `cell_entry`, direct-handoff behavior, backend behavior, or
+  low-level ACT dispatch was changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, no fetch, pull, or push. The worktree was clean
+  before edits.
+- Added `docs/planner_effect_boundary_design.md` as the Phase 8 design source
+  for the `PlannerEffect` boundary.
+- Updated `docs/planner_current_code_architecture_plan.md` so the new effect
+  boundary design is a supporting design reference and the next approved
+  planning scope.
+- Design result:
+  - The current `legacy_fsm_side_effects_applied` path remains a compatibility
+    layer, not the final backend architecture.
+  - Future backends should return ordered requested effects with
+    `side_effects_applied=False`; the execution kernel/shell applier is the
+    only layer allowed to apply mutations.
+  - Effect families are semantic: skill lifecycle, counters/holds, return
+    cycle, coverage updates, coverage runtime, token/plan lifecycle, and
+    diagnostics.
+  - Forbidden shapes include arbitrary planner attribute writes, method-call
+    effects, callback/lambda payloads, and effects that promote `cell_entry` or
+    `pre_dig_align` into the mainline backend without new evidence and approval.
+  - Return direct-handoff and other coupled paths must be evaluated under this
+    design before any code migration.
+- Expected architecture coverage:
+  - fills the missing contract between `PrimitiveDecisionBackend` and the
+    execution kernel;
+  - separates decision recording from requested mutation;
+  - defines effect application ownership;
+  - prevents the current callback backend from becoming the final abstraction.
+- Not completed by this design: concrete requested-effect classes, live branch
+  conversion, behavior-tree/VLM backend implementation, 5P compatibility audit,
+  or legacy cleanup/deletion.

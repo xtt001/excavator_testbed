@@ -36,6 +36,7 @@ Supporting design references:
 
 - `docs/planner_execution_backend_abstraction_plan.md`
 - `docs/planner_execution_abstraction_flow.svg`
+- `docs/planner_effect_boundary_design.md`
 
 Non-goals for this plan:
 
@@ -572,3 +573,9 @@ cleanup. Do not move `pre_dig_align`, the 5P override, direct-handoff helper
 internals, change branch order, change reason strings, or apply unrelated
 effects through the backend boundary without that separate evidence and
 compatibility decision.
+
+The next approved planning scope is Phase 8 effect-boundary design, recorded in
+`docs/planner_effect_boundary_design.md`. It should govern later return
+direct-handoff, 5P compatibility, legacy parking, and backend-selection work by
+classifying each path as facts, decision, requested effect, reporting,
+compatibility, or legacy parking before any code migration.
