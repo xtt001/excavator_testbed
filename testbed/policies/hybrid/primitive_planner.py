@@ -108,7 +108,10 @@ from testbed.planner.primitive_execution import (
     PrimitiveTickPreparation,
     run_primitive_tick,
 )
-from testbed.planner.primitive_decision import PrimitiveDecisionResult
+from testbed.planner.primitive_decision import (
+    PrimitiveDecisionResult,
+    RequestedPlannerEffect,
+)
 from testbed.planner.primitive_tokens import (
     DigDepthProfileTokenPlan,
     DigDepthProfileTokenPlanner,
@@ -1047,6 +1050,13 @@ class PrimitivePlannerACTPolicy(Policy):
             preparation=preparation,
         )
 
+    def _apply_requested_tick_effects(
+        self,
+        effects: tuple[RequestedPlannerEffect, ...],
+    ) -> None:
+        # Phase 8.1 only installs the validated hook; no live backend emits effects yet.
+        return None
+
     def _legacy_fsm_backend(self) -> LegacyFSMBackendAdapter:
         return LegacyFSMBackendAdapter(
             maybe_switch_skill=self._maybe_switch_skill,
@@ -1267,6 +1277,7 @@ class PrimitivePlannerACTPolicy(Policy):
             current_skill_name=self._current_tick_skill_name,
             update_dig_progress=self._update_dig_progress,
             decide_tick=self._decide_tick_with_legacy_fsm,
+            apply_requested_effects=self._apply_requested_tick_effects,
             account_return_timeout=self._account_return_timeout_for_tick,
             dispatch_action=self._dispatch_tick_action,
             record_previous_action=self._record_tick_previous_action,

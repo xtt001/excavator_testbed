@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from testbed.planner.primitive_decision import PrimitiveDecisionResult
+from testbed.planner.primitive_decision import (
+    PrimitiveDecisionResult,
+    RequestedPlannerEffect,
+)
 from testbed.planner.primitive_execution import (
     PrimitiveTickHooks,
     run_primitive_tick,
@@ -17,7 +20,9 @@ class FakeTickHooks(PrimitiveTickHooks):
     return_timeout: bool = False
     transition_completed: bool = False
     previous_action_present: bool = True
+    requested_decision: PrimitiveDecisionResult | None = None
     events: list[str] = field(default_factory=list)
+    applied_effects: list[str] = field(default_factory=list)
 
     def update_boundary_event(self, obs: dict[str, Any]) -> str | None:
         self.events.append("boundary_update")
@@ -43,11 +48,20 @@ class FakeTickHooks(PrimitiveTickHooks):
         self.events.append(
             f"decide:{boundary_event}:{preparation.skill_name_before_decision}"
         )
+        if self.requested_decision is not None:
+            return self.requested_decision
         return PrimitiveDecisionResult.from_legacy_fsm_outcome(
             skill_before=preparation.skill_name_before_decision,
             skill_after=preparation.skill_name_before_decision,
             switch_reason="",
         )
+
+    def apply_requested_effects(
+        self,
+        effects: tuple[RequestedPlannerEffect, ...],
+    ) -> None:
+        self.events.append(f"apply_effects:{len(effects)}")
+        self.applied_effects.extend(effect.effect_type for effect in effects)
 
     def account_return_timeout(self) -> bool:
         self.events.append("return_timeout_accounting")
@@ -126,3 +140,49 @@ def test_run_primitive_tick_skips_dig_progress_for_non_dig_skill() -> None:
         "transition_completed_check",
         "debug_finalize:timeout=False:completed=False",
     ]
+
+
+def test_run_primitive_tick_applies_requested_effects_before_timeout_and_dispatch() -> None:
+    requested_effects = (
+        RequestedPlannerEffect(effect_type="record_decision_trace", reason="first"),
+        RequestedPlannerEffect(effect_type="switch_skill", reason="second"),
+    )
+    hooks = FakeTickHooks(
+        active_skill_name="dig",
+        requested_decision=PrimitiveDecisionResult.from_requested_effects(
+            decision_source="test_backend",
+            status="skill_switch",
+            skill_before="dig",
+            skill_after="carry",
+            switch_reason="dig_to_carry_boundary_confirmed",
+            effects=requested_effects,
+        ),
+    )
+
+    result = run_primitive_tick(hooks=hooks, obs={})
+
+    assert result.decision.effects == requested_effects
+    assert hooks.applied_effects == ["record_decision_trace", "switch_skill"]
+    assert hooks.events == [
+        "boundary_update",
+        "switch_reason_reset",
+        "current_skill_before_progress",
+        "dig_progress_update",
+        "decide:boundary-event:dig",
+        "apply_effects:2",
+        "return_timeout_accounting",
+        "dispatch_action",
+        "prev_action_update:[0.1, 0.2, 0.3, 0.4]",
+        "transition_completed_check",
+        "debug_finalize:timeout=False:completed=False",
+    ]
+
+
+def test_run_primitive_tick_does_not_apply_legacy_already_applied_effects() -> None:
+    hooks = FakeTickHooks(active_skill_name="dig")
+
+    result = run_primitive_tick(hooks=hooks, obs={})
+
+    assert result.decision.side_effects_applied is True
+    assert hooks.applied_effects == []
+    assert "apply_effects:0" not in hooks.events

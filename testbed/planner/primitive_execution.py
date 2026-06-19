@@ -6,7 +6,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from testbed.planner.primitive_decision import PrimitiveDecisionResult
+from testbed.planner.primitive_decision import (
+    PrimitiveDecisionResult,
+    RequestedPlannerEffect,
+    validate_decision_effect_contract,
+)
 
 
 class PrimitiveTickHooks(Protocol):
@@ -27,6 +31,11 @@ class PrimitiveTickHooks(Protocol):
         boundary_event: Any | None,
         preparation: "PrimitiveTickPreparation",
     ) -> PrimitiveDecisionResult: ...
+
+    def apply_requested_effects(
+        self,
+        effects: tuple[RequestedPlannerEffect, ...],
+    ) -> None: ...
 
     def account_return_timeout(self) -> bool: ...
 
@@ -68,6 +77,7 @@ class PrimitiveTickCallbacks:
     current_skill_name: Callable[[], str]
     update_dig_progress: Callable[[dict[str, Any]], None]
     decide_tick: Callable[..., PrimitiveDecisionResult]
+    apply_requested_effects: Callable[[tuple[RequestedPlannerEffect, ...]], None]
     account_return_timeout: Callable[[], bool]
     dispatch_action: Callable[[dict[str, Any]], Any]
     record_previous_action: Callable[[Any], None]
@@ -99,6 +109,7 @@ def run_primitive_tick(
         boundary_event=boundary_event,
         preparation=preparation,
     )
+    _apply_requested_effects_if_needed(hooks=hooks, decision=decision)
 
     transition_timeout = hooks.account_return_timeout()
     action = hooks.dispatch_action(obs)
@@ -117,3 +128,19 @@ def run_primitive_tick(
         transition_timeout=transition_timeout,
         transition_completed=transition_completed,
     )
+
+
+def _apply_requested_effects_if_needed(
+    *,
+    hooks: PrimitiveTickHooks,
+    decision: PrimitiveDecisionResult,
+) -> None:
+    validate_decision_effect_contract(decision)
+    if decision.side_effects_applied:
+        return
+    requested_effects = tuple(
+        effect
+        for effect in decision.effects
+        if isinstance(effect, RequestedPlannerEffect)
+    )
+    hooks.apply_requested_effects(requested_effects)

@@ -272,6 +272,24 @@ tested independently.
 
 ### Stage 2: Add Requested Effect Contract
 
+Phase 8.1 implements the foundation for this stage only. It extends the
+decision contract so a result can be either:
+
+- a legacy already-applied outcome with `side_effects_applied=True`; or
+- an ordered requested-effect result with `side_effects_applied=False`.
+
+The execution template validates the decision contract and invokes the
+requested-effect applier after `decide_tick()` and before return-timeout
+accounting or action dispatch. The current `PrimitivePlannerACTPolicy` bridge
+keeps the default legacy FSM path as already-applied, so no requested effects
+are applied in normal rollout/eval behavior.
+
+The Phase 8.1 validator is intentionally foundational. It rejects mixed
+already-applied/requested results, callable payloads, planner `self` payloads,
+and method-call or arbitrary planner-attribute effect shapes. It does not yet
+define concrete effect-family classes, migrate a branch, or approve a requested
+effect vocabulary for live behavior.
+
 Introduce requested-effect result support without changing planner behavior:
 
 - `PrimitiveDecisionResult` can represent `side_effects_applied=False`;

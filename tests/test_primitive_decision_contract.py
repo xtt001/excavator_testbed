@@ -6,7 +6,10 @@ from typing import Any
 from testbed.planner.primitive_decision import (
     LEGACY_FSM_DECISION_SOURCE,
     LegacyDecisionOutcomeEffect,
+    PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
+    RequestedPlannerEffect,
+    validate_decision_effect_contract,
 )
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
@@ -46,6 +49,65 @@ def test_legacy_decision_result_does_not_infer_private_effects_for_no_change() -
     assert result.status == "no_change"
     assert result.effects == ()
     assert result.side_effects_applied is True
+
+
+def test_requested_effect_result_records_ordered_unapplied_effects() -> None:
+    effects = (
+        RequestedPlannerEffect(effect_type="record_decision_trace", reason="first"),
+        RequestedPlannerEffect(effect_type="switch_skill", reason="second"),
+    )
+
+    result = PrimitiveDecisionResult.from_requested_effects(
+        decision_source="test_backend",
+        status="skill_switch",
+        skill_before="dig",
+        skill_after="carry",
+        switch_reason="dig_to_carry_boundary_confirmed",
+        effects=effects,
+    )
+
+    assert result.side_effects_applied is False
+    assert result.effects == effects
+    assert [effect.reason for effect in result.effects] == ["first", "second"]
+
+
+def test_decision_contract_rejects_callable_or_planner_method_effect_shapes() -> None:
+    callable_effect = PrimitiveDecisionResult.from_requested_effects(
+        decision_source="test_backend",
+        status="no_change",
+        skill_before="dig",
+        skill_after="dig",
+        switch_reason="",
+        effects=(
+            RequestedPlannerEffect(
+                effect_type="record_decision_trace",
+                payload={"callback": lambda: None},
+            ),
+        ),
+        validate=False,
+    )
+    method_effect = PrimitiveDecisionResult.from_requested_effects(
+        decision_source="test_backend",
+        status="no_change",
+        skill_before="dig",
+        skill_after="dig",
+        switch_reason="",
+        effects=(
+            RequestedPlannerEffect(
+                effect_type="call_planner_method",
+                payload={"method_name": "_set_skill"},
+            ),
+        ),
+        validate=False,
+    )
+
+    for result in (callable_effect, method_effect):
+        try:
+            validate_decision_effect_contract(result)
+        except PrimitiveDecisionContractError:
+            pass
+        else:
+            raise AssertionError("invalid requested effect shape was accepted")
 
 
 def test_primitive_planner_legacy_decision_bridge_calls_fsm_once() -> None:

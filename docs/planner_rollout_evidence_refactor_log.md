@@ -1931,3 +1931,50 @@ Each completed refactor round should append:
 - Not completed by this design: concrete requested-effect classes, live branch
   conversion, behavior-tree/VLM backend implementation, 5P compatibility audit,
   or legacy cleanup/deletion.
+
+### 2026-06-19 Phase 8.1 Requested Effect Contract Foundation
+
+- Scope: requested-effect contract foundation and execution hook only. No
+  bootstrap, dig, carry, dump, return, direct-handoff, `pre_dig_align`,
+  `cell_entry`, 5P override, branch order, reason string, threshold, backend
+  selection, behavior tree, VLM/LLM packet, token schema, debug schema, rollout
+  summary schema, policy reset timing, or low-level ACT dispatch behavior was
+  intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `c3e2d6f7175b1e7cc4ca6b63865b015aedffc531`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Selected evidence remains the successful mainline packet:
+  `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl`,
+  its paired planner trace, rollout summary, resolved config, and
+  `docs/planner_evidence_reports/2026-06-18-baseline-aggregate_tx24.md`.
+- Confirmed-live method chain protected by this foundation:
+  public tick execution calls `decide_tick()`, receives the legacy
+  already-applied `PrimitiveDecisionResult`, skips requested-effect
+  application, then continues return-timeout accounting and action dispatch in
+  the existing order.
+- Contract added in `testbed/planner/primitive_decision.py`:
+  `RequestedPlannerEffect`, `PrimitiveDecisionResult.from_requested_effects()`,
+  `PrimitiveDecisionContractError`, and
+  `validate_decision_effect_contract()`.
+- Execution hook added in `testbed/planner/primitive_execution.py`: requested
+  effects are validated and passed to the applier after `decide_tick()` and
+  before `account_return_timeout()` / `dispatch_action()`.
+- Thin bridge added in `PrimitivePlannerACTPolicy`: the default legacy FSM path
+  still returns `side_effects_applied=True`; `_apply_requested_tick_effects()`
+  is a no-op foundation hook because no live backend emits requested effects in
+  this phase.
+- Validation foundation: rejects mixed already-applied/requested results,
+  requested results carrying legacy effects, callable payloads, planner/self
+  payload keys, and planner attr/method-call effect shapes.
+- Added/updated focused tests:
+  `tests/test_primitive_decision_contract.py` and
+  `tests/test_primitive_execution_template.py`. The TDD red run failed on
+  missing requested-effect imports before implementation; the focused green run
+  returned `9 passed`.
+- Old code parked/reclassified: no code was deleted. Existing legacy FSM branch
+  objects and `_maybe_switch_skill()` shell remain the source of truth for live
+  side effects; requested effects are only a validated future backend contract.
+- Next action: do not migrate return direct-handoff, `pre_dig_align`,
+  `cell_entry`, 5P override, or any branch to requested effects without a
+  separate evidence-backed scope and concrete effect-family tests.
