@@ -109,6 +109,7 @@ from testbed.planner.primitive_execution import (
     run_primitive_tick,
 )
 from testbed.planner.primitive_decision import (
+    PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
     RequestedPlannerEffect,
 )
@@ -1054,8 +1055,13 @@ class PrimitivePlannerACTPolicy(Policy):
         self,
         effects: tuple[RequestedPlannerEffect, ...],
     ) -> None:
-        # Phase 8.1 only installs the validated hook; no live backend emits effects yet.
-        return None
+        if not effects:
+            return
+        effect_names = ", ".join(str(effect.effect_type) for effect in effects)
+        raise PrimitiveDecisionContractError(
+            "real planner requested-effect application is not supported yet; "
+            f"received {len(effects)} requested effect(s): {effect_names}"
+        )
 
     def _legacy_fsm_backend(self) -> LegacyFSMBackendAdapter:
         return LegacyFSMBackendAdapter(

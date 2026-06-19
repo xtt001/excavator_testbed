@@ -110,6 +110,33 @@ def test_decision_contract_rejects_callable_or_planner_method_effect_shapes() ->
             raise AssertionError("invalid requested effect shape was accepted")
 
 
+def test_primitive_planner_requested_effect_bridge_allows_empty_effects() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+
+    planner._apply_requested_tick_effects(())
+
+
+def test_primitive_planner_requested_effect_bridge_rejects_live_effects() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    effects = (
+        RequestedPlannerEffect(
+            effect_type="record_decision_trace",
+            reason="future_backend_probe",
+        ),
+    )
+
+    try:
+        planner._apply_requested_tick_effects(effects)
+    except PrimitiveDecisionContractError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("live requested effects were silently ignored")
+
+    assert "real planner" in message
+    assert "requested-effect application" in message
+    assert "not supported" in message
+
+
 def test_primitive_planner_legacy_decision_bridge_calls_fsm_once() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     planner._skill_name = "dig"

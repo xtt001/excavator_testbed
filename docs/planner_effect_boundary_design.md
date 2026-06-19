@@ -290,6 +290,13 @@ and method-call or arbitrary planner-attribute effect shapes. It does not yet
 define concrete effect-family classes, migrate a branch, or approve a requested
 effect vocabulary for live behavior.
 
+Phase 8.2 tightens the real `PrimitivePlannerACTPolicy` shell bridge. The fake
+execution-template hook may still apply requested effects in ordering tests,
+but the production planner shell now treats non-empty requested effects as a
+contract error until concrete live effect-family appliers are implemented.
+Empty requested-effect tuples remain a no-op so future pure-decision backends
+can represent "no requested mutation" without changing tick behavior.
+
 Introduce requested-effect result support without changing planner behavior:
 
 - `PrimitiveDecisionResult` can represent `side_effects_applied=False`;

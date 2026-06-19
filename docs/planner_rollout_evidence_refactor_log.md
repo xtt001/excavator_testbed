@@ -1978,3 +1978,41 @@ Each completed refactor round should append:
 - Next action: do not migrate return direct-handoff, `pre_dig_align`,
   `cell_entry`, 5P override, or any branch to requested effects without a
   separate evidence-backed scope and concrete effect-family tests.
+
+### 2026-06-19 Phase 8.2 Requested Effect Applier Guard
+
+- Scope: real planner requested-effect applier guard only. No bootstrap, dig,
+  carry, dump, return, direct-handoff, `pre_dig_align`, `cell_entry`, 5P
+  override, branch order, reason string, threshold, backend selection, behavior
+  tree, VLM/LLM packet, token schema, debug schema, rollout summary schema,
+  policy reset timing, or low-level ACT dispatch behavior was intentionally
+  changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `e2b83241fea3cf57cf072689410f30db51cd5f00`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Selected evidence remains the successful mainline packet:
+  `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl`,
+  its paired planner trace, rollout summary, resolved config, and
+  `docs/planner_evidence_reports/2026-06-18-baseline-aggregate_tx24.md`.
+- Confirmed-live method chain protected by this guard:
+  public tick execution receives the legacy already-applied
+  `PrimitiveDecisionResult`, skips requested-effect application, then continues
+  return-timeout accounting and action dispatch in the existing order.
+- Updated `PrimitivePlannerACTPolicy._apply_requested_tick_effects()` so an
+  empty requested-effect tuple remains a no-op, but any non-empty tuple raises
+  `PrimitiveDecisionContractError` with a message that live requested-effect
+  application is not supported by the real planner shell yet.
+- Added focused tests in `tests/test_primitive_decision_contract.py` for the
+  real planner bridge empty-tuple no-op and non-empty requested-effect
+  fail-fast behavior. The TDD red run failed because non-empty effects were
+  silently ignored; after implementation the focused green run returned
+  `11 passed`.
+- Existing execution-template tests still cover fake hook requested-effect
+  ordering and default legacy already-applied skip behavior.
+- Old code parked/reclassified: no code was deleted. Requested effects remain a
+  validated future backend contract only; no live effect family or FSM branch
+  conversion was introduced.
+- Next action: before enabling any live requested-effect application, add a
+  concrete effect-family contract and focused parity tests for exactly one
+  evidence-backed branch or shell-owned operation.
