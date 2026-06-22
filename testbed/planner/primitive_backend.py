@@ -326,14 +326,12 @@ class LegacyFSMDigBranch:
         self,
         context: PrimitiveDecisionContext,
     ) -> PrimitiveDecisionResult | None:
-        facts = self.capabilities.decision_facts(context)
+        backend_facts = self.capabilities.backend_facts(context)
+        facts = backend_facts.common
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.config.dig_skill_name):
             return None
-        dig_facts = self.capabilities.dig_transition_facts(
-            context,
-            facts=facts,
-        )
+        dig_facts = backend_facts.dig_transition()
         self.capabilities.sync_dig_transition_reason(dig_facts)
         effects = self._effects_for_status(dig_facts.status)
         switch_reason = _switch_reason_from_effects(effects)
@@ -413,14 +411,12 @@ class LegacyFSMCarryBranch:
         self,
         context: PrimitiveDecisionContext,
     ) -> PrimitiveDecisionResult | None:
-        facts = self.capabilities.decision_facts(context)
+        backend_facts = self.capabilities.backend_facts(context)
+        facts = backend_facts.common
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.config.carry_skill_name):
             return None
-        carry_facts = self.capabilities.carry_transition_facts(
-            context,
-            facts=facts,
-        )
+        carry_facts = backend_facts.carry_transition()
         effects = self._effects_for_status(carry_facts.status)
         decision_status = "skill_switch" if _has_transition_effect(effects) else "no_change"
         switch_reason = _switch_reason_from_effects(effects)
@@ -501,14 +497,12 @@ class LegacyFSMDumpBranch:
         self,
         context: PrimitiveDecisionContext,
     ) -> PrimitiveDecisionResult | None:
-        facts = self.capabilities.decision_facts(context)
+        backend_facts = self.capabilities.backend_facts(context)
+        facts = backend_facts.common
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.config.dump_skill_name):
             return None
-        dump_facts = self.capabilities.dump_transition_facts(
-            context,
-            facts=facts,
-        )
+        dump_facts = backend_facts.dump_transition()
         effects = self._effects_for_status(dump_facts.status)
         decision_status = "skill_switch" if _has_transition_effect(effects) else "no_change"
         return PrimitiveDecisionResult.from_requested_effects(
@@ -576,15 +570,13 @@ class LegacyFSMReturnBranch:
         self,
         context: PrimitiveDecisionContext,
     ) -> PrimitiveDecisionResult | None:
-        facts = self.capabilities.decision_facts(context)
+        backend_facts = self.capabilities.backend_facts(context)
+        facts = backend_facts.common
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.config.return_skill_name):
             return None
         self.capabilities.refresh_return_transition_state(context)
-        return_facts = self.capabilities.return_transition_facts(
-            context,
-            facts=facts,
-        )
+        return_facts = backend_facts.return_transition()
         effects = self._effects_for_status(return_facts.status)
         decision_status = (
             "skill_switch" if _has_return_switch_effect(effects) else "no_change"

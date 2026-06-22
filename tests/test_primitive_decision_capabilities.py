@@ -7,6 +7,7 @@ from testbed.planner.primitive_capabilities import (
     DigTransitionStatus,
     DumpTransitionStatus,
 )
+from testbed.planner.primitive_backend_facts import PrimitiveBackendFactsAccess
 from testbed.planner.primitive_decision_capabilities import (
     BootstrapDecisionStatus,
     PrimitiveDecisionCapabilities,
@@ -227,6 +228,79 @@ def test_decision_capabilities_return_status_read_does_not_refresh() -> None:
     assert capabilities.return_transition_status(context) is provider.return_status
 
     assert provider.calls == [("return", obs, boundary_event)]
+
+
+def test_decision_capabilities_backend_facts_constructs_common_facts() -> None:
+    obs = {"qpos": [1.0]}
+    boundary_event = object()
+    context = _context(obs=obs, boundary_event=boundary_event, skill="carry")
+    capabilities, provider = _capabilities(
+        current_skill_name="carry",
+        current_switch_reason="dig_to_carry_loaded",
+    )
+
+    backend_facts = capabilities.backend_facts(context)
+
+    assert isinstance(backend_facts, PrimitiveBackendFactsAccess)
+    assert backend_facts.context is context
+    assert backend_facts.common.context is context
+    assert backend_facts.common.current_skill_name == "carry"
+    assert backend_facts.common.current_switch_reason == "dig_to_carry_loaded"
+    assert provider.calls == []
+
+    assert backend_facts.carry_transition().status is provider.carry_status
+    assert provider.calls == [("carry", obs, boundary_event)]
+
+
+def test_decision_capabilities_backend_facts_reuses_existing_common_facts() -> None:
+    obs = {"qpos": [1.0]}
+    boundary_event = object()
+    context = _context(obs=obs, boundary_event=boundary_event, skill="dump")
+    provider = _RecordingTransitionStatusProvider()
+    port_calls: list[str] = []
+    capabilities = PrimitiveDecisionCapabilities.from_ports(
+        PrimitiveDecisionCapabilitiesPorts(
+            current_skill_name=lambda: port_calls.append("current_skill") or "dump",
+            current_switch_reason=lambda: port_calls.append("current_reason") or "",
+            should_end_bootstrap=lambda *, obs, boundary_event: False,
+            bootstrap_end_mode=lambda: "first_qualified_dig_start",
+            should_pre_dig_align_before_dig=lambda: False,
+            transition_status_provider=provider,
+            maybe_handle_residual_pre_dig_align=(
+                lambda obs: port_calls.append("residual") or False
+            ),
+        )
+    )
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="dump",
+        current_switch_reason="carry_to_dump_target_ready",
+    )
+
+    backend_facts = capabilities.backend_facts(context, facts=common)
+
+    assert isinstance(backend_facts, PrimitiveBackendFactsAccess)
+    assert backend_facts.common is common
+    assert backend_facts.dump_transition().status is provider.dump_status
+    assert provider.calls == [("dump", obs, boundary_event)]
+    assert port_calls == []
+
+
+def test_decision_capabilities_backend_facts_keeps_compat_mutations_out_of_access() -> None:
+    context = _context(skill="return")
+    capabilities, _ = _capabilities(current_skill_name="return")
+
+    backend_facts = capabilities.backend_facts(context)
+    public_names = {name for name in dir(backend_facts) if not name.startswith("_")}
+
+    assert {
+        "sync_dig_transition_reason",
+        "refresh_return_transition_state",
+        "handle_residual_pre_dig_align",
+    }.isdisjoint(public_names)
+    assert hasattr(capabilities, "sync_dig_transition_reason")
+    assert hasattr(capabilities, "refresh_return_transition_state")
+    assert hasattr(capabilities, "handle_residual_pre_dig_align")
 
 
 def test_decision_capabilities_dig_transition_facts_reuses_existing_common_facts() -> None:

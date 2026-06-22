@@ -6,6 +6,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from testbed.planner.primitive_backend_facts import (
+    PrimitiveBackendFactsAccess,
+    PrimitiveTransitionStatusReader,
+)
 from testbed.planner.primitive_capabilities import (
     CarryTransitionStatus,
     DigTransitionStatus,
@@ -22,42 +26,18 @@ from testbed.planner.primitive_decision_facts import (
 )
 
 
-class PrimitiveTransitionStatusProvider(Protocol):
-    """Transition-status provider consumed by primitive decision capabilities."""
-
-    def dig_transition_status(
-        self,
-        obs: dict[str, Any],
-        boundary_event: Any | None,
-    ) -> DigTransitionStatus: ...
+class PrimitiveTransitionStatusProvider(PrimitiveTransitionStatusReader, Protocol):
+    """Transition status provider plus explicit legacy compatibility actions."""
 
     def sync_dig_transition_reason(
         self,
         status: DigTransitionStatus,
     ) -> None: ...
 
-    def carry_transition_status(
-        self,
-        obs: dict[str, Any],
-        boundary_event: Any | None,
-    ) -> CarryTransitionStatus: ...
-
-    def dump_transition_status(
-        self,
-        obs: dict[str, Any],
-        boundary_event: Any | None,
-    ) -> DumpTransitionStatus: ...
-
     def refresh_return_transition_state(
         self,
         obs: dict[str, Any],
     ) -> None: ...
-
-    def return_transition_status(
-        self,
-        obs: dict[str, Any],
-        boundary_event: Any | None,
-    ) -> ReturnTransitionStatus: ...
 
 
 @dataclass(frozen=True)
@@ -113,6 +93,19 @@ class PrimitiveDecisionCapabilities:
             current_switch_reason=self.current_switch_reason(),
         )
 
+    def backend_facts(
+        self,
+        context: PrimitiveDecisionContext,
+        *,
+        facts: PrimitiveDecisionFacts | None = None,
+    ) -> PrimitiveBackendFactsAccess:
+        common = facts or self.decision_facts(context)
+        return PrimitiveBackendFactsAccess.from_reader(
+            context=context,
+            common=common,
+            transition_status_reader=self.ports.transition_status_provider,
+        )
+
     def bootstrap_status(
         self,
         context: PrimitiveDecisionContext,
@@ -157,11 +150,7 @@ class PrimitiveDecisionCapabilities:
         *,
         facts: PrimitiveDecisionFacts | None = None,
     ) -> PrimitiveDigTransitionFacts:
-        common = facts or self.decision_facts(context)
-        return PrimitiveDigTransitionFacts(
-            common=common,
-            status=self.dig_transition_status(context),
-        )
+        return self.backend_facts(context, facts=facts).dig_transition()
 
     def sync_dig_transition_reason(
         self,
@@ -186,11 +175,7 @@ class PrimitiveDecisionCapabilities:
         *,
         facts: PrimitiveDecisionFacts | None = None,
     ) -> PrimitiveCarryTransitionFacts:
-        common = facts or self.decision_facts(context)
-        return PrimitiveCarryTransitionFacts(
-            common=common,
-            status=self.carry_transition_status(context),
-        )
+        return self.backend_facts(context, facts=facts).carry_transition()
 
     def dump_transition_status(
         self,
@@ -207,11 +192,7 @@ class PrimitiveDecisionCapabilities:
         *,
         facts: PrimitiveDecisionFacts | None = None,
     ) -> PrimitiveDumpTransitionFacts:
-        common = facts or self.decision_facts(context)
-        return PrimitiveDumpTransitionFacts(
-            common=common,
-            status=self.dump_transition_status(context),
-        )
+        return self.backend_facts(context, facts=facts).dump_transition()
 
     def return_transition_status(
         self,
@@ -228,11 +209,7 @@ class PrimitiveDecisionCapabilities:
         *,
         facts: PrimitiveDecisionFacts | None = None,
     ) -> PrimitiveReturnTransitionFacts:
-        common = facts or self.decision_facts(context)
-        return PrimitiveReturnTransitionFacts(
-            common=common,
-            status=self.return_transition_status(context),
-        )
+        return self.backend_facts(context, facts=facts).return_transition()
 
     def refresh_return_transition_state(
         self,
@@ -268,11 +245,13 @@ def _next_skill_after_bootstrap(
 __all__ = [
     "BootstrapDecisionStatus",
     "PrimitiveCarryTransitionFacts",
+    "PrimitiveBackendFactsAccess",
     "PrimitiveDecisionCapabilities",
     "PrimitiveDecisionCapabilitiesPorts",
     "PrimitiveDecisionFacts",
     "PrimitiveDigTransitionFacts",
     "PrimitiveDumpTransitionFacts",
     "PrimitiveReturnTransitionFacts",
+    "PrimitiveTransitionStatusReader",
     "PrimitiveTransitionStatusProvider",
 ]

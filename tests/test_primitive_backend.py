@@ -30,6 +30,7 @@ from testbed.planner.primitive_capabilities import (
     DumpTransitionStatus,
     ReturnTransitionStatus,
 )
+from testbed.planner.primitive_backend_facts import PrimitiveBackendFactsAccess
 from testbed.planner.primitive_decision import (
     LEGACY_FSM_DECISION_SOURCE,
     CompleteCellEntryDigCompatibilityEffect,
@@ -1022,7 +1023,7 @@ def test_legacy_fsm_dig_branch_completes_dig_to_carry_in_order() -> None:
     )
 
 
-def test_legacy_fsm_dig_branch_consumes_dig_transition_facts_and_syncs_reason() -> None:
+def test_legacy_fsm_dig_branch_consumes_backend_facts_and_syncs_reason() -> None:
     calls: list[str] = []
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
@@ -1032,12 +1033,25 @@ def test_legacy_fsm_dig_branch_consumes_dig_transition_facts_and_syncs_reason() 
         dig_to_carry_reason="boundary_confirmed",
     )
 
+    class _DigBackendFacts:
+        def __init__(self, common: PrimitiveDecisionFacts) -> None:
+            self.common = common
+
+        def dig_transition(self) -> PrimitiveDigTransitionFacts:
+            calls.append("dig_status")
+            return PrimitiveDigTransitionFacts(common=self.common, status=status)
+
     class _DigFactsCapabilities:
-        def decision_facts(
+        def backend_facts(
             self,
             context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> _DigBackendFacts:
             nonlocal common_facts
+            assert facts is None
+            assert context.obs is obs
+            assert context.boundary_event is boundary_event
             calls.append("current_skill")
             calls.append("current_reason")
             common_facts = PrimitiveDecisionFacts.from_context(
@@ -1045,7 +1059,13 @@ def test_legacy_fsm_dig_branch_consumes_dig_transition_facts_and_syncs_reason() 
                 current_skill_name="dig",
                 current_switch_reason="",
             )
-            return common_facts
+            return _DigBackendFacts(common_facts)
+
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            raise AssertionError("dig branch must consume backend facts access")
 
         def dig_transition_facts(
             self,
@@ -1053,16 +1073,13 @@ def test_legacy_fsm_dig_branch_consumes_dig_transition_facts_and_syncs_reason() 
             *,
             facts: PrimitiveDecisionFacts | None = None,
         ) -> PrimitiveDigTransitionFacts:
-            assert context.obs is obs
-            assert context.boundary_event is boundary_event
-            assert facts is common_facts
-            calls.append("dig_status")
-            return PrimitiveDigTransitionFacts(common=facts, status=status)
+            raise AssertionError("dig branch must consume backend facts access")
 
         def sync_dig_transition_reason(
             self,
             dig_facts: PrimitiveDigTransitionFacts,
         ) -> None:
+            assert dig_facts.common is common_facts
             assert dig_facts.status is status
             calls.append("sync_dig_reason")
 
@@ -1267,18 +1284,36 @@ def test_legacy_fsm_dig_branch_requested_ignores_non_dig_skill() -> None:
 def test_legacy_fsm_dig_branch_non_dig_skill_does_not_read_or_sync_dig_facts() -> None:
     calls: list[str] = []
 
+    class _NonDigBackendFacts:
+        def __init__(self, common: PrimitiveDecisionFacts) -> None:
+            self.common = common
+
+        def dig_transition(self) -> PrimitiveDigTransitionFacts:
+            calls.append("dig_status")
+            raise AssertionError("non-dig skill must not request dig facts")
+
     class _NonDigCapabilities:
-        def decision_facts(
+        def backend_facts(
             self,
             context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> _NonDigBackendFacts:
+            assert facts is None
             calls.append("current_skill")
             calls.append("current_reason")
-            return PrimitiveDecisionFacts.from_context(
+            common = PrimitiveDecisionFacts.from_context(
                 context,
                 current_skill_name="carry",
                 current_switch_reason="dig_to_carry_loaded",
             )
+            return _NonDigBackendFacts(common)
+
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            raise AssertionError("dig branch must consume backend facts access")
 
         def dig_transition_facts(
             self,
@@ -1286,8 +1321,7 @@ def test_legacy_fsm_dig_branch_non_dig_skill_does_not_read_or_sync_dig_facts() -
             *,
             facts: PrimitiveDecisionFacts | None = None,
         ) -> PrimitiveDigTransitionFacts:
-            calls.append("dig_status")
-            raise AssertionError("non-dig skill must not request dig facts")
+            raise AssertionError("dig branch must consume backend facts access")
 
         def sync_dig_transition_reason(
             self,
@@ -1551,7 +1585,7 @@ def test_legacy_fsm_carry_branch_committed_boundary_switches_to_dump() -> None:
     )
 
 
-def test_legacy_fsm_carry_branch_consumes_carry_transition_facts_view() -> None:
+def test_legacy_fsm_carry_branch_consumes_backend_facts_view() -> None:
     calls: list[str] = []
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
@@ -1573,12 +1607,25 @@ def test_legacy_fsm_carry_branch_consumes_carry_transition_facts_view() -> None:
         carry_to_return_reason="",
     )
 
+    class _CarryBackendFacts:
+        def __init__(self, common: PrimitiveDecisionFacts) -> None:
+            self.common = common
+
+        def carry_transition(self) -> PrimitiveCarryTransitionFacts:
+            calls.append("carry_status")
+            return PrimitiveCarryTransitionFacts(common=self.common, status=status)
+
     class _CarryFactsCapabilities:
-        def decision_facts(
+        def backend_facts(
             self,
             context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> _CarryBackendFacts:
             nonlocal common_facts
+            assert facts is None
+            assert context.obs is obs
+            assert context.boundary_event is boundary_event
             calls.append("current_skill")
             calls.append("current_reason")
             common_facts = PrimitiveDecisionFacts.from_context(
@@ -1586,7 +1633,13 @@ def test_legacy_fsm_carry_branch_consumes_carry_transition_facts_view() -> None:
                 current_skill_name="carry",
                 current_switch_reason="dig_to_carry_loaded",
             )
-            return common_facts
+            return _CarryBackendFacts(common_facts)
+
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            raise AssertionError("carry branch must consume backend facts access")
 
         def carry_transition_facts(
             self,
@@ -1594,11 +1647,7 @@ def test_legacy_fsm_carry_branch_consumes_carry_transition_facts_view() -> None:
             *,
             facts: PrimitiveDecisionFacts | None = None,
         ) -> PrimitiveCarryTransitionFacts:
-            assert context.obs is obs
-            assert context.boundary_event is boundary_event
-            assert facts is common_facts
-            calls.append("carry_status")
-            return PrimitiveCarryTransitionFacts(common=facts, status=status)
+            raise AssertionError("carry branch must consume backend facts access")
 
         def carry_transition_status(
             self,
@@ -1709,18 +1758,36 @@ def test_legacy_fsm_carry_branch_ignores_non_carry_skill() -> None:
 def test_legacy_fsm_carry_branch_non_carry_skill_does_not_read_carry_facts() -> None:
     calls: list[str] = []
 
+    class _NonCarryBackendFacts:
+        def __init__(self, common: PrimitiveDecisionFacts) -> None:
+            self.common = common
+
+        def carry_transition(self) -> PrimitiveCarryTransitionFacts:
+            calls.append("carry_status")
+            raise AssertionError("non-carry skill must not request carry facts")
+
     class _NonCarryCapabilities:
-        def decision_facts(
+        def backend_facts(
             self,
             context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> _NonCarryBackendFacts:
+            assert facts is None
             calls.append("current_skill")
             calls.append("current_reason")
-            return PrimitiveDecisionFacts.from_context(
+            common = PrimitiveDecisionFacts.from_context(
                 context,
                 current_skill_name="dump",
                 current_switch_reason="carry_to_dump_target_ready",
             )
+            return _NonCarryBackendFacts(common)
+
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            raise AssertionError("carry branch must consume backend facts access")
 
         def carry_transition_facts(
             self,
@@ -1728,8 +1795,7 @@ def test_legacy_fsm_carry_branch_non_carry_skill_does_not_read_carry_facts() -> 
             *,
             facts: PrimitiveDecisionFacts | None = None,
         ) -> PrimitiveCarryTransitionFacts:
-            calls.append("carry_status")
-            raise AssertionError("non-carry skill must not request carry facts")
+            raise AssertionError("carry branch must consume backend facts access")
 
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
@@ -1791,7 +1857,7 @@ def test_legacy_fsm_dump_branch_boundary_handoffs_to_return() -> None:
     )
 
 
-def test_legacy_fsm_dump_branch_consumes_dump_transition_facts_view() -> None:
+def test_legacy_fsm_dump_branch_consumes_backend_facts_view() -> None:
     calls: list[str] = []
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
@@ -1811,12 +1877,25 @@ def test_legacy_fsm_dump_branch_consumes_dump_transition_facts_view() -> None:
         dump_to_return_reason="dump_to_return_mass_low",
     )
 
+    class _DumpBackendFacts:
+        def __init__(self, common: PrimitiveDecisionFacts) -> None:
+            self.common = common
+
+        def dump_transition(self) -> PrimitiveDumpTransitionFacts:
+            calls.append("dump_status")
+            return PrimitiveDumpTransitionFacts(common=self.common, status=status)
+
     class _DumpFactsCapabilities:
-        def decision_facts(
+        def backend_facts(
             self,
             context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> _DumpBackendFacts:
             nonlocal common_facts
+            assert facts is None
+            assert context.obs is obs
+            assert context.boundary_event is boundary_event
             calls.append("current_skill")
             calls.append("current_reason")
             common_facts = PrimitiveDecisionFacts.from_context(
@@ -1824,7 +1903,13 @@ def test_legacy_fsm_dump_branch_consumes_dump_transition_facts_view() -> None:
                 current_skill_name="dump",
                 current_switch_reason="carry_to_dump_target_ready",
             )
-            return common_facts
+            return _DumpBackendFacts(common_facts)
+
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            raise AssertionError("dump branch must consume backend facts access")
 
         def dump_transition_facts(
             self,
@@ -1832,11 +1917,7 @@ def test_legacy_fsm_dump_branch_consumes_dump_transition_facts_view() -> None:
             *,
             facts: PrimitiveDecisionFacts | None = None,
         ) -> PrimitiveDumpTransitionFacts:
-            assert context.obs is obs
-            assert context.boundary_event is boundary_event
-            assert facts is common_facts
-            calls.append("dump_status")
-            return PrimitiveDumpTransitionFacts(common=facts, status=status)
+            raise AssertionError("dump branch must consume backend facts access")
 
         def dump_transition_status(
             self,
@@ -2020,18 +2101,36 @@ def test_legacy_fsm_dump_branch_ignores_non_dump_skill() -> None:
 def test_legacy_fsm_dump_branch_non_dump_skill_does_not_read_dump_facts() -> None:
     calls: list[str] = []
 
+    class _NonDumpBackendFacts:
+        def __init__(self, common: PrimitiveDecisionFacts) -> None:
+            self.common = common
+
+        def dump_transition(self) -> PrimitiveDumpTransitionFacts:
+            calls.append("dump_status")
+            raise AssertionError("non-dump skill must not request dump facts")
+
     class _NonDumpCapabilities:
-        def decision_facts(
+        def backend_facts(
             self,
             context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> _NonDumpBackendFacts:
+            assert facts is None
             calls.append("current_skill")
             calls.append("current_reason")
-            return PrimitiveDecisionFacts.from_context(
+            common = PrimitiveDecisionFacts.from_context(
                 context,
                 current_skill_name="return",
                 current_switch_reason="dump_to_return_mass_low",
             )
+            return _NonDumpBackendFacts(common)
+
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            raise AssertionError("dump branch must consume backend facts access")
 
         def dump_transition_facts(
             self,
@@ -2039,8 +2138,7 @@ def test_legacy_fsm_dump_branch_non_dump_skill_does_not_read_dump_facts() -> Non
             *,
             facts: PrimitiveDecisionFacts | None = None,
         ) -> PrimitiveDumpTransitionFacts:
-            calls.append("dump_status")
-            raise AssertionError("non-dump skill must not request dump facts")
+            raise AssertionError("dump branch must consume backend facts access")
 
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
@@ -2282,7 +2380,7 @@ def test_legacy_fsm_return_branch_refreshes_before_reading_return_status() -> No
     )
 
 
-def test_legacy_fsm_return_branch_consumes_return_transition_facts_view() -> None:
+def test_legacy_fsm_return_branch_consumes_backend_facts_view() -> None:
     calls: list[str] = []
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
@@ -2296,12 +2394,25 @@ def test_legacy_fsm_return_branch_consumes_return_transition_facts_view() -> Non
         completed_transition=True,
     )
 
+    class _ReturnBackendFacts:
+        def __init__(self, common: PrimitiveDecisionFacts) -> None:
+            self.common = common
+
+        def return_transition(self) -> PrimitiveReturnTransitionFacts:
+            calls.append("return_status")
+            return PrimitiveReturnTransitionFacts(common=self.common, status=status)
+
     class _ReturnFactsCapabilities:
-        def decision_facts(
+        def backend_facts(
             self,
             context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> _ReturnBackendFacts:
             nonlocal common_facts
+            assert facts is None
+            assert context.obs is obs
+            assert context.boundary_event is boundary_event
             calls.append("current_skill")
             calls.append("current_reason")
             common_facts = PrimitiveDecisionFacts.from_context(
@@ -2309,7 +2420,13 @@ def test_legacy_fsm_return_branch_consumes_return_transition_facts_view() -> Non
                 current_skill_name="return",
                 current_switch_reason="",
             )
-            return common_facts
+            return _ReturnBackendFacts(common_facts)
+
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            raise AssertionError("return branch must consume backend facts access")
 
         def refresh_return_transition_state(
             self,
@@ -2324,10 +2441,7 @@ def test_legacy_fsm_return_branch_consumes_return_transition_facts_view() -> Non
             *,
             facts: PrimitiveDecisionFacts | None = None,
         ) -> PrimitiveReturnTransitionFacts:
-            assert context.obs is obs
-            assert facts is common_facts
-            calls.append("return_status")
-            return PrimitiveReturnTransitionFacts(common=facts, status=status)
+            raise AssertionError("return branch must consume backend facts access")
 
         def return_transition_status(
             self,
