@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.44: the default 4P mainline branch chain no longer
+Current status after Phase 9.45: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -66,6 +66,12 @@ arrays, token source/fallback fields, return start-envelope prior flags, and
 pending next-dig token/raw/exemplar fields are no longer independent policy
 attributes. The policy keeps legacy private token field names as
 property-backed compatibility facades over that state owner. The policy now
+also owns non-token return handoff/runtime cache state through
+`PrimitiveReturnRuntimeState`: return step count, return-to-dig entry-close
+cache, return next-dig-event flag, and return start-envelope gate result/checks
+are no longer independent policy attributes. The policy keeps legacy private
+return field names as property-backed compatibility facades over that return
+state owner. The policy now
 exposes backend-facing common decision facts through
 `PrimitiveDecisionFacts`, built by `PrimitiveDecisionFactsSource`; the facts
 packet carries context identity, current skill, and current switch reason, but
@@ -821,6 +827,20 @@ setters. `PrimitiveTokenRuntimeCoordinator`, `PrimitiveDigTokenPlanningService`,
 and `PrimitiveReturnTokenPlanningService` keep their existing responsibilities;
 observation injection flags, cell-entry compatibility state, coverage state,
 and return handoff state remain outside the token state owner.
+
+Phase 9.45 introduces `PrimitiveReturnRuntimeState` in
+`testbed/planner/primitive_return_state.py`. The state owner centralizes reset
+defaults and mutable storage for the non-token return handoff/runtime cache:
+return step count, return-to-dig entry error and close flag, return next-dig
+event seen flag, and return start-envelope ready/error/check payload. The
+state methods own the small state rules for marking/clearing the next-dig event
+flag, applying start-envelope gate results, and writing entry-close results.
+`PrimitiveResetLifecycleService` now creates one fresh return state during
+reset and includes it in `PrimitiveResetLifecycleState`; legacy private return
+field names remain property-backed compatibility facades over the same state
+owner. Return handoff algorithms, direct-handoff effect sequencing,
+return-target token fields, coverage state, token runtime state, and parked
+`pre_dig_align`/`cell_entry` semantics remain in their existing owners.
 
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in

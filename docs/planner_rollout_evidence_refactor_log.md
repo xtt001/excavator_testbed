@@ -5041,3 +5041,67 @@ Each completed refactor round should append:
   or return handoff logic. The next similar thin-shell gap is return handoff/
   runtime mutable state still stored as policy fields while return handoff
   services own gate/effect algorithms.
+
+### 2026-06-23 Phase 9.45 Extract Primitive Return Runtime State
+
+- Scope: introduced `PrimitiveReturnRuntimeState` in
+  `testbed/planner/primitive_return_state.py` as the focused owner for mutable
+  non-token return handoff/runtime cache state and reset defaults.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `db485f1461c7dd35217b67763b29026996f8da7f`; no fetch, pull, push, reset,
+  checkout, rebase, branch creation, or remote write. HEAD after the code round
+  is `0f23c377c44b6b65c2eedc00dbcc3ea614099e4a`.
+- `PrimitiveReturnRuntimeState.fresh()` owns the legacy reset defaults for
+  `return_step_count`, return-to-dig entry error/close cache,
+  `return_next_dig_event_seen`, and return start-envelope ready/error/check
+  payload. Defaults preserve `0`, permissive close/ready booleans, false
+  next-dig event state, NaN error values, and a fresh empty checks dict.
+- The state owner also owns the small state rules for
+  `mark_next_dig_event_seen()`, `clear_next_dig_event_seen()`,
+  `apply_start_envelope_gate_result(...)`, and
+  `set_entry_close_result(...)`. These are state updates, not return handoff
+  algorithms.
+- `PrimitiveResetLifecycleService` now creates one fresh return state during
+  reset and includes it in `PrimitiveResetLifecycleState`. The policy exposes
+  `_primitive_return_runtime_state()` plus property-backed compatibility facades
+  for legacy private return fields, so existing return handoff, effect, report,
+  and diagnostic paths still use their old names while resolving to one owner.
+- Preserved behavior: return handoff algorithms, start-envelope gate algorithm,
+  direct-handoff sequencing, return timeout behavior, public debug/summary/
+  trace schemas, branch order, reason strings, effect order, policy reset
+  timing, action dispatch, token runtime state, token planning, and coverage
+  runtime state are unchanged.
+- Explicit non-goals: return-target token fields remain in
+  `PrimitiveTokenRuntimeState`; coverage fields remain in
+  `CoverageRuntimeState`; `pre_dig_align` and `cell_entry` remain parked
+  compatibility/residual paths; BT/VLM/LLM backends remain unsupported; 5P
+  runtime remains removed.
+- TDD red result: after focused tests were added, the first run of
+  `python -m pytest -q tests/test_primitive_return_state.py` failed at
+  collection because `testbed.planner.primitive_return_state` did not exist.
+  After implementation, the command returned `7 passed`.
+- Verification reported by implementation thread:
+  `python -m pytest -q tests/test_primitive_return_state.py tests/test_primitive_return_handoff.py tests/test_primitive_reset_lifecycle.py`
+  returned `31 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `106 passed`;
+  `python -m pytest -q tests/test_primitive_token_state.py tests/test_primitive_token_runtime.py tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py`
+  returned `35 passed`;
+  `python -m pytest -q tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  returned `9 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or start_envelope or coverage_decision_trace or dig_depth_profile or dig_cut_tokens"`
+  returned `21 passed, 98 deselected`; compileall for touched modules, both
+  planner guard commands, `git diff --check`, and staged diff check completed
+  successfully.
+- Audit note: this is a real state-owner extraction, not a generic blackboard.
+  It intentionally keeps token state, coverage state, return handoff
+  algorithms, and direct-handoff effect sequencing in their existing owners.
+  One non-blocking wording mismatch remains: the report said reset applies
+  `_return_state` before all legacy return private field updates, while the
+  actual update dict still lists `_return_step_count` before `_return_state`.
+  Current reset values make this behavior-equivalent, and the later return
+  fields do write through the fresh state owner; future cleanup can reorder that
+  dict for exact readability without changing behavior.

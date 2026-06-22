@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.44 implementation. It is intentionally
+compares them with the current Phase 9.45 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -34,6 +34,8 @@ Current maturity:
   **mostly achieved**
 - token runtime mutable state owner: **achieved for dig/return token arrays,
   source/fallback flags, prior-bound flags, and pending next-dig token state**
+- return runtime mutable state owner: **achieved for return handoff counters,
+  entry-close cache, next-dig-event flag, and start-envelope gate cache**
 - runtime composition root / public runtime kernel: **achieved for public
   runtime routing**
 - decision runtime backend factory/registry: **achieved for selecting the
@@ -455,15 +457,21 @@ Ideal boundary:
 Current boundary:
 
 - `CoverageRuntimeState` owns coverage mutable state.
-- Many token, return, pre-dig, debug mirror, and switch fields still live as
+- `PrimitiveTokenRuntimeState` owns mutable token and pending next-dig token
+  runtime state.
+- `PrimitiveReturnRuntimeState` owns mutable return handoff/runtime cache state:
+  return step count, entry-close result, next-dig-event flag, and return
+  start-envelope gate result/checks.
+- Some pre-dig, debug mirror, switch, and compatibility fields still live as
   policy attributes.
 - Skill lifecycle, reset lifecycle, and token runtime services own sequencing,
-  but write through policy-owned storage.
+  but still write through policy compatibility facades for old private names.
 
 Gap:
 
 - Runtime state is only partially extracted.
-- The policy shell still owns a large amount of mutable storage.
+- The policy shell still owns residual mutable storage for parked/pre-dig,
+  debug mirror, switch, and compatibility fields.
 
 Standard:
 
@@ -516,6 +524,9 @@ Current boundary:
 - `PrimitiveTokenRuntimeState` owns mutable dig/return token arrays, token
   source/fallback/prior-bound fields, return start-envelope prior flags, and
   pending next-dig token/raw/exemplar fields.
+- `PrimitiveReturnRuntimeState` owns non-token return handoff/runtime cache
+  fields, so return-target token state and return handoff cache state are no
+  longer mixed in the policy shell.
 - `PrimitiveTokenRuntimeCoordinator` owns dig/return token runtime sequencing.
 - `PrimitiveDigTokenPlanningService` and
   `PrimitiveReturnTokenPlanningService` own orchestration.
@@ -531,7 +542,8 @@ Gap:
   data.
 - `cell_entry` token state remains compatibility/report material outside the
   token runtime state owner.
-- Return handoff/runtime state still lives outside the token state owner.
+- Return handoff algorithms remain in return handoff services; only mutable
+  return handoff/runtime cache storage moved into `PrimitiveReturnRuntimeState`.
 
 Standard:
 
@@ -656,7 +668,9 @@ The next code work should follow this order:
 
 3. Move remaining mutable runtime state into focused state owners.
    - Token runtime mutable state is **done in Phase 9.44**.
-   - Prioritize return handoff/runtime state next, before parked legacy paths.
+   - Return handoff/runtime mutable state is **done in Phase 9.45**.
+   - Inspect the remaining policy-owned mutable fields before choosing another
+     state-owner slice; avoid extracting a generic blackboard.
    - Avoid generic blackboards.
 
 4. Audit parked paths.

@@ -67,6 +67,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_backend_facts.py` | 250 | backend-facing lazy read-only facts access for bootstrap and dig/carry/dump/return transition views |
 | `testbed/planner/primitive_decision_facts.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
 | `testbed/planner/primitive_token_state.py` | 70 | mutable dig/return token runtime state owner and reset defaults |
+| `testbed/planner/primitive_return_state.py` | 56 | mutable non-token return handoff/runtime state owner and reset defaults |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
 | `testbed/planner/evidence_trace.py` | 972 | evidence classifier and report writer for rollout-driven refactor decisions |
@@ -967,6 +968,17 @@ start-envelope prior flags, and pending next-dig raw/token/exemplar fields.
 Observation injection flags, cell-entry compatibility state, coverage state,
 return handoff state, token runtime sequencing, and token planning algorithms
 remain in their existing focused owners.
+
+Current status note after Phase 9.45: mutable non-token return handoff/runtime
+cache state is now owned by `PrimitiveReturnRuntimeState` in
+`testbed/planner/primitive_return_state.py`. Reset creates a fresh return state
+and applies it through `_return_state`; legacy private fields such as
+`_return_step_count`, `_return_to_dig_entry_close_state`,
+`_return_next_dig_event_seen`, and
+`_return_to_dig_start_envelope_checks` are property-backed compatibility
+facades over the same owner. This state owner does not absorb return-target
+token fields, coverage fields, return handoff algorithms, or direct-handoff
+effect sequencing.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
