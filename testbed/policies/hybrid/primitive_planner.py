@@ -59,6 +59,7 @@ from testbed.planner.primitive_backend import (
     LegacyFSMBranchPorts,
     LegacyFSMBranchSet,
     LegacyFSMCompatibilityDecisionBackend,
+    LegacyFSMDecisionBackendFactory,
     LegacyFSMRequestedDecisionBackend,
 )
 from testbed.planner.primitive_capabilities import (
@@ -758,9 +759,14 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _decision_runtime_ports(self) -> PrimitiveDecisionRuntimePorts:
         return PrimitiveDecisionRuntimePorts(
-            legacy_fsm_branch_set=(
-                lambda: LegacyFSMBranchSet.from_ports(self._legacy_fsm_branch_ports())
-            ),
+            backend_factories={
+                "legacy_fsm": self._legacy_fsm_backend_factory,
+            },
+        )
+
+    def _legacy_fsm_backend_factory(self) -> LegacyFSMDecisionBackendFactory:
+        return LegacyFSMDecisionBackendFactory.from_ports(
+            self._legacy_fsm_branch_ports()
         )
 
     def _legacy_fsm_requested_decision_backend(

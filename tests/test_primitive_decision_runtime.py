@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from types import MethodType
 from typing import Any
 
 import pytest
 
-from testbed.planner.primitive_backend import LegacyFSMBranchSet
+from testbed.planner.primitive_backend import (
+    LegacyFSMBranchSet,
+    LegacyFSMDecisionBackendFactory,
+)
 from testbed.planner.primitive_backend_input import PrimitiveBackendDecisionInput
 from testbed.planner.primitive_decision import (
     PrimitiveDecisionContractError,
@@ -133,7 +137,13 @@ def _runtime(
 ) -> PrimitiveDecisionRuntime:
     return PrimitiveDecisionRuntime.from_ports(
         PrimitiveDecisionRuntimePorts(
-            legacy_fsm_branch_set=lambda: branch_set,
+            backend_factories={
+                LEGACY_FSM_DECISION_BACKEND_NAME: (
+                    lambda: LegacyFSMDecisionBackendFactory.from_branch_set(
+                        branch_set
+                    )
+                ),
+            },
         ),
         config=PrimitiveDecisionRuntimeConfig(backend_name=backend_name),
     )
@@ -226,16 +236,25 @@ def test_runtime_compatibility_path_preserves_legacy_order_and_miss() -> None:
     assert miss_calls == ["bootstrap", "residual", "dig", "carry", "dump", "return"]
 
 
+def test_runtime_ports_use_backend_factory_registry_instead_of_legacy_branch_set() -> None:
+    field_names = {field.name for field in fields(PrimitiveDecisionRuntimePorts)}
+
+    assert "backend_factories" in field_names
+    assert "legacy_fsm_branch_set" not in field_names
+
+
 @pytest.mark.parametrize("backend_name", ["behavior_tree", "vlm", "unknown"])
 def test_unsupported_backend_fails_fast_without_building_legacy_fsm(
     backend_name: str,
 ) -> None:
-    def unexpected_branch_set() -> LegacyFSMBranchSet:
-        raise AssertionError("unsupported backend must not build legacy branches")
+    def unexpected_backend_factory() -> LegacyFSMDecisionBackendFactory:
+        raise AssertionError("unsupported backend must not build legacy factory")
 
     runtime = PrimitiveDecisionRuntime.from_ports(
         PrimitiveDecisionRuntimePorts(
-            legacy_fsm_branch_set=unexpected_branch_set,
+            backend_factories={
+                LEGACY_FSM_DECISION_BACKEND_NAME: unexpected_backend_factory,
+            },
         ),
         config=PrimitiveDecisionRuntimeConfig(backend_name=backend_name),
     )
@@ -259,6 +278,18 @@ def test_policy_execution_driver_ports_use_generic_decision_runtime_path() -> No
 
     assert ports.decide_tick.__self__ is planner
     assert ports.decide_tick.__name__ == "_decide_tick"
+
+
+def test_policy_decision_runtime_ports_expose_backend_factory_registry() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    sentinel = object()
+    planner._legacy_fsm_backend_factory = MethodType(lambda self: sentinel, planner)
+
+    ports = planner._decision_runtime_ports()
+
+    assert LEGACY_FSM_DECISION_BACKEND_NAME in ports.backend_factories
+    assert ports.backend_factories[LEGACY_FSM_DECISION_BACKEND_NAME]() is sentinel
+    assert not hasattr(ports, "legacy_fsm_branch_set")
 
 
 def test_policy_decision_wrappers_delegate_to_same_runtime() -> None:

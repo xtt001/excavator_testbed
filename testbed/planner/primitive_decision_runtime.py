@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from testbed.planner.primitive_backend import (
     LegacyFSMBranchSet,
     LegacyFSMCompatibilityDecisionBackend,
+    LegacyFSMDecisionBackendFactory,
     LegacyFSMRequestedDecisionBackend,
+    PrimitiveDecisionBackendFactory,
 )
 from testbed.planner.primitive_decision import (
     PrimitiveDecisionContractError,
@@ -34,7 +36,7 @@ class PrimitiveDecisionRuntimeConfig:
 class PrimitiveDecisionRuntimePorts:
     """Typed backend factory ports for the primitive decision runtime."""
 
-    legacy_fsm_branch_set: Callable[[], LegacyFSMBranchSet]
+    backend_factories: Mapping[str, Callable[[], PrimitiveDecisionBackendFactory]]
 
 
 @dataclass(frozen=True)
@@ -101,34 +103,50 @@ class PrimitiveDecisionRuntime:
         return backend.decide_context(context)
 
     def legacy_fsm_branch_set(self) -> LegacyFSMBranchSet:
-        self._ensure_supported_backend()
-        return self.ports.legacy_fsm_branch_set()
+        factory = self.legacy_fsm_backend_factory()
+        if isinstance(factory, LegacyFSMDecisionBackendFactory):
+            return factory.branch_set()
+        branch_set = getattr(factory, "branch_set", None)
+        if callable(branch_set):
+            return branch_set()
+        raise PrimitiveDecisionContractError(
+            "legacy_fsm backend factory does not expose branch_set compatibility"
+        )
+
+    def legacy_fsm_backend_factory(self) -> PrimitiveDecisionBackendFactory:
+        return self._backend_factory_for(LEGACY_FSM_DECISION_BACKEND_NAME)
 
     def legacy_fsm_requested_decision_backend(
         self,
     ) -> LegacyFSMRequestedDecisionBackend:
-        return self.legacy_fsm_branch_set().requested_decision_backend()
+        return self.legacy_fsm_backend_factory().requested_decision_backend()
 
     def legacy_fsm_compatibility_decision_backend(
         self,
     ) -> LegacyFSMCompatibilityDecisionBackend:
-        return self.legacy_fsm_branch_set().compatibility_decision_backend()
+        return self.legacy_fsm_backend_factory().compatibility_decision_backend()
 
-    def _requested_backend(self) -> LegacyFSMRequestedDecisionBackend:
-        self._ensure_supported_backend()
-        return self.legacy_fsm_requested_decision_backend()
+    def _requested_backend(self) -> Any:
+        return self._backend_factory().requested_decision_backend()
 
-    def _compatibility_backend(self) -> LegacyFSMCompatibilityDecisionBackend:
-        self._ensure_supported_backend()
-        return self.legacy_fsm_compatibility_decision_backend()
+    def _compatibility_backend(self) -> Any:
+        return self._backend_factory().compatibility_decision_backend()
 
     def _backend_name(self) -> str:
         return str(self.config.backend_name).strip().lower()
 
-    def _ensure_supported_backend(self) -> None:
-        backend_name = self._backend_name()
+    def _backend_factory(self) -> PrimitiveDecisionBackendFactory:
+        return self._backend_factory_for(self._backend_name())
+
+    def _backend_factory_for(
+        self,
+        backend_name: str,
+    ) -> PrimitiveDecisionBackendFactory:
+        backend_name = str(backend_name).strip().lower()
         if backend_name == LEGACY_FSM_DECISION_BACKEND_NAME:
-            return
+            factory_builder = self.ports.backend_factories.get(backend_name)
+            if factory_builder is not None:
+                return factory_builder()
         supported = ", ".join(SUPPORTED_DECISION_BACKENDS)
         raise PrimitiveDecisionContractError(
             "unsupported primitive decision backend "

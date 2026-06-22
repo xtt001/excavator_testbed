@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from testbed.planner.primitive_capabilities import (
@@ -81,6 +81,16 @@ class PrimitiveDecisionBackend(Protocol):
         boundary_event: Any | None,
         preparation: PrimitiveTickPreparation,
     ) -> PrimitiveDecisionResult: ...
+
+
+class PrimitiveDecisionBackendFactory(Protocol):
+    """Factory interface for runtime-selected primitive decision backends."""
+
+    def requested_decision_backend(self) -> PrimitiveDecisionBackend: ...
+
+    def compatibility_decision_backend(
+        self,
+    ) -> "LegacyFSMCompatibilityDecisionBackend": ...
 
 
 class PrimitiveDecisionBranch(Protocol):
@@ -585,6 +595,51 @@ class LegacyFSMBranchSet:
 
 
 @dataclass(frozen=True)
+class LegacyFSMDecisionBackendFactory:
+    """Build and reuse legacy FSM requested and compatibility backends."""
+
+    _branch_set_builder: Callable[[], LegacyFSMBranchSet] = field(
+        repr=False,
+        compare=False,
+    )
+    _cached_branch_set: LegacyFSMBranchSet | None = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
+
+    @classmethod
+    def from_ports(
+        cls,
+        ports: LegacyFSMBranchPorts,
+    ) -> "LegacyFSMDecisionBackendFactory":
+        return cls(lambda: LegacyFSMBranchSet.from_ports(ports))
+
+    @classmethod
+    def from_branch_set(
+        cls,
+        branch_set: LegacyFSMBranchSet,
+    ) -> "LegacyFSMDecisionBackendFactory":
+        return cls(lambda: branch_set)
+
+    def branch_set(self) -> LegacyFSMBranchSet:
+        cached = self._cached_branch_set
+        if cached is None:
+            cached = self._branch_set_builder()
+            object.__setattr__(self, "_cached_branch_set", cached)
+        return cached
+
+    def requested_decision_backend(self) -> "LegacyFSMRequestedDecisionBackend":
+        return self.branch_set().requested_decision_backend()
+
+    def compatibility_decision_backend(
+        self,
+    ) -> "LegacyFSMCompatibilityDecisionBackend":
+        return self.branch_set().compatibility_decision_backend()
+
+
+@dataclass(frozen=True)
 class LegacyFSMRequestedDecisionBackend:
     """Requested-effect decision backend backed by a legacy FSM branch set."""
 
@@ -679,6 +734,7 @@ __all__ = [
     "LegacyFSMCarryBranch",
     "LegacyFSMCarryConfig",
     "LegacyFSMCompatibilityDecisionBackend",
+    "LegacyFSMDecisionBackendFactory",
     "LegacyFSMDigBranch",
     "LegacyFSMDigConfig",
     "LegacyFSMDumpBranch",
@@ -689,6 +745,7 @@ __all__ = [
     "LegacyFSMReturnConfig",
     "PrimitiveDecisionBranch",
     "PrimitiveDecisionBackend",
+    "PrimitiveDecisionBackendFactory",
     "PrimitiveRequestedBranchRunner",
     "RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE",
 ]
