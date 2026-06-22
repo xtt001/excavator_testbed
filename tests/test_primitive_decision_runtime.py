@@ -10,6 +10,7 @@ from testbed.planner.primitive_decision import (
     PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
 )
+from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
 from testbed.planner.primitive_decision_runtime import (
     LEGACY_FSM_DECISION_BACKEND_NAME,
     PrimitiveDecisionRuntime,
@@ -26,14 +27,26 @@ class _RecordingBranch:
         name: str,
         result: PrimitiveDecisionResult | None,
         calls: list[str],
+        contexts: list[PrimitiveDecisionContext] | None = None,
     ) -> None:
         self.name = name
         self.result = result
         self.calls = calls
+        self.contexts = contexts if contexts is not None else []
 
-    def decide_tick(self, *, obs, boundary_event, preparation):
+    def decide_context(self, context: PrimitiveDecisionContext):
+        self.contexts.append(context)
         self.calls.append(self.name)
         return self.result
+
+    def decide_tick(self, *, obs, boundary_event, preparation):
+        return self.decide_context(
+            PrimitiveDecisionContext.from_tick(
+                obs=obs,
+                boundary_event=boundary_event,
+                preparation=preparation,
+            )
+        )
 
 
 def _result(source: str, *, skill: str = "dig") -> PrimitiveDecisionResult:
@@ -108,6 +121,42 @@ def test_default_legacy_fsm_runtime_delegates_to_requested_backend() -> None:
 
     assert result is expected
     assert calls == ["bootstrap", "dig", "carry", "dump", "return"]
+
+
+def test_runtime_decide_tick_builds_one_context_for_requested_backend() -> None:
+    calls: list[str] = []
+    contexts: list[PrimitiveDecisionContext] = []
+    expected = _result("return_branch", skill="return")
+    branch_set = LegacyFSMBranchSet(
+        bootstrap_branch=_RecordingBranch("bootstrap", None, calls, contexts),
+        dig_branch=_RecordingBranch("dig", None, calls, contexts),
+        carry_branch=_RecordingBranch("carry", None, calls, contexts),
+        dump_branch=_RecordingBranch("dump", None, calls, contexts),
+        return_branch=_RecordingBranch("return", expected, calls, contexts),
+        residual_branch=_RecordingBranch("residual", None, calls, contexts),
+    )
+    runtime = _runtime(branch_set)
+    obs = {"qpos": [1.0]}
+    boundary_event = object()
+    preparation = PrimitiveTickPreparation(
+        boundary_event=boundary_event,
+        skill_name_before_decision="return",
+        dig_progress_updated=False,
+    )
+
+    result = runtime.decide_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=preparation,
+    )
+
+    assert result is expected
+    assert calls == ["bootstrap", "dig", "carry", "dump", "return"]
+    assert len(contexts) == 5
+    assert len({id(context) for context in contexts}) == 1
+    assert contexts[0].obs is obs
+    assert contexts[0].boundary_event is boundary_event
+    assert contexts[0].preparation is preparation
 
 
 def test_runtime_compatibility_path_preserves_legacy_order_and_miss() -> None:

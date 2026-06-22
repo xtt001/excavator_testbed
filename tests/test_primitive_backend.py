@@ -50,6 +50,7 @@ from testbed.planner.primitive_decision import (
     SwitchToNextSkillAfterReturnEffect,
     SwitchSkillEffect,
 )
+from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
 
@@ -59,14 +60,26 @@ class _RecordingBranch:
         name: str,
         result: PrimitiveDecisionResult | None = None,
         calls: list[str] | None = None,
+        contexts: list[PrimitiveDecisionContext] | None = None,
     ) -> None:
         self.name = name
         self.result = result
         self.calls = calls if calls is not None else []
+        self.contexts = contexts if contexts is not None else []
 
-    def decide_tick(self, *, obs, boundary_event, preparation):
+    def decide_context(self, context: PrimitiveDecisionContext):
+        self.contexts.append(context)
         self.calls.append(self.name)
         return self.result
+
+    def decide_tick(self, *, obs, boundary_event, preparation):
+        return self.decide_context(
+            PrimitiveDecisionContext.from_tick(
+                obs=obs,
+                boundary_event=boundary_event,
+                preparation=preparation,
+            )
+        )
 
 
 class _RecordingCompatBranch(_RecordingBranch):
@@ -441,6 +454,35 @@ def test_requested_branch_runner_returns_first_non_none_result_and_stops() -> No
     assert calls == ["bootstrap", "dig"]
 
 
+def test_requested_branch_runner_uses_single_context_for_ordered_branches() -> None:
+    calls: list[str] = []
+    contexts: list[PrimitiveDecisionContext] = []
+    expected = _requested_no_change_result(decision_source="return_branch")
+    runner = PrimitiveRequestedBranchRunner(
+        bootstrap_branch=_RecordingBranch("bootstrap", None, calls, contexts),
+        dig_branch=_RecordingBranch("dig", None, calls, contexts),
+        carry_branch=_RecordingBranch("carry", None, calls, contexts),
+        dump_branch=_RecordingBranch("dump", None, calls, contexts),
+        return_branch=_RecordingBranch("return", expected, calls, contexts),
+        residual_branch=_RecordingBranch("residual", None, calls, contexts),
+    )
+    context = PrimitiveDecisionContext.from_tick(
+        obs={"qpos": [1.0]},
+        boundary_event=object(),
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="return",
+            dig_progress_updated=False,
+        ),
+    )
+
+    result = runner.decide_context(context)
+
+    assert result is expected
+    assert calls == ["bootstrap", "dig", "carry", "dump", "return"]
+    assert contexts == [context, context, context, context, context]
+
+
 def test_requested_branch_runner_calls_branches_in_stable_order_before_residual() -> None:
     calls: list[str] = []
     residual = _requested_no_change_result(
@@ -500,6 +542,35 @@ def test_requested_branch_runner_fails_fast_when_all_branches_decline() -> None:
     assert "unhandled planner skill" in message
     assert "broad legacy fallback is retired" in message
     assert "legacy_skill" in message
+
+
+def test_compatibility_backend_uses_single_context_for_legacy_order() -> None:
+    calls: list[str] = []
+    contexts: list[PrimitiveDecisionContext] = []
+    expected = _requested_no_change_result(decision_source="dig_branch")
+    branch_set = LegacyFSMBranchSet(
+        bootstrap_branch=_RecordingBranch("bootstrap", None, calls, contexts),
+        dig_branch=_RecordingBranch("dig", expected, calls, contexts),
+        carry_branch=_RecordingBranch("carry", None, calls, contexts),
+        dump_branch=_RecordingBranch("dump", None, calls, contexts),
+        return_branch=_RecordingBranch("return", None, calls, contexts),
+        residual_branch=_RecordingBranch("residual", None, calls, contexts),
+    )
+    context = PrimitiveDecisionContext.from_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
+
+    result = branch_set.compatibility_decision_backend().decide_context(context)
+
+    assert result is expected
+    assert calls == ["bootstrap", "residual", "dig"]
+    assert contexts == [context, context, context]
 
 
 def test_legacy_fsm_backend_adapter_wraps_existing_switch_callback() -> None:

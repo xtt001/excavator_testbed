@@ -689,6 +689,20 @@ mutation. This preserves the current maturity claim: the default legacy FSM is
 backendified, while behavior-tree, VLM/LLM, and other alternate backends remain
 unimplemented parked scope.
 
+Current status note after Phase 9.26: primitive decision backend input has
+moved from scatter arguments into `PrimitiveDecisionContext` in
+`testbed/planner/primitive_decision_context.py`. The context packet preserves
+the `obs`, `boundary_event`, and `PrimitiveTickPreparation` object identities
+for the tick and exposes the skill-before-decision and dig-progress flags as
+read-only convenience fields. `PrimitiveDecisionRuntime`,
+`LegacyFSMRequestedDecisionBackend`, `LegacyFSMCompatibilityDecisionBackend`,
+`PrimitiveRequestedBranchRunner`, and the legacy FSM branch objects are now
+context-driven internally; their scatter-argument `decide_tick(...)` methods
+remain compatibility facades. This keeps the current maturity claim unchanged:
+the default legacy FSM is backendified with a shared decision packet shape,
+while behavior-tree, VLM/LLM, and other alternate backends remain unimplemented
+parked scope.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

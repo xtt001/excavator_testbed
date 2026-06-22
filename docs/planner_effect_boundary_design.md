@@ -152,6 +152,15 @@ selector, and fail-fasts unsupported names such as behavior-tree or VLM
 backends instead of falling back to broad legacy mutation. This is still
 `default legacy FSM backendified`, not evidence that alternate backends are
 implemented or swappable.
+`PrimitiveDecisionContext` now owns the read-only decision input packet shape in
+`testbed/planner/primitive_decision_context.py`: `obs`, `boundary_event`, and
+`PrimitiveTickPreparation`, with convenience fields for the skill before
+decision and dig-progress update status. `PrimitiveDecisionRuntime`,
+`LegacyFSMRequestedDecisionBackend`, `LegacyFSMCompatibilityDecisionBackend`,
+`PrimitiveRequestedBranchRunner`, and the legacy FSM branch objects are
+context-driven internally. The older scatter-argument `decide_tick(...)` methods
+remain thin compatibility facades that immediately construct the shared context
+packet.
 `CoverageEffectRuntimeCoordinator` now owns coverage requested-effect runtime
 sequencing for `CompleteCoverageDigEffect`, `CompleteCoverageDumpEffect`, and
 `RejectActiveCoverageCorridorEffect`: coverage-mode no-op gating, update service
@@ -818,6 +827,17 @@ explicit contract error and do not construct legacy branches or call broad
 legacy fallback paths. The policy's `_decide_tick()` and `_maybe_switch_skill()`
 now delegate through this runtime, while legacy FSM requested/compatibility
 backend accessors remain compatibility facades over the same runtime.
+
+Phase 9.26 introduces the primitive decision context packet in
+`PrimitiveDecisionContext` in
+`testbed/planner/primitive_decision_context.py`. The packet preserves the tick
+`obs` identity, boundary-event identity, and `PrimitiveTickPreparation` identity,
+and exposes read-only convenience fields for backend and branch dispatch. The
+runtime and legacy FSM backend objects now route through `decide_context(...)`
+as their source of truth; scatter-argument `decide_tick(...)` methods remain
+only as compatibility facades for the execution driver and existing diagnostics.
+Requested order, compatibility order, unsupported-backend fail-fast behavior,
+and all branch semantics remain unchanged.
 
 ### Stage 4: Expand Effect Families From Evidence
 

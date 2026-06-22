@@ -3711,3 +3711,74 @@ Each completed refactor round should append:
   material, `pre_dig_align` remains residual parking/action material, behavior
   tree and VLM/LLM backends remain unsupported parked scope, and 5P remains its
   existing legacy override path.
+
+### 2026-06-22 Phase 9.26 Introduce Primitive Decision Context Packet
+
+- Scope: introduced a shared read-only primitive decision context packet and
+  migrated the runtime, legacy FSM backends, branch runner, and legacy FSM
+  branches to consume that packet internally. No decision branch,
+  requested-effect family, branch order, reason string, threshold, policy reset
+  timing, token/debug/summary/trace schema, coverage trace payload schema,
+  public config behavior, pre-dig-align internals, cell-entry compatibility, 5P
+  transition semantics, return handoff internals, or low-level ACT dispatch
+  output contract was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `5615ebe1c69be44784c2f853174963bd5e28f6c7`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `testbed/planner/primitive_decision_context.py` with
+  `PrimitiveDecisionContext`. The packet preserves tick `obs`,
+  `boundary_event`, and `PrimitiveTickPreparation` identities and exposes
+  convenience fields for `skill_name_before_decision` and
+  `dig_progress_updated`.
+- Updated `PrimitiveDecisionRuntime` so scatter-argument `decide_tick(...)` and
+  `decide_legacy_compatibility_tick(...)` immediately construct a
+  `PrimitiveDecisionContext` and delegate to context-based source-of-truth
+  methods. Unsupported backend fail-fast behavior remains unchanged and still
+  avoids legacy branch construction or broad fallback.
+- Updated `PrimitiveDecisionBackend`, `PrimitiveDecisionBranch`,
+  `PrimitiveRequestedBranchRunner`, `LegacyFSMRequestedDecisionBackend`,
+  `LegacyFSMCompatibilityDecisionBackend`, and the legacy FSM branch objects to
+  use `decide_context(...)` internally. Existing `decide_tick(...)` methods
+  remain thin compatibility facades for execution-driver ports, direct tests,
+  and diagnostics.
+- Added `tests/test_primitive_decision_context.py` and updated backend/runtime
+  focused tests to prove context identity preservation, one-context routing
+  through requested order `bootstrap -> dig -> carry -> dump -> return ->
+  residual`, one-context routing through compatibility order
+  `bootstrap -> residual -> dig -> carry -> dump -> return`, and policy/runtime
+  behavior through the existing scatter-argument facade.
+- TDD red result: the first focused run failed at collection because
+  `testbed.planner.primitive_decision_context` did not exist. After adding the
+  context packet and migrating runtime/backend/branch paths, the focused
+  context/runtime/backend subset returned `4 passed, 55 deselected`, and the
+  full context/runtime/backend/decision/effect suite returned `104 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_decision_context.py tests/test_primitive_decision_runtime.py`
+  returned `9 passed`;
+  `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_decision_contract.py tests/test_primitive_effects.py`
+  returned `95 passed`;
+  `python -m pytest -q tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `12 passed`;
+  `python -m pytest -q tests/test_primitive_action_dispatch.py tests/test_primitive_tick_finalization.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_exemplars.py tests/test_primitive_coverage_state.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_effect_runtime.py`
+  returned `29 passed`;
+  `python -m pytest -q tests/test_primitive_planner_trace.py tests/test_primitive_rollout_summary.py tests/test_primitive_debug_report.py tests/test_primitive_observation.py tests/test_primitive_token_status.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace"`
+  returned `19 passed, 101 deselected`;
+  compileall completed successfully with no output; both planner guard commands
+  and `git diff --check` completed successfully with no output.
+- Old code parked/reclassified: scatter-argument `decide_tick(...)` methods
+  remain compatibility facades over `PrimitiveDecisionContext`, execution-driver
+  ports still call the policy's `_decide_tick(...)` facade, `LegacyFSMBranchSet`
+  remains the only supported backend branch-set owner, `LegacyFSMBackendAdapter`
+  remains historical/test scaffolding, `cell_entry` remains
+  compatibility/report material, `pre_dig_align` remains residual
+  parking/action material, behavior tree and VLM/LLM backends remain
+  unsupported parked scope, and 5P remains its existing legacy override path.

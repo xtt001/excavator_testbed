@@ -15,6 +15,7 @@ from testbed.planner.primitive_decision import (
     PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
 )
+from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
 
@@ -62,12 +63,20 @@ class PrimitiveDecisionRuntime:
         boundary_event: Any | None,
         preparation: PrimitiveTickPreparation,
     ) -> PrimitiveDecisionResult:
-        backend = self._requested_backend()
-        return backend.decide_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=preparation,
+        return self.decide_context(
+            PrimitiveDecisionContext.from_tick(
+                obs=obs,
+                boundary_event=boundary_event,
+                preparation=preparation,
+            )
         )
+
+    def decide_context(
+        self,
+        context: PrimitiveDecisionContext,
+    ) -> PrimitiveDecisionResult:
+        backend = self._requested_backend()
+        return backend.decide_context(context)
 
     def decide_legacy_compatibility_tick(
         self,
@@ -76,12 +85,20 @@ class PrimitiveDecisionRuntime:
         boundary_event: Any | None,
         preparation: PrimitiveTickPreparation,
     ) -> PrimitiveDecisionResult | None:
-        backend = self._compatibility_backend()
-        return backend.decide_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=preparation,
+        return self.decide_legacy_compatibility_context(
+            PrimitiveDecisionContext.from_tick(
+                obs=obs,
+                boundary_event=boundary_event,
+                preparation=preparation,
+            )
         )
+
+    def decide_legacy_compatibility_context(
+        self,
+        context: PrimitiveDecisionContext,
+    ) -> PrimitiveDecisionResult | None:
+        backend = self._compatibility_backend()
+        return backend.decide_context(context)
 
     def legacy_fsm_branch_set(self) -> LegacyFSMBranchSet:
         self._ensure_supported_backend()
