@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.38: the default 4P mainline branch chain no longer
+Current status after Phase 9.39: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy now exposes backend-facing common decision facts through
@@ -65,11 +65,15 @@ orders, while `LegacyFSMBootstrapBranch`, `LegacyFSMDigBranch`,
 `LegacyFSMCarryBranch`, `LegacyFSMDumpBranch`, and `LegacyFSMReturnBranch`
 consume `PrimitiveDecisionContext + PrimitiveDecisionFacts + PrimitiveDecisionCapabilities`
 rather than individual shell callback/status-provider fields. Dig/carry/dump/
-return transition statuses remain lazy and branch-local. Return handoff refresh
+return transition statuses remain lazy and branch-local. `PrimitiveBackendFactsAccess`
+now provides the backend-facing read-only access contract for dig/carry/dump/
+return transition facts; it carries the shared common facts identity and a
+private read-only transition-status reader, and it does not expose sync,
+refresh, residual, effect-applier, or shell mutation APIs. Return handoff refresh
 is now explicit: `LegacyFSMReturnBranch` calls
 `PrimitiveDecisionCapabilities.refresh_return_transition_state(context)` only
 after the active skill check confirms `return`, and then consumes
-`PrimitiveDecisionCapabilities.return_transition_facts(context, facts=...)`.
+`PrimitiveBackendFactsAccess.return_transition()`.
 `PrimitiveReturnTransitionFacts` wraps the existing common facts packet and the
 read-only `ReturnTransitionStatus` without carrying refresh/provider/applier
 fields.
@@ -78,19 +82,19 @@ read-only cached-status assembly point rather than a hidden mutation/refresh
 entry. This preserves return handoff refresh timing and avoids eager status
 calculation. Dig-to-carry reason mirror writeback is also no longer hidden in
 the dig status read: active dig branch decisions now consume
-`PrimitiveDecisionCapabilities.dig_transition_facts(context, facts=...)`, then
+`PrimitiveBackendFactsAccess.dig_transition()`, then
 explicitly call `sync_dig_transition_reason(...)` before selecting effects from
 `PrimitiveDigTransitionFacts.status`. `PrimitiveFSMCapabilityProvider.dig_transition_status(...)`
 is a read-only status assembly point, while `sync_dig_transition_reason(...)`
 preserves the legacy shell/debug mirror write timing, including empty reasons.
 Carry and dump branch decisions now follow the same facts-view pattern through
-`PrimitiveDecisionCapabilities.carry_transition_facts(context, facts=...)` and
-`PrimitiveDecisionCapabilities.dump_transition_facts(context, facts=...)`.
+`PrimitiveBackendFactsAccess.carry_transition()` and
+`PrimitiveBackendFactsAccess.dump_transition()`.
 `PrimitiveCarryTransitionFacts` and `PrimitiveDumpTransitionFacts` wrap the
 existing common facts packet plus read-only carry/dump status identities without
 carrying providers, appliers, effects, mutation callbacks, or refresh/sync
 fields. Bootstrap remains a separate normalized status path rather than a
-transition facts view. `LegacyFSMRequestedDecisionBackend`
+facts-access view. `LegacyFSMRequestedDecisionBackend`
 is the default decision backend used by the execution driver, while
 `LegacyFSMCompatibilityDecisionBackend` serves the legacy `_maybe_switch_skill()`
 entry without applying effects inside backend branches. Bootstrap, dig, carry,
@@ -718,6 +722,18 @@ branch decisions now consume typed facts views after their active-skill checks;
 non-matching skills still do not read carry/dump facts or status. This does not
 turn `PrimitiveDecisionFacts` into an eager all-status packet and does not
 create a backend-neutral facts bundle or alternate backend implementation.
+
+Phase 9.39 adds `PrimitiveBackendFactsAccess` in
+`testbed/planner/primitive_backend_facts.py`, consolidating the common decision
+facts plus dig/carry/dump/return transition facts views behind one lazy
+read-only backend-facing access contract. The access object only reads the
+requested transition status when its matching method is called, so non-matching
+branches do not trigger status reads. Dig reason sync, return refresh, residual
+pre-dig-align handling, effect application, and shell mutation remain explicit
+capability/action responsibilities outside this access object. This does not
+move bootstrap into the facts access path yet, does not turn
+`PrimitiveDecisionFacts` into an eager all-status packet, and does not create an
+alternate backend implementation.
 
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in

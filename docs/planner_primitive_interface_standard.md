@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.38 implementation. It is intentionally
+compares them with the current Phase 9.39 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -34,9 +34,9 @@ Current maturity:
   **mostly achieved**
 - runtime composition root / public runtime kernel: **achieved for public
   runtime routing**
-- backend-neutral fact packet for non-FSM decision strategies: **partly
+- backend-neutral fact access for non-FSM decision strategies: **partly
   achieved for common context/skill facts plus lazy dig/carry/dump/return
-  transition views**
+  transition views through `PrimitiveBackendFactsAccess`**
 - behavior-tree, VLM, LLM, or learned decision backend implementation:
   **not implemented; unsupported backends must fail fast**
 
@@ -195,12 +195,15 @@ Current boundary:
 - Legacy FSM branches consume `PrimitiveDecisionContext` plus common
   `PrimitiveDecisionFacts` through `PrimitiveDecisionCapabilities`.
 - The active dig branch consumes a dig-specific facts view,
-  `PrimitiveDigTransitionFacts`, then explicitly syncs the legacy
-  dig-to-carry reason mirror before effect selection.
+  `PrimitiveDigTransitionFacts`, through `PrimitiveBackendFactsAccess`, then
+  explicitly syncs the legacy dig-to-carry reason mirror before effect
+  selection.
 - The active carry and dump branches consume carry/dump-specific facts views,
-  `PrimitiveCarryTransitionFacts` and `PrimitiveDumpTransitionFacts`.
+  `PrimitiveCarryTransitionFacts` and `PrimitiveDumpTransitionFacts`, through
+  `PrimitiveBackendFactsAccess`.
 - The active return branch consumes a return-specific facts view,
-  `PrimitiveReturnTransitionFacts`, after the explicit return refresh step.
+  `PrimitiveReturnTransitionFacts`, through `PrimitiveBackendFactsAccess` after
+  the explicit return refresh step.
 - Unsupported backend names fail fast.
 
 Gap:
@@ -214,9 +217,10 @@ Gap:
 - Dig transition facts now have a typed read-only view, but the legacy
   dig-to-carry reason mirror sync is still an explicit compatibility step in
   the active dig branch.
-- Carry and dump transition facts now have typed read-only views, but those
-  views are still exposed through legacy-FSM-shaped capabilities rather than a
-  single backend-neutral facts bundle.
+- Dig/carry/dump/return transition facts now have typed read-only views exposed
+  through one lazy `PrimitiveBackendFactsAccess`, but that access still covers
+  only the legacy FSM transition branch facts and is not yet a complete
+  backend-neutral facts bundle.
 - Return transition facts now have a typed read-only view, but that view is
   constructed lazily only after the active return branch has refreshed cached
   handoff state.
@@ -315,15 +319,24 @@ Current boundary:
   the read-only
   `ReturnTransitionStatus`; it does not contain refresh, provider, applier,
   callback, or effect fields.
+- `PrimitiveBackendFactsAccess` in
+  `testbed/planner/primitive_backend_facts.py` is the backend-facing lazy
+  read-only access object for dig/carry/dump/return transition facts. It holds
+  a `PrimitiveDecisionContext`, one common `PrimitiveDecisionFacts` identity,
+  and a private read-only `PrimitiveTransitionStatusReader`; its public API is
+  limited to `dig_transition()`, `carry_transition()`, `dump_transition()`, and
+  `return_transition()`.
 - `PrimitiveDecisionCapabilities` maps a decision context to current skill,
-  common decision facts, dig/carry/dump/return transition facts, bootstrap
-  status, transition statuses, explicit dig reason sync, and residual
-  `pre_dig_align` handling.
+  common decision facts, `PrimitiveBackendFactsAccess`, bootstrap status,
+  compatibility read-only status methods, explicit dig reason sync, explicit
+  return refresh, and residual `pre_dig_align` handling.
 - `PrimitiveObservationFacts` and transition status dataclasses exist.
 
 Gap:
 
 - The current capability object is still backend-facing for legacy FSM.
+- Bootstrap still uses `PrimitiveDecisionCapabilities.bootstrap_status(...)`
+  directly rather than a bootstrap facts view on `PrimitiveBackendFactsAccess`.
 - Residual `pre_dig_align` is still a capability-side already-applied handler.
 - `PrimitiveDecisionFacts` is not yet the complete `PrimitiveBackendFacts`
   target. It lacks token, coverage, and return handoff views, and the
@@ -561,28 +574,32 @@ Standard:
 
 The next code work should follow this order:
 
-1. Consolidate transition-specific facts into a backend-neutral facts access
-   contract.
-   - Keep legacy FSM capabilities working.
-   - Preserve lazy transition-status timing; do not eagerly refresh or compute
-     return status outside the active return branch.
-   - Treat `PrimitiveDigTransitionFacts` and
-     `PrimitiveCarryTransitionFacts`, `PrimitiveDumpTransitionFacts`, and
-     `PrimitiveReturnTransitionFacts` as transition-specific views, not as a
-     complete backend facts packet.
-   - Add only bundle/access APIs that are stable across backend styles.
+1. Add bootstrap to the backend facts-access shape.
+   - Introduce a bootstrap-specific read-only facts view/access method rather
+     than keeping bootstrap as the only mainline requested branch that reads
+     facts through a separate capabilities method.
+   - Preserve bootstrap end-mode and pre-dig gate timing.
+   - Do not promote `pre_dig_align` into a mainline capability contract.
+   - Keep `PrimitiveBackendFactsAccess` lazy and branch-local; do not eagerly
+     compute dig/carry/dump/return transition statuses.
    - Do not implement BT/VLM yet.
 
-2. Move remaining mutable runtime state into focused state owners.
+2. Split backend facts access from explicit compatibility actions.
+   - Only do this once bootstrap is inside the facts-access path.
+   - Branch dependencies should get smaller, not just renamed.
+   - Dig reason sync, return refresh, and residual pre-dig handling must remain
+     explicit side-effect actions outside read-only facts access.
+
+3. Move remaining mutable runtime state into focused state owners.
    - Prioritize token/runtime and return state before parked legacy paths.
    - Avoid generic blackboards.
 
-3. Audit parked paths.
+4. Audit parked paths.
    - Decide whether to remove, keep diagnostic-only, or convert
      `pre_dig_align` and `cell_entry`.
    - Do not do this before the runtime kernel boundary is clear.
 
-4. Only then prototype a new backend.
+5. Only then prototype a new backend.
    - Start with a non-default, fail-closed backend contract test.
    - The backend must consume decision facts and return requested effects.
 
@@ -610,12 +627,14 @@ architecture-record ownership:
 
 1. The implementation thread performs the bounded code slice, focused tests,
    parity checks, guard checks, and local commit when requested.
-2. The implementation thread reports the exact changed files, behavioral impact,
-   verification commands, commit hash, and any residual risks back to the
-   refactor-thinking/audit thread.
+2. The implementation thread reports only factual implementation evidence: the
+   exact changed files, behavior-impact statement, verification commands,
+   commit hash, and factual residual risks. It should not recommend next
+   slices, judge the target gap, or direct the audit strategy.
 3. The refactor-thinking/audit thread audits the code result and updates
    architecture documents, interface standards, and execution records as part of
-   that audit.
+   that audit. Target-gap analysis, next-slice candidates, every-third-iteration
+   reflection, and dispatch decisions belong to the audit thread.
 
 This keeps strategic architecture documentation consistent across phases while
 still requiring each code slice to provide enough evidence for documentation to

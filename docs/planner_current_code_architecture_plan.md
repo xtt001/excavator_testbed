@@ -61,6 +61,7 @@ Current relevant Python files:
 | --- | ---: | --- |
 | `testbed/policies/hybrid/primitive_planner.py` | 4900+ | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
+| `testbed/planner/primitive_backend_facts.py` | 117 | backend-facing lazy read-only facts access for dig/carry/dump/return transition views |
 | `testbed/planner/primitive_decision_facts.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
@@ -874,6 +875,21 @@ facts after their active-skill checks, so lazy branch timing is preserved. This
 means dig/carry/dump/return mainline transition branches all have explicit
 facts views, but there is still no unified backend-neutral facts bundle and no
 alternate backend readiness claim.
+
+Current status note after Phase 9.39: dig/carry/dump/return transition facts
+views are now reached through `PrimitiveBackendFactsAccess` in
+`testbed/planner/primitive_backend_facts.py`. The access object holds the
+per-tick `PrimitiveDecisionContext`, one shared `PrimitiveDecisionFacts`
+identity, and a private read-only transition-status reader; it exposes lazy
+`dig_transition()`, `carry_transition()`, `dump_transition()`, and
+`return_transition()` methods. `LegacyFSMDigBranch`,
+`LegacyFSMCarryBranch`, `LegacyFSMDumpBranch`, and `LegacyFSMReturnBranch` now
+use `capabilities.backend_facts(context)` as their branch-local source of
+common facts and transition facts. Dig reason sync, return refresh, residual
+pre-dig-align handling, and effect application remain explicit compatibility or
+mutation responsibilities outside read-only facts access. Bootstrap still uses
+the separate `bootstrap_status(...)` path, so the backend input contract is not
+yet complete and alternate backend readiness remains future work.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;

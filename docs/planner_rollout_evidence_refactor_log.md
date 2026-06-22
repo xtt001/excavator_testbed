@@ -4611,3 +4611,84 @@ Each completed refactor round should append:
   dig/carry/dump/return facts views behind a backend-neutral facts access
   contract while keeping lazy active-branch timing and unsupported backend
   fail-fast behavior.
+
+### 2026-06-23 Phase 9.39 Extract Primitive Backend Facts Access
+
+- Scope: introduced `PrimitiveBackendFactsAccess` and
+  `PrimitiveTransitionStatusReader` in
+  `testbed/planner/primitive_backend_facts.py`. The new access object is a
+  frozen, backend-facing, lazy read-only view over one
+  `PrimitiveDecisionContext`, one shared `PrimitiveDecisionFacts` identity, and
+  the dig/carry/dump/return transition status reader.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `9e85bc018388416f330ca60cd78d609f649fa031`; no fetch, pull, push, reset,
+  checkout, rebase, branch creation, or remote write. HEAD after the code round
+  is `8ba268a3989f06e8a0d9aab47a288e1ea18da85f`.
+- `PrimitiveBackendFactsAccess` exposes only `dig_transition()`,
+  `carry_transition()`, `dump_transition()`, and `return_transition()` as public
+  transition facts reads. It does not expose dig reason sync, return refresh,
+  residual pre-dig-align handling, effect application, shell mutation, planner
+  `self`, policy objects, or callback bags.
+- `PrimitiveDecisionCapabilities.backend_facts(context, *, facts=None)` now
+  constructs the access object. Passing an existing common facts packet reuses
+  that identity and does not reread current skill or current reason ports.
+  Compatibility methods such as `dig_transition_facts(...)`,
+  `carry_transition_facts(...)`, `dump_transition_facts(...)`, and
+  `return_transition_facts(...)` remain, but delegate to the backend facts
+  access methods to avoid duplicating facts assembly logic.
+- `PrimitiveTransitionStatusProvider` now extends the read-only
+  `PrimitiveTransitionStatusReader` and adds only explicit compatibility
+  actions: `sync_dig_transition_reason(...)` and
+  `refresh_return_transition_state(...)`. This keeps read-only facts access and
+  shell-owned compatibility mutation separated at the type boundary.
+- `LegacyFSMDigBranch`, `LegacyFSMCarryBranch`, `LegacyFSMDumpBranch`, and
+  `LegacyFSMReturnBranch` now call `capabilities.backend_facts(context)`, use
+  `backend_facts.common` for skill checks, and consume the active branch's
+  transition facts through `backend_facts`. Non-matching branches still do not
+  read their transition status. Active dig still syncs the dig reason after
+  reading dig facts and before effect selection. Active return still refreshes
+  return state after the active-return skill check and before reading return
+  facts.
+- Explicit non-goals: bootstrap status was not moved into backend facts access;
+  `PrimitiveDecisionFacts` was not turned into an eager all-status packet; no
+  backend support expansion or BT/VLM/LLM implementation; no `pre_dig_align` or
+  `cell_entry` promotion; no 5P restoration; no token, coverage, return
+  handoff, action dispatch, reset, reporting, branch-order, reason-string,
+  effect-order, schema, reset-timing, coverage-trace, or action-output change.
+- TDD red result: after focused tests were added, the first run of
+  `python -m pytest -q tests/test_primitive_backend_facts.py tests/test_primitive_decision_facts.py tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_decision_runtime.py`
+  failed at collection because `testbed.planner.primitive_backend_facts` did
+  not yet exist. After implementation, the command returned `98 passed`.
+- Verification reported by implementation thread and rechecked by the audit
+  thread:
+  `python -m pytest -q tests/test_primitive_backend_facts.py tests/test_primitive_decision_facts.py tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_decision_runtime.py`
+  returned `98 passed`, and
+  `python -m compileall -q testbed/planner/primitive_backend_facts.py testbed/planner/primitive_decision_capabilities.py testbed/planner/primitive_backend.py tests/test_primitive_backend_facts.py`
+  completed successfully. The implementation thread also reported
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace or dig_depth_profile or dig_cut_tokens or dig_to_carry or carry_to_dump or dump_to_return"`
+  returned `23 passed, 96 deselected`; compileall, both planner guard commands,
+  `git diff --check`, and staged diff check completed successfully.
+- Audit note: this is a real architecture step, not a pass-through facade,
+  because four live transition branch facts views now share one lazy read-only
+  backend-facing access contract, while explicit compatibility actions remain
+  outside the facts surface. The remaining confirmed-live branch gap is
+  bootstrap: it still reads `bootstrap_status(...)` directly from
+  capabilities. The next core slice should move bootstrap into a typed
+  read-only facts/access shape without promoting residual `pre_dig_align` or
+  claiming alternate backend readiness.
+- Three-iteration audit reflection for Phases 9.37-9.39: the sequence did move
+  toward the SVG/interface target. Phase 9.37 removed hidden mutation from dig
+  status reads and made reason sync explicit; Phase 9.38 finished mainline
+  carry/dump transition facts views; Phase 9.39 consolidated the four
+  transition views behind one read-only access object. The next architectural
+  blocker is not another transition view, but the incomplete backend input
+  contract: bootstrap remains outside the access path and branch objects still
+  depend on the mixed `PrimitiveDecisionCapabilities` object for both read-only
+  facts and explicit compatibility actions. Future slices should close those
+  gaps without adding anemic wrappers, eager all-status facts, or unsupported
+  BT/VLM/LLM backend claims.
