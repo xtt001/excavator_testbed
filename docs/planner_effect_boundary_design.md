@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.15: the default 4P mainline branch chain no longer
+Current status after Phase 9.16: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -88,8 +88,13 @@ fields, and keeps token planning algorithms in their existing owners.
 base transition keys, token debug fields from `TokenStatus.to_debug_fields()`,
 return gate fields, coverage fields, cell-entry compatibility fields, and
 residual pre-dig fields. The policy shell builds a typed debug snapshot and
-section values, then delegates report assembly to the builder; `rollout_summary`
-and `planner_trace` remain in their existing owners.
+section values, then delegates report assembly to the builder.
+`PrimitiveRolloutSummaryBuilder` now owns public `rollout_summary()` dict
+assembly: summary key layout, bool-like `int(...)` projections, `None` to
+`NaN` fallback fields, compact coverage/return/pre-dig/cell-entry
+compatibility summary fields, and legacy scalar conversions. The policy shell
+builds a typed summary snapshot and delegates report assembly to the builder;
+`planner_trace()` remains in its existing owner.
 
 ## Design Intent
 
@@ -569,6 +574,21 @@ fields are produced through `TokenStatus.to_debug_fields()` rather than a
 second handwritten mapping. The policy shell now keeps only thin snapshot
 helpers and does not assemble the final debug dict inline. `rollout_summary()`,
 `planner_trace()`, per-tick `_make_debug_state(...)`, token planning,
+coverage/runtime updates, `cell_entry` compatibility behavior, and
+`pre_dig_align` residual behavior remain unchanged.
+
+Phase 9.16 extracts public `rollout_summary()` dict assembly into
+`PrimitiveRolloutSummaryBuilder` in
+`testbed/planner/primitive_rollout_summary.py`.
+`PrimitiveRolloutSummaryInputs` carries an explicit scalar summary snapshot for
+transition counters, final primitive skill/cycle, return gate metrics,
+pending/dig-token fields, coverage fields, scripted bootstrap timeout,
+residual pre-dig counters, and dig replan counters. The builder owns final
+public summary key layout, `bool`-like integer projection, `None` to `NaN`
+fallback projection, and compact compatibility/report fields for `cell_entry`
+and `pre_dig_align`. The policy shell now keeps only a thin
+`_rollout_summary_inputs()` snapshot helper and delegates final summary
+assembly. `planner_trace()`, public debug-state assembly, token planning,
 coverage/runtime updates, `cell_entry` compatibility behavior, and
 `pre_dig_align` residual behavior remain unchanged.
 

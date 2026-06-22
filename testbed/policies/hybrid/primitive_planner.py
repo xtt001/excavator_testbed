@@ -123,6 +123,10 @@ from testbed.planner.primitive_observation import (
     PrimitivePolicyObservationAssemblerPorts,
     PrimitivePolicyObservationAssemblyResult,
 )
+from testbed.planner.primitive_rollout_summary import (
+    PrimitiveRolloutSummaryBuilder,
+    PrimitiveRolloutSummaryInputs,
+)
 from testbed.planner.primitive_return_handoff import (
     ReturnDirectHandoffEffectPorts,
     ReturnDirectHandoffEffectService,
@@ -1800,109 +1804,108 @@ class PrimitivePlannerACTPolicy(Policy):
         }
 
     def rollout_summary(self) -> dict[str, float | int | str | list[str]]:
-        return {
-            "transition_source": TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
-            "transition_policy_mode": TRANSITION_POLICY_MODE_PRIMITIVE,
-            "transition_fallback_count": 0,
-            "transition_fallback_reason": "",
-            "transition_timeout_count": int(self._transition_timeout_count),
-            "completed_transition_count": int(self._completed_transition_count),
-            "dump_done_use_boundary_event": int(self.dump_done_use_boundary_event),
-            "primitive_final_skill": str(self._skill_name),
-            "primitive_cycle_index": int(self._cycle_index),
-            "cell_entry_enabled": int(self.cell_entry_enabled),
-            "cell_entry_trace_count": int(len(self._cell_entry_trace)),
-            "dig_cut_token_dim": int(DIG_CUT_TOKEN_DIM),
-            "return_target_token_dim": int(RETURN_TARGET_TOKEN_DIM),
-            "return_target_token_source": str(self._return_target_token_source),
-            "return_to_dig_max_entry_error_m": float(
-                np.nan
-                if self.return_to_dig_max_entry_error_m is None
-                else self.return_to_dig_max_entry_error_m
-            ),
-            "return_to_dig_entry_error_m": float(self._return_to_dig_entry_error_m),
-            "return_to_dig_entry_close": int(self._return_to_dig_entry_close_state),
-            "return_next_dig_event_seen": int(self._return_next_dig_event_seen),
-            "return_to_dig_start_envelope_gate_enabled": int(
+        return self._rollout_summary_builder().build(
+            self._rollout_summary_inputs()
+        )
+
+    @staticmethod
+    def _rollout_summary_builder() -> PrimitiveRolloutSummaryBuilder:
+        return PrimitiveRolloutSummaryBuilder()
+
+    def _rollout_summary_inputs(self) -> PrimitiveRolloutSummaryInputs:
+        return PrimitiveRolloutSummaryInputs(
+            transition_source=TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
+            transition_policy_mode=TRANSITION_POLICY_MODE_PRIMITIVE,
+            transition_fallback_count=0,
+            transition_fallback_reason="",
+            transition_timeout_count=int(self._transition_timeout_count),
+            completed_transition_count=int(self._completed_transition_count),
+            dump_done_use_boundary_event=bool(self.dump_done_use_boundary_event),
+            primitive_final_skill=str(self._skill_name),
+            primitive_cycle_index=int(self._cycle_index),
+            cell_entry_enabled=bool(self.cell_entry_enabled),
+            cell_entry_trace_count=int(len(self._cell_entry_trace)),
+            dig_cut_token_dim=int(DIG_CUT_TOKEN_DIM),
+            return_target_token_dim=int(RETURN_TARGET_TOKEN_DIM),
+            return_target_token_source=str(self._return_target_token_source),
+            return_to_dig_max_entry_error_m=self.return_to_dig_max_entry_error_m,
+            return_to_dig_entry_error_m=float(self._return_to_dig_entry_error_m),
+            return_to_dig_entry_close=bool(self._return_to_dig_entry_close_state),
+            return_next_dig_event_seen=bool(self._return_next_dig_event_seen),
+            return_to_dig_start_envelope_gate_enabled=bool(
                 self.return_to_dig_start_envelope_gate_enabled
             ),
-            "return_to_dig_start_envelope_direct_handoff_enabled": int(
+            return_to_dig_start_envelope_direct_handoff_enabled=bool(
                 self.return_to_dig_start_envelope_direct_handoff_enabled
             ),
-            "return_to_dig_start_envelope_ready": int(
+            return_to_dig_start_envelope_ready=bool(
                 self._return_to_dig_start_envelope_ready_state
             ),
-            "return_to_dig_start_envelope_plane_depth_mode": str(
+            return_to_dig_start_envelope_plane_depth_mode=str(
                 self.return_to_dig_start_envelope_plane_depth_mode
             ),
-            "return_to_dig_start_envelope_local_depth_tolerance_m": float(
+            return_to_dig_start_envelope_local_depth_tolerance_m=float(
                 self.return_to_dig_start_envelope_local_depth_tolerance_m
             ),
-            "return_to_dig_start_envelope_error": float(
+            return_to_dig_start_envelope_error=float(
                 self._return_to_dig_start_envelope_error
             ),
-            "pending_dig_cut_cycle_id": int(self._pending_dig_cut_cycle_id),
-            "pending_dig_cut_corridor_id": int(self._pending_dig_cut_corridor_id),
-            "dig_cut_token_injected": int(self._dig_cut_token_injected),
-            "dig_cut_planner_mode": str(self.dig_cut_planner_mode),
-            "dig_cut_prior_id": str(self.dig_cut_prior_id),
-            "dig_cut_token_source": str(self._dig_cut_token_source),
-            "dig_cut_token_in_prior_p10_p90": int(
+            pending_dig_cut_cycle_id=int(self._pending_dig_cut_cycle_id),
+            pending_dig_cut_corridor_id=int(self._pending_dig_cut_corridor_id),
+            dig_cut_token_injected=bool(self._dig_cut_token_injected),
+            dig_cut_planner_mode=str(self.dig_cut_planner_mode),
+            dig_cut_prior_id=str(self.dig_cut_prior_id),
+            dig_cut_token_source=str(self._dig_cut_token_source),
+            dig_cut_token_in_prior_p10_p90=bool(
                 self._dig_cut_token_in_prior_p10_p90
             ),
-            "dig_cut_fallback_reason": str(self._dig_cut_fallback_reason),
-            "dig_failed_replan_next_skill": str(self.dig_failed_replan_next_skill),
-            "coverage_selected_corridor_id": int(self._coverage_active_corridor_id),
-            "coverage_depleted_count": int(self._coverage_depleted_count()),
-            "coverage_completed_dump_count": int(self._coverage_completed_dump_count),
-            "coverage_pass_index": int(self._coverage_pass_index),
-            "coverage_multi_pass_enabled": int(self.coverage_multi_pass_enabled),
-            "coverage_use_env_removed_depth": int(
+            dig_cut_fallback_reason=str(self._dig_cut_fallback_reason),
+            dig_failed_replan_next_skill=str(self.dig_failed_replan_next_skill),
+            coverage_selected_corridor_id=int(self._coverage_active_corridor_id),
+            coverage_depleted_count=int(self._coverage_depleted_count()),
+            coverage_completed_dump_count=int(self._coverage_completed_dump_count),
+            coverage_pass_index=int(self._coverage_pass_index),
+            coverage_multi_pass_enabled=bool(self.coverage_multi_pass_enabled),
+            coverage_use_env_removed_depth=bool(
                 self.coverage_use_env_removed_depth
             ),
-            "coverage_candidate_layout": str(self.coverage_candidate_layout),
-            "coverage_first_dig_strategy": str(self.coverage_first_dig_strategy),
-            "coverage_first_dig_preferred_corridor_id": int(
-                -1
+            coverage_candidate_layout=str(self.coverage_candidate_layout),
+            coverage_first_dig_strategy=str(self.coverage_first_dig_strategy),
+            coverage_first_dig_preferred_corridor_id=(
+                None
                 if self.coverage_first_dig_preferred_corridor_id is None
-                else self.coverage_first_dig_preferred_corridor_id
+                else int(self.coverage_first_dig_preferred_corridor_id)
             ),
-            "coverage_first_dig_max_entry_distance_m": float(
-                np.nan
-                if self.coverage_first_dig_max_entry_distance_m is None
-                else self.coverage_first_dig_max_entry_distance_m
+            coverage_first_dig_max_entry_distance_m=(
+                self.coverage_first_dig_max_entry_distance_m
             ),
-            "coverage_first_dig_qpos_delta_weight": float(
+            coverage_first_dig_qpos_delta_weight=float(
                 self.coverage_first_dig_qpos_delta_weight
             ),
-            "coverage_terminal_stop_requested": int(
+            coverage_terminal_stop_requested=bool(
                 self._coverage_terminal_stop_requested
             ),
-            "coverage_terminal_stop_reason": str(
-                self._coverage_terminal_stop_reason
-            ),
-            "scripted_bootstrap_timeout_count": int(
+            coverage_terminal_stop_reason=str(self._coverage_terminal_stop_reason),
+            scripted_bootstrap_timeout_count=int(
                 self._scripted_bootstrap_timeout_count
             ),
-            "pre_dig_align_enabled": int(self.pre_dig_align_enabled),
-            "pre_dig_align_first_dig_only": int(
-                self.pre_dig_align_first_dig_only
-            ),
-            "pre_dig_align_replan_after_failed_dig": int(
+            pre_dig_align_enabled=bool(self.pre_dig_align_enabled),
+            pre_dig_align_first_dig_only=bool(self.pre_dig_align_first_dig_only),
+            pre_dig_align_replan_after_failed_dig=bool(
                 self.pre_dig_align_replan_after_failed_dig
             ),
-            "pre_dig_align_surface_guard_enabled": int(
+            pre_dig_align_surface_guard_enabled=bool(
                 self.pre_dig_align_surface_guard_enabled
             ),
-            "pre_dig_align_surface_guard_count": int(
+            pre_dig_align_surface_guard_count=int(
                 self._pre_dig_align_surface_guard_count
             ),
-            "pre_dig_align_timeout_count": int(self._pre_dig_align_timeout_count),
-            "pre_dig_align_completed_count": int(self._pre_dig_align_completed_count),
-            "pre_dig_align_replan_count": int(self._pre_dig_align_replan_count),
-            "dig_bad_replan_count": int(self._dig_bad_replan_count),
-            "dig_exit_guard_replan_count": int(self._dig_exit_guard_replan_count),
-        }
+            pre_dig_align_timeout_count=int(self._pre_dig_align_timeout_count),
+            pre_dig_align_completed_count=int(self._pre_dig_align_completed_count),
+            pre_dig_align_replan_count=int(self._pre_dig_align_replan_count),
+            dig_bad_replan_count=int(self._dig_bad_replan_count),
+            dig_exit_guard_replan_count=int(self._dig_exit_guard_replan_count),
+        )
 
     def planner_trace(self) -> dict[str, object]:
         return {

@@ -3041,3 +3041,69 @@ Each completed refactor round should append:
   `pre_dig_align` remains residual parking/debug material,
   `LegacyFSMBackendAdapter` remains historical/test scaffolding, and 5P remains
   its existing legacy override path.
+
+### 2026-06-22 Phase 9.16 Extract Public Rollout Summary Report Builder
+
+- Scope: extracted public `PrimitivePlannerACTPolicy.rollout_summary()` dict
+  assembly from the large policy shell into a focused reporting module. No
+  `planner_trace()`, public `debug_state()` assembly, per-tick
+  `_make_debug_state(...)`, token planning algorithm, token/debug/summary
+  schema, golden-window contract, branch order, reason string, threshold,
+  policy reset timing, public config behavior, `cell_entry` compatibility
+  classification, `pre_dig_align` residual status, 5P override, or low-level
+  ACT dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `390eca74deea77df36879e716cf7e7d98154b614`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `testbed/planner/primitive_rollout_summary.py` with
+  `PrimitiveRolloutSummaryInputs` and `PrimitiveRolloutSummaryBuilder`. The
+  builder owns final public summary key layout, bool-like `int(...)`
+  projection, `None` to `NaN` fallback projection, and compact scalar
+  conversions for transition, return, pending/dig-token, coverage,
+  scripted-bootstrap, residual pre-dig, cell-entry compatibility, and dig
+  replan fields.
+- Updated `PrimitivePlannerACTPolicy.rollout_summary()` into a thin wrapper
+  that delegates to
+  `_rollout_summary_builder().build(_rollout_summary_inputs())`. The policy
+  shell now prepares a typed scalar summary snapshot only; `planner_trace()`
+  remains in its existing owner.
+- Preserved public summary behavior in focused tests: representative keys such
+  as `transition_source`, `transition_policy_mode`,
+  `transition_timeout_count`, `completed_transition_count`,
+  `primitive_final_skill`, `primitive_cycle_index`, `cell_entry_enabled`,
+  `cell_entry_trace_count`, `dig_cut_token_dim`, `return_target_token_dim`,
+  `return_target_token_source`, return start-envelope fields, pending fields,
+  dig-token fields, coverage fields, scripted bootstrap timeout, pre-dig
+  fields, and dig replan counters are still emitted. Bool-like fields remain
+  integers, and `None` values for optional numeric summary fields still project
+  to `NaN`.
+- TDD red result: the first focused run failed at collection because
+  `testbed.planner.primitive_rollout_summary` did not exist. After adding the
+  builder module and policy bridge, `python -m pytest -q
+  tests/test_primitive_rollout_summary.py` returned `3 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_rollout_summary.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_primitive_debug_report.py tests/test_primitive_token_status.py tests/test_primitive_observation.py`
+  returned `11 passed`;
+  `python -m pytest -q tests/test_primitive_goal_token_provider.py tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_dig_depth_profile_token_planner.py tests/test_primitive_return_target_token_planner.py tests/test_primitive_return_relocate_token_planner.py tests/test_primitive_return_start_envelope_token_planner.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_execution_template.py tests/test_primitive_backend.py`
+  returned `114 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or return_to_dig or pre_dig_align or start_envelope"`
+  returned `18 passed, 102 deselected`;
+  compileall, both planner guard commands, and `git diff --check` completed
+  successfully with no output.
+- Old code parked/reclassified: `planner_trace()` remains in its existing
+  owner for a later audit, `_make_debug_state(...)` remains the per-tick
+  compact debug-state finalizer, public `debug_state()` remains in
+  `PrimitiveDebugReportBuilder`, token planning remains in existing token
+  providers, `cell_entry` remains compatibility/report material,
+  `pre_dig_align` remains residual parking/report material,
+  `LegacyFSMBackendAdapter` remains historical/test scaffolding, and 5P remains
+  its existing legacy override path.

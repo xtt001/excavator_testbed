@@ -558,6 +558,14 @@ from `TokenStatus.to_debug_fields()`. `rollout_summary()`, `planner_trace()`,
 and per-tick `_make_debug_state(...)` are intentionally unchanged in this
 round.
 
+Current status note after Phase 9.16: public `rollout_summary()` dict assembly
+has moved into `PrimitiveRolloutSummaryBuilder` in
+`testbed/planner/primitive_rollout_summary.py`. `rollout_summary()` now
+delegates through typed summary inputs while the builder owns public summary
+key layout, bool-like `int(...)` projection, and `None` to `NaN` fallback
+projection. `planner_trace()`, public `debug_state()` assembly, and per-tick
+`_make_debug_state(...)` are intentionally unchanged in this round.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut
