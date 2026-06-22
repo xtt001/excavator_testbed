@@ -10,6 +10,7 @@ import numpy as np
 
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 from testbed.planner.primitive_coverage_state import CoverageRuntimeState
+from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 
 
@@ -66,6 +67,7 @@ class PrimitiveResetLifecycleState:
     dig_exit_guard_replan_count: int
     completed_transition_count: int
     transition_timeout_count: int
+    return_state: PrimitiveReturnRuntimeState
     cycle_index: int
     dump_start_deposited_mass_kg: float
     cell_entry_goal: Any | None
@@ -163,6 +165,7 @@ class PrimitiveResetLifecycleState:
             "_dig_exit_guard_replan_count": self.dig_exit_guard_replan_count,
             "_completed_transition_count": self.completed_transition_count,
             "_transition_timeout_count": self.transition_timeout_count,
+            "_return_state": self.return_state,
             "_cycle_index": self.cycle_index,
             "_dump_start_deposited_mass_kg": self.dump_start_deposited_mass_kg,
             "_cell_entry_goal": self.cell_entry_goal,
@@ -258,13 +261,14 @@ class PrimitiveResetLifecycleService:
         ports.reset_cell_entry_planner()
         action_dim = int(ports.action_dim)
         token_state = PrimitiveTokenRuntimeState.fresh()
+        return_state = PrimitiveReturnRuntimeState.fresh()
         return PrimitiveResetLifecycleState(
             skill_name=skill_name,
             prev_action=None,
             switch_reason="reset",
             dump_ready_hold_count=0,
             dump_done_hold_count=0,
-            return_step_count=0,
+            return_step_count=return_state.return_step_count,
             scripted_bootstrap_step_count=0,
             scripted_bootstrap_hold_count=0,
             scripted_bootstrap_timeout_count=0,
@@ -291,6 +295,7 @@ class PrimitiveResetLifecycleService:
             dig_exit_guard_replan_count=0,
             completed_transition_count=0,
             transition_timeout_count=0,
+            return_state=return_state,
             cycle_index=0,
             dump_start_deposited_mass_kg=0.0,
             cell_entry_goal=None,
@@ -325,12 +330,20 @@ class PrimitiveResetLifecycleService:
             return_target_planned_cycle_id=token_state.return_target_planned_cycle_id,
             return_target_token_source=token_state.return_target_token_source,
             return_target_fallback_reason=token_state.return_target_fallback_reason,
-            return_to_dig_entry_error_m=float("nan"),
-            return_to_dig_entry_close_state=True,
-            return_next_dig_event_seen=False,
-            return_to_dig_start_envelope_ready_state=True,
-            return_to_dig_start_envelope_error=float("nan"),
-            return_to_dig_start_envelope_checks={},
+            return_to_dig_entry_error_m=return_state.return_to_dig_entry_error_m,
+            return_to_dig_entry_close_state=(
+                return_state.return_to_dig_entry_close_state
+            ),
+            return_next_dig_event_seen=return_state.return_next_dig_event_seen,
+            return_to_dig_start_envelope_ready_state=(
+                return_state.return_to_dig_start_envelope_ready_state
+            ),
+            return_to_dig_start_envelope_error=(
+                return_state.return_to_dig_start_envelope_error
+            ),
+            return_to_dig_start_envelope_checks=(
+                return_state.return_to_dig_start_envelope_checks
+            ),
             pending_dig_cut_cycle_id=token_state.pending_dig_cut_cycle_id,
             pending_dig_cut_corridor_id=token_state.pending_dig_cut_corridor_id,
             pending_dig_cut_raw_fields=token_state.pending_dig_cut_raw_fields,

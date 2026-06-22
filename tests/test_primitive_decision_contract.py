@@ -80,6 +80,12 @@ class _FakePrimitiveFSMCapabilityProvider:
         self.calls.append("return")
         return "return_status"
 
+    def sync_dig_transition_reason(self, status: DigTransitionStatus) -> None:
+        self.calls.append(f"sync:{status.dig_to_carry_reason}")
+
+    def refresh_return_transition_state(self, obs: dict) -> None:
+        self.calls.append("refresh_return")
+
 
 class _FakeDecisionStatusProvider:
     def __init__(
@@ -130,6 +136,12 @@ class _FakeDecisionStatusProvider:
         if self.return_status is None:
             raise AssertionError("return status was not expected")
         return self.return_status
+
+    def sync_dig_transition_reason(self, status: DigTransitionStatus) -> None:
+        pass
+
+    def refresh_return_transition_state(self, obs: dict) -> None:
+        pass
 
 
 def _install_fake_decision_status_provider(
@@ -1484,7 +1496,7 @@ def test_primitive_planner_dig_decision_bridge_returns_requested_effects() -> No
     )
 
 
-def test_primitive_planner_dig_transition_status_provider_maps_inputs_and_mirror() -> None:
+def test_primitive_planner_dig_transition_status_provider_maps_inputs_and_syncs_mirror_explicitly() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     planner.action_dim = 1
     planner.boundary_detector = SimpleNamespace(
@@ -1528,6 +1540,10 @@ def test_primitive_planner_dig_transition_status_provider_maps_inputs_and_mirror
     assert loaded_status.dig_to_carry_reason == "loaded"
     assert loaded_status.dig_exit_guard_ready is False
     assert loaded_status.dig_bad_replan_ready is False
+    assert planner._dig_to_carry_reason == "stale"
+    planner._primitive_fsm_capability_provider().sync_dig_transition_reason(
+        loaded_status
+    )
     assert planner._dig_to_carry_reason == "loaded"
 
     low_payload_status = planner._dig_transition_status_for_backend(
@@ -1545,6 +1561,10 @@ def test_primitive_planner_dig_transition_status_provider_maps_inputs_and_mirror
     assert low_payload_status.dig_bad_replan_ready is True
     assert low_payload_status.dig_to_carry_ready is False
     assert low_payload_status.dig_to_carry_reason == ""
+    assert planner._dig_to_carry_reason == "loaded"
+    planner._primitive_fsm_capability_provider().sync_dig_transition_reason(
+        low_payload_status
+    )
     assert planner._dig_to_carry_reason == ""
 
 
@@ -1568,12 +1588,22 @@ def test_primitive_planner_legacy_branch_ports_use_capability_provider_methods()
     ports = planner._legacy_fsm_branch_ports()
 
     context = SimpleNamespace(obs={}, boundary_event=None)
-    assert ports.capabilities.dig_transition_status(context) == "dig_status"
-    assert ports.capabilities.carry_transition_status(context) == "carry_status"
-    assert ports.capabilities.dump_transition_status(context) == "dump_status"
-    assert ports.capabilities.return_transition_status(context) == "return_status"
+    assert ports.facts_source.backend_facts(context).dig_transition().status == "dig_status"
+    assert (
+        ports.facts_source.backend_facts(context).carry_transition().status
+        == "carry_status"
+    )
+    assert (
+        ports.facts_source.backend_facts(context).dump_transition().status
+        == "dump_status"
+    )
+    assert (
+        ports.facts_source.backend_facts(context).return_transition().status
+        == "return_status"
+    )
     assert provider.calls == ["dig", "carry", "dump", "return"]
     for removed_name in (
+        "capabilities",
         "current_skill_name",
         "should_end_bootstrap",
         "dig_transition_status",

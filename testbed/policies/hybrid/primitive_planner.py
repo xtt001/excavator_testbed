@@ -162,6 +162,7 @@ from testbed.planner.primitive_runtime_kernel import (
     PrimitivePlannerRuntimeKernel,
     PrimitivePlannerRuntimeKernelPorts,
 )
+from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 from testbed.planner import primitive_adapter_config as adapter_config
 from testbed.planner.primitive_adapter_config import (
@@ -466,6 +467,92 @@ class PrimitivePlannerACTPolicy(Policy):
     ) -> None:
         for field_name, value in reset_state.as_policy_field_updates().items():
             setattr(self, field_name, value)
+
+    def _primitive_return_runtime_state(self) -> PrimitiveReturnRuntimeState:
+        state = self.__dict__.get("_return_state")
+        if state is None:
+            state = PrimitiveReturnRuntimeState.fresh()
+            self.__dict__["_return_state"] = state
+        return state
+
+    @property
+    def _return_step_count(self) -> int:
+        return int(self._primitive_return_runtime_state().return_step_count)
+
+    @_return_step_count.setter
+    def _return_step_count(self, value: int) -> None:
+        self._primitive_return_runtime_state().return_step_count = int(value)
+
+    @property
+    def _return_to_dig_entry_error_m(self) -> float:
+        return float(
+            self._primitive_return_runtime_state().return_to_dig_entry_error_m
+        )
+
+    @_return_to_dig_entry_error_m.setter
+    def _return_to_dig_entry_error_m(self, value: float) -> None:
+        self._primitive_return_runtime_state().return_to_dig_entry_error_m = float(
+            value
+        )
+
+    @property
+    def _return_to_dig_entry_close_state(self) -> bool:
+        return bool(
+            self._primitive_return_runtime_state().return_to_dig_entry_close_state
+        )
+
+    @_return_to_dig_entry_close_state.setter
+    def _return_to_dig_entry_close_state(self, value: bool) -> None:
+        state = self._primitive_return_runtime_state()
+        state.return_to_dig_entry_close_state = bool(value)
+
+    @property
+    def _return_next_dig_event_seen(self) -> bool:
+        return bool(self._primitive_return_runtime_state().return_next_dig_event_seen)
+
+    @_return_next_dig_event_seen.setter
+    def _return_next_dig_event_seen(self, value: bool) -> None:
+        state = self._primitive_return_runtime_state()
+        state.return_next_dig_event_seen = bool(value)
+
+    @property
+    def _return_to_dig_start_envelope_ready_state(self) -> bool:
+        return bool(
+            self._primitive_return_runtime_state()
+            .return_to_dig_start_envelope_ready_state
+        )
+
+    @_return_to_dig_start_envelope_ready_state.setter
+    def _return_to_dig_start_envelope_ready_state(self, value: bool) -> None:
+        state = self._primitive_return_runtime_state()
+        state.return_to_dig_start_envelope_ready_state = bool(value)
+
+    @property
+    def _return_to_dig_start_envelope_error(self) -> float:
+        return float(
+            self._primitive_return_runtime_state()
+            .return_to_dig_start_envelope_error
+        )
+
+    @_return_to_dig_start_envelope_error.setter
+    def _return_to_dig_start_envelope_error(self, value: float) -> None:
+        state = self._primitive_return_runtime_state()
+        state.return_to_dig_start_envelope_error = float(value)
+
+    @property
+    def _return_to_dig_start_envelope_checks(self) -> dict[str, Any]:
+        return (
+            self._primitive_return_runtime_state()
+            .return_to_dig_start_envelope_checks
+        )
+
+    @_return_to_dig_start_envelope_checks.setter
+    def _return_to_dig_start_envelope_checks(
+        self,
+        value: dict[str, Any],
+    ) -> None:
+        state = self._primitive_return_runtime_state()
+        state.return_to_dig_start_envelope_checks = value
 
     def _primitive_token_runtime_state(self) -> PrimitiveTokenRuntimeState:
         state = self.__dict__.get("_token_state")
@@ -1295,7 +1382,7 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _mark_return_next_dig_event_seen(self) -> None:
-        self._return_next_dig_event_seen = True
+        self._primitive_return_runtime_state().mark_next_dig_event_seen()
 
     def _complete_return_transition_for_backend(self) -> None:
         self._completed_transition_count += 1
@@ -3001,15 +3088,18 @@ class PrimitivePlannerACTPolicy(Policy):
         if self._skill_name == "return" and self.return_target_planner_enabled:
             self._ensure_return_target_plan_for_cycle(obs)
         entry_error = self._return_to_dig_entry_error_for_obs(obs)
-        self._return_to_dig_entry_error_m = float(entry_error)
         if self.return_to_dig_max_entry_error_m is None:
-            self._return_to_dig_entry_close_state = True
-            return True
-        if not np.isfinite(entry_error):
-            self._return_to_dig_entry_close_state = True
-            return True
-        close = bool(float(entry_error) <= float(self.return_to_dig_max_entry_error_m))
-        self._return_to_dig_entry_close_state = close
+            close = True
+        elif not np.isfinite(entry_error):
+            close = True
+        else:
+            close = bool(
+                float(entry_error) <= float(self.return_to_dig_max_entry_error_m)
+            )
+        self._primitive_return_runtime_state().set_entry_close_result(
+            error_m=float(entry_error),
+            close=close,
+        )
         return close
 
     def _return_to_dig_handoff_ready(self, obs: dict) -> bool:
@@ -3093,9 +3183,11 @@ class PrimitivePlannerACTPolicy(Policy):
         self,
         result: ReturnStartEnvelopeGateResult,
     ) -> None:
-        self._return_to_dig_start_envelope_ready_state = bool(result.ready)
-        self._return_to_dig_start_envelope_error = float(result.error)
-        self._return_to_dig_start_envelope_checks = dict(result.checks)
+        self._primitive_return_runtime_state().apply_start_envelope_gate_result(
+            ready=bool(result.ready),
+            error=float(result.error),
+            checks=dict(result.checks),
+        )
 
     def _return_to_dig_entry_error_for_obs(self, obs: dict) -> float:
         target = self._return_to_dig_entry_target()
