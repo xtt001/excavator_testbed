@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.21: the default 4P mainline branch chain no longer
+Current status after Phase 9.22: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -113,7 +113,18 @@ previous-action copy semantics, dispatch-after transition-completed reason
 prefix detection, and compact `PrimitivePlannerDebugState` assembly for both
 the default 4P planner and the parked 5P compatibility planner. The policy shell
 prepares typed finalization inputs, writes `_prev_action` / `_debug_state`, and
-retains thin compatibility wrappers for the execution hooks.
+retains thin compatibility wrappers for the execution hooks while keeping reset
+lifecycle and `_set_skill()` timing unchanged.
+`CoverageRuntimeState` now owns mutable coverage runtime state in
+`testbed/planner/primitive_coverage_state.py`: corridor storage, selected ids,
+payload/deposit counters, pass/terminal state, candidate scores, decision trace,
+and state-exemplar runtime fields. The 4P policy shell initializes a fresh state
+owner on reset and keeps the old `_coverage_*` private names as property-backed
+compatibility facades so existing tests and diagnostics still observe and mutate
+the same stored containers. Coverage selection/effect coordinators read and
+write through the state owner via typed ports; candidate construction, scoring,
+effect sequencing, report schemas, and public trace/summary/debug payloads
+remain unchanged.
 `CoverageEffectRuntimeCoordinator` now owns coverage requested-effect runtime
 sequencing for `CompleteCoverageDigEffect`, `CompleteCoverageDumpEffect`, and
 `RejectActiveCoverageCorridorEffect`: coverage-mode no-op gating, update service
@@ -721,6 +732,23 @@ prior, ensures candidates, validates non-empty candidates, calls
 selection, candidate-score/event emission, and post-select terminal-stop order.
 Coverage candidate construction, scoring, first-dig gate facts, state exemplar
 matching, raw-field/token planning, report schemas, branch ordering, and
+low-level action dispatch remain unchanged.
+
+Phase 9.22 extracts coverage mutable runtime storage into
+`CoverageRuntimeState` in `testbed/planner/primitive_coverage_state.py`. The
+state owner stores corridors, active/last-selected ids, payload/deposit
+counters, completed dump and low-productivity counters, pass and terminal-stop
+state, candidate scores, decision trace, rejected exemplar ids, and active
+state-exemplar payload. It exposes the common helper behavior that was
+previously scattered across the policy shell: corridor lookup, active corridor,
+depleted count, all-depleted status, selected-id/counter/terminal writeback, and
+state-exemplar/rejected-id updates. `PrimitivePlannerACTPolicy` now creates a
+fresh `CoverageRuntimeState` on reset and keeps old `_coverage_*` private names
+as property-backed compatibility facades; selection/effect runtime ports point
+at the same state owner rather than separate policy fields. This is a focused
+coverage runtime state boundary, not a generic blackboard. Candidate
+construction, selection scoring, effect runtime sequencing, coverage report
+payloads, decision trace schema, terminal-stop reasons, branch order, and
 low-level action dispatch remain unchanged.
 
 ### Stage 4: Expand Effect Families From Evidence

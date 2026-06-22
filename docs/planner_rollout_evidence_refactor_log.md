@@ -3423,3 +3423,78 @@ Each completed refactor round should append:
   `cell_entry` remains compatibility/report material, `pre_dig_align` remains
   residual parking/action material, `LegacyFSMBackendAdapter` remains
   historical/test scaffolding, and 5P remains its existing legacy override path.
+
+### 2026-06-22 Phase 9.22 Extract Primitive Coverage Runtime State Owner
+
+- Scope: extracted mutable coverage runtime storage from the large policy shell
+  into a focused `CoverageRuntimeState` owner. No coverage candidate
+  construction, selection scoring, first-dig gate, state-exemplar matching,
+  raw-field/token planning, coverage effect sequencing, decision trace payload
+  schema, candidate score payload schema, terminal-stop reason string, branch
+  order, reason string, threshold, token/debug/summary/trace schema, reset
+  timing, public config behavior, pre-dig-align internals, cell-entry
+  compatibility, 5P transition semantics, return handoff internals, or low-level
+  ACT dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `a3270c3e3b27ea80b858006dd23e86e8255ec233`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `testbed/planner/primitive_coverage_state.py` with
+  `CoverageRuntimeState`. The state owner stores corridor containers,
+  active/last-selected ids, payload/deposit counters, completed dump and global
+  low-productivity counters, pass and terminal-stop state, candidate scores,
+  decision trace, rejected state exemplar ids, and active state-exemplar payload.
+  It owns corridor lookup, active corridor lookup, depleted count,
+  all-depleted status, selected-id/counter/terminal setters, and
+  active/rejected state-exemplar updates. This is a focused coverage runtime
+  state owner, not a generic blackboard.
+- Updated `PrimitivePlannerACTPolicy.reset()` to initialize a fresh
+  `CoverageRuntimeState`. The previous `_coverage_*` private names now remain
+  as property-backed compatibility facades, so tests and diagnostics that read
+  or mutate `_coverage_corridors`, `_coverage_decision_trace`,
+  `_coverage_rejected_state_exemplar_ids`, `_coverage_candidate_scores`, and
+  scalar coverage fields still operate on the same source-of-truth state owner.
+- Updated coverage state helper/facade methods so selection and effect runtime
+  ports read and write through `CoverageRuntimeState`: `_set_coverage_*`
+  wrappers delegate to state methods, `_coverage_corridor_by_id()`,
+  `_coverage_active_corridor()`, `_coverage_depleted_count()`, and
+  `_coverage_all_depleted()` delegate to the owner, and active state-exemplar
+  writeback/clear paths update the owner.
+- Added `tests/test_primitive_coverage_state.py` with focused coverage for
+  default reset values, stored mutable container identity, corridor helper
+  behavior, runtime setter/update helpers, policy compatibility facades, and
+  selection/effect ports sharing the same state owner.
+- TDD red result: the first focused run failed at collection because
+  `testbed.planner.primitive_coverage_state` did not exist. After adding the
+  state owner and policy compatibility bridge, `python -m pytest -q
+  tests/test_primitive_coverage_state.py` returned `6 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_coverage_state.py` returned
+  `6 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_effect_runtime.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_selection.py tests/test_primitive_coverage_candidates.py tests/test_primitive_coverage_updates.py tests/test_primitive_coverage_runtime.py tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_status.py`
+  returned `12 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `93 passed`;
+  `python -m pytest -q tests/test_primitive_planner_trace.py tests/test_primitive_rollout_summary.py tests/test_primitive_debug_report.py tests/test_primitive_tick_finalization.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or terminal_depletion or semantic_boundary_events_drive_skill_sequence or operator_prior_coverage or first_dig or return_to_dig"`
+  returned `14 passed, 106 deselected`;
+  compileall and both planner guard commands completed successfully with no
+  output; `git diff --check` completed successfully.
+- Old code parked/reclassified: coverage candidate construction remains in
+  `CoverageCandidateBuilder`, coverage scoring remains in
+  `CoverageSelectionService`, coverage selection sequencing remains in
+  `CoverageSelectionRuntimeCoordinator`, coverage effect sequencing remains in
+  `CoverageEffectRuntimeCoordinator`, raw-field/state-exemplar/first-dig fact
+  helpers remain policy facades, corridor debug/report payload projection
+  remains behind `CoverageReportService`, requested-effect dispatch remains in
+  `RequestedEffectApplier`, public report builders remain unchanged,
+  `cell_entry` remains compatibility/report material, `pre_dig_align` remains
+  residual parking/action material, `LegacyFSMBackendAdapter` remains
+  historical/test scaffolding, and 5P remains its existing legacy override path.

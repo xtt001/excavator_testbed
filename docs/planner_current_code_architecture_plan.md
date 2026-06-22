@@ -629,6 +629,22 @@ candidate construction, scoring algorithm, first-dig gate facts, state exemplar
 matching, raw-field/token planning, planner trace/summary/debug schemas, branch
 ordering, and low-level ACT dispatch are intentionally unchanged in this round.
 
+Current status note after Phase 9.22: coverage mutable runtime storage has moved
+into `CoverageRuntimeState` in `testbed/planner/primitive_coverage_state.py`.
+The state owner stores corridor lists, active/last-selected ids, payload/deposit
+counters, completed-dump and low-productivity counters, pass and terminal-stop
+state, candidate scores, decision trace, rejected exemplar ids, and active
+state-exemplar payload. It also owns common state helper behavior such as
+corridor lookup, active corridor lookup, depleted count, all-depleted status,
+selected-id/counter/terminal writeback, and state-exemplar/rejected-id updates.
+The 4P policy shell initializes a fresh state owner on reset and preserves old
+private `_coverage_*` names as property-backed compatibility facades, so tests
+and diagnostics still mutate the same stored containers. Coverage selection and
+effect runtime ports now point at the same state owner rather than independent
+policy fields. Coverage candidate construction, selection scoring, effect
+sequencing, decision trace schema, report schemas, branch ordering, and low-level
+ACT dispatch are intentionally unchanged in this round.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

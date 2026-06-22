@@ -90,6 +90,7 @@ from testbed.planner.primitive_coverage_reports import (
     CoverageReportService,
     CoverageReportState,
 )
+from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.planner.primitive_coverage_updates import (
     CoverageCompletionFacts,
     CoverageEffectRuntimeCoordinator,
@@ -978,27 +979,180 @@ class PrimitivePlannerACTPolicy(Policy):
         self._dig_cut_token_source = "none"
         self._dig_cut_fallback_reason = ""
         self._dig_cut_token_in_prior_p10_p90 = False
-        self._coverage_corridors: list[CoverageCorridorState] = []
-        self._coverage_active_corridor_id = -1
-        self._coverage_last_selected_corridor_id = -1
-        self._coverage_current_payload_gain_kg = 0.0
-        self._coverage_cycle_start_deposit_kg = 0.0
-        self._coverage_last_payload_gain_kg = 0.0
-        self._coverage_last_effective_deposit_delta_kg = 0.0
-        self._coverage_global_low_productivity_streak = 0
-        self._coverage_completed_dump_count = 0
-        self._coverage_pass_index = 0
-        self._coverage_terminal_stop_requested = False
-        self._coverage_terminal_stop_reason = ""
-        self._coverage_candidate_scores: list[dict[str, float | int | str]] = []
-        self._coverage_decision_trace: list[dict[str, Any]] = []
-        self._coverage_active_state_exemplar_ids: list[str] = []
-        self._coverage_rejected_state_exemplar_ids: set[str] = set()
-        self._coverage_active_state_exemplar_distance = float("nan")
-        self._coverage_active_state_exemplar_profile_token: np.ndarray | None = None
+        self._coverage_state = CoverageRuntimeState()
         self._debug_state = self._make_debug_state(
             transition_timeout=False,
             transition_completed=False,
+        )
+
+    def _coverage_runtime_state(self) -> CoverageRuntimeState:
+        state = self.__dict__.get("_coverage_state")
+        if state is None:
+            state = CoverageRuntimeState()
+            self.__dict__["_coverage_state"] = state
+        return state
+
+    @property
+    def _coverage_corridors(self) -> list[CoverageCorridorState]:
+        return self._coverage_runtime_state().coverage_corridors
+
+    @_coverage_corridors.setter
+    def _coverage_corridors(self, value: list[CoverageCorridorState]) -> None:
+        self._coverage_runtime_state().coverage_corridors = value
+
+    @property
+    def _coverage_active_corridor_id(self) -> int:
+        return int(self._coverage_runtime_state().coverage_active_corridor_id)
+
+    @_coverage_active_corridor_id.setter
+    def _coverage_active_corridor_id(self, value: int) -> None:
+        self._coverage_runtime_state().coverage_active_corridor_id = int(value)
+
+    @property
+    def _coverage_last_selected_corridor_id(self) -> int:
+        return int(self._coverage_runtime_state().coverage_last_selected_corridor_id)
+
+    @_coverage_last_selected_corridor_id.setter
+    def _coverage_last_selected_corridor_id(self, value: int) -> None:
+        self._coverage_runtime_state().coverage_last_selected_corridor_id = int(value)
+
+    @property
+    def _coverage_current_payload_gain_kg(self) -> float:
+        return float(self._coverage_runtime_state().coverage_current_payload_gain_kg)
+
+    @_coverage_current_payload_gain_kg.setter
+    def _coverage_current_payload_gain_kg(self, value: float) -> None:
+        self._coverage_runtime_state().coverage_current_payload_gain_kg = float(value)
+
+    @property
+    def _coverage_cycle_start_deposit_kg(self) -> float:
+        return float(self._coverage_runtime_state().coverage_cycle_start_deposit_kg)
+
+    @_coverage_cycle_start_deposit_kg.setter
+    def _coverage_cycle_start_deposit_kg(self, value: float) -> None:
+        self._coverage_runtime_state().coverage_cycle_start_deposit_kg = float(value)
+
+    @property
+    def _coverage_last_payload_gain_kg(self) -> float:
+        return float(self._coverage_runtime_state().coverage_last_payload_gain_kg)
+
+    @_coverage_last_payload_gain_kg.setter
+    def _coverage_last_payload_gain_kg(self, value: float) -> None:
+        self._coverage_runtime_state().coverage_last_payload_gain_kg = float(value)
+
+    @property
+    def _coverage_last_effective_deposit_delta_kg(self) -> float:
+        return float(
+            self._coverage_runtime_state().coverage_last_effective_deposit_delta_kg
+        )
+
+    @_coverage_last_effective_deposit_delta_kg.setter
+    def _coverage_last_effective_deposit_delta_kg(self, value: float) -> None:
+        self._coverage_runtime_state().coverage_last_effective_deposit_delta_kg = (
+            float(value)
+        )
+
+    @property
+    def _coverage_global_low_productivity_streak(self) -> int:
+        return int(
+            self._coverage_runtime_state().coverage_global_low_productivity_streak
+        )
+
+    @_coverage_global_low_productivity_streak.setter
+    def _coverage_global_low_productivity_streak(self, value: int) -> None:
+        self._coverage_runtime_state().coverage_global_low_productivity_streak = int(
+            value
+        )
+
+    @property
+    def _coverage_completed_dump_count(self) -> int:
+        return int(self._coverage_runtime_state().coverage_completed_dump_count)
+
+    @_coverage_completed_dump_count.setter
+    def _coverage_completed_dump_count(self, value: int) -> None:
+        self._coverage_runtime_state().coverage_completed_dump_count = int(value)
+
+    @property
+    def _coverage_pass_index(self) -> int:
+        return int(self._coverage_runtime_state().coverage_pass_index)
+
+    @_coverage_pass_index.setter
+    def _coverage_pass_index(self, value: int) -> None:
+        self._coverage_runtime_state().coverage_pass_index = int(value)
+
+    @property
+    def _coverage_terminal_stop_requested(self) -> bool:
+        return bool(self._coverage_runtime_state().coverage_terminal_stop_requested)
+
+    @_coverage_terminal_stop_requested.setter
+    def _coverage_terminal_stop_requested(self, value: bool) -> None:
+        self._coverage_runtime_state().coverage_terminal_stop_requested = bool(value)
+
+    @property
+    def _coverage_terminal_stop_reason(self) -> str:
+        return str(self._coverage_runtime_state().coverage_terminal_stop_reason)
+
+    @_coverage_terminal_stop_reason.setter
+    def _coverage_terminal_stop_reason(self, value: str) -> None:
+        self._coverage_runtime_state().coverage_terminal_stop_reason = str(value)
+
+    @property
+    def _coverage_candidate_scores(self) -> list[dict[str, Any]]:
+        return self._coverage_runtime_state().coverage_candidate_scores
+
+    @_coverage_candidate_scores.setter
+    def _coverage_candidate_scores(self, value: list[dict[str, Any]]) -> None:
+        self._coverage_runtime_state().coverage_candidate_scores = value
+
+    @property
+    def _coverage_decision_trace(self) -> list[dict[str, Any]]:
+        return self._coverage_runtime_state().coverage_decision_trace
+
+    @_coverage_decision_trace.setter
+    def _coverage_decision_trace(self, value: list[dict[str, Any]]) -> None:
+        self._coverage_runtime_state().coverage_decision_trace = value
+
+    @property
+    def _coverage_active_state_exemplar_ids(self) -> list[str]:
+        return self._coverage_runtime_state().coverage_active_state_exemplar_ids
+
+    @_coverage_active_state_exemplar_ids.setter
+    def _coverage_active_state_exemplar_ids(self, value: list[str]) -> None:
+        self._coverage_runtime_state().coverage_active_state_exemplar_ids = value
+
+    @property
+    def _coverage_rejected_state_exemplar_ids(self) -> set[str]:
+        return self._coverage_runtime_state().coverage_rejected_state_exemplar_ids
+
+    @_coverage_rejected_state_exemplar_ids.setter
+    def _coverage_rejected_state_exemplar_ids(self, value: set[str]) -> None:
+        self._coverage_runtime_state().coverage_rejected_state_exemplar_ids = value
+
+    @property
+    def _coverage_active_state_exemplar_distance(self) -> float:
+        return float(
+            self._coverage_runtime_state().coverage_active_state_exemplar_distance
+        )
+
+    @_coverage_active_state_exemplar_distance.setter
+    def _coverage_active_state_exemplar_distance(self, value: float) -> None:
+        self._coverage_runtime_state().coverage_active_state_exemplar_distance = float(
+            value
+        )
+
+    @property
+    def _coverage_active_state_exemplar_profile_token(self) -> np.ndarray | None:
+        return (
+            self._coverage_runtime_state().coverage_active_state_exemplar_profile_token
+        )
+
+    @_coverage_active_state_exemplar_profile_token.setter
+    def _coverage_active_state_exemplar_profile_token(
+        self,
+        value: np.ndarray | None,
+    ) -> None:
+        self._coverage_runtime_state().coverage_active_state_exemplar_profile_token = (
+            value
         )
 
     def _tick_boundary_event(self, obs: dict) -> Any | None:
@@ -3900,16 +4054,16 @@ class PrimitivePlannerACTPolicy(Policy):
         self,
         corridors: list[CoverageCorridorState],
     ) -> None:
-        self._coverage_corridors = corridors
+        self._coverage_runtime_state().set_coverage_corridors(corridors)
 
     def _set_coverage_candidate_scores(
         self,
         candidate_scores: list[dict[str, Any]],
     ) -> None:
-        self._coverage_candidate_scores = list(candidate_scores)
+        self._coverage_runtime_state().set_candidate_scores(candidate_scores)
 
     def _set_coverage_last_selected_corridor_id(self, value: int) -> None:
-        self._coverage_last_selected_corridor_id = int(value)
+        self._coverage_runtime_state().set_last_selected_corridor_id(value)
 
     def _select_next_coverage_corridor(self, obs: dict) -> CoverageCorridorState:
         return self._coverage_selection_runtime_coordinator().select_next_corridor(
@@ -4359,12 +4513,14 @@ class PrimitivePlannerACTPolicy(Policy):
         exemplar_ids = [str(exemplar.get("exemplar_id", "")) for _, exemplar in selected]
         best_distance = float(selected[0][0])
         if update_state:
-            self._coverage_active_state_exemplar_ids = exemplar_ids
-            self._coverage_active_state_exemplar_distance = best_distance
-            self._coverage_active_state_exemplar_profile_token = (
-                None
-                if profile_token is None
-                else profile_token.astype(np.float32).copy()
+            self._coverage_runtime_state().set_active_state_exemplar(
+                exemplar_ids=exemplar_ids,
+                distance=best_distance,
+                profile_token=(
+                    None
+                    if profile_token is None
+                    else profile_token.astype(np.float32).copy()
+                ),
             )
             corridor.state_exemplar_id = ",".join(exemplar_ids)
             corridor.state_exemplar_distance = best_distance
@@ -4687,40 +4843,40 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _set_coverage_current_payload_gain_kg(self, value: float) -> None:
-        self._coverage_current_payload_gain_kg = float(value)
+        self._coverage_runtime_state().set_current_payload_gain_kg(value)
 
     def _set_coverage_last_payload_gain_kg(self, value: float) -> None:
-        self._coverage_last_payload_gain_kg = float(value)
+        self._coverage_runtime_state().set_last_payload_gain_kg(value)
 
     def _set_coverage_last_effective_deposit_delta_kg(self, value: float) -> None:
-        self._coverage_last_effective_deposit_delta_kg = float(value)
+        self._coverage_runtime_state().set_last_effective_deposit_delta_kg(value)
 
     def _set_coverage_completed_dump_count(self, value: int) -> None:
-        self._coverage_completed_dump_count = int(value)
+        self._coverage_runtime_state().set_completed_dump_count(value)
 
     def _set_coverage_global_low_productivity_streak(self, value: int) -> None:
-        self._coverage_global_low_productivity_streak = int(value)
+        self._coverage_runtime_state().set_global_low_productivity_streak(value)
 
     def _update_coverage_rejected_state_exemplar_ids(
         self,
         exemplar_ids: tuple[str, ...],
     ) -> None:
-        self._coverage_rejected_state_exemplar_ids.update(exemplar_ids)
+        self._coverage_runtime_state().update_rejected_state_exemplar_ids(exemplar_ids)
 
     def _set_coverage_pass_index(self, value: int) -> None:
-        self._coverage_pass_index = int(value)
+        self._coverage_runtime_state().set_coverage_pass_index(value)
 
     def _set_coverage_active_corridor_id(self, value: int) -> None:
-        self._coverage_active_corridor_id = int(value)
+        self._coverage_runtime_state().set_active_corridor_id(value)
 
     def _clear_coverage_rejected_state_exemplar_ids(self) -> None:
-        self._coverage_rejected_state_exemplar_ids.clear()
+        self._coverage_runtime_state().clear_rejected_state_exemplar_ids()
 
     def _set_coverage_terminal_stop_requested(self, value: bool) -> None:
-        self._coverage_terminal_stop_requested = bool(value)
+        self._coverage_runtime_state().set_terminal_stop_requested(value)
 
     def _set_coverage_terminal_stop_reason(self, value: str) -> None:
-        self._coverage_terminal_stop_reason = str(value)
+        self._coverage_runtime_state().set_terminal_stop_reason(value)
 
     def _coverage_reopen_facts(
         self,
@@ -4933,10 +5089,7 @@ class PrimitivePlannerACTPolicy(Policy):
         return float(env_state[int(index)])
 
     def _coverage_all_depleted(self) -> bool:
-        return bool(
-            self._coverage_corridors
-            and all(corridor.depleted for corridor in self._coverage_corridors)
-        )
+        return self._coverage_runtime_state().all_depleted()
 
     def _maybe_reopen_coverage_pass(self, obs: dict, *, reason: str) -> bool:
         return self._coverage_effect_runtime_coordinator().maybe_reopen_pass(
@@ -4956,16 +5109,13 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _coverage_active_corridor(self) -> CoverageCorridorState | None:
-        return self._coverage_corridor_by_id(self._coverage_active_corridor_id)
+        return self._coverage_runtime_state().active_corridor()
 
     def _coverage_corridor_by_id(
         self,
         corridor_id: int,
     ) -> CoverageCorridorState | None:
-        for corridor in self._coverage_corridors:
-            if int(corridor.corridor_id) == int(corridor_id):
-                return corridor
-        return None
+        return self._coverage_runtime_state().corridor_by_id(corridor_id)
 
     def _coverage_active_corridor_score(self) -> float:
         corridor = self._coverage_active_corridor()
@@ -4996,7 +5146,7 @@ class PrimitivePlannerACTPolicy(Policy):
         return int(self._coverage_corridor_row_id(corridor))
 
     def _coverage_depleted_count(self) -> int:
-        return int(sum(1 for corridor in self._coverage_corridors if corridor.depleted))
+        return self._coverage_runtime_state().depleted_count()
 
     def _coverage_corridor_to_debug(
         self,
@@ -5018,9 +5168,7 @@ class PrimitivePlannerACTPolicy(Policy):
         self._dig_cut_token_source = "none"
         self._dig_cut_fallback_reason = ""
         self._dig_cut_token_in_prior_p10_p90 = False
-        self._coverage_active_state_exemplar_ids = []
-        self._coverage_active_state_exemplar_distance = float("nan")
-        self._coverage_active_state_exemplar_profile_token = None
+        self._coverage_runtime_state().clear_active_state_exemplar()
 
     def _invalidate_pending_dig_cut_plan(self) -> None:
         self._pending_dig_cut_cycle_id = -1
