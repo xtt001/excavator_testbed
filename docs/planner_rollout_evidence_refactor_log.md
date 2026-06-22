@@ -4758,3 +4758,73 @@ Each completed refactor round should append:
   compatibility actions such as dig reason sync, return refresh, and residual
   pre-dig-align handling. The next slice should reduce that branch dependency
   shape without changing behavior or adding a pass-through-only wrapper.
+
+### 2026-06-23 Phase 9.41 Split Decision Facts Source From Compatibility Actions
+
+- Scope: split the legacy FSM branch dependency surface into read-only decision
+  facts access and explicit compatibility actions. Added
+  `PrimitiveDecisionFactsSource` and `PrimitiveDecisionCompatibilityActions` in
+  `testbed/planner/primitive_decision_capabilities.py`.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `af225b0a8c55bafc878896ba170ffbbb045b621c`; no fetch, pull, push, reset,
+  checkout, rebase, branch creation, or remote write. HEAD after the code round
+  is `949c8f01f09b4d59cbc1769f974ec6a8b40f74a8`.
+- `PrimitiveDecisionFactsSource` exposes only `decision_facts(context)` and
+  `backend_facts(context, facts=None)`. It does not expose dig reason sync,
+  return refresh, residual pre-dig handling, effect application, mutation,
+  planner `self`, or policy objects.
+- `PrimitiveDecisionCompatibilityActions` exposes only the explicit shell
+  compatibility actions: `sync_dig_transition_reason(...)`,
+  `refresh_return_transition_state(...)`, and
+  `handle_residual_pre_dig_align(...)`. It does not expose backend facts,
+  transition facts/status reads, effect appliers, planner `self`, or policy
+  objects.
+- `PrimitiveDecisionCapabilities` remains as a compatibility facade and
+  construction helper. Its existing compatibility methods delegate to the
+  separated facts source and compatibility actions.
+- `LegacyFSMBranchPorts` now stores `facts_source` and
+  `compatibility_actions` instead of `capabilities`. `LegacyFSMBootstrapBranch`,
+  `LegacyFSMCarryBranch`, and `LegacyFSMDumpBranch` store only the facts
+  source. `LegacyFSMDigBranch` and `LegacyFSMReturnBranch` store facts source
+  plus compatibility actions. `LegacyFSMResidualPreDigAlignAdapter` stores both
+  for its already-applied compatibility path.
+- `PrimitivePlannerACTPolicy._legacy_fsm_branch_ports()` still constructs
+  `PrimitiveDecisionCapabilities` once, but passes
+  `capabilities.facts_source()` and `capabilities.compatibility_actions()` into
+  `LegacyFSMBranchPorts`.
+- Preserved behavior: requested branch order, compatibility branch order,
+  decision source strings, reason strings, effect ordering, lazy backend facts
+  access, active-dig reason sync timing, active-return refresh timing, residual
+  pre-dig-align handling, token/coverage/return-handoff/reset/report schemas,
+  policy reset timing, and low-level action dispatch are unchanged.
+- Explicit non-goals: no change to `PrimitiveBackendFactsAccess` lazy behavior;
+  no promotion of `pre_dig_align` or `cell_entry`; no BT/VLM/LLM backend
+  support; no 5P restoration; no token, coverage, return handoff, action
+  dispatch, reset, or reporting algorithm migration.
+- TDD red result: after focused tests were added, the first run of
+  `python -m pytest -q tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_backend_facts.py tests/test_primitive_decision_runtime.py`
+  failed at collection because `PrimitiveDecisionCompatibilityActions` was not
+  importable from `testbed.planner.primitive_decision_capabilities`. After
+  implementation, the command returned `97 passed`.
+- Verification reported by implementation thread and rechecked by the audit
+  thread:
+  `python -m pytest -q tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_backend_facts.py tests/test_primitive_decision_runtime.py`
+  returned `97 passed`, and
+  `python -m compileall -q testbed/planner/primitive_decision_capabilities.py testbed/planner/primitive_backend.py testbed/planner/primitive_backend_facts.py tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_backend_facts.py`
+  completed successfully. The implementation thread also reported
+  `python -m pytest -q tests/test_primitive_decision_facts.py tests/test_primitive_capability_provider.py tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `31 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace or dig_depth_profile or dig_cut_tokens or dig_to_carry or carry_to_dump or dump_to_return"`
+  returned `23 passed, 96 deselected`; compileall, both planner guard commands,
+  `git diff --check`, and staged diff check completed successfully.
+- Audit note: this is a real dependency-shape improvement rather than a pure
+  facade split, because branch dataclasses no longer receive the broad
+  `PrimitiveDecisionCapabilities` object. The next direct architecture gap is
+  the absence of a per-tick backend decision input packet: branch objects still
+  store facts source/actions and independently build facts for each branch
+  check. A future slice should let the runner construct a single backend input
+  for a tick and pass it through ordered branches while preserving lazy status
+  reads and residual post-mutation fact rereads.

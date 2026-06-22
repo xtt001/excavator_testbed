@@ -908,6 +908,23 @@ contract gap is that branches still receive the mixed
 `PrimitiveDecisionCapabilities` object rather than separate read-only facts
 access and compatibility-action dependencies.
 
+Current status note after Phase 9.41: legacy FSM branch dependencies are now
+split into read-only facts access and explicit compatibility actions.
+`PrimitiveDecisionFactsSource` owns `decision_facts(context)` and
+`backend_facts(context, facts=None)`, while
+`PrimitiveDecisionCompatibilityActions` owns only dig reason sync, return
+refresh, and residual pre-dig-align handling. `LegacyFSMBranchPorts` now
+contains `facts_source` and `compatibility_actions` instead of a broad
+`capabilities` field. Bootstrap, carry, and dump branch dataclasses store only
+the facts source; dig and return additionally store compatibility actions for
+their explicit sync/refresh steps; the residual pre-dig adapter stores both for
+its parked already-applied path. `PrimitiveDecisionCapabilities` remains
+available as a compatibility facade and construction helper, but is no longer
+stored by branch dataclasses. The next backend contract gap is that each branch
+still creates per-tick backend facts from the facts source independently; there
+is not yet one runner-owned backend decision input packet passed through the
+ordered branch chain.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

@@ -52,20 +52,23 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.40: the default 4P mainline branch chain no longer
+Current status after Phase 9.41: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy now exposes backend-facing common decision facts through
-`PrimitiveDecisionFacts`, built by `PrimitiveDecisionCapabilities`; the facts
+`PrimitiveDecisionFacts`, built by `PrimitiveDecisionFactsSource`; the facts
 packet carries context identity, current skill, and current switch reason, but
 does not carry mutation ports or eager transition statuses. `LegacyFSMBranchPorts`
-has been narrowed to skill-name constants plus the capability object. `LegacyFSMBranchSet`
-constructs branches and owns both requested and legacy compatibility dispatch
-orders, while `LegacyFSMBootstrapBranch`, `LegacyFSMDigBranch`,
-`LegacyFSMCarryBranch`, `LegacyFSMDumpBranch`, and `LegacyFSMReturnBranch`
-consume `PrimitiveDecisionContext + PrimitiveDecisionFacts + PrimitiveDecisionCapabilities`
-rather than individual shell callback/status-provider fields. Dig/carry/dump/
-return transition statuses remain lazy and branch-local. `PrimitiveBackendFactsAccess`
+has been narrowed to skill-name constants plus separate
+`PrimitiveDecisionFactsSource` and `PrimitiveDecisionCompatibilityActions`
+dependencies. `LegacyFSMBranchSet` constructs branches and owns both requested
+and legacy compatibility dispatch orders, while `LegacyFSMBootstrapBranch`,
+`LegacyFSMDigBranch`, `LegacyFSMCarryBranch`, `LegacyFSMDumpBranch`, and
+`LegacyFSMReturnBranch` consume read-only facts source plus only the explicit
+compatibility actions they need, rather than the broad
+`PrimitiveDecisionCapabilities` facade or individual shell callback/status
+provider fields. Dig/carry/dump/return transition statuses remain lazy and
+branch-local. `PrimitiveBackendFactsAccess`
 now provides the backend-facing read-only access contract for bootstrap and
 dig/carry/dump/return transition facts; it carries the shared common facts
 identity plus private read-only bootstrap and transition readers, and it does
@@ -75,7 +78,7 @@ only after the active bootstrap skill check; the read-only bootstrap facts view
 preserves the existing end-mode and pre-dig gate next-skill rules without
 promoting residual `pre_dig_align` into a mainline mutation path. Return handoff refresh
 is now explicit: `LegacyFSMReturnBranch` calls
-`PrimitiveDecisionCapabilities.refresh_return_transition_state(context)` only
+`PrimitiveDecisionCompatibilityActions.refresh_return_transition_state(context)` only
 after the active skill check confirms `return`, and then consumes
 `PrimitiveBackendFactsAccess.return_transition()`.
 `PrimitiveReturnTransitionFacts` wraps the existing common facts packet and the
@@ -87,7 +90,8 @@ entry. This preserves return handoff refresh timing and avoids eager status
 calculation. Dig-to-carry reason mirror writeback is also no longer hidden in
 the dig status read: active dig branch decisions now consume
 `PrimitiveBackendFactsAccess.dig_transition()`, then
-explicitly call `sync_dig_transition_reason(...)` before selecting effects from
+explicitly call
+`PrimitiveDecisionCompatibilityActions.sync_dig_transition_reason(...)` before selecting effects from
 `PrimitiveDigTransitionFacts.status`. `PrimitiveFSMCapabilityProvider.dig_transition_status(...)`
 is a read-only status assembly point, while `sync_dig_transition_reason(...)`
 preserves the legacy shell/debug mirror write timing, including empty reasons.
@@ -749,6 +753,18 @@ facade over the same access path. This preserves bootstrap switch reasons and
 next-skill rules, keeps residual `pre_dig_align` as a read-only gate target
 rather than a promoted mainline capability, and still does not implement an
 alternate backend.
+
+Phase 9.41 splits read-only decision facts access from explicit compatibility
+actions. `PrimitiveDecisionFactsSource` now owns `decision_facts(...)` and
+`backend_facts(...)`, while `PrimitiveDecisionCompatibilityActions` owns only
+dig reason sync, return refresh, and residual pre-dig-align handling.
+`LegacyFSMBranchPorts` now carries these two dependencies explicitly instead of
+`PrimitiveDecisionCapabilities`, and branch dataclasses no longer store the
+mixed capabilities object. Bootstrap, carry, and dump branches receive only the
+facts source; dig and return receive facts source plus compatibility actions;
+the residual pre-dig adapter receives both for its already-applied
+compatibility path. `PrimitiveDecisionCapabilities` remains as a compatibility
+facade and construction helper over the separated objects.
 
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in
