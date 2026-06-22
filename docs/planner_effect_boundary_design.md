@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.23: the default 4P mainline branch chain no longer
+Current status after Phase 9.24: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -133,6 +133,15 @@ dig-depth-profile token assembly, rejected-exemplar filtering, and pure plan
 selection. The policy shell keeps compatibility facades for the old private
 methods and owns only runtime writeback from a selected plan into
 `CoverageRuntimeState` and the active corridor debug fields.
+`PrimitiveExecutionDriver` now owns the public primitive tick execution route
+in `testbed/planner/primitive_execution.py`: boundary-event preparation,
+switch-reason reset, dig-progress update when the tick starts in `dig`,
+decision backend invocation, requested-effect application before return-timeout
+accounting and action dispatch, previous-action recording,
+transition-completed check, and debug finalization. `PrimitivePlannerACTPolicy`
+builds typed `PrimitiveExecutionPorts` and delegates `predict()` to the driver;
+`run_primitive_tick()` and `PrimitiveTickCallbacks` remain compatibility
+facades over the same driver ordering.
 `CoverageEffectRuntimeCoordinator` now owns coverage requested-effect runtime
 sequencing for `CompleteCoverageDigEffect`, `CompleteCoverageDumpEffect`, and
 `RejectActiveCoverageCorridorEffect`: coverage-mode no-op gating, update service
@@ -418,8 +427,9 @@ legacy branch to emit `SwitchSkillEffect`.
 Introduce requested-effect result support without changing planner behavior:
 
 - `PrimitiveDecisionResult` can represent `side_effects_applied=False`;
-- `run_primitive_tick()` has a narrow apply-effects hook after decision and
-  before return timeout/action dispatch;
+- `PrimitiveExecutionDriver` has a narrow apply-effects hook after decision and
+  before return timeout/action dispatch, with `run_primitive_tick()` retained as
+  a compatibility facade;
 - fake backend tests prove ordered effect delivery;
 - validation tests reject forbidden shapes.
 
@@ -774,6 +784,19 @@ responsible for `update_state=True` writeback into `CoverageRuntimeState` and
 active `CoverageCorridorState` debug fields. Coverage candidate construction,
 selection scoring, effect runtime sequencing, token contracts, report payload
 schemas, branch order, and low-level action dispatch remain unchanged.
+
+Phase 9.24 extracts the primitive execution driver into
+`PrimitiveExecutionDriver` in `testbed/planner/primitive_execution.py`. The
+driver owns the public tick/predict route and the ordering previously held by
+the free `run_primitive_tick()` function: boundary update, switch-reason reset,
+dig-progress update for `dig`, decision, requested-effect application, return
+timeout accounting, action dispatch, previous-action recording,
+transition-completed check, and debug finalization. The policy shell now exposes
+typed `PrimitiveExecutionPorts` and delegates `predict()` to the driver. The old
+`run_primitive_tick()` function remains as a compatibility facade over the
+driver rather than the source of truth. Decision branches, requested-effect
+families, action dispatch semantics, token/report schemas, branch order, and
+low-level ACT output contracts remain unchanged.
 
 ### Stage 4: Expand Effect Families From Evidence
 

@@ -3572,3 +3572,74 @@ Each completed refactor round should append:
   `cell_entry` remains compatibility/report material, `pre_dig_align` remains
   residual parking/action material, `LegacyFSMBackendAdapter` remains
   historical/test scaffolding, and 5P remains its existing legacy override path.
+
+### 2026-06-22 Phase 9.24 Extract Primitive Execution Driver
+
+- Scope: extracted the public primitive tick execution route from the free
+  `run_primitive_tick()` function and policy-owned hook assembly into a focused
+  `PrimitiveExecutionDriver`. No tick ordering, requested-effect application
+  timing, decision branch, requested-effect family, branch order, reason string,
+  threshold, policy reset timing, token/debug/summary/trace schema, coverage
+  trace payload schema, public config behavior, pre-dig-align internals,
+  cell-entry compatibility, 5P transition semantics, return handoff internals,
+  or low-level ACT dispatch output contract was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `7490563ce08b2b8d138687497845658e9f09152a`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `PrimitiveExecutionPorts` and `PrimitiveExecutionDriver` to
+  `testbed/planner/primitive_execution.py`. The driver owns the tick/predict
+  route: boundary event update, switch-reason reset, dig-progress update for
+  ticks that start in `dig`, decision backend invocation, requested-effect
+  validation/application after decision and before return-timeout accounting,
+  action dispatch, previous-action recording, transition-completed check, and
+  debug finalization. This is the execution-kernel ordering boundary, not a
+  pass-through wrapper around policy private methods.
+- Reclassified `run_primitive_tick()` as a compatibility facade over
+  `PrimitiveExecutionDriver.from_hooks(...).run_tick(...)`, and kept
+  `PrimitiveTickCallbacks` as the compatibility callable bundle. Existing tests
+  and diagnostics can still use the function entry, but it is no longer the
+  source of truth for ordering.
+- Updated `PrimitivePlannerACTPolicy` so `_execution_driver_ports()` builds the
+  typed driver ports and `_execution_driver()` constructs the driver.
+  `_tick_execution_hooks()` remains a compatibility facade over the same port
+  wiring. Public `predict(obs)` now delegates directly to
+  `self._execution_driver().predict(obs)`.
+- Added `tests/test_primitive_execution_driver.py` with focused coverage for
+  full driver tick ordering, dig-progress gating, requested-effect application
+  timing, `predict()` action extraction, `run_primitive_tick()` compatibility
+  delegation, and policy `predict()` delegation.
+- TDD red result: the first focused run failed at collection because
+  `PrimitiveExecutionDriver` did not exist in
+  `testbed.planner.primitive_execution`. After adding the driver and policy
+  bridge, `python -m pytest -q tests/test_primitive_execution_driver.py`
+  returned `6 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `12 passed`;
+  `python -m pytest -q tests/test_primitive_action_dispatch.py tests/test_primitive_tick_finalization.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `93 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_exemplars.py tests/test_primitive_coverage_state.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_effect_runtime.py`
+  returned `29 passed`;
+  `python -m pytest -q tests/test_primitive_planner_trace.py tests/test_primitive_rollout_summary.py tests/test_primitive_debug_report.py tests/test_primitive_observation.py tests/test_primitive_token_status.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace"`
+  returned `19 passed, 101 deselected`;
+  compileall completed successfully with no output; both planner guard commands
+  and `git diff --check` completed successfully with no output.
+- Old code parked/reclassified: `run_primitive_tick()` remains a compatibility
+  facade, `PrimitiveTickCallbacks` remains compatibility hook material,
+  `_tick_execution_hooks()` remains a policy compatibility wrapper, decision
+  backends remain in `primitive_backend.py`, requested-effect dispatch remains
+  in `RequestedEffectApplier`, action dispatch remains in
+  `PrimitiveActionDispatchService`, tick finalization remains in
+  `PrimitiveTickFinalizationService`, public report builders remain unchanged,
+  `cell_entry` remains compatibility/report material, `pre_dig_align` remains
+  residual parking/action material, `LegacyFSMBackendAdapter` remains
+  historical/test scaffolding, and 5P remains its existing legacy override path.

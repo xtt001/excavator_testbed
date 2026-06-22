@@ -662,6 +662,20 @@ selection scoring, effect sequencing, token contracts, decision trace schema,
 report schemas, branch ordering, and low-level ACT dispatch are intentionally
 unchanged in this round.
 
+Current status note after Phase 9.24: public primitive tick execution ordering
+has moved into `PrimitiveExecutionDriver` in
+`testbed/planner/primitive_execution.py`. The driver owns boundary update,
+switch-reason reset, dig-progress update for `dig`, decision backend invocation,
+requested-effect application before return-timeout accounting and action
+dispatch, previous-action recording, transition-completed checks, debug
+finalization, and `predict()` action extraction. `PrimitivePlannerACTPolicy`
+now builds typed `PrimitiveExecutionPorts` and delegates public `predict()` to
+the driver; `run_primitive_tick()` and `PrimitiveTickCallbacks` remain
+compatibility facades over the same ordering. Decision branches,
+requested-effect families, action dispatch, finalization services, token/report
+schemas, branch ordering, and low-level ACT output semantics are intentionally
+unchanged in this round.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

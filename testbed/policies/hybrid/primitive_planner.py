@@ -118,9 +118,10 @@ from testbed.planner.primitive_action_dispatch import (
     PrimitiveActionDispatchService,
 )
 from testbed.planner.primitive_execution import (
+    PrimitiveExecutionDriver,
+    PrimitiveExecutionPorts,
     PrimitiveTickCallbacks,
     PrimitiveTickPreparation,
-    run_primitive_tick,
 )
 from testbed.planner.primitive_tick_finalization import (
     PrimitivePlannerDebugState,
@@ -1553,7 +1554,25 @@ class PrimitivePlannerACTPolicy(Policy):
         self._dig_bad_replan_count += 1
 
     def _tick_execution_hooks(self) -> PrimitiveTickCallbacks:
+        ports = self._execution_driver_ports()
         return PrimitiveTickCallbacks(
+            update_boundary_event=ports.update_boundary_event,
+            reset_switch_reason=ports.reset_switch_reason,
+            current_skill_name=ports.current_skill_name,
+            update_dig_progress=ports.update_dig_progress,
+            decide_tick=ports.decide_tick,
+            apply_requested_effects=ports.apply_requested_effects,
+            account_return_timeout=ports.account_return_timeout,
+            dispatch_action=ports.dispatch_action,
+            record_previous_action=ports.record_previous_action,
+            transition_completed_after_dispatch=(
+                ports.transition_completed_after_dispatch
+            ),
+            finalize_debug_state=ports.finalize_debug_state,
+        )
+
+    def _execution_driver_ports(self) -> PrimitiveExecutionPorts:
+        return PrimitiveExecutionPorts(
             update_boundary_event=self._tick_boundary_event,
             reset_switch_reason=self._reset_tick_switch_reason,
             current_skill_name=self._current_tick_skill_name,
@@ -1569,9 +1588,11 @@ class PrimitivePlannerACTPolicy(Policy):
             finalize_debug_state=self._finalize_tick_debug_state,
         )
 
+    def _execution_driver(self) -> PrimitiveExecutionDriver:
+        return PrimitiveExecutionDriver.from_ports(self._execution_driver_ports())
+
     def predict(self, obs: dict) -> np.ndarray:
-        result = run_primitive_tick(hooks=self._tick_execution_hooks(), obs=obs)
-        return result.action
+        return self._execution_driver().predict(obs)
 
     def debug_state(self) -> dict[str, Any]:
         return self._debug_report_builder().build(self._debug_report_inputs())

@@ -72,7 +72,9 @@ class PrimitiveTickResult:
 
 
 @dataclass(frozen=True)
-class PrimitiveTickCallbacks:
+class PrimitiveExecutionPorts:
+    """Typed shell ports used by the primitive execution driver."""
+
     update_boundary_event: Callable[[dict[str, Any]], Any | None]
     reset_switch_reason: Callable[[], None]
     current_skill_name: Callable[[], str]
@@ -89,49 +91,123 @@ class PrimitiveTickCallbacks:
     finalize_debug_state: Callable[..., None]
 
 
+@dataclass(frozen=True)
+class PrimitiveTickCallbacks(PrimitiveExecutionPorts):
+    """Compatibility callable bundle for older tick-template callers."""
+
+
+@dataclass(frozen=True)
+class PrimitiveExecutionDriver:
+    """Own the public primitive tick execution ordering."""
+
+    ports: PrimitiveExecutionPorts
+    dig_skill_name: str = "dig"
+
+    @classmethod
+    def from_ports(
+        cls,
+        ports: PrimitiveExecutionPorts,
+        *,
+        dig_skill_name: str = "dig",
+    ) -> "PrimitiveExecutionDriver":
+        return cls(ports=ports, dig_skill_name=dig_skill_name)
+
+    @classmethod
+    def from_hooks(
+        cls,
+        *,
+        hooks: PrimitiveTickHooks,
+        dig_skill_name: str = "dig",
+    ) -> "PrimitiveExecutionDriver":
+        return cls.from_ports(
+            PrimitiveExecutionPorts(
+                update_boundary_event=hooks.update_boundary_event,
+                reset_switch_reason=hooks.reset_switch_reason,
+                current_skill_name=hooks.current_skill_name,
+                update_dig_progress=hooks.update_dig_progress,
+                decide_tick=hooks.decide_tick,
+                apply_requested_effects=hooks.apply_requested_effects,
+                account_return_timeout=hooks.account_return_timeout,
+                dispatch_action=hooks.dispatch_action,
+                record_previous_action=hooks.record_previous_action,
+                transition_completed_after_dispatch=(
+                    hooks.transition_completed_after_dispatch
+                ),
+                finalize_debug_state=hooks.finalize_debug_state,
+            ),
+            dig_skill_name=dig_skill_name,
+        )
+
+    def predict(self, obs: dict[str, Any]) -> Any:
+        return self.run_tick(obs).action
+
+    def run_tick(self, obs: dict[str, Any]) -> PrimitiveTickResult:
+        ports = self.ports
+        boundary_event = ports.update_boundary_event(obs)
+        ports.reset_switch_reason()
+        skill_name_before_decision = ports.current_skill_name()
+        dig_progress_updated = skill_name_before_decision == self.dig_skill_name
+        if dig_progress_updated:
+            ports.update_dig_progress(obs)
+        preparation = PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision=skill_name_before_decision,
+            dig_progress_updated=dig_progress_updated,
+        )
+        decision = ports.decide_tick(
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=preparation,
+        )
+        self._apply_requested_effects_if_needed(obs=obs, decision=decision)
+
+        transition_timeout = ports.account_return_timeout()
+        action = ports.dispatch_action(obs)
+        ports.record_previous_action(action)
+
+        transition_completed = ports.transition_completed_after_dispatch()
+        ports.finalize_debug_state(
+            transition_timeout=transition_timeout,
+            transition_completed=transition_completed,
+        )
+        return PrimitiveTickResult(
+            action=action,
+            preparation=preparation,
+            decision=decision,
+            boundary_event=boundary_event,
+            transition_timeout=transition_timeout,
+            transition_completed=transition_completed,
+        )
+
+    def _apply_requested_effects_if_needed(
+        self,
+        *,
+        obs: dict[str, Any],
+        decision: PrimitiveDecisionResult,
+    ) -> None:
+        validate_decision_effect_contract(decision)
+        if decision.side_effects_applied:
+            return
+        requested_effects = tuple(
+            effect
+            for effect in decision.effects
+            if isinstance(effect, RequestedPlannerEffect)
+        )
+        self.ports.apply_requested_effects(obs, requested_effects)
+
+
 def run_primitive_tick(
     *,
     hooks: PrimitiveTickHooks,
     obs: dict[str, Any],
     dig_skill_name: str = "dig",
 ) -> PrimitiveTickResult:
-    """Run one planner tick while keeping behavior inside the supplied hooks."""
+    """Compatibility facade for the primitive execution driver."""
 
-    boundary_event = hooks.update_boundary_event(obs)
-    hooks.reset_switch_reason()
-    skill_name_before_decision = hooks.current_skill_name()
-    dig_progress_updated = skill_name_before_decision == dig_skill_name
-    if dig_progress_updated:
-        hooks.update_dig_progress(obs)
-    preparation = PrimitiveTickPreparation(
-        boundary_event=boundary_event,
-        skill_name_before_decision=skill_name_before_decision,
-        dig_progress_updated=dig_progress_updated,
-    )
-    decision = hooks.decide_tick(
-        obs=obs,
-        boundary_event=boundary_event,
-        preparation=preparation,
-    )
-    _apply_requested_effects_if_needed(hooks=hooks, obs=obs, decision=decision)
-
-    transition_timeout = hooks.account_return_timeout()
-    action = hooks.dispatch_action(obs)
-    hooks.record_previous_action(action)
-
-    transition_completed = hooks.transition_completed_after_dispatch()
-    hooks.finalize_debug_state(
-        transition_timeout=transition_timeout,
-        transition_completed=transition_completed,
-    )
-    return PrimitiveTickResult(
-        action=action,
-        preparation=preparation,
-        decision=decision,
-        boundary_event=boundary_event,
-        transition_timeout=transition_timeout,
-        transition_completed=transition_completed,
-    )
+    return PrimitiveExecutionDriver.from_hooks(
+        hooks=hooks,
+        dig_skill_name=dig_skill_name,
+    ).run_tick(obs)
 
 
 def _apply_requested_effects_if_needed(
@@ -140,6 +216,8 @@ def _apply_requested_effects_if_needed(
     obs: dict[str, Any],
     decision: PrimitiveDecisionResult,
 ) -> None:
+    """Compatibility helper retained for older direct tests/imports."""
+
     validate_decision_effect_contract(decision)
     if decision.side_effects_applied:
         return
