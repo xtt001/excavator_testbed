@@ -8,14 +8,9 @@ from typing import Any
 
 import numpy as np
 
-from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
-from testbed.data.operator_first_v2_2 import (
-    DIG_CUT_TOKEN_DIM,
-    RETURN_START_ENVELOPE_TOKEN_DIM,
-    RETURN_TARGET_TOKEN_DIM,
-)
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 from testbed.planner.primitive_coverage_state import CoverageRuntimeState
+from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 
 
 @dataclass(frozen=True)
@@ -78,6 +73,7 @@ class PrimitiveResetLifecycleState:
     cell_entry_audit: Any | None
     cell_entry_tokens: np.ndarray
     cell_entry_token_injected: bool
+    token_state: PrimitiveTokenRuntimeState
     dig_cut_tokens: np.ndarray
     dig_cut_token_injected: bool
     dig_depth_profile_tokens: np.ndarray
@@ -174,6 +170,7 @@ class PrimitiveResetLifecycleState:
             "_cell_entry_audit": self.cell_entry_audit,
             "_cell_entry_tokens": self.cell_entry_tokens,
             "_cell_entry_token_injected": self.cell_entry_token_injected,
+            "_token_state": self.token_state,
             "_dig_cut_tokens": self.dig_cut_tokens,
             "_dig_cut_token_injected": self.dig_cut_token_injected,
             "_dig_depth_profile_tokens": self.dig_depth_profile_tokens,
@@ -260,6 +257,7 @@ class PrimitiveResetLifecycleService:
         skill_name = self._initial_skill_name()
         ports.reset_cell_entry_planner()
         action_dim = int(ports.action_dim)
+        token_state = PrimitiveTokenRuntimeState.fresh()
         return PrimitiveResetLifecycleState(
             skill_name=skill_name,
             prev_action=None,
@@ -300,49 +298,60 @@ class PrimitiveResetLifecycleService:
             cell_entry_audit=None,
             cell_entry_tokens=np.zeros(CELL_ENTRY_TOKEN_DIM, dtype=np.float32),
             cell_entry_token_injected=False,
-            dig_cut_tokens=np.zeros(DIG_CUT_TOKEN_DIM, dtype=np.float32),
+            token_state=token_state,
+            dig_cut_tokens=token_state.dig_cut_tokens,
             dig_cut_token_injected=False,
-            dig_depth_profile_tokens=np.zeros(
-                DIG_DEPTH_PROFILE_TOKEN_DIM,
-                dtype=np.float32,
-            ),
+            dig_depth_profile_tokens=token_state.dig_depth_profile_tokens,
             dig_depth_profile_token_injected=False,
-            dig_depth_profile_token_source="none",
-            dig_depth_profile_fallback_reason="",
-            return_target_tokens=np.zeros(RETURN_TARGET_TOKEN_DIM, dtype=np.float32),
-            return_target_token_injected=False,
-            return_relocate_tokens=np.zeros(RETURN_TARGET_TOKEN_DIM, dtype=np.float32),
-            return_relocate_token_injected=False,
-            return_start_envelope_tokens=np.zeros(
-                RETURN_START_ENVELOPE_TOKEN_DIM,
-                dtype=np.float32,
+            dig_depth_profile_token_source=token_state.dig_depth_profile_token_source,
+            dig_depth_profile_fallback_reason=(
+                token_state.dig_depth_profile_fallback_reason
             ),
+            return_target_tokens=token_state.return_target_tokens,
+            return_target_token_injected=False,
+            return_relocate_tokens=token_state.return_relocate_tokens,
+            return_relocate_token_injected=False,
+            return_start_envelope_tokens=token_state.return_start_envelope_tokens,
             return_start_envelope_token_injected=False,
-            return_start_envelope_token_source="none",
-            return_start_envelope_use_prior_spatial_bounds=True,
-            return_start_envelope_use_prior_qpos_bounds=True,
-            return_target_planned_cycle_id=-1,
-            return_target_token_source="none",
-            return_target_fallback_reason="",
+            return_start_envelope_token_source=(
+                token_state.return_start_envelope_token_source
+            ),
+            return_start_envelope_use_prior_spatial_bounds=(
+                token_state.return_start_envelope_use_prior_spatial_bounds
+            ),
+            return_start_envelope_use_prior_qpos_bounds=(
+                token_state.return_start_envelope_use_prior_qpos_bounds
+            ),
+            return_target_planned_cycle_id=token_state.return_target_planned_cycle_id,
+            return_target_token_source=token_state.return_target_token_source,
+            return_target_fallback_reason=token_state.return_target_fallback_reason,
             return_to_dig_entry_error_m=float("nan"),
             return_to_dig_entry_close_state=True,
             return_next_dig_event_seen=False,
             return_to_dig_start_envelope_ready_state=True,
             return_to_dig_start_envelope_error=float("nan"),
             return_to_dig_start_envelope_checks={},
-            pending_dig_cut_cycle_id=-1,
-            pending_dig_cut_corridor_id=-1,
-            pending_dig_cut_raw_fields=None,
-            pending_dig_cut_tokens=None,
-            pending_dig_depth_profile_tokens=None,
-            pending_dig_state_exemplar_ids=[],
-            pending_dig_state_exemplar_distance=float("nan"),
+            pending_dig_cut_cycle_id=token_state.pending_dig_cut_cycle_id,
+            pending_dig_cut_corridor_id=token_state.pending_dig_cut_corridor_id,
+            pending_dig_cut_raw_fields=token_state.pending_dig_cut_raw_fields,
+            pending_dig_cut_tokens=token_state.pending_dig_cut_tokens,
+            pending_dig_depth_profile_tokens=(
+                token_state.pending_dig_depth_profile_tokens
+            ),
+            pending_dig_state_exemplar_ids=(
+                token_state.pending_dig_state_exemplar_ids
+            ),
+            pending_dig_state_exemplar_distance=(
+                token_state.pending_dig_state_exemplar_distance
+            ),
             cell_entry_seen_cell_id=-1,
             cell_entry_trace=[],
-            dig_cut_planned_cycle_id=-1,
-            dig_cut_token_source="none",
-            dig_cut_fallback_reason="",
-            dig_cut_token_in_prior_p10_p90=False,
+            dig_cut_planned_cycle_id=token_state.dig_cut_planned_cycle_id,
+            dig_cut_token_source=token_state.dig_cut_token_source,
+            dig_cut_fallback_reason=token_state.dig_cut_fallback_reason,
+            dig_cut_token_in_prior_p10_p90=(
+                token_state.dig_cut_token_in_prior_p10_p90
+            ),
             coverage_state=CoverageRuntimeState(),
             debug_transition_timeout=False,
             debug_transition_completed=False,

@@ -162,6 +162,7 @@ from testbed.planner.primitive_runtime_kernel import (
     PrimitivePlannerRuntimeKernel,
     PrimitivePlannerRuntimeKernelPorts,
 )
+from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 from testbed.planner import primitive_adapter_config as adapter_config
 from testbed.planner.primitive_adapter_config import (
     PrimitivePlannerAdapterConfigInputs,
@@ -465,6 +466,244 @@ class PrimitivePlannerACTPolicy(Policy):
     ) -> None:
         for field_name, value in reset_state.as_policy_field_updates().items():
             setattr(self, field_name, value)
+
+    def _primitive_token_runtime_state(self) -> PrimitiveTokenRuntimeState:
+        state = self.__dict__.get("_token_state")
+        if state is None:
+            state = PrimitiveTokenRuntimeState.fresh()
+            self.__dict__["_token_state"] = state
+        return state
+
+    @property
+    def _dig_cut_planned_cycle_id(self) -> int:
+        return int(self._primitive_token_runtime_state().dig_cut_planned_cycle_id)
+
+    @_dig_cut_planned_cycle_id.setter
+    def _dig_cut_planned_cycle_id(self, value: int) -> None:
+        self._primitive_token_runtime_state().dig_cut_planned_cycle_id = int(value)
+
+    @property
+    def _dig_cut_tokens(self) -> np.ndarray:
+        return self._primitive_token_runtime_state().dig_cut_tokens
+
+    @_dig_cut_tokens.setter
+    def _dig_cut_tokens(self, value: np.ndarray) -> None:
+        self._primitive_token_runtime_state().dig_cut_tokens = value
+
+    @property
+    def _dig_depth_profile_tokens(self) -> np.ndarray:
+        return self._primitive_token_runtime_state().dig_depth_profile_tokens
+
+    @_dig_depth_profile_tokens.setter
+    def _dig_depth_profile_tokens(self, value: np.ndarray) -> None:
+        self._primitive_token_runtime_state().dig_depth_profile_tokens = value
+
+    @property
+    def _dig_cut_token_source(self) -> str:
+        return str(self._primitive_token_runtime_state().dig_cut_token_source)
+
+    @_dig_cut_token_source.setter
+    def _dig_cut_token_source(self, value: str) -> None:
+        self._primitive_token_runtime_state().dig_cut_token_source = str(value)
+
+    @property
+    def _dig_cut_fallback_reason(self) -> str:
+        return str(self._primitive_token_runtime_state().dig_cut_fallback_reason)
+
+    @_dig_cut_fallback_reason.setter
+    def _dig_cut_fallback_reason(self, value: str) -> None:
+        self._primitive_token_runtime_state().dig_cut_fallback_reason = str(value)
+
+    @property
+    def _dig_cut_token_in_prior_p10_p90(self) -> bool:
+        return bool(
+            self._primitive_token_runtime_state().dig_cut_token_in_prior_p10_p90
+        )
+
+    @_dig_cut_token_in_prior_p10_p90.setter
+    def _dig_cut_token_in_prior_p10_p90(self, value: bool) -> None:
+        self._primitive_token_runtime_state().dig_cut_token_in_prior_p10_p90 = bool(
+            value
+        )
+
+    @property
+    def _dig_depth_profile_token_source(self) -> str:
+        return str(
+            self._primitive_token_runtime_state().dig_depth_profile_token_source
+        )
+
+    @_dig_depth_profile_token_source.setter
+    def _dig_depth_profile_token_source(self, value: str) -> None:
+        self._primitive_token_runtime_state().dig_depth_profile_token_source = str(
+            value
+        )
+
+    @property
+    def _dig_depth_profile_fallback_reason(self) -> str:
+        return str(
+            self._primitive_token_runtime_state().dig_depth_profile_fallback_reason
+        )
+
+    @_dig_depth_profile_fallback_reason.setter
+    def _dig_depth_profile_fallback_reason(self, value: str) -> None:
+        self._primitive_token_runtime_state().dig_depth_profile_fallback_reason = str(
+            value
+        )
+
+    @property
+    def _return_target_planned_cycle_id(self) -> int:
+        return int(
+            self._primitive_token_runtime_state().return_target_planned_cycle_id
+        )
+
+    @_return_target_planned_cycle_id.setter
+    def _return_target_planned_cycle_id(self, value: int) -> None:
+        self._primitive_token_runtime_state().return_target_planned_cycle_id = int(
+            value
+        )
+
+    @property
+    def _return_target_tokens(self) -> np.ndarray:
+        return self._primitive_token_runtime_state().return_target_tokens
+
+    @_return_target_tokens.setter
+    def _return_target_tokens(self, value: np.ndarray) -> None:
+        self._primitive_token_runtime_state().return_target_tokens = value
+
+    @property
+    def _return_relocate_tokens(self) -> np.ndarray:
+        return self._primitive_token_runtime_state().return_relocate_tokens
+
+    @_return_relocate_tokens.setter
+    def _return_relocate_tokens(self, value: np.ndarray) -> None:
+        self._primitive_token_runtime_state().return_relocate_tokens = value
+
+    @property
+    def _return_start_envelope_tokens(self) -> np.ndarray:
+        return self._primitive_token_runtime_state().return_start_envelope_tokens
+
+    @_return_start_envelope_tokens.setter
+    def _return_start_envelope_tokens(self, value: np.ndarray) -> None:
+        self._primitive_token_runtime_state().return_start_envelope_tokens = value
+
+    @property
+    def _return_target_token_source(self) -> str:
+        return str(self._primitive_token_runtime_state().return_target_token_source)
+
+    @_return_target_token_source.setter
+    def _return_target_token_source(self, value: str) -> None:
+        self._primitive_token_runtime_state().return_target_token_source = str(value)
+
+    @property
+    def _return_target_fallback_reason(self) -> str:
+        return str(self._primitive_token_runtime_state().return_target_fallback_reason)
+
+    @_return_target_fallback_reason.setter
+    def _return_target_fallback_reason(self, value: str) -> None:
+        self._primitive_token_runtime_state().return_target_fallback_reason = str(
+            value
+        )
+
+    @property
+    def _return_start_envelope_token_source(self) -> str:
+        return str(
+            self._primitive_token_runtime_state().return_start_envelope_token_source
+        )
+
+    @_return_start_envelope_token_source.setter
+    def _return_start_envelope_token_source(self, value: str) -> None:
+        self._primitive_token_runtime_state().return_start_envelope_token_source = str(
+            value
+        )
+
+    @property
+    def _return_start_envelope_use_prior_spatial_bounds(self) -> bool:
+        return bool(
+            self._primitive_token_runtime_state()
+            .return_start_envelope_use_prior_spatial_bounds
+        )
+
+    @_return_start_envelope_use_prior_spatial_bounds.setter
+    def _return_start_envelope_use_prior_spatial_bounds(self, value: bool) -> None:
+        state = self._primitive_token_runtime_state()
+        state.return_start_envelope_use_prior_spatial_bounds = bool(value)
+
+    @property
+    def _return_start_envelope_use_prior_qpos_bounds(self) -> bool:
+        return bool(
+            self._primitive_token_runtime_state()
+            .return_start_envelope_use_prior_qpos_bounds
+        )
+
+    @_return_start_envelope_use_prior_qpos_bounds.setter
+    def _return_start_envelope_use_prior_qpos_bounds(self, value: bool) -> None:
+        state = self._primitive_token_runtime_state()
+        state.return_start_envelope_use_prior_qpos_bounds = bool(value)
+
+    @property
+    def _pending_dig_cut_cycle_id(self) -> int:
+        return int(self._primitive_token_runtime_state().pending_dig_cut_cycle_id)
+
+    @_pending_dig_cut_cycle_id.setter
+    def _pending_dig_cut_cycle_id(self, value: int) -> None:
+        self._primitive_token_runtime_state().pending_dig_cut_cycle_id = int(value)
+
+    @property
+    def _pending_dig_cut_corridor_id(self) -> int:
+        return int(self._primitive_token_runtime_state().pending_dig_cut_corridor_id)
+
+    @_pending_dig_cut_corridor_id.setter
+    def _pending_dig_cut_corridor_id(self, value: int) -> None:
+        self._primitive_token_runtime_state().pending_dig_cut_corridor_id = int(value)
+
+    @property
+    def _pending_dig_cut_raw_fields(self) -> dict[str, float | int] | None:
+        return self._primitive_token_runtime_state().pending_dig_cut_raw_fields
+
+    @_pending_dig_cut_raw_fields.setter
+    def _pending_dig_cut_raw_fields(
+        self,
+        value: dict[str, float | int] | None,
+    ) -> None:
+        self._primitive_token_runtime_state().pending_dig_cut_raw_fields = value
+
+    @property
+    def _pending_dig_cut_tokens(self) -> np.ndarray | None:
+        return self._primitive_token_runtime_state().pending_dig_cut_tokens
+
+    @_pending_dig_cut_tokens.setter
+    def _pending_dig_cut_tokens(self, value: np.ndarray | None) -> None:
+        self._primitive_token_runtime_state().pending_dig_cut_tokens = value
+
+    @property
+    def _pending_dig_depth_profile_tokens(self) -> np.ndarray | None:
+        return self._primitive_token_runtime_state().pending_dig_depth_profile_tokens
+
+    @_pending_dig_depth_profile_tokens.setter
+    def _pending_dig_depth_profile_tokens(self, value: np.ndarray | None) -> None:
+        state = self._primitive_token_runtime_state()
+        state.pending_dig_depth_profile_tokens = value
+
+    @property
+    def _pending_dig_state_exemplar_ids(self) -> list[str]:
+        return self._primitive_token_runtime_state().pending_dig_state_exemplar_ids
+
+    @_pending_dig_state_exemplar_ids.setter
+    def _pending_dig_state_exemplar_ids(self, value: list[str]) -> None:
+        self._primitive_token_runtime_state().pending_dig_state_exemplar_ids = list(
+            value
+        )
+
+    @property
+    def _pending_dig_state_exemplar_distance(self) -> float:
+        return float(
+            self._primitive_token_runtime_state().pending_dig_state_exemplar_distance
+        )
+
+    @_pending_dig_state_exemplar_distance.setter
+    def _pending_dig_state_exemplar_distance(self, value: float) -> None:
+        state = self._primitive_token_runtime_state()
+        state.pending_dig_state_exemplar_distance = float(value)
 
     def _coverage_runtime_state(self) -> CoverageRuntimeState:
         state = self.__dict__.get("_coverage_state")
