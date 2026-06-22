@@ -3228,3 +3228,65 @@ Each completed refactor round should append:
   `pre_dig_align` remains residual parking/action material,
   `LegacyFSMBackendAdapter` remains historical/test scaffolding, and 5P remains
   its existing legacy override path.
+
+### 2026-06-22 Phase 9.19 Extract Primitive Tick Finalization Service
+
+- Scope: extracted primitive tick finalization from the large policy shell into
+  a focused service. No `run_primitive_tick()` ordering, reset lifecycle,
+  `_set_skill(...)` mutation/reset timing, decision branches, requested
+  effects, policy observation/token planning, scripted bootstrap/pre-dig action
+  algorithms, coverage runtime/scoring updates, return handoff internals,
+  branch order, reason string, threshold, token/debug/summary/trace schema,
+  public config behavior, 5P transition semantics, or low-level ACT dispatch
+  output contract was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `b14600a173c340bf2c4564cdf19e5f85efb28836`, no fetch, pull, push, reset,
+  checkout, or rebase.
+- Added `testbed/planner/primitive_tick_finalization.py` with
+  `PrimitivePlannerDebugState`, `PrimitiveTickFinalizationInputs`, and
+  `PrimitiveTickFinalizationService`. The service owns previous-action copy
+  semantics, dispatch-after transition-completed reason-prefix detection, and
+  compact per-tick debug-state assembly.
+- Moved `PrimitivePlannerDebugState` into the focused module and re-imported it
+  from `testbed.policies.hybrid.primitive_planner` for compatibility with
+  existing private/reporting consumers.
+- Updated `PrimitivePlannerACTPolicy._record_tick_previous_action()`,
+  `_transition_completed_after_tick_dispatch()`, `_make_debug_state()`, and
+  `_finalize_tick_debug_state()` into service-backed wrappers. The policy shell
+  now prepares typed finalization inputs and writes `_prev_action` /
+  `_debug_state`.
+- Replaced the 5P compatibility `_make_debug_state()` assembly body with a
+  5P-specific `_tick_finalization_inputs(...)` mapping. The shared service now
+  owns compact debug-state assembly for both 4P and the parked 5P compatibility
+  planner, while 5P transition branches and active-policy overrides remain
+  unchanged.
+- TDD red result: the first focused run failed at collection because
+  `testbed.planner.primitive_tick_finalization` did not exist. After adding the
+  service module and policy bridge, `python -m pytest -q
+  tests/test_primitive_tick_finalization.py` returned `10 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_tick_finalization.py` returned
+  `10 passed`;
+  `python -m pytest -q tests/test_primitive_execution_template.py tests/test_primitive_action_dispatch.py`
+  returned `16 passed`;
+  `python -m pytest -q tests/test_primitive_planner_trace.py tests/test_primitive_rollout_summary.py tests/test_primitive_debug_report.py tests/test_primitive_token_status.py`
+  returned `12 passed`;
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `108 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "first_dig_policy_for_cycle_zero or semantic_boundary_events_drive_skill_sequence or pre_dig_align or scripted_bootstrap or return_to_dig"`
+  returned `18 passed, 102 deselected`;
+  compileall, both planner guard commands, and `git diff --check` completed
+  successfully with no output.
+- Old code parked/reclassified: reset lifecycle and `_set_skill(...)` remain in
+  the policy shell, public report builders remain unchanged, action dispatch
+  remains in `PrimitiveActionDispatchService`, policy observation/token
+  assembly remains in `PrimitivePolicyObservationAssembler`, scripted-bootstrap
+  and pre-dig-align action algorithms remain in their existing owners,
+  `cell_entry` remains compatibility/report material, `pre_dig_align` remains
+  residual parking/action material, `LegacyFSMBackendAdapter` remains
+  historical/test scaffolding, and 5P remains its existing legacy override path.

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +112,11 @@ from testbed.planner.primitive_execution import (
     PrimitiveTickPreparation,
     run_primitive_tick,
 )
+from testbed.planner.primitive_tick_finalization import (
+    PrimitivePlannerDebugState,
+    PrimitiveTickFinalizationInputs,
+    PrimitiveTickFinalizationService,
+)
 from testbed.planner.primitive_decision import (
     PrimitiveDecisionResult,
     RequestedPlannerEffect,
@@ -171,24 +175,6 @@ TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY = "v2_2_primitive_return_policy"
 TRANSITION_POLICY_MODE_PRIMITIVE = "primitive_return_policy"
 BOOTSTRAP_SKILL_NAME = "bootstrap"
 PRE_DIG_ALIGN_SKILL_NAME = "pre_dig_align"
-
-
-@dataclass(frozen=True)
-class PrimitivePlannerDebugState:
-    skill_name: str
-    skill_id: int
-    skill_switch_reason: str
-    primitive_checkpoint_path: str
-    hybrid_mode: str
-    transition_timeout: bool
-    transition_completed: bool
-    completed_transition_count: int
-    transition_timeout_count: int
-    dump_ready_hold_count: int
-    dump_done_hold_count: int
-    primitive_cycle_index: int
-    approach_ready_hold_count: int = 0
-    dump_release_ready_hold_count: int = 0
 
 
 @register_policy("primitive_planner_act")
@@ -1072,11 +1058,13 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _record_tick_previous_action(self, action: np.ndarray) -> None:
-        self._prev_action = action.copy()
+        self._prev_action = self._tick_finalization_service().copy_previous_action(
+            action
+        )
 
     def _transition_completed_after_tick_dispatch(self) -> bool:
-        return self._switch_reason.startswith(
-            ("return_to_dig_", "return_to_pre_dig_align_")
+        return self._tick_finalization_service().transition_completed_after_dispatch(
+            self._switch_reason
         )
 
     def _finalize_tick_debug_state(
@@ -1089,6 +1077,10 @@ class PrimitivePlannerACTPolicy(Policy):
             transition_timeout=transition_timeout,
             transition_completed=transition_completed,
         )
+
+    @staticmethod
+    def _tick_finalization_service() -> PrimitiveTickFinalizationService:
+        return PrimitiveTickFinalizationService()
 
     def _decide_tick_with_legacy_fsm(
         self,
@@ -5403,24 +5395,26 @@ class PrimitivePlannerACTPolicy(Policy):
         transition_timeout: bool,
         transition_completed: bool,
     ) -> PrimitivePlannerDebugState:
-        skill_name = str(self._skill_name)
-        skill_id = PRIMITIVE_SKILL_IDS.get(skill_name, -1)
-        hybrid_mode = (
-            HYBRID_MODE_TRANSITION
-            if skill_name in {"return", PRE_DIG_ALIGN_SKILL_NAME}
-            else HYBRID_MODE_WORK
+        return self._tick_finalization_service().make_debug_state(
+            self._tick_finalization_inputs(
+                transition_timeout=transition_timeout,
+                transition_completed=transition_completed,
+            )
         )
-        return PrimitivePlannerDebugState(
-            skill_name=skill_name,
-            skill_id=int(skill_id),
+
+    def _tick_finalization_inputs(
+        self,
+        *,
+        transition_timeout: bool,
+        transition_completed: bool,
+    ) -> PrimitiveTickFinalizationInputs:
+        return PrimitiveTickFinalizationInputs(
+            skill_name=str(self._skill_name),
+            skill_ids=PRIMITIVE_SKILL_IDS,
             skill_switch_reason=str(self._switch_reason),
-            primitive_checkpoint_path=str(
-                self.primitive_checkpoint_paths.get(
-                    "first_dig" if self._first_dig_policy_active() else skill_name,
-                    "",
-                )
-            ),
-            hybrid_mode=hybrid_mode,
+            primitive_checkpoint_paths=self.primitive_checkpoint_paths,
+            first_dig_policy_active=bool(self._first_dig_policy_active()),
+            transition_skill_names=("return", PRE_DIG_ALIGN_SKILL_NAME),
             transition_timeout=bool(transition_timeout),
             transition_completed=bool(transition_completed),
             completed_transition_count=int(self._completed_transition_count),
@@ -5428,6 +5422,8 @@ class PrimitivePlannerACTPolicy(Policy):
             dump_ready_hold_count=int(self._dump_ready_hold_count),
             dump_done_hold_count=int(self._dump_done_hold_count),
             primitive_cycle_index=int(self._cycle_index),
+            work_hybrid_mode=HYBRID_MODE_WORK,
+            transition_hybrid_mode=HYBRID_MODE_TRANSITION,
         )
 
 
@@ -5889,26 +5885,19 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             policies.append(self.first_dig_policy)
         return policies
 
-    def _make_debug_state(
+    def _tick_finalization_inputs(
         self,
         *,
         transition_timeout: bool,
         transition_completed: bool,
-    ) -> PrimitivePlannerDebugState:
-        skill_name = str(self._skill_name)
-        skill_id = PRIMITIVE_SKILL_IDS_5P.get(skill_name, -1)
-        hybrid_mode = HYBRID_MODE_TRANSITION if skill_name == "return" else HYBRID_MODE_WORK
-        return PrimitivePlannerDebugState(
-            skill_name=skill_name,
-            skill_id=int(skill_id),
+    ) -> PrimitiveTickFinalizationInputs:
+        return PrimitiveTickFinalizationInputs(
+            skill_name=str(self._skill_name),
+            skill_ids=PRIMITIVE_SKILL_IDS_5P,
             skill_switch_reason=str(self._switch_reason),
-            primitive_checkpoint_path=str(
-                self.primitive_checkpoint_paths.get(
-                    "first_dig" if self._first_dig_policy_active() else skill_name,
-                    "",
-                )
-            ),
-            hybrid_mode=hybrid_mode,
+            primitive_checkpoint_paths=self.primitive_checkpoint_paths,
+            first_dig_policy_active=bool(self._first_dig_policy_active()),
+            transition_skill_names=("return",),
             transition_timeout=bool(transition_timeout),
             transition_completed=bool(transition_completed),
             completed_transition_count=int(self._completed_transition_count),
@@ -5916,6 +5905,8 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             dump_ready_hold_count=int(self._dump_release_ready_hold_count),
             dump_done_hold_count=int(self._dump_done_hold_count),
             primitive_cycle_index=int(self._cycle_index),
+            work_hybrid_mode=HYBRID_MODE_WORK,
+            transition_hybrid_mode=HYBRID_MODE_TRANSITION,
             approach_ready_hold_count=int(self._approach_ready_hold_count),
             dump_release_ready_hold_count=int(self._dump_release_ready_hold_count),
         )

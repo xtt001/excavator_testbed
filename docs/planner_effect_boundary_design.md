@@ -108,6 +108,12 @@ selection, active-policy lookup, all-policy ordering, and low-level policy
 `predict(policy_obs)` action shaping. The policy shell builds typed dispatch
 ports and retains thin compatibility wrappers for `_dispatch_tick_action()`,
 `_active_policy()`, `_all_policies()`, and `_first_dig_policy_active()`.
+`PrimitiveTickFinalizationService` now owns primitive tick finalization rules:
+previous-action copy semantics, dispatch-after transition-completed reason
+prefix detection, and compact `PrimitivePlannerDebugState` assembly for both
+the default 4P planner and the parked 5P compatibility planner. The policy shell
+prepares typed finalization inputs, writes `_prev_action` / `_debug_state`, and
+retains thin compatibility wrappers for the execution hooks.
 
 ## Design Intent
 
@@ -640,6 +646,28 @@ not reinterpret 5P skill names as 4P skills. Reset lifecycle, `_set_skill()`
 mutation timing, policy observation/token planning, scripted bootstrap action
 algorithm, pre-dig-align action algorithm, branch ordering, reporting schemas,
 and low-level ACT outputs remain unchanged.
+
+Phase 9.19 extracts primitive tick finalization into
+`PrimitiveTickFinalizationService` in
+`testbed/planner/primitive_tick_finalization.py`.
+`PrimitiveTickFinalizationInputs` carries the explicit compact debug-state
+snapshot: active skill, skill-id map, switch reason, checkpoint paths,
+first-dig policy activity, transition-mode skill names, timeout/completion
+flags, transition counters, dump hold counters, cycle index, and 5P
+compatibility hold counters when present. The service owns previous-action copy
+semantics, the `return_to_dig_` / `return_to_pre_dig_align_`
+transition-completed prefix rule, checkpoint-key selection including
+`first_dig`, hybrid-mode selection, and construction of
+`PrimitivePlannerDebugState`. The 4P policy methods
+`_record_tick_previous_action()`, `_transition_completed_after_tick_dispatch()`,
+`_make_debug_state()`, and `_finalize_tick_debug_state()` are now thin
+service-backed wrappers. The 5P compatibility subclass no longer duplicates
+compact debug-state assembly; it only supplies 5P-specific finalization inputs
+such as skill ids, return-only transition mode, approach/dump-release hold
+counters, and the 5P checkpoint mapping. Public debug-state report assembly,
+rollout summary assembly, planner trace assembly, reset lifecycle,
+`_set_skill()` mutation timing, branch ordering, token planning, coverage
+runtime updates, and low-level ACT dispatch remain unchanged.
 
 ### Stage 4: Expand Effect Families From Evidence
 

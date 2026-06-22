@@ -586,6 +586,20 @@ reshape. Reset lifecycle, `_set_skill()` mutation timing, policy observation
 assembly, scripted/pre-dig action algorithms, 5P transition semantics, and
 public reporting builders are intentionally unchanged in this round.
 
+Current status note after Phase 9.19: primitive tick finalization has moved
+into `PrimitiveTickFinalizationService` in
+`testbed/planner/primitive_tick_finalization.py`. The service owns
+previous-action copy semantics, dispatch-after transition-completed reason
+prefix detection, and compact `PrimitivePlannerDebugState` assembly. The 4P
+policy shell now keeps thin wrappers for `_record_tick_previous_action()`,
+`_transition_completed_after_tick_dispatch()`, `_make_debug_state()`, and
+`_finalize_tick_debug_state()`, while 5P supplies only a compatibility
+finalization input mapping for its skill ids and approach/dump-release hold
+counters. Public `debug_state()`, `rollout_summary()`, `planner_trace()`,
+reset lifecycle, `_set_skill()` mutation timing, action dispatch, branch
+ordering, and token/coverage/runtime semantics are intentionally unchanged in
+this round.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut
