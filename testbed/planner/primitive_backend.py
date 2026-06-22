@@ -572,8 +572,11 @@ class LegacyFSMReturnBranch:
         if not facts.is_current_skill(self.config.return_skill_name):
             return None
         self.capabilities.refresh_return_transition_state(context)
-        status = self.capabilities.return_transition_status(context)
-        effects = self._effects_for_status(status)
+        return_facts = self.capabilities.return_transition_facts(
+            context,
+            facts=facts,
+        )
+        effects = self._effects_for_status(return_facts.status)
         decision_status = (
             "skill_switch" if _has_return_switch_effect(effects) else "no_change"
         )

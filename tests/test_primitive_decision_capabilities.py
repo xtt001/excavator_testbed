@@ -8,7 +8,10 @@ from testbed.planner.primitive_decision_capabilities import (
     PrimitiveDecisionCapabilitiesPorts,
 )
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
-from testbed.planner.primitive_decision_facts import PrimitiveDecisionFacts
+from testbed.planner.primitive_decision_facts import (
+    PrimitiveDecisionFacts,
+    PrimitiveReturnTransitionFacts,
+)
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
 
@@ -150,6 +153,56 @@ def test_decision_capabilities_return_status_read_does_not_refresh() -> None:
 
     assert capabilities.return_transition_status(context) is provider.return_status
 
+    assert provider.calls == [("return", obs, boundary_event)]
+
+
+def test_decision_capabilities_return_transition_facts_reuses_existing_common_facts() -> None:
+    obs = {"qpos": [1.0]}
+    boundary_event = object()
+    context = _context(obs=obs, boundary_event=boundary_event, skill="return")
+    provider = _RecordingTransitionStatusProvider()
+    port_calls: list[str] = []
+
+    capabilities = PrimitiveDecisionCapabilities.from_ports(
+        PrimitiveDecisionCapabilitiesPorts(
+            current_skill_name=lambda: port_calls.append("current_skill") or "return",
+            current_switch_reason=lambda: port_calls.append("current_reason") or "",
+            should_end_bootstrap=lambda *, obs, boundary_event: False,
+            bootstrap_end_mode=lambda: "first_qualified_dig_start",
+            should_pre_dig_align_before_dig=lambda: False,
+            transition_status_provider=provider,
+            maybe_handle_residual_pre_dig_align=(
+                lambda obs: port_calls.append("residual") or False
+            ),
+        )
+    )
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="return",
+        current_switch_reason="dump_to_return_mass_low",
+    )
+
+    return_facts = capabilities.return_transition_facts(context, facts=common)
+
+    assert isinstance(return_facts, PrimitiveReturnTransitionFacts)
+    assert return_facts.common is common
+    assert return_facts.status is provider.return_status
+    assert return_facts.obs is obs
+    assert return_facts.boundary_event is boundary_event
+    assert provider.calls == [("return", obs, boundary_event)]
+    assert port_calls == []
+
+
+def test_decision_capabilities_return_transition_facts_are_read_only() -> None:
+    obs = {"qpos": [1.0]}
+    boundary_event = object()
+    context = _context(obs=obs, boundary_event=boundary_event, skill="return")
+    capabilities, provider = _capabilities(current_skill_name="return")
+
+    return_facts = capabilities.return_transition_facts(context)
+
+    assert isinstance(return_facts, PrimitiveReturnTransitionFacts)
+    assert return_facts.status is provider.return_status
     assert provider.calls == [("return", obs, boundary_event)]
 
 

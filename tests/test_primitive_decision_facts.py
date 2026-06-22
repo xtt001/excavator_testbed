@@ -3,7 +3,11 @@ from __future__ import annotations
 from dataclasses import fields
 
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
-from testbed.planner.primitive_decision_facts import PrimitiveDecisionFacts
+from testbed.planner.primitive_capabilities import ReturnTransitionStatus
+from testbed.planner.primitive_decision_facts import (
+    PrimitiveDecisionFacts,
+    PrimitiveReturnTransitionFacts,
+)
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
 
@@ -25,6 +29,28 @@ def _context() -> tuple[PrimitiveDecisionContext, dict[str, object], object, Pri
         boundary_event,
         preparation,
     )
+
+
+def _return_status(**overrides: object) -> ReturnTransitionStatus:
+    values = {
+        "mass_in_bucket_kg": 0.0,
+        "min_distance_to_dig_area_m": 0.0,
+        "bucket_depth_below_dig_area_plane_m": 0.0,
+        "semantic_boundary_profile_active": False,
+        "next_dig_event": False,
+        "next_or_seen_dig_event": False,
+        "entry_close": False,
+        "start_envelope_ready": False,
+        "handoff_ready": False,
+        "direct_handoff_ready": False,
+        "shallow_guard_ready": False,
+        "shallow_guard_allowed": False,
+        "completed_transition": False,
+        "next_skill": "",
+        "switch_reason": "",
+    }
+    values.update(overrides)
+    return ReturnTransitionStatus(**values)
 
 
 def test_decision_facts_preserve_context_identity_and_mirror_context_accessors() -> None:
@@ -86,4 +112,46 @@ def test_decision_facts_do_not_expose_mutation_or_status_provider_fields() -> No
         "return_transition_status",
         "effect_applier",
         "set_skill",
+    }.isdisjoint(field_names)
+
+
+def test_return_transition_facts_preserve_common_and_status_identity() -> None:
+    context, obs, boundary_event, preparation = _context()
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="return",
+        current_switch_reason="dump_to_return_mass_low",
+    )
+    status = _return_status(
+        completed_transition=True,
+        switch_reason="return_to_dig_next_dig_entry_ready",
+    )
+
+    return_facts = PrimitiveReturnTransitionFacts(common=common, status=status)
+
+    assert return_facts.common is common
+    assert return_facts.status is status
+    assert return_facts.context is context
+    assert return_facts.obs is obs
+    assert return_facts.boundary_event is boundary_event
+    assert return_facts.preparation is preparation
+    assert return_facts.current_skill_name == "return"
+    assert return_facts.skill_name_before_decision == "dig"
+    assert return_facts.completed_transition is True
+    assert return_facts.switch_reason == "return_to_dig_next_dig_entry_ready"
+
+
+def test_return_transition_facts_are_frozen_and_backend_facing_only() -> None:
+    field_names = {field.name for field in fields(PrimitiveReturnTransitionFacts)}
+
+    assert field_names == {"common", "status"}
+    assert {
+        "self",
+        "planner",
+        "policy",
+        "callback",
+        "provider",
+        "applier",
+        "effect",
+        "refresh_return_transition_state",
     }.isdisjoint(field_names)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from testbed.planner.primitive_capabilities import ReturnTransitionStatus
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
@@ -63,4 +64,44 @@ class PrimitiveDecisionFacts:
         return self.current_skill_name == str(skill_name)
 
 
-__all__ = ["PrimitiveDecisionFacts"]
+@dataclass(frozen=True)
+class PrimitiveReturnTransitionFacts:
+    """Read-only return transition view assembled after explicit refresh."""
+
+    common: PrimitiveDecisionFacts
+    status: ReturnTransitionStatus
+
+    @property
+    def context(self) -> PrimitiveDecisionContext:
+        return self.common.context
+
+    @property
+    def obs(self) -> dict[str, Any]:
+        return self.common.obs
+
+    @property
+    def boundary_event(self) -> Any | None:
+        return self.common.boundary_event
+
+    @property
+    def preparation(self) -> PrimitiveTickPreparation:
+        return self.common.preparation
+
+    @property
+    def current_skill_name(self) -> str:
+        return self.common.current_skill_name
+
+    @property
+    def skill_name_before_decision(self) -> str:
+        return self.common.skill_name_before_decision
+
+    @property
+    def completed_transition(self) -> bool:
+        return bool(self.status.completed_transition)
+
+    @property
+    def switch_reason(self) -> str:
+        return str(self.status.switch_reason)
+
+
+__all__ = ["PrimitiveDecisionFacts", "PrimitiveReturnTransitionFacts"]

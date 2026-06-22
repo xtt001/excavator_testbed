@@ -55,6 +55,10 @@ from testbed.planner.primitive_decision_capabilities import (
     PrimitiveDecisionCapabilitiesPorts,
 )
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
+from testbed.planner.primitive_decision_facts import (
+    PrimitiveDecisionFacts,
+    PrimitiveReturnTransitionFacts,
+)
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
 
@@ -1856,6 +1860,88 @@ def test_legacy_fsm_return_branch_refreshes_before_reading_return_status() -> No
             refresh_return_transition_state=refresh,
             return_transition_status=return_status,
         ),
+    )
+
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision="return",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert calls == [
+        "current_skill",
+        "current_reason",
+        "refresh_return",
+        "return_status",
+    ]
+    assert result is not None
+    assert result.effects == (
+        MarkReturnNextDigEventSeenEffect(),
+        CompleteReturnTransitionEffect(),
+        SwitchToNextSkillAfterReturnEffect(reason_suffix="next_dig_entry_ready"),
+    )
+
+
+def test_legacy_fsm_return_branch_consumes_return_transition_facts_view() -> None:
+    calls: list[str] = []
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    boundary_event = object()
+    common_facts: PrimitiveDecisionFacts | None = None
+    status = _return_status(
+        next_dig_event=True,
+        next_or_seen_dig_event=True,
+        entry_close=True,
+        start_envelope_ready=True,
+        handoff_ready=True,
+        completed_transition=True,
+    )
+
+    class _ReturnFactsCapabilities:
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            nonlocal common_facts
+            calls.append("current_skill")
+            calls.append("current_reason")
+            common_facts = PrimitiveDecisionFacts.from_context(
+                context,
+                current_skill_name="return",
+                current_switch_reason="",
+            )
+            return common_facts
+
+        def refresh_return_transition_state(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> None:
+            assert context.obs is obs
+            calls.append("refresh_return")
+
+        def return_transition_facts(
+            self,
+            context: PrimitiveDecisionContext,
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> PrimitiveReturnTransitionFacts:
+            assert context.obs is obs
+            assert facts is common_facts
+            calls.append("return_status")
+            return PrimitiveReturnTransitionFacts(common=facts, status=status)
+
+        def return_transition_status(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> ReturnTransitionStatus:
+            raise AssertionError("return branch must consume return facts view")
+
+    branch = LegacyFSMReturnBranch(
+        config=LegacyFSMReturnConfig(return_skill_name="return"),
+        capabilities=_ReturnFactsCapabilities(),
     )
 
     result = branch.decide_tick(

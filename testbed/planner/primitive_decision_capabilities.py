@@ -13,7 +13,10 @@ from testbed.planner.primitive_capabilities import (
     ReturnTransitionStatus,
 )
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
-from testbed.planner.primitive_decision_facts import PrimitiveDecisionFacts
+from testbed.planner.primitive_decision_facts import (
+    PrimitiveDecisionFacts,
+    PrimitiveReturnTransitionFacts,
+)
 
 
 class PrimitiveTransitionStatusProvider(Protocol):
@@ -167,6 +170,18 @@ class PrimitiveDecisionCapabilities:
             context.boundary_event,
         )
 
+    def return_transition_facts(
+        self,
+        context: PrimitiveDecisionContext,
+        *,
+        facts: PrimitiveDecisionFacts | None = None,
+    ) -> PrimitiveReturnTransitionFacts:
+        common = facts or self.decision_facts(context)
+        return PrimitiveReturnTransitionFacts(
+            common=common,
+            status=self.return_transition_status(context),
+        )
+
     def refresh_return_transition_state(
         self,
         context: PrimitiveDecisionContext,
@@ -203,5 +218,6 @@ __all__ = [
     "PrimitiveDecisionCapabilities",
     "PrimitiveDecisionCapabilitiesPorts",
     "PrimitiveDecisionFacts",
+    "PrimitiveReturnTransitionFacts",
     "PrimitiveTransitionStatusProvider",
 ]
