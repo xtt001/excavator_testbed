@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.34: the default 4P mainline branch chain no longer
+Current status after Phase 9.35: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy now exposes backend-facing common decision facts through
@@ -65,8 +65,15 @@ orders, while `LegacyFSMBootstrapBranch`, `LegacyFSMDigBranch`,
 `LegacyFSMCarryBranch`, `LegacyFSMDumpBranch`, and `LegacyFSMReturnBranch`
 consume `PrimitiveDecisionContext + PrimitiveDecisionFacts + PrimitiveDecisionCapabilities`
 rather than individual shell callback/status-provider fields. Dig/carry/dump/
-return transition statuses remain lazy and branch-local, preserving return
-handoff refresh timing and avoiding eager status calculation. `LegacyFSMRequestedDecisionBackend`
+return transition statuses remain lazy and branch-local. Return handoff refresh
+is now explicit: `LegacyFSMReturnBranch` calls
+`PrimitiveDecisionCapabilities.refresh_return_transition_state(context)` only
+after the active skill check confirms `return`, and then reads
+`return_transition_status(context)`.
+`PrimitiveFSMCapabilityProvider.return_transition_status(...)` is therefore a
+read-only cached-status assembly point rather than a hidden mutation/refresh
+entry. This preserves return handoff refresh timing and avoids eager status
+calculation. `LegacyFSMRequestedDecisionBackend`
 is the default decision backend used by the execution driver, while
 `LegacyFSMCompatibilityDecisionBackend` serves the legacy `_maybe_switch_skill()`
 entry without applying effects inside backend branches. Bootstrap, dig, carry,
@@ -83,7 +90,8 @@ Requested-effect application lives in `RequestedEffectApplier` with typed shell
 mutation ports; the policy shell only builds those ports and delegates from its
 execution hook and legacy compatibility bridges. `PrimitiveFSMCapabilityProvider`
 now owns observation-facts projection and dig/carry/dump/return status assembly
-through typed read-only shell ports. The policy shell only builds the provider
+through typed read-only shell ports, with return refresh split into the explicit
+`refresh_return_transition_state(obs)` method. The policy shell only builds the provider
 ports/snapshot, retains thin diagnostic wrappers for the old private status
 methods, and still owns shell-side mutation through the effect applier.
 `ReturnStartEnvelopeGateService` now owns return-to-dig start-envelope
@@ -665,6 +673,10 @@ and return status still refreshes shell-owned direct-handoff cached state before
 reading cached return flags. `pre_dig_align`, `cell_entry`, 5P, return
 direct-handoff internals, coverage metric internals, token planning, and report
 schemas remain in their existing owners.
+
+Phase 9.35 supersedes the Phase 9.11 return-refresh detail: return refresh now
+lives in the explicit `refresh_return_transition_state(...)` API, while return
+status assembly itself is read-only.
 
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in

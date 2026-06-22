@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.34 implementation. It is intentionally
+compares them with the current Phase 9.35 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -200,6 +200,9 @@ Gap:
 - Current capabilities are still shaped around legacy FSM transition branches.
 - `PrimitiveDecisionFacts` currently covers common facts only: context identity,
   current skill name, current switch reason, and context convenience accessors.
+- Return transition refresh is now explicit: the active legacy-FSM return branch
+  refreshes shell-owned handoff cache state before reading return status, while
+  `return_transition_status(...)` itself is read-only.
 - There is no full backend-neutral fact packet for behavior-tree or VLM
   strategies because transition, token, coverage, and return handoff facts are
   not yet in a neutral packet.
@@ -260,6 +263,9 @@ Current boundary:
 
 - `PrimitiveFSMCapabilityProvider` builds dig/carry/dump/return transition
   status records.
+- `PrimitiveFSMCapabilityProvider.refresh_return_transition_state(obs)` owns
+  the explicit return handoff cache refresh step. `return_transition_status(...)`
+  only reads cached return flags and observation facts.
 - `PrimitiveDecisionFacts` is the first backend-neutral common facts packet. It
   contains `PrimitiveDecisionContext`, current skill name, current switch
   reason, and read-only context accessors; it does not include transition status
@@ -276,8 +282,9 @@ Gap:
 - `PrimitiveDecisionFacts` is not yet the complete `PrimitiveBackendFacts`
   target. It lacks transition, token, coverage, and return handoff views.
 - Dig/carry/dump/return transition status providers intentionally remain lazy
-  and branch-local, because building some statuses has timing-sensitive shell
-  refresh behavior.
+  and branch-local. Return refresh is explicit and still timing-sensitive, so it
+  must stay in the active return branch until a backend-neutral return facts
+  view is designed and tested.
 
 Standard:
 
@@ -509,8 +516,11 @@ The next code work should follow this order:
 
 1. Expand backend-neutral facts beyond the initial common packet.
    - Keep legacy FSM capabilities working.
-   - Preserve lazy transition-status timing; do not eagerly compute return
-     status while it still refreshes shell handoff state.
+   - Preserve lazy transition-status timing; do not eagerly refresh or compute
+     return status outside the active return branch.
+   - Treat explicit return refresh plus read-only status as the starting point
+     for a future backend-neutral return facts view, not as proof that return
+     facts have already migrated.
    - Add only facts that are stable across backend styles.
    - Do not implement BT/VLM yet.
 

@@ -4408,3 +4408,48 @@ Each completed refactor round should append:
   facts are no longer implicit legacy-FSM capability reads. It is deliberately
   only a first packet: full backend-neutral readiness still needs transition,
   token, coverage, and return handoff views that do not disturb lazy timing.
+
+### 2026-06-22 Phase 9.35 Separate Return Transition Refresh From Return Status Read
+
+- Scope: split the return transition handoff-cache refresh from read-only return
+  status assembly. `PrimitiveFSMCapabilityProvider.refresh_return_transition_state(obs)`
+  now explicitly invokes the shell-owned `refresh_return_handoff_state(obs)`
+  port, while `PrimitiveFSMCapabilityProvider.return_transition_status(...)`
+  only reads cached return flags and observation facts.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `e7998bfbcbeb1de2c7a4baf3071f16f2ed1b682d`; no fetch, pull, push, reset,
+  checkout, rebase, branch creation, or remote write. HEAD after the code round
+  is `c1c4b8dd6e0bf27e2956e7c9ae62100c6331d680`.
+- `PrimitiveDecisionCapabilities.refresh_return_transition_state(context)` now
+  delegates the explicit refresh at decision-context level.
+  `return_transition_status(context)` remains the read-only status read.
+- `LegacyFSMReturnBranch.decide_context(...)` now performs the same effective
+  timing with clearer ownership: build common decision facts, return `None`
+  without refresh for non-`return` skills, and for active `return` call explicit
+  refresh before reading return status and producing ordered requested effects.
+- Explicit non-goals: no transition status was moved into
+  `PrimitiveDecisionFacts`; no eager return status calculation was introduced;
+  no BT/VLM/LLM backend implementation; no `pre_dig_align` or `cell_entry`
+  promotion; no 5P restoration; no branch-order, reason-string, effect-order,
+  schema, reset-timing, coverage-trace, or action-dispatch change.
+- TDD red result: after focused tests were updated, the first run of
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_decision_runtime.py`
+  failed with five expected failures: missing provider/capabilities refresh API,
+  the old implicit return refresh still occurring in the status read, and the
+  return branch lacking the explicit refresh-before-status call. After
+  implementation, the command returned `71 passed`.
+- Verification reported by implementation thread:
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_decision_runtime.py`
+  returned `71 passed`;
+  `python -m pytest -q tests/test_primitive_decision_facts.py tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `16 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace or dig_depth_profile or dig_cut_tokens"`
+  returned `20 passed, 99 deselected`; compileall, both planner guard commands,
+  `git diff --check`, and staged diff check completed successfully.
+- Audit note: this is a meaningful interface cleanup, not a guard-only slice.
+  It removes a hidden mutation from a capability status read while preserving
+  lazy active-return timing. It enables a future backend-neutral return facts
+  view, but that view has not yet been implemented.

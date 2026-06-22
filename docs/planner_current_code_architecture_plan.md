@@ -831,6 +831,16 @@ skill/reason checks while keeping dig/carry/dump/return transition statuses lazy
 and branch-local. This is an initial common-facts boundary, not full alternate
 backend readiness.
 
+Current status note after Phase 9.35: return transition cache refresh is no
+longer hidden inside the return status read. `PrimitiveFSMCapabilityProvider`
+now exposes `refresh_return_transition_state(obs)` for the explicit shell-owned
+handoff cache refresh, and `return_transition_status(obs, boundary_event)` only
+reads cached return flags. `PrimitiveDecisionCapabilities` exposes the same
+split at context level, and `LegacyFSMReturnBranch` calls refresh only after the
+active skill check confirms `return`, immediately before reading return status.
+This preserves lazy branch timing while removing a mutation from the status-read
+interface; return status is still not part of `PrimitiveDecisionFacts`.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut
