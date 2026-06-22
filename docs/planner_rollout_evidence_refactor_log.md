@@ -4915,3 +4915,66 @@ Each completed refactor round should append:
 - Avoid over-claiming. A backend factory/registry does not make BT/VLM/LLM
   ready; it only removes the current legacy-FSM-specific construction shape
   from the decision-runtime boundary.
+
+### 2026-06-23 Phase 9.43 Extract Primitive Decision Backend Factory
+
+- Scope: introduced the decision-backend factory/registry boundary. Added
+  `PrimitiveDecisionBackendFactory` and `LegacyFSMDecisionBackendFactory` in
+  `testbed/planner/primitive_backend.py`, and changed
+  `PrimitiveDecisionRuntimePorts` in
+  `testbed/planner/primitive_decision_runtime.py` from a
+  `legacy_fsm_branch_set` callable to a backend-name keyed
+  `backend_factories` registry.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `7f93829e69aa5de7702e396f9cb71867f3e18ed3`; no fetch, pull, push, reset,
+  checkout, rebase, branch creation, or remote write. HEAD after the code round
+  is `af4e9457354d87bf33cec25ba2c138807acebabd`.
+- `LegacyFSMDecisionBackendFactory` owns legacy branch-set construction and
+  reuse. Its requested and compatibility backend constructors reuse the same
+  `LegacyFSMBranchSet` identity, preserving both requested and legacy
+  compatibility branch orders.
+- `PrimitiveDecisionRuntime` now normalizes the configured backend name, looks
+  up a factory builder in `backend_factories`, and delegates requested or
+  legacy compatibility decisions through that factory. Unsupported backend
+  names still raise `PrimitiveDecisionContractError` before constructing the
+  legacy factory or branch set.
+- `PrimitivePlannerACTPolicy._decision_runtime_ports()` now provides the
+  default `legacy_fsm` registry through `_legacy_fsm_backend_factory()`.
+  Existing `_legacy_fsm_branch_set()`,
+  `_legacy_fsm_requested_decision_backend()`, and
+  `_legacy_fsm_compatibility_decision_backend()` remain thin compatibility
+  wrappers over the runtime/factory path.
+- Preserved behavior: supported backend set remains `legacy_fsm` only;
+  requested branch order, compatibility branch order, reason strings, effects,
+  per-tick backend input behavior, facts access lazy timing, active-dig reason
+  sync, active-return refresh, residual pre-dig handling, token/coverage/return
+  handoff/action/reset/reporting paths, schemas, policy reset timing, and
+  low-level action dispatch are unchanged.
+- Explicit non-goals: no behavior-tree, VLM, LLM, or learned backend
+  implementation; no backend support expansion; no promotion of
+  `pre_dig_align` or `cell_entry`; no 5P restoration; no token, coverage,
+  return handoff, action dispatch, reset, reporting, or config migration.
+- TDD red result: after focused tests were added, the first run of
+  `python -m pytest -q tests/test_primitive_decision_backend_factory.py tests/test_primitive_decision_runtime.py`
+  failed at collection because `LegacyFSMDecisionBackendFactory` was not
+  importable from `testbed.planner.primitive_backend`. After implementation,
+  the broader focused command returned `85 passed`.
+- Verification reported by implementation thread:
+  `python -m pytest -q tests/test_primitive_decision_backend_factory.py tests/test_primitive_decision_runtime.py tests/test_primitive_backend.py tests/test_primitive_backend_input.py tests/test_primitive_backend_facts.py`
+  returned `85 passed`;
+  `python -m pytest -q tests/test_primitive_decision_facts.py tests/test_primitive_decision_capabilities.py tests/test_primitive_capability_provider.py tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `51 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace or dig_depth_profile or dig_cut_tokens or dig_to_carry or carry_to_dump or dump_to_return"`
+  returned `23 passed, 96 deselected`; compileall for touched modules, both
+  planner guard commands, `git diff --check`, and staged diff check completed
+  successfully.
+- Audit note: this is a real runtime-boundary improvement because
+  `PrimitiveDecisionRuntime` no longer receives a legacy branch-set callable as
+  its typed port. It now selects a factory through a registry. The maturity
+  claim remains limited: the only concrete factory is legacy FSM, and
+  unsupported backends remain fail-fast. The next direct architecture gap is no
+  longer decision branch input or runtime factory selection; it is the amount
+  of mutable token/return runtime state still stored in the large policy shell.

@@ -52,10 +52,16 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.42: the default 4P mainline branch chain no longer
+Current status after Phase 9.43: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
-shell. The policy now exposes backend-facing common decision facts through
+shell. The decision runtime now selects a backend factory through
+`PrimitiveDecisionRuntimePorts.backend_factories` instead of receiving a
+`legacy_fsm_branch_set` callable. `LegacyFSMDecisionBackendFactory` owns
+legacy branch-set construction/reuse plus requested and legacy compatibility
+backend construction; `legacy_fsm` remains the only supported backend and
+unsupported names still fail fast before branch-set construction. The policy
+now exposes backend-facing common decision facts through
 `PrimitiveDecisionFacts`, built by `PrimitiveDecisionFactsSource`; the facts
 packet carries context identity, current skill, and current switch reason, but
 does not carry mutation ports or eager transition statuses. `LegacyFSMBranchPorts`
@@ -784,6 +790,19 @@ per-tick backend input gap for the legacy FSM branch chain, while
 `PrimitiveDecisionRuntime` still selects only `legacy_fsm` through a
 `legacy_fsm_branch_set` factory port and does not yet expose a backend factory
 or registry contract for alternate backend families.
+
+Phase 9.43 introduces the decision-backend factory/registry boundary.
+`PrimitiveDecisionBackendFactory` is the runtime-facing backend construction
+contract, and `LegacyFSMDecisionBackendFactory` is the default concrete
+factory. `PrimitiveDecisionRuntimePorts` now exposes
+`backend_factories: Mapping[str, Callable[[], PrimitiveDecisionBackendFactory]]`
+instead of `legacy_fsm_branch_set`. `PrimitiveDecisionRuntime` normalizes the
+configured backend name, selects a factory from that registry, and delegates to
+the factory's requested or legacy compatibility backend. The legacy FSM
+compatibility facades remain but delegate through the factory path. This
+removes the branch-set-specific runtime dependency without expanding backend
+support: only `legacy_fsm` is registered and supported, and behavior-tree, VLM,
+LLM, or learned backends remain fail-fast parked scope.
 
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in

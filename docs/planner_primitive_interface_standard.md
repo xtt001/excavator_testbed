@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.42 implementation. It is intentionally
+compares them with the current Phase 9.43 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -34,6 +34,8 @@ Current maturity:
   **mostly achieved**
 - runtime composition root / public runtime kernel: **achieved for public
   runtime routing**
+- decision runtime backend factory/registry: **achieved for selecting the
+  default `legacy_fsm` factory while unsupported backend names fail fast**
 - backend-neutral fact access for non-FSM decision strategies: **partly
   achieved for common context/skill facts plus lazy bootstrap and
   dig/carry/dump/return decision facts through `PrimitiveBackendFactsAccess`,
@@ -193,6 +195,13 @@ call planner private methods, or write shell state.
 Current boundary:
 
 - `PrimitiveDecisionRuntime` selects only the `legacy_fsm` backend.
+- `PrimitiveDecisionRuntimePorts` exposes a `backend_factories` registry from
+  normalized backend name to a backend factory builder. The runtime selects a
+  factory through that registry instead of depending on a
+  `legacy_fsm_branch_set` callable.
+- `LegacyFSMDecisionBackendFactory` owns `LegacyFSMBranchSet` construction and
+  reuse for the default backend, plus requested and legacy-compatibility
+  backend construction.
 - `LegacyFSMBranchSet` owns requested order and legacy compatibility order.
 - `PrimitiveRequestedBranchRunner` and
   `LegacyFSMCompatibilityDecisionBackend` each construct one
@@ -243,10 +252,9 @@ Gap:
 - Return transition facts now have a typed read-only view, but that view is
   constructed lazily only after the active return branch has refreshed cached
   handoff state.
-- `PrimitiveDecisionRuntimePorts` still exposes a
-  `legacy_fsm_branch_set` factory. The runtime has not yet moved to a
-  backend-factory or registry contract that can represent non-FSM backends
-  without mentioning legacy branch sets.
+- The backend registry currently contains only the `legacy_fsm` factory. It is
+  a selection/construction boundary, not proof that behavior-tree, VLM, or
+  learned backends can already consume the current facts packet.
 - There is no full backend-neutral fact packet for behavior-tree or VLM
   strategies because transition, token, coverage, and return handoff facts are
   not yet in a neutral packet.
@@ -368,6 +376,10 @@ Current boundary:
   `PrimitiveBackendFactsAccess`, explicit compatibility actions, and the
   private facts source needed only for explicit common-facts rereads after an
   already-applied compatibility action.
+- `PrimitiveDecisionBackendFactory` is the runtime-facing backend factory
+  contract. `LegacyFSMDecisionBackendFactory` is the only concrete factory and
+  owns legacy branch-set construction/reuse plus requested and compatibility
+  backend construction.
 - `PrimitiveDecisionCapabilities` remains as a compatibility facade over
   facts source plus compatibility actions for older tests and diagnostics.
 - `PrimitiveObservationFacts` and transition status dataclasses exist.
@@ -377,9 +389,10 @@ Gap:
 - Legacy FSM branches now receive one backend decision input packet per tick,
   but the packet is still tailored to the legacy FSM branch chain and its
   explicit compatibility actions.
-- `PrimitiveDecisionRuntimePorts` still exposes `legacy_fsm_branch_set`, so the
-  runtime selection boundary is not yet expressed as a generic backend factory
-  or backend registry contract.
+- The runtime factory/registry boundary is present, but only the legacy FSM
+  factory is registered and supported. It does not yet include a non-FSM
+  backend factory or a richer backend-neutral facts packet for alternate
+  strategies.
 - Residual `pre_dig_align` is still a capability-side already-applied handler.
 - `PrimitiveDecisionFacts` is not yet the complete `PrimitiveBackendFacts`
   target. It lacks token, coverage, and return handoff views, and the
@@ -624,16 +637,14 @@ The next code work should follow this order:
      compute transition statuses in later cleanup.
 
 2. Extract a backend factory/registry boundary for `PrimitiveDecisionRuntime`.
-   - The runtime should select a backend factory by backend name rather than
-     directly depending on a `legacy_fsm_branch_set` callable.
-   - The default factory may remain legacy FSM only and must preserve
-     fail-fast behavior for unsupported backend names.
-   - This is an interface-shape slice, not a BT/VLM implementation.
-   - The policy shell should build a typed factory/registry port, not expose
-     branch-set construction as the runtime's public dependency.
+   - **Done in Phase 9.43** for the default `legacy_fsm` factory/registry
+     boundary.
+   - Keep unsupported backend names fail-fast until a concrete backend has its
+     own facts contract and tests.
 
 3. Move remaining mutable runtime state into focused state owners.
-   - Prioritize token/runtime and return state before parked legacy paths.
+   - Prioritize token runtime mutable state and return handoff/runtime state
+     before parked legacy paths.
    - Avoid generic blackboards.
 
 4. Audit parked paths.

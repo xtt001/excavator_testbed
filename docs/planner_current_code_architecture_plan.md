@@ -62,6 +62,8 @@ Current relevant Python files:
 | `testbed/policies/hybrid/primitive_planner.py` | 5000+ | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
+| `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
+| `testbed/planner/primitive_decision_runtime.py` | 162 | backend-name normalization and backend factory registry selection for primitive decision runtime |
 | `testbed/planner/primitive_backend_facts.py` | 250 | backend-facing lazy read-only facts access for bootstrap and dig/carry/dump/return transition views |
 | `testbed/planner/primitive_decision_facts.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
@@ -939,6 +941,19 @@ common facts after its already-applied compatibility mutation through
 branch input gap, but `PrimitiveDecisionRuntimePorts` still exposes a
 `legacy_fsm_branch_set` factory rather than a backend factory or registry
 contract, so alternate-backend readiness remains future work.
+
+Current status note after Phase 9.43: `PrimitiveDecisionRuntimePorts` now
+exposes `backend_factories`, a backend-name keyed registry of backend factory
+builders. `PrimitiveDecisionRuntime` normalizes the configured backend name,
+selects a factory from that registry, and calls the factory's requested or
+legacy-compatibility backend. `LegacyFSMDecisionBackendFactory` in
+`testbed/planner/primitive_backend.py` owns legacy FSM branch-set
+construction/reuse and requested/compatibility backend construction. The policy
+shell now provides the default registry through `_legacy_fsm_backend_factory()`
+instead of passing a `legacy_fsm_branch_set` callable to the runtime. This
+removes the legacy branch-set dependency from the runtime port shape, but the
+only registered and supported backend remains `legacy_fsm`; BT/VLM/LLM remain
+unsupported parked scope.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
