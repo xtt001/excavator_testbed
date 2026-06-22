@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from testbed.planner.primitive_capabilities import (
+    CarryTransitionStatus,
     DigTransitionStatus,
+    DumpTransitionStatus,
     ReturnTransitionStatus,
 )
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
@@ -108,6 +110,106 @@ class PrimitiveDigTransitionFacts:
 
 
 @dataclass(frozen=True)
+class PrimitiveCarryTransitionFacts:
+    """Read-only carry transition view for active-carry decisions."""
+
+    common: PrimitiveDecisionFacts
+    status: CarryTransitionStatus
+
+    @property
+    def context(self) -> PrimitiveDecisionContext:
+        return self.common.context
+
+    @property
+    def obs(self) -> dict[str, Any]:
+        return self.common.obs
+
+    @property
+    def boundary_event(self) -> Any | None:
+        return self.common.boundary_event
+
+    @property
+    def preparation(self) -> PrimitiveTickPreparation:
+        return self.common.preparation
+
+    @property
+    def current_skill_name(self) -> str:
+        return self.common.current_skill_name
+
+    @property
+    def skill_name_before_decision(self) -> str:
+        return self.common.skill_name_before_decision
+
+    @property
+    def ready_to_dump(self) -> bool:
+        return bool(self.status.ready_to_dump)
+
+    @property
+    def carry_to_dump_reason(self) -> str:
+        return str(self.status.carry_to_dump_reason)
+
+    @property
+    def carry_release_safety_done(self) -> bool:
+        return bool(self.status.carry_release_safety_done)
+
+    @property
+    def dump_complete_event(self) -> bool:
+        return bool(self.status.dump_complete_event)
+
+    @property
+    def next_dump_ready_hold_count(self) -> int:
+        return int(self.status.next_dump_ready_hold_count)
+
+
+@dataclass(frozen=True)
+class PrimitiveDumpTransitionFacts:
+    """Read-only dump transition view for active-dump decisions."""
+
+    common: PrimitiveDecisionFacts
+    status: DumpTransitionStatus
+
+    @property
+    def context(self) -> PrimitiveDecisionContext:
+        return self.common.context
+
+    @property
+    def obs(self) -> dict[str, Any]:
+        return self.common.obs
+
+    @property
+    def boundary_event(self) -> Any | None:
+        return self.common.boundary_event
+
+    @property
+    def preparation(self) -> PrimitiveTickPreparation:
+        return self.common.preparation
+
+    @property
+    def current_skill_name(self) -> str:
+        return self.common.current_skill_name
+
+    @property
+    def skill_name_before_decision(self) -> str:
+        return self.common.skill_name_before_decision
+
+    @property
+    def ready_to_return(self) -> bool:
+        return bool(self.status.ready_to_return)
+
+    @property
+    def dump_to_return_reason(self) -> str:
+        return str(self.status.dump_to_return_reason)
+
+    @property
+    def coverage_completion_reason(self) -> str:
+        return str(self.status.coverage_completion_reason)
+
+    @property
+    def next_dump_done_hold_count(self) -> int:
+        return int(self.status.next_dump_done_hold_count)
+
+
+@dataclass(frozen=True)
 class PrimitiveReturnTransitionFacts:
     """Read-only return transition view assembled after explicit refresh."""
 
@@ -148,7 +250,9 @@ class PrimitiveReturnTransitionFacts:
 
 
 __all__ = [
+    "PrimitiveCarryTransitionFacts",
     "PrimitiveDecisionFacts",
     "PrimitiveDigTransitionFacts",
+    "PrimitiveDumpTransitionFacts",
     "PrimitiveReturnTransitionFacts",
 ]

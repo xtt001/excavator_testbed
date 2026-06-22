@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from testbed.planner.primitive_capabilities import DigTransitionStatus
+from testbed.planner.primitive_capabilities import (
+    CarryTransitionStatus,
+    DigTransitionStatus,
+    DumpTransitionStatus,
+)
 from testbed.planner.primitive_decision_capabilities import (
     BootstrapDecisionStatus,
     PrimitiveDecisionCapabilities,
@@ -10,8 +14,10 @@ from testbed.planner.primitive_decision_capabilities import (
 )
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
 from testbed.planner.primitive_decision_facts import (
+    PrimitiveCarryTransitionFacts,
     PrimitiveDecisionFacts,
     PrimitiveDigTransitionFacts,
+    PrimitiveDumpTransitionFacts,
     PrimitiveReturnTransitionFacts,
 )
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
@@ -21,8 +27,8 @@ class _RecordingTransitionStatusProvider:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any], object | None]] = []
         self.dig_status = _dig_status()
-        self.carry_status = object()
-        self.dump_status = object()
+        self.carry_status = _carry_status()
+        self.dump_status = _dump_status()
         self.return_status = object()
 
     def refresh_return_transition_state(
@@ -104,6 +110,46 @@ def _dig_status(**overrides: Any) -> DigTransitionStatus:
     }
     values.update(overrides)
     return DigTransitionStatus(**values)
+
+
+def _carry_status(**overrides: Any) -> CarryTransitionStatus:
+    values: dict[str, Any] = {
+        "mass_in_bucket_kg": 0.0,
+        "deposited_mass_in_target_box_kg": 0.0,
+        "deposit_delta_since_cycle_start_kg": 0.0,
+        "semantic_boundary_profile_active": False,
+        "dump_committed_event": False,
+        "release_onset_event": False,
+        "dump_complete_event": False,
+        "legacy_dump_start_event": False,
+        "carry_release_safety_done": False,
+        "dump_ready": False,
+        "next_dump_ready_hold_count": 0,
+        "ready_to_dump": False,
+        "carry_to_dump_reason": "",
+        "carry_to_return_reason": "",
+    }
+    values.update(overrides)
+    return CarryTransitionStatus(**values)
+
+
+def _dump_status(**overrides: Any) -> DumpTransitionStatus:
+    values: dict[str, Any] = {
+        "mass_in_bucket_kg": 0.0,
+        "deposited_mass_in_target_box_kg": 0.0,
+        "deposit_delta_since_dump_start_kg": 0.0,
+        "semantic_boundary_profile_active": False,
+        "dump_complete_event": False,
+        "legacy_dump_end_event": False,
+        "boundary_dump_done": False,
+        "dump_done_mass_low": False,
+        "next_dump_done_hold_count": 0,
+        "ready_to_return": False,
+        "coverage_completion_reason": "",
+        "dump_to_return_reason": "",
+    }
+    values.update(overrides)
+    return DumpTransitionStatus(**values)
 
 
 def _capabilities(
@@ -249,6 +295,80 @@ def test_decision_capabilities_sync_dig_transition_reason_uses_status_from_facts
     capabilities.sync_dig_transition_reason(dig_facts)
 
     assert provider.calls == [("sync_dig", provider.dig_status, None)]
+
+
+def test_decision_capabilities_carry_transition_facts_reuses_existing_common_facts() -> None:
+    obs = {"qpos": [1.0]}
+    boundary_event = object()
+    context = _context(obs=obs, boundary_event=boundary_event, skill="carry")
+    provider = _RecordingTransitionStatusProvider()
+    port_calls: list[str] = []
+
+    capabilities = PrimitiveDecisionCapabilities.from_ports(
+        PrimitiveDecisionCapabilitiesPorts(
+            current_skill_name=lambda: port_calls.append("current_skill") or "carry",
+            current_switch_reason=lambda: port_calls.append("current_reason") or "",
+            should_end_bootstrap=lambda *, obs, boundary_event: False,
+            bootstrap_end_mode=lambda: "first_qualified_dig_start",
+            should_pre_dig_align_before_dig=lambda: False,
+            transition_status_provider=provider,
+            maybe_handle_residual_pre_dig_align=(
+                lambda obs: port_calls.append("residual") or False
+            ),
+        )
+    )
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="carry",
+        current_switch_reason="dig_to_carry_loaded",
+    )
+
+    carry_facts = capabilities.carry_transition_facts(context, facts=common)
+
+    assert isinstance(carry_facts, PrimitiveCarryTransitionFacts)
+    assert carry_facts.common is common
+    assert carry_facts.status is provider.carry_status
+    assert carry_facts.obs is obs
+    assert carry_facts.boundary_event is boundary_event
+    assert provider.calls == [("carry", obs, boundary_event)]
+    assert port_calls == []
+
+
+def test_decision_capabilities_dump_transition_facts_reuses_existing_common_facts() -> None:
+    obs = {"qpos": [1.0]}
+    boundary_event = object()
+    context = _context(obs=obs, boundary_event=boundary_event, skill="dump")
+    provider = _RecordingTransitionStatusProvider()
+    port_calls: list[str] = []
+
+    capabilities = PrimitiveDecisionCapabilities.from_ports(
+        PrimitiveDecisionCapabilitiesPorts(
+            current_skill_name=lambda: port_calls.append("current_skill") or "dump",
+            current_switch_reason=lambda: port_calls.append("current_reason") or "",
+            should_end_bootstrap=lambda *, obs, boundary_event: False,
+            bootstrap_end_mode=lambda: "first_qualified_dig_start",
+            should_pre_dig_align_before_dig=lambda: False,
+            transition_status_provider=provider,
+            maybe_handle_residual_pre_dig_align=(
+                lambda obs: port_calls.append("residual") or False
+            ),
+        )
+    )
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="dump",
+        current_switch_reason="carry_to_dump_target_ready",
+    )
+
+    dump_facts = capabilities.dump_transition_facts(context, facts=common)
+
+    assert isinstance(dump_facts, PrimitiveDumpTransitionFacts)
+    assert dump_facts.common is common
+    assert dump_facts.status is provider.dump_status
+    assert dump_facts.obs is obs
+    assert dump_facts.boundary_event is boundary_event
+    assert provider.calls == [("dump", obs, boundary_event)]
+    assert port_calls == []
 
 
 def test_decision_capabilities_return_transition_facts_reuses_existing_common_facts() -> None:

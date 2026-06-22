@@ -56,8 +56,10 @@ from testbed.planner.primitive_decision_capabilities import (
 )
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
 from testbed.planner.primitive_decision_facts import (
+    PrimitiveCarryTransitionFacts,
     PrimitiveDecisionFacts,
     PrimitiveDigTransitionFacts,
+    PrimitiveDumpTransitionFacts,
     PrimitiveReturnTransitionFacts,
 )
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
@@ -1549,6 +1551,88 @@ def test_legacy_fsm_carry_branch_committed_boundary_switches_to_dump() -> None:
     )
 
 
+def test_legacy_fsm_carry_branch_consumes_carry_transition_facts_view() -> None:
+    calls: list[str] = []
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    boundary_event = object()
+    common_facts: PrimitiveDecisionFacts | None = None
+    status = CarryTransitionStatus(
+        mass_in_bucket_kg=120.0,
+        deposited_mass_in_target_box_kg=8.5,
+        deposit_delta_since_cycle_start_kg=8.5,
+        semantic_boundary_profile_active=True,
+        dump_committed_event=True,
+        release_onset_event=False,
+        dump_complete_event=False,
+        legacy_dump_start_event=False,
+        carry_release_safety_done=False,
+        dump_ready=False,
+        next_dump_ready_hold_count=3,
+        ready_to_dump=True,
+        carry_to_dump_reason="dump_committed_boundary",
+        carry_to_return_reason="",
+    )
+
+    class _CarryFactsCapabilities:
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            nonlocal common_facts
+            calls.append("current_skill")
+            calls.append("current_reason")
+            common_facts = PrimitiveDecisionFacts.from_context(
+                context,
+                current_skill_name="carry",
+                current_switch_reason="dig_to_carry_loaded",
+            )
+            return common_facts
+
+        def carry_transition_facts(
+            self,
+            context: PrimitiveDecisionContext,
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> PrimitiveCarryTransitionFacts:
+            assert context.obs is obs
+            assert context.boundary_event is boundary_event
+            assert facts is common_facts
+            calls.append("carry_status")
+            return PrimitiveCarryTransitionFacts(common=facts, status=status)
+
+        def carry_transition_status(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> CarryTransitionStatus:
+            raise AssertionError("carry branch must consume carry facts view")
+
+    branch = LegacyFSMCarryBranch(
+        config=LegacyFSMCarryConfig(carry_skill_name="carry"),
+        capabilities=_CarryFactsCapabilities(),
+    )
+
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision="carry",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert calls == ["current_skill", "current_reason", "carry_status"]
+    assert result is not None
+    assert result.effects == (
+        SetDumpReadyHoldCountEffect(value=3),
+        SetDumpStartDepositedMassFromObservationEffect(),
+        SwitchSkillEffect(
+            target_skill_name="dump",
+            switch_reason="carry_to_dump_dump_committed_boundary",
+        ),
+    )
+
+
 def test_legacy_fsm_carry_branch_requested_ready_to_dump_effects_in_order() -> None:
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
@@ -1622,6 +1706,50 @@ def test_legacy_fsm_carry_branch_ignores_non_carry_skill() -> None:
     assert result is None
 
 
+def test_legacy_fsm_carry_branch_non_carry_skill_does_not_read_carry_facts() -> None:
+    calls: list[str] = []
+
+    class _NonCarryCapabilities:
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            calls.append("current_skill")
+            calls.append("current_reason")
+            return PrimitiveDecisionFacts.from_context(
+                context,
+                current_skill_name="dump",
+                current_switch_reason="carry_to_dump_target_ready",
+            )
+
+        def carry_transition_facts(
+            self,
+            context: PrimitiveDecisionContext,
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> PrimitiveCarryTransitionFacts:
+            calls.append("carry_status")
+            raise AssertionError("non-carry skill must not request carry facts")
+
+    branch = LegacyFSMCarryBranch(
+        config=LegacyFSMCarryConfig(carry_skill_name="carry"),
+        capabilities=_NonCarryCapabilities(),
+    )
+
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dump",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert result is None
+    assert calls == ["current_skill", "current_reason"]
+
+
 def test_legacy_fsm_dump_branch_boundary_handoffs_to_return() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
     status = DumpTransitionStatus(
@@ -1660,6 +1788,83 @@ def test_legacy_fsm_dump_branch_boundary_handoffs_to_return() -> None:
     assert result.effects == (
         CompleteCoverageDumpEffect(reason="dump_complete_boundary"),
         SetReturnOrDirectHandoffEffect(reason="dump_to_return_dump_complete_boundary"),
+    )
+
+
+def test_legacy_fsm_dump_branch_consumes_dump_transition_facts_view() -> None:
+    calls: list[str] = []
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    boundary_event = object()
+    common_facts: PrimitiveDecisionFacts | None = None
+    status = DumpTransitionStatus(
+        mass_in_bucket_kg=5.0,
+        deposited_mass_in_target_box_kg=20.0,
+        deposit_delta_since_dump_start_kg=10.0,
+        semantic_boundary_profile_active=False,
+        dump_complete_event=False,
+        legacy_dump_end_event=False,
+        boundary_dump_done=False,
+        dump_done_mass_low=True,
+        next_dump_done_hold_count=2,
+        ready_to_return=True,
+        coverage_completion_reason="dump_mass_low",
+        dump_to_return_reason="dump_to_return_mass_low",
+    )
+
+    class _DumpFactsCapabilities:
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            nonlocal common_facts
+            calls.append("current_skill")
+            calls.append("current_reason")
+            common_facts = PrimitiveDecisionFacts.from_context(
+                context,
+                current_skill_name="dump",
+                current_switch_reason="carry_to_dump_target_ready",
+            )
+            return common_facts
+
+        def dump_transition_facts(
+            self,
+            context: PrimitiveDecisionContext,
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> PrimitiveDumpTransitionFacts:
+            assert context.obs is obs
+            assert context.boundary_event is boundary_event
+            assert facts is common_facts
+            calls.append("dump_status")
+            return PrimitiveDumpTransitionFacts(common=facts, status=status)
+
+        def dump_transition_status(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> DumpTransitionStatus:
+            raise AssertionError("dump branch must consume dump facts view")
+
+    branch = LegacyFSMDumpBranch(
+        config=LegacyFSMDumpConfig(dump_skill_name="dump"),
+        capabilities=_DumpFactsCapabilities(),
+    )
+
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision="dump",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert calls == ["current_skill", "current_reason", "dump_status"]
+    assert result is not None
+    assert result.effects == (
+        SetDumpDoneHoldCountEffect(value=2),
+        CompleteCoverageDumpEffect(reason="dump_mass_low"),
+        SetReturnOrDirectHandoffEffect(reason="dump_to_return_mass_low"),
     )
 
 
@@ -1810,6 +2015,50 @@ def test_legacy_fsm_dump_branch_ignores_non_dump_skill() -> None:
     )
 
     assert result is None
+
+
+def test_legacy_fsm_dump_branch_non_dump_skill_does_not_read_dump_facts() -> None:
+    calls: list[str] = []
+
+    class _NonDumpCapabilities:
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            calls.append("current_skill")
+            calls.append("current_reason")
+            return PrimitiveDecisionFacts.from_context(
+                context,
+                current_skill_name="return",
+                current_switch_reason="dump_to_return_mass_low",
+            )
+
+        def dump_transition_facts(
+            self,
+            context: PrimitiveDecisionContext,
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> PrimitiveDumpTransitionFacts:
+            calls.append("dump_status")
+            raise AssertionError("non-dump skill must not request dump facts")
+
+    branch = LegacyFSMDumpBranch(
+        config=LegacyFSMDumpConfig(dump_skill_name="dump"),
+        capabilities=_NonDumpCapabilities(),
+    )
+
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="return",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert result is None
+    assert calls == ["current_skill", "current_reason"]
 
 
 def _return_status(

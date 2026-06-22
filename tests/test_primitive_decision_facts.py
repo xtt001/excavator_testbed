@@ -4,12 +4,16 @@ from dataclasses import fields
 
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
 from testbed.planner.primitive_capabilities import (
+    CarryTransitionStatus,
     DigTransitionStatus,
+    DumpTransitionStatus,
     ReturnTransitionStatus,
 )
 from testbed.planner.primitive_decision_facts import (
+    PrimitiveCarryTransitionFacts,
     PrimitiveDecisionFacts,
     PrimitiveDigTransitionFacts,
+    PrimitiveDumpTransitionFacts,
     PrimitiveReturnTransitionFacts,
 )
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
@@ -77,6 +81,46 @@ def _dig_status(**overrides: object) -> DigTransitionStatus:
     }
     values.update(overrides)
     return DigTransitionStatus(**values)
+
+
+def _carry_status(**overrides: object) -> CarryTransitionStatus:
+    values = {
+        "mass_in_bucket_kg": 0.0,
+        "deposited_mass_in_target_box_kg": 0.0,
+        "deposit_delta_since_cycle_start_kg": 0.0,
+        "semantic_boundary_profile_active": False,
+        "dump_committed_event": False,
+        "release_onset_event": False,
+        "dump_complete_event": False,
+        "legacy_dump_start_event": False,
+        "carry_release_safety_done": False,
+        "dump_ready": False,
+        "next_dump_ready_hold_count": 0,
+        "ready_to_dump": False,
+        "carry_to_dump_reason": "",
+        "carry_to_return_reason": "",
+    }
+    values.update(overrides)
+    return CarryTransitionStatus(**values)
+
+
+def _dump_status(**overrides: object) -> DumpTransitionStatus:
+    values = {
+        "mass_in_bucket_kg": 0.0,
+        "deposited_mass_in_target_box_kg": 0.0,
+        "deposit_delta_since_dump_start_kg": 0.0,
+        "semantic_boundary_profile_active": False,
+        "dump_complete_event": False,
+        "legacy_dump_end_event": False,
+        "boundary_dump_done": False,
+        "dump_done_mass_low": False,
+        "next_dump_done_hold_count": 0,
+        "ready_to_return": False,
+        "coverage_completion_reason": "",
+        "dump_to_return_reason": "",
+    }
+    values.update(overrides)
+    return DumpTransitionStatus(**values)
 
 
 def test_decision_facts_preserve_context_identity_and_mirror_context_accessors() -> None:
@@ -223,4 +267,104 @@ def test_dig_transition_facts_are_frozen_and_backend_facing_only() -> None:
         "effect",
         "sync",
         "set_dig_to_carry_reason",
+    }.isdisjoint(field_names)
+
+
+def test_carry_transition_facts_preserve_common_and_status_identity() -> None:
+    context, obs, boundary_event, preparation = _context()
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="carry",
+        current_switch_reason="dig_to_carry_loaded",
+    )
+    status = _carry_status(
+        ready_to_dump=True,
+        carry_to_dump_reason="dump_committed_boundary",
+        carry_release_safety_done=True,
+        dump_complete_event=True,
+        next_dump_ready_hold_count=3,
+    )
+
+    carry_facts = PrimitiveCarryTransitionFacts(common=common, status=status)
+
+    assert carry_facts.common is common
+    assert carry_facts.status is status
+    assert carry_facts.context is context
+    assert carry_facts.obs is obs
+    assert carry_facts.boundary_event is boundary_event
+    assert carry_facts.preparation is preparation
+    assert carry_facts.current_skill_name == "carry"
+    assert carry_facts.skill_name_before_decision == "dig"
+    assert carry_facts.ready_to_dump is True
+    assert carry_facts.carry_to_dump_reason == "dump_committed_boundary"
+    assert carry_facts.carry_release_safety_done is True
+    assert carry_facts.dump_complete_event is True
+    assert carry_facts.next_dump_ready_hold_count == 3
+
+
+def test_carry_transition_facts_are_frozen_and_backend_facing_only() -> None:
+    field_names = {field.name for field in fields(PrimitiveCarryTransitionFacts)}
+
+    assert field_names == {"common", "status"}
+    assert {
+        "self",
+        "planner",
+        "policy",
+        "callback",
+        "provider",
+        "applier",
+        "effect",
+        "sync",
+        "mutation",
+        "setter",
+        "refresh",
+    }.isdisjoint(field_names)
+
+
+def test_dump_transition_facts_preserve_common_and_status_identity() -> None:
+    context, obs, boundary_event, preparation = _context()
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="dump",
+        current_switch_reason="carry_to_dump_target_ready",
+    )
+    status = _dump_status(
+        ready_to_return=True,
+        dump_to_return_reason="dump_to_return_mass_low",
+        coverage_completion_reason="dump_mass_low",
+        next_dump_done_hold_count=2,
+    )
+
+    dump_facts = PrimitiveDumpTransitionFacts(common=common, status=status)
+
+    assert dump_facts.common is common
+    assert dump_facts.status is status
+    assert dump_facts.context is context
+    assert dump_facts.obs is obs
+    assert dump_facts.boundary_event is boundary_event
+    assert dump_facts.preparation is preparation
+    assert dump_facts.current_skill_name == "dump"
+    assert dump_facts.skill_name_before_decision == "dig"
+    assert dump_facts.ready_to_return is True
+    assert dump_facts.dump_to_return_reason == "dump_to_return_mass_low"
+    assert dump_facts.coverage_completion_reason == "dump_mass_low"
+    assert dump_facts.next_dump_done_hold_count == 2
+
+
+def test_dump_transition_facts_are_frozen_and_backend_facing_only() -> None:
+    field_names = {field.name for field in fields(PrimitiveDumpTransitionFacts)}
+
+    assert field_names == {"common", "status"}
+    assert {
+        "self",
+        "planner",
+        "policy",
+        "callback",
+        "provider",
+        "applier",
+        "effect",
+        "sync",
+        "mutation",
+        "setter",
+        "refresh",
     }.isdisjoint(field_names)

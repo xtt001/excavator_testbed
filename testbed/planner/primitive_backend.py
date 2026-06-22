@@ -417,8 +417,11 @@ class LegacyFSMCarryBranch:
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.config.carry_skill_name):
             return None
-        status = self.capabilities.carry_transition_status(context)
-        effects = self._effects_for_status(status)
+        carry_facts = self.capabilities.carry_transition_facts(
+            context,
+            facts=facts,
+        )
+        effects = self._effects_for_status(carry_facts.status)
         decision_status = "skill_switch" if _has_transition_effect(effects) else "no_change"
         switch_reason = _switch_reason_from_effects(effects)
         skill_after = _skill_after_from_effects(effects, default=skill_before)
@@ -502,8 +505,11 @@ class LegacyFSMDumpBranch:
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.config.dump_skill_name):
             return None
-        status = self.capabilities.dump_transition_status(context)
-        effects = self._effects_for_status(status)
+        dump_facts = self.capabilities.dump_transition_facts(
+            context,
+            facts=facts,
+        )
+        effects = self._effects_for_status(dump_facts.status)
         decision_status = "skill_switch" if _has_transition_effect(effects) else "no_change"
         return PrimitiveDecisionResult.from_requested_effects(
             decision_source=DUMP_REQUESTED_DECISION_SOURCE,

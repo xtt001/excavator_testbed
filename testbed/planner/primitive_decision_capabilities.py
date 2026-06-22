@@ -14,8 +14,10 @@ from testbed.planner.primitive_capabilities import (
 )
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
 from testbed.planner.primitive_decision_facts import (
+    PrimitiveCarryTransitionFacts,
     PrimitiveDecisionFacts,
     PrimitiveDigTransitionFacts,
+    PrimitiveDumpTransitionFacts,
     PrimitiveReturnTransitionFacts,
 )
 
@@ -178,6 +180,18 @@ class PrimitiveDecisionCapabilities:
             context.boundary_event,
         )
 
+    def carry_transition_facts(
+        self,
+        context: PrimitiveDecisionContext,
+        *,
+        facts: PrimitiveDecisionFacts | None = None,
+    ) -> PrimitiveCarryTransitionFacts:
+        common = facts or self.decision_facts(context)
+        return PrimitiveCarryTransitionFacts(
+            common=common,
+            status=self.carry_transition_status(context),
+        )
+
     def dump_transition_status(
         self,
         context: PrimitiveDecisionContext,
@@ -185,6 +199,18 @@ class PrimitiveDecisionCapabilities:
         return self.ports.transition_status_provider.dump_transition_status(
             context.obs,
             context.boundary_event,
+        )
+
+    def dump_transition_facts(
+        self,
+        context: PrimitiveDecisionContext,
+        *,
+        facts: PrimitiveDecisionFacts | None = None,
+    ) -> PrimitiveDumpTransitionFacts:
+        common = facts or self.decision_facts(context)
+        return PrimitiveDumpTransitionFacts(
+            common=common,
+            status=self.dump_transition_status(context),
         )
 
     def return_transition_status(
@@ -241,10 +267,12 @@ def _next_skill_after_bootstrap(
 
 __all__ = [
     "BootstrapDecisionStatus",
+    "PrimitiveCarryTransitionFacts",
     "PrimitiveDecisionCapabilities",
     "PrimitiveDecisionCapabilitiesPorts",
     "PrimitiveDecisionFacts",
     "PrimitiveDigTransitionFacts",
+    "PrimitiveDumpTransitionFacts",
     "PrimitiveReturnTransitionFacts",
     "PrimitiveTransitionStatusProvider",
 ]
