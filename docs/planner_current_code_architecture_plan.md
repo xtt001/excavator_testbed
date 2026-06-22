@@ -716,6 +716,18 @@ maturity claim at default legacy-FSM backendified with shared context and
 capabilities shape; behavior-tree, VLM/LLM, and other alternate backends remain
 unimplemented parked scope.
 
+Current status note after Phase 9.28: 4P primitive skill switch lifecycle
+sequencing now lives in `PrimitiveSkillLifecycleService` in
+`testbed/planner/primitive_skill_lifecycle.py`. The service owns the old
+`_set_skill(...)` ordering for same-skill no-op, skill/reason writes,
+active-policy reset timing, target-specific counters and mirrors, dig coverage
+payload reset, and dig-cut plan clearing. `PrimitivePlannerACTPolicy._set_skill`
+is now a thin service-backed facade over typed
+`PrimitiveSkillLifecyclePorts`; requested-effect application still calls that
+facade through its existing `set_skill` port. The 5P `_set_skill()` override,
+`pre_dig_align` residual behavior, `cell_entry` compatibility material, and
+alternate backend parked scope remain intentionally unchanged.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

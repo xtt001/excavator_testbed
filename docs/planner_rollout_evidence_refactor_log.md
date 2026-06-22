@@ -3860,3 +3860,65 @@ Each completed refactor round should append:
   `cell_entry` remains compatibility/report material, `pre_dig_align` remains
   residual parking/action material, and 5P remains its existing legacy override
   path.
+
+### 2026-06-22 Phase 9.28 Extract Primitive Skill Lifecycle Service
+
+- Scope: extracted the 4P primitive skill switch lifecycle sequencing from
+  `PrimitivePlannerACTPolicy._set_skill(...)` into
+  `PrimitiveSkillLifecycleService` with typed
+  `PrimitiveSkillLifecyclePorts`. No branch order, reason string, threshold,
+  token/debug/summary/trace schema, coverage trace payload schema, policy reset
+  timing, public config behavior, requested-effect classes, decision branches,
+  pre-dig-align internals, cell-entry compatibility, 5P transition semantics,
+  behavior-tree/VLM/LLM unsupported status, or low-level ACT dispatch output
+  contract was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `e61669a4511cca1d87ae245cdaed90fe5576b48f`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `testbed/planner/primitive_skill_lifecycle.py` with
+  `PrimitiveSkillLifecyclePorts` and `PrimitiveSkillLifecycleService`. The
+  service owns the old 4P `_set_skill(...)` order: same-skill no-op,
+  skill/reason writes, active-policy reset except for residual
+  `pre_dig_align`, target-specific counter/mirror resets, dig coverage payload
+  reset, and dig-cut plan clear timing.
+- Updated `PrimitivePlannerACTPolicy` with
+  `_primitive_skill_lifecycle_ports()` and
+  `_primitive_skill_lifecycle()` thin wiring. `_set_skill(...)` is now a
+  service-backed facade, and `RequestedEffectApplier` continues to use the same
+  existing `set_skill` port. The 5P `_set_skill()` override remains parked
+  compatibility and was not migrated.
+- Added `tests/test_primitive_skill_lifecycle.py` to lock same-skill no-op,
+  switch-to-dig lifecycle resets without dig-cut clear, carry/dump/return
+  counter resets plus dig-cut clear, the `pre_dig_align` no-reset/no-clear
+  exception, typed-port boundary shape, and policy wrapper delegation.
+- TDD red result: the first focused run failed at collection with
+  `ModuleNotFoundError: No module named
+  'testbed.planner.primitive_skill_lifecycle'`. After adding the service
+  module, the focused test exposed the still-inline policy wrapper with
+  `AttributeError: 'PrimitivePlannerACTPolicy' object has no attribute
+  '_skill_name'`; after wiring policy delegation, the focused lifecycle suite
+  returned `6 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_skill_lifecycle.py` returned
+  `6 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `95 passed`;
+  `python -m pytest -q tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `12 passed`;
+  `python -m pytest -q tests/test_primitive_action_dispatch.py tests/test_primitive_tick_finalization.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_primitive_decision_capabilities.py tests/test_primitive_decision_context.py tests/test_primitive_decision_runtime.py`
+  returned `12 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace"`
+  returned `19 passed, 101 deselected`;
+  compileall completed successfully with no output; both planner guard commands
+  completed successfully with no output.
+- Old code parked/reclassified: 5P keeps its existing `_set_skill()` override
+  and transition semantics; `pre_dig_align` remains residual parking/action
+  material; `cell_entry` remains compatibility/report material; behavior tree,
+  VLM, and LLM backends remain unsupported parked scope.

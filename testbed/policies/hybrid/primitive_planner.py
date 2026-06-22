@@ -145,6 +145,10 @@ from testbed.planner.primitive_effects import (
     RequestedEffectApplier,
     RequestedEffectApplierPorts,
 )
+from testbed.planner.primitive_skill_lifecycle import (
+    PrimitiveSkillLifecyclePorts,
+    PrimitiveSkillLifecycleService,
+)
 from testbed.planner.primitive_observation import (
     PrimitivePolicyObservationAssembler,
     PrimitivePolicyObservationAssemblerPorts,
@@ -2299,37 +2303,99 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _set_skill(self, skill_name: str, reason: str) -> None:
-        if skill_name == self._skill_name:
-            return
-        self._skill_name = str(skill_name)
-        self._switch_reason = str(reason)
-        if skill_name != PRE_DIG_ALIGN_SKILL_NAME:
-            self._active_policy().reset()
-        if skill_name == "carry":
-            self._dump_ready_hold_count = 0
-        elif skill_name == "dump":
-            self._dump_done_hold_count = 0
-        elif skill_name == "return":
-            self._return_step_count = 0
-            self._return_next_dig_event_seen = False
-        elif skill_name == PRE_DIG_ALIGN_SKILL_NAME:
-            self._pre_dig_align_step_count = 0
-            self._pre_dig_align_hold_count = 0
-            self._pre_dig_align_entry_close_handoff_ready = False
-            self._pre_dig_align_entry_intent_handoff_ready = False
-            self._pre_dig_align_timeout_handoff_reason = ""
-            self._pre_dig_align_surface_guard_triggered = False
-        elif skill_name == "dig":
-            self._return_next_dig_event_seen = False
-            self._dump_ready_hold_count = 0
-            self._dump_done_hold_count = 0
-            self._coverage_current_payload_gain_kg = 0.0
-            self._dig_step_count = 0
-            self._dig_best_mass_kg = 0.0
-            self._dig_mass_plateau_count = 0
-            self._dig_to_carry_reason = ""
-        if skill_name not in {"dig", PRE_DIG_ALIGN_SKILL_NAME}:
-            self._clear_dig_cut_plan()
+        self._primitive_skill_lifecycle().set_skill(skill_name, reason)
+
+    def _primitive_skill_lifecycle(self) -> PrimitiveSkillLifecycleService:
+        return PrimitiveSkillLifecycleService.from_ports(
+            self._primitive_skill_lifecycle_ports()
+        )
+
+    def _primitive_skill_lifecycle_ports(self) -> PrimitiveSkillLifecyclePorts:
+        return PrimitiveSkillLifecyclePorts(
+            current_skill_name=lambda: str(self._skill_name),
+            set_skill_name=lambda value: setattr(self, "_skill_name", str(value)),
+            set_switch_reason=lambda value: setattr(self, "_switch_reason", str(value)),
+            reset_active_policy=lambda: self._active_policy().reset(),
+            clear_dig_cut_plan=lambda: self._clear_dig_cut_plan(),
+            set_dump_ready_hold_count=(
+                lambda value: setattr(self, "_dump_ready_hold_count", int(value))
+            ),
+            set_dump_done_hold_count=(
+                lambda value: setattr(self, "_dump_done_hold_count", int(value))
+            ),
+            set_return_step_count=(
+                lambda value: setattr(self, "_return_step_count", int(value))
+            ),
+            set_return_next_dig_event_seen=(
+                lambda value: setattr(
+                    self,
+                    "_return_next_dig_event_seen",
+                    bool(value),
+                )
+            ),
+            set_pre_dig_align_step_count=(
+                lambda value: setattr(self, "_pre_dig_align_step_count", int(value))
+            ),
+            set_pre_dig_align_hold_count=(
+                lambda value: setattr(self, "_pre_dig_align_hold_count", int(value))
+            ),
+            set_pre_dig_align_entry_close_handoff_ready=(
+                lambda value: setattr(
+                    self,
+                    "_pre_dig_align_entry_close_handoff_ready",
+                    bool(value),
+                )
+            ),
+            set_pre_dig_align_entry_intent_handoff_ready=(
+                lambda value: setattr(
+                    self,
+                    "_pre_dig_align_entry_intent_handoff_ready",
+                    bool(value),
+                )
+            ),
+            set_pre_dig_align_timeout_handoff_reason=(
+                lambda value: setattr(
+                    self,
+                    "_pre_dig_align_timeout_handoff_reason",
+                    str(value),
+                )
+            ),
+            set_pre_dig_align_surface_guard_triggered=(
+                lambda value: setattr(
+                    self,
+                    "_pre_dig_align_surface_guard_triggered",
+                    bool(value),
+                )
+            ),
+            set_coverage_current_payload_gain_kg=(
+                lambda value: setattr(
+                    self,
+                    "_coverage_current_payload_gain_kg",
+                    float(value),
+                )
+            ),
+            set_dig_step_count=lambda value: setattr(
+                self,
+                "_dig_step_count",
+                int(value),
+            ),
+            set_dig_best_mass_kg=lambda value: setattr(
+                self,
+                "_dig_best_mass_kg",
+                float(value),
+            ),
+            set_dig_mass_plateau_count=lambda value: setattr(
+                self,
+                "_dig_mass_plateau_count",
+                int(value),
+            ),
+            set_dig_to_carry_reason=lambda value: setattr(
+                self,
+                "_dig_to_carry_reason",
+                str(value),
+            ),
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
+        )
 
     def _restart_pre_dig_align(self, reason: str) -> None:
         self._skill_name = PRE_DIG_ALIGN_SKILL_NAME

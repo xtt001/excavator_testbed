@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.27: the default 4P mainline branch chain no longer
+Current status after Phase 9.28: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy now exposes backend-facing decision facts through
@@ -856,6 +856,17 @@ methods) directly; it carries skill-name constants plus one capabilities
 object. This is a backend-facing context/capabilities boundary for the default
 legacy FSM path, not a claim that alternate behavior-tree or VLM/LLM backends
 are implemented or fully pure-readiness-compatible.
+
+Phase 9.28 extracts 4P primitive skill switch lifecycle sequencing into
+`PrimitiveSkillLifecycleService` in
+`testbed/planner/primitive_skill_lifecycle.py`. The service owns the
+same-skill no-op, skill/reason write order, active-policy reset timing including
+the residual `pre_dig_align` exception, target-specific counter/mirror resets,
+dig coverage payload reset, and dig-cut plan clear timing. The policy shell
+builds typed `PrimitiveSkillLifecyclePorts` and keeps `_set_skill(...)` as a
+thin service-backed facade used by `RequestedEffectApplier`. The 5P
+`_set_skill()` override remains parked legacy compatibility and is not migrated
+in this phase.
 
 ### Stage 4: Expand Effect Families From Evidence
 
