@@ -10,13 +10,19 @@ from testbed.planner.primitive_capabilities import (
 )
 from testbed.planner.primitive_decision import (
     LEGACY_FSM_DECISION_SOURCE,
+    CompleteCellEntryDigCompatibilityEffect,
+    CompleteCoverageDigEffect,
     CompleteReturnTransitionEffect,
     CompleteCoverageDumpEffect,
+    IncrementDigBadReplanCountEffect,
+    IncrementDigExitGuardReplanCountEffect,
     LegacyDecisionOutcomeEffect,
     MarkReturnNextDigEventSeenEffect,
     PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
+    RejectActiveCoverageCorridorEffect,
     RequestedPlannerEffect,
+    RestartAfterFailedDigEffect,
     SetDumpDoneHoldCountEffect,
     SetDumpReadyHoldCountEffect,
     SetDumpStartDepositedMassFromObservationEffect,
@@ -68,7 +74,7 @@ def test_legacy_decision_result_does_not_infer_private_effects_for_no_change() -
 def test_requested_effect_result_records_ordered_unapplied_effects() -> None:
     effects = (
         RequestedPlannerEffect(effect_type="record_decision_trace", reason="first"),
-        RequestedPlannerEffect(effect_type="restart_after_failed_dig", reason="second"),
+        RequestedPlannerEffect(effect_type="record_decision_note", reason="second"),
     )
 
     result = PrimitiveDecisionResult.from_requested_effects(
@@ -283,6 +289,69 @@ def test_carry_dump_effects_reject_invalid_values_or_reasons() -> None:
             pass
         else:
             raise AssertionError("invalid carry/dump effect was accepted")
+
+
+def test_dig_effects_record_semantic_requests() -> None:
+    effects = (
+        IncrementDigExitGuardReplanCountEffect(),
+        IncrementDigBadReplanCountEffect(),
+        RejectActiveCoverageCorridorEffect(reason="bad_dig_low_payload"),
+        RestartAfterFailedDigEffect(reason="bad_dig_low_payload"),
+        CompleteCellEntryDigCompatibilityEffect(),
+        CompleteCoverageDigEffect(),
+    )
+
+    result = PrimitiveDecisionResult.from_requested_effects(
+        decision_source="legacy_fsm_dig_requested_effect",
+        status="skill_switch",
+        skill_before="dig",
+        skill_after="carry",
+        switch_reason="dig_to_carry_loaded",
+        effects=effects,
+    )
+
+    assert result.effects == effects
+    assert [effect.effect_type for effect in effects] == [
+        "increment_dig_exit_guard_replan_count",
+        "increment_dig_bad_replan_count",
+        "reject_active_coverage_corridor",
+        "restart_after_failed_dig",
+        "complete_cell_entry_dig_compatibility",
+        "complete_coverage_dig",
+    ]
+    assert effects[2].reason == "bad_dig_low_payload"
+    assert effects[3].reason == "bad_dig_low_payload"
+
+
+def test_dig_effects_reject_invalid_reasons() -> None:
+    invalid_results = (
+        PrimitiveDecisionResult.from_requested_effects(
+            decision_source="test_backend",
+            status="no_change",
+            skill_before="dig",
+            skill_after="dig",
+            switch_reason="",
+            effects=(RejectActiveCoverageCorridorEffect(reason=""),),
+            validate=False,
+        ),
+        PrimitiveDecisionResult.from_requested_effects(
+            decision_source="test_backend",
+            status="no_change",
+            skill_before="dig",
+            skill_after="dig",
+            switch_reason="",
+            effects=(RestartAfterFailedDigEffect(reason=""),),
+            validate=False,
+        ),
+    )
+
+    for result in invalid_results:
+        try:
+            validate_decision_effect_contract(result)
+        except PrimitiveDecisionContractError:
+            pass
+        else:
+            raise AssertionError("invalid dig effect was accepted")
 
 
 def test_decision_contract_rejects_callable_or_planner_method_effect_shapes() -> None:
@@ -505,9 +574,96 @@ def test_primitive_planner_requested_effect_bridge_applies_carry_dump_effects_wi
     ]
 
 
-def test_primitive_planner_legacy_decision_bridge_calls_fsm_once() -> None:
+def test_primitive_planner_requested_effect_bridge_applies_dig_effects_in_order() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
-    planner._skill_name = "dig"
+    obs: dict[str, Any] = {"payload": "current_obs"}
+    events: list[str] = []
+
+    def fake_exit_count(self: PrimitivePlannerACTPolicy) -> None:
+        events.append("exit_count")
+
+    def fake_bad_count(self: PrimitivePlannerACTPolicy) -> None:
+        events.append("bad_count")
+
+    def fake_reject(
+        self: PrimitivePlannerACTPolicy,
+        got_obs: dict[str, Any],
+        *,
+        reason: str,
+    ) -> None:
+        assert got_obs is obs
+        events.append(f"reject:{reason}")
+
+    def fake_restart(
+        self: PrimitivePlannerACTPolicy,
+        reason: str,
+        got_obs: dict[str, Any],
+    ) -> None:
+        assert got_obs is obs
+        events.append(f"restart:{reason}")
+
+    def fake_complete_cell(
+        self: PrimitivePlannerACTPolicy,
+        got_obs: dict[str, Any],
+    ) -> None:
+        assert got_obs is obs
+        events.append("cell")
+
+    def fake_complete_dig(
+        self: PrimitivePlannerACTPolicy,
+        got_obs: dict[str, Any],
+    ) -> None:
+        assert got_obs is obs
+        events.append("coverage")
+
+    def fake_set_skill(
+        self: PrimitivePlannerACTPolicy,
+        skill_name: str,
+        reason: str,
+    ) -> None:
+        events.append(f"skill:{skill_name}:{reason}")
+
+    planner._increment_dig_exit_guard_replan_count = MethodType(
+        fake_exit_count,
+        planner,
+    )
+    planner._increment_dig_bad_replan_count = MethodType(fake_bad_count, planner)
+    planner._reject_active_coverage_corridor = MethodType(fake_reject, planner)
+    planner._restart_after_failed_dig = MethodType(fake_restart, planner)
+    planner._complete_cell_entry_dig = MethodType(fake_complete_cell, planner)
+    planner._complete_coverage_dig = MethodType(fake_complete_dig, planner)
+    planner._set_skill = MethodType(fake_set_skill, planner)
+
+    planner._apply_requested_tick_effects(
+        obs,
+        (
+            IncrementDigExitGuardReplanCountEffect(),
+            IncrementDigBadReplanCountEffect(),
+            RejectActiveCoverageCorridorEffect(reason="bad_dig_low_payload"),
+            RestartAfterFailedDigEffect(reason="bad_dig_low_payload"),
+            CompleteCellEntryDigCompatibilityEffect(),
+            CompleteCoverageDigEffect(),
+            SwitchSkillEffect(
+                target_skill_name="carry",
+                switch_reason="dig_to_carry_loaded",
+            ),
+        ),
+    )
+
+    assert events == [
+        "exit_count",
+        "bad_count",
+        "reject:bad_dig_low_payload",
+        "restart:bad_dig_low_payload",
+        "cell",
+        "coverage",
+        "skill:carry:dig_to_carry_loaded",
+    ]
+
+
+def test_primitive_planner_residual_legacy_decision_bridge_calls_fsm_once() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    planner._skill_name = "legacy_skill"
     planner._switch_reason = ""
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
@@ -521,7 +677,7 @@ def test_primitive_planner_legacy_decision_bridge_calls_fsm_once() -> None:
     ) -> None:
         calls.append((obs, boundary_event, str(self._skill_name)))
         self._skill_name = "carry"
-        self._switch_reason = "dig_to_carry_boundary_confirmed"
+        self._switch_reason = "legacy_to_carry"
 
     planner._maybe_switch_skill = MethodType(fake_maybe_switch_skill, planner)
 
@@ -530,17 +686,17 @@ def test_primitive_planner_legacy_decision_bridge_calls_fsm_once() -> None:
         boundary_event=boundary_event,
         preparation=PrimitiveTickPreparation(
             boundary_event=boundary_event,
-            skill_name_before_decision="dig",
-            dig_progress_updated=True,
+            skill_name_before_decision="legacy_skill",
+            dig_progress_updated=False,
         ),
     )
 
-    assert calls == [(obs, boundary_event, "dig")]
+    assert calls == [(obs, boundary_event, "legacy_skill")]
     assert result.decision_source == LEGACY_FSM_DECISION_SOURCE
     assert result.status == "skill_switch"
-    assert result.skill_before == "dig"
+    assert result.skill_before == "legacy_skill"
     assert result.skill_after == "carry"
-    assert result.switch_reason == "dig_to_carry_boundary_confirmed"
+    assert result.switch_reason == "legacy_to_carry"
 
 
 def test_primitive_planner_bootstrap_decision_bridge_returns_requested_switch() -> None:
@@ -779,4 +935,74 @@ def test_primitive_planner_dump_decision_bridge_returns_requested_effects() -> N
         SetDumpDoneHoldCountEffect(value=2),
         CompleteCoverageDumpEffect(reason="dump_mass_low"),
         SetReturnOrDirectHandoffEffect(reason="dump_to_return_mass_low"),
+    )
+
+
+def test_primitive_planner_dig_decision_bridge_returns_requested_effects() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    planner._skill_name = "dig"
+    planner._switch_reason = ""
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    callbacks: list[str] = []
+
+    planner._dig_exit_guard_ready = MethodType(lambda self, obs: False, planner)
+    planner._increment_dig_exit_guard_replan_count = MethodType(
+        lambda self: callbacks.append("exit_count"),
+        planner,
+    )
+    planner._reject_active_coverage_corridor = MethodType(
+        lambda self, obs, reason: callbacks.append(f"reject:{reason}"),
+        planner,
+    )
+    planner._restart_after_failed_dig = MethodType(
+        lambda self, reason, obs: callbacks.append(f"restart:{reason}"),
+        planner,
+    )
+    planner._dig_bad_replan_ready = MethodType(lambda self, obs: False, planner)
+    planner._increment_dig_bad_replan_count = MethodType(
+        lambda self: callbacks.append("bad_count"),
+        planner,
+    )
+    planner._dig_complete_boundary_low_payload = MethodType(
+        lambda self, obs, boundary_event: False,
+        planner,
+    )
+    planner._dig_to_carry_ready = MethodType(
+        lambda self, *, obs, boundary_event: True,
+        planner,
+    )
+    planner._complete_cell_entry_dig = MethodType(
+        lambda self, obs: callbacks.append("cell"),
+        planner,
+    )
+    planner._complete_coverage_dig = MethodType(
+        lambda self, obs: callbacks.append("coverage"),
+        planner,
+    )
+    planner._dig_to_carry_reason = "boundary_confirmed"
+    planner._set_skill = MethodType(
+        lambda self, skill, reason: callbacks.append(f"{skill}:{reason}"),
+        planner,
+    )
+
+    result = planner._decide_tick_with_legacy_fsm(
+        obs=obs,
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
+
+    assert callbacks == []
+    assert result.side_effects_applied is False
+    assert result.status == "skill_switch"
+    assert result.effects == (
+        CompleteCellEntryDigCompatibilityEffect(),
+        CompleteCoverageDigEffect(),
+        SwitchSkillEffect(
+            target_skill_name="carry",
+            switch_reason="dig_to_carry_boundary_confirmed",
+        ),
     )

@@ -366,6 +366,20 @@ helpers and preserves old effect ordering. This phase does not migrate the dig
 branch, direct-handoff helper internals, `pre_dig_align`, `cell_entry`, token
 planning, or backend selection.
 
+Phase 9.4 converts the remaining confirmed-live 4P mainline `dig` branch to
+ordered requested effects. The branch now emits concrete dig semantic effects
+for exit-guard failed replans, bad-dig replans, dig-complete low-payload
+replans, coverage corridor rejection, failed-dig restart, coverage-dig
+completion, and the existing `SwitchSkillEffect` for dig-to-carry. The
+execution shell applies those effects in order using existing helper methods.
+`CompleteCellEntryDigCompatibilityEffect` exists only to preserve the old
+cell-entry completion callback when the old dig-to-carry path would have called
+it; it is explicitly compatibility-only and does not promote `cell_entry` into
+the target backend architecture. This phase does not migrate token planning,
+coverage metric internals, return direct-handoff internals, `pre_dig_align`,
+5P paths, behavior-tree/VLM/LLM backend selection, or planner runtime
+directories.
+
 ### Stage 4: Expand Effect Families From Evidence
 
 Each new family must be justified by a confirmed-live rollout behavior and a

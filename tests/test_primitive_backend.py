@@ -22,9 +22,15 @@ from testbed.planner.primitive_capabilities import (
 )
 from testbed.planner.primitive_decision import (
     LEGACY_FSM_DECISION_SOURCE,
+    CompleteCellEntryDigCompatibilityEffect,
+    CompleteCoverageDigEffect,
     CompleteReturnTransitionEffect,
     CompleteCoverageDumpEffect,
+    IncrementDigBadReplanCountEffect,
+    IncrementDigExitGuardReplanCountEffect,
     MarkReturnNextDigEventSeenEffect,
+    RejectActiveCoverageCorridorEffect,
+    RestartAfterFailedDigEffect,
     SetDumpDoneHoldCountEffect,
     SetDumpReadyHoldCountEffect,
     SetDumpStartDepositedMassFromObservationEffect,
@@ -207,6 +213,270 @@ def test_legacy_fsm_dig_branch_completes_dig_to_carry_in_order() -> None:
         ("complete", "cell"),
         ("complete", "coverage"),
         ("carry", "dig_to_carry_boundary_confirmed"),
+    ]
+
+
+def test_legacy_fsm_dig_branch_requested_exit_guard_effects_in_order() -> None:
+    callbacks: list[str] = []
+    branch = LegacyFSMDigBranch(
+        config=LegacyFSMDigConfig(dig_skill_name="dig"),
+        current_skill_name=lambda: "dig",
+        dig_exit_guard_ready=lambda obs: True,
+        increment_dig_exit_guard_replan_count=lambda: callbacks.append("exit_count"),
+        reject_active_coverage_corridor=lambda obs, reason: callbacks.append(
+            f"reject:{reason}"
+        ),
+        restart_after_failed_dig=lambda reason, obs: callbacks.append(
+            f"restart:{reason}"
+        ),
+        dig_bad_replan_ready=lambda obs: True,
+        increment_dig_bad_replan_count=lambda: callbacks.append("bad_count"),
+        dig_complete_boundary_low_payload=lambda obs, boundary_event: True,
+        dig_to_carry_ready=lambda *, obs, boundary_event: True,
+        complete_cell_entry_dig=lambda obs: callbacks.append("cell"),
+        complete_coverage_dig=lambda obs: callbacks.append("coverage"),
+        dig_to_carry_reason=lambda: "boundary_confirmed",
+        set_skill=lambda skill, reason: callbacks.append(f"{skill}:{reason}"),
+    )
+
+    result = branch.decide_tick(
+        obs={"qpos": [1.0]},
+        boundary_event=object(),
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
+
+    assert callbacks == []
+    assert result is not None
+    assert result.side_effects_applied is False
+    assert result.effects == (
+        IncrementDigExitGuardReplanCountEffect(),
+        RejectActiveCoverageCorridorEffect(reason="exit_overshoot_low_payload"),
+        RestartAfterFailedDigEffect(reason="exit_overshoot_low_payload"),
+    )
+
+
+def test_legacy_fsm_dig_branch_requested_bad_dig_effects_in_order() -> None:
+    branch = LegacyFSMDigBranch(
+        config=LegacyFSMDigConfig(dig_skill_name="dig"),
+        current_skill_name=lambda: "dig",
+        dig_exit_guard_ready=lambda obs: False,
+        increment_dig_exit_guard_replan_count=lambda: None,
+        reject_active_coverage_corridor=lambda obs, reason: None,
+        restart_after_failed_dig=lambda reason, obs: None,
+        dig_bad_replan_ready=lambda obs: True,
+        increment_dig_bad_replan_count=lambda: None,
+        dig_complete_boundary_low_payload=lambda obs, boundary_event: True,
+        dig_to_carry_ready=lambda *, obs, boundary_event: True,
+        complete_cell_entry_dig=lambda obs: None,
+        complete_coverage_dig=lambda obs: None,
+        dig_to_carry_reason=lambda: "boundary_confirmed",
+        set_skill=lambda skill, reason: None,
+    )
+
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
+
+    assert result is not None
+    assert result.effects == (
+        IncrementDigBadReplanCountEffect(),
+        RejectActiveCoverageCorridorEffect(reason="bad_dig_low_payload"),
+        RestartAfterFailedDigEffect(reason="bad_dig_low_payload"),
+    )
+
+
+def test_legacy_fsm_dig_branch_requested_complete_low_payload_effects_in_order() -> None:
+    branch = LegacyFSMDigBranch(
+        config=LegacyFSMDigConfig(dig_skill_name="dig"),
+        current_skill_name=lambda: "dig",
+        dig_exit_guard_ready=lambda obs: False,
+        increment_dig_exit_guard_replan_count=lambda: None,
+        reject_active_coverage_corridor=lambda obs, reason: None,
+        restart_after_failed_dig=lambda reason, obs: None,
+        dig_bad_replan_ready=lambda obs: False,
+        increment_dig_bad_replan_count=lambda: None,
+        dig_complete_boundary_low_payload=lambda obs, boundary_event: True,
+        dig_to_carry_ready=lambda *, obs, boundary_event: True,
+        complete_cell_entry_dig=lambda obs: None,
+        complete_coverage_dig=lambda obs: None,
+        dig_to_carry_reason=lambda: "boundary_confirmed",
+        set_skill=lambda skill, reason: None,
+    )
+
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=object(),
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
+
+    assert result is not None
+    assert result.effects == (
+        IncrementDigBadReplanCountEffect(),
+        RejectActiveCoverageCorridorEffect(
+            reason="dig_complete_low_current_payload"
+        ),
+        RestartAfterFailedDigEffect(reason="complete_low_payload"),
+    )
+
+
+def test_legacy_fsm_dig_branch_requested_dig_to_carry_effects_in_order() -> None:
+    callbacks: list[str] = []
+    branch = LegacyFSMDigBranch(
+        config=LegacyFSMDigConfig(dig_skill_name="dig"),
+        current_skill_name=lambda: "dig",
+        dig_exit_guard_ready=lambda obs: False,
+        increment_dig_exit_guard_replan_count=lambda: callbacks.append("exit_count"),
+        reject_active_coverage_corridor=lambda obs, reason: callbacks.append(
+            f"reject:{reason}"
+        ),
+        restart_after_failed_dig=lambda reason, obs: callbacks.append(
+            f"restart:{reason}"
+        ),
+        dig_bad_replan_ready=lambda obs: False,
+        increment_dig_bad_replan_count=lambda: callbacks.append("bad_count"),
+        dig_complete_boundary_low_payload=lambda obs, boundary_event: False,
+        dig_to_carry_ready=lambda *, obs, boundary_event: True,
+        complete_cell_entry_dig=lambda obs: callbacks.append("cell"),
+        complete_coverage_dig=lambda obs: callbacks.append("coverage"),
+        dig_to_carry_reason=lambda: "boundary_confirmed",
+        set_skill=lambda skill, reason: callbacks.append(f"{skill}:{reason}"),
+    )
+
+    result = branch.decide_tick(
+        obs={"qpos": [1.0]},
+        boundary_event=object(),
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
+
+    assert callbacks == []
+    assert result is not None
+    assert result.status == "skill_switch"
+    assert result.skill_after == "carry"
+    assert result.switch_reason == "dig_to_carry_boundary_confirmed"
+    assert result.effects == (
+        CompleteCellEntryDigCompatibilityEffect(),
+        CompleteCoverageDigEffect(),
+        SwitchSkillEffect(
+            target_skill_name="carry",
+            switch_reason="dig_to_carry_boundary_confirmed",
+        ),
+    )
+
+
+def test_legacy_fsm_dig_branch_requested_no_change_for_unready_dig() -> None:
+    branch = LegacyFSMDigBranch(
+        config=LegacyFSMDigConfig(dig_skill_name="dig"),
+        current_skill_name=lambda: "dig",
+        dig_exit_guard_ready=lambda obs: False,
+        increment_dig_exit_guard_replan_count=lambda: None,
+        reject_active_coverage_corridor=lambda obs, reason: None,
+        restart_after_failed_dig=lambda reason, obs: None,
+        dig_bad_replan_ready=lambda obs: False,
+        increment_dig_bad_replan_count=lambda: None,
+        dig_complete_boundary_low_payload=lambda obs, boundary_event: False,
+        dig_to_carry_ready=lambda *, obs, boundary_event: False,
+        complete_cell_entry_dig=lambda obs: None,
+        complete_coverage_dig=lambda obs: None,
+        dig_to_carry_reason=lambda: "",
+        set_skill=lambda skill, reason: None,
+    )
+
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
+
+    assert result is not None
+    assert result.status == "no_change"
+    assert result.side_effects_applied is False
+    assert result.effects == ()
+
+
+def test_legacy_fsm_dig_branch_requested_ignores_non_dig_skill() -> None:
+    branch = LegacyFSMDigBranch(
+        config=LegacyFSMDigConfig(dig_skill_name="dig"),
+        current_skill_name=lambda: "carry",
+        dig_exit_guard_ready=lambda obs: True,
+        increment_dig_exit_guard_replan_count=lambda: None,
+        reject_active_coverage_corridor=lambda obs, reason: None,
+        restart_after_failed_dig=lambda reason, obs: None,
+        dig_bad_replan_ready=lambda obs: True,
+        increment_dig_bad_replan_count=lambda: None,
+        dig_complete_boundary_low_payload=lambda obs, boundary_event: True,
+        dig_to_carry_ready=lambda *, obs, boundary_event: True,
+        complete_cell_entry_dig=lambda obs: None,
+        complete_coverage_dig=lambda obs: None,
+        dig_to_carry_reason=lambda: "",
+        set_skill=lambda skill, reason: None,
+    )
+
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="carry",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert result is None
+
+
+def test_legacy_fsm_dig_branch_compat_facade_reuses_requested_effects() -> None:
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    events: list[str] = []
+    branch = LegacyFSMDigBranch(
+        config=LegacyFSMDigConfig(dig_skill_name="dig"),
+        current_skill_name=lambda: "dig",
+        dig_exit_guard_ready=lambda obs: True,
+        increment_dig_exit_guard_replan_count=lambda: events.append("exit_count"),
+        reject_active_coverage_corridor=lambda obs, reason: events.append(
+            f"reject:{reason}"
+        ),
+        restart_after_failed_dig=lambda reason, obs: events.append(
+            f"restart:{reason}"
+        ),
+        dig_bad_replan_ready=lambda obs: True,
+        increment_dig_bad_replan_count=lambda: events.append("bad_count"),
+        dig_complete_boundary_low_payload=lambda obs, boundary_event: True,
+        dig_to_carry_ready=lambda *, obs, boundary_event: True,
+        complete_cell_entry_dig=lambda obs: events.append("cell"),
+        complete_coverage_dig=lambda obs: events.append("coverage"),
+        dig_to_carry_reason=lambda: "boundary_confirmed",
+        set_skill=lambda skill, reason: events.append(f"{skill}:{reason}"),
+    )
+
+    handled = branch.maybe_handle(obs=obs, boundary_event=None)
+
+    assert handled is True
+    assert events == [
+        "exit_count",
+        "reject:exit_overshoot_low_payload",
+        "restart:exit_overshoot_low_payload",
     ]
 
 

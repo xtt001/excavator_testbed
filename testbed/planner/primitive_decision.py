@@ -115,6 +115,110 @@ class SwitchToNextSkillAfterReturnEffect(RequestedPlannerEffect):
 
 
 @dataclass(frozen=True)
+class IncrementDigExitGuardReplanCountEffect(RequestedPlannerEffect):
+    """Increment the dig exit-guard failed-replan counter."""
+
+    effect_type: str = field(
+        default="increment_dig_exit_guard_replan_count",
+        init=False,
+    )
+    reason: str = field(default="", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(
+            self,
+            "effect_type",
+            "increment_dig_exit_guard_replan_count",
+        )
+        object.__setattr__(self, "reason", "")
+        object.__setattr__(self, "payload", None)
+
+
+@dataclass(frozen=True)
+class IncrementDigBadReplanCountEffect(RequestedPlannerEffect):
+    """Increment the bad-dig failed-replan counter."""
+
+    effect_type: str = field(default="increment_dig_bad_replan_count", init=False)
+    reason: str = field(default="", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(self, "effect_type", "increment_dig_bad_replan_count")
+        object.__setattr__(self, "reason", "")
+        object.__setattr__(self, "payload", None)
+
+
+@dataclass(frozen=True)
+class RejectActiveCoverageCorridorEffect(RequestedPlannerEffect):
+    """Reject the active coverage corridor for the current observation."""
+
+    effect_type: str = field(default="reject_active_coverage_corridor", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+    reason: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(self, "effect_type", "reject_active_coverage_corridor")
+        object.__setattr__(self, "reason", str(self.reason))
+        object.__setattr__(self, "payload", None)
+
+
+@dataclass(frozen=True)
+class RestartAfterFailedDigEffect(RequestedPlannerEffect):
+    """Restart or stop after a failed dig using existing shell semantics."""
+
+    effect_type: str = field(default="restart_after_failed_dig", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+    reason: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(self, "effect_type", "restart_after_failed_dig")
+        object.__setattr__(self, "reason", str(self.reason))
+        object.__setattr__(self, "payload", None)
+
+
+@dataclass(frozen=True)
+class CompleteCellEntryDigCompatibilityEffect(RequestedPlannerEffect):
+    """Run legacy cell-entry dig completion without promoting it as mainline."""
+
+    effect_type: str = field(
+        default="complete_cell_entry_dig_compatibility",
+        init=False,
+    )
+    reason: str = field(default="", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(
+            self,
+            "effect_type",
+            "complete_cell_entry_dig_compatibility",
+        )
+        object.__setattr__(self, "reason", "")
+        object.__setattr__(self, "payload", None)
+
+
+@dataclass(frozen=True)
+class CompleteCoverageDigEffect(RequestedPlannerEffect):
+    """Complete coverage dig accounting for the current observation."""
+
+    effect_type: str = field(default="complete_coverage_dig", init=False)
+    reason: str = field(default="", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(self, "effect_type", "complete_coverage_dig")
+        object.__setattr__(self, "reason", "")
+        object.__setattr__(self, "payload", None)
+
+
+@dataclass(frozen=True)
 class SetDumpReadyHoldCountEffect(RequestedPlannerEffect):
     """Set the carry-to-dump readiness hold counter."""
 
@@ -354,6 +458,51 @@ def _validate_requested_effect_shape(effect: RequestedPlannerEffect) -> None:
             "return post-completion switch effects must use "
             "SwitchToNextSkillAfterReturnEffect"
         )
+    if normalized_type == "increment_dig_exit_guard_replan_count" and not isinstance(
+        effect,
+        IncrementDigExitGuardReplanCountEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "dig exit-guard count effects must use "
+            "IncrementDigExitGuardReplanCountEffect"
+        )
+    if normalized_type == "increment_dig_bad_replan_count" and not isinstance(
+        effect,
+        IncrementDigBadReplanCountEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "bad-dig count effects must use IncrementDigBadReplanCountEffect"
+        )
+    if normalized_type == "reject_active_coverage_corridor" and not isinstance(
+        effect,
+        RejectActiveCoverageCorridorEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "coverage corridor rejection effects must use "
+            "RejectActiveCoverageCorridorEffect"
+        )
+    if normalized_type == "restart_after_failed_dig" and not isinstance(
+        effect,
+        RestartAfterFailedDigEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "failed-dig restart effects must use RestartAfterFailedDigEffect"
+        )
+    if normalized_type == "complete_cell_entry_dig_compatibility" and not isinstance(
+        effect,
+        CompleteCellEntryDigCompatibilityEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "cell-entry compatibility effects must use "
+            "CompleteCellEntryDigCompatibilityEffect"
+        )
+    if normalized_type == "complete_coverage_dig" and not isinstance(
+        effect,
+        CompleteCoverageDigEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "coverage dig completion effects must use CompleteCoverageDigEffect"
+        )
     if normalized_type == "set_dump_ready_hold_count" and not isinstance(
         effect,
         SetDumpReadyHoldCountEffect,
@@ -409,7 +558,15 @@ def _validate_requested_effect_shape(effect: RequestedPlannerEffect) -> None:
             raise PrimitiveDecisionContractError(
                 f"{effect.effect_type} requires a non-negative count"
             )
-    if isinstance(effect, (CompleteCoverageDumpEffect, SetReturnOrDirectHandoffEffect)):
+    if isinstance(
+        effect,
+        (
+            RejectActiveCoverageCorridorEffect,
+            RestartAfterFailedDigEffect,
+            CompleteCoverageDumpEffect,
+            SetReturnOrDirectHandoffEffect,
+        ),
+    ):
         if not str(effect.reason).strip():
             raise PrimitiveDecisionContractError(
                 f"{effect.effect_type} requires a non-empty reason"

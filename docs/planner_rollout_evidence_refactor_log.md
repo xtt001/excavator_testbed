@@ -2250,3 +2250,81 @@ Each completed refactor round should append:
   compatibility, failed-dig restart/replan, and skill switch effects. Convert it
   only with a separate evidence-backed scope and explicit semantic effect
   family coverage.
+
+### 2026-06-22 Phase 9.4 Dig Branch Requested Effects Conversion
+
+- Scope: converted the confirmed-live 4P mainline `dig` branch from direct
+  callback mutation to ordered requested effects. No token planning, coverage
+  metric calculation internals, return direct-handoff internals,
+  `pre_dig_align`, `cell_entry` architecture promotion, 5P override, branch
+  order, reason string, threshold, backend selection, behavior tree, VLM/LLM
+  packet, token schema, debug schema, rollout summary schema, policy reset
+  timing, or low-level ACT dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `9d8154f65ecb28eb70540b07dc7615c3668af0d0`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Selected evidence remains the successful mainline packet:
+  `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl`,
+  its paired planner trace, rollout summary, resolved config, and
+  `docs/planner_evidence_reports/2026-06-18-baseline-aggregate_tx24.md`. The
+  selected evidence marks `gate.dig_to_carry` as confirmed-live and current
+  focused tests cover bad-dig, exit-guard, complete-low-payload, and first-dig
+  policy risk windows.
+- Confirmed-live method chain converted:
+  `run_primitive_tick()` calls the decision bridge, the dig branch returns
+  `PrimitiveDecisionResult(side_effects_applied=False)` with ordered dig
+  requested effects, the execution hook passes current `obs` plus effects to
+  the shell applier before return-timeout accounting and action dispatch, and
+  the real shell applier calls existing dig shell operations in order.
+- Added concrete dig effect contracts in
+  `testbed/planner/primitive_decision.py`:
+  `IncrementDigExitGuardReplanCountEffect`,
+  `IncrementDigBadReplanCountEffect`,
+  `RejectActiveCoverageCorridorEffect(reason)`,
+  `RestartAfterFailedDigEffect(reason)`,
+  `CompleteCellEntryDigCompatibilityEffect`, and
+  `CompleteCoverageDigEffect`. Validation rejects empty reject/restart reasons
+  and preserves forbidden callable/self/arbitrary planner attr or method-call
+  payload checks.
+- Updated `LegacyFSMDigBranch` with `decide_tick(...)` as the requested
+  decision API. The branch now emits ordered effects for dig exit-guard
+  low-payload replans, bad-dig low-payload replans, dig-complete low-current
+  payload replans, dig-to-carry coverage completion, and dig-to-carry
+  `SwitchSkillEffect`. `maybe_handle()` remains a compatibility facade and
+  reuses the same requested decision logic before applying effects through its
+  existing callbacks.
+- Updated `PrimitivePlannerACTPolicy._decide_tick_with_legacy_fsm()` so the
+  default bridge tries bootstrap, dig, carry, dump, then return requested
+  effects before falling back to the residual legacy already-applied adapter.
+- Updated `PrimitivePlannerACTPolicy._apply_requested_tick_effects(obs, ...)`
+  so dig effects map to existing shell helpers:
+  `_increment_dig_exit_guard_replan_count`,
+  `_increment_dig_bad_replan_count`,
+  `_reject_active_coverage_corridor(obs, reason=...)`,
+  `_restart_after_failed_dig(reason, obs)`,
+  `_complete_cell_entry_dig(obs)`,
+  `_complete_coverage_dig(obs)`, and existing `_set_skill`.
+- `CompleteCellEntryDigCompatibilityEffect` is compatibility-only. It preserves
+  the old dig-to-carry callback order when cell-entry is enabled but does not
+  make `cell_entry` a target backend capability or mainline architecture
+  concern.
+- Added focused tests in `tests/test_primitive_backend.py`,
+  `tests/test_primitive_decision_contract.py`, and
+  `tests/test_primitive_execution_template.py` for dig requested effects,
+  non-dig not-handled behavior, no-change dig ticks, compatibility facade
+  reuse, real shell applier ordering, and policy bridge no-callback decision
+  behavior.
+- TDD red result: the first focused run failed at test collection because the
+  dig effect classes did not exist. After implementation and compatibility test
+  updates, the focused green run returned `64 passed`.
+- Old code parked/reclassified: no code was deleted. The dig compatibility
+  facade remains for legacy callers; `pre_dig_align`, `cell_entry` internals,
+  5P compatibility, token planning, and return direct-handoff internals remain
+  existing legacy or compatibility owners.
+- Next action: after bootstrap/dig/carry/dump/return mainline branch conversion,
+  review the residual already-applied adapter and `_maybe_switch_skill()`
+  ownership. The next phase should either park residual compatibility paths
+  (`pre_dig_align`, 5P/legacy-only branches) behind explicit labels or extract a
+  real backend runner over the requested-effect branch list, rather than adding
+  more callback wrappers.

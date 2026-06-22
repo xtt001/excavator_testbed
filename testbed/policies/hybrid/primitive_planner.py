@@ -109,12 +109,18 @@ from testbed.planner.primitive_execution import (
     run_primitive_tick,
 )
 from testbed.planner.primitive_decision import (
+    CompleteCellEntryDigCompatibilityEffect,
+    CompleteCoverageDigEffect,
     CompleteCoverageDumpEffect,
     CompleteReturnTransitionEffect,
+    IncrementDigBadReplanCountEffect,
+    IncrementDigExitGuardReplanCountEffect,
     MarkReturnNextDigEventSeenEffect,
     PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
+    RejectActiveCoverageCorridorEffect,
     RequestedPlannerEffect,
+    RestartAfterFailedDigEffect,
     SetDumpDoneHoldCountEffect,
     SetDumpReadyHoldCountEffect,
     SetDumpStartDepositedMassFromObservationEffect,
@@ -1061,6 +1067,13 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         if bootstrap_result is not None:
             return bootstrap_result
+        dig_result = self._legacy_fsm_dig_branch().decide_tick(
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=preparation,
+        )
+        if dig_result is not None:
+            return dig_result
         carry_result = self._legacy_fsm_carry_branch().decide_tick(
             obs=obs,
             boundary_event=boundary_event,
@@ -1120,6 +1133,29 @@ class PrimitivePlannerACTPolicy(Policy):
                     next_skill,
                     f"return_to_{next_skill}_{reason_suffix}",
                 )
+            elif isinstance(effect, IncrementDigExitGuardReplanCountEffect):
+                self._increment_dig_exit_guard_replan_count()
+            elif isinstance(effect, IncrementDigBadReplanCountEffect):
+                self._increment_dig_bad_replan_count()
+            elif isinstance(effect, RejectActiveCoverageCorridorEffect):
+                reason = str(effect.reason)
+                if not reason.strip():
+                    raise PrimitiveDecisionContractError(
+                        "RejectActiveCoverageCorridor effect requires non-empty "
+                        "reason"
+                    )
+                self._reject_active_coverage_corridor(obs, reason=reason)
+            elif isinstance(effect, RestartAfterFailedDigEffect):
+                reason = str(effect.reason)
+                if not reason.strip():
+                    raise PrimitiveDecisionContractError(
+                        "RestartAfterFailedDig effect requires non-empty reason"
+                    )
+                self._restart_after_failed_dig(reason, obs)
+            elif isinstance(effect, CompleteCellEntryDigCompatibilityEffect):
+                self._complete_cell_entry_dig(obs)
+            elif isinstance(effect, CompleteCoverageDigEffect):
+                self._complete_coverage_dig(obs)
             elif isinstance(effect, SetDumpReadyHoldCountEffect):
                 self._set_dump_ready_hold_count(int(effect.value))
             elif isinstance(effect, SetDumpStartDepositedMassFromObservationEffect):
@@ -1144,7 +1180,7 @@ class PrimitivePlannerACTPolicy(Policy):
                 effect_name = str(effect.effect_type)
                 raise PrimitiveDecisionContractError(
                     "real planner requested-effect application only supports "
-                    "SwitchSkill, return-cycle, and carry/dump effects; "
+                    "SwitchSkill, dig, return-cycle, and carry/dump effects; "
                     f"received: {effect_name}"
                 )
 

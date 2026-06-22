@@ -12,9 +12,17 @@ from testbed.planner.primitive_capabilities import (
     ReturnTransitionStatus,
 )
 from testbed.planner.primitive_decision import PrimitiveDecisionResult
+from testbed.planner.primitive_decision import CompleteCellEntryDigCompatibilityEffect
+from testbed.planner.primitive_decision import CompleteCoverageDigEffect
 from testbed.planner.primitive_decision import CompleteCoverageDumpEffect
 from testbed.planner.primitive_decision import CompleteReturnTransitionEffect
+from testbed.planner.primitive_decision import IncrementDigBadReplanCountEffect
+from testbed.planner.primitive_decision import (
+    IncrementDigExitGuardReplanCountEffect,
+)
 from testbed.planner.primitive_decision import MarkReturnNextDigEventSeenEffect
+from testbed.planner.primitive_decision import RejectActiveCoverageCorridorEffect
+from testbed.planner.primitive_decision import RestartAfterFailedDigEffect
 from testbed.planner.primitive_decision import SetDumpDoneHoldCountEffect
 from testbed.planner.primitive_decision import SetDumpReadyHoldCountEffect
 from testbed.planner.primitive_decision import (
@@ -27,6 +35,7 @@ from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
 
 BOOTSTRAP_REQUESTED_DECISION_SOURCE = "legacy_fsm_bootstrap_requested_effect"
+DIG_REQUESTED_DECISION_SOURCE = "legacy_fsm_dig_requested_effect"
 CARRY_REQUESTED_DECISION_SOURCE = "legacy_fsm_carry_requested_effect"
 DUMP_REQUESTED_DECISION_SOURCE = "legacy_fsm_dump_requested_effect"
 RETURN_REQUESTED_DECISION_SOURCE = "legacy_fsm_return_requested_effect"
@@ -175,36 +184,100 @@ class LegacyFSMDigBranch:
     dig_to_carry_reason: Callable[[], str]
     set_skill: Callable[[str, str], None]
 
-    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
+    def decide_tick(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        preparation: PrimitiveTickPreparation,
+    ) -> PrimitiveDecisionResult | None:
+        skill_before = str(preparation.skill_name_before_decision)
         if str(self.current_skill_name()) != str(self.config.dig_skill_name):
+            return None
+        effects = self._effects_for_tick(obs=obs, boundary_event=boundary_event)
+        switch_reason = _switch_reason_from_effects(effects)
+        skill_after = _skill_after_from_effects(effects, default=skill_before)
+        return PrimitiveDecisionResult.from_requested_effects(
+            decision_source=DIG_REQUESTED_DECISION_SOURCE,
+            status="skill_switch" if switch_reason else "no_change",
+            skill_before=skill_before,
+            skill_after=skill_after,
+            switch_reason=switch_reason,
+            effects=effects,
+        )
+
+    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
+        skill_before = str(self.current_skill_name())
+        result = self.decide_tick(
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=boundary_event,
+                skill_name_before_decision=skill_before,
+                dig_progress_updated=True,
+            ),
+        )
+        if result is None:
             return False
-        if self.dig_exit_guard_ready(obs):
-            self.increment_dig_exit_guard_replan_count()
-            self.reject_active_coverage_corridor(
-                obs,
-                reason="exit_overshoot_low_payload",
-            )
-            self.restart_after_failed_dig("exit_overshoot_low_payload", obs)
-            return True
-        if self.dig_bad_replan_ready(obs):
-            self.increment_dig_bad_replan_count()
-            self.reject_active_coverage_corridor(obs, reason="bad_dig_low_payload")
-            self.restart_after_failed_dig("bad_dig_low_payload", obs)
-            return True
-        if self.dig_complete_boundary_low_payload(obs, boundary_event):
-            self.increment_dig_bad_replan_count()
-            self.reject_active_coverage_corridor(
-                obs,
-                reason="dig_complete_low_current_payload",
-            )
-            self.restart_after_failed_dig("complete_low_payload", obs)
-            return True
-        if self.dig_to_carry_ready(obs=obs, boundary_event=boundary_event):
-            self.complete_cell_entry_dig(obs)
-            self.complete_coverage_dig(obs)
-            reason = self.dig_to_carry_reason() or "loaded"
-            self.set_skill("carry", f"dig_to_carry_{reason}")
+        self._apply_effects(obs, result.effects)
         return True
+
+    def _effects_for_tick(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> tuple[Any, ...]:
+        if self.dig_exit_guard_ready(obs):
+            return (
+                IncrementDigExitGuardReplanCountEffect(),
+                RejectActiveCoverageCorridorEffect(
+                    reason="exit_overshoot_low_payload",
+                ),
+                RestartAfterFailedDigEffect(reason="exit_overshoot_low_payload"),
+            )
+        if self.dig_bad_replan_ready(obs):
+            return (
+                IncrementDigBadReplanCountEffect(),
+                RejectActiveCoverageCorridorEffect(reason="bad_dig_low_payload"),
+                RestartAfterFailedDigEffect(reason="bad_dig_low_payload"),
+            )
+        if self.dig_complete_boundary_low_payload(obs, boundary_event):
+            return (
+                IncrementDigBadReplanCountEffect(),
+                RejectActiveCoverageCorridorEffect(
+                    reason="dig_complete_low_current_payload",
+                ),
+                RestartAfterFailedDigEffect(reason="complete_low_payload"),
+            )
+        if self.dig_to_carry_ready(obs=obs, boundary_event=boundary_event):
+            reason = self.dig_to_carry_reason() or "loaded"
+            return (
+                CompleteCellEntryDigCompatibilityEffect(),
+                CompleteCoverageDigEffect(),
+                SwitchSkillEffect(
+                    target_skill_name="carry",
+                    switch_reason=f"dig_to_carry_{reason}",
+                ),
+            )
+        return ()
+
+    def _apply_effects(self, obs: dict[str, Any], effects: tuple[Any, ...]) -> None:
+        for effect in effects:
+            if isinstance(effect, IncrementDigExitGuardReplanCountEffect):
+                self.increment_dig_exit_guard_replan_count()
+            elif isinstance(effect, IncrementDigBadReplanCountEffect):
+                self.increment_dig_bad_replan_count()
+            elif isinstance(effect, RejectActiveCoverageCorridorEffect):
+                self.reject_active_coverage_corridor(obs, reason=effect.reason)
+            elif isinstance(effect, RestartAfterFailedDigEffect):
+                self.restart_after_failed_dig(effect.reason, obs)
+            elif isinstance(effect, CompleteCellEntryDigCompatibilityEffect):
+                self.complete_cell_entry_dig(obs)
+            elif isinstance(effect, CompleteCoverageDigEffect):
+                self.complete_coverage_dig(obs)
+            elif isinstance(effect, SwitchSkillEffect):
+                self.set_skill(effect.target_skill_name, effect.switch_reason)
 
 
 @dataclass(frozen=True)
