@@ -27,6 +27,7 @@ class FakeTickHooks(PrimitiveTickHooks):
     requested_decision: PrimitiveDecisionResult | None = None
     events: list[str] = field(default_factory=list)
     applied_effects: list[str] = field(default_factory=list)
+    applied_obs_markers: list[str] = field(default_factory=list)
 
     def update_boundary_event(self, obs: dict[str, Any]) -> str | None:
         self.events.append("boundary_update")
@@ -62,9 +63,11 @@ class FakeTickHooks(PrimitiveTickHooks):
 
     def apply_requested_effects(
         self,
+        obs: dict[str, Any],
         effects: tuple[RequestedPlannerEffect, ...],
     ) -> None:
         self.events.append(f"apply_effects:{len(effects)}")
+        self.applied_obs_markers.append(str(obs.get("marker", "")))
         self.applied_effects.extend(effect.effect_type for effect in effects)
 
     def account_return_timeout(self) -> bool:
@@ -163,9 +166,10 @@ def test_run_primitive_tick_applies_requested_effects_before_timeout_and_dispatc
         ),
     )
 
-    result = run_primitive_tick(hooks=hooks, obs={})
+    result = run_primitive_tick(hooks=hooks, obs={"marker": "current_obs"})
 
     assert result.decision.effects == requested_effects
+    assert hooks.applied_obs_markers == ["current_obs"]
     assert hooks.applied_effects == [
         "record_decision_trace",
         "restart_after_failed_dig",

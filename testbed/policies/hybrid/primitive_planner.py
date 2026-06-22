@@ -109,11 +109,16 @@ from testbed.planner.primitive_execution import (
     run_primitive_tick,
 )
 from testbed.planner.primitive_decision import (
+    CompleteCoverageDumpEffect,
     CompleteReturnTransitionEffect,
     MarkReturnNextDigEventSeenEffect,
     PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
     RequestedPlannerEffect,
+    SetDumpDoneHoldCountEffect,
+    SetDumpReadyHoldCountEffect,
+    SetDumpStartDepositedMassFromObservationEffect,
+    SetReturnOrDirectHandoffEffect,
     SwitchToNextSkillAfterReturnEffect,
     SwitchSkillEffect,
 )
@@ -1056,6 +1061,20 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         if bootstrap_result is not None:
             return bootstrap_result
+        carry_result = self._legacy_fsm_carry_branch().decide_tick(
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=preparation,
+        )
+        if carry_result is not None:
+            return carry_result
+        dump_result = self._legacy_fsm_dump_branch().decide_tick(
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=preparation,
+        )
+        if dump_result is not None:
+            return dump_result
         return_result = self._legacy_fsm_return_branch().decide_tick(
             obs=obs,
             boundary_event=boundary_event,
@@ -1071,6 +1090,7 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _apply_requested_tick_effects(
         self,
+        obs: dict,
         effects: tuple[RequestedPlannerEffect, ...],
     ) -> None:
         if not effects:
@@ -1100,11 +1120,31 @@ class PrimitivePlannerACTPolicy(Policy):
                     next_skill,
                     f"return_to_{next_skill}_{reason_suffix}",
                 )
+            elif isinstance(effect, SetDumpReadyHoldCountEffect):
+                self._set_dump_ready_hold_count(int(effect.value))
+            elif isinstance(effect, SetDumpStartDepositedMassFromObservationEffect):
+                self._set_dump_start_deposited_mass(float(self._deposited_mass(obs)))
+            elif isinstance(effect, SetDumpDoneHoldCountEffect):
+                self._set_dump_done_hold_count(int(effect.value))
+            elif isinstance(effect, CompleteCoverageDumpEffect):
+                reason = str(effect.reason)
+                if not reason.strip():
+                    raise PrimitiveDecisionContractError(
+                        "CompleteCoverageDump effect requires non-empty reason"
+                    )
+                self._complete_coverage_dump(obs, reason=reason)
+            elif isinstance(effect, SetReturnOrDirectHandoffEffect):
+                reason = str(effect.reason)
+                if not reason.strip():
+                    raise PrimitiveDecisionContractError(
+                        "SetReturnOrDirectHandoff effect requires non-empty reason"
+                    )
+                self._set_return_or_direct_handoff(obs, reason=reason)
             else:
                 effect_name = str(effect.effect_type)
                 raise PrimitiveDecisionContractError(
                     "real planner requested-effect application only supports "
-                    "SwitchSkill and return-cycle effects; "
+                    "SwitchSkill, return-cycle, and carry/dump effects; "
                     f"received: {effect_name}"
                 )
 

@@ -34,6 +34,7 @@ class PrimitiveTickHooks(Protocol):
 
     def apply_requested_effects(
         self,
+        obs: dict[str, Any],
         effects: tuple[RequestedPlannerEffect, ...],
     ) -> None: ...
 
@@ -77,7 +78,10 @@ class PrimitiveTickCallbacks:
     current_skill_name: Callable[[], str]
     update_dig_progress: Callable[[dict[str, Any]], None]
     decide_tick: Callable[..., PrimitiveDecisionResult]
-    apply_requested_effects: Callable[[tuple[RequestedPlannerEffect, ...]], None]
+    apply_requested_effects: Callable[
+        [dict[str, Any], tuple[RequestedPlannerEffect, ...]],
+        None,
+    ]
     account_return_timeout: Callable[[], bool]
     dispatch_action: Callable[[dict[str, Any]], Any]
     record_previous_action: Callable[[Any], None]
@@ -109,7 +113,7 @@ def run_primitive_tick(
         boundary_event=boundary_event,
         preparation=preparation,
     )
-    _apply_requested_effects_if_needed(hooks=hooks, decision=decision)
+    _apply_requested_effects_if_needed(hooks=hooks, obs=obs, decision=decision)
 
     transition_timeout = hooks.account_return_timeout()
     action = hooks.dispatch_action(obs)
@@ -133,6 +137,7 @@ def run_primitive_tick(
 def _apply_requested_effects_if_needed(
     *,
     hooks: PrimitiveTickHooks,
+    obs: dict[str, Any],
     decision: PrimitiveDecisionResult,
 ) -> None:
     validate_decision_effect_contract(decision)
@@ -143,4 +148,4 @@ def _apply_requested_effects_if_needed(
         for effect in decision.effects
         if isinstance(effect, RequestedPlannerEffect)
     )
-    hooks.apply_requested_effects(requested_effects)
+    hooks.apply_requested_effects(obs, requested_effects)

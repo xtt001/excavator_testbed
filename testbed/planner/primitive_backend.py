@@ -12,14 +12,23 @@ from testbed.planner.primitive_capabilities import (
     ReturnTransitionStatus,
 )
 from testbed.planner.primitive_decision import PrimitiveDecisionResult
+from testbed.planner.primitive_decision import CompleteCoverageDumpEffect
 from testbed.planner.primitive_decision import CompleteReturnTransitionEffect
 from testbed.planner.primitive_decision import MarkReturnNextDigEventSeenEffect
+from testbed.planner.primitive_decision import SetDumpDoneHoldCountEffect
+from testbed.planner.primitive_decision import SetDumpReadyHoldCountEffect
+from testbed.planner.primitive_decision import (
+    SetDumpStartDepositedMassFromObservationEffect,
+)
+from testbed.planner.primitive_decision import SetReturnOrDirectHandoffEffect
 from testbed.planner.primitive_decision import SwitchSkillEffect
 from testbed.planner.primitive_decision import SwitchToNextSkillAfterReturnEffect
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
 
 BOOTSTRAP_REQUESTED_DECISION_SOURCE = "legacy_fsm_bootstrap_requested_effect"
+CARRY_REQUESTED_DECISION_SOURCE = "legacy_fsm_carry_requested_effect"
+DUMP_REQUESTED_DECISION_SOURCE = "legacy_fsm_dump_requested_effect"
 RETURN_REQUESTED_DECISION_SOURCE = "legacy_fsm_return_requested_effect"
 
 
@@ -217,30 +226,94 @@ class LegacyFSMCarryBranch:
     set_dump_start_deposited_mass: Callable[[float], None]
     set_skill: Callable[[str, str], None]
 
-    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
+    def decide_tick(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        preparation: PrimitiveTickPreparation,
+    ) -> PrimitiveDecisionResult | None:
+        skill_before = str(preparation.skill_name_before_decision)
         if str(self.current_skill_name()) != str(self.config.carry_skill_name):
-            return False
+            return None
         status = self.carry_transition_status(obs, boundary_event)
-        if status.carry_release_safety_done:
-            self.complete_coverage_dump(obs, reason="carry_release_safety")
-            self.set_return_or_direct_handoff(
-                obs,
-                reason="carry_to_return_release_safety",
-            )
-            return True
-        if status.dump_complete_event:
-            self.complete_coverage_dump(obs, reason="carry_dump_complete_boundary")
-            self.set_return_or_direct_handoff(
-                obs,
-                reason="carry_to_return_dump_complete_boundary",
-            )
-            return True
-        self.set_dump_ready_hold_count(int(status.next_dump_ready_hold_count))
-        if status.ready_to_dump:
-            self.set_dump_start_deposited_mass(float(self.deposited_mass(obs)))
-            reason = status.carry_to_dump_reason or "target_ready"
-            self.set_skill("dump", f"carry_to_dump_{reason}")
+        effects = self._effects_for_status(status)
+        decision_status = "skill_switch" if _has_transition_effect(effects) else "no_change"
+        switch_reason = _switch_reason_from_effects(effects)
+        skill_after = _skill_after_from_effects(effects, default=skill_before)
+        return PrimitiveDecisionResult.from_requested_effects(
+            decision_source=CARRY_REQUESTED_DECISION_SOURCE,
+            status=decision_status,
+            skill_before=skill_before,
+            skill_after=skill_after,
+            switch_reason=switch_reason,
+            effects=effects,
+        )
+
+    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
+        skill_before = str(self.current_skill_name())
+        result = self.decide_tick(
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=boundary_event,
+                skill_name_before_decision=skill_before,
+                dig_progress_updated=False,
+            ),
+        )
+        if result is None:
+            return False
+        self._apply_effects(obs, result.effects)
         return True
+
+    def _effects_for_status(
+        self,
+        status: CarryTransitionStatus,
+    ) -> tuple[Any, ...]:
+        if status.carry_release_safety_done:
+            return (
+                CompleteCoverageDumpEffect(reason="carry_release_safety"),
+                SetReturnOrDirectHandoffEffect(
+                    reason="carry_to_return_release_safety",
+                ),
+            )
+        if status.dump_complete_event:
+            return (
+                CompleteCoverageDumpEffect(reason="carry_dump_complete_boundary"),
+                SetReturnOrDirectHandoffEffect(
+                    reason="carry_to_return_dump_complete_boundary",
+                ),
+            )
+        effects: list[Any] = [
+            SetDumpReadyHoldCountEffect(
+                value=int(status.next_dump_ready_hold_count)
+            )
+        ]
+        if status.ready_to_dump:
+            reason = status.carry_to_dump_reason or "target_ready"
+            effects.extend(
+                (
+                    SetDumpStartDepositedMassFromObservationEffect(),
+                    SwitchSkillEffect(
+                        target_skill_name="dump",
+                        switch_reason=f"carry_to_dump_{reason}",
+                    ),
+                )
+            )
+        return tuple(effects)
+
+    def _apply_effects(self, obs: dict[str, Any], effects: tuple[Any, ...]) -> None:
+        for effect in effects:
+            if isinstance(effect, CompleteCoverageDumpEffect):
+                self.complete_coverage_dump(obs, reason=effect.reason)
+            elif isinstance(effect, SetReturnOrDirectHandoffEffect):
+                self.set_return_or_direct_handoff(obs, reason=effect.reason)
+            elif isinstance(effect, SetDumpReadyHoldCountEffect):
+                self.set_dump_ready_hold_count(int(effect.value))
+            elif isinstance(effect, SetDumpStartDepositedMassFromObservationEffect):
+                self.set_dump_start_deposited_mass(float(self.deposited_mass(obs)))
+            elif isinstance(effect, SwitchSkillEffect):
+                self.set_skill(effect.target_skill_name, effect.switch_reason)
 
 
 @dataclass(frozen=True)
@@ -259,31 +332,77 @@ class LegacyFSMDumpBranch:
     set_return_or_direct_handoff: Callable[..., None]
     set_dump_done_hold_count: Callable[[int], None]
 
-    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
+    def decide_tick(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        preparation: PrimitiveTickPreparation,
+    ) -> PrimitiveDecisionResult | None:
+        skill_before = str(preparation.skill_name_before_decision)
         if str(self.current_skill_name()) != str(self.config.dump_skill_name):
-            return False
+            return None
         status = self.dump_transition_status(obs, boundary_event)
-        if status.boundary_dump_done:
-            self.complete_coverage_dump(
-                obs,
-                reason=status.coverage_completion_reason,
-            )
-            self.set_return_or_direct_handoff(
-                obs,
-                reason=status.dump_to_return_reason,
-            )
-            return True
-        self.set_dump_done_hold_count(int(status.next_dump_done_hold_count))
-        if status.ready_to_return:
-            self.complete_coverage_dump(
-                obs,
-                reason=status.coverage_completion_reason,
-            )
-            self.set_return_or_direct_handoff(
-                obs,
-                reason=status.dump_to_return_reason,
-            )
+        effects = self._effects_for_status(status)
+        decision_status = "skill_switch" if _has_transition_effect(effects) else "no_change"
+        return PrimitiveDecisionResult.from_requested_effects(
+            decision_source=DUMP_REQUESTED_DECISION_SOURCE,
+            status=decision_status,
+            skill_before=skill_before,
+            skill_after=skill_before,
+            switch_reason="",
+            effects=effects,
+        )
+
+    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
+        skill_before = str(self.current_skill_name())
+        result = self.decide_tick(
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=boundary_event,
+                skill_name_before_decision=skill_before,
+                dig_progress_updated=False,
+            ),
+        )
+        if result is None:
+            return False
+        self._apply_effects(obs, result.effects)
         return True
+
+    def _effects_for_status(
+        self,
+        status: DumpTransitionStatus,
+    ) -> tuple[Any, ...]:
+        if status.boundary_dump_done:
+            return (
+                CompleteCoverageDumpEffect(reason=status.coverage_completion_reason),
+                SetReturnOrDirectHandoffEffect(reason=status.dump_to_return_reason),
+            )
+        effects: list[Any] = [
+            SetDumpDoneHoldCountEffect(value=int(status.next_dump_done_hold_count))
+        ]
+        if status.ready_to_return:
+            effects.extend(
+                (
+                    CompleteCoverageDumpEffect(
+                        reason=status.coverage_completion_reason,
+                    ),
+                    SetReturnOrDirectHandoffEffect(
+                        reason=status.dump_to_return_reason,
+                    ),
+                )
+            )
+        return tuple(effects)
+
+    def _apply_effects(self, obs: dict[str, Any], effects: tuple[Any, ...]) -> None:
+        for effect in effects:
+            if isinstance(effect, SetDumpDoneHoldCountEffect):
+                self.set_dump_done_hold_count(int(effect.value))
+            elif isinstance(effect, CompleteCoverageDumpEffect):
+                self.complete_coverage_dump(obs, reason=effect.reason)
+            elif isinstance(effect, SetReturnOrDirectHandoffEffect):
+                self.set_return_or_direct_handoff(obs, reason=effect.reason)
 
 
 @dataclass(frozen=True)
@@ -415,3 +534,30 @@ def _has_return_switch_effect(effects: tuple[Any, ...]) -> bool:
         isinstance(effect, SwitchToNextSkillAfterReturnEffect)
         for effect in effects
     )
+
+
+def _has_transition_effect(effects: tuple[Any, ...]) -> bool:
+    return any(
+        isinstance(
+            effect,
+            (
+                SwitchSkillEffect,
+                SetReturnOrDirectHandoffEffect,
+            ),
+        )
+        for effect in effects
+    )
+
+
+def _switch_reason_from_effects(effects: tuple[Any, ...]) -> str:
+    for effect in effects:
+        if isinstance(effect, SwitchSkillEffect):
+            return str(effect.switch_reason)
+    return ""
+
+
+def _skill_after_from_effects(effects: tuple[Any, ...], *, default: str) -> str:
+    for effect in effects:
+        if isinstance(effect, SwitchSkillEffect):
+            return str(effect.target_skill_name)
+    return str(default)

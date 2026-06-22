@@ -2172,3 +2172,81 @@ Each completed refactor round should append:
   promote `pre_dig_align`, `cell_entry`, or direct-handoff internals into the
   mainline requested-effect architecture without a separate evidence-backed
   scope and compatibility decision.
+
+### 2026-06-22 Phase 9.3 Observation-Aware Effect Applier And Carry/Dump Requested Effects Conversion
+
+- Scope: made requested-effect application observation-aware and converted only
+  the 4P mainline `carry` and `dump` branches from direct callback mutation to
+  ordered requested effects. No dig branch, return direct-handoff helper
+  internals, `pre_dig_align` branch internals, `cell_entry`, 5P override,
+  branch order, reason string, threshold, backend selection, behavior tree,
+  VLM/LLM packet, token schema, debug schema, rollout summary schema, policy
+  reset timing, or low-level ACT dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `5c4674862e6f8be5fb65c7540f1c558d2c7c6ee3`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Selected evidence remains the successful mainline packet:
+  `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl`,
+  its paired planner trace, rollout summary, resolved config, and
+  `docs/planner_evidence_reports/2026-06-18-baseline-aggregate_tx24.md`. The
+  selected evidence marks `gate.carry_to_dump` and `gate.dump_to_return` as
+  confirmed-live and locks carry/dump switch reasons through the current-code
+  parity harness.
+- Confirmed-live method chain converted:
+  `run_primitive_tick()` calls the decision bridge, the carry/dump branch
+  returns `PrimitiveDecisionResult(side_effects_applied=False)` with ordered
+  requested effects, the execution hook passes both `obs` and effects to the
+  shell applier before return-timeout accounting and action dispatch, and the
+  real shell applier calls existing carry/dump shell operations in order.
+- Updated `testbed/planner/primitive_execution.py` so
+  `apply_requested_effects` receives the current `obs` plus ordered effects.
+  Legacy already-applied decisions still skip requested-effect application.
+- Added concrete carry/dump effect contracts in
+  `testbed/planner/primitive_decision.py`:
+  `SetDumpReadyHoldCountEffect`,
+  `SetDumpStartDepositedMassFromObservationEffect`,
+  `SetDumpDoneHoldCountEffect`, `CompleteCoverageDumpEffect`, and
+  `SetReturnOrDirectHandoffEffect`. Validation rejects negative hold counts,
+  empty coverage/return reasons, and preserves the forbidden callable/self/
+  arbitrary planner attr or method-call payload checks.
+- Updated `LegacyFSMCarryBranch` with `decide_tick(...)` as the requested
+  decision API. The branch now emits ordered effects for carry release-safety,
+  carry dump-complete boundary, hold-count update, dump-start deposited-mass
+  capture from current observation, and carry-to-dump `SwitchSkillEffect`.
+  `maybe_handle()` remains a compatibility facade and reuses the same requested
+  decision logic before applying effects through its existing callbacks.
+- Updated `LegacyFSMDumpBranch` with `decide_tick(...)` as the requested
+  decision API. The branch now emits ordered effects for dump boundary-done,
+  dump done hold-count update, coverage dump completion, and return/direct
+  handoff. `maybe_handle()` remains a compatibility facade and reuses the same
+  requested decision logic before applying effects through its existing
+  callbacks.
+- Updated `PrimitivePlannerACTPolicy._decide_tick_with_legacy_fsm()` so the
+  default bridge tries bootstrap requested effects first, then carry, dump,
+  return requested effects, then falls back to the existing legacy
+  already-applied adapter for dig and legacy parking paths.
+- Updated `PrimitivePlannerACTPolicy._apply_requested_tick_effects(obs, ...)`
+  so carry/dump effects map to existing shell helpers:
+  `_set_dump_ready_hold_count`, `_set_dump_start_deposited_mass` with
+  `_deposited_mass(obs)`, `_set_dump_done_hold_count`,
+  `_complete_coverage_dump(obs, reason=...)`,
+  `_set_return_or_direct_handoff(obs, reason=...)`, and existing `_set_skill`.
+- Added focused tests in `tests/test_primitive_backend.py`,
+  `tests/test_primitive_decision_contract.py`, and
+  `tests/test_primitive_execution_template.py` for obs-aware requested-effect
+  ordering, carry release-safety, carry dump-complete boundary, carry
+  ready-to-dump ordering, dump boundary-done, dump ready-to-return ordering,
+  real shell obs-aware applier calls, and carry/dump policy bridge
+  no-callback decision behavior.
+- TDD red result: the first focused run failed at test collection because the
+  carry/dump effect classes did not exist. After implementation and test
+  updates, the focused green run returned `53 passed`.
+- Old code parked/reclassified: no code was deleted. Dig branch bodies, return
+  direct-handoff helper internals, `pre_dig_align` internals, `cell_entry`, and
+  5P compatibility remain existing legacy or compatibility owners.
+- Next action: the remaining confirmed-live branch with direct callback
+  mutation is `dig`, but it mixes coverage dig completion, cell-entry
+  compatibility, failed-dig restart/replan, and skill switch effects. Convert it
+  only with a separate evidence-backed scope and explicit semantic effect
+  family coverage.

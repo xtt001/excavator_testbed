@@ -353,6 +353,19 @@ before the pre-dig gate chooses `dig` or `pre_dig_align`. This phase does not
 migrate direct-handoff helper internals, dig, carry, dump, coverage, token
 planning, or `pre_dig_align` branch behavior.
 
+Phase 9.3 makes the requested-effect applier observation-aware and converts the
+4P mainline `carry` and `dump` branches to ordered requested effects. The
+execution hook still runs after `decide_tick()` and before return-timeout
+accounting or action dispatch, but it now passes the current `obs` to the shell
+applier so semantic effects can use current observation facts without carrying
+callbacks or planner objects. The converted carry/dump branches emit hold-counter
+effects, dump-start deposited-mass-from-observation, coverage-dump completion,
+return/direct-handoff requests, and existing `SwitchSkillEffect` for
+carry-to-dump. The shell applier maps these effects to the existing shell
+helpers and preserves old effect ordering. This phase does not migrate the dig
+branch, direct-handoff helper internals, `pre_dig_align`, `cell_entry`, token
+planning, or backend selection.
+
 ### Stage 4: Expand Effect Families From Evidence
 
 Each new family must be justified by a confirmed-live rollout behavior and a

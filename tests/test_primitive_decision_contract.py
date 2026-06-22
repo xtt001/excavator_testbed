@@ -3,15 +3,24 @@ from __future__ import annotations
 from types import MethodType
 from typing import Any
 
-from testbed.planner.primitive_capabilities import ReturnTransitionStatus
+from testbed.planner.primitive_capabilities import (
+    CarryTransitionStatus,
+    DumpTransitionStatus,
+    ReturnTransitionStatus,
+)
 from testbed.planner.primitive_decision import (
     LEGACY_FSM_DECISION_SOURCE,
     CompleteReturnTransitionEffect,
+    CompleteCoverageDumpEffect,
     LegacyDecisionOutcomeEffect,
     MarkReturnNextDigEventSeenEffect,
     PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
     RequestedPlannerEffect,
+    SetDumpDoneHoldCountEffect,
+    SetDumpReadyHoldCountEffect,
+    SetDumpStartDepositedMassFromObservationEffect,
+    SetReturnOrDirectHandoffEffect,
     SwitchToNextSkillAfterReturnEffect,
     SwitchSkillEffect,
     validate_decision_effect_contract,
@@ -195,6 +204,87 @@ def test_return_cycle_effect_rejects_empty_reason_suffix() -> None:
         raise AssertionError("invalid return switch effect was accepted")
 
 
+def test_carry_dump_effects_record_semantic_requests() -> None:
+    effects = (
+        SetDumpReadyHoldCountEffect(value=2),
+        SetDumpStartDepositedMassFromObservationEffect(),
+        SetDumpDoneHoldCountEffect(value=3),
+        CompleteCoverageDumpEffect(reason="dump_mass_low"),
+        SetReturnOrDirectHandoffEffect(reason="dump_to_return_mass_low"),
+    )
+
+    result = PrimitiveDecisionResult.from_requested_effects(
+        decision_source="legacy_fsm_carry_requested_effect",
+        status="skill_switch",
+        skill_before="carry",
+        skill_after="carry",
+        switch_reason="",
+        effects=effects,
+    )
+
+    assert result.effects == effects
+    assert [effect.effect_type for effect in effects] == [
+        "set_dump_ready_hold_count",
+        "set_dump_start_deposited_mass_from_observation",
+        "set_dump_done_hold_count",
+        "complete_coverage_dump",
+        "set_return_or_direct_handoff",
+    ]
+    assert effects[0].value == 2
+    assert effects[2].value == 3
+    assert effects[3].reason == "dump_mass_low"
+    assert effects[4].reason == "dump_to_return_mass_low"
+
+
+def test_carry_dump_effects_reject_invalid_values_or_reasons() -> None:
+    invalid_results = (
+        PrimitiveDecisionResult.from_requested_effects(
+            decision_source="test_backend",
+            status="no_change",
+            skill_before="carry",
+            skill_after="carry",
+            switch_reason="",
+            effects=(SetDumpReadyHoldCountEffect(value=-1),),
+            validate=False,
+        ),
+        PrimitiveDecisionResult.from_requested_effects(
+            decision_source="test_backend",
+            status="no_change",
+            skill_before="dump",
+            skill_after="dump",
+            switch_reason="",
+            effects=(SetDumpDoneHoldCountEffect(value=-1),),
+            validate=False,
+        ),
+        PrimitiveDecisionResult.from_requested_effects(
+            decision_source="test_backend",
+            status="skill_switch",
+            skill_before="carry",
+            skill_after="return",
+            switch_reason="",
+            effects=(CompleteCoverageDumpEffect(reason=""),),
+            validate=False,
+        ),
+        PrimitiveDecisionResult.from_requested_effects(
+            decision_source="test_backend",
+            status="skill_switch",
+            skill_before="dump",
+            skill_after="return",
+            switch_reason="",
+            effects=(SetReturnOrDirectHandoffEffect(reason=""),),
+            validate=False,
+        ),
+    )
+
+    for result in invalid_results:
+        try:
+            validate_decision_effect_contract(result)
+        except PrimitiveDecisionContractError:
+            pass
+        else:
+            raise AssertionError("invalid carry/dump effect was accepted")
+
+
 def test_decision_contract_rejects_callable_or_planner_method_effect_shapes() -> None:
     callable_effect = PrimitiveDecisionResult.from_requested_effects(
         decision_source="test_backend",
@@ -237,7 +327,7 @@ def test_decision_contract_rejects_callable_or_planner_method_effect_shapes() ->
 def test_primitive_planner_requested_effect_bridge_allows_empty_effects() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
 
-    planner._apply_requested_tick_effects(())
+    planner._apply_requested_tick_effects({}, ())
 
 
 def test_primitive_planner_requested_effect_bridge_rejects_live_effects() -> None:
@@ -250,7 +340,7 @@ def test_primitive_planner_requested_effect_bridge_rejects_live_effects() -> Non
     )
 
     try:
-        planner._apply_requested_tick_effects(effects)
+        planner._apply_requested_tick_effects({}, effects)
     except PrimitiveDecisionContractError as exc:
         message = str(exc)
     else:
@@ -275,6 +365,7 @@ def test_primitive_planner_requested_effect_bridge_applies_switch_skill() -> Non
     planner._set_skill = MethodType(fake_set_skill, planner)
 
     planner._apply_requested_tick_effects(
+        {},
         (
             SwitchSkillEffect(
                 target_skill_name="carry",
@@ -318,6 +409,7 @@ def test_primitive_planner_requested_effect_bridge_applies_return_cycle_in_order
     planner._set_skill = MethodType(fake_set_skill, planner)
 
     planner._apply_requested_tick_effects(
+        {},
         (
             MarkReturnNextDigEventSeenEffect(),
             CompleteReturnTransitionEffect(),
@@ -332,6 +424,84 @@ def test_primitive_planner_requested_effect_bridge_applies_return_cycle_in_order
         "complete:1",
         "next_skill:1",
         "set:dig:return_to_dig_next_dig_entry_ready",
+    ]
+
+
+def test_primitive_planner_requested_effect_bridge_applies_carry_dump_effects_with_obs() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    obs: dict[str, Any] = {"payload": "current_obs"}
+    events: list[str] = []
+
+    def fake_set_ready(self: PrimitivePlannerACTPolicy, value: int) -> None:
+        events.append(f"ready:{value}")
+
+    def fake_deposited(self: PrimitivePlannerACTPolicy, got_obs: dict[str, Any]) -> float:
+        assert got_obs is obs
+        events.append("deposited")
+        return 12.5
+
+    def fake_set_start(self: PrimitivePlannerACTPolicy, value: float) -> None:
+        events.append(f"start:{value}")
+
+    def fake_complete_dump(
+        self: PrimitivePlannerACTPolicy,
+        got_obs: dict[str, Any],
+        *,
+        reason: str,
+    ) -> None:
+        assert got_obs is obs
+        events.append(f"complete:{reason}")
+
+    def fake_return_or_handoff(
+        self: PrimitivePlannerACTPolicy,
+        got_obs: dict[str, Any],
+        *,
+        reason: str,
+    ) -> None:
+        assert got_obs is obs
+        events.append(f"return:{reason}")
+
+    def fake_set_done(self: PrimitivePlannerACTPolicy, value: int) -> None:
+        events.append(f"done:{value}")
+
+    def fake_set_skill(
+        self: PrimitivePlannerACTPolicy,
+        skill_name: str,
+        reason: str,
+    ) -> None:
+        events.append(f"skill:{skill_name}:{reason}")
+
+    planner._set_dump_ready_hold_count = MethodType(fake_set_ready, planner)
+    planner._deposited_mass = MethodType(fake_deposited, planner)
+    planner._set_dump_start_deposited_mass = MethodType(fake_set_start, planner)
+    planner._complete_coverage_dump = MethodType(fake_complete_dump, planner)
+    planner._set_return_or_direct_handoff = MethodType(fake_return_or_handoff, planner)
+    planner._set_dump_done_hold_count = MethodType(fake_set_done, planner)
+    planner._set_skill = MethodType(fake_set_skill, planner)
+
+    planner._apply_requested_tick_effects(
+        obs,
+        (
+            SetDumpReadyHoldCountEffect(value=4),
+            SetDumpStartDepositedMassFromObservationEffect(),
+            SwitchSkillEffect(
+                target_skill_name="dump",
+                switch_reason="carry_to_dump_target_ready",
+            ),
+            SetDumpDoneHoldCountEffect(value=2),
+            CompleteCoverageDumpEffect(reason="dump_mass_low"),
+            SetReturnOrDirectHandoffEffect(reason="dump_to_return_mass_low"),
+        ),
+    )
+
+    assert events == [
+        "ready:4",
+        "deposited",
+        "start:12.5",
+        "skill:dump:carry_to_dump_target_ready",
+        "done:2",
+        "complete:dump_mass_low",
+        "return:dump_to_return_mass_low",
     ]
 
 
@@ -483,4 +653,130 @@ def test_primitive_planner_return_decision_bridge_returns_requested_effects() ->
         MarkReturnNextDigEventSeenEffect(),
         CompleteReturnTransitionEffect(),
         SwitchToNextSkillAfterReturnEffect(reason_suffix="next_dig_entry_ready"),
+    )
+
+
+def test_primitive_planner_carry_decision_bridge_returns_requested_effects() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    planner._skill_name = "carry"
+    planner._switch_reason = ""
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    callbacks: list[str] = []
+
+    planner._carry_transition_status_for_backend = MethodType(
+        lambda self, obs, boundary_event: CarryTransitionStatus(
+            mass_in_bucket_kg=120.0,
+            deposited_mass_in_target_box_kg=8.5,
+            deposit_delta_since_cycle_start_kg=8.5,
+            semantic_boundary_profile_active=True,
+            dump_committed_event=True,
+            release_onset_event=False,
+            dump_complete_event=False,
+            legacy_dump_start_event=False,
+            carry_release_safety_done=False,
+            dump_ready=False,
+            next_dump_ready_hold_count=3,
+            ready_to_dump=True,
+            carry_to_dump_reason="dump_committed_boundary",
+            carry_to_return_reason="",
+        ),
+        planner,
+    )
+    planner._complete_coverage_dump = MethodType(
+        lambda self, obs, reason: callbacks.append(f"complete:{reason}"),
+        planner,
+    )
+    planner._set_return_or_direct_handoff = MethodType(
+        lambda self, obs, reason: callbacks.append(f"return:{reason}"),
+        planner,
+    )
+    planner._set_dump_ready_hold_count = MethodType(
+        lambda self, value: callbacks.append(f"hold:{value}"),
+        planner,
+    )
+    planner._deposited_mass = MethodType(lambda self, obs: 8.5, planner)
+    planner._set_dump_start_deposited_mass = MethodType(
+        lambda self, value: callbacks.append(f"deposit:{value}"),
+        planner,
+    )
+    planner._set_skill = MethodType(
+        lambda self, skill, reason: callbacks.append(f"{skill}:{reason}"),
+        planner,
+    )
+
+    result = planner._decide_tick_with_legacy_fsm(
+        obs=obs,
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="carry",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert callbacks == []
+    assert result.side_effects_applied is False
+    assert result.effects == (
+        SetDumpReadyHoldCountEffect(value=3),
+        SetDumpStartDepositedMassFromObservationEffect(),
+        SwitchSkillEffect(
+            target_skill_name="dump",
+            switch_reason="carry_to_dump_dump_committed_boundary",
+        ),
+    )
+
+
+def test_primitive_planner_dump_decision_bridge_returns_requested_effects() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    planner._skill_name = "dump"
+    planner._switch_reason = ""
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    callbacks: list[str] = []
+
+    planner._dump_transition_status_for_backend = MethodType(
+        lambda self, obs, boundary_event: DumpTransitionStatus(
+            mass_in_bucket_kg=5.0,
+            deposited_mass_in_target_box_kg=20.0,
+            deposit_delta_since_dump_start_kg=10.0,
+            semantic_boundary_profile_active=False,
+            dump_complete_event=False,
+            legacy_dump_end_event=False,
+            boundary_dump_done=False,
+            dump_done_mass_low=True,
+            next_dump_done_hold_count=2,
+            ready_to_return=True,
+            coverage_completion_reason="dump_mass_low",
+            dump_to_return_reason="dump_to_return_mass_low",
+        ),
+        planner,
+    )
+    planner._complete_coverage_dump = MethodType(
+        lambda self, obs, reason: callbacks.append(f"complete:{reason}"),
+        planner,
+    )
+    planner._set_return_or_direct_handoff = MethodType(
+        lambda self, obs, reason: callbacks.append(f"return:{reason}"),
+        planner,
+    )
+    planner._set_dump_done_hold_count = MethodType(
+        lambda self, value: callbacks.append(f"done:{value}"),
+        planner,
+    )
+
+    result = planner._decide_tick_with_legacy_fsm(
+        obs=obs,
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dump",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert callbacks == []
+    assert result.side_effects_applied is False
+    assert result.effects == (
+        SetDumpDoneHoldCountEffect(value=2),
+        CompleteCoverageDumpEffect(reason="dump_mass_low"),
+        SetReturnOrDirectHandoffEffect(reason="dump_to_return_mass_low"),
     )

@@ -23,7 +23,12 @@ from testbed.planner.primitive_capabilities import (
 from testbed.planner.primitive_decision import (
     LEGACY_FSM_DECISION_SOURCE,
     CompleteReturnTransitionEffect,
+    CompleteCoverageDumpEffect,
     MarkReturnNextDigEventSeenEffect,
+    SetDumpDoneHoldCountEffect,
+    SetDumpReadyHoldCountEffect,
+    SetDumpStartDepositedMassFromObservationEffect,
+    SetReturnOrDirectHandoffEffect,
     SwitchToNextSkillAfterReturnEffect,
     SwitchSkillEffect,
 )
@@ -272,6 +277,108 @@ def test_legacy_fsm_carry_branch_release_safety_handoffs_to_return() -> None:
     ]
 
 
+def test_legacy_fsm_carry_branch_requested_release_safety_handoff_effects() -> None:
+    callbacks: list[str] = []
+    branch = LegacyFSMCarryBranch(
+        config=LegacyFSMCarryConfig(carry_skill_name="carry"),
+        current_skill_name=lambda: "carry",
+        carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
+            mass_in_bucket_kg=0.0,
+            deposited_mass_in_target_box_kg=20.0,
+            deposit_delta_since_cycle_start_kg=10.0,
+            semantic_boundary_profile_active=True,
+            dump_committed_event=False,
+            release_onset_event=False,
+            dump_complete_event=False,
+            legacy_dump_start_event=False,
+            carry_release_safety_done=True,
+            dump_ready=False,
+            next_dump_ready_hold_count=0,
+            ready_to_dump=False,
+            carry_to_dump_reason="",
+            carry_to_return_reason="carry_to_return_release_safety",
+        ),
+        complete_coverage_dump=lambda obs, reason: callbacks.append(
+            f"complete:{reason}"
+        ),
+        set_return_or_direct_handoff=lambda obs, reason: callbacks.append(
+            f"return:{reason}"
+        ),
+        set_dump_ready_hold_count=lambda value: callbacks.append(f"hold:{value}"),
+        deposited_mass=lambda obs: 20.0,
+        set_dump_start_deposited_mass=lambda value: callbacks.append(
+            f"deposit:{value}"
+        ),
+        set_skill=lambda skill, reason: callbacks.append(f"{skill}:{reason}"),
+    )
+
+    result = branch.decide_tick(
+        obs={"qpos": [1.0]},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="carry",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert callbacks == []
+    assert result is not None
+    assert result.side_effects_applied is False
+    assert result.status == "skill_switch"
+    assert result.effects == (
+        CompleteCoverageDumpEffect(reason="carry_release_safety"),
+        SetReturnOrDirectHandoffEffect(reason="carry_to_return_release_safety"),
+    )
+
+
+def test_legacy_fsm_carry_branch_requested_dump_complete_boundary_effects() -> None:
+    branch = LegacyFSMCarryBranch(
+        config=LegacyFSMCarryConfig(carry_skill_name="carry"),
+        current_skill_name=lambda: "carry",
+        carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
+            mass_in_bucket_kg=0.0,
+            deposited_mass_in_target_box_kg=20.0,
+            deposit_delta_since_cycle_start_kg=10.0,
+            semantic_boundary_profile_active=True,
+            dump_committed_event=False,
+            release_onset_event=False,
+            dump_complete_event=True,
+            legacy_dump_start_event=False,
+            carry_release_safety_done=False,
+            dump_ready=False,
+            next_dump_ready_hold_count=0,
+            ready_to_dump=False,
+            carry_to_dump_reason="",
+            carry_to_return_reason="carry_to_return_dump_complete_boundary",
+        ),
+        complete_coverage_dump=lambda obs, reason: None,
+        set_return_or_direct_handoff=lambda obs, reason: None,
+        set_dump_ready_hold_count=lambda value: None,
+        deposited_mass=lambda obs: 20.0,
+        set_dump_start_deposited_mass=lambda value: None,
+        set_skill=lambda skill, reason: None,
+    )
+
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="carry",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert result is not None
+    assert result.effects == (
+        CompleteCoverageDumpEffect(reason="carry_dump_complete_boundary"),
+        SetReturnOrDirectHandoffEffect(
+            reason="carry_to_return_dump_complete_boundary"
+        ),
+    )
+
+
 def test_legacy_fsm_carry_branch_committed_boundary_switches_to_dump() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
@@ -317,6 +424,63 @@ def test_legacy_fsm_carry_branch_committed_boundary_switches_to_dump() -> None:
     assert handled is True
     assert state == {"hold": 3, "deposit": 8.5}
     assert events == [("dump", "carry_to_dump_dump_committed_boundary")]
+
+
+def test_legacy_fsm_carry_branch_requested_ready_to_dump_effects_in_order() -> None:
+    callbacks: list[str] = []
+    branch = LegacyFSMCarryBranch(
+        config=LegacyFSMCarryConfig(carry_skill_name="carry"),
+        current_skill_name=lambda: "carry",
+        carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
+            mass_in_bucket_kg=120.0,
+            deposited_mass_in_target_box_kg=8.5,
+            deposit_delta_since_cycle_start_kg=8.5,
+            semantic_boundary_profile_active=True,
+            dump_committed_event=True,
+            release_onset_event=False,
+            dump_complete_event=False,
+            legacy_dump_start_event=False,
+            carry_release_safety_done=False,
+            dump_ready=False,
+            next_dump_ready_hold_count=3,
+            ready_to_dump=True,
+            carry_to_dump_reason="dump_committed_boundary",
+            carry_to_return_reason="",
+        ),
+        complete_coverage_dump=lambda obs, reason: callbacks.append(
+            f"complete:{reason}"
+        ),
+        set_return_or_direct_handoff=lambda obs, reason: callbacks.append(
+            f"return:{reason}"
+        ),
+        set_dump_ready_hold_count=lambda value: callbacks.append(f"hold:{value}"),
+        deposited_mass=lambda obs: 8.5,
+        set_dump_start_deposited_mass=lambda value: callbacks.append(
+            f"deposit:{value}"
+        ),
+        set_skill=lambda skill, reason: callbacks.append(f"{skill}:{reason}"),
+    )
+
+    result = branch.decide_tick(
+        obs={"qpos": [1.0]},
+        boundary_event=object(),
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="carry",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert callbacks == []
+    assert result is not None
+    assert result.effects == (
+        SetDumpReadyHoldCountEffect(value=3),
+        SetDumpStartDepositedMassFromObservationEffect(),
+        SwitchSkillEffect(
+            target_skill_name="dump",
+            switch_reason="carry_to_dump_dump_committed_boundary",
+        ),
+    )
 
 
 def test_legacy_fsm_carry_branch_ignores_non_carry_skill() -> None:
@@ -389,6 +553,52 @@ def test_legacy_fsm_dump_branch_boundary_handoffs_to_return() -> None:
     ]
 
 
+def test_legacy_fsm_dump_branch_requested_boundary_done_effects() -> None:
+    callbacks: list[str] = []
+    branch = LegacyFSMDumpBranch(
+        config=LegacyFSMDumpConfig(dump_skill_name="dump"),
+        current_skill_name=lambda: "dump",
+        dump_transition_status=lambda obs, boundary_event: DumpTransitionStatus(
+            mass_in_bucket_kg=0.0,
+            deposited_mass_in_target_box_kg=20.0,
+            deposit_delta_since_dump_start_kg=10.0,
+            semantic_boundary_profile_active=True,
+            dump_complete_event=True,
+            legacy_dump_end_event=False,
+            boundary_dump_done=True,
+            dump_done_mass_low=False,
+            next_dump_done_hold_count=0,
+            ready_to_return=True,
+            coverage_completion_reason="dump_complete_boundary",
+            dump_to_return_reason="dump_to_return_dump_complete_boundary",
+        ),
+        complete_coverage_dump=lambda obs, reason: callbacks.append(
+            f"complete:{reason}"
+        ),
+        set_return_or_direct_handoff=lambda obs, reason: callbacks.append(
+            f"return:{reason}"
+        ),
+        set_dump_done_hold_count=lambda value: callbacks.append(f"hold:{value}"),
+    )
+
+    result = branch.decide_tick(
+        obs={"qpos": [1.0]},
+        boundary_event=object(),
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dump",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert callbacks == []
+    assert result is not None
+    assert result.effects == (
+        CompleteCoverageDumpEffect(reason="dump_complete_boundary"),
+        SetReturnOrDirectHandoffEffect(reason="dump_to_return_dump_complete_boundary"),
+    )
+
+
 def test_legacy_fsm_dump_branch_mass_low_hold_switches_to_return() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
     state = {"hold": 0}
@@ -428,6 +638,53 @@ def test_legacy_fsm_dump_branch_mass_low_hold_switches_to_return() -> None:
         ("complete_dump", "dump_mass_low"),
         ("return", "dump_to_return_mass_low"),
     ]
+
+
+def test_legacy_fsm_dump_branch_requested_ready_to_return_effects_in_order() -> None:
+    callbacks: list[str] = []
+    branch = LegacyFSMDumpBranch(
+        config=LegacyFSMDumpConfig(dump_skill_name="dump"),
+        current_skill_name=lambda: "dump",
+        dump_transition_status=lambda obs, boundary_event: DumpTransitionStatus(
+            mass_in_bucket_kg=5.0,
+            deposited_mass_in_target_box_kg=20.0,
+            deposit_delta_since_dump_start_kg=10.0,
+            semantic_boundary_profile_active=False,
+            dump_complete_event=False,
+            legacy_dump_end_event=False,
+            boundary_dump_done=False,
+            dump_done_mass_low=True,
+            next_dump_done_hold_count=2,
+            ready_to_return=True,
+            coverage_completion_reason="dump_mass_low",
+            dump_to_return_reason="dump_to_return_mass_low",
+        ),
+        complete_coverage_dump=lambda obs, reason: callbacks.append(
+            f"complete:{reason}"
+        ),
+        set_return_or_direct_handoff=lambda obs, reason: callbacks.append(
+            f"return:{reason}"
+        ),
+        set_dump_done_hold_count=lambda value: callbacks.append(f"hold:{value}"),
+    )
+
+    result = branch.decide_tick(
+        obs={"qpos": [1.0]},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dump",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert callbacks == []
+    assert result is not None
+    assert result.effects == (
+        SetDumpDoneHoldCountEffect(value=2),
+        CompleteCoverageDumpEffect(reason="dump_mass_low"),
+        SetReturnOrDirectHandoffEffect(reason="dump_to_return_mass_low"),
+    )
 
 
 def test_legacy_fsm_dump_branch_ignores_non_dump_skill() -> None:

@@ -115,6 +115,92 @@ class SwitchToNextSkillAfterReturnEffect(RequestedPlannerEffect):
 
 
 @dataclass(frozen=True)
+class SetDumpReadyHoldCountEffect(RequestedPlannerEffect):
+    """Set the carry-to-dump readiness hold counter."""
+
+    effect_type: str = field(default="set_dump_ready_hold_count", init=False)
+    reason: str = field(default="", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+    value: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(self, "effect_type", "set_dump_ready_hold_count")
+        object.__setattr__(self, "reason", "")
+        object.__setattr__(self, "payload", None)
+        object.__setattr__(self, "value", int(self.value))
+
+
+@dataclass(frozen=True)
+class SetDumpStartDepositedMassFromObservationEffect(RequestedPlannerEffect):
+    """Capture dump-start deposited mass from the current observation."""
+
+    effect_type: str = field(
+        default="set_dump_start_deposited_mass_from_observation",
+        init=False,
+    )
+    reason: str = field(default="", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(
+            self,
+            "effect_type",
+            "set_dump_start_deposited_mass_from_observation",
+        )
+        object.__setattr__(self, "reason", "")
+        object.__setattr__(self, "payload", None)
+
+
+@dataclass(frozen=True)
+class SetDumpDoneHoldCountEffect(RequestedPlannerEffect):
+    """Set the dump-to-return completion hold counter."""
+
+    effect_type: str = field(default="set_dump_done_hold_count", init=False)
+    reason: str = field(default="", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+    value: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(self, "effect_type", "set_dump_done_hold_count")
+        object.__setattr__(self, "reason", "")
+        object.__setattr__(self, "payload", None)
+        object.__setattr__(self, "value", int(self.value))
+
+
+@dataclass(frozen=True)
+class CompleteCoverageDumpEffect(RequestedPlannerEffect):
+    """Complete coverage dump accounting for the current observation."""
+
+    effect_type: str = field(default="complete_coverage_dump", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+    reason: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(self, "effect_type", "complete_coverage_dump")
+        object.__setattr__(self, "reason", str(self.reason))
+        object.__setattr__(self, "payload", None)
+
+
+@dataclass(frozen=True)
+class SetReturnOrDirectHandoffEffect(RequestedPlannerEffect):
+    """Request the existing return/direct-handoff shell transition."""
+
+    effect_type: str = field(default="set_return_or_direct_handoff", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+    reason: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(self, "effect_type", "set_return_or_direct_handoff")
+        object.__setattr__(self, "reason", str(self.reason))
+        object.__setattr__(self, "payload", None)
+
+
+@dataclass(frozen=True)
 class PrimitiveDecisionResult:
     """Decision result returned to the public tick template."""
 
@@ -268,6 +354,42 @@ def _validate_requested_effect_shape(effect: RequestedPlannerEffect) -> None:
             "return post-completion switch effects must use "
             "SwitchToNextSkillAfterReturnEffect"
         )
+    if normalized_type == "set_dump_ready_hold_count" and not isinstance(
+        effect,
+        SetDumpReadyHoldCountEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "dump ready hold-count effects must use SetDumpReadyHoldCountEffect"
+        )
+    if normalized_type == "set_dump_start_deposited_mass_from_observation" and not isinstance(
+        effect,
+        SetDumpStartDepositedMassFromObservationEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "dump-start deposited-mass effects must use "
+            "SetDumpStartDepositedMassFromObservationEffect"
+        )
+    if normalized_type == "set_dump_done_hold_count" and not isinstance(
+        effect,
+        SetDumpDoneHoldCountEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "dump done hold-count effects must use SetDumpDoneHoldCountEffect"
+        )
+    if normalized_type == "complete_coverage_dump" and not isinstance(
+        effect,
+        CompleteCoverageDumpEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "coverage dump completion effects must use CompleteCoverageDumpEffect"
+        )
+    if normalized_type == "set_return_or_direct_handoff" and not isinstance(
+        effect,
+        SetReturnOrDirectHandoffEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "return/direct-handoff effects must use SetReturnOrDirectHandoffEffect"
+        )
     if isinstance(effect, SwitchSkillEffect):
         if not str(effect.target_skill_name).strip():
             raise PrimitiveDecisionContractError(
@@ -281,6 +403,16 @@ def _validate_requested_effect_shape(effect: RequestedPlannerEffect) -> None:
         if not str(effect.reason_suffix).strip():
             raise PrimitiveDecisionContractError(
                 "SwitchToNextSkillAfterReturn effect requires a reason suffix"
+            )
+    if isinstance(effect, (SetDumpReadyHoldCountEffect, SetDumpDoneHoldCountEffect)):
+        if int(effect.value) < 0:
+            raise PrimitiveDecisionContractError(
+                f"{effect.effect_type} requires a non-negative count"
+            )
+    if isinstance(effect, (CompleteCoverageDumpEffect, SetReturnOrDirectHandoffEffect)):
+        if not str(effect.reason).strip():
+            raise PrimitiveDecisionContractError(
+                f"{effect.effect_type} requires a non-empty reason"
             )
     if callable(effect):
         raise PrimitiveDecisionContractError("effect object must not be callable")
