@@ -157,6 +157,10 @@ from testbed.planner.primitive_reset_lifecycle import (
     PrimitiveResetLifecycleService,
     PrimitiveResetLifecycleState,
 )
+from testbed.planner.primitive_runtime_kernel import (
+    PrimitivePlannerRuntimeKernel,
+    PrimitivePlannerRuntimeKernelPorts,
+)
 from testbed.planner import primitive_adapter_config as adapter_config
 from testbed.planner.primitive_adapter_config import (
     PrimitivePlannerAdapterConfigInputs,
@@ -412,11 +416,24 @@ class PrimitivePlannerACTPolicy(Policy):
             setattr(self, field_name, value)
 
     def reset(self) -> None:
-        reset_state = self._primitive_reset_lifecycle_service().reset()
-        self._apply_reset_lifecycle_state(reset_state)
-        self._debug_state = self._make_debug_state(
-            transition_timeout=reset_state.debug_transition_timeout,
-            transition_completed=reset_state.debug_transition_completed,
+        self._runtime_kernel().reset()
+
+    def _runtime_kernel(self) -> PrimitivePlannerRuntimeKernel:
+        return PrimitivePlannerRuntimeKernel.from_ports(self._runtime_kernel_ports())
+
+    def _runtime_kernel_ports(self) -> PrimitivePlannerRuntimeKernelPorts:
+        return PrimitivePlannerRuntimeKernelPorts(
+            reset_lifecycle_service=self._primitive_reset_lifecycle_service,
+            apply_reset_lifecycle_state=self._apply_reset_lifecycle_state,
+            make_debug_state=self._make_debug_state,
+            set_debug_state=lambda state: setattr(self, "_debug_state", state),
+            execution_driver=self._execution_driver,
+            debug_report_builder=self._debug_report_builder,
+            debug_report_inputs=self._debug_report_inputs,
+            rollout_summary_builder=self._rollout_summary_builder,
+            rollout_summary_inputs=self._rollout_summary_inputs,
+            planner_trace_builder=self._planner_trace_builder,
+            planner_trace_inputs=self._planner_trace_inputs,
         )
 
     def _primitive_reset_lifecycle_service(self) -> PrimitiveResetLifecycleService:
@@ -1089,10 +1106,10 @@ class PrimitivePlannerACTPolicy(Policy):
         return PrimitiveExecutionDriver.from_ports(self._execution_driver_ports())
 
     def predict(self, obs: dict) -> np.ndarray:
-        return self._execution_driver().predict(obs)
+        return self._runtime_kernel().predict(obs)
 
     def debug_state(self) -> dict[str, Any]:
-        return self._debug_report_builder().build(self._debug_report_inputs())
+        return self._runtime_kernel().debug_state()
 
     @staticmethod
     def _debug_report_builder() -> PrimitiveDebugReportBuilder:
@@ -1506,9 +1523,7 @@ class PrimitivePlannerACTPolicy(Policy):
         }
 
     def rollout_summary(self) -> dict[str, float | int | str | list[str]]:
-        return self._rollout_summary_builder().build(
-            self._rollout_summary_inputs()
-        )
+        return self._runtime_kernel().rollout_summary()
 
     @staticmethod
     def _rollout_summary_builder() -> PrimitiveRolloutSummaryBuilder:
@@ -1610,7 +1625,7 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def planner_trace(self) -> dict[str, object]:
-        return self._planner_trace_builder().build(self._planner_trace_inputs())
+        return self._runtime_kernel().planner_trace()
 
     @staticmethod
     def _planner_trace_builder() -> PrimitivePlannerTraceBuilder:
