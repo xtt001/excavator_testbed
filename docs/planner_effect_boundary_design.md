@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.30: the default 4P mainline branch chain no longer
+Current status after Phase 9.31: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy now exposes backend-facing decision facts through
@@ -104,6 +104,15 @@ token build/apply/conditioning, source/prior-bound flag writeback, prior
 token/mapping/bounds helpers, corridor-id to cell-id fallback, and token/raw
 field copy semantics. The low-level `ReturnTargetTokenPlanner`,
 `ReturnRelocateTokenPlanner`, and `ReturnStartEnvelopeTokenPlanner` algorithms
+remain the token algorithm owners.
+`PrimitiveDigTokenPlanningService` now owns active dig token planning
+orchestration in `testbed/planner/primitive_dig_token_planning.py`: pending
+return-target dig route application, conservative/operator-prior/
+operator-prior-coverage mode routing, coverage raw-field handoff, fallback
+conservative behavior, dig-cut source/fallback/in-prior writeback,
+dig-depth-profile planning/apply/error writeback, live/prior helper routing,
+raw-field priority, cell-id priority, and token/raw-field copy semantics. The
+low-level `DigCutTokenPlanner` and `DigDepthProfileTokenPlanner` algorithms
 remain the token algorithm owners.
 `PrimitiveDebugReportBuilder` now owns public `debug_state()` dict assembly:
 base transition keys, token debug fields from `TokenStatus.to_debug_fields()`,
@@ -908,6 +917,21 @@ keeps the old private return token planning methods as service-backed facades,
 while active dig token planning, token algorithm classes, coverage algorithms,
 return handoff gate/effect services, `cell_entry`, `pre_dig_align`, 5P, and
 alternate BT/VLM/LLM backend behavior remain outside this slice.
+
+Phase 9.31 extracts active dig token planning orchestration into
+`PrimitiveDigTokenPlanningService` in
+`testbed/planner/primitive_dig_token_planning.py`. The service owns pending
+return-target dig plan application, conservative/operator-prior/
+operator-prior-coverage and sweep-belief routing, fallback conservative
+behavior, coverage raw-field handoff, dig-cut plan source/fallback/in-prior
+writeback, dig-depth-profile plan/apply/error writeback, live/prior helper
+routing, raw-field priority, cell-id priority, and copy semantics for returned
+token/raw-field payloads. `PrimitivePlannerACTPolicy` keeps the old private
+dig token planning method names as service-backed compatibility facades, while
+return token planning, token runtime sequencing, token algorithm classes,
+coverage algorithms, return handoff gate/effect services, `cell_entry`,
+`pre_dig_align`, 5P, and alternate BT/VLM/LLM backend behavior remain outside
+this slice.
 
 ### Stage 4: Expand Effect Families From Evidence
 

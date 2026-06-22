@@ -149,6 +149,10 @@ from testbed.planner.primitive_skill_lifecycle import (
     PrimitiveSkillLifecyclePorts,
     PrimitiveSkillLifecycleService,
 )
+from testbed.planner.primitive_dig_token_planning import (
+    PrimitiveDigTokenPlanningPorts,
+    PrimitiveDigTokenPlanningService,
+)
 from testbed.planner.primitive_return_token_planning import (
     PrimitiveReturnTokenPlanningPorts,
     PrimitiveReturnTokenPlanningService,
@@ -3804,31 +3808,130 @@ class PrimitivePlannerACTPolicy(Policy):
             bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
         )
 
+    def _primitive_dig_token_planning_service(
+        self,
+    ) -> PrimitiveDigTokenPlanningService:
+        return PrimitiveDigTokenPlanningService.from_ports(
+            self._primitive_dig_token_planning_ports()
+        )
+
+    def _primitive_dig_token_planning_ports(
+        self,
+    ) -> PrimitiveDigTokenPlanningPorts:
+        return PrimitiveDigTokenPlanningPorts(
+            dig_cut_planner_mode=lambda: str(self.dig_cut_planner_mode),
+            dig_cut_planner_fallback_mode=(
+                lambda: str(self.dig_cut_planner_fallback_mode)
+            ),
+            cycle_index=lambda: int(self._cycle_index),
+            dig_cut_token_planner=lambda: self._dig_cut_token_planner(),
+            dig_depth_profile_token_planner=(
+                lambda: self._dig_depth_profile_token_planner()
+            ),
+            bucket_dig_area_pose=lambda obs: self._bucket_dig_area_pose(obs),
+            deposited_mass=lambda obs: self._deposited_mass(obs),
+            env_state=lambda obs: self._env_state(obs),
+            get_pending_dig_cut_cycle_id=(
+                lambda: int(self._pending_dig_cut_cycle_id)
+            ),
+            get_pending_dig_cut_tokens=lambda: self._pending_dig_cut_tokens,
+            get_pending_dig_cut_raw_fields=lambda: self._pending_dig_cut_raw_fields,
+            get_pending_dig_cut_corridor_id=(
+                lambda: int(self._pending_dig_cut_corridor_id)
+            ),
+            get_pending_dig_state_exemplar_ids=(
+                lambda: list(self._pending_dig_state_exemplar_ids)
+            ),
+            get_pending_dig_state_exemplar_distance=(
+                lambda: float(self._pending_dig_state_exemplar_distance)
+            ),
+            get_pending_dig_depth_profile_tokens=(
+                lambda: self._pending_dig_depth_profile_tokens
+            ),
+            get_dig_cut_tokens=lambda: self._dig_cut_tokens,
+            set_dig_cut_token_source=(
+                lambda value: setattr(self, "_dig_cut_token_source", str(value))
+            ),
+            set_dig_cut_fallback_reason=(
+                lambda value: setattr(self, "_dig_cut_fallback_reason", str(value))
+            ),
+            set_dig_cut_token_in_prior_p10_p90=(
+                lambda value: setattr(
+                    self,
+                    "_dig_cut_token_in_prior_p10_p90",
+                    bool(value),
+                )
+            ),
+            set_dig_depth_profile_token_source=(
+                lambda value: setattr(
+                    self,
+                    "_dig_depth_profile_token_source",
+                    str(value),
+                )
+            ),
+            set_dig_depth_profile_fallback_reason=(
+                lambda value: setattr(
+                    self,
+                    "_dig_depth_profile_fallback_reason",
+                    str(value),
+                )
+            ),
+            select_next_coverage_corridor=(
+                lambda obs: self._select_next_coverage_corridor(obs)
+            ),
+            coverage_raw_fields=(
+                lambda corridor, *, obs, update_state=False: self._coverage_raw_fields(
+                    corridor,
+                    obs=obs,
+                    update_state=update_state,
+                )
+            ),
+            active_coverage_corridor=lambda: self._coverage_active_corridor(),
+            coverage_corridor_by_id=lambda corridor_id: self._coverage_corridor_by_id(
+                corridor_id
+            ),
+            set_coverage_active_corridor_id=self._set_coverage_active_corridor_id,
+            set_coverage_last_selected_corridor_id=(
+                self._set_coverage_last_selected_corridor_id
+            ),
+            set_coverage_current_payload_gain_kg=(
+                self._set_coverage_current_payload_gain_kg
+            ),
+            set_coverage_cycle_start_deposit_kg=(
+                lambda value: setattr(
+                    self,
+                    "_coverage_cycle_start_deposit_kg",
+                    float(value),
+                )
+            ),
+            set_coverage_active_state_exemplar=(
+                lambda exemplar_ids, distance, profile_token: (
+                    self._coverage_runtime_state().set_active_state_exemplar(
+                        exemplar_ids=list(exemplar_ids),
+                        distance=float(distance),
+                        profile_token=profile_token,
+                    )
+                )
+            ),
+            get_coverage_active_state_exemplar_profile_token=(
+                lambda: self._coverage_active_state_exemplar_profile_token
+            ),
+        )
+
     def _build_dig_depth_profile_tokens_for_obs(self, obs: dict) -> np.ndarray:
-        cell_id = self._dig_depth_profile_cell_id(obs)
-        planner = self._dig_depth_profile_token_planner()
-        try:
-            plan = planner.plan(
-                cell_id=cell_id,
-                raw_fields=self._dig_depth_profile_raw_fields(obs),
-                env_state=self._env_state(obs),
-                state_exemplar_profile_token=(
-                    self._coverage_active_state_exemplar_profile_token
-                ),
-            )
-        except DigDepthProfileTokenPlanningError as exc:
-            self._dig_depth_profile_token_source = str(exc.token_source)
-            self._dig_depth_profile_fallback_reason = str(exc.fallback_reason)
-            raise
-        return self._apply_dig_depth_profile_token_plan(plan)
+        return (
+            self._primitive_dig_token_planning_service()
+            .build_dig_depth_profile_tokens_for_obs(obs)
+        )
 
     def _apply_dig_depth_profile_token_plan(
         self,
         plan: DigDepthProfileTokenPlan,
     ) -> np.ndarray:
-        self._dig_depth_profile_token_source = str(plan.source)
-        self._dig_depth_profile_fallback_reason = str(plan.fallback_reason)
-        return plan.token.copy()
+        return (
+            self._primitive_dig_token_planning_service()
+            .apply_dig_depth_profile_token_plan(plan)
+        )
 
     def _build_live_dig_depth_profile_tokens_for_obs(
         self,
@@ -3836,175 +3939,62 @@ class PrimitivePlannerACTPolicy(Policy):
         *,
         cell_id: int,
     ) -> np.ndarray:
-        raw_fields = self._dig_depth_profile_raw_fields(obs)
-        return self._dig_depth_profile_token_planner().live_plan_token(
-            cell_id=cell_id,
-            raw_fields=raw_fields,
-            env_state=self._env_state(obs),
+        return (
+            self._primitive_dig_token_planning_service()
+            .build_live_dig_depth_profile_tokens_for_obs(
+                obs,
+                cell_id=cell_id,
+            )
         )
 
     def _dig_depth_profile_prior_token(
         self,
         cell_id: int,
     ) -> tuple[np.ndarray | None, str, str]:
-        return self._dig_depth_profile_token_planner().prior_token(cell_id)
+        return (
+            self._primitive_dig_token_planning_service()
+            .dig_depth_profile_prior_token(cell_id)
+        )
 
     def _dig_depth_profile_prior_mapping(
         self,
         cell_id: int,
     ) -> tuple[dict[str, object] | None, str, str]:
-        return self._dig_depth_profile_token_planner().prior_mapping(cell_id)
+        return (
+            self._primitive_dig_token_planning_service()
+            .dig_depth_profile_prior_mapping(cell_id)
+        )
 
     @staticmethod
     def _dig_depth_profile_token_from_prior_mapping(
         mapping: dict[str, object],
     ) -> np.ndarray | None:
-        return DigDepthProfileTokenPlanner.token_from_prior_mapping(mapping)
+        service_class = PrimitiveDigTokenPlanningService
+        return service_class.dig_depth_profile_token_from_prior_mapping(mapping)
 
     def _dig_depth_profile_raw_fields(self, obs: dict) -> dict[str, float | int]:
-        if (
-            self._pending_dig_cut_raw_fields is not None
-            and self._pending_dig_cut_cycle_id == int(self._cycle_index)
-        ):
-            return dict(self._pending_dig_cut_raw_fields)
-        corridor = self._coverage_active_corridor()
-        if corridor is not None:
-            return self._coverage_raw_fields(corridor, obs=obs)
-        raw_fields = self._raw_fields_from_live_pose(obs)
-        token = np.asarray(self._dig_cut_tokens, dtype=np.float32).reshape(-1)
-        if token.size >= DIG_CUT_TOKEN_DIM:
-            raw_fields.update(
-                {
-                    "operator_entry_x_m": float(token[0]) * DIG_CUT_POSITION_SCALE_M,
-                    "operator_entry_z_m": float(token[1]) * DIG_CUT_POSITION_SCALE_M,
-                    "operator_exit_x_m": float(token[2]) * DIG_CUT_POSITION_SCALE_M,
-                    "operator_exit_z_m": float(token[3]) * DIG_CUT_POSITION_SCALE_M,
-                    "operator_cut_direction_x": float(token[4]),
-                    "operator_cut_direction_z": float(token[5]),
-                    "operator_cut_length_m": float(token[6]) * DIG_CUT_LENGTH_SCALE_M,
-                    "operator_cut_depth_peak_m": float(token[7])
-                    * DIG_CUT_DEPTH_SCALE_M,
-                    "operator_cut_payload_gain_kg": float(token[8])
-                    * DIG_CUT_PAYLOAD_SCALE_KG,
-                    "operator_cut_valid": int(float(token[9]) > 0.5),
-                }
-            )
-        return raw_fields
+        return (
+            self._primitive_dig_token_planning_service()
+            .dig_depth_profile_raw_fields(obs)
+        )
 
     def _dig_depth_profile_cell_id(self, obs: dict) -> int:
-        if (
-            int(self._pending_dig_cut_corridor_id) >= 0
-            and self._pending_dig_cut_cycle_id == int(self._cycle_index)
-        ):
-            corridor = self._coverage_corridor_by_id(int(self._pending_dig_cut_corridor_id))
-            if corridor is not None:
-                return int(corridor.cell_id)
-        corridor = self._coverage_active_corridor()
-        if corridor is not None:
-            return int(corridor.cell_id)
-        env_state = self._env_state(obs)
-        if len(env_state) > ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX:
-            value = float(env_state[ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX])
-            if np.isfinite(value):
-                return int(max(0, min(5, round(value))))
-        return 0
+        return (
+            self._primitive_dig_token_planning_service()
+            .dig_depth_profile_cell_id(obs)
+        )
 
     def _build_dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray:
-        self._dig_cut_fallback_reason = ""
-        planner = self._dig_cut_token_planner()
-        if (
-            self._pending_dig_cut_tokens is not None
-            and self._pending_dig_cut_cycle_id == int(self._cycle_index)
-        ):
-            plan = planner.plan_pending_return_target(
-                tokens=self._pending_dig_cut_tokens,
-                raw_fields=self._pending_dig_cut_raw_fields,
-            )
-            self._coverage_active_corridor_id = int(self._pending_dig_cut_corridor_id)
-            self._coverage_last_selected_corridor_id = int(
-                self._pending_dig_cut_corridor_id
-            )
-            self._coverage_current_payload_gain_kg = 0.0
-            self._coverage_cycle_start_deposit_kg = self._deposited_mass(obs)
-            self._coverage_active_state_exemplar_ids = list(
-                self._pending_dig_state_exemplar_ids
-            )
-            self._coverage_active_state_exemplar_distance = float(
-                self._pending_dig_state_exemplar_distance
-            )
-            self._coverage_active_state_exemplar_profile_token = (
-                None
-                if self._pending_dig_depth_profile_tokens is None
-                else self._pending_dig_depth_profile_tokens.astype(np.float32).copy()
-            )
-            return self._apply_dig_cut_token_plan(plan)
-        if self.dig_cut_planner_mode == "conservative_pose":
-            return self._apply_dig_cut_token_plan(
-                planner.plan_conservative_pose(self._bucket_dig_area_pose(obs))
-            )
-        if self.dig_cut_planner_mode == "operator_prior":
-            try:
-                return self._apply_dig_cut_token_plan(
-                    planner.plan_operator_prior(self._bucket_dig_area_pose(obs))
-                )
-            except Exception as exc:
-                if self.dig_cut_planner_fallback_mode != "conservative_pose":
-                    raise
-                return self._apply_dig_cut_token_plan(
-                    planner.plan_fallback_conservative_pose(
-                        self._bucket_dig_area_pose(obs),
-                        fallback_reason=str(exc),
-                    )
-                )
-        if self.dig_cut_planner_mode == "operator_prior_coverage":
-            try:
-                _token, raw_fields, source, fallback_reason = (
-                    self._build_operator_prior_coverage_dig_cut_tokens(obs)
-                )
-                return self._apply_dig_cut_token_plan(
-                    planner.plan_from_raw_fields(
-                        raw_fields,
-                        source=source,
-                        fallback_reason=fallback_reason,
-                    )
-                )
-            except Exception as exc:
-                if self.dig_cut_planner_fallback_mode != "conservative_pose":
-                    raise
-                return self._apply_dig_cut_token_plan(
-                    planner.plan_fallback_conservative_pose(
-                        self._bucket_dig_area_pose(obs),
-                        fallback_reason=str(exc),
-                    )
-                )
-        if self.dig_cut_planner_mode == "operator_prior_sweep_belief":
-            try:
-                _token, raw_fields, source, fallback_reason = (
-                    self._build_operator_prior_coverage_dig_cut_tokens(obs)
-                )
-                return self._apply_dig_cut_token_plan(
-                    planner.plan_from_raw_fields(
-                        raw_fields,
-                        source=source,
-                        fallback_reason=fallback_reason,
-                    )
-                )
-            except Exception as exc:
-                if self.dig_cut_planner_fallback_mode != "conservative_pose":
-                    raise
-                return self._apply_dig_cut_token_plan(
-                    planner.plan_fallback_conservative_pose(
-                        self._bucket_dig_area_pose(obs),
-                        fallback_reason=str(exc),
-                    )
-                )
-        raise ValueError(f"Unsupported dig_cut_planner mode {self.dig_cut_planner_mode!r}.")
+        return (
+            self._primitive_dig_token_planning_service()
+            .build_dig_cut_tokens_for_obs(obs)
+        )
 
     def _apply_dig_cut_token_plan(self, plan: DigCutTokenPlan) -> np.ndarray:
-        self._dig_cut_token_source = str(plan.source)
-        self._dig_cut_fallback_reason = str(plan.fallback_reason)
-        self._dig_cut_token_in_prior_p10_p90 = bool(plan.in_prior_p10_p90)
-        return plan.token.copy()
+        return (
+            self._primitive_dig_token_planning_service()
+            .apply_dig_cut_token_plan(plan)
+        )
 
     def _primitive_return_token_planning_service(
         self,
@@ -4217,39 +4207,26 @@ class PrimitivePlannerACTPolicy(Policy):
         return skill
 
     def _raw_fields_from_live_pose(self, obs: dict) -> dict[str, float | int]:
-        return self._dig_cut_token_planner().raw_fields_from_live_pose(
-            self._bucket_dig_area_pose(obs)
+        return (
+            self._primitive_dig_token_planning_service()
+            .raw_fields_from_live_pose(obs)
         )
 
     def _build_operator_prior_dig_cut_tokens(
         self, obs: dict
     ) -> tuple[np.ndarray, dict[str, float | int], str, str]:
-        plan = self._dig_cut_token_planner().plan_operator_prior(
-            self._bucket_dig_area_pose(obs)
-        )
         return (
-            plan.token.copy(),
-            dict(plan.raw_fields),
-            str(plan.source),
-            str(plan.fallback_reason),
+            self._primitive_dig_token_planning_service()
+            .build_operator_prior_dig_cut_tokens(obs)
         )
 
     def _build_operator_prior_coverage_dig_cut_tokens(
         self, obs: dict
     ) -> tuple[np.ndarray, dict[str, float | int], str, str]:
-        corridor = self._select_next_coverage_corridor(obs)
-        self._coverage_current_payload_gain_kg = 0.0
-        self._coverage_cycle_start_deposit_kg = self._deposited_mass(obs)
-        raw_fields = self._coverage_raw_fields(
-            corridor,
-            obs=obs,
-            update_state=True,
+        return (
+            self._primitive_dig_token_planning_service()
+            .build_operator_prior_coverage_dig_cut_tokens(obs)
         )
-        plan = self._dig_cut_token_planner().plan_from_raw_fields(
-            raw_fields,
-            source="operator_prior_coverage",
-        )
-        return plan.token.copy(), dict(plan.raw_fields), plan.source, plan.fallback_reason
 
     def _coverage_selection_runtime_ports(self) -> CoverageSelectionRuntimePorts:
         return CoverageSelectionRuntimePorts(

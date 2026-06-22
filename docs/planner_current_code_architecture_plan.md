@@ -763,6 +763,26 @@ selection/scoring/exemplar algorithms, return handoff gate/effect services,
 `cell_entry`, `pre_dig_align`, 5P token behavior, and alternate backend parked
 scope remain intentionally unchanged.
 
+Current status note after Phase 9.31: active dig token planning orchestration
+now lives in `PrimitiveDigTokenPlanningService` in
+`testbed/planner/primitive_dig_token_planning.py`.
+`_build_dig_cut_tokens_for_obs(...)`, `_apply_dig_cut_token_plan(...)`,
+`_build_dig_depth_profile_tokens_for_obs(...)`,
+`_apply_dig_depth_profile_token_plan(...)`,
+`_build_live_dig_depth_profile_tokens_for_obs(...)`, dig-depth-profile
+prior/raw-field/cell-id helpers, `_raw_fields_from_live_pose(...)`,
+`_build_operator_prior_dig_cut_tokens(...)`, and
+`_build_operator_prior_coverage_dig_cut_tokens(...)` are now service-backed
+compatibility facades. The service owns pending return-target dig plan
+application, conservative/operator-prior/operator-prior-coverage and
+sweep-belief mode routing, fallback conservative behavior, coverage raw-field
+handoff, dig-cut source/fallback/in-prior writeback, dig-depth-profile
+source/fallback/error writeback, raw-field priority, cell-id priority, and copy
+semantics. Return token planning, token runtime sequencing, token algorithm
+classes, coverage selection/scoring/exemplar algorithms, return handoff
+gate/effect services, `cell_entry`, `pre_dig_align`, 5P token behavior, and
+alternate backend parked scope remain intentionally unchanged.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

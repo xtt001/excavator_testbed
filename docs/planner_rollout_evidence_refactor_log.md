@@ -4086,3 +4086,86 @@ Each completed refactor round should append:
   material; `pre_dig_align` remains residual parking/action material; 5P
   remains its existing legacy token/transition behavior; behavior tree, VLM,
   and LLM backends remain unsupported parked scope.
+
+### 2026-06-22 Phase 9.31 Extract Primitive Dig Token Planning Service
+
+- Scope: extracted confirmed-live 4P active dig token planning orchestration
+  from `PrimitivePlannerACTPolicy` into
+  `PrimitiveDigTokenPlanningService` with typed
+  `PrimitiveDigTokenPlanningPorts`. No token dimension, key/schema, contract
+  version, source/fallback string, prior-bound flag, copy semantics,
+  observation injection order, branch order, reason string, threshold, policy
+  reset timing, public config behavior, coverage trace payload schema, return
+  handoff behavior, cell-entry compatibility, pre-dig-align residual behavior,
+  5P token behavior, behavior-tree/VLM/LLM unsupported status, or low-level ACT
+  dispatch output contract was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `caecefd2e47318f57c301bed1b1fe77087d49349`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `testbed/planner/primitive_dig_token_planning.py` with
+  `PrimitiveDigTokenPlanningPorts` and `PrimitiveDigTokenPlanningService`.
+  The service owns pending return-target dig plan application; conservative,
+  operator-prior, operator-prior-coverage, and sweep-belief mode routing;
+  fallback conservative behavior; coverage raw-field handoff; active coverage
+  corridor/payload/deposit/state-exemplar writeback for pending and coverage
+  routes; dig-cut source/fallback/in-prior writeback; dig-depth-profile
+  plan/apply/error source and fallback writeback; live/prior helper routing;
+  raw-field priority; cell-id priority; unsupported-mode fail-fast; and
+  token/raw-field copy semantics.
+- Updated `PrimitivePlannerACTPolicy` with
+  `_primitive_dig_token_planning_ports()` and
+  `_primitive_dig_token_planning_service()` thin wiring. The old private
+  methods `_build_dig_cut_tokens_for_obs(...)`,
+  `_apply_dig_cut_token_plan(...)`,
+  `_build_dig_depth_profile_tokens_for_obs(...)`,
+  `_apply_dig_depth_profile_token_plan(...)`,
+  `_build_live_dig_depth_profile_tokens_for_obs(...)`,
+  `_dig_depth_profile_prior_token(...)`,
+  `_dig_depth_profile_prior_mapping(...)`,
+  `_dig_depth_profile_token_from_prior_mapping(...)`,
+  `_dig_depth_profile_raw_fields(...)`,
+  `_dig_depth_profile_cell_id(...)`, `_raw_fields_from_live_pose(...)`,
+  `_build_operator_prior_dig_cut_tokens(...)`, and
+  `_build_operator_prior_coverage_dig_cut_tokens(...)` are now
+  service-backed compatibility facades.
+- TDD red result: the first focused run failed at collection with
+  `ModuleNotFoundError: No module named
+  'testbed.planner.primitive_dig_token_planning'`. After adding the service
+  module and policy wiring, the focused dig token planning suite returned
+  `11 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_dig_token_planning.py` returned
+  `11 passed`;
+  `python -m pytest -q tests/test_primitive_token_runtime.py tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_dig_depth_profile_token_planner.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_primitive_return_token_planning.py tests/test_primitive_return_target_token_planner.py tests/test_primitive_return_start_envelope_token_planner.py tests/test_primitive_return_relocate_token_planner.py`
+  returned `15 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_token_status.py tests/test_primitive_goal_token_provider.py`
+  returned `12 passed`;
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_coverage_exemplars.py tests/test_primitive_coverage_state.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_effect_runtime.py`
+  returned `44 passed`;
+  `python -m pytest -q tests/test_primitive_skill_lifecycle.py tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `101 passed`;
+  `python -m pytest -q tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `12 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_depth_profile or dig_cut_tokens or return_to_dig or start_envelope or semantic_boundary_events_drive_skill_sequence or coverage_decision_trace"`
+  returned `8 passed, 112 deselected`;
+  compileall completed successfully with no output; both planner guard commands
+  and `git diff --check` completed successfully with no output.
+- Old code parked/reclassified: return token planning remains in
+  `PrimitiveReturnTokenPlanningService`; token runtime sequencing remains in
+  `PrimitiveTokenRuntimeCoordinator`; token algorithms remain in
+  `DigCutTokenPlanner`, `DigDepthProfileTokenPlanner`,
+  `ReturnTargetTokenPlanner`, `ReturnRelocateTokenPlanner`, and
+  `ReturnStartEnvelopeTokenPlanner`; coverage selection/scoring and
+  state-exemplar algorithms remain in their coverage services; return
+  start-envelope gate readiness and direct-handoff effect sequencing remain in
+  their return handoff services; `cell_entry` remains compatibility/report
+  material; `pre_dig_align` remains residual parking/action material; 5P
+  remains its existing legacy token/transition behavior; behavior tree, VLM,
+  and LLM backends remain unsupported parked scope.
