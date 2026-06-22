@@ -12,7 +12,11 @@ from testbed.planner.primitive_capabilities import (
     ReturnTransitionStatus,
 )
 from testbed.planner.primitive_decision import PrimitiveDecisionResult
+from testbed.planner.primitive_decision import SwitchSkillEffect
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
+
+
+BOOTSTRAP_REQUESTED_DECISION_SOURCE = "legacy_fsm_bootstrap_requested_effect"
 
 
 class PrimitiveDecisionBackend(Protocol):
@@ -68,23 +72,70 @@ class LegacyFSMBootstrapBranch:
     should_pre_dig_align_before_dig: Callable[[], bool]
     set_skill: Callable[[str, str], None]
 
-    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
+    def decide_tick(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        preparation: PrimitiveTickPreparation,
+    ) -> PrimitiveDecisionResult | None:
+        skill_before = str(preparation.skill_name_before_decision)
         if str(self.current_skill_name()) != str(self.config.bootstrap_skill_name):
+            return None
+        if not self.should_end_bootstrap(obs=obs, boundary_event=boundary_event):
+            return PrimitiveDecisionResult.from_requested_effects(
+                decision_source=BOOTSTRAP_REQUESTED_DECISION_SOURCE,
+                status="no_change",
+                skill_before=skill_before,
+                skill_after=skill_before,
+                switch_reason="",
+                effects=(),
+            )
+        next_skill = self._next_skill_after_bootstrap()
+        switch_reason = f"bootstrap_to_{next_skill}"
+        return PrimitiveDecisionResult.from_requested_effects(
+            decision_source=BOOTSTRAP_REQUESTED_DECISION_SOURCE,
+            status="skill_switch",
+            skill_before=skill_before,
+            skill_after=next_skill,
+            switch_reason=switch_reason,
+            effects=(
+                SwitchSkillEffect(
+                    target_skill_name=next_skill,
+                    switch_reason=switch_reason,
+                ),
+            ),
+        )
+
+    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
+        skill_before = str(self.current_skill_name())
+        result = self.decide_tick(
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=boundary_event,
+                skill_name_before_decision=skill_before,
+                dig_progress_updated=False,
+            ),
+        )
+        if result is None:
             return False
-        if self.should_end_bootstrap(obs=obs, boundary_event=boundary_event):
-            if self.bootstrap_end_mode() in {
-                "first_qualified_dig_start",
-                "scripted_qpos",
-            }:
-                next_skill = (
-                    str(self.config.pre_dig_align_skill_name)
-                    if self.should_pre_dig_align_before_dig()
-                    else "dig"
-                )
-            else:
-                next_skill = "carry"
-            self.set_skill(next_skill, f"bootstrap_to_{next_skill}")
+        for effect in result.effects:
+            if isinstance(effect, SwitchSkillEffect):
+                self.set_skill(effect.target_skill_name, effect.switch_reason)
         return True
+
+    def _next_skill_after_bootstrap(self) -> str:
+        if self.bootstrap_end_mode() in {
+            "first_qualified_dig_start",
+            "scripted_qpos",
+        }:
+            return (
+                str(self.config.pre_dig_align_skill_name)
+                if self.should_pre_dig_align_before_dig()
+                else "dig"
+            )
+        return "carry"
 
 
 @dataclass(frozen=True)

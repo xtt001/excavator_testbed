@@ -20,7 +20,10 @@ from testbed.planner.primitive_capabilities import (
     DumpTransitionStatus,
     ReturnTransitionStatus,
 )
-from testbed.planner.primitive_decision import LEGACY_FSM_DECISION_SOURCE
+from testbed.planner.primitive_decision import (
+    LEGACY_FSM_DECISION_SOURCE,
+    SwitchSkillEffect,
+)
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
 
@@ -80,6 +83,72 @@ def test_legacy_fsm_bootstrap_branch_selects_pre_dig_align_when_enabled() -> Non
 
     assert handled is True
     assert switches == [("pre_dig_align", "bootstrap_to_pre_dig_align")]
+
+
+def test_legacy_fsm_bootstrap_branch_returns_requested_switch_effect() -> None:
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    boundary_event = object()
+    switches: list[tuple[str, str]] = []
+    branch = LegacyFSMBootstrapBranch(
+        config=LegacyFSMBootstrapConfig(
+            bootstrap_skill_name="bootstrap",
+            pre_dig_align_skill_name="pre_dig_align",
+        ),
+        current_skill_name=lambda: "bootstrap",
+        should_end_bootstrap=lambda *, obs, boundary_event: True,
+        bootstrap_end_mode=lambda: "first_qualified_dig_start",
+        should_pre_dig_align_before_dig=lambda: True,
+        set_skill=lambda skill, reason: switches.append((skill, reason)),
+    )
+
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision="bootstrap",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert switches == []
+    assert result is not None
+    assert result.side_effects_applied is False
+    assert result.skill_before == "bootstrap"
+    assert result.skill_after == "pre_dig_align"
+    assert result.switch_reason == "bootstrap_to_pre_dig_align"
+    assert result.effects == (
+        SwitchSkillEffect(
+            target_skill_name="pre_dig_align",
+            switch_reason="bootstrap_to_pre_dig_align",
+        ),
+    )
+
+
+def test_legacy_fsm_bootstrap_branch_requested_decision_ignores_non_bootstrap() -> None:
+    branch = LegacyFSMBootstrapBranch(
+        config=LegacyFSMBootstrapConfig(
+            bootstrap_skill_name="bootstrap",
+            pre_dig_align_skill_name="pre_dig_align",
+        ),
+        current_skill_name=lambda: "dig",
+        should_end_bootstrap=lambda *, obs, boundary_event: True,
+        bootstrap_end_mode=lambda: "first_qualified_dig_start",
+        should_pre_dig_align_before_dig=lambda: True,
+        set_skill=lambda skill, reason: None,
+    )
+
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
+
+    assert result is None
 
 
 def test_legacy_fsm_bootstrap_branch_ignores_non_bootstrap_skill() -> None:

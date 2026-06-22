@@ -330,6 +330,16 @@ Do not start with direct handoff or failed-dig restart. Those paths combine
 skill lifecycle, coverage, token planning, and return state, so they should wait
 until the simple effect path is proven.
 
+Phase 9.1 converts only the 4P mainline bootstrap branch to the requested
+`SwitchSkillEffect` path. The backend branch now returns
+`PrimitiveDecisionResult(side_effects_applied=False)` with
+`SwitchSkillEffect(target_skill_name=next_skill, switch_reason=f"bootstrap_to_{next_skill}")`,
+and the execution hook applies it through the real shell applier before action
+dispatch. The compatibility `maybe_handle()` facade remains for legacy callers,
+but the default tick decision path no longer completes bootstrap by direct
+callback mutation. This phase does not migrate dig, carry, dump, return,
+direct handoff, coverage, token planning, or `pre_dig_align` internals.
+
 ### Stage 4: Expand Effect Families From Evidence
 
 Each new family must be justified by a confirmed-live rollout behavior and a

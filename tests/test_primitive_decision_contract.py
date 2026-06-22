@@ -274,3 +274,52 @@ def test_primitive_planner_legacy_decision_bridge_calls_fsm_once() -> None:
     assert result.skill_before == "dig"
     assert result.skill_after == "carry"
     assert result.switch_reason == "dig_to_carry_boundary_confirmed"
+
+
+def test_primitive_planner_bootstrap_decision_bridge_returns_requested_switch() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    planner._skill_name = "bootstrap"
+    planner._switch_reason = ""
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    boundary_event = object()
+    calls: list[tuple[str, str]] = []
+
+    def fake_set_skill(
+        self: PrimitivePlannerACTPolicy,
+        skill_name: str,
+        reason: str,
+    ) -> None:
+        calls.append((skill_name, reason))
+
+    planner._set_skill = MethodType(fake_set_skill, planner)
+    planner._should_end_bootstrap = MethodType(
+        lambda self, *, obs, boundary_event: True,
+        planner,
+    )
+    planner.bootstrap_end_mode = "first_qualified_dig_start"
+    planner._should_pre_dig_align_before_dig = MethodType(
+        lambda self: False,
+        planner,
+    )
+
+    result = planner._decide_tick_with_legacy_fsm(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision="bootstrap",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert calls == []
+    assert result.side_effects_applied is False
+    assert result.skill_before == "bootstrap"
+    assert result.skill_after == "dig"
+    assert result.switch_reason == "bootstrap_to_dig"
+    assert result.effects == (
+        SwitchSkillEffect(
+            target_skill_name="dig",
+            switch_reason="bootstrap_to_dig",
+        ),
+    )

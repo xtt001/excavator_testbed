@@ -1046,6 +1046,13 @@ class PrimitivePlannerACTPolicy(Policy):
         boundary_event: Any | None,
         preparation: PrimitiveTickPreparation,
     ) -> PrimitiveDecisionResult:
+        bootstrap_result = self._legacy_fsm_bootstrap_branch().decide_tick(
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=preparation,
+        )
+        if bootstrap_result is not None:
+            return bootstrap_result
         return self._legacy_fsm_backend().decide_tick(
             obs=obs,
             boundary_event=boundary_event,

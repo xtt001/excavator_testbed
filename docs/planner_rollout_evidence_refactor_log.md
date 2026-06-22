@@ -2056,3 +2056,50 @@ Each completed refactor round should append:
 - Next action: any branch conversion to `SwitchSkillEffect` must be a separate
   evidence-backed scope with branch-specific parity tests and no changes to
   branch order, reason strings, policy reset timing, or debug/token schemas.
+
+### 2026-06-22 Phase 9.1 Bootstrap Branch Requested SwitchSkill Conversion
+
+- Scope: converted only the 4P mainline bootstrap branch from direct callback
+  mutation to the requested `SwitchSkillEffect` decision path. No dig, carry,
+  dump, return, direct-handoff, coverage, token planning, `pre_dig_align`
+  internals, `cell_entry`, 5P override, branch order, reason string, threshold,
+  backend selection, behavior tree, VLM/LLM packet, token schema, debug schema,
+  rollout summary schema, policy reset timing, or low-level ACT dispatch
+  behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `09ceea6019356a680f200c77fb486c582c9c9cfd`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Selected evidence remains the successful mainline packet:
+  `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl`,
+  its paired planner trace, rollout summary, resolved config, and
+  `docs/planner_evidence_reports/2026-06-18-baseline-aggregate_tx24.md`.
+- Confirmed-live method chain converted:
+  `run_primitive_tick()` calls the decision bridge, the bootstrap branch returns
+  `PrimitiveDecisionResult(side_effects_applied=False)` with ordered
+  `SwitchSkillEffect`, the execution hook applies requested effects before
+  return-timeout accounting and action dispatch, and the real shell applier
+  calls existing `_set_skill(next_skill, bootstrap_to_*)`.
+- Updated `LegacyFSMBootstrapBranch` with `decide_tick(...)` as the requested
+  decision API. `maybe_handle()` remains a compatibility facade and reuses the
+  same decision logic before applying `SwitchSkillEffect` through its existing
+  `set_skill` callback.
+- Updated `PrimitivePlannerACTPolicy._decide_tick_with_legacy_fsm()` so
+  bootstrap ticks use the requested-effect path first. Non-bootstrap ticks
+  continue through the existing legacy already-applied adapter.
+- Added focused tests in `tests/test_primitive_backend.py`,
+  `tests/test_primitive_decision_contract.py`, and
+  `tests/test_primitive_execution_template.py` for bootstrap requested
+  `SwitchSkillEffect`, non-bootstrap not-handled behavior, requested-effect
+  ordering before dispatch, policy bridge no-callback decision behavior, and
+  legacy already-applied behavior for other branches.
+- TDD red result: the first focused run failed because
+  `LegacyFSMBootstrapBranch.decide_tick()` did not exist and the policy bridge
+  still directly called `_set_skill()` through bootstrap callback mutation.
+  After implementation the focused green run returned `33 passed`.
+- Old code parked/reclassified: no code was deleted. The bootstrap
+  compatibility facade remains for legacy callers; dig/carry/dump/return
+  branch bodies remain existing legacy already-applied paths.
+- Next action: do not convert another branch until a separate evidence-backed
+  scope locks the target branch's reason strings, ordering, policy reset timing,
+  debug/token surfaces, and requested-effect family coverage.

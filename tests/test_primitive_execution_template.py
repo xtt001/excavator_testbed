@@ -6,6 +6,7 @@ from typing import Any
 from testbed.planner.primitive_decision import (
     PrimitiveDecisionResult,
     RequestedPlannerEffect,
+    SwitchSkillEffect,
 )
 from testbed.planner.primitive_execution import (
     PrimitiveTickHooks,
@@ -173,6 +174,43 @@ def test_run_primitive_tick_applies_requested_effects_before_timeout_and_dispatc
         "dig_progress_update",
         "decide:boundary-event:dig",
         "apply_effects:2",
+        "return_timeout_accounting",
+        "dispatch_action",
+        "prev_action_update:[0.1, 0.2, 0.3, 0.4]",
+        "transition_completed_check",
+        "debug_finalize:timeout=False:completed=False",
+    ]
+
+
+def test_run_primitive_tick_applies_bootstrap_switch_before_dispatch() -> None:
+    requested_effects = (
+        SwitchSkillEffect(
+            target_skill_name="dig",
+            switch_reason="bootstrap_to_dig",
+        ),
+    )
+    hooks = FakeTickHooks(
+        active_skill_name="bootstrap",
+        requested_decision=PrimitiveDecisionResult.from_requested_effects(
+            decision_source="legacy_fsm_bootstrap_requested_effect",
+            status="skill_switch",
+            skill_before="bootstrap",
+            skill_after="dig",
+            switch_reason="bootstrap_to_dig",
+            effects=requested_effects,
+        ),
+    )
+
+    result = run_primitive_tick(hooks=hooks, obs={})
+
+    assert result.decision.effects == requested_effects
+    assert hooks.applied_effects == ["switch_skill"]
+    assert hooks.events == [
+        "boundary_update",
+        "switch_reason_reset",
+        "current_skill_before_progress",
+        "decide:boundary-event:bootstrap",
+        "apply_effects:1",
         "return_timeout_accounting",
         "dispatch_action",
         "prev_action_update:[0.1, 0.2, 0.3, 0.4]",
