@@ -728,6 +728,23 @@ facade through its existing `set_skill` port. The 5P `_set_skill()` override,
 `pre_dig_align` residual behavior, `cell_entry` compatibility material, and
 alternate backend parked scope remain intentionally unchanged.
 
+Current status note after Phase 9.29: primitive dig/return token runtime
+sequencing now lives in `PrimitiveTokenRuntimeCoordinator` in
+`testbed/planner/primitive_token_runtime.py`. `_dig_cut_tokens_for_obs(...)`,
+`_dig_depth_profile_tokens_for_obs(...)`,
+`_ensure_dig_cut_plan_for_cycle(...)`, `_return_target_tokens_for_obs(...)`,
+`_return_relocate_tokens_for_obs(...)`,
+`_return_start_envelope_tokens_for_obs(...)`,
+`_ensure_return_target_plan_for_cycle(...)`, `_clear_dig_cut_plan()`, and
+`_invalidate_pending_dig_cut_plan()` are service-backed compatibility facades.
+The coordinator owns disabled/active-skill/terminal-stop/hold-cycle gating,
+dig-cut plus dig-depth-profile writeback, return-target success/fallback
+writeback, pending next-dig plan state, copy semantics, and clear/invalidate
+resets. Token planner algorithms, token dimensions/contracts, source/fallback
+strings, observation injected-key assembly, `cell_entry` compatibility,
+`pre_dig_align` residual behavior, 5P token behavior, and alternate backend
+parked scope remain intentionally unchanged.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

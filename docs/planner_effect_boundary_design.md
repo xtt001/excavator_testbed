@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.28: the default 4P mainline branch chain no longer
+Current status after Phase 9.29: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy now exposes backend-facing decision facts through
@@ -88,8 +88,14 @@ or residual `pre_dig_align` with the existing `return_to_*_start_envelope_ready`
 reason. `PrimitivePolicyObservationAssembler` now owns low-level policy
 observation token injection: provider call order, injected key names,
 copy/no-copy behavior, and legacy injected-flag state calculation. The policy
-shell builds typed token-provider ports, clears/writes compatibility flag
-fields, and keeps token planning algorithms in their existing owners.
+shell builds typed token-provider ports and clears/writes compatibility flag
+fields. `PrimitiveTokenRuntimeCoordinator` now owns the dig/return token
+runtime sequencing used by those providers: dig-cut gating, terminal-stop
+cached-token behavior, bootstrap policy token exception, hold-cycle checks,
+return-target hold-cycle checks, return relocate planning, return-start-envelope
+token routing, pending next-dig plan writeback, fallback-zero invalidation, and
+dig-cut/pending-plan clearing. Token planner algorithms and token contracts
+remain in their existing owners.
 `PrimitiveDebugReportBuilder` now owns public `debug_state()` dict assembly:
 base transition keys, token debug fields from `TokenStatus.to_debug_fields()`,
 return gate fields, coverage fields, cell-entry compatibility fields, and
@@ -867,6 +873,19 @@ builds typed `PrimitiveSkillLifecyclePorts` and keeps `_set_skill(...)` as a
 thin service-backed facade used by `RequestedEffectApplier`. The 5P
 `_set_skill()` override remains parked legacy compatibility and is not migrated
 in this phase.
+
+Phase 9.29 extracts primitive dig/return token runtime sequencing into
+`PrimitiveTokenRuntimeCoordinator` in
+`testbed/planner/primitive_token_runtime.py`. The coordinator owns the
+confirmed-live lifecycle around existing token algorithms: disabled/no-token
+gates, cached terminal-stop dig tokens, active-skill and bootstrap-policy
+eligibility, dig hold-token rebuild suppression, synchronized dig-cut and
+dig-depth-profile plan writes, return-target eligibility and hold-cycle
+suppression, return relocate token writes, return-start-envelope token routing,
+success and fallback writeback for pending next-dig plans, and exact clear/
+invalidate reset semantics. The policy shell keeps the old private token
+runtime method names as service-backed facades; `cell_entry` token injection
+remains compatibility material outside this coordinator.
 
 ### Stage 4: Expand Effect Families From Evidence
 

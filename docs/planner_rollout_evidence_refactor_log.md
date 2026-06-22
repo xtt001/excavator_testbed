@@ -3922,3 +3922,83 @@ Each completed refactor round should append:
   and transition semantics; `pre_dig_align` remains residual parking/action
   material; `cell_entry` remains compatibility/report material; behavior tree,
   VLM, and LLM backends remain unsupported parked scope.
+
+### 2026-06-22 Phase 9.29 Extract Primitive Token Runtime Coordinator
+
+- Scope: extracted confirmed-live 4P dig/return token runtime lifecycle
+  sequencing from `PrimitivePlannerACTPolicy` into
+  `PrimitiveTokenRuntimeCoordinator` with typed `PrimitiveTokenRuntimePorts`.
+  No token key, dimension, contract version, source/fallback string,
+  in-prior flag, copy semantics, injected flag behavior, branch order, reason
+  string, threshold, policy reset timing, public config behavior, coverage trace
+  payload schema, return handoff behavior, cell-entry compatibility,
+  pre-dig-align residual behavior, 5P token behavior, behavior-tree/VLM/LLM
+  unsupported status, or low-level ACT dispatch output contract was
+  intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `efced56b1bfb1de82bd0414155a8dad4ceb6da9f`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `testbed/planner/primitive_token_runtime.py` with
+  `PrimitiveTokenRuntimePorts` and `PrimitiveTokenRuntimeCoordinator`. The
+  coordinator owns token runtime sequencing rather than token algorithms:
+  dig-cut disabled/no-token gates, terminal-stop cached-token behavior,
+  active-skill and bootstrap-policy eligibility, hold-cycle rebuild
+  suppression, synchronized dig-cut and dig-depth-profile writes, return-target
+  eligibility and hold-cycle suppression, return relocate writes,
+  return-start-envelope routing, return-target success/fallback writeback,
+  pending next-dig plan writeback, and exact dig-cut/pending-plan reset
+  behavior.
+- Updated `PrimitivePlannerACTPolicy` with `_primitive_token_runtime_ports()`
+  and `_primitive_token_runtime()` thin wiring. The old private methods
+  `_dig_cut_tokens_for_obs(...)`, `_dig_depth_profile_tokens_for_obs(...)`,
+  `_ensure_dig_cut_plan_for_cycle(...)`, `_return_target_tokens_for_obs(...)`,
+  `_return_relocate_tokens_for_obs(...)`,
+  `_return_start_envelope_tokens_for_obs(...)`,
+  `_ensure_return_target_plan_for_cycle(...)`, `_clear_dig_cut_plan()`, and
+  `_invalidate_pending_dig_cut_plan()` are now service-backed compatibility
+  facades.
+- Added `tests/test_primitive_token_runtime.py` to lock disabled/terminal-stop/
+  active-skill gates, bootstrap-policy token exception, dig hold-cycle
+  behavior, return eligibility and hold-cycle behavior, return relocate copy
+  behavior, return-target success and fallback writeback, clear/invalidate exact
+  reset fields, typed-port boundary shape, and policy facade delegation.
+- TDD red result: the first focused run failed at collection with
+  `ModuleNotFoundError: No module named
+  'testbed.planner.primitive_token_runtime'`. After adding the coordinator, the
+  focused tests exposed a terminal-stop rebuild bug and the still-inline policy
+  token facades; after fixing the terminal-stop cached-token path and wiring
+  policy delegation, the focused token runtime suite returned `11 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_token_runtime.py` returned
+  `11 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_token_status.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_primitive_goal_token_provider.py tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_dig_depth_profile_token_planner.py tests/test_primitive_return_target_token_planner.py tests/test_primitive_return_relocate_token_planner.py tests/test_primitive_return_start_envelope_token_planner.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_primitive_skill_lifecycle.py tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `101 passed`;
+  `python -m pytest -q tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `12 passed`;
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_coverage_exemplars.py tests/test_primitive_coverage_state.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_effect_runtime.py`
+  returned `44 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_depth_profile or dig_cut_tokens or return_to_dig or start_envelope or semantic_boundary_events_drive_skill_sequence or coverage_decision_trace"`
+  returned `8 passed, 112 deselected`;
+  compileall completed successfully with no output; both planner guard commands
+  and `git diff --check` completed successfully with no output.
+- Old code parked/reclassified: token planner algorithms remain in
+  `DigCutTokenPlanner`, `DigDepthProfileTokenPlanner`,
+  `ReturnTargetTokenPlanner`, `ReturnRelocateTokenPlanner`, and
+  `ReturnStartEnvelopeTokenPlanner`; observation injected-key assembly remains
+  in `PrimitivePolicyObservationAssembler`; coverage selection/scoring,
+  coverage state-exemplar planning, return start-envelope gate evaluation,
+  return direct-handoff effect sequencing, action dispatch, decision branches,
+  and requested-effect classes remain in their existing owners; `cell_entry`
+  remains compatibility/report material; `pre_dig_align` remains residual
+  parking/action material; 5P remains its existing legacy token/transition
+  behavior; behavior tree, VLM, and LLM backends remain unsupported parked
+  scope.

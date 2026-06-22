@@ -149,6 +149,10 @@ from testbed.planner.primitive_skill_lifecycle import (
     PrimitiveSkillLifecyclePorts,
     PrimitiveSkillLifecycleService,
 )
+from testbed.planner.primitive_token_runtime import (
+    PrimitiveTokenRuntimeCoordinator,
+    PrimitiveTokenRuntimePorts,
+)
 from testbed.planner.primitive_observation import (
     PrimitivePolicyObservationAssembler,
     PrimitivePolicyObservationAssemblerPorts,
@@ -3618,125 +3622,183 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _return_target_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        if self._skill_name != "return" or not self.return_target_planner_enabled:
-            return None
-        self._ensure_return_target_plan_for_cycle(obs)
-        return self._return_target_tokens.copy()
+        return self._primitive_token_runtime().return_target_tokens_for_obs(obs)
 
     def _return_relocate_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        if self._skill_name != "return" or not self.return_target_planner_enabled:
-            return None
-        self._ensure_return_target_plan_for_cycle(obs)
-        token = self._return_relocate_token_planner().plan(self._return_target_tokens)
-        self._return_relocate_tokens = token
-        return token.copy()
+        return self._primitive_token_runtime().return_relocate_tokens_for_obs(obs)
 
     def _return_start_envelope_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        if self._skill_name != "return" or not self.return_target_planner_enabled:
-            return None
-        self._ensure_return_target_plan_for_cycle(obs)
-        return self._return_start_envelope_tokens.copy()
+        return self._primitive_token_runtime().return_start_envelope_tokens_for_obs(obs)
 
     def _ensure_return_target_plan_for_cycle(self, obs: dict) -> None:
-        if not self.return_target_planner_enabled:
-            return
-        if (
-            self.return_target_hold_token_until_skill_exit
-            and self._return_target_planned_cycle_id == int(self._cycle_index)
-        ):
-            return
-        try:
-            token, raw_fields, source, fallback_reason, corridor_id = (
-                self._build_next_dig_cut_plan_for_return(obs)
-            )
-            self._return_target_tokens = token.astype(np.float32)
-            self._return_start_envelope_tokens = (
-                self._build_return_start_envelope_tokens_for_obs(
-                    obs,
-                    raw_fields,
-                    corridor_id=corridor_id,
-                )
-            )
-            self._return_target_token_source = str(source)
-            self._return_target_fallback_reason = str(fallback_reason)
-            self._return_target_planned_cycle_id = int(self._cycle_index)
-            self._pending_dig_cut_cycle_id = int(self._cycle_index) + 1
-            self._pending_dig_cut_raw_fields = dict(raw_fields)
-            self._pending_dig_cut_tokens = token.astype(np.float32)
-            self._pending_dig_cut_corridor_id = int(corridor_id)
-            self._pending_dig_depth_profile_tokens = (
-                None
-                if self._coverage_active_state_exemplar_profile_token is None
-                else self._coverage_active_state_exemplar_profile_token.astype(
-                    np.float32
-                ).copy()
-            )
-            self._pending_dig_state_exemplar_ids = list(
-                self._coverage_active_state_exemplar_ids
-            )
-            self._pending_dig_state_exemplar_distance = float(
-                self._coverage_active_state_exemplar_distance
-            )
-        except Exception as exc:
-            self._return_target_tokens = np.zeros(
-                RETURN_TARGET_TOKEN_DIM,
-                dtype=np.float32,
-            )
-            self._return_start_envelope_tokens = np.zeros(
-                RETURN_START_ENVELOPE_TOKEN_DIM,
-                dtype=np.float32,
-            )
-            self._return_target_token_source = "fallback_zero"
-            self._return_start_envelope_token_source = "fallback_zero"
-            self._return_target_fallback_reason = str(exc)
-            self._return_target_planned_cycle_id = int(self._cycle_index)
-            self._invalidate_pending_dig_cut_plan()
+        self._primitive_token_runtime().ensure_return_target_plan_for_cycle(obs)
 
     def _dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        if not self.dig_cut_planner_enabled:
-            return None
-        if self._coverage_terminal_stop_requested:
-            return self._dig_cut_tokens.copy() if self._skill_name == "dig" else None
-        if self._skill_name != "dig":
-            if (
-                self._skill_name != BOOTSTRAP_SKILL_NAME
-                or self.bootstrap_policy is None
-            ):
-                return None
-        self._ensure_dig_cut_plan_for_cycle(obs)
-        return self._dig_cut_tokens.copy()
+        return self._primitive_token_runtime().dig_cut_tokens_for_obs(obs)
 
     def _dig_depth_profile_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        if not self.dig_cut_planner_enabled:
-            return None
-        if self._coverage_terminal_stop_requested:
-            return (
-                self._dig_depth_profile_tokens.copy()
-                if self._skill_name == "dig"
-                else None
-            )
-        if self._skill_name != "dig":
-            if (
-                self._skill_name != BOOTSTRAP_SKILL_NAME
-                or self.bootstrap_policy is None
-            ):
-                return None
-        self._ensure_dig_cut_plan_for_cycle(obs)
-        return self._dig_depth_profile_tokens.copy()
+        return self._primitive_token_runtime().dig_depth_profile_tokens_for_obs(obs)
 
     def _ensure_dig_cut_plan_for_cycle(self, obs: dict) -> None:
-        if not self.dig_cut_planner_enabled:
-            return
-        if (
-            self.dig_cut_hold_token_until_skill_exit
-            and self._dig_cut_planned_cycle_id == int(self._cycle_index)
-        ):
-            return
-        self._dig_cut_tokens = self._build_dig_cut_tokens_for_obs(obs)
-        self._dig_depth_profile_tokens = self._build_dig_depth_profile_tokens_for_obs(
-            obs
+        self._primitive_token_runtime().ensure_dig_cut_plan_for_cycle(obs)
+
+    def _primitive_token_runtime(self) -> PrimitiveTokenRuntimeCoordinator:
+        return PrimitiveTokenRuntimeCoordinator.from_ports(
+            self._primitive_token_runtime_ports()
         )
-        self._dig_cut_planned_cycle_id = int(self._cycle_index)
+
+    def _primitive_token_runtime_ports(self) -> PrimitiveTokenRuntimePorts:
+        return PrimitiveTokenRuntimePorts(
+            current_skill_name=lambda: str(self._skill_name),
+            bootstrap_policy_available=lambda: self.bootstrap_policy is not None,
+            cycle_index=lambda: int(self._cycle_index),
+            dig_cut_planner_enabled=lambda: bool(self.dig_cut_planner_enabled),
+            dig_cut_hold_token_until_skill_exit=(
+                lambda: bool(self.dig_cut_hold_token_until_skill_exit)
+            ),
+            coverage_terminal_stop_requested=(
+                lambda: bool(self._coverage_terminal_stop_requested)
+            ),
+            return_target_planner_enabled=(
+                lambda: bool(self.return_target_planner_enabled)
+            ),
+            return_target_hold_token_until_skill_exit=(
+                lambda: bool(self.return_target_hold_token_until_skill_exit)
+            ),
+            get_dig_cut_planned_cycle_id=lambda: int(self._dig_cut_planned_cycle_id),
+            set_dig_cut_planned_cycle_id=(
+                lambda value: setattr(self, "_dig_cut_planned_cycle_id", int(value))
+            ),
+            get_dig_cut_tokens=lambda: self._dig_cut_tokens,
+            set_dig_cut_tokens=lambda value: setattr(self, "_dig_cut_tokens", value),
+            get_dig_depth_profile_tokens=lambda: self._dig_depth_profile_tokens,
+            set_dig_depth_profile_tokens=(
+                lambda value: setattr(self, "_dig_depth_profile_tokens", value)
+            ),
+            set_dig_cut_token_source=(
+                lambda value: setattr(self, "_dig_cut_token_source", str(value))
+            ),
+            set_dig_cut_fallback_reason=(
+                lambda value: setattr(self, "_dig_cut_fallback_reason", str(value))
+            ),
+            set_dig_cut_token_in_prior_p10_p90=(
+                lambda value: setattr(
+                    self,
+                    "_dig_cut_token_in_prior_p10_p90",
+                    bool(value),
+                )
+            ),
+            build_dig_cut_tokens_for_obs=(
+                lambda obs: self._build_dig_cut_tokens_for_obs(obs)
+            ),
+            build_dig_depth_profile_tokens_for_obs=(
+                lambda obs: self._build_dig_depth_profile_tokens_for_obs(obs)
+            ),
+            get_return_target_planned_cycle_id=(
+                lambda: int(self._return_target_planned_cycle_id)
+            ),
+            set_return_target_planned_cycle_id=(
+                lambda value: setattr(
+                    self,
+                    "_return_target_planned_cycle_id",
+                    int(value),
+                )
+            ),
+            get_return_target_tokens=lambda: self._return_target_tokens,
+            set_return_target_tokens=(
+                lambda value: setattr(self, "_return_target_tokens", value)
+            ),
+            get_return_relocate_tokens=lambda: self._return_relocate_tokens,
+            set_return_relocate_tokens=(
+                lambda value: setattr(self, "_return_relocate_tokens", value)
+            ),
+            get_return_start_envelope_tokens=(
+                lambda: self._return_start_envelope_tokens
+            ),
+            set_return_start_envelope_tokens=(
+                lambda value: setattr(self, "_return_start_envelope_tokens", value)
+            ),
+            set_return_target_token_source=(
+                lambda value: setattr(self, "_return_target_token_source", str(value))
+            ),
+            set_return_start_envelope_token_source=(
+                lambda value: setattr(
+                    self,
+                    "_return_start_envelope_token_source",
+                    str(value),
+                )
+            ),
+            set_return_target_fallback_reason=(
+                lambda value: setattr(
+                    self,
+                    "_return_target_fallback_reason",
+                    str(value),
+                )
+            ),
+            build_next_dig_cut_plan_for_return=(
+                lambda obs: self._build_next_dig_cut_plan_for_return(obs)
+            ),
+            build_return_start_envelope_tokens_for_obs=(
+                lambda obs, raw_fields, *, corridor_id: (
+                    self._build_return_start_envelope_tokens_for_obs(
+                        obs,
+                        raw_fields,
+                        corridor_id=corridor_id,
+                    )
+                )
+            ),
+            plan_return_relocate_tokens=(
+                lambda token: self._return_relocate_token_planner().plan(token)
+            ),
+            set_pending_dig_cut_cycle_id=(
+                lambda value: setattr(self, "_pending_dig_cut_cycle_id", int(value))
+            ),
+            set_pending_dig_cut_corridor_id=(
+                lambda value: setattr(self, "_pending_dig_cut_corridor_id", int(value))
+            ),
+            set_pending_dig_cut_raw_fields=(
+                lambda value: setattr(self, "_pending_dig_cut_raw_fields", value)
+            ),
+            set_pending_dig_cut_tokens=(
+                lambda value: setattr(self, "_pending_dig_cut_tokens", value)
+            ),
+            set_pending_dig_depth_profile_tokens=(
+                lambda value: setattr(
+                    self,
+                    "_pending_dig_depth_profile_tokens",
+                    value,
+                )
+            ),
+            set_pending_dig_state_exemplar_ids=(
+                lambda value: setattr(
+                    self,
+                    "_pending_dig_state_exemplar_ids",
+                    list(value),
+                )
+            ),
+            set_pending_dig_state_exemplar_distance=(
+                lambda value: setattr(
+                    self,
+                    "_pending_dig_state_exemplar_distance",
+                    float(value),
+                )
+            ),
+            get_coverage_active_state_exemplar_ids=(
+                lambda: list(self._coverage_active_state_exemplar_ids)
+            ),
+            get_coverage_active_state_exemplar_distance=(
+                lambda: float(self._coverage_active_state_exemplar_distance)
+            ),
+            get_coverage_active_state_exemplar_profile_token=(
+                lambda: self._coverage_active_state_exemplar_profile_token
+            ),
+            clear_active_state_exemplar=(
+                lambda: self._coverage_runtime_state().clear_active_state_exemplar()
+            ),
+            dig_skill_name="dig",
+            return_skill_name="return",
+            bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
+        )
 
     def _build_dig_depth_profile_tokens_for_obs(self, obs: dict) -> np.ndarray:
         cell_id = self._dig_depth_profile_cell_id(obs)
@@ -5159,25 +5221,10 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _clear_dig_cut_plan(self) -> None:
-        self._dig_cut_planned_cycle_id = -1
-        self._dig_cut_tokens = np.zeros(DIG_CUT_TOKEN_DIM, dtype=np.float32)
-        self._dig_depth_profile_tokens = np.zeros(
-            DIG_DEPTH_PROFILE_TOKEN_DIM,
-            dtype=np.float32,
-        )
-        self._dig_cut_token_source = "none"
-        self._dig_cut_fallback_reason = ""
-        self._dig_cut_token_in_prior_p10_p90 = False
-        self._coverage_runtime_state().clear_active_state_exemplar()
+        self._primitive_token_runtime().clear_dig_cut_plan()
 
     def _invalidate_pending_dig_cut_plan(self) -> None:
-        self._pending_dig_cut_cycle_id = -1
-        self._pending_dig_cut_corridor_id = -1
-        self._pending_dig_cut_raw_fields = None
-        self._pending_dig_cut_tokens = None
-        self._pending_dig_depth_profile_tokens = None
-        self._pending_dig_state_exemplar_ids = []
-        self._pending_dig_state_exemplar_distance = float("nan")
+        self._primitive_token_runtime().invalidate_pending_dig_cut_plan()
 
     def _validate_dig_cut_planner_config(self) -> None:
         if not self.dig_cut_planner_enabled:
