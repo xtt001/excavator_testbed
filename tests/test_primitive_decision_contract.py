@@ -424,6 +424,32 @@ def test_primitive_planner_requested_effect_bridge_allows_empty_effects() -> Non
     planner._apply_requested_tick_effects({}, ())
 
 
+def test_primitive_planner_requested_effect_bridge_delegates_to_requested_applier() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    obs: dict[str, Any] = {"tag": "current_obs"}
+    effects = (
+        RequestedPlannerEffect(
+            effect_type="delegated_probe",
+            reason="test_delegate",
+        ),
+    )
+    calls: list[tuple[dict[str, Any], tuple[RequestedPlannerEffect, ...]]] = []
+
+    class FakeApplier:
+        def apply(
+            self,
+            got_obs: dict[str, Any],
+            got_effects: tuple[RequestedPlannerEffect, ...],
+        ) -> None:
+            calls.append((got_obs, got_effects))
+
+    planner._requested_effect_applier = MethodType(lambda self: FakeApplier(), planner)
+
+    planner._apply_requested_tick_effects(obs, effects)
+
+    assert calls == [(obs, effects)]
+
+
 def test_primitive_planner_requested_effect_bridge_rejects_live_effects() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     effects = (

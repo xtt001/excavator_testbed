@@ -102,24 +102,12 @@ from testbed.planner.primitive_execution import (
     run_primitive_tick,
 )
 from testbed.planner.primitive_decision import (
-    CompleteCellEntryDigCompatibilityEffect,
-    CompleteCoverageDigEffect,
-    CompleteCoverageDumpEffect,
-    CompleteReturnTransitionEffect,
-    IncrementDigBadReplanCountEffect,
-    IncrementDigExitGuardReplanCountEffect,
-    MarkReturnNextDigEventSeenEffect,
-    PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
-    RejectActiveCoverageCorridorEffect,
     RequestedPlannerEffect,
-    RestartAfterFailedDigEffect,
-    SetDumpDoneHoldCountEffect,
-    SetDumpReadyHoldCountEffect,
-    SetDumpStartDepositedMassFromObservationEffect,
-    SetReturnOrDirectHandoffEffect,
-    SwitchToNextSkillAfterReturnEffect,
-    SwitchSkillEffect,
+)
+from testbed.planner.primitive_effects import (
+    RequestedEffectApplier,
+    RequestedEffectApplierPorts,
 )
 from testbed.planner.primitive_tokens import (
     DigDepthProfileTokenPlan,
@@ -1074,81 +1062,61 @@ class PrimitivePlannerACTPolicy(Policy):
     ) -> None:
         if not effects:
             return
-        for effect in effects:
-            if isinstance(effect, SwitchSkillEffect):
-                target_skill = str(effect.target_skill_name)
-                switch_reason = str(effect.switch_reason)
-                if not target_skill.strip() or not switch_reason.strip():
-                    raise PrimitiveDecisionContractError(
-                        "SwitchSkill effect requires non-empty skill and reason"
-                    )
-                self._set_skill(target_skill, switch_reason)
-            elif isinstance(effect, MarkReturnNextDigEventSeenEffect):
-                self._mark_return_next_dig_event_seen()
-            elif isinstance(effect, CompleteReturnTransitionEffect):
-                self._complete_return_transition_for_backend()
-            elif isinstance(effect, SwitchToNextSkillAfterReturnEffect):
-                reason_suffix = str(effect.reason_suffix)
-                if not reason_suffix.strip():
-                    raise PrimitiveDecisionContractError(
-                        "SwitchToNextSkillAfterReturn effect requires non-empty "
-                        "reason suffix"
-                    )
-                next_skill = str(self._next_skill_after_return_transition())
-                self._set_skill(
-                    next_skill,
-                    f"return_to_{next_skill}_{reason_suffix}",
+        self._requested_effect_applier().apply(obs, effects)
+
+    def _requested_effect_applier(self) -> RequestedEffectApplier:
+        return RequestedEffectApplier.from_ports(self._requested_effect_applier_ports())
+
+    def _requested_effect_applier_ports(self) -> RequestedEffectApplierPorts:
+        return RequestedEffectApplierPorts(
+            set_skill=lambda skill, reason: self._set_skill(skill, reason),
+            mark_return_next_dig_event_seen=(
+                lambda: self._mark_return_next_dig_event_seen()
+            ),
+            complete_return_transition=(
+                lambda: self._complete_return_transition_for_backend()
+            ),
+            next_skill_after_return_transition=(
+                lambda: self._next_skill_after_return_transition()
+            ),
+            increment_dig_exit_guard_replan_count=(
+                lambda: self._increment_dig_exit_guard_replan_count()
+            ),
+            increment_dig_bad_replan_count=(
+                lambda: self._increment_dig_bad_replan_count()
+            ),
+            reject_active_coverage_corridor=(
+                lambda obs, reason: self._reject_active_coverage_corridor(
+                    obs,
+                    reason=reason,
                 )
-            elif isinstance(effect, IncrementDigExitGuardReplanCountEffect):
-                self._increment_dig_exit_guard_replan_count()
-            elif isinstance(effect, IncrementDigBadReplanCountEffect):
-                self._increment_dig_bad_replan_count()
-            elif isinstance(effect, RejectActiveCoverageCorridorEffect):
-                reason = str(effect.reason)
-                if not reason.strip():
-                    raise PrimitiveDecisionContractError(
-                        "RejectActiveCoverageCorridor effect requires non-empty "
-                        "reason"
-                    )
-                self._reject_active_coverage_corridor(obs, reason=reason)
-            elif isinstance(effect, RestartAfterFailedDigEffect):
-                reason = str(effect.reason)
-                if not reason.strip():
-                    raise PrimitiveDecisionContractError(
-                        "RestartAfterFailedDig effect requires non-empty reason"
-                    )
-                self._restart_after_failed_dig(reason, obs)
-            elif isinstance(effect, CompleteCellEntryDigCompatibilityEffect):
-                self._complete_cell_entry_dig(obs)
-            elif isinstance(effect, CompleteCoverageDigEffect):
-                self._complete_coverage_dig(obs)
-            elif isinstance(effect, SetDumpReadyHoldCountEffect):
-                self._set_dump_ready_hold_count(int(effect.value))
-            elif isinstance(effect, SetDumpStartDepositedMassFromObservationEffect):
-                self._set_dump_start_deposited_mass(float(self._deposited_mass(obs)))
-            elif isinstance(effect, SetDumpDoneHoldCountEffect):
-                self._set_dump_done_hold_count(int(effect.value))
-            elif isinstance(effect, CompleteCoverageDumpEffect):
-                reason = str(effect.reason)
-                if not reason.strip():
-                    raise PrimitiveDecisionContractError(
-                        "CompleteCoverageDump effect requires non-empty reason"
-                    )
-                self._complete_coverage_dump(obs, reason=reason)
-            elif isinstance(effect, SetReturnOrDirectHandoffEffect):
-                reason = str(effect.reason)
-                if not reason.strip():
-                    raise PrimitiveDecisionContractError(
-                        "SetReturnOrDirectHandoff effect requires non-empty reason"
-                    )
-                self._set_return_or_direct_handoff(obs, reason=reason)
-            else:
-                effect_name = str(effect.effect_type)
-                raise PrimitiveDecisionContractError(
-                    "real planner requested-effect application only supports "
-                    "SwitchSkill, dig, return-cycle, and carry/dump effects; "
-                    f"received: {effect_name}"
+            ),
+            restart_after_failed_dig=(
+                lambda reason, obs: self._restart_after_failed_dig(reason, obs)
+            ),
+            complete_cell_entry_dig=lambda obs: self._complete_cell_entry_dig(obs),
+            complete_coverage_dig=lambda obs: self._complete_coverage_dig(obs),
+            set_dump_ready_hold_count=(
+                lambda value: self._set_dump_ready_hold_count(value)
+            ),
+            deposited_mass=lambda obs: self._deposited_mass(obs),
+            set_dump_start_deposited_mass=(
+                lambda value: self._set_dump_start_deposited_mass(value)
+            ),
+            set_dump_done_hold_count=lambda value: self._set_dump_done_hold_count(value),
+            complete_coverage_dump=(
+                lambda obs, reason: self._complete_coverage_dump(
+                    obs,
+                    reason=reason,
                 )
+            ),
+            set_return_or_direct_handoff=(
+                lambda obs, reason: self._set_return_or_direct_handoff(
+                    obs,
+                    reason=reason,
+                )
+            ),
+        )
 
     def _legacy_fsm_branch_ports(self) -> LegacyFSMBranchPorts:
         return LegacyFSMBranchPorts(

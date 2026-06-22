@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.8: the default 4P mainline branch chain no longer
+Current status after Phase 9.9: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -60,7 +60,9 @@ compatibility/parking path through a narrow residual adapter because selected
 rollout evidence classifies it as not active in the mainline. The confirmed-live
 dig branch now consumes one explicit `DigTransitionStatus` provider instead of
 five gate callbacks, matching the carry/dump/return status-object pattern while
-keeping dig mutation in requested effects and the shell applier.
+keeping dig mutation in requested effects. Requested-effect application now
+lives in `RequestedEffectApplier` with typed shell mutation ports; the policy
+shell only builds those ports and delegates from its execution hook bridge.
 
 ## Design Intent
 
@@ -441,6 +443,17 @@ into `DigTransitionStatus.from_inputs(...)` and keeps `_dig_to_carry_reason` as
 a compatibility/debug mirror. Old dig helper methods remain available as
 diagnostic/compatibility helpers, but the default backend branch no longer calls
 them as individual gate callbacks.
+
+Phase 9.9 extracts requested-effect application into
+`RequestedEffectApplier` and `RequestedEffectApplierPorts` in
+`testbed/planner/primitive_effects.py`. The applier owns requested-effect type
+dispatch, non-empty skill/reason validation that previously lived in the policy
+shell, ordered application, and fail-fast behavior for unsupported requested
+effects. The policy shell exposes `_requested_effect_applier_ports()` and
+delegates `_apply_requested_tick_effects(obs, effects)` to the applier. Shell
+state mutation remains in existing shell helpers reached through ports; the
+applier does not decide branches, compute status facts, dispatch low-level ACT
+policies, or promote `cell_entry` beyond its explicit compatibility effect.
 
 ### Stage 4: Expand Effect Families From Evidence
 

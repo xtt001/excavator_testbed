@@ -2568,3 +2568,85 @@ Each completed refactor round should append:
   callback-heavy status/fact boundary or shell-owned capability from
   `LegacyFSMBranchPorts`, while keeping mutation in requested effects and the
   shell applier until a focused service owns it.
+
+### 2026-06-22 Phase 9.9 Extract Requested Effect Applier From Policy Shell
+
+- Scope: extracted requested-effect application from the large
+  `PrimitivePlannerACTPolicy` shell into a focused planner module. No requested
+  effect class, decision branch, effect application order, branch priority,
+  reason string, threshold, token/debug/summary schema, policy reset timing,
+  backend selection, behavior tree, VLM/LLM packet, `pre_dig_align`,
+  `cell_entry`, 5P override, or low-level ACT dispatch behavior was
+  intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `3d4a06bd671d2eb0eb02bd7c122519aa1403263d`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Selected evidence remains the successful mainline packet:
+  `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl`,
+  its paired planner trace, rollout summary, resolved config, and
+  `docs/planner_evidence_reports/2026-06-18-baseline-aggregate_tx24.md`. The
+  evidence keeps mainline branch decisions and requested-effect application as
+  confirmed-live execution behavior while `gate.pre_dig_align` and
+  `token.cell_entry` remain parked or compatibility-only.
+- Added `testbed/planner/primitive_effects.py` with
+  `RequestedEffectApplierPorts` and `RequestedEffectApplier`. The ports object
+  exposes explicit shell-owned mutation callbacks, not
+  `PrimitivePlannerACTPolicy` or planner `self`.
+- `RequestedEffectApplier` now owns the requested-effect type dispatch,
+  non-empty skill/reason validation previously in the policy shell, ordered
+  iteration over the incoming effects tuple, current-observation deposited-mass
+  lookup for dump-start mass capture, return post-completion next-skill lookup,
+  and fail-fast behavior for unsupported requested effect types.
+- Supported effect families are unchanged:
+  `SwitchSkillEffect`, `MarkReturnNextDigEventSeenEffect`,
+  `CompleteReturnTransitionEffect`, `SwitchToNextSkillAfterReturnEffect`,
+  `IncrementDigExitGuardReplanCountEffect`,
+  `IncrementDigBadReplanCountEffect`, `RejectActiveCoverageCorridorEffect`,
+  `RestartAfterFailedDigEffect`, `CompleteCellEntryDigCompatibilityEffect`,
+  `CompleteCoverageDigEffect`, `SetDumpReadyHoldCountEffect`,
+  `SetDumpStartDepositedMassFromObservationEffect`,
+  `SetDumpDoneHoldCountEffect`, `CompleteCoverageDumpEffect`, and
+  `SetReturnOrDirectHandoffEffect`.
+- Updated `PrimitivePlannerACTPolicy` so `_apply_requested_tick_effects(...)`
+  is a thin execution-hook bridge. It now delegates non-empty effects to
+  `_requested_effect_applier().apply(obs, effects)` and builds the applier from
+  `_requested_effect_applier_ports()`. The policy shell no longer imports the
+  concrete requested-effect classes or owns the `isinstance(effect, ...)`
+  dispatch cascade.
+- `CompleteCellEntryDigCompatibilityEffect` remains compatibility-only and is
+  applied through the shell callback exposed in the applier ports. This phase
+  does not promote `cell_entry` into target mainline backend capability.
+- Added focused tests in `tests/test_primitive_effects.py` for ordered mixed
+  effect application, empty-field validation, unsupported effect fail-fast, and
+  current-observation deposited-mass lookup. Updated
+  `tests/test_primitive_decision_contract.py` with a policy-level delegation
+  test so the policy bridge no longer proves effect-family dispatch itself.
+- TDD red result: the first focused run failed at test collection because
+  `testbed.planner.primitive_effects` did not exist. After implementation, the
+  focused applier tests returned `10 passed`, and the applier plus decision
+  contract run returned `40 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_execution_template.py tests/test_primitive_backend.py`
+  returned `90 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_to_carry or bad_dig_replans or dig_exit_guard or complete_low_payload or carry_to_dump or dump_to_return or return_to_dig or semantic_boundary_events_drive_skill_sequence"`
+  returned `11 passed, 109 deselected`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_primitive_capabilities.py` returned
+  `25 passed`;
+  compileall, both planner guard commands, and `git diff --check` completed
+  successfully with no output.
+- Old code parked/reclassified: no code was deleted. Backend branch
+  compatibility `maybe_handle()` helpers keep their local effect application
+  paths for legacy callers; `pre_dig_align` remains a residual already-applied
+  compatibility path; `_maybe_switch_skill()` remains a legacy compatibility
+  facade for direct tests/diagnostics; `cell_entry` internals, 5P
+  compatibility, token planning, coverage metric internals, and return
+  direct-handoff internals remain existing legacy or compatibility owners.
+- Next action: continue toward the SVG target by extracting the next largest
+  stable shell boundary, likely a capability/status provider bundle or a
+  focused coverage/token/handoff owner, instead of returning to guard-only or
+  cosmetic cleanup rounds.
