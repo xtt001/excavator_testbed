@@ -58,7 +58,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 6516 | real planner source of truth, public policy adapter, inline FSM, tokens, coverage, reports |
+| `testbed/policies/hybrid/primitive_planner.py` | 4900+ | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
 | `testbed/planner/evidence_trace.py` | 972 | evidence classifier and report writer for rollout-driven refactor decisions |
@@ -86,7 +86,7 @@ The table below is the responsibility map future migrations must use.
 
 | Range | Responsibility | Main methods | Main state read/written | Architecture target |
 | --- | --- | --- | --- | --- |
-| 149-841 | public adapter construction and config normalization | `__init__` | policy objects, config scalars, token config, coverage config, pre-dig config | public adapter plus kernel construction |
+| 149-430 | public adapter construction and config normalization facade | `__init__`, `_apply_adapter_config_state` | policy handles, boundary detector, normalized adapter config state | `PrimitivePlannerAdapterConfigNormalizer` plus public adapter facade |
 | 842-927 | reset lifecycle facade | `reset` | reset service result writeback, initial compact debug state | `PrimitiveResetLifecycleService` plus public adapter facade |
 | 968-1012 | public tick template | `predict` | `_prev_action`, boundary event, `_skill_name`, `_switch_reason`, debug state | first extraction slice: explicit execution kernel template |
 | 1014-1549 | public reporting | `debug_state`, `rollout_summary`, `planner_trace` | debug state, token flags, coverage fields, summary counters | reporting boundary, not decision backend |
@@ -798,6 +798,19 @@ runtime planner subclass has been removed by explicit cleanup decision; old
 5P runtime behavior is preserved only in branch/git history, while historical
 data-slicing and experiment records remain documentation/history rather than
 current runtime architecture.
+
+Current status note after Phase 9.33A: public adapter config normalization now
+lives in `PrimitivePlannerAdapterConfigNormalizer` and
+`PrimitivePlannerAdapterConfigState` under
+`testbed/planner/primitive_adapter_config.py`. `PrimitivePlannerACTPolicy.__init__`
+keeps its full public constructor signature and default values, directly stores
+only the low-level policy handles and boundary detector, builds
+`PrimitivePlannerAdapterConfigInputs`, applies the normalized legacy field
+updates, and then calls the existing reset facade. Old private config helper
+names remain compatibility facades delegating to the config module. This slice
+does not build a kernel factory and does not change token planners, execution
+driver wiring, decision runtime, coverage algorithms, `pre_dig_align`,
+`cell_entry`, or removed 5P runtime status.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;

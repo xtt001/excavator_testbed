@@ -4235,3 +4235,74 @@ Each completed refactor round should append:
   VLM, and LLM backends remain unsupported parked scope; 5P runtime behavior is
   removed from current code by explicit cleanup decision and retained only by
   git history, not as a live compatibility owner.
+
+### 2026-06-22 Phase 9.33A Extract Primitive Public Adapter Config Normalizer
+
+- Scope: extracted public adapter config normalization from
+  `PrimitivePlannerACTPolicy.__init__` into
+  `testbed/planner/primitive_adapter_config.py`. The policy constructor keeps
+  the full public signature and default values, directly stores only low-level
+  policy handles plus the boundary detector, builds
+  `PrimitivePlannerAdapterConfigInputs`, applies the normalized
+  `PrimitivePlannerAdapterConfigState`, and then calls the existing reset
+  facade. No 4P branch order, reason string, threshold, policy reset timing,
+  token/debug/summary/trace schema, coverage trace schema, public config
+  behavior, or low-level ACT dispatch output contract was intentionally
+  changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `02ed2c15d551e00771230aaec311d4e67a628b8f`; no fetch, pull, push, reset,
+  checkout, rebase, remote write, or branch creation. HEAD after this round is
+  the local commit containing this record and is reported in the final handoff
+  because a commit cannot embed its own final hash.
+- Added `PrimitivePlannerAdapterConfigInputs`,
+  `PrimitivePlannerAdapterConfigState`, and
+  `PrimitivePlannerAdapterConfigNormalizer`. The normalizer owns constructor
+  config expansion, optional float parsing, action-dimension-aware vector
+  parsing, goal-sequence normalization, plane-depth and failed-dig replan
+  normalization, dig-cut prior loading, dig-planner validation, cell-entry
+  compatibility object construction, coverage/state-exemplar config
+  normalization and exemplar loading, pre-dig-align vectors, scripted bootstrap
+  vectors, and legacy policy-field update payload assembly.
+- Updated old private helper names such as `_normalize_plane_depth_mode`,
+  `_normalize_failed_dig_replan_skill`, `_normalize_goal_sequence`,
+  `_optional_float`, `_align_vector`, `_optional_align_vector`,
+  `_coverage_percentile_list`, `_coverage_percentile_name`,
+  `_load_dig_cut_prior`, and `_validate_dig_cut_planner_config` into
+  compatibility facades that delegate to the new config module. These helpers
+  are no longer source-of-truth logic in the large policy file.
+- Explicit non-goals: this was not a kernel factory extraction. Execution
+  driver wiring, decision runtime, requested-effect application, reset
+  lifecycle, coverage algorithms, token planner algorithms, report builders,
+  `pre_dig_align` residual behavior, `cell_entry` compatibility behavior,
+  removed 5P runtime status, and behavior-tree/VLM/LLM unsupported status were
+  left unchanged.
+- TDD red result: the first focused adapter-config test run failed at
+  collection with `ImportError: cannot import name 'primitive_adapter_config'
+  from 'testbed.planner'` because the module did not exist yet. After adding
+  the module and policy wiring, the focused adapter config suite returned
+  `13 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_adapter_config.py` returned
+  `13 passed`;
+  `python -m pytest -q tests/test_primitive_reset_lifecycle.py tests/test_primitive_execution_driver.py tests/test_primitive_action_dispatch.py`
+  returned `25 passed`;
+  `python -m pytest -q tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py tests/test_primitive_token_runtime.py`
+  returned `30 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_exemplars.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_effect_runtime.py`
+  returned `23 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace or dig_depth_profile or dig_cut_tokens"`
+  returned `20 passed, 99 deselected`;
+  compileall completed successfully with no output for the adapter config,
+  policy, and adapter-config test modules; both planner guard commands and
+  `git diff --check` completed successfully with no output.
+- Old code parked/reclassified: reset lifecycle remains in
+  `PrimitiveResetLifecycleService`; token runtime remains in
+  `PrimitiveTokenRuntimeCoordinator`; active dig and return token planning
+  remain in their focused planning services; coverage state/selection/effect
+  runtime remain in their coverage modules; `pre_dig_align` remains residual
+  parking/action material; `cell_entry` remains compatibility/report material;
+  5P runtime behavior remains removed from current code; behavior tree, VLM,
+  and LLM backends remain unsupported parked scope.

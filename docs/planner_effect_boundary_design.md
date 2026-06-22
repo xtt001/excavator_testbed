@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.31: the default 4P mainline branch chain no longer
+Current status after Phase 9.33A: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy now exposes backend-facing decision facts through
@@ -151,6 +151,18 @@ fresh `CoverageRuntimeState` creation. Public `reset()` only builds reset ports,
 applies the returned reset state, and creates the initial compact debug state.
 The 5P runtime planner subclass has been removed by explicit cleanup decision;
 old 5P runtime behavior is preserved only in branch/git history.
+`PrimitivePlannerAdapterConfigNormalizer` now owns public adapter config
+normalization in `testbed/planner/primitive_adapter_config.py`: constructor
+config expansion, optional float/vector parsing, goal-sequence normalization,
+plane-depth and failed-dig replan normalization, dig-cut prior loading,
+dig-planner validation, cell-entry compatibility object construction,
+coverage/state-exemplar config normalization, pre-dig-align vectors, scripted
+bootstrap vectors, and legacy policy-field update payload assembly.
+`PrimitivePlannerACTPolicy.__init__` keeps the same public signature and only
+stores low-level policy handles plus the boundary detector before applying the
+normalized config state and calling `reset()`. This is an adapter config
+normalization boundary only; it is not a kernel factory, backend selector,
+BT/VLM/LLM implementation, or `pre_dig_align`/`cell_entry` cleanup.
 `CoverageRuntimeState` now owns mutable coverage runtime state in
 `testbed/planner/primitive_coverage_state.py`: corridor storage, selected ids,
 payload/deposit counters, pass/terminal state, candidate scores, decision trace,

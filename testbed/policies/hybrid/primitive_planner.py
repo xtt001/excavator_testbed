@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -53,10 +51,7 @@ from testbed.planner.boundary_detector import BoundaryDetector
 from testbed.planner.cell_entry import (
     CELL_ENTRY_TOKEN_DIM,
     CellEntryGoal,
-    CellEntryPlanner,
-    CellGridSpec,
     PlannerDecisionAudit,
-    PlannerDecisionAuditor,
     PrimitiveCycleOutcome,
     build_cell_entry_tokens,
 )
@@ -161,6 +156,12 @@ from testbed.planner.primitive_reset_lifecycle import (
     PrimitiveResetLifecyclePorts,
     PrimitiveResetLifecycleService,
     PrimitiveResetLifecycleState,
+)
+from testbed.planner import primitive_adapter_config as adapter_config
+from testbed.planner.primitive_adapter_config import (
+    PrimitivePlannerAdapterConfigInputs,
+    PrimitivePlannerAdapterConfigNormalizer,
+    PrimitivePlannerAdapterConfigState,
 )
 from testbed.planner.primitive_token_runtime import (
     PrimitiveTokenRuntimeCoordinator,
@@ -318,595 +319,97 @@ class PrimitivePlannerACTPolicy(Policy):
         self.return_policy = return_policy
         self.bootstrap_policy = bootstrap_policy
         self.boundary_detector = boundary_detector
-        self.bootstrap_end_mode = str(bootstrap_end_mode)
-        self.bootstrap_end_min_bucket_mass_kg = float(bootstrap_end_min_bucket_mass_kg)
-        self.bootstrap_end_min_distance_to_dig_area_m = float(
-            bootstrap_end_min_distance_to_dig_area_m
-        )
-        self.dig_to_carry_min_bucket_mass_kg = float(dig_to_carry_min_bucket_mass_kg)
-        self.dig_to_carry_min_distance_to_dig_area_m = float(
-            dig_to_carry_min_distance_to_dig_area_m
-        )
-        self.dig_to_carry_target_bucket_mass_kg = float(
-            self.dig_to_carry_min_bucket_mass_kg
-            if dig_to_carry_target_bucket_mass_kg is None
-            else dig_to_carry_target_bucket_mass_kg
-        )
-        self.dig_to_carry_mass_plateau_enabled = bool(
-            dig_to_carry_mass_plateau_enabled
-        )
-        self.dig_to_carry_mass_plateau_min_bucket_mass_kg = float(
-            dig_to_carry_mass_plateau_min_bucket_mass_kg
-        )
-        self.dig_to_carry_mass_plateau_epsilon_kg = float(
-            dig_to_carry_mass_plateau_epsilon_kg
-        )
-        self.dig_to_carry_mass_plateau_hold_steps = max(
-            1, int(dig_to_carry_mass_plateau_hold_steps)
-        )
-        self.dig_to_carry_mass_plateau_min_steps = max(
-            1, int(dig_to_carry_mass_plateau_min_steps)
-        )
-        self.dig_bad_replan_enabled = bool(dig_bad_replan_enabled)
-        self.dig_bad_replan_max_steps = max(1, int(dig_bad_replan_max_steps))
-        self.dig_bad_replan_min_bucket_mass_kg = float(
-            dig_bad_replan_min_bucket_mass_kg
-        )
-        self.dig_exit_guard_enabled = bool(dig_exit_guard_enabled)
-        self.dig_exit_guard_min_steps = max(1, int(dig_exit_guard_min_steps))
-        self.dig_exit_guard_overshoot_m = float(dig_exit_guard_overshoot_m)
-        self.dig_exit_guard_min_bucket_mass_kg = float(
-            dig_exit_guard_min_bucket_mass_kg
-        )
-        self.dig_failed_replan_next_skill = self._normalize_failed_dig_replan_skill(
-            dig_failed_replan_next_skill
-        )
-        self.dump_ready_min_bucket_mass_kg = float(dump_ready_min_bucket_mass_kg)
-        self.dump_ready_min_height_above_rim_m = float(dump_ready_min_height_above_rim_m)
-        self.dump_ready_require_over_footprint = bool(dump_ready_require_over_footprint)
-        self.dump_ready_require_clearance = bool(dump_ready_require_clearance)
-        self.dump_ready_max_horizontal_distance_m = (
-            None
-            if dump_ready_max_horizontal_distance_m is None
-            else float(dump_ready_max_horizontal_distance_m)
-        )
-        self.dump_ready_position_mode = str(dump_ready_position_mode)
-        self.dump_ready_max_dump_area_footprint_outside_distance_m = (
-            None
-            if dump_ready_max_dump_area_footprint_outside_distance_m is None
-            else float(dump_ready_max_dump_area_footprint_outside_distance_m)
-        )
-        self.dump_ready_min_dump_area_relative_x_m = (
-            None
-            if dump_ready_min_dump_area_relative_x_m is None
-            else float(dump_ready_min_dump_area_relative_x_m)
-        )
-        self.dump_ready_max_dump_area_relative_x_m = (
-            None
-            if dump_ready_max_dump_area_relative_x_m is None
-            else float(dump_ready_max_dump_area_relative_x_m)
-        )
-        self.dump_ready_min_dump_area_relative_z_m = (
-            None
-            if dump_ready_min_dump_area_relative_z_m is None
-            else float(dump_ready_min_dump_area_relative_z_m)
-        )
-        self.dump_ready_max_dump_area_relative_z_m = (
-            None
-            if dump_ready_max_dump_area_relative_z_m is None
-            else float(dump_ready_max_dump_area_relative_z_m)
-        )
-        self.dump_ready_hold_steps = max(1, int(dump_ready_hold_steps))
-        self.dump_ready_near_window_enabled = bool(dump_ready_near_window_enabled)
-        self.dump_ready_near_window_x_tolerance_m = float(
-            dump_ready_near_window_x_tolerance_m
-        )
-        self.dump_ready_near_window_z_tolerance_m = float(
-            dump_ready_near_window_z_tolerance_m
-        )
-        self.dump_ready_near_window_outside_tolerance_m = float(
-            dump_ready_near_window_outside_tolerance_m
-        )
-        self.dump_ready_near_window_require_over_footprint = bool(
-            dump_ready_near_window_require_over_footprint
-        )
-        self.dump_done_max_bucket_mass_kg = float(dump_done_max_bucket_mass_kg)
-        self.dump_done_min_deposit_delta_kg = float(dump_done_min_deposit_delta_kg)
-        self.dump_done_hold_steps = max(1, int(dump_done_hold_steps))
-        self.dump_done_use_boundary_event = bool(dump_done_use_boundary_event)
-        self.return_to_dig_shallow_guard_enabled = bool(
-            return_to_dig_shallow_guard_enabled
-        )
-        self.return_to_dig_max_bucket_mass_kg = float(return_to_dig_max_bucket_mass_kg)
-        self.return_to_dig_touch_tolerance_m = float(return_to_dig_touch_tolerance_m)
-        self.return_to_dig_min_depth_m = float(return_to_dig_min_depth_m)
-        self.return_to_dig_max_depth_m = float(return_to_dig_max_depth_m)
-        self.return_to_dig_max_entry_error_m = self._optional_float(
-            return_to_dig_max_entry_error_m
-        )
-        self.return_to_dig_start_envelope_gate_enabled = bool(
-            return_to_dig_start_envelope_gate_enabled
-        )
-        self.return_to_dig_start_envelope_spatial_tolerance = float(
-            return_to_dig_start_envelope_spatial_tolerance
-        )
-        self.return_to_dig_start_envelope_depth_tolerance_m = float(
-            return_to_dig_start_envelope_depth_tolerance_m
-        )
-        self.return_to_dig_start_envelope_local_depth_tolerance_m = float(
-            return_to_dig_start_envelope_local_depth_tolerance_m
-        )
-        self.return_to_dig_start_envelope_plane_depth_tolerance_m = float(
-            return_to_dig_start_envelope_plane_depth_tolerance_m
-        )
-        self.return_to_dig_start_envelope_plane_depth_mode = (
-            self._normalize_plane_depth_mode(
-                return_to_dig_start_envelope_plane_depth_mode
-            )
-        )
-        self.return_to_dig_start_envelope_qpos_tolerance = float(
-            return_to_dig_start_envelope_qpos_tolerance
-        )
-        self.return_to_dig_start_envelope_require_contact = bool(
-            return_to_dig_start_envelope_require_contact
-        )
-        self.return_to_dig_start_envelope_direct_handoff_enabled = bool(
-            return_to_dig_start_envelope_direct_handoff_enabled
-        )
-        self.return_max_steps = int(return_max_steps)
-        self.action_dim = int(action_dim)
-        self.primitive_checkpoint_paths = {
-            str(name): str(path)
-            for name, path in dict(primitive_checkpoint_paths or {}).items()
-        }
-        self.goal_sequence = self._normalize_goal_sequence(goal_sequence)
-        self.goal_scenario_id = str(goal_scenario_id)
-        self.goal_depth_norm = float(goal_depth_norm)
-        self.goal_dump_target_norm = float(goal_dump_target_norm)
-        self.cell_entry_enabled = bool(cell_entry_enabled)
-        self.cell_entry_grid = CellGridSpec(**dict(cell_entry_grid or {}))
-        self.cell_entry_grid.validate()
-        self.cell_entry_planner = CellEntryPlanner(grid=self.cell_entry_grid)
-        self.cell_entry_auditor = PlannerDecisionAuditor(
-            grid=self.cell_entry_grid,
-            low_productivity_payload_gain_kg=(
-                cell_entry_low_productivity_payload_gain_kg
-            ),
-        )
-        self.dig_cut_planner_cfg = dict(dig_cut_planner or {})
-        self.dig_cut_planner_enabled = bool(
-            self.dig_cut_planner_cfg.get("enabled", True)
-        )
-        self.dig_cut_planner_mode = str(
-            self.dig_cut_planner_cfg.get("mode", "conservative_pose")
-        )
-        self.dig_cut_planner_fallback_mode = str(
-            self.dig_cut_planner_cfg.get("fallback_mode", "conservative_pose")
-        )
-        self.dig_cut_hold_token_until_skill_exit = bool(
-            self.dig_cut_planner_cfg.get(
-                "hold_token_until_skill_exit",
-                self.dig_cut_planner_mode
-                in {
-                    "operator_prior",
-                    "operator_prior_coverage",
-                    "operator_prior_sweep_belief",
-                },
-            )
-        )
-        self.dig_cut_prior_path = str(self.dig_cut_planner_cfg.get("prior_path", ""))
-        self.dig_cut_prior = self._load_dig_cut_prior(self.dig_cut_prior_path)
-        self.dig_cut_prior_id = str(self.dig_cut_prior.get("prior_id", ""))
-        return_start_envelope_cfg = dict(
-            self.dig_cut_planner_cfg.get("return_start_envelope", {}) or {}
-        )
-        self.return_start_envelope_use_cell_prior = bool(
-            return_start_envelope_cfg.get("use_cell_prior", False)
-        )
-        self.return_start_envelope_min_source_count = max(
-            1, int(return_start_envelope_cfg.get("min_source_count", 1))
-        )
-        self.return_start_envelope_min_source_fraction = max(
-            0.0,
-            float(return_start_envelope_cfg.get("min_source_fraction", 0.0)),
-        )
-        qpos_from_relocate_cfg = dict(
-            return_start_envelope_cfg.get("qpos_from_relocate", {}) or {}
-        )
-        self.return_start_envelope_qpos_from_relocate_enabled = bool(
-            qpos_from_relocate_cfg.get("enabled", False)
-        )
-        raw_relocate_coefficients = qpos_from_relocate_cfg.get("coefficients")
-        self.return_start_envelope_qpos_from_relocate_coefficients = (
-            None
-            if raw_relocate_coefficients is None
-            else np.asarray(raw_relocate_coefficients, dtype=np.float32).reshape(4, 8)
-        )
-        self.return_start_envelope_qpos_from_relocate_min = self._align_vector(
-            qpos_from_relocate_cfg.get("qpos_min", [0.44, 0.50, 0.0, 0.0]),
-            default=[0.44, 0.50, 0.0, 0.0],
-        )
-        self.return_start_envelope_qpos_from_relocate_max = self._align_vector(
-            qpos_from_relocate_cfg.get("qpos_max", [0.56, 0.80, 0.56, 0.48]),
-            default=[0.56, 0.80, 0.56, 0.48],
-        )
-        self.return_start_envelope_qpos_from_relocate_use_prior_qpos_bounds = bool(
-            qpos_from_relocate_cfg.get("use_prior_qpos_bounds", False)
-        )
-        spatial_from_relocate_cfg = dict(
-            return_start_envelope_cfg.get("spatial_from_relocate", {}) or {}
-        )
-        self.return_start_envelope_spatial_from_relocate_enabled = bool(
-            spatial_from_relocate_cfg.get("enabled", False)
-        )
-        raw_spatial_coefficients = spatial_from_relocate_cfg.get("coefficients")
-        self.return_start_envelope_spatial_from_relocate_coefficients = (
-            None
-            if raw_spatial_coefficients is None
-            else np.asarray(raw_spatial_coefficients, dtype=np.float32).reshape(2, 8)
-        )
-        self.return_start_envelope_spatial_from_relocate_min = np.asarray(
-            spatial_from_relocate_cfg.get("spatial_min", [-1.0, -0.10]),
-            dtype=np.float32,
-        ).reshape(2)
-        self.return_start_envelope_spatial_from_relocate_max = np.asarray(
-            spatial_from_relocate_cfg.get("spatial_max", [1.0, 1.0]),
-            dtype=np.float32,
-        ).reshape(2)
-        self.return_start_envelope_spatial_from_relocate_use_prior_spatial_bounds = bool(
-            spatial_from_relocate_cfg.get("use_prior_spatial_bounds", False)
-        )
-        dig_depth_profile_cfg = dict(
-            self.dig_cut_planner_cfg.get("dig_depth_profile", {}) or {}
-        )
-        self.dig_depth_profile_source = str(
-            dig_depth_profile_cfg.get("source", "live_plan")
-        ).strip().lower()
-        self.dig_depth_profile_required = bool(
-            dig_depth_profile_cfg.get("required", False)
-        )
-        self.dig_depth_profile_allow_live_fallback = bool(
-            dig_depth_profile_cfg.get(
-                "allow_live_fallback",
-                self.dig_depth_profile_source != "prior_profile",
-            )
-        )
-        self.dig_depth_profile_allow_global_fallback = bool(
-            dig_depth_profile_cfg.get("allow_global_fallback", True)
-        )
-        self.return_target_planner_cfg = dict(return_target_planner or {})
-        self.return_target_planner_enabled = bool(
-            self.return_target_planner_cfg.get("enabled", False)
-        )
-        self.return_target_hold_token_until_skill_exit = bool(
-            self.return_target_planner_cfg.get("hold_token_until_skill_exit", True)
-        )
-        self.return_target_token_source_prefix = str(
-            self.return_target_planner_cfg.get("token_source_prefix", "return_target")
-        )
-        coverage_cfg = dict(self.dig_cut_planner_cfg.get("coverage", {}) or {})
-        self.coverage_candidate_layout = str(
-            coverage_cfg.get("candidate_layout", "percentile_grid")
-        ).strip().lower()
-        self.coverage_use_env_removed_depth = bool(
-            coverage_cfg.get(
-                "use_env_removed_depth",
-                self.dig_cut_planner_mode == "operator_prior_coverage",
-            )
-        )
-        self.coverage_belief_gain_scale = float(
-            coverage_cfg.get("belief_gain_scale", 0.55)
-        )
-        self.coverage_belief_depleted_score = float(
-            coverage_cfg.get("belief_depleted_score", 1.0)
-        )
-        self.coverage_low_productivity_payload_kg = float(
-            coverage_cfg.get("low_productivity_payload_kg", 15.0)
-        )
-        self.coverage_low_productivity_deposit_kg = float(
-            coverage_cfg.get("low_productivity_deposit_kg", 15.0)
-        )
-        self.coverage_deplete_after_low_streak = max(
-            1, int(coverage_cfg.get("deplete_after_low_streak", 2))
-        )
-        self.coverage_min_remaining_depth_m = float(
-            coverage_cfg.get("min_remaining_depth_m", 0.05)
-        )
-        self.coverage_global_low_productivity_stop = max(
-            1, int(coverage_cfg.get("global_low_productivity_stop", 3))
-        )
-        self.coverage_max_attempts_per_corridor = max(
-            1, int(coverage_cfg.get("max_attempts_per_corridor", 3))
-        )
-        self.coverage_multi_pass_enabled = bool(
-            coverage_cfg.get("multi_pass_enabled", False)
-        )
-        self.coverage_multi_pass_max_passes = max(
-            1, int(coverage_cfg.get("multi_pass_max_passes", 1))
-        )
-        self.coverage_multi_pass_min_remaining_depth_m = float(
-            coverage_cfg.get(
-                "multi_pass_min_remaining_depth_m",
-                self.coverage_min_remaining_depth_m,
-            )
-        )
-        self.coverage_unattempted_bonus = float(
-            coverage_cfg.get("unattempted_bonus", 2.0)
-        )
-        self.coverage_attempt_penalty = float(
-            coverage_cfg.get("attempt_penalty", 0.65)
-        )
-        self.coverage_recent_selection_penalty = float(
-            coverage_cfg.get("recent_selection_penalty", 1.25)
-        )
-        self.coverage_recent_row_selection_penalty = float(
-            coverage_cfg.get("recent_row_selection_penalty", 0.0)
-        )
-        self.coverage_rare_cell_source_fraction_threshold = float(
-            coverage_cfg.get("rare_cell_source_fraction_threshold", 0.05)
-        )
-        self.coverage_rare_cell_max_attempts = max(
-            1, int(coverage_cfg.get("rare_cell_max_attempts", 1))
-        )
-        self.coverage_cell_confidence_weight = float(
-            coverage_cfg.get("cell_confidence_weight", 0.75)
-        )
-        state_exemplar_cfg = dict(
-            coverage_cfg.get("state_conditioned_exemplars", {}) or {}
-        )
-        self.coverage_state_exemplars_enabled = bool(
-            state_exemplar_cfg.get("enabled", False)
-        )
-        self.coverage_state_exemplar_path = str(
-            state_exemplar_cfg.get(
-                "path",
-                self.dig_cut_prior.get("coverage_state_exemplars_path", ""),
-            )
-        )
-        self.coverage_state_exemplar_k = max(
-            1, int(state_exemplar_cfg.get("k", 5))
-        )
-        self.coverage_state_exemplar_removed_depth_scale_m = max(
-            1.0e-6,
-            float(state_exemplar_cfg.get("removed_depth_scale_m", 0.12)),
-        )
-        self.coverage_state_exemplar_target_cell_weight = max(
-            0.0,
-            float(state_exemplar_cfg.get("target_cell_weight", 2.0)),
-        )
-        self.coverage_state_exemplar_score_weight = float(
-            state_exemplar_cfg.get("score_weight", 0.75)
-        )
-        self.coverage_state_exemplar_temperature = max(
-            1.0e-6,
-            float(state_exemplar_cfg.get("temperature", 0.35)),
-        )
-        self.coverage_state_exemplar_skip_rejected = bool(
-            state_exemplar_cfg.get("skip_rejected", True)
-        )
-        self.coverage_state_exemplars_by_cell = (
-            self._load_coverage_state_exemplars()
-        )
-        self.coverage_first_dig_strategy = str(
-            coverage_cfg.get("first_dig_strategy", "coverage_score")
-        ).strip().lower()
-        raw_first_dig_corridor = coverage_cfg.get("first_dig_preferred_corridor_id")
-        self.coverage_first_dig_preferred_corridor_id = (
-            None
-            if raw_first_dig_corridor is None
-            or str(raw_first_dig_corridor).strip().lower() in {"", "none", "null"}
-            else int(raw_first_dig_corridor)
-        )
-        self.coverage_first_dig_preferred_bonus = float(
-            coverage_cfg.get("first_dig_preferred_bonus", 10000.0)
-        )
-        self.coverage_first_dig_proximity_weight = float(
-            coverage_cfg.get("first_dig_proximity_weight", 0.0)
-        )
-        self.coverage_first_dig_max_entry_distance_m = self._optional_float(
-            coverage_cfg.get("first_dig_max_entry_distance_m")
-        )
-        self.coverage_first_dig_qpos_delta_weight = float(
-            coverage_cfg.get("first_dig_qpos_delta_weight", 0.0)
-        )
-        self.coverage_first_dig_max_qpos_delta = self._optional_align_vector(
-            coverage_cfg.get("first_dig_max_qpos_delta")
-        )
-        self.coverage_entry_x_percentiles = self._coverage_percentile_list(
-            coverage_cfg.get("entry_x_percentiles", ["p10", "p50", "p90"]),
-            default=("p10", "p50", "p90"),
-        )
-        self.coverage_entry_z_percentiles = self._coverage_percentile_list(
-            coverage_cfg.get("entry_z_percentiles", ["p10", "p50", "p90"]),
-            default=("p10", "p50", "p90"),
-        )
-        self.coverage_cut_direction_percentile = self._coverage_percentile_name(
-            coverage_cfg.get("cut_direction_percentile", "p50"),
-            default="p50",
-        )
-        self.coverage_cut_length_percentile = self._coverage_percentile_name(
-            coverage_cfg.get("cut_length_percentile", "p50"),
-            default="p50",
-        )
-        self.coverage_cut_depth_percentile = self._coverage_percentile_name(
-            coverage_cfg.get("cut_depth_percentile", "p50"),
-            default="p50",
-        )
-        self.coverage_payload_percentile = self._coverage_percentile_name(
-            coverage_cfg.get("payload_percentile", "p50"),
-            default="p50",
-        )
-        self.pre_dig_align_cfg = dict(pre_dig_align or {})
-        self.pre_dig_align_enabled = bool(self.pre_dig_align_cfg.get("enabled", False))
-        self.pre_dig_align_first_dig_only = bool(
-            self.pre_dig_align_cfg.get("first_dig_only", False)
-        )
-        self.pre_dig_align_replan_after_failed_dig = bool(
-            self.pre_dig_align_cfg.get("replan_after_failed_dig", False)
-        )
-        self.pre_dig_align_kp = float(self.pre_dig_align_cfg.get("kp", 2.0))
-        self.pre_dig_align_kd = float(self.pre_dig_align_cfg.get("kd", 0.25))
-        self.pre_dig_align_action_clip = self.pre_dig_align_cfg.get(
-            "action_clip",
-            [0.55, 0.35, 0.35, 0.35],
-        )
-        self.pre_dig_align_action_signs = np.asarray(
-            self.pre_dig_align_cfg.get("action_signs", [1.0, -1.0, 1.0, 1.0]),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
-        self.pre_dig_align_controlled_dims = (
-            np.asarray(
-                self.pre_dig_align_cfg.get("controlled_dims", [1, 1, 1, 0]),
-                dtype=np.float32,
-            ).reshape(self.action_dim)
-            > 0.5
-        )
-        self.pre_dig_align_bucket_target_qpos = self._optional_float(
-            self.pre_dig_align_cfg.get("bucket_target_qpos")
-        )
-        self.pre_dig_align_qpos_tolerance = self._align_vector(
-            self.pre_dig_align_cfg.get(
-                "qpos_tolerance",
-                [0.025, 0.04, 0.05, 0.06],
-            ),
-            default=[0.025, 0.04, 0.05, 0.06],
-        )
-        self.pre_dig_align_qvel_abs_max = float(
-            self.pre_dig_align_cfg.get("qvel_abs_max", 0.12)
-        )
-        self.pre_dig_align_hold_steps = max(
-            1, int(self.pre_dig_align_cfg.get("hold_steps", 3))
-        )
-        self.pre_dig_align_max_steps = max(
-            1, int(self.pre_dig_align_cfg.get("max_steps", 140))
-        )
-        self.pre_dig_align_max_entry_error_m = self._optional_float(
-            self.pre_dig_align_cfg.get("max_entry_error_m")
-        )
-        self.pre_dig_align_timeout_accept_entry_error_m = self._optional_float(
-            self.pre_dig_align_cfg.get("timeout_accept_entry_error_m")
-        )
-        self.pre_dig_align_timeout_replan_entry_error_m = self._optional_float(
-            self.pre_dig_align_cfg.get("timeout_replan_entry_error_m")
-        )
-        self.pre_dig_align_start_envelope_enabled = bool(
-            self.pre_dig_align_cfg.get("start_envelope_enabled", False)
-        )
-        self.pre_dig_align_first_dig_entry_close_handoff = bool(
-            self.pre_dig_align_cfg.get("first_dig_entry_close_handoff", False)
-        )
-        self.pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max = (
-            self._optional_float(
-                self.pre_dig_align_cfg.get(
-                    "first_dig_entry_close_handoff_qvel_abs_max"
-                )
-            )
-        )
-        self.pre_dig_align_start_envelope_max_entry_error_m = float(
-            self.pre_dig_align_cfg.get("start_envelope_max_entry_error_m", 0.65)
-        )
-        raw_entry_intent_dims = self.pre_dig_align_cfg.get(
-            "entry_intent_controlled_dims"
-        )
-        self.pre_dig_align_entry_intent_controlled_dims = (
-            None
-            if raw_entry_intent_dims is None
-            else (
-                np.asarray(raw_entry_intent_dims, dtype=np.float32).reshape(
-                    self.action_dim
-                )
-                > 0.5
-            )
-        )
-        self.pre_dig_align_entry_intent_handoff_enabled = bool(
-            self.pre_dig_align_cfg.get(
-                "entry_intent_handoff_enabled",
-                self.pre_dig_align_entry_intent_controlled_dims is not None,
-            )
-        )
-        self.pre_dig_align_surface_guard_enabled = bool(
-            self.pre_dig_align_cfg.get("surface_guard_enabled", False)
-        )
-        self.pre_dig_align_surface_guard_max_penetration_m = float(
-            self.pre_dig_align_cfg.get("surface_guard_max_penetration_m", 0.005)
-        )
-        self.pre_dig_align_surface_guard_handoff_entry_error_m = self._optional_float(
-            self.pre_dig_align_cfg.get("surface_guard_handoff_entry_error_m")
-        )
-        self.pre_dig_align_surface_guard_use_contact_fallback = bool(
-            self.pre_dig_align_cfg.get("surface_guard_use_contact_fallback", True)
-        )
-        self.pre_dig_align_start_qpos_min = self._align_vector(
-            self.pre_dig_align_cfg.get(
-                "start_qpos_min",
-                [0.45, 0.52, 0.0, 0.0],
-            ),
-            default=[0.45, 0.52, 0.0, 0.0],
-        )
-        self.pre_dig_align_start_qpos_max = self._align_vector(
-            self.pre_dig_align_cfg.get(
-                "start_qpos_max",
-                [0.57, 0.78, 0.40, 0.12],
-            ),
-            default=[0.57, 0.78, 0.40, 0.12],
-        )
-        self.pre_dig_align_start_pose_min = np.asarray(
-            self.pre_dig_align_cfg.get("start_pose_min", [-0.60, -0.30, -1.50]),
-            dtype=np.float32,
-        ).reshape(3)
-        self.pre_dig_align_start_pose_max = np.asarray(
-            self.pre_dig_align_cfg.get("start_pose_max", [1.65, 0.25, 1.20]),
-            dtype=np.float32,
-        ).reshape(3)
-        self.pre_dig_align_qpos_min = self._align_vector(
-            self.pre_dig_align_cfg.get(
-                "qpos_min",
-                [0.44, 0.50, 0.0, 0.0],
-            ),
-            default=[0.44, 0.50, 0.0, 0.0],
-        )
-        self.pre_dig_align_qpos_max = self._align_vector(
-            self.pre_dig_align_cfg.get(
-                "qpos_max",
-                [0.56, 0.79, 0.42, 0.36],
-            ),
-            default=[0.56, 0.79, 0.42, 0.36],
-        )
-        self.pre_dig_align_qpos_from_token_coefficients = np.asarray(
-            self.pre_dig_align_cfg.get(
-                "qpos_from_token_coefficients",
-                [
-                    [0.49761536, -0.00324577, -0.07974796],
-                    [0.48509995, 0.34124863, -0.02063946],
-                    [0.39998216, -0.50266185, 0.04142020],
-                    [0.21223230, -0.14153491, -0.01244724],
-                ],
-            ),
-            dtype=np.float32,
-        ).reshape(self.action_dim, 3)
-        self._validate_dig_cut_planner_config()
-        self.scripted_bootstrap_target_qpos = (
-            None
-            if scripted_bootstrap_target_qpos is None
-            else np.asarray(scripted_bootstrap_target_qpos, dtype=np.float32).reshape(
-                self.action_dim
-            )
-        )
-        self.scripted_bootstrap_kp = float(scripted_bootstrap_kp)
-        self.scripted_bootstrap_kd = float(scripted_bootstrap_kd)
-        self.scripted_bootstrap_action_clip = scripted_bootstrap_action_clip
-        self.scripted_bootstrap_action_signs = (
-            np.ones(self.action_dim, dtype=np.float32)
-            if scripted_bootstrap_action_signs is None
-            else np.asarray(scripted_bootstrap_action_signs, dtype=np.float32).reshape(
-                self.action_dim
-            )
-        )
-        self.scripted_bootstrap_qpos_tolerance = float(scripted_bootstrap_qpos_tolerance)
-        self.scripted_bootstrap_qvel_abs_max = float(scripted_bootstrap_qvel_abs_max)
-        self.scripted_bootstrap_hold_steps = max(1, int(scripted_bootstrap_hold_steps))
-        self.scripted_bootstrap_max_steps = max(1, int(scripted_bootstrap_max_steps))
+        config_inputs = PrimitivePlannerAdapterConfigInputs(
+            bootstrap_end_mode=bootstrap_end_mode,
+            bootstrap_end_min_bucket_mass_kg=bootstrap_end_min_bucket_mass_kg,
+            bootstrap_end_min_distance_to_dig_area_m=bootstrap_end_min_distance_to_dig_area_m,
+            dig_to_carry_min_bucket_mass_kg=dig_to_carry_min_bucket_mass_kg,
+            dig_to_carry_min_distance_to_dig_area_m=dig_to_carry_min_distance_to_dig_area_m,
+            dig_to_carry_target_bucket_mass_kg=dig_to_carry_target_bucket_mass_kg,
+            dig_to_carry_mass_plateau_enabled=dig_to_carry_mass_plateau_enabled,
+            dig_to_carry_mass_plateau_min_bucket_mass_kg=dig_to_carry_mass_plateau_min_bucket_mass_kg,
+            dig_to_carry_mass_plateau_epsilon_kg=dig_to_carry_mass_plateau_epsilon_kg,
+            dig_to_carry_mass_plateau_hold_steps=dig_to_carry_mass_plateau_hold_steps,
+            dig_to_carry_mass_plateau_min_steps=dig_to_carry_mass_plateau_min_steps,
+            dig_bad_replan_enabled=dig_bad_replan_enabled,
+            dig_bad_replan_max_steps=dig_bad_replan_max_steps,
+            dig_bad_replan_min_bucket_mass_kg=dig_bad_replan_min_bucket_mass_kg,
+            dig_exit_guard_enabled=dig_exit_guard_enabled,
+            dig_exit_guard_min_steps=dig_exit_guard_min_steps,
+            dig_exit_guard_overshoot_m=dig_exit_guard_overshoot_m,
+            dig_exit_guard_min_bucket_mass_kg=dig_exit_guard_min_bucket_mass_kg,
+            dig_failed_replan_next_skill=dig_failed_replan_next_skill,
+            dump_ready_min_bucket_mass_kg=dump_ready_min_bucket_mass_kg,
+            dump_ready_min_height_above_rim_m=dump_ready_min_height_above_rim_m,
+            dump_ready_require_over_footprint=dump_ready_require_over_footprint,
+            dump_ready_require_clearance=dump_ready_require_clearance,
+            dump_ready_max_horizontal_distance_m=dump_ready_max_horizontal_distance_m,
+            dump_ready_position_mode=dump_ready_position_mode,
+            dump_ready_max_dump_area_footprint_outside_distance_m=dump_ready_max_dump_area_footprint_outside_distance_m,
+            dump_ready_min_dump_area_relative_x_m=dump_ready_min_dump_area_relative_x_m,
+            dump_ready_max_dump_area_relative_x_m=dump_ready_max_dump_area_relative_x_m,
+            dump_ready_min_dump_area_relative_z_m=dump_ready_min_dump_area_relative_z_m,
+            dump_ready_max_dump_area_relative_z_m=dump_ready_max_dump_area_relative_z_m,
+            dump_ready_hold_steps=dump_ready_hold_steps,
+            dump_ready_near_window_enabled=dump_ready_near_window_enabled,
+            dump_ready_near_window_x_tolerance_m=dump_ready_near_window_x_tolerance_m,
+            dump_ready_near_window_z_tolerance_m=dump_ready_near_window_z_tolerance_m,
+            dump_ready_near_window_outside_tolerance_m=dump_ready_near_window_outside_tolerance_m,
+            dump_ready_near_window_require_over_footprint=dump_ready_near_window_require_over_footprint,
+            dump_done_max_bucket_mass_kg=dump_done_max_bucket_mass_kg,
+            dump_done_min_deposit_delta_kg=dump_done_min_deposit_delta_kg,
+            dump_done_hold_steps=dump_done_hold_steps,
+            dump_done_use_boundary_event=dump_done_use_boundary_event,
+            return_to_dig_shallow_guard_enabled=return_to_dig_shallow_guard_enabled,
+            return_to_dig_max_bucket_mass_kg=return_to_dig_max_bucket_mass_kg,
+            return_to_dig_touch_tolerance_m=return_to_dig_touch_tolerance_m,
+            return_to_dig_min_depth_m=return_to_dig_min_depth_m,
+            return_to_dig_max_depth_m=return_to_dig_max_depth_m,
+            return_to_dig_max_entry_error_m=return_to_dig_max_entry_error_m,
+            return_to_dig_start_envelope_gate_enabled=return_to_dig_start_envelope_gate_enabled,
+            return_to_dig_start_envelope_spatial_tolerance=return_to_dig_start_envelope_spatial_tolerance,
+            return_to_dig_start_envelope_depth_tolerance_m=return_to_dig_start_envelope_depth_tolerance_m,
+            return_to_dig_start_envelope_local_depth_tolerance_m=return_to_dig_start_envelope_local_depth_tolerance_m,
+            return_to_dig_start_envelope_plane_depth_tolerance_m=return_to_dig_start_envelope_plane_depth_tolerance_m,
+            return_to_dig_start_envelope_plane_depth_mode=return_to_dig_start_envelope_plane_depth_mode,
+            return_to_dig_start_envelope_qpos_tolerance=return_to_dig_start_envelope_qpos_tolerance,
+            return_to_dig_start_envelope_require_contact=return_to_dig_start_envelope_require_contact,
+            return_to_dig_start_envelope_direct_handoff_enabled=return_to_dig_start_envelope_direct_handoff_enabled,
+            return_max_steps=return_max_steps,
+            action_dim=action_dim,
+            primitive_checkpoint_paths=primitive_checkpoint_paths,
+            goal_sequence=goal_sequence,
+            goal_scenario_id=goal_scenario_id,
+            goal_depth_norm=goal_depth_norm,
+            goal_dump_target_norm=goal_dump_target_norm,
+            cell_entry_enabled=cell_entry_enabled,
+            cell_entry_grid=cell_entry_grid,
+            cell_entry_low_productivity_payload_gain_kg=cell_entry_low_productivity_payload_gain_kg,
+            dig_cut_planner=dig_cut_planner,
+            return_target_planner=return_target_planner,
+            scripted_bootstrap_target_qpos=scripted_bootstrap_target_qpos,
+            scripted_bootstrap_kp=scripted_bootstrap_kp,
+            scripted_bootstrap_kd=scripted_bootstrap_kd,
+            scripted_bootstrap_action_clip=scripted_bootstrap_action_clip,
+            scripted_bootstrap_action_signs=scripted_bootstrap_action_signs,
+            scripted_bootstrap_qpos_tolerance=scripted_bootstrap_qpos_tolerance,
+            scripted_bootstrap_qvel_abs_max=scripted_bootstrap_qvel_abs_max,
+            scripted_bootstrap_hold_steps=scripted_bootstrap_hold_steps,
+            scripted_bootstrap_max_steps=scripted_bootstrap_max_steps,
+            pre_dig_align=pre_dig_align,
+        )
+        config_state = PrimitivePlannerAdapterConfigNormalizer.normalize(
+            config_inputs
+        )
+        self._apply_adapter_config_state(config_state)
         self.reset()
+
+    def _apply_adapter_config_state(
+        self,
+        config_state: PrimitivePlannerAdapterConfigState,
+    ) -> None:
+        for field_name, value in config_state.as_policy_field_updates().items():
+            setattr(self, field_name, value)
 
     def reset(self) -> None:
         reset_state = self._primitive_reset_lifecycle_service().reset()
@@ -4100,40 +3603,11 @@ class PrimitivePlannerACTPolicy(Policy):
 
     @staticmethod
     def _normalize_plane_depth_mode(value: object) -> str:
-        mode = str(value or "range").strip().lower().replace("-", "_")
-        aliases = {
-            "legacy": "range",
-            "p05_p95": "range",
-            "median_floor": "p50_floor",
-            "target_floor": "p50_floor",
-            "median_band": "target_band",
-        }
-        mode = aliases.get(mode, mode)
-        if mode not in {"range", "p50_floor", "target_band"}:
-            raise ValueError(
-                "return_to_dig_start_envelope_plane_depth_mode must be one of "
-                "'range', 'p50_floor', or 'target_band'"
-            )
-        return mode
+        return adapter_config.normalize_plane_depth_mode(value)
 
     @staticmethod
     def _normalize_failed_dig_replan_skill(value: object) -> str:
-        skill = str(value or "dig").strip().lower().replace("-", "_")
-        aliases = {
-            "fail": "stop",
-            "fail_fast": "stop",
-            "terminal": "stop",
-            "terminal_stop": "stop",
-            "same": "dig",
-            "same_dig": "dig",
-            "new_dig": "dig",
-        }
-        skill = aliases.get(skill, skill)
-        if skill not in {"dig", "stop"}:
-            raise ValueError(
-                "dig_failed_replan_next_skill must be 'dig' or 'stop'."
-            )
-        return skill
+        return adapter_config.normalize_failed_dig_replan_skill(value)
 
     def _raw_fields_from_live_pose(self, obs: dict) -> dict[str, float | int]:
         return (
@@ -5169,59 +4643,18 @@ class PrimitivePlannerACTPolicy(Policy):
         self._primitive_token_runtime().invalidate_pending_dig_cut_plan()
 
     def _validate_dig_cut_planner_config(self) -> None:
-        if not self.dig_cut_planner_enabled:
-            return
-        supported_modes = {
-            "conservative_pose",
-            "operator_prior",
-            "operator_prior_coverage",
-            "operator_prior_sweep_belief",
-        }
-        if self.dig_cut_planner_mode not in supported_modes:
-            raise ValueError(
-                f"Unsupported dig_cut_planner mode {self.dig_cut_planner_mode!r}; "
-                f"expected one of {sorted(supported_modes)}."
-            )
-        if (
-            self.dig_cut_planner_mode
-            in {"operator_prior", "operator_prior_coverage", "operator_prior_sweep_belief"}
-            and not self.dig_cut_prior_path
-        ):
-            raise ValueError(
-                f"{self.dig_cut_planner_mode} dig_cut_planner requires prior_path."
-            )
-        supported_layouts = {"percentile_grid", "cell_weighted_3x2"}
-        if self.coverage_candidate_layout not in supported_layouts:
-            raise ValueError(
-                "Unsupported coverage.candidate_layout "
-                f"{self.coverage_candidate_layout!r}; expected one of "
-                f"{sorted(supported_layouts)}."
-            )
-        supported_profile_sources = {"live_plan", "prior_profile"}
-        if self.dig_depth_profile_source not in supported_profile_sources:
-            raise ValueError(
-                "Unsupported dig_depth_profile.source "
-                f"{self.dig_depth_profile_source!r}; expected one of "
-                f"{sorted(supported_profile_sources)}."
-            )
-        if self.dig_depth_profile_source == "prior_profile":
-            if not self.dig_cut_prior_path:
-                raise ValueError(
-                    "dig_depth_profile.source='prior_profile' requires prior_path."
-                )
-            if "dig_depth_profile_cells" not in self.dig_cut_prior:
-                raise ValueError(
-                    "dig_depth_profile.source='prior_profile' requires "
-                    "dig_depth_profile_cells in the dig cut prior."
-                )
-            if (
-                self.dig_depth_profile_required
-                and self.dig_depth_profile_allow_live_fallback
-            ):
-                raise ValueError(
-                    "dig_depth_profile.required=true must set "
-                    "allow_live_fallback=false so missing prior profiles fail fast."
-                )
+        adapter_config.validate_dig_cut_planner_config(
+            dig_cut_planner_enabled=bool(self.dig_cut_planner_enabled),
+            dig_cut_planner_mode=str(self.dig_cut_planner_mode),
+            dig_cut_prior_path=str(self.dig_cut_prior_path),
+            coverage_candidate_layout=str(self.coverage_candidate_layout),
+            dig_depth_profile_source=str(self.dig_depth_profile_source),
+            dig_depth_profile_required=bool(self.dig_depth_profile_required),
+            dig_depth_profile_allow_live_fallback=bool(
+                self.dig_depth_profile_allow_live_fallback
+            ),
+            dig_cut_prior=dict(self.dig_cut_prior or {}),
+        )
 
     @staticmethod
     def _coverage_percentile_list(
@@ -5229,21 +4662,11 @@ class PrimitivePlannerACTPolicy(Policy):
         *,
         default: tuple[str, ...],
     ) -> tuple[str, ...]:
-        allowed = {"p10", "p50", "p90"}
-        if isinstance(value, str):
-            items = [item.strip() for item in value.split(",")]
-        elif isinstance(value, (list, tuple)):
-            items = [str(item).strip() for item in value]
-        else:
-            items = list(default)
-        cleaned = tuple(item for item in items if item in allowed)
-        return cleaned or tuple(default)
+        return adapter_config.coverage_percentile_list(value, default=default)
 
     @staticmethod
     def _coverage_percentile_name(value: object, *, default: str) -> str:
-        allowed = {"p10", "p50", "p90"}
-        text = str(value).strip().lower()
-        return text if text in allowed else default
+        return adapter_config.coverage_percentile_name(value, default=default)
 
     def _align_vector(
         self,
@@ -5251,42 +4674,25 @@ class PrimitivePlannerACTPolicy(Policy):
         *,
         default: list[float] | tuple[float, ...],
     ) -> np.ndarray:
-        arr = np.asarray(default if value is None else value, dtype=np.float32)
-        return arr.reshape(self.action_dim)
+        return adapter_config.align_vector(
+            value,
+            default=default,
+            action_dim=int(self.action_dim),
+        )
 
     def _optional_align_vector(self, value: object) -> np.ndarray | None:
-        if value is None:
-            return None
-        if isinstance(value, str):
-            text = value.strip().lower()
-            if text in {"", "none", "null"}:
-                return None
-            value = [part.strip() for part in text.split(",") if part.strip()]
-        return np.asarray(value, dtype=np.float32).reshape(self.action_dim)
+        return adapter_config.optional_align_vector(
+            value,
+            action_dim=int(self.action_dim),
+        )
 
     @staticmethod
     def _optional_float(value: object) -> float | None:
-        if value is None:
-            return None
-        text = str(value).strip().lower()
-        if text in {"", "none", "null"}:
-            return None
-        return float(value)
+        return adapter_config.optional_float(value)
 
     @staticmethod
     def _load_dig_cut_prior(path: str) -> dict[str, Any]:
-        if not path:
-            return {}
-        prior_path = Path(path).expanduser()
-        if not prior_path.is_absolute():
-            prior_path = Path.cwd() / prior_path
-        with prior_path.open("r", encoding="utf-8") as handle:
-            prior = json.load(handle)
-        if int(len(prior.get("token_order", []))) != DIG_CUT_TOKEN_DIM:
-            raise ValueError(
-                f"dig cut prior {prior_path} has invalid token_order length."
-            )
-        return dict(prior)
+        return adapter_config.load_dig_cut_prior(path)
 
     @staticmethod
     def _prior_percentile(
@@ -5512,7 +4918,7 @@ class PrimitivePlannerACTPolicy(Policy):
     def _normalize_goal_sequence(
         goal_sequence: list[str] | tuple[str, ...] | None,
     ) -> tuple[int, ...]:
-        return GoalTokenProvider.normalize_goal_sequence(goal_sequence)
+        return adapter_config.normalize_goal_sequence(goal_sequence)
 
     def _active_policy(self) -> Policy:
         return self._action_dispatch_service().active_policy()
