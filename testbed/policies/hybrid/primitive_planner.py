@@ -100,6 +100,11 @@ from testbed.planner.primitive_coverage_updates import (
     CoverageUpdateConfig,
     CoverageUpdateService,
 )
+from testbed.planner.primitive_debug_report import (
+    PrimitiveDebugReportBuilder,
+    PrimitiveDebugReportInputs,
+    PrimitiveDebugStateSnapshot,
+)
 from testbed.planner.primitive_execution import (
     PrimitiveTickCallbacks,
     PrimitiveTickPreparation,
@@ -126,6 +131,7 @@ from testbed.planner.primitive_return_handoff import (
     ReturnStartEnvelopeGateResult,
     ReturnStartEnvelopeGateService,
 )
+from testbed.planner.primitive_token_status import TokenStatus
 from testbed.planner.primitive_tokens import (
     DigDepthProfileTokenPlan,
     DigDepthProfileTokenPlanner,
@@ -1380,78 +1386,97 @@ class PrimitivePlannerACTPolicy(Policy):
         return result.action
 
     def debug_state(self) -> dict[str, Any]:
-        cell_goal = self._cell_entry_goal
-        cell_audit = self._cell_entry_audit
-        return {
-            "skill_name": self._debug_state.skill_name,
-            "skill_id": int(self._debug_state.skill_id),
-            "skill_switch_reason": self._debug_state.skill_switch_reason,
-            "primitive_checkpoint_path": self._debug_state.primitive_checkpoint_path,
-            "hybrid_mode": self._debug_state.hybrid_mode,
-            "transition_timeout": bool(self._debug_state.transition_timeout),
-            "transition_completed": bool(self._debug_state.transition_completed),
-            "transition_source": TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
-            "transition_policy_mode": TRANSITION_POLICY_MODE_PRIMITIVE,
-            "transition_fallback_count": 0,
-            "transition_fallback_reason": "",
-            "completed_transition_count": int(
-                self._debug_state.completed_transition_count
+        return self._debug_report_builder().build(self._debug_report_inputs())
+
+    @staticmethod
+    def _debug_report_builder() -> PrimitiveDebugReportBuilder:
+        return PrimitiveDebugReportBuilder()
+
+    def _debug_report_inputs(self) -> PrimitiveDebugReportInputs:
+        return PrimitiveDebugReportInputs(
+            debug_state=self._debug_state_snapshot_for_report(),
+            transition_source=TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
+            transition_policy_mode=TRANSITION_POLICY_MODE_PRIMITIVE,
+            transition_fallback_count=0,
+            transition_fallback_reason="",
+            primitive_goal_curr_sector_id=int(self._goal_sector_id(self._cycle_index)),
+            primitive_goal_next_sector_id=int(self._next_goal_sector_id()),
+            token_status=self._token_status_for_debug_report(),
+            dig_failed_replan_next_skill=str(self.dig_failed_replan_next_skill),
+            return_fields=self._debug_report_return_fields(),
+            pending_fields=self._debug_report_pending_fields(),
+            dig_cut_fields=self._debug_report_dig_cut_fields(),
+            coverage_fields=self._debug_report_coverage_fields(),
+            cell_entry_fields=self._debug_report_cell_entry_fields(),
+            scripted_bootstrap_fields=self._debug_report_scripted_bootstrap_fields(),
+            dig_progress_fields=self._debug_report_dig_progress_fields(),
+            pre_dig_align_fields=self._debug_report_pre_dig_align_fields(),
+        )
+
+    def _debug_state_snapshot_for_report(self) -> PrimitiveDebugStateSnapshot:
+        state = self._debug_state
+        return PrimitiveDebugStateSnapshot(
+            skill_name=str(state.skill_name),
+            skill_id=int(state.skill_id),
+            skill_switch_reason=str(state.skill_switch_reason),
+            primitive_checkpoint_path=str(state.primitive_checkpoint_path),
+            hybrid_mode=str(state.hybrid_mode),
+            transition_timeout=bool(state.transition_timeout),
+            transition_completed=bool(state.transition_completed),
+            completed_transition_count=int(state.completed_transition_count),
+            transition_timeout_count=int(state.transition_timeout_count),
+            dump_ready_hold_count=int(state.dump_ready_hold_count),
+            dump_done_hold_count=int(state.dump_done_hold_count),
+            approach_ready_hold_count=int(state.approach_ready_hold_count),
+            dump_release_ready_hold_count=int(state.dump_release_ready_hold_count),
+            primitive_cycle_index=int(state.primitive_cycle_index),
+        )
+
+    def _token_status_for_debug_report(self) -> TokenStatus:
+        return TokenStatus.from_inputs(
+            cell_entry_enabled=bool(self.cell_entry_enabled),
+            cell_entry_token_injected=bool(self._cell_entry_token_injected),
+            cell_entry_token_dim=int(CELL_ENTRY_TOKEN_DIM),
+            dig_cut_token_injected=bool(self._dig_cut_token_injected),
+            dig_cut_token_dim=int(DIG_CUT_TOKEN_DIM),
+            dig_cut_token_source=str(self._dig_cut_token_source),
+            dig_cut_tokens=self._dig_cut_tokens,
+            dig_cut_fallback_reason=str(self._dig_cut_fallback_reason),
+            dig_cut_token_in_prior_p10_p90=bool(
+                self._dig_cut_token_in_prior_p10_p90
             ),
-            "transition_timeout_count": int(self._debug_state.transition_timeout_count),
-            "dump_ready_hold_count": int(self._debug_state.dump_ready_hold_count),
-            "dump_done_hold_count": int(self._debug_state.dump_done_hold_count),
-            "approach_ready_hold_count": int(
-                self._debug_state.approach_ready_hold_count
-            ),
-            "dump_release_ready_hold_count": int(
-                self._debug_state.dump_release_ready_hold_count
-            ),
-            "primitive_cycle_index": int(self._debug_state.primitive_cycle_index),
-            "primitive_goal_curr_sector_id": int(self._goal_sector_id(self._cycle_index)),
-            "primitive_goal_next_sector_id": int(self._next_goal_sector_id()),
-            "cell_entry_enabled": bool(self.cell_entry_enabled),
-            "cell_entry_token_injected": bool(self._cell_entry_token_injected),
-            "cell_entry_token_dim": int(CELL_ENTRY_TOKEN_DIM),
-            "dig_cut_token_injected": bool(self._dig_cut_token_injected),
-            "dig_cut_token_dim": int(DIG_CUT_TOKEN_DIM),
-            "dig_depth_profile_token_injected": bool(
+            dig_depth_profile_token_injected=bool(
                 self._dig_depth_profile_token_injected
             ),
-            "dig_depth_profile_token_dim": int(DIG_DEPTH_PROFILE_TOKEN_DIM),
-            "dig_depth_profile_source": str(self.dig_depth_profile_source),
-            "dig_depth_profile_required": bool(self.dig_depth_profile_required),
-            "dig_depth_profile_token_source": str(
-                self._dig_depth_profile_token_source
-            ),
-            "dig_depth_profile_fallback_reason": str(
+            dig_depth_profile_token_dim=int(DIG_DEPTH_PROFILE_TOKEN_DIM),
+            dig_depth_profile_source=str(self.dig_depth_profile_source),
+            dig_depth_profile_required=bool(self.dig_depth_profile_required),
+            dig_depth_profile_token_source=str(self._dig_depth_profile_token_source),
+            dig_depth_profile_tokens=self._dig_depth_profile_tokens,
+            dig_depth_profile_fallback_reason=str(
                 self._dig_depth_profile_fallback_reason
             ),
-            "dig_failed_replan_next_skill": str(self.dig_failed_replan_next_skill),
-            "return_target_token_injected": bool(self._return_target_token_injected),
-            "return_target_token_dim": int(RETURN_TARGET_TOKEN_DIM),
-            "return_target_token_source": str(self._return_target_token_source),
-            "return_target_tokens": self._return_target_tokens.astype(float).tolist(),
-            "return_target_fallback_reason": str(
-                self._return_target_fallback_reason
-            ),
-            "return_relocate_token_injected": bool(
-                self._return_relocate_token_injected
-            ),
-            "return_relocate_token_dim": int(RETURN_TARGET_TOKEN_DIM),
-            "return_relocate_token_source": str(self._return_target_token_source),
-            "return_relocate_tokens": (
-                self._return_relocate_tokens.astype(float).tolist()
-            ),
-            "return_start_envelope_token_injected": bool(
+            return_target_token_injected=bool(self._return_target_token_injected),
+            return_target_token_dim=int(RETURN_TARGET_TOKEN_DIM),
+            return_target_token_source=str(self._return_target_token_source),
+            return_target_tokens=self._return_target_tokens,
+            return_target_fallback_reason=str(self._return_target_fallback_reason),
+            return_relocate_token_injected=bool(self._return_relocate_token_injected),
+            return_relocate_token_dim=int(RETURN_TARGET_TOKEN_DIM),
+            return_relocate_token_source=str(self._return_target_token_source),
+            return_relocate_tokens=self._return_relocate_tokens,
+            return_start_envelope_token_injected=bool(
                 self._return_start_envelope_token_injected
             ),
-            "return_start_envelope_token_dim": int(RETURN_START_ENVELOPE_TOKEN_DIM),
-            "return_start_envelope_token_source": str(
+            return_start_envelope_token_dim=int(RETURN_START_ENVELOPE_TOKEN_DIM),
+            return_start_envelope_token_source=str(
                 self._return_start_envelope_token_source
             ),
-            "return_start_envelope_tokens": (
-                self._return_start_envelope_tokens.astype(float).tolist()
-            ),
+            return_start_envelope_tokens=self._return_start_envelope_tokens,
+        )
+
+    def _debug_report_return_fields(self) -> dict[str, Any]:
+        return {
             "return_to_dig_entry_error_m": float(
                 self._return_to_dig_entry_error_m
             ),
@@ -1478,21 +1503,22 @@ class PrimitivePlannerACTPolicy(Policy):
             "return_to_dig_start_envelope_checks": dict(
                 self._return_to_dig_start_envelope_checks
             ),
+        }
+
+    def _debug_report_pending_fields(self) -> dict[str, Any]:
+        return {
             "pending_dig_cut_cycle_id": int(self._pending_dig_cut_cycle_id),
             "pending_dig_cut_corridor_id": int(self._pending_dig_cut_corridor_id),
+        }
+
+    def _debug_report_dig_cut_fields(self) -> dict[str, Any]:
+        return {
             "dig_cut_planner_mode": str(self.dig_cut_planner_mode),
             "dig_cut_prior_id": str(self.dig_cut_prior_id),
-            "dig_cut_token_source": str(self._dig_cut_token_source),
-            "dig_cut_tokens": self._dig_cut_tokens.astype(float).tolist(),
-            "dig_depth_profile_tokens": (
-                self._dig_depth_profile_tokens.astype(float).tolist()
-            ),
-            "token_in_prior_p10_p90": bool(self._dig_cut_token_in_prior_p10_p90),
-            "dig_cut_token_in_prior_p10_p90": bool(
-                self._dig_cut_token_in_prior_p10_p90
-            ),
-            "fallback_reason": str(self._dig_cut_fallback_reason),
-            "dig_cut_fallback_reason": str(self._dig_cut_fallback_reason),
+        }
+
+    def _debug_report_coverage_fields(self) -> dict[str, Any]:
+        return {
             "coverage_corridor_id": int(self._coverage_active_corridor_id),
             "coverage_selected_corridor_id": int(self._coverage_active_corridor_id),
             "coverage_last_selected_corridor_id": int(
@@ -1636,6 +1662,12 @@ class PrimitivePlannerACTPolicy(Policy):
                 self._coverage_terminal_stop_reason
             ),
             "coverage_candidate_scores": list(self._coverage_candidate_scores),
+        }
+
+    def _debug_report_cell_entry_fields(self) -> dict[str, Any]:
+        cell_goal = self._cell_entry_goal
+        cell_audit = self._cell_entry_audit
+        return {
             "cell_entry_selected_cell_id": int(
                 -1 if cell_goal is None else cell_goal.selected_cell_id
             ),
@@ -1675,17 +1707,29 @@ class PrimitivePlannerACTPolicy(Policy):
                 else cell_audit.distance_to_entry_envelope_m
             ),
             "cell_entry_seen_cell_id": int(self._cell_entry_seen_cell_id),
+        }
+
+    def _debug_report_scripted_bootstrap_fields(self) -> dict[str, Any]:
+        return {
             "scripted_bootstrap_step_count": int(self._scripted_bootstrap_step_count),
             "scripted_bootstrap_hold_count": int(self._scripted_bootstrap_hold_count),
             "scripted_bootstrap_timeout_count": int(
                 self._scripted_bootstrap_timeout_count
             ),
+        }
+
+    def _debug_report_dig_progress_fields(self) -> dict[str, Any]:
+        return {
             "dig_step_count": int(self._dig_step_count),
             "dig_best_mass_kg": float(self._dig_best_mass_kg),
             "dig_mass_plateau_count": int(self._dig_mass_plateau_count),
             "dig_to_carry_reason": str(self._dig_to_carry_reason),
             "dig_bad_replan_count": int(self._dig_bad_replan_count),
             "dig_exit_guard_replan_count": int(self._dig_exit_guard_replan_count),
+        }
+
+    def _debug_report_pre_dig_align_fields(self) -> dict[str, Any]:
+        return {
             "pre_dig_align_enabled": bool(self.pre_dig_align_enabled),
             "pre_dig_align_first_dig_only": bool(
                 self.pre_dig_align_first_dig_only

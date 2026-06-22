@@ -2978,3 +2978,66 @@ Each completed refactor round should append:
   `CompleteCellEntryDigCompatibilityEffect` remains compatibility-only,
   `LegacyFSMBackendAdapter` remains historical/test scaffolding, and 5P remains
   its existing legacy override path.
+
+### 2026-06-22 Phase 9.15 Extract Public Debug State Report Builder
+
+- Scope: extracted public `PrimitivePlannerACTPolicy.debug_state()` dict
+  assembly from the large policy shell into a focused reporting module. No
+  `rollout_summary()`, `planner_trace()`, per-tick `_make_debug_state(...)`,
+  token planning algorithm, token/debug/summary schema, golden-window contract,
+  branch order, reason string, threshold, policy reset timing, public config
+  behavior, `cell_entry` compatibility classification, `pre_dig_align`
+  residual status, 5P override, or low-level ACT dispatch behavior was
+  intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `3d1cabe3b4968bf12b52dbdb953e152ae3ba715a`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `testbed/planner/primitive_debug_report.py` with
+  `PrimitiveDebugStateSnapshot`, `PrimitiveDebugReportInputs`, and
+  `PrimitiveDebugReportBuilder`. The builder owns final public debug key
+  assembly, token debug-field merge, report-section merge, and plain
+  dict/list payload projection.
+- Updated `PrimitivePlannerACTPolicy.debug_state()` into a thin wrapper that
+  delegates to `_debug_report_builder().build(_debug_report_inputs())`. The
+  policy shell now prepares typed snapshots/sections only:
+  `_debug_state_snapshot_for_report()`, `_token_status_for_debug_report()`,
+  return/pending/dig-cut/coverage/cell-entry/scripted-bootstrap/dig-progress/
+  pre-dig section helpers.
+- Token-related debug fields now enter the public debug report through
+  `TokenStatus.to_debug_fields()`, preserving legacy keys such as
+  `dig_cut_token_source`, `return_target_tokens`,
+  `return_start_envelope_tokens`, `fallback_reason`, and
+  `dig_cut_token_in_prior_p10_p90` without duplicating that mapping in the
+  policy shell or report builder.
+- Preserved representative observable fields in focused tests:
+  `skill_name`, `skill_id`, `skill_switch_reason`, `transition_source`,
+  `transition_policy_mode`, `completed_transition_count`,
+  `primitive_cycle_index`, return start-envelope fields, coverage corridor
+  fields, depleted/terminal-stop fields, pre-dig counters, and cell-entry
+  compatibility fields.
+- TDD red result: the first focused run failed at collection because
+  `testbed.planner.primitive_debug_report` did not exist. After adding the
+  builder module and policy bridge, `python -m pytest -q
+  tests/test_primitive_debug_report.py` returned `3 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_debug_report.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_primitive_token_status.py tests/test_primitive_observation.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_primitive_goal_token_provider.py tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_dig_depth_profile_token_planner.py tests/test_primitive_return_target_token_planner.py tests/test_primitive_return_relocate_token_planner.py tests/test_primitive_return_start_envelope_token_planner.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_execution_template.py tests/test_primitive_backend.py`
+  returned `114 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  compileall completed successfully with no output.
+- Old code parked/reclassified: `rollout_summary()` and `planner_trace()`
+  remain in their existing owners for a later audit, `_make_debug_state(...)`
+  remains the per-tick compact debug-state finalizer, token planning remains in
+  existing token providers, `cell_entry` remains compatibility/debug material,
+  `pre_dig_align` remains residual parking/debug material,
+  `LegacyFSMBackendAdapter` remains historical/test scaffolding, and 5P remains
+  its existing legacy override path.

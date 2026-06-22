@@ -550,6 +550,14 @@ while the assembler owns provider order, injected key names, observation
 copy/no-copy behavior, and injected-state calculation. Token planning algorithms
 and token source/fallback/debug contracts remain in their existing owners.
 
+Current status note after Phase 9.15: public `debug_state()` dict assembly has
+moved into `PrimitiveDebugReportBuilder` in
+`testbed/planner/primitive_debug_report.py`. `debug_state()` now delegates to a
+typed debug snapshot/report-input builder path while token debug fields come
+from `TokenStatus.to_debug_fields()`. `rollout_summary()`, `planner_trace()`,
+and per-tick `_make_debug_state(...)` are intentionally unchanged in this
+round.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

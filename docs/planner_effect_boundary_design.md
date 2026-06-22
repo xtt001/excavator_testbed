@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.14: the default 4P mainline branch chain no longer
+Current status after Phase 9.15: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -84,6 +84,12 @@ observation token injection: provider call order, injected key names,
 copy/no-copy behavior, and legacy injected-flag state calculation. The policy
 shell builds typed token-provider ports, clears/writes compatibility flag
 fields, and keeps token planning algorithms in their existing owners.
+`PrimitiveDebugReportBuilder` now owns public `debug_state()` dict assembly:
+base transition keys, token debug fields from `TokenStatus.to_debug_fields()`,
+return gate fields, coverage fields, cell-entry compatibility fields, and
+residual pre-dig fields. The policy shell builds a typed debug snapshot and
+section values, then delegates report assembly to the builder; `rollout_summary`
+and `planner_trace` remain in their existing owners.
 
 ## Design Intent
 
@@ -551,6 +557,20 @@ injected flags before assembly, delegates to the assembler, and writes the
 resulting compatibility fields. Token planning algorithms, token dimensions,
 token source/fallback strings, debug/summary schemas, and golden-window
 contracts remain unchanged.
+
+Phase 9.15 extracts public `debug_state()` dict assembly into
+`PrimitiveDebugReportBuilder` in `testbed/planner/primitive_debug_report.py`.
+`PrimitiveDebugReportInputs` carries an explicit tick snapshot, token status,
+and report sections for return gates, pending dig-cut state, dig-cut planner
+metadata, coverage, cell-entry compatibility, scripted bootstrap, dig progress,
+and residual pre-dig diagnostics. The builder owns final public key layout,
+section merge order, and plain debug-payload projection. Token-related public
+fields are produced through `TokenStatus.to_debug_fields()` rather than a
+second handwritten mapping. The policy shell now keeps only thin snapshot
+helpers and does not assemble the final debug dict inline. `rollout_summary()`,
+`planner_trace()`, per-tick `_make_debug_state(...)`, token planning,
+coverage/runtime updates, `cell_entry` compatibility behavior, and
+`pre_dig_align` residual behavior remain unchanged.
 
 ### Stage 4: Expand Effect Families From Evidence
 
