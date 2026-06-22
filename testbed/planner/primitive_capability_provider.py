@@ -229,13 +229,15 @@ class PrimitiveFSMCapabilityProvider:
             dump_done_min_deposit_delta_kg=ports.dump_done_min_deposit_delta_kg,
         )
 
+    def refresh_return_transition_state(self, obs: dict[str, Any]) -> None:
+        self.ports.refresh_return_handoff_state(obs)
+
     def return_transition_status(
         self,
         obs: dict[str, Any],
         boundary_event: Any | None,
     ) -> ReturnTransitionStatus:
         ports = self.ports
-        ports.refresh_return_handoff_state(obs)
         return ReturnTransitionStatus.from_inputs(
             observation=self._observation(obs),
             boundary_event=boundary_event,

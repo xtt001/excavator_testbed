@@ -207,6 +207,8 @@ class _TransitionStatusProvider:
             DumpTransitionStatus,
         ]
         | None = None,
+        refresh_return_transition_state: Callable[[dict[str, Any]], None]
+        | None = None,
         return_transition_status: Callable[
             [dict[str, Any], Any | None],
             ReturnTransitionStatus,
@@ -221,6 +223,9 @@ class _TransitionStatusProvider:
         )
         self._dump_transition_status = dump_transition_status or (
             lambda obs, boundary_event: _default_dump_status()
+        )
+        self._refresh_return_transition_state = (
+            refresh_return_transition_state or (lambda obs: None)
         )
         self._return_transition_status = return_transition_status or (
             lambda obs, boundary_event: _default_return_status()
@@ -254,6 +259,12 @@ class _TransitionStatusProvider:
     ) -> ReturnTransitionStatus:
         return self._return_transition_status(obs, boundary_event)
 
+    def refresh_return_transition_state(
+        self,
+        obs: dict[str, Any],
+    ) -> None:
+        self._refresh_return_transition_state(obs)
+
 
 def _decision_capabilities(
     *,
@@ -278,6 +289,7 @@ def _decision_capabilities(
         DumpTransitionStatus,
     ]
     | None = None,
+    refresh_return_transition_state: Callable[[dict[str, Any]], None] | None = None,
     return_transition_status: Callable[
         [dict[str, Any], Any | None],
         ReturnTransitionStatus,
@@ -299,6 +311,7 @@ def _decision_capabilities(
                 dig_transition_status=dig_transition_status,
                 carry_transition_status=carry_transition_status,
                 dump_transition_status=dump_transition_status,
+                refresh_return_transition_state=refresh_return_transition_state,
                 return_transition_status=return_transition_status,
             ),
             maybe_handle_residual_pre_dig_align=(
@@ -1802,17 +1815,92 @@ def test_legacy_fsm_return_branch_requested_no_effects_for_unready_return() -> N
     assert result.effects == ()
 
 
+def test_legacy_fsm_return_branch_refreshes_before_reading_return_status() -> None:
+    calls: list[str] = []
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    boundary_event = object()
+
+    def current_skill_name() -> str:
+        calls.append("current_skill")
+        return "return"
+
+    def current_switch_reason() -> str:
+        calls.append("current_reason")
+        return ""
+
+    def refresh(obs_arg: dict[str, Any]) -> None:
+        assert obs_arg is obs
+        calls.append("refresh_return")
+
+    def return_status(
+        obs_arg: dict[str, Any],
+        boundary_event_arg: Any | None,
+    ) -> ReturnTransitionStatus:
+        assert obs_arg is obs
+        assert boundary_event_arg is boundary_event
+        calls.append("return_status")
+        return _return_status(
+            next_dig_event=True,
+            next_or_seen_dig_event=True,
+            entry_close=True,
+            start_envelope_ready=True,
+            handoff_ready=True,
+            completed_transition=True,
+        )
+
+    branch = LegacyFSMReturnBranch(
+        config=LegacyFSMReturnConfig(return_skill_name="return"),
+        capabilities=_decision_capabilities(
+            current_skill_name=current_skill_name,
+            current_switch_reason=current_switch_reason,
+            refresh_return_transition_state=refresh,
+            return_transition_status=return_status,
+        ),
+    )
+
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision="return",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert calls == [
+        "current_skill",
+        "current_reason",
+        "refresh_return",
+        "return_status",
+    ]
+    assert result is not None
+    assert result.effects == (
+        MarkReturnNextDigEventSeenEffect(),
+        CompleteReturnTransitionEffect(),
+        SwitchToNextSkillAfterReturnEffect(reason_suffix="next_dig_entry_ready"),
+    )
+
+
 def test_legacy_fsm_return_branch_requested_ignores_non_return_skill() -> None:
+    calls: list[str] = []
+
+    def fail_refresh(obs: dict[str, Any]) -> None:
+        calls.append("refresh_return")
+        raise AssertionError("non-return skill must not refresh return state")
+
     def fail_if_called(
         obs: dict[str, Any],
         boundary_event: Any | None,
     ) -> ReturnTransitionStatus:
+        calls.append("return_status")
         raise AssertionError("non-return skill must not request return transition status")
 
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
         capabilities=_decision_capabilities(
             current_skill_name=lambda: "dig",
+            refresh_return_transition_state=fail_refresh,
             return_transition_status=fail_if_called,
         ),
     )
@@ -1828,6 +1916,7 @@ def test_legacy_fsm_return_branch_requested_ignores_non_return_skill() -> None:
     )
 
     assert result is None
+    assert calls == []
 
 
 def test_legacy_fsm_return_branch_latches_next_dig_event_without_switch() -> None:

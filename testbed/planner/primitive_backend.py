@@ -571,6 +571,7 @@ class LegacyFSMReturnBranch:
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.config.return_skill_name):
             return None
+        self.capabilities.refresh_return_transition_state(context)
         status = self.capabilities.return_transition_status(context)
         effects = self._effects_for_status(status)
         decision_status = (

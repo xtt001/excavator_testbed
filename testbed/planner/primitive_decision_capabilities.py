@@ -37,6 +37,11 @@ class PrimitiveTransitionStatusProvider(Protocol):
         boundary_event: Any | None,
     ) -> DumpTransitionStatus: ...
 
+    def refresh_return_transition_state(
+        self,
+        obs: dict[str, Any],
+    ) -> None: ...
+
     def return_transition_status(
         self,
         obs: dict[str, Any],
@@ -160,6 +165,14 @@ class PrimitiveDecisionCapabilities:
         return self.ports.transition_status_provider.return_transition_status(
             context.obs,
             context.boundary_event,
+        )
+
+    def refresh_return_transition_state(
+        self,
+        context: PrimitiveDecisionContext,
+    ) -> None:
+        self.ports.transition_status_provider.refresh_return_transition_state(
+            context.obs
         )
 
     def handle_residual_pre_dig_align(

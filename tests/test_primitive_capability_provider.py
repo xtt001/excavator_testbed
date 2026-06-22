@@ -191,7 +191,25 @@ def test_provider_carry_and_dump_status_share_observation_projection() -> None:
     assert dump.coverage_completion_reason == "dump_mass_low"
 
 
-def test_provider_return_status_refreshes_handoff_cache_before_reading_it() -> None:
+def test_provider_refresh_return_transition_state_refreshes_handoff_cache() -> None:
+    calls: list[str] = []
+    return_state = {"seen": False, "entry": False, "start": False}
+    provider = PrimitiveFSMCapabilityProvider(
+        ports=_ports(calls=calls, return_state=return_state)
+    )
+    obs = _obs(
+        mass_in_bucket_kg=0.5,
+        min_distance_to_dig_area_m=0.1,
+        bucket_depth_below_dig_area_plane_m=0.0,
+    )
+
+    provider.refresh_return_transition_state(obs)
+
+    assert calls == ["refresh_return_handoff_state"]
+    assert return_state == {"seen": True, "entry": True, "start": True}
+
+
+def test_provider_return_status_read_is_read_only_without_explicit_refresh() -> None:
     calls: list[str] = []
     return_state = {"seen": False, "entry": False, "start": False}
     provider = PrimitiveFSMCapabilityProvider(
@@ -207,10 +225,33 @@ def test_provider_return_status_refreshes_handoff_cache_before_reading_it() -> N
         boundary_event=None,
     )
 
-    assert calls[0] == "refresh_return_handoff_state"
-    assert calls.index("refresh_return_handoff_state") < calls.index("seen")
-    assert calls.index("refresh_return_handoff_state") < calls.index("entry")
-    assert calls.index("refresh_return_handoff_state") < calls.index("start")
+    assert "refresh_return_handoff_state" not in calls
+    assert calls == ["seen", "entry", "start"]
+    assert status.completed_transition is False
+    assert status.switch_reason == ""
+
+
+def test_provider_return_status_after_explicit_refresh_matches_old_result() -> None:
+    calls: list[str] = []
+    return_state = {"seen": False, "entry": False, "start": False}
+    provider = PrimitiveFSMCapabilityProvider(
+        ports=_ports(calls=calls, return_state=return_state)
+    )
+    obs = _obs(
+        mass_in_bucket_kg=0.5,
+        min_distance_to_dig_area_m=0.1,
+        bucket_depth_below_dig_area_plane_m=0.0,
+    )
+
+    provider.refresh_return_transition_state(obs)
+    status = provider.return_transition_status(obs, boundary_event=None)
+
+    assert calls == [
+        "refresh_return_handoff_state",
+        "seen",
+        "entry",
+        "start",
+    ]
     assert status.completed_transition is True
     assert status.switch_reason == "return_to_dig_next_dig_entry_ready"
 

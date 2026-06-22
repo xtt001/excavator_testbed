@@ -20,6 +20,12 @@ class _RecordingTransitionStatusProvider:
         self.dump_status = object()
         self.return_status = object()
 
+    def refresh_return_transition_state(
+        self,
+        obs: dict[str, Any],
+    ) -> None:
+        self.calls.append(("refresh_return", obs, None))
+
     def dig_transition_status(
         self,
         obs: dict[str, Any],
@@ -123,6 +129,28 @@ def test_decision_capabilities_route_status_providers_through_context() -> None:
         ("dump", obs, boundary_event),
         ("return", obs, boundary_event),
     ]
+
+
+def test_decision_capabilities_refresh_return_transition_state_is_explicit() -> None:
+    obs = {"qpos": [1.0]}
+    boundary_event = object()
+    context = _context(obs=obs, boundary_event=boundary_event, skill="return")
+    capabilities, provider = _capabilities(current_skill_name="return")
+
+    capabilities.refresh_return_transition_state(context)
+
+    assert provider.calls == [("refresh_return", obs, None)]
+
+
+def test_decision_capabilities_return_status_read_does_not_refresh() -> None:
+    obs = {"qpos": [1.0]}
+    boundary_event = object()
+    context = _context(obs=obs, boundary_event=boundary_event, skill="return")
+    capabilities, provider = _capabilities(current_skill_name="return")
+
+    assert capabilities.return_transition_status(context) is provider.return_status
+
+    assert provider.calls == [("return", obs, boundary_event)]
 
 
 def test_decision_capabilities_build_common_facts_without_status_or_residual_calls() -> None:
