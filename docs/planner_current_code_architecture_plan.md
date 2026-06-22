@@ -703,6 +703,19 @@ the default legacy FSM is backendified with a shared decision packet shape,
 while behavior-tree, VLM/LLM, and other alternate backends remain unimplemented
 parked scope.
 
+Current status note after Phase 9.27: primitive decision backend facts now flow
+through `PrimitiveDecisionCapabilities` in
+`testbed/planner/primitive_decision_capabilities.py`. The policy builds typed
+capability ports from current shell readers, bootstrap gates, the
+`PrimitiveFSMCapabilityProvider`, and the explicitly residual pre-dig-align
+handler; `LegacyFSMBranchPorts` is narrowed to skill-name constants plus that
+capabilities object. Legacy FSM bootstrap/dig/carry/dump/return branches now
+consume `PrimitiveDecisionContext + PrimitiveDecisionCapabilities` instead of
+holding individual shell callback/status-provider fields. This keeps the
+maturity claim at default legacy-FSM backendified with shared context and
+capabilities shape; behavior-tree, VLM/LLM, and other alternate backends remain
+unimplemented parked scope.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

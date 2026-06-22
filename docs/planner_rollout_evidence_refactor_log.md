@@ -3782,3 +3782,81 @@ Each completed refactor round should append:
   compatibility/report material, `pre_dig_align` remains residual
   parking/action material, behavior tree and VLM/LLM backends remain
   unsupported parked scope, and 5P remains its existing legacy override path.
+
+### 2026-06-22 Phase 9.27 Introduce Primitive Decision Capabilities Port
+
+- Scope: introduced a backend-facing primitive decision capabilities object and
+  migrated legacy FSM branch construction so mainline branches consume
+  `PrimitiveDecisionContext + PrimitiveDecisionCapabilities` instead of direct
+  shell callback/status-provider fields. No branch order, reason string,
+  threshold, policy reset timing, token/debug/summary/trace schema, coverage
+  trace payload schema, public config behavior, pre-dig-align internals,
+  cell-entry compatibility, 5P transition semantics, return handoff internals,
+  or low-level ACT dispatch output contract was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `357e84505e98ad9fb7f1e735fb19dc4d2488061e`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `testbed/planner/primitive_decision_capabilities.py` with
+  `PrimitiveDecisionCapabilitiesPorts`, `PrimitiveDecisionCapabilities`,
+  `PrimitiveTransitionStatusProvider`, and `BootstrapDecisionStatus`. The
+  capabilities object maps a shared `PrimitiveDecisionContext` into current
+  skill/reason, normalized bootstrap status, dig/carry/dump/return transition
+  statuses from `PrimitiveFSMCapabilityProvider`, and the explicitly residual
+  pre-dig-align already-applied compatibility handler.
+- Updated `LegacyFSMBranchPorts` so it carries only skill-name constants and a
+  `PrimitiveDecisionCapabilities` object. `LegacyFSMBootstrapBranch`,
+  `LegacyFSMDigBranch`, `LegacyFSMCarryBranch`, `LegacyFSMDumpBranch`,
+  `LegacyFSMReturnBranch`, and the residual pre-dig-align adapter now read
+  backend facts through capabilities and the shared context. The default
+  requested order remains `bootstrap -> dig -> carry -> dump -> return ->
+  residual`, and compatibility order remains `bootstrap -> residual -> dig ->
+  carry -> dump -> return`.
+- Updated `PrimitivePlannerACTPolicy` with
+  `_primitive_decision_capabilities()` and
+  `_primitive_decision_capabilities_ports()` thin wiring. The policy still owns
+  shell readers, bootstrap gates, provider construction, and the residual
+  pre-dig handler, while backend branches no longer receive the mainline
+  callback bag directly.
+- Added `tests/test_primitive_decision_capabilities.py` and updated backend and
+  decision-contract tests to prove context-driven status-provider calls,
+  bootstrap next-skill normalization, explicit residual compatibility handling,
+  `LegacyFSMBranchPorts` shrinkage, policy capabilities wiring, requested and
+  compatibility order preservation, and unsupported-backend fail-fast behavior.
+- TDD red result: the first focused run failed at collection with
+  `ModuleNotFoundError: No module named
+  'testbed.planner.primitive_decision_capabilities'`. After adding the
+  capabilities module, the focused capabilities test returned `3 passed`, and
+  after backend/policy migration the combined capabilities/backend suite
+  returned `53 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_decision_capabilities.py tests/test_primitive_decision_context.py tests/test_primitive_decision_runtime.py`
+  returned `12 passed`;
+  `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_decision_contract.py tests/test_primitive_effects.py`
+  returned `95 passed`;
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_capabilities.py`
+  returned `29 passed`;
+  `python -m pytest -q tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `12 passed`;
+  `python -m pytest -q tests/test_primitive_action_dispatch.py tests/test_primitive_tick_finalization.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_exemplars.py tests/test_primitive_coverage_state.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_effect_runtime.py`
+  returned `29 passed`;
+  `python -m pytest -q tests/test_primitive_planner_trace.py tests/test_primitive_rollout_summary.py tests/test_primitive_debug_report.py tests/test_primitive_observation.py tests/test_primitive_token_status.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace"`
+  returned `19 passed, 101 deselected`;
+  compileall completed successfully with no output; both planner guard commands
+  and `git diff --check` completed successfully with no output.
+- Old code parked/reclassified: `PrimitiveDecisionCapabilities` is a
+  backend-facing legacy-FSM capability boundary, not proof of pure
+  alternate-backend readiness. The default backend remains the only supported
+  `legacy_fsm`; behavior tree and VLM/LLM backends remain unsupported parked
+  scope, `LegacyFSMBackendAdapter` remains historical/test scaffolding,
+  `cell_entry` remains compatibility/report material, `pre_dig_align` remains
+  residual parking/action material, and 5P remains its existing legacy override
+  path.

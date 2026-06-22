@@ -47,23 +47,29 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.25: the default 4P mainline branch chain no longer
+Current status after Phase 9.27: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
-shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
-`LegacyFSMBranchSet` constructs the branches and owns both requested and legacy
-compatibility dispatch orders. `LegacyFSMRequestedDecisionBackend` is the
-default decision backend used by the execution template, while
+shell. The policy now exposes backend-facing decision facts through
+`PrimitiveDecisionCapabilities`; `LegacyFSMBranchPorts` has been narrowed to
+skill-name constants plus that capability object. `LegacyFSMBranchSet`
+constructs branches and owns both requested and legacy compatibility dispatch
+orders, while `LegacyFSMBootstrapBranch`, `LegacyFSMDigBranch`,
+`LegacyFSMCarryBranch`, `LegacyFSMDumpBranch`, and `LegacyFSMReturnBranch`
+consume `PrimitiveDecisionContext + PrimitiveDecisionCapabilities` rather than
+individual shell callback/status-provider fields. `LegacyFSMRequestedDecisionBackend`
+is the default decision backend used by the execution driver, while
 `LegacyFSMCompatibilityDecisionBackend` serves the legacy `_maybe_switch_skill()`
 entry without applying effects inside backend branches. Bootstrap, dig, carry,
-dump, and return are handled through explicit requested-effect branch
-decisions in both entry paths, and requested effects are applied by the same
+dump, and return are handled through explicit requested-effect branch decisions
+in both entry paths, and requested effects are applied by the same
 `RequestedEffectApplier`. Residual `pre_dig_align` behavior remains an
 already-applied compatibility/parking path through a narrow residual adapter
-because selected rollout evidence classifies it as not active in the mainline.
-The confirmed-live dig branch now consumes one explicit `DigTransitionStatus`
-provider instead of five gate callbacks, matching the carry/dump/return
-status-object pattern while keeping dig mutation in requested effects.
+and the capabilities object's explicitly named residual handler because
+selected rollout evidence classifies it as not active in the mainline. The
+confirmed-live dig branch consumes one explicit `DigTransitionStatus` provider
+through capabilities instead of five gate callbacks, matching the carry/dump/
+return status-object pattern while keeping dig mutation in requested effects.
 Requested-effect application lives in `RequestedEffectApplier` with typed shell
 mutation ports; the policy shell only builds those ports and delegates from its
 execution hook and legacy compatibility bridges. `PrimitiveFSMCapabilityProvider`
@@ -838,6 +844,18 @@ as their source of truth; scatter-argument `decide_tick(...)` methods remain
 only as compatibility facades for the execution driver and existing diagnostics.
 Requested order, compatibility order, unsupported-backend fail-fast behavior,
 and all branch semantics remain unchanged.
+
+Phase 9.27 introduces the primitive decision capabilities port in
+`testbed/planner/primitive_decision_capabilities.py`. The capabilities object
+maps a shared `PrimitiveDecisionContext` into legacy-FSM decision facts:
+current skill/reason, normalized bootstrap decision status, dig/carry/dump/
+return transition statuses, and the explicitly residual pre-dig-align
+already-applied handler. `LegacyFSMBranchPorts` no longer exposes the mainline
+callback bag (`current_skill_name`, bootstrap gates, or transition-status
+methods) directly; it carries skill-name constants plus one capabilities
+object. This is a backend-facing context/capabilities boundary for the default
+legacy FSM path, not a claim that alternate behavior-tree or VLM/LLM backends
+are implemented or fully pure-readiness-compatible.
 
 ### Stage 4: Expand Effect Families From Evidence
 

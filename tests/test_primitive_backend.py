@@ -50,6 +50,10 @@ from testbed.planner.primitive_decision import (
     SwitchToNextSkillAfterReturnEffect,
     SwitchSkillEffect,
 )
+from testbed.planner.primitive_decision_capabilities import (
+    PrimitiveDecisionCapabilities,
+    PrimitiveDecisionCapabilitiesPorts,
+)
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
@@ -184,6 +188,126 @@ def _default_return_status() -> ReturnTransitionStatus:
     )
 
 
+class _TransitionStatusProvider:
+    def __init__(
+        self,
+        *,
+        dig_transition_status: Callable[
+            [dict[str, Any], Any | None],
+            DigTransitionStatus,
+        ]
+        | None = None,
+        carry_transition_status: Callable[
+            [dict[str, Any], Any | None],
+            CarryTransitionStatus,
+        ]
+        | None = None,
+        dump_transition_status: Callable[
+            [dict[str, Any], Any | None],
+            DumpTransitionStatus,
+        ]
+        | None = None,
+        return_transition_status: Callable[
+            [dict[str, Any], Any | None],
+            ReturnTransitionStatus,
+        ]
+        | None = None,
+    ) -> None:
+        self._dig_transition_status = (
+            dig_transition_status or (lambda obs, boundary_event: _default_dig_status())
+        )
+        self._carry_transition_status = carry_transition_status or (
+            lambda obs, boundary_event: _default_carry_status()
+        )
+        self._dump_transition_status = dump_transition_status or (
+            lambda obs, boundary_event: _default_dump_status()
+        )
+        self._return_transition_status = return_transition_status or (
+            lambda obs, boundary_event: _default_return_status()
+        )
+
+    def dig_transition_status(
+        self,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> DigTransitionStatus:
+        return self._dig_transition_status(obs, boundary_event)
+
+    def carry_transition_status(
+        self,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> CarryTransitionStatus:
+        return self._carry_transition_status(obs, boundary_event)
+
+    def dump_transition_status(
+        self,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> DumpTransitionStatus:
+        return self._dump_transition_status(obs, boundary_event)
+
+    def return_transition_status(
+        self,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> ReturnTransitionStatus:
+        return self._return_transition_status(obs, boundary_event)
+
+
+def _decision_capabilities(
+    *,
+    current_skill_name: Callable[[], str] | None = None,
+    current_switch_reason: Callable[[], str] | None = None,
+    should_end_bootstrap: Callable[..., bool] | None = None,
+    bootstrap_end_mode: Callable[[], str] | None = None,
+    should_pre_dig_align_before_dig: Callable[[], bool] | None = None,
+    maybe_handle_pre_dig_align_skill: Callable[[dict[str, Any]], bool] | None = None,
+    dig_transition_status: Callable[
+        [dict[str, Any], Any | None],
+        DigTransitionStatus,
+    ]
+    | None = None,
+    carry_transition_status: Callable[
+        [dict[str, Any], Any | None],
+        CarryTransitionStatus,
+    ]
+    | None = None,
+    dump_transition_status: Callable[
+        [dict[str, Any], Any | None],
+        DumpTransitionStatus,
+    ]
+    | None = None,
+    return_transition_status: Callable[
+        [dict[str, Any], Any | None],
+        ReturnTransitionStatus,
+    ]
+    | None = None,
+) -> PrimitiveDecisionCapabilities:
+    return PrimitiveDecisionCapabilities.from_ports(
+        PrimitiveDecisionCapabilitiesPorts(
+            current_skill_name=current_skill_name or (lambda: "dig"),
+            current_switch_reason=current_switch_reason or (lambda: ""),
+            should_end_bootstrap=should_end_bootstrap
+            or (lambda *, obs, boundary_event: False),
+            bootstrap_end_mode=bootstrap_end_mode
+            or (lambda: "first_qualified_dig_start"),
+            should_pre_dig_align_before_dig=(
+                should_pre_dig_align_before_dig or (lambda: False)
+            ),
+            transition_status_provider=_TransitionStatusProvider(
+                dig_transition_status=dig_transition_status,
+                carry_transition_status=carry_transition_status,
+                dump_transition_status=dump_transition_status,
+                return_transition_status=return_transition_status,
+            ),
+            maybe_handle_residual_pre_dig_align=(
+                maybe_handle_pre_dig_align_skill or (lambda obs: False)
+            ),
+        )
+    )
+
+
 def _legacy_fsm_branch_ports(
     *,
     state: dict[str, str] | None = None,
@@ -197,16 +321,10 @@ def _legacy_fsm_branch_ports(
         carry_skill_name="carry",
         dump_skill_name="dump",
         return_skill_name="return",
-        current_skill_name=lambda: state["skill"],
-        current_switch_reason=lambda: state["reason"],
-        should_end_bootstrap=lambda *, obs, boundary_event: False,
-        bootstrap_end_mode=lambda: "first_qualified_dig_start",
-        should_pre_dig_align_before_dig=lambda: False,
-        maybe_handle_pre_dig_align_skill=lambda obs: False,
-        dig_transition_status=lambda obs, boundary_event: _default_dig_status(),
-        carry_transition_status=lambda obs, boundary_event: _default_carry_status(),
-        dump_transition_status=lambda obs, boundary_event: _default_dump_status(),
-        return_transition_status=lambda obs, boundary_event: _default_return_status(),
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: state["skill"],
+            current_switch_reason=lambda: state["reason"],
+        ),
     )
 
 
@@ -221,9 +339,11 @@ def _legacy_fsm_dig_branch(
 ) -> LegacyFSMDigBranch:
     return LegacyFSMDigBranch(
         config=LegacyFSMDigConfig(dig_skill_name="dig"),
-        current_skill_name=current_skill_name or (lambda: "dig"),
-        dig_transition_status=dig_transition_status
-        or (lambda obs, boundary_event: _default_dig_status()),
+        capabilities=_decision_capabilities(
+            current_skill_name=current_skill_name or (lambda: "dig"),
+            dig_transition_status=dig_transition_status
+            or (lambda obs, boundary_event: _default_dig_status()),
+        ),
     )
 
 
@@ -243,18 +363,29 @@ def test_legacy_fsm_branch_set_from_ports_builds_backend_and_runner() -> None:
     assert runner.residual_branch is branch_set.residual_branch
 
 
-def test_legacy_fsm_branch_ports_exposes_dig_transition_status_not_gate_callbacks() -> None:
+def test_legacy_fsm_branch_ports_exposes_decision_capabilities_not_callback_bag() -> None:
     ports = _legacy_fsm_branch_ports()
+    field_names = {field.name for field in fields(LegacyFSMBranchPorts)}
 
-    assert ports.dig_transition_status({}, None) == _default_dig_status()
+    assert isinstance(ports.capabilities, PrimitiveDecisionCapabilities)
     for removed_name in (
+        "current_skill_name",
+        "current_switch_reason",
+        "should_end_bootstrap",
+        "bootstrap_end_mode",
+        "should_pre_dig_align_before_dig",
+        "maybe_handle_pre_dig_align_skill",
+        "dig_transition_status",
+        "carry_transition_status",
+        "dump_transition_status",
+        "return_transition_status",
         "dig_exit_guard_ready",
         "dig_bad_replan_ready",
         "dig_complete_boundary_low_payload",
         "dig_to_carry_ready",
         "dig_to_carry_reason",
     ):
-        assert not hasattr(ports, removed_name)
+        assert removed_name not in field_names
 
 
 def test_legacy_fsm_branch_set_requested_backend_uses_stable_order() -> None:
@@ -622,9 +753,11 @@ def test_residual_pre_dig_align_adapter_is_explicit_already_applied_path() -> No
 
     adapter = LegacyFSMResidualPreDigAlignAdapter(
         pre_dig_align_skill_name="pre_dig_align",
-        current_skill_name=lambda: state["skill"],
-        current_switch_reason=lambda: state["reason"],
-        maybe_handle_pre_dig_align_skill=maybe_handle_pre_dig_align_skill,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: state["skill"],
+            current_switch_reason=lambda: state["reason"],
+            maybe_handle_pre_dig_align_skill=maybe_handle_pre_dig_align_skill,
+        ),
     )
 
     result = adapter.decide_tick(
@@ -649,9 +782,10 @@ def test_residual_pre_dig_align_adapter_is_explicit_already_applied_path() -> No
 def test_residual_pre_dig_align_adapter_ignores_non_residual_skill() -> None:
     adapter = LegacyFSMResidualPreDigAlignAdapter(
         pre_dig_align_skill_name="pre_dig_align",
-        current_skill_name=lambda: "dig",
-        current_switch_reason=lambda: "",
-        maybe_handle_pre_dig_align_skill=lambda obs: True,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "dig",
+            maybe_handle_pre_dig_align_skill=lambda obs: True,
+        ),
     )
 
     result = adapter.decide_tick(
@@ -676,10 +810,12 @@ def test_legacy_fsm_bootstrap_branch_selects_pre_dig_align_when_enabled() -> Non
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        current_skill_name=lambda: state["skill"],
-        should_end_bootstrap=lambda *, obs, boundary_event: True,
-        bootstrap_end_mode=lambda: "first_qualified_dig_start",
-        should_pre_dig_align_before_dig=lambda: True,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: state["skill"],
+            should_end_bootstrap=lambda *, obs, boundary_event: True,
+            bootstrap_end_mode=lambda: "first_qualified_dig_start",
+            should_pre_dig_align_before_dig=lambda: True,
+        ),
     )
 
     result = branch.decide_tick(
@@ -709,10 +845,12 @@ def test_legacy_fsm_bootstrap_branch_returns_requested_switch_effect() -> None:
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        current_skill_name=lambda: "bootstrap",
-        should_end_bootstrap=lambda *, obs, boundary_event: True,
-        bootstrap_end_mode=lambda: "first_qualified_dig_start",
-        should_pre_dig_align_before_dig=lambda: True,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "bootstrap",
+            should_end_bootstrap=lambda *, obs, boundary_event: True,
+            bootstrap_end_mode=lambda: "first_qualified_dig_start",
+            should_pre_dig_align_before_dig=lambda: True,
+        ),
     )
 
     result = branch.decide_tick(
@@ -744,10 +882,12 @@ def test_legacy_fsm_bootstrap_branch_requested_decision_ignores_non_bootstrap() 
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        current_skill_name=lambda: "dig",
-        should_end_bootstrap=lambda *, obs, boundary_event: True,
-        bootstrap_end_mode=lambda: "first_qualified_dig_start",
-        should_pre_dig_align_before_dig=lambda: True,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "dig",
+            should_end_bootstrap=lambda *, obs, boundary_event: True,
+            bootstrap_end_mode=lambda: "first_qualified_dig_start",
+            should_pre_dig_align_before_dig=lambda: True,
+        ),
     )
 
     result = branch.decide_tick(
@@ -769,10 +909,12 @@ def test_legacy_fsm_bootstrap_branch_ignores_non_bootstrap_skill() -> None:
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        current_skill_name=lambda: "dig",
-        should_end_bootstrap=lambda *, obs, boundary_event: True,
-        bootstrap_end_mode=lambda: "disabled",
-        should_pre_dig_align_before_dig=lambda: False,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "dig",
+            should_end_bootstrap=lambda *, obs, boundary_event: True,
+            bootstrap_end_mode=lambda: "disabled",
+            should_pre_dig_align_before_dig=lambda: False,
+        ),
     )
 
     result = branch.decide_tick(
@@ -1058,8 +1200,10 @@ def test_legacy_fsm_carry_branch_release_safety_handoffs_to_return() -> None:
     )
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        current_skill_name=lambda: "carry",
-        carry_transition_status=lambda obs, boundary_event: status,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "carry",
+            carry_transition_status=lambda obs, boundary_event: status,
+        ),
     )
 
     result = branch.decide_tick(
@@ -1082,22 +1226,24 @@ def test_legacy_fsm_carry_branch_release_safety_handoffs_to_return() -> None:
 def test_legacy_fsm_carry_branch_requested_release_safety_handoff_effects() -> None:
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        current_skill_name=lambda: "carry",
-        carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
-            mass_in_bucket_kg=0.0,
-            deposited_mass_in_target_box_kg=20.0,
-            deposit_delta_since_cycle_start_kg=10.0,
-            semantic_boundary_profile_active=True,
-            dump_committed_event=False,
-            release_onset_event=False,
-            dump_complete_event=False,
-            legacy_dump_start_event=False,
-            carry_release_safety_done=True,
-            dump_ready=False,
-            next_dump_ready_hold_count=0,
-            ready_to_dump=False,
-            carry_to_dump_reason="",
-            carry_to_return_reason="carry_to_return_release_safety",
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "carry",
+            carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
+                mass_in_bucket_kg=0.0,
+                deposited_mass_in_target_box_kg=20.0,
+                deposit_delta_since_cycle_start_kg=10.0,
+                semantic_boundary_profile_active=True,
+                dump_committed_event=False,
+                release_onset_event=False,
+                dump_complete_event=False,
+                legacy_dump_start_event=False,
+                carry_release_safety_done=True,
+                dump_ready=False,
+                next_dump_ready_hold_count=0,
+                ready_to_dump=False,
+                carry_to_dump_reason="",
+                carry_to_return_reason="carry_to_return_release_safety",
+            ),
         ),
     )
 
@@ -1123,22 +1269,24 @@ def test_legacy_fsm_carry_branch_requested_release_safety_handoff_effects() -> N
 def test_legacy_fsm_carry_branch_requested_dump_complete_boundary_effects() -> None:
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        current_skill_name=lambda: "carry",
-        carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
-            mass_in_bucket_kg=0.0,
-            deposited_mass_in_target_box_kg=20.0,
-            deposit_delta_since_cycle_start_kg=10.0,
-            semantic_boundary_profile_active=True,
-            dump_committed_event=False,
-            release_onset_event=False,
-            dump_complete_event=True,
-            legacy_dump_start_event=False,
-            carry_release_safety_done=False,
-            dump_ready=False,
-            next_dump_ready_hold_count=0,
-            ready_to_dump=False,
-            carry_to_dump_reason="",
-            carry_to_return_reason="carry_to_return_dump_complete_boundary",
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "carry",
+            carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
+                mass_in_bucket_kg=0.0,
+                deposited_mass_in_target_box_kg=20.0,
+                deposit_delta_since_cycle_start_kg=10.0,
+                semantic_boundary_profile_active=True,
+                dump_committed_event=False,
+                release_onset_event=False,
+                dump_complete_event=True,
+                legacy_dump_start_event=False,
+                carry_release_safety_done=False,
+                dump_ready=False,
+                next_dump_ready_hold_count=0,
+                ready_to_dump=False,
+                carry_to_dump_reason="",
+                carry_to_return_reason="carry_to_return_dump_complete_boundary",
+            ),
         ),
     )
 
@@ -1182,8 +1330,10 @@ def test_legacy_fsm_carry_branch_committed_boundary_switches_to_dump() -> None:
     )
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        current_skill_name=lambda: "carry",
-        carry_transition_status=lambda obs, boundary_event: status,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "carry",
+            carry_transition_status=lambda obs, boundary_event: status,
+        ),
     )
 
     result = branch.decide_tick(
@@ -1210,22 +1360,24 @@ def test_legacy_fsm_carry_branch_committed_boundary_switches_to_dump() -> None:
 def test_legacy_fsm_carry_branch_requested_ready_to_dump_effects_in_order() -> None:
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        current_skill_name=lambda: "carry",
-        carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
-            mass_in_bucket_kg=120.0,
-            deposited_mass_in_target_box_kg=8.5,
-            deposit_delta_since_cycle_start_kg=8.5,
-            semantic_boundary_profile_active=True,
-            dump_committed_event=True,
-            release_onset_event=False,
-            dump_complete_event=False,
-            legacy_dump_start_event=False,
-            carry_release_safety_done=False,
-            dump_ready=False,
-            next_dump_ready_hold_count=3,
-            ready_to_dump=True,
-            carry_to_dump_reason="dump_committed_boundary",
-            carry_to_return_reason="",
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "carry",
+            carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
+                mass_in_bucket_kg=120.0,
+                deposited_mass_in_target_box_kg=8.5,
+                deposit_delta_since_cycle_start_kg=8.5,
+                semantic_boundary_profile_active=True,
+                dump_committed_event=True,
+                release_onset_event=False,
+                dump_complete_event=False,
+                legacy_dump_start_event=False,
+                carry_release_safety_done=False,
+                dump_ready=False,
+                next_dump_ready_hold_count=3,
+                ready_to_dump=True,
+                carry_to_dump_reason="dump_committed_boundary",
+                carry_to_return_reason="",
+            ),
         ),
     )
 
@@ -1253,22 +1405,24 @@ def test_legacy_fsm_carry_branch_requested_ready_to_dump_effects_in_order() -> N
 def test_legacy_fsm_carry_branch_ignores_non_carry_skill() -> None:
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        current_skill_name=lambda: "dump",
-        carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
-            mass_in_bucket_kg=0.0,
-            deposited_mass_in_target_box_kg=0.0,
-            deposit_delta_since_cycle_start_kg=0.0,
-            semantic_boundary_profile_active=False,
-            dump_committed_event=False,
-            release_onset_event=False,
-            dump_complete_event=False,
-            legacy_dump_start_event=False,
-            carry_release_safety_done=True,
-            dump_ready=False,
-            next_dump_ready_hold_count=0,
-            ready_to_dump=False,
-            carry_to_dump_reason="",
-            carry_to_return_reason="carry_to_return_release_safety",
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "dump",
+            carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
+                mass_in_bucket_kg=0.0,
+                deposited_mass_in_target_box_kg=0.0,
+                deposit_delta_since_cycle_start_kg=0.0,
+                semantic_boundary_profile_active=False,
+                dump_committed_event=False,
+                release_onset_event=False,
+                dump_complete_event=False,
+                legacy_dump_start_event=False,
+                carry_release_safety_done=True,
+                dump_ready=False,
+                next_dump_ready_hold_count=0,
+                ready_to_dump=False,
+                carry_to_dump_reason="",
+                carry_to_return_reason="carry_to_return_release_safety",
+            ),
         ),
     )
 
@@ -1303,8 +1457,10 @@ def test_legacy_fsm_dump_branch_boundary_handoffs_to_return() -> None:
     )
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        current_skill_name=lambda: "dump",
-        dump_transition_status=lambda obs, boundary_event: status,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "dump",
+            dump_transition_status=lambda obs, boundary_event: status,
+        ),
     )
 
     result = branch.decide_tick(
@@ -1327,20 +1483,22 @@ def test_legacy_fsm_dump_branch_boundary_handoffs_to_return() -> None:
 def test_legacy_fsm_dump_branch_requested_boundary_done_effects() -> None:
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        current_skill_name=lambda: "dump",
-        dump_transition_status=lambda obs, boundary_event: DumpTransitionStatus(
-            mass_in_bucket_kg=0.0,
-            deposited_mass_in_target_box_kg=20.0,
-            deposit_delta_since_dump_start_kg=10.0,
-            semantic_boundary_profile_active=True,
-            dump_complete_event=True,
-            legacy_dump_end_event=False,
-            boundary_dump_done=True,
-            dump_done_mass_low=False,
-            next_dump_done_hold_count=0,
-            ready_to_return=True,
-            coverage_completion_reason="dump_complete_boundary",
-            dump_to_return_reason="dump_to_return_dump_complete_boundary",
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "dump",
+            dump_transition_status=lambda obs, boundary_event: DumpTransitionStatus(
+                mass_in_bucket_kg=0.0,
+                deposited_mass_in_target_box_kg=20.0,
+                deposit_delta_since_dump_start_kg=10.0,
+                semantic_boundary_profile_active=True,
+                dump_complete_event=True,
+                legacy_dump_end_event=False,
+                boundary_dump_done=True,
+                dump_done_mass_low=False,
+                next_dump_done_hold_count=0,
+                ready_to_return=True,
+                coverage_completion_reason="dump_complete_boundary",
+                dump_to_return_reason="dump_to_return_dump_complete_boundary",
+            ),
         ),
     )
 
@@ -1379,8 +1537,10 @@ def test_legacy_fsm_dump_branch_mass_low_hold_switches_to_return() -> None:
     )
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        current_skill_name=lambda: "dump",
-        dump_transition_status=lambda obs, boundary_event: status,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "dump",
+            dump_transition_status=lambda obs, boundary_event: status,
+        ),
     )
 
     result = branch.decide_tick(
@@ -1404,20 +1564,22 @@ def test_legacy_fsm_dump_branch_mass_low_hold_switches_to_return() -> None:
 def test_legacy_fsm_dump_branch_requested_ready_to_return_effects_in_order() -> None:
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        current_skill_name=lambda: "dump",
-        dump_transition_status=lambda obs, boundary_event: DumpTransitionStatus(
-            mass_in_bucket_kg=5.0,
-            deposited_mass_in_target_box_kg=20.0,
-            deposit_delta_since_dump_start_kg=10.0,
-            semantic_boundary_profile_active=False,
-            dump_complete_event=False,
-            legacy_dump_end_event=False,
-            boundary_dump_done=False,
-            dump_done_mass_low=True,
-            next_dump_done_hold_count=2,
-            ready_to_return=True,
-            coverage_completion_reason="dump_mass_low",
-            dump_to_return_reason="dump_to_return_mass_low",
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "dump",
+            dump_transition_status=lambda obs, boundary_event: DumpTransitionStatus(
+                mass_in_bucket_kg=5.0,
+                deposited_mass_in_target_box_kg=20.0,
+                deposit_delta_since_dump_start_kg=10.0,
+                semantic_boundary_profile_active=False,
+                dump_complete_event=False,
+                legacy_dump_end_event=False,
+                boundary_dump_done=False,
+                dump_done_mass_low=True,
+                next_dump_done_hold_count=2,
+                ready_to_return=True,
+                coverage_completion_reason="dump_mass_low",
+                dump_to_return_reason="dump_to_return_mass_low",
+            ),
         ),
     )
 
@@ -1442,20 +1604,22 @@ def test_legacy_fsm_dump_branch_requested_ready_to_return_effects_in_order() -> 
 def test_legacy_fsm_dump_branch_ignores_non_dump_skill() -> None:
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        current_skill_name=lambda: "return",
-        dump_transition_status=lambda obs, boundary_event: DumpTransitionStatus(
-            mass_in_bucket_kg=0.0,
-            deposited_mass_in_target_box_kg=0.0,
-            deposit_delta_since_dump_start_kg=0.0,
-            semantic_boundary_profile_active=False,
-            dump_complete_event=True,
-            legacy_dump_end_event=False,
-            boundary_dump_done=True,
-            dump_done_mass_low=False,
-            next_dump_done_hold_count=0,
-            ready_to_return=True,
-            coverage_completion_reason="dump_complete_boundary",
-            dump_to_return_reason="dump_to_return_dump_complete_boundary",
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "return",
+            dump_transition_status=lambda obs, boundary_event: DumpTransitionStatus(
+                mass_in_bucket_kg=0.0,
+                deposited_mass_in_target_box_kg=0.0,
+                deposit_delta_since_dump_start_kg=0.0,
+                semantic_boundary_profile_active=False,
+                dump_complete_event=True,
+                legacy_dump_end_event=False,
+                boundary_dump_done=True,
+                dump_done_mass_low=False,
+                next_dump_done_hold_count=0,
+                ready_to_return=True,
+                coverage_completion_reason="dump_complete_boundary",
+                dump_to_return_reason="dump_to_return_dump_complete_boundary",
+            ),
         ),
     )
 
@@ -1509,10 +1673,12 @@ def test_legacy_fsm_return_branch_requested_next_dig_event_marks_only() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        current_skill_name=lambda: "return",
-        return_transition_status=lambda obs, boundary_event: _return_status(
-            next_dig_event=True,
-            next_or_seen_dig_event=True,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "return",
+            return_transition_status=lambda obs, boundary_event: _return_status(
+                next_dig_event=True,
+                next_or_seen_dig_event=True,
+            ),
         ),
     )
 
@@ -1535,13 +1701,15 @@ def test_legacy_fsm_return_branch_requested_next_dig_event_marks_only() -> None:
 def test_legacy_fsm_return_branch_requested_completion_orders_effects() -> None:
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        current_skill_name=lambda: "return",
-        return_transition_status=lambda obs, boundary_event: _return_status(
-            next_or_seen_dig_event=True,
-            entry_close=True,
-            start_envelope_ready=True,
-            handoff_ready=True,
-            completed_transition=True,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "return",
+            return_transition_status=lambda obs, boundary_event: _return_status(
+                next_or_seen_dig_event=True,
+                entry_close=True,
+                start_envelope_ready=True,
+                handoff_ready=True,
+                completed_transition=True,
+            ),
         ),
     )
 
@@ -1567,14 +1735,16 @@ def test_legacy_fsm_return_branch_requested_completion_orders_effects() -> None:
 def test_legacy_fsm_return_branch_requested_event_then_completion_order() -> None:
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        current_skill_name=lambda: "return",
-        return_transition_status=lambda obs, boundary_event: _return_status(
-            next_dig_event=True,
-            next_or_seen_dig_event=True,
-            entry_close=True,
-            start_envelope_ready=True,
-            handoff_ready=True,
-            completed_transition=True,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "return",
+            return_transition_status=lambda obs, boundary_event: _return_status(
+                next_dig_event=True,
+                next_or_seen_dig_event=True,
+                entry_close=True,
+                start_envelope_ready=True,
+                handoff_ready=True,
+                completed_transition=True,
+            ),
         ),
     )
 
@@ -1599,8 +1769,10 @@ def test_legacy_fsm_return_branch_requested_event_then_completion_order() -> Non
 def test_legacy_fsm_return_branch_requested_no_effects_for_unready_return() -> None:
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        current_skill_name=lambda: "return",
-        return_transition_status=lambda obs, boundary_event: _return_status(),
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "return",
+            return_transition_status=lambda obs, boundary_event: _return_status(),
+        ),
     )
 
     result = branch.decide_tick(
@@ -1621,10 +1793,12 @@ def test_legacy_fsm_return_branch_requested_no_effects_for_unready_return() -> N
 def test_legacy_fsm_return_branch_requested_ignores_non_return_skill() -> None:
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        current_skill_name=lambda: "dig",
-        return_transition_status=lambda obs, boundary_event: _return_status(
-            next_dig_event=True,
-            completed_transition=True,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "dig",
+            return_transition_status=lambda obs, boundary_event: _return_status(
+                next_dig_event=True,
+                completed_transition=True,
+            ),
         ),
     )
 
@@ -1662,8 +1836,10 @@ def test_legacy_fsm_return_branch_latches_next_dig_event_without_switch() -> Non
     )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        current_skill_name=lambda: "return",
-        return_transition_status=lambda obs, boundary_event: status,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "return",
+            return_transition_status=lambda obs, boundary_event: status,
+        ),
     )
 
     result = branch.decide_tick(
@@ -1701,8 +1877,10 @@ def test_legacy_fsm_return_branch_completes_next_dig_handoff_in_order() -> None:
     )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        current_skill_name=lambda: "return",
-        return_transition_status=lambda obs, boundary_event: status,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "return",
+            return_transition_status=lambda obs, boundary_event: status,
+        ),
     )
 
     result = branch.decide_tick(
@@ -1744,8 +1922,10 @@ def test_legacy_fsm_return_branch_defers_next_skill_selection_to_applier() -> No
     )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        current_skill_name=lambda: "return",
-        return_transition_status=lambda obs, boundary_event: status,
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "return",
+            return_transition_status=lambda obs, boundary_event: status,
+        ),
     )
 
     result = branch.decide_tick(
@@ -1769,23 +1949,25 @@ def test_legacy_fsm_return_branch_defers_next_skill_selection_to_applier() -> No
 def test_legacy_fsm_return_branch_ignores_non_return_skill() -> None:
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        current_skill_name=lambda: "dig",
-        return_transition_status=lambda obs, boundary_event: ReturnTransitionStatus(
-            mass_in_bucket_kg=0.0,
-            min_distance_to_dig_area_m=0.0,
-            bucket_depth_below_dig_area_plane_m=0.0,
-            semantic_boundary_profile_active=False,
-            next_dig_event=True,
-            next_or_seen_dig_event=True,
-            entry_close=True,
-            start_envelope_ready=True,
-            handoff_ready=True,
-            direct_handoff_ready=False,
-            shallow_guard_ready=False,
-            shallow_guard_allowed=False,
-            completed_transition=True,
-            next_skill="dig",
-            switch_reason="return_to_dig_next_dig_entry_ready",
+        capabilities=_decision_capabilities(
+            current_skill_name=lambda: "dig",
+            return_transition_status=lambda obs, boundary_event: ReturnTransitionStatus(
+                mass_in_bucket_kg=0.0,
+                min_distance_to_dig_area_m=0.0,
+                bucket_depth_below_dig_area_plane_m=0.0,
+                semantic_boundary_profile_active=False,
+                next_dig_event=True,
+                next_or_seen_dig_event=True,
+                entry_close=True,
+                start_envelope_ready=True,
+                handoff_ready=True,
+                direct_handoff_ready=False,
+                shallow_guard_ready=False,
+                shallow_guard_allowed=False,
+                completed_transition=True,
+                next_skill="dig",
+                switch_reason="return_to_dig_next_dig_entry_ready",
+            ),
         ),
     )
 

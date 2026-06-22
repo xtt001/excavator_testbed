@@ -132,6 +132,10 @@ from testbed.planner.primitive_decision import (
     PrimitiveDecisionResult,
     RequestedPlannerEffect,
 )
+from testbed.planner.primitive_decision_capabilities import (
+    PrimitiveDecisionCapabilities,
+    PrimitiveDecisionCapabilitiesPorts,
+)
 from testbed.planner.primitive_decision_runtime import (
     PrimitiveDecisionRuntime,
     PrimitiveDecisionRuntimeConfig,
@@ -1371,7 +1375,6 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _legacy_fsm_branch_ports(self) -> LegacyFSMBranchPorts:
-        capability_provider = self._primitive_fsm_capability_provider()
         return LegacyFSMBranchPorts(
             bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
             pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
@@ -1379,16 +1382,27 @@ class PrimitivePlannerACTPolicy(Policy):
             carry_skill_name="carry",
             dump_skill_name="dump",
             return_skill_name="return",
+            capabilities=self._primitive_decision_capabilities(),
+        )
+
+    def _primitive_decision_capabilities(self) -> PrimitiveDecisionCapabilities:
+        return PrimitiveDecisionCapabilities.from_ports(
+            self._primitive_decision_capabilities_ports()
+        )
+
+    def _primitive_decision_capabilities_ports(
+        self,
+    ) -> PrimitiveDecisionCapabilitiesPorts:
+        return PrimitiveDecisionCapabilitiesPorts(
             current_skill_name=lambda: str(self._skill_name),
             current_switch_reason=lambda: str(self._switch_reason),
             should_end_bootstrap=self._should_end_bootstrap,
             bootstrap_end_mode=lambda: str(self.bootstrap_end_mode),
             should_pre_dig_align_before_dig=self._should_pre_dig_align_before_dig,
-            maybe_handle_pre_dig_align_skill=self._maybe_handle_pre_dig_align_skill,
-            dig_transition_status=capability_provider.dig_transition_status,
-            carry_transition_status=capability_provider.carry_transition_status,
-            dump_transition_status=capability_provider.dump_transition_status,
-            return_transition_status=capability_provider.return_transition_status,
+            transition_status_provider=self._primitive_fsm_capability_provider(),
+            maybe_handle_residual_pre_dig_align=(
+                self._maybe_handle_pre_dig_align_skill
+            ),
         )
 
     def _primitive_fsm_capability_provider(

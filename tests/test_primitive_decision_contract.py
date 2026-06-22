@@ -1567,11 +1567,21 @@ def test_primitive_planner_legacy_branch_ports_use_capability_provider_methods()
 
     ports = planner._legacy_fsm_branch_ports()
 
-    assert ports.dig_transition_status({}, None) == "dig_status"
-    assert ports.carry_transition_status({}, None) == "carry_status"
-    assert ports.dump_transition_status({}, None) == "dump_status"
-    assert ports.return_transition_status({}, None) == "return_status"
+    context = SimpleNamespace(obs={}, boundary_event=None)
+    assert ports.capabilities.dig_transition_status(context) == "dig_status"
+    assert ports.capabilities.carry_transition_status(context) == "carry_status"
+    assert ports.capabilities.dump_transition_status(context) == "dump_status"
+    assert ports.capabilities.return_transition_status(context) == "return_status"
     assert provider.calls == ["dig", "carry", "dump", "return"]
+    for removed_name in (
+        "current_skill_name",
+        "should_end_bootstrap",
+        "dig_transition_status",
+        "carry_transition_status",
+        "dump_transition_status",
+        "return_transition_status",
+    ):
+        assert not hasattr(ports, removed_name)
 
 
 def test_primitive_planner_transition_status_wrappers_delegate_to_provider() -> None:
