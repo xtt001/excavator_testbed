@@ -566,6 +566,15 @@ key layout, bool-like `int(...)` projection, and `None` to `NaN` fallback
 projection. `planner_trace()`, public `debug_state()` assembly, and per-tick
 `_make_debug_state(...)` are intentionally unchanged in this round.
 
+Current status note after Phase 9.17: public `planner_trace()` dict assembly
+has moved into `PrimitivePlannerTraceBuilder` in
+`testbed/planner/primitive_planner_trace.py`. `planner_trace()` now delegates
+through typed trace inputs while the builder owns public trace key layout,
+contract version/string fields, top-level trace-list projection, coverage
+config/status fields, and terminal-stop fields. Coverage decision trace
+recording, public `debug_state()` and `rollout_summary()` assembly, and
+per-tick `_make_debug_state(...)` are intentionally unchanged in this round.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

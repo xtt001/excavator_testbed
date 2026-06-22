@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.16: the default 4P mainline branch chain no longer
+Current status after Phase 9.17: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -94,7 +94,14 @@ assembly: summary key layout, bool-like `int(...)` projections, `None` to
 `NaN` fallback fields, compact coverage/return/pre-dig/cell-entry
 compatibility summary fields, and legacy scalar conversions. The policy shell
 builds a typed summary snapshot and delegates report assembly to the builder;
-`planner_trace()` remains in its existing owner.
+`PrimitivePlannerTraceBuilder` now owns public `planner_trace()` dict assembly:
+trace key layout, token contract version/string fields, top-level list
+projection for cell-entry trace, coverage corridors, and coverage decision
+trace, coverage config/status fields, and terminal-stop fields. The policy
+shell builds typed trace inputs and preprojects coverage corridor payloads
+through the existing coverage report service facade; coverage decision trace
+recording, coverage scoring/runtime updates, and token planning remain in
+their existing owners.
 
 ## Design Intent
 
@@ -589,6 +596,22 @@ fallback projection, and compact compatibility/report fields for `cell_entry`
 and `pre_dig_align`. The policy shell now keeps only a thin
 `_rollout_summary_inputs()` snapshot helper and delegates final summary
 assembly. `planner_trace()`, public debug-state assembly, token planning,
+coverage/runtime updates, `cell_entry` compatibility behavior, and
+`pre_dig_align` residual behavior remain unchanged.
+
+Phase 9.17 extracts public `planner_trace()` dict assembly into
+`PrimitivePlannerTraceBuilder` in
+`testbed/planner/primitive_planner_trace.py`.
+`PrimitivePlannerTraceInputs` carries explicit trace values for cell-entry
+trace, dig-cut planner metadata, return-target planner enablement, coverage
+config/status fields, preprojected coverage corridor payloads, coverage
+decision trace, and terminal-stop status. The builder owns final public trace
+key layout, token contract version/string fields, coverage trace/count fields,
+terminal-stop fields, and top-level list projection. The policy shell now keeps
+only `_planner_trace_inputs()` plus coverage-corridor preprojection through the
+existing `_coverage_corridor_to_debug(...)` facade. Coverage decision trace
+recording, coverage corridor projection service internals, public
+`debug_state()` and `rollout_summary()` assembly, token planning,
 coverage/runtime updates, `cell_entry` compatibility behavior, and
 `pre_dig_align` residual behavior remain unchanged.
 

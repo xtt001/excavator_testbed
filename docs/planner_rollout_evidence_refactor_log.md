@@ -3107,3 +3107,66 @@ Each completed refactor round should append:
   `pre_dig_align` remains residual parking/report material,
   `LegacyFSMBackendAdapter` remains historical/test scaffolding, and 5P remains
   its existing legacy override path.
+
+### 2026-06-22 Phase 9.17 Extract Public Planner Trace Report Builder
+
+- Scope: extracted public `PrimitivePlannerACTPolicy.planner_trace()` dict
+  assembly from the large policy shell into a focused reporting module. No
+  coverage decision trace recording, coverage event payload schema, coverage
+  corridor debug projection service, coverage scoring/runtime updates, public
+  `debug_state()` assembly, public `rollout_summary()` assembly, token planning
+  algorithm, token/debug/summary/trace schema, golden-window contract, branch
+  order, reason string, threshold, policy reset timing, public config behavior,
+  `cell_entry` compatibility classification, `pre_dig_align` residual status,
+  5P override, or low-level ACT dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `620727bb5ce9cb3345da9c6537777cc46bcc2052`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `testbed/planner/primitive_planner_trace.py` with
+  `PrimitivePlannerTraceInputs` and `PrimitivePlannerTraceBuilder`. The builder
+  owns final public planner-trace key layout, token contract version/string
+  fields, top-level list projection for `cell_entry_trace`,
+  `coverage_corridors`, and `coverage_decision_trace`, coverage config/status
+  fields, coverage decision trace count, and terminal-stop fields.
+- Updated `PrimitivePlannerACTPolicy.planner_trace()` into a thin wrapper that
+  delegates to `_planner_trace_builder().build(_planner_trace_inputs())`. The
+  policy shell now prepares typed trace inputs and preprojects coverage
+  corridor payloads through the existing `_coverage_corridor_to_debug(...)`
+  facade; coverage decision trace recording remains in its existing owner.
+- Preserved public trace behavior in focused tests: exact token contract
+  version fields, exact dig-cut/return-target/return-start-envelope contract
+  strings, coverage config/status fields, terminal-stop fields,
+  `coverage_decision_trace_count`, and top-level list-copy behavior for
+  cell-entry trace, coverage corridors, and coverage decision trace.
+- TDD red result: the first focused run failed at collection because
+  `testbed.planner.primitive_planner_trace` did not exist. After adding the
+  builder module and policy bridge, `python -m pytest -q
+  tests/test_primitive_planner_trace.py` returned `3 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_planner_trace.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_primitive_rollout_summary.py tests/test_primitive_debug_report.py tests/test_primitive_token_status.py tests/test_primitive_observation.py`
+  returned `14 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_runtime.py`
+  returned `4 passed`;
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_execution_template.py tests/test_primitive_backend.py`
+  returned `114 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "planner_trace or coverage_decision_trace or terminal_depletion or semantic_boundary_events_drive_skill_sequence"`
+  returned `3 passed, 117 deselected`;
+  compileall, both planner guard commands, and `git diff --check` completed
+  successfully with no output.
+- Old code parked/reclassified: coverage decision trace recording remains in
+  the existing coverage runtime/report path, coverage corridor projection stays
+  behind `CoverageReportService` and the existing policy facade, public
+  `debug_state()` remains in `PrimitiveDebugReportBuilder`, public
+  `rollout_summary()` remains in `PrimitiveRolloutSummaryBuilder`,
+  `_make_debug_state(...)` remains the per-tick compact debug-state finalizer,
+  token planning remains in existing token providers, `cell_entry` remains
+  compatibility/report material, `pre_dig_align` remains residual
+  parking/report material, `LegacyFSMBackendAdapter` remains historical/test
+  scaffolding, and 5P remains its existing legacy override path.
