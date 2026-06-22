@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.36: the default 4P mainline branch chain no longer
+Current status after Phase 9.37: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy now exposes backend-facing common decision facts through
@@ -76,7 +76,15 @@ fields.
 `PrimitiveFSMCapabilityProvider.return_transition_status(...)` is therefore a
 read-only cached-status assembly point rather than a hidden mutation/refresh
 entry. This preserves return handoff refresh timing and avoids eager status
-calculation. `LegacyFSMRequestedDecisionBackend`
+calculation. Dig-to-carry reason mirror writeback is also no longer hidden in
+the dig status read: active dig branch decisions now consume
+`PrimitiveDecisionCapabilities.dig_transition_facts(context, facts=...)`, then
+explicitly call `sync_dig_transition_reason(...)` before selecting effects from
+`PrimitiveDigTransitionFacts.status`. `PrimitiveFSMCapabilityProvider.dig_transition_status(...)`
+is a read-only status assembly point, while `sync_dig_transition_reason(...)`
+preserves the legacy shell/debug mirror write timing, including empty reasons.
+Carry and dump transition facts have not yet been migrated and still use lazy
+read-only status methods. `LegacyFSMRequestedDecisionBackend`
 is the default decision backend used by the execution driver, while
 `LegacyFSMCompatibilityDecisionBackend` serves the legacy `_maybe_switch_skill()`
 entry without applying effects inside backend branches. Bootstrap, dig, carry,
@@ -687,6 +695,15 @@ explicitly and then consume that facts view; non-return skills still do not
 refresh or read return status/facts. This does not move return status into the
 common `PrimitiveDecisionFacts` packet and does not migrate dig/carry/dump
 transition facts.
+
+Phase 9.37 adds the second transition-specific decision facts view:
+`PrimitiveDigTransitionFacts`. Active dig branch decisions now consume that
+facts view and explicitly synchronize the dig-to-carry reason mirror before
+effect selection; non-dig skills still do not read dig status/facts or sync the
+mirror. `PrimitiveFSMCapabilityProvider.dig_transition_status(...)` is now a
+read-only status assembly method. This does not move dig status into the common
+`PrimitiveDecisionFacts` packet and does not migrate carry/dump transition
+facts.
 
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in

@@ -61,7 +61,7 @@ Current relevant Python files:
 | --- | ---: | --- |
 | `testbed/policies/hybrid/primitive_planner.py` | 4900+ | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
-| `testbed/planner/primitive_decision_facts.py` | 66 | backend-neutral common decision facts packet for context, active skill, and switch reason |
+| `testbed/planner/primitive_decision_facts.py` | 154 | backend-neutral common decision facts packet plus lazy dig/return transition facts views |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
 | `testbed/planner/evidence_trace.py` | 972 | evidence classifier and report writer for rollout-driven refactor decisions |
@@ -851,6 +851,18 @@ without refreshing return state and can reuse a prebuilt common facts packet.
 confirms `return`, then consumes the return facts view for effect selection.
 This advances the backend-neutral facts shape for return only; dig/carry/dump
 transition facts and full alternate-backend readiness remain future work.
+
+Current status note after Phase 9.37: active dig decisions now consume a typed
+dig-specific facts view, `PrimitiveDigTransitionFacts`, from
+`testbed/planner/primitive_decision_facts.py`. The view wraps the same common
+`PrimitiveDecisionFacts` identity plus a read-only `DigTransitionStatus`.
+`PrimitiveFSMCapabilityProvider.dig_transition_status(...)` no longer writes
+the shell/debug `_dig_to_carry_reason` mirror; the active dig branch now calls
+`PrimitiveDecisionCapabilities.sync_dig_transition_reason(...)` explicitly after
+assembling dig facts and before effect selection. Non-dig skills still do not
+read dig status/facts or sync the mirror. This advances the backend-neutral
+facts shape for dig and return only; carry/dump transition facts and full
+alternate-backend readiness remain future work.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;

@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.36 implementation. It is intentionally
+compares them with the current Phase 9.37 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -35,7 +35,8 @@ Current maturity:
 - runtime composition root / public runtime kernel: **achieved for public
   runtime routing**
 - backend-neutral fact packet for non-FSM decision strategies: **partly
-  achieved for common context/skill facts only**
+  achieved for common context/skill facts plus lazy dig/return transition
+  views**
 - behavior-tree, VLM, LLM, or learned decision backend implementation:
   **not implemented; unsupported backends must fail fast**
 
@@ -193,6 +194,9 @@ Current boundary:
 - `LegacyFSMBranchSet` owns requested order and legacy compatibility order.
 - Legacy FSM branches consume `PrimitiveDecisionContext` plus common
   `PrimitiveDecisionFacts` through `PrimitiveDecisionCapabilities`.
+- The active dig branch consumes a dig-specific facts view,
+  `PrimitiveDigTransitionFacts`, then explicitly syncs the legacy
+  dig-to-carry reason mirror before effect selection.
 - The active return branch consumes a return-specific facts view,
   `PrimitiveReturnTransitionFacts`, after the explicit return refresh step.
 - Unsupported backend names fail fast.
@@ -205,6 +209,9 @@ Gap:
 - Return transition refresh is now explicit: the active legacy-FSM return branch
   refreshes shell-owned handoff cache state before reading return status, while
   `return_transition_status(...)` itself is read-only.
+- Dig transition facts now have a typed read-only view, but the legacy
+  dig-to-carry reason mirror sync is still an explicit compatibility step in
+  the active dig branch.
 - Return transition facts now have a typed read-only view, but that view is
   constructed lazily only after the active return branch has refreshed cached
   handoff state.
@@ -239,6 +246,8 @@ Current boundary:
   decision and dig-progress update status.
 - `PrimitiveDecisionFacts` wraps the context without copying `obs`,
   `boundary_event`, or `preparation`, and adds current skill/reason facts.
+- `PrimitiveDigTransitionFacts` wraps an existing `PrimitiveDecisionFacts` plus
+  a `DigTransitionStatus` identity for active-dig decisions.
 - `PrimitiveReturnTransitionFacts` wraps an existing `PrimitiveDecisionFacts`
   plus a `ReturnTransitionStatus` identity for active-return decisions.
 
@@ -246,8 +255,8 @@ Gap:
 
 - Context is adequate for current FSM backend.
 - The common facts packet is intentionally small; future backend-neutral facts
-  still need typed views for dig/carry/dump transitions, token state, coverage,
-  and return handoff state.
+  still need typed views for carry/dump transitions, token state, coverage, and
+  return handoff state.
 
 Standard:
 
@@ -270,6 +279,9 @@ Current boundary:
 
 - `PrimitiveFSMCapabilityProvider` builds dig/carry/dump/return transition
   status records.
+- `PrimitiveFSMCapabilityProvider.dig_transition_status(...)` only assembles
+  read-only dig status. Dig-to-carry reason mirror writeback is explicit through
+  `sync_dig_transition_reason(...)`.
 - `PrimitiveFSMCapabilityProvider.refresh_return_transition_state(obs)` owns
   the explicit return handoff cache refresh step. `return_transition_status(...)`
   only reads cached return flags and observation facts.
@@ -277,13 +289,19 @@ Current boundary:
   contains `PrimitiveDecisionContext`, current skill name, current switch
   reason, and read-only context accessors; it does not include transition status
   providers or mutation ports.
-- `PrimitiveReturnTransitionFacts` is the first transition-specific decision
-  facts view. It contains an existing common facts packet and the read-only
+- `PrimitiveDigTransitionFacts` is a transition-specific decision facts view
+  for active dig decisions. It contains an existing common facts packet and the
+  read-only `DigTransitionStatus`; it does not contain provider, applier,
+  callback, effect, sync, or mirror-setter fields.
+- `PrimitiveReturnTransitionFacts` is a transition-specific decision facts view
+  for active return decisions. It contains an existing common facts packet and
+  the read-only
   `ReturnTransitionStatus`; it does not contain refresh, provider, applier,
   callback, or effect fields.
 - `PrimitiveDecisionCapabilities` maps a decision context to current skill,
-  common decision facts, return transition facts, bootstrap status, transition
-  statuses, and residual `pre_dig_align` handling.
+  common decision facts, dig/return transition facts, bootstrap status,
+  transition statuses, explicit dig reason sync, and residual `pre_dig_align`
+  handling.
 - `PrimitiveObservationFacts` and transition status dataclasses exist.
 
 Gap:
@@ -291,11 +309,12 @@ Gap:
 - The current capability object is still backend-facing for legacy FSM.
 - Residual `pre_dig_align` is still a capability-side already-applied handler.
 - `PrimitiveDecisionFacts` is not yet the complete `PrimitiveBackendFacts`
-  target. It lacks dig/carry/dump transition, token, coverage, and return
-  handoff views.
-- Dig/carry/dump transition status providers intentionally remain lazy and
-  branch-local. Return transition facts are also lazy: refresh still happens
-  only inside the active return branch before assembling the facts view.
+  target. It lacks carry/dump transition, token, coverage, and return handoff
+  views.
+- Dig and return transition facts are lazy and active-branch scoped. Carry/dump
+  transition status providers intentionally remain lazy and branch-local.
+  Return refresh still happens only inside the active return branch before
+  assembling the facts view.
 
 Standard:
 
@@ -529,8 +548,9 @@ The next code work should follow this order:
    - Keep legacy FSM capabilities working.
    - Preserve lazy transition-status timing; do not eagerly refresh or compute
      return status outside the active return branch.
-   - Treat `PrimitiveReturnTransitionFacts` as the first transition-specific
-     view, not as proof that all transition facts have migrated.
+   - Treat `PrimitiveDigTransitionFacts` and
+     `PrimitiveReturnTransitionFacts` as transition-specific views, not as proof
+     that all transition facts have migrated.
    - Add only facts that are stable across backend styles.
    - Do not implement BT/VLM yet.
 
