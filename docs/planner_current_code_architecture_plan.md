@@ -745,6 +745,24 @@ strings, observation injected-key assembly, `cell_entry` compatibility,
 `pre_dig_align` residual behavior, 5P token behavior, and alternate backend
 parked scope remain intentionally unchanged.
 
+Current status note after Phase 9.30: return token planning orchestration now
+lives in `PrimitiveReturnTokenPlanningService` in
+`testbed/planner/primitive_return_token_planning.py`.
+`_build_next_dig_cut_plan_for_return(...)`,
+`_unpack_return_target_token_plan(...)`,
+`_build_return_start_envelope_tokens_for_obs(...)`,
+`_apply_return_start_envelope_token_plan(...)`,
+`_maybe_condition_return_start_envelope_qpos_from_relocate(...)`, and the
+return start-envelope prior/cell-id helper methods are now service-backed
+compatibility facades. The service owns return-target mode routing, coverage
+corridor selection and raw-field handoff, active coverage corridor writeback,
+return-start-envelope build/apply/conditioning, source/prior-bound flag
+writeback, prior token/mapping/bounds routing, and token/raw-field copy
+semantics. Active dig token planning, token algorithm classes, coverage
+selection/scoring/exemplar algorithms, return handoff gate/effect services,
+`cell_entry`, `pre_dig_align`, 5P token behavior, and alternate backend parked
+scope remain intentionally unchanged.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

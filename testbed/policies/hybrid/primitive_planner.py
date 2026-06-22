@@ -149,6 +149,10 @@ from testbed.planner.primitive_skill_lifecycle import (
     PrimitiveSkillLifecyclePorts,
     PrimitiveSkillLifecycleService,
 )
+from testbed.planner.primitive_return_token_planning import (
+    PrimitiveReturnTokenPlanningPorts,
+    PrimitiveReturnTokenPlanningService,
+)
 from testbed.planner.primitive_token_runtime import (
     PrimitiveTokenRuntimeCoordinator,
     PrimitiveTokenRuntimePorts,
@@ -4002,49 +4006,94 @@ class PrimitivePlannerACTPolicy(Policy):
         self._dig_cut_token_in_prior_p10_p90 = bool(plan.in_prior_p10_p90)
         return plan.token.copy()
 
+    def _primitive_return_token_planning_service(
+        self,
+    ) -> PrimitiveReturnTokenPlanningService:
+        return PrimitiveReturnTokenPlanningService.from_ports(
+            self._primitive_return_token_planning_ports()
+        )
+
+    def _primitive_return_token_planning_ports(
+        self,
+    ) -> PrimitiveReturnTokenPlanningPorts:
+        return PrimitiveReturnTokenPlanningPorts(
+            dig_cut_planner_mode=lambda: str(self.dig_cut_planner_mode),
+            return_target_token_planner=lambda: self._return_target_token_planner(),
+            return_start_envelope_token_planner=(
+                lambda: self._return_start_envelope_token_planner()
+            ),
+            bucket_dig_area_pose=lambda obs: self._bucket_dig_area_pose(obs),
+            select_next_coverage_corridor=(
+                lambda obs: self._select_next_coverage_corridor(obs)
+            ),
+            set_coverage_active_corridor_id=self._set_coverage_active_corridor_id,
+            coverage_raw_fields=(
+                lambda corridor, *, obs, update_state: self._coverage_raw_fields(
+                    corridor,
+                    obs=obs,
+                    update_state=update_state,
+                )
+            ),
+            env_state=lambda obs: self._env_state(obs),
+            qpos=(
+                lambda obs: np.asarray(
+                    obs.get("qpos", np.zeros(self.action_dim)),
+                    dtype=np.float32,
+                ).reshape(-1)
+            ),
+            qvel=(
+                lambda obs: np.asarray(
+                    obs.get("qvel", np.zeros(self.action_dim)),
+                    dtype=np.float32,
+                ).reshape(-1)
+            ),
+            coverage_corridor_by_id=lambda corridor_id: self._coverage_corridor_by_id(
+                corridor_id
+            ),
+            get_return_start_envelope_use_prior_spatial_bounds=(
+                lambda: bool(self._return_start_envelope_use_prior_spatial_bounds)
+            ),
+            get_return_start_envelope_use_prior_qpos_bounds=(
+                lambda: bool(self._return_start_envelope_use_prior_qpos_bounds)
+            ),
+            set_return_start_envelope_token_source=(
+                lambda value: setattr(
+                    self,
+                    "_return_start_envelope_token_source",
+                    str(value),
+                )
+            ),
+            set_return_start_envelope_use_prior_spatial_bounds=(
+                lambda value: setattr(
+                    self,
+                    "_return_start_envelope_use_prior_spatial_bounds",
+                    bool(value),
+                )
+            ),
+            set_return_start_envelope_use_prior_qpos_bounds=(
+                lambda value: setattr(
+                    self,
+                    "_return_start_envelope_use_prior_qpos_bounds",
+                    bool(value),
+                )
+            ),
+        )
+
     def _build_next_dig_cut_plan_for_return(
         self,
         obs: dict,
     ) -> tuple[np.ndarray, dict[str, float | int], str, str, int]:
-        planner = self._return_target_token_planner()
-        if self.dig_cut_planner_mode == "conservative_pose":
-            return self._unpack_return_target_token_plan(
-                planner.plan_conservative_pose(self._bucket_dig_area_pose(obs))
-            )
-        if self.dig_cut_planner_mode == "operator_prior":
-            return self._unpack_return_target_token_plan(
-                planner.plan_operator_prior(self._bucket_dig_area_pose(obs))
-            )
-        if self.dig_cut_planner_mode in {
-            "operator_prior_coverage",
-            "operator_prior_sweep_belief",
-        }:
-            corridor = self._select_next_coverage_corridor(obs)
-            self._coverage_active_corridor_id = int(corridor.corridor_id)
-            raw_fields = self._coverage_raw_fields(
-                corridor,
-                obs=obs,
-                update_state=True,
-            )
-            return self._unpack_return_target_token_plan(
-                planner.plan_from_coverage_raw_fields(
-                    raw_fields,
-                    dig_cut_planner_mode=self.dig_cut_planner_mode,
-                    corridor_id=int(corridor.corridor_id),
-                )
-            )
-        raise ValueError(f"Unsupported dig_cut_planner mode {self.dig_cut_planner_mode!r}.")
+        return (
+            self._primitive_return_token_planning_service()
+            .build_next_dig_cut_plan_for_return(obs)
+        )
 
     @staticmethod
     def _unpack_return_target_token_plan(
         plan: ReturnTargetTokenPlan,
     ) -> tuple[np.ndarray, dict[str, float | int], str, str, int]:
-        return (
-            plan.token.copy(),
-            dict(plan.raw_fields),
-            str(plan.source),
-            str(plan.fallback_reason),
-            int(plan.corridor_id),
+        return PrimitiveReturnTokenPlanningService.unpack_return_target_token_plan(
+            plan
         )
 
     def _build_return_start_envelope_tokens_for_obs(
@@ -4054,33 +4103,23 @@ class PrimitivePlannerACTPolicy(Policy):
         *,
         corridor_id: int | None = None,
     ) -> np.ndarray:
-        plan = self._return_start_envelope_token_planner().plan(
-            raw_fields=raw_fields,
-            env_state=self._env_state(obs),
-            qpos=np.asarray(
-                obs.get("qpos", np.zeros(self.action_dim)),
-                dtype=np.float32,
-            ).reshape(-1),
-            qvel=np.asarray(
-                obs.get("qvel", np.zeros(self.action_dim)),
-                dtype=np.float32,
-            ).reshape(-1),
-            cell_id=self._return_start_envelope_cell_id(corridor_id),
+        return (
+            self._primitive_return_token_planning_service()
+            .build_return_start_envelope_tokens_for_obs(
+                obs,
+                raw_fields,
+                corridor_id=corridor_id,
+            )
         )
-        return self._apply_return_start_envelope_token_plan(plan)
 
     def _apply_return_start_envelope_token_plan(
         self,
         plan: ReturnStartEnvelopeTokenPlan,
     ) -> np.ndarray:
-        self._return_start_envelope_token_source = str(plan.source)
-        self._return_start_envelope_use_prior_spatial_bounds = bool(
-            plan.use_prior_spatial_bounds
+        return (
+            self._primitive_return_token_planning_service()
+            .apply_return_start_envelope_token_plan(plan)
         )
-        self._return_start_envelope_use_prior_qpos_bounds = bool(
-            plan.use_prior_qpos_bounds
-        )
-        return plan.token.copy()
 
     def _maybe_condition_return_start_envelope_qpos_from_relocate(
         self,
@@ -4089,22 +4128,23 @@ class PrimitivePlannerACTPolicy(Policy):
         raw_fields: dict[str, float | int],
         source: str,
     ) -> np.ndarray:
-        plan = self._return_start_envelope_token_planner().condition_token(
-            token,
-            raw_fields=raw_fields,
-            source=source,
-            use_prior_spatial_bounds=self._return_start_envelope_use_prior_spatial_bounds,
-            use_prior_qpos_bounds=self._return_start_envelope_use_prior_qpos_bounds,
+        return (
+            self._primitive_return_token_planning_service()
+            .condition_return_start_envelope_qpos_from_relocate(
+                token,
+                raw_fields=raw_fields,
+                source=source,
+            )
         )
-        return self._apply_return_start_envelope_token_plan(plan)
 
     def _return_start_envelope_prior_token(
         self,
         *,
         corridor_id: int | None,
     ) -> tuple[np.ndarray | None, str]:
-        return self._return_start_envelope_token_planner().prior_token(
-            cell_id=self._return_start_envelope_cell_id(corridor_id)
+        return (
+            self._primitive_return_token_planning_service()
+            .return_start_envelope_prior_token(corridor_id=corridor_id)
         )
 
     def _return_start_envelope_prior_mapping(
@@ -4112,36 +4152,32 @@ class PrimitivePlannerACTPolicy(Policy):
         *,
         corridor_id: int | None,
     ) -> tuple[dict[str, object] | None, str]:
-        return self._return_start_envelope_token_planner().prior_mapping(
-            cell_id=self._return_start_envelope_cell_id(corridor_id)
+        return (
+            self._primitive_return_token_planning_service()
+            .return_start_envelope_prior_mapping(corridor_id=corridor_id)
         )
 
     def _return_start_envelope_prior_bounds(
         self,
         corridor_id: int | None,
     ) -> tuple[np.ndarray | None, np.ndarray | None]:
-        return self._return_start_envelope_token_planner().prior_bounds(
-            cell_id=self._return_start_envelope_cell_id(corridor_id)
+        return (
+            self._primitive_return_token_planning_service()
+            .return_start_envelope_prior_bounds(corridor_id)
         )
 
     def _return_start_envelope_cell_id(self, corridor_id: int | None) -> int | None:
-        if corridor_id is None:
-            return None
-        try:
-            corridor = self._coverage_corridor_by_id(int(corridor_id))
-        except Exception:
-            corridor = None
-        if corridor is not None:
-            return int(corridor.cell_id)
-        if int(corridor_id) >= 0:
-            return int(corridor_id)
-        return None
+        return (
+            self._primitive_return_token_planning_service()
+            .return_start_envelope_cell_id(corridor_id)
+        )
 
     @staticmethod
     def _return_start_envelope_token_from_prior_mapping(
         mapping: dict[str, object],
     ) -> np.ndarray | None:
-        return ReturnStartEnvelopeTokenPlanner.token_from_prior_mapping(mapping)
+        service_class = PrimitiveReturnTokenPlanningService
+        return service_class.return_start_envelope_token_from_prior_mapping(mapping)
 
     @staticmethod
     def _normalize_plane_depth_mode(value: object) -> str:

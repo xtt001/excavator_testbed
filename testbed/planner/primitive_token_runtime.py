@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 import numpy as np
 
@@ -17,6 +17,19 @@ from testbed.data.operator_first_v2_2 import (
 
 
 ReturnTargetPlanTuple = tuple[np.ndarray, dict[str, float | int], str, str, int]
+
+
+class ReturnStartEnvelopeTokenBuilder(Protocol):
+    """Build return start-envelope tokens with an optional coverage corridor."""
+
+    def __call__(
+        self,
+        obs: dict[str, Any],
+        raw_fields: dict[str, float | int],
+        *,
+        corridor_id: int | None = None,
+    ) -> np.ndarray:
+        ...
 
 
 @dataclass(frozen=True)
@@ -56,10 +69,7 @@ class PrimitiveTokenRuntimePorts:
     set_return_start_envelope_token_source: Callable[[str], None]
     set_return_target_fallback_reason: Callable[[str], None]
     build_next_dig_cut_plan_for_return: Callable[[dict[str, Any]], ReturnTargetPlanTuple]
-    build_return_start_envelope_tokens_for_obs: Callable[
-        [dict[str, Any], dict[str, float | int]],
-        np.ndarray,
-    ]
+    build_return_start_envelope_tokens_for_obs: ReturnStartEnvelopeTokenBuilder
     plan_return_relocate_tokens: Callable[[np.ndarray], np.ndarray]
 
     set_pending_dig_cut_cycle_id: Callable[[int], None]
@@ -265,4 +275,5 @@ class PrimitiveTokenRuntimeCoordinator:
 __all__ = [
     "PrimitiveTokenRuntimeCoordinator",
     "PrimitiveTokenRuntimePorts",
+    "ReturnStartEnvelopeTokenBuilder",
 ]
