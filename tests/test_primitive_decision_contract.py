@@ -906,7 +906,7 @@ def test_primitive_planner_unknown_skill_fails_without_broad_legacy_fallback() -
     assert "broad legacy fallback is retired" in message
 
 
-def test_primitive_planner_decision_bridge_delegates_to_legacy_fsm_backend() -> None:
+def test_primitive_planner_decision_bridge_delegates_to_decision_runtime() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
@@ -920,18 +920,18 @@ def test_primitive_planner_decision_bridge_delegates_to_legacy_fsm_backend() -> 
     )
     calls: list[tuple[dict[str, Any], object, PrimitiveTickPreparation]] = []
 
-    class FakeRunner:
+    class FakeRuntime:
         def decide_tick(self, *, obs, boundary_event, preparation):
             calls.append((obs, boundary_event, preparation))
             return expected
 
-    planner._legacy_fsm_requested_decision_backend = MethodType(
-        lambda self: FakeRunner(),
+    planner._decision_runtime = MethodType(
+        lambda self: FakeRuntime(),
         planner,
     )
     planner._legacy_fsm_branch_ports = MethodType(
         lambda self: (_ for _ in ()).throw(
-            AssertionError("policy bridge should delegate to backend")
+            AssertionError("policy bridge should delegate to decision runtime")
         ),
         planner,
     )
@@ -956,16 +956,16 @@ def test_primitive_planner_mainline_miss_does_not_call_broad_legacy_fallback() -
     obs: dict[str, Any] = {"qpos": [1.0]}
     calls: list[str] = []
 
-    class FailingBackend:
+    class FailingRuntime:
         def decide_tick(self, *, obs, boundary_event, preparation):
-            calls.append("backend")
+            calls.append("runtime")
             raise PrimitiveDecisionContractError(
                 "unhandled planner skill in requested branch chain; broad legacy "
                 "fallback is retired for default decisions: 'dig'"
             )
 
-    planner._legacy_fsm_requested_decision_backend = MethodType(
-        lambda self: FailingBackend(),
+    planner._decision_runtime = MethodType(
+        lambda self: FailingRuntime(),
         planner,
     )
     planner._maybe_switch_skill = MethodType(
@@ -990,7 +990,7 @@ def test_primitive_planner_mainline_miss_does_not_call_broad_legacy_fallback() -
     else:
         raise AssertionError("unhandled mainline branch miss was silently accepted")
 
-    assert calls == ["backend"]
+    assert calls == ["runtime"]
     assert "unhandled planner skill" in message
     assert "broad legacy fallback" in message
 
@@ -1006,13 +1006,13 @@ def test_primitive_planner_pre_dig_align_uses_explicit_residual_path() -> None:
     )
     calls: list[tuple[dict[str, Any], None, PrimitiveTickPreparation]] = []
 
-    class FakeBackend:
+    class FakeRuntime:
         def decide_tick(self, *, obs, boundary_event, preparation):
             calls.append((obs, boundary_event, preparation))
             return expected
 
-    planner._legacy_fsm_requested_decision_backend = MethodType(
-        lambda self: FakeBackend(),
+    planner._decision_runtime = MethodType(
+        lambda self: FakeRuntime(),
         planner,
     )
     planner._maybe_switch_skill = MethodType(
@@ -1068,14 +1068,14 @@ def test_primitive_planner_maybe_switch_skill_applies_requested_compat_result() 
     )
     calls: list[Any] = []
 
-    class FakeCompatibilityBackend:
-        def decide_tick(self, *, obs, boundary_event, preparation):
+    class FakeRuntime:
+        def decide_legacy_compatibility_tick(self, *, obs, boundary_event, preparation):
             calls.append(("decide", obs, boundary_event, preparation))
             return result
 
     planner._skill_name = "dig"
-    planner._legacy_fsm_compatibility_decision_backend = MethodType(
-        lambda self: FakeCompatibilityBackend(),
+    planner._decision_runtime = MethodType(
+        lambda self: FakeRuntime(),
         planner,
     )
     planner._apply_requested_tick_effects = MethodType(
@@ -1111,14 +1111,14 @@ def test_primitive_planner_maybe_switch_skill_does_not_reapply_already_applied_r
     )
     calls: list[Any] = []
 
-    class FakeCompatibilityBackend:
-        def decide_tick(self, *, obs, boundary_event, preparation):
+    class FakeRuntime:
+        def decide_legacy_compatibility_tick(self, *, obs, boundary_event, preparation):
             calls.append(("decide", obs, boundary_event, preparation))
             return result
 
     planner._skill_name = "pre_dig_align"
-    planner._legacy_fsm_compatibility_decision_backend = MethodType(
-        lambda self: FakeCompatibilityBackend(),
+    planner._decision_runtime = MethodType(
+        lambda self: FakeRuntime(),
         planner,
     )
     planner._apply_requested_tick_effects = MethodType(
@@ -1147,14 +1147,14 @@ def test_primitive_planner_maybe_switch_skill_noops_when_compatibility_misses() 
     obs: dict[str, Any] = {"qpos": [1.0]}
     calls: list[Any] = []
 
-    class FakeCompatibilityBackend:
-        def decide_tick(self, *, obs, boundary_event, preparation):
+    class FakeRuntime:
+        def decide_legacy_compatibility_tick(self, *, obs, boundary_event, preparation):
             calls.append(("decide", obs, boundary_event, preparation))
             return None
 
     planner._skill_name = "legacy_skill"
-    planner._legacy_fsm_compatibility_decision_backend = MethodType(
-        lambda self: FakeCompatibilityBackend(),
+    planner._decision_runtime = MethodType(
+        lambda self: FakeRuntime(),
         planner,
     )
     planner._apply_requested_tick_effects = MethodType(

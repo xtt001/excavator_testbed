@@ -676,6 +676,19 @@ requested-effect families, action dispatch, finalization services, token/report
 schemas, branch ordering, and low-level ACT output semantics are intentionally
 unchanged in this round.
 
+Current status note after Phase 9.25: primitive decision backend selection has
+moved into `PrimitiveDecisionRuntime` in
+`testbed/planner/primitive_decision_runtime.py`. The execution driver now calls
+the policy's generic `_decide_tick()` bridge, which delegates to the runtime
+instead of naming the legacy FSM bridge as the default source. The runtime owns
+backend-name normalization, supported-backend validation, default
+`legacy_fsm` requested decision routing, and legacy `_maybe_switch_skill()`
+compatibility decision routing. Unsupported backend names fail fast and do not
+fall back to `LegacyFSMBackendAdapter` or broad `_maybe_switch_skill()`
+mutation. This preserves the current maturity claim: the default legacy FSM is
+backendified, while behavior-tree, VLM/LLM, and other alternate backends remain
+unimplemented parked scope.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

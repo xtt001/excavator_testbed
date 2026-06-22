@@ -132,6 +132,11 @@ from testbed.planner.primitive_decision import (
     PrimitiveDecisionResult,
     RequestedPlannerEffect,
 )
+from testbed.planner.primitive_decision_runtime import (
+    PrimitiveDecisionRuntime,
+    PrimitiveDecisionRuntimeConfig,
+    PrimitiveDecisionRuntimePorts,
+)
 from testbed.planner.primitive_effects import (
     RequestedEffectApplier,
     RequestedEffectApplierPorts,
@@ -1253,24 +1258,54 @@ class PrimitivePlannerACTPolicy(Policy):
         boundary_event: Any | None,
         preparation: PrimitiveTickPreparation,
     ) -> PrimitiveDecisionResult:
-        return self._legacy_fsm_requested_decision_backend().decide_tick(
+        return self._decide_tick(
             obs=obs,
             boundary_event=boundary_event,
             preparation=preparation,
         )
 
+    def _decide_tick(
+        self,
+        *,
+        obs: dict,
+        boundary_event: Any | None,
+        preparation: PrimitiveTickPreparation,
+    ) -> PrimitiveDecisionResult:
+        return self._decision_runtime().decide_tick(
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=preparation,
+        )
+
+    def _decision_runtime(self) -> PrimitiveDecisionRuntime:
+        return PrimitiveDecisionRuntime.from_ports(
+            self._decision_runtime_ports(),
+            config=self._decision_runtime_config(),
+        )
+
+    @staticmethod
+    def _decision_runtime_config() -> PrimitiveDecisionRuntimeConfig:
+        return PrimitiveDecisionRuntimeConfig()
+
+    def _decision_runtime_ports(self) -> PrimitiveDecisionRuntimePorts:
+        return PrimitiveDecisionRuntimePorts(
+            legacy_fsm_branch_set=(
+                lambda: LegacyFSMBranchSet.from_ports(self._legacy_fsm_branch_ports())
+            ),
+        )
+
     def _legacy_fsm_requested_decision_backend(
         self,
     ) -> LegacyFSMRequestedDecisionBackend:
-        return self._legacy_fsm_branch_set().requested_decision_backend()
+        return self._decision_runtime().legacy_fsm_requested_decision_backend()
 
     def _legacy_fsm_compatibility_decision_backend(
         self,
     ) -> LegacyFSMCompatibilityDecisionBackend:
-        return self._legacy_fsm_branch_set().compatibility_decision_backend()
+        return self._decision_runtime().legacy_fsm_compatibility_decision_backend()
 
     def _legacy_fsm_branch_set(self) -> LegacyFSMBranchSet:
-        return LegacyFSMBranchSet.from_ports(self._legacy_fsm_branch_ports())
+        return self._decision_runtime().legacy_fsm_branch_set()
 
     def _apply_requested_tick_effects(
         self,
@@ -1577,7 +1612,7 @@ class PrimitivePlannerACTPolicy(Policy):
             reset_switch_reason=self._reset_tick_switch_reason,
             current_skill_name=self._current_tick_skill_name,
             update_dig_progress=self._update_dig_progress,
-            decide_tick=self._decide_tick_with_legacy_fsm,
+            decide_tick=self._decide_tick,
             apply_requested_effects=self._apply_requested_tick_effects,
             account_return_timeout=self._account_return_timeout_for_tick,
             dispatch_action=self._dispatch_tick_action,
@@ -2155,7 +2190,7 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _maybe_switch_skill(self, *, obs: dict, boundary_event: Any | None) -> None:
         skill_before = str(self._skill_name)
-        result = self._legacy_fsm_compatibility_decision_backend().decide_tick(
+        result = self._decision_runtime().decide_legacy_compatibility_tick(
             obs=obs,
             boundary_event=boundary_event,
             preparation=PrimitiveTickPreparation(

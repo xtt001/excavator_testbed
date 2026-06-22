@@ -3643,3 +3643,71 @@ Each completed refactor round should append:
   `cell_entry` remains compatibility/report material, `pre_dig_align` remains
   residual parking/action material, `LegacyFSMBackendAdapter` remains
   historical/test scaffolding, and 5P remains its existing legacy override path.
+
+### 2026-06-22 Phase 9.25 Extract Primitive Decision Runtime
+
+- Scope: extracted primitive decision backend selection from the policy's
+  legacy-named bridge into a focused `PrimitiveDecisionRuntime`. No decision
+  branch, requested-effect family, branch order, reason string, threshold,
+  policy reset timing, token/debug/summary/trace schema, coverage trace payload
+  schema, public config behavior, pre-dig-align internals, cell-entry
+  compatibility, 5P transition semantics, return handoff internals, or
+  low-level ACT dispatch output contract was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `75d323e9dba8932a3a56906eac0803ddf683eb51`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `testbed/planner/primitive_decision_runtime.py` with
+  `LEGACY_FSM_DECISION_BACKEND_NAME`, `PrimitiveDecisionRuntimeConfig`,
+  `PrimitiveDecisionRuntimePorts`, and `PrimitiveDecisionRuntime`. The runtime
+  owns backend-name normalization, supported-backend validation, default
+  `legacy_fsm` requested decision routing, legacy compatibility decision
+  routing, and explicit fail-fast for unsupported backend names. Unsupported
+  backends do not construct legacy branches and do not fall back to
+  `LegacyFSMBackendAdapter` or broad `_maybe_switch_skill()` mutation.
+- Updated `PrimitivePlannerACTPolicy` so `_execution_driver_ports().decide_tick`
+  points at generic `_decide_tick()`, which delegates to
+  `PrimitiveDecisionRuntime`. `_maybe_switch_skill()` now uses the runtime's
+  legacy compatibility decision path. `_legacy_fsm_requested_decision_backend()`,
+  `_legacy_fsm_compatibility_decision_backend()`, and `_legacy_fsm_branch_set()`
+  remain compatibility/debug facades over the same runtime source.
+- Added `tests/test_primitive_decision_runtime.py` with focused coverage for
+  default `legacy_fsm` requested routing, compatibility order
+  `bootstrap -> residual -> dig -> carry -> dump -> return`, compatibility miss
+  returning `None`, unsupported backend fail-fast without branch construction,
+  policy execution-driver wiring through generic `_decide_tick()`, and legacy
+  wrapper delegation through the same runtime.
+- TDD red result: the first focused run failed at collection because
+  `testbed.planner.primitive_decision_runtime` did not exist. After adding the
+  runtime and policy bridge, `python -m pytest -q
+  tests/test_primitive_decision_runtime.py` returned `7 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_decision_runtime.py` returned
+  `7 passed`;
+  `python -m pytest -q tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `12 passed`;
+  `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_decision_contract.py tests/test_primitive_effects.py`
+  returned `93 passed`;
+  `python -m pytest -q tests/test_primitive_action_dispatch.py tests/test_primitive_tick_finalization.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_exemplars.py tests/test_primitive_coverage_state.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_effect_runtime.py`
+  returned `29 passed`;
+  `python -m pytest -q tests/test_primitive_planner_trace.py tests/test_primitive_rollout_summary.py tests/test_primitive_debug_report.py tests/test_primitive_observation.py tests/test_primitive_token_status.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace"`
+  returned `19 passed, 101 deselected`;
+  compileall completed successfully with no output; both planner guard commands
+  and `git diff --check` completed successfully with no output.
+- Old code parked/reclassified: `LegacyFSMBranchSet` remains the branch-set
+  owner for the only supported backend, `LegacyFSMRequestedDecisionBackend` and
+  `LegacyFSMCompatibilityDecisionBackend` remain backend objects constructed by
+  the runtime, `LegacyFSMBackendAdapter` remains historical/test scaffolding,
+  `run_primitive_tick()` remains a compatibility facade over
+  `PrimitiveExecutionDriver`, `cell_entry` remains compatibility/report
+  material, `pre_dig_align` remains residual parking/action material, behavior
+  tree and VLM/LLM backends remain unsupported parked scope, and 5P remains its
+  existing legacy override path.

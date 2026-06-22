@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.24: the default 4P mainline branch chain no longer
+Current status after Phase 9.25: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -142,6 +142,16 @@ transition-completed check, and debug finalization. `PrimitivePlannerACTPolicy`
 builds typed `PrimitiveExecutionPorts` and delegates `predict()` to the driver;
 `run_primitive_tick()` and `PrimitiveTickCallbacks` remain compatibility
 facades over the same driver ordering.
+`PrimitiveDecisionRuntime` now owns the decision-backend selector boundary in
+`testbed/planner/primitive_decision_runtime.py`. The execution driver calls the
+policy's generic `_decide_tick()` bridge, which delegates to this runtime. The
+runtime currently supports only the confirmed-live `legacy_fsm` backend, builds
+the `LegacyFSMBranchSet` through typed ports, routes both requested decisions
+and legacy `_maybe_switch_skill()` compatibility decisions through the same
+selector, and fail-fasts unsupported names such as behavior-tree or VLM
+backends instead of falling back to broad legacy mutation. This is still
+`default legacy FSM backendified`, not evidence that alternate backends are
+implemented or swappable.
 `CoverageEffectRuntimeCoordinator` now owns coverage requested-effect runtime
 sequencing for `CompleteCoverageDigEffect`, `CompleteCoverageDumpEffect`, and
 `RejectActiveCoverageCorridorEffect`: coverage-mode no-op gating, update service
@@ -797,6 +807,17 @@ typed `PrimitiveExecutionPorts` and delegates `predict()` to the driver. The old
 driver rather than the source of truth. Decision branches, requested-effect
 families, action dispatch semantics, token/report schemas, branch order, and
 low-level ACT output contracts remain unchanged.
+
+Phase 9.25 extracts the primitive decision runtime into
+`PrimitiveDecisionRuntime` in
+`testbed/planner/primitive_decision_runtime.py`. The runtime owns backend-name
+normalization, supported-backend validation, requested-decision routing, and
+legacy compatibility-decision routing. The only supported backend is the
+confirmed-live `legacy_fsm`; unsupported backend names fail fast with an
+explicit contract error and do not construct legacy branches or call broad
+legacy fallback paths. The policy's `_decide_tick()` and `_maybe_switch_skill()`
+now delegate through this runtime, while legacy FSM requested/compatibility
+backend accessors remain compatibility facades over the same runtime.
 
 ### Stage 4: Expand Effect Families From Evidence
 
