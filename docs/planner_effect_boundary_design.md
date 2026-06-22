@@ -47,6 +47,13 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
+Current status after Phase 9.5: the default 4P mainline branch chain no longer
+falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
+callback. Bootstrap, dig, carry, dump, and return are handled through explicit
+requested-effect branch decisions. Residual `pre_dig_align` behavior remains an
+already-applied compatibility/parking path through a narrow residual adapter
+because selected rollout evidence classifies it as not active in the mainline.
+
 ## Design Intent
 
 This design answers one architecture question before any more code migration:
@@ -267,6 +274,11 @@ Do not rewrite the current backend branches immediately. Keep
 `LegacyFSMBackendAdapter` and `PrimitiveDecisionResult.from_legacy_fsm_outcome`
 as the already-applied compatibility path.
 
+Phase 9.5 retires this broad adapter from the default mainline decision path.
+`LegacyFSMBackendAdapter` may remain only as compatibility/test scaffolding for
+the old callback shape; it is no longer the architecture source of truth for
+bootstrap/dig/carry/dump/return.
+
 This preserves parity while the requested-effect contract is introduced and
 tested independently.
 
@@ -379,6 +391,15 @@ the target backend architecture. This phase does not migrate token planning,
 coverage metric internals, return direct-handoff internals, `pre_dig_align`,
 5P paths, behavior-tree/VLM/LLM backend selection, or planner runtime
 directories.
+
+Phase 9.5 removes the broad already-mutating legacy fallback from the default
+decision bridge. The default branch order is now explicit:
+bootstrap -> dig -> carry -> dump -> return -> residual pre-dig-align parking.
+The residual path uses a narrow `LegacyFSMResidualPreDigAlignAdapter` and the
+shell helper `_maybe_handle_pre_dig_align_skill(obs)` so parked pre-dig-align
+behavior can remain already-applied without allowing a hidden callback backdoor
+for mainline branches. Unknown or unclassified skills now fail fast instead of
+silently re-entering `_maybe_switch_skill()`.
 
 ### Stage 4: Expand Effect Families From Evidence
 

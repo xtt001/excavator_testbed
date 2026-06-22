@@ -39,6 +39,9 @@ DIG_REQUESTED_DECISION_SOURCE = "legacy_fsm_dig_requested_effect"
 CARRY_REQUESTED_DECISION_SOURCE = "legacy_fsm_carry_requested_effect"
 DUMP_REQUESTED_DECISION_SOURCE = "legacy_fsm_dump_requested_effect"
 RETURN_REQUESTED_DECISION_SOURCE = "legacy_fsm_return_requested_effect"
+RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE = (
+    "legacy_fsm_residual_pre_dig_align_already_applied"
+)
 
 
 class PrimitiveDecisionBackend(Protocol):
@@ -71,6 +74,35 @@ class LegacyFSMBackendAdapter:
         skill_before = str(preparation.skill_name_before_decision)
         self.maybe_switch_skill(obs=obs, boundary_event=boundary_event)
         return PrimitiveDecisionResult.from_legacy_fsm_outcome(
+            skill_before=skill_before,
+            skill_after=str(self.current_skill_name()),
+            switch_reason=str(self.current_switch_reason()),
+        )
+
+
+@dataclass(frozen=True)
+class LegacyFSMResidualPreDigAlignAdapter:
+    """Explicit already-applied adapter for parked pre-dig-align behavior."""
+
+    pre_dig_align_skill_name: str
+    current_skill_name: Callable[[], str]
+    current_switch_reason: Callable[[], str]
+    maybe_handle_pre_dig_align_skill: Callable[[dict[str, Any]], bool]
+
+    def decide_tick(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        preparation: PrimitiveTickPreparation,
+    ) -> PrimitiveDecisionResult | None:
+        del boundary_event
+        skill_before = str(preparation.skill_name_before_decision)
+        if str(self.current_skill_name()) != str(self.pre_dig_align_skill_name):
+            return None
+        self.maybe_handle_pre_dig_align_skill(obs)
+        return PrimitiveDecisionResult.from_legacy_fsm_outcome(
+            decision_source=RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE,
             skill_before=skill_before,
             skill_after=str(self.current_skill_name()),
             switch_reason=str(self.current_switch_reason()),
@@ -586,9 +618,11 @@ __all__ = [
     "LegacyFSMDigConfig",
     "LegacyFSMDumpBranch",
     "LegacyFSMDumpConfig",
+    "LegacyFSMResidualPreDigAlignAdapter",
     "LegacyFSMReturnBranch",
     "LegacyFSMReturnConfig",
     "PrimitiveDecisionBackend",
+    "RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE",
 ]
 
 

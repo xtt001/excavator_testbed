@@ -12,8 +12,10 @@ from testbed.planner.primitive_backend import (
     LegacyFSMDumpConfig,
     LegacyFSMDigBranch,
     LegacyFSMDigConfig,
+    LegacyFSMResidualPreDigAlignAdapter,
     LegacyFSMReturnBranch,
     LegacyFSMReturnConfig,
+    RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE,
 )
 from testbed.planner.primitive_capabilities import (
     CarryTransitionStatus,
@@ -74,6 +76,65 @@ def test_legacy_fsm_backend_adapter_wraps_existing_switch_callback() -> None:
     assert result.skill_before == "dig"
     assert result.skill_after == "carry"
     assert result.switch_reason == "dig_to_carry_boundary_confirmed"
+
+
+def test_residual_pre_dig_align_adapter_is_explicit_already_applied_path() -> None:
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    boundary_event = object()
+    state = {"skill": "pre_dig_align", "reason": ""}
+    calls: list[dict[str, Any]] = []
+
+    def maybe_handle_pre_dig_align_skill(got_obs: dict[str, Any]) -> bool:
+        calls.append(got_obs)
+        state["skill"] = "dig"
+        state["reason"] = "pre_dig_align_to_dig_ready"
+        return True
+
+    adapter = LegacyFSMResidualPreDigAlignAdapter(
+        pre_dig_align_skill_name="pre_dig_align",
+        current_skill_name=lambda: state["skill"],
+        current_switch_reason=lambda: state["reason"],
+        maybe_handle_pre_dig_align_skill=maybe_handle_pre_dig_align_skill,
+    )
+
+    result = adapter.decide_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision="pre_dig_align",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert calls == [obs]
+    assert result is not None
+    assert result.decision_source == RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE
+    assert result.side_effects_applied is True
+    assert result.skill_before == "pre_dig_align"
+    assert result.skill_after == "dig"
+    assert result.switch_reason == "pre_dig_align_to_dig_ready"
+
+
+def test_residual_pre_dig_align_adapter_ignores_non_residual_skill() -> None:
+    adapter = LegacyFSMResidualPreDigAlignAdapter(
+        pre_dig_align_skill_name="pre_dig_align",
+        current_skill_name=lambda: "dig",
+        current_switch_reason=lambda: "",
+        maybe_handle_pre_dig_align_skill=lambda obs: True,
+    )
+
+    result = adapter.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
+
+    assert result is None
 
 
 def test_legacy_fsm_bootstrap_branch_selects_pre_dig_align_when_enabled() -> None:

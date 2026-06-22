@@ -326,6 +326,7 @@ class PrimitiveDecisionResult:
         skill_before: str,
         skill_after: str,
         switch_reason: str,
+        decision_source: str = LEGACY_FSM_DECISION_SOURCE,
     ) -> "PrimitiveDecisionResult":
         status: PrimitiveDecisionStatus = (
             "skill_switch" if skill_after != skill_before else "no_change"
@@ -344,7 +345,7 @@ class PrimitiveDecisionResult:
         else:
             effects = ()
         return cls(
-            decision_source=LEGACY_FSM_DECISION_SOURCE,
+            decision_source=str(decision_source),
             status=status,
             skill_before=str(skill_before),
             skill_after=str(skill_after),

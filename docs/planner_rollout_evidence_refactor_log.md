@@ -2328,3 +2328,67 @@ Each completed refactor round should append:
   (`pre_dig_align`, 5P/legacy-only branches) behind explicit labels or extract a
   real backend runner over the requested-effect branch list, rather than adding
   more callback wrappers.
+
+### 2026-06-22 Phase 9.5 Retire Mainline Legacy FSM Fallback
+
+- Scope: removed the broad already-mutating
+  `LegacyFSMBackendAdapter -> _maybe_switch_skill()` fallback from the default
+  4P decision bridge. Bootstrap, dig, carry, dump, and return remain the
+  requested-effect mainline branch chain. `pre_dig_align` remains
+  residual/parking and already-applied; it was not promoted into a mainline
+  backend capability. No token planning, coverage metric internals,
+  return direct-handoff internals, `cell_entry`, 5P override, branch order,
+  reason string, threshold, backend selection, behavior tree, VLM/LLM packet,
+  token schema, debug schema, rollout summary schema, policy reset timing, or
+  low-level ACT dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `9ef546b720fa5b39feee794164fac9f62ea90a34`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Selected evidence remains the successful mainline packet:
+  `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl`,
+  its paired planner trace, rollout summary, resolved config, and
+  `docs/planner_evidence_reports/2026-06-18-baseline-aggregate_tx24.md`. The
+  evidence classifies `gate.pre_dig_align` as dead-candidate / legacy parking
+  for this mainline slice while bootstrap/dig/carry/dump/return are
+  confirmed-live or compatibility surfaces.
+- Default decision chain is now:
+  bootstrap requested -> dig requested -> carry requested -> dump requested ->
+  return requested -> explicit residual pre-dig-align adapter. Unknown or
+  unclassified skills fail fast with `PrimitiveDecisionContractError` rather
+  than silently re-entering broad `_maybe_switch_skill()` callback mutation.
+- Added `LegacyFSMResidualPreDigAlignAdapter` in
+  `testbed/planner/primitive_backend.py` with decision source
+  `legacy_fsm_residual_pre_dig_align_already_applied`. It is an explicit
+  already-applied compatibility boundary for parked `pre_dig_align` behavior,
+  not a generic fallback for mainline branches.
+- Updated `PrimitivePlannerACTPolicy._decide_tick_with_legacy_fsm()` to remove
+  `_legacy_fsm_backend().decide_tick(...)` from the default path and to call the
+  residual pre-dig-align adapter only after all requested mainline branches
+  decline the tick.
+- Extracted the old inline pre-dig-align branch body into
+  `_maybe_handle_pre_dig_align_skill(obs)`. `_maybe_switch_skill()` remains a
+  legacy compatibility facade for direct tests/diagnostics, but it is no longer
+  the default mainline decision source of truth.
+- `LegacyFSMBackendAdapter` remains in `primitive_backend.py` only as a
+  compatibility/test scaffold for the historical broad callback shape. The
+  default planner bridge no longer imports or constructs it.
+- Added focused tests in `tests/test_primitive_backend.py` and
+  `tests/test_primitive_decision_contract.py` for the residual pre-dig-align
+  adapter, mainline branch miss fail-fast behavior, branch order
+  bootstrap/dig/carry/dump/return before residual handling, explicit residual
+  pre-dig-align handling, and unknown-skill rejection without calling broad
+  `_maybe_switch_skill()`.
+- TDD red result: the first focused run failed at test collection because the
+  residual adapter and source constant did not exist. After implementation, the
+  old broad fallback policy test failed and was reclassified to assert
+  fail-fast unknown-skill behavior. The focused green run returned `68 passed`.
+- Old code parked/reclassified: no code was deleted. `pre_dig_align` remains a
+  residual already-applied compatibility path; `cell_entry` internals, 5P
+  compatibility, token planning, and return direct-handoff internals remain
+  existing legacy or compatibility owners.
+- Next action: now that the mainline branch chain has no broad callback
+  fallback, the next structural phase should extract an explicit requested
+  branch runner or decision backend object that owns branch ordering outside the
+  large policy shell, while keeping the shell as effect applier and public
+  adapter.

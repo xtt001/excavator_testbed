@@ -63,7 +63,6 @@ from testbed.planner.cell_entry import (
     build_cell_entry_tokens,
 )
 from testbed.planner.primitive_backend import (
-    LegacyFSMBackendAdapter,
     LegacyFSMBootstrapBranch,
     LegacyFSMBootstrapConfig,
     LegacyFSMCarryBranch,
@@ -72,6 +71,7 @@ from testbed.planner.primitive_backend import (
     LegacyFSMDigConfig,
     LegacyFSMDumpBranch,
     LegacyFSMDumpConfig,
+    LegacyFSMResidualPreDigAlignAdapter,
     LegacyFSMReturnBranch,
     LegacyFSMReturnConfig,
 )
@@ -1095,10 +1095,16 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         if return_result is not None:
             return return_result
-        return self._legacy_fsm_backend().decide_tick(
+        residual_result = self._legacy_fsm_residual_pre_dig_align_adapter().decide_tick(
             obs=obs,
             boundary_event=boundary_event,
             preparation=preparation,
+        )
+        if residual_result is not None:
+            return residual_result
+        raise PrimitiveDecisionContractError(
+            "unhandled planner skill in requested branch chain; broad legacy "
+            f"fallback is retired for default decisions: {self._skill_name!r}"
         )
 
     def _apply_requested_tick_effects(
@@ -1184,11 +1190,14 @@ class PrimitivePlannerACTPolicy(Policy):
                     f"received: {effect_name}"
                 )
 
-    def _legacy_fsm_backend(self) -> LegacyFSMBackendAdapter:
-        return LegacyFSMBackendAdapter(
-            maybe_switch_skill=self._maybe_switch_skill,
+    def _legacy_fsm_residual_pre_dig_align_adapter(
+        self,
+    ) -> LegacyFSMResidualPreDigAlignAdapter:
+        return LegacyFSMResidualPreDigAlignAdapter(
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
             current_skill_name=lambda: str(self._skill_name),
             current_switch_reason=lambda: str(self._switch_reason),
+            maybe_handle_pre_dig_align_skill=self._maybe_handle_pre_dig_align_skill,
         )
 
     def _legacy_fsm_bootstrap_branch(self) -> LegacyFSMBootstrapBranch:
@@ -1961,39 +1970,7 @@ class PrimitivePlannerACTPolicy(Policy):
         ):
             return
 
-        if self._skill_name == PRE_DIG_ALIGN_SKILL_NAME:
-            if self._pre_dig_align_surface_guard_triggered_for_state(obs):
-                self._pre_dig_align_surface_guard_count += 1
-                self._pre_dig_align_hold_count = 0
-                if self._pre_dig_align_surface_guard_can_handoff(obs):
-                    self._pre_dig_align_completed_count += 1
-                    self._set_skill("dig", "pre_dig_align_to_dig_surface_guard")
-                else:
-                    self._reject_active_coverage_corridor(
-                        obs,
-                        reason="pre_align_surface_penetration_entry_gap",
-                    )
-                    self._restart_dig_with_new_cut(
-                        "pre_dig_align_to_dig_surface_guard_replan"
-                    )
-            elif self._pre_dig_align_ready(obs):
-                self._pre_dig_align_completed_count += 1
-                self._set_skill("dig", "pre_dig_align_to_dig_ready")
-            elif self._pre_dig_align_step_count >= self.pre_dig_align_max_steps:
-                self._pre_dig_align_timeout_count += 1
-                if self._pre_dig_align_timeout_can_handoff(obs):
-                    reason = (
-                        self._pre_dig_align_timeout_handoff_reason
-                        or "pre_dig_align_to_dig_timeout_close_enough"
-                    )
-                    self._set_skill("dig", reason)
-                else:
-                    self._reject_active_coverage_corridor(
-                        obs,
-                        reason="align_entry_gap_timeout",
-                    )
-                    if not self._try_replan_pre_dig_align_handoff(obs):
-                        self._restart_pre_dig_align("pre_dig_align_retry_entry_gap")
+        if self._maybe_handle_pre_dig_align_skill(obs):
             return
 
         if self._legacy_fsm_dig_branch().maybe_handle(
@@ -2019,6 +1996,43 @@ class PrimitivePlannerACTPolicy(Policy):
             boundary_event=boundary_event,
         ):
             return
+
+    def _maybe_handle_pre_dig_align_skill(self, obs: dict) -> bool:
+        if self._skill_name != PRE_DIG_ALIGN_SKILL_NAME:
+            return False
+        if self._pre_dig_align_surface_guard_triggered_for_state(obs):
+            self._pre_dig_align_surface_guard_count += 1
+            self._pre_dig_align_hold_count = 0
+            if self._pre_dig_align_surface_guard_can_handoff(obs):
+                self._pre_dig_align_completed_count += 1
+                self._set_skill("dig", "pre_dig_align_to_dig_surface_guard")
+            else:
+                self._reject_active_coverage_corridor(
+                    obs,
+                    reason="pre_align_surface_penetration_entry_gap",
+                )
+                self._restart_dig_with_new_cut(
+                    "pre_dig_align_to_dig_surface_guard_replan"
+                )
+        elif self._pre_dig_align_ready(obs):
+            self._pre_dig_align_completed_count += 1
+            self._set_skill("dig", "pre_dig_align_to_dig_ready")
+        elif self._pre_dig_align_step_count >= self.pre_dig_align_max_steps:
+            self._pre_dig_align_timeout_count += 1
+            if self._pre_dig_align_timeout_can_handoff(obs):
+                reason = (
+                    self._pre_dig_align_timeout_handoff_reason
+                    or "pre_dig_align_to_dig_timeout_close_enough"
+                )
+                self._set_skill("dig", reason)
+            else:
+                self._reject_active_coverage_corridor(
+                    obs,
+                    reason="align_entry_gap_timeout",
+                )
+                if not self._try_replan_pre_dig_align_handoff(obs):
+                    self._restart_pre_dig_align("pre_dig_align_retry_entry_gap")
+        return True
 
     def _set_return_or_direct_handoff(self, obs: dict, *, reason: str) -> None:
         self._set_skill("return", reason)

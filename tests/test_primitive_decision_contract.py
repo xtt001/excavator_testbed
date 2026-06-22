@@ -32,6 +32,7 @@ from testbed.planner.primitive_decision import (
     validate_decision_effect_contract,
 )
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
+from testbed.planner.primitive_backend import RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
@@ -661,7 +662,7 @@ def test_primitive_planner_requested_effect_bridge_applies_dig_effects_in_order(
     ]
 
 
-def test_primitive_planner_residual_legacy_decision_bridge_calls_fsm_once() -> None:
+def test_primitive_planner_unknown_skill_fails_without_broad_legacy_fallback() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     planner._skill_name = "legacy_skill"
     planner._switch_reason = ""
@@ -681,22 +682,139 @@ def test_primitive_planner_residual_legacy_decision_bridge_calls_fsm_once() -> N
 
     planner._maybe_switch_skill = MethodType(fake_maybe_switch_skill, planner)
 
+    try:
+        planner._decide_tick_with_legacy_fsm(
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=boundary_event,
+                skill_name_before_decision="legacy_skill",
+                dig_progress_updated=False,
+            ),
+        )
+    except PrimitiveDecisionContractError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("unknown skill unexpectedly used broad legacy fallback")
+
+    assert calls == []
+    assert "unhandled planner skill" in message
+    assert "broad legacy fallback is retired" in message
+
+
+def test_primitive_planner_mainline_miss_does_not_call_broad_legacy_fallback() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    planner._skill_name = "dig"
+    planner._switch_reason = ""
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    order: list[str] = []
+
+    class NoMatchBranch:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def decide_tick(self, *, obs, boundary_event, preparation):
+            order.append(self.name)
+            return None
+
+    planner._legacy_fsm_bootstrap_branch = MethodType(
+        lambda self: NoMatchBranch("bootstrap"),
+        planner,
+    )
+    planner._legacy_fsm_dig_branch = MethodType(
+        lambda self: NoMatchBranch("dig"),
+        planner,
+    )
+    planner._legacy_fsm_carry_branch = MethodType(
+        lambda self: NoMatchBranch("carry"),
+        planner,
+    )
+    planner._legacy_fsm_dump_branch = MethodType(
+        lambda self: NoMatchBranch("dump"),
+        planner,
+    )
+    planner._legacy_fsm_return_branch = MethodType(
+        lambda self: NoMatchBranch("return"),
+        planner,
+    )
+    planner._maybe_switch_skill = MethodType(
+        lambda self, *, obs, boundary_event: (_ for _ in ()).throw(
+            AssertionError("broad legacy fallback should not be called")
+        ),
+        planner,
+    )
+
+    try:
+        planner._decide_tick_with_legacy_fsm(
+            obs=obs,
+            boundary_event=None,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=None,
+                skill_name_before_decision="dig",
+                dig_progress_updated=True,
+            ),
+        )
+    except PrimitiveDecisionContractError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("unhandled mainline branch miss was silently accepted")
+
+    assert order == ["bootstrap", "dig", "carry", "dump", "return"]
+    assert "unhandled planner skill" in message
+    assert "broad legacy fallback" in message
+
+
+def test_primitive_planner_pre_dig_align_uses_explicit_residual_path() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    planner._skill_name = "pre_dig_align"
+    planner._switch_reason = ""
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    calls: list[str] = []
+
+    class NoMatchBranch:
+        def decide_tick(self, *, obs, boundary_event, preparation):
+            return None
+
+    planner._legacy_fsm_bootstrap_branch = MethodType(lambda self: NoMatchBranch(), planner)
+    planner._legacy_fsm_dig_branch = MethodType(lambda self: NoMatchBranch(), planner)
+    planner._legacy_fsm_carry_branch = MethodType(lambda self: NoMatchBranch(), planner)
+    planner._legacy_fsm_dump_branch = MethodType(lambda self: NoMatchBranch(), planner)
+    planner._legacy_fsm_return_branch = MethodType(lambda self: NoMatchBranch(), planner)
+
+    def fake_residual(
+        self: PrimitivePlannerACTPolicy,
+        got_obs: dict[str, Any],
+    ) -> bool:
+        assert got_obs is obs
+        calls.append("residual")
+        self._skill_name = "dig"
+        self._switch_reason = "pre_dig_align_to_dig_ready"
+        return True
+
+    planner._maybe_handle_pre_dig_align_skill = MethodType(fake_residual, planner)
+    planner._maybe_switch_skill = MethodType(
+        lambda self, *, obs, boundary_event: (_ for _ in ()).throw(
+            AssertionError("broad legacy fallback should not be called")
+        ),
+        planner,
+    )
+
     result = planner._decide_tick_with_legacy_fsm(
         obs=obs,
-        boundary_event=boundary_event,
+        boundary_event=None,
         preparation=PrimitiveTickPreparation(
-            boundary_event=boundary_event,
-            skill_name_before_decision="legacy_skill",
+            boundary_event=None,
+            skill_name_before_decision="pre_dig_align",
             dig_progress_updated=False,
         ),
     )
 
-    assert calls == [(obs, boundary_event, "legacy_skill")]
-    assert result.decision_source == LEGACY_FSM_DECISION_SOURCE
-    assert result.status == "skill_switch"
-    assert result.skill_before == "legacy_skill"
-    assert result.skill_after == "carry"
-    assert result.switch_reason == "legacy_to_carry"
+    assert calls == ["residual"]
+    assert result.decision_source == RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE
+    assert result.side_effects_applied is True
+    assert result.skill_before == "pre_dig_align"
+    assert result.skill_after == "dig"
+    assert result.switch_reason == "pre_dig_align_to_dig_ready"
 
 
 def test_primitive_planner_bootstrap_decision_bridge_returns_requested_switch() -> None:
