@@ -81,6 +81,8 @@ from testbed.planner.primitive_coverage import (
     CoverageCandidateSelectionFacts,
     CoverageCorridorState,
     CoverageSelectionConfig,
+    CoverageSelectionRuntimeCoordinator,
+    CoverageSelectionRuntimePorts,
     CoverageSelectionService,
 )
 from testbed.planner.primitive_coverage_reports import (
@@ -3856,27 +3858,66 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         return plan.token.copy(), dict(plan.raw_fields), plan.source, plan.fallback_reason
 
+    def _coverage_selection_runtime_ports(self) -> CoverageSelectionRuntimePorts:
+        return CoverageSelectionRuntimePorts(
+            dig_cut_prior=lambda: dict(self.dig_cut_prior or {}),
+            dig_cut_planner_mode=lambda: str(self.dig_cut_planner_mode),
+            coverage_corridors=lambda: self._coverage_corridors,
+            set_coverage_corridors=self._set_coverage_corridors,
+            candidate_builder=lambda: self._coverage_candidate_builder(),
+            selection_service=lambda: self._coverage_selection_service(),
+            selection_facts=(
+                lambda obs, corridors: self._coverage_selection_facts(
+                    obs,
+                    corridors,
+                )
+            ),
+            recent_row_reference=lambda: self._coverage_recent_row_reference_corridor(),
+            all_depleted=lambda: self._coverage_all_depleted(),
+            maybe_reopen_pass=(
+                lambda obs, reason: self._maybe_reopen_coverage_pass(
+                    obs,
+                    reason=reason,
+                )
+            ),
+            request_terminal_stop=lambda reason: self._request_coverage_terminal_stop(
+                reason
+            ),
+            set_candidate_scores=self._set_coverage_candidate_scores,
+            record_decision_event=self._record_coverage_decision_event,
+            set_active_corridor_id=self._set_coverage_active_corridor_id,
+            set_last_selected_corridor_id=self._set_coverage_last_selected_corridor_id,
+        )
+
+    def _coverage_selection_runtime_coordinator(
+        self,
+    ) -> CoverageSelectionRuntimeCoordinator:
+        return CoverageSelectionRuntimeCoordinator.from_ports(
+            self._coverage_selection_runtime_ports()
+        )
+
+    def _set_coverage_corridors(
+        self,
+        corridors: list[CoverageCorridorState],
+    ) -> None:
+        self._coverage_corridors = corridors
+
+    def _set_coverage_candidate_scores(
+        self,
+        candidate_scores: list[dict[str, Any]],
+    ) -> None:
+        self._coverage_candidate_scores = list(candidate_scores)
+
+    def _set_coverage_last_selected_corridor_id(self, value: int) -> None:
+        self._coverage_last_selected_corridor_id = int(value)
+
     def _select_next_coverage_corridor(self, obs: dict) -> CoverageCorridorState:
-        if not self.dig_cut_prior:
-            raise ValueError(
-                f"{self.dig_cut_planner_mode} mode requires a dig cut prior JSON."
-            )
-        self._ensure_coverage_corridors()
-        if not self._coverage_corridors:
-            raise ValueError(
-                f"{self.dig_cut_planner_mode} could not build candidate corridors."
-            )
-        corridor = self._select_coverage_corridor(obs)
-        self._coverage_active_corridor_id = int(corridor.corridor_id)
-        self._coverage_last_selected_corridor_id = int(corridor.corridor_id)
-        return corridor
+        return self._coverage_selection_runtime_coordinator().select_next_corridor(
+            obs
+        )
 
     def _ensure_coverage_corridors(self) -> None:
-        if self._coverage_corridors:
-            return
-        self._coverage_corridors = self._coverage_candidate_builder().build(
-            dict(self.dig_cut_prior or {})
-        )
+        self._coverage_selection_runtime_coordinator().ensure_corridors()
 
     def _build_cell_weighted_coverage_corridors(
         self,
@@ -3997,30 +4038,7 @@ class PrimitivePlannerACTPolicy(Policy):
         return facts
 
     def _select_coverage_corridor(self, obs: dict) -> CoverageCorridorState:
-        if self._coverage_all_depleted():
-            self._maybe_reopen_coverage_pass(obs, reason="select_all_depleted")
-        service = self._coverage_selection_service()
-        result = service.select(
-            self._coverage_corridors,
-            facts_by_corridor_id=self._coverage_selection_facts(obs),
-            recent_row_reference=self._coverage_recent_row_reference_corridor(),
-        )
-        best = result.selected
-        self._coverage_candidate_scores = list(result.candidate_scores)
-        self._record_coverage_decision_event(
-            "select_corridor",
-            obs=obs,
-            corridor=best,
-            extra={
-                "selected_score": float(result.selected_score),
-                "candidate_scores": list(self._coverage_candidate_scores),
-                "first_dig_gate_available": int(result.first_dig_gate_available),
-            },
-        )
-        if self._coverage_all_depleted():
-            if not self._maybe_reopen_coverage_pass(obs, reason="select_all_depleted"):
-                self._request_coverage_terminal_stop("dig_area_depleted")
-        return best
+        return self._coverage_selection_runtime_coordinator().select_corridor(obs)
 
     def _coverage_first_dig_active(self) -> bool:
         return self._coverage_selection_service().first_dig_active()

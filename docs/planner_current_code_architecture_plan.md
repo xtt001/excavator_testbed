@@ -615,6 +615,20 @@ Coverage candidate construction, scoring/selection, corridor debug projection,
 planner trace/summary/debug schemas, branch ordering, token planning, and
 low-level ACT dispatch are intentionally unchanged in this round.
 
+Current status note after Phase 9.21: coverage corridor selection runtime
+sequencing has moved into `CoverageSelectionRuntimeCoordinator` in
+`testbed/planner/primitive_coverage.py`. The coordinator owns dig-cut prior and
+empty-candidate checks, ensure-corridor no-op/build writeback, selection-service
+invocation, candidate-score writeback, `select_corridor` decision-event
+emission, all-depleted reopen/terminal sequencing, and active/last-selected
+corridor id writeback. The 4P policy shell keeps mutable coverage state
+storage, raw facts helper facades, and report-event append mechanics, while
+`_select_next_coverage_corridor()`, `_ensure_coverage_corridors()`, and
+`_select_coverage_corridor()` are thin coordinator-backed wrappers. Coverage
+candidate construction, scoring algorithm, first-dig gate facts, state exemplar
+matching, raw-field/token planning, planner trace/summary/debug schemas, branch
+ordering, and low-level ACT dispatch are intentionally unchanged in this round.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

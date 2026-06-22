@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -803,11 +804,106 @@ class CoverageCandidateBuilder:
         return DigCutTokenPlanner(prior={}).clamp_to_prior(fields, field_name, value)
 
 
+@dataclass
+class CoverageSelectionRuntimePorts:
+    """Shell ports for coverage corridor runtime selection sequencing."""
+
+    dig_cut_prior: Callable[[], dict[str, Any]]
+    dig_cut_planner_mode: Callable[[], str]
+    coverage_corridors: Callable[[], list[CoverageCorridorState]]
+    set_coverage_corridors: Callable[[list[CoverageCorridorState]], None]
+    candidate_builder: Callable[[], CoverageCandidateBuilder]
+    selection_service: Callable[[], CoverageSelectionService]
+    selection_facts: Callable[
+        [dict[str, Any], list[CoverageCorridorState]],
+        dict[int, CoverageCandidateSelectionFacts],
+    ]
+    recent_row_reference: Callable[[], CoverageCorridorState | None]
+    all_depleted: Callable[[], bool]
+    maybe_reopen_pass: Callable[[dict[str, Any], str], bool]
+    request_terminal_stop: Callable[[str], None]
+    set_candidate_scores: Callable[[list[dict[str, Any]]], None]
+    record_decision_event: Callable[..., None]
+    set_active_corridor_id: Callable[[int], None]
+    set_last_selected_corridor_id: Callable[[int], None]
+
+
+@dataclass(frozen=True)
+class CoverageSelectionRuntimeCoordinator:
+    """Coordinate coverage corridor ensure/select runtime side effects."""
+
+    ports: CoverageSelectionRuntimePorts
+
+    @classmethod
+    def from_ports(
+        cls,
+        ports: CoverageSelectionRuntimePorts,
+    ) -> "CoverageSelectionRuntimeCoordinator":
+        return cls(ports=ports)
+
+    def select_next_corridor(
+        self,
+        obs: dict[str, Any],
+    ) -> CoverageCorridorState:
+        ports = self.ports
+        prior = dict(ports.dig_cut_prior() or {})
+        mode = str(ports.dig_cut_planner_mode())
+        if not prior:
+            raise ValueError(f"{mode} mode requires a dig cut prior JSON.")
+        self.ensure_corridors()
+        corridors = ports.coverage_corridors()
+        if not corridors:
+            raise ValueError(f"{mode} could not build candidate corridors.")
+        corridor = self.select_corridor(obs)
+        ports.set_active_corridor_id(int(corridor.corridor_id))
+        ports.set_last_selected_corridor_id(int(corridor.corridor_id))
+        return corridor
+
+    def ensure_corridors(self) -> None:
+        ports = self.ports
+        if ports.coverage_corridors():
+            return
+        corridors = ports.candidate_builder().build(
+            dict(ports.dig_cut_prior() or {})
+        )
+        ports.set_coverage_corridors(corridors)
+
+    def select_corridor(self, obs: dict[str, Any]) -> CoverageCorridorState:
+        ports = self.ports
+        if ports.all_depleted():
+            ports.maybe_reopen_pass(obs, reason="select_all_depleted")
+        corridors = ports.coverage_corridors()
+        result = ports.selection_service().select(
+            corridors,
+            facts_by_corridor_id=ports.selection_facts(obs, corridors),
+            recent_row_reference=ports.recent_row_reference(),
+        )
+        selected = result.selected
+        candidate_scores = list(result.candidate_scores)
+        ports.set_candidate_scores(candidate_scores)
+        ports.record_decision_event(
+            "select_corridor",
+            obs=obs,
+            corridor=selected,
+            extra={
+                "selected_score": float(result.selected_score),
+                "candidate_scores": list(candidate_scores),
+                "first_dig_gate_available": int(result.first_dig_gate_available),
+            },
+        )
+        if ports.all_depleted():
+            if not ports.maybe_reopen_pass(obs, reason="select_all_depleted"):
+                ports.request_terminal_stop("dig_area_depleted")
+        return selected
+
+
 __all__ = [
     "CoverageCandidateBuilder",
     "CoverageCandidateSelectionFacts",
     "CoverageCorridorState",
     "CoverageSelectionConfig",
+    "CoverageSelectionRuntimeCoordinator",
+    "CoverageSelectionRuntimePorts",
     "CoverageSelectionResult",
     "CoverageSelectionService",
 ]

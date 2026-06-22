@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.20: the default 4P mainline branch chain no longer
+Current status after Phase 9.21: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -124,6 +124,14 @@ storage and report/facts helper facades, but `_complete_coverage_dig()`,
 `_complete_coverage_dump()`, `_reject_active_coverage_corridor()`,
 `_maybe_reopen_coverage_pass()`, and `_request_coverage_terminal_stop()` are now
 thin coordinator-backed wrappers.
+`CoverageSelectionRuntimeCoordinator` now owns coverage corridor selection
+runtime sequencing: prior/empty-candidate checks, candidate ensure/writeback,
+selection-service invocation, candidate-score writeback, `select_corridor`
+event emission, all-depleted reopen/terminal handling, and selected corridor id
+writeback. The policy shell still owns coverage mutable state storage, raw
+facts/helper facades, and report event append mechanics; coverage candidate
+construction and scoring algorithms remain in `CoverageCandidateBuilder` and
+`CoverageSelectionService`.
 
 ## Design Intent
 
@@ -697,6 +705,23 @@ Reopen-pass and terminal-stop result application and event sequencing are also
 owned by the coordinator. Coverage candidate construction, scoring/selection,
 corridor debug projection, report schemas, token planning, branch ordering,
 and low-level action dispatch remain unchanged.
+
+Phase 9.21 extracts coverage corridor selection runtime coordination into
+`CoverageSelectionRuntimeCoordinator` in
+`testbed/planner/primitive_coverage.py`. `CoverageSelectionRuntimePorts`
+exposes typed shell accessors for the dig-cut prior, corridor list storage,
+candidate builder, selection service, selection facts, recent-row reference,
+all-depleted/reopen/terminal hooks, candidate-score writeback, selected-id
+writeback, and decision-event recording. The coordinator owns the
+confirmed-live selection sequencing: `select_next_corridor(...)` checks the
+prior, ensures candidates, validates non-empty candidates, calls
+`select_corridor(...)`, then writes active and last-selected corridor ids;
+`ensure_corridors()` preserves the existing no-op/build behavior; and
+`select_corridor(...)` preserves the old all-depleted pre-reopen, service
+selection, candidate-score/event emission, and post-select terminal-stop order.
+Coverage candidate construction, scoring, first-dig gate facts, state exemplar
+matching, raw-field/token planning, report schemas, branch ordering, and
+low-level action dispatch remain unchanged.
 
 ### Stage 4: Expand Effect Families From Evidence
 

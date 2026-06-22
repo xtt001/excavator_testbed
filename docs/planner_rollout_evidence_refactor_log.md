@@ -3354,3 +3354,72 @@ Each completed refactor round should append:
   material, `pre_dig_align` remains residual parking/action material,
   `LegacyFSMBackendAdapter` remains historical/test scaffolding, and 5P remains
   its existing legacy override path.
+
+### 2026-06-22 Phase 9.21 Extract Primitive Coverage Selection Runtime Coordinator
+
+- Scope: extracted coverage corridor selection runtime sequencing from the
+  large policy shell into a focused coordinator. No coverage candidate
+  construction algorithm, coverage scoring algorithm, first-dig gate facts,
+  state-exemplar matching, raw-field/token planning, corridor debug payload
+  schema, coverage decision trace payload schema, planner trace/summary/debug
+  schema, terminal-stop reason string, branch order, reason string, threshold,
+  token schema, reset timing, public config behavior, pre-dig-align internals,
+  cell-entry compatibility, 5P transition semantics, return handoff internals,
+  or low-level ACT dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `db86769cb84968e9f1ce0201884d055a411819c9`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `CoverageSelectionRuntimePorts` and
+  `CoverageSelectionRuntimeCoordinator` to
+  `testbed/planner/primitive_coverage.py`. The coordinator owns dig-cut prior
+  and empty-candidate checks, ensure-corridor no-op/build writeback,
+  selection-service invocation, candidate-score writeback, `select_corridor`
+  decision-event emission, all-depleted reopen/terminal sequencing, and
+  active/last-selected corridor id writeback.
+- Updated `PrimitivePlannerACTPolicy._select_next_coverage_corridor()`,
+  `_ensure_coverage_corridors()`, and `_select_coverage_corridor()` into
+  coordinator-backed thin wrappers. The policy shell now builds
+  `_coverage_selection_runtime_ports()` from existing coverage mutable state
+  storage, candidate builder/service factories, selection facts providers,
+  recent-row reference helper, existing reopen/terminal wrappers, and explicit
+  state writeback callbacks.
+- Added `tests/test_primitive_coverage_selection_runtime.py` with focused
+  coverage for ensure no-op/build behavior, old prior/empty-candidate error
+  messages, select-next ordering and selected-id writeback, all-depleted
+  pre-select reopen, select event payload ordering, post-select terminal stop,
+  and policy wrapper delegation.
+- TDD red result: the first focused run failed at collection because
+  `CoverageSelectionRuntimeCoordinator` did not exist in
+  `testbed.planner.primitive_coverage`. After adding the coordinator and
+  policy bridge, `python -m pytest -q
+  tests/test_primitive_coverage_selection_runtime.py` returned `7 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_coverage_selection_runtime.py`
+  returned `7 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_selection.py tests/test_primitive_coverage_candidates.py`
+  returned `3 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_updates.py tests/test_primitive_coverage_runtime.py tests/test_primitive_coverage_reports.py`
+  returned `16 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `93 passed`;
+  `python -m pytest -q tests/test_primitive_planner_trace.py tests/test_primitive_rollout_summary.py tests/test_primitive_debug_report.py tests/test_primitive_tick_finalization.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or terminal_depletion or semantic_boundary_events_drive_skill_sequence or operator_prior_coverage or first_dig or return_to_dig"`
+  returned `14 passed, 106 deselected`;
+  compileall and both planner guard commands completed successfully with no
+  output.
+- Old code parked/reclassified: coverage candidate construction remains in
+  `CoverageCandidateBuilder`, coverage scoring remains in
+  `CoverageSelectionService`, raw-field/state-exemplar/first-dig fact helpers
+  remain in the policy shell, coverage effect runtime remains in
+  `CoverageEffectRuntimeCoordinator`, corridor debug/report payload projection
+  remains behind `CoverageReportService`, requested-effect dispatch remains in
+  `RequestedEffectApplier`, public report builders remain unchanged,
+  `cell_entry` remains compatibility/report material, `pre_dig_align` remains
+  residual parking/action material, `LegacyFSMBackendAdapter` remains
+  historical/test scaffolding, and 5P remains its existing legacy override path.
