@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.35: the default 4P mainline branch chain no longer
+Current status after Phase 9.36: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy now exposes backend-facing common decision facts through
@@ -68,8 +68,11 @@ rather than individual shell callback/status-provider fields. Dig/carry/dump/
 return transition statuses remain lazy and branch-local. Return handoff refresh
 is now explicit: `LegacyFSMReturnBranch` calls
 `PrimitiveDecisionCapabilities.refresh_return_transition_state(context)` only
-after the active skill check confirms `return`, and then reads
-`return_transition_status(context)`.
+after the active skill check confirms `return`, and then consumes
+`PrimitiveDecisionCapabilities.return_transition_facts(context, facts=...)`.
+`PrimitiveReturnTransitionFacts` wraps the existing common facts packet and the
+read-only `ReturnTransitionStatus` without carrying refresh/provider/applier
+fields.
 `PrimitiveFSMCapabilityProvider.return_transition_status(...)` is therefore a
 read-only cached-status assembly point rather than a hidden mutation/refresh
 entry. This preserves return handoff refresh timing and avoids eager status
@@ -677,6 +680,13 @@ schemas remain in their existing owners.
 Phase 9.35 supersedes the Phase 9.11 return-refresh detail: return refresh now
 lives in the explicit `refresh_return_transition_state(...)` API, while return
 status assembly itself is read-only.
+
+Phase 9.36 adds the first transition-specific decision facts view:
+`PrimitiveReturnTransitionFacts`. Active return branch decisions now refresh
+explicitly and then consume that facts view; non-return skills still do not
+refresh or read return status/facts. This does not move return status into the
+common `PrimitiveDecisionFacts` packet and does not migrate dig/carry/dump
+transition facts.
 
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in

@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.35 implementation. It is intentionally
+compares them with the current Phase 9.36 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -193,6 +193,8 @@ Current boundary:
 - `LegacyFSMBranchSet` owns requested order and legacy compatibility order.
 - Legacy FSM branches consume `PrimitiveDecisionContext` plus common
   `PrimitiveDecisionFacts` through `PrimitiveDecisionCapabilities`.
+- The active return branch consumes a return-specific facts view,
+  `PrimitiveReturnTransitionFacts`, after the explicit return refresh step.
 - Unsupported backend names fail fast.
 
 Gap:
@@ -203,6 +205,9 @@ Gap:
 - Return transition refresh is now explicit: the active legacy-FSM return branch
   refreshes shell-owned handoff cache state before reading return status, while
   `return_transition_status(...)` itself is read-only.
+- Return transition facts now have a typed read-only view, but that view is
+  constructed lazily only after the active return branch has refreshed cached
+  handoff state.
 - There is no full backend-neutral fact packet for behavior-tree or VLM
   strategies because transition, token, coverage, and return handoff facts are
   not yet in a neutral packet.
@@ -234,13 +239,15 @@ Current boundary:
   decision and dig-progress update status.
 - `PrimitiveDecisionFacts` wraps the context without copying `obs`,
   `boundary_event`, or `preparation`, and adds current skill/reason facts.
+- `PrimitiveReturnTransitionFacts` wraps an existing `PrimitiveDecisionFacts`
+  plus a `ReturnTransitionStatus` identity for active-return decisions.
 
 Gap:
 
 - Context is adequate for current FSM backend.
 - The common facts packet is intentionally small; future backend-neutral facts
-  still need typed views for transition, token, coverage, and return handoff
-  state.
+  still need typed views for dig/carry/dump transitions, token state, coverage,
+  and return handoff state.
 
 Standard:
 
@@ -270,9 +277,13 @@ Current boundary:
   contains `PrimitiveDecisionContext`, current skill name, current switch
   reason, and read-only context accessors; it does not include transition status
   providers or mutation ports.
+- `PrimitiveReturnTransitionFacts` is the first transition-specific decision
+  facts view. It contains an existing common facts packet and the read-only
+  `ReturnTransitionStatus`; it does not contain refresh, provider, applier,
+  callback, or effect fields.
 - `PrimitiveDecisionCapabilities` maps a decision context to current skill,
-  common decision facts, bootstrap status, transition statuses, and residual
-  `pre_dig_align` handling.
+  common decision facts, return transition facts, bootstrap status, transition
+  statuses, and residual `pre_dig_align` handling.
 - `PrimitiveObservationFacts` and transition status dataclasses exist.
 
 Gap:
@@ -280,11 +291,11 @@ Gap:
 - The current capability object is still backend-facing for legacy FSM.
 - Residual `pre_dig_align` is still a capability-side already-applied handler.
 - `PrimitiveDecisionFacts` is not yet the complete `PrimitiveBackendFacts`
-  target. It lacks transition, token, coverage, and return handoff views.
-- Dig/carry/dump/return transition status providers intentionally remain lazy
-  and branch-local. Return refresh is explicit and still timing-sensitive, so it
-  must stay in the active return branch until a backend-neutral return facts
-  view is designed and tested.
+  target. It lacks dig/carry/dump transition, token, coverage, and return
+  handoff views.
+- Dig/carry/dump transition status providers intentionally remain lazy and
+  branch-local. Return transition facts are also lazy: refresh still happens
+  only inside the active return branch before assembling the facts view.
 
 Standard:
 
@@ -518,9 +529,8 @@ The next code work should follow this order:
    - Keep legacy FSM capabilities working.
    - Preserve lazy transition-status timing; do not eagerly refresh or compute
      return status outside the active return branch.
-   - Treat explicit return refresh plus read-only status as the starting point
-     for a future backend-neutral return facts view, not as proof that return
-     facts have already migrated.
+   - Treat `PrimitiveReturnTransitionFacts` as the first transition-specific
+     view, not as proof that all transition facts have migrated.
    - Add only facts that are stable across backend styles.
    - Do not implement BT/VLM yet.
 

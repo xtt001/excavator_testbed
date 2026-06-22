@@ -841,6 +841,17 @@ active skill check confirms `return`, immediately before reading return status.
 This preserves lazy branch timing while removing a mutation from the status-read
 interface; return status is still not part of `PrimitiveDecisionFacts`.
 
+Current status note after Phase 9.36: active return decisions now consume a
+typed return-specific facts view, `PrimitiveReturnTransitionFacts`, from
+`testbed/planner/primitive_decision_facts.py`. The view wraps an existing
+`PrimitiveDecisionFacts` identity plus the read-only `ReturnTransitionStatus`.
+`PrimitiveDecisionCapabilities.return_transition_facts(...)` assembles that view
+without refreshing return state and can reuse a prebuilt common facts packet.
+`LegacyFSMReturnBranch` still refreshes only after the active skill check
+confirms `return`, then consumes the return facts view for effect selection.
+This advances the backend-neutral facts shape for return only; dig/carry/dump
+transition facts and full alternate-backend readiness remain future work.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

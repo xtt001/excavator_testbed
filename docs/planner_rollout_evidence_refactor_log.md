@@ -4453,3 +4453,51 @@ Each completed refactor round should append:
   It removes a hidden mutation from a capability status read while preserving
   lazy active-return timing. It enables a future backend-neutral return facts
   view, but that view has not yet been implemented.
+
+### 2026-06-23 Phase 9.36 Introduce Return Transition Decision Facts View
+
+- Scope: introduced the first transition-specific decision facts view,
+  `PrimitiveReturnTransitionFacts`, in
+  `testbed/planner/primitive_decision_facts.py`. The view is a frozen,
+  read-only wrapper around an existing `PrimitiveDecisionFacts` packet and a
+  `ReturnTransitionStatus` identity. It exposes convenience accessors for the
+  common context/skill facts and selected return status values without copying
+  observation, boundary-event, preparation, common-facts, or status objects.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `7216d994a943c32ebb187cb52077c5a14bd6fcef`; no fetch, pull, push, reset,
+  checkout, rebase, branch creation, or remote write. HEAD after the code round
+  is `d01e225fbe49f2ea6819f2b9a1ff64a2a276a8cb`.
+- `PrimitiveDecisionCapabilities.return_transition_facts(context, *, facts=None)`
+  now assembles the return facts view. When an existing common facts packet is
+  provided, it reuses that packet and does not reread current skill/reason
+  ports. The method is read-only and does not call
+  `refresh_return_transition_state(...)`.
+- `LegacyFSMReturnBranch.decide_context(...)` now keeps the Phase 9.35 timing
+  but consumes the facts view: build common decision facts, return `None`
+  without refresh/status/facts reads for non-`return` skills, explicitly refresh
+  for active `return`, then call `return_transition_facts(...)` and select
+  ordered requested effects from `return_facts.status`.
+- Explicit non-goals: return status was not eagerly added to
+  `PrimitiveDecisionFacts`; dig/carry/dump transition facts were not migrated;
+  no backend support expansion; no BT/VLM/LLM implementation; no `pre_dig_align`
+  or `cell_entry` promotion; no 5P restoration; no branch-order, reason-string,
+  effect-order, schema, reset-timing, coverage-trace, or action-dispatch change.
+- TDD red result: after focused tests were added, the first run of
+  `python -m pytest -q tests/test_primitive_decision_facts.py tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_decision_runtime.py`
+  failed at collection because `PrimitiveReturnTransitionFacts` did not yet
+  exist. After implementation, the command returned `74 passed`.
+- Verification reported by implementation thread:
+  `python -m pytest -q tests/test_primitive_decision_facts.py tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_decision_runtime.py`
+  returned `74 passed`;
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `18 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace or dig_depth_profile or dig_cut_tokens"`
+  returned `20 passed, 99 deselected`; compileall, both planner guard commands,
+  `git diff --check`, and staged diff check completed successfully.
+- Audit note: this continues the SVG target direction by making return
+  transition data an explicit typed facts view instead of a branch-local direct
+  status-method read. It remains deliberately lazy and active-return scoped, so
+  it should not be described as a complete backend-neutral facts packet.
