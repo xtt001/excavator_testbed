@@ -2499,3 +2499,72 @@ Each completed refactor round should append:
   capability/status boundary currently supplied through shell callbacks, so
   branch decisions can consume explicit facts instead of callback-heavy shell
   ports while still preserving rollout parity.
+
+### 2026-06-22 Phase 9.8 Convert Dig Branch Gates To Explicit Transition Status
+
+- Scope: converted the confirmed-live 4P mainline dig branch input contract
+  from five shell gate callbacks to one explicit `DigTransitionStatus` provider.
+  No requested effect family, effect ordering, branch priority, reason string,
+  threshold, token/debug/summary schema, policy reset timing, backend selection,
+  behavior tree, VLM/LLM packet, `pre_dig_align`, `cell_entry`, 5P override, or
+  low-level ACT dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `50bffdb16187ee430e74347c83ef43c69ea2ac80`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Selected evidence remains the successful mainline packet:
+  `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl`,
+  its paired planner trace, rollout summary, resolved config, and
+  `docs/planner_evidence_reports/2026-06-18-baseline-aggregate_tx24.md`. The
+  evidence keeps `gate.dig_to_carry` confirmed-live and `gate.pre_dig_align`
+  parked as residual compatibility.
+- Updated `LegacyFSMBranchPorts` so dig facts are exposed through
+  `dig_transition_status(obs, boundary_event) -> DigTransitionStatus`. The
+  ports object no longer exposes `dig_exit_guard_ready`,
+  `dig_bad_replan_ready`, `dig_complete_boundary_low_payload`,
+  `dig_to_carry_ready`, or `dig_to_carry_reason` as branch input callbacks.
+- Updated `LegacyFSMDigBranch` so `decide_tick(...)` calls the status provider
+  only after confirming the active skill is `dig`, then builds ordered requested
+  effects from the status in the preserved priority order: exit guard, bad dig
+  replan, dig-complete low payload, dig-to-carry, no-change. `maybe_handle()`
+  continues to reuse the requested decision path for compatibility.
+- Added `PrimitivePlannerACTPolicy._dig_transition_status_for_backend(...)`.
+  It maps `PrimitiveObservationFacts.from_obs(...)`, semantic boundary active
+  state, coverage terminal-stop state, dig step count, dig mass plateau count,
+  dig-to-carry distance/payload/plateau config, dump-ready minimum payload,
+  bad-dig replan config, exit-guard config, and current dig exit overshoot into
+  `DigTransitionStatus.from_inputs(...)`. It also keeps `_dig_to_carry_reason`
+  as a shell/debug compatibility mirror of the status reason.
+- Added focused tests in `tests/test_primitive_backend.py` and
+  `tests/test_primitive_decision_contract.py` for status-driven dig effects,
+  status priority, non-dig not-handled behavior without status lookup, ports
+  field removal, policy bridge wiring, and policy status-provider mapping.
+- TDD red result: the first focused run failed because
+  `LegacyFSMBranchPorts.__init__()` did not yet accept `dig_transition_status`,
+  proving the new tests were exercising the intended contract boundary. After
+  implementation, the focused backend/decision run returned `73 passed`, and
+  the required backend/decision/execution run returned `79 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_decision_contract.py tests/test_primitive_execution_template.py`
+  returned `79 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_to_carry or bad_dig_replans or dig_exit_guard or complete_low_payload or semantic_boundary_events_drive_skill_sequence"`
+  returned `8 passed, 112 deselected`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_primitive_capabilities.py` returned
+  `25 passed`;
+  compileall and both planner guard commands completed successfully with no
+  output.
+- Old code parked/reclassified: no code was deleted. Old private dig helper
+  methods remain compatibility/diagnostic helpers; `pre_dig_align` remains a
+  residual already-applied compatibility path; `_maybe_switch_skill()` remains
+  a legacy compatibility facade for direct tests/diagnostics; `cell_entry`
+  internals, 5P compatibility, token planning, coverage metric internals, and
+  return direct-handoff internals remain existing legacy or compatibility
+  owners.
+- Next action: continue moving toward the SVG target by extracting the next
+  callback-heavy status/fact boundary or shell-owned capability from
+  `LegacyFSMBranchPorts`, while keeping mutation in requested effects and the
+  shell applier until a focused service owns it.

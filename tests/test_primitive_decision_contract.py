@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from types import MethodType
+from types import SimpleNamespace
 from typing import Any
 
 from testbed.planner.primitive_capabilities import (
     CarryTransitionStatus,
+    DigTransitionStatus,
     DumpTransitionStatus,
     ReturnTransitionStatus,
 )
@@ -34,6 +36,28 @@ from testbed.planner.primitive_decision import (
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 from testbed.planner.primitive_backend import RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+
+
+def _default_dig_status(**overrides: Any) -> DigTransitionStatus:
+    values: dict[str, Any] = {
+        "dig_step_count": 0,
+        "mass_in_bucket_kg": 0.0,
+        "min_distance_to_dig_area_m": 0.0,
+        "transition_mass_in_bucket_kg": 0.0,
+        "transition_min_distance_to_dig_area_m": 0.0,
+        "distance_ready": False,
+        "semantic_boundary_profile_active": False,
+        "coverage_terminal_stop_requested": False,
+        "dig_complete_boundary": False,
+        "dig_complete_boundary_low_payload": False,
+        "dig_bad_replan_ready": False,
+        "dig_exit_guard_ready": False,
+        "dig_mass_plateau_ready": False,
+        "dig_to_carry_ready": False,
+        "dig_to_carry_reason": "",
+    }
+    values.update(overrides)
+    return DigTransitionStatus(**values)
 
 
 def test_legacy_decision_result_records_observable_skill_switch_only() -> None:
@@ -1110,7 +1134,13 @@ def test_primitive_planner_dig_decision_bridge_returns_requested_effects() -> No
     obs: dict[str, Any] = {"qpos": [1.0]}
     callbacks: list[str] = []
 
-    planner._dig_exit_guard_ready = MethodType(lambda self, obs: False, planner)
+    planner._dig_transition_status_for_backend = MethodType(
+        lambda self, obs, boundary_event: _default_dig_status(
+            dig_to_carry_ready=True,
+            dig_to_carry_reason="boundary_confirmed",
+        ),
+        planner,
+    )
     planner._increment_dig_exit_guard_replan_count = MethodType(
         lambda self: callbacks.append("exit_count"),
         planner,
@@ -1123,17 +1153,8 @@ def test_primitive_planner_dig_decision_bridge_returns_requested_effects() -> No
         lambda self, reason, obs: callbacks.append(f"restart:{reason}"),
         planner,
     )
-    planner._dig_bad_replan_ready = MethodType(lambda self, obs: False, planner)
     planner._increment_dig_bad_replan_count = MethodType(
         lambda self: callbacks.append("bad_count"),
-        planner,
-    )
-    planner._dig_complete_boundary_low_payload = MethodType(
-        lambda self, obs, boundary_event: False,
-        planner,
-    )
-    planner._dig_to_carry_ready = MethodType(
-        lambda self, *, obs, boundary_event: True,
         planner,
     )
     planner._complete_cell_entry_dig = MethodType(
@@ -1144,7 +1165,6 @@ def test_primitive_planner_dig_decision_bridge_returns_requested_effects() -> No
         lambda self, obs: callbacks.append("coverage"),
         planner,
     )
-    planner._dig_to_carry_reason = "boundary_confirmed"
     planner._set_skill = MethodType(
         lambda self, skill, reason: callbacks.append(f"{skill}:{reason}"),
         planner,
@@ -1171,3 +1191,66 @@ def test_primitive_planner_dig_decision_bridge_returns_requested_effects() -> No
             switch_reason="dig_to_carry_boundary_confirmed",
         ),
     )
+
+
+def test_primitive_planner_dig_transition_status_provider_maps_inputs_and_mirror() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    planner.action_dim = 1
+    planner.boundary_detector = SimpleNamespace(
+        config=SimpleNamespace(boundary_profile="legacy")
+    )
+    planner._coverage_terminal_stop_requested = False
+    planner._dig_step_count = 12
+    planner._dig_mass_plateau_count = 4
+    planner.dig_to_carry_min_distance_to_dig_area_m = 0.5
+    planner.dig_to_carry_min_bucket_mass_kg = 20.0
+    planner.dig_to_carry_target_bucket_mass_kg = 20.0
+    planner.dig_to_carry_mass_plateau_enabled = True
+    planner.dig_to_carry_mass_plateau_min_bucket_mass_kg = 5.0
+    planner.dig_to_carry_mass_plateau_hold_steps = 3
+    planner.dig_to_carry_mass_plateau_min_steps = 5
+    planner.dump_ready_min_bucket_mass_kg = 10.0
+    planner.dig_bad_replan_enabled = True
+    planner.dig_bad_replan_max_steps = 10
+    planner.dig_bad_replan_min_bucket_mass_kg = 3.0
+    planner.dig_exit_guard_enabled = True
+    planner.dig_exit_guard_min_steps = 10
+    planner.dig_exit_guard_min_bucket_mass_kg = 3.0
+    planner.dig_exit_guard_overshoot_m = 0.65
+    planner._dig_to_carry_reason = "stale"
+    planner._dig_exit_overshoot_m = MethodType(lambda self, obs: 0.7, planner)
+
+    loaded_status = planner._dig_transition_status_for_backend(
+        {
+            "qpos": [0.0],
+            "task_metrics": {
+                "mass_in_bucket_kg": 25.0,
+                "min_distance_to_dig_area_m": 1.0,
+            },
+        },
+        boundary_event=None,
+    )
+
+    assert loaded_status.dig_step_count == 12
+    assert loaded_status.dig_to_carry_ready is True
+    assert loaded_status.dig_to_carry_reason == "loaded"
+    assert loaded_status.dig_exit_guard_ready is False
+    assert loaded_status.dig_bad_replan_ready is False
+    assert planner._dig_to_carry_reason == "loaded"
+
+    low_payload_status = planner._dig_transition_status_for_backend(
+        {
+            "qpos": [0.0],
+            "task_metrics": {
+                "mass_in_bucket_kg": 1.0,
+                "min_distance_to_dig_area_m": 0.0,
+            },
+        },
+        boundary_event=None,
+    )
+
+    assert low_payload_status.dig_exit_guard_ready is True
+    assert low_payload_status.dig_bad_replan_ready is True
+    assert low_payload_status.dig_to_carry_ready is False
+    assert low_payload_status.dig_to_carry_reason == ""
+    assert planner._dig_to_carry_reason == ""

@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.7: the default 4P mainline branch chain no longer
+Current status after Phase 9.8: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -57,7 +57,10 @@ default decision backend used by the execution template. Bootstrap, dig, carry,
 dump, and return are handled through explicit requested-effect branch
 decisions. Residual `pre_dig_align` behavior remains an already-applied
 compatibility/parking path through a narrow residual adapter because selected
-rollout evidence classifies it as not active in the mainline.
+rollout evidence classifies it as not active in the mainline. The confirmed-live
+dig branch now consumes one explicit `DigTransitionStatus` provider instead of
+five gate callbacks, matching the carry/dump/return status-object pattern while
+keeping dig mutation in requested effects and the shell applier.
 
 ## Design Intent
 
@@ -426,6 +429,18 @@ bootstrap -> dig -> carry -> dump -> return -> residual, and the compatibility
 facade order bootstrap -> residual pre-dig-align -> dig -> carry -> dump ->
 return. `_maybe_switch_skill()` remains only as a legacy compatibility facade
 and delegates to the branch set rather than hand-writing branch order.
+
+Phase 9.8 converts the dig branch fact boundary from multiple shell gate
+callbacks to explicit `DigTransitionStatus`. `LegacyFSMBranchPorts` now wires
+`dig_transition_status(obs, boundary_event)` for dig facts; `LegacyFSMDigBranch`
+reads that status only after confirming the active skill is `dig`, then
+preserves the old priority order: exit guard, bad dig replan,
+dig-complete low payload, dig-to-carry, no-change. The policy shell owns
+`_dig_transition_status_for_backend(...)`, which maps current shell config/state
+into `DigTransitionStatus.from_inputs(...)` and keeps `_dig_to_carry_reason` as
+a compatibility/debug mirror. Old dig helper methods remain available as
+diagnostic/compatibility helpers, but the default backend branch no longer calls
+them as individual gate callbacks.
 
 ### Stage 4: Expand Effect Families From Evidence
 

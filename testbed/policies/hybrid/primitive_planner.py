@@ -69,6 +69,7 @@ from testbed.planner.primitive_backend import (
 )
 from testbed.planner.primitive_capabilities import (
     CarryTransitionStatus,
+    DigTransitionStatus,
     DumpTransitionStatus,
     PrimitiveObservationFacts,
     ReturnTransitionStatus,
@@ -1164,19 +1165,15 @@ class PrimitivePlannerACTPolicy(Policy):
             should_pre_dig_align_before_dig=self._should_pre_dig_align_before_dig,
             set_skill=self._set_skill,
             maybe_handle_pre_dig_align_skill=self._maybe_handle_pre_dig_align_skill,
-            dig_exit_guard_ready=self._dig_exit_guard_ready,
+            dig_transition_status=self._dig_transition_status_for_backend,
             increment_dig_exit_guard_replan_count=(
                 self._increment_dig_exit_guard_replan_count
             ),
             reject_active_coverage_corridor=self._reject_active_coverage_corridor,
             restart_after_failed_dig=self._restart_after_failed_dig,
-            dig_bad_replan_ready=self._dig_bad_replan_ready,
             increment_dig_bad_replan_count=self._increment_dig_bad_replan_count,
-            dig_complete_boundary_low_payload=self._dig_complete_boundary_low_payload,
-            dig_to_carry_ready=self._dig_to_carry_ready,
             complete_cell_entry_dig=self._complete_cell_entry_dig,
             complete_coverage_dig=self._complete_coverage_dig,
-            dig_to_carry_reason=lambda: str(self._dig_to_carry_reason),
             carry_transition_status=self._carry_transition_status_for_backend,
             complete_coverage_dump=self._complete_coverage_dump,
             set_return_or_direct_handoff=self._set_return_or_direct_handoff,
@@ -1192,6 +1189,53 @@ class PrimitivePlannerACTPolicy(Policy):
                 self._next_skill_after_return_transition
             ),
         )
+
+    def _dig_transition_status_for_backend(
+        self,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> DigTransitionStatus:
+        status = DigTransitionStatus.from_inputs(
+            observation=PrimitiveObservationFacts.from_obs(
+                obs,
+                action_dim=self.action_dim,
+            ),
+            boundary_event=boundary_event,
+            semantic_boundary_profile_active=self._semantic_boundary_profile_active(),
+            coverage_terminal_stop_requested=self._coverage_terminal_stop_requested,
+            dig_step_count=self._dig_step_count,
+            dig_mass_plateau_count=self._dig_mass_plateau_count,
+            dig_to_carry_min_distance_to_dig_area_m=(
+                self.dig_to_carry_min_distance_to_dig_area_m
+            ),
+            dig_to_carry_min_bucket_mass_kg=self.dig_to_carry_min_bucket_mass_kg,
+            dig_to_carry_target_bucket_mass_kg=(
+                self.dig_to_carry_target_bucket_mass_kg
+            ),
+            dig_to_carry_mass_plateau_enabled=(
+                self.dig_to_carry_mass_plateau_enabled
+            ),
+            dig_to_carry_mass_plateau_min_bucket_mass_kg=(
+                self.dig_to_carry_mass_plateau_min_bucket_mass_kg
+            ),
+            dig_to_carry_mass_plateau_hold_steps=(
+                self.dig_to_carry_mass_plateau_hold_steps
+            ),
+            dig_to_carry_mass_plateau_min_steps=(
+                self.dig_to_carry_mass_plateau_min_steps
+            ),
+            dump_ready_min_bucket_mass_kg=self.dump_ready_min_bucket_mass_kg,
+            dig_bad_replan_enabled=self.dig_bad_replan_enabled,
+            dig_bad_replan_max_steps=self.dig_bad_replan_max_steps,
+            dig_bad_replan_min_bucket_mass_kg=self.dig_bad_replan_min_bucket_mass_kg,
+            dig_exit_guard_enabled=self.dig_exit_guard_enabled,
+            dig_exit_guard_min_steps=self.dig_exit_guard_min_steps,
+            dig_exit_guard_min_bucket_mass_kg=self.dig_exit_guard_min_bucket_mass_kg,
+            dig_exit_guard_overshoot_m=self.dig_exit_guard_overshoot_m,
+            dig_exit_overshoot_m=self._dig_exit_overshoot_m(obs),
+        )
+        self._dig_to_carry_reason = str(status.dig_to_carry_reason)
+        return status
 
     def _carry_transition_status_for_backend(
         self,
