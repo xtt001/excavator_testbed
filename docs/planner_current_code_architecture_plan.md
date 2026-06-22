@@ -600,6 +600,21 @@ reset lifecycle, `_set_skill()` mutation timing, action dispatch, branch
 ordering, and token/coverage/runtime semantics are intentionally unchanged in
 this round.
 
+Current status note after Phase 9.20: coverage requested-effect runtime
+sequencing has moved into `CoverageEffectRuntimeCoordinator` in
+`testbed/planner/primitive_coverage_updates.py`. The coordinator owns
+coverage-mode no-op gating, dig payload-gain completion, dump completion
+state-write/event/reopen/terminal ordering, corridor rejection
+state-write/event/reopen/terminal ordering, multi-pass reopen result
+application, and terminal-stop result/event application. The 4P policy shell
+keeps coverage state storage and facts/report helper facades, while
+`_complete_coverage_dig()`, `_complete_coverage_dump()`,
+`_reject_active_coverage_corridor()`, `_maybe_reopen_coverage_pass()`, and
+`_request_coverage_terminal_stop()` are thin coordinator-backed wrappers.
+Coverage candidate construction, scoring/selection, corridor debug projection,
+planner trace/summary/debug schemas, branch ordering, token planning, and
+low-level ACT dispatch are intentionally unchanged in this round.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

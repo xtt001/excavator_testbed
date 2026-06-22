@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -366,7 +367,225 @@ class CoverageRuntimeService:
         )
 
 
+@dataclass
+class CoverageEffectRuntimePorts:
+    """Shell ports used by the coverage effect runtime coordinator."""
+
+    coverage_mode: Callable[[], str]
+    coverage_update_service: Callable[[], CoverageUpdateService]
+    coverage_runtime_service: Callable[[], CoverageRuntimeService]
+    coverage_corridors: Callable[[], list[CoverageCorridorState]]
+    active_corridor: Callable[[], CoverageCorridorState | None]
+    current_payload_gain_kg: Callable[[], float]
+    set_current_payload_gain_kg: Callable[[float], None]
+    mass_in_bucket: Callable[[dict[str, Any]], float]
+    completion_facts: Callable[
+        [dict[str, Any], CoverageCorridorState, str],
+        CoverageCompletionFacts,
+    ]
+    rejection_facts: Callable[
+        [dict[str, Any], CoverageCorridorState, str],
+        CoverageRejectionFacts,
+    ]
+    reopen_facts: Callable[
+        [dict[str, Any], list[CoverageCorridorState], str],
+        CoverageReopenFacts,
+    ]
+    terminal_facts: Callable[[str, bool], CoverageTerminalFacts]
+    set_last_payload_gain_kg: Callable[[float], None]
+    set_last_effective_deposit_delta_kg: Callable[[float], None]
+    set_completed_dump_count: Callable[[int], None]
+    set_global_low_productivity_streak: Callable[[int], None]
+    update_rejected_state_exemplar_ids: Callable[[tuple[str, ...]], None]
+    set_coverage_pass_index: Callable[[int], None]
+    set_active_corridor_id: Callable[[int], None]
+    clear_rejected_state_exemplar_ids: Callable[[], None]
+    set_terminal_stop_requested: Callable[[bool], None]
+    set_terminal_stop_reason: Callable[[str], None]
+    record_decision_event: Callable[..., None]
+    coverage_global_low_productivity_stop: Callable[[], int]
+    coverage_low_productivity_payload_kg: Callable[[], float]
+    coverage_low_productivity_deposit_kg: Callable[[], float]
+
+
+@dataclass(frozen=True)
+class CoverageEffectRuntimeCoordinator:
+    """Coordinate coverage requested-effect runtime updates and trace events."""
+
+    ports: CoverageEffectRuntimePorts
+    coverage_modes: tuple[str, ...] = (
+        "operator_prior_coverage",
+        "operator_prior_sweep_belief",
+    )
+
+    @classmethod
+    def from_ports(
+        cls,
+        ports: CoverageEffectRuntimePorts,
+    ) -> "CoverageEffectRuntimeCoordinator":
+        return cls(ports=ports)
+
+    def complete_dig(self, obs: dict[str, Any]) -> None:
+        if not self._coverage_mode_enabled():
+            return
+        ports = self.ports
+        payload_gain = ports.coverage_update_service().record_dig_payload(
+            float(ports.current_payload_gain_kg()),
+            float(ports.mass_in_bucket(obs)),
+        )
+        ports.set_current_payload_gain_kg(float(payload_gain))
+
+    def complete_dump(self, obs: dict[str, Any], *, reason: str) -> None:
+        if not self._coverage_mode_enabled():
+            return
+        ports = self.ports
+        corridor = ports.active_corridor()
+        if corridor is None:
+            return
+        result = ports.coverage_update_service().complete_dump(
+            corridor,
+            ports.completion_facts(obs, corridor, str(reason)),
+        )
+        ports.set_last_payload_gain_kg(float(result.payload_gain_kg))
+        ports.set_last_effective_deposit_delta_kg(
+            float(result.effective_deposit_delta_kg)
+        )
+        ports.set_completed_dump_count(int(result.completed_dump_count))
+        ports.set_global_low_productivity_streak(
+            int(result.global_low_productivity_streak)
+        )
+        ports.record_decision_event(
+            "complete_dump",
+            obs=obs,
+            corridor=corridor,
+            extra={
+                "reason": str(reason),
+                "final_reason": str(result.final_reason),
+                "payload_gain_kg": float(result.payload_gain_kg),
+                "effective_deposit_delta_kg": float(
+                    result.effective_deposit_delta_kg
+                ),
+                "remaining_depth_m": float(result.remaining_depth_m),
+                "low_productivity": int(result.low_productivity),
+                "completed_dump_count": int(result.completed_dump_count),
+            },
+        )
+        if self._all_depleted():
+            if not self.maybe_reopen_pass(obs, reason="complete_all_depleted"):
+                self.request_terminal_stop("dig_area_depleted")
+        elif int(result.global_low_productivity_streak) >= int(
+            ports.coverage_global_low_productivity_stop()
+        ):
+            self.request_terminal_stop("low_productivity_consecutive")
+        if (
+            result.low_productivity
+            and float(result.payload_gain_kg)
+            < float(ports.coverage_low_productivity_payload_kg())
+            and float(result.effective_deposit_delta_kg)
+            >= float(ports.coverage_low_productivity_deposit_kg())
+        ):
+            self.request_terminal_stop("physics_artifact_suspected")
+
+    def reject_active_corridor(self, obs: dict[str, Any], *, reason: str) -> None:
+        if not self._coverage_mode_enabled():
+            return
+        ports = self.ports
+        corridor = ports.active_corridor()
+        if corridor is None:
+            return
+        result = ports.coverage_update_service().reject_corridor(
+            corridor,
+            ports.rejection_facts(obs, corridor, str(reason)),
+        )
+        ports.update_rejected_state_exemplar_ids(
+            tuple(result.rejected_state_exemplar_ids)
+        )
+        ports.set_last_payload_gain_kg(float(result.payload_gain_kg))
+        ports.set_last_effective_deposit_delta_kg(
+            float(result.effective_deposit_delta_kg)
+        )
+        ports.set_global_low_productivity_streak(
+            int(result.global_low_productivity_streak)
+        )
+        ports.record_decision_event(
+            "reject_corridor",
+            obs=obs,
+            corridor=corridor,
+            extra={
+                "reason": str(reason),
+                "payload_gain_kg": float(result.payload_gain_kg),
+                "effective_deposit_delta_kg": float(
+                    result.effective_deposit_delta_kg
+                ),
+                "remaining_depth_m": float(result.remaining_depth_m),
+                "counted_attempt": int(result.counted_attempt),
+            },
+        )
+        if not result.counted_attempt:
+            return
+        if self._all_depleted():
+            if not self.maybe_reopen_pass(obs, reason="reject_all_depleted"):
+                self.request_terminal_stop("dig_area_depleted")
+        elif int(result.global_low_productivity_streak) >= int(
+            ports.coverage_global_low_productivity_stop()
+        ):
+            self.request_terminal_stop("low_productivity_consecutive")
+
+    def maybe_reopen_pass(self, obs: dict[str, Any], *, reason: str) -> bool:
+        ports = self.ports
+        corridors = ports.coverage_corridors()
+        result = ports.coverage_runtime_service().maybe_reopen_pass(
+            corridors,
+            ports.reopen_facts(obs, corridors, str(reason)),
+        )
+        if not result.reopened:
+            return False
+        ports.set_coverage_pass_index(int(result.pass_index))
+        ports.set_active_corridor_id(int(result.active_corridor_id))
+        ports.set_global_low_productivity_streak(
+            int(result.global_low_productivity_streak)
+        )
+        if result.clear_rejected_state_exemplar_ids:
+            ports.clear_rejected_state_exemplar_ids()
+        ports.record_decision_event(
+            "reopen_coverage_pass",
+            obs=obs,
+            extra={
+                "reason": str(result.reason),
+                "pass_index": int(result.pass_index),
+                "max_passes": int(result.max_passes),
+                "min_remaining_depth_m": float(result.min_remaining_depth_m),
+                "reopened_corridors": list(result.reopened_corridors),
+            },
+        )
+        return True
+
+    def request_terminal_stop(self, reason: str, *, replace: bool = False) -> None:
+        ports = self.ports
+        result = ports.coverage_runtime_service().request_terminal_stop(
+            ports.terminal_facts(str(reason), bool(replace))
+        )
+        if not result.record_event:
+            return
+        ports.set_terminal_stop_requested(bool(result.terminal_stop_requested))
+        ports.set_terminal_stop_reason(str(result.terminal_stop_reason))
+        ports.record_decision_event(
+            "terminal_stop",
+            corridor=ports.active_corridor(),
+            extra={"reason": str(result.terminal_stop_reason)},
+        )
+
+    def _coverage_mode_enabled(self) -> bool:
+        return str(self.ports.coverage_mode()) in set(self.coverage_modes)
+
+    def _all_depleted(self) -> bool:
+        corridors = self.ports.coverage_corridors()
+        return bool(corridors and all(corridor.depleted for corridor in corridors))
+
+
 __all__ = [
+    "CoverageEffectRuntimeCoordinator",
+    "CoverageEffectRuntimePorts",
     "CoverageCompletionFacts",
     "CoverageReopenFacts",
     "CoverageReopenResult",

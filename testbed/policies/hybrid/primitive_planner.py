@@ -90,6 +90,8 @@ from testbed.planner.primitive_coverage_reports import (
 )
 from testbed.planner.primitive_coverage_updates import (
     CoverageCompletionFacts,
+    CoverageEffectRuntimeCoordinator,
+    CoverageEffectRuntimePorts,
     CoverageReopenFacts,
     CoverageRejectionFacts,
     CoverageRuntimeConfig,
@@ -4590,6 +4592,118 @@ class PrimitivePlannerACTPolicy(Policy):
     def _coverage_runtime_service(self) -> CoverageRuntimeService:
         return CoverageRuntimeService(self._coverage_runtime_config())
 
+    def _coverage_effect_runtime_ports(self) -> CoverageEffectRuntimePorts:
+        return CoverageEffectRuntimePorts(
+            coverage_mode=lambda: str(self.dig_cut_planner_mode),
+            coverage_update_service=lambda: self._coverage_update_service(),
+            coverage_runtime_service=lambda: self._coverage_runtime_service(),
+            coverage_corridors=lambda: self._coverage_corridors,
+            active_corridor=lambda: self._coverage_active_corridor(),
+            current_payload_gain_kg=lambda: float(
+                self._coverage_current_payload_gain_kg
+            ),
+            set_current_payload_gain_kg=self._set_coverage_current_payload_gain_kg,
+            mass_in_bucket=lambda obs: self._mass_in_bucket(obs),
+            completion_facts=(
+                lambda obs, corridor, reason: self._coverage_completion_facts(
+                    obs,
+                    corridor,
+                    reason=reason,
+                )
+            ),
+            rejection_facts=(
+                lambda obs, corridor, reason: self._coverage_rejection_facts(
+                    obs,
+                    corridor,
+                    reason=reason,
+                )
+            ),
+            reopen_facts=(
+                lambda obs, corridors, reason: self._coverage_reopen_facts(
+                    obs,
+                    corridors,
+                    reason=reason,
+                )
+            ),
+            terminal_facts=(
+                lambda reason, replace: self._coverage_terminal_facts(
+                    reason,
+                    replace=replace,
+                )
+            ),
+            set_last_payload_gain_kg=self._set_coverage_last_payload_gain_kg,
+            set_last_effective_deposit_delta_kg=(
+                self._set_coverage_last_effective_deposit_delta_kg
+            ),
+            set_completed_dump_count=self._set_coverage_completed_dump_count,
+            set_global_low_productivity_streak=(
+                self._set_coverage_global_low_productivity_streak
+            ),
+            update_rejected_state_exemplar_ids=(
+                self._update_coverage_rejected_state_exemplar_ids
+            ),
+            set_coverage_pass_index=self._set_coverage_pass_index,
+            set_active_corridor_id=self._set_coverage_active_corridor_id,
+            clear_rejected_state_exemplar_ids=(
+                self._clear_coverage_rejected_state_exemplar_ids
+            ),
+            set_terminal_stop_requested=self._set_coverage_terminal_stop_requested,
+            set_terminal_stop_reason=self._set_coverage_terminal_stop_reason,
+            record_decision_event=self._record_coverage_decision_event,
+            coverage_global_low_productivity_stop=lambda: int(
+                self.coverage_global_low_productivity_stop
+            ),
+            coverage_low_productivity_payload_kg=lambda: float(
+                self.coverage_low_productivity_payload_kg
+            ),
+            coverage_low_productivity_deposit_kg=lambda: float(
+                self.coverage_low_productivity_deposit_kg
+            ),
+        )
+
+    def _coverage_effect_runtime_coordinator(
+        self,
+    ) -> CoverageEffectRuntimeCoordinator:
+        return CoverageEffectRuntimeCoordinator.from_ports(
+            self._coverage_effect_runtime_ports()
+        )
+
+    def _set_coverage_current_payload_gain_kg(self, value: float) -> None:
+        self._coverage_current_payload_gain_kg = float(value)
+
+    def _set_coverage_last_payload_gain_kg(self, value: float) -> None:
+        self._coverage_last_payload_gain_kg = float(value)
+
+    def _set_coverage_last_effective_deposit_delta_kg(self, value: float) -> None:
+        self._coverage_last_effective_deposit_delta_kg = float(value)
+
+    def _set_coverage_completed_dump_count(self, value: int) -> None:
+        self._coverage_completed_dump_count = int(value)
+
+    def _set_coverage_global_low_productivity_streak(self, value: int) -> None:
+        self._coverage_global_low_productivity_streak = int(value)
+
+    def _update_coverage_rejected_state_exemplar_ids(
+        self,
+        exemplar_ids: tuple[str, ...],
+    ) -> None:
+        self._coverage_rejected_state_exemplar_ids.update(exemplar_ids)
+
+    def _set_coverage_pass_index(self, value: int) -> None:
+        self._coverage_pass_index = int(value)
+
+    def _set_coverage_active_corridor_id(self, value: int) -> None:
+        self._coverage_active_corridor_id = int(value)
+
+    def _clear_coverage_rejected_state_exemplar_ids(self) -> None:
+        self._coverage_rejected_state_exemplar_ids.clear()
+
+    def _set_coverage_terminal_stop_requested(self, value: bool) -> None:
+        self._coverage_terminal_stop_requested = bool(value)
+
+    def _set_coverage_terminal_stop_reason(self, value: str) -> None:
+        self._coverage_terminal_stop_reason = str(value)
+
     def _coverage_reopen_facts(
         self,
         obs: dict,
@@ -4684,119 +4798,16 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _complete_coverage_dig(self, obs: dict) -> None:
-        if self.dig_cut_planner_mode not in {
-            "operator_prior_coverage",
-            "operator_prior_sweep_belief",
-        }:
-            return
-        self._coverage_current_payload_gain_kg = (
-            self._coverage_update_service().record_dig_payload(
-                float(self._coverage_current_payload_gain_kg),
-                self._mass_in_bucket(obs),
-            )
-        )
+        self._coverage_effect_runtime_coordinator().complete_dig(obs)
 
     def _complete_coverage_dump(self, obs: dict, *, reason: str) -> None:
-        if self.dig_cut_planner_mode not in {
-            "operator_prior_coverage",
-            "operator_prior_sweep_belief",
-        }:
-            return
-        corridor = self._coverage_active_corridor()
-        if corridor is None:
-            return
-        result = self._coverage_update_service().complete_dump(
-            corridor,
-            self._coverage_completion_facts(obs, corridor, reason=reason),
-        )
-        self._coverage_last_payload_gain_kg = float(result.payload_gain_kg)
-        self._coverage_last_effective_deposit_delta_kg = float(
-            result.effective_deposit_delta_kg
-        )
-        self._coverage_completed_dump_count = int(result.completed_dump_count)
-        self._coverage_global_low_productivity_streak = int(
-            result.global_low_productivity_streak
-        )
-
-        self._record_coverage_decision_event(
-            "complete_dump",
-            obs=obs,
-            corridor=corridor,
-            extra={
-                "reason": str(reason),
-                "final_reason": str(result.final_reason),
-                "payload_gain_kg": float(result.payload_gain_kg),
-                "effective_deposit_delta_kg": float(
-                    result.effective_deposit_delta_kg
-                ),
-                "remaining_depth_m": float(result.remaining_depth_m),
-                "low_productivity": int(result.low_productivity),
-                "completed_dump_count": int(self._coverage_completed_dump_count),
-            },
-        )
-        if self._coverage_all_depleted():
-            if not self._maybe_reopen_coverage_pass(obs, reason="complete_all_depleted"):
-                self._request_coverage_terminal_stop("dig_area_depleted")
-        elif (
-            self._coverage_global_low_productivity_streak
-            >= self.coverage_global_low_productivity_stop
-        ):
-            self._request_coverage_terminal_stop("low_productivity_consecutive")
-        if (
-            result.low_productivity
-            and result.payload_gain_kg < self.coverage_low_productivity_payload_kg
-            and result.effective_deposit_delta_kg
-            >= self.coverage_low_productivity_deposit_kg
-        ):
-            self._request_coverage_terminal_stop("physics_artifact_suspected")
+        self._coverage_effect_runtime_coordinator().complete_dump(obs, reason=reason)
 
     def _reject_active_coverage_corridor(self, obs: dict, *, reason: str) -> None:
-        if self.dig_cut_planner_mode not in {
-            "operator_prior_coverage",
-            "operator_prior_sweep_belief",
-        }:
-            return
-        corridor = self._coverage_active_corridor()
-        if corridor is None:
-            return
-        result = self._coverage_update_service().reject_corridor(
-            corridor,
-            self._coverage_rejection_facts(obs, corridor, reason=reason),
+        self._coverage_effect_runtime_coordinator().reject_active_corridor(
+            obs,
+            reason=reason,
         )
-        self._coverage_rejected_state_exemplar_ids.update(
-            result.rejected_state_exemplar_ids
-        )
-        self._coverage_last_payload_gain_kg = float(result.payload_gain_kg)
-        self._coverage_last_effective_deposit_delta_kg = float(
-            result.effective_deposit_delta_kg
-        )
-        self._coverage_global_low_productivity_streak = int(
-            result.global_low_productivity_streak
-        )
-        self._record_coverage_decision_event(
-            "reject_corridor",
-            obs=obs,
-            corridor=corridor,
-            extra={
-                "reason": str(reason),
-                "payload_gain_kg": float(result.payload_gain_kg),
-                "effective_deposit_delta_kg": float(
-                    result.effective_deposit_delta_kg
-                ),
-                "remaining_depth_m": float(result.remaining_depth_m),
-                "counted_attempt": int(result.counted_attempt),
-            },
-        )
-        if not result.counted_attempt:
-            return
-        if self._coverage_all_depleted():
-            if not self._maybe_reopen_coverage_pass(obs, reason="reject_all_depleted"):
-                self._request_coverage_terminal_stop("dig_area_depleted")
-        elif (
-            self._coverage_global_low_productivity_streak
-            >= self.coverage_global_low_productivity_stop
-        ):
-            self._request_coverage_terminal_stop("low_productivity_consecutive")
 
     def _update_corridor_belief(
         self,
@@ -4910,32 +4921,10 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _maybe_reopen_coverage_pass(self, obs: dict, *, reason: str) -> bool:
-        result = self._coverage_runtime_service().maybe_reopen_pass(
-            self._coverage_corridors,
-            self._coverage_reopen_facts(obs, reason=reason),
+        return self._coverage_effect_runtime_coordinator().maybe_reopen_pass(
+            obs,
+            reason=reason,
         )
-        if not result.reopened:
-            return False
-
-        self._coverage_pass_index = int(result.pass_index)
-        self._coverage_active_corridor_id = int(result.active_corridor_id)
-        self._coverage_global_low_productivity_streak = int(
-            result.global_low_productivity_streak
-        )
-        if result.clear_rejected_state_exemplar_ids:
-            self._coverage_rejected_state_exemplar_ids.clear()
-        self._record_coverage_decision_event(
-            "reopen_coverage_pass",
-            obs=obs,
-            extra={
-                "reason": str(result.reason),
-                "pass_index": int(self._coverage_pass_index),
-                "max_passes": int(result.max_passes),
-                "min_remaining_depth_m": float(result.min_remaining_depth_m),
-                "reopened_corridors": list(result.reopened_corridors),
-            },
-        )
-        return True
 
     def _request_coverage_terminal_stop(
         self,
@@ -4943,19 +4932,9 @@ class PrimitivePlannerACTPolicy(Policy):
         *,
         replace: bool = False,
     ) -> None:
-        result = self._coverage_runtime_service().request_terminal_stop(
-            self._coverage_terminal_facts(reason, replace=replace)
-        )
-        if not result.record_event:
-            return
-        self._coverage_terminal_stop_requested = bool(
-            result.terminal_stop_requested
-        )
-        self._coverage_terminal_stop_reason = str(result.terminal_stop_reason)
-        self._record_coverage_decision_event(
-            "terminal_stop",
-            corridor=self._coverage_active_corridor(),
-            extra={"reason": str(result.terminal_stop_reason)},
+        self._coverage_effect_runtime_coordinator().request_terminal_stop(
+            reason,
+            replace=replace,
         )
 
     def _coverage_active_corridor(self) -> CoverageCorridorState | None:

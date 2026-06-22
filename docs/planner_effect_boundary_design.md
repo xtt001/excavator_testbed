@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.18: the default 4P mainline branch chain no longer
+Current status after Phase 9.20: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -114,6 +114,16 @@ prefix detection, and compact `PrimitivePlannerDebugState` assembly for both
 the default 4P planner and the parked 5P compatibility planner. The policy shell
 prepares typed finalization inputs, writes `_prev_action` / `_debug_state`, and
 retains thin compatibility wrappers for the execution hooks.
+`CoverageEffectRuntimeCoordinator` now owns coverage requested-effect runtime
+sequencing for `CompleteCoverageDigEffect`, `CompleteCoverageDumpEffect`, and
+`RejectActiveCoverageCorridorEffect`: coverage-mode no-op gating, update service
+calls, coverage state writeback order, decision-event emission, all-depleted
+reopen/terminal handling, global low-productivity terminal handling, and
+physics-artifact terminal requests. The policy shell still owns coverage state
+storage and report/facts helper facades, but `_complete_coverage_dig()`,
+`_complete_coverage_dump()`, `_reject_active_coverage_corridor()`,
+`_maybe_reopen_coverage_pass()`, and `_request_coverage_terminal_stop()` are now
+thin coordinator-backed wrappers.
 
 ## Design Intent
 
@@ -668,6 +678,25 @@ counters, and the 5P checkpoint mapping. Public debug-state report assembly,
 rollout summary assembly, planner trace assembly, reset lifecycle,
 `_set_skill()` mutation timing, branch ordering, token planning, coverage
 runtime updates, and low-level ACT dispatch remain unchanged.
+
+Phase 9.20 extracts coverage effect-side runtime coordination into
+`CoverageEffectRuntimeCoordinator` in
+`testbed/planner/primitive_coverage_updates.py`.
+`CoverageEffectRuntimePorts` exposes typed shell state accessors,
+update/runtime services, facts providers, coverage state writeback callbacks,
+terminal-stop setters, and decision-event recording. The coordinator owns the
+confirmed-live sequencing for coverage requested effects: non-coverage modes
+no-op; dig completion records maximum payload gain; dump completion writes
+update results before recording `complete_dump`, then applies all-depleted
+reopen/terminal checks, global low-productivity terminal checks, and
+physics-artifact terminal checks in the old order; corridor rejection writes
+rejected exemplar ids and payload/deposit state before recording
+`reject_corridor`, skips terminal/reopen checks for uncounted attempts, and
+otherwise applies all-depleted and global terminal checks in the old order.
+Reopen-pass and terminal-stop result application and event sequencing are also
+owned by the coordinator. Coverage candidate construction, scoring/selection,
+corridor debug projection, report schemas, token planning, branch ordering,
+and low-level action dispatch remain unchanged.
 
 ### Stage 4: Expand Effect Families From Evidence
 

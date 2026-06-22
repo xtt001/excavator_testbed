@@ -3290,3 +3290,67 @@ Each completed refactor round should append:
   `cell_entry` remains compatibility/report material, `pre_dig_align` remains
   residual parking/action material, `LegacyFSMBackendAdapter` remains
   historical/test scaffolding, and 5P remains its existing legacy override path.
+
+### 2026-06-22 Phase 9.20 Extract Primitive Coverage Effect Runtime Coordinator
+
+- Scope: extracted coverage requested-effect runtime sequencing from the large
+  policy shell into a focused coordinator. No coverage candidate construction,
+  coverage scoring/selection, corridor debug payload schema, coverage decision
+  trace payload schema, planner trace/summary/debug schema, terminal-stop
+  reason string, branch order, reason string, threshold, token schema, reset
+  timing, public config behavior, pre-dig-align internals, cell-entry
+  compatibility, 5P transition semantics, return handoff internals, or
+  low-level ACT dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `560974571cb539e47e012c02d8e9c27c79587dfa`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `CoverageEffectRuntimePorts` and `CoverageEffectRuntimeCoordinator` to
+  `testbed/planner/primitive_coverage_updates.py`. The coordinator owns
+  coverage-mode no-op gating, dig payload-gain completion, dump completion
+  writeback/event/reopen/terminal ordering, corridor rejection
+  writeback/event/reopen/terminal ordering, multi-pass reopen result
+  application, and terminal-stop result/event application.
+- Updated `PrimitivePlannerACTPolicy._complete_coverage_dig()`,
+  `_complete_coverage_dump()`, `_reject_active_coverage_corridor()`,
+  `_maybe_reopen_coverage_pass()`, and `_request_coverage_terminal_stop()` into
+  coordinator-backed thin wrappers. The policy shell now builds
+  `_coverage_effect_runtime_ports()` from existing coverage state storage,
+  facts/report helper facades, update/runtime service factories, and explicit
+  state writeback callbacks.
+- Added `tests/test_primitive_coverage_effect_runtime.py` with focused coverage
+  for non-coverage no-op behavior, dig payload max update, dump completion
+  event/terminal ordering, corridor rejection counted and uncounted paths,
+  reopen-pass writeback/event ordering, terminal-stop duplicate suppression, and
+  policy wrapper delegation.
+- TDD red result: the first focused run failed at collection because
+  `CoverageEffectRuntimeCoordinator` did not exist in
+  `testbed.planner.primitive_coverage_updates`. After adding the coordinator and
+  policy bridge, `python -m pytest -q
+  tests/test_primitive_coverage_effect_runtime.py` returned `10 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_coverage_effect_runtime.py`
+  returned `10 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_updates.py tests/test_primitive_coverage_runtime.py tests/test_primitive_coverage_reports.py`
+  returned `6 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `93 passed`;
+  `python -m pytest -q tests/test_primitive_planner_trace.py tests/test_primitive_rollout_summary.py tests/test_primitive_debug_report.py tests/test_primitive_tick_finalization.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or terminal_depletion or semantic_boundary_events_drive_skill_sequence or dig_to_carry or dump_to_return or return_to_dig"`
+  returned `9 passed, 111 deselected`;
+  compileall and both planner guard commands completed successfully with no
+  output.
+- Old code parked/reclassified: coverage candidate construction and
+  scoring/selection remain in the existing coverage planning path, corridor
+  debug/report payload projection remains behind `CoverageReportService`,
+  coverage facts helpers and mutable state storage remain in the policy shell,
+  requested-effect dispatch remains in `RequestedEffectApplier`, public report
+  builders remain unchanged, `cell_entry` remains compatibility/report
+  material, `pre_dig_align` remains residual parking/action material,
+  `LegacyFSMBackendAdapter` remains historical/test scaffolding, and 5P remains
+  its existing legacy override path.
