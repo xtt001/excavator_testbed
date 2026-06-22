@@ -15,6 +15,7 @@ from testbed.planner.primitive_backend import (
     LegacyFSMResidualPreDigAlignAdapter,
     LegacyFSMReturnBranch,
     LegacyFSMReturnConfig,
+    PrimitiveRequestedBranchRunner,
     RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE,
 )
 from testbed.planner.primitive_capabilities import (
@@ -37,10 +38,130 @@ from testbed.planner.primitive_decision import (
     SetDumpReadyHoldCountEffect,
     SetDumpStartDepositedMassFromObservationEffect,
     SetReturnOrDirectHandoffEffect,
+    PrimitiveDecisionContractError,
+    PrimitiveDecisionResult,
     SwitchToNextSkillAfterReturnEffect,
     SwitchSkillEffect,
 )
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
+
+
+class _RecordingBranch:
+    def __init__(
+        self,
+        name: str,
+        result: PrimitiveDecisionResult | None = None,
+        calls: list[str] | None = None,
+    ) -> None:
+        self.name = name
+        self.result = result
+        self.calls = calls if calls is not None else []
+
+    def decide_tick(self, *, obs, boundary_event, preparation):
+        self.calls.append(self.name)
+        return self.result
+
+
+def _requested_no_change_result(
+    *,
+    decision_source: str = "test_branch",
+    skill: str = "dig",
+) -> PrimitiveDecisionResult:
+    return PrimitiveDecisionResult.from_requested_effects(
+        decision_source=decision_source,
+        status="no_change",
+        skill_before=skill,
+        skill_after=skill,
+        switch_reason="",
+        effects=(),
+    )
+
+
+def test_requested_branch_runner_returns_first_non_none_result_and_stops() -> None:
+    calls: list[str] = []
+    expected = _requested_no_change_result(decision_source="dig_branch")
+    runner = PrimitiveRequestedBranchRunner(
+        bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
+        dig_branch=_RecordingBranch("dig", expected, calls),
+        carry_branch=_RecordingBranch("carry", _requested_no_change_result(), calls),
+        dump_branch=_RecordingBranch("dump", _requested_no_change_result(), calls),
+        return_branch=_RecordingBranch("return", _requested_no_change_result(), calls),
+        residual_branch=_RecordingBranch("residual", _requested_no_change_result(), calls),
+    )
+
+    result = runner.decide_tick(
+        obs={"qpos": [1.0]},
+        boundary_event=object(),
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
+
+    assert result is expected
+    assert calls == ["bootstrap", "dig"]
+
+
+def test_requested_branch_runner_calls_branches_in_stable_order_before_residual() -> None:
+    calls: list[str] = []
+    residual = _requested_no_change_result(
+        decision_source=RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE,
+        skill="pre_dig_align",
+    )
+    runner = PrimitiveRequestedBranchRunner(
+        bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
+        dig_branch=_RecordingBranch("dig", None, calls),
+        carry_branch=_RecordingBranch("carry", None, calls),
+        dump_branch=_RecordingBranch("dump", None, calls),
+        return_branch=_RecordingBranch("return", None, calls),
+        residual_branch=_RecordingBranch("residual", residual, calls),
+    )
+
+    result = runner.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="pre_dig_align",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert result is residual
+    assert calls == ["bootstrap", "dig", "carry", "dump", "return", "residual"]
+
+
+def test_requested_branch_runner_fails_fast_when_all_branches_decline() -> None:
+    calls: list[str] = []
+    runner = PrimitiveRequestedBranchRunner(
+        bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
+        dig_branch=_RecordingBranch("dig", None, calls),
+        carry_branch=_RecordingBranch("carry", None, calls),
+        dump_branch=_RecordingBranch("dump", None, calls),
+        return_branch=_RecordingBranch("return", None, calls),
+        residual_branch=_RecordingBranch("residual", None, calls),
+    )
+
+    try:
+        runner.decide_tick(
+            obs={},
+            boundary_event=None,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=None,
+                skill_name_before_decision="legacy_skill",
+                dig_progress_updated=False,
+            ),
+        )
+    except PrimitiveDecisionContractError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("runner accepted an unhandled planner skill")
+
+    assert calls == ["bootstrap", "dig", "carry", "dump", "return", "residual"]
+    assert "unhandled planner skill" in message
+    assert "broad legacy fallback is retired" in message
+    assert "legacy_skill" in message
 
 
 def test_legacy_fsm_backend_adapter_wraps_existing_switch_callback() -> None:

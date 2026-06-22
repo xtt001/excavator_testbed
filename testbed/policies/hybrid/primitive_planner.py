@@ -74,6 +74,7 @@ from testbed.planner.primitive_backend import (
     LegacyFSMResidualPreDigAlignAdapter,
     LegacyFSMReturnBranch,
     LegacyFSMReturnConfig,
+    PrimitiveRequestedBranchRunner,
 )
 from testbed.planner.primitive_capabilities import (
     CarryTransitionStatus,
@@ -1060,51 +1061,20 @@ class PrimitivePlannerACTPolicy(Policy):
         boundary_event: Any | None,
         preparation: PrimitiveTickPreparation,
     ) -> PrimitiveDecisionResult:
-        bootstrap_result = self._legacy_fsm_bootstrap_branch().decide_tick(
+        return self._requested_branch_runner().decide_tick(
             obs=obs,
             boundary_event=boundary_event,
             preparation=preparation,
         )
-        if bootstrap_result is not None:
-            return bootstrap_result
-        dig_result = self._legacy_fsm_dig_branch().decide_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=preparation,
-        )
-        if dig_result is not None:
-            return dig_result
-        carry_result = self._legacy_fsm_carry_branch().decide_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=preparation,
-        )
-        if carry_result is not None:
-            return carry_result
-        dump_result = self._legacy_fsm_dump_branch().decide_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=preparation,
-        )
-        if dump_result is not None:
-            return dump_result
-        return_result = self._legacy_fsm_return_branch().decide_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=preparation,
-        )
-        if return_result is not None:
-            return return_result
-        residual_result = self._legacy_fsm_residual_pre_dig_align_adapter().decide_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=preparation,
-        )
-        if residual_result is not None:
-            return residual_result
-        raise PrimitiveDecisionContractError(
-            "unhandled planner skill in requested branch chain; broad legacy "
-            f"fallback is retired for default decisions: {self._skill_name!r}"
+
+    def _requested_branch_runner(self) -> PrimitiveRequestedBranchRunner:
+        return PrimitiveRequestedBranchRunner(
+            bootstrap_branch=self._legacy_fsm_bootstrap_branch(),
+            dig_branch=self._legacy_fsm_dig_branch(),
+            carry_branch=self._legacy_fsm_carry_branch(),
+            dump_branch=self._legacy_fsm_dump_branch(),
+            return_branch=self._legacy_fsm_return_branch(),
+            residual_branch=self._legacy_fsm_residual_pre_dig_align_adapter(),
         )
 
     def _apply_requested_tick_effects(

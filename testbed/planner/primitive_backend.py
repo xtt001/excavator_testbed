@@ -11,6 +11,7 @@ from testbed.planner.primitive_capabilities import (
     DumpTransitionStatus,
     ReturnTransitionStatus,
 )
+from testbed.planner.primitive_decision import PrimitiveDecisionContractError
 from testbed.planner.primitive_decision import PrimitiveDecisionResult
 from testbed.planner.primitive_decision import CompleteCellEntryDigCompatibilityEffect
 from testbed.planner.primitive_decision import CompleteCoverageDigEffect
@@ -54,6 +55,58 @@ class PrimitiveDecisionBackend(Protocol):
         boundary_event: Any | None,
         preparation: PrimitiveTickPreparation,
     ) -> PrimitiveDecisionResult: ...
+
+
+class PrimitiveDecisionBranch(Protocol):
+    """One ordered primitive decision branch, or None when not handled."""
+
+    def decide_tick(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        preparation: PrimitiveTickPreparation,
+    ) -> PrimitiveDecisionResult | None: ...
+
+
+@dataclass(frozen=True)
+class PrimitiveRequestedBranchRunner:
+    """Ordered primitive branch dispatch with explicit residual parking."""
+
+    bootstrap_branch: PrimitiveDecisionBranch
+    dig_branch: PrimitiveDecisionBranch
+    carry_branch: PrimitiveDecisionBranch
+    dump_branch: PrimitiveDecisionBranch
+    return_branch: PrimitiveDecisionBranch
+    residual_branch: PrimitiveDecisionBranch
+
+    def decide_tick(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        preparation: PrimitiveTickPreparation,
+    ) -> PrimitiveDecisionResult:
+        for branch in (
+            self.bootstrap_branch,
+            self.dig_branch,
+            self.carry_branch,
+            self.dump_branch,
+            self.return_branch,
+            self.residual_branch,
+        ):
+            result = branch.decide_tick(
+                obs=obs,
+                boundary_event=boundary_event,
+                preparation=preparation,
+            )
+            if result is not None:
+                return result
+        unhandled_skill = str(preparation.skill_name_before_decision)
+        raise PrimitiveDecisionContractError(
+            "unhandled planner skill in requested branch chain; broad legacy "
+            f"fallback is retired for default decisions: {unhandled_skill!r}"
+        )
 
 
 @dataclass(frozen=True)
@@ -621,7 +674,9 @@ __all__ = [
     "LegacyFSMResidualPreDigAlignAdapter",
     "LegacyFSMReturnBranch",
     "LegacyFSMReturnConfig",
+    "PrimitiveDecisionBranch",
     "PrimitiveDecisionBackend",
+    "PrimitiveRequestedBranchRunner",
     "RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE",
 ]
 

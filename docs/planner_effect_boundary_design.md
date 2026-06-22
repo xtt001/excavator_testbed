@@ -47,9 +47,12 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.5: the default 4P mainline branch chain no longer
+Current status after Phase 9.6: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
-callback. Bootstrap, dig, carry, dump, and return are handled through explicit
+callback, and branch ordering is no longer hand-written in the large policy
+shell. `PrimitiveRequestedBranchRunner` owns ordered dispatch:
+bootstrap -> dig -> carry -> dump -> return -> residual pre-dig-align parking.
+Bootstrap, dig, carry, dump, and return are handled through explicit
 requested-effect branch decisions. Residual `pre_dig_align` behavior remains an
 already-applied compatibility/parking path through a narrow residual adapter
 because selected rollout evidence classifies it as not active in the mainline.
@@ -400,6 +403,16 @@ shell helper `_maybe_handle_pre_dig_align_skill(obs)` so parked pre-dig-align
 behavior can remain already-applied without allowing a hidden callback backdoor
 for mainline branches. Unknown or unclassified skills now fail fast instead of
 silently re-entering `_maybe_switch_skill()`.
+
+Phase 9.6 extracts that default branch order into
+`PrimitiveRequestedBranchRunner`. The large `PrimitivePlannerACTPolicy` shell
+now constructs the requested branches and residual adapter, then delegates the
+decision to the runner through a legacy-named bridge. The runner is the
+decision backend for ordered primitive branch dispatch: it returns the first
+non-`None` branch result, stops calling later branches, and owns the fail-fast
+contract when no branch handles the current skill. The policy shell remains the
+public adapter and requested-effect applier; it does not regain broad
+`LegacyFSMBackendAdapter` fallback behavior.
 
 ### Stage 4: Expand Effect Families From Evidence
 

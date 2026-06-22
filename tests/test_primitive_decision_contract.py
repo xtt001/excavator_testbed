@@ -702,6 +702,48 @@ def test_primitive_planner_unknown_skill_fails_without_broad_legacy_fallback() -
     assert "broad legacy fallback is retired" in message
 
 
+def test_primitive_planner_decision_bridge_delegates_to_requested_branch_runner() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    boundary_event = object()
+    expected = PrimitiveDecisionResult.from_requested_effects(
+        decision_source="test_runner",
+        status="no_change",
+        skill_before="dig",
+        skill_after="dig",
+        switch_reason="",
+        effects=(),
+    )
+    calls: list[tuple[dict[str, Any], object, PrimitiveTickPreparation]] = []
+
+    class FakeRunner:
+        def decide_tick(self, *, obs, boundary_event, preparation):
+            calls.append((obs, boundary_event, preparation))
+            return expected
+
+    planner._requested_branch_runner = MethodType(lambda self: FakeRunner(), planner)
+    planner._legacy_fsm_bootstrap_branch = MethodType(
+        lambda self: (_ for _ in ()).throw(
+            AssertionError("policy bridge should delegate to runner")
+        ),
+        planner,
+    )
+
+    preparation = PrimitiveTickPreparation(
+        boundary_event=boundary_event,
+        skill_name_before_decision="dig",
+        dig_progress_updated=True,
+    )
+    result = planner._decide_tick_with_legacy_fsm(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=preparation,
+    )
+
+    assert result is expected
+    assert calls == [(obs, boundary_event, preparation)]
+
+
 def test_primitive_planner_mainline_miss_does_not_call_broad_legacy_fallback() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     planner._skill_name = "dig"

@@ -2392,3 +2392,53 @@ Each completed refactor round should append:
   branch runner or decision backend object that owns branch ordering outside the
   large policy shell, while keeping the shell as effect applier and public
   adapter.
+
+### 2026-06-22 Phase 9.6 Extract Requested Branch Runner
+
+- Scope: extracted default requested branch ordering from the large
+  `PrimitivePlannerACTPolicy` shell into a focused runner in
+  `testbed/planner/primitive_backend.py`. No requested effect family,
+  branch semantics, branch order, reason string, threshold, token/debug/summary
+  schema, policy reset timing, backend selection, behavior tree, VLM/LLM
+  packet, `pre_dig_align` architecture status, `cell_entry`, 5P override, or
+  low-level ACT dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `9629713b1969f12d6a4f88e3a9cee8ce0420fc07`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Selected evidence remains the successful mainline packet:
+  `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl`,
+  its paired planner trace, rollout summary, resolved config, and
+  `docs/planner_evidence_reports/2026-06-18-baseline-aggregate_tx24.md`. The
+  evidence supports migrating the confirmed-live 4P mainline branch ordering
+  while keeping `pre_dig_align` parked as residual compatibility.
+- Added `PrimitiveDecisionBranch` protocol and
+  `PrimitiveRequestedBranchRunner`. The runner owns ordered dispatch:
+  bootstrap -> dig -> carry -> dump -> return -> residual pre-dig-align. It
+  returns the first non-`None` result, stops calling later branches, and raises
+  `PrimitiveDecisionContractError` when no branch handles the current skill.
+  The fail-fast message keeps the Phase 9.5 invariant that broad legacy
+  fallback is retired for default decisions.
+- Updated `PrimitivePlannerACTPolicy._decide_tick_with_legacy_fsm()` into a
+  thin legacy-named bridge that delegates to `_requested_branch_runner()`. The
+  policy shell now owns branch wiring and requested-effect application, not
+  ordered branch dispatch.
+- `LegacyFSMBackendAdapter` remains only as compatibility/test scaffolding for
+  the historical broad callback shape. The default planner path does not import,
+  construct, or call it, and does not call broad `_maybe_switch_skill()`.
+- Added focused tests in `tests/test_primitive_backend.py` and
+  `tests/test_primitive_decision_contract.py` for runner first-match behavior,
+  stable branch order, fail-fast all-miss behavior, and policy bridge
+  delegation to the runner.
+- TDD red result: the first focused run failed at test collection because
+  `PrimitiveRequestedBranchRunner` did not exist. After implementation, the
+  focused green run returned `66 passed`.
+- Old code parked/reclassified: no code was deleted. `pre_dig_align` remains a
+  residual already-applied compatibility path; `_maybe_switch_skill()` remains
+  a legacy compatibility facade for direct tests/diagnostics; `cell_entry`
+  internals, 5P compatibility, token planning, and return direct-handoff
+  internals remain existing legacy or compatibility owners.
+- Next action: continue moving toward the SVG target by extracting the next
+  stable boundary that still keeps confirmed-live behavior in the policy shell,
+  likely a capability/status provider or branch factory bundle that supplies
+  explicit facts to the requested branch runner without passing planner `self`.
