@@ -4,8 +4,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from testbed.planner.primitive_decision import (
+    CompleteReturnTransitionEffect,
+    MarkReturnNextDigEventSeenEffect,
     PrimitiveDecisionResult,
     RequestedPlannerEffect,
+    SwitchToNextSkillAfterReturnEffect,
     SwitchSkillEffect,
 )
 from testbed.planner.primitive_execution import (
@@ -211,6 +214,46 @@ def test_run_primitive_tick_applies_bootstrap_switch_before_dispatch() -> None:
         "current_skill_before_progress",
         "decide:boundary-event:bootstrap",
         "apply_effects:1",
+        "return_timeout_accounting",
+        "dispatch_action",
+        "prev_action_update:[0.1, 0.2, 0.3, 0.4]",
+        "transition_completed_check",
+        "debug_finalize:timeout=False:completed=False",
+    ]
+
+
+def test_run_primitive_tick_applies_return_effects_before_dispatch() -> None:
+    requested_effects = (
+        MarkReturnNextDigEventSeenEffect(),
+        CompleteReturnTransitionEffect(),
+        SwitchToNextSkillAfterReturnEffect(reason_suffix="next_dig_entry_ready"),
+    )
+    hooks = FakeTickHooks(
+        active_skill_name="return",
+        requested_decision=PrimitiveDecisionResult.from_requested_effects(
+            decision_source="legacy_fsm_return_requested_effect",
+            status="skill_switch",
+            skill_before="return",
+            skill_after="return",
+            switch_reason="",
+            effects=requested_effects,
+        ),
+    )
+
+    result = run_primitive_tick(hooks=hooks, obs={})
+
+    assert result.decision.effects == requested_effects
+    assert hooks.applied_effects == [
+        "mark_return_next_dig_event_seen",
+        "complete_return_transition",
+        "switch_to_next_skill_after_return",
+    ]
+    assert hooks.events == [
+        "boundary_update",
+        "switch_reason_reset",
+        "current_skill_before_progress",
+        "decide:boundary-event:return",
+        "apply_effects:3",
         "return_timeout_accounting",
         "dispatch_action",
         "prev_action_update:[0.1, 0.2, 0.3, 0.4]",

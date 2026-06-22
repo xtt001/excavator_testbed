@@ -2103,3 +2103,72 @@ Each completed refactor round should append:
 - Next action: do not convert another branch until a separate evidence-backed
   scope locks the target branch's reason strings, ordering, policy reset timing,
   debug/token surfaces, and requested-effect family coverage.
+
+### 2026-06-22 Phase 9.2 Return Branch Requested Effect Conversion
+
+- Scope: converted only the 4P mainline `return` branch from direct callback
+  mutation to ordered requested return-cycle effects. No dig, carry, dump,
+  direct-handoff helper internals, coverage, token planning, `pre_dig_align`
+  branch internals, `cell_entry`, 5P override, branch order, reason string,
+  threshold, backend selection, behavior tree, VLM/LLM packet, token schema,
+  debug schema, rollout summary schema, policy reset timing, or low-level ACT
+  dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `7473ac3c5b72c6e6d48c514da647c9b98e4f3637`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Selected evidence remains the successful mainline packet:
+  `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl`,
+  its paired planner trace, rollout summary, resolved config, and
+  `docs/planner_evidence_reports/2026-06-18-baseline-aggregate_tx24.md`. The
+  selected evidence marks `gate.return_to_dig` as confirmed-live and includes
+  return-to-dig reason surfaces such as `return_to_dig_next_dig_entry_ready`,
+  start-envelope handoff readiness, and shallow-guard coverage in tests.
+- Confirmed-live method chain converted:
+  `run_primitive_tick()` calls the decision bridge, the return branch returns
+  `PrimitiveDecisionResult(side_effects_applied=False)` with ordered
+  return-cycle requested effects, the execution hook applies those effects
+  before return-timeout accounting and action dispatch, and the real shell
+  applier calls existing return shell operations in order.
+- Added concrete return-cycle effect contracts in
+  `testbed/planner/primitive_decision.py`:
+  `MarkReturnNextDigEventSeenEffect`,
+  `CompleteReturnTransitionEffect`, and
+  `SwitchToNextSkillAfterReturnEffect(reason_suffix)`. Validation rejects empty
+  return switch reason suffixes and preserves the forbidden callable/self/
+  arbitrary planner attr or method-call payload checks.
+- Updated `LegacyFSMReturnBranch` with `decide_tick(...)` as the requested
+  decision API. The branch returns `None` for non-return skill, an empty
+  no-change requested result for unready return ticks, only the mark effect for
+  next-dig events without completion, and ordered mark/complete/switch effects
+  when event latch and completion happen in the same tick. `maybe_handle()`
+  remains a compatibility facade and reuses the same requested decision logic
+  before applying effects through its existing callbacks.
+- Updated `PrimitivePlannerACTPolicy._decide_tick_with_legacy_fsm()` so the
+  default bridge tries bootstrap requested effects first, then return requested
+  effects, then falls back to the existing legacy already-applied adapter for
+  dig, carry, dump, and legacy parking paths.
+- Updated `PrimitivePlannerACTPolicy._apply_requested_tick_effects()` so
+  return-cycle effects map to existing shell operations:
+  `_mark_return_next_dig_event_seen()`,
+  `_complete_return_transition_for_backend()`, and then
+  `_next_skill_after_return_transition()` plus `_set_skill(...)`. The next
+  skill is computed during effect application after completion, preserving the
+  previous cycle-index/pre-dig-gate ordering.
+- Added focused tests in `tests/test_primitive_backend.py`,
+  `tests/test_primitive_decision_contract.py`, and
+  `tests/test_primitive_execution_template.py` for return requested effects,
+  non-return not-handled behavior, mark/complete/switch ordering, complete-before
+  next-skill shell ordering, policy bridge no-callback decision behavior, and
+  execution-hook application before dispatch.
+- TDD red result: the first focused run failed at test collection because the
+  return-cycle effect classes did not exist. After implementation and test
+  updates, the focused green run returned `43 passed`.
+- Old code parked/reclassified: no code was deleted. Direct-handoff helper
+  internals, dig/carry/dump branch bodies, `pre_dig_align` internals, and 5P
+  compatibility remain existing legacy or compatibility owners.
+- Next action: continue converting confirmed-live branch side effects only when
+  their semantic effect family and ordering can be expressed directly. Do not
+  promote `pre_dig_align`, `cell_entry`, or direct-handoff internals into the
+  mainline requested-effect architecture without a separate evidence-backed
+  scope and compatibility decision.

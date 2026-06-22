@@ -12,11 +12,15 @@ from testbed.planner.primitive_capabilities import (
     ReturnTransitionStatus,
 )
 from testbed.planner.primitive_decision import PrimitiveDecisionResult
+from testbed.planner.primitive_decision import CompleteReturnTransitionEffect
+from testbed.planner.primitive_decision import MarkReturnNextDigEventSeenEffect
 from testbed.planner.primitive_decision import SwitchSkillEffect
+from testbed.planner.primitive_decision import SwitchToNextSkillAfterReturnEffect
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
 
 BOOTSTRAP_REQUESTED_DECISION_SOURCE = "legacy_fsm_bootstrap_requested_effect"
+RETURN_REQUESTED_DECISION_SOURCE = "legacy_fsm_return_requested_effect"
 
 
 class PrimitiveDecisionBackend(Protocol):
@@ -302,18 +306,82 @@ class LegacyFSMReturnBranch:
     next_skill_after_return_transition: Callable[[], str]
     set_skill: Callable[[str, str], None]
 
-    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
+    def decide_tick(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        preparation: PrimitiveTickPreparation,
+    ) -> PrimitiveDecisionResult | None:
+        skill_before = str(preparation.skill_name_before_decision)
         if str(self.current_skill_name()) != str(self.config.return_skill_name):
-            return False
+            return None
         status = self.return_transition_status(obs, boundary_event)
-        if status.next_dig_event:
-            self.mark_return_next_dig_event_seen()
-        if status.completed_transition:
-            self.complete_return_transition()
-            next_skill = str(self.next_skill_after_return_transition())
-            reason_suffix = _return_transition_reason_suffix(status)
-            self.set_skill(next_skill, f"return_to_{next_skill}_{reason_suffix}")
+        effects = self._effects_for_status(status)
+        decision_status = (
+            "skill_switch" if _has_return_switch_effect(effects) else "no_change"
+        )
+        return PrimitiveDecisionResult.from_requested_effects(
+            decision_source=RETURN_REQUESTED_DECISION_SOURCE,
+            status=decision_status,
+            skill_before=skill_before,
+            skill_after=skill_before,
+            switch_reason="",
+            effects=effects,
+        )
+
+    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
+        skill_before = str(self.current_skill_name())
+        result = self.decide_tick(
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=boundary_event,
+                skill_name_before_decision=skill_before,
+                dig_progress_updated=False,
+            ),
+        )
+        if result is None:
+            return False
+        self._apply_effects(result.effects)
         return True
+
+    def _effects_for_status(
+        self,
+        status: ReturnTransitionStatus,
+    ) -> tuple[
+        MarkReturnNextDigEventSeenEffect
+        | CompleteReturnTransitionEffect
+        | SwitchToNextSkillAfterReturnEffect,
+        ...,
+    ]:
+        effects: list[
+            MarkReturnNextDigEventSeenEffect
+            | CompleteReturnTransitionEffect
+            | SwitchToNextSkillAfterReturnEffect
+        ] = []
+        if status.next_dig_event:
+            effects.append(MarkReturnNextDigEventSeenEffect())
+        if status.completed_transition:
+            reason_suffix = _return_transition_reason_suffix(status)
+            effects.append(CompleteReturnTransitionEffect())
+            effects.append(
+                SwitchToNextSkillAfterReturnEffect(reason_suffix=reason_suffix)
+            )
+        return tuple(effects)
+
+    def _apply_effects(self, effects: tuple[Any, ...]) -> None:
+        for effect in effects:
+            if isinstance(effect, MarkReturnNextDigEventSeenEffect):
+                self.mark_return_next_dig_event_seen()
+            elif isinstance(effect, CompleteReturnTransitionEffect):
+                self.complete_return_transition()
+            elif isinstance(effect, SwitchToNextSkillAfterReturnEffect):
+                next_skill = str(self.next_skill_after_return_transition())
+                self.set_skill(
+                    next_skill,
+                    f"return_to_{next_skill}_{effect.reason_suffix}",
+                )
 
 
 __all__ = [
@@ -340,3 +408,10 @@ def _return_transition_reason_suffix(status: ReturnTransitionStatus) -> str:
     if status.shallow_guard_allowed:
         return "shallow_entry_guard"
     return ""
+
+
+def _has_return_switch_effect(effects: tuple[Any, ...]) -> bool:
+    return any(
+        isinstance(effect, SwitchToNextSkillAfterReturnEffect)
+        for effect in effects
+    )

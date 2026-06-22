@@ -63,6 +63,58 @@ class SwitchSkillEffect(RequestedPlannerEffect):
 
 
 @dataclass(frozen=True)
+class MarkReturnNextDigEventSeenEffect(RequestedPlannerEffect):
+    """Semantic request to latch that return saw a next-dig entry event."""
+
+    effect_type: str = field(
+        default="mark_return_next_dig_event_seen",
+        init=False,
+    )
+    reason: str = field(default="", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(self, "effect_type", "mark_return_next_dig_event_seen")
+        object.__setattr__(self, "reason", "")
+        object.__setattr__(self, "payload", None)
+
+
+@dataclass(frozen=True)
+class CompleteReturnTransitionEffect(RequestedPlannerEffect):
+    """Semantic request to complete the current return transition/cycle."""
+
+    effect_type: str = field(default="complete_return_transition", init=False)
+    reason: str = field(default="", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(self, "effect_type", "complete_return_transition")
+        object.__setattr__(self, "reason", "")
+        object.__setattr__(self, "payload", None)
+
+
+@dataclass(frozen=True)
+class SwitchToNextSkillAfterReturnEffect(RequestedPlannerEffect):
+    """Switch after return using the shell's post-completion next-skill logic."""
+
+    effect_type: str = field(
+        default="switch_to_next_skill_after_return",
+        init=False,
+    )
+    reason: str = field(default="", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+    reason_suffix: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(self, "effect_type", "switch_to_next_skill_after_return")
+        object.__setattr__(self, "reason", str(self.reason_suffix))
+        object.__setattr__(self, "payload", None)
+
+
+@dataclass(frozen=True)
 class PrimitiveDecisionResult:
     """Decision result returned to the public tick template."""
 
@@ -193,6 +245,29 @@ def _validate_requested_effect_shape(effect: RequestedPlannerEffect) -> None:
         raise PrimitiveDecisionContractError(
             "switch_skill requested effects must use SwitchSkillEffect"
         )
+    if normalized_type == "mark_return_next_dig_event_seen" and not isinstance(
+        effect,
+        MarkReturnNextDigEventSeenEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "return next-dig event effects must use "
+            "MarkReturnNextDigEventSeenEffect"
+        )
+    if normalized_type == "complete_return_transition" and not isinstance(
+        effect,
+        CompleteReturnTransitionEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "return completion effects must use CompleteReturnTransitionEffect"
+        )
+    if normalized_type == "switch_to_next_skill_after_return" and not isinstance(
+        effect,
+        SwitchToNextSkillAfterReturnEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "return post-completion switch effects must use "
+            "SwitchToNextSkillAfterReturnEffect"
+        )
     if isinstance(effect, SwitchSkillEffect):
         if not str(effect.target_skill_name).strip():
             raise PrimitiveDecisionContractError(
@@ -201,6 +276,11 @@ def _validate_requested_effect_shape(effect: RequestedPlannerEffect) -> None:
         if not str(effect.switch_reason).strip():
             raise PrimitiveDecisionContractError(
                 "SwitchSkill effect requires a switch reason"
+            )
+    if isinstance(effect, SwitchToNextSkillAfterReturnEffect):
+        if not str(effect.reason_suffix).strip():
+            raise PrimitiveDecisionContractError(
+                "SwitchToNextSkillAfterReturn effect requires a reason suffix"
             )
     if callable(effect):
         raise PrimitiveDecisionContractError("effect object must not be callable")

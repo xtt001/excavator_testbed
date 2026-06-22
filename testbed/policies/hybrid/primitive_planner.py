@@ -109,9 +109,12 @@ from testbed.planner.primitive_execution import (
     run_primitive_tick,
 )
 from testbed.planner.primitive_decision import (
+    CompleteReturnTransitionEffect,
+    MarkReturnNextDigEventSeenEffect,
     PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
     RequestedPlannerEffect,
+    SwitchToNextSkillAfterReturnEffect,
     SwitchSkillEffect,
 )
 from testbed.planner.primitive_tokens import (
@@ -1053,6 +1056,13 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         if bootstrap_result is not None:
             return bootstrap_result
+        return_result = self._legacy_fsm_return_branch().decide_tick(
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=preparation,
+        )
+        if return_result is not None:
+            return return_result
         return self._legacy_fsm_backend().decide_tick(
             obs=obs,
             boundary_event=boundary_event,
@@ -1066,19 +1076,37 @@ class PrimitivePlannerACTPolicy(Policy):
         if not effects:
             return
         for effect in effects:
-            if not isinstance(effect, SwitchSkillEffect):
+            if isinstance(effect, SwitchSkillEffect):
+                target_skill = str(effect.target_skill_name)
+                switch_reason = str(effect.switch_reason)
+                if not target_skill.strip() or not switch_reason.strip():
+                    raise PrimitiveDecisionContractError(
+                        "SwitchSkill effect requires non-empty skill and reason"
+                    )
+                self._set_skill(target_skill, switch_reason)
+            elif isinstance(effect, MarkReturnNextDigEventSeenEffect):
+                self._mark_return_next_dig_event_seen()
+            elif isinstance(effect, CompleteReturnTransitionEffect):
+                self._complete_return_transition_for_backend()
+            elif isinstance(effect, SwitchToNextSkillAfterReturnEffect):
+                reason_suffix = str(effect.reason_suffix)
+                if not reason_suffix.strip():
+                    raise PrimitiveDecisionContractError(
+                        "SwitchToNextSkillAfterReturn effect requires non-empty "
+                        "reason suffix"
+                    )
+                next_skill = str(self._next_skill_after_return_transition())
+                self._set_skill(
+                    next_skill,
+                    f"return_to_{next_skill}_{reason_suffix}",
+                )
+            else:
                 effect_name = str(effect.effect_type)
                 raise PrimitiveDecisionContractError(
                     "real planner requested-effect application only supports "
-                    f"SwitchSkill effects; received: {effect_name}"
+                    "SwitchSkill and return-cycle effects; "
+                    f"received: {effect_name}"
                 )
-            target_skill = str(effect.target_skill_name)
-            switch_reason = str(effect.switch_reason)
-            if not target_skill.strip() or not switch_reason.strip():
-                raise PrimitiveDecisionContractError(
-                    "SwitchSkill effect requires non-empty skill and reason"
-                )
-            self._set_skill(target_skill, switch_reason)
 
     def _legacy_fsm_backend(self) -> LegacyFSMBackendAdapter:
         return LegacyFSMBackendAdapter(

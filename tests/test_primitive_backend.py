@@ -22,6 +22,9 @@ from testbed.planner.primitive_capabilities import (
 )
 from testbed.planner.primitive_decision import (
     LEGACY_FSM_DECISION_SOURCE,
+    CompleteReturnTransitionEffect,
+    MarkReturnNextDigEventSeenEffect,
+    SwitchToNextSkillAfterReturnEffect,
     SwitchSkillEffect,
 )
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
@@ -451,6 +454,199 @@ def test_legacy_fsm_dump_branch_ignores_non_dump_skill() -> None:
     )
 
     assert branch.maybe_handle(obs={}, boundary_event=None) is False
+
+
+def _return_status(
+    *,
+    next_dig_event: bool = False,
+    next_or_seen_dig_event: bool = False,
+    entry_close: bool = False,
+    start_envelope_ready: bool = False,
+    handoff_ready: bool = False,
+    direct_handoff_ready: bool = False,
+    shallow_guard_ready: bool = False,
+    shallow_guard_allowed: bool = False,
+    completed_transition: bool = False,
+    next_skill: str = "",
+    switch_reason: str = "",
+) -> ReturnTransitionStatus:
+    return ReturnTransitionStatus(
+        mass_in_bucket_kg=0.0,
+        min_distance_to_dig_area_m=0.0,
+        bucket_depth_below_dig_area_plane_m=0.0,
+        semantic_boundary_profile_active=True,
+        next_dig_event=next_dig_event,
+        next_or_seen_dig_event=next_or_seen_dig_event,
+        entry_close=entry_close,
+        start_envelope_ready=start_envelope_ready,
+        handoff_ready=handoff_ready,
+        direct_handoff_ready=direct_handoff_ready,
+        shallow_guard_ready=shallow_guard_ready,
+        shallow_guard_allowed=shallow_guard_allowed,
+        completed_transition=completed_transition,
+        next_skill=next_skill,
+        switch_reason=switch_reason,
+    )
+
+
+def test_legacy_fsm_return_branch_requested_next_dig_event_marks_only() -> None:
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    callbacks: list[str] = []
+    branch = LegacyFSMReturnBranch(
+        config=LegacyFSMReturnConfig(return_skill_name="return"),
+        current_skill_name=lambda: "return",
+        return_transition_status=lambda obs, boundary_event: _return_status(
+            next_dig_event=True,
+            next_or_seen_dig_event=True,
+        ),
+        mark_return_next_dig_event_seen=lambda: callbacks.append("seen"),
+        complete_return_transition=lambda: callbacks.append("complete"),
+        next_skill_after_return_transition=lambda: "dig",
+        set_skill=lambda skill, reason: callbacks.append(f"{skill}:{reason}"),
+    )
+
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=object(),
+        preparation=PrimitiveTickPreparation(
+            boundary_event=object(),
+            skill_name_before_decision="return",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert callbacks == []
+    assert result is not None
+    assert result.side_effects_applied is False
+    assert result.status == "no_change"
+    assert result.effects == (MarkReturnNextDigEventSeenEffect(),)
+
+
+def test_legacy_fsm_return_branch_requested_completion_orders_effects() -> None:
+    callbacks: list[str] = []
+    branch = LegacyFSMReturnBranch(
+        config=LegacyFSMReturnConfig(return_skill_name="return"),
+        current_skill_name=lambda: "return",
+        return_transition_status=lambda obs, boundary_event: _return_status(
+            next_or_seen_dig_event=True,
+            entry_close=True,
+            start_envelope_ready=True,
+            handoff_ready=True,
+            completed_transition=True,
+        ),
+        mark_return_next_dig_event_seen=lambda: callbacks.append("seen"),
+        complete_return_transition=lambda: callbacks.append("complete"),
+        next_skill_after_return_transition=lambda: "dig",
+        set_skill=lambda skill, reason: callbacks.append(f"{skill}:{reason}"),
+    )
+
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="return",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert callbacks == []
+    assert result is not None
+    assert result.side_effects_applied is False
+    assert result.status == "skill_switch"
+    assert result.effects == (
+        CompleteReturnTransitionEffect(),
+        SwitchToNextSkillAfterReturnEffect(reason_suffix="next_dig_entry_ready"),
+    )
+
+
+def test_legacy_fsm_return_branch_requested_event_then_completion_order() -> None:
+    branch = LegacyFSMReturnBranch(
+        config=LegacyFSMReturnConfig(return_skill_name="return"),
+        current_skill_name=lambda: "return",
+        return_transition_status=lambda obs, boundary_event: _return_status(
+            next_dig_event=True,
+            next_or_seen_dig_event=True,
+            entry_close=True,
+            start_envelope_ready=True,
+            handoff_ready=True,
+            completed_transition=True,
+        ),
+        mark_return_next_dig_event_seen=lambda: None,
+        complete_return_transition=lambda: None,
+        next_skill_after_return_transition=lambda: "dig",
+        set_skill=lambda skill, reason: None,
+    )
+
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="return",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert result is not None
+    assert result.effects == (
+        MarkReturnNextDigEventSeenEffect(),
+        CompleteReturnTransitionEffect(),
+        SwitchToNextSkillAfterReturnEffect(reason_suffix="next_dig_entry_ready"),
+    )
+
+
+def test_legacy_fsm_return_branch_requested_no_effects_for_unready_return() -> None:
+    branch = LegacyFSMReturnBranch(
+        config=LegacyFSMReturnConfig(return_skill_name="return"),
+        current_skill_name=lambda: "return",
+        return_transition_status=lambda obs, boundary_event: _return_status(),
+        mark_return_next_dig_event_seen=lambda: None,
+        complete_return_transition=lambda: None,
+        next_skill_after_return_transition=lambda: "dig",
+        set_skill=lambda skill, reason: None,
+    )
+
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="return",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert result is not None
+    assert result.status == "no_change"
+    assert result.effects == ()
+
+
+def test_legacy_fsm_return_branch_requested_ignores_non_return_skill() -> None:
+    branch = LegacyFSMReturnBranch(
+        config=LegacyFSMReturnConfig(return_skill_name="return"),
+        current_skill_name=lambda: "dig",
+        return_transition_status=lambda obs, boundary_event: _return_status(
+            next_dig_event=True,
+            completed_transition=True,
+        ),
+        mark_return_next_dig_event_seen=lambda: None,
+        complete_return_transition=lambda: None,
+        next_skill_after_return_transition=lambda: "dig",
+        set_skill=lambda skill, reason: None,
+    )
+
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
+
+    assert result is None
 
 
 def test_legacy_fsm_return_branch_latches_next_dig_event_without_switch() -> None:

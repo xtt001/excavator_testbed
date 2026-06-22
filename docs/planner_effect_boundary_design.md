@@ -340,6 +340,19 @@ but the default tick decision path no longer completes bootstrap by direct
 callback mutation. This phase does not migrate dig, carry, dump, return,
 direct handoff, coverage, token planning, or `pre_dig_align` internals.
 
+Phase 9.2 converts the 4P mainline `return` branch to ordered return-cycle
+requested effects. The backend branch now emits
+`MarkReturnNextDigEventSeenEffect`, `CompleteReturnTransitionEffect`, and
+`SwitchToNextSkillAfterReturnEffect(reason_suffix)` in the same order as the
+old callback mutation path. The shell applier still owns the actual mutations:
+it latches next-dig events, completes the return transition/cycle counters, then
+computes the next skill with `_next_skill_after_return_transition()` before
+calling `_set_skill(next_skill, f"return_to_{next_skill}_{reason_suffix}")`.
+This preserves the historical requirement that the cycle index is updated
+before the pre-dig gate chooses `dig` or `pre_dig_align`. This phase does not
+migrate direct-handoff helper internals, dig, carry, dump, coverage, token
+planning, or `pre_dig_align` branch behavior.
+
 ### Stage 4: Expand Effect Families From Evidence
 
 Each new family must be justified by a confirmed-live rollout behavior and a
