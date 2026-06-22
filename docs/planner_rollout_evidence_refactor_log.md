@@ -4828,3 +4828,90 @@ Each completed refactor round should append:
   check. A future slice should let the runner construct a single backend input
   for a tick and pass it through ordered branches while preserving lazy status
   reads and residual post-mutation fact rereads.
+
+### 2026-06-23 Phase 9.42 Introduce Primitive Backend Decision Input
+
+- Scope: introduced `PrimitiveBackendDecisionInput` in
+  `testbed/planner/primitive_backend_input.py` as the per-tick packet passed
+  through the legacy FSM requested and compatibility branch orders.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `7ed74336c7a3771d4cbfb74251f7a2f80c545de0`; no fetch, pull, push, reset,
+  checkout, rebase, branch creation, or remote write. HEAD after the code round
+  is `c3e67730d33dd7ebc4eefcab0cc235601bef663f`.
+- `PrimitiveBackendDecisionInput.from_context(...)` builds one common facts
+  packet through `PrimitiveDecisionFactsSource.decision_facts(context)`, then
+  reuses that exact identity when constructing `PrimitiveBackendFactsAccess`
+  through `PrimitiveDecisionFactsSource.backend_facts(context, facts=common)`.
+  The input carries the original context, backend facts access, explicit
+  compatibility actions, and a private facts source used only for explicit
+  post-compatibility-action rereads.
+- `PrimitiveRequestedBranchRunner` now owns facts source plus compatibility
+  actions and constructs one backend input per `decide_context(...)` call.
+  Bootstrap, dig, carry, dump, return, and residual branches receive the same
+  input identity in requested order.
+- `LegacyFSMCompatibilityDecisionBackend` now constructs one backend input per
+  compatibility `decide_context(...)` call and passes that same input through
+  bootstrap, residual, dig, carry, dump, and return order.
+- Legacy FSM branch dataclasses no longer store `PrimitiveDecisionFactsSource`,
+  `PrimitiveDecisionCompatibilityActions`, broad
+  `PrimitiveDecisionCapabilities`, or shell callbacks. They store only static
+  config such as skill names and implement `decide_input(input)`.
+- Residual pre-dig-align remains an explicitly parked already-applied
+  compatibility path. After calling
+  `input.compatibility_actions.handle_residual_pre_dig_align(context)`, the
+  adapter calls `input.rebuild_common_facts_after_compatibility_action()` to
+  preserve historical post-mutation `skill_after` and `switch_reason` reads.
+- Preserved behavior: requested branch order, compatibility branch order,
+  decision source strings, reason strings, effect ordering, backend facts lazy
+  status reads, active-dig reason sync timing, active-return refresh timing,
+  token/coverage/return-handoff/reset/report schemas, policy reset timing, and
+  low-level action dispatch are unchanged.
+- Explicit non-goals: no BT/VLM/LLM backend implementation; no supported
+  backend expansion; no promotion of `pre_dig_align` or `cell_entry`; no 5P
+  restoration; no token, coverage, return handoff, action dispatch, reset, or
+  reporting algorithm migration.
+- TDD red result: after focused tests were added, the first run of
+  `python -m pytest -q tests/test_primitive_backend_input.py tests/test_primitive_backend.py tests/test_primitive_decision_capabilities.py tests/test_primitive_backend_facts.py tests/test_primitive_decision_runtime.py`
+  failed at collection because
+  `testbed.planner.primitive_backend_input` did not exist. After
+  implementation, the command returned `100 passed`.
+- Verification reported by implementation thread:
+  `python -m pytest -q tests/test_primitive_backend_input.py tests/test_primitive_backend.py tests/test_primitive_decision_capabilities.py tests/test_primitive_backend_facts.py tests/test_primitive_decision_runtime.py`
+  returned `100 passed`;
+  `python -m pytest -q tests/test_primitive_decision_facts.py tests/test_primitive_capability_provider.py tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `31 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace or dig_depth_profile or dig_cut_tokens or dig_to_carry or carry_to_dump or dump_to_return"`
+  returned `23 passed, 96 deselected`; compileall for touched modules, both
+  planner guard commands, `git diff --check`, and staged diff check completed
+  successfully.
+- Audit note: this is a real backend-contract improvement because branch
+  dependencies have been reduced from facts/action objects to one explicit
+  per-tick input packet. It closes the Phase 9.41 gap without eager status
+  reads and without moving compatibility mutations into facts access. The next
+  direct architecture gap is one layer up: `PrimitiveDecisionRuntimePorts` still
+  exposes a `legacy_fsm_branch_set` factory, so backend selection is not yet
+  expressed through a backend factory or registry contract.
+
+#### Three-iteration reflection after Phases 9.40-9.42
+
+- Progress toward the SVG target was substantive, not just interface stacking:
+  Phase 9.40 moved the last confirmed-live mainline branch, bootstrap, into
+  backend facts access; Phase 9.41 split read-only facts construction from
+  explicit compatibility actions; Phase 9.42 introduced the per-tick backend
+  input passed through the branch chain. The branch surface is now much closer
+  to "backend consumes input and returns requested effects" than to "branch
+  holds a bag of policy callbacks".
+- The largest remaining decision-backend gap is above the branch input layer:
+  `PrimitiveDecisionRuntime` still knows about a `legacy_fsm_branch_set`
+  factory directly. The next slice should make runtime backend selection depend
+  on a backend factory/registry contract, while keeping `legacy_fsm` as the
+  only supported backend.
+- Avoid over-protection in the next slice. Do not stop at guard-only tests or
+  rename-only cleanup; change the runtime port shape so the policy shell no
+  longer hands the runtime a branch-set factory as the named dependency.
+- Avoid over-claiming. A backend factory/registry does not make BT/VLM/LLM
+  ready; it only removes the current legacy-FSM-specific construction shape
+  from the decision-runtime boundary.

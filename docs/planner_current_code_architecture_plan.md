@@ -59,8 +59,9 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4900+ | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 5000+ | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
+| `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend_facts.py` | 250 | backend-facing lazy read-only facts access for bootstrap and dig/carry/dump/return transition views |
 | `testbed/planner/primitive_decision_facts.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
@@ -924,6 +925,20 @@ stored by branch dataclasses. The next backend contract gap is that each branch
 still creates per-tick backend facts from the facts source independently; there
 is not yet one runner-owned backend decision input packet passed through the
 ordered branch chain.
+
+Current status note after Phase 9.42: the legacy FSM branch chain now receives
+one per-tick `PrimitiveBackendDecisionInput`. `PrimitiveRequestedBranchRunner`
+and `LegacyFSMCompatibilityDecisionBackend` each build the input once from
+`PrimitiveDecisionContext`, `PrimitiveBackendFactsAccess`, and
+`PrimitiveDecisionCompatibilityActions`, then pass the same input identity
+through their ordered branches. Branch dataclasses now store only static config
+and implement `decide_input(input)`; they no longer store facts source or
+compatibility actions. The residual pre-dig-align adapter explicitly rereads
+common facts after its already-applied compatibility mutation through
+`rebuild_common_facts_after_compatibility_action()`. This closes the per-tick
+branch input gap, but `PrimitiveDecisionRuntimePorts` still exposes a
+`legacy_fsm_branch_set` factory rather than a backend factory or registry
+contract, so alternate-backend readiness remains future work.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;

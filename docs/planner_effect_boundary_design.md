@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.41: the default 4P mainline branch chain no longer
+Current status after Phase 9.42: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy now exposes backend-facing common decision facts through
@@ -62,13 +62,16 @@ does not carry mutation ports or eager transition statuses. `LegacyFSMBranchPort
 has been narrowed to skill-name constants plus separate
 `PrimitiveDecisionFactsSource` and `PrimitiveDecisionCompatibilityActions`
 dependencies. `LegacyFSMBranchSet` constructs branches and owns both requested
-and legacy compatibility dispatch orders, while `LegacyFSMBootstrapBranch`,
+and legacy compatibility dispatch orders. `PrimitiveRequestedBranchRunner` and
+`LegacyFSMCompatibilityDecisionBackend` now construct one
+`PrimitiveBackendDecisionInput` per decision call and pass that same input
+through the ordered branch chain. `LegacyFSMBootstrapBranch`,
 `LegacyFSMDigBranch`, `LegacyFSMCarryBranch`, `LegacyFSMDumpBranch`, and
-`LegacyFSMReturnBranch` consume read-only facts source plus only the explicit
-compatibility actions they need, rather than the broad
-`PrimitiveDecisionCapabilities` facade or individual shell callback/status
-provider fields. Dig/carry/dump/return transition statuses remain lazy and
-branch-local. `PrimitiveBackendFactsAccess`
+`LegacyFSMReturnBranch` consume that input through `decide_input(...)`; branch
+dataclasses store only static config instead of facts source, compatibility
+actions, the broad `PrimitiveDecisionCapabilities` facade, or individual shell
+callback/status provider fields. Dig/carry/dump/return transition statuses
+remain lazy and branch-local. `PrimitiveBackendFactsAccess`
 now provides the backend-facing read-only access contract for bootstrap and
 dig/carry/dump/return transition facts; it carries the shared common facts
 identity plus private read-only bootstrap and transition readers, and it does
@@ -765,6 +768,22 @@ facts source; dig and return receive facts source plus compatibility actions;
 the residual pre-dig adapter receives both for its already-applied
 compatibility path. `PrimitiveDecisionCapabilities` remains as a compatibility
 facade and construction helper over the separated objects.
+
+Phase 9.42 introduces `PrimitiveBackendDecisionInput` in
+`testbed/planner/primitive_backend_input.py`. The requested branch runner and
+legacy compatibility backend each create a single input from
+`PrimitiveDecisionContext`, `PrimitiveBackendFactsAccess`, and explicit
+compatibility actions, then pass that input through the ordered branches.
+Branches now implement `decide_input(input)` and no longer store facts source,
+compatibility actions, broad capabilities, or shell callbacks. The residual
+pre-dig-align adapter still handles the parked already-applied compatibility
+path explicitly, and it calls
+`rebuild_common_facts_after_compatibility_action()` after the shell mutation to
+preserve historical `skill_after` and `switch_reason` reads. This closes the
+per-tick backend input gap for the legacy FSM branch chain, while
+`PrimitiveDecisionRuntime` still selects only `legacy_fsm` through a
+`legacy_fsm_branch_set` factory port and does not yet expose a backend factory
+or registry contract for alternate backend families.
 
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in

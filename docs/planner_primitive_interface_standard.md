@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.41 implementation. It is intentionally
+compares them with the current Phase 9.42 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -36,7 +36,9 @@ Current maturity:
   runtime routing**
 - backend-neutral fact access for non-FSM decision strategies: **partly
   achieved for common context/skill facts plus lazy bootstrap and
-  dig/carry/dump/return decision facts through `PrimitiveBackendFactsAccess`**
+  dig/carry/dump/return decision facts through `PrimitiveBackendFactsAccess`,
+  carried through the legacy FSM branch chain by
+  `PrimitiveBackendDecisionInput`**
 - behavior-tree, VLM, LLM, or learned decision backend implementation:
   **not implemented; unsupported backends must fail fast**
 
@@ -192,9 +194,17 @@ Current boundary:
 
 - `PrimitiveDecisionRuntime` selects only the `legacy_fsm` backend.
 - `LegacyFSMBranchSet` owns requested order and legacy compatibility order.
-- Legacy FSM branches consume facts through `PrimitiveDecisionFactsSource` and
-  use `PrimitiveDecisionCompatibilityActions` only where explicit shell
-  compatibility actions are needed.
+- `PrimitiveRequestedBranchRunner` and
+  `LegacyFSMCompatibilityDecisionBackend` each construct one
+  `PrimitiveBackendDecisionInput` per `decide_context(...)` call and pass that
+  same input identity through the ordered branch chain.
+- Legacy FSM branches implement `decide_input(input)` and store only static
+  config such as skill names; they no longer store facts source,
+  compatibility actions, broad capabilities, or policy callbacks.
+- Legacy FSM branches consume read-only facts through
+  `PrimitiveBackendDecisionInput.backend_facts` and use
+  `PrimitiveBackendDecisionInput.compatibility_actions` only where explicit
+  shell compatibility actions are needed.
 - The active bootstrap branch consumes a bootstrap-specific facts view,
   `PrimitiveBootstrapDecisionFacts`, through `PrimitiveBackendFactsAccess`.
 - The active dig branch consumes a dig-specific facts view,
@@ -225,9 +235,18 @@ Gap:
   views exposed through one lazy `PrimitiveBackendFactsAccess`, but that access
   still covers only the legacy FSM requested-branch facts and is not yet a
   complete backend-neutral facts bundle.
+- `PrimitiveBackendDecisionInput` is a per-tick legacy-FSM backend input
+  packet, not a full alternate-backend packet. It carries context, backend
+  facts access, and explicit compatibility actions through the branch chain,
+  and provides an explicit post-compatibility-action common-facts reread for
+  residual `pre_dig_align`.
 - Return transition facts now have a typed read-only view, but that view is
   constructed lazily only after the active return branch has refreshed cached
   handoff state.
+- `PrimitiveDecisionRuntimePorts` still exposes a
+  `legacy_fsm_branch_set` factory. The runtime has not yet moved to a
+  backend-factory or registry contract that can represent non-FSM backends
+  without mentioning legacy branch sets.
 - There is no full backend-neutral fact packet for behavior-tree or VLM
   strategies because transition, token, coverage, and return handoff facts are
   not yet in a neutral packet.
@@ -342,19 +361,25 @@ Current boundary:
   access construction.
 - `PrimitiveDecisionCompatibilityActions` owns explicit compatibility actions:
   dig reason sync, return refresh, and residual `pre_dig_align` handling.
+- `PrimitiveBackendDecisionInput` in
+  `testbed/planner/primitive_backend_input.py` is the per-tick legacy-FSM
+  backend input passed through requested and legacy compatibility branch
+  orders. It holds the `PrimitiveDecisionContext`, one
+  `PrimitiveBackendFactsAccess`, explicit compatibility actions, and the
+  private facts source needed only for explicit common-facts rereads after an
+  already-applied compatibility action.
 - `PrimitiveDecisionCapabilities` remains as a compatibility facade over
   facts source plus compatibility actions for older tests and diagnostics.
 - `PrimitiveObservationFacts` and transition status dataclasses exist.
 
 Gap:
 
-- Legacy FSM branches no longer hold the mixed
-  `PrimitiveDecisionCapabilities` object, but the requested/compatibility
-  runners still pass only `PrimitiveDecisionContext`; each branch independently
-  asks the facts source for per-tick backend facts.
-- There is not yet a single backend decision input packet carrying
-  `context`, `PrimitiveBackendFactsAccess`, and explicit compatibility actions
-  through the branch runner.
+- Legacy FSM branches now receive one backend decision input packet per tick,
+  but the packet is still tailored to the legacy FSM branch chain and its
+  explicit compatibility actions.
+- `PrimitiveDecisionRuntimePorts` still exposes `legacy_fsm_branch_set`, so the
+  runtime selection boundary is not yet expressed as a generic backend factory
+  or backend registry contract.
 - Residual `pre_dig_align` is still a capability-side already-applied handler.
 - `PrimitiveDecisionFacts` is not yet the complete `PrimitiveBackendFacts`
   target. It lacks token, coverage, and return handoff views, and the
@@ -593,27 +618,30 @@ Standard:
 The next code work should follow this order:
 
 1. Introduce a per-tick backend decision input packet for legacy FSM branches.
-   - The runner should create a single input from `PrimitiveDecisionContext`,
-     `PrimitiveBackendFactsAccess`, and explicit compatibility actions, then
-     pass that input through ordered branches.
-   - Branches should not each store facts source or recreate backend facts
-     independently for the same tick.
-   - Residual pre-dig handling must still be able to reread post-mutation
-     common facts in an explicit compatibility path.
+   - **Done in Phase 9.42** for the confirmed-live legacy FSM requested and
+     compatibility branch chains.
    - Keep `PrimitiveBackendFactsAccess` lazy and branch-local; do not eagerly
-     compute transition statuses.
-   - Do not implement BT/VLM yet.
+     compute transition statuses in later cleanup.
 
-2. Move remaining mutable runtime state into focused state owners.
+2. Extract a backend factory/registry boundary for `PrimitiveDecisionRuntime`.
+   - The runtime should select a backend factory by backend name rather than
+     directly depending on a `legacy_fsm_branch_set` callable.
+   - The default factory may remain legacy FSM only and must preserve
+     fail-fast behavior for unsupported backend names.
+   - This is an interface-shape slice, not a BT/VLM implementation.
+   - The policy shell should build a typed factory/registry port, not expose
+     branch-set construction as the runtime's public dependency.
+
+3. Move remaining mutable runtime state into focused state owners.
    - Prioritize token/runtime and return state before parked legacy paths.
    - Avoid generic blackboards.
 
-3. Audit parked paths.
+4. Audit parked paths.
    - Decide whether to remove, keep diagnostic-only, or convert
      `pre_dig_align` and `cell_entry`.
    - Do not do this before the runtime kernel boundary is clear.
 
-4. Only then prototype a new backend.
+5. Only then prototype a new backend.
    - Start with a non-default, fail-closed backend contract test.
    - The backend must consume decision facts and return requested effects.
 
