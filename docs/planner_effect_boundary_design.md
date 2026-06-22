@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.13: the default 4P mainline branch chain no longer
+Current status after Phase 9.14: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -79,7 +79,11 @@ return/direct-handoff mutation sequence for `SetReturnOrDirectHandoffEffect`:
 set `return`, optionally ensure the return target plan, evaluate handoff and
 direct-handoff readiness, complete the return transition, and switch to `dig`
 or residual `pre_dig_align` with the existing `return_to_*_start_envelope_ready`
-reason.
+reason. `PrimitivePolicyObservationAssembler` now owns low-level policy
+observation token injection: provider call order, injected key names,
+copy/no-copy behavior, and legacy injected-flag state calculation. The policy
+shell builds typed token-provider ports, clears/writes compatibility flag
+fields, and keeps token planning algorithms in their existing owners.
 
 ## Design Intent
 
@@ -530,6 +534,23 @@ the next skill, then use `return_to_{next_skill}_start_envelope_ready`.
 Start-envelope gate calculation, token planning, coverage metrics, 5P,
 `pre_dig_align` internals, and `cell_entry` compatibility remain in their
 existing owners.
+
+Phase 9.14 extracts low-level policy observation/token injection assembly into
+`PrimitivePolicyObservationAssembler` in
+`testbed/planner/primitive_observation.py`. The assembler owns the old
+`_policy_obs(...)` assembly contract: call token providers in order
+goal -> cell-entry compatibility -> dig-cut -> dig-depth-profile ->
+return-target -> return-relocate -> return-start-envelope; return the original
+observation object when every provider returns `None`; otherwise create
+`dict(obs)` and inject the existing keys (`goal_tokens`, `cell_entry_tokens`,
+`dig_cut_tokens`, `dig_depth_profile_tokens_v1`, `return_target_tokens`,
+`return_relocate_tokens_v1`, `return_start_envelope_tokens_v1`). It also
+computes the legacy injected-flag state, with no goal injected flag and
+`cell_entry` kept compatibility-only. The policy shell now clears stale
+injected flags before assembly, delegates to the assembler, and writes the
+resulting compatibility fields. Token planning algorithms, token dimensions,
+token source/fallback strings, debug/summary schemas, and golden-window
+contracts remain unchanged.
 
 ### Stage 4: Expand Effect Families From Evidence
 

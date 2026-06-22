@@ -541,6 +541,15 @@ Implementation history is tracked in
 established the current-code parity harness, public tick execution template,
 and decision/effect result contracts.
 
+Current status note after Phase 9.14: policy observation/token injection
+assembly has moved out of the large policy shell into
+`PrimitivePolicyObservationAssembler` in
+`testbed/planner/primitive_observation.py`. `_policy_obs(...)` now remains as a
+thin compatibility wrapper that clears and writes legacy injected-flag fields,
+while the assembler owns provider order, injected key names, observation
+copy/no-copy behavior, and injected-state calculation. Token planning algorithms
+and token source/fallback/debug contracts remain in their existing owners.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut

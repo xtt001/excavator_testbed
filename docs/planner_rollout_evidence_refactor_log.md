@@ -2914,3 +2914,67 @@ Each completed refactor round should append:
   `CompleteCellEntryDigCompatibilityEffect` remains compatibility-only,
   `LegacyFSMBackendAdapter` remains historical/test scaffolding, and 5P remains
   its existing legacy override path.
+
+### 2026-06-22 Phase 9.14 Extract Policy Observation Token Assembler
+
+- Scope: extracted low-level policy observation token injection assembly from
+  the large policy shell into a focused observation assembler. No token
+  planning algorithm, token key name, token order, source/fallback string,
+  debug/summary schema, golden-window contract, branch order, reason string,
+  threshold, policy reset timing, public config behavior, `cell_entry`
+  compatibility classification, `pre_dig_align` residual status, 5P override,
+  or low-level ACT dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `825cd1bd05ff5fb8e7e5c2b25f599ff2ae9a5758`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `testbed/planner/primitive_observation.py` with
+  `PrimitivePolicyObservationAssemblerPorts`,
+  `PrimitiveTokenInjectionState`,
+  `PrimitivePolicyObservationAssemblyResult`, and
+  `PrimitivePolicyObservationAssembler`. The assembler owns token provider call
+  order, observation copy/no-copy behavior, injected key names, and legacy
+  injected-flag state calculation.
+- Preserved `_policy_obs(...)` semantics exactly: providers are called in order
+  goal -> cell-entry compatibility -> dig-cut -> dig-depth-profile ->
+  return-target -> return-relocate -> return-start-envelope; all-`None`
+  providers return the original observation object; any token creates
+  `dict(obs)`; injected keys remain `goal_tokens`, `cell_entry_tokens`,
+  `dig_cut_tokens`, `dig_depth_profile_tokens_v1`, `return_target_tokens`,
+  `return_relocate_tokens_v1`, and `return_start_envelope_tokens_v1`; goal
+  tokens have no legacy injected flag; `cell_entry_tokens` remains
+  compatibility-only.
+- Updated `PrimitivePlannerACTPolicy._policy_obs(...)` into a thin wrapper that
+  clears stale injected flags before assembly, delegates to
+  `_policy_observation_assembler().assemble(obs)`, writes the returned
+  `PrimitiveTokenInjectionState` into the legacy injected-flag fields, and
+  returns `result.policy_obs`. Token provider methods such as
+  `_dig_cut_tokens_for_obs(...)`, `_return_target_tokens_for_obs(...)`, and
+  `_goal_tokens()` remain in their existing owners.
+- Added `tests/test_primitive_observation.py` for all-`None` identity behavior,
+  copy/injected-key behavior, provider order, goal-token no-flag behavior,
+  cell-entry compatibility-only injected flag behavior, and policy wrapper
+  delegation/writeback.
+- TDD red result: the first focused run failed at collection because
+  `testbed.planner.primitive_observation` did not exist. After adding the
+  assembler module and policy bridge, `python -m pytest -q
+  tests/test_primitive_observation.py` returned `5 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_observation.py` returned
+  `5 passed`;
+  `python -m pytest -q tests/test_primitive_goal_token_provider.py tests/test_primitive_dig_cut_token_planner.py tests/test_primitive_dig_depth_profile_token_planner.py tests/test_primitive_return_target_token_planner.py tests/test_primitive_return_relocate_token_planner.py tests/test_primitive_return_start_envelope_token_planner.py tests/test_primitive_token_status.py`
+  returned `23 passed`;
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_execution_template.py tests/test_primitive_backend.py`
+  returned `114 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  compileall, both planner guard commands, and `git diff --check` completed
+  successfully with no output.
+- Old code parked/reclassified: token planning remains in the existing token
+  planner/provider methods, `cell_entry` token injection remains
+  compatibility-only, `pre_dig_align` remains residual already-applied parking,
+  `CompleteCellEntryDigCompatibilityEffect` remains compatibility-only,
+  `LegacyFSMBackendAdapter` remains historical/test scaffolding, and 5P remains
+  its existing legacy override path.
