@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.43 implementation. It is intentionally
+compares them with the current Phase 9.44 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -32,6 +32,8 @@ Current maturity:
 - effect request/application boundary: **achieved for current requested effects**
 - focused token, coverage, handoff, dispatch, report, reset, config services:
   **mostly achieved**
+- token runtime mutable state owner: **achieved for dig/return token arrays,
+  source/fallback flags, prior-bound flags, and pending next-dig token state**
 - runtime composition root / public runtime kernel: **achieved for public
   runtime routing**
 - decision runtime backend factory/registry: **achieved for selecting the
@@ -511,15 +513,25 @@ Current boundary:
 
 - `PrimitivePolicyObservationAssembler` owns injection order, keys, and injected
   flag projection.
+- `PrimitiveTokenRuntimeState` owns mutable dig/return token arrays, token
+  source/fallback/prior-bound fields, return start-envelope prior flags, and
+  pending next-dig token/raw/exemplar fields.
 - `PrimitiveTokenRuntimeCoordinator` owns dig/return token runtime sequencing.
 - `PrimitiveDigTokenPlanningService` and
   `PrimitiveReturnTokenPlanningService` own orchestration.
 - Token algorithm classes remain in `primitive_tokens.py`.
+- `PrimitivePlannerACTPolicy` keeps old `_dig_cut_*`, `_return_*`, and
+  `_pending_dig_*` private names as property-backed compatibility facades over
+  the single token state owner.
 
 Gap:
 
-- Token mutable state still mostly lives in policy attributes.
-- There is no dedicated token runtime state owner.
+- Observation injection flags remain shell/report compatibility state because
+  they are per-observation injection results rather than cached token runtime
+  data.
+- `cell_entry` token state remains compatibility/report material outside the
+  token runtime state owner.
+- Return handoff/runtime state still lives outside the token state owner.
 
 Standard:
 
@@ -643,8 +655,8 @@ The next code work should follow this order:
      own facts contract and tests.
 
 3. Move remaining mutable runtime state into focused state owners.
-   - Prioritize token runtime mutable state and return handoff/runtime state
-     before parked legacy paths.
+   - Token runtime mutable state is **done in Phase 9.44**.
+   - Prioritize return handoff/runtime state next, before parked legacy paths.
    - Avoid generic blackboards.
 
 4. Audit parked paths.

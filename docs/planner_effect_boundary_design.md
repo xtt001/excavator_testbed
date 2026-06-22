@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.43: the default 4P mainline branch chain no longer
+Current status after Phase 9.44: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -60,8 +60,13 @@ shell. The decision runtime now selects a backend factory through
 `legacy_fsm_branch_set` callable. `LegacyFSMDecisionBackendFactory` owns
 legacy branch-set construction/reuse plus requested and legacy compatibility
 backend construction; `legacy_fsm` remains the only supported backend and
-unsupported names still fail fast before branch-set construction. The policy
-now exposes backend-facing common decision facts through
+unsupported names still fail fast before branch-set construction. Token runtime
+mutable storage is now owned by `PrimitiveTokenRuntimeState`: dig/return token
+arrays, token source/fallback fields, return start-envelope prior flags, and
+pending next-dig token/raw/exemplar fields are no longer independent policy
+attributes. The policy keeps legacy private token field names as
+property-backed compatibility facades over that state owner. The policy now
+exposes backend-facing common decision facts through
 `PrimitiveDecisionFacts`, built by `PrimitiveDecisionFactsSource`; the facts
 packet carries context identity, current skill, and current switch reason, but
 does not carry mutation ports or eager transition statuses. `LegacyFSMBranchPorts`
@@ -803,6 +808,19 @@ compatibility facades remain but delegate through the factory path. This
 removes the branch-set-specific runtime dependency without expanding backend
 support: only `legacy_fsm` is registered and supported, and behavior-tree, VLM,
 LLM, or learned backends remain fail-fast parked scope.
+
+Phase 9.44 introduces `PrimitiveTokenRuntimeState` in
+`testbed/planner/primitive_token_state.py`. The state owner centralizes reset
+defaults and mutable storage for dig-cut tokens, dig-depth-profile tokens,
+return target/relocate/start-envelope tokens, token source/fallback/prior-bound
+fields, return start-envelope prior flags, and pending next-dig token/raw/
+exemplar fields. `PrimitiveResetLifecycleService` now creates one fresh token
+state during reset and applies it before legacy private token field names so
+those compatibility names write into the same state object through property
+setters. `PrimitiveTokenRuntimeCoordinator`, `PrimitiveDigTokenPlanningService`,
+and `PrimitiveReturnTokenPlanningService` keep their existing responsibilities;
+observation injection flags, cell-entry compatibility state, coverage state,
+and return handoff state remain outside the token state owner.
 
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in

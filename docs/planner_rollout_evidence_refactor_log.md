@@ -4978,3 +4978,66 @@ Each completed refactor round should append:
   unsupported backends remain fail-fast. The next direct architecture gap is no
   longer decision branch input or runtime factory selection; it is the amount
   of mutable token/return runtime state still stored in the large policy shell.
+
+### 2026-06-23 Phase 9.44 Extract Primitive Token Runtime State
+
+- Scope: introduced `PrimitiveTokenRuntimeState` in
+  `testbed/planner/primitive_token_state.py` as the focused owner for mutable
+  dig/return token runtime state and reset defaults.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `72b354437e9f0e5a7825a1b8660a78cffef0bafb`; no fetch, pull, push, reset,
+  checkout, rebase, branch creation, or remote write. HEAD after the code round
+  is `38fe0725091b20535e93ce286dad462462d91f6f`.
+- `PrimitiveTokenRuntimeState.fresh()` owns the legacy reset defaults for
+  dig-cut tokens, dig-depth-profile tokens, return target/relocate/
+  start-envelope tokens, token source/fallback/prior-bound fields, return
+  start-envelope prior flags, and pending next-dig token/raw/exemplar fields.
+  Defaults preserve token dimensions, `np.float32` arrays, `"none"` source
+  strings, empty fallback strings, `-1` cycle/corridor ids, `None` pending
+  payloads, empty exemplar id lists, and NaN pending exemplar distance.
+- `PrimitiveResetLifecycleService` now creates one fresh token state during
+  reset and includes it in `PrimitiveResetLifecycleState`. The policy applies
+  `_token_state` before legacy private token field names, so compatibility
+  updates for `_dig_cut_tokens`, `_return_target_tokens`,
+  `_pending_dig_cut_cycle_id`, and related names write into the same state owner
+  through property setters rather than creating independent storage.
+- `PrimitivePlannerACTPolicy` now exposes `_primitive_token_runtime_state()` and
+  property-backed compatibility facades for legacy token/pending private names.
+  Existing `PrimitiveTokenRuntimeCoordinator`, `PrimitiveDigTokenPlanningService`,
+  and `PrimitiveReturnTokenPlanningService` ports continue to use those names,
+  but the state now resolves to `PrimitiveTokenRuntimeState`.
+- Preserved behavior: token dimensions, dtype, default zero arrays, source
+  strings, fallback strings, prior-bound flags, pending ids/raw/token defaults,
+  NaN pending exemplar distance, copy behavior, observation injection flags,
+  debug/summary/trace schemas, branch order, reason strings, policy reset
+  timing, and low-level action dispatch are unchanged.
+- Explicit non-goals: observation injection flags were not moved; cell-entry
+  state remains compatibility/report material; coverage state remains
+  `CoverageRuntimeState`; token planning algorithms, token runtime sequencing,
+  return handoff, action dispatch, report builders, decision backend/runtime,
+  config normalization, pre-dig-align, 5P, and BT/VLM/LLM support were not
+  migrated or changed.
+- TDD red result: after focused tests were added, the first run of
+  `python -m pytest -q tests/test_primitive_token_state.py` failed at
+  collection because `testbed.planner.primitive_token_state` did not exist.
+  After implementation, the command returned `5 passed`.
+- Verification reported by implementation thread:
+  `python -m pytest -q tests/test_primitive_token_state.py tests/test_primitive_token_runtime.py tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py`
+  returned `35 passed`;
+  `python -m pytest -q tests/test_primitive_reset_lifecycle.py tests/test_primitive_observation.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  returned `23 passed`;
+  `python -m pytest -q tests/test_primitive_decision_backend_factory.py tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `15 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace or dig_depth_profile or dig_cut_tokens or start_envelope"`
+  returned `21 passed, 98 deselected`; compileall for touched modules, both
+  planner guard commands, `git diff --check`, and staged diff check completed
+  successfully.
+- Audit note: this is a real state-ownership improvement rather than a
+  blackboard extraction. The state owner is scoped to token/pending runtime
+  fields and does not absorb token algorithms, coverage, observation injection,
+  or return handoff logic. The next similar thin-shell gap is return handoff/
+  runtime mutable state still stored as policy fields while return handoff
+  services own gate/effect algorithms.

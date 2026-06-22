@@ -66,6 +66,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_decision_runtime.py` | 162 | backend-name normalization and backend factory registry selection for primitive decision runtime |
 | `testbed/planner/primitive_backend_facts.py` | 250 | backend-facing lazy read-only facts access for bootstrap and dig/carry/dump/return transition views |
 | `testbed/planner/primitive_decision_facts.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
+| `testbed/planner/primitive_token_state.py` | 70 | mutable dig/return token runtime state owner and reset defaults |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
 | `testbed/planner/evidence_trace.py` | 972 | evidence classifier and report writer for rollout-driven refactor decisions |
@@ -954,6 +955,18 @@ instead of passing a `legacy_fsm_branch_set` callable to the runtime. This
 removes the legacy branch-set dependency from the runtime port shape, but the
 only registered and supported backend remains `legacy_fsm`; BT/VLM/LLM remain
 unsupported parked scope.
+
+Current status note after Phase 9.44: mutable dig/return token runtime state is
+now owned by `PrimitiveTokenRuntimeState` in
+`testbed/planner/primitive_token_state.py`. Reset creates a fresh token state
+and applies it before legacy token private field names, so those compatibility
+names write through property setters into the same state object. The owner
+covers dig-cut and dig-depth-profile tokens, return target/relocate/
+start-envelope tokens, token source/fallback/prior-bound fields, return
+start-envelope prior flags, and pending next-dig raw/token/exemplar fields.
+Observation injection flags, cell-entry compatibility state, coverage state,
+return handoff state, token runtime sequencing, and token planning algorithms
+remain in their existing focused owners.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
