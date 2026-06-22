@@ -35,6 +35,7 @@ from testbed.planner.primitive_backend_facts import (
     PrimitiveBackendFactsAccess,
     PrimitiveBootstrapDecisionFacts,
 )
+from testbed.planner.primitive_backend_input import PrimitiveBackendDecisionInput
 from testbed.planner.primitive_decision import (
     LEGACY_FSM_DECISION_SOURCE,
     CompleteCellEntryDigCompatibilityEffect,
@@ -76,26 +77,20 @@ class _RecordingBranch:
         name: str,
         result: PrimitiveDecisionResult | None = None,
         calls: list[str] | None = None,
-        contexts: list[PrimitiveDecisionContext] | None = None,
+        inputs: list[PrimitiveBackendDecisionInput] | None = None,
     ) -> None:
         self.name = name
         self.result = result
         self.calls = calls if calls is not None else []
-        self.contexts = contexts if contexts is not None else []
+        self.inputs = inputs if inputs is not None else []
 
-    def decide_context(self, context: PrimitiveDecisionContext):
-        self.contexts.append(context)
+    def decide_input(self, decision_input: PrimitiveBackendDecisionInput):
+        self.inputs.append(decision_input)
         self.calls.append(self.name)
         return self.result
 
     def decide_tick(self, *, obs, boundary_event, preparation):
-        return self.decide_context(
-            PrimitiveDecisionContext.from_tick(
-                obs=obs,
-                boundary_event=boundary_event,
-                preparation=preparation,
-            )
-        )
+        raise AssertionError("ordered branch runner must pass backend decision input")
 
 
 class _RecordingCompatBranch(_RecordingBranch):
@@ -361,6 +356,105 @@ def _facts_and_actions(
     }
 
 
+def _backend_decision_input(
+    capabilities: PrimitiveDecisionCapabilities,
+    *,
+    obs: dict[str, Any] | None = None,
+    boundary_event: Any | None = None,
+    skill_name_before_decision: str = "dig",
+    dig_progress_updated: bool = True,
+) -> PrimitiveBackendDecisionInput:
+    context = PrimitiveDecisionContext.from_tick(
+        obs=obs if obs is not None else {},
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision=skill_name_before_decision,
+            dig_progress_updated=dig_progress_updated,
+        ),
+    )
+    return PrimitiveBackendDecisionInput.from_context(
+        context,
+        facts_source=capabilities.facts_source(),
+        compatibility_actions=capabilities.compatibility_actions(),
+    )
+
+
+def _decision_input_from_common(
+    common: PrimitiveDecisionFacts,
+    backend_facts: Any,
+    *,
+    compatibility_actions: Any | None = None,
+) -> PrimitiveBackendDecisionInput:
+    return PrimitiveBackendDecisionInput(
+        context=common.context,
+        backend_facts=backend_facts,
+        compatibility_actions=(
+            compatibility_actions if compatibility_actions is not None else object()
+        ),
+        _facts_source=object(),
+    )
+
+
+def _decide_branch_tick(
+    branch: Any,
+    capabilities: PrimitiveDecisionCapabilities | None,
+    *,
+    obs: dict[str, Any],
+    boundary_event: Any | None,
+    preparation: PrimitiveTickPreparation,
+) -> PrimitiveDecisionResult | None:
+    if capabilities is None:
+        capabilities = branch.capabilities
+    return branch.decide_input(
+        _backend_decision_input(
+            capabilities,
+            obs=obs,
+            boundary_event=boundary_event,
+            skill_name_before_decision=str(preparation.skill_name_before_decision),
+            dig_progress_updated=bool(preparation.dig_progress_updated),
+        )
+    )
+
+
+class _BoundBranch:
+    def __init__(
+        self,
+        branch: Any,
+        capabilities: PrimitiveDecisionCapabilities,
+    ) -> None:
+        self.branch = branch
+        self.capabilities = capabilities
+
+    def decide_input(
+        self,
+        decision_input: PrimitiveBackendDecisionInput,
+    ) -> PrimitiveDecisionResult | None:
+        return self.branch.decide_input(decision_input)
+
+    def decide_tick(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        preparation: PrimitiveTickPreparation,
+    ) -> PrimitiveDecisionResult | None:
+        return _decide_branch_tick(
+            self.branch,
+            self.capabilities,
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=preparation,
+        )
+
+
+def _runner_dependencies() -> dict[str, Any]:
+    return _facts_and_actions(_decision_capabilities())
+
+
+capabilities: PrimitiveDecisionCapabilities | None = None
+
+
 def _legacy_fsm_branch_ports(
     *,
     state: dict[str, str] | None = None,
@@ -378,7 +472,8 @@ def _legacy_fsm_branch_ports(
         carry_skill_name="carry",
         dump_skill_name="dump",
         return_skill_name="return",
-        **_facts_and_actions(capabilities),
+        facts_source=capabilities.facts_source(),
+        compatibility_actions=capabilities.compatibility_actions(),
     )
 
 
@@ -396,9 +491,11 @@ def _legacy_fsm_dig_branch(
         dig_transition_status=dig_transition_status
         or (lambda obs, boundary_event: _default_dig_status()),
     )
-    return LegacyFSMDigBranch(
-        config=LegacyFSMDigConfig(dig_skill_name="dig"),
-        **_facts_and_actions(capabilities),
+    return _BoundBranch(
+        LegacyFSMDigBranch(
+            config=LegacyFSMDigConfig(dig_skill_name="dig"),
+        ),
+        capabilities,
     )
 
 
@@ -450,37 +547,38 @@ def test_legacy_fsm_branch_ports_splits_facts_source_from_compat_actions() -> No
 def test_legacy_fsm_branch_dataclasses_use_narrow_fact_and_action_dependencies() -> None:
     assert {field.name for field in fields(LegacyFSMBootstrapBranch)} == {
         "config",
-        "facts_source",
     }
     assert {field.name for field in fields(LegacyFSMCarryBranch)} == {
         "config",
-        "facts_source",
     }
     assert {field.name for field in fields(LegacyFSMDumpBranch)} == {
         "config",
-        "facts_source",
     }
     assert {field.name for field in fields(LegacyFSMDigBranch)} == {
         "config",
-        "facts_source",
-        "compatibility_actions",
     }
     assert {field.name for field in fields(LegacyFSMReturnBranch)} == {
         "config",
-        "facts_source",
-        "compatibility_actions",
     }
     assert {field.name for field in fields(LegacyFSMResidualPreDigAlignAdapter)} == {
         "pre_dig_align_skill_name",
-        "facts_source",
-        "compatibility_actions",
     }
+    for branch_type in (
+        LegacyFSMBootstrapBranch,
+        LegacyFSMDigBranch,
+        LegacyFSMCarryBranch,
+        LegacyFSMDumpBranch,
+        LegacyFSMReturnBranch,
+        LegacyFSMResidualPreDigAlignAdapter,
+    ):
+        assert hasattr(branch_type, "decide_input")
 
 
 def test_legacy_fsm_branch_set_requested_backend_uses_stable_order() -> None:
     calls: list[str] = []
     expected = _requested_no_change_result(decision_source="return_branch")
     branch_set = LegacyFSMBranchSet(
+        **_runner_dependencies(),
         bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
         dig_branch=_RecordingBranch("dig", None, calls),
         carry_branch=_RecordingBranch("carry", None, calls),
@@ -507,6 +605,7 @@ def test_legacy_fsm_branch_set_compatibility_backend_uses_legacy_order() -> None
     calls: list[str] = []
     expected = _requested_no_change_result(decision_source="dig_branch")
     branch_set = LegacyFSMBranchSet(
+        **_runner_dependencies(),
         bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
         dig_branch=_RecordingBranch("dig", expected, calls),
         carry_branch=_RecordingBranch("carry", _requested_no_change_result(), calls),
@@ -534,6 +633,7 @@ def test_legacy_fsm_branch_set_compatibility_backend_uses_legacy_order() -> None
 def test_legacy_fsm_branch_set_compatibility_backend_returns_none_on_all_miss() -> None:
     calls: list[str] = []
     branch_set = LegacyFSMBranchSet(
+        **_runner_dependencies(),
         bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
         dig_branch=_RecordingBranch("dig", None, calls),
         carry_branch=_RecordingBranch("carry", None, calls),
@@ -594,6 +694,7 @@ def test_mainline_legacy_fsm_branches_do_not_expose_local_effect_application() -
 def test_legacy_fsm_branch_set_requested_backend_fails_fast_when_all_decline() -> None:
     calls: list[str] = []
     branch_set = LegacyFSMBranchSet(
+        **_runner_dependencies(),
         bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
         dig_branch=_RecordingBranch("dig", None, calls),
         carry_branch=_RecordingBranch("carry", None, calls),
@@ -626,6 +727,7 @@ def test_legacy_fsm_branch_set_compatibility_order_keeps_residual_second() -> No
     calls: list[str] = []
     expected = _requested_no_change_result(decision_source="return_branch")
     branch_set = LegacyFSMBranchSet(
+        **_runner_dependencies(),
         bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
         dig_branch=_RecordingBranch("dig", None, calls),
         carry_branch=_RecordingBranch("carry", None, calls),
@@ -652,6 +754,7 @@ def test_requested_branch_runner_returns_first_non_none_result_and_stops() -> No
     calls: list[str] = []
     expected = _requested_no_change_result(decision_source="dig_branch")
     runner = PrimitiveRequestedBranchRunner(
+        **_runner_dependencies(),
         bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
         dig_branch=_RecordingBranch("dig", expected, calls),
         carry_branch=_RecordingBranch("carry", _requested_no_change_result(), calls),
@@ -674,17 +777,18 @@ def test_requested_branch_runner_returns_first_non_none_result_and_stops() -> No
     assert calls == ["bootstrap", "dig"]
 
 
-def test_requested_branch_runner_uses_single_context_for_ordered_branches() -> None:
+def test_requested_branch_runner_uses_single_backend_input_for_ordered_branches() -> None:
     calls: list[str] = []
-    contexts: list[PrimitiveDecisionContext] = []
+    inputs: list[PrimitiveBackendDecisionInput] = []
     expected = _requested_no_change_result(decision_source="return_branch")
     runner = PrimitiveRequestedBranchRunner(
-        bootstrap_branch=_RecordingBranch("bootstrap", None, calls, contexts),
-        dig_branch=_RecordingBranch("dig", None, calls, contexts),
-        carry_branch=_RecordingBranch("carry", None, calls, contexts),
-        dump_branch=_RecordingBranch("dump", None, calls, contexts),
-        return_branch=_RecordingBranch("return", expected, calls, contexts),
-        residual_branch=_RecordingBranch("residual", None, calls, contexts),
+        **_runner_dependencies(),
+        bootstrap_branch=_RecordingBranch("bootstrap", None, calls, inputs),
+        dig_branch=_RecordingBranch("dig", None, calls, inputs),
+        carry_branch=_RecordingBranch("carry", None, calls, inputs),
+        dump_branch=_RecordingBranch("dump", None, calls, inputs),
+        return_branch=_RecordingBranch("return", expected, calls, inputs),
+        residual_branch=_RecordingBranch("residual", None, calls, inputs),
     )
     context = PrimitiveDecisionContext.from_tick(
         obs={"qpos": [1.0]},
@@ -700,7 +804,9 @@ def test_requested_branch_runner_uses_single_context_for_ordered_branches() -> N
 
     assert result is expected
     assert calls == ["bootstrap", "dig", "carry", "dump", "return"]
-    assert contexts == [context, context, context, context, context]
+    assert len(inputs) == 5
+    assert all(got is inputs[0] for got in inputs)
+    assert inputs[0].context is context
 
 
 def test_requested_branch_runner_calls_branches_in_stable_order_before_residual() -> None:
@@ -710,6 +816,7 @@ def test_requested_branch_runner_calls_branches_in_stable_order_before_residual(
         skill="pre_dig_align",
     )
     runner = PrimitiveRequestedBranchRunner(
+        **_runner_dependencies(),
         bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
         dig_branch=_RecordingBranch("dig", None, calls),
         carry_branch=_RecordingBranch("carry", None, calls),
@@ -735,6 +842,7 @@ def test_requested_branch_runner_calls_branches_in_stable_order_before_residual(
 def test_requested_branch_runner_fails_fast_when_all_branches_decline() -> None:
     calls: list[str] = []
     runner = PrimitiveRequestedBranchRunner(
+        **_runner_dependencies(),
         bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
         dig_branch=_RecordingBranch("dig", None, calls),
         carry_branch=_RecordingBranch("carry", None, calls),
@@ -764,17 +872,18 @@ def test_requested_branch_runner_fails_fast_when_all_branches_decline() -> None:
     assert "legacy_skill" in message
 
 
-def test_compatibility_backend_uses_single_context_for_legacy_order() -> None:
+def test_compatibility_backend_uses_single_backend_input_for_legacy_order() -> None:
     calls: list[str] = []
-    contexts: list[PrimitiveDecisionContext] = []
+    inputs: list[PrimitiveBackendDecisionInput] = []
     expected = _requested_no_change_result(decision_source="dig_branch")
     branch_set = LegacyFSMBranchSet(
-        bootstrap_branch=_RecordingBranch("bootstrap", None, calls, contexts),
-        dig_branch=_RecordingBranch("dig", expected, calls, contexts),
-        carry_branch=_RecordingBranch("carry", None, calls, contexts),
-        dump_branch=_RecordingBranch("dump", None, calls, contexts),
-        return_branch=_RecordingBranch("return", None, calls, contexts),
-        residual_branch=_RecordingBranch("residual", None, calls, contexts),
+        **_runner_dependencies(),
+        bootstrap_branch=_RecordingBranch("bootstrap", None, calls, inputs),
+        dig_branch=_RecordingBranch("dig", expected, calls, inputs),
+        carry_branch=_RecordingBranch("carry", None, calls, inputs),
+        dump_branch=_RecordingBranch("dump", None, calls, inputs),
+        return_branch=_RecordingBranch("return", None, calls, inputs),
+        residual_branch=_RecordingBranch("residual", None, calls, inputs),
     )
     context = PrimitiveDecisionContext.from_tick(
         obs={},
@@ -790,7 +899,9 @@ def test_compatibility_backend_uses_single_context_for_legacy_order() -> None:
 
     assert result is expected
     assert calls == ["bootstrap", "residual", "dig"]
-    assert contexts == [context, context, context]
+    assert len(inputs) == 3
+    assert all(got is inputs[0] for got in inputs)
+    assert inputs[0].context is context
 
 
 def test_legacy_fsm_backend_adapter_wraps_existing_switch_callback() -> None:
@@ -847,10 +958,11 @@ def test_residual_pre_dig_align_adapter_is_explicit_already_applied_path() -> No
     )
     adapter = LegacyFSMResidualPreDigAlignAdapter(
         pre_dig_align_skill_name="pre_dig_align",
-        **_facts_and_actions(capabilities),
     )
 
-    result = adapter.decide_tick(
+    result = _decide_branch_tick(
+        adapter,
+        capabilities,
         obs=obs,
         boundary_event=boundary_event,
         preparation=PrimitiveTickPreparation(
@@ -876,10 +988,11 @@ def test_residual_pre_dig_align_adapter_ignores_non_residual_skill() -> None:
     )
     adapter = LegacyFSMResidualPreDigAlignAdapter(
         pre_dig_align_skill_name="pre_dig_align",
-        **_facts_and_actions(capabilities),
     )
 
-    result = adapter.decide_tick(
+    result = _decide_branch_tick(
+        adapter,
+        capabilities,
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -907,10 +1020,11 @@ def test_legacy_fsm_bootstrap_branch_selects_pre_dig_align_when_enabled() -> Non
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        **_facts_only(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs=obs,
         boundary_event=boundary_event,
         preparation=PrimitiveTickPreparation(
@@ -943,10 +1057,11 @@ def test_legacy_fsm_bootstrap_branch_returns_requested_switch_effect() -> None:
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        **_facts_only(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs=obs,
         boundary_event=boundary_event,
         preparation=PrimitiveTickPreparation(
@@ -1009,10 +1124,11 @@ def test_legacy_fsm_bootstrap_branch_requested_decision_ignores_non_bootstrap() 
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        **_facts_only(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -1062,43 +1178,13 @@ def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_no_change() -> None:
         def return_transition(self) -> PrimitiveReturnTransitionFacts:
             raise AssertionError("bootstrap branch must not read return transition")
 
-    class _BootstrapFactsSource:
-        def backend_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> _BootstrapBackendFacts:
-            assert facts is None
-            assert context.obs is obs
-            assert context.boundary_event is boundary_event
-            calls.append("current_skill")
-            calls.append("current_reason")
-            common = PrimitiveDecisionFacts.from_context(
-                context,
-                current_skill_name="bootstrap",
-                current_switch_reason="",
-            )
-            return _BootstrapBackendFacts(common)
-
-        def decision_facts(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
-            raise AssertionError("bootstrap branch must consume backend facts access")
-
-        def bootstrap_status(self, *args: Any, **kwargs: Any) -> BootstrapDecisionStatus:
-            raise AssertionError("bootstrap branch must consume bootstrap facts view")
-
     branch = LegacyFSMBootstrapBranch(
         config=LegacyFSMBootstrapConfig(
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        facts_source=_BootstrapFactsSource(),
     )
-
-    result = branch.decide_tick(
+    context = PrimitiveDecisionContext.from_tick(
         obs=obs,
         boundary_event=boundary_event,
         preparation=PrimitiveTickPreparation(
@@ -1107,8 +1193,21 @@ def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_no_change() -> None:
             dig_progress_updated=False,
         ),
     )
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="bootstrap",
+        current_switch_reason="",
+    )
+    decision_input = PrimitiveBackendDecisionInput(
+        context=context,
+        backend_facts=_BootstrapBackendFacts(common),
+        compatibility_actions=object(),
+        _facts_source=object(),
+    )
 
-    assert calls == ["current_skill", "current_reason", "bootstrap_status"]
+    result = branch.decide_input(decision_input)
+
+    assert calls == ["bootstrap_status"]
     assert result is not None
     assert result.decision_source == "legacy_fsm_bootstrap_requested_effect"
     assert result.status == "no_change"
@@ -1143,42 +1242,13 @@ def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_switch_to_dig() -> N
             calls.append("bootstrap_status")
             return PrimitiveBootstrapDecisionFacts(common=self.common, status=status)
 
-    class _BootstrapFactsSource:
-        def backend_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> _BootstrapBackendFacts:
-            assert facts is None
-            calls.append("current_skill")
-            calls.append("current_reason")
-            return _BootstrapBackendFacts(
-                PrimitiveDecisionFacts.from_context(
-                    context,
-                    current_skill_name="bootstrap",
-                    current_switch_reason="",
-                )
-            )
-
-        def decision_facts(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
-            raise AssertionError("bootstrap branch must consume backend facts access")
-
-        def bootstrap_status(self, *args: Any, **kwargs: Any) -> BootstrapDecisionStatus:
-            raise AssertionError("bootstrap branch must consume bootstrap facts view")
-
     branch = LegacyFSMBootstrapBranch(
         config=LegacyFSMBootstrapConfig(
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        facts_source=_BootstrapFactsSource(),
     )
-
-    result = branch.decide_tick(
+    context = PrimitiveDecisionContext.from_tick(
         obs=obs,
         boundary_event=boundary_event,
         preparation=PrimitiveTickPreparation(
@@ -1187,8 +1257,21 @@ def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_switch_to_dig() -> N
             dig_progress_updated=False,
         ),
     )
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="bootstrap",
+        current_switch_reason="",
+    )
+    decision_input = PrimitiveBackendDecisionInput(
+        context=context,
+        backend_facts=_BootstrapBackendFacts(common),
+        compatibility_actions=object(),
+        _facts_source=object(),
+    )
 
-    assert calls == ["current_skill", "current_reason", "bootstrap_status"]
+    result = branch.decide_input(decision_input)
+
+    assert calls == ["bootstrap_status"]
     assert result is not None
     assert result.status == "skill_switch"
     assert result.skill_after == "dig"
@@ -1213,10 +1296,11 @@ def test_legacy_fsm_bootstrap_branch_ignores_non_bootstrap_skill() -> None:
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        **_facts_only(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -1239,7 +1323,9 @@ def test_legacy_fsm_dig_branch_completes_dig_to_carry_in_order() -> None:
         ),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs=obs,
         boundary_event=boundary_event,
         preparation=PrimitiveTickPreparation(
@@ -1278,46 +1364,6 @@ def test_legacy_fsm_dig_branch_consumes_backend_facts_and_syncs_reason() -> None
             calls.append("dig_status")
             return PrimitiveDigTransitionFacts(common=self.common, status=status)
 
-    class _DigFactsSource:
-        def backend_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> _DigBackendFacts:
-            nonlocal common_facts
-            assert facts is None
-            assert context.obs is obs
-            assert context.boundary_event is boundary_event
-            calls.append("current_skill")
-            calls.append("current_reason")
-            common_facts = PrimitiveDecisionFacts.from_context(
-                context,
-                current_skill_name="dig",
-                current_switch_reason="",
-            )
-            return _DigBackendFacts(common_facts)
-
-        def decision_facts(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
-            raise AssertionError("dig branch must consume backend facts access")
-
-        def dig_transition_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> PrimitiveDigTransitionFacts:
-            raise AssertionError("dig branch must consume backend facts access")
-
-        def dig_transition_status(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> DigTransitionStatus:
-            raise AssertionError("dig branch must consume dig facts view")
-
     class _DigCompatibilityActions:
         def sync_dig_transition_reason(
             self,
@@ -1329,11 +1375,8 @@ def test_legacy_fsm_dig_branch_consumes_backend_facts_and_syncs_reason() -> None
 
     branch = LegacyFSMDigBranch(
         config=LegacyFSMDigConfig(dig_skill_name="dig"),
-        facts_source=_DigFactsSource(),
-        compatibility_actions=_DigCompatibilityActions(),
     )
-
-    result = branch.decide_tick(
+    context = PrimitiveDecisionContext.from_tick(
         obs=obs,
         boundary_event=boundary_event,
         preparation=PrimitiveTickPreparation(
@@ -1342,10 +1385,21 @@ def test_legacy_fsm_dig_branch_consumes_backend_facts_and_syncs_reason() -> None
             dig_progress_updated=True,
         ),
     )
+    common_facts = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="dig",
+        current_switch_reason="",
+    )
+    decision_input = PrimitiveBackendDecisionInput(
+        context=context,
+        backend_facts=_DigBackendFacts(common_facts),
+        compatibility_actions=_DigCompatibilityActions(),
+        _facts_source=object(),
+    )
+
+    result = branch.decide_input(decision_input)
 
     assert calls == [
-        "current_skill",
-        "current_reason",
         "dig_status",
         "sync_dig_reason",
     ]
@@ -1371,7 +1425,9 @@ def test_legacy_fsm_dig_branch_requested_exit_guard_effects_in_order() -> None:
         ),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={"qpos": [1.0]},
         boundary_event=object(),
         preparation=PrimitiveTickPreparation(
@@ -1400,7 +1456,9 @@ def test_legacy_fsm_dig_branch_requested_bad_dig_effects_in_order() -> None:
         ),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -1427,7 +1485,9 @@ def test_legacy_fsm_dig_branch_requested_complete_low_payload_effects_in_order()
         ),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={},
         boundary_event=object(),
         preparation=PrimitiveTickPreparation(
@@ -1455,7 +1515,9 @@ def test_legacy_fsm_dig_branch_requested_dig_to_carry_effects_in_order() -> None
         ),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={"qpos": [1.0]},
         boundary_event=object(),
         preparation=PrimitiveTickPreparation(
@@ -1482,7 +1544,9 @@ def test_legacy_fsm_dig_branch_requested_dig_to_carry_effects_in_order() -> None
 def test_legacy_fsm_dig_branch_requested_no_change_for_unready_dig() -> None:
     branch = _legacy_fsm_dig_branch()
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -1507,7 +1571,9 @@ def test_legacy_fsm_dig_branch_requested_ignores_non_dig_skill() -> None:
         dig_transition_status=fail_if_called,
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -1531,37 +1597,6 @@ def test_legacy_fsm_dig_branch_non_dig_skill_does_not_read_or_sync_dig_facts() -
             calls.append("dig_status")
             raise AssertionError("non-dig skill must not request dig facts")
 
-    class _NonDigFactsSource:
-        def backend_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> _NonDigBackendFacts:
-            assert facts is None
-            calls.append("current_skill")
-            calls.append("current_reason")
-            common = PrimitiveDecisionFacts.from_context(
-                context,
-                current_skill_name="carry",
-                current_switch_reason="dig_to_carry_loaded",
-            )
-            return _NonDigBackendFacts(common)
-
-        def decision_facts(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
-            raise AssertionError("dig branch must consume backend facts access")
-
-        def dig_transition_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> PrimitiveDigTransitionFacts:
-            raise AssertionError("dig branch must consume backend facts access")
-
     class _NonDigCompatibilityActions:
         def sync_dig_transition_reason(
             self,
@@ -1572,11 +1607,8 @@ def test_legacy_fsm_dig_branch_non_dig_skill_does_not_read_or_sync_dig_facts() -
 
     branch = LegacyFSMDigBranch(
         config=LegacyFSMDigConfig(dig_skill_name="dig"),
-        facts_source=_NonDigFactsSource(),
-        compatibility_actions=_NonDigCompatibilityActions(),
     )
-
-    result = branch.decide_tick(
+    context = PrimitiveDecisionContext.from_tick(
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -1585,15 +1617,28 @@ def test_legacy_fsm_dig_branch_non_dig_skill_does_not_read_or_sync_dig_facts() -
             dig_progress_updated=False,
         ),
     )
+    calls.append("current_skill")
+    calls.append("current_reason")
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="carry",
+        current_switch_reason="dig_to_carry_loaded",
+    )
+
+    result = branch.decide_input(
+        _decision_input_from_common(
+            common,
+            _NonDigBackendFacts(common),
+            compatibility_actions=_NonDigCompatibilityActions(),
+        )
+    )
 
     assert result is None
     assert calls == ["current_skill", "current_reason"]
 
 
 def test_legacy_fsm_compatibility_backend_returns_dig_requested_effects() -> None:
-    branch_set = LegacyFSMBranchSet(
-        bootstrap_branch=_RecordingBranch("bootstrap", None, []),
-        dig_branch=_legacy_fsm_dig_branch(
+    capabilities = _decision_capabilities(
         dig_transition_status=lambda obs, boundary_event: _default_dig_status(
             dig_exit_guard_ready=True,
             dig_bad_replan_ready=True,
@@ -1601,6 +1646,12 @@ def test_legacy_fsm_compatibility_backend_returns_dig_requested_effects() -> Non
             dig_to_carry_ready=True,
             dig_to_carry_reason="boundary_confirmed",
         ),
+    )
+    branch_set = LegacyFSMBranchSet(
+        **_facts_and_actions(capabilities),
+        bootstrap_branch=_RecordingBranch("bootstrap", None, []),
+        dig_branch=LegacyFSMDigBranch(
+            config=LegacyFSMDigConfig(dig_skill_name="dig"),
         ),
         carry_branch=_RecordingBranch("carry", None, []),
         dump_branch=_RecordingBranch("dump", None, []),
@@ -1636,7 +1687,9 @@ def test_legacy_fsm_dig_branch_ignores_non_dig_skill() -> None:
         dig_transition_status=fail_if_called,
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -1673,10 +1726,11 @@ def test_legacy_fsm_carry_branch_release_safety_handoffs_to_return() -> None:
     )
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        **_facts_only(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs=obs,
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -1715,10 +1769,11 @@ def test_legacy_fsm_carry_branch_requested_release_safety_handoff_effects() -> N
     )
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        **_facts_only(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={"qpos": [1.0]},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -1759,10 +1814,11 @@ def test_legacy_fsm_carry_branch_requested_dump_complete_boundary_effects() -> N
     )
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        **_facts_only(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -1806,10 +1862,11 @@ def test_legacy_fsm_carry_branch_committed_boundary_switches_to_dump() -> None:
     )
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        **_facts_only(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs=obs,
         boundary_event=boundary_event,
         preparation=PrimitiveTickPreparation(
@@ -1860,52 +1917,10 @@ def test_legacy_fsm_carry_branch_consumes_backend_facts_view() -> None:
             calls.append("carry_status")
             return PrimitiveCarryTransitionFacts(common=self.common, status=status)
 
-    class _CarryFactsSource:
-        def backend_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> _CarryBackendFacts:
-            nonlocal common_facts
-            assert facts is None
-            assert context.obs is obs
-            assert context.boundary_event is boundary_event
-            calls.append("current_skill")
-            calls.append("current_reason")
-            common_facts = PrimitiveDecisionFacts.from_context(
-                context,
-                current_skill_name="carry",
-                current_switch_reason="dig_to_carry_loaded",
-            )
-            return _CarryBackendFacts(common_facts)
-
-        def decision_facts(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
-            raise AssertionError("carry branch must consume backend facts access")
-
-        def carry_transition_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> PrimitiveCarryTransitionFacts:
-            raise AssertionError("carry branch must consume backend facts access")
-
-        def carry_transition_status(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> CarryTransitionStatus:
-            raise AssertionError("carry branch must consume carry facts view")
-
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        facts_source=_CarryFactsSource(),
     )
-
-    result = branch.decide_tick(
+    context = PrimitiveDecisionContext.from_tick(
         obs=obs,
         boundary_event=boundary_event,
         preparation=PrimitiveTickPreparation(
@@ -1913,6 +1928,17 @@ def test_legacy_fsm_carry_branch_consumes_backend_facts_view() -> None:
             skill_name_before_decision="carry",
             dig_progress_updated=False,
         ),
+    )
+    calls.append("current_skill")
+    calls.append("current_reason")
+    common_facts = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="carry",
+        current_switch_reason="dig_to_carry_loaded",
+    )
+
+    result = branch.decide_input(
+        _decision_input_from_common(common_facts, _CarryBackendFacts(common_facts))
     )
 
     assert calls == ["current_skill", "current_reason", "carry_status"]
@@ -1949,10 +1975,11 @@ def test_legacy_fsm_carry_branch_requested_ready_to_dump_effects_in_order() -> N
     )
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        **_facts_only(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={"qpos": [1.0]},
         boundary_event=object(),
         preparation=PrimitiveTickPreparation(
@@ -1986,10 +2013,11 @@ def test_legacy_fsm_carry_branch_ignores_non_carry_skill() -> None:
     )
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        **_facts_only(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -2013,43 +2041,10 @@ def test_legacy_fsm_carry_branch_non_carry_skill_does_not_read_carry_facts() -> 
             calls.append("carry_status")
             raise AssertionError("non-carry skill must not request carry facts")
 
-    class _NonCarryFactsSource:
-        def backend_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> _NonCarryBackendFacts:
-            assert facts is None
-            calls.append("current_skill")
-            calls.append("current_reason")
-            common = PrimitiveDecisionFacts.from_context(
-                context,
-                current_skill_name="dump",
-                current_switch_reason="carry_to_dump_target_ready",
-            )
-            return _NonCarryBackendFacts(common)
-
-        def decision_facts(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
-            raise AssertionError("carry branch must consume backend facts access")
-
-        def carry_transition_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> PrimitiveCarryTransitionFacts:
-            raise AssertionError("carry branch must consume backend facts access")
-
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        facts_source=_NonCarryFactsSource(),
     )
-
-    result = branch.decide_tick(
+    context = PrimitiveDecisionContext.from_tick(
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -2057,6 +2052,17 @@ def test_legacy_fsm_carry_branch_non_carry_skill_does_not_read_carry_facts() -> 
             skill_name_before_decision="dump",
             dig_progress_updated=False,
         ),
+    )
+    calls.append("current_skill")
+    calls.append("current_reason")
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="dump",
+        current_switch_reason="carry_to_dump_target_ready",
+    )
+
+    result = branch.decide_input(
+        _decision_input_from_common(common, _NonCarryBackendFacts(common))
     )
 
     assert result is None
@@ -2085,10 +2091,11 @@ def test_legacy_fsm_dump_branch_boundary_handoffs_to_return() -> None:
     )
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        **_facts_only(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs=obs,
         boundary_event=object(),
         preparation=PrimitiveTickPreparation(
@@ -2133,52 +2140,10 @@ def test_legacy_fsm_dump_branch_consumes_backend_facts_view() -> None:
             calls.append("dump_status")
             return PrimitiveDumpTransitionFacts(common=self.common, status=status)
 
-    class _DumpFactsSource:
-        def backend_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> _DumpBackendFacts:
-            nonlocal common_facts
-            assert facts is None
-            assert context.obs is obs
-            assert context.boundary_event is boundary_event
-            calls.append("current_skill")
-            calls.append("current_reason")
-            common_facts = PrimitiveDecisionFacts.from_context(
-                context,
-                current_skill_name="dump",
-                current_switch_reason="carry_to_dump_target_ready",
-            )
-            return _DumpBackendFacts(common_facts)
-
-        def decision_facts(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
-            raise AssertionError("dump branch must consume backend facts access")
-
-        def dump_transition_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> PrimitiveDumpTransitionFacts:
-            raise AssertionError("dump branch must consume backend facts access")
-
-        def dump_transition_status(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> DumpTransitionStatus:
-            raise AssertionError("dump branch must consume dump facts view")
-
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        facts_source=_DumpFactsSource(),
     )
-
-    result = branch.decide_tick(
+    context = PrimitiveDecisionContext.from_tick(
         obs=obs,
         boundary_event=boundary_event,
         preparation=PrimitiveTickPreparation(
@@ -2186,6 +2151,17 @@ def test_legacy_fsm_dump_branch_consumes_backend_facts_view() -> None:
             skill_name_before_decision="dump",
             dig_progress_updated=False,
         ),
+    )
+    calls.append("current_skill")
+    calls.append("current_reason")
+    common_facts = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="dump",
+        current_switch_reason="carry_to_dump_target_ready",
+    )
+
+    result = branch.decide_input(
+        _decision_input_from_common(common_facts, _DumpBackendFacts(common_facts))
     )
 
     assert calls == ["current_skill", "current_reason", "dump_status"]
@@ -2217,10 +2193,11 @@ def test_legacy_fsm_dump_branch_requested_boundary_done_effects() -> None:
     )
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        **_facts_only(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={"qpos": [1.0]},
         boundary_event=object(),
         preparation=PrimitiveTickPreparation(
@@ -2259,10 +2236,11 @@ def test_legacy_fsm_dump_branch_mass_low_hold_switches_to_return() -> None:
     )
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        **_facts_only(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs=obs,
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -2300,10 +2278,11 @@ def test_legacy_fsm_dump_branch_requested_ready_to_return_effects_in_order() -> 
     )
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        **_facts_only(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={"qpos": [1.0]},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -2334,10 +2313,11 @@ def test_legacy_fsm_dump_branch_ignores_non_dump_skill() -> None:
     )
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        **_facts_only(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -2361,43 +2341,10 @@ def test_legacy_fsm_dump_branch_non_dump_skill_does_not_read_dump_facts() -> Non
             calls.append("dump_status")
             raise AssertionError("non-dump skill must not request dump facts")
 
-    class _NonDumpFactsSource:
-        def backend_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> _NonDumpBackendFacts:
-            assert facts is None
-            calls.append("current_skill")
-            calls.append("current_reason")
-            common = PrimitiveDecisionFacts.from_context(
-                context,
-                current_skill_name="return",
-                current_switch_reason="dump_to_return_mass_low",
-            )
-            return _NonDumpBackendFacts(common)
-
-        def decision_facts(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
-            raise AssertionError("dump branch must consume backend facts access")
-
-        def dump_transition_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> PrimitiveDumpTransitionFacts:
-            raise AssertionError("dump branch must consume backend facts access")
-
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        facts_source=_NonDumpFactsSource(),
     )
-
-    result = branch.decide_tick(
+    context = PrimitiveDecisionContext.from_tick(
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -2405,6 +2352,17 @@ def test_legacy_fsm_dump_branch_non_dump_skill_does_not_read_dump_facts() -> Non
             skill_name_before_decision="return",
             dig_progress_updated=False,
         ),
+    )
+    calls.append("current_skill")
+    calls.append("current_reason")
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="return",
+        current_switch_reason="dump_to_return_mass_low",
+    )
+
+    result = branch.decide_input(
+        _decision_input_from_common(common, _NonDumpBackendFacts(common))
     )
 
     assert result is None
@@ -2455,10 +2413,11 @@ def test_legacy_fsm_return_branch_requested_next_dig_event_marks_only() -> None:
     )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        **_facts_and_actions(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs=obs,
         boundary_event=object(),
         preparation=PrimitiveTickPreparation(
@@ -2487,10 +2446,11 @@ def test_legacy_fsm_return_branch_requested_completion_orders_effects() -> None:
     )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        **_facts_and_actions(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -2523,10 +2483,11 @@ def test_legacy_fsm_return_branch_requested_event_then_completion_order() -> Non
     )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        **_facts_and_actions(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -2551,10 +2512,11 @@ def test_legacy_fsm_return_branch_requested_no_effects_for_unready_return() -> N
     )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        **_facts_and_actions(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -2610,10 +2572,11 @@ def test_legacy_fsm_return_branch_refreshes_before_reading_return_status() -> No
     )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        **_facts_and_actions(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs=obs,
         boundary_event=boundary_event,
         preparation=PrimitiveTickPreparation(
@@ -2659,46 +2622,6 @@ def test_legacy_fsm_return_branch_consumes_backend_facts_view() -> None:
             calls.append("return_status")
             return PrimitiveReturnTransitionFacts(common=self.common, status=status)
 
-    class _ReturnFactsSource:
-        def backend_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> _ReturnBackendFacts:
-            nonlocal common_facts
-            assert facts is None
-            assert context.obs is obs
-            assert context.boundary_event is boundary_event
-            calls.append("current_skill")
-            calls.append("current_reason")
-            common_facts = PrimitiveDecisionFacts.from_context(
-                context,
-                current_skill_name="return",
-                current_switch_reason="",
-            )
-            return _ReturnBackendFacts(common_facts)
-
-        def decision_facts(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> PrimitiveDecisionFacts:
-            raise AssertionError("return branch must consume backend facts access")
-
-        def return_transition_facts(
-            self,
-            context: PrimitiveDecisionContext,
-            *,
-            facts: PrimitiveDecisionFacts | None = None,
-        ) -> PrimitiveReturnTransitionFacts:
-            raise AssertionError("return branch must consume backend facts access")
-
-        def return_transition_status(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> ReturnTransitionStatus:
-            raise AssertionError("return branch must consume return facts view")
-
     class _ReturnCompatibilityActions:
         def refresh_return_transition_state(
             self,
@@ -2709,11 +2632,8 @@ def test_legacy_fsm_return_branch_consumes_backend_facts_view() -> None:
 
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        facts_source=_ReturnFactsSource(),
-        compatibility_actions=_ReturnCompatibilityActions(),
     )
-
-    result = branch.decide_tick(
+    context = PrimitiveDecisionContext.from_tick(
         obs=obs,
         boundary_event=boundary_event,
         preparation=PrimitiveTickPreparation(
@@ -2721,6 +2641,21 @@ def test_legacy_fsm_return_branch_consumes_backend_facts_view() -> None:
             skill_name_before_decision="return",
             dig_progress_updated=False,
         ),
+    )
+    calls.append("current_skill")
+    calls.append("current_reason")
+    common_facts = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="return",
+        current_switch_reason="",
+    )
+
+    result = branch.decide_input(
+        _decision_input_from_common(
+            common_facts,
+            _ReturnBackendFacts(common_facts),
+            compatibility_actions=_ReturnCompatibilityActions(),
+        )
     )
 
     assert calls == [
@@ -2758,10 +2693,11 @@ def test_legacy_fsm_return_branch_requested_ignores_non_return_skill() -> None:
     )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        **_facts_and_actions(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -2800,10 +2736,11 @@ def test_legacy_fsm_return_branch_latches_next_dig_event_without_switch() -> Non
     )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        **_facts_and_actions(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs=obs,
         boundary_event=object(),
         preparation=PrimitiveTickPreparation(
@@ -2842,10 +2779,11 @@ def test_legacy_fsm_return_branch_completes_next_dig_handoff_in_order() -> None:
     )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        **_facts_and_actions(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs=obs,
         boundary_event=object(),
         preparation=PrimitiveTickPreparation(
@@ -2888,10 +2826,11 @@ def test_legacy_fsm_return_branch_defers_next_skill_selection_to_applier() -> No
     )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        **_facts_and_actions(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs=obs,
         boundary_event=object(),
         preparation=PrimitiveTickPreparation(
@@ -2932,10 +2871,11 @@ def test_legacy_fsm_return_branch_ignores_non_return_skill() -> None:
     )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        **_facts_and_actions(capabilities),
     )
 
-    result = branch.decide_tick(
+    result = _decide_branch_tick(
+        branch,
+        capabilities,
         obs={},
         boundary_event=None,
         preparation=PrimitiveTickPreparation(

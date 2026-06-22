@@ -6,11 +6,13 @@ from typing import Any
 import pytest
 
 from testbed.planner.primitive_backend import LegacyFSMBranchSet
+from testbed.planner.primitive_backend_input import PrimitiveBackendDecisionInput
 from testbed.planner.primitive_decision import (
     PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
 )
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
+from testbed.planner.primitive_decision_facts import PrimitiveDecisionFacts
 from testbed.planner.primitive_decision_runtime import (
     LEGACY_FSM_DECISION_BACKEND_NAME,
     PrimitiveDecisionRuntime,
@@ -34,19 +36,55 @@ class _RecordingBranch:
         self.calls = calls
         self.contexts = contexts if contexts is not None else []
 
-    def decide_context(self, context: PrimitiveDecisionContext):
-        self.contexts.append(context)
+    def decide_input(self, decision_input: PrimitiveBackendDecisionInput):
+        self.contexts.append(decision_input.context)
         self.calls.append(self.name)
         return self.result
 
     def decide_tick(self, *, obs, boundary_event, preparation):
-        return self.decide_context(
-            PrimitiveDecisionContext.from_tick(
-                obs=obs,
-                boundary_event=boundary_event,
-                preparation=preparation,
-            )
+        raise AssertionError("runtime backend must pass backend decision input")
+
+
+class _BackendFacts:
+    def __init__(self, common: PrimitiveDecisionFacts) -> None:
+        self.common = common
+
+
+class _RuntimeFactsSource:
+    def decision_facts(self, context: PrimitiveDecisionContext) -> PrimitiveDecisionFacts:
+        return PrimitiveDecisionFacts.from_context(
+            context,
+            current_skill_name=str(context.skill_name_before_decision),
+            current_switch_reason="",
         )
+
+    def backend_facts(
+        self,
+        context: PrimitiveDecisionContext,
+        *,
+        facts: PrimitiveDecisionFacts | None = None,
+    ) -> _BackendFacts:
+        if facts is None:
+            facts = self.decision_facts(context)
+        return _BackendFacts(facts)
+
+
+class _RuntimeCompatibilityActions:
+    def sync_dig_transition_reason(self, dig_facts: object) -> None:
+        raise AssertionError("recording branches must not sync dig reason")
+
+    def refresh_return_transition_state(self, context: PrimitiveDecisionContext) -> None:
+        raise AssertionError("recording branches must not refresh return")
+
+    def handle_residual_pre_dig_align(self, context: PrimitiveDecisionContext) -> bool:
+        raise AssertionError("recording branches must not handle residual")
+
+
+def _branch_dependencies() -> dict[str, object]:
+    return {
+        "facts_source": _RuntimeFactsSource(),
+        "compatibility_actions": _RuntimeCompatibilityActions(),
+    }
 
 
 def _result(source: str, *, skill: str = "dig") -> PrimitiveDecisionResult:
@@ -74,6 +112,7 @@ def _branch_set(
         "return": requested_result if requested_branch == "return" else None,
     }
     return LegacyFSMBranchSet(
+        **_branch_dependencies(),
         bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
         dig_branch=_RecordingBranch(
             "dig",
@@ -128,6 +167,7 @@ def test_runtime_decide_tick_builds_one_context_for_requested_backend() -> None:
     contexts: list[PrimitiveDecisionContext] = []
     expected = _result("return_branch", skill="return")
     branch_set = LegacyFSMBranchSet(
+        **_branch_dependencies(),
         bootstrap_branch=_RecordingBranch("bootstrap", None, calls, contexts),
         dig_branch=_RecordingBranch("dig", None, calls, contexts),
         carry_branch=_RecordingBranch("carry", None, calls, contexts),

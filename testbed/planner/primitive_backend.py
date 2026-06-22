@@ -38,6 +38,7 @@ from testbed.planner.primitive_decision_capabilities import (
     PrimitiveDecisionFactsSource,
 )
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
+from testbed.planner.primitive_backend_input import PrimitiveBackendDecisionInput
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
 
@@ -85,17 +86,9 @@ class PrimitiveDecisionBackend(Protocol):
 class PrimitiveDecisionBranch(Protocol):
     """One ordered primitive decision branch, or None when not handled."""
 
-    def decide_context(
+    def decide_input(
         self,
-        context: PrimitiveDecisionContext,
-    ) -> PrimitiveDecisionResult | None: ...
-
-    def decide_tick(
-        self,
-        *,
-        obs: dict[str, Any],
-        boundary_event: Any | None,
-        preparation: PrimitiveTickPreparation,
+        decision_input: PrimitiveBackendDecisionInput,
     ) -> PrimitiveDecisionResult | None: ...
 
 
@@ -103,6 +96,8 @@ class PrimitiveDecisionBranch(Protocol):
 class PrimitiveRequestedBranchRunner:
     """Ordered primitive branch dispatch with explicit residual parking."""
 
+    facts_source: PrimitiveDecisionFactsSource
+    compatibility_actions: PrimitiveDecisionCompatibilityActions
     bootstrap_branch: PrimitiveDecisionBranch
     dig_branch: PrimitiveDecisionBranch
     carry_branch: PrimitiveDecisionBranch
@@ -114,6 +109,11 @@ class PrimitiveRequestedBranchRunner:
         self,
         context: PrimitiveDecisionContext,
     ) -> PrimitiveDecisionResult:
+        decision_input = PrimitiveBackendDecisionInput.from_context(
+            context,
+            facts_source=self.facts_source,
+            compatibility_actions=self.compatibility_actions,
+        )
         for branch in (
             self.bootstrap_branch,
             self.dig_branch,
@@ -122,7 +122,7 @@ class PrimitiveRequestedBranchRunner:
             self.return_branch,
             self.residual_branch,
         ):
-            result = branch.decide_context(context)
+            result = branch.decide_input(decision_input)
             if result is not None:
                 return result
         unhandled_skill = str(context.skill_name_before_decision)
@@ -191,58 +191,27 @@ class LegacyFSMResidualPreDigAlignAdapter:
     """Explicit already-applied adapter for parked pre-dig-align behavior."""
 
     pre_dig_align_skill_name: str
-    facts_source: PrimitiveDecisionFactsSource
-    compatibility_actions: PrimitiveDecisionCompatibilityActions
 
-    def decide_context(
+    def decide_input(
         self,
-        context: PrimitiveDecisionContext,
+        decision_input: PrimitiveBackendDecisionInput,
     ) -> PrimitiveDecisionResult | None:
-        facts = self.facts_source.decision_facts(context)
+        facts = decision_input.common
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.pre_dig_align_skill_name):
             return None
-        self.compatibility_actions.handle_residual_pre_dig_align(context)
+        decision_input.compatibility_actions.handle_residual_pre_dig_align(
+            decision_input.context
+        )
         # Residual handling mutates shell-owned skill/reason state; rebuild facts
         # after the compatibility handler to preserve the historical result.
-        facts_after = self.facts_source.decision_facts(context)
+        facts_after = decision_input.rebuild_common_facts_after_compatibility_action()
         return PrimitiveDecisionResult.from_legacy_fsm_outcome(
             decision_source=RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE,
             skill_before=skill_before,
             skill_after=facts_after.current_skill_name,
             switch_reason=facts_after.current_switch_reason,
         )
-
-    def decide_tick(
-        self,
-        *,
-        obs: dict[str, Any],
-        boundary_event: Any | None,
-        preparation: PrimitiveTickPreparation,
-    ) -> PrimitiveDecisionResult | None:
-        return self.decide_context(
-            PrimitiveDecisionContext.from_tick(
-                obs=obs,
-                boundary_event=boundary_event,
-                preparation=preparation,
-            )
-        )
-
-    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
-        context = PrimitiveDecisionContext.from_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=PrimitiveTickPreparation(
-                boundary_event=boundary_event,
-                skill_name_before_decision="",
-                dig_progress_updated=False,
-            ),
-        )
-        facts = self.facts_source.decision_facts(context)
-        if not facts.is_current_skill(self.pre_dig_align_skill_name):
-            return False
-        self.compatibility_actions.handle_residual_pre_dig_align(context)
-        return True
 
 
 @dataclass(frozen=True)
@@ -256,14 +225,13 @@ class LegacyFSMBootstrapBranch:
     """Bootstrap branch of the legacy FSM with decision capabilities."""
 
     config: LegacyFSMBootstrapConfig
-    facts_source: PrimitiveDecisionFactsSource
 
-    def decide_context(
+    def decide_input(
         self,
-        context: PrimitiveDecisionContext,
+        decision_input: PrimitiveBackendDecisionInput,
     ) -> PrimitiveDecisionResult | None:
-        backend_facts = self.facts_source.backend_facts(context)
-        facts = backend_facts.common
+        backend_facts = decision_input.backend_facts
+        facts = decision_input.common
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.config.bootstrap_skill_name):
             return None
@@ -296,21 +264,6 @@ class LegacyFSMBootstrapBranch:
             ),
         )
 
-    def decide_tick(
-        self,
-        *,
-        obs: dict[str, Any],
-        boundary_event: Any | None,
-        preparation: PrimitiveTickPreparation,
-    ) -> PrimitiveDecisionResult | None:
-        return self.decide_context(
-            PrimitiveDecisionContext.from_tick(
-                obs=obs,
-                boundary_event=boundary_event,
-                preparation=preparation,
-            )
-        )
-
 
 @dataclass(frozen=True)
 class LegacyFSMDigConfig:
@@ -322,20 +275,18 @@ class LegacyFSMDigBranch:
     """Dig branch of the legacy FSM with decision capabilities."""
 
     config: LegacyFSMDigConfig
-    facts_source: PrimitiveDecisionFactsSource
-    compatibility_actions: PrimitiveDecisionCompatibilityActions
 
-    def decide_context(
+    def decide_input(
         self,
-        context: PrimitiveDecisionContext,
+        decision_input: PrimitiveBackendDecisionInput,
     ) -> PrimitiveDecisionResult | None:
-        backend_facts = self.facts_source.backend_facts(context)
-        facts = backend_facts.common
+        backend_facts = decision_input.backend_facts
+        facts = decision_input.common
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.config.dig_skill_name):
             return None
         dig_facts = backend_facts.dig_transition()
-        self.compatibility_actions.sync_dig_transition_reason(dig_facts)
+        decision_input.compatibility_actions.sync_dig_transition_reason(dig_facts)
         effects = self._effects_for_status(dig_facts.status)
         switch_reason = _switch_reason_from_effects(effects)
         skill_after = _skill_after_from_effects(effects, default=skill_before)
@@ -346,21 +297,6 @@ class LegacyFSMDigBranch:
             skill_after=skill_after,
             switch_reason=switch_reason,
             effects=effects,
-        )
-
-    def decide_tick(
-        self,
-        *,
-        obs: dict[str, Any],
-        boundary_event: Any | None,
-        preparation: PrimitiveTickPreparation,
-    ) -> PrimitiveDecisionResult | None:
-        return self.decide_context(
-            PrimitiveDecisionContext.from_tick(
-                obs=obs,
-                boundary_event=boundary_event,
-                preparation=preparation,
-            )
         )
 
     def _effects_for_status(self, status: DigTransitionStatus) -> tuple[Any, ...]:
@@ -408,14 +344,13 @@ class LegacyFSMCarryBranch:
     """Carry branch of the legacy FSM with decision capabilities."""
 
     config: LegacyFSMCarryConfig
-    facts_source: PrimitiveDecisionFactsSource
 
-    def decide_context(
+    def decide_input(
         self,
-        context: PrimitiveDecisionContext,
+        decision_input: PrimitiveBackendDecisionInput,
     ) -> PrimitiveDecisionResult | None:
-        backend_facts = self.facts_source.backend_facts(context)
-        facts = backend_facts.common
+        backend_facts = decision_input.backend_facts
+        facts = decision_input.common
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.config.carry_skill_name):
             return None
@@ -431,21 +366,6 @@ class LegacyFSMCarryBranch:
             skill_after=skill_after,
             switch_reason=switch_reason,
             effects=effects,
-        )
-
-    def decide_tick(
-        self,
-        *,
-        obs: dict[str, Any],
-        boundary_event: Any | None,
-        preparation: PrimitiveTickPreparation,
-    ) -> PrimitiveDecisionResult | None:
-        return self.decide_context(
-            PrimitiveDecisionContext.from_tick(
-                obs=obs,
-                boundary_event=boundary_event,
-                preparation=preparation,
-            )
         )
 
     def _effects_for_status(
@@ -494,14 +414,13 @@ class LegacyFSMDumpBranch:
     """Dump branch of the legacy FSM with decision capabilities."""
 
     config: LegacyFSMDumpConfig
-    facts_source: PrimitiveDecisionFactsSource
 
-    def decide_context(
+    def decide_input(
         self,
-        context: PrimitiveDecisionContext,
+        decision_input: PrimitiveBackendDecisionInput,
     ) -> PrimitiveDecisionResult | None:
-        backend_facts = self.facts_source.backend_facts(context)
-        facts = backend_facts.common
+        backend_facts = decision_input.backend_facts
+        facts = decision_input.common
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.config.dump_skill_name):
             return None
@@ -515,21 +434,6 @@ class LegacyFSMDumpBranch:
             skill_after=skill_before,
             switch_reason="",
             effects=effects,
-        )
-
-    def decide_tick(
-        self,
-        *,
-        obs: dict[str, Any],
-        boundary_event: Any | None,
-        preparation: PrimitiveTickPreparation,
-    ) -> PrimitiveDecisionResult | None:
-        return self.decide_context(
-            PrimitiveDecisionContext.from_tick(
-                obs=obs,
-                boundary_event=boundary_event,
-                preparation=preparation,
-            )
         )
 
     def _effects_for_status(
@@ -567,19 +471,19 @@ class LegacyFSMReturnBranch:
     """Return branch of the legacy FSM with decision capabilities."""
 
     config: LegacyFSMReturnConfig
-    facts_source: PrimitiveDecisionFactsSource
-    compatibility_actions: PrimitiveDecisionCompatibilityActions
 
-    def decide_context(
+    def decide_input(
         self,
-        context: PrimitiveDecisionContext,
+        decision_input: PrimitiveBackendDecisionInput,
     ) -> PrimitiveDecisionResult | None:
-        backend_facts = self.facts_source.backend_facts(context)
-        facts = backend_facts.common
+        backend_facts = decision_input.backend_facts
+        facts = decision_input.common
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.config.return_skill_name):
             return None
-        self.compatibility_actions.refresh_return_transition_state(context)
+        decision_input.compatibility_actions.refresh_return_transition_state(
+            decision_input.context
+        )
         return_facts = backend_facts.return_transition()
         effects = self._effects_for_status(return_facts.status)
         decision_status = (
@@ -592,21 +496,6 @@ class LegacyFSMReturnBranch:
             skill_after=skill_before,
             switch_reason="",
             effects=effects,
-        )
-
-    def decide_tick(
-        self,
-        *,
-        obs: dict[str, Any],
-        boundary_event: Any | None,
-        preparation: PrimitiveTickPreparation,
-    ) -> PrimitiveDecisionResult | None:
-        return self.decide_context(
-            PrimitiveDecisionContext.from_tick(
-                obs=obs,
-                boundary_event=boundary_event,
-                preparation=preparation,
-            )
         )
 
     def _effects_for_status(
@@ -637,6 +526,8 @@ class LegacyFSMReturnBranch:
 class LegacyFSMBranchSet:
     """Constructed legacy FSM branches plus their supported dispatch orders."""
 
+    facts_source: PrimitiveDecisionFactsSource
+    compatibility_actions: PrimitiveDecisionCompatibilityActions
     bootstrap_branch: PrimitiveDecisionBranch
     dig_branch: PrimitiveDecisionBranch
     carry_branch: PrimitiveDecisionBranch
@@ -647,40 +538,35 @@ class LegacyFSMBranchSet:
     @classmethod
     def from_ports(cls, ports: LegacyFSMBranchPorts) -> "LegacyFSMBranchSet":
         return cls(
+            facts_source=ports.facts_source,
+            compatibility_actions=ports.compatibility_actions,
             bootstrap_branch=LegacyFSMBootstrapBranch(
                 config=LegacyFSMBootstrapConfig(
                     bootstrap_skill_name=ports.bootstrap_skill_name,
                     pre_dig_align_skill_name=ports.pre_dig_align_skill_name,
                 ),
-                facts_source=ports.facts_source,
             ),
             dig_branch=LegacyFSMDigBranch(
                 config=LegacyFSMDigConfig(dig_skill_name=ports.dig_skill_name),
-                facts_source=ports.facts_source,
-                compatibility_actions=ports.compatibility_actions,
             ),
             carry_branch=LegacyFSMCarryBranch(
                 config=LegacyFSMCarryConfig(carry_skill_name=ports.carry_skill_name),
-                facts_source=ports.facts_source,
             ),
             dump_branch=LegacyFSMDumpBranch(
                 config=LegacyFSMDumpConfig(dump_skill_name=ports.dump_skill_name),
-                facts_source=ports.facts_source,
             ),
             return_branch=LegacyFSMReturnBranch(
                 config=LegacyFSMReturnConfig(return_skill_name=ports.return_skill_name),
-                facts_source=ports.facts_source,
-                compatibility_actions=ports.compatibility_actions,
             ),
             residual_branch=LegacyFSMResidualPreDigAlignAdapter(
                 pre_dig_align_skill_name=ports.pre_dig_align_skill_name,
-                facts_source=ports.facts_source,
-                compatibility_actions=ports.compatibility_actions,
             ),
         )
 
     def requested_runner(self) -> PrimitiveRequestedBranchRunner:
         return PrimitiveRequestedBranchRunner(
+            facts_source=self.facts_source,
+            compatibility_actions=self.compatibility_actions,
             bootstrap_branch=self.bootstrap_branch,
             dig_branch=self.dig_branch,
             carry_branch=self.carry_branch,
@@ -750,6 +636,11 @@ class LegacyFSMCompatibilityDecisionBackend:
         self,
         context: PrimitiveDecisionContext,
     ) -> PrimitiveDecisionResult | None:
+        decision_input = PrimitiveBackendDecisionInput.from_context(
+            context,
+            facts_source=self.branch_set.facts_source,
+            compatibility_actions=self.branch_set.compatibility_actions,
+        )
         for branch in (
             self.branch_set.bootstrap_branch,
             self.branch_set.residual_branch,
@@ -758,7 +649,7 @@ class LegacyFSMCompatibilityDecisionBackend:
             self.branch_set.dump_branch,
             self.branch_set.return_branch,
         ):
-            result = branch.decide_context(context)
+            result = branch.decide_input(decision_input)
             if result is not None:
                 return result
         return None
