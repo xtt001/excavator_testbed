@@ -4692,3 +4692,69 @@ Each completed refactor round should append:
   facts and explicit compatibility actions. Future slices should close those
   gaps without adding anemic wrappers, eager all-status facts, or unsupported
   BT/VLM/LLM backend claims.
+
+### 2026-06-23 Phase 9.40 Introduce Bootstrap Backend Facts Access
+
+- Scope: introduced bootstrap-specific read-only backend facts access in
+  `testbed/planner/primitive_backend_facts.py`. The module now owns
+  `BootstrapDecisionStatus`, `PrimitiveBootstrapDecisionFacts`,
+  `PrimitiveBootstrapDecisionReader`, and `next_skill_after_bootstrap(...)`,
+  alongside the existing transition facts access.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `5e9d85498b2e747e4506f5203fd00e1d42cc9a79`; no fetch, pull, push, reset,
+  checkout, rebase, branch creation, or remote write. HEAD after the code round
+  is `7b59267f036c70df233deedc4aadb13c3a2f6f33`.
+- `PrimitiveBackendFactsAccess.bootstrap_decision(...)` lazily assembles a
+  `PrimitiveBootstrapDecisionFacts` view from the shared common decision facts
+  and the read-only bootstrap gate reader. It does not read dig/carry/dump/
+  return transition statuses and does not expose residual handlers, mutation,
+  effects, refresh, sync, planner `self`, or policy objects.
+- `PrimitiveDecisionCapabilities.backend_facts(...)` now supplies a private
+  read-only bootstrap gate adapter to the backend facts access object.
+  `PrimitiveDecisionCapabilities.bootstrap_status(...)` remains a
+  compatibility facade but delegates to
+  `backend_facts(...).bootstrap_decision(...).status`.
+- `LegacyFSMBootstrapBranch.decide_context(...)` now uses
+  `capabilities.backend_facts(context)`, `backend_facts.common` for its
+  active-skill check, and `backend_facts.bootstrap_decision(...)` for active
+  bootstrap decisions. Non-bootstrap skills still return `None` without reading
+  bootstrap gates, transition statuses, residual handlers, dig sync, or return
+  refresh.
+- Preserved behavior: requested branch order, bootstrap no-change result,
+  `SwitchSkillEffect`, `bootstrap_to_<next_skill>` switch reasons, and
+  next-skill rules are unchanged. Modes `first_qualified_dig_start` and
+  `scripted_qpos` still choose `pre_dig_align` only when the pre-dig gate is
+  true, otherwise `dig`; other modes still choose `carry`.
+- Explicit non-goals: residual `pre_dig_align` was not promoted into a mainline
+  capability; `cell_entry` was not promoted; dig/carry/dump/return transition
+  reads remain lazy and unchanged; no backend support expansion or BT/VLM/LLM
+  implementation; no 5P restoration; no token, coverage, return handoff,
+  action dispatch, reset, reporting, schema, threshold, reset-timing, or
+  action-output change.
+- TDD red result: after focused tests were added, the first run of
+  `python -m pytest -q tests/test_primitive_backend_facts.py tests/test_primitive_decision_facts.py tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_decision_runtime.py`
+  failed at collection because `BootstrapDecisionStatus` and
+  `PrimitiveBootstrapDecisionFacts` were not yet importable from
+  `testbed.planner.primitive_backend_facts`. After implementation, the command
+  returned `106 passed`.
+- Verification reported by implementation thread and rechecked by the audit
+  thread:
+  `python -m pytest -q tests/test_primitive_backend_facts.py tests/test_primitive_decision_facts.py tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_decision_runtime.py`
+  returned `106 passed`, and
+  `python -m compileall -q testbed/planner/primitive_backend_facts.py testbed/planner/primitive_decision_facts.py testbed/planner/primitive_decision_capabilities.py testbed/planner/primitive_backend.py tests/test_primitive_backend_facts.py tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py`
+  completed successfully. The implementation thread also reported
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace or dig_depth_profile or dig_cut_tokens or dig_to_carry or carry_to_dump or dump_to_return"`
+  returned `23 passed, 96 deselected`; compileall, both planner guard commands,
+  `git diff --check`, and staged diff check completed successfully.
+- Audit note: this closes the confirmed-live legacy FSM requested branches'
+  facts-access gap. The next direct architecture gap is the mixed
+  `PrimitiveDecisionCapabilities` dependency: branches still receive one object
+  that can create read-only facts access and also perform explicit
+  compatibility actions such as dig reason sync, return refresh, and residual
+  pre-dig-align handling. The next slice should reduce that branch dependency
+  shape without changing behavior or adding a pass-through-only wrapper.

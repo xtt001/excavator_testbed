@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.39: the default 4P mainline branch chain no longer
+Current status after Phase 9.40: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy now exposes backend-facing common decision facts through
@@ -66,10 +66,14 @@ orders, while `LegacyFSMBootstrapBranch`, `LegacyFSMDigBranch`,
 consume `PrimitiveDecisionContext + PrimitiveDecisionFacts + PrimitiveDecisionCapabilities`
 rather than individual shell callback/status-provider fields. Dig/carry/dump/
 return transition statuses remain lazy and branch-local. `PrimitiveBackendFactsAccess`
-now provides the backend-facing read-only access contract for dig/carry/dump/
-return transition facts; it carries the shared common facts identity and a
-private read-only transition-status reader, and it does not expose sync,
-refresh, residual, effect-applier, or shell mutation APIs. Return handoff refresh
+now provides the backend-facing read-only access contract for bootstrap and
+dig/carry/dump/return transition facts; it carries the shared common facts
+identity plus private read-only bootstrap and transition readers, and it does
+not expose sync, refresh, residual, effect-applier, or shell mutation APIs.
+Bootstrap decisions consume `PrimitiveBackendFactsAccess.bootstrap_decision(...)`
+only after the active bootstrap skill check; the read-only bootstrap facts view
+preserves the existing end-mode and pre-dig gate next-skill rules without
+promoting residual `pre_dig_align` into a mainline mutation path. Return handoff refresh
 is now explicit: `LegacyFSMReturnBranch` calls
 `PrimitiveDecisionCapabilities.refresh_return_transition_state(context)` only
 after the active skill check confirms `return`, and then consumes
@@ -93,8 +97,7 @@ Carry and dump branch decisions now follow the same facts-view pattern through
 `PrimitiveCarryTransitionFacts` and `PrimitiveDumpTransitionFacts` wrap the
 existing common facts packet plus read-only carry/dump status identities without
 carrying providers, appliers, effects, mutation callbacks, or refresh/sync
-fields. Bootstrap remains a separate normalized status path rather than a
-facts-access view. `LegacyFSMRequestedDecisionBackend`
+fields. `LegacyFSMRequestedDecisionBackend`
 is the default decision backend used by the execution driver, while
 `LegacyFSMCompatibilityDecisionBackend` serves the legacy `_maybe_switch_skill()`
 entry without applying effects inside backend branches. Bootstrap, dig, carry,
@@ -734,6 +737,18 @@ capability/action responsibilities outside this access object. This does not
 move bootstrap into the facts access path yet, does not turn
 `PrimitiveDecisionFacts` into an eager all-status packet, and does not create an
 alternate backend implementation.
+
+Phase 9.40 adds bootstrap to `PrimitiveBackendFactsAccess` through
+`BootstrapDecisionStatus`, `PrimitiveBootstrapDecisionFacts`, and a read-only
+`PrimitiveBootstrapDecisionReader`. Active bootstrap branch decisions now use
+`backend_facts.common` for skill checks and
+`backend_facts.bootstrap_decision(...)` for bootstrap status. Non-bootstrap
+skills do not call bootstrap gates or transition status readers. The old
+`PrimitiveDecisionCapabilities.bootstrap_status(...)` remains a compatibility
+facade over the same access path. This preserves bootstrap switch reasons and
+next-skill rules, keeps residual `pre_dig_align` as a read-only gate target
+rather than a promoted mainline capability, and still does not implement an
+alternate backend.
 
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in

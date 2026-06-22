@@ -61,7 +61,7 @@ Current relevant Python files:
 | --- | ---: | --- |
 | `testbed/policies/hybrid/primitive_planner.py` | 4900+ | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
-| `testbed/planner/primitive_backend_facts.py` | 117 | backend-facing lazy read-only facts access for dig/carry/dump/return transition views |
+| `testbed/planner/primitive_backend_facts.py` | 250 | backend-facing lazy read-only facts access for bootstrap and dig/carry/dump/return transition views |
 | `testbed/planner/primitive_decision_facts.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
@@ -890,6 +890,23 @@ pre-dig-align handling, and effect application remain explicit compatibility or
 mutation responsibilities outside read-only facts access. Bootstrap still uses
 the separate `bootstrap_status(...)` path, so the backend input contract is not
 yet complete and alternate backend readiness remains future work.
+
+Current status note after Phase 9.40: bootstrap requested-branch facts now also
+flow through `PrimitiveBackendFactsAccess`. The backend facts module owns
+`BootstrapDecisionStatus`, `PrimitiveBootstrapDecisionFacts`, the read-only
+`PrimitiveBootstrapDecisionReader` protocol, and
+`next_skill_after_bootstrap(...)`. `LegacyFSMBootstrapBranch` now obtains
+`backend_facts = capabilities.backend_facts(context)`, uses
+`backend_facts.common` for the active-skill check, and calls
+`backend_facts.bootstrap_decision(...)` only for active bootstrap decisions.
+`PrimitiveDecisionCapabilities.bootstrap_status(...)` remains a compatibility
+facade over that access path. This completes the confirmed-live legacy FSM
+requested branches' migration to the backend facts-access shape, while dig
+reason sync, return refresh, residual pre-dig-align handling, and effect
+application remain explicit actions outside read-only facts. The next backend
+contract gap is that branches still receive the mixed
+`PrimitiveDecisionCapabilities` object rather than separate read-only facts
+access and compatibility-action dependencies.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
