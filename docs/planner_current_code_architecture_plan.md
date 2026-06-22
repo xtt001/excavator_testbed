@@ -61,7 +61,7 @@ Current relevant Python files:
 | --- | ---: | --- |
 | `testbed/policies/hybrid/primitive_planner.py` | 4900+ | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
-| `testbed/planner/primitive_decision_facts.py` | 154 | backend-neutral common decision facts packet plus lazy dig/return transition facts views |
+| `testbed/planner/primitive_decision_facts.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
 | `testbed/planner/evidence_trace.py` | 972 | evidence classifier and report writer for rollout-driven refactor decisions |
@@ -863,6 +863,17 @@ assembling dig facts and before effect selection. Non-dig skills still do not
 read dig status/facts or sync the mirror. This advances the backend-neutral
 facts shape for dig and return only; carry/dump transition facts and full
 alternate-backend readiness remain future work.
+
+Current status note after Phase 9.38: active carry and dump decisions now
+consume typed facts views, `PrimitiveCarryTransitionFacts` and
+`PrimitiveDumpTransitionFacts`, from
+`testbed/planner/primitive_decision_facts.py`. Each view wraps the existing
+common `PrimitiveDecisionFacts` identity plus the read-only carry/dump status
+identity. `LegacyFSMCarryBranch` and `LegacyFSMDumpBranch` only assemble these
+facts after their active-skill checks, so lazy branch timing is preserved. This
+means dig/carry/dump/return mainline transition branches all have explicit
+facts views, but there is still no unified backend-neutral facts bundle and no
+alternate backend readiness claim.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;

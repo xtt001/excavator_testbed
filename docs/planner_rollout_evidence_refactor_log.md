@@ -4556,3 +4556,58 @@ Each completed refactor round should append:
   active-dig scoped, so it should not be described as a complete
   backend-neutral facts packet. The next direct slice should migrate carry and
   dump transition facts rather than jump to later backend experiments.
+
+### 2026-06-23 Phase 9.38 Introduce Carry/Dump Transition Decision Facts Views
+
+- Scope: introduced the remaining mainline transition-specific decision facts
+  views, `PrimitiveCarryTransitionFacts` and `PrimitiveDumpTransitionFacts`, in
+  `testbed/planner/primitive_decision_facts.py`. Each view is a frozen,
+  read-only wrapper around an existing `PrimitiveDecisionFacts` packet and the
+  matching `CarryTransitionStatus` or `DumpTransitionStatus` identity. The
+  views expose convenience accessors for common context/skill facts plus
+  selected carry/dump status values without copying observation, boundary-event,
+  preparation, common-facts, or status objects.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `0c69ffdcb80174ab3d06510e0eaa3a0c8ae03424`; no fetch, pull, push, reset,
+  checkout, rebase, branch creation, or remote write. HEAD after the code round
+  is `d25d20b83369ef7243b32ccaff0e198082511665`.
+- `PrimitiveDecisionCapabilities.carry_transition_facts(context, *, facts=None)`
+  and `PrimitiveDecisionCapabilities.dump_transition_facts(context, *, facts=None)`
+  now assemble carry/dump facts views. When an existing common facts packet is
+  provided, each method reuses that packet and does not reread current
+  skill/reason ports. The methods are read-only and do not call residual
+  handlers, return refresh, dig reason sync, effect appliers, or shell mutation
+  callbacks.
+- `LegacyFSMCarryBranch.decide_context(...)` and
+  `LegacyFSMDumpBranch.decide_context(...)` now consume facts views after their
+  active-skill checks. Non-carry and non-dump skills still return `None`
+  without facts/status reads. Ordered effects, hold-count effects, decision
+  source strings, switch reasons, and branch status calculations remain
+  unchanged.
+- Explicit non-goals: carry/dump status was not eagerly added to
+  `PrimitiveDecisionFacts`; no unified backend-neutral facts bundle was created;
+  no backend support expansion; no BT/VLM/LLM implementation; no `pre_dig_align`
+  or `cell_entry` promotion; no 5P restoration; no branch-order,
+  reason-string, effect-order, schema, reset-timing, coverage-trace, or
+  action-dispatch change.
+- TDD red result: after focused tests were added, the first run of
+  `python -m pytest -q tests/test_primitive_decision_facts.py tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_decision_runtime.py`
+  failed at collection because `PrimitiveCarryTransitionFacts` did not yet
+  exist. After implementation, the command returned `91 passed`.
+- Verification reported by implementation thread:
+  `python -m pytest -q tests/test_primitive_decision_facts.py tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_decision_runtime.py`
+  returned `91 passed`;
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace or dig_depth_profile or dig_cut_tokens or carry_to_dump or dump_to_return"`
+  returned `20 passed, 99 deselected`; compileall, both planner guard commands,
+  `git diff --check`, and staged diff check completed successfully.
+- Audit note: this closes the remaining mainline transition facts-view gap for
+  confirmed-live 4P branches. The next direct architecture slice should not add
+  another one-off branch view; it should consolidate the common plus
+  dig/carry/dump/return facts views behind a backend-neutral facts access
+  contract while keeping lazy active-branch timing and unsupported backend
+  fail-fast behavior.
