@@ -46,6 +46,23 @@ class RequestedPlannerEffect(PlannerEffect):
 
 
 @dataclass(frozen=True)
+class SwitchSkillEffect(RequestedPlannerEffect):
+    """Semantic request to switch the active primitive skill."""
+
+    effect_type: str = field(default="switch_skill", init=False)
+    reason: str = field(default="", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+    target_skill_name: str
+    switch_reason: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(self, "effect_type", "switch_skill")
+        object.__setattr__(self, "reason", str(self.switch_reason))
+        object.__setattr__(self, "payload", None)
+
+
+@dataclass(frozen=True)
 class PrimitiveDecisionResult:
     """Decision result returned to the public tick template."""
 
@@ -172,6 +189,19 @@ def _validate_requested_effect_shape(effect: RequestedPlannerEffect) -> None:
         raise PrimitiveDecisionContractError(
             f"forbidden planner effect type: {effect_type}"
         )
+    if normalized_type == "switch_skill" and not isinstance(effect, SwitchSkillEffect):
+        raise PrimitiveDecisionContractError(
+            "switch_skill requested effects must use SwitchSkillEffect"
+        )
+    if isinstance(effect, SwitchSkillEffect):
+        if not str(effect.target_skill_name).strip():
+            raise PrimitiveDecisionContractError(
+                "SwitchSkill effect requires a target skill name"
+            )
+        if not str(effect.switch_reason).strip():
+            raise PrimitiveDecisionContractError(
+                "SwitchSkill effect requires a switch reason"
+            )
     if callable(effect):
         raise PrimitiveDecisionContractError("effect object must not be callable")
     if effect.payload is not None:

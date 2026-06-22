@@ -9,6 +9,7 @@ from testbed.planner.primitive_decision import (
     PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
     RequestedPlannerEffect,
+    SwitchSkillEffect,
     validate_decision_effect_contract,
 )
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
@@ -54,7 +55,7 @@ def test_legacy_decision_result_does_not_infer_private_effects_for_no_change() -
 def test_requested_effect_result_records_ordered_unapplied_effects() -> None:
     effects = (
         RequestedPlannerEffect(effect_type="record_decision_trace", reason="first"),
-        RequestedPlannerEffect(effect_type="switch_skill", reason="second"),
+        RequestedPlannerEffect(effect_type="restart_after_failed_dig", reason="second"),
     )
 
     result = PrimitiveDecisionResult.from_requested_effects(
@@ -69,6 +70,81 @@ def test_requested_effect_result_records_ordered_unapplied_effects() -> None:
     assert result.side_effects_applied is False
     assert result.effects == effects
     assert [effect.reason for effect in result.effects] == ["first", "second"]
+
+
+def test_switch_skill_effect_records_semantic_target_and_reason() -> None:
+    effect = SwitchSkillEffect(
+        target_skill_name="carry",
+        switch_reason="dig_to_carry_boundary_confirmed",
+    )
+
+    result = PrimitiveDecisionResult.from_requested_effects(
+        decision_source="test_backend",
+        status="skill_switch",
+        skill_before="dig",
+        skill_after="carry",
+        switch_reason="dig_to_carry_boundary_confirmed",
+        effects=(effect,),
+    )
+
+    assert result.effects == (effect,)
+    assert effect.effect_type == "switch_skill"
+    assert effect.target_skill_name == "carry"
+    assert effect.switch_reason == "dig_to_carry_boundary_confirmed"
+    assert effect.reason == "dig_to_carry_boundary_confirmed"
+
+
+def test_switch_skill_effect_rejects_empty_skill_or_reason() -> None:
+    invalid_results = (
+        PrimitiveDecisionResult.from_requested_effects(
+            decision_source="test_backend",
+            status="skill_switch",
+            skill_before="dig",
+            skill_after="",
+            switch_reason="dig_to_carry_boundary_confirmed",
+            effects=(
+                SwitchSkillEffect(
+                    target_skill_name="",
+                    switch_reason="dig_to_carry_boundary_confirmed",
+                ),
+            ),
+            validate=False,
+        ),
+        PrimitiveDecisionResult.from_requested_effects(
+            decision_source="test_backend",
+            status="skill_switch",
+            skill_before="dig",
+            skill_after="carry",
+            switch_reason="",
+            effects=(SwitchSkillEffect(target_skill_name="carry", switch_reason=""),),
+            validate=False,
+        ),
+        PrimitiveDecisionResult.from_requested_effects(
+            decision_source="test_backend",
+            status="skill_switch",
+            skill_before="dig",
+            skill_after="carry",
+            switch_reason="dig_to_carry_boundary_confirmed",
+            effects=(
+                RequestedPlannerEffect(
+                    effect_type="switch_skill",
+                    payload={
+                        "target_skill_name": "carry",
+                        "switch_reason": "dig_to_carry_boundary_confirmed",
+                    },
+                ),
+            ),
+            validate=False,
+        ),
+    )
+
+    for result in invalid_results:
+        try:
+            validate_decision_effect_contract(result)
+        except PrimitiveDecisionContractError:
+            pass
+        else:
+            raise AssertionError("invalid SwitchSkill effect was accepted")
 
 
 def test_decision_contract_rejects_callable_or_planner_method_effect_shapes() -> None:
@@ -134,7 +210,32 @@ def test_primitive_planner_requested_effect_bridge_rejects_live_effects() -> Non
 
     assert "real planner" in message
     assert "requested-effect application" in message
-    assert "not supported" in message
+    assert "only supports SwitchSkill" in message
+
+
+def test_primitive_planner_requested_effect_bridge_applies_switch_skill() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    calls: list[tuple[str, str]] = []
+
+    def fake_set_skill(
+        self: PrimitivePlannerACTPolicy,
+        skill_name: str,
+        reason: str,
+    ) -> None:
+        calls.append((skill_name, reason))
+
+    planner._set_skill = MethodType(fake_set_skill, planner)
+
+    planner._apply_requested_tick_effects(
+        (
+            SwitchSkillEffect(
+                target_skill_name="carry",
+                switch_reason="dig_to_carry_boundary_confirmed",
+            ),
+        )
+    )
+
+    assert calls == [("carry", "dig_to_carry_boundary_confirmed")]
 
 
 def test_primitive_planner_legacy_decision_bridge_calls_fsm_once() -> None:

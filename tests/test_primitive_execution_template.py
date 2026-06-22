@@ -145,7 +145,7 @@ def test_run_primitive_tick_skips_dig_progress_for_non_dig_skill() -> None:
 def test_run_primitive_tick_applies_requested_effects_before_timeout_and_dispatch() -> None:
     requested_effects = (
         RequestedPlannerEffect(effect_type="record_decision_trace", reason="first"),
-        RequestedPlannerEffect(effect_type="switch_skill", reason="second"),
+        RequestedPlannerEffect(effect_type="restart_after_failed_dig", reason="second"),
     )
     hooks = FakeTickHooks(
         active_skill_name="dig",
@@ -162,7 +162,10 @@ def test_run_primitive_tick_applies_requested_effects_before_timeout_and_dispatc
     result = run_primitive_tick(hooks=hooks, obs={})
 
     assert result.decision.effects == requested_effects
-    assert hooks.applied_effects == ["record_decision_trace", "switch_skill"]
+    assert hooks.applied_effects == [
+        "record_decision_trace",
+        "restart_after_failed_dig",
+    ]
     assert hooks.events == [
         "boundary_update",
         "switch_reason_reset",

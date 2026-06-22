@@ -2016,3 +2016,43 @@ Each completed refactor round should append:
 - Next action: before enabling any live requested-effect application, add a
   concrete effect-family contract and focused parity tests for exactly one
   evidence-backed branch or shell-owned operation.
+
+### 2026-06-22 Phase 8.3 SwitchSkill Requested Effect Family
+
+- Scope: first concrete requested-effect family contract and real shell applier
+  support only. No bootstrap, dig, carry, dump, return, direct-handoff,
+  `pre_dig_align`, `cell_entry`, 5P override, branch order, reason string,
+  threshold, backend selection, behavior tree, VLM/LLM packet, token schema,
+  debug schema, rollout summary schema, policy reset timing, or low-level ACT
+  dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `b9b414ec31a6ad9860abe886108148a41bb06765`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Selected evidence remains the successful mainline packet:
+  `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl`,
+  its paired planner trace, rollout summary, resolved config, and
+  `docs/planner_evidence_reports/2026-06-18-baseline-aggregate_tx24.md`.
+- Added `SwitchSkillEffect(target_skill_name, switch_reason)` in
+  `testbed/planner/primitive_decision.py`. Validation requires non-empty target
+  skill and switch reason, requires generic `switch_skill` requested effects to
+  use the concrete semantic class, and preserves the existing forbidden
+  callable/self/planner attr/method-call checks.
+- Updated `PrimitivePlannerACTPolicy._apply_requested_tick_effects()` so an
+  empty tuple remains a no-op, `SwitchSkillEffect` calls existing
+  `_set_skill(skill, reason)`, and any other requested effect still raises
+  `PrimitiveDecisionContractError`.
+- Added focused tests in `tests/test_primitive_decision_contract.py` for
+  `SwitchSkillEffect` construction/validation, invalid skill/reason rejection,
+  real shell `_set_skill()` call argument order, and unknown requested-effect
+  fail-fast behavior. Existing execution-template tests continue to cover fake
+  requested-effect ordering and default legacy already-applied skip behavior.
+- TDD red result: the first focused run failed with missing `SwitchSkillEffect`.
+  After implementation and test updates, the focused green run returned
+  `14 passed`.
+- Old code parked/reclassified: no code was deleted. No legacy FSM branch was
+  converted to emit `SwitchSkillEffect`; legacy already-applied branch behavior
+  remains the default planner path.
+- Next action: any branch conversion to `SwitchSkillEffect` must be a separate
+  evidence-backed scope with branch-specific parity tests and no changes to
+  branch order, reason strings, policy reset timing, or debug/token schemas.

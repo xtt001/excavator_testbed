@@ -297,6 +297,13 @@ contract error until concrete live effect-family appliers are implemented.
 Empty requested-effect tuples remain a no-op so future pure-decision backends
 can represent "no requested mutation" without changing tick behavior.
 
+Phase 8.3 defines the first concrete requested-effect family,
+`SwitchSkillEffect(target_skill_name, switch_reason)`. The real shell applier
+may apply only this family by calling the existing `_set_skill(skill, reason)`.
+All other requested effects continue to fail fast in the real shell. This phase
+does not convert bootstrap, dig, carry, dump, return, direct handoff, or any
+legacy branch to emit `SwitchSkillEffect`.
+
 Introduce requested-effect result support without changing planner behavior:
 
 - `PrimitiveDecisionResult` can represent `side_effects_applied=False`;

@@ -112,6 +112,7 @@ from testbed.planner.primitive_decision import (
     PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
     RequestedPlannerEffect,
+    SwitchSkillEffect,
 )
 from testbed.planner.primitive_tokens import (
     DigDepthProfileTokenPlan,
@@ -1057,11 +1058,20 @@ class PrimitivePlannerACTPolicy(Policy):
     ) -> None:
         if not effects:
             return
-        effect_names = ", ".join(str(effect.effect_type) for effect in effects)
-        raise PrimitiveDecisionContractError(
-            "real planner requested-effect application is not supported yet; "
-            f"received {len(effects)} requested effect(s): {effect_names}"
-        )
+        for effect in effects:
+            if not isinstance(effect, SwitchSkillEffect):
+                effect_name = str(effect.effect_type)
+                raise PrimitiveDecisionContractError(
+                    "real planner requested-effect application only supports "
+                    f"SwitchSkill effects; received: {effect_name}"
+                )
+            target_skill = str(effect.target_skill_name)
+            switch_reason = str(effect.switch_reason)
+            if not target_skill.strip() or not switch_reason.strip():
+                raise PrimitiveDecisionContractError(
+                    "SwitchSkill effect requires non-empty skill and reason"
+                )
+            self._set_skill(target_skill, switch_reason)
 
     def _legacy_fsm_backend(self) -> LegacyFSMBackendAdapter:
         return LegacyFSMBackendAdapter(
