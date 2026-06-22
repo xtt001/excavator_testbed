@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import fields
 from typing import Any
 
 from testbed.planner.primitive_backend import (
@@ -11,6 +12,7 @@ from testbed.planner.primitive_backend import (
     LegacyFSMBootstrapConfig,
     LegacyFSMCarryBranch,
     LegacyFSMCarryConfig,
+    LegacyFSMCompatibilityDecisionBackend,
     LegacyFSMDumpBranch,
     LegacyFSMDumpConfig,
     LegacyFSMDigBranch,
@@ -172,15 +174,8 @@ def _default_return_status() -> ReturnTransitionStatus:
 def _legacy_fsm_branch_ports(
     *,
     state: dict[str, str] | None = None,
-    events: list[str] | None = None,
 ) -> LegacyFSMBranchPorts:
     state = state if state is not None else {"skill": "legacy_skill", "reason": ""}
-    events = events if events is not None else []
-
-    def set_skill(skill: str, reason: str) -> None:
-        events.append(f"set:{skill}:{reason}")
-        state["skill"] = skill
-        state["reason"] = reason
 
     return LegacyFSMBranchPorts(
         bootstrap_skill_name="bootstrap",
@@ -194,37 +189,11 @@ def _legacy_fsm_branch_ports(
         should_end_bootstrap=lambda *, obs, boundary_event: False,
         bootstrap_end_mode=lambda: "first_qualified_dig_start",
         should_pre_dig_align_before_dig=lambda: False,
-        set_skill=set_skill,
         maybe_handle_pre_dig_align_skill=lambda obs: False,
         dig_transition_status=lambda obs, boundary_event: _default_dig_status(),
-        increment_dig_exit_guard_replan_count=lambda: events.append("exit_count"),
-        reject_active_coverage_corridor=lambda obs, reason: events.append(
-            f"reject:{reason}"
-        ),
-        restart_after_failed_dig=lambda reason, obs: events.append(
-            f"restart:{reason}"
-        ),
-        increment_dig_bad_replan_count=lambda: events.append("bad_count"),
-        complete_cell_entry_dig=lambda obs: events.append("cell"),
-        complete_coverage_dig=lambda obs: events.append("coverage"),
         carry_transition_status=lambda obs, boundary_event: _default_carry_status(),
-        complete_coverage_dump=lambda obs, reason: events.append(
-            f"complete_dump:{reason}"
-        ),
-        set_return_or_direct_handoff=lambda obs, reason: events.append(
-            f"return:{reason}"
-        ),
-        set_dump_ready_hold_count=lambda value: events.append(f"ready:{value}"),
-        deposited_mass=lambda obs: 0.0,
-        set_dump_start_deposited_mass=lambda value: events.append(
-            f"deposit:{value}"
-        ),
         dump_transition_status=lambda obs, boundary_event: _default_dump_status(),
-        set_dump_done_hold_count=lambda value: events.append(f"done:{value}"),
         return_transition_status=lambda obs, boundary_event: _default_return_status(),
-        mark_return_next_dig_event_seen=lambda: events.append("mark_return_event"),
-        complete_return_transition=lambda: events.append("complete_return"),
-        next_skill_after_return_transition=lambda: "dig",
     )
 
 
@@ -236,27 +205,12 @@ def _legacy_fsm_dig_branch(
         DigTransitionStatus,
     ]
     | None = None,
-    callbacks: list[Any] | None = None,
 ) -> LegacyFSMDigBranch:
-    callbacks = callbacks if callbacks is not None else []
     return LegacyFSMDigBranch(
         config=LegacyFSMDigConfig(dig_skill_name="dig"),
         current_skill_name=current_skill_name or (lambda: "dig"),
         dig_transition_status=dig_transition_status
         or (lambda obs, boundary_event: _default_dig_status()),
-        increment_dig_exit_guard_replan_count=lambda: callbacks.append(
-            ("inc", "exit")
-        ),
-        reject_active_coverage_corridor=lambda obs, reason: callbacks.append(
-            ("reject", reason)
-        ),
-        restart_after_failed_dig=lambda reason, obs: callbacks.append(
-            ("restart", reason)
-        ),
-        increment_dig_bad_replan_count=lambda: callbacks.append(("inc", "bad")),
-        complete_cell_entry_dig=lambda obs: callbacks.append(("complete", "cell")),
-        complete_coverage_dig=lambda obs: callbacks.append(("complete", "coverage")),
-        set_skill=lambda skill, reason: callbacks.append((skill, reason)),
     )
 
 
@@ -316,6 +270,94 @@ def test_legacy_fsm_branch_set_requested_backend_uses_stable_order() -> None:
     assert calls == ["bootstrap", "dig", "carry", "dump", "return"]
 
 
+def test_legacy_fsm_branch_set_compatibility_backend_uses_legacy_order() -> None:
+    calls: list[str] = []
+    expected = _requested_no_change_result(decision_source="dig_branch")
+    branch_set = LegacyFSMBranchSet(
+        bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
+        dig_branch=_RecordingBranch("dig", expected, calls),
+        carry_branch=_RecordingBranch("carry", _requested_no_change_result(), calls),
+        dump_branch=_RecordingBranch("dump", _requested_no_change_result(), calls),
+        return_branch=_RecordingBranch("return", _requested_no_change_result(), calls),
+        residual_branch=_RecordingBranch("residual", None, calls),
+    )
+
+    backend = branch_set.compatibility_decision_backend()
+    result = backend.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
+
+    assert isinstance(backend, LegacyFSMCompatibilityDecisionBackend)
+    assert result is expected
+    assert calls == ["bootstrap", "residual", "dig"]
+
+
+def test_legacy_fsm_branch_set_compatibility_backend_returns_none_on_all_miss() -> None:
+    calls: list[str] = []
+    branch_set = LegacyFSMBranchSet(
+        bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
+        dig_branch=_RecordingBranch("dig", None, calls),
+        carry_branch=_RecordingBranch("carry", None, calls),
+        dump_branch=_RecordingBranch("dump", None, calls),
+        return_branch=_RecordingBranch("return", None, calls),
+        residual_branch=_RecordingBranch("residual", None, calls),
+    )
+
+    result = branch_set.compatibility_decision_backend().decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="legacy_skill",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert result is None
+    assert calls == ["bootstrap", "residual", "dig", "carry", "dump", "return"]
+
+
+def test_legacy_fsm_branch_ports_do_not_expose_mainline_mutation_ports() -> None:
+    field_names = {field.name for field in fields(LegacyFSMBranchPorts)}
+
+    assert {
+        "set_skill",
+        "increment_dig_exit_guard_replan_count",
+        "reject_active_coverage_corridor",
+        "restart_after_failed_dig",
+        "increment_dig_bad_replan_count",
+        "complete_cell_entry_dig",
+        "complete_coverage_dig",
+        "complete_coverage_dump",
+        "set_return_or_direct_handoff",
+        "set_dump_ready_hold_count",
+        "deposited_mass",
+        "set_dump_start_deposited_mass",
+        "set_dump_done_hold_count",
+        "mark_return_next_dig_event_seen",
+        "complete_return_transition",
+        "next_skill_after_return_transition",
+    }.isdisjoint(field_names)
+
+
+def test_mainline_legacy_fsm_branches_do_not_expose_local_effect_application() -> None:
+    for branch_type in (
+        LegacyFSMBootstrapBranch,
+        LegacyFSMDigBranch,
+        LegacyFSMCarryBranch,
+        LegacyFSMDumpBranch,
+        LegacyFSMReturnBranch,
+    ):
+        assert not hasattr(branch_type, "maybe_handle")
+        assert not hasattr(branch_type, "_apply_effects")
+
+
 def test_legacy_fsm_branch_set_requested_backend_fails_fast_when_all_decline() -> None:
     calls: list[str] = []
     branch_set = LegacyFSMBranchSet(
@@ -349,18 +391,27 @@ def test_legacy_fsm_branch_set_requested_backend_fails_fast_when_all_decline() -
 
 def test_legacy_fsm_branch_set_compatibility_order_keeps_residual_second() -> None:
     calls: list[str] = []
+    expected = _requested_no_change_result(decision_source="return_branch")
     branch_set = LegacyFSMBranchSet(
-        bootstrap_branch=_RecordingCompatBranch("bootstrap", False, calls),
-        dig_branch=_RecordingCompatBranch("dig", False, calls),
-        carry_branch=_RecordingCompatBranch("carry", False, calls),
-        dump_branch=_RecordingCompatBranch("dump", False, calls),
-        return_branch=_RecordingCompatBranch("return", True, calls),
-        residual_branch=_RecordingCompatBranch("residual", False, calls),
+        bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
+        dig_branch=_RecordingBranch("dig", None, calls),
+        carry_branch=_RecordingBranch("carry", None, calls),
+        dump_branch=_RecordingBranch("dump", None, calls),
+        return_branch=_RecordingBranch("return", expected, calls),
+        residual_branch=_RecordingBranch("residual", None, calls),
     )
 
-    handled = branch_set.maybe_handle_legacy_fsm(obs={}, boundary_event=None)
+    result = branch_set.compatibility_decision_backend().decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="return",
+            dig_progress_updated=False,
+        ),
+    )
 
-    assert handled is True
+    assert result is expected
     assert calls == ["bootstrap", "residual", "dig", "carry", "dump", "return"]
 
 
@@ -549,7 +600,6 @@ def test_legacy_fsm_bootstrap_branch_selects_pre_dig_align_when_enabled() -> Non
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
     state = {"skill": "bootstrap"}
-    switches: list[tuple[str, str]] = []
     branch = LegacyFSMBootstrapBranch(
         config=LegacyFSMBootstrapConfig(
             bootstrap_skill_name="bootstrap",
@@ -559,29 +609,6 @@ def test_legacy_fsm_bootstrap_branch_selects_pre_dig_align_when_enabled() -> Non
         should_end_bootstrap=lambda *, obs, boundary_event: True,
         bootstrap_end_mode=lambda: "first_qualified_dig_start",
         should_pre_dig_align_before_dig=lambda: True,
-        set_skill=lambda skill, reason: switches.append((skill, reason)),
-    )
-
-    handled = branch.maybe_handle(obs=obs, boundary_event=boundary_event)
-
-    assert handled is True
-    assert switches == [("pre_dig_align", "bootstrap_to_pre_dig_align")]
-
-
-def test_legacy_fsm_bootstrap_branch_returns_requested_switch_effect() -> None:
-    obs: dict[str, Any] = {"qpos": [1.0]}
-    boundary_event = object()
-    switches: list[tuple[str, str]] = []
-    branch = LegacyFSMBootstrapBranch(
-        config=LegacyFSMBootstrapConfig(
-            bootstrap_skill_name="bootstrap",
-            pre_dig_align_skill_name="pre_dig_align",
-        ),
-        current_skill_name=lambda: "bootstrap",
-        should_end_bootstrap=lambda *, obs, boundary_event: True,
-        bootstrap_end_mode=lambda: "first_qualified_dig_start",
-        should_pre_dig_align_before_dig=lambda: True,
-        set_skill=lambda skill, reason: switches.append((skill, reason)),
     )
 
     result = branch.decide_tick(
@@ -594,7 +621,39 @@ def test_legacy_fsm_bootstrap_branch_returns_requested_switch_effect() -> None:
         ),
     )
 
-    assert switches == []
+    assert result is not None
+    assert result.effects == (
+        SwitchSkillEffect(
+            target_skill_name="pre_dig_align",
+            switch_reason="bootstrap_to_pre_dig_align",
+        ),
+    )
+
+
+def test_legacy_fsm_bootstrap_branch_returns_requested_switch_effect() -> None:
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    boundary_event = object()
+    branch = LegacyFSMBootstrapBranch(
+        config=LegacyFSMBootstrapConfig(
+            bootstrap_skill_name="bootstrap",
+            pre_dig_align_skill_name="pre_dig_align",
+        ),
+        current_skill_name=lambda: "bootstrap",
+        should_end_bootstrap=lambda *, obs, boundary_event: True,
+        bootstrap_end_mode=lambda: "first_qualified_dig_start",
+        should_pre_dig_align_before_dig=lambda: True,
+    )
+
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision="bootstrap",
+            dig_progress_updated=False,
+        ),
+    )
+
     assert result is not None
     assert result.side_effects_applied is False
     assert result.skill_before == "bootstrap"
@@ -618,7 +677,6 @@ def test_legacy_fsm_bootstrap_branch_requested_decision_ignores_non_bootstrap() 
         should_end_bootstrap=lambda *, obs, boundary_event: True,
         bootstrap_end_mode=lambda: "first_qualified_dig_start",
         should_pre_dig_align_before_dig=lambda: True,
-        set_skill=lambda skill, reason: None,
     )
 
     result = branch.decide_tick(
@@ -644,38 +702,54 @@ def test_legacy_fsm_bootstrap_branch_ignores_non_bootstrap_skill() -> None:
         should_end_bootstrap=lambda *, obs, boundary_event: True,
         bootstrap_end_mode=lambda: "disabled",
         should_pre_dig_align_before_dig=lambda: False,
-        set_skill=lambda skill, reason: None,
     )
 
-    assert branch.maybe_handle(obs={}, boundary_event=None) is False
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
+
+    assert result is None
 
 
 def test_legacy_fsm_dig_branch_completes_dig_to_carry_in_order() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
-    events: list[tuple[str, str]] = []
     branch = _legacy_fsm_dig_branch(
-        callbacks=events,
         dig_transition_status=lambda obs, boundary_event: _default_dig_status(
             dig_to_carry_ready=True,
             dig_to_carry_reason="boundary_confirmed",
         ),
     )
 
-    handled = branch.maybe_handle(obs=obs, boundary_event=boundary_event)
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
 
-    assert handled is True
-    assert events == [
-        ("complete", "cell"),
-        ("complete", "coverage"),
-        ("carry", "dig_to_carry_boundary_confirmed"),
-    ]
+    assert result is not None
+    assert result.effects == (
+        CompleteCellEntryDigCompatibilityEffect(),
+        CompleteCoverageDigEffect(),
+        SwitchSkillEffect(
+            target_skill_name="carry",
+            switch_reason="dig_to_carry_boundary_confirmed",
+        ),
+    )
 
 
 def test_legacy_fsm_dig_branch_requested_exit_guard_effects_in_order() -> None:
-    callbacks: list[Any] = []
     branch = _legacy_fsm_dig_branch(
-        callbacks=callbacks,
         dig_transition_status=lambda obs, boundary_event: _default_dig_status(
             dig_exit_guard_ready=True,
             dig_bad_replan_ready=True,
@@ -695,7 +769,6 @@ def test_legacy_fsm_dig_branch_requested_exit_guard_effects_in_order() -> None:
         ),
     )
 
-    assert callbacks == []
     assert result is not None
     assert result.side_effects_applied is False
     assert result.effects == (
@@ -763,9 +836,7 @@ def test_legacy_fsm_dig_branch_requested_complete_low_payload_effects_in_order()
 
 
 def test_legacy_fsm_dig_branch_requested_dig_to_carry_effects_in_order() -> None:
-    callbacks: list[Any] = []
     branch = _legacy_fsm_dig_branch(
-        callbacks=callbacks,
         dig_transition_status=lambda obs, boundary_event: _default_dig_status(
             dig_to_carry_ready=True,
             dig_to_carry_reason="boundary_confirmed",
@@ -782,7 +853,6 @@ def test_legacy_fsm_dig_branch_requested_dig_to_carry_effects_in_order() -> None
         ),
     )
 
-    assert callbacks == []
     assert result is not None
     assert result.status == "skill_switch"
     assert result.skill_after == "carry"
@@ -838,11 +908,10 @@ def test_legacy_fsm_dig_branch_requested_ignores_non_dig_skill() -> None:
     assert result is None
 
 
-def test_legacy_fsm_dig_branch_compat_facade_reuses_requested_effects() -> None:
-    obs: dict[str, Any] = {"qpos": [1.0]}
-    events: list[Any] = []
-    branch = _legacy_fsm_dig_branch(
-        callbacks=events,
+def test_legacy_fsm_compatibility_backend_returns_dig_requested_effects() -> None:
+    branch_set = LegacyFSMBranchSet(
+        bootstrap_branch=_RecordingBranch("bootstrap", None, []),
+        dig_branch=_legacy_fsm_dig_branch(
         dig_transition_status=lambda obs, boundary_event: _default_dig_status(
             dig_exit_guard_ready=True,
             dig_bad_replan_ready=True,
@@ -850,16 +919,30 @@ def test_legacy_fsm_dig_branch_compat_facade_reuses_requested_effects() -> None:
             dig_to_carry_ready=True,
             dig_to_carry_reason="boundary_confirmed",
         ),
+        ),
+        carry_branch=_RecordingBranch("carry", None, []),
+        dump_branch=_RecordingBranch("dump", None, []),
+        return_branch=_RecordingBranch("return", None, []),
+        residual_branch=_RecordingBranch("residual", None, []),
     )
 
-    handled = branch.maybe_handle(obs=obs, boundary_event=None)
+    result = branch_set.compatibility_decision_backend().decide_tick(
+        obs={"qpos": [1.0]},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
 
-    assert handled is True
-    assert events == [
-        ("inc", "exit"),
-        ("reject", "exit_overshoot_low_payload"),
-        ("restart", "exit_overshoot_low_payload"),
-    ]
+    assert result is not None
+    assert result.side_effects_applied is False
+    assert result.effects == (
+        IncrementDigExitGuardReplanCountEffect(),
+        RejectActiveCoverageCorridorEffect(reason="exit_overshoot_low_payload"),
+        RestartAfterFailedDigEffect(reason="exit_overshoot_low_payload"),
+    )
 
 
 def test_legacy_fsm_dig_branch_ignores_non_dig_skill() -> None:
@@ -871,12 +954,21 @@ def test_legacy_fsm_dig_branch_ignores_non_dig_skill() -> None:
         dig_transition_status=fail_if_called,
     )
 
-    assert branch.maybe_handle(obs={}, boundary_event=None) is False
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="carry",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert result is None
 
 
 def test_legacy_fsm_carry_branch_release_safety_handoffs_to_return() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
-    events: list[tuple[str, str]] = []
     status = CarryTransitionStatus(
         mass_in_bucket_kg=0.0,
         deposited_mass_in_target_box_kg=20.0,
@@ -897,31 +989,26 @@ def test_legacy_fsm_carry_branch_release_safety_handoffs_to_return() -> None:
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
         current_skill_name=lambda: "carry",
         carry_transition_status=lambda obs, boundary_event: status,
-        complete_coverage_dump=lambda obs, reason: events.append(
-            ("complete_dump", reason)
-        ),
-        set_return_or_direct_handoff=lambda obs, reason: events.append(
-            ("return", reason)
-        ),
-        set_dump_ready_hold_count=lambda value: events.append(("hold", str(value))),
-        deposited_mass=lambda obs: 20.0,
-        set_dump_start_deposited_mass=lambda value: events.append(
-            ("deposit", str(value))
-        ),
-        set_skill=lambda skill, reason: events.append((skill, reason)),
     )
 
-    handled = branch.maybe_handle(obs=obs, boundary_event=None)
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="carry",
+            dig_progress_updated=False,
+        ),
+    )
 
-    assert handled is True
-    assert events == [
-        ("complete_dump", "carry_release_safety"),
-        ("return", "carry_to_return_release_safety"),
-    ]
+    assert result is not None
+    assert result.effects == (
+        CompleteCoverageDumpEffect(reason="carry_release_safety"),
+        SetReturnOrDirectHandoffEffect(reason="carry_to_return_release_safety"),
+    )
 
 
 def test_legacy_fsm_carry_branch_requested_release_safety_handoff_effects() -> None:
-    callbacks: list[str] = []
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
         current_skill_name=lambda: "carry",
@@ -941,18 +1028,6 @@ def test_legacy_fsm_carry_branch_requested_release_safety_handoff_effects() -> N
             carry_to_dump_reason="",
             carry_to_return_reason="carry_to_return_release_safety",
         ),
-        complete_coverage_dump=lambda obs, reason: callbacks.append(
-            f"complete:{reason}"
-        ),
-        set_return_or_direct_handoff=lambda obs, reason: callbacks.append(
-            f"return:{reason}"
-        ),
-        set_dump_ready_hold_count=lambda value: callbacks.append(f"hold:{value}"),
-        deposited_mass=lambda obs: 20.0,
-        set_dump_start_deposited_mass=lambda value: callbacks.append(
-            f"deposit:{value}"
-        ),
-        set_skill=lambda skill, reason: callbacks.append(f"{skill}:{reason}"),
     )
 
     result = branch.decide_tick(
@@ -965,7 +1040,6 @@ def test_legacy_fsm_carry_branch_requested_release_safety_handoff_effects() -> N
         ),
     )
 
-    assert callbacks == []
     assert result is not None
     assert result.side_effects_applied is False
     assert result.status == "skill_switch"
@@ -995,12 +1069,6 @@ def test_legacy_fsm_carry_branch_requested_dump_complete_boundary_effects() -> N
             carry_to_dump_reason="",
             carry_to_return_reason="carry_to_return_dump_complete_boundary",
         ),
-        complete_coverage_dump=lambda obs, reason: None,
-        set_return_or_direct_handoff=lambda obs, reason: None,
-        set_dump_ready_hold_count=lambda value: None,
-        deposited_mass=lambda obs: 20.0,
-        set_dump_start_deposited_mass=lambda value: None,
-        set_skill=lambda skill, reason: None,
     )
 
     result = branch.decide_tick(
@@ -1025,8 +1093,6 @@ def test_legacy_fsm_carry_branch_requested_dump_complete_boundary_effects() -> N
 def test_legacy_fsm_carry_branch_committed_boundary_switches_to_dump() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
-    state = {"hold": 0, "deposit": 0.0}
-    events: list[tuple[str, str]] = []
     status = CarryTransitionStatus(
         mass_in_bucket_kg=120.0,
         deposited_mass_in_target_box_kg=8.5,
@@ -1047,30 +1113,30 @@ def test_legacy_fsm_carry_branch_committed_boundary_switches_to_dump() -> None:
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
         current_skill_name=lambda: "carry",
         carry_transition_status=lambda obs, boundary_event: status,
-        complete_coverage_dump=lambda obs, reason: events.append(
-            ("complete_dump", reason)
-        ),
-        set_return_or_direct_handoff=lambda obs, reason: events.append(
-            ("return", reason)
-        ),
-        set_dump_ready_hold_count=lambda value: state.__setitem__("hold", value),
-        deposited_mass=lambda obs: 8.5,
-        set_dump_start_deposited_mass=lambda value: state.__setitem__(
-            "deposit",
-            value,
-        ),
-        set_skill=lambda skill, reason: events.append((skill, reason)),
     )
 
-    handled = branch.maybe_handle(obs=obs, boundary_event=boundary_event)
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision="carry",
+            dig_progress_updated=False,
+        ),
+    )
 
-    assert handled is True
-    assert state == {"hold": 3, "deposit": 8.5}
-    assert events == [("dump", "carry_to_dump_dump_committed_boundary")]
+    assert result is not None
+    assert result.effects == (
+        SetDumpReadyHoldCountEffect(value=3),
+        SetDumpStartDepositedMassFromObservationEffect(),
+        SwitchSkillEffect(
+            target_skill_name="dump",
+            switch_reason="carry_to_dump_dump_committed_boundary",
+        ),
+    )
 
 
 def test_legacy_fsm_carry_branch_requested_ready_to_dump_effects_in_order() -> None:
-    callbacks: list[str] = []
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
         current_skill_name=lambda: "carry",
@@ -1090,18 +1156,6 @@ def test_legacy_fsm_carry_branch_requested_ready_to_dump_effects_in_order() -> N
             carry_to_dump_reason="dump_committed_boundary",
             carry_to_return_reason="",
         ),
-        complete_coverage_dump=lambda obs, reason: callbacks.append(
-            f"complete:{reason}"
-        ),
-        set_return_or_direct_handoff=lambda obs, reason: callbacks.append(
-            f"return:{reason}"
-        ),
-        set_dump_ready_hold_count=lambda value: callbacks.append(f"hold:{value}"),
-        deposited_mass=lambda obs: 8.5,
-        set_dump_start_deposited_mass=lambda value: callbacks.append(
-            f"deposit:{value}"
-        ),
-        set_skill=lambda skill, reason: callbacks.append(f"{skill}:{reason}"),
     )
 
     result = branch.decide_tick(
@@ -1114,7 +1168,6 @@ def test_legacy_fsm_carry_branch_requested_ready_to_dump_effects_in_order() -> N
         ),
     )
 
-    assert callbacks == []
     assert result is not None
     assert result.effects == (
         SetDumpReadyHoldCountEffect(value=3),
@@ -1146,20 +1199,23 @@ def test_legacy_fsm_carry_branch_ignores_non_carry_skill() -> None:
             carry_to_dump_reason="",
             carry_to_return_reason="carry_to_return_release_safety",
         ),
-        complete_coverage_dump=lambda obs, reason: None,
-        set_return_or_direct_handoff=lambda obs, reason: None,
-        set_dump_ready_hold_count=lambda value: None,
-        deposited_mass=lambda obs: 0.0,
-        set_dump_start_deposited_mass=lambda value: None,
-        set_skill=lambda skill, reason: None,
     )
 
-    assert branch.maybe_handle(obs={}, boundary_event=None) is False
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dump",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert result is None
 
 
 def test_legacy_fsm_dump_branch_boundary_handoffs_to_return() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
-    events: list[tuple[str, str]] = []
     status = DumpTransitionStatus(
         mass_in_bucket_kg=0.0,
         deposited_mass_in_target_box_kg=20.0,
@@ -1178,26 +1234,26 @@ def test_legacy_fsm_dump_branch_boundary_handoffs_to_return() -> None:
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
         current_skill_name=lambda: "dump",
         dump_transition_status=lambda obs, boundary_event: status,
-        complete_coverage_dump=lambda obs, reason: events.append(
-            ("complete_dump", reason)
-        ),
-        set_return_or_direct_handoff=lambda obs, reason: events.append(
-            ("return", reason)
-        ),
-        set_dump_done_hold_count=lambda value: events.append(("hold", str(value))),
     )
 
-    handled = branch.maybe_handle(obs=obs, boundary_event=object())
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=object(),
+        preparation=PrimitiveTickPreparation(
+            boundary_event=object(),
+            skill_name_before_decision="dump",
+            dig_progress_updated=False,
+        ),
+    )
 
-    assert handled is True
-    assert events == [
-        ("complete_dump", "dump_complete_boundary"),
-        ("return", "dump_to_return_dump_complete_boundary"),
-    ]
+    assert result is not None
+    assert result.effects == (
+        CompleteCoverageDumpEffect(reason="dump_complete_boundary"),
+        SetReturnOrDirectHandoffEffect(reason="dump_to_return_dump_complete_boundary"),
+    )
 
 
 def test_legacy_fsm_dump_branch_requested_boundary_done_effects() -> None:
-    callbacks: list[str] = []
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
         current_skill_name=lambda: "dump",
@@ -1215,13 +1271,6 @@ def test_legacy_fsm_dump_branch_requested_boundary_done_effects() -> None:
             coverage_completion_reason="dump_complete_boundary",
             dump_to_return_reason="dump_to_return_dump_complete_boundary",
         ),
-        complete_coverage_dump=lambda obs, reason: callbacks.append(
-            f"complete:{reason}"
-        ),
-        set_return_or_direct_handoff=lambda obs, reason: callbacks.append(
-            f"return:{reason}"
-        ),
-        set_dump_done_hold_count=lambda value: callbacks.append(f"hold:{value}"),
     )
 
     result = branch.decide_tick(
@@ -1234,7 +1283,6 @@ def test_legacy_fsm_dump_branch_requested_boundary_done_effects() -> None:
         ),
     )
 
-    assert callbacks == []
     assert result is not None
     assert result.effects == (
         CompleteCoverageDumpEffect(reason="dump_complete_boundary"),
@@ -1244,8 +1292,6 @@ def test_legacy_fsm_dump_branch_requested_boundary_done_effects() -> None:
 
 def test_legacy_fsm_dump_branch_mass_low_hold_switches_to_return() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
-    state = {"hold": 0}
-    events: list[tuple[str, str]] = []
     status = DumpTransitionStatus(
         mass_in_bucket_kg=5.0,
         deposited_mass_in_target_box_kg=20.0,
@@ -1264,27 +1310,27 @@ def test_legacy_fsm_dump_branch_mass_low_hold_switches_to_return() -> None:
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
         current_skill_name=lambda: "dump",
         dump_transition_status=lambda obs, boundary_event: status,
-        complete_coverage_dump=lambda obs, reason: events.append(
-            ("complete_dump", reason)
-        ),
-        set_return_or_direct_handoff=lambda obs, reason: events.append(
-            ("return", reason)
-        ),
-        set_dump_done_hold_count=lambda value: state.__setitem__("hold", value),
     )
 
-    handled = branch.maybe_handle(obs=obs, boundary_event=None)
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dump",
+            dig_progress_updated=False,
+        ),
+    )
 
-    assert handled is True
-    assert state == {"hold": 2}
-    assert events == [
-        ("complete_dump", "dump_mass_low"),
-        ("return", "dump_to_return_mass_low"),
-    ]
+    assert result is not None
+    assert result.effects == (
+        SetDumpDoneHoldCountEffect(value=2),
+        CompleteCoverageDumpEffect(reason="dump_mass_low"),
+        SetReturnOrDirectHandoffEffect(reason="dump_to_return_mass_low"),
+    )
 
 
 def test_legacy_fsm_dump_branch_requested_ready_to_return_effects_in_order() -> None:
-    callbacks: list[str] = []
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
         current_skill_name=lambda: "dump",
@@ -1302,13 +1348,6 @@ def test_legacy_fsm_dump_branch_requested_ready_to_return_effects_in_order() -> 
             coverage_completion_reason="dump_mass_low",
             dump_to_return_reason="dump_to_return_mass_low",
         ),
-        complete_coverage_dump=lambda obs, reason: callbacks.append(
-            f"complete:{reason}"
-        ),
-        set_return_or_direct_handoff=lambda obs, reason: callbacks.append(
-            f"return:{reason}"
-        ),
-        set_dump_done_hold_count=lambda value: callbacks.append(f"hold:{value}"),
     )
 
     result = branch.decide_tick(
@@ -1321,7 +1360,6 @@ def test_legacy_fsm_dump_branch_requested_ready_to_return_effects_in_order() -> 
         ),
     )
 
-    assert callbacks == []
     assert result is not None
     assert result.effects == (
         SetDumpDoneHoldCountEffect(value=2),
@@ -1348,12 +1386,19 @@ def test_legacy_fsm_dump_branch_ignores_non_dump_skill() -> None:
             coverage_completion_reason="dump_complete_boundary",
             dump_to_return_reason="dump_to_return_dump_complete_boundary",
         ),
-        complete_coverage_dump=lambda obs, reason: None,
-        set_return_or_direct_handoff=lambda obs, reason: None,
-        set_dump_done_hold_count=lambda value: None,
     )
 
-    assert branch.maybe_handle(obs={}, boundary_event=None) is False
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="return",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert result is None
 
 
 def _return_status(
@@ -1391,7 +1436,6 @@ def _return_status(
 
 def test_legacy_fsm_return_branch_requested_next_dig_event_marks_only() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
-    callbacks: list[str] = []
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
         current_skill_name=lambda: "return",
@@ -1399,10 +1443,6 @@ def test_legacy_fsm_return_branch_requested_next_dig_event_marks_only() -> None:
             next_dig_event=True,
             next_or_seen_dig_event=True,
         ),
-        mark_return_next_dig_event_seen=lambda: callbacks.append("seen"),
-        complete_return_transition=lambda: callbacks.append("complete"),
-        next_skill_after_return_transition=lambda: "dig",
-        set_skill=lambda skill, reason: callbacks.append(f"{skill}:{reason}"),
     )
 
     result = branch.decide_tick(
@@ -1415,7 +1455,6 @@ def test_legacy_fsm_return_branch_requested_next_dig_event_marks_only() -> None:
         ),
     )
 
-    assert callbacks == []
     assert result is not None
     assert result.side_effects_applied is False
     assert result.status == "no_change"
@@ -1423,7 +1462,6 @@ def test_legacy_fsm_return_branch_requested_next_dig_event_marks_only() -> None:
 
 
 def test_legacy_fsm_return_branch_requested_completion_orders_effects() -> None:
-    callbacks: list[str] = []
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
         current_skill_name=lambda: "return",
@@ -1434,10 +1472,6 @@ def test_legacy_fsm_return_branch_requested_completion_orders_effects() -> None:
             handoff_ready=True,
             completed_transition=True,
         ),
-        mark_return_next_dig_event_seen=lambda: callbacks.append("seen"),
-        complete_return_transition=lambda: callbacks.append("complete"),
-        next_skill_after_return_transition=lambda: "dig",
-        set_skill=lambda skill, reason: callbacks.append(f"{skill}:{reason}"),
     )
 
     result = branch.decide_tick(
@@ -1450,7 +1484,6 @@ def test_legacy_fsm_return_branch_requested_completion_orders_effects() -> None:
         ),
     )
 
-    assert callbacks == []
     assert result is not None
     assert result.side_effects_applied is False
     assert result.status == "skill_switch"
@@ -1472,10 +1505,6 @@ def test_legacy_fsm_return_branch_requested_event_then_completion_order() -> Non
             handoff_ready=True,
             completed_transition=True,
         ),
-        mark_return_next_dig_event_seen=lambda: None,
-        complete_return_transition=lambda: None,
-        next_skill_after_return_transition=lambda: "dig",
-        set_skill=lambda skill, reason: None,
     )
 
     result = branch.decide_tick(
@@ -1501,10 +1530,6 @@ def test_legacy_fsm_return_branch_requested_no_effects_for_unready_return() -> N
         config=LegacyFSMReturnConfig(return_skill_name="return"),
         current_skill_name=lambda: "return",
         return_transition_status=lambda obs, boundary_event: _return_status(),
-        mark_return_next_dig_event_seen=lambda: None,
-        complete_return_transition=lambda: None,
-        next_skill_after_return_transition=lambda: "dig",
-        set_skill=lambda skill, reason: None,
     )
 
     result = branch.decide_tick(
@@ -1530,10 +1555,6 @@ def test_legacy_fsm_return_branch_requested_ignores_non_return_skill() -> None:
             next_dig_event=True,
             completed_transition=True,
         ),
-        mark_return_next_dig_event_seen=lambda: None,
-        complete_return_transition=lambda: None,
-        next_skill_after_return_transition=lambda: "dig",
-        set_skill=lambda skill, reason: None,
     )
 
     result = branch.decide_tick(
@@ -1551,7 +1572,6 @@ def test_legacy_fsm_return_branch_requested_ignores_non_return_skill() -> None:
 
 def test_legacy_fsm_return_branch_latches_next_dig_event_without_switch() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
-    events: list[str] = []
     status = ReturnTransitionStatus(
         mass_in_bucket_kg=0.0,
         min_distance_to_dig_area_m=0.0,
@@ -1573,21 +1593,24 @@ def test_legacy_fsm_return_branch_latches_next_dig_event_without_switch() -> Non
         config=LegacyFSMReturnConfig(return_skill_name="return"),
         current_skill_name=lambda: "return",
         return_transition_status=lambda obs, boundary_event: status,
-        mark_return_next_dig_event_seen=lambda: events.append("seen"),
-        complete_return_transition=lambda: events.append("complete"),
-        next_skill_after_return_transition=lambda: "dig",
-        set_skill=lambda skill, reason: events.append(f"{skill}:{reason}"),
     )
 
-    handled = branch.maybe_handle(obs=obs, boundary_event=object())
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=object(),
+        preparation=PrimitiveTickPreparation(
+            boundary_event=object(),
+            skill_name_before_decision="return",
+            dig_progress_updated=False,
+        ),
+    )
 
-    assert handled is True
-    assert events == ["seen"]
+    assert result is not None
+    assert result.effects == (MarkReturnNextDigEventSeenEffect(),)
 
 
 def test_legacy_fsm_return_branch_completes_next_dig_handoff_in_order() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
-    events: list[str] = []
     status = ReturnTransitionStatus(
         mass_in_bucket_kg=0.0,
         min_distance_to_dig_area_m=0.0,
@@ -1609,26 +1632,28 @@ def test_legacy_fsm_return_branch_completes_next_dig_handoff_in_order() -> None:
         config=LegacyFSMReturnConfig(return_skill_name="return"),
         current_skill_name=lambda: "return",
         return_transition_status=lambda obs, boundary_event: status,
-        mark_return_next_dig_event_seen=lambda: events.append("seen"),
-        complete_return_transition=lambda: events.append("complete"),
-        next_skill_after_return_transition=lambda: "dig",
-        set_skill=lambda skill, reason: events.append(f"{skill}:{reason}"),
     )
 
-    handled = branch.maybe_handle(obs=obs, boundary_event=object())
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=object(),
+        preparation=PrimitiveTickPreparation(
+            boundary_event=object(),
+            skill_name_before_decision="return",
+            dig_progress_updated=False,
+        ),
+    )
 
-    assert handled is True
-    assert events == [
-        "seen",
-        "complete",
-        "dig:return_to_dig_next_dig_entry_ready",
-    ]
+    assert result is not None
+    assert result.effects == (
+        MarkReturnNextDigEventSeenEffect(),
+        CompleteReturnTransitionEffect(),
+        SwitchToNextSkillAfterReturnEffect(reason_suffix="next_dig_entry_ready"),
+    )
 
 
-def test_legacy_fsm_return_branch_selects_next_skill_after_completion() -> None:
+def test_legacy_fsm_return_branch_defers_next_skill_selection_to_applier() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
-    state = {"cycle": 0}
-    events: list[str] = []
     status = ReturnTransitionStatus(
         mass_in_bucket_kg=0.0,
         min_distance_to_dig_area_m=0.0,
@@ -1650,22 +1675,24 @@ def test_legacy_fsm_return_branch_selects_next_skill_after_completion() -> None:
         config=LegacyFSMReturnConfig(return_skill_name="return"),
         current_skill_name=lambda: "return",
         return_transition_status=lambda obs, boundary_event: status,
-        mark_return_next_dig_event_seen=lambda: events.append("seen"),
-        complete_return_transition=lambda: state.__setitem__(
-            "cycle",
-            state["cycle"] + 1,
-        ),
-        next_skill_after_return_transition=lambda: (
-            "pre_dig_align" if state["cycle"] == 0 else "dig"
-        ),
-        set_skill=lambda skill, reason: events.append(f"{skill}:{reason}"),
     )
 
-    handled = branch.maybe_handle(obs=obs, boundary_event=object())
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=object(),
+        preparation=PrimitiveTickPreparation(
+            boundary_event=object(),
+            skill_name_before_decision="return",
+            dig_progress_updated=False,
+        ),
+    )
 
-    assert handled is True
-    assert state == {"cycle": 1}
-    assert events == ["seen", "dig:return_to_dig_next_dig_entry_ready"]
+    assert result is not None
+    assert result.effects == (
+        MarkReturnNextDigEventSeenEffect(),
+        CompleteReturnTransitionEffect(),
+        SwitchToNextSkillAfterReturnEffect(reason_suffix="next_dig_entry_ready"),
+    )
 
 
 def test_legacy_fsm_return_branch_ignores_non_return_skill() -> None:
@@ -1689,10 +1716,16 @@ def test_legacy_fsm_return_branch_ignores_non_return_skill() -> None:
             next_skill="dig",
             switch_reason="return_to_dig_next_dig_entry_ready",
         ),
-        mark_return_next_dig_event_seen=lambda: None,
-        complete_return_transition=lambda: None,
-        next_skill_after_return_transition=lambda: "dig",
-        set_skill=lambda skill, reason: None,
     )
 
-    assert branch.maybe_handle(obs={}, boundary_event=None) is False
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
+
+    assert result is None

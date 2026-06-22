@@ -61,33 +61,17 @@ class LegacyFSMBranchPorts:
     should_end_bootstrap: Callable[..., bool]
     bootstrap_end_mode: Callable[[], str]
     should_pre_dig_align_before_dig: Callable[[], bool]
-    set_skill: Callable[[str, str], None]
     maybe_handle_pre_dig_align_skill: Callable[[dict[str, Any]], bool]
     dig_transition_status: Callable[
         [dict[str, Any], Any | None],
         DigTransitionStatus,
     ]
-    increment_dig_exit_guard_replan_count: Callable[[], None]
-    reject_active_coverage_corridor: Callable[..., None]
-    restart_after_failed_dig: Callable[[str, dict[str, Any]], None]
-    increment_dig_bad_replan_count: Callable[[], None]
-    complete_cell_entry_dig: Callable[[dict[str, Any]], None]
-    complete_coverage_dig: Callable[[dict[str, Any]], None]
     carry_transition_status: Callable[[dict[str, Any], Any | None], CarryTransitionStatus]
-    complete_coverage_dump: Callable[..., None]
-    set_return_or_direct_handoff: Callable[..., None]
-    set_dump_ready_hold_count: Callable[[int], None]
-    deposited_mass: Callable[[dict[str, Any]], float]
-    set_dump_start_deposited_mass: Callable[[float], None]
     dump_transition_status: Callable[[dict[str, Any], Any | None], DumpTransitionStatus]
-    set_dump_done_hold_count: Callable[[int], None]
     return_transition_status: Callable[
         [dict[str, Any], Any | None],
         ReturnTransitionStatus,
     ]
-    mark_return_next_dig_event_seen: Callable[[], None]
-    complete_return_transition: Callable[[], None]
-    next_skill_after_return_transition: Callable[[], str]
 
 
 class PrimitiveDecisionBackend(Protocol):
@@ -229,7 +213,6 @@ class LegacyFSMBootstrapBranch:
     should_end_bootstrap: Callable[..., bool]
     bootstrap_end_mode: Callable[[], str]
     should_pre_dig_align_before_dig: Callable[[], bool]
-    set_skill: Callable[[str, str], None]
 
     def decide_tick(
         self,
@@ -266,24 +249,6 @@ class LegacyFSMBootstrapBranch:
             ),
         )
 
-    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
-        skill_before = str(self.current_skill_name())
-        result = self.decide_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=PrimitiveTickPreparation(
-                boundary_event=boundary_event,
-                skill_name_before_decision=skill_before,
-                dig_progress_updated=False,
-            ),
-        )
-        if result is None:
-            return False
-        for effect in result.effects:
-            if isinstance(effect, SwitchSkillEffect):
-                self.set_skill(effect.target_skill_name, effect.switch_reason)
-        return True
-
     def _next_skill_after_bootstrap(self) -> str:
         if self.bootstrap_end_mode() in {
             "first_qualified_dig_start",
@@ -312,13 +277,6 @@ class LegacyFSMDigBranch:
         [dict[str, Any], Any | None],
         DigTransitionStatus,
     ]
-    increment_dig_exit_guard_replan_count: Callable[[], None]
-    reject_active_coverage_corridor: Callable[..., None]
-    restart_after_failed_dig: Callable[[str, dict[str, Any]], None]
-    increment_dig_bad_replan_count: Callable[[], None]
-    complete_cell_entry_dig: Callable[[dict[str, Any]], None]
-    complete_coverage_dig: Callable[[dict[str, Any]], None]
-    set_skill: Callable[[str, str], None]
 
     def decide_tick(
         self,
@@ -341,22 +299,6 @@ class LegacyFSMDigBranch:
             switch_reason=switch_reason,
             effects=effects,
         )
-
-    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
-        skill_before = str(self.current_skill_name())
-        result = self.decide_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=PrimitiveTickPreparation(
-                boundary_event=boundary_event,
-                skill_name_before_decision=skill_before,
-                dig_progress_updated=True,
-            ),
-        )
-        if result is None:
-            return False
-        self._apply_effects(obs, result.effects)
-        return True
 
     def _effects_for_tick(
         self,
@@ -399,24 +341,6 @@ class LegacyFSMDigBranch:
             )
         return ()
 
-    def _apply_effects(self, obs: dict[str, Any], effects: tuple[Any, ...]) -> None:
-        for effect in effects:
-            if isinstance(effect, IncrementDigExitGuardReplanCountEffect):
-                self.increment_dig_exit_guard_replan_count()
-            elif isinstance(effect, IncrementDigBadReplanCountEffect):
-                self.increment_dig_bad_replan_count()
-            elif isinstance(effect, RejectActiveCoverageCorridorEffect):
-                self.reject_active_coverage_corridor(obs, reason=effect.reason)
-            elif isinstance(effect, RestartAfterFailedDigEffect):
-                self.restart_after_failed_dig(effect.reason, obs)
-            elif isinstance(effect, CompleteCellEntryDigCompatibilityEffect):
-                self.complete_cell_entry_dig(obs)
-            elif isinstance(effect, CompleteCoverageDigEffect):
-                self.complete_coverage_dig(obs)
-            elif isinstance(effect, SwitchSkillEffect):
-                self.set_skill(effect.target_skill_name, effect.switch_reason)
-
-
 @dataclass(frozen=True)
 class LegacyFSMCarryConfig:
     carry_skill_name: str
@@ -429,12 +353,6 @@ class LegacyFSMCarryBranch:
     config: LegacyFSMCarryConfig
     current_skill_name: Callable[[], str]
     carry_transition_status: Callable[[dict[str, Any], Any | None], CarryTransitionStatus]
-    complete_coverage_dump: Callable[..., None]
-    set_return_or_direct_handoff: Callable[..., None]
-    set_dump_ready_hold_count: Callable[[int], None]
-    deposited_mass: Callable[[dict[str, Any]], float]
-    set_dump_start_deposited_mass: Callable[[float], None]
-    set_skill: Callable[[str, str], None]
 
     def decide_tick(
         self,
@@ -459,22 +377,6 @@ class LegacyFSMCarryBranch:
             switch_reason=switch_reason,
             effects=effects,
         )
-
-    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
-        skill_before = str(self.current_skill_name())
-        result = self.decide_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=PrimitiveTickPreparation(
-                boundary_event=boundary_event,
-                skill_name_before_decision=skill_before,
-                dig_progress_updated=False,
-            ),
-        )
-        if result is None:
-            return False
-        self._apply_effects(obs, result.effects)
-        return True
 
     def _effects_for_status(
         self,
@@ -512,20 +414,6 @@ class LegacyFSMCarryBranch:
             )
         return tuple(effects)
 
-    def _apply_effects(self, obs: dict[str, Any], effects: tuple[Any, ...]) -> None:
-        for effect in effects:
-            if isinstance(effect, CompleteCoverageDumpEffect):
-                self.complete_coverage_dump(obs, reason=effect.reason)
-            elif isinstance(effect, SetReturnOrDirectHandoffEffect):
-                self.set_return_or_direct_handoff(obs, reason=effect.reason)
-            elif isinstance(effect, SetDumpReadyHoldCountEffect):
-                self.set_dump_ready_hold_count(int(effect.value))
-            elif isinstance(effect, SetDumpStartDepositedMassFromObservationEffect):
-                self.set_dump_start_deposited_mass(float(self.deposited_mass(obs)))
-            elif isinstance(effect, SwitchSkillEffect):
-                self.set_skill(effect.target_skill_name, effect.switch_reason)
-
-
 @dataclass(frozen=True)
 class LegacyFSMDumpConfig:
     dump_skill_name: str
@@ -538,9 +426,6 @@ class LegacyFSMDumpBranch:
     config: LegacyFSMDumpConfig
     current_skill_name: Callable[[], str]
     dump_transition_status: Callable[[dict[str, Any], Any | None], DumpTransitionStatus]
-    complete_coverage_dump: Callable[..., None]
-    set_return_or_direct_handoff: Callable[..., None]
-    set_dump_done_hold_count: Callable[[int], None]
 
     def decide_tick(
         self,
@@ -563,22 +448,6 @@ class LegacyFSMDumpBranch:
             switch_reason="",
             effects=effects,
         )
-
-    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
-        skill_before = str(self.current_skill_name())
-        result = self.decide_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=PrimitiveTickPreparation(
-                boundary_event=boundary_event,
-                skill_name_before_decision=skill_before,
-                dig_progress_updated=False,
-            ),
-        )
-        if result is None:
-            return False
-        self._apply_effects(obs, result.effects)
-        return True
 
     def _effects_for_status(
         self,
@@ -605,16 +474,6 @@ class LegacyFSMDumpBranch:
             )
         return tuple(effects)
 
-    def _apply_effects(self, obs: dict[str, Any], effects: tuple[Any, ...]) -> None:
-        for effect in effects:
-            if isinstance(effect, SetDumpDoneHoldCountEffect):
-                self.set_dump_done_hold_count(int(effect.value))
-            elif isinstance(effect, CompleteCoverageDumpEffect):
-                self.complete_coverage_dump(obs, reason=effect.reason)
-            elif isinstance(effect, SetReturnOrDirectHandoffEffect):
-                self.set_return_or_direct_handoff(obs, reason=effect.reason)
-
-
 @dataclass(frozen=True)
 class LegacyFSMReturnConfig:
     return_skill_name: str
@@ -630,10 +489,6 @@ class LegacyFSMReturnBranch:
         [dict[str, Any], Any | None],
         ReturnTransitionStatus,
     ]
-    mark_return_next_dig_event_seen: Callable[[], None]
-    complete_return_transition: Callable[[], None]
-    next_skill_after_return_transition: Callable[[], str]
-    set_skill: Callable[[str, str], None]
 
     def decide_tick(
         self,
@@ -659,22 +514,6 @@ class LegacyFSMReturnBranch:
             effects=effects,
         )
 
-    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
-        skill_before = str(self.current_skill_name())
-        result = self.decide_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=PrimitiveTickPreparation(
-                boundary_event=boundary_event,
-                skill_name_before_decision=skill_before,
-                dig_progress_updated=False,
-            ),
-        )
-        if result is None:
-            return False
-        self._apply_effects(result.effects)
-        return True
-
     def _effects_for_status(
         self,
         status: ReturnTransitionStatus,
@@ -698,20 +537,6 @@ class LegacyFSMReturnBranch:
                 SwitchToNextSkillAfterReturnEffect(reason_suffix=reason_suffix)
             )
         return tuple(effects)
-
-    def _apply_effects(self, effects: tuple[Any, ...]) -> None:
-        for effect in effects:
-            if isinstance(effect, MarkReturnNextDigEventSeenEffect):
-                self.mark_return_next_dig_event_seen()
-            elif isinstance(effect, CompleteReturnTransitionEffect):
-                self.complete_return_transition()
-            elif isinstance(effect, SwitchToNextSkillAfterReturnEffect):
-                next_skill = str(self.next_skill_after_return_transition())
-                self.set_skill(
-                    next_skill,
-                    f"return_to_{next_skill}_{effect.reason_suffix}",
-                )
-
 
 @dataclass(frozen=True)
 class LegacyFSMBranchSet:
@@ -738,55 +563,26 @@ class LegacyFSMBranchSet:
                 should_pre_dig_align_before_dig=(
                     ports.should_pre_dig_align_before_dig
                 ),
-                set_skill=ports.set_skill,
             ),
             dig_branch=LegacyFSMDigBranch(
                 config=LegacyFSMDigConfig(dig_skill_name=ports.dig_skill_name),
                 current_skill_name=ports.current_skill_name,
                 dig_transition_status=ports.dig_transition_status,
-                increment_dig_exit_guard_replan_count=(
-                    ports.increment_dig_exit_guard_replan_count
-                ),
-                reject_active_coverage_corridor=(
-                    ports.reject_active_coverage_corridor
-                ),
-                restart_after_failed_dig=ports.restart_after_failed_dig,
-                increment_dig_bad_replan_count=ports.increment_dig_bad_replan_count,
-                complete_cell_entry_dig=ports.complete_cell_entry_dig,
-                complete_coverage_dig=ports.complete_coverage_dig,
-                set_skill=ports.set_skill,
             ),
             carry_branch=LegacyFSMCarryBranch(
                 config=LegacyFSMCarryConfig(carry_skill_name=ports.carry_skill_name),
                 current_skill_name=ports.current_skill_name,
                 carry_transition_status=ports.carry_transition_status,
-                complete_coverage_dump=ports.complete_coverage_dump,
-                set_return_or_direct_handoff=ports.set_return_or_direct_handoff,
-                set_dump_ready_hold_count=ports.set_dump_ready_hold_count,
-                deposited_mass=ports.deposited_mass,
-                set_dump_start_deposited_mass=ports.set_dump_start_deposited_mass,
-                set_skill=ports.set_skill,
             ),
             dump_branch=LegacyFSMDumpBranch(
                 config=LegacyFSMDumpConfig(dump_skill_name=ports.dump_skill_name),
                 current_skill_name=ports.current_skill_name,
                 dump_transition_status=ports.dump_transition_status,
-                complete_coverage_dump=ports.complete_coverage_dump,
-                set_return_or_direct_handoff=ports.set_return_or_direct_handoff,
-                set_dump_done_hold_count=ports.set_dump_done_hold_count,
             ),
             return_branch=LegacyFSMReturnBranch(
                 config=LegacyFSMReturnConfig(return_skill_name=ports.return_skill_name),
                 current_skill_name=ports.current_skill_name,
                 return_transition_status=ports.return_transition_status,
-                mark_return_next_dig_event_seen=(
-                    ports.mark_return_next_dig_event_seen
-                ),
-                complete_return_transition=ports.complete_return_transition,
-                next_skill_after_return_transition=(
-                    ports.next_skill_after_return_transition
-                ),
-                set_skill=ports.set_skill,
             ),
             residual_branch=LegacyFSMResidualPreDigAlignAdapter(
                 pre_dig_align_skill_name=ports.pre_dig_align_skill_name,
@@ -811,23 +607,10 @@ class LegacyFSMBranchSet:
     def requested_decision_backend(self) -> "LegacyFSMRequestedDecisionBackend":
         return LegacyFSMRequestedDecisionBackend(branch_set=self)
 
-    def maybe_handle_legacy_fsm(
+    def compatibility_decision_backend(
         self,
-        *,
-        obs: dict[str, Any],
-        boundary_event: Any | None,
-    ) -> bool:
-        for branch in (
-            self.bootstrap_branch,
-            self.residual_branch,
-            self.dig_branch,
-            self.carry_branch,
-            self.dump_branch,
-            self.return_branch,
-        ):
-            if branch.maybe_handle(obs=obs, boundary_event=boundary_event):
-                return True
-        return False
+    ) -> "LegacyFSMCompatibilityDecisionBackend":
+        return LegacyFSMCompatibilityDecisionBackend(branch_set=self)
 
 
 @dataclass(frozen=True)
@@ -857,6 +640,44 @@ class LegacyFSMRequestedDecisionBackend:
         )
 
 
+@dataclass(frozen=True)
+class LegacyFSMCompatibilityDecisionBackend:
+    """Legacy compatibility decision order without branch-local mutation."""
+
+    branch_set: LegacyFSMBranchSet
+
+    @classmethod
+    def from_ports(
+        cls,
+        ports: LegacyFSMBranchPorts,
+    ) -> "LegacyFSMCompatibilityDecisionBackend":
+        return cls(branch_set=LegacyFSMBranchSet.from_ports(ports))
+
+    def decide_tick(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        preparation: PrimitiveTickPreparation,
+    ) -> PrimitiveDecisionResult | None:
+        for branch in (
+            self.branch_set.bootstrap_branch,
+            self.branch_set.residual_branch,
+            self.branch_set.dig_branch,
+            self.branch_set.carry_branch,
+            self.branch_set.dump_branch,
+            self.branch_set.return_branch,
+        ):
+            result = branch.decide_tick(
+                obs=obs,
+                boundary_event=boundary_event,
+                preparation=preparation,
+            )
+            if result is not None:
+                return result
+        return None
+
+
 __all__ = [
     "LegacyFSMBackendAdapter",
     "LegacyFSMBranchPorts",
@@ -865,6 +686,7 @@ __all__ = [
     "LegacyFSMBootstrapConfig",
     "LegacyFSMCarryBranch",
     "LegacyFSMCarryConfig",
+    "LegacyFSMCompatibilityDecisionBackend",
     "LegacyFSMDigBranch",
     "LegacyFSMDigConfig",
     "LegacyFSMDumpBranch",

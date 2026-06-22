@@ -65,6 +65,7 @@ from testbed.planner.cell_entry import (
 from testbed.planner.primitive_backend import (
     LegacyFSMBranchPorts,
     LegacyFSMBranchSet,
+    LegacyFSMCompatibilityDecisionBackend,
     LegacyFSMRequestedDecisionBackend,
 )
 from testbed.planner.primitive_capabilities import (
@@ -1052,6 +1053,11 @@ class PrimitivePlannerACTPolicy(Policy):
     ) -> LegacyFSMRequestedDecisionBackend:
         return self._legacy_fsm_branch_set().requested_decision_backend()
 
+    def _legacy_fsm_compatibility_decision_backend(
+        self,
+    ) -> LegacyFSMCompatibilityDecisionBackend:
+        return self._legacy_fsm_branch_set().compatibility_decision_backend()
+
     def _legacy_fsm_branch_set(self) -> LegacyFSMBranchSet:
         return LegacyFSMBranchSet.from_ports(self._legacy_fsm_branch_ports())
 
@@ -1131,31 +1137,11 @@ class PrimitivePlannerACTPolicy(Policy):
             should_end_bootstrap=self._should_end_bootstrap,
             bootstrap_end_mode=lambda: str(self.bootstrap_end_mode),
             should_pre_dig_align_before_dig=self._should_pre_dig_align_before_dig,
-            set_skill=self._set_skill,
             maybe_handle_pre_dig_align_skill=self._maybe_handle_pre_dig_align_skill,
             dig_transition_status=self._dig_transition_status_for_backend,
-            increment_dig_exit_guard_replan_count=(
-                self._increment_dig_exit_guard_replan_count
-            ),
-            reject_active_coverage_corridor=self._reject_active_coverage_corridor,
-            restart_after_failed_dig=self._restart_after_failed_dig,
-            increment_dig_bad_replan_count=self._increment_dig_bad_replan_count,
-            complete_cell_entry_dig=self._complete_cell_entry_dig,
-            complete_coverage_dig=self._complete_coverage_dig,
             carry_transition_status=self._carry_transition_status_for_backend,
-            complete_coverage_dump=self._complete_coverage_dump,
-            set_return_or_direct_handoff=self._set_return_or_direct_handoff,
-            set_dump_ready_hold_count=self._set_dump_ready_hold_count,
-            deposited_mass=self._deposited_mass,
-            set_dump_start_deposited_mass=self._set_dump_start_deposited_mass,
             dump_transition_status=self._dump_transition_status_for_backend,
-            set_dump_done_hold_count=self._set_dump_done_hold_count,
             return_transition_status=self._return_transition_status_for_backend,
-            mark_return_next_dig_event_seen=self._mark_return_next_dig_event_seen,
-            complete_return_transition=self._complete_return_transition_for_backend,
-            next_skill_after_return_transition=(
-                self._next_skill_after_return_transition
-            ),
         )
 
     def _dig_transition_status_for_backend(
@@ -1900,10 +1886,19 @@ class PrimitivePlannerACTPolicy(Policy):
         }
 
     def _maybe_switch_skill(self, *, obs: dict, boundary_event: Any | None) -> None:
-        self._legacy_fsm_branch_set().maybe_handle_legacy_fsm(
+        skill_before = str(self._skill_name)
+        result = self._legacy_fsm_compatibility_decision_backend().decide_tick(
             obs=obs,
             boundary_event=boundary_event,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=boundary_event,
+                skill_name_before_decision=skill_before,
+                dig_progress_updated=skill_before == "dig",
+            ),
         )
+        if result is None or result.side_effects_applied:
+            return
+        self._apply_requested_tick_effects(obs, result.effects)
 
     def _maybe_handle_pre_dig_align_skill(self, obs: dict) -> bool:
         if self._skill_name != PRE_DIG_ALIGN_SKILL_NAME:

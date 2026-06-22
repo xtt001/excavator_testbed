@@ -896,22 +896,132 @@ def test_primitive_planner_pre_dig_align_uses_explicit_residual_path() -> None:
     assert result.switch_reason == "pre_dig_align_to_dig_ready"
 
 
-def test_primitive_planner_maybe_switch_skill_delegates_to_branch_set() -> None:
+def test_primitive_planner_maybe_switch_skill_applies_requested_compat_result() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
-    calls: list[tuple[dict[str, Any], object]] = []
+    effect = SwitchSkillEffect(
+        target_skill_name="carry",
+        switch_reason="dig_to_carry_loaded",
+    )
+    result = PrimitiveDecisionResult.from_requested_effects(
+        decision_source="compat_dig",
+        status="skill_switch",
+        skill_before="dig",
+        skill_after="carry",
+        switch_reason="dig_to_carry_loaded",
+        effects=(effect,),
+    )
+    calls: list[Any] = []
 
-    class FakeBranchSet:
-        def maybe_handle_legacy_fsm(self, *, obs, boundary_event):
-            calls.append((obs, boundary_event))
-            return True
+    class FakeCompatibilityBackend:
+        def decide_tick(self, *, obs, boundary_event, preparation):
+            calls.append(("decide", obs, boundary_event, preparation))
+            return result
 
-    planner._legacy_fsm_branch_set = MethodType(lambda self: FakeBranchSet(), planner)
+    planner._skill_name = "dig"
+    planner._legacy_fsm_compatibility_decision_backend = MethodType(
+        lambda self: FakeCompatibilityBackend(),
+        planner,
+    )
+    planner._apply_requested_tick_effects = MethodType(
+        lambda self, got_obs, effects: calls.append(("apply", got_obs, effects)),
+        planner,
+    )
 
     planner._maybe_switch_skill(obs=obs, boundary_event=boundary_event)
 
-    assert calls == [(obs, boundary_event)]
+    assert calls == [
+        (
+            "decide",
+            obs,
+            boundary_event,
+            PrimitiveTickPreparation(
+                boundary_event=boundary_event,
+                skill_name_before_decision="dig",
+                dig_progress_updated=True,
+            ),
+        ),
+        ("apply", obs, (effect,)),
+    ]
+
+
+def test_primitive_planner_maybe_switch_skill_does_not_reapply_already_applied_residual() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    result = PrimitiveDecisionResult.from_legacy_fsm_outcome(
+        decision_source=RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE,
+        skill_before="pre_dig_align",
+        skill_after="dig",
+        switch_reason="pre_dig_align_to_dig_ready",
+    )
+    calls: list[Any] = []
+
+    class FakeCompatibilityBackend:
+        def decide_tick(self, *, obs, boundary_event, preparation):
+            calls.append(("decide", obs, boundary_event, preparation))
+            return result
+
+    planner._skill_name = "pre_dig_align"
+    planner._legacy_fsm_compatibility_decision_backend = MethodType(
+        lambda self: FakeCompatibilityBackend(),
+        planner,
+    )
+    planner._apply_requested_tick_effects = MethodType(
+        lambda self, got_obs, effects: calls.append(("apply", got_obs, effects)),
+        planner,
+    )
+
+    planner._maybe_switch_skill(obs=obs, boundary_event=None)
+
+    assert calls == [
+        (
+            "decide",
+            obs,
+            None,
+            PrimitiveTickPreparation(
+                boundary_event=None,
+                skill_name_before_decision="pre_dig_align",
+                dig_progress_updated=False,
+            ),
+        )
+    ]
+
+
+def test_primitive_planner_maybe_switch_skill_noops_when_compatibility_misses() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    calls: list[Any] = []
+
+    class FakeCompatibilityBackend:
+        def decide_tick(self, *, obs, boundary_event, preparation):
+            calls.append(("decide", obs, boundary_event, preparation))
+            return None
+
+    planner._skill_name = "legacy_skill"
+    planner._legacy_fsm_compatibility_decision_backend = MethodType(
+        lambda self: FakeCompatibilityBackend(),
+        planner,
+    )
+    planner._apply_requested_tick_effects = MethodType(
+        lambda self, got_obs, effects: calls.append(("apply", got_obs, effects)),
+        planner,
+    )
+
+    planner._maybe_switch_skill(obs=obs, boundary_event=None)
+
+    assert calls == [
+        (
+            "decide",
+            obs,
+            None,
+            PrimitiveTickPreparation(
+                boundary_event=None,
+                skill_name_before_decision="legacy_skill",
+                dig_progress_updated=False,
+            ),
+        )
+    ]
 
 
 def test_primitive_planner_bootstrap_decision_bridge_returns_requested_switch() -> None:

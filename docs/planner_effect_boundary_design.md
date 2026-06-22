@@ -47,22 +47,26 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.9: the default 4P mainline branch chain no longer
+Current status after Phase 9.10: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
 `LegacyFSMBranchSet` constructs the branches and owns both requested and legacy
-compatibility dispatch orders; `LegacyFSMRequestedDecisionBackend` is the
-default decision backend used by the execution template. Bootstrap, dig, carry,
+compatibility dispatch orders. `LegacyFSMRequestedDecisionBackend` is the
+default decision backend used by the execution template, while
+`LegacyFSMCompatibilityDecisionBackend` serves the legacy `_maybe_switch_skill()`
+entry without applying effects inside backend branches. Bootstrap, dig, carry,
 dump, and return are handled through explicit requested-effect branch
-decisions. Residual `pre_dig_align` behavior remains an already-applied
-compatibility/parking path through a narrow residual adapter because selected
-rollout evidence classifies it as not active in the mainline. The confirmed-live
-dig branch now consumes one explicit `DigTransitionStatus` provider instead of
-five gate callbacks, matching the carry/dump/return status-object pattern while
-keeping dig mutation in requested effects. Requested-effect application now
-lives in `RequestedEffectApplier` with typed shell mutation ports; the policy
-shell only builds those ports and delegates from its execution hook bridge.
+decisions in both entry paths, and requested effects are applied by the same
+`RequestedEffectApplier`. Residual `pre_dig_align` behavior remains an
+already-applied compatibility/parking path through a narrow residual adapter
+because selected rollout evidence classifies it as not active in the mainline.
+The confirmed-live dig branch now consumes one explicit `DigTransitionStatus`
+provider instead of five gate callbacks, matching the carry/dump/return
+status-object pattern while keeping dig mutation in requested effects.
+Requested-effect application lives in `RequestedEffectApplier` with typed shell
+mutation ports; the policy shell only builds those ports and delegates from its
+execution hook and legacy compatibility bridges.
 
 ## Design Intent
 
@@ -454,6 +458,19 @@ delegates `_apply_requested_tick_effects(obs, effects)` to the applier. Shell
 state mutation remains in existing shell helpers reached through ports; the
 applier does not decide branches, compute status facts, dispatch low-level ACT
 policies, or promote `cell_entry` beyond its explicit compatibility effect.
+
+Phase 9.10 routes the legacy compatibility `_maybe_switch_skill()` entry
+through the same requested decision and centralized requested-effect applier
+chain. `LegacyFSMCompatibilityDecisionBackend` uses the compatibility order
+bootstrap -> residual pre-dig-align -> dig -> carry -> dump -> return and
+returns `PrimitiveDecisionResult | None` without applying requested effects
+itself. `_maybe_switch_skill()` now builds the compatibility tick preparation,
+ignores all-miss `None`, skips reapplication for already-applied residual
+`pre_dig_align`, and applies mainline requested effects through
+`_apply_requested_tick_effects(...)`. Mainline branch-local `maybe_handle()`
+and `_apply_effects()` mutation paths are retired; `LegacyFSMBranchPorts` keeps
+decision facts/status providers and the residual parking callback, while shell
+mutation callbacks belong to `RequestedEffectApplierPorts`.
 
 ### Stage 4: Expand Effect Families From Evidence
 

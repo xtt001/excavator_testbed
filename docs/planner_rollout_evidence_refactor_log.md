@@ -2650,3 +2650,76 @@ Each completed refactor round should append:
   stable shell boundary, likely a capability/status provider bundle or a
   focused coverage/token/handoff owner, instead of returning to guard-only or
   cosmetic cleanup rounds.
+
+### 2026-06-22 Phase 9.10 Route Legacy Compatibility Through Requested Effects
+
+- Scope: routed the legacy compatibility `_maybe_switch_skill()` entry through
+  the requested decision result and centralized requested-effect applier chain.
+  No branch order, reason string, threshold, token/debug/summary schema, policy
+  reset timing, backend selection, behavior tree, VLM/LLM packet,
+  `pre_dig_align` mainline status, `cell_entry` status, 5P override, or
+  low-level ACT dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `08f57a0f0cb680d7425580f015241cc565bcf5d1`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Selected evidence remains the successful mainline packet:
+  `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl`,
+  its paired planner trace, rollout summary, resolved config, and
+  `docs/planner_evidence_reports/2026-06-18-baseline-aggregate_tx24.md`. The
+  evidence keeps mainline branch decisions confirmed-live while `gate.pre_dig_align`
+  remains residual legacy parking and `token.cell_entry` remains compatibility-only.
+- Added `LegacyFSMCompatibilityDecisionBackend`. It owns the legacy
+  compatibility order bootstrap -> residual pre-dig-align -> dig -> carry ->
+  dump -> return, returns `PrimitiveDecisionResult | None`, and never applies
+  requested effects locally. All-miss compatibility decisions return `None`
+  instead of using the default fail-fast requested runner contract.
+- Updated `PrimitivePlannerACTPolicy._maybe_switch_skill()` so it builds a
+  compatibility `PrimitiveTickPreparation`, calls
+  `_legacy_fsm_compatibility_decision_backend().decide_tick(...)`, no-ops on
+  `None`, skips reapplication for already-applied residual results, and sends
+  mainline requested effects to `_apply_requested_tick_effects(obs, effects)`.
+  That bridge reaches the same `RequestedEffectApplier` used by the default
+  execution hook.
+- Retired branch-local mainline mutation application. `LegacyFSMBootstrapBranch`,
+  `LegacyFSMDigBranch`, `LegacyFSMCarryBranch`, `LegacyFSMDumpBranch`, and
+  `LegacyFSMReturnBranch` no longer expose `maybe_handle()` or `_apply_effects()`;
+  they only produce requested decision results. The residual
+  `LegacyFSMResidualPreDigAlignAdapter` still exposes `maybe_handle()` as an
+  explicit already-applied parking path.
+- Narrowed `LegacyFSMBranchPorts` by removing mainline mutation fields:
+  `set_skill`, dig replan/reject/restart/completion callbacks,
+  coverage-dump/return-handoff callbacks, dump hold/deposited-mass setters,
+  deposited-mass reader, and return transition/switch callbacks. Those mutation
+  ports remain owned by `RequestedEffectApplierPorts`.
+- Added or migrated focused tests in `tests/test_primitive_backend.py` and
+  `tests/test_primitive_decision_contract.py` for compatibility decision order,
+  all-miss `None`, ports field removal, absence of mainline branch-local
+  application methods, and `_maybe_switch_skill()` handling of requested,
+  residual already-applied, and no-op compatibility outcomes.
+- TDD red result: the first focused backend run failed at collection because
+  `LegacyFSMCompatibilityDecisionBackend` did not exist. The first policy
+  focused run failed because `_maybe_switch_skill()` still entered the old
+  branch-local mutation path and requested dig transition status from an
+  uninitialized policy shell. After implementation, the focused backend tests
+  returned `48 passed`, and the focused decision contract tests returned
+  `32 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_execution_template.py tests/test_primitive_backend.py`
+  returned `96 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_to_carry or bad_dig_replans or dig_exit_guard or complete_low_payload or carry_to_dump or dump_to_return or return_to_dig or semantic_boundary_events_drive_skill_sequence or pre_dig_align"`
+  returned `24 passed, 96 deselected`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_primitive_capabilities.py` returned
+  `25 passed`;
+  compileall, both planner guard commands, and `git diff --check` completed
+  successfully with no output.
+- Old code parked/reclassified: `LegacyFSMBackendAdapter` remains historical
+  compatibility/test scaffolding and is not used by the default policy path or
+  `_maybe_switch_skill()`. `pre_dig_align` remains residual already-applied
+  parking. `CompleteCellEntryDigCompatibilityEffect` remains compatibility-only.
+  5P, token planning, coverage metric internals, and return direct-handoff
+  internals remain existing owners.
