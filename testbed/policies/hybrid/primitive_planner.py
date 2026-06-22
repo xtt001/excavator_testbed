@@ -113,6 +113,12 @@ from testbed.planner.primitive_effects import (
     RequestedEffectApplier,
     RequestedEffectApplierPorts,
 )
+from testbed.planner.primitive_return_handoff import (
+    ReturnStartEnvelopeGateConfig,
+    ReturnStartEnvelopeGateInputs,
+    ReturnStartEnvelopeGateResult,
+    ReturnStartEnvelopeGateService,
+)
 from testbed.planner.primitive_tokens import (
     DigDepthProfileTokenPlan,
     DigDepthProfileTokenPlanner,
@@ -2954,239 +2960,63 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _return_to_dig_start_envelope_ready(self, obs: dict) -> bool:
-        if not self.return_to_dig_start_envelope_gate_enabled:
-            self._return_to_dig_start_envelope_ready_state = True
-            self._return_to_dig_start_envelope_error = float("nan")
-            self._return_to_dig_start_envelope_checks = {}
-            return True
-
-        token = np.asarray(
-            self._return_start_envelope_tokens,
-            dtype=np.float32,
-        ).reshape(-1)
-        if token.shape[0] != RETURN_START_ENVELOPE_TOKEN_DIM:
-            self._return_to_dig_start_envelope_ready_state = True
-            self._return_to_dig_start_envelope_error = float("nan")
-            self._return_to_dig_start_envelope_checks = {"missing_token": True}
-            return True
-        if float(token[16]) <= 0.5 and float(token[17]) <= 0.5:
-            self._return_to_dig_start_envelope_ready_state = True
-            self._return_to_dig_start_envelope_error = float("nan")
-            self._return_to_dig_start_envelope_checks = {"invalid_token": True}
-            return True
-
-        lower, upper = self._return_start_envelope_prior_bounds(
-            int(self._pending_dig_cut_corridor_id)
+        result = self._return_start_envelope_gate_service().evaluate(
+            self._return_start_envelope_gate_inputs(obs)
         )
-        prior_mapping, _ = self._return_start_envelope_prior_mapping(
-            corridor_id=int(self._pending_dig_cut_corridor_id)
+        self._apply_return_start_envelope_gate_result(result)
+        return bool(result.ready)
+
+    def _return_start_envelope_gate_service(self) -> ReturnStartEnvelopeGateService:
+        return ReturnStartEnvelopeGateService(
+            config=self._return_start_envelope_gate_config()
         )
-        checks: dict[str, Any] = {}
-        max_error = 0.0
-        ready = True
 
-        def bounds_for(
-            index: int,
-            tolerance: float,
-            *,
-            use_prior_bounds: bool = True,
-        ) -> tuple[float, float]:
-            if use_prior_bounds and lower is not None and upper is not None:
-                low = float(lower[index]) - float(tolerance)
-                high = float(upper[index]) + float(tolerance)
-            else:
-                low = float(token[index]) - float(tolerance)
-                high = float(token[index]) + float(tolerance)
-            return low, high
-
-        def add_check(name: str, value: float, low: float, high: float) -> bool:
-            nonlocal max_error, ready
-            finite = bool(np.isfinite(value) and np.isfinite(low) and np.isfinite(high))
-            if not finite:
-                ok = False
-                error = float("inf")
-            else:
-                error = max(float(low) - float(value), float(value) - float(high), 0.0)
-                ok = bool(error <= 1.0e-6)
-                max_error = max(max_error, float(error))
-            ready = bool(ready and ok)
-            checks[name] = {
-                "value": float(value),
-                "min": float(low),
-                "max": float(high),
-                "ok": bool(ok),
-                "error": float(error),
-            }
-            return bool(ok)
-
-        env_state = self._env_state(obs)
-        local_depth_prior = (
-            None
-            if prior_mapping is None
-            else prior_mapping.get("dig_start_local_depth_m")
+    def _return_start_envelope_gate_config(self) -> ReturnStartEnvelopeGateConfig:
+        return ReturnStartEnvelopeGateConfig(
+            enabled=self.return_to_dig_start_envelope_gate_enabled,
+            action_dim=self.action_dim,
+            spatial_tolerance=self.return_to_dig_start_envelope_spatial_tolerance,
+            depth_tolerance_m=self.return_to_dig_start_envelope_depth_tolerance_m,
+            local_depth_tolerance_m=(
+                self.return_to_dig_start_envelope_local_depth_tolerance_m
+            ),
+            plane_depth_tolerance_m=(
+                self.return_to_dig_start_envelope_plane_depth_tolerance_m
+            ),
+            plane_depth_mode=self.return_to_dig_start_envelope_plane_depth_mode,
+            qpos_tolerance=self.return_to_dig_start_envelope_qpos_tolerance,
+            require_contact=self.return_to_dig_start_envelope_require_contact,
         )
-        local_depth_prior_used = False
-        require_contact = bool(
-            self.return_to_dig_start_envelope_require_contact
-            or float(token[6]) > 0.5
-        )
-        if float(token[17]) > 0.5:
-            if len(env_state) > ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX:
-                spatial_tol = self.return_to_dig_start_envelope_spatial_tolerance
-                low, high = bounds_for(
-                    0,
-                    spatial_tol,
-                    use_prior_bounds=self._return_start_envelope_use_prior_spatial_bounds,
-                )
-                add_check(
-                    "long_norm",
-                    float(env_state[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX]),
-                    low,
-                    high,
-                )
-                low, high = bounds_for(
-                    1,
-                    spatial_tol,
-                    use_prior_bounds=self._return_start_envelope_use_prior_spatial_bounds,
-                )
-                add_check(
-                    "short_norm",
-                    float(env_state[ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX]),
-                    low,
-                    high,
-                )
-            else:
-                ready = False
-                checks["spatial_missing"] = True
 
-            if len(env_state) > ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX:
-                local_value = float(
-                    env_state[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX]
-                )
-                if isinstance(local_depth_prior, dict):
-                    local_depth_prior_used = True
-                    local_tol = (
-                        self.return_to_dig_start_envelope_local_depth_tolerance_m
-                    )
-                    p05 = float(local_depth_prior.get("p05", token[4]))
-                    p50 = float(local_depth_prior.get("p50", token[2]))
-                    p95 = float(local_depth_prior.get("p95", token[5]))
-                    low = p05 - local_tol
-                    high = p95 + local_tol
-                    add_check("local_depth_m", local_value, low, high)
-                    checks["local_depth_m"].update(
-                        {
-                            "mode": "prior_range",
-                            "target": float(p50),
-                            "p05": float(p05),
-                            "p50": float(p50),
-                            "p95": float(p95),
-                        }
-                    )
-                else:
-                    depth_tol = self.return_to_dig_start_envelope_depth_tolerance_m
-                    low = float(token[4]) - depth_tol
-                    high = float(token[5]) + depth_tol
-                    add_check("local_depth_m", local_value, low, high)
-                    checks["local_depth_m"].update({"mode": "token_range"})
-            else:
-                ready = False
-                checks["local_depth_missing"] = True
-
-            plane_depth_prior = (
-                None
-                if prior_mapping is None
-                else prior_mapping.get("dig_start_plane_depth_m")
-            )
-            if isinstance(plane_depth_prior, dict):
-                plane_tol = self.return_to_dig_start_envelope_plane_depth_tolerance_m
-                p05 = float(plane_depth_prior.get("p05", token[2]))
-                p50 = float(plane_depth_prior.get("p50", token[2]))
-                p95 = float(plane_depth_prior.get("p95", token[5]))
-                mode = self.return_to_dig_start_envelope_plane_depth_mode
-                if mode == "target_band":
-                    low = p50 - plane_tol
-                    high = p50 + plane_tol
-                elif mode == "p50_floor":
-                    plane_floor = (
-                        p05 if local_depth_prior_used and require_contact else p50
-                    )
-                    low = plane_floor - plane_tol
-                    high = p95 + plane_tol
-                else:
-                    low = p05 - plane_tol
-                    high = p95 + plane_tol
-                add_check(
-                    "plane_depth_m",
-                    float(env_state[ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX]),
-                    low,
-                    high,
-                )
-                checks["plane_depth_m"].update(
-                    {
-                        "mode": str(mode),
-                        "target": float(p50),
-                        "p05": float(p05),
-                        "p50": float(p50),
-                        "p95": float(p95),
-                        "floor_source": (
-                            "p05_local_contact_prior"
-                            if mode == "p50_floor"
-                            and local_depth_prior_used
-                            and require_contact
-                            else "p50"
-                            if mode == "p50_floor"
-                            else "range"
-                        ),
-                    }
-                )
-
-            if require_contact:
-                if len(env_state) > ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX:
-                    contact = float(env_state[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX])
-                    ok = bool(contact > 0.5)
-                    ready = bool(ready and ok)
-                    checks["dig_contact"] = {
-                        "value": contact,
-                        "ok": ok,
-                        "required_by_config": bool(
-                            self.return_to_dig_start_envelope_require_contact
-                        ),
-                        "required_by_token": bool(float(token[6]) > 0.5),
-                    }
-                else:
-                    ready = False
-                    checks["dig_contact_missing"] = True
-
-        if float(token[16]) > 0.5:
-            qpos = np.asarray(
+    def _return_start_envelope_gate_inputs(
+        self,
+        obs: dict,
+    ) -> ReturnStartEnvelopeGateInputs:
+        corridor_id = int(self._pending_dig_cut_corridor_id)
+        return ReturnStartEnvelopeGateInputs(
+            token=self._return_start_envelope_tokens,
+            env_state=self._env_state(obs),
+            qpos=np.asarray(
                 obs.get("qpos", np.zeros(self.action_dim)),
                 dtype=np.float32,
-            ).reshape(-1)
-            if qpos.shape[0] >= 4:
-                qpos_tol = self.return_to_dig_start_envelope_qpos_tolerance
-                for offset in range(4):
-                    index = 7 + offset
-                    if (
-                        self._return_start_envelope_use_prior_qpos_bounds
-                        and lower is not None
-                        and upper is not None
-                    ):
-                        low = float(lower[index]) - qpos_tol
-                        high = float(upper[index]) + qpos_tol
-                    else:
-                        half_width = max(float(token[11 + offset]), qpos_tol)
-                        low = float(token[index]) - half_width - qpos_tol
-                        high = float(token[index]) + half_width + qpos_tol
-                    add_check(f"qpos_{offset}", float(qpos[offset]), low, high)
-            else:
-                ready = False
-                checks["qpos_missing"] = True
+            ).reshape(-1),
+            prior_bounds=lambda: self._return_start_envelope_prior_bounds(corridor_id),
+            prior_mapping=(
+                lambda: self._return_start_envelope_prior_mapping(
+                    corridor_id=corridor_id,
+                )[0]
+            ),
+            use_prior_spatial_bounds=self._return_start_envelope_use_prior_spatial_bounds,
+            use_prior_qpos_bounds=self._return_start_envelope_use_prior_qpos_bounds,
+        )
 
-        self._return_to_dig_start_envelope_ready_state = bool(ready)
-        self._return_to_dig_start_envelope_error = float(max_error)
-        self._return_to_dig_start_envelope_checks = checks
-        return bool(ready)
+    def _apply_return_start_envelope_gate_result(
+        self,
+        result: ReturnStartEnvelopeGateResult,
+    ) -> None:
+        self._return_to_dig_start_envelope_ready_state = bool(result.ready)
+        self._return_to_dig_start_envelope_error = float(result.error)
+        self._return_to_dig_start_envelope_checks = dict(result.checks)
 
     def _return_to_dig_entry_error_for_obs(self, obs: dict) -> float:
         target = self._return_to_dig_entry_target()

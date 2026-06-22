@@ -2786,3 +2786,67 @@ Each completed refactor round should append:
 - Next action: no implementation continuation was started in this thread; the
   result is handed back to the refactor-thinking thread for audit before any
   next bounded slice is selected.
+
+### 2026-06-22 Phase 9.12 Extract Return Start-Envelope Gate Service
+
+- Scope: extracted return-to-dig start-envelope readiness/check computation from
+  the large policy shell into a focused return handoff service. No branch order,
+  reason string, threshold, token/debug/summary schema, policy reset timing,
+  backend selection, behavior tree, VLM/LLM packet, `pre_dig_align` mainline
+  status, `cell_entry` status, 5P override, token planning semantics,
+  direct-handoff transition side effects, or low-level ACT dispatch behavior was
+  intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `1c305a0c469dc17a4a2155dc220f14b3faa18123`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `testbed/planner/primitive_return_handoff.py` with
+  `ReturnStartEnvelopeGateConfig`, `ReturnStartEnvelopeGateInputs`,
+  `ReturnStartEnvelopeGateResult`, and `ReturnStartEnvelopeGateService`. The
+  service owns the readiness/check algorithm: disabled gate, missing/invalid
+  token permissive compatibility, spatial long/short checks, local-depth prior
+  range, plane-depth `range` / `p50_floor` / `target_band` handling, contact
+  requirements from config or token, qpos envelope checks, NaN compatibility,
+  and maximum error calculation.
+- Updated `PrimitivePlannerACTPolicy._return_to_dig_start_envelope_ready(...)`
+  into a thin wrapper. The policy now constructs service config/inputs, calls
+  the service, writes `_return_to_dig_start_envelope_ready_state`,
+  `_return_to_dig_start_envelope_error`, and
+  `_return_to_dig_start_envelope_checks` from the result, then returns
+  `result.ready`. Policy still owns `_return_to_dig_entry_close(...)`,
+  `_return_to_dig_handoff_ready(...)`, direct-handoff transition side effects,
+  skill switching, completed transition counters, and return token planning.
+- Kept prior/token helper facades in the policy. `ReturnStartEnvelopeGateInputs`
+  carries lazy prior-bounds and prior-mapping readers so the service preserves
+  the old timing: prior data is not read for disabled, missing-token, or
+  invalid-token compatibility cases.
+- Added `tests/test_primitive_return_handoff.py` for service-level payload
+  contracts and policy wrapper writeback. Coverage includes disabled/missing/
+  invalid cases, spatial check payloads, local-depth prior-range payloads,
+  plane-depth `p50_floor` with local contact prior, contact-required and
+  missing-contact payloads, qpos checks and qpos-missing payloads, and policy
+  cached-state writeback.
+- TDD red result: the first focused run failed at collection because
+  `testbed.planner.primitive_return_handoff` did not exist. After service and
+  policy bridge implementation, the focused suite returned `7 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_return_handoff.py` returned
+  `7 passed`;
+  `python -m pytest -q tests/test_primitive_return_start_envelope_token_planner.py tests/test_primitive_capability_provider.py tests/test_primitive_capabilities.py`
+  returned `32 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_execution_template.py tests/test_primitive_backend.py`
+  returned `98 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "return_to_dig or return_entry_frame_can_direct_handoff_without_return_action or shallow_guard or start_envelope or pre_dig_align"`
+  returned `18 passed, 102 deselected`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  compileall, both planner guard commands, and `git diff --check` completed
+  successfully with no output.
+- Old code parked/reclassified: direct-handoff side effects remain policy-owned,
+  return start-envelope token planning remains in the token planner path,
+  `pre_dig_align` remains residual already-applied parking,
+  `CompleteCellEntryDigCompatibilityEffect` remains compatibility-only,
+  `LegacyFSMBackendAdapter` remains historical/test scaffolding, and 5P remains
+  its existing legacy override path.

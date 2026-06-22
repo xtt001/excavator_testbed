@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.11: the default 4P mainline branch chain no longer
+Current status after Phase 9.12: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -71,6 +71,9 @@ now owns observation-facts projection and dig/carry/dump/return status assembly
 through typed read-only shell ports. The policy shell only builds the provider
 ports/snapshot, retains thin diagnostic wrappers for the old private status
 methods, and still owns shell-side mutation through the effect applier.
+`ReturnStartEnvelopeGateService` now owns return-to-dig start-envelope
+readiness and diagnostic check computation; the policy shell prepares inputs,
+writes cached ready/error/check state, and retains direct-handoff side effects.
 
 ## Design Intent
 
@@ -490,6 +493,21 @@ and return status still refreshes shell-owned direct-handoff cached state before
 reading cached return flags. `pre_dig_align`, `cell_entry`, 5P, return
 direct-handoff internals, coverage metric internals, token planning, and report
 schemas remain in their existing owners.
+
+Phase 9.12 extracts return-to-dig start-envelope readiness into
+`ReturnStartEnvelopeGateService` in
+`testbed/planner/primitive_return_handoff.py`. The service owns the former
+nested gate/check algorithm from `_return_to_dig_start_envelope_ready(...)`,
+including permissive disabled/missing/invalid token compatibility, spatial
+long/short checks, local-depth and plane-depth prior modes, contact-required
+payloads, qpos envelope checks, NaN handling, and `max_error` calculation. The
+policy shell now constructs `ReturnStartEnvelopeGateConfig` and
+`ReturnStartEnvelopeGateInputs`, delegates to the service, and writes
+`_return_to_dig_start_envelope_ready_state`,
+`_return_to_dig_start_envelope_error`, and
+`_return_to_dig_start_envelope_checks` from the result. Direct-handoff
+transition side effects, skill switching, return counters, token planning, and
+return-target planning remain outside the service.
 
 ### Stage 4: Expand Effect Families From Evidence
 
