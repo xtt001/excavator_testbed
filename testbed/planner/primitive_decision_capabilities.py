@@ -13,6 +13,7 @@ from testbed.planner.primitive_capabilities import (
     ReturnTransitionStatus,
 )
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
+from testbed.planner.primitive_decision_facts import PrimitiveDecisionFacts
 
 
 class PrimitiveTransitionStatusProvider(Protocol):
@@ -86,13 +87,25 @@ class PrimitiveDecisionCapabilities:
     def current_switch_reason(self) -> str:
         return str(self.ports.current_switch_reason())
 
+    def decision_facts(
+        self,
+        context: PrimitiveDecisionContext,
+    ) -> PrimitiveDecisionFacts:
+        return PrimitiveDecisionFacts.from_context(
+            context,
+            current_skill_name=self.current_skill_name(),
+            current_switch_reason=self.current_switch_reason(),
+        )
+
     def bootstrap_status(
         self,
         context: PrimitiveDecisionContext,
         *,
         bootstrap_skill_name: str,
         pre_dig_align_skill_name: str,
+        facts: PrimitiveDecisionFacts | None = None,
     ) -> BootstrapDecisionStatus:
+        facts = facts or self.decision_facts(context)
         mode = str(self.ports.bootstrap_end_mode())
         pre_dig_before_dig = bool(self.ports.should_pre_dig_align_before_dig())
         next_skill = _next_skill_after_bootstrap(
@@ -101,7 +114,7 @@ class PrimitiveDecisionCapabilities:
             pre_dig_align_skill_name=pre_dig_align_skill_name,
         )
         return BootstrapDecisionStatus(
-            current_skill_name=self.current_skill_name(),
+            current_skill_name=facts.current_skill_name,
             should_end_bootstrap=bool(
                 self.ports.should_end_bootstrap(
                     obs=context.obs,
@@ -176,5 +189,6 @@ __all__ = [
     "BootstrapDecisionStatus",
     "PrimitiveDecisionCapabilities",
     "PrimitiveDecisionCapabilitiesPorts",
+    "PrimitiveDecisionFacts",
     "PrimitiveTransitionStatusProvider",
 ]

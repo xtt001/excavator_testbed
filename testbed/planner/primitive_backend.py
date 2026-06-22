@@ -195,17 +195,19 @@ class LegacyFSMResidualPreDigAlignAdapter:
         self,
         context: PrimitiveDecisionContext,
     ) -> PrimitiveDecisionResult | None:
-        skill_before = str(context.skill_name_before_decision)
-        if str(self.capabilities.current_skill_name()) != str(
-            self.pre_dig_align_skill_name
-        ):
+        facts = self.capabilities.decision_facts(context)
+        skill_before = str(facts.skill_name_before_decision)
+        if not facts.is_current_skill(self.pre_dig_align_skill_name):
             return None
         self.capabilities.handle_residual_pre_dig_align(context)
+        # Residual handling mutates shell-owned skill/reason state; rebuild facts
+        # after the compatibility handler to preserve the historical result.
+        facts_after = self.capabilities.decision_facts(context)
         return PrimitiveDecisionResult.from_legacy_fsm_outcome(
             decision_source=RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE,
             skill_before=skill_before,
-            skill_after=str(self.capabilities.current_skill_name()),
-            switch_reason=str(self.capabilities.current_switch_reason()),
+            skill_after=facts_after.current_skill_name,
+            switch_reason=facts_after.current_switch_reason,
         )
 
     def decide_tick(
@@ -233,9 +235,8 @@ class LegacyFSMResidualPreDigAlignAdapter:
                 dig_progress_updated=False,
             ),
         )
-        if str(self.capabilities.current_skill_name()) != str(
-            self.pre_dig_align_skill_name
-        ):
+        facts = self.capabilities.decision_facts(context)
+        if not facts.is_current_skill(self.pre_dig_align_skill_name):
             return False
         self.capabilities.handle_residual_pre_dig_align(context)
         return True
@@ -258,15 +259,15 @@ class LegacyFSMBootstrapBranch:
         self,
         context: PrimitiveDecisionContext,
     ) -> PrimitiveDecisionResult | None:
-        skill_before = str(context.skill_name_before_decision)
-        if str(self.capabilities.current_skill_name()) != str(
-            self.config.bootstrap_skill_name
-        ):
+        facts = self.capabilities.decision_facts(context)
+        skill_before = str(facts.skill_name_before_decision)
+        if not facts.is_current_skill(self.config.bootstrap_skill_name):
             return None
         status = self.capabilities.bootstrap_status(
             context,
             bootstrap_skill_name=self.config.bootstrap_skill_name,
             pre_dig_align_skill_name=self.config.pre_dig_align_skill_name,
+            facts=facts,
         )
         if not status.should_end_bootstrap:
             return PrimitiveDecisionResult.from_requested_effects(
@@ -325,8 +326,9 @@ class LegacyFSMDigBranch:
         self,
         context: PrimitiveDecisionContext,
     ) -> PrimitiveDecisionResult | None:
-        skill_before = str(context.skill_name_before_decision)
-        if str(self.capabilities.current_skill_name()) != str(self.config.dig_skill_name):
+        facts = self.capabilities.decision_facts(context)
+        skill_before = str(facts.skill_name_before_decision)
+        if not facts.is_current_skill(self.config.dig_skill_name):
             return None
         effects = self._effects_for_status(
             self.capabilities.dig_transition_status(context)
@@ -408,10 +410,9 @@ class LegacyFSMCarryBranch:
         self,
         context: PrimitiveDecisionContext,
     ) -> PrimitiveDecisionResult | None:
-        skill_before = str(context.skill_name_before_decision)
-        if str(self.capabilities.current_skill_name()) != str(
-            self.config.carry_skill_name
-        ):
+        facts = self.capabilities.decision_facts(context)
+        skill_before = str(facts.skill_name_before_decision)
+        if not facts.is_current_skill(self.config.carry_skill_name):
             return None
         status = self.capabilities.carry_transition_status(context)
         effects = self._effects_for_status(status)
@@ -494,8 +495,9 @@ class LegacyFSMDumpBranch:
         self,
         context: PrimitiveDecisionContext,
     ) -> PrimitiveDecisionResult | None:
-        skill_before = str(context.skill_name_before_decision)
-        if str(self.capabilities.current_skill_name()) != str(self.config.dump_skill_name):
+        facts = self.capabilities.decision_facts(context)
+        skill_before = str(facts.skill_name_before_decision)
+        if not facts.is_current_skill(self.config.dump_skill_name):
             return None
         status = self.capabilities.dump_transition_status(context)
         effects = self._effects_for_status(status)
@@ -565,10 +567,9 @@ class LegacyFSMReturnBranch:
         self,
         context: PrimitiveDecisionContext,
     ) -> PrimitiveDecisionResult | None:
-        skill_before = str(context.skill_name_before_decision)
-        if str(self.capabilities.current_skill_name()) != str(
-            self.config.return_skill_name
-        ):
+        facts = self.capabilities.decision_facts(context)
+        skill_before = str(facts.skill_name_before_decision)
+        if not facts.is_current_skill(self.config.return_skill_name):
             return None
         status = self.capabilities.return_transition_status(context)
         effects = self._effects_for_status(status)

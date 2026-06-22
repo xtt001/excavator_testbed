@@ -877,6 +877,30 @@ def test_legacy_fsm_bootstrap_branch_returns_requested_switch_effect() -> None:
 
 
 def test_legacy_fsm_bootstrap_branch_requested_decision_ignores_non_bootstrap() -> None:
+    def fail_dig_status(
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> DigTransitionStatus:
+        raise AssertionError("bootstrap branch must not request dig status")
+
+    def fail_carry_status(
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> CarryTransitionStatus:
+        raise AssertionError("bootstrap branch must not request carry status")
+
+    def fail_dump_status(
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> DumpTransitionStatus:
+        raise AssertionError("bootstrap branch must not request dump status")
+
+    def fail_return_status(
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> ReturnTransitionStatus:
+        raise AssertionError("bootstrap branch must not request return status")
+
     branch = LegacyFSMBootstrapBranch(
         config=LegacyFSMBootstrapConfig(
             bootstrap_skill_name="bootstrap",
@@ -887,6 +911,10 @@ def test_legacy_fsm_bootstrap_branch_requested_decision_ignores_non_bootstrap() 
             should_end_bootstrap=lambda *, obs, boundary_event: True,
             bootstrap_end_mode=lambda: "first_qualified_dig_start",
             should_pre_dig_align_before_dig=lambda: True,
+            dig_transition_status=fail_dig_status,
+            carry_transition_status=fail_carry_status,
+            dump_transition_status=fail_dump_status,
+            return_transition_status=fail_return_status,
         ),
     )
 
@@ -1403,26 +1431,17 @@ def test_legacy_fsm_carry_branch_requested_ready_to_dump_effects_in_order() -> N
 
 
 def test_legacy_fsm_carry_branch_ignores_non_carry_skill() -> None:
+    def fail_if_called(
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> CarryTransitionStatus:
+        raise AssertionError("non-carry skill must not request carry transition status")
+
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
         capabilities=_decision_capabilities(
             current_skill_name=lambda: "dump",
-            carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
-                mass_in_bucket_kg=0.0,
-                deposited_mass_in_target_box_kg=0.0,
-                deposit_delta_since_cycle_start_kg=0.0,
-                semantic_boundary_profile_active=False,
-                dump_committed_event=False,
-                release_onset_event=False,
-                dump_complete_event=False,
-                legacy_dump_start_event=False,
-                carry_release_safety_done=True,
-                dump_ready=False,
-                next_dump_ready_hold_count=0,
-                ready_to_dump=False,
-                carry_to_dump_reason="",
-                carry_to_return_reason="carry_to_return_release_safety",
-            ),
+            carry_transition_status=fail_if_called,
         ),
     )
 
@@ -1602,24 +1621,17 @@ def test_legacy_fsm_dump_branch_requested_ready_to_return_effects_in_order() -> 
 
 
 def test_legacy_fsm_dump_branch_ignores_non_dump_skill() -> None:
+    def fail_if_called(
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> DumpTransitionStatus:
+        raise AssertionError("non-dump skill must not request dump transition status")
+
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
         capabilities=_decision_capabilities(
             current_skill_name=lambda: "return",
-            dump_transition_status=lambda obs, boundary_event: DumpTransitionStatus(
-                mass_in_bucket_kg=0.0,
-                deposited_mass_in_target_box_kg=0.0,
-                deposit_delta_since_dump_start_kg=0.0,
-                semantic_boundary_profile_active=False,
-                dump_complete_event=True,
-                legacy_dump_end_event=False,
-                boundary_dump_done=True,
-                dump_done_mass_low=False,
-                next_dump_done_hold_count=0,
-                ready_to_return=True,
-                coverage_completion_reason="dump_complete_boundary",
-                dump_to_return_reason="dump_to_return_dump_complete_boundary",
-            ),
+            dump_transition_status=fail_if_called,
         ),
     )
 
@@ -1791,14 +1803,17 @@ def test_legacy_fsm_return_branch_requested_no_effects_for_unready_return() -> N
 
 
 def test_legacy_fsm_return_branch_requested_ignores_non_return_skill() -> None:
+    def fail_if_called(
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> ReturnTransitionStatus:
+        raise AssertionError("non-return skill must not request return transition status")
+
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
         capabilities=_decision_capabilities(
             current_skill_name=lambda: "dig",
-            return_transition_status=lambda obs, boundary_event: _return_status(
-                next_dig_event=True,
-                completed_transition=True,
-            ),
+            return_transition_status=fail_if_called,
         ),
     )
 

@@ -8,6 +8,7 @@ from testbed.planner.primitive_decision_capabilities import (
     PrimitiveDecisionCapabilitiesPorts,
 )
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
+from testbed.planner.primitive_decision_facts import PrimitiveDecisionFacts
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
 
 
@@ -122,6 +123,30 @@ def test_decision_capabilities_route_status_providers_through_context() -> None:
         ("dump", obs, boundary_event),
         ("return", obs, boundary_event),
     ]
+
+
+def test_decision_capabilities_build_common_facts_without_status_or_residual_calls() -> None:
+    obs = {"qpos": [1.0]}
+    boundary_event = object()
+    residual_calls: list[dict[str, Any]] = []
+    capabilities, provider = _capabilities(
+        current_skill_name="return",
+        current_switch_reason="dump_to_return_mass_low",
+        residual_calls=residual_calls,
+    )
+    context = _context(obs=obs, boundary_event=boundary_event, skill="return")
+
+    facts = capabilities.decision_facts(context)
+
+    assert isinstance(facts, PrimitiveDecisionFacts)
+    assert facts.context is context
+    assert facts.obs is obs
+    assert facts.boundary_event is boundary_event
+    assert facts.preparation is context.preparation
+    assert facts.current_skill_name == "return"
+    assert facts.current_switch_reason == "dump_to_return_mass_low"
+    assert provider.calls == []
+    assert residual_calls == []
 
 
 def test_bootstrap_status_computes_target_skill_from_mode_and_pre_dig_gate() -> None:
