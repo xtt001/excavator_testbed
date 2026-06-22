@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from testbed.planner.primitive_backend_facts import (
+    BootstrapDecisionStatus,
     PrimitiveBackendFactsAccess,
+    PrimitiveBootstrapDecisionFacts,
+    PrimitiveBootstrapDecisionReader,
     PrimitiveTransitionStatusReader,
 )
 from testbed.planner.primitive_capabilities import (
@@ -41,17 +44,6 @@ class PrimitiveTransitionStatusProvider(PrimitiveTransitionStatusReader, Protoco
 
 
 @dataclass(frozen=True)
-class BootstrapDecisionStatus:
-    """Bootstrap facts normalized for legacy FSM branch decisions."""
-
-    current_skill_name: str
-    should_end_bootstrap: bool
-    bootstrap_end_mode: str
-    should_pre_dig_align_before_dig: bool
-    next_skill_after_bootstrap: str
-
-
-@dataclass(frozen=True)
 class PrimitiveDecisionCapabilitiesPorts:
     """Shell-provided decision facts for primitive backend capabilities."""
 
@@ -62,6 +54,32 @@ class PrimitiveDecisionCapabilitiesPorts:
     should_pre_dig_align_before_dig: Callable[[], bool]
     transition_status_provider: PrimitiveTransitionStatusProvider
     maybe_handle_residual_pre_dig_align: Callable[[dict[str, Any]], bool]
+
+
+@dataclass(frozen=True)
+class _BootstrapDecisionReader:
+    """Read-only bootstrap gate adapter over shell-provided capability ports."""
+
+    ports: PrimitiveDecisionCapabilitiesPorts
+
+    def should_end_bootstrap(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> bool:
+        return bool(
+            self.ports.should_end_bootstrap(
+                obs=obs,
+                boundary_event=boundary_event,
+            )
+        )
+
+    def bootstrap_end_mode(self) -> str:
+        return str(self.ports.bootstrap_end_mode())
+
+    def should_pre_dig_align_before_dig(self) -> bool:
+        return bool(self.ports.should_pre_dig_align_before_dig())
 
 
 @dataclass(frozen=True)
@@ -104,6 +122,7 @@ class PrimitiveDecisionCapabilities:
             context=context,
             common=common,
             transition_status_reader=self.ports.transition_status_provider,
+            bootstrap_decision_reader=_BootstrapDecisionReader(self.ports),
         )
 
     def bootstrap_status(
@@ -114,26 +133,10 @@ class PrimitiveDecisionCapabilities:
         pre_dig_align_skill_name: str,
         facts: PrimitiveDecisionFacts | None = None,
     ) -> BootstrapDecisionStatus:
-        facts = facts or self.decision_facts(context)
-        mode = str(self.ports.bootstrap_end_mode())
-        pre_dig_before_dig = bool(self.ports.should_pre_dig_align_before_dig())
-        next_skill = _next_skill_after_bootstrap(
-            bootstrap_end_mode=mode,
-            pre_dig_align_before_dig=pre_dig_before_dig,
+        del bootstrap_skill_name
+        return self.backend_facts(context, facts=facts).bootstrap_decision(
             pre_dig_align_skill_name=pre_dig_align_skill_name,
-        )
-        return BootstrapDecisionStatus(
-            current_skill_name=facts.current_skill_name,
-            should_end_bootstrap=bool(
-                self.ports.should_end_bootstrap(
-                    obs=context.obs,
-                    boundary_event=context.boundary_event,
-                )
-            ),
-            bootstrap_end_mode=mode,
-            should_pre_dig_align_before_dig=pre_dig_before_dig,
-            next_skill_after_bootstrap=next_skill,
-        )
+        ).status
 
     def dig_transition_status(
         self,
@@ -228,24 +231,12 @@ class PrimitiveDecisionCapabilities:
         return bool(self.ports.maybe_handle_residual_pre_dig_align(context.obs))
 
 
-def _next_skill_after_bootstrap(
-    *,
-    bootstrap_end_mode: str,
-    pre_dig_align_before_dig: bool,
-    pre_dig_align_skill_name: str,
-) -> str:
-    if str(bootstrap_end_mode) in {
-        "first_qualified_dig_start",
-        "scripted_qpos",
-    }:
-        return str(pre_dig_align_skill_name) if pre_dig_align_before_dig else "dig"
-    return "carry"
-
-
 __all__ = [
     "BootstrapDecisionStatus",
     "PrimitiveCarryTransitionFacts",
     "PrimitiveBackendFactsAccess",
+    "PrimitiveBootstrapDecisionFacts",
+    "PrimitiveBootstrapDecisionReader",
     "PrimitiveDecisionCapabilities",
     "PrimitiveDecisionCapabilitiesPorts",
     "PrimitiveDecisionFacts",

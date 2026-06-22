@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import fields
+from dataclasses import FrozenInstanceError, fields
 from typing import Any
 
+import pytest
+
 from testbed.planner.primitive_backend_facts import (
+    BootstrapDecisionStatus,
+    PrimitiveBootstrapDecisionFacts,
     PrimitiveBackendFactsAccess,
     PrimitiveTransitionStatusReader,
 )
@@ -182,6 +186,37 @@ class _RecordingStatusReader:
         return self.return_status
 
 
+class _RecordingBootstrapReader:
+    def __init__(
+        self,
+        *,
+        should_end_bootstrap: bool = True,
+        bootstrap_end_mode: str = "first_qualified_dig_start",
+        should_pre_dig_align_before_dig: bool = False,
+    ) -> None:
+        self.calls: list[tuple[str, dict[str, Any] | None, object | None]] = []
+        self.should_end_bootstrap_value = should_end_bootstrap
+        self.bootstrap_end_mode_value = bootstrap_end_mode
+        self.should_pre_dig_align_before_dig_value = should_pre_dig_align_before_dig
+
+    def should_end_bootstrap(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: object | None,
+    ) -> bool:
+        self.calls.append(("should_end_bootstrap", obs, boundary_event))
+        return self.should_end_bootstrap_value
+
+    def bootstrap_end_mode(self) -> str:
+        self.calls.append(("bootstrap_end_mode", None, None))
+        return self.bootstrap_end_mode_value
+
+    def should_pre_dig_align_before_dig(self) -> bool:
+        self.calls.append(("pre_dig_gate", None, None))
+        return self.should_pre_dig_align_before_dig_value
+
+
 def _access() -> tuple[
     PrimitiveBackendFactsAccess,
     _RecordingStatusReader,
@@ -200,6 +235,46 @@ def _access() -> tuple[
         transition_status_reader=reader,
     )
     return access, reader, context, common, obs, boundary_event, preparation
+
+
+def _access_with_bootstrap_reader(
+    *,
+    current_skill_name: str = "bootstrap",
+    bootstrap_reader: _RecordingBootstrapReader | None = None,
+) -> tuple[
+    PrimitiveBackendFactsAccess,
+    _RecordingStatusReader,
+    _RecordingBootstrapReader,
+    PrimitiveDecisionContext,
+    PrimitiveDecisionFacts,
+    dict[str, object],
+    object,
+    PrimitiveTickPreparation,
+]:
+    context, obs, boundary_event, preparation = _context()
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name=current_skill_name,
+        current_switch_reason="",
+    )
+    transition_reader = _RecordingStatusReader()
+    bootstrap_reader = bootstrap_reader or _RecordingBootstrapReader()
+    access = PrimitiveBackendFactsAccess.from_reader(
+        context=context,
+        common=common,
+        transition_status_reader=transition_reader,
+        bootstrap_decision_reader=bootstrap_reader,
+    )
+    return (
+        access,
+        transition_reader,
+        bootstrap_reader,
+        context,
+        common,
+        obs,
+        boundary_event,
+        preparation,
+    )
 
 
 def test_backend_facts_access_preserves_context_and_common_identity() -> None:
@@ -249,6 +324,116 @@ def test_backend_facts_access_transition_reads_are_lazy_and_branch_local() -> No
     ]
 
 
+def test_bootstrap_facts_view_preserves_identity_and_projects_status() -> None:
+    (
+        access,
+        transition_reader,
+        bootstrap_reader,
+        context,
+        common,
+        obs,
+        boundary_event,
+        preparation,
+    ) = _access_with_bootstrap_reader(
+        bootstrap_reader=_RecordingBootstrapReader(
+            should_end_bootstrap=True,
+            bootstrap_end_mode="first_qualified_dig_start",
+            should_pre_dig_align_before_dig=True,
+        )
+    )
+
+    bootstrap_facts = access.bootstrap_decision(
+        pre_dig_align_skill_name="pre_dig_align",
+    )
+
+    assert isinstance(bootstrap_facts, PrimitiveBootstrapDecisionFacts)
+    assert bootstrap_facts.common is common
+    assert bootstrap_facts.context is context
+    assert bootstrap_facts.obs is obs
+    assert bootstrap_facts.boundary_event is boundary_event
+    assert bootstrap_facts.preparation is preparation
+    assert bootstrap_facts.current_skill_name == "bootstrap"
+    assert bootstrap_facts.skill_name_before_decision == "dig"
+    assert bootstrap_facts.should_end_bootstrap is True
+    assert bootstrap_facts.bootstrap_end_mode == "first_qualified_dig_start"
+    assert bootstrap_facts.should_pre_dig_align_before_dig is True
+    assert bootstrap_facts.next_skill_after_bootstrap == "pre_dig_align"
+    assert bootstrap_facts.status == BootstrapDecisionStatus(
+        current_skill_name="bootstrap",
+        should_end_bootstrap=True,
+        bootstrap_end_mode="first_qualified_dig_start",
+        should_pre_dig_align_before_dig=True,
+        next_skill_after_bootstrap="pre_dig_align",
+    )
+    assert transition_reader.calls == []
+    assert bootstrap_reader.calls == [
+        ("bootstrap_end_mode", None, None),
+        ("pre_dig_gate", None, None),
+        ("should_end_bootstrap", obs, boundary_event),
+    ]
+
+
+def test_bootstrap_facts_view_is_backend_facing_read_only_shape() -> None:
+    access, _, _, _, _, _, _, _ = _access_with_bootstrap_reader()
+
+    bootstrap_facts = access.bootstrap_decision(
+        pre_dig_align_skill_name="pre_dig_align",
+    )
+
+    assert {field.name for field in fields(PrimitiveBootstrapDecisionFacts)} == {
+        "common",
+        "status",
+    }
+    assert {
+        "self",
+        "planner",
+        "policy",
+        "callback",
+        "provider",
+        "applier",
+        "effect",
+        "mutation",
+        "setter",
+        "refresh",
+        "sync",
+        "residual",
+    }.isdisjoint({field.name for field in fields(PrimitiveBootstrapDecisionFacts)})
+    with pytest.raises(FrozenInstanceError):
+        bootstrap_facts.status = bootstrap_facts.status
+
+
+def test_backend_facts_bootstrap_decision_is_lazy_and_read_only() -> None:
+    access, transition_reader, bootstrap_reader, _, _, obs, boundary_event, _ = (
+        _access_with_bootstrap_reader()
+    )
+
+    assert bootstrap_reader.calls == []
+    assert transition_reader.calls == []
+
+    bootstrap_facts = access.bootstrap_decision(
+        pre_dig_align_skill_name="pre_dig_align",
+    )
+
+    assert bootstrap_facts.status.next_skill_after_bootstrap == "dig"
+    assert bootstrap_reader.calls == [
+        ("bootstrap_end_mode", None, None),
+        ("pre_dig_gate", None, None),
+        ("should_end_bootstrap", obs, boundary_event),
+    ]
+    assert transition_reader.calls == []
+
+
+def test_backend_facts_transition_reads_do_not_call_bootstrap_gates() -> None:
+    access, transition_reader, bootstrap_reader, _, _, obs, boundary_event, _ = (
+        _access_with_bootstrap_reader()
+    )
+
+    assert access.dig_transition().status is transition_reader.dig_status
+
+    assert transition_reader.calls == [("dig", obs, boundary_event)]
+    assert bootstrap_reader.calls == []
+
+
 def test_backend_facts_access_public_api_is_read_only() -> None:
     access, _, _, _, _, _, _ = _access()
     public_names = {name for name in dir(access) if not name.startswith("_")}
@@ -268,8 +453,23 @@ def test_backend_facts_access_public_api_is_read_only() -> None:
         "mutation",
     }.isdisjoint(public_names)
     assert {
+        "callback",
+        "provider",
+        "applier",
+        "effect",
+        "setter",
+        "refresh",
+        "sync",
+        "residual",
+    }.isdisjoint(field_names)
+    assert {
         "sync_dig_transition_reason",
         "refresh_return_transition_state",
         "handle_residual_pre_dig_align",
     }.isdisjoint(protocol_names)
-    assert field_names == {"context", "common", "_transition_status_reader"}
+    assert {
+        "context",
+        "common",
+        "_transition_status_reader",
+        "_bootstrap_decision_reader",
+    }.issubset(field_names)

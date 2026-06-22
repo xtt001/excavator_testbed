@@ -30,7 +30,11 @@ from testbed.planner.primitive_capabilities import (
     DumpTransitionStatus,
     ReturnTransitionStatus,
 )
-from testbed.planner.primitive_backend_facts import PrimitiveBackendFactsAccess
+from testbed.planner.primitive_backend_facts import (
+    BootstrapDecisionStatus,
+    PrimitiveBackendFactsAccess,
+    PrimitiveBootstrapDecisionFacts,
+)
 from testbed.planner.primitive_decision import (
     LEGACY_FSM_DECISION_SOURCE,
     CompleteCellEntryDigCompatibilityEffect,
@@ -963,6 +967,200 @@ def test_legacy_fsm_bootstrap_branch_requested_decision_ignores_non_bootstrap() 
     )
 
     assert result is None
+
+
+def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_no_change() -> None:
+    calls: list[str] = []
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    boundary_event = object()
+    status = BootstrapDecisionStatus(
+        current_skill_name="bootstrap",
+        should_end_bootstrap=False,
+        bootstrap_end_mode="first_qualified_dig_start",
+        should_pre_dig_align_before_dig=False,
+        next_skill_after_bootstrap="dig",
+    )
+
+    class _BootstrapBackendFacts:
+        def __init__(self, common: PrimitiveDecisionFacts) -> None:
+            self.common = common
+
+        def bootstrap_decision(
+            self,
+            *,
+            pre_dig_align_skill_name: str,
+        ) -> PrimitiveBootstrapDecisionFacts:
+            assert pre_dig_align_skill_name == "pre_dig_align"
+            calls.append("bootstrap_status")
+            return PrimitiveBootstrapDecisionFacts(common=self.common, status=status)
+
+        def dig_transition(self) -> PrimitiveDigTransitionFacts:
+            raise AssertionError("bootstrap branch must not read dig transition")
+
+        def carry_transition(self) -> PrimitiveCarryTransitionFacts:
+            raise AssertionError("bootstrap branch must not read carry transition")
+
+        def dump_transition(self) -> PrimitiveDumpTransitionFacts:
+            raise AssertionError("bootstrap branch must not read dump transition")
+
+        def return_transition(self) -> PrimitiveReturnTransitionFacts:
+            raise AssertionError("bootstrap branch must not read return transition")
+
+    class _BootstrapFactsCapabilities:
+        def backend_facts(
+            self,
+            context: PrimitiveDecisionContext,
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> _BootstrapBackendFacts:
+            assert facts is None
+            assert context.obs is obs
+            assert context.boundary_event is boundary_event
+            calls.append("current_skill")
+            calls.append("current_reason")
+            common = PrimitiveDecisionFacts.from_context(
+                context,
+                current_skill_name="bootstrap",
+                current_switch_reason="",
+            )
+            return _BootstrapBackendFacts(common)
+
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            raise AssertionError("bootstrap branch must consume backend facts access")
+
+        def bootstrap_status(self, *args: Any, **kwargs: Any) -> BootstrapDecisionStatus:
+            raise AssertionError("bootstrap branch must consume bootstrap facts view")
+
+        def handle_residual_pre_dig_align(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> bool:
+            raise AssertionError("bootstrap branch must not call residual handler")
+
+        def sync_dig_transition_reason(
+            self,
+            dig_facts: PrimitiveDigTransitionFacts,
+        ) -> None:
+            raise AssertionError("bootstrap branch must not sync dig reason")
+
+        def refresh_return_transition_state(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> None:
+            raise AssertionError("bootstrap branch must not refresh return")
+
+    branch = LegacyFSMBootstrapBranch(
+        config=LegacyFSMBootstrapConfig(
+            bootstrap_skill_name="bootstrap",
+            pre_dig_align_skill_name="pre_dig_align",
+        ),
+        capabilities=_BootstrapFactsCapabilities(),
+    )
+
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision="bootstrap",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert calls == ["current_skill", "current_reason", "bootstrap_status"]
+    assert result is not None
+    assert result.decision_source == "legacy_fsm_bootstrap_requested_effect"
+    assert result.status == "no_change"
+    assert result.skill_before == "bootstrap"
+    assert result.skill_after == "bootstrap"
+    assert result.switch_reason == ""
+    assert result.effects == ()
+
+
+def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_switch_to_dig() -> None:
+    calls: list[str] = []
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    boundary_event = object()
+    status = BootstrapDecisionStatus(
+        current_skill_name="bootstrap",
+        should_end_bootstrap=True,
+        bootstrap_end_mode="first_qualified_dig_start",
+        should_pre_dig_align_before_dig=False,
+        next_skill_after_bootstrap="dig",
+    )
+
+    class _BootstrapBackendFacts:
+        def __init__(self, common: PrimitiveDecisionFacts) -> None:
+            self.common = common
+
+        def bootstrap_decision(
+            self,
+            *,
+            pre_dig_align_skill_name: str,
+        ) -> PrimitiveBootstrapDecisionFacts:
+            assert pre_dig_align_skill_name == "pre_dig_align"
+            calls.append("bootstrap_status")
+            return PrimitiveBootstrapDecisionFacts(common=self.common, status=status)
+
+    class _BootstrapFactsCapabilities:
+        def backend_facts(
+            self,
+            context: PrimitiveDecisionContext,
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> _BootstrapBackendFacts:
+            assert facts is None
+            calls.append("current_skill")
+            calls.append("current_reason")
+            return _BootstrapBackendFacts(
+                PrimitiveDecisionFacts.from_context(
+                    context,
+                    current_skill_name="bootstrap",
+                    current_switch_reason="",
+                )
+            )
+
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            raise AssertionError("bootstrap branch must consume backend facts access")
+
+        def bootstrap_status(self, *args: Any, **kwargs: Any) -> BootstrapDecisionStatus:
+            raise AssertionError("bootstrap branch must consume bootstrap facts view")
+
+    branch = LegacyFSMBootstrapBranch(
+        config=LegacyFSMBootstrapConfig(
+            bootstrap_skill_name="bootstrap",
+            pre_dig_align_skill_name="pre_dig_align",
+        ),
+        capabilities=_BootstrapFactsCapabilities(),
+    )
+
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision="bootstrap",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert calls == ["current_skill", "current_reason", "bootstrap_status"]
+    assert result is not None
+    assert result.status == "skill_switch"
+    assert result.skill_after == "dig"
+    assert result.switch_reason == "bootstrap_to_dig"
+    assert result.effects == (
+        SwitchSkillEffect(
+            target_skill_name="dig",
+            switch_reason="bootstrap_to_dig",
+        ),
+    )
 
 
 def test_legacy_fsm_bootstrap_branch_ignores_non_bootstrap_skill() -> None:

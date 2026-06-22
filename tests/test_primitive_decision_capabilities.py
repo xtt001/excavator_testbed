@@ -8,6 +8,7 @@ from testbed.planner.primitive_capabilities import (
     DumpTransitionStatus,
 )
 from testbed.planner.primitive_backend_facts import PrimitiveBackendFactsAccess
+from testbed.planner.primitive_backend_facts import PrimitiveBootstrapDecisionFacts
 from testbed.planner.primitive_decision_capabilities import (
     BootstrapDecisionStatus,
     PrimitiveDecisionCapabilities,
@@ -286,6 +287,59 @@ def test_decision_capabilities_backend_facts_reuses_existing_common_facts() -> N
     assert port_calls == []
 
 
+def test_decision_capabilities_backend_facts_bootstrap_reuses_existing_common_facts() -> None:
+    obs = {"qpos": [1.0]}
+    boundary_event = object()
+    context = _context(obs=obs, boundary_event=boundary_event, skill="bootstrap")
+    provider = _RecordingTransitionStatusProvider()
+    port_calls: list[str] = []
+    capabilities = PrimitiveDecisionCapabilities.from_ports(
+        PrimitiveDecisionCapabilitiesPorts(
+            current_skill_name=(
+                lambda: port_calls.append("current_skill") or "bootstrap"
+            ),
+            current_switch_reason=lambda: port_calls.append("current_reason") or "",
+            should_end_bootstrap=(
+                lambda *, obs, boundary_event: port_calls.append("should_end")
+                or True
+            ),
+            bootstrap_end_mode=(
+                lambda: port_calls.append("bootstrap_end_mode")
+                or "first_qualified_dig_start"
+            ),
+            should_pre_dig_align_before_dig=(
+                lambda: port_calls.append("pre_dig_gate") or True
+            ),
+            transition_status_provider=provider,
+            maybe_handle_residual_pre_dig_align=(
+                lambda obs: port_calls.append("residual") or False
+            ),
+        )
+    )
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="bootstrap",
+        current_switch_reason="",
+    )
+
+    bootstrap_facts = capabilities.backend_facts(
+        context,
+        facts=common,
+    ).bootstrap_decision(pre_dig_align_skill_name="pre_dig_align")
+
+    assert isinstance(bootstrap_facts, PrimitiveBootstrapDecisionFacts)
+    assert bootstrap_facts.common is common
+    assert bootstrap_facts.status == BootstrapDecisionStatus(
+        current_skill_name="bootstrap",
+        should_end_bootstrap=True,
+        bootstrap_end_mode="first_qualified_dig_start",
+        should_pre_dig_align_before_dig=True,
+        next_skill_after_bootstrap="pre_dig_align",
+    )
+    assert provider.calls == []
+    assert port_calls == ["bootstrap_end_mode", "pre_dig_gate", "should_end"]
+
+
 def test_decision_capabilities_backend_facts_keeps_compat_mutations_out_of_access() -> None:
     context = _context(skill="return")
     capabilities, _ = _capabilities(current_skill_name="return")
@@ -557,6 +611,57 @@ def test_bootstrap_status_computes_target_skill_from_mode_and_pre_dig_gate() -> 
         ).next_skill_after_bootstrap
         == "carry"
     )
+
+
+def test_bootstrap_status_compatibility_uses_backend_facts_access() -> None:
+    obs = {"qpos": [1.0]}
+    boundary_event = object()
+    provider = _RecordingTransitionStatusProvider()
+    port_calls: list[str] = []
+    capabilities = PrimitiveDecisionCapabilities.from_ports(
+        PrimitiveDecisionCapabilitiesPorts(
+            current_skill_name=(
+                lambda: port_calls.append("current_skill") or "bootstrap"
+            ),
+            current_switch_reason=lambda: port_calls.append("current_reason") or "",
+            should_end_bootstrap=(
+                lambda *, obs, boundary_event: port_calls.append("should_end")
+                or True
+            ),
+            bootstrap_end_mode=(
+                lambda: port_calls.append("bootstrap_end_mode") or "scripted_qpos"
+            ),
+            should_pre_dig_align_before_dig=(
+                lambda: port_calls.append("pre_dig_gate") or False
+            ),
+            transition_status_provider=provider,
+            maybe_handle_residual_pre_dig_align=(
+                lambda obs: port_calls.append("residual") or False
+            ),
+        )
+    )
+
+    status = capabilities.bootstrap_status(
+        _context(obs=obs, boundary_event=boundary_event, skill="bootstrap"),
+        bootstrap_skill_name="bootstrap",
+        pre_dig_align_skill_name="pre_dig_align",
+    )
+
+    assert status == BootstrapDecisionStatus(
+        current_skill_name="bootstrap",
+        should_end_bootstrap=True,
+        bootstrap_end_mode="scripted_qpos",
+        should_pre_dig_align_before_dig=False,
+        next_skill_after_bootstrap="dig",
+    )
+    assert provider.calls == []
+    assert port_calls == [
+        "current_skill",
+        "current_reason",
+        "bootstrap_end_mode",
+        "pre_dig_gate",
+        "should_end",
+    ]
 
 
 def test_residual_pre_dig_align_handler_is_explicit_compatibility_port() -> None:

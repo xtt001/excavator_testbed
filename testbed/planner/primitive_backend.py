@@ -259,16 +259,15 @@ class LegacyFSMBootstrapBranch:
         self,
         context: PrimitiveDecisionContext,
     ) -> PrimitiveDecisionResult | None:
-        facts = self.capabilities.decision_facts(context)
+        backend_facts = self.capabilities.backend_facts(context)
+        facts = backend_facts.common
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.config.bootstrap_skill_name):
             return None
-        status = self.capabilities.bootstrap_status(
-            context,
-            bootstrap_skill_name=self.config.bootstrap_skill_name,
+        bootstrap_facts = backend_facts.bootstrap_decision(
             pre_dig_align_skill_name=self.config.pre_dig_align_skill_name,
-            facts=facts,
         )
+        status = bootstrap_facts.status
         if not status.should_end_bootstrap:
             return PrimitiveDecisionResult.from_requested_effects(
                 decision_source=BOOTSTRAP_REQUESTED_DECISION_SOURCE,

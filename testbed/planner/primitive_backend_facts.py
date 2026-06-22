@@ -21,6 +21,80 @@ from testbed.planner.primitive_decision_facts import (
 )
 
 
+@dataclass(frozen=True)
+class BootstrapDecisionStatus:
+    """Bootstrap facts normalized for primitive backend decisions."""
+
+    current_skill_name: str
+    should_end_bootstrap: bool
+    bootstrap_end_mode: str
+    should_pre_dig_align_before_dig: bool
+    next_skill_after_bootstrap: str
+
+
+@dataclass(frozen=True)
+class PrimitiveBootstrapDecisionFacts:
+    """Read-only bootstrap decision view for active-bootstrap decisions."""
+
+    common: PrimitiveDecisionFacts
+    status: BootstrapDecisionStatus
+
+    @property
+    def context(self) -> PrimitiveDecisionContext:
+        return self.common.context
+
+    @property
+    def obs(self) -> dict[str, Any]:
+        return self.common.obs
+
+    @property
+    def boundary_event(self) -> Any | None:
+        return self.common.boundary_event
+
+    @property
+    def preparation(self) -> Any:
+        return self.common.preparation
+
+    @property
+    def current_skill_name(self) -> str:
+        return self.common.current_skill_name
+
+    @property
+    def skill_name_before_decision(self) -> str:
+        return self.common.skill_name_before_decision
+
+    @property
+    def should_end_bootstrap(self) -> bool:
+        return bool(self.status.should_end_bootstrap)
+
+    @property
+    def bootstrap_end_mode(self) -> str:
+        return str(self.status.bootstrap_end_mode)
+
+    @property
+    def should_pre_dig_align_before_dig(self) -> bool:
+        return bool(self.status.should_pre_dig_align_before_dig)
+
+    @property
+    def next_skill_after_bootstrap(self) -> str:
+        return str(self.status.next_skill_after_bootstrap)
+
+
+class PrimitiveBootstrapDecisionReader(Protocol):
+    """Read-only bootstrap decision gate reader for backend facts access."""
+
+    def should_end_bootstrap(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> bool: ...
+
+    def bootstrap_end_mode(self) -> str: ...
+
+    def should_pre_dig_align_before_dig(self) -> bool: ...
+
+
 class PrimitiveTransitionStatusReader(Protocol):
     """Read-only transition status reader for backend facts access."""
 
@@ -59,6 +133,11 @@ class PrimitiveBackendFactsAccess:
         repr=False,
         compare=False,
     )
+    _bootstrap_decision_reader: PrimitiveBootstrapDecisionReader | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     @classmethod
     def from_reader(
@@ -67,11 +146,47 @@ class PrimitiveBackendFactsAccess:
         context: PrimitiveDecisionContext,
         common: PrimitiveDecisionFacts,
         transition_status_reader: PrimitiveTransitionStatusReader,
+        bootstrap_decision_reader: PrimitiveBootstrapDecisionReader | None = None,
     ) -> "PrimitiveBackendFactsAccess":
         return cls(
             context=context,
             common=common,
             _transition_status_reader=transition_status_reader,
+            _bootstrap_decision_reader=bootstrap_decision_reader,
+        )
+
+    def bootstrap_decision(
+        self,
+        *,
+        pre_dig_align_skill_name: str,
+    ) -> PrimitiveBootstrapDecisionFacts:
+        if self._bootstrap_decision_reader is None:
+            raise RuntimeError(
+                "bootstrap_decision requires a bootstrap decision reader"
+            )
+        mode = str(self._bootstrap_decision_reader.bootstrap_end_mode())
+        pre_dig_before_dig = bool(
+            self._bootstrap_decision_reader.should_pre_dig_align_before_dig()
+        )
+        next_skill = next_skill_after_bootstrap(
+            bootstrap_end_mode=mode,
+            pre_dig_align_before_dig=pre_dig_before_dig,
+            pre_dig_align_skill_name=pre_dig_align_skill_name,
+        )
+        return PrimitiveBootstrapDecisionFacts(
+            common=self.common,
+            status=BootstrapDecisionStatus(
+                current_skill_name=self.common.current_skill_name,
+                should_end_bootstrap=bool(
+                    self._bootstrap_decision_reader.should_end_bootstrap(
+                        obs=self.context.obs,
+                        boundary_event=self.context.boundary_event,
+                    )
+                ),
+                bootstrap_end_mode=mode,
+                should_pre_dig_align_before_dig=pre_dig_before_dig,
+                next_skill_after_bootstrap=next_skill,
+            ),
         )
 
     def dig_transition(self) -> PrimitiveDigTransitionFacts:
@@ -111,7 +226,25 @@ class PrimitiveBackendFactsAccess:
         )
 
 
+def next_skill_after_bootstrap(
+    *,
+    bootstrap_end_mode: str,
+    pre_dig_align_before_dig: bool,
+    pre_dig_align_skill_name: str,
+) -> str:
+    if str(bootstrap_end_mode) in {
+        "first_qualified_dig_start",
+        "scripted_qpos",
+    }:
+        return str(pre_dig_align_skill_name) if pre_dig_align_before_dig else "dig"
+    return "carry"
+
+
 __all__ = [
+    "BootstrapDecisionStatus",
+    "PrimitiveBootstrapDecisionFacts",
+    "PrimitiveBootstrapDecisionReader",
     "PrimitiveBackendFactsAccess",
     "PrimitiveTransitionStatusReader",
+    "next_skill_after_bootstrap",
 ]
