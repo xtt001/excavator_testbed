@@ -2442,3 +2442,60 @@ Each completed refactor round should append:
   stable boundary that still keeps confirmed-live behavior in the policy shell,
   likely a capability/status provider or branch factory bundle that supplies
   explicit facts to the requested branch runner without passing planner `self`.
+
+### 2026-06-22 Phase 9.7 Extract Legacy FSM Branch Ports And Branch Set
+
+- Scope: extracted legacy-FSM branch wiring and branch-set construction from
+  the large `PrimitivePlannerACTPolicy` shell into
+  `testbed/planner/primitive_backend.py`. No requested effect family, branch
+  semantics, branch order, reason string, threshold, token/debug/summary
+  schema, policy reset timing, backend selection, behavior tree, VLM/LLM
+  packet, `pre_dig_align` architecture status, `cell_entry`, 5P override, or
+  low-level ACT dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `99d80d8b87be444bc1944b73180d049a502b7e3d`, no fetch, pull, or push. The
+  worktree was clean before edits.
+- Selected evidence remains the successful mainline packet:
+  `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl`,
+  its paired planner trace, rollout summary, resolved config, and
+  `docs/planner_evidence_reports/2026-06-18-baseline-aggregate_tx24.md`. The
+  evidence supports moving confirmed-live FSM wiring out of the shell while
+  keeping `pre_dig_align` and `cell_entry` out of target mainline capability.
+- Added `LegacyFSMBranchPorts` as the typed shell boundary for branch wiring.
+  It carries explicit callbacks/config values, not `PrimitivePlannerACTPolicy`
+  or planner `self`.
+- Added `LegacyFSMBranchSet` to construct/own bootstrap, dig, carry, dump,
+  return, and residual pre-dig-align branches from ports. The branch set owns
+  the requested dispatch order
+  bootstrap -> dig -> carry -> dump -> return -> residual and the compatibility
+  facade order bootstrap -> residual pre-dig-align -> dig -> carry -> dump ->
+  return.
+- Added `LegacyFSMRequestedDecisionBackend` as the default requested-effect
+  decision backend built from the branch set. It delegates to the requested
+  runner and preserves the Phase 9.6 fail-fast contract.
+- Updated `PrimitivePlannerACTPolicy` so it no longer imports or constructs
+  individual `LegacyFSM*Branch` / `LegacyFSM*Config` classes. It now exposes
+  `_legacy_fsm_branch_ports()`, builds a branch set from those ports, and
+  delegates `_decide_tick_with_legacy_fsm()` to
+  `LegacyFSMRequestedDecisionBackend`.
+- Updated `_maybe_switch_skill()` so the legacy compatibility facade delegates
+  to `LegacyFSMBranchSet.maybe_handle_legacy_fsm(...)` instead of hand-writing
+  branch order in the policy shell.
+- Added focused tests in `tests/test_primitive_backend.py` and
+  `tests/test_primitive_decision_contract.py` for branch ports, branch-set
+  construction, requested backend order, fail-fast all-miss behavior,
+  compatibility order, policy backend delegation, and policy compatibility
+  facade delegation.
+- TDD red result: the first focused run failed at test collection because
+  `LegacyFSMBranchPorts` did not exist. After implementation, the focused green
+  run returned `71 passed`.
+- Old code parked/reclassified: no code was deleted. `pre_dig_align` remains a
+  residual already-applied compatibility path; `_maybe_switch_skill()` remains
+  a legacy compatibility facade for direct tests/diagnostics; `cell_entry`
+  internals, 5P compatibility, token planning, and return direct-handoff
+  internals remain existing legacy or compatibility owners.
+- Next action: continue moving toward the SVG target by extracting the next
+  capability/status boundary currently supplied through shell callbacks, so
+  branch decisions can consume explicit facts instead of callback-heavy shell
+  ports while still preserving rollout parity.

@@ -702,7 +702,7 @@ def test_primitive_planner_unknown_skill_fails_without_broad_legacy_fallback() -
     assert "broad legacy fallback is retired" in message
 
 
-def test_primitive_planner_decision_bridge_delegates_to_requested_branch_runner() -> None:
+def test_primitive_planner_decision_bridge_delegates_to_legacy_fsm_backend() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
@@ -721,10 +721,13 @@ def test_primitive_planner_decision_bridge_delegates_to_requested_branch_runner(
             calls.append((obs, boundary_event, preparation))
             return expected
 
-    planner._requested_branch_runner = MethodType(lambda self: FakeRunner(), planner)
-    planner._legacy_fsm_bootstrap_branch = MethodType(
+    planner._legacy_fsm_requested_decision_backend = MethodType(
+        lambda self: FakeRunner(),
+        planner,
+    )
+    planner._legacy_fsm_branch_ports = MethodType(
         lambda self: (_ for _ in ()).throw(
-            AssertionError("policy bridge should delegate to runner")
+            AssertionError("policy bridge should delegate to backend")
         ),
         planner,
     )
@@ -746,37 +749,19 @@ def test_primitive_planner_decision_bridge_delegates_to_requested_branch_runner(
 
 def test_primitive_planner_mainline_miss_does_not_call_broad_legacy_fallback() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
-    planner._skill_name = "dig"
-    planner._switch_reason = ""
     obs: dict[str, Any] = {"qpos": [1.0]}
-    order: list[str] = []
+    calls: list[str] = []
 
-    class NoMatchBranch:
-        def __init__(self, name: str) -> None:
-            self.name = name
-
+    class FailingBackend:
         def decide_tick(self, *, obs, boundary_event, preparation):
-            order.append(self.name)
-            return None
+            calls.append("backend")
+            raise PrimitiveDecisionContractError(
+                "unhandled planner skill in requested branch chain; broad legacy "
+                "fallback is retired for default decisions: 'dig'"
+            )
 
-    planner._legacy_fsm_bootstrap_branch = MethodType(
-        lambda self: NoMatchBranch("bootstrap"),
-        planner,
-    )
-    planner._legacy_fsm_dig_branch = MethodType(
-        lambda self: NoMatchBranch("dig"),
-        planner,
-    )
-    planner._legacy_fsm_carry_branch = MethodType(
-        lambda self: NoMatchBranch("carry"),
-        planner,
-    )
-    planner._legacy_fsm_dump_branch = MethodType(
-        lambda self: NoMatchBranch("dump"),
-        planner,
-    )
-    planner._legacy_fsm_return_branch = MethodType(
-        lambda self: NoMatchBranch("return"),
+    planner._legacy_fsm_requested_decision_backend = MethodType(
+        lambda self: FailingBackend(),
         planner,
     )
     planner._maybe_switch_skill = MethodType(
@@ -801,39 +786,31 @@ def test_primitive_planner_mainline_miss_does_not_call_broad_legacy_fallback() -
     else:
         raise AssertionError("unhandled mainline branch miss was silently accepted")
 
-    assert order == ["bootstrap", "dig", "carry", "dump", "return"]
+    assert calls == ["backend"]
     assert "unhandled planner skill" in message
     assert "broad legacy fallback" in message
 
 
 def test_primitive_planner_pre_dig_align_uses_explicit_residual_path() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
-    planner._skill_name = "pre_dig_align"
-    planner._switch_reason = ""
     obs: dict[str, Any] = {"qpos": [1.0]}
-    calls: list[str] = []
+    expected = PrimitiveDecisionResult.from_legacy_fsm_outcome(
+        decision_source=RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE,
+        skill_before="pre_dig_align",
+        skill_after="dig",
+        switch_reason="pre_dig_align_to_dig_ready",
+    )
+    calls: list[tuple[dict[str, Any], None, PrimitiveTickPreparation]] = []
 
-    class NoMatchBranch:
+    class FakeBackend:
         def decide_tick(self, *, obs, boundary_event, preparation):
-            return None
+            calls.append((obs, boundary_event, preparation))
+            return expected
 
-    planner._legacy_fsm_bootstrap_branch = MethodType(lambda self: NoMatchBranch(), planner)
-    planner._legacy_fsm_dig_branch = MethodType(lambda self: NoMatchBranch(), planner)
-    planner._legacy_fsm_carry_branch = MethodType(lambda self: NoMatchBranch(), planner)
-    planner._legacy_fsm_dump_branch = MethodType(lambda self: NoMatchBranch(), planner)
-    planner._legacy_fsm_return_branch = MethodType(lambda self: NoMatchBranch(), planner)
-
-    def fake_residual(
-        self: PrimitivePlannerACTPolicy,
-        got_obs: dict[str, Any],
-    ) -> bool:
-        assert got_obs is obs
-        calls.append("residual")
-        self._skill_name = "dig"
-        self._switch_reason = "pre_dig_align_to_dig_ready"
-        return True
-
-    planner._maybe_handle_pre_dig_align_skill = MethodType(fake_residual, planner)
+    planner._legacy_fsm_requested_decision_backend = MethodType(
+        lambda self: FakeBackend(),
+        planner,
+    )
     planner._maybe_switch_skill = MethodType(
         lambda self, *, obs, boundary_event: (_ for _ in ()).throw(
             AssertionError("broad legacy fallback should not be called")
@@ -851,12 +828,40 @@ def test_primitive_planner_pre_dig_align_uses_explicit_residual_path() -> None:
         ),
     )
 
-    assert calls == ["residual"]
-    assert result.decision_source == RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE
+    assert calls == [
+        (
+            obs,
+            None,
+            PrimitiveTickPreparation(
+                boundary_event=None,
+                skill_name_before_decision="pre_dig_align",
+                dig_progress_updated=False,
+            ),
+        )
+    ]
+    assert result is expected
     assert result.side_effects_applied is True
     assert result.skill_before == "pre_dig_align"
     assert result.skill_after == "dig"
     assert result.switch_reason == "pre_dig_align_to_dig_ready"
+
+
+def test_primitive_planner_maybe_switch_skill_delegates_to_branch_set() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    boundary_event = object()
+    calls: list[tuple[dict[str, Any], object]] = []
+
+    class FakeBranchSet:
+        def maybe_handle_legacy_fsm(self, *, obs, boundary_event):
+            calls.append((obs, boundary_event))
+            return True
+
+    planner._legacy_fsm_branch_set = MethodType(lambda self: FakeBranchSet(), planner)
+
+    planner._maybe_switch_skill(obs=obs, boundary_event=boundary_event)
+
+    assert calls == [(obs, boundary_event)]
 
 
 def test_primitive_planner_bootstrap_decision_bridge_returns_requested_switch() -> None:

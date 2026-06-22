@@ -45,6 +45,51 @@ RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE = (
 )
 
 
+@dataclass(frozen=True)
+class LegacyFSMBranchPorts:
+    """Typed shell ports needed to build the legacy FSM branch set."""
+
+    bootstrap_skill_name: str
+    pre_dig_align_skill_name: str
+    dig_skill_name: str
+    carry_skill_name: str
+    dump_skill_name: str
+    return_skill_name: str
+    current_skill_name: Callable[[], str]
+    current_switch_reason: Callable[[], str]
+    should_end_bootstrap: Callable[..., bool]
+    bootstrap_end_mode: Callable[[], str]
+    should_pre_dig_align_before_dig: Callable[[], bool]
+    set_skill: Callable[[str, str], None]
+    maybe_handle_pre_dig_align_skill: Callable[[dict[str, Any]], bool]
+    dig_exit_guard_ready: Callable[[dict[str, Any]], bool]
+    increment_dig_exit_guard_replan_count: Callable[[], None]
+    reject_active_coverage_corridor: Callable[..., None]
+    restart_after_failed_dig: Callable[[str, dict[str, Any]], None]
+    dig_bad_replan_ready: Callable[[dict[str, Any]], bool]
+    increment_dig_bad_replan_count: Callable[[], None]
+    dig_complete_boundary_low_payload: Callable[[dict[str, Any], Any | None], bool]
+    dig_to_carry_ready: Callable[..., bool]
+    complete_cell_entry_dig: Callable[[dict[str, Any]], None]
+    complete_coverage_dig: Callable[[dict[str, Any]], None]
+    dig_to_carry_reason: Callable[[], str]
+    carry_transition_status: Callable[[dict[str, Any], Any | None], CarryTransitionStatus]
+    complete_coverage_dump: Callable[..., None]
+    set_return_or_direct_handoff: Callable[..., None]
+    set_dump_ready_hold_count: Callable[[int], None]
+    deposited_mass: Callable[[dict[str, Any]], float]
+    set_dump_start_deposited_mass: Callable[[float], None]
+    dump_transition_status: Callable[[dict[str, Any], Any | None], DumpTransitionStatus]
+    set_dump_done_hold_count: Callable[[int], None]
+    return_transition_status: Callable[
+        [dict[str, Any], Any | None],
+        ReturnTransitionStatus,
+    ]
+    mark_return_next_dig_event_seen: Callable[[], None]
+    complete_return_transition: Callable[[], None]
+    next_skill_after_return_transition: Callable[[], str]
+
+
 class PrimitiveDecisionBackend(Protocol):
     """Backend interface for choosing the next primitive skill for a tick."""
 
@@ -160,6 +205,13 @@ class LegacyFSMResidualPreDigAlignAdapter:
             skill_after=str(self.current_skill_name()),
             switch_reason=str(self.current_switch_reason()),
         )
+
+    def maybe_handle(self, *, obs: dict[str, Any], boundary_event: Any | None) -> bool:
+        del boundary_event
+        if str(self.current_skill_name()) != str(self.pre_dig_align_skill_name):
+            return False
+        self.maybe_handle_pre_dig_align_skill(obs)
+        return True
 
 
 @dataclass(frozen=True)
@@ -661,8 +713,160 @@ class LegacyFSMReturnBranch:
                 )
 
 
+@dataclass(frozen=True)
+class LegacyFSMBranchSet:
+    """Constructed legacy FSM branches plus their supported dispatch orders."""
+
+    bootstrap_branch: PrimitiveDecisionBranch
+    dig_branch: PrimitiveDecisionBranch
+    carry_branch: PrimitiveDecisionBranch
+    dump_branch: PrimitiveDecisionBranch
+    return_branch: PrimitiveDecisionBranch
+    residual_branch: PrimitiveDecisionBranch
+
+    @classmethod
+    def from_ports(cls, ports: LegacyFSMBranchPorts) -> "LegacyFSMBranchSet":
+        return cls(
+            bootstrap_branch=LegacyFSMBootstrapBranch(
+                config=LegacyFSMBootstrapConfig(
+                    bootstrap_skill_name=ports.bootstrap_skill_name,
+                    pre_dig_align_skill_name=ports.pre_dig_align_skill_name,
+                ),
+                current_skill_name=ports.current_skill_name,
+                should_end_bootstrap=ports.should_end_bootstrap,
+                bootstrap_end_mode=ports.bootstrap_end_mode,
+                should_pre_dig_align_before_dig=(
+                    ports.should_pre_dig_align_before_dig
+                ),
+                set_skill=ports.set_skill,
+            ),
+            dig_branch=LegacyFSMDigBranch(
+                config=LegacyFSMDigConfig(dig_skill_name=ports.dig_skill_name),
+                current_skill_name=ports.current_skill_name,
+                dig_exit_guard_ready=ports.dig_exit_guard_ready,
+                increment_dig_exit_guard_replan_count=(
+                    ports.increment_dig_exit_guard_replan_count
+                ),
+                reject_active_coverage_corridor=(
+                    ports.reject_active_coverage_corridor
+                ),
+                restart_after_failed_dig=ports.restart_after_failed_dig,
+                dig_bad_replan_ready=ports.dig_bad_replan_ready,
+                increment_dig_bad_replan_count=ports.increment_dig_bad_replan_count,
+                dig_complete_boundary_low_payload=(
+                    ports.dig_complete_boundary_low_payload
+                ),
+                dig_to_carry_ready=ports.dig_to_carry_ready,
+                complete_cell_entry_dig=ports.complete_cell_entry_dig,
+                complete_coverage_dig=ports.complete_coverage_dig,
+                dig_to_carry_reason=ports.dig_to_carry_reason,
+                set_skill=ports.set_skill,
+            ),
+            carry_branch=LegacyFSMCarryBranch(
+                config=LegacyFSMCarryConfig(carry_skill_name=ports.carry_skill_name),
+                current_skill_name=ports.current_skill_name,
+                carry_transition_status=ports.carry_transition_status,
+                complete_coverage_dump=ports.complete_coverage_dump,
+                set_return_or_direct_handoff=ports.set_return_or_direct_handoff,
+                set_dump_ready_hold_count=ports.set_dump_ready_hold_count,
+                deposited_mass=ports.deposited_mass,
+                set_dump_start_deposited_mass=ports.set_dump_start_deposited_mass,
+                set_skill=ports.set_skill,
+            ),
+            dump_branch=LegacyFSMDumpBranch(
+                config=LegacyFSMDumpConfig(dump_skill_name=ports.dump_skill_name),
+                current_skill_name=ports.current_skill_name,
+                dump_transition_status=ports.dump_transition_status,
+                complete_coverage_dump=ports.complete_coverage_dump,
+                set_return_or_direct_handoff=ports.set_return_or_direct_handoff,
+                set_dump_done_hold_count=ports.set_dump_done_hold_count,
+            ),
+            return_branch=LegacyFSMReturnBranch(
+                config=LegacyFSMReturnConfig(return_skill_name=ports.return_skill_name),
+                current_skill_name=ports.current_skill_name,
+                return_transition_status=ports.return_transition_status,
+                mark_return_next_dig_event_seen=(
+                    ports.mark_return_next_dig_event_seen
+                ),
+                complete_return_transition=ports.complete_return_transition,
+                next_skill_after_return_transition=(
+                    ports.next_skill_after_return_transition
+                ),
+                set_skill=ports.set_skill,
+            ),
+            residual_branch=LegacyFSMResidualPreDigAlignAdapter(
+                pre_dig_align_skill_name=ports.pre_dig_align_skill_name,
+                current_skill_name=ports.current_skill_name,
+                current_switch_reason=ports.current_switch_reason,
+                maybe_handle_pre_dig_align_skill=(
+                    ports.maybe_handle_pre_dig_align_skill
+                ),
+            ),
+        )
+
+    def requested_runner(self) -> PrimitiveRequestedBranchRunner:
+        return PrimitiveRequestedBranchRunner(
+            bootstrap_branch=self.bootstrap_branch,
+            dig_branch=self.dig_branch,
+            carry_branch=self.carry_branch,
+            dump_branch=self.dump_branch,
+            return_branch=self.return_branch,
+            residual_branch=self.residual_branch,
+        )
+
+    def requested_decision_backend(self) -> "LegacyFSMRequestedDecisionBackend":
+        return LegacyFSMRequestedDecisionBackend(branch_set=self)
+
+    def maybe_handle_legacy_fsm(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+    ) -> bool:
+        for branch in (
+            self.bootstrap_branch,
+            self.residual_branch,
+            self.dig_branch,
+            self.carry_branch,
+            self.dump_branch,
+            self.return_branch,
+        ):
+            if branch.maybe_handle(obs=obs, boundary_event=boundary_event):
+                return True
+        return False
+
+
+@dataclass(frozen=True)
+class LegacyFSMRequestedDecisionBackend:
+    """Requested-effect decision backend backed by a legacy FSM branch set."""
+
+    branch_set: LegacyFSMBranchSet
+
+    @classmethod
+    def from_ports(
+        cls,
+        ports: LegacyFSMBranchPorts,
+    ) -> "LegacyFSMRequestedDecisionBackend":
+        return cls(branch_set=LegacyFSMBranchSet.from_ports(ports))
+
+    def decide_tick(
+        self,
+        *,
+        obs: dict[str, Any],
+        boundary_event: Any | None,
+        preparation: PrimitiveTickPreparation,
+    ) -> PrimitiveDecisionResult:
+        return self.branch_set.requested_runner().decide_tick(
+            obs=obs,
+            boundary_event=boundary_event,
+            preparation=preparation,
+        )
+
+
 __all__ = [
     "LegacyFSMBackendAdapter",
+    "LegacyFSMBranchPorts",
+    "LegacyFSMBranchSet",
     "LegacyFSMBootstrapBranch",
     "LegacyFSMBootstrapConfig",
     "LegacyFSMCarryBranch",
@@ -672,6 +876,7 @@ __all__ = [
     "LegacyFSMDumpBranch",
     "LegacyFSMDumpConfig",
     "LegacyFSMResidualPreDigAlignAdapter",
+    "LegacyFSMRequestedDecisionBackend",
     "LegacyFSMReturnBranch",
     "LegacyFSMReturnConfig",
     "PrimitiveDecisionBranch",

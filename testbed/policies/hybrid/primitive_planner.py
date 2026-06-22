@@ -63,18 +63,9 @@ from testbed.planner.cell_entry import (
     build_cell_entry_tokens,
 )
 from testbed.planner.primitive_backend import (
-    LegacyFSMBootstrapBranch,
-    LegacyFSMBootstrapConfig,
-    LegacyFSMCarryBranch,
-    LegacyFSMCarryConfig,
-    LegacyFSMDigBranch,
-    LegacyFSMDigConfig,
-    LegacyFSMDumpBranch,
-    LegacyFSMDumpConfig,
-    LegacyFSMResidualPreDigAlignAdapter,
-    LegacyFSMReturnBranch,
-    LegacyFSMReturnConfig,
-    PrimitiveRequestedBranchRunner,
+    LegacyFSMBranchPorts,
+    LegacyFSMBranchSet,
+    LegacyFSMRequestedDecisionBackend,
 )
 from testbed.planner.primitive_capabilities import (
     CarryTransitionStatus,
@@ -1061,21 +1052,19 @@ class PrimitivePlannerACTPolicy(Policy):
         boundary_event: Any | None,
         preparation: PrimitiveTickPreparation,
     ) -> PrimitiveDecisionResult:
-        return self._requested_branch_runner().decide_tick(
+        return self._legacy_fsm_requested_decision_backend().decide_tick(
             obs=obs,
             boundary_event=boundary_event,
             preparation=preparation,
         )
 
-    def _requested_branch_runner(self) -> PrimitiveRequestedBranchRunner:
-        return PrimitiveRequestedBranchRunner(
-            bootstrap_branch=self._legacy_fsm_bootstrap_branch(),
-            dig_branch=self._legacy_fsm_dig_branch(),
-            carry_branch=self._legacy_fsm_carry_branch(),
-            dump_branch=self._legacy_fsm_dump_branch(),
-            return_branch=self._legacy_fsm_return_branch(),
-            residual_branch=self._legacy_fsm_residual_pre_dig_align_adapter(),
-        )
+    def _legacy_fsm_requested_decision_backend(
+        self,
+    ) -> LegacyFSMRequestedDecisionBackend:
+        return self._legacy_fsm_branch_set().requested_decision_backend()
+
+    def _legacy_fsm_branch_set(self) -> LegacyFSMBranchSet:
+        return LegacyFSMBranchSet.from_ports(self._legacy_fsm_branch_ports())
 
     def _apply_requested_tick_effects(
         self,
@@ -1160,33 +1149,21 @@ class PrimitivePlannerACTPolicy(Policy):
                     f"received: {effect_name}"
                 )
 
-    def _legacy_fsm_residual_pre_dig_align_adapter(
-        self,
-    ) -> LegacyFSMResidualPreDigAlignAdapter:
-        return LegacyFSMResidualPreDigAlignAdapter(
+    def _legacy_fsm_branch_ports(self) -> LegacyFSMBranchPorts:
+        return LegacyFSMBranchPorts(
+            bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
             pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
+            dig_skill_name="dig",
+            carry_skill_name="carry",
+            dump_skill_name="dump",
+            return_skill_name="return",
             current_skill_name=lambda: str(self._skill_name),
             current_switch_reason=lambda: str(self._switch_reason),
-            maybe_handle_pre_dig_align_skill=self._maybe_handle_pre_dig_align_skill,
-        )
-
-    def _legacy_fsm_bootstrap_branch(self) -> LegacyFSMBootstrapBranch:
-        return LegacyFSMBootstrapBranch(
-            config=LegacyFSMBootstrapConfig(
-                bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
-                pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
-            ),
-            current_skill_name=lambda: str(self._skill_name),
             should_end_bootstrap=self._should_end_bootstrap,
             bootstrap_end_mode=lambda: str(self.bootstrap_end_mode),
             should_pre_dig_align_before_dig=self._should_pre_dig_align_before_dig,
             set_skill=self._set_skill,
-        )
-
-    def _legacy_fsm_dig_branch(self) -> LegacyFSMDigBranch:
-        return LegacyFSMDigBranch(
-            config=LegacyFSMDigConfig(dig_skill_name="dig"),
-            current_skill_name=lambda: str(self._skill_name),
+            maybe_handle_pre_dig_align_skill=self._maybe_handle_pre_dig_align_skill,
             dig_exit_guard_ready=self._dig_exit_guard_ready,
             increment_dig_exit_guard_replan_count=(
                 self._increment_dig_exit_guard_replan_count
@@ -1200,20 +1177,20 @@ class PrimitivePlannerACTPolicy(Policy):
             complete_cell_entry_dig=self._complete_cell_entry_dig,
             complete_coverage_dig=self._complete_coverage_dig,
             dig_to_carry_reason=lambda: str(self._dig_to_carry_reason),
-            set_skill=self._set_skill,
-        )
-
-    def _legacy_fsm_carry_branch(self) -> LegacyFSMCarryBranch:
-        return LegacyFSMCarryBranch(
-            config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-            current_skill_name=lambda: str(self._skill_name),
             carry_transition_status=self._carry_transition_status_for_backend,
             complete_coverage_dump=self._complete_coverage_dump,
             set_return_or_direct_handoff=self._set_return_or_direct_handoff,
             set_dump_ready_hold_count=self._set_dump_ready_hold_count,
             deposited_mass=self._deposited_mass,
             set_dump_start_deposited_mass=self._set_dump_start_deposited_mass,
-            set_skill=self._set_skill,
+            dump_transition_status=self._dump_transition_status_for_backend,
+            set_dump_done_hold_count=self._set_dump_done_hold_count,
+            return_transition_status=self._return_transition_status_for_backend,
+            mark_return_next_dig_event_seen=self._mark_return_next_dig_event_seen,
+            complete_return_transition=self._complete_return_transition_for_backend,
+            next_skill_after_return_transition=(
+                self._next_skill_after_return_transition
+            ),
         )
 
     def _carry_transition_status_for_backend(
@@ -1277,16 +1254,6 @@ class PrimitivePlannerACTPolicy(Policy):
     def _set_dump_start_deposited_mass(self, value: float) -> None:
         self._dump_start_deposited_mass_kg = float(value)
 
-    def _legacy_fsm_dump_branch(self) -> LegacyFSMDumpBranch:
-        return LegacyFSMDumpBranch(
-            config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-            current_skill_name=lambda: str(self._skill_name),
-            dump_transition_status=self._dump_transition_status_for_backend,
-            complete_coverage_dump=self._complete_coverage_dump,
-            set_return_or_direct_handoff=self._set_return_or_direct_handoff,
-            set_dump_done_hold_count=self._set_dump_done_hold_count,
-        )
-
     def _dump_transition_status_for_backend(
         self,
         obs: dict,
@@ -1309,19 +1276,6 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _set_dump_done_hold_count(self, value: int) -> None:
         self._dump_done_hold_count = int(value)
-
-    def _legacy_fsm_return_branch(self) -> LegacyFSMReturnBranch:
-        return LegacyFSMReturnBranch(
-            config=LegacyFSMReturnConfig(return_skill_name="return"),
-            current_skill_name=lambda: str(self._skill_name),
-            return_transition_status=self._return_transition_status_for_backend,
-            mark_return_next_dig_event_seen=self._mark_return_next_dig_event_seen,
-            complete_return_transition=self._complete_return_transition_for_backend,
-            next_skill_after_return_transition=(
-                self._next_skill_after_return_transition
-            ),
-            set_skill=self._set_skill,
-        )
 
     def _return_transition_status_for_backend(
         self,
@@ -1934,38 +1888,10 @@ class PrimitivePlannerACTPolicy(Policy):
         }
 
     def _maybe_switch_skill(self, *, obs: dict, boundary_event: Any | None) -> None:
-        if self._legacy_fsm_bootstrap_branch().maybe_handle(
+        self._legacy_fsm_branch_set().maybe_handle_legacy_fsm(
             obs=obs,
             boundary_event=boundary_event,
-        ):
-            return
-
-        if self._maybe_handle_pre_dig_align_skill(obs):
-            return
-
-        if self._legacy_fsm_dig_branch().maybe_handle(
-            obs=obs,
-            boundary_event=boundary_event,
-        ):
-            return
-
-        if self._legacy_fsm_carry_branch().maybe_handle(
-            obs=obs,
-            boundary_event=boundary_event,
-        ):
-            return
-
-        if self._legacy_fsm_dump_branch().maybe_handle(
-            obs=obs,
-            boundary_event=boundary_event,
-        ):
-            return
-
-        if self._legacy_fsm_return_branch().maybe_handle(
-            obs=obs,
-            boundary_event=boundary_event,
-        ):
-            return
+        )
 
     def _maybe_handle_pre_dig_align_skill(self, obs: dict) -> bool:
         if self._skill_name != PRE_DIG_ALIGN_SKILL_NAME:

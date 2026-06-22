@@ -4,6 +4,8 @@ from typing import Any
 
 from testbed.planner.primitive_backend import (
     LegacyFSMBackendAdapter,
+    LegacyFSMBranchPorts,
+    LegacyFSMBranchSet,
     LegacyFSMBootstrapBranch,
     LegacyFSMBootstrapConfig,
     LegacyFSMCarryBranch,
@@ -13,6 +15,7 @@ from testbed.planner.primitive_backend import (
     LegacyFSMDigBranch,
     LegacyFSMDigConfig,
     LegacyFSMResidualPreDigAlignAdapter,
+    LegacyFSMRequestedDecisionBackend,
     LegacyFSMReturnBranch,
     LegacyFSMReturnConfig,
     PrimitiveRequestedBranchRunner,
@@ -62,6 +65,21 @@ class _RecordingBranch:
         return self.result
 
 
+class _RecordingCompatBranch(_RecordingBranch):
+    def __init__(
+        self,
+        name: str,
+        handled: bool,
+        calls: list[str],
+    ) -> None:
+        super().__init__(name=name, result=None, calls=calls)
+        self.handled = handled
+
+    def maybe_handle(self, *, obs, boundary_event):
+        self.calls.append(self.name)
+        return self.handled
+
+
 def _requested_no_change_result(
     *,
     decision_source: str = "test_branch",
@@ -75,6 +93,209 @@ def _requested_no_change_result(
         switch_reason="",
         effects=(),
     )
+
+
+def _default_carry_status() -> CarryTransitionStatus:
+    return CarryTransitionStatus(
+        mass_in_bucket_kg=0.0,
+        deposited_mass_in_target_box_kg=0.0,
+        deposit_delta_since_cycle_start_kg=0.0,
+        semantic_boundary_profile_active=False,
+        dump_committed_event=False,
+        release_onset_event=False,
+        dump_complete_event=False,
+        legacy_dump_start_event=False,
+        carry_release_safety_done=False,
+        dump_ready=False,
+        next_dump_ready_hold_count=0,
+        ready_to_dump=False,
+        carry_to_dump_reason="",
+        carry_to_return_reason="",
+    )
+
+
+def _default_dump_status() -> DumpTransitionStatus:
+    return DumpTransitionStatus(
+        mass_in_bucket_kg=0.0,
+        deposited_mass_in_target_box_kg=0.0,
+        deposit_delta_since_dump_start_kg=0.0,
+        semantic_boundary_profile_active=False,
+        dump_complete_event=False,
+        legacy_dump_end_event=False,
+        boundary_dump_done=False,
+        dump_done_mass_low=False,
+        next_dump_done_hold_count=0,
+        ready_to_return=False,
+        coverage_completion_reason="dump_mass_low",
+        dump_to_return_reason="dump_to_return_mass_low",
+    )
+
+
+def _default_return_status() -> ReturnTransitionStatus:
+    return ReturnTransitionStatus(
+        semantic_boundary_profile_active=False,
+        next_dig_event=False,
+        return_next_dig_event_seen=False,
+        next_or_seen_dig_event=False,
+        entry_close=False,
+        handoff_ready=False,
+        direct_handoff_ready=False,
+        shallow_guard_allowed=False,
+        completed_transition=False,
+    )
+
+
+def _legacy_fsm_branch_ports(
+    *,
+    state: dict[str, str] | None = None,
+    events: list[str] | None = None,
+) -> LegacyFSMBranchPorts:
+    state = state if state is not None else {"skill": "legacy_skill", "reason": ""}
+    events = events if events is not None else []
+
+    def set_skill(skill: str, reason: str) -> None:
+        events.append(f"set:{skill}:{reason}")
+        state["skill"] = skill
+        state["reason"] = reason
+
+    return LegacyFSMBranchPorts(
+        bootstrap_skill_name="bootstrap",
+        pre_dig_align_skill_name="pre_dig_align",
+        dig_skill_name="dig",
+        carry_skill_name="carry",
+        dump_skill_name="dump",
+        return_skill_name="return",
+        current_skill_name=lambda: state["skill"],
+        current_switch_reason=lambda: state["reason"],
+        should_end_bootstrap=lambda *, obs, boundary_event: False,
+        bootstrap_end_mode=lambda: "first_qualified_dig_start",
+        should_pre_dig_align_before_dig=lambda: False,
+        set_skill=set_skill,
+        maybe_handle_pre_dig_align_skill=lambda obs: False,
+        dig_exit_guard_ready=lambda obs: False,
+        increment_dig_exit_guard_replan_count=lambda: events.append("exit_count"),
+        reject_active_coverage_corridor=lambda obs, reason: events.append(
+            f"reject:{reason}"
+        ),
+        restart_after_failed_dig=lambda reason, obs: events.append(
+            f"restart:{reason}"
+        ),
+        dig_bad_replan_ready=lambda obs: False,
+        increment_dig_bad_replan_count=lambda: events.append("bad_count"),
+        dig_complete_boundary_low_payload=lambda obs, boundary_event: False,
+        dig_to_carry_ready=lambda *, obs, boundary_event: False,
+        complete_cell_entry_dig=lambda obs: events.append("cell"),
+        complete_coverage_dig=lambda obs: events.append("coverage"),
+        dig_to_carry_reason=lambda: "",
+        carry_transition_status=lambda obs, boundary_event: _default_carry_status(),
+        complete_coverage_dump=lambda obs, reason: events.append(
+            f"complete_dump:{reason}"
+        ),
+        set_return_or_direct_handoff=lambda obs, reason: events.append(
+            f"return:{reason}"
+        ),
+        set_dump_ready_hold_count=lambda value: events.append(f"ready:{value}"),
+        deposited_mass=lambda obs: 0.0,
+        set_dump_start_deposited_mass=lambda value: events.append(
+            f"deposit:{value}"
+        ),
+        dump_transition_status=lambda obs, boundary_event: _default_dump_status(),
+        set_dump_done_hold_count=lambda value: events.append(f"done:{value}"),
+        return_transition_status=lambda obs, boundary_event: _default_return_status(),
+        mark_return_next_dig_event_seen=lambda: events.append("mark_return_event"),
+        complete_return_transition=lambda: events.append("complete_return"),
+        next_skill_after_return_transition=lambda: "dig",
+    )
+
+
+def test_legacy_fsm_branch_set_from_ports_builds_backend_and_runner() -> None:
+    branch_set = LegacyFSMBranchSet.from_ports(_legacy_fsm_branch_ports())
+
+    backend = branch_set.requested_decision_backend()
+    runner = branch_set.requested_runner()
+
+    assert isinstance(backend, LegacyFSMRequestedDecisionBackend)
+    assert isinstance(runner, PrimitiveRequestedBranchRunner)
+    assert runner.bootstrap_branch is branch_set.bootstrap_branch
+    assert runner.dig_branch is branch_set.dig_branch
+    assert runner.carry_branch is branch_set.carry_branch
+    assert runner.dump_branch is branch_set.dump_branch
+    assert runner.return_branch is branch_set.return_branch
+    assert runner.residual_branch is branch_set.residual_branch
+
+
+def test_legacy_fsm_branch_set_requested_backend_uses_stable_order() -> None:
+    calls: list[str] = []
+    expected = _requested_no_change_result(decision_source="return_branch")
+    branch_set = LegacyFSMBranchSet(
+        bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
+        dig_branch=_RecordingBranch("dig", None, calls),
+        carry_branch=_RecordingBranch("carry", None, calls),
+        dump_branch=_RecordingBranch("dump", None, calls),
+        return_branch=_RecordingBranch("return", expected, calls),
+        residual_branch=_RecordingBranch("residual", _requested_no_change_result(), calls),
+    )
+
+    result = branch_set.requested_decision_backend().decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="return",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert result is expected
+    assert calls == ["bootstrap", "dig", "carry", "dump", "return"]
+
+
+def test_legacy_fsm_branch_set_requested_backend_fails_fast_when_all_decline() -> None:
+    calls: list[str] = []
+    branch_set = LegacyFSMBranchSet(
+        bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
+        dig_branch=_RecordingBranch("dig", None, calls),
+        carry_branch=_RecordingBranch("carry", None, calls),
+        dump_branch=_RecordingBranch("dump", None, calls),
+        return_branch=_RecordingBranch("return", None, calls),
+        residual_branch=_RecordingBranch("residual", None, calls),
+    )
+
+    try:
+        branch_set.requested_decision_backend().decide_tick(
+            obs={},
+            boundary_event=None,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=None,
+                skill_name_before_decision="legacy_skill",
+                dig_progress_updated=False,
+            ),
+        )
+    except PrimitiveDecisionContractError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("backend accepted an unhandled planner skill")
+
+    assert calls == ["bootstrap", "dig", "carry", "dump", "return", "residual"]
+    assert "broad legacy fallback is retired" in message
+    assert "legacy_skill" in message
+
+
+def test_legacy_fsm_branch_set_compatibility_order_keeps_residual_second() -> None:
+    calls: list[str] = []
+    branch_set = LegacyFSMBranchSet(
+        bootstrap_branch=_RecordingCompatBranch("bootstrap", False, calls),
+        dig_branch=_RecordingCompatBranch("dig", False, calls),
+        carry_branch=_RecordingCompatBranch("carry", False, calls),
+        dump_branch=_RecordingCompatBranch("dump", False, calls),
+        return_branch=_RecordingCompatBranch("return", True, calls),
+        residual_branch=_RecordingCompatBranch("residual", False, calls),
+    )
+
+    handled = branch_set.maybe_handle_legacy_fsm(obs={}, boundary_event=None)
+
+    assert handled is True
+    assert calls == ["bootstrap", "residual", "dig", "carry", "dump", "return"]
 
 
 def test_requested_branch_runner_returns_first_non_none_result_and_stops() -> None:

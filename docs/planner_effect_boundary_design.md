@@ -47,15 +47,17 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.6: the default 4P mainline branch chain no longer
+Current status after Phase 9.7: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
-shell. `PrimitiveRequestedBranchRunner` owns ordered dispatch:
-bootstrap -> dig -> carry -> dump -> return -> residual pre-dig-align parking.
-Bootstrap, dig, carry, dump, and return are handled through explicit
-requested-effect branch decisions. Residual `pre_dig_align` behavior remains an
-already-applied compatibility/parking path through a narrow residual adapter
-because selected rollout evidence classifies it as not active in the mainline.
+shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
+`LegacyFSMBranchSet` constructs the branches and owns both requested and legacy
+compatibility dispatch orders; `LegacyFSMRequestedDecisionBackend` is the
+default decision backend used by the execution template. Bootstrap, dig, carry,
+dump, and return are handled through explicit requested-effect branch
+decisions. Residual `pre_dig_align` behavior remains an already-applied
+compatibility/parking path through a narrow residual adapter because selected
+rollout evidence classifies it as not active in the mainline.
 
 ## Design Intent
 
@@ -413,6 +415,17 @@ non-`None` branch result, stops calling later branches, and owns the fail-fast
 contract when no branch handles the current skill. The policy shell remains the
 public adapter and requested-effect applier; it does not regain broad
 `LegacyFSMBackendAdapter` fallback behavior.
+
+Phase 9.7 extracts legacy-FSM branch wiring into `LegacyFSMBranchPorts`,
+`LegacyFSMBranchSet`, and `LegacyFSMRequestedDecisionBackend`. The policy shell
+no longer imports or constructs individual branch classes for the default 4P
+decision path. It exposes one typed ports object made of shell callbacks/config,
+then delegates requested decisions to the backend. The branch set owns branch
+construction, the requested order
+bootstrap -> dig -> carry -> dump -> return -> residual, and the compatibility
+facade order bootstrap -> residual pre-dig-align -> dig -> carry -> dump ->
+return. `_maybe_switch_skill()` remains only as a legacy compatibility facade
+and delegates to the branch set rather than hand-writing branch order.
 
 ### Stage 4: Expand Effect Families From Evidence
 
