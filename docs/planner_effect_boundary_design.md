@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.22: the default 4P mainline branch chain no longer
+Current status after Phase 9.23: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -125,13 +125,22 @@ the same stored containers. Coverage selection/effect coordinators read and
 write through the state owner via typed ports; candidate construction, scoring,
 effect sequencing, report schemas, and public trace/summary/debug payloads
 remain unchanged.
+`CoverageStateExemplarPlanner` now owns coverage state-conditioned exemplar
+planning in `testbed/planner/primitive_coverage_exemplars.py`: exemplar
+loading/validation, removed-depth grid projection, exemplar distance and
+temperature weighting, weighted dig-cut raw-field assembly, weighted
+dig-depth-profile token assembly, rejected-exemplar filtering, and pure plan
+selection. The policy shell keeps compatibility facades for the old private
+methods and owns only runtime writeback from a selected plan into
+`CoverageRuntimeState` and the active corridor debug fields.
 `CoverageEffectRuntimeCoordinator` now owns coverage requested-effect runtime
 sequencing for `CompleteCoverageDigEffect`, `CompleteCoverageDumpEffect`, and
 `RejectActiveCoverageCorridorEffect`: coverage-mode no-op gating, update service
 calls, coverage state writeback order, decision-event emission, all-depleted
 reopen/terminal handling, global low-productivity terminal handling, and
-physics-artifact terminal requests. The policy shell still owns coverage state
-storage and report/facts helper facades, but `_complete_coverage_dig()`,
+physics-artifact terminal requests. Coverage state storage now lives in
+`CoverageRuntimeState`; the policy shell builds typed ports and keeps
+report/facts helper facades, while `_complete_coverage_dig()`,
 `_complete_coverage_dump()`, `_reject_active_coverage_corridor()`,
 `_maybe_reopen_coverage_pass()`, and `_request_coverage_terminal_stop()` are now
 thin coordinator-backed wrappers.
@@ -139,10 +148,10 @@ thin coordinator-backed wrappers.
 runtime sequencing: prior/empty-candidate checks, candidate ensure/writeback,
 selection-service invocation, candidate-score writeback, `select_corridor`
 event emission, all-depleted reopen/terminal handling, and selected corridor id
-writeback. The policy shell still owns coverage mutable state storage, raw
-facts/helper facades, and report event append mechanics; coverage candidate
-construction and scoring algorithms remain in `CoverageCandidateBuilder` and
-`CoverageSelectionService`.
+writeback. Coverage state storage now lives in `CoverageRuntimeState`; the
+policy shell keeps raw facts/helper facades and report event append mechanics.
+Coverage candidate construction and scoring algorithms remain in
+`CoverageCandidateBuilder` and `CoverageSelectionService`.
 
 ## Design Intent
 
@@ -750,6 +759,21 @@ coverage runtime state boundary, not a generic blackboard. Candidate
 construction, selection scoring, effect runtime sequencing, coverage report
 payloads, decision trace schema, terminal-stop reasons, branch order, and
 low-level action dispatch remain unchanged.
+
+Phase 9.23 extracts coverage state-conditioned exemplar planning into
+`CoverageStateExemplarPlanner` in
+`testbed/planner/primitive_coverage_exemplars.py`. The planner owns the
+confirmed-live state-exemplar algorithm: loading and validating exemplar JSON,
+resolving paths relative to the dig-cut prior, projecting removed-depth grids,
+computing exemplar distances with target-cell weighting, handling non-finite
+distance weights with the old uniform fallback, filtering rejected exemplar ids
+only when that leaves a non-empty candidate set, and building weighted dig-cut
+raw fields plus optional weighted dig-depth-profile tokens. The policy shell
+keeps old private diagnostic method names as service-backed facades and remains
+responsible for `update_state=True` writeback into `CoverageRuntimeState` and
+active `CoverageCorridorState` debug fields. Coverage candidate construction,
+selection scoring, effect runtime sequencing, token contracts, report payload
+schemas, branch order, and low-level action dispatch remain unchanged.
 
 ### Stage 4: Expand Effect Families From Evidence
 

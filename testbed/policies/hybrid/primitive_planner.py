@@ -85,6 +85,11 @@ from testbed.planner.primitive_coverage import (
     CoverageSelectionRuntimePorts,
     CoverageSelectionService,
 )
+from testbed.planner.primitive_coverage_exemplars import (
+    CoverageStateExemplarPlanInputs,
+    CoverageStateExemplarPlanner,
+    CoverageStateExemplarPlannerConfig,
+)
 from testbed.planner.primitive_coverage_reports import (
     CoverageBucketSnapshot,
     CoverageReportService,
@@ -4422,53 +4427,29 @@ class PrimitivePlannerACTPolicy(Policy):
             "operator_cut_valid": 1,
         }
 
+    def _coverage_state_exemplar_planner_config(
+        self,
+    ) -> CoverageStateExemplarPlannerConfig:
+        return CoverageStateExemplarPlannerConfig(
+            enabled=bool(self.coverage_state_exemplars_enabled),
+            path=str(self.coverage_state_exemplar_path),
+            dig_cut_prior_path=str(self.dig_cut_prior_path),
+            k=int(self.coverage_state_exemplar_k),
+            removed_depth_scale_m=float(
+                self.coverage_state_exemplar_removed_depth_scale_m
+            ),
+            target_cell_weight=float(self.coverage_state_exemplar_target_cell_weight),
+            temperature=float(self.coverage_state_exemplar_temperature),
+            skip_rejected=bool(self.coverage_state_exemplar_skip_rejected),
+        )
+
+    def _coverage_state_exemplar_planner(self) -> CoverageStateExemplarPlanner:
+        return CoverageStateExemplarPlanner(
+            self._coverage_state_exemplar_planner_config()
+        )
+
     def _load_coverage_state_exemplars(self) -> dict[int, list[dict[str, Any]]]:
-        if not self.coverage_state_exemplars_enabled:
-            return {}
-        raw_path = str(self.coverage_state_exemplar_path).strip()
-        if not raw_path:
-            raise ValueError(
-                "coverage.state_conditioned_exemplars.enabled=true requires a path."
-            )
-        path = Path(raw_path).expanduser()
-        if not path.is_absolute() and not path.exists():
-            prior_path = Path(self.dig_cut_prior_path).expanduser()
-            if not prior_path.is_absolute():
-                prior_path = Path.cwd() / prior_path
-            path = prior_path.parent / path
-        if not path.is_absolute():
-            path = Path.cwd() / path
-        with path.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-        raw_exemplars = payload.get("exemplars", [])
-        if not isinstance(raw_exemplars, list):
-            raise ValueError(
-                f"coverage state exemplar file {path} must contain an exemplars list."
-            )
-        exemplars_by_cell: dict[int, list[dict[str, Any]]] = {
-            cell_id: [] for cell_id in range(6)
-        }
-        for item in raw_exemplars:
-            if not isinstance(item, dict):
-                continue
-            try:
-                cell_id = int(item.get("cell_id", -1))
-            except (TypeError, ValueError):
-                continue
-            if cell_id < 0 or cell_id > 5:
-                continue
-            raw_fields = item.get("raw_fields", {})
-            if not isinstance(raw_fields, dict):
-                continue
-            exemplar = dict(item)
-            exemplar["raw_fields"] = dict(raw_fields)
-            exemplar["exemplar_id"] = str(
-                exemplar.get("exemplar_id", f"cell_{cell_id}_{len(exemplars_by_cell[cell_id])}")
-            )
-            exemplars_by_cell[cell_id].append(exemplar)
-        if not any(exemplars_by_cell.values()):
-            raise ValueError(f"coverage state exemplar file {path} has no usable rows.")
-        return exemplars_by_cell
+        return self._coverage_state_exemplar_planner().load_exemplars()
 
     def _coverage_state_conditioned_plan(
         self,
@@ -4477,58 +4458,33 @@ class PrimitivePlannerACTPolicy(Policy):
         *,
         update_state: bool,
     ) -> dict[str, object] | None:
-        if not self.coverage_state_exemplars_enabled:
-            return None
-        cell_id = self._coverage_cell_id(corridor)
-        exemplars = list(self.coverage_state_exemplars_by_cell.get(cell_id, []))
-        if not exemplars:
-            return None
-        removed_grid = self._coverage_removed_depth_grid(obs)
-        if removed_grid is None:
-            return None
-        scored: list[tuple[float, dict[str, Any]]] = []
-        for exemplar in exemplars:
-            distance = self._coverage_state_exemplar_distance_for_grid(
-                removed_grid,
-                exemplar,
-                cell_id=cell_id,
+        result = self._coverage_state_exemplar_planner().plan(
+            CoverageStateExemplarPlanInputs(
+                corridor=corridor,
+                env_state=self._env_state(obs),
+                exemplars_by_cell=self.coverage_state_exemplars_by_cell,
+                rejected_exemplar_ids=self._coverage_rejected_state_exemplar_ids,
             )
-            if np.isfinite(distance):
-                scored.append((float(distance), exemplar))
-        if not scored:
+        )
+        if result is None:
             return None
-        scored.sort(key=lambda item: item[0])
-        if self.coverage_state_exemplar_skip_rejected:
-            filtered = [
-                item
-                for item in scored
-                if str(item[1].get("exemplar_id", ""))
-                not in self._coverage_rejected_state_exemplar_ids
-            ]
-            if filtered:
-                scored = filtered
-        selected = scored[: self.coverage_state_exemplar_k]
-        raw_fields = self._weighted_state_exemplar_raw_fields(selected)
-        profile_token = self._weighted_state_exemplar_profile_token(selected)
-        exemplar_ids = [str(exemplar.get("exemplar_id", "")) for _, exemplar in selected]
-        best_distance = float(selected[0][0])
         if update_state:
             self._coverage_runtime_state().set_active_state_exemplar(
-                exemplar_ids=exemplar_ids,
-                distance=best_distance,
+                exemplar_ids=list(result.exemplar_ids),
+                distance=float(result.distance),
                 profile_token=(
                     None
-                    if profile_token is None
-                    else profile_token.astype(np.float32).copy()
+                    if result.profile_token is None
+                    else result.profile_token.astype(np.float32).copy()
                 ),
             )
-            corridor.state_exemplar_id = ",".join(exemplar_ids)
-            corridor.state_exemplar_distance = best_distance
+            corridor.state_exemplar_id = ",".join(result.exemplar_ids)
+            corridor.state_exemplar_distance = float(result.distance)
         return {
-            "raw_fields": raw_fields,
-            "profile_token": profile_token,
-            "exemplar_ids": exemplar_ids,
-            "distance": best_distance,
+            "raw_fields": dict(result.raw_fields),
+            "profile_token": result.profile_token,
+            "exemplar_ids": list(result.exemplar_ids),
+            "distance": float(result.distance),
         }
 
     def _coverage_state_exemplar_distance(
@@ -4563,15 +4519,9 @@ class PrimitivePlannerACTPolicy(Policy):
         return str(exemplar_ids[0])
 
     def _coverage_removed_depth_grid(self, obs: dict) -> np.ndarray | None:
-        env_state = self._env_state(obs)
-        start = ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX
-        end = start + 6
-        if len(env_state) < end:
-            return None
-        grid = np.asarray(env_state[start:end], dtype=np.float32).reshape(6)
-        if not np.all(np.isfinite(grid)):
-            return None
-        return np.maximum(grid, 0.0).astype(np.float32)
+        return self._coverage_state_exemplar_planner().removed_depth_grid(
+            self._env_state(obs)
+        )
 
     def _coverage_state_exemplar_distance_for_grid(
         self,
@@ -4580,117 +4530,31 @@ class PrimitivePlannerACTPolicy(Policy):
         *,
         cell_id: int,
     ) -> float:
-        exemplar_grid = np.asarray(
-            exemplar.get("start_removed_depth_grid_m", []),
-            dtype=np.float32,
-        ).reshape(-1)
-        if exemplar_grid.size < 6 or not np.all(np.isfinite(exemplar_grid[:6])):
-            return float("nan")
-        scale = float(self.coverage_state_exemplar_removed_depth_scale_m)
-        diff = (
-            np.asarray(removed_grid, dtype=np.float32).reshape(6)
-            - exemplar_grid[:6].astype(np.float32)
-        ) / scale
-        cell_index = int(max(0, min(5, cell_id)))
-        diff[cell_index] *= float(self.coverage_state_exemplar_target_cell_weight)
-        return float(np.sqrt(np.mean(np.square(diff.astype(np.float32)))))
+        return self._coverage_state_exemplar_planner().distance_for_grid(
+            removed_grid,
+            exemplar,
+            cell_id=cell_id,
+        )
 
     def _state_exemplar_weights(
         self,
         selected: list[tuple[float, dict[str, Any]]],
     ) -> np.ndarray:
-        distances = np.asarray([distance for distance, _ in selected], dtype=np.float32)
-        if distances.size == 0:
-            return np.zeros(0, dtype=np.float32)
-        if not np.all(np.isfinite(distances)):
-            return np.full(distances.shape, 1.0 / float(distances.size), dtype=np.float32)
-        shifted = distances - float(np.min(distances))
-        weights = np.exp(-shifted / float(self.coverage_state_exemplar_temperature))
-        weight_sum = float(np.sum(weights))
-        if not np.isfinite(weight_sum) or weight_sum <= 1.0e-8:
-            return np.full(distances.shape, 1.0 / float(distances.size), dtype=np.float32)
-        return (weights / weight_sum).astype(np.float32)
+        return self._coverage_state_exemplar_planner().weights(selected)
 
     def _weighted_state_exemplar_raw_fields(
         self,
         selected: list[tuple[float, dict[str, Any]]],
     ) -> dict[str, float | int]:
-        weights = self._state_exemplar_weights(selected)
-
-        def weighted(name: str, default: float = 0.0) -> float:
-            values: list[float] = []
-            for _, exemplar in selected:
-                raw_fields = dict(exemplar.get("raw_fields", {}) or {})
-                try:
-                    value = float(raw_fields.get(name, default))
-                except (TypeError, ValueError):
-                    value = float(default)
-                values.append(value if np.isfinite(value) else float(default))
-            return float(np.dot(weights, np.asarray(values, dtype=np.float32)))
-
-        entry_x = weighted("operator_entry_x_m")
-        entry_y = weighted("operator_entry_y_m")
-        entry_z = weighted("operator_entry_z_m")
-        exit_x = weighted("operator_exit_x_m")
-        exit_y = weighted("operator_exit_y_m", default=entry_y)
-        exit_z = weighted("operator_exit_z_m")
-        delta_x = exit_x - entry_x
-        delta_y = exit_y - entry_y
-        delta_z = exit_z - entry_z
-        length = float(np.sqrt(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z))
-        if length <= 1.0e-6:
-            dir_x = weighted("operator_cut_direction_x", default=-1.0)
-            dir_y = weighted("operator_cut_direction_y", default=0.0)
-            dir_z = weighted("operator_cut_direction_z", default=0.0)
-            length = weighted("operator_cut_length_m", default=1.0)
-        else:
-            dir_x = delta_x / length
-            dir_y = delta_y / length
-            dir_z = delta_z / length
-        return {
-            "operator_entry_x_m": float(entry_x),
-            "operator_entry_y_m": float(entry_y),
-            "operator_entry_z_m": float(entry_z),
-            "operator_exit_x_m": float(exit_x),
-            "operator_exit_y_m": float(exit_y),
-            "operator_exit_z_m": float(exit_z),
-            "operator_cut_direction_x": float(dir_x),
-            "operator_cut_direction_y": float(dir_y),
-            "operator_cut_direction_z": float(dir_z),
-            "operator_cut_length_m": float(length),
-            "operator_cut_depth_peak_m": weighted("operator_cut_depth_peak_m"),
-            "operator_cut_payload_gain_kg": weighted("operator_cut_payload_gain_kg"),
-            "operator_effective_deposit_delta_kg": weighted(
-                "operator_effective_deposit_delta_kg",
-                default=weighted("operator_cut_payload_gain_kg"),
-            ),
-            "operator_cut_valid": 1,
-        }
+        return self._coverage_state_exemplar_planner().weighted_raw_fields(selected)
 
     def _weighted_state_exemplar_profile_token(
         self,
         selected: list[tuple[float, dict[str, Any]]],
     ) -> np.ndarray | None:
-        weights = self._state_exemplar_weights(selected)
-        tokens: list[np.ndarray] = []
-        for _, exemplar in selected:
-            if "dig_depth_profile_token" not in exemplar:
-                return None
-            token = np.asarray(
-                exemplar.get("dig_depth_profile_token", []),
-                dtype=np.float32,
-            ).reshape(-1)
-            if token.shape[0] != DIG_DEPTH_PROFILE_TOKEN_DIM:
-                return None
-            if not np.all(np.isfinite(token)):
-                return None
-            tokens.append(token)
-        if not tokens:
-            return None
-        stacked = np.stack(tokens, axis=0)
-        merged = np.sum(stacked * weights.reshape(-1, 1), axis=0)
-        merged[-1] = 1.0
-        return merged.astype(np.float32)
+        return self._coverage_state_exemplar_planner().weighted_profile_token(
+            selected
+        )
 
     def _coverage_remaining_depth_for_corridor(
         self,

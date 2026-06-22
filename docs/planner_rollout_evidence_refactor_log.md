@@ -3498,3 +3498,77 @@ Each completed refactor round should append:
   `cell_entry` remains compatibility/report material, `pre_dig_align` remains
   residual parking/action material, `LegacyFSMBackendAdapter` remains
   historical/test scaffolding, and 5P remains its existing legacy override path.
+
+### 2026-06-22 Phase 9.23 Extract Primitive Coverage State-Exemplar Planner
+
+- Scope: extracted confirmed-live coverage state-conditioned exemplar planning
+  from the large policy shell into a focused planner service. No token schema,
+  token key, contract version, debug/summary/trace schema, coverage candidate
+  construction, coverage selection scoring, coverage effect sequencing, coverage
+  decision trace payload schema, branch order, reason string, threshold, reset
+  timing, public config behavior, pre-dig-align internals, cell-entry
+  compatibility, 5P transition semantics, return handoff internals, or low-level
+  ACT dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `1efd88ee99e69907d87410fa96a624095f8ca90f`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `testbed/planner/primitive_coverage_exemplars.py` with
+  `CoverageStateExemplarPlannerConfig`, `CoverageStateExemplarPlanInputs`,
+  `CoverageStateExemplarPlanResult`, and `CoverageStateExemplarPlanner`. The
+  planner owns exemplar JSON loading/validation, path resolution relative to the
+  dig-cut prior, removed-depth grid projection, exemplar distance computation,
+  temperature weighting with the old uniform fallback for non-finite/degenerate
+  weights, rejected-exemplar filtering, weighted dig-cut raw-field assembly,
+  weighted dig-depth-profile token assembly, and pure state-conditioned plan
+  selection.
+- Updated `PrimitivePlannerACTPolicy` so `_load_coverage_state_exemplars()`,
+  `_coverage_removed_depth_grid()`,
+  `_coverage_state_exemplar_distance_for_grid()`, `_state_exemplar_weights()`,
+  `_weighted_state_exemplar_raw_fields()`, and
+  `_weighted_state_exemplar_profile_token()` are service-backed compatibility
+  facades. `_coverage_state_conditioned_plan(...)` now calls the planner for the
+  pure plan and remains responsible only for `update_state=True` writeback into
+  `CoverageRuntimeState` and active `CoverageCorridorState` debug fields.
+- Added `tests/test_primitive_coverage_exemplars.py` with focused coverage for
+  disabled/no-plan behavior, load/validation errors, removed-depth grid length
+  and finite/clipping behavior, exemplar distance/weight fallback,
+  rejected-exemplar filtering including empty-string ids, weighted raw/profile
+  token dtype and copy semantics, and policy facade writeback behavior.
+- TDD red result: the first focused run failed at collection because
+  `testbed.planner.primitive_coverage_exemplars` did not exist. After adding the
+  service and policy facades, `python -m pytest -q
+  tests/test_primitive_coverage_exemplars.py` returned `6 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_coverage_exemplars.py` returned
+  `6 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_state.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_selection.py tests/test_primitive_coverage_candidates.py`
+  returned `16 passed`;
+  `python -m pytest -q tests/test_primitive_dig_depth_profile_token_planner.py tests/test_primitive_token_status.py`
+  returned `7 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_updates.py tests/test_primitive_coverage_runtime.py tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_status.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `93 passed`;
+  `python -m pytest -q tests/test_primitive_planner_trace.py tests/test_primitive_rollout_summary.py tests/test_primitive_debug_report.py tests/test_primitive_tick_finalization.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "state_conditioned_exemplar or dig_depth_profile or coverage_decision_trace or operator_prior_coverage or first_dig or return_to_dig"`
+  returned `13 passed, 107 deselected`;
+  compileall and both planner guard commands completed successfully with no
+  output.
+- Old code parked/reclassified: coverage candidate construction remains in
+  `CoverageCandidateBuilder`, coverage scoring remains in
+  `CoverageSelectionService`, coverage runtime state remains in
+  `CoverageRuntimeState`, coverage selection sequencing remains in
+  `CoverageSelectionRuntimeCoordinator`, coverage effect sequencing remains in
+  `CoverageEffectRuntimeCoordinator`, first-dig/raw observation facts remain
+  policy facades, corridor debug/report payload projection remains behind
+  `CoverageReportService`, requested-effect dispatch remains in
+  `RequestedEffectApplier`, public report builders remain unchanged,
+  `cell_entry` remains compatibility/report material, `pre_dig_align` remains
+  residual parking/action material, `LegacyFSMBackendAdapter` remains
+  historical/test scaffolding, and 5P remains its existing legacy override path.

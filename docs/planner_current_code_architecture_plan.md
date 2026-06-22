@@ -606,8 +606,9 @@ sequencing has moved into `CoverageEffectRuntimeCoordinator` in
 coverage-mode no-op gating, dig payload-gain completion, dump completion
 state-write/event/reopen/terminal ordering, corridor rejection
 state-write/event/reopen/terminal ordering, multi-pass reopen result
-application, and terminal-stop result/event application. The 4P policy shell
-keeps coverage state storage and facts/report helper facades, while
+application, and terminal-stop result/event application. Coverage state storage
+now lives in `CoverageRuntimeState`; the 4P policy shell builds typed ports and
+keeps facts/report helper facades, while
 `_complete_coverage_dig()`, `_complete_coverage_dump()`,
 `_reject_active_coverage_corridor()`, `_maybe_reopen_coverage_pass()`, and
 `_request_coverage_terminal_stop()` are thin coordinator-backed wrappers.
@@ -621,8 +622,9 @@ sequencing has moved into `CoverageSelectionRuntimeCoordinator` in
 empty-candidate checks, ensure-corridor no-op/build writeback, selection-service
 invocation, candidate-score writeback, `select_corridor` decision-event
 emission, all-depleted reopen/terminal sequencing, and active/last-selected
-corridor id writeback. The 4P policy shell keeps mutable coverage state
-storage, raw facts helper facades, and report-event append mechanics, while
+corridor id writeback. Coverage state storage now lives in
+`CoverageRuntimeState`; the 4P policy shell keeps raw facts helper facades and
+report-event append mechanics, while
 `_select_next_coverage_corridor()`, `_ensure_coverage_corridors()`, and
 `_select_coverage_corridor()` are thin coordinator-backed wrappers. Coverage
 candidate construction, scoring algorithm, first-dig gate facts, state exemplar
@@ -644,6 +646,21 @@ effect runtime ports now point at the same state owner rather than independent
 policy fields. Coverage candidate construction, selection scoring, effect
 sequencing, decision trace schema, report schemas, branch ordering, and low-level
 ACT dispatch are intentionally unchanged in this round.
+
+Current status note after Phase 9.23: coverage state-conditioned exemplar
+planning has moved into `CoverageStateExemplarPlanner` in
+`testbed/planner/primitive_coverage_exemplars.py`. The planner owns exemplar
+JSON loading/validation, relative path resolution against the dig-cut prior,
+removed-depth grid projection, exemplar distance computation, temperature
+weighting with the old uniform fallback, rejected exemplar filtering,
+weighted dig-cut raw-field assembly, weighted dig-depth-profile token assembly,
+and pure state-conditioned plan selection. The 4P policy shell keeps old private
+method names as service-backed compatibility/diagnostic facades and performs
+only `update_state=True` writeback into `CoverageRuntimeState` and active
+`CoverageCorridorState` debug fields. Coverage candidate construction,
+selection scoring, effect sequencing, token contracts, decision trace schema,
+report schemas, branch ordering, and low-level ACT dispatch are intentionally
+unchanged in this round.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
