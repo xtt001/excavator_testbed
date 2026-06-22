@@ -37,6 +37,7 @@ Supporting design references:
 - `docs/planner_execution_backend_abstraction_plan.md`
 - `docs/planner_execution_abstraction_flow.svg`
 - `docs/planner_effect_boundary_design.md`
+- `docs/planner_primitive_interface_standard.md`
 
 Non-goals for this plan:
 
@@ -59,6 +60,8 @@ Current relevant Python files:
 | File | Lines | Current role |
 | --- | ---: | --- |
 | `testbed/policies/hybrid/primitive_planner.py` | 4900+ | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
+| `testbed/planner/primitive_decision_facts.py` | 66 | backend-neutral common decision facts packet for context, active skill, and switch reason |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
 | `testbed/planner/evidence_trace.py` | 972 | evidence classifier and report writer for rollout-driven refactor decisions |
@@ -87,9 +90,8 @@ The table below is the responsibility map future migrations must use.
 | Range | Responsibility | Main methods | Main state read/written | Architecture target |
 | --- | --- | --- | --- | --- |
 | 149-430 | public adapter construction and config normalization facade | `__init__`, `_apply_adapter_config_state` | policy handles, boundary detector, normalized adapter config state | `PrimitivePlannerAdapterConfigNormalizer` plus public adapter facade |
-| 842-927 | reset lifecycle facade | `reset` | reset service result writeback, initial compact debug state | `PrimitiveResetLifecycleService` plus public adapter facade |
-| 968-1012 | public tick template | `predict` | `_prev_action`, boundary event, `_skill_name`, `_switch_reason`, debug state | first extraction slice: explicit execution kernel template |
-| 1014-1549 | public reporting | `debug_state`, `rollout_summary`, `planner_trace` | debug state, token flags, coverage fields, summary counters | reporting boundary, not decision backend |
+| 842-1120 | public runtime route and execution facade | `reset`, `predict`, `_runtime_kernel`, `_execution_driver` | runtime-kernel ports, reset state, execution driver ports | `PrimitivePlannerRuntimeKernel` plus `PrimitiveExecutionDriver` |
+| 1121-1649 | public reporting facades | `debug_state`, `rollout_summary`, `planner_trace` and report input builders | debug state, token flags, coverage fields, summary counters | report builders called through runtime kernel |
 | 1550-1819 | inline 4P FSM branch order | `_maybe_switch_skill`, return direct handoff helpers | active skill, boundary event, counters, coverage completion/reject, pending plans | legacy FSM parity backend after execution template exists |
 | 1820-1954 | skill mutation and restart effects | `_set_skill`, `_restart_*`, failed-dig stop/restart | active skill, reset timing, hold counters, dig-cut clear/invalidate, terminal stop | kernel-owned effect application |
 | 1955-2359 | bootstrap and pre-dig-align logic | `_should_end_bootstrap`, `_pre_dig_align_*`, `_pre_dig_align_action` | bootstrap config, pre-dig counters, qpos target/error, surface guard | bootstrap mainline status; pre-dig-align legacy parking |
@@ -149,13 +151,26 @@ The target boundary is:
 
 ```text
 PrimitivePlannerACTPolicy
-  -> PrimitivePlannerExecutionKernel
+  -> PrimitivePlannerRuntimeKernel
       -> PrimitiveCapabilityPort
       -> PrimitiveDecisionBackend
       -> PrimitiveDecisionResult
       -> PlannerEffect application
       -> action dispatch and reporting
 ```
+
+The current ideal-vs-current interface standard for this boundary is
+`docs/planner_primitive_interface_standard.md`. Use that document when choosing
+implementation slices after Phase 9.33B; it distinguishes the target interface
+from the current legacy-FSM-backendified implementation and must not be read as
+a claim that alternate behavior-tree, VLM, or LLM backends are already
+swappable.
+
+Current status after Phase 9.33B: `PrimitivePlannerRuntimeKernel` owns the
+public runtime route (`reset`, `predict`, `debug_state`, `rollout_summary`, and
+`planner_trace`). `PrimitivePlannerACTPolicy` still constructs typed ports and
+keeps compatibility facades/storage, but those public methods are now
+kernel-backed thin wrappers.
 
 ### Public Adapter
 
@@ -177,33 +192,25 @@ Long-term adapter responsibilities:
 - keep cleanup-approved 5P runtime removal explicit; old branch/git history
   preserves historical behavior
 
-### Execution Kernel
+### Execution Driver / Runtime Kernel
 
-Candidate file: `testbed/planner/primitive_execution.py`.
+Candidate files: `testbed/planner/primitive_runtime_kernel.py` and
+`testbed/planner/primitive_execution.py`.
 
-The first code phase should introduce an execution kernel without changing the
-decision source of truth. It may initially call the old `_maybe_switch_skill()`
-body through a thin bridge while the public tick order is made explicit.
+The original execution-kernel target has now split into two concrete owners:
+`PrimitivePlannerRuntimeKernel` owns public runtime routing, while
+`PrimitiveExecutionDriver` owns one-tick execution ordering. Future work should
+extend those owners rather than introducing a second kernel name.
 
-Conceptual methods:
+Conceptual execution-driver methods:
 
 ```python
-class PrimitivePlannerExecutionKernel:
-    def reset(self) -> None: ...
-    def prepare_tick(self, obs: Mapping[str, object]) -> PrimitiveTickPreparation: ...
-    def decide_tick(self, preparation: PrimitiveTickPreparation) -> PrimitiveDecisionResult: ...
-    def apply_decision(self, result: PrimitiveDecisionResult) -> None: ...
-    def dispatch_action(self, obs: Mapping[str, object]) -> np.ndarray: ...
-    def finalize_tick(
-        self,
-        *,
-        action: np.ndarray,
-        preparation: PrimitiveTickPreparation,
-        decision: PrimitiveDecisionResult,
-    ) -> np.ndarray: ...
+class PrimitiveExecutionDriver:
+    def run_tick(self, obs: Mapping[str, object]) -> PrimitiveTickResult: ...
+    def predict(self, obs: Mapping[str, object]) -> np.ndarray: ...
 ```
 
-Kernel-owned effects:
+Execution/effect-boundary owned effects:
 
 - `SetSkill`
 - `ResetPolicyForSkill`
@@ -219,7 +226,8 @@ Kernel-owned effects:
 - `RequestCoverageTerminalStop`
 - `RecordDiagnostic`
 
-The backend may request these effects. Only the kernel applies them.
+The backend may request these effects. Only the execution route and
+shell-side requested-effect applier may apply them.
 
 ### Capability Port
 
@@ -811,6 +819,17 @@ names remain compatibility facades delegating to the config module. This slice
 does not build a kernel factory and does not change token planners, execution
 driver wiring, decision runtime, coverage algorithms, `pre_dig_align`,
 `cell_entry`, or removed 5P runtime status.
+
+Current status note after Phase 9.34: the first backend-neutral common decision
+facts packet now lives in `PrimitiveDecisionFacts` under
+`testbed/planner/primitive_decision_facts.py`. It preserves the per-tick
+`PrimitiveDecisionContext` identity and adds current skill/reason facts without
+carrying transition status providers, mutation ports, effect appliers, planner
+`self`, or policy fields. `PrimitiveDecisionCapabilities.decision_facts(...)`
+builds that packet, and the legacy FSM branches now use it for common
+skill/reason checks while keeping dig/carry/dump/return transition statuses lazy
+and branch-local. This is an initial common-facts boundary, not full alternate
+backend readiness.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;

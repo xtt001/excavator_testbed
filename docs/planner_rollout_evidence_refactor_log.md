@@ -4306,3 +4306,105 @@ Each completed refactor round should append:
   parking/action material; `cell_entry` remains compatibility/report material;
   5P runtime behavior remains removed from current code; behavior tree, VLM,
   and LLM backends remain unsupported parked scope.
+
+### 2026-06-22 Phase 9.33B Extract Primitive Runtime Kernel
+
+- Scope: extracted the public primitive planner runtime route into
+  `testbed/planner/primitive_runtime_kernel.py`. `PrimitivePlannerRuntimeKernel`
+  now owns `reset()`, `predict(obs)`, `debug_state()`, `rollout_summary()`, and
+  `planner_trace()` composition over existing services. `PrimitivePlannerACTPolicy`
+  keeps public API compatibility, typed runtime-kernel port construction, legacy
+  storage, and compatibility facades, but the public methods now delegate to the
+  runtime kernel.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `4eb691db1fd2cac6054bce44aa47d598c5e8e914`; no fetch, pull, push, reset,
+  checkout, rebase, branch creation, or remote write. HEAD after the code round
+  is `659b4d9f655f86ad973132323ca2a0c31251e869`.
+- Added `PrimitivePlannerRuntimeKernelPorts` and
+  `PrimitivePlannerRuntimeKernel`. The kernel composes reset lifecycle,
+  reset-state application, initial compact debug-state creation, execution
+  driver prediction, debug report builder, rollout summary builder, and planner
+  trace builder through explicit typed ports. It does not receive planner
+  `self`; its port dataclass does not contain `planner` or `self` fields.
+- Updated `PrimitivePlannerACTPolicy.reset()`, `predict()`, `debug_state()`,
+  `rollout_summary()`, and `planner_trace()` into kernel-backed thin wrappers.
+  Existing private compatibility facades and service wiring remain in place;
+  this round did not attempt unrelated facade cleanup.
+- Explicit non-goals: no public constructor/default change, no decision-backend
+  support expansion, no backend-neutral fact packet, no token/coverage/return
+  algorithm movement, no 5P restoration, and no `pre_dig_align` or `cell_entry`
+  cleanup. `legacy_fsm` remains the only supported decision backend; BT/VLM/LLM
+  remain unsupported parked scope.
+- TDD red result: the first focused runtime-kernel test run failed at collection
+  with `ModuleNotFoundError: No module named
+  'testbed.planner.primitive_runtime_kernel'`. After adding the kernel module
+  and policy wrappers, the focused runtime-kernel suite returned `5 passed`.
+- Verification reported by implementation thread:
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py` returned
+  `5 passed`;
+  `python -m pytest -q tests/test_primitive_reset_lifecycle.py tests/test_primitive_execution_driver.py tests/test_primitive_action_dispatch.py tests/test_primitive_tick_finalization.py`
+  returned `35 passed`;
+  `python -m pytest -q tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  returned `9 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `95 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace or dig_depth_profile or dig_cut_tokens"`
+  returned `20 passed, 99 deselected`; compileall, both planner guard commands,
+  `git diff --check`, and staged diff check completed successfully.
+- Audit note: this closes the runtime composition-root gap identified in
+  `docs/planner_primitive_interface_standard.md` without overclaiming backend
+  swappability. The next architecture gap is a backend-neutral decision facts
+  packet or focused runtime-state owners, not behavior-tree/VLM implementation.
+
+### 2026-06-22 Phase 9.34 Introduce Primitive Decision Facts Packet
+
+- Scope: introduced the first backend-neutral common decision facts packet in
+  `testbed/planner/primitive_decision_facts.py`. `PrimitiveDecisionFacts`
+  preserves the per-tick `PrimitiveDecisionContext` identity and carries only
+  common context/skill facts: current skill name, current switch reason,
+  observation, boundary event, preparation, skill-before-decision, and
+  dig-progress-updated convenience accessors.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `659b4d9f655f86ad973132323ca2a0c31251e869`; no fetch, pull, push, reset,
+  checkout, rebase, branch creation, or remote write. HEAD after the code round
+  is `d893cc7e6d1857eb49cd5cd9ab853a134c625817`.
+- `PrimitiveDecisionCapabilities.decision_facts(context)` now builds
+  `PrimitiveDecisionFacts` from current skill/reason ports. It does not call
+  dig/carry/dump/return transition status providers and does not call the
+  residual pre-dig handler.
+- Legacy FSM bootstrap, dig, carry, dump, return, and residual pre-dig adapter
+  now use `PrimitiveDecisionFacts` for common skill/reason checks. Transition
+  statuses remain lazy and branch-local; dig/carry/dump/return status providers
+  are still called only after the matching active skill check passes.
+- Residual `pre_dig_align` remains an already-applied compatibility/parking
+  path. The residual adapter intentionally rebuilds facts after the residual
+  handler mutates shell-owned skill/reason state so that the reported
+  `skill_after` and `switch_reason` preserve historical mutation-after-read
+  timing.
+- Explicit non-goals: no transition/token/coverage/return handoff facts were
+  added to the neutral facts packet; no backend support expansion; no BT/VLM/LLM
+  implementation; no `pre_dig_align` or `cell_entry` promotion; no 5P runtime
+  restoration; no branch-order, reason-string, schema, reset-timing, or action
+  dispatch change.
+- TDD red result: the first focused facts/capabilities/backend run failed at
+  collection with `ModuleNotFoundError: No module named
+  'testbed.planner.primitive_decision_facts'`. After adding the facts module and
+  branch/capability wiring, the focused command returned `66 passed`.
+- Verification reported by implementation thread:
+  `python -m pytest -q tests/test_primitive_decision_facts.py tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_decision_runtime.py`
+  returned `66 passed`;
+  `python -m pytest -q tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `12 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace or dig_depth_profile or dig_cut_tokens"`
+  returned `20 passed, 99 deselected`; compileall, both planner guard commands,
+  `git diff --check`, and staged diff check completed successfully.
+- Audit note: this is a real step toward the SVG target because common decision
+  facts are no longer implicit legacy-FSM capability reads. It is deliberately
+  only a first packet: full backend-neutral readiness still needs transition,
+  token, coverage, and return handoff views that do not disturb lazy timing.

@@ -11,6 +11,11 @@ effect requests while the execution kernel remains the only layer that applies
 planner state mutations. This closes the largest remaining gap between the
 current implementation and the execution/backend abstraction diagram.
 
+For the broader ideal-vs-current interface target across public adapter,
+runtime kernel, decision backend, capability facts, effects, state, token,
+coverage, reporting, config, and parked paths, use
+`docs/planner_primitive_interface_standard.md`.
+
 ## Current Problem
 
 The current implementation has a useful execution template and a legacy FSM
@@ -47,17 +52,21 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.33A: the default 4P mainline branch chain no longer
+Current status after Phase 9.34: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
-shell. The policy now exposes backend-facing decision facts through
-`PrimitiveDecisionCapabilities`; `LegacyFSMBranchPorts` has been narrowed to
-skill-name constants plus that capability object. `LegacyFSMBranchSet`
+shell. The policy now exposes backend-facing common decision facts through
+`PrimitiveDecisionFacts`, built by `PrimitiveDecisionCapabilities`; the facts
+packet carries context identity, current skill, and current switch reason, but
+does not carry mutation ports or eager transition statuses. `LegacyFSMBranchPorts`
+has been narrowed to skill-name constants plus the capability object. `LegacyFSMBranchSet`
 constructs branches and owns both requested and legacy compatibility dispatch
 orders, while `LegacyFSMBootstrapBranch`, `LegacyFSMDigBranch`,
 `LegacyFSMCarryBranch`, `LegacyFSMDumpBranch`, and `LegacyFSMReturnBranch`
-consume `PrimitiveDecisionContext + PrimitiveDecisionCapabilities` rather than
-individual shell callback/status-provider fields. `LegacyFSMRequestedDecisionBackend`
+consume `PrimitiveDecisionContext + PrimitiveDecisionFacts + PrimitiveDecisionCapabilities`
+rather than individual shell callback/status-provider fields. Dig/carry/dump/
+return transition statuses remain lazy and branch-local, preserving return
+handoff refresh timing and avoiding eager status calculation. `LegacyFSMRequestedDecisionBackend`
 is the default decision backend used by the execution driver, while
 `LegacyFSMCompatibilityDecisionBackend` serves the legacy `_maybe_switch_skill()`
 entry without applying effects inside backend branches. Bootstrap, dig, carry,
@@ -163,6 +172,14 @@ stores low-level policy handles plus the boundary detector before applying the
 normalized config state and calling `reset()`. This is an adapter config
 normalization boundary only; it is not a kernel factory, backend selector,
 BT/VLM/LLM implementation, or `pre_dig_align`/`cell_entry` cleanup.
+`PrimitivePlannerRuntimeKernel` now owns the public runtime route in
+`testbed/planner/primitive_runtime_kernel.py`: `reset()`, `predict(obs)`,
+`debug_state()`, `rollout_summary()`, and `planner_trace()`. The policy shell
+builds typed runtime-kernel ports and keeps compatibility facades/storage, while
+the kernel composes the reset lifecycle service, execution driver, and report
+builders. This closes the public composition-root gap without changing backend
+support; `legacy_fsm` remains the only supported decision backend and
+BT/VLM/LLM remain unsupported parked scope.
 `CoverageRuntimeState` now owns mutable coverage runtime state in
 `testbed/planner/primitive_coverage_state.py`: corridor storage, selected ids,
 payload/deposit counters, pass/terminal state, candidate scores, decision trace,
