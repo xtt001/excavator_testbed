@@ -755,6 +755,29 @@ def test_primitive_planner_requested_effect_bridge_applies_carry_dump_effects_wi
     ]
 
 
+def test_primitive_planner_return_effect_bridge_uses_service_backed_wrapper() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    obs: dict[str, Any] = {"payload": "current_obs"}
+    calls: list[tuple[dict[str, Any], str]] = []
+
+    class FakeReturnDirectHandoffService:
+        def apply(self, got_obs: dict[str, Any], *, reason: str) -> object:
+            calls.append((got_obs, reason))
+            return SimpleNamespace(direct_handoff_applied=False)
+
+    planner._return_direct_handoff_effect_service = MethodType(
+        lambda self: FakeReturnDirectHandoffService(),
+        planner,
+    )
+
+    planner._apply_requested_tick_effects(
+        obs,
+        (SetReturnOrDirectHandoffEffect(reason="dump_to_return_mass_low"),),
+    )
+
+    assert calls == [(obs, "dump_to_return_mass_low")]
+
+
 def test_primitive_planner_requested_effect_bridge_applies_dig_effects_in_order() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs: dict[str, Any] = {"payload": "current_obs"}

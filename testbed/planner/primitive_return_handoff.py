@@ -19,6 +19,79 @@ from testbed.data.schema import (
 
 
 @dataclass(frozen=True)
+class ReturnDirectHandoffEffectPorts:
+    """Shell mutation/read ports for applying return/direct-handoff effects."""
+
+    current_skill_name: Callable[[], str]
+    set_skill: Callable[[str, str], None]
+    return_target_planner_enabled: bool
+    return_to_dig_start_envelope_direct_handoff_enabled: bool
+    ensure_return_target_plan_for_cycle: Callable[[dict[str, Any]], None]
+    return_to_dig_handoff_ready: Callable[[dict[str, Any]], bool]
+    return_to_dig_direct_handoff_ready: Callable[..., bool]
+    complete_return_transition: Callable[[], None]
+    next_skill_after_return_transition: Callable[[], str]
+
+
+@dataclass(frozen=True)
+class ReturnDirectHandoffEffectResult:
+    """Observable outcome from applying a return/direct-handoff effect."""
+
+    direct_handoff_applied: bool
+    next_skill: str = ""
+    switch_reason: str = ""
+
+
+@dataclass(frozen=True)
+class ReturnDirectHandoffEffectService:
+    """Apply the ordered return/direct-handoff effect-side transition sequence."""
+
+    ports: ReturnDirectHandoffEffectPorts
+
+    def apply(
+        self,
+        obs: dict[str, Any],
+        *,
+        reason: str,
+    ) -> ReturnDirectHandoffEffectResult:
+        self.ports.set_skill("return", str(reason))
+        return self.try_direct_handoff(obs)
+
+    def try_direct_handoff(
+        self,
+        obs: dict[str, Any],
+    ) -> ReturnDirectHandoffEffectResult:
+        ports = self.ports
+        if str(ports.current_skill_name()) != "return":
+            return ReturnDirectHandoffEffectResult(direct_handoff_applied=False)
+        if not ports.return_target_planner_enabled:
+            return ReturnDirectHandoffEffectResult(direct_handoff_applied=False)
+        if not ports.return_to_dig_start_envelope_direct_handoff_enabled:
+            return ReturnDirectHandoffEffectResult(direct_handoff_applied=False)
+
+        ports.ensure_return_target_plan_for_cycle(obs)
+        handoff_ready = bool(ports.return_to_dig_handoff_ready(obs))
+        direct_handoff_ready = bool(
+            ports.return_to_dig_direct_handoff_ready(
+                obs,
+                handoff_ready=handoff_ready,
+            )
+        )
+        if not direct_handoff_ready:
+            return ReturnDirectHandoffEffectResult(direct_handoff_applied=False)
+
+        ports.complete_return_transition()
+        next_skill = str(ports.next_skill_after_return_transition())
+        switch_reason = f"return_to_{next_skill}_start_envelope_ready"
+        ports.set_skill(next_skill, switch_reason)
+        return ReturnDirectHandoffEffectResult(
+            direct_handoff_applied=True,
+            next_skill=next_skill,
+            switch_reason=switch_reason,
+        )
+
+
+@dataclass(frozen=True)
 class ReturnStartEnvelopeGateConfig:
     """Static gate configuration for return-to-dig start-envelope readiness."""
 
@@ -311,6 +384,9 @@ def _bounds_for(
 
 
 __all__ = [
+    "ReturnDirectHandoffEffectPorts",
+    "ReturnDirectHandoffEffectResult",
+    "ReturnDirectHandoffEffectService",
     "ReturnStartEnvelopeGateConfig",
     "ReturnStartEnvelopeGateInputs",
     "ReturnStartEnvelopeGateResult",

@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.12: the default 4P mainline branch chain no longer
+Current status after Phase 9.13: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -73,7 +73,13 @@ ports/snapshot, retains thin diagnostic wrappers for the old private status
 methods, and still owns shell-side mutation through the effect applier.
 `ReturnStartEnvelopeGateService` now owns return-to-dig start-envelope
 readiness and diagnostic check computation; the policy shell prepares inputs,
-writes cached ready/error/check state, and retains direct-handoff side effects.
+writes cached ready/error/check state, and retains direct-handoff read/write
+ports. `ReturnDirectHandoffEffectService` now owns the ordered effect-side
+return/direct-handoff mutation sequence for `SetReturnOrDirectHandoffEffect`:
+set `return`, optionally ensure the return target plan, evaluate handoff and
+direct-handoff readiness, complete the return transition, and switch to `dig`
+or residual `pre_dig_align` with the existing `return_to_*_start_envelope_ready`
+reason.
 
 ## Design Intent
 
@@ -508,6 +514,22 @@ policy shell now constructs `ReturnStartEnvelopeGateConfig` and
 `_return_to_dig_start_envelope_checks` from the result. Direct-handoff
 transition side effects, skill switching, return counters, token planning, and
 return-target planning remain outside the service.
+
+Phase 9.13 extracts the effect-side return/direct-handoff transition chain into
+`ReturnDirectHandoffEffectService` in
+`testbed/planner/primitive_return_handoff.py`. The requested-effect applier
+still applies `SetReturnOrDirectHandoffEffect` through shell ports, but the
+policy shell no longer owns the ordered cascade itself. Instead, it builds
+`ReturnDirectHandoffEffectPorts` and delegates `_set_return_or_direct_handoff`
+and the compatibility `_try_return_direct_handoff_at_current_obs` wrapper to
+the service. The service preserves the old order: set active skill to `return`,
+stop when the return target planner or direct handoff is disabled, ensure the
+return target plan before readiness checks, pass the same `handoff_ready` value
+into direct-handoff readiness, complete the return transition before computing
+the next skill, then use `return_to_{next_skill}_start_envelope_ready`.
+Start-envelope gate calculation, token planning, coverage metrics, 5P,
+`pre_dig_align` internals, and `cell_entry` compatibility remain in their
+existing owners.
 
 ### Stage 4: Expand Effect Families From Evidence
 

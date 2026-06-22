@@ -114,6 +114,8 @@ from testbed.planner.primitive_effects import (
     RequestedEffectApplierPorts,
 )
 from testbed.planner.primitive_return_handoff import (
+    ReturnDirectHandoffEffectPorts,
+    ReturnDirectHandoffEffectService,
     ReturnStartEnvelopeGateConfig,
     ReturnStartEnvelopeGateInputs,
     ReturnStartEnvelopeGateResult,
@@ -1961,35 +1963,48 @@ class PrimitivePlannerACTPolicy(Policy):
         return True
 
     def _set_return_or_direct_handoff(self, obs: dict, *, reason: str) -> None:
-        self._set_skill("return", reason)
-        self._try_return_direct_handoff_at_current_obs(obs)
+        self._return_direct_handoff_effect_service().apply(obs, reason=reason)
 
     def _try_return_direct_handoff_at_current_obs(self, obs: dict) -> bool:
-        if self._skill_name != "return":
-            return False
-        if not self.return_target_planner_enabled:
-            return False
-        if not self.return_to_dig_start_envelope_direct_handoff_enabled:
-            return False
-        self._ensure_return_target_plan_for_cycle(obs)
-        handoff_ready = self._return_to_dig_handoff_ready(obs)
-        if not self._return_to_dig_direct_handoff_ready(
-            obs,
-            handoff_ready=handoff_ready,
-        ):
-            return False
-        self._completed_transition_count += 1
-        self._cycle_index += 1
-        next_skill = (
-            PRE_DIG_ALIGN_SKILL_NAME
-            if self._should_pre_dig_align_before_dig()
-            else "dig"
+        result = self._return_direct_handoff_effect_service().try_direct_handoff(obs)
+        return bool(result.direct_handoff_applied)
+
+    def _return_direct_handoff_effect_service(
+        self,
+    ) -> ReturnDirectHandoffEffectService:
+        return ReturnDirectHandoffEffectService(
+            ports=self._return_direct_handoff_effect_ports()
         )
-        self._set_skill(
-            next_skill,
-            f"return_to_{next_skill}_start_envelope_ready",
+
+    def _return_direct_handoff_effect_ports(
+        self,
+    ) -> ReturnDirectHandoffEffectPorts:
+        return ReturnDirectHandoffEffectPorts(
+            current_skill_name=lambda: str(self._skill_name),
+            set_skill=lambda skill, reason: self._set_skill(skill, reason),
+            return_target_planner_enabled=self.return_target_planner_enabled,
+            return_to_dig_start_envelope_direct_handoff_enabled=(
+                self.return_to_dig_start_envelope_direct_handoff_enabled
+            ),
+            ensure_return_target_plan_for_cycle=(
+                lambda obs: self._ensure_return_target_plan_for_cycle(obs)
+            ),
+            return_to_dig_handoff_ready=(
+                lambda obs: self._return_to_dig_handoff_ready(obs)
+            ),
+            return_to_dig_direct_handoff_ready=(
+                lambda obs, *, handoff_ready: self._return_to_dig_direct_handoff_ready(
+                    obs,
+                    handoff_ready=handoff_ready,
+                )
+            ),
+            complete_return_transition=(
+                lambda: self._complete_return_transition_for_backend()
+            ),
+            next_skill_after_return_transition=(
+                lambda: self._next_skill_after_return_transition()
+            ),
         )
-        return True
 
     def _set_skill(self, skill_name: str, reason: str) -> None:
         if skill_name == self._skill_name:

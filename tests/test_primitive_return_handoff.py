@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import MethodType
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -15,11 +16,14 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
 )
 from testbed.planner.primitive_return_handoff import (
+    ReturnDirectHandoffEffectPorts,
+    ReturnDirectHandoffEffectService,
     ReturnStartEnvelopeGateConfig,
     ReturnStartEnvelopeGateInputs,
     ReturnStartEnvelopeGateResult,
     ReturnStartEnvelopeGateService,
 )
+from testbed.planner.primitive_decision import SetReturnOrDirectHandoffEffect
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
@@ -92,6 +96,150 @@ def _inputs(
         use_prior_spatial_bounds=use_prior_spatial_bounds,
         use_prior_qpos_bounds=use_prior_qpos_bounds,
     )
+
+
+def _direct_handoff_ports(
+    events: list[str],
+    *,
+    current_skill: str = "dump",
+    return_target_planner_enabled: bool = True,
+    direct_handoff_enabled: bool = True,
+    handoff_ready: bool = True,
+    direct_handoff_ready: bool = True,
+    next_skill: str = "dig",
+) -> ReturnDirectHandoffEffectPorts:
+    state = {"skill": current_skill}
+
+    def set_skill(skill_name: str, reason: str) -> None:
+        events.append(f"set:{skill_name}:{reason}")
+        state["skill"] = skill_name
+
+    def ensure(obs: dict[str, object]) -> None:
+        events.append(f"ensure:{obs['tag']}")
+
+    def handoff(obs: dict[str, object]) -> bool:
+        events.append(f"handoff_ready:{obs['tag']}")
+        return handoff_ready
+
+    def direct(obs: dict[str, object], *, handoff_ready: bool) -> bool:
+        events.append(f"direct_ready:{obs['tag']}:{handoff_ready}")
+        return direct_handoff_ready
+
+    def complete() -> None:
+        events.append("complete")
+
+    def next_skill_after_return() -> str:
+        events.append("next_skill")
+        return next_skill
+
+    return ReturnDirectHandoffEffectPorts(
+        current_skill_name=lambda: state["skill"],
+        set_skill=set_skill,
+        return_target_planner_enabled=return_target_planner_enabled,
+        return_to_dig_start_envelope_direct_handoff_enabled=(
+            direct_handoff_enabled
+        ),
+        ensure_return_target_plan_for_cycle=ensure,
+        return_to_dig_handoff_ready=handoff,
+        return_to_dig_direct_handoff_ready=direct,
+        complete_return_transition=complete,
+        next_skill_after_return_transition=next_skill_after_return,
+    )
+
+
+def test_return_direct_handoff_service_stops_after_set_return_when_direct_disabled() -> None:
+    events: list[str] = []
+    service = ReturnDirectHandoffEffectService(
+        ports=_direct_handoff_ports(events, direct_handoff_enabled=False)
+    )
+
+    result = service.apply({"tag": "obs"}, reason="dump_to_return_mass_low")
+
+    assert result.direct_handoff_applied is False
+    assert events == ["set:return:dump_to_return_mass_low"]
+
+
+def test_return_direct_handoff_service_stops_after_set_return_when_target_planner_disabled() -> None:
+    events: list[str] = []
+    service = ReturnDirectHandoffEffectService(
+        ports=_direct_handoff_ports(events, return_target_planner_enabled=False)
+    )
+
+    result = service.apply({"tag": "obs"}, reason="dump_to_return_mass_low")
+
+    assert result.direct_handoff_applied is False
+    assert events == ["set:return:dump_to_return_mass_low"]
+
+
+def test_return_direct_handoff_service_checks_readiness_without_completion_when_not_ready() -> None:
+    events: list[str] = []
+    service = ReturnDirectHandoffEffectService(
+        ports=_direct_handoff_ports(events, direct_handoff_ready=False)
+    )
+
+    result = service.apply({"tag": "obs"}, reason="carry_to_return_release_safety")
+
+    assert result.direct_handoff_applied is False
+    assert events == [
+        "set:return:carry_to_return_release_safety",
+        "ensure:obs",
+        "handoff_ready:obs",
+        "direct_ready:obs:True",
+    ]
+
+
+def test_return_direct_handoff_service_applies_ready_direct_handoff_to_dig_in_order() -> None:
+    events: list[str] = []
+    service = ReturnDirectHandoffEffectService(
+        ports=_direct_handoff_ports(events, next_skill="dig")
+    )
+
+    result = service.apply(
+        {"tag": "obs"},
+        reason="dump_to_return_dump_complete_boundary",
+    )
+
+    assert result.direct_handoff_applied is True
+    assert result.next_skill == "dig"
+    assert result.switch_reason == "return_to_dig_start_envelope_ready"
+    assert events == [
+        "set:return:dump_to_return_dump_complete_boundary",
+        "ensure:obs",
+        "handoff_ready:obs",
+        "direct_ready:obs:True",
+        "complete",
+        "next_skill",
+        "set:dig:return_to_dig_start_envelope_ready",
+    ]
+
+
+def test_return_direct_handoff_service_applies_ready_direct_handoff_to_pre_dig_align() -> None:
+    events: list[str] = []
+    service = ReturnDirectHandoffEffectService(
+        ports=_direct_handoff_ports(events, next_skill="pre_dig_align")
+    )
+
+    result = service.apply({"tag": "obs"}, reason="dump_to_return_mass_low")
+
+    assert result.direct_handoff_applied is True
+    assert result.next_skill == "pre_dig_align"
+    assert result.switch_reason == "return_to_pre_dig_align_start_envelope_ready"
+    assert events[-2:] == [
+        "next_skill",
+        "set:pre_dig_align:return_to_pre_dig_align_start_envelope_ready",
+    ]
+
+
+def test_return_direct_handoff_service_try_direct_handoff_noops_outside_return() -> None:
+    events: list[str] = []
+    service = ReturnDirectHandoffEffectService(
+        ports=_direct_handoff_ports(events, current_skill="dump")
+    )
+
+    result = service.try_direct_handoff({"tag": "obs"})
+
+    assert result.direct_handoff_applied is False
+    assert events == []
 
 
 def test_start_envelope_gate_keeps_permissive_compat_cases() -> None:
@@ -268,3 +416,54 @@ def test_policy_start_envelope_wrapper_delegates_and_writes_cached_result() -> N
     assert planner._return_to_dig_start_envelope_ready_state is False
     assert planner._return_to_dig_start_envelope_error == 0.25
     assert planner._return_to_dig_start_envelope_checks == {"qpos_0": {"ok": False}}
+
+
+def test_policy_return_or_direct_handoff_wrapper_delegates_to_service() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    obs = {"tag": "obs"}
+    calls: list[tuple[str, dict[str, object], str]] = []
+
+    class _FakeService:
+        def apply(self, got_obs: dict[str, object], *, reason: str) -> object:
+            calls.append(("apply", got_obs, reason))
+            return object()
+
+        def try_direct_handoff(self, got_obs: dict[str, object]) -> object:
+            calls.append(("try", got_obs, ""))
+            return SimpleNamespace(direct_handoff_applied=True)
+
+    planner._return_direct_handoff_effect_service = MethodType(
+        lambda self: _FakeService(),
+        planner,
+    )
+
+    planner._set_return_or_direct_handoff(obs, reason="dump_to_return_mass_low")
+    planner._try_return_direct_handoff_at_current_obs(obs)
+
+    assert calls == [
+        ("apply", obs, "dump_to_return_mass_low"),
+        ("try", obs, ""),
+    ]
+
+
+def test_policy_requested_effect_path_uses_service_backed_return_wrapper() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    obs = {"tag": "obs"}
+    calls: list[tuple[dict[str, object], str]] = []
+
+    class _FakeService:
+        def apply(self, got_obs: dict[str, object], *, reason: str) -> object:
+            calls.append((got_obs, reason))
+            return object()
+
+    planner._return_direct_handoff_effect_service = MethodType(
+        lambda self: _FakeService(),
+        planner,
+    )
+
+    planner._apply_requested_tick_effects(
+        obs,
+        (SetReturnOrDirectHandoffEffect(reason="dump_to_return_mass_low"),),
+    )
+
+    assert calls == [(obs, "dump_to_return_mass_low")]

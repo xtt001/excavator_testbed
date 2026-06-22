@@ -2850,3 +2850,67 @@ Each completed refactor round should append:
   `CompleteCellEntryDigCompatibilityEffect` remains compatibility-only,
   `LegacyFSMBackendAdapter` remains historical/test scaffolding, and 5P remains
   its existing legacy override path.
+
+### 2026-06-22 Phase 9.13 Extract Return/Direct-Handoff Effect Service
+
+- Scope: extracted the 4P return/direct-handoff effect-side transition cascade
+  from the large policy shell into a focused return handoff service. No branch
+  order, reason string, threshold, token/debug/summary schema, policy reset
+  timing, backend selection, behavior tree, VLM/LLM packet, `pre_dig_align`
+  residual status, `cell_entry` compatibility, 5P override, token planning,
+  start-envelope gate calculation, coverage metric internals, or low-level ACT
+  dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `a6b320064801e237e36515b7d05f5bf2bf0069aa`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `ReturnDirectHandoffEffectPorts`,
+  `ReturnDirectHandoffEffectResult`, and
+  `ReturnDirectHandoffEffectService` to
+  `testbed/planner/primitive_return_handoff.py`. The service owns the ordered
+  mutation sequence for `SetReturnOrDirectHandoffEffect`: set active skill to
+  `return`, stop if return-target planning or start-envelope direct handoff is
+  disabled, ensure the return target plan, evaluate handoff readiness, pass the
+  same `handoff_ready` into direct-handoff readiness, complete the return
+  transition, compute the post-return next skill, and set
+  `return_to_{next_skill}_start_envelope_ready`.
+- Updated `PrimitivePlannerACTPolicy._set_return_or_direct_handoff(...)` and
+  `_try_return_direct_handoff_at_current_obs(...)` into thin service-backed
+  wrappers. The policy now builds `_return_direct_handoff_effect_ports()` and
+  `_return_direct_handoff_effect_service()`. Shell-owned mutations still occur
+  through explicit ports: `_set_skill`,
+  `_ensure_return_target_plan_for_cycle`,
+  `_return_to_dig_handoff_ready`,
+  `_return_to_dig_direct_handoff_ready`,
+  `_complete_return_transition_for_backend`, and
+  `_next_skill_after_return_transition`.
+- Added focused tests in `tests/test_primitive_return_handoff.py` for disabled
+  direct handoff, disabled return-target planner, not-ready readiness checks,
+  ready direct handoff to `dig`, ready direct handoff to residual
+  `pre_dig_align`, no-op compatibility try outside `return`, and policy wrapper
+  delegation. Added a policy/applier integration check in
+  `tests/test_primitive_decision_contract.py` proving
+  `SetReturnOrDirectHandoffEffect` enters the service-backed wrapper through
+  `_apply_requested_tick_effects(...)`.
+- TDD red result: the first focused run failed at collection because
+  `ReturnDirectHandoffEffectPorts` did not exist. After adding the service and
+  policy bridge, the focused direct-handoff tests returned `7 passed,
+  8 deselected`, and the full return-handoff test file returned `15 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_execution_template.py tests/test_primitive_backend.py`
+  returned `114 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "return_to_dig or return_entry_frame_can_direct_handoff_without_return_action or shallow_guard or start_envelope or pre_dig_align"`
+  returned `18 passed, 102 deselected`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  compileall, both planner guard commands, and `git diff --check` completed
+  successfully with no output.
+- Old code parked/reclassified: start-envelope readiness remains in
+  `ReturnStartEnvelopeGateService`, token planning remains in the token planner
+  path, direct-handoff decision does not move into backend branches,
+  `pre_dig_align` remains residual already-applied parking,
+  `CompleteCellEntryDigCompatibilityEffect` remains compatibility-only,
+  `LegacyFSMBackendAdapter` remains historical/test scaffolding, and 5P remains
+  its existing legacy override path.
