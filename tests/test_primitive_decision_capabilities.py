@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from typing import Any
 
 from testbed.planner.primitive_capabilities import (
@@ -11,8 +12,10 @@ from testbed.planner.primitive_backend_facts import PrimitiveBackendFactsAccess
 from testbed.planner.primitive_backend_facts import PrimitiveBootstrapDecisionFacts
 from testbed.planner.primitive_decision_capabilities import (
     BootstrapDecisionStatus,
+    PrimitiveDecisionCompatibilityActions,
     PrimitiveDecisionCapabilities,
     PrimitiveDecisionCapabilitiesPorts,
+    PrimitiveDecisionFactsSource,
 )
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
 from testbed.planner.primitive_decision_facts import (
@@ -229,6 +232,103 @@ def test_decision_capabilities_return_status_read_does_not_refresh() -> None:
     assert capabilities.return_transition_status(context) is provider.return_status
 
     assert provider.calls == [("return", obs, boundary_event)]
+
+
+def test_decision_facts_source_public_api_is_read_only_facts_only() -> None:
+    context = _context(skill="carry")
+    capabilities, provider = _capabilities(
+        current_skill_name="carry",
+        current_switch_reason="dig_to_carry_loaded",
+    )
+
+    facts_source = capabilities.facts_source()
+    public_names = {name for name in dir(facts_source) if not name.startswith("_")}
+    field_names = {field.name for field in fields(PrimitiveDecisionFactsSource)}
+
+    assert {"decision_facts", "backend_facts"}.issubset(public_names)
+    assert {
+        "sync_dig_transition_reason",
+        "refresh_return_transition_state",
+        "handle_residual_pre_dig_align",
+        "apply_effect",
+        "effect_applier",
+        "planner",
+        "policy",
+        "self",
+        "mutation",
+    }.isdisjoint(public_names)
+    assert {
+        "planner",
+        "policy",
+        "self",
+        "callback",
+        "provider",
+        "applier",
+        "effect",
+        "mutation",
+    }.isdisjoint(field_names)
+
+    common = facts_source.decision_facts(context)
+
+    assert common.current_skill_name == "carry"
+    assert common.current_switch_reason == "dig_to_carry_loaded"
+    assert facts_source.backend_facts(context, facts=common).common is common
+    assert provider.calls == []
+
+
+def test_decision_compatibility_actions_public_api_is_actions_only() -> None:
+    obs = {"qpos": [1.0]}
+    context = _context(obs=obs, skill="return")
+    capabilities, provider = _capabilities(current_skill_name="return")
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="dig",
+        current_switch_reason="",
+    )
+    dig_facts = PrimitiveDigTransitionFacts(common=common, status=provider.dig_status)
+
+    actions = capabilities.compatibility_actions()
+    public_names = {name for name in dir(actions) if not name.startswith("_")}
+    field_names = {field.name for field in fields(PrimitiveDecisionCompatibilityActions)}
+
+    assert {
+        "sync_dig_transition_reason",
+        "refresh_return_transition_state",
+        "handle_residual_pre_dig_align",
+    }.issubset(public_names)
+    assert {
+        "decision_facts",
+        "backend_facts",
+        "dig_transition_facts",
+        "dig_transition_status",
+        "carry_transition_status",
+        "dump_transition_status",
+        "return_transition_status",
+        "apply_effect",
+        "effect_applier",
+        "planner",
+        "policy",
+        "self",
+    }.isdisjoint(public_names)
+    assert {
+        "planner",
+        "policy",
+        "self",
+        "callback",
+        "provider",
+        "applier",
+        "effect",
+        "mutation",
+    }.isdisjoint(field_names)
+
+    actions.sync_dig_transition_reason(dig_facts)
+    actions.refresh_return_transition_state(context)
+    assert actions.handle_residual_pre_dig_align(context) is True
+
+    assert provider.calls == [
+        ("sync_dig", provider.dig_status, None),
+        ("refresh_return", obs, None),
+    ]
 
 
 def test_decision_capabilities_backend_facts_constructs_common_facts() -> None:

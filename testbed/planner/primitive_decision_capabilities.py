@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from testbed.planner.primitive_backend_facts import (
@@ -83,6 +83,66 @@ class _BootstrapDecisionReader:
 
 
 @dataclass(frozen=True)
+class PrimitiveDecisionFactsSource:
+    """Read-only common/backend facts source for primitive decision backends."""
+
+    _ports: PrimitiveDecisionCapabilitiesPorts = field(repr=False, compare=False)
+
+    def decision_facts(
+        self,
+        context: PrimitiveDecisionContext,
+    ) -> PrimitiveDecisionFacts:
+        return PrimitiveDecisionFacts.from_context(
+            context,
+            current_skill_name=str(self._ports.current_skill_name()),
+            current_switch_reason=str(self._ports.current_switch_reason()),
+        )
+
+    def backend_facts(
+        self,
+        context: PrimitiveDecisionContext,
+        *,
+        facts: PrimitiveDecisionFacts | None = None,
+    ) -> PrimitiveBackendFactsAccess:
+        common = facts or self.decision_facts(context)
+        return PrimitiveBackendFactsAccess.from_reader(
+            context=context,
+            common=common,
+            transition_status_reader=self._ports.transition_status_provider,
+            bootstrap_decision_reader=_BootstrapDecisionReader(self._ports),
+        )
+
+
+@dataclass(frozen=True)
+class PrimitiveDecisionCompatibilityActions:
+    """Explicit shell compatibility actions kept outside read-only facts access."""
+
+    _ports: PrimitiveDecisionCapabilitiesPorts = field(repr=False, compare=False)
+
+    def sync_dig_transition_reason(
+        self,
+        dig_facts: PrimitiveDigTransitionFacts,
+    ) -> None:
+        self._ports.transition_status_provider.sync_dig_transition_reason(
+            dig_facts.status,
+        )
+
+    def refresh_return_transition_state(
+        self,
+        context: PrimitiveDecisionContext,
+    ) -> None:
+        self._ports.transition_status_provider.refresh_return_transition_state(
+            context.obs
+        )
+
+    def handle_residual_pre_dig_align(
+        self,
+        context: PrimitiveDecisionContext,
+    ) -> bool:
+        return bool(self._ports.maybe_handle_residual_pre_dig_align(context.obs))
+
+
+@dataclass(frozen=True)
 class PrimitiveDecisionCapabilities:
     """Map a decision context into legacy FSM backend facts and statuses."""
 
@@ -101,15 +161,17 @@ class PrimitiveDecisionCapabilities:
     def current_switch_reason(self) -> str:
         return str(self.ports.current_switch_reason())
 
+    def facts_source(self) -> PrimitiveDecisionFactsSource:
+        return PrimitiveDecisionFactsSource(self.ports)
+
+    def compatibility_actions(self) -> PrimitiveDecisionCompatibilityActions:
+        return PrimitiveDecisionCompatibilityActions(self.ports)
+
     def decision_facts(
         self,
         context: PrimitiveDecisionContext,
     ) -> PrimitiveDecisionFacts:
-        return PrimitiveDecisionFacts.from_context(
-            context,
-            current_skill_name=self.current_skill_name(),
-            current_switch_reason=self.current_switch_reason(),
-        )
+        return self.facts_source().decision_facts(context)
 
     def backend_facts(
         self,
@@ -117,13 +179,7 @@ class PrimitiveDecisionCapabilities:
         *,
         facts: PrimitiveDecisionFacts | None = None,
     ) -> PrimitiveBackendFactsAccess:
-        common = facts or self.decision_facts(context)
-        return PrimitiveBackendFactsAccess.from_reader(
-            context=context,
-            common=common,
-            transition_status_reader=self.ports.transition_status_provider,
-            bootstrap_decision_reader=_BootstrapDecisionReader(self.ports),
-        )
+        return self.facts_source().backend_facts(context, facts=facts)
 
     def bootstrap_status(
         self,
@@ -159,9 +215,7 @@ class PrimitiveDecisionCapabilities:
         self,
         dig_facts: PrimitiveDigTransitionFacts,
     ) -> None:
-        self.ports.transition_status_provider.sync_dig_transition_reason(
-            dig_facts.status,
-        )
+        self.compatibility_actions().sync_dig_transition_reason(dig_facts)
 
     def carry_transition_status(
         self,
@@ -218,9 +272,7 @@ class PrimitiveDecisionCapabilities:
         self,
         context: PrimitiveDecisionContext,
     ) -> None:
-        self.ports.transition_status_provider.refresh_return_transition_state(
-            context.obs
-        )
+        self.compatibility_actions().refresh_return_transition_state(context)
 
     def handle_residual_pre_dig_align(
         self,
@@ -228,7 +280,7 @@ class PrimitiveDecisionCapabilities:
     ) -> bool:
         """Apply the parked pre-dig-align compatibility path."""
 
-        return bool(self.ports.maybe_handle_residual_pre_dig_align(context.obs))
+        return self.compatibility_actions().handle_residual_pre_dig_align(context)
 
 
 __all__ = [
@@ -237,9 +289,11 @@ __all__ = [
     "PrimitiveBackendFactsAccess",
     "PrimitiveBootstrapDecisionFacts",
     "PrimitiveBootstrapDecisionReader",
+    "PrimitiveDecisionCompatibilityActions",
     "PrimitiveDecisionCapabilities",
     "PrimitiveDecisionCapabilitiesPorts",
     "PrimitiveDecisionFacts",
+    "PrimitiveDecisionFactsSource",
     "PrimitiveDigTransitionFacts",
     "PrimitiveDumpTransitionFacts",
     "PrimitiveReturnTransitionFacts",

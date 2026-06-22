@@ -840,6 +840,7 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _legacy_fsm_branch_ports(self) -> LegacyFSMBranchPorts:
+        capabilities = self._primitive_decision_capabilities()
         return LegacyFSMBranchPorts(
             bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
             pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
@@ -847,7 +848,8 @@ class PrimitivePlannerACTPolicy(Policy):
             carry_skill_name="carry",
             dump_skill_name="dump",
             return_skill_name="return",
-            capabilities=self._primitive_decision_capabilities(),
+            facts_source=capabilities.facts_source(),
+            compatibility_actions=capabilities.compatibility_actions(),
         )
 
     def _primitive_decision_capabilities(self) -> PrimitiveDecisionCapabilities:

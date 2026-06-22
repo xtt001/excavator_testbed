@@ -346,12 +346,31 @@ def _decision_capabilities(
     )
 
 
+def _facts_only(
+    capabilities: PrimitiveDecisionCapabilities,
+) -> dict[str, Any]:
+    return {"facts_source": capabilities.facts_source()}
+
+
+def _facts_and_actions(
+    capabilities: PrimitiveDecisionCapabilities,
+) -> dict[str, Any]:
+    return {
+        "facts_source": capabilities.facts_source(),
+        "compatibility_actions": capabilities.compatibility_actions(),
+    }
+
+
 def _legacy_fsm_branch_ports(
     *,
     state: dict[str, str] | None = None,
 ) -> LegacyFSMBranchPorts:
     state = state if state is not None else {"skill": "legacy_skill", "reason": ""}
 
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: state["skill"],
+        current_switch_reason=lambda: state["reason"],
+    )
     return LegacyFSMBranchPorts(
         bootstrap_skill_name="bootstrap",
         pre_dig_align_skill_name="pre_dig_align",
@@ -359,10 +378,7 @@ def _legacy_fsm_branch_ports(
         carry_skill_name="carry",
         dump_skill_name="dump",
         return_skill_name="return",
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: state["skill"],
-            current_switch_reason=lambda: state["reason"],
-        ),
+        **_facts_and_actions(capabilities),
     )
 
 
@@ -375,13 +391,14 @@ def _legacy_fsm_dig_branch(
     ]
     | None = None,
 ) -> LegacyFSMDigBranch:
+    capabilities = _decision_capabilities(
+        current_skill_name=current_skill_name or (lambda: "dig"),
+        dig_transition_status=dig_transition_status
+        or (lambda obs, boundary_event: _default_dig_status()),
+    )
     return LegacyFSMDigBranch(
         config=LegacyFSMDigConfig(dig_skill_name="dig"),
-        capabilities=_decision_capabilities(
-            current_skill_name=current_skill_name or (lambda: "dig"),
-            dig_transition_status=dig_transition_status
-            or (lambda obs, boundary_event: _default_dig_status()),
-        ),
+        **_facts_and_actions(capabilities),
     )
 
 
@@ -401,11 +418,15 @@ def test_legacy_fsm_branch_set_from_ports_builds_backend_and_runner() -> None:
     assert runner.residual_branch is branch_set.residual_branch
 
 
-def test_legacy_fsm_branch_ports_exposes_decision_capabilities_not_callback_bag() -> None:
+def test_legacy_fsm_branch_ports_splits_facts_source_from_compat_actions() -> None:
     ports = _legacy_fsm_branch_ports()
     field_names = {field.name for field in fields(LegacyFSMBranchPorts)}
 
-    assert isinstance(ports.capabilities, PrimitiveDecisionCapabilities)
+    assert "facts_source" in field_names
+    assert "compatibility_actions" in field_names
+    assert "capabilities" not in field_names
+    assert ports.facts_source is not None
+    assert ports.compatibility_actions is not None
     for removed_name in (
         "current_skill_name",
         "current_switch_reason",
@@ -424,6 +445,36 @@ def test_legacy_fsm_branch_ports_exposes_decision_capabilities_not_callback_bag(
         "dig_to_carry_reason",
     ):
         assert removed_name not in field_names
+
+
+def test_legacy_fsm_branch_dataclasses_use_narrow_fact_and_action_dependencies() -> None:
+    assert {field.name for field in fields(LegacyFSMBootstrapBranch)} == {
+        "config",
+        "facts_source",
+    }
+    assert {field.name for field in fields(LegacyFSMCarryBranch)} == {
+        "config",
+        "facts_source",
+    }
+    assert {field.name for field in fields(LegacyFSMDumpBranch)} == {
+        "config",
+        "facts_source",
+    }
+    assert {field.name for field in fields(LegacyFSMDigBranch)} == {
+        "config",
+        "facts_source",
+        "compatibility_actions",
+    }
+    assert {field.name for field in fields(LegacyFSMReturnBranch)} == {
+        "config",
+        "facts_source",
+        "compatibility_actions",
+    }
+    assert {field.name for field in fields(LegacyFSMResidualPreDigAlignAdapter)} == {
+        "pre_dig_align_skill_name",
+        "facts_source",
+        "compatibility_actions",
+    }
 
 
 def test_legacy_fsm_branch_set_requested_backend_uses_stable_order() -> None:
@@ -789,13 +840,14 @@ def test_residual_pre_dig_align_adapter_is_explicit_already_applied_path() -> No
         state["reason"] = "pre_dig_align_to_dig_ready"
         return True
 
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: state["skill"],
+        current_switch_reason=lambda: state["reason"],
+        maybe_handle_pre_dig_align_skill=maybe_handle_pre_dig_align_skill,
+    )
     adapter = LegacyFSMResidualPreDigAlignAdapter(
         pre_dig_align_skill_name="pre_dig_align",
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: state["skill"],
-            current_switch_reason=lambda: state["reason"],
-            maybe_handle_pre_dig_align_skill=maybe_handle_pre_dig_align_skill,
-        ),
+        **_facts_and_actions(capabilities),
     )
 
     result = adapter.decide_tick(
@@ -818,12 +870,13 @@ def test_residual_pre_dig_align_adapter_is_explicit_already_applied_path() -> No
 
 
 def test_residual_pre_dig_align_adapter_ignores_non_residual_skill() -> None:
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "dig",
+        maybe_handle_pre_dig_align_skill=lambda obs: True,
+    )
     adapter = LegacyFSMResidualPreDigAlignAdapter(
         pre_dig_align_skill_name="pre_dig_align",
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "dig",
-            maybe_handle_pre_dig_align_skill=lambda obs: True,
-        ),
+        **_facts_and_actions(capabilities),
     )
 
     result = adapter.decide_tick(
@@ -843,17 +896,18 @@ def test_legacy_fsm_bootstrap_branch_selects_pre_dig_align_when_enabled() -> Non
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
     state = {"skill": "bootstrap"}
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: state["skill"],
+        should_end_bootstrap=lambda *, obs, boundary_event: True,
+        bootstrap_end_mode=lambda: "first_qualified_dig_start",
+        should_pre_dig_align_before_dig=lambda: True,
+    )
     branch = LegacyFSMBootstrapBranch(
         config=LegacyFSMBootstrapConfig(
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: state["skill"],
-            should_end_bootstrap=lambda *, obs, boundary_event: True,
-            bootstrap_end_mode=lambda: "first_qualified_dig_start",
-            should_pre_dig_align_before_dig=lambda: True,
-        ),
+        **_facts_only(capabilities),
     )
 
     result = branch.decide_tick(
@@ -878,17 +932,18 @@ def test_legacy_fsm_bootstrap_branch_selects_pre_dig_align_when_enabled() -> Non
 def test_legacy_fsm_bootstrap_branch_returns_requested_switch_effect() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "bootstrap",
+        should_end_bootstrap=lambda *, obs, boundary_event: True,
+        bootstrap_end_mode=lambda: "first_qualified_dig_start",
+        should_pre_dig_align_before_dig=lambda: True,
+    )
     branch = LegacyFSMBootstrapBranch(
         config=LegacyFSMBootstrapConfig(
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "bootstrap",
-            should_end_bootstrap=lambda *, obs, boundary_event: True,
-            bootstrap_end_mode=lambda: "first_qualified_dig_start",
-            should_pre_dig_align_before_dig=lambda: True,
-        ),
+        **_facts_only(capabilities),
     )
 
     result = branch.decide_tick(
@@ -939,21 +994,22 @@ def test_legacy_fsm_bootstrap_branch_requested_decision_ignores_non_bootstrap() 
     ) -> ReturnTransitionStatus:
         raise AssertionError("bootstrap branch must not request return status")
 
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "dig",
+        should_end_bootstrap=lambda *, obs, boundary_event: True,
+        bootstrap_end_mode=lambda: "first_qualified_dig_start",
+        should_pre_dig_align_before_dig=lambda: True,
+        dig_transition_status=fail_dig_status,
+        carry_transition_status=fail_carry_status,
+        dump_transition_status=fail_dump_status,
+        return_transition_status=fail_return_status,
+    )
     branch = LegacyFSMBootstrapBranch(
         config=LegacyFSMBootstrapConfig(
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "dig",
-            should_end_bootstrap=lambda *, obs, boundary_event: True,
-            bootstrap_end_mode=lambda: "first_qualified_dig_start",
-            should_pre_dig_align_before_dig=lambda: True,
-            dig_transition_status=fail_dig_status,
-            carry_transition_status=fail_carry_status,
-            dump_transition_status=fail_dump_status,
-            return_transition_status=fail_return_status,
-        ),
+        **_facts_only(capabilities),
     )
 
     result = branch.decide_tick(
@@ -1006,7 +1062,7 @@ def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_no_change() -> None:
         def return_transition(self) -> PrimitiveReturnTransitionFacts:
             raise AssertionError("bootstrap branch must not read return transition")
 
-    class _BootstrapFactsCapabilities:
+    class _BootstrapFactsSource:
         def backend_facts(
             self,
             context: PrimitiveDecisionContext,
@@ -1034,30 +1090,12 @@ def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_no_change() -> None:
         def bootstrap_status(self, *args: Any, **kwargs: Any) -> BootstrapDecisionStatus:
             raise AssertionError("bootstrap branch must consume bootstrap facts view")
 
-        def handle_residual_pre_dig_align(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> bool:
-            raise AssertionError("bootstrap branch must not call residual handler")
-
-        def sync_dig_transition_reason(
-            self,
-            dig_facts: PrimitiveDigTransitionFacts,
-        ) -> None:
-            raise AssertionError("bootstrap branch must not sync dig reason")
-
-        def refresh_return_transition_state(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> None:
-            raise AssertionError("bootstrap branch must not refresh return")
-
     branch = LegacyFSMBootstrapBranch(
         config=LegacyFSMBootstrapConfig(
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        capabilities=_BootstrapFactsCapabilities(),
+        facts_source=_BootstrapFactsSource(),
     )
 
     result = branch.decide_tick(
@@ -1105,7 +1143,7 @@ def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_switch_to_dig() -> N
             calls.append("bootstrap_status")
             return PrimitiveBootstrapDecisionFacts(common=self.common, status=status)
 
-    class _BootstrapFactsCapabilities:
+    class _BootstrapFactsSource:
         def backend_facts(
             self,
             context: PrimitiveDecisionContext,
@@ -1137,7 +1175,7 @@ def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_switch_to_dig() -> N
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        capabilities=_BootstrapFactsCapabilities(),
+        facts_source=_BootstrapFactsSource(),
     )
 
     result = branch.decide_tick(
@@ -1164,17 +1202,18 @@ def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_switch_to_dig() -> N
 
 
 def test_legacy_fsm_bootstrap_branch_ignores_non_bootstrap_skill() -> None:
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "dig",
+        should_end_bootstrap=lambda *, obs, boundary_event: True,
+        bootstrap_end_mode=lambda: "disabled",
+        should_pre_dig_align_before_dig=lambda: False,
+    )
     branch = LegacyFSMBootstrapBranch(
         config=LegacyFSMBootstrapConfig(
             bootstrap_skill_name="bootstrap",
             pre_dig_align_skill_name="pre_dig_align",
         ),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "dig",
-            should_end_bootstrap=lambda *, obs, boundary_event: True,
-            bootstrap_end_mode=lambda: "disabled",
-            should_pre_dig_align_before_dig=lambda: False,
-        ),
+        **_facts_only(capabilities),
     )
 
     result = branch.decide_tick(
@@ -1239,7 +1278,7 @@ def test_legacy_fsm_dig_branch_consumes_backend_facts_and_syncs_reason() -> None
             calls.append("dig_status")
             return PrimitiveDigTransitionFacts(common=self.common, status=status)
 
-    class _DigFactsCapabilities:
+    class _DigFactsSource:
         def backend_facts(
             self,
             context: PrimitiveDecisionContext,
@@ -1273,6 +1312,13 @@ def test_legacy_fsm_dig_branch_consumes_backend_facts_and_syncs_reason() -> None
         ) -> PrimitiveDigTransitionFacts:
             raise AssertionError("dig branch must consume backend facts access")
 
+        def dig_transition_status(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> DigTransitionStatus:
+            raise AssertionError("dig branch must consume dig facts view")
+
+    class _DigCompatibilityActions:
         def sync_dig_transition_reason(
             self,
             dig_facts: PrimitiveDigTransitionFacts,
@@ -1281,15 +1327,10 @@ def test_legacy_fsm_dig_branch_consumes_backend_facts_and_syncs_reason() -> None
             assert dig_facts.status is status
             calls.append("sync_dig_reason")
 
-        def dig_transition_status(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> DigTransitionStatus:
-            raise AssertionError("dig branch must consume dig facts view")
-
     branch = LegacyFSMDigBranch(
         config=LegacyFSMDigConfig(dig_skill_name="dig"),
-        capabilities=_DigFactsCapabilities(),
+        facts_source=_DigFactsSource(),
+        compatibility_actions=_DigCompatibilityActions(),
     )
 
     result = branch.decide_tick(
@@ -1490,7 +1531,7 @@ def test_legacy_fsm_dig_branch_non_dig_skill_does_not_read_or_sync_dig_facts() -
             calls.append("dig_status")
             raise AssertionError("non-dig skill must not request dig facts")
 
-    class _NonDigCapabilities:
+    class _NonDigFactsSource:
         def backend_facts(
             self,
             context: PrimitiveDecisionContext,
@@ -1521,6 +1562,7 @@ def test_legacy_fsm_dig_branch_non_dig_skill_does_not_read_or_sync_dig_facts() -
         ) -> PrimitiveDigTransitionFacts:
             raise AssertionError("dig branch must consume backend facts access")
 
+    class _NonDigCompatibilityActions:
         def sync_dig_transition_reason(
             self,
             dig_facts: PrimitiveDigTransitionFacts,
@@ -1530,7 +1572,8 @@ def test_legacy_fsm_dig_branch_non_dig_skill_does_not_read_or_sync_dig_facts() -
 
     branch = LegacyFSMDigBranch(
         config=LegacyFSMDigConfig(dig_skill_name="dig"),
-        capabilities=_NonDigCapabilities(),
+        facts_source=_NonDigFactsSource(),
+        compatibility_actions=_NonDigCompatibilityActions(),
     )
 
     result = branch.decide_tick(
@@ -1624,12 +1667,13 @@ def test_legacy_fsm_carry_branch_release_safety_handoffs_to_return() -> None:
         carry_to_dump_reason="",
         carry_to_return_reason="carry_to_return_release_safety",
     )
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "carry",
+        carry_transition_status=lambda obs, boundary_event: status,
+    )
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "carry",
-            carry_transition_status=lambda obs, boundary_event: status,
-        ),
+        **_facts_only(capabilities),
     )
 
     result = branch.decide_tick(
@@ -1650,27 +1694,28 @@ def test_legacy_fsm_carry_branch_release_safety_handoffs_to_return() -> None:
 
 
 def test_legacy_fsm_carry_branch_requested_release_safety_handoff_effects() -> None:
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "carry",
+        carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
+            mass_in_bucket_kg=0.0,
+            deposited_mass_in_target_box_kg=20.0,
+            deposit_delta_since_cycle_start_kg=10.0,
+            semantic_boundary_profile_active=True,
+            dump_committed_event=False,
+            release_onset_event=False,
+            dump_complete_event=False,
+            legacy_dump_start_event=False,
+            carry_release_safety_done=True,
+            dump_ready=False,
+            next_dump_ready_hold_count=0,
+            ready_to_dump=False,
+            carry_to_dump_reason="",
+            carry_to_return_reason="carry_to_return_release_safety",
+        ),
+    )
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "carry",
-            carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
-                mass_in_bucket_kg=0.0,
-                deposited_mass_in_target_box_kg=20.0,
-                deposit_delta_since_cycle_start_kg=10.0,
-                semantic_boundary_profile_active=True,
-                dump_committed_event=False,
-                release_onset_event=False,
-                dump_complete_event=False,
-                legacy_dump_start_event=False,
-                carry_release_safety_done=True,
-                dump_ready=False,
-                next_dump_ready_hold_count=0,
-                ready_to_dump=False,
-                carry_to_dump_reason="",
-                carry_to_return_reason="carry_to_return_release_safety",
-            ),
-        ),
+        **_facts_only(capabilities),
     )
 
     result = branch.decide_tick(
@@ -1693,27 +1738,28 @@ def test_legacy_fsm_carry_branch_requested_release_safety_handoff_effects() -> N
 
 
 def test_legacy_fsm_carry_branch_requested_dump_complete_boundary_effects() -> None:
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "carry",
+        carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
+            mass_in_bucket_kg=0.0,
+            deposited_mass_in_target_box_kg=20.0,
+            deposit_delta_since_cycle_start_kg=10.0,
+            semantic_boundary_profile_active=True,
+            dump_committed_event=False,
+            release_onset_event=False,
+            dump_complete_event=True,
+            legacy_dump_start_event=False,
+            carry_release_safety_done=False,
+            dump_ready=False,
+            next_dump_ready_hold_count=0,
+            ready_to_dump=False,
+            carry_to_dump_reason="",
+            carry_to_return_reason="carry_to_return_dump_complete_boundary",
+        ),
+    )
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "carry",
-            carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
-                mass_in_bucket_kg=0.0,
-                deposited_mass_in_target_box_kg=20.0,
-                deposit_delta_since_cycle_start_kg=10.0,
-                semantic_boundary_profile_active=True,
-                dump_committed_event=False,
-                release_onset_event=False,
-                dump_complete_event=True,
-                legacy_dump_start_event=False,
-                carry_release_safety_done=False,
-                dump_ready=False,
-                next_dump_ready_hold_count=0,
-                ready_to_dump=False,
-                carry_to_dump_reason="",
-                carry_to_return_reason="carry_to_return_dump_complete_boundary",
-            ),
-        ),
+        **_facts_only(capabilities),
     )
 
     result = branch.decide_tick(
@@ -1754,12 +1800,13 @@ def test_legacy_fsm_carry_branch_committed_boundary_switches_to_dump() -> None:
         carry_to_dump_reason="dump_committed_boundary",
         carry_to_return_reason="",
     )
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "carry",
+        carry_transition_status=lambda obs, boundary_event: status,
+    )
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "carry",
-            carry_transition_status=lambda obs, boundary_event: status,
-        ),
+        **_facts_only(capabilities),
     )
 
     result = branch.decide_tick(
@@ -1813,7 +1860,7 @@ def test_legacy_fsm_carry_branch_consumes_backend_facts_view() -> None:
             calls.append("carry_status")
             return PrimitiveCarryTransitionFacts(common=self.common, status=status)
 
-    class _CarryFactsCapabilities:
+    class _CarryFactsSource:
         def backend_facts(
             self,
             context: PrimitiveDecisionContext,
@@ -1855,7 +1902,7 @@ def test_legacy_fsm_carry_branch_consumes_backend_facts_view() -> None:
 
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        capabilities=_CarryFactsCapabilities(),
+        facts_source=_CarryFactsSource(),
     )
 
     result = branch.decide_tick(
@@ -1881,27 +1928,28 @@ def test_legacy_fsm_carry_branch_consumes_backend_facts_view() -> None:
 
 
 def test_legacy_fsm_carry_branch_requested_ready_to_dump_effects_in_order() -> None:
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "carry",
+        carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
+            mass_in_bucket_kg=120.0,
+            deposited_mass_in_target_box_kg=8.5,
+            deposit_delta_since_cycle_start_kg=8.5,
+            semantic_boundary_profile_active=True,
+            dump_committed_event=True,
+            release_onset_event=False,
+            dump_complete_event=False,
+            legacy_dump_start_event=False,
+            carry_release_safety_done=False,
+            dump_ready=False,
+            next_dump_ready_hold_count=3,
+            ready_to_dump=True,
+            carry_to_dump_reason="dump_committed_boundary",
+            carry_to_return_reason="",
+        ),
+    )
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "carry",
-            carry_transition_status=lambda obs, boundary_event: CarryTransitionStatus(
-                mass_in_bucket_kg=120.0,
-                deposited_mass_in_target_box_kg=8.5,
-                deposit_delta_since_cycle_start_kg=8.5,
-                semantic_boundary_profile_active=True,
-                dump_committed_event=True,
-                release_onset_event=False,
-                dump_complete_event=False,
-                legacy_dump_start_event=False,
-                carry_release_safety_done=False,
-                dump_ready=False,
-                next_dump_ready_hold_count=3,
-                ready_to_dump=True,
-                carry_to_dump_reason="dump_committed_boundary",
-                carry_to_return_reason="",
-            ),
-        ),
+        **_facts_only(capabilities),
     )
 
     result = branch.decide_tick(
@@ -1932,12 +1980,13 @@ def test_legacy_fsm_carry_branch_ignores_non_carry_skill() -> None:
     ) -> CarryTransitionStatus:
         raise AssertionError("non-carry skill must not request carry transition status")
 
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "dump",
+        carry_transition_status=fail_if_called,
+    )
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "dump",
-            carry_transition_status=fail_if_called,
-        ),
+        **_facts_only(capabilities),
     )
 
     result = branch.decide_tick(
@@ -1964,7 +2013,7 @@ def test_legacy_fsm_carry_branch_non_carry_skill_does_not_read_carry_facts() -> 
             calls.append("carry_status")
             raise AssertionError("non-carry skill must not request carry facts")
 
-    class _NonCarryCapabilities:
+    class _NonCarryFactsSource:
         def backend_facts(
             self,
             context: PrimitiveDecisionContext,
@@ -1997,7 +2046,7 @@ def test_legacy_fsm_carry_branch_non_carry_skill_does_not_read_carry_facts() -> 
 
     branch = LegacyFSMCarryBranch(
         config=LegacyFSMCarryConfig(carry_skill_name="carry"),
-        capabilities=_NonCarryCapabilities(),
+        facts_source=_NonCarryFactsSource(),
     )
 
     result = branch.decide_tick(
@@ -2030,12 +2079,13 @@ def test_legacy_fsm_dump_branch_boundary_handoffs_to_return() -> None:
         coverage_completion_reason="dump_complete_boundary",
         dump_to_return_reason="dump_to_return_dump_complete_boundary",
     )
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "dump",
+        dump_transition_status=lambda obs, boundary_event: status,
+    )
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "dump",
-            dump_transition_status=lambda obs, boundary_event: status,
-        ),
+        **_facts_only(capabilities),
     )
 
     result = branch.decide_tick(
@@ -2083,7 +2133,7 @@ def test_legacy_fsm_dump_branch_consumes_backend_facts_view() -> None:
             calls.append("dump_status")
             return PrimitiveDumpTransitionFacts(common=self.common, status=status)
 
-    class _DumpFactsCapabilities:
+    class _DumpFactsSource:
         def backend_facts(
             self,
             context: PrimitiveDecisionContext,
@@ -2125,7 +2175,7 @@ def test_legacy_fsm_dump_branch_consumes_backend_facts_view() -> None:
 
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        capabilities=_DumpFactsCapabilities(),
+        facts_source=_DumpFactsSource(),
     )
 
     result = branch.decide_tick(
@@ -2148,25 +2198,26 @@ def test_legacy_fsm_dump_branch_consumes_backend_facts_view() -> None:
 
 
 def test_legacy_fsm_dump_branch_requested_boundary_done_effects() -> None:
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "dump",
+        dump_transition_status=lambda obs, boundary_event: DumpTransitionStatus(
+            mass_in_bucket_kg=0.0,
+            deposited_mass_in_target_box_kg=20.0,
+            deposit_delta_since_dump_start_kg=10.0,
+            semantic_boundary_profile_active=True,
+            dump_complete_event=True,
+            legacy_dump_end_event=False,
+            boundary_dump_done=True,
+            dump_done_mass_low=False,
+            next_dump_done_hold_count=0,
+            ready_to_return=True,
+            coverage_completion_reason="dump_complete_boundary",
+            dump_to_return_reason="dump_to_return_dump_complete_boundary",
+        ),
+    )
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "dump",
-            dump_transition_status=lambda obs, boundary_event: DumpTransitionStatus(
-                mass_in_bucket_kg=0.0,
-                deposited_mass_in_target_box_kg=20.0,
-                deposit_delta_since_dump_start_kg=10.0,
-                semantic_boundary_profile_active=True,
-                dump_complete_event=True,
-                legacy_dump_end_event=False,
-                boundary_dump_done=True,
-                dump_done_mass_low=False,
-                next_dump_done_hold_count=0,
-                ready_to_return=True,
-                coverage_completion_reason="dump_complete_boundary",
-                dump_to_return_reason="dump_to_return_dump_complete_boundary",
-            ),
-        ),
+        **_facts_only(capabilities),
     )
 
     result = branch.decide_tick(
@@ -2202,12 +2253,13 @@ def test_legacy_fsm_dump_branch_mass_low_hold_switches_to_return() -> None:
         coverage_completion_reason="dump_mass_low",
         dump_to_return_reason="dump_to_return_mass_low",
     )
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "dump",
+        dump_transition_status=lambda obs, boundary_event: status,
+    )
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "dump",
-            dump_transition_status=lambda obs, boundary_event: status,
-        ),
+        **_facts_only(capabilities),
     )
 
     result = branch.decide_tick(
@@ -2229,25 +2281,26 @@ def test_legacy_fsm_dump_branch_mass_low_hold_switches_to_return() -> None:
 
 
 def test_legacy_fsm_dump_branch_requested_ready_to_return_effects_in_order() -> None:
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "dump",
+        dump_transition_status=lambda obs, boundary_event: DumpTransitionStatus(
+            mass_in_bucket_kg=5.0,
+            deposited_mass_in_target_box_kg=20.0,
+            deposit_delta_since_dump_start_kg=10.0,
+            semantic_boundary_profile_active=False,
+            dump_complete_event=False,
+            legacy_dump_end_event=False,
+            boundary_dump_done=False,
+            dump_done_mass_low=True,
+            next_dump_done_hold_count=2,
+            ready_to_return=True,
+            coverage_completion_reason="dump_mass_low",
+            dump_to_return_reason="dump_to_return_mass_low",
+        ),
+    )
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "dump",
-            dump_transition_status=lambda obs, boundary_event: DumpTransitionStatus(
-                mass_in_bucket_kg=5.0,
-                deposited_mass_in_target_box_kg=20.0,
-                deposit_delta_since_dump_start_kg=10.0,
-                semantic_boundary_profile_active=False,
-                dump_complete_event=False,
-                legacy_dump_end_event=False,
-                boundary_dump_done=False,
-                dump_done_mass_low=True,
-                next_dump_done_hold_count=2,
-                ready_to_return=True,
-                coverage_completion_reason="dump_mass_low",
-                dump_to_return_reason="dump_to_return_mass_low",
-            ),
-        ),
+        **_facts_only(capabilities),
     )
 
     result = branch.decide_tick(
@@ -2275,12 +2328,13 @@ def test_legacy_fsm_dump_branch_ignores_non_dump_skill() -> None:
     ) -> DumpTransitionStatus:
         raise AssertionError("non-dump skill must not request dump transition status")
 
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "return",
+        dump_transition_status=fail_if_called,
+    )
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "return",
-            dump_transition_status=fail_if_called,
-        ),
+        **_facts_only(capabilities),
     )
 
     result = branch.decide_tick(
@@ -2307,7 +2361,7 @@ def test_legacy_fsm_dump_branch_non_dump_skill_does_not_read_dump_facts() -> Non
             calls.append("dump_status")
             raise AssertionError("non-dump skill must not request dump facts")
 
-    class _NonDumpCapabilities:
+    class _NonDumpFactsSource:
         def backend_facts(
             self,
             context: PrimitiveDecisionContext,
@@ -2340,7 +2394,7 @@ def test_legacy_fsm_dump_branch_non_dump_skill_does_not_read_dump_facts() -> Non
 
     branch = LegacyFSMDumpBranch(
         config=LegacyFSMDumpConfig(dump_skill_name="dump"),
-        capabilities=_NonDumpCapabilities(),
+        facts_source=_NonDumpFactsSource(),
     )
 
     result = branch.decide_tick(
@@ -2392,15 +2446,16 @@ def _return_status(
 
 def test_legacy_fsm_return_branch_requested_next_dig_event_marks_only() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "return",
+        return_transition_status=lambda obs, boundary_event: _return_status(
+            next_dig_event=True,
+            next_or_seen_dig_event=True,
+        ),
+    )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "return",
-            return_transition_status=lambda obs, boundary_event: _return_status(
-                next_dig_event=True,
-                next_or_seen_dig_event=True,
-            ),
-        ),
+        **_facts_and_actions(capabilities),
     )
 
     result = branch.decide_tick(
@@ -2420,18 +2475,19 @@ def test_legacy_fsm_return_branch_requested_next_dig_event_marks_only() -> None:
 
 
 def test_legacy_fsm_return_branch_requested_completion_orders_effects() -> None:
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "return",
+        return_transition_status=lambda obs, boundary_event: _return_status(
+            next_or_seen_dig_event=True,
+            entry_close=True,
+            start_envelope_ready=True,
+            handoff_ready=True,
+            completed_transition=True,
+        ),
+    )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "return",
-            return_transition_status=lambda obs, boundary_event: _return_status(
-                next_or_seen_dig_event=True,
-                entry_close=True,
-                start_envelope_ready=True,
-                handoff_ready=True,
-                completed_transition=True,
-            ),
-        ),
+        **_facts_and_actions(capabilities),
     )
 
     result = branch.decide_tick(
@@ -2454,19 +2510,20 @@ def test_legacy_fsm_return_branch_requested_completion_orders_effects() -> None:
 
 
 def test_legacy_fsm_return_branch_requested_event_then_completion_order() -> None:
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "return",
+        return_transition_status=lambda obs, boundary_event: _return_status(
+            next_dig_event=True,
+            next_or_seen_dig_event=True,
+            entry_close=True,
+            start_envelope_ready=True,
+            handoff_ready=True,
+            completed_transition=True,
+        ),
+    )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "return",
-            return_transition_status=lambda obs, boundary_event: _return_status(
-                next_dig_event=True,
-                next_or_seen_dig_event=True,
-                entry_close=True,
-                start_envelope_ready=True,
-                handoff_ready=True,
-                completed_transition=True,
-            ),
-        ),
+        **_facts_and_actions(capabilities),
     )
 
     result = branch.decide_tick(
@@ -2488,12 +2545,13 @@ def test_legacy_fsm_return_branch_requested_event_then_completion_order() -> Non
 
 
 def test_legacy_fsm_return_branch_requested_no_effects_for_unready_return() -> None:
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "return",
+        return_transition_status=lambda obs, boundary_event: _return_status(),
+    )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "return",
-            return_transition_status=lambda obs, boundary_event: _return_status(),
-        ),
+        **_facts_and_actions(capabilities),
     )
 
     result = branch.decide_tick(
@@ -2544,14 +2602,15 @@ def test_legacy_fsm_return_branch_refreshes_before_reading_return_status() -> No
             completed_transition=True,
         )
 
+    capabilities = _decision_capabilities(
+        current_skill_name=current_skill_name,
+        current_switch_reason=current_switch_reason,
+        refresh_return_transition_state=refresh,
+        return_transition_status=return_status,
+    )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        capabilities=_decision_capabilities(
-            current_skill_name=current_skill_name,
-            current_switch_reason=current_switch_reason,
-            refresh_return_transition_state=refresh,
-            return_transition_status=return_status,
-        ),
+        **_facts_and_actions(capabilities),
     )
 
     result = branch.decide_tick(
@@ -2600,7 +2659,7 @@ def test_legacy_fsm_return_branch_consumes_backend_facts_view() -> None:
             calls.append("return_status")
             return PrimitiveReturnTransitionFacts(common=self.common, status=status)
 
-    class _ReturnFactsCapabilities:
+    class _ReturnFactsSource:
         def backend_facts(
             self,
             context: PrimitiveDecisionContext,
@@ -2626,13 +2685,6 @@ def test_legacy_fsm_return_branch_consumes_backend_facts_view() -> None:
         ) -> PrimitiveDecisionFacts:
             raise AssertionError("return branch must consume backend facts access")
 
-        def refresh_return_transition_state(
-            self,
-            context: PrimitiveDecisionContext,
-        ) -> None:
-            assert context.obs is obs
-            calls.append("refresh_return")
-
         def return_transition_facts(
             self,
             context: PrimitiveDecisionContext,
@@ -2647,9 +2699,18 @@ def test_legacy_fsm_return_branch_consumes_backend_facts_view() -> None:
         ) -> ReturnTransitionStatus:
             raise AssertionError("return branch must consume return facts view")
 
+    class _ReturnCompatibilityActions:
+        def refresh_return_transition_state(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> None:
+            assert context.obs is obs
+            calls.append("refresh_return")
+
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        capabilities=_ReturnFactsCapabilities(),
+        facts_source=_ReturnFactsSource(),
+        compatibility_actions=_ReturnCompatibilityActions(),
     )
 
     result = branch.decide_tick(
@@ -2690,13 +2751,14 @@ def test_legacy_fsm_return_branch_requested_ignores_non_return_skill() -> None:
         calls.append("return_status")
         raise AssertionError("non-return skill must not request return transition status")
 
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "dig",
+        refresh_return_transition_state=fail_refresh,
+        return_transition_status=fail_if_called,
+    )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "dig",
-            refresh_return_transition_state=fail_refresh,
-            return_transition_status=fail_if_called,
-        ),
+        **_facts_and_actions(capabilities),
     )
 
     result = branch.decide_tick(
@@ -2732,12 +2794,13 @@ def test_legacy_fsm_return_branch_latches_next_dig_event_without_switch() -> Non
         next_skill="",
         switch_reason="",
     )
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "return",
+        return_transition_status=lambda obs, boundary_event: status,
+    )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "return",
-            return_transition_status=lambda obs, boundary_event: status,
-        ),
+        **_facts_and_actions(capabilities),
     )
 
     result = branch.decide_tick(
@@ -2773,12 +2836,13 @@ def test_legacy_fsm_return_branch_completes_next_dig_handoff_in_order() -> None:
         next_skill="dig",
         switch_reason="return_to_dig_next_dig_entry_ready",
     )
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "return",
+        return_transition_status=lambda obs, boundary_event: status,
+    )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "return",
-            return_transition_status=lambda obs, boundary_event: status,
-        ),
+        **_facts_and_actions(capabilities),
     )
 
     result = branch.decide_tick(
@@ -2818,12 +2882,13 @@ def test_legacy_fsm_return_branch_defers_next_skill_selection_to_applier() -> No
         next_skill="pre_dig_align",
         switch_reason="return_to_pre_dig_align_next_dig_entry_ready",
     )
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "return",
+        return_transition_status=lambda obs, boundary_event: status,
+    )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "return",
-            return_transition_status=lambda obs, boundary_event: status,
-        ),
+        **_facts_and_actions(capabilities),
     )
 
     result = branch.decide_tick(
@@ -2845,28 +2910,29 @@ def test_legacy_fsm_return_branch_defers_next_skill_selection_to_applier() -> No
 
 
 def test_legacy_fsm_return_branch_ignores_non_return_skill() -> None:
+    capabilities = _decision_capabilities(
+        current_skill_name=lambda: "dig",
+        return_transition_status=lambda obs, boundary_event: ReturnTransitionStatus(
+            mass_in_bucket_kg=0.0,
+            min_distance_to_dig_area_m=0.0,
+            bucket_depth_below_dig_area_plane_m=0.0,
+            semantic_boundary_profile_active=False,
+            next_dig_event=True,
+            next_or_seen_dig_event=True,
+            entry_close=True,
+            start_envelope_ready=True,
+            handoff_ready=True,
+            direct_handoff_ready=False,
+            shallow_guard_ready=False,
+            shallow_guard_allowed=False,
+            completed_transition=True,
+            next_skill="dig",
+            switch_reason="return_to_dig_next_dig_entry_ready",
+        ),
+    )
     branch = LegacyFSMReturnBranch(
         config=LegacyFSMReturnConfig(return_skill_name="return"),
-        capabilities=_decision_capabilities(
-            current_skill_name=lambda: "dig",
-            return_transition_status=lambda obs, boundary_event: ReturnTransitionStatus(
-                mass_in_bucket_kg=0.0,
-                min_distance_to_dig_area_m=0.0,
-                bucket_depth_below_dig_area_plane_m=0.0,
-                semantic_boundary_profile_active=False,
-                next_dig_event=True,
-                next_or_seen_dig_event=True,
-                entry_close=True,
-                start_envelope_ready=True,
-                handoff_ready=True,
-                direct_handoff_ready=False,
-                shallow_guard_ready=False,
-                shallow_guard_allowed=False,
-                completed_transition=True,
-                next_skill="dig",
-                switch_reason="return_to_dig_next_dig_entry_ready",
-            ),
-        ),
+        **_facts_and_actions(capabilities),
     )
 
     result = branch.decide_tick(
