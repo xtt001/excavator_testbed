@@ -57,6 +57,7 @@ from testbed.planner.primitive_decision_capabilities import (
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
 from testbed.planner.primitive_decision_facts import (
     PrimitiveDecisionFacts,
+    PrimitiveDigTransitionFacts,
     PrimitiveReturnTransitionFacts,
 )
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
@@ -211,6 +212,8 @@ class _TransitionStatusProvider:
             DumpTransitionStatus,
         ]
         | None = None,
+        sync_dig_transition_reason: Callable[[DigTransitionStatus], None]
+        | None = None,
         refresh_return_transition_state: Callable[[dict[str, Any]], None]
         | None = None,
         return_transition_status: Callable[
@@ -227,6 +230,9 @@ class _TransitionStatusProvider:
         )
         self._dump_transition_status = dump_transition_status or (
             lambda obs, boundary_event: _default_dump_status()
+        )
+        self._sync_dig_transition_reason = (
+            sync_dig_transition_reason or (lambda status: None)
         )
         self._refresh_return_transition_state = (
             refresh_return_transition_state or (lambda obs: None)
@@ -255,6 +261,12 @@ class _TransitionStatusProvider:
         boundary_event: Any | None,
     ) -> DumpTransitionStatus:
         return self._dump_transition_status(obs, boundary_event)
+
+    def sync_dig_transition_reason(
+        self,
+        status: DigTransitionStatus,
+    ) -> None:
+        self._sync_dig_transition_reason(status)
 
     def return_transition_status(
         self,
@@ -293,6 +305,7 @@ def _decision_capabilities(
         DumpTransitionStatus,
     ]
     | None = None,
+    sync_dig_transition_reason: Callable[[DigTransitionStatus], None] | None = None,
     refresh_return_transition_state: Callable[[dict[str, Any]], None] | None = None,
     return_transition_status: Callable[
         [dict[str, Any], Any | None],
@@ -315,6 +328,7 @@ def _decision_capabilities(
                 dig_transition_status=dig_transition_status,
                 carry_transition_status=carry_transition_status,
                 dump_transition_status=dump_transition_status,
+                sync_dig_transition_reason=sync_dig_transition_reason,
                 refresh_return_transition_state=refresh_return_transition_state,
                 return_transition_status=return_transition_status,
             ),
@@ -1006,6 +1020,88 @@ def test_legacy_fsm_dig_branch_completes_dig_to_carry_in_order() -> None:
     )
 
 
+def test_legacy_fsm_dig_branch_consumes_dig_transition_facts_and_syncs_reason() -> None:
+    calls: list[str] = []
+    obs: dict[str, Any] = {"qpos": [1.0]}
+    boundary_event = object()
+    common_facts: PrimitiveDecisionFacts | None = None
+    status = _default_dig_status(
+        dig_to_carry_ready=True,
+        dig_to_carry_reason="boundary_confirmed",
+    )
+
+    class _DigFactsCapabilities:
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            nonlocal common_facts
+            calls.append("current_skill")
+            calls.append("current_reason")
+            common_facts = PrimitiveDecisionFacts.from_context(
+                context,
+                current_skill_name="dig",
+                current_switch_reason="",
+            )
+            return common_facts
+
+        def dig_transition_facts(
+            self,
+            context: PrimitiveDecisionContext,
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> PrimitiveDigTransitionFacts:
+            assert context.obs is obs
+            assert context.boundary_event is boundary_event
+            assert facts is common_facts
+            calls.append("dig_status")
+            return PrimitiveDigTransitionFacts(common=facts, status=status)
+
+        def sync_dig_transition_reason(
+            self,
+            dig_facts: PrimitiveDigTransitionFacts,
+        ) -> None:
+            assert dig_facts.status is status
+            calls.append("sync_dig_reason")
+
+        def dig_transition_status(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> DigTransitionStatus:
+            raise AssertionError("dig branch must consume dig facts view")
+
+    branch = LegacyFSMDigBranch(
+        config=LegacyFSMDigConfig(dig_skill_name="dig"),
+        capabilities=_DigFactsCapabilities(),
+    )
+
+    result = branch.decide_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision="dig",
+            dig_progress_updated=True,
+        ),
+    )
+
+    assert calls == [
+        "current_skill",
+        "current_reason",
+        "dig_status",
+        "sync_dig_reason",
+    ]
+    assert result is not None
+    assert result.effects == (
+        CompleteCellEntryDigCompatibilityEffect(),
+        CompleteCoverageDigEffect(),
+        SwitchSkillEffect(
+            target_skill_name="carry",
+            switch_reason="dig_to_carry_boundary_confirmed",
+        ),
+    )
+
+
 def test_legacy_fsm_dig_branch_requested_exit_guard_effects_in_order() -> None:
     branch = _legacy_fsm_dig_branch(
         dig_transition_status=lambda obs, boundary_event: _default_dig_status(
@@ -1164,6 +1260,57 @@ def test_legacy_fsm_dig_branch_requested_ignores_non_dig_skill() -> None:
     )
 
     assert result is None
+
+
+def test_legacy_fsm_dig_branch_non_dig_skill_does_not_read_or_sync_dig_facts() -> None:
+    calls: list[str] = []
+
+    class _NonDigCapabilities:
+        def decision_facts(
+            self,
+            context: PrimitiveDecisionContext,
+        ) -> PrimitiveDecisionFacts:
+            calls.append("current_skill")
+            calls.append("current_reason")
+            return PrimitiveDecisionFacts.from_context(
+                context,
+                current_skill_name="carry",
+                current_switch_reason="dig_to_carry_loaded",
+            )
+
+        def dig_transition_facts(
+            self,
+            context: PrimitiveDecisionContext,
+            *,
+            facts: PrimitiveDecisionFacts | None = None,
+        ) -> PrimitiveDigTransitionFacts:
+            calls.append("dig_status")
+            raise AssertionError("non-dig skill must not request dig facts")
+
+        def sync_dig_transition_reason(
+            self,
+            dig_facts: PrimitiveDigTransitionFacts,
+        ) -> None:
+            calls.append("sync_dig_reason")
+            raise AssertionError("non-dig skill must not sync dig reason")
+
+    branch = LegacyFSMDigBranch(
+        config=LegacyFSMDigConfig(dig_skill_name="dig"),
+        capabilities=_NonDigCapabilities(),
+    )
+
+    result = branch.decide_tick(
+        obs={},
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="carry",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert result is None
+    assert calls == ["current_skill", "current_reason"]
 
 
 def test_legacy_fsm_compatibility_backend_returns_dig_requested_effects() -> None:

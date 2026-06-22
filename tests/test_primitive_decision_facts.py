@@ -3,9 +3,13 @@ from __future__ import annotations
 from dataclasses import fields
 
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
-from testbed.planner.primitive_capabilities import ReturnTransitionStatus
+from testbed.planner.primitive_capabilities import (
+    DigTransitionStatus,
+    ReturnTransitionStatus,
+)
 from testbed.planner.primitive_decision_facts import (
     PrimitiveDecisionFacts,
+    PrimitiveDigTransitionFacts,
     PrimitiveReturnTransitionFacts,
 )
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
@@ -51,6 +55,28 @@ def _return_status(**overrides: object) -> ReturnTransitionStatus:
     }
     values.update(overrides)
     return ReturnTransitionStatus(**values)
+
+
+def _dig_status(**overrides: object) -> DigTransitionStatus:
+    values = {
+        "dig_step_count": 0,
+        "mass_in_bucket_kg": 0.0,
+        "min_distance_to_dig_area_m": 0.0,
+        "transition_mass_in_bucket_kg": 0.0,
+        "transition_min_distance_to_dig_area_m": 0.0,
+        "distance_ready": False,
+        "semantic_boundary_profile_active": False,
+        "coverage_terminal_stop_requested": False,
+        "dig_complete_boundary": False,
+        "dig_complete_boundary_low_payload": False,
+        "dig_bad_replan_ready": False,
+        "dig_exit_guard_ready": False,
+        "dig_mass_plateau_ready": False,
+        "dig_to_carry_ready": False,
+        "dig_to_carry_reason": "",
+    }
+    values.update(overrides)
+    return DigTransitionStatus(**values)
 
 
 def test_decision_facts_preserve_context_identity_and_mirror_context_accessors() -> None:
@@ -154,4 +180,47 @@ def test_return_transition_facts_are_frozen_and_backend_facing_only() -> None:
         "applier",
         "effect",
         "refresh_return_transition_state",
+    }.isdisjoint(field_names)
+
+
+def test_dig_transition_facts_preserve_common_and_status_identity() -> None:
+    context, obs, boundary_event, preparation = _context()
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="dig",
+        current_switch_reason="",
+    )
+    status = _dig_status(
+        dig_to_carry_ready=True,
+        dig_to_carry_reason="boundary_confirmed",
+    )
+
+    dig_facts = PrimitiveDigTransitionFacts(common=common, status=status)
+
+    assert dig_facts.common is common
+    assert dig_facts.status is status
+    assert dig_facts.context is context
+    assert dig_facts.obs is obs
+    assert dig_facts.boundary_event is boundary_event
+    assert dig_facts.preparation is preparation
+    assert dig_facts.current_skill_name == "dig"
+    assert dig_facts.skill_name_before_decision == "dig"
+    assert dig_facts.dig_to_carry_ready is True
+    assert dig_facts.dig_to_carry_reason == "boundary_confirmed"
+
+
+def test_dig_transition_facts_are_frozen_and_backend_facing_only() -> None:
+    field_names = {field.name for field in fields(PrimitiveDigTransitionFacts)}
+
+    assert field_names == {"common", "status"}
+    assert {
+        "self",
+        "planner",
+        "policy",
+        "callback",
+        "provider",
+        "applier",
+        "effect",
+        "sync",
+        "set_dig_to_carry_reason",
     }.isdisjoint(field_names)

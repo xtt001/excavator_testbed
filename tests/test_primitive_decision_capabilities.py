@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from testbed.planner.primitive_capabilities import DigTransitionStatus
 from testbed.planner.primitive_decision_capabilities import (
     BootstrapDecisionStatus,
     PrimitiveDecisionCapabilities,
@@ -10,6 +11,7 @@ from testbed.planner.primitive_decision_capabilities import (
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
 from testbed.planner.primitive_decision_facts import (
     PrimitiveDecisionFacts,
+    PrimitiveDigTransitionFacts,
     PrimitiveReturnTransitionFacts,
 )
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
@@ -18,7 +20,7 @@ from testbed.planner.primitive_execution import PrimitiveTickPreparation
 class _RecordingTransitionStatusProvider:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any], object | None]] = []
-        self.dig_status = object()
+        self.dig_status = _dig_status()
         self.carry_status = object()
         self.dump_status = object()
         self.return_status = object()
@@ -36,6 +38,9 @@ class _RecordingTransitionStatusProvider:
     ) -> object:
         self.calls.append(("dig", obs, boundary_event))
         return self.dig_status
+
+    def sync_dig_transition_reason(self, status: object) -> None:
+        self.calls.append(("sync_dig", status, None))
 
     def carry_transition_status(
         self,
@@ -77,6 +82,28 @@ def _context(
             dig_progress_updated=skill == "dig",
         ),
     )
+
+
+def _dig_status(**overrides: Any) -> DigTransitionStatus:
+    values: dict[str, Any] = {
+        "dig_step_count": 0,
+        "mass_in_bucket_kg": 0.0,
+        "min_distance_to_dig_area_m": 0.0,
+        "transition_mass_in_bucket_kg": 0.0,
+        "transition_min_distance_to_dig_area_m": 0.0,
+        "distance_ready": False,
+        "semantic_boundary_profile_active": False,
+        "coverage_terminal_stop_requested": False,
+        "dig_complete_boundary": False,
+        "dig_complete_boundary_low_payload": False,
+        "dig_bad_replan_ready": False,
+        "dig_exit_guard_ready": False,
+        "dig_mass_plateau_ready": False,
+        "dig_to_carry_ready": False,
+        "dig_to_carry_reason": "",
+    }
+    values.update(overrides)
+    return DigTransitionStatus(**values)
 
 
 def _capabilities(
@@ -154,6 +181,74 @@ def test_decision_capabilities_return_status_read_does_not_refresh() -> None:
     assert capabilities.return_transition_status(context) is provider.return_status
 
     assert provider.calls == [("return", obs, boundary_event)]
+
+
+def test_decision_capabilities_dig_transition_facts_reuses_existing_common_facts() -> None:
+    obs = {"qpos": [1.0]}
+    boundary_event = object()
+    context = _context(obs=obs, boundary_event=boundary_event, skill="dig")
+    provider = _RecordingTransitionStatusProvider()
+    port_calls: list[str] = []
+
+    capabilities = PrimitiveDecisionCapabilities.from_ports(
+        PrimitiveDecisionCapabilitiesPorts(
+            current_skill_name=lambda: port_calls.append("current_skill") or "dig",
+            current_switch_reason=lambda: port_calls.append("current_reason") or "",
+            should_end_bootstrap=lambda *, obs, boundary_event: False,
+            bootstrap_end_mode=lambda: "first_qualified_dig_start",
+            should_pre_dig_align_before_dig=lambda: False,
+            transition_status_provider=provider,
+            maybe_handle_residual_pre_dig_align=(
+                lambda obs: port_calls.append("residual") or False
+            ),
+        )
+    )
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="dig",
+        current_switch_reason="",
+    )
+
+    dig_facts = capabilities.dig_transition_facts(context, facts=common)
+
+    assert isinstance(dig_facts, PrimitiveDigTransitionFacts)
+    assert dig_facts.common is common
+    assert dig_facts.status is provider.dig_status
+    assert dig_facts.obs is obs
+    assert dig_facts.boundary_event is boundary_event
+    assert provider.calls == [("dig", obs, boundary_event)]
+    assert port_calls == []
+
+
+def test_decision_capabilities_dig_transition_facts_do_not_sync_reason() -> None:
+    obs = {"qpos": [1.0]}
+    boundary_event = object()
+    context = _context(obs=obs, boundary_event=boundary_event, skill="dig")
+    capabilities, provider = _capabilities(current_skill_name="dig")
+
+    dig_facts = capabilities.dig_transition_facts(context)
+
+    assert isinstance(dig_facts, PrimitiveDigTransitionFacts)
+    assert dig_facts.status is provider.dig_status
+    assert provider.calls == [("dig", obs, boundary_event)]
+
+
+def test_decision_capabilities_sync_dig_transition_reason_uses_status_from_facts() -> None:
+    context = _context(skill="dig")
+    capabilities, provider = _capabilities(current_skill_name="dig")
+    common = PrimitiveDecisionFacts.from_context(
+        context,
+        current_skill_name="dig",
+        current_switch_reason="",
+    )
+    dig_facts = PrimitiveDigTransitionFacts(
+        common=common,
+        status=provider.dig_status,
+    )
+
+    capabilities.sync_dig_transition_reason(dig_facts)
+
+    assert provider.calls == [("sync_dig", provider.dig_status, None)]
 
 
 def test_decision_capabilities_return_transition_facts_reuses_existing_common_facts() -> None:

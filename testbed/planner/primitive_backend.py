@@ -330,9 +330,12 @@ class LegacyFSMDigBranch:
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.config.dig_skill_name):
             return None
-        effects = self._effects_for_status(
-            self.capabilities.dig_transition_status(context)
+        dig_facts = self.capabilities.dig_transition_facts(
+            context,
+            facts=facts,
         )
+        self.capabilities.sync_dig_transition_reason(dig_facts)
+        effects = self._effects_for_status(dig_facts.status)
         switch_reason = _switch_reason_from_effects(effects)
         skill_after = _skill_after_from_effects(effects, default=skill_before)
         return PrimitiveDecisionResult.from_requested_effects(

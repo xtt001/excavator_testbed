@@ -148,7 +148,7 @@ def _ports(
     )
 
 
-def test_provider_dig_status_projects_observation_and_updates_reason_mirror() -> None:
+def test_provider_dig_status_projects_observation_without_reason_mirror() -> None:
     reasons: list[str] = []
     provider = PrimitiveFSMCapabilityProvider(
         ports=_ports(dig_reason_sink=reasons)
@@ -164,7 +164,27 @@ def test_provider_dig_status_projects_observation_and_updates_reason_mirror() ->
     assert status.min_distance_to_dig_area_m == 1.0
     assert status.dig_to_carry_ready is True
     assert status.dig_to_carry_reason == "loaded"
+    assert reasons == []
+
+    provider.sync_dig_transition_reason(status)
+
     assert reasons == ["loaded"]
+
+
+def test_provider_sync_dig_transition_reason_writes_empty_reason_mirror() -> None:
+    reasons: list[str] = []
+    provider = PrimitiveFSMCapabilityProvider(
+        ports=_ports(dig_reason_sink=reasons)
+    )
+
+    status = provider.dig_transition_status(
+        _obs(mass_in_bucket_kg=0.0, min_distance_to_dig_area_m=1.0),
+        boundary_event=None,
+    )
+    provider.sync_dig_transition_reason(status)
+
+    assert status.dig_to_carry_reason == ""
+    assert reasons == [""]
 
 
 def test_provider_carry_and_dump_status_share_observation_projection() -> None:

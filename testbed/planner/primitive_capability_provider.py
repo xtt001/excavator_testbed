@@ -99,7 +99,7 @@ class PrimitiveFSMCapabilityProvider:
         boundary_event: Any | None,
     ) -> DigTransitionStatus:
         ports = self.ports
-        status = DigTransitionStatus.from_inputs(
+        return DigTransitionStatus.from_inputs(
             observation=self._observation(obs),
             boundary_event=boundary_event,
             semantic_boundary_profile_active=(
@@ -145,8 +145,12 @@ class PrimitiveFSMCapabilityProvider:
             dig_exit_guard_overshoot_m=ports.dig_exit_guard_overshoot_m,
             dig_exit_overshoot_m=ports.dig_exit_overshoot_m(obs),
         )
-        ports.set_dig_to_carry_reason(str(status.dig_to_carry_reason))
-        return status
+
+    def sync_dig_transition_reason(
+        self,
+        status: DigTransitionStatus,
+    ) -> None:
+        self.ports.set_dig_to_carry_reason(str(status.dig_to_carry_reason))
 
     def carry_transition_status(
         self,

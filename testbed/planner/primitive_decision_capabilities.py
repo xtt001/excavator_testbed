@@ -15,6 +15,7 @@ from testbed.planner.primitive_capabilities import (
 from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
 from testbed.planner.primitive_decision_facts import (
     PrimitiveDecisionFacts,
+    PrimitiveDigTransitionFacts,
     PrimitiveReturnTransitionFacts,
 )
 
@@ -27,6 +28,11 @@ class PrimitiveTransitionStatusProvider(Protocol):
         obs: dict[str, Any],
         boundary_event: Any | None,
     ) -> DigTransitionStatus: ...
+
+    def sync_dig_transition_reason(
+        self,
+        status: DigTransitionStatus,
+    ) -> None: ...
 
     def carry_transition_status(
         self,
@@ -143,6 +149,26 @@ class PrimitiveDecisionCapabilities:
             context.boundary_event,
         )
 
+    def dig_transition_facts(
+        self,
+        context: PrimitiveDecisionContext,
+        *,
+        facts: PrimitiveDecisionFacts | None = None,
+    ) -> PrimitiveDigTransitionFacts:
+        common = facts or self.decision_facts(context)
+        return PrimitiveDigTransitionFacts(
+            common=common,
+            status=self.dig_transition_status(context),
+        )
+
+    def sync_dig_transition_reason(
+        self,
+        dig_facts: PrimitiveDigTransitionFacts,
+    ) -> None:
+        self.ports.transition_status_provider.sync_dig_transition_reason(
+            dig_facts.status,
+        )
+
     def carry_transition_status(
         self,
         context: PrimitiveDecisionContext,
@@ -218,6 +244,7 @@ __all__ = [
     "PrimitiveDecisionCapabilities",
     "PrimitiveDecisionCapabilitiesPorts",
     "PrimitiveDecisionFacts",
+    "PrimitiveDigTransitionFacts",
     "PrimitiveReturnTransitionFacts",
     "PrimitiveTransitionStatusProvider",
 ]
