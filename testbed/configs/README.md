@@ -807,7 +807,7 @@ ln -sfn /data/pingfan/excavator_testbed_data_archive/agx_v2_2_4primitives_safe_d
 carry/dump window，而不是把这段混合动作分给 `carry` 或 `dump`。V2.2 builder 不再
 fallback 到官方 mass-based `dump_start`；找不到带 dump area geometry 的安全 onset 的
 dump window 会被 reject，并写入 `summary.json`。完整 phase boundary 定义见
-`docs/v2_2_4primitives/phase_boundaries.md`。
+`docs/contracts/primitive_phase_boundaries.md`。
 
 YuLong new-env pilot 使用额外的边界 profile：
 
@@ -875,7 +875,7 @@ Current carry/dump smoke training mix:
   16-field env_state.
 - The new builder accepted `dig` only and rejected all `carry/dump` windows.
 - Decision: do not batch-train from these roots. Record new demonstrations with
-  `docs/v2_2_4primitives/phase_boundaries.md` as the manipulation contract.
+  `docs/contracts/primitive_phase_boundaries.md` as the manipulation contract.
 
 V2.2 scripted planner 的 dump readiness 使用 target-relative geometry：
 `mass_in_bucket_kg` 足够、`bucket_height_above_target_rim_m >= 0.30`，并且位置满足

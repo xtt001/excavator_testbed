@@ -22,7 +22,6 @@ scheduler 重构阶段中遇到的主要问题、解决思路、结果和遗留�
 
 本轮当前仓库已核对来源：
 
-- `docs/current_status_and_plan.md`
 - `docs/v1_to_v2_3_exploration_path.md`
 - `docs/v2_1_failure_retrospective.md`
 - `docs/v2_4plan.md`
@@ -80,9 +79,34 @@ scheduler 重构阶段中遇到的主要问题、解决思路、结果和遗留�
 | V2.2 | 解决 monolithic workskill 内部污染，明确 dig/carry/dump/return 的 skill ownership。 | 拆成 `dig -> carry -> dump -> return` 四 primitive；分别训练 checkpoint；清理 carry tail；加 post-dump hold。 | 3-cycle smoke 历史记录达到成功；四 primitive 成为稳定主线；carry 不再默认吞 dump release。 | 仍有 spill、target clearance、数据量和高质量窗口不足；没有解决“下一铲挖哪里”的参数化问题。 | `verified-current` |
 | V2.2 5P diagnostic | 检查 dump 是否应该进一步拆成 approach 和 release，以获得更清楚的 release timing。 | 尝试 `approach_dump` / `dump_release` 5P split，并查找专业 teleop 中的自然内部边界。 | 得到明确负结果：专业 dump 是混合动作，默认不应过度拆分。 | 5P 数据窗口少且 boundary 不自然；作为诊断保留，不适合作为主线。 | `verified-current` |
 | V2.3 / V2.3.5 | 推进参数化挖掘、coverage planner、payload atom 和更长时程作业区规划。 | 引入 paramdig、surface-depth fields、square planner、truck-token、effect-based atom、planner rebind 等多线探索。 | 证明 parameterized dig、target-centric diagnostics、hard chunk barrier、effect-based boundary 都有价值。 | 一次改变 dig/carry/dump/return/planner/metrics 太多，dump/return 退化，归因困难；最终回退到 V2.2 稳线。 | `verified-current` |
-| V2.4 | 让低层 ACT 真正响应 planner token，而不是继续复现专业师傅的平均动作习惯。 | Outcome-grounded hindsight goal-conditioned learning；从自然操作中离线反推 actual cut、payload、deposit、return target。 | 问题焦点从“能不能连续跑完”推进到“planner 点位是否合理、ACT 是否跟随 token、coverage 是否反映真实 remaining depth”。 | planner 自由度仍需受控；必须先证明 token-swap / outcome supervision 有效，不能直接上 learned planner。 | `verified-current` |
-| V2.4.5 | 修正旧 `/v2` 标签和阶段驱动边界对 material cycle、carry/dump/return 的污染。 | 使用 `v2_4_5_spatial_mass` ownership；按空间/质量事件重切四 primitive；引入 Gate 1/2/3、qc6、return-start envelope。 | qc6 accepted split 成为训练/eval 数据源；`BoundaryDetector`、builder、configs、runtime 均接入相关语义；`return_start_envelope_tokens_v1` 建立 return handoff 分布。 | handoff、dig checkpoint、live observation/action scaling、coverage depletion 仍需长期 rollout 和离线 audit 区分；不能只看单次 smoke。 | `verified-current` |
+| V2.4 | 让低层 ACT 真正响应 planner token，而不是继续复现专业师傅的平均动作习惯。 | Outcome-grounded hindsight goal-conditioned learning；从自然操作中离线反推 actual cut、payload、deposit、return target，并写入 dig/return outcome targets、removed-depth outcome。 | 取得的是数据/训练契约和诊断能力：可以检查 planner token、ACT 执行结果、removed-depth outcome 是否一致；问题焦点从“能不能连续跑完”推进到“为什么没有按 token 挖”。 | V2.4 本身不应表述为已严格通过 10-cycle。主要失败点是旧 return target 只描述下一铲 cut intent，不能约束 return handoff；旧 boundary 仍会污染 carry/dump/return。 | `verified-current` |
+| V2.4.5 | 修正 V2.4 暴露的 handoff 和 boundary 污染：旧 `/v2` 标签和阶段驱动边界不等于真实 material cycle。 | 使用 `v2_4_5_spatial_mass` ownership；按空间/质量事件重切四 primitive；引入 Gate 1/2/3、qc6、return-start envelope、return-relocate。 | qc6 accepted split 成为训练/eval 数据源；`BoundaryDetector`、builder、configs、runtime 均接入相关语义；历史记录中 return-relocate 路径达到 10-cycle smooth milestone：10 次 dump 后 gate terminal hold，无 spill / hard target collision。 | 10-cycle smooth 只证明四 primitive 闭环和 return-relocate 路径能连续运转；当时还没有 per-cycle intent/execution/prior 精度表，不能当作“严格指哪挖哪”的最终验收。handoff、dig checkpoint、live observation/action scaling、coverage depletion 仍需长期 rollout 和离线 audit 区分。 | `verified-current` for docs, `historical-record` for 10-cycle run |
 | 最近 service-object refactor | 降低 `PrimitivePlannerACTPolicy` 大文件风险，把 scheduler/coverage/handoff 逻辑迁入稳定 capability。 | 历史 rollout 中采用 behavior-preserving service extraction，保留 facade、行为锁和 targeted tests。 | coverage service、return handoff Phase 1 等历史记录显示该路线可行。 | 当前 checkout 与历史 service-object rollout 模块形态不一致；缺少对应 plan 文档，后续不能直接套用历史模块名。 | `historical-record` + `needs-confirmation` |
+
+### V2.4 和 V2.4.5 的区别
+
+V2.4 是 token/outcome 学习问题的提出和落地：把自然操作数据转成 hindsight goal，
+让 `dig_cut_tokens`、`return_target_tokens`、payload、deposit、removed-depth outcome
+进入同一套可训练、可审计的契约。它的结果不是“已经稳定挖 10 铲”，而是让系统能回答：
+planner 计划挖哪里、ACT 实际挖到哪里、outcome 是否支持这个 token。
+
+V2.4 暴露出的关键失败是 handoff 和 boundary 语义不够干净：
+
+- 旧 `return_target_tokens` 描述的是下一铲怎么切，不是 return 应该回到什么 next dig-start
+  state envelope，因此 return 可能提前下铲、卡 DigArea，或者把不在训练分布内的状态交给 dig。
+- `return -> dig` handoff 过宽时，第二铲可能 0 mass / 浅挖；诊断中看到 live handoff 的
+  plane depth 约 `0.30m`，而 qc6 cell1 gold dig-start 的 p05/p50 约 `0.57/0.59m`。
+- `dig_complete` 只说明一次 dig 轨迹结束，不保证 bucket 有足够 payload；underloaded 状态切
+  carry 后，carry 可能在错误状态 release 或让 planner 卡住。
+- 旧 boundary 可能让 dump 吞掉还在去 dump area 的 transport / pre-adjustment，导致
+  carry/dump/return 的训练责任混在一起。
+
+V2.4.5 是针对这些失败做的工程收敛：用 `v2_4_5_spatial_mass` 按空间/质量事件重切
+material cycle；用 qc6 作为 copy/train/eval 主数据源；把 return conditioning 从
+“下一铲 cut intent”改成 `return_start_envelope_tokens_v1`，后续又用
+`return_relocate_tokens_v1` 给 return 暴露 target-specific relocation 信息。历史记录中
+V2.4.5 return-relocate 路径跑过 10-cycle smooth milestone，但这个结果只能说明闭环能连续运转，
+不能替代每铲 intent/execution/prior 精度审核。
 
 ## Problems Encountered
 

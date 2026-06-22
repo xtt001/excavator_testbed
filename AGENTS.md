@@ -30,6 +30,25 @@ If a code change is purely internal and no documentation update is needed, the
 agent must explicitly justify that decision in the final response instead of
 silently skipping documentation updates.
 
+3. Training And Eval Preflight
+
+Before starting any `tb-train` or `tb-eval` command, the agent must read
+`docs/training_setup.md` and use `docs/checklist_train.md` as the preflight
+checklist, or perform an equivalent explicit preflight summary.
+
+The preflight must at least confirm:
+
+- the selected train/eval config and whether it is current or legacy
+- dataset root, primitive root, or materialized copy root
+- required Gate / QC status, including manual review when the data contract
+  requires it
+- low-dimensional inputs, supervision keys, and training tier assumptions
+- checkpoint/output directories and whether existing artifacts may be
+  overwritten
+
+If the user asks to run training or eval urgently, the agent may keep the
+preflight concise, but it must not silently skip these checks.
+
 ## Codebase Governance
 
 These rules keep the repository maintainable as training, rollout, replay, and

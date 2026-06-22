@@ -23,19 +23,19 @@ Planner/ACT 层级契约只描述 policy 消费哪些 token；数据如何产生
 当前主线是分阶段的，不是从 raw 一步直接写最终训练集。
 
 ```text
-raw full-cycle / replay refreshed root
-  -> tb-dataset-qc                         # 原始 HDF5 可读性、shape、NaN、长度、图像检查
-  -> tb-label-v2_1                         # add-only /v2 基础标签和 cycle 搜索坐标
-  -> tb-build-operator-first-v2_2           # dig_cut_tokens / return_target_tokens / operator cycle fields
-  -> tb-build-hindsight-goal-v2_4           # dig/return outcome targets、removed-depth outcome
+raw full-cycle / replay refreshed root      # 输入：自然 full-cycle 或 replay refresh 后的 episode root
+  -> tb-dataset-qc                         # 读取原始 HDF5，检查可读性、shape、NaN、长度和图像帧
+  -> tb-label-v2_1                         # 写入 add-only /v2 基础标签，建立 cycle 搜索和诊断坐标
+  -> tb-build-operator-first-v2_2           # 从专家轨迹反推 dig_cut/return_target tokens 和 operator cycle 字段
+  -> tb-build-hindsight-goal-v2_4           # 计算并检查 dig/return outcome targets 和 removed-depth outcome
   -> tb-build-primitives-v2_2
        --boundary-profile v2_4_5_spatial_mass
-                                           # material-cycle ownership 切 dig/carry/dump/return
-  -> gate1: 04_pre_materialize_qc.json      # primitive VDS 数字 QC
-  -> gate2: tb-audit-primitive-boundaries   # timeline、videos、contact sheets、人工边界复核
-  -> tb-materialize-vds                     # 写 materialized primitive training copy
-  -> gate1b: materialized-copy QC           # 图像必须不再是 virtual
-  -> train / eval / offline audit
+                                           # 按 material-cycle ownership 重切并生成 dig/carry/dump/return primitive VDS
+  -> gate1: 04_pre_materialize_qc.json      # 对 primitive VDS 做数字 QC：长度、mask、字段、边界和 reject 统计
+  -> gate2: tb-audit-primitive-boundaries   # 导出 timeline、videos、contact sheets，人工复核 primitive 边界
+  -> tb-materialize-vds                     # 将通过审计的 primitive VDS 写成 materialized primitive training copy
+  -> gate1b: materialized-copy QC           # 复查 materialized copy：图像数据必须实体化，不再是 virtual
+  -> train / eval / offline audit           # 使用训练 copy 训练/评测，并保留 offline audit 证据
 ```
 
 分阶段的原因：
