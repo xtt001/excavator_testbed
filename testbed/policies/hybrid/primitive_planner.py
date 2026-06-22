@@ -104,6 +104,10 @@ from testbed.planner.primitive_debug_report import (
     PrimitiveDebugReportInputs,
     PrimitiveDebugStateSnapshot,
 )
+from testbed.planner.primitive_action_dispatch import (
+    PrimitiveActionDispatchPorts,
+    PrimitiveActionDispatchService,
+)
 from testbed.planner.primitive_execution import (
     PrimitiveTickCallbacks,
     PrimitiveTickPreparation,
@@ -1035,14 +1039,36 @@ class PrimitivePlannerACTPolicy(Policy):
         return transition_timeout
 
     def _dispatch_tick_action(self, obs: dict) -> np.ndarray:
-        if self._skill_name == BOOTSTRAP_SKILL_NAME and self._scripted_bootstrap_enabled():
-            return self._scripted_bootstrap_action(obs)
-        if self._skill_name == PRE_DIG_ALIGN_SKILL_NAME:
-            return self._pre_dig_align_action(obs)
-        policy = self._active_policy()
-        policy_obs = self._policy_obs(obs)
-        return np.asarray(policy.predict(policy_obs), dtype=np.float32).reshape(
-            self.action_dim
+        return self._action_dispatch_service().dispatch_action(obs)
+
+    def _action_dispatch_service(self) -> PrimitiveActionDispatchService:
+        return PrimitiveActionDispatchService.from_ports(self._action_dispatch_ports())
+
+    def _action_dispatch_ports(self) -> PrimitiveActionDispatchPorts:
+        return PrimitiveActionDispatchPorts(
+            current_skill_name=lambda: str(self._skill_name),
+            action_dim=int(self.action_dim),
+            skill_policies={
+                "dig": self.dig_policy,
+                "carry": self.carry_policy,
+                "dump": self.dump_policy,
+                "return": self.return_policy,
+            },
+            base_policy_order=("dig", "carry", "dump", "return"),
+            optional_policy_order=("first_dig", "bootstrap"),
+            first_dig_policy=self.first_dig_policy,
+            bootstrap_policy=self.bootstrap_policy,
+            cycle_index=lambda: int(getattr(self, "_cycle_index", 0)),
+            coverage_completed_dump_count=lambda: int(
+                getattr(self, "_coverage_completed_dump_count", 0)
+            ),
+            policy_observation=lambda obs: self._policy_obs(obs),
+            scripted_bootstrap_enabled=lambda: self._scripted_bootstrap_enabled(),
+            scripted_bootstrap_action=lambda obs: self._scripted_bootstrap_action(obs),
+            pre_dig_align_action=lambda obs: self._pre_dig_align_action(obs),
+            bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
+            dig_skill_name="dig",
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
         )
 
     def _record_tick_previous_action(self, action: np.ndarray) -> None:
@@ -5363,39 +5389,13 @@ class PrimitivePlannerACTPolicy(Policy):
         return GoalTokenProvider.normalize_goal_sequence(goal_sequence)
 
     def _active_policy(self) -> Policy:
-        if self._skill_name == BOOTSTRAP_SKILL_NAME:
-            if self.bootstrap_policy is None:
-                raise RuntimeError("bootstrap skill is active but bootstrap_policy is None.")
-            return self.bootstrap_policy
-        if self._skill_name == "dig":
-            if self._first_dig_policy_active():
-                if self.first_dig_policy is None:
-                    raise RuntimeError("first dig policy is active but missing.")
-                return self.first_dig_policy
-            return self.dig_policy
-        if self._skill_name == "carry":
-            return self.carry_policy
-        if self._skill_name == "dump":
-            return self.dump_policy
-        if self._skill_name == "return":
-            return self.return_policy
-        raise RuntimeError(f"Unknown primitive skill {self._skill_name!r}.")
+        return self._action_dispatch_service().active_policy()
 
     def _all_policies(self) -> list[Policy]:
-        policies = [self.dig_policy, self.carry_policy, self.dump_policy, self.return_policy]
-        if self.first_dig_policy is not None:
-            policies.append(self.first_dig_policy)
-        if self.bootstrap_policy is not None:
-            policies.append(self.bootstrap_policy)
-        return policies
+        return self._action_dispatch_service().all_policies()
 
     def _first_dig_policy_active(self) -> bool:
-        return bool(
-            self.first_dig_policy is not None
-            and self._skill_name == "dig"
-            and int(getattr(self, "_cycle_index", 0)) == 0
-            and int(getattr(self, "_coverage_completed_dump_count", 0)) <= 0
-        )
+        return self._action_dispatch_service().first_dig_policy_active()
 
     def _make_debug_state(
         self,
@@ -5818,6 +5818,40 @@ class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
             horizontal_ok
             and height_ok
             and (clearance_ok or not self.approach_ready_require_clearance)
+        )
+
+    def _action_dispatch_ports(self) -> PrimitiveActionDispatchPorts:
+        return PrimitiveActionDispatchPorts(
+            current_skill_name=lambda: str(self._skill_name),
+            action_dim=int(self.action_dim),
+            skill_policies={
+                "dig": self.dig_policy,
+                "carry": self.carry_policy,
+                "approach_dump": self.approach_dump_policy,
+                "dump_release": self.dump_release_policy,
+                "return": self.return_policy,
+            },
+            base_policy_order=(
+                "dig",
+                "carry",
+                "approach_dump",
+                "dump_release",
+                "return",
+            ),
+            optional_policy_order=("bootstrap", "first_dig"),
+            first_dig_policy=self.first_dig_policy,
+            bootstrap_policy=self.bootstrap_policy,
+            cycle_index=lambda: int(getattr(self, "_cycle_index", 0)),
+            coverage_completed_dump_count=lambda: int(
+                getattr(self, "_coverage_completed_dump_count", 0)
+            ),
+            policy_observation=lambda obs: self._policy_obs(obs),
+            scripted_bootstrap_enabled=lambda: self._scripted_bootstrap_enabled(),
+            scripted_bootstrap_action=lambda obs: self._scripted_bootstrap_action(obs),
+            pre_dig_align_action=lambda obs: self._pre_dig_align_action(obs),
+            bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
+            dig_skill_name="dig",
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
         )
 
     def _active_policy(self) -> Policy:

@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.17: the default 4P mainline branch chain no longer
+Current status after Phase 9.18: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -101,7 +101,13 @@ trace, coverage config/status fields, and terminal-stop fields. The policy
 shell builds typed trace inputs and preprojects coverage corridor payloads
 through the existing coverage report service facade; coverage decision trace
 recording, coverage scoring/runtime updates, and token planning remain in
-their existing owners.
+their existing owners. `PrimitiveActionDispatchService` now owns primitive
+action dispatch and low-level policy selection: scripted bootstrap
+short-circuit, residual pre-dig-align action short-circuit, first-dig policy
+selection, active-policy lookup, all-policy ordering, and low-level policy
+`predict(policy_obs)` action shaping. The policy shell builds typed dispatch
+ports and retains thin compatibility wrappers for `_dispatch_tick_action()`,
+`_active_policy()`, `_all_policies()`, and `_first_dig_policy_active()`.
 
 ## Design Intent
 
@@ -614,6 +620,26 @@ recording, coverage corridor projection service internals, public
 `debug_state()` and `rollout_summary()` assembly, token planning,
 coverage/runtime updates, `cell_entry` compatibility behavior, and
 `pre_dig_align` residual behavior remain unchanged.
+
+Phase 9.18 extracts primitive action dispatch and active low-level policy
+selection into `PrimitiveActionDispatchService` in
+`testbed/planner/primitive_action_dispatch.py`.
+`PrimitiveActionDispatchPorts` exposes only typed shell values/callables:
+current skill, action dimension, low-level policy handles and ordering,
+first-dig/bootstrap optional policies, cycle/coverage counters, policy
+observation assembly, scripted-bootstrap action entry, and residual
+pre-dig-align action entry. The service owns the dispatch sequence: scripted
+bootstrap short-circuit before policy observation, pre-dig-align short-circuit
+before policy observation, active policy selection, policy observation
+assembly, low-level policy predict, and `float32` reshape to `action_dim`.
+The 4P policy methods `_dispatch_tick_action()`, `_active_policy()`,
+`_all_policies()`, and `_first_dig_policy_active()` are now thin service
+wrappers. The 5P compatibility subclass keeps its legacy transition overrides;
+it only supplies compatible action-dispatch ports so inherited dispatch does
+not reinterpret 5P skill names as 4P skills. Reset lifecycle, `_set_skill()`
+mutation timing, policy observation/token planning, scripted bootstrap action
+algorithm, pre-dig-align action algorithm, branch ordering, reporting schemas,
+and low-level ACT outputs remain unchanged.
 
 ### Stage 4: Expand Effect Families From Evidence
 

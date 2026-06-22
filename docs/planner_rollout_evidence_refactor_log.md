@@ -3170,3 +3170,61 @@ Each completed refactor round should append:
   compatibility/report material, `pre_dig_align` remains residual
   parking/report material, `LegacyFSMBackendAdapter` remains historical/test
   scaffolding, and 5P remains its existing legacy override path.
+
+### 2026-06-22 Phase 9.18 Extract Primitive Action Dispatch Service
+
+- Scope: extracted primitive action dispatch and active low-level policy
+  selection from the large policy shell into a focused service. No reset
+  lifecycle, `_set_skill(...)` state mutation/reset timing, policy observation
+  token assembly, token planning, scripted bootstrap action algorithm,
+  pre-dig-align action algorithm, branch order, reason string, threshold,
+  token/debug/summary/trace schema, public config behavior, 5P transition
+  semantics, or low-level ACT output behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `3d4628940543beae288b08fa1395341cc6e0efd8`, no fetch, pull, push, reset,
+  checkout, or rebase.
+- Added `testbed/planner/primitive_action_dispatch.py` with
+  `PrimitiveActionDispatchPorts` and `PrimitiveActionDispatchService`. The
+  service owns scripted-bootstrap dispatch short-circuit, residual
+  `pre_dig_align` action short-circuit, active low-level policy selection,
+  first-dig activation, all-policy ordering, policy-observation invocation,
+  low-level policy `predict(...)`, and `float32` reshape to `action_dim`.
+- Updated `PrimitivePlannerACTPolicy._dispatch_tick_action(...)`,
+  `_active_policy()`, `_all_policies()`, and `_first_dig_policy_active()` into
+  thin wrappers backed by `_action_dispatch_service()`. The policy shell now
+  builds typed action-dispatch ports and retains lifecycle/state mutation
+  ownership.
+- Added a 5P compatibility `_action_dispatch_ports()` mapping so inherited
+  dispatch can use the 5P skill/policy set without migrating 5P transition
+  semantics. Existing 5P `_active_policy()` / `_all_policies()` overrides
+  remain legacy compatibility entry points.
+- TDD red result: the first focused run failed at collection because
+  `testbed.planner.primitive_action_dispatch` did not exist. After adding the
+  service module and policy bridge, `python -m pytest -q
+  tests/test_primitive_action_dispatch.py` returned `10 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_action_dispatch.py` returned
+  `10 passed`;
+  `python -m pytest -q tests/test_primitive_execution_template.py tests/test_primitive_observation.py`
+  returned `11 passed`;
+  `python -m pytest -q tests/test_primitive_planner_trace.py tests/test_primitive_rollout_summary.py tests/test_primitive_debug_report.py tests/test_primitive_token_status.py`
+  returned `12 passed`;
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `108 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "first_dig_policy_for_cycle_zero or semantic_boundary_events_drive_skill_sequence or pre_dig_align or scripted_bootstrap or return_to_dig"`
+  returned `18 passed, 102 deselected`;
+  compileall, both planner guard commands, and `git diff --check` completed
+  successfully with no output.
+- Old code parked/reclassified: reset lifecycle and `_set_skill(...)` remain in
+  the policy shell, policy observation/token assembly remains in
+  `PrimitivePolicyObservationAssembler`, scripted-bootstrap and pre-dig-align
+  action algorithms remain in their existing owners, public report builders
+  remain unchanged, `cell_entry` remains compatibility/report material,
+  `pre_dig_align` remains residual parking/action material,
+  `LegacyFSMBackendAdapter` remains historical/test scaffolding, and 5P remains
+  its existing legacy override path.

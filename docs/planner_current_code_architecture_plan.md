@@ -575,6 +575,17 @@ config/status fields, and terminal-stop fields. Coverage decision trace
 recording, public `debug_state()` and `rollout_summary()` assembly, and
 per-tick `_make_debug_state(...)` are intentionally unchanged in this round.
 
+Current status note after Phase 9.18: primitive action dispatch and active
+low-level policy selection have moved into `PrimitiveActionDispatchService` in
+`testbed/planner/primitive_action_dispatch.py`. `_dispatch_tick_action()`,
+`_active_policy()`, `_all_policies()`, and `_first_dig_policy_active()` now
+delegate through typed dispatch ports while the service owns scripted
+bootstrap/pre-dig short-circuits, first-dig policy selection, all-policy order,
+policy-observation dispatch, low-level `predict(...)`, and `float32` action
+reshape. Reset lifecycle, `_set_skill()` mutation timing, policy observation
+assembly, scripted/pre-dig action algorithms, 5P transition semantics, and
+public reporting builders are intentionally unchanged in this round.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut
