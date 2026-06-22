@@ -140,11 +140,17 @@ ports and retains thin compatibility wrappers for `_dispatch_tick_action()`,
 `_active_policy()`, `_all_policies()`, and `_first_dig_policy_active()`.
 `PrimitiveTickFinalizationService` now owns primitive tick finalization rules:
 previous-action copy semantics, dispatch-after transition-completed reason
-prefix detection, and compact `PrimitivePlannerDebugState` assembly for both
-the default 4P planner and the parked 5P compatibility planner. The policy shell
-prepares typed finalization inputs, writes `_prev_action` / `_debug_state`, and
-retains thin compatibility wrappers for the execution hooks while keeping reset
-lifecycle and `_set_skill()` timing unchanged.
+prefix detection, and compact `PrimitivePlannerDebugState` assembly for the
+default 4P planner. The policy shell prepares typed finalization inputs, writes
+`_prev_action` / `_debug_state`, and retains thin compatibility wrappers for
+the execution hooks. `PrimitiveResetLifecycleService` now owns 4P reset
+lifecycle sequencing in `testbed/planner/primitive_reset_lifecycle.py`:
+low-level policy reset order, boundary detector reset, bootstrap/pre-dig
+initial-skill selection, counter/token/pending/coverage/debug defaults, and
+fresh `CoverageRuntimeState` creation. Public `reset()` only builds reset ports,
+applies the returned reset state, and creates the initial compact debug state.
+The 5P runtime planner subclass has been removed by explicit cleanup decision;
+old 5P runtime behavior is preserved only in branch/git history.
 `CoverageRuntimeState` now owns mutable coverage runtime state in
 `testbed/planner/primitive_coverage_state.py`: corridor storage, selected ids,
 payload/deposit counters, pass/terminal state, candidate scores, decision trace,
@@ -933,6 +939,20 @@ coverage algorithms, return handoff gate/effect services, `cell_entry`,
 `pre_dig_align`, 5P, and alternate BT/VLM/LLM backend behavior remain outside
 this slice.
 
+Phase 9.32 extracts 4P reset lifecycle sequencing into
+`PrimitiveResetLifecycleService` in
+`testbed/planner/primitive_reset_lifecycle.py`. The service owns low-level
+policy reset order, boundary-detector reset, bootstrap/pre-dig initial-skill
+selection, switch reason and previous-action defaults, hold/counter mirrors,
+pre-dig cached diagnostics, cell-entry compatibility defaults, dig/return token
+and pending-plan defaults, injected-token flags, token source/fallback strings,
+and fresh `CoverageRuntimeState` creation. `PrimitivePlannerACTPolicy.reset()`
+is now a thin service-backed facade that applies the reset state and initializes
+the compact debug state. The 5P runtime planner compatibility path has been
+removed by explicit user cleanup decision; old behavior is retained only in git
+history, while historical data-slicing and experiment docs can remain as
+history.
+
 ### Stage 4: Expand Effect Families From Evidence
 
 Each new family must be justified by a confirmed-live rollout behavior and a
@@ -941,8 +961,9 @@ not callback convenience.
 
 ## How This Governs Return Handoff And Other Coupled Paths
 
-Return direct handoff, coverage terminal stop, pre-dig parking, and 5P
-compatibility must be analyzed under this contract.
+Return direct handoff, coverage terminal stop, and pre-dig parking must be
+analyzed under this contract. The former 5P runtime compatibility path was
+cleanup-approved and removed in Phase 9.32; only historical records remain.
 
 For each path, answer:
 
@@ -980,7 +1001,6 @@ It does not complete these pieces:
 - implementation of concrete requested-effect classes;
 - conversion of any live branch from callbacks to requested effects;
 - behavior-tree or VLM backend implementation;
-- 5P compatibility audit;
 - legacy parking cleanup or deletion.
 
 ## Verification Plan

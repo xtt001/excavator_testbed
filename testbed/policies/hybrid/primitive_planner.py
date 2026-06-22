@@ -157,6 +157,11 @@ from testbed.planner.primitive_return_token_planning import (
     PrimitiveReturnTokenPlanningPorts,
     PrimitiveReturnTokenPlanningService,
 )
+from testbed.planner.primitive_reset_lifecycle import (
+    PrimitiveResetLifecyclePorts,
+    PrimitiveResetLifecycleService,
+    PrimitiveResetLifecycleState,
+)
 from testbed.planner.primitive_token_runtime import (
     PrimitiveTokenRuntimeCoordinator,
     PrimitiveTokenRuntimePorts,
@@ -203,10 +208,6 @@ from testbed.policies.hybrid.adapter import HYBRID_MODE_TRANSITION, HYBRID_MODE_
 
 PRIMITIVE_SKILL_NAMES = ("dig", "carry", "dump", "return")
 PRIMITIVE_SKILL_IDS = {name: index for index, name in enumerate(PRIMITIVE_SKILL_NAMES)}
-PRIMITIVE_SKILL_NAMES_5P = ("dig", "carry", "approach_dump", "dump_release", "return")
-PRIMITIVE_SKILL_IDS_5P = {
-    name: index for index, name in enumerate(PRIMITIVE_SKILL_NAMES_5P)
-}
 TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY = "v2_2_primitive_return_policy"
 TRANSITION_POLICY_MODE_PRIMITIVE = "primitive_return_policy"
 BOOTSTRAP_SKILL_NAME = "bootstrap"
@@ -908,113 +909,41 @@ class PrimitivePlannerACTPolicy(Policy):
         self.reset()
 
     def reset(self) -> None:
-        for policy in self._all_policies():
-            policy.reset()
-        self.boundary_detector.reset()
-        has_bootstrap = (
-            self.bootstrap_end_mode != "disabled"
-            and (
-                self.bootstrap_policy is not None
-                or self._scripted_bootstrap_enabled()
-            )
-        )
-        self._skill_name = (
-            BOOTSTRAP_SKILL_NAME
-            if has_bootstrap
-            else PRE_DIG_ALIGN_SKILL_NAME
-            if self._should_pre_dig_align_before_dig()
-            else "dig"
-        )
-        self._prev_action: np.ndarray | None = None
-        self._switch_reason = "reset"
-        self._dump_ready_hold_count = 0
-        self._dump_done_hold_count = 0
-        self._return_step_count = 0
-        self._scripted_bootstrap_step_count = 0
-        self._scripted_bootstrap_hold_count = 0
-        self._scripted_bootstrap_timeout_count = 0
-        self._pre_dig_align_step_count = 0
-        self._pre_dig_align_hold_count = 0
-        self._pre_dig_align_timeout_count = 0
-        self._pre_dig_align_completed_count = 0
-        self._pre_dig_align_replan_count = 0
-        self._pre_dig_align_target_qpos = np.zeros(self.action_dim, dtype=np.float32)
-        self._pre_dig_align_error = np.zeros(self.action_dim, dtype=np.float32)
-        self._pre_dig_align_entry_error_m = float("nan")
-        self._pre_dig_align_start_envelope_ready = False
-        self._pre_dig_align_entry_close_handoff_ready = False
-        self._pre_dig_align_entry_intent_handoff_ready = False
-        self._pre_dig_align_timeout_handoff_reason = ""
-        self._pre_dig_align_surface_depth_m = float("nan")
-        self._pre_dig_align_surface_guard_triggered = False
-        self._pre_dig_align_surface_guard_count = 0
-        self._dig_step_count = 0
-        self._dig_best_mass_kg = 0.0
-        self._dig_mass_plateau_count = 0
-        self._dig_to_carry_reason = ""
-        self._dig_bad_replan_count = 0
-        self._dig_exit_guard_replan_count = 0
-        self._completed_transition_count = 0
-        self._transition_timeout_count = 0
-        self._cycle_index = 0
-        self._dump_start_deposited_mass_kg = 0.0
-        self.cell_entry_planner.reset()
-        self._cell_entry_goal: CellEntryGoal | None = None
-        self._cell_entry_goal_cycle_id = -1
-        self._cell_entry_audit: PlannerDecisionAudit | None = None
-        self._cell_entry_tokens = np.zeros(CELL_ENTRY_TOKEN_DIM, dtype=np.float32)
-        self._cell_entry_token_injected = False
-        self._dig_cut_tokens = np.zeros(DIG_CUT_TOKEN_DIM, dtype=np.float32)
-        self._dig_cut_token_injected = False
-        self._dig_depth_profile_tokens = np.zeros(
-            DIG_DEPTH_PROFILE_TOKEN_DIM,
-            dtype=np.float32,
-        )
-        self._dig_depth_profile_token_injected = False
-        self._dig_depth_profile_token_source = "none"
-        self._dig_depth_profile_fallback_reason = ""
-        self._return_target_tokens = np.zeros(RETURN_TARGET_TOKEN_DIM, dtype=np.float32)
-        self._return_target_token_injected = False
-        self._return_relocate_tokens = np.zeros(
-            RETURN_TARGET_TOKEN_DIM,
-            dtype=np.float32,
-        )
-        self._return_relocate_token_injected = False
-        self._return_start_envelope_tokens = np.zeros(
-            RETURN_START_ENVELOPE_TOKEN_DIM,
-            dtype=np.float32,
-        )
-        self._return_start_envelope_token_injected = False
-        self._return_start_envelope_token_source = "none"
-        self._return_start_envelope_use_prior_spatial_bounds = True
-        self._return_start_envelope_use_prior_qpos_bounds = True
-        self._return_target_planned_cycle_id = -1
-        self._return_target_token_source = "none"
-        self._return_target_fallback_reason = ""
-        self._return_to_dig_entry_error_m = float("nan")
-        self._return_to_dig_entry_close_state = True
-        self._return_next_dig_event_seen = False
-        self._return_to_dig_start_envelope_ready_state = True
-        self._return_to_dig_start_envelope_error = float("nan")
-        self._return_to_dig_start_envelope_checks: dict[str, Any] = {}
-        self._pending_dig_cut_cycle_id = -1
-        self._pending_dig_cut_corridor_id = -1
-        self._pending_dig_cut_raw_fields: dict[str, float | int] | None = None
-        self._pending_dig_cut_tokens: np.ndarray | None = None
-        self._pending_dig_depth_profile_tokens: np.ndarray | None = None
-        self._pending_dig_state_exemplar_ids: list[str] = []
-        self._pending_dig_state_exemplar_distance = float("nan")
-        self._cell_entry_seen_cell_id = -1
-        self._cell_entry_trace: list[dict[str, Any]] = []
-        self._dig_cut_planned_cycle_id = -1
-        self._dig_cut_token_source = "none"
-        self._dig_cut_fallback_reason = ""
-        self._dig_cut_token_in_prior_p10_p90 = False
-        self._coverage_state = CoverageRuntimeState()
+        reset_state = self._primitive_reset_lifecycle_service().reset()
+        self._apply_reset_lifecycle_state(reset_state)
         self._debug_state = self._make_debug_state(
-            transition_timeout=False,
-            transition_completed=False,
+            transition_timeout=reset_state.debug_transition_timeout,
+            transition_completed=reset_state.debug_transition_completed,
         )
+
+    def _primitive_reset_lifecycle_service(self) -> PrimitiveResetLifecycleService:
+        return PrimitiveResetLifecycleService.from_ports(
+            self._primitive_reset_lifecycle_ports()
+        )
+
+    def _primitive_reset_lifecycle_ports(self) -> PrimitiveResetLifecyclePorts:
+        return PrimitiveResetLifecyclePorts(
+            all_policies=lambda: self._all_policies(),
+            reset_boundary_detector=lambda: self.boundary_detector.reset(),
+            reset_cell_entry_planner=lambda: self.cell_entry_planner.reset(),
+            bootstrap_end_mode=lambda: str(self.bootstrap_end_mode),
+            bootstrap_policy_available=lambda: self.bootstrap_policy is not None,
+            scripted_bootstrap_enabled=lambda: self._scripted_bootstrap_enabled(),
+            should_pre_dig_align_before_dig=(
+                lambda: self._should_pre_dig_align_before_dig()
+            ),
+            action_dim=int(self.action_dim),
+            bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
+            dig_skill_name="dig",
+        )
+
+    def _apply_reset_lifecycle_state(
+        self,
+        reset_state: PrimitiveResetLifecycleState,
+    ) -> None:
+        for field_name, value in reset_state.as_policy_field_updates().items():
+            setattr(self, field_name, value)
 
     def _coverage_runtime_state(self) -> CoverageRuntimeState:
         state = self.__dict__.get("_coverage_state")
@@ -5649,469 +5578,3 @@ def _pd_servo_action(
     if action_clip_arr.ndim == 0:
         action_clip_arr = np.full_like(action, float(action_clip_arr))
     return np.clip(action, -action_clip_arr, action_clip_arr).astype(np.float32)
-
-
-@register_policy("primitive_planner_act_5p")
-class PrimitivePlannerACT5PPolicy(PrimitivePlannerACTPolicy):
-    """Scripted V2.2 planner over dig/carry/approach_dump/dump_release/return.
-
-    The upper model should provide low-frequency task intent only. This planner
-    owns high-frequency primitive boundary decisions from relative geometry,
-    bucket mass, clearance, and V2.1 boundary events.
-    """
-
-    def __init__(
-        self,
-        *,
-        dig_policy: Policy,
-        first_dig_policy: Policy | None = None,
-        carry_policy: Policy,
-        approach_dump_policy: Policy,
-        dump_release_policy: Policy,
-        return_policy: Policy,
-        boundary_detector: BoundaryDetector,
-        bootstrap_policy: Policy | None = None,
-        bootstrap_end_mode: str = "disabled",
-        bootstrap_end_min_bucket_mass_kg: float = 300.0,
-        bootstrap_end_min_distance_to_dig_area_m: float = 0.25,
-        dig_to_carry_min_bucket_mass_kg: float = 300.0,
-        dig_to_carry_min_distance_to_dig_area_m: float = 0.0,
-        dig_to_carry_target_bucket_mass_kg: float | None = None,
-        dig_to_carry_mass_plateau_enabled: bool = False,
-        dig_to_carry_mass_plateau_min_bucket_mass_kg: float = 20.0,
-        dig_to_carry_mass_plateau_epsilon_kg: float = 1.0,
-        dig_to_carry_mass_plateau_hold_steps: int = 25,
-        dig_to_carry_mass_plateau_min_steps: int = 80,
-        dig_bad_replan_enabled: bool = False,
-        dig_bad_replan_max_steps: int = 180,
-        dig_bad_replan_min_bucket_mass_kg: float = 15.0,
-        dig_exit_guard_enabled: bool = False,
-        dig_exit_guard_min_steps: int = 80,
-        dig_exit_guard_overshoot_m: float = 0.65,
-        dig_exit_guard_min_bucket_mass_kg: float = 20.0,
-        dig_failed_replan_next_skill: str = "dig",
-        approach_ready_min_bucket_mass_kg: float = 150.0,
-        approach_ready_max_horizontal_distance_m: float | None = 1.25,
-        approach_ready_min_height_above_rim_m: float = -0.20,
-        approach_ready_require_clearance: bool = True,
-        approach_ready_hold_steps: int = 3,
-        dump_release_ready_min_bucket_mass_kg: float = 150.0,
-        dump_release_ready_min_height_above_rim_m: float = 0.45,
-        dump_release_ready_require_over_footprint: bool = True,
-        dump_release_ready_require_clearance: bool = True,
-        dump_release_ready_max_horizontal_distance_m: float | None = 0.60,
-        dump_release_ready_position_mode: str = "footprint_or_dump_area_relative",
-        dump_release_ready_max_dump_area_footprint_outside_distance_m: float | None = 0.05,
-        dump_release_ready_min_dump_area_relative_x_m: float | None = None,
-        dump_release_ready_max_dump_area_relative_x_m: float | None = None,
-        dump_release_ready_min_dump_area_relative_z_m: float | None = None,
-        dump_release_ready_max_dump_area_relative_z_m: float | None = None,
-        dump_release_ready_hold_steps: int = 3,
-        dump_ready_near_window_enabled: bool = False,
-        dump_ready_near_window_x_tolerance_m: float = 0.05,
-        dump_ready_near_window_z_tolerance_m: float = 0.05,
-        dump_ready_near_window_outside_tolerance_m: float = 0.0,
-        dump_ready_near_window_require_over_footprint: bool = True,
-        dump_done_max_bucket_mass_kg: float = 100.0,
-        dump_done_min_deposit_delta_kg: float = 10.0,
-        dump_done_hold_steps: int = 30,
-        dump_done_use_boundary_event: bool = True,
-        return_to_dig_shallow_guard_enabled: bool = False,
-        return_to_dig_max_bucket_mass_kg: float = 15.0,
-        return_to_dig_touch_tolerance_m: float = 0.05,
-        return_to_dig_min_depth_m: float = 0.02,
-        return_to_dig_max_depth_m: float = 0.12,
-        return_to_dig_max_entry_error_m: float | None = None,
-        return_to_dig_start_envelope_gate_enabled: bool = False,
-        return_to_dig_start_envelope_spatial_tolerance: float = 0.10,
-        return_to_dig_start_envelope_depth_tolerance_m: float = 0.08,
-        return_to_dig_start_envelope_local_depth_tolerance_m: float = 0.005,
-        return_to_dig_start_envelope_plane_depth_tolerance_m: float = 0.05,
-        return_to_dig_start_envelope_plane_depth_mode: str = "range",
-        return_to_dig_start_envelope_qpos_tolerance: float = 0.04,
-        return_to_dig_start_envelope_require_contact: bool = True,
-        return_to_dig_start_envelope_direct_handoff_enabled: bool = False,
-        return_max_steps: int = 420,
-        action_dim: int = 4,
-        primitive_checkpoint_paths: dict[str, str] | None = None,
-        goal_sequence: list[str] | tuple[str, ...] | None = None,
-        goal_scenario_id: str = "s0_truck",
-        goal_depth_norm: float = 1.0,
-        goal_dump_target_norm: float = 1.0,
-        cell_entry_enabled: bool = False,
-        cell_entry_grid: dict[str, Any] | None = None,
-        cell_entry_low_productivity_payload_gain_kg: float = 100.0,
-        dig_cut_planner: dict[str, Any] | None = None,
-        return_target_planner: dict[str, Any] | None = None,
-        pre_dig_align: dict[str, Any] | None = None,
-    ) -> None:
-        self.approach_dump_policy = approach_dump_policy
-        self.dump_release_policy = dump_release_policy
-        self.approach_ready_min_bucket_mass_kg = float(approach_ready_min_bucket_mass_kg)
-        self.approach_ready_max_horizontal_distance_m = (
-            None
-            if approach_ready_max_horizontal_distance_m is None
-            else float(approach_ready_max_horizontal_distance_m)
-        )
-        self.approach_ready_min_height_above_rim_m = float(
-            approach_ready_min_height_above_rim_m
-        )
-        self.approach_ready_require_clearance = bool(approach_ready_require_clearance)
-        self.approach_ready_hold_steps = max(1, int(approach_ready_hold_steps))
-        self._approach_ready_hold_count = 0
-        self._dump_release_ready_hold_count = 0
-        super().__init__(
-            dig_policy=dig_policy,
-            first_dig_policy=first_dig_policy,
-            carry_policy=carry_policy,
-            dump_policy=dump_release_policy,
-            return_policy=return_policy,
-            boundary_detector=boundary_detector,
-            bootstrap_policy=bootstrap_policy,
-            bootstrap_end_mode=bootstrap_end_mode,
-            bootstrap_end_min_bucket_mass_kg=bootstrap_end_min_bucket_mass_kg,
-            bootstrap_end_min_distance_to_dig_area_m=(
-                bootstrap_end_min_distance_to_dig_area_m
-            ),
-            dig_to_carry_min_bucket_mass_kg=dig_to_carry_min_bucket_mass_kg,
-            dig_to_carry_min_distance_to_dig_area_m=(
-                dig_to_carry_min_distance_to_dig_area_m
-            ),
-            dig_to_carry_target_bucket_mass_kg=dig_to_carry_target_bucket_mass_kg,
-            dig_to_carry_mass_plateau_enabled=dig_to_carry_mass_plateau_enabled,
-            dig_to_carry_mass_plateau_min_bucket_mass_kg=(
-                dig_to_carry_mass_plateau_min_bucket_mass_kg
-            ),
-            dig_to_carry_mass_plateau_epsilon_kg=(
-                dig_to_carry_mass_plateau_epsilon_kg
-            ),
-            dig_to_carry_mass_plateau_hold_steps=(
-                dig_to_carry_mass_plateau_hold_steps
-            ),
-            dig_to_carry_mass_plateau_min_steps=dig_to_carry_mass_plateau_min_steps,
-            dig_bad_replan_enabled=dig_bad_replan_enabled,
-            dig_bad_replan_max_steps=dig_bad_replan_max_steps,
-            dig_bad_replan_min_bucket_mass_kg=dig_bad_replan_min_bucket_mass_kg,
-            dig_exit_guard_enabled=dig_exit_guard_enabled,
-            dig_exit_guard_min_steps=dig_exit_guard_min_steps,
-            dig_exit_guard_overshoot_m=dig_exit_guard_overshoot_m,
-            dig_exit_guard_min_bucket_mass_kg=dig_exit_guard_min_bucket_mass_kg,
-            dig_failed_replan_next_skill=dig_failed_replan_next_skill,
-            dump_ready_min_bucket_mass_kg=dump_release_ready_min_bucket_mass_kg,
-            dump_ready_min_height_above_rim_m=(
-                dump_release_ready_min_height_above_rim_m
-            ),
-            dump_ready_require_over_footprint=(
-                dump_release_ready_require_over_footprint
-            ),
-            dump_ready_require_clearance=dump_release_ready_require_clearance,
-            dump_ready_max_horizontal_distance_m=(
-                dump_release_ready_max_horizontal_distance_m
-            ),
-            dump_ready_position_mode=dump_release_ready_position_mode,
-            dump_ready_max_dump_area_footprint_outside_distance_m=(
-                dump_release_ready_max_dump_area_footprint_outside_distance_m
-            ),
-            dump_ready_min_dump_area_relative_x_m=(
-                dump_release_ready_min_dump_area_relative_x_m
-            ),
-            dump_ready_max_dump_area_relative_x_m=(
-                dump_release_ready_max_dump_area_relative_x_m
-            ),
-            dump_ready_min_dump_area_relative_z_m=(
-                dump_release_ready_min_dump_area_relative_z_m
-            ),
-            dump_ready_max_dump_area_relative_z_m=(
-                dump_release_ready_max_dump_area_relative_z_m
-            ),
-            dump_ready_hold_steps=dump_release_ready_hold_steps,
-            dump_ready_near_window_enabled=dump_ready_near_window_enabled,
-            dump_ready_near_window_x_tolerance_m=(
-                dump_ready_near_window_x_tolerance_m
-            ),
-            dump_ready_near_window_z_tolerance_m=(
-                dump_ready_near_window_z_tolerance_m
-            ),
-            dump_ready_near_window_outside_tolerance_m=(
-                dump_ready_near_window_outside_tolerance_m
-            ),
-            dump_ready_near_window_require_over_footprint=(
-                dump_ready_near_window_require_over_footprint
-            ),
-            dump_done_max_bucket_mass_kg=dump_done_max_bucket_mass_kg,
-            dump_done_min_deposit_delta_kg=dump_done_min_deposit_delta_kg,
-            dump_done_hold_steps=dump_done_hold_steps,
-            dump_done_use_boundary_event=dump_done_use_boundary_event,
-            return_to_dig_shallow_guard_enabled=(
-                return_to_dig_shallow_guard_enabled
-            ),
-            return_to_dig_max_bucket_mass_kg=return_to_dig_max_bucket_mass_kg,
-            return_to_dig_touch_tolerance_m=return_to_dig_touch_tolerance_m,
-            return_to_dig_min_depth_m=return_to_dig_min_depth_m,
-            return_to_dig_max_depth_m=return_to_dig_max_depth_m,
-            return_to_dig_max_entry_error_m=return_to_dig_max_entry_error_m,
-            return_to_dig_start_envelope_gate_enabled=(
-                return_to_dig_start_envelope_gate_enabled
-            ),
-            return_to_dig_start_envelope_spatial_tolerance=(
-                return_to_dig_start_envelope_spatial_tolerance
-            ),
-            return_to_dig_start_envelope_depth_tolerance_m=(
-                return_to_dig_start_envelope_depth_tolerance_m
-            ),
-            return_to_dig_start_envelope_local_depth_tolerance_m=(
-                return_to_dig_start_envelope_local_depth_tolerance_m
-            ),
-            return_to_dig_start_envelope_plane_depth_tolerance_m=(
-                return_to_dig_start_envelope_plane_depth_tolerance_m
-            ),
-            return_to_dig_start_envelope_plane_depth_mode=(
-                return_to_dig_start_envelope_plane_depth_mode
-            ),
-            return_to_dig_start_envelope_qpos_tolerance=(
-                return_to_dig_start_envelope_qpos_tolerance
-            ),
-            return_to_dig_start_envelope_require_contact=(
-                return_to_dig_start_envelope_require_contact
-            ),
-            return_to_dig_start_envelope_direct_handoff_enabled=(
-                return_to_dig_start_envelope_direct_handoff_enabled
-            ),
-            return_max_steps=return_max_steps,
-            action_dim=action_dim,
-            primitive_checkpoint_paths=primitive_checkpoint_paths,
-            goal_sequence=goal_sequence,
-            goal_scenario_id=goal_scenario_id,
-            goal_depth_norm=goal_depth_norm,
-            goal_dump_target_norm=goal_dump_target_norm,
-            cell_entry_enabled=cell_entry_enabled,
-            cell_entry_grid=cell_entry_grid,
-            cell_entry_low_productivity_payload_gain_kg=(
-                cell_entry_low_productivity_payload_gain_kg
-            ),
-            dig_cut_planner=dig_cut_planner,
-            return_target_planner=return_target_planner,
-            pre_dig_align=pre_dig_align,
-        )
-        self.dump_release_ready_hold_steps = self.dump_ready_hold_steps
-
-    def reset(self) -> None:
-        self._approach_ready_hold_count = 0
-        self._dump_release_ready_hold_count = 0
-        super().reset()
-        self._approach_ready_hold_count = 0
-        self._dump_release_ready_hold_count = 0
-        self._debug_state = self._make_debug_state(
-            transition_timeout=False,
-            transition_completed=False,
-        )
-
-    def _maybe_switch_skill(self, *, obs: dict, boundary_event: Any | None) -> None:
-        if self._skill_name == BOOTSTRAP_SKILL_NAME:
-            if self._should_end_bootstrap(obs=obs, boundary_event=boundary_event):
-                next_skill = (
-                    "dig"
-                    if self.bootstrap_end_mode
-                    in {"first_qualified_dig_start", "scripted_qpos"}
-                    else "carry"
-                )
-                self._set_skill(next_skill, f"bootstrap_to_{next_skill}")
-            return
-
-        if self._skill_name == "dig":
-            if self._dig_to_carry_ready(obs=obs, boundary_event=boundary_event):
-                self._set_skill("carry", "dig_to_carry_loaded")
-            return
-
-        if self._skill_name == "carry":
-            if self._approach_ready(obs):
-                self._approach_ready_hold_count += 1
-            else:
-                self._approach_ready_hold_count = 0
-            if self._approach_ready_hold_count >= self.approach_ready_hold_steps:
-                self._set_skill("approach_dump", "carry_to_approach_dump_region_ready")
-            return
-
-        if self._skill_name == "approach_dump":
-            if self._dump_ready(obs):
-                self._dump_release_ready_hold_count += 1
-            else:
-                self._dump_release_ready_hold_count = 0
-            if self._dump_release_ready_hold_count >= self.dump_ready_hold_steps:
-                self._dump_start_deposited_mass_kg = self._deposited_mass(obs)
-                self._set_skill("dump_release", "approach_dump_to_dump_release_ready")
-            return
-
-        if self._skill_name == "dump_release":
-            if (
-                self.dump_done_use_boundary_event
-                and boundary_event is not None
-                and bool(getattr(boundary_event, "dump_end", False))
-            ):
-                self._set_skill("return", "dump_release_to_return_dump_end")
-                return
-            if self._dump_done(obs):
-                self._dump_done_hold_count += 1
-            else:
-                self._dump_done_hold_count = 0
-            if self._dump_done_hold_count >= self.dump_done_hold_steps:
-                self._set_skill("return", "dump_release_to_return_mass_low")
-            return
-
-        if self._skill_name == "return":
-            if boundary_event is not None and bool(
-                getattr(boundary_event, "qualified_dig_start", False)
-            ):
-                self._completed_transition_count += 1
-                self._cycle_index += 1
-                self._set_skill("dig", "return_to_dig_qualified_dig_start")
-                return
-            if self._return_to_dig_direct_handoff_ready(obs):
-                self._completed_transition_count += 1
-                self._cycle_index += 1
-                self._set_skill("dig", "return_to_dig_start_envelope_ready")
-                return
-            if self._return_to_dig_shallow_guard_ready(
-                obs=obs,
-                boundary_event=boundary_event,
-            ):
-                self._completed_transition_count += 1
-                self._cycle_index += 1
-                self._set_skill("dig", "return_to_dig_shallow_entry_guard")
-
-    def _set_skill(self, skill_name: str, reason: str) -> None:
-        if skill_name == self._skill_name:
-            return
-        self._skill_name = str(skill_name)
-        self._switch_reason = str(reason)
-        self._active_policy().reset()
-        if skill_name == "carry":
-            self._approach_ready_hold_count = 0
-        elif skill_name == "approach_dump":
-            self._dump_release_ready_hold_count = 0
-        elif skill_name == "dump_release":
-            self._dump_done_hold_count = 0
-        elif skill_name == "return":
-            self._return_step_count = 0
-        elif skill_name == "dig":
-            self._approach_ready_hold_count = 0
-            self._dump_release_ready_hold_count = 0
-            self._dump_done_hold_count = 0
-        if skill_name != "dig":
-            self._clear_dig_cut_plan()
-
-    def _approach_ready(self, obs: dict) -> bool:
-        if self._mass_in_bucket(obs) < self.approach_ready_min_bucket_mass_kg:
-            return False
-        geometry = self._target_geometry(obs)
-        horizontal_ok = True
-        if self.approach_ready_max_horizontal_distance_m is not None:
-            horizontal_ok = (
-                geometry["target_horizontal_distance_m"]
-                <= self.approach_ready_max_horizontal_distance_m + 1.0e-6
-            )
-        height_ok = (
-            geometry["bucket_height_above_target_rim_m"]
-            >= self.approach_ready_min_height_above_rim_m - 1.0e-6
-        )
-        clearance_ok = geometry["dump_clearance_ok_mask"] > 0.5
-        return bool(
-            horizontal_ok
-            and height_ok
-            and (clearance_ok or not self.approach_ready_require_clearance)
-        )
-
-    def _action_dispatch_ports(self) -> PrimitiveActionDispatchPorts:
-        return PrimitiveActionDispatchPorts(
-            current_skill_name=lambda: str(self._skill_name),
-            action_dim=int(self.action_dim),
-            skill_policies={
-                "dig": self.dig_policy,
-                "carry": self.carry_policy,
-                "approach_dump": self.approach_dump_policy,
-                "dump_release": self.dump_release_policy,
-                "return": self.return_policy,
-            },
-            base_policy_order=(
-                "dig",
-                "carry",
-                "approach_dump",
-                "dump_release",
-                "return",
-            ),
-            optional_policy_order=("bootstrap", "first_dig"),
-            first_dig_policy=self.first_dig_policy,
-            bootstrap_policy=self.bootstrap_policy,
-            cycle_index=lambda: int(getattr(self, "_cycle_index", 0)),
-            coverage_completed_dump_count=lambda: int(
-                getattr(self, "_coverage_completed_dump_count", 0)
-            ),
-            policy_observation=lambda obs: self._policy_obs(obs),
-            scripted_bootstrap_enabled=lambda: self._scripted_bootstrap_enabled(),
-            scripted_bootstrap_action=lambda obs: self._scripted_bootstrap_action(obs),
-            pre_dig_align_action=lambda obs: self._pre_dig_align_action(obs),
-            bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
-            dig_skill_name="dig",
-            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
-        )
-
-    def _active_policy(self) -> Policy:
-        if self._skill_name == BOOTSTRAP_SKILL_NAME:
-            if self.bootstrap_policy is None:
-                raise RuntimeError("bootstrap skill is active but bootstrap_policy is None.")
-            return self.bootstrap_policy
-        if self._skill_name == "dig":
-            if self._first_dig_policy_active():
-                if self.first_dig_policy is None:
-                    raise RuntimeError("first dig policy is active but missing.")
-                return self.first_dig_policy
-            return self.dig_policy
-        if self._skill_name == "carry":
-            return self.carry_policy
-        if self._skill_name == "approach_dump":
-            return self.approach_dump_policy
-        if self._skill_name == "dump_release":
-            return self.dump_release_policy
-        if self._skill_name == "return":
-            return self.return_policy
-        raise RuntimeError(f"Unknown primitive skill {self._skill_name!r}.")
-
-    def _all_policies(self) -> list[Policy]:
-        policies = [
-            self.dig_policy,
-            self.carry_policy,
-            self.approach_dump_policy,
-            self.dump_release_policy,
-            self.return_policy,
-        ]
-        if self.bootstrap_policy is not None:
-            policies.append(self.bootstrap_policy)
-        if self.first_dig_policy is not None:
-            policies.append(self.first_dig_policy)
-        return policies
-
-    def _tick_finalization_inputs(
-        self,
-        *,
-        transition_timeout: bool,
-        transition_completed: bool,
-    ) -> PrimitiveTickFinalizationInputs:
-        return PrimitiveTickFinalizationInputs(
-            skill_name=str(self._skill_name),
-            skill_ids=PRIMITIVE_SKILL_IDS_5P,
-            skill_switch_reason=str(self._switch_reason),
-            primitive_checkpoint_paths=self.primitive_checkpoint_paths,
-            first_dig_policy_active=bool(self._first_dig_policy_active()),
-            transition_skill_names=("return",),
-            transition_timeout=bool(transition_timeout),
-            transition_completed=bool(transition_completed),
-            completed_transition_count=int(self._completed_transition_count),
-            transition_timeout_count=int(self._transition_timeout_count),
-            dump_ready_hold_count=int(self._dump_release_ready_hold_count),
-            dump_done_hold_count=int(self._dump_done_hold_count),
-            primitive_cycle_index=int(self._cycle_index),
-            work_hybrid_mode=HYBRID_MODE_WORK,
-            transition_hybrid_mode=HYBRID_MODE_TRANSITION,
-            approach_ready_hold_count=int(self._approach_ready_hold_count),
-            dump_release_ready_hold_count=int(self._dump_release_ready_hold_count),
-        )

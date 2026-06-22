@@ -62,7 +62,6 @@ from testbed.cli.build_surface_depth_planner_prior import (
 )
 from testbed.policies.base import Policy
 from testbed.policies.hybrid.primitive_planner import (
-    PrimitivePlannerACT5PPolicy,
     PrimitivePlannerACTPolicy,
 )
 
@@ -4404,106 +4403,6 @@ class TestPrimitivesV22(unittest.TestCase):
             policy.debug_state()["skill_switch_reason"],
             "dig_to_carry_loaded",
         )
-
-    def test_5p_primitive_planner_switches_on_synthetic_geometry_events(self) -> None:
-        detector = _FakeBoundaryDetector(
-            [
-                _FakeBoundaryEvent(),
-                _FakeBoundaryEvent(),
-                _FakeBoundaryEvent(),
-                _FakeBoundaryEvent(),
-                _FakeBoundaryEvent(),
-                _FakeBoundaryEvent(),
-                _FakeBoundaryEvent(),
-                _FakeBoundaryEvent(qualified_dig_start=True),
-            ]
-        )
-        policy = PrimitivePlannerACT5PPolicy(
-            dig_policy=_ConstantPolicy(0),
-            carry_policy=_ConstantPolicy(1),
-            approach_dump_policy=_ConstantPolicy(2),
-            dump_release_policy=_ConstantPolicy(3),
-            return_policy=_ConstantPolicy(4),
-            boundary_detector=detector,
-            approach_ready_hold_steps=2,
-            dump_release_ready_hold_steps=2,
-            dump_done_hold_steps=2,
-            primitive_checkpoint_paths={
-                "dig": "dig.ckpt",
-                "carry": "carry.ckpt",
-                "approach_dump": "approach_dump.ckpt",
-                "dump_release": "dump_release.ckpt",
-                "return": "return.ckpt",
-            },
-        )
-
-        action = policy.predict(_obs(mass=0.0, dig_distance=0.02))
-        self.assertEqual(float(action[0]), 0.0)
-        self.assertEqual(policy.debug_state()["skill_name"], "dig")
-
-        action = policy.predict(_obs(mass=320.0, dig_distance=0.30))
-        self.assertEqual(float(action[0]), 1.0)
-        self.assertEqual(policy.debug_state()["skill_name"], "carry")
-
-        approach_obs = _obs(
-            mass=320.0,
-            dig_distance=0.30,
-            horizontal_distance=1.20,
-            height_above_rim=0.0,
-            over_footprint=False,
-            clearance_ok=True,
-        )
-        action = policy.predict(approach_obs)
-        self.assertEqual(float(action[0]), 1.0)
-        self.assertEqual(policy.debug_state()["approach_ready_hold_count"], 1)
-
-        action = policy.predict(approach_obs)
-        self.assertEqual(float(action[0]), 2.0)
-        self.assertEqual(policy.debug_state()["skill_name"], "approach_dump")
-        self.assertEqual(
-            policy.debug_state()["skill_switch_reason"],
-            "carry_to_approach_dump_region_ready",
-        )
-
-        dump_ready_obs = _obs(
-            mass=320.0,
-            dig_distance=0.30,
-            horizontal_distance=0.60,
-            height_above_rim=0.45,
-            over_footprint=False,
-            clearance_ok=True,
-            dump_area_footprint_outside_distance=0.03,
-        )
-        action = policy.predict(dump_ready_obs)
-        self.assertEqual(float(action[0]), 2.0)
-        self.assertEqual(policy.debug_state()["dump_release_ready_hold_count"], 1)
-
-        action = policy.predict(dump_ready_obs)
-        self.assertEqual(float(action[0]), 3.0)
-        self.assertEqual(policy.debug_state()["skill_name"], "dump_release")
-        self.assertEqual(
-            policy.debug_state()["skill_switch_reason"],
-            "approach_dump_to_dump_release_ready",
-        )
-
-        action = policy.predict(
-            _obs(mass=50.0, dig_distance=0.30, dump_ready=True, deposited=20.0)
-        )
-        self.assertEqual(float(action[0]), 3.0)
-        self.assertEqual(policy.debug_state()["skill_name"], "dump_release")
-
-        action = policy.predict(
-            _obs(mass=50.0, dig_distance=0.30, dump_ready=True, deposited=20.0)
-        )
-        self.assertEqual(float(action[0]), 4.0)
-        self.assertEqual(policy.debug_state()["skill_name"], "return")
-
-        action = policy.predict(_obs(mass=0.0, dig_distance=0.02))
-        self.assertEqual(float(action[0]), 0.0)
-        self.assertEqual(policy.debug_state()["skill_name"], "dig")
-        self.assertTrue(policy.debug_state()["transition_completed"])
-        self.assertEqual(policy.rollout_summary()["completed_transition_count"], 1)
-
 
 def _write_workskill_episode(path: Path) -> None:
     episode = _make_workskill_episode_payload(length=360)

@@ -76,10 +76,10 @@ def test_classifier_separates_live_support_report_owners_and_legacy_parking() ->
             owner_classification="compatibility",
         ),
         CapabilitySpec(
-            capability_id="legacy.5p_compat",
-            owner="PrimitivePlannerACT5PPolicy",
+            capability_id="legacy.5p_removed_runtime",
+            owner="removed 5P runtime planner (git history only)",
             category="compatibility",
-            owner_classification="test-only",
+            owner_classification="removed-runtime",
         ),
         CapabilitySpec(
             capability_id="unused.current_packet",
@@ -135,12 +135,16 @@ def test_classifier_separates_live_support_report_owners_and_legacy_parking() ->
     assert by_id["metric.dig_mass_progress"].classification == "support-live"
     assert by_id["debug.rollout_summary"].classification == "report-only"
     assert by_id["policy.public_adapter"].classification == "compatibility"
-    assert by_id["legacy.5p_compat"].classification == "test-only"
+    assert by_id["legacy.5p_removed_runtime"].classification == "removed-runtime"
     assert by_id["unused.current_packet"].classification == "dead-candidate"
     assert by_id["unused.protected_diagnostic"].classification == "not-observed"
     assert by_id["gate.dig_to_carry"].retention_decision == "retain-and-migrate"
     assert by_id["debug.rollout_summary"].retention_decision == "retain-report-boundary"
     assert by_id["unused.current_packet"].retention_decision == "retain-legacy-parking"
+    assert (
+        by_id["legacy.5p_removed_runtime"].retention_decision
+        == "removed-runtime-cleanup"
+    )
     assert by_id["unused.protected_diagnostic"].retention_decision == "hold-unobserved"
 
 

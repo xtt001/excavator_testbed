@@ -47,11 +47,12 @@ def eval_policy(config: dict[str, Any]) -> None:
         )
     )
     save_video      = bool(eval_cfg.get("save_video", True))
-    temporal_agg_default = (
-        True
-        if policy_class in {"PRIMITIVE_PLANNER_ACT", "PRIMITIVE_PLANNER_ACT_5P"}
-        else False
-    )
+    if policy_class == "PRIMITIVE_PLANNER_ACT_5P":
+        raise ValueError(
+            "PRIMITIVE_PLANNER_ACT_5P runtime planner has been removed; "
+            "use PRIMITIVE_PLANNER_ACT for the supported 4P runtime path."
+        )
+    temporal_agg_default = True if policy_class == "PRIMITIVE_PLANNER_ACT" else False
     temporal_agg    = bool(
         eval_cfg.get(
             "temporal_agg",
@@ -72,7 +73,7 @@ def eval_policy(config: dict[str, Any]) -> None:
             or eval_cfg.get("ckpt_dir")
             or config.get("train", {}).get("ckpt_dir")
         )
-    elif policy_class in {"PRIMITIVE_PLANNER_ACT", "PRIMITIVE_PLANNER_ACT_5P"}:
+    elif policy_class == "PRIMITIVE_PLANNER_ACT":
         ckpt_path_value = (
             eval_cfg.get("dig_ckpt_path")
             or policy_cfg.get("dig_ckpt_path")
@@ -462,7 +463,7 @@ def eval_policy(config: dict[str, Any]) -> None:
             scenario_id=scenario_id,
         )
 
-    elif policy_class in {"PRIMITIVE_PLANNER_ACT", "PRIMITIVE_PLANNER_ACT_5P"}:
+    elif policy_class == "PRIMITIVE_PLANNER_ACT":
         primitive_low_dim_keys = list(policy_cfg.get("primitive_low_dim_keys", ["qpos", "qvel"]))
         if "goal_tokens" in primitive_low_dim_keys and not scenario_id:
             raise ValueError(
@@ -473,11 +474,7 @@ def eval_policy(config: dict[str, Any]) -> None:
         primitive_policies = {}
         primitive_ckpt_paths: dict[str, str] = {}
         primitive_ckpt_dirs: dict[str, str] = {}
-        primitive_names = (
-            ("dig", "carry", "approach_dump", "dump_release", "return")
-            if policy_class == "PRIMITIVE_PLANNER_ACT_5P"
-            else ("dig", "carry", "dump", "return")
-        )
+        primitive_names = ("dig", "carry", "dump", "return")
         for primitive_name in primitive_names:
             primitive_ckpt_path_value = (
                 eval_cfg.get(f"{primitive_name}_ckpt_path")
@@ -621,10 +618,7 @@ def eval_policy(config: dict[str, Any]) -> None:
             primitive_ckpt_dirs["bootstrap"] = str(bootstrap_ckpt_dir)
 
         from testbed.planner.boundary_detector import build_boundary_detector_from_config
-        from testbed.policies.hybrid.primitive_planner import (
-            PrimitivePlannerACT5PPolicy,
-            PrimitivePlannerACTPolicy,
-        )
+        from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
         switch_cfg = dict(policy_cfg.get("switch", {}))
         transition_cfg = dict(policy_cfg.get("transition", {}))
@@ -857,120 +851,53 @@ def eval_policy(config: dict[str, Any]) -> None:
                 scripted_bootstrap_cfg.get("max_steps", 240)
             ),
         }
-        if policy_class == "PRIMITIVE_PLANNER_ACT_5P":
-            policy = PrimitivePlannerACT5PPolicy(
-                dig_policy=primitive_policies["dig"],
-                carry_policy=primitive_policies["carry"],
-                approach_dump_policy=primitive_policies["approach_dump"],
-                dump_release_policy=primitive_policies["dump_release"],
-                return_policy=primitive_policies["return"],
-                approach_ready_min_bucket_mass_kg=float(
-                    switch_cfg.get("approach_ready_min_bucket_mass_kg", 150.0)
-                ),
-                approach_ready_max_horizontal_distance_m=_optional_float(
-                    switch_cfg.get("approach_ready_max_horizontal_distance_m", 1.25)
-                ),
-                approach_ready_min_height_above_rim_m=float(
-                    switch_cfg.get("approach_ready_min_height_above_rim_m", -0.20)
-                ),
-                approach_ready_require_clearance=bool(
-                    switch_cfg.get("approach_ready_require_clearance", True)
-                ),
-                approach_ready_hold_steps=int(
-                    switch_cfg.get("approach_ready_hold_steps", 3)
-                ),
-                dump_release_ready_min_bucket_mass_kg=float(
-                    switch_cfg.get("dump_release_ready_min_bucket_mass_kg", 150.0)
-                ),
-                dump_release_ready_min_height_above_rim_m=float(
-                    switch_cfg.get("dump_release_ready_min_height_above_rim_m", 0.45)
-                ),
-                dump_release_ready_require_over_footprint=bool(
-                    switch_cfg.get("dump_release_ready_require_over_footprint", True)
-                ),
-                dump_release_ready_require_clearance=bool(
-                    switch_cfg.get("dump_release_ready_require_clearance", True)
-                ),
-                dump_release_ready_max_horizontal_distance_m=_optional_float(
-                    switch_cfg.get("dump_release_ready_max_horizontal_distance_m", 0.60)
-                ),
-                dump_release_ready_position_mode=str(
-                    switch_cfg.get(
-                        "dump_release_ready_position_mode",
-                        "footprint_or_dump_area_relative",
-                    )
-                ),
-                dump_release_ready_max_dump_area_footprint_outside_distance_m=_optional_float(
-                    switch_cfg.get(
-                        "dump_release_ready_max_dump_area_footprint_outside_distance_m",
-                        0.05,
-                    )
-                ),
-                dump_release_ready_min_dump_area_relative_x_m=_optional_float(
-                    switch_cfg.get("dump_release_ready_min_dump_area_relative_x_m")
-                ),
-                dump_release_ready_max_dump_area_relative_x_m=_optional_float(
-                    switch_cfg.get("dump_release_ready_max_dump_area_relative_x_m")
-                ),
-                dump_release_ready_min_dump_area_relative_z_m=_optional_float(
-                    switch_cfg.get("dump_release_ready_min_dump_area_relative_z_m")
-                ),
-                dump_release_ready_max_dump_area_relative_z_m=_optional_float(
-                    switch_cfg.get("dump_release_ready_max_dump_area_relative_z_m")
-                ),
-                dump_release_ready_hold_steps=int(
-                    switch_cfg.get("dump_release_ready_hold_steps", 3)
-                ),
-                **common_kwargs,
-            )
-        else:
-            policy = PrimitivePlannerACTPolicy(
-                dig_policy=primitive_policies["dig"],
-                carry_policy=primitive_policies["carry"],
-                dump_policy=primitive_policies["dump"],
-                return_policy=primitive_policies["return"],
-                dump_ready_min_bucket_mass_kg=float(
-                    switch_cfg.get("dump_ready_min_bucket_mass_kg", 150.0)
-                ),
-                dump_ready_min_height_above_rim_m=float(
-                    switch_cfg.get("dump_ready_min_height_above_rim_m", 0.45)
-                ),
-                dump_ready_require_over_footprint=bool(
-                    switch_cfg.get("dump_ready_require_over_footprint", True)
-                ),
-                dump_ready_require_clearance=bool(
-                    switch_cfg.get("dump_ready_require_clearance", True)
-                ),
-                dump_ready_max_horizontal_distance_m=_optional_float(
-                    switch_cfg.get("dump_ready_max_horizontal_distance_m", 0.82)
-                ),
-                dump_ready_position_mode=str(
-                    switch_cfg.get(
-                        "dump_ready_position_mode",
-                        "footprint_or_dump_area_relative",
-                    )
-                ),
-                dump_ready_max_dump_area_footprint_outside_distance_m=_optional_float(
-                    switch_cfg.get(
-                        "dump_ready_max_dump_area_footprint_outside_distance_m",
-                        0.05,
-                    )
-                ),
-                dump_ready_min_dump_area_relative_x_m=_optional_float(
-                    switch_cfg.get("dump_ready_min_dump_area_relative_x_m")
-                ),
-                dump_ready_max_dump_area_relative_x_m=_optional_float(
-                    switch_cfg.get("dump_ready_max_dump_area_relative_x_m")
-                ),
-                dump_ready_min_dump_area_relative_z_m=_optional_float(
-                    switch_cfg.get("dump_ready_min_dump_area_relative_z_m")
-                ),
-                dump_ready_max_dump_area_relative_z_m=_optional_float(
-                    switch_cfg.get("dump_ready_max_dump_area_relative_z_m")
-                ),
-                dump_ready_hold_steps=int(switch_cfg.get("dump_ready_hold_steps", 3)),
-                **common_kwargs,
-            )
+        policy = PrimitivePlannerACTPolicy(
+            dig_policy=primitive_policies["dig"],
+            carry_policy=primitive_policies["carry"],
+            dump_policy=primitive_policies["dump"],
+            return_policy=primitive_policies["return"],
+            dump_ready_min_bucket_mass_kg=float(
+                switch_cfg.get("dump_ready_min_bucket_mass_kg", 150.0)
+            ),
+            dump_ready_min_height_above_rim_m=float(
+                switch_cfg.get("dump_ready_min_height_above_rim_m", 0.45)
+            ),
+            dump_ready_require_over_footprint=bool(
+                switch_cfg.get("dump_ready_require_over_footprint", True)
+            ),
+            dump_ready_require_clearance=bool(
+                switch_cfg.get("dump_ready_require_clearance", True)
+            ),
+            dump_ready_max_horizontal_distance_m=_optional_float(
+                switch_cfg.get("dump_ready_max_horizontal_distance_m", 0.82)
+            ),
+            dump_ready_position_mode=str(
+                switch_cfg.get(
+                    "dump_ready_position_mode",
+                    "footprint_or_dump_area_relative",
+                )
+            ),
+            dump_ready_max_dump_area_footprint_outside_distance_m=_optional_float(
+                switch_cfg.get(
+                    "dump_ready_max_dump_area_footprint_outside_distance_m",
+                    0.05,
+                )
+            ),
+            dump_ready_min_dump_area_relative_x_m=_optional_float(
+                switch_cfg.get("dump_ready_min_dump_area_relative_x_m")
+            ),
+            dump_ready_max_dump_area_relative_x_m=_optional_float(
+                switch_cfg.get("dump_ready_max_dump_area_relative_x_m")
+            ),
+            dump_ready_min_dump_area_relative_z_m=_optional_float(
+                switch_cfg.get("dump_ready_min_dump_area_relative_z_m")
+            ),
+            dump_ready_max_dump_area_relative_z_m=_optional_float(
+                switch_cfg.get("dump_ready_max_dump_area_relative_z_m")
+            ),
+            dump_ready_hold_steps=int(switch_cfg.get("dump_ready_hold_steps", 3)),
+            **common_kwargs,
+        )
 
     else:
         from testbed.policies.base import PolicyRegistry
@@ -1058,7 +985,7 @@ def eval_policy(config: dict[str, Any]) -> None:
             "device_requested": str(device),
         }
     )
-    if policy_class in {"PRIMITIVE_PLANNER_ACT", "PRIMITIVE_PLANNER_ACT_5P"}:
+    if policy_class == "PRIMITIVE_PLANNER_ACT":
         record_hdf5_metadata.update(
             {
                 "dig_ckpt_path": str(policy_cfg.get("dig_ckpt_path", "")),

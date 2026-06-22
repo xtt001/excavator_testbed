@@ -87,7 +87,7 @@ The table below is the responsibility map future migrations must use.
 | Range | Responsibility | Main methods | Main state read/written | Architecture target |
 | --- | --- | --- | --- | --- |
 | 149-841 | public adapter construction and config normalization | `__init__` | policy objects, config scalars, token config, coverage config, pre-dig config | public adapter plus kernel construction |
-| 842-967 | reset lifecycle | `reset` | low-level policy resets, boundary detector, active skill, counters, token state, return state, coverage state | execution kernel reset plus public adapter facade |
+| 842-927 | reset lifecycle facade | `reset` | reset service result writeback, initial compact debug state | `PrimitiveResetLifecycleService` plus public adapter facade |
 | 968-1012 | public tick template | `predict` | `_prev_action`, boundary event, `_skill_name`, `_switch_reason`, debug state | first extraction slice: explicit execution kernel template |
 | 1014-1549 | public reporting | `debug_state`, `rollout_summary`, `planner_trace` | debug state, token flags, coverage fields, summary counters | reporting boundary, not decision backend |
 | 1550-1819 | inline 4P FSM branch order | `_maybe_switch_skill`, return direct handoff helpers | active skill, boundary event, counters, coverage completion/reject, pending plans | legacy FSM parity backend after execution template exists |
@@ -103,7 +103,7 @@ The table below is the responsibility map future migrations must use.
 | 5637-5818 | plan invalidation, config validation, prior helpers | `_clear_dig_cut_plan`, `_invalidate_pending_dig_cut_plan`, `_load_dig_cut_prior`, `_prior_percentile` | token plan ids, pending plans, prior file content | token/config helper modules |
 | 5819-5940 | cell-entry legacy path | `_cell_entry_tokens_for_obs`, `_complete_cell_entry_dig`, cell pose/cell id helpers | cell-entry goal/audit/trace | legacy diagnostic parking, not mainline backend |
 | 5941-6075 | goal tokens, policy dispatch, debug-state construction | `_goal_tokens`, `_active_policy`, `_all_policies`, `_make_debug_state` | goal sequence, active skill, policy handles, debug fields | goal-token service, dispatch facade, report boundary |
-| 6083-6505 | 5P compatibility planner | `PrimitivePlannerACT5PPolicy` overrides | 5P approach/dump-release states and policy mapping | compatibility owner, not mainline architecture |
+| removed | 5P runtime planner | removed `PrimitivePlannerACT5PPolicy` subclass | old 5P approach/dump-release runtime path retained only in git history | cleanup-approved removed runtime path |
 
 ## Evidence-Based Retention Matrix
 
@@ -139,7 +139,7 @@ The current baseline report uses the successful `aggregate_tx24` rollout packet:
 | `report.rollout_summary` | report-only | retain-report-boundary | `rollout_summary` | reporting boundary |
 | `trace.planner_trace` | report-only | retain-report-boundary | `planner_trace` | reporting boundary |
 | `policy.public_adapter` | compatibility | retain-compatibility | `PrimitivePlannerACTPolicy` | public adapter |
-| `compat.5p_policy` | compatibility | retain-compatibility | `PrimitivePlannerACT5PPolicy` | compatibility owner |
+| `compat.5p_policy` | compatibility-cleanup | removed-runtime-cleanup | git history only | cleanup-approved removed runtime path |
 | `token.cell_entry` | dead-candidate | retain-legacy-parking | `_cell_entry_tokens_for_obs` | legacy diagnostic parking |
 | `gate.pre_dig_align` | dead-candidate | retain-legacy-parking | `_maybe_switch_skill` pre-dig branch | legacy diagnostic/action parking |
 
@@ -174,7 +174,8 @@ Long-term adapter responsibilities:
 - preserve public constructor/config compatibility
 - expose public reporting shapes
 - hide backend selection from eval/rollout callers
-- keep 5P compatibility as a compatibility owner
+- keep cleanup-approved 5P runtime removal explicit; old branch/git history
+  preserves historical behavior
 
 ### Execution Kernel
 
@@ -307,7 +308,7 @@ Parked code must not be used as a justification for new mainline services.
 | --- | --- | --- | --- | --- | --- |
 | `token.cell_entry` | absent from successful rollout; `cell_entry_enabled=0`; no `cell_entry_tokens` low-dim key | `_cell_entry_tokens_for_obs`, `_complete_cell_entry_dig`, `testbed/planner/cell_entry.py` | `LegacyCellEntryDiagnostics` or compatibility notes | old configs, diagnostics, explicit legacy replay | default token contract, new backend fact, VLM decision packet |
 | `gate.pre_dig_align` | successful rollout has `pre_dig_align.enabled=false`; completed/timeout counts are zero | pre-dig branch in `_maybe_switch_skill`, `_pre_dig_align_*`, `_pre_dig_align_action` | `LegacyPreDigAlignAdapter` or diagnostic note | explicit legacy config, old PD alignment replay, debug comparison | default FSM path, behavior-tree node, VLM effect unless re-approved |
-| `PrimitivePlannerACT5PPolicy` | not mainline evidence, but public compatibility owner | 5P subclass | compatibility owner | old 5P configs and tests | source of default 4P architecture |
+| removed `PrimitivePlannerACT5PPolicy` runtime path | user-approved cleanup, not mainline evidence | git history only | removed runtime path | historical comparison from old branches | source of default 4P architecture |
 
 Parking review before any later cleanup:
 
@@ -783,6 +784,21 @@ classes, coverage selection/scoring/exemplar algorithms, return handoff
 gate/effect services, `cell_entry`, `pre_dig_align`, 5P token behavior, and
 alternate backend parked scope remain intentionally unchanged.
 
+Current status note after Phase 9.32: 4P reset lifecycle sequencing now lives
+in `PrimitiveResetLifecycleService` in
+`testbed/planner/primitive_reset_lifecycle.py`. Public
+`PrimitivePlannerACTPolicy.reset()` is a thin service-backed adapter that builds
+typed reset ports, applies the returned reset state, and creates the initial
+compact debug state. The service owns low-level policy reset order, boundary
+detector reset, bootstrap/pre-dig initial-skill selection, counters, hold
+mirrors, pre-dig cached diagnostics, cell-entry compatibility defaults,
+dig/return token and pending-plan defaults, injected-token flags,
+source/fallback strings, and fresh `CoverageRuntimeState` creation. The 5P
+runtime planner subclass has been removed by explicit cleanup decision; old
+5P runtime behavior is preserved only in branch/git history, while historical
+data-slicing and experiment records remain documentation/history rather than
+current runtime architecture.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut
@@ -809,15 +825,16 @@ evidence packet classifies `gate.pre_dig_align` as
 `dead-candidate` / `retain-legacy-parking`.
 
 Stop further Slice 7 code migration at this verified boundary unless the user
-approves a new scope. Valid next scopes are a legacy pre-dig parking extraction,
-5P compatibility audit, direct-handoff helper extraction, or backend selection
-cleanup. Do not move `pre_dig_align`, the 5P override, direct-handoff helper
-internals, change branch order, change reason strings, or apply unrelated
-effects through the backend boundary without that separate evidence and
-compatibility decision.
+approves a new scope. The 5P runtime compatibility audit has been resolved by
+the Phase 9.32 cleanup-approved removal of `PrimitivePlannerACT5PPolicy`; old
+behavior remains available only through git history. Valid remaining scopes are
+legacy pre-dig parking extraction, direct-handoff helper extraction, or backend
+selection cleanup. Do not move `pre_dig_align`, direct-handoff helper internals,
+change branch order, change reason strings, or apply unrelated effects through
+the backend boundary without that separate evidence and compatibility decision.
 
 The next approved planning scope is Phase 8 effect-boundary design, recorded in
 `docs/planner_effect_boundary_design.md`. It should govern later return
-direct-handoff, 5P compatibility, legacy parking, and backend-selection work by
+direct-handoff, legacy parking, and backend-selection work by
 classifying each path as facts, decision, requested effect, reporting,
 compatibility, or legacy parking before any code migration.

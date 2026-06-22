@@ -276,9 +276,9 @@ BASELINE_CAPABILITY_SPECS: tuple[CapabilitySpec, ...] = (
     ),
     CapabilitySpec(
         "compat.5p_policy",
-        "PrimitivePlannerACT5PPolicy",
+        "removed 5P runtime planner (git history only)",
         "compatibility",
-        owner_classification="compatibility",
+        owner_classification="removed-runtime",
     ),
 )
 
@@ -782,6 +782,8 @@ def _retention_decision(classification: str) -> str:
         return "retain-compatibility"
     if classification == "test-only":
         return "retain-test-only"
+    if classification == "removed-runtime":
+        return "removed-runtime-cleanup"
     if classification == "dead-candidate":
         return "retain-legacy-parking"
     return "hold-unobserved"

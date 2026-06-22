@@ -4169,3 +4169,69 @@ Each completed refactor round should append:
   material; `pre_dig_align` remains residual parking/action material; 5P
   remains its existing legacy token/transition behavior; behavior tree, VLM,
   and LLM backends remain unsupported parked scope.
+
+### 2026-06-22 Phase 9.32 Extract Reset Lifecycle Service And Remove 5P Planner
+
+- Scope: extracted confirmed-live 4P reset lifecycle sequencing from
+  `PrimitivePlannerACTPolicy.reset()` into `PrimitiveResetLifecycleService`
+  with typed `PrimitiveResetLifecyclePorts` and a reset-state result object.
+  Removed the obsolete `PrimitivePlannerACT5PPolicy` runtime subclass and
+  updated current runtime/tests/docs to classify 5P runtime behavior as
+  cleanup-approved and available only through git history. No 4P branch order,
+  reason string, threshold, token/debug/summary/trace schema, policy reset
+  timing, public config behavior, coverage trace payload schema, or low-level
+  ACT dispatch output contract was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `c9cf0f2e1d0638225abfeb882fcfd70d9155467b`; no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits. HEAD after this
+  round is the local commit containing this record and is reported in the final
+  handoff because a commit cannot embed its own final hash.
+- Added `testbed/planner/primitive_reset_lifecycle.py` with
+  `PrimitiveResetLifecyclePorts`, `PrimitiveResetLifecycleState`, and
+  `PrimitiveResetLifecycleService`. The service owns old 4P reset ordering for
+  low-level policy resets, boundary-detector reset, bootstrap/scripted/
+  pre-dig initial-skill selection, switch reason and previous-action defaults,
+  hold counters, return/dig/cycle counters, pre-dig cached diagnostics,
+  cell-entry compatibility state, dig/return token arrays and injected flags,
+  source/fallback strings, pending next-dig plan state, fresh
+  `CoverageRuntimeState` creation, and initial debug transition flags.
+- Updated `PrimitivePlannerACTPolicy.reset()` to build reset ports, invoke the
+  service, apply the returned reset state to policy storage, and initialize the
+  compact debug state. The policy shell keeps mutable storage and compatibility
+  private names; the reset sequencing source of truth is now the service.
+- Removed `PrimitivePlannerACT5PPolicy` and its 5P-specific reset,
+  `_maybe_switch_skill`, `_set_skill`, active-policy/all-policy, action-dispatch,
+  and tick-finalization runtime overrides. Runtime eval now fail-fasts
+  `PRIMITIVE_PLANNER_ACT_5P` with an explicit removed-runtime message. The AGX
+  test that directly exercised 5P runtime switching was removed; data slicing
+  and historical experiment material were not deleted.
+- TDD red result: the first focused run failed at collection with
+  `ModuleNotFoundError: No module named
+  'testbed.planner.primitive_reset_lifecycle'`. After adding the service module
+  and policy wiring, the focused reset lifecycle suite returned `9 passed`.
+- Verification:
+  `python -m pytest -q tests/test_primitive_reset_lifecycle.py` returned
+  `9 passed`;
+  `python -m pytest -q tests/test_primitive_execution_driver.py tests/test_primitive_action_dispatch.py tests/test_primitive_tick_finalization.py tests/test_primitive_skill_lifecycle.py`
+  returned `32 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `95 passed`;
+  `python -m pytest -q tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py tests/test_primitive_token_runtime.py`
+  returned `30 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or coverage_decision_trace or dig_depth_profile or dig_cut_tokens"`
+  returned `20 passed, 99 deselected`;
+  compileall completed successfully with no output for the touched reset,
+  execution, action-dispatch, tick-finalization, skill-lifecycle, policy,
+  runtime eval, evidence trace, and reset-test modules; both planner guard
+  commands and `git diff --check` completed successfully with no output.
+- Structural check:
+  `rg -n "PrimitivePlannerACT5PPolicy|PRIMITIVE_SKILL_IDS_5P|approach_dump_policy|dump_release_policy|carry_to_approach_dump|dump_release_to_return" testbed/policies/hybrid/primitive_planner.py testbed/planner tests/test_primitive_* tests/test_agx_primitives_v2_2.py`
+  returned no current runtime dependency hits.
+- Old code parked/reclassified: `pre_dig_align` remains residual parking/action
+  material; `cell_entry` remains compatibility/report material; behavior tree,
+  VLM, and LLM backends remain unsupported parked scope; 5P runtime behavior is
+  removed from current code by explicit cleanup decision and retained only by
+  git history, not as a live compatibility owner.
