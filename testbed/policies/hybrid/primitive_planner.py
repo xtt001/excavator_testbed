@@ -72,8 +72,11 @@ from testbed.planner.primitive_capabilities import (
     CarryTransitionStatus,
     DigTransitionStatus,
     DumpTransitionStatus,
-    PrimitiveObservationFacts,
     ReturnTransitionStatus,
+)
+from testbed.planner.primitive_capability_provider import (
+    PrimitiveFSMCapabilityProvider,
+    PrimitiveFSMCapabilityProviderPorts,
 )
 from testbed.planner.primitive_coverage import (
     CoverageCandidateBuilder,
@@ -1125,6 +1128,7 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _legacy_fsm_branch_ports(self) -> LegacyFSMBranchPorts:
+        capability_provider = self._primitive_fsm_capability_provider()
         return LegacyFSMBranchPorts(
             bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
             pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
@@ -1138,24 +1142,27 @@ class PrimitivePlannerACTPolicy(Policy):
             bootstrap_end_mode=lambda: str(self.bootstrap_end_mode),
             should_pre_dig_align_before_dig=self._should_pre_dig_align_before_dig,
             maybe_handle_pre_dig_align_skill=self._maybe_handle_pre_dig_align_skill,
-            dig_transition_status=self._dig_transition_status_for_backend,
-            carry_transition_status=self._carry_transition_status_for_backend,
-            dump_transition_status=self._dump_transition_status_for_backend,
-            return_transition_status=self._return_transition_status_for_backend,
+            dig_transition_status=capability_provider.dig_transition_status,
+            carry_transition_status=capability_provider.carry_transition_status,
+            dump_transition_status=capability_provider.dump_transition_status,
+            return_transition_status=capability_provider.return_transition_status,
         )
 
-    def _dig_transition_status_for_backend(
+    def _primitive_fsm_capability_provider(
         self,
-        obs: dict,
-        boundary_event: Any | None,
-    ) -> DigTransitionStatus:
-        status = DigTransitionStatus.from_inputs(
-            observation=PrimitiveObservationFacts.from_obs(
-                obs,
-                action_dim=self.action_dim,
+    ) -> PrimitiveFSMCapabilityProvider:
+        return PrimitiveFSMCapabilityProvider.from_ports(
+            self._primitive_fsm_capability_provider_ports()
+        )
+
+    def _primitive_fsm_capability_provider_ports(
+        self,
+    ) -> PrimitiveFSMCapabilityProviderPorts:
+        return PrimitiveFSMCapabilityProviderPorts(
+            action_dim=self.action_dim,
+            semantic_boundary_profile_active=(
+                lambda: self._semantic_boundary_profile_active()
             ),
-            boundary_event=boundary_event,
-            semantic_boundary_profile_active=self._semantic_boundary_profile_active(),
             coverage_terminal_stop_requested=self._coverage_terminal_stop_requested,
             dig_step_count=self._dig_step_count,
             dig_mass_plateau_count=self._dig_mass_plateau_count,
@@ -1186,27 +1193,17 @@ class PrimitivePlannerACTPolicy(Policy):
             dig_exit_guard_min_steps=self.dig_exit_guard_min_steps,
             dig_exit_guard_min_bucket_mass_kg=self.dig_exit_guard_min_bucket_mass_kg,
             dig_exit_guard_overshoot_m=self.dig_exit_guard_overshoot_m,
-            dig_exit_overshoot_m=self._dig_exit_overshoot_m(obs),
-        )
-        self._dig_to_carry_reason = str(status.dig_to_carry_reason)
-        return status
-
-    def _carry_transition_status_for_backend(
-        self,
-        obs: dict,
-        boundary_event: Any | None,
-    ) -> CarryTransitionStatus:
-        return CarryTransitionStatus.from_inputs(
-            observation=PrimitiveObservationFacts.from_obs(
-                obs,
-                action_dim=self.action_dim,
+            dig_exit_overshoot_m=lambda obs: self._dig_exit_overshoot_m(obs),
+            set_dig_to_carry_reason=(
+                lambda reason: setattr(
+                    self,
+                    "_dig_to_carry_reason",
+                    str(reason),
+                )
             ),
-            boundary_event=boundary_event,
-            semantic_boundary_profile_active=self._semantic_boundary_profile_active(),
             coverage_cycle_start_deposit_kg=self._coverage_cycle_start_deposit_kg,
             dump_ready_hold_count=self._dump_ready_hold_count,
             dump_ready_hold_steps=self.dump_ready_hold_steps,
-            dump_ready_min_bucket_mass_kg=self.dump_ready_min_bucket_mass_kg,
             dump_ready_min_height_above_rim_m=self.dump_ready_min_height_above_rim_m,
             dump_ready_require_over_footprint=self.dump_ready_require_over_footprint,
             dump_ready_require_clearance=self.dump_ready_require_clearance,
@@ -1244,54 +1241,25 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             dump_done_max_bucket_mass_kg=self.dump_done_max_bucket_mass_kg,
             dump_done_min_deposit_delta_kg=self.dump_done_min_deposit_delta_kg,
-        )
-
-    def _set_dump_ready_hold_count(self, value: int) -> None:
-        self._dump_ready_hold_count = int(value)
-
-    def _set_dump_start_deposited_mass(self, value: float) -> None:
-        self._dump_start_deposited_mass_kg = float(value)
-
-    def _dump_transition_status_for_backend(
-        self,
-        obs: dict,
-        boundary_event: Any | None,
-    ) -> DumpTransitionStatus:
-        return DumpTransitionStatus.from_inputs(
-            observation=PrimitiveObservationFacts.from_obs(
-                obs,
-                action_dim=self.action_dim,
-            ),
-            boundary_event=boundary_event,
-            semantic_boundary_profile_active=self._semantic_boundary_profile_active(),
             dump_done_use_boundary_event=self.dump_done_use_boundary_event,
             dump_start_deposited_mass_kg=self._dump_start_deposited_mass_kg,
             dump_done_hold_count=self._dump_done_hold_count,
             dump_done_hold_steps=self.dump_done_hold_steps,
-            dump_done_max_bucket_mass_kg=self.dump_done_max_bucket_mass_kg,
-            dump_done_min_deposit_delta_kg=self.dump_done_min_deposit_delta_kg,
-        )
-
-    def _set_dump_done_hold_count(self, value: int) -> None:
-        self._dump_done_hold_count = int(value)
-
-    def _return_transition_status_for_backend(
-        self,
-        obs: dict,
-        boundary_event: Any | None,
-    ) -> ReturnTransitionStatus:
-        self._return_to_dig_handoff_ready(obs)
-        return ReturnTransitionStatus.from_inputs(
-            observation=PrimitiveObservationFacts.from_obs(
-                obs,
-                action_dim=self.action_dim,
+            refresh_return_handoff_state=(
+                lambda obs: self._return_to_dig_handoff_ready(obs)
             ),
-            boundary_event=boundary_event,
-            semantic_boundary_profile_active=self._semantic_boundary_profile_active(),
-            return_next_dig_event_seen=self._return_next_dig_event_seen,
-            entry_close=self._return_to_dig_entry_close_state,
-            start_envelope_ready=self._return_to_dig_start_envelope_ready_state,
-            pre_dig_align_before_dig=self._should_pre_dig_align_before_dig(),
+            return_next_dig_event_seen=(
+                lambda: bool(self._return_next_dig_event_seen)
+            ),
+            return_entry_close=(
+                lambda: bool(self._return_to_dig_entry_close_state)
+            ),
+            return_start_envelope_ready=(
+                lambda: bool(self._return_to_dig_start_envelope_ready_state)
+            ),
+            pre_dig_align_before_dig=(
+                lambda: self._should_pre_dig_align_before_dig()
+            ),
             return_to_dig_start_envelope_direct_handoff_enabled=(
                 self.return_to_dig_start_envelope_direct_handoff_enabled
             ),
@@ -1306,6 +1274,55 @@ class PrimitivePlannerACTPolicy(Policy):
             return_to_dig_min_depth_m=self.return_to_dig_min_depth_m,
             return_to_dig_max_depth_m=self.return_to_dig_max_depth_m,
             return_to_dig_max_entry_error_m=self.return_to_dig_max_entry_error_m,
+        )
+
+    def _dig_transition_status_for_backend(
+        self,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> DigTransitionStatus:
+        return self._primitive_fsm_capability_provider().dig_transition_status(
+            obs,
+            boundary_event,
+        )
+
+    def _carry_transition_status_for_backend(
+        self,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> CarryTransitionStatus:
+        return self._primitive_fsm_capability_provider().carry_transition_status(
+            obs,
+            boundary_event,
+        )
+
+    def _set_dump_ready_hold_count(self, value: int) -> None:
+        self._dump_ready_hold_count = int(value)
+
+    def _set_dump_start_deposited_mass(self, value: float) -> None:
+        self._dump_start_deposited_mass_kg = float(value)
+
+    def _dump_transition_status_for_backend(
+        self,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> DumpTransitionStatus:
+        return self._primitive_fsm_capability_provider().dump_transition_status(
+            obs,
+            boundary_event,
+        )
+
+    def _set_dump_done_hold_count(self, value: int) -> None:
+        self._dump_done_hold_count = int(value)
+
+    def _return_transition_status_for_backend(
+        self,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> ReturnTransitionStatus:
+        return self._primitive_fsm_capability_provider().return_transition_status(
+            obs,
+            boundary_event,
         )
 
     def _mark_return_next_dig_event_seen(self) -> None:

@@ -60,6 +60,136 @@ def _default_dig_status(**overrides: Any) -> DigTransitionStatus:
     return DigTransitionStatus(**values)
 
 
+class _FakePrimitiveFSMCapabilityProvider:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def dig_transition_status(self, obs: dict, boundary_event: Any | None) -> str:
+        self.calls.append("dig")
+        return "dig_status"
+
+    def carry_transition_status(self, obs: dict, boundary_event: Any | None) -> str:
+        self.calls.append("carry")
+        return "carry_status"
+
+    def dump_transition_status(self, obs: dict, boundary_event: Any | None) -> str:
+        self.calls.append("dump")
+        return "dump_status"
+
+    def return_transition_status(self, obs: dict, boundary_event: Any | None) -> str:
+        self.calls.append("return")
+        return "return_status"
+
+
+class _FakeDecisionStatusProvider:
+    def __init__(
+        self,
+        *,
+        dig_status: DigTransitionStatus | None = None,
+        carry_status: CarryTransitionStatus | None = None,
+        dump_status: DumpTransitionStatus | None = None,
+        return_status: ReturnTransitionStatus | None = None,
+    ) -> None:
+        self.dig_status = dig_status
+        self.carry_status = carry_status
+        self.dump_status = dump_status
+        self.return_status = return_status
+
+    def dig_transition_status(
+        self,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> DigTransitionStatus:
+        if self.dig_status is None:
+            raise AssertionError("dig status was not expected")
+        return self.dig_status
+
+    def carry_transition_status(
+        self,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> CarryTransitionStatus:
+        if self.carry_status is None:
+            raise AssertionError("carry status was not expected")
+        return self.carry_status
+
+    def dump_transition_status(
+        self,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> DumpTransitionStatus:
+        if self.dump_status is None:
+            raise AssertionError("dump status was not expected")
+        return self.dump_status
+
+    def return_transition_status(
+        self,
+        obs: dict,
+        boundary_event: Any | None,
+    ) -> ReturnTransitionStatus:
+        if self.return_status is None:
+            raise AssertionError("return status was not expected")
+        return self.return_status
+
+
+def _install_fake_decision_status_provider(
+    planner: PrimitivePlannerACTPolicy,
+    *,
+    dig_status: DigTransitionStatus | None = None,
+    carry_status: CarryTransitionStatus | None = None,
+    dump_status: DumpTransitionStatus | None = None,
+    return_status: ReturnTransitionStatus | None = None,
+) -> _FakeDecisionStatusProvider:
+    provider = _FakeDecisionStatusProvider(
+        dig_status=dig_status,
+        carry_status=carry_status,
+        dump_status=dump_status,
+        return_status=return_status,
+    )
+    planner._primitive_fsm_capability_provider = MethodType(
+        lambda self: provider,
+        planner,
+    )
+    return provider
+
+
+def _set_minimal_non_dig_capability_fields(planner: PrimitivePlannerACTPolicy) -> None:
+    planner._coverage_cycle_start_deposit_kg = 0.0
+    planner._dump_ready_hold_count = 0
+    planner.dump_ready_hold_steps = 1
+    planner.dump_ready_min_height_above_rim_m = 0.0
+    planner.dump_ready_require_over_footprint = True
+    planner.dump_ready_require_clearance = True
+    planner.dump_ready_max_horizontal_distance_m = None
+    planner.dump_ready_position_mode = "footprint_or_dump_area_relative"
+    planner.dump_ready_max_dump_area_footprint_outside_distance_m = None
+    planner.dump_ready_min_dump_area_relative_x_m = None
+    planner.dump_ready_max_dump_area_relative_x_m = None
+    planner.dump_ready_min_dump_area_relative_z_m = None
+    planner.dump_ready_max_dump_area_relative_z_m = None
+    planner.dump_ready_near_window_enabled = False
+    planner.dump_ready_near_window_x_tolerance_m = 0.0
+    planner.dump_ready_near_window_z_tolerance_m = 0.0
+    planner.dump_ready_near_window_outside_tolerance_m = 0.0
+    planner.dump_ready_near_window_require_over_footprint = True
+    planner.dump_done_max_bucket_mass_kg = 0.0
+    planner.dump_done_min_deposit_delta_kg = 0.0
+    planner.dump_done_use_boundary_event = True
+    planner._dump_start_deposited_mass_kg = 0.0
+    planner._dump_done_hold_count = 0
+    planner.dump_done_hold_steps = 1
+    planner.return_to_dig_start_envelope_direct_handoff_enabled = False
+    planner.return_to_dig_start_envelope_gate_enabled = False
+    planner.return_to_dig_shallow_guard_enabled = False
+    planner.return_to_dig_max_bucket_mass_kg = 0.0
+    planner.return_to_dig_touch_tolerance_m = 0.0
+    planner.return_to_dig_min_depth_m = 0.0
+    planner.return_to_dig_max_depth_m = 0.0
+    planner.return_to_dig_max_entry_error_m = None
+    planner._return_to_dig_handoff_ready = MethodType(lambda self, obs: False, planner)
+    planner._should_pre_dig_align_before_dig = MethodType(lambda self: False, planner)
+
+
 def test_legacy_decision_result_records_observable_skill_switch_only() -> None:
     result = PrimitiveDecisionResult.from_legacy_fsm_outcome(
         skill_before="dig",
@@ -731,6 +861,7 @@ def test_primitive_planner_unknown_skill_fails_without_broad_legacy_fallback() -
         self._switch_reason = "legacy_to_carry"
 
     planner._maybe_switch_skill = MethodType(fake_maybe_switch_skill, planner)
+    _install_fake_decision_status_provider(planner)
 
     try:
         planner._decide_tick_with_legacy_fsm(
@@ -1049,6 +1180,7 @@ def test_primitive_planner_bootstrap_decision_bridge_returns_requested_switch() 
         lambda self: False,
         planner,
     )
+    _install_fake_decision_status_provider(planner)
 
     result = planner._decide_tick_with_legacy_fsm(
         obs=obs,
@@ -1080,8 +1212,9 @@ def test_primitive_planner_return_decision_bridge_returns_requested_effects() ->
     obs: dict[str, Any] = {"qpos": [1.0]}
     calls: list[str] = []
 
-    planner._return_transition_status_for_backend = MethodType(
-        lambda self, obs, boundary_event: ReturnTransitionStatus(
+    _install_fake_decision_status_provider(
+        planner,
+        return_status=ReturnTransitionStatus(
             mass_in_bucket_kg=0.0,
             min_distance_to_dig_area_m=0.0,
             bucket_depth_below_dig_area_plane_m=0.0,
@@ -1098,7 +1231,6 @@ def test_primitive_planner_return_decision_bridge_returns_requested_effects() ->
             next_skill="dig",
             switch_reason="return_to_dig_next_dig_entry_ready",
         ),
-        planner,
     )
     planner._mark_return_next_dig_event_seen = MethodType(
         lambda self: calls.append("mark"),
@@ -1144,8 +1276,9 @@ def test_primitive_planner_carry_decision_bridge_returns_requested_effects() -> 
     obs: dict[str, Any] = {"qpos": [1.0]}
     callbacks: list[str] = []
 
-    planner._carry_transition_status_for_backend = MethodType(
-        lambda self, obs, boundary_event: CarryTransitionStatus(
+    _install_fake_decision_status_provider(
+        planner,
+        carry_status=CarryTransitionStatus(
             mass_in_bucket_kg=120.0,
             deposited_mass_in_target_box_kg=8.5,
             deposit_delta_since_cycle_start_kg=8.5,
@@ -1161,7 +1294,6 @@ def test_primitive_planner_carry_decision_bridge_returns_requested_effects() -> 
             carry_to_dump_reason="dump_committed_boundary",
             carry_to_return_reason="",
         ),
-        planner,
     )
     planner._complete_coverage_dump = MethodType(
         lambda self, obs, reason: callbacks.append(f"complete:{reason}"),
@@ -1214,8 +1346,9 @@ def test_primitive_planner_dump_decision_bridge_returns_requested_effects() -> N
     obs: dict[str, Any] = {"qpos": [1.0]}
     callbacks: list[str] = []
 
-    planner._dump_transition_status_for_backend = MethodType(
-        lambda self, obs, boundary_event: DumpTransitionStatus(
+    _install_fake_decision_status_provider(
+        planner,
+        dump_status=DumpTransitionStatus(
             mass_in_bucket_kg=5.0,
             deposited_mass_in_target_box_kg=20.0,
             deposit_delta_since_dump_start_kg=10.0,
@@ -1229,7 +1362,6 @@ def test_primitive_planner_dump_decision_bridge_returns_requested_effects() -> N
             coverage_completion_reason="dump_mass_low",
             dump_to_return_reason="dump_to_return_mass_low",
         ),
-        planner,
     )
     planner._complete_coverage_dump = MethodType(
         lambda self, obs, reason: callbacks.append(f"complete:{reason}"),
@@ -1270,12 +1402,12 @@ def test_primitive_planner_dig_decision_bridge_returns_requested_effects() -> No
     obs: dict[str, Any] = {"qpos": [1.0]}
     callbacks: list[str] = []
 
-    planner._dig_transition_status_for_backend = MethodType(
-        lambda self, obs, boundary_event: _default_dig_status(
+    _install_fake_decision_status_provider(
+        planner,
+        dig_status=_default_dig_status(
             dig_to_carry_ready=True,
             dig_to_carry_reason="boundary_confirmed",
         ),
-        planner,
     )
     planner._increment_dig_exit_guard_replan_count = MethodType(
         lambda self: callbacks.append("exit_count"),
@@ -1355,6 +1487,7 @@ def test_primitive_planner_dig_transition_status_provider_maps_inputs_and_mirror
     planner.dig_exit_guard_overshoot_m = 0.65
     planner._dig_to_carry_reason = "stale"
     planner._dig_exit_overshoot_m = MethodType(lambda self, obs: 0.7, planner)
+    _set_minimal_non_dig_capability_fields(planner)
 
     loaded_status = planner._dig_transition_status_for_backend(
         {
@@ -1390,3 +1523,44 @@ def test_primitive_planner_dig_transition_status_provider_maps_inputs_and_mirror
     assert low_payload_status.dig_to_carry_ready is False
     assert low_payload_status.dig_to_carry_reason == ""
     assert planner._dig_to_carry_reason == ""
+
+
+def test_primitive_planner_legacy_branch_ports_use_capability_provider_methods() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    planner._skill_name = "dig"
+    planner._switch_reason = ""
+    planner.bootstrap_end_mode = "first_qualified_dig_start"
+    planner._should_end_bootstrap = MethodType(
+        lambda self, *, obs, boundary_event: False,
+        planner,
+    )
+    planner._should_pre_dig_align_before_dig = MethodType(lambda self: False, planner)
+    planner._maybe_handle_pre_dig_align_skill = MethodType(lambda self, obs: False, planner)
+    provider = _FakePrimitiveFSMCapabilityProvider()
+    planner._primitive_fsm_capability_provider = MethodType(
+        lambda self: provider,
+        planner,
+    )
+
+    ports = planner._legacy_fsm_branch_ports()
+
+    assert ports.dig_transition_status({}, None) == "dig_status"
+    assert ports.carry_transition_status({}, None) == "carry_status"
+    assert ports.dump_transition_status({}, None) == "dump_status"
+    assert ports.return_transition_status({}, None) == "return_status"
+    assert provider.calls == ["dig", "carry", "dump", "return"]
+
+
+def test_primitive_planner_transition_status_wrappers_delegate_to_provider() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    provider = _FakePrimitiveFSMCapabilityProvider()
+    planner._primitive_fsm_capability_provider = MethodType(
+        lambda self: provider,
+        planner,
+    )
+
+    assert planner._dig_transition_status_for_backend({}, None) == "dig_status"
+    assert planner._carry_transition_status_for_backend({}, None) == "carry_status"
+    assert planner._dump_transition_status_for_backend({}, None) == "dump_status"
+    assert planner._return_transition_status_for_backend({}, None) == "return_status"
+    assert provider.calls == ["dig", "carry", "dump", "return"]

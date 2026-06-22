@@ -47,7 +47,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.10: the default 4P mainline branch chain no longer
+Current status after Phase 9.11: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The policy exposes shell callbacks/config through `LegacyFSMBranchPorts`;
@@ -66,7 +66,11 @@ provider instead of five gate callbacks, matching the carry/dump/return
 status-object pattern while keeping dig mutation in requested effects.
 Requested-effect application lives in `RequestedEffectApplier` with typed shell
 mutation ports; the policy shell only builds those ports and delegates from its
-execution hook and legacy compatibility bridges.
+execution hook and legacy compatibility bridges. `PrimitiveFSMCapabilityProvider`
+now owns observation-facts projection and dig/carry/dump/return status assembly
+through typed read-only shell ports. The policy shell only builds the provider
+ports/snapshot, retains thin diagnostic wrappers for the old private status
+methods, and still owns shell-side mutation through the effect applier.
 
 ## Design Intent
 
@@ -471,6 +475,21 @@ ignores all-miss `None`, skips reapplication for already-applied residual
 and `_apply_effects()` mutation paths are retired; `LegacyFSMBranchPorts` keeps
 decision facts/status providers and the residual parking callback, while shell
 mutation callbacks belong to `RequestedEffectApplierPorts`.
+
+Phase 9.11 extracts primitive FSM capability/status assembly into
+`PrimitiveFSMCapabilityProvider` and `PrimitiveFSMCapabilityProviderPorts` in
+`testbed/planner/primitive_capability_provider.py`. The provider owns
+`PrimitiveObservationFacts.from_obs(...)` projection and wires the existing
+`DigTransitionStatus`, `CarryTransitionStatus`, `DumpTransitionStatus`, and
+`ReturnTransitionStatus` `from_inputs(...)` contracts from typed shell
+snapshot/read ports. The policy shell builds the ports and exposes provider
+methods to `LegacyFSMBranchPorts`; its old `_dig/_carry/_dump/_return`
+backend-status helpers remain as thin compatibility/debug wrappers. The dig
+reason mirror is preserved through an explicit `set_dig_to_carry_reason` port,
+and return status still refreshes shell-owned direct-handoff cached state before
+reading cached return flags. `pre_dig_align`, `cell_entry`, 5P, return
+direct-handoff internals, coverage metric internals, token planning, and report
+schemas remain in their existing owners.
 
 ### Stage 4: Expand Effect Families From Evidence
 

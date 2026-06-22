@@ -2723,3 +2723,66 @@ Each completed refactor round should append:
   parking. `CompleteCellEntryDigCompatibilityEffect` remains compatibility-only.
   5P, token planning, coverage metric internals, and return direct-handoff
   internals remain existing owners.
+
+### 2026-06-22 Phase 9.11 Extract Primitive FSM Capability Provider
+
+- Scope: extracted 4P mainline FSM transition-status assembly from the large
+  policy shell into a focused primitive capability provider. No branch order,
+  reason string, threshold, token/debug/summary schema, policy reset timing,
+  backend selection, behavior tree, VLM/LLM packet, `pre_dig_align` mainline
+  status, `cell_entry` status, 5P override, return direct-handoff internals,
+  coverage metric internals, token planning, report schema, or low-level ACT
+  dispatch behavior was intentionally changed.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `95f657c64b5890c6961363da4e47b85f03259f85`, no fetch, pull, push, reset,
+  checkout, or rebase. The worktree was clean before edits.
+- Added `testbed/planner/primitive_capability_provider.py` with
+  `PrimitiveFSMCapabilityProviderPorts` and `PrimitiveFSMCapabilityProvider`.
+  The provider owns `PrimitiveObservationFacts.from_obs(...)` projection and
+  wires existing `DigTransitionStatus`, `CarryTransitionStatus`,
+  `DumpTransitionStatus`, and `ReturnTransitionStatus` `from_inputs(...)`
+  contracts from explicit shell snapshot/read ports.
+- Updated `PrimitivePlannerACTPolicy` so `_legacy_fsm_branch_ports()` passes
+  provider methods into `LegacyFSMBranchPorts`. The policy now owns
+  `_primitive_fsm_capability_provider_ports()` and
+  `_primitive_fsm_capability_provider()` wiring, while
+  `_dig_transition_status_for_backend(...)`,
+  `_carry_transition_status_for_backend(...)`,
+  `_dump_transition_status_for_backend(...)`, and
+  `_return_transition_status_for_backend(...)` remain thin compatibility/debug
+  wrappers that delegate to the provider.
+- Preserved shell-owned compatibility behavior explicitly: dig reason mirror is
+  updated through `set_dig_to_carry_reason`, and return status still calls
+  `refresh_return_handoff_state(obs)` before reading cached return handoff
+  flags. These are documented shell compatibility ports, not backend mutation.
+- Added `tests/test_primitive_capability_provider.py` for provider-owned status
+  assembly, observation projection reuse, dig reason mirror, return handoff
+  refresh ordering, and the no planner/self port boundary. Updated policy
+  bridge tests so branch-port status wiring comes from provider methods rather
+  than the old policy status assembly wrappers.
+- TDD red result: the first focused provider run failed at collection because
+  `testbed.planner.primitive_capability_provider` did not exist. After adding
+  the provider and changing the policy bridge, the next focused run exposed old
+  object-construction test assumptions around direct policy status wrappers;
+  tests were updated to use the new provider boundary and then passed.
+- Verification:
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_capabilities.py`
+  returned `29 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_execution_template.py tests/test_primitive_backend.py`
+  returned `98 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py` returned
+  `3 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_to_carry or bad_dig_replans or dig_exit_guard or complete_low_payload or carry_to_dump or dump_to_return or return_to_dig or semantic_boundary_events_drive_skill_sequence or pre_dig_align"`
+  returned `24 passed, 96 deselected`;
+  `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `5 passed`;
+  compileall, both planner guard commands, and `git diff --check` completed
+  successfully with no output.
+- Old code parked/reclassified: `pre_dig_align` remains residual already-applied
+  parking, `CompleteCellEntryDigCompatibilityEffect` remains compatibility-only,
+  `LegacyFSMBackendAdapter` remains historical/test scaffolding, and 5P remains
+  its existing legacy override path.
+- Next action: no implementation continuation was started in this thread; the
+  result is handed back to the refactor-thinking thread for audit before any
+  next bounded slice is selected.
