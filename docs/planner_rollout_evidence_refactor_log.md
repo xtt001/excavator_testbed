@@ -8059,3 +8059,81 @@ Each completed refactor round should append:
   remains default legacy FSM backendified with focused services / shared
   backend decision input/facts/factory; BT/VLM/LLM backends remain unsupported
   fail-fast.
+
+### 2026-06-23 Phase 9.82 Move Coverage Planning Fact-Source Boundary
+
+- Scope: moved the confirmed-live coverage planning fact-source cluster out of
+  `PrimitivePlannerACTPolicy` into a focused coverage fact service. This is a
+  structural source-of-truth migration for selection facts, raw-field
+  projection, and state-exemplar fact/writeback projection, not a coverage
+  scoring, token, report, or backend behavior change.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 145]`, HEAD
+  `9933e6a9cc356bf17439a545291f0e48e6d0ad66`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, or remote write was
+  used by the executor.
+- Added `CoveragePlanningFactConfig` and `CoveragePlanningFactService` in
+  `testbed/planner/primitive_coverage_facts.py`.
+- `CoveragePlanningFactService` now owns coverage selection fact projection,
+  coverage raw-field fallback/clamp projection, optional state-conditioned
+  exemplar override and active-exemplar writeback, state exemplar distance/id
+  projection, removed-depth grid delegation, weighted exemplar helper
+  delegation, and remaining-depth projection.
+- `PrimitivePlannerACTPolicy` now constructs explicit coverage fact inputs from
+  `CoverageRuntimeState`, `CoverageStateExemplarPlanner`, coverage config
+  facts, observation fact callables, and the explicit first-dig qpos-delta
+  callable. The old private names remain thin compatibility facades:
+  `_coverage_selection_facts(...)`, `_coverage_raw_fields(...)`,
+  `_coverage_state_conditioned_plan(...)`, state-exemplar distance/id helpers,
+  removed-depth grid helper, weighted exemplar helpers, and
+  `_coverage_remaining_depth_for_corridor(...)`.
+- Line-count impact: `testbed/policies/hybrid/primitive_planner.py` dropped
+  from 4763 to 4637 lines. The new
+  `testbed/planner/primitive_coverage_facts.py` file is 333 lines and owns the
+  stable coverage planning fact-source responsibility.
+- Preserved behavior: coverage selection/scoring/effect algorithms,
+  state-exemplar scoring and weighting, raw-field priority and copy semantics,
+  token dimensions/order/source strings, debug/summary/trace schemas, residual
+  `pre_dig_align` parked status, parked `cell_entry` status, backend fail-fast
+  behavior, and removed 5P runtime status remain unchanged.
+- Explicit non-goals: no coverage scoring or terminal-stop behavior change, no
+  token schema change, no observation injection/provider order change, no
+  `pre_dig_align` promotion or readiness/action move, no `cell_entry` promotion
+  or planner/auditor/token move, and no backend support expansion.
+- TDD red result from executor callback: after focused tests were added,
+  `python -m pytest -q tests/test_primitive_coverage_facts.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_state.py`
+  failed at collection with `ModuleNotFoundError: No module named
+  'testbed.planner.primitive_coverage_facts'`, proving the requested focused
+  fact-source boundary did not exist yet.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_coverage_facts.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_state.py`
+  returned `18 passed`;
+  `python -m pytest -q tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py tests/test_primitive_coverage_exemplars.py`
+  returned `25 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_updates.py`
+  returned `23 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or dig_cut_tokens or dig_depth_profile or return_to_dig or semantic_boundary_events_drive_skill_sequence"`
+  returned `6 passed, 113 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_coverage_facts.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_state.py`
+  returned `18 passed`;
+  `python -m pytest -q tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py tests/test_primitive_coverage_exemplars.py`
+  returned `25 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_updates.py`
+  returned `23 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or dig_cut_tokens or dig_depth_profile or return_to_dig or semantic_boundary_events_drive_skill_sequence"`
+  returned `6 passed, 113 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was the bounded coverage planning fact-source move
+  selected by Phase 9.81 audit, not the safest smallest cleanup. It did not add
+  a pass-through wrapper, anemic service, planner-self port, broad config bag,
+  generic blackboard, or parked-path promotion. Current maturity remains
+  default legacy FSM backendified with focused services / shared backend
+  decision input/facts/factory; BT/VLM/LLM backends remain unsupported
+  fail-fast.

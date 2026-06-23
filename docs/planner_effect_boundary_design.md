@@ -302,6 +302,16 @@ dig-depth-profile planning/apply/error writeback, live/prior helper routing,
 raw-field priority, cell-id priority, and token/raw-field copy semantics. The
 low-level `DigCutTokenPlanner` and `DigDepthProfileTokenPlanner` algorithms
 remain the token algorithm owners.
+`CoveragePlanningFactService` now owns the coverage planning fact-source
+boundary in `testbed/planner/primitive_coverage_facts.py`: coverage selection
+facts, coverage raw-field fallback/clamp projection, optional state-conditioned
+exemplar override/writeback, exemplar distance/id projection, removed-depth
+grid and weighted exemplar helper delegation, and remaining-depth projection.
+The policy shell supplies explicit config/state/exemplar/observation inputs and
+keeps old private names as compatibility facades. Coverage scoring/selection
+algorithms, state-exemplar scoring, raw-field priority, token schema, report
+schema, residual `pre_dig_align`, parked `cell_entry`, and backend fail-fast
+behavior remain unchanged.
 `PrimitiveDebugReportBuilder` now owns public `debug_state()` dict assembly:
 base transition keys, token debug fields from `TokenStatus.to_debug_fields()`,
 return gate fields, coverage fields, cell-entry compatibility fields, and
@@ -1765,6 +1775,18 @@ public debug, summary, and planner-trace values now project through
 explicit report config facts. This keeps cell-entry parked as compatibility/
 report material and avoids turning it into a token contract, backend fact
 source, behavior-tree node, or mainline runtime responsibility.
+
+Phase 9.82 narrows the coverage planning fact-source boundary. Coverage
+selection facts, coverage raw-field fallback/clamp projection,
+state-conditioned exemplar plan/writeback projection, exemplar distance/id
+projection, removed-depth grid delegation, weighted exemplar helper delegation,
+and remaining-depth projection now live in `CoveragePlanningFactService`.
+`PrimitivePlannerACTPolicy` remains the adapter that supplies explicit
+config/state/observation callables and preserves old private facades. This
+phase does not change coverage scoring/selection, state-exemplar scoring,
+raw-field priority/copy semantics, token dimensions/order/source strings,
+debug/summary/trace schemas, `pre_dig_align`, `cell_entry`, backend fail-fast
+behavior, or removed 5P runtime status.
 
 ### Stage 4: Expand Effect Families From Evidence
 

@@ -32,11 +32,8 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
     ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
     ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
-    ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
-    ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
-    ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
 )
@@ -85,9 +82,12 @@ from testbed.planner.primitive_coverage import (
     CoverageSelectionService,
 )
 from testbed.planner.primitive_coverage_exemplars import (
-    CoverageStateExemplarPlanInputs,
     CoverageStateExemplarPlanner,
     CoverageStateExemplarPlannerConfig,
+)
+from testbed.planner.primitive_coverage_facts import (
+    CoveragePlanningFactConfig,
+    CoveragePlanningFactService,
 )
 from testbed.planner.primitive_coverage_reports import (
     CoverageBucketSnapshot,
@@ -3559,30 +3559,40 @@ class PrimitivePlannerACTPolicy(Policy):
     def _coverage_selection_service(self) -> CoverageSelectionService:
         return CoverageSelectionService(self._coverage_selection_config())
 
+    def _coverage_planning_fact_config(self) -> CoveragePlanningFactConfig:
+        return CoveragePlanningFactConfig(
+            prior_fields=dict(self.dig_cut_prior.get("fields", {})),
+            cut_direction_percentile=str(self.coverage_cut_direction_percentile),
+            cut_length_percentile=str(self.coverage_cut_length_percentile),
+            cut_depth_percentile=str(self.coverage_cut_depth_percentile),
+            payload_percentile=str(self.coverage_payload_percentile),
+        )
+
+    def _coverage_planning_fact_service(self) -> CoveragePlanningFactService:
+        return CoveragePlanningFactService(
+            config=self._coverage_planning_fact_config(),
+            coverage_state=self._coverage_runtime_state(),
+            state_exemplar_planner=self._coverage_state_exemplar_planner(),
+            coverage_state_exemplars_by_cell=self.coverage_state_exemplars_by_cell,
+            env_state=lambda obs: self._env_state(obs),
+            bucket_tip_dig_area_pose=lambda obs: self._bucket_tip_dig_area_pose(obs),
+            first_dig_qpos_delta=(
+                lambda corridor, obs: self._coverage_first_dig_qpos_delta(
+                    corridor,
+                    obs,
+                )
+            ),
+        )
+
     def _coverage_selection_facts(
         self,
         obs: dict,
         corridors: list[CoverageCorridorState] | None = None,
     ) -> dict[int, CoverageCandidateSelectionFacts]:
-        facts: dict[int, CoverageCandidateSelectionFacts] = {}
-        for corridor in list(self._coverage_corridors if corridors is None else corridors):
-            facts[int(corridor.corridor_id)] = CoverageCandidateSelectionFacts(
-                remaining_depth_m=float(
-                    self._coverage_remaining_depth_for_corridor(obs, corridor)
-                ),
-                first_dig_entry_distance_m=float(
-                    self._coverage_entry_distance_m(corridor, obs)
-                ),
-                first_dig_qpos_delta=self._coverage_first_dig_qpos_delta(
-                    corridor,
-                    obs,
-                ),
-                state_exemplar_distance=float(
-                    self._coverage_state_exemplar_distance(corridor, obs)
-                ),
-                state_exemplar_id=str(self._coverage_state_exemplar_id(corridor, obs)),
-            )
-        return facts
+        return self._coverage_planning_fact_service().selection_facts(
+            obs,
+            corridors,
+        )
 
     def _select_coverage_corridor(self, obs: dict) -> CoverageCorridorState:
         return self._coverage_selection_runtime_coordinator().select_corridor(obs)
@@ -3673,17 +3683,9 @@ class PrimitivePlannerACTPolicy(Policy):
         corridor: CoverageCorridorState,
         obs: dict,
     ) -> float:
-        pose = self._bucket_tip_dig_area_pose(obs)
-        if pose is None:
-            return float("nan")
-        bucket_x, _, bucket_z = pose
-        if not all(np.isfinite(value) for value in (bucket_x, bucket_z)):
-            return float("nan")
-        return float(
-            np.hypot(
-                float(bucket_x) - float(corridor.entry_x_m),
-                float(bucket_z) - float(corridor.entry_z_m),
-            )
+        return self._coverage_planning_fact_service().entry_distance_m(
+            corridor,
+            obs,
         )
 
     def _coverage_first_dig_qpos_delta(
@@ -3721,99 +3723,11 @@ class PrimitivePlannerACTPolicy(Policy):
         obs: dict | None = None,
         update_state: bool = False,
     ) -> dict[str, float | int]:
-        if obs is not None:
-            state_plan = self._coverage_state_conditioned_plan(
-                corridor,
-                obs,
-                update_state=update_state,
-            )
-            if state_plan is not None:
-                return dict(state_plan["raw_fields"])
-        fields = dict(self.dig_cut_prior.get("fields", {}))
-        entry_x = self._clamp_to_prior(fields, "entry_x_m", corridor.entry_x_m)
-        entry_z = self._clamp_to_prior(fields, "entry_z_m", corridor.entry_z_m)
-        exit_x = self._clamp_to_prior(fields, "exit_x_m", corridor.exit_x_m)
-        exit_z = self._clamp_to_prior(fields, "exit_z_m", corridor.exit_z_m)
-        delta_x = exit_x - entry_x
-        delta_z = exit_z - entry_z
-        length = float(np.hypot(delta_x, delta_z))
-        if length <= 1.0e-6:
-            dir_x = self._prior_percentile(
-                fields,
-                "cut_direction_x",
-                self.coverage_cut_direction_percentile,
-            )
-            dir_z = self._prior_percentile(
-                fields,
-                "cut_direction_z",
-                self.coverage_cut_direction_percentile,
-            )
-            length = self._prior_percentile(
-                fields,
-                "cut_length_m",
-                self.coverage_cut_length_percentile,
-            )
-        else:
-            dir_x = delta_x / length
-            dir_z = delta_z / length
-        return {
-            "operator_entry_x_m": float(entry_x),
-            "operator_entry_y_m": 0.0,
-            "operator_entry_z_m": float(entry_z),
-            "operator_exit_x_m": float(exit_x),
-            "operator_exit_y_m": 0.0,
-            "operator_exit_z_m": float(exit_z),
-            "operator_cut_direction_x": float(
-                self._clamp_to_prior(fields, "cut_direction_x", dir_x)
-            ),
-            "operator_cut_direction_y": 0.0,
-            "operator_cut_direction_z": float(
-                self._clamp_to_prior(fields, "cut_direction_z", dir_z)
-            ),
-            "operator_cut_length_m": float(
-                self._clamp_to_prior(fields, "cut_length_m", length)
-            ),
-            "operator_cut_depth_peak_m": float(
-                self._clamp_to_prior(
-                    fields,
-                    "cut_depth_peak_m",
-                    float(corridor.cut_depth_peak_m)
-                    if np.isfinite(corridor.cut_depth_peak_m)
-                    else self._prior_percentile(
-                        fields,
-                        "cut_depth_peak_m",
-                        self.coverage_cut_depth_percentile,
-                    ),
-                )
-            ),
-            "operator_cut_payload_gain_kg": float(
-                self._clamp_to_prior(
-                    fields,
-                    "payload_gain_kg",
-                    float(corridor.payload_gain_kg)
-                    if np.isfinite(corridor.payload_gain_kg)
-                    else self._prior_percentile(
-                        fields,
-                        "payload_gain_kg",
-                        self.coverage_payload_percentile,
-                    ),
-                )
-            ),
-            "operator_effective_deposit_delta_kg": float(
-                self._clamp_to_prior(
-                    fields,
-                    "effective_deposit_delta_kg",
-                    float(corridor.effective_deposit_delta_kg)
-                    if np.isfinite(corridor.effective_deposit_delta_kg)
-                    else self._prior_percentile(
-                        fields,
-                        "effective_deposit_delta_kg",
-                        "p50",
-                    ),
-                )
-            ),
-            "operator_cut_valid": 1,
-        }
+        return self._coverage_planning_fact_service().raw_fields(
+            corridor,
+            obs=obs,
+            update_state=update_state,
+        )
 
     def _coverage_state_exemplar_planner_config(
         self,
@@ -3846,70 +3760,34 @@ class PrimitivePlannerACTPolicy(Policy):
         *,
         update_state: bool,
     ) -> dict[str, object] | None:
-        result = self._coverage_state_exemplar_planner().plan(
-            CoverageStateExemplarPlanInputs(
-                corridor=corridor,
-                env_state=self._env_state(obs),
-                exemplars_by_cell=self.coverage_state_exemplars_by_cell,
-                rejected_exemplar_ids=self._coverage_rejected_state_exemplar_ids,
-            )
+        return self._coverage_planning_fact_service().state_conditioned_plan(
+            corridor,
+            obs,
+            update_state=update_state,
         )
-        if result is None:
-            return None
-        if update_state:
-            self._coverage_runtime_state().set_active_state_exemplar(
-                exemplar_ids=list(result.exemplar_ids),
-                distance=float(result.distance),
-                profile_token=(
-                    None
-                    if result.profile_token is None
-                    else result.profile_token.astype(np.float32).copy()
-                ),
-            )
-            corridor.state_exemplar_id = ",".join(result.exemplar_ids)
-            corridor.state_exemplar_distance = float(result.distance)
-        return {
-            "raw_fields": dict(result.raw_fields),
-            "profile_token": result.profile_token,
-            "exemplar_ids": list(result.exemplar_ids),
-            "distance": float(result.distance),
-        }
 
     def _coverage_state_exemplar_distance(
         self,
         corridor: CoverageCorridorState,
         obs: dict,
     ) -> float:
-        state_plan = self._coverage_state_conditioned_plan(
+        return self._coverage_planning_fact_service().state_exemplar_distance(
             corridor,
             obs,
-            update_state=False,
         )
-        if state_plan is None:
-            return float("nan")
-        return float(state_plan["distance"])
 
     def _coverage_state_exemplar_id(
         self,
         corridor: CoverageCorridorState,
         obs: dict,
     ) -> str:
-        state_plan = self._coverage_state_conditioned_plan(
+        return self._coverage_planning_fact_service().state_exemplar_id(
             corridor,
             obs,
-            update_state=False,
         )
-        if state_plan is None:
-            return ""
-        exemplar_ids = state_plan.get("exemplar_ids", [])
-        if not exemplar_ids:
-            return ""
-        return str(exemplar_ids[0])
 
     def _coverage_removed_depth_grid(self, obs: dict) -> np.ndarray | None:
-        return self._coverage_state_exemplar_planner().removed_depth_grid(
-            self._env_state(obs)
-        )
+        return self._coverage_planning_fact_service().removed_depth_grid(obs)
 
     def _coverage_state_exemplar_distance_for_grid(
         self,
@@ -3918,7 +3796,7 @@ class PrimitivePlannerACTPolicy(Policy):
         *,
         cell_id: int,
     ) -> float:
-        return self._coverage_state_exemplar_planner().distance_for_grid(
+        return self._coverage_planning_fact_service().state_exemplar_distance_for_grid(
             removed_grid,
             exemplar,
             cell_id=cell_id,
@@ -3928,20 +3806,26 @@ class PrimitivePlannerACTPolicy(Policy):
         self,
         selected: list[tuple[float, dict[str, Any]]],
     ) -> np.ndarray:
-        return self._coverage_state_exemplar_planner().weights(selected)
+        return self._coverage_planning_fact_service().state_exemplar_weights(selected)
 
     def _weighted_state_exemplar_raw_fields(
         self,
         selected: list[tuple[float, dict[str, Any]]],
     ) -> dict[str, float | int]:
-        return self._coverage_state_exemplar_planner().weighted_raw_fields(selected)
+        return (
+            self._coverage_planning_fact_service().weighted_state_exemplar_raw_fields(
+                selected
+            )
+        )
 
     def _weighted_state_exemplar_profile_token(
         self,
         selected: list[tuple[float, dict[str, Any]]],
     ) -> np.ndarray | None:
-        return self._coverage_state_exemplar_planner().weighted_profile_token(
-            selected
+        return (
+            self._coverage_planning_fact_service().weighted_state_exemplar_profile_token(
+                selected
+            )
         )
 
     def _coverage_remaining_depth_for_corridor(
@@ -3949,20 +3833,10 @@ class PrimitivePlannerACTPolicy(Policy):
         obs: dict,
         corridor: CoverageCorridorState,
     ) -> float:
-        env_state = self._env_state(obs)
-        cell_id = self._coverage_cell_id(corridor)
-        target_idx = ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX + cell_id
-        removed_idx = ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX + cell_id
-        valid_idx = ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX + cell_id
-        if len(env_state) <= max(target_idx, removed_idx, valid_idx):
-            return float("nan")
-        if float(env_state[valid_idx]) <= 0.5:
-            return float("nan")
-        target_depth = float(env_state[target_idx])
-        removed_depth = float(env_state[removed_idx])
-        if not np.isfinite(target_depth) or not np.isfinite(removed_depth):
-            return float("nan")
-        return float(max(0.0, target_depth - removed_depth))
+        return self._coverage_planning_fact_service().remaining_depth_for_corridor(
+            obs,
+            corridor,
+        )
 
     @staticmethod
     def _coverage_cell_id(corridor: CoverageCorridorState) -> int:

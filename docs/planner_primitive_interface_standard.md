@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.80 implementation. It is intentionally
+compares them with the current Phase 9.82 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -46,6 +46,11 @@ Current maturity:
 - coverage rollout-summary projection: **achieved for the rollout-summary
   coverage subset through `CoverageSummaryReportStatus` and
   `CoverageReportService.summary_status_from_state(...)`**
+- coverage planning fact-source boundary: **achieved for coverage selection
+  facts, coverage raw-field projection, state-conditioned exemplar
+  projection/writeback, exemplar distance/id projection, and remaining-depth
+  facts through `CoveragePlanningFactService`; scoring/selection algorithms
+  remain in the existing coverage services**
 - coverage selection runtime mutable state owner: **achieved for corridor
   list, candidate scores, active/last-selected ids, and all-depleted checks;
   selection runtime sequencing now consumes `CoverageRuntimeState` directly
@@ -676,15 +681,22 @@ Current boundary:
   planning services remain explicit ports.
 - `PrimitiveDigTokenPlanningService` and
   `PrimitiveReturnTokenPlanningService` own orchestration.
+- `CoveragePlanningFactService` owns coverage selection facts, coverage
+  raw-field fallback/clamp projection, optional state-conditioned exemplar
+  override/writeback, exemplar distance/id projection, removed-depth grid and
+  weighted exemplar helper delegation, and remaining-depth facts from explicit
+  coverage config/state/exemplar/observation inputs.
 - `PrimitiveDigTokenPlanningService` ports carry `PrimitiveTokenRuntimeState`
   and `CoverageRuntimeState` directly for active dig token planning storage
   reads/writes; external config, token planners, observation facts, and
-  coverage raw-field building remain explicit ports.
+  coverage raw-field projection remain explicit ports backed by the coverage
+  planning fact service.
 - `PrimitiveReturnTokenPlanningService` ports carry
   `PrimitiveTokenRuntimeState` and `CoverageRuntimeState` directly for return
   start-envelope source/prior flags, active corridor id, and corridor lookup;
   external config, token planners, observation facts, coverage selection, and
-  coverage raw-field building remain explicit ports.
+  coverage raw-field projection remain explicit ports backed by the coverage
+  planning fact service.
 - Token algorithm classes remain in `primitive_tokens.py`.
 - `PrimitivePlannerACTPolicy` keeps old `_dig_cut_*`, `_return_*`, and
   `_pending_dig_*` private names as property-backed compatibility facades over
@@ -701,6 +713,9 @@ Gap:
   `PrimitiveCellEntryCompatibilityRuntimeState`.
 - Return handoff algorithms remain in return handoff services; only mutable
   return handoff/runtime cache storage moved into `PrimitiveReturnRuntimeState`.
+- Coverage planning facts are no longer policy-owned implementation, but they
+  are still legacy-FSM/default-path facts rather than a complete alternate
+  backend-neutral fact packet.
 
 Standard:
 

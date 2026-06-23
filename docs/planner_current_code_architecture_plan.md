@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4763 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4637 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -85,6 +85,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_coverage_state.py` | 139 | mutable coverage runtime state owner for corridors, selection ids, candidate scores, completion counters, terminal-stop state, decision trace, and state-exemplar payload |
 | `testbed/planner/primitive_coverage_updates.py` | 591 | coverage completion/rejection/reopen/terminal-stop effect runtime sequencing over the focused coverage state owner plus explicit external ports |
 | `testbed/planner/primitive_coverage_reports.py` | 572 | coverage report config, coverage corridor debug, coverage decision-event, and coverage debug/trace/summary projection from focused runtime state |
+| `testbed/planner/primitive_coverage_facts.py` | 333 | coverage planning fact-source owner for selection facts, raw-field projection, state-conditioned exemplar projection/writeback, and remaining-depth facts |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
 | `testbed/planner/evidence_trace.py` | 972 | evidence classifier and report writer for rollout-driven refactor decisions |
@@ -1595,6 +1596,19 @@ exist in focused modules. This is the next meaningful live boundary to consider:
 it can reduce real policy-side fact construction without promoting parked
 `pre_dig_align` or `cell_entry`, without inventing a pass-through composition
 object, and without claiming alternate backend readiness.
+
+Current status note after Phase 9.82: the coverage planning fact-source
+boundary moved out of `PrimitivePlannerACTPolicy` into
+`CoveragePlanningFactService` in `testbed/planner/primitive_coverage_facts.py`.
+The service now owns coverage selection facts, raw-field fallback/clamp
+projection, optional state-conditioned exemplar override/writeback, exemplar
+distance/id projection, removed-depth grid delegation, weighted exemplar helper
+delegation, and remaining-depth projection. The policy shell now supplies
+explicit config/state/observation callables and keeps the old private method
+names as compatibility facades. This narrows real coverage planning
+responsibility without changing coverage scoring/selection algorithms,
+state-exemplar scoring, raw-field priority, token schemas, report schemas,
+parked `pre_dig_align`, parked `cell_entry`, or backend support.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective
