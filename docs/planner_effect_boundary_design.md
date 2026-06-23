@@ -943,6 +943,25 @@ algorithms, token dimensions, token key names, token array values, trace schema,
 debug/summary/trace public schema, residual `pre_dig_align`, backend fail-fast
 behavior, or removed 5P runtime status.
 
+Phase 9.51 introduces `PrimitivePreDigAlignCompatibilityRuntimeState` in
+`testbed/planner/primitive_pre_dig_align_state.py`. The state owner centralizes
+parked pre-dig-align compatibility/report mutable storage: step/hold/timeout/
+completed/replan counters, cached target qpos and error arrays, entry-error and
+surface-depth report floats, readiness booleans, timeout handoff reason,
+surface-guard trigger state, and surface-guard count. Reset creates one fresh
+pre-dig-align compatibility state and applies it through
+`_pre_dig_align_state`; the old `_pre_dig_align_*` names remain compatibility
+facades over the same owner. `_maybe_handle_pre_dig_align_skill(...)`,
+`_restart_pre_dig_align(...)`, `_try_replan_pre_dig_align_handoff(...)`,
+`_pre_dig_align_ready(...)`, `_pre_dig_align_timeout_can_handoff(...)`,
+`_pre_dig_align_action(...)`, and target/surface-guard helpers still own the
+parked residual algorithms in the policy shell. This phase does not promote
+pre-dig-align into the mainline backend and does not change branch order,
+reason strings, thresholds, target calculation, PD action, timeout handoff,
+start-envelope, entry-close, entry-intent, surface-guard behavior,
+debug/summary/trace public schema, `cell_entry`, backend fail-fast behavior, or
+removed 5P runtime status.
+
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in
 `testbed/planner/primitive_return_handoff.py`. The service owns the former

@@ -5467,3 +5467,111 @@ Each completed refactor round should append:
   planner/auditor algorithms, token contracts, observation injection state,
   token/coverage/return/cycle/scripted-bootstrap/execution state, residual
   `pre_dig_align`, backend facts, effect application, and report schemas.
+
+### 2026-06-23 Phase 9.51 Extract Primitive Pre-Dig-Align Compatibility Runtime State
+
+- Scope: introduced `PrimitivePreDigAlignCompatibilityRuntimeState` in
+  `testbed/planner/primitive_pre_dig_align_state.py` as the focused owner for
+  parked pre-dig-align compatibility/report mutable storage.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 114]`, HEAD
+  before this round `673a8db9eeab0d13bf6ea39e348b98bf68e86ddf`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- `PrimitivePreDigAlignCompatibilityRuntimeState.fresh(action_dim=...)` owns the
+  previous reset defaults: step/hold/timeout/completed/replan counters at zero,
+  zero float32 target-qpos and error arrays sized by action dim, `NaN`
+  entry-error and surface-depth report floats, false readiness/surface flags,
+  empty timeout handoff reason, and zero surface-guard count.
+- `PrimitivePlannerACTPolicy` exposes
+  `_primitive_pre_dig_align_compatibility_runtime_state()` plus property-backed
+  compatibility facades for `_pre_dig_align_step_count`,
+  `_pre_dig_align_hold_count`, `_pre_dig_align_timeout_count`,
+  `_pre_dig_align_completed_count`, `_pre_dig_align_replan_count`,
+  `_pre_dig_align_target_qpos`, `_pre_dig_align_error`,
+  `_pre_dig_align_entry_error_m`, `_pre_dig_align_start_envelope_ready`,
+  `_pre_dig_align_entry_close_handoff_ready`,
+  `_pre_dig_align_entry_intent_handoff_ready`,
+  `_pre_dig_align_timeout_handoff_reason`,
+  `_pre_dig_align_surface_depth_m`, `_pre_dig_align_surface_guard_triggered`,
+  and `_pre_dig_align_surface_guard_count`.
+- `PrimitiveResetLifecycleService` now creates one fresh pre-dig-align
+  compatibility state during reset and applies `_pre_dig_align_state` before the
+  old pre-dig private field names. Existing pre-dig-align readiness, timeout,
+  target, surface-guard, replan, and PD action algorithms remain in the policy
+  shell and continue using the old private-name facades.
+- Preserved behavior: pre-dig-align algorithms, branch order, reason strings,
+  thresholds, qpos target calculation, PD action, timeout handoff,
+  start-envelope, entry-close, entry-intent, surface-guard behavior, token
+  schema, public debug/summary/trace schemas, backend fail-fast behavior,
+  cell-entry compatibility state, observation injection state,
+  token/coverage/return/cycle/scripted-bootstrap/execution state owners, and
+  removed 5P runtime status are unchanged.
+- Explicit non-goals: no `pre_dig_align` mainline backend promotion, no
+  pre-dig-align algorithm move, no cleanup/deletion of the parked path, no
+  token contract change, no backend selection change, and no public report
+  schema change.
+- TDD red result from executor callback: after focused tests were added, the
+  first run of `python -m pytest -q tests/test_primitive_pre_dig_align_state.py`
+  failed as expected with `ModuleNotFoundError` because
+  `testbed.planner.primitive_pre_dig_align_state` did not yet exist.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_pre_dig_align_state.py tests/test_primitive_reset_lifecycle.py`
+  returned `14 passed`;
+  `python -m pytest -q tests/test_primitive_action_dispatch.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "pre_dig_align or semantic_boundary_events_drive_skill_sequence or return_to_dig or start_envelope or cell_entry"`
+  returned `19 passed, 100 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_pre_dig_align_state.py tests/test_primitive_reset_lifecycle.py`
+  returned `14 passed`;
+  `python -m pytest -q tests/test_primitive_action_dispatch.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "pre_dig_align or semantic_boundary_events_drive_skill_sequence or return_to_dig or start_envelope or cell_entry"`
+  returned `19 passed, 100 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record. The recursive callback and
+  thinking-effort rules remain in force: refactor/audit stays `thinking: xhigh`,
+  and executor prompts must explicitly specify `thinking: high` or
+  `thinking: xhigh` while preserving the `send_message_to_thread` callback.
+- Audit note: this is a parked compatibility/report state-owner extraction, not
+  a pre-dig-align mainline promotion. It intentionally excludes pre-dig-align
+  readiness/action/timeout/target/surface-guard algorithm movement,
+  `cell_entry`, observation injection state, token/coverage/return/cycle/
+  scripted-bootstrap/execution state, backend facts, effect application, and
+  report schemas.
+
+#### Three-iteration reflection after Phases 9.49-9.51
+
+- Progress toward target: these three rounds moved mutable shell storage closer
+  to `docs/planner_execution_abstraction_flow.svg` and
+  `docs/planner_primitive_interface_standard.md` by replacing independent
+  policy-owned storage with focused runtime owners for observation injected
+  flags, parked cell-entry report state, and parked pre-dig-align report/action
+  state. The default legacy FSM remains backendified with focused services and
+  shared backend decision input/facts/factory; BT/VLM/LLM remain unsupported
+  fail-fast.
+- Largest remaining gap: the large policy shell still carries compatibility
+  facades, parked algorithms, report projection glue, and some domain helper
+  chains. Mutable storage is now better owned, but this is still not a fully
+  swappable backend architecture because alternate backends do not yet have a
+  concrete decision/effect contract beyond fail-fast selection.
+- Next core bounded slice: re-audit the remaining policy-owned mutable fields
+  and facades before dispatching another implementation task. Prefer a slice
+  that removes real shell-owned state or moves a stable live/report projection
+  responsibility into an existing focused owner. Do not continue extracting
+  small bags of fields unless the owner has a stable reset/apply/report role.
+- Over-protection / anemic-facade risk: the last two parked-path slices were
+  acceptable because they explicitly reclassified residual paths and centralized
+  reset/report storage without promoting them. Continuing to wrap parked
+  algorithms in services would be over-protection and would risk anemic
+  facades; parked algorithms should stay parked until a cleanup or deletion
+  review is explicitly approved.
+- Direction correction: pause implementation dispatch long enough to inspect
+  the remaining `PrimitivePlannerACTPolicy` owned storage/facades after Phase
+  9.51. The next prompt should be based on real current-code inventory, not on
+  momentum from the state-owner sequence.

@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.50 implementation. It is intentionally
+compares them with the current Phase 9.51 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -48,6 +48,9 @@ Current maturity:
   token injected compatibility flags and assembler-result application**
 - cell-entry compatibility runtime state owner: **achieved for parked
   cell-entry goal/audit/token-cache/trace report storage**
+- pre-dig-align compatibility runtime state owner: **achieved for parked
+  pre-dig-align counters, cached target/error arrays, readiness booleans,
+  timeout reason, and surface-guard report storage**
 - runtime composition root / public runtime kernel: **achieved for public
   runtime routing**
 - decision runtime backend factory/registry: **achieved for selecting the
@@ -497,15 +500,21 @@ Current boundary:
   compatibility/report storage: goal, goal cycle id, audit, cached token array,
   seen cell id, and trace list. The policy keeps the old `_cell_entry_*` names
   as property-backed compatibility facades over that owner.
-- Some pre-dig and compatibility fields still live as policy attributes.
+- `PrimitivePreDigAlignCompatibilityRuntimeState` owns parked pre-dig-align
+  compatibility/report storage: counters, cached target/error arrays,
+  readiness booleans, timeout handoff reason, surface depth, and surface-guard
+  count. The policy keeps the old `_pre_dig_align_*` names as property-backed
+  compatibility facades over that owner while the parked algorithms remain in
+  the policy shell.
 - Skill lifecycle, reset lifecycle, and token runtime services own sequencing,
   but still write through policy compatibility facades for old private names.
 
 Gap:
 
 - Runtime state is only partially extracted.
-- The policy shell still owns residual mutable storage for parked/pre-dig and
-  compatibility fields.
+- The policy shell still owns some compatibility/report algorithms and
+  compatibility facades, but no longer stores pre-dig-align or cell-entry
+  mutable report state as independent policy attributes.
 
 Standard:
 
@@ -676,8 +685,8 @@ Standard:
 
 Current parking:
 
-- `pre_dig_align`: residual parking/action material. It is not target mainline
-  backend capability.
+- `pre_dig_align`: residual parking/action material with focused
+  compatibility state ownership. It is not target mainline backend capability.
 - `cell_entry`: compatibility/report material. It is not target token contract
   for the selected mainline rollout.
 - `5P`: removed runtime. Historical behavior is preserved only by git history;
@@ -717,6 +726,8 @@ The next code work should follow this order:
    - Observation injected-flag mutable state is **done in Phase 9.49**.
    - Parked cell-entry compatibility/report mutable state is
      **done in Phase 9.50**.
+   - Parked pre-dig-align compatibility/report mutable state is
+     **done in Phase 9.51**.
    - Inspect the remaining policy-owned mutable fields before choosing another
      state-owner slice; avoid extracting a generic blackboard.
    - Avoid generic blackboards.

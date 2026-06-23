@@ -69,6 +69,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_execution_state.py` | 49 | mutable execution lifecycle state owner for active skill, switch reason, previous action, and latest debug state |
 | `testbed/planner/primitive_observation.py` | 176 | policy observation assembler plus mutable per-observation injected-flag runtime state owner |
 | `testbed/planner/primitive_cell_entry_state.py` | 36 | parked cell-entry compatibility/report runtime state owner and reset defaults |
+| `testbed/planner/primitive_pre_dig_align_state.py` | 46 | parked pre-dig-align compatibility/report runtime state owner and reset defaults |
 | `testbed/planner/primitive_token_state.py` | 70 | mutable dig/return token runtime state owner and reset defaults |
 | `testbed/planner/primitive_return_state.py` | 56 | mutable non-token return handoff/runtime state owner and reset defaults |
 | `testbed/planner/primitive_cycle_state.py` | 75 | mutable live 4P cycle/progress runtime state owner and reset defaults |
@@ -154,7 +155,7 @@ The current baseline report uses the successful `aggregate_tx24` rollout packet:
 | `policy.public_adapter` | compatibility | retain-compatibility | `PrimitivePlannerACTPolicy` | public adapter |
 | `compat.5p_policy` | compatibility-cleanup | removed-runtime-cleanup | git history only | cleanup-approved removed runtime path |
 | `token.cell_entry` | dead-candidate | retain-legacy-parking | `_cell_entry_tokens_for_obs` | legacy diagnostic parking |
-| `gate.pre_dig_align` | dead-candidate | retain-legacy-parking | `_maybe_switch_skill` pre-dig branch | legacy diagnostic/action parking |
+| `gate.pre_dig_align` | dead-candidate | retain-legacy-parking | `_maybe_switch_skill` pre-dig branch plus `PrimitivePreDigAlignCompatibilityRuntimeState` | legacy diagnostic/action parking |
 
 ## Target Architecture
 
@@ -326,7 +327,7 @@ Parked code must not be used as a justification for new mainline services.
 | Path | Evidence | Current code owner | Parking owner | Allowed use | Not allowed |
 | --- | --- | --- | --- | --- | --- |
 | `token.cell_entry` | absent from successful rollout; `cell_entry_enabled=0`; no `cell_entry_tokens` low-dim key | `_cell_entry_tokens_for_obs`, `_complete_cell_entry_dig`, `testbed/planner/cell_entry.py`, `PrimitiveCellEntryCompatibilityRuntimeState` | parked compatibility/report state owner plus legacy diagnostics | old configs, diagnostics, explicit legacy replay | default token contract, new backend fact, VLM decision packet |
-| `gate.pre_dig_align` | successful rollout has `pre_dig_align.enabled=false`; completed/timeout counts are zero | pre-dig branch in `_maybe_switch_skill`, `_pre_dig_align_*`, `_pre_dig_align_action` | `LegacyPreDigAlignAdapter` or diagnostic note | explicit legacy config, old PD alignment replay, debug comparison | default FSM path, behavior-tree node, VLM effect unless re-approved |
+| `gate.pre_dig_align` | successful rollout has `pre_dig_align.enabled=false`; completed/timeout counts are zero | pre-dig branch in `_maybe_switch_skill`, `_pre_dig_align_*`, `_pre_dig_align_action`, `PrimitivePreDigAlignCompatibilityRuntimeState` | parked compatibility/report state owner plus residual action diagnostics | explicit legacy config, old PD alignment replay, debug comparison | default FSM path, behavior-tree node, VLM effect unless re-approved |
 | removed `PrimitivePlannerACT5PPolicy` runtime path | user-approved cleanup, not mainline evidence | git history only | removed runtime path | historical comparison from old branches | source of default 4P architecture |
 
 Parking review before any later cleanup:
@@ -1046,6 +1047,25 @@ dimensions, token key names, token values, and report/trace schemas remain
 unchanged, and `cell_entry` remains parked compatibility/report material rather
 than a mainline backend capability.
 
+Current status note after Phase 9.51: parked pre-dig-align
+compatibility/report storage is now owned by
+`PrimitivePreDigAlignCompatibilityRuntimeState` in
+`testbed/planner/primitive_pre_dig_align_state.py`. Reset creates a fresh
+pre-dig-align compatibility state and applies it through
+`_pre_dig_align_state`; the old `_pre_dig_align_step_count`,
+`_pre_dig_align_hold_count`, `_pre_dig_align_timeout_count`,
+`_pre_dig_align_completed_count`, `_pre_dig_align_replan_count`,
+`_pre_dig_align_target_qpos`, `_pre_dig_align_error`,
+`_pre_dig_align_entry_error_m`, `_pre_dig_align_start_envelope_ready`,
+`_pre_dig_align_entry_close_handoff_ready`,
+`_pre_dig_align_entry_intent_handoff_ready`,
+`_pre_dig_align_timeout_handoff_reason`,
+`_pre_dig_align_surface_depth_m`, `_pre_dig_align_surface_guard_triggered`,
+and `_pre_dig_align_surface_guard_count` names are property-backed facades.
+The parked readiness, timeout, target, surface-guard, and PD action algorithms
+remain in the policy shell; `pre_dig_align` remains residual parking/action
+material rather than a mainline backend capability.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut
@@ -1075,8 +1095,9 @@ Stop further Slice 7 code migration at this verified boundary unless the user
 approves a new scope. The 5P runtime compatibility audit has been resolved by
 the Phase 9.32 cleanup-approved removal of `PrimitivePlannerACT5PPolicy`; old
 behavior remains available only through git history. Valid remaining scopes are
-legacy pre-dig parking extraction, direct-handoff helper extraction, backend
-selection cleanup, or a focused audit of any remaining policy-owned storage.
+legacy pre-dig parking cleanup/reclassification, direct-handoff helper
+extraction, backend selection cleanup, or a focused audit of any remaining
+policy-owned storage.
 Do not move `pre_dig_align`, direct-handoff helper internals, change branch
 order, change reason strings, or apply unrelated effects through the backend
 boundary without that separate evidence and compatibility decision.
