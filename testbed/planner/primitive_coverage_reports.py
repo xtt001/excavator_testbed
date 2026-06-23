@@ -5,7 +5,42 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+
 from testbed.planner.primitive_coverage import CoverageCorridorState
+
+
+@dataclass(frozen=True)
+class CoverageDebugReportInputs:
+    active_corridor_id: int
+    last_selected_corridor_id: int
+    last_selected_cell_id: int
+    last_selected_row_id: int
+    active_corridor: dict[str, Any] | None
+    active_cell_id: int
+    active_score: float
+    state_exemplar_enabled: bool
+    state_exemplar_ids: list[str]
+    state_exemplar_distance: float
+    depleted_count: int
+    pass_index: int
+    multi_pass_enabled: bool
+    multi_pass_max_passes: int
+    multi_pass_min_remaining_depth_m: float
+    last_payload_gain_kg: float
+    last_effective_deposit_delta_kg: float
+    global_low_productivity_streak: int
+    use_env_removed_depth: bool
+    candidate_layout: str
+    first_dig_strategy: str
+    first_dig_preferred_corridor_id: int | None
+    first_dig_max_entry_distance_m: float | None
+    first_dig_qpos_delta_weight: float
+    first_dig_max_qpos_delta: Any | None
+    terminal_stop_requested: bool
+    terminal_stop_reason: str
+    corridors: list[dict[str, Any]]
+    candidate_scores: list[dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -38,6 +73,111 @@ class CoverageBucketSnapshot:
 
 class CoverageReportService:
     """Build coverage debug and trace payloads from explicit state snapshots."""
+
+    @staticmethod
+    def debug_fields(inputs: CoverageDebugReportInputs) -> dict[str, Any]:
+        active = inputs.active_corridor
+
+        def active_float(name: str) -> float:
+            if active is None:
+                return float("nan")
+            return float(active.get(name, float("nan")))
+
+        return {
+            "coverage_corridor_id": int(inputs.active_corridor_id),
+            "coverage_selected_corridor_id": int(inputs.active_corridor_id),
+            "coverage_last_selected_corridor_id": int(
+                inputs.last_selected_corridor_id
+            ),
+            "coverage_last_selected_cell_id": int(inputs.last_selected_cell_id),
+            "coverage_last_selected_row_id": int(inputs.last_selected_row_id),
+            "coverage_entry_x_m": active_float("entry_x_m"),
+            "coverage_entry_z_m": active_float("entry_z_m"),
+            "coverage_exit_x_m": active_float("exit_x_m"),
+            "coverage_exit_z_m": active_float("exit_z_m"),
+            "coverage_entry_x_p05_m": active_float("entry_x_p05_m"),
+            "coverage_entry_x_p50_m": active_float("entry_x_p50_m"),
+            "coverage_entry_x_p95_m": active_float("entry_x_p95_m"),
+            "coverage_entry_z_p05_m": active_float("entry_z_p05_m"),
+            "coverage_entry_z_p50_m": active_float("entry_z_p50_m"),
+            "coverage_entry_z_p95_m": active_float("entry_z_p95_m"),
+            "coverage_entry_radial_p75_m": active_float("entry_radial_p75_m"),
+            "coverage_entry_radial_p95_m": active_float("entry_radial_p95_m"),
+            "coverage_exit_x_p05_m": active_float("exit_x_p05_m"),
+            "coverage_exit_x_p50_m": active_float("exit_x_p50_m"),
+            "coverage_exit_x_p95_m": active_float("exit_x_p95_m"),
+            "coverage_exit_z_p05_m": active_float("exit_z_p05_m"),
+            "coverage_exit_z_p50_m": active_float("exit_z_p50_m"),
+            "coverage_exit_z_p95_m": active_float("exit_z_p95_m"),
+            "coverage_exit_radial_p75_m": active_float("exit_radial_p75_m"),
+            "coverage_exit_radial_p95_m": active_float("exit_radial_p95_m"),
+            "coverage_cut_depth_peak_p05_m": active_float(
+                "cut_depth_peak_p05_m"
+            ),
+            "coverage_cut_depth_peak_p50_m": active_float(
+                "cut_depth_peak_p50_m"
+            ),
+            "coverage_cut_depth_peak_p95_m": active_float(
+                "cut_depth_peak_p95_m"
+            ),
+            "coverage_cell_id": int(inputs.active_cell_id),
+            "coverage_corridor_score": float(inputs.active_score),
+            "coverage_state_exemplar_enabled": bool(
+                inputs.state_exemplar_enabled
+            ),
+            "coverage_state_exemplar_ids": list(inputs.state_exemplar_ids),
+            "coverage_state_exemplar_distance": float(
+                inputs.state_exemplar_distance
+            ),
+            "coverage_depleted_count": int(inputs.depleted_count),
+            "coverage_pass_index": int(inputs.pass_index),
+            "coverage_multi_pass_enabled": bool(inputs.multi_pass_enabled),
+            "coverage_multi_pass_max_passes": int(inputs.multi_pass_max_passes),
+            "coverage_multi_pass_min_remaining_depth_m": float(
+                inputs.multi_pass_min_remaining_depth_m
+            ),
+            "coverage_last_payload_gain_kg": float(inputs.last_payload_gain_kg),
+            "coverage_last_effective_deposit_delta_kg": float(
+                inputs.last_effective_deposit_delta_kg
+            ),
+            "coverage_global_low_productivity_streak": int(
+                inputs.global_low_productivity_streak
+            ),
+            "coverage_use_env_removed_depth": bool(inputs.use_env_removed_depth),
+            "coverage_candidate_layout": str(inputs.candidate_layout),
+            "coverage_first_dig_strategy": str(inputs.first_dig_strategy),
+            "coverage_first_dig_preferred_corridor_id": int(
+                -1
+                if inputs.first_dig_preferred_corridor_id is None
+                else inputs.first_dig_preferred_corridor_id
+            ),
+            "coverage_first_dig_max_entry_distance_m": float(
+                np.nan
+                if inputs.first_dig_max_entry_distance_m is None
+                else inputs.first_dig_max_entry_distance_m
+            ),
+            "coverage_first_dig_qpos_delta_weight": float(
+                inputs.first_dig_qpos_delta_weight
+            ),
+            "coverage_first_dig_max_qpos_delta": (
+                None
+                if inputs.first_dig_max_qpos_delta is None
+                else np.asarray(
+                    inputs.first_dig_max_qpos_delta,
+                    dtype=float,
+                ).tolist()
+            ),
+            "coverage_terminal_stop_requested": bool(
+                inputs.terminal_stop_requested
+            ),
+            "coverage_terminal_stop_reason": str(inputs.terminal_stop_reason),
+            "coverage_corridors": list(inputs.corridors),
+            "planner_terminal_stop_requested": bool(
+                inputs.terminal_stop_requested
+            ),
+            "planner_terminal_stop_reason": str(inputs.terminal_stop_reason),
+            "coverage_candidate_scores": list(inputs.candidate_scores),
+        }
 
     @staticmethod
     def corridor_to_debug(
@@ -136,6 +276,7 @@ class CoverageReportService:
 
 __all__ = [
     "CoverageBucketSnapshot",
+    "CoverageDebugReportInputs",
     "CoverageReportService",
     "CoverageReportState",
 ]

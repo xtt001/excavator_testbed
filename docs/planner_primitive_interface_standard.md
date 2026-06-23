@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.51 implementation. It is intentionally
+compares them with the current Phase 9.52 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -32,6 +32,9 @@ Current maturity:
 - effect request/application boundary: **achieved for current requested effects**
 - focused token, coverage, handoff, dispatch, report, reset, config services:
   **mostly achieved**
+- coverage debug-field projection: **achieved for
+  `CoverageReportService.debug_fields(...)` while policy still prepares the
+  explicit snapshot inputs**
 - token runtime mutable state owner: **achieved for dig/return token arrays,
   source/fallback flags, prior-bound flags, and pending next-dig token state**
 - return runtime mutable state owner: **achieved for return handoff counters,
@@ -639,13 +642,17 @@ Current boundary:
 
 - `PrimitiveDebugReportBuilder`, `PrimitiveRolloutSummaryBuilder`, and
   `PrimitivePlannerTraceBuilder` exist.
+- `CoverageReportService` owns coverage corridor debug payloads, coverage
+  decision-event payloads, and coverage debug-field schema projection through
+  explicit `CoverageDebugReportInputs`.
 - Policy still prepares section snapshots and compatibility fields.
 
 Gap:
 
 - This layer is close to target.
-- Section snapshot providers may be further narrowed later, but schema assembly
-  is already outside the large policy class.
+- Section snapshot providers may be further narrowed later. Coverage debug-field
+  schema assembly is outside the large policy class; other report input
+  assembly still has policy-side compatibility glue.
 
 Standard:
 

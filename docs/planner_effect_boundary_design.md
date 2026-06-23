@@ -962,6 +962,18 @@ start-envelope, entry-close, entry-intent, surface-guard behavior,
 debug/summary/trace public schema, `cell_entry`, backend fail-fast behavior, or
 removed 5P runtime status.
 
+Phase 9.52 extends `CoverageReportService` in
+`testbed/planner/primitive_coverage_reports.py` with
+`CoverageDebugReportInputs` and `debug_fields(...)`. Coverage debug-field
+public schema assembly now lives in the coverage report boundary, while
+`PrimitivePlannerACTPolicy._debug_report_coverage_fields()` remains a
+compatibility facade that supplies explicit snapshot values. Existing
+`corridor_to_debug(...)` and `decision_event(...)` behavior remains unchanged.
+This phase does not change coverage selection, scoring, effect/runtime updates,
+candidate generation, public debug/summary/trace schemas, token schemas,
+`cell_entry`, residual `pre_dig_align`, backend fail-fast behavior, or removed
+5P runtime status.
+
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in
 `testbed/planner/primitive_return_handoff.py`. The service owns the former

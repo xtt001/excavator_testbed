@@ -5575,3 +5575,64 @@ Each completed refactor round should append:
   the remaining `PrimitivePlannerACTPolicy` owned storage/facades after Phase
   9.51. The next prompt should be based on real current-code inventory, not on
   momentum from the state-owner sequence.
+
+### 2026-06-23 Phase 9.52 Move Coverage Debug Projection Into Report Service
+
+- Scope: extended `CoverageReportService` in
+  `testbed/planner/primitive_coverage_reports.py` so the coverage report
+  boundary owns coverage debug-field public schema assembly.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 115]`, HEAD
+  before this round `ea1aac816ad5a1099e586b4ae28d4157d3d950b8`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- Added `CoverageDebugReportInputs` as an explicit coverage debug projection
+  input snapshot and `CoverageReportService.debug_fields(...)` as the stable
+  schema projection method.
+- `PrimitivePlannerACTPolicy._debug_report_coverage_fields()` now constructs
+  `CoverageDebugReportInputs` and delegates to `CoverageReportService`. The old
+  policy method remains as the compatibility facade used by current debug-state
+  report construction and tests.
+- Existing `CoverageReportService.corridor_to_debug(...)` and
+  `decision_event(...)` behavior was not changed.
+- Preserved behavior: coverage debug key names, scalar conversions, `NaN`/`-1`
+  fallback semantics, corridor/candidate list projection, public coverage
+  report schemas, coverage selection/scoring/effect/runtime semantics, token
+  schemas, cell-entry compatibility, residual pre-dig-align behavior,
+  observation injection, token/return/cycle/scripted-bootstrap/execution owners,
+  backend fail-fast behavior, and removed 5P runtime status are unchanged.
+- Explicit non-goals: no coverage selection, scoring, effect, candidate, or
+  runtime semantic change; no public report schema change; no token contract
+  change; no parked-path promotion; no backend selection change.
+- TDD red result from executor callback: after focused tests were added, the
+  first run of `python -m pytest -q tests/test_primitive_coverage_reports.py`
+  failed as expected with `ImportError` because
+  `CoverageDebugReportInputs` did not yet exist in
+  `testbed.planner.primitive_coverage_reports`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_debug_report.py tests/test_primitive_planner_trace.py`
+  returned `10 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_state.py tests/test_primitive_coverage_selection.py tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_updates.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or return_to_dig or pre_dig_align or cell_entry"`
+  returned `19 passed, 100 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_debug_report.py tests/test_primitive_planner_trace.py`
+  returned `10 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_state.py tests/test_primitive_coverage_selection.py tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_updates.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or return_to_dig or pre_dig_align or cell_entry"`
+  returned `19 passed, 100 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record. The recursive callback and
+  thinking-effort rules remain in force: refactor/audit stays `thinking: xhigh`,
+  and executor prompts must explicitly specify `thinking: high` or
+  `thinking: xhigh` while preserving the `send_message_to_thread` callback.
+- Audit note: this is implementation round 1 after the latest three-iteration
+  reflection. It moves coverage debug projection into an existing report
+  boundary; it is not a new state owner, a generic report blackboard, or a
+  backend capability change.

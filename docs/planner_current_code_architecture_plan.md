@@ -74,6 +74,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_return_state.py` | 56 | mutable non-token return handoff/runtime state owner and reset defaults |
 | `testbed/planner/primitive_cycle_state.py` | 75 | mutable live 4P cycle/progress runtime state owner and reset defaults |
 | `testbed/planner/primitive_scripted_bootstrap.py` | 116 | scripted bootstrap runtime state, readiness checks, timeout, and PD action service |
+| `testbed/planner/primitive_coverage_reports.py` | 282 | coverage corridor debug, coverage decision-event, and coverage debug-field payload builders |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
 | `testbed/planner/evidence_trace.py` | 972 | evidence classifier and report writer for rollout-driven refactor decisions |
@@ -315,6 +316,8 @@ Candidate file: `testbed/planner/primitive_reporting.py`.
 Reporting must remain a boundary, not part of decision logic:
 
 - debug state keeps the public schema stable
+- coverage debug fields are projected by `CoverageReportService` from explicit
+  snapshot inputs
 - rollout summary keeps current aggregate fields stable
 - planner trace owns structured evidence/debug payloads
 - report-only fields can read kernel state but must not drive backend decisions
@@ -1065,6 +1068,17 @@ and `_pre_dig_align_surface_guard_count` names are property-backed facades.
 The parked readiness, timeout, target, surface-guard, and PD action algorithms
 remain in the policy shell; `pre_dig_align` remains residual parking/action
 material rather than a mainline backend capability.
+
+Current status note after Phase 9.52: coverage debug-field public schema
+assembly is now owned by `CoverageReportService.debug_fields(...)` in
+`testbed/planner/primitive_coverage_reports.py`. `CoverageDebugReportInputs`
+captures explicit coverage report values, and
+`PrimitivePlannerACTPolicy._debug_report_coverage_fields()` now remains a thin
+compatibility facade that builds the snapshot and delegates to the service.
+Coverage corridor debug payloads and coverage decision-event payloads remain in
+the same report service. Coverage selection, scoring, effect/runtime updates,
+candidate generation, public key names, scalar conversions, `NaN`/`-1`
+fallbacks, and list projection semantics remain unchanged.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;

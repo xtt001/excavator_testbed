@@ -94,6 +94,7 @@ from testbed.planner.primitive_coverage_exemplars import (
 )
 from testbed.planner.primitive_coverage_reports import (
     CoverageBucketSnapshot,
+    CoverageDebugReportInputs,
     CoverageReportService,
     CoverageReportState,
 )
@@ -2097,151 +2098,73 @@ class PrimitivePlannerACTPolicy(Policy):
         }
 
     def _debug_report_coverage_fields(self) -> dict[str, Any]:
-        return {
-            "coverage_corridor_id": int(self._coverage_active_corridor_id),
-            "coverage_selected_corridor_id": int(self._coverage_active_corridor_id),
-            "coverage_last_selected_corridor_id": int(
-                self._coverage_last_selected_corridor_id
-            ),
-            "coverage_last_selected_cell_id": int(
-                self._coverage_corridor_cell_id_by_id(
+        active_corridor = self._coverage_active_corridor()
+        return self._coverage_report_service().debug_fields(
+            CoverageDebugReportInputs(
+                active_corridor_id=int(self._coverage_active_corridor_id),
+                last_selected_corridor_id=int(
                     self._coverage_last_selected_corridor_id
-                )
-            ),
-            "coverage_last_selected_row_id": int(
-                self._coverage_corridor_row_id_by_id(
-                    self._coverage_last_selected_corridor_id
-                )
-            ),
-            "coverage_entry_x_m": float(self._coverage_active_value("entry_x_m")),
-            "coverage_entry_z_m": float(self._coverage_active_value("entry_z_m")),
-            "coverage_exit_x_m": float(self._coverage_active_value("exit_x_m")),
-            "coverage_exit_z_m": float(self._coverage_active_value("exit_z_m")),
-            "coverage_entry_x_p05_m": float(
-                self._coverage_active_value("entry_x_p05_m")
-            ),
-            "coverage_entry_x_p50_m": float(
-                self._coverage_active_value("entry_x_p50_m")
-            ),
-            "coverage_entry_x_p95_m": float(
-                self._coverage_active_value("entry_x_p95_m")
-            ),
-            "coverage_entry_z_p05_m": float(
-                self._coverage_active_value("entry_z_p05_m")
-            ),
-            "coverage_entry_z_p50_m": float(
-                self._coverage_active_value("entry_z_p50_m")
-            ),
-            "coverage_entry_z_p95_m": float(
-                self._coverage_active_value("entry_z_p95_m")
-            ),
-            "coverage_entry_radial_p75_m": float(
-                self._coverage_active_value("entry_radial_p75_m")
-            ),
-            "coverage_entry_radial_p95_m": float(
-                self._coverage_active_value("entry_radial_p95_m")
-            ),
-            "coverage_exit_x_p05_m": float(
-                self._coverage_active_value("exit_x_p05_m")
-            ),
-            "coverage_exit_x_p50_m": float(
-                self._coverage_active_value("exit_x_p50_m")
-            ),
-            "coverage_exit_x_p95_m": float(
-                self._coverage_active_value("exit_x_p95_m")
-            ),
-            "coverage_exit_z_p05_m": float(
-                self._coverage_active_value("exit_z_p05_m")
-            ),
-            "coverage_exit_z_p50_m": float(
-                self._coverage_active_value("exit_z_p50_m")
-            ),
-            "coverage_exit_z_p95_m": float(
-                self._coverage_active_value("exit_z_p95_m")
-            ),
-            "coverage_exit_radial_p75_m": float(
-                self._coverage_active_value("exit_radial_p75_m")
-            ),
-            "coverage_exit_radial_p95_m": float(
-                self._coverage_active_value("exit_radial_p95_m")
-            ),
-            "coverage_cut_depth_peak_p05_m": float(
-                self._coverage_active_value("cut_depth_peak_p05_m")
-            ),
-            "coverage_cut_depth_peak_p50_m": float(
-                self._coverage_active_value("cut_depth_peak_p50_m")
-            ),
-            "coverage_cut_depth_peak_p95_m": float(
-                self._coverage_active_value("cut_depth_peak_p95_m")
-            ),
-            "coverage_cell_id": int(self._coverage_active_cell_id()),
-            "coverage_corridor_score": float(self._coverage_active_corridor_score()),
-            "coverage_state_exemplar_enabled": bool(
-                self.coverage_state_exemplars_enabled
-            ),
-            "coverage_state_exemplar_ids": list(
-                self._coverage_active_state_exemplar_ids
-            ),
-            "coverage_state_exemplar_distance": float(
-                self._coverage_active_state_exemplar_distance
-            ),
-            "coverage_depleted_count": int(self._coverage_depleted_count()),
-            "coverage_pass_index": int(self._coverage_pass_index),
-            "coverage_multi_pass_enabled": bool(self.coverage_multi_pass_enabled),
-            "coverage_multi_pass_max_passes": int(self.coverage_multi_pass_max_passes),
-            "coverage_multi_pass_min_remaining_depth_m": float(
-                self.coverage_multi_pass_min_remaining_depth_m
-            ),
-            "coverage_last_payload_gain_kg": float(
-                self._coverage_last_payload_gain_kg
-            ),
-            "coverage_last_effective_deposit_delta_kg": float(
-                self._coverage_last_effective_deposit_delta_kg
-            ),
-            "coverage_global_low_productivity_streak": int(
-                self._coverage_global_low_productivity_streak
-            ),
-            "coverage_use_env_removed_depth": bool(
-                self.coverage_use_env_removed_depth
-            ),
-            "coverage_candidate_layout": str(self.coverage_candidate_layout),
-            "coverage_first_dig_strategy": str(self.coverage_first_dig_strategy),
-            "coverage_first_dig_preferred_corridor_id": int(
-                -1
-                if self.coverage_first_dig_preferred_corridor_id is None
-                else self.coverage_first_dig_preferred_corridor_id
-            ),
-            "coverage_first_dig_max_entry_distance_m": float(
-                np.nan
-                if self.coverage_first_dig_max_entry_distance_m is None
-                else self.coverage_first_dig_max_entry_distance_m
-            ),
-            "coverage_first_dig_qpos_delta_weight": float(
-                self.coverage_first_dig_qpos_delta_weight
-            ),
-            "coverage_first_dig_max_qpos_delta": (
-                None
-                if self.coverage_first_dig_max_qpos_delta is None
-                else self.coverage_first_dig_max_qpos_delta.astype(float).tolist()
-            ),
-            "coverage_terminal_stop_requested": bool(
-                self._coverage_terminal_stop_requested
-            ),
-            "coverage_terminal_stop_reason": str(
-                self._coverage_terminal_stop_reason
-            ),
-            "coverage_corridors": [
-                self._coverage_corridor_to_debug(corridor)
-                for corridor in self._coverage_corridors
-            ],
-            "planner_terminal_stop_requested": bool(
-                self._coverage_terminal_stop_requested
-            ),
-            "planner_terminal_stop_reason": str(
-                self._coverage_terminal_stop_reason
-            ),
-            "coverage_candidate_scores": list(self._coverage_candidate_scores),
-        }
+                ),
+                last_selected_cell_id=int(
+                    self._coverage_corridor_cell_id_by_id(
+                        self._coverage_last_selected_corridor_id
+                    )
+                ),
+                last_selected_row_id=int(
+                    self._coverage_corridor_row_id_by_id(
+                        self._coverage_last_selected_corridor_id
+                    )
+                ),
+                active_corridor=(
+                    None
+                    if active_corridor is None
+                    else self._coverage_corridor_to_debug(active_corridor)
+                ),
+                active_cell_id=int(self._coverage_active_cell_id()),
+                active_score=float(self._coverage_active_corridor_score()),
+                state_exemplar_enabled=bool(self.coverage_state_exemplars_enabled),
+                state_exemplar_ids=list(self._coverage_active_state_exemplar_ids),
+                state_exemplar_distance=float(
+                    self._coverage_active_state_exemplar_distance
+                ),
+                depleted_count=int(self._coverage_depleted_count()),
+                pass_index=int(self._coverage_pass_index),
+                multi_pass_enabled=bool(self.coverage_multi_pass_enabled),
+                multi_pass_max_passes=int(self.coverage_multi_pass_max_passes),
+                multi_pass_min_remaining_depth_m=float(
+                    self.coverage_multi_pass_min_remaining_depth_m
+                ),
+                last_payload_gain_kg=float(self._coverage_last_payload_gain_kg),
+                last_effective_deposit_delta_kg=float(
+                    self._coverage_last_effective_deposit_delta_kg
+                ),
+                global_low_productivity_streak=int(
+                    self._coverage_global_low_productivity_streak
+                ),
+                use_env_removed_depth=bool(self.coverage_use_env_removed_depth),
+                candidate_layout=str(self.coverage_candidate_layout),
+                first_dig_strategy=str(self.coverage_first_dig_strategy),
+                first_dig_preferred_corridor_id=(
+                    self.coverage_first_dig_preferred_corridor_id
+                ),
+                first_dig_max_entry_distance_m=(
+                    self.coverage_first_dig_max_entry_distance_m
+                ),
+                first_dig_qpos_delta_weight=float(
+                    self.coverage_first_dig_qpos_delta_weight
+                ),
+                first_dig_max_qpos_delta=self.coverage_first_dig_max_qpos_delta,
+                terminal_stop_requested=bool(
+                    self._coverage_terminal_stop_requested
+                ),
+                terminal_stop_reason=str(self._coverage_terminal_stop_reason),
+                corridors=[
+                    self._coverage_corridor_to_debug(corridor)
+                    for corridor in self._coverage_corridors
+                ],
+                candidate_scores=list(self._coverage_candidate_scores),
+            )
+        )
 
     def _debug_report_cell_entry_fields(self) -> dict[str, Any]:
         cell_goal = self._cell_entry_goal
