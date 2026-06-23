@@ -6168,3 +6168,118 @@ Each completed refactor round should append:
   reflection. It continues the reflection's broader coverage/report/trace
   boundary direction and does not promote the current implementation to a fully
   swappable backend architecture.
+
+### 2026-06-23 Phase 9.60 Move Token Report Status Into Token Runtime State
+
+- Scope: extended `PrimitiveTokenRuntimeState` in
+  `testbed/planner/primitive_token_state.py` so live token/pending/dig-cut
+  report metadata is projected as one explicit token report/status object
+  instead of being hand-assembled independently for debug, summary, and trace
+  report inputs.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 123]`, HEAD
+  before this round `3459e04cae1d89f36d0e39f1c2d130d04d32c3c8`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- Added frozen `PrimitiveTokenReportStatus` carrying pending/dig-cut report
+  metadata: pending next-dig cycle/corridor ids, dig-cut injected flag,
+  planner mode, prior id/path, token source, prior-window flag, and fallback
+  reason.
+- Added `PrimitiveTokenRuntimeState.to_report_status(...)`, which consumes
+  explicit external facts from `PrimitiveTokenInjectionState` plus dig-cut
+  config facts, and reads pending/dig-cut runtime fields from the token owner.
+- Added `PrimitiveTokenReportStatus.pending_debug_fields()` and
+  `dig_cut_debug_fields()` for the existing public debug pending/dig-cut key
+  mappings.
+- `PrimitiveRolloutSummaryInputs` and `PrimitiveRolloutSummaryBuilder` now
+  carry and use the token report status for existing pending/dig-cut summary
+  keys.
+- `PrimitivePlannerTraceInputs` and `PrimitivePlannerTraceBuilder` now carry
+  and use the token report status for existing dig-cut trace metadata keys.
+- `PrimitivePlannerACTPolicy` now assembles one token report status and reuses
+  it through debug pending/dig-cut fields, rollout summary inputs, and planner
+  trace inputs.
+- Preserved behavior: token dimensions, token contract text/version,
+  source/fallback string semantics, injected observation key names, public
+  debug/summary/trace key names and type projection, token planning
+  algorithms/coordinators, dig-depth-profile planning, return token planning,
+  coverage algorithms, backend facts/fail-fast behavior, reset timing, policy
+  observation provider order, `cell_entry`, `pre_dig_align`, and removed 5P
+  runtime status are unchanged.
+- Explicit non-goals: no token planning algorithm move, no token schema change,
+  no public report schema change, no observation assembly order change, no
+  coverage/return/cycle/scripted-bootstrap owner change, no parked
+  `cell_entry` or `pre_dig_align` promotion, no backend support change, no
+  generic report blackboard or pass-through facade.
+- TDD red result from executor callback: after focused tests were added, the
+  first run of `python -m pytest -q tests/test_primitive_token_state.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  failed as expected with `ImportError` because `PrimitiveTokenReportStatus`
+  did not yet exist in `testbed.planner.primitive_token_state`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_token_state.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  returned `15 passed`;
+  `python -m pytest -q tests/test_primitive_debug_report.py tests/test_primitive_token_status.py tests/test_primitive_observation.py`
+  returned `14 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py`
+  returned `11 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_cut_tokens or dig_depth_profile or return_to_dig or start_envelope or coverage_decision_trace or semantic_boundary_events_drive_skill_sequence"`
+  returned `8 passed, 111 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_token_state.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  returned `15 passed`;
+  `python -m pytest -q tests/test_primitive_debug_report.py tests/test_primitive_token_status.py tests/test_primitive_observation.py`
+  returned `14 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py`
+  returned `11 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_cut_tokens or dig_depth_profile or return_to_dig or start_envelope or coverage_decision_trace or semantic_boundary_events_drive_skill_sequence"`
+  returned `8 passed, 111 deselected`; compileall for touched modules passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Post-documentation checks by the audit thread: both planner guard commands
+  and `git diff --check` passed.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It moved live token/pending/dig-cut report metadata as one
+  bounded status boundary and was not a one-field micro-slice or conservative
+  tiny cleanup. No anemic service, pass-through facade, or generic blackboard
+  was created.
+- Audit note: this is implementation round 3 after the latest three-iteration
+  reflection. It completes the current report-boundary sequence and triggers a
+  new three-iteration reflection.
+
+#### Three-iteration reflection after Phases 9.58-9.60
+
+- Progress toward target: the three-round sequence moved real report/facts
+  boundaries out of `PrimitivePlannerACTPolicy` without changing public report
+  schemas. Phase 9.58 moved planner-trace coverage status into the coverage
+  report boundary; Phase 9.59 moved rollout-summary coverage status into the
+  same boundary; Phase 9.60 moved token/pending/dig-cut report metadata into
+  the existing token runtime owner. This narrows policy-side report assembly
+  and keeps builders consuming typed section statuses instead of broad
+  hand-built scalar lists.
+- Maximum remaining gap: the code is still not a fully swappable backend
+  architecture. The accurate status remains default legacy FSM backendified
+  with focused services / shared backend decision input/facts/factory, while
+  BT/VLM/LLM backends remain unsupported fail-fast. `PrimitivePlannerACTPolicy`
+  still owns broad compatibility glue, port construction, config facts,
+  report input assembly for non-token/non-coverage sections, and parked
+  `cell_entry` / residual `pre_dig_align` algorithms.
+- Direction correction: stop extending the report-boundary sequence by default.
+  The next implementation slice should target a deeper live runtime/port
+  coupling or dispatch/input boundary if the code shows a cohesive owner.
+  If inspection only finds more one-field report dicts or parked
+  compatibility tails, dispatch an audit-only inventory instead of creating
+  another status wrapper.
+- Hard constraint check: these three rounds did not violate the rule that
+  protection is a constraint, not the objective. They were bounded but not
+  merely the safest smallest cleanup: each round consolidated a multi-field,
+  reused live report projection around an existing stable owner. Going forward,
+  repeating the same pattern on tiny or parked fields would violate the
+  constraint and should be stopped.
+- Next core bounded-slice filter: prefer live boundaries with execution impact
+  on coupling, such as port-builder consolidation, runtime-kernel/report input
+  composition, or remaining backend facts/action seams. Do not promote parked
+  `cell_entry`, residual `pre_dig_align`, removed 5P runtime, or unsupported
+  BT/VLM/LLM backends by momentum.

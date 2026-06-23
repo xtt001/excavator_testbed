@@ -7,6 +7,7 @@ from typing import Any, Sequence
 
 from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_CONTRACT
 from testbed.planner.primitive_coverage_reports import CoverageTraceReportStatus
+from testbed.planner.primitive_token_state import PrimitiveTokenReportStatus
 
 
 DIG_CUT_TOKEN_CONTRACT_TEXT = (
@@ -30,9 +31,7 @@ class PrimitivePlannerTraceInputs:
     """Snapshot values required to assemble the public planner trace."""
 
     cell_entry_trace: Sequence[Any]
-    dig_cut_planner_mode: str
-    dig_cut_prior_id: str
-    dig_cut_prior_path: str
+    token: PrimitiveTokenReportStatus
     return_target_planner_enabled: bool
     coverage: CoverageTraceReportStatus
 
@@ -46,9 +45,9 @@ class PrimitivePlannerTraceBuilder:
             "cell_entry_trace": list(inputs.cell_entry_trace),
             "dig_cut_token_contract_version": DIG_CUT_TOKEN_CONTRACT,
             "dig_cut_token_contract": DIG_CUT_TOKEN_CONTRACT_TEXT,
-            "dig_cut_planner_mode": str(inputs.dig_cut_planner_mode),
-            "dig_cut_prior_id": str(inputs.dig_cut_prior_id),
-            "dig_cut_prior_path": str(inputs.dig_cut_prior_path),
+            "dig_cut_planner_mode": str(inputs.token.dig_cut_planner_mode),
+            "dig_cut_prior_id": str(inputs.token.dig_cut_prior_id),
+            "dig_cut_prior_path": str(inputs.token.dig_cut_prior_path),
             "return_target_token_contract_version": DIG_CUT_TOKEN_CONTRACT,
             "return_target_token_contract": RETURN_TARGET_TOKEN_CONTRACT_TEXT,
             "return_start_envelope_token_contract_version": (

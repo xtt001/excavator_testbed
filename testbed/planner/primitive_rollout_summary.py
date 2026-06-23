@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from testbed.planner.primitive_coverage_reports import CoverageSummaryReportStatus
+from testbed.planner.primitive_token_state import PrimitiveTokenReportStatus
 
 
 PrimitiveRolloutSummaryValue = float | int | str | list[str]
@@ -38,14 +39,7 @@ class PrimitiveRolloutSummaryInputs:
     return_to_dig_start_envelope_plane_depth_mode: str
     return_to_dig_start_envelope_local_depth_tolerance_m: float
     return_to_dig_start_envelope_error: float
-    pending_dig_cut_cycle_id: int
-    pending_dig_cut_corridor_id: int
-    dig_cut_token_injected: bool
-    dig_cut_planner_mode: str
-    dig_cut_prior_id: str
-    dig_cut_token_source: str
-    dig_cut_token_in_prior_p10_p90: bool
-    dig_cut_fallback_reason: str
+    token: PrimitiveTokenReportStatus
     dig_failed_replan_next_skill: str
     coverage: CoverageSummaryReportStatus
     scripted_bootstrap_timeout_count: int
@@ -111,16 +105,20 @@ class PrimitiveRolloutSummaryBuilder:
             "return_to_dig_start_envelope_error": float(
                 inputs.return_to_dig_start_envelope_error
             ),
-            "pending_dig_cut_cycle_id": int(inputs.pending_dig_cut_cycle_id),
-            "pending_dig_cut_corridor_id": int(inputs.pending_dig_cut_corridor_id),
-            "dig_cut_token_injected": int(inputs.dig_cut_token_injected),
-            "dig_cut_planner_mode": str(inputs.dig_cut_planner_mode),
-            "dig_cut_prior_id": str(inputs.dig_cut_prior_id),
-            "dig_cut_token_source": str(inputs.dig_cut_token_source),
-            "dig_cut_token_in_prior_p10_p90": int(
-                inputs.dig_cut_token_in_prior_p10_p90
+            "pending_dig_cut_cycle_id": int(
+                inputs.token.pending_dig_cut_cycle_id
             ),
-            "dig_cut_fallback_reason": str(inputs.dig_cut_fallback_reason),
+            "pending_dig_cut_corridor_id": int(
+                inputs.token.pending_dig_cut_corridor_id
+            ),
+            "dig_cut_token_injected": int(inputs.token.dig_cut_token_injected),
+            "dig_cut_planner_mode": str(inputs.token.dig_cut_planner_mode),
+            "dig_cut_prior_id": str(inputs.token.dig_cut_prior_id),
+            "dig_cut_token_source": str(inputs.token.dig_cut_token_source),
+            "dig_cut_token_in_prior_p10_p90": int(
+                inputs.token.dig_cut_token_in_prior_p10_p90
+            ),
+            "dig_cut_fallback_reason": str(inputs.token.dig_cut_fallback_reason),
             "dig_failed_replan_next_skill": str(
                 inputs.dig_failed_replan_next_skill
             ),

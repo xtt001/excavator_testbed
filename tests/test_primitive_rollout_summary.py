@@ -9,10 +9,22 @@ from testbed.planner.primitive_rollout_summary import (
     PrimitiveRolloutSummaryBuilder,
     PrimitiveRolloutSummaryInputs,
 )
+from testbed.planner.primitive_token_state import PrimitiveTokenReportStatus
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
 def _inputs(**overrides: Any) -> PrimitiveRolloutSummaryInputs:
+    token = PrimitiveTokenReportStatus(
+        pending_dig_cut_cycle_id=4,
+        pending_dig_cut_corridor_id=9,
+        dig_cut_token_injected=True,
+        dig_cut_planner_mode="operator_prior_coverage",
+        dig_cut_prior_id="default",
+        dig_cut_prior_path="/tmp/dig_prior.json",
+        dig_cut_token_source="operator_prior_coverage",
+        dig_cut_token_in_prior_p10_p90=True,
+        dig_cut_fallback_reason="none",
+    )
     coverage = CoverageSummaryReportStatus(
         selected_corridor_id=12,
         depleted_count=6,
@@ -53,14 +65,7 @@ def _inputs(**overrides: Any) -> PrimitiveRolloutSummaryInputs:
         "return_to_dig_start_envelope_plane_depth_mode": "p50_floor",
         "return_to_dig_start_envelope_local_depth_tolerance_m": 0.03,
         "return_to_dig_start_envelope_error": 0.04,
-        "pending_dig_cut_cycle_id": 4,
-        "pending_dig_cut_corridor_id": 9,
-        "dig_cut_token_injected": True,
-        "dig_cut_planner_mode": "operator_prior_coverage",
-        "dig_cut_prior_id": "default",
-        "dig_cut_token_source": "operator_prior_coverage",
-        "dig_cut_token_in_prior_p10_p90": True,
-        "dig_cut_fallback_reason": "none",
+        "token": token,
         "dig_failed_replan_next_skill": "dig",
         "coverage": coverage,
         "scripted_bootstrap_timeout_count": 8,

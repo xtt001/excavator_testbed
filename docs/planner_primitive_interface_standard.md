@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.59 implementation. It is intentionally
+compares them with the current Phase 9.60 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -43,7 +43,7 @@ Current maturity:
   `CoverageReportService.summary_status(...)`**
 - token runtime mutable state owner: **achieved for dig/return token arrays,
   source/fallback flags, prior-bound flags, pending next-dig token state, and
-  live `TokenStatus` projection**
+  live `TokenStatus` plus token/pending/dig-cut report metadata projection**
 - return runtime mutable state owner: **achieved for return handoff counters,
   entry-close cache, next-dig-event flag, start-envelope gate cache, and live
   return report/status projection**
@@ -598,7 +598,8 @@ Current boundary:
   source/fallback/prior-bound fields, return start-envelope prior flags, and
   pending next-dig token/raw/exemplar fields. It also owns live `TokenStatus`
   projection from explicit cell-entry enablement, observation-injection flags,
-  and dig-depth-profile config facts.
+  and dig-depth-profile config facts, plus token/pending/dig-cut report
+  metadata projection through `PrimitiveTokenReportStatus`.
 - `PrimitiveReturnRuntimeState` owns non-token return handoff/runtime cache
   fields, so return-target token state and return handoff cache state are no
   longer mixed in the policy shell.
@@ -609,7 +610,9 @@ Current boundary:
 - `PrimitivePlannerACTPolicy` keeps old `_dig_cut_*`, `_return_*`, and
   `_pending_dig_*` private names as property-backed compatibility facades over
   the single token state owner. Its token-status report helper remains a thin
-  facade that delegates to the token state owner.
+  facade that delegates to the token state owner, and its token report-status
+  helper remains a thin explicit-facts assembler for debug, summary, and trace
+  report consumers.
 
 Gap:
 
@@ -670,6 +673,10 @@ Current boundary:
   explicit `CoverageDebugReportInputs`, planner-trace coverage sub-projection
   through `CoverageTraceReportStatus`, and rollout-summary coverage sub-
   projection through `CoverageSummaryReportStatus`.
+- `PrimitiveTokenRuntimeState` owns token/pending/dig-cut report metadata
+  projection through `PrimitiveTokenReportStatus`; debug pending/dig-cut fields,
+  rollout-summary pending/dig-cut fields, and planner-trace dig-cut metadata
+  reuse that status object.
 - Policy still prepares section snapshots and compatibility fields.
 
 Gap:

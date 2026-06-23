@@ -70,7 +70,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_observation.py` | 176 | policy observation assembler plus mutable per-observation injected-flag runtime state owner |
 | `testbed/planner/primitive_cell_entry_state.py` | 81 | parked cell-entry compatibility/report runtime state owner, reset defaults, and debug-field projection |
 | `testbed/planner/primitive_pre_dig_align_state.py` | 46 | parked pre-dig-align compatibility/report runtime state owner and reset defaults |
-| `testbed/planner/primitive_token_state.py` | 135 | mutable dig/return token runtime state owner, reset defaults, and live token-status projection |
+| `testbed/planner/primitive_token_state.py` | 190 | mutable dig/return token runtime state owner, reset defaults, live token-status projection, and token report metadata projection |
 | `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
 | `testbed/planner/primitive_cycle_state.py` | 123 | mutable live 4P cycle/progress runtime state owner, reset defaults, and live report/finalization projection |
 | `testbed/planner/primitive_scripted_bootstrap.py` | 144 | scripted bootstrap runtime state, readiness checks, timeout, PD action service, and live report/status projection |
@@ -1177,6 +1177,22 @@ projection, debug schemas, planner trace schemas, coverage algorithms,
 corridor debug payload values, decision trace mutation, terminal-stop behavior,
 backend facts, token/return/cycle/scripted-bootstrap owners, `cell_entry`,
 `pre_dig_align`, and removed 5P runtime status remain unchanged.
+
+Current status note after Phase 9.60: live token/pending/dig-cut report
+metadata projection is now owned by
+`PrimitiveTokenRuntimeState.to_report_status(...)` and
+`PrimitiveTokenReportStatus` in `testbed/planner/primitive_token_state.py`.
+The status carries pending next-dig cycle/corridor ids, dig-cut injected
+status, planner mode, prior id/path, token source, prior-window flag, and
+fallback reason. `PrimitivePlannerACTPolicy._debug_report_pending_fields()`,
+`_debug_report_dig_cut_fields()`, `_rollout_summary_inputs()`, and
+`_planner_trace_inputs()` now reuse that status while remaining thin
+explicit-facts assemblers for config and observation-injection facts. Public
+debug/summary/trace key names and type projection, token dimensions, token
+contract text/version, token planning algorithms/coordinators,
+dig-depth-profile planning, return token planning, coverage algorithms,
+backend facts/fail-fast, reset timing, policy observation provider order,
+`cell_entry`, `pre_dig_align`, and removed 5P runtime status remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

@@ -12,7 +12,10 @@ from testbed.data.operator_first_v2_2 import (
 )
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 from testbed.planner.primitive_observation import PrimitiveTokenInjectionState
-from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
+from testbed.planner.primitive_token_state import (
+    PrimitiveTokenReportStatus,
+    PrimitiveTokenRuntimeState,
+)
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
@@ -265,3 +268,67 @@ def test_policy_token_status_facade_delegates_to_token_runtime_state() -> None:
         policy._token_status_for_debug_report().to_debug_fields()
         == expected.to_debug_fields()
     )
+
+
+def test_token_runtime_state_projects_report_status_from_live_runtime_state() -> None:
+    state = PrimitiveTokenRuntimeState.fresh()
+    state.pending_dig_cut_cycle_id = 4
+    state.pending_dig_cut_corridor_id = 9
+    state.dig_cut_token_source = "operator_prior_coverage"
+    state.dig_cut_token_in_prior_p10_p90 = True
+    state.dig_cut_fallback_reason = "none"
+    injection_state = PrimitiveTokenInjectionState(dig_cut_token_injected=True)
+
+    status = state.to_report_status(
+        token_injection_state=injection_state,
+        dig_cut_planner_mode="operator_prior_coverage",
+        dig_cut_prior_id="default",
+        dig_cut_prior_path="/tmp/dig_prior.json",
+    )
+
+    assert status == PrimitiveTokenReportStatus(
+        pending_dig_cut_cycle_id=4,
+        pending_dig_cut_corridor_id=9,
+        dig_cut_token_injected=True,
+        dig_cut_planner_mode="operator_prior_coverage",
+        dig_cut_prior_id="default",
+        dig_cut_prior_path="/tmp/dig_prior.json",
+        dig_cut_token_source="operator_prior_coverage",
+        dig_cut_token_in_prior_p10_p90=True,
+        dig_cut_fallback_reason="none",
+    )
+    assert status.pending_debug_fields() == {
+        "pending_dig_cut_cycle_id": 4,
+        "pending_dig_cut_corridor_id": 9,
+    }
+    assert status.dig_cut_debug_fields() == {
+        "dig_cut_planner_mode": "operator_prior_coverage",
+        "dig_cut_prior_id": "default",
+    }
+
+
+def test_policy_token_report_debug_facades_delegate_to_report_status() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    state = policy._primitive_token_runtime_state()
+    state.pending_dig_cut_cycle_id = 4
+    state.pending_dig_cut_corridor_id = 9
+    state.dig_cut_token_source = "operator_prior_coverage"
+    state.dig_cut_token_in_prior_p10_p90 = True
+    state.dig_cut_fallback_reason = "none"
+    policy._dig_cut_token_injected = True
+    policy.dig_cut_planner_mode = "operator_prior_coverage"
+    policy.dig_cut_prior_id = "default"
+    policy.dig_cut_prior_path = "/tmp/dig_prior.json"
+
+    status = state.to_report_status(
+        token_injection_state=(
+            policy._primitive_observation_injection_runtime_state()
+            .to_token_injection_state()
+        ),
+        dig_cut_planner_mode="operator_prior_coverage",
+        dig_cut_prior_id="default",
+        dig_cut_prior_path="/tmp/dig_prior.json",
+    )
+
+    assert policy._debug_report_pending_fields() == status.pending_debug_fields()
+    assert policy._debug_report_dig_cut_fields() == status.dig_cut_debug_fields()

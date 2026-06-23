@@ -18,6 +18,35 @@ from testbed.planner.primitive_observation import PrimitiveTokenInjectionState
 from testbed.planner.primitive_token_status import TokenStatus
 
 
+@dataclass(frozen=True)
+class PrimitiveTokenReportStatus:
+    """Projected token/pending/dig-cut report metadata."""
+
+    pending_dig_cut_cycle_id: int
+    pending_dig_cut_corridor_id: int
+    dig_cut_token_injected: bool
+    dig_cut_planner_mode: str
+    dig_cut_prior_id: str
+    dig_cut_prior_path: str
+    dig_cut_token_source: str
+    dig_cut_token_in_prior_p10_p90: bool
+    dig_cut_fallback_reason: str
+
+    def pending_debug_fields(self) -> dict[str, int]:
+        return {
+            "pending_dig_cut_cycle_id": int(self.pending_dig_cut_cycle_id),
+            "pending_dig_cut_corridor_id": int(
+                self.pending_dig_cut_corridor_id
+            ),
+        }
+
+    def dig_cut_debug_fields(self) -> dict[str, str]:
+        return {
+            "dig_cut_planner_mode": str(self.dig_cut_planner_mode),
+            "dig_cut_prior_id": str(self.dig_cut_prior_id),
+        }
+
+
 @dataclass
 class PrimitiveTokenRuntimeState:
     """Own mutable dig/return token and pending-token runtime state."""
@@ -127,9 +156,35 @@ class PrimitiveTokenRuntimeState:
             return_start_envelope_tokens=self.return_start_envelope_tokens,
         )
 
+    def to_report_status(
+        self,
+        *,
+        token_injection_state: PrimitiveTokenInjectionState,
+        dig_cut_planner_mode: str,
+        dig_cut_prior_id: str,
+        dig_cut_prior_path: str,
+    ) -> PrimitiveTokenReportStatus:
+        """Project live token report metadata from runtime state and config facts."""
+
+        return PrimitiveTokenReportStatus(
+            pending_dig_cut_cycle_id=int(self.pending_dig_cut_cycle_id),
+            pending_dig_cut_corridor_id=int(self.pending_dig_cut_corridor_id),
+            dig_cut_token_injected=bool(
+                token_injection_state.dig_cut_token_injected
+            ),
+            dig_cut_planner_mode=str(dig_cut_planner_mode),
+            dig_cut_prior_id=str(dig_cut_prior_id),
+            dig_cut_prior_path=str(dig_cut_prior_path),
+            dig_cut_token_source=str(self.dig_cut_token_source),
+            dig_cut_token_in_prior_p10_p90=bool(
+                self.dig_cut_token_in_prior_p10_p90
+            ),
+            dig_cut_fallback_reason=str(self.dig_cut_fallback_reason),
+        )
+
 
 def _zeros(size: int) -> np.ndarray:
     return np.zeros(int(size), dtype=np.float32)
 
 
-__all__ = ["PrimitiveTokenRuntimeState"]
+__all__ = ["PrimitiveTokenReportStatus", "PrimitiveTokenRuntimeState"]

@@ -184,7 +184,10 @@ from testbed.planner.primitive_scripted_bootstrap import (
     PrimitiveScriptedBootstrapRuntimeService,
     PrimitiveScriptedBootstrapRuntimeState,
 )
-from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
+from testbed.planner.primitive_token_state import (
+    PrimitiveTokenReportStatus,
+    PrimitiveTokenRuntimeState,
+)
 from testbed.planner import primitive_adapter_config as adapter_config
 from testbed.planner.primitive_adapter_config import (
     PrimitivePlannerAdapterConfigInputs,
@@ -2054,20 +2057,25 @@ class PrimitivePlannerACTPolicy(Policy):
             dig_depth_profile_required=bool(self.dig_depth_profile_required),
         )
 
+    def _token_report_status(self) -> PrimitiveTokenReportStatus:
+        return self._primitive_token_runtime_state().to_report_status(
+            token_injection_state=(
+                self._primitive_observation_injection_runtime_state()
+                .to_token_injection_state()
+            ),
+            dig_cut_planner_mode=str(self.dig_cut_planner_mode),
+            dig_cut_prior_id=str(self.dig_cut_prior_id),
+            dig_cut_prior_path=str(self.dig_cut_prior_path),
+        )
+
     def _debug_report_return_fields(self) -> dict[str, Any]:
         return self._return_report_status().debug_fields()
 
     def _debug_report_pending_fields(self) -> dict[str, Any]:
-        return {
-            "pending_dig_cut_cycle_id": int(self._pending_dig_cut_cycle_id),
-            "pending_dig_cut_corridor_id": int(self._pending_dig_cut_corridor_id),
-        }
+        return self._token_report_status().pending_debug_fields()
 
     def _debug_report_dig_cut_fields(self) -> dict[str, Any]:
-        return {
-            "dig_cut_planner_mode": str(self.dig_cut_planner_mode),
-            "dig_cut_prior_id": str(self.dig_cut_prior_id),
-        }
+        return self._token_report_status().dig_cut_debug_fields()
 
     def _debug_report_coverage_fields(self) -> dict[str, Any]:
         active_corridor = self._coverage_active_corridor()
@@ -2229,6 +2237,7 @@ class PrimitivePlannerACTPolicy(Policy):
         cycle_status = self._cycle_report_status()
         return_status = self._return_report_status()
         scripted_bootstrap_status = self._scripted_bootstrap_report_status()
+        token_status = self._token_report_status()
         coverage_status = self._coverage_report_service().summary_status(
             selected_corridor_id=int(self._coverage_active_corridor_id),
             depleted_count=int(self._coverage_depleted_count()),
@@ -2295,16 +2304,7 @@ class PrimitivePlannerACTPolicy(Policy):
             return_to_dig_start_envelope_error=(
                 return_status.return_to_dig_start_envelope_error
             ),
-            pending_dig_cut_cycle_id=int(self._pending_dig_cut_cycle_id),
-            pending_dig_cut_corridor_id=int(self._pending_dig_cut_corridor_id),
-            dig_cut_token_injected=bool(self._dig_cut_token_injected),
-            dig_cut_planner_mode=str(self.dig_cut_planner_mode),
-            dig_cut_prior_id=str(self.dig_cut_prior_id),
-            dig_cut_token_source=str(self._dig_cut_token_source),
-            dig_cut_token_in_prior_p10_p90=bool(
-                self._dig_cut_token_in_prior_p10_p90
-            ),
-            dig_cut_fallback_reason=str(self._dig_cut_fallback_reason),
+            token=token_status,
             dig_failed_replan_next_skill=str(self.dig_failed_replan_next_skill),
             coverage=coverage_status,
             scripted_bootstrap_timeout_count=(
@@ -2365,9 +2365,7 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         return PrimitivePlannerTraceInputs(
             cell_entry_trace=self._cell_entry_trace,
-            dig_cut_planner_mode=str(self.dig_cut_planner_mode),
-            dig_cut_prior_id=str(self.dig_cut_prior_id),
-            dig_cut_prior_path=str(self.dig_cut_prior_path),
+            token=self._token_report_status(),
             return_target_planner_enabled=bool(self.return_target_planner_enabled),
             coverage=coverage,
         )

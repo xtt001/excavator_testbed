@@ -9,10 +9,22 @@ from testbed.planner.primitive_planner_trace import (
     PrimitivePlannerTraceBuilder,
     PrimitivePlannerTraceInputs,
 )
+from testbed.planner.primitive_token_state import PrimitiveTokenReportStatus
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
 def _inputs(**overrides: Any) -> PrimitivePlannerTraceInputs:
+    token_status = PrimitiveTokenReportStatus(
+        pending_dig_cut_cycle_id=4,
+        pending_dig_cut_corridor_id=9,
+        dig_cut_token_injected=True,
+        dig_cut_planner_mode="operator_prior_coverage",
+        dig_cut_prior_id="default",
+        dig_cut_prior_path="/tmp/dig_prior.json",
+        dig_cut_token_source="operator_prior_coverage",
+        dig_cut_token_in_prior_p10_p90=True,
+        dig_cut_fallback_reason="none",
+    )
     coverage_status = CoverageTraceReportStatus(
         use_env_removed_depth=False,
         candidate_layout="corridor_grid",
@@ -29,9 +41,7 @@ def _inputs(**overrides: Any) -> PrimitivePlannerTraceInputs:
     )
     values: dict[str, Any] = {
         "cell_entry_trace": [{"cell_id": 2, "reason": "compatibility_only"}],
-        "dig_cut_planner_mode": "operator_prior_coverage",
-        "dig_cut_prior_id": "default",
-        "dig_cut_prior_path": "/tmp/dig_prior.json",
+        "token": token_status,
         "return_target_planner_enabled": True,
         "coverage": coverage_status,
     }

@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.59: the default 4P mainline branch chain no longer
+Current status after Phase 9.60: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -65,7 +65,10 @@ mutable storage is now owned by `PrimitiveTokenRuntimeState`: dig/return token
 arrays, token source/fallback fields, return start-envelope prior flags, and
 pending next-dig token/raw/exemplar fields are no longer independent policy
 attributes. The policy keeps legacy private token field names as
-property-backed compatibility facades over that state owner. The policy now
+property-backed compatibility facades over that state owner. Live token arrays
+and source fields project through `TokenStatus`, while pending/dig-cut report
+metadata projects through `PrimitiveTokenReportStatus` for debug, summary, and
+trace consumers. The policy now
 also owns non-token return handoff/runtime cache state through
 `PrimitiveReturnRuntimeState`: return step count, return-to-dig entry-close
 cache, return next-dig-event flag, and return start-envelope gate result/checks
@@ -1049,6 +1052,23 @@ injected flags, dimensions, observation assembly provider order, token planning
 services/coordinators, coverage behavior, parked `cell_entry`, residual
 `pre_dig_align`, backend fail-fast behavior, or removed 5P runtime status.
 
+Phase 9.60 extends `PrimitiveTokenRuntimeState` with
+`to_report_status(...)` and adds `PrimitiveTokenReportStatus`. Live
+token/pending/dig-cut report metadata now lives with the token runtime owner:
+pending next-dig cycle/corridor ids, dig-cut injected status, planner mode,
+prior id/path, token source, prior-window flag, and fallback reason.
+`PrimitivePlannerACTPolicy._debug_report_pending_fields()`,
+`_debug_report_dig_cut_fields()`, `_rollout_summary_inputs()`, and
+`_planner_trace_inputs()` now reuse that status while remaining thin explicit-
+facts assemblers for config and observation-injection facts. This phase does
+not change token dimensions, token contract text/version, source/fallback
+string semantics, injected observation key names, public debug/summary/trace
+key names or type projection, token planning algorithms/coordinators,
+dig-depth-profile planning, return token planning, coverage algorithms,
+backend facts/fail-fast behavior, reset timing, policy observation provider
+order, parked `cell_entry`, residual `pre_dig_align`, or removed 5P runtime
+status.
+
 Phase 9.55 extends `PrimitiveReturnRuntimeState` in
 `testbed/planner/primitive_return_state.py` with `to_report_status(...)` and
 adds `PrimitiveReturnReportStatus.debug_fields()`. Live return report/status
@@ -1130,24 +1150,25 @@ Phase 9.15 extracts public `debug_state()` dict assembly into
 and report sections for return gates, pending dig-cut state, dig-cut planner
 metadata, coverage, cell-entry compatibility, scripted bootstrap, dig progress,
 and residual pre-dig diagnostics. The builder owns final public key layout,
-section merge order, and plain debug-payload projection. Token-related public
-fields are produced through `TokenStatus.to_debug_fields()` rather than a
-second handwritten mapping. The policy shell now keeps only thin snapshot
-helpers and does not assemble the final debug dict inline. `rollout_summary()`,
-`planner_trace()`, per-tick `_make_debug_state(...)`, token planning,
-coverage/runtime updates, `cell_entry` compatibility behavior, and
-`pre_dig_align` residual behavior remain unchanged.
+section merge order, and plain debug-payload projection. Token arrays/source
+fields are produced through `TokenStatus.to_debug_fields()`, while pending and
+dig-cut metadata now come from `PrimitiveTokenReportStatus` before reaching the
+builder. The policy shell now keeps only thin snapshot helpers and does not
+assemble the final debug dict inline. `rollout_summary()`, `planner_trace()`,
+per-tick `_make_debug_state(...)`, token planning, coverage/runtime updates,
+`cell_entry` compatibility behavior, and `pre_dig_align` residual behavior
+remain unchanged.
 
 Phase 9.16 extracts public `rollout_summary()` dict assembly into
 `PrimitiveRolloutSummaryBuilder` in
 `testbed/planner/primitive_rollout_summary.py`.
-`PrimitiveRolloutSummaryInputs` carries an explicit scalar summary snapshot for
+`PrimitiveRolloutSummaryInputs` carries an explicit summary snapshot for
 transition counters, final primitive skill/cycle, return gate metrics,
-pending/dig-token fields, coverage fields, scripted bootstrap timeout,
-residual pre-dig counters, and dig replan counters. The builder owns final
-public summary key layout, `bool`-like integer projection, `None` to `NaN`
-fallback projection, and compact compatibility/report fields for `cell_entry`
-and `pre_dig_align`. The policy shell now keeps only a thin
+token/pending/dig-cut report status, coverage status, scripted bootstrap
+timeout, residual pre-dig counters, and dig replan counters. The builder owns
+final public summary key layout, `bool`-like integer projection, `None` to
+`NaN` fallback projection, and compact compatibility/report fields for
+`cell_entry` and `pre_dig_align`. The policy shell now keeps only a thin
 `_rollout_summary_inputs()` snapshot helper and delegates final summary
 assembly. `planner_trace()`, public debug-state assembly, token planning,
 coverage/runtime updates, `cell_entry` compatibility behavior, and
@@ -1157,14 +1178,15 @@ Phase 9.17 extracts public `planner_trace()` dict assembly into
 `PrimitivePlannerTraceBuilder` in
 `testbed/planner/primitive_planner_trace.py`.
 `PrimitivePlannerTraceInputs` carries explicit trace values for cell-entry
-trace, dig-cut planner metadata, return-target planner enablement, coverage
-config/status fields, preprojected coverage corridor payloads, coverage
-decision trace, and terminal-stop status. The builder owns final public trace
-key layout, token contract version/string fields, coverage trace/count fields,
-terminal-stop fields, and top-level list projection. The policy shell now keeps
-only `_planner_trace_inputs()` plus coverage-corridor preprojection through the
-existing `_coverage_corridor_to_debug(...)` facade. Coverage decision trace
-recording, coverage corridor projection service internals, public
+trace, token report status for dig-cut planner metadata, return-target planner
+enablement, coverage config/status fields, preprojected coverage corridor
+payloads, coverage decision trace, and terminal-stop status. The builder owns
+final public trace key layout, token contract version/string fields, coverage
+trace/count fields, terminal-stop fields, and top-level list projection. The
+policy shell now keeps only `_planner_trace_inputs()` plus coverage-corridor
+preprojection through the existing `_coverage_corridor_to_debug(...)` facade.
+Coverage decision trace recording, coverage corridor projection service
+internals, public
 `debug_state()` and `rollout_summary()` assembly, token planning,
 coverage/runtime updates, `cell_entry` compatibility behavior, and
 `pre_dig_align` residual behavior remain unchanged.
