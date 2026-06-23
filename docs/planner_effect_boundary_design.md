@@ -1000,6 +1000,19 @@ injected flags, dimensions, observation assembly provider order, token planning
 services/coordinators, coverage behavior, parked `cell_entry`, residual
 `pre_dig_align`, backend fail-fast behavior, or removed 5P runtime status.
 
+Phase 9.55 extends `PrimitiveReturnRuntimeState` in
+`testbed/planner/primitive_return_state.py` with `to_report_status(...)` and
+adds `PrimitiveReturnReportStatus.debug_fields()`. Live return report/status
+projection now lives with the return runtime owner, while
+`PrimitivePlannerACTPolicy._debug_report_return_fields()` remains a thin
+facade and `_rollout_summary_inputs()` reuses the same status projection for
+return summary fields. The projection consumes explicit start-envelope config
+facts plus return runtime owner values. This phase does not change public debug
+key names, rollout summary fields, bool/string/float projection, `NaN`
+behavior, checks dict copy projection, return handoff algorithms, start-
+envelope gate evaluation, backend fail-fast behavior, or removed 5P runtime
+status.
+
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in
 `testbed/planner/primitive_return_handoff.py`. The service owns the former

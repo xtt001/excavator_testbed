@@ -5790,3 +5790,66 @@ Each completed refactor round should append:
   work is no longer acceptable by default. Future prompts must include the hard
   constraint that protection is secondary and that the selected slice must be
   the most effective bounded move toward the target architecture.
+
+### 2026-06-23 Phase 9.55 Move Return Report Status Into Return Runtime State
+
+- Scope: extended `PrimitiveReturnRuntimeState` in
+  `testbed/planner/primitive_return_state.py` so the live return runtime owner
+  also owns return report/status projection for debug and rollout summary
+  consumers.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 118]`, HEAD
+  before this round `15d705f3cccbea018be99e4574cc95f0590e1342`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- Added frozen `PrimitiveReturnReportStatus` carrying live return report/status
+  fields and `debug_fields()` for the existing public return debug mapping.
+- Added `PrimitiveReturnRuntimeState.to_report_status(...)`, consuming explicit
+  start-envelope config facts plus return runtime owner values.
+- `PrimitivePlannerACTPolicy._debug_report_return_fields()` now delegates to
+  the return report status projection, and `_rollout_summary_inputs()` reuses
+  the same projection for return summary fields.
+- Preserved behavior: public debug key names, rollout summary fields,
+  bool/string/float projection, `NaN` behavior, checks dict copy projection,
+  return handoff algorithms, start-envelope gate evaluation, backend fail-fast
+  behavior, and removed 5P runtime status are unchanged.
+- Explicit non-goals: no return handoff algorithm move, no start-envelope gate
+  evaluation move, no public debug/summary schema change, no token/coverage/
+  cell-entry/pre-dig-align algorithm change, no backend selection change, no
+  generic blackboard or pass-through report service.
+- TDD red result from executor callback: after focused tests were added, the
+  first run of `python -m pytest -q tests/test_primitive_return_state.py`
+  failed as expected with `ImportError` because
+  `PrimitiveReturnReportStatus` did not yet exist in
+  `testbed.planner.primitive_return_state`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_return_state.py` returned
+  `11 passed`;
+  `python -m pytest -q tests/test_primitive_return_state.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_runtime_kernel.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "return_to_dig or start_envelope or semantic_boundary_events_drive_skill_sequence or dig_cut_tokens"`
+  returned `7 passed, 112 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_return_state.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_runtime_kernel.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "return_to_dig or start_envelope or semantic_boundary_events_drive_skill_sequence or dig_cut_tokens"`
+  returned `7 passed, 112 deselected`; compileall for touched modules passed.
+- Post-documentation checks by the audit thread: both planner guard commands
+  and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It moved a live return report/facts projection into the
+  focused return runtime owner and was not a tiny parked compatibility dict or
+  pass-through facade. No anemic service or generic blackboard was created.
+- Audit note: this is implementation round 1 after the latest three-iteration
+  reflection. It follows the reflection's direction correction by targeting a
+  live return report/facts boundary instead of another parked compatibility
+  micro-slice.

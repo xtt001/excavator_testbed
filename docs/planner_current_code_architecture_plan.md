@@ -71,7 +71,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_cell_entry_state.py` | 81 | parked cell-entry compatibility/report runtime state owner, reset defaults, and debug-field projection |
 | `testbed/planner/primitive_pre_dig_align_state.py` | 46 | parked pre-dig-align compatibility/report runtime state owner and reset defaults |
 | `testbed/planner/primitive_token_state.py` | 135 | mutable dig/return token runtime state owner, reset defaults, and live token-status projection |
-| `testbed/planner/primitive_return_state.py` | 56 | mutable non-token return handoff/runtime state owner and reset defaults |
+| `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
 | `testbed/planner/primitive_cycle_state.py` | 75 | mutable live 4P cycle/progress runtime state owner and reset defaults |
 | `testbed/planner/primitive_scripted_bootstrap.py` | 116 | scripted bootstrap runtime state, readiness checks, timeout, and PD action service |
 | `testbed/planner/primitive_coverage_reports.py` | 282 | coverage corridor debug, coverage decision-event, and coverage debug-field payload builders |
@@ -1103,6 +1103,19 @@ copy/freeze behavior. Token debug key names, token list values, source/fallback
 fields, injected flags, dimensions, observation provider order, token planning
 services/coordinators, `cell_entry`, `pre_dig_align`, backend fail-fast, and
 removed 5P runtime status remain unchanged.
+
+Current status note after Phase 9.55: live return report/status projection is
+now owned by `PrimitiveReturnRuntimeState.to_report_status(...)` and
+`PrimitiveReturnReportStatus.debug_fields()` in
+`testbed/planner/primitive_return_state.py`.
+`PrimitivePlannerACTPolicy._debug_report_return_fields()` remains a thin
+compatibility facade, and `_rollout_summary_inputs()` reuses the same return
+status projection for return summary fields. The projection consumes explicit
+start-envelope config facts and the return runtime owner values. Public debug
+key names, rollout summary fields, bool/string/float projection, `NaN`
+behavior, checks dict copy projection, return handoff algorithms, start-
+envelope gate evaluation, backend fail-fast, and removed 5P runtime status
+remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

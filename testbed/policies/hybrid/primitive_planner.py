@@ -171,7 +171,10 @@ from testbed.planner.primitive_runtime_kernel import (
 )
 from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive_execution_state import PrimitiveExecutionRuntimeState
-from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive_return_state import (
+    PrimitiveReturnReportStatus,
+    PrimitiveReturnRuntimeState,
+)
 from testbed.planner.primitive_scripted_bootstrap import (
     PrimitiveScriptedBootstrapRuntimeConfig,
     PrimitiveScriptedBootstrapRuntimeService,
@@ -639,6 +642,22 @@ class PrimitivePlannerACTPolicy(Policy):
             state = PrimitiveReturnRuntimeState.fresh()
             self.__dict__["_return_state"] = state
         return state
+
+    def _return_report_status(self) -> PrimitiveReturnReportStatus:
+        return self._primitive_return_runtime_state().to_report_status(
+            start_envelope_gate_enabled=bool(
+                self.return_to_dig_start_envelope_gate_enabled
+            ),
+            start_envelope_direct_handoff_enabled=bool(
+                self.return_to_dig_start_envelope_direct_handoff_enabled
+            ),
+            start_envelope_plane_depth_mode=str(
+                self.return_to_dig_start_envelope_plane_depth_mode
+            ),
+            start_envelope_local_depth_tolerance_m=float(
+                self.return_to_dig_start_envelope_local_depth_tolerance_m
+            ),
+        )
 
     @property
     def _return_step_count(self) -> int:
@@ -2024,34 +2043,7 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _debug_report_return_fields(self) -> dict[str, Any]:
-        return {
-            "return_to_dig_entry_error_m": float(
-                self._return_to_dig_entry_error_m
-            ),
-            "return_to_dig_entry_close": bool(self._return_to_dig_entry_close_state),
-            "return_next_dig_event_seen": bool(self._return_next_dig_event_seen),
-            "return_to_dig_start_envelope_gate_enabled": bool(
-                self.return_to_dig_start_envelope_gate_enabled
-            ),
-            "return_to_dig_start_envelope_direct_handoff_enabled": bool(
-                self.return_to_dig_start_envelope_direct_handoff_enabled
-            ),
-            "return_to_dig_start_envelope_ready": bool(
-                self._return_to_dig_start_envelope_ready_state
-            ),
-            "return_to_dig_start_envelope_plane_depth_mode": str(
-                self.return_to_dig_start_envelope_plane_depth_mode
-            ),
-            "return_to_dig_start_envelope_local_depth_tolerance_m": float(
-                self.return_to_dig_start_envelope_local_depth_tolerance_m
-            ),
-            "return_to_dig_start_envelope_error": float(
-                self._return_to_dig_start_envelope_error
-            ),
-            "return_to_dig_start_envelope_checks": dict(
-                self._return_to_dig_start_envelope_checks
-            ),
-        }
+        return self._return_report_status().debug_fields()
 
     def _debug_report_pending_fields(self) -> dict[str, Any]:
         return {
@@ -2235,6 +2227,7 @@ class PrimitivePlannerACTPolicy(Policy):
         return PrimitiveRolloutSummaryBuilder()
 
     def _rollout_summary_inputs(self) -> PrimitiveRolloutSummaryInputs:
+        return_status = self._return_report_status()
         return PrimitiveRolloutSummaryInputs(
             transition_source=TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
             transition_policy_mode=TRANSITION_POLICY_MODE_PRIMITIVE,
@@ -2251,26 +2244,30 @@ class PrimitivePlannerACTPolicy(Policy):
             return_target_token_dim=int(RETURN_TARGET_TOKEN_DIM),
             return_target_token_source=str(self._return_target_token_source),
             return_to_dig_max_entry_error_m=self.return_to_dig_max_entry_error_m,
-            return_to_dig_entry_error_m=float(self._return_to_dig_entry_error_m),
-            return_to_dig_entry_close=bool(self._return_to_dig_entry_close_state),
-            return_next_dig_event_seen=bool(self._return_next_dig_event_seen),
-            return_to_dig_start_envelope_gate_enabled=bool(
-                self.return_to_dig_start_envelope_gate_enabled
+            return_to_dig_entry_error_m=(
+                return_status.return_to_dig_entry_error_m
             ),
-            return_to_dig_start_envelope_direct_handoff_enabled=bool(
-                self.return_to_dig_start_envelope_direct_handoff_enabled
+            return_to_dig_entry_close=return_status.return_to_dig_entry_close,
+            return_next_dig_event_seen=return_status.return_next_dig_event_seen,
+            return_to_dig_start_envelope_gate_enabled=(
+                return_status.return_to_dig_start_envelope_gate_enabled
             ),
-            return_to_dig_start_envelope_ready=bool(
-                self._return_to_dig_start_envelope_ready_state
+            return_to_dig_start_envelope_direct_handoff_enabled=(
+                return_status
+                .return_to_dig_start_envelope_direct_handoff_enabled
             ),
-            return_to_dig_start_envelope_plane_depth_mode=str(
-                self.return_to_dig_start_envelope_plane_depth_mode
+            return_to_dig_start_envelope_ready=(
+                return_status.return_to_dig_start_envelope_ready
             ),
-            return_to_dig_start_envelope_local_depth_tolerance_m=float(
-                self.return_to_dig_start_envelope_local_depth_tolerance_m
+            return_to_dig_start_envelope_plane_depth_mode=(
+                return_status.return_to_dig_start_envelope_plane_depth_mode
             ),
-            return_to_dig_start_envelope_error=float(
-                self._return_to_dig_start_envelope_error
+            return_to_dig_start_envelope_local_depth_tolerance_m=(
+                return_status
+                .return_to_dig_start_envelope_local_depth_tolerance_m
+            ),
+            return_to_dig_start_envelope_error=(
+                return_status.return_to_dig_start_envelope_error
             ),
             pending_dig_cut_cycle_id=int(self._pending_dig_cut_cycle_id),
             pending_dig_cut_corridor_id=int(self._pending_dig_cut_corridor_id),

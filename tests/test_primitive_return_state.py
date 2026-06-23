@@ -5,7 +5,10 @@ from types import MethodType
 import numpy as np
 
 from testbed.planner.primitive_return_handoff import ReturnStartEnvelopeGateResult
-from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive_return_state import (
+    PrimitiveReturnReportStatus,
+    PrimitiveReturnRuntimeState,
+)
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
@@ -147,3 +150,146 @@ def test_return_direct_handoff_effect_ports_read_return_state_owner() -> None:
     assert state.return_next_dig_event_seen is True
     assert state.return_to_dig_entry_close_state is False
     assert state.return_to_dig_start_envelope_ready_state is True
+
+
+def test_return_runtime_state_projects_fresh_report_status_defaults() -> None:
+    state = PrimitiveReturnRuntimeState.fresh()
+
+    status = state.to_report_status(
+        start_envelope_gate_enabled=False,
+        start_envelope_direct_handoff_enabled=True,
+        start_envelope_plane_depth_mode="range",
+        start_envelope_local_depth_tolerance_m=0.005,
+    )
+
+    assert np.isnan(status.return_to_dig_entry_error_m)
+    assert status.return_to_dig_entry_close is True
+    assert status.return_next_dig_event_seen is False
+    assert status.return_to_dig_start_envelope_gate_enabled is False
+    assert status.return_to_dig_start_envelope_direct_handoff_enabled is True
+    assert status.return_to_dig_start_envelope_ready is True
+    assert status.return_to_dig_start_envelope_plane_depth_mode == "range"
+    assert status.return_to_dig_start_envelope_local_depth_tolerance_m == 0.005
+    assert np.isnan(status.return_to_dig_start_envelope_error)
+    assert status.return_to_dig_start_envelope_checks == {}
+
+    fields = status.debug_fields()
+    assert fields["return_to_dig_entry_close"] is True
+    assert fields["return_next_dig_event_seen"] is False
+    assert fields["return_to_dig_start_envelope_checks"] == {}
+    assert fields["return_to_dig_start_envelope_checks"] is not (
+        status.return_to_dig_start_envelope_checks
+    )
+
+
+def test_return_runtime_state_projects_populated_report_status_without_aliasing() -> None:
+    state = PrimitiveReturnRuntimeState.fresh()
+    state.return_to_dig_entry_error_m = 0.25
+    state.return_to_dig_entry_close_state = False
+    state.return_next_dig_event_seen = True
+    state.return_to_dig_start_envelope_ready_state = False
+    state.return_to_dig_start_envelope_error = 0.75
+    state.return_to_dig_start_envelope_checks = {"qpos_0": {"ok": False}}
+
+    status = state.to_report_status(
+        start_envelope_gate_enabled=True,
+        start_envelope_direct_handoff_enabled=False,
+        start_envelope_plane_depth_mode="p50_floor",
+        start_envelope_local_depth_tolerance_m=0.03,
+    )
+    state.return_to_dig_start_envelope_checks["changed"] = True
+
+    assert status.return_to_dig_entry_error_m == 0.25
+    assert status.return_to_dig_entry_close is False
+    assert status.return_next_dig_event_seen is True
+    assert status.return_to_dig_start_envelope_gate_enabled is True
+    assert status.return_to_dig_start_envelope_direct_handoff_enabled is False
+    assert status.return_to_dig_start_envelope_ready is False
+    assert status.return_to_dig_start_envelope_plane_depth_mode == "p50_floor"
+    assert status.return_to_dig_start_envelope_local_depth_tolerance_m == 0.03
+    assert status.return_to_dig_start_envelope_error == 0.75
+    assert status.return_to_dig_start_envelope_checks == {
+        "qpos_0": {"ok": False}
+    }
+    assert status.debug_fields() == {
+        "return_to_dig_entry_error_m": 0.25,
+        "return_to_dig_entry_close": False,
+        "return_next_dig_event_seen": True,
+        "return_to_dig_start_envelope_gate_enabled": True,
+        "return_to_dig_start_envelope_direct_handoff_enabled": False,
+        "return_to_dig_start_envelope_ready": False,
+        "return_to_dig_start_envelope_plane_depth_mode": "p50_floor",
+        "return_to_dig_start_envelope_local_depth_tolerance_m": 0.03,
+        "return_to_dig_start_envelope_error": 0.75,
+        "return_to_dig_start_envelope_checks": {"qpos_0": {"ok": False}},
+    }
+
+
+def test_policy_return_debug_facade_delegates_to_report_status() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    state = policy._primitive_return_runtime_state()
+    state.return_to_dig_entry_error_m = 0.25
+    state.return_to_dig_entry_close_state = False
+    state.return_next_dig_event_seen = True
+    state.return_to_dig_start_envelope_ready_state = False
+    state.return_to_dig_start_envelope_error = 0.75
+    state.return_to_dig_start_envelope_checks = {"qpos_0": {"ok": False}}
+    policy.return_to_dig_start_envelope_gate_enabled = True
+    policy.return_to_dig_start_envelope_direct_handoff_enabled = False
+    policy.return_to_dig_start_envelope_plane_depth_mode = "p50_floor"
+    policy.return_to_dig_start_envelope_local_depth_tolerance_m = 0.03
+
+    status = state.to_report_status(
+        start_envelope_gate_enabled=True,
+        start_envelope_direct_handoff_enabled=False,
+        start_envelope_plane_depth_mode="p50_floor",
+        start_envelope_local_depth_tolerance_m=0.03,
+    )
+
+    assert policy._debug_report_return_fields() == status.debug_fields()
+
+
+def test_policy_rollout_summary_inputs_use_return_report_status_projection() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    return_status = PrimitiveReturnReportStatus(
+        return_to_dig_entry_error_m=0.42,
+        return_to_dig_entry_close=False,
+        return_next_dig_event_seen=True,
+        return_to_dig_start_envelope_gate_enabled=True,
+        return_to_dig_start_envelope_direct_handoff_enabled=True,
+        return_to_dig_start_envelope_ready=False,
+        return_to_dig_start_envelope_plane_depth_mode="p50_floor",
+        return_to_dig_start_envelope_local_depth_tolerance_m=0.04,
+        return_to_dig_start_envelope_error=0.125,
+        return_to_dig_start_envelope_checks={"qpos_0": {"ok": False}},
+    )
+    policy._return_report_status = MethodType(lambda self: return_status, policy)
+    policy.dump_done_use_boundary_event = False
+    policy.cell_entry_enabled = False
+    policy.return_to_dig_max_entry_error_m = 0.5
+    policy.dig_cut_planner_mode = "operator_prior"
+    policy.dig_cut_prior_id = "default"
+    policy.dig_failed_replan_next_skill = "dig"
+    policy.coverage_multi_pass_enabled = False
+    policy.coverage_use_env_removed_depth = False
+    policy.coverage_candidate_layout = "corridor_grid"
+    policy.coverage_first_dig_strategy = "best_score"
+    policy.coverage_first_dig_preferred_corridor_id = None
+    policy.coverage_first_dig_max_entry_distance_m = None
+    policy.coverage_first_dig_qpos_delta_weight = 1.0
+    policy.pre_dig_align_enabled = False
+    policy.pre_dig_align_first_dig_only = True
+    policy.pre_dig_align_replan_after_failed_dig = False
+    policy.pre_dig_align_surface_guard_enabled = False
+
+    inputs = policy._rollout_summary_inputs()
+
+    assert inputs.return_to_dig_entry_error_m == 0.42
+    assert inputs.return_to_dig_entry_close is False
+    assert inputs.return_next_dig_event_seen is True
+    assert inputs.return_to_dig_start_envelope_gate_enabled is True
+    assert inputs.return_to_dig_start_envelope_direct_handoff_enabled is True
+    assert inputs.return_to_dig_start_envelope_ready is False
+    assert inputs.return_to_dig_start_envelope_plane_depth_mode == "p50_floor"
+    assert inputs.return_to_dig_start_envelope_local_depth_tolerance_m == 0.04
+    assert inputs.return_to_dig_start_envelope_error == 0.125
