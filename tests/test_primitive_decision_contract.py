@@ -4,6 +4,14 @@ from types import MethodType
 from types import SimpleNamespace
 from typing import Any
 
+import numpy as np
+
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
+)
+from testbed.planner.primitive_coverage import CoverageCorridorState
 from testbed.planner.primitive_capabilities import (
     CarryTransitionStatus,
     DigTransitionStatus,
@@ -1490,12 +1498,29 @@ def test_primitive_planner_dig_transition_status_provider_maps_inputs_and_syncs_
     planner.dig_exit_guard_min_bucket_mass_kg = 3.0
     planner.dig_exit_guard_overshoot_m = 0.65
     planner._dig_to_carry_reason = "stale"
-    planner._dig_exit_overshoot_m = MethodType(lambda self, obs: 0.7, planner)
+    coverage_state = planner._coverage_runtime_state()
+    coverage_state.set_coverage_corridors(
+        [
+            CoverageCorridorState(
+                corridor_id=5,
+                entry_x_m=0.0,
+                entry_z_m=0.0,
+                exit_x_m=1.0,
+                exit_z_m=0.0,
+            )
+        ]
+    )
+    coverage_state.set_active_corridor_id(5)
+    env_state = np.zeros(64, dtype=np.float32)
+    env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX] = 1.7
+    env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX] = 0.0
+    env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX] = 0.0
     _set_minimal_non_dig_capability_fields(planner)
 
     loaded_status = planner._dig_transition_status_for_backend(
         {
             "qpos": [0.0],
+            "env_state": env_state,
             "task_metrics": {
                 "mass_in_bucket_kg": 25.0,
                 "min_distance_to_dig_area_m": 1.0,
@@ -1518,6 +1543,7 @@ def test_primitive_planner_dig_transition_status_provider_maps_inputs_and_syncs_
     low_payload_status = planner._dig_transition_status_for_backend(
         {
             "qpos": [0.0],
+            "env_state": env_state,
             "task_metrics": {
                 "mass_in_bucket_kg": 1.0,
                 "min_distance_to_dig_area_m": 0.0,

@@ -59,13 +59,15 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 5311 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4899 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
 | `testbed/planner/primitive_decision_runtime.py` | 162 | backend-name normalization and backend factory registry selection for primitive decision runtime |
 | `testbed/planner/primitive_backend_facts.py` | 250 | backend-facing lazy read-only facts access for bootstrap and dig/carry/dump/return transition views |
 | `testbed/planner/primitive_decision_facts.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
+| `testbed/planner/primitive_capabilities.py` | 1027 | read-only observation facts plus bootstrap/dig/carry/dump/return transition status projections and dump-ready geometry predicates |
+| `testbed/planner/primitive_capability_provider.py` | 317 | legacy FSM transition-status provider over focused cycle/coverage/return owners and observation facts |
 | `testbed/planner/primitive_execution_state.py` | 49 | mutable execution lifecycle state owner for active skill, switch reason, previous action, and latest debug state |
 | `testbed/planner/primitive_observation.py` | 176 | policy observation assembler plus mutable per-observation injected-flag runtime state owner |
 | `testbed/planner/primitive_cell_entry_state.py` | 81 | parked cell-entry compatibility/report runtime state owner, reset defaults, and debug-field projection |
@@ -1457,6 +1459,28 @@ predicates, return-to-dig entry/shallow/start-envelope gate inputs, and the
 associated capability-provider fact assembly. That candidate must preserve
 thresholds, reason strings, branch order, backend facts schema, return
 start-envelope behavior, and parking boundaries.
+
+Current status note after Phase 9.75: the first transition facts / geometry
+gate implementation slice moved dig-exit overshoot calculation into
+`PrimitiveFSMCapabilityProvider` and removed duplicated migrated transition
+helpers from `PrimitivePlannerACTPolicy`. `PrimitiveObservationFacts` now owns
+read-only bucket dig-area pose and bucket-tip dig-area pose projection from
+`env_state`, preserving the existing bucket-tip-preferred and bucket-pose
+fallback semantics. `PrimitiveFSMCapabilityProviderPorts` no longer carries a
+`dig_exit_overshoot_m` callback; the provider computes overshoot from the active
+coverage corridor plus observation pose facts and feeds the existing
+`DigTransitionStatus` guard logic.
+
+The policy shell no longer contains the migrated duplicate implementations for
+dig bad-replan readiness, dig-exit guard readiness, dig-to-carry readiness,
+semantic dig liveness, dig-complete low-payload check, dump-ready geometry
+predicates, dump-done/deposit checks, carry release-safety check, or target
+geometry projection. Those facts now resolve through
+`PrimitiveObservationFacts`, `PrimitiveFSMCapabilityProvider`, and the existing
+transition status dataclasses. Backend branch order, reason strings,
+thresholds, token schema, debug/summary/trace schemas, reset timing,
+`pre_dig_align`, `cell_entry`, and BT/VLM/LLM unsupported fail-fast behavior
+remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

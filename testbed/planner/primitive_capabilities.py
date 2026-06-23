@@ -10,11 +10,17 @@ import numpy as np
 
 from testbed.data.schema import (
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
@@ -123,6 +129,29 @@ class PrimitiveObservationFacts:
                 ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
             ),
         }
+
+    def bucket_dig_area_pose(self) -> tuple[float, float, float] | None:
+        if len(self.env_state) <= ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX:
+            return None
+        pose = (
+            float(self.env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX]),
+            float(self.env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX]),
+            float(self.env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX]),
+        )
+        if not all(np.isfinite(value) for value in pose):
+            return None
+        return pose
+
+    def bucket_tip_dig_area_pose(self) -> tuple[float, float, float] | None:
+        if len(self.env_state) > ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX:
+            pose = (
+                float(self.env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX]),
+                float(self.env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX]),
+                float(self.env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX]),
+            )
+            if all(np.isfinite(value) for value in pose):
+                return pose
+        return self.bucket_dig_area_pose()
 
     def env_state_value(self, index: int, *, default: float = float("nan")) -> float:
         if len(self.env_state) <= int(index):

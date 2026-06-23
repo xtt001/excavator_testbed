@@ -28,7 +28,10 @@ Current maturity:
 - public adapter compatibility: **mostly achieved**
 - tick execution ordering: **achieved for one-tick execution**
 - legacy FSM mainline branch conversion to requested effects: **achieved**
-- capability/status provider boundary for legacy FSM: **partly achieved**
+- capability/status provider boundary for legacy FSM: **partly achieved;
+  dig/carry/dump/return transition status assembly is focused, and dig-exit
+  overshoot now derives from observation facts plus the coverage state owner
+  rather than a policy callback**
 - effect request/application boundary: **achieved for current requested effects**
 - focused token, coverage, handoff, dispatch, report, reset, config services:
   **mostly achieved**
@@ -392,6 +395,9 @@ Current boundary:
 - `PrimitiveFSMCapabilityProvider` builds dig/carry/dump/return transition
   status records and reads live cycle, coverage, and return runtime values
   through the focused state owners.
+- It also owns dig-exit overshoot projection for dig transition facts by
+  combining `PrimitiveObservationFacts` bucket-tip/fallback dig-area pose with
+  the active coverage corridor.
 - `PrimitiveFSMCapabilityProvider.dig_transition_status(...)` only assembles
   read-only dig status. Dig-to-carry reason mirror writeback is explicit through
   `sync_dig_transition_reason(...)`.
@@ -450,6 +456,8 @@ Current boundary:
 - `PrimitiveDecisionCapabilities` remains as a compatibility facade over
   facts source plus compatibility actions for older tests and diagnostics.
 - `PrimitiveObservationFacts` and transition status dataclasses exist.
+  Observation facts own target geometry projection plus bucket dig-area and
+  bucket-tip dig-area pose projection for transition facts.
 
 Gap:
 

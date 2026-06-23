@@ -6,11 +6,17 @@ import numpy as np
 import pytest
 
 from testbed.data.schema import (
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
@@ -144,6 +150,50 @@ def test_observation_facts_target_geometry_preserves_legacy_unavailable_error() 
 
     with pytest.raises(RuntimeError, match="target_geometry_available=1"):
         facts.target_geometry()
+
+
+def test_observation_facts_bucket_tip_pose_prefers_tip_pose_without_mutating_inputs() -> None:
+    env_state = np.zeros(64, dtype=np.float32)
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX] = 0.1
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX] = 0.2
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX] = 0.3
+    env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX] = 1.1
+    env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX] = 1.2
+    env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX] = 1.3
+    facts = PrimitiveObservationFacts.from_obs({"env_state": env_state}, action_dim=4)
+
+    assert facts.bucket_dig_area_pose() == pytest.approx((0.1, 0.2, 0.3))
+    assert facts.bucket_tip_dig_area_pose() == pytest.approx((1.1, 1.2, 1.3))
+    assert facts.env_state.flags.writeable is False
+    assert env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX] == pytest.approx(1.1)
+
+
+def test_observation_facts_bucket_tip_pose_falls_back_to_bucket_pose() -> None:
+    env_state = np.zeros(ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX + 1, dtype=np.float32)
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX] = 0.4
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX] = 0.5
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX] = 0.6
+    facts = PrimitiveObservationFacts.from_obs({"env_state": env_state}, action_dim=4)
+
+    assert facts.bucket_tip_dig_area_pose() == pytest.approx((0.4, 0.5, 0.6))
+
+
+def test_observation_facts_bucket_tip_pose_returns_none_without_finite_pose() -> None:
+    missing = PrimitiveObservationFacts.from_obs({}, action_dim=4)
+    non_finite_env = np.zeros(
+        ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX + 1,
+        dtype=np.float32,
+    )
+    non_finite_env[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX] = float("nan")
+    non_finite = PrimitiveObservationFacts.from_obs(
+        {"env_state": non_finite_env},
+        action_dim=4,
+    )
+
+    assert missing.bucket_dig_area_pose() is None
+    assert missing.bucket_tip_dig_area_pose() is None
+    assert non_finite.bucket_dig_area_pose() is None
+    assert non_finite.bucket_tip_dig_area_pose() is None
 
 
 def test_bootstrap_status_records_first_qualified_dig_start_gate() -> None:

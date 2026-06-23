@@ -86,8 +86,10 @@ return runtime state owners directly, so dig counters, terminal-stop state,
 cycle-start deposit, dump hold/start fields, return cached flags, and the
 dig-to-carry reason mirror no longer flow through policy-built storage
 fields/callbacks. Threshold/config values, semantic-boundary profile reads,
-dig-exit overshoot calculation, explicit return handoff refresh, and
-`pre_dig_align` gate reads remain explicit ports. Requested-effect application
+explicit return handoff refresh, and `pre_dig_align` gate reads remain explicit
+ports. Since Phase 9.75, dig-exit overshoot calculation is owned by the
+capability provider from observation facts plus the active coverage corridor
+rather than a policy callback. Requested-effect application
 now carries focused cycle and return runtime state owners directly, so return
 next-dig marking, return-cycle completion, dig replan counters, dump hold
 counts, and dump start deposited mass updates no longer pass through
@@ -1621,6 +1623,19 @@ without promoting `pre_dig_align` into mainline backend architecture. Action
 dispatch semantics, action shape/dtype, first-dig gating, scripted bootstrap,
 pre-dig-align action behavior, backend support, token/report schemas, and
 removed 5P runtime status remain unchanged.
+
+Phase 9.75 narrows the transition facts / geometry gate boundary. The
+dig-exit overshoot input to `DigTransitionStatus` is no longer supplied through
+a policy callback. `PrimitiveObservationFacts` now projects bucket dig-area and
+bucket-tip dig-area poses from `env_state`, and
+`PrimitiveFSMCapabilityProvider` computes the overshoot from those observation
+facts plus `CoverageRuntimeState.active_corridor()`. The large policy shell
+also drops the duplicated migrated dig/carry/dump helper implementations that
+were already represented by `PrimitiveObservationFacts`,
+`PrimitiveFSMCapabilityProvider`, and the transition status dataclasses. Return
+start-envelope gates, residual `pre_dig_align`, parked `cell_entry`, backend
+branch order, reason strings, thresholds, token/report schemas, and removed 5P
+runtime status remain unchanged.
 
 ### Stage 4: Expand Effect Families From Evidence
 

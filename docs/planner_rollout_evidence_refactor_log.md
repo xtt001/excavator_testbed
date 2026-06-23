@@ -7463,3 +7463,82 @@ Each completed refactor round should append:
   or a generic blackboard. Current maturity remains default legacy FSM
   backendified with focused services / shared backend decision input/facts/
   factory; BT/VLM/LLM backends remain unsupported fail-fast.
+
+### 2026-06-23 Phase 9.75 Route Dig-Exit Geometry Through Capability Provider
+
+- Scope: implemented the first transition facts / geometry gate slice after the
+  Phase 9.74 inventory. The live dig-exit overshoot fact now belongs to
+  `PrimitiveFSMCapabilityProvider` and observation facts instead of a
+  policy-built callback.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 138]`, HEAD
+  `44a92172e1b8b02009e0b67edf9b9911f64e1bb1`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, or remote write was
+  used by the executor.
+- `PrimitiveObservationFacts` now exposes read-only
+  `bucket_dig_area_pose()` and `bucket_tip_dig_area_pose()`. The projection
+  preserves the existing bucket-tip pose preference and fallback to bucket
+  dig-area pose, and returns `None` for missing or non-finite pose data.
+- `PrimitiveFSMCapabilityProviderPorts` no longer includes the
+  `dig_exit_overshoot_m` callback field.
+- `PrimitiveFSMCapabilityProvider` computes dig-exit overshoot from
+  `PrimitiveObservationFacts.bucket_tip_dig_area_pose()` plus
+  `CoverageRuntimeState.active_corridor()` and passes the value into the
+  existing `DigTransitionStatus.from_inputs(...)` guard logic.
+- `PrimitivePlannerACTPolicy._primitive_fsm_capability_provider_ports()` no
+  longer passes a policy overshoot callback.
+- Removed duplicate migrated helper implementations from
+  `PrimitivePlannerACTPolicy` after they were confirmed to have no production
+  callers: `_dig_bad_replan_ready`, `_dig_exit_guard_ready`,
+  `_dig_exit_overshoot_m`, `_dig_to_carry_ready`,
+  `_semantic_dig_to_carry_liveness_ready`,
+  `_dig_complete_boundary_low_payload`, `_dump_ready`,
+  `_dump_area_relative_dump_position_ok`,
+  `_dump_area_relative_near_window_ok`, `_optional_range_ok`,
+  `_optional_range_near_ok`, `_dump_ready_position_ok`, `_dump_done`,
+  `_carry_release_safety_done`, and `_target_geometry`.
+- Line-count impact: `testbed/policies/hybrid/primitive_planner.py` dropped
+  from 5311 to 4899 lines after this slice.
+- Preserved behavior: dig-exit overshoot formula, bucket-tip/fallback pose
+  semantics, active-corridor projection, backend branch order, reason strings,
+  thresholds, token schema, debug/summary/trace schema, reset timing,
+  `pre_dig_align`, `cell_entry`, removed 5P runtime, and BT/VLM/LLM unsupported
+  fail-fast behavior are unchanged.
+- Explicit non-goals: no return start-envelope gate changes, no return direct
+  handoff readiness changes, no `pre_dig_align` readiness/action/report
+  changes, no `cell_entry` compatibility/token/report changes, no backend
+  support change, and no public report schema change.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_capabilities.py tests/test_primitive_decision_contract.py`
+  failed with `10 failed, 60 passed` because
+  `PrimitiveFSMCapabilityProviderPorts.__init__()` still required
+  `dig_exit_overshoot_m`, and field-shape assertions still observed that port
+  field.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_capabilities.py tests/test_primitive_decision_contract.py`
+  returned `73 passed`;
+  `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_decision_capabilities.py tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py`
+  returned `92 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or first_dig_policy_for_cycle_zero or return_to_dig or pre_dig_align or dig_cut_tokens or coverage_decision_trace or dump_ready or dig_exit_guard"`
+  returned `20 passed, 99 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_capabilities.py tests/test_primitive_decision_contract.py`
+  returned `73 passed`;
+  `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_decision_capabilities.py tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py`
+  returned `92 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or first_dig_policy_for_cycle_zero or return_to_dig or pre_dig_align or dig_cut_tokens or coverage_decision_trace or dump_ready or dig_exit_guard"`
+  returned `20 passed, 99 deselected`; `python -m pytest -q
+  tests/test_primitive_cycle_state.py` returned `14 passed`; compileall for
+  touched modules, both planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was a bounded transition fact / geometry gate boundary
+  move with real policy implementation deletion, not a tiny facade,
+  pass-through wrapper, or generic blackboard. Current maturity remains
+  default legacy FSM backendified with focused services / shared backend
+  decision input/facts/factory; BT/VLM/LLM backends remain unsupported
+  fail-fast.

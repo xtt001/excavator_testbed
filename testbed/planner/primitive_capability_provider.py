@@ -6,6 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+
 from testbed.planner.primitive_capabilities import (
     CarryTransitionStatus,
     DigTransitionStatus,
@@ -42,7 +44,6 @@ class PrimitiveFSMCapabilityProviderPorts:
     dig_exit_guard_min_steps: int
     dig_exit_guard_min_bucket_mass_kg: float
     dig_exit_guard_overshoot_m: float
-    dig_exit_overshoot_m: Callable[[dict[str, Any]], float]
     dump_ready_hold_steps: int
     dump_ready_min_height_above_rim_m: float
     dump_ready_require_over_footprint: bool
@@ -94,8 +95,9 @@ class PrimitiveFSMCapabilityProvider:
         boundary_event: Any | None,
     ) -> DigTransitionStatus:
         ports = self.ports
+        observation = self._observation(obs)
         return DigTransitionStatus.from_inputs(
-            observation=self._observation(obs),
+            observation=observation,
             boundary_event=boundary_event,
             semantic_boundary_profile_active=(
                 ports.semantic_boundary_profile_active()
@@ -138,7 +140,7 @@ class PrimitiveFSMCapabilityProvider:
                 ports.dig_exit_guard_min_bucket_mass_kg
             ),
             dig_exit_guard_overshoot_m=ports.dig_exit_guard_overshoot_m,
-            dig_exit_overshoot_m=ports.dig_exit_overshoot_m(obs),
+            dig_exit_overshoot_m=self._dig_exit_overshoot_m(observation),
         )
 
     def sync_dig_transition_reason(
@@ -280,6 +282,33 @@ class PrimitiveFSMCapabilityProvider:
             obs,
             action_dim=self.ports.action_dim,
         )
+
+    def _dig_exit_overshoot_m(
+        self,
+        observation: PrimitiveObservationFacts,
+    ) -> float:
+        corridor = self.ports.coverage_state.active_corridor()
+        if corridor is None:
+            return float("nan")
+        pose = observation.bucket_tip_dig_area_pose()
+        if pose is None:
+            return float("nan")
+        entry = np.asarray(
+            [float(corridor.entry_x_m), float(corridor.entry_z_m)],
+            dtype=np.float32,
+        )
+        exit_point = np.asarray(
+            [float(corridor.exit_x_m), float(corridor.exit_z_m)],
+            dtype=np.float32,
+        )
+        tip = np.asarray([float(pose[0]), float(pose[2])], dtype=np.float32)
+        direction = exit_point - entry
+        length = float(np.linalg.norm(direction))
+        if length <= 1.0e-6 or not np.all(np.isfinite(tip)):
+            return float("nan")
+        unit = direction / length
+        progress = float(np.dot(tip - entry, unit))
+        return float(progress - length)
 
 
 __all__ = [
