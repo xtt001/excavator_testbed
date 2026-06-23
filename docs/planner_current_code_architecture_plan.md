@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4592 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4602 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -75,7 +75,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_token_state.py` | 190 | mutable dig/return token runtime state owner, reset defaults, live token-status projection, and token report metadata projection |
 | `testbed/planner/primitive_token_runtime.py` | 255 | dig/return token runtime sequencing over focused token and coverage state owners plus explicit external config/algorithm ports |
 | `testbed/planner/primitive_dig_token_planning.py` | 354 | active dig token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm ports and typed observation facts |
-| `testbed/planner/primitive_dig_recovery.py` | 181 | failed-dig/restart recovery orchestration over focused execution/cycle/return/coverage/token/pre-dig compatibility owners plus explicit external algorithm/action ports |
+| `testbed/planner/primitive_dig_recovery.py` | 183 | failed-dig/restart recovery orchestration over focused execution/cycle/return/coverage/token/pre-dig compatibility owners plus explicit external algorithm/action ports and typed observation metric facts |
 | `testbed/planner/primitive_return_handoff.py` | 569 | return direct-handoff effect service, return handoff readiness source, and return start-envelope gate over focused execution/cycle/return/token/coverage owners |
 | `testbed/planner/primitive_return_token_planning.py` | 226 | return token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm ports and typed observation facts |
 | `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
@@ -85,6 +85,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_coverage_state.py` | 139 | mutable coverage runtime state owner for corridors, selection ids, candidate scores, completion counters, terminal-stop state, decision trace, and state-exemplar payload |
 | `testbed/planner/primitive_coverage_updates.py` | 698 | coverage completion/rejection/reopen/terminal-stop effect runtime sequencing and effect fact projection over focused coverage/cycle state plus typed observation facts |
 | `testbed/planner/primitive_coverage_reports.py` | 626 | coverage report config, coverage corridor debug, coverage decision-event bucket snapshot, and coverage debug/trace/summary projection from focused runtime state |
+| `testbed/planner/primitive_effects.py` | 160 | requested-effect application over focused cycle/return owners, explicit external action ports, and typed observation metric facts |
 | `testbed/planner/primitive_coverage_facts.py` | 333 | coverage planning fact-source owner for selection facts, raw-field projection, state-conditioned exemplar projection/writeback, and remaining-depth facts |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
@@ -1668,6 +1669,19 @@ while preserving the coverage decision-event payload schema, key names, event
 ordering, task-metric fallback behavior, env-state NaN/default semantics,
 debug/summary/trace schemas, coverage algorithms, parked `pre_dig_align`,
 parked `cell_entry`, and backend support status.
+
+Current status note after Phase 9.87: effect-side observation metric fact
+projection now uses typed `PrimitiveObservationFacts` providers in
+`RequestedEffectApplierPorts` and `PrimitiveDigRecoveryPorts`. The requested
+effect applier no longer receives a policy-built `deposited_mass` callback for
+`SetDumpStartDepositedMassFromObservationEffect`; failed-dig recovery no longer
+receives a policy-built `mass_in_bucket` callback for failed-dig stop payloads.
+`PrimitivePlannerACTPolicy` now constructs explicit
+`PrimitiveObservationFacts.from_obs(obs, action_dim=int(self.action_dim))`
+providers for these live effect-side boundaries. Requested-effect order,
+dump-start deposited mass writeback, failed-dig payload max/event payload keys,
+terminal-stop request ordering, parked `pre_dig_align`, parked `cell_entry`,
+and backend support status remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

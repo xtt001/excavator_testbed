@@ -1744,7 +1744,12 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             complete_cell_entry_dig=lambda obs: self._complete_cell_entry_dig(obs),
             complete_coverage_dig=lambda obs: self._complete_coverage_dig(obs),
-            deposited_mass=lambda obs: self._deposited_mass(obs),
+            observation_facts=(
+                lambda obs: PrimitiveObservationFacts.from_obs(
+                    obs,
+                    action_dim=int(self.action_dim),
+                )
+            ),
             complete_coverage_dump=(
                 lambda obs, reason: self._complete_coverage_dump(
                     obs,
@@ -2357,7 +2362,12 @@ class PrimitivePlannerACTPolicy(Policy):
                     )
                 )
             ),
-            mass_in_bucket=lambda obs: self._mass_in_bucket(obs),
+            observation_facts=(
+                lambda obs: PrimitiveObservationFacts.from_obs(
+                    obs,
+                    action_dim=int(self.action_dim),
+                )
+            ),
             should_pre_dig_align_before_dig=(
                 lambda: self._should_pre_dig_align_before_dig()
             ),

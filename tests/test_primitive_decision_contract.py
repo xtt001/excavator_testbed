@@ -689,14 +689,13 @@ def test_primitive_planner_requested_effect_bridge_applies_return_cycle_in_order
 
 def test_primitive_planner_requested_effect_bridge_applies_carry_dump_effects_with_obs() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
-    obs: dict[str, Any] = {"payload": "current_obs"}
+    planner.action_dim = 4
+    obs: dict[str, Any] = {
+        "payload": "current_obs",
+        "task_metrics": {"deposited_mass_in_target_box_kg": 12.5},
+    }
     events: list[str] = []
     cycle_state = planner._primitive_cycle_runtime_state()
-
-    def fake_deposited(self: PrimitivePlannerACTPolicy, got_obs: dict[str, Any]) -> float:
-        assert got_obs is obs
-        events.append("deposited")
-        return 12.5
 
     def fake_complete_dump(
         self: PrimitivePlannerACTPolicy,
@@ -723,7 +722,6 @@ def test_primitive_planner_requested_effect_bridge_applies_carry_dump_effects_wi
     ) -> None:
         events.append(f"skill:{skill_name}:{reason}")
 
-    planner._deposited_mass = MethodType(fake_deposited, planner)
     planner._complete_coverage_dump = MethodType(fake_complete_dump, planner)
     planner._set_return_or_direct_handoff = MethodType(fake_return_or_handoff, planner)
     planner._set_skill = MethodType(fake_set_skill, planner)
@@ -744,7 +742,6 @@ def test_primitive_planner_requested_effect_bridge_applies_carry_dump_effects_wi
     )
 
     assert events == [
-        "deposited",
         "skill:dump:carry_to_dump_target_ready",
         "complete:dump_mass_low",
         "return:dump_to_return_mass_low",

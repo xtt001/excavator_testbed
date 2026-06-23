@@ -908,6 +908,18 @@ effects remain explicit ports. The applier does not decide branches, compute
 status facts, dispatch low-level ACT policies, or promote `cell_entry` beyond
 its explicit compatibility effect.
 
+Phase 9.87 narrows the remaining effect-side observation metric boundary.
+`RequestedEffectApplierPorts` now receives a typed `PrimitiveObservationFacts`
+provider instead of a policy-built `deposited_mass` scalar callback, and
+`RequestedEffectApplier` reads
+`deposited_mass_in_target_box_kg` from that typed fact source when applying
+`SetDumpStartDepositedMassFromObservationEffect`. `PrimitiveDigRecoveryPorts`
+uses the same typed observation facts provider instead of a policy-built
+`mass_in_bucket` callback for failed-dig stop payloads. This preserves
+requested-effect order, dump-start deposited mass writeback, failed-dig payload
+max calculation, coverage decision-event extra keys, terminal-stop request
+ordering, parked `pre_dig_align`, and parked `cell_entry`.
+
 Phase 9.10 routes the legacy compatibility `_maybe_switch_skill()` entry
 through the same requested decision and centralized requested-effect applier
 chain. `LegacyFSMCompatibilityDecisionBackend` uses the compatibility order

@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 
 from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_DIM
+from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive_coverage import CoverageCorridorState
 from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
@@ -117,9 +118,18 @@ def _service(
         events.append(f"terminal:{reason}:{replace}")
         coverage_state.set_terminal_stop(requested=True, reason=reason)
 
-    def _mass_in_bucket(obs: dict[str, Any]) -> float:
-        events.append(f"mass:{obs['id']}")
-        return float(config["mass_in_bucket"])
+    def _observation_facts(obs: dict[str, Any]) -> PrimitiveObservationFacts:
+        events.append(f"facts:{obs['id']}")
+        return PrimitiveObservationFacts.from_obs(
+            {
+                **obs,
+                "task_metrics": {
+                    **dict(obs.get("task_metrics", {}) or {}),
+                    "mass_in_bucket_kg": float(config["mass_in_bucket"]),
+                },
+            },
+            action_dim=4,
+        )
 
     ports = PrimitiveDigRecoveryPorts(
         execution_state=execution_state,
@@ -138,7 +148,7 @@ def _service(
         set_skill=_set_skill,
         record_coverage_decision_event=_record_event,
         request_coverage_terminal_stop=_request_terminal_stop,
-        mass_in_bucket=_mass_in_bucket,
+        observation_facts=_observation_facts,
         should_pre_dig_align_before_dig=lambda: bool(config["pre_dig_before"]),
         should_pre_dig_align_after_failed_dig=lambda: bool(
             config["pre_dig_after_failed"]
@@ -203,8 +213,7 @@ def test_stop_after_failed_dig_preserves_payload_event_and_terminal_stop() -> No
     service.stop_after_failed_dig("bad_dig_low_payload", obs)
 
     assert events == [
-        "mass:obs_stop",
-        "mass:obs_stop",
+        "facts:obs_stop",
         "record:failed_dig_stop",
         "terminal:dig_failed_bad_dig_low_payload:True",
     ]
@@ -355,6 +364,8 @@ def test_policy_recovery_ports_share_focused_owners_and_facades_remain_callable(
     )
     assert "planner" not in port_names
     assert "self" not in port_names
+    assert "observation_facts" in port_names
+    assert "mass_in_bucket" not in port_names
     assert hasattr(policy, "_restart_pre_dig_align")
     assert hasattr(policy, "_try_replan_pre_dig_align_handoff")
     assert hasattr(policy, "_restart_dig_with_new_cut")

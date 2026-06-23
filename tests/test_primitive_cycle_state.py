@@ -146,6 +146,7 @@ def test_policy_cycle_methods_write_state_owner() -> None:
 
 def test_requested_effect_ports_share_cycle_and_return_state_owners() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy.action_dim = 4
     cycle_state = policy._primitive_cycle_runtime_state()
     return_state = policy._primitive_return_runtime_state()
 
@@ -153,6 +154,8 @@ def test_requested_effect_ports_share_cycle_and_return_state_owners() -> None:
 
     assert ports.cycle_state is cycle_state
     assert ports.return_state is return_state
+    assert not hasattr(ports, "deposited_mass")
+    assert hasattr(ports, "observation_facts")
     assert not hasattr(ports, "complete_return_transition")
     assert not hasattr(ports, "mark_return_next_dig_event_seen")
     assert not hasattr(ports, "set_dump_ready_hold_count")
@@ -454,6 +457,16 @@ def test_policy_rollout_summary_inputs_use_cycle_report_status_projection() -> N
         ),
         policy,
     )
+    policy._scripted_bootstrap_report_status = MethodType(
+        lambda self: SimpleNamespace(timeout_count=0),
+        policy,
+    )
+    policy._token_report_status = MethodType(lambda self: SimpleNamespace(), policy)
+    policy._cell_entry_report_status = MethodType(lambda self: SimpleNamespace(), policy)
+    policy._pre_dig_align_report_status = MethodType(
+        lambda self: SimpleNamespace(),
+        policy,
+    )
     policy.dump_done_use_boundary_event = False
     policy.cell_entry_enabled = False
     policy.return_to_dig_max_entry_error_m = 0.5
@@ -468,6 +481,10 @@ def test_policy_rollout_summary_inputs_use_cycle_report_status_projection() -> N
     policy.coverage_first_dig_preferred_corridor_id = None
     policy.coverage_first_dig_max_entry_distance_m = None
     policy.coverage_first_dig_qpos_delta_weight = 1.0
+    policy.coverage_state_exemplars_enabled = False
+    policy.coverage_multi_pass_max_passes = 1
+    policy.coverage_multi_pass_min_remaining_depth_m = 0.0
+    policy.coverage_first_dig_max_qpos_delta = None
     policy.pre_dig_align_enabled = False
     policy.pre_dig_align_first_dig_only = True
     policy.pre_dig_align_replan_after_failed_dig = False

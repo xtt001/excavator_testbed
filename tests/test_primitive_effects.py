@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive_decision import (
     CompleteCellEntryDigCompatibilityEffect,
     CompleteCoverageDigEffect,
@@ -36,7 +37,8 @@ from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
 def _ports(
     events: list[str],
     *,
-    deposited_mass: Callable[[dict[str, Any]], float] | None = None,
+    observation_facts: Callable[[dict[str, Any]], PrimitiveObservationFacts]
+    | None = None,
     next_skill_after_return_transition: Callable[[], str] | None = None,
     cycle_state: PrimitiveCycleRuntimeState | None = None,
     return_state: PrimitiveReturnRuntimeState | None = None,
@@ -56,7 +58,19 @@ def _ports(
         ),
         complete_cell_entry_dig=lambda obs: events.append(f"cell:{obs['tag']}"),
         complete_coverage_dig=lambda obs: events.append(f"coverage_dig:{obs['tag']}"),
-        deposited_mass=deposited_mass or (lambda obs: 12.5),
+        observation_facts=observation_facts
+        or (
+            lambda obs: PrimitiveObservationFacts.from_obs(
+                {
+                    **obs,
+                    "task_metrics": {
+                        **dict(obs.get("task_metrics", {}) or {}),
+                        "deposited_mass_in_target_box_kg": 12.5,
+                    },
+                },
+                action_dim=4,
+            )
+        ),
         complete_coverage_dump=lambda obs, reason: events.append(
             f"coverage_dump:{reason}:{obs['tag']}"
         ),
@@ -70,6 +84,8 @@ def test_requested_effect_ports_use_state_owners_not_storage_callbacks() -> None
     field_names = {field.name for field in fields(RequestedEffectApplierPorts)}
 
     assert {"cycle_state", "return_state"} <= field_names
+    assert "observation_facts" in field_names
+    assert "deposited_mass" not in field_names
     assert not {
         "mark_return_next_dig_event_seen",
         "complete_return_transition",
@@ -93,7 +109,15 @@ def test_requested_effect_applier_applies_mixed_effects_in_order() -> None:
 
     ports = _ports(
         events,
-        deposited_mass=lambda got_obs: 17.25,
+        observation_facts=lambda got_obs: PrimitiveObservationFacts.from_obs(
+            {
+                **got_obs,
+                "task_metrics": {
+                    "deposited_mass_in_target_box_kg": 17.25,
+                },
+            },
+            action_dim=4,
+        ),
         next_skill_after_return_transition=next_skill_after_return,
         cycle_state=cycle_state,
         return_state=return_state,
@@ -147,12 +171,22 @@ def test_requested_effect_applier_reads_deposited_mass_from_current_obs() -> Non
     first_obs = {"tag": "first"}
     second_obs = {"tag": "second"}
 
-    def deposited_mass(obs: dict[str, Any]) -> float:
+    def observation_facts(obs: dict[str, Any]) -> PrimitiveObservationFacts:
         events.append(f"read:{obs['tag']}")
-        return 3.0 if obs is first_obs else 8.0
+        return PrimitiveObservationFacts.from_obs(
+            {
+                **obs,
+                "task_metrics": {
+                    "deposited_mass_in_target_box_kg": (
+                        3.0 if obs is first_obs else 8.0
+                    ),
+                },
+            },
+            action_dim=4,
+        )
 
     applier = RequestedEffectApplier(
-        ports=_ports(events, deposited_mass=deposited_mass)
+        ports=_ports(events, observation_facts=observation_facts)
     )
 
     applier.apply(first_obs, (SetDumpStartDepositedMassFromObservationEffect(),))

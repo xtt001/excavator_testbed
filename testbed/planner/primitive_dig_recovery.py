@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 import numpy as np
 
+from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive_coverage import CoverageCorridorState
 from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
@@ -41,7 +42,7 @@ class PrimitiveDigRecoveryPorts:
     set_skill: Callable[[str, str], None]
     record_coverage_decision_event: Callable[..., None]
     request_coverage_terminal_stop: Callable[..., None]
-    mass_in_bucket: Callable[[dict[str, Any]], float]
+    observation_facts: Callable[[dict[str, Any]], PrimitiveObservationFacts]
     should_pre_dig_align_before_dig: Callable[[], bool]
     should_pre_dig_align_after_failed_dig: Callable[[], bool]
     dig_cut_planner_mode: Callable[[], str]
@@ -137,10 +138,11 @@ class PrimitiveDigRecoveryService:
     def stop_after_failed_dig(self, reason: str, obs: dict[str, Any]) -> None:
         ports = self.ports
         corridor = ports.coverage_state.active_corridor()
+        bucket_mass = float(ports.observation_facts(obs).mass_in_bucket_kg)
         payload_gain = max(
             float(ports.coverage_state.coverage_current_payload_gain_kg),
             float(ports.cycle_state.dig_best_mass_kg),
-            ports.mass_in_bucket(obs),
+            bucket_mass,
             0.0,
         )
         ports.execution_state.set_switch_reason(f"dig_failed_stop_{reason}")
@@ -151,7 +153,7 @@ class PrimitiveDigRecoveryService:
             extra={
                 "reason": str(reason),
                 "payload_gain_kg": float(payload_gain),
-                "current_bucket_mass_kg": float(ports.mass_in_bucket(obs)),
+                "current_bucket_mass_kg": float(bucket_mass),
                 "dig_best_mass_kg": float(ports.cycle_state.dig_best_mass_kg),
                 "dig_step_count": int(ports.cycle_state.dig_step_count),
             },

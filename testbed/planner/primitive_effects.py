@@ -26,6 +26,7 @@ from testbed.planner.primitive_decision import (
     SwitchToNextSkillAfterReturnEffect,
 )
 from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
 
 
@@ -41,7 +42,7 @@ class RequestedEffectApplierPorts:
     restart_after_failed_dig: Callable[[str, dict[str, Any]], None]
     complete_cell_entry_dig: Callable[[dict[str, Any]], None]
     complete_coverage_dig: Callable[[dict[str, Any]], None]
-    deposited_mass: Callable[[dict[str, Any]], float]
+    observation_facts: Callable[[dict[str, Any]], PrimitiveObservationFacts]
     complete_coverage_dump: Callable[..., None]
     set_return_or_direct_handoff: Callable[..., None]
 
@@ -126,7 +127,7 @@ class RequestedEffectApplier:
             ports.cycle_state.set_dump_ready_hold_count(int(effect.value))
         elif isinstance(effect, SetDumpStartDepositedMassFromObservationEffect):
             ports.cycle_state.set_dump_start_deposited_mass_kg(
-                float(ports.deposited_mass(obs))
+                float(ports.observation_facts(obs).deposited_mass_in_target_box_kg)
             )
         elif isinstance(effect, SetDumpDoneHoldCountEffect):
             ports.cycle_state.set_dump_done_hold_count(int(effect.value))

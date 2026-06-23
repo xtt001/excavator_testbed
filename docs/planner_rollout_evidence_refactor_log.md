@@ -7434,6 +7434,100 @@ Each completed refactor round should append:
   Current maturity remains default legacy FSM backendified with focused
   services / shared backend decision input/facts/factory; BT/VLM/LLM backends
   remain unsupported fail-fast.
+
+### 2026-06-23 Phase 9.87 Move Effect-Side Observation Metric Fact-Source Boundary
+
+- Scope: moved live effect-side observation metric facts from policy-built
+  scalar callbacks into typed `PrimitiveObservationFacts` providers. This is a
+  structural fact-source refactor for requested-effect dump-start deposited
+  mass and failed-dig current bucket mass, not a requested-effect ordering,
+  recovery, coverage, token, return, or parked-path behavior change.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 150]`, HEAD
+  `dd671fbfbf9ed1bdb4557b4f9545ff20de9752d8`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, commit, docs edit, or
+  remote write was used by the executor.
+- `RequestedEffectApplierPorts` in `testbed/planner/primitive_effects.py` now
+  carries `observation_facts: Callable[[dict[str, Any]],
+  PrimitiveObservationFacts]` instead of the policy-built `deposited_mass`
+  callback.
+- `RequestedEffectApplier` now handles
+  `SetDumpStartDepositedMassFromObservationEffect` by reading
+  `ports.observation_facts(obs).deposited_mass_in_target_box_kg` and writing
+  the same `PrimitiveCycleRuntimeState` dump-start deposited mass field.
+- `PrimitiveDigRecoveryPorts` in
+  `testbed/planner/primitive_dig_recovery.py` now carries the same typed
+  observation facts provider instead of the policy-built `mass_in_bucket`
+  callback.
+- `PrimitiveDigRecoveryService.stop_after_failed_dig(...)` now reads current
+  bucket mass through typed observation facts and preserves the payload max
+  calculation plus `current_bucket_mass_kg` coverage decision-event extra
+  value.
+- `PrimitivePlannerACTPolicy._requested_effect_applier_ports()` and
+  `_primitive_dig_recovery_ports()` now construct
+  `PrimitiveObservationFacts.from_obs(obs, action_dim=int(self.action_dim))`
+  providers instead of passing `_deposited_mass` or `_mass_in_bucket` lambdas
+  into those effect-side boundaries.
+- Line-count impact: `testbed/policies/hybrid/primitive_planner.py` grew from
+  4592 to 4602 lines because two scalar callback lambdas became explicit typed
+  observation fact providers. This is acceptable for the large-file policy
+  because it is thin interface construction, and the behavior source of truth
+  moved into focused modules. `testbed/planner/primitive_effects.py` is 160
+  lines and `testbed/planner/primitive_dig_recovery.py` is 183 lines.
+- Preserved behavior: requested-effect order/dispatch semantics, dump-start
+  deposited mass writeback value/fallback, failed-dig stop payload max
+  calculation, coverage decision-event payload keys, terminal-stop reason
+  strings/request ordering, debug/summary/trace schemas, token/coverage/return
+  direct-handoff semantics, branch order, reason strings, reset timing,
+  backend unsupported fail-fast, parked `pre_dig_align`, parked `cell_entry`,
+  and removed 5P runtime status remain unchanged.
+- Explicit non-goals: no requested-effect order change, no recovery branch
+  change, no terminal-stop reason change, no coverage selection/effect/update
+  algorithm change, no token/return/direct-handoff behavior change, no report
+  schema change, no parked `pre_dig_align` or `cell_entry` touch, and no
+  backend support expansion.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_dig_recovery.py tests/test_primitive_capabilities.py`
+  returned `16 failed, 28 passed` with representative failures
+  `AssertionError` showing `observation_facts` absent and old
+  `deposited_mass` present on `RequestedEffectApplierPorts`, plus `TypeError:
+  PrimitiveDigRecoveryPorts.__init__() got an unexpected keyword argument
+  'observation_facts'`, proving the effect-side typed fact-source boundary did
+  not exist yet.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_dig_recovery.py tests/test_primitive_capabilities.py`
+  returned `44 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_decision_contract.py`
+  returned `46 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or coverage_decision_trace or return_to_dig or dig_cut_tokens"`
+  returned `6 passed, 113 deselected`;
+  `python -m pytest -q tests/test_primitive_cycle_state.py` returned
+  `14 passed`; compileall for touched modules, both planner guard commands,
+  and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_dig_recovery.py tests/test_primitive_capabilities.py`
+  returned `44 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_decision_contract.py`
+  returned `46 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or coverage_decision_trace or return_to_dig or dig_cut_tokens"`
+  returned `6 passed, 113 deselected`;
+  `python -m pytest -q tests/test_primitive_cycle_state.py` returned
+  `14 passed`.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was the bounded effect-side observation metric
+  fact-source move, not the safest smallest cleanup, because it migrated both
+  requested-effect deposited mass and failed-dig current bucket mass in one
+  coherent live boundary. It did not add a pass-through wrapper, anemic
+  service, planner-self port, broad config bag, generic blackboard, or
+  parked-path promotion. Residual `pre_dig_align` and parked `cell_entry` were
+  not touched, promoted, deleted, or refactored. Current maturity remains
+  default legacy FSM backendified with focused services / shared backend
+  decision input/facts/factory; BT/VLM/LLM backends remain unsupported
+  fail-fast.
 - Direction correction: after this trio, the strongest live state-owner
   routing seam has mostly been harvested. The next implementation should not
   chase one-off callback removal or line-count wins. It should either select a
