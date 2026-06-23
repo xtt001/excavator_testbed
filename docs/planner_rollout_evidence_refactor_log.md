@@ -8837,3 +8837,42 @@ Each completed refactor round should append:
   default legacy FSM backendified with focused services / shared backend
   decision input/facts/factory; BT/VLM/LLM backends remain unsupported
   fail-fast.
+
+### 2026-06-23 Three-Iteration Reflection After Phases 9.89-9.91
+
+- Scope reflected: Phase 9.89 bootstrap end fact-source boundary, Phase 9.90
+  dig progress / coverage payload tick-update boundary, and Phase 9.91
+  boundary-event tick source boundary.
+- Direction check: the three slices moved confirmed-live tick preparation and
+  transition fact-source responsibilities out of the large policy shell and
+  into focused owners/services: `BootstrapStatus`,
+  `PrimitiveDigProgressRuntimeService`, and
+  `PrimitiveBoundaryEventRuntimeService`. They therefore moved toward the SVG
+  direction where execution prepares facts, decision reads facts, and the
+  public policy shell stays an adapter.
+- Hard constraint check: the slices treated protection as a constraint, not
+  the objective. They were not wrapper-only cleanup: each moved a coherent live
+  fact/update boundary while preserving branch order, reason strings, token
+  schema, debug/summary/trace schemas, reset timing, and backend unsupported
+  fail-fast behavior.
+- Parked path check: residual `pre_dig_align` and parked `cell_entry` were not
+  touched, promoted, deleted, or refactored. The user direction remains that
+  these parked paths should stay parked until other live/mainline work is done;
+  then take an explicit checkpoint commit before a separate cleanup/removal
+  review.
+- Remaining gap: `PrimitivePlannerACTPolicy` remains large because it still
+  hosts public adapter construction, typed port assembly, compatibility
+  property facades, report/diagnostic facades, policy observation provider
+  composition, residual parked pre-dig-align action/readiness material, and
+  parked cell-entry planner/auditor/token compatibility algorithms. Size alone
+  is no longer a reliable indicator that there is a large live implementation
+  slice left.
+- Next-step correction: before dispatching another implementation, the
+  refactor thread should run or request a focused audit of the remaining
+  non-parked surfaces. A valid next implementation must still be a maximum
+  effective bounded move. It must not be a single compatibility facade
+  deletion, broad composition bag, generic blackboard, planner-self port, or
+  parked-path promotion.
+- Maturity statement remains: default legacy FSM backendified with focused
+  services / shared backend decision input/facts/factory; BT/VLM/LLM backends
+  remain unsupported fail-fast.
