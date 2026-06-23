@@ -1319,6 +1319,18 @@ delegates. This does not change coverage decision-event payload keys, event
 ordering, coverage selection/effect/update algorithms, debug/summary/trace
 schemas, token/return/recovery semantics, parked `pre_dig_align`, or parked
 `cell_entry`.
+
+Phase 9.88 narrows the coverage planning fact-source boundary by routing
+`CoveragePlanningFactService` env-state and bucket-pose reads through typed
+`PrimitiveObservationFacts`. The service now receives an `observation_facts`
+provider instead of separate policy-built `env_state` and
+`bucket_tip_dig_area_pose` callbacks. Entry distance uses
+`PrimitiveObservationFacts.bucket_tip_dig_area_pose()`, preserving bucket-tip
+preferred and bucket dig-area fallback behavior. State-exemplar planning,
+removed-depth grid extraction, and remaining-depth projection read
+`facts.env_state`. The `first_dig_qpos_delta` callback intentionally remains
+explicit because it still reaches parked/residual pre-dig-align target
+material; this phase does not promote or modify that parked path.
 token/return/direct-handoff/recovery semantics, or parked path status.
 
 Phase 9.64 narrows the active dig token planning port boundary in

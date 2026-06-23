@@ -3580,8 +3580,10 @@ class PrimitivePlannerACTPolicy(Policy):
             coverage_state=self._coverage_runtime_state(),
             state_exemplar_planner=self._coverage_state_exemplar_planner(),
             coverage_state_exemplars_by_cell=self.coverage_state_exemplars_by_cell,
-            env_state=lambda obs: self._env_state(obs),
-            bucket_tip_dig_area_pose=lambda obs: self._bucket_tip_dig_area_pose(obs),
+            observation_facts=lambda obs: PrimitiveObservationFacts.from_obs(
+                obs,
+                action_dim=int(self.action_dim),
+            ),
             first_dig_qpos_delta=(
                 lambda corridor, obs: self._coverage_first_dig_qpos_delta(
                     corridor,

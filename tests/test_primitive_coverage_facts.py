@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import math
+from dataclasses import fields
 from typing import Any
 
 import numpy as np
 import pytest
 
 from testbed.data.schema import (
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
     ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
     ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
@@ -14,6 +18,7 @@ from testbed.data.schema import (
     ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
     ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
 )
+from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive_coverage import CoverageCorridorState
 from testbed.planner.primitive_coverage_exemplars import (
     CoverageStateExemplarPlanInputs,
@@ -76,12 +81,16 @@ def _env_state(
     *,
     target_depth: float = 0.08,
     removed_depth: float = 0.03,
+    bucket_pose: tuple[float, float, float] = (0.0, 0.0, 0.0),
     bucket_tip: tuple[float, float, float] = (1.0, 0.0, 0.0),
 ) -> np.ndarray:
     env_state = np.zeros(64, dtype=np.float32)
     env_state[ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX] = float(target_depth)
     env_state[ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX] = float(removed_depth)
     env_state[ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX] = 1.0
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX] = float(bucket_pose[0])
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX] = float(bucket_pose[1])
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX] = float(bucket_pose[2])
     env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX] = float(bucket_tip[0])
     env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX] = float(bucket_tip[1])
     env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX] = float(bucket_tip[2])
@@ -117,15 +126,8 @@ def _service(
             planner if planner is not None else _FakeStateExemplarPlanner(None)
         ),
         coverage_state_exemplars_by_cell={0: [{"exemplar_id": "cell0_a"}]},
-        env_state=lambda obs: np.asarray(obs["env_state"], dtype=np.float32),
-        bucket_tip_dig_area_pose=(
-            lambda obs: tuple(np.asarray(obs["env_state"], dtype=np.float32)[
-                [
-                    ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
-                    ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
-                    ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
-                ]
-            ])
+        observation_facts=(
+            lambda obs: PrimitiveObservationFacts.from_obs(obs, action_dim=4)
         ),
         first_dig_qpos_delta=(
             lambda corridor, obs: np.asarray(
@@ -133,6 +135,29 @@ def _service(
                 dtype=np.float32,
             )
         ),
+    )
+
+
+def test_service_uses_typed_observation_facts_not_observation_callbacks() -> None:
+    names = {field.name for field in fields(CoveragePlanningFactService)}
+
+    assert "observation_facts" in names
+    assert "env_state" not in names
+    assert "bucket_tip_dig_area_pose" not in names
+
+
+def test_entry_distance_uses_typed_bucket_tip_fallback_to_bucket_pose() -> None:
+    service = _service()
+    corridor = _corridor(entry_x_m=1.5, entry_z_m=1.0)
+    obs = {
+        "env_state": _env_state(
+            bucket_pose=(3.0, 0.0, 4.0),
+            bucket_tip=(float("nan"), float("nan"), float("nan")),
+        )
+    }
+
+    assert service.entry_distance_m(corridor, obs) == pytest.approx(
+        math.hypot(1.5, 3.0)
     )
 
 

@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4602 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4604 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -86,7 +86,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_coverage_updates.py` | 698 | coverage completion/rejection/reopen/terminal-stop effect runtime sequencing and effect fact projection over focused coverage/cycle state plus typed observation facts |
 | `testbed/planner/primitive_coverage_reports.py` | 626 | coverage report config, coverage corridor debug, coverage decision-event bucket snapshot, and coverage debug/trace/summary projection from focused runtime state |
 | `testbed/planner/primitive_effects.py` | 160 | requested-effect application over focused cycle/return owners, explicit external action ports, and typed observation metric facts |
-| `testbed/planner/primitive_coverage_facts.py` | 333 | coverage planning fact-source owner for selection facts, raw-field projection, state-conditioned exemplar projection/writeback, and remaining-depth facts |
+| `testbed/planner/primitive_coverage_facts.py` | 332 | coverage planning fact-source owner for selection facts, raw-field projection, state-conditioned exemplar projection/writeback, remaining-depth facts, and typed observation fact access |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
 | `testbed/planner/evidence_trace.py` | 972 | evidence classifier and report writer for rollout-driven refactor decisions |
@@ -1682,6 +1682,21 @@ providers for these live effect-side boundaries. Requested-effect order,
 dump-start deposited mass writeback, failed-dig payload max/event payload keys,
 terminal-stop request ordering, parked `pre_dig_align`, parked `cell_entry`,
 and backend support status remain unchanged.
+
+Current status note after Phase 9.88: the coverage planning fact-source
+boundary now uses typed `PrimitiveObservationFacts` for env-state and bucket
+pose access. `CoveragePlanningFactService` no longer carries policy-built
+`env_state` or `bucket_tip_dig_area_pose` callbacks. It receives an
+`observation_facts` provider and reads `facts.env_state` for state-exemplar,
+removed-depth, and remaining-depth facts, and
+`facts.bucket_tip_dig_area_pose()` for entry distance while preserving the
+bucket-tip preferred / bucket dig-area fallback behavior. The existing
+`first_dig_qpos_delta` callback remains explicit because it still touches
+parked/residual pre-dig-align target material and is not part of this live
+fact-source slice. Coverage selection/scoring/effect/update behavior,
+candidate score payloads, token/return/direct-handoff/recovery semantics,
+parked `pre_dig_align`, parked `cell_entry`, and backend support status remain
+unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

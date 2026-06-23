@@ -7361,6 +7361,92 @@ Each completed refactor round should append:
   decision input/facts/factory; BT/VLM/LLM backends remain unsupported
   fail-fast.
 
+### 2026-06-23 Phase 9.88 Move Coverage Planning Observation Fact-Source Boundary
+
+- Scope: moved coverage planning fact-service env-state and bucket-pose reads
+  from policy-built callbacks into a typed `PrimitiveObservationFacts`
+  provider. This is a structural fact-source refactor for confirmed-live
+  coverage planning facts, not a coverage scoring/selection/effect/update,
+  token, return, recovery, or parked-path behavior change.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 151]`, HEAD
+  `7dacf2abdcf2a54b6abd68b6f2799b9aa0b00445`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, commit, docs edit, or
+  remote write was used by the executor.
+- `CoveragePlanningFactService` now carries `observation_facts:
+  Callable[[dict], PrimitiveObservationFacts]` instead of policy-built
+  `env_state` and `bucket_tip_dig_area_pose` callbacks.
+- `entry_distance_m(...)` reads
+  `PrimitiveObservationFacts.bucket_tip_dig_area_pose()`, preserving
+  bucket-tip preferred, bucket dig-area fallback, finite checks, and NaN
+  behavior through the typed facts owner.
+- `state_conditioned_plan(...)`, `removed_depth_grid(...)`, and
+  `remaining_depth_for_corridor(...)` now read env-state through
+  `PrimitiveObservationFacts.env_state`.
+- `PrimitivePlannerACTPolicy._coverage_planning_fact_service()` now constructs
+  `PrimitiveObservationFacts.from_obs(obs, action_dim=int(self.action_dim))`
+  and keeps `first_dig_qpos_delta` as the explicit existing callback. That
+  callback is intentionally not migrated in this slice because it still reaches
+  parked/residual pre-dig-align target material.
+- Line-count impact: `testbed/policies/hybrid/primitive_planner.py` grew from
+  4602 to 4604 lines because two policy-built callbacks became one explicit
+  typed observation facts provider. This is thin interface construction in the
+  large file. `testbed/planner/primitive_coverage_facts.py` is 332 lines and
+  remains the stable coverage planning fact-source owner.
+- Preserved behavior: coverage entry distance, remaining depth,
+  state-exemplar plan/writeback, removed-depth grid behavior,
+  selection/effect/update algorithms, candidate score/event payloads,
+  debug/summary/trace schemas, token/return/direct-handoff/recovery semantics,
+  branch order, reason strings, reset timing, backend unsupported fail-fast,
+  parked `pre_dig_align`, parked `cell_entry`, and removed 5P runtime status
+  remain unchanged.
+- Explicit non-goals: no coverage scoring/selection/effect/update algorithm
+  change, no `first_dig_qpos_delta` migration, no pre-dig-align target helper
+  change, no token/return/direct-handoff/recovery behavior change, no report
+  schema change, no parked `pre_dig_align` or `cell_entry` touch, and no
+  backend support expansion.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_coverage_facts.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_state.py`
+  returned `5 failed, 15 passed`. The representative failure asserted that
+  `CoveragePlanningFactService` still exposed `env_state` and
+  `bucket_tip_dig_area_pose` fields while lacking `observation_facts`, and
+  helper construction failed with `TypeError:
+  CoveragePlanningFactService.__init__() got an unexpected keyword argument
+  'observation_facts'`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_coverage_facts.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_state.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_updates.py`
+  returned `28 passed`;
+  `python -m pytest -q tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py tests/test_primitive_capabilities.py`
+  returned `47 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or dig_cut_tokens or return_to_dig"`
+  returned `6 passed, 113 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_coverage_facts.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_state.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_updates.py`
+  returned `28 passed`;
+  `python -m pytest -q tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py tests/test_primitive_capabilities.py`
+  returned `47 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or dig_cut_tokens or return_to_dig"`
+  returned `6 passed, 113 deselected`.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: refactor/audit thinking is `xhigh`, executor
+  thinking is `high`, and this slice treats protection as a constraint, not
+  the objective. It was the bounded coverage planning observation fact-source
+  move, not the safest smallest cleanup. It did not add a pass-through wrapper,
+  anemic service, planner-self port, broad config bag, generic blackboard, or
+  parked-path promotion. Residual `pre_dig_align` and parked `cell_entry` were
+  not touched, promoted, deleted, or refactored. Current maturity remains
+  default legacy FSM backendified with focused services / shared backend
+  decision input/facts/factory; BT/VLM/LLM backends remain unsupported
+  fail-fast.
+
 ### 2026-06-23 Phase 9.86 Move Coverage Bucket Snapshot Fact-Source Boundary
 
 - Scope: moved the live coverage decision-event bucket snapshot observation

@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.87 implementation. It is intentionally
+compares them with the current Phase 9.88 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -57,8 +57,11 @@ Current maturity:
 - coverage planning fact-source boundary: **achieved for coverage selection
   facts, coverage raw-field projection, state-conditioned exemplar
   projection/writeback, exemplar distance/id projection, and remaining-depth
-  facts through `CoveragePlanningFactService`; scoring/selection algorithms
-  remain in the existing coverage services**
+  facts through `CoveragePlanningFactService`; env-state and bucket-pose reads
+  now use typed `PrimitiveObservationFacts`, while the existing
+  `first_dig_qpos_delta` callback remains explicit because it still touches
+  parked pre-dig-align target material; scoring/selection algorithms remain in
+  the existing coverage services**
 - token planning observation fact-source boundary: **achieved for active dig
   and return token planning through a typed `PrimitiveObservationFacts`
   provider; separate policy-built bucket pose, deposited-mass, env-state, qpos,

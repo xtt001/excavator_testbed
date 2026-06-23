@@ -13,6 +13,7 @@ from testbed.data.schema import (
     ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
     ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
 )
+from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive_coverage import (
     CoverageCandidateSelectionFacts,
     CoverageCorridorState,
@@ -45,11 +46,7 @@ class CoveragePlanningFactService:
     coverage_state: CoverageRuntimeState
     state_exemplar_planner: CoverageStateExemplarPlanner
     coverage_state_exemplars_by_cell: dict[int, list[dict[str, Any]]]
-    env_state: Callable[[dict], np.ndarray]
-    bucket_tip_dig_area_pose: Callable[
-        [dict],
-        tuple[float, float, float] | None,
-    ]
+    observation_facts: Callable[[dict], PrimitiveObservationFacts]
     first_dig_qpos_delta: Callable[[CoverageCorridorState, dict], np.ndarray]
 
     def selection_facts(
@@ -81,7 +78,7 @@ class CoveragePlanningFactService:
         corridor: CoverageCorridorState,
         obs: dict,
     ) -> float:
-        pose = self.bucket_tip_dig_area_pose(obs)
+        pose = self.observation_facts(obs).bucket_tip_dig_area_pose()
         if pose is None:
             return float("nan")
         bucket_x, _, bucket_z = pose
@@ -205,7 +202,7 @@ class CoveragePlanningFactService:
         result = self.state_exemplar_planner.plan(
             CoverageStateExemplarPlanInputs(
                 corridor=corridor,
-                env_state=self.env_state(obs),
+                env_state=self.observation_facts(obs).env_state,
                 exemplars_by_cell=self.coverage_state_exemplars_by_cell,
                 rejected_exemplar_ids=(
                     self.coverage_state.coverage_rejected_state_exemplar_ids
@@ -257,7 +254,9 @@ class CoveragePlanningFactService:
         return str(exemplar_ids[0])
 
     def removed_depth_grid(self, obs: dict) -> np.ndarray | None:
-        return self.state_exemplar_planner.removed_depth_grid(self.env_state(obs))
+        return self.state_exemplar_planner.removed_depth_grid(
+            self.observation_facts(obs).env_state
+        )
 
     def state_exemplar_distance_for_grid(
         self,
@@ -295,7 +294,7 @@ class CoveragePlanningFactService:
         obs: dict,
         corridor: CoverageCorridorState,
     ) -> float:
-        env_state = self.env_state(obs)
+        env_state = self.observation_facts(obs).env_state
         cell_id = CoverageSelectionService.cell_id(corridor)
         target_idx = ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX + cell_id
         removed_idx = ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX + cell_id
