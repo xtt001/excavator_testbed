@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.46 implementation. It is intentionally
+compares them with the current Phase 9.47 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -39,6 +39,9 @@ Current maturity:
 - cycle/progress runtime mutable state owner: **achieved for live 4P
   dig-progress, dump-hold, transition-count, cycle-index, and dump-deposit
   baseline state**
+- scripted bootstrap runtime state/service owner: **achieved for
+  scripted-qpos bootstrap counters, target-reached/timeout checks, and PD
+  bootstrap action generation**
 - runtime composition root / public runtime kernel: **achieved for public
   runtime routing**
 - decision runtime backend factory/registry: **achieved for selecting the
@@ -468,6 +471,11 @@ Current boundary:
 - `PrimitiveCycleRuntimeState` owns confirmed-live 4P cycle/progress state:
   dig progress counters, dump hold counters, transition counters, cycle index,
   and dump-start deposited-mass baseline.
+- `PrimitiveScriptedBootstrapRuntimeState` owns scripted bootstrap counters:
+  step count, target-reached hold count, and timeout count.
+- `PrimitiveScriptedBootstrapRuntimeService` owns scripted-qpos bootstrap
+  runtime rules: enabled detection, target-reached hold gating, timeout
+  completion, and PD action generation.
 - Some pre-dig, debug mirror, switch, and compatibility fields still live as
   policy attributes.
 - Skill lifecycle, reset lifecycle, and token runtime services own sequencing,
@@ -500,6 +508,10 @@ Current boundary:
 - `PrimitiveActionDispatchService` owns scripted bootstrap short-circuit,
   residual pre-dig action short-circuit, first-dig policy selection,
   active-policy lookup, all-policy order, `policy_obs` call, and action shape.
+- The scripted bootstrap short-circuit calls the policy's compatibility facade,
+  but the underlying runtime rules and state now live in
+  `PrimitiveScriptedBootstrapRuntimeService` and
+  `PrimitiveScriptedBootstrapRuntimeState`.
 
 Gap:
 
@@ -676,6 +688,8 @@ The next code work should follow this order:
    - Token runtime mutable state is **done in Phase 9.44**.
    - Return handoff/runtime mutable state is **done in Phase 9.45**.
    - Mainline cycle/progress mutable state is **done in Phase 9.46**.
+   - Scripted bootstrap runtime mutable state and action/readiness rules are
+     **done in Phase 9.47**.
    - Inspect the remaining policy-owned mutable fields before choosing another
      state-owner slice; avoid extracting a generic blackboard.
    - Avoid generic blackboards.

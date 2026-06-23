@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.46: the default 4P mainline branch chain no longer
+Current status after Phase 9.47: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -76,7 +76,14 @@ state owner. Mainline cycle/progress state is now owned by
 transition timeout/completion counters, cycle index, and dump-start deposit
 baseline are no longer independent policy attributes. The policy keeps legacy
 private cycle/progress field names as property-backed compatibility facades over
-that cycle state owner. The policy now
+that cycle state owner. Scripted bootstrap runtime state and rules are now
+owned by `PrimitiveScriptedBootstrapRuntimeState` and
+`PrimitiveScriptedBootstrapRuntimeService`: scripted-qpos enabled detection,
+target-reached hold gating, timeout completion, and PD bootstrap action
+generation are no longer inline policy logic. The policy keeps old scripted
+bootstrap private counter names as property-backed compatibility facades over
+the state owner, and action dispatch still reaches the scripted action through
+the existing compatibility facade. The policy now
 exposes backend-facing common decision facts through
 `PrimitiveDecisionFacts`, built by `PrimitiveDecisionFactsSource`; the facts
 packet carries context identity, current skill, and current switch reason, but
@@ -862,6 +869,19 @@ paths keep their old compatibility names while resolving to the same state
 owner. Active skill, switch reason, previous action, token state, return state,
 coverage state, parked `pre_dig_align`, and `cell_entry` compatibility state
 remain outside this owner.
+
+Phase 9.47 introduces `PrimitiveScriptedBootstrapRuntimeState` and
+`PrimitiveScriptedBootstrapRuntimeService` in
+`testbed/planner/primitive_scripted_bootstrap.py`. The state owner centralizes
+the scripted bootstrap step, hold, and timeout counters, and reset creates one
+fresh scripted bootstrap state before applying the legacy scripted counter
+field names. The service owns the scripted-qpos runtime rules that used to live
+in the policy shell: `scripted_qpos` enabled detection, target-qpos and qvel
+hold gating, max-step timeout completion, missing-target error reporting, and
+clipped float32 PD action generation with optional action signs. Non-scripted
+bootstrap end modes, residual `pre_dig_align` action/state, `cell_entry`
+compatibility/report state, token/return/cycle/coverage state owners,
+BT/VLM/LLM backend support, and removed 5P runtime remain unchanged.
 
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in

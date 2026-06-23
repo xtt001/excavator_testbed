@@ -69,6 +69,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_token_state.py` | 70 | mutable dig/return token runtime state owner and reset defaults |
 | `testbed/planner/primitive_return_state.py` | 56 | mutable non-token return handoff/runtime state owner and reset defaults |
 | `testbed/planner/primitive_cycle_state.py` | 75 | mutable live 4P cycle/progress runtime state owner and reset defaults |
+| `testbed/planner/primitive_scripted_bootstrap.py` | 116 | scripted bootstrap runtime state, readiness checks, timeout, and PD action service |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
 | `testbed/planner/evidence_trace.py` | 972 | evidence classifier and report writer for rollout-driven refactor decisions |
@@ -510,7 +511,7 @@ Alternate backend rule:
 | return planning | return target, relocate, start envelope, pending next-dig fields | Slice 5 |
 | coverage | selected corridor, scores, state exemplar ids, completion/rejection trace, terminal stop | Slice 6 |
 | reporting | debug keys, rollout summary keys, planner trace keys | every slice touching reporting |
-| compatibility | `PrimitivePlannerACTPolicy` constructor/config and 5P public class remain importable | every public-surface slice |
+| compatibility | `PrimitivePlannerACTPolicy` constructor/config remains compatible; removed 5P runtime fails fast through explicit runtime diagnostics | every public-surface slice |
 | parking | `cell_entry` and `pre_dig_align` do not become default mainline dependencies | every slice touching tokens or gates |
 
 Minimum verification commands for documentation-only plan changes:
@@ -992,6 +993,20 @@ fields such as `_dump_ready_hold_count`, `_dump_done_hold_count`,
 over the same owner. The owner does not absorb active skill/switch reason,
 previous action, token state, return state, coverage state, pre-dig-align
 state, cell-entry compatibility state, backend facts, or report schemas.
+
+Current status note after Phase 9.47: scripted bootstrap runtime state and
+runtime rules are now owned by `PrimitiveScriptedBootstrapRuntimeState` and
+`PrimitiveScriptedBootstrapRuntimeService` in
+`testbed/planner/primitive_scripted_bootstrap.py`. Reset creates a fresh
+scripted bootstrap state and applies it before legacy scripted counter private
+field names; `_scripted_bootstrap_step_count`,
+`_scripted_bootstrap_hold_count`, and `_scripted_bootstrap_timeout_count` are
+property-backed compatibility facades over that owner. The service owns
+scripted-qpos enabled detection, target-reached hold gating, max-step timeout
+completion, missing-target runtime error text, and clipped float32 PD action
+generation. Non-scripted bootstrap modes, residual `pre_dig_align`, cell-entry
+compatibility/report state, token/return/cycle/coverage state owners,
+BT/VLM/LLM support, and removed 5P runtime remain unchanged.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;

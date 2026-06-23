@@ -5166,3 +5166,64 @@ Each completed refactor round should append:
   policy go through property setters. The owner intentionally excludes active
   skill/switch reason, token, return, coverage, parked `pre_dig_align`, and
   `cell_entry` state.
+
+### 2026-06-23 Phase 9.47 Extract Primitive Scripted Bootstrap Runtime Service
+
+- Scope: introduced `PrimitiveScriptedBootstrapRuntimeState`,
+  `PrimitiveScriptedBootstrapRuntimeConfig`, and
+  `PrimitiveScriptedBootstrapRuntimeService` in
+  `testbed/planner/primitive_scripted_bootstrap.py` as the focused owner for
+  scripted-qpos bootstrap runtime counters, readiness checks, timeout
+  completion, and PD action generation.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `3f3b14075640618e7fe353b776463d6830b58d8d`; no fetch, pull, push, reset,
+  checkout, rebase, branch creation, or remote write. HEAD after the code round
+  is `6e14f108655e81acc86aab785daeecca439d3fb7`.
+- `PrimitiveScriptedBootstrapRuntimeState.fresh()` owns the reset defaults for
+  scripted bootstrap step count, target-reached hold count, and timeout count.
+  `PrimitiveResetLifecycleService` now creates one fresh scripted bootstrap
+  state during reset and applies it before legacy scripted counter private
+  field names.
+- The policy exposes `_primitive_scripted_bootstrap_runtime_state()` plus
+  property-backed compatibility facades for
+  `_scripted_bootstrap_step_count`, `_scripted_bootstrap_hold_count`, and
+  `_scripted_bootstrap_timeout_count`. Debug/report paths and old diagnostics
+  still read the legacy private names while resolving to the same state owner.
+- The service owns the scripted bootstrap rules previously inline in the policy:
+  enabled detection for `bootstrap_end_mode == "scripted_qpos"` with target
+  qpos, target-qpos and qvel hold gating, max-step timeout completion, exact
+  missing-target runtime error text, and clipped float32 PD action generation
+  with optional action signs.
+- Preserved behavior: scripted bootstrap enabled rule, target-reached hold
+  counter reset/increment behavior, timeout counter increment behavior, PD
+  action dtype/shape/sign/clip behavior, and missing-target
+  `RuntimeError("scripted bootstrap is active without target qpos.")` text are
+  unchanged.
+- Explicit non-goals: non-scripted bootstrap end modes, residual
+  `pre_dig_align` action/state, `cell_entry` compatibility/report state,
+  token/return/cycle/coverage state owners, BT/VLM/LLM backend support, and
+  removed 5P runtime were not migrated or changed.
+- TDD red result: after focused tests were added, the first run of
+  `python -m pytest -q tests/test_primitive_scripted_bootstrap.py` failed at
+  collection because `testbed.planner.primitive_scripted_bootstrap` did not
+  exist. After implementation, the command returned `11 passed`.
+- Verification rerun by the audit thread:
+  `python -m pytest -q tests/test_primitive_scripted_bootstrap.py tests/test_primitive_reset_lifecycle.py tests/test_primitive_action_dispatch.py`
+  returned `30 passed`;
+  `python -m pytest -q tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  returned `9 passed`;
+  `python -m pytest -q tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `108 passed`;
+  `python -m pytest -q tests/test_primitive_cycle_state.py tests/test_primitive_return_state.py tests/test_primitive_token_state.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "scripted_bootstrap or semantic_boundary_events_drive_skill_sequence or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or start_envelope or coverage_decision_trace or dig_depth_profile or dig_cut_tokens"`
+  returned `21 passed, 98 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` completed successfully.
+- Audit note: this is a real responsibility extraction, not a pass-through
+  facade. `PrimitiveScriptedBootstrapRuntimeService` owns readiness, timeout,
+  and action rules, while policy methods are compatibility delegates. The
+  extraction intentionally does not promote `pre_dig_align` or `cell_entry`
+  into the mainline backend architecture.
