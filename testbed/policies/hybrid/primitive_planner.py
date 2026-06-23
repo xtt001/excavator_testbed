@@ -72,6 +72,9 @@ from testbed.planner.primitive_capability_provider import (
     PrimitiveFSMCapabilityProvider,
     PrimitiveFSMCapabilityProviderPorts,
 )
+from testbed.planner.primitive_cell_entry_state import (
+    PrimitiveCellEntryCompatibilityRuntimeState,
+)
 from testbed.planner.primitive_coverage import (
     CoverageCandidateBuilder,
     CoverageCandidateSelectionFacts,
@@ -825,6 +828,69 @@ class PrimitivePlannerACTPolicy(Policy):
     def _return_start_envelope_token_injected(self, value: bool) -> None:
         state = self._primitive_observation_injection_runtime_state()
         state.return_start_envelope_token_injected = bool(value)
+
+    def _primitive_cell_entry_compatibility_runtime_state(
+        self,
+    ) -> PrimitiveCellEntryCompatibilityRuntimeState:
+        state = self.__dict__.get("_cell_entry_state")
+        if state is None:
+            state = PrimitiveCellEntryCompatibilityRuntimeState.fresh()
+            self.__dict__["_cell_entry_state"] = state
+        return state
+
+    @property
+    def _cell_entry_goal(self) -> Any | None:
+        return self._primitive_cell_entry_compatibility_runtime_state().goal
+
+    @_cell_entry_goal.setter
+    def _cell_entry_goal(self, value: Any | None) -> None:
+        self._primitive_cell_entry_compatibility_runtime_state().goal = value
+
+    @property
+    def _cell_entry_goal_cycle_id(self) -> int:
+        return int(
+            self._primitive_cell_entry_compatibility_runtime_state().goal_cycle_id
+        )
+
+    @_cell_entry_goal_cycle_id.setter
+    def _cell_entry_goal_cycle_id(self, value: int) -> None:
+        state = self._primitive_cell_entry_compatibility_runtime_state()
+        state.goal_cycle_id = int(value)
+
+    @property
+    def _cell_entry_audit(self) -> Any | None:
+        return self._primitive_cell_entry_compatibility_runtime_state().audit
+
+    @_cell_entry_audit.setter
+    def _cell_entry_audit(self, value: Any | None) -> None:
+        self._primitive_cell_entry_compatibility_runtime_state().audit = value
+
+    @property
+    def _cell_entry_tokens(self) -> np.ndarray:
+        return self._primitive_cell_entry_compatibility_runtime_state().tokens
+
+    @_cell_entry_tokens.setter
+    def _cell_entry_tokens(self, value: np.ndarray) -> None:
+        self._primitive_cell_entry_compatibility_runtime_state().tokens = value
+
+    @property
+    def _cell_entry_seen_cell_id(self) -> int:
+        return int(
+            self._primitive_cell_entry_compatibility_runtime_state().seen_cell_id
+        )
+
+    @_cell_entry_seen_cell_id.setter
+    def _cell_entry_seen_cell_id(self, value: int) -> None:
+        state = self._primitive_cell_entry_compatibility_runtime_state()
+        state.seen_cell_id = int(value)
+
+    @property
+    def _cell_entry_trace(self) -> list[dict[str, Any]]:
+        return self._primitive_cell_entry_compatibility_runtime_state().trace
+
+    @_cell_entry_trace.setter
+    def _cell_entry_trace(self, value: list[dict[str, Any]]) -> None:
+        self._primitive_cell_entry_compatibility_runtime_state().trace = value
 
     def _primitive_token_runtime_state(self) -> PrimitiveTokenRuntimeState:
         state = self.__dict__.get("_token_state")

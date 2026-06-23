@@ -8,7 +8,9 @@ from typing import Any
 
 import numpy as np
 
-from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
+from testbed.planner.primitive_cell_entry_state import (
+    PrimitiveCellEntryCompatibilityRuntimeState,
+)
 from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive_execution_state import PrimitiveExecutionRuntimeState
@@ -81,6 +83,7 @@ class PrimitiveResetLifecycleState:
     return_state: PrimitiveReturnRuntimeState
     cycle_index: int
     dump_start_deposited_mass_kg: float
+    cell_entry_state: PrimitiveCellEntryCompatibilityRuntimeState
     cell_entry_goal: Any | None
     cell_entry_goal_cycle_id: int
     cell_entry_audit: Any | None
@@ -183,6 +186,7 @@ class PrimitiveResetLifecycleState:
             "_return_state": self.return_state,
             "_cycle_index": self.cycle_index,
             "_dump_start_deposited_mass_kg": self.dump_start_deposited_mass_kg,
+            "_cell_entry_state": self.cell_entry_state,
             "_cell_entry_goal": self.cell_entry_goal,
             "_cell_entry_goal_cycle_id": self.cell_entry_goal_cycle_id,
             "_cell_entry_audit": self.cell_entry_audit,
@@ -282,6 +286,7 @@ class PrimitiveResetLifecycleService:
         )
         cycle_state = PrimitiveCycleRuntimeState.fresh()
         token_state = PrimitiveTokenRuntimeState.fresh()
+        cell_entry_state = PrimitiveCellEntryCompatibilityRuntimeState.fresh()
         observation_injection_state = PrimitiveObservationInjectionRuntimeState.fresh()
         return_state = PrimitiveReturnRuntimeState.fresh()
         scripted_bootstrap_state = PrimitiveScriptedBootstrapRuntimeState.fresh()
@@ -328,10 +333,11 @@ class PrimitiveResetLifecycleService:
             dump_start_deposited_mass_kg=(
                 cycle_state.dump_start_deposited_mass_kg
             ),
-            cell_entry_goal=None,
-            cell_entry_goal_cycle_id=-1,
-            cell_entry_audit=None,
-            cell_entry_tokens=np.zeros(CELL_ENTRY_TOKEN_DIM, dtype=np.float32),
+            cell_entry_state=cell_entry_state,
+            cell_entry_goal=cell_entry_state.goal,
+            cell_entry_goal_cycle_id=cell_entry_state.goal_cycle_id,
+            cell_entry_audit=cell_entry_state.audit,
+            cell_entry_tokens=cell_entry_state.tokens,
             observation_injection_state=observation_injection_state,
             cell_entry_token_injected=(
                 observation_injection_state.cell_entry_token_injected
@@ -398,8 +404,8 @@ class PrimitiveResetLifecycleService:
             pending_dig_state_exemplar_distance=(
                 token_state.pending_dig_state_exemplar_distance
             ),
-            cell_entry_seen_cell_id=-1,
-            cell_entry_trace=[],
+            cell_entry_seen_cell_id=cell_entry_state.seen_cell_id,
+            cell_entry_trace=cell_entry_state.trace,
             dig_cut_planned_cycle_id=token_state.dig_cut_planned_cycle_id,
             dig_cut_token_source=token_state.dig_cut_token_source,
             dig_cut_fallback_reason=token_state.dig_cut_fallback_reason,

@@ -175,7 +175,14 @@ copy/no-copy behavior, and immutable legacy injected-flag state calculation.
 injected compatibility flags: reset defaults, clear before assembly, apply from
 `PrimitiveTokenInjectionState`, and compatibility projection. The policy shell
 builds typed token-provider ports and keeps old injected-flag names as
-property-backed facades over that owner. `PrimitiveTokenRuntimeCoordinator` now owns the dig/return token
+property-backed facades over that owner.
+`PrimitiveCellEntryCompatibilityRuntimeState` owns parked cell-entry
+compatibility/report storage: goal, goal cycle id, audit, cached token array,
+seen cell id, and trace list. The policy keeps old `_cell_entry_*` names as
+property-backed facades while the cell-entry planner/auditor algorithms remain
+in their existing parked compatibility path. This does not promote cell-entry
+tokens into the mainline token contract or decision backend facts.
+`PrimitiveTokenRuntimeCoordinator` now owns the dig/return token
 runtime sequencing used by those providers: dig-cut gating, terminal-stop
 cached-token behavior, bootstrap policy token exception, hold-cycle checks,
 return-target hold-cycle checks, return relocate planning, return-start-envelope
@@ -919,6 +926,21 @@ assembler result. The policy's old `_cell_entry_token_injected`,
 the same owner. This phase does not change token schema, token dimensions,
 injected observation key names, provider call order, copy/no-copy behavior,
 public report schemas, `cell_entry`, `pre_dig_align`, backend fail-fast
+behavior, or removed 5P runtime status.
+
+Phase 9.50 introduces `PrimitiveCellEntryCompatibilityRuntimeState` in
+`testbed/planner/primitive_cell_entry_state.py`. The state owner centralizes
+parked cell-entry compatibility/report mutable storage: selected goal, goal
+cycle id, audit result, cached token array, seen cell id, and trace list. Reset
+creates one fresh cell-entry compatibility state and applies it through
+`_cell_entry_state`; the old `_cell_entry_goal`,
+`_cell_entry_goal_cycle_id`, `_cell_entry_audit`, `_cell_entry_tokens`,
+`_cell_entry_seen_cell_id`, and `_cell_entry_trace` names remain compatibility
+facades over the same owner. `_cell_entry_tokens_for_obs(...)` and
+`_complete_cell_entry_dig(...)` still own the legacy compatibility algorithms in
+the policy shell. This phase does not change cell-entry planner/auditor
+algorithms, token dimensions, token key names, token array values, trace schema,
+debug/summary/trace public schema, residual `pre_dig_align`, backend fail-fast
 behavior, or removed 5P runtime status.
 
 Phase 9.12 extracts return-to-dig start-envelope readiness into

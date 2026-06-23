@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.49 implementation. It is intentionally
+compares them with the current Phase 9.50 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -46,6 +46,8 @@ Current maturity:
   reason, previous action, and latest compact debug state**
 - observation injection runtime state owner: **achieved for per-observation
   token injected compatibility flags and assembler-result application**
+- cell-entry compatibility runtime state owner: **achieved for parked
+  cell-entry goal/audit/token-cache/trace report storage**
 - runtime composition root / public runtime kernel: **achieved for public
   runtime routing**
 - decision runtime backend factory/registry: **achieved for selecting the
@@ -491,6 +493,10 @@ Current boundary:
   `_return_relocate_token_injected`, and
   `_return_start_envelope_token_injected` names as property-backed
   compatibility facades over that owner.
+- `PrimitiveCellEntryCompatibilityRuntimeState` owns parked cell-entry
+  compatibility/report storage: goal, goal cycle id, audit, cached token array,
+  seen cell id, and trace list. The policy keeps the old `_cell_entry_*` names
+  as property-backed compatibility facades over that owner.
 - Some pre-dig and compatibility fields still live as policy attributes.
 - Skill lifecycle, reset lifecycle, and token runtime services own sequencing,
   but still write through policy compatibility facades for old private names.
@@ -572,8 +578,10 @@ Current boundary:
 
 Gap:
 
-- `cell_entry` token state remains compatibility/report material outside the
-  token runtime state owner.
+- `cell_entry` planner/auditor algorithms and token generation remain parked
+  compatibility/report material outside the token runtime state owner; their
+  mutable report storage now resolves through
+  `PrimitiveCellEntryCompatibilityRuntimeState`.
 - Return handoff algorithms remain in return handoff services; only mutable
   return handoff/runtime cache storage moved into `PrimitiveReturnRuntimeState`.
 
@@ -706,6 +714,9 @@ The next code work should follow this order:
      **done in Phase 9.47**.
    - Execution lifecycle metadata is **done in Phase 9.48** for active skill,
      switch reason, previous action, and latest compact debug state.
+   - Observation injected-flag mutable state is **done in Phase 9.49**.
+   - Parked cell-entry compatibility/report mutable state is
+     **done in Phase 9.50**.
    - Inspect the remaining policy-owned mutable fields before choosing another
      state-owner slice; avoid extracting a generic blackboard.
    - Avoid generic blackboards.

@@ -68,6 +68,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_decision_facts.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
 | `testbed/planner/primitive_execution_state.py` | 49 | mutable execution lifecycle state owner for active skill, switch reason, previous action, and latest debug state |
 | `testbed/planner/primitive_observation.py` | 176 | policy observation assembler plus mutable per-observation injected-flag runtime state owner |
+| `testbed/planner/primitive_cell_entry_state.py` | 36 | parked cell-entry compatibility/report runtime state owner and reset defaults |
 | `testbed/planner/primitive_token_state.py` | 70 | mutable dig/return token runtime state owner and reset defaults |
 | `testbed/planner/primitive_return_state.py` | 56 | mutable non-token return handoff/runtime state owner and reset defaults |
 | `testbed/planner/primitive_cycle_state.py` | 75 | mutable live 4P cycle/progress runtime state owner and reset defaults |
@@ -324,7 +325,7 @@ Parked code must not be used as a justification for new mainline services.
 
 | Path | Evidence | Current code owner | Parking owner | Allowed use | Not allowed |
 | --- | --- | --- | --- | --- | --- |
-| `token.cell_entry` | absent from successful rollout; `cell_entry_enabled=0`; no `cell_entry_tokens` low-dim key | `_cell_entry_tokens_for_obs`, `_complete_cell_entry_dig`, `testbed/planner/cell_entry.py` | `LegacyCellEntryDiagnostics` or compatibility notes | old configs, diagnostics, explicit legacy replay | default token contract, new backend fact, VLM decision packet |
+| `token.cell_entry` | absent from successful rollout; `cell_entry_enabled=0`; no `cell_entry_tokens` low-dim key | `_cell_entry_tokens_for_obs`, `_complete_cell_entry_dig`, `testbed/planner/cell_entry.py`, `PrimitiveCellEntryCompatibilityRuntimeState` | parked compatibility/report state owner plus legacy diagnostics | old configs, diagnostics, explicit legacy replay | default token contract, new backend fact, VLM decision packet |
 | `gate.pre_dig_align` | successful rollout has `pre_dig_align.enabled=false`; completed/timeout counts are zero | pre-dig branch in `_maybe_switch_skill`, `_pre_dig_align_*`, `_pre_dig_align_action` | `LegacyPreDigAlignAdapter` or diagnostic note | explicit legacy config, old PD alignment replay, debug comparison | default FSM path, behavior-tree node, VLM effect unless re-approved |
 | removed `PrimitivePlannerACT5PPolicy` runtime path | user-approved cleanup, not mainline evidence | git history only | removed runtime path | historical comparison from old branches | source of default 4P architecture |
 
@@ -1033,6 +1034,17 @@ the old `_cell_entry_token_injected`, `_dig_cut_token_injected`,
 `PrimitivePolicyObservationAssembler` still owns provider order, key names,
 copy/no-copy behavior, and immutable `PrimitiveTokenInjectionState` projection;
 token schema, `cell_entry`, and `pre_dig_align` behavior remain unchanged.
+
+Current status note after Phase 9.50: parked cell-entry compatibility/report
+storage is now owned by `PrimitiveCellEntryCompatibilityRuntimeState` in
+`testbed/planner/primitive_cell_entry_state.py`. Reset creates a fresh
+cell-entry state and applies it through `_cell_entry_state`; the old
+`_cell_entry_goal`, `_cell_entry_goal_cycle_id`, `_cell_entry_audit`,
+`_cell_entry_tokens`, `_cell_entry_seen_cell_id`, and `_cell_entry_trace` names
+are property-backed facades. `cell_entry` planner/auditor algorithms, token
+dimensions, token key names, token values, and report/trace schemas remain
+unchanged, and `cell_entry` remains parked compatibility/report material rather
+than a mainline backend capability.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;

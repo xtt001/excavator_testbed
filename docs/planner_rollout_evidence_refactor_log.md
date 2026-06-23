@@ -5398,3 +5398,72 @@ Each completed refactor round should append:
   token schemas, coverage/return/cycle/scripted-bootstrap/execution state,
   parked `pre_dig_align`, `cell_entry` compatibility state, backend facts,
   effect application, and report schemas.
+
+### 2026-06-23 Phase 9.50 Extract Primitive Cell-Entry Compatibility Runtime State
+
+- Scope: introduced `PrimitiveCellEntryCompatibilityRuntimeState` in
+  `testbed/planner/primitive_cell_entry_state.py` as the focused owner for
+  parked cell-entry compatibility/report mutable storage.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 113]`, HEAD
+  before this round `df41490cd5cafa85a1c49ebca8424c7fcaffed72`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- `PrimitiveCellEntryCompatibilityRuntimeState.fresh()` owns the previous reset
+  defaults: `goal=None`, `goal_cycle_id=-1`, `audit=None`, zero float32
+  `CELL_ENTRY_TOKEN_DIM` token cache, `seen_cell_id=-1`, and an empty trace
+  list. It also exposes `copy_tokens()` for compatibility-token copy behavior.
+- `PrimitivePlannerACTPolicy` exposes
+  `_primitive_cell_entry_compatibility_runtime_state()` plus property-backed
+  compatibility facades for `_cell_entry_goal`, `_cell_entry_goal_cycle_id`,
+  `_cell_entry_audit`, `_cell_entry_tokens`, `_cell_entry_seen_cell_id`, and
+  `_cell_entry_trace`.
+- `PrimitiveResetLifecycleService` now creates one fresh cell-entry
+  compatibility state during reset and applies `_cell_entry_state` before the
+  old cell-entry private field names. `_cell_entry_tokens_for_obs(...)` and
+  `_complete_cell_entry_dig(...)` remain in the policy shell and continue using
+  the old private-name facades.
+- Preserved behavior: cell-entry planner/auditor algorithms, risk/audit
+  semantics, token dimensions, token key names, token array values, trace
+  schema, public debug/summary/trace schemas, residual `pre_dig_align`, token
+  planning services, token runtime arrays/source/fallback fields, observation
+  injection owner, coverage/return/cycle/scripted-bootstrap/execution state
+  owners, branch order, reason strings, policy reset timing, previous-action
+  semantics, backend fail-fast behavior, and removed 5P runtime status are
+  unchanged.
+- Explicit non-goals: no `cell_entry` mainline backend promotion, no
+  cell-entry planner/auditor algorithm move, no token contract change, no
+  `pre_dig_align` cleanup, no backend selection change, and no public report
+  schema change.
+- TDD red result from executor callback: after focused tests were added, the
+  first run of `python -m pytest -q tests/test_primitive_cell_entry_state.py`
+  failed as expected with `ModuleNotFoundError` because
+  `testbed.planner.primitive_cell_entry_state` did not yet exist.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_cell_entry_state.py tests/test_primitive_reset_lifecycle.py`
+  returned `13 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "cell_entry or dig_cut_tokens or semantic_boundary_events_drive_skill_sequence or pre_dig_align"`
+  returned `16 passed, 103 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_cell_entry_state.py tests/test_primitive_reset_lifecycle.py`
+  returned `13 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "cell_entry or dig_cut_tokens or semantic_boundary_events_drive_skill_sequence or pre_dig_align"`
+  returned `16 passed, 103 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record. The recursive callback and
+  thinking-effort rules remain in force: refactor/audit stays `thinking: xhigh`,
+  and executor prompts must explicitly specify `thinking: high` or
+  `thinking: xhigh` while preserving the `send_message_to_thread` callback.
+- Audit note: this is a parked compatibility/report state-owner extraction, not
+  a cell-entry mainline promotion. It intentionally excludes cell-entry
+  planner/auditor algorithms, token contracts, observation injection state,
+  token/coverage/return/cycle/scripted-bootstrap/execution state, residual
+  `pre_dig_align`, backend facts, effect application, and report schemas.
