@@ -215,6 +215,27 @@ this callback requirement recursively, so delegated execution remains
 closed-loop and the refactor thread owns audit, documentation sync, and next
 direction decisions.
 
+## Three-Iteration Reflection Rule
+
+After every three bounded executor implementation rounds, the refactor/audit
+thread must pause before dispatching another executor task and record a
+three-iteration reflection in `docs/planner_rollout_evidence_refactor_log.md`.
+This reflection is owned by the refactor/audit thread, not the executor.
+
+The reflection must answer:
+
+- whether the last three rounds moved the implementation closer to
+  `docs/planner_execution_abstraction_flow.svg` and
+  `docs/planner_primitive_interface_standard.md`
+- the largest remaining architecture gap
+- the next core bounded slice
+- whether the workflow is over-protecting old code or creating anemic
+  pass-through facades
+- any direction correction before the next executor prompt
+
+Do not dispatch the fourth executor round in a sequence until this reflection is
+recorded or the refactor/audit thread explicitly stops for user confirmation.
+
 ## Stop Conditions
 
 Stop and ask for a decision when:

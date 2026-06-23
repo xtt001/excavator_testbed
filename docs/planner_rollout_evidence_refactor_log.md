@@ -5289,3 +5289,38 @@ Each completed refactor round should append:
   token, coverage, return, cycle/progress, scripted bootstrap, parked
   `pre_dig_align`, `cell_entry`, backend facts, effect application, and report
   schemas.
+
+### 2026-06-23 Three-Iteration Reflection After Phases 9.46-9.48
+
+- Scope reflected: Phase 9.46 `PrimitiveCycleRuntimeState`, Phase 9.47
+  `PrimitiveScriptedBootstrapRuntimeState` /
+  `PrimitiveScriptedBootstrapRuntimeService`, and Phase 9.48
+  `PrimitiveExecutionRuntimeState`.
+- Closeness to `docs/planner_execution_abstraction_flow.svg` and
+  `docs/planner_primitive_interface_standard.md`: the last three implementation
+  rounds moved confirmed-live runtime metadata and state rules out of
+  `PrimitivePlannerACTPolicy` and into focused state/service owners. This
+  directly improves the Layer 8 shell-state target while preserving the default
+  legacy FSM backendified maturity level. It does not make BT/VLM/LLM backends
+  supported or fully swappable.
+- Largest remaining architecture gap: the policy shell still owns residual
+  compatibility/report storage and facades, especially per-observation injected
+  token flags plus parked `pre_dig_align` and `cell_entry` material. The latter
+  two remain legacy/diagnostic parking paths and should not be promoted into the
+  mainline architecture without a separate evidence review.
+- Next core bounded slice: move per-observation token injected flag ownership
+  behind the existing observation boundary. `PrimitiveTokenInjectionState`
+  already exists in `testbed/planner/primitive_observation.py` as the assembler
+  projection; the next slice should make reset/clear/apply/report flag storage
+  resolve through a focused observation-injection state owner or equivalent
+  stable method boundary, while preserving old `_..._token_injected` private
+  names as compatibility facades.
+- Over-protection / anemic-facade risk: do not create a generic blackboard or a
+  pass-through wrapper around six booleans. The owner must have a stable
+  responsibility: reset defaults, per-observation clear, assembler-result
+  application, and compatibility projection for debug/summary/report inputs.
+- Direction correction: continue reducing confirmed-live/report mutable shell
+  storage before auditing parked paths. Do not clean up or migrate
+  `pre_dig_align`, `cell_entry`, token algorithms, token schemas, branch order,
+  reason strings, backend selection, or public report schemas in the next
+  executor round.

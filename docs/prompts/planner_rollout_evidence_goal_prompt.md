@@ -83,6 +83,12 @@ objective:
   TDD red、changed files、core factual change、verification、behavior impact、
   docs status、git status after、HEAD after；并在后续 executor prompt 中递归保留
   这个闭环回调要求。
+- 每 3 轮 bounded executor implementation 后，refactor/audit 线程必须先在
+  docs/planner_rollout_evidence_refactor_log.md 记录 three-iteration
+  reflection，再生成下一轮 executor prompt。反思必须判断：是否更接近
+  docs/planner_execution_abstraction_flow.svg / docs/planner_primitive_interface_standard.md，
+  最大剩余差距，下一步核心 bounded slice，是否过度保护旧代码或产生贫血
+  pass-through facade，以及是否需要方向修正。executor 不写反思。
 
 每轮验证至少考虑：
 - focused pytest for new module
@@ -106,6 +112,7 @@ commands run:
 verification result:
 decisions made:
 first-principles reflection:
+three-iteration reflection status:
 risks or unknowns:
 next action:
 do-not-repeat:

@@ -90,6 +90,8 @@ def check_plan_contract(root: str | Path = ".") -> None:
         "## Rollout Evidence Gate",
         "## New-File Extraction Rule",
         "## Parking And Reclassification Rule",
+        "## Delegated Executor Callback Rule",
+        "## Three-Iteration Reflection Rule",
     ):
         _require(active, heading, path=active_path)
 
@@ -102,6 +104,8 @@ def check_plan_contract(root: str | Path = ".") -> None:
     for needle in (
         "docs/planner_baseline_architecture_map.md",
         "branch baseline",
+        "send_message_to_thread",
+        "three-iteration reflection",
     ):
         _require(active.lower(), needle.lower(), path=active_path)
 
