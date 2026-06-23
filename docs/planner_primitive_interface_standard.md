@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.90 implementation. It is intentionally
+compares them with the current Phase 9.91 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -27,6 +27,10 @@ Current maturity:
 
 - public adapter compatibility: **mostly achieved**
 - tick execution ordering: **achieved for one-tick execution**
+- boundary-event tick source boundary: **achieved for prev-action gating and
+  typed observation projection through `PrimitiveBoundaryEventRuntimeService`;
+  the policy shell no longer owns the live `BoundaryDetector.update(...)`
+  argument assembly**
 - legacy FSM mainline branch conversion to requested effects: **achieved**
 - capability/status provider boundary for legacy FSM: **partly achieved;
   dig/carry/dump/return transition status assembly is focused, and dig-exit

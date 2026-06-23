@@ -59,8 +59,9 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4626 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4640 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
+| `testbed/planner/primitive_boundary_event.py` | 53 | live boundary-event tick source over focused execution state, boundary detector, and typed observation facts |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
 | `testbed/planner/primitive_decision_runtime.py` | 162 | backend-name normalization and backend factory registry selection for primitive decision runtime |
@@ -1722,6 +1723,17 @@ remains a compatibility facade and typed port constructor. Execution-driver
 tick order, plateau semantics, coverage payload max semantics, debug/summary/
 trace schemas, backend fail-fast behavior, parked `pre_dig_align`, and parked
 `cell_entry` remain unchanged.
+
+Current status note after Phase 9.91: the boundary-event tick source now lives
+in `PrimitiveBoundaryEventRuntimeService`. The service reads
+`PrimitiveExecutionRuntimeState.prev_action`, skips the boundary detector when
+there is no previous action, and otherwise projects typed
+`PrimitiveObservationFacts` into `BoundaryDetector.update(...)` arguments.
+`PrimitivePlannerACTPolicy._tick_boundary_event(...)` remains a compatibility
+facade and typed port constructor. Boundary-detector metrics/event algorithms,
+execution-driver tick order, prev-action finalization timing, backend
+fail-fast behavior, debug/summary/trace schemas, parked `pre_dig_align`, and
+parked `cell_entry` remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

@@ -1356,6 +1356,18 @@ compatibility facade and port constructor. This does not change execution tick
 order, branch order, plateau behavior, coverage payload max behavior, public
 report schemas, or parked `pre_dig_align` / `cell_entry` status.
 
+Phase 9.91 narrows the boundary-event tick source. A new
+`PrimitiveBoundaryEventRuntimeService` owns the live prev-action gate and
+observation projection for `BoundaryDetector.update(...)`. It reads the
+focused execution state owner for `prev_action`, returns `None` without calling
+the detector when no previous action exists, and otherwise passes typed
+`PrimitiveObservationFacts` env-state, qpos, reward phase, task successes, and
+task metrics plus the previous action to the detector. The policy remains a
+compatibility facade and port constructor. This does not change
+`BoundaryDetector` algorithms, execution-driver tick order, prev-action copy
+timing, decision facts, report schemas, or parked `pre_dig_align` /
+`cell_entry` status.
+
 Phase 9.64 narrows the active dig token planning port boundary in
 `testbed/planner/primitive_dig_token_planning.py`.
 `PrimitiveDigTokenPlanningPorts` now carries the focused

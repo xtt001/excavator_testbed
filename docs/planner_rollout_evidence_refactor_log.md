@@ -7582,6 +7582,78 @@ Each completed refactor round should append:
   services / shared backend decision input/facts/factory; BT/VLM/LLM backends
   remain unsupported fail-fast.
 
+### 2026-06-23 Phase 9.91 Move Boundary-Event Tick Source Boundary
+
+- Scope: moved the live boundary-event tick source out of direct
+  `PrimitivePlannerACTPolicy` implementation and into a focused runtime
+  service. This is a mainline tick-preparation refactor for previous-action
+  gating and boundary-detector input projection, not a boundary detector
+  algorithm, dig-progress, bootstrap, coverage, token, or parked-path behavior
+  change.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 154]`, HEAD
+  `e93367b267aeec01db6cf1ea0e8fdce3eb52db22`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, commit, docs edit, or
+  remote write was used by the executor.
+- Added `PrimitiveBoundaryEventRuntimePorts` and
+  `PrimitiveBoundaryEventRuntimeService` in
+  `testbed/planner/primitive_boundary_event.py`.
+- The service reads `PrimitiveExecutionRuntimeState.prev_action`, skips
+  boundary detector update and returns `None` when the previous action is
+  absent, and otherwise projects typed `PrimitiveObservationFacts` into
+  `boundary_detector.update(env_state, action, qpos, reward_phase,
+  task_step_successes, task_metrics)`.
+- `PrimitivePlannerACTPolicy._tick_boundary_event(...)` remains callable as a
+  compatibility facade. It now delegates through the focused execution state
+  owner, the existing boundary detector object, and a typed
+  `PrimitiveObservationFacts.from_obs(obs, action_dim=...)` provider instead of
+  assembling raw detector arguments in the large policy.
+- Focused tests cover port shape, previous-action gating, detector input
+  projection/defaults, event passthrough, and policy facade sharing the same
+  execution state owner and boundary detector object.
+- Line-count impact: `testbed/policies/hybrid/primitive_planner.py` grew from
+  4626 to 4640 lines because it now imports and builds typed boundary-event
+  runtime ports, while `testbed/planner/primitive_boundary_event.py` adds 53
+  lines for the focused boundary.
+- Preserved behavior: execution driver still produces boundary events before
+  switch-reason reset, dig-progress update, and decision; previous-action gate,
+  detector update arguments, env-state/qpos fallback through typed observation
+  facts, reward/task facts passthrough, debug/summary/trace schemas, branch
+  order, reason strings, token schema, reset timing, backend unsupported
+  fail-fast, parked `pre_dig_align`, parked `cell_entry`, and removed 5P
+  runtime status remain unchanged.
+- Explicit non-goals: no `BoundaryDetector` metrics/event algorithm change, no
+  execution-driver ordering change, no prev-action finalization timing change,
+  no dig-progress move, no bootstrap change, no coverage first-dig qpos delta
+  move, no policy observation assembler change, no `pre_dig_align` or
+  `cell_entry` promotion/deletion/refactor, and no backend support expansion.
+- TDD red result from executor callback:
+  `python -m pytest -q tests/test_primitive_boundary_event.py tests/test_primitive_execution_state.py tests/test_primitive_execution_driver.py`
+  failed during collection with `ModuleNotFoundError: No module named
+  'testbed.planner.primitive_boundary_event'`, proving the focused
+  boundary-event runtime boundary did not exist before implementation.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_boundary_event.py tests/test_primitive_execution_state.py tests/test_primitive_execution_driver.py`
+  returned `14 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `101 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or first_dig_policy_for_cycle_zero or coverage_decision_trace"`
+  returned `3 passed, 116 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was the bounded boundary-event tick source move, not
+  the safest smallest cleanup. It did not add a pass-through wrapper, anemic
+  service, planner-self port, broad config bag, generic blackboard, or
+  parked-path promotion. Residual `pre_dig_align` and parked `cell_entry` were
+  not touched, promoted, deleted, or refactored. Current maturity remains
+  default legacy FSM backendified with focused services / shared backend
+  decision input/facts/factory; BT/VLM/LLM backends remain unsupported
+  fail-fast.
+
 ### 2026-06-23 Phase 9.86 Move Coverage Bucket Snapshot Fact-Source Boundary
 
 - Scope: moved the live coverage decision-event bucket snapshot observation

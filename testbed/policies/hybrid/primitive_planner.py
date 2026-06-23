@@ -52,6 +52,10 @@ from testbed.planner.primitive_backend import (
     LegacyFSMDecisionBackendFactory,
     LegacyFSMRequestedDecisionBackend,
 )
+from testbed.planner.primitive_boundary_event import (
+    PrimitiveBoundaryEventRuntimePorts,
+    PrimitiveBoundaryEventRuntimeService,
+)
 from testbed.planner.primitive_capabilities import (
     BootstrapStatus,
     CarryTransitionStatus,
@@ -1575,16 +1579,26 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _tick_boundary_event(self, obs: dict) -> Any | None:
-        if self._prev_action is not None:
-            return self.boundary_detector.update(
-                env_state=obs.get("env_state", np.zeros(13, dtype=np.float32)),
-                action=self._prev_action,
-                qpos=obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
-                reward_phase=obs.get("reward_phase"),
-                task_step_successes=obs.get("task_step_successes"),
-                task_metrics=obs.get("task_metrics"),
-            )
-        return None
+        return self._primitive_boundary_event_runtime_service().update(obs)
+
+    def _primitive_boundary_event_runtime_service(
+        self,
+    ) -> PrimitiveBoundaryEventRuntimeService:
+        return PrimitiveBoundaryEventRuntimeService.from_ports(
+            self._primitive_boundary_event_runtime_ports()
+        )
+
+    def _primitive_boundary_event_runtime_ports(
+        self,
+    ) -> PrimitiveBoundaryEventRuntimePorts:
+        return PrimitiveBoundaryEventRuntimePorts(
+            execution_state=self._primitive_execution_runtime_state(),
+            boundary_detector=self.boundary_detector,
+            observation_facts=lambda obs: PrimitiveObservationFacts.from_obs(
+                obs,
+                action_dim=int(self.action_dim),
+            ),
+        )
 
     def _reset_tick_switch_reason(self) -> None:
         self._switch_reason = ""
