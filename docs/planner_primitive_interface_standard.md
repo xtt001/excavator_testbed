@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.55 implementation. It is intentionally
+compares them with the current Phase 9.56 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -42,8 +42,8 @@ Current maturity:
   entry-close cache, next-dig-event flag, start-envelope gate cache, and live
   return report/status projection**
 - cycle/progress runtime mutable state owner: **achieved for live 4P
-  dig-progress, dump-hold, transition-count, cycle-index, and dump-deposit
-  baseline state**
+  dig-progress, dump-hold, transition-count, cycle-index, dump-deposit
+  baseline state, and live cycle/progress report/finalization projection**
 - scripted bootstrap runtime state/service owner: **achieved for
   scripted-qpos bootstrap counters, target-reached/timeout checks, and PD
   bootstrap action generation**
@@ -486,7 +486,8 @@ Current boundary:
   projection from explicit start-envelope config facts.
 - `PrimitiveCycleRuntimeState` owns confirmed-live 4P cycle/progress state:
   dig progress counters, dump hold counters, transition counters, cycle index,
-  and dump-start deposited-mass baseline.
+  and dump-start deposited-mass baseline. It also owns live cycle/progress
+  report/finalization projection through `PrimitiveCycleReportStatus`.
 - `PrimitiveScriptedBootstrapRuntimeState` owns scripted bootstrap counters:
   step count, target-reached hold count, and timeout count.
 - `PrimitiveScriptedBootstrapRuntimeService` owns scripted-qpos bootstrap

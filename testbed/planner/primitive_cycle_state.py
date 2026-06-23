@@ -5,6 +5,37 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+@dataclass(frozen=True)
+class PrimitiveCycleReportStatus:
+    """Projected cycle/progress runtime facts for reports and finalization."""
+
+    completed_transition_count: int
+    transition_timeout_count: int
+    dump_ready_hold_count: int
+    dump_done_hold_count: int
+    primitive_cycle_index: int
+    dig_step_count: int
+    dig_best_mass_kg: float
+    dig_mass_plateau_count: int
+    dig_to_carry_reason: str
+    dig_bad_replan_count: int
+    dig_exit_guard_replan_count: int
+
+    def dig_progress_debug_fields(self) -> dict[str, int | float | str]:
+        """Return the public dig-progress debug report field projection."""
+
+        return {
+            "dig_step_count": int(self.dig_step_count),
+            "dig_best_mass_kg": float(self.dig_best_mass_kg),
+            "dig_mass_plateau_count": int(self.dig_mass_plateau_count),
+            "dig_to_carry_reason": str(self.dig_to_carry_reason),
+            "dig_bad_replan_count": int(self.dig_bad_replan_count),
+            "dig_exit_guard_replan_count": int(
+                self.dig_exit_guard_replan_count
+            ),
+        }
+
+
 @dataclass
 class PrimitiveCycleRuntimeState:
     """Own mutable 4P mainline cycle/progress counters and mirrors."""
@@ -49,6 +80,23 @@ class PrimitiveCycleRuntimeState:
     def increment_dig_exit_guard_replan_count(self) -> None:
         self.dig_exit_guard_replan_count += 1
 
+    def to_report_status(self) -> PrimitiveCycleReportStatus:
+        """Project live cycle/progress state for reports and finalization."""
+
+        return PrimitiveCycleReportStatus(
+            completed_transition_count=int(self.completed_transition_count),
+            transition_timeout_count=int(self.transition_timeout_count),
+            dump_ready_hold_count=int(self.dump_ready_hold_count),
+            dump_done_hold_count=int(self.dump_done_hold_count),
+            primitive_cycle_index=int(self.cycle_index),
+            dig_step_count=int(self.dig_step_count),
+            dig_best_mass_kg=float(self.dig_best_mass_kg),
+            dig_mass_plateau_count=int(self.dig_mass_plateau_count),
+            dig_to_carry_reason=str(self.dig_to_carry_reason),
+            dig_bad_replan_count=int(self.dig_bad_replan_count),
+            dig_exit_guard_replan_count=int(self.dig_exit_guard_replan_count),
+        )
+
     def reset_dig_progress(self) -> None:
         self.dig_step_count = 0
         self.dig_best_mass_kg = 0.0
@@ -72,4 +120,4 @@ class PrimitiveCycleRuntimeState:
         self.dig_mass_plateau_count += 1
 
 
-__all__ = ["PrimitiveCycleRuntimeState"]
+__all__ = ["PrimitiveCycleReportStatus", "PrimitiveCycleRuntimeState"]

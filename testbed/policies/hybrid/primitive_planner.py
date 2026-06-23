@@ -169,7 +169,10 @@ from testbed.planner.primitive_runtime_kernel import (
     PrimitivePlannerRuntimeKernel,
     PrimitivePlannerRuntimeKernelPorts,
 )
-from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive_cycle_state import (
+    PrimitiveCycleReportStatus,
+    PrimitiveCycleRuntimeState,
+)
 from testbed.planner.primitive_execution_state import PrimitiveExecutionRuntimeState
 from testbed.planner.primitive_return_state import (
     PrimitiveReturnReportStatus,
@@ -531,6 +534,9 @@ class PrimitivePlannerACTPolicy(Policy):
             state = PrimitiveCycleRuntimeState.fresh()
             self.__dict__["_cycle_state"] = state
         return state
+
+    def _cycle_report_status(self) -> PrimitiveCycleReportStatus:
+        return self._primitive_cycle_runtime_state().to_report_status()
 
     @property
     def _dump_ready_hold_count(self) -> int:
@@ -2139,14 +2145,7 @@ class PrimitivePlannerACTPolicy(Policy):
         }
 
     def _debug_report_dig_progress_fields(self) -> dict[str, Any]:
-        return {
-            "dig_step_count": int(self._dig_step_count),
-            "dig_best_mass_kg": float(self._dig_best_mass_kg),
-            "dig_mass_plateau_count": int(self._dig_mass_plateau_count),
-            "dig_to_carry_reason": str(self._dig_to_carry_reason),
-            "dig_bad_replan_count": int(self._dig_bad_replan_count),
-            "dig_exit_guard_replan_count": int(self._dig_exit_guard_replan_count),
-        }
+        return self._cycle_report_status().dig_progress_debug_fields()
 
     def _debug_report_pre_dig_align_fields(self) -> dict[str, Any]:
         return {
@@ -2227,17 +2226,18 @@ class PrimitivePlannerACTPolicy(Policy):
         return PrimitiveRolloutSummaryBuilder()
 
     def _rollout_summary_inputs(self) -> PrimitiveRolloutSummaryInputs:
+        cycle_status = self._cycle_report_status()
         return_status = self._return_report_status()
         return PrimitiveRolloutSummaryInputs(
             transition_source=TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
             transition_policy_mode=TRANSITION_POLICY_MODE_PRIMITIVE,
             transition_fallback_count=0,
             transition_fallback_reason="",
-            transition_timeout_count=int(self._transition_timeout_count),
-            completed_transition_count=int(self._completed_transition_count),
+            transition_timeout_count=cycle_status.transition_timeout_count,
+            completed_transition_count=cycle_status.completed_transition_count,
             dump_done_use_boundary_event=bool(self.dump_done_use_boundary_event),
             primitive_final_skill=str(self._skill_name),
-            primitive_cycle_index=int(self._cycle_index),
+            primitive_cycle_index=cycle_status.primitive_cycle_index,
             cell_entry_enabled=bool(self.cell_entry_enabled),
             cell_entry_trace_count=int(len(self._cell_entry_trace)),
             dig_cut_token_dim=int(DIG_CUT_TOKEN_DIM),
@@ -2322,8 +2322,10 @@ class PrimitivePlannerACTPolicy(Policy):
             pre_dig_align_timeout_count=int(self._pre_dig_align_timeout_count),
             pre_dig_align_completed_count=int(self._pre_dig_align_completed_count),
             pre_dig_align_replan_count=int(self._pre_dig_align_replan_count),
-            dig_bad_replan_count=int(self._dig_bad_replan_count),
-            dig_exit_guard_replan_count=int(self._dig_exit_guard_replan_count),
+            dig_bad_replan_count=cycle_status.dig_bad_replan_count,
+            dig_exit_guard_replan_count=(
+                cycle_status.dig_exit_guard_replan_count
+            ),
         )
 
     def planner_trace(self) -> dict[str, object]:
@@ -5634,6 +5636,7 @@ class PrimitivePlannerACTPolicy(Policy):
         transition_timeout: bool,
         transition_completed: bool,
     ) -> PrimitiveTickFinalizationInputs:
+        cycle_status = self._cycle_report_status()
         return PrimitiveTickFinalizationInputs(
             skill_name=str(self._skill_name),
             skill_ids=PRIMITIVE_SKILL_IDS,
@@ -5643,11 +5646,11 @@ class PrimitivePlannerACTPolicy(Policy):
             transition_skill_names=("return", PRE_DIG_ALIGN_SKILL_NAME),
             transition_timeout=bool(transition_timeout),
             transition_completed=bool(transition_completed),
-            completed_transition_count=int(self._completed_transition_count),
-            transition_timeout_count=int(self._transition_timeout_count),
-            dump_ready_hold_count=int(self._dump_ready_hold_count),
-            dump_done_hold_count=int(self._dump_done_hold_count),
-            primitive_cycle_index=int(self._cycle_index),
+            completed_transition_count=cycle_status.completed_transition_count,
+            transition_timeout_count=cycle_status.transition_timeout_count,
+            dump_ready_hold_count=cycle_status.dump_ready_hold_count,
+            dump_done_hold_count=cycle_status.dump_done_hold_count,
+            primitive_cycle_index=cycle_status.primitive_cycle_index,
             work_hybrid_mode=HYBRID_MODE_WORK,
             transition_hybrid_mode=HYBRID_MODE_TRANSITION,
         )

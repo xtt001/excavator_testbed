@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from types import MethodType
+from types import MethodType, SimpleNamespace
 
 import numpy as np
 
-from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive_cycle_state import (
+    PrimitiveCycleReportStatus,
+    PrimitiveCycleRuntimeState,
+)
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
@@ -294,3 +297,174 @@ def test_tick_finalization_and_report_inputs_read_cycle_state_owner() -> None:
     assert snapshot.dump_ready_hold_count == 9
     assert snapshot.dump_done_hold_count == 10
     assert snapshot.primitive_cycle_index == 11
+
+
+def test_cycle_runtime_state_projects_fresh_report_status_defaults() -> None:
+    state = PrimitiveCycleRuntimeState.fresh()
+
+    status = state.to_report_status()
+
+    assert status.completed_transition_count == 0
+    assert status.transition_timeout_count == 0
+    assert status.dump_ready_hold_count == 0
+    assert status.dump_done_hold_count == 0
+    assert status.primitive_cycle_index == 0
+    assert status.dig_step_count == 0
+    assert status.dig_best_mass_kg == 0.0
+    assert status.dig_mass_plateau_count == 0
+    assert status.dig_to_carry_reason == ""
+    assert status.dig_bad_replan_count == 0
+    assert status.dig_exit_guard_replan_count == 0
+    assert status.dig_progress_debug_fields() == {
+        "dig_step_count": 0,
+        "dig_best_mass_kg": 0.0,
+        "dig_mass_plateau_count": 0,
+        "dig_to_carry_reason": "",
+        "dig_bad_replan_count": 0,
+        "dig_exit_guard_replan_count": 0,
+    }
+
+
+def test_cycle_runtime_state_projects_populated_report_status() -> None:
+    state = PrimitiveCycleRuntimeState.fresh()
+    state.completed_transition_count = 1
+    state.transition_timeout_count = 2
+    state.dump_ready_hold_count = 3
+    state.dump_done_hold_count = 4
+    state.cycle_index = 5
+    state.dig_step_count = 6
+    state.dig_best_mass_kg = 7.5
+    state.dig_mass_plateau_count = 8
+    state.dig_to_carry_reason = "loaded"
+    state.dig_bad_replan_count = 9
+    state.dig_exit_guard_replan_count = 10
+
+    status = state.to_report_status()
+
+    assert status == PrimitiveCycleReportStatus(
+        completed_transition_count=1,
+        transition_timeout_count=2,
+        dump_ready_hold_count=3,
+        dump_done_hold_count=4,
+        primitive_cycle_index=5,
+        dig_step_count=6,
+        dig_best_mass_kg=7.5,
+        dig_mass_plateau_count=8,
+        dig_to_carry_reason="loaded",
+        dig_bad_replan_count=9,
+        dig_exit_guard_replan_count=10,
+    )
+    assert status.dig_progress_debug_fields() == {
+        "dig_step_count": 6,
+        "dig_best_mass_kg": 7.5,
+        "dig_mass_plateau_count": 8,
+        "dig_to_carry_reason": "loaded",
+        "dig_bad_replan_count": 9,
+        "dig_exit_guard_replan_count": 10,
+    }
+
+
+def test_policy_dig_progress_debug_facade_delegates_to_cycle_report_status() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    state = policy._primitive_cycle_runtime_state()
+    state.dig_step_count = 6
+    state.dig_best_mass_kg = 7.5
+    state.dig_mass_plateau_count = 8
+    state.dig_to_carry_reason = "loaded"
+    state.dig_bad_replan_count = 9
+    state.dig_exit_guard_replan_count = 10
+
+    assert (
+        policy._debug_report_dig_progress_fields()
+        == state.to_report_status().dig_progress_debug_fields()
+    )
+
+
+def test_policy_rollout_summary_inputs_use_cycle_report_status_projection() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    cycle_status = PrimitiveCycleReportStatus(
+        completed_transition_count=11,
+        transition_timeout_count=12,
+        dump_ready_hold_count=13,
+        dump_done_hold_count=14,
+        primitive_cycle_index=15,
+        dig_step_count=16,
+        dig_best_mass_kg=17.5,
+        dig_mass_plateau_count=18,
+        dig_to_carry_reason="loaded",
+        dig_bad_replan_count=19,
+        dig_exit_guard_replan_count=20,
+    )
+    policy._cycle_report_status = MethodType(lambda self: cycle_status, policy)
+    policy._return_report_status = MethodType(
+        lambda self: SimpleNamespace(
+            return_to_dig_entry_error_m=0.0,
+            return_to_dig_entry_close=True,
+            return_next_dig_event_seen=False,
+            return_to_dig_start_envelope_gate_enabled=False,
+            return_to_dig_start_envelope_direct_handoff_enabled=False,
+            return_to_dig_start_envelope_ready=True,
+            return_to_dig_start_envelope_plane_depth_mode="range",
+            return_to_dig_start_envelope_local_depth_tolerance_m=0.0,
+            return_to_dig_start_envelope_error=0.0,
+        ),
+        policy,
+    )
+    policy.dump_done_use_boundary_event = False
+    policy.cell_entry_enabled = False
+    policy.return_to_dig_max_entry_error_m = 0.5
+    policy.dig_cut_planner_mode = "operator_prior"
+    policy.dig_cut_prior_id = "default"
+    policy.dig_failed_replan_next_skill = "dig"
+    policy.coverage_multi_pass_enabled = False
+    policy.coverage_use_env_removed_depth = False
+    policy.coverage_candidate_layout = "corridor_grid"
+    policy.coverage_first_dig_strategy = "best_score"
+    policy.coverage_first_dig_preferred_corridor_id = None
+    policy.coverage_first_dig_max_entry_distance_m = None
+    policy.coverage_first_dig_qpos_delta_weight = 1.0
+    policy.pre_dig_align_enabled = False
+    policy.pre_dig_align_first_dig_only = True
+    policy.pre_dig_align_replan_after_failed_dig = False
+    policy.pre_dig_align_surface_guard_enabled = False
+
+    inputs = policy._rollout_summary_inputs()
+
+    assert inputs.transition_timeout_count == 12
+    assert inputs.completed_transition_count == 11
+    assert inputs.primitive_cycle_index == 15
+    assert inputs.dig_bad_replan_count == 19
+    assert inputs.dig_exit_guard_replan_count == 20
+
+
+def test_policy_tick_finalization_inputs_use_cycle_report_status_projection() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    cycle_status = PrimitiveCycleReportStatus(
+        completed_transition_count=21,
+        transition_timeout_count=22,
+        dump_ready_hold_count=23,
+        dump_done_hold_count=24,
+        primitive_cycle_index=25,
+        dig_step_count=26,
+        dig_best_mass_kg=27.5,
+        dig_mass_plateau_count=28,
+        dig_to_carry_reason="loaded",
+        dig_bad_replan_count=29,
+        dig_exit_guard_replan_count=30,
+    )
+    policy._cycle_report_status = MethodType(lambda self: cycle_status, policy)
+    policy._skill_name = "dump"
+    policy._switch_reason = "carry_to_dump"
+    policy.primitive_checkpoint_paths = {"dump": "dump.ckpt"}
+    policy._first_dig_policy_active = MethodType(lambda self: False, policy)
+
+    inputs = policy._tick_finalization_inputs(
+        transition_timeout=False,
+        transition_completed=True,
+    )
+
+    assert inputs.completed_transition_count == 21
+    assert inputs.transition_timeout_count == 22
+    assert inputs.dump_ready_hold_count == 23
+    assert inputs.dump_done_hold_count == 24
+    assert inputs.primitive_cycle_index == 25

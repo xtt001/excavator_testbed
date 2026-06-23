@@ -72,7 +72,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_pre_dig_align_state.py` | 46 | parked pre-dig-align compatibility/report runtime state owner and reset defaults |
 | `testbed/planner/primitive_token_state.py` | 135 | mutable dig/return token runtime state owner, reset defaults, and live token-status projection |
 | `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
-| `testbed/planner/primitive_cycle_state.py` | 75 | mutable live 4P cycle/progress runtime state owner and reset defaults |
+| `testbed/planner/primitive_cycle_state.py` | 123 | mutable live 4P cycle/progress runtime state owner, reset defaults, and live report/finalization projection |
 | `testbed/planner/primitive_scripted_bootstrap.py` | 116 | scripted bootstrap runtime state, readiness checks, timeout, and PD action service |
 | `testbed/planner/primitive_coverage_reports.py` | 282 | coverage corridor debug, coverage decision-event, and coverage debug-field payload builders |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
@@ -992,7 +992,7 @@ facades over the same owner. This state owner does not absorb return-target
 token fields, coverage fields, return handoff algorithms, or direct-handoff
 effect sequencing.
 
-Current status note after Phase 9.46: mutable confirmed-live 4P cycle/progress
+Current status note after Phase 9.56: mutable confirmed-live 4P cycle/progress
 state is now owned by `PrimitiveCycleRuntimeState` in
 `testbed/planner/primitive_cycle_state.py`. Reset creates a fresh cycle state
 and applies `_cycle_state` before legacy cycle/progress private field names;
@@ -1000,9 +1000,13 @@ fields such as `_dump_ready_hold_count`, `_dump_done_hold_count`,
 `_dig_step_count`, `_dig_best_mass_kg`, `_dig_to_carry_reason`,
 `_completed_transition_count`, `_transition_timeout_count`, `_cycle_index`, and
 `_dump_start_deposited_mass_kg` are now property-backed compatibility facades
-over the same owner. The owner does not absorb active skill/switch reason,
+over the same owner. `PrimitiveCycleRuntimeState.to_report_status()` and
+`PrimitiveCycleReportStatus.dig_progress_debug_fields()` now own live
+cycle/progress report/finalization projection for debug, rollout summary, and
+tick-finalization inputs. The owner does not absorb active skill/switch reason,
 previous action, token state, return state, coverage state, pre-dig-align
-state, cell-entry compatibility state, backend facts, or report schemas.
+state, cell-entry compatibility state, backend facts, dig-progress update
+algorithms, or public report schema assembly.
 
 Current status note after Phase 9.47: scripted bootstrap runtime state and
 runtime rules are now owned by `PrimitiveScriptedBootstrapRuntimeState` and
@@ -1116,6 +1120,18 @@ key names, rollout summary fields, bool/string/float projection, `NaN`
 behavior, checks dict copy projection, return handoff algorithms, start-
 envelope gate evaluation, backend fail-fast, and removed 5P runtime status
 remain unchanged.
+
+Current status note after Phase 9.56: live cycle/progress report/finalization
+projection is now owned by `PrimitiveCycleRuntimeState.to_report_status()` and
+`PrimitiveCycleReportStatus.dig_progress_debug_fields()` in
+`testbed/planner/primitive_cycle_state.py`.
+`PrimitivePlannerACTPolicy._debug_report_dig_progress_fields()` remains a thin
+compatibility facade, while `_rollout_summary_inputs()` and
+`_tick_finalization_inputs()` reuse the same cycle status projection for
+transition counts, dump-hold counts, cycle index, and dig replan counters.
+Public dig-progress debug keys, rollout summary values, tick finalization input
+values, dig-progress update algorithms, skill lifecycle behavior, reset
+behavior, backend fail-fast, and removed 5P runtime status remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

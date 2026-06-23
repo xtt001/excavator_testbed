@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.47: the default 4P mainline branch chain no longer
+Current status after Phase 9.56: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -76,7 +76,9 @@ state owner. Mainline cycle/progress state is now owned by
 transition timeout/completion counters, cycle index, and dump-start deposit
 baseline are no longer independent policy attributes. The policy keeps legacy
 private cycle/progress field names as property-backed compatibility facades over
-that cycle state owner. Scripted bootstrap runtime state and rules are now
+that cycle state owner, and live cycle/progress report/finalization projection
+now lives with that owner through `PrimitiveCycleReportStatus`. Scripted
+bootstrap runtime state and rules are now
 owned by `PrimitiveScriptedBootstrapRuntimeState` and
 `PrimitiveScriptedBootstrapRuntimeService`: scripted-qpos enabled detection,
 target-reached hold gating, timeout completion, and PD bootstrap action
@@ -882,9 +884,14 @@ increments, dig progress reset, and atomic dig progress update. Reset creates
 one fresh cycle state and applies it before legacy private cycle/progress field
 names, so capability provider, effect applier, tick finalization, and report
 paths keep their old compatibility names while resolving to the same state
-owner. Active skill, switch reason, previous action, token state, return state,
-coverage state, parked `pre_dig_align`, and `cell_entry` compatibility state
-remain outside this owner.
+owner. Phase 9.56 extends the same owner with
+`PrimitiveCycleRuntimeState.to_report_status()` and
+`PrimitiveCycleReportStatus.dig_progress_debug_fields()`, so debug
+dig-progress fields, rollout summary transition/cycle fields, and tick
+finalization cycle inputs all use one live cycle/progress projection. Active
+skill, switch reason, previous action, token state, return state, coverage
+state, parked `pre_dig_align`, `cell_entry` compatibility state, dig-progress
+update algorithms, and public report schema assembly remain outside this owner.
 
 Phase 9.47 introduces `PrimitiveScriptedBootstrapRuntimeState` and
 `PrimitiveScriptedBootstrapRuntimeService` in
@@ -1012,6 +1019,18 @@ key names, rollout summary fields, bool/string/float projection, `NaN`
 behavior, checks dict copy projection, return handoff algorithms, start-
 envelope gate evaluation, backend fail-fast behavior, or removed 5P runtime
 status.
+
+Phase 9.56 extends `PrimitiveCycleRuntimeState` in
+`testbed/planner/primitive_cycle_state.py` with `to_report_status()` and adds
+`PrimitiveCycleReportStatus.dig_progress_debug_fields()`. Live cycle/progress
+report and finalization projection now lives with the cycle runtime owner,
+while `PrimitivePlannerACTPolicy._debug_report_dig_progress_fields()` remains a
+thin facade and `_rollout_summary_inputs()` / `_tick_finalization_inputs()`
+reuse the same status projection for transition counts, dump-hold counts,
+cycle index, and dig replan counters. This phase does not change public
+dig-progress debug keys, rollout summary values, tick finalization input
+values, dig-progress update algorithms, skill lifecycle behavior, reset
+behavior, backend fail-fast behavior, or removed 5P runtime status.
 
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in

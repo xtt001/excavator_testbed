@@ -5853,3 +5853,67 @@ Each completed refactor round should append:
   reflection. It follows the reflection's direction correction by targeting a
   live return report/facts boundary instead of another parked compatibility
   micro-slice.
+
+### 2026-06-23 Phase 9.56 Move Cycle Report Status Into Cycle Runtime State
+
+- Scope: extended `PrimitiveCycleRuntimeState` in
+  `testbed/planner/primitive_cycle_state.py` so the live cycle/progress runtime
+  owner also owns cycle/progress report and finalization projection for debug,
+  rollout summary, and tick finalization consumers.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 119]`, HEAD
+  before this round `9fd9a053396505df0cdfa63672236c29b839bc11`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- Added frozen `PrimitiveCycleReportStatus` carrying live cycle/progress report
+  and finalization fields.
+- Added `PrimitiveCycleRuntimeState.to_report_status()`, projecting existing
+  cycle/progress counters from the runtime owner.
+- Added `PrimitiveCycleReportStatus.dig_progress_debug_fields()` for the
+  existing public dig-progress debug mapping.
+- `PrimitivePlannerACTPolicy._debug_report_dig_progress_fields()`,
+  `_rollout_summary_inputs()`, and `_tick_finalization_inputs()` now reuse the
+  same cycle report status projection for transition counts, dump-hold counts,
+  cycle index, and dig replan counters.
+- Preserved behavior: public dig-progress debug keys, rollout summary values,
+  tick finalization input values, int/float/string projection, dig-progress
+  update algorithms, skill lifecycle behavior, reset behavior, backend
+  fail-fast behavior, and removed 5P runtime status are unchanged.
+- Explicit non-goals: no dig-progress algorithm move, no branch order or reason
+  string change, no public debug/summary/finalization schema change, no
+  token/return/coverage/cell-entry/pre-dig-align algorithm change, no backend
+  selection change, no generic blackboard or pass-through report service.
+- TDD red result from executor callback: after focused tests were added, the
+  first run of `python -m pytest -q tests/test_primitive_cycle_state.py`
+  failed as expected with `ImportError` because `PrimitiveCycleReportStatus`
+  did not yet exist in `testbed.planner.primitive_cycle_state`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_cycle_state.py` returned
+  `13 passed`;
+  `python -m pytest -q tests/test_primitive_cycle_state.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_tick_finalization.py`
+  returned `29 passed`;
+  `python -m pytest -q tests/test_primitive_skill_lifecycle.py tests/test_primitive_execution_driver.py tests/test_primitive_runtime_kernel.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or first_dig_policy_for_cycle_zero or dig_cut_tokens or return_to_dig"`
+  returned `6 passed, 113 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_cycle_state.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_tick_finalization.py`
+  returned `29 passed`;
+  `python -m pytest -q tests/test_primitive_skill_lifecycle.py tests/test_primitive_execution_driver.py tests/test_primitive_runtime_kernel.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or first_dig_policy_for_cycle_zero or dig_cut_tokens or return_to_dig"`
+  returned `6 passed, 113 deselected`; compileall for touched modules passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It moved a live cycle/progress report/finalization
+  projection into the focused cycle runtime owner and was not a tiny parked
+  compatibility dict or pass-through facade. No anemic service or generic
+  blackboard was created.
+- Audit note: this is implementation round 2 after the latest three-iteration
+  reflection. It follows the corrected direction by targeting a live
+  cycle/progress report/facts boundary instead of another parked compatibility
+  micro-slice.
