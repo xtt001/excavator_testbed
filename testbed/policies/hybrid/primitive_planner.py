@@ -162,6 +162,7 @@ from testbed.planner.primitive_runtime_kernel import (
     PrimitivePlannerRuntimeKernel,
     PrimitivePlannerRuntimeKernelPorts,
 )
+from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 from testbed.planner import primitive_adapter_config as adapter_config
@@ -467,6 +468,117 @@ class PrimitivePlannerACTPolicy(Policy):
     ) -> None:
         for field_name, value in reset_state.as_policy_field_updates().items():
             setattr(self, field_name, value)
+
+    def _primitive_cycle_runtime_state(self) -> PrimitiveCycleRuntimeState:
+        state = self.__dict__.get("_cycle_state")
+        if state is None:
+            state = PrimitiveCycleRuntimeState.fresh()
+            self.__dict__["_cycle_state"] = state
+        return state
+
+    @property
+    def _dump_ready_hold_count(self) -> int:
+        return int(self._primitive_cycle_runtime_state().dump_ready_hold_count)
+
+    @_dump_ready_hold_count.setter
+    def _dump_ready_hold_count(self, value: int) -> None:
+        self._primitive_cycle_runtime_state().dump_ready_hold_count = int(value)
+
+    @property
+    def _dump_done_hold_count(self) -> int:
+        return int(self._primitive_cycle_runtime_state().dump_done_hold_count)
+
+    @_dump_done_hold_count.setter
+    def _dump_done_hold_count(self, value: int) -> None:
+        self._primitive_cycle_runtime_state().dump_done_hold_count = int(value)
+
+    @property
+    def _dig_step_count(self) -> int:
+        return int(self._primitive_cycle_runtime_state().dig_step_count)
+
+    @_dig_step_count.setter
+    def _dig_step_count(self, value: int) -> None:
+        self._primitive_cycle_runtime_state().dig_step_count = int(value)
+
+    @property
+    def _dig_best_mass_kg(self) -> float:
+        return float(self._primitive_cycle_runtime_state().dig_best_mass_kg)
+
+    @_dig_best_mass_kg.setter
+    def _dig_best_mass_kg(self, value: float) -> None:
+        self._primitive_cycle_runtime_state().dig_best_mass_kg = float(value)
+
+    @property
+    def _dig_mass_plateau_count(self) -> int:
+        return int(self._primitive_cycle_runtime_state().dig_mass_plateau_count)
+
+    @_dig_mass_plateau_count.setter
+    def _dig_mass_plateau_count(self, value: int) -> None:
+        self._primitive_cycle_runtime_state().dig_mass_plateau_count = int(value)
+
+    @property
+    def _dig_to_carry_reason(self) -> str:
+        return str(self._primitive_cycle_runtime_state().dig_to_carry_reason)
+
+    @_dig_to_carry_reason.setter
+    def _dig_to_carry_reason(self, value: str) -> None:
+        self._primitive_cycle_runtime_state().dig_to_carry_reason = str(value)
+
+    @property
+    def _dig_bad_replan_count(self) -> int:
+        return int(self._primitive_cycle_runtime_state().dig_bad_replan_count)
+
+    @_dig_bad_replan_count.setter
+    def _dig_bad_replan_count(self, value: int) -> None:
+        self._primitive_cycle_runtime_state().dig_bad_replan_count = int(value)
+
+    @property
+    def _dig_exit_guard_replan_count(self) -> int:
+        return int(
+            self._primitive_cycle_runtime_state().dig_exit_guard_replan_count
+        )
+
+    @_dig_exit_guard_replan_count.setter
+    def _dig_exit_guard_replan_count(self, value: int) -> None:
+        state = self._primitive_cycle_runtime_state()
+        state.dig_exit_guard_replan_count = int(value)
+
+    @property
+    def _completed_transition_count(self) -> int:
+        return int(self._primitive_cycle_runtime_state().completed_transition_count)
+
+    @_completed_transition_count.setter
+    def _completed_transition_count(self, value: int) -> None:
+        state = self._primitive_cycle_runtime_state()
+        state.completed_transition_count = int(value)
+
+    @property
+    def _transition_timeout_count(self) -> int:
+        return int(self._primitive_cycle_runtime_state().transition_timeout_count)
+
+    @_transition_timeout_count.setter
+    def _transition_timeout_count(self, value: int) -> None:
+        state = self._primitive_cycle_runtime_state()
+        state.transition_timeout_count = int(value)
+
+    @property
+    def _cycle_index(self) -> int:
+        return int(self._primitive_cycle_runtime_state().cycle_index)
+
+    @_cycle_index.setter
+    def _cycle_index(self, value: int) -> None:
+        self._primitive_cycle_runtime_state().cycle_index = int(value)
+
+    @property
+    def _dump_start_deposited_mass_kg(self) -> float:
+        return float(
+            self._primitive_cycle_runtime_state().dump_start_deposited_mass_kg
+        )
+
+    @_dump_start_deposited_mass_kg.setter
+    def _dump_start_deposited_mass_kg(self, value: float) -> None:
+        state = self._primitive_cycle_runtime_state()
+        state.dump_start_deposited_mass_kg = float(value)
 
     def _primitive_return_runtime_state(self) -> PrimitiveReturnRuntimeState:
         state = self.__dict__.get("_return_state")
@@ -986,7 +1098,8 @@ class PrimitivePlannerACTPolicy(Policy):
             self._return_step_count += 1
             if self.return_max_steps > 0 and self._return_step_count >= self.return_max_steps:
                 transition_timeout = True
-                self._transition_timeout_count += 1
+                state = self._primitive_cycle_runtime_state()
+                state.increment_transition_timeout_count()
         return transition_timeout
 
     def _dispatch_tick_action(self, obs: dict) -> np.ndarray:
@@ -1353,10 +1466,10 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _set_dump_ready_hold_count(self, value: int) -> None:
-        self._dump_ready_hold_count = int(value)
+        self._primitive_cycle_runtime_state().set_dump_ready_hold_count(value)
 
     def _set_dump_start_deposited_mass(self, value: float) -> None:
-        self._dump_start_deposited_mass_kg = float(value)
+        self._primitive_cycle_runtime_state().set_dump_start_deposited_mass_kg(value)
 
     def _dump_transition_status_for_backend(
         self,
@@ -1369,7 +1482,7 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _set_dump_done_hold_count(self, value: int) -> None:
-        self._dump_done_hold_count = int(value)
+        self._primitive_cycle_runtime_state().set_dump_done_hold_count(value)
 
     def _return_transition_status_for_backend(
         self,
@@ -1385,8 +1498,7 @@ class PrimitivePlannerACTPolicy(Policy):
         self._primitive_return_runtime_state().mark_next_dig_event_seen()
 
     def _complete_return_transition_for_backend(self) -> None:
-        self._completed_transition_count += 1
-        self._cycle_index += 1
+        self._primitive_cycle_runtime_state().complete_return_transition()
 
     def _next_skill_after_return_transition(self) -> str:
         return (
@@ -1396,10 +1508,10 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _increment_dig_exit_guard_replan_count(self) -> None:
-        self._dig_exit_guard_replan_count += 1
+        self._primitive_cycle_runtime_state().increment_dig_exit_guard_replan_count()
 
     def _increment_dig_bad_replan_count(self) -> None:
-        self._dig_bad_replan_count += 1
+        self._primitive_cycle_runtime_state().increment_dig_bad_replan_count()
 
     def _tick_execution_hooks(self) -> PrimitiveTickCallbacks:
         ports = self._execution_driver_ports()
@@ -2699,15 +2811,11 @@ class PrimitivePlannerACTPolicy(Policy):
         return float(np.hypot(dx, dz))
 
     def _update_dig_progress(self, obs: dict) -> None:
-        self._dig_step_count += 1
         mass = self._mass_in_bucket(obs)
-        previous_best = float(self._dig_best_mass_kg)
-        if mass > previous_best + self.dig_to_carry_mass_plateau_epsilon_kg:
-            self._dig_best_mass_kg = float(mass)
-            self._dig_mass_plateau_count = 0
-        else:
-            self._dig_best_mass_kg = max(previous_best, float(mass))
-            self._dig_mass_plateau_count += 1
+        self._primitive_cycle_runtime_state().update_dig_progress(
+            mass_in_bucket_kg=float(mass),
+            plateau_epsilon_kg=float(self.dig_to_carry_mass_plateau_epsilon_kg),
+        )
         self._coverage_current_payload_gain_kg = max(
             float(self._coverage_current_payload_gain_kg),
             float(mass),

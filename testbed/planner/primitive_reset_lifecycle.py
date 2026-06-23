@@ -10,6 +10,7 @@ import numpy as np
 
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 from testbed.planner.primitive_coverage_state import CoverageRuntimeState
+from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 
@@ -38,6 +39,7 @@ class PrimitiveResetLifecycleState:
     skill_name: str
     prev_action: np.ndarray | None
     switch_reason: str
+    cycle_state: PrimitiveCycleRuntimeState
     dump_ready_hold_count: int
     dump_done_hold_count: int
     return_step_count: int
@@ -124,6 +126,7 @@ class PrimitiveResetLifecycleState:
             "_skill_name": self.skill_name,
             "_prev_action": self.prev_action,
             "_switch_reason": self.switch_reason,
+            "_cycle_state": self.cycle_state,
             "_dump_ready_hold_count": self.dump_ready_hold_count,
             "_dump_done_hold_count": self.dump_done_hold_count,
             "_return_step_count": self.return_step_count,
@@ -260,14 +263,16 @@ class PrimitiveResetLifecycleService:
         skill_name = self._initial_skill_name()
         ports.reset_cell_entry_planner()
         action_dim = int(ports.action_dim)
+        cycle_state = PrimitiveCycleRuntimeState.fresh()
         token_state = PrimitiveTokenRuntimeState.fresh()
         return_state = PrimitiveReturnRuntimeState.fresh()
         return PrimitiveResetLifecycleState(
             skill_name=skill_name,
             prev_action=None,
             switch_reason="reset",
-            dump_ready_hold_count=0,
-            dump_done_hold_count=0,
+            cycle_state=cycle_state,
+            dump_ready_hold_count=cycle_state.dump_ready_hold_count,
+            dump_done_hold_count=cycle_state.dump_done_hold_count,
             return_step_count=return_state.return_step_count,
             scripted_bootstrap_step_count=0,
             scripted_bootstrap_hold_count=0,
@@ -287,17 +292,19 @@ class PrimitiveResetLifecycleService:
             pre_dig_align_surface_depth_m=float("nan"),
             pre_dig_align_surface_guard_triggered=False,
             pre_dig_align_surface_guard_count=0,
-            dig_step_count=0,
-            dig_best_mass_kg=0.0,
-            dig_mass_plateau_count=0,
-            dig_to_carry_reason="",
-            dig_bad_replan_count=0,
-            dig_exit_guard_replan_count=0,
-            completed_transition_count=0,
-            transition_timeout_count=0,
+            dig_step_count=cycle_state.dig_step_count,
+            dig_best_mass_kg=cycle_state.dig_best_mass_kg,
+            dig_mass_plateau_count=cycle_state.dig_mass_plateau_count,
+            dig_to_carry_reason=cycle_state.dig_to_carry_reason,
+            dig_bad_replan_count=cycle_state.dig_bad_replan_count,
+            dig_exit_guard_replan_count=cycle_state.dig_exit_guard_replan_count,
+            completed_transition_count=cycle_state.completed_transition_count,
+            transition_timeout_count=cycle_state.transition_timeout_count,
             return_state=return_state,
-            cycle_index=0,
-            dump_start_deposited_mass_kg=0.0,
+            cycle_index=cycle_state.cycle_index,
+            dump_start_deposited_mass_kg=(
+                cycle_state.dump_start_deposited_mass_kg
+            ),
             cell_entry_goal=None,
             cell_entry_goal_cycle_id=-1,
             cell_entry_audit=None,
