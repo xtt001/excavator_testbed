@@ -7376,3 +7376,90 @@ Each completed refactor round should append:
   parked `cell_entry`, residual `pre_dig_align`, removed 5P runtime, and
   unsupported BT/VLM/LLM backends out of the target architecture unless the
   user explicitly approves a new evidence-backed promotion.
+
+### 2026-06-23 Phase 9.74 Audit Remaining Large Policy Clusters
+
+- Scope: audit-only inventory of why
+  `testbed/policies/hybrid/primitive_planner.py` remains large after Phase
+  9.73, and which remaining clusters could form meaningful bounded
+  implementation slices. No repository files were modified by the executor.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 137]`, HEAD
+  `a52e8f8d34bdf91fb96a33505131955571f2ee03`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, or remote write was
+  used by the executor.
+- Line-count fact: `wc -l testbed/policies/hybrid/primitive_planner.py`
+  returned `5311`.
+- Remaining large-policy cluster inventory:
+  - Public adapter / runtime-kernel / reset / execution-driver /
+    decision-backend port builders are confirmed-live composition glue. The
+    policy defines `PrimitivePlannerACTPolicy`, builds runtime kernel ports,
+    reset lifecycle ports, decision runtime ports, legacy FSM branch ports, and
+    execution-driver ports.
+  - Action dispatch after Phase 9.73 is already implemented by
+    `PrimitiveActionDispatchService`; the policy is a port assembler/facade
+    that passes execution/cycle/coverage owners plus low-level policy handles,
+    observation assembly, scripted bootstrap action, and residual pre-dig-align
+    action ports.
+  - `_debug_report_coverage_fields()`,
+    `_debug_report_pre_dig_align_fields()`, `_rollout_summary_inputs()`, and
+    `_planner_trace_inputs()` are report-only snapshot assembly over focused
+    report/status builders and compatibility fields.
+  - Token runtime/planning, dig token planning, return token planning,
+    coverage selection, and coverage effect port builders are confirmed-live
+    composition over focused owners plus explicit external config, algorithm,
+    and observation facts.
+  - Failed-dig/recovery and return direct-handoff are already service-owned by
+    `PrimitiveDigRecoveryService` and `ReturnDirectHandoffEffectService`; the
+    policy retains compatibility/private facades and typed port assembly.
+  - `pre_dig_align` remains parked residual compatibility/action/report
+    material. It is not the default FSM path, a backend node, or a VLM/LLM
+    effect unless re-approved.
+  - `cell_entry` remains parked compatibility/token/report material. It is not
+    a default token contract or backend fact for the selected mainline rollout.
+  - Property-backed execution/cycle/pre-dig/cell-entry/token/coverage facades
+    are a major line-count contributor but are compatibility shims over focused
+    state owners.
+  - Transition fact / geometry gate helpers remain live policy-side facts and
+    algorithms consumed by `PrimitiveFSMCapabilityProvider` through explicit
+    ports: dig progress and dig gates, dig-exit overshoot, dump-ready geometry
+    predicates, dump-done/deposit checks, return-to-dig shallow/entry/direct
+    handoff readiness, return start-envelope gate inputs, target geometry, and
+    nearby observation helpers.
+- Candidate clusters requiring refactor-thread judgment:
+  - Cohesive report-input snapshot boundary. This is only useful if it moves a
+    whole report-input cluster and preserves public schema, NaN/None behavior,
+    and list-copy semantics; moving one dict is unsuitable.
+  - Transition fact / geometry gate boundary. This could materially narrow the
+    remaining live policy implementation if it moves dig/carry/dump/return
+    readiness facts into a focused owner/service without changing thresholds,
+    reason strings, backend fact schemas, branch order, or return
+    start-envelope behavior.
+  - Public adapter/composition cleanup boundary. This is unsuitable unless it
+    deletes repeated policy assembly behind a stable responsibility; a simple
+    pass-through composition object would violate the hard constraint.
+  - Parking/deletion-review boundary for `pre_dig_align` or `cell_entry`. This
+    requires user confirmation before removal and must not promote parked paths
+    into mainline architecture.
+- Unsuitable next implementation targets by themselves: deleting one or two
+  private wrappers, moving only a `pre_dig_align` or `cell_entry` debug dict,
+  promoting parked paths into backend/token/runtime architecture, or wrapping
+  existing port builders in an anemic/pass-through object with no real deletion
+  or stable responsibility.
+- TDD red: not applicable. This was audit-only with no code or test changes.
+- Verification reported by executor callback: target-lock commands passed;
+  required docs and SVG were read or queried; read-only code/doc inspections
+  were run with `wc -l`, `rg`, and `nl -ba ...`; `git diff --check` passed;
+  final status remained clean at HEAD
+  `a52e8f8d34bdf91fb96a33505131955571f2ee03`.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread recorded this inventory in the current-code plan and this execution
+  record.
+- Behavior impact: none. Audit only.
+- Hard constraint confirmation: this audit treats protection as a constraint,
+  not the objective. It exists to prevent the next implementation from
+  degrading into tiny facade cleanup, an anemic service, a pass-through wrapper,
+  or a generic blackboard. Current maturity remains default legacy FSM
+  backendified with focused services / shared backend decision input/facts/
+  factory; BT/VLM/LLM backends remain unsupported fail-fast.

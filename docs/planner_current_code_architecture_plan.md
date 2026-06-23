@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 5313 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 5311 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -1435,6 +1435,28 @@ generation. Action dispatch semantics, first-dig gate behavior, observation
 provider order, branch order, reason strings, token schema, debug/summary/trace
 schemas, backend support, `pre_dig_align` algorithm/action behavior,
 `cell_entry`, and removed 5P runtime status remain unchanged.
+
+Current status note after Phase 9.74 audit-only remaining-size inventory:
+`PrimitivePlannerACTPolicy` remains 5311 lines after Phase 9.73. The remaining
+large-policy responsibility is not one single algorithm block. It is split
+across public adapter/runtime composition ports, reset/execution/decision
+composition, report snapshot assembly, token/coverage/dig/return planning port
+assembly, service-backed recovery/direct-handoff/action-dispatch facades,
+property-backed compatibility facades over focused state owners, residual
+`pre_dig_align` parking material, parked `cell_entry` compatibility material,
+and live transition fact / geometry gate helpers.
+
+The audit classifies report helpers as report-only snapshot assembly that
+should only move as a coherent report-input boundary, not by moving one dict at
+a time. It classifies `pre_dig_align` and `cell_entry` as parked material that
+must not be promoted into backend facts, behavior-tree nodes, token contracts,
+or mainline runtime architecture without new evidence and explicit approval.
+The strongest remaining implementation candidate is a cohesive transition
+facts / geometry gate boundary: dig-exit overshoot, dump-ready geometry
+predicates, return-to-dig entry/shallow/start-envelope gate inputs, and the
+associated capability-provider fact assembly. That candidate must preserve
+thresholds, reason strings, branch order, backend facts schema, return
+start-envelope behavior, and parking boundaries.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective
