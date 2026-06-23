@@ -147,6 +147,11 @@ from testbed.planner.primitive_dig_recovery import (
     PrimitiveDigRecoveryPorts,
     PrimitiveDigRecoveryService,
 )
+from testbed.planner.primitive_dig_progress import (
+    PrimitiveDigProgressRuntimeConfig,
+    PrimitiveDigProgressRuntimePorts,
+    PrimitiveDigProgressRuntimeService,
+)
 from testbed.planner.primitive_effects import (
     RequestedEffectApplier,
     RequestedEffectApplierPorts,
@@ -2789,14 +2794,28 @@ class PrimitivePlannerACTPolicy(Policy):
         return float(np.hypot(dx, dz))
 
     def _update_dig_progress(self, obs: dict) -> None:
-        mass = self._mass_in_bucket(obs)
-        self._primitive_cycle_runtime_state().update_dig_progress(
-            mass_in_bucket_kg=float(mass),
-            plateau_epsilon_kg=float(self.dig_to_carry_mass_plateau_epsilon_kg),
+        self._primitive_dig_progress_runtime_service().update(obs)
+
+    def _primitive_dig_progress_runtime_service(
+        self,
+    ) -> PrimitiveDigProgressRuntimeService:
+        return PrimitiveDigProgressRuntimeService.from_ports(
+            self._primitive_dig_progress_runtime_ports()
         )
-        self._coverage_current_payload_gain_kg = max(
-            float(self._coverage_current_payload_gain_kg),
-            float(mass),
+
+    def _primitive_dig_progress_runtime_ports(
+        self,
+    ) -> PrimitiveDigProgressRuntimePorts:
+        return PrimitiveDigProgressRuntimePorts(
+            cycle_state=self._primitive_cycle_runtime_state(),
+            coverage_state=self._coverage_runtime_state(),
+            observation_facts=lambda obs: PrimitiveObservationFacts.from_obs(
+                obs,
+                action_dim=int(self.action_dim),
+            ),
+            config=PrimitiveDigProgressRuntimeConfig(
+                plateau_epsilon_kg=float(self.dig_to_carry_mass_plateau_epsilon_kg)
+            ),
         )
 
     def _semantic_boundary_profile_active(self) -> bool:

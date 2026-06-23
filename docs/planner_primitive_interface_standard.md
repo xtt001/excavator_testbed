@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.89 implementation. It is intentionally
+compares them with the current Phase 9.90 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -83,6 +83,10 @@ Current maturity:
   complete-dig mass, complete-dump facts, rejection facts, reopen facts, and
   terminal-stop facts through `CoverageEffectFactService`; the policy no
   longer builds coverage effect fact dataclasses through callback ports**
+- dig progress tick-update boundary: **achieved for per-dig tick progress and
+  current coverage payload gain updates through
+  `PrimitiveDigProgressRuntimeService`; the policy shell no longer owns the
+  live mass fact-source, cycle progress update, or coverage payload max update**
 - token runtime mutable state owner: **achieved for dig/return token arrays,
   source/fallback flags, prior-bound flags, pending next-dig token state, and
   live `TokenStatus` plus token/pending/dig-cut report metadata projection;

@@ -116,8 +116,8 @@ def test_policy_reset_application_replaces_cycle_state_owner() -> None:
 def test_policy_cycle_methods_write_state_owner() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     state = policy._primitive_cycle_runtime_state()
+    policy.action_dim = 4
     policy.dig_to_carry_mass_plateau_epsilon_kg = 0.1
-    policy._mass_in_bucket = MethodType(lambda self, obs: float(obs["mass"]), policy)
     policy._coverage_current_payload_gain_kg = 0.0
 
     policy._set_dump_ready_hold_count(4)
@@ -127,8 +127,8 @@ def test_policy_cycle_methods_write_state_owner() -> None:
     policy._increment_dig_exit_guard_replan_count()
     policy._complete_return_transition_for_backend()
     policy._transition_timeout_count = 2
-    policy._update_dig_progress({"mass": 3.0})
-    policy._update_dig_progress({"mass": 3.05})
+    policy._update_dig_progress({"task_metrics": {"mass_in_bucket_kg": 3.0}})
+    policy._update_dig_progress({"task_metrics": {"mass_in_bucket_kg": 3.05}})
 
     assert state.dump_ready_hold_count == 4
     assert state.dump_done_hold_count == 5

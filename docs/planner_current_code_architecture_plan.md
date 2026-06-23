@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4607 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4626 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -75,6 +75,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_token_state.py` | 190 | mutable dig/return token runtime state owner, reset defaults, live token-status projection, and token report metadata projection |
 | `testbed/planner/primitive_token_runtime.py` | 255 | dig/return token runtime sequencing over focused token and coverage state owners plus explicit external config/algorithm ports |
 | `testbed/planner/primitive_dig_token_planning.py` | 354 | active dig token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm ports and typed observation facts |
+| `testbed/planner/primitive_dig_progress.py` | 63 | live per-dig tick progress and coverage current-payload update boundary over focused cycle/coverage state owners plus typed observation facts |
 | `testbed/planner/primitive_dig_recovery.py` | 183 | failed-dig/restart recovery orchestration over focused execution/cycle/return/coverage/token/pre-dig compatibility owners plus explicit external algorithm/action ports and typed observation metric facts |
 | `testbed/planner/primitive_return_handoff.py` | 569 | return direct-handoff effect service, return handoff readiness source, and return start-envelope gate over focused execution/cycle/return/token/coverage owners |
 | `testbed/planner/primitive_return_token_planning.py` | 226 | return token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm ports and typed observation facts |
@@ -1710,6 +1711,17 @@ behavior are projected by the existing bootstrap status owner. Scripted
 bootstrap runtime state/action/timeout behavior, reset timing, backend
 fail-fast behavior, token schemas, debug/summary/trace schemas, parked
 `pre_dig_align`, and parked `cell_entry` remain unchanged.
+
+Current status note after Phase 9.90: the live per-dig tick progress update
+now lives in `PrimitiveDigProgressRuntimeService`. The service reads bucket
+mass through a typed `PrimitiveObservationFacts` provider, updates
+`PrimitiveCycleRuntimeState.update_dig_progress(...)`, and mirrors the same
+mass into `CoverageRuntimeState.coverage_current_payload_gain_kg` with the
+existing max(old, mass) behavior. `PrimitivePlannerACTPolicy._update_dig_progress(...)`
+remains a compatibility facade and typed port constructor. Execution-driver
+tick order, plateau semantics, coverage payload max semantics, debug/summary/
+trace schemas, backend fail-fast behavior, parked `pre_dig_align`, and parked
+`cell_entry` remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

@@ -7515,6 +7515,73 @@ Each completed refactor round should append:
   decision input/facts/factory; BT/VLM/LLM backends remain unsupported
   fail-fast.
 
+### 2026-06-23 Phase 9.90 Move Dig Progress Tick-Update Boundary
+
+- Scope: moved the live per-dig tick progress support update out of direct
+  `PrimitivePlannerACTPolicy` implementation and into a focused runtime
+  service. This is a mainline tick-preparation support refactor, not a boundary
+  detector, bootstrap, token, coverage selection, or parked-path behavior
+  change.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 153]`, HEAD
+  `ea72c931f409c631210197825a8ba9d175962ffe`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, commit, docs edit, or
+  remote write was used by the executor.
+- Added `PrimitiveDigProgressRuntimeConfig`,
+  `PrimitiveDigProgressRuntimePorts`, and `PrimitiveDigProgressRuntimeService`
+  in `testbed/planner/primitive_dig_progress.py`.
+- The service reads current bucket mass through typed `PrimitiveObservationFacts`,
+  calls `PrimitiveCycleRuntimeState.update_dig_progress(...)`, and updates
+  `CoverageRuntimeState.coverage_current_payload_gain_kg` with the existing
+  `max(old, mass)` projection.
+- `PrimitivePlannerACTPolicy._update_dig_progress(...)` remains callable as a
+  compatibility facade. It now delegates through focused cycle/coverage state
+  owners and a typed `PrimitiveObservationFacts.from_obs(obs, action_dim=...)`
+  provider instead of calling the policy `_mass_in_bucket` wrapper directly.
+- Focused tests cover service port shape, task-metric mass, env-state fallback,
+  plateau/best-mass behavior, coverage payload max behavior, and policy facade
+  delegation without the old mass wrapper.
+- Line-count impact: `testbed/policies/hybrid/primitive_planner.py` grew from
+  4607 to 4626 lines because it now imports and builds typed dig-progress
+  runtime ports, while `testbed/planner/primitive_dig_progress.py` adds 63
+  lines for the focused owner/service boundary.
+- Preserved behavior: execution driver still calls `_update_dig_progress` only
+  for `dig` ticks before decision; dig progress plateau semantics, best mass
+  max behavior, coverage current payload max behavior, debug/summary/trace
+  schemas, branch order, reason strings, token schema, reset timing, backend
+  unsupported fail-fast, parked `pre_dig_align`, parked `cell_entry`, and
+  removed 5P runtime status remain unchanged.
+- Explicit non-goals: no tick boundary event move, no boundary detector change,
+  no bootstrap change, no coverage first-dig qpos delta move, no policy
+  observation assembler change, no `pre_dig_align` or `cell_entry`
+  promotion/deletion/refactor, and no backend support expansion.
+- TDD red result from executor callback:
+  `python -m pytest -q tests/test_primitive_dig_progress.py tests/test_primitive_cycle_state.py tests/test_primitive_coverage_state.py`
+  failed during collection with `ModuleNotFoundError: No module named
+  'testbed.planner.primitive_dig_progress'`, proving the focused dig-progress
+  runtime boundary did not exist before implementation.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_dig_progress.py tests/test_primitive_cycle_state.py tests/test_primitive_coverage_state.py`
+  returned `24 passed`;
+  `python -m pytest -q tests/test_primitive_execution_driver.py tests/test_primitive_runtime_kernel.py tests/test_primitive_decision_contract.py`
+  returned `46 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_cut_tokens or coverage_decision_trace or semantic_boundary_events_drive_skill_sequence"`
+  returned `3 passed, 116 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was the bounded dig progress / coverage payload
+  tick-update move, not the safest smallest cleanup. It did not add a
+  pass-through wrapper, anemic service, planner-self port, broad config bag,
+  generic blackboard, or parked-path promotion. Residual `pre_dig_align` and
+  parked `cell_entry` were not touched, promoted, deleted, or refactored.
+  Current maturity remains default legacy FSM backendified with focused
+  services / shared backend decision input/facts/factory; BT/VLM/LLM backends
+  remain unsupported fail-fast.
+
 ### 2026-06-23 Phase 9.86 Move Coverage Bucket Snapshot Fact-Source Boundary
 
 - Scope: moved the live coverage decision-event bucket snapshot observation

@@ -1345,6 +1345,17 @@ bootstrap fact projection out of direct policy wrapper reads without changing
 branch order, thresholds, error text, reset timing, backend support, report
 schemas, or parked `pre_dig_align` / `cell_entry` status.
 
+Phase 9.90 narrows the dig-progress tick-update boundary. A new
+`PrimitiveDigProgressRuntimeService` owns the live support update that runs
+when a tick starts in `dig`: it reads mass through typed
+`PrimitiveObservationFacts`, updates `PrimitiveCycleRuntimeState` dig-progress
+counters with the existing plateau epsilon, and updates
+`CoverageRuntimeState` current payload gain with the existing max(old, mass)
+projection. The policy's `_update_dig_progress(...)` method remains only a
+compatibility facade and port constructor. This does not change execution tick
+order, branch order, plateau behavior, coverage payload max behavior, public
+report schemas, or parked `pre_dig_align` / `cell_entry` status.
+
 Phase 9.64 narrows the active dig token planning port boundary in
 `testbed/planner/primitive_dig_token_planning.py`.
 `PrimitiveDigTokenPlanningPorts` now carries the focused
