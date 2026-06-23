@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.64: the default 4P mainline branch chain no longer
+Current status after Phase 9.65: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -91,7 +91,14 @@ dig-depth-profile source/fallback fields, active corridor ids, payload/deposit
 baselines, and state-exemplar payload through those owners instead of
 policy-built storage callbacks. Config facts, token planner algorithms,
 observation facts, coverage corridor selection, and coverage raw-field building
-remain explicit external ports. The policy now
+remain explicit external ports. The return token planning boundary has also
+been narrowed to the same focused owners: `PrimitiveReturnTokenPlanningPorts`
+carries `PrimitiveTokenRuntimeState` and `CoverageRuntimeState`, and
+`PrimitiveReturnTokenPlanningService` reads/writes return start-envelope
+source/prior flags plus active corridor/corridor lookup state through those
+owners instead of policy-built storage callbacks. Return-target mode routing,
+token planner algorithms, observation facts, coverage corridor selection, and
+coverage raw-field building remain explicit external ports. The policy now
 also owns non-token return handoff/runtime cache state through
 `PrimitiveReturnRuntimeState`: return step count, return-to-dig entry-close
 cache, return next-dig-event flag, and return start-envelope gate result/checks
@@ -1162,6 +1169,26 @@ pending-return-target route semantics, dig-depth-profile planning behavior,
 coverage selection/effect semantics, debug/summary/trace schema, branch order,
 reason strings, backend fail-fast behavior, parked `cell_entry`, residual
 `pre_dig_align`, or removed 5P runtime status.
+
+Phase 9.65 narrows the return token planning port boundary in
+`testbed/planner/primitive_return_token_planning.py`.
+`PrimitiveReturnTokenPlanningPorts` now carries the focused
+`PrimitiveTokenRuntimeState` and `CoverageRuntimeState` owners for return
+start-envelope source/prior flags, coverage active corridor id, and corridor
+lookup. `PrimitiveReturnTokenPlanningService` reads and writes those owners
+directly, while return-target mode/config, return token planner algorithms,
+bucket/env/qpos/qvel observation facts, coverage corridor selection, and
+coverage raw-field building remain explicit external ports. The policy's
+`_primitive_return_token_planning_ports()` now passes
+`self._primitive_token_runtime_state()` and `self._coverage_runtime_state()`
+and no longer assembles return-token-planning storage callbacks for coverage
+active id/corridor lookup or return start-envelope source/prior flags. This
+phase does not change return-target mode routing, coverage raw-field handoff,
+corridor id/cell id fallback, return start-envelope build/apply/conditioning,
+prior token/mapping/bounds helper behavior, token/raw-field copy semantics,
+token dimensions/order/source strings, debug/summary/trace schema, branch
+order, reason strings, policy reset timing, backend fail-fast behavior, parked
+`cell_entry`, residual `pre_dig_align`, or removed 5P runtime status.
 
 Phase 9.55 extends `PrimitiveReturnRuntimeState` in
 `testbed/planner/primitive_return_state.py` with `to_report_status(...)` and

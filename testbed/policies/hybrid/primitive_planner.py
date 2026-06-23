@@ -3959,6 +3959,8 @@ class PrimitivePlannerACTPolicy(Policy):
         self,
     ) -> PrimitiveReturnTokenPlanningPorts:
         return PrimitiveReturnTokenPlanningPorts(
+            token_state=self._primitive_token_runtime_state(),
+            coverage_state=self._coverage_runtime_state(),
             dig_cut_planner_mode=lambda: str(self.dig_cut_planner_mode),
             return_target_token_planner=lambda: self._return_target_token_planner(),
             return_start_envelope_token_planner=(
@@ -3968,7 +3970,6 @@ class PrimitivePlannerACTPolicy(Policy):
             select_next_coverage_corridor=(
                 lambda obs: self._select_next_coverage_corridor(obs)
             ),
-            set_coverage_active_corridor_id=self._set_coverage_active_corridor_id,
             coverage_raw_fields=(
                 lambda corridor, *, obs, update_state: self._coverage_raw_fields(
                     corridor,
@@ -3988,36 +3989,6 @@ class PrimitivePlannerACTPolicy(Policy):
                     obs.get("qvel", np.zeros(self.action_dim)),
                     dtype=np.float32,
                 ).reshape(-1)
-            ),
-            coverage_corridor_by_id=lambda corridor_id: self._coverage_corridor_by_id(
-                corridor_id
-            ),
-            get_return_start_envelope_use_prior_spatial_bounds=(
-                lambda: bool(self._return_start_envelope_use_prior_spatial_bounds)
-            ),
-            get_return_start_envelope_use_prior_qpos_bounds=(
-                lambda: bool(self._return_start_envelope_use_prior_qpos_bounds)
-            ),
-            set_return_start_envelope_token_source=(
-                lambda value: setattr(
-                    self,
-                    "_return_start_envelope_token_source",
-                    str(value),
-                )
-            ),
-            set_return_start_envelope_use_prior_spatial_bounds=(
-                lambda value: setattr(
-                    self,
-                    "_return_start_envelope_use_prior_spatial_bounds",
-                    bool(value),
-                )
-            ),
-            set_return_start_envelope_use_prior_qpos_bounds=(
-                lambda value: setattr(
-                    self,
-                    "_return_start_envelope_use_prior_qpos_bounds",
-                    bool(value),
-                )
             ),
         )
 

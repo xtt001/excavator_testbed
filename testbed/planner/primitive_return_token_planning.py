@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 
@@ -13,6 +13,10 @@ from testbed.planner.primitive_tokens import (
     ReturnStartEnvelopeTokenPlanner,
     ReturnTargetTokenPlan,
 )
+
+if TYPE_CHECKING:
+    from testbed.planner.primitive_coverage_state import CoverageRuntimeState
+    from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 
 
 ReturnTargetPlanTuple = tuple[np.ndarray, dict[str, float | int], str, str, int]
@@ -35,22 +39,17 @@ class CoverageRawFieldsBuilder(Protocol):
 class PrimitiveReturnTokenPlanningPorts:
     """Shell-owned readers, writers, and token algorithm providers."""
 
+    token_state: PrimitiveTokenRuntimeState
+    coverage_state: CoverageRuntimeState
     dig_cut_planner_mode: Callable[[], str]
     return_target_token_planner: Callable[[], Any]
     return_start_envelope_token_planner: Callable[[], ReturnStartEnvelopeTokenPlanner]
     bucket_dig_area_pose: Callable[[dict[str, Any]], tuple[float, float, float] | None]
     select_next_coverage_corridor: Callable[[dict[str, Any]], Any]
-    set_coverage_active_corridor_id: Callable[[int], None]
     coverage_raw_fields: CoverageRawFieldsBuilder
     env_state: Callable[[dict[str, Any]], np.ndarray]
     qpos: Callable[[dict[str, Any]], np.ndarray]
     qvel: Callable[[dict[str, Any]], np.ndarray]
-    coverage_corridor_by_id: Callable[[int], Any | None]
-    get_return_start_envelope_use_prior_spatial_bounds: Callable[[], bool]
-    get_return_start_envelope_use_prior_qpos_bounds: Callable[[], bool]
-    set_return_start_envelope_token_source: Callable[[str], None]
-    set_return_start_envelope_use_prior_spatial_bounds: Callable[[bool], None]
-    set_return_start_envelope_use_prior_qpos_bounds: Callable[[bool], None]
 
 
 @dataclass(frozen=True)
@@ -84,7 +83,7 @@ class PrimitiveReturnTokenPlanningService:
         if mode in {"operator_prior_coverage", "operator_prior_sweep_belief"}:
             corridor = ports.select_next_coverage_corridor(obs)
             corridor_id = int(corridor.corridor_id)
-            ports.set_coverage_active_corridor_id(corridor_id)
+            ports.coverage_state.set_active_corridor_id(corridor_id)
             raw_fields = ports.coverage_raw_fields(
                 corridor,
                 obs=obs,
@@ -131,12 +130,13 @@ class PrimitiveReturnTokenPlanningService:
         self,
         plan: ReturnStartEnvelopeTokenPlan,
     ) -> np.ndarray:
-        self.ports.set_return_start_envelope_token_source(str(plan.source))
-        self.ports.set_return_start_envelope_use_prior_spatial_bounds(
-            bool(plan.use_prior_spatial_bounds)
+        token_state = self.ports.token_state
+        token_state.return_start_envelope_token_source = str(plan.source)
+        token_state.return_start_envelope_use_prior_spatial_bounds = bool(
+            plan.use_prior_spatial_bounds
         )
-        self.ports.set_return_start_envelope_use_prior_qpos_bounds(
-            bool(plan.use_prior_qpos_bounds)
+        token_state.return_start_envelope_use_prior_qpos_bounds = bool(
+            plan.use_prior_qpos_bounds
         )
         return plan.token.copy()
 
@@ -152,10 +152,10 @@ class PrimitiveReturnTokenPlanningService:
             raw_fields=raw_fields,
             source=source,
             use_prior_spatial_bounds=(
-                self.ports.get_return_start_envelope_use_prior_spatial_bounds()
+                self.ports.token_state.return_start_envelope_use_prior_spatial_bounds
             ),
             use_prior_qpos_bounds=(
-                self.ports.get_return_start_envelope_use_prior_qpos_bounds()
+                self.ports.token_state.return_start_envelope_use_prior_qpos_bounds
             ),
         )
         return self.apply_return_start_envelope_token_plan(plan)
@@ -193,7 +193,7 @@ class PrimitiveReturnTokenPlanningService:
         if corridor_id is None:
             return None
         try:
-            corridor = self.ports.coverage_corridor_by_id(int(corridor_id))
+            corridor = self.ports.coverage_state.corridor_by_id(int(corridor_id))
         except Exception:
             corridor = None
         if corridor is not None:

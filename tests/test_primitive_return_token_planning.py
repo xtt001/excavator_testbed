@@ -11,6 +11,8 @@ from testbed.planner.primitive_return_token_planning import (
     PrimitiveReturnTokenPlanningPorts,
     PrimitiveReturnTokenPlanningService,
 )
+from testbed.planner.primitive_coverage_state import CoverageRuntimeState
+from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 from testbed.planner.primitive_tokens import (
     ReturnStartEnvelopeTokenPlan,
     ReturnTargetTokenPlan,
@@ -168,26 +170,23 @@ def _ports(
     events = [] if events is None else events
     state: dict[str, object] = {
         "mode": mode,
-        "active_corridor_id": -1,
-        "token_source": "old",
-        "prior_spatial": prior_spatial,
-        "prior_qpos": prior_qpos,
     }
     target_planner = _ReturnTargetPlanner(events)
     start_planner = _ReturnStartEnvelopePlanner(events)
     corridor = SimpleNamespace(corridor_id=42, cell_id=9)
-
-    def set_value(name: str, value: object) -> None:
-        events.append(f"set_{name}:{value}")
-        state[name] = value
-
-    def corridor_by_id(corridor_id: int) -> object | None:
-        events.append(f"corridor_by_id:{corridor_id}")
-        if corridor_id == 42:
-            return corridor
-        return None
+    token_state = PrimitiveTokenRuntimeState.fresh()
+    token_state.return_start_envelope_token_source = "old"
+    token_state.return_start_envelope_use_prior_spatial_bounds = bool(
+        prior_spatial
+    )
+    token_state.return_start_envelope_use_prior_qpos_bounds = bool(prior_qpos)
+    coverage_state = CoverageRuntimeState(coverage_corridors=[corridor])
+    state["token_state"] = token_state
+    state["coverage_state"] = coverage_state
 
     ports = PrimitiveReturnTokenPlanningPorts(
+        token_state=token_state,
+        coverage_state=coverage_state,
         dig_cut_planner_mode=lambda: str(state["mode"]),
         return_target_token_planner=lambda: target_planner,
         return_start_envelope_token_planner=lambda: start_planner,
@@ -199,10 +198,6 @@ def _ports(
         select_next_coverage_corridor=lambda obs: (
             events.append(f"select_corridor:{obs['id']}") or corridor
         ),
-        set_coverage_active_corridor_id=lambda value: set_value(
-            "active_corridor_id",
-            int(value),
-        ),
         coverage_raw_fields=lambda selected, *, obs, update_state: (
             events.append(
                 "coverage_raw_fields:"
@@ -213,22 +208,6 @@ def _ports(
         env_state=lambda obs: np.asarray(obs["env_state"], dtype=np.float32),
         qpos=lambda obs: np.asarray(obs["qpos"], dtype=np.float32),
         qvel=lambda obs: np.asarray(obs["qvel"], dtype=np.float32),
-        coverage_corridor_by_id=corridor_by_id,
-        get_return_start_envelope_use_prior_spatial_bounds=(
-            lambda: bool(state["prior_spatial"])
-        ),
-        get_return_start_envelope_use_prior_qpos_bounds=(
-            lambda: bool(state["prior_qpos"])
-        ),
-        set_return_start_envelope_token_source=(
-            lambda value: set_value("token_source", str(value))
-        ),
-        set_return_start_envelope_use_prior_spatial_bounds=(
-            lambda value: set_value("prior_spatial", bool(value))
-        ),
-        set_return_start_envelope_use_prior_qpos_bounds=(
-            lambda value: set_value("prior_qpos", bool(value))
-        ),
     )
     return ports, state, events, target_planner, start_planner
 
@@ -280,11 +259,12 @@ def test_coverage_route_selects_sets_active_and_builds_raw_fields(mode: str) -> 
 
     assert events == [
         "select_corridor:obs",
-        "set_active_corridor_id:42",
         "coverage_raw_fields:42:obs:True",
         f"plan_coverage:{mode}:42:12.5",
     ]
-    assert state["active_corridor_id"] == 42
+    coverage_state = state["coverage_state"]
+    assert isinstance(coverage_state, CoverageRuntimeState)
+    assert coverage_state.coverage_active_corridor_id == 42
     np.testing.assert_allclose(token, _token(3, 3.0))
     assert raw_fields == {"operator_entry_x_m": 3.0}
     assert source == f"return_{mode}"
@@ -322,15 +302,13 @@ def test_return_start_envelope_build_conditions_and_prior_helpers() -> None:
     )
 
     assert events == [
-        "corridor_by_id:42",
         "plan_start:4.5:1.5:2.5:3.5:9",
-        "set_token_source:start_planned",
-        "set_prior_spatial:False",
-        "set_prior_qpos:True",
     ]
-    assert state["token_source"] == "start_planned"
-    assert state["prior_spatial"] is False
-    assert state["prior_qpos"] is True
+    token_state = state["token_state"]
+    assert isinstance(token_state, PrimitiveTokenRuntimeState)
+    assert token_state.return_start_envelope_token_source == "start_planned"
+    assert token_state.return_start_envelope_use_prior_spatial_bounds is False
+    assert token_state.return_start_envelope_use_prior_qpos_bounds is True
     assert start_planner.last_plan is not None
     assert token is not start_planner.last_plan.token
     token[0] = 99.0
@@ -345,13 +323,13 @@ def test_return_start_envelope_build_conditions_and_prior_helpers() -> None:
 
     assert events == [
         "condition_start:10.0:11.0:relocate:False:True",
-        "set_token_source:relocate+conditioned",
-        "set_prior_spatial:True",
-        "set_prior_qpos:False",
     ]
-    assert state["token_source"] == "relocate+conditioned"
-    assert state["prior_spatial"] is True
-    assert state["prior_qpos"] is False
+    assert (
+        token_state.return_start_envelope_token_source
+        == "relocate+conditioned"
+    )
+    assert token_state.return_start_envelope_use_prior_spatial_bounds is True
+    assert token_state.return_start_envelope_use_prior_qpos_bounds is False
     np.testing.assert_allclose(conditioned, _token(5, 5.0))
 
     events.clear()
@@ -364,11 +342,8 @@ def test_return_start_envelope_build_conditions_and_prior_helpers() -> None:
     prior_min, prior_max = service.return_start_envelope_prior_bounds(corridor_id=-1)
 
     assert events == [
-        "corridor_by_id:42",
         "prior_token:9",
-        "corridor_by_id:99",
         "prior_mapping:99",
-        "corridor_by_id:-1",
         "prior_bounds:None",
     ]
     np.testing.assert_allclose(prior_token, _token(5, 6.0))
@@ -391,11 +366,23 @@ def test_return_start_envelope_cell_id_preserves_current_fallbacks() -> None:
 
 def test_ports_boundary_is_typed_and_does_not_accept_planner_self() -> None:
     names = {field.name for field in fields(PrimitiveReturnTokenPlanningPorts)}
+    removed_state_callbacks = {
+        "set_coverage_active_corridor_id",
+        "coverage_corridor_by_id",
+        "get_return_start_envelope_use_prior_spatial_bounds",
+        "get_return_start_envelope_use_prior_qpos_bounds",
+        "set_return_start_envelope_token_source",
+        "set_return_start_envelope_use_prior_spatial_bounds",
+        "set_return_start_envelope_use_prior_qpos_bounds",
+    }
 
     assert "planner" not in names
     assert "self" not in names
+    assert "token_state" in names
+    assert "coverage_state" in names
     assert "return_target_token_planner" in names
     assert "return_start_envelope_token_planner" in names
+    assert names.isdisjoint(removed_state_callbacks)
 
 
 def test_policy_private_facades_delegate_to_return_token_planning_service() -> None:

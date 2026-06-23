@@ -6629,3 +6629,89 @@ Each completed refactor round should append:
   reflection. It follows the reflection by targeting a cohesive live planning
   boundary with enough token and coverage state coupling to matter, instead of
   a one-field callback cleanup.
+
+### 2026-06-23 Phase 9.65 Replace Return Token Planning State Callback Ports With State Owners
+
+- Scope: narrowed `PrimitiveReturnTokenPlanningPorts` in
+  `testbed/planner/primitive_return_token_planning.py` so return token planning
+  orchestration consumes the focused `PrimitiveTokenRuntimeState` and
+  `CoverageRuntimeState` owners directly instead of receiving policy-built
+  storage callbacks for coverage active id/corridor lookup and return
+  start-envelope source/prior flags.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 128]`, HEAD
+  before this round `53badc44ede10018fece8936ef5eb1c4399f7d4e`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- `PrimitiveReturnTokenPlanningPorts` now carries
+  `token_state: PrimitiveTokenRuntimeState` and
+  `coverage_state: CoverageRuntimeState`.
+- `PrimitiveReturnTokenPlanningService` now reads and writes return
+  start-envelope source/prior flags through the token runtime state owner, and
+  coverage active corridor id plus corridor lookup through the coverage runtime
+  state owner.
+- `PrimitivePlannerACTPolicy._primitive_return_token_planning_ports()` now
+  passes `self._primitive_token_runtime_state()` and
+  `self._coverage_runtime_state()` and no longer assembles storage callbacks
+  for coverage active id/corridor lookup or return start-envelope source/prior
+  flags.
+- External planner modes/config facts, return token planner algorithms,
+  bucket/env/qpos/qvel observation facts, coverage corridor selection, and
+  coverage raw-field building remain explicit ports.
+- Focused tests now use real `PrimitiveTokenRuntimeState` and
+  `CoverageRuntimeState` helpers and assert old callback port names are absent.
+- Preserved behavior: return-target mode routing, coverage raw-field handoff,
+  corridor id/cell id fallback, return start-envelope
+  build/apply/conditioning, prior token/mapping/bounds helper behavior,
+  token/raw-field copy semantics, token dimensions/order/source strings,
+  debug/summary/trace schema, branch order, reason strings, policy reset
+  timing, backend fail-fast behavior, `cell_entry`, `pre_dig_align`, and
+  removed 5P runtime status are unchanged.
+- Explicit non-goals: no token algorithm change, no token schema or source
+  string change, no dig token planning port change, no token runtime
+  coordinator behavior change, no return handoff gate/effect service change,
+  no coverage selection or effect algorithm change, no report schema change, no
+  backend support change, no parked `cell_entry` or residual `pre_dig_align`
+  promotion, and no generic blackboard.
+- TDD red result from executor callback: after focused tests were added,
+  `python -m pytest -q tests/test_primitive_return_token_planning.py tests/test_primitive_token_state.py tests/test_primitive_coverage_state.py`
+  failed as expected with `TypeError` because
+  `PrimitiveReturnTokenPlanningPorts.__init__()` did not yet accept
+  `token_state`, plus field-boundary failures showing missing `token_state`
+  and `coverage_state` attributes.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_return_token_planning.py tests/test_primitive_token_state.py tests/test_primitive_coverage_state.py`
+  returned `25 passed`;
+  `python -m pytest -q tests/test_primitive_token_runtime.py tests/test_primitive_return_token_planning.py tests/test_primitive_return_start_envelope_token_planner.py`
+  returned `22 passed`;
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py`
+  returned `26 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py tests/test_primitive_debug_report.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "return_to_dig or start_envelope or dig_cut_tokens or dig_depth_profile or coverage_decision_trace or semantic_boundary_events_drive_skill_sequence"`
+  returned `8 passed, 111 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_return_token_planning.py tests/test_primitive_token_state.py tests/test_primitive_coverage_state.py`
+  returned `25 passed`;
+  `python -m pytest -q tests/test_primitive_token_runtime.py tests/test_primitive_return_token_planning.py tests/test_primitive_return_start_envelope_token_planner.py`
+  returned `22 passed`;
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py`
+  returned `26 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py tests/test_primitive_debug_report.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "return_to_dig or start_envelope or dig_cut_tokens or dig_depth_profile or coverage_decision_trace or semantic_boundary_events_drive_skill_sequence"`
+  returned `8 passed, 111 deselected`; compileall for touched modules passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It replaced live return-token-planning token/coverage
+  state callback port coupling with focused state owners and was a cohesive
+  bounded live planning/runtime coupling move, not a tiny compatibility
+  dict/facade move. No anemic service, pass-through facade, or generic
+  blackboard was created.
+- Audit note: this is implementation round 2 after the latest three-iteration
+  reflection. It follows the same corrected direction as Phase 9.64 by
+  targeting a live token planning boundary with meaningful state coupling.

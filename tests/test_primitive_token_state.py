@@ -184,6 +184,27 @@ def test_dig_token_planning_ports_share_token_state_owner() -> None:
     assert state.dig_cut_token_source == "operator_prior_coverage"
 
 
+def test_return_token_planning_ports_share_token_state_owner() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    state = policy._primitive_token_runtime_state()
+    policy.dig_cut_planner_mode = "operator_prior_coverage"
+
+    ports = policy._primitive_return_token_planning_ports()
+    port_names = {field.name for field in ports.__dataclass_fields__.values()}
+
+    assert ports.token_state is state
+    assert "get_return_start_envelope_use_prior_spatial_bounds" not in port_names
+    assert "get_return_start_envelope_use_prior_qpos_bounds" not in port_names
+    assert "set_return_start_envelope_token_source" not in port_names
+    assert "set_return_start_envelope_use_prior_qpos_bounds" not in port_names
+
+    ports.token_state.return_start_envelope_token_source = "return_start"
+    ports.token_state.return_start_envelope_use_prior_qpos_bounds = False
+
+    assert state.return_start_envelope_token_source == "return_start"
+    assert state.return_start_envelope_use_prior_qpos_bounds is False
+
+
 def test_token_runtime_state_projects_token_status_from_live_runtime_state() -> None:
     state = PrimitiveTokenRuntimeState.fresh()
     dig_cut_tokens = np.arange(DIG_CUT_TOKEN_DIM, dtype=np.float32) + 1.0

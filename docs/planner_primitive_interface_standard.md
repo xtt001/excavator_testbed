@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.64 implementation. It is intentionally
+compares them with the current Phase 9.65 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -59,6 +59,11 @@ Current maturity:
   selected corridor ids, payload/deposit baselines, and state-exemplar payload;
   active dig token planning now consumes `PrimitiveTokenRuntimeState` and
   `CoverageRuntimeState` directly instead of policy-built storage callbacks**
+- return token planning mutable state-owner boundary: **achieved for
+  return start-envelope source/prior flags, coverage active corridor id, and
+  coverage corridor lookup; return token planning now consumes
+  `PrimitiveTokenRuntimeState` and `CoverageRuntimeState` directly instead of
+  policy-built storage callbacks**
 - return runtime mutable state owner: **achieved for return handoff counters,
   entry-close cache, next-dig-event flag, start-envelope gate cache, and live
   return report/status projection**
@@ -627,6 +632,11 @@ Current boundary:
 - `PrimitiveDigTokenPlanningService` ports carry `PrimitiveTokenRuntimeState`
   and `CoverageRuntimeState` directly for active dig token planning storage
   reads/writes; external config, token planners, observation facts, and
+  coverage raw-field building remain explicit ports.
+- `PrimitiveReturnTokenPlanningService` ports carry
+  `PrimitiveTokenRuntimeState` and `CoverageRuntimeState` directly for return
+  start-envelope source/prior flags, active corridor id, and corridor lookup;
+  external config, token planners, observation facts, coverage selection, and
   coverage raw-field building remain explicit ports.
 - Token algorithm classes remain in `primitive_tokens.py`.
 - `PrimitivePlannerACTPolicy` keeps old `_dig_cut_*`, `_return_*`, and
