@@ -44,6 +44,22 @@ class CoverageDebugReportInputs:
 
 
 @dataclass(frozen=True)
+class CoverageTraceReportStatus:
+    use_env_removed_depth: bool
+    candidate_layout: str
+    first_dig_strategy: str
+    pass_index: int
+    multi_pass_enabled: bool
+    multi_pass_max_passes: int
+    multi_pass_min_remaining_depth_m: float
+    first_dig_preferred_corridor_id: int | None
+    corridors: list[Any]
+    decision_trace: list[Any]
+    terminal_stop_requested: bool
+    terminal_stop_reason: str
+
+
+@dataclass(frozen=True)
 class CoverageReportState:
     cycle_index: int
     skill_name: str
@@ -73,6 +89,43 @@ class CoverageBucketSnapshot:
 
 class CoverageReportService:
     """Build coverage debug and trace payloads from explicit state snapshots."""
+
+    @staticmethod
+    def trace_status(
+        *,
+        use_env_removed_depth: bool,
+        candidate_layout: str,
+        first_dig_strategy: str,
+        pass_index: int,
+        multi_pass_enabled: bool,
+        multi_pass_max_passes: int,
+        multi_pass_min_remaining_depth_m: float,
+        first_dig_preferred_corridor_id: int | None,
+        corridors: list[Any],
+        decision_trace: list[Any],
+        terminal_stop_requested: bool,
+        terminal_stop_reason: str,
+    ) -> CoverageTraceReportStatus:
+        return CoverageTraceReportStatus(
+            use_env_removed_depth=bool(use_env_removed_depth),
+            candidate_layout=str(candidate_layout),
+            first_dig_strategy=str(first_dig_strategy),
+            pass_index=int(pass_index),
+            multi_pass_enabled=bool(multi_pass_enabled),
+            multi_pass_max_passes=int(multi_pass_max_passes),
+            multi_pass_min_remaining_depth_m=float(
+                multi_pass_min_remaining_depth_m
+            ),
+            first_dig_preferred_corridor_id=(
+                None
+                if first_dig_preferred_corridor_id is None
+                else int(first_dig_preferred_corridor_id)
+            ),
+            corridors=list(corridors),
+            decision_trace=list(decision_trace),
+            terminal_stop_requested=bool(terminal_stop_requested),
+            terminal_stop_reason=str(terminal_stop_reason),
+        )
 
     @staticmethod
     def debug_fields(inputs: CoverageDebugReportInputs) -> dict[str, Any]:
@@ -279,4 +332,5 @@ __all__ = [
     "CoverageDebugReportInputs",
     "CoverageReportService",
     "CoverageReportState",
+    "CoverageTraceReportStatus",
 ]

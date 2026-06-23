@@ -74,7 +74,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
 | `testbed/planner/primitive_cycle_state.py` | 123 | mutable live 4P cycle/progress runtime state owner, reset defaults, and live report/finalization projection |
 | `testbed/planner/primitive_scripted_bootstrap.py` | 144 | scripted bootstrap runtime state, readiness checks, timeout, PD action service, and live report/status projection |
-| `testbed/planner/primitive_coverage_reports.py` | 282 | coverage corridor debug, coverage decision-event, and coverage debug-field payload builders |
+| `testbed/planner/primitive_coverage_reports.py` | 336 | coverage corridor debug, coverage decision-event, coverage debug-field, and planner-trace coverage status payload builders |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
 | `testbed/planner/evidence_trace.py` | 972 | evidence classifier and report writer for rollout-driven refactor decisions |
@@ -1149,6 +1149,20 @@ readiness, timeout, target-reached, PD action algorithms, reset timing, public
 debug key names, rollout summary key names, backend fail-fast, token/coverage/
 return/cycle owners, `cell_entry`, `pre_dig_align`, and removed 5P runtime
 status remain unchanged.
+
+Current status note after Phase 9.58: live planner-trace coverage sub-
+projection is now owned by `CoverageReportService.trace_status(...)` and
+`CoverageTraceReportStatus` in
+`testbed/planner/primitive_coverage_reports.py`.
+`PrimitivePlannerTraceInputs` now carries that coverage status object instead
+of many independent coverage trace fields, while
+`PrimitivePlannerACTPolicy._planner_trace_inputs()` remains a thin explicit-
+facts assembler for coverage trace status and non-coverage trace fields.
+Public `planner_trace()` key names, coverage decision trace count semantics,
+list shallow-copy behavior, corridor debug payload values, decision trace
+mutation, terminal-stop behavior, coverage debug/summary schemas, coverage
+algorithms, backend facts, token/return/cycle/scripted-bootstrap owners,
+`cell_entry`, `pre_dig_align`, and removed 5P runtime status remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

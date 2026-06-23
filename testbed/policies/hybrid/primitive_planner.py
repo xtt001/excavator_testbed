@@ -2337,37 +2337,38 @@ class PrimitivePlannerACTPolicy(Policy):
         return PrimitivePlannerTraceBuilder()
 
     def _planner_trace_inputs(self) -> PrimitivePlannerTraceInputs:
+        coverage = self._coverage_report_service().trace_status(
+            use_env_removed_depth=bool(self.coverage_use_env_removed_depth),
+            candidate_layout=str(self.coverage_candidate_layout),
+            first_dig_strategy=str(self.coverage_first_dig_strategy),
+            pass_index=int(self._coverage_pass_index),
+            multi_pass_enabled=bool(self.coverage_multi_pass_enabled),
+            multi_pass_max_passes=int(self.coverage_multi_pass_max_passes),
+            multi_pass_min_remaining_depth_m=float(
+                self.coverage_multi_pass_min_remaining_depth_m
+            ),
+            first_dig_preferred_corridor_id=(
+                None
+                if self.coverage_first_dig_preferred_corridor_id is None
+                else int(self.coverage_first_dig_preferred_corridor_id)
+            ),
+            corridors=[
+                self._coverage_corridor_to_debug(corridor)
+                for corridor in self._coverage_corridors
+            ],
+            decision_trace=self._coverage_decision_trace,
+            terminal_stop_requested=bool(
+                self._coverage_terminal_stop_requested
+            ),
+            terminal_stop_reason=str(self._coverage_terminal_stop_reason),
+        )
         return PrimitivePlannerTraceInputs(
             cell_entry_trace=self._cell_entry_trace,
             dig_cut_planner_mode=str(self.dig_cut_planner_mode),
             dig_cut_prior_id=str(self.dig_cut_prior_id),
             dig_cut_prior_path=str(self.dig_cut_prior_path),
             return_target_planner_enabled=bool(self.return_target_planner_enabled),
-            coverage_use_env_removed_depth=bool(
-                self.coverage_use_env_removed_depth
-            ),
-            coverage_candidate_layout=str(self.coverage_candidate_layout),
-            coverage_first_dig_strategy=str(self.coverage_first_dig_strategy),
-            coverage_pass_index=int(self._coverage_pass_index),
-            coverage_multi_pass_enabled=bool(self.coverage_multi_pass_enabled),
-            coverage_multi_pass_max_passes=int(self.coverage_multi_pass_max_passes),
-            coverage_multi_pass_min_remaining_depth_m=float(
-                self.coverage_multi_pass_min_remaining_depth_m
-            ),
-            coverage_first_dig_preferred_corridor_id=(
-                None
-                if self.coverage_first_dig_preferred_corridor_id is None
-                else int(self.coverage_first_dig_preferred_corridor_id)
-            ),
-            coverage_corridors=[
-                self._coverage_corridor_to_debug(corridor)
-                for corridor in self._coverage_corridors
-            ],
-            coverage_decision_trace=self._coverage_decision_trace,
-            coverage_terminal_stop_requested=bool(
-                self._coverage_terminal_stop_requested
-            ),
-            coverage_terminal_stop_reason=str(self._coverage_terminal_stop_reason),
+            coverage=coverage,
         )
 
     def _maybe_switch_skill(self, *, obs: dict, boundary_event: Any | None) -> None:

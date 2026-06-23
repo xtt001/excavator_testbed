@@ -4,6 +4,7 @@ from types import MethodType
 from typing import Any
 
 from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_CONTRACT
+from testbed.planner.primitive_coverage_reports import CoverageTraceReportStatus
 from testbed.planner.primitive_planner_trace import (
     PrimitivePlannerTraceBuilder,
     PrimitivePlannerTraceInputs,
@@ -12,24 +13,27 @@ from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
 def _inputs(**overrides: Any) -> PrimitivePlannerTraceInputs:
+    coverage_status = CoverageTraceReportStatus(
+        use_env_removed_depth=False,
+        candidate_layout="corridor_grid",
+        first_dig_strategy="preferred_corridor",
+        pass_index=3,
+        multi_pass_enabled=True,
+        multi_pass_max_passes=4,
+        multi_pass_min_remaining_depth_m=0.05,
+        first_dig_preferred_corridor_id=None,
+        corridors=[{"corridor_id": 7, "score": 1.25}],
+        decision_trace=[{"event": "select_corridor"}],
+        terminal_stop_requested=True,
+        terminal_stop_reason="dig_area_depleted",
+    )
     values: dict[str, Any] = {
         "cell_entry_trace": [{"cell_id": 2, "reason": "compatibility_only"}],
         "dig_cut_planner_mode": "operator_prior_coverage",
         "dig_cut_prior_id": "default",
         "dig_cut_prior_path": "/tmp/dig_prior.json",
         "return_target_planner_enabled": True,
-        "coverage_use_env_removed_depth": False,
-        "coverage_candidate_layout": "corridor_grid",
-        "coverage_first_dig_strategy": "preferred_corridor",
-        "coverage_pass_index": 3,
-        "coverage_multi_pass_enabled": True,
-        "coverage_multi_pass_max_passes": 4,
-        "coverage_multi_pass_min_remaining_depth_m": 0.05,
-        "coverage_first_dig_preferred_corridor_id": None,
-        "coverage_corridors": [{"corridor_id": 7, "score": 1.25}],
-        "coverage_decision_trace": [{"event": "select_corridor"}],
-        "coverage_terminal_stop_requested": True,
-        "coverage_terminal_stop_reason": "dig_area_depleted",
+        "coverage": coverage_status,
     }
     values.update(overrides)
     return PrimitivePlannerTraceInputs(**values)
@@ -86,10 +90,13 @@ def test_planner_trace_builder_preserves_coverage_fields_and_list_projection() -
     assert trace["coverage_corridors"] == [{"corridor_id": 7, "score": 1.25}]
     assert trace["coverage_decision_trace"] == [{"event": "select_corridor"}]
     assert trace["cell_entry_trace"] is not inputs.cell_entry_trace
-    assert trace["coverage_corridors"] is not inputs.coverage_corridors
-    assert trace["coverage_decision_trace"] is not inputs.coverage_decision_trace
+    assert trace["coverage_corridors"] is not inputs.coverage.corridors
+    assert trace["coverage_decision_trace"] is not inputs.coverage.decision_trace
     assert trace["cell_entry_trace"][0] is inputs.cell_entry_trace[0]
-    assert trace["coverage_decision_trace"][0] is inputs.coverage_decision_trace[0]
+    assert (
+        trace["coverage_decision_trace"][0]
+        is inputs.coverage.decision_trace[0]
+    )
 
 
 def test_policy_planner_trace_delegates_to_trace_builder() -> None:

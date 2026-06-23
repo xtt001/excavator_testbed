@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.57 implementation. It is intentionally
+compares them with the current Phase 9.58 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -35,6 +35,9 @@ Current maturity:
 - coverage debug-field projection: **achieved for
   `CoverageReportService.debug_fields(...)` while policy still prepares the
   explicit snapshot inputs**
+- coverage trace/report projection: **achieved for the planner-trace coverage
+  subset through `CoverageTraceReportStatus` and
+  `CoverageReportService.trace_status(...)`**
 - token runtime mutable state owner: **achieved for dig/return token arrays,
   source/fallback flags, prior-bound flags, pending next-dig token state, and
   live `TokenStatus` projection**
@@ -496,6 +499,9 @@ Current boundary:
 - `PrimitiveScriptedBootstrapRuntimeService` owns scripted-qpos bootstrap
   runtime rules: enabled detection, target-reached hold gating, timeout
   completion, and PD action generation.
+- `CoverageReportService` owns coverage corridor debug projection, decision
+  event payloads, coverage debug-field assembly, and planner-trace coverage
+  sub-projection through `CoverageTraceReportStatus`.
 - `PrimitiveExecutionRuntimeState` owns execution lifecycle metadata: active
   skill, switch reason, previous action, and latest compact debug state. The
   policy keeps `_skill_name`, `_switch_reason`, `_prev_action`, and
@@ -656,8 +662,9 @@ Current boundary:
 - `PrimitiveDebugReportBuilder`, `PrimitiveRolloutSummaryBuilder`, and
   `PrimitivePlannerTraceBuilder` exist.
 - `CoverageReportService` owns coverage corridor debug payloads, coverage
-  decision-event payloads, and coverage debug-field schema projection through
-  explicit `CoverageDebugReportInputs`.
+  decision-event payloads, coverage debug-field schema projection through
+  explicit `CoverageDebugReportInputs`, and planner-trace coverage sub-
+  projection through `CoverageTraceReportStatus`.
 - Policy still prepares section snapshots and compatibility fields.
 
 Gap:

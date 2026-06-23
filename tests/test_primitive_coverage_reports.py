@@ -8,6 +8,7 @@ import numpy as np
 from testbed.planner.primitive_coverage_reports import (
     CoverageDebugReportInputs,
     CoverageReportService,
+    CoverageTraceReportStatus,
 )
 from tests.test_agx_primitives_v2_2 import (
     _RecordingPolicy,
@@ -163,3 +164,42 @@ def test_coverage_report_service_matches_debug_fields_without_active_corridor() 
     assert service_payload["coverage_last_selected_row_id"] == -1
     assert isnan(float(service_payload["coverage_entry_x_m"]))
     assert isnan(float(service_payload["coverage_corridor_score"]))
+
+
+def test_coverage_report_service_projects_trace_status() -> None:
+    corridors = [{"corridor_id": 7, "score": 1.25}]
+    decision_trace = [{"event": "select_corridor"}]
+
+    status = CoverageReportService().trace_status(
+        use_env_removed_depth=False,
+        candidate_layout="corridor_grid",
+        first_dig_strategy="preferred_corridor",
+        pass_index=3,
+        multi_pass_enabled=True,
+        multi_pass_max_passes=4,
+        multi_pass_min_remaining_depth_m=0.05,
+        first_dig_preferred_corridor_id=None,
+        corridors=corridors,
+        decision_trace=decision_trace,
+        terminal_stop_requested=True,
+        terminal_stop_reason="dig_area_depleted",
+    )
+
+    assert status == CoverageTraceReportStatus(
+        use_env_removed_depth=False,
+        candidate_layout="corridor_grid",
+        first_dig_strategy="preferred_corridor",
+        pass_index=3,
+        multi_pass_enabled=True,
+        multi_pass_max_passes=4,
+        multi_pass_min_remaining_depth_m=0.05,
+        first_dig_preferred_corridor_id=None,
+        corridors=corridors,
+        decision_trace=decision_trace,
+        terminal_stop_requested=True,
+        terminal_stop_reason="dig_area_depleted",
+    )
+    assert status.corridors is not corridors
+    assert status.decision_trace is not decision_trace
+    assert status.corridors[0] is corridors[0]
+    assert status.decision_trace[0] is decision_trace[0]
