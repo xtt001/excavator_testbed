@@ -67,6 +67,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_backend_facts.py` | 250 | backend-facing lazy read-only facts access for bootstrap and dig/carry/dump/return transition views |
 | `testbed/planner/primitive_decision_facts.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
 | `testbed/planner/primitive_execution_state.py` | 49 | mutable execution lifecycle state owner for active skill, switch reason, previous action, and latest debug state |
+| `testbed/planner/primitive_observation.py` | 176 | policy observation assembler plus mutable per-observation injected-flag runtime state owner |
 | `testbed/planner/primitive_token_state.py` | 70 | mutable dig/return token runtime state owner and reset defaults |
 | `testbed/planner/primitive_return_state.py` | 56 | mutable non-token return handoff/runtime state owner and reset defaults |
 | `testbed/planner/primitive_cycle_state.py` | 75 | mutable live 4P cycle/progress runtime state owner and reset defaults |
@@ -563,10 +564,12 @@ Current status note after Phase 9.14: policy observation/token injection
 assembly has moved out of the large policy shell into
 `PrimitivePolicyObservationAssembler` in
 `testbed/planner/primitive_observation.py`. `_policy_obs(...)` now remains as a
-thin compatibility wrapper that clears and writes legacy injected-flag fields,
-while the assembler owns provider order, injected key names, observation
-copy/no-copy behavior, and injected-state calculation. Token planning algorithms
-and token source/fallback/debug contracts remain in their existing owners.
+thin compatibility wrapper. The assembler owns provider order, injected key
+names, observation copy/no-copy behavior, and immutable injected-state
+calculation. Phase 9.49 adds `PrimitiveObservationInjectionRuntimeState` in the
+same module as the mutable owner for clear/apply/projection of the six legacy
+injected flags. Token planning algorithms and token source/fallback/debug
+contracts remain in their existing owners.
 
 Current status note after Phase 9.15: public `debug_state()` dict assembly has
 moved into `PrimitiveDebugReportBuilder` in
@@ -968,9 +971,10 @@ names write through property setters into the same state object. The owner
 covers dig-cut and dig-depth-profile tokens, return target/relocate/
 start-envelope tokens, token source/fallback/prior-bound fields, return
 start-envelope prior flags, and pending next-dig raw/token/exemplar fields.
-Observation injection flags, cell-entry compatibility state, coverage state,
-return handoff state, token runtime sequencing, and token planning algorithms
-remain in their existing focused owners.
+Observation-injection flags now live in `PrimitiveObservationInjectionRuntimeState`;
+cell-entry compatibility state, coverage state, return handoff state, token
+runtime sequencing, and token planning algorithms remain in their existing
+focused owners.
 
 Current status note after Phase 9.45: mutable non-token return handoff/runtime
 cache state is now owned by `PrimitiveReturnRuntimeState` in
@@ -1016,9 +1020,19 @@ state with the selected initial skill, `switch_reason="reset"`, and
 `prev_action=None`; `PrimitivePlannerRuntimeKernel.reset()` still finalizes the
 initial compact debug state after applying the reset state. The policy keeps
 `_skill_name`, `_switch_reason`, `_prev_action`, and `_debug_state` as
-property-backed compatibility facades over the same owner. This owner does not
-absorb token, coverage, return, cycle/progress, scripted bootstrap,
-`pre_dig_align`, `cell_entry`, backend facts, or report schemas.
+property-backed compatibility facades.
+
+Current status note after Phase 9.49: per-observation token injected
+compatibility flags are now owned by `PrimitiveObservationInjectionRuntimeState`
+in `testbed/planner/primitive_observation.py`. Reset creates a fresh
+observation-injection state and applies it through `_observation_injection_state`;
+the old `_cell_entry_token_injected`, `_dig_cut_token_injected`,
+`_dig_depth_profile_token_injected`, `_return_target_token_injected`,
+`_return_relocate_token_injected`, and
+`_return_start_envelope_token_injected` names are property-backed facades.
+`PrimitivePolicyObservationAssembler` still owns provider order, key names,
+copy/no-copy behavior, and immutable `PrimitiveTokenInjectionState` projection;
+token schema, `cell_entry`, and `pre_dig_align` behavior remain unchanged.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;

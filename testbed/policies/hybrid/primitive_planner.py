@@ -182,6 +182,7 @@ from testbed.planner.primitive_token_runtime import (
     PrimitiveTokenRuntimePorts,
 )
 from testbed.planner.primitive_observation import (
+    PrimitiveObservationInjectionRuntimeState,
     PrimitivePolicyObservationAssembler,
     PrimitivePolicyObservationAssemblerPorts,
     PrimitivePolicyObservationAssemblyResult,
@@ -743,6 +744,87 @@ class PrimitivePlannerACTPolicy(Policy):
     @_scripted_bootstrap_timeout_count.setter
     def _scripted_bootstrap_timeout_count(self, value: int) -> None:
         self._primitive_scripted_bootstrap_runtime_state().timeout_count = int(value)
+
+    def _primitive_observation_injection_runtime_state(
+        self,
+    ) -> PrimitiveObservationInjectionRuntimeState:
+        state = self.__dict__.get("_observation_injection_state")
+        if state is None:
+            state = PrimitiveObservationInjectionRuntimeState.fresh()
+            self.__dict__["_observation_injection_state"] = state
+        return state
+
+    @property
+    def _cell_entry_token_injected(self) -> bool:
+        return bool(
+            self._primitive_observation_injection_runtime_state()
+            .cell_entry_token_injected
+        )
+
+    @_cell_entry_token_injected.setter
+    def _cell_entry_token_injected(self, value: bool) -> None:
+        state = self._primitive_observation_injection_runtime_state()
+        state.cell_entry_token_injected = bool(value)
+
+    @property
+    def _dig_cut_token_injected(self) -> bool:
+        return bool(
+            self._primitive_observation_injection_runtime_state()
+            .dig_cut_token_injected
+        )
+
+    @_dig_cut_token_injected.setter
+    def _dig_cut_token_injected(self, value: bool) -> None:
+        state = self._primitive_observation_injection_runtime_state()
+        state.dig_cut_token_injected = bool(value)
+
+    @property
+    def _dig_depth_profile_token_injected(self) -> bool:
+        return bool(
+            self._primitive_observation_injection_runtime_state()
+            .dig_depth_profile_token_injected
+        )
+
+    @_dig_depth_profile_token_injected.setter
+    def _dig_depth_profile_token_injected(self, value: bool) -> None:
+        state = self._primitive_observation_injection_runtime_state()
+        state.dig_depth_profile_token_injected = bool(value)
+
+    @property
+    def _return_target_token_injected(self) -> bool:
+        return bool(
+            self._primitive_observation_injection_runtime_state()
+            .return_target_token_injected
+        )
+
+    @_return_target_token_injected.setter
+    def _return_target_token_injected(self, value: bool) -> None:
+        state = self._primitive_observation_injection_runtime_state()
+        state.return_target_token_injected = bool(value)
+
+    @property
+    def _return_relocate_token_injected(self) -> bool:
+        return bool(
+            self._primitive_observation_injection_runtime_state()
+            .return_relocate_token_injected
+        )
+
+    @_return_relocate_token_injected.setter
+    def _return_relocate_token_injected(self, value: bool) -> None:
+        state = self._primitive_observation_injection_runtime_state()
+        state.return_relocate_token_injected = bool(value)
+
+    @property
+    def _return_start_envelope_token_injected(self) -> bool:
+        return bool(
+            self._primitive_observation_injection_runtime_state()
+            .return_start_envelope_token_injected
+        )
+
+    @_return_start_envelope_token_injected.setter
+    def _return_start_envelope_token_injected(self, value: bool) -> None:
+        state = self._primitive_observation_injection_runtime_state()
+        state.return_start_envelope_token_injected = bool(value)
 
     def _primitive_token_runtime_state(self) -> PrimitiveTokenRuntimeState:
         state = self.__dict__.get("_token_state")
@@ -3559,29 +3641,14 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _clear_policy_observation_injected_flags(self) -> None:
-        self._cell_entry_token_injected = False
-        self._dig_cut_token_injected = False
-        self._dig_depth_profile_token_injected = False
-        self._return_target_token_injected = False
-        self._return_relocate_token_injected = False
-        self._return_start_envelope_token_injected = False
+        self._primitive_observation_injection_runtime_state().clear()
 
     def _apply_policy_observation_assembly(
         self,
         result: PrimitivePolicyObservationAssemblyResult,
     ) -> None:
-        state = result.token_injection_state
-        self._cell_entry_token_injected = bool(state.cell_entry_token_injected)
-        self._dig_cut_token_injected = bool(state.dig_cut_token_injected)
-        self._dig_depth_profile_token_injected = bool(
-            state.dig_depth_profile_token_injected
-        )
-        self._return_target_token_injected = bool(state.return_target_token_injected)
-        self._return_relocate_token_injected = bool(
-            state.return_relocate_token_injected
-        )
-        self._return_start_envelope_token_injected = bool(
-            state.return_start_envelope_token_injected
+        self._primitive_observation_injection_runtime_state().apply_token_injection_state(
+            result.token_injection_state
         )
 
     def _return_target_tokens_for_obs(self, obs: dict) -> np.ndarray | None:

@@ -83,6 +83,12 @@ objective:
   TDD red、changed files、core factual change、verification、behavior impact、
   docs status、git status after、HEAD after；并在后续 executor prompt 中递归保留
   这个闭环回调要求。
+- refactor/audit 线程自身必须始终显式使用 `thinking: xhigh`。每次生成
+  executor prompt 时，prompt 文本必须显式指定 executor thinking effort 为
+  `thinking: high` 或 `thinking: xhigh`；如果 Codex thread tool 暴露
+  thinking 参数，也要在 tool 调用里传相同强度。这个 thinking-effort 要求必须
+  写进要求 executor 回调的递归规则里，避免后续 prompt 漂移到未指定或错误的
+  思考强度。
 - 每 3 轮 bounded executor implementation 后，refactor/audit 线程必须先在
   docs/planner_rollout_evidence_refactor_log.md 记录 three-iteration
   reflection，再生成下一轮 executor prompt。反思必须判断：是否更接近

@@ -32,6 +32,65 @@ class PrimitiveTokenInjectionState:
     return_start_envelope_token_injected: bool = False
 
 
+@dataclass
+class PrimitiveObservationInjectionRuntimeState:
+    """Own mutable per-observation token injected compatibility flags."""
+
+    cell_entry_token_injected: bool = False
+    dig_cut_token_injected: bool = False
+    dig_depth_profile_token_injected: bool = False
+    return_target_token_injected: bool = False
+    return_relocate_token_injected: bool = False
+    return_start_envelope_token_injected: bool = False
+
+    @classmethod
+    def fresh(cls) -> "PrimitiveObservationInjectionRuntimeState":
+        """Return reset-default injected flags for a new observation lifecycle."""
+
+        return cls()
+
+    def clear(self) -> None:
+        self.cell_entry_token_injected = False
+        self.dig_cut_token_injected = False
+        self.dig_depth_profile_token_injected = False
+        self.return_target_token_injected = False
+        self.return_relocate_token_injected = False
+        self.return_start_envelope_token_injected = False
+
+    def apply_token_injection_state(
+        self,
+        state: PrimitiveTokenInjectionState,
+    ) -> None:
+        self.cell_entry_token_injected = bool(state.cell_entry_token_injected)
+        self.dig_cut_token_injected = bool(state.dig_cut_token_injected)
+        self.dig_depth_profile_token_injected = bool(
+            state.dig_depth_profile_token_injected
+        )
+        self.return_target_token_injected = bool(
+            state.return_target_token_injected
+        )
+        self.return_relocate_token_injected = bool(
+            state.return_relocate_token_injected
+        )
+        self.return_start_envelope_token_injected = bool(
+            state.return_start_envelope_token_injected
+        )
+
+    def to_token_injection_state(self) -> PrimitiveTokenInjectionState:
+        return PrimitiveTokenInjectionState(
+            cell_entry_token_injected=bool(self.cell_entry_token_injected),
+            dig_cut_token_injected=bool(self.dig_cut_token_injected),
+            dig_depth_profile_token_injected=bool(
+                self.dig_depth_profile_token_injected
+            ),
+            return_target_token_injected=bool(self.return_target_token_injected),
+            return_relocate_token_injected=bool(self.return_relocate_token_injected),
+            return_start_envelope_token_injected=bool(
+                self.return_start_envelope_token_injected
+            ),
+        )
+
+
 @dataclass(frozen=True)
 class PrimitivePolicyObservationAssemblyResult:
     """Assembled policy observation plus legacy injected-flag state."""
@@ -114,6 +173,7 @@ class PrimitivePolicyObservationAssembler:
 
 
 __all__ = [
+    "PrimitiveObservationInjectionRuntimeState",
     "PrimitivePolicyObservationAssembler",
     "PrimitivePolicyObservationAssemblerPorts",
     "PrimitivePolicyObservationAssemblyResult",

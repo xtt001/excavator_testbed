@@ -4,6 +4,7 @@ from types import MethodType
 from typing import Any
 
 from testbed.planner.primitive_observation import (
+    PrimitiveObservationInjectionRuntimeState,
     PrimitivePolicyObservationAssembler,
     PrimitivePolicyObservationAssemblerPorts,
     PrimitivePolicyObservationAssemblyResult,
@@ -134,6 +135,89 @@ def test_policy_observation_assembler_cell_entry_flag_is_compatibility_only() ->
     assert "cell_entry_tokens" in result.policy_obs
     assert result.token_injection_state == PrimitiveTokenInjectionState(
         cell_entry_token_injected=True,
+    )
+
+
+def test_observation_injection_runtime_state_clear_apply_and_projection() -> None:
+    state = PrimitiveObservationInjectionRuntimeState.fresh()
+
+    assert state.to_token_injection_state() == PrimitiveTokenInjectionState()
+
+    state.apply_token_injection_state(
+        PrimitiveTokenInjectionState(
+            cell_entry_token_injected=True,
+            dig_cut_token_injected=True,
+            dig_depth_profile_token_injected=True,
+            return_target_token_injected=True,
+            return_relocate_token_injected=True,
+            return_start_envelope_token_injected=True,
+        )
+    )
+
+    assert state.to_token_injection_state() == PrimitiveTokenInjectionState(
+        cell_entry_token_injected=True,
+        dig_cut_token_injected=True,
+        dig_depth_profile_token_injected=True,
+        return_target_token_injected=True,
+        return_relocate_token_injected=True,
+        return_start_envelope_token_injected=True,
+    )
+
+    state.clear()
+
+    assert state.to_token_injection_state() == PrimitiveTokenInjectionState()
+
+
+def test_policy_legacy_injected_flags_are_backed_by_one_observation_state() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    state = planner._primitive_observation_injection_runtime_state()
+
+    planner._cell_entry_token_injected = 1
+    planner._dig_cut_token_injected = True
+    planner._dig_depth_profile_token_injected = False
+    planner._return_target_token_injected = True
+    planner._return_relocate_token_injected = False
+    planner._return_start_envelope_token_injected = True
+
+    assert planner._primitive_observation_injection_runtime_state() is state
+    assert state.to_token_injection_state() == PrimitiveTokenInjectionState(
+        cell_entry_token_injected=True,
+        dig_cut_token_injected=True,
+        dig_depth_profile_token_injected=False,
+        return_target_token_injected=True,
+        return_relocate_token_injected=False,
+        return_start_envelope_token_injected=True,
+    )
+    assert planner._cell_entry_token_injected is True
+    assert planner._dig_cut_token_injected is True
+    assert planner._dig_depth_profile_token_injected is False
+    assert planner._return_target_token_injected is True
+    assert planner._return_relocate_token_injected is False
+    assert planner._return_start_envelope_token_injected is True
+
+
+def test_policy_reset_application_replaces_observation_injection_state_owner() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    old_state = planner._primitive_observation_injection_runtime_state()
+    old_state.apply_token_injection_state(
+        PrimitiveTokenInjectionState(dig_cut_token_injected=True)
+    )
+    reset_state = PrimitiveObservationInjectionRuntimeState.fresh()
+
+    class _ResetState:
+        def as_policy_field_updates(self):
+            return {"_observation_injection_state": reset_state}
+
+    planner._apply_reset_lifecycle_state(_ResetState())
+    planner._return_target_token_injected = True
+
+    assert planner._primitive_observation_injection_runtime_state() is reset_state
+    assert planner._primitive_observation_injection_runtime_state() is not old_state
+    assert reset_state.to_token_injection_state() == PrimitiveTokenInjectionState(
+        return_target_token_injected=True,
+    )
+    assert old_state.to_token_injection_state() == PrimitiveTokenInjectionState(
+        dig_cut_token_injected=True,
     )
 
 

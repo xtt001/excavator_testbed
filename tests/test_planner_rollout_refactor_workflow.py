@@ -32,8 +32,11 @@ def test_plan_contract_requires_separate_plan_log_and_no_legacy_plan_files(
                 "## New-File Extraction Rule",
                 "## Parking And Reclassification Rule",
                 "## Delegated Executor Callback Rule",
+                "## Thinking-Effort Dispatch Rule",
                 "## Three-Iteration Reflection Rule",
                 "send_message_to_thread",
+                "thinking",
+                "xhigh",
                 "three-iteration reflection",
                 "docs/planner_baseline_architecture_map.md",
                 "branch baseline",
@@ -131,8 +134,11 @@ def test_plan_contract_rejects_change_records_in_active_plan(tmp_path: Path) -> 
                 "## New-File Extraction Rule",
                 "## Parking And Reclassification Rule",
                 "## Delegated Executor Callback Rule",
+                "## Thinking-Effort Dispatch Rule",
                 "## Three-Iteration Reflection Rule",
                 "send_message_to_thread",
+                "thinking",
+                "xhigh",
                 "three-iteration reflection",
                 "## Change Record 2026-06-18",
             ]
@@ -271,6 +277,8 @@ def test_goal_prompt_exists_for_rollout_evidence_goal_mode() -> None:
     assert "TDD red" in prompt
     assert "git status after" in prompt
     assert "HEAD after" in prompt
+    assert "thinking: xhigh" in prompt
+    assert "thinking: high" in prompt
     assert "three-iteration reflection" in prompt
     assert "primitive_scheduler_service_refactor_plan" not in prompt
 

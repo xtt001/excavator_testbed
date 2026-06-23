@@ -16,6 +16,9 @@ from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive_scripted_bootstrap import (
     PrimitiveScriptedBootstrapRuntimeState,
 )
+from testbed.planner.primitive_observation import (
+    PrimitiveObservationInjectionRuntimeState,
+)
 from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 
 
@@ -82,6 +85,7 @@ class PrimitiveResetLifecycleState:
     cell_entry_goal_cycle_id: int
     cell_entry_audit: Any | None
     cell_entry_tokens: np.ndarray
+    observation_injection_state: PrimitiveObservationInjectionRuntimeState
     cell_entry_token_injected: bool
     token_state: PrimitiveTokenRuntimeState
     dig_cut_tokens: np.ndarray
@@ -183,6 +187,7 @@ class PrimitiveResetLifecycleState:
             "_cell_entry_goal_cycle_id": self.cell_entry_goal_cycle_id,
             "_cell_entry_audit": self.cell_entry_audit,
             "_cell_entry_tokens": self.cell_entry_tokens,
+            "_observation_injection_state": self.observation_injection_state,
             "_cell_entry_token_injected": self.cell_entry_token_injected,
             "_token_state": self.token_state,
             "_dig_cut_tokens": self.dig_cut_tokens,
@@ -277,6 +282,7 @@ class PrimitiveResetLifecycleService:
         )
         cycle_state = PrimitiveCycleRuntimeState.fresh()
         token_state = PrimitiveTokenRuntimeState.fresh()
+        observation_injection_state = PrimitiveObservationInjectionRuntimeState.fresh()
         return_state = PrimitiveReturnRuntimeState.fresh()
         scripted_bootstrap_state = PrimitiveScriptedBootstrapRuntimeState.fresh()
         return PrimitiveResetLifecycleState(
@@ -326,22 +332,33 @@ class PrimitiveResetLifecycleService:
             cell_entry_goal_cycle_id=-1,
             cell_entry_audit=None,
             cell_entry_tokens=np.zeros(CELL_ENTRY_TOKEN_DIM, dtype=np.float32),
-            cell_entry_token_injected=False,
+            observation_injection_state=observation_injection_state,
+            cell_entry_token_injected=(
+                observation_injection_state.cell_entry_token_injected
+            ),
             token_state=token_state,
             dig_cut_tokens=token_state.dig_cut_tokens,
-            dig_cut_token_injected=False,
+            dig_cut_token_injected=observation_injection_state.dig_cut_token_injected,
             dig_depth_profile_tokens=token_state.dig_depth_profile_tokens,
-            dig_depth_profile_token_injected=False,
+            dig_depth_profile_token_injected=(
+                observation_injection_state.dig_depth_profile_token_injected
+            ),
             dig_depth_profile_token_source=token_state.dig_depth_profile_token_source,
             dig_depth_profile_fallback_reason=(
                 token_state.dig_depth_profile_fallback_reason
             ),
             return_target_tokens=token_state.return_target_tokens,
-            return_target_token_injected=False,
+            return_target_token_injected=(
+                observation_injection_state.return_target_token_injected
+            ),
             return_relocate_tokens=token_state.return_relocate_tokens,
-            return_relocate_token_injected=False,
+            return_relocate_token_injected=(
+                observation_injection_state.return_relocate_token_injected
+            ),
             return_start_envelope_tokens=token_state.return_start_envelope_tokens,
-            return_start_envelope_token_injected=False,
+            return_start_envelope_token_injected=(
+                observation_injection_state.return_start_envelope_token_injected
+            ),
             return_start_envelope_token_source=(
                 token_state.return_start_envelope_token_source
             ),

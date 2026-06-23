@@ -170,9 +170,12 @@ direct-handoff readiness, complete the return transition, and switch to `dig`
 or residual `pre_dig_align` with the existing `return_to_*_start_envelope_ready`
 reason. `PrimitivePolicyObservationAssembler` now owns low-level policy
 observation token injection: provider call order, injected key names,
-copy/no-copy behavior, and legacy injected-flag state calculation. The policy
-shell builds typed token-provider ports and clears/writes compatibility flag
-fields. `PrimitiveTokenRuntimeCoordinator` now owns the dig/return token
+copy/no-copy behavior, and immutable legacy injected-flag state calculation.
+`PrimitiveObservationInjectionRuntimeState` owns the mutable per-observation
+injected compatibility flags: reset defaults, clear before assembly, apply from
+`PrimitiveTokenInjectionState`, and compatibility projection. The policy shell
+builds typed token-provider ports and keeps old injected-flag names as
+property-backed facades over that owner. `PrimitiveTokenRuntimeCoordinator` now owns the dig/return token
 runtime sequencing used by those providers: dig-cut gating, terminal-stop
 cached-token behavior, bootstrap policy token exception, hold-cycle checks,
 return-target hold-cycle checks, return relocate planning, return-start-envelope
@@ -902,6 +905,22 @@ previous-action copy semantics, report schemas, backend fail-fast behavior,
 token injection flags, residual `pre_dig_align`, `cell_entry`, or removed 5P
 runtime status.
 
+Phase 9.49 introduces `PrimitiveObservationInjectionRuntimeState` in
+`testbed/planner/primitive_observation.py`. The state owner centralizes the six
+per-observation token injected compatibility flags while preserving the
+existing immutable `PrimitiveTokenInjectionState` returned by
+`PrimitivePolicyObservationAssembler`. Reset creates one fresh observation
+injection state; `_clear_policy_observation_injected_flags()` delegates to
+`clear()`, and `_apply_policy_observation_assembly(...)` delegates to apply the
+assembler result. The policy's old `_cell_entry_token_injected`,
+`_dig_cut_token_injected`, `_dig_depth_profile_token_injected`,
+`_return_target_token_injected`, `_return_relocate_token_injected`, and
+`_return_start_envelope_token_injected` names remain compatibility facades over
+the same owner. This phase does not change token schema, token dimensions,
+injected observation key names, provider call order, copy/no-copy behavior,
+public report schemas, `cell_entry`, `pre_dig_align`, backend fail-fast
+behavior, or removed 5P runtime status.
+
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in
 `testbed/planner/primitive_return_handoff.py`. The service owns the former
@@ -944,8 +963,10 @@ observation object when every provider returns `None`; otherwise create
 `dig_cut_tokens`, `dig_depth_profile_tokens_v1`, `return_target_tokens`,
 `return_relocate_tokens_v1`, `return_start_envelope_tokens_v1`). It also
 computes the legacy injected-flag state, with no goal injected flag and
-`cell_entry` kept compatibility-only. The policy shell now clears stale
-injected flags before assembly, delegates to the assembler, and writes the
+`cell_entry` kept compatibility-only. Phase 9.49 moves mutable injected-flag
+storage into `PrimitiveObservationInjectionRuntimeState`; the policy shell now
+clears stale injected flags through that owner before assembly, delegates to the
+assembler, and applies the
 resulting compatibility fields. Token planning algorithms, token dimensions,
 token source/fallback strings, debug/summary schemas, and golden-window
 contracts remain unchanged.

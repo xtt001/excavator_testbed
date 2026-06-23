@@ -5324,3 +5324,77 @@ Each completed refactor round should append:
   `pre_dig_align`, `cell_entry`, token algorithms, token schemas, branch order,
   reason strings, backend selection, or public report schemas in the next
   executor round.
+
+### 2026-06-23 Phase 9.49 Extract Primitive Observation Injection Runtime State
+
+- Scope: introduced `PrimitiveObservationInjectionRuntimeState` in
+  `testbed/planner/primitive_observation.py` as the focused mutable owner for
+  the six per-observation token injected compatibility flags.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 112]`, HEAD
+  before this round `21458c9c5ccf929d905c168d6bb67539f6985e46`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- `PrimitiveObservationInjectionRuntimeState.fresh()` owns reset-default false
+  values. The owner also owns per-observation `clear()`,
+  `apply_token_injection_state(...)` from immutable
+  `PrimitiveTokenInjectionState`, and `to_token_injection_state()` projection
+  back to the assembler/report compatibility shape.
+- `PrimitivePlannerACTPolicy` exposes
+  `_primitive_observation_injection_runtime_state()` plus property-backed
+  compatibility facades for `_cell_entry_token_injected`,
+  `_dig_cut_token_injected`, `_dig_depth_profile_token_injected`,
+  `_return_target_token_injected`, `_return_relocate_token_injected`, and
+  `_return_start_envelope_token_injected`.
+- `_clear_policy_observation_injected_flags()` now delegates to the owner, and
+  `_apply_policy_observation_assembly(...)` applies the assembler's immutable
+  result through the owner. `PrimitiveResetLifecycleService` creates one fresh
+  observation-injection state during reset and applies it before the old
+  injected-flag field names.
+- Preserved behavior: token schema, token dimensions, injected observation key
+  names, provider call order, copy/no-copy behavior, public debug/summary/trace
+  schemas, branch order, reason strings, policy reset timing, previous-action
+  semantics, backend fail-fast behavior, `cell_entry` planner/audit/token
+  state, residual `pre_dig_align`, token planning, coverage/return/cycle/
+  scripted-bootstrap/execution state owners, and removed 5P runtime status are
+  unchanged.
+- Explicit non-goals: no `cell_entry` promotion, no `pre_dig_align` cleanup, no
+  token algorithm or token contract change, no backend selection change, and no
+  public report schema change.
+- TDD red result from executor callback: after focused tests were added, the
+  first run of `python -m pytest -q tests/test_primitive_observation.py`
+  failed as expected with an `ImportError` because
+  `PrimitiveObservationInjectionRuntimeState` did not yet exist in
+  `testbed.planner.primitive_observation`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_reset_lifecycle.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  returned `9 passed`;
+  `python -m pytest -q tests/test_primitive_execution_state.py tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py`
+  returned `15 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_cut_tokens or dig_depth_profile or return_to_dig or start_envelope or pre_dig_align or semantic_boundary_events_drive_skill_sequence or cell_entry"`
+  returned `20 passed, 99 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_reset_lifecycle.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  returned `9 passed`;
+  `python -m pytest -q tests/test_primitive_execution_state.py tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py`
+  returned `15 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_cut_tokens or dig_depth_profile or return_to_dig or start_envelope or pre_dig_align or semantic_boundary_events_drive_skill_sequence or cell_entry"`
+  returned `20 passed, 99 deselected`; compileall for touched modules passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, active refactor plan, goal prompt, workflow guard, and workflow test.
+  The active workflow now also requires refactor/audit threads to run with
+  explicit `thinking: xhigh`, and every executor delegation prompt to specify
+  `thinking: high` or `thinking: xhigh` in both prompt text and tool call when
+  available.
+- Audit note: this is a focused per-observation injected-flag owner, not a
+  generic state bag. It intentionally excludes token arrays, token planning,
+  token schemas, coverage/return/cycle/scripted-bootstrap/execution state,
+  parked `pre_dig_align`, `cell_entry` compatibility state, backend facts,
+  effect application, and report schemas.
