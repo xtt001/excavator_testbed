@@ -7619,3 +7619,114 @@ Each completed refactor round should append:
   remains default legacy FSM backendified with focused services / shared backend
   decision input/facts/factory; BT/VLM/LLM backends remain unsupported
   fail-fast.
+
+### 2026-06-23 Phase 9.77 Route Return Refresh Through Readiness Service
+
+- Scope: closed the return transition refresh edge after Phase 9.76. The
+  capability provider now refreshes return handoff state through the focused
+  `ReturnHandoffReadinessService` rather than a policy-built callback.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 140]`, HEAD
+  `9cf50e9e4b777858426a6ef025fb97f7b336bcc7`, dirty status clean at initial
+  lock check. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- `PrimitiveFSMCapabilityProviderPorts` now carries
+  `return_handoff_readiness_service: ReturnHandoffReadinessService` instead of
+  the `refresh_return_handoff_state` callback.
+- `PrimitiveFSMCapabilityProvider.refresh_return_transition_state(obs)` calls
+  `return_handoff_readiness_service.handoff_ready(obs)`, preserving the prior
+  cache-refresh behavior previously reached through
+  `PrimitivePlannerACTPolicy._return_to_dig_handoff_ready(obs)`.
+- `PrimitivePlannerACTPolicy._primitive_fsm_capability_provider_ports()` now
+  passes `self._return_handoff_readiness_service()` directly.
+- Removed duplicate `_return_to_dig_shallow_guard_ready(...)` from
+  `PrimitivePlannerACTPolicy` after `rg` confirmed it had no production callers
+  and the shallow-guard calculation is already represented by
+  `ReturnTransitionStatus.from_inputs(...)`.
+- Line-count impact: `testbed/policies/hybrid/primitive_planner.py` dropped from
+  4906 to 4873 lines. `testbed/planner/primitive_capability_provider.py` is 318
+  lines after replacing the callback field with the focused readiness-service
+  field.
+- Preserved behavior: return transition refresh still evaluates handoff
+  readiness for the observation and writes the same `PrimitiveReturnRuntimeState`
+  caches through `ReturnHandoffReadinessService`. Return handoff readiness
+  semantics, direct-handoff effect ordering, next-skill reason strings, return
+  start-envelope token algorithms, debug/summary/trace schemas, residual
+  `pre_dig_align`, parked `cell_entry`, removed 5P runtime status, and backend
+  fail-fast behavior remain unchanged.
+- Explicit non-goals: no return readiness semantic change, no direct handoff
+  effect-order change, no return start-envelope token build/apply/conditioning
+  or prior-mapping change, no `pre_dig_align` or `cell_entry` promotion, no
+  backend support change, and no public report schema change.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_return_handoff.py tests/test_primitive_decision_contract.py`
+  failed with `10 failed, 57 passed`; representative failures were
+  `PrimitiveFSMCapabilityProviderPorts.__init__() got an unexpected keyword
+  argument 'return_handoff_readiness_service'`, and the port field assertion
+  still saw the old callback boundary.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_return_handoff.py tests/test_primitive_decision_contract.py`
+  returned `67 passed`;
+  `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_decision_capabilities.py tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py`
+  returned `92 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "return_to_dig or start_envelope or semantic_boundary_events_drive_skill_sequence or pre_dig_align or dig_cut_tokens or coverage_decision_trace"`
+  returned `20 passed, 99 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_return_handoff.py tests/test_primitive_decision_contract.py`
+  returned `67 passed`;
+  `python -m pytest -q tests/test_primitive_backend.py tests/test_primitive_decision_capabilities.py tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py`
+  returned `92 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "return_to_dig or start_envelope or semantic_boundary_events_drive_skill_sequence or pre_dig_align or dig_cut_tokens or coverage_decision_trace"`
+  returned `20 passed, 99 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was a bounded live return transition refresh boundary
+  move that connected an existing focused service to the capability provider,
+  not a tiny compatibility dict/facade move, pass-through wrapper, anemic
+  service, planner-self port, or generic blackboard. Current maturity remains
+  default legacy FSM backendified with focused services / shared backend
+  decision input/facts/factory; BT/VLM/LLM backends remain unsupported
+  fail-fast.
+
+### 2026-06-23 Three-Iteration Reflection After Phases 9.75-9.77
+
+- Reflection scope: Phase 9.75 routed dig-exit geometry through the capability
+  provider and removed migrated dig/carry/dump helper duplicates from the
+  policy shell. Phase 9.76 moved return handoff readiness into
+  `ReturnHandoffReadinessService`. Phase 9.77 connected capability-provider
+  return refresh directly to that readiness service and removed a duplicate
+  shallow-guard helper.
+- Are we closer to the target: yes. The latest three slices moved confirmed-live
+  transition facts and return readiness from policy-owned callbacks/private
+  implementations into stable focused owners. They also reduced direct
+  `PrimitivePlannerACTPolicy` implementation responsibility and line count from
+  the Phase 9.74 audit baseline of 5311 lines to 4873 lines, while keeping
+  default legacy FSM behavior unchanged.
+- Maximum remaining gap: `PrimitivePlannerACTPolicy` is still a large public
+  adapter and compatibility-facade host. The largest remaining contributors are
+  property-backed compatibility facades, report snapshot assembly, token and
+  coverage port builders, residual `pre_dig_align` algorithm/action/report
+  material, parked `cell_entry` compatibility material, and composition glue for
+  reset/runtime/decision/report paths. The system is still not a fully swappable
+  backend architecture; the correct maturity remains default legacy FSM
+  backendified with focused services / shared backend decision input/facts/
+  factory, while BT/VLM/LLM backends remain unsupported fail-fast.
+- Hard constraint check: these three rounds did not treat protection as the
+  objective. They were not tiny compatibility dict moves, pass-through facades,
+  anemic services, planner-self ports, or a generic blackboard. They did use
+  protection as a constraint: no branch order, reason string, threshold, token
+  schema, report schema, backend support, reset timing, `pre_dig_align`,
+  `cell_entry`, or removed 5P runtime behavior changed.
+- Direction correction: the transition-fact/return-readiness boundary has now
+  reached diminishing returns for callback cleanup. The next implementation
+  should not spend a whole slice deleting one or two private wrappers. The next
+  core bounded move should either move a coherent report-input snapshot cluster
+  out of the policy shell, or perform a focused parked-compatibility audit for
+  `pre_dig_align`/`cell_entry` before any deletion or parking change. A simple
+  composition wrapper around existing port builders is explicitly unsuitable
+  unless it deletes repeated assembly behind a stable responsibility.

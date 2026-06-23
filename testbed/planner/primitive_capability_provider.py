@@ -17,6 +17,7 @@ from testbed.planner.primitive_capabilities import (
 )
 from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive_return_handoff import ReturnHandoffReadinessService
 from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
 
 
@@ -64,7 +65,7 @@ class PrimitiveFSMCapabilityProviderPorts:
     dump_done_min_deposit_delta_kg: float
     dump_done_use_boundary_event: bool
     dump_done_hold_steps: int
-    refresh_return_handoff_state: Callable[[dict[str, Any]], None]
+    return_handoff_readiness_service: ReturnHandoffReadinessService
     pre_dig_align_before_dig: Callable[[], bool]
     return_to_dig_start_envelope_direct_handoff_enabled: bool
     return_to_dig_start_envelope_gate_enabled: bool
@@ -235,7 +236,7 @@ class PrimitiveFSMCapabilityProvider:
         )
 
     def refresh_return_transition_state(self, obs: dict[str, Any]) -> None:
-        self.ports.refresh_return_handoff_state(obs)
+        self.ports.return_handoff_readiness_service.handoff_ready(obs)
 
     def return_transition_status(
         self,

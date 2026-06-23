@@ -1828,9 +1828,7 @@ class PrimitivePlannerACTPolicy(Policy):
             dump_done_min_deposit_delta_kg=self.dump_done_min_deposit_delta_kg,
             dump_done_use_boundary_event=self.dump_done_use_boundary_event,
             dump_done_hold_steps=self.dump_done_hold_steps,
-            refresh_return_handoff_state=(
-                lambda obs: self._return_to_dig_handoff_ready(obs)
-            ),
+            return_handoff_readiness_service=self._return_handoff_readiness_service(),
             pre_dig_align_before_dig=(
                 lambda: self._should_pre_dig_align_before_dig()
             ),
@@ -2926,37 +2924,6 @@ class PrimitivePlannerACTPolicy(Policy):
         config = getattr(self.boundary_detector, "config", None)
         profile = str(getattr(config, "boundary_profile", "legacy"))
         return profile == "v2_4_5_spatial_mass"
-
-    def _return_to_dig_shallow_guard_ready(
-        self,
-        *,
-        obs: dict,
-        boundary_event: Any | None,
-    ) -> bool:
-        if not self.return_to_dig_shallow_guard_enabled:
-            return False
-        metrics = dict(getattr(boundary_event, "metrics", {}) or {})
-        mass = float(metrics.get("mass_in_bucket_kg", self._mass_in_bucket(obs)))
-        distance = float(
-            metrics.get("min_distance_to_dig_area_m", self._min_distance_to_dig_area(obs))
-        )
-        depth = float(
-            metrics.get(
-                "bucket_depth_below_dig_area_plane_m",
-                self._bucket_depth_below_dig_area_plane(obs),
-            )
-        )
-        entry_guard_ready = bool(
-            self.return_to_dig_max_entry_error_m is not None
-            and self._return_to_dig_entry_close(obs)
-        )
-        depth_below_max = bool(depth <= self.return_to_dig_max_depth_m)
-        return bool(
-            mass <= self.return_to_dig_max_bucket_mass_kg
-            and distance <= self.return_to_dig_touch_tolerance_m
-            and depth >= self.return_to_dig_min_depth_m
-            and (depth_below_max or entry_guard_ready)
-        )
 
     def _return_handoff_readiness_config(self) -> ReturnHandoffReadinessConfig:
         return ReturnHandoffReadinessConfig(

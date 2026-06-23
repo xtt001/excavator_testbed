@@ -151,14 +151,16 @@ def _ports(
         return_state["start"]
     )
 
-    def refresh_return_handoff_state(obs: dict[str, Any]) -> None:
-        calls.append("refresh_return_handoff_state")
-        return_state["seen"] = True
-        return_state["entry"] = True
-        return_state["start"] = True
-        runtime_return_state.return_next_dig_event_seen = True
-        runtime_return_state.return_to_dig_entry_close_state = True
-        runtime_return_state.return_to_dig_start_envelope_ready_state = True
+    class _FakeReturnHandoffReadinessService:
+        def handoff_ready(self, obs: dict[str, Any]) -> bool:
+            calls.append("return_handoff_readiness_service.handoff_ready")
+            return_state["seen"] = True
+            return_state["entry"] = True
+            return_state["start"] = True
+            runtime_return_state.return_next_dig_event_seen = True
+            runtime_return_state.return_to_dig_entry_close_state = True
+            runtime_return_state.return_to_dig_start_envelope_ready_state = True
+            return True
 
     return PrimitiveFSMCapabilityProviderPorts(
         action_dim=2,
@@ -201,7 +203,7 @@ def _ports(
         dump_done_min_deposit_delta_kg=2.0,
         dump_done_use_boundary_event=True,
         dump_done_hold_steps=1,
-        refresh_return_handoff_state=refresh_return_handoff_state,
+        return_handoff_readiness_service=_FakeReturnHandoffReadinessService(),
         pre_dig_align_before_dig=lambda: False,
         return_to_dig_start_envelope_direct_handoff_enabled=True,
         return_to_dig_start_envelope_gate_enabled=True,
@@ -351,7 +353,7 @@ def test_provider_refresh_return_transition_state_refreshes_handoff_cache() -> N
 
     provider.refresh_return_transition_state(obs)
 
-    assert calls == ["refresh_return_handoff_state"]
+    assert calls == ["return_handoff_readiness_service.handoff_ready"]
     assert return_state == {"seen": True, "entry": True, "start": True}
 
 
@@ -371,7 +373,7 @@ def test_provider_return_status_read_is_read_only_without_explicit_refresh() -> 
         boundary_event=None,
     )
 
-    assert "refresh_return_handoff_state" not in calls
+    assert "return_handoff_readiness_service.handoff_ready" not in calls
     assert calls == []
     assert status.completed_transition is False
     assert status.switch_reason == ""
@@ -392,7 +394,7 @@ def test_provider_return_status_after_explicit_refresh_matches_old_result() -> N
     provider.refresh_return_transition_state(obs)
     status = provider.return_transition_status(obs, boundary_event=None)
 
-    assert calls == ["refresh_return_handoff_state"]
+    assert calls == ["return_handoff_readiness_service.handoff_ready"]
     assert status.completed_transition is True
     assert status.switch_reason == "return_to_dig_next_dig_entry_ready"
 
@@ -404,6 +406,7 @@ def test_provider_ports_do_not_accept_planner_or_policy_self() -> None:
     assert "planner" not in field_names
     assert "policy" not in field_names
     assert {"cycle_state", "coverage_state", "return_state"} <= field_names
+    assert "return_handoff_readiness_service" in field_names
     assert not {
         "coverage_terminal_stop_requested",
         "dig_step_count",
@@ -416,5 +419,6 @@ def test_provider_ports_do_not_accept_planner_or_policy_self() -> None:
         "return_next_dig_event_seen",
         "return_entry_close",
         "return_start_envelope_ready",
+        "refresh_return_handoff_state",
         "dig_exit_overshoot_m",
     } & field_names

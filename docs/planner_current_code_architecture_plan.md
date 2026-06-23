@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4906 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4873 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -67,7 +67,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_backend_facts.py` | 250 | backend-facing lazy read-only facts access for bootstrap and dig/carry/dump/return transition views |
 | `testbed/planner/primitive_decision_facts.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
 | `testbed/planner/primitive_capabilities.py` | 1027 | read-only observation facts plus bootstrap/dig/carry/dump/return transition status projections and dump-ready geometry predicates |
-| `testbed/planner/primitive_capability_provider.py` | 317 | legacy FSM transition-status provider over focused cycle/coverage/return owners and observation facts |
+| `testbed/planner/primitive_capability_provider.py` | 318 | legacy FSM transition-status provider over focused cycle/coverage/return owners, observation facts, and return handoff readiness service |
 | `testbed/planner/primitive_execution_state.py` | 49 | mutable execution lifecycle state owner for active skill, switch reason, previous action, and latest debug state |
 | `testbed/planner/primitive_observation.py` | 176 | policy observation assembler plus mutable per-observation injected-flag runtime state owner |
 | `testbed/planner/primitive_cell_entry_state.py` | 81 | parked cell-entry compatibility/report runtime state owner, reset defaults, and debug-field projection |
@@ -1504,6 +1504,25 @@ assembly. Return start-envelope token build/apply/conditioning/prior mapping,
 backend branch order, thresholds, debug/summary/trace schemas, reset timing,
 `pre_dig_align`, `cell_entry`, and BT/VLM/LLM unsupported fail-fast behavior
 remain unchanged.
+
+Current status note after Phase 9.77: the capability-provider return refresh
+edge now consumes the focused return handoff readiness source directly.
+`PrimitiveFSMCapabilityProviderPorts` carries
+`ReturnHandoffReadinessService` instead of a policy-built
+`refresh_return_handoff_state` callback, and
+`PrimitiveFSMCapabilityProvider.refresh_return_transition_state(obs)` calls
+`handoff_ready(obs)` on that service to refresh the same return owner caches.
+`PrimitivePlannerACTPolicy._primitive_fsm_capability_provider_ports()` now passes
+`self._return_handoff_readiness_service()` directly. The policy shell also
+dropped the duplicate `_return_to_dig_shallow_guard_ready(...)` helper after the
+same shallow-guard calculation was confirmed to be represented by
+`ReturnTransitionStatus.from_inputs(...)` and to have no production callers.
+
+Return transition refresh semantics, return handoff readiness semantics,
+direct-handoff effect ordering, next-skill reason strings, return
+start-envelope token algorithms, debug/summary/trace schemas, residual
+`pre_dig_align`, parked `cell_entry`, and BT/VLM/LLM unsupported fail-fast
+behavior remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

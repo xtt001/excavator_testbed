@@ -1334,6 +1334,18 @@ start-envelope token planning, effect ordering, completion timing, reason
 strings, token/report schemas, backend support, `pre_dig_align`, `cell_entry`,
 and removed 5P runtime status remain unchanged.
 
+Phase 9.77 closes the return-refresh edge from the capability provider to that
+same readiness owner. `PrimitiveFSMCapabilityProviderPorts` now carries
+`ReturnHandoffReadinessService` directly instead of a
+`refresh_return_handoff_state` policy callback. `refresh_return_transition_state`
+calls `handoff_ready(obs)` on the readiness service, preserving the same return
+owner cache refresh behavior without routing through a policy-built callback.
+The policy shell also drops the duplicate `_return_to_dig_shallow_guard_ready`
+helper after confirming the shallow-guard calculation already lives in
+`ReturnTransitionStatus.from_inputs(...)`. Return readiness semantics, direct
+handoff effect ordering, reason strings, token planning, `pre_dig_align`,
+`cell_entry`, and backend support remain unchanged.
+
 Phase 9.14 extracts low-level policy observation/token injection assembly into
 `PrimitivePolicyObservationAssembler` in
 `testbed/planner/primitive_observation.py`. The assembler owns the old
@@ -1661,6 +1673,12 @@ and coverage state owners plus explicit prior-bound/mapping ports. This keeps
 live return readiness in the return handoff module without promoting residual
 `pre_dig_align` or parked `cell_entry` material into mainline backend
 architecture.
+
+Phase 9.77 narrows the capability-provider refresh boundary. Return transition
+cache refresh now reaches the same focused readiness owner directly, rather than
+via a policy callback. This keeps the return transition fact path aligned with
+the return handoff module and removes one more migrated duplicate helper from
+the large policy shell without changing the return transition status schema.
 
 ### Stage 4: Expand Effect Families From Evidence
 

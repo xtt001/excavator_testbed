@@ -402,8 +402,8 @@ Current boundary:
   read-only dig status. Dig-to-carry reason mirror writeback is explicit through
   `sync_dig_transition_reason(...)`.
 - `PrimitiveFSMCapabilityProvider.refresh_return_transition_state(obs)` owns
-  the explicit return handoff cache refresh step. That refresh now delegates
-  through the policy facade into `ReturnHandoffReadinessService`, while
+  the explicit return handoff cache refresh step. That refresh now consumes
+  `ReturnHandoffReadinessService` directly from provider ports, while
   `return_transition_status(...)` only reads cached return owner flags and
   observation facts.
 - `PrimitiveDecisionFacts` is the first backend-neutral common facts packet. It
