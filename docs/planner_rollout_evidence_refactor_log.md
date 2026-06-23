@@ -8210,3 +8210,85 @@ Each completed refactor round should append:
   and parked-path promotion. Current maturity remains default legacy FSM
   backendified with focused services / shared backend decision input/facts/
   factory; BT/VLM/LLM backends remain unsupported fail-fast.
+
+### 2026-06-23 Phase 9.84 Move Token Planning Observation Fact-Source Boundary
+
+- Scope: moved active dig and return token planning observation fact-source
+  ports from separate policy-built observation callbacks to a shared typed
+  `PrimitiveObservationFacts` provider. This is a structural port/fact-source
+  refactor for confirmed-live token planning, not a token algorithm, schema, or
+  parked-path behavior change.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 147]`, HEAD
+  `992d1922050f542e0d62d4a8736f10ec7e6a7029`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, commit, docs edit, or
+  remote write was used by the executor.
+- `PrimitiveDigTokenPlanningPorts` now carries
+  `observation_facts: Callable[[dict[str, Any]], PrimitiveObservationFacts]`
+  instead of `bucket_dig_area_pose`, `deposited_mass`, and `env_state`
+  callbacks. `PrimitiveDigTokenPlanningService` reads bucket dig-area pose,
+  deposited mass, and env-state through that typed facts object.
+- `PrimitiveReturnTokenPlanningPorts` now carries the same typed facts provider
+  instead of `bucket_dig_area_pose`, `env_state`, `qpos`, and `qvel` callbacks.
+  `PrimitiveReturnTokenPlanningService` reads bucket pose, env-state, qpos, and
+  qvel through `PrimitiveObservationFacts`.
+- `PrimitivePlannerACTPolicy._primitive_dig_token_planning_ports()` and
+  `_primitive_return_token_planning_ports()` now construct
+  `PrimitiveObservationFacts.from_obs(obs, action_dim=int(self.action_dim))` as
+  the explicit adapter-side facts provider.
+- Line-count impact: `testbed/policies/hybrid/primitive_planner.py` dropped
+  from 4637 to 4633 lines. The focused token planning modules grew to carry the
+  typed fact-source access in the service boundary:
+  `testbed/planner/primitive_dig_token_planning.py` is 354 lines and
+  `testbed/planner/primitive_return_token_planning.py` is 226 lines.
+- Preserved behavior: token dimensions/order/source/fallback strings,
+  raw-field priority, token/raw-field copy semantics, dig-depth-profile
+  env-state/cell-id behavior, return start-envelope build/apply/conditioning
+  and qpos/qvel defaults, policy observation injection order, coverage
+  raw-field facts, debug/summary/trace schemas, branch order, reason strings,
+  reset timing, backend unsupported fail-fast, parked `pre_dig_align`, parked
+  `cell_entry`, and removed 5P runtime status remain unchanged.
+- Explicit non-goals: no policy observation assembler movement, no coverage
+  raw-field fact-source change, no return handoff readiness change, no
+  requested-effect or dig-recovery metric change, no parked `pre_dig_align` or
+  `cell_entry` promotion, and no backend support expansion.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py tests/test_primitive_capabilities.py`
+  returned `17 failed, 30 passed` with `TypeError` for unexpected
+  `observation_facts` constructor arguments and port-shape assertions proving
+  the typed fact-source boundary did not exist yet.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py tests/test_primitive_capabilities.py`
+  returned `47 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_coverage_facts.py tests/test_primitive_token_runtime.py`
+  returned `23 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_coverage_facts.py tests/test_primitive_token_runtime.py tests/test_primitive_token_state.py`
+  returned `34 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_cut_tokens or dig_depth_profile or return_to_dig or start_envelope or coverage_decision_trace or semantic_boundary_events_drive_skill_sequence"`
+  returned `8 passed, 111 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py tests/test_primitive_capabilities.py`
+  returned `47 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_coverage_facts.py tests/test_primitive_token_runtime.py tests/test_primitive_token_state.py`
+  returned `34 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_cut_tokens or dig_depth_profile or return_to_dig or start_envelope or coverage_decision_trace or semantic_boundary_events_drive_skill_sequence"`
+  returned `8 passed, 111 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- User direction recorded during audit: residual `pre_dig_align` and parked
+  `cell_entry` should be left parked until other live/mainline work is done.
+  After that, make one explicit checkpoint commit, then perform a separate
+  cleanup/removal review for parked paths. Do not route parked material into
+  mainline backend/runtime/token-contract work in the interim.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was the bounded active dig/return token planning
+  observation fact-source move selected by Phase 9.83 audit, not the safest
+  smallest cleanup. It did not add a pass-through wrapper, anemic service,
+  planner-self port, broad config bag, generic blackboard, or parked-path
+  promotion. Current maturity remains default legacy FSM backendified with
+  focused services / shared backend decision input/facts/factory; BT/VLM/LLM
+  backends remain unsupported fail-fast.

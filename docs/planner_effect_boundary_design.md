@@ -117,6 +117,13 @@ baselines, and state-exemplar payload through those owners instead of
 policy-built storage callbacks. Config facts, token planner algorithms,
 observation facts, coverage corridor selection, and coverage raw-field building
 remain explicit external ports.
+Phase 9.84 narrows the active dig and return token planning observation
+fact-source boundary further. Both token planning port sets now receive a
+typed `PrimitiveObservationFacts` provider instead of separate policy-built
+bucket pose, deposited-mass, env-state, qpos, and qvel callbacks. The token
+planning services still keep planner algorithms, coverage corridor selection,
+and coverage raw-field building as explicit ports, and this does not change
+policy observation token injection order or token schemas.
 
 Failed-dig/restart recovery is now a focused service boundary rather than
 direct policy implementation. `PrimitiveDigRecoveryService` consumes focused
@@ -1294,6 +1301,13 @@ coverage selection/effect semantics, debug/summary/trace schema, branch order,
 reason strings, backend fail-fast behavior, parked `cell_entry`, residual
 `pre_dig_align`, or removed 5P runtime status.
 
+Phase 9.84 updates this boundary so active dig token planning receives
+`PrimitiveObservationFacts` through a typed provider rather than separate
+`bucket_dig_area_pose`, `deposited_mass`, and `env_state` callbacks. The
+service reads bucket pose, deposited mass, and env-state through that typed
+facts object while keeping coverage raw-field construction and token planner
+algorithms explicit.
+
 Phase 9.65 narrows the return token planning port boundary in
 `testbed/planner/primitive_return_token_planning.py`.
 `PrimitiveReturnTokenPlanningPorts` now carries the focused
@@ -1313,6 +1327,13 @@ prior token/mapping/bounds helper behavior, token/raw-field copy semantics,
 token dimensions/order/source strings, debug/summary/trace schema, branch
 order, reason strings, policy reset timing, backend fail-fast behavior, parked
 `cell_entry`, residual `pre_dig_align`, or removed 5P runtime status.
+
+Phase 9.84 updates this boundary so return token planning receives
+`PrimitiveObservationFacts` through the same typed provider rather than
+separate `bucket_dig_area_pose`, `env_state`, `qpos`, and `qvel` callbacks.
+The service reads bucket pose, env-state, qpos, and qvel through that typed
+facts object while keeping return token planner algorithms, coverage raw-field
+construction, and return start-envelope behavior unchanged.
 
 Phase 9.66 narrows the token runtime port boundary in
 `testbed/planner/primitive_token_runtime.py`. `PrimitiveTokenRuntimePorts` now

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX
+from testbed.data.schema import ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX
 from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_TOKEN_DIM,
@@ -166,16 +168,27 @@ def test_dig_token_planning_ports_share_token_state_owner() -> None:
     policy.dig_cut_planner_mode = "operator_prior_coverage"
     policy.dig_cut_planner_fallback_mode = "conservative_pose"
     policy._cycle_index = 0
+    policy.action_dim = 4
 
     ports = policy._primitive_dig_token_planning_ports()
     port_names = {field.name for field in ports.__dataclass_fields__.values()}
 
     assert ports.token_state is state
+    assert "observation_facts" in port_names
+    assert "bucket_dig_area_pose" not in port_names
+    assert "deposited_mass" not in port_names
+    assert "env_state" not in port_names
     assert "get_pending_dig_cut_cycle_id" not in port_names
     assert "get_pending_dig_cut_tokens" not in port_names
     assert "set_dig_cut_token_source" not in port_names
     assert "set_dig_depth_profile_fallback_reason" not in port_names
 
+    env_state = np.zeros(64, dtype=np.float32)
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX] = 1.25
+    env_state[ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX] = 3.5
+    facts = ports.observation_facts({"env_state": env_state})
+    assert facts.bucket_dig_area_pose()[0] == 1.25
+    assert facts.deposited_mass_in_target_box_kg == 3.5
     ports.token_state.pending_dig_cut_cycle_id = 17
     ports.token_state.dig_cut_token_source = "operator_prior_coverage"
 
@@ -187,16 +200,25 @@ def test_return_token_planning_ports_share_token_state_owner() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     state = policy._primitive_token_runtime_state()
     policy.dig_cut_planner_mode = "operator_prior_coverage"
+    policy.action_dim = 4
 
     ports = policy._primitive_return_token_planning_ports()
     port_names = {field.name for field in ports.__dataclass_fields__.values()}
 
     assert ports.token_state is state
+    assert "observation_facts" in port_names
+    assert "bucket_dig_area_pose" not in port_names
+    assert "env_state" not in port_names
+    assert "qpos" not in port_names
+    assert "qvel" not in port_names
     assert "get_return_start_envelope_use_prior_spatial_bounds" not in port_names
     assert "get_return_start_envelope_use_prior_qpos_bounds" not in port_names
     assert "set_return_start_envelope_token_source" not in port_names
     assert "set_return_start_envelope_use_prior_qpos_bounds" not in port_names
 
+    facts = ports.observation_facts({})
+    assert facts.qpos.tolist() == [0.0, 0.0, 0.0, 0.0]
+    assert facts.qvel.tolist() == [0.0, 0.0, 0.0, 0.0]
     ports.token_state.return_start_envelope_token_source = "return_start"
     ports.token_state.return_start_envelope_use_prior_qpos_bounds = False
 

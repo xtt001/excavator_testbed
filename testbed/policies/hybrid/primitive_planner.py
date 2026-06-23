@@ -56,6 +56,7 @@ from testbed.planner.primitive_capabilities import (
     CarryTransitionStatus,
     DigTransitionStatus,
     DumpTransitionStatus,
+    PrimitiveObservationFacts,
     ReturnTransitionStatus,
 )
 from testbed.planner.primitive_capability_provider import (
@@ -3143,9 +3144,12 @@ class PrimitivePlannerACTPolicy(Policy):
             dig_depth_profile_token_planner=(
                 lambda: self._dig_depth_profile_token_planner()
             ),
-            bucket_dig_area_pose=lambda obs: self._bucket_dig_area_pose(obs),
-            deposited_mass=lambda obs: self._deposited_mass(obs),
-            env_state=lambda obs: self._env_state(obs),
+            observation_facts=(
+                lambda obs: PrimitiveObservationFacts.from_obs(
+                    obs,
+                    action_dim=int(self.action_dim),
+                )
+            ),
             select_next_coverage_corridor=(
                 lambda obs: self._select_next_coverage_corridor(obs)
             ),
@@ -3254,7 +3258,12 @@ class PrimitivePlannerACTPolicy(Policy):
             return_start_envelope_token_planner=(
                 lambda: self._return_start_envelope_token_planner()
             ),
-            bucket_dig_area_pose=lambda obs: self._bucket_dig_area_pose(obs),
+            observation_facts=(
+                lambda obs: PrimitiveObservationFacts.from_obs(
+                    obs,
+                    action_dim=int(self.action_dim),
+                )
+            ),
             select_next_coverage_corridor=(
                 lambda obs: self._select_next_coverage_corridor(obs)
             ),
@@ -3264,19 +3273,6 @@ class PrimitivePlannerACTPolicy(Policy):
                     obs=obs,
                     update_state=update_state,
                 )
-            ),
-            env_state=lambda obs: self._env_state(obs),
-            qpos=(
-                lambda obs: np.asarray(
-                    obs.get("qpos", np.zeros(self.action_dim)),
-                    dtype=np.float32,
-                ).reshape(-1)
-            ),
-            qvel=(
-                lambda obs: np.asarray(
-                    obs.get("qvel", np.zeros(self.action_dim)),
-                    dtype=np.float32,
-                ).reshape(-1)
             ),
         )
 

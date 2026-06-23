@@ -16,6 +16,11 @@ from testbed.data.operator_first_v2_2 import (
     DIG_CUT_TOKEN_DIM,
 )
 from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX
+from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX
+from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX
+from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX
+from testbed.data.schema import ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX
+from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive_dig_token_planning import (
     PrimitiveDigTokenPlanningPorts,
     PrimitiveDigTokenPlanningService,
@@ -295,6 +300,26 @@ def _ports(
         )
         return {"operator_entry_x_m": 22.5}
 
+    def observation_facts(obs: dict[str, Any]) -> PrimitiveObservationFacts:
+        env_state = np.zeros(64, dtype=np.float32)
+        if "env_state" in obs:
+            incoming = np.asarray(obs["env_state"], dtype=np.float32).reshape(-1)
+            env_state[: len(incoming)] = incoming
+        if "pose_x" in obs:
+            env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX] = float(obs["pose_x"])
+            env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX] = float(obs["pose_y"])
+            env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX] = float(obs["pose_z"])
+        env_state[ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX] = 42.0
+        return PrimitiveObservationFacts.from_obs(
+            {
+                "env_state": env_state,
+                "task_metrics": {
+                    "deposited_mass_in_target_box_kg": 42.0,
+                },
+            },
+            action_dim=4,
+        )
+
     ports = PrimitiveDigTokenPlanningPorts(
         token_state=token_state,
         coverage_state=coverage_state,
@@ -303,13 +328,7 @@ def _ports(
         cycle_index=lambda: int(state["cycle_index"]),
         dig_cut_token_planner=lambda: cut_planner,
         dig_depth_profile_token_planner=lambda: depth_planner,
-        bucket_dig_area_pose=lambda obs: (
-            float(obs["pose_x"]),
-            float(obs["pose_y"]),
-            float(obs["pose_z"]),
-        ),
-        deposited_mass=lambda obs: events.append(f"deposited:{obs['id']}") or 42.0,
-        env_state=lambda obs: np.asarray(obs["env_state"], dtype=np.float32),
+        observation_facts=observation_facts,
         select_next_coverage_corridor=lambda obs: events.append(
             f"select_corridor:{obs['id']}"
         )
@@ -335,7 +354,6 @@ def test_pending_return_target_route_writes_coverage_state_and_copies() -> None:
 
     assert events == [
         "plan_pending:1.5:{'operator_entry_x_m': 9.0}",
-        "deposited:obs",
     ]
     token_state = state["token_state"]
     coverage_state = state["coverage_state"]
@@ -436,7 +454,6 @@ def test_coverage_routes_use_existing_coverage_raw_field_builder(mode: str) -> N
 
     assert events == [
         "select_corridor:obs",
-        "deposited:obs",
         "coverage_raw:22:obs:True",
         "plan_raw:operator_prior_coverage:22.5:",
     ]
@@ -455,7 +472,6 @@ def test_coverage_routes_use_existing_coverage_raw_field_builder(mode: str) -> N
     ).build_dig_cut_tokens_for_obs({"id": "obs", "pose_x": 1, "pose_y": 2, "pose_z": 3})
     assert events == [
         "select_corridor:obs",
-        "deposited:obs",
         "coverage_raw:22:obs:True",
         "plan_raw:operator_prior_coverage:22.5:",
         "plan_raw:operator_prior_coverage:22.5:",
@@ -701,8 +717,12 @@ def test_ports_boundary_is_typed_and_does_not_accept_planner_self() -> None:
     assert "self" not in names
     assert "token_state" in names
     assert "coverage_state" in names
+    assert "observation_facts" in names
     assert "dig_cut_token_planner" in names
     assert "dig_depth_profile_token_planner" in names
+    assert "bucket_dig_area_pose" not in names
+    assert "deposited_mass" not in names
+    assert "env_state" not in names
     assert names.isdisjoint(removed_state_callbacks)
 
 

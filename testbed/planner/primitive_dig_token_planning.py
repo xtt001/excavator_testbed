@@ -24,6 +24,7 @@ from testbed.planner.primitive_tokens import (
 )
 
 if TYPE_CHECKING:
+    from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
     from testbed.planner.primitive_coverage_state import CoverageRuntimeState
     from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 
@@ -55,9 +56,7 @@ class PrimitiveDigTokenPlanningPorts:
     cycle_index: Callable[[], int]
     dig_cut_token_planner: Callable[[], Any]
     dig_depth_profile_token_planner: Callable[[], Any]
-    bucket_dig_area_pose: Callable[[dict[str, Any]], tuple[float, float, float] | None]
-    deposited_mass: Callable[[dict[str, Any]], float]
-    env_state: Callable[[dict[str, Any]], np.ndarray]
+    observation_facts: Callable[[dict[str, Any]], PrimitiveObservationFacts]
 
     select_next_coverage_corridor: Callable[[dict[str, Any]], Any]
     coverage_raw_fields: CoverageRawFieldsBuilder
@@ -94,7 +93,9 @@ class PrimitiveDigTokenPlanningService:
                 last_selected_corridor_id=corridor_id,
             )
             coverage_state.set_current_payload_gain_kg(0.0)
-            coverage_state.set_cycle_start_deposit_kg(ports.deposited_mass(obs))
+            coverage_state.set_cycle_start_deposit_kg(
+                self.observation_facts(obs).deposited_mass_in_target_box_kg
+            )
             profile_token = token_state.pending_dig_depth_profile_tokens
             coverage_state.set_active_state_exemplar(
                 exemplar_ids=list(token_state.pending_dig_state_exemplar_ids),
@@ -110,19 +111,23 @@ class PrimitiveDigTokenPlanningService:
             return self.apply_dig_cut_token_plan(plan)
         if mode == "conservative_pose":
             return self.apply_dig_cut_token_plan(
-                planner.plan_conservative_pose(ports.bucket_dig_area_pose(obs))
+                planner.plan_conservative_pose(
+                    self.observation_facts(obs).bucket_dig_area_pose()
+                )
             )
         if mode == "operator_prior":
             try:
                 return self.apply_dig_cut_token_plan(
-                    planner.plan_operator_prior(ports.bucket_dig_area_pose(obs))
+                    planner.plan_operator_prior(
+                        self.observation_facts(obs).bucket_dig_area_pose()
+                    )
                 )
             except Exception as exc:
                 if str(ports.dig_cut_planner_fallback_mode()) != "conservative_pose":
                     raise
                 return self.apply_dig_cut_token_plan(
                     planner.plan_fallback_conservative_pose(
-                        ports.bucket_dig_area_pose(obs),
+                        self.observation_facts(obs).bucket_dig_area_pose(),
                         fallback_reason=str(exc),
                     )
                 )
@@ -143,7 +148,7 @@ class PrimitiveDigTokenPlanningService:
                     raise
                 return self.apply_dig_cut_token_plan(
                     planner.plan_fallback_conservative_pose(
-                        ports.bucket_dig_area_pose(obs),
+                        self.observation_facts(obs).bucket_dig_area_pose(),
                         fallback_reason=str(exc),
                     )
                 )
@@ -163,7 +168,7 @@ class PrimitiveDigTokenPlanningService:
         obs: dict[str, Any],
     ) -> DigCutPlanTuple:
         plan = self.ports.dig_cut_token_planner().plan_operator_prior(
-            self.ports.bucket_dig_area_pose(obs)
+            self.observation_facts(obs).bucket_dig_area_pose()
         )
         return self.unpack_dig_cut_token_plan(plan)
 
@@ -174,7 +179,9 @@ class PrimitiveDigTokenPlanningService:
         ports = self.ports
         corridor = ports.select_next_coverage_corridor(obs)
         ports.coverage_state.set_current_payload_gain_kg(0.0)
-        ports.coverage_state.set_cycle_start_deposit_kg(ports.deposited_mass(obs))
+        ports.coverage_state.set_cycle_start_deposit_kg(
+            self.observation_facts(obs).deposited_mass_in_target_box_kg
+        )
         raw_fields = ports.coverage_raw_fields(
             corridor,
             obs=obs,
@@ -204,7 +211,7 @@ class PrimitiveDigTokenPlanningService:
             plan = planner.plan(
                 cell_id=self.dig_depth_profile_cell_id(obs),
                 raw_fields=self.dig_depth_profile_raw_fields(obs),
-                env_state=self.ports.env_state(obs),
+                env_state=self.observation_facts(obs).env_state,
                 state_exemplar_profile_token=(
                     self.ports.coverage_state.coverage_active_state_exemplar_profile_token
                 ),
@@ -236,7 +243,7 @@ class PrimitiveDigTokenPlanningService:
         return self.ports.dig_depth_profile_token_planner().live_plan_token(
             cell_id=int(cell_id),
             raw_fields=self.dig_depth_profile_raw_fields(obs),
-            env_state=self.ports.env_state(obs),
+            env_state=self.observation_facts(obs).env_state,
         )
 
     def dig_depth_profile_prior_token(
@@ -299,7 +306,7 @@ class PrimitiveDigTokenPlanningService:
         obs: dict[str, Any],
     ) -> dict[str, float | int]:
         return self.ports.dig_cut_token_planner().raw_fields_from_live_pose(
-            self.ports.bucket_dig_area_pose(obs)
+            self.observation_facts(obs).bucket_dig_area_pose()
         )
 
     def dig_depth_profile_cell_id(self, obs: dict[str, Any]) -> int:
@@ -313,12 +320,18 @@ class PrimitiveDigTokenPlanningService:
         corridor = self.ports.coverage_state.active_corridor()
         if corridor is not None:
             return int(corridor.cell_id)
-        env_state = self.ports.env_state(obs)
+        env_state = self.observation_facts(obs).env_state
         if len(env_state) > ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX:
             value = float(env_state[ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX])
             if np.isfinite(value):
                 return int(max(0, min(5, round(value))))
         return 0
+
+    def observation_facts(
+        self,
+        obs: dict[str, Any],
+    ) -> "PrimitiveObservationFacts":
+        return self.ports.observation_facts(obs)
 
     def _pending_dig_cut_matches_current_cycle(self) -> bool:
         return bool(

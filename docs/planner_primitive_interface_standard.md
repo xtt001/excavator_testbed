@@ -3,9 +3,9 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.83 audit state. It is intentionally not
-a snapshot-only inventory. Use it to decide whether future refactor slices move
-the code toward the architecture in
+compares them with the current Phase 9.84 implementation. It is intentionally
+not a snapshot-only inventory. Use it to decide whether future refactor slices
+move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
 
 The current implementation is best described as **default legacy FSM
@@ -51,12 +51,10 @@ Current maturity:
   projection/writeback, exemplar distance/id projection, and remaining-depth
   facts through `CoveragePlanningFactService`; scoring/selection algorithms
   remain in the existing coverage services**
-- token planning observation fact-source boundary: **not yet achieved as a
-  shared typed fact-source boundary; active dig and return token planning still
-  receive explicit bucket pose, deposited-mass, env-state, qpos, and qvel
-  observation callbacks from the policy shell even though
-  `PrimitiveObservationFacts` already owns the stable read-only projection
-  semantics**
+- token planning observation fact-source boundary: **achieved for active dig
+  and return token planning through a typed `PrimitiveObservationFacts`
+  provider; separate policy-built bucket pose, deposited-mass, env-state, qpos,
+  and qvel callbacks are no longer exposed on the token planning ports**
 - coverage selection runtime mutable state owner: **achieved for corridor
   list, candidate scores, active/last-selected ids, and all-depleted checks;
   selection runtime sequencing now consumes `CoverageRuntimeState` directly
@@ -130,6 +128,13 @@ Current maturity:
 Do not describe the current code as "fully swappable backend architecture." The
 accurate claim is: the confirmed-live 4P legacy FSM path has been backendified,
 and the shell now delegates most domain work to focused services.
+
+Parked-path policy: residual `pre_dig_align` and parked `cell_entry` must stay
+parked while live/mainline boundaries continue to shrink. After the other
+confirmed-live work is complete, take an explicit checkpoint commit first, then
+run a separate parking/deletion cleanup review. Do not promote either parked
+path into backend facts, token contracts, behavior-tree nodes, VLM packets, or
+mainline runtime architecture as part of ordinary refactor momentum.
 
 ## Layer 1: Public Adapter
 

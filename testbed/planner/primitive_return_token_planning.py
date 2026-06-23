@@ -15,6 +15,7 @@ from testbed.planner.primitive_tokens import (
 )
 
 if TYPE_CHECKING:
+    from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
     from testbed.planner.primitive_coverage_state import CoverageRuntimeState
     from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 
@@ -44,12 +45,9 @@ class PrimitiveReturnTokenPlanningPorts:
     dig_cut_planner_mode: Callable[[], str]
     return_target_token_planner: Callable[[], Any]
     return_start_envelope_token_planner: Callable[[], ReturnStartEnvelopeTokenPlanner]
-    bucket_dig_area_pose: Callable[[dict[str, Any]], tuple[float, float, float] | None]
+    observation_facts: Callable[[dict[str, Any]], PrimitiveObservationFacts]
     select_next_coverage_corridor: Callable[[dict[str, Any]], Any]
     coverage_raw_fields: CoverageRawFieldsBuilder
-    env_state: Callable[[dict[str, Any]], np.ndarray]
-    qpos: Callable[[dict[str, Any]], np.ndarray]
-    qvel: Callable[[dict[str, Any]], np.ndarray]
 
 
 @dataclass(frozen=True)
@@ -74,11 +72,15 @@ class PrimitiveReturnTokenPlanningService:
         mode = str(ports.dig_cut_planner_mode())
         if mode == "conservative_pose":
             return self.unpack_return_target_token_plan(
-                planner.plan_conservative_pose(ports.bucket_dig_area_pose(obs))
+                planner.plan_conservative_pose(
+                    self.observation_facts(obs).bucket_dig_area_pose()
+                )
             )
         if mode == "operator_prior":
             return self.unpack_return_target_token_plan(
-                planner.plan_operator_prior(ports.bucket_dig_area_pose(obs))
+                planner.plan_operator_prior(
+                    self.observation_facts(obs).bucket_dig_area_pose()
+                )
             )
         if mode in {"operator_prior_coverage", "operator_prior_sweep_belief"}:
             corridor = ports.select_next_coverage_corridor(obs)
@@ -117,11 +119,12 @@ class PrimitiveReturnTokenPlanningService:
         *,
         corridor_id: int | None = None,
     ) -> np.ndarray:
+        facts = self.observation_facts(obs)
         plan = self.ports.return_start_envelope_token_planner().plan(
             raw_fields=raw_fields,
-            env_state=self.ports.env_state(obs),
-            qpos=self.ports.qpos(obs),
-            qvel=self.ports.qvel(obs),
+            env_state=facts.env_state,
+            qpos=facts.qpos,
+            qvel=facts.qvel,
             cell_id=self.return_start_envelope_cell_id(corridor_id),
         )
         return self.apply_return_start_envelope_token_plan(plan)
@@ -201,6 +204,12 @@ class PrimitiveReturnTokenPlanningService:
         if int(corridor_id) >= 0:
             return int(corridor_id)
         return None
+
+    def observation_facts(
+        self,
+        obs: dict[str, Any],
+    ) -> "PrimitiveObservationFacts":
+        return self.ports.observation_facts(obs)
 
     @staticmethod
     def return_start_envelope_token_from_prior_mapping(

@@ -7,6 +7,10 @@ from typing import Any
 import numpy as np
 import pytest
 
+from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX
+from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX
+from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX
+from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive_return_token_planning import (
     PrimitiveReturnTokenPlanningPorts,
     PrimitiveReturnTokenPlanningService,
@@ -184,17 +188,31 @@ def _ports(
     state["token_state"] = token_state
     state["coverage_state"] = coverage_state
 
+    def observation_facts(obs: dict[str, Any]) -> PrimitiveObservationFacts:
+        env_state = np.zeros(64, dtype=np.float32)
+        if "env_state" in obs:
+            incoming = np.asarray(obs["env_state"], dtype=np.float32).reshape(-1)
+            env_state[: len(incoming)] = incoming
+        if "pose_x" in obs:
+            env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX] = float(obs["pose_x"])
+            env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX] = float(obs["pose_y"])
+            env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX] = float(obs["pose_z"])
+        return PrimitiveObservationFacts.from_obs(
+            {
+                "env_state": env_state,
+                "qpos": obs.get("qpos", np.zeros(4, dtype=np.float32)),
+                "qvel": obs.get("qvel", np.zeros(4, dtype=np.float32)),
+            },
+            action_dim=4,
+        )
+
     ports = PrimitiveReturnTokenPlanningPorts(
         token_state=token_state,
         coverage_state=coverage_state,
         dig_cut_planner_mode=lambda: str(state["mode"]),
         return_target_token_planner=lambda: target_planner,
         return_start_envelope_token_planner=lambda: start_planner,
-        bucket_dig_area_pose=lambda obs: (
-            float(obs["pose_x"]),
-            float(obs["pose_y"]),
-            float(obs["pose_z"]),
-        ),
+        observation_facts=observation_facts,
         select_next_coverage_corridor=lambda obs: (
             events.append(f"select_corridor:{obs['id']}") or corridor
         ),
@@ -205,9 +223,6 @@ def _ports(
             )
             or {"operator_entry_x_m": 12.5}
         ),
-        env_state=lambda obs: np.asarray(obs["env_state"], dtype=np.float32),
-        qpos=lambda obs: np.asarray(obs["qpos"], dtype=np.float32),
-        qvel=lambda obs: np.asarray(obs["qvel"], dtype=np.float32),
     )
     return ports, state, events, target_planner, start_planner
 
@@ -380,8 +395,13 @@ def test_ports_boundary_is_typed_and_does_not_accept_planner_self() -> None:
     assert "self" not in names
     assert "token_state" in names
     assert "coverage_state" in names
+    assert "observation_facts" in names
     assert "return_target_token_planner" in names
     assert "return_start_envelope_token_planner" in names
+    assert "bucket_dig_area_pose" not in names
+    assert "env_state" not in names
+    assert "qpos" not in names
+    assert "qvel" not in names
     assert names.isdisjoint(removed_state_callbacks)
 
 

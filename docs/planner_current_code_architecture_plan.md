@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4637 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4633 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -69,15 +69,15 @@ Current relevant Python files:
 | `testbed/planner/primitive_capabilities.py` | 1027 | read-only observation facts plus bootstrap/dig/carry/dump/return transition status projections and dump-ready geometry predicates |
 | `testbed/planner/primitive_capability_provider.py` | 318 | legacy FSM transition-status provider over focused cycle/coverage/return owners, observation facts, and return handoff readiness service |
 | `testbed/planner/primitive_execution_state.py` | 49 | mutable execution lifecycle state owner for active skill, switch reason, previous action, and latest debug state |
-| `testbed/planner/primitive_observation.py` | 176 | policy observation assembler plus mutable per-observation injected-flag runtime state owner |
+| `testbed/planner/primitive_observation.py` | 181 | policy observation assembler plus mutable per-observation injected-flag runtime state owner |
 | `testbed/planner/primitive_cell_entry_state.py` | 137 | parked cell-entry compatibility/report runtime state owner, reset defaults, and debug/summary/trace report projection |
 | `testbed/planner/primitive_pre_dig_align_state.py` | 202 | parked pre-dig-align compatibility/report runtime state owner, reset defaults, and debug/summary report projection |
 | `testbed/planner/primitive_token_state.py` | 190 | mutable dig/return token runtime state owner, reset defaults, live token-status projection, and token report metadata projection |
 | `testbed/planner/primitive_token_runtime.py` | 255 | dig/return token runtime sequencing over focused token and coverage state owners plus explicit external config/algorithm ports |
-| `testbed/planner/primitive_dig_token_planning.py` | 341 | active dig token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm/observation ports |
+| `testbed/planner/primitive_dig_token_planning.py` | 354 | active dig token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm ports and typed observation facts |
 | `testbed/planner/primitive_dig_recovery.py` | 181 | failed-dig/restart recovery orchestration over focused execution/cycle/return/coverage/token/pre-dig compatibility owners plus explicit external algorithm/action ports |
 | `testbed/planner/primitive_return_handoff.py` | 569 | return direct-handoff effect service, return handoff readiness source, and return start-envelope gate over focused execution/cycle/return/token/coverage owners |
-| `testbed/planner/primitive_return_token_planning.py` | 217 | return token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm/observation ports |
+| `testbed/planner/primitive_return_token_planning.py` | 226 | return token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm ports and typed observation facts |
 | `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
 | `testbed/planner/primitive_cycle_state.py` | 123 | mutable live 4P cycle/progress runtime state owner, reset defaults, and live report/finalization projection |
 | `testbed/planner/primitive_scripted_bootstrap.py` | 144 | scripted bootstrap runtime state, readiness checks, timeout, PD action service, and live report/status projection |
@@ -1628,6 +1628,21 @@ leaving policy observation token injection order, coverage raw-field facts,
 return handoff readiness, requested effects, recovery metrics, parked
 `pre_dig_align`, and parked `cell_entry` out of scope.
 
+Current status note after Phase 9.84: active dig and return token planning now
+consume a typed `PrimitiveObservationFacts` provider instead of separate
+policy-built observation callbacks. `PrimitiveDigTokenPlanningPorts` no longer
+exposes `bucket_dig_area_pose`, `deposited_mass`, or `env_state`;
+`PrimitiveReturnTokenPlanningPorts` no longer exposes `bucket_dig_area_pose`,
+`env_state`, `qpos`, or `qvel`. The policy shell constructs
+`PrimitiveObservationFacts.from_obs(obs, action_dim=int(self.action_dim))` for
+both token planning services and keeps remaining observation helpers only for
+other live consumers or compatibility facades. This narrows the token planning
+observation fact-source boundary without changing token dimensions/order/source
+strings, raw-field priority, dig-depth-profile env-state/cell-id behavior,
+return start-envelope qpos/qvel defaults, policy observation injection order,
+coverage raw-field facts, parked `pre_dig_align`, parked `cell_entry`, or
+backend support.
+
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective
 bounded move toward the interface standard, not merely the safest smallest
@@ -1635,6 +1650,14 @@ cleanup. If a candidate only moves a tiny compatibility dictionary or facade
 without reducing a broader stable boundary, the refactor thread must stop,
 state that risk explicitly in its conclusion, and choose a larger bounded
 target before dispatch.
+
+Parked cleanup rule: leave residual `pre_dig_align` and parked `cell_entry`
+material alone while confirmed-live/mainline boundaries continue. Once the
+other live work is complete, make an explicit checkpoint commit first, then run
+a separate cleanup/removal review for parked paths. Until that checkpoint, do
+not dispatch implementation slices that promote parked material into backend
+facts, token contracts, behavior-tree/VLM surfaces, or mainline runtime
+architecture.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
