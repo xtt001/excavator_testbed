@@ -1948,6 +1948,15 @@ fresh `PrimitivePreDigAlignCompatibilityRuntimeState` defaults and
 parked `cell_entry`, does not remove public pre-dig schema keys, and does not
 reintroduce pre-dig runtime behavior.
 
+Phase 9.99 removes the remaining primitive-planner parked pre-dig-align false
+predicate private facades. `PrimitivePlannerACTPolicy` no longer exposes
+`_should_pre_dig_align_before_dig()` or
+`_should_pre_dig_align_after_failed_dig()`. Tests now assert the absence of
+those policy-private predicate facades and no longer monkeypatch them. This
+does not change direct return handoff behavior, backend branch ordering, reason
+strings, disabled pre-dig config compatibility, enabled-config fail-fast
+behavior, or public pre-dig debug/summary/report schema projection.
+
 Phase 9.93 removes the parked primitive-planner `cell_entry` runtime execution
 path. The cleanup deletes policy-observation `cell_entry_tokens` injection,
 the policy-owned `_cell_entry_tokens_for_obs(...)` and

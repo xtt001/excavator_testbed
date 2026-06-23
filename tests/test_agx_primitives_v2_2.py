@@ -3312,7 +3312,6 @@ class TestPrimitivesV22(unittest.TestCase):
         )
 
         state = policy.debug_state()
-        self.assertFalse(policy._should_pre_dig_align_before_dig())
         self.assertEqual(state["skill_name"], "dig")
         self.assertEqual(
             state["skill_switch_reason"],

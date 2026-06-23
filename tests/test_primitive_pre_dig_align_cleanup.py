@@ -9,6 +9,7 @@ from testbed.planner.primitive_adapter_config import (
     PrimitivePlannerAdapterConfigInputs,
     PrimitivePlannerAdapterConfigNormalizer,
 )
+from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 from tests.test_primitive_action_dispatch import _ports
 
 
@@ -60,3 +61,12 @@ def test_pre_dig_align_skill_has_no_runtime_action_dispatch() -> None:
     with pytest.raises(RuntimeError, match="Unknown primitive skill 'pre_dig_align'."):
         service.dispatch_action(obs)
     assert events == []
+
+
+def test_policy_no_longer_exposes_pre_dig_align_predicate_facades() -> None:
+    removed_names = {
+        "_should_pre_dig_align_before_dig",
+        "_should_pre_dig_align_after_failed_dig",
+    }
+
+    assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)

@@ -9158,3 +9158,43 @@ Each completed refactor round should append:
   no behavior-tree/VLM/LLM backend work, no generic observation snapshot bag,
   planner self port, blackboard, broad config bag, pass-through service, or
   commit in the implementation thread.
+
+### 2026-06-23 Pre-Dig False Predicate Private Facade Cleanup
+
+- Scope implemented by parked cleanup executor: remove remaining parked
+  pre-dig-align false predicate private facades from
+  `PrimitivePlannerACTPolicy` after the parked runtime path and private runtime
+  field facades had already been removed.
+- TDD red result: after adding the focused absence assertion and removing test
+  monkeypatches, `python -m pytest -q tests/test_primitive_pre_dig_align_cleanup.py tests/test_primitive_backend.py tests/test_primitive_decision_contract.py tests/test_primitive_cycle_state.py tests/test_primitive_return_handoff.py tests/test_primitive_dig_recovery.py tests/test_primitive_action_dispatch.py`
+  failed with representative error:
+  `test_policy_no_longer_exposes_pre_dig_align_predicate_facades` because
+  `PrimitivePlannerACTPolicy.__dict__` still exposed
+  `_should_pre_dig_align_before_dig` and
+  `_should_pre_dig_align_after_failed_dig`.
+- Core change: `PrimitivePlannerACTPolicy` no longer exposes
+  `_should_pre_dig_align_before_dig()` or
+  `_should_pre_dig_align_after_failed_dig()`. Tests now assert the absence of
+  those old private predicate facades and no longer monkeypatch or call them.
+- Compatibility retained: parked pre-dig runtime execution remains removed;
+  direct return handoff remains on the existing `dig` path; disabled public
+  pre-dig debug/summary/report schema compatibility and enabled-config
+  fail-fast behavior remain unchanged.
+- Verification:
+  - `python -m pytest -q tests/test_primitive_pre_dig_align_cleanup.py tests/test_primitive_backend.py tests/test_primitive_decision_contract.py tests/test_primitive_cycle_state.py tests/test_primitive_return_handoff.py tests/test_primitive_dig_recovery.py tests/test_primitive_action_dispatch.py`
+    -> `151 passed in 0.17s`
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "pre_dig_align or return_to_dig or semantic_boundary_events_drive_skill_sequence or coverage_decision_trace or dig_cut_tokens"`
+    -> `7 passed, 100 deselected in 0.70s`
+  - `python -m compileall testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_return_handoff.py testbed/planner/primitive_dig_recovery.py`
+    -> no output, exit 0
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`
+    -> no output, exit 0
+  - `python scripts/planner_refactor_guard.py --check-skill-contract`
+    -> no output, exit 0
+- Non-goals held: no public pre-dig schema removal, no disabled pre-dig config
+  compatibility change, no `cell_entry` cleanup, no return handoff algorithm
+  change, no backend branch order/reason string/token/debug/summary/trace/reset
+  timing/guard behavior change, no behavior-tree/VLM/LLM backend work, no
+  anemic service, pass-through facade, generic blackboard, broad config bag,
+  planner self port, broad cleanup sweep, or commit in the implementation
+  thread.

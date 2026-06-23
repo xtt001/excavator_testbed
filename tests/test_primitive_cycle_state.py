@@ -266,7 +266,6 @@ def test_capability_provider_ports_read_cycle_state_owner() -> None:
         policy,
     )
     policy._return_to_dig_handoff_ready = MethodType(lambda self, obs: True, policy)
-    policy._should_pre_dig_align_before_dig = MethodType(lambda self: False, policy)
 
     ports = policy._primitive_fsm_capability_provider_ports()
 

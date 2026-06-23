@@ -207,7 +207,6 @@ def _set_minimal_non_dig_capability_fields(planner: PrimitivePlannerACTPolicy) -
     planner.return_to_dig_max_depth_m = 0.0
     planner.return_to_dig_max_entry_error_m = None
     planner._return_to_dig_handoff_ready = MethodType(lambda self, obs: False, planner)
-    planner._should_pre_dig_align_before_dig = MethodType(lambda self: False, planner)
 
 
 def test_legacy_decision_result_records_observable_skill_switch_only() -> None:
@@ -1165,10 +1164,6 @@ def test_primitive_planner_bootstrap_decision_bridge_returns_requested_switch() 
         planner,
     )
     planner.bootstrap_end_mode = "first_qualified_dig_start"
-    planner._should_pre_dig_align_before_dig = MethodType(
-        lambda self: False,
-        planner,
-    )
     _install_fake_decision_status_provider(planner)
 
     result = planner._decide_tick_with_legacy_fsm(
@@ -1543,7 +1538,6 @@ def test_primitive_planner_legacy_branch_ports_use_capability_provider_methods()
         lambda self, *, obs, boundary_event: False,
         planner,
     )
-    planner._should_pre_dig_align_before_dig = MethodType(lambda self: False, planner)
     provider = _FakePrimitiveFSMCapabilityProvider()
     planner._primitive_fsm_capability_provider = MethodType(
         lambda self: provider,

@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 3617 | public primitive policy adapter plus compatibility facades over focused planner services; cell-entry, pre-dig, coverage effect fact, and raw observation private runtime/test facades removed |
+| `testbed/policies/hybrid/primitive_planner.py` | 3611 | public primitive policy adapter plus compatibility facades over focused planner services; cell-entry, pre-dig, coverage effect fact, raw observation, and pre-dig false predicate private runtime/test facades removed |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_boundary_event.py` | 53 | live boundary-event tick source over focused execution state, boundary detector, and typed observation facts |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
@@ -121,7 +121,7 @@ The table below is the responsibility map future migrations must use.
 | 1121-1649 | public reporting facades | `debug_state`, `rollout_summary`, `planner_trace` and report input builders | debug state, token flags, coverage fields, summary counters | report builders called through runtime kernel |
 | 1550-1819 | inline 4P FSM branch order | `_maybe_switch_skill`, return direct handoff helpers | active skill, boundary event, counters, coverage completion/reject, pending plans | legacy FSM parity backend after execution template exists |
 | 1820-1954 | skill mutation and restart effects | `_set_skill`, `_restart_*`, failed-dig stop/restart | active skill, reset timing, hold counters, dig-cut clear/invalidate, terminal stop | kernel-owned effect application |
-| 1955-2359 | bootstrap and parked pre-dig config/report helpers | `_should_end_bootstrap`, `_should_pre_dig_align_*`, `_pre_dig_align_report_*` | bootstrap config, disabled pre-dig config/report facts | bootstrap mainline status; pre-dig-align disabled public schema compatibility |
+| 1955-2353 | bootstrap and parked pre-dig config/report helpers | `_should_end_bootstrap`, `_pre_dig_align_report_*` | bootstrap config, disabled pre-dig config/report facts | bootstrap mainline status; pre-dig-align disabled public schema compatibility |
 | 2361-3187 | gate and observation facts | `_update_dig_progress`, `_dig_to_carry_ready`, `_dump_ready`, `_return_to_dig_*`, geometry helpers | mass, deposit, qpos/qvel, env_state, boundary profile, hold counters | capability port status records |
 | 3193-3350 | policy observation and token injection | `_policy_obs`, `_return_*_tokens_for_obs`, `_dig_cut_tokens_for_obs`, `_dig_depth_profile_tokens_for_obs` | token flags, token arrays, active skill, return planner state | policy observation assembler owned by kernel |
 | 3351-3627 | active dig token planning | `_ensure_dig_cut_plan_for_cycle`, depth-profile builders, raw fields | dig-cut tokens, depth-profile tokens, fallback/source fields | token planning service |
@@ -1083,7 +1083,11 @@ facade cleanup, reset no longer creates or writes `_pre_dig_align_state`, and
 `PrimitivePlannerACTPolicy` no longer exposes the old `_pre_dig_align_*`
 runtime field facades. Public debug/summary/report keys remain through fresh
 disabled/default report projection. `pre_dig_align` remains removed parked
-runtime material rather than a mainline backend capability.
+runtime material rather than a mainline backend capability. The later false
+predicate cleanup also removed the policy-private
+`_should_pre_dig_align_before_dig()` and
+`_should_pre_dig_align_after_failed_dig()` facades; tests now lock their
+absence rather than monkeypatching them.
 
 Current status note after Phase 9.79: parked pre-dig-align debug and rollout-
 summary report projection now lives with the parked compatibility state owner.
@@ -1778,6 +1782,15 @@ state. `PrimitiveResetLifecycleState.as_policy_field_updates()` no longer emits
 debug/summary/report schema compatibility remains projected through
 `PrimitivePreDigAlignCompatibilityRuntimeState.fresh(...).to_report_status(...)`
 and `PrimitivePreDigAlignReportStatus`.
+
+Current status note after parked pre-dig-align false predicate facade cleanup:
+`PrimitivePlannerACTPolicy` no longer exposes
+`_should_pre_dig_align_before_dig()` or
+`_should_pre_dig_align_after_failed_dig()`. Test coverage now asserts those
+private predicate facades are absent and removes monkeypatches from decision,
+cycle, and AGX coverage tests. Direct return handoff remains on the already
+implemented `dig` path; public disabled pre-dig schema compatibility and
+enabled-config fail-fast behavior remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

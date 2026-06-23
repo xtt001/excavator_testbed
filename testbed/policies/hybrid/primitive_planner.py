@@ -2042,12 +2042,6 @@ class PrimitivePlannerACTPolicy(Policy):
     def _restart_after_failed_dig(self, reason: str, obs: dict) -> None:
         self._primitive_dig_recovery().restart_after_failed_dig(reason, obs)
 
-    def _should_pre_dig_align_before_dig(self) -> bool:
-        return False
-
-    def _should_pre_dig_align_after_failed_dig(self) -> bool:
-        return False
-
     def _should_end_bootstrap(self, *, obs: dict, boundary_event: Any | None) -> bool:
         scripted_bootstrap = self._primitive_scripted_bootstrap_runtime_service()
         if scripted_bootstrap.enabled():

@@ -172,6 +172,12 @@ config must fail fast instead of silently running or being ignored. Historical
 contract outside primitive planner runtime. Do not promote either parked path
 into backend facts, token contracts, behavior-tree nodes, VLM packets, or
 mainline runtime architecture as part of ordinary refactor momentum.
+After the parked pre-dig-align cleanup, `PrimitivePlannerACTPolicy` also no
+longer exposes the old private false predicate facades
+`_should_pre_dig_align_before_dig()` or
+`_should_pre_dig_align_after_failed_dig()`; direct return handoff continues to
+select `dig`, while public disabled pre-dig report/debug/summary schema
+compatibility remains.
 
 ## Layer 1: Public Adapter
 
