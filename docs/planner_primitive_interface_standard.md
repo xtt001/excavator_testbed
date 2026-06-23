@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.72 implementation. It is intentionally
+compares them with the current Phase 9.73 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -72,6 +72,11 @@ Current maturity:
   skill reads and return-transition completion through focused
   execution/cycle owners, while lifecycle switching and readiness/token
   planning remain explicit ports**
+- action-dispatch state-owner boundary: **achieved for active skill,
+  first-dig cycle index, and completed-dump-count reads through focused
+  execution/cycle/coverage owners, while low-level policy handles,
+  observation assembly, scripted bootstrap action, and residual pre-dig-align
+  action remain explicit ports**
 - cycle/progress runtime mutable state owner: **achieved for live 4P
   dig-progress, dump-hold, transition-count, cycle-index, dump-deposit
   baseline state, and live cycle/progress report/finalization projection**
@@ -591,6 +596,9 @@ Current boundary:
 - `PrimitiveActionDispatchService` owns scripted bootstrap short-circuit,
   residual pre-dig action short-circuit, first-dig policy selection,
   active-policy lookup, all-policy order, `policy_obs` call, and action shape.
+- It reads active skill from `PrimitiveExecutionRuntimeState`, first-dig cycle
+  index from `PrimitiveCycleRuntimeState`, and completed dump count from
+  `CoverageRuntimeState` instead of receiving policy-built state callbacks.
 - The scripted bootstrap short-circuit calls the policy's compatibility facade,
   but the underlying runtime rules and state now live in
   `PrimitiveScriptedBootstrapRuntimeService` and
@@ -600,7 +608,8 @@ Gap:
 
 - This layer is close to target.
 - It is reached through the runtime kernel and execution driver, but still
-  receives policy handles through policy-built dispatch ports.
+  receives low-level policy handles, observation assembly, scripted bootstrap
+  action, and residual pre-dig-align action through policy-built dispatch ports.
 
 Standard:
 

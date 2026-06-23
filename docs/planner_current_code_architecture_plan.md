@@ -1419,6 +1419,23 @@ timing, token schemas, debug/summary/trace schemas, backend support,
 `pre_dig_align` algorithm/action behavior, `cell_entry`, and removed 5P
 runtime status remain unchanged.
 
+Current status note after Phase 9.73: primitive action dispatch no longer uses
+policy-built callbacks for the state reads that choose the active policy and the
+first-dig override. `PrimitiveActionDispatchPorts` now carries the focused
+`PrimitiveExecutionRuntimeState`, `PrimitiveCycleRuntimeState`, and
+`CoverageRuntimeState` owners directly. `PrimitiveActionDispatchService` reads
+the active skill from the execution owner, first-dig cycle index from the cycle
+owner, and completed dump count from the coverage owner while preserving the
+scripted-bootstrap short-circuit, residual `pre_dig_align` action short-circuit,
+first-dig policy gate, active-policy lookup, policy observation assembly, and
+action shape contract. `PrimitivePlannerACTPolicy` still assembles explicit
+ports for low-level policy handles and ordering, policy observation assembly,
+scripted bootstrap action generation, and residual pre-dig-align action
+generation. Action dispatch semantics, first-dig gate behavior, observation
+provider order, branch order, reason strings, token schema, debug/summary/trace
+schemas, backend support, `pre_dig_align` algorithm/action behavior,
+`cell_entry`, and removed 5P runtime status remain unchanged.
+
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective
 bounded move toward the interface standard, not merely the safest smallest

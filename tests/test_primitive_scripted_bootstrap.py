@@ -333,6 +333,7 @@ def test_policy_rollout_summary_inputs_use_scripted_bootstrap_report_status() ->
     policy.return_to_dig_max_entry_error_m = 0.5
     policy.dig_cut_planner_mode = "operator_prior"
     policy.dig_cut_prior_id = "default"
+    policy.dig_cut_prior_path = ""
     policy.dig_failed_replan_next_skill = "dig"
     policy.coverage_multi_pass_enabled = False
     policy.coverage_use_env_removed_depth = False

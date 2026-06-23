@@ -1608,6 +1608,20 @@ removed by explicit user cleanup decision; old behavior is retained only in git
 history, while historical data-slicing and experiment docs can remain as
 history.
 
+Phase 9.73 narrows primitive action dispatch state reads through focused owners.
+`PrimitiveActionDispatchPorts` now carries
+`PrimitiveExecutionRuntimeState`, `PrimitiveCycleRuntimeState`, and
+`CoverageRuntimeState` directly. `PrimitiveActionDispatchService` reads active
+skill, first-dig cycle index, and completed dump count from those owners instead
+of through policy-built state callbacks. The policy shell still supplies
+low-level policy handles and ordering, policy observation assembly, scripted
+bootstrap action generation, and the residual pre-dig-align action callback as
+explicit ports. This keeps action dispatch as a focused live runtime service
+without promoting `pre_dig_align` into mainline backend architecture. Action
+dispatch semantics, action shape/dtype, first-dig gating, scripted bootstrap,
+pre-dig-align action behavior, backend support, token/report schemas, and
+removed 5P runtime status remain unchanged.
+
 ### Stage 4: Expand Effect Families From Evidence
 
 Each new family must be justified by a confirmed-live rollout behavior and a

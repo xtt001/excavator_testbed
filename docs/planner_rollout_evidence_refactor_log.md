@@ -7273,3 +7273,106 @@ Each completed refactor round should append:
   facade, generic blackboard, or planner-self port. `pre_dig_align` remains
   parked/residual compatibility/action material; `cell_entry` remains parked
   compatibility/report material.
+
+### 2026-06-23 Phase 9.73 Route Action Dispatch State Reads Through Focused Owners
+
+- Scope: narrowed primitive action-dispatch state reads in
+  `testbed/planner/primitive_action_dispatch.py` so policy selection uses
+  focused execution, cycle, and coverage runtime owners instead of policy-built
+  state callbacks.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 136]`, HEAD
+  `9213f80f69aa36a7c93af237ef754125c8f8f5b2`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, or remote write was
+  used by the executor.
+- `PrimitiveActionDispatchPorts` now carries
+  `PrimitiveExecutionRuntimeState`, `PrimitiveCycleRuntimeState`, and
+  `CoverageRuntimeState`.
+- Removed the state-like action-dispatch port callbacks
+  `current_skill_name`, `cycle_index`, and
+  `coverage_completed_dump_count`.
+- `PrimitiveActionDispatchService` now reads active skill from
+  `execution_state`, first-dig cycle index from `cycle_state`, and completed
+  dump count from `coverage_state`.
+- `PrimitivePlannerACTPolicy._action_dispatch_ports()` now passes focused
+  execution/cycle/coverage owners while keeping low-level policy handles and
+  ordering, policy observation assembly, scripted bootstrap action generation,
+  and residual pre-dig-align action generation as explicit ports.
+- Preserved behavior: action dispatch semantics, active policy selection
+  order, first-dig policy gate, scripted bootstrap dispatch, residual
+  pre-dig-align action dispatch, policy observation provider order, action
+  shape/dtype, reset timing, branch order, reason strings, backend behavior,
+  token schema, report/debug/summary/trace schema, `cell_entry`,
+  pre-dig-align algorithm/action behavior, removed 5P runtime, and BT/VLM/LLM
+  unsupported fail-fast status are unchanged.
+- Explicit non-goals: no low-level policy behavior, observation assembly,
+  scripted bootstrap readiness/action algorithm, pre-dig-align algorithm,
+  token runtime/planning, coverage selection/effect algorithm, return handoff,
+  decision backend/facts, report schema, 5P, or alternate backend changes.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_action_dispatch.py tests/test_primitive_execution_state.py tests/test_primitive_cycle_state.py tests/test_primitive_coverage_state.py`
+  failed because tests expected `PrimitiveActionDispatchPorts.execution_state`,
+  `cycle_state`, and `coverage_state`, while production ports still exposed the
+  old callback shape. Representative failures were missing owner-field
+  assertions and `TypeError` rejecting `execution_state`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_action_dispatch.py tests/test_primitive_execution_state.py tests/test_primitive_cycle_state.py tests/test_primitive_coverage_state.py`
+  returned `36 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_skill_lifecycle.py tests/test_primitive_scripted_bootstrap.py`
+  returned `32 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or semantic_boundary_events_drive_skill_sequence"`
+  returned `15 passed, 104 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_action_dispatch.py tests/test_primitive_execution_state.py tests/test_primitive_cycle_state.py tests/test_primitive_coverage_state.py`
+  returned `36 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_skill_lifecycle.py tests/test_primitive_scripted_bootstrap.py`
+  returned `32 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or semantic_boundary_events_drive_skill_sequence"`
+  returned `15 passed, 104 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was the bounded primitive action-dispatch state-owner
+  routing move, not the safest smallest cleanup, and did not create an anemic
+  service, pass-through facade, generic blackboard, or planner-self port.
+  `pre_dig_align` remains parked/residual compatibility/action material;
+  `cell_entry` remains parked compatibility/report material.
+
+#### Three-iteration reflection after Phases 9.71-9.73
+
+- Progress toward target: the three-round sequence moved three high-coupling
+  live boundaries out of policy-owned private state access. Phase 9.71 moved
+  failed-dig/restart recovery implementation into
+  `PrimitiveDigRecoveryService` while keeping residual `pre_dig_align` parked.
+  Phase 9.72 routed return direct-handoff state reads/mutations through focused
+  execution/cycle owners. Phase 9.73 routed action-dispatch state reads through
+  execution/cycle/coverage owners. Together these reduce the large policy shell
+  from an implementation owner into a compatibility facade and typed port
+  assembler for these paths.
+- Maximum remaining gap: `PrimitivePlannerACTPolicy` is still large because it
+  remains the public adapter, composition root, compatibility-facade host,
+  report snapshot assembler, and parking boundary for residual
+  `pre_dig_align` and `cell_entry` material. The current maturity is still
+  default legacy FSM backendified with focused services / shared backend
+  decision input/facts/factory; BT/VLM/LLM backends remain unsupported
+  fail-fast.
+- Direction correction: after this trio, the strongest live state-owner
+  routing seam has mostly been harvested. The next implementation should not
+  chase one-off callback removal or line-count wins. It should either select a
+  cohesive report-input or compatibility-parking boundary with meaningful
+  policy-shell deletion, or run audit-only if the remaining candidates are
+  mostly tiny facades.
+- Hard constraint check: these three rounds treated protection as a constraint,
+  not the objective. They were the most effective bounded moves available in
+  the live recovery/direct-handoff/action-dispatch boundaries, and they did not
+  create an anemic service, pass-through facade, generic blackboard, or
+  planner-self port.
+- Next core bounded-slice filter: prefer a stable owner that deletes or
+  materially narrows a whole remaining policy responsibility cluster. Keep
+  parked `cell_entry`, residual `pre_dig_align`, removed 5P runtime, and
+  unsupported BT/VLM/LLM backends out of the target architecture unless the
+  user explicitly approves a new evidence-backed promotion.

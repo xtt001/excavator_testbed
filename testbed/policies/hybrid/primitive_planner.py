@@ -1559,7 +1559,9 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _action_dispatch_ports(self) -> PrimitiveActionDispatchPorts:
         return PrimitiveActionDispatchPorts(
-            current_skill_name=lambda: str(self._skill_name),
+            execution_state=self._primitive_execution_runtime_state(),
+            cycle_state=self._primitive_cycle_runtime_state(),
+            coverage_state=self._coverage_runtime_state(),
             action_dim=int(self.action_dim),
             skill_policies={
                 "dig": self.dig_policy,
@@ -1571,10 +1573,6 @@ class PrimitivePlannerACTPolicy(Policy):
             optional_policy_order=("first_dig", "bootstrap"),
             first_dig_policy=self.first_dig_policy,
             bootstrap_policy=self.bootstrap_policy,
-            cycle_index=lambda: int(getattr(self, "_cycle_index", 0)),
-            coverage_completed_dump_count=lambda: int(
-                getattr(self, "_coverage_completed_dump_count", 0)
-            ),
             policy_observation=lambda obs: self._policy_obs(obs),
             scripted_bootstrap_enabled=lambda: self._scripted_bootstrap_enabled(),
             scripted_bootstrap_action=lambda obs: self._scripted_bootstrap_action(obs),

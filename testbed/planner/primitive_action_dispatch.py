@@ -8,6 +8,10 @@ from typing import Any
 
 import numpy as np
 
+from testbed.planner.primitive_coverage_state import CoverageRuntimeState
+from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive_execution_state import PrimitiveExecutionRuntimeState
+
 
 BOOTSTRAP_SKILL_NAME = "bootstrap"
 DIG_SKILL_NAME = "dig"
@@ -18,15 +22,15 @@ PRE_DIG_ALIGN_SKILL_NAME = "pre_dig_align"
 class PrimitiveActionDispatchPorts:
     """Typed shell ports required for primitive action dispatch."""
 
-    current_skill_name: Callable[[], str]
+    execution_state: PrimitiveExecutionRuntimeState
+    cycle_state: PrimitiveCycleRuntimeState
+    coverage_state: CoverageRuntimeState
     action_dim: int
     skill_policies: Mapping[str, Any]
     base_policy_order: Sequence[str]
     optional_policy_order: Sequence[str]
     first_dig_policy: Any | None
     bootstrap_policy: Any | None
-    cycle_index: Callable[[], int]
-    coverage_completed_dump_count: Callable[[], int]
     policy_observation: Callable[[dict[str, Any]], dict[str, Any]]
     scripted_bootstrap_enabled: Callable[[], bool]
     scripted_bootstrap_action: Callable[[dict[str, Any]], Any]
@@ -95,12 +99,12 @@ class PrimitiveActionDispatchService:
         return bool(
             ports.first_dig_policy is not None
             and self._skill_name() == ports.dig_skill_name
-            and int(ports.cycle_index()) == 0
-            and int(ports.coverage_completed_dump_count()) <= 0
+            and int(ports.cycle_state.cycle_index) == 0
+            and int(ports.coverage_state.coverage_completed_dump_count) <= 0
         )
 
     def _skill_name(self) -> str:
-        return str(self.ports.current_skill_name())
+        return str(self.ports.execution_state.skill_name)
 
     def _optional_policy(self, name: str) -> Any | None:
         if name == "first_dig":

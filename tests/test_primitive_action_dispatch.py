@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from types import MethodType
 from typing import Any
 
 import numpy as np
 import pytest
 
+from testbed.planner.primitive_coverage_state import CoverageRuntimeState
+from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive_execution_state import (
+    PrimitiveExecutionRuntimeState,
+)
 from testbed.planner.primitive_action_dispatch import (
     PrimitiveActionDispatchPorts,
     PrimitiveActionDispatchService,
@@ -43,6 +49,13 @@ def _ports(
     completed_dump_count: int = 1,
     scripted_bootstrap_enabled: bool = False,
 ) -> PrimitiveActionDispatchPorts:
+    execution_state = PrimitiveExecutionRuntimeState.fresh(
+        initial_skill_name=skill_name,
+    )
+    cycle_state = PrimitiveCycleRuntimeState.fresh()
+    cycle_state.cycle_index = int(cycle_index)
+    coverage_state = CoverageRuntimeState()
+    coverage_state.coverage_completed_dump_count = int(completed_dump_count)
     dig_policy = dig_policy or _FakePolicy("dig", events)
     carry_policy = carry_policy or _FakePolicy("carry", events)
     dump_policy = dump_policy or _FakePolicy("dump", events)
@@ -61,7 +74,9 @@ def _ports(
         return np.asarray([6.0, 7.0, 8.0, 9.0], dtype=np.float32)
 
     return PrimitiveActionDispatchPorts(
-        current_skill_name=lambda: skill_name,
+        execution_state=execution_state,
+        cycle_state=cycle_state,
+        coverage_state=coverage_state,
         action_dim=action_dim,
         skill_policies={
             "dig": dig_policy,
@@ -73,13 +88,22 @@ def _ports(
         optional_policy_order=("first_dig", "bootstrap"),
         first_dig_policy=first_dig_policy,
         bootstrap_policy=bootstrap_policy,
-        cycle_index=lambda: cycle_index,
-        coverage_completed_dump_count=lambda: completed_dump_count,
         policy_observation=policy_observation,
         scripted_bootstrap_enabled=lambda: scripted_bootstrap_enabled,
         scripted_bootstrap_action=scripted_action,
         pre_dig_align_action=pre_dig_action,
     )
+
+
+def test_action_dispatch_ports_use_focused_state_owners() -> None:
+    port_fields = {field.name for field in fields(PrimitiveActionDispatchPorts)}
+
+    assert {"execution_state", "cycle_state", "coverage_state"} <= port_fields
+    assert not {
+        "current_skill_name",
+        "cycle_index",
+        "coverage_completed_dump_count",
+    } & port_fields
 
 
 def test_dispatch_short_circuits_to_scripted_bootstrap_action() -> None:
@@ -256,3 +280,30 @@ def test_policy_action_dispatch_private_methods_delegate_to_service() -> None:
     assert planner._active_policy() is policy
     assert planner._all_policies() is policies
     assert planner._first_dig_policy_active() is True
+
+
+def test_policy_action_dispatch_ports_share_focused_state_owners() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    planner.action_dim = 4
+    planner.dig_policy = _FakePolicy("dig")
+    planner.carry_policy = _FakePolicy("carry")
+    planner.dump_policy = _FakePolicy("dump")
+    planner.return_policy = _FakePolicy("return")
+    planner.first_dig_policy = _FakePolicy("first_dig")
+    planner.bootstrap_policy = _FakePolicy("bootstrap")
+    planner._skill_name = "dig"
+    planner._cycle_index = 0
+    planner._coverage_completed_dump_count = 0
+
+    ports = planner._action_dispatch_ports()
+    port_fields = {field.name for field in fields(PrimitiveActionDispatchPorts)}
+
+    assert ports.execution_state is planner._primitive_execution_runtime_state()
+    assert ports.cycle_state is planner._primitive_cycle_runtime_state()
+    assert ports.coverage_state is planner._coverage_runtime_state()
+    assert ports.execution_state.skill_name == "dig"
+    assert ports.cycle_state.cycle_index == 0
+    assert ports.coverage_state.coverage_completed_dump_count == 0
+    assert "current_skill_name" not in port_fields
+    assert "cycle_index" not in port_fields
+    assert "coverage_completed_dump_count" not in port_fields
