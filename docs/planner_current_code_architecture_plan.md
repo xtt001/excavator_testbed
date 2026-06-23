@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 5314 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 5313 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -74,6 +74,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_token_runtime.py` | 255 | dig/return token runtime sequencing over focused token and coverage state owners plus explicit external config/algorithm ports |
 | `testbed/planner/primitive_dig_token_planning.py` | 341 | active dig token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm/observation ports |
 | `testbed/planner/primitive_dig_recovery.py` | 181 | failed-dig/restart recovery orchestration over focused execution/cycle/return/coverage/token/pre-dig compatibility owners plus explicit external algorithm/action ports |
+| `testbed/planner/primitive_return_handoff.py` | 402 | return direct-handoff effect service and return start-envelope gate; direct-handoff state reads/mutations now consume focused execution/cycle owners plus explicit readiness/token-planning ports |
 | `testbed/planner/primitive_return_token_planning.py` | 217 | return token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm/observation ports |
 | `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
 | `testbed/planner/primitive_cycle_state.py` | 123 | mutable live 4P cycle/progress runtime state owner, reset defaults, and live report/finalization projection |
@@ -1398,6 +1399,25 @@ material rather than promoting it into a mainline backend/runtime capability.
 Failed-dig branch choice, reason strings, token writeback/copy behavior,
 terminal-stop diagnostics, reset timing, debug/summary/trace schemas, backend
 support, `cell_entry`, and removed 5P runtime status remain unchanged.
+
+Current status note after Phase 9.72: return direct-handoff effect-side
+transition state no longer depends on policy-built state callbacks.
+`ReturnDirectHandoffEffectPorts` now carries the focused
+`PrimitiveExecutionRuntimeState` and `PrimitiveCycleRuntimeState` owners
+directly. `ReturnDirectHandoffEffectService` reads the current skill from the
+execution owner, completes the return transition through the cycle owner, and
+chooses the existing next skill from explicit `should_pre_dig_align_before_dig`
+plus skill-name facts. `PrimitivePlannerACTPolicy` still keeps
+`_set_return_or_direct_handoff(...)`,
+`_try_return_direct_handoff_at_current_obs(...)`,
+`_complete_return_transition_for_backend()`, and
+`_next_skill_after_return_transition()` callable as compatibility/private
+facades, while `set_skill`, return-target planning, handoff readiness, and
+direct-handoff readiness remain explicit ports. Direct-handoff readiness
+behavior, reason strings, return transition counts, skill lifecycle reset
+timing, token schemas, debug/summary/trace schemas, backend support,
+`pre_dig_align` algorithm/action behavior, `cell_entry`, and removed 5P
+runtime status remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

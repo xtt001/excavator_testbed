@@ -2407,7 +2407,8 @@ class PrimitivePlannerACTPolicy(Policy):
         self,
     ) -> ReturnDirectHandoffEffectPorts:
         return ReturnDirectHandoffEffectPorts(
-            current_skill_name=lambda: str(self._skill_name),
+            execution_state=self._primitive_execution_runtime_state(),
+            cycle_state=self._primitive_cycle_runtime_state(),
             set_skill=lambda skill, reason: self._set_skill(skill, reason),
             return_target_planner_enabled=self.return_target_planner_enabled,
             return_to_dig_start_envelope_direct_handoff_enabled=(
@@ -2425,12 +2426,10 @@ class PrimitivePlannerACTPolicy(Policy):
                     handoff_ready=handoff_ready,
                 )
             ),
-            complete_return_transition=(
-                lambda: self._complete_return_transition_for_backend()
+            should_pre_dig_align_before_dig=(
+                lambda: self._should_pre_dig_align_before_dig()
             ),
-            next_skill_after_return_transition=(
-                lambda: self._next_skill_after_return_transition()
-            ),
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
         )
 
     def _set_skill(self, skill_name: str, reason: str) -> None:

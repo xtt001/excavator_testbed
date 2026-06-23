@@ -7205,3 +7205,71 @@ Each completed refactor round should append:
   generic blackboard, or planner-self port. `pre_dig_align` remains
   parked/residual compatibility/action material; `cell_entry` remains parked
   compatibility/report material.
+
+### 2026-06-23 Phase 9.72 Route Return Direct-Handoff State Through Focused Owners
+
+- Scope: narrowed the live return direct-handoff effect boundary in
+  `testbed/planner/primitive_return_handoff.py` so state reads/mutations use
+  focused execution and cycle runtime owners instead of policy-built
+  state-like callbacks.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 135]`, HEAD
+  `c03ac6d8113cc09a4737bee1749715db5ba033bc`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, or remote write was
+  used by the executor.
+- `ReturnDirectHandoffEffectPorts` now carries
+  `PrimitiveExecutionRuntimeState` and `PrimitiveCycleRuntimeState`.
+- Removed the state-like direct-handoff port callbacks
+  `current_skill_name`, `complete_return_transition`, and
+  `next_skill_after_return_transition`.
+- `ReturnDirectHandoffEffectService` now reads current skill from
+  `execution_state`, completes return transition through `cycle_state`, and
+  chooses the existing next skill from explicit
+  `should_pre_dig_align_before_dig` plus skill-name facts.
+- `PrimitivePlannerACTPolicy._return_direct_handoff_effect_ports()` now
+  passes focused execution/cycle owners and explicit next-skill facts while
+  keeping `set_skill`, return-target planning, handoff readiness, and
+  direct-handoff readiness as explicit ports.
+- Preserved behavior: direct-handoff readiness behavior, return transition
+  completion, dig/pre-dig-align next-skill reason strings, skill lifecycle
+  reset timing, requested-effect order, branch order, token schema,
+  debug/summary/trace schema, backend support, `pre_dig_align`
+  algorithm/action behavior, `cell_entry`, removed 5P runtime, and
+  BT/VLM/LLM unsupported fail-fast status are unchanged.
+- Explicit non-goals: no failed-dig/restart recovery, token runtime/planning,
+  return token planning, start-envelope gate algorithm,
+  `_return_to_dig_handoff_ready(...)`,
+  `_return_to_dig_direct_handoff_ready(...)`, pre-dig algorithm/action,
+  `cell_entry`, decision backend/facts, report schema, 5P, or alternate
+  backend changes.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_execution_state.py tests/test_primitive_cycle_state.py tests/test_primitive_skill_lifecycle.py`
+  failed because tests expected `ReturnDirectHandoffEffectPorts.execution_state`
+  and `cycle_state`, while production ports still exposed the old callback
+  shape. Representative failures were missing owner-field assertions and
+  `TypeError` rejecting `execution_state`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_execution_state.py tests/test_primitive_cycle_state.py tests/test_primitive_skill_lifecycle.py`
+  returned `41 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_return_state.py`
+  returned `33 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "return_to_dig or start_envelope or semantic_boundary_events_drive_skill_sequence or pre_dig_align"`
+  returned `18 passed, 101 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_execution_state.py tests/test_primitive_cycle_state.py tests/test_primitive_skill_lifecycle.py`
+  returned `41 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_return_state.py`
+  returned `33 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "return_to_dig or start_envelope or semantic_boundary_events_drive_skill_sequence or pre_dig_align"`
+  returned `18 passed, 101 deselected`.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was the bounded return direct-handoff effect
+  state-owner routing move and did not create an anemic service, pass-through
+  facade, generic blackboard, or planner-self port. `pre_dig_align` remains
+  parked/residual compatibility/action material; `cell_entry` remains parked
+  compatibility/report material.

@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.71 implementation. It is intentionally
+compares them with the current Phase 9.72 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -68,6 +68,10 @@ Current maturity:
 - return runtime mutable state owner: **achieved for return handoff counters,
   entry-close cache, next-dig-event flag, start-envelope gate cache, and live
   return report/status projection**
+- return direct-handoff effect state-owner boundary: **achieved for current
+  skill reads and return-transition completion through focused
+  execution/cycle owners, while lifecycle switching and readiness/token
+  planning remain explicit ports**
 - cycle/progress runtime mutable state owner: **achieved for live 4P
   dig-progress, dump-hold, transition-count, cycle-index, dump-deposit
   baseline state, and live cycle/progress report/finalization projection**

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from types import MethodType
 from types import SimpleNamespace
 from typing import Any
@@ -23,8 +24,15 @@ from testbed.planner.primitive_return_handoff import (
     ReturnStartEnvelopeGateResult,
     ReturnStartEnvelopeGateService,
 )
+from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive_decision import SetReturnOrDirectHandoffEffect
-from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+from testbed.planner.primitive_execution_state import (
+    PrimitiveExecutionRuntimeState,
+)
+from testbed.policies.hybrid.primitive_planner import (
+    PRE_DIG_ALIGN_SKILL_NAME,
+    PrimitivePlannerACTPolicy,
+)
 
 
 def _token() -> np.ndarray:
@@ -108,11 +116,21 @@ def _direct_handoff_ports(
     direct_handoff_ready: bool = True,
     next_skill: str = "dig",
 ) -> ReturnDirectHandoffEffectPorts:
-    state = {"skill": current_skill}
+    execution_state = PrimitiveExecutionRuntimeState.fresh(
+        initial_skill_name=current_skill,
+    )
+
+    class _RecordingCycleState(PrimitiveCycleRuntimeState):
+        def complete_return_transition(self) -> None:
+            events.append("complete")
+            super().complete_return_transition()
+
+    cycle_state = _RecordingCycleState.fresh()
 
     def set_skill(skill_name: str, reason: str) -> None:
         events.append(f"set:{skill_name}:{reason}")
-        state["skill"] = skill_name
+        execution_state.set_skill_name(skill_name)
+        execution_state.set_switch_reason(reason)
 
     def ensure(obs: dict[str, object]) -> None:
         events.append(f"ensure:{obs['tag']}")
@@ -125,15 +143,9 @@ def _direct_handoff_ports(
         events.append(f"direct_ready:{obs['tag']}:{handoff_ready}")
         return direct_handoff_ready
 
-    def complete() -> None:
-        events.append("complete")
-
-    def next_skill_after_return() -> str:
-        events.append("next_skill")
-        return next_skill
-
     return ReturnDirectHandoffEffectPorts(
-        current_skill_name=lambda: state["skill"],
+        execution_state=execution_state,
+        cycle_state=cycle_state,
         set_skill=set_skill,
         return_target_planner_enabled=return_target_planner_enabled,
         return_to_dig_start_envelope_direct_handoff_enabled=(
@@ -142,9 +154,23 @@ def _direct_handoff_ports(
         ensure_return_target_plan_for_cycle=ensure,
         return_to_dig_handoff_ready=handoff,
         return_to_dig_direct_handoff_ready=direct,
-        complete_return_transition=complete,
-        next_skill_after_return_transition=next_skill_after_return,
+        should_pre_dig_align_before_dig=(
+            lambda: next_skill == PRE_DIG_ALIGN_SKILL_NAME
+        ),
+        pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
+        dig_skill_name="dig",
     )
+
+
+def test_return_direct_handoff_ports_use_focused_state_owners() -> None:
+    port_fields = {field.name for field in fields(ReturnDirectHandoffEffectPorts)}
+
+    assert {"execution_state", "cycle_state"} <= port_fields
+    assert not {
+        "current_skill_name",
+        "complete_return_transition",
+        "next_skill_after_return_transition",
+    } & port_fields
 
 
 def test_return_direct_handoff_service_stops_after_set_return_when_direct_disabled() -> None:
@@ -208,7 +234,6 @@ def test_return_direct_handoff_service_applies_ready_direct_handoff_to_dig_in_or
         "handoff_ready:obs",
         "direct_ready:obs:True",
         "complete",
-        "next_skill",
         "set:dig:return_to_dig_start_envelope_ready",
     ]
 
@@ -225,7 +250,7 @@ def test_return_direct_handoff_service_applies_ready_direct_handoff_to_pre_dig_a
     assert result.next_skill == "pre_dig_align"
     assert result.switch_reason == "return_to_pre_dig_align_start_envelope_ready"
     assert events[-2:] == [
-        "next_skill",
+        "complete",
         "set:pre_dig_align:return_to_pre_dig_align_start_envelope_ready",
     ]
 
@@ -444,6 +469,37 @@ def test_policy_return_or_direct_handoff_wrapper_delegates_to_service() -> None:
         ("apply", obs, "dump_to_return_mass_low"),
         ("try", obs, ""),
     ]
+
+
+def test_policy_return_direct_handoff_ports_share_execution_and_cycle_owners() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    planner._skill_name = "return"
+    planner.return_target_planner_enabled = True
+    planner.return_to_dig_start_envelope_direct_handoff_enabled = True
+    planner.pre_dig_align_enabled = False
+    planner.pre_dig_align_first_dig_only = False
+    planner._set_skill = MethodType(lambda self, skill, reason: None, planner)
+    planner._ensure_return_target_plan_for_cycle = MethodType(
+        lambda self, obs: None,
+        planner,
+    )
+    planner._return_to_dig_handoff_ready = MethodType(lambda self, obs: False, planner)
+    planner._return_to_dig_direct_handoff_ready = MethodType(
+        lambda self, obs, *, handoff_ready: False,
+        planner,
+    )
+
+    ports = planner._return_direct_handoff_effect_ports()
+    port_fields = {field.name for field in fields(ReturnDirectHandoffEffectPorts)}
+
+    assert ports.execution_state is planner._primitive_execution_runtime_state()
+    assert ports.cycle_state is planner._primitive_cycle_runtime_state()
+    assert ports.execution_state.skill_name == "return"
+    assert "current_skill_name" not in port_fields
+    assert "complete_return_transition" not in port_fields
+    assert "next_skill_after_return_transition" not in port_fields
+    assert hasattr(planner, "_complete_return_transition_for_backend")
+    assert hasattr(planner, "_next_skill_after_return_transition")
 
 
 def test_policy_requested_effect_path_uses_service_backed_return_wrapper() -> None:

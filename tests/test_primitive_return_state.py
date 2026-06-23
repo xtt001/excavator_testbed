@@ -144,12 +144,17 @@ def test_return_direct_handoff_effect_ports_read_return_state_owner() -> None:
         lambda self, obs, *, handoff_ready: False,
         policy,
     )
-    policy._complete_return_transition_for_backend = MethodType(lambda self: None, policy)
-    policy._next_skill_after_return_transition = MethodType(lambda self: "dig", policy)
+    policy.pre_dig_align_enabled = False
+    policy.pre_dig_align_first_dig_only = False
 
     ports = policy._return_direct_handoff_effect_ports()
 
-    assert ports.current_skill_name() == "return"
+    assert ports.execution_state is policy._primitive_execution_runtime_state()
+    assert ports.cycle_state is policy._primitive_cycle_runtime_state()
+    assert not hasattr(ports, "current_skill_name")
+    assert not hasattr(ports, "complete_return_transition")
+    assert not hasattr(ports, "next_skill_after_return_transition")
+    assert ports.execution_state.skill_name == "return"
     assert state.return_next_dig_event_seen is True
     assert state.return_to_dig_entry_close_state is False
     assert state.return_to_dig_start_envelope_ready_state is True

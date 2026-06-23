@@ -128,6 +128,16 @@ configuration facts. This keeps failed-dig recovery cohesive while leaving
 `pre_dig_align` parked/residual; it does not convert pre-dig-align into a
 mainline backend-requested effect or change the selected rollout's
 `cell_entry` parking decision.
+Return direct-handoff effect application now follows the same focused-owner
+rule for state reads and mutations. `ReturnDirectHandoffEffectPorts` carries
+the execution and cycle runtime owners directly; the service reads the current
+skill from `PrimitiveExecutionRuntimeState` and completes the return
+transition through `PrimitiveCycleRuntimeState`. The next-skill choice is
+driven by explicit `should_pre_dig_align_before_dig` and skill-name facts
+rather than a policy private helper callback. `set_skill`, return-target
+planning, handoff readiness, and direct-handoff readiness remain explicit
+ports because they are lifecycle or algorithm boundaries, not simple state
+storage.
 The return token planning boundary has also
 been narrowed to the same focused owners: `PrimitiveReturnTokenPlanningPorts`
 carries `PrimitiveTokenRuntimeState` and `CoverageRuntimeState`, and
