@@ -67,6 +67,8 @@ from testbed.planner.primitive_capability_provider import (
 )
 from testbed.planner.primitive_cell_entry_state import (
     PrimitiveCellEntryCompatibilityRuntimeState,
+    PrimitiveCellEntryReportConfig,
+    PrimitiveCellEntryReportStatus,
 )
 from testbed.planner.primitive_pre_dig_align_state import (
     PrimitivePreDigAlignCompatibilityRuntimeState,
@@ -1146,6 +1148,17 @@ class PrimitivePlannerACTPolicy(Policy):
     def _cell_entry_trace(self, value: list[dict[str, Any]]) -> None:
         self._primitive_cell_entry_compatibility_runtime_state().trace = value
 
+    def _cell_entry_report_config(self) -> PrimitiveCellEntryReportConfig:
+        return PrimitiveCellEntryReportConfig(
+            enabled=bool(getattr(self, "cell_entry_enabled", False))
+        )
+
+    def _cell_entry_report_status(self) -> PrimitiveCellEntryReportStatus:
+        return (
+            self._primitive_cell_entry_compatibility_runtime_state()
+            .to_report_status(self._cell_entry_report_config())
+        )
+
     def _primitive_token_runtime_state(self) -> PrimitiveTokenRuntimeState:
         state = self.__dict__.get("_token_state")
         if state is None:
@@ -2078,7 +2091,7 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _debug_report_cell_entry_fields(self) -> dict[str, Any]:
-        return self._primitive_cell_entry_compatibility_runtime_state().debug_fields()
+        return self._cell_entry_report_status().debug_fields()
 
     def _debug_report_scripted_bootstrap_fields(self) -> dict[str, Any]:
         return self._scripted_bootstrap_report_status().debug_fields()
@@ -2101,6 +2114,7 @@ class PrimitivePlannerACTPolicy(Policy):
         return_status = self._return_report_status()
         scripted_bootstrap_status = self._scripted_bootstrap_report_status()
         token_status = self._token_report_status()
+        cell_entry_status = self._cell_entry_report_status()
         coverage_status = self._coverage_report_service().summary_status_from_state(
             self._coverage_runtime_state(),
             config=self._coverage_report_config(),
@@ -2116,8 +2130,7 @@ class PrimitivePlannerACTPolicy(Policy):
             dump_done_use_boundary_event=bool(self.dump_done_use_boundary_event),
             primitive_final_skill=str(self._skill_name),
             primitive_cycle_index=cycle_status.primitive_cycle_index,
-            cell_entry_enabled=bool(self.cell_entry_enabled),
-            cell_entry_trace_count=int(len(self._cell_entry_trace)),
+            cell_entry=cell_entry_status,
             dig_cut_token_dim=int(DIG_CUT_TOKEN_DIM),
             return_target_token_dim=int(RETURN_TARGET_TOKEN_DIM),
             return_target_token_source=str(self._return_target_token_source),
@@ -2174,7 +2187,7 @@ class PrimitivePlannerACTPolicy(Policy):
             selection_service=self._coverage_selection_service(),
         )
         return PrimitivePlannerTraceInputs(
-            cell_entry_trace=self._cell_entry_trace,
+            cell_entry=self._cell_entry_report_status(),
             token=self._token_report_status(),
             return_target_planner_enabled=bool(self.return_target_planner_enabled),
             coverage=coverage,

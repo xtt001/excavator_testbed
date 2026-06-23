@@ -7879,3 +7879,114 @@ Each completed refactor round should append:
   or generic blackboard. Current maturity remains default legacy FSM
   backendified with focused services / shared backend decision input/facts/
   factory; BT/VLM/LLM backends remain unsupported fail-fast.
+
+### 2026-06-23 Phase 9.80 Move Parked Cell-Entry Report Projection
+
+- Scope: moved parked `cell_entry` debug, rollout-summary, and planner-trace
+  report projection into the existing cell-entry compatibility state owner.
+  This is compatibility/report parking only, not a cell-entry token,
+  planner/auditor, or backend architecture change.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 143]`, HEAD
+  `cd2bc3b146ded925ddd0db329628a0b33fc0b348`, dirty status clean at initial
+  lock check. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- Added `PrimitiveCellEntryReportConfig` and `PrimitiveCellEntryReportStatus`
+  in `testbed/planner/primitive_cell_entry_state.py`.
+- Added `PrimitiveCellEntryCompatibilityRuntimeState.to_report_status(config)`
+  to project parked mutable state plus explicit config facts into existing
+  cell-entry public debug fields, rollout-summary enablement/trace-count
+  fields, and planner-trace trace list.
+- `PrimitivePlannerACTPolicy` now has thin `_cell_entry_report_config()` and
+  `_cell_entry_report_status()` helpers. `_debug_report_cell_entry_fields()`
+  delegates to `PrimitiveCellEntryReportStatus.debug_fields()`.
+- `PrimitiveRolloutSummaryInputs` and `PrimitivePlannerTraceInputs` now carry
+  `cell_entry: PrimitiveCellEntryReportStatus`, preserving the same public
+  summary keys and planner-trace list projection through the parked status
+  object.
+- Line-count impact: `testbed/policies/hybrid/primitive_planner.py` is 4763
+  lines after the report/status facades and removed inline projection glue.
+  `testbed/planner/primitive_cell_entry_state.py` grew from 81 to 137 lines as
+  the parked compatibility owner absorbed the report projection boundary.
+  `testbed/planner/primitive_rollout_summary.py` is 196 lines and
+  `testbed/planner/primitive_planner_trace.py` is 106 lines after consuming the
+  status object.
+- Preserved behavior: public cell-entry debug/summary/trace key names and value
+  projection are unchanged. Planner-trace cell-entry trace projection preserves
+  list shallow-copy semantics. Cell-entry planner/auditor/token algorithms,
+  token dimensions, token key names, trace mutation semantics, reset semantics,
+  residual `pre_dig_align`, coverage/token/return/cycle/scripted-bootstrap/
+  execution owners, backend fail-fast behavior, and removed 5P runtime status
+  remain unchanged.
+- Explicit non-goals: no `cell_entry` token contract promotion, no backend fact
+  promotion, no behavior-tree node, no planner/auditor algorithm move, no trace
+  mutation change, no `pre_dig_align` change, no generic report snapshot object,
+  no planner-self port, and no broad config bag.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_cell_entry_state.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py tests/test_primitive_debug_report.py`
+  failed at collection with `ImportError` for missing
+  `PrimitiveCellEntryReportConfig` / `PrimitiveCellEntryReportStatus`, proving
+  the requested parked report/config/status boundary did not exist yet.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_cell_entry_state.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py tests/test_primitive_debug_report.py`
+  returned `18 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_reset_lifecycle.py tests/test_primitive_pre_dig_align_state.py`
+  returned `25 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "cell_entry or pre_dig_align or semantic_boundary_events_drive_skill_sequence or return_to_dig or coverage_decision_trace"`
+  returned `19 passed, 100 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_cell_entry_state.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py tests/test_primitive_debug_report.py`
+  returned `18 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_reset_lifecycle.py tests/test_primitive_pre_dig_align_state.py`
+  returned `25 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "cell_entry or pre_dig_align or semantic_boundary_events_drive_skill_sequence or return_to_dig or coverage_decision_trace"`
+  returned `19 passed, 100 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was a bounded parked `cell_entry` report compatibility
+  projection move inside an existing focused owner, not a tiny facade,
+  pass-through wrapper, anemic service, planner-self port, broad config bag,
+  generic report snapshot, or generic blackboard. Current maturity remains
+  default legacy FSM backendified with focused services / shared backend
+  decision input/facts/factory; BT/VLM/LLM backends remain unsupported
+  fail-fast.
+
+### 2026-06-23 Three-Iteration Reflection After Phases 9.78-9.80
+
+- Reflection scope: Phase 9.78 moved coverage debug/summary/trace snapshot
+  projection from the policy shell into `CoverageReportService`; Phase 9.79
+  moved parked pre-dig-align debug/summary projection into
+  `PrimitivePreDigAlignCompatibilityRuntimeState`; Phase 9.80 moved parked
+  cell-entry debug/summary/trace projection into
+  `PrimitiveCellEntryCompatibilityRuntimeState`.
+- Are we closer to the target: yes. The report layer now has domain owners for
+  the major coverage, pre-dig-align, and cell-entry projection clusters instead
+  of hand-built policy report dictionaries/lists. The policy remains a public
+  adapter and compatibility-facade host, but it owns less report schema logic.
+- Maximum remaining gap: `PrimitivePlannerACTPolicy` is still large because it
+  carries public adapter construction, typed port assembly, compatibility
+  property facades, observation/raw fact helpers, token/coverage/return
+  planning composition, residual `pre_dig_align` action/readiness material, and
+  parked `cell_entry` planner/auditor/token compatibility algorithms. It is not
+  large because the backend is fully abstracted; the current maturity is still
+  default legacy FSM backendified with focused services / shared backend
+  decision input/facts/factory, with BT/VLM/LLM unsupported fail-fast.
+- Hard constraint check: these three rounds treated protection as a constraint,
+  not the goal. Each moved a coherent report boundary and preserved public
+  schema, fallback, list-copy, branch-order, reason-string, token-contract,
+  reset-timing, `pre_dig_align`, and `cell_entry` behavior. They did not add
+  pass-through facades, anemic services, planner-self ports, broad config bags,
+  or generic blackboards.
+- Direction correction: the report/parking projection cluster is now mostly
+  exhausted. Continuing to move one or two compatibility fields would risk the
+  safest-smallest cleanup pattern the project explicitly rejects. The next
+  implementation should either target a larger live boundary with real policy
+  responsibility removal, or run a bounded audit to choose that next boundary
+  from current code evidence before dispatch. Do not promote parked
+  `pre_dig_align` or `cell_entry` into the mainline backend/runtime
+  architecture without new evidence and explicit approval.

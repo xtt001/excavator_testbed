@@ -4,6 +4,9 @@ from types import MethodType
 from typing import Any
 
 from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_CONTRACT
+from testbed.planner.primitive_cell_entry_state import (
+    PrimitiveCellEntryReportStatus,
+)
 from testbed.planner.primitive_coverage_reports import CoverageTraceReportStatus
 from testbed.planner.primitive_planner_trace import (
     PrimitivePlannerTraceBuilder,
@@ -39,8 +42,25 @@ def _inputs(**overrides: Any) -> PrimitivePlannerTraceInputs:
         terminal_stop_requested=True,
         terminal_stop_reason="dig_area_depleted",
     )
+    cell_entry_status = PrimitiveCellEntryReportStatus(
+        enabled=True,
+        trace=[{"cell_id": 2, "reason": "compatibility_only"}],
+        selected_cell_id=-1,
+        selected_long_index=-1,
+        selected_short_index=-1,
+        planned_entry_x_m=float("nan"),
+        planned_entry_y_m=float("nan"),
+        planned_entry_z_m=float("nan"),
+        planner_ok=False,
+        audit_reason_code=-1,
+        audit_reason="",
+        audit_risk_flags=0,
+        inside_entry_envelope=False,
+        distance_to_entry_envelope_m=float("nan"),
+        seen_cell_id=-1,
+    )
     values: dict[str, Any] = {
-        "cell_entry_trace": [{"cell_id": 2, "reason": "compatibility_only"}],
+        "cell_entry": cell_entry_status,
         "token": token_status,
         "return_target_planner_enabled": True,
         "coverage": coverage_status,
@@ -99,10 +119,10 @@ def test_planner_trace_builder_preserves_coverage_fields_and_list_projection() -
     ]
     assert trace["coverage_corridors"] == [{"corridor_id": 7, "score": 1.25}]
     assert trace["coverage_decision_trace"] == [{"event": "select_corridor"}]
-    assert trace["cell_entry_trace"] is not inputs.cell_entry_trace
+    assert trace["cell_entry_trace"] is not inputs.cell_entry.trace
     assert trace["coverage_corridors"] is not inputs.coverage.corridors
     assert trace["coverage_decision_trace"] is not inputs.coverage.decision_trace
-    assert trace["cell_entry_trace"][0] is inputs.cell_entry_trace[0]
+    assert trace["cell_entry_trace"][0] is inputs.cell_entry.trace[0]
     assert (
         trace["coverage_decision_trace"][0]
         is inputs.coverage.decision_trace[0]

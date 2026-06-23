@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4750 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4763 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -70,7 +70,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_capability_provider.py` | 318 | legacy FSM transition-status provider over focused cycle/coverage/return owners, observation facts, and return handoff readiness service |
 | `testbed/planner/primitive_execution_state.py` | 49 | mutable execution lifecycle state owner for active skill, switch reason, previous action, and latest debug state |
 | `testbed/planner/primitive_observation.py` | 176 | policy observation assembler plus mutable per-observation injected-flag runtime state owner |
-| `testbed/planner/primitive_cell_entry_state.py` | 81 | parked cell-entry compatibility/report runtime state owner, reset defaults, and debug-field projection |
+| `testbed/planner/primitive_cell_entry_state.py` | 137 | parked cell-entry compatibility/report runtime state owner, reset defaults, and debug/summary/trace report projection |
 | `testbed/planner/primitive_pre_dig_align_state.py` | 202 | parked pre-dig-align compatibility/report runtime state owner, reset defaults, and debug/summary report projection |
 | `testbed/planner/primitive_token_state.py` | 190 | mutable dig/return token runtime state owner, reset defaults, live token-status projection, and token report metadata projection |
 | `testbed/planner/primitive_token_runtime.py` | 255 | dig/return token runtime sequencing over focused token and coverage state owners plus explicit external config/algorithm ports |
@@ -1572,6 +1572,17 @@ projection directly; it supplies explicit config facts and the focused parked
 state owner to `PrimitivePreDigAlignReportStatus`. This narrows report assembly
 without promoting residual `pre_dig_align` into backend facts, behavior-tree
 nodes, token contracts, or mainline runtime architecture.
+
+Current status note after Phase 9.80: the parked cell-entry report projection
+cluster now lives with `PrimitiveCellEntryCompatibilityRuntimeState`.
+`PrimitiveCellEntryReportStatus` projects the existing cell-entry public debug
+fields, rollout-summary enablement/trace-count fields, and planner-trace trace
+list from the parked compatibility state plus explicit report config facts.
+The large policy shell keeps thin report config/status facades, while
+`PrimitiveRolloutSummaryInputs` and `PrimitivePlannerTraceInputs` consume the
+same status object. This keeps `cell_entry` parked as compatibility/report
+material and does not promote it into the token contract, backend facts, or
+mainline runtime architecture.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

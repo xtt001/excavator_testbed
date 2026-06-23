@@ -5,6 +5,9 @@ from types import MethodType
 from typing import Any
 
 from testbed.planner.primitive_coverage_reports import CoverageSummaryReportStatus
+from testbed.planner.primitive_cell_entry_state import (
+    PrimitiveCellEntryReportStatus,
+)
 from testbed.planner.primitive_pre_dig_align_state import (
     PrimitivePreDigAlignReportStatus,
 )
@@ -43,6 +46,29 @@ def _inputs(**overrides: Any) -> PrimitiveRolloutSummaryInputs:
         terminal_stop_requested=True,
         terminal_stop_reason="dig_area_depleted",
     )
+    cell_entry = PrimitiveCellEntryReportStatus(
+        enabled=True,
+        trace=[
+            {"cycle_id": 1},
+            {"cycle_id": 2},
+            {"cycle_id": 3},
+            {"cycle_id": 4},
+            {"cycle_id": 5},
+        ],
+        selected_cell_id=-1,
+        selected_long_index=-1,
+        selected_short_index=-1,
+        planned_entry_x_m=float("nan"),
+        planned_entry_y_m=float("nan"),
+        planned_entry_z_m=float("nan"),
+        planner_ok=False,
+        audit_reason_code=-1,
+        audit_reason="",
+        audit_risk_flags=0,
+        inside_entry_envelope=False,
+        distance_to_entry_envelope_m=float("nan"),
+        seen_cell_id=-1,
+    )
     pre_dig_align = PrimitivePreDigAlignReportStatus(
         enabled=False,
         first_dig_only=True,
@@ -80,8 +106,7 @@ def _inputs(**overrides: Any) -> PrimitiveRolloutSummaryInputs:
         "dump_done_use_boundary_event": True,
         "primitive_final_skill": "return",
         "primitive_cycle_index": 4,
-        "cell_entry_enabled": True,
-        "cell_entry_trace_count": 5,
+        "cell_entry": cell_entry,
         "dig_cut_token_dim": 10,
         "return_target_token_dim": 10,
         "return_target_token_source": "return_target_corridor_1",

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from testbed.planner.primitive_cell_entry_state import (
+    PrimitiveCellEntryReportStatus,
+)
 from testbed.planner.primitive_coverage_reports import CoverageSummaryReportStatus
 from testbed.planner.primitive_pre_dig_align_state import (
     PrimitivePreDigAlignReportStatus,
@@ -27,8 +30,7 @@ class PrimitiveRolloutSummaryInputs:
     dump_done_use_boundary_event: bool
     primitive_final_skill: str
     primitive_cycle_index: int
-    cell_entry_enabled: bool
-    cell_entry_trace_count: int
+    cell_entry: PrimitiveCellEntryReportStatus
     dig_cut_token_dim: int
     return_target_token_dim: int
     return_target_token_source: str
@@ -70,8 +72,8 @@ class PrimitiveRolloutSummaryBuilder:
             ),
             "primitive_final_skill": str(inputs.primitive_final_skill),
             "primitive_cycle_index": int(inputs.primitive_cycle_index),
-            "cell_entry_enabled": int(inputs.cell_entry_enabled),
-            "cell_entry_trace_count": int(inputs.cell_entry_trace_count),
+            "cell_entry_enabled": int(inputs.cell_entry.enabled),
+            "cell_entry_trace_count": int(inputs.cell_entry.trace_count),
             "dig_cut_token_dim": int(inputs.dig_cut_token_dim),
             "return_target_token_dim": int(inputs.return_target_token_dim),
             "return_target_token_source": str(inputs.return_target_token_source),

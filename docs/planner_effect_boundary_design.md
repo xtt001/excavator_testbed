@@ -270,6 +270,13 @@ seen cell id, and trace list. The policy keeps old `_cell_entry_*` names as
 property-backed facades while the cell-entry planner/auditor algorithms remain
 in their existing parked compatibility path. This does not promote cell-entry
 tokens into the mainline token contract or decision backend facts.
+Phase 9.80 extends that parked owner with `PrimitiveCellEntryReportConfig` and
+`PrimitiveCellEntryReportStatus`. Parked cell-entry public debug fields,
+rollout-summary enablement/trace-count fields, and planner-trace trace list
+now project from the compatibility state owner plus explicit config facts.
+This keeps cell-entry as compatibility/report material and does not promote
+cell-entry tokens, planner/auditor behavior, or trace mutation semantics into
+the mainline token contract, decision backend facts, or runtime architecture.
 `PrimitiveTokenRuntimeCoordinator` now owns the dig/return token
 runtime sequencing used by those providers: dig-cut gating, terminal-stop
 cached-token behavior, bootstrap policy token exception, hold-cycle checks,
@@ -357,6 +364,20 @@ summary keys. This phase does not change pre-dig readiness, target, timeout,
 surface-guard, action, replan, or handoff algorithms, and does not change branch
 order, reason strings, report schemas, `cell_entry`, backend fail-fast behavior,
 or removed 5P runtime status.
+
+Phase 9.80 narrows parked cell-entry report projection without promoting
+cell-entry into the mainline token/backend/runtime architecture. The existing
+`PrimitiveCellEntryCompatibilityRuntimeState` now projects
+`PrimitiveCellEntryReportStatus` from its parked mutable state and explicit
+`PrimitiveCellEntryReportConfig` facts. `PrimitivePlannerACTPolicy` keeps thin
+report config/status facades, `debug_state()` gets the same public cell-entry
+debug keys from `PrimitiveCellEntryReportStatus.debug_fields()`,
+`PrimitiveRolloutSummaryInputs` carries the same status object for cell-entry
+summary fields, and `PrimitivePlannerTraceInputs` carries it for cell-entry
+trace projection. This phase does not change cell-entry planner/auditor/token
+algorithms, token dimensions, trace mutation semantics, reset semantics, branch
+order, reason strings, report schemas, `pre_dig_align`, backend fail-fast
+behavior, or removed 5P runtime status.
 
 `PrimitiveRolloutSummaryBuilder` now owns public `rollout_summary()` dict
 assembly: summary key layout, bool-like `int(...)` projections, `None` to
@@ -1737,6 +1758,13 @@ Pre-dig-align public debug and summary values now project through
 explicit report config facts. This keeps pre-dig-align parked as compatibility
 report/action material and avoids turning it into a backend fact source,
 behavior-tree node, token contract, or mainline runtime responsibility.
+
+Phase 9.80 narrows the parked cell-entry report projection boundary. Cell-entry
+public debug, summary, and planner-trace values now project through
+`PrimitiveCellEntryReportStatus` from the compatibility state owner plus
+explicit report config facts. This keeps cell-entry parked as compatibility/
+report material and avoids turning it into a token contract, backend fact
+source, behavior-tree node, or mainline runtime responsibility.
 
 ### Stage 4: Expand Effect Families From Evidence
 

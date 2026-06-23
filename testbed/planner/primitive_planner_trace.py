@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
 
 from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_CONTRACT
+from testbed.planner.primitive_cell_entry_state import PrimitiveCellEntryReportStatus
 from testbed.planner.primitive_coverage_reports import CoverageTraceReportStatus
 from testbed.planner.primitive_token_state import PrimitiveTokenReportStatus
 
@@ -30,7 +31,7 @@ RETURN_START_ENVELOPE_TOKEN_CONTRACT_TEXT = (
 class PrimitivePlannerTraceInputs:
     """Snapshot values required to assemble the public planner trace."""
 
-    cell_entry_trace: Sequence[Any]
+    cell_entry: PrimitiveCellEntryReportStatus
     token: PrimitiveTokenReportStatus
     return_target_planner_enabled: bool
     coverage: CoverageTraceReportStatus
@@ -42,7 +43,7 @@ class PrimitivePlannerTraceBuilder:
 
     def build(self, inputs: PrimitivePlannerTraceInputs) -> dict[str, object]:
         return {
-            "cell_entry_trace": list(inputs.cell_entry_trace),
+            "cell_entry_trace": inputs.cell_entry.trace_for_planner_trace(),
             "dig_cut_token_contract_version": DIG_CUT_TOKEN_CONTRACT,
             "dig_cut_token_contract": DIG_CUT_TOKEN_CONTRACT_TEXT,
             "dig_cut_planner_mode": str(inputs.token.dig_cut_planner_mode),

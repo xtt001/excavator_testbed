@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.73 implementation. It is intentionally
+compares them with the current Phase 9.80 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -94,8 +94,8 @@ Current maturity:
 - observation injection runtime state owner: **achieved for per-observation
   token injected compatibility flags and assembler-result application**
 - cell-entry compatibility runtime state owner: **achieved for parked
-  cell-entry goal/audit/token-cache/trace report storage and debug-field
-  projection**
+  cell-entry goal/audit/token-cache/trace report storage and public
+  debug/summary/trace report projection**
 - pre-dig-align compatibility runtime state owner: **achieved for parked
   pre-dig-align counters, cached target/error arrays, readiness booleans,
   timeout reason, surface-guard report storage, and public debug/summary report
@@ -569,9 +569,11 @@ Current boundary:
   compatibility facades over that owner.
 - `PrimitiveCellEntryCompatibilityRuntimeState` owns parked cell-entry
   compatibility/report storage: goal, goal cycle id, audit, cached token array,
-  seen cell id, trace list, and public debug-field projection. The policy keeps
-  the old `_cell_entry_*` names as property-backed compatibility facades over
-  that owner.
+  seen cell id, trace list, and public debug/summary/trace report projection
+  through `PrimitiveCellEntryReportStatus` from explicit
+  `PrimitiveCellEntryReportConfig` facts. The policy keeps the old
+  `_cell_entry_*` names as property-backed compatibility facades over that
+  owner.
 - `PrimitivePreDigAlignCompatibilityRuntimeState` owns parked pre-dig-align
   compatibility/report storage: counters, cached target/error arrays,
   readiness booleans, timeout handoff reason, surface depth, and surface-guard
@@ -588,7 +590,8 @@ Gap:
 - Runtime state is only partially extracted.
 - The policy shell still owns some compatibility/report algorithms and
   compatibility facades, but no longer stores pre-dig-align or cell-entry
-  mutable report state or cell-entry debug projection as independent policy
+  mutable report state, cell-entry debug projection, cell-entry summary
+  projection, or cell-entry planner-trace projection as independent policy
   responsibilities.
 
 Standard:
@@ -760,6 +763,10 @@ Current boundary:
   debug and rollout-summary report projection through
   `PrimitivePreDigAlignReportStatus`; this is report parking only and does not
   make `pre_dig_align` a mainline backend/runtime capability.
+- `PrimitiveCellEntryCompatibilityRuntimeState` owns parked cell-entry debug,
+  rollout-summary, and planner-trace report projection through
+  `PrimitiveCellEntryReportStatus`; this is report parking only and does not
+  make `cell_entry` a mainline token/backend/runtime capability.
 - Policy still prepares section snapshots and compatibility fields.
 
 Gap:
@@ -767,9 +774,9 @@ Gap:
 - This layer is close to target.
 - Section snapshot providers may be further narrowed later. Coverage debug,
   trace, and summary coverage snapshot projection are outside the large policy
-  class, and parked pre-dig-align debug/summary projection is owned by the
-  pre-dig compatibility state owner. Other report input assembly still has
-  policy-side compatibility glue.
+  class. Parked pre-dig-align debug/summary projection and parked cell-entry
+  debug/summary/trace projection are owned by their compatibility state owners.
+  Other report input assembly still has policy-side compatibility glue.
 
 Standard:
 
@@ -852,7 +859,9 @@ The next code work should follow this order:
      switch reason, previous action, and latest compact debug state.
    - Observation injected-flag mutable state is **done in Phase 9.49**.
    - Parked cell-entry compatibility/report mutable state is
-     **done in Phase 9.50**.
+     **done in Phase 9.50**; its public debug/summary/trace report projection
+     is **done in Phase 9.80** as compatibility parking, not backend
+     promotion.
    - Parked pre-dig-align compatibility/report mutable state is
      **done in Phase 9.51**; its public debug/summary report projection is
      **done in Phase 9.79** as compatibility parking, not backend promotion.

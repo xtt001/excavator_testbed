@@ -12,6 +12,8 @@ from testbed.planner.cell_entry import (
 )
 from testbed.planner.primitive_cell_entry_state import (
     PrimitiveCellEntryCompatibilityRuntimeState,
+    PrimitiveCellEntryReportConfig,
+    PrimitiveCellEntryReportStatus,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
@@ -180,3 +182,56 @@ def test_cell_entry_debug_fields_match_policy_facade_for_populated_state() -> No
         "cell_entry_distance_to_entry_envelope_m": 0.125,
         "cell_entry_seen_cell_id": 6,
     }
+
+
+def test_cell_entry_report_status_projects_summary_and_trace_defaults() -> None:
+    state = PrimitiveCellEntryCompatibilityRuntimeState.fresh()
+
+    status = state.to_report_status(PrimitiveCellEntryReportConfig(enabled=False))
+
+    assert status.enabled is False
+    assert status.trace_count == 0
+    assert status.trace == []
+    assert status.trace_for_planner_trace() == []
+    assert status.debug_fields() == state.debug_fields()
+
+
+def test_cell_entry_report_status_projects_populated_trace_with_shallow_copy() -> None:
+    state = PrimitiveCellEntryCompatibilityRuntimeState.fresh()
+    event = {"cycle_id": 3, "reason": "compatibility_only"}
+    state.trace.append(event)
+    state.seen_cell_id = 8
+
+    status = state.to_report_status(PrimitiveCellEntryReportConfig(enabled=True))
+    trace_payload = status.trace_for_planner_trace()
+
+    assert status.enabled is True
+    assert status.trace == [event]
+    assert status.selected_cell_id == -1
+    assert status.selected_long_index == -1
+    assert status.selected_short_index == -1
+    assert np.isnan(status.planned_entry_x_m)
+    assert np.isnan(status.planned_entry_y_m)
+    assert np.isnan(status.planned_entry_z_m)
+    assert status.planner_ok is False
+    assert status.audit_reason_code == -1
+    assert status.audit_reason == ""
+    assert status.audit_risk_flags == 0
+    assert status.inside_entry_envelope is False
+    assert np.isnan(status.distance_to_entry_envelope_m)
+    assert status.seen_cell_id == 8
+    assert status.trace is not state.trace
+    assert trace_payload is not status.trace
+    assert trace_payload[0] is event
+
+
+def test_policy_cell_entry_debug_facade_delegates_to_report_status() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy.cell_entry_enabled = True
+    state = policy._primitive_cell_entry_compatibility_runtime_state()
+    state.seen_cell_id = 5
+
+    assert policy._debug_report_cell_entry_fields() == (
+        state.to_report_status(policy._cell_entry_report_config()).debug_fields()
+    )
+    assert policy._cell_entry_report_status().enabled is True
