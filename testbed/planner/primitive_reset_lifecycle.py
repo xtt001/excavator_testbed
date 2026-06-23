@@ -8,9 +8,6 @@ from typing import Any
 
 import numpy as np
 
-from testbed.planner.primitive_cell_entry_state import (
-    PrimitiveCellEntryCompatibilityRuntimeState,
-)
 from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive_execution_state import PrimitiveExecutionRuntimeState
@@ -84,11 +81,6 @@ class PrimitiveResetLifecycleState:
     return_state: PrimitiveReturnRuntimeState
     cycle_index: int
     dump_start_deposited_mass_kg: float
-    cell_entry_state: PrimitiveCellEntryCompatibilityRuntimeState
-    cell_entry_goal: Any | None
-    cell_entry_goal_cycle_id: int
-    cell_entry_audit: Any | None
-    cell_entry_tokens: np.ndarray
     observation_injection_state: PrimitiveObservationInjectionRuntimeState
     cell_entry_token_injected: bool
     token_state: PrimitiveTokenRuntimeState
@@ -123,8 +115,6 @@ class PrimitiveResetLifecycleState:
     pending_dig_depth_profile_tokens: np.ndarray | None
     pending_dig_state_exemplar_ids: list[str]
     pending_dig_state_exemplar_distance: float
-    cell_entry_seen_cell_id: int
-    cell_entry_trace: list[dict[str, Any]]
     dig_cut_planned_cycle_id: int
     dig_cut_token_source: str
     dig_cut_fallback_reason: str
@@ -188,11 +178,6 @@ class PrimitiveResetLifecycleState:
             "_return_state": self.return_state,
             "_cycle_index": self.cycle_index,
             "_dump_start_deposited_mass_kg": self.dump_start_deposited_mass_kg,
-            "_cell_entry_state": self.cell_entry_state,
-            "_cell_entry_goal": self.cell_entry_goal,
-            "_cell_entry_goal_cycle_id": self.cell_entry_goal_cycle_id,
-            "_cell_entry_audit": self.cell_entry_audit,
-            "_cell_entry_tokens": self.cell_entry_tokens,
             "_observation_injection_state": self.observation_injection_state,
             "_cell_entry_token_injected": self.cell_entry_token_injected,
             "_token_state": self.token_state,
@@ -249,8 +234,6 @@ class PrimitiveResetLifecycleState:
             "_pending_dig_state_exemplar_distance": (
                 self.pending_dig_state_exemplar_distance
             ),
-            "_cell_entry_seen_cell_id": self.cell_entry_seen_cell_id,
-            "_cell_entry_trace": self.cell_entry_trace,
             "_dig_cut_planned_cycle_id": self.dig_cut_planned_cycle_id,
             "_dig_cut_token_source": self.dig_cut_token_source,
             "_dig_cut_fallback_reason": self.dig_cut_fallback_reason,
@@ -287,7 +270,6 @@ class PrimitiveResetLifecycleService:
         )
         cycle_state = PrimitiveCycleRuntimeState.fresh()
         token_state = PrimitiveTokenRuntimeState.fresh()
-        cell_entry_state = PrimitiveCellEntryCompatibilityRuntimeState.fresh()
         observation_injection_state = PrimitiveObservationInjectionRuntimeState.fresh()
         pre_dig_align_state = (
             PrimitivePreDigAlignCompatibilityRuntimeState.fresh(
@@ -352,11 +334,6 @@ class PrimitiveResetLifecycleService:
             dump_start_deposited_mass_kg=(
                 cycle_state.dump_start_deposited_mass_kg
             ),
-            cell_entry_state=cell_entry_state,
-            cell_entry_goal=cell_entry_state.goal,
-            cell_entry_goal_cycle_id=cell_entry_state.goal_cycle_id,
-            cell_entry_audit=cell_entry_state.audit,
-            cell_entry_tokens=cell_entry_state.tokens,
             observation_injection_state=observation_injection_state,
             cell_entry_token_injected=(
                 observation_injection_state.cell_entry_token_injected
@@ -423,8 +400,6 @@ class PrimitiveResetLifecycleService:
             pending_dig_state_exemplar_distance=(
                 token_state.pending_dig_state_exemplar_distance
             ),
-            cell_entry_seen_cell_id=cell_entry_state.seen_cell_id,
-            cell_entry_trace=cell_entry_state.trace,
             dig_cut_planned_cycle_id=token_state.dig_cut_planned_cycle_id,
             dig_cut_token_source=token_state.dig_cut_token_source,
             dig_cut_fallback_reason=token_state.dig_cut_fallback_reason,

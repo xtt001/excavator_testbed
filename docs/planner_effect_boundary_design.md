@@ -273,13 +273,15 @@ builds typed token-provider ports and keeps old injected-flag names as
 property-backed facades over that owner.
 `PrimitiveCellEntryCompatibilityRuntimeState` owns parked cell-entry
 compatibility/report storage: goal, goal cycle id, audit, cached token array,
-seen cell id, and trace list. The policy keeps old `_cell_entry_*` names as
-property-backed facades for disabled public schema compatibility. The
-primitive-planner runtime no longer injects `cell_entry_tokens`, runs
-cell-entry planner/auditor algorithms, or mutates the cell-entry trace during
-dig completion. Historical data/HDF5/training low-dimensional support remains
-outside primitive planner runtime. This does not promote cell-entry tokens into
-the mainline token contract or decision backend facts.
+seen cell id, and trace list for standalone compatibility projection. The
+policy no longer keeps old `_cell_entry_*` private runtime field facades or
+reset snapshot writeback for disabled public schema compatibility; it projects
+fresh disabled/default report values instead. The primitive-planner runtime no
+longer injects `cell_entry_tokens`, runs cell-entry planner/auditor algorithms,
+or mutates the cell-entry trace during dig completion. Historical data/HDF5/
+training low-dimensional support remains outside primitive planner runtime.
+This does not promote cell-entry tokens into the mainline token contract or
+decision backend facts.
 Phase 9.80 extends that parked owner with `PrimitiveCellEntryReportConfig` and
 `PrimitiveCellEntryReportStatus`. Parked cell-entry public debug fields,
 rollout-summary enablement/trace-count fields, and planner-trace trace list
@@ -1152,17 +1154,15 @@ behavior, or removed 5P runtime status.
 Phase 9.50 introduces `PrimitiveCellEntryCompatibilityRuntimeState` in
 `testbed/planner/primitive_cell_entry_state.py`. The state owner centralizes
 parked cell-entry compatibility/report mutable storage: selected goal, goal
-cycle id, audit result, cached token array, seen cell id, and trace list. Reset
-creates one fresh cell-entry compatibility state and applies it through
-`_cell_entry_state`; the old `_cell_entry_goal`,
-`_cell_entry_goal_cycle_id`, `_cell_entry_audit`, `_cell_entry_tokens`,
-`_cell_entry_seen_cell_id`, and `_cell_entry_trace` names remain compatibility
-facades over the same owner. A later parked cleanup removed
-`_cell_entry_tokens_for_obs(...)` and `_complete_cell_entry_dig(...)` from the
-policy shell; the owner now supports disabled public schema compatibility, while
-historical data/HDF5/training token support remains outside primitive planner
-runtime. This phase does not change trace schema, debug/summary/trace public
-schema, residual `pre_dig_align`, backend fail-fast
+cycle id, audit result, cached token array, seen cell id, and trace list. This
+initial phase kept reset `_cell_entry_state` writeback and old `_cell_entry_*`
+private facades over the same owner. Later parked cleanups removed
+`_cell_entry_tokens_for_obs(...)`, `_complete_cell_entry_dig(...)`, the
+primitive-planner `_cell_entry_*` runtime facades, and reset snapshot writeback
+from the policy shell; the owner now supports standalone disabled public schema
+compatibility, while historical data/HDF5/training token support remains
+outside primitive planner runtime. This phase does not change trace schema,
+debug/summary/trace public schema, residual `pre_dig_align`, backend fail-fast
 behavior, or removed 5P runtime status.
 
 Phase 9.51 introduced `PrimitivePreDigAlignCompatibilityRuntimeState` in
@@ -1923,6 +1923,17 @@ resolution, and training/eval support for stored `cell_entry_tokens` remain
 compatibility contracts outside primitive planner runtime. This is a deletion
 cleanup, not a promotion into backend facts, token contracts, behavior-tree
 nodes, VLM packets, or mainline runtime architecture.
+
+Phase 9.94 removes the leftover primitive-planner `cell_entry` private field
+facades and reset snapshot writeback after the runtime path was deleted. The
+policy no longer exposes `_primitive_cell_entry_compatibility_runtime_state`,
+`_cell_entry_goal`, `_cell_entry_goal_cycle_id`, `_cell_entry_audit`,
+`_cell_entry_tokens`, `_cell_entry_seen_cell_id`, or `_cell_entry_trace` as
+runtime field descriptors. `PrimitiveResetLifecycleState` no longer carries or
+applies `_cell_entry_state` / `_cell_entry_*` reset field updates. Public
+cell-entry debug/summary/trace keys remain disabled/default compatibility
+surfaces, and historical data/HDF5/training low-dimensional compatibility is
+unchanged.
 
 ### Stage 4: Expand Effect Families From Evidence
 

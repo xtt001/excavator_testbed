@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
 
 from testbed.planner.cell_entry import (
@@ -52,61 +50,23 @@ def test_cell_entry_compatibility_runtime_state_owns_trace_and_token_copy() -> N
     assert other.tokens is not state.tokens
 
 
-def test_policy_legacy_cell_entry_fields_are_backed_by_one_state_owner() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
-    state = policy._primitive_cell_entry_compatibility_runtime_state()
-    goal = object()
-    audit = object()
-    tokens = np.ones(CELL_ENTRY_TOKEN_DIM, dtype=np.float32)
-    trace = [{"cycle_id": 1}]
+def test_policy_no_longer_exposes_private_cell_entry_runtime_facades() -> None:
+    removed_names = {
+        "_primitive_cell_entry_compatibility_runtime_state",
+        "_cell_entry_goal",
+        "_cell_entry_goal_cycle_id",
+        "_cell_entry_audit",
+        "_cell_entry_tokens",
+        "_cell_entry_seen_cell_id",
+        "_cell_entry_trace",
+    }
 
-    policy._cell_entry_goal = goal
-    policy._cell_entry_goal_cycle_id = 7
-    policy._cell_entry_audit = audit
-    policy._cell_entry_tokens = tokens
-    policy._cell_entry_seen_cell_id = 4
-    policy._cell_entry_trace = trace
-
-    assert policy._primitive_cell_entry_compatibility_runtime_state() is state
-    assert state.goal is goal
-    assert state.goal_cycle_id == 7
-    assert state.audit is audit
-    assert state.tokens is tokens
-    assert state.seen_cell_id == 4
-    assert state.trace is trace
-    assert policy._cell_entry_goal is goal
-    assert policy._cell_entry_goal_cycle_id == 7
-    assert policy._cell_entry_audit is audit
-    assert policy._cell_entry_tokens is tokens
-    assert policy._cell_entry_seen_cell_id == 4
-    assert policy._cell_entry_trace is trace
-
-
-def test_policy_reset_application_replaces_cell_entry_state_owner() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
-    old_state = policy._primitive_cell_entry_compatibility_runtime_state()
-    old_state.goal_cycle_id = 9
-    reset_state = PrimitiveCellEntryCompatibilityRuntimeState.fresh()
-
-    class _ResetState:
-        def as_policy_field_updates(self) -> dict[str, Any]:
-            return {"_cell_entry_state": reset_state}
-
-    policy._apply_reset_lifecycle_state(_ResetState())
-    policy._cell_entry_goal_cycle_id = 2
-    policy._cell_entry_trace.append({"cycle_id": 2})
-
-    assert policy._primitive_cell_entry_compatibility_runtime_state() is reset_state
-    assert policy._primitive_cell_entry_compatibility_runtime_state() is not old_state
-    assert reset_state.goal_cycle_id == 2
-    assert reset_state.trace == [{"cycle_id": 2}]
-    assert old_state.goal_cycle_id == 9
-    assert old_state.trace == []
+    assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
 
 
 def test_cell_entry_debug_fields_match_policy_facade_for_fresh_state() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
-    state = policy._primitive_cell_entry_compatibility_runtime_state()
+    state = PrimitiveCellEntryCompatibilityRuntimeState.fresh()
 
     fields = state.debug_fields()
 
@@ -126,9 +86,9 @@ def test_cell_entry_debug_fields_match_policy_facade_for_fresh_state() -> None:
     assert fields["cell_entry_seen_cell_id"] == -1
 
 
-def test_cell_entry_debug_fields_match_policy_facade_for_populated_state() -> None:
+def test_policy_cell_entry_debug_facade_ignores_removed_runtime_state() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
-    state = policy._primitive_cell_entry_compatibility_runtime_state()
+    state = PrimitiveCellEntryCompatibilityRuntimeState.fresh()
     state.goal = CellEntryGoal(
         cycle_id=3,
         selected_cell_id=4,
@@ -163,25 +123,23 @@ def test_cell_entry_debug_fields_match_policy_facade_for_populated_state() -> No
         target_cell_match=True,
     )
     state.seen_cell_id = 6
+    policy.__dict__["_cell_entry_state"] = state
 
-    fields = state.debug_fields()
+    fields = policy._debug_report_cell_entry_fields()
 
-    assert fields == policy._debug_report_cell_entry_fields()
-    assert fields == {
-        "cell_entry_selected_cell_id": 4,
-        "cell_entry_selected_long_index": 1,
-        "cell_entry_selected_short_index": 2,
-        "cell_entry_planned_entry_x_m": 1.25,
-        "cell_entry_planned_entry_y_m": 2.5,
-        "cell_entry_planned_entry_z_m": -0.75,
-        "cell_entry_planner_ok": True,
-        "cell_entry_audit_reason_code": 9,
-        "cell_entry_audit_reason": "inside_entry_envelope",
-        "cell_entry_audit_risk_flags": 5,
-        "cell_entry_inside_entry_envelope": True,
-        "cell_entry_distance_to_entry_envelope_m": 0.125,
-        "cell_entry_seen_cell_id": 6,
-    }
+    assert fields["cell_entry_selected_cell_id"] == -1
+    assert fields["cell_entry_selected_long_index"] == -1
+    assert fields["cell_entry_selected_short_index"] == -1
+    assert fields["cell_entry_planner_ok"] is False
+    assert fields["cell_entry_audit_reason_code"] == -1
+    assert fields["cell_entry_audit_reason"] == ""
+    assert fields["cell_entry_audit_risk_flags"] == 0
+    assert fields["cell_entry_inside_entry_envelope"] is False
+    assert fields["cell_entry_seen_cell_id"] == -1
+    assert np.isnan(fields["cell_entry_planned_entry_x_m"])
+    assert np.isnan(fields["cell_entry_planned_entry_y_m"])
+    assert np.isnan(fields["cell_entry_planned_entry_z_m"])
+    assert np.isnan(fields["cell_entry_distance_to_entry_envelope_m"])
 
 
 def test_cell_entry_report_status_projects_summary_and_trace_defaults() -> None:
@@ -228,10 +186,13 @@ def test_cell_entry_report_status_projects_populated_trace_with_shallow_copy() -
 def test_policy_cell_entry_debug_facade_delegates_to_report_status() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     policy.cell_entry_enabled = True
-    state = policy._primitive_cell_entry_compatibility_runtime_state()
+    state = PrimitiveCellEntryCompatibilityRuntimeState.fresh()
     state.seen_cell_id = 5
+    policy.__dict__["_cell_entry_state"] = state
 
     assert policy._debug_report_cell_entry_fields() == (
-        state.to_report_status(policy._cell_entry_report_config()).debug_fields()
+        PrimitiveCellEntryCompatibilityRuntimeState.fresh()
+        .to_report_status(policy._cell_entry_report_config())
+        .debug_fields()
     )
     assert policy._cell_entry_report_status().enabled is False

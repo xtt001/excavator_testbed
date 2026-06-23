@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4640 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4640 | public primitive policy adapter plus compatibility facades over focused planner services; cell-entry private runtime field facades removed |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_boundary_event.py` | 53 | live boundary-event tick source over focused execution state, boundary detector, and typed observation facts |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
@@ -1061,16 +1061,16 @@ the old `_cell_entry_token_injected`, `_dig_cut_token_injected`,
 copy/no-copy behavior, and immutable `PrimitiveTokenInjectionState` projection;
 token schema, `cell_entry`, and `pre_dig_align` behavior remain unchanged.
 
-Current status note after Phase 9.50: parked cell-entry compatibility/report
-storage is now owned by `PrimitiveCellEntryCompatibilityRuntimeState` in
-`testbed/planner/primitive_cell_entry_state.py`. Reset creates a fresh
-cell-entry state and applies it through `_cell_entry_state`; the old
-`_cell_entry_goal`, `_cell_entry_goal_cycle_id`, `_cell_entry_audit`,
-`_cell_entry_tokens`, `_cell_entry_seen_cell_id`, and `_cell_entry_trace` names
-are property-backed facades. `cell_entry` planner/auditor algorithms, token
-dimensions, token key names, token values, and report/trace schemas remain
-unchanged, and `cell_entry` remains parked compatibility/report material rather
-than a mainline backend capability.
+Current status note after the parked cell-entry runtime cleanups: parked
+cell-entry compatibility/report schema projection still lives in
+`PrimitiveCellEntryCompatibilityRuntimeState` in
+`testbed/planner/primitive_cell_entry_state.py`, but primitive-planner runtime
+execution and the policy-owned private `_cell_entry_*` field facades/reset
+writeback have been removed. Policy report helpers project fresh disabled/default
+cell-entry values. Historical cell-entry planner/data/HDF5/training
+compatibility remains outside primitive planner runtime, and `cell_entry`
+remains non-mainline compatibility/report material rather than a backend
+capability.
 
 Current status note after Phase 9.51: parked pre-dig-align
 compatibility/report storage is now owned by

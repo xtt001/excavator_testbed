@@ -8974,3 +8974,48 @@ Each completed refactor round should append:
   planner-self port. Current maturity remains default legacy FSM backendified
   with focused services / shared backend decision input/facts/factory;
   BT/VLM/LLM remain unsupported fail-fast.
+
+### 2026-06-23 Parked Cell-Entry Private Facade Cleanup
+
+- Scope implemented by parked cleanup executor: remove leftover
+  primitive-planner `cell_entry` private runtime field facades and reset
+  snapshot writeback after the runtime/token/trace execution path was already
+  removed.
+- TDD red result: after updating focused cleanup assertions,
+  `python -m pytest -q tests/test_primitive_cell_entry_state.py tests/test_primitive_reset_lifecycle.py tests/test_primitive_rollout_summary.py tests/test_primitive_debug_report.py`
+  failed with representative errors: `PrimitivePlannerACTPolicy.__dict__` still
+  exposed `_primitive_cell_entry_compatibility_runtime_state` and old
+  `_cell_entry_*` descriptors, policy debug fields still read a manually
+  injected `_cell_entry_state`, and `PrimitiveResetLifecycleState` still carried
+  / applied old cell-entry reset fields.
+- Core change: `PrimitivePlannerACTPolicy` no longer exposes
+  `_primitive_cell_entry_compatibility_runtime_state`, `_cell_entry_goal`,
+  `_cell_entry_goal_cycle_id`, `_cell_entry_audit`, `_cell_entry_tokens`,
+  `_cell_entry_seen_cell_id`, or `_cell_entry_trace` as runtime field facades.
+  `_cell_entry_report_status()` now projects fresh disabled/default report
+  status. `PrimitiveResetLifecycleState` no longer carries or writes
+  `_cell_entry_state` / `_cell_entry_*` reset snapshot entries.
+- Compatibility retained: public cell-entry debug/summary/trace keys remain
+  present as disabled/default compatibility surfaces. `PrimitiveCellEntryCompatibilityRuntimeState`,
+  `testbed/planner/cell_entry.py`, HDF5/data/training low-dimensional
+  compatibility, and `PrimitiveObservationInjectionRuntimeState.cell_entry_token_injected`
+  remain.
+- Verification:
+  - `python -m pytest -q tests/test_primitive_cell_entry_state.py tests/test_primitive_reset_lifecycle.py tests/test_primitive_rollout_summary.py tests/test_primitive_debug_report.py`
+    -> `23 passed in 0.16s`
+  - `python -m pytest -q tests/test_primitive_adapter_config.py tests/test_primitive_observation.py tests/test_primitive_backend.py tests/test_primitive_decision_contract.py tests/test_primitive_effects.py`
+    -> `132 passed in 0.16s`
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "cell_entry or semantic_boundary_events_drive_skill_sequence or coverage_decision_trace or dig_cut_tokens"`
+    -> `4 passed, 103 deselected in 0.63s`
+  - `python -m compileall testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_reset_lifecycle.py testbed/planner/primitive_cell_entry_state.py`
+    -> no output, exit 0
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`
+    -> no output, exit 0
+  - `python scripts/planner_refactor_guard.py --check-skill-contract`
+    -> no output, exit 0
+  - `git diff --check`
+    -> no output, exit 0
+- Non-goals held: no `pre_dig_align` change, no public cell-entry schema
+  removal, no data/HDF5/training compatibility deletion, no behavior-tree/VLM/
+  LLM backend implementation, no broad report snapshot rewrite, no generic
+  cleanup sweep, and no commit in the implementation thread.

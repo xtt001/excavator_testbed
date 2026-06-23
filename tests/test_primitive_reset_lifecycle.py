@@ -14,7 +14,6 @@ from testbed.data.operator_first_v2_2 import (
     RETURN_START_ENVELOPE_TOKEN_DIM,
     RETURN_TARGET_TOKEN_DIM,
 )
-from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.planner.primitive_reset_lifecycle import (
     PrimitiveResetLifecyclePorts,
@@ -148,11 +147,6 @@ def test_reset_state_matches_legacy_counter_token_pending_and_coverage_defaults(
     assert state.transition_timeout_count == 0
     assert state.cycle_index == 0
     assert state.dump_start_deposited_mass_kg == 0.0
-    assert state.cell_entry_goal is None
-    assert state.cell_entry_goal_cycle_id == -1
-    assert state.cell_entry_audit is None
-    assert state.cell_entry_tokens.dtype == np.float32
-    assert state.cell_entry_tokens.shape == (CELL_ENTRY_TOKEN_DIM,)
     assert state.cell_entry_token_injected is False
     assert state.dig_cut_tokens.dtype == np.float32
     assert state.dig_cut_tokens.shape == (DIG_CUT_TOKEN_DIM,)
@@ -179,6 +173,36 @@ def test_reset_state_matches_legacy_counter_token_pending_and_coverage_defaults(
     assert state.return_start_envelope_token_source == "none"
     assert state.return_start_envelope_use_prior_spatial_bounds is True
     assert state.return_start_envelope_use_prior_qpos_bounds is True
+
+
+def test_reset_lifecycle_no_longer_emits_cell_entry_runtime_field_updates() -> None:
+    ports, _ = _ports(action_dim=4)
+
+    state = PrimitiveResetLifecycleService.from_ports(ports).reset()
+    updates = state.as_policy_field_updates()
+    removed_field_names = {
+        "cell_entry_state",
+        "cell_entry_goal",
+        "cell_entry_goal_cycle_id",
+        "cell_entry_audit",
+        "cell_entry_tokens",
+        "cell_entry_seen_cell_id",
+        "cell_entry_trace",
+    }
+    removed_policy_update_names = {
+        "_cell_entry_state",
+        "_cell_entry_goal",
+        "_cell_entry_goal_cycle_id",
+        "_cell_entry_audit",
+        "_cell_entry_tokens",
+        "_cell_entry_seen_cell_id",
+        "_cell_entry_trace",
+    }
+
+    assert removed_field_names.isdisjoint(
+        {field.name for field in fields(type(state))}
+    )
+    assert removed_policy_update_names.isdisjoint(updates)
     assert state.return_target_planned_cycle_id == -1
     assert state.return_target_token_source == "none"
     assert state.return_target_fallback_reason == ""
@@ -195,8 +219,6 @@ def test_reset_state_matches_legacy_counter_token_pending_and_coverage_defaults(
     assert state.pending_dig_depth_profile_tokens is None
     assert state.pending_dig_state_exemplar_ids == []
     assert np.isnan(state.pending_dig_state_exemplar_distance)
-    assert state.cell_entry_seen_cell_id == -1
-    assert state.cell_entry_trace == []
     assert state.dig_cut_planned_cycle_id == -1
     assert isinstance(state.coverage_state, CoverageRuntimeState)
     assert state.coverage_state.coverage_corridors == []
@@ -210,11 +232,9 @@ def test_reset_service_returns_fresh_mutable_arrays_and_containers() -> None:
     first = service.reset()
     second = service.reset()
     first.dig_cut_tokens[0] = 99.0
-    first.cell_entry_trace.append({"changed": True})
     first.return_to_dig_start_envelope_checks["changed"] = True
 
     assert second.dig_cut_tokens[0] == 0.0
-    assert second.cell_entry_trace == []
     assert second.return_to_dig_start_envelope_checks == {}
     assert first.dig_cut_tokens is not second.dig_cut_tokens
     assert first.coverage_state is not second.coverage_state

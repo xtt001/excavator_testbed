@@ -618,10 +618,11 @@ Current boundary:
   compatibility/report storage: goal, goal cycle id, audit, cached token array,
   seen cell id, trace list, and disabled public debug/summary/trace report
   projection through `PrimitiveCellEntryReportStatus` from explicit
-  `PrimitiveCellEntryReportConfig` facts. The policy keeps the old
-  `_cell_entry_*` names as property-backed compatibility facades over that
-  owner, but no longer injects `cell_entry_tokens` into policy observations or
-  mutates the trace from the dig-to-carry runtime path.
+  `PrimitiveCellEntryReportConfig` facts. After the primitive-planner
+  `cell_entry` runtime cleanup, the policy no longer keeps the old
+  `_cell_entry_*` runtime field facades or reset snapshot writeback; report
+  helpers project fresh disabled/default values instead of reading mutable
+  policy cell-entry state.
 - `PrimitivePreDigAlignCompatibilityRuntimeState` owns parked pre-dig-align
   compatibility/report storage: counters, cached target/error arrays,
   readiness booleans, timeout handoff reason, surface depth, and surface-guard
@@ -756,7 +757,8 @@ Gap:
   execution, and trace mutation have been removed. Historical cell-entry data,
   HDF5, and ACT low-dimensional compatibility remain outside the primitive
   planner runtime, while public planner report fields project disabled/default
-  values through `PrimitiveCellEntryCompatibilityRuntimeState`.
+  values through `PrimitiveCellEntryCompatibilityRuntimeState` without
+  policy-owned private runtime facades.
 - Return handoff algorithms remain in return handoff services; only mutable
   return handoff/runtime cache storage moved into `PrimitiveReturnRuntimeState`.
 - Coverage planning facts are no longer policy-owned implementation, but they
@@ -884,7 +886,9 @@ Current parking:
   debug/summary/report schema compatibility. Enabled config is invalid and
   must fail fast. It is not target mainline backend capability.
 - `cell_entry`: compatibility/report material. It is not target token contract
-  for the selected mainline rollout.
+  for the selected mainline rollout. Primitive-planner private `_cell_entry_*`
+  runtime facades and reset snapshot writeback have been removed; public report
+  keys remain disabled/default.
 - `5P`: removed runtime. Historical behavior is preserved only by git history;
   runtime eval may keep a fail-fast diagnostic.
 - behavior-tree, VLM, and LLM backends: unsupported parked scope.
