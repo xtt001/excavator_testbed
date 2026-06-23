@@ -13,6 +13,9 @@ from testbed.planner.primitive_capabilities import (
     PrimitiveObservationFacts,
     ReturnTransitionStatus,
 )
+from testbed.planner.primitive_coverage_state import CoverageRuntimeState
+from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
 
 
 @dataclass(frozen=True)
@@ -21,9 +24,9 @@ class PrimitiveFSMCapabilityProviderPorts:
 
     action_dim: int
     semantic_boundary_profile_active: Callable[[], bool]
-    coverage_terminal_stop_requested: bool
-    dig_step_count: int
-    dig_mass_plateau_count: int
+    cycle_state: PrimitiveCycleRuntimeState
+    coverage_state: CoverageRuntimeState
+    return_state: PrimitiveReturnRuntimeState
     dig_to_carry_min_distance_to_dig_area_m: float
     dig_to_carry_min_bucket_mass_kg: float
     dig_to_carry_target_bucket_mass_kg: float
@@ -40,9 +43,6 @@ class PrimitiveFSMCapabilityProviderPorts:
     dig_exit_guard_min_bucket_mass_kg: float
     dig_exit_guard_overshoot_m: float
     dig_exit_overshoot_m: Callable[[dict[str, Any]], float]
-    set_dig_to_carry_reason: Callable[[str], None]
-    coverage_cycle_start_deposit_kg: float
-    dump_ready_hold_count: int
     dump_ready_hold_steps: int
     dump_ready_min_height_above_rim_m: float
     dump_ready_require_over_footprint: bool
@@ -62,13 +62,8 @@ class PrimitiveFSMCapabilityProviderPorts:
     dump_done_max_bucket_mass_kg: float
     dump_done_min_deposit_delta_kg: float
     dump_done_use_boundary_event: bool
-    dump_start_deposited_mass_kg: float
-    dump_done_hold_count: int
     dump_done_hold_steps: int
     refresh_return_handoff_state: Callable[[dict[str, Any]], None]
-    return_next_dig_event_seen: Callable[[], bool]
-    return_entry_close: Callable[[], bool]
-    return_start_envelope_ready: Callable[[], bool]
     pre_dig_align_before_dig: Callable[[], bool]
     return_to_dig_start_envelope_direct_handoff_enabled: bool
     return_to_dig_start_envelope_gate_enabled: bool
@@ -106,10 +101,10 @@ class PrimitiveFSMCapabilityProvider:
                 ports.semantic_boundary_profile_active()
             ),
             coverage_terminal_stop_requested=(
-                ports.coverage_terminal_stop_requested
+                ports.coverage_state.coverage_terminal_stop_requested
             ),
-            dig_step_count=ports.dig_step_count,
-            dig_mass_plateau_count=ports.dig_mass_plateau_count,
+            dig_step_count=ports.cycle_state.dig_step_count,
+            dig_mass_plateau_count=ports.cycle_state.dig_mass_plateau_count,
             dig_to_carry_min_distance_to_dig_area_m=(
                 ports.dig_to_carry_min_distance_to_dig_area_m
             ),
@@ -150,7 +145,9 @@ class PrimitiveFSMCapabilityProvider:
         self,
         status: DigTransitionStatus,
     ) -> None:
-        self.ports.set_dig_to_carry_reason(str(status.dig_to_carry_reason))
+        self.ports.cycle_state.dig_to_carry_reason = str(
+            status.dig_to_carry_reason
+        )
 
     def carry_transition_status(
         self,
@@ -165,9 +162,9 @@ class PrimitiveFSMCapabilityProvider:
                 ports.semantic_boundary_profile_active()
             ),
             coverage_cycle_start_deposit_kg=(
-                ports.coverage_cycle_start_deposit_kg
+                ports.coverage_state.coverage_cycle_start_deposit_kg
             ),
-            dump_ready_hold_count=ports.dump_ready_hold_count,
+            dump_ready_hold_count=ports.cycle_state.dump_ready_hold_count,
             dump_ready_hold_steps=ports.dump_ready_hold_steps,
             dump_ready_min_bucket_mass_kg=ports.dump_ready_min_bucket_mass_kg,
             dump_ready_min_height_above_rim_m=(
@@ -226,8 +223,10 @@ class PrimitiveFSMCapabilityProvider:
                 ports.semantic_boundary_profile_active()
             ),
             dump_done_use_boundary_event=ports.dump_done_use_boundary_event,
-            dump_start_deposited_mass_kg=ports.dump_start_deposited_mass_kg,
-            dump_done_hold_count=ports.dump_done_hold_count,
+            dump_start_deposited_mass_kg=(
+                ports.cycle_state.dump_start_deposited_mass_kg
+            ),
+            dump_done_hold_count=ports.cycle_state.dump_done_hold_count,
             dump_done_hold_steps=ports.dump_done_hold_steps,
             dump_done_max_bucket_mass_kg=ports.dump_done_max_bucket_mass_kg,
             dump_done_min_deposit_delta_kg=ports.dump_done_min_deposit_delta_kg,
@@ -248,9 +247,13 @@ class PrimitiveFSMCapabilityProvider:
             semantic_boundary_profile_active=(
                 ports.semantic_boundary_profile_active()
             ),
-            return_next_dig_event_seen=ports.return_next_dig_event_seen(),
-            entry_close=ports.return_entry_close(),
-            start_envelope_ready=ports.return_start_envelope_ready(),
+            return_next_dig_event_seen=(
+                ports.return_state.return_next_dig_event_seen
+            ),
+            entry_close=ports.return_state.return_to_dig_entry_close_state,
+            start_envelope_ready=(
+                ports.return_state.return_to_dig_start_envelope_ready_state
+            ),
             pre_dig_align_before_dig=ports.pre_dig_align_before_dig(),
             return_to_dig_start_envelope_direct_handoff_enabled=(
                 ports.return_to_dig_start_envelope_direct_handoff_enabled

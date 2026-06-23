@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.67: the default 4P mainline branch chain no longer
+Current status after Phase 9.68: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -80,6 +80,14 @@ runtime state owners through `PrimitiveSkillLifecyclePorts`, so skill/reason
 writes and target-specific counter resets no longer require policy-built
 storage setter callbacks. The service still keeps explicit external action
 ports for low-level active policy reset and dig-cut plan clearing. The
+FSM transition-status provider boundary now also follows the focused owner
+pattern: `PrimitiveFSMCapabilityProviderPorts` carries cycle, coverage, and
+return runtime state owners directly, so dig counters, terminal-stop state,
+cycle-start deposit, dump hold/start fields, return cached flags, and the
+dig-to-carry reason mirror no longer flow through policy-built storage
+fields/callbacks. Threshold/config values, semantic-boundary profile reads,
+dig-exit overshoot calculation, explicit return handoff refresh, and
+`pre_dig_align` gate reads remain explicit ports. The
 coverage selection runtime boundary now follows the same state-owner pattern:
 `CoverageSelectionRuntimePorts` carries `CoverageRuntimeState`, and
 `CoverageSelectionRuntimeCoordinator` reads/writes corridor lists, candidate
@@ -817,10 +825,12 @@ Phase 9.11 extracts primitive FSM capability/status assembly into
 `ReturnTransitionStatus` `from_inputs(...)` contracts from typed shell
 snapshot/read ports. The policy shell builds the ports and exposes provider
 methods to `LegacyFSMBranchPorts`; its old `_dig/_carry/_dump/_return`
-backend-status helpers remain as thin compatibility/debug wrappers. The dig
-reason mirror is preserved through an explicit `set_dig_to_carry_reason` port,
-and return status still refreshes shell-owned direct-handoff cached state before
-reading cached return flags. `pre_dig_align`, `cell_entry`, 5P, return
+backend-status helpers remain as thin compatibility/debug wrappers. Since
+Phase 9.68, live cycle, coverage, and return runtime values are read through
+focused state owners rather than policy-built storage fields/callbacks, and
+the dig reason mirror is preserved by writing the cycle state owner. Return
+handoff refresh remains an explicit provider action and status assembly only
+reads cached return owner flags. `pre_dig_align`, `cell_entry`, 5P, return
 direct-handoff internals, coverage metric internals, token planning, and report
 schemas remain in their existing owners.
 

@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.67 implementation. It is intentionally
+compares them with the current Phase 9.68 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -377,13 +377,14 @@ Ideal boundary:
 Current boundary:
 
 - `PrimitiveFSMCapabilityProvider` builds dig/carry/dump/return transition
-  status records.
+  status records and reads live cycle, coverage, and return runtime values
+  through the focused state owners.
 - `PrimitiveFSMCapabilityProvider.dig_transition_status(...)` only assembles
   read-only dig status. Dig-to-carry reason mirror writeback is explicit through
   `sync_dig_transition_reason(...)`.
 - `PrimitiveFSMCapabilityProvider.refresh_return_transition_state(obs)` owns
   the explicit return handoff cache refresh step. `return_transition_status(...)`
-  only reads cached return flags and observation facts.
+  only reads cached return owner flags and observation facts.
 - `PrimitiveDecisionFacts` is the first backend-neutral common facts packet. It
   contains `PrimitiveDecisionContext`, current skill name, current switch
   reason, and read-only context accessors; it does not include transition status

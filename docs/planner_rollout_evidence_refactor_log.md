@@ -6908,3 +6908,76 @@ Each completed refactor round should append:
   not the objective. It was the largest effective bounded move in the live
   skill lifecycle state boundary and did not create an anemic service,
   pass-through facade, or generic blackboard.
+
+### 2026-06-23 Phase 9.68 Route FSM Transition-Status Provider State Through Focused Owners
+
+- Scope: narrowed `PrimitiveFSMCapabilityProviderPorts` in
+  `testbed/planner/primitive_capability_provider.py` so backend-facing
+  transition-status assembly consumes focused cycle, coverage, and return
+  runtime state owners instead of receiving policy-built primitive
+  fields/callbacks for the same live storage.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 131]`, HEAD
+  before this round `32d66fcda585487ad4565182ec02870558595d33`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- `PrimitiveFSMCapabilityProviderPorts` now carries
+  `cycle_state: PrimitiveCycleRuntimeState`,
+  `coverage_state: CoverageRuntimeState`, and
+  `return_state: PrimitiveReturnRuntimeState`.
+- Removed provider state storage ports for coverage terminal-stop, dig
+  counters/reason writer, coverage cycle-start deposit, dump hold/start fields,
+  and return state reader callbacks.
+- `PrimitiveFSMCapabilityProvider` now reads dig/carry/dump/return
+  transition-status runtime values through the focused owners and writes
+  `cycle_state.dig_to_carry_reason` in
+  `sync_dig_transition_reason(...)`.
+- `PrimitivePlannerACTPolicy._primitive_fsm_capability_provider_ports()` now
+  passes the policy-owned cycle, coverage, and return state owners while
+  keeping config facts and observation/refresh callbacks explicit.
+- Focused tests now use real state owners, assert old storage port names are
+  absent, and assert policy provider ports share the same owner instances as
+  policy facades.
+- Preserved behavior: transition-status algorithms, branch order, reason
+  strings, thresholds, token schema, debug/summary/trace schema, backend
+  support, `pre_dig_align` algorithm, `cell_entry`, and removed 5P runtime
+  behavior are unchanged.
+- Explicit non-goals: no `PrimitiveDecisionCapabilitiesPorts`,
+  `LegacyFSMBranchSet`, `PrimitiveBackendFactsAccess`, decision facts schema,
+  return handoff algorithm, `pre_dig_align`, `cell_entry`, token
+  runtime/planning, coverage selection/effect, requested effect applier,
+  runtime kernel, action dispatch, or report schema changes.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_cycle_state.py tests/test_primitive_coverage_state.py tests/test_primitive_return_state.py`
+  failed as expected with `TypeError` because
+  `PrimitiveFSMCapabilityProviderPorts.__init__()` did not yet accept
+  `cycle_state`, plus missing owner field assertions for `cycle_state`,
+  `coverage_state`, and `return_state`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_cycle_state.py tests/test_primitive_coverage_state.py tests/test_primitive_return_state.py`
+  returned `37 passed`;
+  `python -m pytest -q tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_decision_contract.py`
+  returned `116 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_tick_finalization.py`
+  returned `21 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or first_dig_policy_for_cycle_zero or return_to_dig or pre_dig_align or dig_cut_tokens or coverage_decision_trace"`
+  returned `20 passed, 99 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_capability_provider.py tests/test_primitive_cycle_state.py tests/test_primitive_coverage_state.py tests/test_primitive_return_state.py`
+  returned `37 passed`;
+  `python -m pytest -q tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_decision_contract.py`
+  returned `116 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_tick_finalization.py`
+  returned `21 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or first_dig_policy_for_cycle_zero or return_to_dig or pre_dig_align or dig_cut_tokens or coverage_decision_trace"`
+  returned `20 passed, 99 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was the largest effective bounded move in the live FSM
+  transition-status provider state boundary and did not create an anemic
+  service, pass-through facade, or generic blackboard.

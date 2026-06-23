@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 5366 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 5346 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -1315,6 +1315,21 @@ skill/reason write order, active-policy reset timing including the residual
 timing. `PrimitivePlannerACTPolicy` still assembles the explicit external
 active-policy reset and dig-cut clear action ports. Branch order, reason
 strings, thresholds, token schema, debug/summary/trace schema, backend
+support, `pre_dig_align` algorithms, `cell_entry`, and removed 5P runtime
+status remain unchanged.
+
+Current status note after Phase 9.68: backend-facing FSM transition-status
+assembly no longer receives cycle, coverage, and return runtime storage as
+policy-built primitive fields/callbacks. `PrimitiveFSMCapabilityProviderPorts`
+now carries `PrimitiveCycleRuntimeState`, `CoverageRuntimeState`, and
+`PrimitiveReturnRuntimeState` directly. `PrimitiveFSMCapabilityProvider` reads
+dig counters, terminal-stop state, cycle-start deposit, dump hold/start fields,
+and return cached flags through those owners, and synchronizes the
+dig-to-carry reason mirror by writing `PrimitiveCycleRuntimeState`.
+`PrimitivePlannerACTPolicy` still assembles explicit config facts, semantic
+boundary reads, dig-exit overshoot calculation, return handoff refresh, and
+`pre_dig_align` gate ports. Transition algorithms, branch order, reason string
+semantics, thresholds, token schema, debug/summary/trace schema, backend
 support, `pre_dig_align` algorithms, `cell_entry`, and removed 5P runtime
 status remain unchanged.
 

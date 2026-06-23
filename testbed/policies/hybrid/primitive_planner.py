@@ -1777,9 +1777,9 @@ class PrimitivePlannerACTPolicy(Policy):
             semantic_boundary_profile_active=(
                 lambda: self._semantic_boundary_profile_active()
             ),
-            coverage_terminal_stop_requested=self._coverage_terminal_stop_requested,
-            dig_step_count=self._dig_step_count,
-            dig_mass_plateau_count=self._dig_mass_plateau_count,
+            cycle_state=self._primitive_cycle_runtime_state(),
+            coverage_state=self._coverage_runtime_state(),
+            return_state=self._primitive_return_runtime_state(),
             dig_to_carry_min_distance_to_dig_area_m=(
                 self.dig_to_carry_min_distance_to_dig_area_m
             ),
@@ -1808,15 +1808,6 @@ class PrimitivePlannerACTPolicy(Policy):
             dig_exit_guard_min_bucket_mass_kg=self.dig_exit_guard_min_bucket_mass_kg,
             dig_exit_guard_overshoot_m=self.dig_exit_guard_overshoot_m,
             dig_exit_overshoot_m=lambda obs: self._dig_exit_overshoot_m(obs),
-            set_dig_to_carry_reason=(
-                lambda reason: setattr(
-                    self,
-                    "_dig_to_carry_reason",
-                    str(reason),
-                )
-            ),
-            coverage_cycle_start_deposit_kg=self._coverage_cycle_start_deposit_kg,
-            dump_ready_hold_count=self._dump_ready_hold_count,
             dump_ready_hold_steps=self.dump_ready_hold_steps,
             dump_ready_min_height_above_rim_m=self.dump_ready_min_height_above_rim_m,
             dump_ready_require_over_footprint=self.dump_ready_require_over_footprint,
@@ -1856,20 +1847,9 @@ class PrimitivePlannerACTPolicy(Policy):
             dump_done_max_bucket_mass_kg=self.dump_done_max_bucket_mass_kg,
             dump_done_min_deposit_delta_kg=self.dump_done_min_deposit_delta_kg,
             dump_done_use_boundary_event=self.dump_done_use_boundary_event,
-            dump_start_deposited_mass_kg=self._dump_start_deposited_mass_kg,
-            dump_done_hold_count=self._dump_done_hold_count,
             dump_done_hold_steps=self.dump_done_hold_steps,
             refresh_return_handoff_state=(
                 lambda obs: self._return_to_dig_handoff_ready(obs)
-            ),
-            return_next_dig_event_seen=(
-                lambda: bool(self._return_next_dig_event_seen)
-            ),
-            return_entry_close=(
-                lambda: bool(self._return_to_dig_entry_close_state)
-            ),
-            return_start_envelope_ready=(
-                lambda: bool(self._return_to_dig_start_envelope_ready_state)
             ),
             pre_dig_align_before_dig=(
                 lambda: self._should_pre_dig_align_before_dig()

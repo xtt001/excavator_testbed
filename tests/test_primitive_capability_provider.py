@@ -5,6 +5,9 @@ from typing import Any
 
 import numpy as np
 
+from testbed.planner.primitive_coverage_state import CoverageRuntimeState
+from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive_capability_provider import (
     PrimitiveFSMCapabilityProvider,
     PrimitiveFSMCapabilityProviderPorts,
@@ -74,23 +77,37 @@ def _ports(
         "start": False,
     }
     dig_reason_sink = dig_reason_sink if dig_reason_sink is not None else []
+    cycle_state = PrimitiveCycleRuntimeState.fresh()
+    cycle_state.dig_step_count = 12
+    cycle_state.dig_mass_plateau_count = 3
+    cycle_state.dump_ready_hold_count = 1
+    cycle_state.dump_start_deposited_mass_kg = 4.0
+    cycle_state.dump_done_hold_count = 0
+    coverage_state = CoverageRuntimeState()
+    coverage_state.coverage_terminal_stop_requested = False
+    coverage_state.coverage_cycle_start_deposit_kg = 2.0
+    runtime_return_state = PrimitiveReturnRuntimeState.fresh()
+    runtime_return_state.return_next_dig_event_seen = bool(return_state["seen"])
+    runtime_return_state.return_to_dig_entry_close_state = bool(return_state["entry"])
+    runtime_return_state.return_to_dig_start_envelope_ready_state = bool(
+        return_state["start"]
+    )
 
     def refresh_return_handoff_state(obs: dict[str, Any]) -> None:
         calls.append("refresh_return_handoff_state")
         return_state["seen"] = True
         return_state["entry"] = True
         return_state["start"] = True
-
-    def read_return_flag(name: str) -> bool:
-        calls.append(name)
-        return bool(return_state[name])
+        runtime_return_state.return_next_dig_event_seen = True
+        runtime_return_state.return_to_dig_entry_close_state = True
+        runtime_return_state.return_to_dig_start_envelope_ready_state = True
 
     return PrimitiveFSMCapabilityProviderPorts(
         action_dim=2,
         semantic_boundary_profile_active=lambda: semantic_boundary_profile_active,
-        coverage_terminal_stop_requested=False,
-        dig_step_count=12,
-        dig_mass_plateau_count=3,
+        cycle_state=cycle_state,
+        coverage_state=coverage_state,
+        return_state=runtime_return_state,
         dig_to_carry_min_distance_to_dig_area_m=0.5,
         dig_to_carry_min_bucket_mass_kg=20.0,
         dig_to_carry_target_bucket_mass_kg=20.0,
@@ -107,9 +124,6 @@ def _ports(
         dig_exit_guard_min_bucket_mass_kg=3.0,
         dig_exit_guard_overshoot_m=0.65,
         dig_exit_overshoot_m=lambda obs: 0.7,
-        set_dig_to_carry_reason=lambda reason: dig_reason_sink.append(reason),
-        coverage_cycle_start_deposit_kg=2.0,
-        dump_ready_hold_count=1,
         dump_ready_hold_steps=2,
         dump_ready_min_height_above_rim_m=0.5,
         dump_ready_require_over_footprint=True,
@@ -129,13 +143,8 @@ def _ports(
         dump_done_max_bucket_mass_kg=1.0,
         dump_done_min_deposit_delta_kg=2.0,
         dump_done_use_boundary_event=True,
-        dump_start_deposited_mass_kg=4.0,
-        dump_done_hold_count=0,
         dump_done_hold_steps=1,
         refresh_return_handoff_state=refresh_return_handoff_state,
-        return_next_dig_event_seen=lambda: read_return_flag("seen"),
-        return_entry_close=lambda: read_return_flag("entry"),
-        return_start_envelope_ready=lambda: read_return_flag("start"),
         pre_dig_align_before_dig=lambda: False,
         return_to_dig_start_envelope_direct_handoff_enabled=True,
         return_to_dig_start_envelope_gate_enabled=True,
@@ -168,7 +177,8 @@ def test_provider_dig_status_projects_observation_without_reason_mirror() -> Non
 
     provider.sync_dig_transition_reason(status)
 
-    assert reasons == ["loaded"]
+    assert reasons == []
+    assert provider.ports.cycle_state.dig_to_carry_reason == "loaded"
 
 
 def test_provider_sync_dig_transition_reason_writes_empty_reason_mirror() -> None:
@@ -184,7 +194,8 @@ def test_provider_sync_dig_transition_reason_writes_empty_reason_mirror() -> Non
     provider.sync_dig_transition_reason(status)
 
     assert status.dig_to_carry_reason == ""
-    assert reasons == [""]
+    assert reasons == []
+    assert provider.ports.cycle_state.dig_to_carry_reason == ""
 
 
 def test_provider_carry_and_dump_status_share_observation_projection() -> None:
@@ -246,7 +257,7 @@ def test_provider_return_status_read_is_read_only_without_explicit_refresh() -> 
     )
 
     assert "refresh_return_handoff_state" not in calls
-    assert calls == ["seen", "entry", "start"]
+    assert calls == []
     assert status.completed_transition is False
     assert status.switch_reason == ""
 
@@ -266,12 +277,7 @@ def test_provider_return_status_after_explicit_refresh_matches_old_result() -> N
     provider.refresh_return_transition_state(obs)
     status = provider.return_transition_status(obs, boundary_event=None)
 
-    assert calls == [
-        "refresh_return_handoff_state",
-        "seen",
-        "entry",
-        "start",
-    ]
+    assert calls == ["refresh_return_handoff_state"]
     assert status.completed_transition is True
     assert status.switch_reason == "return_to_dig_next_dig_entry_ready"
 
@@ -282,3 +288,17 @@ def test_provider_ports_do_not_accept_planner_or_policy_self() -> None:
     assert "self" not in field_names
     assert "planner" not in field_names
     assert "policy" not in field_names
+    assert {"cycle_state", "coverage_state", "return_state"} <= field_names
+    assert not {
+        "coverage_terminal_stop_requested",
+        "dig_step_count",
+        "dig_mass_plateau_count",
+        "set_dig_to_carry_reason",
+        "coverage_cycle_start_deposit_kg",
+        "dump_ready_hold_count",
+        "dump_start_deposited_mass_kg",
+        "dump_done_hold_count",
+        "return_next_dig_event_seen",
+        "return_entry_close",
+        "return_start_envelope_ready",
+    } & field_names

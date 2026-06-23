@@ -183,9 +183,15 @@ def test_capability_provider_ports_read_cycle_state_owner() -> None:
     state.dump_ready_hold_count = 4
     state.dump_done_hold_count = 5
     state.dump_start_deposited_mass_kg = 6.5
+    coverage_state = policy._coverage_runtime_state()
+    coverage_state.coverage_terminal_stop_requested = False
+    coverage_state.coverage_cycle_start_deposit_kg = 7.5
+    return_state = policy._primitive_return_runtime_state()
+    return_state.return_next_dig_event_seen = False
+    return_state.return_to_dig_entry_close_state = True
+    return_state.return_to_dig_start_envelope_ready_state = True
     policy.action_dim = 1
     policy._semantic_boundary_profile_active = MethodType(lambda self: False, policy)
-    policy._coverage_terminal_stop_requested = False
     policy._dig_exit_overshoot_m = MethodType(lambda self, obs: 0.0, policy)
     policy.dig_to_carry_min_distance_to_dig_area_m = 0.0
     policy.dig_to_carry_min_bucket_mass_kg = 0.0
@@ -202,7 +208,6 @@ def test_capability_provider_ports_read_cycle_state_owner() -> None:
     policy.dig_exit_guard_min_steps = 1
     policy.dig_exit_guard_min_bucket_mass_kg = 0.0
     policy.dig_exit_guard_overshoot_m = 0.0
-    policy._coverage_cycle_start_deposit_kg = 0.0
     policy.dump_ready_hold_steps = 1
     policy.dump_ready_min_height_above_rim_m = 0.0
     policy.dump_ready_require_over_footprint = False
@@ -231,9 +236,6 @@ def test_capability_provider_ports_read_cycle_state_owner() -> None:
     policy.return_to_dig_max_entry_error_m = None
     policy.return_to_dig_start_envelope_direct_handoff_enabled = False
     policy.return_to_dig_start_envelope_gate_enabled = False
-    policy._return_next_dig_event_seen = False
-    policy._return_to_dig_entry_close_state = True
-    policy._return_to_dig_start_envelope_ready_state = True
     policy._return_to_dig_direct_handoff_ready = MethodType(
         lambda self, obs, *, handoff_ready: False,
         policy,
@@ -243,11 +245,27 @@ def test_capability_provider_ports_read_cycle_state_owner() -> None:
 
     ports = policy._primitive_fsm_capability_provider_ports()
 
-    assert ports.dig_step_count == 12
-    assert ports.dig_mass_plateau_count == 3
-    assert ports.dump_ready_hold_count == 4
-    assert ports.dump_done_hold_count == 5
-    assert ports.dump_start_deposited_mass_kg == 6.5
+    assert ports.cycle_state is state
+    assert ports.coverage_state is coverage_state
+    assert ports.return_state is return_state
+    assert not hasattr(ports, "dig_step_count")
+    assert not hasattr(ports, "dig_mass_plateau_count")
+    assert not hasattr(ports, "set_dig_to_carry_reason")
+    assert not hasattr(ports, "coverage_terminal_stop_requested")
+    assert not hasattr(ports, "coverage_cycle_start_deposit_kg")
+    assert not hasattr(ports, "dump_ready_hold_count")
+    assert not hasattr(ports, "dump_done_hold_count")
+    assert not hasattr(ports, "dump_start_deposited_mass_kg")
+    assert not hasattr(ports, "return_next_dig_event_seen")
+    assert not hasattr(ports, "return_entry_close")
+    assert not hasattr(ports, "return_start_envelope_ready")
+    assert ports.cycle_state.dig_step_count == 12
+    assert ports.cycle_state.dig_mass_plateau_count == 3
+    assert ports.cycle_state.dump_ready_hold_count == 4
+    assert ports.cycle_state.dump_done_hold_count == 5
+    assert ports.cycle_state.dump_start_deposited_mass_kg == 6.5
+    assert ports.coverage_state.coverage_cycle_start_deposit_kg == 7.5
+    assert ports.return_state.return_to_dig_entry_close_state is True
 
 
 def test_tick_finalization_and_report_inputs_read_cycle_state_owner() -> None:
