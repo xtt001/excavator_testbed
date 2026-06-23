@@ -36,14 +36,16 @@ Current maturity:
 - focused token, coverage, handoff, dispatch, report, reset, config services:
   **mostly achieved**
 - coverage debug-field projection: **achieved for
-  `CoverageReportService.debug_fields(...)` while policy still prepares the
-  explicit snapshot inputs**
+  `CoverageReportService.debug_fields_from_state(...)`; coverage debug inputs
+  now project from `CoverageRuntimeState` plus explicit coverage report config
+  and coverage selection service facts instead of policy-side manual snapshot
+  assembly**
 - coverage trace/report projection: **achieved for the planner-trace coverage
   subset through `CoverageTraceReportStatus` and
-  `CoverageReportService.trace_status(...)`**
+  `CoverageReportService.trace_status_from_state(...)`**
 - coverage rollout-summary projection: **achieved for the rollout-summary
   coverage subset through `CoverageSummaryReportStatus` and
-  `CoverageReportService.summary_status(...)`**
+  `CoverageReportService.summary_status_from_state(...)`**
 - coverage selection runtime mutable state owner: **achieved for corridor
   list, candidate scores, active/last-selected ids, and all-depleted checks;
   selection runtime sequencing now consumes `CoverageRuntimeState` directly
@@ -549,9 +551,10 @@ Current boundary:
   runtime rules: enabled detection, target-reached hold gating, timeout
   completion, and PD action generation.
 - `CoverageReportService` owns coverage corridor debug projection, decision
-  event payloads, coverage debug-field assembly, and planner-trace coverage
-  sub-projection through `CoverageTraceReportStatus`, plus rollout-summary
-  coverage sub-projection through `CoverageSummaryReportStatus`.
+  event payloads, coverage debug-field assembly, and planner-trace/rollout-
+  summary coverage sub-projections. Coverage report snapshots now start from
+  `CoverageRuntimeState` plus explicit `CoverageReportConfig` and
+  `CoverageSelectionService` facts instead of policy-built coverage dictionaries.
 - `PrimitiveExecutionRuntimeState` owns execution lifecycle metadata: active
   skill, switch reason, previous action, and latest compact debug state. The
   policy keeps `_skill_name`, `_switch_reason`, `_prev_action`, and
@@ -742,7 +745,10 @@ Current boundary:
   decision-event payloads, coverage debug-field schema projection through
   explicit `CoverageDebugReportInputs`, planner-trace coverage sub-projection
   through `CoverageTraceReportStatus`, and rollout-summary coverage sub-
-  projection through `CoverageSummaryReportStatus`.
+  projection through `CoverageSummaryReportStatus`. For live report inputs, the
+  service projects those coverage outputs from `CoverageRuntimeState`,
+  `CoverageReportConfig`, and `CoverageSelectionService` rather than from a
+  policy-owned coverage snapshot.
 - `PrimitiveTokenRuntimeState` owns token/pending/dig-cut report metadata
   projection through `PrimitiveTokenReportStatus`; debug pending/dig-cut fields,
   rollout-summary pending/dig-cut fields, and planner-trace dig-cut metadata
@@ -753,7 +759,7 @@ Gap:
 
 - This layer is close to target.
 - Section snapshot providers may be further narrowed later. Coverage debug,
-  trace, and summary coverage schema assembly are outside the large policy
+  trace, and summary coverage snapshot projection are outside the large policy
   class; other report input assembly still has policy-side compatibility glue.
 
 Standard:

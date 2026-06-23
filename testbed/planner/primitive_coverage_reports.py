@@ -7,7 +7,11 @@ from typing import Any
 
 import numpy as np
 
-from testbed.planner.primitive_coverage import CoverageCorridorState
+from testbed.planner.primitive_coverage import (
+    CoverageCorridorState,
+    CoverageSelectionService,
+)
+from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 
 
 @dataclass(frozen=True)
@@ -41,6 +45,21 @@ class CoverageDebugReportInputs:
     terminal_stop_reason: str
     corridors: list[dict[str, Any]]
     candidate_scores: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class CoverageReportConfig:
+    state_exemplar_enabled: bool
+    multi_pass_enabled: bool
+    multi_pass_max_passes: int
+    multi_pass_min_remaining_depth_m: float
+    use_env_removed_depth: bool
+    candidate_layout: str
+    first_dig_strategy: str
+    first_dig_preferred_corridor_id: int | None
+    first_dig_max_entry_distance_m: float | None
+    first_dig_qpos_delta_weight: float
+    first_dig_max_qpos_delta: Any | None
 
 
 @dataclass(frozen=True)
@@ -106,6 +125,163 @@ class CoverageBucketSnapshot:
 
 class CoverageReportService:
     """Build coverage debug and trace payloads from explicit state snapshots."""
+
+    def debug_fields_from_state(
+        self,
+        state: CoverageRuntimeState,
+        *,
+        config: CoverageReportConfig,
+        selection_service: CoverageSelectionService,
+    ) -> dict[str, Any]:
+        active_corridor = state.active_corridor()
+        last_selected_corridor = state.corridor_by_id(
+            state.coverage_last_selected_corridor_id
+        )
+        return self.debug_fields(
+            CoverageDebugReportInputs(
+                active_corridor_id=int(state.coverage_active_corridor_id),
+                last_selected_corridor_id=int(
+                    state.coverage_last_selected_corridor_id
+                ),
+                last_selected_cell_id=(
+                    -1
+                    if last_selected_corridor is None
+                    else int(selection_service.cell_id(last_selected_corridor))
+                ),
+                last_selected_row_id=(
+                    -1
+                    if last_selected_corridor is None
+                    else int(selection_service.corridor_row_id(last_selected_corridor))
+                ),
+                active_corridor=(
+                    None
+                    if active_corridor is None
+                    else self.corridor_to_debug(
+                        active_corridor,
+                        attempt_limit=selection_service.corridor_attempt_limit(
+                            active_corridor
+                        ),
+                        cell_confidence=selection_service.cell_confidence(
+                            active_corridor
+                        ),
+                    )
+                ),
+                active_cell_id=(
+                    -1
+                    if active_corridor is None
+                    else int(selection_service.cell_id(active_corridor))
+                ),
+                active_score=(
+                    float("nan")
+                    if active_corridor is None
+                    else float(active_corridor.score)
+                ),
+                state_exemplar_enabled=bool(config.state_exemplar_enabled),
+                state_exemplar_ids=list(state.coverage_active_state_exemplar_ids),
+                state_exemplar_distance=float(
+                    state.coverage_active_state_exemplar_distance
+                ),
+                depleted_count=int(state.depleted_count()),
+                pass_index=int(state.coverage_pass_index),
+                multi_pass_enabled=bool(config.multi_pass_enabled),
+                multi_pass_max_passes=int(config.multi_pass_max_passes),
+                multi_pass_min_remaining_depth_m=float(
+                    config.multi_pass_min_remaining_depth_m
+                ),
+                last_payload_gain_kg=float(state.coverage_last_payload_gain_kg),
+                last_effective_deposit_delta_kg=float(
+                    state.coverage_last_effective_deposit_delta_kg
+                ),
+                global_low_productivity_streak=int(
+                    state.coverage_global_low_productivity_streak
+                ),
+                use_env_removed_depth=bool(config.use_env_removed_depth),
+                candidate_layout=str(config.candidate_layout),
+                first_dig_strategy=str(config.first_dig_strategy),
+                first_dig_preferred_corridor_id=(
+                    config.first_dig_preferred_corridor_id
+                ),
+                first_dig_max_entry_distance_m=(
+                    config.first_dig_max_entry_distance_m
+                ),
+                first_dig_qpos_delta_weight=float(
+                    config.first_dig_qpos_delta_weight
+                ),
+                first_dig_max_qpos_delta=config.first_dig_max_qpos_delta,
+                terminal_stop_requested=bool(
+                    state.coverage_terminal_stop_requested
+                ),
+                terminal_stop_reason=str(state.coverage_terminal_stop_reason),
+                corridors=[
+                    self.corridor_to_debug(
+                        corridor,
+                        attempt_limit=selection_service.corridor_attempt_limit(
+                            corridor
+                        ),
+                        cell_confidence=selection_service.cell_confidence(corridor),
+                    )
+                    for corridor in state.coverage_corridors
+                ],
+                candidate_scores=list(state.coverage_candidate_scores),
+            )
+        )
+
+    def summary_status_from_state(
+        self,
+        state: CoverageRuntimeState,
+        *,
+        config: CoverageReportConfig,
+    ) -> CoverageSummaryReportStatus:
+        return self.summary_status(
+            selected_corridor_id=int(state.coverage_active_corridor_id),
+            depleted_count=int(state.depleted_count()),
+            completed_dump_count=int(state.coverage_completed_dump_count),
+            pass_index=int(state.coverage_pass_index),
+            multi_pass_enabled=bool(config.multi_pass_enabled),
+            use_env_removed_depth=bool(config.use_env_removed_depth),
+            candidate_layout=str(config.candidate_layout),
+            first_dig_strategy=str(config.first_dig_strategy),
+            first_dig_preferred_corridor_id=(
+                config.first_dig_preferred_corridor_id
+            ),
+            first_dig_max_entry_distance_m=config.first_dig_max_entry_distance_m,
+            first_dig_qpos_delta_weight=float(config.first_dig_qpos_delta_weight),
+            terminal_stop_requested=bool(state.coverage_terminal_stop_requested),
+            terminal_stop_reason=str(state.coverage_terminal_stop_reason),
+        )
+
+    def trace_status_from_state(
+        self,
+        state: CoverageRuntimeState,
+        *,
+        config: CoverageReportConfig,
+        selection_service: CoverageSelectionService,
+    ) -> CoverageTraceReportStatus:
+        return self.trace_status(
+            use_env_removed_depth=bool(config.use_env_removed_depth),
+            candidate_layout=str(config.candidate_layout),
+            first_dig_strategy=str(config.first_dig_strategy),
+            pass_index=int(state.coverage_pass_index),
+            multi_pass_enabled=bool(config.multi_pass_enabled),
+            multi_pass_max_passes=int(config.multi_pass_max_passes),
+            multi_pass_min_remaining_depth_m=float(
+                config.multi_pass_min_remaining_depth_m
+            ),
+            first_dig_preferred_corridor_id=(
+                config.first_dig_preferred_corridor_id
+            ),
+            corridors=[
+                self.corridor_to_debug(
+                    corridor,
+                    attempt_limit=selection_service.corridor_attempt_limit(corridor),
+                    cell_confidence=selection_service.cell_confidence(corridor),
+                )
+                for corridor in state.coverage_corridors
+            ],
+            decision_trace=state.coverage_decision_trace,
+            terminal_stop_requested=bool(state.coverage_terminal_stop_requested),
+            terminal_stop_reason=str(state.coverage_terminal_stop_reason),
+        )
 
     @staticmethod
     def trace_status(
@@ -388,6 +564,7 @@ class CoverageReportService:
 __all__ = [
     "CoverageBucketSnapshot",
     "CoverageDebugReportInputs",
+    "CoverageReportConfig",
     "CoverageReportService",
     "CoverageReportState",
     "CoverageSummaryReportStatus",

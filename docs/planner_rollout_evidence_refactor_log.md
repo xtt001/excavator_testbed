@@ -7730,3 +7730,77 @@ Each completed refactor round should append:
   `pre_dig_align`/`cell_entry` before any deletion or parking change. A simple
   composition wrapper around existing port builders is explicitly unsuitable
   unless it deletes repeated assembly behind a stable responsibility.
+
+### 2026-06-23 Phase 9.78 Move Coverage Report Snapshot Boundary
+
+- Scope: moved the coverage report snapshot cluster out of the large policy
+  shell and into the existing coverage report boundary. This is a report-input
+  projection slice, not a schema or coverage algorithm change.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 141]`, HEAD
+  `7f598217ef0dee233eb79b75599b316d5a137826`, dirty status clean at initial
+  lock check. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- Added `CoverageReportConfig` as the explicit coverage report config input
+  boundary in `testbed/planner/primitive_coverage_reports.py`.
+- Added `CoverageReportService.debug_fields_from_state(...)`,
+  `summary_status_from_state(...)`, and `trace_status_from_state(...)`. These
+  methods project existing coverage debug fields, rollout-summary coverage
+  status, and planner-trace coverage status from `CoverageRuntimeState` plus
+  explicit `CoverageReportConfig`. They use `CoverageSelectionService` for
+  row/cell/attempt/confidence facts where corridor debug payloads need those
+  coverage-domain facts.
+- `PrimitivePlannerACTPolicy._debug_report_coverage_fields()`,
+  `_rollout_summary_inputs()`, and `_planner_trace_inputs()` now delegate the
+  coverage subset to `CoverageReportService` from focused state/config/service
+  inputs instead of hand-assembling coverage fields, summary status, and trace
+  status inside the large policy shell.
+- Existing `CoverageReportService.debug_fields(...)`, `summary_status(...)`,
+  `trace_status(...)`, and `corridor_to_debug(...)` remain as public projection
+  helpers for explicit inputs and tests.
+- Line-count impact: `testbed/policies/hybrid/primitive_planner.py` dropped from
+  4873 to 4795 lines. `testbed/planner/primitive_coverage_reports.py` grew from
+  395 to 572 lines as the focused report owner absorbed the coverage snapshot
+  projection boundary.
+- Preserved behavior: coverage debug/summary/trace key names,
+  `NaN`/`None`/`-1` fallback semantics, list shallow-copy behavior, corridor
+  debug payload values, candidate scores, decision trace, terminal-stop fields,
+  coverage selection/effect algorithms, token/return/cycle/scripted-bootstrap/
+  execution owners, residual `pre_dig_align`, parked `cell_entry`, backend
+  fail-fast behavior, and removed 5P runtime status remain unchanged.
+- Explicit non-goals: no coverage scoring or selection change, no coverage
+  effect sequencing change, no public report schema change, no movement of
+  residual `pre_dig_align` or parked `cell_entry` report fields, no backend
+  support change, and no generic report blackboard or planner-self port.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  failed at collection with `ImportError: cannot import name
+  'CoverageReportConfig' from testbed.planner.primitive_coverage_reports`,
+  proving the requested coverage report snapshot boundary did not exist yet.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_state.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_updates.py`
+  returned `27 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or return_to_dig or pre_dig_align or cell_entry"`
+  returned `19 passed, 100 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_state.py tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_updates.py`
+  returned `27 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or return_to_dig or pre_dig_align or cell_entry"`
+  returned `19 passed, 100 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was a bounded coverage report snapshot boundary move
+  with a stable focused owner, not a tiny compatibility dict/facade move,
+  pass-through wrapper, anemic service, planner-self port, broad config bag, or
+  generic blackboard. Current maturity remains default legacy FSM backendified
+  with focused services / shared backend decision input/facts/factory; BT/VLM/
+  LLM backends remain unsupported fail-fast.

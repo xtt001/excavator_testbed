@@ -302,9 +302,13 @@ residual pre-dig fields. The policy shell builds a typed debug snapshot and
 section values, then delegates report assembly to the builder.
 `CoverageReportService` now also owns the planner-trace coverage sub-
 projection through `CoverageTraceReportStatus` and the rollout-summary coverage
-sub-projection through `CoverageSummaryReportStatus`. The policy shell still
-builds explicit coverage report facts and non-coverage report inputs; coverage
-debug projection remains unchanged.
+sub-projection through `CoverageSummaryReportStatus`. Phase 9.78 narrows the
+coverage report snapshot boundary further: `CoverageReportService` now projects
+coverage debug, trace, and summary coverage outputs from `CoverageRuntimeState`
+plus explicit `CoverageReportConfig` and `CoverageSelectionService` facts. The
+policy shell still builds non-coverage report inputs and passes explicit
+coverage config/service facts, but it no longer hand-assembles the coverage
+snapshot dictionaries/lists for those public report sections.
 
 Phase 9.58 extends `CoverageReportService` in
 `testbed/planner/primitive_coverage_reports.py` with `trace_status(...)` and
@@ -327,6 +331,19 @@ This phase does not change public `rollout_summary()` key names, bool-to-int
 projection, `None`-to-`NaN` projection, debug schemas, planner trace schemas,
 coverage algorithms, corridor debug payload values, decision trace mutation,
 terminal-stop behavior, backend facts, or removed 5P runtime status.
+
+Phase 9.78 extends the same report boundary with `CoverageReportConfig`,
+`debug_fields_from_state(...)`, `summary_status_from_state(...)`, and
+`trace_status_from_state(...)`. The coverage report service now consumes the
+focused `CoverageRuntimeState` owner directly and uses the existing
+`CoverageSelectionService` for row/cell/attempt/confidence facts needed by
+corridor debug payloads. The policy shell remains a thin adapter that supplies
+state/config/service inputs for the coverage subset and keeps non-coverage
+report fields in their existing owners. This phase does not change public
+debug/summary/trace key names, `NaN`/`None`/`-1` fallback semantics, list
+shallow-copy behavior, candidate scores, decision trace, terminal-stop fields,
+coverage selection/effect algorithms, residual `pre_dig_align`, parked
+`cell_entry`, backend fail-fast behavior, or removed 5P runtime status.
 
 `PrimitiveRolloutSummaryBuilder` now owns public `rollout_summary()` dict
 assembly: summary key layout, bool-like `int(...)` projections, `None` to
@@ -1346,6 +1363,13 @@ helper after confirming the shallow-guard calculation already lives in
 handoff effect ordering, reason strings, token planning, `pre_dig_align`,
 `cell_entry`, and backend support remain unchanged.
 
+Phase 9.78 narrows the report snapshot boundary for coverage. The large policy
+shell no longer owns coverage debug/summary/trace snapshot assembly; it passes
+`CoverageRuntimeState`, explicit `CoverageReportConfig`, and
+`CoverageSelectionService` into `CoverageReportService`. This keeps the public
+report schema in report builders/services without promoting coverage report
+state into decision backends or a generic planner blackboard.
+
 Phase 9.14 extracts low-level policy observation/token injection assembly into
 `PrimitivePolicyObservationAssembler` in
 `testbed/planner/primitive_observation.py`. The assembler owns the old
@@ -1679,6 +1703,12 @@ cache refresh now reaches the same focused readiness owner directly, rather than
 via a policy callback. This keeps the return transition fact path aligned with
 the return handoff module and removes one more migrated duplicate helper from
 the large policy shell without changing the return transition status schema.
+
+Phase 9.78 narrows the coverage report snapshot boundary. Coverage report
+projection now starts from `CoverageRuntimeState` plus explicit coverage report
+config and selection-service facts. This removes the hand-built coverage report
+snapshot cluster from the large policy shell while preserving report schema,
+fallback values, list-copy behavior, and coverage runtime algorithms.
 
 ### Stage 4: Expand Effect Families From Evidence
 

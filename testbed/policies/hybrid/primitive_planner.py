@@ -87,7 +87,7 @@ from testbed.planner.primitive_coverage_exemplars import (
 )
 from testbed.planner.primitive_coverage_reports import (
     CoverageBucketSnapshot,
-    CoverageDebugReportInputs,
+    CoverageReportConfig,
     CoverageReportService,
     CoverageReportState,
 )
@@ -2036,72 +2036,10 @@ class PrimitivePlannerACTPolicy(Policy):
         return self._token_report_status().dig_cut_debug_fields()
 
     def _debug_report_coverage_fields(self) -> dict[str, Any]:
-        active_corridor = self._coverage_active_corridor()
-        return self._coverage_report_service().debug_fields(
-            CoverageDebugReportInputs(
-                active_corridor_id=int(self._coverage_active_corridor_id),
-                last_selected_corridor_id=int(
-                    self._coverage_last_selected_corridor_id
-                ),
-                last_selected_cell_id=int(
-                    self._coverage_corridor_cell_id_by_id(
-                        self._coverage_last_selected_corridor_id
-                    )
-                ),
-                last_selected_row_id=int(
-                    self._coverage_corridor_row_id_by_id(
-                        self._coverage_last_selected_corridor_id
-                    )
-                ),
-                active_corridor=(
-                    None
-                    if active_corridor is None
-                    else self._coverage_corridor_to_debug(active_corridor)
-                ),
-                active_cell_id=int(self._coverage_active_cell_id()),
-                active_score=float(self._coverage_active_corridor_score()),
-                state_exemplar_enabled=bool(self.coverage_state_exemplars_enabled),
-                state_exemplar_ids=list(self._coverage_active_state_exemplar_ids),
-                state_exemplar_distance=float(
-                    self._coverage_active_state_exemplar_distance
-                ),
-                depleted_count=int(self._coverage_depleted_count()),
-                pass_index=int(self._coverage_pass_index),
-                multi_pass_enabled=bool(self.coverage_multi_pass_enabled),
-                multi_pass_max_passes=int(self.coverage_multi_pass_max_passes),
-                multi_pass_min_remaining_depth_m=float(
-                    self.coverage_multi_pass_min_remaining_depth_m
-                ),
-                last_payload_gain_kg=float(self._coverage_last_payload_gain_kg),
-                last_effective_deposit_delta_kg=float(
-                    self._coverage_last_effective_deposit_delta_kg
-                ),
-                global_low_productivity_streak=int(
-                    self._coverage_global_low_productivity_streak
-                ),
-                use_env_removed_depth=bool(self.coverage_use_env_removed_depth),
-                candidate_layout=str(self.coverage_candidate_layout),
-                first_dig_strategy=str(self.coverage_first_dig_strategy),
-                first_dig_preferred_corridor_id=(
-                    self.coverage_first_dig_preferred_corridor_id
-                ),
-                first_dig_max_entry_distance_m=(
-                    self.coverage_first_dig_max_entry_distance_m
-                ),
-                first_dig_qpos_delta_weight=float(
-                    self.coverage_first_dig_qpos_delta_weight
-                ),
-                first_dig_max_qpos_delta=self.coverage_first_dig_max_qpos_delta,
-                terminal_stop_requested=bool(
-                    self._coverage_terminal_stop_requested
-                ),
-                terminal_stop_reason=str(self._coverage_terminal_stop_reason),
-                corridors=[
-                    self._coverage_corridor_to_debug(corridor)
-                    for corridor in self._coverage_corridors
-                ],
-                candidate_scores=list(self._coverage_candidate_scores),
-            )
+        return self._coverage_report_service().debug_fields_from_state(
+            self._coverage_runtime_state(),
+            config=self._coverage_report_config(),
+            selection_service=self._coverage_selection_service(),
         )
 
     def _debug_report_cell_entry_fields(self) -> dict[str, Any]:
@@ -2196,30 +2134,9 @@ class PrimitivePlannerACTPolicy(Policy):
         return_status = self._return_report_status()
         scripted_bootstrap_status = self._scripted_bootstrap_report_status()
         token_status = self._token_report_status()
-        coverage_status = self._coverage_report_service().summary_status(
-            selected_corridor_id=int(self._coverage_active_corridor_id),
-            depleted_count=int(self._coverage_depleted_count()),
-            completed_dump_count=int(self._coverage_completed_dump_count),
-            pass_index=int(self._coverage_pass_index),
-            multi_pass_enabled=bool(self.coverage_multi_pass_enabled),
-            use_env_removed_depth=bool(self.coverage_use_env_removed_depth),
-            candidate_layout=str(self.coverage_candidate_layout),
-            first_dig_strategy=str(self.coverage_first_dig_strategy),
-            first_dig_preferred_corridor_id=(
-                None
-                if self.coverage_first_dig_preferred_corridor_id is None
-                else int(self.coverage_first_dig_preferred_corridor_id)
-            ),
-            first_dig_max_entry_distance_m=(
-                self.coverage_first_dig_max_entry_distance_m
-            ),
-            first_dig_qpos_delta_weight=float(
-                self.coverage_first_dig_qpos_delta_weight
-            ),
-            terminal_stop_requested=bool(
-                self._coverage_terminal_stop_requested
-            ),
-            terminal_stop_reason=str(self._coverage_terminal_stop_reason),
+        coverage_status = self._coverage_report_service().summary_status_from_state(
+            self._coverage_runtime_state(),
+            config=self._coverage_report_config(),
         )
         return PrimitiveRolloutSummaryInputs(
             transition_source=TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
@@ -2296,30 +2213,10 @@ class PrimitivePlannerACTPolicy(Policy):
         return PrimitivePlannerTraceBuilder()
 
     def _planner_trace_inputs(self) -> PrimitivePlannerTraceInputs:
-        coverage = self._coverage_report_service().trace_status(
-            use_env_removed_depth=bool(self.coverage_use_env_removed_depth),
-            candidate_layout=str(self.coverage_candidate_layout),
-            first_dig_strategy=str(self.coverage_first_dig_strategy),
-            pass_index=int(self._coverage_pass_index),
-            multi_pass_enabled=bool(self.coverage_multi_pass_enabled),
-            multi_pass_max_passes=int(self.coverage_multi_pass_max_passes),
-            multi_pass_min_remaining_depth_m=float(
-                self.coverage_multi_pass_min_remaining_depth_m
-            ),
-            first_dig_preferred_corridor_id=(
-                None
-                if self.coverage_first_dig_preferred_corridor_id is None
-                else int(self.coverage_first_dig_preferred_corridor_id)
-            ),
-            corridors=[
-                self._coverage_corridor_to_debug(corridor)
-                for corridor in self._coverage_corridors
-            ],
-            decision_trace=self._coverage_decision_trace,
-            terminal_stop_requested=bool(
-                self._coverage_terminal_stop_requested
-            ),
-            terminal_stop_reason=str(self._coverage_terminal_stop_reason),
+        coverage = self._coverage_report_service().trace_status_from_state(
+            self._coverage_runtime_state(),
+            config=self._coverage_report_config(),
+            selection_service=self._coverage_selection_service(),
         )
         return PrimitivePlannerTraceInputs(
             cell_entry_trace=self._cell_entry_trace,
@@ -4363,6 +4260,31 @@ class PrimitivePlannerACTPolicy(Policy):
     @staticmethod
     def _coverage_report_service() -> CoverageReportService:
         return CoverageReportService()
+
+    def _coverage_report_config(self) -> CoverageReportConfig:
+        return CoverageReportConfig(
+            state_exemplar_enabled=bool(self.coverage_state_exemplars_enabled),
+            multi_pass_enabled=bool(self.coverage_multi_pass_enabled),
+            multi_pass_max_passes=int(self.coverage_multi_pass_max_passes),
+            multi_pass_min_remaining_depth_m=float(
+                self.coverage_multi_pass_min_remaining_depth_m
+            ),
+            use_env_removed_depth=bool(self.coverage_use_env_removed_depth),
+            candidate_layout=str(self.coverage_candidate_layout),
+            first_dig_strategy=str(self.coverage_first_dig_strategy),
+            first_dig_preferred_corridor_id=(
+                None
+                if self.coverage_first_dig_preferred_corridor_id is None
+                else int(self.coverage_first_dig_preferred_corridor_id)
+            ),
+            first_dig_max_entry_distance_m=(
+                self.coverage_first_dig_max_entry_distance_m
+            ),
+            first_dig_qpos_delta_weight=float(
+                self.coverage_first_dig_qpos_delta_weight
+            ),
+            first_dig_max_qpos_delta=self.coverage_first_dig_max_qpos_delta,
+        )
 
     def _coverage_report_state(self) -> CoverageReportState:
         return CoverageReportState(

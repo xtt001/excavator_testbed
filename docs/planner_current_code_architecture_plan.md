@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4873 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4795 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -84,7 +84,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_coverage.py` | 909 | coverage candidate/scoring/selection services; selection runtime sequencing now consumes the focused coverage state owner directly plus explicit external ports |
 | `testbed/planner/primitive_coverage_state.py` | 139 | mutable coverage runtime state owner for corridors, selection ids, candidate scores, completion counters, terminal-stop state, decision trace, and state-exemplar payload |
 | `testbed/planner/primitive_coverage_updates.py` | 591 | coverage completion/rejection/reopen/terminal-stop effect runtime sequencing over the focused coverage state owner plus explicit external ports |
-| `testbed/planner/primitive_coverage_reports.py` | 395 | coverage corridor debug, coverage decision-event, coverage debug-field, planner-trace coverage status, and rollout-summary coverage status payload builders |
+| `testbed/planner/primitive_coverage_reports.py` | 572 | coverage report config, coverage corridor debug, coverage decision-event, and coverage debug/trace/summary projection from focused runtime state |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
 | `testbed/planner/evidence_trace.py` | 972 | evidence classifier and report writer for rollout-driven refactor decisions |
@@ -1098,6 +1098,23 @@ the same report service. Coverage selection, scoring, effect/runtime updates,
 candidate generation, public key names, scalar conversions, `NaN`/`-1`
 fallbacks, and list projection semantics remain unchanged.
 
+Current status note after Phase 9.78: the coverage report snapshot boundary now
+starts from the focused `CoverageRuntimeState` owner instead of a hand-assembled
+coverage snapshot in the large policy shell. `CoverageReportConfig` captures the
+coverage report config facts, and `CoverageReportService` projects coverage
+debug fields, rollout-summary coverage status, and planner-trace coverage status
+from `CoverageRuntimeState` plus explicit `CoverageReportConfig` and
+`CoverageSelectionService` where row/cell/attempt/confidence facts are needed.
+`PrimitivePlannerACTPolicy._debug_report_coverage_fields()`,
+`_rollout_summary_inputs()`, and `_planner_trace_inputs()` now pass the focused
+state owner/config/service into the report service for the coverage subset,
+while non-coverage report inputs remain in their existing owners/facades.
+Coverage debug/summary/trace key names, `NaN`/`None`/`-1` fallback semantics,
+list shallow-copy behavior, corridor debug payload values, candidate scores,
+decision trace, terminal-stop fields, coverage selection/effect algorithms,
+`pre_dig_align`, `cell_entry`, backend fail-fast behavior, and removed 5P
+runtime status remain unchanged.
+
 Current status note after Phase 9.53: parked cell-entry debug-field public
 schema projection is now owned by
 `PrimitiveCellEntryCompatibilityRuntimeState.debug_fields()` in
@@ -1523,6 +1540,16 @@ direct-handoff effect ordering, next-skill reason strings, return
 start-envelope token algorithms, debug/summary/trace schemas, residual
 `pre_dig_align`, parked `cell_entry`, and BT/VLM/LLM unsupported fail-fast
 behavior remain unchanged.
+
+Current status note after Phase 9.78: the coverage report snapshot cluster moved
+as one bounded report-input boundary. `CoverageReportService` now owns projection
+from `CoverageRuntimeState` plus explicit `CoverageReportConfig` and
+`CoverageSelectionService` into coverage debug fields, coverage rollout-summary
+status, and coverage planner-trace status. The policy shell no longer
+hand-assembles those coverage snapshot dictionaries/lists for the public reports;
+it only supplies the focused state owner and explicit config/service facts for
+the coverage subset. This narrows report snapshot assembly without introducing a
+generic report blackboard or planner-self port.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

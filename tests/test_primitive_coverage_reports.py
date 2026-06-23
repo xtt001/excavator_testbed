@@ -7,6 +7,7 @@ import numpy as np
 
 from testbed.planner.primitive_coverage_reports import (
     CoverageDebugReportInputs,
+    CoverageReportConfig,
     CoverageReportService,
     CoverageSummaryReportStatus,
     CoverageTraceReportStatus,
@@ -95,6 +96,28 @@ def _coverage_debug_report_inputs(policy: Any) -> CoverageDebugReportInputs:
     )
 
 
+def _coverage_report_config(policy: Any) -> CoverageReportConfig:
+    return CoverageReportConfig(
+        state_exemplar_enabled=policy.coverage_state_exemplars_enabled,
+        multi_pass_enabled=policy.coverage_multi_pass_enabled,
+        multi_pass_max_passes=policy.coverage_multi_pass_max_passes,
+        multi_pass_min_remaining_depth_m=(
+            policy.coverage_multi_pass_min_remaining_depth_m
+        ),
+        use_env_removed_depth=policy.coverage_use_env_removed_depth,
+        candidate_layout=policy.coverage_candidate_layout,
+        first_dig_strategy=policy.coverage_first_dig_strategy,
+        first_dig_preferred_corridor_id=(
+            policy.coverage_first_dig_preferred_corridor_id
+        ),
+        first_dig_max_entry_distance_m=(
+            policy.coverage_first_dig_max_entry_distance_m
+        ),
+        first_dig_qpos_delta_weight=policy.coverage_first_dig_qpos_delta_weight,
+        first_dig_max_qpos_delta=policy.coverage_first_dig_max_qpos_delta,
+    )
+
+
 def test_coverage_report_service_matches_corridor_debug_facade() -> None:
     policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
     policy._ensure_coverage_corridors()
@@ -161,6 +184,39 @@ def test_coverage_report_service_matches_debug_fields_without_active_corridor() 
     _assert_nested_equal(service_payload, policy._debug_report_coverage_fields())
     assert service_payload["coverage_corridor_id"] == -1
     assert service_payload["coverage_selected_corridor_id"] == -1
+    assert service_payload["coverage_last_selected_cell_id"] == -1
+    assert service_payload["coverage_last_selected_row_id"] == -1
+    assert isnan(float(service_payload["coverage_entry_x_m"]))
+    assert isnan(float(service_payload["coverage_corridor_score"]))
+
+
+def test_coverage_report_service_projects_debug_fields_from_runtime_state() -> None:
+    policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
+    policy._ensure_coverage_corridors()
+    corridor = policy._coverage_corridors[0]
+    policy._coverage_active_corridor_id = int(corridor.corridor_id)
+    policy._coverage_last_selected_corridor_id = int(corridor.corridor_id)
+
+    service_payload = CoverageReportService().debug_fields_from_state(
+        policy._coverage_runtime_state(),
+        config=_coverage_report_config(policy),
+        selection_service=policy._coverage_selection_service(),
+    )
+
+    _assert_nested_equal(service_payload, policy._debug_report_coverage_fields())
+
+
+def test_coverage_report_service_projects_empty_debug_fields_from_runtime_state() -> None:
+    policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
+
+    service_payload = CoverageReportService().debug_fields_from_state(
+        policy._coverage_runtime_state(),
+        config=_coverage_report_config(policy),
+        selection_service=policy._coverage_selection_service(),
+    )
+
+    _assert_nested_equal(service_payload, policy._debug_report_coverage_fields())
+    assert service_payload["coverage_corridor_id"] == -1
     assert service_payload["coverage_last_selected_cell_id"] == -1
     assert service_payload["coverage_last_selected_row_id"] == -1
     assert isnan(float(service_payload["coverage_entry_x_m"]))
@@ -238,3 +294,43 @@ def test_coverage_report_service_projects_summary_status() -> None:
         terminal_stop_requested=True,
         terminal_stop_reason="dig_area_depleted",
     )
+
+
+def test_coverage_report_service_projects_summary_status_from_runtime_state() -> None:
+    policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
+    policy._ensure_coverage_corridors()
+    corridor = policy._coverage_corridors[0]
+    policy._coverage_active_corridor_id = int(corridor.corridor_id)
+    policy._coverage_completed_dump_count = 4
+    policy._coverage_terminal_stop_requested = True
+    policy._coverage_terminal_stop_reason = "dig_area_depleted"
+
+    status = CoverageReportService().summary_status_from_state(
+        policy._coverage_runtime_state(),
+        config=_coverage_report_config(policy),
+    )
+
+    _assert_nested_equal(
+        status,
+        policy._rollout_summary_inputs().coverage,
+    )
+
+
+def test_coverage_report_service_projects_trace_status_from_runtime_state() -> None:
+    policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
+    policy._ensure_coverage_corridors()
+    policy._record_coverage_decision_event(
+        "unit_trace",
+        corridor=policy._coverage_corridors[0],
+        extra={"reason": "unit_test"},
+    )
+
+    status = CoverageReportService().trace_status_from_state(
+        policy._coverage_runtime_state(),
+        config=_coverage_report_config(policy),
+        selection_service=policy._coverage_selection_service(),
+    )
+
+    _assert_nested_equal(status, policy._planner_trace_inputs().coverage)
+    assert status.decision_trace is not policy._coverage_decision_trace
+    assert status.decision_trace[0] is policy._coverage_decision_trace[0]
