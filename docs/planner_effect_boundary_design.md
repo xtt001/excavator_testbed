@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.45: the default 4P mainline branch chain no longer
+Current status after Phase 9.46: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -71,7 +71,12 @@ also owns non-token return handoff/runtime cache state through
 cache, return next-dig-event flag, and return start-envelope gate result/checks
 are no longer independent policy attributes. The policy keeps legacy private
 return field names as property-backed compatibility facades over that return
-state owner. The policy now
+state owner. Mainline cycle/progress state is now owned by
+`PrimitiveCycleRuntimeState`: dig progress counters, dump hold counters,
+transition timeout/completion counters, cycle index, and dump-start deposit
+baseline are no longer independent policy attributes. The policy keeps legacy
+private cycle/progress field names as property-backed compatibility facades over
+that cycle state owner. The policy now
 exposes backend-facing common decision facts through
 `PrimitiveDecisionFacts`, built by `PrimitiveDecisionFactsSource`; the facts
 packet carries context identity, current skill, and current switch reason, but
@@ -841,6 +846,22 @@ field names remain property-backed compatibility facades over the same state
 owner. Return handoff algorithms, direct-handoff effect sequencing,
 return-target token fields, coverage state, token runtime state, and parked
 `pre_dig_align`/`cell_entry` semantics remain in their existing owners.
+
+Phase 9.46 introduces `PrimitiveCycleRuntimeState` in
+`testbed/planner/primitive_cycle_state.py`. The state owner centralizes reset
+defaults and mutable storage for confirmed-live 4P mainline cycle/progress
+state: dump-ready and dump-done hold counters, dig progress and plateau
+counters, dig-to-carry reason mirror, dig replan counters, transition timeout
+and completion counters, cycle index, and dump-start deposited-mass baseline.
+The state methods own small counter/setter rules such as complete-return
+transition count/index advancement, transition-timeout increments, dig replan
+increments, dig progress reset, and atomic dig progress update. Reset creates
+one fresh cycle state and applies it before legacy private cycle/progress field
+names, so capability provider, effect applier, tick finalization, and report
+paths keep their old compatibility names while resolving to the same state
+owner. Active skill, switch reason, previous action, token state, return state,
+coverage state, parked `pre_dig_align`, and `cell_entry` compatibility state
+remain outside this owner.
 
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in

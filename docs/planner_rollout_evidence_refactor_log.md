@@ -5105,3 +5105,64 @@ Each completed refactor round should append:
   Current reset values make this behavior-equivalent, and the later return
   fields do write through the fresh state owner; future cleanup can reorder that
   dict for exact readability without changing behavior.
+
+### 2026-06-23 Phase 9.46 Extract Primitive Cycle Runtime State
+
+- Scope: introduced `PrimitiveCycleRuntimeState` in
+  `testbed/planner/primitive_cycle_state.py` as the focused owner for mutable
+  confirmed-live 4P mainline cycle/progress state and reset defaults.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests`, HEAD before this round
+  `b73e69c69a5f5321cfa49a9c409c0d2928a246f7`; no fetch, pull, push, reset,
+  checkout, rebase, branch creation, or remote write. HEAD after the code round
+  is `b65bcfe64940f3f99bae95a32c530291cd358ef5`.
+- `PrimitiveCycleRuntimeState.fresh()` owns the reset defaults for
+  dump-ready and dump-done hold counters, dig progress and plateau counters,
+  dig-to-carry reason, dig bad/exit replan counters, completed-transition and
+  transition-timeout counters, cycle index, and dump-start deposited-mass
+  baseline.
+- The state owner also owns small counter/setter rules for dump hold/deposit
+  setters, transition-timeout increment, complete-return transition count/index
+  advancement, dig replan increments, dig progress reset, and atomic dig
+  progress update. These are state update rules, not branch-decision algorithms.
+- `PrimitiveResetLifecycleService` now creates one fresh cycle state during
+  reset and includes it in `PrimitiveResetLifecycleState`. The policy exposes
+  `_primitive_cycle_runtime_state()` plus property-backed compatibility facades
+  for legacy private cycle/progress fields, so decision capability provider,
+  effect applier, tick finalization, debug/summary/trace reports, and tests
+  still use old names while resolving to one owner.
+- Preserved behavior: reset defaults, branch order, reason strings, effect
+  ordering, policy reset timing, public debug/summary/trace schema, token/
+  coverage/return handoff algorithms, and low-level action output contract are
+  unchanged.
+- Explicit non-goals: active skill name, switch reason, previous action,
+  `PrimitiveTokenRuntimeState`, `PrimitiveReturnRuntimeState`,
+  `CoverageRuntimeState`, pre-dig-align internals/state, cell-entry
+  compatibility/report state, BT/VLM/LLM backend support, removed 5P runtime,
+  token/coverage/return handoff algorithms, and public report schemas were not
+  migrated or changed.
+- TDD red result: after focused tests were added, the first run of
+  `python -m pytest -q tests/test_primitive_cycle_state.py` failed at
+  collection because `testbed.planner.primitive_cycle_state` did not exist.
+  After implementation, the command returned `8 passed`.
+- Verification reported by implementation thread:
+  `python -m pytest -q tests/test_primitive_cycle_state.py tests/test_primitive_reset_lifecycle.py tests/test_primitive_skill_lifecycle.py tests/test_primitive_tick_finalization.py`
+  returned `33 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py tests/test_primitive_capability_provider.py tests/test_primitive_decision_capabilities.py`
+  returned `133 passed`;
+  `python -m pytest -q tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+  returned `9 passed`;
+  `python -m pytest -q tests/test_primitive_action_dispatch.py tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py`
+  returned `22 passed`;
+  `python -m pytest -q tests/test_planner_current_code_parity.py tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+  returned `8 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or start_envelope or coverage_decision_trace or dig_depth_profile or dig_cut_tokens or dig_to_carry or carry_to_dump or dump_to_return"`
+  returned `24 passed, 95 deselected`; compileall for touched modules, both
+  planner guard commands, `git diff --check`, and staged diff check completed
+  successfully.
+- Audit note: this is a real state-owner extraction for live mainline state,
+  not a generic blackboard. Reset applies `_cycle_state` before legacy
+  cycle/progress private names, and the remaining old-name assignments in the
+  policy go through property setters. The owner intentionally excludes active
+  skill/switch reason, token, return, coverage, parked `pre_dig_align`, and
+  `cell_entry` state.

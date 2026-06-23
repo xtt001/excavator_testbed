@@ -68,6 +68,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_decision_facts.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
 | `testbed/planner/primitive_token_state.py` | 70 | mutable dig/return token runtime state owner and reset defaults |
 | `testbed/planner/primitive_return_state.py` | 56 | mutable non-token return handoff/runtime state owner and reset defaults |
+| `testbed/planner/primitive_cycle_state.py` | 75 | mutable live 4P cycle/progress runtime state owner and reset defaults |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
 | `testbed/planner/evidence_trace.py` | 972 | evidence classifier and report writer for rollout-driven refactor decisions |
@@ -979,6 +980,18 @@ and applies it through `_return_state`; legacy private fields such as
 facades over the same owner. This state owner does not absorb return-target
 token fields, coverage fields, return handoff algorithms, or direct-handoff
 effect sequencing.
+
+Current status note after Phase 9.46: mutable confirmed-live 4P cycle/progress
+state is now owned by `PrimitiveCycleRuntimeState` in
+`testbed/planner/primitive_cycle_state.py`. Reset creates a fresh cycle state
+and applies `_cycle_state` before legacy cycle/progress private field names;
+fields such as `_dump_ready_hold_count`, `_dump_done_hold_count`,
+`_dig_step_count`, `_dig_best_mass_kg`, `_dig_to_carry_reason`,
+`_completed_transition_count`, `_transition_timeout_count`, `_cycle_index`, and
+`_dump_start_deposited_mass_kg` are now property-backed compatibility facades
+over the same owner. The owner does not absorb active skill/switch reason,
+previous action, token state, return state, coverage state, pre-dig-align
+state, cell-entry compatibility state, backend facts, or report schemas.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;

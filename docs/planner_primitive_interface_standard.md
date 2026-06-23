@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.45 implementation. It is intentionally
+compares them with the current Phase 9.46 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -36,6 +36,9 @@ Current maturity:
   source/fallback flags, prior-bound flags, and pending next-dig token state**
 - return runtime mutable state owner: **achieved for return handoff counters,
   entry-close cache, next-dig-event flag, and start-envelope gate cache**
+- cycle/progress runtime mutable state owner: **achieved for live 4P
+  dig-progress, dump-hold, transition-count, cycle-index, and dump-deposit
+  baseline state**
 - runtime composition root / public runtime kernel: **achieved for public
   runtime routing**
 - decision runtime backend factory/registry: **achieved for selecting the
@@ -462,6 +465,9 @@ Current boundary:
 - `PrimitiveReturnRuntimeState` owns mutable return handoff/runtime cache state:
   return step count, entry-close result, next-dig-event flag, and return
   start-envelope gate result/checks.
+- `PrimitiveCycleRuntimeState` owns confirmed-live 4P cycle/progress state:
+  dig progress counters, dump hold counters, transition counters, cycle index,
+  and dump-start deposited-mass baseline.
 - Some pre-dig, debug mirror, switch, and compatibility fields still live as
   policy attributes.
 - Skill lifecycle, reset lifecycle, and token runtime services own sequencing,
@@ -669,6 +675,7 @@ The next code work should follow this order:
 3. Move remaining mutable runtime state into focused state owners.
    - Token runtime mutable state is **done in Phase 9.44**.
    - Return handoff/runtime mutable state is **done in Phase 9.45**.
+   - Mainline cycle/progress mutable state is **done in Phase 9.46**.
    - Inspect the remaining policy-owned mutable fields before choosing another
      state-owner slice; avoid extracting a generic blackboard.
    - Avoid generic blackboards.
