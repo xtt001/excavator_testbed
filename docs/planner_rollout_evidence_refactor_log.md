@@ -6981,3 +6981,110 @@ Each completed refactor round should append:
   not the objective. It was the largest effective bounded move in the live FSM
   transition-status provider state boundary and did not create an anemic
   service, pass-through facade, or generic blackboard.
+
+### 2026-06-23 Phase 9.69 Route Requested-Effect State Mutations Through Focused Owners
+
+- Scope: narrowed `RequestedEffectApplierPorts` in
+  `testbed/planner/primitive_effects.py` so requested-effect application uses
+  focused cycle and return runtime state owners for simple live state effects
+  instead of receiving policy-built state-mutation callbacks for those fields.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 132]`, HEAD
+  before this round `b20988792168f2cadfec236bad03aef1934996c7`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- `RequestedEffectApplierPorts` now carries
+  `PrimitiveCycleRuntimeState` and `PrimitiveReturnRuntimeState`.
+- Removed requested-effect state-mutation callback ports for return next-dig
+  event marking, return transition completion, dig replan counters, dump hold
+  counts, and dump start deposited mass.
+- `RequestedEffectApplier` now mutates those effects through the focused
+  owners while preserving ordered effect application. Skill switching,
+  coverage/cell-entry/restart actions, return handoff routing, and
+  deposited-mass observation reads remain explicit external ports.
+- `PrimitivePlannerACTPolicy._requested_effect_applier_ports()` now passes the
+  focused cycle and return state owners and no longer assembles the removed
+  state-mutation callbacks.
+- Focused tests and decision-contract bridge tests assert owner-backed
+  mutations and absence of old storage callback port names.
+- Preserved behavior: effect order and external action ports remain explicit,
+  while simple cycle/return state mutations land on the same focused runtime
+  owners. No algorithm semantics, branch order, reason strings, thresholds,
+  token schema, debug/summary/trace schema, backend support,
+  `pre_dig_align` algorithm, `cell_entry`, or removed 5P runtime behavior
+  changed.
+- Explicit non-goals: no backend branch order, decision facts schema,
+  `LegacyFSMBranchSet`, transition-status algorithm, skill lifecycle, return
+  handoff algorithm, coverage selection/effect algorithm, token
+  runtime/planning, `pre_dig_align`, `cell_entry`, runtime kernel, action
+  dispatch, or report schema changes.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_cycle_state.py tests/test_primitive_return_state.py`
+  failed as expected because `RequestedEffectApplierPorts` lacked
+  `cycle_state` and `return_state`, rejected new constructor args with
+  `TypeError`, and policy ports had no `cycle_state` attribute.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_cycle_state.py tests/test_primitive_return_state.py`
+  returned `36 passed`;
+  `python -m pytest -q tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `96 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_tick_finalization.py`
+  returned `21 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or first_dig_policy_for_cycle_zero or return_to_dig or pre_dig_align or dig_cut_tokens or coverage_decision_trace"`
+  returned `20 passed, 99 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_cycle_state.py tests/test_primitive_return_state.py`
+  returned `36 passed`;
+  `python -m pytest -q tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `96 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_tick_finalization.py`
+  returned `21 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or first_dig_policy_for_cycle_zero or return_to_dig or pre_dig_align or dig_cut_tokens or coverage_decision_trace"`
+  returned `20 passed, 99 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was the largest effective bounded move in the live
+  requested-effect state mutation boundary and did not create an anemic
+  service, pass-through facade, or generic blackboard.
+
+#### Three-iteration reflection after Phases 9.67-9.69
+
+- Progress toward target: the three-round sequence removed policy-built
+  storage callback clusters from live lifecycle, backend facts, and
+  requested-effect boundaries. Phase 9.67 routed skill lifecycle state writes
+  through execution/cycle/return/pre-dig-align compatibility/coverage owners;
+  Phase 9.68 routed FSM transition-status state reads and the dig reason mirror
+  through cycle/coverage/return owners; Phase 9.69 routed simple
+  requested-effect cycle/return mutations through the same focused owners.
+  This materially reduces the large policy shell's role as a bag of setter
+  callbacks while preserving explicit external algorithm/action ports.
+- Maximum remaining gap: the system is still not a fully swappable backend
+  architecture. The accurate status remains default legacy FSM backendified
+  with focused services / shared backend decision input/facts/factory, while
+  BT/VLM/LLM backends remain unsupported fail-fast. `PrimitivePlannerACTPolicy`
+  still owns significant composition, compatibility facades, public adapter
+  config/reset glue, residual `pre_dig_align` action paths, parked
+  `cell_entry` algorithms, and multiple private diagnostic wrappers.
+- Direction correction: the state-owner port-cleanup seam has now yielded the
+  strongest live clusters in token, coverage, lifecycle, backend facts, and
+  effect application. The next step should not continue hunting single leftover
+  callbacks or line-count wins. The next bounded move should be chosen from a
+  fresh audit of remaining live responsibility chains: either a larger
+  composition/facade cleanup with clear deletion/parking criteria, or an
+  audit-only inventory if the remaining candidates are mostly compatibility
+  wrappers.
+- Hard constraint check: these three rounds did not treat protection as the
+  objective. They were bounded but not timid: each moved a cohesive live state
+  cluster to existing focused owners and reduced policy coupling without
+  changing algorithms, schemas, reason strings, branch order, threshold
+  semantics, or reset timing.
+- Next core bounded-slice filter: require a stable owner and a meaningful
+  reduction in live policy responsibility. Keep parked `cell_entry`, residual
+  `pre_dig_align`, removed 5P runtime, and unsupported BT/VLM/LLM backends out
+  of the target architecture. If the best candidate is only a small facade or
+  compatibility wrapper cleanup, dispatch audit-only and do not implement.

@@ -642,18 +642,12 @@ def test_primitive_planner_requested_effect_bridge_applies_switch_skill() -> Non
 def test_primitive_planner_requested_effect_bridge_applies_return_cycle_in_order() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     events: list[str] = []
-    state = {"cycle": 0}
-
-    def fake_mark(self: PrimitivePlannerACTPolicy) -> None:
-        events.append("mark")
-
-    def fake_complete(self: PrimitivePlannerACTPolicy) -> None:
-        state["cycle"] += 1
-        events.append(f"complete:{state['cycle']}")
+    cycle_state = planner._primitive_cycle_runtime_state()
+    return_state = planner._primitive_return_runtime_state()
 
     def fake_next_skill(self: PrimitivePlannerACTPolicy) -> str:
-        events.append(f"next_skill:{state['cycle']}")
-        return "dig" if state["cycle"] > 0 else "pre_dig_align"
+        events.append(f"next_skill:{cycle_state.cycle_index}")
+        return "dig" if cycle_state.cycle_index > 0 else "pre_dig_align"
 
     def fake_set_skill(
         self: PrimitivePlannerACTPolicy,
@@ -662,11 +656,6 @@ def test_primitive_planner_requested_effect_bridge_applies_return_cycle_in_order
     ) -> None:
         events.append(f"set:{skill_name}:{reason}")
 
-    planner._mark_return_next_dig_event_seen = MethodType(fake_mark, planner)
-    planner._complete_return_transition_for_backend = MethodType(
-        fake_complete,
-        planner,
-    )
     planner._next_skill_after_return_transition = MethodType(fake_next_skill, planner)
     planner._set_skill = MethodType(fake_set_skill, planner)
 
@@ -682,28 +671,24 @@ def test_primitive_planner_requested_effect_bridge_applies_return_cycle_in_order
     )
 
     assert events == [
-        "mark",
-        "complete:1",
         "next_skill:1",
         "set:dig:return_to_dig_next_dig_entry_ready",
     ]
+    assert return_state.return_next_dig_event_seen is True
+    assert cycle_state.completed_transition_count == 1
+    assert cycle_state.cycle_index == 1
 
 
 def test_primitive_planner_requested_effect_bridge_applies_carry_dump_effects_with_obs() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs: dict[str, Any] = {"payload": "current_obs"}
     events: list[str] = []
-
-    def fake_set_ready(self: PrimitivePlannerACTPolicy, value: int) -> None:
-        events.append(f"ready:{value}")
+    cycle_state = planner._primitive_cycle_runtime_state()
 
     def fake_deposited(self: PrimitivePlannerACTPolicy, got_obs: dict[str, Any]) -> float:
         assert got_obs is obs
         events.append("deposited")
         return 12.5
-
-    def fake_set_start(self: PrimitivePlannerACTPolicy, value: float) -> None:
-        events.append(f"start:{value}")
 
     def fake_complete_dump(
         self: PrimitivePlannerACTPolicy,
@@ -723,9 +708,6 @@ def test_primitive_planner_requested_effect_bridge_applies_carry_dump_effects_wi
         assert got_obs is obs
         events.append(f"return:{reason}")
 
-    def fake_set_done(self: PrimitivePlannerACTPolicy, value: int) -> None:
-        events.append(f"done:{value}")
-
     def fake_set_skill(
         self: PrimitivePlannerACTPolicy,
         skill_name: str,
@@ -733,12 +715,9 @@ def test_primitive_planner_requested_effect_bridge_applies_carry_dump_effects_wi
     ) -> None:
         events.append(f"skill:{skill_name}:{reason}")
 
-    planner._set_dump_ready_hold_count = MethodType(fake_set_ready, planner)
     planner._deposited_mass = MethodType(fake_deposited, planner)
-    planner._set_dump_start_deposited_mass = MethodType(fake_set_start, planner)
     planner._complete_coverage_dump = MethodType(fake_complete_dump, planner)
     planner._set_return_or_direct_handoff = MethodType(fake_return_or_handoff, planner)
-    planner._set_dump_done_hold_count = MethodType(fake_set_done, planner)
     planner._set_skill = MethodType(fake_set_skill, planner)
 
     planner._apply_requested_tick_effects(
@@ -757,14 +736,14 @@ def test_primitive_planner_requested_effect_bridge_applies_carry_dump_effects_wi
     )
 
     assert events == [
-        "ready:4",
         "deposited",
-        "start:12.5",
         "skill:dump:carry_to_dump_target_ready",
-        "done:2",
         "complete:dump_mass_low",
         "return:dump_to_return_mass_low",
     ]
+    assert cycle_state.dump_ready_hold_count == 4
+    assert cycle_state.dump_start_deposited_mass_kg == 12.5
+    assert cycle_state.dump_done_hold_count == 2
 
 
 def test_primitive_planner_return_effect_bridge_uses_service_backed_wrapper() -> None:
@@ -794,12 +773,7 @@ def test_primitive_planner_requested_effect_bridge_applies_dig_effects_in_order(
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs: dict[str, Any] = {"payload": "current_obs"}
     events: list[str] = []
-
-    def fake_exit_count(self: PrimitivePlannerACTPolicy) -> None:
-        events.append("exit_count")
-
-    def fake_bad_count(self: PrimitivePlannerACTPolicy) -> None:
-        events.append("bad_count")
+    cycle_state = planner._primitive_cycle_runtime_state()
 
     def fake_reject(
         self: PrimitivePlannerACTPolicy,
@@ -839,11 +813,6 @@ def test_primitive_planner_requested_effect_bridge_applies_dig_effects_in_order(
     ) -> None:
         events.append(f"skill:{skill_name}:{reason}")
 
-    planner._increment_dig_exit_guard_replan_count = MethodType(
-        fake_exit_count,
-        planner,
-    )
-    planner._increment_dig_bad_replan_count = MethodType(fake_bad_count, planner)
     planner._reject_active_coverage_corridor = MethodType(fake_reject, planner)
     planner._restart_after_failed_dig = MethodType(fake_restart, planner)
     planner._complete_cell_entry_dig = MethodType(fake_complete_cell, planner)
@@ -867,14 +836,14 @@ def test_primitive_planner_requested_effect_bridge_applies_dig_effects_in_order(
     )
 
     assert events == [
-        "exit_count",
-        "bad_count",
         "reject:bad_dig_low_payload",
         "restart:bad_dig_low_payload",
         "cell",
         "coverage",
         "skill:carry:dig_to_carry_loaded",
     ]
+    assert cycle_state.dig_exit_guard_replan_count == 1
+    assert cycle_state.dig_bad_replan_count == 1
 
 
 def test_primitive_planner_unknown_skill_fails_without_broad_legacy_fallback() -> None:

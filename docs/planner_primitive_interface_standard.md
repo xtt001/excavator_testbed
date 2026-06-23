@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.68 implementation. It is intentionally
+compares them with the current Phase 9.69 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -477,8 +477,9 @@ Current boundary:
 - `PrimitiveDecisionResult` and requested effect classes exist.
 - `validate_decision_effect_contract()` rejects mixed legacy/requested shapes
   and forbidden payloads.
-- `RequestedEffectApplier` owns effect-class dispatch and delegates state
-  mutation to typed ports/services.
+- `RequestedEffectApplier` owns effect-class dispatch, writes simple cycle and
+  return state effects through focused runtime owners, and keeps external
+  action/algorithm effects as explicit typed ports.
 
 Gap:
 

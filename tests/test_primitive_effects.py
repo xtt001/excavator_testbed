@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import fields
 from typing import Any
 
 import pytest
@@ -28,6 +29,8 @@ from testbed.planner.primitive_effects import (
     RequestedEffectApplier,
     RequestedEffectApplierPorts,
 )
+from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
 
 
 def _ports(
@@ -35,16 +38,16 @@ def _ports(
     *,
     deposited_mass: Callable[[dict[str, Any]], float] | None = None,
     next_skill_after_return_transition: Callable[[], str] | None = None,
+    cycle_state: PrimitiveCycleRuntimeState | None = None,
+    return_state: PrimitiveReturnRuntimeState | None = None,
 ) -> RequestedEffectApplierPorts:
     return RequestedEffectApplierPorts(
+        cycle_state=cycle_state or PrimitiveCycleRuntimeState.fresh(),
+        return_state=return_state or PrimitiveReturnRuntimeState.fresh(),
         set_skill=lambda skill, reason: events.append(f"skill:{skill}:{reason}"),
-        mark_return_next_dig_event_seen=lambda: events.append("mark_return_event"),
-        complete_return_transition=lambda: events.append("complete_return"),
         next_skill_after_return_transition=(
             next_skill_after_return_transition or (lambda: "dig")
         ),
-        increment_dig_exit_guard_replan_count=lambda: events.append("exit_count"),
-        increment_dig_bad_replan_count=lambda: events.append("bad_count"),
         reject_active_coverage_corridor=lambda obs, reason: events.append(
             f"reject:{reason}:{obs['tag']}"
         ),
@@ -53,10 +56,7 @@ def _ports(
         ),
         complete_cell_entry_dig=lambda obs: events.append(f"cell:{obs['tag']}"),
         complete_coverage_dig=lambda obs: events.append(f"coverage_dig:{obs['tag']}"),
-        set_dump_ready_hold_count=lambda value: events.append(f"ready:{value}"),
         deposited_mass=deposited_mass or (lambda obs: 12.5),
-        set_dump_start_deposited_mass=lambda value: events.append(f"start:{value}"),
-        set_dump_done_hold_count=lambda value: events.append(f"done:{value}"),
         complete_coverage_dump=lambda obs, reason: events.append(
             f"coverage_dump:{reason}:{obs['tag']}"
         ),
@@ -66,23 +66,39 @@ def _ports(
     )
 
 
+def test_requested_effect_ports_use_state_owners_not_storage_callbacks() -> None:
+    field_names = {field.name for field in fields(RequestedEffectApplierPorts)}
+
+    assert {"cycle_state", "return_state"} <= field_names
+    assert not {
+        "mark_return_next_dig_event_seen",
+        "complete_return_transition",
+        "increment_dig_exit_guard_replan_count",
+        "increment_dig_bad_replan_count",
+        "set_dump_ready_hold_count",
+        "set_dump_start_deposited_mass",
+        "set_dump_done_hold_count",
+    } & field_names
+
+
 def test_requested_effect_applier_applies_mixed_effects_in_order() -> None:
     events: list[str] = []
     obs = {"tag": "current"}
-    state = {"cycle": 0}
+    cycle_state = PrimitiveCycleRuntimeState.fresh()
+    return_state = PrimitiveReturnRuntimeState.fresh()
 
     def next_skill_after_return() -> str:
-        state["cycle"] += 1
-        events.append(f"next_skill:{state['cycle']}")
+        events.append(f"next_skill:{cycle_state.cycle_index}")
         return "dig"
 
-    applier = RequestedEffectApplier(
-        ports=_ports(
-            events,
-            deposited_mass=lambda got_obs: 17.25,
-            next_skill_after_return_transition=next_skill_after_return,
-        )
+    ports = _ports(
+        events,
+        deposited_mass=lambda got_obs: 17.25,
+        next_skill_after_return_transition=next_skill_after_return,
+        cycle_state=cycle_state,
+        return_state=return_state,
     )
+    applier = RequestedEffectApplier(ports=ports)
 
     applier.apply(
         obs,
@@ -107,22 +123,23 @@ def test_requested_effect_applier_applies_mixed_effects_in_order() -> None:
 
     assert events == [
         "skill:carry:bootstrap_to_carry",
-        "mark_return_event",
-        "complete_return",
         "next_skill:1",
         "skill:dig:return_to_dig_next_dig_entry_ready",
-        "exit_count",
-        "bad_count",
         "reject:bad_dig_low_payload:current",
         "restart:bad_dig_low_payload:current",
         "cell:current",
         "coverage_dig:current",
-        "ready:4",
-        "start:17.25",
-        "done:2",
         "coverage_dump:dump_mass_low:current",
         "return:dump_to_return_mass_low:current",
     ]
+    assert return_state.return_next_dig_event_seen is True
+    assert cycle_state.completed_transition_count == 1
+    assert cycle_state.cycle_index == 1
+    assert cycle_state.dig_exit_guard_replan_count == 1
+    assert cycle_state.dig_bad_replan_count == 1
+    assert cycle_state.dump_ready_hold_count == 4
+    assert cycle_state.dump_start_deposited_mass_kg == 17.25
+    assert cycle_state.dump_done_hold_count == 2
 
 
 def test_requested_effect_applier_reads_deposited_mass_from_current_obs() -> None:
@@ -139,9 +156,11 @@ def test_requested_effect_applier_reads_deposited_mass_from_current_obs() -> Non
     )
 
     applier.apply(first_obs, (SetDumpStartDepositedMassFromObservationEffect(),))
+    assert applier.ports.cycle_state.dump_start_deposited_mass_kg == 3.0
     applier.apply(second_obs, (SetDumpStartDepositedMassFromObservationEffect(),))
 
-    assert events == ["read:first", "start:3.0", "read:second", "start:8.0"]
+    assert events == ["read:first", "read:second"]
+    assert applier.ports.cycle_state.dump_start_deposited_mass_kg == 8.0
 
 
 @pytest.mark.parametrize(

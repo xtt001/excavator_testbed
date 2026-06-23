@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 5346 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 5329 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -1330,6 +1330,20 @@ dig-to-carry reason mirror by writing `PrimitiveCycleRuntimeState`.
 boundary reads, dig-exit overshoot calculation, return handoff refresh, and
 `pre_dig_align` gate ports. Transition algorithms, branch order, reason string
 semantics, thresholds, token schema, debug/summary/trace schema, backend
+support, `pre_dig_align` algorithms, `cell_entry`, and removed 5P runtime
+status remain unchanged.
+
+Current status note after Phase 9.69: requested-effect application no longer
+uses policy-built state-mutation callbacks for simple cycle and return runtime
+effects. `RequestedEffectApplierPorts` now carries
+`PrimitiveCycleRuntimeState` and `PrimitiveReturnRuntimeState` directly.
+`RequestedEffectApplier` marks return next-dig events, completes return
+transitions, increments dig replan counters, sets dump hold counts, and writes
+dump start deposited mass through those owners while preserving ordered effect
+application. `PrimitivePlannerACTPolicy` still assembles explicit external
+ports for skill switching, coverage/cell-entry/restart actions, return handoff
+routing, and deposited-mass observation reads. Effect order, branch order,
+reason strings, thresholds, token schema, debug/summary/trace schema, backend
 support, `pre_dig_align` algorithms, `cell_entry`, and removed 5P runtime
 status remain unchanged.
 

@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.68: the default 4P mainline branch chain no longer
+Current status after Phase 9.69: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -87,7 +87,13 @@ cycle-start deposit, dump hold/start fields, return cached flags, and the
 dig-to-carry reason mirror no longer flow through policy-built storage
 fields/callbacks. Threshold/config values, semantic-boundary profile reads,
 dig-exit overshoot calculation, explicit return handoff refresh, and
-`pre_dig_align` gate reads remain explicit ports. The
+`pre_dig_align` gate reads remain explicit ports. Requested-effect application
+now carries focused cycle and return runtime state owners directly, so return
+next-dig marking, return-cycle completion, dig replan counters, dump hold
+counts, and dump start deposited mass updates no longer pass through
+policy-built state-mutation callbacks. Skill switching, coverage/cell-entry/
+restart actions, return handoff routing, and deposited-mass observation reads
+remain explicit ports. The
 coverage selection runtime boundary now follows the same state-owner pattern:
 `CoverageSelectionRuntimePorts` carries `CoverageRuntimeState`, and
 `CoverageSelectionRuntimeCoordinator` reads/writes corridor lists, candidate
@@ -800,9 +806,11 @@ dispatch, non-empty skill/reason validation that previously lived in the policy
 shell, ordered application, and fail-fast behavior for unsupported requested
 effects. The policy shell exposes `_requested_effect_applier_ports()` and
 delegates `_apply_requested_tick_effects(obs, effects)` to the applier. Shell
-state mutation remains in existing shell helpers reached through ports; the
-applier does not decide branches, compute status facts, dispatch low-level ACT
-policies, or promote `cell_entry` beyond its explicit compatibility effect.
+state mutation for simple cycle/return state effects now goes through the
+focused cycle and return runtime owners, while external action/algorithm
+effects remain explicit ports. The applier does not decide branches, compute
+status facts, dispatch low-level ACT policies, or promote `cell_entry` beyond
+its explicit compatibility effect.
 
 Phase 9.10 routes the legacy compatibility `_maybe_switch_skill()` entry
 through the same requested decision and centralized requested-effect applier

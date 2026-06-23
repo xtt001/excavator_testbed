@@ -144,6 +144,28 @@ def test_policy_cycle_methods_write_state_owner() -> None:
     assert policy._coverage_current_payload_gain_kg == 3.05
 
 
+def test_requested_effect_ports_share_cycle_and_return_state_owners() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    cycle_state = policy._primitive_cycle_runtime_state()
+    return_state = policy._primitive_return_runtime_state()
+
+    ports = policy._requested_effect_applier_ports()
+
+    assert ports.cycle_state is cycle_state
+    assert ports.return_state is return_state
+    assert not hasattr(ports, "complete_return_transition")
+    assert not hasattr(ports, "mark_return_next_dig_event_seen")
+    assert not hasattr(ports, "set_dump_ready_hold_count")
+    assert not hasattr(ports, "set_dump_start_deposited_mass")
+    assert not hasattr(ports, "set_dump_done_hold_count")
+
+    ports.cycle_state.set_dump_ready_hold_count(7)
+    ports.return_state.mark_next_dig_event_seen()
+
+    assert cycle_state.dump_ready_hold_count == 7
+    assert return_state.return_next_dig_event_seen is True
+
+
 def test_skill_lifecycle_cycle_ports_write_state_owner() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     state = policy._primitive_cycle_runtime_state()

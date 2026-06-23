@@ -1680,21 +1680,11 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _requested_effect_applier_ports(self) -> RequestedEffectApplierPorts:
         return RequestedEffectApplierPorts(
+            cycle_state=self._primitive_cycle_runtime_state(),
+            return_state=self._primitive_return_runtime_state(),
             set_skill=lambda skill, reason: self._set_skill(skill, reason),
-            mark_return_next_dig_event_seen=(
-                lambda: self._mark_return_next_dig_event_seen()
-            ),
-            complete_return_transition=(
-                lambda: self._complete_return_transition_for_backend()
-            ),
             next_skill_after_return_transition=(
                 lambda: self._next_skill_after_return_transition()
-            ),
-            increment_dig_exit_guard_replan_count=(
-                lambda: self._increment_dig_exit_guard_replan_count()
-            ),
-            increment_dig_bad_replan_count=(
-                lambda: self._increment_dig_bad_replan_count()
             ),
             reject_active_coverage_corridor=(
                 lambda obs, reason: self._reject_active_coverage_corridor(
@@ -1707,14 +1697,7 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             complete_cell_entry_dig=lambda obs: self._complete_cell_entry_dig(obs),
             complete_coverage_dig=lambda obs: self._complete_coverage_dig(obs),
-            set_dump_ready_hold_count=(
-                lambda value: self._set_dump_ready_hold_count(value)
-            ),
             deposited_mass=lambda obs: self._deposited_mass(obs),
-            set_dump_start_deposited_mass=(
-                lambda value: self._set_dump_start_deposited_mass(value)
-            ),
-            set_dump_done_hold_count=lambda value: self._set_dump_done_hold_count(value),
             complete_coverage_dump=(
                 lambda obs, reason: self._complete_coverage_dump(
                     obs,
