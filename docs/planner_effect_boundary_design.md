@@ -974,6 +974,19 @@ candidate generation, public debug/summary/trace schemas, token schemas,
 `cell_entry`, residual `pre_dig_align`, backend fail-fast behavior, or removed
 5P runtime status.
 
+Phase 9.53 extends `PrimitiveCellEntryCompatibilityRuntimeState` in
+`testbed/planner/primitive_cell_entry_state.py` with `debug_fields(...)`.
+Parked cell-entry public debug-field schema projection now lives with the
+compatibility/report state owner, while
+`PrimitivePlannerACTPolicy._debug_report_cell_entry_fields()` remains the thin
+facade used by current debug report assembly. This phase does not change
+cell-entry token generation, token dimensions, planner/auditor algorithms,
+trace mutation, reset semantics, public debug key names, fallback values,
+coverage reporting, residual `pre_dig_align`, backend fail-fast behavior, or
+removed 5P runtime status. It is recorded as tail cleanup for an existing
+parked compatibility/report owner, not as permission to continue shrinking work
+into protective micro-slices.
+
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in
 `testbed/planner/primitive_return_handoff.py`. The service owns the former

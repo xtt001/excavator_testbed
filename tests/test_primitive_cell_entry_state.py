@@ -4,7 +4,12 @@ from typing import Any
 
 import numpy as np
 
-from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
+from testbed.planner.cell_entry import (
+    CELL_ENTRY_TOKEN_DIM,
+    CellEntryGoal,
+    EntryEnvelope,
+    PlannerDecisionAudit,
+)
 from testbed.planner.primitive_cell_entry_state import (
     PrimitiveCellEntryCompatibilityRuntimeState,
 )
@@ -95,3 +100,83 @@ def test_policy_reset_application_replaces_cell_entry_state_owner() -> None:
     assert reset_state.trace == [{"cycle_id": 2}]
     assert old_state.goal_cycle_id == 9
     assert old_state.trace == []
+
+
+def test_cell_entry_debug_fields_match_policy_facade_for_fresh_state() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    state = policy._primitive_cell_entry_compatibility_runtime_state()
+
+    fields = state.debug_fields()
+
+    assert fields == policy._debug_report_cell_entry_fields()
+    assert fields["cell_entry_selected_cell_id"] == -1
+    assert fields["cell_entry_selected_long_index"] == -1
+    assert fields["cell_entry_selected_short_index"] == -1
+    assert np.isnan(fields["cell_entry_planned_entry_x_m"])
+    assert np.isnan(fields["cell_entry_planned_entry_y_m"])
+    assert np.isnan(fields["cell_entry_planned_entry_z_m"])
+    assert fields["cell_entry_planner_ok"] is False
+    assert fields["cell_entry_audit_reason_code"] == -1
+    assert fields["cell_entry_audit_reason"] == ""
+    assert fields["cell_entry_audit_risk_flags"] == 0
+    assert fields["cell_entry_inside_entry_envelope"] is False
+    assert np.isnan(fields["cell_entry_distance_to_entry_envelope_m"])
+    assert fields["cell_entry_seen_cell_id"] == -1
+
+
+def test_cell_entry_debug_fields_match_policy_facade_for_populated_state() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    state = policy._primitive_cell_entry_compatibility_runtime_state()
+    state.goal = CellEntryGoal(
+        cycle_id=3,
+        selected_cell_id=4,
+        selected_long_index=1,
+        selected_short_index=2,
+        planned_entry_x_m=1.25,
+        planned_entry_y_m=2.5,
+        planned_entry_z_m=-0.75,
+        planned_bite_x_m=3.0,
+        planned_bite_y_m=4.0,
+        planned_bite_z_m=5.0,
+        entry_envelope=EntryEnvelope(
+            x_min_m=0.0,
+            x_max_m=1.0,
+            y_min_m=2.0,
+            y_max_m=3.0,
+            z_min_m=-1.0,
+            z_max_m=0.0,
+        ),
+    )
+    state.audit = PlannerDecisionAudit(
+        cycle_id=3,
+        planner_ok=True,
+        risk_flags=5,
+        reason_code=9,
+        reason="inside_entry_envelope",
+        inside_entry_envelope=True,
+        distance_to_entry_envelope_m=0.125,
+        entry_delta_x_m=0.1,
+        entry_delta_y_m=0.2,
+        entry_delta_z_m=0.3,
+        target_cell_match=True,
+    )
+    state.seen_cell_id = 6
+
+    fields = state.debug_fields()
+
+    assert fields == policy._debug_report_cell_entry_fields()
+    assert fields == {
+        "cell_entry_selected_cell_id": 4,
+        "cell_entry_selected_long_index": 1,
+        "cell_entry_selected_short_index": 2,
+        "cell_entry_planned_entry_x_m": 1.25,
+        "cell_entry_planned_entry_y_m": 2.5,
+        "cell_entry_planned_entry_z_m": -0.75,
+        "cell_entry_planner_ok": True,
+        "cell_entry_audit_reason_code": 9,
+        "cell_entry_audit_reason": "inside_entry_envelope",
+        "cell_entry_audit_risk_flags": 5,
+        "cell_entry_inside_entry_envelope": True,
+        "cell_entry_distance_to_entry_envelope_m": 0.125,
+        "cell_entry_seen_cell_id": 6,
+    }

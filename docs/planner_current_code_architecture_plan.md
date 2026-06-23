@@ -68,7 +68,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_decision_facts.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
 | `testbed/planner/primitive_execution_state.py` | 49 | mutable execution lifecycle state owner for active skill, switch reason, previous action, and latest debug state |
 | `testbed/planner/primitive_observation.py` | 176 | policy observation assembler plus mutable per-observation injected-flag runtime state owner |
-| `testbed/planner/primitive_cell_entry_state.py` | 36 | parked cell-entry compatibility/report runtime state owner and reset defaults |
+| `testbed/planner/primitive_cell_entry_state.py` | 81 | parked cell-entry compatibility/report runtime state owner, reset defaults, and debug-field projection |
 | `testbed/planner/primitive_pre_dig_align_state.py` | 46 | parked pre-dig-align compatibility/report runtime state owner and reset defaults |
 | `testbed/planner/primitive_token_state.py` | 70 | mutable dig/return token runtime state owner and reset defaults |
 | `testbed/planner/primitive_return_state.py` | 56 | mutable non-token return handoff/runtime state owner and reset defaults |
@@ -1079,6 +1079,25 @@ Coverage corridor debug payloads and coverage decision-event payloads remain in
 the same report service. Coverage selection, scoring, effect/runtime updates,
 candidate generation, public key names, scalar conversions, `NaN`/`-1`
 fallbacks, and list projection semantics remain unchanged.
+
+Current status note after Phase 9.53: parked cell-entry debug-field public
+schema projection is now owned by
+`PrimitiveCellEntryCompatibilityRuntimeState.debug_fields()` in
+`testbed/planner/primitive_cell_entry_state.py`.
+`PrimitivePlannerACTPolicy._debug_report_cell_entry_fields()` remains a thin
+compatibility facade that delegates to the state owner. Cell-entry token
+generation, token dimensions, planner/auditor algorithms, trace mutation,
+reset semantics, and public debug key/fallback values remain unchanged. This
+phase is accepted as a small cleanup of the parked compatibility/report owner,
+but it is not a template for continuing parked-path micro-slices.
+
+Hard constraint for future conclusions and executor prompts: protection is a
+constraint, not the objective. Each next slice must be the most effective
+bounded move toward the interface standard, not merely the safest smallest
+cleanup. If a candidate only moves a tiny compatibility dictionary or facade
+without reducing a broader stable boundary, the refactor thread must stop,
+state that risk explicitly in its conclusion, and choose a larger bounded
+target before dispatch.
 
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;

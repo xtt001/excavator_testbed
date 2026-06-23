@@ -2167,49 +2167,7 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _debug_report_cell_entry_fields(self) -> dict[str, Any]:
-        cell_goal = self._cell_entry_goal
-        cell_audit = self._cell_entry_audit
-        return {
-            "cell_entry_selected_cell_id": int(
-                -1 if cell_goal is None else cell_goal.selected_cell_id
-            ),
-            "cell_entry_selected_long_index": int(
-                -1 if cell_goal is None else cell_goal.selected_long_index
-            ),
-            "cell_entry_selected_short_index": int(
-                -1 if cell_goal is None else cell_goal.selected_short_index
-            ),
-            "cell_entry_planned_entry_x_m": float(
-                np.nan if cell_goal is None else cell_goal.planned_entry_x_m
-            ),
-            "cell_entry_planned_entry_y_m": float(
-                np.nan if cell_goal is None else cell_goal.planned_entry_y_m
-            ),
-            "cell_entry_planned_entry_z_m": float(
-                np.nan if cell_goal is None else cell_goal.planned_entry_z_m
-            ),
-            "cell_entry_planner_ok": bool(
-                False if cell_audit is None else cell_audit.planner_ok
-            ),
-            "cell_entry_audit_reason_code": int(
-                -1 if cell_audit is None else cell_audit.reason_code
-            ),
-            "cell_entry_audit_reason": str(
-                "" if cell_audit is None else cell_audit.reason
-            ),
-            "cell_entry_audit_risk_flags": int(
-                0 if cell_audit is None else cell_audit.risk_flags
-            ),
-            "cell_entry_inside_entry_envelope": bool(
-                False if cell_audit is None else cell_audit.inside_entry_envelope
-            ),
-            "cell_entry_distance_to_entry_envelope_m": float(
-                np.nan
-                if cell_audit is None
-                else cell_audit.distance_to_entry_envelope_m
-            ),
-            "cell_entry_seen_cell_id": int(self._cell_entry_seen_cell_id),
-        }
+        return self._primitive_cell_entry_compatibility_runtime_state().debug_fields()
 
     def _debug_report_scripted_bootstrap_fields(self) -> dict[str, Any]:
         return {

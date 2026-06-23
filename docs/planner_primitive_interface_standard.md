@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.52 implementation. It is intentionally
+compares them with the current Phase 9.53 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -50,7 +50,8 @@ Current maturity:
 - observation injection runtime state owner: **achieved for per-observation
   token injected compatibility flags and assembler-result application**
 - cell-entry compatibility runtime state owner: **achieved for parked
-  cell-entry goal/audit/token-cache/trace report storage**
+  cell-entry goal/audit/token-cache/trace report storage and debug-field
+  projection**
 - pre-dig-align compatibility runtime state owner: **achieved for parked
   pre-dig-align counters, cached target/error arrays, readiness booleans,
   timeout reason, and surface-guard report storage**
@@ -501,8 +502,9 @@ Current boundary:
   compatibility facades over that owner.
 - `PrimitiveCellEntryCompatibilityRuntimeState` owns parked cell-entry
   compatibility/report storage: goal, goal cycle id, audit, cached token array,
-  seen cell id, and trace list. The policy keeps the old `_cell_entry_*` names
-  as property-backed compatibility facades over that owner.
+  seen cell id, trace list, and public debug-field projection. The policy keeps
+  the old `_cell_entry_*` names as property-backed compatibility facades over
+  that owner.
 - `PrimitivePreDigAlignCompatibilityRuntimeState` owns parked pre-dig-align
   compatibility/report storage: counters, cached target/error arrays,
   readiness booleans, timeout handoff reason, surface depth, and surface-guard
@@ -517,7 +519,8 @@ Gap:
 - Runtime state is only partially extracted.
 - The policy shell still owns some compatibility/report algorithms and
   compatibility facades, but no longer stores pre-dig-align or cell-entry
-  mutable report state as independent policy attributes.
+  mutable report state or cell-entry debug projection as independent policy
+  responsibilities.
 
 Standard:
 

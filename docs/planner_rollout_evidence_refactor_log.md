@@ -5636,3 +5636,68 @@ Each completed refactor round should append:
   reflection. It moves coverage debug projection into an existing report
   boundary; it is not a new state owner, a generic report blackboard, or a
   backend capability change.
+
+### 2026-06-23 Phase 9.53 Move Cell-Entry Debug Projection Into Compatibility State
+
+- Scope: extended `PrimitiveCellEntryCompatibilityRuntimeState` in
+  `testbed/planner/primitive_cell_entry_state.py` so the parked cell-entry
+  compatibility/report owner also owns public debug-field schema projection.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 116]`, HEAD
+  before this round `256dec5c0fd4651bc5fbc7d572482053099cb0b0`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- Added `PrimitiveCellEntryCompatibilityRuntimeState.debug_fields()` to produce
+  the existing cell-entry public debug-field mapping from the parked
+  compatibility state owner.
+- `PrimitivePlannerACTPolicy._debug_report_cell_entry_fields()` now delegates
+  to the cell-entry compatibility state owner. The policy method remains as the
+  compatibility facade used by current debug-state report construction.
+- Preserved behavior: cell-entry debug key names, fallback
+  `NaN`/`-1`/`False`/empty-string/zero semantics, bool/string/int/float
+  conversions, token generation, token dimensions, token key names, token
+  values, trace mutation, reset semantics, coverage debug projection, residual
+  pre-dig-align behavior, observation injection, token/return/cycle/scripted-
+  bootstrap/execution owners, backend fail-fast behavior, and removed 5P
+  runtime status are unchanged.
+- Explicit non-goals: no cell-entry planner/auditor algorithm move, no token
+  contract change, no trace mutation change, no reset semantic change, no
+  parked-path promotion, no backend selection change.
+- TDD red result from executor callback: after focused tests were added, the
+  first run of `python -m pytest -q tests/test_primitive_cell_entry_state.py`
+  failed as expected with `AttributeError` because
+  `PrimitiveCellEntryCompatibilityRuntimeState.debug_fields` did not yet exist.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_cell_entry_state.py tests/test_primitive_debug_report.py`
+  returned `9 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_planner_trace.py`
+  returned `7 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "cell_entry or coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or pre_dig_align"`
+  returned `16 passed, 103 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_cell_entry_state.py tests/test_primitive_debug_report.py`
+  returned `9 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_planner_trace.py`
+  returned `7 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "cell_entry or coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or pre_dig_align"`
+  returned `16 passed, 103 deselected`.
+- Post-documentation checks by the audit thread: compileall for touched Python
+  modules, both planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint carried forward into every future conclusion and executor
+  prompt: protection is a constraint, not the objective. The next slice must be
+  the most effective bounded move toward the interface standard, not merely the
+  safest smallest cleanup. If a candidate only moves a tiny compatibility
+  dictionary or facade without reducing a broader stable boundary, the refactor
+  thread must state that risk explicitly, stop dispatch, and choose a larger
+  bounded target.
+- Audit note: this is implementation round 2 after the latest three-iteration
+  reflection. It is accepted as tail cleanup for an already extracted parked
+  compatibility/report owner, but it exposed a direction risk: continuing with
+  parked-path report micro-slices would violate the maximum-effective bounded
+  refactor rule. The next implementation dispatch must pivot to a larger
+  current-code gap after a fresh inventory.
