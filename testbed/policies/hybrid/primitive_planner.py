@@ -4834,15 +4834,10 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _coverage_effect_runtime_ports(self) -> CoverageEffectRuntimePorts:
         return CoverageEffectRuntimePorts(
+            state=self._coverage_runtime_state(),
             coverage_mode=lambda: str(self.dig_cut_planner_mode),
             coverage_update_service=lambda: self._coverage_update_service(),
             coverage_runtime_service=lambda: self._coverage_runtime_service(),
-            coverage_corridors=lambda: self._coverage_corridors,
-            active_corridor=lambda: self._coverage_active_corridor(),
-            current_payload_gain_kg=lambda: float(
-                self._coverage_current_payload_gain_kg
-            ),
-            set_current_payload_gain_kg=self._set_coverage_current_payload_gain_kg,
             mass_in_bucket=lambda obs: self._mass_in_bucket(obs),
             completion_facts=(
                 lambda obs, corridor, reason: self._coverage_completion_facts(
@@ -4871,24 +4866,6 @@ class PrimitivePlannerACTPolicy(Policy):
                     replace=replace,
                 )
             ),
-            set_last_payload_gain_kg=self._set_coverage_last_payload_gain_kg,
-            set_last_effective_deposit_delta_kg=(
-                self._set_coverage_last_effective_deposit_delta_kg
-            ),
-            set_completed_dump_count=self._set_coverage_completed_dump_count,
-            set_global_low_productivity_streak=(
-                self._set_coverage_global_low_productivity_streak
-            ),
-            update_rejected_state_exemplar_ids=(
-                self._update_coverage_rejected_state_exemplar_ids
-            ),
-            set_coverage_pass_index=self._set_coverage_pass_index,
-            set_active_corridor_id=self._set_coverage_active_corridor_id,
-            clear_rejected_state_exemplar_ids=(
-                self._clear_coverage_rejected_state_exemplar_ids
-            ),
-            set_terminal_stop_requested=self._set_coverage_terminal_stop_requested,
-            set_terminal_stop_reason=self._set_coverage_terminal_stop_reason,
             record_decision_event=self._record_coverage_decision_event,
             coverage_global_low_productivity_stop=lambda: int(
                 self.coverage_global_low_productivity_stop

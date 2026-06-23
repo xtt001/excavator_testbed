@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.62: the default 4P mainline branch chain no longer
+Current status after Phase 9.63: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -75,7 +75,14 @@ coverage selection runtime boundary now follows the same state-owner pattern:
 `CoverageSelectionRuntimePorts` carries `CoverageRuntimeState`, and
 `CoverageSelectionRuntimeCoordinator` reads/writes corridor lists, candidate
 scores, active/last-selected ids, and all-depleted checks through that owner
-instead of receiving policy-built coverage-state getter/setter callbacks. The
+instead of receiving policy-built coverage-state getter/setter callbacks.
+Coverage effect runtime has also moved its mutable storage coupling to
+`CoverageRuntimeState`: current payload gain, last payload/deposit, completed
+dump count, global low-productivity streak, rejected exemplar ids, pass index,
+active corridor id, terminal-stop state, active corridor lookup, corridor
+lists, and all-depleted checks now flow through the coverage state owner while
+mode/config, update/runtime services, facts builders, low-productivity
+thresholds, and decision-event recording remain explicit external ports. The
 policy now
 also owns non-token return handoff/runtime cache state through
 `PrimitiveReturnRuntimeState`: return step count, return-to-dig entry-close
@@ -1108,6 +1115,26 @@ recent-row penalty, state-exemplar scoring, terminal-stop reason strings,
 decision trace payload schema, token/return/cycle/scripted-bootstrap/
 execution behavior, backend fail-fast behavior, parked `cell_entry`, residual
 `pre_dig_align`, or removed 5P runtime status.
+
+Phase 9.63 narrows the coverage effect runtime port boundary in
+`testbed/planner/primitive_coverage_updates.py`. `CoverageEffectRuntimePorts`
+now carries one focused `CoverageRuntimeState` owner for live coverage effect
+runtime storage: current payload gain, last payload/deposit, completed dump
+count, global low-productivity streak, rejected exemplar ids, pass index,
+active corridor id, terminal-stop state, active corridor lookup, corridor list,
+and all-depleted checks. `CoverageEffectRuntimeCoordinator` reads and writes
+that owner directly, while coverage mode/config, update/runtime services,
+mass/facts builders, decision-event recording, and low-productivity thresholds
+remain explicit external ports. The policy's
+`_coverage_effect_runtime_ports()` now passes `self._coverage_runtime_state()`
+and no longer assembles coverage-state getter/setter callbacks for this effect
+runtime boundary. This phase does not change coverage candidate
+construction/scoring/selection algorithms, first-dig gate behavior, recent-row
+penalty, state-exemplar scoring, terminal-stop reason strings, decision trace
+payload schema, event ordering, report/debug/summary/trace schemas,
+token/return/cycle/scripted-bootstrap/execution behavior, backend fail-fast
+behavior, parked `cell_entry`, residual `pre_dig_align`, or removed 5P runtime
+status.
 
 Phase 9.55 extends `PrimitiveReturnRuntimeState` in
 `testbed/planner/primitive_return_state.py` with `to_report_status(...)` and

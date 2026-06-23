@@ -6434,3 +6434,115 @@ Each completed refactor round should append:
   reflection. It continues the reflection's direction by targeting live
   runtime/port coupling instead of report-field status extraction or parked
   compatibility tails.
+
+### 2026-06-23 Phase 9.63 Replace Coverage Effect State Callback Ports With State Owner
+
+- Scope: narrowed `CoverageEffectRuntimePorts` in
+  `testbed/planner/primitive_coverage_updates.py` so coverage completion,
+  rejection, reopen, and terminal-stop effect sequencing consumes the focused
+  `CoverageRuntimeState` owner directly instead of receiving policy-built
+  getter/setter callbacks for the same coverage effect runtime storage fields.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 126]`, HEAD
+  before this round `6907d4d5368ebab5ac207a66fad8e53b180d4274`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- `CoverageEffectRuntimePorts` now carries `state: CoverageRuntimeState` for
+  focused coverage effect runtime storage.
+- `CoverageEffectRuntimeCoordinator` now reads and writes current payload gain,
+  last payload/deposit, completed dump count, global low-productivity streak,
+  rejected exemplar ids, pass index, active corridor id, terminal-stop state,
+  active corridor lookup, corridor list, and all-depleted checks through
+  `ports.state`.
+- `PrimitivePlannerACTPolicy._coverage_effect_runtime_ports()` now passes
+  `self._coverage_runtime_state()` and no longer assembles removed
+  coverage-state getter/setter callbacks for effect runtime.
+- External coverage mode/config, update/runtime services, mass/facts builders,
+  decision events, and low-productivity thresholds remain explicit ports.
+- Coverage effect runtime tests now use a real `CoverageRuntimeState` owner in
+  helper ports and assert old effect state callback port names are absent.
+- Preserved behavior: coverage candidate construction/scoring/selection
+  algorithms, first-dig gate, recent-row penalty, state-exemplar scoring,
+  terminal-stop reason strings, decision trace payload schema, event ordering,
+  report/debug/summary/trace schemas, token/return/cycle/scripted-bootstrap/
+  execution behavior, backend fail-fast behavior, `cell_entry`,
+  `pre_dig_align`, and removed 5P runtime status are unchanged.
+- Explicit non-goals: no coverage candidate construction/scoring/selection
+  change, no event ordering or terminal-stop reason change, no public report
+  schema change, no backend support change, no token/return/cycle/
+  scripted-bootstrap owner change, no parked `cell_entry` or residual
+  `pre_dig_align` promotion, and no generic blackboard.
+- TDD red result from executor callback: after focused tests were added,
+  `python -m pytest -q tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_state.py`
+  failed as expected with `TypeError` because
+  `CoverageEffectRuntimePorts.__init__()` did not yet accept `state`, and
+  `AttributeError` because `CoverageEffectRuntimePorts` did not yet expose a
+  `state` attribute. The red run reported `11 failed, 6 passed`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_state.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_updates.py`
+  returned `16 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_decision_contract.py`
+  returned `46 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or dig_cut_tokens or return_to_dig or pre_dig_align"`
+  returned `19 passed, 100 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_state.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_updates.py`
+  returned `16 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_decision_contract.py`
+  returned `46 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or dig_cut_tokens or return_to_dig or pre_dig_align"`
+  returned `19 passed, 100 deselected`; compileall for touched modules passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It replaced live coverage effect runtime state callback
+  port coupling with the focused coverage state owner and was the largest
+  effective bounded live runtime coupling move in this slice. No anemic
+  service, pass-through facade, or generic blackboard was created.
+- Audit note: this is implementation round 3 after the latest three-iteration
+  reflection. It completes the current runtime/port state-owner coupling
+  sequence and triggers a new three-iteration reflection.
+
+#### Three-iteration reflection after Phases 9.61-9.63
+
+- Progress toward target: the three-round sequence reduced real live runtime
+  coupling in the policy shell. Phase 9.61 moved token runtime mutable storage
+  access from policy-built callbacks to `PrimitiveTokenRuntimeState`; Phase
+  9.62 moved coverage selection runtime mutable storage access to
+  `CoverageRuntimeState`; Phase 9.63 moved coverage effect runtime mutable
+  storage access to the same coverage state owner. The result is a clearer
+  owner boundary for token and coverage runtime state while keeping external
+  services, facts, config, and decision-event ports explicit.
+- Maximum remaining gap: the code is still not a fully swappable backend
+  architecture. The accurate status remains default legacy FSM backendified
+  with focused services / shared backend decision input/facts/factory, while
+  BT/VLM/LLM backends remain unsupported fail-fast. `PrimitivePlannerACTPolicy`
+  still owns broad port construction, compatibility facades, token planning
+  wiring, skill/reset lifecycle write ports, non-mainline `cell_entry` and
+  residual `pre_dig_align` algorithms, plus many shell-side adapter bridges.
+- Direction correction: the next slice should not blindly continue replacing
+  individual callbacks. It should first audit remaining port builders and pick
+  only a cohesive live boundary where an existing state owner can absorb a
+  meaningful set of storage reads/writes without hiding external facts or
+  algorithm services. The strongest likely candidates are token planning
+  ports that still write token/coverage state, or skill lifecycle reset/write
+  ports that still fan out into execution/return/cycle/coverage owners. If the
+  candidate is only a one-field setter cleanup, dispatch an audit-only
+  inventory instead.
+- Hard constraint check: these three rounds did not violate the rule that
+  protection is a constraint, not the objective. They were bounded but not
+  minimal safety cleanup: each removed a live runtime callback cluster and
+  routed it to an existing focused state owner. Going forward, repeating this
+  pattern on isolated compatibility fields would violate the constraint.
+- Next core bounded-slice filter: prefer a live runtime/planning/lifecycle
+  boundary with enough state coupling to matter, preserve all branch order,
+  thresholds, reason strings, token schemas, debug/summary/trace schemas, and
+  policy reset timing, and keep parked `cell_entry`, residual `pre_dig_align`,
+  removed 5P runtime, and unsupported BT/VLM/LLM backends out of the mainline.

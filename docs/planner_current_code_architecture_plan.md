@@ -77,7 +77,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_scripted_bootstrap.py` | 144 | scripted bootstrap runtime state, readiness checks, timeout, PD action service, and live report/status projection |
 | `testbed/planner/primitive_coverage.py` | 909 | coverage candidate/scoring/selection services; selection runtime sequencing now consumes the focused coverage state owner directly plus explicit external ports |
 | `testbed/planner/primitive_coverage_state.py` | 139 | mutable coverage runtime state owner for corridors, selection ids, candidate scores, completion counters, terminal-stop state, decision trace, and state-exemplar payload |
-| `testbed/planner/primitive_coverage_updates.py` | 600 | coverage completion/rejection/reopen/terminal-stop effect runtime sequencing over explicit shell ports |
+| `testbed/planner/primitive_coverage_updates.py` | 591 | coverage completion/rejection/reopen/terminal-stop effect runtime sequencing over the focused coverage state owner plus explicit external ports |
 | `testbed/planner/primitive_coverage_reports.py` | 395 | coverage corridor debug, coverage decision-event, coverage debug-field, planner-trace coverage status, and rollout-summary coverage status payload builders |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
@@ -1224,6 +1224,25 @@ selection facts, recent-row reference, reopen/terminal hooks, and
 decision-event recording. Coverage candidate construction, scoring/selection
 algorithms, first-dig gate behavior, recent-row penalty, state-exemplar
 scoring, terminal-stop reason strings, decision trace payload schema,
+token/return/cycle/scripted-bootstrap/execution behavior, backend fail-fast
+behavior, `cell_entry`, `pre_dig_align`, and removed 5P runtime status remain
+unchanged.
+
+Current status note after Phase 9.63: live coverage effect runtime sequencing
+no longer uses policy-built getter/setter callbacks for coverage effect state
+storage. `CoverageEffectRuntimePorts` in
+`testbed/planner/primitive_coverage_updates.py` now carries the focused
+`CoverageRuntimeState` owner directly, and
+`CoverageEffectRuntimeCoordinator` reads/writes current payload gain, last
+payload/deposit, completed dump count, global low-productivity streak,
+rejected exemplar ids, pass index, active corridor id, terminal-stop state,
+active corridor lookup, corridor list, and all-depleted checks through that
+owner. `PrimitivePlannerACTPolicy` still assembles explicit external ports for
+coverage mode/config, update/runtime services, mass/facts builders,
+decision-event recording, and low-productivity thresholds. Coverage candidate
+construction/scoring/selection algorithms, first-dig gate behavior, recent-row
+penalty, state-exemplar scoring, terminal-stop reason strings, decision trace
+payload schema, event ordering, report/debug/summary/trace schemas,
 token/return/cycle/scripted-bootstrap/execution behavior, backend fail-fast
 behavior, `cell_entry`, `pre_dig_align`, and removed 5P runtime status remain
 unchanged.

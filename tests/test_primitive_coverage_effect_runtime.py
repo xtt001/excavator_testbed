@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from types import MethodType
 from typing import Any
 
 from testbed.planner.primitive_coverage import CoverageCorridorState
+from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.planner.primitive_coverage_updates import (
     CoverageCompletionFacts,
     CoverageEffectRuntimeCoordinator,
@@ -158,62 +160,12 @@ def _ports(
         target_corridors = [corridor]
     elif corridor is None:
         corridor = target_corridors[0] if target_corridors else None
-    state: dict[str, Any] = {
-        "current_payload": float(current_payload),
-        "last_payload": 0.0,
-        "last_deposit": 0.0,
-        "completed_dump_count": 0,
-        "global_streak": 0,
-        "pass_index": 0,
-        "active_corridor_id": -1,
-        "terminal_requested": bool(terminal_requested),
-        "terminal_reason": str(terminal_reason),
-        "rejected_ids": set(),
-    }
-
-    def set_current_payload(value: float) -> None:
-        events.append(f"write:current_payload:{value}")
-        state["current_payload"] = float(value)
-
-    def set_last_payload(value: float) -> None:
-        events.append(f"write:last_payload:{value}")
-        state["last_payload"] = float(value)
-
-    def set_last_deposit(value: float) -> None:
-        events.append(f"write:last_deposit:{value}")
-        state["last_deposit"] = float(value)
-
-    def set_completed_dump_count(value: int) -> None:
-        events.append(f"write:completed_dump_count:{value}")
-        state["completed_dump_count"] = int(value)
-
-    def set_global_streak(value: int) -> None:
-        events.append(f"write:global_streak:{value}")
-        state["global_streak"] = int(value)
-
-    def update_rejected(ids: tuple[str, ...]) -> None:
-        events.append(f"write:rejected_ids:{','.join(ids)}")
-        state["rejected_ids"].update(ids)
-
-    def set_pass_index(value: int) -> None:
-        events.append(f"write:pass_index:{value}")
-        state["pass_index"] = int(value)
-
-    def set_active_corridor_id(value: int) -> None:
-        events.append(f"write:active_corridor_id:{value}")
-        state["active_corridor_id"] = int(value)
-
-    def clear_rejected_ids() -> None:
-        events.append("write:clear_rejected_ids")
-        state["rejected_ids"].clear()
-
-    def set_terminal_requested(value: bool) -> None:
-        events.append(f"write:terminal_requested:{int(value)}")
-        state["terminal_requested"] = bool(value)
-
-    def set_terminal_reason(value: str) -> None:
-        events.append(f"write:terminal_reason:{value}")
-        state["terminal_reason"] = str(value)
+    state = CoverageRuntimeState()
+    state.coverage_corridors = target_corridors
+    state.coverage_active_corridor_id = -1 if corridor is None else int(corridor.corridor_id)
+    state.coverage_current_payload_gain_kg = float(current_payload)
+    state.coverage_terminal_stop_requested = bool(terminal_requested)
+    state.coverage_terminal_stop_reason = str(terminal_reason)
 
     def record_event(
         event: str,
@@ -228,13 +180,10 @@ def _ports(
         )
 
     ports = CoverageEffectRuntimePorts(
+        state=state,
         coverage_mode=lambda: mode,
         coverage_update_service=lambda: update_service or _FakeUpdateService(events),
         coverage_runtime_service=lambda: runtime_service or _FakeRuntimeService(events),
-        coverage_corridors=lambda: target_corridors,
-        active_corridor=lambda: corridor,
-        current_payload_gain_kg=lambda: float(state["current_payload"]),
-        set_current_payload_gain_kg=set_current_payload,
         mass_in_bucket=lambda obs: float(bucket_mass),
         completion_facts=lambda obs, got_corridor, reason: CoverageCompletionFacts(
             payload_gain_kg=1.0,
@@ -257,7 +206,7 @@ def _ports(
         reopen_facts=lambda obs, got_corridors, reason: CoverageReopenFacts(
             reason=reason,
             pass_index=0,
-            terminal_stop_requested=bool(state["terminal_requested"]),
+            terminal_stop_requested=bool(state.coverage_terminal_stop_requested),
             remaining_depth_by_corridor_id={
                 int(item.corridor_id): 0.1 for item in got_corridors
             },
@@ -265,19 +214,9 @@ def _ports(
         terminal_facts=lambda reason, replace: CoverageTerminalFacts(
             reason=reason,
             replace=replace,
-            terminal_stop_requested=bool(state["terminal_requested"]),
-            terminal_stop_reason=str(state["terminal_reason"]),
+            terminal_stop_requested=bool(state.coverage_terminal_stop_requested),
+            terminal_stop_reason=str(state.coverage_terminal_stop_reason),
         ),
-        set_last_payload_gain_kg=set_last_payload,
-        set_last_effective_deposit_delta_kg=set_last_deposit,
-        set_completed_dump_count=set_completed_dump_count,
-        set_global_low_productivity_streak=set_global_streak,
-        update_rejected_state_exemplar_ids=update_rejected,
-        set_coverage_pass_index=set_pass_index,
-        set_active_corridor_id=set_active_corridor_id,
-        clear_rejected_state_exemplar_ids=clear_rejected_ids,
-        set_terminal_stop_requested=set_terminal_requested,
-        set_terminal_stop_reason=set_terminal_reason,
         record_decision_event=record_event,
         coverage_global_low_productivity_stop=lambda: int(global_stop),
         coverage_low_productivity_payload_kg=lambda: float(low_payload_kg),
@@ -305,11 +244,8 @@ def test_complete_dig_records_max_payload_gain() -> None:
 
     CoverageEffectRuntimeCoordinator.from_ports(ports).complete_dig({"obs": 1})
 
-    assert events == [
-        "update:record_dig_payload:2.0:5.0",
-        "write:current_payload:5.0",
-    ]
-    assert ports.test_state["current_payload"] == 5.0  # type: ignore[attr-defined]
+    assert events == ["update:record_dig_payload:2.0:5.0"]
+    assert ports.test_state.coverage_current_payload_gain_kg == 5.0  # type: ignore[attr-defined]
 
 
 def test_complete_dump_writes_result_then_event_then_reopen_terminal_checks() -> None:
@@ -343,17 +279,17 @@ def test_complete_dump_writes_result_then_event_then_reopen_terminal_checks() ->
 
     assert events == [
         "update:complete_dump:7:dump_done",
-        "write:last_payload:6.0",
-        "write:last_deposit:2.0",
-        "write:completed_dump_count:4",
-        "write:global_streak:0",
         "event:complete_dump:7:dump_done",
         "runtime:maybe_reopen:complete_all_depleted:1",
         "runtime:terminal:dig_area_depleted:False",
-        "write:terminal_requested:1",
-        "write:terminal_reason:dig_area_depleted",
         "event:terminal_stop:7:dig_area_depleted",
     ]
+    assert ports.test_state.coverage_last_payload_gain_kg == 6.0  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_last_effective_deposit_delta_kg == 2.0  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_completed_dump_count == 4  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_global_low_productivity_streak == 0  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_terminal_stop_requested is True  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_terminal_stop_reason == "dig_area_depleted"  # type: ignore[attr-defined]
 
 
 def test_complete_dump_global_terminal_precedes_physics_terminal_request() -> None:
@@ -390,13 +326,13 @@ def test_complete_dump_global_terminal_precedes_physics_terminal_request() -> No
     )
 
     assert events[-6:] == [
+        "update:complete_dump:7:dump_done",
         "event:complete_dump:7:dump_done",
         "runtime:terminal:low_productivity_consecutive:False",
-        "write:terminal_requested:1",
-        "write:terminal_reason:low_productivity_consecutive",
         "event:terminal_stop:7:low_productivity_consecutive",
         "runtime:terminal:physics_artifact_suspected:False",
     ]
+    assert ports.test_state.coverage_terminal_stop_reason == "low_productivity_consecutive"  # type: ignore[attr-defined]
 
 
 def test_reject_counted_attempt_zero_records_event_and_skips_terminal_checks() -> None:
@@ -425,12 +361,12 @@ def test_reject_counted_attempt_zero_records_event_and_skips_terminal_checks() -
 
     assert events == [
         "update:reject_corridor:7:align_entry_gap_timeout",
-        "write:rejected_ids:cell0_a",
-        "write:last_payload:3.0",
-        "write:last_deposit:1.0",
-        "write:global_streak:0",
         "event:reject_corridor:7:align_entry_gap_timeout",
     ]
+    assert ports.test_state.coverage_rejected_state_exemplar_ids == {"cell0_a"}  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_last_payload_gain_kg == 3.0  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_last_effective_deposit_delta_kg == 1.0  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_global_low_productivity_streak == 0  # type: ignore[attr-defined]
 
 
 def test_reject_counted_attempt_path_checks_reopen_or_terminal() -> None:
@@ -448,13 +384,13 @@ def test_reject_counted_attempt_path_checks_reopen_or_terminal() -> None:
         reason="bad_dig",
     )
 
-    assert events[-5:] == [
+    assert events[-4:] == [
+        "event:reject_corridor:7:bad_dig",
         "runtime:maybe_reopen:reject_all_depleted:1",
         "runtime:terminal:dig_area_depleted:False",
-        "write:terminal_requested:1",
-        "write:terminal_reason:dig_area_depleted",
         "event:terminal_stop:7:dig_area_depleted",
     ]
+    assert ports.test_state.coverage_terminal_stop_reason == "dig_area_depleted"  # type: ignore[attr-defined]
 
 
 def test_maybe_reopen_pass_applies_result_and_records_event() -> None:
@@ -476,7 +412,7 @@ def test_maybe_reopen_pass_applies_result_and_records_event() -> None:
         corridors=[corridor],
         runtime_service=_FakeRuntimeService(events, reopen_result=reopen_result),
     )
-    ports.test_state["rejected_ids"].add("cell0_a")  # type: ignore[attr-defined]
+    ports.test_state.coverage_rejected_state_exemplar_ids.add("cell0_a")  # type: ignore[attr-defined]
 
     reopened = CoverageEffectRuntimeCoordinator.from_ports(ports).maybe_reopen_pass(
         {"obs": 1},
@@ -484,16 +420,12 @@ def test_maybe_reopen_pass_applies_result_and_records_event() -> None:
     )
 
     assert reopened is True
-    assert ports.test_state["pass_index"] == 2  # type: ignore[attr-defined]
-    assert ports.test_state["active_corridor_id"] == -1  # type: ignore[attr-defined]
-    assert ports.test_state["global_streak"] == 0  # type: ignore[attr-defined]
-    assert ports.test_state["rejected_ids"] == set()  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_pass_index == 2  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_active_corridor_id == -1  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_global_low_productivity_streak == 0  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_rejected_state_exemplar_ids == set()  # type: ignore[attr-defined]
     assert events == [
         "runtime:maybe_reopen:unit_reopen:1",
-        "write:pass_index:2",
-        "write:active_corridor_id:-1",
-        "write:global_streak:0",
-        "write:clear_rejected_ids",
         "event:reopen_coverage_pass:-1:unit_reopen",
     ]
 
@@ -511,7 +443,7 @@ def test_request_terminal_stop_skips_duplicate_without_replace() -> None:
     )
 
     assert events == ["runtime:terminal:ignored_reason:False"]
-    assert ports.test_state["terminal_reason"] == "first_reason"  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_terminal_stop_reason == "first_reason"  # type: ignore[attr-defined]
 
 
 def test_request_terminal_stop_records_event_with_current_active_corridor() -> None:
@@ -524,10 +456,33 @@ def test_request_terminal_stop_records_event_with_current_active_corridor() -> N
 
     assert events == [
         "runtime:terminal:dig_area_depleted:False",
-        "write:terminal_requested:1",
-        "write:terminal_reason:dig_area_depleted",
         "event:terminal_stop:7:dig_area_depleted",
     ]
+    assert ports.test_state.coverage_terminal_stop_requested is True  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_terminal_stop_reason == "dig_area_depleted"  # type: ignore[attr-defined]
+
+
+def test_effect_runtime_ports_carry_state_owner_without_state_callbacks() -> None:
+    ports = _ports([])
+    port_fields = {field.name for field in fields(CoverageEffectRuntimePorts)}
+
+    assert isinstance(ports.state, CoverageRuntimeState)
+    assert "coverage_corridors" not in port_fields
+    assert "active_corridor" not in port_fields
+    assert "current_payload_gain_kg" not in port_fields
+    assert "set_current_payload_gain_kg" not in port_fields
+    assert "set_last_payload_gain_kg" not in port_fields
+    assert "set_last_effective_deposit_delta_kg" not in port_fields
+    assert "set_completed_dump_count" not in port_fields
+    assert "set_global_low_productivity_streak" not in port_fields
+    assert "update_rejected_state_exemplar_ids" not in port_fields
+    assert "set_coverage_pass_index" not in port_fields
+    assert "set_active_corridor_id" not in port_fields
+    assert "clear_rejected_state_exemplar_ids" not in port_fields
+    assert "set_terminal_stop_requested" not in port_fields
+    assert "set_terminal_stop_reason" not in port_fields
+    assert "planner" not in port_fields
+    assert "self" not in port_fields
 
 
 def test_policy_coverage_effect_wrappers_delegate_to_coordinator() -> None:
