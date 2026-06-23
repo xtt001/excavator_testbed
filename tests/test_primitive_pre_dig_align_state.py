@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
 
 from testbed.planner.primitive_pre_dig_align_state import (
@@ -52,50 +50,30 @@ def test_pre_dig_align_compatibility_runtime_state_uses_fresh_arrays() -> None:
     assert other.error is not state.error
 
 
-def test_policy_legacy_pre_dig_align_fields_are_backed_by_one_state_owner() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
-    policy.action_dim = 4
-    state = policy._primitive_pre_dig_align_compatibility_runtime_state()
-    target_qpos = np.arange(4, dtype=np.float32)
-    error = np.arange(4, dtype=np.float32) * -1.0
+def test_policy_no_longer_exposes_private_pre_dig_align_runtime_facades() -> None:
+    removed_names = {
+        "_primitive_pre_dig_align_compatibility_runtime_state",
+        "_pre_dig_align_step_count",
+        "_pre_dig_align_hold_count",
+        "_pre_dig_align_timeout_count",
+        "_pre_dig_align_completed_count",
+        "_pre_dig_align_replan_count",
+        "_pre_dig_align_target_qpos",
+        "_pre_dig_align_error",
+        "_pre_dig_align_entry_error_m",
+        "_pre_dig_align_start_envelope_ready",
+        "_pre_dig_align_entry_close_handoff_ready",
+        "_pre_dig_align_entry_intent_handoff_ready",
+        "_pre_dig_align_timeout_handoff_reason",
+        "_pre_dig_align_surface_depth_m",
+        "_pre_dig_align_surface_guard_triggered",
+        "_pre_dig_align_surface_guard_count",
+    }
 
-    policy._pre_dig_align_step_count = 1
-    policy._pre_dig_align_hold_count = 2
-    policy._pre_dig_align_timeout_count = 3
-    policy._pre_dig_align_completed_count = 4
-    policy._pre_dig_align_replan_count = 5
-    policy._pre_dig_align_target_qpos = target_qpos
-    policy._pre_dig_align_error = error
-    policy._pre_dig_align_entry_error_m = 0.25
-    policy._pre_dig_align_start_envelope_ready = True
-    policy._pre_dig_align_entry_close_handoff_ready = True
-    policy._pre_dig_align_entry_intent_handoff_ready = True
-    policy._pre_dig_align_timeout_handoff_reason = "entry_close"
-    policy._pre_dig_align_surface_depth_m = 0.75
-    policy._pre_dig_align_surface_guard_triggered = True
-    policy._pre_dig_align_surface_guard_count = 6
-
-    assert policy._primitive_pre_dig_align_compatibility_runtime_state() is state
-    assert state.step_count == 1
-    assert state.hold_count == 2
-    assert state.timeout_count == 3
-    assert state.completed_count == 4
-    assert state.replan_count == 5
-    assert state.target_qpos is target_qpos
-    assert state.error is error
-    assert state.entry_error_m == 0.25
-    assert state.start_envelope_ready is True
-    assert state.entry_close_handoff_ready is True
-    assert state.entry_intent_handoff_ready is True
-    assert state.timeout_handoff_reason == "entry_close"
-    assert state.surface_depth_m == 0.75
-    assert state.surface_guard_triggered is True
-    assert state.surface_guard_count == 6
-    assert policy._pre_dig_align_target_qpos is target_qpos
-    assert policy._pre_dig_align_error is error
+    assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
 
 
-def test_reset_lifecycle_creates_pre_dig_align_state_owner_and_legacy_fields() -> None:
+def test_reset_lifecycle_no_longer_emits_pre_dig_align_runtime_fields() -> None:
     ports = PrimitiveResetLifecyclePorts(
         all_policies=lambda: [],
         reset_boundary_detector=lambda: None,
@@ -106,48 +84,29 @@ def test_reset_lifecycle_creates_pre_dig_align_state_owner_and_legacy_fields() -
     )
 
     reset_state = PrimitiveResetLifecycleService(ports).reset()
+    updates = reset_state.as_policy_field_updates()
+    removed_field_names = {
+        "pre_dig_align_state",
+        "pre_dig_align_step_count",
+        "pre_dig_align_hold_count",
+        "pre_dig_align_timeout_count",
+        "pre_dig_align_completed_count",
+        "pre_dig_align_replan_count",
+        "pre_dig_align_target_qpos",
+        "pre_dig_align_error",
+        "pre_dig_align_entry_error_m",
+        "pre_dig_align_start_envelope_ready",
+        "pre_dig_align_entry_close_handoff_ready",
+        "pre_dig_align_entry_intent_handoff_ready",
+        "pre_dig_align_timeout_handoff_reason",
+        "pre_dig_align_surface_depth_m",
+        "pre_dig_align_surface_guard_triggered",
+        "pre_dig_align_surface_guard_count",
+    }
+    removed_update_names = {f"_{name}" for name in removed_field_names}
 
-    assert reset_state.pre_dig_align_state.step_count == 0
-    assert reset_state.pre_dig_align_state.hold_count == 0
-    assert reset_state.pre_dig_align_state.timeout_count == 0
-    assert reset_state.pre_dig_align_state.completed_count == 0
-    assert reset_state.pre_dig_align_state.replan_count == 0
-    assert reset_state.pre_dig_align_target_qpos is reset_state.pre_dig_align_state.target_qpos
-    assert reset_state.pre_dig_align_error is reset_state.pre_dig_align_state.error
-    assert np.isnan(reset_state.pre_dig_align_state.entry_error_m)
-    assert reset_state.pre_dig_align_start_envelope_ready is False
-    assert reset_state.pre_dig_align_entry_close_handoff_ready is False
-    assert reset_state.pre_dig_align_entry_intent_handoff_ready is False
-    assert reset_state.pre_dig_align_timeout_handoff_reason == ""
-    assert np.isnan(reset_state.pre_dig_align_state.surface_depth_m)
-    assert reset_state.pre_dig_align_surface_guard_triggered is False
-    assert reset_state.pre_dig_align_surface_guard_count == 0
-
-
-def test_policy_reset_application_replaces_pre_dig_align_state_owner() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
-    policy.action_dim = 4
-    old_state = policy._primitive_pre_dig_align_compatibility_runtime_state()
-    old_state.step_count = 9
-    reset_state = PrimitivePreDigAlignCompatibilityRuntimeState.fresh(action_dim=4)
-
-    class _ResetState:
-        def as_policy_field_updates(self) -> dict[str, Any]:
-            return {"_pre_dig_align_state": reset_state}
-
-    policy._apply_reset_lifecycle_state(_ResetState())
-    policy._pre_dig_align_step_count = 2
-    policy._pre_dig_align_target_qpos[0] = 5.0
-
-    assert (
-        policy._primitive_pre_dig_align_compatibility_runtime_state()
-        is reset_state
-    )
-    assert policy._primitive_pre_dig_align_compatibility_runtime_state() is not old_state
-    assert reset_state.step_count == 2
-    assert reset_state.target_qpos[0] == 5.0
-    assert old_state.step_count == 9
-    assert old_state.target_qpos[0] == 0.0
+    assert removed_field_names.isdisjoint(reset_state.__dataclass_fields__)
+    assert removed_update_names.isdisjoint(updates)
 
 
 def _report_config(**overrides: Any) -> PrimitivePreDigAlignReportConfig:
@@ -270,11 +229,15 @@ def test_policy_pre_dig_align_debug_facade_delegates_to_state_report_status() ->
     )
     policy.pre_dig_align_bucket_target_qpos = None
     policy._cycle_index = 0
-    state = policy._primitive_pre_dig_align_compatibility_runtime_state()
+    state = PrimitivePreDigAlignCompatibilityRuntimeState.fresh(action_dim=4)
     state.completed_count = 3
     state.timeout_count = 2
     state.replan_count = 1
+    policy.__dict__["_pre_dig_align_state"] = state
 
-    assert policy._debug_report_pre_dig_align_fields() == (
-        state.to_report_status(policy._pre_dig_align_report_config()).debug_fields()
-    )
+    fields = policy._debug_report_pre_dig_align_fields()
+
+    assert fields["pre_dig_align_enabled"] is False
+    assert fields["pre_dig_align_completed_count"] == 0
+    assert fields["pre_dig_align_timeout_count"] == 0
+    assert fields["pre_dig_align_replan_count"] == 0

@@ -120,23 +120,6 @@ def test_reset_state_matches_legacy_counter_token_pending_and_coverage_defaults(
     assert state.scripted_bootstrap_step_count == 0
     assert state.scripted_bootstrap_hold_count == 0
     assert state.scripted_bootstrap_timeout_count == 0
-    assert state.pre_dig_align_step_count == 0
-    assert state.pre_dig_align_hold_count == 0
-    assert state.pre_dig_align_timeout_count == 0
-    assert state.pre_dig_align_completed_count == 0
-    assert state.pre_dig_align_replan_count == 0
-    assert state.pre_dig_align_target_qpos.dtype == np.float32
-    assert state.pre_dig_align_target_qpos.shape == (4,)
-    assert state.pre_dig_align_error.dtype == np.float32
-    assert state.pre_dig_align_error.shape == (4,)
-    assert np.isnan(state.pre_dig_align_entry_error_m)
-    assert state.pre_dig_align_start_envelope_ready is False
-    assert state.pre_dig_align_entry_close_handoff_ready is False
-    assert state.pre_dig_align_entry_intent_handoff_ready is False
-    assert state.pre_dig_align_timeout_handoff_reason == ""
-    assert np.isnan(state.pre_dig_align_surface_depth_m)
-    assert state.pre_dig_align_surface_guard_triggered is False
-    assert state.pre_dig_align_surface_guard_count == 0
     assert state.dig_step_count == 0
     assert state.dig_best_mass_kg == 0.0
     assert state.dig_mass_plateau_count == 0
@@ -223,6 +206,37 @@ def test_reset_lifecycle_no_longer_emits_cell_entry_runtime_field_updates() -> N
     assert isinstance(state.coverage_state, CoverageRuntimeState)
     assert state.coverage_state.coverage_corridors == []
     assert state.coverage_state.coverage_active_corridor_id == -1
+
+
+def test_reset_lifecycle_no_longer_emits_pre_dig_align_runtime_field_updates() -> None:
+    ports, _ = _ports(action_dim=4)
+
+    state = PrimitiveResetLifecycleService.from_ports(ports).reset()
+    updates = state.as_policy_field_updates()
+    removed_field_names = {
+        "pre_dig_align_state",
+        "pre_dig_align_step_count",
+        "pre_dig_align_hold_count",
+        "pre_dig_align_timeout_count",
+        "pre_dig_align_completed_count",
+        "pre_dig_align_replan_count",
+        "pre_dig_align_target_qpos",
+        "pre_dig_align_error",
+        "pre_dig_align_entry_error_m",
+        "pre_dig_align_start_envelope_ready",
+        "pre_dig_align_entry_close_handoff_ready",
+        "pre_dig_align_entry_intent_handoff_ready",
+        "pre_dig_align_timeout_handoff_reason",
+        "pre_dig_align_surface_depth_m",
+        "pre_dig_align_surface_guard_triggered",
+        "pre_dig_align_surface_guard_count",
+    }
+    removed_policy_update_names = {f"_{name}" for name in removed_field_names}
+
+    assert removed_field_names.isdisjoint(
+        {field.name for field in fields(type(state))}
+    )
+    assert removed_policy_update_names.isdisjoint(updates)
 
 
 def test_reset_service_returns_fresh_mutable_arrays_and_containers() -> None:

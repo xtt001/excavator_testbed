@@ -1166,17 +1166,16 @@ debug/summary/trace public schema, residual `pre_dig_align`, backend fail-fast
 behavior, or removed 5P runtime status.
 
 Phase 9.51 introduced `PrimitivePreDigAlignCompatibilityRuntimeState` in
-`testbed/planner/primitive_pre_dig_align_state.py`. The state owner centralizes
-parked pre-dig-align compatibility/report mutable storage: step/hold/timeout/
-completed/replan counters, cached target qpos and error arrays, entry-error and
-surface-depth report floats, readiness booleans, timeout handoff reason,
-surface-guard trigger state, and surface-guard count. Reset creates one fresh
-pre-dig-align compatibility state and applies it through
-`_pre_dig_align_state`; the old `_pre_dig_align_*` names remain compatibility
-facades over the same owner for disabled public schema compatibility. The
-runtime algorithms that once used those counters and readiness fields were
-removed in Phase 9.92; pre-dig-align is not promoted into the mainline backend,
-and disabled debug/summary/trace public schema compatibility remains.
+`testbed/planner/primitive_pre_dig_align_state.py`. That phase centralized the
+then-parked pre-dig-align compatibility/report mutable storage for step/hold/
+timeout/completed/replan counters, cached target qpos and error arrays,
+entry-error and surface-depth report floats, readiness booleans, timeout
+handoff reason, surface-guard trigger state, and surface-guard count. Later
+parked cleanups removed the runtime algorithms that used those fields, and then
+removed reset `_pre_dig_align_state` writeback plus the old policy
+`_pre_dig_align_*` private runtime facades. The owner now supports disabled
+public schema compatibility through fresh default report projection;
+pre-dig-align is not promoted into the mainline backend.
 
 Phase 9.79 extends that parked owner with
 `PrimitivePreDigAlignReportConfig` and `PrimitivePreDigAlignReportStatus`. The
@@ -1908,6 +1907,19 @@ behavior-tree nodes, VLM packets, or mainline runtime architecture. It does not
 touch parked `cell_entry` and does not change backend maturity: default legacy
 FSM backendified with focused services / shared backend decision
 input/facts/factory; BT/VLM/LLM remain unsupported fail-fast.
+
+Phase 9.95 removes the leftover primitive-planner pre-dig-align private runtime
+field facades and reset snapshot writeback after the runtime path was already
+removed. `PrimitivePlannerACTPolicy` no longer exposes
+`_primitive_pre_dig_align_compatibility_runtime_state` or the old
+`_pre_dig_align_*` counter, target/error, entry/surface diagnostic, readiness,
+timeout, and surface-guard descriptors. `PrimitiveResetLifecycleState` no
+longer carries or applies `_pre_dig_align_state` or those private runtime field
+updates. Disabled public debug/summary/report keys remain projected through
+fresh `PrimitivePreDigAlignCompatibilityRuntimeState` defaults and
+`PrimitivePreDigAlignReportStatus`. This is cleanup only; it does not touch
+parked `cell_entry`, does not remove public pre-dig schema keys, and does not
+reintroduce pre-dig runtime behavior.
 
 Phase 9.93 removes the parked primitive-planner `cell_entry` runtime execution
 path. The cleanup deletes policy-observation `cell_entry_tokens` injection,

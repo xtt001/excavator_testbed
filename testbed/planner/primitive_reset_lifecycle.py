@@ -18,9 +18,6 @@ from testbed.planner.primitive_scripted_bootstrap import (
 from testbed.planner.primitive_observation import (
     PrimitiveObservationInjectionRuntimeState,
 )
-from testbed.planner.primitive_pre_dig_align_state import (
-    PrimitivePreDigAlignCompatibilityRuntimeState,
-)
 from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 
 
@@ -54,22 +51,6 @@ class PrimitiveResetLifecycleState:
     scripted_bootstrap_step_count: int
     scripted_bootstrap_hold_count: int
     scripted_bootstrap_timeout_count: int
-    pre_dig_align_state: PrimitivePreDigAlignCompatibilityRuntimeState
-    pre_dig_align_step_count: int
-    pre_dig_align_hold_count: int
-    pre_dig_align_timeout_count: int
-    pre_dig_align_completed_count: int
-    pre_dig_align_replan_count: int
-    pre_dig_align_target_qpos: np.ndarray
-    pre_dig_align_error: np.ndarray
-    pre_dig_align_entry_error_m: float
-    pre_dig_align_start_envelope_ready: bool
-    pre_dig_align_entry_close_handoff_ready: bool
-    pre_dig_align_entry_intent_handoff_ready: bool
-    pre_dig_align_timeout_handoff_reason: str
-    pre_dig_align_surface_depth_m: float
-    pre_dig_align_surface_guard_triggered: bool
-    pre_dig_align_surface_guard_count: int
     dig_step_count: int
     dig_best_mass_kg: float
     dig_mass_plateau_count: int
@@ -139,34 +120,6 @@ class PrimitiveResetLifecycleState:
             "_scripted_bootstrap_step_count": self.scripted_bootstrap_step_count,
             "_scripted_bootstrap_hold_count": self.scripted_bootstrap_hold_count,
             "_scripted_bootstrap_timeout_count": self.scripted_bootstrap_timeout_count,
-            "_pre_dig_align_state": self.pre_dig_align_state,
-            "_pre_dig_align_step_count": self.pre_dig_align_step_count,
-            "_pre_dig_align_hold_count": self.pre_dig_align_hold_count,
-            "_pre_dig_align_timeout_count": self.pre_dig_align_timeout_count,
-            "_pre_dig_align_completed_count": self.pre_dig_align_completed_count,
-            "_pre_dig_align_replan_count": self.pre_dig_align_replan_count,
-            "_pre_dig_align_target_qpos": self.pre_dig_align_target_qpos,
-            "_pre_dig_align_error": self.pre_dig_align_error,
-            "_pre_dig_align_entry_error_m": self.pre_dig_align_entry_error_m,
-            "_pre_dig_align_start_envelope_ready": (
-                self.pre_dig_align_start_envelope_ready
-            ),
-            "_pre_dig_align_entry_close_handoff_ready": (
-                self.pre_dig_align_entry_close_handoff_ready
-            ),
-            "_pre_dig_align_entry_intent_handoff_ready": (
-                self.pre_dig_align_entry_intent_handoff_ready
-            ),
-            "_pre_dig_align_timeout_handoff_reason": (
-                self.pre_dig_align_timeout_handoff_reason
-            ),
-            "_pre_dig_align_surface_depth_m": self.pre_dig_align_surface_depth_m,
-            "_pre_dig_align_surface_guard_triggered": (
-                self.pre_dig_align_surface_guard_triggered
-            ),
-            "_pre_dig_align_surface_guard_count": (
-                self.pre_dig_align_surface_guard_count
-            ),
             "_dig_step_count": self.dig_step_count,
             "_dig_best_mass_kg": self.dig_best_mass_kg,
             "_dig_mass_plateau_count": self.dig_mass_plateau_count,
@@ -271,11 +224,6 @@ class PrimitiveResetLifecycleService:
         cycle_state = PrimitiveCycleRuntimeState.fresh()
         token_state = PrimitiveTokenRuntimeState.fresh()
         observation_injection_state = PrimitiveObservationInjectionRuntimeState.fresh()
-        pre_dig_align_state = (
-            PrimitivePreDigAlignCompatibilityRuntimeState.fresh(
-                action_dim=action_dim,
-            )
-        )
         return_state = PrimitiveReturnRuntimeState.fresh()
         scripted_bootstrap_state = PrimitiveScriptedBootstrapRuntimeState.fresh()
         return PrimitiveResetLifecycleState(
@@ -292,34 +240,6 @@ class PrimitiveResetLifecycleService:
             scripted_bootstrap_hold_count=scripted_bootstrap_state.hold_count,
             scripted_bootstrap_timeout_count=(
                 scripted_bootstrap_state.timeout_count
-            ),
-            pre_dig_align_state=pre_dig_align_state,
-            pre_dig_align_step_count=pre_dig_align_state.step_count,
-            pre_dig_align_hold_count=pre_dig_align_state.hold_count,
-            pre_dig_align_timeout_count=pre_dig_align_state.timeout_count,
-            pre_dig_align_completed_count=pre_dig_align_state.completed_count,
-            pre_dig_align_replan_count=pre_dig_align_state.replan_count,
-            pre_dig_align_target_qpos=pre_dig_align_state.target_qpos,
-            pre_dig_align_error=pre_dig_align_state.error,
-            pre_dig_align_entry_error_m=pre_dig_align_state.entry_error_m,
-            pre_dig_align_start_envelope_ready=(
-                pre_dig_align_state.start_envelope_ready
-            ),
-            pre_dig_align_entry_close_handoff_ready=(
-                pre_dig_align_state.entry_close_handoff_ready
-            ),
-            pre_dig_align_entry_intent_handoff_ready=(
-                pre_dig_align_state.entry_intent_handoff_ready
-            ),
-            pre_dig_align_timeout_handoff_reason=(
-                pre_dig_align_state.timeout_handoff_reason
-            ),
-            pre_dig_align_surface_depth_m=pre_dig_align_state.surface_depth_m,
-            pre_dig_align_surface_guard_triggered=(
-                pre_dig_align_state.surface_guard_triggered
-            ),
-            pre_dig_align_surface_guard_count=(
-                pre_dig_align_state.surface_guard_count
             ),
             dig_step_count=cycle_state.dig_step_count,
             dig_best_mass_kg=cycle_state.dig_best_mass_kg,

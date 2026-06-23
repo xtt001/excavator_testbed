@@ -9019,3 +9019,45 @@ Each completed refactor round should append:
   removal, no data/HDF5/training compatibility deletion, no behavior-tree/VLM/
   LLM backend implementation, no broad report snapshot rewrite, no generic
   cleanup sweep, and no commit in the implementation thread.
+
+### 2026-06-23 Parked Pre-Dig-Align Private Facade Cleanup
+
+- Scope implemented by parked cleanup executor: remove leftover
+  primitive-planner `pre_dig_align` private runtime field facades and reset
+  snapshot writeback after the runtime execution path was already removed.
+- TDD red result: after updating focused cleanup assertions,
+  `python -m pytest -q tests/test_primitive_pre_dig_align_state.py tests/test_primitive_reset_lifecycle.py tests/test_primitive_rollout_summary.py tests/test_primitive_debug_report.py`
+  failed with representative errors: `PrimitivePlannerACTPolicy.__dict__` still
+  exposed `_primitive_pre_dig_align_compatibility_runtime_state` and old
+  `_pre_dig_align_*` descriptors, `PrimitiveResetLifecycleState` still carried
+  / applied old pre-dig reset fields, and policy debug fields still read a
+  manually injected `_pre_dig_align_state`.
+- Core change: `PrimitivePlannerACTPolicy` no longer exposes
+  `_primitive_pre_dig_align_compatibility_runtime_state` or the old
+  `_pre_dig_align_*` runtime field facades for counters, target/error arrays,
+  entry/surface diagnostics, readiness flags, timeout reason, and surface-guard
+  state. `_pre_dig_align_report_status()` now projects fresh disabled/default
+  report status. `PrimitiveResetLifecycleState` no longer carries or writes
+  `_pre_dig_align_state` / `_pre_dig_align_*` reset snapshot entries.
+- Compatibility retained: public pre-dig-align debug/summary/report keys remain
+  present as disabled/default compatibility surfaces through
+  `PrimitivePreDigAlignCompatibilityRuntimeState` and
+  `PrimitivePreDigAlignReportStatus`. Disabled pre-dig config compatibility and
+  enabled-config fail-fast behavior remain unchanged.
+- Verification:
+  - `python -m pytest -q tests/test_primitive_pre_dig_align_state.py tests/test_primitive_reset_lifecycle.py tests/test_primitive_rollout_summary.py tests/test_primitive_debug_report.py`
+    -> `23 passed in 0.13s`
+  - `python -m pytest -q tests/test_primitive_pre_dig_align_cleanup.py tests/test_primitive_adapter_config.py tests/test_primitive_action_dispatch.py tests/test_primitive_dig_recovery.py tests/test_primitive_return_handoff.py`
+    -> `57 passed in 0.15s`
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "pre_dig_align or semantic_boundary_events_drive_skill_sequence or coverage_decision_trace or dig_cut_tokens"`
+    -> `4 passed, 103 deselected in 0.65s`
+  - `python -m compileall testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_reset_lifecycle.py testbed/planner/primitive_pre_dig_align_state.py`
+    -> no output, exit 0
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`
+    -> no output, exit 0
+  - `python scripts/planner_refactor_guard.py --check-skill-contract`
+    -> no output, exit 0
+- Non-goals held: no `cell_entry` change, no public pre-dig schema removal, no
+  disabled pre-dig config removal, no runtime pre-dig reintroduction, no
+  behavior-tree/VLM/LLM backend work, no broad report snapshot rewrite, no
+  generic cleanup sweep, and no commit in the implementation thread.

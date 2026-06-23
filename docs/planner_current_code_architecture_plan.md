@@ -72,12 +72,12 @@ Current relevant Python files:
 | `testbed/planner/primitive_execution_state.py` | 49 | mutable execution lifecycle state owner for active skill, switch reason, previous action, and latest debug state |
 | `testbed/planner/primitive_observation.py` | 181 | policy observation assembler plus mutable per-observation injected-flag runtime state owner |
 | `testbed/planner/primitive_cell_entry_state.py` | 137 | parked cell-entry compatibility/report runtime state owner, reset defaults, and debug/summary/trace report projection |
-| `testbed/planner/primitive_pre_dig_align_state.py` | 202 | parked pre-dig-align compatibility/report runtime state owner, reset defaults, and debug/summary report projection |
+| `testbed/planner/primitive_pre_dig_align_state.py` | 202 | parked pre-dig-align compatibility/report projection defaults and debug/summary report projection |
 | `testbed/planner/primitive_token_state.py` | 190 | mutable dig/return token runtime state owner, reset defaults, live token-status projection, and token report metadata projection |
 | `testbed/planner/primitive_token_runtime.py` | 255 | dig/return token runtime sequencing over focused token and coverage state owners plus explicit external config/algorithm ports |
 | `testbed/planner/primitive_dig_token_planning.py` | 354 | active dig token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm ports and typed observation facts |
 | `testbed/planner/primitive_dig_progress.py` | 63 | live per-dig tick progress and coverage current-payload update boundary over focused cycle/coverage state owners plus typed observation facts |
-| `testbed/planner/primitive_dig_recovery.py` | 183 | failed-dig/restart recovery orchestration over focused execution/cycle/return/coverage/token/pre-dig compatibility owners plus explicit external algorithm/action ports and typed observation metric facts |
+| `testbed/planner/primitive_dig_recovery.py` | 183 | failed-dig/restart recovery orchestration over focused execution/cycle/return/coverage/token owners plus explicit external algorithm/action ports and typed observation metric facts |
 | `testbed/planner/primitive_return_handoff.py` | 569 | return direct-handoff effect service, return handoff readiness source, and return start-envelope gate over focused execution/cycle/return/token/coverage owners |
 | `testbed/planner/primitive_return_token_planning.py` | 226 | return token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm ports and typed observation facts |
 | `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
@@ -121,7 +121,7 @@ The table below is the responsibility map future migrations must use.
 | 1121-1649 | public reporting facades | `debug_state`, `rollout_summary`, `planner_trace` and report input builders | debug state, token flags, coverage fields, summary counters | report builders called through runtime kernel |
 | 1550-1819 | inline 4P FSM branch order | `_maybe_switch_skill`, return direct handoff helpers | active skill, boundary event, counters, coverage completion/reject, pending plans | legacy FSM parity backend after execution template exists |
 | 1820-1954 | skill mutation and restart effects | `_set_skill`, `_restart_*`, failed-dig stop/restart | active skill, reset timing, hold counters, dig-cut clear/invalidate, terminal stop | kernel-owned effect application |
-| 1955-2359 | bootstrap and pre-dig-align logic | `_should_end_bootstrap`, `_pre_dig_align_*`, `_pre_dig_align_action` | bootstrap config, pre-dig counters, qpos target/error, surface guard | bootstrap mainline status; pre-dig-align legacy parking |
+| 1955-2359 | bootstrap and parked pre-dig config/report helpers | `_should_end_bootstrap`, `_should_pre_dig_align_*`, `_pre_dig_align_report_*` | bootstrap config, disabled pre-dig config/report facts | bootstrap mainline status; pre-dig-align disabled public schema compatibility |
 | 2361-3187 | gate and observation facts | `_update_dig_progress`, `_dig_to_carry_ready`, `_dump_ready`, `_return_to_dig_*`, geometry helpers | mass, deposit, qpos/qvel, env_state, boundary profile, hold counters | capability port status records |
 | 3193-3350 | policy observation and token injection | `_policy_obs`, `_return_*_tokens_for_obs`, `_dig_cut_tokens_for_obs`, `_dig_depth_profile_tokens_for_obs` | token flags, token arrays, active skill, return planner state | policy observation assembler owned by kernel |
 | 3351-3627 | active dig token planning | `_ensure_dig_cut_plan_for_cycle`, depth-profile builders, raw fields | dig-cut tokens, depth-profile tokens, fallback/source fields | token planning service |
@@ -170,7 +170,7 @@ The current baseline report uses the successful `aggregate_tx24` rollout packet:
 | `policy.public_adapter` | compatibility | retain-compatibility | `PrimitivePlannerACTPolicy` | public adapter |
 | `compat.5p_policy` | compatibility-cleanup | removed-runtime-cleanup | git history only | cleanup-approved removed runtime path |
 | `token.cell_entry` | removed primitive-runtime path | disabled-schema-and-data-compatibility | `PrimitiveCellEntryCompatibilityRuntimeState` plus historical data/HDF5 support | no primitive planner token injection |
-| `gate.pre_dig_align` | dead-candidate | retain-legacy-parking | `_maybe_switch_skill` pre-dig branch plus `PrimitivePreDigAlignCompatibilityRuntimeState` | legacy diagnostic/action parking |
+| `gate.pre_dig_align` | removed primitive-runtime path | disabled-schema-compatibility | `PrimitivePreDigAlignCompatibilityRuntimeState` report projection defaults | no primitive planner branch/action runtime |
 
 ## Target Architecture
 
@@ -1072,24 +1072,18 @@ compatibility remains outside primitive planner runtime, and `cell_entry`
 remains non-mainline compatibility/report material rather than a backend
 capability.
 
-Current status note after Phase 9.51: parked pre-dig-align
-compatibility/report storage is now owned by
-`PrimitivePreDigAlignCompatibilityRuntimeState` in
-`testbed/planner/primitive_pre_dig_align_state.py`. Reset creates a fresh
-pre-dig-align compatibility state and applies it through
-`_pre_dig_align_state`; the old `_pre_dig_align_step_count`,
-`_pre_dig_align_hold_count`, `_pre_dig_align_timeout_count`,
-`_pre_dig_align_completed_count`, `_pre_dig_align_replan_count`,
-`_pre_dig_align_target_qpos`, `_pre_dig_align_error`,
-`_pre_dig_align_entry_error_m`, `_pre_dig_align_start_envelope_ready`,
-`_pre_dig_align_entry_close_handoff_ready`,
-`_pre_dig_align_entry_intent_handoff_ready`,
-`_pre_dig_align_timeout_handoff_reason`,
-`_pre_dig_align_surface_depth_m`, `_pre_dig_align_surface_guard_triggered`,
-and `_pre_dig_align_surface_guard_count` names are property-backed facades.
-The parked readiness, timeout, target, surface-guard, and PD action algorithms
-remain in the policy shell; `pre_dig_align` remains residual parking/action
-material rather than a mainline backend capability.
+Current status note after Phase 9.51 and the later parked pre-dig-align
+cleanups: parked pre-dig-align compatibility/report projection defaults are
+owned by `PrimitivePreDigAlignCompatibilityRuntimeState` in
+`testbed/planner/primitive_pre_dig_align_state.py`. Phase 9.51 introduced a
+mutable parked state owner and private policy facades for the old runtime
+counters, cached arrays, readiness flags, timeout handoff reason, surface
+depth, and surface-guard fields. After the parked runtime cleanup and private
+facade cleanup, reset no longer creates or writes `_pre_dig_align_state`, and
+`PrimitivePlannerACTPolicy` no longer exposes the old `_pre_dig_align_*`
+runtime field facades. Public debug/summary/report keys remain through fresh
+disabled/default report projection. `pre_dig_align` remains removed parked
+runtime material rather than a mainline backend capability.
 
 Current status note after Phase 9.79: parked pre-dig-align debug and rollout-
 summary report projection now lives with the parked compatibility state owner.
@@ -1747,6 +1741,17 @@ token contracts, behavior-tree/VLM packets, or mainline runtime architecture,
 and does not change the maturity statement: default legacy FSM backendified
 with focused services / shared backend decision input/facts/factory; BT/VLM/LLM
 backends remain unsupported fail-fast.
+
+Current status note after parked pre-dig-align private facade cleanup:
+`PrimitivePlannerACTPolicy` no longer exposes
+`_primitive_pre_dig_align_compatibility_runtime_state` or the old
+`_pre_dig_align_*` runtime field facades for counters, target/error arrays,
+entry/surface diagnostics, readiness flags, timeout reason, and surface-guard
+state. `PrimitiveResetLifecycleState.as_policy_field_updates()` no longer emits
+`_pre_dig_align_state` or those old private runtime fields. Disabled public
+debug/summary/report schema compatibility remains projected through
+`PrimitivePreDigAlignCompatibilityRuntimeState.fresh(...).to_report_status(...)`
+and `PrimitivePreDigAlignReportStatus`.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

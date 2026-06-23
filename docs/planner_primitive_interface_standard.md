@@ -624,26 +624,27 @@ Current boundary:
   helpers project fresh disabled/default values instead of reading mutable
   policy cell-entry state.
 - `PrimitivePreDigAlignCompatibilityRuntimeState` owns parked pre-dig-align
-  compatibility/report storage: counters, cached target/error arrays,
-  readiness booleans, timeout handoff reason, surface depth, and surface-guard
-  count. It also projects parked pre-dig-align debug and rollout-summary report
-  fields through `PrimitivePreDigAlignReportStatus` from explicit
-  `PrimitivePreDigAlignReportConfig` facts. The policy keeps the old
-  `_pre_dig_align_*` names as property-backed compatibility facades over that
-  owner for disabled public schema compatibility; the runtime action,
-  readiness, target, timeout, failed-dig replan, and branch-selection
-  algorithms have been removed.
+  compatibility/report projection defaults. It projects parked pre-dig-align
+  debug and rollout-summary report fields through
+  `PrimitivePreDigAlignReportStatus` from explicit
+  `PrimitivePreDigAlignReportConfig` facts. After the primitive-planner
+  `pre_dig_align` runtime cleanup, the policy no longer keeps the old
+  `_pre_dig_align_*` runtime field facades or reset snapshot writeback; report
+  helpers project fresh disabled/default values instead of reading mutable
+  policy pre-dig-align state. The runtime action, readiness, target, timeout,
+  failed-dig replan, and branch-selection algorithms have been removed.
 - Skill lifecycle, reset lifecycle, and token runtime services own sequencing,
-  but still write through policy compatibility facades for old private names.
+  but only write through remaining policy compatibility facades for live or
+  retained private names.
 
 Gap:
 
 - Runtime state is only partially extracted.
 - The policy shell still owns some compatibility/report algorithms and
   compatibility facades, but no longer stores pre-dig-align or cell-entry
-  mutable report state, cell-entry debug projection, cell-entry summary
-  projection, or cell-entry planner-trace projection as independent policy
-  responsibilities.
+  mutable report state, pre-dig-align/cell-entry debug projection,
+  pre-dig-align/cell-entry summary projection, or cell-entry planner-trace
+  projection as independent policy responsibilities.
 
 Standard:
 
