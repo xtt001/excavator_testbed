@@ -7,6 +7,16 @@ from typing import Any
 
 import numpy as np
 
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+    ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
+)
+from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive_coverage import (
     CoverageCorridorState,
     CoverageSelectionService,
@@ -360,6 +370,50 @@ class CoverageReportService:
             terminal_stop_requested=bool(terminal_stop_requested),
             terminal_stop_reason=str(terminal_stop_reason),
         )
+
+    @staticmethod
+    def bucket_snapshot(observation: PrimitiveObservationFacts) -> CoverageBucketSnapshot:
+        return CoverageBucketSnapshot(
+            mass_kg=float(observation.mass_in_bucket_kg),
+            deposited_mass_kg=float(observation.deposited_mass_in_target_box_kg),
+            dig_area_x_m=CoverageReportService._env_state_value(
+                observation,
+                ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+            ),
+            dig_area_y_m=CoverageReportService._env_state_value(
+                observation,
+                ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+            ),
+            dig_area_z_m=CoverageReportService._env_state_value(
+                observation,
+                ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
+            ),
+            long_norm=CoverageReportService._env_state_value(
+                observation,
+                ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
+            ),
+            short_norm=CoverageReportService._env_state_value(
+                observation,
+                ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
+            ),
+            plane_depth_m=CoverageReportService._env_state_value(
+                observation,
+                ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+            ),
+            local_depth_m=CoverageReportService._env_state_value(
+                observation,
+                ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+            ),
+        )
+
+    @staticmethod
+    def _env_state_value(
+        observation: PrimitiveObservationFacts,
+        index: int,
+    ) -> float:
+        if len(observation.env_state) <= int(index):
+            return float("nan")
+        return float(observation.env_state[int(index)])
 
     @staticmethod
     def debug_fields(inputs: CoverageDebugReportInputs) -> dict[str, Any]:

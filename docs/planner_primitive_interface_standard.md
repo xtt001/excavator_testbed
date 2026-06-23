@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.85 implementation. It is intentionally
+compares them with the current Phase 9.86 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -46,6 +46,10 @@ Current maturity:
 - coverage rollout-summary projection: **achieved for the rollout-summary
   coverage subset through `CoverageSummaryReportStatus` and
   `CoverageReportService.summary_status_from_state(...)`**
+- coverage decision-event bucket snapshot projection: **achieved through
+  `CoverageReportService.bucket_snapshot(...)` over typed
+  `PrimitiveObservationFacts`; the policy shell no longer owns the live
+  mass/deposit/env-state bucket snapshot projection**
 - coverage planning fact-source boundary: **achieved for coverage selection
   facts, coverage raw-field projection, state-conditioned exemplar
   projection/writeback, exemplar distance/id projection, and remaining-depth

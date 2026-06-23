@@ -5,7 +5,18 @@ from typing import Any
 
 import numpy as np
 
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+    ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
+)
+from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive_coverage_reports import (
+    CoverageBucketSnapshot,
     CoverageDebugReportInputs,
     CoverageReportConfig,
     CoverageReportService,
@@ -116,6 +127,90 @@ def _coverage_report_config(policy: Any) -> CoverageReportConfig:
         first_dig_qpos_delta_weight=policy.coverage_first_dig_qpos_delta_weight,
         first_dig_max_qpos_delta=policy.coverage_first_dig_max_qpos_delta,
     )
+
+
+def _env_state_with_bucket_values() -> np.ndarray:
+    env_state = np.zeros(
+        max(
+            ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+            ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+            ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
+            ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
+            ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
+            ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+            ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+        )
+        + 1,
+        dtype=np.float32,
+    )
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX] = 1.25
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX] = -0.5
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX] = 2.5
+    env_state[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX] = 0.75
+    env_state[ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX] = 0.35
+    env_state[ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX] = 0.42
+    env_state[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = 0.18
+    return env_state
+
+
+def test_coverage_report_service_projects_bucket_snapshot_from_observation_facts() -> None:
+    obs = {
+        "env_state": _env_state_with_bucket_values(),
+        "task_metrics": {
+            "mass_in_bucket_kg": 3.5,
+            "deposited_mass_in_target_box_kg": 2.25,
+        },
+    }
+    facts = PrimitiveObservationFacts.from_obs(obs, action_dim=4)
+
+    snapshot = CoverageReportService().bucket_snapshot(facts)
+
+    _assert_nested_equal(
+        snapshot.__dict__,
+        CoverageBucketSnapshot(
+        mass_kg=3.5,
+        deposited_mass_kg=2.25,
+        dig_area_x_m=1.25,
+        dig_area_y_m=-0.5,
+        dig_area_z_m=2.5,
+        long_norm=0.75,
+        short_norm=0.35,
+        plane_depth_m=0.42,
+        local_depth_m=0.18,
+        ).__dict__,
+    )
+
+
+def test_coverage_report_service_bucket_snapshot_preserves_nan_and_default_fallbacks() -> None:
+    facts = PrimitiveObservationFacts.from_obs({"env_state": np.zeros(3)}, action_dim=4)
+
+    snapshot = CoverageReportService().bucket_snapshot(facts)
+
+    assert snapshot.mass_kg == 0.0
+    assert snapshot.deposited_mass_kg == 0.0
+    assert isnan(snapshot.dig_area_x_m)
+    assert isnan(snapshot.dig_area_y_m)
+    assert isnan(snapshot.dig_area_z_m)
+    assert isnan(snapshot.long_norm)
+    assert isnan(snapshot.short_norm)
+    assert isnan(snapshot.plane_depth_m)
+    assert isnan(snapshot.local_depth_m)
+
+
+def test_policy_coverage_bucket_snapshot_delegates_to_report_service() -> None:
+    policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
+    obs = {
+        "env_state": _env_state_with_bucket_values(),
+        "task_metrics": {
+            "mass_in_bucket_kg": 4.5,
+            "deposited_mass_in_target_box_kg": 1.25,
+        },
+    }
+    service_snapshot = CoverageReportService().bucket_snapshot(
+        PrimitiveObservationFacts.from_obs(obs, action_dim=int(policy.action_dim))
+    )
+
+    assert policy._coverage_bucket_snapshot(obs) == service_snapshot
 
 
 def test_coverage_report_service_matches_corridor_debug_facade() -> None:

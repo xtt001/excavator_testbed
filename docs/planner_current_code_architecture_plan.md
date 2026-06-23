@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4619 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4592 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -84,7 +84,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_coverage.py` | 909 | coverage candidate/scoring/selection services; selection runtime sequencing now consumes the focused coverage state owner directly plus explicit external ports |
 | `testbed/planner/primitive_coverage_state.py` | 139 | mutable coverage runtime state owner for corridors, selection ids, candidate scores, completion counters, terminal-stop state, decision trace, and state-exemplar payload |
 | `testbed/planner/primitive_coverage_updates.py` | 698 | coverage completion/rejection/reopen/terminal-stop effect runtime sequencing and effect fact projection over focused coverage/cycle state plus typed observation facts |
-| `testbed/planner/primitive_coverage_reports.py` | 572 | coverage report config, coverage corridor debug, coverage decision-event, and coverage debug/trace/summary projection from focused runtime state |
+| `testbed/planner/primitive_coverage_reports.py` | 626 | coverage report config, coverage corridor debug, coverage decision-event bucket snapshot, and coverage debug/trace/summary projection from focused runtime state |
 | `testbed/planner/primitive_coverage_facts.py` | 333 | coverage planning fact-source owner for selection facts, raw-field projection, state-conditioned exemplar projection/writeback, and remaining-depth facts |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
@@ -1657,6 +1657,17 @@ live policy callback bag while preserving coverage update/runtime service
 behavior, terminal-stop reason strings, decision-event payload schema, event
 ordering, token/return/direct-handoff/recovery semantics, parked
 `pre_dig_align`, parked `cell_entry`, and backend support status.
+
+Current status note after Phase 9.86: the live coverage decision-event bucket
+snapshot projection now lives in `CoverageReportService.bucket_snapshot(...)`
+inside `testbed/planner/primitive_coverage_reports.py`. The policy shell keeps
+`_coverage_bucket_snapshot(...)` only as a compatibility facade that wraps the
+observation in `PrimitiveObservationFacts` and delegates to the report service.
+This removes policy-owned mass/deposit/env-state bucket snapshot projection
+while preserving the coverage decision-event payload schema, key names, event
+ordering, task-metric fallback behavior, env-state NaN/default semantics,
+debug/summary/trace schemas, coverage algorithms, parked `pre_dig_align`,
+parked `cell_entry`, and backend support status.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

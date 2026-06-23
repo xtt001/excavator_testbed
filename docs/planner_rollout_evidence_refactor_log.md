@@ -7360,6 +7360,80 @@ Each completed refactor round should append:
   default legacy FSM backendified with focused services / shared backend
   decision input/facts/factory; BT/VLM/LLM backends remain unsupported
   fail-fast.
+
+### 2026-06-23 Phase 9.86 Move Coverage Bucket Snapshot Fact-Source Boundary
+
+- Scope: moved the live coverage decision-event bucket snapshot observation
+  projection from the policy shell into the focused coverage report boundary.
+  This is a structural fact-source refactor for confirmed-live coverage
+  decision trace/report material, not a coverage algorithm, token, return,
+  recovery, or parked-path behavior change.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 149]`, HEAD
+  `f1cb71b2e7650d3691d68bc530fa3ae683539408`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, commit, docs edit, or
+  remote write was used by the executor.
+- Added `CoverageReportService.bucket_snapshot(...)` in
+  `testbed/planner/primitive_coverage_reports.py`. It projects
+  `CoverageBucketSnapshot` from typed `PrimitiveObservationFacts`, centralized
+  env-state schema constants, existing task-metric mass/deposit fallback, and
+  the same NaN/default behavior for short env-state vectors.
+- `PrimitivePlannerACTPolicy._coverage_bucket_snapshot(...)` remains only as a
+  compatibility facade that wraps `obs` with
+  `PrimitiveObservationFacts.from_obs(obs, action_dim=int(self.action_dim))`
+  and delegates to `CoverageReportService.bucket_snapshot(...)`.
+- Focused tests cover task-metric plus env-state projection, short env-state
+  fallback behavior, and policy facade equivalence to the report-service
+  source of truth.
+- Line-count impact: `testbed/policies/hybrid/primitive_planner.py` dropped
+  from 4619 to 4592 lines. `testbed/planner/primitive_coverage_reports.py`
+  grew from 572 to 626 lines because it now owns coverage report config,
+  corridor/debug/summary/trace projections, and decision-event bucket snapshot
+  projection.
+- Preserved behavior: coverage decision-event payload schema, key names, event
+  ordering, mass/deposit/env-state fallback behavior, debug/summary/trace
+  schemas, coverage selection/effect/update algorithms, token/return/direct
+  handoff/recovery semantics, branch order, reason strings, reset timing,
+  backend unsupported fail-fast, parked `pre_dig_align`, parked `cell_entry`,
+  and removed 5P runtime status remain unchanged.
+- Explicit non-goals: no coverage selection/effect/update algorithm change, no
+  coverage effect fact-source change, no coverage raw-field planning change, no
+  token/return/direct-handoff/recovery behavior change, no report schema
+  change, no parked `pre_dig_align` or `cell_entry` touch, and no backend
+  support expansion.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_debug_report.py tests/test_primitive_planner_trace.py`
+  returned `3 failed, 16 passed` with representative `AttributeError:
+  'CoverageReportService' object has no attribute 'bucket_snapshot'`, proving
+  the requested report-service bucket snapshot API did not exist yet.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_debug_report.py tests/test_primitive_planner_trace.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_facts.py tests/test_primitive_coverage_updates.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or dig_cut_tokens or return_to_dig"`
+  returned `6 passed, 113 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_debug_report.py tests/test_primitive_planner_trace.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_facts.py tests/test_primitive_coverage_updates.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or dig_cut_tokens or return_to_dig"`
+  returned `6 passed, 113 deselected`; compileall for touched modules passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was the bounded coverage decision-event bucket snapshot
+  fact-source move, not the safest smallest cleanup. It did not add a
+  pass-through wrapper, anemic service, planner-self port, broad config bag,
+  generic blackboard, or parked-path promotion. Residual `pre_dig_align` and
+  parked `cell_entry` were not touched, promoted, deleted, or refactored.
+  Current maturity remains default legacy FSM backendified with focused
+  services / shared backend decision input/facts/factory; BT/VLM/LLM backends
+  remain unsupported fail-fast.
 - Direction correction: after this trio, the strongest live state-owner
   routing seam has mostly been harvested. The next implementation should not
   chase one-off callback removal or line-count wins. It should either select a

@@ -4136,38 +4136,11 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _coverage_bucket_snapshot(self, obs: dict) -> CoverageBucketSnapshot:
-        env_state = self._env_state(obs)
-        return CoverageBucketSnapshot(
-            mass_kg=float(self._mass_in_bucket(obs)),
-            deposited_mass_kg=float(self._deposited_mass(obs)),
-            dig_area_x_m=self._env_state_value(
-                env_state,
-                ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
-            ),
-            dig_area_y_m=self._env_state_value(
-                env_state,
-                ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
-            ),
-            dig_area_z_m=self._env_state_value(
-                env_state,
-                ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
-            ),
-            long_norm=self._env_state_value(
-                env_state,
-                ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
-            ),
-            short_norm=self._env_state_value(
-                env_state,
-                ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
-            ),
-            plane_depth_m=self._env_state_value(
-                env_state,
-                ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
-            ),
-            local_depth_m=self._env_state_value(
-                env_state,
-                ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
-            ),
+        return self._coverage_report_service().bucket_snapshot(
+            PrimitiveObservationFacts.from_obs(
+                obs,
+                action_dim=int(self.action_dim),
+            )
         )
 
     def _record_coverage_decision_event(

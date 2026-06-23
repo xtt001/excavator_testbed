@@ -1293,6 +1293,20 @@ complete-dump, rejection, reopen, and terminal-stop facts inside the coverage
 effect runtime boundary while keeping update/runtime services and
 decision-event recording explicit. This does not change coverage update
 algorithms, terminal-stop reason strings, event ordering, report schemas,
+token/return/recovery semantics, parked `pre_dig_align`, or parked
+`cell_entry`.
+
+Phase 9.86 narrows the adjacent coverage decision-event reporting boundary by
+moving bucket snapshot projection into `CoverageReportService.bucket_snapshot`.
+The report service now projects `CoverageBucketSnapshot` from typed
+`PrimitiveObservationFacts` and centralized env-state schema indexes, including
+the existing task-metric mass/deposit fallback and NaN/default behavior for
+short env-state vectors. `PrimitivePlannerACTPolicy._coverage_bucket_snapshot`
+is only a compatibility facade that constructs the typed observation facts and
+delegates. This does not change coverage decision-event payload keys, event
+ordering, coverage selection/effect/update algorithms, debug/summary/trace
+schemas, token/return/recovery semantics, parked `pre_dig_align`, or parked
+`cell_entry`.
 token/return/direct-handoff/recovery semantics, or parked path status.
 
 Phase 9.64 narrows the active dig token planning port boundary in
