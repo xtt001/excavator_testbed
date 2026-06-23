@@ -5,6 +5,10 @@ from types import MethodType, SimpleNamespace
 import numpy as np
 import pytest
 
+from testbed.data.schema import (
+    ENV_STATE_MASS_IN_BUCKET_IDX,
+    ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
+)
 from testbed.planner.primitive_scripted_bootstrap import (
     PrimitiveScriptedBootstrapReportStatus,
     PrimitiveScriptedBootstrapRuntimeConfig,
@@ -64,6 +68,26 @@ def _install_policy_scripted_config(
     policy.scripted_bootstrap_kd = 0.25
     policy.scripted_bootstrap_action_clip = action_clip
     policy.scripted_bootstrap_action_signs = action_signs
+    policy.scripted_bootstrap_qpos_tolerance = 0.02
+    policy.scripted_bootstrap_qvel_abs_max = 0.08
+    policy.scripted_bootstrap_hold_steps = 2
+    policy.scripted_bootstrap_max_steps = 3
+
+
+def _install_policy_bootstrap_config(
+    policy: PrimitivePlannerACTPolicy,
+    *,
+    bootstrap_end_mode: str,
+) -> None:
+    policy.action_dim = 4
+    policy.bootstrap_end_mode = bootstrap_end_mode
+    policy.bootstrap_end_min_bucket_mass_kg = 100.0
+    policy.bootstrap_end_min_distance_to_dig_area_m = 0.5
+    policy.scripted_bootstrap_target_qpos = np.zeros(4, dtype=np.float32)
+    policy.scripted_bootstrap_kp = 2.0
+    policy.scripted_bootstrap_kd = 0.25
+    policy.scripted_bootstrap_action_clip = 1.0
+    policy.scripted_bootstrap_action_signs = None
     policy.scripted_bootstrap_qpos_tolerance = 0.02
     policy.scripted_bootstrap_qvel_abs_max = 0.08
     policy.scripted_bootstrap_hold_steps = 2
@@ -239,6 +263,69 @@ def test_policy_should_end_bootstrap_uses_scripted_service_timeout_path() -> Non
     assert state.timeout_count == 1
 
 
+def test_policy_should_end_bootstrap_loaded_and_clear_uses_bootstrap_status_facts() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    _install_policy_bootstrap_config(policy, bootstrap_end_mode="loaded_and_clear")
+    policy.bootstrap_policy = object()
+    policy._mass_in_bucket = MethodType(
+        lambda self, obs: (_ for _ in ()).throw(AssertionError("old mass wrapper")),
+        policy,
+    )
+    policy._min_distance_to_dig_area = MethodType(
+        lambda self, obs: (_ for _ in ()).throw(AssertionError("old distance wrapper")),
+        policy,
+    )
+
+    env_state = np.zeros(64, dtype=np.float32)
+    env_state[ENV_STATE_MASS_IN_BUCKET_IDX] = 125.0
+    env_state[ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX] = 0.75
+
+    assert (
+        policy._should_end_bootstrap(
+            obs={"env_state": env_state},
+            boundary_event=None,
+        )
+        is True
+    )
+
+
+def test_policy_should_end_bootstrap_non_scripted_modes_use_bootstrap_status_facts() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    _install_policy_bootstrap_config(
+        policy,
+        bootstrap_end_mode="first_qualified_dig_start",
+    )
+    policy.bootstrap_policy = object()
+
+    assert (
+        policy._should_end_bootstrap(
+            obs={},
+            boundary_event=SimpleNamespace(qualified_dig_start=True),
+        )
+        is True
+    )
+
+    policy.bootstrap_policy = None
+    assert (
+        policy._should_end_bootstrap(
+            obs={},
+            boundary_event=SimpleNamespace(qualified_dig_start=True),
+        )
+        is False
+    )
+
+    policy.bootstrap_policy = object()
+    policy.bootstrap_end_mode = "disabled"
+    assert policy._should_end_bootstrap(obs={}, boundary_event=None) is False
+
+    policy.bootstrap_end_mode = "unsupported"
+    with pytest.raises(
+        ValueError,
+        match="^Unsupported bootstrap_end_mode 'unsupported'\\.$",
+    ):
+        policy._should_end_bootstrap(obs={}, boundary_event=None)
+
+
 def test_policy_debug_scripted_bootstrap_fields_read_state_owner() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     state = policy._primitive_scripted_bootstrap_runtime_state()
@@ -336,16 +423,26 @@ def test_policy_rollout_summary_inputs_use_scripted_bootstrap_report_status() ->
     policy.dig_cut_prior_path = ""
     policy.dig_failed_replan_next_skill = "dig"
     policy.coverage_multi_pass_enabled = False
+    policy.coverage_multi_pass_max_passes = 1
+    policy.coverage_multi_pass_min_remaining_depth_m = 0.0
     policy.coverage_use_env_removed_depth = False
     policy.coverage_candidate_layout = "corridor_grid"
     policy.coverage_first_dig_strategy = "best_score"
     policy.coverage_first_dig_preferred_corridor_id = None
     policy.coverage_first_dig_max_entry_distance_m = None
     policy.coverage_first_dig_qpos_delta_weight = 1.0
+    policy.coverage_first_dig_max_qpos_delta = None
+    policy.coverage_state_exemplars_enabled = False
     policy.pre_dig_align_enabled = False
     policy.pre_dig_align_first_dig_only = True
     policy.pre_dig_align_replan_after_failed_dig = False
     policy.pre_dig_align_surface_guard_enabled = False
+    policy.pre_dig_align_entry_intent_controlled_dims = None
+    policy.pre_dig_align_first_dig_entry_close_handoff = False
+    policy.pre_dig_align_entry_intent_handoff_enabled = False
+    policy.pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max = None
+    policy.pre_dig_align_controlled_dims = []
+    policy.pre_dig_align_bucket_target_qpos = 0.0
 
     inputs = policy._rollout_summary_inputs()
 

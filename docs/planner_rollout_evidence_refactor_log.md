@@ -7447,6 +7447,74 @@ Each completed refactor round should append:
   decision input/facts/factory; BT/VLM/LLM backends remain unsupported
   fail-fast.
 
+### 2026-06-23 Phase 9.89 Move Bootstrap End Fact-Source Boundary
+
+- Scope: moved non-scripted bootstrap end fact projection out of direct
+  `PrimitivePlannerACTPolicy` wrapper reads and into the existing
+  `PrimitiveObservationFacts` + `BootstrapStatus` boundary. This is a
+  live/mainline bootstrap transition gate refactor, not a scripted-bootstrap
+  algorithm change and not a parked-path cleanup.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 152]`, HEAD
+  `8ba61b11584fc1a9abe415e6f7cf78e364d755b1`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, commit, docs edit, or
+  remote write was used by the executor.
+- `PrimitivePlannerACTPolicy._should_end_bootstrap(...)` now preserves scripted
+  bootstrap precedence by delegating to
+  `PrimitiveScriptedBootstrapRuntimeService.should_end_bootstrap(obs)` when the
+  scripted runtime service is enabled.
+- For non-scripted bootstrap modes, `_should_end_bootstrap(...)` now constructs
+  `PrimitiveObservationFacts.from_obs(obs, action_dim=int(self.action_dim))`
+  and returns `BootstrapStatus.from_inputs(...).should_end`. The existing
+  `BootstrapStatus` owner therefore projects first-qualified-dig-start,
+  loaded-and-clear, disabled, and unsupported-mode behavior.
+- Focused tests now prove the loaded-and-clear policy facade no longer calls
+  old `_mass_in_bucket` or `_min_distance_to_dig_area` wrappers, while
+  first-qualified-dig-start, bootstrap-policy absence, disabled mode,
+  unsupported-mode error text, and scripted timeout delegation remain stable.
+- Line-count impact: `testbed/policies/hybrid/primitive_planner.py` grew from
+  4604 to 4607 lines because the large policy now performs typed observation
+  fact construction and delegates to `BootstrapStatus` instead of carrying the
+  branch body directly.
+- Preserved behavior: scripted bootstrap target/hold/timeout/action behavior,
+  first-qualified boundary-event gate, loaded-and-clear thresholds and
+  task-metric/env-state fallbacks, disabled behavior, unsupported-mode error
+  string, branch order, reset timing, token schemas, debug/summary/trace
+  schemas, backend unsupported fail-fast, parked `pre_dig_align`, parked
+  `cell_entry`, and removed 5P runtime status remain unchanged.
+- Explicit non-goals: no scripted bootstrap runtime state/service change, no
+  tick boundary event move, no dig-progress move, no coverage first-dig qpos
+  delta move, no policy observation assembler change, no `pre_dig_align` or
+  `cell_entry` promotion/deletion/refactor, and no backend support expansion.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_scripted_bootstrap.py tests/test_primitive_capabilities.py`
+  failed because
+  `test_policy_should_end_bootstrap_loaded_and_clear_uses_bootstrap_status_facts`
+  monkeypatched the old `_mass_in_bucket` wrapper to raise
+  `AssertionError(\"old mass wrapper\")`, proving production still used the old
+  policy wrapper path.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_scripted_bootstrap.py tests/test_primitive_capabilities.py`
+  returned `45 passed`;
+  `python -m pytest -q tests/test_primitive_decision_capabilities.py tests/test_primitive_backend.py tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py`
+  returned `92 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "scripted_bootstrap or first_dig_policy_for_cycle_zero or semantic_boundary_events_drive_skill_sequence"`
+  returned `2 passed, 117 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was the bounded bootstrap end fact-source move, not the
+  safest smallest cleanup. It did not add a pass-through wrapper, anemic
+  service, planner-self port, broad config bag, generic blackboard, or
+  parked-path promotion. Residual `pre_dig_align` and parked `cell_entry` were
+  not touched, promoted, deleted, or refactored. Current maturity remains
+  default legacy FSM backendified with focused services / shared backend
+  decision input/facts/factory; BT/VLM/LLM backends remain unsupported
+  fail-fast.
+
 ### 2026-06-23 Phase 9.86 Move Coverage Bucket Snapshot Fact-Source Boundary
 
 - Scope: moved the live coverage decision-event bucket snapshot observation

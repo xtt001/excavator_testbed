@@ -1331,7 +1331,19 @@ removed-depth grid extraction, and remaining-depth projection read
 `facts.env_state`. The `first_dig_qpos_delta` callback intentionally remains
 explicit because it still reaches parked/residual pre-dig-align target
 material; this phase does not promote or modify that parked path.
-token/return/direct-handoff/recovery semantics, or parked path status.
+It does not change token/return/direct-handoff/recovery semantics or parked
+path status.
+
+Phase 9.89 narrows the bootstrap end fact-source boundary. The policy's
+`_should_end_bootstrap(...)` compatibility facade still delegates to
+`PrimitiveScriptedBootstrapRuntimeService` first when scripted bootstrap is
+enabled, preserving scripted target/hold/timeout behavior. Non-scripted
+bootstrap end now builds typed `PrimitiveObservationFacts` and uses
+`BootstrapStatus.from_inputs(...).should_end` for first-qualified-dig-start,
+loaded-and-clear, disabled, and unsupported-mode handling. This moves live
+bootstrap fact projection out of direct policy wrapper reads without changing
+branch order, thresholds, error text, reset timing, backend support, report
+schemas, or parked `pre_dig_align` / `cell_entry` status.
 
 Phase 9.64 narrows the active dig token planning port boundary in
 `testbed/planner/primitive_dig_token_planning.py`.

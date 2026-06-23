@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4604 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4607 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -1697,6 +1697,19 @@ fact-source slice. Coverage selection/scoring/effect/update behavior,
 candidate score payloads, token/return/direct-handoff/recovery semantics,
 parked `pre_dig_align`, parked `cell_entry`, and backend support status remain
 unchanged.
+
+Current status note after Phase 9.89: the non-scripted bootstrap end
+fact-source boundary now uses `PrimitiveObservationFacts` and
+`BootstrapStatus.from_inputs(...)` instead of direct large-policy
+`_mass_in_bucket` / `_min_distance_to_dig_area` wrapper reads.
+`PrimitivePlannerACTPolicy._should_end_bootstrap(...)` remains the
+compatibility facade and still gives `PrimitiveScriptedBootstrapRuntimeService`
+precedence when scripted bootstrap is enabled. For non-scripted modes,
+first-qualified-dig-start, loaded-and-clear, disabled, and unsupported-mode
+behavior are projected by the existing bootstrap status owner. Scripted
+bootstrap runtime state/action/timeout behavior, reset timing, backend
+fail-fast behavior, token schemas, debug/summary/trace schemas, parked
+`pre_dig_align`, and parked `cell_entry` remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

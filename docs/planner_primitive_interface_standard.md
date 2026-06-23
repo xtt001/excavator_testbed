@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.88 implementation. It is intentionally
+compares them with the current Phase 9.89 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -62,6 +62,11 @@ Current maturity:
   `first_dig_qpos_delta` callback remains explicit because it still touches
   parked pre-dig-align target material; scoring/selection algorithms remain in
   the existing coverage services**
+- bootstrap end fact-source boundary: **achieved for non-scripted bootstrap
+  end gates through `PrimitiveObservationFacts` and `BootstrapStatus`; scripted
+  bootstrap still takes precedence through `PrimitiveScriptedBootstrapRuntimeService`,
+  while first-qualified-dig-start, loaded-and-clear, disabled, and unsupported
+  mode behavior are projected by the existing bootstrap status owner**
 - token planning observation fact-source boundary: **achieved for active dig
   and return token planning through a typed `PrimitiveObservationFacts`
   provider; separate policy-built bucket pose, deposited-mass, env-state, qpos,

@@ -53,6 +53,7 @@ from testbed.planner.primitive_backend import (
     LegacyFSMRequestedDecisionBackend,
 )
 from testbed.planner.primitive_capabilities import (
+    BootstrapStatus,
     CarryTransitionStatus,
     DigTransitionStatus,
     DumpTransitionStatus,
@@ -2413,21 +2414,23 @@ class PrimitivePlannerACTPolicy(Policy):
         scripted_bootstrap = self._primitive_scripted_bootstrap_runtime_service()
         if scripted_bootstrap.enabled():
             return scripted_bootstrap.should_end_bootstrap(obs)
-        if self.bootstrap_policy is None:
-            return False
-        if self.bootstrap_end_mode == "first_qualified_dig_start":
-            return bool(
-                boundary_event is not None
-                and getattr(boundary_event, "qualified_dig_start", False)
-            )
-        if self.bootstrap_end_mode == "loaded_and_clear":
-            return self._mass_in_bucket(obs) >= self.bootstrap_end_min_bucket_mass_kg and (
-                self._min_distance_to_dig_area(obs)
-                >= self.bootstrap_end_min_distance_to_dig_area_m
-            )
-        if self.bootstrap_end_mode == "disabled":
-            return False
-        raise ValueError(f"Unsupported bootstrap_end_mode {self.bootstrap_end_mode!r}.")
+        observation = PrimitiveObservationFacts.from_obs(
+            obs,
+            action_dim=int(self.action_dim),
+        )
+        status = BootstrapStatus.from_inputs(
+            observation=observation,
+            boundary_event=boundary_event,
+            bootstrap_policy_present=self.bootstrap_policy is not None,
+            bootstrap_end_mode=str(self.bootstrap_end_mode),
+            bootstrap_end_min_bucket_mass_kg=float(
+                self.bootstrap_end_min_bucket_mass_kg
+            ),
+            bootstrap_end_min_distance_to_dig_area_m=float(
+                self.bootstrap_end_min_distance_to_dig_area_m
+            ),
+        )
+        return status.should_end
 
     def _primitive_scripted_bootstrap_runtime_config(
         self,
