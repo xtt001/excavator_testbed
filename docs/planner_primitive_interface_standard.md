@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.53 implementation. It is intentionally
+compares them with the current Phase 9.54 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -36,7 +36,8 @@ Current maturity:
   `CoverageReportService.debug_fields(...)` while policy still prepares the
   explicit snapshot inputs**
 - token runtime mutable state owner: **achieved for dig/return token arrays,
-  source/fallback flags, prior-bound flags, and pending next-dig token state**
+  source/fallback flags, prior-bound flags, pending next-dig token state, and
+  live `TokenStatus` projection**
 - return runtime mutable state owner: **achieved for return handoff counters,
   entry-close cache, next-dig-event flag, and start-envelope gate cache**
 - cycle/progress runtime mutable state owner: **achieved for live 4P
@@ -579,7 +580,9 @@ Current boundary:
   projection for the injected flags reported through debug/summary/trace paths.
 - `PrimitiveTokenRuntimeState` owns mutable dig/return token arrays, token
   source/fallback/prior-bound fields, return start-envelope prior flags, and
-  pending next-dig token/raw/exemplar fields.
+  pending next-dig token/raw/exemplar fields. It also owns live `TokenStatus`
+  projection from explicit cell-entry enablement, observation-injection flags,
+  and dig-depth-profile config facts.
 - `PrimitiveReturnRuntimeState` owns non-token return handoff/runtime cache
   fields, so return-target token state and return handoff cache state are no
   longer mixed in the policy shell.
@@ -589,7 +592,8 @@ Current boundary:
 - Token algorithm classes remain in `primitive_tokens.py`.
 - `PrimitivePlannerACTPolicy` keeps old `_dig_cut_*`, `_return_*`, and
   `_pending_dig_*` private names as property-backed compatibility facades over
-  the single token state owner.
+  the single token state owner. Its token-status report helper remains a thin
+  facade that delegates to the token state owner.
 
 Gap:
 

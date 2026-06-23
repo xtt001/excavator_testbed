@@ -13,6 +13,9 @@ from testbed.data.operator_first_v2_2 import (
     RETURN_START_ENVELOPE_TOKEN_DIM,
     RETURN_TARGET_TOKEN_DIM,
 )
+from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
+from testbed.planner.primitive_observation import PrimitiveTokenInjectionState
+from testbed.planner.primitive_token_status import TokenStatus
 
 
 @dataclass
@@ -61,6 +64,68 @@ class PrimitiveTokenRuntimeState:
         """Return a fresh token runtime state matching reset defaults."""
 
         return cls()
+
+    def to_token_status(
+        self,
+        *,
+        cell_entry_enabled: bool,
+        token_injection_state: PrimitiveTokenInjectionState,
+        dig_depth_profile_source: str,
+        dig_depth_profile_required: bool,
+    ) -> TokenStatus:
+        """Project live token runtime state into the public token status facts."""
+
+        return TokenStatus.from_inputs(
+            cell_entry_enabled=bool(cell_entry_enabled),
+            cell_entry_token_injected=bool(
+                token_injection_state.cell_entry_token_injected
+            ),
+            cell_entry_token_dim=int(CELL_ENTRY_TOKEN_DIM),
+            dig_cut_token_injected=bool(
+                token_injection_state.dig_cut_token_injected
+            ),
+            dig_cut_token_dim=int(DIG_CUT_TOKEN_DIM),
+            dig_cut_token_source=str(self.dig_cut_token_source),
+            dig_cut_tokens=self.dig_cut_tokens,
+            dig_cut_fallback_reason=str(self.dig_cut_fallback_reason),
+            dig_cut_token_in_prior_p10_p90=bool(
+                self.dig_cut_token_in_prior_p10_p90
+            ),
+            dig_depth_profile_token_injected=bool(
+                token_injection_state.dig_depth_profile_token_injected
+            ),
+            dig_depth_profile_token_dim=int(DIG_DEPTH_PROFILE_TOKEN_DIM),
+            dig_depth_profile_source=str(dig_depth_profile_source),
+            dig_depth_profile_required=bool(dig_depth_profile_required),
+            dig_depth_profile_token_source=str(
+                self.dig_depth_profile_token_source
+            ),
+            dig_depth_profile_tokens=self.dig_depth_profile_tokens,
+            dig_depth_profile_fallback_reason=str(
+                self.dig_depth_profile_fallback_reason
+            ),
+            return_target_token_injected=bool(
+                token_injection_state.return_target_token_injected
+            ),
+            return_target_token_dim=int(RETURN_TARGET_TOKEN_DIM),
+            return_target_token_source=str(self.return_target_token_source),
+            return_target_tokens=self.return_target_tokens,
+            return_target_fallback_reason=str(self.return_target_fallback_reason),
+            return_relocate_token_injected=bool(
+                token_injection_state.return_relocate_token_injected
+            ),
+            return_relocate_token_dim=int(RETURN_TARGET_TOKEN_DIM),
+            return_relocate_token_source=str(self.return_target_token_source),
+            return_relocate_tokens=self.return_relocate_tokens,
+            return_start_envelope_token_injected=bool(
+                token_injection_state.return_start_envelope_token_injected
+            ),
+            return_start_envelope_token_dim=int(RETURN_START_ENVELOPE_TOKEN_DIM),
+            return_start_envelope_token_source=str(
+                self.return_start_envelope_token_source
+            ),
+            return_start_envelope_tokens=self.return_start_envelope_tokens,
+        )
 
 
 def _zeros(size: int) -> np.ndarray:

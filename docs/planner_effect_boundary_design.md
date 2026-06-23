@@ -987,6 +987,19 @@ removed 5P runtime status. It is recorded as tail cleanup for an existing
 parked compatibility/report owner, not as permission to continue shrinking work
 into protective micro-slices.
 
+Phase 9.54 extends `PrimitiveTokenRuntimeState` in
+`testbed/planner/primitive_token_state.py` with `to_token_status(...)`. Live
+token-status projection now lives with the token runtime owner, while
+`PrimitivePlannerACTPolicy._token_status_for_debug_report()` remains the thin
+facade that supplies explicit external facts: cell-entry enablement,
+observation-injection flags, dig-depth-profile source, and dig-depth-profile
+required state. The owner method uses central token dimension constants and
+delegates copy/freeze behavior to `TokenStatus.from_inputs(...)`. This phase
+does not change token debug key names, token values, source/fallback fields,
+injected flags, dimensions, observation assembly provider order, token planning
+services/coordinators, coverage behavior, parked `cell_entry`, residual
+`pre_dig_align`, backend fail-fast behavior, or removed 5P runtime status.
+
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in
 `testbed/planner/primitive_return_handoff.py`. The service owns the former

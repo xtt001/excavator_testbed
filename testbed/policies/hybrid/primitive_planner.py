@@ -2013,46 +2013,14 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _token_status_for_debug_report(self) -> TokenStatus:
-        return TokenStatus.from_inputs(
+        return self._primitive_token_runtime_state().to_token_status(
             cell_entry_enabled=bool(self.cell_entry_enabled),
-            cell_entry_token_injected=bool(self._cell_entry_token_injected),
-            cell_entry_token_dim=int(CELL_ENTRY_TOKEN_DIM),
-            dig_cut_token_injected=bool(self._dig_cut_token_injected),
-            dig_cut_token_dim=int(DIG_CUT_TOKEN_DIM),
-            dig_cut_token_source=str(self._dig_cut_token_source),
-            dig_cut_tokens=self._dig_cut_tokens,
-            dig_cut_fallback_reason=str(self._dig_cut_fallback_reason),
-            dig_cut_token_in_prior_p10_p90=bool(
-                self._dig_cut_token_in_prior_p10_p90
+            token_injection_state=(
+                self._primitive_observation_injection_runtime_state()
+                .to_token_injection_state()
             ),
-            dig_depth_profile_token_injected=bool(
-                self._dig_depth_profile_token_injected
-            ),
-            dig_depth_profile_token_dim=int(DIG_DEPTH_PROFILE_TOKEN_DIM),
             dig_depth_profile_source=str(self.dig_depth_profile_source),
             dig_depth_profile_required=bool(self.dig_depth_profile_required),
-            dig_depth_profile_token_source=str(self._dig_depth_profile_token_source),
-            dig_depth_profile_tokens=self._dig_depth_profile_tokens,
-            dig_depth_profile_fallback_reason=str(
-                self._dig_depth_profile_fallback_reason
-            ),
-            return_target_token_injected=bool(self._return_target_token_injected),
-            return_target_token_dim=int(RETURN_TARGET_TOKEN_DIM),
-            return_target_token_source=str(self._return_target_token_source),
-            return_target_tokens=self._return_target_tokens,
-            return_target_fallback_reason=str(self._return_target_fallback_reason),
-            return_relocate_token_injected=bool(self._return_relocate_token_injected),
-            return_relocate_token_dim=int(RETURN_TARGET_TOKEN_DIM),
-            return_relocate_token_source=str(self._return_target_token_source),
-            return_relocate_tokens=self._return_relocate_tokens,
-            return_start_envelope_token_injected=bool(
-                self._return_start_envelope_token_injected
-            ),
-            return_start_envelope_token_dim=int(RETURN_START_ENVELOPE_TOKEN_DIM),
-            return_start_envelope_token_source=str(
-                self._return_start_envelope_token_source
-            ),
-            return_start_envelope_tokens=self._return_start_envelope_tokens,
         )
 
     def _debug_report_return_fields(self) -> dict[str, Any]:

@@ -70,7 +70,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_observation.py` | 176 | policy observation assembler plus mutable per-observation injected-flag runtime state owner |
 | `testbed/planner/primitive_cell_entry_state.py` | 81 | parked cell-entry compatibility/report runtime state owner, reset defaults, and debug-field projection |
 | `testbed/planner/primitive_pre_dig_align_state.py` | 46 | parked pre-dig-align compatibility/report runtime state owner and reset defaults |
-| `testbed/planner/primitive_token_state.py` | 70 | mutable dig/return token runtime state owner and reset defaults |
+| `testbed/planner/primitive_token_state.py` | 135 | mutable dig/return token runtime state owner, reset defaults, and live token-status projection |
 | `testbed/planner/primitive_return_state.py` | 56 | mutable non-token return handoff/runtime state owner and reset defaults |
 | `testbed/planner/primitive_cycle_state.py` | 75 | mutable live 4P cycle/progress runtime state owner and reset defaults |
 | `testbed/planner/primitive_scripted_bootstrap.py` | 116 | scripted bootstrap runtime state, readiness checks, timeout, and PD action service |
@@ -1090,6 +1090,19 @@ generation, token dimensions, planner/auditor algorithms, trace mutation,
 reset semantics, and public debug key/fallback values remain unchanged. This
 phase is accepted as a small cleanup of the parked compatibility/report owner,
 but it is not a template for continuing parked-path micro-slices.
+
+Current status note after Phase 9.54: live token-status projection is now owned
+by `PrimitiveTokenRuntimeState.to_token_status(...)` in
+`testbed/planner/primitive_token_state.py`.
+`PrimitivePlannerACTPolicy._token_status_for_debug_report()` remains a thin
+compatibility facade that supplies explicit external facts: cell-entry
+enablement, current observation-injection flags, dig-depth-profile source, and
+dig-depth-profile required state. The projection uses central token dimension
+constants and still relies on `TokenStatus.from_inputs(...)` for token array
+copy/freeze behavior. Token debug key names, token list values, source/fallback
+fields, injected flags, dimensions, observation provider order, token planning
+services/coordinators, `cell_entry`, `pre_dig_align`, backend fail-fast, and
+removed 5P runtime status remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

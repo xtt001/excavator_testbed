@@ -5701,3 +5701,92 @@ Each completed refactor round should append:
   parked-path report micro-slices would violate the maximum-effective bounded
   refactor rule. The next implementation dispatch must pivot to a larger
   current-code gap after a fresh inventory.
+
+### 2026-06-23 Phase 9.54 Move TokenStatus Projection Into Token Runtime State
+
+- Scope: extended `PrimitiveTokenRuntimeState` in
+  `testbed/planner/primitive_token_state.py` so the live token runtime owner
+  also owns `TokenStatus` projection for debug/report/future fact consumers.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 117]`, HEAD
+  before this round `e98e6df61cd2c813f0cf5d95eda161db144a139b`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- Added `PrimitiveTokenRuntimeState.to_token_status(...)`. The owner method
+  projects live token arrays, sources, fallback strings, and prior-bound state
+  into the existing `TokenStatus` contract.
+- The method consumes explicit external facts rather than reading policy state:
+  cell-entry enablement, immutable `PrimitiveTokenInjectionState`, dig-depth-
+  profile source, and dig-depth-profile required state.
+- `PrimitivePlannerACTPolicy._token_status_for_debug_report()` now delegates to
+  the token runtime state owner through the observation-injection runtime
+  projection. The policy method remains the public compatibility helper used by
+  `PrimitiveDebugReportInputs`.
+- Preserved behavior: `TokenStatus.to_debug_fields()` key names, token list
+  values, source/fallback fields, injected flags, dimensions, token array
+  copy/freeze behavior, observation provider order, observation-injection
+  reset/clear/apply behavior, token planning services/coordinators, coverage
+  behavior, parked cell-entry compatibility, residual pre-dig-align behavior,
+  backend fail-fast behavior, and removed 5P runtime status are unchanged.
+- Explicit non-goals: no token planning move, no observation assembly/provider
+  order change, no `TokenStatus` public schema change, no coverage/cell-entry/
+  pre-dig-align algorithm change, no backend selection change, no generic
+  blackboard or report service.
+- TDD red result from executor callback: the first test run failed with an
+  `ImportError` because the new test initially imported `CELL_ENTRY_TOKEN_DIM`
+  from the wrong module. After correcting the test to use the existing
+  `testbed.planner.cell_entry` source of truth, the focused red run failed as
+  expected with `AttributeError` because
+  `PrimitiveTokenRuntimeState.to_token_status` did not yet exist.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_token_state.py tests/test_primitive_token_status.py tests/test_primitive_debug_report.py`
+  returned `13 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_runtime_kernel.py`
+  returned `13 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_cut_tokens or dig_depth_profile or return_to_dig or start_envelope or semantic_boundary_events_drive_skill_sequence or cell_entry"`
+  returned `8 passed, 111 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_token_state.py tests/test_primitive_token_status.py tests/test_primitive_debug_report.py`
+  returned `13 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_runtime_kernel.py`
+  returned `13 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_cut_tokens or dig_depth_profile or return_to_dig or start_envelope or semantic_boundary_events_drive_skill_sequence or cell_entry"`
+  returned `8 passed, 111 deselected`; compileall for touched modules passed.
+- Post-documentation checks by the audit thread: both planner guard commands
+  and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It moved a live token/report/facts projection into the
+  focused token runtime owner and was not a tiny parked compatibility dict or
+  pass-through facade. No anemic service or generic blackboard was created.
+
+#### Three-iteration reflection after Phases 9.52-9.54
+
+- Progress toward target: the sequence mostly moved toward the interface
+  standard. Phase 9.52 moved coverage debug schema projection into an existing
+  report service; Phase 9.54 moved live `TokenStatus` projection into the token
+  runtime owner. Phase 9.53 was intentionally accepted only as tail cleanup for
+  an already extracted parked compatibility owner and should not define the
+  ongoing direction.
+- Maximum remaining gap: `PrimitivePlannerACTPolicy` still owns substantial
+  report/fact input snapshot glue and many port-builder facades. The
+  implementation is still best described as default legacy FSM backendified
+  with focused services and shared backend decision input/facts/factory;
+  BT/VLM/LLM backends remain unsupported fail-fast.
+- Direction correction: do not continue parked-path report micro-slices. The
+  next implementation slice should target a live boundary that reduces policy
+  shell ownership of report/facts/ports without changing public schemas or
+  algorithm semantics.
+- Next core bounded slice candidate: audit the remaining live return handoff
+  and execution/report section projections, then select one stable owner for a
+  live report/facts projection if the current code shows a coherent
+  responsibility. Do not dispatch another executor task until that candidate is
+  verified against real code, not momentum from the previous projection slices.
+- Over-protection / anemic-facade risk: small compatibility-owner projection
+  work is no longer acceptable by default. Future prompts must include the hard
+  constraint that protection is secondary and that the selected slice must be
+  the most effective bounded move toward the target architecture.

@@ -10,6 +10,8 @@ from testbed.data.operator_first_v2_2 import (
     RETURN_START_ENVELOPE_TOKEN_DIM,
     RETURN_TARGET_TOKEN_DIM,
 )
+from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
+from testbed.planner.primitive_observation import PrimitiveTokenInjectionState
 from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
@@ -148,3 +150,118 @@ def test_token_runtime_ports_and_clear_facade_use_state_owner() -> None:
     assert state.dig_cut_token_in_prior_p10_p90 is False
     assert state.dig_cut_tokens.shape == (DIG_CUT_TOKEN_DIM,)
     assert state.dig_depth_profile_tokens.shape == (DIG_DEPTH_PROFILE_TOKEN_DIM,)
+
+
+def test_token_runtime_state_projects_token_status_from_live_runtime_state() -> None:
+    state = PrimitiveTokenRuntimeState.fresh()
+    dig_cut_tokens = np.arange(DIG_CUT_TOKEN_DIM, dtype=np.float32) + 1.0
+    dig_depth_tokens = np.arange(DIG_DEPTH_PROFILE_TOKEN_DIM, dtype=np.float32) + 2.0
+    return_tokens = np.arange(RETURN_TARGET_TOKEN_DIM, dtype=np.float32) + 3.0
+    relocate_tokens = np.arange(RETURN_TARGET_TOKEN_DIM, dtype=np.float32) + 4.0
+    envelope_tokens = (
+        np.arange(RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.float32) + 5.0
+    )
+    state.dig_cut_tokens = dig_cut_tokens
+    state.dig_depth_profile_tokens = dig_depth_tokens
+    state.return_target_tokens = return_tokens
+    state.return_relocate_tokens = relocate_tokens
+    state.return_start_envelope_tokens = envelope_tokens
+    state.dig_cut_token_source = "operator_prior_coverage"
+    state.dig_cut_fallback_reason = "fallback"
+    state.dig_cut_token_in_prior_p10_p90 = True
+    state.dig_depth_profile_token_source = "depth_profile_prior"
+    state.dig_depth_profile_fallback_reason = "depth_fallback"
+    state.return_target_token_source = "return_target_corridor_1"
+    state.return_target_fallback_reason = "return_fallback"
+    state.return_start_envelope_token_source = "return_start_envelope"
+    injection_state = PrimitiveTokenInjectionState(
+        cell_entry_token_injected=True,
+        dig_cut_token_injected=True,
+        dig_depth_profile_token_injected=True,
+        return_target_token_injected=True,
+        return_relocate_token_injected=True,
+        return_start_envelope_token_injected=True,
+    )
+
+    status = state.to_token_status(
+        cell_entry_enabled=True,
+        token_injection_state=injection_state,
+        dig_depth_profile_source="prior_profile",
+        dig_depth_profile_required=True,
+    )
+
+    assert status.cell_entry_enabled is True
+    assert status.cell_entry.injected is True
+    assert status.cell_entry.dim == CELL_ENTRY_TOKEN_DIM
+    assert status.dig_cut.injected is True
+    assert status.dig_cut.dim == DIG_CUT_TOKEN_DIM
+    assert status.dig_cut.source == "operator_prior_coverage"
+    assert status.dig_cut.fallback_reason == "fallback"
+    assert status.dig_cut.in_prior_p10_p90 is True
+    assert status.dig_depth_profile_source == "prior_profile"
+    assert status.dig_depth_profile_required is True
+    assert status.dig_depth_profile.source == "depth_profile_prior"
+    assert status.dig_depth_profile.fallback_reason == "depth_fallback"
+    assert status.return_target.source == "return_target_corridor_1"
+    assert status.return_target.fallback_reason == "return_fallback"
+    assert status.return_relocate.source == "return_target_corridor_1"
+    assert status.return_start_envelope.source == "return_start_envelope"
+    np.testing.assert_allclose(status.dig_cut.tokens, dig_cut_tokens)
+    np.testing.assert_allclose(status.dig_depth_profile.tokens, dig_depth_tokens)
+    np.testing.assert_allclose(status.return_target.tokens, return_tokens)
+    np.testing.assert_allclose(status.return_relocate.tokens, relocate_tokens)
+    np.testing.assert_allclose(status.return_start_envelope.tokens, envelope_tokens)
+
+    dig_cut_tokens[0] = 99.0
+    assert float(status.dig_cut.tokens[0]) == 1.0
+    assert status.dig_cut.tokens.flags.writeable is False
+
+
+def test_policy_token_status_facade_delegates_to_token_runtime_state() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    state = policy._primitive_token_runtime_state()
+    state.dig_cut_tokens = np.arange(DIG_CUT_TOKEN_DIM, dtype=np.float32) + 10.0
+    state.dig_depth_profile_tokens = (
+        np.arange(DIG_DEPTH_PROFILE_TOKEN_DIM, dtype=np.float32) + 20.0
+    )
+    state.return_target_tokens = (
+        np.arange(RETURN_TARGET_TOKEN_DIM, dtype=np.float32) + 30.0
+    )
+    state.return_relocate_tokens = (
+        np.arange(RETURN_TARGET_TOKEN_DIM, dtype=np.float32) + 40.0
+    )
+    state.return_start_envelope_tokens = (
+        np.arange(RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.float32) + 50.0
+    )
+    state.dig_cut_token_source = "operator_prior_coverage"
+    state.dig_cut_fallback_reason = "fallback"
+    state.dig_cut_token_in_prior_p10_p90 = True
+    state.dig_depth_profile_token_source = "depth_profile_prior"
+    state.dig_depth_profile_fallback_reason = "depth_fallback"
+    state.return_target_token_source = "return_target_corridor_1"
+    state.return_target_fallback_reason = "return_fallback"
+    state.return_start_envelope_token_source = "return_start_envelope"
+    policy.cell_entry_enabled = True
+    policy.dig_depth_profile_source = "prior_profile"
+    policy.dig_depth_profile_required = True
+    policy._cell_entry_token_injected = True
+    policy._dig_cut_token_injected = True
+    policy._dig_depth_profile_token_injected = True
+    policy._return_target_token_injected = True
+    policy._return_relocate_token_injected = True
+    policy._return_start_envelope_token_injected = True
+
+    expected = state.to_token_status(
+        cell_entry_enabled=True,
+        token_injection_state=(
+            policy._primitive_observation_injection_runtime_state()
+            .to_token_injection_state()
+        ),
+        dig_depth_profile_source="prior_profile",
+        dig_depth_profile_required=True,
+    )
+
+    assert (
+        policy._token_status_for_debug_report().to_debug_fields()
+        == expected.to_debug_fields()
+    )
