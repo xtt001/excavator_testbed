@@ -7088,3 +7088,55 @@ Each completed refactor round should append:
   `pre_dig_align`, removed 5P runtime, and unsupported BT/VLM/LLM backends out
   of the target architecture. If the best candidate is only a small facade or
   compatibility wrapper cleanup, dispatch audit-only and do not implement.
+
+### 2026-06-23 Phase 9.70 Audit Remaining Primitive Policy Boundaries
+
+- Scope: read-only inventory of remaining `PrimitivePlannerACTPolicy` port
+  builders, direct helpers, report-input assemblers, and parked compatibility
+  paths after Phases 9.67-9.69. No planner code was changed.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 133]`, HEAD
+  `c50eda72545b6a07a033df6c60addaaffe647091`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, or remote write was
+  used by the executor.
+- TDD red: not applicable. This was an audit-only round with no code changes.
+- Commands reported by executor: target-lock checks; `AGENTS.md`; repo skill
+  `excavator-planner-safe-refactor`; recent rollout log; source-of-truth doc
+  searches; focused `rg` over remaining private methods/port builders; several
+  `nl -ba ... | sed ...` read-only inspections across
+  `testbed/policies/hybrid/primitive_planner.py`, focused planner modules, and
+  docs; `git diff --check` passed.
+- Inventory result: `_runtime_kernel_ports()`, reset lifecycle ports, action
+  dispatch ports, decision/backend/facts ports, execution driver ports, token
+  runtime/planning ports, and coverage selection/effect ports are classified
+  as live composition glue or explicit external fact/service ports over
+  existing focused owners. Chasing individual callbacks in those builders would
+  risk small cleanup without reducing a stable responsibility boundary.
+- Report-only result: `_debug_report_coverage_fields()`,
+  `_rollout_summary_inputs()`, and `_planner_trace_inputs()` are live
+  report/trace snapshot assembly over already focused status/report builders.
+  Remaining moves here should be grouped only if they form a coherent
+  report-input boundary with real policy-shell deletion.
+- Parked compatibility result: `_debug_report_pre_dig_align_fields()` is
+  parked pre-dig-align compatibility reporting; `_cell_entry_tokens_for_obs()`
+  and `_complete_cell_entry_dig()` are parked cell-entry compatibility/legacy
+  diagnostic algorithms. These paths must not be promoted into the target
+  backend/runtime/token architecture without new evidence and explicit
+  approval.
+- Mixed live/residual result: `_restart_pre_dig_align()`,
+  `_try_replan_pre_dig_align_handoff()`, `_restart_dig_with_new_cut()`,
+  `_stop_after_failed_dig()`, and `_restart_after_failed_dig()` remain direct
+  policy behavior. They mix live failed-dig restart/stop handling,
+  coverage/token invalidation, terminal-stop event recording, return-event
+  clearing, and residual pre-dig-align retry paths. This is the most plausible
+  next implementation boundary only if it is framed as failed-dig/restart
+  recovery with pre-dig-align kept explicitly parked, not promoted.
+- Behavior impact: none. Audit only.
+- Documentation/audit note: the executor did not edit docs by design. The
+  audit thread recorded the inventory in the current-code plan and this
+  execution record.
+- Hard constraint confirmation: this audit treats protection as a constraint,
+  not the objective. It exists because the next implementation must not
+  degrade into tiny facade cleanup, an anemic service, a pass-through wrapper,
+  or a generic blackboard.

@@ -1347,6 +1347,40 @@ reason strings, thresholds, token schema, debug/summary/trace schema, backend
 support, `pre_dig_align` algorithms, `cell_entry`, and removed 5P runtime
 status remain unchanged.
 
+Current status note after Phase 9.70 audit-only remaining-policy inventory:
+`PrimitivePlannerACTPolicy` is still a large file because it is now serving as
+the public adapter, composition root, compatibility-facade host, and residual
+parking boundary rather than only as the old algorithm owner. The read-only
+inventory after Phase 9.69 classifies most remaining port builders as live
+composition glue over focused services and explicit external facts:
+runtime-kernel ports, reset lifecycle ports, action dispatch ports, backend
+decision/facts ports, execution-driver ports, token runtime/planning ports, and
+coverage selection/effect runtime ports. These should not be migrated by
+chasing individual callback removal unless a broader stable owner boundary is
+being reduced.
+
+The same inventory classifies `_debug_report_coverage_fields()`,
+`_rollout_summary_inputs()`, and `_planner_trace_inputs()` as report-only
+snapshot assembly over already focused status/report builders. Moving only a
+few remaining fields from these helpers would be a protective micro-slice
+unless it is grouped into a coherent report-input boundary with meaningful
+policy-shell deletion. `_debug_report_pre_dig_align_fields()` is parked
+compatibility reporting over the pre-dig-align compatibility state owner.
+`_cell_entry_tokens_for_obs()` and `_complete_cell_entry_dig()` remain parked
+cell-entry compatibility/legacy diagnostic algorithms and must not be promoted
+into the target token/runtime architecture without new evidence and explicit
+approval.
+
+The highest-risk remaining policy region is the restart/recovery cluster:
+`_restart_pre_dig_align()`, `_try_replan_pre_dig_align_handoff()`,
+`_restart_dig_with_new_cut()`, `_stop_after_failed_dig()`, and
+`_restart_after_failed_dig()`. This cluster mixes live failed-dig recovery,
+coverage/token invalidation, terminal-stop diagnostics, return state clearing,
+and parked pre-dig-align retry paths. It should only be moved as a bounded
+responsibility chain that keeps `pre_dig_align` explicitly parked; extracting
+only a thin wrapper around old private methods would violate the hard
+constraint.
+
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective
 bounded move toward the interface standard, not merely the safest smallest
