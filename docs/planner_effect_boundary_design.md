@@ -345,6 +345,19 @@ shallow-copy behavior, candidate scores, decision trace, terminal-stop fields,
 coverage selection/effect algorithms, residual `pre_dig_align`, parked
 `cell_entry`, backend fail-fast behavior, or removed 5P runtime status.
 
+Phase 9.79 narrows parked pre-dig-align report projection without promoting
+pre-dig-align into the mainline backend/runtime architecture. The existing
+`PrimitivePreDigAlignCompatibilityRuntimeState` now projects
+`PrimitivePreDigAlignReportStatus` from its parked mutable state and explicit
+`PrimitivePreDigAlignReportConfig` facts. `PrimitivePlannerACTPolicy` keeps thin
+report config/status facades, `debug_state()` gets the same public pre-dig
+debug keys from `PrimitivePreDigAlignReportStatus.debug_fields()`, and
+`PrimitiveRolloutSummaryInputs` carries the same status object for the pre-dig
+summary keys. This phase does not change pre-dig readiness, target, timeout,
+surface-guard, action, replan, or handoff algorithms, and does not change branch
+order, reason strings, report schemas, `cell_entry`, backend fail-fast behavior,
+or removed 5P runtime status.
+
 `PrimitiveRolloutSummaryBuilder` now owns public `rollout_summary()` dict
 assembly: summary key layout, bool-like `int(...)` projections, `None` to
 `NaN` fallback fields, compact coverage/return/pre-dig/cell-entry
@@ -1116,6 +1129,14 @@ start-envelope, entry-close, entry-intent, surface-guard behavior,
 debug/summary/trace public schema, `cell_entry`, backend fail-fast behavior, or
 removed 5P runtime status.
 
+Phase 9.79 extends that parked owner with
+`PrimitivePreDigAlignReportConfig` and `PrimitivePreDigAlignReportStatus`. The
+public debug and rollout-summary projection for pre-dig-align now lives with the
+parked compatibility owner rather than as a policy-owned report dictionary and
+summary field cluster. The pre-dig-align action/readiness/replan implementation
+remains residual compatibility/action material in its existing service/policy
+boundary.
+
 Phase 9.52 extends `CoverageReportService` in
 `testbed/planner/primitive_coverage_reports.py` with
 `CoverageDebugReportInputs` and `debug_fields(...)`. Coverage debug-field
@@ -1709,6 +1730,13 @@ projection now starts from `CoverageRuntimeState` plus explicit coverage report
 config and selection-service facts. This removes the hand-built coverage report
 snapshot cluster from the large policy shell while preserving report schema,
 fallback values, list-copy behavior, and coverage runtime algorithms.
+
+Phase 9.79 narrows the parked pre-dig-align report projection boundary.
+Pre-dig-align public debug and summary values now project through
+`PrimitivePreDigAlignReportStatus` from the compatibility state owner plus
+explicit report config facts. This keeps pre-dig-align parked as compatibility
+report/action material and avoids turning it into a backend fact source,
+behavior-tree node, token contract, or mainline runtime responsibility.
 
 ### Stage 4: Expand Effect Families From Evidence
 

@@ -5,6 +5,9 @@ from types import MethodType
 from typing import Any
 
 from testbed.planner.primitive_coverage_reports import CoverageSummaryReportStatus
+from testbed.planner.primitive_pre_dig_align_state import (
+    PrimitivePreDigAlignReportStatus,
+)
 from testbed.planner.primitive_rollout_summary import (
     PrimitiveRolloutSummaryBuilder,
     PrimitiveRolloutSummaryInputs,
@@ -40,6 +43,33 @@ def _inputs(**overrides: Any) -> PrimitiveRolloutSummaryInputs:
         terminal_stop_requested=True,
         terminal_stop_reason="dig_area_depleted",
     )
+    pre_dig_align = PrimitivePreDigAlignReportStatus(
+        enabled=False,
+        first_dig_only=True,
+        replan_after_failed_dig=False,
+        entry_intent_controlled_dims=None,
+        surface_guard_enabled=True,
+        surface_depth_m=float("nan"),
+        surface_guard_triggered=False,
+        surface_guard_count=2,
+        active_for_next_dig=False,
+        step_count=1,
+        hold_count=2,
+        timeout_count=3,
+        completed_count=4,
+        replan_count=5,
+        target_qpos=[0.0, 0.0, 0.0, 0.0],
+        error=[0.0, 0.0, 0.0, 0.0],
+        entry_error_m=float("nan"),
+        start_envelope_ready=False,
+        first_dig_entry_close_handoff=False,
+        entry_close_handoff_ready=False,
+        entry_intent_handoff_enabled=False,
+        entry_intent_handoff_ready=False,
+        first_dig_entry_close_handoff_qvel_abs_max=float("nan"),
+        controlled_dims=[1, 1, 1, 1],
+        bucket_target_qpos=float("nan"),
+    )
     values: dict[str, Any] = {
         "transition_source": "v2_2_primitive_return_policy",
         "transition_policy_mode": "primitive_return_policy",
@@ -69,14 +99,7 @@ def _inputs(**overrides: Any) -> PrimitiveRolloutSummaryInputs:
         "dig_failed_replan_next_skill": "dig",
         "coverage": coverage,
         "scripted_bootstrap_timeout_count": 8,
-        "pre_dig_align_enabled": False,
-        "pre_dig_align_first_dig_only": True,
-        "pre_dig_align_replan_after_failed_dig": False,
-        "pre_dig_align_surface_guard_enabled": True,
-        "pre_dig_align_surface_guard_count": 2,
-        "pre_dig_align_timeout_count": 3,
-        "pre_dig_align_completed_count": 4,
-        "pre_dig_align_replan_count": 5,
+        "pre_dig_align": pre_dig_align,
         "dig_bad_replan_count": 6,
         "dig_exit_guard_replan_count": 7,
     }

@@ -98,7 +98,8 @@ Current maturity:
   projection**
 - pre-dig-align compatibility runtime state owner: **achieved for parked
   pre-dig-align counters, cached target/error arrays, readiness booleans,
-  timeout reason, and surface-guard report storage**
+  timeout reason, surface-guard report storage, and public debug/summary report
+  projection**
 - failed-dig/restart recovery service boundary: **achieved for the direct
   restart/recovery helpers through `PrimitiveDigRecoveryService`, while
   keeping `pre_dig_align` explicitly parked/residual and algorithm/action
@@ -574,9 +575,11 @@ Current boundary:
 - `PrimitivePreDigAlignCompatibilityRuntimeState` owns parked pre-dig-align
   compatibility/report storage: counters, cached target/error arrays,
   readiness booleans, timeout handoff reason, surface depth, and surface-guard
-  count. The policy keeps the old `_pre_dig_align_*` names as property-backed
-  compatibility facades over that owner while the parked algorithms remain in
-  the policy shell.
+  count. It also projects parked pre-dig-align debug and rollout-summary report
+  fields through `PrimitivePreDigAlignReportStatus` from explicit
+  `PrimitivePreDigAlignReportConfig` facts. The policy keeps the old
+  `_pre_dig_align_*` names as property-backed compatibility facades over that
+  owner while the parked algorithms remain in the policy shell.
 - Skill lifecycle, reset lifecycle, and token runtime services own sequencing,
   but still write through policy compatibility facades for old private names.
 
@@ -753,6 +756,10 @@ Current boundary:
   projection through `PrimitiveTokenReportStatus`; debug pending/dig-cut fields,
   rollout-summary pending/dig-cut fields, and planner-trace dig-cut metadata
   reuse that status object.
+- `PrimitivePreDigAlignCompatibilityRuntimeState` owns parked pre-dig-align
+  debug and rollout-summary report projection through
+  `PrimitivePreDigAlignReportStatus`; this is report parking only and does not
+  make `pre_dig_align` a mainline backend/runtime capability.
 - Policy still prepares section snapshots and compatibility fields.
 
 Gap:
@@ -760,7 +767,9 @@ Gap:
 - This layer is close to target.
 - Section snapshot providers may be further narrowed later. Coverage debug,
   trace, and summary coverage snapshot projection are outside the large policy
-  class; other report input assembly still has policy-side compatibility glue.
+  class, and parked pre-dig-align debug/summary projection is owned by the
+  pre-dig compatibility state owner. Other report input assembly still has
+  policy-side compatibility glue.
 
 Standard:
 
@@ -845,7 +854,8 @@ The next code work should follow this order:
    - Parked cell-entry compatibility/report mutable state is
      **done in Phase 9.50**.
    - Parked pre-dig-align compatibility/report mutable state is
-     **done in Phase 9.51**.
+     **done in Phase 9.51**; its public debug/summary report projection is
+     **done in Phase 9.79** as compatibility parking, not backend promotion.
    - Inspect the remaining policy-owned mutable fields before choosing another
      state-owner slice; avoid extracting a generic blackboard.
    - Avoid generic blackboards.

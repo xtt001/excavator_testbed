@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from testbed.planner.primitive_coverage_reports import CoverageSummaryReportStatus
+from testbed.planner.primitive_pre_dig_align_state import (
+    PrimitivePreDigAlignReportStatus,
+)
 from testbed.planner.primitive_token_state import PrimitiveTokenReportStatus
 
 
@@ -43,14 +46,7 @@ class PrimitiveRolloutSummaryInputs:
     dig_failed_replan_next_skill: str
     coverage: CoverageSummaryReportStatus
     scripted_bootstrap_timeout_count: int
-    pre_dig_align_enabled: bool
-    pre_dig_align_first_dig_only: bool
-    pre_dig_align_replan_after_failed_dig: bool
-    pre_dig_align_surface_guard_enabled: bool
-    pre_dig_align_surface_guard_count: int
-    pre_dig_align_timeout_count: int
-    pre_dig_align_completed_count: int
-    pre_dig_align_replan_count: int
+    pre_dig_align: PrimitivePreDigAlignReportStatus
     dig_bad_replan_count: int
     dig_exit_guard_replan_count: int
 
@@ -160,26 +156,26 @@ class PrimitiveRolloutSummaryBuilder:
             "scripted_bootstrap_timeout_count": int(
                 inputs.scripted_bootstrap_timeout_count
             ),
-            "pre_dig_align_enabled": int(inputs.pre_dig_align_enabled),
+            "pre_dig_align_enabled": int(inputs.pre_dig_align.enabled),
             "pre_dig_align_first_dig_only": int(
-                inputs.pre_dig_align_first_dig_only
+                inputs.pre_dig_align.first_dig_only
             ),
             "pre_dig_align_replan_after_failed_dig": int(
-                inputs.pre_dig_align_replan_after_failed_dig
+                inputs.pre_dig_align.replan_after_failed_dig
             ),
             "pre_dig_align_surface_guard_enabled": int(
-                inputs.pre_dig_align_surface_guard_enabled
+                inputs.pre_dig_align.surface_guard_enabled
             ),
             "pre_dig_align_surface_guard_count": int(
-                inputs.pre_dig_align_surface_guard_count
+                inputs.pre_dig_align.surface_guard_count
             ),
             "pre_dig_align_timeout_count": int(
-                inputs.pre_dig_align_timeout_count
+                inputs.pre_dig_align.timeout_count
             ),
             "pre_dig_align_completed_count": int(
-                inputs.pre_dig_align_completed_count
+                inputs.pre_dig_align.completed_count
             ),
-            "pre_dig_align_replan_count": int(inputs.pre_dig_align_replan_count),
+            "pre_dig_align_replan_count": int(inputs.pre_dig_align.replan_count),
             "dig_bad_replan_count": int(inputs.dig_bad_replan_count),
             "dig_exit_guard_replan_count": int(
                 inputs.dig_exit_guard_replan_count

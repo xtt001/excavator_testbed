@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4795 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4750 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -71,7 +71,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_execution_state.py` | 49 | mutable execution lifecycle state owner for active skill, switch reason, previous action, and latest debug state |
 | `testbed/planner/primitive_observation.py` | 176 | policy observation assembler plus mutable per-observation injected-flag runtime state owner |
 | `testbed/planner/primitive_cell_entry_state.py` | 81 | parked cell-entry compatibility/report runtime state owner, reset defaults, and debug-field projection |
-| `testbed/planner/primitive_pre_dig_align_state.py` | 46 | parked pre-dig-align compatibility/report runtime state owner and reset defaults |
+| `testbed/planner/primitive_pre_dig_align_state.py` | 202 | parked pre-dig-align compatibility/report runtime state owner, reset defaults, and debug/summary report projection |
 | `testbed/planner/primitive_token_state.py` | 190 | mutable dig/return token runtime state owner, reset defaults, live token-status projection, and token report metadata projection |
 | `testbed/planner/primitive_token_runtime.py` | 255 | dig/return token runtime sequencing over focused token and coverage state owners plus explicit external config/algorithm ports |
 | `testbed/planner/primitive_dig_token_planning.py` | 341 | active dig token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm/observation ports |
@@ -1087,6 +1087,20 @@ The parked readiness, timeout, target, surface-guard, and PD action algorithms
 remain in the policy shell; `pre_dig_align` remains residual parking/action
 material rather than a mainline backend capability.
 
+Current status note after Phase 9.79: parked pre-dig-align debug and rollout-
+summary report projection now lives with the parked compatibility state owner.
+`PrimitivePreDigAlignReportConfig` carries explicit report config facts, and
+`PrimitivePreDigAlignCompatibilityRuntimeState.to_report_status(...)` returns
+`PrimitivePreDigAlignReportStatus` for the existing public debug fields and
+rollout-summary pre-dig fields. `PrimitivePlannerACTPolicy` keeps thin
+`_pre_dig_align_report_config()` and `_pre_dig_align_report_status()` helpers;
+`_debug_report_pre_dig_align_fields()` delegates to
+`PrimitivePreDigAlignReportStatus.debug_fields()`, and
+`PrimitiveRolloutSummaryInputs` now carries the same status object for the
+summary keys. This is compatibility/report parking only: readiness, target,
+timeout, surface-guard, action, replan, and handoff algorithms remain unchanged
+and parked outside the mainline backend/runtime architecture.
+
 Current status note after Phase 9.52: coverage debug-field public schema
 assembly is now owned by `CoverageReportService.debug_fields(...)` in
 `testbed/planner/primitive_coverage_reports.py`. `CoverageDebugReportInputs`
@@ -1550,6 +1564,14 @@ hand-assembles those coverage snapshot dictionaries/lists for the public reports
 it only supplies the focused state owner and explicit config/service facts for
 the coverage subset. This narrows report snapshot assembly without introducing a
 generic report blackboard or planner-self port.
+
+Current status note after Phase 9.79: the parked pre-dig-align report projection
+cluster moved as one compatibility/report boundary. The large policy shell no
+longer owns the public pre-dig debug dict or the pre-dig rollout-summary field
+projection directly; it supplies explicit config facts and the focused parked
+state owner to `PrimitivePreDigAlignReportStatus`. This narrows report assembly
+without promoting residual `pre_dig_align` into backend facts, behavior-tree
+nodes, token contracts, or mainline runtime architecture.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

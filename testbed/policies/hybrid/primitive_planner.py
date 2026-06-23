@@ -70,6 +70,8 @@ from testbed.planner.primitive_cell_entry_state import (
 )
 from testbed.planner.primitive_pre_dig_align_state import (
     PrimitivePreDigAlignCompatibilityRuntimeState,
+    PrimitivePreDigAlignReportConfig,
+    PrimitivePreDigAlignReportStatus,
 )
 from testbed.planner.primitive_coverage import (
     CoverageCandidateBuilder,
@@ -796,6 +798,39 @@ class PrimitivePlannerACTPolicy(Policy):
             )
             self.__dict__["_pre_dig_align_state"] = state
         return state
+
+    def _pre_dig_align_report_config(self) -> PrimitivePreDigAlignReportConfig:
+        return PrimitivePreDigAlignReportConfig(
+            enabled=bool(self.pre_dig_align_enabled),
+            first_dig_only=bool(self.pre_dig_align_first_dig_only),
+            replan_after_failed_dig=bool(
+                self.pre_dig_align_replan_after_failed_dig
+            ),
+            entry_intent_controlled_dims=(
+                self.pre_dig_align_entry_intent_controlled_dims
+            ),
+            surface_guard_enabled=bool(self.pre_dig_align_surface_guard_enabled),
+            active_for_next_dig=bool(self._should_pre_dig_align_before_dig()),
+            first_dig_entry_close_handoff=bool(
+                self.pre_dig_align_first_dig_entry_close_handoff
+            ),
+            entry_intent_handoff_enabled=bool(
+                self.pre_dig_align_entry_intent_handoff_enabled
+            ),
+            first_dig_entry_close_handoff_qvel_abs_max=(
+                self.pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max
+            ),
+            controlled_dims=self.pre_dig_align_controlled_dims,
+            bucket_target_qpos=self.pre_dig_align_bucket_target_qpos,
+        )
+
+    def _pre_dig_align_report_status(
+        self,
+    ) -> PrimitivePreDigAlignReportStatus:
+        return (
+            self._primitive_pre_dig_align_compatibility_runtime_state()
+            .to_report_status(self._pre_dig_align_report_config())
+        )
 
     @property
     def _pre_dig_align_step_count(self) -> int:
@@ -2052,75 +2087,7 @@ class PrimitivePlannerACTPolicy(Policy):
         return self._cycle_report_status().dig_progress_debug_fields()
 
     def _debug_report_pre_dig_align_fields(self) -> dict[str, Any]:
-        return {
-            "pre_dig_align_enabled": bool(self.pre_dig_align_enabled),
-            "pre_dig_align_first_dig_only": bool(
-                self.pre_dig_align_first_dig_only
-            ),
-            "pre_dig_align_replan_after_failed_dig": bool(
-                self.pre_dig_align_replan_after_failed_dig
-            ),
-            "pre_dig_align_entry_intent_controlled_dims": (
-                None
-                if self.pre_dig_align_entry_intent_controlled_dims is None
-                else [
-                    int(value)
-                    for value in self.pre_dig_align_entry_intent_controlled_dims.tolist()
-                ]
-            ),
-            "pre_dig_align_surface_guard_enabled": bool(
-                self.pre_dig_align_surface_guard_enabled
-            ),
-            "pre_dig_align_surface_depth_m": float(
-                self._pre_dig_align_surface_depth_m
-            ),
-            "pre_dig_align_surface_guard_triggered": bool(
-                self._pre_dig_align_surface_guard_triggered
-            ),
-            "pre_dig_align_surface_guard_count": int(
-                self._pre_dig_align_surface_guard_count
-            ),
-            "pre_dig_align_active_for_next_dig": bool(
-                self._should_pre_dig_align_before_dig()
-            ),
-            "pre_dig_align_step_count": int(self._pre_dig_align_step_count),
-            "pre_dig_align_hold_count": int(self._pre_dig_align_hold_count),
-            "pre_dig_align_timeout_count": int(self._pre_dig_align_timeout_count),
-            "pre_dig_align_completed_count": int(self._pre_dig_align_completed_count),
-            "pre_dig_align_replan_count": int(self._pre_dig_align_replan_count),
-            "pre_dig_align_target_qpos": self._pre_dig_align_target_qpos.astype(float).tolist(),
-            "pre_dig_align_error": self._pre_dig_align_error.astype(float).tolist(),
-            "pre_dig_align_entry_error_m": float(self._pre_dig_align_entry_error_m),
-            "pre_dig_align_start_envelope_ready": bool(
-                self._pre_dig_align_start_envelope_ready
-            ),
-            "pre_dig_align_first_dig_entry_close_handoff": bool(
-                self.pre_dig_align_first_dig_entry_close_handoff
-            ),
-            "pre_dig_align_entry_close_handoff_ready": bool(
-                self._pre_dig_align_entry_close_handoff_ready
-            ),
-            "pre_dig_align_entry_intent_handoff_enabled": bool(
-                self.pre_dig_align_entry_intent_handoff_enabled
-            ),
-            "pre_dig_align_entry_intent_handoff_ready": bool(
-                self._pre_dig_align_entry_intent_handoff_ready
-            ),
-            "pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max": float(
-                np.nan
-                if self.pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max
-                is None
-                else self.pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max
-            ),
-            "pre_dig_align_controlled_dims": [
-                int(value) for value in self.pre_dig_align_controlled_dims.tolist()
-            ],
-            "pre_dig_align_bucket_target_qpos": float(
-                np.nan
-                if self.pre_dig_align_bucket_target_qpos is None
-                else self.pre_dig_align_bucket_target_qpos
-            ),
-        }
+        return self._pre_dig_align_report_status().debug_fields()
 
     def rollout_summary(self) -> dict[str, float | int | str | list[str]]:
         return self._runtime_kernel().rollout_summary()
@@ -2138,6 +2105,7 @@ class PrimitivePlannerACTPolicy(Policy):
             self._coverage_runtime_state(),
             config=self._coverage_report_config(),
         )
+        pre_dig_align_status = self._pre_dig_align_report_status()
         return PrimitiveRolloutSummaryInputs(
             transition_source=TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
             transition_policy_mode=TRANSITION_POLICY_MODE_PRIMITIVE,
@@ -2185,20 +2153,7 @@ class PrimitivePlannerACTPolicy(Policy):
             scripted_bootstrap_timeout_count=(
                 scripted_bootstrap_status.timeout_count
             ),
-            pre_dig_align_enabled=bool(self.pre_dig_align_enabled),
-            pre_dig_align_first_dig_only=bool(self.pre_dig_align_first_dig_only),
-            pre_dig_align_replan_after_failed_dig=bool(
-                self.pre_dig_align_replan_after_failed_dig
-            ),
-            pre_dig_align_surface_guard_enabled=bool(
-                self.pre_dig_align_surface_guard_enabled
-            ),
-            pre_dig_align_surface_guard_count=int(
-                self._pre_dig_align_surface_guard_count
-            ),
-            pre_dig_align_timeout_count=int(self._pre_dig_align_timeout_count),
-            pre_dig_align_completed_count=int(self._pre_dig_align_completed_count),
-            pre_dig_align_replan_count=int(self._pre_dig_align_replan_count),
+            pre_dig_align=pre_dig_align_status,
             dig_bad_replan_count=cycle_status.dig_bad_replan_count,
             dig_exit_guard_replan_count=(
                 cycle_status.dig_exit_guard_replan_count

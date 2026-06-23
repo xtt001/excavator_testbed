@@ -7804,3 +7804,78 @@ Each completed refactor round should append:
   generic blackboard. Current maturity remains default legacy FSM backendified
   with focused services / shared backend decision input/facts/factory; BT/VLM/
   LLM backends remain unsupported fail-fast.
+
+### 2026-06-23 Phase 9.79 Move Parked Pre-Dig-Align Report Projection
+
+- Scope: moved parked `pre_dig_align` debug and rollout-summary report
+  projection into the existing pre-dig-align compatibility state owner. This is
+  compatibility/report parking only, not a pre-dig action/readiness or backend
+  architecture change.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 142]`, HEAD
+  `1abbc279af033db3a519be28975e5c043bb0f4eb`, dirty status clean at initial
+  lock check. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- Added `PrimitivePreDigAlignReportConfig` and
+  `PrimitivePreDigAlignReportStatus` in
+  `testbed/planner/primitive_pre_dig_align_state.py`.
+- Added
+  `PrimitivePreDigAlignCompatibilityRuntimeState.to_report_status(config)` to
+  project parked mutable state plus explicit config facts into the existing
+  `pre_dig_align` public debug and rollout-summary report values.
+- `PrimitivePlannerACTPolicy` now has thin `_pre_dig_align_report_config()` and
+  `_pre_dig_align_report_status()` helpers. `_debug_report_pre_dig_align_fields()`
+  delegates to `PrimitivePreDigAlignReportStatus.debug_fields()`.
+- `PrimitiveRolloutSummaryInputs` now carries
+  `pre_dig_align: PrimitivePreDigAlignReportStatus`, and
+  `PrimitiveRolloutSummaryBuilder` projects the same public pre-dig summary keys
+  from that status object.
+- Line-count impact: `testbed/policies/hybrid/primitive_planner.py` dropped from
+  4795 to 4750 lines. `testbed/planner/primitive_pre_dig_align_state.py` grew
+  from 46 to 202 lines as the parked compatibility owner absorbed the report
+  projection boundary. `testbed/planner/primitive_rollout_summary.py` is 194
+  lines after consuming the status object.
+- Preserved behavior: public `pre_dig_align` debug/summary key names and
+  projections are unchanged. Pre-dig-align readiness, target, timeout,
+  surface-guard, action, replan, and handoff algorithms are unchanged. Branch
+  order, reason strings, token schema, debug/summary/trace schemas, reset
+  timing, backend fail-fast behavior, `cell_entry`, coverage/token/return/cycle/
+  scripted-bootstrap/execution owners, and removed 5P runtime status remain
+  unchanged.
+- Explicit non-goals: no `pre_dig_align` backend promotion, no behavior-tree
+  node, no token contract change, no action/readiness algorithm move, no
+  `cell_entry` change, no generic report snapshot object, no planner-self port,
+  and no broad config bag.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_pre_dig_align_state.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py`
+  failed at collection with `ImportError: cannot import name
+  'PrimitivePreDigAlignReportConfig' / 'PrimitivePreDigAlignReportStatus' from
+  testbed.planner.primitive_pre_dig_align_state`, proving the requested parked
+  report/config boundary did not exist yet.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_pre_dig_align_state.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py`
+  returned `14 passed`;
+  `python -m pytest -q tests/test_primitive_dig_recovery.py tests/test_primitive_action_dispatch.py tests/test_primitive_skill_lifecycle.py`
+  returned `23 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "pre_dig_align or semantic_boundary_events_drive_skill_sequence or return_to_dig or coverage_decision_trace or cell_entry"`
+  returned `19 passed, 100 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_pre_dig_align_state.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py`
+  returned `14 passed`;
+  `python -m pytest -q tests/test_primitive_dig_recovery.py tests/test_primitive_action_dispatch.py tests/test_primitive_skill_lifecycle.py`
+  returned `23 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "pre_dig_align or semantic_boundary_events_drive_skill_sequence or return_to_dig or coverage_decision_trace or cell_entry"`
+  returned `19 passed, 100 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was a bounded parked `pre_dig_align` report
+  compatibility projection move, not a tiny facade, pass-through wrapper,
+  anemic service, planner-self port, broad config bag, generic report snapshot,
+  or generic blackboard. Current maturity remains default legacy FSM
+  backendified with focused services / shared backend decision input/facts/
+  factory; BT/VLM/LLM backends remain unsupported fail-fast.
