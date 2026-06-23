@@ -4,7 +4,11 @@ from copy import deepcopy
 
 import numpy as np
 
-from testbed.planner.primitive_coverage_updates import CoverageUpdateService
+from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
+from testbed.planner.primitive_coverage_updates import (
+    CoverageEffectFactService,
+    CoverageUpdateService,
+)
 from tests.test_agx_primitives_v2_2 import (
     _RecordingPolicy,
     _coverage_obs,
@@ -30,6 +34,26 @@ def _assert_corridor_update_equal(actual, expected) -> None:
     )
 
 
+def _coverage_effect_fact_service(policy) -> CoverageEffectFactService:
+    return CoverageEffectFactService(
+        state=policy._coverage_runtime_state(),
+        cycle_state=policy._primitive_cycle_runtime_state(),
+        observation_facts=(
+            lambda obs: PrimitiveObservationFacts.from_obs(
+                obs,
+                action_dim=int(policy.action_dim),
+            )
+        ),
+        remaining_depth=(
+            lambda obs, corridor: policy._coverage_remaining_depth_for_corridor(
+                obs,
+                corridor,
+            )
+        ),
+        corridor_attempt_limit=policy._coverage_corridor_attempt_limit,
+    )
+
+
 def test_coverage_completion_update_service_matches_planner_facade() -> None:
     policy = _coverage_planner_policy(
         dig_policy=_RecordingPolicy(0),
@@ -48,7 +72,7 @@ def test_coverage_completion_update_service_matches_planner_facade() -> None:
         policy._coverage_update_config(),
     ).complete_dump(
         service_corridor,
-        policy._coverage_completion_facts(
+        _coverage_effect_fact_service(policy).completion_facts(
             obs,
             service_corridor,
             reason="unit_test_low_productivity",
@@ -95,7 +119,7 @@ def test_coverage_rejection_update_service_matches_planner_facade() -> None:
         policy._coverage_update_config(),
     ).reject_corridor(
         service_corridor,
-        policy._coverage_rejection_facts(
+        _coverage_effect_fact_service(policy).rejection_facts(
             obs,
             service_corridor,
             reason="unit_test_reject",

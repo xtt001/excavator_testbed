@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4640 | public primitive policy adapter plus compatibility facades over focused planner services; cell-entry private runtime field facades removed |
+| `testbed/policies/hybrid/primitive_planner.py` | 3745 | public primitive policy adapter plus compatibility facades over focused planner services; cell-entry, pre-dig, and coverage effect fact private runtime/test facades removed |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_boundary_event.py` | 53 | live boundary-event tick source over focused execution state, boundary detector, and typed observation facts |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
@@ -1651,6 +1651,16 @@ live policy callback bag while preserving coverage update/runtime service
 behavior, terminal-stop reason strings, decision-event payload schema, event
 ordering, token/return/direct-handoff/recovery semantics, parked
 `pre_dig_align`, parked `cell_entry`, and backend support status.
+
+Current status note after coverage effect fact private facade cleanup:
+`PrimitivePlannerACTPolicy` no longer exposes the old
+`_coverage_completion_facts`, `_coverage_rejection_facts`,
+`_coverage_reopen_facts`, or `_coverage_terminal_facts` helper facades. Focused
+coverage tests now exercise `CoverageEffectFactService` directly for those
+facts. This is compatibility/test-only facade cleanup after Phase 9.85; it does
+not change coverage update/runtime service behavior, decision-event payloads,
+event ordering, report schemas, token/return/direct-handoff/recovery semantics,
+parked `pre_dig_align`, parked `cell_entry`, or backend support status.
 
 Current status note after Phase 9.86: the live coverage decision-event bucket
 snapshot projection now lives in `CoverageReportService.bucket_snapshot(...)`

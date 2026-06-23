@@ -1306,6 +1306,17 @@ algorithms, terminal-stop reason strings, event ordering, report schemas,
 token/return/recovery semantics, parked `pre_dig_align`, or parked
 `cell_entry`.
 
+Phase 9.96 removes the remaining primitive-planner private helper facades for
+coverage effect facts after the focused fact projection boundary was already in
+place. `PrimitivePlannerACTPolicy` no longer exposes
+`_coverage_completion_facts`, `_coverage_rejection_facts`,
+`_coverage_reopen_facts`, or `_coverage_terminal_facts`; tests verify
+`CoverageEffectFactService` directly for completion, rejection, reopen, and
+terminal-stop fact projection. This is cleanup only. It does not alter coverage
+scoring, update/reopen/terminal-stop algorithms, remaining-depth semantics,
+event ordering, report/debug/summary/trace schemas, token/return/recovery
+behavior, parked `pre_dig_align`, or parked `cell_entry`.
+
 Phase 9.86 narrows the adjacent coverage decision-event reporting boundary by
 moving bucket snapshot projection into `CoverageReportService.bucket_snapshot`.
 The report service now projects `CoverageBucketSnapshot` from typed

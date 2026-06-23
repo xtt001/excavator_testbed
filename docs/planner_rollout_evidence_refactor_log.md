@@ -9061,3 +9061,49 @@ Each completed refactor round should append:
   disabled pre-dig config removal, no runtime pre-dig reintroduction, no
   behavior-tree/VLM/LLM backend work, no broad report snapshot rewrite, no
   generic cleanup sweep, and no commit in the implementation thread.
+
+### 2026-06-23 Coverage Effect Fact Private Facade Cleanup
+
+- Scope implemented by parked cleanup executor: remove remaining
+  primitive-planner private helper facades for coverage effect/runtime facts
+  after production fact projection had already moved into
+  `CoverageEffectFactService`.
+- TDD red result: after updating focused cleanup assertions,
+  `python -m pytest -q tests/test_primitive_coverage_updates.py tests/test_primitive_coverage_runtime.py tests/test_primitive_coverage_effect_runtime.py`
+  failed with representative error:
+  `test_policy_no_longer_exposes_coverage_effect_fact_facades` because
+  `PrimitivePlannerACTPolicy.__dict__` still exposed
+  `_coverage_completion_facts`, `_coverage_rejection_facts`,
+  `_coverage_reopen_facts`, and `_coverage_terminal_facts`.
+- Core change: coverage update/runtime tests now verify
+  `CoverageEffectFactService` directly for completion, rejection, reopen, and
+  terminal-stop fact projection. `PrimitivePlannerACTPolicy` no longer exposes
+  the four old private coverage effect fact helper facades.
+- Compatibility retained: coverage completion/rejection/reopen/terminal-stop
+  payload, deposit, remaining-depth, attempt, reason, pass-index, and
+  terminal-stop semantics remain owned by focused coverage services. Public
+  report/debug/summary/trace schemas, decision-event payloads, event ordering,
+  token/return/direct-handoff/recovery behavior, parked `pre_dig_align`, parked
+  `cell_entry`, and backend support status remain unchanged.
+- Verification:
+  - `python -m pytest -q tests/test_primitive_coverage_updates.py tests/test_primitive_coverage_runtime.py tests/test_primitive_coverage_effect_runtime.py`
+    -> `18 passed in 0.67s`
+  - `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_facts.py tests/test_primitive_decision_contract.py`
+    -> `55 passed in 0.70s`
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or dig_cut_tokens"`
+    -> `3 passed, 104 deselected in 0.68s`
+  - `python -m compileall testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_coverage_updates.py`
+    -> no output, exit 0
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`
+    -> no output, exit 0
+  - `python scripts/planner_refactor_guard.py --check-skill-contract`
+    -> no output, exit 0
+  - `git diff --check`
+    -> no output, exit 0
+- Non-goals held: no coverage scoring, coverage update, coverage reopen,
+  terminal-stop, remaining-depth, event ordering, report/debug/summary/trace
+  schema, token/return/direct-handoff/recovery behavior changes; no public
+  schema removal; no `pre_dig_align` or `cell_entry` cleanup; no
+  behavior-tree/VLM/LLM backend work; no generic report snapshot object,
+  pass-through facade, broad config bag, planner self port, blackboard, or
+  commit in the implementation thread.

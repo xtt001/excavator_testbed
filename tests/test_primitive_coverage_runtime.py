@@ -4,12 +4,36 @@ from copy import deepcopy
 
 import numpy as np
 
-from testbed.planner.primitive_coverage_updates import CoverageRuntimeService
+from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
+from testbed.planner.primitive_coverage_updates import (
+    CoverageEffectFactService,
+    CoverageRuntimeService,
+)
 from tests.test_agx_primitives_v2_2 import (
     _RecordingPolicy,
     _coverage_obs,
     _coverage_planner_policy,
 )
+
+
+def _coverage_effect_fact_service(policy) -> CoverageEffectFactService:
+    return CoverageEffectFactService(
+        state=policy._coverage_runtime_state(),
+        cycle_state=policy._primitive_cycle_runtime_state(),
+        observation_facts=(
+            lambda obs: PrimitiveObservationFacts.from_obs(
+                obs,
+                action_dim=int(policy.action_dim),
+            )
+        ),
+        remaining_depth=(
+            lambda obs, corridor: policy._coverage_remaining_depth_for_corridor(
+                obs,
+                corridor,
+            )
+        ),
+        corridor_attempt_limit=policy._coverage_corridor_attempt_limit,
+    )
 
 
 def test_coverage_runtime_service_matches_multi_pass_reopen_facade() -> None:
@@ -37,7 +61,7 @@ def test_coverage_runtime_service_matches_multi_pass_reopen_facade() -> None:
         policy._coverage_runtime_config(),
     ).maybe_reopen_pass(
         service_corridors,
-        policy._coverage_reopen_facts(
+        _coverage_effect_fact_service(policy).reopen_facts(
             obs,
             service_corridors,
             reason="unit_test_reopen",
@@ -81,21 +105,30 @@ def test_coverage_runtime_service_matches_terminal_stop_replace_gate() -> None:
     policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
 
     first = CoverageRuntimeService(policy._coverage_runtime_config()).request_terminal_stop(
-        policy._coverage_terminal_facts("first_reason", replace=False)
+        _coverage_effect_fact_service(policy).terminal_facts(
+            "first_reason",
+            replace=False,
+        )
     )
     policy._request_coverage_terminal_stop("first_reason")
 
     ignored = CoverageRuntimeService(
         policy._coverage_runtime_config()
     ).request_terminal_stop(
-        policy._coverage_terminal_facts("ignored_reason", replace=False)
+        _coverage_effect_fact_service(policy).terminal_facts(
+            "ignored_reason",
+            replace=False,
+        )
     )
     policy._request_coverage_terminal_stop("ignored_reason")
 
     replaced = CoverageRuntimeService(
         policy._coverage_runtime_config()
     ).request_terminal_stop(
-        policy._coverage_terminal_facts("replacement_reason", replace=True)
+        _coverage_effect_fact_service(policy).terminal_facts(
+            "replacement_reason",
+            replace=True,
+        )
     )
     policy._request_coverage_terminal_stop("replacement_reason", replace=True)
 

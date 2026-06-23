@@ -86,7 +86,8 @@ Current maturity:
 - coverage effect fact-source boundary: **achieved for coverage
   complete-dig mass, complete-dump facts, rejection facts, reopen facts, and
   terminal-stop facts through `CoverageEffectFactService`; the policy no
-  longer builds coverage effect fact dataclasses through callback ports**
+  longer builds coverage effect fact dataclasses through callback ports, and
+  the old private policy fact helper facades have been removed**
 - dig progress tick-update boundary: **achieved for per-dig tick progress and
   current coverage payload gain updates through
   `PrimitiveDigProgressRuntimeService`; the policy shell no longer owns the

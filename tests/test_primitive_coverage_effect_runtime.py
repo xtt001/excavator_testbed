@@ -575,6 +575,17 @@ def test_effect_runtime_ports_carry_state_owner_without_state_callbacks() -> Non
     assert "self" not in port_fields
 
 
+def test_policy_no_longer_exposes_coverage_effect_fact_facades() -> None:
+    removed_names = {
+        "_coverage_completion_facts",
+        "_coverage_rejection_facts",
+        "_coverage_reopen_facts",
+        "_coverage_terminal_facts",
+    }
+
+    assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
+
+
 def test_policy_coverage_effect_wrappers_delegate_to_coordinator() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs = {"tag": "current"}

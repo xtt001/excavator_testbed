@@ -96,14 +96,10 @@ from testbed.planner.primitive_coverage_reports import (
 )
 from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.planner.primitive_coverage_updates import (
-    CoverageCompletionFacts,
     CoverageEffectRuntimeCoordinator,
     CoverageEffectRuntimePorts,
-    CoverageReopenFacts,
-    CoverageRejectionFacts,
     CoverageRuntimeConfig,
     CoverageRuntimeService,
-    CoverageTerminalFacts,
     CoverageUpdateConfig,
     CoverageUpdateService,
 )
@@ -3312,99 +3308,6 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _set_coverage_terminal_stop_reason(self, value: str) -> None:
         self._coverage_runtime_state().set_terminal_stop_reason(value)
-
-    def _coverage_reopen_facts(
-        self,
-        obs: dict,
-        corridors: list[CoverageCorridorState] | None = None,
-        *,
-        reason: str,
-    ) -> CoverageReopenFacts:
-        target_corridors = list(
-            self._coverage_corridors if corridors is None else corridors
-        )
-        return CoverageReopenFacts(
-            reason=str(reason),
-            pass_index=int(self._coverage_pass_index),
-            terminal_stop_requested=bool(self._coverage_terminal_stop_requested),
-            remaining_depth_by_corridor_id={
-                int(corridor.corridor_id): float(
-                    self._coverage_remaining_depth_for_corridor(obs, corridor)
-                )
-                for corridor in target_corridors
-            },
-        )
-
-    def _coverage_terminal_facts(
-        self,
-        reason: str,
-        *,
-        replace: bool,
-    ) -> CoverageTerminalFacts:
-        return CoverageTerminalFacts(
-            reason=str(reason),
-            replace=bool(replace),
-            terminal_stop_requested=bool(self._coverage_terminal_stop_requested),
-            terminal_stop_reason=str(self._coverage_terminal_stop_reason),
-        )
-
-    def _coverage_completion_facts(
-        self,
-        obs: dict,
-        corridor: CoverageCorridorState,
-        *,
-        reason: str,
-    ) -> CoverageCompletionFacts:
-        return CoverageCompletionFacts(
-            payload_gain_kg=max(float(self._coverage_current_payload_gain_kg), 0.0),
-            effective_deposit_delta_kg=max(
-                0.0,
-                self._deposited_mass(obs)
-                - float(self._coverage_cycle_start_deposit_kg),
-            ),
-            remaining_depth_m=float(
-                self._coverage_remaining_depth_for_corridor(obs, corridor)
-            ),
-            reason=str(reason),
-            attempt_limit=int(self._coverage_corridor_attempt_limit(corridor)),
-            completed_dump_count=int(self._coverage_completed_dump_count),
-            global_low_productivity_streak=int(
-                self._coverage_global_low_productivity_streak
-            ),
-        )
-
-    def _coverage_rejection_facts(
-        self,
-        obs: dict,
-        corridor: CoverageCorridorState,
-        *,
-        reason: str,
-    ) -> CoverageRejectionFacts:
-        return CoverageRejectionFacts(
-            payload_gain_kg=max(
-                float(self._coverage_current_payload_gain_kg),
-                float(self._dig_best_mass_kg),
-                self._mass_in_bucket(obs),
-                0.0,
-            ),
-            effective_deposit_delta_kg=max(
-                0.0,
-                self._deposited_mass(obs)
-                - float(self._coverage_cycle_start_deposit_kg),
-            ),
-            remaining_depth_m=float(
-                self._coverage_remaining_depth_for_corridor(obs, corridor)
-            ),
-            reason=str(reason),
-            attempt_limit=int(self._coverage_corridor_attempt_limit(corridor)),
-            global_low_productivity_streak=int(
-                self._coverage_global_low_productivity_streak
-            ),
-            active_state_exemplar_ids=tuple(
-                str(exemplar_id)
-                for exemplar_id in self._coverage_active_state_exemplar_ids
-            ),
-        )
 
     def _complete_coverage_dig(self, obs: dict) -> None:
         self._coverage_effect_runtime_coordinator().complete_dig(obs)
