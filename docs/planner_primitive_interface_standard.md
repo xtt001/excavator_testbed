@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.65 implementation. It is intentionally
+compares them with the current Phase 9.66 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -52,8 +52,9 @@ Current maturity:
 - token runtime mutable state owner: **achieved for dig/return token arrays,
   source/fallback flags, prior-bound flags, pending next-dig token state, and
   live `TokenStatus` plus token/pending/dig-cut report metadata projection;
-  token runtime sequencing now consumes this owner directly instead of
-  policy-built getter/setter callbacks**
+  token runtime sequencing now consumes this owner directly, and consumes
+  `CoverageRuntimeState` directly for pending next-dig state-exemplar handoff
+  and clear timing, instead of policy-built getter/setter callbacks**
 - active dig token planning mutable state-owner boundary: **achieved for
   pending dig route, dig-cut status, dig-depth-profile status, active corridor,
   selected corridor ids, payload/deposit baselines, and state-exemplar payload;
@@ -625,8 +626,10 @@ Current boundary:
   longer mixed in the policy shell.
 - `PrimitiveTokenRuntimeCoordinator` owns dig/return token runtime sequencing.
   Its ports now carry the focused `PrimitiveTokenRuntimeState` owner directly
-  for token storage reads/writes; external config, token-builder algorithms,
-  return-relocate planning, and coverage exemplar facts remain explicit ports.
+  for token storage reads/writes and `CoverageRuntimeState` directly for
+  pending next-dig state-exemplar handoff reads and clear timing; external
+  config, token-builder algorithms, return-relocate planning, and token
+  planning services remain explicit ports.
 - `PrimitiveDigTokenPlanningService` and
   `PrimitiveReturnTokenPlanningService` own orchestration.
 - `PrimitiveDigTokenPlanningService` ports carry `PrimitiveTokenRuntimeState`

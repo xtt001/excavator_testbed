@@ -158,6 +158,7 @@ def test_policy_selection_and_effect_ports_share_coverage_state_owner() -> None:
 
     selection_ports = policy._coverage_selection_runtime_ports()
     effect_ports = policy._coverage_effect_runtime_ports()
+    token_runtime_ports = policy._primitive_token_runtime_ports()
     dig_token_ports = policy._primitive_dig_token_planning_ports()
     return_token_ports = policy._primitive_return_token_planning_ports()
 
@@ -171,6 +172,17 @@ def test_policy_selection_and_effect_ports_share_coverage_state_owner() -> None:
     assert not hasattr(effect_ports, "set_current_payload_gain_kg")
     assert not hasattr(effect_ports, "update_rejected_state_exemplar_ids")
     assert effect_ports.state.coverage_corridors is policy._coverage_state.coverage_corridors
+    assert token_runtime_ports.coverage_state is policy._coverage_state
+    assert not hasattr(token_runtime_ports, "get_coverage_active_state_exemplar_ids")
+    assert not hasattr(
+        token_runtime_ports,
+        "get_coverage_active_state_exemplar_distance",
+    )
+    assert not hasattr(
+        token_runtime_ports,
+        "get_coverage_active_state_exemplar_profile_token",
+    )
+    assert not hasattr(token_runtime_ports, "clear_active_state_exemplar")
     assert dig_token_ports.coverage_state is policy._coverage_state
     assert not hasattr(dig_token_ports, "active_coverage_corridor")
     assert not hasattr(dig_token_ports, "coverage_corridor_by_id")
@@ -193,6 +205,11 @@ def test_policy_selection_and_effect_ports_share_coverage_state_owner() -> None:
     selection_ports.state.set_candidate_scores([{"corridor_id": 12, "score": 3.0}])
     effect_ports.state.set_current_payload_gain_kg(9.0)
     effect_ports.state.update_rejected_state_exemplar_ids(("cell0_c",))
+    token_runtime_ports.coverage_state.set_active_state_exemplar(
+        exemplar_ids=["cell0_d"],
+        distance=0.25,
+        profile_token=None,
+    )
     dig_token_ports.coverage_state.set_cycle_start_deposit_kg(21.0)
     return_token_ports.coverage_state.set_active_corridor_id(14)
 
@@ -204,3 +221,4 @@ def test_policy_selection_and_effect_ports_share_coverage_state_owner() -> None:
     assert policy._coverage_state.coverage_current_payload_gain_kg == 9.0
     assert policy._coverage_state.coverage_cycle_start_deposit_kg == 21.0
     assert policy._coverage_state.coverage_rejected_state_exemplar_ids == {"cell0_c"}
+    assert policy._coverage_state.coverage_active_state_exemplar_ids == ["cell0_d"]

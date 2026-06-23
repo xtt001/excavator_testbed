@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 5450 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 5439 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -71,7 +71,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_cell_entry_state.py` | 81 | parked cell-entry compatibility/report runtime state owner, reset defaults, and debug-field projection |
 | `testbed/planner/primitive_pre_dig_align_state.py` | 46 | parked pre-dig-align compatibility/report runtime state owner and reset defaults |
 | `testbed/planner/primitive_token_state.py` | 190 | mutable dig/return token runtime state owner, reset defaults, live token-status projection, and token report metadata projection |
-| `testbed/planner/primitive_token_runtime.py` | 254 | dig/return token runtime sequencing over the focused token state owner plus explicit external config/algorithm ports |
+| `testbed/planner/primitive_token_runtime.py` | 255 | dig/return token runtime sequencing over focused token and coverage state owners plus explicit external config/algorithm ports |
 | `testbed/planner/primitive_dig_token_planning.py` | 341 | active dig token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm/observation ports |
 | `testbed/planner/primitive_return_token_planning.py` | 217 | return token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm/observation ports |
 | `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
@@ -1281,6 +1281,24 @@ coverage raw-field building. Return-target mode routing, coverage raw-field
 handoff, corridor id/cell id fallback, return start-envelope
 build/apply/conditioning, prior token/mapping/bounds helper behavior,
 token/raw-field copy semantics, token dimensions/order/source strings,
+debug/summary/trace schema, branch order, reason strings, policy reset timing,
+backend fail-fast behavior, `cell_entry`, `pre_dig_align`, and removed 5P
+runtime status remain unchanged.
+
+Current status note after Phase 9.66: token runtime sequencing no longer uses
+policy-built coverage state-exemplar callbacks for the pending next-dig
+handoff. `PrimitiveTokenRuntimePorts` in
+`testbed/planner/primitive_token_runtime.py` now carries
+`CoverageRuntimeState` directly alongside `PrimitiveTokenRuntimeState`, and
+`PrimitiveTokenRuntimeCoordinator` reads active state-exemplar ids, distance,
+and profile token from the coverage owner while preserving the existing
+profile-token copy behavior. `clear_dig_cut_plan()` also clears the active
+state exemplar through the coverage owner at the same timing as before.
+`PrimitivePlannerACTPolicy` still assembles explicit external ports for current
+skill/config gates, token-builder algorithms, return-relocate planning, and
+return token planning services. Return target plan success path, pending
+next-dig token/raw/exemplar writeback values, clear dig-cut timing, pending
+invalidation, return fallback-zero path, token dimensions/order/source strings,
 debug/summary/trace schema, branch order, reason strings, policy reset timing,
 backend fail-fast behavior, `cell_entry`, `pre_dig_align`, and removed 5P
 runtime status remain unchanged.

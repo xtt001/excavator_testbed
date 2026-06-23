@@ -15,6 +15,7 @@ from testbed.planner.primitive_token_runtime import (
     PrimitiveTokenRuntimeCoordinator,
     PrimitiveTokenRuntimePorts,
 )
+from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
@@ -84,12 +85,6 @@ def _ports(
         "pending_dig_depth_profile_tokens": _token(DIG_DEPTH_PROFILE_TOKEN_DIM, 6.0),
         "pending_dig_state_exemplar_ids": ["old"],
         "pending_dig_state_exemplar_distance": 7.0,
-        "coverage_active_state_exemplar_ids": ["ex_a", "ex_b"],
-        "coverage_active_state_exemplar_distance": 1.25,
-        "coverage_active_state_exemplar_profile_token": _token(
-            DIG_DEPTH_PROFILE_TOKEN_DIM,
-            8.0,
-        ),
     }
     defaults.update(state or {})
     facts = {
@@ -101,7 +96,15 @@ def _ports(
     for name, value in defaults.items():
         if name in _TOKEN_STATE_FIELD_NAMES:
             setattr(token_state, name, value)
+    coverage_state = CoverageRuntimeState()
+    coverage_state.coverage_active_state_exemplar_ids = ["ex_a", "ex_b"]
+    coverage_state.coverage_active_state_exemplar_distance = 1.25
+    coverage_state.coverage_active_state_exemplar_profile_token = _token(
+        DIG_DEPTH_PROFILE_TOKEN_DIM,
+        8.0,
+    )
     state_view = _PortState(facts=facts, token_state=token_state)
+    facts["coverage_state"] = coverage_state
     events = events if events is not None else []
 
     def build_dig_cut(obs: dict) -> np.ndarray:
@@ -141,6 +144,7 @@ def _ports(
     return (
         PrimitiveTokenRuntimePorts(
             state=token_state,
+            coverage_state=coverage_state,
             current_skill_name=lambda: str(state_view["skill"]),
             bootstrap_policy_available=lambda: bool(
                 state_view["bootstrap_policy_available"]
@@ -166,18 +170,6 @@ def _ports(
             build_next_dig_cut_plan_for_return=build_return_plan,
             build_return_start_envelope_tokens_for_obs=build_start_envelope,
             plan_return_relocate_tokens=plan_relocate,
-            get_coverage_active_state_exemplar_ids=lambda: state_view[
-                "coverage_active_state_exemplar_ids"
-            ],
-            get_coverage_active_state_exemplar_distance=lambda: float(
-                state_view["coverage_active_state_exemplar_distance"]
-            ),
-            get_coverage_active_state_exemplar_profile_token=(
-                lambda: state_view["coverage_active_state_exemplar_profile_token"]
-            ),
-            clear_active_state_exemplar=lambda: events.append(
-                "clear_active_state_exemplar"
-            ),
         ),
         state_view,
         events,
@@ -355,6 +347,12 @@ def test_ensure_return_target_success_writes_tokens_and_pending_plan() -> None:
         state["pending_dig_depth_profile_tokens"],
         _token(DIG_DEPTH_PROFILE_TOKEN_DIM, 8.0),
     )
+    coverage_state = state["coverage_state"]
+    assert isinstance(coverage_state, CoverageRuntimeState)
+    assert (
+        state["pending_dig_depth_profile_tokens"]
+        is not coverage_state.coverage_active_state_exemplar_profile_token
+    )
     assert state["pending_dig_state_exemplar_ids"] == ["ex_a", "ex_b"]
     assert float(state["pending_dig_state_exemplar_distance"]) == 1.25
 
@@ -419,7 +417,11 @@ def test_clear_dig_cut_plan_and_invalidate_pending_plan_reset_exact_fields() -> 
     assert state["dig_cut_token_source"] == "none"
     assert state["dig_cut_fallback_reason"] == ""
     assert state["dig_cut_token_in_prior_p10_p90"] is False
-    assert "clear_active_state_exemplar" in events
+    coverage_state = state["coverage_state"]
+    assert isinstance(coverage_state, CoverageRuntimeState)
+    assert coverage_state.coverage_active_state_exemplar_ids == []
+    assert np.isnan(coverage_state.coverage_active_state_exemplar_distance)
+    assert coverage_state.coverage_active_state_exemplar_profile_token is None
     assert int(state["pending_dig_cut_cycle_id"]) == -1
     assert int(state["pending_dig_cut_corridor_id"]) == -1
     assert state["pending_dig_cut_raw_fields"] is None
@@ -434,10 +436,15 @@ def test_token_runtime_boundary_uses_typed_ports_without_planner_self() -> None:
     coordinator_fields = {field.name for field in fields(PrimitiveTokenRuntimeCoordinator)}
 
     assert "state" in port_fields
+    assert "coverage_state" in port_fields
     assert "get_dig_cut_tokens" not in port_fields
     assert "set_dig_cut_tokens" not in port_fields
     assert "set_return_target_tokens" not in port_fields
     assert "set_pending_dig_cut_cycle_id" not in port_fields
+    assert "get_coverage_active_state_exemplar_ids" not in port_fields
+    assert "get_coverage_active_state_exemplar_distance" not in port_fields
+    assert "get_coverage_active_state_exemplar_profile_token" not in port_fields
+    assert "clear_active_state_exemplar" not in port_fields
     assert "planner" not in port_fields
     assert "self" not in port_fields
     assert coordinator_fields == {"ports"}

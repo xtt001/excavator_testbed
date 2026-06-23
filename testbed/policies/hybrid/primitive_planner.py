@@ -3779,6 +3779,7 @@ class PrimitivePlannerACTPolicy(Policy):
     def _primitive_token_runtime_ports(self) -> PrimitiveTokenRuntimePorts:
         return PrimitiveTokenRuntimePorts(
             state=self._primitive_token_runtime_state(),
+            coverage_state=self._coverage_runtime_state(),
             current_skill_name=lambda: str(self._skill_name),
             bootstrap_policy_available=lambda: self.bootstrap_policy is not None,
             cycle_index=lambda: int(self._cycle_index),
@@ -3815,18 +3816,6 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             plan_return_relocate_tokens=(
                 lambda token: self._return_relocate_token_planner().plan(token)
-            ),
-            get_coverage_active_state_exemplar_ids=(
-                lambda: list(self._coverage_active_state_exemplar_ids)
-            ),
-            get_coverage_active_state_exemplar_distance=(
-                lambda: float(self._coverage_active_state_exemplar_distance)
-            ),
-            get_coverage_active_state_exemplar_profile_token=(
-                lambda: self._coverage_active_state_exemplar_profile_token
-            ),
-            clear_active_state_exemplar=(
-                lambda: self._coverage_runtime_state().clear_active_state_exemplar()
             ),
             dig_skill_name="dig",
             return_skill_name="return",

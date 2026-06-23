@@ -6715,3 +6715,124 @@ Each completed refactor round should append:
 - Audit note: this is implementation round 2 after the latest three-iteration
   reflection. It follows the same corrected direction as Phase 9.64 by
   targeting a live token planning boundary with meaningful state coupling.
+
+### 2026-06-23 Phase 9.66 Replace Token Runtime Coverage Exemplar Callback Ports With Coverage State Owner
+
+- Scope: narrowed `PrimitiveTokenRuntimePorts` in
+  `testbed/planner/primitive_token_runtime.py` so token runtime sequencing
+  consumes `CoverageRuntimeState` directly for the pending next-dig
+  state-exemplar handoff instead of receiving policy-built getter/clear
+  callbacks for the same coverage state-exemplar storage fields.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 129]`, HEAD
+  before this round `6a3ca3940416fe8473f9b8298e2f40178e0c68be`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- `PrimitiveTokenRuntimePorts` now carries
+  `coverage_state: CoverageRuntimeState` alongside
+  `state: PrimitiveTokenRuntimeState`.
+- Removed token-runtime coverage active state-exemplar storage callback ports:
+  exemplar ids, exemplar distance, profile token, and clear callback.
+- `PrimitiveTokenRuntimeCoordinator.ensure_return_target_plan_for_cycle(...)`
+  now reads active coverage exemplar ids, distance, and profile token through
+  `ports.coverage_state` and preserves profile token copy behavior when
+  writing pending dig-depth-profile tokens.
+- `PrimitiveTokenRuntimeCoordinator.clear_dig_cut_plan()` now calls
+  `ports.coverage_state.clear_active_state_exemplar()` with the same clear
+  timing.
+- `PrimitivePlannerACTPolicy._primitive_token_runtime_ports()` now passes
+  `self._coverage_runtime_state()` and no longer assembles the removed
+  exemplar callbacks.
+- Focused tests now use real `CoverageRuntimeState` helpers and assert old
+  callback port names are absent.
+- Preserved behavior: return target plan success path, pending next-dig
+  token/raw/exemplar writeback, coverage exemplar profile token copy semantics,
+  clear dig-cut plan timing, pending invalidation, return fallback-zero path,
+  token dimensions/order/source strings, debug/summary/trace schema, branch
+  order, reason strings, policy reset timing, backend fail-fast behavior,
+  `cell_entry`, `pre_dig_align`, and removed 5P runtime status are unchanged.
+- Explicit non-goals: no active dig token planning port change, no return token
+  planning port change, no token planner algorithm change, no coverage
+  selection or effect algorithm change, no return handoff gate/effect service
+  change, no report schema change, no backend support change, no parked
+  `cell_entry` or residual `pre_dig_align` promotion, and no generic
+  blackboard.
+- TDD red result from executor callback: after focused tests were added,
+  `python -m pytest -q tests/test_primitive_token_runtime.py tests/test_primitive_coverage_state.py tests/test_primitive_token_state.py`
+  failed as expected with `TypeError` because
+  `PrimitiveTokenRuntimePorts.__init__()` did not yet accept `coverage_state`,
+  plus field-boundary failures showing missing `coverage_state` on token
+  runtime ports.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_token_runtime.py tests/test_primitive_coverage_state.py tests/test_primitive_token_state.py`
+  returned `28 passed`;
+  `python -m pytest -q tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py tests/test_primitive_token_runtime.py`
+  returned `30 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_reports.py`
+  returned `25 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py tests/test_primitive_debug_report.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_cut_tokens or dig_depth_profile or return_to_dig or start_envelope or coverage_decision_trace or semantic_boundary_events_drive_skill_sequence"`
+  returned `8 passed, 111 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_token_runtime.py tests/test_primitive_coverage_state.py tests/test_primitive_token_state.py`
+  returned `28 passed`;
+  `python -m pytest -q tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py tests/test_primitive_token_runtime.py`
+  returned `30 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_reports.py`
+  returned `25 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py tests/test_primitive_debug_report.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_cut_tokens or dig_depth_profile or return_to_dig or start_envelope or coverage_decision_trace or semantic_boundary_events_drive_skill_sequence"`
+  returned `8 passed, 111 deselected`; compileall for touched modules passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It routed the return-to-dig pending next-dig handoff
+  exemplar state cluster through the focused coverage owner and was not a tiny
+  compatibility dict/facade move. No anemic service, pass-through facade, or
+  generic blackboard was created.
+- Audit note: this is implementation round 3 after the latest three-iteration
+  reflection. It completes the 9.64-9.66 token/coverage state-owner coupling
+  sequence and triggers a new three-iteration reflection.
+
+#### Three-iteration reflection after Phases 9.64-9.66
+
+- Progress toward target: the three-round sequence removed policy-built
+  storage callback clusters from live token planning/runtime boundaries. Phase
+  9.64 routed active dig token planning through `PrimitiveTokenRuntimeState`
+  and `CoverageRuntimeState`; Phase 9.65 routed return token planning through
+  the same focused owners; Phase 9.66 routed token runtime's pending next-dig
+  state-exemplar handoff through `CoverageRuntimeState`. This materially
+  reduces policy-shell port wiring while preserving explicit algorithm,
+  config, observation, and coverage raw-field ports.
+- Maximum remaining gap: the system is still not a fully swappable backend
+  architecture. The accurate status remains default legacy FSM backendified
+  with focused services / shared backend decision input/facts/factory, while
+  BT/VLM/LLM backends remain unsupported fail-fast. `PrimitivePlannerACTPolicy`
+  still owns substantial composition and compatibility surface: broad
+  lifecycle/effect applier wiring, public adapter/config/reset glue, residual
+  `pre_dig_align` action methods, parked `cell_entry` algorithms, and many
+  compatibility facades.
+- Direction correction: the next slice should not continue sweeping isolated
+  callback leftovers just because they exist. The state-owner port cleanup has
+  now harvested the strongest live token/coverage clusters. The next bounded
+  target should either reduce a larger live lifecycle/effect boundary, such as
+  skill lifecycle ports using the existing execution/cycle/return/coverage/
+  pre-dig owners directly, or perform an audit-only inventory if no cohesive
+  live boundary is large enough. A one-field setter cleanup would violate the
+  hard constraint.
+- Hard constraint check: these three rounds did not treat protection as the
+  objective. They were bounded but not over-conservative: each moved a cohesive
+  live state cluster to an existing focused owner and reduced policy coupling
+  without changing algorithms, schemas, reason strings, branch order, or reset
+  timing.
+- Next core bounded-slice filter: choose a live boundary that owns stable
+  lifecycle or effect-application responsibility and has enough state coupling
+  to matter. Keep parked `cell_entry`, residual `pre_dig_align`, removed 5P
+  runtime, and unsupported BT/VLM/LLM backends out of the mainline. If the
+  candidate cannot demonstrate meaningful coupling reduction beyond a tiny
+  adapter cleanup, dispatch audit-only instead of implementation.

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from types import MethodType
-
 import numpy as np
 
 from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
@@ -11,6 +9,7 @@ from testbed.data.operator_first_v2_2 import (
     RETURN_TARGET_TOKEN_DIM,
 )
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
+from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.planner.primitive_observation import PrimitiveTokenInjectionState
 from testbed.planner.primitive_token_state import (
     PrimitiveTokenReportStatus,
@@ -127,29 +126,28 @@ def test_token_runtime_ports_and_clear_facade_use_state_owner() -> None:
     policy.return_target_hold_token_until_skill_exit = False
     policy.bootstrap_policy = None
     policy._coverage_terminal_stop_requested = False
-    policy._coverage_runtime_state = MethodType(
-        lambda self: type(
-            "_CoverageState",
-            (),
-            {"clear_active_state_exemplar": lambda self: None},
-        )(),
-        policy,
-    )
+    coverage_state = policy._coverage_runtime_state()
     ports = policy._primitive_token_runtime_ports()
 
     port_names = {field.name for field in ports.__dataclass_fields__.values()}
     assert ports.state is state
+    assert ports.coverage_state is coverage_state
+    assert isinstance(ports.coverage_state, CoverageRuntimeState)
     assert "get_dig_cut_tokens" not in port_names
     assert "set_dig_cut_tokens" not in port_names
     assert "set_pending_dig_cut_cycle_id" not in port_names
+    assert "get_coverage_active_state_exemplar_ids" not in port_names
+    assert "clear_active_state_exemplar" not in port_names
 
     ports.state.dig_cut_planned_cycle_id = 12
     ports.state.dig_cut_tokens = np.full(DIG_CUT_TOKEN_DIM, 5.0, dtype=np.float32)
     ports.state.pending_dig_cut_cycle_id = 13
+    ports.coverage_state.coverage_active_state_exemplar_ids = ["ex_a"]
 
     assert state.dig_cut_planned_cycle_id == 12
     assert ports.state.dig_cut_tokens is state.dig_cut_tokens
     assert state.pending_dig_cut_cycle_id == 13
+    assert coverage_state.coverage_active_state_exemplar_ids == ["ex_a"]
 
     policy._clear_dig_cut_plan()
 
@@ -159,6 +157,7 @@ def test_token_runtime_ports_and_clear_facade_use_state_owner() -> None:
     assert state.dig_cut_token_in_prior_p10_p90 is False
     assert state.dig_cut_tokens.shape == (DIG_CUT_TOKEN_DIM,)
     assert state.dig_depth_profile_tokens.shape == (DIG_DEPTH_PROFILE_TOKEN_DIM,)
+    assert coverage_state.coverage_active_state_exemplar_ids == []
 
 
 def test_dig_token_planning_ports_share_token_state_owner() -> None:

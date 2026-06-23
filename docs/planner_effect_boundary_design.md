@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.65: the default 4P mainline branch chain no longer
+Current status after Phase 9.66: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -71,6 +71,10 @@ metadata projects through `PrimitiveTokenReportStatus` for debug, summary, and
 trace consumers. `PrimitiveTokenRuntimePorts` now carries that focused token
 state owner directly, so `PrimitiveTokenRuntimeCoordinator` no longer receives
 policy-built getter/setter callbacks for the same token storage fields. The
+same token runtime boundary now also carries `CoverageRuntimeState` directly
+for the pending next-dig state-exemplar handoff: exemplar ids, exemplar
+distance, profile token copy source, and active-exemplar clear timing no longer
+flow through policy-built callbacks. The
 coverage selection runtime boundary now follows the same state-owner pattern:
 `CoverageSelectionRuntimePorts` carries `CoverageRuntimeState`, and
 `CoverageSelectionRuntimeCoordinator` reads/writes corridor lists, candidate
@@ -1189,6 +1193,25 @@ prior token/mapping/bounds helper behavior, token/raw-field copy semantics,
 token dimensions/order/source strings, debug/summary/trace schema, branch
 order, reason strings, policy reset timing, backend fail-fast behavior, parked
 `cell_entry`, residual `pre_dig_align`, or removed 5P runtime status.
+
+Phase 9.66 narrows the token runtime port boundary in
+`testbed/planner/primitive_token_runtime.py`. `PrimitiveTokenRuntimePorts` now
+carries `CoverageRuntimeState` alongside `PrimitiveTokenRuntimeState` for the
+return-to-dig pending next-dig state-exemplar handoff. The runtime coordinator
+reads active state-exemplar ids, distance, and profile token from the coverage
+state owner, preserves the existing profile-token copy behavior when writing
+pending dig-depth-profile tokens, and clears the active exemplar through
+`CoverageRuntimeState.clear_active_state_exemplar()` at the existing
+`clear_dig_cut_plan()` timing. The policy's
+`_primitive_token_runtime_ports()` now passes `self._coverage_runtime_state()`
+and no longer assembles coverage state-exemplar getter/clear callbacks. This
+phase does not change the return target plan success path, pending next-dig
+token/raw/exemplar writeback values, coverage exemplar profile token copy
+semantics, clear dig-cut plan timing, pending invalidation, return
+fallback-zero path, token dimensions/order/source strings,
+debug/summary/trace schema, branch order, reason strings, policy reset timing,
+backend fail-fast behavior, parked `cell_entry`, residual `pre_dig_align`, or
+removed 5P runtime status.
 
 Phase 9.55 extends `PrimitiveReturnRuntimeState` in
 `testbed/planner/primitive_return_state.py` with `to_report_status(...)` and

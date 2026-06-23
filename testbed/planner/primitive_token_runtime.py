@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 
@@ -15,6 +15,9 @@ from testbed.data.operator_first_v2_2 import (
     RETURN_TARGET_TOKEN_DIM,
 )
 from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
+
+if TYPE_CHECKING:
+    from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 
 
 ReturnTargetPlanTuple = tuple[np.ndarray, dict[str, float | int], str, str, int]
@@ -38,6 +41,7 @@ class PrimitiveTokenRuntimePorts:
     """Shell-owned token state and planner algorithm ports."""
 
     state: PrimitiveTokenRuntimeState
+    coverage_state: CoverageRuntimeState
     current_skill_name: Callable[[], str]
     bootstrap_policy_available: Callable[[], bool]
     cycle_index: Callable[[], int]
@@ -53,11 +57,6 @@ class PrimitiveTokenRuntimePorts:
     build_next_dig_cut_plan_for_return: Callable[[dict[str, Any]], ReturnTargetPlanTuple]
     build_return_start_envelope_tokens_for_obs: ReturnStartEnvelopeTokenBuilder
     plan_return_relocate_tokens: Callable[[np.ndarray], np.ndarray]
-
-    get_coverage_active_state_exemplar_ids: Callable[[], list[str]]
-    get_coverage_active_state_exemplar_distance: Callable[[], float]
-    get_coverage_active_state_exemplar_profile_token: Callable[[], np.ndarray | None]
-    clear_active_state_exemplar: Callable[[], None]
 
     dig_skill_name: str = "dig"
     return_skill_name: str = "return"
@@ -169,7 +168,9 @@ class PrimitiveTokenRuntimeCoordinator:
                 np.asarray(token, dtype=np.float32).astype(np.float32)
             )
             ports.state.pending_dig_cut_corridor_id = int(corridor_id)
-            profile_token = ports.get_coverage_active_state_exemplar_profile_token()
+            profile_token = (
+                ports.coverage_state.coverage_active_state_exemplar_profile_token
+            )
             ports.state.pending_dig_depth_profile_tokens = (
                 None
                 if profile_token is None
@@ -178,10 +179,10 @@ class PrimitiveTokenRuntimeCoordinator:
                 ).copy()
             )
             ports.state.pending_dig_state_exemplar_ids = list(
-                ports.get_coverage_active_state_exemplar_ids()
+                ports.coverage_state.coverage_active_state_exemplar_ids
             )
             ports.state.pending_dig_state_exemplar_distance = float(
-                ports.get_coverage_active_state_exemplar_distance()
+                ports.coverage_state.coverage_active_state_exemplar_distance
             )
         except Exception as exc:
             ports.state.return_target_tokens = np.zeros(
@@ -206,7 +207,7 @@ class PrimitiveTokenRuntimeCoordinator:
         ports.state.dig_cut_token_source = "none"
         ports.state.dig_cut_fallback_reason = ""
         ports.state.dig_cut_token_in_prior_p10_p90 = False
-        ports.clear_active_state_exemplar()
+        ports.coverage_state.clear_active_state_exemplar()
 
     def invalidate_pending_dig_cut_plan(self) -> None:
         ports = self.ports
