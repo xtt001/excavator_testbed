@@ -1584,6 +1584,18 @@ same status object. This keeps `cell_entry` parked as compatibility/report
 material and does not promote it into the token contract, backend facts, or
 mainline runtime architecture.
 
+Current status note after Phase 9.81 audit-only inventory: the large policy
+shell remains 4763 lines because it still owns several different adapter
+responsibilities, not because one remaining monolithic algorithm is waiting to
+be moved. The confirmed-live coverage raw-field, coverage selection-fact, and
+state-exemplar fact-source helpers still live in
+`PrimitivePlannerACTPolicy` near the coverage planning port builders, while
+coverage scoring/selection services and state-exemplar planner services already
+exist in focused modules. This is the next meaningful live boundary to consider:
+it can reduce real policy-side fact construction without promoting parked
+`pre_dig_align` or `cell_entry`, without inventing a pass-through composition
+object, and without claiming alternate backend readiness.
+
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective
 bounded move toward the interface standard, not merely the safest smallest

@@ -7990,3 +7990,72 @@ Each completed refactor round should append:
   from current code evidence before dispatch. Do not promote parked
   `pre_dig_align` or `cell_entry` into the mainline backend/runtime
   architecture without new evidence and explicit approval.
+
+### 2026-06-23 Phase 9.81 Audit Remaining Large-Policy Boundaries
+
+- Scope: audit-only pass after the Phase 9.78-9.80 report/parking projection
+  cluster. No code, tests, or docs were changed by the executor. The audit
+  reclassified remaining large `PrimitivePlannerACTPolicy` clusters from
+  current code and source-of-truth docs before choosing the next implementation
+  direction.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 144]`, HEAD
+  `d4437505fc06609b84d9b3fb7b643615e50c18a5`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, remote write, or file
+  edit was used by the executor.
+- Current size fact: `testbed/policies/hybrid/primitive_planner.py` is 4763
+  lines and is documented as the public primitive policy adapter plus
+  compatibility facades over focused planner services.
+- Confirmed composition/facade clusters: public adapter/runtime/reset/report
+  routes, decision/backend/capability provider port builders, requested-effect
+  applier ports, return direct-handoff facades, dig recovery facades, and action
+  dispatch facades are already backed by focused services. Moving only those
+  wrappers would be tiny facade cleanup or pass-through composition.
+- Report cluster status: after Phase 9.78-9.80, coverage, parked pre-dig-align,
+  and parked cell-entry projection owners exist. Remaining report helper
+  movement would mostly shift individual scalar inputs and risks a generic
+  report snapshot/pass-through object.
+- Confirmed-live coverage fact cluster: coverage selection facts,
+  coverage raw-field projection, and state-exemplar fact-source helpers still
+  have implementation in the large policy shell around the coverage planning
+  port builders. Existing owners/services already include
+  `CoverageSelectionService`, `CoverageRuntimeState`, and
+  `CoverageStateExemplarPlanner`, so this is a viable larger bounded live
+  boundary if implemented as a real fact/source owner rather than a callback
+  wrapper.
+- Mixed observation-fact cluster: task metric, env-state, qpos/qvel, bucket
+  pose, and raw observation helper functions remain policy-side facts used by
+  token planning, return handoff, coverage, and effects. `PrimitiveObservationFacts`
+  is a possible owner, but this boundary has wider blast radius than the
+  coverage-specific fact cluster because it touches several subsystems.
+- Parked clusters remain parked: `pre_dig_align` readiness/action/algorithm
+  material is parked residual compatibility/action material; `cell_entry`
+  planner/auditor/token material is parked compatibility/token/report material.
+  Neither should be promoted into backend facts, token contracts, behavior-tree
+  nodes, or mainline runtime architecture without new evidence and explicit
+  approval.
+- Unsuitable standalone targets: single report wrappers, service-backed action/
+  return/recovery wrappers, individual property-backed compatibility fields,
+  and public adapter entry points. These would violate the hard constraint by
+  optimizing for safety or apparent line count rather than meaningful boundary
+  reduction.
+- Direction chosen by the refactor thread after audit: dispatch the next
+  implementation slice to the coverage planning fact-source boundary. The slice
+  should target coverage raw-field / selection-facts / state-exemplar
+  fact-source responsibilities with focused tests and policy facades preserved,
+  while explicitly preserving coverage scoring/selection algorithms, token
+  schema, state-exemplar scoring, raw-field priority, report schemas,
+  `pre_dig_align`, `cell_entry`, backend fail-fast behavior, and removed 5P
+  runtime status.
+- Verification reported by executor callback: `git diff --check` passed; final
+  `git status --short --branch` remained
+  `## fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 144]`;
+  final HEAD remained `d4437505fc06609b84d9b3fb7b643615e50c18a5`.
+- Hard constraint confirmation: this audit treats protection as a constraint,
+  not the objective. It deliberately rejected tiny facade deletion,
+  pass-through wrappers, anemic services, planner-self ports, broad config
+  bags, generic blackboards, and parked-path promotion. Current maturity
+  remains default legacy FSM backendified with focused services / shared
+  backend decision input/facts/factory; BT/VLM/LLM backends remain unsupported
+  fail-fast.
