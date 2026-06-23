@@ -1410,32 +1410,27 @@ cell-entry compatibility/legacy diagnostic algorithms and must not be promoted
 into the target token/runtime architecture without new evidence and explicit
 approval.
 
-The highest-risk remaining policy region is the restart/recovery cluster:
-`_restart_pre_dig_align()`, `_try_replan_pre_dig_align_handoff()`,
-`_restart_dig_with_new_cut()`, `_stop_after_failed_dig()`, and
-`_restart_after_failed_dig()`. This cluster mixes live failed-dig recovery,
+The restart/recovery cluster originally mixed live failed-dig recovery,
 coverage/token invalidation, terminal-stop diagnostics, return state clearing,
-and parked pre-dig-align retry paths. It should only be moved as a bounded
-responsibility chain that keeps `pre_dig_align` explicitly parked; extracting
-only a thin wrapper around old private methods would violate the hard
-constraint.
+and parked pre-dig-align retry paths. The live recovery responsibility has since
+been moved into `PrimitiveDigRecoveryService`, and Phase 9.92 removed the
+parked pre-dig-align restart/replan path. Further changes here should only
+target live failed-dig behavior or explicit compatibility deletion, not
+pre-dig-align runtime revival.
 
-Current status note after Phase 9.71: failed-dig/restart recovery no longer
-lives as direct implementation in `PrimitivePlannerACTPolicy`.
-`PrimitiveDigRecoveryService` in `testbed/planner/primitive_dig_recovery.py`
-owns `_restart_pre_dig_align()`, `_try_replan_pre_dig_align_handoff()`,
-`_restart_dig_with_new_cut()`, `_stop_after_failed_dig()`, and
-`_restart_after_failed_dig()` behavior behind policy facades. The service uses
-focused execution, cycle, return, coverage, token, and parked pre-dig-align
-compatibility state owners for stable storage while keeping active-policy
-reset, dig-cut plan clear/invalidation actions, operator-prior token
-construction, raw-field prior checks, pre-dig gate checks, coverage decision
-events, terminal-stop requests, mass reads, and config facts as explicit
-ports. This keeps `pre_dig_align` parked/residual compatibility/action
-material rather than promoting it into a mainline backend/runtime capability.
-Failed-dig branch choice, reason strings, token writeback/copy behavior,
-terminal-stop diagnostics, reset timing, debug/summary/trace schemas, backend
-support, `cell_entry`, and removed 5P runtime status remain unchanged.
+Current status note after Phase 9.71 and Phase 9.92: failed-dig/restart
+recovery no longer lives as direct implementation in
+`PrimitivePlannerACTPolicy`, and parked pre-dig-align retry/replan behavior has
+been removed. `PrimitiveDigRecoveryService` in
+`testbed/planner/primitive_dig_recovery.py` owns `_restart_dig_with_new_cut()`,
+`_stop_after_failed_dig()`, and `_restart_after_failed_dig()` behavior behind
+policy facades. The service uses focused execution, cycle, return, and coverage
+state owners for stable storage while keeping active-policy reset, dig-cut plan
+clear/invalidation actions, coverage decision events, terminal-stop requests,
+typed observation facts, and config facts as explicit ports. Failed-dig branch
+choice, remaining reason strings, terminal-stop diagnostics, reset timing,
+debug/summary/trace schemas, backend support, `cell_entry`, and removed 5P
+runtime status remain unchanged.
 
 Current status note after Phase 9.72: return direct-handoff effect-side
 transition state no longer depends on policy-built state callbacks.
@@ -1443,8 +1438,8 @@ transition state no longer depends on policy-built state callbacks.
 `PrimitiveExecutionRuntimeState` and `PrimitiveCycleRuntimeState` owners
 directly. `ReturnDirectHandoffEffectService` reads the current skill from the
 execution owner, completes the return transition through the cycle owner, and
-chooses the existing next skill from explicit `should_pre_dig_align_before_dig`
-plus skill-name facts. `PrimitivePlannerACTPolicy` still keeps
+after Phase 9.92 always hands off to `dig` rather than parked pre-dig-align.
+`PrimitivePlannerACTPolicy` still keeps
 `_set_return_or_direct_handoff(...)`,
 `_try_return_direct_handoff_at_current_obs(...)`,
 `_complete_return_transition_for_backend()`, and
@@ -1735,6 +1730,22 @@ execution-driver tick order, prev-action finalization timing, backend
 fail-fast behavior, debug/summary/trace schemas, parked `pre_dig_align`, and
 parked `cell_entry` remain unchanged.
 
+Current status note after parked pre-dig-align cleanup: the parked
+`pre_dig_align` runtime execution path has been removed end-to-end. The legacy
+FSM backend branch chain no longer routes to `pre_dig_align`; action dispatch no
+longer owns a pre-dig action port; reset, skill lifecycle, return handoff,
+dig-recovery, tick finalization, and coverage first-dig qpos-delta paths no
+longer call pre-dig readiness/target/action/replan algorithms. Disabled public
+debug/summary/report schema compatibility remains through
+`PrimitivePreDigAlignCompatibilityRuntimeState` and report projection defaults.
+Enabled `pre_dig_align` config now fails fast during adapter normalization, and
+active v2.4 eval configs retain only disabled compatibility blocks. This does
+not touch parked `cell_entry`, does not promote pre-dig into backend facts,
+token contracts, behavior-tree/VLM packets, or mainline runtime architecture,
+and does not change the maturity statement: default legacy FSM backendified
+with focused services / shared backend decision input/facts/factory; BT/VLM/LLM
+backends remain unsupported fail-fast.
+
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective
 bounded move toward the interface standard, not merely the safest smallest
@@ -1743,11 +1754,10 @@ without reducing a broader stable boundary, the refactor thread must stop,
 state that risk explicitly in its conclusion, and choose a larger bounded
 target before dispatch.
 
-Parked cleanup rule: leave residual `pre_dig_align` and parked `cell_entry`
-material alone while confirmed-live/mainline boundaries continue. Once the
-other live work is complete, make an explicit checkpoint commit first, then run
-a separate cleanup/removal review for parked paths. Until that checkpoint, do
-not dispatch implementation slices that promote parked material into backend
+Parked cleanup rule: the explicit checkpoint/review gate has now been used for
+the parked `pre_dig_align` runtime cleanup. Keep the remaining disabled
+pre-dig public schema compatibility separate from parked `cell_entry` cleanup.
+Do not dispatch implementation slices that promote parked material into backend
 facts, token contracts, behavior-tree/VLM surfaces, or mainline runtime
 architecture.
 
@@ -1772,9 +1782,11 @@ migrated only the 4P return branch behind the backend adapter; Phase 7.7 has
 audited the residual 4P `_maybe_switch_skill()` shell and legacy parking
 boundary. The confirmed-live mainline branches now delegate to backend branch
 objects in the original order. The remaining inline 4P branch body is
-`pre_dig_align`, which stays legacy parking because the selected successful
-evidence packet classifies `gate.pre_dig_align` as
-`dead-candidate` / `retain-legacy-parking`.
+`pre_dig_align`, which was legacy parking because the selected successful
+evidence packet classified `gate.pre_dig_align` as
+`dead-candidate` / `retain-legacy-parking`. The subsequent parked cleanup
+removed that runtime branch while retaining disabled report/schema
+compatibility.
 
 Stop further Slice 7 code migration at this verified boundary unless the user
 approves a new scope. The 5P runtime compatibility audit has been resolved by
@@ -1785,7 +1797,10 @@ extraction, backend selection cleanup, or a focused audit of any remaining
 policy-owned storage.
 Do not move `pre_dig_align`, direct-handoff helper internals, change branch
 order, change reason strings, or apply unrelated effects through the backend
-boundary without that separate evidence and compatibility decision.
+boundary without that separate evidence and compatibility decision. For
+`pre_dig_align`, the approved cleanup decision is now: no runtime branch, no
+runtime action path, enabled config fail-fast, disabled public schema retained
+temporarily.
 
 The next approved planning scope is Phase 8 effect-boundary design, recorded in
 `docs/planner_effect_boundary_design.md`. It should govern later return

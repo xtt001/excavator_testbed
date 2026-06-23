@@ -42,7 +42,6 @@ def _ports(
     bootstrap_end_mode: str = "disabled",
     bootstrap_policy_available: bool = False,
     scripted_bootstrap_enabled: bool = False,
-    pre_dig_align_before_dig: bool = False,
     action_dim: int = 4,
 ) -> tuple[PrimitiveResetLifecyclePorts, list[str]]:
     events = events if events is not None else []
@@ -56,10 +55,8 @@ def _ports(
             bootstrap_end_mode=lambda: bootstrap_end_mode,
             bootstrap_policy_available=lambda: bootstrap_policy_available,
             scripted_bootstrap_enabled=lambda: scripted_bootstrap_enabled,
-            should_pre_dig_align_before_dig=lambda: pre_dig_align_before_dig,
             action_dim=action_dim,
             bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
-            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
             dig_skill_name="dig",
         ),
         events,
@@ -86,28 +83,24 @@ def test_reset_service_resets_policies_then_boundary_then_cell_entry() -> None:
         "bootstrap_end_mode",
         "bootstrap_policy_available",
         "scripted_bootstrap_enabled",
-        "pre_dig_align_before_dig",
         "expected_skill",
     ),
     [
-        ("first_qualified_dig_start", True, False, False, BOOTSTRAP_SKILL_NAME),
-        ("scripted_qpos", False, True, False, BOOTSTRAP_SKILL_NAME),
-        ("disabled", False, False, True, PRE_DIG_ALIGN_SKILL_NAME),
-        ("disabled", False, False, False, "dig"),
+        ("first_qualified_dig_start", True, False, BOOTSTRAP_SKILL_NAME),
+        ("scripted_qpos", False, True, BOOTSTRAP_SKILL_NAME),
+        ("disabled", False, False, "dig"),
     ],
 )
-def test_reset_service_selects_initial_skill_from_bootstrap_and_pre_dig_gates(
+def test_reset_service_selects_initial_skill_from_bootstrap_or_dig(
     bootstrap_end_mode: str,
     bootstrap_policy_available: bool,
     scripted_bootstrap_enabled: bool,
-    pre_dig_align_before_dig: bool,
     expected_skill: str,
 ) -> None:
     ports, _ = _ports(
         bootstrap_end_mode=bootstrap_end_mode,
         bootstrap_policy_available=bootstrap_policy_available,
         scripted_bootstrap_enabled=scripted_bootstrap_enabled,
-        pre_dig_align_before_dig=pre_dig_align_before_dig,
     )
 
     state = PrimitiveResetLifecycleService.from_ports(ports).reset()

@@ -52,17 +52,10 @@ class _FactoryCompatibilityActions:
     ) -> None:
         raise AssertionError("factory tests must not refresh return")
 
-    def handle_residual_pre_dig_align(
-        self,
-        context: PrimitiveDecisionContext,
-    ) -> bool:
-        raise AssertionError("factory tests must not handle residual")
-
 
 def _branch_ports() -> LegacyFSMBranchPorts:
     return LegacyFSMBranchPorts(
         bootstrap_skill_name="bootstrap",
-        pre_dig_align_skill_name="pre_dig_align",
         dig_skill_name="dig",
         carry_skill_name="carry",
         dump_skill_name="dump",

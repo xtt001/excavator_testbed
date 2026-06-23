@@ -47,9 +47,6 @@ DIG_REQUESTED_DECISION_SOURCE = "legacy_fsm_dig_requested_effect"
 CARRY_REQUESTED_DECISION_SOURCE = "legacy_fsm_carry_requested_effect"
 DUMP_REQUESTED_DECISION_SOURCE = "legacy_fsm_dump_requested_effect"
 RETURN_REQUESTED_DECISION_SOURCE = "legacy_fsm_return_requested_effect"
-RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE = (
-    "legacy_fsm_residual_pre_dig_align_already_applied"
-)
 
 
 @dataclass(frozen=True)
@@ -57,7 +54,6 @@ class LegacyFSMBranchPorts:
     """Typed shell ports needed to build the legacy FSM branch set."""
 
     bootstrap_skill_name: str
-    pre_dig_align_skill_name: str
     dig_skill_name: str
     carry_skill_name: str
     dump_skill_name: str
@@ -113,7 +109,6 @@ class PrimitiveRequestedBranchRunner:
     carry_branch: PrimitiveDecisionBranch
     dump_branch: PrimitiveDecisionBranch
     return_branch: PrimitiveDecisionBranch
-    residual_branch: PrimitiveDecisionBranch
 
     def decide_context(
         self,
@@ -130,7 +125,6 @@ class PrimitiveRequestedBranchRunner:
             self.carry_branch,
             self.dump_branch,
             self.return_branch,
-            self.residual_branch,
         ):
             result = branch.decide_input(decision_input)
             if result is not None:
@@ -197,37 +191,8 @@ class LegacyFSMBackendAdapter:
 
 
 @dataclass(frozen=True)
-class LegacyFSMResidualPreDigAlignAdapter:
-    """Explicit already-applied adapter for parked pre-dig-align behavior."""
-
-    pre_dig_align_skill_name: str
-
-    def decide_input(
-        self,
-        decision_input: PrimitiveBackendDecisionInput,
-    ) -> PrimitiveDecisionResult | None:
-        facts = decision_input.common
-        skill_before = str(facts.skill_name_before_decision)
-        if not facts.is_current_skill(self.pre_dig_align_skill_name):
-            return None
-        decision_input.compatibility_actions.handle_residual_pre_dig_align(
-            decision_input.context
-        )
-        # Residual handling mutates shell-owned skill/reason state; rebuild facts
-        # after the compatibility handler to preserve the historical result.
-        facts_after = decision_input.rebuild_common_facts_after_compatibility_action()
-        return PrimitiveDecisionResult.from_legacy_fsm_outcome(
-            decision_source=RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE,
-            skill_before=skill_before,
-            skill_after=facts_after.current_skill_name,
-            switch_reason=facts_after.current_switch_reason,
-        )
-
-
-@dataclass(frozen=True)
 class LegacyFSMBootstrapConfig:
     bootstrap_skill_name: str
-    pre_dig_align_skill_name: str
 
 
 @dataclass(frozen=True)
@@ -245,9 +210,7 @@ class LegacyFSMBootstrapBranch:
         skill_before = str(facts.skill_name_before_decision)
         if not facts.is_current_skill(self.config.bootstrap_skill_name):
             return None
-        bootstrap_facts = backend_facts.bootstrap_decision(
-            pre_dig_align_skill_name=self.config.pre_dig_align_skill_name,
-        )
+        bootstrap_facts = backend_facts.bootstrap_decision()
         status = bootstrap_facts.status
         if not status.should_end_bootstrap:
             return PrimitiveDecisionResult.from_requested_effects(
@@ -543,7 +506,6 @@ class LegacyFSMBranchSet:
     carry_branch: PrimitiveDecisionBranch
     dump_branch: PrimitiveDecisionBranch
     return_branch: PrimitiveDecisionBranch
-    residual_branch: PrimitiveDecisionBranch
 
     @classmethod
     def from_ports(cls, ports: LegacyFSMBranchPorts) -> "LegacyFSMBranchSet":
@@ -553,7 +515,6 @@ class LegacyFSMBranchSet:
             bootstrap_branch=LegacyFSMBootstrapBranch(
                 config=LegacyFSMBootstrapConfig(
                     bootstrap_skill_name=ports.bootstrap_skill_name,
-                    pre_dig_align_skill_name=ports.pre_dig_align_skill_name,
                 ),
             ),
             dig_branch=LegacyFSMDigBranch(
@@ -568,9 +529,6 @@ class LegacyFSMBranchSet:
             return_branch=LegacyFSMReturnBranch(
                 config=LegacyFSMReturnConfig(return_skill_name=ports.return_skill_name),
             ),
-            residual_branch=LegacyFSMResidualPreDigAlignAdapter(
-                pre_dig_align_skill_name=ports.pre_dig_align_skill_name,
-            ),
         )
 
     def requested_runner(self) -> PrimitiveRequestedBranchRunner:
@@ -582,7 +540,6 @@ class LegacyFSMBranchSet:
             carry_branch=self.carry_branch,
             dump_branch=self.dump_branch,
             return_branch=self.return_branch,
-            residual_branch=self.residual_branch,
         )
 
     def requested_decision_backend(self) -> "LegacyFSMRequestedDecisionBackend":
@@ -698,7 +655,6 @@ class LegacyFSMCompatibilityDecisionBackend:
         )
         for branch in (
             self.branch_set.bootstrap_branch,
-            self.branch_set.residual_branch,
             self.branch_set.dig_branch,
             self.branch_set.carry_branch,
             self.branch_set.dump_branch,
@@ -739,7 +695,6 @@ __all__ = [
     "LegacyFSMDigConfig",
     "LegacyFSMDumpBranch",
     "LegacyFSMDumpConfig",
-    "LegacyFSMResidualPreDigAlignAdapter",
     "LegacyFSMRequestedDecisionBackend",
     "LegacyFSMReturnBranch",
     "LegacyFSMReturnConfig",
@@ -747,7 +702,6 @@ __all__ = [
     "PrimitiveDecisionBackend",
     "PrimitiveDecisionBackendFactory",
     "PrimitiveRequestedBranchRunner",
-    "RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE",
 ]
 
 

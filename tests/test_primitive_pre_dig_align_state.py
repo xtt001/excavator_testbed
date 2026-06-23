@@ -103,7 +103,6 @@ def test_reset_lifecycle_creates_pre_dig_align_state_owner_and_legacy_fields() -
         bootstrap_end_mode=lambda: "dig",
         bootstrap_policy_available=lambda: False,
         scripted_bootstrap_enabled=lambda: False,
-        should_pre_dig_align_before_dig=lambda: False,
         action_dim=4,
     )
 

@@ -66,7 +66,7 @@ def test_previous_action_is_copied_without_aliasing() -> None:
     ("reason", "expected"),
     [
         ("return_to_dig_start_envelope_ready", True),
-        ("return_to_pre_dig_align_start_envelope_ready", True),
+        ("return_to_pre_dig_align_start_envelope_ready", False),
         ("dig_to_carry_loaded", False),
         ("return_to_dump_unexpected", False),
         ("", False),

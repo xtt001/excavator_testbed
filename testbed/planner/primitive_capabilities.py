@@ -719,7 +719,6 @@ class ReturnTransitionStatus:
         return_next_dig_event_seen: bool = False,
         entry_close: bool = False,
         start_envelope_ready: bool = False,
-        pre_dig_align_before_dig: bool = False,
         return_to_dig_start_envelope_direct_handoff_enabled: bool = False,
         return_to_dig_start_envelope_gate_enabled: bool = False,
         return_to_dig_shallow_guard_enabled: bool = False,
@@ -771,7 +770,7 @@ class ReturnTransitionStatus:
             and (depth_below_max or entry_guard_ready)
         )
         shallow_guard_allowed = bool(not semantic and shallow_guard_ready and handoff_ready)
-        next_skill = "pre_dig_align" if pre_dig_align_before_dig else "dig"
+        next_skill = "dig"
         reason_suffix = ""
         if next_or_seen and handoff_ready:
             reason_suffix = "next_dig_entry_ready"

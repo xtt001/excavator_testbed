@@ -8,18 +8,12 @@ from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive_execution_state import (
     PrimitiveExecutionRuntimeState,
 )
-from testbed.planner.primitive_pre_dig_align_state import (
-    PrimitivePreDigAlignCompatibilityRuntimeState,
-)
 from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive_skill_lifecycle import (
     PrimitiveSkillLifecyclePorts,
     PrimitiveSkillLifecycleService,
 )
-from testbed.policies.hybrid.primitive_planner import (
-    PRE_DIG_ALIGN_SKILL_NAME,
-    PrimitivePlannerACTPolicy,
-)
+from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
 def _ports(
@@ -35,9 +29,6 @@ def _ports(
     )
     cycle_state = PrimitiveCycleRuntimeState.fresh()
     return_state = PrimitiveReturnRuntimeState.fresh()
-    pre_dig_align_state = PrimitivePreDigAlignCompatibilityRuntimeState.fresh(
-        action_dim=4,
-    )
     coverage_state = CoverageRuntimeState()
 
     return (
@@ -45,19 +36,16 @@ def _ports(
             execution_state=execution_state,
             cycle_state=cycle_state,
             return_state=return_state,
-            pre_dig_align_state=pre_dig_align_state,
             coverage_state=coverage_state,
             reset_active_policy=lambda: events.append(
                 f"reset:{execution_state.skill_name}"
             ),
             clear_dig_cut_plan=lambda: events.append("clear_dig_cut_plan"),
-            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
         ),
         {
             "execution": execution_state,
             "cycle": cycle_state,
             "return": return_state,
-            "pre_dig_align": pre_dig_align_state,
             "coverage": coverage_state,
         },
         events,
@@ -134,35 +122,6 @@ def test_switch_to_carry_dump_and_return_reset_expected_counters_and_clear_plan(
             assert owners["return"].return_next_dig_event_seen is False
 
 
-def test_switch_to_pre_dig_align_skips_active_policy_reset_and_clearing() -> None:
-    ports, owners, events = _ports(skill_name="dig", switch_reason="old")
-    pre_state = owners["pre_dig_align"]
-    pre_state.step_count = 3
-    pre_state.hold_count = 4
-    pre_state.entry_close_handoff_ready = True
-    pre_state.entry_intent_handoff_ready = True
-    pre_state.timeout_handoff_reason = "timeout"
-    pre_state.surface_guard_triggered = True
-
-    PrimitiveSkillLifecycleService.from_ports(ports).set_skill(
-        PRE_DIG_ALIGN_SKILL_NAME,
-        "dig_to_pre_dig_align_bad_dig_low_payload",
-    )
-
-    assert events == []
-    assert owners["execution"].skill_name == PRE_DIG_ALIGN_SKILL_NAME
-    assert (
-        owners["execution"].switch_reason
-        == "dig_to_pre_dig_align_bad_dig_low_payload"
-    )
-    assert pre_state.step_count == 0
-    assert pre_state.hold_count == 0
-    assert pre_state.entry_close_handoff_ready is False
-    assert pre_state.entry_intent_handoff_ready is False
-    assert pre_state.timeout_handoff_reason == ""
-    assert pre_state.surface_guard_triggered is False
-
-
 def test_policy_set_skill_delegates_to_skill_lifecycle_service() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     calls: list[tuple[str, str]] = []
@@ -191,7 +150,6 @@ def test_skill_lifecycle_boundary_uses_typed_ports_without_planner_self() -> Non
         "execution_state",
         "cycle_state",
         "return_state",
-        "pre_dig_align_state",
         "coverage_state",
     } <= port_fields
     assert not {
@@ -202,12 +160,6 @@ def test_skill_lifecycle_boundary_uses_typed_ports_without_planner_self() -> Non
         "set_dump_done_hold_count",
         "set_return_step_count",
         "set_return_next_dig_event_seen",
-        "set_pre_dig_align_step_count",
-        "set_pre_dig_align_hold_count",
-        "set_pre_dig_align_entry_close_handoff_ready",
-        "set_pre_dig_align_entry_intent_handoff_ready",
-        "set_pre_dig_align_timeout_handoff_reason",
-        "set_pre_dig_align_surface_guard_triggered",
         "set_coverage_current_payload_gain_kg",
         "set_dig_step_count",
         "set_dig_best_mass_kg",

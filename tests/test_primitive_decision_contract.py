@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
+import pytest
 
 from testbed.data.schema import (
     ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
@@ -42,7 +43,6 @@ from testbed.planner.primitive_decision import (
     validate_decision_effect_contract,
 )
 from testbed.planner.primitive_execution import PrimitiveTickPreparation
-from testbed.planner.primitive_backend import RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
@@ -655,7 +655,7 @@ def test_primitive_planner_requested_effect_bridge_applies_return_cycle_in_order
 
     def fake_next_skill(self: PrimitivePlannerACTPolicy) -> str:
         events.append(f"next_skill:{cycle_state.cycle_index}")
-        return "dig" if cycle_state.cycle_index > 0 else "pre_dig_align"
+        return "dig"
 
     def fake_set_skill(
         self: PrimitivePlannerACTPolicy,
@@ -981,21 +981,15 @@ def test_primitive_planner_mainline_miss_does_not_call_broad_legacy_fallback() -
     assert "broad legacy fallback" in message
 
 
-def test_primitive_planner_pre_dig_align_uses_explicit_residual_path() -> None:
+def test_primitive_planner_pre_dig_align_is_unhandled_after_cleanup() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs: dict[str, Any] = {"qpos": [1.0]}
-    expected = PrimitiveDecisionResult.from_legacy_fsm_outcome(
-        decision_source=RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE,
-        skill_before="pre_dig_align",
-        skill_after="dig",
-        switch_reason="pre_dig_align_to_dig_ready",
-    )
     calls: list[tuple[dict[str, Any], None, PrimitiveTickPreparation]] = []
 
     class FakeRuntime:
         def decide_tick(self, *, obs, boundary_event, preparation):
             calls.append((obs, boundary_event, preparation))
-            return expected
+            raise PrimitiveDecisionContractError("unhandled planner skill: pre_dig_align")
 
     planner._decision_runtime = MethodType(
         lambda self: FakeRuntime(),
@@ -1008,15 +1002,16 @@ def test_primitive_planner_pre_dig_align_uses_explicit_residual_path() -> None:
         planner,
     )
 
-    result = planner._decide_tick_with_legacy_fsm(
-        obs=obs,
-        boundary_event=None,
-        preparation=PrimitiveTickPreparation(
+    with pytest.raises(PrimitiveDecisionContractError, match="pre_dig_align"):
+        planner._decide_tick_with_legacy_fsm(
+            obs=obs,
             boundary_event=None,
-            skill_name_before_decision="pre_dig_align",
-            dig_progress_updated=False,
-        ),
-    )
+            preparation=PrimitiveTickPreparation(
+                boundary_event=None,
+                skill_name_before_decision="pre_dig_align",
+                dig_progress_updated=False,
+            ),
+        )
 
     assert calls == [
         (
@@ -1029,11 +1024,6 @@ def test_primitive_planner_pre_dig_align_uses_explicit_residual_path() -> None:
             ),
         )
     ]
-    assert result is expected
-    assert result.side_effects_applied is True
-    assert result.skill_before == "pre_dig_align"
-    assert result.skill_after == "dig"
-    assert result.switch_reason == "pre_dig_align_to_dig_ready"
 
 
 def test_primitive_planner_maybe_switch_skill_applies_requested_compat_result() -> None:
@@ -1086,21 +1076,15 @@ def test_primitive_planner_maybe_switch_skill_applies_requested_compat_result() 
     ]
 
 
-def test_primitive_planner_maybe_switch_skill_does_not_reapply_already_applied_residual() -> None:
+def test_primitive_planner_maybe_switch_skill_propagates_removed_pre_dig_error() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs: dict[str, Any] = {"qpos": [1.0]}
-    result = PrimitiveDecisionResult.from_legacy_fsm_outcome(
-        decision_source=RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE,
-        skill_before="pre_dig_align",
-        skill_after="dig",
-        switch_reason="pre_dig_align_to_dig_ready",
-    )
     calls: list[Any] = []
 
     class FakeRuntime:
         def decide_legacy_compatibility_tick(self, *, obs, boundary_event, preparation):
             calls.append(("decide", obs, boundary_event, preparation))
-            return result
+            raise PrimitiveDecisionContractError("unhandled planner skill: pre_dig_align")
 
     planner._skill_name = "pre_dig_align"
     planner._decision_runtime = MethodType(
@@ -1112,7 +1096,8 @@ def test_primitive_planner_maybe_switch_skill_does_not_reapply_already_applied_r
         planner,
     )
 
-    planner._maybe_switch_skill(obs=obs, boundary_event=None)
+    with pytest.raises(PrimitiveDecisionContractError, match="pre_dig_align"):
+        planner._maybe_switch_skill(obs=obs, boundary_event=None)
 
     assert calls == [
         (
@@ -1570,7 +1555,6 @@ def test_primitive_planner_legacy_branch_ports_use_capability_provider_methods()
         planner,
     )
     planner._should_pre_dig_align_before_dig = MethodType(lambda self: False, planner)
-    planner._maybe_handle_pre_dig_align_skill = MethodType(lambda self, obs: False, planner)
     provider = _FakePrimitiveFSMCapabilityProvider()
     planner._primitive_fsm_capability_provider = MethodType(
         lambda self: provider,

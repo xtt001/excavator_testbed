@@ -51,9 +51,7 @@ class PrimitiveDecisionCapabilitiesPorts:
     current_switch_reason: Callable[[], str]
     should_end_bootstrap: Callable[..., bool]
     bootstrap_end_mode: Callable[[], str]
-    should_pre_dig_align_before_dig: Callable[[], bool]
     transition_status_provider: PrimitiveTransitionStatusProvider
-    maybe_handle_residual_pre_dig_align: Callable[[dict[str, Any]], bool]
 
 
 @dataclass(frozen=True)
@@ -77,9 +75,6 @@ class _BootstrapDecisionReader:
 
     def bootstrap_end_mode(self) -> str:
         return str(self.ports.bootstrap_end_mode())
-
-    def should_pre_dig_align_before_dig(self) -> bool:
-        return bool(self.ports.should_pre_dig_align_before_dig())
 
 
 @dataclass(frozen=True)
@@ -135,12 +130,6 @@ class PrimitiveDecisionCompatibilityActions:
             context.obs
         )
 
-    def handle_residual_pre_dig_align(
-        self,
-        context: PrimitiveDecisionContext,
-    ) -> bool:
-        return bool(self._ports.maybe_handle_residual_pre_dig_align(context.obs))
-
 
 @dataclass(frozen=True)
 class PrimitiveDecisionCapabilities:
@@ -186,13 +175,10 @@ class PrimitiveDecisionCapabilities:
         context: PrimitiveDecisionContext,
         *,
         bootstrap_skill_name: str,
-        pre_dig_align_skill_name: str,
         facts: PrimitiveDecisionFacts | None = None,
     ) -> BootstrapDecisionStatus:
         del bootstrap_skill_name
-        return self.backend_facts(context, facts=facts).bootstrap_decision(
-            pre_dig_align_skill_name=pre_dig_align_skill_name,
-        ).status
+        return self.backend_facts(context, facts=facts).bootstrap_decision().status
 
     def dig_transition_status(
         self,
@@ -273,15 +259,6 @@ class PrimitiveDecisionCapabilities:
         context: PrimitiveDecisionContext,
     ) -> None:
         self.compatibility_actions().refresh_return_transition_state(context)
-
-    def handle_residual_pre_dig_align(
-        self,
-        context: PrimitiveDecisionContext,
-    ) -> bool:
-        """Apply the parked pre-dig-align compatibility path."""
-
-        return self.compatibility_actions().handle_residual_pre_dig_align(context)
-
 
 __all__ = [
     "BootstrapDecisionStatus",

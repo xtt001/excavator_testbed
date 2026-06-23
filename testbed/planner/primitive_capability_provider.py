@@ -66,7 +66,6 @@ class PrimitiveFSMCapabilityProviderPorts:
     dump_done_use_boundary_event: bool
     dump_done_hold_steps: int
     return_handoff_readiness_service: ReturnHandoffReadinessService
-    pre_dig_align_before_dig: Callable[[], bool]
     return_to_dig_start_envelope_direct_handoff_enabled: bool
     return_to_dig_start_envelope_gate_enabled: bool
     return_to_dig_shallow_guard_enabled: bool
@@ -257,7 +256,6 @@ class PrimitiveFSMCapabilityProvider:
             start_envelope_ready=(
                 ports.return_state.return_to_dig_start_envelope_ready_state
             ),
-            pre_dig_align_before_dig=ports.pre_dig_align_before_dig(),
             return_to_dig_start_envelope_direct_handoff_enabled=(
                 ports.return_to_dig_start_envelope_direct_handoff_enabled
             ),

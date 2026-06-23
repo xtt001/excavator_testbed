@@ -4,9 +4,6 @@ from dataclasses import fields
 from types import MethodType
 from typing import Any
 
-import numpy as np
-
-from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_DIM
 from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive_coverage import CoverageCorridorState
 from testbed.planner.primitive_coverage_state import CoverageRuntimeState
@@ -18,15 +15,8 @@ from testbed.planner.primitive_dig_recovery import (
 from testbed.planner.primitive_execution_state import (
     PrimitiveExecutionRuntimeState,
 )
-from testbed.planner.primitive_pre_dig_align_state import (
-    PrimitivePreDigAlignCompatibilityRuntimeState,
-)
 from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
-from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
-from testbed.policies.hybrid.primitive_planner import (
-    PRE_DIG_ALIGN_SKILL_NAME,
-    PrimitivePlannerACTPolicy,
-)
+from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
 def _corridor(corridor_id: int) -> CoverageCorridorState:
@@ -52,13 +42,7 @@ def _service(
 ]:
     events = events if events is not None else []
     config = {
-        "dig_cut_planner_mode": "operator_prior_coverage",
         "dig_failed_replan_next_skill": "dig",
-        "pre_dig_before": False,
-        "pre_dig_after_failed": False,
-        "pre_dig_entry_error": 0.0,
-        "pre_dig_timeout_can_handoff": True,
-        "raw_fields_in_prior_range": True,
         "mass_in_bucket": 0.0,
         **(config or {}),
     }
@@ -70,32 +54,11 @@ def _service(
     cycle_state = PrimitiveCycleRuntimeState.fresh()
     return_state = PrimitiveReturnRuntimeState.fresh()
     coverage_state = CoverageRuntimeState()
-    token_state = PrimitiveTokenRuntimeState.fresh()
-    pre_dig_align_state = PrimitivePreDigAlignCompatibilityRuntimeState.fresh(
-        action_dim=4,
-    )
 
     def _set_skill(skill_name: str, reason: str) -> None:
         events.append(f"set_skill:{skill_name}:{reason}")
         execution_state.set_skill_name(skill_name)
         execution_state.set_switch_reason(reason)
-
-    def _build_tokens(obs: dict[str, Any]):
-        events.append(f"build_tokens:{obs['id']}")
-        token = np.arange(DIG_CUT_TOKEN_DIM, dtype=np.float32) + 10.0
-        return token, {"x": 1.0}, "operator_prior_coverage", "fallback"
-
-    def _raw_fields_in_prior_range(raw_fields: dict[str, float | int]) -> bool:
-        events.append(f"raw_range:{raw_fields['x']}")
-        return bool(config["raw_fields_in_prior_range"])
-
-    def _pre_dig_entry_error(obs: dict[str, Any]) -> float:
-        events.append(f"entry_error:{obs['id']}")
-        return float(config["pre_dig_entry_error"])
-
-    def _pre_dig_timeout_can_handoff(obs: dict[str, Any]) -> bool:
-        events.append(f"timeout_gate:{obs['id']}")
-        return bool(config["pre_dig_timeout_can_handoff"])
 
     def _record_event(
         event: str,
@@ -136,36 +99,22 @@ def _service(
         cycle_state=cycle_state,
         return_state=return_state,
         coverage_state=coverage_state,
-        token_state=token_state,
-        pre_dig_align_state=pre_dig_align_state,
         reset_active_policy=lambda: events.append("active_reset"),
         invalidate_pending_dig_cut_plan=lambda: events.append("invalidate"),
         clear_dig_cut_plan=lambda: events.append("clear"),
-        build_operator_prior_coverage_dig_cut_tokens=_build_tokens,
-        raw_fields_in_prior_range=_raw_fields_in_prior_range,
-        pre_dig_align_entry_error=_pre_dig_entry_error,
-        pre_dig_align_timeout_can_handoff=_pre_dig_timeout_can_handoff,
         set_skill=_set_skill,
         record_coverage_decision_event=_record_event,
         request_coverage_terminal_stop=_request_terminal_stop,
         observation_facts=_observation_facts,
-        should_pre_dig_align_before_dig=lambda: bool(config["pre_dig_before"]),
-        should_pre_dig_align_after_failed_dig=lambda: bool(
-            config["pre_dig_after_failed"]
-        ),
-        dig_cut_planner_mode=lambda: str(config["dig_cut_planner_mode"]),
         dig_failed_replan_next_skill=lambda: str(
             config["dig_failed_replan_next_skill"]
         ),
-        pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
     )
     owners = {
         "execution": execution_state,
         "cycle": cycle_state,
         "return": return_state,
         "coverage": coverage_state,
-        "token": token_state,
-        "pre_dig_align": pre_dig_align_state,
     }
     return (
         PrimitiveDigRecoveryService.from_ports(ports),
@@ -236,23 +185,16 @@ def test_stop_after_failed_dig_preserves_payload_event_and_terminal_stop() -> No
 
 
 def test_restart_after_failed_dig_preserves_branch_reasons() -> None:
-    service, owners, events, _captured, _config = _service(
-        config={"pre_dig_after_failed": True},
-    )
+    service, owners, events, _captured, _config = _service()
     owners["return"].return_next_dig_event_seen = True
     owners["cycle"].dig_step_count = 3
 
-    service.restart_after_failed_dig("bad_dig_low_payload", {"id": "pre"})
+    service.restart_after_failed_dig("bad_dig_low_payload", {"id": "retry"})
 
-    assert owners["execution"].skill_name == PRE_DIG_ALIGN_SKILL_NAME
-    assert (
-        owners["execution"].switch_reason
-        == "dig_to_pre_dig_align_bad_dig_low_payload"
-    )
-    assert owners["pre_dig_align"].replan_count == 1
-    assert owners["return"].return_next_dig_event_seen is False
+    assert owners["execution"].skill_name == "dig"
+    assert owners["execution"].switch_reason == "dig_retry_bad_dig_low_payload"
     assert owners["cycle"].dig_step_count == 0
-    assert events == ["invalidate", "clear"]
+    assert events == ["active_reset", "invalidate", "clear"]
 
     service, owners, events, captured, _config = _service(
         config={
@@ -270,63 +212,6 @@ def test_restart_after_failed_dig_preserves_branch_reasons() -> None:
     assert owners["execution"].skill_name == "dig"
     assert owners["execution"].switch_reason == "dig_retry_bad_dig_plateau"
     assert events == ["active_reset", "invalidate", "clear"]
-
-
-def test_try_replan_pre_dig_align_handoff_preserves_writeback_and_gate() -> None:
-    service, owners, events, _captured, config = _service(
-        config={"pre_dig_entry_error": 0.42},
-    )
-    owners["cycle"].cycle_index = 5
-    owners["coverage"].coverage_active_corridor_id = 9
-    returned_token = np.arange(DIG_CUT_TOKEN_DIM, dtype=np.float32) + 10.0
-
-    assert service.try_replan_pre_dig_align_handoff({"id": "success"}) is True
-
-    assert events == [
-        "invalidate",
-        "clear",
-        "build_tokens:success",
-        "raw_range:1.0",
-        "entry_error:success",
-        "timeout_gate:success",
-        "set_skill:dig:pre_dig_align_replan_to_dig_entry_close",
-    ]
-    assert owners["coverage"].coverage_active_corridor_id == -1
-    assert np.allclose(owners["token"].dig_cut_tokens, returned_token)
-    assert owners["token"].dig_cut_tokens is not returned_token
-    assert owners["token"].dig_cut_planned_cycle_id == 5
-    assert owners["token"].dig_cut_token_source == "operator_prior_coverage"
-    assert owners["token"].dig_cut_fallback_reason == "fallback"
-    assert owners["token"].dig_cut_token_in_prior_p10_p90 is True
-    assert owners["pre_dig_align"].entry_error_m == 0.42
-    assert owners["pre_dig_align"].replan_count == 1
-    assert owners["pre_dig_align"].completed_count == 1
-    assert owners["pre_dig_align"].step_count == 0
-    assert owners["pre_dig_align"].hold_count == 0
-    assert owners["execution"].skill_name == "dig"
-    assert (
-        owners["execution"].switch_reason
-        == "pre_dig_align_replan_to_dig_entry_close"
-    )
-
-    service, _owners, events, _captured, config = _service()
-    config["dig_cut_planner_mode"] = "learned"
-    assert service.try_replan_pre_dig_align_handoff({"id": "guard"}) is False
-    assert events == []
-
-    service, owners, events, _captured, config = _service(
-        config={"pre_dig_timeout_can_handoff": False},
-    )
-    assert service.try_replan_pre_dig_align_handoff({"id": "timeout"}) is False
-    assert events == [
-        "invalidate",
-        "clear",
-        "build_tokens:timeout",
-        "raw_range:1.0",
-        "entry_error:timeout",
-        "timeout_gate:timeout",
-    ]
-    assert owners["pre_dig_align"].completed_count == 0
 
 
 def test_policy_recovery_ports_share_focused_owners_and_facades_remain_callable() -> None:
@@ -357,17 +242,12 @@ def test_policy_recovery_ports_share_focused_owners_and_facades_remain_callable(
     assert ports.cycle_state is policy._primitive_cycle_runtime_state()
     assert ports.return_state is policy._primitive_return_runtime_state()
     assert ports.coverage_state is policy._coverage_runtime_state()
-    assert ports.token_state is policy._primitive_token_runtime_state()
-    assert (
-        ports.pre_dig_align_state
-        is policy._primitive_pre_dig_align_compatibility_runtime_state()
-    )
     assert "planner" not in port_names
     assert "self" not in port_names
     assert "observation_facts" in port_names
     assert "mass_in_bucket" not in port_names
-    assert hasattr(policy, "_restart_pre_dig_align")
-    assert hasattr(policy, "_try_replan_pre_dig_align_handoff")
+    assert not hasattr(policy, "_restart_pre_dig_align")
+    assert not hasattr(policy, "_try_replan_pre_dig_align_handoff")
     assert hasattr(policy, "_restart_dig_with_new_cut")
     assert hasattr(policy, "_stop_after_failed_dig")
     assert hasattr(policy, "_restart_after_failed_dig")

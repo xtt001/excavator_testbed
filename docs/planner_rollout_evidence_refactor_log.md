@@ -8876,3 +8876,37 @@ Each completed refactor round should append:
 - Maturity statement remains: default legacy FSM backendified with focused
   services / shared backend decision input/facts/factory; BT/VLM/LLM backends
   remain unsupported fail-fast.
+
+### 2026-06-23 Parked Pre-Dig-Align Runtime Cleanup
+
+- Scope implemented by parked cleanup executor: remove parked `pre_dig_align`
+  runtime execution end-to-end while retaining disabled public
+  debug/summary/report schema compatibility.
+- TDD red result: after adding focused cleanup assertions,
+  `python -m pytest -q tests/test_primitive_adapter_config.py::test_pre_dig_align_enabled_config_fails_fast_after_runtime_removal tests/test_primitive_action_dispatch.py::test_pre_dig_align_no_longer_has_runtime_action_dispatch`
+  failed with representative errors `Failed: DID NOT RAISE <class
+  'ValueError'>` for enabled config and `PrimitiveActionDispatchPorts.__init__()
+  missing 1 required positional argument: 'pre_dig_align_action'` for the old
+  action-dispatch port.
+- Core change: legacy FSM backend branch routing, action dispatch, reset
+  initial-skill selection, skill lifecycle, direct return handoff, failed-dig
+  recovery/replan, tick finalization, and policy pre-dig
+  readiness/target/timeout/action helpers no longer execute or select
+  `pre_dig_align`. Coverage first-dig qpos delta no longer depends on a
+  pre-dig target helper.
+- Compatibility retained: `PrimitivePreDigAlignCompatibilityRuntimeState`,
+  legacy `_pre_dig_align_*` public/private compatibility properties, debug
+  fields, rollout-summary fields, and disabled config blocks remain as disabled
+  schema surfaces. Enabled `pre_dig_align` config now fails fast during adapter
+  normalization; active v2.4 eval configs now set the top-level pre-dig enable
+  flag to false.
+- Non-goals held: no `cell_entry` cleanup, no behavior-tree/VLM/LLM backend
+  implementation, no public schema removal, no token contract promotion, no
+  generic compatibility layer, and no commit in the implementation thread.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It is the largest effective bounded pre-dig cleanup, not a
+  one-wrapper move. It does not create an anemic service, pass-through facade,
+  generic blackboard, broad config bag, or planner-self port. Current maturity
+  remains default legacy FSM backendified with focused services / shared
+  backend decision input/facts/factory; BT/VLM/LLM remain unsupported
+  fail-fast.

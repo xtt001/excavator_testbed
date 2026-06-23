@@ -110,7 +110,8 @@ policy:
     hold_token_until_skill_exit: true
     token_source_prefix: conditioned_return
   pre_dig_align:
-    enabled: true
+    # Runtime path removed; disabled block retained for report schema compatibility.
+    enabled: false
     first_dig_only: true
     controlled_dims:
     - 1

@@ -157,12 +157,14 @@ Do not describe the current code as "fully swappable backend architecture." The
 accurate claim is: the confirmed-live 4P legacy FSM path has been backendified,
 and the shell now delegates most domain work to focused services.
 
-Parked-path policy: residual `pre_dig_align` and parked `cell_entry` must stay
-parked while live/mainline boundaries continue to shrink. After the other
-confirmed-live work is complete, take an explicit checkpoint commit first, then
-run a separate parking/deletion cleanup review. Do not promote either parked
-path into backend facts, token contracts, behavior-tree nodes, VLM packets, or
-mainline runtime architecture as part of ordinary refactor momentum.
+Parked-path policy: `pre_dig_align` runtime execution has been removed after
+the explicit checkpoint/review gate; parked `cell_entry` must stay parked while
+live/mainline boundaries continue to shrink. Disabled `pre_dig_align` public
+debug/summary/report schema compatibility remains temporarily, but enabled
+`pre_dig_align` config must fail fast instead of silently running or being
+ignored. Do not promote either parked path into backend facts, token contracts,
+behavior-tree nodes, VLM packets, or mainline runtime architecture as part of
+ordinary refactor momentum.
 
 ## Layer 1: Public Adapter
 
@@ -625,7 +627,9 @@ Current boundary:
   fields through `PrimitivePreDigAlignReportStatus` from explicit
   `PrimitivePreDigAlignReportConfig` facts. The policy keeps the old
   `_pre_dig_align_*` names as property-backed compatibility facades over that
-  owner while the parked algorithms remain in the policy shell.
+  owner for disabled public schema compatibility; the runtime action,
+  readiness, target, timeout, failed-dig replan, and branch-selection
+  algorithms have been removed.
 - Skill lifecycle, reset lifecycle, and token runtime services own sequencing,
   but still write through policy compatibility facades for old private names.
 
@@ -873,8 +877,9 @@ Standard:
 
 Current parking:
 
-- `pre_dig_align`: residual parking/action material with focused
-  compatibility state ownership. It is not target mainline backend capability.
+- `pre_dig_align`: removed runtime execution path with disabled public
+  debug/summary/report schema compatibility. Enabled config is invalid and
+  must fail fast. It is not target mainline backend capability.
 - `cell_entry`: compatibility/report material. It is not target token contract
   for the selected mainline rollout.
 - `5P`: removed runtime. Historical behavior is preserved only by git history;

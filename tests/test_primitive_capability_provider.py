@@ -204,7 +204,6 @@ def _ports(
         dump_done_use_boundary_event=True,
         dump_done_hold_steps=1,
         return_handoff_readiness_service=_FakeReturnHandoffReadinessService(),
-        pre_dig_align_before_dig=lambda: False,
         return_to_dig_start_envelope_direct_handoff_enabled=True,
         return_to_dig_start_envelope_gate_enabled=True,
         return_to_dig_shallow_guard_enabled=True,

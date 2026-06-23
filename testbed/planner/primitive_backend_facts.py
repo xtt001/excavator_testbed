@@ -28,7 +28,6 @@ class BootstrapDecisionStatus:
     current_skill_name: str
     should_end_bootstrap: bool
     bootstrap_end_mode: str
-    should_pre_dig_align_before_dig: bool
     next_skill_after_bootstrap: str
 
 
@@ -72,10 +71,6 @@ class PrimitiveBootstrapDecisionFacts:
         return str(self.status.bootstrap_end_mode)
 
     @property
-    def should_pre_dig_align_before_dig(self) -> bool:
-        return bool(self.status.should_pre_dig_align_before_dig)
-
-    @property
     def next_skill_after_bootstrap(self) -> str:
         return str(self.status.next_skill_after_bootstrap)
 
@@ -91,8 +86,6 @@ class PrimitiveBootstrapDecisionReader(Protocol):
     ) -> bool: ...
 
     def bootstrap_end_mode(self) -> str: ...
-
-    def should_pre_dig_align_before_dig(self) -> bool: ...
 
 
 class PrimitiveTransitionStatusReader(Protocol):
@@ -155,23 +148,14 @@ class PrimitiveBackendFactsAccess:
             _bootstrap_decision_reader=bootstrap_decision_reader,
         )
 
-    def bootstrap_decision(
-        self,
-        *,
-        pre_dig_align_skill_name: str,
-    ) -> PrimitiveBootstrapDecisionFacts:
+    def bootstrap_decision(self) -> PrimitiveBootstrapDecisionFacts:
         if self._bootstrap_decision_reader is None:
             raise RuntimeError(
                 "bootstrap_decision requires a bootstrap decision reader"
             )
         mode = str(self._bootstrap_decision_reader.bootstrap_end_mode())
-        pre_dig_before_dig = bool(
-            self._bootstrap_decision_reader.should_pre_dig_align_before_dig()
-        )
         next_skill = next_skill_after_bootstrap(
             bootstrap_end_mode=mode,
-            pre_dig_align_before_dig=pre_dig_before_dig,
-            pre_dig_align_skill_name=pre_dig_align_skill_name,
         )
         return PrimitiveBootstrapDecisionFacts(
             common=self.common,
@@ -184,7 +168,6 @@ class PrimitiveBackendFactsAccess:
                     )
                 ),
                 bootstrap_end_mode=mode,
-                should_pre_dig_align_before_dig=pre_dig_before_dig,
                 next_skill_after_bootstrap=next_skill,
             ),
         )
@@ -229,14 +212,12 @@ class PrimitiveBackendFactsAccess:
 def next_skill_after_bootstrap(
     *,
     bootstrap_end_mode: str,
-    pre_dig_align_before_dig: bool,
-    pre_dig_align_skill_name: str,
 ) -> str:
     if str(bootstrap_end_mode) in {
         "first_qualified_dig_start",
         "scripted_qpos",
     }:
-        return str(pre_dig_align_skill_name) if pre_dig_align_before_dig else "dig"
+        return "dig"
     return "carry"
 
 

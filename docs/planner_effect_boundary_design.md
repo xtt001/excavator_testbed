@@ -853,14 +853,15 @@ coverage metric internals, return direct-handoff internals, `pre_dig_align`,
 5P paths, behavior-tree/VLM/LLM backend selection, or planner runtime
 directories.
 
-Phase 9.5 removes the broad already-mutating legacy fallback from the default
-decision bridge. The default branch order is now explicit:
+Phase 9.5 removed the broad already-mutating legacy fallback from the default
+decision bridge. At that point the branch order was explicit:
 bootstrap -> dig -> carry -> dump -> return -> residual pre-dig-align parking.
-The residual path uses a narrow `LegacyFSMResidualPreDigAlignAdapter` and the
+That residual path used a narrow `LegacyFSMResidualPreDigAlignAdapter` and the
 shell helper `_maybe_handle_pre_dig_align_skill(obs)` so parked pre-dig-align
-behavior can remain already-applied without allowing a hidden callback backdoor
-for mainline branches. Unknown or unclassified skills now fail fast instead of
-silently re-entering `_maybe_switch_skill()`.
+behavior could remain already-applied without allowing a hidden callback
+backdoor for mainline branches. Phase 9.92 later removed that parked runtime
+route; unknown or unclassified skills still fail fast instead of silently
+re-entering `_maybe_switch_skill()`.
 
 Phase 9.6 extracts that default branch order into
 `PrimitiveRequestedBranchRunner`. The large `PrimitivePlannerACTPolicy` shell
@@ -1160,7 +1161,7 @@ algorithms, token dimensions, token key names, token array values, trace schema,
 debug/summary/trace public schema, residual `pre_dig_align`, backend fail-fast
 behavior, or removed 5P runtime status.
 
-Phase 9.51 introduces `PrimitivePreDigAlignCompatibilityRuntimeState` in
+Phase 9.51 introduced `PrimitivePreDigAlignCompatibilityRuntimeState` in
 `testbed/planner/primitive_pre_dig_align_state.py`. The state owner centralizes
 parked pre-dig-align compatibility/report mutable storage: step/hold/timeout/
 completed/replan counters, cached target qpos and error arrays, entry-error and
@@ -1168,24 +1169,18 @@ surface-depth report floats, readiness booleans, timeout handoff reason,
 surface-guard trigger state, and surface-guard count. Reset creates one fresh
 pre-dig-align compatibility state and applies it through
 `_pre_dig_align_state`; the old `_pre_dig_align_*` names remain compatibility
-facades over the same owner. `_maybe_handle_pre_dig_align_skill(...)`,
-`_restart_pre_dig_align(...)`, `_try_replan_pre_dig_align_handoff(...)`,
-`_pre_dig_align_ready(...)`, `_pre_dig_align_timeout_can_handoff(...)`,
-`_pre_dig_align_action(...)`, and target/surface-guard helpers still own the
-parked residual algorithms in the policy shell. This phase does not promote
-pre-dig-align into the mainline backend and does not change branch order,
-reason strings, thresholds, target calculation, PD action, timeout handoff,
-start-envelope, entry-close, entry-intent, surface-guard behavior,
-debug/summary/trace public schema, `cell_entry`, backend fail-fast behavior, or
-removed 5P runtime status.
+facades over the same owner for disabled public schema compatibility. The
+runtime algorithms that once used those counters and readiness fields were
+removed in Phase 9.92; pre-dig-align is not promoted into the mainline backend,
+and disabled debug/summary/trace public schema compatibility remains.
 
 Phase 9.79 extends that parked owner with
 `PrimitivePreDigAlignReportConfig` and `PrimitivePreDigAlignReportStatus`. The
 public debug and rollout-summary projection for pre-dig-align now lives with the
 parked compatibility owner rather than as a policy-owned report dictionary and
-summary field cluster. The pre-dig-align action/readiness/replan implementation
-remains residual compatibility/action material in its existing service/policy
-boundary.
+summary field cluster. After Phase 9.92 this report/status boundary is retained
+only as disabled public schema compatibility; the action/readiness/replan
+runtime implementation has been removed.
 
 Phase 9.52 extends `CoverageReportService` in
 `testbed/planner/primitive_coverage_reports.py` with
@@ -1623,8 +1618,8 @@ snapshot: active skill, skill-id map, switch reason, checkpoint paths,
 first-dig policy activity, transition-mode skill names, timeout/completion
 flags, transition counters, dump hold counters, cycle index, and 5P
 compatibility hold counters when present. The service owns previous-action copy
-semantics, the `return_to_dig_` / `return_to_pre_dig_align_`
-transition-completed prefix rule, checkpoint-key selection including
+semantics, the `return_to_dig_` transition-completed prefix rule,
+checkpoint-key selection including
 `first_dig`, hybrid-mode selection, and construction of
 `PrimitivePlannerDebugState`. The 4P policy methods
 `_record_tick_previous_action()`, `_transition_completed_after_tick_dispatch()`,
@@ -1894,6 +1889,21 @@ phase does not change coverage scoring/selection, state-exemplar scoring,
 raw-field priority/copy semantics, token dimensions/order/source strings,
 debug/summary/trace schemas, `pre_dig_align`, `cell_entry`, backend fail-fast
 behavior, or removed 5P runtime status.
+
+Phase 9.92 removes the parked pre-dig-align runtime execution path after the
+explicit checkpoint/review gate. The cleanup deletes the residual legacy-FSM
+pre-dig branch route, action-dispatch pre-dig port, reset/bootstrap/return
+handoff next-skill selection to pre-dig, failed-dig pre-dig replan path, and
+policy-owned pre-dig readiness/target/timeout/action algorithms. Disabled
+public debug/summary/report fields remain projected through
+`PrimitivePreDigAlignCompatibilityRuntimeState` with disabled/zero/default
+values. Enabled `pre_dig_align` config now fails fast in adapter normalization,
+and active v2.4 eval configs use disabled compatibility blocks. This is a
+deletion cleanup, not a migration into backend facts, token contracts,
+behavior-tree nodes, VLM packets, or mainline runtime architecture. It does not
+touch parked `cell_entry` and does not change backend maturity: default legacy
+FSM backendified with focused services / shared backend decision
+input/facts/factory; BT/VLM/LLM remain unsupported fail-fast.
 
 ### Stage 4: Expand Effect Families From Evidence
 

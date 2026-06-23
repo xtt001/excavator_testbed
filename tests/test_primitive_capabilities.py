@@ -561,7 +561,7 @@ def test_return_transition_status_records_seen_next_dig_event_handoff() -> None:
     assert status.switch_reason == "return_to_dig_next_dig_entry_ready"
 
 
-def test_return_transition_status_records_direct_handoff_to_pre_dig_align() -> None:
+def test_return_transition_status_records_direct_handoff_to_dig_after_pre_dig_removal() -> None:
     facts = PrimitiveObservationFacts.from_obs(
         {"task_metrics": {"mass_in_bucket_kg": 8.0}},
         action_dim=4,
@@ -572,15 +572,14 @@ def test_return_transition_status_records_direct_handoff_to_pre_dig_align() -> N
         boundary_event=None,
         entry_close=True,
         start_envelope_ready=True,
-        pre_dig_align_before_dig=True,
         return_to_dig_start_envelope_direct_handoff_enabled=True,
         return_to_dig_start_envelope_gate_enabled=True,
         return_to_dig_max_bucket_mass_kg=10.0,
     )
 
     assert status.direct_handoff_ready is True
-    assert status.next_skill == "pre_dig_align"
-    assert status.switch_reason == "return_to_pre_dig_align_start_envelope_ready"
+    assert status.next_skill == "dig"
+    assert status.switch_reason == "return_to_dig_start_envelope_ready"
 
 
 def test_return_transition_status_records_legacy_shallow_guard() -> None:

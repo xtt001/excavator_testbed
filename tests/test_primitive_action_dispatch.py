@@ -69,10 +69,6 @@ def _ports(
         events.append("scripted_action")
         return np.asarray([9.0, 8.0, 7.0, 6.0], dtype=np.float32)
 
-    def pre_dig_action(obs: dict[str, Any]) -> np.ndarray:
-        events.append("pre_dig_action")
-        return np.asarray([6.0, 7.0, 8.0, 9.0], dtype=np.float32)
-
     return PrimitiveActionDispatchPorts(
         execution_state=execution_state,
         cycle_state=cycle_state,
@@ -91,7 +87,6 @@ def _ports(
         policy_observation=policy_observation,
         scripted_bootstrap_enabled=lambda: scripted_bootstrap_enabled,
         scripted_bootstrap_action=scripted_action,
-        pre_dig_align_action=pre_dig_action,
     )
 
 
@@ -126,17 +121,18 @@ def test_dispatch_short_circuits_to_scripted_bootstrap_action() -> None:
     assert low_level.predicted_obs is None
 
 
-def test_dispatch_short_circuits_to_pre_dig_align_action() -> None:
+def test_pre_dig_align_no_longer_has_runtime_action_dispatch() -> None:
     events: list[str] = []
     service = PrimitiveActionDispatchService.from_ports(
         _ports(events, skill_name="pre_dig_align")
     )
 
-    action = service.dispatch_action({"qpos": [1.0]})
-
-    assert action.tolist() == [6.0, 7.0, 8.0, 9.0]
-    assert action.dtype == np.float32
-    assert events == ["pre_dig_action"]
+    with pytest.raises(
+        RuntimeError,
+        match="Unknown primitive skill 'pre_dig_align'.",
+    ):
+        service.dispatch_action({"qpos": [1.0]})
+    assert events == []
 
 
 def test_dispatch_normal_policy_uses_policy_observation_and_shapes_action() -> None:

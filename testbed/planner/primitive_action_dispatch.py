@@ -15,7 +15,6 @@ from testbed.planner.primitive_execution_state import PrimitiveExecutionRuntimeS
 
 BOOTSTRAP_SKILL_NAME = "bootstrap"
 DIG_SKILL_NAME = "dig"
-PRE_DIG_ALIGN_SKILL_NAME = "pre_dig_align"
 
 
 @dataclass(frozen=True)
@@ -34,10 +33,8 @@ class PrimitiveActionDispatchPorts:
     policy_observation: Callable[[dict[str, Any]], dict[str, Any]]
     scripted_bootstrap_enabled: Callable[[], bool]
     scripted_bootstrap_action: Callable[[dict[str, Any]], Any]
-    pre_dig_align_action: Callable[[dict[str, Any]], Any]
     bootstrap_skill_name: str = BOOTSTRAP_SKILL_NAME
     dig_skill_name: str = DIG_SKILL_NAME
-    pre_dig_align_skill_name: str = PRE_DIG_ALIGN_SKILL_NAME
 
 
 @dataclass(frozen=True)
@@ -61,8 +58,6 @@ class PrimitiveActionDispatchService:
             and ports.scripted_bootstrap_enabled()
         ):
             return ports.scripted_bootstrap_action(obs)
-        if skill_name == ports.pre_dig_align_skill_name:
-            return ports.pre_dig_align_action(obs)
         policy = self.active_policy()
         policy_obs = ports.policy_observation(obs)
         return np.asarray(policy.predict(policy_obs), dtype=np.float32).reshape(

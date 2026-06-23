@@ -72,6 +72,48 @@ def test_default_config_normalizes_legacy_defaults_and_vector_helpers() -> None:
     assert optional.tolist() == [1.0, 2.0, 3.0, 4.0]
 
 
+def test_pre_dig_align_enabled_config_fails_fast_after_runtime_removal() -> None:
+    with pytest.raises(
+        ValueError,
+        match=(
+            "pre_dig_align runtime execution has been removed; "
+            "set pre_dig_align.enabled=false"
+        ),
+    ):
+        _normalize(
+            PrimitivePlannerAdapterConfigInputs(
+                pre_dig_align={"enabled": True},
+            )
+        )
+
+
+def test_disabled_pre_dig_align_config_remains_report_schema_compatible() -> None:
+    state = _normalize(
+        PrimitivePlannerAdapterConfigInputs(
+            pre_dig_align={
+                "enabled": False,
+                "first_dig_only": True,
+                "replan_after_failed_dig": True,
+                "controlled_dims": [1, 0, 1, 0],
+                "bucket_target_qpos": -0.2,
+            },
+        )
+    )
+    updates = state.as_policy_field_updates()
+
+    assert updates["pre_dig_align_cfg"]["enabled"] is False
+    assert updates["pre_dig_align_enabled"] is False
+    assert updates["pre_dig_align_first_dig_only"] is True
+    assert updates["pre_dig_align_replan_after_failed_dig"] is True
+    assert updates["pre_dig_align_controlled_dims"].tolist() == [
+        True,
+        False,
+        True,
+        False,
+    ]
+    assert updates["pre_dig_align_bucket_target_qpos"] == -0.2
+
+
 def test_dig_cut_prior_loading_validates_token_order(tmp_path: Path) -> None:
     assert adapter_config.load_dig_cut_prior("") == {}
 

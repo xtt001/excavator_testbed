@@ -252,10 +252,6 @@ def _direct_handoff_ports(
         ),
         ensure_return_target_plan_for_cycle=ensure,
         readiness_service=_FakeReadinessService(),
-        should_pre_dig_align_before_dig=(
-            lambda: next_skill == PRE_DIG_ALIGN_SKILL_NAME
-        ),
-        pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
         dig_skill_name="dig",
     )
 
@@ -468,23 +464,6 @@ def test_return_direct_handoff_service_applies_ready_direct_handoff_to_dig_in_or
         "direct_ready:obs:True",
         "complete",
         "set:dig:return_to_dig_start_envelope_ready",
-    ]
-
-
-def test_return_direct_handoff_service_applies_ready_direct_handoff_to_pre_dig_align() -> None:
-    events: list[str] = []
-    service = ReturnDirectHandoffEffectService(
-        ports=_direct_handoff_ports(events, next_skill="pre_dig_align")
-    )
-
-    result = service.apply({"tag": "obs"}, reason="dump_to_return_mass_low")
-
-    assert result.direct_handoff_applied is True
-    assert result.next_skill == "pre_dig_align"
-    assert result.switch_reason == "return_to_pre_dig_align_start_envelope_ready"
-    assert events[-2:] == [
-        "complete",
-        "set:pre_dig_align:return_to_pre_dig_align_start_envelope_ready",
     ]
 
 
@@ -746,8 +725,6 @@ def test_policy_return_direct_handoff_ports_share_execution_and_cycle_owners() -
     planner._skill_name = "return"
     planner.return_target_planner_enabled = True
     planner.return_to_dig_start_envelope_direct_handoff_enabled = True
-    planner.pre_dig_align_enabled = False
-    planner.pre_dig_align_first_dig_only = False
     planner._set_skill = MethodType(lambda self, skill, reason: None, planner)
     planner._ensure_return_target_plan_for_cycle = MethodType(
         lambda self, obs: None,

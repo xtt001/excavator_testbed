@@ -37,10 +37,8 @@ class PrimitiveResetLifecyclePorts:
     bootstrap_end_mode: Callable[[], str]
     bootstrap_policy_available: Callable[[], bool]
     scripted_bootstrap_enabled: Callable[[], bool]
-    should_pre_dig_align_before_dig: Callable[[], bool]
     action_dim: int
     bootstrap_skill_name: str = "bootstrap"
-    pre_dig_align_skill_name: str = "pre_dig_align"
     dig_skill_name: str = "dig"
 
 
@@ -451,8 +449,6 @@ class PrimitiveResetLifecycleService:
         )
         if has_bootstrap:
             return str(ports.bootstrap_skill_name)
-        if bool(ports.should_pre_dig_align_before_dig()):
-            return str(ports.pre_dig_align_skill_name)
         return str(ports.dig_skill_name)
 
 

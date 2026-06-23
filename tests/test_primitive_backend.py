@@ -4,6 +4,8 @@ from collections.abc import Callable
 from dataclasses import fields
 from typing import Any
 
+import pytest
+
 from testbed.planner.primitive_backend import (
     LegacyFSMBackendAdapter,
     LegacyFSMBranchPorts,
@@ -17,12 +19,10 @@ from testbed.planner.primitive_backend import (
     LegacyFSMDumpConfig,
     LegacyFSMDigBranch,
     LegacyFSMDigConfig,
-    LegacyFSMResidualPreDigAlignAdapter,
     LegacyFSMRequestedDecisionBackend,
     LegacyFSMReturnBranch,
     LegacyFSMReturnConfig,
     PrimitiveRequestedBranchRunner,
-    RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE,
 )
 from testbed.planner.primitive_capabilities import (
     CarryTransitionStatus,
@@ -290,8 +290,6 @@ def _decision_capabilities(
     current_switch_reason: Callable[[], str] | None = None,
     should_end_bootstrap: Callable[..., bool] | None = None,
     bootstrap_end_mode: Callable[[], str] | None = None,
-    should_pre_dig_align_before_dig: Callable[[], bool] | None = None,
-    maybe_handle_pre_dig_align_skill: Callable[[dict[str, Any]], bool] | None = None,
     dig_transition_status: Callable[
         [dict[str, Any], Any | None],
         DigTransitionStatus,
@@ -323,9 +321,6 @@ def _decision_capabilities(
             or (lambda *, obs, boundary_event: False),
             bootstrap_end_mode=bootstrap_end_mode
             or (lambda: "first_qualified_dig_start"),
-            should_pre_dig_align_before_dig=(
-                should_pre_dig_align_before_dig or (lambda: False)
-            ),
             transition_status_provider=_TransitionStatusProvider(
                 dig_transition_status=dig_transition_status,
                 carry_transition_status=carry_transition_status,
@@ -333,9 +328,6 @@ def _decision_capabilities(
                 sync_dig_transition_reason=sync_dig_transition_reason,
                 refresh_return_transition_state=refresh_return_transition_state,
                 return_transition_status=return_transition_status,
-            ),
-            maybe_handle_residual_pre_dig_align=(
-                maybe_handle_pre_dig_align_skill or (lambda obs: False)
             ),
         )
     )
@@ -467,7 +459,6 @@ def _legacy_fsm_branch_ports(
     )
     return LegacyFSMBranchPorts(
         bootstrap_skill_name="bootstrap",
-        pre_dig_align_skill_name="pre_dig_align",
         dig_skill_name="dig",
         carry_skill_name="carry",
         dump_skill_name="dump",
@@ -512,7 +503,6 @@ def test_legacy_fsm_branch_set_from_ports_builds_backend_and_runner() -> None:
     assert runner.carry_branch is branch_set.carry_branch
     assert runner.dump_branch is branch_set.dump_branch
     assert runner.return_branch is branch_set.return_branch
-    assert runner.residual_branch is branch_set.residual_branch
 
 
 def test_legacy_fsm_branch_ports_splits_facts_source_from_compat_actions() -> None:
@@ -560,16 +550,12 @@ def test_legacy_fsm_branch_dataclasses_use_narrow_fact_and_action_dependencies()
     assert {field.name for field in fields(LegacyFSMReturnBranch)} == {
         "config",
     }
-    assert {field.name for field in fields(LegacyFSMResidualPreDigAlignAdapter)} == {
-        "pre_dig_align_skill_name",
-    }
     for branch_type in (
         LegacyFSMBootstrapBranch,
         LegacyFSMDigBranch,
         LegacyFSMCarryBranch,
         LegacyFSMDumpBranch,
         LegacyFSMReturnBranch,
-        LegacyFSMResidualPreDigAlignAdapter,
     ):
         assert hasattr(branch_type, "decide_input")
 
@@ -584,7 +570,6 @@ def test_legacy_fsm_branch_set_requested_backend_uses_stable_order() -> None:
         carry_branch=_RecordingBranch("carry", None, calls),
         dump_branch=_RecordingBranch("dump", None, calls),
         return_branch=_RecordingBranch("return", expected, calls),
-        residual_branch=_RecordingBranch("residual", _requested_no_change_result(), calls),
     )
 
     result = branch_set.requested_decision_backend().decide_tick(
@@ -611,7 +596,6 @@ def test_legacy_fsm_branch_set_compatibility_backend_uses_legacy_order() -> None
         carry_branch=_RecordingBranch("carry", _requested_no_change_result(), calls),
         dump_branch=_RecordingBranch("dump", _requested_no_change_result(), calls),
         return_branch=_RecordingBranch("return", _requested_no_change_result(), calls),
-        residual_branch=_RecordingBranch("residual", None, calls),
     )
 
     backend = branch_set.compatibility_decision_backend()
@@ -627,7 +611,7 @@ def test_legacy_fsm_branch_set_compatibility_backend_uses_legacy_order() -> None
 
     assert isinstance(backend, LegacyFSMCompatibilityDecisionBackend)
     assert result is expected
-    assert calls == ["bootstrap", "residual", "dig"]
+    assert calls == ["bootstrap", "dig"]
 
 
 def test_legacy_fsm_branch_set_compatibility_backend_returns_none_on_all_miss() -> None:
@@ -639,7 +623,6 @@ def test_legacy_fsm_branch_set_compatibility_backend_returns_none_on_all_miss() 
         carry_branch=_RecordingBranch("carry", None, calls),
         dump_branch=_RecordingBranch("dump", None, calls),
         return_branch=_RecordingBranch("return", None, calls),
-        residual_branch=_RecordingBranch("residual", None, calls),
     )
 
     result = branch_set.compatibility_decision_backend().decide_tick(
@@ -653,7 +636,7 @@ def test_legacy_fsm_branch_set_compatibility_backend_returns_none_on_all_miss() 
     )
 
     assert result is None
-    assert calls == ["bootstrap", "residual", "dig", "carry", "dump", "return"]
+    assert calls == ["bootstrap", "dig", "carry", "dump", "return"]
 
 
 def test_legacy_fsm_branch_ports_do_not_expose_mainline_mutation_ports() -> None:
@@ -700,7 +683,6 @@ def test_legacy_fsm_branch_set_requested_backend_fails_fast_when_all_decline() -
         carry_branch=_RecordingBranch("carry", None, calls),
         dump_branch=_RecordingBranch("dump", None, calls),
         return_branch=_RecordingBranch("return", None, calls),
-        residual_branch=_RecordingBranch("residual", None, calls),
     )
 
     try:
@@ -718,12 +700,12 @@ def test_legacy_fsm_branch_set_requested_backend_fails_fast_when_all_decline() -
     else:
         raise AssertionError("backend accepted an unhandled planner skill")
 
-    assert calls == ["bootstrap", "dig", "carry", "dump", "return", "residual"]
+    assert calls == ["bootstrap", "dig", "carry", "dump", "return"]
     assert "broad legacy fallback is retired" in message
     assert "legacy_skill" in message
 
 
-def test_legacy_fsm_branch_set_compatibility_order_keeps_residual_second() -> None:
+def test_legacy_fsm_branch_set_compatibility_order_uses_mainline_branches() -> None:
     calls: list[str] = []
     expected = _requested_no_change_result(decision_source="return_branch")
     branch_set = LegacyFSMBranchSet(
@@ -733,7 +715,6 @@ def test_legacy_fsm_branch_set_compatibility_order_keeps_residual_second() -> No
         carry_branch=_RecordingBranch("carry", None, calls),
         dump_branch=_RecordingBranch("dump", None, calls),
         return_branch=_RecordingBranch("return", expected, calls),
-        residual_branch=_RecordingBranch("residual", None, calls),
     )
 
     result = branch_set.compatibility_decision_backend().decide_tick(
@@ -747,7 +728,7 @@ def test_legacy_fsm_branch_set_compatibility_order_keeps_residual_second() -> No
     )
 
     assert result is expected
-    assert calls == ["bootstrap", "residual", "dig", "carry", "dump", "return"]
+    assert calls == ["bootstrap", "dig", "carry", "dump", "return"]
 
 
 def test_requested_branch_runner_returns_first_non_none_result_and_stops() -> None:
@@ -760,7 +741,6 @@ def test_requested_branch_runner_returns_first_non_none_result_and_stops() -> No
         carry_branch=_RecordingBranch("carry", _requested_no_change_result(), calls),
         dump_branch=_RecordingBranch("dump", _requested_no_change_result(), calls),
         return_branch=_RecordingBranch("return", _requested_no_change_result(), calls),
-        residual_branch=_RecordingBranch("residual", _requested_no_change_result(), calls),
     )
 
     result = runner.decide_tick(
@@ -788,7 +768,6 @@ def test_requested_branch_runner_uses_single_backend_input_for_ordered_branches(
         carry_branch=_RecordingBranch("carry", None, calls, inputs),
         dump_branch=_RecordingBranch("dump", None, calls, inputs),
         return_branch=_RecordingBranch("return", expected, calls, inputs),
-        residual_branch=_RecordingBranch("residual", None, calls, inputs),
     )
     context = PrimitiveDecisionContext.from_tick(
         obs={"qpos": [1.0]},
@@ -809,12 +788,8 @@ def test_requested_branch_runner_uses_single_backend_input_for_ordered_branches(
     assert inputs[0].context is context
 
 
-def test_requested_branch_runner_calls_branches_in_stable_order_before_residual() -> None:
+def test_requested_branch_runner_rejects_pre_dig_align_without_residual() -> None:
     calls: list[str] = []
-    residual = _requested_no_change_result(
-        decision_source=RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE,
-        skill="pre_dig_align",
-    )
     runner = PrimitiveRequestedBranchRunner(
         **_runner_dependencies(),
         bootstrap_branch=_RecordingBranch("bootstrap", None, calls),
@@ -822,21 +797,19 @@ def test_requested_branch_runner_calls_branches_in_stable_order_before_residual(
         carry_branch=_RecordingBranch("carry", None, calls),
         dump_branch=_RecordingBranch("dump", None, calls),
         return_branch=_RecordingBranch("return", None, calls),
-        residual_branch=_RecordingBranch("residual", residual, calls),
     )
 
-    result = runner.decide_tick(
-        obs={},
-        boundary_event=None,
-        preparation=PrimitiveTickPreparation(
+    with pytest.raises(PrimitiveDecisionContractError, match="pre_dig_align"):
+        runner.decide_tick(
+            obs={},
             boundary_event=None,
-            skill_name_before_decision="pre_dig_align",
-            dig_progress_updated=False,
-        ),
-    )
-
-    assert result is residual
-    assert calls == ["bootstrap", "dig", "carry", "dump", "return", "residual"]
+            preparation=PrimitiveTickPreparation(
+                boundary_event=None,
+                skill_name_before_decision="pre_dig_align",
+                dig_progress_updated=False,
+            ),
+        )
+    assert calls == ["bootstrap", "dig", "carry", "dump", "return"]
 
 
 def test_requested_branch_runner_fails_fast_when_all_branches_decline() -> None:
@@ -848,7 +821,6 @@ def test_requested_branch_runner_fails_fast_when_all_branches_decline() -> None:
         carry_branch=_RecordingBranch("carry", None, calls),
         dump_branch=_RecordingBranch("dump", None, calls),
         return_branch=_RecordingBranch("return", None, calls),
-        residual_branch=_RecordingBranch("residual", None, calls),
     )
 
     try:
@@ -866,7 +838,7 @@ def test_requested_branch_runner_fails_fast_when_all_branches_decline() -> None:
     else:
         raise AssertionError("runner accepted an unhandled planner skill")
 
-    assert calls == ["bootstrap", "dig", "carry", "dump", "return", "residual"]
+    assert calls == ["bootstrap", "dig", "carry", "dump", "return"]
     assert "unhandled planner skill" in message
     assert "broad legacy fallback is retired" in message
     assert "legacy_skill" in message
@@ -883,7 +855,6 @@ def test_compatibility_backend_uses_single_backend_input_for_legacy_order() -> N
         carry_branch=_RecordingBranch("carry", None, calls, inputs),
         dump_branch=_RecordingBranch("dump", None, calls, inputs),
         return_branch=_RecordingBranch("return", None, calls, inputs),
-        residual_branch=_RecordingBranch("residual", None, calls, inputs),
     )
     context = PrimitiveDecisionContext.from_tick(
         obs={},
@@ -898,8 +869,8 @@ def test_compatibility_backend_uses_single_backend_input_for_legacy_order() -> N
     result = branch_set.compatibility_decision_backend().decide_context(context)
 
     assert result is expected
-    assert calls == ["bootstrap", "residual", "dig"]
-    assert len(inputs) == 3
+    assert calls == ["bootstrap", "dig"]
+    assert len(inputs) == 2
     assert all(got is inputs[0] for got in inputs)
     assert inputs[0].context is context
 
@@ -939,73 +910,27 @@ def test_legacy_fsm_backend_adapter_wraps_existing_switch_callback() -> None:
     assert result.switch_reason == "dig_to_carry_boundary_confirmed"
 
 
-def test_residual_pre_dig_align_adapter_is_explicit_already_applied_path() -> None:
-    obs: dict[str, Any] = {"qpos": [1.0]}
-    boundary_event = object()
-    state = {"skill": "pre_dig_align", "reason": ""}
-    calls: list[dict[str, Any]] = []
+def test_requested_runner_rejects_removed_pre_dig_align_skill() -> None:
+    branch_set = LegacyFSMBranchSet.from_ports(_legacy_fsm_branch_ports())
 
-    def maybe_handle_pre_dig_align_skill(got_obs: dict[str, Any]) -> bool:
-        calls.append(got_obs)
-        state["skill"] = "dig"
-        state["reason"] = "pre_dig_align_to_dig_ready"
-        return True
-
-    capabilities = _decision_capabilities(
-        current_skill_name=lambda: state["skill"],
-        current_switch_reason=lambda: state["reason"],
-        maybe_handle_pre_dig_align_skill=maybe_handle_pre_dig_align_skill,
-    )
-    adapter = LegacyFSMResidualPreDigAlignAdapter(
-        pre_dig_align_skill_name="pre_dig_align",
-    )
-
-    result = _decide_branch_tick(
-        adapter,
-        capabilities,
-        obs=obs,
-        boundary_event=boundary_event,
-        preparation=PrimitiveTickPreparation(
-            boundary_event=boundary_event,
-            skill_name_before_decision="pre_dig_align",
-            dig_progress_updated=False,
-        ),
-    )
-
-    assert calls == [obs]
-    assert result is not None
-    assert result.decision_source == RESIDUAL_PRE_DIG_ALIGN_DECISION_SOURCE
-    assert result.side_effects_applied is True
-    assert result.skill_before == "pre_dig_align"
-    assert result.skill_after == "dig"
-    assert result.switch_reason == "pre_dig_align_to_dig_ready"
+    with pytest.raises(
+        PrimitiveDecisionContractError,
+        match="pre_dig_align",
+    ):
+        branch_set.requested_runner().decide_context(
+            PrimitiveDecisionContext(
+                obs={},
+                boundary_event=None,
+                preparation=PrimitiveTickPreparation(
+                    boundary_event=None,
+                    skill_name_before_decision="pre_dig_align",
+                    dig_progress_updated=False,
+                ),
+            )
+        )
 
 
-def test_residual_pre_dig_align_adapter_ignores_non_residual_skill() -> None:
-    capabilities = _decision_capabilities(
-        current_skill_name=lambda: "dig",
-        maybe_handle_pre_dig_align_skill=lambda obs: True,
-    )
-    adapter = LegacyFSMResidualPreDigAlignAdapter(
-        pre_dig_align_skill_name="pre_dig_align",
-    )
-
-    result = _decide_branch_tick(
-        adapter,
-        capabilities,
-        obs={},
-        boundary_event=None,
-        preparation=PrimitiveTickPreparation(
-            boundary_event=None,
-            skill_name_before_decision="dig",
-            dig_progress_updated=True,
-        ),
-    )
-
-    assert result is None
-
-
-def test_legacy_fsm_bootstrap_branch_selects_pre_dig_align_when_enabled() -> None:
+def test_legacy_fsm_bootstrap_branch_selects_dig_after_pre_dig_removal() -> None:
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
     state = {"skill": "bootstrap"}
@@ -1013,12 +938,10 @@ def test_legacy_fsm_bootstrap_branch_selects_pre_dig_align_when_enabled() -> Non
         current_skill_name=lambda: state["skill"],
         should_end_bootstrap=lambda *, obs, boundary_event: True,
         bootstrap_end_mode=lambda: "first_qualified_dig_start",
-        should_pre_dig_align_before_dig=lambda: True,
     )
     branch = LegacyFSMBootstrapBranch(
         config=LegacyFSMBootstrapConfig(
             bootstrap_skill_name="bootstrap",
-            pre_dig_align_skill_name="pre_dig_align",
         ),
     )
 
@@ -1037,8 +960,8 @@ def test_legacy_fsm_bootstrap_branch_selects_pre_dig_align_when_enabled() -> Non
     assert result is not None
     assert result.effects == (
         SwitchSkillEffect(
-            target_skill_name="pre_dig_align",
-            switch_reason="bootstrap_to_pre_dig_align",
+            target_skill_name="dig",
+            switch_reason="bootstrap_to_dig",
         ),
     )
 
@@ -1050,12 +973,10 @@ def test_legacy_fsm_bootstrap_branch_returns_requested_switch_effect() -> None:
         current_skill_name=lambda: "bootstrap",
         should_end_bootstrap=lambda *, obs, boundary_event: True,
         bootstrap_end_mode=lambda: "first_qualified_dig_start",
-        should_pre_dig_align_before_dig=lambda: True,
     )
     branch = LegacyFSMBootstrapBranch(
         config=LegacyFSMBootstrapConfig(
             bootstrap_skill_name="bootstrap",
-            pre_dig_align_skill_name="pre_dig_align",
         ),
     )
 
@@ -1074,12 +995,12 @@ def test_legacy_fsm_bootstrap_branch_returns_requested_switch_effect() -> None:
     assert result is not None
     assert result.side_effects_applied is False
     assert result.skill_before == "bootstrap"
-    assert result.skill_after == "pre_dig_align"
-    assert result.switch_reason == "bootstrap_to_pre_dig_align"
+    assert result.skill_after == "dig"
+    assert result.switch_reason == "bootstrap_to_dig"
     assert result.effects == (
         SwitchSkillEffect(
-            target_skill_name="pre_dig_align",
-            switch_reason="bootstrap_to_pre_dig_align",
+            target_skill_name="dig",
+            switch_reason="bootstrap_to_dig",
         ),
     )
 
@@ -1113,7 +1034,6 @@ def test_legacy_fsm_bootstrap_branch_requested_decision_ignores_non_bootstrap() 
         current_skill_name=lambda: "dig",
         should_end_bootstrap=lambda *, obs, boundary_event: True,
         bootstrap_end_mode=lambda: "first_qualified_dig_start",
-        should_pre_dig_align_before_dig=lambda: True,
         dig_transition_status=fail_dig_status,
         carry_transition_status=fail_carry_status,
         dump_transition_status=fail_dump_status,
@@ -1122,7 +1042,6 @@ def test_legacy_fsm_bootstrap_branch_requested_decision_ignores_non_bootstrap() 
     branch = LegacyFSMBootstrapBranch(
         config=LegacyFSMBootstrapConfig(
             bootstrap_skill_name="bootstrap",
-            pre_dig_align_skill_name="pre_dig_align",
         ),
     )
 
@@ -1149,7 +1068,6 @@ def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_no_change() -> None:
         current_skill_name="bootstrap",
         should_end_bootstrap=False,
         bootstrap_end_mode="first_qualified_dig_start",
-        should_pre_dig_align_before_dig=False,
         next_skill_after_bootstrap="dig",
     )
 
@@ -1157,12 +1075,7 @@ def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_no_change() -> None:
         def __init__(self, common: PrimitiveDecisionFacts) -> None:
             self.common = common
 
-        def bootstrap_decision(
-            self,
-            *,
-            pre_dig_align_skill_name: str,
-        ) -> PrimitiveBootstrapDecisionFacts:
-            assert pre_dig_align_skill_name == "pre_dig_align"
+        def bootstrap_decision(self) -> PrimitiveBootstrapDecisionFacts:
             calls.append("bootstrap_status")
             return PrimitiveBootstrapDecisionFacts(common=self.common, status=status)
 
@@ -1181,7 +1094,6 @@ def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_no_change() -> None:
     branch = LegacyFSMBootstrapBranch(
         config=LegacyFSMBootstrapConfig(
             bootstrap_skill_name="bootstrap",
-            pre_dig_align_skill_name="pre_dig_align",
         ),
     )
     context = PrimitiveDecisionContext.from_tick(
@@ -1225,7 +1137,6 @@ def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_switch_to_dig() -> N
         current_skill_name="bootstrap",
         should_end_bootstrap=True,
         bootstrap_end_mode="first_qualified_dig_start",
-        should_pre_dig_align_before_dig=False,
         next_skill_after_bootstrap="dig",
     )
 
@@ -1233,19 +1144,13 @@ def test_legacy_fsm_bootstrap_branch_consumes_backend_facts_switch_to_dig() -> N
         def __init__(self, common: PrimitiveDecisionFacts) -> None:
             self.common = common
 
-        def bootstrap_decision(
-            self,
-            *,
-            pre_dig_align_skill_name: str,
-        ) -> PrimitiveBootstrapDecisionFacts:
-            assert pre_dig_align_skill_name == "pre_dig_align"
+        def bootstrap_decision(self) -> PrimitiveBootstrapDecisionFacts:
             calls.append("bootstrap_status")
             return PrimitiveBootstrapDecisionFacts(common=self.common, status=status)
 
     branch = LegacyFSMBootstrapBranch(
         config=LegacyFSMBootstrapConfig(
             bootstrap_skill_name="bootstrap",
-            pre_dig_align_skill_name="pre_dig_align",
         ),
     )
     context = PrimitiveDecisionContext.from_tick(
@@ -1289,12 +1194,10 @@ def test_legacy_fsm_bootstrap_branch_ignores_non_bootstrap_skill() -> None:
         current_skill_name=lambda: "dig",
         should_end_bootstrap=lambda *, obs, boundary_event: True,
         bootstrap_end_mode=lambda: "disabled",
-        should_pre_dig_align_before_dig=lambda: False,
     )
     branch = LegacyFSMBootstrapBranch(
         config=LegacyFSMBootstrapConfig(
             bootstrap_skill_name="bootstrap",
-            pre_dig_align_skill_name="pre_dig_align",
         ),
     )
 
@@ -1656,7 +1559,6 @@ def test_legacy_fsm_compatibility_backend_returns_dig_requested_effects() -> Non
         carry_branch=_RecordingBranch("carry", None, []),
         dump_branch=_RecordingBranch("dump", None, []),
         return_branch=_RecordingBranch("return", None, []),
-        residual_branch=_RecordingBranch("residual", None, []),
     )
 
     result = branch_set.compatibility_decision_backend().decide_tick(
@@ -2817,8 +2719,8 @@ def test_legacy_fsm_return_branch_defers_next_skill_selection_to_applier() -> No
         shallow_guard_ready=False,
         shallow_guard_allowed=False,
         completed_transition=True,
-        next_skill="pre_dig_align",
-        switch_reason="return_to_pre_dig_align_next_dig_entry_ready",
+        next_skill="dig",
+        switch_reason="return_to_dig_next_dig_entry_ready",
     )
     capabilities = _decision_capabilities(
         current_skill_name=lambda: "return",

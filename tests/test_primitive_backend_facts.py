@@ -192,12 +192,10 @@ class _RecordingBootstrapReader:
         *,
         should_end_bootstrap: bool = True,
         bootstrap_end_mode: str = "first_qualified_dig_start",
-        should_pre_dig_align_before_dig: bool = False,
     ) -> None:
         self.calls: list[tuple[str, dict[str, Any] | None, object | None]] = []
         self.should_end_bootstrap_value = should_end_bootstrap
         self.bootstrap_end_mode_value = bootstrap_end_mode
-        self.should_pre_dig_align_before_dig_value = should_pre_dig_align_before_dig
 
     def should_end_bootstrap(
         self,
@@ -211,11 +209,6 @@ class _RecordingBootstrapReader:
     def bootstrap_end_mode(self) -> str:
         self.calls.append(("bootstrap_end_mode", None, None))
         return self.bootstrap_end_mode_value
-
-    def should_pre_dig_align_before_dig(self) -> bool:
-        self.calls.append(("pre_dig_gate", None, None))
-        return self.should_pre_dig_align_before_dig_value
-
 
 def _access() -> tuple[
     PrimitiveBackendFactsAccess,
@@ -338,13 +331,10 @@ def test_bootstrap_facts_view_preserves_identity_and_projects_status() -> None:
         bootstrap_reader=_RecordingBootstrapReader(
             should_end_bootstrap=True,
             bootstrap_end_mode="first_qualified_dig_start",
-            should_pre_dig_align_before_dig=True,
         )
     )
 
-    bootstrap_facts = access.bootstrap_decision(
-        pre_dig_align_skill_name="pre_dig_align",
-    )
+    bootstrap_facts = access.bootstrap_decision()
 
     assert isinstance(bootstrap_facts, PrimitiveBootstrapDecisionFacts)
     assert bootstrap_facts.common is common
@@ -356,19 +346,16 @@ def test_bootstrap_facts_view_preserves_identity_and_projects_status() -> None:
     assert bootstrap_facts.skill_name_before_decision == "dig"
     assert bootstrap_facts.should_end_bootstrap is True
     assert bootstrap_facts.bootstrap_end_mode == "first_qualified_dig_start"
-    assert bootstrap_facts.should_pre_dig_align_before_dig is True
-    assert bootstrap_facts.next_skill_after_bootstrap == "pre_dig_align"
+    assert bootstrap_facts.next_skill_after_bootstrap == "dig"
     assert bootstrap_facts.status == BootstrapDecisionStatus(
         current_skill_name="bootstrap",
         should_end_bootstrap=True,
         bootstrap_end_mode="first_qualified_dig_start",
-        should_pre_dig_align_before_dig=True,
-        next_skill_after_bootstrap="pre_dig_align",
+        next_skill_after_bootstrap="dig",
     )
     assert transition_reader.calls == []
     assert bootstrap_reader.calls == [
         ("bootstrap_end_mode", None, None),
-        ("pre_dig_gate", None, None),
         ("should_end_bootstrap", obs, boundary_event),
     ]
 
@@ -376,9 +363,7 @@ def test_bootstrap_facts_view_preserves_identity_and_projects_status() -> None:
 def test_bootstrap_facts_view_is_backend_facing_read_only_shape() -> None:
     access, _, _, _, _, _, _, _ = _access_with_bootstrap_reader()
 
-    bootstrap_facts = access.bootstrap_decision(
-        pre_dig_align_skill_name="pre_dig_align",
-    )
+    bootstrap_facts = access.bootstrap_decision()
 
     assert {field.name for field in fields(PrimitiveBootstrapDecisionFacts)} == {
         "common",
@@ -410,14 +395,11 @@ def test_backend_facts_bootstrap_decision_is_lazy_and_read_only() -> None:
     assert bootstrap_reader.calls == []
     assert transition_reader.calls == []
 
-    bootstrap_facts = access.bootstrap_decision(
-        pre_dig_align_skill_name="pre_dig_align",
-    )
+    bootstrap_facts = access.bootstrap_decision()
 
     assert bootstrap_facts.status.next_skill_after_bootstrap == "dig"
     assert bootstrap_reader.calls == [
         ("bootstrap_end_mode", None, None),
-        ("pre_dig_gate", None, None),
         ("should_end_bootstrap", obs, boundary_event),
     ]
     assert transition_reader.calls == []

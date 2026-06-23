@@ -2146,12 +2146,11 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertEqual(int(candidate_by_id[0]["first_dig_gate_applied"]), 1)
         self.assertEqual(int(candidate_by_id[0]["first_dig_gated_out"]), 1)
 
-    def test_primitive_planner_coverage_first_dig_qpos_reachability_gate(
+    def test_primitive_planner_coverage_first_dig_qpos_gate_is_disabled_after_pre_dig_cleanup(
         self,
     ) -> None:
         policy = _coverage_planner_policy(
             dig_policy=_RecordingPolicy(0),
-            pre_dig_align_enabled=True,
             coverage_extra={
                 "first_dig_strategy": "nearest_entry",
                 "first_dig_proximity_weight": 8.0,
@@ -2174,13 +2173,11 @@ class TestPrimitivesV22(unittest.TestCase):
             for item in state["coverage_candidate_scores"]
         }
         self.assertEqual(int(candidate_by_id[3]["first_dig_entry_reachable"]), 1)
-        self.assertEqual(int(candidate_by_id[3]["first_dig_qpos_reachable"]), 0)
-        self.assertEqual(int(candidate_by_id[3]["first_dig_gated_out"]), 1)
+        self.assertEqual(int(candidate_by_id[3]["first_dig_qpos_reachable"]), 1)
+        self.assertEqual(int(candidate_by_id[3]["first_dig_gated_out"]), 0)
         self.assertEqual(int(candidate_by_id[4]["first_dig_qpos_reachable"]), 1)
-        self.assertLess(
-            float(candidate_by_id[4]["first_dig_qpos_delta_norm"]),
-            float(candidate_by_id[3]["first_dig_qpos_delta_norm"]),
-        )
+        self.assertEqual(float(candidate_by_id[3]["first_dig_qpos_delta_norm"]), 0.0)
+        self.assertEqual(float(candidate_by_id[4]["first_dig_qpos_delta_norm"]), 0.0)
 
     def test_primitive_planner_coverage_can_request_deeper_payload_prior(
         self,
@@ -3303,17 +3300,12 @@ class TestPrimitivesV22(unittest.TestCase):
             "exit_overshoot_low_payload",
         )
 
-    def test_failed_dig_replan_can_align_after_first_cycle(self) -> None:
+    def test_failed_dig_replan_retries_dig_after_pre_dig_cleanup(self) -> None:
         policy = _coverage_planner_policy(
             dig_policy=_RecordingPolicy(0),
             dig_to_carry_min_bucket_mass_kg=100.0,
             dig_bad_replan_enabled=False,
             dig_exit_guard_enabled=True,
-            pre_dig_align_enabled=True,
-            pre_dig_align_extra={
-                "first_dig_only": True,
-                "replan_after_failed_dig": True,
-            },
             coverage_extra={"use_env_removed_depth": False},
         )
         policy._ensure_coverage_corridors()
@@ -3333,12 +3325,12 @@ class TestPrimitivesV22(unittest.TestCase):
 
         state = policy.debug_state()
         self.assertFalse(policy._should_pre_dig_align_before_dig())
-        self.assertEqual(state["skill_name"], "pre_dig_align")
+        self.assertEqual(state["skill_name"], "dig")
         self.assertEqual(
             state["skill_switch_reason"],
-            "dig_to_pre_dig_align_exit_overshoot_low_payload",
+            "dig_retry_exit_overshoot_low_payload",
         )
-        self.assertEqual(state["pre_dig_align_replan_after_failed_dig"], True)
+        self.assertEqual(state["pre_dig_align_replan_after_failed_dig"], False)
 
     def test_failed_dig_can_stop_rollout_with_reason(self) -> None:
         policy = _coverage_planner_policy(
@@ -3386,24 +3378,15 @@ class TestPrimitivesV22(unittest.TestCase):
             "dig_failed_exit_overshoot_low_payload",
         )
 
-    def test_primitive_planner_pre_dig_align_plans_before_dig(self) -> None:
-        dig_policy = _RecordingPolicy(0)
-        policy = _coverage_planner_policy(
-            dig_policy=dig_policy,
-            pre_dig_align_enabled=True,
-        )
-
-        action = policy.predict(_coverage_obs(mass=0.0, dig_distance=0.0))
-        state = policy.debug_state()
-
-        self.assertEqual(state["skill_name"], "pre_dig_align")
-        self.assertEqual(state["coverage_corridor_id"], 0)
-        self.assertEqual(state["dig_cut_token_injected"], False)
-        self.assertIsNone(dig_policy.last_dig_cut_tokens)
-        self.assertEqual(action.shape, (4,))
-        self.assertTrue(np.all(np.isfinite(action)))
-        self.assertEqual(state["pre_dig_align_controlled_dims"], [1, 1, 1, 0])
-        self.assertAlmostEqual(float(action[3]), 0.0, places=6)
+    def test_primitive_planner_pre_dig_align_enabled_config_fails_fast(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "pre_dig_align runtime execution has been removed",
+        ):
+            _coverage_planner_policy(
+                dig_policy=_RecordingPolicy(0),
+                pre_dig_align_enabled=True,
+            )
 
     def test_primitive_planner_bootstrap_policy_can_receive_dig_cut_tokens(self) -> None:
         bootstrap_policy = _RecordingPolicy(0)
@@ -3447,331 +3430,6 @@ class TestPrimitivesV22(unittest.TestCase):
         policy.predict(_coverage_obs(mass=0.0, dig_distance=0.0))
 
         self.assertEqual(regular_dig.call_count, 1)
-
-    def test_primitive_planner_pre_dig_align_does_not_drive_bucket_axis(self) -> None:
-        policy = _coverage_planner_policy(
-            dig_policy=_RecordingPolicy(0),
-            pre_dig_align_enabled=True,
-        )
-        obs = _coverage_obs(mass=0.0, dig_distance=0.0)
-        obs["qpos"] = np.asarray([0.0, 0.0, 0.0, 0.83], dtype=np.float32)
-        obs["qvel"] = np.asarray([0.0, 0.0, 0.0, 0.25], dtype=np.float32)
-
-        target = policy._pre_dig_align_target(obs)
-        action = policy.predict(obs)
-
-        self.assertAlmostEqual(float(target[3]), 0.83, places=6)
-        self.assertAlmostEqual(float(action[3]), 0.0, places=6)
-
-    def test_primitive_planner_pre_dig_align_can_extend_bucket_to_zero(self) -> None:
-        policy = _coverage_planner_policy(
-            dig_policy=_RecordingPolicy(0),
-            pre_dig_align_enabled=True,
-            pre_dig_align_extra={
-                "controlled_dims": [1, 1, 1, 1],
-                "bucket_target_qpos": 0.0,
-            },
-        )
-        obs = _coverage_obs(mass=0.0, dig_distance=0.0)
-        obs["qpos"] = np.asarray([0.0, 0.0, 0.0, 0.83], dtype=np.float32)
-        obs["qvel"] = np.zeros(4, dtype=np.float32)
-
-        target = policy._pre_dig_align_target(obs)
-        action = policy.predict(obs)
-
-        self.assertAlmostEqual(float(target[3]), 0.0, places=6)
-        self.assertLess(float(action[3]), 0.0)
-
-    def test_primitive_planner_pre_dig_align_can_mask_depth_axes(self) -> None:
-        policy = _coverage_planner_policy(
-            dig_policy=_RecordingPolicy(0),
-            pre_dig_align_enabled=True,
-            pre_dig_align_extra={
-                "controlled_dims": [1, 1, 1, 1],
-                "entry_intent_controlled_dims": [1, 0, 0, 0],
-            },
-        )
-        obs = _coverage_obs(mass=0.0, dig_distance=0.0)
-        obs["qpos"] = np.asarray([0.11, 0.22, 0.33, 0.44], dtype=np.float32)
-        obs["qvel"] = np.zeros(4, dtype=np.float32)
-
-        target = policy._pre_dig_align_target(obs)
-        action = policy.predict(obs)
-
-        self.assertNotAlmostEqual(float(target[0]), float(obs["qpos"][0]), places=4)
-        np.testing.assert_allclose(target[1:], obs["qpos"][1:], atol=1e-6)
-        np.testing.assert_allclose(action[1:], np.zeros(3, dtype=np.float32), atol=1e-6)
-        self.assertEqual(
-            policy.debug_state()["pre_dig_align_entry_intent_controlled_dims"],
-            [1, 0, 0, 0],
-        )
-
-    def test_primitive_planner_pre_dig_align_entry_intent_handoff_without_entry_close(
-        self,
-    ) -> None:
-        dig_policy = _RecordingPolicy(0)
-        policy = _coverage_planner_policy(
-            dig_policy=dig_policy,
-            pre_dig_align_enabled=True,
-            pre_dig_align_extra={
-                "controlled_dims": [1, 1, 1, 1],
-                "entry_intent_controlled_dims": [1, 0, 0, 0],
-                "max_entry_error_m": 0.01,
-                "timeout_accept_entry_error_m": 0.01,
-                "start_envelope_enabled": False,
-            },
-        )
-        obs = _coverage_obs(mass=0.0, dig_distance=0.0)
-        obs["qpos"] = policy._pre_dig_align_target(obs).astype(np.float32)
-        obs["qvel"] = np.zeros(4, dtype=np.float32)
-
-        for _ in range(policy.pre_dig_align_hold_steps + 1):
-            policy.predict(obs)
-
-        state = policy.debug_state()
-        self.assertEqual(state["skill_name"], "dig")
-        self.assertTrue(state["pre_dig_align_entry_intent_handoff_ready"])
-        self.assertGreater(state["pre_dig_align_entry_error_m"], 0.01)
-        self.assertEqual(policy._coverage_corridors[0].attempts, 0)
-        self.assertIsNotNone(dig_policy.last_dig_cut_tokens)
-
-    def test_primitive_planner_pre_dig_align_intent_timeout_does_not_deplete_cell(
-        self,
-    ) -> None:
-        policy = _coverage_planner_policy(
-            dig_policy=_RecordingPolicy(0),
-            pre_dig_align_enabled=True,
-            pre_dig_align_extra={
-                "controlled_dims": [1, 1, 1, 1],
-                "entry_intent_controlled_dims": [1, 0, 0, 0],
-                "max_entry_error_m": 0.01,
-                "timeout_accept_entry_error_m": 0.01,
-                "start_envelope_enabled": False,
-                "hold_steps": 20,
-                "max_steps": 1,
-            },
-        )
-        obs = _coverage_obs(mass=0.0, dig_distance=0.0)
-        obs["qpos"] = np.zeros(4, dtype=np.float32)
-        obs["qvel"] = np.zeros(4, dtype=np.float32)
-
-        policy.predict(obs)
-        policy.predict(obs)
-
-        state = policy.debug_state()
-        self.assertEqual(state["skill_name"], "dig")
-        self.assertEqual(
-            state["skill_switch_reason"],
-            "pre_dig_align_to_dig_timeout_intent_aligned",
-        )
-        self.assertEqual(policy._coverage_corridors[0].attempts, 0)
-        self.assertFalse(policy._coverage_corridors[0].depleted)
-        self.assertFalse(state["coverage_terminal_stop_requested"])
-
-    def test_primitive_planner_pre_dig_align_surface_guard_hands_off_to_dig(
-        self,
-    ) -> None:
-        dig_policy = _RecordingPolicy(0)
-        policy = _coverage_planner_policy(
-            dig_policy=dig_policy,
-            pre_dig_align_enabled=True,
-            pre_dig_align_extra={
-                "surface_guard_enabled": True,
-                "surface_guard_max_penetration_m": 0.005,
-                "surface_guard_handoff_entry_error_m": 0.35,
-            },
-            coverage_extra={
-                "first_dig_strategy": "nearest_entry",
-                "first_dig_proximity_weight": 8.0,
-            },
-        )
-        obs = _coverage_obs(
-            mass=0.0,
-            dig_distance=0.0,
-            bucket_pose=(0.42, 0.0, -0.34),
-        )
-        env_state = np.asarray(obs["env_state"], dtype=np.float32)
-        env_state[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = 0.03
-        env_state[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX] = 1.0
-        obs["env_state"] = env_state
-
-        action = policy.predict(obs)
-        state = policy.debug_state()
-
-        self.assertEqual(state["skill_name"], "dig")
-        self.assertEqual(
-            state["skill_switch_reason"],
-            "pre_dig_align_to_dig_surface_guard",
-        )
-        self.assertTrue(state["pre_dig_align_surface_guard_triggered"])
-        self.assertEqual(state["pre_dig_align_surface_guard_count"], 1)
-        self.assertIsNotNone(dig_policy.last_dig_cut_tokens)
-        np.testing.assert_allclose(action, np.zeros(4, dtype=np.float32), atol=1e-6)
-
-    def test_primitive_planner_pre_dig_align_hands_off_to_dig(self) -> None:
-        dig_policy = _RecordingPolicy(0)
-        policy = _coverage_planner_policy(
-            dig_policy=dig_policy,
-            pre_dig_align_enabled=True,
-        )
-        obs = _coverage_obs(mass=0.0, dig_distance=0.0)
-        target = policy._pre_dig_align_target(obs)
-        obs["qpos"] = target.astype(np.float32)
-        obs["qvel"] = np.zeros(4, dtype=np.float32)
-
-        for _ in range(policy.pre_dig_align_hold_steps + 1):
-            policy.predict(obs)
-
-        self.assertEqual(policy.debug_state()["skill_name"], "dig")
-        policy.predict(obs)
-        self.assertIsNotNone(dig_policy.last_dig_cut_tokens)
-
-    def test_primitive_planner_pre_dig_align_first_dig_only_skips_after_return(
-        self,
-    ) -> None:
-        policy = _coverage_planner_policy(
-            dig_policy=_RecordingPolicy(0),
-            pre_dig_align_enabled=True,
-            pre_dig_align_extra={"first_dig_only": True},
-        )
-
-        self.assertEqual(policy._skill_name, "pre_dig_align")
-        self.assertTrue(policy._should_pre_dig_align_before_dig())
-
-        policy._set_skill("return", "unit_test_return")
-        policy._maybe_switch_skill(
-            obs=_coverage_obs(mass=0.0, dig_distance=0.0),
-            boundary_event=_FakeBoundaryEvent(qualified_dig_start=True),
-        )
-
-        self.assertEqual(policy._cycle_index, 1)
-        self.assertEqual(policy._skill_name, "dig")
-        self.assertFalse(policy._should_pre_dig_align_before_dig())
-
-    def test_primitive_planner_pre_dig_align_uses_start_envelope_handoff(self) -> None:
-        dig_policy = _RecordingPolicy(0)
-        policy = _coverage_planner_policy(
-            dig_policy=dig_policy,
-            pre_dig_align_enabled=True,
-            pre_dig_align_extra={
-                "controlled_dims": [1, 1, 1, 1],
-                "bucket_target_qpos": 0.0,
-                "max_entry_error_m": 0.10,
-                "start_envelope_enabled": True,
-                "start_envelope_max_entry_error_m": 0.65,
-            },
-        )
-        obs = _coverage_obs(mass=0.0, dig_distance=0.0)
-        target = policy._pre_dig_align_target(obs)
-        obs["qpos"] = target.astype(np.float32)
-        obs["qvel"] = np.zeros(4, dtype=np.float32)
-        env_state = np.asarray(obs["env_state"], dtype=np.float32)
-        env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX] = 0.75
-        env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX] = 0.0
-        env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX] = -0.85
-        env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX] = 0.75
-        env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX] = 0.0
-        env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX] = -0.85
-        obs["env_state"] = env_state
-
-        for _ in range(policy.pre_dig_align_hold_steps + 1):
-            policy.predict(obs)
-
-        state = policy.debug_state()
-        self.assertEqual(state["skill_name"], "dig")
-        self.assertTrue(state["pre_dig_align_start_envelope_ready"])
-
-    def test_primitive_planner_pre_dig_align_first_dig_hands_off_on_entry_close(
-        self,
-    ) -> None:
-        dig_policy = _RecordingPolicy(0)
-        policy = _coverage_planner_policy(
-            dig_policy=dig_policy,
-            pre_dig_align_enabled=True,
-            pre_dig_align_extra={
-                "controlled_dims": [1, 1, 1, 1],
-                "max_entry_error_m": 0.35,
-                "first_dig_entry_close_handoff": True,
-                "first_dig_entry_close_handoff_qvel_abs_max": 0.15,
-            },
-            coverage_extra={
-                "first_dig_strategy": "nearest_entry",
-                "first_dig_proximity_weight": 8.0,
-            },
-        )
-        obs = _coverage_obs(
-            mass=0.0,
-            dig_distance=0.0,
-            bucket_pose=(0.42, 0.0, -0.34),
-        )
-        obs["qpos"] = np.asarray([0.50, 0.60, 0.10, 0.20], dtype=np.float32)
-        obs["qvel"] = np.asarray([0.0, 0.03, -0.10, -0.02], dtype=np.float32)
-
-        for _ in range(policy.pre_dig_align_hold_steps + 1):
-            policy.predict(obs)
-
-        state = policy.debug_state()
-        self.assertEqual(state["skill_name"], "dig")
-        self.assertTrue(state["pre_dig_align_entry_close_handoff_ready"])
-        self.assertIsNotNone(dig_policy.last_dig_cut_tokens)
-
-    def test_primitive_planner_pre_dig_align_first_dig_entry_close_waits_for_qvel(
-        self,
-    ) -> None:
-        policy = _coverage_planner_policy(
-            dig_policy=_RecordingPolicy(0),
-            pre_dig_align_enabled=True,
-            pre_dig_align_extra={
-                "controlled_dims": [1, 1, 1, 1],
-                "max_entry_error_m": 0.35,
-                "first_dig_entry_close_handoff": True,
-                "first_dig_entry_close_handoff_qvel_abs_max": 0.15,
-            },
-            coverage_extra={
-                "first_dig_strategy": "nearest_entry",
-                "first_dig_proximity_weight": 8.0,
-            },
-        )
-        obs = _coverage_obs(
-            mass=0.0,
-            dig_distance=0.0,
-            bucket_pose=(0.42, 0.0, -0.34),
-        )
-        obs["qpos"] = np.asarray([0.50, 0.60, 0.10, 0.20], dtype=np.float32)
-        obs["qvel"] = np.asarray([0.0, 0.03, -0.20, -0.02], dtype=np.float32)
-
-        for _ in range(policy.pre_dig_align_hold_steps + 1):
-            policy.predict(obs)
-
-        state = policy.debug_state()
-        self.assertEqual(state["skill_name"], "pre_dig_align")
-        self.assertFalse(state["pre_dig_align_entry_close_handoff_ready"])
-
-    def test_primitive_planner_pre_dig_align_replans_when_entry_gap_stays_large(self) -> None:
-        policy = _coverage_planner_policy(
-            dig_policy=_RecordingPolicy(0),
-            pre_dig_align_enabled=True,
-            pre_dig_align_extra={
-                "max_entry_error_m": 0.10,
-                "timeout_accept_entry_error_m": 0.10,
-                "max_steps": 2,
-            },
-        )
-        obs = _coverage_obs(mass=0.0, dig_distance=0.0)
-        target = policy._pre_dig_align_target(obs)
-        obs["qpos"] = target.astype(np.float32)
-        obs["qvel"] = np.zeros(4, dtype=np.float32)
-
-        for _ in range(3):
-            policy.predict(obs)
-
-        state = policy.debug_state()
-        self.assertEqual(state["skill_name"], "pre_dig_align")
-        self.assertGreaterEqual(state["pre_dig_align_replan_count"], 1)
-        self.assertEqual(
-            policy._coverage_corridors[0].last_reason,
-            "align_entry_gap_timeout",
-        )
 
     def test_primitive_planner_dig_to_carry_waits_for_target_payload(self) -> None:
         carry_policy = _RecordingPolicy(1)
@@ -3899,7 +3557,6 @@ class TestPrimitivesV22(unittest.TestCase):
             dig_to_carry_min_bucket_mass_kg=15.0,
             dig_to_carry_target_bucket_mass_kg=45.0,
             dig_bad_replan_enabled=True,
-            pre_dig_align_enabled=True,
         )
         policy._set_skill("dig", "unit_test_start_dig")
 
@@ -3907,7 +3564,7 @@ class TestPrimitivesV22(unittest.TestCase):
             policy.predict(_coverage_obs(mass=5.0, dig_distance=0.0))
 
         state = policy.debug_state()
-        self.assertEqual(state["skill_name"], "pre_dig_align")
+        self.assertEqual(state["skill_name"], "dig")
         self.assertGreaterEqual(state["dig_bad_replan_count"], 1)
         self.assertEqual(
             policy._coverage_corridors[0].last_reason,

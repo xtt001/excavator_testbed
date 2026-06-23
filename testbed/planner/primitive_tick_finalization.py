@@ -56,7 +56,6 @@ class PrimitiveTickFinalizationService:
 
     transition_completed_reason_prefixes: tuple[str, ...] = (
         "return_to_dig_",
-        "return_to_pre_dig_align_",
     )
 
     def copy_previous_action(self, action: Any) -> np.ndarray:
