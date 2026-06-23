@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 5329 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 5314 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -73,6 +73,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_token_state.py` | 190 | mutable dig/return token runtime state owner, reset defaults, live token-status projection, and token report metadata projection |
 | `testbed/planner/primitive_token_runtime.py` | 255 | dig/return token runtime sequencing over focused token and coverage state owners plus explicit external config/algorithm ports |
 | `testbed/planner/primitive_dig_token_planning.py` | 341 | active dig token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm/observation ports |
+| `testbed/planner/primitive_dig_recovery.py` | 181 | failed-dig/restart recovery orchestration over focused execution/cycle/return/coverage/token/pre-dig compatibility owners plus explicit external algorithm/action ports |
 | `testbed/planner/primitive_return_token_planning.py` | 217 | return token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm/observation ports |
 | `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
 | `testbed/planner/primitive_cycle_state.py` | 123 | mutable live 4P cycle/progress runtime state owner, reset defaults, and live report/finalization projection |
@@ -1380,6 +1381,23 @@ and parked pre-dig-align retry paths. It should only be moved as a bounded
 responsibility chain that keeps `pre_dig_align` explicitly parked; extracting
 only a thin wrapper around old private methods would violate the hard
 constraint.
+
+Current status note after Phase 9.71: failed-dig/restart recovery no longer
+lives as direct implementation in `PrimitivePlannerACTPolicy`.
+`PrimitiveDigRecoveryService` in `testbed/planner/primitive_dig_recovery.py`
+owns `_restart_pre_dig_align()`, `_try_replan_pre_dig_align_handoff()`,
+`_restart_dig_with_new_cut()`, `_stop_after_failed_dig()`, and
+`_restart_after_failed_dig()` behavior behind policy facades. The service uses
+focused execution, cycle, return, coverage, token, and parked pre-dig-align
+compatibility state owners for stable storage while keeping active-policy
+reset, dig-cut plan clear/invalidation actions, operator-prior token
+construction, raw-field prior checks, pre-dig gate checks, coverage decision
+events, terminal-stop requests, mass reads, and config facts as explicit
+ports. This keeps `pre_dig_align` parked/residual compatibility/action
+material rather than promoting it into a mainline backend/runtime capability.
+Failed-dig branch choice, reason strings, token writeback/copy behavior,
+terminal-stop diagnostics, reset timing, debug/summary/trace schemas, backend
+support, `cell_entry`, and removed 5P runtime status remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

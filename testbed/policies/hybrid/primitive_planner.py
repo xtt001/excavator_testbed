@@ -144,6 +144,10 @@ from testbed.planner.primitive_decision_runtime import (
     PrimitiveDecisionRuntimeConfig,
     PrimitiveDecisionRuntimePorts,
 )
+from testbed.planner.primitive_dig_recovery import (
+    PrimitiveDigRecoveryPorts,
+    PrimitiveDigRecoveryService,
+)
 from testbed.planner.primitive_effects import (
     RequestedEffectApplier,
     RequestedEffectApplierPorts,
@@ -2451,107 +2455,88 @@ class PrimitivePlannerACTPolicy(Policy):
             pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
         )
 
+    def _primitive_dig_recovery(self) -> PrimitiveDigRecoveryService:
+        return PrimitiveDigRecoveryService.from_ports(
+            self._primitive_dig_recovery_ports()
+        )
+
+    def _primitive_dig_recovery_ports(self) -> PrimitiveDigRecoveryPorts:
+        return PrimitiveDigRecoveryPorts(
+            execution_state=self._primitive_execution_runtime_state(),
+            cycle_state=self._primitive_cycle_runtime_state(),
+            return_state=self._primitive_return_runtime_state(),
+            coverage_state=self._coverage_runtime_state(),
+            token_state=self._primitive_token_runtime_state(),
+            pre_dig_align_state=(
+                self._primitive_pre_dig_align_compatibility_runtime_state()
+            ),
+            reset_active_policy=lambda: self._active_policy().reset(),
+            invalidate_pending_dig_cut_plan=(
+                lambda: self._invalidate_pending_dig_cut_plan()
+            ),
+            clear_dig_cut_plan=lambda: self._clear_dig_cut_plan(),
+            build_operator_prior_coverage_dig_cut_tokens=(
+                lambda obs: self._build_operator_prior_coverage_dig_cut_tokens(obs)
+            ),
+            raw_fields_in_prior_range=(
+                lambda raw_fields: self._raw_fields_in_prior_range(raw_fields)
+            ),
+            pre_dig_align_entry_error=(
+                lambda obs: self._pre_dig_align_entry_error(obs)
+            ),
+            pre_dig_align_timeout_can_handoff=(
+                lambda obs: self._pre_dig_align_timeout_can_handoff(obs)
+            ),
+            set_skill=lambda skill_name, reason: self._set_skill(
+                skill_name,
+                reason,
+            ),
+            record_coverage_decision_event=(
+                lambda event, *, obs, corridor, extra: (
+                    self._record_coverage_decision_event(
+                        event,
+                        obs=obs,
+                        corridor=corridor,
+                        extra=extra,
+                    )
+                )
+            ),
+            request_coverage_terminal_stop=(
+                lambda reason, *, replace=False: (
+                    self._request_coverage_terminal_stop(
+                        reason,
+                        replace=replace,
+                    )
+                )
+            ),
+            mass_in_bucket=lambda obs: self._mass_in_bucket(obs),
+            should_pre_dig_align_before_dig=(
+                lambda: self._should_pre_dig_align_before_dig()
+            ),
+            should_pre_dig_align_after_failed_dig=(
+                lambda: self._should_pre_dig_align_after_failed_dig()
+            ),
+            dig_cut_planner_mode=lambda: str(self.dig_cut_planner_mode),
+            dig_failed_replan_next_skill=(
+                lambda: str(self.dig_failed_replan_next_skill)
+            ),
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
+        )
+
     def _restart_pre_dig_align(self, reason: str) -> None:
-        self._skill_name = PRE_DIG_ALIGN_SKILL_NAME
-        self._switch_reason = str(reason)
-        self._pre_dig_align_step_count = 0
-        self._pre_dig_align_hold_count = 0
-        self._pre_dig_align_replan_count += 1
-        self._pre_dig_align_entry_intent_handoff_ready = False
-        self._pre_dig_align_timeout_handoff_reason = ""
-        self._pre_dig_align_surface_guard_triggered = False
-        self._dig_step_count = 0
-        self._dig_best_mass_kg = 0.0
-        self._dig_mass_plateau_count = 0
-        self._dig_to_carry_reason = ""
-        self._coverage_current_payload_gain_kg = 0.0
-        self._coverage_active_corridor_id = -1
-        self._return_next_dig_event_seen = False
-        self._invalidate_pending_dig_cut_plan()
-        self._clear_dig_cut_plan()
+        self._primitive_dig_recovery().restart_pre_dig_align(reason)
 
     def _try_replan_pre_dig_align_handoff(self, obs: dict) -> bool:
-        if self.dig_cut_planner_mode not in {
-            "operator_prior_coverage",
-            "operator_prior_sweep_belief",
-        }:
-            return False
-        self._coverage_active_corridor_id = -1
-        self._invalidate_pending_dig_cut_plan()
-        self._clear_dig_cut_plan()
-        try:
-            token, raw_fields, source, fallback_reason = (
-                self._build_operator_prior_coverage_dig_cut_tokens(obs)
-            )
-        except Exception:
-            return False
-        self._dig_cut_tokens = np.asarray(token, dtype=np.float32).copy()
-        self._dig_cut_planned_cycle_id = int(self._cycle_index)
-        self._dig_cut_token_source = str(source)
-        self._dig_cut_fallback_reason = str(fallback_reason)
-        self._dig_cut_token_in_prior_p10_p90 = self._raw_fields_in_prior_range(
-            raw_fields
-        )
-        self._pre_dig_align_entry_error_m = float(self._pre_dig_align_entry_error(obs))
-        if not self._pre_dig_align_timeout_can_handoff(obs):
-            return False
-        self._pre_dig_align_replan_count += 1
-        self._pre_dig_align_completed_count += 1
-        self._pre_dig_align_step_count = 0
-        self._pre_dig_align_hold_count = 0
-        self._set_skill("dig", "pre_dig_align_replan_to_dig_entry_close")
-        return True
+        return self._primitive_dig_recovery().try_replan_pre_dig_align_handoff(obs)
 
     def _restart_dig_with_new_cut(self, reason: str) -> None:
-        self._skill_name = "dig"
-        self._switch_reason = str(reason)
-        self._active_policy().reset()
-        self._dig_step_count = 0
-        self._dig_best_mass_kg = 0.0
-        self._dig_mass_plateau_count = 0
-        self._dig_to_carry_reason = ""
-        self._coverage_current_payload_gain_kg = 0.0
-        self._coverage_active_corridor_id = -1
-        self._invalidate_pending_dig_cut_plan()
-        self._clear_dig_cut_plan()
+        self._primitive_dig_recovery().restart_dig_with_new_cut(reason)
 
     def _stop_after_failed_dig(self, reason: str, obs: dict) -> None:
-        corridor = self._coverage_active_corridor()
-        payload_gain = max(
-            float(self._coverage_current_payload_gain_kg),
-            float(self._dig_best_mass_kg),
-            self._mass_in_bucket(obs),
-            0.0,
-        )
-        self._switch_reason = f"dig_failed_stop_{reason}"
-        self._record_coverage_decision_event(
-            "failed_dig_stop",
-            obs=obs,
-            corridor=corridor,
-            extra={
-                "reason": str(reason),
-                "payload_gain_kg": float(payload_gain),
-                "current_bucket_mass_kg": float(self._mass_in_bucket(obs)),
-                "dig_best_mass_kg": float(self._dig_best_mass_kg),
-                "dig_step_count": int(self._dig_step_count),
-            },
-        )
-        self._request_coverage_terminal_stop(
-            f"dig_failed_{reason}",
-            replace=True,
-        )
+        self._primitive_dig_recovery().stop_after_failed_dig(reason, obs)
 
     def _restart_after_failed_dig(self, reason: str, obs: dict) -> None:
-        if (
-            self._should_pre_dig_align_before_dig()
-            or self._should_pre_dig_align_after_failed_dig()
-        ):
-            self._restart_pre_dig_align(f"dig_to_pre_dig_align_{reason}")
-            return
-        if self.dig_failed_replan_next_skill == "stop":
-            self._stop_after_failed_dig(reason, obs)
-            return
-        self._restart_dig_with_new_cut(f"dig_retry_{reason}")
+        self._primitive_dig_recovery().restart_after_failed_dig(reason, obs)
 
     def _should_pre_dig_align_before_dig(self) -> bool:
         if not self.pre_dig_align_enabled:

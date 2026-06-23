@@ -7140,3 +7140,68 @@ Each completed refactor round should append:
   not the objective. It exists because the next implementation must not
   degrade into tiny facade cleanup, an anemic service, a pass-through wrapper,
   or a generic blackboard.
+
+### 2026-06-23 Phase 9.71 Extract Failed-Dig / Restart Recovery Boundary
+
+- Scope: moved the source implementation for failed-dig and restart recovery
+  helpers out of `PrimitivePlannerACTPolicy` into
+  `PrimitiveDigRecoveryService` in
+  `testbed/planner/primitive_dig_recovery.py`.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 134]`, HEAD
+  `d7cb4a3294acd9d72e469fe58ac07b813dfb1a73`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, or remote write was
+  used by the executor.
+- `PrimitiveDigRecoveryPorts` carries focused execution, cycle, return,
+  coverage, token, and parked pre-dig-align compatibility state owners.
+- `PrimitiveDigRecoveryService` now owns the behavior previously implemented
+  by `_restart_pre_dig_align(...)`,
+  `_try_replan_pre_dig_align_handoff(...)`,
+  `_restart_dig_with_new_cut(...)`, `_stop_after_failed_dig(...)`, and
+  `_restart_after_failed_dig(...)`.
+- `PrimitivePlannerACTPolicy` keeps those old private method names as thin
+  service-backed facades and assembles explicit external ports for active
+  policy reset, dig-cut plan invalidation/clear, operator-prior token
+  construction, raw-field prior-range checks, pre-dig entry/timeout gates,
+  coverage decision event recording, coverage terminal-stop requests, bucket
+  mass reads, and config facts.
+- Preserved behavior: failed-dig branch choice, reason strings, active policy
+  reset timing, dig progress reset, coverage payload/active-id reset,
+  return-event clearing, pre-dig retry counters, operator-prior dig-cut
+  writeback/copy semantics, terminal-stop event payload, token schema,
+  debug/summary/trace schemas, backend support, `cell_entry`, pre-dig-align
+  algorithms, and removed 5P runtime status are unchanged.
+- Explicit non-goals: no `_maybe_handle_pre_dig_align_skill(...)`,
+  `_pre_dig_align_ready(...)`, `_pre_dig_align_action(...)`, pre-dig geometry
+  or readiness algorithm changes; no `cell_entry`, return direct handoff,
+  decision backend/facts, coverage candidate/scoring/effect, token planner
+  algorithm, report schema, 5P, or BT/VLM/LLM backend changes.
+- TDD red result from executor callback: after focused tests were written,
+  `python -m pytest -q tests/test_primitive_dig_recovery.py tests/test_primitive_pre_dig_align_state.py tests/test_primitive_cycle_state.py tests/test_primitive_token_state.py tests/test_primitive_coverage_state.py tests/test_primitive_return_state.py`
+  failed as expected with `ModuleNotFoundError: No module named
+  'testbed.planner.primitive_dig_recovery'`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_dig_recovery.py tests/test_primitive_pre_dig_align_state.py tests/test_primitive_cycle_state.py tests/test_primitive_token_state.py tests/test_primitive_coverage_state.py tests/test_primitive_return_state.py`
+  returned `52 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_skill_lifecycle.py tests/test_primitive_token_runtime.py tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_selection_runtime.py`
+  returned `47 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "pre_dig_align or semantic_boundary_events_drive_skill_sequence or first_dig_policy_for_cycle_zero or dig_cut_tokens or coverage_decision_trace or return_to_dig"`
+  returned `20 passed, 99 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_dig_recovery.py tests/test_primitive_pre_dig_align_state.py tests/test_primitive_cycle_state.py tests/test_primitive_token_state.py tests/test_primitive_coverage_state.py tests/test_primitive_return_state.py`
+  returned `52 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_skill_lifecycle.py tests/test_primitive_token_runtime.py tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_selection_runtime.py`
+  returned `47 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "pre_dig_align or semantic_boundary_events_drive_skill_sequence or first_dig_policy_for_cycle_zero or dig_cut_tokens or coverage_decision_trace or return_to_dig"`
+  returned `20 passed, 99 deselected`.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was the largest effective bounded failed-dig/restart
+  recovery move and did not create an anemic service, pass-through facade,
+  generic blackboard, or planner-self port. `pre_dig_align` remains
+  parked/residual compatibility/action material; `cell_entry` remains parked
+  compatibility/report material.

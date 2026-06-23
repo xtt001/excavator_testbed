@@ -114,7 +114,21 @@ dig-depth-profile source/fallback fields, active corridor ids, payload/deposit
 baselines, and state-exemplar payload through those owners instead of
 policy-built storage callbacks. Config facts, token planner algorithms,
 observation facts, coverage corridor selection, and coverage raw-field building
-remain explicit external ports. The return token planning boundary has also
+remain explicit external ports.
+
+Failed-dig/restart recovery is now a focused service boundary rather than
+direct policy implementation. `PrimitiveDigRecoveryService` consumes focused
+execution, cycle, return, coverage, token, and pre-dig-align compatibility
+state owners for the restart/recovery state writes previously embedded in
+`PrimitivePlannerACTPolicy`. It preserves explicit ports for active-policy
+reset, dig-cut plan invalidation/clear actions, operator-prior token
+construction, raw-field prior checks, pre-dig entry/timeout gates, coverage
+decision event recording, coverage terminal-stop requests, mass reads, and
+configuration facts. This keeps failed-dig recovery cohesive while leaving
+`pre_dig_align` parked/residual; it does not convert pre-dig-align into a
+mainline backend-requested effect or change the selected rollout's
+`cell_entry` parking decision.
+The return token planning boundary has also
 been narrowed to the same focused owners: `PrimitiveReturnTokenPlanningPorts`
 carries `PrimitiveTokenRuntimeState` and `CoverageRuntimeState`, and
 `PrimitiveReturnTokenPlanningService` reads/writes return start-envelope

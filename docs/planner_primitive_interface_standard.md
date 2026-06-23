@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.69 implementation. It is intentionally
+compares them with the current Phase 9.71 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -85,6 +85,10 @@ Current maturity:
 - pre-dig-align compatibility runtime state owner: **achieved for parked
   pre-dig-align counters, cached target/error arrays, readiness booleans,
   timeout reason, and surface-guard report storage**
+- failed-dig/restart recovery service boundary: **achieved for the direct
+  restart/recovery helpers through `PrimitiveDigRecoveryService`, while
+  keeping `pre_dig_align` explicitly parked/residual and algorithm/action
+  dependencies as explicit ports**
 - runtime composition root / public runtime kernel: **achieved for public
   runtime routing**
 - decision runtime backend factory/registry: **achieved for selecting the
