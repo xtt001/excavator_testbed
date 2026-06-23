@@ -3891,36 +3891,22 @@ class PrimitivePlannerACTPolicy(Policy):
     def _coverage_effect_runtime_ports(self) -> CoverageEffectRuntimePorts:
         return CoverageEffectRuntimePorts(
             state=self._coverage_runtime_state(),
+            cycle_state=self._primitive_cycle_runtime_state(),
             coverage_mode=lambda: str(self.dig_cut_planner_mode),
             coverage_update_service=lambda: self._coverage_update_service(),
             coverage_runtime_service=lambda: self._coverage_runtime_service(),
-            mass_in_bucket=lambda obs: self._mass_in_bucket(obs),
-            completion_facts=(
-                lambda obs, corridor, reason: self._coverage_completion_facts(
+            observation_facts=(
+                lambda obs: PrimitiveObservationFacts.from_obs(
                     obs,
-                    corridor,
-                    reason=reason,
+                    action_dim=int(self.action_dim),
                 )
             ),
-            rejection_facts=(
-                lambda obs, corridor, reason: self._coverage_rejection_facts(
-                    obs,
-                    corridor,
-                    reason=reason,
-                )
+            remaining_depth=lambda obs, corridor: self._coverage_remaining_depth_for_corridor(
+                obs,
+                corridor,
             ),
-            reopen_facts=(
-                lambda obs, corridors, reason: self._coverage_reopen_facts(
-                    obs,
-                    corridors,
-                    reason=reason,
-                )
-            ),
-            terminal_facts=(
-                lambda reason, replace: self._coverage_terminal_facts(
-                    reason,
-                    replace=replace,
-                )
+            corridor_attempt_limit=lambda corridor: self._coverage_corridor_attempt_limit(
+                corridor
             ),
             record_decision_event=self._record_coverage_decision_event,
             coverage_global_low_productivity_stop=lambda: int(

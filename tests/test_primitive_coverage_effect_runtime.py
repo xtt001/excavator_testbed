@@ -4,8 +4,12 @@ from dataclasses import fields
 from types import MethodType
 from typing import Any
 
+import numpy as np
+
+from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive_coverage import CoverageCorridorState
 from testbed.planner.primitive_coverage_state import CoverageRuntimeState
+from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive_coverage_updates import (
     CoverageCompletionFacts,
     CoverageEffectRuntimeCoordinator,
@@ -50,6 +54,8 @@ class _FakeUpdateService:
             counted_attempt=1,
             rejected_state_exemplar_ids=("cell0_a",),
         )
+        self.last_completion_facts: CoverageCompletionFacts | None = None
+        self.last_rejection_facts: CoverageRejectionFacts | None = None
 
     def record_dig_payload(
         self,
@@ -66,6 +72,7 @@ class _FakeUpdateService:
         corridor: CoverageCorridorState,
         facts: CoverageCompletionFacts,
     ) -> CoverageUpdateResult:
+        self.last_completion_facts = facts
         self.events.append(f"update:complete_dump:{corridor.corridor_id}:{facts.reason}")
         return self.dump_result
 
@@ -74,6 +81,7 @@ class _FakeUpdateService:
         corridor: CoverageCorridorState,
         facts: CoverageRejectionFacts,
     ) -> CoverageUpdateResult:
+        self.last_rejection_facts = facts
         self.events.append(
             f"update:reject_corridor:{corridor.corridor_id}:{facts.reason}"
         )
@@ -99,12 +107,15 @@ class _FakeRuntimeService:
             min_remaining_depth_m=0.05,
             reopened_corridors=[],
         )
+        self.last_reopen_facts: CoverageReopenFacts | None = None
+        self.last_terminal_facts: CoverageTerminalFacts | None = None
 
     def maybe_reopen_pass(
         self,
         corridors: list[CoverageCorridorState],
         facts: CoverageReopenFacts,
     ) -> CoverageReopenResult:
+        self.last_reopen_facts = facts
         self.events.append(f"runtime:maybe_reopen:{facts.reason}:{len(corridors)}")
         return self.reopen_result
 
@@ -112,6 +123,7 @@ class _FakeRuntimeService:
         self,
         facts: CoverageTerminalFacts,
     ) -> CoverageTerminalResult:
+        self.last_terminal_facts = facts
         self.events.append(f"runtime:terminal:{facts.reason}:{facts.replace}")
         if facts.terminal_stop_requested and not facts.replace:
             return CoverageTerminalResult(
@@ -147,6 +159,12 @@ def _ports(
     runtime_service: _FakeRuntimeService | None = None,
     current_payload: float = 2.0,
     bucket_mass: float = 5.0,
+    deposited_mass: float = 11.0,
+    cycle_start_deposit: float = 4.0,
+    remaining_depth: float = 0.1,
+    attempt_limit: int = 3,
+    dig_best_mass: float = 0.0,
+    active_exemplar_ids: tuple[str, ...] = ("cell0_a",),
     terminal_requested: bool = False,
     terminal_reason: str = "",
     global_stop: int = 3,
@@ -164,8 +182,21 @@ def _ports(
     state.coverage_corridors = target_corridors
     state.coverage_active_corridor_id = -1 if corridor is None else int(corridor.corridor_id)
     state.coverage_current_payload_gain_kg = float(current_payload)
+    state.coverage_cycle_start_deposit_kg = float(cycle_start_deposit)
+    state.coverage_active_state_exemplar_ids = list(active_exemplar_ids)
     state.coverage_terminal_stop_requested = bool(terminal_requested)
     state.coverage_terminal_stop_reason = str(terminal_reason)
+    cycle_state = PrimitiveCycleRuntimeState()
+    cycle_state.dig_best_mass_kg = float(dig_best_mass)
+
+    def observation_facts(obs: dict[str, Any]) -> PrimitiveObservationFacts:
+        merged = dict(obs)
+        metrics = dict(merged.get("task_metrics", {}) or {})
+        metrics.setdefault("mass_in_bucket_kg", float(bucket_mass))
+        metrics.setdefault("deposited_mass_in_target_box_kg", float(deposited_mass))
+        merged["task_metrics"] = metrics
+        merged.setdefault("env_state", np.zeros(13, dtype=np.float32))
+        return PrimitiveObservationFacts.from_obs(merged, action_dim=4)
 
     def record_event(
         event: str,
@@ -181,48 +212,20 @@ def _ports(
 
     ports = CoverageEffectRuntimePorts(
         state=state,
+        cycle_state=cycle_state,
         coverage_mode=lambda: mode,
         coverage_update_service=lambda: update_service or _FakeUpdateService(events),
         coverage_runtime_service=lambda: runtime_service or _FakeRuntimeService(events),
-        mass_in_bucket=lambda obs: float(bucket_mass),
-        completion_facts=lambda obs, got_corridor, reason: CoverageCompletionFacts(
-            payload_gain_kg=1.0,
-            effective_deposit_delta_kg=1.0,
-            remaining_depth_m=0.1,
-            reason=reason,
-            attempt_limit=3,
-            completed_dump_count=0,
-            global_low_productivity_streak=0,
-        ),
-        rejection_facts=lambda obs, got_corridor, reason: CoverageRejectionFacts(
-            payload_gain_kg=1.0,
-            effective_deposit_delta_kg=1.0,
-            remaining_depth_m=0.1,
-            reason=reason,
-            attempt_limit=3,
-            global_low_productivity_streak=0,
-            active_state_exemplar_ids=("cell0_a",),
-        ),
-        reopen_facts=lambda obs, got_corridors, reason: CoverageReopenFacts(
-            reason=reason,
-            pass_index=0,
-            terminal_stop_requested=bool(state.coverage_terminal_stop_requested),
-            remaining_depth_by_corridor_id={
-                int(item.corridor_id): 0.1 for item in got_corridors
-            },
-        ),
-        terminal_facts=lambda reason, replace: CoverageTerminalFacts(
-            reason=reason,
-            replace=replace,
-            terminal_stop_requested=bool(state.coverage_terminal_stop_requested),
-            terminal_stop_reason=str(state.coverage_terminal_stop_reason),
-        ),
+        observation_facts=observation_facts,
+        remaining_depth=lambda obs, got_corridor: float(remaining_depth),
+        corridor_attempt_limit=lambda got_corridor: int(attempt_limit),
         record_decision_event=record_event,
         coverage_global_low_productivity_stop=lambda: int(global_stop),
         coverage_low_productivity_payload_kg=lambda: float(low_payload_kg),
         coverage_low_productivity_deposit_kg=lambda: float(low_deposit_kg),
     )
     ports.test_state = state  # type: ignore[attr-defined]
+    ports.test_cycle_state = cycle_state  # type: ignore[attr-defined]
     return ports
 
 
@@ -246,6 +249,36 @@ def test_complete_dig_records_max_payload_gain() -> None:
 
     assert events == ["update:record_dig_payload:2.0:5.0"]
     assert ports.test_state.coverage_current_payload_gain_kg == 5.0  # type: ignore[attr-defined]
+
+
+def test_complete_dump_builds_completion_facts_from_runtime_state_and_observation() -> None:
+    events: list[str] = []
+    update_service = _FakeUpdateService(events)
+    ports = _ports(
+        events,
+        update_service=update_service,
+        current_payload=2.5,
+        deposited_mass=12.0,
+        cycle_start_deposit=4.5,
+        remaining_depth=0.06,
+        attempt_limit=5,
+    )
+
+    CoverageEffectRuntimeCoordinator.from_ports(ports).complete_dump(
+        {"obs": 1},
+        reason="dump_done",
+    )
+
+    facts = update_service.last_completion_facts
+    assert facts == CoverageCompletionFacts(
+        payload_gain_kg=2.5,
+        effective_deposit_delta_kg=7.5,
+        remaining_depth_m=0.06,
+        reason="dump_done",
+        attempt_limit=5,
+        completed_dump_count=0,
+        global_low_productivity_streak=0,
+    )
 
 
 def test_complete_dump_writes_result_then_event_then_reopen_terminal_checks() -> None:
@@ -369,6 +402,39 @@ def test_reject_counted_attempt_zero_records_event_and_skips_terminal_checks() -
     assert ports.test_state.coverage_global_low_productivity_streak == 0  # type: ignore[attr-defined]
 
 
+def test_reject_builds_rejection_facts_from_runtime_state_and_observation() -> None:
+    events: list[str] = []
+    update_service = _FakeUpdateService(events)
+    ports = _ports(
+        events,
+        update_service=update_service,
+        current_payload=2.0,
+        bucket_mass=5.5,
+        deposited_mass=13.0,
+        cycle_start_deposit=3.0,
+        remaining_depth=0.07,
+        attempt_limit=4,
+        dig_best_mass=6.25,
+        active_exemplar_ids=("cell0_a", "cell0_b"),
+    )
+
+    CoverageEffectRuntimeCoordinator.from_ports(ports).reject_active_corridor(
+        {"obs": 1},
+        reason="bad_dig",
+    )
+
+    facts = update_service.last_rejection_facts
+    assert facts == CoverageRejectionFacts(
+        payload_gain_kg=6.25,
+        effective_deposit_delta_kg=10.0,
+        remaining_depth_m=0.07,
+        reason="bad_dig",
+        attempt_limit=4,
+        global_low_productivity_streak=0,
+        active_state_exemplar_ids=("cell0_a", "cell0_b"),
+    )
+
+
 def test_reject_counted_attempt_path_checks_reopen_or_terminal() -> None:
     events: list[str] = []
     corridor = _corridor(depleted=True)
@@ -407,10 +473,11 @@ def test_maybe_reopen_pass_applies_result_and_records_event() -> None:
         min_remaining_depth_m=0.04,
         reopened_corridors=[{"corridor_id": 7, "remaining_depth_m": 0.12}],
     )
+    runtime_service = _FakeRuntimeService(events, reopen_result=reopen_result)
     ports = _ports(
         events,
         corridors=[corridor],
-        runtime_service=_FakeRuntimeService(events, reopen_result=reopen_result),
+        runtime_service=runtime_service,
     )
     ports.test_state.coverage_rejected_state_exemplar_ids.add("cell0_a")  # type: ignore[attr-defined]
 
@@ -428,12 +495,20 @@ def test_maybe_reopen_pass_applies_result_and_records_event() -> None:
         "runtime:maybe_reopen:unit_reopen:1",
         "event:reopen_coverage_pass:-1:unit_reopen",
     ]
+    assert runtime_service.last_reopen_facts == CoverageReopenFacts(
+        reason="unit_reopen",
+        pass_index=0,
+        terminal_stop_requested=False,
+        remaining_depth_by_corridor_id={7: 0.1},
+    )
 
 
 def test_request_terminal_stop_skips_duplicate_without_replace() -> None:
     events: list[str] = []
+    runtime_service = _FakeRuntimeService(events)
     ports = _ports(
         events,
+        runtime_service=runtime_service,
         terminal_requested=True,
         terminal_reason="first_reason",
     )
@@ -444,6 +519,12 @@ def test_request_terminal_stop_skips_duplicate_without_replace() -> None:
 
     assert events == ["runtime:terminal:ignored_reason:False"]
     assert ports.test_state.coverage_terminal_stop_reason == "first_reason"  # type: ignore[attr-defined]
+    assert runtime_service.last_terminal_facts == CoverageTerminalFacts(
+        reason="ignored_reason",
+        replace=False,
+        terminal_stop_requested=True,
+        terminal_stop_reason="first_reason",
+    )
 
 
 def test_request_terminal_stop_records_event_with_current_active_corridor() -> None:
@@ -467,6 +548,7 @@ def test_effect_runtime_ports_carry_state_owner_without_state_callbacks() -> Non
     port_fields = {field.name for field in fields(CoverageEffectRuntimePorts)}
 
     assert isinstance(ports.state, CoverageRuntimeState)
+    assert isinstance(ports.cycle_state, PrimitiveCycleRuntimeState)
     assert "coverage_corridors" not in port_fields
     assert "active_corridor" not in port_fields
     assert "current_payload_gain_kg" not in port_fields
@@ -481,6 +563,14 @@ def test_effect_runtime_ports_carry_state_owner_without_state_callbacks() -> Non
     assert "clear_rejected_state_exemplar_ids" not in port_fields
     assert "set_terminal_stop_requested" not in port_fields
     assert "set_terminal_stop_reason" not in port_fields
+    assert "mass_in_bucket" not in port_fields
+    assert "completion_facts" not in port_fields
+    assert "rejection_facts" not in port_fields
+    assert "reopen_facts" not in port_fields
+    assert "terminal_facts" not in port_fields
+    assert "observation_facts" in port_fields
+    assert "remaining_depth" in port_fields
+    assert "corridor_attempt_limit" in port_fields
     assert "planner" not in port_fields
     assert "self" not in port_fields
 

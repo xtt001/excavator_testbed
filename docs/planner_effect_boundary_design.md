@@ -1282,6 +1282,19 @@ token/return/cycle/scripted-bootstrap/execution behavior, backend fail-fast
 behavior, parked `cell_entry`, residual `pre_dig_align`, or removed 5P runtime
 status.
 
+Phase 9.85 narrows this boundary further by moving coverage effect fact
+projection into `CoverageEffectFactService`. `CoverageEffectRuntimePorts` now
+carries `CoverageRuntimeState`, `PrimitiveCycleRuntimeState`, a typed
+`PrimitiveObservationFacts` provider, a remaining-depth provider, and a
+corridor-attempt-limit provider instead of policy-built `mass_in_bucket`,
+`completion_facts`, `rejection_facts`, `reopen_facts`, and `terminal_facts`
+callbacks. `CoverageEffectRuntimeCoordinator` constructs complete-dig mass,
+complete-dump, rejection, reopen, and terminal-stop facts inside the coverage
+effect runtime boundary while keeping update/runtime services and
+decision-event recording explicit. This does not change coverage update
+algorithms, terminal-stop reason strings, event ordering, report schemas,
+token/return/direct-handoff/recovery semantics, or parked path status.
+
 Phase 9.64 narrows the active dig token planning port boundary in
 `testbed/planner/primitive_dig_token_planning.py`.
 `PrimitiveDigTokenPlanningPorts` now carries the focused

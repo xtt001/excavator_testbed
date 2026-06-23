@@ -14,7 +14,9 @@ from testbed.planner.primitive_coverage import (
 )
 
 if TYPE_CHECKING:
+    from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
     from testbed.planner.primitive_coverage_state import CoverageRuntimeState
+    from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
 
 
 @dataclass(frozen=True)
@@ -276,6 +278,109 @@ class CoverageTerminalResult:
     record_event: bool
 
 
+@dataclass(frozen=True)
+class CoverageEffectFactService:
+    """Project coverage effect facts from focused runtime state and observation facts."""
+
+    state: CoverageRuntimeState
+    cycle_state: PrimitiveCycleRuntimeState
+    observation_facts: Callable[[dict[str, Any]], PrimitiveObservationFacts]
+    remaining_depth: Callable[[dict[str, Any], CoverageCorridorState], float]
+    corridor_attempt_limit: Callable[[CoverageCorridorState], int]
+
+    def mass_in_bucket_kg(self, obs: dict[str, Any]) -> float:
+        return float(self.observation_facts(obs).mass_in_bucket_kg)
+
+    def completion_facts(
+        self,
+        obs: dict[str, Any],
+        corridor: CoverageCorridorState,
+        *,
+        reason: str,
+    ) -> CoverageCompletionFacts:
+        observation = self.observation_facts(obs)
+        return CoverageCompletionFacts(
+            payload_gain_kg=max(
+                float(self.state.coverage_current_payload_gain_kg),
+                0.0,
+            ),
+            effective_deposit_delta_kg=max(
+                0.0,
+                float(observation.deposited_mass_in_target_box_kg)
+                - float(self.state.coverage_cycle_start_deposit_kg),
+            ),
+            remaining_depth_m=float(self.remaining_depth(obs, corridor)),
+            reason=str(reason),
+            attempt_limit=int(self.corridor_attempt_limit(corridor)),
+            completed_dump_count=int(self.state.coverage_completed_dump_count),
+            global_low_productivity_streak=int(
+                self.state.coverage_global_low_productivity_streak
+            ),
+        )
+
+    def rejection_facts(
+        self,
+        obs: dict[str, Any],
+        corridor: CoverageCorridorState,
+        *,
+        reason: str,
+    ) -> CoverageRejectionFacts:
+        observation = self.observation_facts(obs)
+        return CoverageRejectionFacts(
+            payload_gain_kg=max(
+                float(self.state.coverage_current_payload_gain_kg),
+                float(self.cycle_state.dig_best_mass_kg),
+                float(observation.mass_in_bucket_kg),
+                0.0,
+            ),
+            effective_deposit_delta_kg=max(
+                0.0,
+                float(observation.deposited_mass_in_target_box_kg)
+                - float(self.state.coverage_cycle_start_deposit_kg),
+            ),
+            remaining_depth_m=float(self.remaining_depth(obs, corridor)),
+            reason=str(reason),
+            attempt_limit=int(self.corridor_attempt_limit(corridor)),
+            global_low_productivity_streak=int(
+                self.state.coverage_global_low_productivity_streak
+            ),
+            active_state_exemplar_ids=tuple(
+                str(exemplar_id)
+                for exemplar_id in self.state.coverage_active_state_exemplar_ids
+            ),
+        )
+
+    def reopen_facts(
+        self,
+        obs: dict[str, Any],
+        corridors: list[CoverageCorridorState],
+        *,
+        reason: str,
+    ) -> CoverageReopenFacts:
+        return CoverageReopenFacts(
+            reason=str(reason),
+            pass_index=int(self.state.coverage_pass_index),
+            terminal_stop_requested=bool(self.state.coverage_terminal_stop_requested),
+            remaining_depth_by_corridor_id={
+                int(corridor.corridor_id): float(self.remaining_depth(obs, corridor))
+                for corridor in corridors
+            },
+        )
+
+    def terminal_facts(
+        self,
+        reason: str,
+        *,
+        replace: bool,
+    ) -> CoverageTerminalFacts:
+        return CoverageTerminalFacts(
+            reason=str(reason),
+            replace=bool(replace),
+            terminal_stop_requested=bool(self.state.coverage_terminal_stop_requested),
+            terminal_stop_reason=str(self.state.coverage_terminal_stop_reason),
+        )
+
+
 class CoverageRuntimeService:
     """Gate coverage reopen and terminal-stop requests without trace side effects."""
 
@@ -375,23 +480,13 @@ class CoverageEffectRuntimePorts:
     """Shell ports used by the coverage effect runtime coordinator."""
 
     state: CoverageRuntimeState
+    cycle_state: PrimitiveCycleRuntimeState
     coverage_mode: Callable[[], str]
     coverage_update_service: Callable[[], CoverageUpdateService]
     coverage_runtime_service: Callable[[], CoverageRuntimeService]
-    mass_in_bucket: Callable[[dict[str, Any]], float]
-    completion_facts: Callable[
-        [dict[str, Any], CoverageCorridorState, str],
-        CoverageCompletionFacts,
-    ]
-    rejection_facts: Callable[
-        [dict[str, Any], CoverageCorridorState, str],
-        CoverageRejectionFacts,
-    ]
-    reopen_facts: Callable[
-        [dict[str, Any], list[CoverageCorridorState], str],
-        CoverageReopenFacts,
-    ]
-    terminal_facts: Callable[[str, bool], CoverageTerminalFacts]
+    observation_facts: Callable[[dict[str, Any]], PrimitiveObservationFacts]
+    remaining_depth: Callable[[dict[str, Any], CoverageCorridorState], float]
+    corridor_attempt_limit: Callable[[CoverageCorridorState], int]
     record_decision_event: Callable[..., None]
     coverage_global_low_productivity_stop: Callable[[], int]
     coverage_low_productivity_payload_kg: Callable[[], float]
@@ -419,9 +514,10 @@ class CoverageEffectRuntimeCoordinator:
         if not self._coverage_mode_enabled():
             return
         ports = self.ports
+        facts = self._facts()
         payload_gain = ports.coverage_update_service().record_dig_payload(
             float(ports.state.coverage_current_payload_gain_kg),
-            float(ports.mass_in_bucket(obs)),
+            facts.mass_in_bucket_kg(obs),
         )
         ports.state.set_current_payload_gain_kg(float(payload_gain))
 
@@ -434,7 +530,7 @@ class CoverageEffectRuntimeCoordinator:
             return
         result = ports.coverage_update_service().complete_dump(
             corridor,
-            ports.completion_facts(obs, corridor, str(reason)),
+            self._facts().completion_facts(obs, corridor, reason=str(reason)),
         )
         ports.state.set_last_payload_gain_kg(float(result.payload_gain_kg))
         ports.state.set_last_effective_deposit_delta_kg(
@@ -485,7 +581,7 @@ class CoverageEffectRuntimeCoordinator:
             return
         result = ports.coverage_update_service().reject_corridor(
             corridor,
-            ports.rejection_facts(obs, corridor, str(reason)),
+            self._facts().rejection_facts(obs, corridor, reason=str(reason)),
         )
         ports.state.update_rejected_state_exemplar_ids(
             tuple(result.rejected_state_exemplar_ids)
@@ -526,7 +622,7 @@ class CoverageEffectRuntimeCoordinator:
         corridors = ports.state.coverage_corridors
         result = ports.coverage_runtime_service().maybe_reopen_pass(
             corridors,
-            ports.reopen_facts(obs, corridors, str(reason)),
+            self._facts().reopen_facts(obs, corridors, reason=str(reason)),
         )
         if not result.reopened:
             return False
@@ -553,7 +649,7 @@ class CoverageEffectRuntimeCoordinator:
     def request_terminal_stop(self, reason: str, *, replace: bool = False) -> None:
         ports = self.ports
         result = ports.coverage_runtime_service().request_terminal_stop(
-            ports.terminal_facts(str(reason), bool(replace))
+            self._facts().terminal_facts(str(reason), replace=bool(replace))
         )
         if not result.record_event:
             return
@@ -573,9 +669,20 @@ class CoverageEffectRuntimeCoordinator:
     def _all_depleted(self) -> bool:
         return self.ports.state.all_depleted()
 
+    def _facts(self) -> CoverageEffectFactService:
+        ports = self.ports
+        return CoverageEffectFactService(
+            state=ports.state,
+            cycle_state=ports.cycle_state,
+            observation_facts=ports.observation_facts,
+            remaining_depth=ports.remaining_depth,
+            corridor_attempt_limit=ports.corridor_attempt_limit,
+        )
+
 
 __all__ = [
     "CoverageEffectRuntimeCoordinator",
+    "CoverageEffectFactService",
     "CoverageEffectRuntimePorts",
     "CoverageCompletionFacts",
     "CoverageReopenFacts",

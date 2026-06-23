@@ -168,9 +168,15 @@ def test_policy_selection_and_effect_ports_share_coverage_state_owner() -> None:
     assert not hasattr(selection_ports, "set_candidate_scores")
     assert selection_ports.state.coverage_corridors is policy._coverage_state.coverage_corridors
     assert effect_ports.state is policy._coverage_state
+    assert effect_ports.cycle_state is policy._cycle_state
     assert not hasattr(effect_ports, "coverage_corridors")
     assert not hasattr(effect_ports, "set_current_payload_gain_kg")
     assert not hasattr(effect_ports, "update_rejected_state_exemplar_ids")
+    assert not hasattr(effect_ports, "mass_in_bucket")
+    assert not hasattr(effect_ports, "completion_facts")
+    assert not hasattr(effect_ports, "rejection_facts")
+    assert not hasattr(effect_ports, "reopen_facts")
+    assert not hasattr(effect_ports, "terminal_facts")
     assert effect_ports.state.coverage_corridors is policy._coverage_state.coverage_corridors
     assert token_runtime_ports.coverage_state is policy._coverage_state
     assert not hasattr(token_runtime_ports, "get_coverage_active_state_exemplar_ids")

@@ -8292,3 +8292,87 @@ Each completed refactor round should append:
   promotion. Current maturity remains default legacy FSM backendified with
   focused services / shared backend decision input/facts/factory; BT/VLM/LLM
   backends remain unsupported fail-fast.
+
+### 2026-06-23 Phase 9.85 Move Coverage Effect Runtime Fact-Source Boundary
+
+- Scope: moved coverage effect runtime fact projection from policy-built
+  callback ports into the focused coverage effect runtime boundary. This is a
+  structural fact-source refactor for confirmed-live coverage effect runtime,
+  not a coverage update algorithm, report schema, token, return, recovery, or
+  parked-path behavior change.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 148]`, HEAD
+  `ece7f307aadeb3ed3ee458abbb226cf93798a416`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, commit, docs edit, or
+  remote write was used by the executor.
+- Added `CoverageEffectFactService` in
+  `testbed/planner/primitive_coverage_updates.py` to project coverage effect
+  facts from `CoverageRuntimeState`, `PrimitiveCycleRuntimeState`, typed
+  `PrimitiveObservationFacts`, explicit remaining-depth provider, and
+  corridor-attempt-limit provider.
+- `CoverageEffectRuntimePorts` no longer exposes policy-built facts callback
+  fields: `mass_in_bucket`, `completion_facts`, `rejection_facts`,
+  `reopen_facts`, and `terminal_facts`. It now carries `cycle_state`,
+  `observation_facts`, `remaining_depth`, and `corridor_attempt_limit`
+  alongside the existing coverage state, update/runtime services, event
+  recorder, mode, and low-productivity threshold ports.
+- `CoverageEffectRuntimeCoordinator` now builds complete-dig mass,
+  complete-dump facts, rejection facts, reopen facts, and terminal-stop facts
+  inside the coverage effect boundary, preserving the existing update/event
+  ordering.
+- `PrimitivePlannerACTPolicy._coverage_effect_runtime_ports()` now passes
+  focused state owners and typed fact/provider callables instead of assembling
+  coverage effect facts dataclasses in the policy shell.
+- Line-count impact: `testbed/policies/hybrid/primitive_planner.py` dropped
+  from 4633 to 4619 lines. `testbed/planner/primitive_coverage_updates.py`
+  grew from 591 to 698 lines because it now owns both coverage effect runtime
+  sequencing and coverage effect fact projection.
+- Preserved behavior: coverage update service behavior, terminal-stop reason
+  strings, decision-event payload schema, event ordering,
+  debug/summary/trace schemas, token/return/direct-handoff/recovery semantics,
+  backend unsupported fail-fast, parked `pre_dig_align`, parked `cell_entry`,
+  and removed 5P runtime status remain unchanged.
+- Explicit non-goals: no coverage candidate construction/scoring/selection
+  algorithm change, no coverage raw-field fact-source change, no coverage report
+  bucket snapshot move, no requested-effect applier change, no dig recovery
+  metric change, no token/return/direct-handoff behavior change, no parked
+  `pre_dig_align` or `cell_entry` touch, and no backend support expansion.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_state.py tests/test_primitive_coverage_updates.py`
+  returned `12 failed, 9 passed` with representative `TypeError:
+  CoverageEffectRuntimePorts.__init__() got an unexpected keyword argument
+  'cycle_state'`, proving production ports still used the old callback
+  boundary.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_state.py tests/test_primitive_coverage_updates.py`
+  returned `21 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_facts.py tests/test_primitive_coverage_reports.py tests/test_primitive_effects.py`
+  returned `25 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_decision_contract.py`
+  returned `46 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or dig_cut_tokens or return_to_dig or pre_dig_align"`
+  returned `19 passed, 100 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_state.py tests/test_primitive_coverage_updates.py`
+  returned `21 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_facts.py tests/test_primitive_coverage_reports.py tests/test_primitive_effects.py`
+  returned `25 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_decision_contract.py`
+  returned `46 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or dig_cut_tokens or return_to_dig or pre_dig_align"`
+  returned `19 passed, 100 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was the bounded coverage effect runtime fact-source
+  move, not the safest smallest cleanup. It did not add a pass-through wrapper,
+  anemic service, planner-self port, broad config bag, generic blackboard, or
+  parked-path promotion. Residual `pre_dig_align` and parked `cell_entry` were
+  not touched, promoted, deleted, or refactored. Current maturity remains
+  default legacy FSM backendified with focused services / shared backend
+  decision input/facts/factory; BT/VLM/LLM backends remain unsupported
+  fail-fast.

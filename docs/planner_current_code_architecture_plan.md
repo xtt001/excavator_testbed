@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4633 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4619 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -83,7 +83,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_scripted_bootstrap.py` | 144 | scripted bootstrap runtime state, readiness checks, timeout, PD action service, and live report/status projection |
 | `testbed/planner/primitive_coverage.py` | 909 | coverage candidate/scoring/selection services; selection runtime sequencing now consumes the focused coverage state owner directly plus explicit external ports |
 | `testbed/planner/primitive_coverage_state.py` | 139 | mutable coverage runtime state owner for corridors, selection ids, candidate scores, completion counters, terminal-stop state, decision trace, and state-exemplar payload |
-| `testbed/planner/primitive_coverage_updates.py` | 591 | coverage completion/rejection/reopen/terminal-stop effect runtime sequencing over the focused coverage state owner plus explicit external ports |
+| `testbed/planner/primitive_coverage_updates.py` | 698 | coverage completion/rejection/reopen/terminal-stop effect runtime sequencing and effect fact projection over focused coverage/cycle state plus typed observation facts |
 | `testbed/planner/primitive_coverage_reports.py` | 572 | coverage report config, coverage corridor debug, coverage decision-event, and coverage debug/trace/summary projection from focused runtime state |
 | `testbed/planner/primitive_coverage_facts.py` | 333 | coverage planning fact-source owner for selection facts, raw-field projection, state-conditioned exemplar projection/writeback, and remaining-depth facts |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
@@ -1642,6 +1642,21 @@ strings, raw-field priority, dig-depth-profile env-state/cell-id behavior,
 return start-envelope qpos/qvel defaults, policy observation injection order,
 coverage raw-field facts, parked `pre_dig_align`, parked `cell_entry`, or
 backend support.
+
+Current status note after Phase 9.85: coverage effect runtime fact projection
+now lives in `CoverageEffectFactService` inside
+`testbed/planner/primitive_coverage_updates.py`. `CoverageEffectRuntimePorts`
+no longer exposes policy-built `mass_in_bucket`, `completion_facts`,
+`rejection_facts`, `reopen_facts`, or `terminal_facts` callbacks. Instead, the
+coverage effect boundary receives `CoverageRuntimeState`,
+`PrimitiveCycleRuntimeState`, a typed `PrimitiveObservationFacts` provider, a
+remaining-depth provider, and a corridor-attempt-limit provider, then projects
+the existing `CoverageCompletionFacts`, `CoverageRejectionFacts`,
+`CoverageReopenFacts`, and `CoverageTerminalFacts` internally. This removes a
+live policy callback bag while preserving coverage update/runtime service
+behavior, terminal-stop reason strings, decision-event payload schema, event
+ordering, token/return/direct-handoff/recovery semantics, parked
+`pre_dig_align`, parked `cell_entry`, and backend support status.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

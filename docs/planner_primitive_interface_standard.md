@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.84 implementation. It is intentionally
+compares them with the current Phase 9.85 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -63,6 +63,10 @@ Current maturity:
   completion/rejection/reopen/terminal-stop mutable state; effect runtime
   sequencing now consumes `CoverageRuntimeState` directly instead of
   policy-built getter/setter callbacks**
+- coverage effect fact-source boundary: **achieved for coverage
+  complete-dig mass, complete-dump facts, rejection facts, reopen facts, and
+  terminal-stop facts through `CoverageEffectFactService`; the policy no
+  longer builds coverage effect fact dataclasses through callback ports**
 - token runtime mutable state owner: **achieved for dig/return token arrays,
   source/fallback flags, prior-bound flags, pending next-dig token state, and
   live `TokenStatus` plus token/pending/dig-cut report metadata projection;
