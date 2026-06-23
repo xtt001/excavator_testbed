@@ -3,6 +3,15 @@ from __future__ import annotations
 from dataclasses import fields
 from types import MethodType
 
+from testbed.planner.primitive_coverage_state import CoverageRuntimeState
+from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive_execution_state import (
+    PrimitiveExecutionRuntimeState,
+)
+from testbed.planner.primitive_pre_dig_align_state import (
+    PrimitivePreDigAlignCompatibilityRuntimeState,
+)
+from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive_skill_lifecycle import (
     PrimitiveSkillLifecyclePorts,
     PrimitiveSkillLifecycleService,
@@ -15,160 +24,143 @@ from testbed.policies.hybrid.primitive_planner import (
 
 def _ports(
     *,
-    state: dict[str, object] | None = None,
+    skill_name: str = "dig",
+    switch_reason: str = "old",
     events: list[str] | None = None,
 ) -> tuple[PrimitiveSkillLifecyclePorts, dict[str, object], list[str]]:
-    state = state if state is not None else {"skill": "dig", "reason": "old"}
     events = events if events is not None else []
-
-    def set_value(name: str, value: object) -> None:
-        events.append(f"{name}:{value}")
-        state[name] = value
+    execution_state = PrimitiveExecutionRuntimeState.fresh(
+        initial_skill_name=skill_name,
+        switch_reason=switch_reason,
+    )
+    cycle_state = PrimitiveCycleRuntimeState.fresh()
+    return_state = PrimitiveReturnRuntimeState.fresh()
+    pre_dig_align_state = PrimitivePreDigAlignCompatibilityRuntimeState.fresh(
+        action_dim=4,
+    )
+    coverage_state = CoverageRuntimeState()
 
     return (
         PrimitiveSkillLifecyclePorts(
-            current_skill_name=lambda: str(state["skill"]),
-            set_skill_name=lambda value: set_value("skill", value),
-            set_switch_reason=lambda value: set_value("reason", value),
-            reset_active_policy=lambda: events.append(f"reset:{state['skill']}"),
+            execution_state=execution_state,
+            cycle_state=cycle_state,
+            return_state=return_state,
+            pre_dig_align_state=pre_dig_align_state,
+            coverage_state=coverage_state,
+            reset_active_policy=lambda: events.append(
+                f"reset:{execution_state.skill_name}"
+            ),
             clear_dig_cut_plan=lambda: events.append("clear_dig_cut_plan"),
-            set_dump_ready_hold_count=lambda value: set_value(
-                "dump_ready_hold_count",
-                value,
-            ),
-            set_dump_done_hold_count=lambda value: set_value(
-                "dump_done_hold_count",
-                value,
-            ),
-            set_return_step_count=lambda value: set_value("return_step_count", value),
-            set_return_next_dig_event_seen=lambda value: set_value(
-                "return_next_dig_event_seen",
-                value,
-            ),
-            set_pre_dig_align_step_count=lambda value: set_value(
-                "pre_dig_align_step_count",
-                value,
-            ),
-            set_pre_dig_align_hold_count=lambda value: set_value(
-                "pre_dig_align_hold_count",
-                value,
-            ),
-            set_pre_dig_align_entry_close_handoff_ready=lambda value: set_value(
-                "pre_dig_align_entry_close_handoff_ready",
-                value,
-            ),
-            set_pre_dig_align_entry_intent_handoff_ready=lambda value: set_value(
-                "pre_dig_align_entry_intent_handoff_ready",
-                value,
-            ),
-            set_pre_dig_align_timeout_handoff_reason=lambda value: set_value(
-                "pre_dig_align_timeout_handoff_reason",
-                value,
-            ),
-            set_pre_dig_align_surface_guard_triggered=lambda value: set_value(
-                "pre_dig_align_surface_guard_triggered",
-                value,
-            ),
-            set_coverage_current_payload_gain_kg=lambda value: set_value(
-                "coverage_current_payload_gain_kg",
-                value,
-            ),
-            set_dig_step_count=lambda value: set_value("dig_step_count", value),
-            set_dig_best_mass_kg=lambda value: set_value("dig_best_mass_kg", value),
-            set_dig_mass_plateau_count=lambda value: set_value(
-                "dig_mass_plateau_count",
-                value,
-            ),
-            set_dig_to_carry_reason=lambda value: set_value(
-                "dig_to_carry_reason",
-                value,
-            ),
             pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
         ),
-        state,
+        {
+            "execution": execution_state,
+            "cycle": cycle_state,
+            "return": return_state,
+            "pre_dig_align": pre_dig_align_state,
+            "coverage": coverage_state,
+        },
         events,
     )
 
 
 def test_same_skill_noop_preserves_reason_and_side_effects() -> None:
-    ports, state, events = _ports(state={"skill": "dig", "reason": "old_reason"})
+    ports, owners, events = _ports(skill_name="dig", switch_reason="old_reason")
 
     PrimitiveSkillLifecycleService.from_ports(ports).set_skill(
         "dig",
         "new_reason",
     )
 
-    assert state == {"skill": "dig", "reason": "old_reason"}
+    execution_state = owners["execution"]
+    assert execution_state.skill_name == "dig"
+    assert execution_state.switch_reason == "old_reason"
     assert events == []
 
 
 def test_switch_to_dig_resets_active_policy_and_dig_lifecycle_without_clear() -> None:
-    ports, state, events = _ports(state={"skill": "return", "reason": "old"})
+    ports, owners, events = _ports(skill_name="return", switch_reason="old")
+    cycle_state = owners["cycle"]
+    return_state = owners["return"]
+    coverage_state = owners["coverage"]
+    cycle_state.dump_ready_hold_count = 5
+    cycle_state.dump_done_hold_count = 6
+    cycle_state.dig_step_count = 7
+    cycle_state.dig_best_mass_kg = 8.5
+    cycle_state.dig_mass_plateau_count = 9
+    cycle_state.dig_to_carry_reason = "old"
+    return_state.return_next_dig_event_seen = True
+    coverage_state.coverage_current_payload_gain_kg = 2.5
 
     PrimitiveSkillLifecycleService.from_ports(ports).set_skill(
         "dig",
         "return_to_dig_next_dig_entry_ready",
     )
 
-    assert events == [
-        "skill:dig",
-        "reason:return_to_dig_next_dig_entry_ready",
-        "reset:dig",
-        "return_next_dig_event_seen:False",
-        "dump_ready_hold_count:0",
-        "dump_done_hold_count:0",
-        "coverage_current_payload_gain_kg:0.0",
-        "dig_step_count:0",
-        "dig_best_mass_kg:0.0",
-        "dig_mass_plateau_count:0",
-        "dig_to_carry_reason:",
-    ]
-    assert state["skill"] == "dig"
-    assert state["reason"] == "return_to_dig_next_dig_entry_ready"
+    execution_state = owners["execution"]
+    assert events == ["reset:dig"]
+    assert execution_state.skill_name == "dig"
+    assert execution_state.switch_reason == "return_to_dig_next_dig_entry_ready"
+    assert return_state.return_next_dig_event_seen is False
+    assert cycle_state.dump_ready_hold_count == 0
+    assert cycle_state.dump_done_hold_count == 0
+    assert coverage_state.coverage_current_payload_gain_kg == 0.0
+    assert cycle_state.dig_step_count == 0
+    assert cycle_state.dig_best_mass_kg == 0.0
+    assert cycle_state.dig_mass_plateau_count == 0
+    assert cycle_state.dig_to_carry_reason == ""
 
 
 def test_switch_to_carry_dump_and_return_reset_expected_counters_and_clear_plan() -> None:
-    for target, expected_tail in (
-        ("carry", ["dump_ready_hold_count:0", "clear_dig_cut_plan"]),
-        ("dump", ["dump_done_hold_count:0", "clear_dig_cut_plan"]),
-        (
-            "return",
-            [
-                "return_step_count:0",
-                "return_next_dig_event_seen:False",
-                "clear_dig_cut_plan",
-            ],
-        ),
-    ):
-        ports, _, events = _ports(state={"skill": "dig", "reason": "old"})
+    for target in ("carry", "dump", "return"):
+        ports, owners, events = _ports(skill_name="dig", switch_reason="old")
+        owners["cycle"].dump_ready_hold_count = 4
+        owners["cycle"].dump_done_hold_count = 5
+        owners["return"].return_step_count = 6
+        owners["return"].return_next_dig_event_seen = True
 
         PrimitiveSkillLifecycleService.from_ports(ports).set_skill(
             target,
             f"to_{target}",
         )
 
-        assert events[:3] == [f"skill:{target}", f"reason:to_{target}", f"reset:{target}"]
-        assert events[3:] == expected_tail
+        assert events == [f"reset:{target}", "clear_dig_cut_plan"]
+        if target == "carry":
+            assert owners["cycle"].dump_ready_hold_count == 0
+        elif target == "dump":
+            assert owners["cycle"].dump_done_hold_count == 0
+        else:
+            assert owners["return"].return_step_count == 0
+            assert owners["return"].return_next_dig_event_seen is False
 
 
 def test_switch_to_pre_dig_align_skips_active_policy_reset_and_clearing() -> None:
-    ports, _, events = _ports(state={"skill": "dig", "reason": "old"})
+    ports, owners, events = _ports(skill_name="dig", switch_reason="old")
+    pre_state = owners["pre_dig_align"]
+    pre_state.step_count = 3
+    pre_state.hold_count = 4
+    pre_state.entry_close_handoff_ready = True
+    pre_state.entry_intent_handoff_ready = True
+    pre_state.timeout_handoff_reason = "timeout"
+    pre_state.surface_guard_triggered = True
 
     PrimitiveSkillLifecycleService.from_ports(ports).set_skill(
         PRE_DIG_ALIGN_SKILL_NAME,
         "dig_to_pre_dig_align_bad_dig_low_payload",
     )
 
-    assert events == [
-        f"skill:{PRE_DIG_ALIGN_SKILL_NAME}",
-        "reason:dig_to_pre_dig_align_bad_dig_low_payload",
-        "pre_dig_align_step_count:0",
-        "pre_dig_align_hold_count:0",
-        "pre_dig_align_entry_close_handoff_ready:False",
-        "pre_dig_align_entry_intent_handoff_ready:False",
-        "pre_dig_align_timeout_handoff_reason:",
-        "pre_dig_align_surface_guard_triggered:False",
-    ]
+    assert events == []
+    assert owners["execution"].skill_name == PRE_DIG_ALIGN_SKILL_NAME
+    assert (
+        owners["execution"].switch_reason
+        == "dig_to_pre_dig_align_bad_dig_low_payload"
+    )
+    assert pre_state.step_count == 0
+    assert pre_state.hold_count == 0
+    assert pre_state.entry_close_handoff_ready is False
+    assert pre_state.entry_intent_handoff_ready is False
+    assert pre_state.timeout_handoff_reason == ""
+    assert pre_state.surface_guard_triggered is False
 
 
 def test_policy_set_skill_delegates_to_skill_lifecycle_service() -> None:
@@ -195,4 +187,31 @@ def test_skill_lifecycle_boundary_uses_typed_ports_without_planner_self() -> Non
 
     assert "planner" not in port_fields
     assert "self" not in port_fields
+    assert {
+        "execution_state",
+        "cycle_state",
+        "return_state",
+        "pre_dig_align_state",
+        "coverage_state",
+    } <= port_fields
+    assert not {
+        "current_skill_name",
+        "set_skill_name",
+        "set_switch_reason",
+        "set_dump_ready_hold_count",
+        "set_dump_done_hold_count",
+        "set_return_step_count",
+        "set_return_next_dig_event_seen",
+        "set_pre_dig_align_step_count",
+        "set_pre_dig_align_hold_count",
+        "set_pre_dig_align_entry_close_handoff_ready",
+        "set_pre_dig_align_entry_intent_handoff_ready",
+        "set_pre_dig_align_timeout_handoff_reason",
+        "set_pre_dig_align_surface_guard_triggered",
+        "set_coverage_current_payload_gain_kg",
+        "set_dig_step_count",
+        "set_dig_best_mass_kg",
+        "set_dig_mass_plateau_count",
+        "set_dig_to_carry_reason",
+    } & port_fields
     assert service_fields == {"ports"}

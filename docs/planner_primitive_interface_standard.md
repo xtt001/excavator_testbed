@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.66 implementation. It is intentionally
+compares them with the current Phase 9.67 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -740,7 +740,10 @@ Current boundary:
 - `PrimitivePlannerAdapterConfigNormalizer` owns constructor config
   normalization.
 - `PrimitiveResetLifecycleService` owns reset sequencing.
-- `PrimitiveSkillLifecycleService` owns `_set_skill()` lifecycle sequencing.
+- `PrimitiveSkillLifecycleService` owns `_set_skill()` lifecycle sequencing
+  and uses the focused execution, cycle, return, pre-dig-align compatibility,
+  and coverage runtime state owners directly instead of policy-built storage
+  setter callbacks.
 
 Gap:
 

@@ -118,8 +118,11 @@ def test_skill_lifecycle_return_ports_write_return_state_owner() -> None:
     policy._clear_dig_cut_plan = MethodType(lambda self: None, policy)
 
     ports = policy._primitive_skill_lifecycle_ports()
-    ports.set_return_step_count(0)
-    ports.set_return_next_dig_event_seen(False)
+    assert ports.return_state is state
+    assert not hasattr(ports, "set_return_step_count")
+    assert not hasattr(ports, "set_return_next_dig_event_seen")
+    ports.return_state.return_step_count = 0
+    ports.return_state.clear_next_dig_event_seen()
 
     assert state.return_step_count == 0
     assert state.return_next_dig_event_seen is False
@@ -269,6 +272,7 @@ def test_policy_rollout_summary_inputs_use_return_report_status_projection() -> 
     policy.return_to_dig_max_entry_error_m = 0.5
     policy.dig_cut_planner_mode = "operator_prior"
     policy.dig_cut_prior_id = "default"
+    policy.dig_cut_prior_path = ""
     policy.dig_failed_replan_next_skill = "dig"
     policy.coverage_multi_pass_enabled = False
     policy.coverage_use_env_removed_depth = False

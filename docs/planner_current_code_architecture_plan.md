@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 5439 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 5366 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -1302,6 +1302,21 @@ invalidation, return fallback-zero path, token dimensions/order/source strings,
 debug/summary/trace schema, branch order, reason strings, policy reset timing,
 backend fail-fast behavior, `cell_entry`, `pre_dig_align`, and removed 5P
 runtime status remain unchanged.
+
+Current status note after Phase 9.67: skill switch lifecycle sequencing no
+longer uses policy-built storage setter callbacks for active skill/reason,
+cycle counters, return counters, parked pre-dig-align compatibility fields,
+coverage current payload gain, or dig progress fields.
+`PrimitiveSkillLifecyclePorts` now carries the focused execution, cycle,
+return, pre-dig-align compatibility, and coverage state owners directly.
+`PrimitiveSkillLifecycleService` still owns the same-skill no-op,
+skill/reason write order, active-policy reset timing including the residual
+`pre_dig_align` exception, target-specific reset values, and dig-cut plan clear
+timing. `PrimitivePlannerACTPolicy` still assembles the explicit external
+active-policy reset and dig-cut clear action ports. Branch order, reason
+strings, thresholds, token schema, debug/summary/trace schema, backend
+support, `pre_dig_align` algorithms, `cell_entry`, and removed 5P runtime
+status remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

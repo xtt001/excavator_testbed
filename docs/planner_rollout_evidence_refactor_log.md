@@ -6836,3 +6836,75 @@ Each completed refactor round should append:
   runtime, and unsupported BT/VLM/LLM backends out of the mainline. If the
   candidate cannot demonstrate meaningful coupling reduction beyond a tiny
   adapter cleanup, dispatch audit-only instead of implementation.
+
+### 2026-06-23 Phase 9.67 Route Skill Lifecycle State Writes Through Focused Owners
+
+- Scope: narrowed `PrimitiveSkillLifecyclePorts` in
+  `testbed/planner/primitive_skill_lifecycle.py` so the skill lifecycle service
+  uses focused state owners for execution, cycle/progress, return, parked
+  pre-dig-align compatibility, and coverage payload runtime storage instead of
+  receiving policy-built storage setter callbacks for those fields.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 130]`, HEAD
+  before this round `c9e250f5b100a7fc963ca783ab01f3ec88107a12`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- `PrimitiveSkillLifecyclePorts` now carries `execution_state`,
+  `cycle_state`, `return_state`, `pre_dig_align_state`, and `coverage_state`
+  focused owners.
+- Removed skill lifecycle storage callback ports for active skill/reason,
+  cycle counters, return counters, pre-dig-align parked fields, coverage
+  current payload gain, and dig progress fields.
+- `PrimitiveSkillLifecycleService` now reads same-skill state from
+  `execution_state.skill_name`, writes skill/reason through execution state
+  setters, and resets cycle, return, pre-dig-align compatibility, and coverage
+  state through the focused owners.
+- `PrimitivePlannerACTPolicy._primitive_skill_lifecycle_ports()` now passes
+  policy-owned focused state owners plus only `reset_active_policy`,
+  `clear_dig_cut_plan`, and `pre_dig_align_skill_name` external ports.
+- Focused tests assert old storage callback port names are absent and policy
+  lifecycle ports share the same owner instances as policy facades.
+- Preserved behavior: same-skill no-op, skill/reason write values,
+  active-policy reset exception for `pre_dig_align`, target-specific reset
+  values, dig-cut clear timing, branch order, reason strings, thresholds, token
+  schema, debug/summary/trace schema, backend support, `pre_dig_align`
+  algorithm, `cell_entry`, and removed 5P runtime behavior are unchanged.
+- Explicit non-goals: no `_restart_pre_dig_align`,
+  `_restart_dig_with_new_cut`, `_try_replan_pre_dig_align_handoff`, token
+  runtime/planning, coverage selection/effect, decision backend, runtime
+  kernel, action dispatch, debug/summary/trace schema, `cell_entry`, or parked
+  5P runtime changes.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_skill_lifecycle.py tests/test_primitive_execution_state.py tests/test_primitive_cycle_state.py tests/test_primitive_return_state.py tests/test_primitive_pre_dig_align_state.py tests/test_primitive_coverage_state.py`
+  failed as expected with `TypeError` because
+  `PrimitiveSkillLifecyclePorts.__init__()` did not yet accept
+  `execution_state`, plus missing owner field failures for `cycle_state` and
+  `return_state`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_skill_lifecycle.py tests/test_primitive_execution_state.py tests/test_primitive_cycle_state.py tests/test_primitive_return_state.py tests/test_primitive_pre_dig_align_state.py tests/test_primitive_coverage_state.py`
+  returned `45 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_tick_finalization.py`
+  returned `21 passed`;
+  `python -m pytest -q tests/test_primitive_token_runtime.py tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py`
+  returned `30 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or first_dig_policy_for_cycle_zero or return_to_dig or pre_dig_align or dig_cut_tokens or coverage_decision_trace"`
+  returned `20 passed, 99 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_skill_lifecycle.py tests/test_primitive_execution_state.py tests/test_primitive_cycle_state.py tests/test_primitive_return_state.py tests/test_primitive_pre_dig_align_state.py tests/test_primitive_coverage_state.py`
+  returned `45 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_tick_finalization.py`
+  returned `21 passed`;
+  `python -m pytest -q tests/test_primitive_token_runtime.py tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py`
+  returned `30 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or first_dig_policy_for_cycle_zero or return_to_dig or pre_dig_align or dig_cut_tokens or coverage_decision_trace"`
+  returned `20 passed, 99 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was the largest effective bounded move in the live
+  skill lifecycle state boundary and did not create an anemic service,
+  pass-through facade, or generic blackboard.

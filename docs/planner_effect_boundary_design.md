@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.66: the default 4P mainline branch chain no longer
+Current status after Phase 9.67: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -74,7 +74,12 @@ policy-built getter/setter callbacks for the same token storage fields. The
 same token runtime boundary now also carries `CoverageRuntimeState` directly
 for the pending next-dig state-exemplar handoff: exemplar ids, exemplar
 distance, profile token copy source, and active-exemplar clear timing no longer
-flow through policy-built callbacks. The
+flow through policy-built callbacks. Skill lifecycle sequencing now carries
+focused execution, cycle, return, pre-dig-align compatibility, and coverage
+runtime state owners through `PrimitiveSkillLifecyclePorts`, so skill/reason
+writes and target-specific counter resets no longer require policy-built
+storage setter callbacks. The service still keeps explicit external action
+ports for low-level active policy reset and dig-cut plan clearing. The
 coverage selection runtime boundary now follows the same state-owner pattern:
 `CoverageSelectionRuntimePorts` carries `CoverageRuntimeState`, and
 `CoverageSelectionRuntimeCoordinator` reads/writes corridor lists, candidate
@@ -1499,7 +1504,10 @@ same-skill no-op, skill/reason write order, active-policy reset timing including
 the residual `pre_dig_align` exception, target-specific counter/mirror resets,
 dig coverage payload reset, and dig-cut plan clear timing. The policy shell
 builds typed `PrimitiveSkillLifecyclePorts` and keeps `_set_skill(...)` as a
-thin service-backed facade used by `RequestedEffectApplier`. The 5P
+thin service-backed facade used by `RequestedEffectApplier`. Since Phase 9.67,
+those ports carry the focused execution, cycle, return, pre-dig-align
+compatibility, and coverage state owners directly, leaving only active-policy
+reset and dig-cut plan clearing as explicit external action ports. The 5P
 `_set_skill()` override remains parked legacy compatibility and is not migrated
 in this phase.
 

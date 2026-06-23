@@ -156,12 +156,16 @@ def test_skill_lifecycle_cycle_ports_write_state_owner() -> None:
     policy._clear_dig_cut_plan = MethodType(lambda self: None, policy)
 
     ports = policy._primitive_skill_lifecycle_ports()
-    ports.set_dump_ready_hold_count(1)
-    ports.set_dump_done_hold_count(2)
-    ports.set_dig_step_count(3)
-    ports.set_dig_best_mass_kg(4.5)
-    ports.set_dig_mass_plateau_count(6)
-    ports.set_dig_to_carry_reason("reason")
+    assert ports.cycle_state is state
+    assert not hasattr(ports, "set_dump_ready_hold_count")
+    assert not hasattr(ports, "set_dump_done_hold_count")
+    assert not hasattr(ports, "set_dig_step_count")
+    ports.cycle_state.set_dump_ready_hold_count(1)
+    ports.cycle_state.set_dump_done_hold_count(2)
+    ports.cycle_state.dig_step_count = 3
+    ports.cycle_state.dig_best_mass_kg = 4.5
+    ports.cycle_state.dig_mass_plateau_count = 6
+    ports.cycle_state.dig_to_carry_reason = "reason"
 
     assert state.dump_ready_hold_count == 1
     assert state.dump_done_hold_count == 2
@@ -415,6 +419,7 @@ def test_policy_rollout_summary_inputs_use_cycle_report_status_projection() -> N
     policy.return_to_dig_max_entry_error_m = 0.5
     policy.dig_cut_planner_mode = "operator_prior"
     policy.dig_cut_prior_id = "default"
+    policy.dig_cut_prior_path = ""
     policy.dig_failed_replan_next_skill = "dig"
     policy.coverage_multi_pass_enabled = False
     policy.coverage_use_env_removed_depth = False
