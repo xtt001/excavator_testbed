@@ -4226,10 +4226,9 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _coverage_selection_runtime_ports(self) -> CoverageSelectionRuntimePorts:
         return CoverageSelectionRuntimePorts(
+            state=self._coverage_runtime_state(),
             dig_cut_prior=lambda: dict(self.dig_cut_prior or {}),
             dig_cut_planner_mode=lambda: str(self.dig_cut_planner_mode),
-            coverage_corridors=lambda: self._coverage_corridors,
-            set_coverage_corridors=self._set_coverage_corridors,
             candidate_builder=lambda: self._coverage_candidate_builder(),
             selection_service=lambda: self._coverage_selection_service(),
             selection_facts=(
@@ -4239,7 +4238,6 @@ class PrimitivePlannerACTPolicy(Policy):
                 )
             ),
             recent_row_reference=lambda: self._coverage_recent_row_reference_corridor(),
-            all_depleted=lambda: self._coverage_all_depleted(),
             maybe_reopen_pass=(
                 lambda obs, reason: self._maybe_reopen_coverage_pass(
                     obs,
@@ -4249,10 +4247,7 @@ class PrimitivePlannerACTPolicy(Policy):
             request_terminal_stop=lambda reason: self._request_coverage_terminal_stop(
                 reason
             ),
-            set_candidate_scores=self._set_coverage_candidate_scores,
             record_decision_event=self._record_coverage_decision_event,
-            set_active_corridor_id=self._set_coverage_active_corridor_id,
-            set_last_selected_corridor_id=self._set_coverage_last_selected_corridor_id,
         )
 
     def _coverage_selection_runtime_coordinator(

@@ -6355,3 +6355,82 @@ Each completed refactor round should append:
 - Audit note: this is implementation round 1 after the latest three-iteration
   reflection. It follows the reflection by targeting live runtime/port coupling
   instead of continuing report-field status extraction.
+
+### 2026-06-23 Phase 9.62 Replace Coverage Selection State Callback Ports With State Owner
+
+- Scope: narrowed `CoverageSelectionRuntimePorts` in
+  `testbed/planner/primitive_coverage.py` so coverage corridor selection
+  sequencing consumes the focused `CoverageRuntimeState` owner directly
+  instead of receiving policy-built getter/setter callbacks for the same
+  coverage selection storage fields.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 125]`, HEAD
+  before this round `4ba0f3bf33251a770cd8b52d15d010e371d8e767`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- `CoverageSelectionRuntimePorts` now carries
+  `state: CoverageRuntimeState` for focused coverage selection runtime
+  storage.
+- `CoverageSelectionRuntimeCoordinator` now reads and writes
+  `coverage_corridors`, `coverage_candidate_scores`,
+  `coverage_active_corridor_id`, `coverage_last_selected_corridor_id`, and
+  all-depleted checks through `ports.state`.
+- `PrimitivePlannerACTPolicy._coverage_selection_runtime_ports()` now passes
+  `self._coverage_runtime_state()` and no longer assembles
+  selection-runtime coverage-state getter/setter callbacks.
+- External prior/config/service/facts/reopen/terminal/event callbacks remain
+  explicit ports: dig-cut prior, planner mode, candidate builder, selection
+  service, selection facts, recent-row reference, reopen hook, terminal-stop
+  request hook, and decision-event recording.
+- Coverage selection runtime tests now use a real `CoverageRuntimeState` owner
+  in helper ports and assert old coverage-state getter/setter port names are
+  absent.
+- Preserved behavior: coverage candidate construction/scoring/selection
+  algorithms, first-dig gate, recent-row penalty, state-exemplar scoring,
+  terminal-stop reason strings, decision trace payload schema, token/return/
+  cycle/scripted-bootstrap/execution behavior, backend fail-fast behavior,
+  `cell_entry`, `pre_dig_align`, and removed 5P runtime status are unchanged.
+- Explicit non-goals: no coverage candidate construction or scoring change, no
+  coverage effect runtime port change, no report/debug/summary/trace schema
+  change, no backend support change, no token/return/cycle/scripted-bootstrap
+  owner change, no parked `cell_entry` or residual `pre_dig_align` promotion,
+  and no generic blackboard.
+- TDD red result from executor callback: after focused tests were added,
+  `python -m pytest -q tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_state.py`
+  failed as expected with `TypeError` because
+  `CoverageSelectionRuntimePorts.__init__()` did not yet accept `state`, and
+  `AttributeError` because `CoverageSelectionRuntimePorts` did not yet expose a
+  `state` attribute. The red run reported `8 failed, 6 passed`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_state.py`
+  returned `14 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_updates.py`
+  returned `18 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_decision_contract.py`
+  returned `46 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or dig_cut_tokens or return_to_dig or pre_dig_align"`
+  returned `19 passed, 100 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_coverage_selection_runtime.py tests/test_primitive_coverage_state.py`
+  returned `14 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_updates.py`
+  returned `18 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_decision_contract.py`
+  returned `46 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or dig_cut_tokens or return_to_dig or pre_dig_align"`
+  returned `19 passed, 100 deselected`; compileall for touched modules passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Post-documentation checks by the audit thread: both planner guard commands
+  and `git diff --check` passed.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It replaced runtime port coupling for the live coverage
+  selection state owner and was not a tiny compatibility dict/facade move. No
+  anemic service, pass-through facade, or generic blackboard was created.
+- Audit note: this is implementation round 2 after the latest three-iteration
+  reflection. It continues the reflection's direction by targeting live
+  runtime/port coupling instead of report-field status extraction or parked
+  compatibility tails.

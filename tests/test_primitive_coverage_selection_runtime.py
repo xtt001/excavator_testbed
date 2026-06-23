@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from types import MethodType
 from typing import Any
 
@@ -12,6 +13,7 @@ from testbed.planner.primitive_coverage import (
     CoverageSelectionRuntimeCoordinator,
     CoverageSelectionRuntimePorts,
 )
+from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
@@ -101,28 +103,14 @@ def _ports(
     builder_corridors: list[CoverageCorridorState] | None = None,
     selection_service: _FakeSelectionService | None = None,
     recent_reference: CoverageCorridorState | None = None,
-    all_depleted_values: list[bool] | None = None,
     reopen_results: list[bool] | None = None,
 ) -> CoverageSelectionRuntimePorts:
-    state: dict[str, Any] = {
+    fact_values: dict[str, Any] = {
         "prior": {} if prior is None else dict(prior),
-        "corridors": [] if corridors is None else corridors,
-        "candidate_scores": [],
-        "active_id": -1,
-        "last_selected_id": -1,
     }
-    depleted_values = list(all_depleted_values or [False])
-    last_depleted_value = bool(depleted_values[-1])
+    state = CoverageRuntimeState()
+    state.coverage_corridors = [] if corridors is None else corridors
     reopen_values = list(reopen_results or [False])
-
-    def coverage_corridors() -> list[CoverageCorridorState]:
-        return state["corridors"]
-
-    def set_corridors(value: list[CoverageCorridorState]) -> None:
-        events.append(
-            f"write:corridors:{[int(corridor.corridor_id) for corridor in value]}"
-        )
-        state["corridors"] = value
 
     def facts(obs: dict[str, Any], got_corridors: list[CoverageCorridorState]) -> dict[int, CoverageCandidateSelectionFacts]:
         events.append(
@@ -130,10 +118,6 @@ def _ports(
             f"{[int(corridor.corridor_id) for corridor in got_corridors]}"
         )
         return _facts_for(got_corridors)
-
-    def set_candidate_scores(value: list[dict[str, Any]]) -> None:
-        events.append(f"write:candidate_scores:{len(value)}")
-        state["candidate_scores"] = list(value)
 
     def record_event(
         event: str,
@@ -149,32 +133,21 @@ def _ports(
             f"{(extra or {}).get('first_dig_gate_available', '')}"
         )
 
-    def all_depleted() -> bool:
-        value = bool(depleted_values.pop(0) if depleted_values else last_depleted_value)
-        events.append(f"all_depleted:{int(value)}")
-        return value
-
     def maybe_reopen(obs: dict[str, Any], *, reason: str) -> bool:
         value = bool(reopen_values.pop(0) if reopen_values else False)
         events.append(f"reopen:{reason}:{int(value)}")
+        if value:
+            for corridor in state.coverage_corridors:
+                corridor.depleted = False
         return value
 
     def terminal(reason: str) -> None:
         events.append(f"terminal:{reason}")
 
-    def set_active(value: int) -> None:
-        events.append(f"write:active:{value}")
-        state["active_id"] = int(value)
-
-    def set_last_selected(value: int) -> None:
-        events.append(f"write:last_selected:{value}")
-        state["last_selected_id"] = int(value)
-
     ports = CoverageSelectionRuntimePorts(
-        dig_cut_prior=lambda: dict(state["prior"]),
+        state=state,
+        dig_cut_prior=lambda: dict(fact_values["prior"]),
         dig_cut_planner_mode=lambda: str(mode),
-        coverage_corridors=coverage_corridors,
-        set_coverage_corridors=set_corridors,
         candidate_builder=lambda: _FakeCandidateBuilder(
             events,
             [] if builder_corridors is None else builder_corridors,
@@ -184,13 +157,9 @@ def _ports(
         ),
         selection_facts=facts,
         recent_row_reference=lambda: recent_reference,
-        all_depleted=all_depleted,
         maybe_reopen_pass=maybe_reopen,
         request_terminal_stop=terminal,
-        set_candidate_scores=set_candidate_scores,
         record_decision_event=record_event,
-        set_active_corridor_id=set_active,
-        set_last_selected_corridor_id=set_last_selected,
     )
     ports.test_state = state  # type: ignore[attr-defined]
     return ports
@@ -204,7 +173,7 @@ def test_ensure_corridors_skips_builder_when_corridors_already_exist() -> None:
     CoverageSelectionRuntimeCoordinator.from_ports(ports).ensure_corridors()
 
     assert events == []
-    assert ports.test_state["corridors"] is existing  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_corridors is existing  # type: ignore[attr-defined]
 
 
 def test_ensure_corridors_builds_and_writes_candidate_list() -> None:
@@ -216,9 +185,8 @@ def test_ensure_corridors_builds_and_writes_candidate_list() -> None:
 
     assert events == [
         "builder:build:['fields']",
-        "write:corridors:[1, 2]",
     ]
-    assert ports.test_state["corridors"] is built  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_corridors is built  # type: ignore[attr-defined]
 
 
 def test_select_next_corridor_preserves_old_error_messages() -> None:
@@ -249,18 +217,16 @@ def test_select_next_corridor_ensures_selects_then_writes_selected_ids() -> None
     assert selected is built[1]
     assert events == [
         "builder:build:['fields']",
-        "write:corridors:[1, 2]",
-        "all_depleted:0",
         "facts:obs:[1, 2]",
         "service:select:[1, 2]:[1, 2]:-1",
-        "write:candidate_scores:2",
         "event:select_corridor:2:12.5:2:1",
-        "all_depleted:0",
-        "write:active:2",
-        "write:last_selected:2",
     ]
-    assert ports.test_state["active_id"] == 2  # type: ignore[attr-defined]
-    assert ports.test_state["last_selected_id"] == 2  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_active_corridor_id == 2  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_last_selected_corridor_id == 2  # type: ignore[attr-defined]
+    assert ports.test_state.coverage_candidate_scores == [  # type: ignore[attr-defined]
+        {"corridor_id": 1, "score": 0.0},
+        {"corridor_id": 2, "score": 1.0},
+    ]
 
 
 def test_select_corridor_attempts_reopen_before_select_when_all_depleted() -> None:
@@ -270,7 +236,6 @@ def test_select_corridor_attempts_reopen_before_select_when_all_depleted() -> No
         events,
         prior={"fields": {}},
         corridors=corridors,
-        all_depleted_values=[True, False],
         reopen_results=[True],
     )
 
@@ -279,13 +244,12 @@ def test_select_corridor_attempts_reopen_before_select_when_all_depleted() -> No
     )
 
     assert selected is corridors[1]
-    assert events[:3] == [
-        "all_depleted:1",
+    assert events[:2] == [
         "reopen:select_all_depleted:1",
         "facts:obs:[1, 2]",
     ]
     assert "service:select:[1, 2]:[1, 2]:-1" in events
-    assert events[-1] == "all_depleted:0"
+    assert "terminal:dig_area_depleted" not in events
 
 
 def test_select_corridor_records_scores_before_terminal_stop() -> None:
@@ -295,7 +259,6 @@ def test_select_corridor_records_scores_before_terminal_stop() -> None:
         events,
         prior={"fields": {}},
         corridors=corridors,
-        all_depleted_values=[False, True],
         reopen_results=[False],
     )
 
@@ -304,15 +267,28 @@ def test_select_corridor_records_scores_before_terminal_stop() -> None:
     )
 
     assert events == [
-        "all_depleted:0",
+        "reopen:select_all_depleted:0",
         "facts:obs:[1, 2]",
         "service:select:[1, 2]:[1, 2]:-1",
-        "write:candidate_scores:2",
         "event:select_corridor:2:12.5:2:1",
-        "all_depleted:1",
         "reopen:select_all_depleted:0",
         "terminal:dig_area_depleted",
     ]
+
+
+def test_selection_runtime_ports_carry_state_owner_without_state_callbacks() -> None:
+    ports = _ports([])
+    port_fields = {field.name for field in fields(CoverageSelectionRuntimePorts)}
+
+    assert isinstance(ports.state, CoverageRuntimeState)
+    assert "coverage_corridors" not in port_fields
+    assert "set_coverage_corridors" not in port_fields
+    assert "set_candidate_scores" not in port_fields
+    assert "set_active_corridor_id" not in port_fields
+    assert "set_last_selected_corridor_id" not in port_fields
+    assert "all_depleted" not in port_fields
+    assert "planner" not in port_fields
+    assert "self" not in port_fields
 
 
 def test_policy_coverage_selection_wrappers_delegate_to_coordinator() -> None:

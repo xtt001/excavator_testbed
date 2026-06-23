@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.61 implementation. It is intentionally
+compares them with the current Phase 9.62 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -41,6 +41,10 @@ Current maturity:
 - coverage rollout-summary projection: **achieved for the rollout-summary
   coverage subset through `CoverageSummaryReportStatus` and
   `CoverageReportService.summary_status(...)`**
+- coverage selection runtime mutable state owner: **achieved for corridor
+  list, candidate scores, active/last-selected ids, and all-depleted checks;
+  selection runtime sequencing now consumes `CoverageRuntimeState` directly
+  instead of policy-built getter/setter callbacks**
 - token runtime mutable state owner: **achieved for dig/return token arrays,
   source/fallback flags, prior-bound flags, pending next-dig token state, and
   live `TokenStatus` plus token/pending/dig-cut report metadata projection;

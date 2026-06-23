@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.61: the default 4P mainline branch chain no longer
+Current status after Phase 9.62: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -71,6 +71,11 @@ metadata projects through `PrimitiveTokenReportStatus` for debug, summary, and
 trace consumers. `PrimitiveTokenRuntimePorts` now carries that focused token
 state owner directly, so `PrimitiveTokenRuntimeCoordinator` no longer receives
 policy-built getter/setter callbacks for the same token storage fields. The
+coverage selection runtime boundary now follows the same state-owner pattern:
+`CoverageSelectionRuntimePorts` carries `CoverageRuntimeState`, and
+`CoverageSelectionRuntimeCoordinator` reads/writes corridor lists, candidate
+scores, active/last-selected ids, and all-depleted checks through that owner
+instead of receiving policy-built coverage-state getter/setter callbacks. The
 policy now
 also owns non-token return handoff/runtime cache state through
 `PrimitiveReturnRuntimeState`: return step count, return-to-dig entry-close
@@ -1085,6 +1090,23 @@ coverage exemplar facts remain explicit external ports. The policy's
 getter/setter callbacks for this runtime boundary. This phase does not change
 token dimensions, schema keys, source/fallback strings, branch order, reset
 timing, backend fail-fast behavior, parked `cell_entry`, residual
+`pre_dig_align`, or removed 5P runtime status.
+
+Phase 9.62 narrows the coverage selection runtime port boundary in
+`testbed/planner/primitive_coverage.py`. `CoverageSelectionRuntimePorts` now
+carries one focused `CoverageRuntimeState` owner for coverage corridor lists,
+candidate scores, active/last-selected corridor ids, and all-depleted checks.
+`CoverageSelectionRuntimeCoordinator` reads and writes that owner directly,
+while dig-cut prior/config facts, candidate builder, selection service,
+selection facts, recent-row reference, reopen/terminal hooks, and
+decision-event recording remain explicit external ports. The policy's
+`_coverage_selection_runtime_ports()` now passes
+`self._coverage_runtime_state()` and no longer assembles selection-runtime
+coverage-state getter/setter callbacks. This phase does not change coverage
+candidate construction, scoring/selection algorithms, first-dig gate behavior,
+recent-row penalty, state-exemplar scoring, terminal-stop reason strings,
+decision trace payload schema, token/return/cycle/scripted-bootstrap/
+execution behavior, backend fail-fast behavior, parked `cell_entry`, residual
 `pre_dig_align`, or removed 5P runtime status.
 
 Phase 9.55 extends `PrimitiveReturnRuntimeState` in

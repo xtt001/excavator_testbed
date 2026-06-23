@@ -75,6 +75,9 @@ Current relevant Python files:
 | `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
 | `testbed/planner/primitive_cycle_state.py` | 123 | mutable live 4P cycle/progress runtime state owner, reset defaults, and live report/finalization projection |
 | `testbed/planner/primitive_scripted_bootstrap.py` | 144 | scripted bootstrap runtime state, readiness checks, timeout, PD action service, and live report/status projection |
+| `testbed/planner/primitive_coverage.py` | 909 | coverage candidate/scoring/selection services; selection runtime sequencing now consumes the focused coverage state owner directly plus explicit external ports |
+| `testbed/planner/primitive_coverage_state.py` | 139 | mutable coverage runtime state owner for corridors, selection ids, candidate scores, completion counters, terminal-stop state, decision trace, and state-exemplar payload |
+| `testbed/planner/primitive_coverage_updates.py` | 600 | coverage completion/rejection/reopen/terminal-stop effect runtime sequencing over explicit shell ports |
 | `testbed/planner/primitive_coverage_reports.py` | 395 | coverage corridor debug, coverage decision-event, coverage debug-field, planner-trace coverage status, and rollout-summary coverage status payload builders |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
@@ -1207,6 +1210,23 @@ algorithms, return-relocate planning, coverage terminal-stop status, and
 coverage exemplar facts. Token dimensions, schema keys, source/fallback
 strings, branch order, reset timing, backend fail-fast behavior, `cell_entry`,
 `pre_dig_align`, and removed 5P runtime status remain unchanged.
+
+Current status note after Phase 9.62: live coverage selection runtime
+sequencing no longer uses policy-built getter/setter callbacks for coverage
+selection state storage. `CoverageSelectionRuntimePorts` in
+`testbed/planner/primitive_coverage.py` now carries the focused
+`CoverageRuntimeState` owner directly, and
+`CoverageSelectionRuntimeCoordinator` reads/writes coverage corridors,
+candidate scores, active/last-selected ids, and all-depleted checks through
+that owner. `PrimitivePlannerACTPolicy` still assembles explicit external
+ports for dig-cut prior/config facts, candidate builder, selection service,
+selection facts, recent-row reference, reopen/terminal hooks, and
+decision-event recording. Coverage candidate construction, scoring/selection
+algorithms, first-dig gate behavior, recent-row penalty, state-exemplar
+scoring, terminal-stop reason strings, decision trace payload schema,
+token/return/cycle/scripted-bootstrap/execution behavior, backend fail-fast
+behavior, `cell_entry`, `pre_dig_align`, and removed 5P runtime status remain
+unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

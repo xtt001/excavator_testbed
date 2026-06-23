@@ -159,12 +159,16 @@ def test_policy_selection_and_effect_ports_share_coverage_state_owner() -> None:
     selection_ports = policy._coverage_selection_runtime_ports()
     effect_ports = policy._coverage_effect_runtime_ports()
 
-    assert selection_ports.coverage_corridors() is policy._coverage_state.coverage_corridors
+    assert selection_ports.state is policy._coverage_state
+    assert not hasattr(selection_ports, "coverage_corridors")
+    assert not hasattr(selection_ports, "set_coverage_corridors")
+    assert not hasattr(selection_ports, "set_candidate_scores")
+    assert selection_ports.state.coverage_corridors is policy._coverage_state.coverage_corridors
     assert effect_ports.coverage_corridors() is policy._coverage_state.coverage_corridors
 
-    selection_ports.set_active_corridor_id(12)
-    selection_ports.set_last_selected_corridor_id(13)
-    selection_ports.set_candidate_scores([{"corridor_id": 12, "score": 3.0}])
+    selection_ports.state.set_active_corridor_id(12)
+    selection_ports.state.set_last_selected_corridor_id(13)
+    selection_ports.state.set_candidate_scores([{"corridor_id": 12, "score": 3.0}])
     effect_ports.set_current_payload_gain_kg(9.0)
     effect_ports.update_rejected_state_exemplar_ids(("cell0_c",))
 
