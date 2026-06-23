@@ -9107,3 +9107,54 @@ Each completed refactor round should append:
   behavior-tree/VLM/LLM backend work; no generic report snapshot object,
   pass-through facade, broad config bag, planner self port, blackboard, or
   commit in the implementation thread.
+
+### 2026-06-23 Raw Observation Private Facade Cleanup
+
+- Scope implemented by parked cleanup executor: remove remaining
+  primitive-planner private raw observation helper facades after live
+  observation fact projection moved to `PrimitiveObservationFacts` and focused
+  services.
+- TDD red result: after updating focused cleanup assertions,
+  `python -m pytest -q tests/test_primitive_capabilities.py tests/test_primitive_dig_progress.py tests/test_primitive_scripted_bootstrap.py tests/test_primitive_return_handoff.py tests/test_primitive_effects.py`
+  failed with representative error:
+  `test_policy_no_longer_exposes_raw_observation_helper_facades` because
+  `PrimitivePlannerACTPolicy.__dict__` still exposed the old raw observation
+  helper names.
+- Core change: `PrimitivePlannerACTPolicy` no longer exposes
+  `_mass_in_bucket`, `_deposited_mass`, `_min_distance_to_dig_area`,
+  `_bucket_depth_below_dig_area_plane`, `_bucket_depth_below_local_surface`,
+  `_bucket_dig_area_contact_mask`, `_env_state`,
+  `_bucket_dig_area_cell_in_bounds_mask`, `_dig_cell_id`,
+  `_bucket_dig_area_pose`, or `_bucket_tip_dig_area_pose`. Tests now use typed
+  observation inputs, `PrimitiveObservationFacts`, and focused services instead
+  of monkeypatching those wrappers.
+- Compatibility retained: observation fallback semantics, env-state index
+  constants, task-metrics precedence, qpos/qvel defaults, boundary detector
+  inputs, token provider order, policy observation injected key names, coverage
+  algorithms, return handoff semantics, bootstrap semantics, requested-effect
+  semantics, report/debug/summary/trace schemas, parked `pre_dig_align`,
+  parked `cell_entry`, and backend support status remain unchanged.
+- Verification:
+  - `python -m pytest -q tests/test_primitive_capabilities.py tests/test_primitive_dig_progress.py tests/test_primitive_scripted_bootstrap.py tests/test_primitive_return_handoff.py tests/test_primitive_effects.py`
+    -> `82 passed in 0.16s`
+  - `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_boundary_event.py tests/test_primitive_dig_token_planning.py tests/test_primitive_return_token_planning.py tests/test_primitive_coverage_facts.py`
+    -> `37 passed in 0.69s`
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or coverage_decision_trace or dig_cut_tokens or return_to_dig or scripted_bootstrap"`
+    -> `6 passed, 101 deselected in 0.68s`
+  - `python -m compileall testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_capabilities.py testbed/planner/primitive_observation.py`
+    -> no output, exit 0
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`
+    -> no output, exit 0
+  - `python scripts/planner_refactor_guard.py --check-skill-contract`
+    -> no output, exit 0
+  - `git diff --check`
+    -> no output, exit 0
+- Non-goals held: no observation fallback semantic change, no env-state index
+  constant change, no task-metrics precedence change, no qpos/qvel default
+  change, no boundary detector input change, no token provider order change, no
+  policy observation injected key-name change, no coverage/return/bootstrap/
+  requested-effect behavior change, no report/debug/summary/trace schema
+  change, no public schema removal, no `pre_dig_align` or `cell_entry` cleanup,
+  no behavior-tree/VLM/LLM backend work, no generic observation snapshot bag,
+  planner self port, blackboard, broad config bag, pass-through service, or
+  commit in the implementation thread.

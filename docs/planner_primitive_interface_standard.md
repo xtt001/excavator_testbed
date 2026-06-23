@@ -58,6 +58,11 @@ Current maturity:
   requested-effect dump-start deposited mass and failed-dig current bucket mass
   through typed `PrimitiveObservationFacts` providers; policy-built scalar
   metric callbacks are no longer exposed on those effect-side ports**
+- raw observation helper facade cleanup: **achieved after the typed fact-source
+  migrations; `PrimitivePlannerACTPolicy` no longer exposes private
+  `_mass_in_bucket`, `_deposited_mass`, `_min_distance_to_dig_area`,
+  `_bucket_depth_*`, `_bucket_dig_area_*`, `_dig_cell_id`, or `_env_state`
+  helper facades**
 - coverage planning fact-source boundary: **achieved for coverage selection
   facts, coverage raw-field projection, state-conditioned exemplar
   projection/writeback, exemplar distance/id projection, and remaining-depth
@@ -644,8 +649,9 @@ Gap:
 - The policy shell still owns some compatibility/report algorithms and
   compatibility facades, but no longer stores pre-dig-align or cell-entry
   mutable report state, pre-dig-align/cell-entry debug projection,
-  pre-dig-align/cell-entry summary projection, or cell-entry planner-trace
-  projection as independent policy responsibilities.
+  pre-dig-align/cell-entry summary projection, cell-entry planner-trace
+  projection, or raw observation metric/env-state helper projection as
+  independent policy responsibilities.
 
 Standard:
 

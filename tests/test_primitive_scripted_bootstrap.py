@@ -267,14 +267,6 @@ def test_policy_should_end_bootstrap_loaded_and_clear_uses_bootstrap_status_fact
     policy = object.__new__(PrimitivePlannerACTPolicy)
     _install_policy_bootstrap_config(policy, bootstrap_end_mode="loaded_and_clear")
     policy.bootstrap_policy = object()
-    policy._mass_in_bucket = MethodType(
-        lambda self, obs: (_ for _ in ()).throw(AssertionError("old mass wrapper")),
-        policy,
-    )
-    policy._min_distance_to_dig_area = MethodType(
-        lambda self, obs: (_ for _ in ()).throw(AssertionError("old distance wrapper")),
-        policy,
-    )
 
     env_state = np.zeros(64, dtype=np.float32)
     env_state[ENV_STATE_MASS_IN_BUCKET_IDX] = 125.0

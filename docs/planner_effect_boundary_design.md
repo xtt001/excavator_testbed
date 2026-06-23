@@ -1317,6 +1317,22 @@ scoring, update/reopen/terminal-stop algorithms, remaining-depth semantics,
 event ordering, report/debug/summary/trace schemas, token/return/recovery
 behavior, parked `pre_dig_align`, or parked `cell_entry`.
 
+Phase 9.97 removes the remaining primitive-planner private raw observation
+helper facades after live observation fact projection moved to
+`PrimitiveObservationFacts` and focused services. `PrimitivePlannerACTPolicy`
+no longer exposes `_mass_in_bucket`, `_deposited_mass`,
+`_min_distance_to_dig_area`, `_bucket_depth_below_dig_area_plane`,
+`_bucket_depth_below_local_surface`, `_bucket_dig_area_contact_mask`,
+`_env_state`, `_bucket_dig_area_cell_in_bounds_mask`, `_dig_cell_id`,
+`_bucket_dig_area_pose`, or `_bucket_tip_dig_area_pose`. Tests now exercise
+typed observation inputs, `PrimitiveObservationFacts`, and focused services
+directly. This is cleanup only; it does not change observation fallback
+semantics, env-state index constants, task-metrics precedence, boundary-event
+inputs, token provider order, policy observation injected keys, coverage
+algorithms, return handoff behavior, bootstrap behavior, requested-effect
+semantics, report/debug/summary/trace schemas, parked `pre_dig_align`, or
+parked `cell_entry`.
+
 Phase 9.86 narrows the adjacent coverage decision-event reporting boundary by
 moving bucket snapshot projection into `CoverageReportService.bucket_snapshot`.
 The report service now projects `CoverageBucketSnapshot` from typed

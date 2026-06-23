@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import fields
-from types import MethodType
-
 import numpy as np
 
 from testbed.data.schema import ENV_STATE_MASS_IN_BUCKET_IDX
@@ -82,10 +80,6 @@ def test_policy_update_dig_progress_delegates_without_old_mass_wrapper() -> None
     policy = object.__new__(PrimitivePlannerACTPolicy)
     policy.action_dim = 4
     policy.dig_to_carry_mass_plateau_epsilon_kg = 0.5
-    policy._mass_in_bucket = MethodType(
-        lambda self, obs: (_ for _ in ()).throw(AssertionError("old mass wrapper")),
-        policy,
-    )
 
     policy._update_dig_progress({"task_metrics": {"mass_in_bucket_kg": 9.0}})
 

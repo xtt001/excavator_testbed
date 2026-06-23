@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 3745 | public primitive policy adapter plus compatibility facades over focused planner services; cell-entry, pre-dig, and coverage effect fact private runtime/test facades removed |
+| `testbed/policies/hybrid/primitive_planner.py` | 3617 | public primitive policy adapter plus compatibility facades over focused planner services; cell-entry, pre-dig, coverage effect fact, and raw observation private runtime/test facades removed |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_boundary_event.py` | 53 | live boundary-event tick source over focused execution state, boundary detector, and typed observation facts |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
@@ -1735,6 +1735,22 @@ facade and typed port constructor. Boundary-detector metrics/event algorithms,
 execution-driver tick order, prev-action finalization timing, backend
 fail-fast behavior, debug/summary/trace schemas, parked `pre_dig_align`, and
 parked `cell_entry` remain unchanged.
+
+Current status note after raw observation helper facade cleanup:
+`PrimitivePlannerACTPolicy` no longer exposes the old private raw observation
+helper facades `_mass_in_bucket`, `_deposited_mass`,
+`_min_distance_to_dig_area`, `_bucket_depth_below_dig_area_plane`,
+`_bucket_depth_below_local_surface`, `_bucket_dig_area_contact_mask`,
+`_env_state`, `_bucket_dig_area_cell_in_bounds_mask`, `_dig_cell_id`,
+`_bucket_dig_area_pose`, or `_bucket_tip_dig_area_pose`. Tests now lock typed
+`PrimitiveObservationFacts`, focused services, and direct observation inputs
+instead of monkeypatching those old wrappers. This is cleanup after the
+observation fact-source migrations; it does not change observation fallback
+semantics, env-state indexes, task-metric precedence, boundary detector inputs,
+token provider order, policy observation injected key names, coverage
+algorithms, return handoff semantics, bootstrap semantics, requested-effect
+semantics, report schemas, parked `pre_dig_align`, parked `cell_entry`, or
+backend support status.
 
 Current status note after parked pre-dig-align cleanup: the parked
 `pre_dig_align` runtime execution path has been removed end-to-end. The legacy

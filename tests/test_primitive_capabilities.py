@@ -31,6 +31,7 @@ from testbed.planner.primitive_capabilities import (
     PrimitiveObservationFacts,
     ReturnTransitionStatus,
 )
+from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
 class _BoundaryEvent:
@@ -90,6 +91,24 @@ def test_observation_facts_extract_obs_values_without_mutating_inputs() -> None:
     assert facts.qpos.flags.writeable is False
     assert facts.qvel.flags.writeable is False
     assert facts.env_state.flags.writeable is False
+
+
+def test_policy_no_longer_exposes_raw_observation_helper_facades() -> None:
+    removed_names = {
+        "_mass_in_bucket",
+        "_deposited_mass",
+        "_min_distance_to_dig_area",
+        "_bucket_depth_below_dig_area_plane",
+        "_bucket_depth_below_local_surface",
+        "_bucket_dig_area_contact_mask",
+        "_env_state",
+        "_bucket_dig_area_cell_in_bounds_mask",
+        "_dig_cell_id",
+        "_bucket_dig_area_pose",
+        "_bucket_tip_dig_area_pose",
+    }
+
+    assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
 
 
 def test_observation_facts_use_legacy_missing_defaults() -> None:

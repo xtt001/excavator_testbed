@@ -615,7 +615,6 @@ def test_policy_start_envelope_wrapper_delegates_and_writes_cached_result() -> N
     planner._return_start_envelope_use_prior_qpos_bounds = False
     planner._pending_dig_cut_corridor_id = 7
     planner.action_dim = 4
-    planner._env_state = MethodType(lambda self, obs: _env_state(), planner)
     planner._return_start_envelope_prior_bounds = MethodType(
         lambda self, corridor_id: (None, None),
         planner,
@@ -644,7 +643,9 @@ def test_policy_start_envelope_wrapper_delegates_and_writes_cached_result() -> N
         planner,
     )
 
-    ready = planner._return_to_dig_start_envelope_ready({"qpos": [1.0, 2.0, 3.0, 4.0]})
+    ready = planner._return_to_dig_start_envelope_ready(
+        {"qpos": [1.0, 2.0, 3.0, 4.0], "env_state": _env_state()}
+    )
 
     assert ready is False
     assert len(calls) == 1

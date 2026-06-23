@@ -20,22 +20,8 @@ from testbed.data.operator_first_v2_2 import (
     _build_dig_cut_token,
 )
 from testbed.data.schema import (
-    ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
-    ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
-    ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
     ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
-    ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
-    ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
-    ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
-    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
-    ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
-    ENV_STATE_MASS_IN_BUCKET_IDX,
-    ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
 )
 from testbed.planner.boundary_detector import BoundaryDetector
 from testbed.planner.primitive_backend import (
@@ -2295,79 +2281,6 @@ class PrimitivePlannerACTPolicy(Policy):
     def _return_to_dig_entry_target(self) -> tuple[float, float] | None:
         return self._return_handoff_readiness_service().entry_target()
 
-    def _mass_in_bucket(self, obs: dict) -> float:
-        task_metrics = dict(obs.get("task_metrics", {}) or {})
-        if "mass_in_bucket_kg" in task_metrics:
-            return float(task_metrics["mass_in_bucket_kg"])
-        env_state = self._env_state(obs)
-        return (
-            float(env_state[ENV_STATE_MASS_IN_BUCKET_IDX])
-            if len(env_state) > ENV_STATE_MASS_IN_BUCKET_IDX
-            else 0.0
-        )
-
-    def _deposited_mass(self, obs: dict) -> float:
-        task_metrics = dict(obs.get("task_metrics", {}) or {})
-        if "deposited_mass_in_target_box_kg" in task_metrics:
-            return float(task_metrics["deposited_mass_in_target_box_kg"])
-        env_state = self._env_state(obs)
-        return (
-            float(env_state[ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX])
-            if len(env_state) > ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX
-            else 0.0
-        )
-
-    def _min_distance_to_dig_area(self, obs: dict) -> float:
-        task_metrics = dict(obs.get("task_metrics", {}) or {})
-        if "min_distance_to_dig_area_m" in task_metrics:
-            return float(task_metrics["min_distance_to_dig_area_m"])
-        env_state = self._env_state(obs)
-        return (
-            float(env_state[ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX])
-            if len(env_state) > ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX
-            else 0.0
-        )
-
-    def _bucket_depth_below_dig_area_plane(self, obs: dict) -> float:
-        task_metrics = dict(obs.get("task_metrics", {}) or {})
-        if "bucket_depth_below_dig_area_plane_m" in task_metrics:
-            return float(task_metrics["bucket_depth_below_dig_area_plane_m"])
-        env_state = self._env_state(obs)
-        return (
-            float(env_state[ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX])
-            if len(env_state) > ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX
-            else 0.0
-        )
-
-    def _bucket_depth_below_local_surface(self, obs: dict) -> float:
-        task_metrics = dict(obs.get("task_metrics", {}) or {})
-        if "bucket_depth_below_local_surface_m" in task_metrics:
-            return float(task_metrics["bucket_depth_below_local_surface_m"])
-        env_state = self._env_state(obs)
-        return (
-            float(env_state[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX])
-            if len(env_state) > ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX
-            else float("nan")
-        )
-
-    def _bucket_dig_area_contact_mask(self, obs: dict) -> bool:
-        task_metrics = dict(obs.get("task_metrics", {}) or {})
-        if "bucket_dig_area_penetration_contact_mask" in task_metrics:
-            return bool(float(task_metrics["bucket_dig_area_penetration_contact_mask"]) > 0.5)
-        if "bucket_contact_dig_area_mask" in task_metrics:
-            return bool(float(task_metrics["bucket_contact_dig_area_mask"]) > 0.5)
-        env_state = self._env_state(obs)
-        return bool(
-            len(env_state) > ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX
-            and float(env_state[ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX]) > 0.5
-        )
-
-    def _env_state(self, obs: dict) -> np.ndarray:
-        return np.asarray(
-            obs.get("env_state", np.zeros(13, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(-1)
-
     def _policy_obs(self, obs: dict) -> dict:
         self._clear_policy_observation_injected_flags()
         result = self._policy_observation_assembler().assemble(obs)
@@ -3565,47 +3478,6 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _raw_fields_in_prior_range(self, raw_fields: dict[str, float | int]) -> bool:
         return self._dig_cut_token_planner().raw_fields_in_prior_range(raw_fields)
-
-    def _bucket_dig_area_cell_in_bounds_mask(self, obs: dict) -> bool:
-        env_state = self._env_state(obs)
-        return bool(
-            len(env_state) > ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX
-            and float(env_state[ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX]) > 0.5
-        )
-
-    def _dig_cell_id(self, obs: dict) -> int:
-        env_state = self._env_state(obs)
-        if len(env_state) <= ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX:
-            return -1
-        value = float(env_state[ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX])
-        if not np.isfinite(value):
-            return -1
-        return int(round(value))
-
-    def _bucket_dig_area_pose(self, obs: dict) -> tuple[float, float, float] | None:
-        env_state = self._env_state(obs)
-        if len(env_state) <= ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX:
-            return None
-        values = (
-            float(env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX]),
-            float(env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX]),
-            float(env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX]),
-        )
-        if not all(np.isfinite(value) for value in values):
-            return None
-        return values
-
-    def _bucket_tip_dig_area_pose(self, obs: dict) -> tuple[float, float, float] | None:
-        env_state = self._env_state(obs)
-        if len(env_state) > ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX:
-            values = (
-                float(env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX]),
-                float(env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX]),
-                float(env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX]),
-            )
-            if all(np.isfinite(value) for value in values):
-                return values
-        return self._bucket_dig_area_pose(obs)
 
     def _goal_tokens(self) -> np.ndarray | None:
         return self._goal_token_provider().tokens_for_cycle(self._cycle_index)

@@ -847,7 +847,10 @@ def test_primitive_planner_unknown_skill_fails_without_broad_legacy_fallback() -
     planner = object.__new__(PrimitivePlannerACTPolicy)
     planner._skill_name = "legacy_skill"
     planner._switch_reason = ""
-    obs: dict[str, Any] = {"qpos": [1.0]}
+    obs: dict[str, Any] = {
+        "qpos": [1.0],
+        "task_metrics": {"deposited_mass_in_target_box_kg": 8.5},
+    }
     boundary_event = object()
     calls: list[tuple[dict[str, Any], object, str]] = []
 
@@ -1293,7 +1296,6 @@ def test_primitive_planner_carry_decision_bridge_returns_requested_effects() -> 
         lambda self, value: callbacks.append(f"hold:{value}"),
         planner,
     )
-    planner._deposited_mass = MethodType(lambda self, obs: 8.5, planner)
     planner._set_dump_start_deposited_mass = MethodType(
         lambda self, value: callbacks.append(f"deposit:{value}"),
         planner,
