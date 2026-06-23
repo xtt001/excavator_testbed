@@ -164,6 +164,11 @@ from testbed.planner.primitive_runtime_kernel import (
 )
 from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive_scripted_bootstrap import (
+    PrimitiveScriptedBootstrapRuntimeConfig,
+    PrimitiveScriptedBootstrapRuntimeService,
+    PrimitiveScriptedBootstrapRuntimeState,
+)
 from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 from testbed.planner import primitive_adapter_config as adapter_config
 from testbed.planner.primitive_adapter_config import (
@@ -665,6 +670,39 @@ class PrimitivePlannerACTPolicy(Policy):
     ) -> None:
         state = self._primitive_return_runtime_state()
         state.return_to_dig_start_envelope_checks = value
+
+    def _primitive_scripted_bootstrap_runtime_state(
+        self,
+    ) -> PrimitiveScriptedBootstrapRuntimeState:
+        state = self.__dict__.get("_scripted_bootstrap_state")
+        if state is None:
+            state = PrimitiveScriptedBootstrapRuntimeState.fresh()
+            self.__dict__["_scripted_bootstrap_state"] = state
+        return state
+
+    @property
+    def _scripted_bootstrap_step_count(self) -> int:
+        return int(self._primitive_scripted_bootstrap_runtime_state().step_count)
+
+    @_scripted_bootstrap_step_count.setter
+    def _scripted_bootstrap_step_count(self, value: int) -> None:
+        self._primitive_scripted_bootstrap_runtime_state().step_count = int(value)
+
+    @property
+    def _scripted_bootstrap_hold_count(self) -> int:
+        return int(self._primitive_scripted_bootstrap_runtime_state().hold_count)
+
+    @_scripted_bootstrap_hold_count.setter
+    def _scripted_bootstrap_hold_count(self, value: int) -> None:
+        self._primitive_scripted_bootstrap_runtime_state().hold_count = int(value)
+
+    @property
+    def _scripted_bootstrap_timeout_count(self) -> int:
+        return int(self._primitive_scripted_bootstrap_runtime_state().timeout_count)
+
+    @_scripted_bootstrap_timeout_count.setter
+    def _scripted_bootstrap_timeout_count(self, value: int) -> None:
+        self._primitive_scripted_bootstrap_runtime_state().timeout_count = int(value)
 
     def _primitive_token_runtime_state(self) -> PrimitiveTokenRuntimeState:
         state = self.__dict__.get("_token_state")
@@ -2418,13 +2456,9 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _should_end_bootstrap(self, *, obs: dict, boundary_event: Any | None) -> bool:
-        if self._scripted_bootstrap_enabled():
-            if self._scripted_bootstrap_target_reached(obs):
-                return True
-            if self._scripted_bootstrap_step_count >= self.scripted_bootstrap_max_steps:
-                self._scripted_bootstrap_timeout_count += 1
-                return True
-            return False
+        scripted_bootstrap = self._primitive_scripted_bootstrap_runtime_service()
+        if scripted_bootstrap.enabled():
+            return scripted_bootstrap.should_end_bootstrap(obs)
         if self.bootstrap_policy is None:
             return False
         if self.bootstrap_end_mode == "first_qualified_dig_start":
@@ -2441,54 +2475,41 @@ class PrimitivePlannerACTPolicy(Policy):
             return False
         raise ValueError(f"Unsupported bootstrap_end_mode {self.bootstrap_end_mode!r}.")
 
-    def _scripted_bootstrap_enabled(self) -> bool:
-        return bool(
-            self.bootstrap_end_mode == "scripted_qpos"
-            and self.scripted_bootstrap_target_qpos is not None
-        )
-
-    def _scripted_bootstrap_target_reached(self, obs: dict) -> bool:
-        if self.scripted_bootstrap_target_qpos is None:
-            return False
-        qpos = np.asarray(
-            obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
-        qvel = np.asarray(
-            obs.get("qvel", np.zeros(self.action_dim, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
-        qpos_close = bool(
-            np.all(np.abs(qpos - self.scripted_bootstrap_target_qpos) <= self.scripted_bootstrap_qpos_tolerance)
-        )
-        qvel_small = bool(np.all(np.abs(qvel) <= self.scripted_bootstrap_qvel_abs_max))
-        if qpos_close and qvel_small:
-            self._scripted_bootstrap_hold_count += 1
-        else:
-            self._scripted_bootstrap_hold_count = 0
-        return bool(self._scripted_bootstrap_hold_count >= self.scripted_bootstrap_hold_steps)
-
-    def _scripted_bootstrap_action(self, obs: dict) -> np.ndarray:
-        if self.scripted_bootstrap_target_qpos is None:
-            raise RuntimeError("scripted bootstrap is active without target qpos.")
-        self._scripted_bootstrap_step_count += 1
-        qpos = np.asarray(
-            obs.get("qpos", np.zeros(self.action_dim, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
-        qvel = np.asarray(
-            obs.get("qvel", np.zeros(self.action_dim, dtype=np.float32)),
-            dtype=np.float32,
-        ).reshape(self.action_dim)
-        return _pd_servo_action(
-            qpos=qpos,
-            qvel=qvel,
+    def _primitive_scripted_bootstrap_runtime_config(
+        self,
+    ) -> PrimitiveScriptedBootstrapRuntimeConfig:
+        return PrimitiveScriptedBootstrapRuntimeConfig(
+            action_dim=int(self.action_dim),
+            bootstrap_end_mode=str(self.bootstrap_end_mode),
             target_qpos=self.scripted_bootstrap_target_qpos,
-            kp=self.scripted_bootstrap_kp,
-            kd=self.scripted_bootstrap_kd,
+            kp=float(self.scripted_bootstrap_kp),
+            kd=float(self.scripted_bootstrap_kd),
             action_clip=self.scripted_bootstrap_action_clip,
             action_signs=self.scripted_bootstrap_action_signs,
+            qpos_tolerance=float(self.scripted_bootstrap_qpos_tolerance),
+            qvel_abs_max=float(self.scripted_bootstrap_qvel_abs_max),
+            hold_steps=int(self.scripted_bootstrap_hold_steps),
+            max_steps=int(self.scripted_bootstrap_max_steps),
         )
+
+    def _primitive_scripted_bootstrap_runtime_service(
+        self,
+    ) -> PrimitiveScriptedBootstrapRuntimeService:
+        return PrimitiveScriptedBootstrapRuntimeService(
+            config=self._primitive_scripted_bootstrap_runtime_config(),
+            state=self._primitive_scripted_bootstrap_runtime_state(),
+        )
+
+    def _scripted_bootstrap_enabled(self) -> bool:
+        return self._primitive_scripted_bootstrap_runtime_service().enabled()
+
+    def _scripted_bootstrap_target_reached(self, obs: dict) -> bool:
+        return self._primitive_scripted_bootstrap_runtime_service().target_reached(
+            obs
+        )
+
+    def _scripted_bootstrap_action(self, obs: dict) -> np.ndarray:
+        return self._primitive_scripted_bootstrap_runtime_service().action(obs)
 
     def _pre_dig_align_surface_guard_triggered_for_state(self, obs: dict) -> bool:
         self._pre_dig_align_surface_depth_m = float(

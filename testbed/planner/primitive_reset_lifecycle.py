@@ -12,6 +12,9 @@ from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive_scripted_bootstrap import (
+    PrimitiveScriptedBootstrapRuntimeState,
+)
 from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 
 
@@ -43,6 +46,7 @@ class PrimitiveResetLifecycleState:
     dump_ready_hold_count: int
     dump_done_hold_count: int
     return_step_count: int
+    scripted_bootstrap_state: PrimitiveScriptedBootstrapRuntimeState
     scripted_bootstrap_step_count: int
     scripted_bootstrap_hold_count: int
     scripted_bootstrap_timeout_count: int
@@ -130,6 +134,7 @@ class PrimitiveResetLifecycleState:
             "_dump_ready_hold_count": self.dump_ready_hold_count,
             "_dump_done_hold_count": self.dump_done_hold_count,
             "_return_step_count": self.return_step_count,
+            "_scripted_bootstrap_state": self.scripted_bootstrap_state,
             "_scripted_bootstrap_step_count": self.scripted_bootstrap_step_count,
             "_scripted_bootstrap_hold_count": self.scripted_bootstrap_hold_count,
             "_scripted_bootstrap_timeout_count": self.scripted_bootstrap_timeout_count,
@@ -266,6 +271,7 @@ class PrimitiveResetLifecycleService:
         cycle_state = PrimitiveCycleRuntimeState.fresh()
         token_state = PrimitiveTokenRuntimeState.fresh()
         return_state = PrimitiveReturnRuntimeState.fresh()
+        scripted_bootstrap_state = PrimitiveScriptedBootstrapRuntimeState.fresh()
         return PrimitiveResetLifecycleState(
             skill_name=skill_name,
             prev_action=None,
@@ -274,9 +280,12 @@ class PrimitiveResetLifecycleService:
             dump_ready_hold_count=cycle_state.dump_ready_hold_count,
             dump_done_hold_count=cycle_state.dump_done_hold_count,
             return_step_count=return_state.return_step_count,
-            scripted_bootstrap_step_count=0,
-            scripted_bootstrap_hold_count=0,
-            scripted_bootstrap_timeout_count=0,
+            scripted_bootstrap_state=scripted_bootstrap_state,
+            scripted_bootstrap_step_count=scripted_bootstrap_state.step_count,
+            scripted_bootstrap_hold_count=scripted_bootstrap_state.hold_count,
+            scripted_bootstrap_timeout_count=(
+                scripted_bootstrap_state.timeout_count
+            ),
             pre_dig_align_step_count=0,
             pre_dig_align_hold_count=0,
             pre_dig_align_timeout_count=0,
