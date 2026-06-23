@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.60: the default 4P mainline branch chain no longer
+Current status after Phase 9.61: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -68,7 +68,10 @@ attributes. The policy keeps legacy private token field names as
 property-backed compatibility facades over that state owner. Live token arrays
 and source fields project through `TokenStatus`, while pending/dig-cut report
 metadata projects through `PrimitiveTokenReportStatus` for debug, summary, and
-trace consumers. The policy now
+trace consumers. `PrimitiveTokenRuntimePorts` now carries that focused token
+state owner directly, so `PrimitiveTokenRuntimeCoordinator` no longer receives
+policy-built getter/setter callbacks for the same token storage fields. The
+policy now
 also owns non-token return handoff/runtime cache state through
 `PrimitiveReturnRuntimeState`: return step count, return-to-dig entry-close
 cache, return next-dig-event flag, and return start-envelope gate result/checks
@@ -1068,6 +1071,21 @@ dig-depth-profile planning, return token planning, coverage algorithms,
 backend facts/fail-fast behavior, reset timing, policy observation provider
 order, parked `cell_entry`, residual `pre_dig_align`, or removed 5P runtime
 status.
+
+Phase 9.61 narrows the token runtime port boundary in
+`testbed/planner/primitive_token_runtime.py`. `PrimitiveTokenRuntimePorts` now
+carries one focused `PrimitiveTokenRuntimeState` owner for dig-cut,
+dig-depth-profile, return-target, return-relocate, return-start-envelope, and
+pending next-dig token storage. `PrimitiveTokenRuntimeCoordinator` reads and
+writes that owner directly, while current-skill/config gates, token-builder
+algorithms, return-relocate planning, coverage terminal-stop status, and
+coverage exemplar facts remain explicit external ports. The policy's
+`_primitive_token_runtime_ports()` now passes
+`self._primitive_token_runtime_state()` and no longer assembles token-state
+getter/setter callbacks for this runtime boundary. This phase does not change
+token dimensions, schema keys, source/fallback strings, branch order, reset
+timing, backend fail-fast behavior, parked `cell_entry`, residual
+`pre_dig_align`, or removed 5P runtime status.
 
 Phase 9.55 extends `PrimitiveReturnRuntimeState` in
 `testbed/planner/primitive_return_state.py` with `to_report_status(...)` and

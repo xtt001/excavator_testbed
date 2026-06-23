@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.60 implementation. It is intentionally
+compares them with the current Phase 9.61 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -43,7 +43,9 @@ Current maturity:
   `CoverageReportService.summary_status(...)`**
 - token runtime mutable state owner: **achieved for dig/return token arrays,
   source/fallback flags, prior-bound flags, pending next-dig token state, and
-  live `TokenStatus` plus token/pending/dig-cut report metadata projection**
+  live `TokenStatus` plus token/pending/dig-cut report metadata projection;
+  token runtime sequencing now consumes this owner directly instead of
+  policy-built getter/setter callbacks**
 - return runtime mutable state owner: **achieved for return handoff counters,
   entry-close cache, next-dig-event flag, start-envelope gate cache, and live
   return report/status projection**
@@ -604,6 +606,9 @@ Current boundary:
   fields, so return-target token state and return handoff cache state are no
   longer mixed in the policy shell.
 - `PrimitiveTokenRuntimeCoordinator` owns dig/return token runtime sequencing.
+  Its ports now carry the focused `PrimitiveTokenRuntimeState` owner directly
+  for token storage reads/writes; external config, token-builder algorithms,
+  return-relocate planning, and coverage exemplar facts remain explicit ports.
 - `PrimitiveDigTokenPlanningService` and
   `PrimitiveReturnTokenPlanningService` own orchestration.
 - Token algorithm classes remain in `primitive_tokens.py`.

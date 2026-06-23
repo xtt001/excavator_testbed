@@ -3778,6 +3778,7 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _primitive_token_runtime_ports(self) -> PrimitiveTokenRuntimePorts:
         return PrimitiveTokenRuntimePorts(
+            state=self._primitive_token_runtime_state(),
             current_skill_name=lambda: str(self._skill_name),
             bootstrap_policy_available=lambda: self.bootstrap_policy is not None,
             cycle_index=lambda: int(self._cycle_index),
@@ -3794,75 +3795,11 @@ class PrimitivePlannerACTPolicy(Policy):
             return_target_hold_token_until_skill_exit=(
                 lambda: bool(self.return_target_hold_token_until_skill_exit)
             ),
-            get_dig_cut_planned_cycle_id=lambda: int(self._dig_cut_planned_cycle_id),
-            set_dig_cut_planned_cycle_id=(
-                lambda value: setattr(self, "_dig_cut_planned_cycle_id", int(value))
-            ),
-            get_dig_cut_tokens=lambda: self._dig_cut_tokens,
-            set_dig_cut_tokens=lambda value: setattr(self, "_dig_cut_tokens", value),
-            get_dig_depth_profile_tokens=lambda: self._dig_depth_profile_tokens,
-            set_dig_depth_profile_tokens=(
-                lambda value: setattr(self, "_dig_depth_profile_tokens", value)
-            ),
-            set_dig_cut_token_source=(
-                lambda value: setattr(self, "_dig_cut_token_source", str(value))
-            ),
-            set_dig_cut_fallback_reason=(
-                lambda value: setattr(self, "_dig_cut_fallback_reason", str(value))
-            ),
-            set_dig_cut_token_in_prior_p10_p90=(
-                lambda value: setattr(
-                    self,
-                    "_dig_cut_token_in_prior_p10_p90",
-                    bool(value),
-                )
-            ),
             build_dig_cut_tokens_for_obs=(
                 lambda obs: self._build_dig_cut_tokens_for_obs(obs)
             ),
             build_dig_depth_profile_tokens_for_obs=(
                 lambda obs: self._build_dig_depth_profile_tokens_for_obs(obs)
-            ),
-            get_return_target_planned_cycle_id=(
-                lambda: int(self._return_target_planned_cycle_id)
-            ),
-            set_return_target_planned_cycle_id=(
-                lambda value: setattr(
-                    self,
-                    "_return_target_planned_cycle_id",
-                    int(value),
-                )
-            ),
-            get_return_target_tokens=lambda: self._return_target_tokens,
-            set_return_target_tokens=(
-                lambda value: setattr(self, "_return_target_tokens", value)
-            ),
-            get_return_relocate_tokens=lambda: self._return_relocate_tokens,
-            set_return_relocate_tokens=(
-                lambda value: setattr(self, "_return_relocate_tokens", value)
-            ),
-            get_return_start_envelope_tokens=(
-                lambda: self._return_start_envelope_tokens
-            ),
-            set_return_start_envelope_tokens=(
-                lambda value: setattr(self, "_return_start_envelope_tokens", value)
-            ),
-            set_return_target_token_source=(
-                lambda value: setattr(self, "_return_target_token_source", str(value))
-            ),
-            set_return_start_envelope_token_source=(
-                lambda value: setattr(
-                    self,
-                    "_return_start_envelope_token_source",
-                    str(value),
-                )
-            ),
-            set_return_target_fallback_reason=(
-                lambda value: setattr(
-                    self,
-                    "_return_target_fallback_reason",
-                    str(value),
-                )
             ),
             build_next_dig_cut_plan_for_return=(
                 lambda obs: self._build_next_dig_cut_plan_for_return(obs)
@@ -3878,39 +3815,6 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             plan_return_relocate_tokens=(
                 lambda token: self._return_relocate_token_planner().plan(token)
-            ),
-            set_pending_dig_cut_cycle_id=(
-                lambda value: setattr(self, "_pending_dig_cut_cycle_id", int(value))
-            ),
-            set_pending_dig_cut_corridor_id=(
-                lambda value: setattr(self, "_pending_dig_cut_corridor_id", int(value))
-            ),
-            set_pending_dig_cut_raw_fields=(
-                lambda value: setattr(self, "_pending_dig_cut_raw_fields", value)
-            ),
-            set_pending_dig_cut_tokens=(
-                lambda value: setattr(self, "_pending_dig_cut_tokens", value)
-            ),
-            set_pending_dig_depth_profile_tokens=(
-                lambda value: setattr(
-                    self,
-                    "_pending_dig_depth_profile_tokens",
-                    value,
-                )
-            ),
-            set_pending_dig_state_exemplar_ids=(
-                lambda value: setattr(
-                    self,
-                    "_pending_dig_state_exemplar_ids",
-                    list(value),
-                )
-            ),
-            set_pending_dig_state_exemplar_distance=(
-                lambda value: setattr(
-                    self,
-                    "_pending_dig_state_exemplar_distance",
-                    float(value),
-                )
             ),
             get_coverage_active_state_exemplar_ids=(
                 lambda: list(self._coverage_active_state_exemplar_ids)

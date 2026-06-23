@@ -15,6 +15,7 @@ from testbed.planner.primitive_token_runtime import (
     PrimitiveTokenRuntimeCoordinator,
     PrimitiveTokenRuntimePorts,
 )
+from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
@@ -22,12 +23,36 @@ def _token(size: int, value: float) -> np.ndarray:
     return np.full(size, value, dtype=np.float32)
 
 
+_TOKEN_STATE_FIELD_NAMES = set(PrimitiveTokenRuntimeState.__dataclass_fields__)
+
+
+class _PortState:
+    def __init__(
+        self,
+        facts: dict[str, object],
+        token_state: PrimitiveTokenRuntimeState,
+    ) -> None:
+        self._facts = facts
+        self.token_state = token_state
+
+    def __getitem__(self, name: str) -> object:
+        if name in _TOKEN_STATE_FIELD_NAMES:
+            return getattr(self.token_state, name)
+        return self._facts[name]
+
+    def __setitem__(self, name: str, value: object) -> None:
+        if name in _TOKEN_STATE_FIELD_NAMES:
+            setattr(self.token_state, name, value)
+            return
+        self._facts[name] = value
+
+
 def _ports(
     *,
     state: dict[str, object] | None = None,
     events: list[str] | None = None,
-) -> tuple[PrimitiveTokenRuntimePorts, dict[str, object], list[str]]:
-    state = {
+) -> tuple[PrimitiveTokenRuntimePorts, _PortState, list[str]]:
+    defaults = {
         "skill": "dig",
         "bootstrap_policy_available": True,
         "dig_cut_planner_enabled": True,
@@ -65,13 +90,19 @@ def _ports(
             DIG_DEPTH_PROFILE_TOKEN_DIM,
             8.0,
         ),
-        **(state or {}),
     }
+    defaults.update(state or {})
+    facts = {
+        name: value
+        for name, value in defaults.items()
+        if name not in _TOKEN_STATE_FIELD_NAMES
+    }
+    token_state = PrimitiveTokenRuntimeState.fresh()
+    for name, value in defaults.items():
+        if name in _TOKEN_STATE_FIELD_NAMES:
+            setattr(token_state, name, value)
+    state_view = _PortState(facts=facts, token_state=token_state)
     events = events if events is not None else []
-
-    def set_value(name: str, value: object) -> None:
-        events.append(f"{name}:{value}")
-        state[name] = value
 
     def build_dig_cut(obs: dict) -> np.ndarray:
         events.append(f"build_dig_cut:{obs['id']}")
@@ -109,120 +140,46 @@ def _ports(
 
     return (
         PrimitiveTokenRuntimePorts(
-            current_skill_name=lambda: str(state["skill"]),
+            state=token_state,
+            current_skill_name=lambda: str(state_view["skill"]),
             bootstrap_policy_available=lambda: bool(
-                state["bootstrap_policy_available"]
+                state_view["bootstrap_policy_available"]
             ),
-            cycle_index=lambda: int(state["cycle_index"]),
-            dig_cut_planner_enabled=lambda: bool(state["dig_cut_planner_enabled"]),
+            cycle_index=lambda: int(state_view["cycle_index"]),
+            dig_cut_planner_enabled=lambda: bool(
+                state_view["dig_cut_planner_enabled"]
+            ),
             dig_cut_hold_token_until_skill_exit=lambda: bool(
-                state["dig_cut_hold_token_until_skill_exit"]
+                state_view["dig_cut_hold_token_until_skill_exit"]
             ),
             coverage_terminal_stop_requested=lambda: bool(
-                state["coverage_terminal_stop_requested"]
+                state_view["coverage_terminal_stop_requested"]
             ),
             return_target_planner_enabled=lambda: bool(
-                state["return_target_planner_enabled"]
+                state_view["return_target_planner_enabled"]
             ),
             return_target_hold_token_until_skill_exit=lambda: bool(
-                state["return_target_hold_token_until_skill_exit"]
-            ),
-            get_dig_cut_planned_cycle_id=lambda: int(
-                state["dig_cut_planned_cycle_id"]
-            ),
-            set_dig_cut_planned_cycle_id=(
-                lambda value: set_value("dig_cut_planned_cycle_id", int(value))
-            ),
-            get_dig_cut_tokens=lambda: state["dig_cut_tokens"],
-            set_dig_cut_tokens=lambda value: set_value("dig_cut_tokens", value),
-            get_dig_depth_profile_tokens=lambda: state["dig_depth_profile_tokens"],
-            set_dig_depth_profile_tokens=(
-                lambda value: set_value("dig_depth_profile_tokens", value)
-            ),
-            set_dig_cut_token_source=(
-                lambda value: set_value("dig_cut_token_source", str(value))
-            ),
-            set_dig_cut_fallback_reason=(
-                lambda value: set_value("dig_cut_fallback_reason", str(value))
-            ),
-            set_dig_cut_token_in_prior_p10_p90=(
-                lambda value: set_value("dig_cut_token_in_prior_p10_p90", bool(value))
+                state_view["return_target_hold_token_until_skill_exit"]
             ),
             build_dig_cut_tokens_for_obs=build_dig_cut,
             build_dig_depth_profile_tokens_for_obs=build_depth,
-            get_return_target_planned_cycle_id=lambda: int(
-                state["return_target_planned_cycle_id"]
-            ),
-            set_return_target_planned_cycle_id=(
-                lambda value: set_value("return_target_planned_cycle_id", int(value))
-            ),
-            get_return_target_tokens=lambda: state["return_target_tokens"],
-            set_return_target_tokens=lambda value: set_value(
-                "return_target_tokens",
-                value,
-            ),
-            get_return_relocate_tokens=lambda: state["return_relocate_tokens"],
-            set_return_relocate_tokens=lambda value: set_value(
-                "return_relocate_tokens",
-                value,
-            ),
-            get_return_start_envelope_tokens=(
-                lambda: state["return_start_envelope_tokens"]
-            ),
-            set_return_start_envelope_tokens=lambda value: set_value(
-                "return_start_envelope_tokens",
-                value,
-            ),
-            set_return_target_token_source=(
-                lambda value: set_value("return_target_token_source", str(value))
-            ),
-            set_return_start_envelope_token_source=(
-                lambda value: set_value(
-                    "return_start_envelope_token_source",
-                    str(value),
-                )
-            ),
-            set_return_target_fallback_reason=(
-                lambda value: set_value("return_target_fallback_reason", str(value))
-            ),
             build_next_dig_cut_plan_for_return=build_return_plan,
             build_return_start_envelope_tokens_for_obs=build_start_envelope,
             plan_return_relocate_tokens=plan_relocate,
-            set_pending_dig_cut_cycle_id=(
-                lambda value: set_value("pending_dig_cut_cycle_id", int(value))
-            ),
-            set_pending_dig_cut_corridor_id=(
-                lambda value: set_value("pending_dig_cut_corridor_id", int(value))
-            ),
-            set_pending_dig_cut_raw_fields=(
-                lambda value: set_value("pending_dig_cut_raw_fields", value)
-            ),
-            set_pending_dig_cut_tokens=(
-                lambda value: set_value("pending_dig_cut_tokens", value)
-            ),
-            set_pending_dig_depth_profile_tokens=(
-                lambda value: set_value("pending_dig_depth_profile_tokens", value)
-            ),
-            set_pending_dig_state_exemplar_ids=(
-                lambda value: set_value("pending_dig_state_exemplar_ids", value)
-            ),
-            set_pending_dig_state_exemplar_distance=(
-                lambda value: set_value("pending_dig_state_exemplar_distance", value)
-            ),
-            get_coverage_active_state_exemplar_ids=lambda: state[
+            get_coverage_active_state_exemplar_ids=lambda: state_view[
                 "coverage_active_state_exemplar_ids"
             ],
             get_coverage_active_state_exemplar_distance=lambda: float(
-                state["coverage_active_state_exemplar_distance"]
+                state_view["coverage_active_state_exemplar_distance"]
             ),
             get_coverage_active_state_exemplar_profile_token=(
-                lambda: state["coverage_active_state_exemplar_profile_token"]
+                lambda: state_view["coverage_active_state_exemplar_profile_token"]
             ),
             clear_active_state_exemplar=lambda: events.append(
                 "clear_active_state_exemplar"
             ),
         ),
-        state,
+        state_view,
         events,
     )
 
@@ -287,8 +244,7 @@ def test_dig_tokens_skip_non_dig_except_bootstrap_policy_exception() -> None:
     ).dig_cut_tokens_for_obs({"id": "boot"})
 
     np.testing.assert_allclose(result, _token(DIG_CUT_TOKEN_DIM, 11.0))
-    assert bootstrap_events[0] == "build_dig_cut:boot"
-    assert bootstrap_events[1].startswith("dig_cut_tokens:[11.")
+    assert bootstrap_events == ["build_dig_cut:boot", "build_depth:boot"]
 
 
 def test_dig_hold_cycle_hit_skips_rebuild_and_miss_builds_both_tokens() -> None:
@@ -316,13 +272,7 @@ def test_dig_hold_cycle_hit_skips_rebuild_and_miss_builds_both_tokens() -> None:
     token = miss_runtime.dig_depth_profile_tokens_for_obs({"id": "miss"})
 
     np.testing.assert_allclose(token, _token(DIG_DEPTH_PROFILE_TOKEN_DIM, 12.0))
-    assert miss_events == [
-        "build_dig_cut:miss",
-        f"dig_cut_tokens:{_token(DIG_CUT_TOKEN_DIM, 11.0)}",
-        "build_depth:miss",
-        f"dig_depth_profile_tokens:{_token(DIG_DEPTH_PROFILE_TOKEN_DIM, 12.0)}",
-        "dig_cut_planned_cycle_id:3",
-    ]
+    assert miss_events == ["build_dig_cut:miss", "build_depth:miss"]
     assert int(state["dig_cut_planned_cycle_id"]) == 3
 
 
@@ -360,13 +310,14 @@ def test_return_hold_cycle_hit_skips_rebuild_and_returns_copies() -> None:
     relocate = runtime.return_relocate_tokens_for_obs({"id": "held"})
     envelope = runtime.return_start_envelope_tokens_for_obs({"id": "held"})
 
-    assert events == [
-        "plan_relocate:3.0",
-        "return_relocate_tokens:[15. 16. 17.]",
-    ]
+    assert events == ["plan_relocate:3.0"]
     assert target is not state["return_target_tokens"]
     assert relocate is not state["return_relocate_tokens"]
     assert envelope is not state["return_start_envelope_tokens"]
+    np.testing.assert_allclose(
+        state["return_relocate_tokens"],
+        np.asarray([15.0, 16.0, 17.0], dtype=np.float32),
+    )
     target[0] = 99.0
     assert float(state["return_target_tokens"][0]) == 3.0
 
@@ -378,14 +329,20 @@ def test_ensure_return_target_success_writes_tokens_and_pending_plan() -> None:
         {"id": "ret"}
     )
 
-    assert events[:6] == [
+    assert events == [
         "build_return_plan:ret",
-        f"return_target_tokens:{_token(RETURN_TARGET_TOKEN_DIM, 13.0)}",
         "build_start_envelope:ret:1.5:42",
-        f"return_start_envelope_tokens:{_token(RETURN_START_ENVELOPE_TOKEN_DIM, 14.0)}",
-        "return_target_token_source:operator_prior_coverage",
-        "return_target_fallback_reason:",
     ]
+    np.testing.assert_allclose(
+        state["return_target_tokens"],
+        _token(RETURN_TARGET_TOKEN_DIM, 13.0),
+    )
+    np.testing.assert_allclose(
+        state["return_start_envelope_tokens"],
+        _token(RETURN_START_ENVELOPE_TOKEN_DIM, 14.0),
+    )
+    assert state["return_target_token_source"] == "operator_prior_coverage"
+    assert state["return_target_fallback_reason"] == ""
     assert int(state["return_target_planned_cycle_id"]) == 3
     assert int(state["pending_dig_cut_cycle_id"]) == 4
     assert state["pending_dig_cut_raw_fields"] == {"operator_entry_x_m": 1.5}
@@ -440,7 +397,7 @@ def test_ensure_return_target_exception_writes_fallback_and_invalidates_pending(
     assert state["pending_dig_depth_profile_tokens"] is None
     assert state["pending_dig_state_exemplar_ids"] == []
     assert np.isnan(float(state["pending_dig_state_exemplar_distance"]))
-    assert "pending_dig_cut_cycle_id:-1" in events
+    assert events == []
 
 
 def test_clear_dig_cut_plan_and_invalidate_pending_plan_reset_exact_fields() -> None:
@@ -476,6 +433,11 @@ def test_token_runtime_boundary_uses_typed_ports_without_planner_self() -> None:
     port_fields = {field.name for field in fields(PrimitiveTokenRuntimePorts)}
     coordinator_fields = {field.name for field in fields(PrimitiveTokenRuntimeCoordinator)}
 
+    assert "state" in port_fields
+    assert "get_dig_cut_tokens" not in port_fields
+    assert "set_dig_cut_tokens" not in port_fields
+    assert "set_return_target_tokens" not in port_fields
+    assert "set_pending_dig_cut_cycle_id" not in port_fields
     assert "planner" not in port_fields
     assert "self" not in port_fields
     assert coordinator_fields == {"ports"}

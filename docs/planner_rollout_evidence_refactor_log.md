@@ -6283,3 +6283,75 @@ Each completed refactor round should append:
   composition, or remaining backend facts/action seams. Do not promote parked
   `cell_entry`, residual `pre_dig_align`, removed 5P runtime, or unsupported
   BT/VLM/LLM backends by momentum.
+
+### 2026-06-23 Phase 9.61 Replace Token Runtime State Callback Ports With State Owner
+
+- Scope: narrowed `PrimitiveTokenRuntimePorts` in
+  `testbed/planner/primitive_token_runtime.py` so token runtime sequencing
+  consumes the focused `PrimitiveTokenRuntimeState` owner directly instead of
+  receiving many policy-built getter/setter callbacks for the same token
+  storage fields.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 124]`, HEAD
+  before this round `682f600a087ef9a01a3b6f25a409db050fa20973`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- `PrimitiveTokenRuntimePorts` now carries
+  `state: PrimitiveTokenRuntimeState` for focused token runtime storage.
+- `PrimitiveTokenRuntimeCoordinator` now reads and writes dig-cut,
+  dig-depth-profile, return-target, return-relocate, return-start-envelope,
+  and pending next-dig token fields directly through `ports.state`.
+- `PrimitivePlannerACTPolicy._primitive_token_runtime_ports()` now passes
+  `self._primitive_token_runtime_state()` and no longer assembles token-state
+  getter/setter callback fields for that runtime boundary.
+- Existing builder/config/coverage exemplar callbacks remain explicit external
+  ports: current skill/config gates, token-building functions, return-relocate
+  planning, coverage terminal-stop status, and coverage exemplar facts.
+- Token runtime tests now use a real `PrimitiveTokenRuntimeState` owner in
+  helper ports and assert old token-state getter/setter port names are absent.
+- Preserved behavior: token dimensions, schema keys, source/fallback strings,
+  branch order, reset timing, backend fail-fast behavior, `cell_entry`,
+  `pre_dig_align`, and removed 5P runtime status are unchanged.
+- Explicit non-goals: no token planning algorithm change, no token schema
+  change, no public report schema change, no observation assembly order change,
+  no coverage/return/cycle/scripted-bootstrap owner change, no parked
+  `cell_entry` or `pre_dig_align` promotion, no backend support change, no
+  generic blackboard.
+- TDD red result from executor callback: after focused tests were added,
+  `python -m pytest -q tests/test_primitive_token_runtime.py tests/test_primitive_token_state.py`
+  failed as expected with `TypeError` because
+  `PrimitiveTokenRuntimePorts.__init__()` did not yet accept `state`, and
+  `AttributeError` because `PrimitiveTokenRuntimePorts` did not yet expose a
+  `state` attribute. The red run reported `10 failed, 10 passed`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_token_runtime.py tests/test_primitive_token_state.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py tests/test_primitive_debug_report.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_return_token_planning.py tests/test_primitive_dig_token_planning.py`
+  returned `30 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_cut_tokens or dig_depth_profile or return_to_dig or start_envelope or coverage_decision_trace or semantic_boundary_events_drive_skill_sequence"`
+  returned `8 passed, 111 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_token_runtime.py tests/test_primitive_token_state.py`
+  returned `20 passed`;
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py tests/test_primitive_debug_report.py`
+  returned `17 passed`;
+  `python -m pytest -q tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_return_token_planning.py tests/test_primitive_dig_token_planning.py`
+  returned `30 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_cut_tokens or dig_depth_profile or return_to_dig or start_envelope or coverage_decision_trace or semantic_boundary_events_drive_skill_sequence"`
+  returned `8 passed, 111 deselected`; compileall for touched modules passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Post-documentation checks by the audit thread: both planner guard commands
+  and `git diff --check` passed.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It replaced runtime port coupling for the live token state
+  owner and was not a tiny compatibility dict/facade move. No anemic service,
+  pass-through facade, or generic blackboard was created.
+- Audit note: this is implementation round 1 after the latest three-iteration
+  reflection. It follows the reflection by targeting live runtime/port coupling
+  instead of continuing report-field status extraction.

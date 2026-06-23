@@ -71,6 +71,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_cell_entry_state.py` | 81 | parked cell-entry compatibility/report runtime state owner, reset defaults, and debug-field projection |
 | `testbed/planner/primitive_pre_dig_align_state.py` | 46 | parked pre-dig-align compatibility/report runtime state owner and reset defaults |
 | `testbed/planner/primitive_token_state.py` | 190 | mutable dig/return token runtime state owner, reset defaults, live token-status projection, and token report metadata projection |
+| `testbed/planner/primitive_token_runtime.py` | 254 | dig/return token runtime sequencing over the focused token state owner plus explicit external config/algorithm ports |
 | `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
 | `testbed/planner/primitive_cycle_state.py` | 123 | mutable live 4P cycle/progress runtime state owner, reset defaults, and live report/finalization projection |
 | `testbed/planner/primitive_scripted_bootstrap.py` | 144 | scripted bootstrap runtime state, readiness checks, timeout, PD action service, and live report/status projection |
@@ -1193,6 +1194,19 @@ contract text/version, token planning algorithms/coordinators,
 dig-depth-profile planning, return token planning, coverage algorithms,
 backend facts/fail-fast, reset timing, policy observation provider order,
 `cell_entry`, `pre_dig_align`, and removed 5P runtime status remain unchanged.
+
+Current status note after Phase 9.61: live token runtime sequencing no longer
+uses policy-built getter/setter callbacks for token state storage.
+`PrimitiveTokenRuntimePorts` in `testbed/planner/primitive_token_runtime.py`
+now carries the focused `PrimitiveTokenRuntimeState` owner directly, and
+`PrimitiveTokenRuntimeCoordinator` reads/writes dig-cut, dig-depth-profile,
+return-target, return-relocate, return-start-envelope, and pending next-dig
+token fields through that owner. `PrimitivePlannerACTPolicy` still assembles
+explicit external ports for current skill, config gates, token-builder
+algorithms, return-relocate planning, coverage terminal-stop status, and
+coverage exemplar facts. Token dimensions, schema keys, source/fallback
+strings, branch order, reset timing, backend fail-fast behavior, `cell_entry`,
+`pre_dig_align`, and removed 5P runtime status remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

@@ -137,12 +137,18 @@ def test_token_runtime_ports_and_clear_facade_use_state_owner() -> None:
     )
     ports = policy._primitive_token_runtime_ports()
 
-    ports.set_dig_cut_planned_cycle_id(12)
-    ports.set_dig_cut_tokens(np.full(DIG_CUT_TOKEN_DIM, 5.0, dtype=np.float32))
-    ports.set_pending_dig_cut_cycle_id(13)
+    port_names = {field.name for field in ports.__dataclass_fields__.values()}
+    assert ports.state is state
+    assert "get_dig_cut_tokens" not in port_names
+    assert "set_dig_cut_tokens" not in port_names
+    assert "set_pending_dig_cut_cycle_id" not in port_names
+
+    ports.state.dig_cut_planned_cycle_id = 12
+    ports.state.dig_cut_tokens = np.full(DIG_CUT_TOKEN_DIM, 5.0, dtype=np.float32)
+    ports.state.pending_dig_cut_cycle_id = 13
 
     assert state.dig_cut_planned_cycle_id == 12
-    assert ports.get_dig_cut_tokens() is state.dig_cut_tokens
+    assert ports.state.dig_cut_tokens is state.dig_cut_tokens
     assert state.pending_dig_cut_cycle_id == 13
 
     policy._clear_dig_cut_plan()
