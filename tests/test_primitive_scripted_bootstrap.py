@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from types import MethodType
+from types import MethodType, SimpleNamespace
 
 import numpy as np
 import pytest
 
 from testbed.planner.primitive_scripted_bootstrap import (
+    PrimitiveScriptedBootstrapReportStatus,
     PrimitiveScriptedBootstrapRuntimeConfig,
     PrimitiveScriptedBootstrapRuntimeService,
     PrimitiveScriptedBootstrapRuntimeState,
@@ -250,3 +251,101 @@ def test_policy_debug_scripted_bootstrap_fields_read_state_owner() -> None:
         "scripted_bootstrap_hold_count": 2,
         "scripted_bootstrap_timeout_count": 1,
     }
+
+
+def test_scripted_bootstrap_runtime_state_projects_fresh_report_status() -> None:
+    state = PrimitiveScriptedBootstrapRuntimeState.fresh()
+
+    status = state.to_report_status()
+
+    assert status == PrimitiveScriptedBootstrapReportStatus(
+        step_count=0,
+        hold_count=0,
+        timeout_count=0,
+    )
+    assert status.debug_fields() == {
+        "scripted_bootstrap_step_count": 0,
+        "scripted_bootstrap_hold_count": 0,
+        "scripted_bootstrap_timeout_count": 0,
+    }
+
+
+def test_scripted_bootstrap_runtime_state_projects_populated_report_status() -> None:
+    state = PrimitiveScriptedBootstrapRuntimeState.fresh()
+    state.step_count = 7
+    state.hold_count = 2
+    state.timeout_count = 1
+
+    status = state.to_report_status()
+
+    assert status == PrimitiveScriptedBootstrapReportStatus(
+        step_count=7,
+        hold_count=2,
+        timeout_count=1,
+    )
+    assert status.debug_fields() == {
+        "scripted_bootstrap_step_count": 7,
+        "scripted_bootstrap_hold_count": 2,
+        "scripted_bootstrap_timeout_count": 1,
+    }
+
+
+def test_policy_scripted_bootstrap_debug_facade_delegates_to_report_status() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    state = policy._primitive_scripted_bootstrap_runtime_state()
+    state.step_count = 7
+    state.hold_count = 2
+    state.timeout_count = 1
+
+    assert (
+        policy._debug_report_scripted_bootstrap_fields()
+        == state.to_report_status().debug_fields()
+    )
+
+
+def test_policy_rollout_summary_inputs_use_scripted_bootstrap_report_status() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    status = PrimitiveScriptedBootstrapReportStatus(
+        step_count=7,
+        hold_count=2,
+        timeout_count=9,
+    )
+    policy._scripted_bootstrap_report_status = MethodType(
+        lambda self: status,
+        policy,
+    )
+    policy._return_report_status = MethodType(
+        lambda self: SimpleNamespace(
+            return_to_dig_entry_error_m=0.0,
+            return_to_dig_entry_close=True,
+            return_next_dig_event_seen=False,
+            return_to_dig_start_envelope_gate_enabled=False,
+            return_to_dig_start_envelope_direct_handoff_enabled=False,
+            return_to_dig_start_envelope_ready=True,
+            return_to_dig_start_envelope_plane_depth_mode="range",
+            return_to_dig_start_envelope_local_depth_tolerance_m=0.0,
+            return_to_dig_start_envelope_error=0.0,
+        ),
+        policy,
+    )
+    policy.dump_done_use_boundary_event = False
+    policy.cell_entry_enabled = False
+    policy.return_to_dig_max_entry_error_m = 0.5
+    policy.dig_cut_planner_mode = "operator_prior"
+    policy.dig_cut_prior_id = "default"
+    policy.dig_failed_replan_next_skill = "dig"
+    policy.coverage_multi_pass_enabled = False
+    policy.coverage_use_env_removed_depth = False
+    policy.coverage_candidate_layout = "corridor_grid"
+    policy.coverage_first_dig_strategy = "best_score"
+    policy.coverage_first_dig_preferred_corridor_id = None
+    policy.coverage_first_dig_max_entry_distance_m = None
+    policy.coverage_first_dig_qpos_delta_weight = 1.0
+    policy.pre_dig_align_enabled = False
+    policy.pre_dig_align_first_dig_only = True
+    policy.pre_dig_align_replan_after_failed_dig = False
+    policy.pre_dig_align_surface_guard_enabled = False
+
+    inputs = policy._rollout_summary_inputs()
+
+    assert inputs.scripted_bootstrap_timeout_count == 9

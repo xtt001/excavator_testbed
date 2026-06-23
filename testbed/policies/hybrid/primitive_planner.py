@@ -179,6 +179,7 @@ from testbed.planner.primitive_return_state import (
     PrimitiveReturnRuntimeState,
 )
 from testbed.planner.primitive_scripted_bootstrap import (
+    PrimitiveScriptedBootstrapReportStatus,
     PrimitiveScriptedBootstrapRuntimeConfig,
     PrimitiveScriptedBootstrapRuntimeService,
     PrimitiveScriptedBootstrapRuntimeState,
@@ -752,6 +753,11 @@ class PrimitivePlannerACTPolicy(Policy):
             state = PrimitiveScriptedBootstrapRuntimeState.fresh()
             self.__dict__["_scripted_bootstrap_state"] = state
         return state
+
+    def _scripted_bootstrap_report_status(
+        self,
+    ) -> PrimitiveScriptedBootstrapReportStatus:
+        return self._primitive_scripted_bootstrap_runtime_state().to_report_status()
 
     @property
     def _scripted_bootstrap_step_count(self) -> int:
@@ -2136,13 +2142,7 @@ class PrimitivePlannerACTPolicy(Policy):
         return self._primitive_cell_entry_compatibility_runtime_state().debug_fields()
 
     def _debug_report_scripted_bootstrap_fields(self) -> dict[str, Any]:
-        return {
-            "scripted_bootstrap_step_count": int(self._scripted_bootstrap_step_count),
-            "scripted_bootstrap_hold_count": int(self._scripted_bootstrap_hold_count),
-            "scripted_bootstrap_timeout_count": int(
-                self._scripted_bootstrap_timeout_count
-            ),
-        }
+        return self._scripted_bootstrap_report_status().debug_fields()
 
     def _debug_report_dig_progress_fields(self) -> dict[str, Any]:
         return self._cycle_report_status().dig_progress_debug_fields()
@@ -2228,6 +2228,7 @@ class PrimitivePlannerACTPolicy(Policy):
     def _rollout_summary_inputs(self) -> PrimitiveRolloutSummaryInputs:
         cycle_status = self._cycle_report_status()
         return_status = self._return_report_status()
+        scripted_bootstrap_status = self._scripted_bootstrap_report_status()
         return PrimitiveRolloutSummaryInputs(
             transition_source=TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
             transition_policy_mode=TRANSITION_POLICY_MODE_PRIMITIVE,
@@ -2305,8 +2306,8 @@ class PrimitivePlannerACTPolicy(Policy):
                 self._coverage_terminal_stop_requested
             ),
             coverage_terminal_stop_reason=str(self._coverage_terminal_stop_reason),
-            scripted_bootstrap_timeout_count=int(
-                self._scripted_bootstrap_timeout_count
+            scripted_bootstrap_timeout_count=(
+                scripted_bootstrap_status.timeout_count
             ),
             pre_dig_align_enabled=bool(self.pre_dig_align_enabled),
             pre_dig_align_first_dig_only=bool(self.pre_dig_align_first_dig_only),

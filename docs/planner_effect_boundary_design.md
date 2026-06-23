@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.56: the default 4P mainline branch chain no longer
+Current status after Phase 9.57: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -85,7 +85,9 @@ target-reached hold gating, timeout completion, and PD bootstrap action
 generation are no longer inline policy logic. The policy keeps old scripted
 bootstrap private counter names as property-backed compatibility facades over
 the state owner, and action dispatch still reaches the scripted action through
-the existing compatibility facade. Execution lifecycle metadata is now owned by
+the existing compatibility facade. Live scripted-bootstrap report/status
+projection now lives with that owner through
+`PrimitiveScriptedBootstrapReportStatus`. Execution lifecycle metadata is now owned by
 `PrimitiveExecutionRuntimeState`: active skill, switch reason, previous action,
 and latest compact debug state are no longer independent policy attributes, and
 the policy keeps their old private names as property-backed compatibility
@@ -905,6 +907,18 @@ clipped float32 PD action generation with optional action signs. Non-scripted
 bootstrap end modes, residual `pre_dig_align` action/state, `cell_entry`
 compatibility/report state, token/return/cycle/coverage state owners,
 BT/VLM/LLM backend support, and removed 5P runtime remain unchanged.
+
+Phase 9.57 extends `PrimitiveScriptedBootstrapRuntimeState` in
+`testbed/planner/primitive_scripted_bootstrap.py` with `to_report_status()` and
+adds `PrimitiveScriptedBootstrapReportStatus.debug_fields()`. Live
+scripted-bootstrap report/status projection now lives with the scripted
+bootstrap runtime owner, while
+`PrimitivePlannerACTPolicy._debug_report_scripted_bootstrap_fields()` remains a
+thin facade and `_rollout_summary_inputs()` reuses the same status projection
+for `scripted_bootstrap_timeout_count`. This phase does not change scripted
+bootstrap readiness, timeout, target-reached, PD action algorithms, reset
+timing, public debug key names, rollout summary key names, backend fail-fast
+behavior, or removed 5P runtime status.
 
 Phase 9.48 introduces `PrimitiveExecutionRuntimeState` in
 `testbed/planner/primitive_execution_state.py`. The state owner centralizes

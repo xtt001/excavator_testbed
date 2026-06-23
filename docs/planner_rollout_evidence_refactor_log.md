@@ -5917,3 +5917,101 @@ Each completed refactor round should append:
   reflection. It follows the corrected direction by targeting a live
   cycle/progress report/facts boundary instead of another parked compatibility
   micro-slice.
+
+### 2026-06-23 Phase 9.57 Move Scripted Bootstrap Report Status Into Runtime State
+
+- Scope: extended `PrimitiveScriptedBootstrapRuntimeState` in
+  `testbed/planner/primitive_scripted_bootstrap.py` so the live scripted
+  bootstrap runtime owner also owns scripted-bootstrap report/status projection
+  for debug and rollout summary consumers.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 120]`, HEAD
+  before this round `a48bba47a99caf6db5175a8559bf390ef43f4e7a`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- Added frozen `PrimitiveScriptedBootstrapReportStatus` carrying scripted
+  bootstrap step, hold, and timeout report counters.
+- Added `PrimitiveScriptedBootstrapReportStatus.debug_fields()` for the
+  existing public scripted-bootstrap debug mapping.
+- Added `PrimitiveScriptedBootstrapRuntimeState.to_report_status()`, projecting
+  live owner counters with int coercion.
+- `PrimitivePlannerACTPolicy._debug_report_scripted_bootstrap_fields()` now
+  delegates to the report status, and `_rollout_summary_inputs()` reuses the
+  same projection for `scripted_bootstrap_timeout_count`.
+- Preserved behavior: scripted bootstrap readiness, timeout, target-reached, PD
+  action algorithms, reset timing, public debug key names, rollout summary key
+  names, backend fail-fast behavior, token/coverage/return/cycle owners,
+  `cell_entry`, `pre_dig_align`, and removed 5P runtime status are unchanged.
+- Explicit non-goals: no scripted bootstrap readiness/timeout/action algorithm
+  move, no reset lifecycle timing change, no public debug/summary schema
+  change, no token/coverage/return/cycle owner change, no `cell_entry` or
+  `pre_dig_align` change, no backend selection change, no generic blackboard or
+  pass-through report service.
+- TDD red result from executor callback: after focused tests were added, the
+  first run of `python -m pytest -q tests/test_primitive_scripted_bootstrap.py`
+  failed as expected with `ImportError` because
+  `PrimitiveScriptedBootstrapReportStatus` did not yet exist in
+  `testbed.planner.primitive_scripted_bootstrap`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_scripted_bootstrap.py` returned
+  `15 passed`;
+  `python -m pytest -q tests/test_primitive_scripted_bootstrap.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py`
+  returned `21 passed`;
+  `python -m pytest -q tests/test_primitive_reset_lifecycle.py tests/test_primitive_action_dispatch.py tests/test_primitive_runtime_kernel.py`
+  returned `24 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "scripted_bootstrap or semantic_boundary_events_drive_skill_sequence or first_dig_policy_for_cycle_zero or return_to_dig"`
+  returned `5 passed, 114 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_scripted_bootstrap.py tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py`
+  returned `21 passed`;
+  `python -m pytest -q tests/test_primitive_reset_lifecycle.py tests/test_primitive_action_dispatch.py tests/test_primitive_runtime_kernel.py`
+  returned `24 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "scripted_bootstrap or semantic_boundary_events_drive_skill_sequence or first_dig_policy_for_cycle_zero or return_to_dig"`
+  returned `5 passed, 114 deselected`; compileall for touched modules passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Post-documentation checks by the audit thread: both planner guard commands
+  and `git diff --check` passed.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It moved a live scripted-bootstrap report/status
+  projection into the existing scripted bootstrap runtime owner and was not a
+  tiny compatibility dict or pass-through facade. No anemic service or generic
+  blackboard was created.
+- Audit note: this is implementation round 3 after the latest three-iteration
+  reflection. It completes the planned live report/status projection sequence
+  for return, cycle/progress, and scripted bootstrap owners.
+
+#### Three-iteration reflection after Phases 9.55-9.57
+
+- Progress toward target: the three-round sequence moved toward the interface
+  standard. Return, cycle/progress, and scripted-bootstrap report/status
+  projections now live with their focused runtime owners instead of being
+  hand-assembled directly in `PrimitivePlannerACTPolicy`. The policy remains
+  the compatibility shell, but direct live report/finalization reads are
+  narrower and more explicit.
+- Maximum remaining gap: `PrimitivePlannerACTPolicy` still owns broad report
+  input assembly and port-builder glue, especially `_rollout_summary_inputs()`,
+  `_planner_trace_inputs()`, coverage debug snapshot preparation, pending/dig-
+  cut report fields, and residual `pre_dig_align` report projection. The
+  implementation is still best described as default legacy FSM backendified
+  with focused services / shared backend decision input/facts/factory; BT/VLM/
+  LLM backends remain unsupported fail-fast.
+- Direction correction: stop looking for one-field status moves. The next
+  implementation slice must consolidate a broader stable live report/facts
+  boundary already present in the codebase, or else pause for an audit-only
+  inventory. Parked `pre_dig_align` and `cell_entry` tails must not be promoted
+  into the target architecture by momentum.
+- Next core bounded slice candidate: audit the remaining coverage/report/trace
+  glue first. If the real code shows one cohesive owner, extend the existing
+  `CoverageReportService` or coverage runtime owner to project a bounded
+  coverage report/trace status used by debug/summary/trace inputs. If the code
+  does not show a cohesive boundary, dispatch an audit-only inventory rather
+  than creating a generic report blackboard.
+- Over-protection / anemic-facade risk: continuing with tiny dict extraction
+  would violate the hard constraint. Protection remains a constraint, not the
+  objective; every following prompt must require the most effective bounded
+  move and must stop if the candidate becomes a pass-through facade, anemic
+  service, or generic blackboard.

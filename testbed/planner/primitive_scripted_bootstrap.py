@@ -8,6 +8,24 @@ from typing import Any
 import numpy as np
 
 
+@dataclass(frozen=True)
+class PrimitiveScriptedBootstrapReportStatus:
+    """Projected scripted-bootstrap runtime counters for reports."""
+
+    step_count: int
+    hold_count: int
+    timeout_count: int
+
+    def debug_fields(self) -> dict[str, int]:
+        """Return the public scripted-bootstrap debug field projection."""
+
+        return {
+            "scripted_bootstrap_step_count": int(self.step_count),
+            "scripted_bootstrap_hold_count": int(self.hold_count),
+            "scripted_bootstrap_timeout_count": int(self.timeout_count),
+        }
+
+
 @dataclass
 class PrimitiveScriptedBootstrapRuntimeState:
     """Mutable counters owned by the scripted bootstrap runtime path."""
@@ -19,6 +37,15 @@ class PrimitiveScriptedBootstrapRuntimeState:
     @classmethod
     def fresh(cls) -> "PrimitiveScriptedBootstrapRuntimeState":
         return cls()
+
+    def to_report_status(self) -> PrimitiveScriptedBootstrapReportStatus:
+        """Project live scripted-bootstrap counters for reporting."""
+
+        return PrimitiveScriptedBootstrapReportStatus(
+            step_count=int(self.step_count),
+            hold_count=int(self.hold_count),
+            timeout_count=int(self.timeout_count),
+        )
 
 
 @dataclass(frozen=True)
@@ -110,6 +137,7 @@ class PrimitiveScriptedBootstrapRuntimeService:
 
 
 __all__ = [
+    "PrimitiveScriptedBootstrapReportStatus",
     "PrimitiveScriptedBootstrapRuntimeConfig",
     "PrimitiveScriptedBootstrapRuntimeService",
     "PrimitiveScriptedBootstrapRuntimeState",

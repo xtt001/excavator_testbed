@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.56 implementation. It is intentionally
+compares them with the current Phase 9.57 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -46,7 +46,8 @@ Current maturity:
   baseline state, and live cycle/progress report/finalization projection**
 - scripted bootstrap runtime state/service owner: **achieved for
   scripted-qpos bootstrap counters, target-reached/timeout checks, and PD
-  bootstrap action generation**
+  bootstrap action generation, plus live scripted-bootstrap report/status
+  projection**
 - execution lifecycle runtime state owner: **achieved for active skill, switch
   reason, previous action, and latest compact debug state**
 - observation injection runtime state owner: **achieved for per-observation
@@ -489,7 +490,9 @@ Current boundary:
   and dump-start deposited-mass baseline. It also owns live cycle/progress
   report/finalization projection through `PrimitiveCycleReportStatus`.
 - `PrimitiveScriptedBootstrapRuntimeState` owns scripted bootstrap counters:
-  step count, target-reached hold count, and timeout count.
+  step count, target-reached hold count, and timeout count. It also owns live
+  scripted-bootstrap report/status projection through
+  `PrimitiveScriptedBootstrapReportStatus`.
 - `PrimitiveScriptedBootstrapRuntimeService` owns scripted-qpos bootstrap
   runtime rules: enabled detection, target-reached hold gating, timeout
   completion, and PD action generation.

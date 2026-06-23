@@ -73,7 +73,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_token_state.py` | 135 | mutable dig/return token runtime state owner, reset defaults, and live token-status projection |
 | `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
 | `testbed/planner/primitive_cycle_state.py` | 123 | mutable live 4P cycle/progress runtime state owner, reset defaults, and live report/finalization projection |
-| `testbed/planner/primitive_scripted_bootstrap.py` | 116 | scripted bootstrap runtime state, readiness checks, timeout, and PD action service |
+| `testbed/planner/primitive_scripted_bootstrap.py` | 144 | scripted bootstrap runtime state, readiness checks, timeout, PD action service, and live report/status projection |
 | `testbed/planner/primitive_coverage_reports.py` | 282 | coverage corridor debug, coverage decision-event, and coverage debug-field payload builders |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
@@ -1008,7 +1008,7 @@ previous action, token state, return state, coverage state, pre-dig-align
 state, cell-entry compatibility state, backend facts, dig-progress update
 algorithms, or public report schema assembly.
 
-Current status note after Phase 9.47: scripted bootstrap runtime state and
+Current status note after Phase 9.57: scripted bootstrap runtime state and
 runtime rules are now owned by `PrimitiveScriptedBootstrapRuntimeState` and
 `PrimitiveScriptedBootstrapRuntimeService` in
 `testbed/planner/primitive_scripted_bootstrap.py`. Reset creates a fresh
@@ -1018,9 +1018,13 @@ field names; `_scripted_bootstrap_step_count`,
 property-backed compatibility facades over that owner. The service owns
 scripted-qpos enabled detection, target-reached hold gating, max-step timeout
 completion, missing-target runtime error text, and clipped float32 PD action
-generation. Non-scripted bootstrap modes, residual `pre_dig_align`, cell-entry
+generation. `PrimitiveScriptedBootstrapRuntimeState.to_report_status()` and
+`PrimitiveScriptedBootstrapReportStatus.debug_fields()` now own live
+scripted-bootstrap report/status projection for debug and rollout-summary
+inputs. Non-scripted bootstrap modes, residual `pre_dig_align`, cell-entry
 compatibility/report state, token/return/cycle/coverage state owners,
-BT/VLM/LLM support, and removed 5P runtime remain unchanged.
+BT/VLM/LLM support, scripted bootstrap algorithms, reset timing, public report
+schemas, and removed 5P runtime remain unchanged.
 
 Current status note after Phase 9.48: execution lifecycle metadata is now owned
 by `PrimitiveExecutionRuntimeState` in
@@ -1132,6 +1136,19 @@ transition counts, dump-hold counts, cycle index, and dig replan counters.
 Public dig-progress debug keys, rollout summary values, tick finalization input
 values, dig-progress update algorithms, skill lifecycle behavior, reset
 behavior, backend fail-fast, and removed 5P runtime status remain unchanged.
+
+Current status note after Phase 9.57: live scripted-bootstrap report/status
+projection is now owned by
+`PrimitiveScriptedBootstrapRuntimeState.to_report_status()` and
+`PrimitiveScriptedBootstrapReportStatus.debug_fields()` in
+`testbed/planner/primitive_scripted_bootstrap.py`.
+`PrimitivePlannerACTPolicy._debug_report_scripted_bootstrap_fields()` remains a
+thin compatibility facade, while `_rollout_summary_inputs()` reuses the same
+status projection for `scripted_bootstrap_timeout_count`. Scripted bootstrap
+readiness, timeout, target-reached, PD action algorithms, reset timing, public
+debug key names, rollout summary key names, backend fail-fast, token/coverage/
+return/cycle owners, `cell_entry`, `pre_dig_align`, and removed 5P runtime
+status remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective
