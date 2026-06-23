@@ -1610,6 +1610,24 @@ responsibility without changing coverage scoring/selection algorithms,
 state-exemplar scoring, raw-field priority, token schemas, report schemas,
 parked `pre_dig_align`, parked `cell_entry`, or backend support.
 
+Current status note after Phase 9.83 audit-only inventory:
+`PrimitivePlannerACTPolicy` remains 4637 lines after the coverage fact-source
+move. The remaining observation/raw-fact helpers are cross-chain facts rather
+than one isolated residue: token planning consumes bucket pose, deposited mass,
+env-state, qpos, and qvel callbacks; coverage effect/report paths still consume
+mass/deposit/env snapshots; requested effects and dig recovery still consume
+one observation metric each; parked `pre_dig_align` and `cell_entry` also have
+compatibility-only observation helpers. `PrimitiveObservationFacts` already owns
+stable read-only projections for mass, deposit, target geometry, qpos/qvel,
+env-state, and bucket dig-area/tip pose, so the next implementation should not
+create a generic observation blackboard or move isolated helper wrappers.
+The narrowest live bounded slice is the token planning observation fact-source
+boundary: move active dig and return token planning from separate policy-built
+observation callbacks to a shared typed `PrimitiveObservationFacts` input while
+leaving policy observation token injection order, coverage raw-field facts,
+return handoff readiness, requested effects, recovery metrics, parked
+`pre_dig_align`, and parked `cell_entry` out of scope.
+
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective
 bounded move toward the interface standard, not merely the safest smallest

@@ -3,9 +3,9 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.82 implementation. It is intentionally
-not a snapshot-only inventory. Use it to decide whether future refactor slices
-move the code toward the architecture in
+compares them with the current Phase 9.83 audit state. It is intentionally not
+a snapshot-only inventory. Use it to decide whether future refactor slices move
+the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
 
 The current implementation is best described as **default legacy FSM
@@ -51,6 +51,12 @@ Current maturity:
   projection/writeback, exemplar distance/id projection, and remaining-depth
   facts through `CoveragePlanningFactService`; scoring/selection algorithms
   remain in the existing coverage services**
+- token planning observation fact-source boundary: **not yet achieved as a
+  shared typed fact-source boundary; active dig and return token planning still
+  receive explicit bucket pose, deposited-mass, env-state, qpos, and qvel
+  observation callbacks from the policy shell even though
+  `PrimitiveObservationFacts` already owns the stable read-only projection
+  semantics**
 - coverage selection runtime mutable state owner: **achieved for corridor
   list, candidate scores, active/last-selected ids, and all-depleted checks;
   selection runtime sequencing now consumes `CoverageRuntimeState` directly

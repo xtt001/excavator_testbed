@@ -8137,3 +8137,76 @@ Each completed refactor round should append:
   default legacy FSM backendified with focused services / shared backend
   decision input/facts/factory; BT/VLM/LLM backends remain unsupported
   fail-fast.
+
+### 2026-06-23 Phase 9.83 Audit Observation Fact-Source Boundary
+
+- Scope: audit-only pass after Phase 9.82 moved the coverage planning
+  fact-source boundary. No code or tests were changed by the executor. The audit
+  classified the remaining observation/raw-fact helpers and chose the next
+  implementation boundary from current code and source-of-truth docs.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 146]`, HEAD
+  `00880a00fddacb385fde1c688acb67a1449972f5`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, remote write, code edit,
+  or docs edit was used by the executor.
+- Current size facts: `testbed/policies/hybrid/primitive_planner.py` is 4637
+  lines, `testbed/planner/primitive_capabilities.py` is 1027 lines, and
+  `testbed/planner/primitive_observation.py` is 181 lines. The large policy
+  shell is still large because it hosts public adapter/runtime/reset/backend
+  composition, typed port assembly, compatibility property facades,
+  token/coverage/return planning composition, residual `pre_dig_align`
+  readiness/action material, and parked `cell_entry` planner/auditor/token
+  compatibility algorithms.
+- Existing owner fact: `PrimitiveObservationFacts` in
+  `testbed/planner/primitive_capabilities.py` already owns read-only
+  observation projections for qpos/qvel/env-state/task-metric/reward facts,
+  mass/deposit/min-distance/bucket-depth metric/env fallback, target geometry,
+  and bucket dig-area/tip poses.
+- Remaining live observation/raw-fact helpers are cross-chain, not one
+  standalone residue. Active dig token planning still receives bucket pose,
+  deposited mass, and env-state callbacks; return token planning still receives
+  bucket pose, env-state, qpos, and qvel callbacks; coverage effect/report paths
+  still read mass/deposit/env snapshots; requested effects and dig recovery
+  still use one observation metric each. Moving one helper or one callback would
+  be a micro-slice.
+- Boundaries already owned elsewhere: return handoff readiness wraps
+  observations into `PrimitiveObservationFacts` inside
+  `ReturnHandoffReadinessService`; the FSM capability provider wraps
+  observations into `PrimitiveObservationFacts` for transition facts; coverage
+  planning facts are now owned by `CoveragePlanningFactService`.
+- Parked paths remain parked: `pre_dig_align` observation helpers support
+  residual readiness/action/timeout material, and `cell_entry` observation
+  helpers support compatibility token/report behavior. Neither should be
+  promoted into backend facts, token contracts, behavior-tree nodes, or
+  mainline runtime architecture without new evidence and explicit approval.
+- Unsuitable standalone targets: deleting return/capability wrapper facades,
+  moving only the policy observation assembler, moving parked
+  `pre_dig_align`/`cell_entry` observation helpers, moving the one-field
+  requested-effect deposited-mass callback, or wrapping boundary-detector raw
+  observation adapters. These would risk pass-through cleanup or parked-path
+  promotion.
+- Direction chosen by the refactor thread after audit: dispatch the next
+  implementation slice to the active dig/return token planning observation
+  fact-source boundary. The slice should move token planning ports from
+  separate policy-built observation callbacks to a shared typed
+  `PrimitiveObservationFacts` input, while preserving token schema/order/source
+  strings, fallback/copy semantics, dig-depth-profile env-state behavior,
+  return-token qpos/qvel defaults, policy observation injection order,
+  coverage raw-field facts, return handoff readiness, requested effects,
+  recovery metrics, parked `pre_dig_align`, parked `cell_entry`, backend
+  fail-fast behavior, and removed 5P runtime status.
+- Verification reported by executor callback: `git diff --check` passed; no
+  pytest was run because this was audit-only with no code changes. Final
+  `git status --short --branch` remained
+  `## fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 146]`;
+  final HEAD remained `00880a00fddacb385fde1c688acb67a1449972f5`.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, and this execution
+  record.
+- Hard constraint confirmation: this audit treats protection as a constraint,
+  not the objective. It rejected tiny facade deletion, pass-through wrappers,
+  anemic services, planner-self ports, broad config bags, generic blackboards,
+  and parked-path promotion. Current maturity remains default legacy FSM
+  backendified with focused services / shared backend decision input/facts/
+  factory; BT/VLM/LLM backends remain unsupported fail-fast.
