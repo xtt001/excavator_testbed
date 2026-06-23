@@ -1255,24 +1255,26 @@ policy:
 `mask_dataset: "/observations/image_masks/fpv"`；设置
 `require_mask_dataset: true` 时缺失 mask 会直接报错。这个 mask 只改视觉输入，
 不把 `env_state` 加进 ACT low-dim 输入。
-- 旧低频 sector `goal_tokens` 只作为 diagnostic/legacy 对照。正式 YuLong V2.2
-  主线使用 Cell Entry token，只参数化 `dig`：
+- 旧低频 sector `goal_tokens` 只作为 diagnostic/legacy 对照。历史 YuLong V2.2
+  数据和 checkpoint 仍可保留 `cell_entry_tokens` 低维 schema，但 primitive planner
+  里的 cell-entry runtime 已删除；新 runtime 配置不能再启用 `policy.cell_entry`。
+  若需要保留旧 block 作为报告/schema 兼容占位，必须显式禁用：
 
 ```yaml
 policy:
   class: "primitive_planner_act"
   cell_entry:
-    enabled: true
-  dig_low_dim_keys: ["qpos", "qvel", "cell_entry_tokens"]
+    enabled: false
+  dig_low_dim_keys: ["qpos", "qvel"]
   return_low_dim_keys: ["qpos", "qvel"]
   carry_low_dim_keys: ["qpos", "qvel"]
   dump_low_dim_keys: ["qpos", "qvel"]
 ```
 
-live planner 会把 planned cell / entry envelope 转成 10D `cell_entry_tokens`，
-并且只在调用 `dig` policy 时注入。rollout JSONL 会记录
-`cell_entry_selected_cell_id`、planned entry、audit reason 和
-`cell_entry_token_injected`，用于区分 planner miss、return miss、dig miss 与 dump fail。
+设置 `policy.cell_entry.enabled: true` 会在 primitive-planner config
+normalization 阶段 fail-fast。历史 HDF5 / training / eval 代码仍可读取已有
+`cell_entry_tokens` 数据，但当前 primitive planner 不再注入 token、不再运行
+cell-entry planner/auditor trace，也不会把 cell-entry completion 作为 backend effect。
 - eval 支持 `eval.stream_rollout_logs: true`，会在 rollout 过程中写
   `rollout_XXX.partial.jsonl`，中途停止时也能保留第 2/第 3 cycle 的逐步证据。
 - compare 的主口径固定为：

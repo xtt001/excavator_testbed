@@ -8,7 +8,6 @@ import pytest
 
 from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive_decision import (
-    CompleteCellEntryDigCompatibilityEffect,
     CompleteCoverageDigEffect,
     CompleteCoverageDumpEffect,
     CompleteReturnTransitionEffect,
@@ -56,7 +55,6 @@ def _ports(
         restart_after_failed_dig=lambda reason, obs: events.append(
             f"restart:{reason}:{obs['tag']}"
         ),
-        complete_cell_entry_dig=lambda obs: events.append(f"cell:{obs['tag']}"),
         complete_coverage_dig=lambda obs: events.append(f"coverage_dig:{obs['tag']}"),
         observation_facts=observation_facts
         or (
@@ -86,6 +84,7 @@ def test_requested_effect_ports_use_state_owners_not_storage_callbacks() -> None
     assert {"cycle_state", "return_state"} <= field_names
     assert "observation_facts" in field_names
     assert "deposited_mass" not in field_names
+    assert "complete_cell_entry_dig" not in field_names
     assert not {
         "mark_return_next_dig_event_seen",
         "complete_return_transition",
@@ -135,7 +134,6 @@ def test_requested_effect_applier_applies_mixed_effects_in_order() -> None:
             IncrementDigBadReplanCountEffect(),
             RejectActiveCoverageCorridorEffect(reason="bad_dig_low_payload"),
             RestartAfterFailedDigEffect(reason="bad_dig_low_payload"),
-            CompleteCellEntryDigCompatibilityEffect(),
             CompleteCoverageDigEffect(),
             SetDumpReadyHoldCountEffect(value=4),
             SetDumpStartDepositedMassFromObservationEffect(),
@@ -151,7 +149,6 @@ def test_requested_effect_applier_applies_mixed_effects_in_order() -> None:
         "skill:dig:return_to_dig_next_dig_entry_ready",
         "reject:bad_dig_low_payload:current",
         "restart:bad_dig_low_payload:current",
-        "cell:current",
         "coverage_dig:current",
         "coverage_dump:dump_mass_low:current",
         "return:dump_to_return_mass_low:current",

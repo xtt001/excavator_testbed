@@ -38,7 +38,6 @@ from testbed.planner.primitive_backend_facts import (
 from testbed.planner.primitive_backend_input import PrimitiveBackendDecisionInput
 from testbed.planner.primitive_decision import (
     LEGACY_FSM_DECISION_SOURCE,
-    CompleteCellEntryDigCompatibilityEffect,
     CompleteCoverageDigEffect,
     CompleteReturnTransitionEffect,
     CompleteCoverageDumpEffect,
@@ -648,7 +647,6 @@ def test_legacy_fsm_branch_ports_do_not_expose_mainline_mutation_ports() -> None
         "reject_active_coverage_corridor",
         "restart_after_failed_dig",
         "increment_dig_bad_replan_count",
-        "complete_cell_entry_dig",
         "complete_coverage_dig",
         "complete_coverage_dump",
         "set_return_or_direct_handoff",
@@ -1240,7 +1238,6 @@ def test_legacy_fsm_dig_branch_completes_dig_to_carry_in_order() -> None:
 
     assert result is not None
     assert result.effects == (
-        CompleteCellEntryDigCompatibilityEffect(),
         CompleteCoverageDigEffect(),
         SwitchSkillEffect(
             target_skill_name="carry",
@@ -1308,7 +1305,6 @@ def test_legacy_fsm_dig_branch_consumes_backend_facts_and_syncs_reason() -> None
     ]
     assert result is not None
     assert result.effects == (
-        CompleteCellEntryDigCompatibilityEffect(),
         CompleteCoverageDigEffect(),
         SwitchSkillEffect(
             target_skill_name="carry",
@@ -1435,7 +1431,6 @@ def test_legacy_fsm_dig_branch_requested_dig_to_carry_effects_in_order() -> None
     assert result.skill_after == "carry"
     assert result.switch_reason == "dig_to_carry_boundary_confirmed"
     assert result.effects == (
-        CompleteCellEntryDigCompatibilityEffect(),
         CompleteCoverageDigEffect(),
         SwitchSkillEffect(
             target_skill_name="carry",

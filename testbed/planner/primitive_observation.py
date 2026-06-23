@@ -12,7 +12,6 @@ class PrimitivePolicyObservationAssemblerPorts:
     """Token provider ports used to assemble low-level policy observations."""
 
     goal_tokens: Callable[[], Any | None]
-    cell_entry_tokens: Callable[[dict[str, Any]], Any | None]
     dig_cut_tokens: Callable[[dict[str, Any]], Any | None]
     dig_depth_profile_tokens: Callable[[dict[str, Any]], Any | None]
     return_target_tokens: Callable[[dict[str, Any]], Any | None]
@@ -118,7 +117,6 @@ class PrimitivePolicyObservationAssembler:
     ) -> PrimitivePolicyObservationAssemblyResult:
         ports = self.ports
         goal_tokens = ports.goal_tokens()
-        cell_entry_tokens = ports.cell_entry_tokens(obs)
         dig_cut_tokens = ports.dig_cut_tokens(obs)
         dig_depth_profile_tokens = ports.dig_depth_profile_tokens(obs)
         return_target_tokens = ports.return_target_tokens(obs)
@@ -127,7 +125,6 @@ class PrimitivePolicyObservationAssembler:
 
         if (
             goal_tokens is None
-            and cell_entry_tokens is None
             and dig_cut_tokens is None
             and dig_depth_profile_tokens is None
             and return_target_tokens is None
@@ -141,7 +138,7 @@ class PrimitivePolicyObservationAssembler:
 
         policy_obs = dict(obs)
         state = PrimitiveTokenInjectionState(
-            cell_entry_token_injected=cell_entry_tokens is not None,
+            cell_entry_token_injected=False,
             dig_cut_token_injected=dig_cut_tokens is not None,
             dig_depth_profile_token_injected=dig_depth_profile_tokens is not None,
             return_target_token_injected=return_target_tokens is not None,
@@ -152,8 +149,6 @@ class PrimitivePolicyObservationAssembler:
         )
         if goal_tokens is not None:
             policy_obs["goal_tokens"] = goal_tokens
-        if cell_entry_tokens is not None:
-            policy_obs["cell_entry_tokens"] = cell_entry_tokens
         if dig_cut_tokens is not None:
             policy_obs["dig_cut_tokens"] = dig_cut_tokens
         if dig_depth_profile_tokens is not None:

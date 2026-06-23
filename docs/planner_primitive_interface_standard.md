@@ -131,8 +131,8 @@ Current maturity:
 - observation injection runtime state owner: **achieved for per-observation
   token injected compatibility flags and assembler-result application**
 - cell-entry compatibility runtime state owner: **achieved for parked
-  cell-entry goal/audit/token-cache/trace report storage and public
-  debug/summary/trace report projection**
+  cell-entry goal/audit/token-cache/trace report storage and disabled public
+  debug/summary/trace report projection after primitive-planner runtime removal**
 - pre-dig-align compatibility runtime state owner: **achieved for parked
   pre-dig-align counters, cached target/error arrays, readiness booleans,
   timeout reason, surface-guard report storage, and public debug/summary report
@@ -157,14 +157,15 @@ Do not describe the current code as "fully swappable backend architecture." The
 accurate claim is: the confirmed-live 4P legacy FSM path has been backendified,
 and the shell now delegates most domain work to focused services.
 
-Parked-path policy: `pre_dig_align` runtime execution has been removed after
-the explicit checkpoint/review gate; parked `cell_entry` must stay parked while
-live/mainline boundaries continue to shrink. Disabled `pre_dig_align` public
-debug/summary/report schema compatibility remains temporarily, but enabled
-`pre_dig_align` config must fail fast instead of silently running or being
-ignored. Do not promote either parked path into backend facts, token contracts,
-behavior-tree nodes, VLM packets, or mainline runtime architecture as part of
-ordinary refactor momentum.
+Parked-path policy: `pre_dig_align` and primitive-planner `cell_entry` runtime
+execution have been removed after explicit checkpoint/review gates. Disabled
+public debug/summary/report/schema compatibility remains temporarily for both
+paths, but enabled `pre_dig_align` or `cell_entry` primitive-planner runtime
+config must fail fast instead of silently running or being ignored. Historical
+`cell_entry` data/HDF5/training low-dimensional support remains a compatibility
+contract outside primitive planner runtime. Do not promote either parked path
+into backend facts, token contracts, behavior-tree nodes, VLM packets, or
+mainline runtime architecture as part of ordinary refactor momentum.
 
 ## Layer 1: Public Adapter
 
@@ -615,11 +616,12 @@ Current boundary:
   compatibility facades over that owner.
 - `PrimitiveCellEntryCompatibilityRuntimeState` owns parked cell-entry
   compatibility/report storage: goal, goal cycle id, audit, cached token array,
-  seen cell id, trace list, and public debug/summary/trace report projection
-  through `PrimitiveCellEntryReportStatus` from explicit
+  seen cell id, trace list, and disabled public debug/summary/trace report
+  projection through `PrimitiveCellEntryReportStatus` from explicit
   `PrimitiveCellEntryReportConfig` facts. The policy keeps the old
   `_cell_entry_*` names as property-backed compatibility facades over that
-  owner.
+  owner, but no longer injects `cell_entry_tokens` into policy observations or
+  mutates the trace from the dig-to-carry runtime path.
 - `PrimitivePreDigAlignCompatibilityRuntimeState` owns parked pre-dig-align
   compatibility/report storage: counters, cached target/error arrays,
   readiness booleans, timeout handoff reason, surface depth, and surface-guard
@@ -750,10 +752,11 @@ Current boundary:
 
 Gap:
 
-- `cell_entry` planner/auditor algorithms and token generation remain parked
-  compatibility/report material outside the token runtime state owner; their
-  mutable report storage now resolves through
-  `PrimitiveCellEntryCompatibilityRuntimeState`.
+- `cell_entry` primitive-planner runtime token generation, planner/auditor
+  execution, and trace mutation have been removed. Historical cell-entry data,
+  HDF5, and ACT low-dimensional compatibility remain outside the primitive
+  planner runtime, while public planner report fields project disabled/default
+  values through `PrimitiveCellEntryCompatibilityRuntimeState`.
 - Return handoff algorithms remain in return handoff services; only mutable
   return handoff/runtime cache storage moved into `PrimitiveReturnRuntimeState`.
 - Coverage planning facts are no longer policy-owned implementation, but they

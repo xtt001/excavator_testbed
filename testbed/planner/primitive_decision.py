@@ -182,28 +182,6 @@ class RestartAfterFailedDigEffect(RequestedPlannerEffect):
 
 
 @dataclass(frozen=True)
-class CompleteCellEntryDigCompatibilityEffect(RequestedPlannerEffect):
-    """Run legacy cell-entry dig completion without promoting it as mainline."""
-
-    effect_type: str = field(
-        default="complete_cell_entry_dig_compatibility",
-        init=False,
-    )
-    reason: str = field(default="", init=False)
-    payload: Mapping[str, object] | None = field(default=None, init=False)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "already_applied", False)
-        object.__setattr__(
-            self,
-            "effect_type",
-            "complete_cell_entry_dig_compatibility",
-        )
-        object.__setattr__(self, "reason", "")
-        object.__setattr__(self, "payload", None)
-
-
-@dataclass(frozen=True)
 class CompleteCoverageDigEffect(RequestedPlannerEffect):
     """Complete coverage dig accounting for the current observation."""
 
@@ -488,14 +466,6 @@ def _validate_requested_effect_shape(effect: RequestedPlannerEffect) -> None:
     ):
         raise PrimitiveDecisionContractError(
             "failed-dig restart effects must use RestartAfterFailedDigEffect"
-        )
-    if normalized_type == "complete_cell_entry_dig_compatibility" and not isinstance(
-        effect,
-        CompleteCellEntryDigCompatibilityEffect,
-    ):
-        raise PrimitiveDecisionContractError(
-            "cell-entry compatibility effects must use "
-            "CompleteCellEntryDigCompatibilityEffect"
         )
     if normalized_type == "complete_coverage_dig" and not isinstance(
         effect,

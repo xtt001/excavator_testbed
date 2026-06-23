@@ -67,7 +67,9 @@ policy:
     dim_feedforward: 3200
 
   cell_entry:
-    enabled: true
+    # Primitive-planner cell_entry runtime was removed; disabled block is kept
+    # only for legacy report/schema compatibility.
+    enabled: false
     grid:
       long_count: 3
       short_count: 2

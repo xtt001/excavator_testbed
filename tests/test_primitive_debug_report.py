@@ -14,9 +14,9 @@ from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 def _token_status() -> TokenStatus:
     return TokenStatus.from_inputs(
-        cell_entry_enabled=True,
-        cell_entry_token_injected=True,
-        cell_entry_token_dim=6,
+        cell_entry_enabled=False,
+        cell_entry_token_injected=False,
+        cell_entry_token_dim=0,
         dig_cut_token_injected=True,
         dig_cut_token_dim=3,
         dig_cut_token_source="operator_prior_coverage",
@@ -143,8 +143,8 @@ def test_debug_report_builder_uses_token_status_legacy_fields() -> None:
     assert report["transition_policy_mode"] == "primitive_return_policy"
     assert report["completed_transition_count"] == 2
     assert report["primitive_cycle_index"] == 5
-    assert report["cell_entry_enabled"] is True
-    assert report["cell_entry_token_injected"] is True
+    assert report["cell_entry_enabled"] is False
+    assert report["cell_entry_token_injected"] is False
     assert report["dig_cut_token_source"] == "operator_prior_coverage"
     assert report["dig_cut_tokens"] == [1.0, 2.0, 3.0]
     assert report["dig_depth_profile_token_source"] == "depth_profile"

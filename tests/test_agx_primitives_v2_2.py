@@ -1695,35 +1695,23 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertEqual(policy.debug_state()["primitive_goal_curr_sector_id"], 0)
         self.assertEqual(policy.debug_state()["primitive_goal_next_sector_id"], 2)
 
-    def test_primitive_planner_injects_cell_entry_tokens_only_for_dig(self) -> None:
+    def test_primitive_planner_rejects_enabled_cell_entry_runtime(self) -> None:
         dig_policy = _RecordingPolicy(0)
         carry_policy = _RecordingPolicy(1)
-        policy = PrimitivePlannerACTPolicy(
-            dig_policy=dig_policy,
-            carry_policy=carry_policy,
-            dump_policy=_RecordingPolicy(2),
-            return_policy=_RecordingPolicy(3),
-            boundary_detector=_FakeBoundaryDetector([]),
-            cell_entry_enabled=True,
-            dig_to_carry_min_bucket_mass_kg=20.0,
-            dig_to_carry_min_distance_to_dig_area_m=0.0,
-        )
-
-        action = policy.predict(_cell_entry_obs(mass=0.0, dig_distance=0.0))
-        self.assertEqual(float(action[0]), 0.0)
-        self.assertEqual(policy.debug_state()["skill_name"], "dig")
-        self.assertTrue(policy.debug_state()["cell_entry_token_injected"])
-        self.assertEqual(dig_policy.last_cell_entry_tokens.shape, (10,))
-        self.assertEqual(
-            int(policy.debug_state()["cell_entry_selected_cell_id"]),
-            2,
-        )
-
-        action = policy.predict(_cell_entry_obs(mass=50.0, dig_distance=0.1))
-        self.assertEqual(float(action[0]), 1.0)
-        self.assertEqual(policy.debug_state()["skill_name"], "carry")
-        self.assertFalse(policy.debug_state()["cell_entry_token_injected"])
-        self.assertIsNone(carry_policy.last_cell_entry_tokens)
+        with self.assertRaisesRegex(
+            ValueError,
+            "cell_entry primitive planner runtime has been removed",
+        ):
+            PrimitivePlannerACTPolicy(
+                dig_policy=dig_policy,
+                carry_policy=carry_policy,
+                dump_policy=_RecordingPolicy(2),
+                return_policy=_RecordingPolicy(3),
+                boundary_detector=_FakeBoundaryDetector([]),
+                cell_entry_enabled=True,
+                dig_to_carry_min_bucket_mass_kg=20.0,
+                dig_to_carry_min_distance_to_dig_area_m=0.0,
+            )
 
     def test_primitive_planner_conservative_dig_cut_mode_matches_legacy_token(self) -> None:
         dig_policy = _RecordingPolicy(0)

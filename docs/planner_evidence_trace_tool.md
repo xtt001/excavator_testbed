@@ -120,15 +120,20 @@ configuration:
   boundaries.
 - Retain `PrimitivePlannerACTPolicy` and `PrimitivePlannerACT5PPolicy` as
   compatibility owners for now.
-- Mark `token.cell_entry` and `gate.pre_dig_align` as `dead-candidate` /
-  `retain-legacy-parking` for the current mainline route. The successful
-  `aggregate_tx24` rollout disables `policy.pre_dig_align.enabled`, has no
-  `policy.cell_entry` / `cell_entry_enabled` setting, and uses
+- Mark `token.cell_entry` as `removed-runtime` /
+  `removed-runtime-cleanup` for primitive planner runtime while retaining
+  historical data/HDF5/training low-dimensional compatibility. Mark
+  `gate.pre_dig_align` as `dead-candidate` / `retain-legacy-parking` for the
+  current mainline route. The successful `aggregate_tx24` rollout disables
+  `policy.pre_dig_align.enabled`, has no active primitive-planner
+  `policy.cell_entry` runtime setting, and uses
   `dig_low_dim_keys: [qpos, qvel, dig_cut_tokens]` instead of
   `cell_entry_tokens`.
 - Do not migrate `cell_entry` or `pre_dig_align` into the execution-kernel /
-  backend architecture. Keep them only as legacy/diagnostic parking material
-  while legacy config and test owners are checked.
+  backend architecture. Keep `cell_entry` primitive runtime removed with
+  disabled public schema compatibility and keep `pre_dig_align` only as
+  legacy/diagnostic parking material while legacy config and test owners are
+  checked.
 
 ## Limits
 

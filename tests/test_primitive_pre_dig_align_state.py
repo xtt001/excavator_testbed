@@ -99,7 +99,6 @@ def test_reset_lifecycle_creates_pre_dig_align_state_owner_and_legacy_fields() -
     ports = PrimitiveResetLifecyclePorts(
         all_policies=lambda: [],
         reset_boundary_detector=lambda: None,
-        reset_cell_entry_planner=lambda: None,
         bootstrap_end_mode=lambda: "dig",
         bootstrap_policy_available=lambda: False,
         scripted_bootstrap_enabled=lambda: False,

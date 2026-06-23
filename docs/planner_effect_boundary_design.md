@@ -274,9 +274,12 @@ property-backed facades over that owner.
 `PrimitiveCellEntryCompatibilityRuntimeState` owns parked cell-entry
 compatibility/report storage: goal, goal cycle id, audit, cached token array,
 seen cell id, and trace list. The policy keeps old `_cell_entry_*` names as
-property-backed facades while the cell-entry planner/auditor algorithms remain
-in their existing parked compatibility path. This does not promote cell-entry
-tokens into the mainline token contract or decision backend facts.
+property-backed facades for disabled public schema compatibility. The
+primitive-planner runtime no longer injects `cell_entry_tokens`, runs
+cell-entry planner/auditor algorithms, or mutates the cell-entry trace during
+dig completion. Historical data/HDF5/training low-dimensional support remains
+outside primitive planner runtime. This does not promote cell-entry tokens into
+the mainline token contract or decision backend facts.
 Phase 9.80 extends that parked owner with `PrimitiveCellEntryReportConfig` and
 `PrimitiveCellEntryReportStatus`. Parked cell-entry public debug fields,
 rollout-summary enablement/trace-count fields, and planner-trace trace list
@@ -845,13 +848,13 @@ for exit-guard failed replans, bad-dig replans, dig-complete low-payload
 replans, coverage corridor rejection, failed-dig restart, coverage-dig
 completion, and the existing `SwitchSkillEffect` for dig-to-carry. The
 execution shell applies those effects in order using existing helper methods.
-`CompleteCellEntryDigCompatibilityEffect` exists only to preserve the old
-cell-entry completion callback when the old dig-to-carry path would have called
-it; it is explicitly compatibility-only and does not promote `cell_entry` into
-the target backend architecture. This phase does not migrate token planning,
-coverage metric internals, return direct-handoff internals, `pre_dig_align`,
-5P paths, behavior-tree/VLM/LLM backend selection, or planner runtime
-directories.
+The parked `CompleteCellEntryDigCompatibilityEffect` was later removed with
+the primitive-planner `cell_entry` runtime cleanup. Dig-to-carry now requests
+coverage completion plus the carry skill switch only; public cell-entry report
+fields remain disabled compatibility schema. This cleanup does not migrate
+token planning, coverage metric internals, return direct-handoff internals,
+`pre_dig_align`, 5P paths, behavior-tree/VLM/LLM backend selection, or planner
+runtime directories.
 
 Phase 9.5 removed the broad already-mutating legacy fallback from the default
 decision bridge. At that point the branch order was explicit:
@@ -1154,11 +1157,12 @@ creates one fresh cell-entry compatibility state and applies it through
 `_cell_entry_state`; the old `_cell_entry_goal`,
 `_cell_entry_goal_cycle_id`, `_cell_entry_audit`, `_cell_entry_tokens`,
 `_cell_entry_seen_cell_id`, and `_cell_entry_trace` names remain compatibility
-facades over the same owner. `_cell_entry_tokens_for_obs(...)` and
-`_complete_cell_entry_dig(...)` still own the legacy compatibility algorithms in
-the policy shell. This phase does not change cell-entry planner/auditor
-algorithms, token dimensions, token key names, token array values, trace schema,
-debug/summary/trace public schema, residual `pre_dig_align`, backend fail-fast
+facades over the same owner. A later parked cleanup removed
+`_cell_entry_tokens_for_obs(...)` and `_complete_cell_entry_dig(...)` from the
+policy shell; the owner now supports disabled public schema compatibility, while
+historical data/HDF5/training token support remains outside primitive planner
+runtime. This phase does not change trace schema, debug/summary/trace public
+schema, residual `pre_dig_align`, backend fail-fast
 behavior, or removed 5P runtime status.
 
 Phase 9.51 introduced `PrimitivePreDigAlignCompatibilityRuntimeState` in
@@ -1528,14 +1532,14 @@ Phase 9.14 extracts low-level policy observation/token injection assembly into
 `PrimitivePolicyObservationAssembler` in
 `testbed/planner/primitive_observation.py`. The assembler owns the old
 `_policy_obs(...)` assembly contract: call token providers in order
-goal -> cell-entry compatibility -> dig-cut -> dig-depth-profile ->
-return-target -> return-relocate -> return-start-envelope; return the original
+goal -> dig-cut -> dig-depth-profile -> return-target -> return-relocate ->
+return-start-envelope; return the original
 observation object when every provider returns `None`; otherwise create
-`dict(obs)` and inject the existing keys (`goal_tokens`, `cell_entry_tokens`,
-`dig_cut_tokens`, `dig_depth_profile_tokens_v1`, `return_target_tokens`,
+`dict(obs)` and inject the existing primitive-planner runtime keys
+(`goal_tokens`, `dig_cut_tokens`, `dig_depth_profile_tokens_v1`, `return_target_tokens`,
 `return_relocate_tokens_v1`, `return_start_envelope_tokens_v1`). It also
 computes the legacy injected-flag state, with no goal injected flag and
-`cell_entry` kept compatibility-only. Phase 9.49 moves mutable injected-flag
+`cell_entry_token_injected` kept as a disabled compatibility field. Phase 9.49 moves mutable injected-flag
 storage into `PrimitiveObservationInjectionRuntimeState`; the policy shell now
 clears stale injected flags through that owner before assembly, delegates to the
 assembler, and applies the
@@ -1904,6 +1908,21 @@ behavior-tree nodes, VLM packets, or mainline runtime architecture. It does not
 touch parked `cell_entry` and does not change backend maturity: default legacy
 FSM backendified with focused services / shared backend decision
 input/facts/factory; BT/VLM/LLM remain unsupported fail-fast.
+
+Phase 9.93 removes the parked primitive-planner `cell_entry` runtime execution
+path. The cleanup deletes policy-observation `cell_entry_tokens` injection,
+the policy-owned `_cell_entry_tokens_for_obs(...)` and
+`_complete_cell_entry_dig(...)` helpers, the legacy-FSM
+`CompleteCellEntryDigCompatibilityEffect`, and the requested-effect applier
+port that called the old completion hook. `PrimitiveCellEntryCompatibilityRuntimeState`
+and public debug/summary/trace keys remain as disabled/default schema
+compatibility. Enabled primitive-planner `cell_entry` config now fails fast in
+adapter normalization; disabled config blocks remain accepted. Historical
+`testbed/planner/cell_entry.py`, HDF5 enrichment, ACT low-dimensional dimension
+resolution, and training/eval support for stored `cell_entry_tokens` remain
+compatibility contracts outside primitive planner runtime. This is a deletion
+cleanup, not a promotion into backend facts, token contracts, behavior-tree
+nodes, VLM packets, or mainline runtime architecture.
 
 ### Stage 4: Expand Effect Families From Evidence
 

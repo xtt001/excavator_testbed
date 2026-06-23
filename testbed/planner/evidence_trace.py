@@ -190,8 +190,9 @@ BASELINE_CAPABILITY_SPECS: tuple[CapabilitySpec, ...] = (
     ),
     CapabilitySpec(
         "token.cell_entry",
-        "PrimitivePlannerACTPolicy._cell_entry_tokens_for_obs",
-        "token",
+        "removed primitive-planner cell-entry runtime (data/schema compatibility only)",
+        "compatibility",
+        owner_classification="removed-runtime",
     ),
     CapabilitySpec(
         "token.dig_cut",
@@ -381,16 +382,6 @@ def events_from_rollout_row(row: dict[str, Any]) -> list[EvidenceEvent]:
                 supports=("action.dispatch",),
             )
         )
-    _append_token_event(
-        events,
-        row=row,
-        tick_id=tick_id,
-        capability_id="token.cell_entry",
-        producer="PrimitivePlannerACTPolicy._cell_entry_tokens_for_obs",
-        injected_key="cell_entry_token_injected",
-        source_key="cell_entry_audit_reason",
-        supports=("gate.pre_dig_align",),
-    )
     _append_token_event(
         events,
         row=row,

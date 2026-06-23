@@ -234,4 +234,4 @@ def test_policy_cell_entry_debug_facade_delegates_to_report_status() -> None:
     assert policy._debug_report_cell_entry_fields() == (
         state.to_report_status(policy._cell_entry_report_config()).debug_fields()
     )
-    assert policy._cell_entry_report_status().enabled is True
+    assert policy._cell_entry_report_status().enabled is False

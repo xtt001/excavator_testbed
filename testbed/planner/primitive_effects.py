@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from testbed.planner.primitive_decision import (
-    CompleteCellEntryDigCompatibilityEffect,
     CompleteCoverageDigEffect,
     CompleteCoverageDumpEffect,
     CompleteReturnTransitionEffect,
@@ -40,7 +39,6 @@ class RequestedEffectApplierPorts:
     next_skill_after_return_transition: Callable[[], str]
     reject_active_coverage_corridor: Callable[..., None]
     restart_after_failed_dig: Callable[[str, dict[str, Any]], None]
-    complete_cell_entry_dig: Callable[[dict[str, Any]], None]
     complete_coverage_dig: Callable[[dict[str, Any]], None]
     observation_facts: Callable[[dict[str, Any]], PrimitiveObservationFacts]
     complete_coverage_dump: Callable[..., None]
@@ -119,8 +117,6 @@ class RequestedEffectApplier:
                     "RestartAfterFailedDig effect requires non-empty reason"
                 )
             ports.restart_after_failed_dig(reason, obs)
-        elif isinstance(effect, CompleteCellEntryDigCompatibilityEffect):
-            ports.complete_cell_entry_dig(obs)
         elif isinstance(effect, CompleteCoverageDigEffect):
             ports.complete_coverage_dig(obs)
         elif isinstance(effect, SetDumpReadyHoldCountEffect):

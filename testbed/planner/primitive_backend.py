@@ -14,7 +14,6 @@ from testbed.planner.primitive_capabilities import (
 )
 from testbed.planner.primitive_decision import PrimitiveDecisionContractError
 from testbed.planner.primitive_decision import PrimitiveDecisionResult
-from testbed.planner.primitive_decision import CompleteCellEntryDigCompatibilityEffect
 from testbed.planner.primitive_decision import CompleteCoverageDigEffect
 from testbed.planner.primitive_decision import CompleteCoverageDumpEffect
 from testbed.planner.primitive_decision import CompleteReturnTransitionEffect
@@ -298,7 +297,6 @@ class LegacyFSMDigBranch:
         if status.dig_to_carry_ready:
             reason = str(status.dig_to_carry_reason) or "loaded"
             return (
-                CompleteCellEntryDigCompatibilityEffect(),
                 CompleteCoverageDigEffect(),
                 SwitchSkillEffect(
                     target_skill_name="carry",

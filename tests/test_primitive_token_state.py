@@ -326,7 +326,7 @@ def test_policy_token_status_facade_delegates_to_token_runtime_state() -> None:
     policy._return_start_envelope_token_injected = True
 
     expected = state.to_token_status(
-        cell_entry_enabled=True,
+        cell_entry_enabled=False,
         token_injection_state=(
             policy._primitive_observation_injection_runtime_state()
             .to_token_injection_state()

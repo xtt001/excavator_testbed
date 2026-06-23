@@ -104,12 +104,17 @@ class PrimitiveTokenRuntimeState:
     ) -> TokenStatus:
         """Project live token runtime state into the public token status facts."""
 
+        cell_entry_runtime_enabled = bool(cell_entry_enabled)
         return TokenStatus.from_inputs(
-            cell_entry_enabled=bool(cell_entry_enabled),
+            cell_entry_enabled=cell_entry_runtime_enabled,
             cell_entry_token_injected=bool(
                 token_injection_state.cell_entry_token_injected
-            ),
-            cell_entry_token_dim=int(CELL_ENTRY_TOKEN_DIM),
+            )
+            if cell_entry_runtime_enabled
+            else False,
+            cell_entry_token_dim=int(CELL_ENTRY_TOKEN_DIM)
+            if cell_entry_runtime_enabled
+            else 0,
             dig_cut_token_injected=bool(
                 token_injection_state.dig_cut_token_injected
             ),

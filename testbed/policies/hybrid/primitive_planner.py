@@ -38,13 +38,6 @@ from testbed.data.schema import (
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
 )
 from testbed.planner.boundary_detector import BoundaryDetector
-from testbed.planner.cell_entry import (
-    CELL_ENTRY_TOKEN_DIM,
-    CellEntryGoal,
-    PlannerDecisionAudit,
-    PrimitiveCycleOutcome,
-    build_cell_entry_tokens,
-)
 from testbed.planner.primitive_backend import (
     LegacyFSMBranchPorts,
     LegacyFSMBranchSet,
@@ -488,7 +481,6 @@ class PrimitivePlannerACTPolicy(Policy):
         return PrimitiveResetLifecyclePorts(
             all_policies=lambda: self._all_policies(),
             reset_boundary_detector=lambda: self.boundary_detector.reset(),
-            reset_cell_entry_planner=lambda: self.cell_entry_planner.reset(),
             bootstrap_end_mode=lambda: str(self.bootstrap_end_mode),
             bootstrap_policy_available=lambda: self.bootstrap_policy is not None,
             scripted_bootstrap_enabled=lambda: self._scripted_bootstrap_enabled(),
@@ -1147,7 +1139,7 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _cell_entry_report_config(self) -> PrimitiveCellEntryReportConfig:
         return PrimitiveCellEntryReportConfig(
-            enabled=bool(getattr(self, "cell_entry_enabled", False))
+            enabled=False
         )
 
     def _cell_entry_report_status(self) -> PrimitiveCellEntryReportStatus:
@@ -1746,7 +1738,6 @@ class PrimitivePlannerACTPolicy(Policy):
             restart_after_failed_dig=(
                 lambda reason, obs: self._restart_after_failed_dig(reason, obs)
             ),
-            complete_cell_entry_dig=lambda obs: self._complete_cell_entry_dig(obs),
             complete_coverage_dig=lambda obs: self._complete_coverage_dig(obs),
             observation_facts=(
                 lambda obs: PrimitiveObservationFacts.from_obs(
@@ -2052,7 +2043,7 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _token_status_for_debug_report(self) -> TokenStatus:
         return self._primitive_token_runtime_state().to_token_status(
-            cell_entry_enabled=bool(self.cell_entry_enabled),
+            cell_entry_enabled=False,
             token_injection_state=(
                 self._primitive_observation_injection_runtime_state()
                 .to_token_injection_state()
@@ -2641,7 +2632,6 @@ class PrimitivePlannerACTPolicy(Policy):
     ) -> PrimitivePolicyObservationAssemblerPorts:
         return PrimitivePolicyObservationAssemblerPorts(
             goal_tokens=lambda: self._goal_tokens(),
-            cell_entry_tokens=lambda obs: self._cell_entry_tokens_for_obs(obs),
             dig_cut_tokens=lambda obs: self._dig_cut_tokens_for_obs(obs),
             dig_depth_profile_tokens=(
                 lambda obs: self._dig_depth_profile_tokens_for_obs(obs)
@@ -3916,87 +3906,6 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _raw_fields_in_prior_range(self, raw_fields: dict[str, float | int]) -> bool:
         return self._dig_cut_token_planner().raw_fields_in_prior_range(raw_fields)
-
-    def _cell_entry_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        if not self.cell_entry_enabled or self._skill_name != "dig":
-            return None
-        if (
-            self._cell_entry_goal is None
-            or self._cell_entry_goal_cycle_id != int(self._cycle_index)
-        ):
-            self._cell_entry_goal = self.cell_entry_planner.plan(
-                cycle_id=int(self._cycle_index)
-            )
-            self._cell_entry_goal_cycle_id = int(self._cycle_index)
-            self._cell_entry_seen_cell_id = -1
-
-        cell_id = self._dig_cell_id(obs)
-        if cell_id >= 0 and self._cell_entry_seen_cell_id < 0:
-            self._cell_entry_seen_cell_id = int(cell_id)
-        outcome = PrimitiveCycleOutcome(
-            cycle_id=int(self._cycle_index),
-            actual_start_step=-1,
-            actual_bite_step=-1,
-            actual_removal_step=-1,
-            actual_start_cell_id=int(cell_id),
-            actual_bite_cell_id=int(cell_id),
-            actual_removal_cell_id=int(cell_id),
-            payload_gain_kg=float(self.cell_entry_auditor.low_productivity_payload_gain_kg),
-            deposit_delta_kg=0.0,
-            collision_count_delta=0,
-            return_miss=False,
-        )
-        self._cell_entry_audit = self.cell_entry_auditor.audit(
-            goal=self._cell_entry_goal,
-            outcome=outcome,
-            current_bucket_pose=self._bucket_dig_area_pose(obs),
-            geometry_available=self._bucket_dig_area_cell_in_bounds_mask(obs),
-        )
-        self._cell_entry_tokens = build_cell_entry_tokens(
-            grid=self.cell_entry_grid,
-            goal=self._cell_entry_goal,
-            audit=self._cell_entry_audit,
-        )
-        return self._cell_entry_tokens.copy()
-
-    def _complete_cell_entry_dig(self, obs: dict) -> None:
-        if not self.cell_entry_enabled or self._cell_entry_goal is None:
-            return
-        cell_id = self._dig_cell_id(obs)
-        if cell_id < 0:
-            cell_id = int(self._cell_entry_seen_cell_id)
-        outcome = PrimitiveCycleOutcome(
-            cycle_id=int(self._cycle_index),
-            actual_start_step=-1,
-            actual_bite_step=-1,
-            actual_removal_step=-1,
-            actual_start_cell_id=int(cell_id),
-            actual_bite_cell_id=int(cell_id),
-            actual_removal_cell_id=int(cell_id),
-            payload_gain_kg=float(self._mass_in_bucket(obs)),
-            deposit_delta_kg=0.0,
-            collision_count_delta=0,
-            return_miss=False,
-        )
-        self.cell_entry_planner.update(outcome)
-        self._cell_entry_trace.append(
-            {
-                "cycle_id": int(self._cycle_index),
-                "selected_cell_id": int(self._cell_entry_goal.selected_cell_id),
-                "actual_cell_id": int(cell_id),
-                "payload_gain_kg": float(outcome.payload_gain_kg),
-                "audit_reason_code": int(
-                    -1
-                    if self._cell_entry_audit is None
-                    else self._cell_entry_audit.reason_code
-                ),
-                "audit_reason": str(
-                    ""
-                    if self._cell_entry_audit is None
-                    else self._cell_entry_audit.reason
-                ),
-            }
-        )
 
     def _bucket_dig_area_cell_in_bounds_mask(self, obs: dict) -> bool:
         env_state = self._env_state(obs)

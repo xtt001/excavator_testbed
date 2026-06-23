@@ -51,7 +51,6 @@ def _ports(
         PrimitiveResetLifecyclePorts(
             all_policies=lambda: policies,
             reset_boundary_detector=lambda: events.append("boundary_reset"),
-            reset_cell_entry_planner=lambda: events.append("cell_entry_reset"),
             bootstrap_end_mode=lambda: bootstrap_end_mode,
             bootstrap_policy_available=lambda: bootstrap_policy_available,
             scripted_bootstrap_enabled=lambda: scripted_bootstrap_enabled,
@@ -63,7 +62,7 @@ def _ports(
     )
 
 
-def test_reset_service_resets_policies_then_boundary_then_cell_entry() -> None:
+def test_reset_service_resets_policies_then_boundary() -> None:
     ports, events = _ports()
 
     PrimitiveResetLifecycleService.from_ports(ports).reset()
@@ -74,7 +73,6 @@ def test_reset_service_resets_policies_then_boundary_then_cell_entry() -> None:
         "reset:dump",
         "reset:return",
         "boundary_reset",
-        "cell_entry_reset",
     ]
 
 

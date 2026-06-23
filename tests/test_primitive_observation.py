@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from types import MethodType
 from typing import Any
 
@@ -17,7 +18,6 @@ def _ports(
     events: list[str],
     *,
     goal: Any = None,
-    cell_entry: Any = None,
     dig_cut: Any = None,
     dig_depth_profile: Any = None,
     return_target: Any = None,
@@ -30,7 +30,6 @@ def _ports(
 
     return PrimitivePolicyObservationAssemblerPorts(
         goal_tokens=lambda: record("goal", goal),
-        cell_entry_tokens=lambda obs: record("cell_entry", cell_entry),
         dig_cut_tokens=lambda obs: record("dig_cut", dig_cut),
         dig_depth_profile_tokens=lambda obs: record(
             "dig_depth_profile",
@@ -57,7 +56,6 @@ def test_policy_observation_assembler_returns_original_obs_when_no_tokens() -> N
     assert result.token_injection_state == PrimitiveTokenInjectionState()
     assert events == [
         "goal",
-        "cell_entry",
         "dig_cut",
         "dig_depth_profile",
         "return_target",
@@ -71,7 +69,6 @@ def test_policy_observation_assembler_injects_tokens_into_copy_in_legacy_order()
     obs = {"qpos": [1.0]}
     tokens = {
         "goal": object(),
-        "cell_entry": object(),
         "dig_cut": object(),
         "dig_depth_profile": object(),
         "return_target": object(),
@@ -86,7 +83,6 @@ def test_policy_observation_assembler_injects_tokens_into_copy_in_legacy_order()
     assert result.policy_obs is not obs
     assert obs == {"qpos": [1.0]}
     assert result.policy_obs["goal_tokens"] is tokens["goal"]
-    assert result.policy_obs["cell_entry_tokens"] is tokens["cell_entry"]
     assert result.policy_obs["dig_cut_tokens"] is tokens["dig_cut"]
     assert (
         result.policy_obs["dig_depth_profile_tokens_v1"]
@@ -98,8 +94,8 @@ def test_policy_observation_assembler_injects_tokens_into_copy_in_legacy_order()
         result.policy_obs["return_start_envelope_tokens_v1"]
         is tokens["return_start_envelope"]
     )
+    assert "cell_entry_tokens" not in result.policy_obs
     assert result.token_injection_state == PrimitiveTokenInjectionState(
-        cell_entry_token_injected=True,
         dig_cut_token_injected=True,
         dig_depth_profile_token_injected=True,
         return_target_token_injected=True,
@@ -108,7 +104,6 @@ def test_policy_observation_assembler_injects_tokens_into_copy_in_legacy_order()
     )
     assert events == [
         "goal",
-        "cell_entry",
         "dig_cut",
         "dig_depth_profile",
         "return_target",
@@ -126,16 +121,17 @@ def test_policy_observation_assembler_goal_token_has_no_legacy_injected_flag() -
     assert result.token_injection_state == PrimitiveTokenInjectionState()
 
 
-def test_policy_observation_assembler_cell_entry_flag_is_compatibility_only() -> None:
-    # Cell-entry token injection remains a compatibility-only legacy token path.
+def test_policy_observation_assembler_has_no_cell_entry_runtime_provider() -> None:
+    port_fields = {field.name for field in fields(PrimitivePolicyObservationAssemblerPorts)}
+
+    assert "cell_entry_tokens" not in port_fields
+
     result = PrimitivePolicyObservationAssembler(
-        ports=_ports([], cell_entry=object()),
+        ports=_ports([]),
     ).assemble({"qpos": [1.0]})
 
-    assert "cell_entry_tokens" in result.policy_obs
-    assert result.token_injection_state == PrimitiveTokenInjectionState(
-        cell_entry_token_injected=True,
-    )
+    assert "cell_entry_tokens" not in result.policy_obs
+    assert result.token_injection_state == PrimitiveTokenInjectionState()
 
 
 def test_observation_injection_runtime_state_clear_apply_and_projection() -> None:

@@ -211,7 +211,7 @@ def test_mainline_absent_cell_entry_and_pre_dig_align_are_parked_outside_mainlin
     )
     by_id = {item.capability_id: item for item in report.rows}
 
-    assert by_id["token.cell_entry"].classification == "dead-candidate"
-    assert by_id["token.cell_entry"].retention_decision == "retain-legacy-parking"
+    assert by_id["token.cell_entry"].classification == "removed-runtime"
+    assert by_id["token.cell_entry"].retention_decision == "removed-runtime-cleanup"
     assert by_id["gate.pre_dig_align"].classification == "dead-candidate"
     assert by_id["gate.pre_dig_align"].retention_decision == "retain-legacy-parking"

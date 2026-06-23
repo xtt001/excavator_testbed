@@ -114,6 +114,38 @@ def test_disabled_pre_dig_align_config_remains_report_schema_compatible() -> Non
     assert updates["pre_dig_align_bucket_target_qpos"] == -0.2
 
 
+def test_cell_entry_enabled_config_fails_fast_after_runtime_removal() -> None:
+    with pytest.raises(
+        ValueError,
+        match=(
+            "cell_entry primitive planner runtime has been removed; "
+            "set cell_entry.enabled=false"
+        ),
+    ):
+        _normalize(
+            PrimitivePlannerAdapterConfigInputs(
+                cell_entry_enabled=True,
+            )
+        )
+
+
+def test_disabled_cell_entry_config_remains_report_schema_compatible() -> None:
+    state = _normalize(
+        PrimitivePlannerAdapterConfigInputs(
+            cell_entry_enabled=False,
+            cell_entry_grid={"half_long_m": 2.0, "half_short_m": 1.0},
+            cell_entry_low_productivity_payload_gain_kg=75.0,
+        )
+    )
+    updates = state.as_policy_field_updates()
+
+    assert updates["cell_entry_enabled"] is False
+    assert updates["cell_entry_grid"].half_long_m == 2.0
+    assert updates["cell_entry_grid"].half_short_m == 1.0
+    assert updates["cell_entry_planner"] is not None
+    assert updates["cell_entry_auditor"].low_productivity_payload_gain_kg == 75.0
+
+
 def test_dig_cut_prior_loading_validates_token_order(tmp_path: Path) -> None:
     assert adapter_config.load_dig_cut_prior("") == {}
 

@@ -8910,3 +8910,67 @@ Each completed refactor round should append:
   remains default legacy FSM backendified with focused services / shared
   backend decision input/facts/factory; BT/VLM/LLM remain unsupported
   fail-fast.
+
+### 2026-06-23 Parked Cell-Entry Primitive Runtime Cleanup
+
+- Scope implemented by parked cleanup executor: remove parked primitive-planner
+  `cell_entry` runtime/token/trace execution while retaining disabled public
+  debug/summary/trace schema compatibility and historical data/HDF5/training
+  low-dimensional compatibility.
+- TDD red result: after adding focused cleanup assertions,
+  `python -m pytest -q tests/test_primitive_adapter_config.py::test_cell_entry_enabled_config_fails_fast_after_runtime_removal tests/test_primitive_observation.py::test_policy_observation_assembler_has_no_cell_entry_runtime_provider tests/test_primitive_backend.py::test_legacy_fsm_dig_branch_requested_dig_to_carry_effects_in_order tests/test_primitive_effects.py::test_requested_effect_ports_use_state_owners_not_storage_callbacks tests/test_primitive_decision_contract.py::test_cell_entry_compatibility_effect_is_removed_from_decision_contract`
+  failed with representative errors: enabled config did not raise, the
+  observation assembler still exposed `cell_entry_tokens`, dig-to-carry effects
+  still included `CompleteCellEntryDigCompatibilityEffect`, requested-effect
+  ports still exposed `complete_cell_entry_dig`, and
+  `primitive_decision` still exported `CompleteCellEntryDigCompatibilityEffect`.
+- Core change: `PrimitivePolicyObservationAssemblerPorts` no longer exposes or
+  calls a `cell_entry_tokens` provider; `PrimitivePlannerACTPolicy` no longer
+  wires cell-entry token generation or completion callbacks; the legacy FSM dig
+  branch now emits coverage completion plus carry switch only; the obsolete
+  cell-entry compatibility effect and requested-effect applier port were
+  removed; reset no longer resets a cell-entry runtime planner.
+- Compatibility retained: `PrimitiveCellEntryCompatibilityRuntimeState`, legacy
+  `_cell_entry_*` property facades, public debug fields, rollout-summary fields,
+  and planner-trace `cell_entry_trace` key remain. Policy/runtime report values
+  now project disabled/default values. Disabled `cell_entry` config blocks remain
+  accepted; enabled primitive-planner `cell_entry` config fails fast during
+  adapter normalization.
+- Data compatibility retained: `testbed/planner/cell_entry.py`,
+  `testbed/data/cell_entry_v2_2.py`, rollout HDF5 cell-entry support,
+  training/eval low-dimensional dimension resolution, and old stored
+  `cell_entry_tokens` data semantics were not deleted.
+- Verification:
+  - `python -m pytest -q tests/test_primitive_adapter_config.py::test_cell_entry_enabled_config_fails_fast_after_runtime_removal tests/test_primitive_observation.py::test_policy_observation_assembler_has_no_cell_entry_runtime_provider tests/test_primitive_backend.py::test_legacy_fsm_dig_branch_requested_dig_to_carry_effects_in_order tests/test_primitive_effects.py::test_requested_effect_ports_use_state_owners_not_storage_callbacks tests/test_primitive_decision_contract.py::test_cell_entry_compatibility_effect_is_removed_from_decision_contract`
+    -> `5 passed in 0.12s`
+  - `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_backend.py tests/test_primitive_decision_contract.py tests/test_primitive_cell_entry_state.py`
+    -> `113 passed in 0.16s`
+  - `python -m pytest -q tests/test_primitive_token_state.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py tests/test_primitive_debug_report.py`
+    -> `20 passed in 0.17s`
+  - `python -m pytest -q tests/test_primitive_adapter_config.py tests/test_eval_rollout_hdf5.py tests/test_cell_entry_v2_2.py tests/test_equipment_dimensions.py`
+    -> `26 passed, 1 warning in 1.33s`
+  - `python -m pytest -q tests/test_primitive_adapter_config.py tests/test_primitive_observation.py tests/test_primitive_backend.py tests/test_primitive_decision_contract.py tests/test_primitive_effects.py tests/test_primitive_reset_lifecycle.py tests/test_primitive_pre_dig_align_state.py tests/test_primitive_cell_entry_state.py`
+    -> `157 passed in 0.21s`
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "cell_entry or semantic_boundary_events_drive_skill_sequence or coverage_decision_trace or dig_cut_tokens"`
+    -> `4 passed, 103 deselected in 0.68s`
+  - `python -m pytest -q tests/test_planner_evidence_trace.py tests/test_planner_evidence_cli.py`
+    -> `5 passed in 0.02s`
+  - `python -m pytest -q tests/test_primitive_action_dispatch.py tests/test_primitive_return_handoff.py`
+    -> `33 passed in 0.12s`
+  - `python -m compileall testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_observation.py testbed/planner/primitive_backend.py testbed/planner/primitive_decision.py testbed/planner/primitive_effects.py testbed/planner/primitive_reset_lifecycle.py testbed/planner/primitive_adapter_config.py testbed/planner/primitive_token_state.py testbed/planner/evidence_trace.py`
+    -> no output, exit 0
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`
+    -> no output, exit 0
+  - `python scripts/planner_refactor_guard.py --check-skill-contract`
+    -> no output, exit 0
+- Non-goals held: no `pre_dig_align` cleanup beyond preserving removed runtime
+  status, no behavior-tree/VLM/LLM backend implementation, no public schema
+  removal, no data/HDF5/training schema deletion, no token contract promotion,
+  no generic compatibility layer, and no commit in the implementation thread.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It is a bounded deletion of the parked `cell_entry`
+  primitive-planner runtime path, not a one-wrapper move. It does not create an
+  anemic service, pass-through facade, generic blackboard, broad config bag, or
+  planner-self port. Current maturity remains default legacy FSM backendified
+  with focused services / shared backend decision input/facts/factory;
+  BT/VLM/LLM remain unsupported fail-fast.

@@ -353,7 +353,12 @@ class PrimitivePlannerAdapterConfigNormalizer:
 
         cell_entry_grid = CellGridSpec(**dict(inputs.cell_entry_grid or {}))
         cell_entry_grid.validate()
-        set_value("cell_entry_enabled", bool(inputs.cell_entry_enabled))
+        if bool(inputs.cell_entry_enabled):
+            raise ValueError(
+                "cell_entry primitive planner runtime has been removed; "
+                "set cell_entry.enabled=false or remove the block."
+            )
+        set_value("cell_entry_enabled", False)
         set_value("cell_entry_grid", cell_entry_grid)
         set_value("cell_entry_planner", CellEntryPlanner(grid=cell_entry_grid))
         set_value(

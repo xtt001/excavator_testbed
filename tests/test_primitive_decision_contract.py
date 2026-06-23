@@ -19,9 +19,9 @@ from testbed.planner.primitive_capabilities import (
     DumpTransitionStatus,
     ReturnTransitionStatus,
 )
+from testbed.planner import primitive_decision
 from testbed.planner.primitive_decision import (
     LEGACY_FSM_DECISION_SOURCE,
-    CompleteCellEntryDigCompatibilityEffect,
     CompleteCoverageDigEffect,
     CompleteReturnTransitionEffect,
     CompleteCoverageDumpEffect,
@@ -472,7 +472,6 @@ def test_dig_effects_record_semantic_requests() -> None:
         IncrementDigBadReplanCountEffect(),
         RejectActiveCoverageCorridorEffect(reason="bad_dig_low_payload"),
         RestartAfterFailedDigEffect(reason="bad_dig_low_payload"),
-        CompleteCellEntryDigCompatibilityEffect(),
         CompleteCoverageDigEffect(),
     )
 
@@ -491,11 +490,14 @@ def test_dig_effects_record_semantic_requests() -> None:
         "increment_dig_bad_replan_count",
         "reject_active_coverage_corridor",
         "restart_after_failed_dig",
-        "complete_cell_entry_dig_compatibility",
         "complete_coverage_dig",
     ]
     assert effects[2].reason == "bad_dig_low_payload"
     assert effects[3].reason == "bad_dig_low_payload"
+
+
+def test_cell_entry_compatibility_effect_is_removed_from_decision_contract() -> None:
+    assert not hasattr(primitive_decision, "CompleteCellEntryDigCompatibilityEffect")
 
 
 def test_dig_effects_reject_invalid_reasons() -> None:
@@ -797,13 +799,6 @@ def test_primitive_planner_requested_effect_bridge_applies_dig_effects_in_order(
         assert got_obs is obs
         events.append(f"restart:{reason}")
 
-    def fake_complete_cell(
-        self: PrimitivePlannerACTPolicy,
-        got_obs: dict[str, Any],
-    ) -> None:
-        assert got_obs is obs
-        events.append("cell")
-
     def fake_complete_dig(
         self: PrimitivePlannerACTPolicy,
         got_obs: dict[str, Any],
@@ -820,7 +815,6 @@ def test_primitive_planner_requested_effect_bridge_applies_dig_effects_in_order(
 
     planner._reject_active_coverage_corridor = MethodType(fake_reject, planner)
     planner._restart_after_failed_dig = MethodType(fake_restart, planner)
-    planner._complete_cell_entry_dig = MethodType(fake_complete_cell, planner)
     planner._complete_coverage_dig = MethodType(fake_complete_dig, planner)
     planner._set_skill = MethodType(fake_set_skill, planner)
 
@@ -831,7 +825,6 @@ def test_primitive_planner_requested_effect_bridge_applies_dig_effects_in_order(
             IncrementDigBadReplanCountEffect(),
             RejectActiveCoverageCorridorEffect(reason="bad_dig_low_payload"),
             RestartAfterFailedDigEffect(reason="bad_dig_low_payload"),
-            CompleteCellEntryDigCompatibilityEffect(),
             CompleteCoverageDigEffect(),
             SwitchSkillEffect(
                 target_skill_name="carry",
@@ -843,7 +836,6 @@ def test_primitive_planner_requested_effect_bridge_applies_dig_effects_in_order(
     assert events == [
         "reject:bad_dig_low_payload",
         "restart:bad_dig_low_payload",
-        "cell",
         "coverage",
         "skill:carry:dig_to_carry_loaded",
     ]
@@ -1419,10 +1411,6 @@ def test_primitive_planner_dig_decision_bridge_returns_requested_effects() -> No
         lambda self: callbacks.append("bad_count"),
         planner,
     )
-    planner._complete_cell_entry_dig = MethodType(
-        lambda self, obs: callbacks.append("cell"),
-        planner,
-    )
     planner._complete_coverage_dig = MethodType(
         lambda self, obs: callbacks.append("coverage"),
         planner,
@@ -1446,7 +1434,6 @@ def test_primitive_planner_dig_decision_bridge_returns_requested_effects() -> No
     assert result.side_effects_applied is False
     assert result.status == "skill_switch"
     assert result.effects == (
-        CompleteCellEntryDigCompatibilityEffect(),
         CompleteCoverageDigEffect(),
         SwitchSkillEffect(
             target_skill_name="carry",

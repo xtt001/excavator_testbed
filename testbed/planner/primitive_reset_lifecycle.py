@@ -33,7 +33,6 @@ class PrimitiveResetLifecyclePorts:
 
     all_policies: Callable[[], Sequence[Any]]
     reset_boundary_detector: Callable[[], None]
-    reset_cell_entry_planner: Callable[[], None]
     bootstrap_end_mode: Callable[[], str]
     bootstrap_policy_available: Callable[[], bool]
     scripted_bootstrap_enabled: Callable[[], bool]
@@ -281,7 +280,6 @@ class PrimitiveResetLifecycleService:
             policy.reset()
         ports.reset_boundary_detector()
         skill_name = self._initial_skill_name()
-        ports.reset_cell_entry_planner()
         action_dim = int(ports.action_dim)
         execution_state = PrimitiveExecutionRuntimeState.fresh(
             initial_skill_name=skill_name,

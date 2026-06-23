@@ -130,7 +130,7 @@ The table below is the responsibility map future migrations must use.
 | 4059-5159 | coverage candidate construction and selection | `_select_next_coverage_corridor`, `_ensure_coverage_corridors`, `_select_coverage_corridor`, scoring/exemplar helpers | coverage corridors, candidate scores, active corridor, decision trace | coverage planning service |
 | 5160-5636 | coverage completion, rejection, terminal-stop diagnostics | `_complete_coverage_dig`, `_complete_coverage_dump`, `_reject_active_coverage_corridor`, `_request_coverage_terminal_stop` | coverage belief, attempts, payload/deposit, terminal-stop state | coverage runtime service plus kernel effects |
 | 5637-5818 | plan invalidation, config validation, prior helpers | `_clear_dig_cut_plan`, `_invalidate_pending_dig_cut_plan`, `_load_dig_cut_prior`, `_prior_percentile` | token plan ids, pending plans, prior file content | token/config helper modules |
-| 5819-5940 | cell-entry legacy path | `_cell_entry_tokens_for_obs`, `_complete_cell_entry_dig`, cell pose/cell id helpers | cell-entry goal/audit/trace | legacy diagnostic parking, not mainline backend |
+| 5819-5940 | removed cell-entry primitive runtime region | cell-entry pose/cell-id helpers retained only where still referenced; `_cell_entry_tokens_for_obs` and `_complete_cell_entry_dig` removed | disabled cell-entry report/schema compatibility | no primitive-planner token injection or completion runtime |
 | 5941-6075 | goal tokens, policy dispatch, debug-state construction | `_goal_tokens`, `_active_policy`, `_all_policies`, `_make_debug_state` | goal sequence, active skill, policy handles, debug fields | goal-token service, dispatch facade, report boundary |
 | removed | 5P runtime planner | removed `PrimitivePlannerACT5PPolicy` subclass | old 5P approach/dump-release runtime path retained only in git history | cleanup-approved removed runtime path |
 
@@ -169,7 +169,7 @@ The current baseline report uses the successful `aggregate_tx24` rollout packet:
 | `trace.planner_trace` | report-only | retain-report-boundary | `planner_trace` | reporting boundary |
 | `policy.public_adapter` | compatibility | retain-compatibility | `PrimitivePlannerACTPolicy` | public adapter |
 | `compat.5p_policy` | compatibility-cleanup | removed-runtime-cleanup | git history only | cleanup-approved removed runtime path |
-| `token.cell_entry` | dead-candidate | retain-legacy-parking | `_cell_entry_tokens_for_obs` | legacy diagnostic parking |
+| `token.cell_entry` | removed primitive-runtime path | disabled-schema-and-data-compatibility | `PrimitiveCellEntryCompatibilityRuntimeState` plus historical data/HDF5 support | no primitive planner token injection |
 | `gate.pre_dig_align` | dead-candidate | retain-legacy-parking | `_maybe_switch_skill` pre-dig branch plus `PrimitivePreDigAlignCompatibilityRuntimeState` | legacy diagnostic/action parking |
 
 ## Target Architecture
@@ -343,7 +343,7 @@ Parked code must not be used as a justification for new mainline services.
 
 | Path | Evidence | Current code owner | Parking owner | Allowed use | Not allowed |
 | --- | --- | --- | --- | --- | --- |
-| `token.cell_entry` | absent from successful rollout; `cell_entry_enabled=0`; no `cell_entry_tokens` low-dim key | `_cell_entry_tokens_for_obs`, `_complete_cell_entry_dig`, `testbed/planner/cell_entry.py`, `PrimitiveCellEntryCompatibilityRuntimeState` | parked compatibility/report state owner plus legacy diagnostics | old configs, diagnostics, explicit legacy replay | default token contract, new backend fact, VLM decision packet |
+| `token.cell_entry` | absent from successful rollout; `cell_entry_enabled=0`; no active primitive-planner `cell_entry_tokens` low-dim key | `PrimitiveCellEntryCompatibilityRuntimeState`, historical `testbed/planner/cell_entry.py`, data/HDF5/training support | removed primitive runtime plus disabled schema/data compatibility | historical data/checkpoint compatibility and disabled public report fields | primitive-planner token injection, default token contract, new backend fact, VLM decision packet |
 | `gate.pre_dig_align` | successful rollout has `pre_dig_align.enabled=false`; completed/timeout counts are zero | pre-dig branch in `_maybe_switch_skill`, `_pre_dig_align_*`, `_pre_dig_align_action`, `PrimitivePreDigAlignCompatibilityRuntimeState` | parked compatibility/report state owner plus residual action diagnostics | explicit legacy config, old PD alignment replay, debug comparison | default FSM path, behavior-tree node, VLM effect unless re-approved |
 | removed `PrimitivePlannerACT5PPolicy` runtime path | user-approved cleanup, not mainline evidence | git history only | removed runtime path | historical comparison from old branches | source of default 4P architecture |
 
@@ -1405,10 +1405,12 @@ few remaining fields from these helpers would be a protective micro-slice
 unless it is grouped into a coherent report-input boundary with meaningful
 policy-shell deletion. `_debug_report_pre_dig_align_fields()` is parked
 compatibility reporting over the pre-dig-align compatibility state owner.
-`_cell_entry_tokens_for_obs()` and `_complete_cell_entry_dig()` remain parked
-cell-entry compatibility/legacy diagnostic algorithms and must not be promoted
-into the target token/runtime architecture without new evidence and explicit
-approval.
+primitive-planner `_cell_entry_tokens_for_obs()` and
+`_complete_cell_entry_dig()` have been removed. Historical cell-entry
+data/HDF5/training support remains a compatibility boundary, and public
+cell-entry report fields remain disabled/default schema surfaces. Do not
+recreate cell-entry primitive runtime or promote it into the target
+token/runtime architecture without new evidence and explicit approval.
 
 The restart/recovery cluster originally mixed live failed-dig recovery,
 coverage/token invalidation, terminal-stop diagnostics, return state clearing,

@@ -47,14 +47,8 @@ def _inputs(**overrides: Any) -> PrimitiveRolloutSummaryInputs:
         terminal_stop_reason="dig_area_depleted",
     )
     cell_entry = PrimitiveCellEntryReportStatus(
-        enabled=True,
-        trace=[
-            {"cycle_id": 1},
-            {"cycle_id": 2},
-            {"cycle_id": 3},
-            {"cycle_id": 4},
-            {"cycle_id": 5},
-        ],
+        enabled=False,
+        trace=[],
         selected_cell_id=-1,
         selected_long_index=-1,
         selected_short_index=-1,
@@ -141,7 +135,7 @@ def test_rollout_summary_builder_preserves_public_summary_keys() -> None:
     assert summary["completed_transition_count"] == 3
     assert summary["primitive_final_skill"] == "return"
     assert summary["primitive_cycle_index"] == 4
-    assert summary["cell_entry_trace_count"] == 5
+    assert summary["cell_entry_trace_count"] == 0
     assert summary["dig_cut_token_dim"] == 10
     assert summary["return_target_token_dim"] == 10
     assert summary["return_target_token_source"] == "return_target_corridor_1"
@@ -189,7 +183,7 @@ def test_rollout_summary_builder_preserves_int_and_nan_projection() -> None:
     ):
         assert type(summary[key]) is int
 
-    assert summary["cell_entry_enabled"] == 1
+    assert summary["cell_entry_enabled"] == 0
     assert summary["return_next_dig_event_seen"] == 0
     assert summary["coverage_use_env_removed_depth"] == 0
     assert summary["pre_dig_align_enabled"] == 0
