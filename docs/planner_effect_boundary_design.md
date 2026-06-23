@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.63: the default 4P mainline branch chain no longer
+Current status after Phase 9.64: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -83,7 +83,15 @@ active corridor id, terminal-stop state, active corridor lookup, corridor
 lists, and all-depleted checks now flow through the coverage state owner while
 mode/config, update/runtime services, facts builders, low-productivity
 thresholds, and decision-event recording remain explicit external ports. The
-policy now
+active dig token planning boundary now follows the same owner pattern:
+`PrimitiveDigTokenPlanningPorts` carries `PrimitiveTokenRuntimeState` and
+`CoverageRuntimeState`, and `PrimitiveDigTokenPlanningService` reads/writes
+pending dig route state, dig-cut source/fallback/prior flags,
+dig-depth-profile source/fallback fields, active corridor ids, payload/deposit
+baselines, and state-exemplar payload through those owners instead of
+policy-built storage callbacks. Config facts, token planner algorithms,
+observation facts, coverage corridor selection, and coverage raw-field building
+remain explicit external ports. The policy now
 also owns non-token return handoff/runtime cache state through
 `PrimitiveReturnRuntimeState`: return step count, return-to-dig entry-close
 cache, return next-dig-event flag, and return start-envelope gate result/checks
@@ -1135,6 +1143,25 @@ payload schema, event ordering, report/debug/summary/trace schemas,
 token/return/cycle/scripted-bootstrap/execution behavior, backend fail-fast
 behavior, parked `cell_entry`, residual `pre_dig_align`, or removed 5P runtime
 status.
+
+Phase 9.64 narrows the active dig token planning port boundary in
+`testbed/planner/primitive_dig_token_planning.py`.
+`PrimitiveDigTokenPlanningPorts` now carries the focused
+`PrimitiveTokenRuntimeState` and `CoverageRuntimeState` owners for pending dig
+route, dig-cut, dig-depth-profile, selected corridor, payload/deposit, and
+state-exemplar storage. `PrimitiveDigTokenPlanningService` reads and writes
+those owners directly, while dig-cut planner mode/config, token planner
+algorithms, bucket/env/deposit observation facts, coverage corridor selection,
+and coverage raw-field building remain explicit external ports. The policy's
+`_primitive_dig_token_planning_ports()` now passes
+`self._primitive_token_runtime_state()` and `self._coverage_runtime_state()`
+and no longer assembles token-state or coverage-state getter/setter callbacks
+for this active dig planning boundary. This phase does not change token
+dimensions/order/source strings, raw-field priority, cell-id priority,
+pending-return-target route semantics, dig-depth-profile planning behavior,
+coverage selection/effect semantics, debug/summary/trace schema, branch order,
+reason strings, backend fail-fast behavior, parked `cell_entry`, residual
+`pre_dig_align`, or removed 5P runtime status.
 
 Phase 9.55 extends `PrimitiveReturnRuntimeState` in
 `testbed/planner/primitive_return_state.py` with `to_report_status(...)` and

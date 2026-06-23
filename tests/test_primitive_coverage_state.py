@@ -158,6 +158,7 @@ def test_policy_selection_and_effect_ports_share_coverage_state_owner() -> None:
 
     selection_ports = policy._coverage_selection_runtime_ports()
     effect_ports = policy._coverage_effect_runtime_ports()
+    dig_token_ports = policy._primitive_dig_token_planning_ports()
 
     assert selection_ports.state is policy._coverage_state
     assert not hasattr(selection_ports, "coverage_corridors")
@@ -169,12 +170,22 @@ def test_policy_selection_and_effect_ports_share_coverage_state_owner() -> None:
     assert not hasattr(effect_ports, "set_current_payload_gain_kg")
     assert not hasattr(effect_ports, "update_rejected_state_exemplar_ids")
     assert effect_ports.state.coverage_corridors is policy._coverage_state.coverage_corridors
+    assert dig_token_ports.coverage_state is policy._coverage_state
+    assert not hasattr(dig_token_ports, "active_coverage_corridor")
+    assert not hasattr(dig_token_ports, "coverage_corridor_by_id")
+    assert not hasattr(dig_token_ports, "set_coverage_active_corridor_id")
+    assert not hasattr(dig_token_ports, "set_coverage_cycle_start_deposit_kg")
+    assert (
+        dig_token_ports.coverage_state.coverage_corridors
+        is policy._coverage_state.coverage_corridors
+    )
 
     selection_ports.state.set_active_corridor_id(12)
     selection_ports.state.set_last_selected_corridor_id(13)
     selection_ports.state.set_candidate_scores([{"corridor_id": 12, "score": 3.0}])
     effect_ports.state.set_current_payload_gain_kg(9.0)
     effect_ports.state.update_rejected_state_exemplar_ids(("cell0_c",))
+    dig_token_ports.coverage_state.set_cycle_start_deposit_kg(21.0)
 
     assert policy._coverage_state.coverage_active_corridor_id == 12
     assert policy._coverage_state.coverage_last_selected_corridor_id == 13
@@ -182,4 +193,5 @@ def test_policy_selection_and_effect_ports_share_coverage_state_owner() -> None:
         {"corridor_id": 12, "score": 3.0}
     ]
     assert policy._coverage_state.coverage_current_payload_gain_kg == 9.0
+    assert policy._coverage_state.coverage_cycle_start_deposit_kg == 21.0
     assert policy._coverage_state.coverage_rejected_state_exemplar_ids == {"cell0_c"}

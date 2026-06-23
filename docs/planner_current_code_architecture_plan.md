@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 5000+ | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 5479 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -72,6 +72,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_pre_dig_align_state.py` | 46 | parked pre-dig-align compatibility/report runtime state owner and reset defaults |
 | `testbed/planner/primitive_token_state.py` | 190 | mutable dig/return token runtime state owner, reset defaults, live token-status projection, and token report metadata projection |
 | `testbed/planner/primitive_token_runtime.py` | 254 | dig/return token runtime sequencing over the focused token state owner plus explicit external config/algorithm ports |
+| `testbed/planner/primitive_dig_token_planning.py` | 341 | active dig token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm/observation ports |
 | `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
 | `testbed/planner/primitive_cycle_state.py` | 123 | mutable live 4P cycle/progress runtime state owner, reset defaults, and live report/finalization projection |
 | `testbed/planner/primitive_scripted_bootstrap.py` | 144 | scripted bootstrap runtime state, readiness checks, timeout, PD action service, and live report/status projection |
@@ -1246,6 +1247,23 @@ payload schema, event ordering, report/debug/summary/trace schemas,
 token/return/cycle/scripted-bootstrap/execution behavior, backend fail-fast
 behavior, `cell_entry`, `pre_dig_align`, and removed 5P runtime status remain
 unchanged.
+
+Current status note after Phase 9.64: active dig token planning no longer uses
+policy-built getter/setter callbacks for token and coverage storage.
+`PrimitiveDigTokenPlanningPorts` in
+`testbed/planner/primitive_dig_token_planning.py` now carries
+`PrimitiveTokenRuntimeState` and `CoverageRuntimeState` directly, and
+`PrimitiveDigTokenPlanningService` reads/writes pending dig-cut route state,
+dig-cut source/fallback/prior flags, dig-depth-profile source/fallback fields,
+selected corridor ids, payload/deposit baselines, active corridor lookup, and
+state-exemplar payload through those owners. `PrimitivePlannerACTPolicy` still
+assembles explicit external ports for planner modes, token planner algorithms,
+bucket/env/deposit observation facts, coverage corridor selection, and coverage
+raw-field building. Token dimensions/order/source strings, raw-field priority,
+cell-id priority, pending-return-target route semantics, dig-depth-profile
+planning behavior, coverage selection/effect semantics, debug/summary/trace
+schema, branch order, reason strings, backend fail-fast behavior, `cell_entry`,
+`pre_dig_align`, and removed 5P runtime status remain unchanged.
 
 Hard constraint for future conclusions and executor prompts: protection is a
 constraint, not the objective. Each next slice must be the most effective

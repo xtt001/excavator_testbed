@@ -161,6 +161,29 @@ def test_token_runtime_ports_and_clear_facade_use_state_owner() -> None:
     assert state.dig_depth_profile_tokens.shape == (DIG_DEPTH_PROFILE_TOKEN_DIM,)
 
 
+def test_dig_token_planning_ports_share_token_state_owner() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    state = policy._primitive_token_runtime_state()
+    policy.dig_cut_planner_mode = "operator_prior_coverage"
+    policy.dig_cut_planner_fallback_mode = "conservative_pose"
+    policy._cycle_index = 0
+
+    ports = policy._primitive_dig_token_planning_ports()
+    port_names = {field.name for field in ports.__dataclass_fields__.values()}
+
+    assert ports.token_state is state
+    assert "get_pending_dig_cut_cycle_id" not in port_names
+    assert "get_pending_dig_cut_tokens" not in port_names
+    assert "set_dig_cut_token_source" not in port_names
+    assert "set_dig_depth_profile_fallback_reason" not in port_names
+
+    ports.token_state.pending_dig_cut_cycle_id = 17
+    ports.token_state.dig_cut_token_source = "operator_prior_coverage"
+
+    assert state.pending_dig_cut_cycle_id == 17
+    assert state.dig_cut_token_source == "operator_prior_coverage"
+
+
 def test_token_runtime_state_projects_token_status_from_live_runtime_state() -> None:
     state = PrimitiveTokenRuntimeState.fresh()
     dig_cut_tokens = np.arange(DIG_CUT_TOKEN_DIM, dtype=np.float32) + 1.0

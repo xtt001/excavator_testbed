@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.63 implementation. It is intentionally
+compares them with the current Phase 9.64 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -54,6 +54,11 @@ Current maturity:
   live `TokenStatus` plus token/pending/dig-cut report metadata projection;
   token runtime sequencing now consumes this owner directly instead of
   policy-built getter/setter callbacks**
+- active dig token planning mutable state-owner boundary: **achieved for
+  pending dig route, dig-cut status, dig-depth-profile status, active corridor,
+  selected corridor ids, payload/deposit baselines, and state-exemplar payload;
+  active dig token planning now consumes `PrimitiveTokenRuntimeState` and
+  `CoverageRuntimeState` directly instead of policy-built storage callbacks**
 - return runtime mutable state owner: **achieved for return handoff counters,
   entry-close cache, next-dig-event flag, start-envelope gate cache, and live
   return report/status projection**
@@ -619,6 +624,10 @@ Current boundary:
   return-relocate planning, and coverage exemplar facts remain explicit ports.
 - `PrimitiveDigTokenPlanningService` and
   `PrimitiveReturnTokenPlanningService` own orchestration.
+- `PrimitiveDigTokenPlanningService` ports carry `PrimitiveTokenRuntimeState`
+  and `CoverageRuntimeState` directly for active dig token planning storage
+  reads/writes; external config, token planners, observation facts, and
+  coverage raw-field building remain explicit ports.
 - Token algorithm classes remain in `primitive_tokens.py`.
 - `PrimitivePlannerACTPolicy` keeps old `_dig_cut_*`, `_return_*`, and
   `_pending_dig_*` private names as property-backed compatibility facades over

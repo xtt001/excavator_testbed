@@ -3844,6 +3844,8 @@ class PrimitivePlannerACTPolicy(Policy):
         self,
     ) -> PrimitiveDigTokenPlanningPorts:
         return PrimitiveDigTokenPlanningPorts(
+            token_state=self._primitive_token_runtime_state(),
+            coverage_state=self._coverage_runtime_state(),
             dig_cut_planner_mode=lambda: str(self.dig_cut_planner_mode),
             dig_cut_planner_fallback_mode=(
                 lambda: str(self.dig_cut_planner_fallback_mode)
@@ -3856,51 +3858,6 @@ class PrimitivePlannerACTPolicy(Policy):
             bucket_dig_area_pose=lambda obs: self._bucket_dig_area_pose(obs),
             deposited_mass=lambda obs: self._deposited_mass(obs),
             env_state=lambda obs: self._env_state(obs),
-            get_pending_dig_cut_cycle_id=(
-                lambda: int(self._pending_dig_cut_cycle_id)
-            ),
-            get_pending_dig_cut_tokens=lambda: self._pending_dig_cut_tokens,
-            get_pending_dig_cut_raw_fields=lambda: self._pending_dig_cut_raw_fields,
-            get_pending_dig_cut_corridor_id=(
-                lambda: int(self._pending_dig_cut_corridor_id)
-            ),
-            get_pending_dig_state_exemplar_ids=(
-                lambda: list(self._pending_dig_state_exemplar_ids)
-            ),
-            get_pending_dig_state_exemplar_distance=(
-                lambda: float(self._pending_dig_state_exemplar_distance)
-            ),
-            get_pending_dig_depth_profile_tokens=(
-                lambda: self._pending_dig_depth_profile_tokens
-            ),
-            get_dig_cut_tokens=lambda: self._dig_cut_tokens,
-            set_dig_cut_token_source=(
-                lambda value: setattr(self, "_dig_cut_token_source", str(value))
-            ),
-            set_dig_cut_fallback_reason=(
-                lambda value: setattr(self, "_dig_cut_fallback_reason", str(value))
-            ),
-            set_dig_cut_token_in_prior_p10_p90=(
-                lambda value: setattr(
-                    self,
-                    "_dig_cut_token_in_prior_p10_p90",
-                    bool(value),
-                )
-            ),
-            set_dig_depth_profile_token_source=(
-                lambda value: setattr(
-                    self,
-                    "_dig_depth_profile_token_source",
-                    str(value),
-                )
-            ),
-            set_dig_depth_profile_fallback_reason=(
-                lambda value: setattr(
-                    self,
-                    "_dig_depth_profile_fallback_reason",
-                    str(value),
-                )
-            ),
             select_next_coverage_corridor=(
                 lambda obs: self._select_next_coverage_corridor(obs)
             ),
@@ -3910,36 +3867,6 @@ class PrimitivePlannerACTPolicy(Policy):
                     obs=obs,
                     update_state=update_state,
                 )
-            ),
-            active_coverage_corridor=lambda: self._coverage_active_corridor(),
-            coverage_corridor_by_id=lambda corridor_id: self._coverage_corridor_by_id(
-                corridor_id
-            ),
-            set_coverage_active_corridor_id=self._set_coverage_active_corridor_id,
-            set_coverage_last_selected_corridor_id=(
-                self._set_coverage_last_selected_corridor_id
-            ),
-            set_coverage_current_payload_gain_kg=(
-                self._set_coverage_current_payload_gain_kg
-            ),
-            set_coverage_cycle_start_deposit_kg=(
-                lambda value: setattr(
-                    self,
-                    "_coverage_cycle_start_deposit_kg",
-                    float(value),
-                )
-            ),
-            set_coverage_active_state_exemplar=(
-                lambda exemplar_ids, distance, profile_token: (
-                    self._coverage_runtime_state().set_active_state_exemplar(
-                        exemplar_ids=list(exemplar_ids),
-                        distance=float(distance),
-                        profile_token=profile_token,
-                    )
-                )
-            ),
-            get_coverage_active_state_exemplar_profile_token=(
-                lambda: self._coverage_active_state_exemplar_profile_token
             ),
         )
 
