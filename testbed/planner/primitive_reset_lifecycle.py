@@ -63,20 +63,14 @@ class PrimitiveResetLifecycleState:
     cycle_index: int
     dump_start_deposited_mass_kg: float
     observation_injection_state: PrimitiveObservationInjectionRuntimeState
-    cell_entry_token_injected: bool
     token_state: PrimitiveTokenRuntimeState
     dig_cut_tokens: np.ndarray
-    dig_cut_token_injected: bool
     dig_depth_profile_tokens: np.ndarray
-    dig_depth_profile_token_injected: bool
     dig_depth_profile_token_source: str
     dig_depth_profile_fallback_reason: str
     return_target_tokens: np.ndarray
-    return_target_token_injected: bool
     return_relocate_tokens: np.ndarray
-    return_relocate_token_injected: bool
     return_start_envelope_tokens: np.ndarray
-    return_start_envelope_token_injected: bool
     return_start_envelope_token_source: str
     return_start_envelope_use_prior_spatial_bounds: bool
     return_start_envelope_use_prior_qpos_bounds: bool
@@ -132,26 +126,16 @@ class PrimitiveResetLifecycleState:
             "_cycle_index": self.cycle_index,
             "_dump_start_deposited_mass_kg": self.dump_start_deposited_mass_kg,
             "_observation_injection_state": self.observation_injection_state,
-            "_cell_entry_token_injected": self.cell_entry_token_injected,
             "_token_state": self.token_state,
             "_dig_cut_tokens": self.dig_cut_tokens,
-            "_dig_cut_token_injected": self.dig_cut_token_injected,
             "_dig_depth_profile_tokens": self.dig_depth_profile_tokens,
-            "_dig_depth_profile_token_injected": (
-                self.dig_depth_profile_token_injected
-            ),
             "_dig_depth_profile_token_source": self.dig_depth_profile_token_source,
             "_dig_depth_profile_fallback_reason": (
                 self.dig_depth_profile_fallback_reason
             ),
             "_return_target_tokens": self.return_target_tokens,
-            "_return_target_token_injected": self.return_target_token_injected,
             "_return_relocate_tokens": self.return_relocate_tokens,
-            "_return_relocate_token_injected": self.return_relocate_token_injected,
             "_return_start_envelope_tokens": self.return_start_envelope_tokens,
-            "_return_start_envelope_token_injected": (
-                self.return_start_envelope_token_injected
-            ),
             "_return_start_envelope_token_source": (
                 self.return_start_envelope_token_source
             ),
@@ -255,32 +239,16 @@ class PrimitiveResetLifecycleService:
                 cycle_state.dump_start_deposited_mass_kg
             ),
             observation_injection_state=observation_injection_state,
-            cell_entry_token_injected=(
-                observation_injection_state.cell_entry_token_injected
-            ),
             token_state=token_state,
             dig_cut_tokens=token_state.dig_cut_tokens,
-            dig_cut_token_injected=observation_injection_state.dig_cut_token_injected,
             dig_depth_profile_tokens=token_state.dig_depth_profile_tokens,
-            dig_depth_profile_token_injected=(
-                observation_injection_state.dig_depth_profile_token_injected
-            ),
             dig_depth_profile_token_source=token_state.dig_depth_profile_token_source,
             dig_depth_profile_fallback_reason=(
                 token_state.dig_depth_profile_fallback_reason
             ),
             return_target_tokens=token_state.return_target_tokens,
-            return_target_token_injected=(
-                observation_injection_state.return_target_token_injected
-            ),
             return_relocate_tokens=token_state.return_relocate_tokens,
-            return_relocate_token_injected=(
-                observation_injection_state.return_relocate_token_injected
-            ),
             return_start_envelope_tokens=token_state.return_start_envelope_tokens,
-            return_start_envelope_token_injected=(
-                observation_injection_state.return_start_envelope_token_injected
-            ),
             return_start_envelope_token_source=(
                 token_state.return_start_envelope_token_source
             ),

@@ -269,8 +269,9 @@ copy/no-copy behavior, and immutable legacy injected-flag state calculation.
 `PrimitiveObservationInjectionRuntimeState` owns the mutable per-observation
 injected compatibility flags: reset defaults, clear before assembly, apply from
 `PrimitiveTokenInjectionState`, and compatibility projection. The policy shell
-builds typed token-provider ports and keeps old injected-flag names as
-property-backed facades over that owner.
+builds typed token-provider ports and reads this owner directly; the old private
+injected-flag property facades and duplicate reset snapshot writeback entries
+are removed.
 `PrimitiveCellEntryCompatibilityRuntimeState` owns parked cell-entry
 compatibility/report storage: goal, goal cycle id, audit, cached token array,
 seen cell id, and trace list for standalone compatibility projection. The
@@ -1142,11 +1143,9 @@ existing immutable `PrimitiveTokenInjectionState` returned by
 `PrimitivePolicyObservationAssembler`. Reset creates one fresh observation
 injection state; `_clear_policy_observation_injected_flags()` delegates to
 `clear()`, and `_apply_policy_observation_assembly(...)` delegates to apply the
-assembler result. The policy's old `_cell_entry_token_injected`,
-`_dig_cut_token_injected`, `_dig_depth_profile_token_injected`,
-`_return_target_token_injected`, `_return_relocate_token_injected`, and
-`_return_start_envelope_token_injected` names remain compatibility facades over
-the same owner. This phase does not change token schema, token dimensions,
+assembler result. The policy now uses that owner directly and no longer exposes
+old private injected-flag property facades or duplicate reset snapshot
+writeback entries. This phase does not change token schema, token dimensions,
 injected observation key names, provider call order, copy/no-copy behavior,
 public report schemas, `cell_entry`, `pre_dig_align`, backend fail-fast
 behavior, or removed 5P runtime status.

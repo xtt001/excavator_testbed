@@ -1053,10 +1053,8 @@ Current status note after Phase 9.49: per-observation token injected
 compatibility flags are now owned by `PrimitiveObservationInjectionRuntimeState`
 in `testbed/planner/primitive_observation.py`. Reset creates a fresh
 observation-injection state and applies it through `_observation_injection_state`;
-the old `_cell_entry_token_injected`, `_dig_cut_token_injected`,
-`_dig_depth_profile_token_injected`, `_return_target_token_injected`,
-`_return_relocate_token_injected`, and
-`_return_start_envelope_token_injected` names are property-backed facades.
+the policy no longer keeps the old private injected-flag property facades or
+duplicate reset snapshot writeback entries for those flags.
 `PrimitivePolicyObservationAssembler` still owns provider order, key names,
 copy/no-copy behavior, and immutable `PrimitiveTokenInjectionState` projection;
 token schema, `cell_entry`, and `pre_dig_align` behavior remain unchanged.

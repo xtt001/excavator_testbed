@@ -620,12 +620,9 @@ Current boundary:
   policy keeps `_skill_name`, `_switch_reason`, `_prev_action`, and
   `_debug_state` as property-backed compatibility facades over that owner.
 - `PrimitiveObservationInjectionRuntimeState` owns per-observation token
-  injected compatibility flags. The policy keeps the old
-  `_cell_entry_token_injected`, `_dig_cut_token_injected`,
-  `_dig_depth_profile_token_injected`, `_return_target_token_injected`,
-  `_return_relocate_token_injected`, and
-  `_return_start_envelope_token_injected` names as property-backed
-  compatibility facades over that owner.
+  injected compatibility flags. The policy now reads this owner directly for
+  debug/summary/trace projection and no longer keeps old private injected-flag
+  property facades or reset snapshot writeback entries.
 - `PrimitiveCellEntryCompatibilityRuntimeState` owns parked cell-entry
   compatibility/report storage: goal, goal cycle id, audit, cached token array,
   seen cell id, trace list, and disabled public debug/summary/trace report

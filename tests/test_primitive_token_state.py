@@ -12,7 +12,10 @@ from testbed.data.operator_first_v2_2 import (
 )
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 from testbed.planner.primitive_coverage_state import CoverageRuntimeState
-from testbed.planner.primitive_observation import PrimitiveTokenInjectionState
+from testbed.planner.primitive_observation import (
+    PrimitiveObservationInjectionRuntimeState,
+    PrimitiveTokenInjectionState,
+)
 from testbed.planner.primitive_token_state import (
     PrimitiveTokenReportStatus,
     PrimitiveTokenRuntimeState,
@@ -318,12 +321,16 @@ def test_policy_token_status_facade_delegates_to_token_runtime_state() -> None:
     policy.cell_entry_enabled = True
     policy.dig_depth_profile_source = "prior_profile"
     policy.dig_depth_profile_required = True
-    policy._cell_entry_token_injected = True
-    policy._dig_cut_token_injected = True
-    policy._dig_depth_profile_token_injected = True
-    policy._return_target_token_injected = True
-    policy._return_relocate_token_injected = True
-    policy._return_start_envelope_token_injected = True
+    policy.__dict__["_observation_injection_state"] = (
+        PrimitiveObservationInjectionRuntimeState(
+            cell_entry_token_injected=True,
+            dig_cut_token_injected=True,
+            dig_depth_profile_token_injected=True,
+            return_target_token_injected=True,
+            return_relocate_token_injected=True,
+            return_start_envelope_token_injected=True,
+        )
+    )
 
     expected = state.to_token_status(
         cell_entry_enabled=False,
@@ -386,7 +393,9 @@ def test_policy_token_report_debug_facades_delegate_to_report_status() -> None:
     state.dig_cut_token_source = "operator_prior_coverage"
     state.dig_cut_token_in_prior_p10_p90 = True
     state.dig_cut_fallback_reason = "none"
-    policy._dig_cut_token_injected = True
+    policy.__dict__["_observation_injection_state"] = (
+        PrimitiveObservationInjectionRuntimeState(dig_cut_token_injected=True)
+    )
     policy.dig_cut_planner_mode = "operator_prior_coverage"
     policy.dig_cut_prior_id = "default"
     policy.dig_cut_prior_path = "/tmp/dig_prior.json"

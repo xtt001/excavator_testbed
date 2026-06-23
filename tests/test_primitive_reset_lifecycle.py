@@ -26,6 +26,16 @@ from testbed.policies.hybrid.primitive_planner import (
 )
 
 
+_OBSERVATION_INJECTION_FLAG_NAMES = {
+    "cell_entry_token_injected",
+    "dig_cut_token_injected",
+    "dig_depth_profile_token_injected",
+    "return_target_token_injected",
+    "return_relocate_token_injected",
+    "return_start_envelope_token_injected",
+}
+
+
 class _Policy:
     def __init__(self, name: str, events: list[str]) -> None:
         self.name = name
@@ -130,32 +140,46 @@ def test_reset_state_matches_legacy_counter_token_pending_and_coverage_defaults(
     assert state.transition_timeout_count == 0
     assert state.cycle_index == 0
     assert state.dump_start_deposited_mass_kg == 0.0
-    assert state.cell_entry_token_injected is False
+    assert state.observation_injection_state.to_token_injection_state() == (
+        state.observation_injection_state.fresh().to_token_injection_state()
+    )
     assert state.dig_cut_tokens.dtype == np.float32
     assert state.dig_cut_tokens.shape == (DIG_CUT_TOKEN_DIM,)
-    assert state.dig_cut_token_injected is False
     assert state.dig_cut_token_source == "none"
     assert state.dig_cut_fallback_reason == ""
     assert state.dig_cut_token_in_prior_p10_p90 is False
     assert state.dig_depth_profile_tokens.dtype == np.float32
     assert state.dig_depth_profile_tokens.shape == (DIG_DEPTH_PROFILE_TOKEN_DIM,)
-    assert state.dig_depth_profile_token_injected is False
     assert state.dig_depth_profile_token_source == "none"
     assert state.dig_depth_profile_fallback_reason == ""
     assert state.return_target_tokens.dtype == np.float32
     assert state.return_target_tokens.shape == (RETURN_TARGET_TOKEN_DIM,)
-    assert state.return_target_token_injected is False
     assert state.return_relocate_tokens.dtype == np.float32
     assert state.return_relocate_tokens.shape == (RETURN_TARGET_TOKEN_DIM,)
-    assert state.return_relocate_token_injected is False
     assert state.return_start_envelope_tokens.dtype == np.float32
     assert state.return_start_envelope_tokens.shape == (
         RETURN_START_ENVELOPE_TOKEN_DIM,
     )
-    assert state.return_start_envelope_token_injected is False
     assert state.return_start_envelope_token_source == "none"
     assert state.return_start_envelope_use_prior_spatial_bounds is True
     assert state.return_start_envelope_use_prior_qpos_bounds is True
+
+
+def test_reset_lifecycle_no_longer_emits_observation_injection_flag_updates() -> None:
+    ports, _ = _ports(action_dim=4)
+
+    state = PrimitiveResetLifecycleService.from_ports(ports).reset()
+    updates = state.as_policy_field_updates()
+    removed_policy_update_names = {
+        f"_{name}" for name in _OBSERVATION_INJECTION_FLAG_NAMES
+    }
+
+    assert _OBSERVATION_INJECTION_FLAG_NAMES.isdisjoint(
+        {field.name for field in fields(type(state))}
+    )
+    assert removed_policy_update_names.isdisjoint(updates)
+    assert "_observation_injection_state" in updates
+    assert updates["_observation_injection_state"] is state.observation_injection_state
 
 
 def test_reset_lifecycle_no_longer_emits_cell_entry_runtime_field_updates() -> None:

@@ -14,6 +14,16 @@ from testbed.planner.primitive_observation import (
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
+_INJECTED_FLAG_NAMES = {
+    "cell_entry_token_injected",
+    "dig_cut_token_injected",
+    "dig_depth_profile_token_injected",
+    "return_target_token_injected",
+    "return_relocate_token_injected",
+    "return_start_envelope_token_injected",
+}
+
+
 def _ports(
     events: list[str],
     *,
@@ -164,32 +174,10 @@ def test_observation_injection_runtime_state_clear_apply_and_projection() -> Non
     assert state.to_token_injection_state() == PrimitiveTokenInjectionState()
 
 
-def test_policy_legacy_injected_flags_are_backed_by_one_observation_state() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-    state = planner._primitive_observation_injection_runtime_state()
+def test_policy_no_longer_exposes_old_observation_injection_flag_facades() -> None:
+    removed_names = {f"_{name}" for name in _INJECTED_FLAG_NAMES}
 
-    planner._cell_entry_token_injected = 1
-    planner._dig_cut_token_injected = True
-    planner._dig_depth_profile_token_injected = False
-    planner._return_target_token_injected = True
-    planner._return_relocate_token_injected = False
-    planner._return_start_envelope_token_injected = True
-
-    assert planner._primitive_observation_injection_runtime_state() is state
-    assert state.to_token_injection_state() == PrimitiveTokenInjectionState(
-        cell_entry_token_injected=True,
-        dig_cut_token_injected=True,
-        dig_depth_profile_token_injected=False,
-        return_target_token_injected=True,
-        return_relocate_token_injected=False,
-        return_start_envelope_token_injected=True,
-    )
-    assert planner._cell_entry_token_injected is True
-    assert planner._dig_cut_token_injected is True
-    assert planner._dig_depth_profile_token_injected is False
-    assert planner._return_target_token_injected is True
-    assert planner._return_relocate_token_injected is False
-    assert planner._return_start_envelope_token_injected is True
+    assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
 
 
 def test_policy_reset_application_replaces_observation_injection_state_owner() -> None:
@@ -205,7 +193,7 @@ def test_policy_reset_application_replaces_observation_injection_state_owner() -
             return {"_observation_injection_state": reset_state}
 
     planner._apply_reset_lifecycle_state(_ResetState())
-    planner._return_target_token_injected = True
+    reset_state.return_target_token_injected = True
 
     assert planner._primitive_observation_injection_runtime_state() is reset_state
     assert planner._primitive_observation_injection_runtime_state() is not old_state
@@ -219,12 +207,17 @@ def test_policy_reset_application_replaces_observation_injection_state_owner() -
 
 def test_policy_obs_delegates_to_assembler_and_writes_legacy_flags() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
-    planner._cell_entry_token_injected = True
-    planner._dig_cut_token_injected = True
-    planner._dig_depth_profile_token_injected = True
-    planner._return_target_token_injected = True
-    planner._return_relocate_token_injected = True
-    planner._return_start_envelope_token_injected = True
+    state = planner._primitive_observation_injection_runtime_state()
+    state.apply_token_injection_state(
+        PrimitiveTokenInjectionState(
+            cell_entry_token_injected=True,
+            dig_cut_token_injected=True,
+            dig_depth_profile_token_injected=True,
+            return_target_token_injected=True,
+            return_relocate_token_injected=True,
+            return_start_envelope_token_injected=True,
+        )
+    )
     obs = {"qpos": [1.0]}
     assembled_obs = {"qpos": [1.0], "dig_cut_tokens": object()}
 
@@ -234,12 +227,7 @@ def test_policy_obs_delegates_to_assembler_and_writes_legacy_flags() -> None:
             got_obs: dict[str, Any],
         ) -> PrimitivePolicyObservationAssemblyResult:
             assert got_obs is obs
-            assert planner._cell_entry_token_injected is False
-            assert planner._dig_cut_token_injected is False
-            assert planner._dig_depth_profile_token_injected is False
-            assert planner._return_target_token_injected is False
-            assert planner._return_relocate_token_injected is False
-            assert planner._return_start_envelope_token_injected is False
+            assert state.to_token_injection_state() == PrimitiveTokenInjectionState()
             return PrimitivePolicyObservationAssemblyResult(
                 policy_obs=assembled_obs,
                 token_injection_state=PrimitiveTokenInjectionState(
@@ -256,9 +244,7 @@ def test_policy_obs_delegates_to_assembler_and_writes_legacy_flags() -> None:
     result = planner._policy_obs(obs)
 
     assert result is assembled_obs
-    assert planner._cell_entry_token_injected is False
-    assert planner._dig_cut_token_injected is True
-    assert planner._dig_depth_profile_token_injected is False
-    assert planner._return_target_token_injected is True
-    assert planner._return_relocate_token_injected is False
-    assert planner._return_start_envelope_token_injected is False
+    assert state.to_token_injection_state() == PrimitiveTokenInjectionState(
+        dig_cut_token_injected=True,
+        return_target_token_injected=True,
+    )

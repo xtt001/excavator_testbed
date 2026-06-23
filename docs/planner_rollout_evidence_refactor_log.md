@@ -9198,3 +9198,53 @@ Each completed refactor round should append:
   anemic service, pass-through facade, generic blackboard, broad config bag,
   planner self port, broad cleanup sweep, or commit in the implementation
   thread.
+
+### 2026-06-24 Observation Injection Flag Private Facade Cleanup
+
+- Scope implemented by cleanup executor: remove the remaining old-name private
+  observation-injection flag property facades from `PrimitivePlannerACTPolicy`
+  and remove the duplicate reset snapshot writeback fields after
+  `PrimitiveObservationInjectionRuntimeState` became the focused owner.
+- TDD red result: after moving focused tests to the owner contract,
+  `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_token_state.py tests/test_primitive_reset_lifecycle.py`
+  failed with representative errors:
+  `test_policy_no_longer_exposes_old_observation_injection_flag_facades`
+  because `PrimitivePlannerACTPolicy.__dict__` still exposed the six old private
+  injected-flag properties, and
+  `test_reset_lifecycle_no_longer_emits_observation_injection_flag_updates`
+  because `PrimitiveResetLifecycleState` still carried the six duplicate reset
+  fields.
+- Core change: `PrimitivePlannerACTPolicy` no longer exposes the old private
+  observation-injection flag property descriptors. `PrimitiveResetLifecycleState`
+  no longer carries or writes those duplicate reset snapshot fields; reset still
+  writes one `_observation_injection_state` owner. Tests now manipulate
+  `PrimitiveObservationInjectionRuntimeState` and `PrimitiveTokenInjectionState`
+  directly.
+- Compatibility retained: token provider order, injected observation key names,
+  token dimensions/source/fallback strings, public debug/summary/trace report
+  fields, reset-default flag clearing, parked `cell_entry`, parked
+  `pre_dig_align`, and BT/VLM/LLM unsupported fail-fast behavior remain
+  unchanged.
+- Verification:
+  - `python -m pytest -q tests/test_primitive_observation.py tests/test_primitive_token_state.py tests/test_primitive_reset_lifecycle.py`
+    -> `30 passed in 0.14s`
+  - `python -m pytest -q tests/test_primitive_debug_report.py tests/test_primitive_rollout_summary.py tests/test_primitive_planner_trace.py`
+    -> `9 passed in 0.12s`
+  - `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "dig_cut_tokens or dig_depth_profile or return_to_dig or start_envelope or semantic_boundary_events_drive_skill_sequence"`
+    -> `6 passed, 101 deselected in 0.78s`
+  - `python -m compileall testbed/policies/hybrid/primitive_planner.py testbed/planner/primitive_reset_lifecycle.py testbed/planner/primitive_observation.py tests/test_primitive_observation.py tests/test_primitive_token_state.py tests/test_primitive_reset_lifecycle.py`
+    -> compiled the touched test files, exit 0
+  - `python scripts/planner_refactor_guard.py --check-plan-contract`
+    -> no output, exit 0
+  - `python scripts/planner_refactor_guard.py --check-skill-contract`
+    -> no output, exit 0
+  - `git diff --check`
+    -> no output, exit 0
+  - source check for the six old underscored private flag names in the touched
+    policy/reset/test files
+    -> no matches, exit 1 from `rg`
+- Non-goals held: no token schema/key/dimension/source/fallback change, no
+  public debug/summary/trace schema change, no observation assembler provider
+  order change, no `cell_entry` runtime promotion, no `pre_dig_align` change,
+  no behavior-tree/VLM/LLM backend work, no runtime config edit, and no commit
+  in the implementation thread.
