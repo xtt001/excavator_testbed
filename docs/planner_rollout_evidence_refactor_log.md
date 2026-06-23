@@ -6090,3 +6090,81 @@ Each completed refactor round should append:
 - Audit note: this is implementation round 1 after the latest three-iteration
   reflection. It follows the reflection by targeting a broader live coverage
   report/trace boundary instead of another one-field status move.
+
+### 2026-06-23 Phase 9.59 Move Coverage Summary Status Into Coverage Report Boundary
+
+- Scope: extended `CoverageReportService` in
+  `testbed/planner/primitive_coverage_reports.py` so the live coverage
+  sub-projection used by `rollout_summary()` is carried as one explicit
+  coverage report/status object instead of many independent policy-prepared
+  summary fields.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 122]`, HEAD
+  before this round `e17b8be4051fb13b13cacaaa6815145fb96c58d7`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- Added frozen `CoverageSummaryReportStatus` carrying the rollout-summary
+  coverage subset: selected corridor id, depleted/completed/pass counters,
+  multi-pass and env-removed-depth flags, candidate layout, first-dig strategy
+  and config values, and terminal-stop status.
+- Added `CoverageReportService.summary_status(...)`, projecting explicit
+  coverage summary values with the existing bool/int/float/string/`None`
+  semantics.
+- `PrimitiveRolloutSummaryInputs` now carries one
+  `CoverageSummaryReportStatus` object for the coverage subset instead of many
+  independent coverage fields.
+- `PrimitiveRolloutSummaryBuilder` preserves the same public summary keys,
+  bool-to-int projection, and `None`-to-`NaN` projection through the coverage
+  status object.
+- `PrimitivePlannerACTPolicy._rollout_summary_inputs()` now constructs the
+  coverage summary status through `CoverageReportService`, while non-coverage
+  summary fields remain explicit inputs.
+- Preserved behavior: public `rollout_summary()` key names, bool-to-int
+  projection, `None`-to-`NaN` projection, debug schemas, planner trace schemas,
+  coverage algorithms, corridor debug payload values, decision trace mutation,
+  terminal-stop behavior, backend facts, token/return/cycle/scripted-bootstrap
+  owners, `cell_entry`, `pre_dig_align`, and removed 5P runtime status are
+  unchanged.
+- Explicit non-goals: no coverage corridor selection/scoring/effect/runtime
+  update algorithm change, no `CoverageDebugReportInputs` or
+  `_debug_report_coverage_fields()` change, no `CoverageTraceReportStatus` or
+  `_planner_trace_inputs()` change, no public summary schema change, no backend
+  selection change, no generic report blackboard or pass-through facade.
+- TDD red result from executor callback: after focused tests were added, the
+  first run of `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_rollout_summary.py`
+  failed as expected with `ImportError` because `CoverageSummaryReportStatus`
+  did not yet exist in `testbed.planner.primitive_coverage_reports`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_rollout_summary.py`
+  returned `9 passed`;
+  `python -m pytest -q tests/test_primitive_debug_report.py tests/test_primitive_planner_trace.py`
+  returned `6 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_state.py tests/test_primitive_coverage_selection.py tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_updates.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or return_to_dig or scripted_bootstrap"`
+  returned `5 passed, 114 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_coverage_reports.py tests/test_primitive_rollout_summary.py`
+  returned `9 passed`;
+  `python -m pytest -q tests/test_primitive_debug_report.py tests/test_primitive_planner_trace.py`
+  returned `6 passed`;
+  `python -m pytest -q tests/test_primitive_coverage_state.py tests/test_primitive_coverage_selection.py tests/test_primitive_coverage_effect_runtime.py tests/test_primitive_coverage_updates.py`
+  returned `19 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "coverage_decision_trace or semantic_boundary_events_drive_skill_sequence or return_to_dig or scripted_bootstrap"`
+  returned `5 passed, 114 deselected`; compileall for touched modules passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Post-documentation checks by the audit thread: both planner guard commands
+  and `git diff --check` passed.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It implemented a live coverage rollout-summary
+  sub-projection in the existing coverage report boundary and was not a tiny
+  compatibility dict or pass-through facade. No anemic service or generic
+  blackboard was created.
+- Audit note: this is implementation round 2 after the latest three-iteration
+  reflection. It continues the reflection's broader coverage/report/trace
+  boundary direction and does not promote the current implementation to a fully
+  swappable backend architecture.

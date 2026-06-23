@@ -3,7 +3,7 @@
 Status: **active interface target and implementation standard**.
 
 This document defines the target primitive planner interface boundaries and
-compares them with the current Phase 9.58 implementation. It is intentionally
+compares them with the current Phase 9.59 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
 move the code toward the architecture in
 `docs/planner_execution_abstraction_flow.svg`.
@@ -38,6 +38,9 @@ Current maturity:
 - coverage trace/report projection: **achieved for the planner-trace coverage
   subset through `CoverageTraceReportStatus` and
   `CoverageReportService.trace_status(...)`**
+- coverage rollout-summary projection: **achieved for the rollout-summary
+  coverage subset through `CoverageSummaryReportStatus` and
+  `CoverageReportService.summary_status(...)`**
 - token runtime mutable state owner: **achieved for dig/return token arrays,
   source/fallback flags, prior-bound flags, pending next-dig token state, and
   live `TokenStatus` projection**
@@ -501,7 +504,8 @@ Current boundary:
   completion, and PD action generation.
 - `CoverageReportService` owns coverage corridor debug projection, decision
   event payloads, coverage debug-field assembly, and planner-trace coverage
-  sub-projection through `CoverageTraceReportStatus`.
+  sub-projection through `CoverageTraceReportStatus`, plus rollout-summary
+  coverage sub-projection through `CoverageSummaryReportStatus`.
 - `PrimitiveExecutionRuntimeState` owns execution lifecycle metadata: active
   skill, switch reason, previous action, and latest compact debug state. The
   policy keeps `_skill_name`, `_switch_reason`, `_prev_action`, and
@@ -663,16 +667,17 @@ Current boundary:
   `PrimitivePlannerTraceBuilder` exist.
 - `CoverageReportService` owns coverage corridor debug payloads, coverage
   decision-event payloads, coverage debug-field schema projection through
-  explicit `CoverageDebugReportInputs`, and planner-trace coverage sub-
-  projection through `CoverageTraceReportStatus`.
+  explicit `CoverageDebugReportInputs`, planner-trace coverage sub-projection
+  through `CoverageTraceReportStatus`, and rollout-summary coverage sub-
+  projection through `CoverageSummaryReportStatus`.
 - Policy still prepares section snapshots and compatibility fields.
 
 Gap:
 
 - This layer is close to target.
-- Section snapshot providers may be further narrowed later. Coverage debug-field
-  schema assembly is outside the large policy class; other report input
-  assembly still has policy-side compatibility glue.
+- Section snapshot providers may be further narrowed later. Coverage debug,
+  trace, and summary coverage schema assembly are outside the large policy
+  class; other report input assembly still has policy-side compatibility glue.
 
 Standard:
 

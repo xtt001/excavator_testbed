@@ -60,6 +60,23 @@ class CoverageTraceReportStatus:
 
 
 @dataclass(frozen=True)
+class CoverageSummaryReportStatus:
+    selected_corridor_id: int
+    depleted_count: int
+    completed_dump_count: int
+    pass_index: int
+    multi_pass_enabled: bool
+    use_env_removed_depth: bool
+    candidate_layout: str
+    first_dig_strategy: str
+    first_dig_preferred_corridor_id: int | None
+    first_dig_max_entry_distance_m: float | None
+    first_dig_qpos_delta_weight: float
+    terminal_stop_requested: bool
+    terminal_stop_reason: str
+
+
+@dataclass(frozen=True)
 class CoverageReportState:
     cycle_index: int
     skill_name: str
@@ -123,6 +140,47 @@ class CoverageReportService:
             ),
             corridors=list(corridors),
             decision_trace=list(decision_trace),
+            terminal_stop_requested=bool(terminal_stop_requested),
+            terminal_stop_reason=str(terminal_stop_reason),
+        )
+
+    @staticmethod
+    def summary_status(
+        *,
+        selected_corridor_id: int,
+        depleted_count: int,
+        completed_dump_count: int,
+        pass_index: int,
+        multi_pass_enabled: bool,
+        use_env_removed_depth: bool,
+        candidate_layout: str,
+        first_dig_strategy: str,
+        first_dig_preferred_corridor_id: int | None,
+        first_dig_max_entry_distance_m: float | None,
+        first_dig_qpos_delta_weight: float,
+        terminal_stop_requested: bool,
+        terminal_stop_reason: str,
+    ) -> CoverageSummaryReportStatus:
+        return CoverageSummaryReportStatus(
+            selected_corridor_id=int(selected_corridor_id),
+            depleted_count=int(depleted_count),
+            completed_dump_count=int(completed_dump_count),
+            pass_index=int(pass_index),
+            multi_pass_enabled=bool(multi_pass_enabled),
+            use_env_removed_depth=bool(use_env_removed_depth),
+            candidate_layout=str(candidate_layout),
+            first_dig_strategy=str(first_dig_strategy),
+            first_dig_preferred_corridor_id=(
+                None
+                if first_dig_preferred_corridor_id is None
+                else int(first_dig_preferred_corridor_id)
+            ),
+            first_dig_max_entry_distance_m=(
+                None
+                if first_dig_max_entry_distance_m is None
+                else float(first_dig_max_entry_distance_m)
+            ),
+            first_dig_qpos_delta_weight=float(first_dig_qpos_delta_weight),
             terminal_stop_requested=bool(terminal_stop_requested),
             terminal_stop_reason=str(terminal_stop_reason),
         )
@@ -332,5 +390,6 @@ __all__ = [
     "CoverageDebugReportInputs",
     "CoverageReportService",
     "CoverageReportState",
+    "CoverageSummaryReportStatus",
     "CoverageTraceReportStatus",
 ]

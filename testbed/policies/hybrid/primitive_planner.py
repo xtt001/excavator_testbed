@@ -2229,6 +2229,31 @@ class PrimitivePlannerACTPolicy(Policy):
         cycle_status = self._cycle_report_status()
         return_status = self._return_report_status()
         scripted_bootstrap_status = self._scripted_bootstrap_report_status()
+        coverage_status = self._coverage_report_service().summary_status(
+            selected_corridor_id=int(self._coverage_active_corridor_id),
+            depleted_count=int(self._coverage_depleted_count()),
+            completed_dump_count=int(self._coverage_completed_dump_count),
+            pass_index=int(self._coverage_pass_index),
+            multi_pass_enabled=bool(self.coverage_multi_pass_enabled),
+            use_env_removed_depth=bool(self.coverage_use_env_removed_depth),
+            candidate_layout=str(self.coverage_candidate_layout),
+            first_dig_strategy=str(self.coverage_first_dig_strategy),
+            first_dig_preferred_corridor_id=(
+                None
+                if self.coverage_first_dig_preferred_corridor_id is None
+                else int(self.coverage_first_dig_preferred_corridor_id)
+            ),
+            first_dig_max_entry_distance_m=(
+                self.coverage_first_dig_max_entry_distance_m
+            ),
+            first_dig_qpos_delta_weight=float(
+                self.coverage_first_dig_qpos_delta_weight
+            ),
+            terminal_stop_requested=bool(
+                self._coverage_terminal_stop_requested
+            ),
+            terminal_stop_reason=str(self._coverage_terminal_stop_reason),
+        )
         return PrimitiveRolloutSummaryInputs(
             transition_source=TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
             transition_policy_mode=TRANSITION_POLICY_MODE_PRIMITIVE,
@@ -2281,31 +2306,7 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             dig_cut_fallback_reason=str(self._dig_cut_fallback_reason),
             dig_failed_replan_next_skill=str(self.dig_failed_replan_next_skill),
-            coverage_selected_corridor_id=int(self._coverage_active_corridor_id),
-            coverage_depleted_count=int(self._coverage_depleted_count()),
-            coverage_completed_dump_count=int(self._coverage_completed_dump_count),
-            coverage_pass_index=int(self._coverage_pass_index),
-            coverage_multi_pass_enabled=bool(self.coverage_multi_pass_enabled),
-            coverage_use_env_removed_depth=bool(
-                self.coverage_use_env_removed_depth
-            ),
-            coverage_candidate_layout=str(self.coverage_candidate_layout),
-            coverage_first_dig_strategy=str(self.coverage_first_dig_strategy),
-            coverage_first_dig_preferred_corridor_id=(
-                None
-                if self.coverage_first_dig_preferred_corridor_id is None
-                else int(self.coverage_first_dig_preferred_corridor_id)
-            ),
-            coverage_first_dig_max_entry_distance_m=(
-                self.coverage_first_dig_max_entry_distance_m
-            ),
-            coverage_first_dig_qpos_delta_weight=float(
-                self.coverage_first_dig_qpos_delta_weight
-            ),
-            coverage_terminal_stop_requested=bool(
-                self._coverage_terminal_stop_requested
-            ),
-            coverage_terminal_stop_reason=str(self._coverage_terminal_stop_reason),
+            coverage=coverage_status,
             scripted_bootstrap_timeout_count=(
                 scripted_bootstrap_status.timeout_count
             ),

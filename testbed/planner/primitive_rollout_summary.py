@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from testbed.planner.primitive_coverage_reports import CoverageSummaryReportStatus
+
 
 PrimitiveRolloutSummaryValue = float | int | str | list[str]
 
@@ -45,19 +47,7 @@ class PrimitiveRolloutSummaryInputs:
     dig_cut_token_in_prior_p10_p90: bool
     dig_cut_fallback_reason: str
     dig_failed_replan_next_skill: str
-    coverage_selected_corridor_id: int
-    coverage_depleted_count: int
-    coverage_completed_dump_count: int
-    coverage_pass_index: int
-    coverage_multi_pass_enabled: bool
-    coverage_use_env_removed_depth: bool
-    coverage_candidate_layout: str
-    coverage_first_dig_strategy: str
-    coverage_first_dig_preferred_corridor_id: int | None
-    coverage_first_dig_max_entry_distance_m: float | None
-    coverage_first_dig_qpos_delta_weight: float
-    coverage_terminal_stop_requested: bool
-    coverage_terminal_stop_reason: str
+    coverage: CoverageSummaryReportStatus
     scripted_bootstrap_timeout_count: int
     pre_dig_align_enabled: bool
     pre_dig_align_first_dig_only: bool
@@ -135,37 +125,39 @@ class PrimitiveRolloutSummaryBuilder:
                 inputs.dig_failed_replan_next_skill
             ),
             "coverage_selected_corridor_id": int(
-                inputs.coverage_selected_corridor_id
+                inputs.coverage.selected_corridor_id
             ),
-            "coverage_depleted_count": int(inputs.coverage_depleted_count),
+            "coverage_depleted_count": int(inputs.coverage.depleted_count),
             "coverage_completed_dump_count": int(
-                inputs.coverage_completed_dump_count
+                inputs.coverage.completed_dump_count
             ),
-            "coverage_pass_index": int(inputs.coverage_pass_index),
-            "coverage_multi_pass_enabled": int(inputs.coverage_multi_pass_enabled),
+            "coverage_pass_index": int(inputs.coverage.pass_index),
+            "coverage_multi_pass_enabled": int(
+                inputs.coverage.multi_pass_enabled
+            ),
             "coverage_use_env_removed_depth": int(
-                inputs.coverage_use_env_removed_depth
+                inputs.coverage.use_env_removed_depth
             ),
-            "coverage_candidate_layout": str(inputs.coverage_candidate_layout),
+            "coverage_candidate_layout": str(inputs.coverage.candidate_layout),
             "coverage_first_dig_strategy": str(
-                inputs.coverage_first_dig_strategy
+                inputs.coverage.first_dig_strategy
             ),
             "coverage_first_dig_preferred_corridor_id": int(
                 -1
-                if inputs.coverage_first_dig_preferred_corridor_id is None
-                else inputs.coverage_first_dig_preferred_corridor_id
+                if inputs.coverage.first_dig_preferred_corridor_id is None
+                else inputs.coverage.first_dig_preferred_corridor_id
             ),
             "coverage_first_dig_max_entry_distance_m": _float_or_nan(
-                inputs.coverage_first_dig_max_entry_distance_m
+                inputs.coverage.first_dig_max_entry_distance_m
             ),
             "coverage_first_dig_qpos_delta_weight": float(
-                inputs.coverage_first_dig_qpos_delta_weight
+                inputs.coverage.first_dig_qpos_delta_weight
             ),
             "coverage_terminal_stop_requested": int(
-                inputs.coverage_terminal_stop_requested
+                inputs.coverage.terminal_stop_requested
             ),
             "coverage_terminal_stop_reason": str(
-                inputs.coverage_terminal_stop_reason
+                inputs.coverage.terminal_stop_reason
             ),
             "scripted_bootstrap_timeout_count": int(
                 inputs.scripted_bootstrap_timeout_count

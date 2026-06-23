@@ -8,6 +8,7 @@ import numpy as np
 from testbed.planner.primitive_coverage_reports import (
     CoverageDebugReportInputs,
     CoverageReportService,
+    CoverageSummaryReportStatus,
     CoverageTraceReportStatus,
 )
 from tests.test_agx_primitives_v2_2 import (
@@ -203,3 +204,37 @@ def test_coverage_report_service_projects_trace_status() -> None:
     assert status.decision_trace is not decision_trace
     assert status.corridors[0] is corridors[0]
     assert status.decision_trace[0] is decision_trace[0]
+
+
+def test_coverage_report_service_projects_summary_status() -> None:
+    status = CoverageReportService().summary_status(
+        selected_corridor_id=12,
+        depleted_count=6,
+        completed_dump_count=7,
+        pass_index=1,
+        multi_pass_enabled=True,
+        use_env_removed_depth=False,
+        candidate_layout="corridor_grid",
+        first_dig_strategy="preferred_corridor",
+        first_dig_preferred_corridor_id=None,
+        first_dig_max_entry_distance_m=None,
+        first_dig_qpos_delta_weight=0.75,
+        terminal_stop_requested=True,
+        terminal_stop_reason="dig_area_depleted",
+    )
+
+    assert status == CoverageSummaryReportStatus(
+        selected_corridor_id=12,
+        depleted_count=6,
+        completed_dump_count=7,
+        pass_index=1,
+        multi_pass_enabled=True,
+        use_env_removed_depth=False,
+        candidate_layout="corridor_grid",
+        first_dig_strategy="preferred_corridor",
+        first_dig_preferred_corridor_id=None,
+        first_dig_max_entry_distance_m=None,
+        first_dig_qpos_delta_weight=0.75,
+        terminal_stop_requested=True,
+        terminal_stop_reason="dig_area_depleted",
+    )

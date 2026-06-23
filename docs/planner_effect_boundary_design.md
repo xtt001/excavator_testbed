@@ -52,7 +52,7 @@ Only the execution kernel or shell-side applier may mutate planner state.
 Backends may choose, explain, and request effects, but must not call planner
 private methods or write planner fields directly.
 
-Current status after Phase 9.58: the default 4P mainline branch chain no longer
+Current status after Phase 9.59: the default 4P mainline branch chain no longer
 falls through to the broad `LegacyFSMBackendAdapter -> _maybe_switch_skill()`
 callback, and branch ordering is no longer hand-written in the large policy
 shell. The decision runtime now selects a backend factory through
@@ -217,11 +217,10 @@ return gate fields, coverage fields, cell-entry compatibility fields, and
 residual pre-dig fields. The policy shell builds a typed debug snapshot and
 section values, then delegates report assembly to the builder.
 `CoverageReportService` now also owns the planner-trace coverage sub-
-projection through `CoverageTraceReportStatus`: coverage config flags,
-pass-index/multi-pass fields, corridor debug payload list, decision trace list,
-decision-trace count input, and terminal-stop fields. The policy shell still
-builds explicit coverage trace facts and non-coverage trace inputs; coverage
-debug and rollout-summary projection remain unchanged.
+projection through `CoverageTraceReportStatus` and the rollout-summary coverage
+sub-projection through `CoverageSummaryReportStatus`. The policy shell still
+builds explicit coverage report facts and non-coverage report inputs; coverage
+debug projection remains unchanged.
 
 Phase 9.58 extends `CoverageReportService` in
 `testbed/planner/primitive_coverage_reports.py` with `trace_status(...)` and
@@ -233,6 +232,17 @@ coverage decision trace count semantics, list shallow-copy behavior, corridor
 debug payload values, decision trace mutation, terminal-stop behavior, coverage
 debug/summary schemas, coverage algorithms, backend facts, or removed 5P
 runtime status.
+
+Phase 9.59 extends the same `CoverageReportService` with
+`summary_status(...)` and adds `CoverageSummaryReportStatus`. The rollout
+summary coverage subset now moves as one coverage report/status object into
+`PrimitiveRolloutSummaryInputs`, while
+`PrimitivePlannerACTPolicy._rollout_summary_inputs()` remains a thin explicit-
+facts assembler for coverage summary status and non-coverage summary fields.
+This phase does not change public `rollout_summary()` key names, bool-to-int
+projection, `None`-to-`NaN` projection, debug schemas, planner trace schemas,
+coverage algorithms, corridor debug payload values, decision trace mutation,
+terminal-stop behavior, backend facts, or removed 5P runtime status.
 
 `PrimitiveRolloutSummaryBuilder` now owns public `rollout_summary()` dict
 assembly: summary key layout, bool-like `int(...)` projections, `None` to

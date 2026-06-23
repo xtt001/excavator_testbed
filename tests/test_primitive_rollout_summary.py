@@ -4,6 +4,7 @@ import math
 from types import MethodType
 from typing import Any
 
+from testbed.planner.primitive_coverage_reports import CoverageSummaryReportStatus
 from testbed.planner.primitive_rollout_summary import (
     PrimitiveRolloutSummaryBuilder,
     PrimitiveRolloutSummaryInputs,
@@ -12,6 +13,21 @@ from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
 def _inputs(**overrides: Any) -> PrimitiveRolloutSummaryInputs:
+    coverage = CoverageSummaryReportStatus(
+        selected_corridor_id=12,
+        depleted_count=6,
+        completed_dump_count=7,
+        pass_index=1,
+        multi_pass_enabled=True,
+        use_env_removed_depth=False,
+        candidate_layout="corridor_grid",
+        first_dig_strategy="preferred_corridor",
+        first_dig_preferred_corridor_id=None,
+        first_dig_max_entry_distance_m=None,
+        first_dig_qpos_delta_weight=0.75,
+        terminal_stop_requested=True,
+        terminal_stop_reason="dig_area_depleted",
+    )
     values: dict[str, Any] = {
         "transition_source": "v2_2_primitive_return_policy",
         "transition_policy_mode": "primitive_return_policy",
@@ -46,19 +62,7 @@ def _inputs(**overrides: Any) -> PrimitiveRolloutSummaryInputs:
         "dig_cut_token_in_prior_p10_p90": True,
         "dig_cut_fallback_reason": "none",
         "dig_failed_replan_next_skill": "dig",
-        "coverage_selected_corridor_id": 12,
-        "coverage_depleted_count": 6,
-        "coverage_completed_dump_count": 7,
-        "coverage_pass_index": 1,
-        "coverage_multi_pass_enabled": True,
-        "coverage_use_env_removed_depth": False,
-        "coverage_candidate_layout": "corridor_grid",
-        "coverage_first_dig_strategy": "preferred_corridor",
-        "coverage_first_dig_preferred_corridor_id": None,
-        "coverage_first_dig_max_entry_distance_m": None,
-        "coverage_first_dig_qpos_delta_weight": 0.75,
-        "coverage_terminal_stop_requested": True,
-        "coverage_terminal_stop_reason": "dig_area_depleted",
+        "coverage": coverage,
         "scripted_bootstrap_timeout_count": 8,
         "pre_dig_align_enabled": False,
         "pre_dig_align_first_dig_only": True,
