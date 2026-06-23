@@ -163,6 +163,7 @@ from testbed.planner.primitive_runtime_kernel import (
     PrimitivePlannerRuntimeKernelPorts,
 )
 from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive_execution_state import PrimitiveExecutionRuntimeState
 from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive_scripted_bootstrap import (
     PrimitiveScriptedBootstrapRuntimeConfig,
@@ -473,6 +474,45 @@ class PrimitivePlannerACTPolicy(Policy):
     ) -> None:
         for field_name, value in reset_state.as_policy_field_updates().items():
             setattr(self, field_name, value)
+
+    def _primitive_execution_runtime_state(self) -> PrimitiveExecutionRuntimeState:
+        state = self.__dict__.get("_execution_state")
+        if state is None:
+            state = PrimitiveExecutionRuntimeState.fresh()
+            self.__dict__["_execution_state"] = state
+        return state
+
+    @property
+    def _skill_name(self) -> str:
+        return str(self._primitive_execution_runtime_state().skill_name)
+
+    @_skill_name.setter
+    def _skill_name(self, value: str) -> None:
+        self._primitive_execution_runtime_state().set_skill_name(value)
+
+    @property
+    def _switch_reason(self) -> str:
+        return str(self._primitive_execution_runtime_state().switch_reason)
+
+    @_switch_reason.setter
+    def _switch_reason(self, value: str) -> None:
+        self._primitive_execution_runtime_state().set_switch_reason(value)
+
+    @property
+    def _prev_action(self) -> np.ndarray | None:
+        return self._primitive_execution_runtime_state().prev_action
+
+    @_prev_action.setter
+    def _prev_action(self, value: np.ndarray | None) -> None:
+        self._primitive_execution_runtime_state().set_prev_action(value)
+
+    @property
+    def _debug_state(self) -> Any | None:
+        return self._primitive_execution_runtime_state().debug_state
+
+    @_debug_state.setter
+    def _debug_state(self, value: Any) -> None:
+        self._primitive_execution_runtime_state().set_debug_state(value)
 
     def _primitive_cycle_runtime_state(self) -> PrimitiveCycleRuntimeState:
         state = self.__dict__.get("_cycle_state")

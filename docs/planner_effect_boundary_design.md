@@ -83,7 +83,13 @@ target-reached hold gating, timeout completion, and PD bootstrap action
 generation are no longer inline policy logic. The policy keeps old scripted
 bootstrap private counter names as property-backed compatibility facades over
 the state owner, and action dispatch still reaches the scripted action through
-the existing compatibility facade. The policy now
+the existing compatibility facade. Execution lifecycle metadata is now owned by
+`PrimitiveExecutionRuntimeState`: active skill, switch reason, previous action,
+and latest compact debug state are no longer independent policy attributes, and
+the policy keeps their old private names as property-backed compatibility
+facades. This execution state owner does not absorb effect application, token
+state, coverage state, return state, cycle/progress state, scripted bootstrap
+state, residual `pre_dig_align`, or `cell_entry`. The policy now
 exposes backend-facing common decision facts through
 `PrimitiveDecisionFacts`, built by `PrimitiveDecisionFactsSource`; the facts
 packet carries context identity, current skill, and current switch reason, but
@@ -882,6 +888,19 @@ clipped float32 PD action generation with optional action signs. Non-scripted
 bootstrap end modes, residual `pre_dig_align` action/state, `cell_entry`
 compatibility/report state, token/return/cycle/coverage state owners,
 BT/VLM/LLM backend support, and removed 5P runtime remain unchanged.
+
+Phase 9.48 introduces `PrimitiveExecutionRuntimeState` in
+`testbed/planner/primitive_execution_state.py`. The state owner centralizes
+execution lifecycle metadata: active/current skill name, switch reason,
+previous action, and latest compact debug state. Reset creates one fresh
+execution state with the selected initial skill and `switch_reason="reset"`,
+then the runtime kernel still finalizes the initial debug state in the existing
+order. The policy's `_skill_name`, `_switch_reason`, `_prev_action`, and
+`_debug_state` names remain compatibility facades over the same state owner.
+This phase does not change branch order, reason strings, policy reset timing,
+previous-action copy semantics, report schemas, backend fail-fast behavior,
+token injection flags, residual `pre_dig_align`, `cell_entry`, or removed 5P
+runtime status.
 
 Phase 9.12 extracts return-to-dig start-envelope readiness into
 `ReturnStartEnvelopeGateService` in

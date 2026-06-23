@@ -66,6 +66,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_decision_runtime.py` | 162 | backend-name normalization and backend factory registry selection for primitive decision runtime |
 | `testbed/planner/primitive_backend_facts.py` | 250 | backend-facing lazy read-only facts access for bootstrap and dig/carry/dump/return transition views |
 | `testbed/planner/primitive_decision_facts.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
+| `testbed/planner/primitive_execution_state.py` | 49 | mutable execution lifecycle state owner for active skill, switch reason, previous action, and latest debug state |
 | `testbed/planner/primitive_token_state.py` | 70 | mutable dig/return token runtime state owner and reset defaults |
 | `testbed/planner/primitive_return_state.py` | 56 | mutable non-token return handoff/runtime state owner and reset defaults |
 | `testbed/planner/primitive_cycle_state.py` | 75 | mutable live 4P cycle/progress runtime state owner and reset defaults |
@@ -1008,6 +1009,17 @@ generation. Non-scripted bootstrap modes, residual `pre_dig_align`, cell-entry
 compatibility/report state, token/return/cycle/coverage state owners,
 BT/VLM/LLM support, and removed 5P runtime remain unchanged.
 
+Current status note after Phase 9.48: execution lifecycle metadata is now owned
+by `PrimitiveExecutionRuntimeState` in
+`testbed/planner/primitive_execution_state.py`. Reset creates a fresh execution
+state with the selected initial skill, `switch_reason="reset"`, and
+`prev_action=None`; `PrimitivePlannerRuntimeKernel.reset()` still finalizes the
+initial compact debug state after applying the reset state. The policy keeps
+`_skill_name`, `_switch_reason`, `_prev_action`, and `_debug_state` as
+property-backed compatibility facades over the same owner. This owner does not
+absorb token, coverage, return, cycle/progress, scripted bootstrap,
+`pre_dig_align`, `cell_entry`, backend facts, or report schemas.
+
 The current implementation route is **Slice 7: Move Legacy FSM Behind Backend
 Protocol**. Slice 4 status records have been established through `TokenStatus`;
 Phase 5.1 has extracted the goal token provider; Phase 5.2 has extracted dig-cut
@@ -1037,10 +1049,11 @@ Stop further Slice 7 code migration at this verified boundary unless the user
 approves a new scope. The 5P runtime compatibility audit has been resolved by
 the Phase 9.32 cleanup-approved removal of `PrimitivePlannerACT5PPolicy`; old
 behavior remains available only through git history. Valid remaining scopes are
-legacy pre-dig parking extraction, direct-handoff helper extraction, or backend
-selection cleanup. Do not move `pre_dig_align`, direct-handoff helper internals,
-change branch order, change reason strings, or apply unrelated effects through
-the backend boundary without that separate evidence and compatibility decision.
+legacy pre-dig parking extraction, direct-handoff helper extraction, backend
+selection cleanup, or a focused audit of any remaining policy-owned storage.
+Do not move `pre_dig_align`, direct-handoff helper internals, change branch
+order, change reason strings, or apply unrelated effects through the backend
+boundary without that separate evidence and compatibility decision.
 
 The next approved planning scope is Phase 8 effect-boundary design, recorded in
 `docs/planner_effect_boundary_design.md`. It should govern later return

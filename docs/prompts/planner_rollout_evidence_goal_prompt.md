@@ -77,6 +77,12 @@ objective:
 - tests 先行，至少覆盖新 module contract、old path parking/reclassification/compatibility guard、必要 parity。
 - 计划和修改记录分离：计划不写 landing record；结果追加到 docs/planner_rollout_evidence_refactor_log.md。
 - 保持默认 backend、branch order、threshold、reason string、policy reset timing、debug/rollout/token schema 不变；如不确定，停止询问。
+- 如果你作为 refactor/audit 线程创建 executor thread，executor prompt 必须要求：
+  在 bounded task 完成后、executor 本地 final reply 前，使用 Codex thread tool
+  `send_message_to_thread` 回调 source/refactor thread，字段必须包含 target lock、
+  TDD red、changed files、core factual change、verification、behavior impact、
+  docs status、git status after、HEAD after；并在后续 executor prompt 中递归保留
+  这个闭环回调要求。
 
 每轮验证至少考虑：
 - focused pytest for new module
@@ -95,6 +101,7 @@ rollout evidence used:
 confirmed-live path:
 new files:
 old code parked or reclassified:
+executor callback status:
 commands run:
 verification result:
 decisions made:

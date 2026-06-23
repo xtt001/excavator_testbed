@@ -258,6 +258,11 @@ def test_goal_prompt_exists_for_rollout_evidence_goal_mode() -> None:
     assert "branch baseline" in prompt.lower()
     assert "docs/planner_baseline_architecture_map.md" in prompt
     assert "docs/planner_current_code_architecture_plan.md" in prompt
+    assert "send_message_to_thread" in prompt
+    assert "target lock" in prompt
+    assert "TDD red" in prompt
+    assert "git status after" in prompt
+    assert "HEAD after" in prompt
     assert "primitive_scheduler_service_refactor_plan" not in prompt
 
 

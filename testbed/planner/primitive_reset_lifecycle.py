@@ -11,6 +11,7 @@ import numpy as np
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive_execution_state import PrimitiveExecutionRuntimeState
 from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive_scripted_bootstrap import (
     PrimitiveScriptedBootstrapRuntimeState,
@@ -39,6 +40,7 @@ class PrimitiveResetLifecyclePorts:
 class PrimitiveResetLifecycleState:
     """Complete shell state snapshot produced by the reset lifecycle."""
 
+    execution_state: PrimitiveExecutionRuntimeState
     skill_name: str
     prev_action: np.ndarray | None
     switch_reason: str
@@ -127,6 +129,7 @@ class PrimitiveResetLifecycleState:
         """Map reset state to the legacy private field names owned by policy."""
 
         return {
+            "_execution_state": self.execution_state,
             "_skill_name": self.skill_name,
             "_prev_action": self.prev_action,
             "_switch_reason": self.switch_reason,
@@ -268,11 +271,16 @@ class PrimitiveResetLifecycleService:
         skill_name = self._initial_skill_name()
         ports.reset_cell_entry_planner()
         action_dim = int(ports.action_dim)
+        execution_state = PrimitiveExecutionRuntimeState.fresh(
+            initial_skill_name=skill_name,
+            switch_reason="reset",
+        )
         cycle_state = PrimitiveCycleRuntimeState.fresh()
         token_state = PrimitiveTokenRuntimeState.fresh()
         return_state = PrimitiveReturnRuntimeState.fresh()
         scripted_bootstrap_state = PrimitiveScriptedBootstrapRuntimeState.fresh()
         return PrimitiveResetLifecycleState(
+            execution_state=execution_state,
             skill_name=skill_name,
             prev_action=None,
             switch_reason="reset",

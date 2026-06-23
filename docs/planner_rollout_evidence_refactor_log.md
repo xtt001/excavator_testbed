@@ -5227,3 +5227,65 @@ Each completed refactor round should append:
   and action rules, while policy methods are compatibility delegates. The
   extraction intentionally does not promote `pre_dig_align` or `cell_entry`
   into the mainline backend architecture.
+
+### 2026-06-23 Phase 9.48 Extract Primitive Execution Runtime State
+
+- Scope: introduced `PrimitiveExecutionRuntimeState` in
+  `testbed/planner/primitive_execution_state.py` as the focused owner for
+  primitive execution lifecycle metadata: active/current skill name, switch
+  reason, previous action, and latest compact debug state.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 110]`, HEAD
+  before this round `c7dc0c360ef8192b372582d3b5dc5f808928d012`, dirty status
+  clean. No fetch, pull, push, reset, checkout, rebase, branch creation, or
+  remote write was used by the executor.
+- `PrimitiveExecutionRuntimeState.fresh(...)` owns reset defaults for the
+  selected initial skill, switch reason, `prev_action=None`, and
+  `debug_state=None`. `PrimitiveResetLifecycleService` now creates one fresh
+  execution state during reset and includes it in
+  `PrimitiveResetLifecycleState`.
+- `PrimitivePlannerACTPolicy` exposes `_primitive_execution_runtime_state()`
+  plus property-backed compatibility facades for `_skill_name`,
+  `_switch_reason`, `_prev_action`, and `_debug_state`, so existing runtime
+  kernel, execution driver, skill lifecycle, decision facts, dispatch, and
+  report paths keep using old names while resolving to one owner.
+- Preserved behavior: initial skill selection, `switch_reason="reset"`,
+  previous-action copy semantics, debug-state finalization order, branch order,
+  reason strings, policy reset timing, public debug/summary/trace schema,
+  backend fail-fast behavior, token injection flags, residual `pre_dig_align`,
+  `cell_entry`, and removed 5P runtime status are unchanged.
+- Explicit non-goals: token, coverage, return, cycle/progress, scripted
+  bootstrap, `pre_dig_align`, `cell_entry`, backend facts, requested effects,
+  low-level ACT dispatch, and public report schemas were not migrated or
+  changed.
+- TDD red result from executor callback: after focused tests were added, the
+  first run of `python -m pytest -q tests/test_primitive_execution_state.py`
+  failed as expected with
+  `ModuleNotFoundError: No module named 'testbed.planner.primitive_execution_state'`.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_execution_state.py tests/test_primitive_reset_lifecycle.py tests/test_primitive_tick_finalization.py tests/test_primitive_skill_lifecycle.py tests/test_primitive_runtime_kernel.py`
+  returned `34 passed`;
+  `python -m pytest -q tests/test_primitive_execution_driver.py tests/test_primitive_execution_template.py tests/test_primitive_decision_contract.py tests/test_primitive_backend.py`
+  returned `108 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "semantic_boundary_events_drive_skill_sequence or scripted_bootstrap or pre_dig_align or first_dig_policy_for_cycle_zero or return_to_dig or start_envelope or coverage_decision_trace or dig_depth_profile or dig_cut_tokens"`
+  returned `21 passed, 98 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_execution_state.py tests/test_primitive_reset_lifecycle.py tests/test_primitive_tick_finalization.py tests/test_primitive_skill_lifecycle.py tests/test_primitive_runtime_kernel.py`
+  returned `34 passed`;
+  `python -m compileall testbed/planner/primitive_execution_state.py testbed/planner/primitive_reset_lifecycle.py testbed/policies/hybrid/primitive_planner.py`
+  passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, active refactor plan, goal prompt, and workflow test. Future executor
+  delegation prompts must require a `send_message_to_thread` callback to the
+  source/refactor thread with target lock, TDD red, changed files, core factual
+  change, verification, behavior impact, docs status, git status after, and
+  HEAD after, and must repeat this recursive callback rule in follow-up
+  executor prompts.
+- Audit note: this is a focused state-owner extraction for live execution
+  metadata, not a generic planner blackboard. The owner intentionally excludes
+  token, coverage, return, cycle/progress, scripted bootstrap, parked
+  `pre_dig_align`, `cell_entry`, backend facts, effect application, and report
+  schemas.
