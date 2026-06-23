@@ -16,8 +16,12 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
     ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
 )
+from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
+from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive_execution_state import PrimitiveExecutionRuntimeState
+from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 
 
 @dataclass(frozen=True)
@@ -30,8 +34,7 @@ class ReturnDirectHandoffEffectPorts:
     return_target_planner_enabled: bool
     return_to_dig_start_envelope_direct_handoff_enabled: bool
     ensure_return_target_plan_for_cycle: Callable[[dict[str, Any]], None]
-    return_to_dig_handoff_ready: Callable[[dict[str, Any]], bool]
-    return_to_dig_direct_handoff_ready: Callable[..., bool]
+    readiness_service: ReturnHandoffReadinessService
     should_pre_dig_align_before_dig: Callable[[], bool]
     pre_dig_align_skill_name: str
     dig_skill_name: str = "dig"
@@ -74,12 +77,10 @@ class ReturnDirectHandoffEffectService:
             return ReturnDirectHandoffEffectResult(direct_handoff_applied=False)
 
         ports.ensure_return_target_plan_for_cycle(obs)
-        handoff_ready = bool(ports.return_to_dig_handoff_ready(obs))
+        readiness = ports.readiness_service
+        handoff_ready = bool(readiness.handoff_ready(obs))
         direct_handoff_ready = bool(
-            ports.return_to_dig_direct_handoff_ready(
-                obs,
-                handoff_ready=handoff_ready,
-            )
+            readiness.direct_handoff_ready(obs, handoff_ready=handoff_ready)
         )
         if not direct_handoff_ready:
             return ReturnDirectHandoffEffectResult(direct_handoff_applied=False)
@@ -342,6 +343,169 @@ class ReturnStartEnvelopeGateService:
         )
 
 
+@dataclass(frozen=True)
+class ReturnHandoffReadinessConfig:
+    """Static config facts for return-to-dig handoff readiness."""
+
+    return_target_planner_enabled: bool
+    max_entry_error_m: float | None
+    max_bucket_mass_kg: float
+    start_envelope_direct_handoff_enabled: bool
+    start_envelope_gate: ReturnStartEnvelopeGateConfig
+
+
+@dataclass(frozen=True)
+class ReturnHandoffReadinessPorts:
+    """Focused owners and explicit algorithm ports for return handoff readiness."""
+
+    config: ReturnHandoffReadinessConfig
+    action_dim: int
+    execution_state: PrimitiveExecutionRuntimeState
+    cycle_state: PrimitiveCycleRuntimeState
+    return_state: PrimitiveReturnRuntimeState
+    token_state: PrimitiveTokenRuntimeState
+    coverage_state: CoverageRuntimeState
+    start_envelope_gate_service: ReturnStartEnvelopeGateService
+    ensure_return_target_plan_for_cycle: Callable[[dict[str, Any]], None]
+    return_start_envelope_prior_bounds: Callable[
+        [int],
+        tuple[np.ndarray | None, np.ndarray | None],
+    ]
+    return_start_envelope_prior_mapping: Callable[[int], dict[str, object] | None]
+
+
+@dataclass(frozen=True)
+class ReturnHandoffReadinessService:
+    """Own return-to-dig handoff readiness and start-envelope cache updates."""
+
+    ports: ReturnHandoffReadinessPorts
+
+    def entry_target(self) -> tuple[float, float] | None:
+        ports = self.ports
+        raw_fields = ports.token_state.pending_dig_cut_raw_fields
+        if (
+            raw_fields is not None
+            and int(ports.token_state.pending_dig_cut_cycle_id)
+            == int(ports.cycle_state.cycle_index) + 1
+        ):
+            entry_x = float(raw_fields.get("operator_entry_x_m", float("nan")))
+            entry_z = float(raw_fields.get("operator_entry_z_m", float("nan")))
+            if np.isfinite(entry_x) and np.isfinite(entry_z):
+                return entry_x, entry_z
+        corridor = ports.coverage_state.active_corridor()
+        if corridor is None:
+            return None
+        return float(corridor.entry_x_m), float(corridor.entry_z_m)
+
+    def entry_error_for_obs(self, obs: dict[str, Any]) -> float:
+        target = self.entry_target()
+        pose = self._observation(obs).bucket_dig_area_pose()
+        if target is None or pose is None:
+            return float("nan")
+        bucket_x, _, bucket_z = pose
+        entry_x, entry_z = target
+        if not all(np.isfinite(value) for value in (bucket_x, bucket_z, entry_x, entry_z)):
+            return float("nan")
+        return float(
+            np.hypot(float(bucket_x) - float(entry_x), float(bucket_z) - float(entry_z))
+        )
+
+    def entry_close(self, obs: dict[str, Any]) -> bool:
+        ports = self.ports
+        if (
+            str(ports.execution_state.skill_name) == "return"
+            and ports.config.return_target_planner_enabled
+        ):
+            ports.ensure_return_target_plan_for_cycle(obs)
+        entry_error = self.entry_error_for_obs(obs)
+        max_entry_error = ports.config.max_entry_error_m
+        if max_entry_error is None:
+            close = True
+        elif not np.isfinite(entry_error):
+            close = True
+        else:
+            close = bool(float(entry_error) <= float(max_entry_error))
+        ports.return_state.set_entry_close_result(
+            error_m=float(entry_error),
+            close=close,
+        )
+        return bool(close)
+
+    def handoff_ready(self, obs: dict[str, Any]) -> bool:
+        entry_close = self.entry_close(obs)
+        envelope_ready = self.start_envelope_ready(obs)
+        return bool(entry_close and envelope_ready)
+
+    def direct_handoff_ready(
+        self,
+        obs: dict[str, Any],
+        *,
+        handoff_ready: bool | None = None,
+    ) -> bool:
+        config = self.ports.config
+        if not config.start_envelope_direct_handoff_enabled:
+            return False
+        if not config.start_envelope_gate.enabled:
+            return False
+        ready = self.handoff_ready(obs) if handoff_ready is None else bool(handoff_ready)
+        if not ready:
+            return False
+        return bool(
+            self._observation(obs).mass_in_bucket_kg <= config.max_bucket_mass_kg
+        )
+
+    def start_envelope_ready(self, obs: dict[str, Any]) -> bool:
+        result = self.ports.start_envelope_gate_service.evaluate(
+            self.start_envelope_gate_inputs(obs)
+        )
+        self.apply_start_envelope_gate_result(result)
+        return bool(result.ready)
+
+    def start_envelope_gate_config(self) -> ReturnStartEnvelopeGateConfig:
+        return self.ports.config.start_envelope_gate
+
+    def start_envelope_gate_inputs(
+        self,
+        obs: dict[str, Any],
+    ) -> ReturnStartEnvelopeGateInputs:
+        ports = self.ports
+        observation = self._observation(obs)
+        corridor_id = int(ports.token_state.pending_dig_cut_corridor_id)
+        return ReturnStartEnvelopeGateInputs(
+            token=ports.token_state.return_start_envelope_tokens,
+            env_state=observation.env_state,
+            qpos=observation.qpos,
+            prior_bounds=(
+                lambda: ports.return_start_envelope_prior_bounds(corridor_id)
+            ),
+            prior_mapping=(
+                lambda: ports.return_start_envelope_prior_mapping(corridor_id)
+            ),
+            use_prior_spatial_bounds=(
+                ports.token_state.return_start_envelope_use_prior_spatial_bounds
+            ),
+            use_prior_qpos_bounds=(
+                ports.token_state.return_start_envelope_use_prior_qpos_bounds
+            ),
+        )
+
+    def apply_start_envelope_gate_result(
+        self,
+        result: ReturnStartEnvelopeGateResult,
+    ) -> None:
+        self.ports.return_state.apply_start_envelope_gate_result(
+            ready=bool(result.ready),
+            error=float(result.error),
+            checks=dict(result.checks),
+        )
+
+    def _observation(self, obs: dict[str, Any]) -> PrimitiveObservationFacts:
+        return PrimitiveObservationFacts.from_obs(
+            obs,
+            action_dim=self.ports.action_dim,
+        )
+
+
 @dataclass
 class _GateState:
     ready: bool = True
@@ -392,6 +556,9 @@ def _bounds_for(
 
 
 __all__ = [
+    "ReturnHandoffReadinessConfig",
+    "ReturnHandoffReadinessPorts",
+    "ReturnHandoffReadinessService",
     "ReturnDirectHandoffEffectPorts",
     "ReturnDirectHandoffEffectResult",
     "ReturnDirectHandoffEffectService",

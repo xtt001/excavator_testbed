@@ -7542,3 +7542,80 @@ Each completed refactor round should append:
   default legacy FSM backendified with focused services / shared backend
   decision input/facts/factory; BT/VLM/LLM backends remain unsupported
   fail-fast.
+
+### 2026-06-23 Phase 9.76 Move Return Handoff Readiness Source
+
+- Scope: implemented the next transition facts / return handoff slice after
+  Phase 9.75. The live return-to-dig handoff readiness source now belongs to
+  `ReturnHandoffReadinessService` in
+  `testbed/planner/primitive_return_handoff.py` instead of policy-owned
+  readiness callbacks.
+- Target lock from executor callback: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `fs/v2_4-refactor-tests...origin/fs/v2_4-refactor-tests [ahead 139]`, HEAD
+  `f57ab1b0488dd43bda6c8d02933cf8a09ee90049`, dirty status clean. No fetch,
+  pull, push, reset, checkout, rebase, branch creation, or remote write was
+  used by the executor.
+- Added `ReturnHandoffReadinessConfig`, `ReturnHandoffReadinessPorts`, and
+  `ReturnHandoffReadinessService`. The service owns the existing entry-target
+  precedence, entry-error calculation from
+  `PrimitiveObservationFacts.bucket_dig_area_pose()`, entry-close runtime
+  writeback, return start-envelope gate input assembly, gate-result writeback,
+  `handoff_ready`, and direct-handoff mass/config gate.
+- `ReturnHandoffReadinessPorts` carries focused execution, cycle, return, token,
+  and coverage runtime state owners directly. Return-target planning and return
+  start-envelope prior bounds/mapping remain explicit external algorithm ports.
+- `ReturnDirectHandoffEffectPorts` no longer carries
+  `return_to_dig_handoff_ready` or `return_to_dig_direct_handoff_ready`
+  callbacks. `ReturnDirectHandoffEffectService` now calls the readiness service
+  for those checks while preserving explicit `set_skill`,
+  return-target-plan ensure, and next-skill facts.
+- `PrimitivePlannerACTPolicy` keeps the old private return handoff method names
+  as thin compatibility facades and assembles the typed readiness owner/config
+  ports. Return start-envelope token build/apply/conditioning/prior mapping
+  stays in the existing token planning boundary.
+- Line-count impact: `testbed/planner/primitive_return_handoff.py` grew from
+  402 to 569 lines as the focused owner absorbed the readiness implementation.
+  `testbed/policies/hybrid/primitive_planner.py` is 4906 lines after keeping the
+  compatibility facades and typed port assembly for this boundary.
+- Preserved behavior: return entry-target precedence, entry error projection,
+  entry-close cache writeback, start-envelope gate input/result behavior,
+  direct-handoff mass/config gating, effect ordering, completion timing,
+  next-skill reason strings, branch order, return start-envelope token planning,
+  backend fail-fast behavior, debug/summary/trace schemas, `pre_dig_align`,
+  `cell_entry`, and removed 5P runtime status are unchanged.
+- Explicit non-goals: no return start-envelope token build/apply/conditioning
+  change, no prior-mapping algorithm change, no residual `pre_dig_align`
+  algorithm/action/report change, no `cell_entry` compatibility/token/report
+  change, no backend support change, and no public report schema change.
+- TDD red result from executor callback: after focused tests were updated,
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_return_state.py tests/test_primitive_token_state.py tests/test_primitive_coverage_state.py`
+  failed at collection with `ImportError: cannot import name
+  'ReturnHandoffReadinessConfig' from testbed.planner.primitive_return_handoff`,
+  proving the new readiness boundary did not exist yet.
+- Verification reported by executor callback:
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_return_state.py tests/test_primitive_token_state.py tests/test_primitive_coverage_state.py`
+  returned `50 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_skill_lifecycle.py tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_decision_contract.py`
+  returned `63 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "return_to_dig or start_envelope or semantic_boundary_events_drive_skill_sequence or pre_dig_align or dig_cut_tokens or coverage_decision_trace"`
+  returned `20 passed, 99 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Verification rerun by the audit thread before documentation sync:
+  `python -m pytest -q tests/test_primitive_return_handoff.py tests/test_primitive_return_state.py tests/test_primitive_token_state.py tests/test_primitive_coverage_state.py`
+  returned `50 passed`;
+  `python -m pytest -q tests/test_primitive_effects.py tests/test_primitive_skill_lifecycle.py tests/test_primitive_runtime_kernel.py tests/test_primitive_execution_driver.py tests/test_primitive_decision_contract.py`
+  returned `63 passed`;
+  `python -m pytest -q tests/test_agx_primitives_v2_2.py -k "return_to_dig or start_envelope or semantic_boundary_events_drive_skill_sequence or pre_dig_align or dig_cut_tokens or coverage_decision_trace"`
+  returned `20 passed, 99 deselected`; compileall for touched modules, both
+  planner guard commands, and `git diff --check` passed.
+- Documentation/audit note: executor did not edit docs by design. The audit
+  thread updated the interface standard, current-code plan, effect-boundary
+  design, and this execution record.
+- Hard constraint confirmation: this slice treats protection as a constraint,
+  not the objective. It was a bounded live return handoff readiness boundary
+  move with a stable focused owner, not a tiny compatibility dict/facade move,
+  pass-through wrapper, anemic service, or generic blackboard. Current maturity
+  remains default legacy FSM backendified with focused services / shared backend
+  decision input/facts/factory; BT/VLM/LLM backends remain unsupported
+  fail-fast.

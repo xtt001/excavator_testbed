@@ -402,8 +402,10 @@ Current boundary:
   read-only dig status. Dig-to-carry reason mirror writeback is explicit through
   `sync_dig_transition_reason(...)`.
 - `PrimitiveFSMCapabilityProvider.refresh_return_transition_state(obs)` owns
-  the explicit return handoff cache refresh step. `return_transition_status(...)`
-  only reads cached return owner flags and observation facts.
+  the explicit return handoff cache refresh step. That refresh now delegates
+  through the policy facade into `ReturnHandoffReadinessService`, while
+  `return_transition_status(...)` only reads cached return owner flags and
+  observation facts.
 - `PrimitiveDecisionFacts` is the first backend-neutral common facts packet. It
   contains `PrimitiveDecisionContext`, current skill name, current switch
   reason, and read-only context accessors; it does not include transition status
@@ -651,6 +653,12 @@ Current boundary:
 - `PrimitiveReturnRuntimeState` owns non-token return handoff/runtime cache
   fields, so return-target token state and return handoff cache state are no
   longer mixed in the policy shell.
+- `ReturnHandoffReadinessService` owns return-to-dig entry-target precedence,
+  entry-error calculation, entry-close cache writeback, return start-envelope
+  gate input/result writeback, `handoff_ready`, and direct-handoff mass/config
+  gating over focused execution/cycle/return/token/coverage state owners.
+  `PrimitivePlannerACTPolicy` retains old private method names only as
+  compatibility facades and typed port assembly.
 - `PrimitiveTokenRuntimeCoordinator` owns dig/return token runtime sequencing.
   Its ports now carry the focused `PrimitiveTokenRuntimeState` owner directly
   for token storage reads/writes and `CoverageRuntimeState` directly for

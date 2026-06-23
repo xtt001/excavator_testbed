@@ -13,10 +13,18 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
     ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
 )
+from testbed.planner.primitive_coverage import CoverageCorridorState
+from testbed.planner.primitive_coverage_state import CoverageRuntimeState
 from testbed.planner.primitive_return_handoff import (
+    ReturnHandoffReadinessConfig,
+    ReturnHandoffReadinessPorts,
+    ReturnHandoffReadinessService,
     ReturnDirectHandoffEffectPorts,
     ReturnDirectHandoffEffectService,
     ReturnStartEnvelopeGateConfig,
@@ -29,6 +37,8 @@ from testbed.planner.primitive_decision import SetReturnOrDirectHandoffEffect
 from testbed.planner.primitive_execution_state import (
     PrimitiveExecutionRuntimeState,
 )
+from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
 from testbed.policies.hybrid.primitive_planner import (
     PRE_DIG_ALIGN_SKILL_NAME,
     PrimitivePlannerACTPolicy,
@@ -106,6 +116,89 @@ def _inputs(
     )
 
 
+def _readiness_config(**overrides: Any) -> ReturnHandoffReadinessConfig:
+    values: dict[str, Any] = {
+        "return_target_planner_enabled": True,
+        "max_entry_error_m": 0.25,
+        "max_bucket_mass_kg": 2.0,
+        "start_envelope_direct_handoff_enabled": True,
+        "start_envelope_gate": _config(enabled=True),
+    }
+    values.update(overrides)
+    return ReturnHandoffReadinessConfig(**values)
+
+
+def _return_handoff_env(
+    *,
+    bucket_x: float,
+    bucket_y: float = 0.0,
+    bucket_z: float,
+    mass_in_bucket_kg: float = 0.0,
+) -> np.ndarray:
+    env_state = _env_state()
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX] = float(bucket_x)
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX] = float(bucket_y)
+    env_state[ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX] = float(bucket_z)
+    env_state[0] = float(mass_in_bucket_kg)
+    return env_state
+
+
+def _readiness_service(
+    *,
+    config: ReturnHandoffReadinessConfig | None = None,
+    execution_state: PrimitiveExecutionRuntimeState | None = None,
+    cycle_state: PrimitiveCycleRuntimeState | None = None,
+    return_state: PrimitiveReturnRuntimeState | None = None,
+    token_state: PrimitiveTokenRuntimeState | None = None,
+    coverage_state: CoverageRuntimeState | None = None,
+    ensure_calls: list[str] | None = None,
+    gate_results: list[ReturnStartEnvelopeGateResult] | None = None,
+) -> ReturnHandoffReadinessService:
+    execution_state = execution_state or PrimitiveExecutionRuntimeState.fresh(
+        initial_skill_name="return"
+    )
+    cycle_state = cycle_state or PrimitiveCycleRuntimeState.fresh()
+    return_state = return_state or PrimitiveReturnRuntimeState.fresh()
+    token_state = token_state or PrimitiveTokenRuntimeState.fresh()
+    coverage_state = coverage_state or CoverageRuntimeState()
+    ensure_calls = ensure_calls if ensure_calls is not None else []
+    gate_results = gate_results if gate_results is not None else [
+        ReturnStartEnvelopeGateResult(ready=True, error=0.0, checks={"ok": True})
+    ]
+
+    class _FakeGateService:
+        def __init__(self) -> None:
+            self.inputs: list[ReturnStartEnvelopeGateInputs] = []
+
+        def evaluate(
+            self,
+            inputs: ReturnStartEnvelopeGateInputs,
+        ) -> ReturnStartEnvelopeGateResult:
+            self.inputs.append(inputs)
+            return gate_results[-1]
+
+    gate_service = _FakeGateService()
+
+    def ensure(obs: dict[str, Any]) -> None:
+        ensure_calls.append(str(obs.get("tag", "")))
+
+    return ReturnHandoffReadinessService(
+        ports=ReturnHandoffReadinessPorts(
+            config=config or _readiness_config(),
+            action_dim=4,
+            execution_state=execution_state,
+            cycle_state=cycle_state,
+            return_state=return_state,
+            token_state=token_state,
+            coverage_state=coverage_state,
+            start_envelope_gate_service=gate_service,
+            ensure_return_target_plan_for_cycle=ensure,
+            return_start_envelope_prior_bounds=lambda corridor_id: (None, None),
+            return_start_envelope_prior_mapping=lambda corridor_id: None,
+        )
+    )
+
+
 def _direct_handoff_ports(
     events: list[str],
     *,
@@ -135,13 +228,19 @@ def _direct_handoff_ports(
     def ensure(obs: dict[str, object]) -> None:
         events.append(f"ensure:{obs['tag']}")
 
-    def handoff(obs: dict[str, object]) -> bool:
-        events.append(f"handoff_ready:{obs['tag']}")
-        return handoff_ready
+    class _FakeReadinessService:
+        def handoff_ready(self, obs: dict[str, object]) -> bool:
+            events.append(f"handoff_ready:{obs['tag']}")
+            return handoff_ready
 
-    def direct(obs: dict[str, object], *, handoff_ready: bool) -> bool:
-        events.append(f"direct_ready:{obs['tag']}:{handoff_ready}")
-        return direct_handoff_ready
+        def direct_handoff_ready(
+            self,
+            obs: dict[str, object],
+            *,
+            handoff_ready: bool | None = None,
+        ) -> bool:
+            events.append(f"direct_ready:{obs['tag']}:{handoff_ready}")
+            return direct_handoff_ready
 
     return ReturnDirectHandoffEffectPorts(
         execution_state=execution_state,
@@ -152,8 +251,7 @@ def _direct_handoff_ports(
             direct_handoff_enabled
         ),
         ensure_return_target_plan_for_cycle=ensure,
-        return_to_dig_handoff_ready=handoff,
-        return_to_dig_direct_handoff_ready=direct,
+        readiness_service=_FakeReadinessService(),
         should_pre_dig_align_before_dig=(
             lambda: next_skill == PRE_DIG_ALIGN_SKILL_NAME
         ),
@@ -170,7 +268,142 @@ def test_return_direct_handoff_ports_use_focused_state_owners() -> None:
         "current_skill_name",
         "complete_return_transition",
         "next_skill_after_return_transition",
+        "return_to_dig_handoff_ready",
+        "return_to_dig_direct_handoff_ready",
     } & port_fields
+    assert "readiness_service" in port_fields
+
+
+def test_return_handoff_readiness_prefers_pending_next_cycle_raw_entry_target() -> None:
+    token_state = PrimitiveTokenRuntimeState.fresh()
+    token_state.pending_dig_cut_cycle_id = 4
+    token_state.pending_dig_cut_raw_fields = {
+        "operator_entry_x_m": 1.0,
+        "operator_entry_z_m": 2.0,
+    }
+    coverage_state = CoverageRuntimeState()
+    coverage_state.set_coverage_corridors(
+        [
+            CoverageCorridorState(
+                corridor_id=9,
+                entry_x_m=5.0,
+                entry_z_m=6.0,
+                exit_x_m=7.0,
+                exit_z_m=8.0,
+            )
+        ]
+    )
+    coverage_state.set_active_corridor_id(9)
+    cycle_state = PrimitiveCycleRuntimeState.fresh()
+    cycle_state.cycle_index = 3
+    return_state = PrimitiveReturnRuntimeState.fresh()
+    service = _readiness_service(
+        cycle_state=cycle_state,
+        return_state=return_state,
+        token_state=token_state,
+        coverage_state=coverage_state,
+    )
+
+    error = service.entry_error_for_obs(
+        {
+            "env_state": _return_handoff_env(bucket_x=1.0, bucket_z=2.2),
+            "qpos": np.zeros(4, dtype=np.float32),
+        }
+    )
+    close = service.entry_close(
+        {
+            "tag": "pending",
+            "env_state": _return_handoff_env(bucket_x=1.0, bucket_z=2.2),
+            "qpos": np.zeros(4, dtype=np.float32),
+        }
+    )
+
+    assert service.entry_target() == pytest.approx((1.0, 2.0))
+    assert error == pytest.approx(0.2)
+    assert close is True
+    assert return_state.return_to_dig_entry_error_m == pytest.approx(0.2)
+    assert return_state.return_to_dig_entry_close_state is True
+
+
+def test_return_handoff_readiness_falls_back_to_active_corridor_entry_target() -> None:
+    coverage_state = CoverageRuntimeState()
+    coverage_state.set_coverage_corridors(
+        [
+            CoverageCorridorState(
+                corridor_id=11,
+                entry_x_m=3.0,
+                entry_z_m=4.0,
+                exit_x_m=5.0,
+                exit_z_m=6.0,
+            )
+        ]
+    )
+    coverage_state.set_active_corridor_id(11)
+    service = _readiness_service(coverage_state=coverage_state)
+
+    assert service.entry_target() == pytest.approx((3.0, 4.0))
+    assert service.entry_error_for_obs(
+        {
+            "env_state": _return_handoff_env(bucket_x=3.0, bucket_z=4.5),
+            "qpos": np.zeros(4, dtype=np.float32),
+        }
+    ) == pytest.approx(0.5)
+
+
+def test_return_handoff_readiness_writes_start_envelope_gate_result() -> None:
+    return_state = PrimitiveReturnRuntimeState.fresh()
+    result = ReturnStartEnvelopeGateResult(
+        ready=False,
+        error=0.75,
+        checks={"long_norm": {"ok": False}},
+    )
+    service = _readiness_service(
+        return_state=return_state,
+        gate_results=[result],
+    )
+
+    ready = service.start_envelope_ready(
+        {
+            "env_state": _return_handoff_env(bucket_x=0.0, bucket_z=0.0),
+            "qpos": np.zeros(4, dtype=np.float32),
+        }
+    )
+
+    assert ready is False
+    assert return_state.return_to_dig_start_envelope_ready_state is False
+    assert return_state.return_to_dig_start_envelope_error == pytest.approx(0.75)
+    assert return_state.return_to_dig_start_envelope_checks == {
+        "long_norm": {"ok": False}
+    }
+
+
+def test_return_handoff_readiness_direct_handoff_requires_mass_gate() -> None:
+    service = _readiness_service(
+        config=_readiness_config(max_bucket_mass_kg=2.0),
+    )
+
+    assert (
+        service.direct_handoff_ready(
+            {
+                "env_state": _return_handoff_env(bucket_x=0.0, bucket_z=0.0),
+                "qpos": np.zeros(4, dtype=np.float32),
+                "task_metrics": {"mass_in_bucket_kg": 1.5},
+            },
+            handoff_ready=True,
+        )
+        is True
+    )
+    assert (
+        service.direct_handoff_ready(
+            {
+                "env_state": _return_handoff_env(bucket_x=0.0, bucket_z=0.0),
+                "qpos": np.zeros(4, dtype=np.float32),
+                "task_metrics": {"mass_in_bucket_kg": 2.5},
+            },
+            handoff_ready=True,
+        )
+        is False
+    )
 
 
 def test_return_direct_handoff_service_stops_after_set_return_when_direct_disabled() -> None:
@@ -443,6 +676,43 @@ def test_policy_start_envelope_wrapper_delegates_and_writes_cached_result() -> N
     assert planner._return_to_dig_start_envelope_checks == {"qpos_0": {"ok": False}}
 
 
+def test_policy_return_handoff_readiness_ports_share_focused_owners() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    planner.action_dim = 4
+    planner.return_target_planner_enabled = True
+    planner.return_to_dig_max_entry_error_m = 0.25
+    planner.return_to_dig_max_bucket_mass_kg = 2.0
+    planner.return_to_dig_start_envelope_direct_handoff_enabled = True
+    planner.return_to_dig_start_envelope_gate_enabled = True
+    planner.return_to_dig_start_envelope_spatial_tolerance = 0.1
+    planner.return_to_dig_start_envelope_depth_tolerance_m = 0.08
+    planner.return_to_dig_start_envelope_local_depth_tolerance_m = 0.005
+    planner.return_to_dig_start_envelope_plane_depth_tolerance_m = 0.005
+    planner.return_to_dig_start_envelope_plane_depth_mode = "range"
+    planner.return_to_dig_start_envelope_qpos_tolerance = 0.04
+    planner.return_to_dig_start_envelope_require_contact = False
+    planner._ensure_return_target_plan_for_cycle = MethodType(
+        lambda self, obs: None,
+        planner,
+    )
+    planner._return_start_envelope_prior_bounds = MethodType(
+        lambda self, corridor_id: (None, None),
+        planner,
+    )
+    planner._return_start_envelope_prior_mapping = MethodType(
+        lambda self, *, corridor_id: (None, "missing"),
+        planner,
+    )
+
+    ports = planner._return_handoff_readiness_ports()
+
+    assert ports.execution_state is planner._primitive_execution_runtime_state()
+    assert ports.cycle_state is planner._primitive_cycle_runtime_state()
+    assert ports.return_state is planner._primitive_return_runtime_state()
+    assert ports.token_state is planner._primitive_token_runtime_state()
+    assert ports.coverage_state is planner._coverage_runtime_state()
+
+
 def test_policy_return_or_direct_handoff_wrapper_delegates_to_service() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs = {"tag": "obs"}
@@ -483,9 +753,12 @@ def test_policy_return_direct_handoff_ports_share_execution_and_cycle_owners() -
         lambda self, obs: None,
         planner,
     )
-    planner._return_to_dig_handoff_ready = MethodType(lambda self, obs: False, planner)
-    planner._return_to_dig_direct_handoff_ready = MethodType(
-        lambda self, obs, *, handoff_ready: False,
+    readiness = SimpleNamespace(
+        handoff_ready=lambda obs: False,
+        direct_handoff_ready=lambda obs, *, handoff_ready: False,
+    )
+    planner._return_handoff_readiness_service = MethodType(
+        lambda self: readiness,
         planner,
     )
 
@@ -498,6 +771,9 @@ def test_policy_return_direct_handoff_ports_share_execution_and_cycle_owners() -
     assert "current_skill_name" not in port_fields
     assert "complete_return_transition" not in port_fields
     assert "next_skill_after_return_transition" not in port_fields
+    assert "return_to_dig_handoff_ready" not in port_fields
+    assert "return_to_dig_direct_handoff_ready" not in port_fields
+    assert ports.readiness_service is readiness
     assert hasattr(planner, "_complete_return_transition_for_backend")
     assert hasattr(planner, "_next_skill_after_return_transition")
 

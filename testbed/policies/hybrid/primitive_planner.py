@@ -210,6 +210,9 @@ from testbed.planner.primitive_rollout_summary import (
     PrimitiveRolloutSummaryInputs,
 )
 from testbed.planner.primitive_return_handoff import (
+    ReturnHandoffReadinessConfig,
+    ReturnHandoffReadinessPorts,
+    ReturnHandoffReadinessService,
     ReturnDirectHandoffEffectPorts,
     ReturnDirectHandoffEffectService,
     ReturnStartEnvelopeGateConfig,
@@ -2407,15 +2410,7 @@ class PrimitivePlannerACTPolicy(Policy):
             ensure_return_target_plan_for_cycle=(
                 lambda obs: self._ensure_return_target_plan_for_cycle(obs)
             ),
-            return_to_dig_handoff_ready=(
-                lambda obs: self._return_to_dig_handoff_ready(obs)
-            ),
-            return_to_dig_direct_handoff_ready=(
-                lambda obs, *, handoff_ready: self._return_to_dig_direct_handoff_ready(
-                    obs,
-                    handoff_ready=handoff_ready,
-                )
-            ),
+            readiness_service=self._return_handoff_readiness_service(),
             should_pre_dig_align_before_dig=(
                 lambda: self._should_pre_dig_align_before_dig()
             ),
@@ -2963,28 +2958,110 @@ class PrimitivePlannerACTPolicy(Policy):
             and (depth_below_max or entry_guard_ready)
         )
 
-    def _return_to_dig_entry_close(self, obs: dict) -> bool:
-        if self._skill_name == "return" and self.return_target_planner_enabled:
-            self._ensure_return_target_plan_for_cycle(obs)
-        entry_error = self._return_to_dig_entry_error_for_obs(obs)
-        if self.return_to_dig_max_entry_error_m is None:
-            close = True
-        elif not np.isfinite(entry_error):
-            close = True
-        else:
-            close = bool(
-                float(entry_error) <= float(self.return_to_dig_max_entry_error_m)
-            )
-        self._primitive_return_runtime_state().set_entry_close_result(
-            error_m=float(entry_error),
-            close=close,
+    def _return_handoff_readiness_config(self) -> ReturnHandoffReadinessConfig:
+        return ReturnHandoffReadinessConfig(
+            return_target_planner_enabled=bool(
+                getattr(self, "return_target_planner_enabled", False)
+            ),
+            max_entry_error_m=getattr(self, "return_to_dig_max_entry_error_m", None),
+            max_bucket_mass_kg=float(
+                getattr(self, "return_to_dig_max_bucket_mass_kg", 0.0)
+            ),
+            start_envelope_direct_handoff_enabled=bool(
+                getattr(
+                    self,
+                    "return_to_dig_start_envelope_direct_handoff_enabled",
+                    False,
+                )
+            ),
+            start_envelope_gate=ReturnStartEnvelopeGateConfig(
+                enabled=bool(
+                    getattr(self, "return_to_dig_start_envelope_gate_enabled", False)
+                ),
+                action_dim=int(getattr(self, "action_dim", 0)),
+                spatial_tolerance=float(
+                    getattr(
+                        self,
+                        "return_to_dig_start_envelope_spatial_tolerance",
+                        0.0,
+                    )
+                ),
+                depth_tolerance_m=float(
+                    getattr(
+                        self,
+                        "return_to_dig_start_envelope_depth_tolerance_m",
+                        0.0,
+                    )
+                ),
+                local_depth_tolerance_m=float(
+                    getattr(
+                        self,
+                        "return_to_dig_start_envelope_local_depth_tolerance_m",
+                        0.0,
+                    )
+                ),
+                plane_depth_tolerance_m=float(
+                    getattr(
+                        self,
+                        "return_to_dig_start_envelope_plane_depth_tolerance_m",
+                        0.0,
+                    )
+                ),
+                plane_depth_mode=str(
+                    getattr(
+                        self,
+                        "return_to_dig_start_envelope_plane_depth_mode",
+                        "range",
+                    )
+                ),
+                qpos_tolerance=float(
+                    getattr(self, "return_to_dig_start_envelope_qpos_tolerance", 0.0)
+                ),
+                require_contact=bool(
+                    getattr(
+                        self,
+                        "return_to_dig_start_envelope_require_contact",
+                        False,
+                    )
+                ),
+            ),
         )
-        return close
+
+    def _return_handoff_readiness_ports(self) -> ReturnHandoffReadinessPorts:
+        return ReturnHandoffReadinessPorts(
+            config=self._return_handoff_readiness_config(),
+            action_dim=int(getattr(self, "action_dim", 0)),
+            execution_state=self._primitive_execution_runtime_state(),
+            cycle_state=self._primitive_cycle_runtime_state(),
+            return_state=self._primitive_return_runtime_state(),
+            token_state=self._primitive_token_runtime_state(),
+            coverage_state=self._coverage_runtime_state(),
+            start_envelope_gate_service=self._return_start_envelope_gate_service(),
+            ensure_return_target_plan_for_cycle=(
+                lambda obs: self._ensure_return_target_plan_for_cycle(obs)
+            ),
+            return_start_envelope_prior_bounds=(
+                lambda corridor_id: self._return_start_envelope_prior_bounds(
+                    corridor_id
+                )
+            ),
+            return_start_envelope_prior_mapping=(
+                lambda corridor_id: self._return_start_envelope_prior_mapping(
+                    corridor_id=corridor_id,
+                )[0]
+            ),
+        )
+
+    def _return_handoff_readiness_service(self) -> ReturnHandoffReadinessService:
+        return ReturnHandoffReadinessService(
+            ports=self._return_handoff_readiness_ports()
+        )
+
+    def _return_to_dig_entry_close(self, obs: dict) -> bool:
+        return self._return_handoff_readiness_service().entry_close(obs)
 
     def _return_to_dig_handoff_ready(self, obs: dict) -> bool:
-        entry_close = self._return_to_dig_entry_close(obs)
-        envelope_ready = self._return_to_dig_start_envelope_ready(obs)
-        return bool(entry_close and envelope_ready)
+        return self._return_handoff_readiness_service().handoff_ready(obs)
 
     def _return_to_dig_direct_handoff_ready(
         self,
@@ -2992,27 +3069,13 @@ class PrimitivePlannerACTPolicy(Policy):
         *,
         handoff_ready: bool | None = None,
     ) -> bool:
-        if not self.return_to_dig_start_envelope_direct_handoff_enabled:
-            return False
-        if not self.return_to_dig_start_envelope_gate_enabled:
-            return False
-        ready = (
-            self._return_to_dig_handoff_ready(obs)
-            if handoff_ready is None
-            else bool(handoff_ready)
-        )
-        if not ready:
-            return False
-        return bool(
-            self._mass_in_bucket(obs) <= self.return_to_dig_max_bucket_mass_kg
+        return self._return_handoff_readiness_service().direct_handoff_ready(
+            obs,
+            handoff_ready=handoff_ready,
         )
 
     def _return_to_dig_start_envelope_ready(self, obs: dict) -> bool:
-        result = self._return_start_envelope_gate_service().evaluate(
-            self._return_start_envelope_gate_inputs(obs)
-        )
-        self._apply_return_start_envelope_gate_result(result)
-        return bool(result.ready)
+        return self._return_handoff_readiness_service().start_envelope_ready(obs)
 
     def _return_start_envelope_gate_service(self) -> ReturnStartEnvelopeGateService:
         return ReturnStartEnvelopeGateService(
@@ -3020,81 +3083,25 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _return_start_envelope_gate_config(self) -> ReturnStartEnvelopeGateConfig:
-        return ReturnStartEnvelopeGateConfig(
-            enabled=self.return_to_dig_start_envelope_gate_enabled,
-            action_dim=self.action_dim,
-            spatial_tolerance=self.return_to_dig_start_envelope_spatial_tolerance,
-            depth_tolerance_m=self.return_to_dig_start_envelope_depth_tolerance_m,
-            local_depth_tolerance_m=(
-                self.return_to_dig_start_envelope_local_depth_tolerance_m
-            ),
-            plane_depth_tolerance_m=(
-                self.return_to_dig_start_envelope_plane_depth_tolerance_m
-            ),
-            plane_depth_mode=self.return_to_dig_start_envelope_plane_depth_mode,
-            qpos_tolerance=self.return_to_dig_start_envelope_qpos_tolerance,
-            require_contact=self.return_to_dig_start_envelope_require_contact,
-        )
+        return self._return_handoff_readiness_config().start_envelope_gate
 
     def _return_start_envelope_gate_inputs(
         self,
         obs: dict,
     ) -> ReturnStartEnvelopeGateInputs:
-        corridor_id = int(self._pending_dig_cut_corridor_id)
-        return ReturnStartEnvelopeGateInputs(
-            token=self._return_start_envelope_tokens,
-            env_state=self._env_state(obs),
-            qpos=np.asarray(
-                obs.get("qpos", np.zeros(self.action_dim)),
-                dtype=np.float32,
-            ).reshape(-1),
-            prior_bounds=lambda: self._return_start_envelope_prior_bounds(corridor_id),
-            prior_mapping=(
-                lambda: self._return_start_envelope_prior_mapping(
-                    corridor_id=corridor_id,
-                )[0]
-            ),
-            use_prior_spatial_bounds=self._return_start_envelope_use_prior_spatial_bounds,
-            use_prior_qpos_bounds=self._return_start_envelope_use_prior_qpos_bounds,
-        )
+        return self._return_handoff_readiness_service().start_envelope_gate_inputs(obs)
 
     def _apply_return_start_envelope_gate_result(
         self,
         result: ReturnStartEnvelopeGateResult,
     ) -> None:
-        self._primitive_return_runtime_state().apply_start_envelope_gate_result(
-            ready=bool(result.ready),
-            error=float(result.error),
-            checks=dict(result.checks),
-        )
+        self._return_handoff_readiness_service().apply_start_envelope_gate_result(result)
 
     def _return_to_dig_entry_error_for_obs(self, obs: dict) -> float:
-        target = self._return_to_dig_entry_target()
-        pose = self._bucket_dig_area_pose(obs)
-        if target is None or pose is None:
-            return float("nan")
-        bucket_x, _, bucket_z = pose
-        entry_x, entry_z = target
-        if not all(np.isfinite(value) for value in (bucket_x, bucket_z, entry_x, entry_z)):
-            return float("nan")
-        return float(
-            np.hypot(float(bucket_x) - float(entry_x), float(bucket_z) - float(entry_z))
-        )
+        return self._return_handoff_readiness_service().entry_error_for_obs(obs)
 
     def _return_to_dig_entry_target(self) -> tuple[float, float] | None:
-        raw_fields = self._pending_dig_cut_raw_fields
-        if (
-            raw_fields is not None
-            and int(self._pending_dig_cut_cycle_id) == int(self._cycle_index) + 1
-        ):
-            entry_x = float(raw_fields.get("operator_entry_x_m", float("nan")))
-            entry_z = float(raw_fields.get("operator_entry_z_m", float("nan")))
-            if np.isfinite(entry_x) and np.isfinite(entry_z):
-                return entry_x, entry_z
-        corridor = self._coverage_active_corridor()
-        if corridor is None:
-            return None
-        return float(corridor.entry_x_m), float(corridor.entry_z_m)
+        return self._return_handoff_readiness_service().entry_target()
 
     def _mass_in_bucket(self, obs: dict) -> float:
         task_metrics = dict(obs.get("task_metrics", {}) or {})

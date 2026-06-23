@@ -59,7 +59,7 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 4899 | public primitive policy adapter plus compatibility facades over focused planner services |
+| `testbed/policies/hybrid/primitive_planner.py` | 4906 | public primitive policy adapter plus compatibility facades over focused planner services |
 | `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
 | `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
 | `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
@@ -76,7 +76,7 @@ Current relevant Python files:
 | `testbed/planner/primitive_token_runtime.py` | 255 | dig/return token runtime sequencing over focused token and coverage state owners plus explicit external config/algorithm ports |
 | `testbed/planner/primitive_dig_token_planning.py` | 341 | active dig token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm/observation ports |
 | `testbed/planner/primitive_dig_recovery.py` | 181 | failed-dig/restart recovery orchestration over focused execution/cycle/return/coverage/token/pre-dig compatibility owners plus explicit external algorithm/action ports |
-| `testbed/planner/primitive_return_handoff.py` | 402 | return direct-handoff effect service and return start-envelope gate; direct-handoff state reads/mutations now consume focused execution/cycle owners plus explicit readiness/token-planning ports |
+| `testbed/planner/primitive_return_handoff.py` | 569 | return direct-handoff effect service, return handoff readiness source, and return start-envelope gate over focused execution/cycle/return/token/coverage owners |
 | `testbed/planner/primitive_return_token_planning.py` | 217 | return token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm/observation ports |
 | `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
 | `testbed/planner/primitive_cycle_state.py` | 123 | mutable live 4P cycle/progress runtime state owner, reset defaults, and live report/finalization projection |
@@ -1479,6 +1479,29 @@ geometry projection. Those facts now resolve through
 `PrimitiveObservationFacts`, `PrimitiveFSMCapabilityProvider`, and the existing
 transition status dataclasses. Backend branch order, reason strings,
 thresholds, token schema, debug/summary/trace schemas, reset timing,
+`pre_dig_align`, `cell_entry`, and BT/VLM/LLM unsupported fail-fast behavior
+remain unchanged.
+
+Current status note after Phase 9.76: return-to-dig handoff readiness is now a
+focused source of truth in `ReturnHandoffReadinessService`. The service owns the
+existing entry-target precedence, entry-error calculation from
+`PrimitiveObservationFacts.bucket_dig_area_pose()`, entry-close runtime
+writeback, return start-envelope gate input assembly, gate-result writeback,
+`handoff_ready`, and direct-handoff mass/config gate. Its ports carry the
+focused execution, cycle, return, token, and coverage state owners directly,
+while return-target planning and return start-envelope prior bounds/mapping
+remain explicit external algorithm ports.
+
+`ReturnDirectHandoffEffectPorts` no longer carries
+`return_to_dig_handoff_ready` or `return_to_dig_direct_handoff_ready`
+callbacks. `ReturnDirectHandoffEffectService` now uses the readiness service for
+those checks while preserving the existing ordered effect chain: set return
+skill, ensure return-target plan, evaluate handoff/direct readiness, complete the
+return transition, then switch to dig or residual `pre_dig_align` with the same
+reason strings. `PrimitivePlannerACTPolicy` keeps the old private return
+handoff method names as thin compatibility facades and typed owner/config port
+assembly. Return start-envelope token build/apply/conditioning/prior mapping,
+backend branch order, thresholds, debug/summary/trace schemas, reset timing,
 `pre_dig_align`, `cell_entry`, and BT/VLM/LLM unsupported fail-fast behavior
 remain unchanged.
 

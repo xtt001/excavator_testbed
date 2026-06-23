@@ -136,10 +136,12 @@ the execution and cycle runtime owners directly; the service reads the current
 skill from `PrimitiveExecutionRuntimeState` and completes the return
 transition through `PrimitiveCycleRuntimeState`. The next-skill choice is
 driven by explicit `should_pre_dig_align_before_dig` and skill-name facts
-rather than a policy private helper callback. `set_skill`, return-target
-planning, handoff readiness, and direct-handoff readiness remain explicit
-ports because they are lifecycle or algorithm boundaries, not simple state
-storage.
+rather than a policy private helper callback. `set_skill` and return-target
+planning remain explicit lifecycle/algorithm ports. Return handoff readiness is
+now supplied by `ReturnHandoffReadinessService`, which owns entry-target
+precedence, entry-error projection, start-envelope gate input/result writeback,
+`handoff_ready`, and direct-handoff mass/config gating over the focused return,
+token, coverage, cycle, and execution owners.
 The return token planning boundary has also
 been narrowed to the same focused owners: `PrimitiveReturnTokenPlanningPorts`
 carries `PrimitiveTokenRuntimeState` and `CoverageRuntimeState`, and
@@ -1318,6 +1320,20 @@ Start-envelope gate calculation, token planning, coverage metrics, 5P,
 `pre_dig_align` internals, and `cell_entry` compatibility remain in their
 existing owners.
 
+Phase 9.76 moves return-to-dig handoff readiness into
+`ReturnHandoffReadinessService` in the same return handoff module. The readiness
+service owns the existing entry-target precedence, entry-error calculation from
+observation facts, entry-close cache writeback, start-envelope gate input
+assembly, gate-result cache writeback, `handoff_ready`, and direct-handoff
+mass/config gate. `ReturnDirectHandoffEffectService` now consumes that readiness
+service instead of policy-built `return_to_dig_handoff_ready` and
+`return_to_dig_direct_handoff_ready` callbacks. The policy shell keeps the old
+private method names as compatibility facades and still supplies explicit
+return-target planning plus prior bounds/mapping algorithm ports. Return
+start-envelope token planning, effect ordering, completion timing, reason
+strings, token/report schemas, backend support, `pre_dig_align`, `cell_entry`,
+and removed 5P runtime status remain unchanged.
+
 Phase 9.14 extracts low-level policy observation/token injection assembly into
 `PrimitivePolicyObservationAssembler` in
 `testbed/planner/primitive_observation.py`. The assembler owns the old
@@ -1636,6 +1652,15 @@ were already represented by `PrimitiveObservationFacts`,
 start-envelope gates, residual `pre_dig_align`, parked `cell_entry`, backend
 branch order, reason strings, thresholds, token/report schemas, and removed 5P
 runtime status remain unchanged.
+
+Phase 9.76 narrows the return handoff readiness boundary. The policy shell no
+longer owns the entry-target/error/start-envelope readiness implementation; it
+only assembles typed owner/config ports and retains old private facades.
+`ReturnHandoffReadinessService` consumes focused execution, cycle, return, token,
+and coverage state owners plus explicit prior-bound/mapping ports. This keeps
+live return readiness in the return handoff module without promoting residual
+`pre_dig_align` or parked `cell_entry` material into mainline backend
+architecture.
 
 ### Stage 4: Expand Effect Families From Evidence
 
