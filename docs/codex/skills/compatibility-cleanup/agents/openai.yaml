@@ -1,0 +1,4 @@
+interface:
+  display_name: "Compatibility Cleanup"
+  short_description: "Retire obsolete glue safely"
+  default_prompt: "Use $compatibility-cleanup to remove obsolete compatibility glue while preserving public contracts."
