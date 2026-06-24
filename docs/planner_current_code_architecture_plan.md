@@ -40,6 +40,7 @@ Supporting design references:
 - `docs/planner_policy_shell_target_interface.md`
 - `docs/planner_responsibility_chain_migration_design.md`
 - `docs/planner_responsibility_chain_migration_simulation.md`
+- `docs/superpowers/specs/2026-06-25-pre-dig-align-runtime-restoration-design.md`
 - `docs/planner_effect_boundary_design.md`
 - `docs/planner_primitive_interface_standard.md`
 

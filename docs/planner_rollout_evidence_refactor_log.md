@@ -14286,3 +14286,44 @@ Each completed refactor round should append:
     preparation. Future production external backend routing/plugin config
     design or implementation is a new target, not part of this cleanup
     closure.
+
+### 2026-06-25 Design: Pre-Dig-Align Runtime Restoration Re-Approved
+
+- User decision:
+  - `pre_dig_align` should be restored under the current SVG-aligned primitive
+    package lanes instead of being reverted into
+    `PrimitivePlannerACTPolicy`.
+  - The restored path should live as an opt-in execution/runtime capability, not
+    as a default mainline requirement and not as a production external backend
+    import contract.
+- Evidence basis:
+  - Fresh Unity validation showed the current `pre_dig_align.enabled=false`
+    tracked config fails the task in both current HEAD and parent baseline with
+    matching summary fields, so the package refactor itself did not introduce
+    behavior drift.
+  - Historical YuLong v2.4.5 qc6 runs with the same checkpoint family and
+    `pre_dig_align.enabled=true` reached successful or high-payload behavior.
+  - This reopens `pre_dig_align` as a user-approved restoration target while
+    the current production code still has runtime execution removed until the
+    implementation slice lands.
+- Design artifact:
+  - added
+    `docs/superpowers/specs/2026-06-25-pre-dig-align-runtime-restoration-design.md`.
+  - added the design artifact to
+    `docs/planner_current_code_architecture_plan.md` supporting references.
+- Architecture target:
+  - core runtime algorithms belong in
+    `testbed/planner/primitive/execution/pre_dig_align.py`;
+  - action dispatch should regain a `pre_dig_align` action branch;
+  - legacy FSM / decision capability should regain the
+    `pre_dig_align -> dig` ready, timeout, and surface-guard transition chain;
+  - dig recovery and return handoff should regain typed pre-dig selection ports;
+  - report compatibility should read live pre-dig runtime state after
+    implementation instead of constructing a fresh disabled/default projection.
+- Non-goals:
+  - no code implementation in this design-only slice;
+  - no default config enablement;
+  - no behavior-tree, VLM, LLM, plugin routing, `cell_entry`, or 5P runtime
+    restoration;
+  - no old policy-private `_pre_dig_align_*` method restoration in
+    `PrimitivePlannerACTPolicy`.
