@@ -1,6 +1,10 @@
 # Planner Effect Boundary Design
 
-Status: **Phase 8 design source for planner effect-boundary work**.
+Status: **historical Phase 8 design source**.
+
+Current architecture references:
+`docs/planner_current_architecture.md` and
+`docs/planner_scheduling_backend_design.md`.
 
 This document defines the intended `PlannerEffect` boundary for the primitive
 planner refactor. It is a design document only: no planner runtime behavior is

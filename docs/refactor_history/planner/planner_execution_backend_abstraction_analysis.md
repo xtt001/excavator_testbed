@@ -1,8 +1,9 @@
 # Planner Execution Backend Abstraction Analysis
 
-Status: supporting analysis only.
+Status: **historical supporting analysis only**.
 
 The current implementation source of truth is
+`docs/planner_current_architecture.md` and
 `docs/planner_current_code_architecture_plan.md`. This analysis explains why
 the execution-kernel/backend direction exists, but it must not be used as the
 file-ownership map, migration checklist, or current module inventory. If this

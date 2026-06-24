@@ -5,8 +5,9 @@ Status: **active interface target and implementation standard**.
 This document defines the target primitive planner interface boundaries and
 compares them with the current Phase 9.91 implementation. It is intentionally
 not a snapshot-only inventory. Use it to decide whether future refactor slices
-move the code toward the architecture in
-`docs/planner_execution_abstraction_flow.svg`.
+move the code toward the current architecture entry point in
+`docs/planner_current_architecture.md` and the backend guide in
+`docs/planner_scheduling_backend_design.md`.
 
 The current implementation is best described as **default legacy FSM
 backendified with focused services**. It is not yet a fully backend-agnostic
@@ -15,17 +16,14 @@ without additional interface work.
 
 ## Source Documents
 
-- `docs/planner_execution_abstraction_flow.svg`
-- `docs/planner_package_layout_target.md`
-- `docs/planner_policy_shell_target_interface.md`
-- `docs/planner_responsibility_chain_migration_design.md`
-- `docs/planner_responsibility_chain_migration_simulation.md`
+- `docs/planner_current_architecture.md`
+- `docs/planner_scheduling_backend_design.md`
 - `docs/planner_current_code_architecture_plan.md`
-- `docs/planner_effect_boundary_design.md`
 - `docs/planner_baseline_architecture_map.md`
 - `docs/planner_rollout_evidence_refactor_plan.md`
 - `docs/planner_rollout_evidence_refactor_log.md`
 - `docs/prompts/planner_rollout_evidence_goal_prompt.md`
+- `docs/refactor_history/planner/README.md`
 - `AGENTS.md`
 
 ## Deep Reflection Reference Set
@@ -33,10 +31,12 @@ without additional interface work.
 Three-iteration planner reflections must use the following explicit reference
 set instead of relying on memory or an unnamed old document:
 
-- primary architecture target: `docs/planner_execution_abstraction_flow.svg`
-  and this interface standard;
-- current implementation target: `docs/planner_current_code_architecture_plan.md`
-  and `docs/planner_effect_boundary_design.md`;
+- primary architecture target: `docs/planner_current_architecture.md` and this
+  interface standard;
+- future backend target:
+  `docs/planner_scheduling_backend_design.md`;
+- current implementation inventory:
+  `docs/planner_current_code_architecture_plan.md`;
 - historical baseline/evidence context:
   `docs/planner_baseline_architecture_map.md`, used as historical comparison
   and rollout-evidence grounding, not as a replacement for the current
@@ -44,6 +44,9 @@ set instead of relying on memory or an unnamed old document:
 - workflow contract: `docs/planner_rollout_evidence_refactor_plan.md`,
   `docs/planner_rollout_evidence_refactor_log.md`, and
   `docs/prompts/planner_rollout_evidence_goal_prompt.md`;
+- historical context:
+  `docs/refactor_history/planner/`, used only when a prompt explicitly needs
+  superseded design rationale or risk history;
 - repository governance: `AGENTS.md`;
 - live code facts: `testbed/policies/hybrid/primitive_planner.py`, focused
   modules under `testbed/planner/`, and focused primitive tests.
@@ -236,8 +239,8 @@ Current maturity:
 
 This section is the allowed production import surface for future external
 decision backend work. It is intentionally narrower than the design documents.
-Files such as `docs/planner_policy_shell_target_interface.md` remain review
-artifacts and must not be imported or treated as runtime APIs.
+Design guides such as `docs/planner_scheduling_backend_design.md` remain
+review artifacts and must not be imported or treated as runtime APIs.
 
 Allowed generic decision/backend contract imports:
 

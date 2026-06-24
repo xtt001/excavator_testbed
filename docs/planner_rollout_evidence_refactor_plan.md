@@ -60,10 +60,11 @@ Before choosing a migration slice, update
   `test-only`, `compatibility`, or `dead-candidate`
 
 The current code-grounded architecture target is
-`docs/planner_current_code_architecture_plan.md`. The earlier
-`docs/planner_execution_backend_abstraction_plan.md` and
-`docs/planner_execution_abstraction_flow.svg` remain supporting concept
-references, but the current-code plan is the implementation source of truth.
+`docs/planner_current_architecture.md`, with detailed inventory in
+`docs/planner_current_code_architecture_plan.md`. Earlier backend abstraction
+plans and the older SVG flow are archived under
+`docs/refactor_history/planner/` as historical context, not implementation
+source of truth.
 
 The plan intentionally starts with the public tick execution template before
 introducing pluggable decision backends. Do not jump straight to behavior-tree,
@@ -235,18 +236,22 @@ from an unnamed old plan, or from the current code shape alone.
 
 Primary architecture references:
 
-- `docs/planner_execution_abstraction_flow.svg`: the intended abstraction flow
-  and the direction of shell -> runtime/service -> effect/report boundaries.
+- `docs/planner_current_architecture.md`: the current actual architecture
+  diagram, package lanes, shell boundary, runtime flow, and parked/restored
+  path policy.
 - `docs/planner_primitive_interface_standard.md`: the active interface/core
   boundary standard, maturity wording, and public compatibility constraints.
+- `docs/planner_scheduling_backend_design.md`: the current future-backend
+  design guide and backend-ready contract checklist.
 
 Current implementation references:
 
 - `docs/planner_current_code_architecture_plan.md`: the live current-code
   architecture inventory, file responsibilities, line-count facts, and next
   responsibility clusters.
-- `docs/planner_effect_boundary_design.md`: effect, report, trace, reset,
-  branch-order, reason-string, and schema preservation contracts.
+- `docs/refactor_history/planner/`: archived older SVG, phase design, package
+  target, shell target, and migration simulation documents; use only as
+  historical context when needed.
 - Current code and focused tests, especially
   `testbed/policies/hybrid/primitive_planner.py`, focused modules under
   `testbed/planner/`, and the focused `tests/test_primitive_*.py` suites.
@@ -341,7 +346,8 @@ The reflection must answer:
 
 - whether the last three rounds moved the implementation closer to the Deep
   Reflection Reference Set above, especially
-  `docs/planner_execution_abstraction_flow.svg` and
+  `docs/planner_current_architecture.md`,
+  `docs/planner_scheduling_backend_design.md`, and
   `docs/planner_primitive_interface_standard.md`
 - the largest remaining architecture gap
 - the next core bounded slice

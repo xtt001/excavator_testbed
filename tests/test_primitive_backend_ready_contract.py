@@ -101,11 +101,11 @@ def test_primitive_lane_modules_do_not_depend_on_policy_shell() -> None:
     assert offenders == []
 
 
-def test_policy_shell_design_doc_is_not_a_production_import_api() -> None:
+def test_backend_design_doc_is_not_a_production_import_api() -> None:
     design_doc = (
         Path(__file__).resolve().parents[1]
-        / "docs/planner_policy_shell_target_interface.md"
+        / "docs/planner_scheduling_backend_design.md"
     ).read_text()
 
-    assert "active design target, not a production import contract" in design_doc
-    assert "Do not import it from production code" in design_doc
+    assert "active design guide for future scheduling/decision backends" in design_doc
+    assert "Design documents are not production import contracts" in design_doc

@@ -34,15 +34,10 @@ Current evidence inputs:
 
 Supporting design references:
 
-- `docs/planner_execution_backend_abstraction_plan.md`
-- `docs/planner_execution_abstraction_flow.svg`
-- `docs/planner_package_layout_target.md`
-- `docs/planner_policy_shell_target_interface.md`
-- `docs/planner_responsibility_chain_migration_design.md`
-- `docs/planner_responsibility_chain_migration_simulation.md`
-- `docs/superpowers/specs/2026-06-25-pre-dig-align-runtime-restoration-design.md`
-- `docs/planner_effect_boundary_design.md`
+- `docs/planner_current_architecture.md`
+- `docs/planner_scheduling_backend_design.md`
 - `docs/planner_primitive_interface_standard.md`
+- `docs/refactor_history/planner/README.md`
 
 Non-goals for this plan:
 
@@ -2086,7 +2081,7 @@ trace schemas, token/return behavior, parked `pre_dig_align`, parked
 
 Current status note after shell weld classification snapshot: the remaining
 `PrimitivePlannerACTPolicy` private shell surface has been classified against
-the target interface in `docs/planner_policy_shell_target_interface.md`.
+the shell boundary summarized in `docs/planner_current_architecture.md`.
 Coverage static config and coverage runtime ports are accepted: the policy keeps
 `_primitive_coverage_static_config()` as the static snapshot weld and the
 report/selection/effect runtime port methods now contain only dynamic
@@ -2259,8 +2254,9 @@ strings, token dimensions, default-disabled config behavior, or apply unrelated
 effects through the backend boundary without a separate evidence and
 compatibility decision.
 
-The next approved planning scope is Phase 8 effect-boundary design, recorded in
-`docs/planner_effect_boundary_design.md`. It should govern later return
-direct-handoff, legacy parking, and backend-selection work by
-classifying each path as facts, decision, requested effect, reporting,
+The accepted effect-boundary design is now historical context under
+`docs/refactor_history/planner/`. Future return direct-handoff, legacy parking,
+and backend-selection work should use `docs/planner_current_architecture.md`,
+`docs/planner_scheduling_backend_design.md`, and this current-code inventory to
+classify each path as facts, decision, requested effect, reporting,
 compatibility, or legacy parking before any code migration.

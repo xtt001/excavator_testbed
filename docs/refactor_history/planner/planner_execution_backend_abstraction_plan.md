@@ -1,11 +1,13 @@
 # Planner Execution Backend Abstraction Plan
 
-Status: supporting concept plan.
+Status: **historical supporting concept plan**.
 
 The current implementation source of truth is now
+`docs/planner_current_architecture.md`,
+`docs/planner_scheduling_backend_design.md`, and
 `docs/planner_current_code_architecture_plan.md`. Use this document for the
-conceptual execution-kernel/backend direction, but use the current-code plan for
-actual file ownership, migration slices, parking decisions, and verification.
+conceptual execution-kernel/backend direction only, not for active file
+ownership, migration slices, parking decisions, or verification.
 Do not execute the phases below directly; their role is background rationale for
 the current-code plan.
 

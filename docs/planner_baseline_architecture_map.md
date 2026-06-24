@@ -378,7 +378,7 @@ Candidate artifacts to review for preservation before any destructive reset:
 
 - active docs under `docs/planner_*`
 - `docs/prompts/planner_rollout_evidence_goal_prompt.md`
-- `docs/superpowers/specs/2026-06-17-planner-backend-interface-design.md`,
+- `docs/refactor_history/planner/superpowers_specs/2026-06-17-planner-backend-interface-design.md`,
   only as historical reference for the superseded partial backend migration
 - `scripts/planner_refactor_guard.py`
 - `.githooks/pre-commit`

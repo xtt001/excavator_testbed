@@ -1,6 +1,6 @@
 # Primitive Policy Shell Target Interface Design
 
-Status: **active design target, not a production import contract**.
+Status: **historical design target, not a production import contract**.
 
 This document defines the responsibility boundary used to keep
 `PrimitivePlannerACTPolicy` converging toward an external API shell. It is a

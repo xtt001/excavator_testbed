@@ -1,12 +1,12 @@
 # Primitive Planner Package Layout Target
 
-Status: **active package-layout design target, not an implementation plan**.
+Status: **historical package-layout design target**.
 
-This document describes how the primitive planner code should eventually be
-grouped so the repository structure reflects
-`docs/planner_execution_abstraction_flow.svg`. It is a source-of-truth design
-artifact for future relocation slices. It does not move files, change imports,
-or alter runtime behavior by itself.
+This document describes an earlier package-layout target for grouping primitive
+planner code around the superseded SVG flow. It is retained as historical
+context. Current layout guidance lives in
+`docs/planner_current_architecture.md`; this file does not move files, change
+imports, or alter runtime behavior by itself.
 
 Companion responsibility-chain design references:
 

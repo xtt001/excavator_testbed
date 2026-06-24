@@ -4,8 +4,8 @@ Status: unit-level restoration implemented through Slice 8; Unity runtime smoke
 validation completed on 2026-06-25. Enabled opt-in routing reaches the restored
 runtime; target-cycle success remains a separate behavioral/performance issue.
 
-This document specifies how to restore `pre_dig_align` runtime behavior under
-the current SVG-aligned primitive planner package structure. It is a design and
+This document specifies how `pre_dig_align` runtime behavior was restored under
+the current primitive planner package structure. It is a historical design and
 execution contract for the next implementation slice. It is not a production
 backend import contract, and it does not define behavior-tree, VLM, or LLM
 backend support.

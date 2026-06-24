@@ -1,6 +1,6 @@
 # Primitive Planner Responsibility-Chain Migration Simulation
 
-Status: **active design workbook, not an implementation plan**.
+Status: **historical design workbook, not an implementation plan**.
 
 This document records design-only dry runs for future primitive-planner
 responsibility-chain migrations. It is used before dispatching implementation
@@ -302,4 +302,3 @@ candidate is likely one of:
 
 Coverage should be simulated in parallel but implemented only after its
 subchain boundary is narrowed.
-

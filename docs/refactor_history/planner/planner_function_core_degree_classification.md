@@ -1,7 +1,7 @@
 # Planner Function Core-Degree Classification
 
-Status: active cleanup management note for `PrimitivePlannerACTPolicy` glue
-classification.
+Status: **historical cleanup management note** for
+`PrimitivePlannerACTPolicy` glue classification.
 
 This note records how the cleanup program classifies remaining policy-shell
 functions and mappings. It does not replace the architecture plan or rollout

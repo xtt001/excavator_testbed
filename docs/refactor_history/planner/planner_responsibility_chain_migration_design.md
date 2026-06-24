@@ -1,6 +1,6 @@
 # Primitive Planner Responsibility-Chain Migration Design
 
-Status: **active design target, not an implementation plan**.
+Status: **historical design target, not an implementation plan**.
 
 This document defines how future primitive-planner responsibility-chain
 migrations should be selected, simulated, and accepted after the backend-ready
@@ -168,4 +168,3 @@ After a package-layout seed, the next non-code step should simulate the token,
 coverage, report, and effects/return-handoff chains in parallel. The planner
 should then choose one implementation slice with the clearest target owner and
 lowest semantic ambiguity.
-

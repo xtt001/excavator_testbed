@@ -25,15 +25,14 @@ objective:
 - docs/planner_rollout_evidence_refactor_plan.md
 - docs/planner_rollout_evidence_refactor_log.md
 - docs/planner_baseline_architecture_map.md
+- docs/planner_current_architecture.md
+- docs/planner_scheduling_backend_design.md
 - docs/planner_current_code_architecture_plan.md
 - docs/planner_evidence_trace_tool.md
 - /home/pingfan/.codex/skills/excavator-planner-safe-refactor/SKILL.md
 
-可选参考，不作为实施 source-of-truth：
-- docs/planner_execution_backend_abstraction_plan.md
-- docs/planner_execution_backend_abstraction_analysis.md
-- docs/planner_execution_abstraction_flow.svg
-- docs/superpowers/specs/2026-06-17-planner-backend-interface-design.md
+可选历史参考，不作为实施 source-of-truth：
+- docs/refactor_history/planner/
 
 开始前必须先做 branch baseline 架构重建：
 - 不 fetch / pull。
@@ -43,7 +42,8 @@ objective:
   `git merge-base HEAD origin/fs/v2_4-refactor-tests` 替代创建 baseline。
 - 从 branch baseline 的代码重建 planner 入口、状态切换、token、effect、debug/reporting 数据流。
 - 更新 `docs/planner_baseline_architecture_map.md`。
-- 以 `docs/planner_current_code_architecture_plan.md` 的结构为目标：
+- 以 `docs/planner_current_architecture.md` 和
+  `docs/planner_current_code_architecture_plan.md` 的结构为目标：
   public policy adapter -> execution kernel -> capability port -> decision
   backend -> effect application。
 - 第一段代码迁移应优先抽出 public tick execution template，不要直接跳到
@@ -93,16 +93,16 @@ objective:
   docs/planner_rollout_evidence_refactor_log.md 记录 three-iteration
   reflection，再生成下一轮 executor prompt。反思必须显式列出并核对 reference
   set，不能凭记忆、随机旧文档或当前代码形状自由发挥。reference set 至少包括：
-  docs/planner_execution_abstraction_flow.svg；
+  docs/planner_current_architecture.md；
+  docs/planner_scheduling_backend_design.md；
   docs/planner_primitive_interface_standard.md；
   docs/planner_current_code_architecture_plan.md；
-  docs/planner_effect_boundary_design.md；
   docs/planner_baseline_architecture_map.md（历史/基线对照，不替代当前标准）；
   docs/planner_rollout_evidence_refactor_plan.md；
   docs/planner_rollout_evidence_refactor_log.md；
   docs/prompts/planner_rollout_evidence_goal_prompt.md；
   AGENTS.md；以及当前代码/ focused tests。反思必须判断：是否更接近该 reference
-  set 中的架构图和 interface standard，最大剩余差距，下一步核心 bounded slice，
+  set 中的当前架构图、backend guide 和 interface standard，最大剩余差距，下一步核心 bounded slice，
   是否过度保护旧代码或产生贫血 pass-through facade，以及是否需要方向修正。
   executor 不写反思。
 - 这条 three-iteration reflection gate 必须显式写进双方 prompt surface：

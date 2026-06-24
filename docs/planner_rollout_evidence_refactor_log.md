@@ -14652,3 +14652,34 @@ Each completed refactor round should append:
   current restored worktree still reproduces the high-performing
   dig-area-depleted outcome, with 10 completed dumps in this run versus the
   historical aggregate's 9.
+
+### 2026-06-25 Planner Documentation Cleanup And Final Architecture Entrypoints
+
+- Scope: documentation cleanup after backend-ready closure and pre-dig-align
+  validation. No production planner code, runtime/eval config, checkpoint/model,
+  Unity asset, remote, fetch/pull/push/reset, or environment setting was
+  changed.
+- Added final active entrypoints:
+  - `docs/planner_current_architecture.md` records the current actual planner
+    architecture diagram, package lanes, public shell boundary, runtime flow,
+    and restored/parked path policy.
+  - `docs/planner_scheduling_backend_design.md` records future
+    scheduling/decision backend integration guidance, allowed production import
+    surface, backend rules, and readiness checklist.
+- Archived intermediate planner design artifacts under
+  `docs/refactor_history/planner/`:
+  - older SVG abstraction flow, backend abstraction analysis/plan, function
+    core-degree classification, package-layout target, policy-shell target,
+    responsibility-chain design/simulation, effect-boundary phase design, and
+    the two one-slice superpowers specs.
+- Updated active references in
+  `docs/planner_primitive_interface_standard.md`,
+  `docs/planner_current_code_architecture_plan.md`,
+  `docs/planner_rollout_evidence_refactor_plan.md`,
+  `docs/prompts/planner_rollout_evidence_goal_prompt.md`, and
+  `docs/planner_baseline_architecture_map.md` so future planner reflections use
+  the current architecture and backend guide instead of the superseded SVG or
+  target-interface drafts.
+- Updated `tests/test_primitive_backend_ready_contract.py` to keep guarding
+  that design documents are not production import APIs, now using the active
+  backend guide instead of the archived policy-shell target draft.
