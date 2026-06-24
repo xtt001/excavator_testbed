@@ -14598,3 +14598,57 @@ Each completed refactor round should append:
   default-disabled no-regression. It does not claim restored `pre_dig_align`
   solves target-cycle performance in this smoke; that remains a separate
   behavior/model/config investigation if needed.
+
+### 2026-06-25 Aggregate Tx24 Best-Config Reproduction Check
+
+- Scope: investigated whether the low/zero values in the temporary
+  `pre_dig_align` smoke reports were abnormal by comparing them against the
+  historical high-performing YuLong v2.4.5 qc6 aggregate rollout. No production
+  code, tracked runtime/eval config, checkpoint/model, Unity asset, remote,
+  fetch/pull/push/reset, or environment setting was changed.
+- Historical best-match evidence for the user's remembered "9-cycle clear"
+  record:
+  `runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000_summary.json`.
+  Summary: `success=true`, `episode_len=5584`,
+  `rollout_stop_reason=dig_area_depleted`,
+  `target_cycle_gate=15`, `target_cycle_completed_dump_count=9`,
+  `completed_dump_count=9`, `coverage_completed_dump_count=9`,
+  `coverage_depleted_count=6`, `max_bucket_mass=80.94144439697266`,
+  `pre_dig_align_enabled=0`, `primitive_final_skill=return`.
+- Key config difference from the temporary pre-dig smoke configs:
+  aggregate Tx24 uses
+  `v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524` dig/carry/dump
+  checkpoints, the
+  `v2_4_5_return_relocate_token_swap_all_surface_depth_qc6labels_scale080_20260526`
+  return checkpoint, state-conditioned coverage exemplars, cell-prior
+  return-start envelope and return-relocate tokens, `target_cycle_gate=15`, and
+  `pre_dig_align.enabled=false`. The temporary smoke configs used the older
+  `yulong_v2_4_5_process_boundary_qc6_20260522` checkpoint family,
+  `target_cycle_gate=3`, no state-conditioned exemplar/cell-prior return
+  envelope fields, and the enabled smoke intentionally set
+  `pre_dig_align.enabled=true`.
+- Reproduction config generated in the dirty restoration worktree:
+  `runs/eval/reproduce_aggregate_tx24_20260625/eval_aggregate_tx24_resolved_repro.yaml`.
+  It was copied from the historical resolved config with only output paths
+  redirected into the ignored reproduction run directory.
+- Reproduction command:
+  `DISPLAY=:0 XAUTHORITY=/run/user/1000/gdm/Xauthority PYTHONUNBUFFERED=1
+  /home/pingfan/miniconda3/bin/python -m testbed.cli.eval --config
+  runs/eval/reproduce_aggregate_tx24_20260625/eval_aggregate_tx24_resolved_repro.yaml
+  --num-rollouts 1 --target-cycle-gate 15 --output-dir
+  runs/eval/reproduce_aggregate_tx24_20260625`.
+- Reproduction result:
+  `success=true`, `episode_len=6136`,
+  `rollout_stop_reason=dig_area_depleted`,
+  `target_cycle_completed_dump_count=10`, `completed_dump_count=10`,
+  `coverage_completed_dump_count=10`, `coverage_depleted_count=6`,
+  `max_bucket_mass=84.93572235107422`,
+  `final_bucket_mass=12.140751838684082`, `pre_dig_align_enabled=0`,
+  `primitive_final_skill=return`, `primitive_cycle_index=9`,
+  `hard_target_collision_count=0`, `spill_before_target_count=0`.
+- Conclusion: the temporary pre-dig smoke zero-mass values were normal for that
+  different smoke config/ckpt family and should not be compared directly to the
+  aggregate Tx24 success record. Under the historical best-match config, the
+  current restored worktree still reproduces the high-performing
+  dig-area-depleted outcome, with 10 completed dumps in this run versus the
+  historical aggregate's 9.
