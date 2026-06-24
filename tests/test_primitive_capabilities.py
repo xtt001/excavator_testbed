@@ -23,7 +23,7 @@ from testbed.data.schema import (
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
     ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
-from testbed.planner.primitive_capabilities import (
+from testbed.planner.primitive.facts.capabilities import (
     BootstrapStatus,
     CarryTransitionStatus,
     DigTransitionStatus,

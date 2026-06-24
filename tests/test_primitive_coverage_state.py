@@ -5,12 +5,34 @@ from typing import Any
 
 import numpy as np
 
-from testbed.planner.primitive_coverage import CoverageCorridorState
-from testbed.planner.primitive_coverage_state import CoverageRuntimeState
+from testbed.planner.primitive.coverage.selection import CoverageCorridorState
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 from tests.test_agx_primitives_v2_2 import (
     _RecordingPolicy,
     _coverage_planner_policy,
 )
+
+_COVERAGE_RUNTIME_FIELD_NAMES = {
+    "coverage_corridors",
+    "coverage_active_corridor_id",
+    "coverage_last_selected_corridor_id",
+    "coverage_current_payload_gain_kg",
+    "coverage_cycle_start_deposit_kg",
+    "coverage_last_payload_gain_kg",
+    "coverage_last_effective_deposit_delta_kg",
+    "coverage_global_low_productivity_streak",
+    "coverage_completed_dump_count",
+    "coverage_pass_index",
+    "coverage_terminal_stop_requested",
+    "coverage_terminal_stop_reason",
+    "coverage_candidate_scores",
+    "coverage_decision_trace",
+    "coverage_active_state_exemplar_ids",
+    "coverage_rejected_state_exemplar_ids",
+    "coverage_active_state_exemplar_distance",
+    "coverage_active_state_exemplar_profile_token",
+}
 
 
 def _corridor(corridor_id: int, *, depleted: bool = False) -> CoverageCorridorState:
@@ -133,34 +155,66 @@ def test_coverage_runtime_state_update_helpers_preserve_runtime_values() -> None
     assert state.coverage_active_state_exemplar_profile_token is None
 
 
-def test_policy_coverage_private_names_are_state_backed_compatibility_facades() -> None:
+def test_policy_coverage_private_names_are_not_property_facades() -> None:
+    removed_policy_names = {f"_{name}" for name in _COVERAGE_RUNTIME_FIELD_NAMES}
+
+    assert removed_policy_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
+
+
+def test_policy_no_longer_exposes_coverage_owner_state_setter_wrappers() -> None:
+    removed_names = {
+        "_set_coverage_current_payload_gain_kg",
+        "_set_coverage_last_payload_gain_kg",
+        "_set_coverage_last_effective_deposit_delta_kg",
+        "_set_coverage_completed_dump_count",
+        "_set_coverage_global_low_productivity_streak",
+        "_update_coverage_rejected_state_exemplar_ids",
+        "_set_coverage_pass_index",
+        "_set_coverage_active_corridor_id",
+        "_clear_coverage_rejected_state_exemplar_ids",
+        "_set_coverage_terminal_stop_requested",
+        "_set_coverage_terminal_stop_reason",
+    }
+
+    assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
+
+
+def test_policy_coverage_runtime_state_is_direct_owner() -> None:
     policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
-    state = policy._coverage_state
+    state = policy._coverage_runtime_state()
     corridor = _corridor(11)
 
-    policy._coverage_corridors.append(corridor)
-    policy._coverage_active_corridor_id = 11
-    policy._coverage_candidate_scores = [{"corridor_id": 11, "score": 1.0}]
-    policy._coverage_rejected_state_exemplar_ids.add("cell0_b")
+    state.coverage_corridors.append(corridor)
+    state.coverage_active_corridor_id = 11
+    state.coverage_candidate_scores = [{"corridor_id": 11, "score": 1.0}]
+    state.coverage_rejected_state_exemplar_ids.add("cell0_b")
 
     assert policy._coverage_state is state
     assert state.coverage_corridors == [corridor]
     assert state.coverage_active_corridor_id == 11
     assert state.coverage_candidate_scores == [{"corridor_id": 11, "score": 1.0}]
     assert state.coverage_rejected_state_exemplar_ids == {"cell0_b"}
-    assert policy._coverage_active_corridor() is corridor
+    assert policy._primitive_coverage_report_runtime().active_corridor() is corridor
 
 
 def test_policy_selection_and_effect_ports_share_coverage_state_owner() -> None:
     policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
     corridor = _corridor(12)
-    policy._coverage_corridors.append(corridor)
+    policy._coverage_runtime_state().coverage_corridors.append(corridor)
 
-    selection_ports = policy._coverage_selection_runtime_ports()
-    effect_ports = policy._coverage_effect_runtime_ports()
-    token_runtime_ports = policy._primitive_token_runtime_ports()
-    dig_token_ports = policy._primitive_dig_token_planning_ports()
-    return_token_ports = policy._primitive_return_token_planning_ports()
+    selection_ports = policy._primitive_coverage_selection_runtime().coverage_selection_runtime_ports()
+    effect_ports = (
+        policy._primitive_coverage_effect_runtime().coverage_effect_runtime_ports()
+    )
+    token_runtime_ports = (
+        policy._primitive_token_observation_runtime().primitive_token_runtime_ports()
+    )
+    dig_token_ports = (
+        policy._primitive_token_planning_runtime().dig_token_planning_ports()
+    )
+    return_token_ports = (
+        policy._primitive_token_planning_runtime().return_token_planning_ports()
+    )
 
     assert selection_ports.state is policy._coverage_state
     assert not hasattr(selection_ports, "coverage_corridors")

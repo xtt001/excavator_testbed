@@ -4,9 +4,9 @@ from dataclasses import fields
 import numpy as np
 
 from testbed.data.schema import ENV_STATE_MASS_IN_BUCKET_IDX
-from testbed.planner.primitive_coverage_state import CoverageRuntimeState
-from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive_dig_progress import (
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.execution.dig_progress import (
     PrimitiveDigProgressRuntimeConfig,
     PrimitiveDigProgressRuntimePorts,
     PrimitiveDigProgressRuntimeService,
@@ -15,7 +15,7 @@ from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
 def _facts_provider(action_dim: int = 4):
-    from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
+    from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 
     return lambda obs: PrimitiveObservationFacts.from_obs(obs, action_dim=action_dim)
 

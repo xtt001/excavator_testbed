@@ -64,6 +64,8 @@ from testbed.policies.base import Policy
 from testbed.policies.hybrid.primitive_planner import (
     PrimitivePlannerACTPolicy,
 )
+from testbed.planner.primitive.coverage.selection import CoverageSelectionService
+from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -79,6 +81,26 @@ YULONG_REMOVED_DEPTH_DIG_CUT_STATE_EXEMPLARS_QC6_PATH = (
     REPO_ROOT
     / "testbed/configs/planner_priors/yulong_removed_depth_dig_cut_state_exemplars_qc6.json"
 )
+
+
+def _apply_legacy_compatibility_decision(
+    policy: PrimitivePlannerACTPolicy,
+    *,
+    obs: dict,
+    boundary_event: object | None,
+) -> None:
+    skill_before = str(policy._skill_name)
+    result = policy._decision_runtime().decide_legacy_compatibility_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision=skill_before,
+            dig_progress_updated=skill_before == "dig",
+        ),
+    )
+    if result is not None and not result.side_effects_applied:
+        policy._primitive_requested_effect_runtime().apply(obs, result.effects)
 
 
 class TestPrimitivesV22(unittest.TestCase):
@@ -1951,9 +1973,9 @@ class TestPrimitivesV22(unittest.TestCase):
                     "allow_global_fallback": False,
                 },
             )
-            policy._ensure_coverage_corridors()
-            for corridor in policy._coverage_corridors:
-                if policy._coverage_cell_id(corridor) != 1:
+            policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+            for corridor in policy._coverage_runtime_state().coverage_corridors:
+                if CoverageSelectionService.cell_id(corridor) != 1:
                     corridor.depleted = True
             obs = _coverage_obs(mass=0.0, dig_distance=0.0)
             env_state = np.asarray(obs["env_state"], dtype=np.float32)
@@ -2149,7 +2171,7 @@ class TestPrimitivesV22(unittest.TestCase):
         obs = _coverage_obs(
             mass=0.0,
             dig_distance=0.0,
-            bucket_pose=(-0.88, 0.0, -0.16),
+            bucket_pose=(0.92, 0.0, -0.3382),
         )
         obs["qpos"] = np.asarray([0.50, 0.60, 0.10, 0.20], dtype=np.float32)
         policy.predict(obs)
@@ -2177,9 +2199,9 @@ class TestPrimitivesV22(unittest.TestCase):
                 "payload_percentile": "p90",
             },
         )
-        policy._ensure_coverage_corridors()
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
 
-        raw_fields = policy._coverage_raw_fields(policy._coverage_corridors[0])
+        raw_fields = policy._primitive_coverage_selection_runtime().coverage_raw_fields(policy._coverage_runtime_state().coverage_corridors[0])
 
         self.assertAlmostEqual(
             float(raw_fields["operator_cut_depth_peak_m"]),
@@ -2238,11 +2260,15 @@ class TestPrimitivesV22(unittest.TestCase):
 
         policy.predict(_coverage_obs(mass=0.0, dig_distance=0.0))
         first_corridor_id = int(policy.debug_state()["coverage_corridor_id"])
-        active = policy._coverage_active_corridor()
+        active = policy._primitive_coverage_report_runtime().active_corridor()
         self.assertIsNotNone(active)
         active.depleted = True
-        policy._clear_dig_cut_plan()
-        policy._cycle_index += 1
+        (
+            policy._primitive_token_observation_runtime()
+            .primitive_token_runtime()
+            .clear_dig_cut_plan()
+        )
+        policy._primitive_cycle_runtime_state().cycle_index += 1
 
         policy.predict(_coverage_obs(mass=0.0, dig_distance=0.0))
         self.assertNotEqual(
@@ -2258,17 +2284,17 @@ class TestPrimitivesV22(unittest.TestCase):
                 "recent_row_selection_penalty": 1.5,
             },
         )
-        policy._ensure_coverage_corridors()
-        policy._coverage_last_selected_corridor_id = 1
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        policy._coverage_runtime_state().coverage_last_selected_corridor_id = 1
 
-        selected = policy._select_coverage_corridor(
+        selected = policy._primitive_coverage_selection_runtime().select_coverage_corridor(
             _coverage_obs(mass=0.0, dig_distance=0.0)
         )
 
         self.assertEqual(int(selected.corridor_id), 3)
         penalty_by_corridor = {
             int(item["corridor_id"]): float(item["recent_row_penalty"])
-            for item in policy._coverage_candidate_scores
+            for item in policy._coverage_runtime_state().coverage_candidate_scores
         }
         self.assertEqual(penalty_by_corridor[0], 1.5)
         self.assertEqual(penalty_by_corridor[2], 1.5)
@@ -2284,18 +2310,18 @@ class TestPrimitivesV22(unittest.TestCase):
                 "recent_row_selection_penalty": 1.5,
             },
         )
-        policy._ensure_coverage_corridors()
-        previous = policy._coverage_corridors[1]
-        same_row_neighbor = policy._coverage_corridors[0]
-        self.assertEqual(policy._coverage_cell_id(previous), 1)
-        self.assertEqual(policy._coverage_cell_id(same_row_neighbor), 0)
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        previous = policy._coverage_runtime_state().coverage_corridors[1]
+        same_row_neighbor = policy._coverage_runtime_state().coverage_corridors[0]
+        self.assertEqual(CoverageSelectionService.cell_id(previous), 1)
+        self.assertEqual(CoverageSelectionService.cell_id(same_row_neighbor), 0)
         self.assertNotAlmostEqual(previous.entry_z_m, same_row_neighbor.entry_z_m)
-        policy._coverage_last_selected_corridor_id = int(previous.corridor_id)
+        policy._coverage_runtime_state().coverage_last_selected_corridor_id = int(previous.corridor_id)
 
-        policy._select_coverage_corridor(_coverage_obs(mass=0.0, dig_distance=0.0))
+        policy._primitive_coverage_selection_runtime().select_coverage_corridor(_coverage_obs(mass=0.0, dig_distance=0.0))
 
         candidate_by_cell = {
-            int(item["cell_id"]): item for item in policy._coverage_candidate_scores
+            int(item["cell_id"]): item for item in policy._coverage_runtime_state().coverage_candidate_scores
         }
         self.assertEqual(candidate_by_cell[0]["recent_row_penalty"], 1.5)
         self.assertEqual(candidate_by_cell[0]["same_recent_row"], 1)
@@ -2314,14 +2340,14 @@ class TestPrimitivesV22(unittest.TestCase):
                 "belief_depleted_score": 100.0,
             },
         )
-        policy._ensure_coverage_corridors()
-        corridor = policy._coverage_corridors[0]
-        policy._coverage_active_corridor_id = int(corridor.corridor_id)
-        policy._coverage_current_payload_gain_kg = 50.0
-        policy._coverage_cycle_start_deposit_kg = 0.0
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        corridor = policy._coverage_runtime_state().coverage_corridors[0]
+        policy._coverage_runtime_state().coverage_active_corridor_id = int(corridor.corridor_id)
+        policy._coverage_runtime_state().coverage_current_payload_gain_kg = 50.0
+        policy._coverage_runtime_state().coverage_cycle_start_deposit_kg = 0.0
 
         for _ in range(policy.coverage_max_attempts_per_corridor):
-            policy._complete_coverage_dump(
+            policy._primitive_coverage_effect_runtime().complete_coverage_dump(
                 _coverage_obs(mass=0.0, dig_distance=0.0),
                 reason="unit_test",
             )
@@ -2338,13 +2364,13 @@ class TestPrimitivesV22(unittest.TestCase):
                 "min_remaining_depth_m": 0.05,
             },
         )
-        policy._ensure_coverage_corridors()
-        corridor = policy._coverage_corridors[0]
-        policy._coverage_active_corridor_id = int(corridor.corridor_id)
-        policy._coverage_current_payload_gain_kg = 50.0
-        policy._coverage_cycle_start_deposit_kg = 0.0
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        corridor = policy._coverage_runtime_state().coverage_corridors[0]
+        policy._coverage_runtime_state().coverage_active_corridor_id = int(corridor.corridor_id)
+        policy._coverage_runtime_state().coverage_current_payload_gain_kg = 50.0
+        policy._coverage_runtime_state().coverage_cycle_start_deposit_kg = 0.0
 
-        policy._complete_coverage_dump(
+        policy._primitive_coverage_effect_runtime().complete_coverage_dump(
             _coverage_obs(mass=0.0, dig_distance=0.0, removed_cell0=0.01),
             reason="unit_test",
         )
@@ -2355,8 +2381,8 @@ class TestPrimitivesV22(unittest.TestCase):
 
     def test_primitive_planner_coverage_terminal_stop_when_all_depleted(self) -> None:
         policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
-        policy._ensure_coverage_corridors()
-        for corridor in policy._coverage_corridors:
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        for corridor in policy._coverage_runtime_state().coverage_corridors:
             corridor.depleted = True
 
         policy.predict(_coverage_obs(mass=0.0, dig_distance=0.0))
@@ -2375,14 +2401,14 @@ class TestPrimitivesV22(unittest.TestCase):
                 "multi_pass_min_remaining_depth_m": 0.04,
             },
         )
-        policy._ensure_coverage_corridors()
-        for corridor in policy._coverage_corridors:
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        for corridor in policy._coverage_runtime_state().coverage_corridors:
             corridor.depleted = True
             corridor.attempts = 2
             corridor.low_productivity_streak = 2
             corridor.last_reason = "unit_test_pass_local_depleted"
 
-        selected = policy._select_coverage_corridor(
+        selected = policy._primitive_coverage_selection_runtime().select_coverage_corridor(
             _coverage_obs(mass=0.0, dig_distance=0.0, removed_cell0=0.02)
         )
 
@@ -2392,7 +2418,7 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertFalse(selected.depleted)
         self.assertLess(
             state["coverage_depleted_count"],
-            len(policy._coverage_corridors),
+            len(policy._coverage_runtime_state().coverage_corridors),
         )
         reopen_events = [
             event
@@ -2414,8 +2440,8 @@ class TestPrimitivesV22(unittest.TestCase):
                 "multi_pass_min_remaining_depth_m": 0.04,
             },
         )
-        policy._ensure_coverage_corridors()
-        for corridor in policy._coverage_corridors:
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        for corridor in policy._coverage_runtime_state().coverage_corridors:
             corridor.depleted = True
         obs = _coverage_obs(mass=0.0, dig_distance=0.0)
         env_state = np.asarray(obs["env_state"], dtype=np.float32)
@@ -2424,7 +2450,7 @@ class TestPrimitivesV22(unittest.TestCase):
         env_state[start : start + 6] = env_state[target_start : target_start + 6]
         obs["env_state"] = env_state
 
-        policy._select_coverage_corridor(obs)
+        policy._primitive_coverage_selection_runtime().select_coverage_corridor(obs)
 
         state = policy.debug_state()
         self.assertEqual(state["coverage_pass_index"], 0)
@@ -2434,11 +2460,11 @@ class TestPrimitivesV22(unittest.TestCase):
     def test_primitive_planner_coverage_keeps_legacy_percentile_grid_without_cells(self) -> None:
         policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
 
-        policy._ensure_coverage_corridors()
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
 
-        self.assertEqual(len(policy._coverage_corridors), 9)
+        self.assertEqual(len(policy._coverage_runtime_state().coverage_corridors), 9)
         self.assertEqual(
-            sorted({policy._coverage_cell_id(c) for c in policy._coverage_corridors}),
+            sorted({CoverageSelectionService.cell_id(c) for c in policy._coverage_runtime_state().coverage_corridors}),
             [0, 1, 2, 3, 4, 5],
         )
         self.assertEqual(
@@ -2457,18 +2483,18 @@ class TestPrimitivesV22(unittest.TestCase):
             },
         )
 
-        policy._ensure_coverage_corridors()
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
 
-        self.assertEqual(len(policy._coverage_corridors), 6)
+        self.assertEqual(len(policy._coverage_runtime_state().coverage_corridors), 6)
         self.assertEqual(
-            [policy._coverage_cell_id(c) for c in policy._coverage_corridors],
+            [CoverageSelectionService.cell_id(c) for c in policy._coverage_runtime_state().coverage_corridors],
             [0, 1, 2, 3, 4, 5],
         )
-        rare = policy._coverage_corridors[4]
+        rare = policy._coverage_runtime_state().coverage_corridors[4]
         self.assertEqual(rare.cell_id, 4)
         self.assertLess(rare.source_fraction, 0.05)
-        self.assertEqual(policy._coverage_corridor_attempt_limit(rare), 1)
-        self.assertEqual(policy._coverage_corridor_attempt_limit(policy._coverage_corridors[3]), 3)
+        self.assertEqual(policy._primitive_coverage_selection_runtime().coverage_corridor_attempt_limit(rare), 1)
+        self.assertEqual(policy._primitive_coverage_selection_runtime().coverage_corridor_attempt_limit(policy._coverage_runtime_state().coverage_corridors[3]), 3)
 
     def test_primitive_planner_qc6_rare_cell_not_first_until_others_depleted(self) -> None:
         policy = _coverage_planner_policy(
@@ -2488,20 +2514,20 @@ class TestPrimitivesV22(unittest.TestCase):
             bucket_pose=(0.8023, 0.0, 0.5011),
         )
 
-        selected = policy._select_next_coverage_corridor(obs)
-        self.assertNotEqual(policy._coverage_cell_id(selected), 4)
+        selected = policy._primitive_coverage_selection_runtime().select_next_coverage_corridor(obs)
+        self.assertNotEqual(CoverageSelectionService.cell_id(selected), 4)
         rare_debug = [
             item
-            for item in policy._coverage_candidate_scores
+            for item in policy._coverage_runtime_state().coverage_candidate_scores
             if int(item["cell_id"]) == 4
         ][0]
         self.assertEqual(rare_debug["rare_first_dig_gated_out"], 1)
 
-        for corridor in policy._coverage_corridors:
-            if policy._coverage_cell_id(corridor) != 4:
+        for corridor in policy._coverage_runtime_state().coverage_corridors:
+            if CoverageSelectionService.cell_id(corridor) != 4:
                 corridor.depleted = True
-        selected = policy._select_next_coverage_corridor(obs)
-        self.assertEqual(policy._coverage_cell_id(selected), 4)
+        selected = policy._primitive_coverage_selection_runtime().select_next_coverage_corridor(obs)
+        self.assertEqual(CoverageSelectionService.cell_id(selected), 4)
 
     def test_primitive_planner_injects_return_target_only_for_return_and_reuses_for_dig(self) -> None:
         dig_policy = _RecordingPolicy(0)
@@ -2559,7 +2585,7 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertEqual(float(envelope_token[16]), 1.0)
         self.assertFalse(policy.debug_state()["dig_cut_token_injected"])
 
-        policy._cycle_index += 1
+        policy._primitive_cycle_runtime_state().cycle_index += 1
         policy._set_skill("dig", "unit_test_return_to_dig")
         policy.predict(_coverage_obs(mass=0.0, dig_distance=0.0))
         np.testing.assert_allclose(dig_policy.last_dig_cut_tokens, return_token)
@@ -2572,23 +2598,28 @@ class TestPrimitivesV22(unittest.TestCase):
             prior_path=YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH,
             coverage_extra={"candidate_layout": "cell_weighted_3x2"},
         )
-        policy._pending_dig_cut_cycle_id = int(policy._cycle_index)
-        policy._pending_dig_cut_corridor_id = 1
-        policy._pending_dig_cut_raw_fields = {
+        token_state = policy._primitive_token_runtime_state()
+        token_state.pending_dig_cut_cycle_id = int(
+            policy._primitive_cycle_runtime_state().cycle_index
+        )
+        token_state.pending_dig_cut_corridor_id = 1
+        token_state.pending_dig_cut_raw_fields = {
             "operator_entry_x_m": 1.0,
             "operator_entry_z_m": -0.5,
         }
-        policy._pending_dig_cut_tokens = np.ones(10, dtype=np.float32)
-        policy._pending_dig_depth_profile_tokens = np.ones(12, dtype=np.float32)
-        policy._pending_dig_state_exemplar_ids = ["stale_exemplar"]
-        policy._pending_dig_state_exemplar_distance = 0.0
+        token_state.pending_dig_cut_tokens = np.ones(10, dtype=np.float32)
+        token_state.pending_dig_depth_profile_tokens = np.ones(12, dtype=np.float32)
+        token_state.pending_dig_state_exemplar_ids = ["stale_exemplar"]
+        token_state.pending_dig_state_exemplar_distance = 0.0
 
-        policy._restart_dig_with_new_cut("unit_test_bad_dig_replan")
+        policy._primitive_dig_recovery().restart_dig_with_new_cut(
+            "unit_test_bad_dig_replan"
+        )
         policy.predict(_coverage_obs(mass=0.0, dig_distance=0.0))
 
-        self.assertIsNone(policy._pending_dig_cut_tokens)
-        self.assertIsNone(policy._pending_dig_cut_raw_fields)
-        self.assertEqual(policy._pending_dig_state_exemplar_ids, [])
+        self.assertIsNone(token_state.pending_dig_cut_tokens)
+        self.assertIsNone(token_state.pending_dig_cut_raw_fields)
+        self.assertEqual(token_state.pending_dig_state_exemplar_ids, [])
         self.assertNotEqual(
             policy.debug_state()["dig_cut_token_source"],
             "pending_return_target",
@@ -2610,17 +2641,20 @@ class TestPrimitivesV22(unittest.TestCase):
             coverage_extra={"candidate_layout": "cell_weighted_3x2"},
             return_start_envelope_extra={"use_cell_prior": True},
         )
-        policy._ensure_coverage_corridors()
-        corridor = policy._coverage_corridor_by_id(1)
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        corridor = policy._primitive_coverage_report_runtime().corridor_by_id(1)
         self.assertIsNotNone(corridor)
-        raw_fields = policy._coverage_raw_fields(corridor)
+        raw_fields = policy._primitive_coverage_selection_runtime().coverage_raw_fields(corridor)
         obs = _coverage_obs(mass=0.0, dig_distance=0.0)
         obs["qpos"] = np.asarray([0.9, 0.1, 0.9, 0.9], dtype=np.float32)
 
-        token = policy._build_return_start_envelope_tokens_for_obs(
+        token = (
+            policy._primitive_token_planning_runtime()
+            .build_return_start_envelope_tokens_for_obs(
             obs,
             raw_fields,
             corridor_id=1,
+        )
         )
 
         np.testing.assert_allclose(token, expected, atol=1.0e-6)
@@ -2660,14 +2694,17 @@ class TestPrimitivesV22(unittest.TestCase):
                     "min_source_count": 8,
                 },
             )
-            policy._ensure_coverage_corridors()
-            corridor = policy._coverage_corridor_by_id(2)
+            policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+            corridor = policy._primitive_coverage_report_runtime().corridor_by_id(2)
             self.assertIsNotNone(corridor)
             obs = _coverage_obs(mass=0.0, dig_distance=0.0)
-            token = policy._build_return_start_envelope_tokens_for_obs(
+            token = (
+                policy._primitive_token_planning_runtime()
+                .build_return_start_envelope_tokens_for_obs(
                 obs,
-                policy._coverage_raw_fields(corridor),
+                policy._primitive_coverage_selection_runtime().coverage_raw_fields(corridor),
                 corridor_id=2,
+            )
             )
 
         np.testing.assert_allclose(token, expected, atol=1.0e-6)
@@ -2691,15 +2728,18 @@ class TestPrimitivesV22(unittest.TestCase):
             prior_path=YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH,
             coverage_extra={"candidate_layout": "cell_weighted_3x2"},
         )
-        policy._ensure_coverage_corridors()
-        corridor = policy._coverage_corridor_by_id(1)
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        corridor = policy._primitive_coverage_report_runtime().corridor_by_id(1)
         self.assertIsNotNone(corridor)
         obs = _coverage_obs(mass=0.0, dig_distance=0.0)
 
-        token = policy._build_return_start_envelope_tokens_for_obs(
+        token = (
+            policy._primitive_token_planning_runtime()
+            .build_return_start_envelope_tokens_for_obs(
             obs,
-            policy._coverage_raw_fields(corridor),
+            policy._primitive_coverage_selection_runtime().coverage_raw_fields(corridor),
             corridor_id=1,
+        )
         )
 
         np.testing.assert_allclose(token, expected, atol=1.0e-6)
@@ -2737,16 +2777,19 @@ class TestPrimitivesV22(unittest.TestCase):
                 },
             },
         )
-        policy._ensure_coverage_corridors()
-        corridor = policy._coverage_corridor_by_id(1)
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        corridor = policy._primitive_coverage_report_runtime().corridor_by_id(1)
         self.assertIsNotNone(corridor)
-        raw_fields = policy._coverage_raw_fields(corridor)
+        raw_fields = policy._primitive_coverage_selection_runtime().coverage_raw_fields(corridor)
         obs = _coverage_obs(mass=0.0, dig_distance=0.0)
 
-        token = policy._build_return_start_envelope_tokens_for_obs(
+        token = (
+            policy._primitive_token_planning_runtime()
+            .build_return_start_envelope_tokens_for_obs(
             obs,
             raw_fields,
             corridor_id=1,
+        )
         )
 
         relocate_token = _build_dig_cut_token(raw_fields).astype(np.float32)
@@ -2766,7 +2809,10 @@ class TestPrimitivesV22(unittest.TestCase):
             policy.debug_state()["return_start_envelope_token_source"],
             "qc6_return_start_envelope_global+relocate_qpos_linear",
         )
-        self.assertFalse(policy._return_start_envelope_use_prior_qpos_bounds)
+        self.assertFalse(
+            policy._primitive_token_runtime_state()
+            .return_start_envelope_use_prior_qpos_bounds
+        )
 
     def test_return_envelope_can_condition_spatial_from_relocate_token(self) -> None:
         spatial_coefficients = np.zeros((2, 8), dtype=np.float32)
@@ -2792,15 +2838,18 @@ class TestPrimitivesV22(unittest.TestCase):
                 },
             },
         )
-        policy._ensure_coverage_corridors()
-        corridor = policy._coverage_corridor_by_id(1)
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        corridor = policy._primitive_coverage_report_runtime().corridor_by_id(1)
         self.assertIsNotNone(corridor)
-        raw_fields = policy._coverage_raw_fields(corridor)
+        raw_fields = policy._primitive_coverage_selection_runtime().coverage_raw_fields(corridor)
 
-        token = policy._build_return_start_envelope_tokens_for_obs(
+        token = (
+            policy._primitive_token_planning_runtime()
+            .build_return_start_envelope_tokens_for_obs(
             _coverage_obs(mass=0.0, dig_distance=0.0),
             raw_fields,
             corridor_id=1,
+        )
         )
 
         relocate_token = _build_dig_cut_token(raw_fields).astype(np.float32)
@@ -2815,7 +2864,10 @@ class TestPrimitivesV22(unittest.TestCase):
             policy.debug_state()["return_start_envelope_token_source"],
             "qc6_return_start_envelope_global+relocate_spatial_linear+relocate_qpos_linear",
         )
-        self.assertFalse(policy._return_start_envelope_use_prior_spatial_bounds)
+        self.assertFalse(
+            policy._primitive_token_runtime_state()
+            .return_start_envelope_use_prior_spatial_bounds
+        )
 
     def test_return_to_dig_gate_requires_qc6_start_envelope(self) -> None:
         with YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH.open(
@@ -2847,10 +2899,13 @@ class TestPrimitivesV22(unittest.TestCase):
             return_to_dig_start_envelope_plane_depth_mode="p50_floor",
             return_start_envelope_extra={"use_cell_prior": True},
         )
-        policy._return_start_envelope_tokens = token.copy()
-        policy._pending_dig_cut_corridor_id = 1
-        policy._pending_dig_cut_cycle_id = int(policy._cycle_index) + 1
-        policy._pending_dig_cut_raw_fields = {
+        token_state = policy._primitive_token_runtime_state()
+        token_state.return_start_envelope_tokens = token.copy()
+        token_state.pending_dig_cut_corridor_id = 1
+        token_state.pending_dig_cut_cycle_id = (
+            int(policy._primitive_cycle_runtime_state().cycle_index) + 1
+        )
+        token_state.pending_dig_cut_raw_fields = {
             "operator_entry_x_m": 1.0088,
             "operator_entry_z_m": -0.8830,
         }
@@ -2870,8 +2925,16 @@ class TestPrimitivesV22(unittest.TestCase):
         bad_obs["env_state"] = bad_env
         bad_obs["qpos"] = np.asarray([0.5342, 0.4644, 0.3084, 0.1546], dtype=np.float32)
 
-        self.assertTrue(policy._return_to_dig_entry_close(bad_obs))
-        self.assertFalse(policy._return_to_dig_handoff_ready(bad_obs))
+        self.assertTrue(
+            policy._primitive_return_handoff_runtime()
+            .readiness_service()
+            .entry_close(bad_obs)
+        )
+        self.assertFalse(
+            policy._primitive_return_handoff_runtime()
+            .readiness_service()
+            .handoff_ready(bad_obs)
+        )
         checks = policy.debug_state()["return_to_dig_start_envelope_checks"]
         self.assertFalse(checks["short_norm"]["ok"])
         self.assertFalse(checks["qpos_1"]["ok"])
@@ -2893,8 +2956,16 @@ class TestPrimitivesV22(unittest.TestCase):
         shallow_obs["env_state"] = shallow_env
         shallow_obs["qpos"] = token[7:11].astype(np.float32)
 
-        self.assertTrue(policy._return_to_dig_entry_close(shallow_obs))
-        self.assertFalse(policy._return_to_dig_handoff_ready(shallow_obs))
+        self.assertTrue(
+            policy._primitive_return_handoff_runtime()
+            .readiness_service()
+            .entry_close(shallow_obs)
+        )
+        self.assertFalse(
+            policy._primitive_return_handoff_runtime()
+            .readiness_service()
+            .handoff_ready(shallow_obs)
+        )
         checks = policy.debug_state()["return_to_dig_start_envelope_checks"]
         self.assertFalse(checks["local_depth_m"]["ok"])
         self.assertFalse(checks["plane_depth_m"]["ok"])
@@ -2914,8 +2985,16 @@ class TestPrimitivesV22(unittest.TestCase):
         local_only_obs["env_state"] = local_only_env
         local_only_obs["qpos"] = token[7:11].astype(np.float32)
 
-        self.assertTrue(policy._return_to_dig_entry_close(local_only_obs))
-        self.assertFalse(policy._return_to_dig_handoff_ready(local_only_obs))
+        self.assertTrue(
+            policy._primitive_return_handoff_runtime()
+            .readiness_service()
+            .entry_close(local_only_obs)
+        )
+        self.assertFalse(
+            policy._primitive_return_handoff_runtime()
+            .readiness_service()
+            .handoff_ready(local_only_obs)
+        )
         checks = policy.debug_state()["return_to_dig_start_envelope_checks"]
         self.assertFalse(checks["local_depth_m"]["ok"])
         self.assertTrue(checks["plane_depth_m"]["ok"])
@@ -2940,7 +3019,11 @@ class TestPrimitivesV22(unittest.TestCase):
         p05_only_obs["env_state"] = p05_only_env
         p05_only_obs["qpos"] = token[7:11].astype(np.float32)
 
-        self.assertFalse(policy._return_to_dig_handoff_ready(p05_only_obs))
+        self.assertFalse(
+            policy._primitive_return_handoff_runtime()
+            .readiness_service()
+            .handoff_ready(p05_only_obs)
+        )
         checks = policy.debug_state()["return_to_dig_start_envelope_checks"]
         self.assertFalse(checks["local_depth_m"]["ok"])
         self.assertTrue(checks["plane_depth_m"]["ok"])
@@ -2967,7 +3050,11 @@ class TestPrimitivesV22(unittest.TestCase):
         no_contact_obs["env_state"] = no_contact_env
         no_contact_obs["qpos"] = token[7:11].astype(np.float32)
 
-        self.assertFalse(policy._return_to_dig_handoff_ready(no_contact_obs))
+        self.assertFalse(
+            policy._primitive_return_handoff_runtime()
+            .readiness_service()
+            .handoff_ready(no_contact_obs)
+        )
         checks = policy.debug_state()["return_to_dig_start_envelope_checks"]
         self.assertFalse(checks["dig_contact"]["ok"])
         self.assertTrue(checks["dig_contact"]["required_by_config"])
@@ -2990,19 +3077,30 @@ class TestPrimitivesV22(unittest.TestCase):
         good_obs["env_state"] = good_env
         good_obs["qpos"] = token[7:11].astype(np.float32)
 
-        self.assertTrue(policy._return_to_dig_handoff_ready(good_obs))
+        self.assertTrue(
+            policy._primitive_return_handoff_runtime()
+            .readiness_service()
+            .handoff_ready(good_obs)
+        )
 
         policy._skill_name = "return"
         policy._switch_reason = "unit_test_return_latch"
-        policy._return_next_dig_event_seen = False
-        policy._maybe_switch_skill(
+        policy._primitive_return_runtime_state().return_next_dig_event_seen = False
+        _apply_legacy_compatibility_decision(
+            policy,
             obs=local_only_obs,
             boundary_event=_FakeBoundaryEvent(next_dig_entry_ready=True),
         )
         self.assertEqual(policy._skill_name, "return")
-        self.assertTrue(policy._return_next_dig_event_seen)
+        self.assertTrue(
+            policy._primitive_return_runtime_state().return_next_dig_event_seen
+        )
 
-        policy._maybe_switch_skill(obs=good_obs, boundary_event=_FakeBoundaryEvent())
+        _apply_legacy_compatibility_decision(
+            policy,
+            obs=good_obs,
+            boundary_event=_FakeBoundaryEvent(),
+        )
         self.assertEqual(policy._skill_name, "dig")
         self.assertEqual(
             policy._switch_reason,
@@ -3038,10 +3136,11 @@ class TestPrimitivesV22(unittest.TestCase):
             )
             policy._skill_name = "return"
             policy._switch_reason = "unit_test_return_direct_handoff"
-            policy._return_start_envelope_tokens = token.copy()
-            policy._return_start_envelope_use_prior_spatial_bounds = False
-            policy._return_start_envelope_use_prior_qpos_bounds = False
-            policy._pending_dig_cut_raw_fields = {
+            token_state = policy._primitive_token_runtime_state()
+            token_state.return_start_envelope_tokens = token.copy()
+            token_state.return_start_envelope_use_prior_spatial_bounds = False
+            token_state.return_start_envelope_use_prior_qpos_bounds = False
+            token_state.pending_dig_cut_raw_fields = {
                 "operator_entry_x_m": 0.0,
                 "operator_entry_z_m": 0.0,
             }
@@ -3063,12 +3162,24 @@ class TestPrimitivesV22(unittest.TestCase):
         obs["qpos"] = token[7:11].astype(np.float32)
 
         legacy_policy = make_policy(direct_handoff_enabled=False)
-        self.assertTrue(legacy_policy._return_to_dig_handoff_ready(obs))
-        legacy_policy._maybe_switch_skill(obs=obs, boundary_event=_FakeBoundaryEvent())
+        self.assertTrue(
+            legacy_policy._primitive_return_handoff_runtime()
+            .readiness_service()
+            .handoff_ready(obs)
+        )
+        _apply_legacy_compatibility_decision(
+            legacy_policy,
+            obs=obs,
+            boundary_event=_FakeBoundaryEvent(),
+        )
         self.assertEqual(legacy_policy._skill_name, "return")
 
         direct_policy = make_policy(direct_handoff_enabled=True)
-        direct_policy._maybe_switch_skill(obs=obs, boundary_event=_FakeBoundaryEvent())
+        _apply_legacy_compatibility_decision(
+            direct_policy,
+            obs=obs,
+            boundary_event=_FakeBoundaryEvent(),
+        )
         self.assertEqual(direct_policy._skill_name, "dig")
         self.assertEqual(
             direct_policy._switch_reason,
@@ -3096,17 +3207,18 @@ class TestPrimitivesV22(unittest.TestCase):
             return_to_dig_start_envelope_plane_depth_tolerance_m=10.0,
         )
         policy._skill_name = "dump"
-        policy._return_start_envelope_tokens = token.copy()
-        policy._return_start_envelope_use_prior_spatial_bounds = False
-        policy._return_start_envelope_use_prior_qpos_bounds = False
-        policy._pending_dig_cut_cycle_id = int(policy._cycle_index) + 1
-        policy._pending_dig_cut_corridor_id = -1
-        policy._pending_dig_cut_raw_fields = {
+        token_state = policy._primitive_token_runtime_state()
+        token_state.return_start_envelope_tokens = token.copy()
+        token_state.return_start_envelope_use_prior_spatial_bounds = False
+        token_state.return_start_envelope_use_prior_qpos_bounds = False
+        token_state.pending_dig_cut_cycle_id = (
+            int(policy._primitive_cycle_runtime_state().cycle_index) + 1
+        )
+        token_state.pending_dig_cut_corridor_id = -1
+        token_state.pending_dig_cut_raw_fields = {
             "operator_entry_x_m": 0.0,
             "operator_entry_z_m": 0.0,
         }
-        policy._ensure_return_target_plan_for_cycle = lambda obs: None  # type: ignore[method-assign]
-
         obs = _coverage_obs(
             mass=0.0,
             dig_distance=0.0,
@@ -3122,14 +3234,17 @@ class TestPrimitivesV22(unittest.TestCase):
         obs["env_state"] = env
         obs["qpos"] = token[7:11].astype(np.float32)
 
-        policy._set_return_or_direct_handoff(
+        policy._primitive_return_handoff_runtime().apply_direct_handoff(
             obs,
             reason="dump_to_return_dump_complete_boundary",
         )
 
         self.assertEqual(policy._skill_name, "dig")
-        self.assertEqual(policy._cycle_index, 1)
-        self.assertEqual(policy._completed_transition_count, 1)
+        self.assertEqual(policy._primitive_cycle_runtime_state().cycle_index, 1)
+        self.assertEqual(
+            policy._primitive_cycle_runtime_state().completed_transition_count,
+            1,
+        )
         self.assertEqual(
             policy._switch_reason,
             "return_to_dig_start_envelope_ready",
@@ -3156,13 +3271,13 @@ class TestPrimitivesV22(unittest.TestCase):
             dig_cut_mode="operator_prior_sweep_belief",
             coverage_extra={"use_env_removed_depth": False},
         )
-        policy._ensure_coverage_corridors()
-        corridor = policy._coverage_corridors[0]
-        policy._coverage_active_corridor_id = int(corridor.corridor_id)
-        policy._coverage_current_payload_gain_kg = 8.0
-        policy._coverage_cycle_start_deposit_kg = 0.0
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        corridor = policy._coverage_runtime_state().coverage_corridors[0]
+        policy._coverage_runtime_state().coverage_active_corridor_id = int(corridor.corridor_id)
+        policy._coverage_runtime_state().coverage_current_payload_gain_kg = 8.0
+        policy._coverage_runtime_state().coverage_cycle_start_deposit_kg = 0.0
 
-        policy._complete_coverage_dump(
+        policy._primitive_coverage_effect_runtime().complete_coverage_dump(
             _coverage_obs(mass=0.0, dig_distance=0.0, deposited=7.0),
             reason="unit_test_low_productivity",
         )
@@ -3188,7 +3303,7 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertGreaterEqual(len(trace[0]["candidate_scores"]), 1)
         self.assertIn("bucket", trace[0])
 
-        policy._complete_coverage_dump(
+        policy._primitive_coverage_effect_runtime().complete_coverage_dump(
             _coverage_obs(mass=0.0, dig_distance=0.0, deposited=7.0),
             reason="unit_test_low_productivity",
         )
@@ -3201,11 +3316,11 @@ class TestPrimitivesV22(unittest.TestCase):
             dig_policy=_RecordingPolicy(0),
             dig_cut_mode="operator_prior_sweep_belief",
         )
-        policy._ensure_coverage_corridors()
-        for corridor in policy._coverage_corridors:
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        for corridor in policy._coverage_runtime_state().coverage_corridors:
             corridor.depleted = True
 
-        policy._select_coverage_corridor(_coverage_obs(mass=0.0, dig_distance=0.0))
+        policy._primitive_coverage_selection_runtime().select_coverage_corridor(_coverage_obs(mass=0.0, dig_distance=0.0))
 
         trace = policy.planner_trace()["coverage_decision_trace"]
         self.assertEqual(trace[-1]["event"], "terminal_stop")
@@ -3249,7 +3364,7 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertEqual(state["dig_bad_replan_count"], 1)
         self.assertEqual(state["skill_switch_reason"], "dig_retry_bad_dig_low_payload")
         self.assertEqual(
-            policy._coverage_corridors[0].last_reason,
+            policy._coverage_runtime_state().coverage_corridors[0].last_reason,
             "bad_dig_low_payload",
         )
 
@@ -3263,11 +3378,13 @@ class TestPrimitivesV22(unittest.TestCase):
             dig_exit_guard_enabled=True,
             coverage_extra={"use_env_removed_depth": False},
         )
-        policy._ensure_coverage_corridors()
-        policy._coverage_active_corridor_id = 0
-        policy._coverage_last_selected_corridor_id = 0
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        policy._coverage_runtime_state().coverage_active_corridor_id = 0
+        policy._coverage_runtime_state().coverage_last_selected_corridor_id = 0
         policy._skill_name = "dig"
-        policy._dig_step_count = policy.dig_exit_guard_min_steps
+        policy._primitive_cycle_runtime_state().dig_step_count = (
+            policy.dig_exit_guard_min_steps
+        )
 
         policy.predict(
             _coverage_obs(
@@ -3284,7 +3401,7 @@ class TestPrimitivesV22(unittest.TestCase):
             "dig_retry_exit_overshoot_low_payload",
         )
         self.assertEqual(
-            policy._coverage_corridors[0].last_reason,
+            policy._coverage_runtime_state().coverage_corridors[0].last_reason,
             "exit_overshoot_low_payload",
         )
 
@@ -3296,12 +3413,14 @@ class TestPrimitivesV22(unittest.TestCase):
             dig_exit_guard_enabled=True,
             coverage_extra={"use_env_removed_depth": False},
         )
-        policy._ensure_coverage_corridors()
-        policy._coverage_active_corridor_id = 0
-        policy._coverage_last_selected_corridor_id = 0
-        policy._cycle_index = 1
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        policy._coverage_runtime_state().coverage_active_corridor_id = 0
+        policy._coverage_runtime_state().coverage_last_selected_corridor_id = 0
+        policy._primitive_cycle_runtime_state().cycle_index = 1
         policy._skill_name = "dig"
-        policy._dig_step_count = policy.dig_exit_guard_min_steps
+        policy._primitive_cycle_runtime_state().dig_step_count = (
+            policy.dig_exit_guard_min_steps
+        )
 
         policy.predict(
             _coverage_obs(
@@ -3328,12 +3447,14 @@ class TestPrimitivesV22(unittest.TestCase):
             dig_failed_replan_next_skill="stop",
             coverage_extra={"use_env_removed_depth": False},
         )
-        policy._ensure_coverage_corridors()
-        policy._coverage_active_corridor_id = 0
-        policy._coverage_last_selected_corridor_id = 0
-        policy._cycle_index = 1
+        policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+        policy._coverage_runtime_state().coverage_active_corridor_id = 0
+        policy._coverage_runtime_state().coverage_last_selected_corridor_id = 0
+        policy._primitive_cycle_runtime_state().cycle_index = 1
         policy._skill_name = "dig"
-        policy._dig_step_count = policy.dig_exit_guard_min_steps
+        policy._primitive_cycle_runtime_state().dig_step_count = (
+            policy.dig_exit_guard_min_steps
+        )
 
         policy.predict(
             _coverage_obs(
@@ -3412,8 +3533,8 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertEqual(first_dig.call_count, 1)
         self.assertEqual(regular_dig.call_count, 0)
 
-        policy._coverage_completed_dump_count = 1
-        policy._cycle_index = 1
+        policy._coverage_runtime_state().coverage_completed_dump_count = 1
+        policy._primitive_cycle_runtime_state().cycle_index = 1
         policy.predict(_coverage_obs(mass=0.0, dig_distance=0.0))
 
         self.assertEqual(regular_dig.call_count, 1)
@@ -3530,7 +3651,7 @@ class TestPrimitivesV22(unittest.TestCase):
             dump_done_min_deposit_delta_kg=5.0,
         )
         policy._set_skill("carry", "unit_test_carry")
-        policy._coverage_cycle_start_deposit_kg = 10.0
+        policy._coverage_runtime_state().coverage_cycle_start_deposit_kg = 10.0
 
         policy.predict(_obs(mass=0.0, dig_distance=2.0, deposited=16.0))
 
@@ -3554,7 +3675,7 @@ class TestPrimitivesV22(unittest.TestCase):
         self.assertEqual(state["skill_name"], "dig")
         self.assertGreaterEqual(state["dig_bad_replan_count"], 1)
         self.assertEqual(
-            policy._coverage_corridors[0].last_reason,
+            policy._coverage_runtime_state().coverage_corridors[0].last_reason,
             "bad_dig_low_payload",
         )
 
@@ -3694,10 +3815,11 @@ class TestPrimitivesV22(unittest.TestCase):
             return_to_dig_max_entry_error_m=0.55,
         )
         policy._skill_name = "return"
-        policy._cycle_index = 0
+        policy._primitive_cycle_runtime_state().cycle_index = 0
         policy._prev_action = np.zeros(4, dtype=np.float32)
-        policy._pending_dig_cut_cycle_id = 1
-        policy._pending_dig_cut_raw_fields = {
+        token_state = policy._primitive_token_runtime_state()
+        token_state.pending_dig_cut_cycle_id = 1
+        token_state.pending_dig_cut_raw_fields = {
             "operator_entry_x_m": 0.5,
             "operator_entry_z_m": -0.5,
         }
@@ -3740,10 +3862,11 @@ class TestPrimitivesV22(unittest.TestCase):
             return_to_dig_max_entry_error_m=0.55,
         )
         policy._skill_name = "return"
-        policy._cycle_index = 0
+        policy._primitive_cycle_runtime_state().cycle_index = 0
         policy._prev_action = np.zeros(4, dtype=np.float32)
-        policy._pending_dig_cut_cycle_id = 1
-        policy._pending_dig_cut_raw_fields = {
+        token_state = policy._primitive_token_runtime_state()
+        token_state.pending_dig_cut_cycle_id = 1
+        token_state.pending_dig_cut_raw_fields = {
             "operator_entry_x_m": 0.4,
             "operator_entry_z_m": -1.0,
         }

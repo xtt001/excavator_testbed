@@ -36,6 +36,10 @@ Supporting design references:
 
 - `docs/planner_execution_backend_abstraction_plan.md`
 - `docs/planner_execution_abstraction_flow.svg`
+- `docs/planner_package_layout_target.md`
+- `docs/planner_policy_shell_target_interface.md`
+- `docs/planner_responsibility_chain_migration_design.md`
+- `docs/planner_responsibility_chain_migration_simulation.md`
 - `docs/planner_effect_boundary_design.md`
 - `docs/planner_primitive_interface_standard.md`
 
@@ -46,6 +50,59 @@ Non-goals for this plan:
 - no deletion of `cell_entry`, `pre_dig_align`, or other legacy code
 - no change to thresholds, branch order, reason strings, token schemas, debug
   schema, rollout summary, policy reset timing, or default config semantics
+
+Target anchor for the next phase: `PrimitivePlannerACTPolicy` should converge
+to the external communication/API adapter surface only. Internal planner
+runtime, state, decision, effect, report/input assembly, token, coverage, and
+transition work should continue moving behind stable owner/runtime/service
+boundaries. This anchor records the target direction; it does not start broad
+phase-2 migration in this slice.
+
+Responsibility-chain migration design now separates two decisions:
+package-layout relocation decides where code belongs under
+`testbed/planner/primitive/...`; responsibility-chain simulation decides which
+production owner, behavior locks, old import classifications, and tests make a
+future migration slice valid. Future implementation prompts should not merge
+layout relocation with semantic responsibility changes unless the simulation
+proves the target chain is narrow and behavior-locked.
+
+## Current Three-Step Contract Direction
+
+The user-confirmed contract direction for the current cleanup phase is three
+large responsibility slices, not many small private-facade removals:
+
+1. **Backend-neutral facts contract consolidation.** This is the largest
+   backend-facing block and is now accepted as the first completed slice.
+   `PrimitiveBackendFactsSource`, `PrimitiveBackendDecisionInputBuilder`, and
+   backend facts access make legacy FSM the first consumer/adapter rather than
+   the main interface concept.
+2. **Decision/capability/effect composition contract cleanup.** This slice is
+   accepted enough to enter contract-readiness closure. Its goal was to remove
+   remaining legacy-FSM-specific names
+   and policy-private composition wrappers from the backend-facing interface
+   surface. Factory, registry, backend ports, capability composition, and
+   requested-effect composition should read as generic backend contracts, with
+   legacy FSM contained as the default concrete adapter. The accepted
+   decision-runtime composition, static capability-provider config,
+   return-handoff runtime composition, generic decision-runtime accessor,
+   requested-effect runtime composition, generic backend factory protocol, and
+   default legacy-backend factory composition slices are partial progress
+   inside this second block, not separate end states. The generic runtime
+   interface now exposes backend-neutral requested and compatibility backend
+   protocols, and default legacy-FSM composition is contained in the concrete
+   legacy backend factory boundary instead of
+   `primitive/decision/runtime.py`.
+3. **Contract readiness closure.** This is now represented in the current code
+   and docs by fake-backend contract tests, external-backend readiness notes,
+   and compatibility-surface classification. The closure proves that the
+   generic decision runtime can select a registered backend factory without
+   editing `PrimitivePlannerACTPolicy` main decision flow. It does not add a
+   production backend plugin/config system.
+
+Protection remains a constraint rather than the target. Private wrappers that
+look important only because tests mention them must be migrated to focused
+contracts or classified as compatibility/test-only material; they must not be
+preserved as production architecture.
 
 ## Current Code Reality
 
@@ -59,36 +116,51 @@ Current relevant Python files:
 
 | File | Lines | Current role |
 | --- | ---: | --- |
-| `testbed/policies/hybrid/primitive_planner.py` | 3611 | public primitive policy adapter plus compatibility facades over focused planner services; cell-entry, pre-dig, coverage effect fact, raw observation, and pre-dig false predicate private runtime/test facades removed |
-| `testbed/planner/primitive_runtime_kernel.py` | 72 | public runtime composition root for reset, predict, and reports |
-| `testbed/planner/primitive_boundary_event.py` | 53 | live boundary-event tick source over focused execution state, boundary detector, and typed observation facts |
-| `testbed/planner/primitive_backend_input.py` | 52 | per-tick legacy FSM backend decision input carrying context, backend facts access, and explicit compatibility actions through ordered branches |
-| `testbed/planner/primitive_backend.py` | 795 | legacy FSM branch set, requested/compatibility orders, per-branch decisions, and legacy FSM backend factory |
-| `testbed/planner/primitive_decision_runtime.py` | 162 | backend-name normalization and backend factory registry selection for primitive decision runtime |
-| `testbed/planner/primitive_backend_facts.py` | 250 | backend-facing lazy read-only facts access for bootstrap and dig/carry/dump/return transition views |
-| `testbed/planner/primitive_decision_facts.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
-| `testbed/planner/primitive_capabilities.py` | 1027 | read-only observation facts plus bootstrap/dig/carry/dump/return transition status projections and dump-ready geometry predicates |
-| `testbed/planner/primitive_capability_provider.py` | 318 | legacy FSM transition-status provider over focused cycle/coverage/return owners, observation facts, and return handoff readiness service |
-| `testbed/planner/primitive_execution_state.py` | 49 | mutable execution lifecycle state owner for active skill, switch reason, previous action, and latest debug state |
-| `testbed/planner/primitive_observation.py` | 181 | policy observation assembler plus mutable per-observation injected-flag runtime state owner |
-| `testbed/planner/primitive_cell_entry_state.py` | 137 | parked cell-entry compatibility/report runtime state owner, reset defaults, and debug/summary/trace report projection |
-| `testbed/planner/primitive_pre_dig_align_state.py` | 202 | parked pre-dig-align compatibility/report projection defaults and debug/summary report projection |
-| `testbed/planner/primitive_token_state.py` | 190 | mutable dig/return token runtime state owner, reset defaults, live token-status projection, and token report metadata projection |
-| `testbed/planner/primitive_token_runtime.py` | 255 | dig/return token runtime sequencing over focused token and coverage state owners plus explicit external config/algorithm ports |
-| `testbed/planner/primitive_dig_token_planning.py` | 354 | active dig token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm ports and typed observation facts |
-| `testbed/planner/primitive_dig_progress.py` | 63 | live per-dig tick progress and coverage current-payload update boundary over focused cycle/coverage state owners plus typed observation facts |
-| `testbed/planner/primitive_dig_recovery.py` | 183 | failed-dig/restart recovery orchestration over focused execution/cycle/return/coverage/token owners plus explicit external algorithm/action ports and typed observation metric facts |
-| `testbed/planner/primitive_return_handoff.py` | 569 | return direct-handoff effect service, return handoff readiness source, and return start-envelope gate over focused execution/cycle/return/token/coverage owners |
-| `testbed/planner/primitive_return_token_planning.py` | 226 | return token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm ports and typed observation facts |
-| `testbed/planner/primitive_return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
-| `testbed/planner/primitive_cycle_state.py` | 123 | mutable live 4P cycle/progress runtime state owner, reset defaults, and live report/finalization projection |
-| `testbed/planner/primitive_scripted_bootstrap.py` | 144 | scripted bootstrap runtime state, readiness checks, timeout, PD action service, and live report/status projection |
-| `testbed/planner/primitive_coverage.py` | 909 | coverage candidate/scoring/selection services; selection runtime sequencing now consumes the focused coverage state owner directly plus explicit external ports |
-| `testbed/planner/primitive_coverage_state.py` | 139 | mutable coverage runtime state owner for corridors, selection ids, candidate scores, completion counters, terminal-stop state, decision trace, and state-exemplar payload |
-| `testbed/planner/primitive_coverage_updates.py` | 698 | coverage completion/rejection/reopen/terminal-stop effect runtime sequencing and effect fact projection over focused coverage/cycle state plus typed observation facts |
-| `testbed/planner/primitive_coverage_reports.py` | 626 | coverage report config, coverage corridor debug, coverage decision-event bucket snapshot, and coverage debug/trace/summary projection from focused runtime state |
-| `testbed/planner/primitive_effects.py` | 160 | requested-effect application over focused cycle/return owners, explicit external action ports, and typed observation metric facts |
-| `testbed/planner/primitive_coverage_facts.py` | 332 | coverage planning fact-source owner for selection facts, raw-field projection, state-conditioned exemplar projection/writeback, remaining-depth facts, and typed observation fact access |
+| `testbed/policies/hybrid/primitive_planner.py` | 1312 | public primitive policy adapter and typed owner/runtime weld shell; old owner-state D-property facades plus token/report/coverage/return-handoff, requested-effect composition, legacy FSM transition/status/backend/decision, default legacy backend factory composition, execution hook/action, tick-finalization/return-timeout, test-only helper, execution-composition, public-runtime-kernel, and report/status composition facade clusters removed |
+| `testbed/planner/primitive/config/adapter.py` | 1360 | public adapter config normalizer, legacy policy-field update payload assembly, static FSM capability-provider config, and static return-handoff readiness config |
+| `testbed/planner/primitive/shell/runtime_kernel.py` | 146 | public runtime-kernel route plus public-runtime composition owner for reset, predict, and reports |
+| `testbed/planner/primitive/execution/boundary_event.py` | 53 | live boundary-event tick source over focused execution state, boundary detector, and typed observation facts |
+| `testbed/planner/primitive/decision/input.py` | 85 | per-tick backend decision input builder carrying context, backend facts access, and explicit compatibility actions through ordered branches |
+| `testbed/planner/primitive/decision/backends/legacy_fsm.py` | 840 | generic requested/compatibility backend protocols, legacy FSM branch set, requested/compatibility orders, per-branch decisions, and concrete legacy FSM backend factory composition consuming typed runtime ports and backend facts source |
+| `testbed/planner/primitive/decision/runtime.py` | 156 | backend-name normalization, generic backend factory/backend accessors, unsupported-backend fail-fast, and backend factory registry selection for primitive decision runtime |
+| `testbed/planner/primitive/facts/backend.py` | 282 | backend-facing facts source/ports plus lazy read-only facts access for bootstrap and dig/carry/dump/return transition views |
+| `testbed/planner/primitive/facts/decision.py` | 258 | backend-neutral common decision facts packet plus lazy dig/carry/dump/return transition facts views |
+| `testbed/planner/primitive/decision/contracts.py` | 601 | primitive decision result/effect contracts and effect-contract validation; old `primitive_decision.py` remains only as a public-compat re-export facade |
+| `testbed/planner/primitive/decision/context.py` | 42 | primitive decision context packet for tick observation, boundary event, and preparation identity; old `primitive_decision_context.py` remains only as a cross-module-compat re-export facade |
+| `testbed/planner/primitive/facts/capabilities.py` | 1027 | read-only observation facts plus bootstrap/dig/carry/dump/return transition status projections and dump-ready geometry predicates |
+| `testbed/planner/primitive/decision/backends/legacy_capability_provider.py` | 328 | legacy FSM transition-status provider over focused cycle/coverage/return owners, observation facts, and return handoff readiness service |
+| `testbed/planner/primitive/decision/capabilities.py` | 262 | compatibility facade over backend facts source plus explicit compatibility actions for older focused diagnostics |
+| `testbed/planner/primitive/execution/state.py` | 49 | mutable execution lifecycle state owner for active skill, switch reason, previous action, and latest debug state |
+| `testbed/planner/primitive/facts/observation.py` | 181 | policy observation assembler plus mutable per-observation injected-flag runtime state owner |
+| `testbed/planner/primitive/compatibility/cell_entry.py` | 137 | parked cell-entry compatibility/report runtime state owner, reset defaults, and debug/summary/trace report projection |
+| `testbed/planner/primitive/compatibility/pre_dig_align.py` | 202 | parked pre-dig-align compatibility/report projection defaults and debug/summary report projection |
+| `testbed/planner/primitive/report/runtime.py` | 398 | public report/status composition runtime plus debug, rollout summary, and planner trace input assembly |
+| `testbed/planner/primitive/token/tokens.py` | 916 | goal, dig-cut, dig-depth-profile, return-target, return-relocate, and return-start-envelope token planner classes |
+| `testbed/planner/primitive/token/factory.py` | 137 | token planner factory config and focused construction owner for goal/dig/return token planners |
+| `testbed/planner/primitive/token/state.py` | 195 | mutable dig/return token runtime state owner, reset defaults, live token-status projection, and token report metadata projection |
+| `testbed/planner/primitive/token/status.py` | 205 | immutable token status vector/debug projection records |
+| `testbed/planner/primitive/token/runtime.py` | 255 | dig/return token runtime sequencing over focused token and coverage state owners plus explicit external config/algorithm ports |
+| `testbed/planner/primitive/token/observation_runtime.py` | 191 | token observation composition runtime that owns policy observation assembly, observation-injection clear/apply timing, assembler ports, and token runtime ports |
+| `testbed/planner/primitive/token/planning_runtime.py` | 275 | token planning service composition runtime that owns dig/return token planning ports and service construction |
+| `testbed/planner/primitive/token/dig_planning.py` | 354 | active dig token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm ports and typed observation facts |
+| `testbed/planner/primitive/execution/dig_progress.py` | 63 | live per-dig tick progress and coverage current-payload update boundary over focused cycle/coverage state owners plus typed observation facts |
+| `testbed/planner/primitive/execution/dig_recovery.py` | 183 | failed-dig/restart recovery orchestration over focused execution/cycle/return/coverage/token owners plus explicit external algorithm/action ports and typed observation metric facts |
+| `testbed/planner/primitive/effects/return_handoff.py` | 563 | return direct-handoff effect service, return handoff readiness source, and return start-envelope gate over focused execution/cycle/return/token/coverage owners |
+| `testbed/planner/primitive/effects/return_handoff_runtime.py` | 115 | return-handoff runtime composition boundary that builds readiness, start-envelope gate, and direct-handoff effect services from typed state/config/algorithm ports |
+| `testbed/planner/primitive/token/return_planning.py` | 226 | return token planning orchestration over focused token and coverage state owners plus explicit external config/algorithm ports and typed observation facts |
+| `testbed/planner/primitive/execution/return_state.py` | 141 | mutable non-token return handoff/runtime state owner, reset defaults, and live return report/status projection |
+| `testbed/planner/primitive/execution/cycle_state.py` | 123 | mutable live 4P cycle/progress runtime state owner, reset defaults, and live report/finalization projection |
+| `testbed/planner/primitive/execution/scripted_bootstrap.py` | 144 | scripted bootstrap runtime state, readiness checks, timeout, PD action service, and live report/status projection |
+| `testbed/planner/primitive/coverage/selection.py` | 909 | coverage candidate/scoring/selection services; selection runtime sequencing consumes the focused coverage state owner directly plus explicit external ports |
+| `testbed/planner/primitive/coverage/config.py` | 204 | static coverage config snapshot owner that builds report, selection, planning-fact, state-exemplar, update, and runtime config objects for coverage runtimes |
+| `testbed/planner/primitive/coverage/selection_runtime.py` | 388 | coverage selection/fact composition runtime that owns dynamic selection runtime ports, coverage selection service construction, and planning-fact service construction through `PrimitiveCoverageStaticConfig` |
+| `testbed/planner/primitive/coverage/state.py` | 139 | mutable coverage runtime state owner for corridors, selection ids, candidate scores, completion counters, terminal-stop state, decision trace, and state-exemplar payload |
+| `testbed/planner/primitive/coverage/effect_runtime.py` | 149 | coverage effect/update composition runtime that owns service, effect-port, and coordinator construction through `PrimitiveCoverageStaticConfig` plus explicit live effect ports |
+| `testbed/planner/primitive/coverage/effects.py` | 698 | coverage completion/rejection/reopen/terminal-stop effect runtime sequencing and effect fact projection over focused coverage/cycle state plus typed observation facts |
+| `testbed/planner/primitive/coverage/report_runtime.py` | 176 | coverage report/decision-event composition runtime that owns report state/service composition, bucket snapshot projection, decision-event recording, and active/corridor report helper projection through `PrimitiveCoverageStaticConfig` |
+| `testbed/planner/primitive/coverage/reports.py` | 626 | coverage report config, coverage corridor debug, coverage decision-event bucket snapshot, and coverage debug/trace/summary projection from focused runtime state |
+| `testbed/planner/primitive/effects/requested.py` | 234 | requested-effect runtime composition plus requested-effect application over focused cycle/return owners, explicit external action ports, return-handoff runtime, coverage/dig recovery runtimes, and typed observation metric facts |
+| `testbed/planner/primitive/coverage/facts.py` | 332 | coverage planning fact-source owner for selection facts, raw-field projection, state-conditioned exemplar projection/writeback, remaining-depth facts, and typed observation fact access |
 | `testbed/planner/boundary_detector.py` | 891 | event extraction from previous action, obs facts, and semantic boundary profile |
 | `testbed/planner/cell_entry.py` | 540 | legacy cell-entry planner/auditor helpers, not active in mainline rollout |
 | `testbed/planner/evidence_trace.py` | 972 | evidence classifier and report writer for rollout-driven refactor decisions |
@@ -111,32 +183,36 @@ Current test reality:
 
 ## Primitive Planner Responsibility Map
 
-The current planner implementation is one large class with embedded subdomains.
-The table below is the responsibility map future migrations must use.
+The planner started this refactor as one large class with embedded subdomains.
+The table below preserves the migration-origin responsibility map. Current line
+ranges are no longer exact after the accepted cleanup slices; when a row names
+old private helper methods, the later Phase-2 notes below are authoritative for
+whether those names still exist or have been retired.
 
 | Range | Responsibility | Main methods | Main state read/written | Architecture target |
 | --- | --- | --- | --- | --- |
 | 149-430 | public adapter construction and config normalization facade | `__init__`, `_apply_adapter_config_state` | policy handles, boundary detector, normalized adapter config state | `PrimitivePlannerAdapterConfigNormalizer` plus public adapter facade |
-| 842-1120 | public runtime route and execution facade | `reset`, `predict`, `_runtime_kernel`, `_execution_driver` | runtime-kernel ports, reset state, execution driver ports | `PrimitivePlannerRuntimeKernel` plus `PrimitiveExecutionDriver` |
-| 1121-1649 | public reporting facades | `debug_state`, `rollout_summary`, `planner_trace` and report input builders | debug state, token flags, coverage fields, summary counters | report builders called through runtime kernel |
-| 1550-1819 | inline 4P FSM branch order | `_maybe_switch_skill`, return direct handoff helpers | active skill, boundary event, counters, coverage completion/reject, pending plans | legacy FSM parity backend after execution template exists |
+| 842-1120 | public runtime route and execution composition weld | `reset`, `predict`, `_primitive_runtime_kernel_runtime`, `_primitive_execution_runtime` | public-runtime ports, reset state, execution runtime ports | `PrimitivePlannerPublicRuntime` plus `PrimitiveExecutionRuntime` / `PrimitiveExecutionDriver` |
+| 1121-1590 | public reporting facades | `debug_state`, `rollout_summary`, `planner_trace`, `_primitive_report_composition_runtime` | debug state, token flags, coverage fields, summary counters | `PrimitiveReportCompositionRuntime` / `PrimitiveReportRuntime` plus report builders called through public runtime kernel |
+| 1550-1819 | historical 4P FSM branch order | legacy FSM backend branches and requested-effect applier; old `_maybe_switch_skill` policy facade retired | active skill, boundary event, counters, coverage completion/reject, pending plans | legacy FSM parity backend after execution template exists |
 | 1820-1954 | skill mutation and restart effects | `_set_skill`, `_restart_*`, failed-dig stop/restart | active skill, reset timing, hold counters, dig-cut clear/invalidate, terminal stop | kernel-owned effect application |
 | 1955-2353 | bootstrap and parked pre-dig config/report helpers | `_should_end_bootstrap`, `_pre_dig_align_report_*` | bootstrap config, disabled pre-dig config/report facts | bootstrap mainline status; pre-dig-align disabled public schema compatibility |
 | 2361-3187 | gate and observation facts | `_update_dig_progress`, `_dig_to_carry_ready`, `_dump_ready`, `_return_to_dig_*`, geometry helpers | mass, deposit, qpos/qvel, env_state, boundary profile, hold counters | capability port status records |
-| 3193-3350 | policy observation and token injection | `_policy_obs`, `_return_*_tokens_for_obs`, `_dig_cut_tokens_for_obs`, `_dig_depth_profile_tokens_for_obs` | token flags, token arrays, active skill, return planner state | policy observation assembler owned by kernel |
+| 3193-3350 | policy observation and token injection | historical `_policy_obs` / token-provider wrappers; now `PrimitiveTokenObservationRuntime` welds | token flags, token arrays, active skill, return planner state | policy observation assembler plus token-observation runtime |
 | 3351-3627 | active dig token planning | `_ensure_dig_cut_plan_for_cycle`, depth-profile builders, raw fields | dig-cut tokens, depth-profile tokens, fallback/source fields | token planning service |
 | 3628-3914 | return-target and envelope planning | `_build_next_dig_cut_plan_for_return`, `_build_return_start_envelope_tokens_for_obs`, envelope priors | pending next-dig state, return tokens, coverage active corridor | return planning service |
 | 3915-4058 | config/value helpers and operator prior token builders | normalizers, prior lookup, raw-field checks | prior JSON, raw fields, token ranges | data/config helper modules after source-of-truth check |
-| 4059-5159 | coverage candidate construction and selection | `_select_next_coverage_corridor`, `_ensure_coverage_corridors`, `_select_coverage_corridor`, scoring/exemplar helpers | coverage corridors, candidate scores, active corridor, decision trace | coverage planning service |
+| 4059-5159 | coverage candidate construction and selection | historical selection/scoring/exemplar wrappers; now `PrimitiveCoverageSelectionRuntime` welds | coverage corridors, candidate scores, active corridor, decision trace | coverage planning service plus selection/fact runtime |
 | 5160-5636 | coverage completion, rejection, terminal-stop diagnostics | `_complete_coverage_dig`, `_complete_coverage_dump`, `_reject_active_coverage_corridor`, `_request_coverage_terminal_stop` | coverage belief, attempts, payload/deposit, terminal-stop state | coverage runtime service plus kernel effects |
 | 5637-5818 | plan invalidation, config validation, prior helpers | `_clear_dig_cut_plan`, `_invalidate_pending_dig_cut_plan`, `_load_dig_cut_prior`, `_prior_percentile` | token plan ids, pending plans, prior file content | token/config helper modules |
 | 5819-5940 | removed cell-entry primitive runtime region | cell-entry pose/cell-id helpers retained only where still referenced; `_cell_entry_tokens_for_obs` and `_complete_cell_entry_dig` removed | disabled cell-entry report/schema compatibility | no primitive-planner token injection or completion runtime |
-| 5941-6075 | goal tokens, policy dispatch, debug-state construction | `_goal_tokens`, `_active_policy`, `_all_policies`, `_make_debug_state` | goal sequence, active skill, policy handles, debug fields | goal-token service, dispatch facade, report boundary |
+| 5941-6075 | goal tokens, action dispatch service wiring, debug-state construction | `PrimitiveTokenPlannerFactory`, `_action_dispatch_service`, `_make_debug_state` | goal sequence, active skill, policy handles, debug fields | token factory, dispatch service, report/finalization boundary |
 | removed | 5P runtime planner | removed `PrimitivePlannerACT5PPolicy` subclass | old 5P approach/dump-release runtime path retained only in git history | cleanup-approved removed runtime path |
 
 ## Evidence-Based Retention Matrix
 
-The current baseline report uses the successful `aggregate_tx24` rollout packet:
+The current baseline report uses the selected current-mainline successful
+`aggregate_tx24` rollout packet:
 
 - event_count: 75902
 - evidence_packet_count: 3
@@ -147,22 +223,30 @@ The current baseline report uses the successful `aggregate_tx24` rollout packet:
 - rollout summary has `cell_entry_enabled=0`,
   `pre_dig_align_enabled=0`, `pre_dig_align_completed_count=0`
 
+This selected current-mainline evidence does not claim `pre_dig_align` was
+never useful. Repo-wide historical scan found 187 successful summaries among
+281 scanned `runs/**/rollout_*_summary.json` files; 15 successful summaries had
+`pre_dig_align_enabled=1` and 14 had completed pre-dig-align steps. The current
+architecture classification is that return-start-envelope / return-to-dig
+readiness supersedes that runtime route for the selected mainline primitive
+planner.
+
 | Capability | Evidence classification | Retention | Current owner | Architecture placement |
 | --- | --- | --- | --- | --- |
 | `execution.predict_tick` | confirmed-live | retain-and-migrate | `predict` | execution kernel |
-| `fsm.skill_switch` | confirmed-live | retain-and-migrate | `_maybe_switch_skill` / `_set_skill` | legacy FSM backend after kernel exists |
-| `action.dispatch` | confirmed-live | retain-and-migrate | `predict` / `_active_policy` | kernel-owned dispatch facade |
-| `token.goal` | confirmed-live | retain-and-migrate | `_goal_tokens` / `_policy_obs` | token provider used by observation assembler |
+| `fsm.skill_switch` | confirmed-live | retain-and-migrate | `PrimitiveDecisionRuntime` / `RequestedEffectApplier` / `_set_skill` | legacy FSM backend after kernel exists |
+| `action.dispatch` | confirmed-live | retain-and-migrate | `predict` / `PrimitiveActionDispatchService` | kernel-owned dispatch facade |
+| `token.goal` | confirmed-live | retain-and-migrate | `PrimitiveTokenPlannerFactory` / `PrimitiveTokenObservationRuntime` | token provider used by observation assembler |
 | `token.dig_cut` | confirmed-live | retain-and-migrate | `_ensure_dig_cut_plan_for_cycle` | token planning service |
 | `token.dig_depth_profile` | confirmed-live | retain-and-migrate | `_dig_depth_profile_tokens_for_obs` | token planning service |
 | `token.return_target` | confirmed-live | retain-and-migrate | `_ensure_return_target_plan_for_cycle` | return planning service |
 | `token.return_relocate` | confirmed-live | retain-and-migrate | `_return_relocate_tokens_for_obs` | return planning service |
 | `token.return_start_envelope` | confirmed-live | retain-and-migrate | `_return_start_envelope_tokens_for_obs` | return-envelope service |
 | `metric.dig_progress` | support-live | retain-and-migrate | `_update_dig_progress` | capability status fact |
-| `gate.dig_to_carry` | confirmed-live | retain-and-migrate | `_maybe_switch_skill` dig branch | capability status plus legacy FSM branch |
-| `gate.carry_to_dump` | confirmed-live | retain-and-migrate | `_maybe_switch_skill` carry branch | capability status plus legacy FSM branch |
-| `gate.dump_to_return` | confirmed-live | retain-and-migrate | `_maybe_switch_skill` dump branch | capability status plus legacy FSM branch |
-| `gate.return_to_dig` | confirmed-live | retain-and-migrate | `_maybe_switch_skill` return branch | capability status plus legacy FSM branch |
+| `gate.dig_to_carry` | confirmed-live | retain-and-migrate | `LegacyFSMDigBranch` through decision runtime/facts | capability status plus legacy FSM branch |
+| `gate.carry_to_dump` | confirmed-live | retain-and-migrate | `LegacyFSMCarryBranch` through decision runtime/facts | capability status plus legacy FSM branch |
+| `gate.dump_to_return` | confirmed-live | retain-and-migrate | `LegacyFSMDumpBranch` through decision runtime/facts | capability status plus legacy FSM branch |
+| `gate.return_to_dig` | confirmed-live | retain-and-migrate | `LegacyFSMReturnBranch` through decision runtime/facts | capability status plus legacy FSM branch |
 | `coverage.corridor` | confirmed-live | retain-and-migrate | coverage helpers | coverage planning/runtime service |
 | `debug.debug_state` | report-only | retain-report-boundary | `debug_state` / `_make_debug_state` | reporting boundary |
 | `report.rollout_summary` | report-only | retain-report-boundary | `rollout_summary` | reporting boundary |
@@ -193,11 +277,15 @@ from the current legacy-FSM-backendified implementation and must not be read as
 a claim that alternate behavior-tree, VLM, or LLM backends are already
 swappable.
 
-Current status after Phase 9.33B: `PrimitivePlannerRuntimeKernel` owns the
-public runtime route (`reset`, `predict`, `debug_state`, `rollout_summary`, and
-`planner_trace`). `PrimitivePlannerACTPolicy` still constructs typed ports and
-keeps compatibility facades/storage, but those public methods are now
-kernel-backed thin wrappers.
+Current status after the Phase-2 public runtime-kernel composition cleanup:
+`PrimitivePlannerPublicRuntime` owns construction of
+`PrimitivePlannerRuntimeKernelPorts` from focused reset, execution,
+tick-finalization, and report runtimes plus explicit shell debug-state
+writeback. `PrimitivePlannerRuntimeKernel` still owns the public route
+(`reset`, `predict`, `debug_state`, `rollout_summary`, and `planner_trace`).
+`PrimitivePlannerACTPolicy` keeps public methods plus a typed public-runtime
+weld, but the old `_runtime_kernel`, `_runtime_kernel_ports`, and report-builder
+wrapper methods are retired.
 
 ### Public Adapter
 
@@ -221,11 +309,12 @@ Long-term adapter responsibilities:
 
 ### Execution Driver / Runtime Kernel
 
-Candidate files: `testbed/planner/primitive_runtime_kernel.py` and
-`testbed/planner/primitive_execution.py`.
+Candidate files: `testbed/planner/primitive/shell/runtime_kernel.py` and
+`testbed/planner/primitive/execution/runtime.py`.
 
 The original execution-kernel target has now split into two concrete owners:
 `PrimitivePlannerRuntimeKernel` owns public runtime routing, while
+`PrimitiveExecutionRuntime` owns execution-driver composition and
 `PrimitiveExecutionDriver` owns one-tick execution ordering. Future work should
 extend those owners rather than introducing a second kernel name.
 
@@ -258,7 +347,7 @@ shell-side requested-effect applier may apply them.
 
 ### Capability Port
 
-Candidate file: `testbed/planner/primitive_capabilities.py`.
+Candidate file: `testbed/planner/primitive/facts/capabilities.py`.
 
 The capability port is a read-only interface over typed facts. It must not be a
 one-method-per-private-method facade.
@@ -268,11 +357,11 @@ Initial status records:
 | Status record | Current source methods | Used by |
 | --- | --- | --- |
 | `PrimitiveObservationFacts` | `_env_state`, `_mass_in_bucket`, `_deposited_mass`, `_target_geometry` | all gates and diagnostics |
-| `BootstrapStatus` | `_should_end_bootstrap`, `_scripted_bootstrap_enabled`, `_scripted_bootstrap_target_reached` | legacy FSM |
+| `BootstrapStatus` | `_should_end_bootstrap`, `_scripted_bootstrap_enabled`, `PrimitiveScriptedBootstrapRuntimeService.target_reached(...)` | legacy FSM |
 | `DigTransitionStatus` | `_update_dig_progress`, `_dig_exit_guard_ready`, `_dig_bad_replan_ready`, `_dig_to_carry_ready` | legacy FSM and future BT |
 | `CarryTransitionStatus` | `_carry_release_safety_done`, `_dump_ready`, boundary-event facts | legacy FSM and future BT |
 | `DumpTransitionStatus` | `_dump_done`, dump boundary event facts | legacy FSM and future BT |
-| `ReturnTransitionStatus` | `_return_to_dig_handoff_ready`, `_return_to_dig_direct_handoff_ready`, `_return_to_dig_shallow_guard_ready` | legacy FSM and future BT |
+| `ReturnTransitionStatus` | `ReturnHandoffReadinessService`, `ReturnTransitionStatus.from_inputs(...)` | legacy FSM and future BT |
 | `CoverageStatus` | `_coverage_active_corridor`, `_coverage_candidate_scores`, terminal-stop fields | coverage-aware decisions and reporting |
 | `TokenStatus` | token source/injected/fallback fields | reporting, VLM packet, parity checks |
 
@@ -285,7 +374,9 @@ Legacy-only status:
 
 ### Decision Backend
 
-Candidate file: `testbed/planner/primitive_decision.py`.
+Current contract file: `testbed/planner/primitive/decision/contracts.py`.
+The old `testbed/planner/primitive_decision.py` path is only a thin
+public-compat re-export facade.
 
 The backend owns only decision scheme details. It reads `PrimitiveTickContext`
 and `PrimitiveCapabilityPort`, then returns a structured result.
@@ -344,7 +435,7 @@ Parked code must not be used as a justification for new mainline services.
 | Path | Evidence | Current code owner | Parking owner | Allowed use | Not allowed |
 | --- | --- | --- | --- | --- | --- |
 | `token.cell_entry` | absent from successful rollout; `cell_entry_enabled=0`; no active primitive-planner `cell_entry_tokens` low-dim key | `PrimitiveCellEntryCompatibilityRuntimeState`, historical `testbed/planner/cell_entry.py`, data/HDF5/training support | removed primitive runtime plus disabled schema/data compatibility | historical data/checkpoint compatibility and disabled public report fields | primitive-planner token injection, default token contract, new backend fact, VLM decision packet |
-| `gate.pre_dig_align` | successful rollout has `pre_dig_align.enabled=false`; completed/timeout counts are zero | pre-dig branch in `_maybe_switch_skill`, `_pre_dig_align_*`, `_pre_dig_align_action`, `PrimitivePreDigAlignCompatibilityRuntimeState` | parked compatibility/report state owner plus residual action diagnostics | explicit legacy config, old PD alignment replay, debug comparison | default FSM path, behavior-tree node, VLM effect unless re-approved |
+| `gate.pre_dig_align` | selected current-mainline successful rollout has `pre_dig_align.enabled=false`; historical successful legacy/diagnostic/transition evidence exists | removed pre-dig branch/action/readiness runtime plus `PrimitivePreDigAlignCompatibilityRuntimeState` | parked compatibility/report state owner plus historical legacy evidence | disabled schema compatibility, historical debug comparison | default FSM path, behavior-tree node, VLM effect unless explicitly re-approved |
 | removed `PrimitivePlannerACT5PPolicy` runtime path | user-approved cleanup, not mainline evidence | git history only | removed runtime path | historical comparison from old branches | source of default 4P architecture |
 
 Parking review before any later cleanup:
@@ -389,7 +480,7 @@ the old decision body as the behavior source of truth.
 
 Files likely touched:
 
-- create `testbed/planner/primitive_execution.py`
+- create `testbed/planner/primitive/execution/runtime.py`
 - add focused tests for execution-step ordering
 - modify `testbed/policies/hybrid/primitive_planner.py` only as a thin bridge
 
@@ -397,7 +488,9 @@ Allowed behavior:
 
 - `predict()` delegates preparation, decision call, action dispatch, and
   finalization to named steps
-- `_maybe_switch_skill()` remains the only decision logic
+- at that historical slice, the old policy-private decision shell remained
+  the behavior source of truth; it has since been retired in favor of
+  `PrimitiveDecisionRuntime` plus requested-effect application
 - `_active_policy()`, `_policy_obs()`, and `_make_debug_state()` can remain
   facades during this slice
 
@@ -421,13 +514,14 @@ Purpose: create typed result/effect contracts before moving branch logic.
 
 Files likely touched:
 
-- `testbed/planner/primitive_decision.py`
+- `testbed/planner/primitive/decision/contracts.py`
+- `testbed/planner/primitive_decision.py` only as the public-compat facade
 - tests for `PrimitiveDecisionResult` and ordered effects
 
 Allowed behavior:
 
-- old `_maybe_switch_skill()` can be wrapped by a temporary adapter that returns
-  `PrimitiveDecisionResult`
+- the historical policy-private decision shell could be wrapped temporarily to
+  return `PrimitiveDecisionResult`; the old facade has since been retired
 - effect application remains in the old shell/kernel
 
 Not allowed:
@@ -458,9 +552,9 @@ Purpose: move token generation and return planning out of the policy shell.
 
 Candidate files:
 
-- `testbed/planner/primitive_tokens.py`
+- `testbed/planner/primitive/token/tokens.py`
 - `testbed/planner/primitive_return_planning.py`
-- `testbed/planner/primitive_observation.py`
+- `testbed/planner/primitive/facts/observation.py`
 
 Move only after the execution template and status records exist. Token schema,
 token order, injected-key names, and source/fallback strings must stay fixed.
@@ -472,11 +566,11 @@ completion, rejection, and terminal-stop requests.
 
 Candidate file:
 
-- `testbed/planner/primitive_coverage.py`
-- `testbed/planner/primitive_coverage_reports.py` for coverage debug and trace
+- `testbed/planner/primitive/coverage/selection.py`
+- `testbed/planner/primitive/coverage/reports.py` for coverage debug and trace
   payload projection
-- `testbed/planner/primitive_coverage_updates.py` for completion/rejection
-  mutation and runtime request gating once `primitive_coverage.py` approaches
+- `testbed/planner/primitive/coverage/effects.py` for completion/rejection
+  mutation and runtime request gating once `primitive/coverage/selection.py` approaches
   the large-file threshold
 
 This service must own real coverage state, not return temporary copies. Direct
@@ -495,7 +589,7 @@ Default backend:
 
 Backend boundary file:
 
-- `testbed/planner/primitive_backend.py`
+- `testbed/planner/primitive/decision/backends/legacy_fsm.py`
 
 Behavior to preserve:
 
@@ -579,20 +673,23 @@ Implementation history is tracked in
 established the current-code parity harness, public tick execution template,
 and decision/effect result contracts.
 
-Current status note after Phase 9.14: policy observation/token injection
-assembly has moved out of the large policy shell into
+Current status note after Phase 9.14, superseded by the Phase 2
+token-observation runtime cleanup below: policy observation/token injection
+assembly moved out of the large policy shell into
 `PrimitivePolicyObservationAssembler` in
-`testbed/planner/primitive_observation.py`. `_policy_obs(...)` now remains as a
-thin compatibility wrapper. The assembler owns provider order, injected key
-names, observation copy/no-copy behavior, and immutable injected-state
-calculation. Phase 9.49 adds `PrimitiveObservationInjectionRuntimeState` in the
-same module as the mutable owner for clear/apply/projection of the six legacy
-injected flags. Token planning algorithms and token source/fallback/debug
-contracts remain in their existing owners.
+`testbed/planner/primitive/facts/observation.py`. The assembler owns provider order,
+injected key names, observation copy/no-copy behavior, and immutable
+injected-state calculation. Phase 9.49 added
+`PrimitiveObservationInjectionRuntimeState` in the same module as the mutable
+owner for clear/apply/projection of the six legacy injected flags. The later
+`PrimitiveTokenObservationRuntime` migration retired `_policy_obs(...)` and the
+old private token-runtime wrapper names from `PrimitivePlannerACTPolicy`. Token
+planning algorithms and token source/fallback/debug contracts remain in their
+focused owners.
 
 Current status note after Phase 9.15: public `debug_state()` dict assembly has
 moved into `PrimitiveDebugReportBuilder` in
-`testbed/planner/primitive_debug_report.py`. `debug_state()` now delegates to a
+`testbed/planner/primitive/report/debug_report.py`. `debug_state()` now delegates to a
 typed debug snapshot/report-input builder path while token debug fields come
 from `TokenStatus.to_debug_fields()`. `rollout_summary()`, `planner_trace()`,
 and per-tick `_make_debug_state(...)` are intentionally unchanged in this
@@ -600,7 +697,7 @@ round.
 
 Current status note after Phase 9.16: public `rollout_summary()` dict assembly
 has moved into `PrimitiveRolloutSummaryBuilder` in
-`testbed/planner/primitive_rollout_summary.py`. `rollout_summary()` now
+`testbed/planner/primitive/report/rollout_summary.py`. `rollout_summary()` now
 delegates through typed summary inputs while the builder owns public summary
 key layout, bool-like `int(...)` projection, and `None` to `NaN` fallback
 projection. `planner_trace()`, public `debug_state()` assembly, and per-tick
@@ -608,41 +705,48 @@ projection. `planner_trace()`, public `debug_state()` assembly, and per-tick
 
 Current status note after Phase 9.17: public `planner_trace()` dict assembly
 has moved into `PrimitivePlannerTraceBuilder` in
-`testbed/planner/primitive_planner_trace.py`. `planner_trace()` now delegates
+`testbed/planner/primitive/report/planner_trace.py`. `planner_trace()` now delegates
 through typed trace inputs while the builder owns public trace key layout,
 contract version/string fields, top-level trace-list projection, coverage
 config/status fields, and terminal-stop fields. Coverage decision trace
 recording, public `debug_state()` and `rollout_summary()` assembly, and
 per-tick `_make_debug_state(...)` are intentionally unchanged in this round.
 
-Current status note after Phase 9.18: primitive action dispatch and active
-low-level policy selection have moved into `PrimitiveActionDispatchService` in
-`testbed/planner/primitive_action_dispatch.py`. `_dispatch_tick_action()`,
-`_active_policy()`, `_all_policies()`, and `_first_dig_policy_active()` now
-delegate through typed dispatch ports while the service owns scripted
-bootstrap/pre-dig short-circuits, first-dig policy selection, all-policy order,
-policy-observation dispatch, low-level `predict(...)`, and `float32` action
-reshape. Reset lifecycle, `_set_skill()` mutation timing, policy observation
-assembly, scripted/pre-dig action algorithms, 5P transition semantics, and
-public reporting builders are intentionally unchanged in this round.
+Current status note after Phase 9.18, superseded by the Phase-2 execution-chain
+wrapper cleanup below: primitive action dispatch and active low-level policy
+selection moved into `PrimitiveActionDispatchService` in
+`testbed/planner/primitive/execution/action_dispatch.py`. The later cleanup retired
+`_dispatch_tick_action()`, `_active_policy()`, `_all_policies()`, and
+`_first_dig_policy_active()` from `PrimitivePlannerACTPolicy`; execution,
+reset, skill lifecycle, recovery, and focused tests now call
+`PrimitiveActionDispatchService` or typed dispatch ports directly. The service
+owns scripted bootstrap short-circuit, first-dig policy selection, all-policy
+order, policy-observation dispatch, low-level `predict(...)`, and `float32`
+action reshape. Reset lifecycle, `_set_skill()` mutation timing, policy
+observation assembly, scripted action algorithms, and public reporting builders
+are intentionally unchanged.
 
-Current status note after Phase 9.19: primitive tick finalization has moved
-into `PrimitiveTickFinalizationService` in
-`testbed/planner/primitive_tick_finalization.py`. The service owns
-previous-action copy semantics, dispatch-after transition-completed reason
-prefix detection, and compact `PrimitivePlannerDebugState` assembly. The 4P
-policy shell now keeps thin wrappers for `_record_tick_previous_action()`,
-`_transition_completed_after_tick_dispatch()`, `_make_debug_state()`, and
-`_finalize_tick_debug_state()`, while 5P supplies only a compatibility
-finalization input mapping for its skill ids and approach/dump-release hold
-counters. Public `debug_state()`, `rollout_summary()`, `planner_trace()`,
-reset lifecycle, `_set_skill()` mutation timing, action dispatch, branch
-ordering, and token/coverage/runtime semantics are intentionally unchanged in
-this round.
+Current status note after Phase 9.19, superseded by the Phase-2 execution-chain
+and tick-finalization runtime cleanup below: primitive tick finalization lives in
+`testbed/planner/primitive/execution/tick_finalization.py`. The service owns
+previous-action copy semantics and dispatch-after transition-completed reason
+prefix detection. `PrimitiveTickFinalizationRuntime` now owns live finalization
+input snapshots, compact debug-state writeback, and return-step timeout
+accounting over typed execution/cycle/return owners. The later cleanups retired
+`_record_tick_previous_action()`,
+`_transition_completed_after_tick_dispatch()`,
+`_finalize_tick_debug_state()`, `_make_debug_state(...)`,
+`_tick_finalization_inputs(...)`, `_account_return_timeout_for_tick()`, and
+`_tick_finalization_service()` from `PrimitivePlannerACTPolicy`; execution and
+runtime-kernel ports call the focused finalization boundary or execution state
+owner directly. Public `debug_state()`, `rollout_summary()`,
+`planner_trace()`, reset lifecycle, `_set_skill()` mutation timing, action
+dispatch, branch ordering, and token/coverage/runtime semantics are
+intentionally unchanged.
 
 Current status note after Phase 9.20: coverage requested-effect runtime
 sequencing has moved into `CoverageEffectRuntimeCoordinator` in
-`testbed/planner/primitive_coverage_updates.py`. The coordinator owns
+`testbed/planner/primitive/coverage/effects.py`. The coordinator owns
 coverage-mode no-op gating, dig payload-gain completion, dump completion
 state-write/event/reopen/terminal ordering, corridor rejection
 state-write/event/reopen/terminal ordering, multi-pass reopen result
@@ -656,40 +760,48 @@ Coverage candidate construction, scoring/selection, corridor debug projection,
 planner trace/summary/debug schemas, branch ordering, token planning, and
 low-level ACT dispatch are intentionally unchanged in this round.
 
-Current status note after Phase 9.21: coverage corridor selection runtime
-sequencing has moved into `CoverageSelectionRuntimeCoordinator` in
-`testbed/planner/primitive_coverage.py`. The coordinator owns dig-cut prior and
+Current status note after Phase 9.21, superseded by the Phase-2 coverage
+selection/fact runtime cleanup below: coverage corridor selection runtime
+sequencing moved into `CoverageSelectionRuntimeCoordinator` in
+`testbed/planner/primitive/coverage/selection.py`. The coordinator owns dig-cut prior and
 empty-candidate checks, ensure-corridor no-op/build writeback, selection-service
 invocation, candidate-score writeback, `select_corridor` decision-event
 emission, all-depleted reopen/terminal sequencing, and active/last-selected
 corridor id writeback. Coverage state storage now lives in
-`CoverageRuntimeState`; the 4P policy shell keeps raw facts helper facades and
-report-event append mechanics, while
-`_select_next_coverage_corridor()`, `_ensure_coverage_corridors()`, and
-`_select_coverage_corridor()` are thin coordinator-backed wrappers. Coverage
-candidate construction, scoring algorithm, first-dig gate facts, state exemplar
-matching, raw-field/token planning, planner trace/summary/debug schemas, branch
-ordering, and low-level ACT dispatch are intentionally unchanged in this round.
+`CoverageRuntimeState`. The later `PrimitiveCoverageSelectionRuntime` cleanup
+retired the old private policy coverage selection/fact wrapper names and moved
+production/test callers to the runtime, focused services, or coverage owner
+state directly. The subsequent scoring/exemplar helper cleanup retired old
+private policy helper names for coverage state-owner writeback, candidate
+construction, scoring/first-dig facts, state exemplar matching, and cell/row id
+projection; focused callers use `PrimitiveCoverageSelectionRuntime`,
+`CoverageSelectionService`, `CoveragePlanningFactService`,
+`CoverageCandidateBuilder`, or `CoverageRuntimeState` directly. Coverage
+candidate construction, scoring algorithm, first-dig
+gate facts, state exemplar matching, raw-field/token planning, planner
+trace/summary/debug schemas, branch ordering, and low-level ACT dispatch are
+intentionally unchanged.
 
 Current status note after Phase 9.22: coverage mutable runtime storage has moved
-into `CoverageRuntimeState` in `testbed/planner/primitive_coverage_state.py`.
+into `CoverageRuntimeState` in `testbed/planner/primitive/coverage/state.py`.
 The state owner stores corridor lists, active/last-selected ids, payload/deposit
 counters, completed-dump and low-productivity counters, pass and terminal-stop
 state, candidate scores, decision trace, rejected exemplar ids, and active
 state-exemplar payload. It also owns common state helper behavior such as
 corridor lookup, active corridor lookup, depleted count, all-depleted status,
 selected-id/counter/terminal writeback, and state-exemplar/rejected-id updates.
-The 4P policy shell initializes a fresh state owner on reset and preserves old
-private `_coverage_*` names as property-backed compatibility facades, so tests
-and diagnostics still mutate the same stored containers. Coverage selection and
-effect runtime ports now point at the same state owner rather than independent
-policy fields. Coverage candidate construction, selection scoring, effect
+The 4P policy shell initializes a fresh state owner on reset, and tests and
+diagnostics now mutate the owner through `_coverage_runtime_state()` instead of
+old private `_coverage_*` property-backed compatibility facades. Coverage
+selection and effect runtime ports now point at the same state owner rather
+than independent policy fields. Coverage candidate construction, selection
+scoring, effect
 sequencing, decision trace schema, report schemas, branch ordering, and low-level
 ACT dispatch are intentionally unchanged in this round.
 
 Current status note after Phase 9.23: coverage state-conditioned exemplar
 planning has moved into `CoverageStateExemplarPlanner` in
-`testbed/planner/primitive_coverage_exemplars.py`. The planner owns exemplar
+`testbed/planner/primitive/coverage/exemplars.py`. The planner owns exemplar
 JSON loading/validation, relative path resolution against the dig-cut prior,
 removed-depth grid projection, exemplar distance computation, temperature
 weighting with the old uniform fallback, rejected exemplar filtering,
@@ -704,34 +816,38 @@ unchanged in this round.
 
 Current status note after Phase 9.24: public primitive tick execution ordering
 has moved into `PrimitiveExecutionDriver` in
-`testbed/planner/primitive_execution.py`. The driver owns boundary update,
+`testbed/planner/primitive/execution/runtime.py`. The driver owns boundary update,
 switch-reason reset, dig-progress update for `dig`, decision backend invocation,
 requested-effect application before return-timeout accounting and action
 dispatch, previous-action recording, transition-completed checks, debug
 finalization, and `predict()` action extraction. `PrimitivePlannerACTPolicy`
-now builds typed `PrimitiveExecutionPorts` and delegates public `predict()` to
-the driver; `run_primitive_tick()` and `PrimitiveTickCallbacks` remain
-compatibility facades over the same ordering. Decision branches,
-requested-effect families, action dispatch, finalization services, token/report
-schemas, branch ordering, and low-level ACT output semantics are intentionally
-unchanged in this round.
+now supplies focused services and owners to `PrimitiveExecutionRuntime`, which
+builds typed `PrimitiveExecutionPorts` and returns the driver; `run_primitive_tick()`
+and `PrimitiveTickCallbacks` remain compatibility facades over the same
+ordering. Decision branches, requested-effect families, action dispatch,
+finalization services, token/report schemas, branch ordering, and low-level ACT
+output semantics are intentionally unchanged in this round.
 
 Current status note after Phase 9.25: primitive decision backend selection has
 moved into `PrimitiveDecisionRuntime` in
-`testbed/planner/primitive_decision_runtime.py`. The execution driver now calls
-the policy's generic `_decide_tick()` bridge, which delegates to the runtime
-instead of naming the legacy FSM bridge as the default source. The runtime owns
+`testbed/planner/primitive/decision/runtime.py`. The execution runtime now calls
+`PrimitiveDecisionRuntime.decide_tick(...)` directly instead of routing through a
+policy-private decision bridge. The runtime owns
 backend-name normalization, supported-backend validation, default
-`legacy_fsm` requested decision routing, and legacy `_maybe_switch_skill()`
-compatibility decision routing. Unsupported backend names fail fast and do not
-fall back to `LegacyFSMBackendAdapter` or broad `_maybe_switch_skill()`
-mutation. This preserves the current maturity claim: the default legacy FSM is
+`legacy_fsm` requested decision routing, and legacy compatibility decision
+routing through `PrimitiveDecisionRuntime.decide_legacy_compatibility_tick(...)`.
+Unsupported backend names fail fast and do not fall back to
+`LegacyFSMBackendAdapter` or broad policy-private mutation. The old
+`_decide_tick()`, `_decide_tick_with_legacy_fsm()`, and `_maybe_switch_skill()`
+policy-private facades are retired; public execution enters through the runtime
+kernel and `PrimitiveExecutionRuntime`.
+This preserves the current maturity claim: the default legacy FSM is
 backendified, while behavior-tree, VLM/LLM, and other alternate backends remain
 unimplemented parked scope.
 
 Current status note after Phase 9.26: primitive decision backend input has
 moved from scatter arguments into `PrimitiveDecisionContext` in
-`testbed/planner/primitive_decision_context.py`. The context packet preserves
+`testbed/planner/primitive/decision/context.py`. The context packet preserves
 the `obs`, `boundary_event`, and `PrimitiveTickPreparation` object identities
 for the tick and exposes the skill-before-decision and dig-progress flags as
 read-only convenience fields. `PrimitiveDecisionRuntime`,
@@ -745,7 +861,7 @@ parked scope.
 
 Current status note after Phase 9.27: primitive decision backend facts now flow
 through `PrimitiveDecisionCapabilities` in
-`testbed/planner/primitive_decision_capabilities.py`. The policy builds typed
+`testbed/planner/primitive/decision/capabilities.py`. The policy builds typed
 capability ports from current shell readers, bootstrap gates, the
 `PrimitiveFSMCapabilityProvider`, and the explicitly residual pre-dig-align
 handler; `LegacyFSMBranchPorts` is narrowed to skill-name constants plus that
@@ -758,7 +874,7 @@ unimplemented parked scope.
 
 Current status note after Phase 9.28: 4P primitive skill switch lifecycle
 sequencing now lives in `PrimitiveSkillLifecycleService` in
-`testbed/planner/primitive_skill_lifecycle.py`. The service owns the old
+`testbed/planner/primitive/execution/skill_lifecycle.py`. The service owns the old
 `_set_skill(...)` ordering for same-skill no-op, skill/reason writes,
 active-policy reset timing, target-specific counters and mirrors, dig coverage
 payload reset, and dig-cut plan clearing. `PrimitivePlannerACTPolicy._set_skill`
@@ -768,16 +884,15 @@ facade through its existing `set_skill` port. The 5P `_set_skill()` override,
 `pre_dig_align` residual behavior, `cell_entry` compatibility material, and
 alternate backend parked scope remain intentionally unchanged.
 
-Current status note after Phase 9.29: primitive dig/return token runtime
+Current status note after Phase 9.29, superseded by the Phase 2
+token-observation/runtime and skill/recovery token-plan wrapper retirements:
+primitive dig/return token runtime
 sequencing now lives in `PrimitiveTokenRuntimeCoordinator` in
-`testbed/planner/primitive_token_runtime.py`. `_dig_cut_tokens_for_obs(...)`,
-`_dig_depth_profile_tokens_for_obs(...)`,
-`_ensure_dig_cut_plan_for_cycle(...)`, `_return_target_tokens_for_obs(...)`,
-`_return_relocate_tokens_for_obs(...)`,
-`_return_start_envelope_tokens_for_obs(...)`,
-`_ensure_return_target_plan_for_cycle(...)`, `_clear_dig_cut_plan()`, and
-`_invalidate_pending_dig_cut_plan()` are service-backed compatibility facades.
-The coordinator owns disabled/active-skill/terminal-stop/hold-cycle gating,
+`testbed/planner/primitive/token/runtime.py`. The old policy token-observation
+facades and token-plan clear/invalidate wrappers have since been removed:
+production callers use `PrimitiveTokenObservationRuntime` and its token runtime
+coordinator directly through typed owner welds. The coordinator owns
+disabled/active-skill/terminal-stop/hold-cycle gating,
 dig-cut plus dig-depth-profile writeback, return-target success/fallback
 writeback, pending next-dig plan state, copy semantics, and clear/invalidate
 resets. Token planner algorithms, token dimensions/contracts, source/fallback
@@ -785,17 +900,20 @@ strings, observation injected-key assembly, `cell_entry` compatibility,
 `pre_dig_align` residual behavior, 5P token behavior, and alternate backend
 parked scope remain intentionally unchanged.
 
-Current status note after Phase 9.30: return token planning orchestration now
-lives in `PrimitiveReturnTokenPlanningService` in
-`testbed/planner/primitive_return_token_planning.py`.
+Current status note after Phase 9.30, superseded by the Phase 2
+token-planning runtime cleanup below: return token planning orchestration moved
+into `PrimitiveReturnTokenPlanningService` in
+`testbed/planner/primitive/token/return_planning.py`.
 `_build_next_dig_cut_plan_for_return(...)`,
 `_unpack_return_target_token_plan(...)`,
 `_build_return_start_envelope_tokens_for_obs(...)`,
 `_apply_return_start_envelope_token_plan(...)`,
 `_maybe_condition_return_start_envelope_qpos_from_relocate(...)`, and the
-return start-envelope prior/cell-id helper methods are now service-backed
-compatibility facades. The service owns return-target mode routing, coverage
-corridor selection and raw-field handoff, active coverage corridor writeback,
+return start-envelope prior/cell-id helper methods were temporary
+service-backed compatibility facades during that extraction. The later
+`PrimitiveTokenPlanningRuntime` migration retired those old private policy
+wrapper names. The service owns return-target mode routing, coverage corridor
+selection and raw-field handoff, active coverage corridor writeback,
 return-start-envelope build/apply/conditioning, source/prior-bound flag
 writeback, prior token/mapping/bounds routing, and token/raw-field copy
 semantics. Active dig token planning, token algorithm classes, coverage
@@ -803,29 +921,43 @@ selection/scoring/exemplar algorithms, return handoff gate/effect services,
 `cell_entry`, `pre_dig_align`, 5P token behavior, and alternate backend parked
 scope remain intentionally unchanged.
 
-Current status note after Phase 9.31: active dig token planning orchestration
-now lives in `PrimitiveDigTokenPlanningService` in
-`testbed/planner/primitive_dig_token_planning.py`.
+Current status note after the policy test-only / dead-candidate helper facade
+cleanup: remaining policy-private adapter/config helper facades, prior-loading
+facades, scripted-bootstrap target-reached facade, coverage-candidate-builder
+facade, and token conversion helper facades have been retired. Tests now call
+`primitive_adapter_config`, `PrimitiveScriptedBootstrapRuntimeService`,
+`PrimitiveDigTokenPlanningService`, `PrimitiveReturnTokenPlanningService`,
+`DigCutTokenPlanner`, `CoverageCandidateBuilder`, or current focused runtime
+contracts directly. Public constructor normalization, token dimensions/order,
+token source/fallback strings, coverage candidate construction, scripted
+bootstrap behavior, report schemas, and selected AGX behavior remain unchanged.
+
+Current status note after Phase 9.31, superseded by the Phase 2
+token-planning runtime cleanup below: active dig token planning orchestration
+moved into `PrimitiveDigTokenPlanningService` in
+`testbed/planner/primitive/token/dig_planning.py`.
 `_build_dig_cut_tokens_for_obs(...)`, `_apply_dig_cut_token_plan(...)`,
 `_build_dig_depth_profile_tokens_for_obs(...)`,
 `_apply_dig_depth_profile_token_plan(...)`,
 `_build_live_dig_depth_profile_tokens_for_obs(...)`, dig-depth-profile
 prior/raw-field/cell-id helpers, `_raw_fields_from_live_pose(...)`,
 `_build_operator_prior_dig_cut_tokens(...)`, and
-`_build_operator_prior_coverage_dig_cut_tokens(...)` are now service-backed
-compatibility facades. The service owns pending return-target dig plan
-application, conservative/operator-prior/operator-prior-coverage and
-sweep-belief mode routing, fallback conservative behavior, coverage raw-field
-handoff, dig-cut source/fallback/in-prior writeback, dig-depth-profile
-source/fallback/error writeback, raw-field priority, cell-id priority, and copy
-semantics. Return token planning, token runtime sequencing, token algorithm
-classes, coverage selection/scoring/exemplar algorithms, return handoff
-gate/effect services, `cell_entry`, `pre_dig_align`, 5P token behavior, and
-alternate backend parked scope remain intentionally unchanged.
+`_build_operator_prior_coverage_dig_cut_tokens(...)` were temporary
+service-backed compatibility facades during that extraction. The later
+`PrimitiveTokenPlanningRuntime` migration retired those old private policy
+wrapper names. The service owns pending return-target dig plan application,
+conservative/operator-prior/operator-prior-coverage and sweep-belief mode
+routing, fallback conservative behavior, coverage raw-field handoff, dig-cut
+source/fallback/in-prior writeback, dig-depth-profile source/fallback/error
+writeback, raw-field priority, cell-id priority, and copy semantics. Return
+token planning, token runtime sequencing, token algorithm classes, coverage
+selection/scoring/exemplar algorithms, return handoff gate/effect services,
+`cell_entry`, `pre_dig_align`, 5P token behavior, and alternate backend parked
+scope remain intentionally unchanged.
 
 Current status note after Phase 9.32: 4P reset lifecycle sequencing now lives
 in `PrimitiveResetLifecycleService` in
-`testbed/planner/primitive_reset_lifecycle.py`. Public
+`testbed/planner/primitive/execution/reset_lifecycle.py`. Public
 `PrimitivePlannerACTPolicy.reset()` is a thin service-backed adapter that builds
 typed reset ports, applies the returned reset state, and creates the initial
 compact debug state. The service owns low-level policy reset order, boundary
@@ -841,7 +973,7 @@ current runtime architecture.
 Current status note after Phase 9.33A: public adapter config normalization now
 lives in `PrimitivePlannerAdapterConfigNormalizer` and
 `PrimitivePlannerAdapterConfigState` under
-`testbed/planner/primitive_adapter_config.py`. `PrimitivePlannerACTPolicy.__init__`
+`testbed/planner/primitive/config/adapter.py`. `PrimitivePlannerACTPolicy.__init__`
 keeps its full public constructor signature and default values, directly stores
 only the low-level policy handles and boundary detector, builds
 `PrimitivePlannerAdapterConfigInputs`, applies the normalized legacy field
@@ -853,7 +985,7 @@ driver wiring, decision runtime, coverage algorithms, `pre_dig_align`,
 
 Current status note after Phase 9.34: the first backend-neutral common decision
 facts packet now lives in `PrimitiveDecisionFacts` under
-`testbed/planner/primitive_decision_facts.py`. It preserves the per-tick
+`testbed/planner/primitive/facts/decision.py`. It preserves the per-tick
 `PrimitiveDecisionContext` identity and adds current skill/reason facts without
 carrying transition status providers, mutation ports, effect appliers, planner
 `self`, or policy fields. `PrimitiveDecisionCapabilities.decision_facts(...)`
@@ -874,7 +1006,7 @@ interface; return status is still not part of `PrimitiveDecisionFacts`.
 
 Current status note after Phase 9.36: active return decisions now consume a
 typed return-specific facts view, `PrimitiveReturnTransitionFacts`, from
-`testbed/planner/primitive_decision_facts.py`. The view wraps an existing
+`testbed/planner/primitive/facts/decision.py`. The view wraps an existing
 `PrimitiveDecisionFacts` identity plus the read-only `ReturnTransitionStatus`.
 `PrimitiveDecisionCapabilities.return_transition_facts(...)` assembles that view
 without refreshing return state and can reuse a prebuilt common facts packet.
@@ -885,7 +1017,7 @@ transition facts and full alternate-backend readiness remain future work.
 
 Current status note after Phase 9.37: active dig decisions now consume a typed
 dig-specific facts view, `PrimitiveDigTransitionFacts`, from
-`testbed/planner/primitive_decision_facts.py`. The view wraps the same common
+`testbed/planner/primitive/facts/decision.py`. The view wraps the same common
 `PrimitiveDecisionFacts` identity plus a read-only `DigTransitionStatus`.
 `PrimitiveFSMCapabilityProvider.dig_transition_status(...)` no longer writes
 the shell/debug `_dig_to_carry_reason` mirror; the active dig branch now calls
@@ -898,7 +1030,7 @@ alternate-backend readiness remain future work.
 Current status note after Phase 9.38: active carry and dump decisions now
 consume typed facts views, `PrimitiveCarryTransitionFacts` and
 `PrimitiveDumpTransitionFacts`, from
-`testbed/planner/primitive_decision_facts.py`. Each view wraps the existing
+`testbed/planner/primitive/facts/decision.py`. Each view wraps the existing
 common `PrimitiveDecisionFacts` identity plus the read-only carry/dump status
 identity. `LegacyFSMCarryBranch` and `LegacyFSMDumpBranch` only assemble these
 facts after their active-skill checks, so lazy branch timing is preserved. This
@@ -908,7 +1040,7 @@ alternate backend readiness claim.
 
 Current status note after Phase 9.39: dig/carry/dump/return transition facts
 views are now reached through `PrimitiveBackendFactsAccess` in
-`testbed/planner/primitive_backend_facts.py`. The access object holds the
+`testbed/planner/primitive/facts/backend.py`. The access object holds the
 per-tick `PrimitiveDecisionContext`, one shared `PrimitiveDecisionFacts`
 identity, and a private read-only transition-status reader; it exposes lazy
 `dig_transition()`, `carry_transition()`, `dump_transition()`, and
@@ -974,19 +1106,102 @@ exposes `backend_factories`, a backend-name keyed registry of backend factory
 builders. `PrimitiveDecisionRuntime` normalizes the configured backend name,
 selects a factory from that registry, and calls the factory's requested or
 legacy-compatibility backend. `LegacyFSMDecisionBackendFactory` in
-`testbed/planner/primitive_backend.py` owns legacy FSM branch-set
-construction/reuse and requested/compatibility backend construction. The policy
-shell now provides the default registry through `_legacy_fsm_backend_factory()`
-instead of passing a `legacy_fsm_branch_set` callable to the runtime. This
-removes the legacy branch-set dependency from the runtime port shape, but the
+`testbed/planner/primitive/decision/backends/legacy_fsm.py` owns legacy FSM branch-set
+construction/reuse and requested/compatibility backend construction. This
+removes the legacy branch-set dependency from the runtime port shape. The old
+policy-private `_legacy_fsm_requested_decision_backend()`,
+`_legacy_fsm_compatibility_decision_backend()`, and
+`_legacy_fsm_branch_set()` wrappers are retired; tests and local callers use
+the generic `PrimitiveDecisionRuntime.backend_factory_for(...)`,
+`requested_backend_for(...)`, and `compatibility_backend_for(...)` accessors or
+`LegacyFSMDecisionBackendFactory` contracts directly. The
 only registered and supported backend remains `legacy_fsm`; BT/VLM/LLM remain
 unsupported parked scope.
 
+Current status note after the generic backend factory protocol and default
+legacy composition boundary cleanup: `PrimitiveDecisionRuntime` in
+`testbed/planner/primitive/decision/runtime.py` now owns only backend-name
+normalization, unsupported-backend fail-fast, generic backend factory registry
+access, and decision invocation. `PrimitiveDecisionBackendFactory` exposes
+generic requested and compatibility backend protocols instead of a
+legacy-specific compatibility return type. Default legacy-FSM composition now
+lives in `testbed/planner/primitive/decision/backends/legacy_fsm.py`:
+`LegacyFSMDecisionBackendFactoryPorts` carries explicit typed runtime inputs,
+and `LegacyFSMDecisionBackendFactory.from_runtime_ports(...)` builds
+`PrimitiveFSMCapabilityProvider`, `PrimitiveDecisionCapabilities`,
+`LegacyFSMBranchPorts`, and the cached legacy branch set inside the concrete
+legacy adapter boundary. `PrimitiveDecisionRuntimeComposition*` is retired from
+the code/test interface. `PrimitivePlannerACTPolicy._decision_runtime()` remains
+a thin weld that builds `LegacyFSMDecisionBackendFactoryPorts`, registers
+`LegacyFSMDecisionBackendFactory.from_runtime_ports(...)` in
+`PrimitiveDecisionRuntimePorts.backend_factories`, and passes the registry to
+`PrimitiveDecisionRuntime`. Tests that previously depended on the old runtime
+composition names were migrated to focused backend factory/runtime contracts
+instead of preserving those names for tests. The maturity claim remains
+unchanged for the production policy shell: only `legacy_fsm` is registered by
+`PrimitivePlannerACTPolicy`.
+
+Current status note after the contract-readiness closure: focused fake-backend
+tests prove that `PrimitiveDecisionRuntime` can select any normalized backend
+name present in `PrimitiveDecisionRuntimePorts.backend_factories` and invoke
+both the requested and compatibility context paths through the generic
+`PrimitiveDecisionBackendFactory` protocols. Registered non-legacy names are
+selected without touching `PrimitivePlannerACTPolicy`; unregistered names still
+fail fast with a direct unsupported-backend error that lists the currently
+registered backend names. This proves the generic runtime contract is ready for
+a future backend factory implementation. It does not add production
+BT/VLM/LLM/learned backend support, and it does not add public plugin/config
+selection for alternate backends.
+
+Current status note after the generic decision-runtime interface cleanup:
+`PrimitiveDecisionRuntime` no longer exposes legacy-FSM-specific runtime
+accessors for branch set, backend factory, requested backend, or compatibility
+backend. Focused tests that need the default concrete backend call
+`backend_factory_for(LEGACY_FSM_DECISION_BACKEND_NAME)` or the generic
+requested/compatibility backend accessors, then inspect
+`LegacyFSMDecisionBackendFactory` or backend contracts. Concrete `LegacyFSM*`
+adapter names remain in `testbed/planner/primitive/decision/backends/legacy_fsm.py`; only the
+runtime/factory/registry interface surface was made backend-neutral.
+
+Current status note after Phase 9.43D: static FSM transition configuration now
+has a focused value object, `PrimitiveFSMCapabilityProviderConfig`, owned by
+`testbed/planner/primitive/decision/backends/legacy_capability_provider.py`. The public adapter config
+normalizer builds that config from constructor-normalized values and stores it
+on `PrimitivePlannerAdapterConfigState`; the policy shell keeps the resulting
+config as `_fsm_capability_provider_config`. `PrimitiveFSMCapabilityProviderPorts`
+now carries that static config plus only explicit live inputs:
+semantic-boundary activity, cycle/coverage/return runtime state, and
+`ReturnHandoffReadinessService`. `LegacyFSMDecisionBackendFactoryPorts`
+receives the static config and live state/service ports, then constructs
+`PrimitiveFSMCapabilityProviderPorts` inside the concrete legacy factory
+composition boundary. `PrimitivePlannerACTPolicy._decision_runtime()` no longer
+imports or constructs `PrimitiveFSMCapabilityProviderPorts`; it remains a thin
+typed weld over constructor-owned config and live runtime owners. This
+preserves branch order, transition algorithms, reason strings, public schemas,
+token/coverage/return behavior, reset timing, default legacy FSM behavior, and
+unsupported backend fail-fast wording.
+
+Current status note after the return-handoff runtime composition extraction:
+`PrimitiveReturnHandoffRuntime` in
+`testbed/planner/primitive/effects/return_handoff_runtime.py` owns composition of
+`ReturnHandoffReadinessService`, `ReturnStartEnvelopeGateService`, and
+`ReturnDirectHandoffEffectService` from explicit execution/cycle/return/token/
+coverage state owners, adapter-normalized `ReturnHandoffReadinessConfig`,
+return-target planning, and return start-envelope prior callbacks. The adapter
+config normalizer builds the static return-handoff readiness config into
+`PrimitivePlannerAdapterConfigState`; the policy shell stores that normalized
+config and keeps only a typed return-handoff runtime weld. The old private
+policy wrappers for return-handoff config/ports/service construction and direct
+handoff effect ports are retired. Return handoff algorithms, direct-handoff
+effect ordering, start-envelope readiness checks, transition cache timing,
+reason strings, public report schemas, token/coverage behavior, `cell_entry`,
+`pre_dig_align`, and backend maturity remain unchanged.
+
 Current status note after Phase 9.44: mutable dig/return token runtime state is
 now owned by `PrimitiveTokenRuntimeState` in
-`testbed/planner/primitive_token_state.py`. Reset creates a fresh token state
-and applies it before legacy token private field names, so those compatibility
-names write through property setters into the same state object. The owner
+`testbed/planner/primitive/token/state.py`. Reset creates a fresh token state
+and applies it through `_token_state`; the old private token/pending property
+facades and duplicate reset snapshot writeback entries are removed. The owner
 covers dig-cut and dig-depth-profile tokens, return target/relocate/
 start-envelope tokens, token source/fallback/prior-bound fields, return
 start-envelope prior flags, and pending next-dig raw/token/exemplar fields.
@@ -997,24 +1212,19 @@ focused owners.
 
 Current status note after Phase 9.45: mutable non-token return handoff/runtime
 cache state is now owned by `PrimitiveReturnRuntimeState` in
-`testbed/planner/primitive_return_state.py`. Reset creates a fresh return state
-and applies it through `_return_state`; legacy private fields such as
-`_return_step_count`, `_return_to_dig_entry_close_state`,
-`_return_next_dig_event_seen`, and
-`_return_to_dig_start_envelope_checks` are property-backed compatibility
-facades over the same owner. This state owner does not absorb return-target
-token fields, coverage fields, return handoff algorithms, or direct-handoff
-effect sequencing.
+`testbed/planner/primitive/execution/return_state.py`. Reset creates a fresh return state
+and applies it through `_return_state`; the old private return-runtime property
+facades and duplicate reset snapshot writeback entries are removed. This state
+owner does not absorb return-target token fields, pending next-dig token fields,
+coverage fields, return handoff algorithms, or direct-handoff effect
+sequencing.
 
 Current status note after Phase 9.56: mutable confirmed-live 4P cycle/progress
 state is now owned by `PrimitiveCycleRuntimeState` in
-`testbed/planner/primitive_cycle_state.py`. Reset creates a fresh cycle state
-and applies `_cycle_state` before legacy cycle/progress private field names;
-fields such as `_dump_ready_hold_count`, `_dump_done_hold_count`,
-`_dig_step_count`, `_dig_best_mass_kg`, `_dig_to_carry_reason`,
-`_completed_transition_count`, `_transition_timeout_count`, `_cycle_index`, and
-`_dump_start_deposited_mass_kg` are now property-backed compatibility facades
-over the same owner. `PrimitiveCycleRuntimeState.to_report_status()` and
+`testbed/planner/primitive/execution/cycle_state.py`. Reset creates a fresh cycle state
+and applies it through `_cycle_state`; the old private cycle/progress property
+facades and duplicate reset snapshot writeback entries are removed.
+`PrimitiveCycleRuntimeState.to_report_status()` and
 `PrimitiveCycleReportStatus.dig_progress_debug_fields()` now own live
 cycle/progress report/finalization projection for debug, rollout summary, and
 tick-finalization inputs. The owner does not absorb active skill/switch reason,
@@ -1025,11 +1235,10 @@ algorithms, or public report schema assembly.
 Current status note after Phase 9.57: scripted bootstrap runtime state and
 runtime rules are now owned by `PrimitiveScriptedBootstrapRuntimeState` and
 `PrimitiveScriptedBootstrapRuntimeService` in
-`testbed/planner/primitive_scripted_bootstrap.py`. Reset creates a fresh
-scripted bootstrap state and applies it before legacy scripted counter private
-field names; `_scripted_bootstrap_step_count`,
-`_scripted_bootstrap_hold_count`, and `_scripted_bootstrap_timeout_count` are
-property-backed compatibility facades over that owner. The service owns
+`testbed/planner/primitive/execution/scripted_bootstrap.py`. Reset creates a fresh
+scripted bootstrap state and applies it through `_scripted_bootstrap_state`;
+the old private scripted counter property facades and duplicate reset snapshot
+writeback entries are removed. The service owns
 scripted-qpos enabled detection, target-reached hold gating, max-step timeout
 completion, missing-target runtime error text, and clipped float32 PD action
 generation. `PrimitiveScriptedBootstrapRuntimeState.to_report_status()` and
@@ -1042,7 +1251,7 @@ schemas, and removed 5P runtime remain unchanged.
 
 Current status note after Phase 9.48: execution lifecycle metadata is now owned
 by `PrimitiveExecutionRuntimeState` in
-`testbed/planner/primitive_execution_state.py`. Reset creates a fresh execution
+`testbed/planner/primitive/execution/state.py`. Reset creates a fresh execution
 state with the selected initial skill, `switch_reason="reset"`, and
 `prev_action=None`; `PrimitivePlannerRuntimeKernel.reset()` still finalizes the
 initial compact debug state after applying the reset state. The policy keeps
@@ -1051,7 +1260,7 @@ property-backed compatibility facades.
 
 Current status note after Phase 9.49: per-observation token injected
 compatibility flags are now owned by `PrimitiveObservationInjectionRuntimeState`
-in `testbed/planner/primitive_observation.py`. Reset creates a fresh
+in `testbed/planner/primitive/facts/observation.py`. Reset creates a fresh
 observation-injection state and applies it through `_observation_injection_state`;
 the policy no longer keeps the old private injected-flag property facades or
 duplicate reset snapshot writeback entries for those flags.
@@ -1062,7 +1271,7 @@ token schema, `cell_entry`, and `pre_dig_align` behavior remain unchanged.
 Current status note after the parked cell-entry runtime cleanups: parked
 cell-entry compatibility/report schema projection still lives in
 `PrimitiveCellEntryCompatibilityRuntimeState` in
-`testbed/planner/primitive_cell_entry_state.py`, but primitive-planner runtime
+`testbed/planner/primitive/compatibility/cell_entry.py`, but primitive-planner runtime
 execution and the policy-owned private `_cell_entry_*` field facades/reset
 writeback have been removed. Policy report helpers project fresh disabled/default
 cell-entry values. Historical cell-entry planner/data/HDF5/training
@@ -1073,7 +1282,7 @@ capability.
 Current status note after Phase 9.51 and the later parked pre-dig-align
 cleanups: parked pre-dig-align compatibility/report projection defaults are
 owned by `PrimitivePreDigAlignCompatibilityRuntimeState` in
-`testbed/planner/primitive_pre_dig_align_state.py`. Phase 9.51 introduced a
+`testbed/planner/primitive/compatibility/pre_dig_align.py`. Phase 9.51 introduced a
 mutable parked state owner and private policy facades for the old runtime
 counters, cached arrays, readiness flags, timeout handoff reason, surface
 depth, and surface-guard fields. After the parked runtime cleanup and private
@@ -1092,21 +1301,20 @@ summary report projection now lives with the parked compatibility state owner.
 `PrimitivePreDigAlignReportConfig` carries explicit report config facts, and
 `PrimitivePreDigAlignCompatibilityRuntimeState.to_report_status(...)` returns
 `PrimitivePreDigAlignReportStatus` for the existing public debug fields and
-rollout-summary pre-dig fields. `PrimitivePlannerACTPolicy` keeps thin
-`_pre_dig_align_report_config()` and `_pre_dig_align_report_status()` helpers;
-`_debug_report_pre_dig_align_fields()` delegates to
-`PrimitivePreDigAlignReportStatus.debug_fields()`, and
-`PrimitiveRolloutSummaryInputs` now carries the same status object for the
-summary keys. This is compatibility/report parking only: readiness, target,
+rollout-summary pre-dig fields. `PrimitiveReportRuntime` now consumes that
+status object directly for public report input assembly; the old
+`_debug_report_pre_dig_align_fields()` policy wrapper has been removed. This is
+compatibility/report parking only: readiness, target,
 timeout, surface-guard, action, replan, and handoff algorithms remain unchanged
 and parked outside the mainline backend/runtime architecture.
 
 Current status note after Phase 9.52: coverage debug-field public schema
 assembly is now owned by `CoverageReportService.debug_fields(...)` in
-`testbed/planner/primitive_coverage_reports.py`. `CoverageDebugReportInputs`
+`testbed/planner/primitive/coverage/reports.py`. `CoverageDebugReportInputs`
 captures explicit coverage report values, and
-`PrimitivePlannerACTPolicy._debug_report_coverage_fields()` now remains a thin
-compatibility facade that builds the snapshot and delegates to the service.
+`PrimitiveReportRuntime` and `PrimitiveCoverageReportRuntime` now consume the
+focused coverage state/config/service facts directly; the old
+`_debug_report_coverage_fields()` policy wrapper has been removed.
 Coverage corridor debug payloads and coverage decision-event payloads remain in
 the same report service. Coverage selection, scoring, effect/runtime updates,
 candidate generation, public key names, scalar conversions, `NaN`/`-1`
@@ -1119,10 +1327,9 @@ coverage report config facts, and `CoverageReportService` projects coverage
 debug fields, rollout-summary coverage status, and planner-trace coverage status
 from `CoverageRuntimeState` plus explicit `CoverageReportConfig` and
 `CoverageSelectionService` where row/cell/attempt/confidence facts are needed.
-`PrimitivePlannerACTPolicy._debug_report_coverage_fields()`,
-`_rollout_summary_inputs()`, and `_planner_trace_inputs()` now pass the focused
-state owner/config/service into the report service for the coverage subset,
-while non-coverage report inputs remain in their existing owners/facades.
+`PrimitiveReportRuntime` now passes the focused state owner/config/service into
+the report service for the coverage subset, while the policy supplies typed
+report-runtime ports without old private report helper wrappers.
 Coverage debug/summary/trace key names, `NaN`/`None`/`-1` fallback semantics,
 list shallow-copy behavior, corridor debug payload values, candidate scores,
 decision trace, terminal-stop fields, coverage selection/effect algorithms,
@@ -1132,23 +1339,25 @@ runtime status remain unchanged.
 Current status note after Phase 9.53: parked cell-entry debug-field public
 schema projection is now owned by
 `PrimitiveCellEntryCompatibilityRuntimeState.debug_fields()` in
-`testbed/planner/primitive_cell_entry_state.py`.
-`PrimitivePlannerACTPolicy._debug_report_cell_entry_fields()` remains a thin
-compatibility facade that delegates to the state owner. Cell-entry token
+`testbed/planner/primitive/compatibility/cell_entry.py`.
+`PrimitiveReportRuntime` now consumes the cell-entry report status directly;
+the old `_debug_report_cell_entry_fields()` policy wrapper has been removed.
+Cell-entry token
 generation, token dimensions, planner/auditor algorithms, trace mutation,
 reset semantics, and public debug key/fallback values remain unchanged. This
 phase is accepted as a small cleanup of the parked compatibility/report owner,
 but it is not a template for continuing parked-path micro-slices.
 
-Current status note after Phase 9.54: live token-status projection is now owned
-by `PrimitiveTokenRuntimeState.to_token_status(...)` in
-`testbed/planner/primitive_token_state.py`.
-`PrimitivePlannerACTPolicy._token_status_for_debug_report()` remains a thin
-compatibility facade that supplies explicit external facts: cell-entry
-enablement, current observation-injection flags, dig-depth-profile source, and
-dig-depth-profile required state. The projection uses central token dimension
-constants and still relies on `TokenStatus.from_inputs(...)` for token array
-copy/freeze behavior. Token debug key names, token list values, source/fallback
+Current status note after Phase 9.54 and later report/status composition cleanup:
+live token-status projection is now owned by
+`PrimitiveTokenRuntimeState.to_token_status(...)` in
+`testbed/planner/primitive/token/state.py`, and
+`PrimitiveReportCompositionRuntime` supplies the explicit report-time facts:
+current observation-injection flags, dig-depth-profile source, and
+dig-depth-profile required state. The old policy-private
+`_token_status_for_debug_report()` facade is retired. The projection uses
+central token dimension constants and still relies on `TokenStatus.from_inputs(...)`
+for token array copy/freeze behavior. Token debug key names, token list values, source/fallback
 fields, injected flags, dimensions, observation provider order, token planning
 services/coordinators, `cell_entry`, `pre_dig_align`, backend fail-fast, and
 removed 5P runtime status remain unchanged.
@@ -1156,10 +1365,11 @@ removed 5P runtime status remain unchanged.
 Current status note after Phase 9.55: live return report/status projection is
 now owned by `PrimitiveReturnRuntimeState.to_report_status(...)` and
 `PrimitiveReturnReportStatus.debug_fields()` in
-`testbed/planner/primitive_return_state.py`.
-`PrimitivePlannerACTPolicy._debug_report_return_fields()` remains a thin
-compatibility facade, and `_rollout_summary_inputs()` reuses the same return
-status projection for return summary fields. The projection consumes explicit
+`testbed/planner/primitive/execution/return_state.py`.
+`PrimitiveReportRuntime` now consumes the same return status projection for
+debug and summary fields; the old `_debug_report_return_fields()` and
+`_rollout_summary_inputs()` policy wrappers have been removed. The projection
+consumes explicit
 start-envelope config facts and the return runtime owner values. Public debug
 key names, rollout summary fields, bool/string/float projection, `NaN`
 behavior, checks dict copy projection, return handoff algorithms, start-
@@ -1169,11 +1379,12 @@ remain unchanged.
 Current status note after Phase 9.56: live cycle/progress report/finalization
 projection is now owned by `PrimitiveCycleRuntimeState.to_report_status()` and
 `PrimitiveCycleReportStatus.dig_progress_debug_fields()` in
-`testbed/planner/primitive_cycle_state.py`.
-`PrimitivePlannerACTPolicy._debug_report_dig_progress_fields()` remains a thin
-compatibility facade, while `_rollout_summary_inputs()` and
-`_tick_finalization_inputs()` reuse the same cycle status projection for
+`testbed/planner/primitive/execution/cycle_state.py`.
+`PrimitiveReportRuntime` and tick finalization now reuse the same cycle status
+projection for
 transition counts, dump-hold counts, cycle index, and dig replan counters.
+The old `_debug_report_dig_progress_fields()` and `_rollout_summary_inputs()`
+policy wrappers have been removed.
 Public dig-progress debug keys, rollout summary values, tick finalization input
 values, dig-progress update algorithms, skill lifecycle behavior, reset
 behavior, backend fail-fast, and removed 5P runtime status remain unchanged.
@@ -1182,10 +1393,11 @@ Current status note after Phase 9.57: live scripted-bootstrap report/status
 projection is now owned by
 `PrimitiveScriptedBootstrapRuntimeState.to_report_status()` and
 `PrimitiveScriptedBootstrapReportStatus.debug_fields()` in
-`testbed/planner/primitive_scripted_bootstrap.py`.
-`PrimitivePlannerACTPolicy._debug_report_scripted_bootstrap_fields()` remains a
-thin compatibility facade, while `_rollout_summary_inputs()` reuses the same
-status projection for `scripted_bootstrap_timeout_count`. Scripted bootstrap
+`testbed/planner/primitive/execution/scripted_bootstrap.py`.
+`PrimitiveReportRuntime` now reuses the same scripted-bootstrap status
+projection for debug fields and `scripted_bootstrap_timeout_count`; the old
+`_debug_report_scripted_bootstrap_fields()` and `_rollout_summary_inputs()`
+policy wrappers have been removed. Scripted bootstrap
 readiness, timeout, target-reached, PD action algorithms, reset timing, public
 debug key names, rollout summary key names, backend fail-fast, token/coverage/
 return/cycle owners, `cell_entry`, `pre_dig_align`, and removed 5P runtime
@@ -1194,11 +1406,11 @@ status remain unchanged.
 Current status note after Phase 9.58: live planner-trace coverage sub-
 projection is now owned by `CoverageReportService.trace_status(...)` and
 `CoverageTraceReportStatus` in
-`testbed/planner/primitive_coverage_reports.py`.
+`testbed/planner/primitive/coverage/reports.py`.
 `PrimitivePlannerTraceInputs` now carries that coverage status object instead
-of many independent coverage trace fields, while
-`PrimitivePlannerACTPolicy._planner_trace_inputs()` remains a thin explicit-
-facts assembler for coverage trace status and non-coverage trace fields.
+of many independent coverage trace fields, and `PrimitiveReportRuntime` owns
+trace-input assembly. The old `_planner_trace_inputs()` policy wrapper has
+been removed.
 Public `planner_trace()` key names, coverage decision trace count semantics,
 list shallow-copy behavior, corridor debug payload values, decision trace
 mutation, terminal-stop behavior, coverage debug/summary schemas, coverage
@@ -1208,11 +1420,11 @@ algorithms, backend facts, token/return/cycle/scripted-bootstrap owners,
 Current status note after Phase 9.59: live rollout-summary coverage sub-
 projection is now owned by `CoverageReportService.summary_status(...)` and
 `CoverageSummaryReportStatus` in
-`testbed/planner/primitive_coverage_reports.py`.
+`testbed/planner/primitive/coverage/reports.py`.
 `PrimitiveRolloutSummaryInputs` now carries that coverage status object instead
-of many independent coverage summary fields, while
-`PrimitivePlannerACTPolicy._rollout_summary_inputs()` remains a thin explicit-
-facts assembler for coverage summary status and non-coverage summary fields.
+of many independent coverage summary fields, and `PrimitiveReportRuntime` owns
+summary-input assembly. The old `_rollout_summary_inputs()` policy wrapper has
+been removed.
 Public `rollout_summary()` key names, bool-to-int projection, `None`-to-`NaN`
 projection, debug schemas, planner trace schemas, coverage algorithms,
 corridor debug payload values, decision trace mutation, terminal-stop behavior,
@@ -1222,13 +1434,14 @@ backend facts, token/return/cycle/scripted-bootstrap owners, `cell_entry`,
 Current status note after Phase 9.60: live token/pending/dig-cut report
 metadata projection is now owned by
 `PrimitiveTokenRuntimeState.to_report_status(...)` and
-`PrimitiveTokenReportStatus` in `testbed/planner/primitive_token_state.py`.
+`PrimitiveTokenReportStatus` in `testbed/planner/primitive/token/state.py`.
 The status carries pending next-dig cycle/corridor ids, dig-cut injected
 status, planner mode, prior id/path, token source, prior-window flag, and
-fallback reason. `PrimitivePlannerACTPolicy._debug_report_pending_fields()`,
-`_debug_report_dig_cut_fields()`, `_rollout_summary_inputs()`, and
-`_planner_trace_inputs()` now reuse that status while remaining thin
-explicit-facts assemblers for config and observation-injection facts. Public
+fallback reason. `PrimitiveReportRuntime` now reuses that status for pending,
+dig-cut, summary, and trace report inputs; the old private policy wrappers
+`_debug_report_pending_fields()`, `_debug_report_dig_cut_fields()`,
+`_rollout_summary_inputs()`, and `_planner_trace_inputs()` have been removed.
+Public
 debug/summary/trace key names and type projection, token dimensions, token
 contract text/version, token planning algorithms/coordinators,
 dig-depth-profile planning, return token planning, coverage algorithms,
@@ -1237,7 +1450,7 @@ backend facts/fail-fast, reset timing, policy observation provider order,
 
 Current status note after Phase 9.61: live token runtime sequencing no longer
 uses policy-built getter/setter callbacks for token state storage.
-`PrimitiveTokenRuntimePorts` in `testbed/planner/primitive_token_runtime.py`
+`PrimitiveTokenRuntimePorts` in `testbed/planner/primitive/token/runtime.py`
 now carries the focused `PrimitiveTokenRuntimeState` owner directly, and
 `PrimitiveTokenRuntimeCoordinator` reads/writes dig-cut, dig-depth-profile,
 return-target, return-relocate, return-start-envelope, and pending next-dig
@@ -1248,10 +1461,41 @@ coverage exemplar facts. Token dimensions, schema keys, source/fallback
 strings, branch order, reset timing, backend fail-fast behavior, `cell_entry`,
 `pre_dig_align`, and removed 5P runtime status remain unchanged.
 
+Current status note after Phase 2 token observation/runtime composition
+extraction: `PrimitiveTokenObservationRuntime` in
+`testbed/planner/primitive/token/observation_runtime.py` now owns
+policy-observation assembly, observation-injection clear/apply timing,
+`PrimitivePolicyObservationAssemblerPorts` construction, and
+`PrimitiveTokenRuntimePorts` construction. The old private policy wrappers for
+`_policy_obs()`, plan ensure hooks, and token-runtime coordinator/ports access
+have been removed; `PrimitivePlannerACTPolicy` keeps typed token-observation
+runtime ports/runtime factory as the B owner weld. Token planner construction is
+now owned by `PrimitiveTokenPlannerFactory` in
+`testbed/planner/primitive/token/factory.py`; the old policy-private goal token
+and concrete token planner factory/proxy methods have been removed.
+Token provider order, injected observation key names, token dimensions,
+source/fallback strings, token planning algorithms, coverage algorithms,
+return handoff behavior, public debug/summary/trace schemas, reset timing,
+and backend fail-fast behavior remain unchanged.
+
+Current status note after Phase 2 token planning service composition
+extraction: `PrimitiveTokenPlanningRuntime` in
+`testbed/planner/primitive/token/planning_runtime.py` now owns construction of
+`PrimitiveDigTokenPlanningPorts`, `PrimitiveReturnTokenPlanningPorts`,
+`PrimitiveDigTokenPlanningService`, and `PrimitiveReturnTokenPlanningService`.
+The old private policy wrappers for active dig token planning,
+dig-depth-profile helpers, return-target planning, return-start-envelope
+helpers, live-pose raw fields, and operator-prior token helpers have been
+removed; `PrimitivePlannerACTPolicy` keeps typed token-planning runtime
+ports/runtime factory as the B owner weld. Token schemas,
+source/fallback strings, token planning algorithms, coverage algorithms,
+return handoff behavior, public debug/summary/trace schemas, reset timing,
+and backend fail-fast behavior remain unchanged.
+
 Current status note after Phase 9.62: live coverage selection runtime
 sequencing no longer uses policy-built getter/setter callbacks for coverage
 selection state storage. `CoverageSelectionRuntimePorts` in
-`testbed/planner/primitive_coverage.py` now carries the focused
+`testbed/planner/primitive/coverage/selection.py` now carries the focused
 `CoverageRuntimeState` owner directly, and
 `CoverageSelectionRuntimeCoordinator` reads/writes coverage corridors,
 candidate scores, active/last-selected ids, and all-depleted checks through
@@ -1268,7 +1512,7 @@ unchanged.
 Current status note after Phase 9.63: live coverage effect runtime sequencing
 no longer uses policy-built getter/setter callbacks for coverage effect state
 storage. `CoverageEffectRuntimePorts` in
-`testbed/planner/primitive_coverage_updates.py` now carries the focused
+`testbed/planner/primitive/coverage/effects.py` now carries the focused
 `CoverageRuntimeState` owner directly, and
 `CoverageEffectRuntimeCoordinator` reads/writes current payload gain, last
 payload/deposit, completed dump count, global low-productivity streak,
@@ -1284,10 +1528,41 @@ token/return/cycle/scripted-bootstrap/execution behavior, backend fail-fast
 behavior, `cell_entry`, `pre_dig_align`, and removed 5P runtime status remain
 unchanged.
 
+Current status note after Phase-2 coverage effect/update composition
+extraction: `PrimitiveCoverageEffectRuntime` in
+`testbed/planner/primitive/coverage/effect_runtime.py` now owns
+`CoverageUpdateConfig`, `CoverageUpdateService`, `CoverageRuntimeConfig`,
+`CoverageRuntimeService`, and `CoverageEffectRuntimePorts` construction.
+`PrimitivePlannerACTPolicy` keeps typed coverage-effect runtime ports and the
+focused runtime factory; the old private coverage effect/update helper
+wrappers have been deleted after callers/tests moved to the focused runtime
+contract. The later coverage effect owner-state setter cleanup also removed
+old private policy setter/update wrappers for payload, dump,
+low-productivity, pass, active-corridor, rejected-exemplar, and terminal-stop
+coverage owner fields; callers use `CoverageRuntimeState` owner methods or
+focused coverage runtimes directly. Coverage update formulas,
+low-productivity gates, multi-pass reopen, terminal-stop replace behavior,
+corridor belief updates, decision-event payloads, coverage selection/fact
+composition, coverage report composition, token/return behavior, public
+debug/summary/trace schemas, parked `pre_dig_align`, parked `cell_entry`, and
+backend support status remain unchanged.
+
+Current status note after Phase-2 coverage report/decision-event composition
+extraction: `PrimitiveCoverageReportRuntime` in
+`testbed/planner/primitive/coverage/report_runtime.py` now owns coverage report
+config/state/service composition, bucket snapshot projection, decision-event
+recording, and active/corridor report helper projection. The old private
+coverage report helper wrappers have been deleted after callers/tests moved to
+the focused runtime contract. Coverage report/debug/summary/trace schema,
+decision-event payload keys, bucket snapshot payloads, candidate scores,
+coverage selection/effect behavior, token/return behavior, reset timing,
+parked `pre_dig_align`, parked `cell_entry`, and backend support status remain
+unchanged.
+
 Current status note after Phase 9.64: active dig token planning no longer uses
 policy-built getter/setter callbacks for token and coverage storage.
 `PrimitiveDigTokenPlanningPorts` in
-`testbed/planner/primitive_dig_token_planning.py` now carries
+`testbed/planner/primitive/token/dig_planning.py` now carries
 `PrimitiveTokenRuntimeState` and `CoverageRuntimeState` directly, and
 `PrimitiveDigTokenPlanningService` reads/writes pending dig-cut route state,
 dig-cut source/fallback/prior flags, dig-depth-profile source/fallback fields,
@@ -1305,7 +1580,7 @@ Current status note after Phase 9.65: return token planning no longer uses
 policy-built storage callbacks for coverage active id/corridor lookup or
 return start-envelope source/prior flags.
 `PrimitiveReturnTokenPlanningPorts` in
-`testbed/planner/primitive_return_token_planning.py` now carries
+`testbed/planner/primitive/token/return_planning.py` now carries
 `PrimitiveTokenRuntimeState` and `CoverageRuntimeState` directly, and
 `PrimitiveReturnTokenPlanningService` reads/writes return start-envelope token
 source, prior spatial/qpos flags, active corridor id, and corridor lookup
@@ -1323,7 +1598,7 @@ runtime status remain unchanged.
 Current status note after Phase 9.66: token runtime sequencing no longer uses
 policy-built coverage state-exemplar callbacks for the pending next-dig
 handoff. `PrimitiveTokenRuntimePorts` in
-`testbed/planner/primitive_token_runtime.py` now carries
+`testbed/planner/primitive/token/runtime.py` now carries
 `CoverageRuntimeState` directly alongside `PrimitiveTokenRuntimeState`, and
 `PrimitiveTokenRuntimeCoordinator` reads active state-exemplar ids, distance,
 and profile token from the coverage owner while preserving the existing
@@ -1356,14 +1631,17 @@ status remain unchanged.
 Current status note after Phase 9.68: backend-facing FSM transition-status
 assembly no longer receives cycle, coverage, and return runtime storage as
 policy-built primitive fields/callbacks. `PrimitiveFSMCapabilityProviderPorts`
-now carries `PrimitiveCycleRuntimeState`, `CoverageRuntimeState`, and
-`PrimitiveReturnRuntimeState` directly. `PrimitiveFSMCapabilityProvider` reads
-dig counters, terminal-stop state, cycle-start deposit, dump hold/start fields,
-and return cached flags through those owners, and synchronizes the
-dig-to-carry reason mirror by writing `PrimitiveCycleRuntimeState`.
-`PrimitivePlannerACTPolicy` still assembles explicit config facts, semantic
-boundary reads, dig-exit overshoot calculation, return handoff refresh, and
-`pre_dig_align` gate ports. Transition algorithms, branch order, reason string
+now carries `PrimitiveFSMCapabilityProviderConfig`,
+`PrimitiveCycleRuntimeState`, `CoverageRuntimeState`, `PrimitiveReturnRuntimeState`,
+semantic-boundary activity, and `ReturnHandoffReadinessService` directly.
+`PrimitiveFSMCapabilityProvider` reads dig counters, terminal-stop state,
+cycle-start deposit, dump hold/start fields, and return cached flags through
+those live owners; it reads thresholds and gate configuration through the
+focused static config; and it synchronizes the dig-to-carry reason mirror by
+writing `PrimitiveCycleRuntimeState`. Focused branches/tests read transition
+statuses through `PrimitiveFSMCapabilityProvider` or `LegacyFSMBranchPorts`
+instead of old policy-private `_dig/_carry/_dump/_return_transition_status_for_backend(...)`
+wrappers. Transition algorithms, branch order, reason string
 semantics, thresholds, token schema, debug/summary/trace schema, backend
 support, `pre_dig_align` algorithms, `cell_entry`, and removed 5P runtime
 status remain unchanged.
@@ -1382,6 +1660,30 @@ reason strings, thresholds, token schema, debug/summary/trace schema, backend
 support, `pre_dig_align` algorithms, `cell_entry`, and removed 5P runtime
 status remain unchanged.
 
+Current status note after requested-effect runtime composition cleanup:
+`PrimitiveRequestedEffectRuntime` in `testbed/planner/primitive/effects/requested.py`
+owns construction of `RequestedEffectApplierPorts` from explicit typed state,
+service, and runtime inputs: cycle state, return state, `set_skill`, fixed
+return next-skill name, coverage effect runtime, dig recovery service,
+return-handoff runtime, and `action_dim` for per-observation
+`PrimitiveObservationFacts`. `PrimitivePlannerACTPolicy` keeps only a typed
+`_primitive_requested_effect_runtime*` weld and passes that runtime to
+`PrimitiveExecutionRuntimePorts.requested_effect_applier`; the old private
+`_requested_effect_applier()` and `_requested_effect_applier_ports()` policy
+wrappers are retired. Tests that depended on those old private names were
+migrated to focused requested-effect runtime/applier contracts or the new
+policy runtime weld.
+
+Current status note after Phase-2 cycle/return/dump transition wrapper
+retirement: the old private policy wrappers for dump ready/done hold counts,
+dump-start deposited mass, return next-dig marking, return transition
+completion, return next-skill selection, and dig replan counters have been
+removed. Tests and production callbacks use `PrimitiveCycleRuntimeState`,
+`PrimitiveReturnRuntimeState`, and `RequestedEffectApplier` contracts directly;
+the requested-effect port for return next-skill now supplies the direct `dig`
+target while preserving the existing `return_to_dig_next_dig_entry_ready`
+reason construction and post-completion ordering.
+
 Current status note after Phase 9.70 audit-only remaining-policy inventory:
 `PrimitivePlannerACTPolicy` is still a large file because it is now serving as
 the public adapter, composition root, compatibility-facade host, and residual
@@ -1394,13 +1696,12 @@ coverage selection/effect runtime ports. These should not be migrated by
 chasing individual callback removal unless a broader stable owner boundary is
 being reduced.
 
-The same inventory classifies `_debug_report_coverage_fields()`,
+The earlier inventory classified `_debug_report_coverage_fields()`,
 `_rollout_summary_inputs()`, and `_planner_trace_inputs()` as report-only
-snapshot assembly over already focused status/report builders. Moving only a
-few remaining fields from these helpers would be a protective micro-slice
-unless it is grouped into a coherent report-input boundary with meaningful
-policy-shell deletion. `_debug_report_pre_dig_align_fields()` is parked
-compatibility reporting over the pre-dig-align compatibility state owner.
+snapshot assembly over already focused status/report builders. The retroactive
+report-runtime wrapper-retirement slice has now grouped those old helper names
+with the rest of the report-runtime private wrapper cluster and deleted them
+after callers/tests moved to `PrimitiveReportRuntime`.
 primitive-planner `_cell_entry_tokens_for_obs()` and
 `_complete_cell_entry_dig()` have been removed. Historical cell-entry
 data/HDF5/training support remains a compatibility boundary, and public
@@ -1416,14 +1717,15 @@ parked pre-dig-align restart/replan path. Further changes here should only
 target live failed-dig behavior or explicit compatibility deletion, not
 pre-dig-align runtime revival.
 
-Current status note after Phase 9.71 and Phase 9.92: failed-dig/restart
+Current status note after Phase 9.71 and Phase 9.92, superseded by the Phase 2
+skill/recovery token-plan wrapper retirement: failed-dig/restart
 recovery no longer lives as direct implementation in
 `PrimitivePlannerACTPolicy`, and parked pre-dig-align retry/replan behavior has
 been removed. `PrimitiveDigRecoveryService` in
-`testbed/planner/primitive_dig_recovery.py` owns `_restart_dig_with_new_cut()`,
-`_stop_after_failed_dig()`, and `_restart_after_failed_dig()` behavior behind
-policy facades. The service uses focused execution, cycle, return, and coverage
-state owners for stable storage while keeping active-policy reset, dig-cut plan
+`testbed/planner/primitive/execution/dig_recovery.py` owns restart/stop behavior directly
+through typed ports; the old private policy restart wrappers have been removed.
+The service uses focused execution, cycle, return, and coverage state owners for
+stable storage while keeping active-policy reset, token runtime
 clear/invalidation actions, coverage decision events, terminal-stop requests,
 typed observation facts, and config facts as explicit ports. Failed-dig branch
 choice, remaining reason strings, terminal-stop diagnostics, reset timing,
@@ -1437,13 +1739,16 @@ transition state no longer depends on policy-built state callbacks.
 directly. `ReturnDirectHandoffEffectService` reads the current skill from the
 execution owner, completes the return transition through the cycle owner, and
 after Phase 9.92 always hands off to `dig` rather than parked pre-dig-align.
-`PrimitivePlannerACTPolicy` still keeps
-`_set_return_or_direct_handoff(...)`,
-`_try_return_direct_handoff_at_current_obs(...)`,
-`_complete_return_transition_for_backend()`, and
-`_next_skill_after_return_transition()` callable as compatibility/private
-facades, while `set_skill`, return-target planning, handoff readiness, and
-direct-handoff readiness remain explicit ports. Direct-handoff readiness
+The later return-handoff runtime composition extraction retired the old private
+policy action/weld wrappers; requested-effect application now calls
+`PrimitiveReturnHandoffRuntime.apply_direct_handoff(...)`. That runtime builds
+`ReturnDirectHandoffEffectService`, `ReturnHandoffReadinessService`, and
+`ReturnStartEnvelopeGateService` from typed config, state owners, and explicit
+return-target/prior algorithm ports. `set_skill`, return-target planning,
+handoff readiness, and direct-handoff readiness remain explicit typed ports. The old
+`_complete_return_transition_for_backend()` and
+`_next_skill_after_return_transition()` compatibility facades were retired by
+the Phase-2 cycle/return/dump transition wrapper cleanup. Direct-handoff readiness
 behavior, reason strings, return transition counts, skill lifecycle reset
 timing, token schemas, debug/summary/trace schemas, backend support,
 `pre_dig_align` algorithm/action behavior, `cell_entry`, and removed 5P
@@ -1526,12 +1831,27 @@ callbacks. `ReturnDirectHandoffEffectService` now uses the readiness service for
 those checks while preserving the existing ordered effect chain: set return
 skill, ensure return-target plan, evaluate handoff/direct readiness, complete the
 return transition, then switch to dig or residual `pre_dig_align` with the same
-reason strings. `PrimitivePlannerACTPolicy` keeps the old private return
-handoff method names as thin compatibility facades and typed owner/config port
-assembly. Return start-envelope token build/apply/conditioning/prior mapping,
-backend branch order, thresholds, debug/summary/trace schemas, reset timing,
+reason strings. The old private policy return handoff readiness wrappers have
+been retired; policy supplies only the typed readiness config/ports/service weld.
+Return start-envelope token build/apply/conditioning/prior mapping, backend
+branch order, thresholds, debug/summary/trace schemas, reset timing,
 `pre_dig_align`, `cell_entry`, and BT/VLM/LLM unsupported fail-fast behavior
 remain unchanged.
+
+Current status note after the return-handoff runtime composition extraction:
+`PrimitivePlannerAdapterConfigNormalizer` builds the static
+`ReturnHandoffReadinessConfig` from normalized constructor values, including the
+existing `ReturnStartEnvelopeGateConfig`. `PrimitivePlannerACTPolicy` stores
+that adapter-owned config under a dedicated return-handoff runtime value and no
+longer builds `_return_handoff_readiness_config()`,
+`_return_handoff_readiness_ports()`, `_return_handoff_readiness_service()`, or
+`_return_direct_handoff_effect_ports()` private wrappers. Decision-runtime
+composition receives return-handoff readiness through
+`PrimitiveReturnHandoffRuntime.readiness_service()`, and requested-effect
+application uses the same runtime for direct handoff. Return handoff algorithms,
+direct-handoff ordering, reason strings, public report/debug/trace schemas,
+token planning, coverage behavior, reset timing, and backend support remain
+unchanged.
 
 Current status note after Phase 9.77: the capability-provider return refresh
 edge now consumes the focused return handoff readiness source directly.
@@ -1581,6 +1901,19 @@ same status object. This keeps `cell_entry` parked as compatibility/report
 material and does not promote it into the token contract, backend facts, or
 mainline runtime architecture.
 
+Current status note after Phase 2 report/status composition extraction:
+`PrimitiveReportCompositionRuntime` in
+`testbed/planner/primitive/report/runtime.py` owns construction of
+`PrimitiveReportRuntimePorts` plus token, `cell_entry`, and `pre_dig_align`
+report-status projection from focused owners/runtimes. `PrimitiveReportRuntime`
+continues to own construction of `PrimitiveDebugReportInputs`,
+`PrimitiveRolloutSummaryInputs`, and `PrimitivePlannerTraceInputs`.
+`PrimitivePlannerACTPolicy` keeps public `debug_state()`, `rollout_summary()`,
+and `planner_trace()` surfaces plus a typed report-composition weld; the old
+private report/status composition wrappers have been retired. The existing
+report builders still own public schema projection; public debug/summary/trace
+keys, values, list-copy behavior, and compatibility fields remain unchanged.
+
 Current status note after Phase 9.81 audit-only inventory: the large policy
 shell remains 4763 lines because it still owns several different adapter
 responsibilities, not because one remaining monolithic algorithm is waiting to
@@ -1595,21 +1928,22 @@ object, and without claiming alternate backend readiness.
 
 Current status note after Phase 9.82: the coverage planning fact-source
 boundary moved out of `PrimitivePlannerACTPolicy` into
-`CoveragePlanningFactService` in `testbed/planner/primitive_coverage_facts.py`.
+`CoveragePlanningFactService` in `testbed/planner/primitive/coverage/facts.py`.
 The service now owns coverage selection facts, raw-field fallback/clamp
 projection, optional state-conditioned exemplar override/writeback, exemplar
 distance/id projection, removed-depth grid delegation, weighted exemplar helper
-delegation, and remaining-depth projection. The policy shell now supplies
-explicit config/state/observation callables and keeps the old private method
-names as compatibility facades. This narrows real coverage planning
+delegation, and remaining-depth projection. The policy shell supplies explicit
+typed coverage-selection runtime ports; the old private policy helper names
+that once wrapped this service have been retired. This narrows real coverage planning
 responsibility without changing coverage scoring/selection algorithms,
 state-exemplar scoring, raw-field priority, token schemas, report schemas,
 parked `pre_dig_align`, parked `cell_entry`, or backend support.
 
-Current status note after Phase 9.83 audit-only inventory:
-`PrimitivePlannerACTPolicy` remains 4637 lines after the coverage fact-source
-move. The remaining observation/raw-fact helpers are cross-chain facts rather
-than one isolated residue: token planning consumes bucket pose, deposited mass,
+Historical status note after Phase 9.83 audit-only inventory:
+`PrimitivePlannerACTPolicy` remained 4637 lines at that point after the coverage
+fact-source move. The then-remaining observation/raw-fact helpers were
+cross-chain facts rather than one isolated residue: token planning consumes
+bucket pose, deposited mass,
 env-state, qpos, and qvel callbacks; coverage effect/report paths still consume
 mass/deposit/env snapshots; requested effects and dig recovery still consume
 one observation metric each; parked `pre_dig_align` and `cell_entry` also have
@@ -1641,7 +1975,7 @@ backend support.
 
 Current status note after Phase 9.85: coverage effect runtime fact projection
 now lives in `CoverageEffectFactService` inside
-`testbed/planner/primitive_coverage_updates.py`. `CoverageEffectRuntimePorts`
+`testbed/planner/primitive/coverage/effects.py`. `CoverageEffectRuntimePorts`
 no longer exposes policy-built `mass_in_bucket`, `completion_facts`,
 `rejection_facts`, `reopen_facts`, or `terminal_facts` callbacks. Instead, the
 coverage effect boundary receives `CoverageRuntimeState`,
@@ -1666,7 +2000,7 @@ parked `pre_dig_align`, parked `cell_entry`, or backend support status.
 
 Current status note after Phase 9.86: the live coverage decision-event bucket
 snapshot projection now lives in `CoverageReportService.bucket_snapshot(...)`
-inside `testbed/planner/primitive_coverage_reports.py`. The policy shell keeps
+inside `testbed/planner/primitive/coverage/reports.py`. The policy shell keeps
 `_coverage_bucket_snapshot(...)` only as a compatibility facade that wraps the
 observation in `PrimitiveObservationFacts` and delegates to the report service.
 This removes policy-owned mass/deposit/env-state bucket snapshot projection
@@ -1703,6 +2037,69 @@ candidate score payloads, token/return/direct-handoff/recovery semantics,
 parked `pre_dig_align`, parked `cell_entry`, and backend support status remain
 unchanged.
 
+Current status note after Phase-2 coverage selection/fact composition
+extraction: `PrimitiveCoverageSelectionRuntime` in
+`testbed/planner/primitive/coverage/selection_runtime.py` now owns
+`CoverageSelectionRuntimePorts`, `CoverageSelectionConfig`,
+`CoveragePlanningFactConfig`, and `CoveragePlanningFactService` construction.
+`PrimitivePlannerACTPolicy` keeps typed coverage-selection runtime ports and
+runtime factory as owner welds; old private coverage selection/fact helper
+wrappers have been retired after production/test callers moved to
+`PrimitiveCoverageSelectionRuntime` and focused service contracts. Old private
+scoring/exemplar helper wrappers around the same owner chain have also been
+retired; production/test callers now use the focused runtime, services/builders,
+or coverage owner state directly. Coverage
+candidate construction, scoring/selection algorithms,
+candidate score payloads, first-dig gates, rare/recent row penalties,
+state-exemplar planning, remaining-depth projection, coverage effect/update
+runtime, coverage report composition, token/return behavior, public
+debug/summary/trace schemas, parked `pre_dig_align`, parked `cell_entry`, and
+backend support status remain unchanged.
+
+Current status note after coverage static config factory shell cleanup:
+`PrimitiveCoverageStaticConfig` in
+`testbed/planner/primitive/coverage/config.py` now owns the static coverage
+report, selection, planning-fact, state-exemplar, update, and runtime config
+snapshot. `PrimitiveCoverageReportRuntimePorts`,
+`PrimitiveCoverageSelectionRuntimePorts`, and
+`PrimitiveCoverageEffectRuntimePorts` receive that static config object plus
+explicit live state/callback ports. `PrimitivePlannerACTPolicy` keeps one thin
+`_primitive_coverage_static_config()` weld for normalized static fields, while
+the three coverage runtime port methods retain only dynamic state, cycle/skill,
+observation facts, selection-service, pass-reopen, terminal-stop,
+decision-event, remaining-depth, and corridor-attempt-limit wiring. Coverage
+selection/scoring/fact projection, effect/update behavior, report/debug/summary/
+trace schemas, token/return behavior, parked `pre_dig_align`, parked
+`cell_entry`, and backend support status remain unchanged.
+
+Current status note after shell weld classification snapshot: the remaining
+`PrimitivePlannerACTPolicy` private shell surface has been classified against
+the target interface in `docs/planner_policy_shell_target_interface.md`.
+Coverage static config and coverage runtime ports are accepted: the policy keeps
+`_primitive_coverage_static_config()` as the static snapshot weld and the
+report/selection/effect runtime port methods now contain only dynamic
+state/callback wiring. Token planner factory, token observation runtime, and
+token planning runtime wiring are accepted shell welds because token algorithm
+construction lives in `PrimitiveTokenPlannerFactory` and token runtime owners.
+Decision runtime default `legacy_fsm` backend registration stays in the shell
+until production backend plugin/config routing is explicitly requested. Report
+composition remains visually broad but is accepted as public report-schema
+source wiring; the report lane owns schema assembly. Future cleanup should not
+continue by line count. The next eligible phase is backend-ready contract
+closure and documentation/testing confirmation.
+
+Current status note after backend-ready contract closure: future external
+decision backends may depend on the production import contracts documented in
+`docs/planner_primitive_interface_standard.md`, including decision context,
+decision result/effect records, generic backend protocols, decision runtime
+ports/config, backend facts source/ports, common decision facts, backend
+decision input builder, and requested-effect applier contracts. They must not
+depend on `PrimitivePlannerACTPolicy`, policy private methods, or design-target
+documents. The package lanes under `testbed/planner/primitive/...` are guarded
+against reverse imports of the policy shell. The fake backend proof remains
+test-local and demonstrates generic runtime/factory selection only; no
+production backend plugin/config routing or real BT/VLM/LLM backend is added.
+
 Current status note after Phase 9.89: the non-scripted bootstrap end
 fact-source boundary now uses `PrimitiveObservationFacts` and
 `BootstrapStatus.from_inputs(...)` instead of direct large-policy
@@ -1727,16 +2124,18 @@ tick order, plateau semantics, coverage payload max semantics, debug/summary/
 trace schemas, backend fail-fast behavior, parked `pre_dig_align`, and parked
 `cell_entry` remain unchanged.
 
-Current status note after Phase 9.91: the boundary-event tick source now lives
+Current status note after Phase 9.91, superseded by the Phase-2 execution-chain
+wrapper cleanup below: the boundary-event tick source now lives
 in `PrimitiveBoundaryEventRuntimeService`. The service reads
 `PrimitiveExecutionRuntimeState.prev_action`, skips the boundary detector when
 there is no previous action, and otherwise projects typed
 `PrimitiveObservationFacts` into `BoundaryDetector.update(...)` arguments.
-`PrimitivePlannerACTPolicy._tick_boundary_event(...)` remains a compatibility
-facade and typed port constructor. Boundary-detector metrics/event algorithms,
-execution-driver tick order, prev-action finalization timing, backend
-fail-fast behavior, debug/summary/trace schemas, parked `pre_dig_align`, and
-parked `cell_entry` remain unchanged.
+The later cleanup retired `PrimitivePlannerACTPolicy._tick_boundary_event(...)`;
+execution-driver ports call `PrimitiveBoundaryEventRuntimeService.update(...)`
+directly through typed ports. Boundary-detector metrics/event algorithms,
+execution-driver tick order, prev-action finalization timing, backend fail-fast
+behavior, debug/summary/trace schemas, parked `pre_dig_align`, and parked
+`cell_entry` remain unchanged.
 
 Current status note after raw observation helper facade cleanup:
 `PrimitivePlannerACTPolicy` no longer exposes the old private raw observation

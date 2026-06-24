@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from testbed.data.operator_first_v2_2 import _build_dig_cut_token
-from testbed.planner.primitive_tokens import (
+from testbed.planner.primitive.token.tokens import (
     DigCutTokenPlanner,
     ReturnTargetTokenPlanner,
 )

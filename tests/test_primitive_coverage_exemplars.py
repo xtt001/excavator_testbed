@@ -8,8 +8,8 @@ import pytest
 
 from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.schema import ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX
-from testbed.planner.primitive_coverage import CoverageCorridorState
-from testbed.planner.primitive_coverage_exemplars import (
+from testbed.planner.primitive.coverage.selection import CoverageCorridorState
+from testbed.planner.primitive.coverage.exemplars import (
     CoverageStateExemplarPlanInputs,
     CoverageStateExemplarPlanner,
     CoverageStateExemplarPlannerConfig,
@@ -244,7 +244,7 @@ def test_policy_state_conditioned_plan_facade_controls_runtime_writeback(tmp_pat
     ] = np.asarray([0.0, 0.06, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
     obs["env_state"] = env_state
 
-    no_write = policy._coverage_state_conditioned_plan(
+    no_write = policy._primitive_coverage_selection_runtime().coverage_state_conditioned_plan(
         corridor,
         obs,
         update_state=False,
@@ -254,7 +254,7 @@ def test_policy_state_conditioned_plan_facade_controls_runtime_writeback(tmp_pat
     assert policy._coverage_state.coverage_active_state_exemplar_ids == []
     assert corridor.state_exemplar_id == ""
 
-    with_write = policy._coverage_state_conditioned_plan(
+    with_write = policy._primitive_coverage_selection_runtime().coverage_state_conditioned_plan(
         corridor,
         obs,
         update_state=True,

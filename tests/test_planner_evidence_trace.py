@@ -56,7 +56,7 @@ def test_classifier_separates_live_support_report_owners_and_legacy_parking() ->
     specs = [
         CapabilitySpec(
             capability_id="gate.dig_to_carry",
-            owner="PrimitivePlannerACTPolicy._maybe_switch_skill",
+            owner="PrimitiveDecisionRuntime.decide_legacy_compatibility_tick",
             category="gate",
         ),
         CapabilitySpec(
@@ -98,7 +98,7 @@ def test_classifier_separates_live_support_report_owners_and_legacy_parking() ->
             tick_id=11,
             capability_id="gate.dig_to_carry",
             event_type="gate",
-            producer="PrimitivePlannerACTPolicy._maybe_switch_skill",
+            producer="PrimitiveDecisionRuntime.decide_legacy_compatibility_tick",
             observed=True,
             consumed_by_decision=True,
             reported=True,

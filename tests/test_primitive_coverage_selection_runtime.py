@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import fields
-from types import MethodType
 from typing import Any
 
 import pytest
 
-from testbed.planner.primitive_coverage import (
+from testbed.planner.primitive.coverage.selection import (
     CoverageCandidateSelectionFacts,
     CoverageCorridorState,
     CoverageSelectionResult,
     CoverageSelectionRuntimeCoordinator,
     CoverageSelectionRuntimePorts,
 )
-from testbed.planner.primitive_coverage_state import CoverageRuntimeState
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
@@ -291,32 +290,96 @@ def test_selection_runtime_ports_carry_state_owner_without_state_callbacks() -> 
     assert "self" not in port_fields
 
 
-def test_policy_coverage_selection_wrappers_delegate_to_coordinator() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
+def test_coverage_selection_runtime_delegates_to_coordinator() -> None:
     obs = {"tag": "current"}
     events: list[str] = []
     selected = _corridor(4)
 
-    class _FakeCoordinator:
-        def select_next_corridor(self, got_obs: dict[str, Any]) -> CoverageCorridorState:
+    class _FakeRuntime:
+        def select_next_coverage_corridor(
+            self,
+            got_obs: dict[str, Any],
+        ) -> CoverageCorridorState:
             assert got_obs is obs
             events.append("select_next")
             return selected
 
-        def ensure_corridors(self) -> None:
+        def ensure_coverage_corridors(self) -> None:
             events.append("ensure")
 
-        def select_corridor(self, got_obs: dict[str, Any]) -> CoverageCorridorState:
+        def select_coverage_corridor(
+            self,
+            got_obs: dict[str, Any],
+        ) -> CoverageCorridorState:
             assert got_obs is obs
             events.append("select")
             return selected
 
-    planner._coverage_selection_runtime_coordinator = MethodType(
-        lambda self: _FakeCoordinator(),
-        planner,
-    )
+    runtime = _FakeRuntime()
 
-    assert planner._select_next_coverage_corridor(obs) is selected
-    planner._ensure_coverage_corridors()
-    assert planner._select_coverage_corridor(obs) is selected
+    assert runtime.select_next_coverage_corridor(obs) is selected
+    runtime.ensure_coverage_corridors()
+    assert runtime.select_coverage_corridor(obs) is selected
     assert events == ["select_next", "ensure", "select"]
+
+
+def test_policy_no_longer_exposes_coverage_selection_private_wrappers() -> None:
+    removed_names = {
+        "_coverage_selection_runtime_ports",
+        "_coverage_selection_runtime_coordinator",
+        "_select_next_coverage_corridor",
+        "_ensure_coverage_corridors",
+        "_coverage_selection_config",
+        "_coverage_selection_service",
+        "_coverage_planning_fact_config",
+        "_coverage_planning_fact_service",
+        "_coverage_selection_facts",
+        "_select_coverage_corridor",
+        "_coverage_raw_fields",
+        "_coverage_state_exemplar_planner_config",
+        "_coverage_state_exemplar_planner",
+        "_coverage_remaining_depth_for_corridor",
+    }
+
+    assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
+
+
+def test_policy_no_longer_exposes_coverage_scoring_exemplar_private_wrappers() -> None:
+    removed_names = {
+        "_set_coverage_corridors",
+        "_set_coverage_candidate_scores",
+        "_set_coverage_last_selected_corridor_id",
+        "_build_cell_weighted_coverage_corridors",
+        "_coverage_cell_float",
+        "_coverage_stat_float",
+        "_coverage_exit_from_entry",
+        "_coverage_first_dig_active",
+        "_coverage_first_dig_gate_available",
+        "_coverage_first_dig_entry_reachable",
+        "_coverage_score",
+        "_coverage_cell_confidence",
+        "_coverage_corridor_is_rare",
+        "_coverage_corridor_attempt_limit",
+        "_coverage_rare_first_dig_gated_out",
+        "_coverage_recent_row_penalty",
+        "_coverage_recent_row_reference_corridor",
+        "_coverage_first_dig_bonus",
+        "_coverage_entry_distance_m",
+        "_coverage_first_dig_qpos_delta",
+        "_coverage_first_dig_qpos_reachable",
+        "_coverage_first_dig_qpos_delta_penalty",
+        "_load_coverage_state_exemplars",
+        "_coverage_state_conditioned_plan",
+        "_coverage_state_exemplar_distance",
+        "_coverage_state_exemplar_id",
+        "_coverage_removed_depth_grid",
+        "_coverage_state_exemplar_distance_for_grid",
+        "_state_exemplar_weights",
+        "_weighted_state_exemplar_raw_fields",
+        "_weighted_state_exemplar_profile_token",
+        "_coverage_cell_id",
+        "_coverage_corridor_row_id",
+        "_coverage_cell_id_from_percentile_indices",
+    }
+
+    assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)

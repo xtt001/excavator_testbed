@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from testbed.planner.primitive_coverage_status import CoverageStatus
+from testbed.planner.primitive.coverage.status import CoverageStatus
 
 
 def test_coverage_status_freezes_selected_corridor_and_candidate_scores() -> None:

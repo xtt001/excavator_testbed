@@ -7,7 +7,7 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
     ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
 )
-from testbed.planner.primitive_tokens import (
+from testbed.planner.primitive.token.tokens import (
     ReturnStartEnvelopeConditioningConfig,
     ReturnStartEnvelopeTokenPlanner,
 )

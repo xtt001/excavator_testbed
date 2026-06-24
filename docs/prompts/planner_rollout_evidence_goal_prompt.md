@@ -91,10 +91,37 @@ objective:
   思考强度。
 - 每 3 轮 bounded executor implementation 后，refactor/audit 线程必须先在
   docs/planner_rollout_evidence_refactor_log.md 记录 three-iteration
-  reflection，再生成下一轮 executor prompt。反思必须判断：是否更接近
-  docs/planner_execution_abstraction_flow.svg / docs/planner_primitive_interface_standard.md，
-  最大剩余差距，下一步核心 bounded slice，是否过度保护旧代码或产生贫血
-  pass-through facade，以及是否需要方向修正。executor 不写反思。
+  reflection，再生成下一轮 executor prompt。反思必须显式列出并核对 reference
+  set，不能凭记忆、随机旧文档或当前代码形状自由发挥。reference set 至少包括：
+  docs/planner_execution_abstraction_flow.svg；
+  docs/planner_primitive_interface_standard.md；
+  docs/planner_current_code_architecture_plan.md；
+  docs/planner_effect_boundary_design.md；
+  docs/planner_baseline_architecture_map.md（历史/基线对照，不替代当前标准）；
+  docs/planner_rollout_evidence_refactor_plan.md；
+  docs/planner_rollout_evidence_refactor_log.md；
+  docs/prompts/planner_rollout_evidence_goal_prompt.md；
+  AGENTS.md；以及当前代码/ focused tests。反思必须判断：是否更接近该 reference
+  set 中的架构图和 interface standard，最大剩余差距，下一步核心 bounded slice，
+  是否过度保护旧代码或产生贫血 pass-through facade，以及是否需要方向修正。
+  executor 不写反思。
+- 这条 three-iteration reflection gate 必须显式写进双方 prompt surface：
+  refactor/audit prompt 要记录当前 accepted-slice 计数和下一次 callback 是否触发
+  gate；executor prompt 要要求 executor 回传足够事实证据，但不得替 planner 写
+  deep reflection、不得选择下一片。未记录三轮反思前，不允许派发第四个 executor
+  implementation slice。
+- 每一轮 refactor/audit prompt 和 executor delegation prompt 都必须显式复制
+  skill compliance block：target lock first；planner dispatch 后 yield，不轮询；
+  executor green 不等于 closure，planner 必须复核 target lock/scope/diff/docs/
+  behavior/verification；每次 callback 做轻量反思，三次 accepted implementation
+  callback 或失败/偏航后做 deep reflection；executor 只回事实，不选下一片；
+  不虚构 thinking/model/tool/CLI/env/path/branch/schema/port/config 值；不改
+  runtime config 除非明确允许并已验证；保护是约束不是目标；不保留可直接连到
+  focused owner/service 的旧 private glue；不传 planner self，不新增 broad
+  pass-through object、generic blackboard、broad config bag、anemic service 或
+  one-method-per-private-method callback bag；保持 public schema、token order/
+  dimensions、branch order、reason string、reset timing、default legacy FSM 和
+  BT/VLM/LLM fail-fast，除非用户明确批准语义改变。
 
 每轮验证至少考虑：
 - focused pytest for new module

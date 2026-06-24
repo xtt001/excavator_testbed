@@ -4,8 +4,8 @@ from copy import deepcopy
 
 import numpy as np
 
-from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
-from testbed.planner.primitive_coverage_updates import (
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
+from testbed.planner.primitive.coverage.effects import (
     CoverageEffectFactService,
     CoverageUpdateService,
 )
@@ -45,12 +45,12 @@ def _coverage_effect_fact_service(policy) -> CoverageEffectFactService:
             )
         ),
         remaining_depth=(
-            lambda obs, corridor: policy._coverage_remaining_depth_for_corridor(
+            lambda obs, corridor: policy._primitive_coverage_selection_runtime().coverage_remaining_depth_for_corridor(
                 obs,
                 corridor,
             )
         ),
-        corridor_attempt_limit=policy._coverage_corridor_attempt_limit,
+        corridor_attempt_limit=policy._primitive_coverage_selection_runtime().coverage_corridor_attempt_limit,
     )
 
 
@@ -60,16 +60,17 @@ def test_coverage_completion_update_service_matches_planner_facade() -> None:
         dig_cut_mode="operator_prior_sweep_belief",
         coverage_extra={"use_env_removed_depth": False},
     )
-    policy._ensure_coverage_corridors()
-    corridor = policy._coverage_corridors[0]
-    policy._coverage_active_corridor_id = int(corridor.corridor_id)
-    policy._coverage_current_payload_gain_kg = 8.0
-    policy._coverage_cycle_start_deposit_kg = 0.0
+    policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+    corridor = policy._coverage_runtime_state().coverage_corridors[0]
+    policy._coverage_runtime_state().coverage_active_corridor_id = int(corridor.corridor_id)
+    policy._coverage_runtime_state().coverage_current_payload_gain_kg = 8.0
+    policy._coverage_runtime_state().coverage_cycle_start_deposit_kg = 0.0
     obs = _coverage_obs(mass=0.0, dig_distance=0.0, deposited=7.0)
 
     service_corridor = deepcopy(corridor)
+    effect_runtime = policy._primitive_coverage_effect_runtime()
     service_result = CoverageUpdateService(
-        policy._coverage_update_config(),
+        effect_runtime.coverage_update_config(),
     ).complete_dump(
         service_corridor,
         _coverage_effect_fact_service(policy).completion_facts(
@@ -79,21 +80,24 @@ def test_coverage_completion_update_service_matches_planner_facade() -> None:
         ),
     )
 
-    policy._complete_coverage_dump(obs, reason="unit_test_low_productivity")
+    effect_runtime.complete_coverage_dump(
+        obs,
+        reason="unit_test_low_productivity",
+    )
 
     _assert_corridor_update_equal(service_corridor, corridor)
-    assert service_result.completed_dump_count == policy._coverage_completed_dump_count
+    assert service_result.completed_dump_count == policy._coverage_runtime_state().coverage_completed_dump_count
     assert (
         service_result.global_low_productivity_streak
-        == policy._coverage_global_low_productivity_streak
+        == policy._coverage_runtime_state().coverage_global_low_productivity_streak
     )
     assert np.isclose(
         service_result.payload_gain_kg,
-        policy._coverage_last_payload_gain_kg,
+        policy._coverage_runtime_state().coverage_last_payload_gain_kg,
     )
     assert np.isclose(
         service_result.effective_deposit_delta_kg,
-        policy._coverage_last_effective_deposit_delta_kg,
+        policy._coverage_runtime_state().coverage_last_effective_deposit_delta_kg,
     )
 
 
@@ -105,18 +109,19 @@ def test_coverage_rejection_update_service_matches_planner_facade() -> None:
             "deplete_after_low_streak": 1,
         },
     )
-    policy._ensure_coverage_corridors()
-    corridor = policy._coverage_corridors[0]
-    policy._coverage_active_corridor_id = int(corridor.corridor_id)
-    policy._coverage_active_state_exemplar_ids = ["cell0_a", ""]
-    policy._coverage_current_payload_gain_kg = 3.0
-    policy._dig_best_mass_kg = 6.0
-    policy._coverage_cycle_start_deposit_kg = 0.0
+    policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+    corridor = policy._coverage_runtime_state().coverage_corridors[0]
+    policy._coverage_runtime_state().coverage_active_corridor_id = int(corridor.corridor_id)
+    policy._coverage_runtime_state().coverage_active_state_exemplar_ids = ["cell0_a", ""]
+    policy._coverage_runtime_state().coverage_current_payload_gain_kg = 3.0
+    policy._primitive_cycle_runtime_state().dig_best_mass_kg = 6.0
+    policy._coverage_runtime_state().coverage_cycle_start_deposit_kg = 0.0
     obs = _coverage_obs(mass=4.0, dig_distance=0.0, deposited=0.0)
 
     service_corridor = deepcopy(corridor)
+    effect_runtime = policy._primitive_coverage_effect_runtime()
     service_result = CoverageUpdateService(
-        policy._coverage_update_config(),
+        effect_runtime.coverage_update_config(),
     ).reject_corridor(
         service_corridor,
         _coverage_effect_fact_service(policy).rejection_facts(
@@ -126,13 +131,16 @@ def test_coverage_rejection_update_service_matches_planner_facade() -> None:
         ),
     )
 
-    policy._reject_active_coverage_corridor(obs, reason="unit_test_reject")
+    effect_runtime.reject_active_coverage_corridor(
+        obs,
+        reason="unit_test_reject",
+    )
 
     _assert_corridor_update_equal(service_corridor, corridor)
     assert service_result.counted_attempt == 1
     assert service_result.rejected_state_exemplar_ids == ("cell0_a",)
-    assert policy._coverage_rejected_state_exemplar_ids == {"cell0_a"}
+    assert policy._coverage_runtime_state().coverage_rejected_state_exemplar_ids == {"cell0_a"}
     assert (
         service_result.global_low_productivity_streak
-        == policy._coverage_global_low_productivity_streak
+        == policy._coverage_runtime_state().coverage_global_low_productivity_streak
     )

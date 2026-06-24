@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import fields
-from types import MethodType
-
 import numpy as np
 
 from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
@@ -11,12 +9,12 @@ from testbed.data.operator_first_v2_2 import (
     RETURN_START_ENVELOPE_TOKEN_DIM,
     RETURN_TARGET_TOKEN_DIM,
 )
-from testbed.planner.primitive_token_runtime import (
+from testbed.planner.primitive.token.runtime import (
     PrimitiveTokenRuntimeCoordinator,
     PrimitiveTokenRuntimePorts,
 )
-from testbed.planner.primitive_coverage_state import CoverageRuntimeState
-from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
@@ -450,28 +448,20 @@ def test_token_runtime_boundary_uses_typed_ports_without_planner_self() -> None:
     assert coordinator_fields == {"ports"}
 
 
-def test_policy_token_runtime_facades_delegate_to_coordinator() -> None:
+def test_policy_token_observation_runtime_exposes_clear_dig_cut_plan() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
-    calls: list[tuple[str, str]] = []
+    token_state = planner._primitive_token_runtime_state()
+    coverage_state = planner._coverage_runtime_state()
+    token_state.dig_cut_planned_cycle_id = 3
+    token_state.dig_cut_tokens = np.ones(DIG_CUT_TOKEN_DIM, dtype=np.float32)
+    coverage_state.coverage_active_state_exemplar_ids = ["ex_a"]
 
-    class _FakeRuntime:
-        def dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray:
-            calls.append(("dig_cut", obs["id"]))
-            return _token(DIG_CUT_TOKEN_DIM, 21.0)
-
-        def ensure_return_target_plan_for_cycle(self, obs: dict) -> None:
-            calls.append(("ensure_return", obs["id"]))
-
-        def clear_dig_cut_plan(self) -> None:
-            calls.append(("clear", ""))
-
-    planner._primitive_token_runtime = MethodType(lambda self: _FakeRuntime(), planner)
-
-    np.testing.assert_allclose(
-        planner._dig_cut_tokens_for_obs({"id": "dig"}),
-        _token(DIG_CUT_TOKEN_DIM, 21.0),
+    (
+        planner._primitive_token_observation_runtime()
+        .primitive_token_runtime()
+        .clear_dig_cut_plan()
     )
-    planner._ensure_return_target_plan_for_cycle({"id": "ret"})
-    planner._clear_dig_cut_plan()
 
-    assert calls == [("dig_cut", "dig"), ("ensure_return", "ret"), ("clear", "")]
+    assert token_state.dig_cut_planned_cycle_id == -1
+    assert np.all(token_state.dig_cut_tokens == 0.0)
+    assert coverage_state.coverage_active_state_exemplar_ids == []

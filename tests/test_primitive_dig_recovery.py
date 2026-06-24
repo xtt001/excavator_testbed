@@ -4,18 +4,18 @@ from dataclasses import fields
 from types import MethodType
 from typing import Any
 
-from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
-from testbed.planner.primitive_coverage import CoverageCorridorState
-from testbed.planner.primitive_coverage_state import CoverageRuntimeState
-from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive_dig_recovery import (
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
+from testbed.planner.primitive.coverage.selection import CoverageCorridorState
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.execution.dig_recovery import (
     PrimitiveDigRecoveryPorts,
     PrimitiveDigRecoveryService,
 )
-from testbed.planner.primitive_execution_state import (
+from testbed.planner.primitive.execution.state import (
     PrimitiveExecutionRuntimeState,
 )
-from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
@@ -214,7 +214,7 @@ def test_restart_after_failed_dig_preserves_branch_reasons() -> None:
     assert events == ["active_reset", "invalidate", "clear"]
 
 
-def test_policy_recovery_ports_share_focused_owners_and_facades_remain_callable() -> None:
+def test_policy_recovery_ports_share_focused_owners_and_runtime_boundaries() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     policy.action_dim = 4
     policy.dig_cut_planner_mode = "operator_prior_coverage"
@@ -225,13 +225,12 @@ def test_policy_recovery_ports_share_focused_owners_and_facades_remain_callable(
         def reset(self) -> None:
             events.append("active_reset")
 
-    policy._active_policy = MethodType(lambda self: _ActivePolicy(), policy)
-    policy._invalidate_pending_dig_cut_plan = MethodType(
-        lambda self: events.append("invalidate"),
-        policy,
-    )
-    policy._clear_dig_cut_plan = MethodType(
-        lambda self: events.append("clear"),
+    class _ActionDispatchService:
+        def active_policy(self) -> _ActivePolicy:
+            return _ActivePolicy()
+
+    policy._action_dispatch_service = MethodType(
+        lambda self: _ActionDispatchService(),
         policy,
     )
 
@@ -248,19 +247,39 @@ def test_policy_recovery_ports_share_focused_owners_and_facades_remain_callable(
     assert "mass_in_bucket" not in port_names
     assert not hasattr(policy, "_restart_pre_dig_align")
     assert not hasattr(policy, "_try_replan_pre_dig_align_handoff")
-    assert hasattr(policy, "_restart_dig_with_new_cut")
-    assert hasattr(policy, "_stop_after_failed_dig")
-    assert hasattr(policy, "_restart_after_failed_dig")
 
     policy._primitive_cycle_runtime_state().dig_step_count = 5
     policy._coverage_runtime_state().coverage_current_payload_gain_kg = 6.0
     policy._coverage_runtime_state().coverage_active_corridor_id = 7
+    token_state = policy._primitive_token_runtime_state()
+    token_state.pending_dig_cut_cycle_id = 2
+    token_state.pending_dig_cut_raw_fields = {"operator_entry_x_m": 1.0}
+    token_state.pending_dig_cut_tokens = object()
+    token_state.dig_cut_planned_cycle_id = 2
+    policy._coverage_runtime_state().coverage_active_state_exemplar_ids = ["ex_a"]
 
-    policy._restart_dig_with_new_cut("policy_retry")
+    policy._primitive_dig_recovery().restart_dig_with_new_cut("policy_retry")
 
-    assert events == ["active_reset", "invalidate", "clear"]
+    assert events == ["active_reset"]
     assert policy._primitive_execution_runtime_state().skill_name == "dig"
     assert policy._primitive_execution_runtime_state().switch_reason == "policy_retry"
     assert policy._primitive_cycle_runtime_state().dig_step_count == 0
     assert policy._coverage_runtime_state().coverage_current_payload_gain_kg == 0.0
     assert policy._coverage_runtime_state().coverage_active_corridor_id == -1
+    assert token_state.pending_dig_cut_cycle_id == -1
+    assert token_state.pending_dig_cut_raw_fields is None
+    assert token_state.pending_dig_cut_tokens is None
+    assert token_state.dig_cut_planned_cycle_id == -1
+    assert policy._coverage_runtime_state().coverage_active_state_exemplar_ids == []
+
+
+def test_policy_no_longer_exposes_recovery_token_plan_private_wrappers() -> None:
+    removed_names = {
+        "_clear_dig_cut_plan",
+        "_invalidate_pending_dig_cut_plan",
+        "_restart_dig_with_new_cut",
+        "_stop_after_failed_dig",
+        "_restart_after_failed_dig",
+    }
+
+    assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
-from testbed.planner.primitive_execution import PrimitiveTickPreparation
+from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
+from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 
 
 def test_decision_context_from_tick_preserves_identity_and_exposes_fields() -> None:

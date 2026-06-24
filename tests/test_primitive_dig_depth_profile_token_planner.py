@@ -7,7 +7,7 @@ from testbed.data.dig_depth_profile_v2_4 import (
     DIG_DEPTH_PROFILE_TOKEN_DIM,
     build_dig_depth_profile_token_from_plan,
 )
-from testbed.planner.primitive_tokens import (
+from testbed.planner.primitive.token.tokens import (
     DigDepthProfileTokenPlanner,
     DigDepthProfileTokenPlanningError,
 )

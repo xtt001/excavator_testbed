@@ -6,224 +6,129 @@ from typing import Any
 
 import numpy as np
 
-from testbed.data.dig_depth_profile_v2_4 import (
-    DIG_DEPTH_PROFILE_TOKEN_DIM,
-)
-from testbed.data.operator_first_v2_2 import (
-    DIG_CUT_DEPTH_SCALE_M,
-    DIG_CUT_LENGTH_SCALE_M,
-    DIG_CUT_PAYLOAD_SCALE_KG,
-    DIG_CUT_POSITION_SCALE_M,
-    DIG_CUT_TOKEN_DIM,
-    RETURN_START_ENVELOPE_TOKEN_DIM,
-    RETURN_TARGET_TOKEN_DIM,
-    _build_dig_cut_token,
-)
-from testbed.data.schema import (
-    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
-)
 from testbed.planner.boundary_detector import BoundaryDetector
-from testbed.planner.primitive_backend import (
-    LegacyFSMBranchPorts,
-    LegacyFSMBranchSet,
-    LegacyFSMCompatibilityDecisionBackend,
-    LegacyFSMDecisionBackendFactory,
-    LegacyFSMRequestedDecisionBackend,
-)
-from testbed.planner.primitive_boundary_event import (
+from testbed.planner.primitive.execution.boundary_event import (
     PrimitiveBoundaryEventRuntimePorts,
     PrimitiveBoundaryEventRuntimeService,
 )
-from testbed.planner.primitive_capabilities import (
+from testbed.planner.primitive.facts.capabilities import (
     BootstrapStatus,
-    CarryTransitionStatus,
-    DigTransitionStatus,
-    DumpTransitionStatus,
     PrimitiveObservationFacts,
-    ReturnTransitionStatus,
 )
-from testbed.planner.primitive_capability_provider import (
-    PrimitiveFSMCapabilityProvider,
-    PrimitiveFSMCapabilityProviderPorts,
-)
-from testbed.planner.primitive_cell_entry_state import (
+from testbed.planner.primitive.compatibility.cell_entry import (
     PrimitiveCellEntryCompatibilityRuntimeState,
-    PrimitiveCellEntryReportConfig,
-    PrimitiveCellEntryReportStatus,
 )
-from testbed.planner.primitive_pre_dig_align_state import (
-    PrimitivePreDigAlignCompatibilityRuntimeState,
-    PrimitivePreDigAlignReportConfig,
-    PrimitivePreDigAlignReportStatus,
+from testbed.planner.primitive.coverage.selection import CoverageCorridorState
+from testbed.planner.primitive.coverage.config import PrimitiveCoverageStaticConfig
+from testbed.planner.primitive.coverage.selection_runtime import (
+    PrimitiveCoverageSelectionRuntime,
+    PrimitiveCoverageSelectionRuntimePorts as CoverageSelectionBoundaryPorts,
 )
-from testbed.planner.primitive_coverage import (
-    CoverageCandidateBuilder,
-    CoverageCandidateSelectionFacts,
-    CoverageCorridorState,
-    CoverageSelectionConfig,
-    CoverageSelectionRuntimeCoordinator,
-    CoverageSelectionRuntimePorts,
-    CoverageSelectionService,
+from testbed.planner.primitive.coverage.report_runtime import (
+    PrimitiveCoverageReportRuntime,
+    PrimitiveCoverageReportRuntimePorts as CoverageReportBoundaryPorts,
 )
-from testbed.planner.primitive_coverage_exemplars import (
-    CoverageStateExemplarPlanner,
-    CoverageStateExemplarPlannerConfig,
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.coverage.effect_runtime import (
+    PrimitiveCoverageEffectRuntime,
+    PrimitiveCoverageEffectRuntimePorts as CoverageEffectBoundaryPorts,
 )
-from testbed.planner.primitive_coverage_facts import (
-    CoveragePlanningFactConfig,
-    CoveragePlanningFactService,
-)
-from testbed.planner.primitive_coverage_reports import (
-    CoverageBucketSnapshot,
-    CoverageReportConfig,
-    CoverageReportService,
-    CoverageReportState,
-)
-from testbed.planner.primitive_coverage_state import CoverageRuntimeState
-from testbed.planner.primitive_coverage_updates import (
-    CoverageEffectRuntimeCoordinator,
-    CoverageEffectRuntimePorts,
-    CoverageRuntimeConfig,
-    CoverageRuntimeService,
-    CoverageUpdateConfig,
-    CoverageUpdateService,
-)
-from testbed.planner.primitive_debug_report import (
-    PrimitiveDebugReportBuilder,
-    PrimitiveDebugReportInputs,
-    PrimitiveDebugStateSnapshot,
-)
-from testbed.planner.primitive_action_dispatch import (
+from testbed.planner.primitive.execution.action_dispatch import (
     PrimitiveActionDispatchPorts,
     PrimitiveActionDispatchService,
 )
-from testbed.planner.primitive_execution import (
-    PrimitiveExecutionDriver,
-    PrimitiveExecutionPorts,
-    PrimitiveTickCallbacks,
-    PrimitiveTickPreparation,
+from testbed.planner.primitive.execution.runtime import (
+    PrimitiveExecutionRuntime,
+    PrimitiveExecutionRuntimePorts,
 )
-from testbed.planner.primitive_tick_finalization import (
-    PrimitivePlannerDebugState,
-    PrimitiveTickFinalizationInputs,
-    PrimitiveTickFinalizationService,
+from testbed.planner.primitive.execution.tick_finalization import (
+    PrimitiveTickFinalizationRuntime,
+    PrimitiveTickFinalizationRuntimePorts,
 )
-from testbed.planner.primitive_decision import (
-    PrimitiveDecisionResult,
-    RequestedPlannerEffect,
-)
-from testbed.planner.primitive_decision_capabilities import (
-    PrimitiveDecisionCapabilities,
-    PrimitiveDecisionCapabilitiesPorts,
-)
-from testbed.planner.primitive_decision_runtime import (
+from testbed.planner.primitive.decision.runtime import (
+    LEGACY_FSM_DECISION_BACKEND_NAME,
     PrimitiveDecisionRuntime,
     PrimitiveDecisionRuntimeConfig,
     PrimitiveDecisionRuntimePorts,
 )
-from testbed.planner.primitive_dig_recovery import (
+from testbed.planner.primitive.decision.backends.legacy_fsm import (
+    LegacyFSMDecisionBackendFactory,
+    LegacyFSMDecisionBackendFactoryPorts,
+)
+from testbed.planner.primitive.execution.dig_recovery import (
     PrimitiveDigRecoveryPorts,
     PrimitiveDigRecoveryService,
 )
-from testbed.planner.primitive_dig_progress import (
+from testbed.planner.primitive.execution.dig_progress import (
     PrimitiveDigProgressRuntimeConfig,
     PrimitiveDigProgressRuntimePorts,
     PrimitiveDigProgressRuntimeService,
 )
-from testbed.planner.primitive_effects import (
-    RequestedEffectApplier,
-    RequestedEffectApplierPorts,
+from testbed.planner.primitive.effects.requested import (
+    PrimitiveRequestedEffectRuntime,
+    PrimitiveRequestedEffectRuntimePorts,
 )
-from testbed.planner.primitive_skill_lifecycle import (
+from testbed.planner.primitive.execution.skill_lifecycle import (
     PrimitiveSkillLifecyclePorts,
     PrimitiveSkillLifecycleService,
 )
-from testbed.planner.primitive_dig_token_planning import (
-    PrimitiveDigTokenPlanningPorts,
-    PrimitiveDigTokenPlanningService,
-)
-from testbed.planner.primitive_return_token_planning import (
-    PrimitiveReturnTokenPlanningPorts,
-    PrimitiveReturnTokenPlanningService,
-)
-from testbed.planner.primitive_reset_lifecycle import (
+from testbed.planner.primitive.execution.reset_lifecycle import (
     PrimitiveResetLifecyclePorts,
     PrimitiveResetLifecycleService,
     PrimitiveResetLifecycleState,
 )
-from testbed.planner.primitive_runtime_kernel import (
-    PrimitivePlannerRuntimeKernel,
-    PrimitivePlannerRuntimeKernelPorts,
+from testbed.planner.primitive.shell.runtime_kernel import (
+    PrimitivePlannerPublicRuntime,
+    PrimitivePlannerPublicRuntimePorts,
 )
-from testbed.planner.primitive_cycle_state import (
+from testbed.planner.primitive.execution.cycle_state import (
     PrimitiveCycleReportStatus,
     PrimitiveCycleRuntimeState,
 )
-from testbed.planner.primitive_execution_state import PrimitiveExecutionRuntimeState
-from testbed.planner.primitive_return_state import (
+from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
+from testbed.planner.primitive.execution.return_state import (
     PrimitiveReturnReportStatus,
     PrimitiveReturnRuntimeState,
 )
-from testbed.planner.primitive_scripted_bootstrap import (
+from testbed.planner.primitive.execution.scripted_bootstrap import (
     PrimitiveScriptedBootstrapReportStatus,
     PrimitiveScriptedBootstrapRuntimeConfig,
     PrimitiveScriptedBootstrapRuntimeService,
     PrimitiveScriptedBootstrapRuntimeState,
 )
-from testbed.planner.primitive_token_state import (
-    PrimitiveTokenReportStatus,
+from testbed.planner.primitive.token.state import (
     PrimitiveTokenRuntimeState,
 )
-from testbed.planner import primitive_adapter_config as adapter_config
-from testbed.planner.primitive_adapter_config import (
+import testbed.planner.primitive.config.adapter as adapter_config
+from testbed.planner.primitive.config.adapter import (
     PrimitivePlannerAdapterConfigInputs,
     PrimitivePlannerAdapterConfigNormalizer,
     PrimitivePlannerAdapterConfigState,
 )
-from testbed.planner.primitive_token_runtime import (
-    PrimitiveTokenRuntimeCoordinator,
-    PrimitiveTokenRuntimePorts,
+from testbed.planner.primitive.token.observation_runtime import (
+    PrimitiveTokenObservationRuntime,
+    PrimitiveTokenObservationRuntimePorts,
 )
-from testbed.planner.primitive_observation import (
+from testbed.planner.primitive.token.planning_runtime import (
+    PrimitiveTokenPlanningRuntime,
+    PrimitiveTokenPlanningRuntimePorts,
+)
+from testbed.planner.primitive.token.factory import (
+    PrimitiveTokenPlannerFactory,
+    PrimitiveTokenPlannerFactoryConfig,
+)
+from testbed.planner.primitive.facts.observation import (
     PrimitiveObservationInjectionRuntimeState,
-    PrimitivePolicyObservationAssembler,
-    PrimitivePolicyObservationAssemblerPorts,
-    PrimitivePolicyObservationAssemblyResult,
 )
-from testbed.planner.primitive_planner_trace import (
-    PrimitivePlannerTraceBuilder,
-    PrimitivePlannerTraceInputs,
+from testbed.planner.primitive.report.runtime import (
+    PrimitiveReportCompositionPorts,
+    PrimitiveReportCompositionRuntime,
+    TRANSITION_POLICY_MODE_PRIMITIVE,
+    TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
 )
-from testbed.planner.primitive_rollout_summary import (
-    PrimitiveRolloutSummaryBuilder,
-    PrimitiveRolloutSummaryInputs,
-)
-from testbed.planner.primitive_return_handoff import (
-    ReturnHandoffReadinessConfig,
-    ReturnHandoffReadinessPorts,
-    ReturnHandoffReadinessService,
-    ReturnDirectHandoffEffectPorts,
-    ReturnDirectHandoffEffectService,
-    ReturnStartEnvelopeGateConfig,
-    ReturnStartEnvelopeGateInputs,
-    ReturnStartEnvelopeGateResult,
-    ReturnStartEnvelopeGateService,
-)
-from testbed.planner.primitive_token_status import TokenStatus
-from testbed.planner.primitive_tokens import (
-    DigDepthProfileTokenPlan,
-    DigDepthProfileTokenPlanner,
-    DigDepthProfileTokenPlanningError,
-    DigCutTokenPlan,
-    DigCutTokenPlanner,
-    GoalTokenProvider,
-    ReturnRelocateTokenPlanner,
-    ReturnStartEnvelopeConditioningConfig,
-    ReturnStartEnvelopeTokenPlan,
-    ReturnStartEnvelopeTokenPlanner,
-    ReturnTargetTokenPlan,
-    ReturnTargetTokenPlanner,
+from testbed.planner.primitive.effects.return_handoff_runtime import (
+    PrimitiveReturnHandoffRuntime,
+    PrimitiveReturnHandoffRuntimePorts,
 )
 from testbed.policies.base import Policy, register_policy
 from testbed.policies.hybrid.adapter import HYBRID_MODE_TRANSITION, HYBRID_MODE_WORK
@@ -231,8 +136,6 @@ from testbed.policies.hybrid.adapter import HYBRID_MODE_TRANSITION, HYBRID_MODE_
 
 PRIMITIVE_SKILL_NAMES = ("dig", "carry", "dump", "return")
 PRIMITIVE_SKILL_IDS = {name: index for index, name in enumerate(PRIMITIVE_SKILL_NAMES)}
-TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY = "v2_2_primitive_return_policy"
-TRANSITION_POLICY_MODE_PRIMITIVE = "primitive_return_policy"
 BOOTSTRAP_SKILL_NAME = "bootstrap"
 PRE_DIG_ALIGN_SKILL_NAME = "pre_dig_align"
 
@@ -432,26 +335,37 @@ class PrimitivePlannerACTPolicy(Policy):
     ) -> None:
         for field_name, value in config_state.as_policy_field_updates().items():
             setattr(self, field_name, value)
+        if config_state.fsm_capability_provider_config is not None:
+            self._fsm_capability_provider_config = (
+                config_state.fsm_capability_provider_config
+            )
+        if config_state.return_handoff_readiness_config is not None:
+            self._primitive_return_handoff_config = (
+                config_state.return_handoff_readiness_config
+            )
 
     def reset(self) -> None:
-        self._runtime_kernel().reset()
+        self._primitive_runtime_kernel_runtime().reset()
 
-    def _runtime_kernel(self) -> PrimitivePlannerRuntimeKernel:
-        return PrimitivePlannerRuntimeKernel.from_ports(self._runtime_kernel_ports())
-
-    def _runtime_kernel_ports(self) -> PrimitivePlannerRuntimeKernelPorts:
-        return PrimitivePlannerRuntimeKernelPorts(
+    def _primitive_runtime_kernel_runtime_ports(
+        self,
+    ) -> PrimitivePlannerPublicRuntimePorts:
+        return PrimitivePlannerPublicRuntimePorts(
             reset_lifecycle_service=self._primitive_reset_lifecycle_service,
             apply_reset_lifecycle_state=self._apply_reset_lifecycle_state,
-            make_debug_state=self._make_debug_state,
+            tick_finalization_runtime=self._primitive_tick_finalization_runtime,
             set_debug_state=lambda state: setattr(self, "_debug_state", state),
-            execution_driver=self._execution_driver,
-            debug_report_builder=self._debug_report_builder,
-            debug_report_inputs=self._debug_report_inputs,
-            rollout_summary_builder=self._rollout_summary_builder,
-            rollout_summary_inputs=self._rollout_summary_inputs,
-            planner_trace_builder=self._planner_trace_builder,
-            planner_trace_inputs=self._planner_trace_inputs,
+            execution_runtime=self._primitive_execution_runtime,
+            report_runtime=(
+                lambda: (
+                    self._primitive_report_composition_runtime().report_runtime()
+                )
+            ),
+        )
+
+    def _primitive_runtime_kernel_runtime(self) -> PrimitivePlannerPublicRuntime:
+        return PrimitivePlannerPublicRuntime.from_ports(
+            self._primitive_runtime_kernel_runtime_ports()
         )
 
     def _primitive_reset_lifecycle_service(self) -> PrimitiveResetLifecycleService:
@@ -461,7 +375,7 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _primitive_reset_lifecycle_ports(self) -> PrimitiveResetLifecyclePorts:
         return PrimitiveResetLifecyclePorts(
-            all_policies=lambda: self._all_policies(),
+            all_policies=lambda: self._action_dispatch_service().all_policies(),
             reset_boundary_detector=lambda: self.boundary_detector.reset(),
             bootstrap_end_mode=lambda: str(self.bootstrap_end_mode),
             bootstrap_policy_available=lambda: self.bootstrap_policy is not None,
@@ -527,110 +441,6 @@ class PrimitivePlannerACTPolicy(Policy):
     def _cycle_report_status(self) -> PrimitiveCycleReportStatus:
         return self._primitive_cycle_runtime_state().to_report_status()
 
-    @property
-    def _dump_ready_hold_count(self) -> int:
-        return int(self._primitive_cycle_runtime_state().dump_ready_hold_count)
-
-    @_dump_ready_hold_count.setter
-    def _dump_ready_hold_count(self, value: int) -> None:
-        self._primitive_cycle_runtime_state().dump_ready_hold_count = int(value)
-
-    @property
-    def _dump_done_hold_count(self) -> int:
-        return int(self._primitive_cycle_runtime_state().dump_done_hold_count)
-
-    @_dump_done_hold_count.setter
-    def _dump_done_hold_count(self, value: int) -> None:
-        self._primitive_cycle_runtime_state().dump_done_hold_count = int(value)
-
-    @property
-    def _dig_step_count(self) -> int:
-        return int(self._primitive_cycle_runtime_state().dig_step_count)
-
-    @_dig_step_count.setter
-    def _dig_step_count(self, value: int) -> None:
-        self._primitive_cycle_runtime_state().dig_step_count = int(value)
-
-    @property
-    def _dig_best_mass_kg(self) -> float:
-        return float(self._primitive_cycle_runtime_state().dig_best_mass_kg)
-
-    @_dig_best_mass_kg.setter
-    def _dig_best_mass_kg(self, value: float) -> None:
-        self._primitive_cycle_runtime_state().dig_best_mass_kg = float(value)
-
-    @property
-    def _dig_mass_plateau_count(self) -> int:
-        return int(self._primitive_cycle_runtime_state().dig_mass_plateau_count)
-
-    @_dig_mass_plateau_count.setter
-    def _dig_mass_plateau_count(self, value: int) -> None:
-        self._primitive_cycle_runtime_state().dig_mass_plateau_count = int(value)
-
-    @property
-    def _dig_to_carry_reason(self) -> str:
-        return str(self._primitive_cycle_runtime_state().dig_to_carry_reason)
-
-    @_dig_to_carry_reason.setter
-    def _dig_to_carry_reason(self, value: str) -> None:
-        self._primitive_cycle_runtime_state().dig_to_carry_reason = str(value)
-
-    @property
-    def _dig_bad_replan_count(self) -> int:
-        return int(self._primitive_cycle_runtime_state().dig_bad_replan_count)
-
-    @_dig_bad_replan_count.setter
-    def _dig_bad_replan_count(self, value: int) -> None:
-        self._primitive_cycle_runtime_state().dig_bad_replan_count = int(value)
-
-    @property
-    def _dig_exit_guard_replan_count(self) -> int:
-        return int(
-            self._primitive_cycle_runtime_state().dig_exit_guard_replan_count
-        )
-
-    @_dig_exit_guard_replan_count.setter
-    def _dig_exit_guard_replan_count(self, value: int) -> None:
-        state = self._primitive_cycle_runtime_state()
-        state.dig_exit_guard_replan_count = int(value)
-
-    @property
-    def _completed_transition_count(self) -> int:
-        return int(self._primitive_cycle_runtime_state().completed_transition_count)
-
-    @_completed_transition_count.setter
-    def _completed_transition_count(self, value: int) -> None:
-        state = self._primitive_cycle_runtime_state()
-        state.completed_transition_count = int(value)
-
-    @property
-    def _transition_timeout_count(self) -> int:
-        return int(self._primitive_cycle_runtime_state().transition_timeout_count)
-
-    @_transition_timeout_count.setter
-    def _transition_timeout_count(self, value: int) -> None:
-        state = self._primitive_cycle_runtime_state()
-        state.transition_timeout_count = int(value)
-
-    @property
-    def _cycle_index(self) -> int:
-        return int(self._primitive_cycle_runtime_state().cycle_index)
-
-    @_cycle_index.setter
-    def _cycle_index(self, value: int) -> None:
-        self._primitive_cycle_runtime_state().cycle_index = int(value)
-
-    @property
-    def _dump_start_deposited_mass_kg(self) -> float:
-        return float(
-            self._primitive_cycle_runtime_state().dump_start_deposited_mass_kg
-        )
-
-    @_dump_start_deposited_mass_kg.setter
-    def _dump_start_deposited_mass_kg(self, value: float) -> None:
-        state = self._primitive_cycle_runtime_state()
-        state.dump_start_deposited_mass_kg = float(value)
-
     def _primitive_return_runtime_state(self) -> PrimitiveReturnRuntimeState:
         state = self.__dict__.get("_return_state")
         if state is None:
@@ -654,85 +464,6 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
         )
 
-    @property
-    def _return_step_count(self) -> int:
-        return int(self._primitive_return_runtime_state().return_step_count)
-
-    @_return_step_count.setter
-    def _return_step_count(self, value: int) -> None:
-        self._primitive_return_runtime_state().return_step_count = int(value)
-
-    @property
-    def _return_to_dig_entry_error_m(self) -> float:
-        return float(
-            self._primitive_return_runtime_state().return_to_dig_entry_error_m
-        )
-
-    @_return_to_dig_entry_error_m.setter
-    def _return_to_dig_entry_error_m(self, value: float) -> None:
-        self._primitive_return_runtime_state().return_to_dig_entry_error_m = float(
-            value
-        )
-
-    @property
-    def _return_to_dig_entry_close_state(self) -> bool:
-        return bool(
-            self._primitive_return_runtime_state().return_to_dig_entry_close_state
-        )
-
-    @_return_to_dig_entry_close_state.setter
-    def _return_to_dig_entry_close_state(self, value: bool) -> None:
-        state = self._primitive_return_runtime_state()
-        state.return_to_dig_entry_close_state = bool(value)
-
-    @property
-    def _return_next_dig_event_seen(self) -> bool:
-        return bool(self._primitive_return_runtime_state().return_next_dig_event_seen)
-
-    @_return_next_dig_event_seen.setter
-    def _return_next_dig_event_seen(self, value: bool) -> None:
-        state = self._primitive_return_runtime_state()
-        state.return_next_dig_event_seen = bool(value)
-
-    @property
-    def _return_to_dig_start_envelope_ready_state(self) -> bool:
-        return bool(
-            self._primitive_return_runtime_state()
-            .return_to_dig_start_envelope_ready_state
-        )
-
-    @_return_to_dig_start_envelope_ready_state.setter
-    def _return_to_dig_start_envelope_ready_state(self, value: bool) -> None:
-        state = self._primitive_return_runtime_state()
-        state.return_to_dig_start_envelope_ready_state = bool(value)
-
-    @property
-    def _return_to_dig_start_envelope_error(self) -> float:
-        return float(
-            self._primitive_return_runtime_state()
-            .return_to_dig_start_envelope_error
-        )
-
-    @_return_to_dig_start_envelope_error.setter
-    def _return_to_dig_start_envelope_error(self, value: float) -> None:
-        state = self._primitive_return_runtime_state()
-        state.return_to_dig_start_envelope_error = float(value)
-
-    @property
-    def _return_to_dig_start_envelope_checks(self) -> dict[str, Any]:
-        return (
-            self._primitive_return_runtime_state()
-            .return_to_dig_start_envelope_checks
-        )
-
-    @_return_to_dig_start_envelope_checks.setter
-    def _return_to_dig_start_envelope_checks(
-        self,
-        value: dict[str, Any],
-    ) -> None:
-        state = self._primitive_return_runtime_state()
-        state.return_to_dig_start_envelope_checks = value
-
     def _primitive_scripted_bootstrap_runtime_state(
         self,
     ) -> PrimitiveScriptedBootstrapRuntimeState:
@@ -747,54 +478,6 @@ class PrimitivePlannerACTPolicy(Policy):
     ) -> PrimitiveScriptedBootstrapReportStatus:
         return self._primitive_scripted_bootstrap_runtime_state().to_report_status()
 
-    @property
-    def _scripted_bootstrap_step_count(self) -> int:
-        return int(self._primitive_scripted_bootstrap_runtime_state().step_count)
-
-    @_scripted_bootstrap_step_count.setter
-    def _scripted_bootstrap_step_count(self, value: int) -> None:
-        self._primitive_scripted_bootstrap_runtime_state().step_count = int(value)
-
-    @property
-    def _scripted_bootstrap_hold_count(self) -> int:
-        return int(self._primitive_scripted_bootstrap_runtime_state().hold_count)
-
-    @_scripted_bootstrap_hold_count.setter
-    def _scripted_bootstrap_hold_count(self, value: int) -> None:
-        self._primitive_scripted_bootstrap_runtime_state().hold_count = int(value)
-
-    @property
-    def _scripted_bootstrap_timeout_count(self) -> int:
-        return int(self._primitive_scripted_bootstrap_runtime_state().timeout_count)
-
-    @_scripted_bootstrap_timeout_count.setter
-    def _scripted_bootstrap_timeout_count(self, value: int) -> None:
-        self._primitive_scripted_bootstrap_runtime_state().timeout_count = int(value)
-
-    def _pre_dig_align_report_config(self) -> PrimitivePreDigAlignReportConfig:
-        return PrimitivePreDigAlignReportConfig(
-            enabled=False,
-            first_dig_only=False,
-            replan_after_failed_dig=False,
-            entry_intent_controlled_dims=None,
-            surface_guard_enabled=False,
-            active_for_next_dig=False,
-            first_dig_entry_close_handoff=False,
-            entry_intent_handoff_enabled=False,
-            first_dig_entry_close_handoff_qvel_abs_max=None,
-            controlled_dims=self.pre_dig_align_controlled_dims,
-            bucket_target_qpos=None,
-        )
-
-    def _pre_dig_align_report_status(
-        self,
-    ) -> PrimitivePreDigAlignReportStatus:
-        return PrimitivePreDigAlignCompatibilityRuntimeState.fresh(
-            action_dim=int(getattr(self, "action_dim", 4)),
-        ).to_report_status(
-            self._pre_dig_align_report_config(),
-        )
-
     def _primitive_observation_injection_runtime_state(
         self,
     ) -> PrimitiveObservationInjectionRuntimeState:
@@ -804,16 +487,6 @@ class PrimitivePlannerACTPolicy(Policy):
             self.__dict__["_observation_injection_state"] = state
         return state
 
-    def _cell_entry_report_config(self) -> PrimitiveCellEntryReportConfig:
-        return PrimitiveCellEntryReportConfig(
-            enabled=False
-        )
-
-    def _cell_entry_report_status(self) -> PrimitiveCellEntryReportStatus:
-        return PrimitiveCellEntryCompatibilityRuntimeState.fresh().to_report_status(
-            self._cell_entry_report_config()
-        )
-
     def _primitive_token_runtime_state(self) -> PrimitiveTokenRuntimeState:
         state = self.__dict__.get("_token_state")
         if state is None:
@@ -821,409 +494,12 @@ class PrimitivePlannerACTPolicy(Policy):
             self.__dict__["_token_state"] = state
         return state
 
-    @property
-    def _dig_cut_planned_cycle_id(self) -> int:
-        return int(self._primitive_token_runtime_state().dig_cut_planned_cycle_id)
-
-    @_dig_cut_planned_cycle_id.setter
-    def _dig_cut_planned_cycle_id(self, value: int) -> None:
-        self._primitive_token_runtime_state().dig_cut_planned_cycle_id = int(value)
-
-    @property
-    def _dig_cut_tokens(self) -> np.ndarray:
-        return self._primitive_token_runtime_state().dig_cut_tokens
-
-    @_dig_cut_tokens.setter
-    def _dig_cut_tokens(self, value: np.ndarray) -> None:
-        self._primitive_token_runtime_state().dig_cut_tokens = value
-
-    @property
-    def _dig_depth_profile_tokens(self) -> np.ndarray:
-        return self._primitive_token_runtime_state().dig_depth_profile_tokens
-
-    @_dig_depth_profile_tokens.setter
-    def _dig_depth_profile_tokens(self, value: np.ndarray) -> None:
-        self._primitive_token_runtime_state().dig_depth_profile_tokens = value
-
-    @property
-    def _dig_cut_token_source(self) -> str:
-        return str(self._primitive_token_runtime_state().dig_cut_token_source)
-
-    @_dig_cut_token_source.setter
-    def _dig_cut_token_source(self, value: str) -> None:
-        self._primitive_token_runtime_state().dig_cut_token_source = str(value)
-
-    @property
-    def _dig_cut_fallback_reason(self) -> str:
-        return str(self._primitive_token_runtime_state().dig_cut_fallback_reason)
-
-    @_dig_cut_fallback_reason.setter
-    def _dig_cut_fallback_reason(self, value: str) -> None:
-        self._primitive_token_runtime_state().dig_cut_fallback_reason = str(value)
-
-    @property
-    def _dig_cut_token_in_prior_p10_p90(self) -> bool:
-        return bool(
-            self._primitive_token_runtime_state().dig_cut_token_in_prior_p10_p90
-        )
-
-    @_dig_cut_token_in_prior_p10_p90.setter
-    def _dig_cut_token_in_prior_p10_p90(self, value: bool) -> None:
-        self._primitive_token_runtime_state().dig_cut_token_in_prior_p10_p90 = bool(
-            value
-        )
-
-    @property
-    def _dig_depth_profile_token_source(self) -> str:
-        return str(
-            self._primitive_token_runtime_state().dig_depth_profile_token_source
-        )
-
-    @_dig_depth_profile_token_source.setter
-    def _dig_depth_profile_token_source(self, value: str) -> None:
-        self._primitive_token_runtime_state().dig_depth_profile_token_source = str(
-            value
-        )
-
-    @property
-    def _dig_depth_profile_fallback_reason(self) -> str:
-        return str(
-            self._primitive_token_runtime_state().dig_depth_profile_fallback_reason
-        )
-
-    @_dig_depth_profile_fallback_reason.setter
-    def _dig_depth_profile_fallback_reason(self, value: str) -> None:
-        self._primitive_token_runtime_state().dig_depth_profile_fallback_reason = str(
-            value
-        )
-
-    @property
-    def _return_target_planned_cycle_id(self) -> int:
-        return int(
-            self._primitive_token_runtime_state().return_target_planned_cycle_id
-        )
-
-    @_return_target_planned_cycle_id.setter
-    def _return_target_planned_cycle_id(self, value: int) -> None:
-        self._primitive_token_runtime_state().return_target_planned_cycle_id = int(
-            value
-        )
-
-    @property
-    def _return_target_tokens(self) -> np.ndarray:
-        return self._primitive_token_runtime_state().return_target_tokens
-
-    @_return_target_tokens.setter
-    def _return_target_tokens(self, value: np.ndarray) -> None:
-        self._primitive_token_runtime_state().return_target_tokens = value
-
-    @property
-    def _return_relocate_tokens(self) -> np.ndarray:
-        return self._primitive_token_runtime_state().return_relocate_tokens
-
-    @_return_relocate_tokens.setter
-    def _return_relocate_tokens(self, value: np.ndarray) -> None:
-        self._primitive_token_runtime_state().return_relocate_tokens = value
-
-    @property
-    def _return_start_envelope_tokens(self) -> np.ndarray:
-        return self._primitive_token_runtime_state().return_start_envelope_tokens
-
-    @_return_start_envelope_tokens.setter
-    def _return_start_envelope_tokens(self, value: np.ndarray) -> None:
-        self._primitive_token_runtime_state().return_start_envelope_tokens = value
-
-    @property
-    def _return_target_token_source(self) -> str:
-        return str(self._primitive_token_runtime_state().return_target_token_source)
-
-    @_return_target_token_source.setter
-    def _return_target_token_source(self, value: str) -> None:
-        self._primitive_token_runtime_state().return_target_token_source = str(value)
-
-    @property
-    def _return_target_fallback_reason(self) -> str:
-        return str(self._primitive_token_runtime_state().return_target_fallback_reason)
-
-    @_return_target_fallback_reason.setter
-    def _return_target_fallback_reason(self, value: str) -> None:
-        self._primitive_token_runtime_state().return_target_fallback_reason = str(
-            value
-        )
-
-    @property
-    def _return_start_envelope_token_source(self) -> str:
-        return str(
-            self._primitive_token_runtime_state().return_start_envelope_token_source
-        )
-
-    @_return_start_envelope_token_source.setter
-    def _return_start_envelope_token_source(self, value: str) -> None:
-        self._primitive_token_runtime_state().return_start_envelope_token_source = str(
-            value
-        )
-
-    @property
-    def _return_start_envelope_use_prior_spatial_bounds(self) -> bool:
-        return bool(
-            self._primitive_token_runtime_state()
-            .return_start_envelope_use_prior_spatial_bounds
-        )
-
-    @_return_start_envelope_use_prior_spatial_bounds.setter
-    def _return_start_envelope_use_prior_spatial_bounds(self, value: bool) -> None:
-        state = self._primitive_token_runtime_state()
-        state.return_start_envelope_use_prior_spatial_bounds = bool(value)
-
-    @property
-    def _return_start_envelope_use_prior_qpos_bounds(self) -> bool:
-        return bool(
-            self._primitive_token_runtime_state()
-            .return_start_envelope_use_prior_qpos_bounds
-        )
-
-    @_return_start_envelope_use_prior_qpos_bounds.setter
-    def _return_start_envelope_use_prior_qpos_bounds(self, value: bool) -> None:
-        state = self._primitive_token_runtime_state()
-        state.return_start_envelope_use_prior_qpos_bounds = bool(value)
-
-    @property
-    def _pending_dig_cut_cycle_id(self) -> int:
-        return int(self._primitive_token_runtime_state().pending_dig_cut_cycle_id)
-
-    @_pending_dig_cut_cycle_id.setter
-    def _pending_dig_cut_cycle_id(self, value: int) -> None:
-        self._primitive_token_runtime_state().pending_dig_cut_cycle_id = int(value)
-
-    @property
-    def _pending_dig_cut_corridor_id(self) -> int:
-        return int(self._primitive_token_runtime_state().pending_dig_cut_corridor_id)
-
-    @_pending_dig_cut_corridor_id.setter
-    def _pending_dig_cut_corridor_id(self, value: int) -> None:
-        self._primitive_token_runtime_state().pending_dig_cut_corridor_id = int(value)
-
-    @property
-    def _pending_dig_cut_raw_fields(self) -> dict[str, float | int] | None:
-        return self._primitive_token_runtime_state().pending_dig_cut_raw_fields
-
-    @_pending_dig_cut_raw_fields.setter
-    def _pending_dig_cut_raw_fields(
-        self,
-        value: dict[str, float | int] | None,
-    ) -> None:
-        self._primitive_token_runtime_state().pending_dig_cut_raw_fields = value
-
-    @property
-    def _pending_dig_cut_tokens(self) -> np.ndarray | None:
-        return self._primitive_token_runtime_state().pending_dig_cut_tokens
-
-    @_pending_dig_cut_tokens.setter
-    def _pending_dig_cut_tokens(self, value: np.ndarray | None) -> None:
-        self._primitive_token_runtime_state().pending_dig_cut_tokens = value
-
-    @property
-    def _pending_dig_depth_profile_tokens(self) -> np.ndarray | None:
-        return self._primitive_token_runtime_state().pending_dig_depth_profile_tokens
-
-    @_pending_dig_depth_profile_tokens.setter
-    def _pending_dig_depth_profile_tokens(self, value: np.ndarray | None) -> None:
-        state = self._primitive_token_runtime_state()
-        state.pending_dig_depth_profile_tokens = value
-
-    @property
-    def _pending_dig_state_exemplar_ids(self) -> list[str]:
-        return self._primitive_token_runtime_state().pending_dig_state_exemplar_ids
-
-    @_pending_dig_state_exemplar_ids.setter
-    def _pending_dig_state_exemplar_ids(self, value: list[str]) -> None:
-        self._primitive_token_runtime_state().pending_dig_state_exemplar_ids = list(
-            value
-        )
-
-    @property
-    def _pending_dig_state_exemplar_distance(self) -> float:
-        return float(
-            self._primitive_token_runtime_state().pending_dig_state_exemplar_distance
-        )
-
-    @_pending_dig_state_exemplar_distance.setter
-    def _pending_dig_state_exemplar_distance(self, value: float) -> None:
-        state = self._primitive_token_runtime_state()
-        state.pending_dig_state_exemplar_distance = float(value)
-
     def _coverage_runtime_state(self) -> CoverageRuntimeState:
         state = self.__dict__.get("_coverage_state")
         if state is None:
             state = CoverageRuntimeState()
             self.__dict__["_coverage_state"] = state
         return state
-
-    @property
-    def _coverage_corridors(self) -> list[CoverageCorridorState]:
-        return self._coverage_runtime_state().coverage_corridors
-
-    @_coverage_corridors.setter
-    def _coverage_corridors(self, value: list[CoverageCorridorState]) -> None:
-        self._coverage_runtime_state().coverage_corridors = value
-
-    @property
-    def _coverage_active_corridor_id(self) -> int:
-        return int(self._coverage_runtime_state().coverage_active_corridor_id)
-
-    @_coverage_active_corridor_id.setter
-    def _coverage_active_corridor_id(self, value: int) -> None:
-        self._coverage_runtime_state().coverage_active_corridor_id = int(value)
-
-    @property
-    def _coverage_last_selected_corridor_id(self) -> int:
-        return int(self._coverage_runtime_state().coverage_last_selected_corridor_id)
-
-    @_coverage_last_selected_corridor_id.setter
-    def _coverage_last_selected_corridor_id(self, value: int) -> None:
-        self._coverage_runtime_state().coverage_last_selected_corridor_id = int(value)
-
-    @property
-    def _coverage_current_payload_gain_kg(self) -> float:
-        return float(self._coverage_runtime_state().coverage_current_payload_gain_kg)
-
-    @_coverage_current_payload_gain_kg.setter
-    def _coverage_current_payload_gain_kg(self, value: float) -> None:
-        self._coverage_runtime_state().coverage_current_payload_gain_kg = float(value)
-
-    @property
-    def _coverage_cycle_start_deposit_kg(self) -> float:
-        return float(self._coverage_runtime_state().coverage_cycle_start_deposit_kg)
-
-    @_coverage_cycle_start_deposit_kg.setter
-    def _coverage_cycle_start_deposit_kg(self, value: float) -> None:
-        self._coverage_runtime_state().coverage_cycle_start_deposit_kg = float(value)
-
-    @property
-    def _coverage_last_payload_gain_kg(self) -> float:
-        return float(self._coverage_runtime_state().coverage_last_payload_gain_kg)
-
-    @_coverage_last_payload_gain_kg.setter
-    def _coverage_last_payload_gain_kg(self, value: float) -> None:
-        self._coverage_runtime_state().coverage_last_payload_gain_kg = float(value)
-
-    @property
-    def _coverage_last_effective_deposit_delta_kg(self) -> float:
-        return float(
-            self._coverage_runtime_state().coverage_last_effective_deposit_delta_kg
-        )
-
-    @_coverage_last_effective_deposit_delta_kg.setter
-    def _coverage_last_effective_deposit_delta_kg(self, value: float) -> None:
-        self._coverage_runtime_state().coverage_last_effective_deposit_delta_kg = (
-            float(value)
-        )
-
-    @property
-    def _coverage_global_low_productivity_streak(self) -> int:
-        return int(
-            self._coverage_runtime_state().coverage_global_low_productivity_streak
-        )
-
-    @_coverage_global_low_productivity_streak.setter
-    def _coverage_global_low_productivity_streak(self, value: int) -> None:
-        self._coverage_runtime_state().coverage_global_low_productivity_streak = int(
-            value
-        )
-
-    @property
-    def _coverage_completed_dump_count(self) -> int:
-        return int(self._coverage_runtime_state().coverage_completed_dump_count)
-
-    @_coverage_completed_dump_count.setter
-    def _coverage_completed_dump_count(self, value: int) -> None:
-        self._coverage_runtime_state().coverage_completed_dump_count = int(value)
-
-    @property
-    def _coverage_pass_index(self) -> int:
-        return int(self._coverage_runtime_state().coverage_pass_index)
-
-    @_coverage_pass_index.setter
-    def _coverage_pass_index(self, value: int) -> None:
-        self._coverage_runtime_state().coverage_pass_index = int(value)
-
-    @property
-    def _coverage_terminal_stop_requested(self) -> bool:
-        return bool(self._coverage_runtime_state().coverage_terminal_stop_requested)
-
-    @_coverage_terminal_stop_requested.setter
-    def _coverage_terminal_stop_requested(self, value: bool) -> None:
-        self._coverage_runtime_state().coverage_terminal_stop_requested = bool(value)
-
-    @property
-    def _coverage_terminal_stop_reason(self) -> str:
-        return str(self._coverage_runtime_state().coverage_terminal_stop_reason)
-
-    @_coverage_terminal_stop_reason.setter
-    def _coverage_terminal_stop_reason(self, value: str) -> None:
-        self._coverage_runtime_state().coverage_terminal_stop_reason = str(value)
-
-    @property
-    def _coverage_candidate_scores(self) -> list[dict[str, Any]]:
-        return self._coverage_runtime_state().coverage_candidate_scores
-
-    @_coverage_candidate_scores.setter
-    def _coverage_candidate_scores(self, value: list[dict[str, Any]]) -> None:
-        self._coverage_runtime_state().coverage_candidate_scores = value
-
-    @property
-    def _coverage_decision_trace(self) -> list[dict[str, Any]]:
-        return self._coverage_runtime_state().coverage_decision_trace
-
-    @_coverage_decision_trace.setter
-    def _coverage_decision_trace(self, value: list[dict[str, Any]]) -> None:
-        self._coverage_runtime_state().coverage_decision_trace = value
-
-    @property
-    def _coverage_active_state_exemplar_ids(self) -> list[str]:
-        return self._coverage_runtime_state().coverage_active_state_exemplar_ids
-
-    @_coverage_active_state_exemplar_ids.setter
-    def _coverage_active_state_exemplar_ids(self, value: list[str]) -> None:
-        self._coverage_runtime_state().coverage_active_state_exemplar_ids = value
-
-    @property
-    def _coverage_rejected_state_exemplar_ids(self) -> set[str]:
-        return self._coverage_runtime_state().coverage_rejected_state_exemplar_ids
-
-    @_coverage_rejected_state_exemplar_ids.setter
-    def _coverage_rejected_state_exemplar_ids(self, value: set[str]) -> None:
-        self._coverage_runtime_state().coverage_rejected_state_exemplar_ids = value
-
-    @property
-    def _coverage_active_state_exemplar_distance(self) -> float:
-        return float(
-            self._coverage_runtime_state().coverage_active_state_exemplar_distance
-        )
-
-    @_coverage_active_state_exemplar_distance.setter
-    def _coverage_active_state_exemplar_distance(self, value: float) -> None:
-        self._coverage_runtime_state().coverage_active_state_exemplar_distance = float(
-            value
-        )
-
-    @property
-    def _coverage_active_state_exemplar_profile_token(self) -> np.ndarray | None:
-        return (
-            self._coverage_runtime_state().coverage_active_state_exemplar_profile_token
-        )
-
-    @_coverage_active_state_exemplar_profile_token.setter
-    def _coverage_active_state_exemplar_profile_token(
-        self,
-        value: np.ndarray | None,
-    ) -> None:
-        self._coverage_runtime_state().coverage_active_state_exemplar_profile_token = (
-            value
-        )
-
-    def _tick_boundary_event(self, obs: dict) -> Any | None:
-        return self._primitive_boundary_event_runtime_service().update(obs)
 
     def _primitive_boundary_event_runtime_service(
         self,
@@ -1244,24 +520,32 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
         )
 
-    def _reset_tick_switch_reason(self) -> None:
-        self._switch_reason = ""
+    def _primitive_tick_finalization_runtime_ports(
+        self,
+    ) -> PrimitiveTickFinalizationRuntimePorts:
+        return PrimitiveTickFinalizationRuntimePorts(
+            execution_state=self._primitive_execution_runtime_state(),
+            cycle_state=self._primitive_cycle_runtime_state(),
+            return_state=self._primitive_return_runtime_state(),
+            cycle_report_status=self._cycle_report_status,
+            first_dig_policy_active=(
+                lambda: self._action_dispatch_service().first_dig_policy_active()
+            ),
+            skill_ids=PRIMITIVE_SKILL_IDS,
+            primitive_checkpoint_paths=self.primitive_checkpoint_paths,
+            transition_skill_names=("return",),
+            return_skill_name="return",
+            return_max_steps=int(self.return_max_steps),
+            work_hybrid_mode=HYBRID_MODE_WORK,
+            transition_hybrid_mode=HYBRID_MODE_TRANSITION,
+        )
 
-    def _current_tick_skill_name(self) -> str:
-        return str(self._skill_name)
-
-    def _account_return_timeout_for_tick(self) -> bool:
-        transition_timeout = False
-        if self._skill_name == "return":
-            self._return_step_count += 1
-            if self.return_max_steps > 0 and self._return_step_count >= self.return_max_steps:
-                transition_timeout = True
-                state = self._primitive_cycle_runtime_state()
-                state.increment_transition_timeout_count()
-        return transition_timeout
-
-    def _dispatch_tick_action(self, obs: dict) -> np.ndarray:
-        return self._action_dispatch_service().dispatch_action(obs)
+    def _primitive_tick_finalization_runtime(
+        self,
+    ) -> PrimitiveTickFinalizationRuntime:
+        return PrimitiveTickFinalizationRuntime.from_ports(
+            self._primitive_tick_finalization_runtime_ports()
+        )
 
     def _action_dispatch_service(self) -> PrimitiveActionDispatchService:
         return PrimitiveActionDispatchService.from_ports(self._action_dispatch_ports())
@@ -1282,67 +566,49 @@ class PrimitivePlannerACTPolicy(Policy):
             optional_policy_order=("first_dig", "bootstrap"),
             first_dig_policy=self.first_dig_policy,
             bootstrap_policy=self.bootstrap_policy,
-            policy_observation=lambda obs: self._policy_obs(obs),
+            policy_observation=(
+                lambda obs: self._primitive_token_observation_runtime().policy_obs(
+                    obs
+                )
+            ),
             scripted_bootstrap_enabled=lambda: self._scripted_bootstrap_enabled(),
             scripted_bootstrap_action=lambda obs: self._scripted_bootstrap_action(obs),
             bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
             dig_skill_name="dig",
         )
 
-    def _record_tick_previous_action(self, action: np.ndarray) -> None:
-        self._prev_action = self._tick_finalization_service().copy_previous_action(
-            action
-        )
-
-    def _transition_completed_after_tick_dispatch(self) -> bool:
-        return self._tick_finalization_service().transition_completed_after_dispatch(
-            self._switch_reason
-        )
-
-    def _finalize_tick_debug_state(
-        self,
-        *,
-        transition_timeout: bool,
-        transition_completed: bool,
-    ) -> None:
-        self._debug_state = self._make_debug_state(
-            transition_timeout=transition_timeout,
-            transition_completed=transition_completed,
-        )
-
-    @staticmethod
-    def _tick_finalization_service() -> PrimitiveTickFinalizationService:
-        return PrimitiveTickFinalizationService()
-
-    def _decide_tick_with_legacy_fsm(
-        self,
-        *,
-        obs: dict,
-        boundary_event: Any | None,
-        preparation: PrimitiveTickPreparation,
-    ) -> PrimitiveDecisionResult:
-        return self._decide_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=preparation,
-        )
-
-    def _decide_tick(
-        self,
-        *,
-        obs: dict,
-        boundary_event: Any | None,
-        preparation: PrimitiveTickPreparation,
-    ) -> PrimitiveDecisionResult:
-        return self._decision_runtime().decide_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=preparation,
-        )
-
     def _decision_runtime(self) -> PrimitiveDecisionRuntime:
+        legacy_factory_ports = LegacyFSMDecisionBackendFactoryPorts(
+            capability_provider_config=self._fsm_capability_provider_config,
+            semantic_boundary_profile_active=(
+                lambda: self._semantic_boundary_profile_active()
+            ),
+            cycle_state=self._primitive_cycle_runtime_state(),
+            coverage_state=self._coverage_runtime_state(),
+            return_state=self._primitive_return_runtime_state(),
+            return_handoff_readiness_service=(
+                self._primitive_return_handoff_runtime().readiness_service()
+            ),
+            current_skill_name=lambda: str(self._skill_name),
+            current_switch_reason=lambda: str(self._switch_reason),
+            should_end_bootstrap=self._should_end_bootstrap,
+            bootstrap_end_mode=lambda: str(self.bootstrap_end_mode),
+            bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
+            dig_skill_name="dig",
+            carry_skill_name="carry",
+            dump_skill_name="dump",
+            return_skill_name="return",
+        )
         return PrimitiveDecisionRuntime.from_ports(
-            self._decision_runtime_ports(),
+            PrimitiveDecisionRuntimePorts(
+                backend_factories={
+                    LEGACY_FSM_DECISION_BACKEND_NAME: (
+                        lambda: LegacyFSMDecisionBackendFactory.from_runtime_ports(
+                            legacy_factory_ports
+                        )
+                    ),
+                },
+            ),
             config=self._decision_runtime_config(),
         )
 
@@ -1350,548 +616,259 @@ class PrimitivePlannerACTPolicy(Policy):
     def _decision_runtime_config() -> PrimitiveDecisionRuntimeConfig:
         return PrimitiveDecisionRuntimeConfig()
 
-    def _decision_runtime_ports(self) -> PrimitiveDecisionRuntimePorts:
-        return PrimitiveDecisionRuntimePorts(
-            backend_factories={
-                "legacy_fsm": self._legacy_fsm_backend_factory,
-            },
-        )
-
-    def _legacy_fsm_backend_factory(self) -> LegacyFSMDecisionBackendFactory:
-        return LegacyFSMDecisionBackendFactory.from_ports(
-            self._legacy_fsm_branch_ports()
-        )
-
-    def _legacy_fsm_requested_decision_backend(
+    def _primitive_requested_effect_runtime_ports(
         self,
-    ) -> LegacyFSMRequestedDecisionBackend:
-        return self._decision_runtime().legacy_fsm_requested_decision_backend()
-
-    def _legacy_fsm_compatibility_decision_backend(
-        self,
-    ) -> LegacyFSMCompatibilityDecisionBackend:
-        return self._decision_runtime().legacy_fsm_compatibility_decision_backend()
-
-    def _legacy_fsm_branch_set(self) -> LegacyFSMBranchSet:
-        return self._decision_runtime().legacy_fsm_branch_set()
-
-    def _apply_requested_tick_effects(
-        self,
-        obs: dict,
-        effects: tuple[RequestedPlannerEffect, ...],
-    ) -> None:
-        if not effects:
-            return
-        self._requested_effect_applier().apply(obs, effects)
-
-    def _requested_effect_applier(self) -> RequestedEffectApplier:
-        return RequestedEffectApplier.from_ports(self._requested_effect_applier_ports())
-
-    def _requested_effect_applier_ports(self) -> RequestedEffectApplierPorts:
-        return RequestedEffectApplierPorts(
+    ) -> PrimitiveRequestedEffectRuntimePorts:
+        return PrimitiveRequestedEffectRuntimePorts(
             cycle_state=self._primitive_cycle_runtime_state(),
             return_state=self._primitive_return_runtime_state(),
             set_skill=lambda skill, reason: self._set_skill(skill, reason),
-            next_skill_after_return_transition=(
-                lambda: self._next_skill_after_return_transition()
+            return_transition_next_skill_name="dig",
+            coverage_effect_runtime=self._primitive_coverage_effect_runtime(),
+            dig_recovery_service=self._primitive_dig_recovery(),
+            return_handoff_runtime=self._primitive_return_handoff_runtime(),
+            action_dim=int(self.action_dim),
+        )
+
+    def _primitive_requested_effect_runtime(self) -> PrimitiveRequestedEffectRuntime:
+        return PrimitiveRequestedEffectRuntime.from_ports(
+            self._primitive_requested_effect_runtime_ports()
+        )
+
+    def _primitive_execution_runtime_ports(self) -> PrimitiveExecutionRuntimePorts:
+        return PrimitiveExecutionRuntimePorts(
+            execution_state=self._primitive_execution_runtime_state(),
+            boundary_event_runtime=self._primitive_boundary_event_runtime_service(),
+            dig_progress_runtime=self._primitive_dig_progress_runtime_service(),
+            decision_runtime=self._decision_runtime(),
+            requested_effect_applier=self._primitive_requested_effect_runtime(),
+            tick_finalization_runtime=self._primitive_tick_finalization_runtime(),
+            action_dispatch_service=self._action_dispatch_service(),
+        )
+
+    def _primitive_execution_runtime(self) -> PrimitiveExecutionRuntime:
+        return PrimitiveExecutionRuntime.from_ports(
+            self._primitive_execution_runtime_ports()
+        )
+
+    def predict(self, obs: dict) -> np.ndarray:
+        return self._primitive_runtime_kernel_runtime().predict(obs)
+
+    def debug_state(self) -> dict[str, Any]:
+        return self._primitive_runtime_kernel_runtime().debug_state()
+
+    def _primitive_coverage_static_config(self) -> PrimitiveCoverageStaticConfig:
+        return PrimitiveCoverageStaticConfig(
+            dig_cut_prior=dict(self.dig_cut_prior or {}),
+            dig_cut_prior_path=str(self.dig_cut_prior_path),
+            dig_cut_planner_mode=str(self.dig_cut_planner_mode),
+            action_dim=int(self.action_dim),
+            candidate_layout=str(self.coverage_candidate_layout),
+            entry_x_percentiles=tuple(self.coverage_entry_x_percentiles),
+            entry_z_percentiles=tuple(self.coverage_entry_z_percentiles),
+            cut_direction_percentile=str(self.coverage_cut_direction_percentile),
+            cut_length_percentile=str(self.coverage_cut_length_percentile),
+            cut_depth_percentile=str(self.coverage_cut_depth_percentile),
+            payload_percentile=str(self.coverage_payload_percentile),
+            use_env_removed_depth=bool(self.coverage_use_env_removed_depth),
+            max_attempts_per_corridor=int(self.coverage_max_attempts_per_corridor),
+            recent_selection_penalty=float(self.coverage_recent_selection_penalty),
+            unattempted_bonus=float(self.coverage_unattempted_bonus),
+            attempt_penalty=float(self.coverage_attempt_penalty),
+            cell_confidence_weight=float(self.coverage_cell_confidence_weight),
+            rare_cell_source_fraction_threshold=float(
+                self.coverage_rare_cell_source_fraction_threshold
             ),
-            reject_active_coverage_corridor=(
-                lambda obs, reason: self._reject_active_coverage_corridor(
-                    obs,
-                    reason=reason,
-                )
+            rare_cell_max_attempts=int(self.coverage_rare_cell_max_attempts),
+            recent_row_selection_penalty=float(
+                self.coverage_recent_row_selection_penalty
             ),
-            restart_after_failed_dig=(
-                lambda reason, obs: self._restart_after_failed_dig(reason, obs)
+            first_dig_strategy=str(self.coverage_first_dig_strategy),
+            first_dig_preferred_corridor_id=(
+                self.coverage_first_dig_preferred_corridor_id
             ),
-            complete_coverage_dig=lambda obs: self._complete_coverage_dig(obs),
+            first_dig_preferred_bonus=float(self.coverage_first_dig_preferred_bonus),
+            first_dig_proximity_weight=float(self.coverage_first_dig_proximity_weight),
+            first_dig_max_entry_distance_m=self.coverage_first_dig_max_entry_distance_m,
+            first_dig_qpos_delta_weight=float(self.coverage_first_dig_qpos_delta_weight),
+            first_dig_max_qpos_delta=self.coverage_first_dig_max_qpos_delta,
+            pre_dig_align_controlled_dims=self.pre_dig_align_controlled_dims,
+            state_exemplars_enabled=bool(self.coverage_state_exemplars_enabled),
+            state_exemplar_path=str(self.coverage_state_exemplar_path),
+            state_exemplar_k=int(self.coverage_state_exemplar_k),
+            state_exemplar_removed_depth_scale_m=float(
+                self.coverage_state_exemplar_removed_depth_scale_m
+            ),
+            state_exemplar_target_cell_weight=float(
+                self.coverage_state_exemplar_target_cell_weight
+            ),
+            state_exemplar_temperature=float(self.coverage_state_exemplar_temperature),
+            state_exemplar_skip_rejected=bool(
+                self.coverage_state_exemplar_skip_rejected
+            ),
+            state_exemplar_score_weight=float(self.coverage_state_exemplar_score_weight),
+            state_exemplars_by_cell=self.coverage_state_exemplars_by_cell,
+            multi_pass_enabled=bool(self.coverage_multi_pass_enabled),
+            multi_pass_max_passes=int(self.coverage_multi_pass_max_passes),
+            multi_pass_min_remaining_depth_m=float(
+                self.coverage_multi_pass_min_remaining_depth_m
+            ),
+            low_productivity_payload_kg=float(
+                self.coverage_low_productivity_payload_kg
+            ),
+            low_productivity_deposit_kg=float(
+                self.coverage_low_productivity_deposit_kg
+            ),
+            deplete_after_low_streak=int(self.coverage_deplete_after_low_streak),
+            min_remaining_depth_m=float(self.coverage_min_remaining_depth_m),
+            belief_depleted_score=float(self.coverage_belief_depleted_score),
+            belief_gain_scale=float(self.coverage_belief_gain_scale),
+            global_low_productivity_stop=int(
+                self.coverage_global_low_productivity_stop
+            ),
+        )
+
+    def _primitive_coverage_report_runtime_ports(
+        self,
+    ) -> CoverageReportBoundaryPorts:
+        return CoverageReportBoundaryPorts(
+            state=self._coverage_runtime_state(),
+            static_config=self._primitive_coverage_static_config(),
+            cycle_index=lambda: int(self._primitive_cycle_runtime_state().cycle_index),
+            skill_name=lambda: str(self._skill_name),
             observation_facts=(
                 lambda obs: PrimitiveObservationFacts.from_obs(
                     obs,
                     action_dim=int(self.action_dim),
                 )
             ),
-            complete_coverage_dump=(
-                lambda obs, reason: self._complete_coverage_dump(
-                    obs,
-                    reason=reason,
-                )
-            ),
-            set_return_or_direct_handoff=(
-                lambda obs, reason: self._set_return_or_direct_handoff(
-                    obs,
-                    reason=reason,
+            selection_service=(
+                lambda: (
+                    self._primitive_coverage_selection_runtime()
+                    .coverage_selection_service()
                 )
             ),
         )
 
-    def _legacy_fsm_branch_ports(self) -> LegacyFSMBranchPorts:
-        capabilities = self._primitive_decision_capabilities()
-        return LegacyFSMBranchPorts(
-            bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
-            dig_skill_name="dig",
-            carry_skill_name="carry",
-            dump_skill_name="dump",
-            return_skill_name="return",
-            facts_source=capabilities.facts_source(),
-            compatibility_actions=capabilities.compatibility_actions(),
+    def _primitive_coverage_report_runtime(self) -> PrimitiveCoverageReportRuntime:
+        return PrimitiveCoverageReportRuntime.from_ports(
+            self._primitive_coverage_report_runtime_ports()
         )
 
-    def _primitive_decision_capabilities(self) -> PrimitiveDecisionCapabilities:
-        return PrimitiveDecisionCapabilities.from_ports(
-            self._primitive_decision_capabilities_ports()
-        )
-
-    def _primitive_decision_capabilities_ports(
+    def _primitive_report_composition_runtime_ports(
         self,
-    ) -> PrimitiveDecisionCapabilitiesPorts:
-        return PrimitiveDecisionCapabilitiesPorts(
-            current_skill_name=lambda: str(self._skill_name),
-            current_switch_reason=lambda: str(self._switch_reason),
-            should_end_bootstrap=self._should_end_bootstrap,
-            bootstrap_end_mode=lambda: str(self.bootstrap_end_mode),
-            transition_status_provider=self._primitive_fsm_capability_provider(),
+    ) -> PrimitiveReportCompositionPorts:
+        return PrimitiveReportCompositionPorts(
+            debug_state=lambda: self._debug_state,
+            cycle_report_status=self._cycle_report_status,
+            return_report_status=self._return_report_status,
+            token_state=self._primitive_token_runtime_state,
+            observation_injection_state=(
+                self._primitive_observation_injection_runtime_state
+            ),
+            coverage_state=self._coverage_runtime_state,
+            coverage_report_runtime=self._primitive_coverage_report_runtime,
+            coverage_selection_service=(
+                lambda: (
+                    self._primitive_coverage_selection_runtime()
+                    .coverage_selection_service()
+                )
+            ),
+            cell_entry_state=PrimitiveCellEntryCompatibilityRuntimeState.fresh,
+            scripted_bootstrap_report_status=(
+                self._scripted_bootstrap_report_status
+            ),
+            pre_dig_align_controlled_dims=(
+                lambda: self.pre_dig_align_controlled_dims
+            ),
+            action_dim=lambda: int(getattr(self, "action_dim", 4)),
+            goal_sector_id=self._primitive_token_planner_factory().goal_sector_id,
+            next_goal_sector_id=(
+                lambda: (
+                    self._primitive_token_planner_factory().next_goal_sector_id(
+                        self._primitive_cycle_runtime_state().cycle_index
+                    )
+                )
+            ),
+            dig_failed_replan_next_skill=(
+                lambda: str(self.dig_failed_replan_next_skill)
+            ),
+            dump_done_use_boundary_event=(
+                lambda: bool(self.dump_done_use_boundary_event)
+            ),
+            skill_name=lambda: str(self._skill_name),
+            return_target_planner_enabled=(
+                lambda: bool(self.return_target_planner_enabled)
+            ),
+            return_target_token_source=(
+                lambda: str(
+                    self._primitive_token_runtime_state()
+                    .return_target_token_source
+                )
+            ),
+            return_to_dig_max_entry_error_m=(
+                lambda: self.return_to_dig_max_entry_error_m
+            ),
+            dig_depth_profile_source=lambda: str(self.dig_depth_profile_source),
+            dig_depth_profile_required=(
+                lambda: bool(self.dig_depth_profile_required)
+            ),
+            dig_cut_planner_mode=lambda: str(self.dig_cut_planner_mode),
+            dig_cut_prior_id=lambda: str(self.dig_cut_prior_id),
+            dig_cut_prior_path=lambda: str(self.dig_cut_prior_path),
         )
 
-    def _primitive_fsm_capability_provider(
+    def _primitive_report_composition_runtime(
         self,
-    ) -> PrimitiveFSMCapabilityProvider:
-        return PrimitiveFSMCapabilityProvider.from_ports(
-            self._primitive_fsm_capability_provider_ports()
+    ) -> PrimitiveReportCompositionRuntime:
+        return PrimitiveReportCompositionRuntime.from_ports(
+            self._primitive_report_composition_runtime_ports()
         )
-
-    def _primitive_fsm_capability_provider_ports(
-        self,
-    ) -> PrimitiveFSMCapabilityProviderPorts:
-        return PrimitiveFSMCapabilityProviderPorts(
-            action_dim=self.action_dim,
-            semantic_boundary_profile_active=(
-                lambda: self._semantic_boundary_profile_active()
-            ),
-            cycle_state=self._primitive_cycle_runtime_state(),
-            coverage_state=self._coverage_runtime_state(),
-            return_state=self._primitive_return_runtime_state(),
-            dig_to_carry_min_distance_to_dig_area_m=(
-                self.dig_to_carry_min_distance_to_dig_area_m
-            ),
-            dig_to_carry_min_bucket_mass_kg=self.dig_to_carry_min_bucket_mass_kg,
-            dig_to_carry_target_bucket_mass_kg=(
-                self.dig_to_carry_target_bucket_mass_kg
-            ),
-            dig_to_carry_mass_plateau_enabled=(
-                self.dig_to_carry_mass_plateau_enabled
-            ),
-            dig_to_carry_mass_plateau_min_bucket_mass_kg=(
-                self.dig_to_carry_mass_plateau_min_bucket_mass_kg
-            ),
-            dig_to_carry_mass_plateau_hold_steps=(
-                self.dig_to_carry_mass_plateau_hold_steps
-            ),
-            dig_to_carry_mass_plateau_min_steps=(
-                self.dig_to_carry_mass_plateau_min_steps
-            ),
-            dump_ready_min_bucket_mass_kg=self.dump_ready_min_bucket_mass_kg,
-            dig_bad_replan_enabled=self.dig_bad_replan_enabled,
-            dig_bad_replan_max_steps=self.dig_bad_replan_max_steps,
-            dig_bad_replan_min_bucket_mass_kg=self.dig_bad_replan_min_bucket_mass_kg,
-            dig_exit_guard_enabled=self.dig_exit_guard_enabled,
-            dig_exit_guard_min_steps=self.dig_exit_guard_min_steps,
-            dig_exit_guard_min_bucket_mass_kg=self.dig_exit_guard_min_bucket_mass_kg,
-            dig_exit_guard_overshoot_m=self.dig_exit_guard_overshoot_m,
-            dump_ready_hold_steps=self.dump_ready_hold_steps,
-            dump_ready_min_height_above_rim_m=self.dump_ready_min_height_above_rim_m,
-            dump_ready_require_over_footprint=self.dump_ready_require_over_footprint,
-            dump_ready_require_clearance=self.dump_ready_require_clearance,
-            dump_ready_max_horizontal_distance_m=(
-                self.dump_ready_max_horizontal_distance_m
-            ),
-            dump_ready_position_mode=self.dump_ready_position_mode,
-            dump_ready_max_dump_area_footprint_outside_distance_m=(
-                self.dump_ready_max_dump_area_footprint_outside_distance_m
-            ),
-            dump_ready_min_dump_area_relative_x_m=(
-                self.dump_ready_min_dump_area_relative_x_m
-            ),
-            dump_ready_max_dump_area_relative_x_m=(
-                self.dump_ready_max_dump_area_relative_x_m
-            ),
-            dump_ready_min_dump_area_relative_z_m=(
-                self.dump_ready_min_dump_area_relative_z_m
-            ),
-            dump_ready_max_dump_area_relative_z_m=(
-                self.dump_ready_max_dump_area_relative_z_m
-            ),
-            dump_ready_near_window_enabled=self.dump_ready_near_window_enabled,
-            dump_ready_near_window_x_tolerance_m=(
-                self.dump_ready_near_window_x_tolerance_m
-            ),
-            dump_ready_near_window_z_tolerance_m=(
-                self.dump_ready_near_window_z_tolerance_m
-            ),
-            dump_ready_near_window_outside_tolerance_m=(
-                self.dump_ready_near_window_outside_tolerance_m
-            ),
-            dump_ready_near_window_require_over_footprint=(
-                self.dump_ready_near_window_require_over_footprint
-            ),
-            dump_done_max_bucket_mass_kg=self.dump_done_max_bucket_mass_kg,
-            dump_done_min_deposit_delta_kg=self.dump_done_min_deposit_delta_kg,
-            dump_done_use_boundary_event=self.dump_done_use_boundary_event,
-            dump_done_hold_steps=self.dump_done_hold_steps,
-            return_handoff_readiness_service=self._return_handoff_readiness_service(),
-            return_to_dig_start_envelope_direct_handoff_enabled=(
-                self.return_to_dig_start_envelope_direct_handoff_enabled
-            ),
-            return_to_dig_start_envelope_gate_enabled=(
-                self.return_to_dig_start_envelope_gate_enabled
-            ),
-            return_to_dig_shallow_guard_enabled=(
-                self.return_to_dig_shallow_guard_enabled
-            ),
-            return_to_dig_max_bucket_mass_kg=self.return_to_dig_max_bucket_mass_kg,
-            return_to_dig_touch_tolerance_m=self.return_to_dig_touch_tolerance_m,
-            return_to_dig_min_depth_m=self.return_to_dig_min_depth_m,
-            return_to_dig_max_depth_m=self.return_to_dig_max_depth_m,
-            return_to_dig_max_entry_error_m=self.return_to_dig_max_entry_error_m,
-        )
-
-    def _dig_transition_status_for_backend(
-        self,
-        obs: dict,
-        boundary_event: Any | None,
-    ) -> DigTransitionStatus:
-        return self._primitive_fsm_capability_provider().dig_transition_status(
-            obs,
-            boundary_event,
-        )
-
-    def _carry_transition_status_for_backend(
-        self,
-        obs: dict,
-        boundary_event: Any | None,
-    ) -> CarryTransitionStatus:
-        return self._primitive_fsm_capability_provider().carry_transition_status(
-            obs,
-            boundary_event,
-        )
-
-    def _set_dump_ready_hold_count(self, value: int) -> None:
-        self._primitive_cycle_runtime_state().set_dump_ready_hold_count(value)
-
-    def _set_dump_start_deposited_mass(self, value: float) -> None:
-        self._primitive_cycle_runtime_state().set_dump_start_deposited_mass_kg(value)
-
-    def _dump_transition_status_for_backend(
-        self,
-        obs: dict,
-        boundary_event: Any | None,
-    ) -> DumpTransitionStatus:
-        return self._primitive_fsm_capability_provider().dump_transition_status(
-            obs,
-            boundary_event,
-        )
-
-    def _set_dump_done_hold_count(self, value: int) -> None:
-        self._primitive_cycle_runtime_state().set_dump_done_hold_count(value)
-
-    def _return_transition_status_for_backend(
-        self,
-        obs: dict,
-        boundary_event: Any | None,
-    ) -> ReturnTransitionStatus:
-        return self._primitive_fsm_capability_provider().return_transition_status(
-            obs,
-            boundary_event,
-        )
-
-    def _mark_return_next_dig_event_seen(self) -> None:
-        self._primitive_return_runtime_state().mark_next_dig_event_seen()
-
-    def _complete_return_transition_for_backend(self) -> None:
-        self._primitive_cycle_runtime_state().complete_return_transition()
-
-    def _next_skill_after_return_transition(self) -> str:
-        return "dig"
-
-    def _increment_dig_exit_guard_replan_count(self) -> None:
-        self._primitive_cycle_runtime_state().increment_dig_exit_guard_replan_count()
-
-    def _increment_dig_bad_replan_count(self) -> None:
-        self._primitive_cycle_runtime_state().increment_dig_bad_replan_count()
-
-    def _tick_execution_hooks(self) -> PrimitiveTickCallbacks:
-        ports = self._execution_driver_ports()
-        return PrimitiveTickCallbacks(
-            update_boundary_event=ports.update_boundary_event,
-            reset_switch_reason=ports.reset_switch_reason,
-            current_skill_name=ports.current_skill_name,
-            update_dig_progress=ports.update_dig_progress,
-            decide_tick=ports.decide_tick,
-            apply_requested_effects=ports.apply_requested_effects,
-            account_return_timeout=ports.account_return_timeout,
-            dispatch_action=ports.dispatch_action,
-            record_previous_action=ports.record_previous_action,
-            transition_completed_after_dispatch=(
-                ports.transition_completed_after_dispatch
-            ),
-            finalize_debug_state=ports.finalize_debug_state,
-        )
-
-    def _execution_driver_ports(self) -> PrimitiveExecutionPorts:
-        return PrimitiveExecutionPorts(
-            update_boundary_event=self._tick_boundary_event,
-            reset_switch_reason=self._reset_tick_switch_reason,
-            current_skill_name=self._current_tick_skill_name,
-            update_dig_progress=self._update_dig_progress,
-            decide_tick=self._decide_tick,
-            apply_requested_effects=self._apply_requested_tick_effects,
-            account_return_timeout=self._account_return_timeout_for_tick,
-            dispatch_action=self._dispatch_tick_action,
-            record_previous_action=self._record_tick_previous_action,
-            transition_completed_after_dispatch=(
-                self._transition_completed_after_tick_dispatch
-            ),
-            finalize_debug_state=self._finalize_tick_debug_state,
-        )
-
-    def _execution_driver(self) -> PrimitiveExecutionDriver:
-        return PrimitiveExecutionDriver.from_ports(self._execution_driver_ports())
-
-    def predict(self, obs: dict) -> np.ndarray:
-        return self._runtime_kernel().predict(obs)
-
-    def debug_state(self) -> dict[str, Any]:
-        return self._runtime_kernel().debug_state()
-
-    @staticmethod
-    def _debug_report_builder() -> PrimitiveDebugReportBuilder:
-        return PrimitiveDebugReportBuilder()
-
-    def _debug_report_inputs(self) -> PrimitiveDebugReportInputs:
-        return PrimitiveDebugReportInputs(
-            debug_state=self._debug_state_snapshot_for_report(),
-            transition_source=TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
-            transition_policy_mode=TRANSITION_POLICY_MODE_PRIMITIVE,
-            transition_fallback_count=0,
-            transition_fallback_reason="",
-            primitive_goal_curr_sector_id=int(self._goal_sector_id(self._cycle_index)),
-            primitive_goal_next_sector_id=int(self._next_goal_sector_id()),
-            token_status=self._token_status_for_debug_report(),
-            dig_failed_replan_next_skill=str(self.dig_failed_replan_next_skill),
-            return_fields=self._debug_report_return_fields(),
-            pending_fields=self._debug_report_pending_fields(),
-            dig_cut_fields=self._debug_report_dig_cut_fields(),
-            coverage_fields=self._debug_report_coverage_fields(),
-            cell_entry_fields=self._debug_report_cell_entry_fields(),
-            scripted_bootstrap_fields=self._debug_report_scripted_bootstrap_fields(),
-            dig_progress_fields=self._debug_report_dig_progress_fields(),
-            pre_dig_align_fields=self._debug_report_pre_dig_align_fields(),
-        )
-
-    def _debug_state_snapshot_for_report(self) -> PrimitiveDebugStateSnapshot:
-        state = self._debug_state
-        return PrimitiveDebugStateSnapshot(
-            skill_name=str(state.skill_name),
-            skill_id=int(state.skill_id),
-            skill_switch_reason=str(state.skill_switch_reason),
-            primitive_checkpoint_path=str(state.primitive_checkpoint_path),
-            hybrid_mode=str(state.hybrid_mode),
-            transition_timeout=bool(state.transition_timeout),
-            transition_completed=bool(state.transition_completed),
-            completed_transition_count=int(state.completed_transition_count),
-            transition_timeout_count=int(state.transition_timeout_count),
-            dump_ready_hold_count=int(state.dump_ready_hold_count),
-            dump_done_hold_count=int(state.dump_done_hold_count),
-            approach_ready_hold_count=int(state.approach_ready_hold_count),
-            dump_release_ready_hold_count=int(state.dump_release_ready_hold_count),
-            primitive_cycle_index=int(state.primitive_cycle_index),
-        )
-
-    def _token_status_for_debug_report(self) -> TokenStatus:
-        return self._primitive_token_runtime_state().to_token_status(
-            cell_entry_enabled=False,
-            token_injection_state=(
-                self._primitive_observation_injection_runtime_state()
-                .to_token_injection_state()
-            ),
-            dig_depth_profile_source=str(self.dig_depth_profile_source),
-            dig_depth_profile_required=bool(self.dig_depth_profile_required),
-        )
-
-    def _token_report_status(self) -> PrimitiveTokenReportStatus:
-        return self._primitive_token_runtime_state().to_report_status(
-            token_injection_state=(
-                self._primitive_observation_injection_runtime_state()
-                .to_token_injection_state()
-            ),
-            dig_cut_planner_mode=str(self.dig_cut_planner_mode),
-            dig_cut_prior_id=str(self.dig_cut_prior_id),
-            dig_cut_prior_path=str(self.dig_cut_prior_path),
-        )
-
-    def _debug_report_return_fields(self) -> dict[str, Any]:
-        return self._return_report_status().debug_fields()
-
-    def _debug_report_pending_fields(self) -> dict[str, Any]:
-        return self._token_report_status().pending_debug_fields()
-
-    def _debug_report_dig_cut_fields(self) -> dict[str, Any]:
-        return self._token_report_status().dig_cut_debug_fields()
-
-    def _debug_report_coverage_fields(self) -> dict[str, Any]:
-        return self._coverage_report_service().debug_fields_from_state(
-            self._coverage_runtime_state(),
-            config=self._coverage_report_config(),
-            selection_service=self._coverage_selection_service(),
-        )
-
-    def _debug_report_cell_entry_fields(self) -> dict[str, Any]:
-        return self._cell_entry_report_status().debug_fields()
-
-    def _debug_report_scripted_bootstrap_fields(self) -> dict[str, Any]:
-        return self._scripted_bootstrap_report_status().debug_fields()
-
-    def _debug_report_dig_progress_fields(self) -> dict[str, Any]:
-        return self._cycle_report_status().dig_progress_debug_fields()
-
-    def _debug_report_pre_dig_align_fields(self) -> dict[str, Any]:
-        return self._pre_dig_align_report_status().debug_fields()
 
     def rollout_summary(self) -> dict[str, float | int | str | list[str]]:
-        return self._runtime_kernel().rollout_summary()
-
-    @staticmethod
-    def _rollout_summary_builder() -> PrimitiveRolloutSummaryBuilder:
-        return PrimitiveRolloutSummaryBuilder()
-
-    def _rollout_summary_inputs(self) -> PrimitiveRolloutSummaryInputs:
-        cycle_status = self._cycle_report_status()
-        return_status = self._return_report_status()
-        scripted_bootstrap_status = self._scripted_bootstrap_report_status()
-        token_status = self._token_report_status()
-        cell_entry_status = self._cell_entry_report_status()
-        coverage_status = self._coverage_report_service().summary_status_from_state(
-            self._coverage_runtime_state(),
-            config=self._coverage_report_config(),
-        )
-        pre_dig_align_status = self._pre_dig_align_report_status()
-        return PrimitiveRolloutSummaryInputs(
-            transition_source=TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
-            transition_policy_mode=TRANSITION_POLICY_MODE_PRIMITIVE,
-            transition_fallback_count=0,
-            transition_fallback_reason="",
-            transition_timeout_count=cycle_status.transition_timeout_count,
-            completed_transition_count=cycle_status.completed_transition_count,
-            dump_done_use_boundary_event=bool(self.dump_done_use_boundary_event),
-            primitive_final_skill=str(self._skill_name),
-            primitive_cycle_index=cycle_status.primitive_cycle_index,
-            cell_entry=cell_entry_status,
-            dig_cut_token_dim=int(DIG_CUT_TOKEN_DIM),
-            return_target_token_dim=int(RETURN_TARGET_TOKEN_DIM),
-            return_target_token_source=str(self._return_target_token_source),
-            return_to_dig_max_entry_error_m=self.return_to_dig_max_entry_error_m,
-            return_to_dig_entry_error_m=(
-                return_status.return_to_dig_entry_error_m
-            ),
-            return_to_dig_entry_close=return_status.return_to_dig_entry_close,
-            return_next_dig_event_seen=return_status.return_next_dig_event_seen,
-            return_to_dig_start_envelope_gate_enabled=(
-                return_status.return_to_dig_start_envelope_gate_enabled
-            ),
-            return_to_dig_start_envelope_direct_handoff_enabled=(
-                return_status
-                .return_to_dig_start_envelope_direct_handoff_enabled
-            ),
-            return_to_dig_start_envelope_ready=(
-                return_status.return_to_dig_start_envelope_ready
-            ),
-            return_to_dig_start_envelope_plane_depth_mode=(
-                return_status.return_to_dig_start_envelope_plane_depth_mode
-            ),
-            return_to_dig_start_envelope_local_depth_tolerance_m=(
-                return_status
-                .return_to_dig_start_envelope_local_depth_tolerance_m
-            ),
-            return_to_dig_start_envelope_error=(
-                return_status.return_to_dig_start_envelope_error
-            ),
-            token=token_status,
-            dig_failed_replan_next_skill=str(self.dig_failed_replan_next_skill),
-            coverage=coverage_status,
-            scripted_bootstrap_timeout_count=(
-                scripted_bootstrap_status.timeout_count
-            ),
-            pre_dig_align=pre_dig_align_status,
-            dig_bad_replan_count=cycle_status.dig_bad_replan_count,
-            dig_exit_guard_replan_count=(
-                cycle_status.dig_exit_guard_replan_count
-            ),
-        )
+        return self._primitive_runtime_kernel_runtime().rollout_summary()
 
     def planner_trace(self) -> dict[str, object]:
-        return self._runtime_kernel().planner_trace()
+        return self._primitive_runtime_kernel_runtime().planner_trace()
 
-    @staticmethod
-    def _planner_trace_builder() -> PrimitivePlannerTraceBuilder:
-        return PrimitivePlannerTraceBuilder()
-
-    def _planner_trace_inputs(self) -> PrimitivePlannerTraceInputs:
-        coverage = self._coverage_report_service().trace_status_from_state(
-            self._coverage_runtime_state(),
-            config=self._coverage_report_config(),
-            selection_service=self._coverage_selection_service(),
-        )
-        return PrimitivePlannerTraceInputs(
-            cell_entry=self._cell_entry_report_status(),
-            token=self._token_report_status(),
-            return_target_planner_enabled=bool(self.return_target_planner_enabled),
-            coverage=coverage,
-        )
-
-    def _maybe_switch_skill(self, *, obs: dict, boundary_event: Any | None) -> None:
-        skill_before = str(self._skill_name)
-        result = self._decision_runtime().decide_legacy_compatibility_tick(
-            obs=obs,
-            boundary_event=boundary_event,
-            preparation=PrimitiveTickPreparation(
-                boundary_event=boundary_event,
-                skill_name_before_decision=skill_before,
-                dig_progress_updated=skill_before == "dig",
-            ),
-        )
-        if result is None or result.side_effects_applied:
-            return
-        self._apply_requested_tick_effects(obs, result.effects)
-
-    def _set_return_or_direct_handoff(self, obs: dict, *, reason: str) -> None:
-        self._return_direct_handoff_effect_service().apply(obs, reason=reason)
-
-    def _try_return_direct_handoff_at_current_obs(self, obs: dict) -> bool:
-        result = self._return_direct_handoff_effect_service().try_direct_handoff(obs)
-        return bool(result.direct_handoff_applied)
-
-    def _return_direct_handoff_effect_service(
+    def _primitive_return_handoff_runtime_ports(
         self,
-    ) -> ReturnDirectHandoffEffectService:
-        return ReturnDirectHandoffEffectService(
-            ports=self._return_direct_handoff_effect_ports()
-        )
-
-    def _return_direct_handoff_effect_ports(
-        self,
-    ) -> ReturnDirectHandoffEffectPorts:
-        return ReturnDirectHandoffEffectPorts(
+    ) -> PrimitiveReturnHandoffRuntimePorts:
+        return PrimitiveReturnHandoffRuntimePorts(
+            config=self._primitive_return_handoff_config,
+            action_dim=int(getattr(self, "action_dim", 0)),
             execution_state=self._primitive_execution_runtime_state(),
             cycle_state=self._primitive_cycle_runtime_state(),
+            return_state=self._primitive_return_runtime_state(),
+            token_state=self._primitive_token_runtime_state(),
+            coverage_state=self._coverage_runtime_state(),
             set_skill=lambda skill, reason: self._set_skill(skill, reason),
-            return_target_planner_enabled=self.return_target_planner_enabled,
-            return_to_dig_start_envelope_direct_handoff_enabled=(
-                self.return_to_dig_start_envelope_direct_handoff_enabled
-            ),
             ensure_return_target_plan_for_cycle=(
-                lambda obs: self._ensure_return_target_plan_for_cycle(obs)
+                lambda obs: (
+                    self._primitive_token_observation_runtime()
+                    .ensure_return_target_plan_for_cycle(obs)
+                )
             ),
-            readiness_service=self._return_handoff_readiness_service(),
+            return_start_envelope_prior_bounds=(
+                lambda corridor_id: (
+                    self._primitive_token_planning_runtime()
+                    .return_start_envelope_prior_bounds(corridor_id)
+                )
+            ),
+            return_start_envelope_prior_mapping=(
+                lambda corridor_id: (
+                    self._primitive_token_planning_runtime()
+                    .return_start_envelope_prior_mapping(
+                        corridor_id=corridor_id,
+                    )[0]
+                )
+            ),
+            dig_skill_name="dig",
+        )
+
+    def _primitive_return_handoff_runtime(self) -> PrimitiveReturnHandoffRuntime:
+        return PrimitiveReturnHandoffRuntime.from_ports(
+            self._primitive_return_handoff_runtime_ports()
         )
 
     def _set_skill(self, skill_name: str, reason: str) -> None:
@@ -1908,8 +885,16 @@ class PrimitivePlannerACTPolicy(Policy):
             cycle_state=self._primitive_cycle_runtime_state(),
             return_state=self._primitive_return_runtime_state(),
             coverage_state=self._coverage_runtime_state(),
-            reset_active_policy=lambda: self._active_policy().reset(),
-            clear_dig_cut_plan=lambda: self._clear_dig_cut_plan(),
+            reset_active_policy=(
+                lambda: self._action_dispatch_service().active_policy().reset()
+            ),
+            clear_dig_cut_plan=(
+                lambda: (
+                    self._primitive_token_observation_runtime()
+                    .primitive_token_runtime()
+                    .clear_dig_cut_plan()
+                )
+            ),
         )
 
     def _primitive_dig_recovery(self) -> PrimitiveDigRecoveryService:
@@ -1923,18 +908,30 @@ class PrimitivePlannerACTPolicy(Policy):
             cycle_state=self._primitive_cycle_runtime_state(),
             return_state=self._primitive_return_runtime_state(),
             coverage_state=self._coverage_runtime_state(),
-            reset_active_policy=lambda: self._active_policy().reset(),
-            invalidate_pending_dig_cut_plan=(
-                lambda: self._invalidate_pending_dig_cut_plan()
+            reset_active_policy=(
+                lambda: self._action_dispatch_service().active_policy().reset()
             ),
-            clear_dig_cut_plan=lambda: self._clear_dig_cut_plan(),
+            invalidate_pending_dig_cut_plan=(
+                lambda: (
+                    self._primitive_token_observation_runtime()
+                    .primitive_token_runtime()
+                    .invalidate_pending_dig_cut_plan()
+                )
+            ),
+            clear_dig_cut_plan=(
+                lambda: (
+                    self._primitive_token_observation_runtime()
+                    .primitive_token_runtime()
+                    .clear_dig_cut_plan()
+                )
+            ),
             set_skill=lambda skill_name, reason: self._set_skill(
                 skill_name,
                 reason,
             ),
             record_coverage_decision_event=(
                 lambda event, *, obs, corridor, extra: (
-                    self._record_coverage_decision_event(
+                    self._primitive_coverage_report_runtime().record_decision_event(
                         event,
                         obs=obs,
                         corridor=corridor,
@@ -1944,7 +941,8 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             request_coverage_terminal_stop=(
                 lambda reason, *, replace=False: (
-                    self._request_coverage_terminal_stop(
+                    self._primitive_coverage_effect_runtime()
+                    .request_coverage_terminal_stop(
                         reason,
                         replace=replace,
                     )
@@ -1960,15 +958,6 @@ class PrimitivePlannerACTPolicy(Policy):
                 lambda: str(self.dig_failed_replan_next_skill)
             ),
         )
-
-    def _restart_dig_with_new_cut(self, reason: str) -> None:
-        self._primitive_dig_recovery().restart_dig_with_new_cut(reason)
-
-    def _stop_after_failed_dig(self, reason: str, obs: dict) -> None:
-        self._primitive_dig_recovery().stop_after_failed_dig(reason, obs)
-
-    def _restart_after_failed_dig(self, reason: str, obs: dict) -> None:
-        self._primitive_dig_recovery().restart_after_failed_dig(reason, obs)
 
     def _should_end_bootstrap(self, *, obs: dict, boundary_event: Any | None) -> bool:
         scripted_bootstrap = self._primitive_scripted_bootstrap_runtime_service()
@@ -2020,11 +1009,6 @@ class PrimitivePlannerACTPolicy(Policy):
     def _scripted_bootstrap_enabled(self) -> bool:
         return self._primitive_scripted_bootstrap_runtime_service().enabled()
 
-    def _scripted_bootstrap_target_reached(self, obs: dict) -> bool:
-        return self._primitive_scripted_bootstrap_runtime_service().target_reached(
-            obs
-        )
-
     def _scripted_bootstrap_action(self, obs: dict) -> np.ndarray:
         return self._primitive_scripted_bootstrap_runtime_service().action(obs)
 
@@ -2058,230 +1042,40 @@ class PrimitivePlannerACTPolicy(Policy):
         profile = str(getattr(config, "boundary_profile", "legacy"))
         return profile == "v2_4_5_spatial_mass"
 
-    def _return_handoff_readiness_config(self) -> ReturnHandoffReadinessConfig:
-        return ReturnHandoffReadinessConfig(
-            return_target_planner_enabled=bool(
-                getattr(self, "return_target_planner_enabled", False)
-            ),
-            max_entry_error_m=getattr(self, "return_to_dig_max_entry_error_m", None),
-            max_bucket_mass_kg=float(
-                getattr(self, "return_to_dig_max_bucket_mass_kg", 0.0)
-            ),
-            start_envelope_direct_handoff_enabled=bool(
-                getattr(
-                    self,
-                    "return_to_dig_start_envelope_direct_handoff_enabled",
-                    False,
-                )
-            ),
-            start_envelope_gate=ReturnStartEnvelopeGateConfig(
-                enabled=bool(
-                    getattr(self, "return_to_dig_start_envelope_gate_enabled", False)
-                ),
-                action_dim=int(getattr(self, "action_dim", 0)),
-                spatial_tolerance=float(
-                    getattr(
-                        self,
-                        "return_to_dig_start_envelope_spatial_tolerance",
-                        0.0,
-                    )
-                ),
-                depth_tolerance_m=float(
-                    getattr(
-                        self,
-                        "return_to_dig_start_envelope_depth_tolerance_m",
-                        0.0,
-                    )
-                ),
-                local_depth_tolerance_m=float(
-                    getattr(
-                        self,
-                        "return_to_dig_start_envelope_local_depth_tolerance_m",
-                        0.0,
-                    )
-                ),
-                plane_depth_tolerance_m=float(
-                    getattr(
-                        self,
-                        "return_to_dig_start_envelope_plane_depth_tolerance_m",
-                        0.0,
-                    )
-                ),
-                plane_depth_mode=str(
-                    getattr(
-                        self,
-                        "return_to_dig_start_envelope_plane_depth_mode",
-                        "range",
-                    )
-                ),
-                qpos_tolerance=float(
-                    getattr(self, "return_to_dig_start_envelope_qpos_tolerance", 0.0)
-                ),
-                require_contact=bool(
-                    getattr(
-                        self,
-                        "return_to_dig_start_envelope_require_contact",
-                        False,
-                    )
-                ),
-            ),
+    def _primitive_token_observation_runtime(
+        self,
+    ) -> PrimitiveTokenObservationRuntime:
+        return PrimitiveTokenObservationRuntime.from_ports(
+            self._primitive_token_observation_runtime_ports()
         )
 
-    def _return_handoff_readiness_ports(self) -> ReturnHandoffReadinessPorts:
-        return ReturnHandoffReadinessPorts(
-            config=self._return_handoff_readiness_config(),
-            action_dim=int(getattr(self, "action_dim", 0)),
-            execution_state=self._primitive_execution_runtime_state(),
-            cycle_state=self._primitive_cycle_runtime_state(),
-            return_state=self._primitive_return_runtime_state(),
+    def _primitive_token_observation_runtime_ports(
+        self,
+    ) -> PrimitiveTokenObservationRuntimePorts:
+        return PrimitiveTokenObservationRuntimePorts(
+            observation_injection_state=(
+                self._primitive_observation_injection_runtime_state()
+            ),
             token_state=self._primitive_token_runtime_state(),
             coverage_state=self._coverage_runtime_state(),
-            start_envelope_gate_service=self._return_start_envelope_gate_service(),
-            ensure_return_target_plan_for_cycle=(
-                lambda obs: self._ensure_return_target_plan_for_cycle(obs)
-            ),
-            return_start_envelope_prior_bounds=(
-                lambda corridor_id: self._return_start_envelope_prior_bounds(
-                    corridor_id
+            goal_tokens=(
+                lambda: (
+                    self._primitive_token_planner_factory().goal_tokens_for_cycle(
+                        self._primitive_cycle_runtime_state().cycle_index
+                    )
                 )
             ),
-            return_start_envelope_prior_mapping=(
-                lambda corridor_id: self._return_start_envelope_prior_mapping(
-                    corridor_id=corridor_id,
-                )[0]
-            ),
-        )
-
-    def _return_handoff_readiness_service(self) -> ReturnHandoffReadinessService:
-        return ReturnHandoffReadinessService(
-            ports=self._return_handoff_readiness_ports()
-        )
-
-    def _return_to_dig_entry_close(self, obs: dict) -> bool:
-        return self._return_handoff_readiness_service().entry_close(obs)
-
-    def _return_to_dig_handoff_ready(self, obs: dict) -> bool:
-        return self._return_handoff_readiness_service().handoff_ready(obs)
-
-    def _return_to_dig_direct_handoff_ready(
-        self,
-        obs: dict,
-        *,
-        handoff_ready: bool | None = None,
-    ) -> bool:
-        return self._return_handoff_readiness_service().direct_handoff_ready(
-            obs,
-            handoff_ready=handoff_ready,
-        )
-
-    def _return_to_dig_start_envelope_ready(self, obs: dict) -> bool:
-        return self._return_handoff_readiness_service().start_envelope_ready(obs)
-
-    def _return_start_envelope_gate_service(self) -> ReturnStartEnvelopeGateService:
-        return ReturnStartEnvelopeGateService(
-            config=self._return_start_envelope_gate_config()
-        )
-
-    def _return_start_envelope_gate_config(self) -> ReturnStartEnvelopeGateConfig:
-        return self._return_handoff_readiness_config().start_envelope_gate
-
-    def _return_start_envelope_gate_inputs(
-        self,
-        obs: dict,
-    ) -> ReturnStartEnvelopeGateInputs:
-        return self._return_handoff_readiness_service().start_envelope_gate_inputs(obs)
-
-    def _apply_return_start_envelope_gate_result(
-        self,
-        result: ReturnStartEnvelopeGateResult,
-    ) -> None:
-        self._return_handoff_readiness_service().apply_start_envelope_gate_result(result)
-
-    def _return_to_dig_entry_error_for_obs(self, obs: dict) -> float:
-        return self._return_handoff_readiness_service().entry_error_for_obs(obs)
-
-    def _return_to_dig_entry_target(self) -> tuple[float, float] | None:
-        return self._return_handoff_readiness_service().entry_target()
-
-    def _policy_obs(self, obs: dict) -> dict:
-        self._clear_policy_observation_injected_flags()
-        result = self._policy_observation_assembler().assemble(obs)
-        self._apply_policy_observation_assembly(result)
-        return result.policy_obs
-
-    def _policy_observation_assembler(self) -> PrimitivePolicyObservationAssembler:
-        return PrimitivePolicyObservationAssembler.from_ports(
-            self._policy_observation_assembler_ports()
-        )
-
-    def _policy_observation_assembler_ports(
-        self,
-    ) -> PrimitivePolicyObservationAssemblerPorts:
-        return PrimitivePolicyObservationAssemblerPorts(
-            goal_tokens=lambda: self._goal_tokens(),
-            dig_cut_tokens=lambda obs: self._dig_cut_tokens_for_obs(obs),
-            dig_depth_profile_tokens=(
-                lambda obs: self._dig_depth_profile_tokens_for_obs(obs)
-            ),
-            return_target_tokens=lambda obs: self._return_target_tokens_for_obs(obs),
-            return_relocate_tokens=(
-                lambda obs: self._return_relocate_tokens_for_obs(obs)
-            ),
-            return_start_envelope_tokens=(
-                lambda obs: self._return_start_envelope_tokens_for_obs(obs)
-            ),
-        )
-
-    def _clear_policy_observation_injected_flags(self) -> None:
-        self._primitive_observation_injection_runtime_state().clear()
-
-    def _apply_policy_observation_assembly(
-        self,
-        result: PrimitivePolicyObservationAssemblyResult,
-    ) -> None:
-        self._primitive_observation_injection_runtime_state().apply_token_injection_state(
-            result.token_injection_state
-        )
-
-    def _return_target_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        return self._primitive_token_runtime().return_target_tokens_for_obs(obs)
-
-    def _return_relocate_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        return self._primitive_token_runtime().return_relocate_tokens_for_obs(obs)
-
-    def _return_start_envelope_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        return self._primitive_token_runtime().return_start_envelope_tokens_for_obs(obs)
-
-    def _ensure_return_target_plan_for_cycle(self, obs: dict) -> None:
-        self._primitive_token_runtime().ensure_return_target_plan_for_cycle(obs)
-
-    def _dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        return self._primitive_token_runtime().dig_cut_tokens_for_obs(obs)
-
-    def _dig_depth_profile_tokens_for_obs(self, obs: dict) -> np.ndarray | None:
-        return self._primitive_token_runtime().dig_depth_profile_tokens_for_obs(obs)
-
-    def _ensure_dig_cut_plan_for_cycle(self, obs: dict) -> None:
-        self._primitive_token_runtime().ensure_dig_cut_plan_for_cycle(obs)
-
-    def _primitive_token_runtime(self) -> PrimitiveTokenRuntimeCoordinator:
-        return PrimitiveTokenRuntimeCoordinator.from_ports(
-            self._primitive_token_runtime_ports()
-        )
-
-    def _primitive_token_runtime_ports(self) -> PrimitiveTokenRuntimePorts:
-        return PrimitiveTokenRuntimePorts(
-            state=self._primitive_token_runtime_state(),
-            coverage_state=self._coverage_runtime_state(),
             current_skill_name=lambda: str(self._skill_name),
             bootstrap_policy_available=lambda: self.bootstrap_policy is not None,
-            cycle_index=lambda: int(self._cycle_index),
+            cycle_index=lambda: int(self._primitive_cycle_runtime_state().cycle_index),
             dig_cut_planner_enabled=lambda: bool(self.dig_cut_planner_enabled),
             dig_cut_hold_token_until_skill_exit=(
                 lambda: bool(self.dig_cut_hold_token_until_skill_exit)
             ),
             coverage_terminal_stop_requested=(
-                lambda: bool(self._coverage_terminal_stop_requested)
+                lambda: bool(
+                    self._coverage_runtime_state().coverage_terminal_stop_requested
+                )
             ),
             return_target_planner_enabled=(
                 lambda: bool(self.return_target_planner_enabled)
@@ -2290,17 +1084,27 @@ class PrimitivePlannerACTPolicy(Policy):
                 lambda: bool(self.return_target_hold_token_until_skill_exit)
             ),
             build_dig_cut_tokens_for_obs=(
-                lambda obs: self._build_dig_cut_tokens_for_obs(obs)
+                lambda obs: (
+                    self._primitive_token_planning_runtime()
+                    .build_dig_cut_tokens_for_obs(obs)
+                )
             ),
             build_dig_depth_profile_tokens_for_obs=(
-                lambda obs: self._build_dig_depth_profile_tokens_for_obs(obs)
+                lambda obs: (
+                    self._primitive_token_planning_runtime()
+                    .build_dig_depth_profile_tokens_for_obs(obs)
+                )
             ),
             build_next_dig_cut_plan_for_return=(
-                lambda obs: self._build_next_dig_cut_plan_for_return(obs)
+                lambda obs: (
+                    self._primitive_token_planning_runtime()
+                    .build_next_dig_cut_plan_for_return(obs)
+                )
             ),
             build_return_start_envelope_tokens_for_obs=(
                 lambda obs, raw_fields, *, corridor_id: (
-                    self._build_return_start_envelope_tokens_for_obs(
+                    self._primitive_token_planning_runtime()
+                    .build_return_start_envelope_tokens_for_obs(
                         obs,
                         raw_fields,
                         corridor_id=corridor_id,
@@ -2308,148 +1112,46 @@ class PrimitivePlannerACTPolicy(Policy):
                 )
             ),
             plan_return_relocate_tokens=(
-                lambda token: self._return_relocate_token_planner().plan(token)
+                lambda token: (
+                    self._primitive_token_planner_factory()
+                    .return_relocate_token_planner()
+                    .plan(token)
+                )
             ),
             dig_skill_name="dig",
             return_skill_name="return",
             bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
         )
 
-    def _primitive_dig_token_planning_service(
-        self,
-    ) -> PrimitiveDigTokenPlanningService:
-        return PrimitiveDigTokenPlanningService.from_ports(
-            self._primitive_dig_token_planning_ports()
+    def _primitive_token_planning_runtime(self) -> PrimitiveTokenPlanningRuntime:
+        return PrimitiveTokenPlanningRuntime.from_ports(
+            self._primitive_token_planning_runtime_ports()
         )
 
-    def _primitive_dig_token_planning_ports(
+    def _primitive_token_planning_runtime_ports(
         self,
-    ) -> PrimitiveDigTokenPlanningPorts:
-        return PrimitiveDigTokenPlanningPorts(
+    ) -> PrimitiveTokenPlanningRuntimePorts:
+        return PrimitiveTokenPlanningRuntimePorts(
             token_state=self._primitive_token_runtime_state(),
             coverage_state=self._coverage_runtime_state(),
             dig_cut_planner_mode=lambda: str(self.dig_cut_planner_mode),
             dig_cut_planner_fallback_mode=(
                 lambda: str(self.dig_cut_planner_fallback_mode)
             ),
-            cycle_index=lambda: int(self._cycle_index),
-            dig_cut_token_planner=lambda: self._dig_cut_token_planner(),
+            cycle_index=lambda: int(self._primitive_cycle_runtime_state().cycle_index),
+            dig_cut_token_planner=(
+                self._primitive_token_planner_factory().dig_cut_token_planner
+            ),
             dig_depth_profile_token_planner=(
-                lambda: self._dig_depth_profile_token_planner()
+                self._primitive_token_planner_factory()
+                .dig_depth_profile_token_planner
             ),
-            observation_facts=(
-                lambda obs: PrimitiveObservationFacts.from_obs(
-                    obs,
-                    action_dim=int(self.action_dim),
-                )
+            return_target_token_planner=(
+                self._primitive_token_planner_factory().return_target_token_planner
             ),
-            select_next_coverage_corridor=(
-                lambda obs: self._select_next_coverage_corridor(obs)
-            ),
-            coverage_raw_fields=(
-                lambda corridor, *, obs, update_state=False: self._coverage_raw_fields(
-                    corridor,
-                    obs=obs,
-                    update_state=update_state,
-                )
-            ),
-        )
-
-    def _build_dig_depth_profile_tokens_for_obs(self, obs: dict) -> np.ndarray:
-        return (
-            self._primitive_dig_token_planning_service()
-            .build_dig_depth_profile_tokens_for_obs(obs)
-        )
-
-    def _apply_dig_depth_profile_token_plan(
-        self,
-        plan: DigDepthProfileTokenPlan,
-    ) -> np.ndarray:
-        return (
-            self._primitive_dig_token_planning_service()
-            .apply_dig_depth_profile_token_plan(plan)
-        )
-
-    def _build_live_dig_depth_profile_tokens_for_obs(
-        self,
-        obs: dict,
-        *,
-        cell_id: int,
-    ) -> np.ndarray:
-        return (
-            self._primitive_dig_token_planning_service()
-            .build_live_dig_depth_profile_tokens_for_obs(
-                obs,
-                cell_id=cell_id,
-            )
-        )
-
-    def _dig_depth_profile_prior_token(
-        self,
-        cell_id: int,
-    ) -> tuple[np.ndarray | None, str, str]:
-        return (
-            self._primitive_dig_token_planning_service()
-            .dig_depth_profile_prior_token(cell_id)
-        )
-
-    def _dig_depth_profile_prior_mapping(
-        self,
-        cell_id: int,
-    ) -> tuple[dict[str, object] | None, str, str]:
-        return (
-            self._primitive_dig_token_planning_service()
-            .dig_depth_profile_prior_mapping(cell_id)
-        )
-
-    @staticmethod
-    def _dig_depth_profile_token_from_prior_mapping(
-        mapping: dict[str, object],
-    ) -> np.ndarray | None:
-        service_class = PrimitiveDigTokenPlanningService
-        return service_class.dig_depth_profile_token_from_prior_mapping(mapping)
-
-    def _dig_depth_profile_raw_fields(self, obs: dict) -> dict[str, float | int]:
-        return (
-            self._primitive_dig_token_planning_service()
-            .dig_depth_profile_raw_fields(obs)
-        )
-
-    def _dig_depth_profile_cell_id(self, obs: dict) -> int:
-        return (
-            self._primitive_dig_token_planning_service()
-            .dig_depth_profile_cell_id(obs)
-        )
-
-    def _build_dig_cut_tokens_for_obs(self, obs: dict) -> np.ndarray:
-        return (
-            self._primitive_dig_token_planning_service()
-            .build_dig_cut_tokens_for_obs(obs)
-        )
-
-    def _apply_dig_cut_token_plan(self, plan: DigCutTokenPlan) -> np.ndarray:
-        return (
-            self._primitive_dig_token_planning_service()
-            .apply_dig_cut_token_plan(plan)
-        )
-
-    def _primitive_return_token_planning_service(
-        self,
-    ) -> PrimitiveReturnTokenPlanningService:
-        return PrimitiveReturnTokenPlanningService.from_ports(
-            self._primitive_return_token_planning_ports()
-        )
-
-    def _primitive_return_token_planning_ports(
-        self,
-    ) -> PrimitiveReturnTokenPlanningPorts:
-        return PrimitiveReturnTokenPlanningPorts(
-            token_state=self._primitive_token_runtime_state(),
-            coverage_state=self._coverage_runtime_state(),
-            dig_cut_planner_mode=lambda: str(self.dig_cut_planner_mode),
-            return_target_token_planner=lambda: self._return_target_token_planner(),
             return_start_envelope_token_planner=(
-                lambda: self._return_start_envelope_token_planner()
+                self._primitive_token_planner_factory()
+                .return_start_envelope_token_planner
             ),
             observation_facts=(
                 lambda obs: PrimitiveObservationFacts.from_obs(
@@ -2458,1082 +1160,153 @@ class PrimitivePlannerACTPolicy(Policy):
                 )
             ),
             select_next_coverage_corridor=(
-                lambda obs: self._select_next_coverage_corridor(obs)
+                lambda obs: (
+                    self._primitive_coverage_selection_runtime()
+                    .select_next_coverage_corridor(obs)
+                )
             ),
             coverage_raw_fields=(
-                lambda corridor, *, obs, update_state: self._coverage_raw_fields(
-                    corridor,
-                    obs=obs,
-                    update_state=update_state,
+                lambda corridor, *, obs, update_state=False: (
+                    self._primitive_coverage_selection_runtime()
+                    .coverage_raw_fields(
+                        corridor,
+                        obs=obs,
+                        update_state=update_state,
+                    )
                 )
             ),
         )
 
-    def _build_next_dig_cut_plan_for_return(
+    def _primitive_coverage_selection_runtime_ports(
         self,
-        obs: dict,
-    ) -> tuple[np.ndarray, dict[str, float | int], str, str, int]:
-        return (
-            self._primitive_return_token_planning_service()
-            .build_next_dig_cut_plan_for_return(obs)
-        )
-
-    @staticmethod
-    def _unpack_return_target_token_plan(
-        plan: ReturnTargetTokenPlan,
-    ) -> tuple[np.ndarray, dict[str, float | int], str, str, int]:
-        return PrimitiveReturnTokenPlanningService.unpack_return_target_token_plan(
-            plan
-        )
-
-    def _build_return_start_envelope_tokens_for_obs(
-        self,
-        obs: dict,
-        raw_fields: dict[str, float | int],
-        *,
-        corridor_id: int | None = None,
-    ) -> np.ndarray:
-        return (
-            self._primitive_return_token_planning_service()
-            .build_return_start_envelope_tokens_for_obs(
-                obs,
-                raw_fields,
-                corridor_id=corridor_id,
-            )
-        )
-
-    def _apply_return_start_envelope_token_plan(
-        self,
-        plan: ReturnStartEnvelopeTokenPlan,
-    ) -> np.ndarray:
-        return (
-            self._primitive_return_token_planning_service()
-            .apply_return_start_envelope_token_plan(plan)
-        )
-
-    def _maybe_condition_return_start_envelope_qpos_from_relocate(
-        self,
-        token: np.ndarray,
-        *,
-        raw_fields: dict[str, float | int],
-        source: str,
-    ) -> np.ndarray:
-        return (
-            self._primitive_return_token_planning_service()
-            .condition_return_start_envelope_qpos_from_relocate(
-                token,
-                raw_fields=raw_fields,
-                source=source,
-            )
-        )
-
-    def _return_start_envelope_prior_token(
-        self,
-        *,
-        corridor_id: int | None,
-    ) -> tuple[np.ndarray | None, str]:
-        return (
-            self._primitive_return_token_planning_service()
-            .return_start_envelope_prior_token(corridor_id=corridor_id)
-        )
-
-    def _return_start_envelope_prior_mapping(
-        self,
-        *,
-        corridor_id: int | None,
-    ) -> tuple[dict[str, object] | None, str]:
-        return (
-            self._primitive_return_token_planning_service()
-            .return_start_envelope_prior_mapping(corridor_id=corridor_id)
-        )
-
-    def _return_start_envelope_prior_bounds(
-        self,
-        corridor_id: int | None,
-    ) -> tuple[np.ndarray | None, np.ndarray | None]:
-        return (
-            self._primitive_return_token_planning_service()
-            .return_start_envelope_prior_bounds(corridor_id)
-        )
-
-    def _return_start_envelope_cell_id(self, corridor_id: int | None) -> int | None:
-        return (
-            self._primitive_return_token_planning_service()
-            .return_start_envelope_cell_id(corridor_id)
-        )
-
-    @staticmethod
-    def _return_start_envelope_token_from_prior_mapping(
-        mapping: dict[str, object],
-    ) -> np.ndarray | None:
-        service_class = PrimitiveReturnTokenPlanningService
-        return service_class.return_start_envelope_token_from_prior_mapping(mapping)
-
-    @staticmethod
-    def _normalize_plane_depth_mode(value: object) -> str:
-        return adapter_config.normalize_plane_depth_mode(value)
-
-    @staticmethod
-    def _normalize_failed_dig_replan_skill(value: object) -> str:
-        return adapter_config.normalize_failed_dig_replan_skill(value)
-
-    def _raw_fields_from_live_pose(self, obs: dict) -> dict[str, float | int]:
-        return (
-            self._primitive_dig_token_planning_service()
-            .raw_fields_from_live_pose(obs)
-        )
-
-    def _build_operator_prior_dig_cut_tokens(
-        self, obs: dict
-    ) -> tuple[np.ndarray, dict[str, float | int], str, str]:
-        return (
-            self._primitive_dig_token_planning_service()
-            .build_operator_prior_dig_cut_tokens(obs)
-        )
-
-    def _build_operator_prior_coverage_dig_cut_tokens(
-        self, obs: dict
-    ) -> tuple[np.ndarray, dict[str, float | int], str, str]:
-        return (
-            self._primitive_dig_token_planning_service()
-            .build_operator_prior_coverage_dig_cut_tokens(obs)
-        )
-
-    def _coverage_selection_runtime_ports(self) -> CoverageSelectionRuntimePorts:
-        return CoverageSelectionRuntimePorts(
+    ) -> CoverageSelectionBoundaryPorts:
+        return CoverageSelectionBoundaryPorts(
             state=self._coverage_runtime_state(),
-            dig_cut_prior=lambda: dict(self.dig_cut_prior or {}),
-            dig_cut_planner_mode=lambda: str(self.dig_cut_planner_mode),
-            candidate_builder=lambda: self._coverage_candidate_builder(),
-            selection_service=lambda: self._coverage_selection_service(),
-            selection_facts=(
-                lambda obs, corridors: self._coverage_selection_facts(
+            static_config=self._primitive_coverage_static_config(),
+            cycle_index=lambda: int(self._primitive_cycle_runtime_state().cycle_index),
+            observation_facts=(
+                lambda obs: PrimitiveObservationFacts.from_obs(
                     obs,
-                    corridors,
+                    action_dim=int(self.action_dim),
                 )
             ),
-            recent_row_reference=lambda: self._coverage_recent_row_reference_corridor(),
             maybe_reopen_pass=(
-                lambda obs, reason: self._maybe_reopen_coverage_pass(
-                    obs,
-                    reason=reason,
+                lambda obs, reason: (
+                    self._primitive_coverage_effect_runtime()
+                    .maybe_reopen_coverage_pass(obs, reason=reason)
                 )
             ),
-            request_terminal_stop=lambda reason: self._request_coverage_terminal_stop(
-                reason
-            ),
-            record_decision_event=self._record_coverage_decision_event,
-        )
-
-    def _coverage_selection_runtime_coordinator(
-        self,
-    ) -> CoverageSelectionRuntimeCoordinator:
-        return CoverageSelectionRuntimeCoordinator.from_ports(
-            self._coverage_selection_runtime_ports()
-        )
-
-    def _set_coverage_corridors(
-        self,
-        corridors: list[CoverageCorridorState],
-    ) -> None:
-        self._coverage_runtime_state().set_coverage_corridors(corridors)
-
-    def _set_coverage_candidate_scores(
-        self,
-        candidate_scores: list[dict[str, Any]],
-    ) -> None:
-        self._coverage_runtime_state().set_candidate_scores(candidate_scores)
-
-    def _set_coverage_last_selected_corridor_id(self, value: int) -> None:
-        self._coverage_runtime_state().set_last_selected_corridor_id(value)
-
-    def _select_next_coverage_corridor(self, obs: dict) -> CoverageCorridorState:
-        return self._coverage_selection_runtime_coordinator().select_next_corridor(
-            obs
-        )
-
-    def _ensure_coverage_corridors(self) -> None:
-        self._coverage_selection_runtime_coordinator().ensure_corridors()
-
-    def _build_cell_weighted_coverage_corridors(
-        self,
-        fields: dict[str, object],
-    ) -> list[CoverageCorridorState]:
-        prior = dict(self.dig_cut_prior or {})
-        prior["fields"] = dict(fields)
-        return self._coverage_candidate_builder(
-            candidate_layout="cell_weighted_3x2"
-        ).build(prior)
-
-    @staticmethod
-    def _coverage_cell_float(
-        mapping: dict[str, object],
-        name: str,
-        default: float,
-    ) -> float:
-        return CoverageCandidateBuilder._cell_float(mapping, name, default)
-
-    @classmethod
-    def _coverage_stat_float(
-        cls,
-        mapping: dict[str, object],
-        section: str,
-        name: str,
-        default: float,
-    ) -> float:
-        return CoverageCandidateBuilder._stat_float(mapping, section, name, default)
-
-    def _coverage_exit_from_entry(self, entry_x: float, entry_z: float) -> tuple[float, float]:
-        return self._coverage_candidate_builder()._exit_from_entry(
-            dict(self.dig_cut_prior.get("fields", {})),
-            entry_x,
-            entry_z,
-        )
-
-    def _coverage_selection_config(self) -> CoverageSelectionConfig:
-        return CoverageSelectionConfig(
-            candidate_layout=str(self.coverage_candidate_layout),
-            prior_fields=dict(self.dig_cut_prior.get("fields", {})),
-            cut_depth_percentile=str(self.coverage_cut_depth_percentile),
-            use_env_removed_depth=bool(self.coverage_use_env_removed_depth),
-            max_attempts_per_corridor=int(self.coverage_max_attempts_per_corridor),
-            recent_selection_penalty=float(self.coverage_recent_selection_penalty),
-            unattempted_bonus=float(self.coverage_unattempted_bonus),
-            attempt_penalty=float(self.coverage_attempt_penalty),
-            cell_confidence_weight=float(self.coverage_cell_confidence_weight),
-            rare_cell_source_fraction_threshold=float(
-                self.coverage_rare_cell_source_fraction_threshold
-            ),
-            rare_cell_max_attempts=int(self.coverage_rare_cell_max_attempts),
-            recent_row_selection_penalty=float(
-                self.coverage_recent_row_selection_penalty
-            ),
-            last_selected_corridor_id=int(self._coverage_last_selected_corridor_id),
-            cycle_index=int(self._cycle_index),
-            completed_dump_count=int(self._coverage_completed_dump_count),
-            first_dig_strategy=str(self.coverage_first_dig_strategy),
-            first_dig_preferred_corridor_id=(
-                None
-                if self.coverage_first_dig_preferred_corridor_id is None
-                else int(self.coverage_first_dig_preferred_corridor_id)
-            ),
-            first_dig_preferred_bonus=float(
-                self.coverage_first_dig_preferred_bonus
-            ),
-            first_dig_proximity_weight=float(
-                self.coverage_first_dig_proximity_weight
-            ),
-            first_dig_max_entry_distance_m=(
-                None
-                if self.coverage_first_dig_max_entry_distance_m is None
-                else float(self.coverage_first_dig_max_entry_distance_m)
-            ),
-            first_dig_qpos_delta_weight=float(
-                self.coverage_first_dig_qpos_delta_weight
-            ),
-            first_dig_max_qpos_delta=(
-                None
-                if self.coverage_first_dig_max_qpos_delta is None
-                else self.coverage_first_dig_max_qpos_delta.astype(np.float32).copy()
-            ),
-            pre_dig_align_controlled_dims=self.pre_dig_align_controlled_dims.astype(
-                bool
-            ).copy(),
-            state_exemplars_enabled=bool(self.coverage_state_exemplars_enabled),
-            state_exemplar_score_weight=float(
-                self.coverage_state_exemplar_score_weight
-            ),
-        )
-
-    def _coverage_selection_service(self) -> CoverageSelectionService:
-        return CoverageSelectionService(self._coverage_selection_config())
-
-    def _coverage_planning_fact_config(self) -> CoveragePlanningFactConfig:
-        return CoveragePlanningFactConfig(
-            prior_fields=dict(self.dig_cut_prior.get("fields", {})),
-            cut_direction_percentile=str(self.coverage_cut_direction_percentile),
-            cut_length_percentile=str(self.coverage_cut_length_percentile),
-            cut_depth_percentile=str(self.coverage_cut_depth_percentile),
-            payload_percentile=str(self.coverage_payload_percentile),
-        )
-
-    def _coverage_planning_fact_service(self) -> CoveragePlanningFactService:
-        return CoveragePlanningFactService(
-            config=self._coverage_planning_fact_config(),
-            coverage_state=self._coverage_runtime_state(),
-            state_exemplar_planner=self._coverage_state_exemplar_planner(),
-            coverage_state_exemplars_by_cell=self.coverage_state_exemplars_by_cell,
-            observation_facts=lambda obs: PrimitiveObservationFacts.from_obs(
-                obs,
-                action_dim=int(self.action_dim),
-            ),
-            first_dig_qpos_delta=(
-                lambda corridor, obs: self._coverage_first_dig_qpos_delta(
-                    corridor,
-                    obs,
+            request_terminal_stop=(
+                lambda reason: (
+                    self._primitive_coverage_effect_runtime()
+                    .request_coverage_terminal_stop(reason)
                 )
             ),
-        )
-
-    def _coverage_selection_facts(
-        self,
-        obs: dict,
-        corridors: list[CoverageCorridorState] | None = None,
-    ) -> dict[int, CoverageCandidateSelectionFacts]:
-        return self._coverage_planning_fact_service().selection_facts(
-            obs,
-            corridors,
-        )
-
-    def _select_coverage_corridor(self, obs: dict) -> CoverageCorridorState:
-        return self._coverage_selection_runtime_coordinator().select_corridor(obs)
-
-    def _coverage_first_dig_active(self) -> bool:
-        return self._coverage_selection_service().first_dig_active()
-
-    def _coverage_first_dig_gate_available(self, obs: dict) -> bool:
-        return self._coverage_selection_service().first_dig_gate_available(
-            self._coverage_corridors,
-            facts_by_corridor_id=self._coverage_selection_facts(obs),
-        )
-
-    def _coverage_first_dig_entry_reachable(self, distance: float) -> bool:
-        return self._coverage_selection_service().first_dig_entry_reachable(distance)
-
-    def _coverage_score(
-        self,
-        corridor: CoverageCorridorState,
-        remaining_depth_m: float,
-        *,
-        obs: dict | None = None,
-    ) -> float:
-        return self._coverage_selection_service().score(
-            corridor,
-            remaining_depth_m,
-            state_exemplar_distance=(
-                float("nan")
-                if obs is None
-                else self._coverage_state_exemplar_distance(corridor, obs)
-            ),
-            recent_row_reference=self._coverage_recent_row_reference_corridor(),
-        )
-
-    def _coverage_cell_confidence(self, corridor: CoverageCorridorState) -> float:
-        return self._coverage_selection_service().cell_confidence(corridor)
-
-    def _coverage_corridor_is_rare(self, corridor: CoverageCorridorState) -> bool:
-        return self._coverage_selection_service().corridor_is_rare(corridor)
-
-    def _coverage_corridor_attempt_limit(self, corridor: CoverageCorridorState) -> int:
-        return self._coverage_selection_service().corridor_attempt_limit(corridor)
-
-    def _coverage_rare_first_dig_gated_out(
-        self,
-        corridor: CoverageCorridorState,
-    ) -> bool:
-        return self._coverage_selection_service().rare_first_dig_gated_out(
-            corridor,
-            self._coverage_corridors,
-        )
-
-    def _coverage_recent_row_penalty(self, corridor: CoverageCorridorState) -> float:
-        return self._coverage_selection_service().recent_row_penalty(
-            corridor,
-            recent_row_reference=self._coverage_recent_row_reference_corridor(),
-        )
-
-    def _coverage_recent_row_reference_corridor(
-        self,
-    ) -> CoverageCorridorState | None:
-        previous = self._coverage_corridor_by_id(self._coverage_last_selected_corridor_id)
-        if previous is not None:
-            return previous
-        return self._coverage_active_corridor()
-
-    def _coverage_first_dig_bonus(
-        self,
-        corridor: CoverageCorridorState,
-        obs: dict,
-    ) -> float:
-        return self._coverage_selection_service().first_dig_bonus(
-            corridor,
-            CoverageCandidateSelectionFacts(
-                remaining_depth_m=float("nan"),
-                first_dig_entry_distance_m=float(
-                    self._coverage_entry_distance_m(corridor, obs)
-                ),
-                first_dig_qpos_delta=self._coverage_first_dig_qpos_delta(
-                    corridor,
-                    obs,
-                ),
+            record_decision_event=(
+                self._primitive_coverage_report_runtime().record_decision_event
             ),
         )
 
-    def _coverage_entry_distance_m(
+    def _primitive_coverage_selection_runtime(
         self,
-        corridor: CoverageCorridorState,
-        obs: dict,
-    ) -> float:
-        return self._coverage_planning_fact_service().entry_distance_m(
-            corridor,
-            obs,
+    ) -> PrimitiveCoverageSelectionRuntime:
+        return PrimitiveCoverageSelectionRuntime.from_ports(
+            self._primitive_coverage_selection_runtime_ports()
         )
 
-    def _coverage_first_dig_qpos_delta(
+    def _primitive_coverage_effect_runtime_ports(
         self,
-        corridor: CoverageCorridorState,
-        obs: dict,
-    ) -> np.ndarray:
-        del corridor, obs
-        return np.zeros(self.action_dim, dtype=np.float32)
-
-    def _coverage_first_dig_qpos_reachable(self, delta: np.ndarray) -> bool:
-        return self._coverage_selection_service().first_dig_qpos_reachable(delta)
-
-    def _coverage_first_dig_qpos_delta_penalty(self, delta: np.ndarray) -> float:
-        return self._coverage_selection_service().first_dig_qpos_delta_penalty(delta)
-
-    def _coverage_raw_fields(
-        self,
-        corridor: CoverageCorridorState,
-        *,
-        obs: dict | None = None,
-        update_state: bool = False,
-    ) -> dict[str, float | int]:
-        return self._coverage_planning_fact_service().raw_fields(
-            corridor,
-            obs=obs,
-            update_state=update_state,
-        )
-
-    def _coverage_state_exemplar_planner_config(
-        self,
-    ) -> CoverageStateExemplarPlannerConfig:
-        return CoverageStateExemplarPlannerConfig(
-            enabled=bool(self.coverage_state_exemplars_enabled),
-            path=str(self.coverage_state_exemplar_path),
-            dig_cut_prior_path=str(self.dig_cut_prior_path),
-            k=int(self.coverage_state_exemplar_k),
-            removed_depth_scale_m=float(
-                self.coverage_state_exemplar_removed_depth_scale_m
-            ),
-            target_cell_weight=float(self.coverage_state_exemplar_target_cell_weight),
-            temperature=float(self.coverage_state_exemplar_temperature),
-            skip_rejected=bool(self.coverage_state_exemplar_skip_rejected),
-        )
-
-    def _coverage_state_exemplar_planner(self) -> CoverageStateExemplarPlanner:
-        return CoverageStateExemplarPlanner(
-            self._coverage_state_exemplar_planner_config()
-        )
-
-    def _load_coverage_state_exemplars(self) -> dict[int, list[dict[str, Any]]]:
-        return self._coverage_state_exemplar_planner().load_exemplars()
-
-    def _coverage_state_conditioned_plan(
-        self,
-        corridor: CoverageCorridorState,
-        obs: dict,
-        *,
-        update_state: bool,
-    ) -> dict[str, object] | None:
-        return self._coverage_planning_fact_service().state_conditioned_plan(
-            corridor,
-            obs,
-            update_state=update_state,
-        )
-
-    def _coverage_state_exemplar_distance(
-        self,
-        corridor: CoverageCorridorState,
-        obs: dict,
-    ) -> float:
-        return self._coverage_planning_fact_service().state_exemplar_distance(
-            corridor,
-            obs,
-        )
-
-    def _coverage_state_exemplar_id(
-        self,
-        corridor: CoverageCorridorState,
-        obs: dict,
-    ) -> str:
-        return self._coverage_planning_fact_service().state_exemplar_id(
-            corridor,
-            obs,
-        )
-
-    def _coverage_removed_depth_grid(self, obs: dict) -> np.ndarray | None:
-        return self._coverage_planning_fact_service().removed_depth_grid(obs)
-
-    def _coverage_state_exemplar_distance_for_grid(
-        self,
-        removed_grid: np.ndarray,
-        exemplar: dict[str, Any],
-        *,
-        cell_id: int,
-    ) -> float:
-        return self._coverage_planning_fact_service().state_exemplar_distance_for_grid(
-            removed_grid,
-            exemplar,
-            cell_id=cell_id,
-        )
-
-    def _state_exemplar_weights(
-        self,
-        selected: list[tuple[float, dict[str, Any]]],
-    ) -> np.ndarray:
-        return self._coverage_planning_fact_service().state_exemplar_weights(selected)
-
-    def _weighted_state_exemplar_raw_fields(
-        self,
-        selected: list[tuple[float, dict[str, Any]]],
-    ) -> dict[str, float | int]:
-        return (
-            self._coverage_planning_fact_service().weighted_state_exemplar_raw_fields(
-                selected
-            )
-        )
-
-    def _weighted_state_exemplar_profile_token(
-        self,
-        selected: list[tuple[float, dict[str, Any]]],
-    ) -> np.ndarray | None:
-        return (
-            self._coverage_planning_fact_service().weighted_state_exemplar_profile_token(
-                selected
-            )
-        )
-
-    def _coverage_remaining_depth_for_corridor(
-        self,
-        obs: dict,
-        corridor: CoverageCorridorState,
-    ) -> float:
-        return self._coverage_planning_fact_service().remaining_depth_for_corridor(
-            obs,
-            corridor,
-        )
-
-    @staticmethod
-    def _coverage_cell_id(corridor: CoverageCorridorState) -> int:
-        return CoverageSelectionService.cell_id(corridor)
-
-    def _coverage_corridor_row_id(self, corridor: CoverageCorridorState) -> int:
-        return CoverageSelectionService.corridor_row_id(corridor)
-
-    @staticmethod
-    def _coverage_cell_id_from_percentile_indices(
-        *,
-        x_index: int,
-        x_count: int,
-        z_index: int,
-        z_count: int,
-    ) -> int:
-        return CoverageCandidateBuilder.cell_id_from_percentile_indices(
-            x_index=x_index,
-            x_count=x_count,
-            z_index=z_index,
-            z_count=z_count,
-        )
-
-    def _coverage_update_config(self) -> CoverageUpdateConfig:
-        return CoverageUpdateConfig(
-            prior_fields=dict(self.dig_cut_prior.get("fields", {})),
-            use_env_removed_depth=bool(self.coverage_use_env_removed_depth),
-            low_productivity_payload_kg=float(
-                self.coverage_low_productivity_payload_kg
-            ),
-            low_productivity_deposit_kg=float(
-                self.coverage_low_productivity_deposit_kg
-            ),
-            deplete_after_low_streak=int(self.coverage_deplete_after_low_streak),
-            min_remaining_depth_m=float(self.coverage_min_remaining_depth_m),
-            belief_depleted_score=float(self.coverage_belief_depleted_score),
-            belief_gain_scale=float(self.coverage_belief_gain_scale),
-        )
-
-    def _coverage_update_service(self) -> CoverageUpdateService:
-        return CoverageUpdateService(self._coverage_update_config())
-
-    def _coverage_runtime_config(self) -> CoverageRuntimeConfig:
-        return CoverageRuntimeConfig(
-            multi_pass_enabled=bool(self.coverage_multi_pass_enabled),
-            use_env_removed_depth=bool(self.coverage_use_env_removed_depth),
-            multi_pass_max_passes=int(self.coverage_multi_pass_max_passes),
-            multi_pass_min_remaining_depth_m=float(
-                self.coverage_multi_pass_min_remaining_depth_m
-            ),
-        )
-
-    def _coverage_runtime_service(self) -> CoverageRuntimeService:
-        return CoverageRuntimeService(self._coverage_runtime_config())
-
-    def _coverage_effect_runtime_ports(self) -> CoverageEffectRuntimePorts:
-        return CoverageEffectRuntimePorts(
+    ) -> CoverageEffectBoundaryPorts:
+        return CoverageEffectBoundaryPorts(
             state=self._coverage_runtime_state(),
             cycle_state=self._primitive_cycle_runtime_state(),
-            coverage_mode=lambda: str(self.dig_cut_planner_mode),
-            coverage_update_service=lambda: self._coverage_update_service(),
-            coverage_runtime_service=lambda: self._coverage_runtime_service(),
+            static_config=self._primitive_coverage_static_config(),
             observation_facts=(
                 lambda obs: PrimitiveObservationFacts.from_obs(
                     obs,
                     action_dim=int(self.action_dim),
                 )
             ),
-            remaining_depth=lambda obs, corridor: self._coverage_remaining_depth_for_corridor(
-                obs,
-                corridor,
-            ),
-            corridor_attempt_limit=lambda corridor: self._coverage_corridor_attempt_limit(
-                corridor
-            ),
-            record_decision_event=self._record_coverage_decision_event,
-            coverage_global_low_productivity_stop=lambda: int(
-                self.coverage_global_low_productivity_stop
-            ),
-            coverage_low_productivity_payload_kg=lambda: float(
-                self.coverage_low_productivity_payload_kg
-            ),
-            coverage_low_productivity_deposit_kg=lambda: float(
-                self.coverage_low_productivity_deposit_kg
-            ),
-        )
-
-    def _coverage_effect_runtime_coordinator(
-        self,
-    ) -> CoverageEffectRuntimeCoordinator:
-        return CoverageEffectRuntimeCoordinator.from_ports(
-            self._coverage_effect_runtime_ports()
-        )
-
-    def _set_coverage_current_payload_gain_kg(self, value: float) -> None:
-        self._coverage_runtime_state().set_current_payload_gain_kg(value)
-
-    def _set_coverage_last_payload_gain_kg(self, value: float) -> None:
-        self._coverage_runtime_state().set_last_payload_gain_kg(value)
-
-    def _set_coverage_last_effective_deposit_delta_kg(self, value: float) -> None:
-        self._coverage_runtime_state().set_last_effective_deposit_delta_kg(value)
-
-    def _set_coverage_completed_dump_count(self, value: int) -> None:
-        self._coverage_runtime_state().set_completed_dump_count(value)
-
-    def _set_coverage_global_low_productivity_streak(self, value: int) -> None:
-        self._coverage_runtime_state().set_global_low_productivity_streak(value)
-
-    def _update_coverage_rejected_state_exemplar_ids(
-        self,
-        exemplar_ids: tuple[str, ...],
-    ) -> None:
-        self._coverage_runtime_state().update_rejected_state_exemplar_ids(exemplar_ids)
-
-    def _set_coverage_pass_index(self, value: int) -> None:
-        self._coverage_runtime_state().set_coverage_pass_index(value)
-
-    def _set_coverage_active_corridor_id(self, value: int) -> None:
-        self._coverage_runtime_state().set_active_corridor_id(value)
-
-    def _clear_coverage_rejected_state_exemplar_ids(self) -> None:
-        self._coverage_runtime_state().clear_rejected_state_exemplar_ids()
-
-    def _set_coverage_terminal_stop_requested(self, value: bool) -> None:
-        self._coverage_runtime_state().set_terminal_stop_requested(value)
-
-    def _set_coverage_terminal_stop_reason(self, value: str) -> None:
-        self._coverage_runtime_state().set_terminal_stop_reason(value)
-
-    def _complete_coverage_dig(self, obs: dict) -> None:
-        self._coverage_effect_runtime_coordinator().complete_dig(obs)
-
-    def _complete_coverage_dump(self, obs: dict, *, reason: str) -> None:
-        self._coverage_effect_runtime_coordinator().complete_dump(obs, reason=reason)
-
-    def _reject_active_coverage_corridor(self, obs: dict, *, reason: str) -> None:
-        self._coverage_effect_runtime_coordinator().reject_active_corridor(
-            obs,
-            reason=reason,
-        )
-
-    def _update_corridor_belief(
-        self,
-        corridor: CoverageCorridorState,
-        *,
-        payload_gain_kg: float,
-        effective_deposit_delta_kg: float,
-    ) -> None:
-        self._coverage_update_service().update_belief(
-            corridor,
-            payload_gain_kg=payload_gain_kg,
-            effective_deposit_delta_kg=effective_deposit_delta_kg,
-        )
-
-    @staticmethod
-    def _coverage_report_service() -> CoverageReportService:
-        return CoverageReportService()
-
-    def _coverage_report_config(self) -> CoverageReportConfig:
-        return CoverageReportConfig(
-            state_exemplar_enabled=bool(self.coverage_state_exemplars_enabled),
-            multi_pass_enabled=bool(self.coverage_multi_pass_enabled),
-            multi_pass_max_passes=int(self.coverage_multi_pass_max_passes),
-            multi_pass_min_remaining_depth_m=float(
-                self.coverage_multi_pass_min_remaining_depth_m
-            ),
-            use_env_removed_depth=bool(self.coverage_use_env_removed_depth),
-            candidate_layout=str(self.coverage_candidate_layout),
-            first_dig_strategy=str(self.coverage_first_dig_strategy),
-            first_dig_preferred_corridor_id=(
-                None
-                if self.coverage_first_dig_preferred_corridor_id is None
-                else int(self.coverage_first_dig_preferred_corridor_id)
-            ),
-            first_dig_max_entry_distance_m=(
-                self.coverage_first_dig_max_entry_distance_m
-            ),
-            first_dig_qpos_delta_weight=float(
-                self.coverage_first_dig_qpos_delta_weight
-            ),
-            first_dig_max_qpos_delta=self.coverage_first_dig_max_qpos_delta,
-        )
-
-    def _coverage_report_state(self) -> CoverageReportState:
-        return CoverageReportState(
-            cycle_index=int(self._cycle_index),
-            skill_name=str(self._skill_name),
-            active_corridor_id=int(self._coverage_active_corridor_id),
-            last_selected_corridor_id=int(self._coverage_last_selected_corridor_id),
-            last_selected_cell_id=int(
-                self._coverage_corridor_cell_id_by_id(
-                    self._coverage_last_selected_corridor_id
+            remaining_depth=lambda obs, corridor: (
+                self._primitive_coverage_selection_runtime()
+                .coverage_remaining_depth_for_corridor(
+                    obs,
+                    corridor,
                 )
             ),
-            last_selected_row_id=int(
-                self._coverage_corridor_row_id_by_id(
-                    self._coverage_last_selected_corridor_id
+            corridor_attempt_limit=(
+                lambda corridor: (
+                    self._primitive_coverage_selection_runtime()
+                    .coverage_corridor_attempt_limit(corridor)
                 )
             ),
-            depleted_count=int(self._coverage_depleted_count()),
-            pass_index=int(self._coverage_pass_index),
-            global_low_productivity_streak=int(
-                self._coverage_global_low_productivity_streak
+            record_decision_event=(
+                self._primitive_coverage_report_runtime().record_decision_event
             ),
-            terminal_stop_requested=bool(self._coverage_terminal_stop_requested),
-            terminal_stop_reason=str(self._coverage_terminal_stop_reason),
         )
 
-    def _coverage_bucket_snapshot(self, obs: dict) -> CoverageBucketSnapshot:
-        return self._coverage_report_service().bucket_snapshot(
-            PrimitiveObservationFacts.from_obs(
-                obs,
-                action_dim=int(self.action_dim),
-            )
+    def _primitive_coverage_effect_runtime(self) -> PrimitiveCoverageEffectRuntime:
+        return PrimitiveCoverageEffectRuntime.from_ports(
+            self._primitive_coverage_effect_runtime_ports()
         )
 
-    def _record_coverage_decision_event(
-        self,
-        event: str,
-        *,
-        obs: dict | None = None,
-        corridor: CoverageCorridorState | None = None,
-        extra: dict[str, Any] | None = None,
-    ) -> None:
-        self._coverage_decision_trace.append(
-            self._coverage_report_service().decision_event(
-                str(event),
-                state=self._coverage_report_state(),
-                corridor=(
-                    None
-                    if corridor is None
-                    else self._coverage_corridor_to_debug(corridor)
+    def _primitive_token_planner_factory(self) -> PrimitiveTokenPlannerFactory:
+        return PrimitiveTokenPlannerFactory(
+            PrimitiveTokenPlannerFactoryConfig(
+                goal_sequence=tuple(self.goal_sequence),
+                goal_scenario_id=str(self.goal_scenario_id),
+                goal_depth_norm=float(self.goal_depth_norm),
+                goal_dump_target_norm=float(self.goal_dump_target_norm),
+                dig_cut_prior=dict(self.dig_cut_prior or {}),
+                dig_depth_profile_source=str(self.dig_depth_profile_source),
+                dig_depth_profile_required=bool(self.dig_depth_profile_required),
+                dig_depth_profile_allow_live_fallback=bool(
+                    self.dig_depth_profile_allow_live_fallback
                 ),
-                bucket=None if obs is None else self._coverage_bucket_snapshot(obs),
-                extra=dict(extra or {}),
-            )
-        )
-
-    @staticmethod
-    def _env_state_value(env_state: np.ndarray, index: int) -> float:
-        if len(env_state) <= int(index):
-            return float("nan")
-        return float(env_state[int(index)])
-
-    def _coverage_all_depleted(self) -> bool:
-        return self._coverage_runtime_state().all_depleted()
-
-    def _maybe_reopen_coverage_pass(self, obs: dict, *, reason: str) -> bool:
-        return self._coverage_effect_runtime_coordinator().maybe_reopen_pass(
-            obs,
-            reason=reason,
-        )
-
-    def _request_coverage_terminal_stop(
-        self,
-        reason: str,
-        *,
-        replace: bool = False,
-    ) -> None:
-        self._coverage_effect_runtime_coordinator().request_terminal_stop(
-            reason,
-            replace=replace,
-        )
-
-    def _coverage_active_corridor(self) -> CoverageCorridorState | None:
-        return self._coverage_runtime_state().active_corridor()
-
-    def _coverage_corridor_by_id(
-        self,
-        corridor_id: int,
-    ) -> CoverageCorridorState | None:
-        return self._coverage_runtime_state().corridor_by_id(corridor_id)
-
-    def _coverage_active_corridor_score(self) -> float:
-        corridor = self._coverage_active_corridor()
-        return float("nan") if corridor is None else float(corridor.score)
-
-    def _coverage_active_value(self, name: str) -> float:
-        corridor = self._coverage_active_corridor()
-        if corridor is None:
-            return float("nan")
-        return float(getattr(corridor, name, float("nan")))
-
-    def _coverage_active_cell_id(self) -> int:
-        corridor = self._coverage_active_corridor()
-        if corridor is None:
-            return -1
-        return int(self._coverage_cell_id(corridor))
-
-    def _coverage_corridor_cell_id_by_id(self, corridor_id: int) -> int:
-        corridor = self._coverage_corridor_by_id(corridor_id)
-        if corridor is None:
-            return -1
-        return int(self._coverage_cell_id(corridor))
-
-    def _coverage_corridor_row_id_by_id(self, corridor_id: int) -> int:
-        corridor = self._coverage_corridor_by_id(corridor_id)
-        if corridor is None:
-            return -1
-        return int(self._coverage_corridor_row_id(corridor))
-
-    def _coverage_depleted_count(self) -> int:
-        return self._coverage_runtime_state().depleted_count()
-
-    def _coverage_corridor_to_debug(
-        self,
-        corridor: CoverageCorridorState,
-    ) -> dict[str, float | int | str]:
-        return self._coverage_report_service().corridor_to_debug(
-            corridor,
-            attempt_limit=self._coverage_corridor_attempt_limit(corridor),
-            cell_confidence=self._coverage_cell_confidence(corridor),
-        )
-
-    def _clear_dig_cut_plan(self) -> None:
-        self._primitive_token_runtime().clear_dig_cut_plan()
-
-    def _invalidate_pending_dig_cut_plan(self) -> None:
-        self._primitive_token_runtime().invalidate_pending_dig_cut_plan()
-
-    def _validate_dig_cut_planner_config(self) -> None:
-        adapter_config.validate_dig_cut_planner_config(
-            dig_cut_planner_enabled=bool(self.dig_cut_planner_enabled),
-            dig_cut_planner_mode=str(self.dig_cut_planner_mode),
-            dig_cut_prior_path=str(self.dig_cut_prior_path),
-            coverage_candidate_layout=str(self.coverage_candidate_layout),
-            dig_depth_profile_source=str(self.dig_depth_profile_source),
-            dig_depth_profile_required=bool(self.dig_depth_profile_required),
-            dig_depth_profile_allow_live_fallback=bool(
-                self.dig_depth_profile_allow_live_fallback
-            ),
-            dig_cut_prior=dict(self.dig_cut_prior or {}),
-        )
-
-    @staticmethod
-    def _coverage_percentile_list(
-        value: object,
-        *,
-        default: tuple[str, ...],
-    ) -> tuple[str, ...]:
-        return adapter_config.coverage_percentile_list(value, default=default)
-
-    @staticmethod
-    def _coverage_percentile_name(value: object, *, default: str) -> str:
-        return adapter_config.coverage_percentile_name(value, default=default)
-
-    def _align_vector(
-        self,
-        value: object,
-        *,
-        default: list[float] | tuple[float, ...],
-    ) -> np.ndarray:
-        return adapter_config.align_vector(
-            value,
-            default=default,
-            action_dim=int(self.action_dim),
-        )
-
-    def _optional_align_vector(self, value: object) -> np.ndarray | None:
-        return adapter_config.optional_align_vector(
-            value,
-            action_dim=int(self.action_dim),
-        )
-
-    @staticmethod
-    def _optional_float(value: object) -> float | None:
-        return adapter_config.optional_float(value)
-
-    @staticmethod
-    def _load_dig_cut_prior(path: str) -> dict[str, Any]:
-        return adapter_config.load_dig_cut_prior(path)
-
-    @staticmethod
-    def _prior_percentile(
-        fields: dict[str, Any], field_name: str, percentile: str
-    ) -> float:
-        return DigCutTokenPlanner.prior_percentile(fields, field_name, percentile)
-
-    def _clamp_to_prior(
-        self, fields: dict[str, Any], field_name: str, value: float
-    ) -> float:
-        return self._dig_cut_token_planner().clamp_to_prior(fields, field_name, value)
-
-    def _raw_fields_in_prior_range(self, raw_fields: dict[str, float | int]) -> bool:
-        return self._dig_cut_token_planner().raw_fields_in_prior_range(raw_fields)
-
-    def _goal_tokens(self) -> np.ndarray | None:
-        return self._goal_token_provider().tokens_for_cycle(self._cycle_index)
-
-    def _goal_sector_id(self, cycle_index: int) -> int:
-        return self._goal_token_provider().sector_id(cycle_index)
-
-    def _next_goal_sector_id(self) -> int:
-        return self._goal_token_provider().next_sector_id(self._cycle_index)
-
-    def _goal_token_provider(self) -> GoalTokenProvider:
-        return GoalTokenProvider(
-            goal_sequence=tuple(self.goal_sequence),
-            scenario_id=self.goal_scenario_id,
-            depth_norm=self.goal_depth_norm,
-            dump_target_norm=self.goal_dump_target_norm,
-        )
-
-    def _dig_cut_token_planner(self) -> DigCutTokenPlanner:
-        return DigCutTokenPlanner(prior=dict(self.dig_cut_prior or {}))
-
-    def _dig_depth_profile_token_planner(self) -> DigDepthProfileTokenPlanner:
-        return DigDepthProfileTokenPlanner(
-            prior=dict(self.dig_cut_prior or {}),
-            source=str(self.dig_depth_profile_source),
-            required=bool(self.dig_depth_profile_required),
-            allow_live_fallback=bool(self.dig_depth_profile_allow_live_fallback),
-            allow_global_fallback=bool(self.dig_depth_profile_allow_global_fallback),
-        )
-
-    def _return_target_token_planner(self) -> ReturnTargetTokenPlanner:
-        return ReturnTargetTokenPlanner(
-            dig_cut_planner=self._dig_cut_token_planner(),
-            source_prefix=str(self.return_target_token_source_prefix),
-        )
-
-    @staticmethod
-    def _return_relocate_token_planner() -> ReturnRelocateTokenPlanner:
-        return ReturnRelocateTokenPlanner()
-
-    def _return_start_envelope_token_planner(self) -> ReturnStartEnvelopeTokenPlanner:
-        return ReturnStartEnvelopeTokenPlanner(
-            prior=dict(self.dig_cut_prior or {}),
-            use_cell_prior=bool(self.return_start_envelope_use_cell_prior),
-            min_source_count=int(self.return_start_envelope_min_source_count),
-            min_source_fraction=float(self.return_start_envelope_min_source_fraction),
-            conditioning=ReturnStartEnvelopeConditioningConfig(
-                qpos_enabled=bool(
+                dig_depth_profile_allow_global_fallback=bool(
+                    self.dig_depth_profile_allow_global_fallback
+                ),
+                return_target_token_source_prefix=str(
+                    self.return_target_token_source_prefix
+                ),
+                return_start_envelope_use_cell_prior=bool(
+                    self.return_start_envelope_use_cell_prior
+                ),
+                return_start_envelope_min_source_count=int(
+                    self.return_start_envelope_min_source_count
+                ),
+                return_start_envelope_min_source_fraction=float(
+                    self.return_start_envelope_min_source_fraction
+                ),
+                return_start_envelope_qpos_from_relocate_enabled=bool(
                     self.return_start_envelope_qpos_from_relocate_enabled
                 ),
-                qpos_coefficients=self.return_start_envelope_qpos_from_relocate_coefficients,
-                qpos_min=self.return_start_envelope_qpos_from_relocate_min,
-                qpos_max=self.return_start_envelope_qpos_from_relocate_max,
-                qpos_use_prior_bounds=bool(
+                return_start_envelope_qpos_from_relocate_coefficients=(
+                    self.return_start_envelope_qpos_from_relocate_coefficients
+                ),
+                return_start_envelope_qpos_from_relocate_min=(
+                    self.return_start_envelope_qpos_from_relocate_min
+                ),
+                return_start_envelope_qpos_from_relocate_max=(
+                    self.return_start_envelope_qpos_from_relocate_max
+                ),
+                return_start_envelope_qpos_from_relocate_use_prior_qpos_bounds=bool(
                     self.return_start_envelope_qpos_from_relocate_use_prior_qpos_bounds
                 ),
-                spatial_enabled=bool(
+                return_start_envelope_spatial_from_relocate_enabled=bool(
                     self.return_start_envelope_spatial_from_relocate_enabled
                 ),
-                spatial_coefficients=(
+                return_start_envelope_spatial_from_relocate_coefficients=(
                     self.return_start_envelope_spatial_from_relocate_coefficients
                 ),
-                spatial_min=self.return_start_envelope_spatial_from_relocate_min,
-                spatial_max=self.return_start_envelope_spatial_from_relocate_max,
-                spatial_use_prior_bounds=bool(
+                return_start_envelope_spatial_from_relocate_min=(
+                    self.return_start_envelope_spatial_from_relocate_min
+                ),
+                return_start_envelope_spatial_from_relocate_max=(
+                    self.return_start_envelope_spatial_from_relocate_max
+                ),
+                return_start_envelope_spatial_from_relocate_use_prior_spatial_bounds=bool(
                     self.return_start_envelope_spatial_from_relocate_use_prior_spatial_bounds
                 ),
-            ),
-        )
-
-    def _coverage_candidate_builder(
-        self,
-        *,
-        candidate_layout: str | None = None,
-    ) -> CoverageCandidateBuilder:
-        return CoverageCandidateBuilder(
-            candidate_layout=str(candidate_layout or self.coverage_candidate_layout),
-            entry_x_percentiles=tuple(self.coverage_entry_x_percentiles),
-            entry_z_percentiles=tuple(self.coverage_entry_z_percentiles),
-            cut_direction_percentile=str(self.coverage_cut_direction_percentile),
-            cut_length_percentile=str(self.coverage_cut_length_percentile),
-            cut_depth_percentile=str(self.coverage_cut_depth_percentile),
-            payload_percentile=str(self.coverage_payload_percentile),
-        )
-
-    @staticmethod
-    def _normalize_goal_sequence(
-        goal_sequence: list[str] | tuple[str, ...] | None,
-    ) -> tuple[int, ...]:
-        return adapter_config.normalize_goal_sequence(goal_sequence)
-
-    def _active_policy(self) -> Policy:
-        return self._action_dispatch_service().active_policy()
-
-    def _all_policies(self) -> list[Policy]:
-        return self._action_dispatch_service().all_policies()
-
-    def _first_dig_policy_active(self) -> bool:
-        return self._action_dispatch_service().first_dig_policy_active()
-
-    def _make_debug_state(
-        self,
-        *,
-        transition_timeout: bool,
-        transition_completed: bool,
-    ) -> PrimitivePlannerDebugState:
-        return self._tick_finalization_service().make_debug_state(
-            self._tick_finalization_inputs(
-                transition_timeout=transition_timeout,
-                transition_completed=transition_completed,
             )
-        )
-
-    def _tick_finalization_inputs(
-        self,
-        *,
-        transition_timeout: bool,
-        transition_completed: bool,
-    ) -> PrimitiveTickFinalizationInputs:
-        cycle_status = self._cycle_report_status()
-        return PrimitiveTickFinalizationInputs(
-            skill_name=str(self._skill_name),
-            skill_ids=PRIMITIVE_SKILL_IDS,
-            skill_switch_reason=str(self._switch_reason),
-            primitive_checkpoint_paths=self.primitive_checkpoint_paths,
-            first_dig_policy_active=bool(self._first_dig_policy_active()),
-            transition_skill_names=("return",),
-            transition_timeout=bool(transition_timeout),
-            transition_completed=bool(transition_completed),
-            completed_transition_count=cycle_status.completed_transition_count,
-            transition_timeout_count=cycle_status.transition_timeout_count,
-            dump_ready_hold_count=cycle_status.dump_ready_hold_count,
-            dump_done_hold_count=cycle_status.dump_done_hold_count,
-            primitive_cycle_index=cycle_status.primitive_cycle_index,
-            work_hybrid_mode=HYBRID_MODE_WORK,
-            transition_hybrid_mode=HYBRID_MODE_TRANSITION,
         )

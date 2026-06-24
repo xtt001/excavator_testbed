@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from testbed.planner.primitive_execution_state import (
+from testbed.planner.primitive.execution.state import (
     PrimitiveExecutionRuntimeState,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy

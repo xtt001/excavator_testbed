@@ -1,16 +1,29 @@
 from __future__ import annotations
 
 from dataclasses import fields
-from types import MethodType
 from typing import Any
 
-from testbed.planner.primitive_observation import (
+import numpy as np
+
+from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
+from testbed.data.operator_first_v2_2 import (
+    DIG_CUT_TOKEN_DIM,
+    RETURN_START_ENVELOPE_TOKEN_DIM,
+    RETURN_TARGET_TOKEN_DIM,
+)
+from testbed.planner.primitive.facts.observation import (
     PrimitiveObservationInjectionRuntimeState,
     PrimitivePolicyObservationAssembler,
     PrimitivePolicyObservationAssemblerPorts,
     PrimitivePolicyObservationAssemblyResult,
     PrimitiveTokenInjectionState,
 )
+from testbed.planner.primitive.token.observation_runtime import (
+    PrimitiveTokenObservationRuntime,
+    PrimitiveTokenObservationRuntimePorts,
+)
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
@@ -21,6 +34,23 @@ _INJECTED_FLAG_NAMES = {
     "return_target_token_injected",
     "return_relocate_token_injected",
     "return_start_envelope_token_injected",
+}
+
+_TOKEN_OBSERVATION_RUNTIME_WRAPPER_NAMES = {
+    "policy_obs",
+    "policy_observation_assembler",
+    "policy_observation_assembler_ports",
+    "clear_policy_observation_injected_flags",
+    "apply_policy_observation_assembly",
+    "return_target_tokens_for_obs",
+    "return_relocate_tokens_for_obs",
+    "return_start_envelope_tokens_for_obs",
+    "ensure_return_target_plan_for_cycle",
+    "dig_cut_tokens_for_obs",
+    "dig_depth_profile_tokens_for_obs",
+    "ensure_dig_cut_plan_for_cycle",
+    "primitive_token_runtime",
+    "primitive_token_runtime_ports",
 }
 
 
@@ -180,6 +210,12 @@ def test_policy_no_longer_exposes_old_observation_injection_flag_facades() -> No
     assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
 
 
+def test_policy_no_longer_exposes_old_token_observation_runtime_wrappers() -> None:
+    removed_names = {f"_{name}" for name in _TOKEN_OBSERVATION_RUNTIME_WRAPPER_NAMES}
+
+    assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
+
+
 def test_policy_reset_application_replaces_observation_injection_state_owner() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     old_state = planner._primitive_observation_injection_runtime_state()
@@ -205,46 +241,88 @@ def test_policy_reset_application_replaces_observation_injection_state_owner() -
     )
 
 
-def test_policy_obs_delegates_to_assembler_and_writes_legacy_flags() -> None:
+def test_policy_action_dispatch_port_uses_token_observation_runtime() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
-    state = planner._primitive_observation_injection_runtime_state()
-    state.apply_token_injection_state(
-        PrimitiveTokenInjectionState(
-            cell_entry_token_injected=True,
-            dig_cut_token_injected=True,
-            dig_depth_profile_token_injected=True,
-            return_target_token_injected=True,
-            return_relocate_token_injected=True,
-            return_start_envelope_token_injected=True,
-        )
-    )
     obs = {"qpos": [1.0]}
     assembled_obs = {"qpos": [1.0], "dig_cut_tokens": object()}
+    calls: list[str] = []
 
-    class _FakeAssembler:
-        def assemble(
-            self,
-            got_obs: dict[str, Any],
-        ) -> PrimitivePolicyObservationAssemblyResult:
+    class _FakeRuntime:
+        def policy_obs(self, got_obs: dict[str, Any]) -> dict[str, Any]:
             assert got_obs is obs
-            assert state.to_token_injection_state() == PrimitiveTokenInjectionState()
-            return PrimitivePolicyObservationAssemblyResult(
-                policy_obs=assembled_obs,
-                token_injection_state=PrimitiveTokenInjectionState(
-                    dig_cut_token_injected=True,
-                    return_target_token_injected=True,
-                ),
-            )
+            calls.append("policy_obs")
+            return assembled_obs
 
-    planner._policy_observation_assembler = MethodType(
-        lambda self: _FakeAssembler(),
-        planner,
-    )
+    planner._primitive_token_observation_runtime = lambda: _FakeRuntime()
+    planner.action_dim = 4
+    planner.dig_policy = None
+    planner.carry_policy = None
+    planner.dump_policy = None
+    planner.return_policy = None
+    planner.first_dig_policy = None
+    planner.bootstrap_policy = None
 
-    result = planner._policy_obs(obs)
+    result = planner._action_dispatch_ports().policy_observation(obs)
 
     assert result is assembled_obs
-    assert state.to_token_injection_state() == PrimitiveTokenInjectionState(
+    assert calls == ["policy_obs"]
+
+
+def test_token_observation_runtime_assembles_policy_obs_and_owns_injected_flags() -> None:
+    injection_state = PrimitiveObservationInjectionRuntimeState.fresh()
+    injection_state.apply_token_injection_state(
+        PrimitiveTokenInjectionState(return_target_token_injected=True)
+    )
+    dig_cut = np.ones(DIG_CUT_TOKEN_DIM, dtype=np.float32)
+    dig_depth_profile = np.full(
+        DIG_DEPTH_PROFILE_TOKEN_DIM,
+        2.0,
+        dtype=np.float32,
+    )
+    return_target = np.full(RETURN_TARGET_TOKEN_DIM, 3.0, dtype=np.float32)
+
+    runtime = PrimitiveTokenObservationRuntime.from_ports(
+        PrimitiveTokenObservationRuntimePorts(
+            observation_injection_state=injection_state,
+            token_state=PrimitiveTokenRuntimeState.fresh(),
+            coverage_state=CoverageRuntimeState(),
+            goal_tokens=lambda: None,
+            current_skill_name=lambda: "dig",
+            bootstrap_policy_available=lambda: False,
+            cycle_index=lambda: 0,
+            dig_cut_planner_enabled=lambda: True,
+            dig_cut_hold_token_until_skill_exit=lambda: False,
+            coverage_terminal_stop_requested=lambda: False,
+            return_target_planner_enabled=lambda: True,
+            return_target_hold_token_until_skill_exit=lambda: False,
+            build_dig_cut_tokens_for_obs=lambda obs: dig_cut,
+            build_dig_depth_profile_tokens_for_obs=lambda obs: dig_depth_profile,
+            build_next_dig_cut_plan_for_return=lambda obs: (
+                return_target,
+                {},
+                "test",
+                "",
+                0,
+            ),
+            build_return_start_envelope_tokens_for_obs=(
+                lambda obs, raw_fields, *, corridor_id: np.zeros(
+                    RETURN_START_ENVELOPE_TOKEN_DIM,
+                    dtype=np.float32,
+                )
+            ),
+            plan_return_relocate_tokens=lambda token: token.copy(),
+        )
+    )
+
+    result = runtime.policy_obs({"id": "obs"})
+
+    np.testing.assert_allclose(result["dig_cut_tokens"], dig_cut)
+    np.testing.assert_allclose(
+        result["dig_depth_profile_tokens_v1"],
+        dig_depth_profile,
+    )
+    assert "return_target_tokens" not in result
+    assert injection_state.to_token_injection_state() == PrimitiveTokenInjectionState(
         dig_cut_token_injected=True,
-        return_target_token_injected=True,
+        dig_depth_profile_token_injected=True,
     )

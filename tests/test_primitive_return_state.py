@@ -4,12 +4,27 @@ from types import MethodType
 
 import numpy as np
 
-from testbed.planner.primitive_return_handoff import ReturnStartEnvelopeGateResult
-from testbed.planner.primitive_return_state import (
+from testbed.planner.primitive.execution.return_state import (
     PrimitiveReturnReportStatus,
     PrimitiveReturnRuntimeState,
 )
+from testbed.planner.primitive.effects.return_handoff import (
+    ReturnHandoffReadinessConfig,
+    ReturnStartEnvelopeGateConfig,
+)
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+from tests.primitive_policy_test_helpers import make_policy_shell_for_private_weld_tests
+
+
+_RETURN_RUNTIME_FIELD_NAMES = {
+    "return_step_count",
+    "return_to_dig_entry_error_m",
+    "return_to_dig_entry_close_state",
+    "return_next_dig_event_seen",
+    "return_to_dig_start_envelope_ready_state",
+    "return_to_dig_start_envelope_error",
+    "return_to_dig_start_envelope_checks",
+}
 
 
 def test_return_runtime_state_fresh_matches_legacy_reset_defaults() -> None:
@@ -37,17 +52,23 @@ def test_return_runtime_state_fresh_does_not_alias_mutable_checks() -> None:
     )
 
 
-def test_policy_legacy_return_fields_are_backed_by_one_state_owner() -> None:
+def test_policy_no_longer_exposes_old_return_runtime_property_facades() -> None:
+    old_property_names = {f"_{name}" for name in _RETURN_RUNTIME_FIELD_NAMES}
+
+    assert old_property_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
+
+
+def test_policy_return_runtime_owner_stores_mutable_return_fields() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     state = policy._primitive_return_runtime_state()
 
-    policy._return_step_count = 11
-    policy._return_to_dig_entry_error_m = 0.25
-    policy._return_to_dig_entry_close_state = False
-    policy._return_next_dig_event_seen = True
-    policy._return_to_dig_start_envelope_ready_state = False
-    policy._return_to_dig_start_envelope_error = 0.5
-    policy._return_to_dig_start_envelope_checks = {"qpos_0": {"ok": False}}
+    state.return_step_count = 11
+    state.return_to_dig_entry_error_m = 0.25
+    state.return_to_dig_entry_close_state = False
+    state.return_next_dig_event_seen = True
+    state.return_to_dig_start_envelope_ready_state = False
+    state.return_to_dig_start_envelope_error = 0.5
+    state.return_to_dig_start_envelope_checks = {"qpos_0": {"ok": False}}
 
     assert policy._primitive_return_runtime_state() is state
     assert state.return_step_count == 11
@@ -56,10 +77,9 @@ def test_policy_legacy_return_fields_are_backed_by_one_state_owner() -> None:
     assert state.return_next_dig_event_seen is True
     assert state.return_to_dig_start_envelope_ready_state is False
     assert state.return_to_dig_start_envelope_error == 0.5
-    assert (
-        policy._return_to_dig_start_envelope_checks
-        is state.return_to_dig_start_envelope_checks
-    )
+    assert state.return_to_dig_start_envelope_checks == {
+        "qpos_0": {"ok": False}
+    }
 
 
 def test_policy_reset_application_replaces_return_state_owner() -> None:
@@ -77,10 +97,15 @@ def test_policy_reset_application_replaces_return_state_owner() -> None:
 
     assert policy._primitive_return_runtime_state() is reset_state
     assert policy._primitive_return_runtime_state() is not old_state
-    assert policy._return_step_count == 0
-    assert policy._return_to_dig_start_envelope_checks == {}
+    assert policy._primitive_return_runtime_state().return_step_count == 0
     assert (
-        policy._return_to_dig_start_envelope_checks
+        policy._primitive_return_runtime_state()
+        .return_to_dig_start_envelope_checks
+        == {}
+    )
+    assert (
+        policy._primitive_return_runtime_state()
+        .return_to_dig_start_envelope_checks
         is not old_state.return_to_dig_start_envelope_checks
     )
 
@@ -89,13 +114,11 @@ def test_policy_return_state_methods_write_state_owner() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     state = policy._primitive_return_runtime_state()
 
-    policy._mark_return_next_dig_event_seen()
-    policy._apply_return_start_envelope_gate_result(
-        ReturnStartEnvelopeGateResult(
-            ready=False,
-            error=0.75,
-            checks={"qpos_0": {"ok": False}},
-        )
+    state.mark_next_dig_event_seen()
+    state.apply_start_envelope_gate_result(
+        ready=False,
+        error=0.75,
+        checks={"qpos_0": {"ok": False}},
     )
 
     assert state.return_next_dig_event_seen is True
@@ -111,11 +134,14 @@ def test_skill_lifecycle_return_ports_write_return_state_owner() -> None:
     state.return_next_dig_event_seen = True
     policy._skill_name = "dig"
     policy._switch_reason = ""
-    policy._active_policy = MethodType(
-        lambda self: type("_Policy", (), {"reset": lambda self: None})(),
+    class _ActionDispatchService:
+        def active_policy(self):
+            return type("_Policy", (), {"reset": lambda self: None})()
+
+    policy._action_dispatch_service = MethodType(
+        lambda self: _ActionDispatchService(),
         policy,
     )
-    policy._clear_dig_cut_plan = MethodType(lambda self: None, policy)
 
     ports = policy._primitive_skill_lifecycle_ports()
     assert ports.return_state is state
@@ -135,19 +161,45 @@ def test_return_direct_handoff_effect_ports_read_return_state_owner() -> None:
     state.return_to_dig_entry_close_state = False
     state.return_to_dig_start_envelope_ready_state = True
     policy._skill_name = "return"
-    policy.return_target_planner_enabled = True
-    policy.return_to_dig_start_envelope_direct_handoff_enabled = True
-    policy._set_skill = MethodType(lambda self, skill, reason: None, policy)
-    policy._ensure_return_target_plan_for_cycle = MethodType(lambda self, obs: None, policy)
-    policy._return_to_dig_handoff_ready = MethodType(lambda self, obs: False, policy)
-    policy._return_to_dig_direct_handoff_ready = MethodType(
-        lambda self, obs, *, handoff_ready: False,
-        policy,
+    policy.action_dim = 4
+    policy._primitive_return_handoff_config = ReturnHandoffReadinessConfig(
+        return_target_planner_enabled=True,
+        max_entry_error_m=None,
+        max_bucket_mass_kg=0.0,
+        start_envelope_direct_handoff_enabled=True,
+        start_envelope_gate=ReturnStartEnvelopeGateConfig(
+            enabled=False,
+            action_dim=4,
+            spatial_tolerance=0.0,
+            depth_tolerance_m=0.0,
+            local_depth_tolerance_m=0.0,
+            plane_depth_tolerance_m=0.0,
+            plane_depth_mode="range",
+            qpos_tolerance=0.0,
+            require_contact=False,
+        ),
     )
+    policy._set_skill = MethodType(lambda self, skill, reason: None, policy)
+
+    class _FakeTokenObservationRuntime:
+        def ensure_return_target_plan_for_cycle(self, obs):
+            return None
+
+    class _FakeTokenPlanningRuntime:
+        def return_start_envelope_prior_bounds(self, corridor_id):
+            return (None, None)
+
+        def return_start_envelope_prior_mapping(self, *, corridor_id):
+            return (None, "missing")
+
+    policy._primitive_token_observation_runtime = (
+        lambda: _FakeTokenObservationRuntime()
+    )
+    policy._primitive_token_planning_runtime = lambda: _FakeTokenPlanningRuntime()
     policy.pre_dig_align_enabled = False
     policy.pre_dig_align_first_dig_only = False
 
-    ports = policy._return_direct_handoff_effect_ports()
+    ports = policy._primitive_return_handoff_runtime().direct_handoff_effect_service().ports
 
     assert ports.execution_state is policy._primitive_execution_runtime_state()
     assert ports.cycle_state is policy._primitive_cycle_runtime_state()
@@ -234,7 +286,7 @@ def test_return_runtime_state_projects_populated_report_status_without_aliasing(
 
 
 def test_policy_return_debug_facade_delegates_to_report_status() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     state = policy._primitive_return_runtime_state()
     state.return_to_dig_entry_error_m = 0.25
     state.return_to_dig_entry_close_state = False
@@ -254,11 +306,14 @@ def test_policy_return_debug_facade_delegates_to_report_status() -> None:
         start_envelope_local_depth_tolerance_m=0.03,
     )
 
-    assert policy._debug_report_return_fields() == status.debug_fields()
+    assert (
+        policy._primitive_report_composition_runtime().report_runtime().debug_report_return_fields()
+        == status.debug_fields()
+    )
 
 
 def test_policy_rollout_summary_inputs_use_return_report_status_projection() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     return_status = PrimitiveReturnReportStatus(
         return_to_dig_entry_error_m=0.42,
         return_to_dig_entry_close=False,
@@ -280,18 +335,23 @@ def test_policy_rollout_summary_inputs_use_return_report_status_projection() -> 
     policy.dig_cut_prior_path = ""
     policy.dig_failed_replan_next_skill = "dig"
     policy.coverage_multi_pass_enabled = False
+    policy.coverage_multi_pass_max_passes = 1
+    policy.coverage_multi_pass_min_remaining_depth_m = 0.0
     policy.coverage_use_env_removed_depth = False
     policy.coverage_candidate_layout = "corridor_grid"
+    policy.coverage_state_exemplars_enabled = False
     policy.coverage_first_dig_strategy = "best_score"
     policy.coverage_first_dig_preferred_corridor_id = None
     policy.coverage_first_dig_max_entry_distance_m = None
     policy.coverage_first_dig_qpos_delta_weight = 1.0
+    policy.coverage_first_dig_max_qpos_delta = None
     policy.pre_dig_align_enabled = False
     policy.pre_dig_align_first_dig_only = True
     policy.pre_dig_align_replan_after_failed_dig = False
     policy.pre_dig_align_surface_guard_enabled = False
+    policy.pre_dig_align_controlled_dims = np.ones(4, dtype=bool)
 
-    inputs = policy._rollout_summary_inputs()
+    inputs = policy._primitive_report_composition_runtime().report_runtime().rollout_summary_inputs()
 
     assert inputs.return_to_dig_entry_error_m == 0.42
     assert inputs.return_to_dig_entry_close is False

@@ -4,15 +4,15 @@ from types import MethodType
 from typing import Any
 
 from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_CONTRACT
-from testbed.planner.primitive_cell_entry_state import (
+from testbed.planner.primitive.compatibility.cell_entry import (
     PrimitiveCellEntryReportStatus,
 )
-from testbed.planner.primitive_coverage_reports import CoverageTraceReportStatus
-from testbed.planner.primitive_planner_trace import (
+from testbed.planner.primitive.coverage.reports import CoverageTraceReportStatus
+from testbed.planner.primitive.report.planner_trace import (
     PrimitivePlannerTraceBuilder,
     PrimitivePlannerTraceInputs,
 )
-from testbed.planner.primitive_token_state import PrimitiveTokenReportStatus
+from testbed.planner.primitive.token.state import PrimitiveTokenReportStatus
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
@@ -131,15 +131,14 @@ def test_planner_trace_builder_preserves_coverage_fields_and_list_projection() -
 
 def test_policy_planner_trace_delegates_to_trace_builder() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
-    sentinel_inputs = object()
     built_trace = {"coverage_decision_trace_count": 0}
 
-    class _FakeBuilder:
-        def build(self, got_inputs: object) -> dict[str, Any]:
-            assert got_inputs is sentinel_inputs
+    class _FakePublicRuntime:
+        def planner_trace(self) -> dict[str, Any]:
             return built_trace
 
-    planner._planner_trace_inputs = MethodType(lambda self: sentinel_inputs, planner)
-    planner._planner_trace_builder = MethodType(lambda self: _FakeBuilder(), planner)
+    planner._primitive_runtime_kernel_runtime = MethodType(
+        lambda self: _FakePublicRuntime(), planner
+    )
 
     assert planner.planner_trace() is built_trace

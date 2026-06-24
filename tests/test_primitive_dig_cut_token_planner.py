@@ -6,7 +6,7 @@ from testbed.data.operator_first_v2_2 import (
     _build_dig_cut_token,
     build_live_dig_cut_tokens_from_pose,
 )
-from testbed.planner.primitive_tokens import DigCutTokenPlanner
+from testbed.planner.primitive.token.tokens import DigCutTokenPlanner
 
 
 def _prior() -> dict[str, object]:

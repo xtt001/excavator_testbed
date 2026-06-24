@@ -191,6 +191,96 @@ audit and architecture split make the old path clearly unnecessary.
 11. Record: append the round result to
     `docs/planner_rollout_evidence_refactor_log.md`.
 
+## Per-Round Skill Compliance Prompt Block
+
+Every refactor/audit prompt and every executor delegation prompt in this
+workflow must expose these mandatory skill rules explicitly instead of relying
+on memory or implied context:
+
+- Target lock first: verify cwd, branch/status, HEAD, and expected dirty state;
+  stop on mismatch instead of self-correcting repo state.
+- Event-driven loop: after dispatching one executor slice, the planner yields
+  until a callback, blocker, or user correction arrives. Do not poll or
+  speculate while waiting.
+- Planner closure gate: executor green is not closure. The planner must audit
+  target lock, scope, diff/status, docs, behavior impact, and planner-side
+  verification before accepting a slice or dispatching the next one.
+- Reflection cadence: lightweight reflection after every callback; deep
+  reflection after every three accepted implementation callbacks and after any
+  failed or misaligned callback. Do not dispatch the fourth implementation
+  slice until the deep reflection is recorded or the planner stops for user
+  confirmation.
+- Executor boundary: executor callbacks are fact-only. The executor must not
+  choose next tasks, write strategy, or broaden scope.
+- Configuration discipline: every prompt starts with `thinking: xhigh` or
+  `thinking: high`; do not invent model, tool, CLI, env var, path, branch,
+  feature flag, schema, credential, port, or runtime config values; do not
+  change runtime config unless explicitly allowed and verified.
+- Refactor direction: protection is a constraint, not the objective. Do not
+  preserve obsolete/test-only private glue by default once callers/tests can use
+  focused owners or services directly.
+- Architecture boundary: do not pass planner `self` into focused modules; do
+  not add broad pass-through objects, generic blackboards, broad config bags,
+  anemic services, or one-method-per-private-method callback bags.
+- Behavior guardrails: preserve public schema, token order/dimensions, branch
+  order, reason strings, reset timing, default legacy FSM backend, and
+  BT/VLM/LLM fail-fast status unless the user explicitly approves a semantic
+  change.
+
+## Deep Reflection Reference Set
+
+Every lightweight or three-iteration reflection must name the concrete
+reference files it is comparing against. Do not write a reflection from memory,
+from an unnamed old plan, or from the current code shape alone.
+
+Primary architecture references:
+
+- `docs/planner_execution_abstraction_flow.svg`: the intended abstraction flow
+  and the direction of shell -> runtime/service -> effect/report boundaries.
+- `docs/planner_primitive_interface_standard.md`: the active interface/core
+  boundary standard, maturity wording, and public compatibility constraints.
+
+Current implementation references:
+
+- `docs/planner_current_code_architecture_plan.md`: the live current-code
+  architecture inventory, file responsibilities, line-count facts, and next
+  responsibility clusters.
+- `docs/planner_effect_boundary_design.md`: effect, report, trace, reset,
+  branch-order, reason-string, and schema preservation contracts.
+- Current code and focused tests, especially
+  `testbed/policies/hybrid/primitive_planner.py`, focused modules under
+  `testbed/planner/`, and the focused `tests/test_primitive_*.py` suites.
+
+Historical/context references:
+
+- `docs/planner_baseline_architecture_map.md`: branch-created baseline and
+  rollout-evidence context. Use it to prevent current-HEAD drift, but do not
+  treat it as a replacement for the current implementation standard.
+
+Workflow references:
+
+- `docs/planner_rollout_evidence_refactor_plan.md`: this active route,
+  hard-rule block, stop conditions, and verification expectations.
+- `docs/planner_rollout_evidence_refactor_log.md`: accepted callbacks,
+  closure audits, failures, and previous reflection decisions.
+- `docs/prompts/planner_rollout_evidence_goal_prompt.md`: prompt-surface
+  contract for recursive planner/executor continuation.
+- `AGENTS.md`: repository governance, large-file policy, documentation sync,
+  semantic confirmation, and planner state-machine architecture rules.
+
+Three-iteration deep reflection must explicitly answer against this set:
+
+- whether the last accepted implementation callbacks moved toward the SVG and
+  interface standard rather than preserving policy-private glue;
+- whether the current code inventory and effect-boundary docs are stale after
+  the callbacks;
+- whether historical baseline or rollout evidence changes the classification of
+  any path under review;
+- whether verification is proving public behavior contracts instead of merely
+  proving local green tests;
+- whether the next slice should continue, widen within one responsibility
+  cluster, narrow, or stop for user confirmation.
+
 ## Delegated Executor Callback Rule
 
 When the audit/refactor thread delegates a bounded code slice to a separate
@@ -214,6 +304,12 @@ Every follow-up executor prompt generated by the refactor thread must repeat
 this callback requirement recursively, so delegated execution remains
 closed-loop and the refactor thread owns audit, documentation sync, and next
 direction decisions.
+
+Every follow-up executor prompt must also repeat the three-iteration reflection
+gate explicitly. The executor does not write the reflection or choose strategy,
+but its callback must preserve enough factual slice evidence for the
+refactor/audit thread to decide whether the next planner turn is due for the
+three-round deep-reflection stop before another executor dispatch.
 
 ## Thinking-Effort Dispatch Rule
 
@@ -243,7 +339,8 @@ This reflection is owned by the refactor/audit thread, not the executor.
 
 The reflection must answer:
 
-- whether the last three rounds moved the implementation closer to
+- whether the last three rounds moved the implementation closer to the Deep
+  Reflection Reference Set above, especially
   `docs/planner_execution_abstraction_flow.svg` and
   `docs/planner_primitive_interface_standard.md`
 - the largest remaining architecture gap
@@ -254,6 +351,11 @@ The reflection must answer:
 
 Do not dispatch the fourth executor round in a sequence until this reflection is
 recorded or the refactor/audit thread explicitly stops for user confirmation.
+This rule must be copied into both sides of the workflow prompt surface: the
+refactor/audit prompt must name the current accepted-slice count and whether the
+next callback triggers the gate, and the executor prompt must remind the
+executor to return fact-only evidence while leaving the deep reflection and next
+dispatch decision to the refactor/audit thread.
 
 ## Stop Conditions
 

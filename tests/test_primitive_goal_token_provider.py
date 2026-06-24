@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from testbed.data.v2_1 import build_goal_tokens
-from testbed.planner.primitive_tokens import GoalTokenProvider
+from testbed.planner.primitive.token.tokens import GoalTokenProvider
 
 
 def test_goal_token_provider_returns_none_without_goal_sequence() -> None:

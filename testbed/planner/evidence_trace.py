@@ -185,7 +185,7 @@ BASELINE_CAPABILITY_SPECS: tuple[CapabilitySpec, ...] = (
     ),
     CapabilitySpec(
         "token.goal",
-        "PrimitivePlannerACTPolicy._goal_tokens/_policy_obs",
+        "PrimitiveTokenPlannerFactory.goal_tokens_for_cycle/PrimitiveTokenObservationRuntime.policy_obs",
         "token",
     ),
     CapabilitySpec(
@@ -376,7 +376,7 @@ def events_from_rollout_row(row: dict[str, Any]) -> list[EvidenceEvent]:
             _token_event(
                 tick_id,
                 "token.goal",
-                "PrimitivePlannerACTPolicy._goal_tokens/_policy_obs",
+                "PrimitiveTokenPlannerFactory.goal_tokens_for_cycle/PrimitiveTokenObservationRuntime.policy_obs",
                 source="goal_tokens",
                 injected=True,
                 supports=("action.dispatch",),

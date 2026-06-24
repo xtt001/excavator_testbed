@@ -11,16 +11,45 @@ from testbed.data.operator_first_v2_2 import (
     RETURN_TARGET_TOKEN_DIM,
 )
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
-from testbed.planner.primitive_coverage_state import CoverageRuntimeState
-from testbed.planner.primitive_observation import (
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.facts.observation import (
     PrimitiveObservationInjectionRuntimeState,
     PrimitiveTokenInjectionState,
 )
-from testbed.planner.primitive_token_state import (
+from testbed.planner.primitive.token.state import (
     PrimitiveTokenReportStatus,
     PrimitiveTokenRuntimeState,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+from tests.primitive_policy_test_helpers import make_policy_shell_for_private_weld_tests
+
+
+_TOKEN_RUNTIME_FIELD_NAMES = {
+    "dig_cut_planned_cycle_id",
+    "dig_cut_tokens",
+    "dig_depth_profile_tokens",
+    "dig_cut_token_source",
+    "dig_cut_fallback_reason",
+    "dig_cut_token_in_prior_p10_p90",
+    "dig_depth_profile_token_source",
+    "dig_depth_profile_fallback_reason",
+    "return_target_planned_cycle_id",
+    "return_target_tokens",
+    "return_relocate_tokens",
+    "return_start_envelope_tokens",
+    "return_target_token_source",
+    "return_target_fallback_reason",
+    "return_start_envelope_token_source",
+    "return_start_envelope_use_prior_spatial_bounds",
+    "return_start_envelope_use_prior_qpos_bounds",
+    "pending_dig_cut_cycle_id",
+    "pending_dig_cut_corridor_id",
+    "pending_dig_cut_raw_fields",
+    "pending_dig_cut_tokens",
+    "pending_dig_depth_profile_tokens",
+    "pending_dig_state_exemplar_ids",
+    "pending_dig_state_exemplar_distance",
+}
 
 
 def test_token_runtime_state_fresh_matches_legacy_reset_defaults() -> None:
@@ -76,28 +105,32 @@ def test_token_runtime_state_fresh_does_not_alias_mutable_values() -> None:
     assert first.pending_dig_state_exemplar_ids is not second.pending_dig_state_exemplar_ids
 
 
-def test_policy_legacy_token_fields_are_backed_by_one_state_owner() -> None:
+def test_policy_no_longer_exposes_old_token_property_facades() -> None:
+    old_policy_names = {f"_{name}" for name in _TOKEN_RUNTIME_FIELD_NAMES}
+
+    assert old_policy_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
+
+
+def test_policy_token_runtime_owner_is_direct_mutation_surface() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     state = policy._primitive_token_runtime_state()
 
-    policy._dig_cut_tokens = np.ones(DIG_CUT_TOKEN_DIM, dtype=np.float32)
-    policy._pending_dig_cut_cycle_id = 42
-    policy._return_target_tokens = np.full(
+    state.dig_cut_tokens = np.ones(DIG_CUT_TOKEN_DIM, dtype=np.float32)
+    state.pending_dig_cut_cycle_id = 42
+    state.return_target_tokens = np.full(
         RETURN_TARGET_TOKEN_DIM,
         3.0,
         dtype=np.float32,
     )
-    policy._return_start_envelope_use_prior_qpos_bounds = False
-    policy._pending_dig_state_exemplar_ids = ["a", "b"]
+    state.return_start_envelope_use_prior_qpos_bounds = False
+    state.pending_dig_state_exemplar_ids = ["a", "b"]
 
     assert policy._primitive_token_runtime_state() is state
-    assert policy._dig_cut_tokens is state.dig_cut_tokens
     assert float(state.dig_cut_tokens[0]) == 1.0
     assert state.pending_dig_cut_cycle_id == 42
-    assert policy._return_target_tokens is state.return_target_tokens
     assert float(state.return_target_tokens[0]) == 3.0
     assert state.return_start_envelope_use_prior_qpos_bounds is False
-    assert policy._pending_dig_state_exemplar_ids is state.pending_dig_state_exemplar_ids
+    assert state.pending_dig_state_exemplar_ids == ["a", "b"]
 
 
 def test_policy_reset_application_replaces_token_state_owner() -> None:
@@ -115,24 +148,29 @@ def test_policy_reset_application_replaces_token_state_owner() -> None:
 
     assert policy._primitive_token_runtime_state() is reset_state
     assert policy._primitive_token_runtime_state() is not old_state
-    assert policy._dig_cut_tokens[0] == 0.0
-    assert policy._pending_dig_state_exemplar_ids == []
-    assert policy._dig_cut_tokens is not old_state.dig_cut_tokens
+    assert policy._primitive_token_runtime_state().dig_cut_tokens[0] == 0.0
+    assert policy._primitive_token_runtime_state().pending_dig_state_exemplar_ids == []
+    assert (
+        policy._primitive_token_runtime_state().dig_cut_tokens
+        is not old_state.dig_cut_tokens
+    )
 
 
 def test_token_runtime_ports_and_clear_facade_use_state_owner() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     state = policy._primitive_token_runtime_state()
     policy._skill_name = "dig"
-    policy._cycle_index = 0
+    policy._primitive_cycle_runtime_state().cycle_index = 0
     policy.dig_cut_planner_enabled = True
     policy.dig_cut_hold_token_until_skill_exit = False
     policy.return_target_planner_enabled = True
     policy.return_target_hold_token_until_skill_exit = False
     policy.bootstrap_policy = None
-    policy._coverage_terminal_stop_requested = False
+    policy._coverage_runtime_state().coverage_terminal_stop_requested = False
     coverage_state = policy._coverage_runtime_state()
-    ports = policy._primitive_token_runtime_ports()
+    ports = (
+        policy._primitive_token_observation_runtime().primitive_token_runtime_ports()
+    )
 
     port_names = {field.name for field in ports.__dataclass_fields__.values()}
     assert ports.state is state
@@ -154,7 +192,11 @@ def test_token_runtime_ports_and_clear_facade_use_state_owner() -> None:
     assert state.pending_dig_cut_cycle_id == 13
     assert coverage_state.coverage_active_state_exemplar_ids == ["ex_a"]
 
-    policy._clear_dig_cut_plan()
+    (
+        policy._primitive_token_observation_runtime()
+        .primitive_token_runtime()
+        .clear_dig_cut_plan()
+    )
 
     assert state.dig_cut_planned_cycle_id == -1
     assert state.dig_cut_token_source == "none"
@@ -166,14 +208,14 @@ def test_token_runtime_ports_and_clear_facade_use_state_owner() -> None:
 
 
 def test_dig_token_planning_ports_share_token_state_owner() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     state = policy._primitive_token_runtime_state()
     policy.dig_cut_planner_mode = "operator_prior_coverage"
     policy.dig_cut_planner_fallback_mode = "conservative_pose"
-    policy._cycle_index = 0
+    policy._primitive_cycle_runtime_state().cycle_index = 0
     policy.action_dim = 4
 
-    ports = policy._primitive_dig_token_planning_ports()
+    ports = policy._primitive_token_planning_runtime().dig_token_planning_ports()
     port_names = {field.name for field in ports.__dataclass_fields__.values()}
 
     assert ports.token_state is state
@@ -200,12 +242,12 @@ def test_dig_token_planning_ports_share_token_state_owner() -> None:
 
 
 def test_return_token_planning_ports_share_token_state_owner() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     state = policy._primitive_token_runtime_state()
     policy.dig_cut_planner_mode = "operator_prior_coverage"
     policy.action_dim = 4
 
-    ports = policy._primitive_return_token_planning_ports()
+    ports = policy._primitive_token_planning_runtime().return_token_planning_ports()
     port_names = {field.name for field in ports.__dataclass_fields__.values()}
 
     assert ports.token_state is state
@@ -295,7 +337,7 @@ def test_token_runtime_state_projects_token_status_from_live_runtime_state() -> 
 
 
 def test_policy_token_status_facade_delegates_to_token_runtime_state() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     state = policy._primitive_token_runtime_state()
     state.dig_cut_tokens = np.arange(DIG_CUT_TOKEN_DIM, dtype=np.float32) + 10.0
     state.dig_depth_profile_tokens = (
@@ -343,7 +385,9 @@ def test_policy_token_status_facade_delegates_to_token_runtime_state() -> None:
     )
 
     assert (
-        policy._token_status_for_debug_report().to_debug_fields()
+        policy._primitive_report_composition_runtime()
+        .token_status_for_debug_report()
+        .to_debug_fields()
         == expected.to_debug_fields()
     )
 
@@ -386,7 +430,7 @@ def test_token_runtime_state_projects_report_status_from_live_runtime_state() ->
 
 
 def test_policy_token_report_debug_facades_delegate_to_report_status() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     state = policy._primitive_token_runtime_state()
     state.pending_dig_cut_cycle_id = 4
     state.pending_dig_cut_corridor_id = 9
@@ -410,5 +454,7 @@ def test_policy_token_report_debug_facades_delegate_to_report_status() -> None:
         dig_cut_prior_path="/tmp/dig_prior.json",
     )
 
-    assert policy._debug_report_pending_fields() == status.pending_debug_fields()
-    assert policy._debug_report_dig_cut_fields() == status.dig_cut_debug_fields()
+    runtime = policy._primitive_report_composition_runtime().report_runtime()
+
+    assert runtime.debug_report_pending_fields() == status.pending_debug_fields()
+    assert runtime.debug_report_dig_cut_fields() == status.dig_cut_debug_fields()

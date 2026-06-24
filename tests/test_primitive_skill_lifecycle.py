@@ -3,13 +3,13 @@ from __future__ import annotations
 from dataclasses import fields
 from types import MethodType
 
-from testbed.planner.primitive_coverage_state import CoverageRuntimeState
-from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive_execution_state import (
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.execution.state import (
     PrimitiveExecutionRuntimeState,
 )
-from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
-from testbed.planner.primitive_skill_lifecycle import (
+from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive.execution.skill_lifecycle import (
     PrimitiveSkillLifecyclePorts,
     PrimitiveSkillLifecycleService,
 )

@@ -5,13 +5,16 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from testbed.planner.primitive_boundary_event import (
+from testbed.planner.primitive.execution.boundary_event import (
     PrimitiveBoundaryEventRuntimePorts,
     PrimitiveBoundaryEventRuntimeService,
 )
-from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
-from testbed.planner.primitive_execution_state import PrimitiveExecutionRuntimeState
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
+from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+
+
+_OLD_BOUNDARY_EVENT_POLICY_WRAPPERS = ("_tick_boundary_event",)
 
 
 class _FakeBoundaryDetector:
@@ -88,7 +91,12 @@ def test_boundary_event_service_projects_observation_facts_to_detector() -> None
     assert dict(call["task_metrics"]) == task_metrics
 
 
-def test_policy_boundary_event_facade_uses_execution_owner_and_detector() -> None:
+def test_policy_no_longer_exposes_boundary_event_private_wrapper() -> None:
+    for wrapper_name in _OLD_BOUNDARY_EVENT_POLICY_WRAPPERS:
+        assert wrapper_name not in PrimitivePlannerACTPolicy.__dict__
+
+
+def test_policy_boundary_event_runtime_uses_execution_owner_and_detector() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     policy.action_dim = 4
     detector = _FakeBoundaryDetector(event=SimpleNamespace(kind="boundary"))
@@ -98,7 +106,9 @@ def test_policy_boundary_event_facade_uses_execution_owner_and_detector() -> Non
     execution_state.set_prev_action(action)
 
     ports = policy._primitive_boundary_event_runtime_ports()
-    result = policy._tick_boundary_event({"task_metrics": {"mass_in_bucket_kg": 3.0}})
+    result = policy._primitive_boundary_event_runtime_service().update(
+        {"task_metrics": {"mass_in_bucket_kg": 3.0}}
+    )
 
     assert ports.execution_state is execution_state
     assert ports.boundary_detector is detector

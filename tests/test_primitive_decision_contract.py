@@ -12,15 +12,24 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
     ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
 )
-from testbed.planner.primitive_coverage import CoverageCorridorState
-from testbed.planner.primitive_capabilities import (
+from testbed.planner.primitive.coverage.selection import CoverageCorridorState
+from testbed.planner.primitive.facts.capabilities import (
     CarryTransitionStatus,
     DigTransitionStatus,
     DumpTransitionStatus,
     ReturnTransitionStatus,
 )
-from testbed.planner import primitive_decision
-from testbed.planner.primitive_decision import (
+from testbed.planner.primitive.decision.backends.legacy_capability_provider import (
+    PrimitiveFSMCapabilityProvider,
+    PrimitiveFSMCapabilityProviderConfig,
+    PrimitiveFSMCapabilityProviderPorts,
+)
+from testbed.planner.primitive.decision import contracts as primitive_decision
+from testbed.planner.primitive.decision.backends.legacy_fsm import (
+    LegacyFSMBranchPorts,
+    LegacyFSMDecisionBackendFactory,
+)
+from testbed.planner.primitive.decision.contracts import (
     LEGACY_FSM_DECISION_SOURCE,
     CompleteCoverageDigEffect,
     CompleteReturnTransitionEffect,
@@ -42,8 +51,100 @@ from testbed.planner.primitive_decision import (
     SwitchSkillEffect,
     validate_decision_effect_contract,
 )
-from testbed.planner.primitive_execution import PrimitiveTickPreparation
+from testbed.planner.primitive.decision.capabilities import (
+    PrimitiveDecisionCapabilities,
+    PrimitiveDecisionCapabilitiesPorts,
+)
+from testbed.planner.primitive.decision.runtime import (
+    LEGACY_FSM_DECISION_BACKEND_NAME,
+    PrimitiveDecisionRuntime,
+    PrimitiveDecisionRuntimePorts,
+)
+from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
+from testbed.planner.primitive.effects.return_handoff import (
+    ReturnHandoffReadinessConfig,
+    ReturnStartEnvelopeGateConfig,
+)
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+
+
+_OLD_TRANSITION_STATUS_POLICY_WRAPPERS = (
+    "_dig_transition_status_for_backend",
+    "_carry_transition_status_for_backend",
+    "_dump_transition_status_for_backend",
+    "_return_transition_status_for_backend",
+)
+
+_OLD_CAPABILITY_COMPOSITION_POLICY_WRAPPERS = (
+    "_decision_runtime_ports",
+    "_legacy_fsm_backend_factory",
+    "_legacy_fsm_branch_ports",
+    "_primitive_decision_capabilities",
+    "_primitive_decision_capabilities_ports",
+    "_primitive_fsm_capability_provider",
+    "_primitive_fsm_capability_provider_ports",
+)
+
+
+def _minimal_return_handoff_config(
+    *,
+    action_dim: int = 4,
+) -> ReturnHandoffReadinessConfig:
+    return ReturnHandoffReadinessConfig(
+        return_target_planner_enabled=False,
+        max_entry_error_m=None,
+        max_bucket_mass_kg=0.0,
+        start_envelope_direct_handoff_enabled=False,
+        start_envelope_gate=ReturnStartEnvelopeGateConfig(
+            enabled=False,
+            action_dim=int(action_dim),
+            spatial_tolerance=0.0,
+            depth_tolerance_m=0.0,
+            local_depth_tolerance_m=0.0,
+            plane_depth_tolerance_m=0.0,
+            plane_depth_mode="range",
+            qpos_tolerance=0.0,
+            require_contact=False,
+        ),
+    )
+
+
+class _FakeCoverageEffectRuntime:
+    def __init__(self, events: list[str], expected_obs: dict[str, Any]) -> None:
+        self._events = events
+        self._expected_obs = expected_obs
+
+    def complete_coverage_dump(
+        self,
+        got_obs: dict[str, Any],
+        *,
+        reason: str,
+    ) -> None:
+        assert got_obs is self._expected_obs
+        self._events.append(f"complete:{reason}")
+
+    def reject_active_coverage_corridor(
+        self,
+        got_obs: dict[str, Any],
+        *,
+        reason: str,
+    ) -> None:
+        assert got_obs is self._expected_obs
+        self._events.append(f"reject:{reason}")
+
+    def complete_coverage_dig(self, got_obs: dict[str, Any]) -> None:
+        assert got_obs is self._expected_obs
+        self._events.append("coverage")
+
+
+class _FakeDigRecoveryService:
+    def __init__(self, events: list[str], expected_obs: dict[str, Any]) -> None:
+        self._events = events
+        self._expected_obs = expected_obs
+
+    def restart_after_failed_dig(self, reason: str, got_obs: dict[str, Any]) -> None:
+        assert got_obs is self._expected_obs
+        self._events.append(f"restart:{reason}")
 
 
 def _default_dig_status(**overrides: Any) -> DigTransitionStatus:
@@ -166,16 +267,50 @@ def _install_fake_decision_status_provider(
         dump_status=dump_status,
         return_status=return_status,
     )
-    planner._primitive_fsm_capability_provider = MethodType(
-        lambda self: provider,
+    capabilities = PrimitiveDecisionCapabilities.from_ports(
+        PrimitiveDecisionCapabilitiesPorts(
+            current_skill_name=lambda: str(planner._skill_name),
+            current_switch_reason=lambda: str(planner._switch_reason),
+            should_end_bootstrap=getattr(
+                planner,
+                "_should_end_bootstrap",
+                lambda *, obs, boundary_event: False,
+            ),
+            bootstrap_end_mode=lambda: str(
+                getattr(planner, "bootstrap_end_mode", "first_qualified_dig_start")
+            ),
+            transition_status_provider=provider,
+        )
+    )
+    branch_ports = LegacyFSMBranchPorts(
+        bootstrap_skill_name="bootstrap",
+        dig_skill_name="dig",
+        carry_skill_name="carry",
+        dump_skill_name="dump",
+        return_skill_name="return",
+        facts_source=capabilities.facts_source(),
+        compatibility_actions=capabilities.compatibility_actions(),
+    )
+    runtime = PrimitiveDecisionRuntime.from_ports(
+        PrimitiveDecisionRuntimePorts(
+            backend_factories={
+                LEGACY_FSM_DECISION_BACKEND_NAME: (
+                    lambda: LegacyFSMDecisionBackendFactory.from_ports(branch_ports)
+                ),
+            }
+        )
+    )
+    planner._decision_runtime = MethodType(
+        lambda self: runtime,
         planner,
     )
     return provider
 
 
 def _set_minimal_non_dig_capability_fields(planner: PrimitivePlannerACTPolicy) -> None:
-    planner._coverage_cycle_start_deposit_kg = 0.0
-    planner._dump_ready_hold_count = 0
+    planner._coverage_runtime_state().coverage_cycle_start_deposit_kg = 0.0
+    cycle_state = planner._primitive_cycle_runtime_state()
+    cycle_state.dump_ready_hold_count = 0
     planner.dump_ready_hold_steps = 1
     planner.dump_ready_min_height_above_rim_m = 0.0
     planner.dump_ready_require_over_footprint = True
@@ -195,8 +330,8 @@ def _set_minimal_non_dig_capability_fields(planner: PrimitivePlannerACTPolicy) -
     planner.dump_done_max_bucket_mass_kg = 0.0
     planner.dump_done_min_deposit_delta_kg = 0.0
     planner.dump_done_use_boundary_event = True
-    planner._dump_start_deposited_mass_kg = 0.0
-    planner._dump_done_hold_count = 0
+    cycle_state.dump_start_deposited_mass_kg = 0.0
+    cycle_state.dump_done_hold_count = 0
     planner.dump_done_hold_steps = 1
     planner.return_to_dig_start_envelope_direct_handoff_enabled = False
     planner.return_to_dig_start_envelope_gate_enabled = False
@@ -206,7 +341,51 @@ def _set_minimal_non_dig_capability_fields(planner: PrimitivePlannerACTPolicy) -
     planner.return_to_dig_min_depth_m = 0.0
     planner.return_to_dig_max_depth_m = 0.0
     planner.return_to_dig_max_entry_error_m = None
-    planner._return_to_dig_handoff_ready = MethodType(lambda self, obs: False, planner)
+    planner._primitive_return_handoff_config = _minimal_return_handoff_config(
+        action_dim=int(getattr(planner, "action_dim", 4))
+    )
+
+
+def _fsm_capability_provider_from_config(
+    planner: PrimitivePlannerACTPolicy,
+    *,
+    config: PrimitiveFSMCapabilityProviderConfig,
+) -> PrimitiveFSMCapabilityProvider:
+    return PrimitiveFSMCapabilityProvider.from_ports(
+        PrimitiveFSMCapabilityProviderPorts(
+            config=config,
+            semantic_boundary_profile_active=(
+                lambda: planner._semantic_boundary_profile_active()
+            ),
+            cycle_state=planner._primitive_cycle_runtime_state(),
+            coverage_state=planner._coverage_runtime_state(),
+            return_state=planner._primitive_return_runtime_state(),
+            return_handoff_readiness_service=(
+                planner._primitive_return_handoff_runtime().readiness_service()
+            ),
+        )
+    )
+
+
+def _apply_legacy_compatibility_decision(
+    planner: PrimitivePlannerACTPolicy,
+    *,
+    obs: dict[str, Any],
+    boundary_event: Any | None,
+) -> PrimitiveDecisionResult | None:
+    skill_before = str(planner._skill_name)
+    result = planner._decision_runtime().decide_legacy_compatibility_tick(
+        obs=obs,
+        boundary_event=boundary_event,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision=skill_before,
+            dig_progress_updated=skill_before == "dig",
+        ),
+    )
+    if result is not None and not result.side_effects_applied:
+        planner._primitive_requested_effect_runtime().apply(obs, result.effects)
+    return result
 
 
 def test_legacy_decision_result_records_observable_skill_switch_only() -> None:
@@ -569,279 +748,6 @@ def test_decision_contract_rejects_callable_or_planner_method_effect_shapes() ->
             raise AssertionError("invalid requested effect shape was accepted")
 
 
-def test_primitive_planner_requested_effect_bridge_allows_empty_effects() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-
-    planner._apply_requested_tick_effects({}, ())
-
-
-def test_primitive_planner_requested_effect_bridge_delegates_to_requested_applier() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-    obs: dict[str, Any] = {"tag": "current_obs"}
-    effects = (
-        RequestedPlannerEffect(
-            effect_type="delegated_probe",
-            reason="test_delegate",
-        ),
-    )
-    calls: list[tuple[dict[str, Any], tuple[RequestedPlannerEffect, ...]]] = []
-
-    class FakeApplier:
-        def apply(
-            self,
-            got_obs: dict[str, Any],
-            got_effects: tuple[RequestedPlannerEffect, ...],
-        ) -> None:
-            calls.append((got_obs, got_effects))
-
-    planner._requested_effect_applier = MethodType(lambda self: FakeApplier(), planner)
-
-    planner._apply_requested_tick_effects(obs, effects)
-
-    assert calls == [(obs, effects)]
-
-
-def test_primitive_planner_requested_effect_bridge_rejects_live_effects() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-    effects = (
-        RequestedPlannerEffect(
-            effect_type="record_decision_trace",
-            reason="future_backend_probe",
-        ),
-    )
-
-    try:
-        planner._apply_requested_tick_effects({}, effects)
-    except PrimitiveDecisionContractError as exc:
-        message = str(exc)
-    else:
-        raise AssertionError("live requested effects were silently ignored")
-
-    assert "real planner" in message
-    assert "requested-effect application" in message
-    assert "only supports SwitchSkill" in message
-
-
-def test_primitive_planner_requested_effect_bridge_applies_switch_skill() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-    calls: list[tuple[str, str]] = []
-
-    def fake_set_skill(
-        self: PrimitivePlannerACTPolicy,
-        skill_name: str,
-        reason: str,
-    ) -> None:
-        calls.append((skill_name, reason))
-
-    planner._set_skill = MethodType(fake_set_skill, planner)
-
-    planner._apply_requested_tick_effects(
-        {},
-        (
-            SwitchSkillEffect(
-                target_skill_name="carry",
-                switch_reason="dig_to_carry_boundary_confirmed",
-            ),
-        )
-    )
-
-    assert calls == [("carry", "dig_to_carry_boundary_confirmed")]
-
-
-def test_primitive_planner_requested_effect_bridge_applies_return_cycle_in_order() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-    events: list[str] = []
-    cycle_state = planner._primitive_cycle_runtime_state()
-    return_state = planner._primitive_return_runtime_state()
-
-    def fake_next_skill(self: PrimitivePlannerACTPolicy) -> str:
-        events.append(f"next_skill:{cycle_state.cycle_index}")
-        return "dig"
-
-    def fake_set_skill(
-        self: PrimitivePlannerACTPolicy,
-        skill_name: str,
-        reason: str,
-    ) -> None:
-        events.append(f"set:{skill_name}:{reason}")
-
-    planner._next_skill_after_return_transition = MethodType(fake_next_skill, planner)
-    planner._set_skill = MethodType(fake_set_skill, planner)
-
-    planner._apply_requested_tick_effects(
-        {},
-        (
-            MarkReturnNextDigEventSeenEffect(),
-            CompleteReturnTransitionEffect(),
-            SwitchToNextSkillAfterReturnEffect(
-                reason_suffix="next_dig_entry_ready",
-            ),
-        )
-    )
-
-    assert events == [
-        "next_skill:1",
-        "set:dig:return_to_dig_next_dig_entry_ready",
-    ]
-    assert return_state.return_next_dig_event_seen is True
-    assert cycle_state.completed_transition_count == 1
-    assert cycle_state.cycle_index == 1
-
-
-def test_primitive_planner_requested_effect_bridge_applies_carry_dump_effects_with_obs() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-    planner.action_dim = 4
-    obs: dict[str, Any] = {
-        "payload": "current_obs",
-        "task_metrics": {"deposited_mass_in_target_box_kg": 12.5},
-    }
-    events: list[str] = []
-    cycle_state = planner._primitive_cycle_runtime_state()
-
-    def fake_complete_dump(
-        self: PrimitivePlannerACTPolicy,
-        got_obs: dict[str, Any],
-        *,
-        reason: str,
-    ) -> None:
-        assert got_obs is obs
-        events.append(f"complete:{reason}")
-
-    def fake_return_or_handoff(
-        self: PrimitivePlannerACTPolicy,
-        got_obs: dict[str, Any],
-        *,
-        reason: str,
-    ) -> None:
-        assert got_obs is obs
-        events.append(f"return:{reason}")
-
-    def fake_set_skill(
-        self: PrimitivePlannerACTPolicy,
-        skill_name: str,
-        reason: str,
-    ) -> None:
-        events.append(f"skill:{skill_name}:{reason}")
-
-    planner._complete_coverage_dump = MethodType(fake_complete_dump, planner)
-    planner._set_return_or_direct_handoff = MethodType(fake_return_or_handoff, planner)
-    planner._set_skill = MethodType(fake_set_skill, planner)
-
-    planner._apply_requested_tick_effects(
-        obs,
-        (
-            SetDumpReadyHoldCountEffect(value=4),
-            SetDumpStartDepositedMassFromObservationEffect(),
-            SwitchSkillEffect(
-                target_skill_name="dump",
-                switch_reason="carry_to_dump_target_ready",
-            ),
-            SetDumpDoneHoldCountEffect(value=2),
-            CompleteCoverageDumpEffect(reason="dump_mass_low"),
-            SetReturnOrDirectHandoffEffect(reason="dump_to_return_mass_low"),
-        ),
-    )
-
-    assert events == [
-        "skill:dump:carry_to_dump_target_ready",
-        "complete:dump_mass_low",
-        "return:dump_to_return_mass_low",
-    ]
-    assert cycle_state.dump_ready_hold_count == 4
-    assert cycle_state.dump_start_deposited_mass_kg == 12.5
-    assert cycle_state.dump_done_hold_count == 2
-
-
-def test_primitive_planner_return_effect_bridge_uses_service_backed_wrapper() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-    obs: dict[str, Any] = {"payload": "current_obs"}
-    calls: list[tuple[dict[str, Any], str]] = []
-
-    class FakeReturnDirectHandoffService:
-        def apply(self, got_obs: dict[str, Any], *, reason: str) -> object:
-            calls.append((got_obs, reason))
-            return SimpleNamespace(direct_handoff_applied=False)
-
-    planner._return_direct_handoff_effect_service = MethodType(
-        lambda self: FakeReturnDirectHandoffService(),
-        planner,
-    )
-
-    planner._apply_requested_tick_effects(
-        obs,
-        (SetReturnOrDirectHandoffEffect(reason="dump_to_return_mass_low"),),
-    )
-
-    assert calls == [(obs, "dump_to_return_mass_low")]
-
-
-def test_primitive_planner_requested_effect_bridge_applies_dig_effects_in_order() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-    obs: dict[str, Any] = {"payload": "current_obs"}
-    events: list[str] = []
-    cycle_state = planner._primitive_cycle_runtime_state()
-
-    def fake_reject(
-        self: PrimitivePlannerACTPolicy,
-        got_obs: dict[str, Any],
-        *,
-        reason: str,
-    ) -> None:
-        assert got_obs is obs
-        events.append(f"reject:{reason}")
-
-    def fake_restart(
-        self: PrimitivePlannerACTPolicy,
-        reason: str,
-        got_obs: dict[str, Any],
-    ) -> None:
-        assert got_obs is obs
-        events.append(f"restart:{reason}")
-
-    def fake_complete_dig(
-        self: PrimitivePlannerACTPolicy,
-        got_obs: dict[str, Any],
-    ) -> None:
-        assert got_obs is obs
-        events.append("coverage")
-
-    def fake_set_skill(
-        self: PrimitivePlannerACTPolicy,
-        skill_name: str,
-        reason: str,
-    ) -> None:
-        events.append(f"skill:{skill_name}:{reason}")
-
-    planner._reject_active_coverage_corridor = MethodType(fake_reject, planner)
-    planner._restart_after_failed_dig = MethodType(fake_restart, planner)
-    planner._complete_coverage_dig = MethodType(fake_complete_dig, planner)
-    planner._set_skill = MethodType(fake_set_skill, planner)
-
-    planner._apply_requested_tick_effects(
-        obs,
-        (
-            IncrementDigExitGuardReplanCountEffect(),
-            IncrementDigBadReplanCountEffect(),
-            RejectActiveCoverageCorridorEffect(reason="bad_dig_low_payload"),
-            RestartAfterFailedDigEffect(reason="bad_dig_low_payload"),
-            CompleteCoverageDigEffect(),
-            SwitchSkillEffect(
-                target_skill_name="carry",
-                switch_reason="dig_to_carry_loaded",
-            ),
-        ),
-    )
-
-    assert events == [
-        "reject:bad_dig_low_payload",
-        "restart:bad_dig_low_payload",
-        "coverage",
-        "skill:carry:dig_to_carry_loaded",
-    ]
-    assert cycle_state.dig_exit_guard_replan_count == 1
-    assert cycle_state.dig_bad_replan_count == 1
-
-
 def test_primitive_planner_unknown_skill_fails_without_broad_legacy_fallback() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     planner._skill_name = "legacy_skill"
@@ -851,23 +757,10 @@ def test_primitive_planner_unknown_skill_fails_without_broad_legacy_fallback() -
         "task_metrics": {"deposited_mass_in_target_box_kg": 8.5},
     }
     boundary_event = object()
-    calls: list[tuple[dict[str, Any], object, str]] = []
-
-    def fake_maybe_switch_skill(
-        self: PrimitivePlannerACTPolicy,
-        *,
-        obs: dict[str, Any],
-        boundary_event: object,
-    ) -> None:
-        calls.append((obs, boundary_event, str(self._skill_name)))
-        self._skill_name = "carry"
-        self._switch_reason = "legacy_to_carry"
-
-    planner._maybe_switch_skill = MethodType(fake_maybe_switch_skill, planner)
     _install_fake_decision_status_provider(planner)
 
     try:
-        planner._decide_tick_with_legacy_fsm(
+        planner._decision_runtime().decide_tick(
             obs=obs,
             boundary_event=boundary_event,
             preparation=PrimitiveTickPreparation(
@@ -881,7 +774,6 @@ def test_primitive_planner_unknown_skill_fails_without_broad_legacy_fallback() -
     else:
         raise AssertionError("unknown skill unexpectedly used broad legacy fallback")
 
-    assert calls == []
     assert "unhandled planner skill" in message
     assert "broad legacy fallback is retired" in message
 
@@ -909,19 +801,13 @@ def test_primitive_planner_decision_bridge_delegates_to_decision_runtime() -> No
         lambda self: FakeRuntime(),
         planner,
     )
-    planner._legacy_fsm_branch_ports = MethodType(
-        lambda self: (_ for _ in ()).throw(
-            AssertionError("policy bridge should delegate to decision runtime")
-        ),
-        planner,
-    )
 
     preparation = PrimitiveTickPreparation(
         boundary_event=boundary_event,
         skill_name_before_decision="dig",
         dig_progress_updated=True,
     )
-    result = planner._decide_tick_with_legacy_fsm(
+    result = planner._decision_runtime().decide_tick(
         obs=obs,
         boundary_event=boundary_event,
         preparation=preparation,
@@ -948,15 +834,9 @@ def test_primitive_planner_mainline_miss_does_not_call_broad_legacy_fallback() -
         lambda self: FailingRuntime(),
         planner,
     )
-    planner._maybe_switch_skill = MethodType(
-        lambda self, *, obs, boundary_event: (_ for _ in ()).throw(
-            AssertionError("broad legacy fallback should not be called")
-        ),
-        planner,
-    )
 
     try:
-        planner._decide_tick_with_legacy_fsm(
+        planner._decision_runtime().decide_tick(
             obs=obs,
             boundary_event=None,
             preparation=PrimitiveTickPreparation(
@@ -989,15 +869,9 @@ def test_primitive_planner_pre_dig_align_is_unhandled_after_cleanup() -> None:
         lambda self: FakeRuntime(),
         planner,
     )
-    planner._maybe_switch_skill = MethodType(
-        lambda self, *, obs, boundary_event: (_ for _ in ()).throw(
-            AssertionError("broad legacy fallback should not be called")
-        ),
-        planner,
-    )
 
     with pytest.raises(PrimitiveDecisionContractError, match="pre_dig_align"):
-        planner._decide_tick_with_legacy_fsm(
+        planner._decision_runtime().decide_tick(
             obs=obs,
             boundary_event=None,
             preparation=PrimitiveTickPreparation(
@@ -1020,7 +894,7 @@ def test_primitive_planner_pre_dig_align_is_unhandled_after_cleanup() -> None:
     ]
 
 
-def test_primitive_planner_maybe_switch_skill_applies_requested_compat_result() -> None:
+def test_primitive_planner_legacy_compatibility_applies_requested_compat_result() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs: dict[str, Any] = {"qpos": [1.0]}
     boundary_event = object()
@@ -1048,12 +922,23 @@ def test_primitive_planner_maybe_switch_skill_applies_requested_compat_result() 
         lambda self: FakeRuntime(),
         planner,
     )
-    planner._apply_requested_tick_effects = MethodType(
-        lambda self, got_obs, effects: calls.append(("apply", got_obs, effects)),
+    class FakeApplier:
+        def apply(self, got_obs, effects):
+            calls.append(("apply", got_obs, effects))
+
+    planner._primitive_requested_effect_runtime = MethodType(
+        lambda self: FakeApplier(),
         planner,
     )
 
-    planner._maybe_switch_skill(obs=obs, boundary_event=boundary_event)
+    assert (
+        _apply_legacy_compatibility_decision(
+            planner,
+            obs=obs,
+            boundary_event=boundary_event,
+        )
+        is result
+    )
 
     assert calls == [
         (
@@ -1070,7 +955,7 @@ def test_primitive_planner_maybe_switch_skill_applies_requested_compat_result() 
     ]
 
 
-def test_primitive_planner_maybe_switch_skill_propagates_removed_pre_dig_error() -> None:
+def test_primitive_planner_legacy_compatibility_propagates_removed_pre_dig_error() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs: dict[str, Any] = {"qpos": [1.0]}
     calls: list[Any] = []
@@ -1085,13 +970,21 @@ def test_primitive_planner_maybe_switch_skill_propagates_removed_pre_dig_error()
         lambda self: FakeRuntime(),
         planner,
     )
-    planner._apply_requested_tick_effects = MethodType(
-        lambda self, got_obs, effects: calls.append(("apply", got_obs, effects)),
+    class FakeApplier:
+        def apply(self, got_obs, effects):
+            calls.append(("apply", got_obs, effects))
+
+    planner._primitive_requested_effect_runtime = MethodType(
+        lambda self: FakeApplier(),
         planner,
     )
 
     with pytest.raises(PrimitiveDecisionContractError, match="pre_dig_align"):
-        planner._maybe_switch_skill(obs=obs, boundary_event=None)
+        _apply_legacy_compatibility_decision(
+            planner,
+            obs=obs,
+            boundary_event=None,
+        )
 
     assert calls == [
         (
@@ -1107,7 +1000,7 @@ def test_primitive_planner_maybe_switch_skill_propagates_removed_pre_dig_error()
     ]
 
 
-def test_primitive_planner_maybe_switch_skill_noops_when_compatibility_misses() -> None:
+def test_primitive_planner_legacy_compatibility_noops_when_compatibility_misses() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs: dict[str, Any] = {"qpos": [1.0]}
     calls: list[Any] = []
@@ -1122,12 +1015,23 @@ def test_primitive_planner_maybe_switch_skill_noops_when_compatibility_misses() 
         lambda self: FakeRuntime(),
         planner,
     )
-    planner._apply_requested_tick_effects = MethodType(
-        lambda self, got_obs, effects: calls.append(("apply", got_obs, effects)),
+    class FakeApplier:
+        def apply(self, got_obs, effects):
+            calls.append(("apply", got_obs, effects))
+
+    planner._primitive_requested_effect_runtime = MethodType(
+        lambda self: FakeApplier(),
         planner,
     )
 
-    planner._maybe_switch_skill(obs=obs, boundary_event=None)
+    assert (
+        _apply_legacy_compatibility_decision(
+            planner,
+            obs=obs,
+            boundary_event=None,
+        )
+        is None
+    )
 
     assert calls == [
         (
@@ -1166,7 +1070,7 @@ def test_primitive_planner_bootstrap_decision_bridge_returns_requested_switch() 
     planner.bootstrap_end_mode = "first_qualified_dig_start"
     _install_fake_decision_status_provider(planner)
 
-    result = planner._decide_tick_with_legacy_fsm(
+    result = planner._decision_runtime().decide_tick(
         obs=obs,
         boundary_event=boundary_event,
         preparation=PrimitiveTickPreparation(
@@ -1216,24 +1120,12 @@ def test_primitive_planner_return_decision_bridge_returns_requested_effects() ->
             switch_reason="return_to_dig_next_dig_entry_ready",
         ),
     )
-    planner._mark_return_next_dig_event_seen = MethodType(
-        lambda self: calls.append("mark"),
-        planner,
-    )
-    planner._complete_return_transition_for_backend = MethodType(
-        lambda self: calls.append("complete"),
-        planner,
-    )
-    planner._next_skill_after_return_transition = MethodType(
-        lambda self: "dig",
-        planner,
-    )
     planner._set_skill = MethodType(
         lambda self, skill_name, reason: calls.append(f"{skill_name}:{reason}"),
         planner,
     )
 
-    result = planner._decide_tick_with_legacy_fsm(
+    result = planner._decision_runtime().decide_tick(
         obs=obs,
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -1279,28 +1171,12 @@ def test_primitive_planner_carry_decision_bridge_returns_requested_effects() -> 
             carry_to_return_reason="",
         ),
     )
-    planner._complete_coverage_dump = MethodType(
-        lambda self, obs, reason: callbacks.append(f"complete:{reason}"),
-        planner,
-    )
-    planner._set_return_or_direct_handoff = MethodType(
-        lambda self, obs, reason: callbacks.append(f"return:{reason}"),
-        planner,
-    )
-    planner._set_dump_ready_hold_count = MethodType(
-        lambda self, value: callbacks.append(f"hold:{value}"),
-        planner,
-    )
-    planner._set_dump_start_deposited_mass = MethodType(
-        lambda self, value: callbacks.append(f"deposit:{value}"),
-        planner,
-    )
     planner._set_skill = MethodType(
         lambda self, skill, reason: callbacks.append(f"{skill}:{reason}"),
         planner,
     )
 
-    result = planner._decide_tick_with_legacy_fsm(
+    result = planner._decision_runtime().decide_tick(
         obs=obs,
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -1346,20 +1222,7 @@ def test_primitive_planner_dump_decision_bridge_returns_requested_effects() -> N
             dump_to_return_reason="dump_to_return_mass_low",
         ),
     )
-    planner._complete_coverage_dump = MethodType(
-        lambda self, obs, reason: callbacks.append(f"complete:{reason}"),
-        planner,
-    )
-    planner._set_return_or_direct_handoff = MethodType(
-        lambda self, obs, reason: callbacks.append(f"return:{reason}"),
-        planner,
-    )
-    planner._set_dump_done_hold_count = MethodType(
-        lambda self, value: callbacks.append(f"done:{value}"),
-        planner,
-    )
-
-    result = planner._decide_tick_with_legacy_fsm(
+    result = planner._decision_runtime().decide_tick(
         obs=obs,
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -1392,32 +1255,12 @@ def test_primitive_planner_dig_decision_bridge_returns_requested_effects() -> No
             dig_to_carry_reason="boundary_confirmed",
         ),
     )
-    planner._increment_dig_exit_guard_replan_count = MethodType(
-        lambda self: callbacks.append("exit_count"),
-        planner,
-    )
-    planner._reject_active_coverage_corridor = MethodType(
-        lambda self, obs, reason: callbacks.append(f"reject:{reason}"),
-        planner,
-    )
-    planner._restart_after_failed_dig = MethodType(
-        lambda self, reason, obs: callbacks.append(f"restart:{reason}"),
-        planner,
-    )
-    planner._increment_dig_bad_replan_count = MethodType(
-        lambda self: callbacks.append("bad_count"),
-        planner,
-    )
-    planner._complete_coverage_dig = MethodType(
-        lambda self, obs: callbacks.append("coverage"),
-        planner,
-    )
     planner._set_skill = MethodType(
         lambda self, skill, reason: callbacks.append(f"{skill}:{reason}"),
         planner,
     )
 
-    result = planner._decide_tick_with_legacy_fsm(
+    result = planner._decision_runtime().decide_tick(
         obs=obs,
         boundary_event=None,
         preparation=PrimitiveTickPreparation(
@@ -1445,25 +1288,11 @@ def test_primitive_planner_dig_transition_status_provider_maps_inputs_and_syncs_
     planner.boundary_detector = SimpleNamespace(
         config=SimpleNamespace(boundary_profile="legacy")
     )
-    planner._coverage_terminal_stop_requested = False
-    planner._dig_step_count = 12
-    planner._dig_mass_plateau_count = 4
-    planner.dig_to_carry_min_distance_to_dig_area_m = 0.5
-    planner.dig_to_carry_min_bucket_mass_kg = 20.0
-    planner.dig_to_carry_target_bucket_mass_kg = 20.0
-    planner.dig_to_carry_mass_plateau_enabled = True
-    planner.dig_to_carry_mass_plateau_min_bucket_mass_kg = 5.0
-    planner.dig_to_carry_mass_plateau_hold_steps = 3
-    planner.dig_to_carry_mass_plateau_min_steps = 5
-    planner.dump_ready_min_bucket_mass_kg = 10.0
-    planner.dig_bad_replan_enabled = True
-    planner.dig_bad_replan_max_steps = 10
-    planner.dig_bad_replan_min_bucket_mass_kg = 3.0
-    planner.dig_exit_guard_enabled = True
-    planner.dig_exit_guard_min_steps = 10
-    planner.dig_exit_guard_min_bucket_mass_kg = 3.0
-    planner.dig_exit_guard_overshoot_m = 0.65
-    planner._dig_to_carry_reason = "stale"
+    planner._coverage_runtime_state().coverage_terminal_stop_requested = False
+    cycle_state = planner._primitive_cycle_runtime_state()
+    cycle_state.dig_step_count = 12
+    cycle_state.dig_mass_plateau_count = 4
+    cycle_state.dig_to_carry_reason = "stale"
     coverage_state = planner._coverage_runtime_state()
     coverage_state.set_coverage_corridors(
         [
@@ -1483,7 +1312,56 @@ def test_primitive_planner_dig_transition_status_provider_maps_inputs_and_syncs_
     env_state[ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX] = 0.0
     _set_minimal_non_dig_capability_fields(planner)
 
-    loaded_status = planner._dig_transition_status_for_backend(
+    capability_provider = _fsm_capability_provider_from_config(
+        planner,
+        config=PrimitiveFSMCapabilityProviderConfig(
+            action_dim=1,
+            dig_to_carry_min_distance_to_dig_area_m=0.5,
+            dig_to_carry_min_bucket_mass_kg=20.0,
+            dig_to_carry_target_bucket_mass_kg=20.0,
+            dig_to_carry_mass_plateau_enabled=True,
+            dig_to_carry_mass_plateau_min_bucket_mass_kg=5.0,
+            dig_to_carry_mass_plateau_hold_steps=3,
+            dig_to_carry_mass_plateau_min_steps=5,
+            dump_ready_min_bucket_mass_kg=10.0,
+            dig_bad_replan_enabled=True,
+            dig_bad_replan_max_steps=10,
+            dig_bad_replan_min_bucket_mass_kg=3.0,
+            dig_exit_guard_enabled=True,
+            dig_exit_guard_min_steps=10,
+            dig_exit_guard_min_bucket_mass_kg=3.0,
+            dig_exit_guard_overshoot_m=0.65,
+            dump_ready_hold_steps=1,
+            dump_ready_min_height_above_rim_m=0.0,
+            dump_ready_require_over_footprint=False,
+            dump_ready_require_clearance=False,
+            dump_ready_max_horizontal_distance_m=None,
+            dump_ready_position_mode="footprint",
+            dump_ready_max_dump_area_footprint_outside_distance_m=None,
+            dump_ready_min_dump_area_relative_x_m=None,
+            dump_ready_max_dump_area_relative_x_m=None,
+            dump_ready_min_dump_area_relative_z_m=None,
+            dump_ready_max_dump_area_relative_z_m=None,
+            dump_ready_near_window_enabled=False,
+            dump_ready_near_window_x_tolerance_m=0.0,
+            dump_ready_near_window_z_tolerance_m=0.0,
+            dump_ready_near_window_outside_tolerance_m=0.0,
+            dump_ready_near_window_require_over_footprint=False,
+            dump_done_max_bucket_mass_kg=0.0,
+            dump_done_min_deposit_delta_kg=0.0,
+            dump_done_use_boundary_event=False,
+            dump_done_hold_steps=1,
+            return_to_dig_start_envelope_direct_handoff_enabled=False,
+            return_to_dig_start_envelope_gate_enabled=False,
+            return_to_dig_shallow_guard_enabled=False,
+            return_to_dig_max_bucket_mass_kg=0.0,
+            return_to_dig_touch_tolerance_m=0.0,
+            return_to_dig_min_depth_m=0.0,
+            return_to_dig_max_depth_m=0.0,
+            return_to_dig_max_entry_error_m=None,
+        ),
+    )
+    loaded_status = capability_provider.dig_transition_status(
         {
             "qpos": [0.0],
             "env_state": env_state,
@@ -1500,13 +1378,11 @@ def test_primitive_planner_dig_transition_status_provider_maps_inputs_and_syncs_
     assert loaded_status.dig_to_carry_reason == "loaded"
     assert loaded_status.dig_exit_guard_ready is False
     assert loaded_status.dig_bad_replan_ready is False
-    assert planner._dig_to_carry_reason == "stale"
-    planner._primitive_fsm_capability_provider().sync_dig_transition_reason(
-        loaded_status
-    )
-    assert planner._dig_to_carry_reason == "loaded"
+    assert cycle_state.dig_to_carry_reason == "stale"
+    capability_provider.sync_dig_transition_reason(loaded_status)
+    assert cycle_state.dig_to_carry_reason == "loaded"
 
-    low_payload_status = planner._dig_transition_status_for_backend(
+    low_payload_status = capability_provider.dig_transition_status(
         {
             "qpos": [0.0],
             "env_state": env_state,
@@ -1522,14 +1398,12 @@ def test_primitive_planner_dig_transition_status_provider_maps_inputs_and_syncs_
     assert low_payload_status.dig_bad_replan_ready is True
     assert low_payload_status.dig_to_carry_ready is False
     assert low_payload_status.dig_to_carry_reason == ""
-    assert planner._dig_to_carry_reason == "loaded"
-    planner._primitive_fsm_capability_provider().sync_dig_transition_reason(
-        low_payload_status
-    )
-    assert planner._dig_to_carry_reason == ""
+    assert cycle_state.dig_to_carry_reason == "loaded"
+    capability_provider.sync_dig_transition_reason(low_payload_status)
+    assert cycle_state.dig_to_carry_reason == ""
 
 
-def test_primitive_planner_legacy_branch_ports_use_capability_provider_methods() -> None:
+def test_legacy_fsm_branch_ports_use_capability_provider_methods() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     planner._skill_name = "dig"
     planner._switch_reason = ""
@@ -1539,12 +1413,24 @@ def test_primitive_planner_legacy_branch_ports_use_capability_provider_methods()
         planner,
     )
     provider = _FakePrimitiveFSMCapabilityProvider()
-    planner._primitive_fsm_capability_provider = MethodType(
-        lambda self: provider,
-        planner,
+    capabilities = PrimitiveDecisionCapabilities.from_ports(
+        PrimitiveDecisionCapabilitiesPorts(
+            current_skill_name=lambda: str(planner._skill_name),
+            current_switch_reason=lambda: str(planner._switch_reason),
+            should_end_bootstrap=planner._should_end_bootstrap,
+            bootstrap_end_mode=lambda: str(planner.bootstrap_end_mode),
+            transition_status_provider=provider,
+        )
     )
-
-    ports = planner._legacy_fsm_branch_ports()
+    ports = LegacyFSMBranchPorts(
+        bootstrap_skill_name="bootstrap",
+        dig_skill_name="dig",
+        carry_skill_name="carry",
+        dump_skill_name="dump",
+        return_skill_name="return",
+        facts_source=capabilities.facts_source(),
+        compatibility_actions=capabilities.compatibility_actions(),
+    )
 
     context = SimpleNamespace(obs={}, boundary_event=None)
     assert ports.facts_source.backend_facts(context).dig_transition().status == "dig_status"
@@ -1573,16 +1459,11 @@ def test_primitive_planner_legacy_branch_ports_use_capability_provider_methods()
         assert not hasattr(ports, removed_name)
 
 
-def test_primitive_planner_transition_status_wrappers_delegate_to_provider() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-    provider = _FakePrimitiveFSMCapabilityProvider()
-    planner._primitive_fsm_capability_provider = MethodType(
-        lambda self: provider,
-        planner,
-    )
+def test_primitive_planner_no_longer_exposes_transition_status_wrappers() -> None:
+    for wrapper_name in _OLD_TRANSITION_STATUS_POLICY_WRAPPERS:
+        assert wrapper_name not in PrimitivePlannerACTPolicy.__dict__
 
-    assert planner._dig_transition_status_for_backend({}, None) == "dig_status"
-    assert planner._carry_transition_status_for_backend({}, None) == "carry_status"
-    assert planner._dump_transition_status_for_backend({}, None) == "dump_status"
-    assert planner._return_transition_status_for_backend({}, None) == "return_status"
-    assert provider.calls == ["dig", "carry", "dump", "return"]
+
+def test_primitive_planner_no_longer_exposes_capability_composition_wrappers() -> None:
+    for wrapper_name in _OLD_CAPABILITY_COMPOSITION_POLICY_WRAPPERS:
+        assert wrapper_name not in PrimitivePlannerACTPolicy.__dict__

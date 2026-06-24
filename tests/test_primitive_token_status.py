@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from testbed.planner.primitive_token_status import TokenStatus
+from testbed.planner.primitive.token.status import TokenStatus
 
 
 def test_token_status_freezes_current_token_arrays() -> None:

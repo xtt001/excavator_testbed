@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import fields
-from types import MethodType
 from typing import Any
 
 import numpy as np
 
-from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
-from testbed.planner.primitive_coverage import CoverageCorridorState
-from testbed.planner.primitive_coverage_state import CoverageRuntimeState
-from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive_coverage_updates import (
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
+from testbed.planner.primitive.coverage.selection import CoverageCorridorState
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.coverage.effect_runtime import (
+    PrimitiveCoverageEffectRuntime,
+    PrimitiveCoverageEffectRuntimePorts,
+)
+from testbed.planner.primitive.coverage.effects import (
     CoverageCompletionFacts,
     CoverageEffectRuntimeCoordinator,
     CoverageEffectRuntimePorts,
@@ -22,6 +25,19 @@ from testbed.planner.primitive_coverage_updates import (
     CoverageUpdateResult,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+
+
+def test_primitive_coverage_effect_runtime_boundary_uses_typed_ports_without_planner_self() -> None:
+    port_fields = {field.name for field in fields(PrimitiveCoverageEffectRuntimePorts)}
+    runtime_fields = {field.name for field in fields(PrimitiveCoverageEffectRuntime)}
+
+    assert "planner" not in port_fields
+    assert "self" not in port_fields
+    assert "state" in port_fields
+    assert "cycle_state" in port_fields
+    assert "remaining_depth" in port_fields
+    assert "record_decision_event" in port_fields
+    assert runtime_fields == {"ports"}
 
 
 class _FakeUpdateService:
@@ -586,53 +602,25 @@ def test_policy_no_longer_exposes_coverage_effect_fact_facades() -> None:
     assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
 
 
-def test_policy_coverage_effect_wrappers_delegate_to_coordinator() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-    obs = {"tag": "current"}
-    events: list[str] = []
+def test_policy_no_longer_exposes_coverage_effect_update_facades() -> None:
+    removed_names = {
+        "_coverage_update_config",
+        "_coverage_update_service",
+        "_coverage_runtime_config",
+        "_coverage_runtime_service",
+        "_coverage_effect_runtime_ports",
+        "_coverage_effect_runtime_coordinator",
+        "_complete_coverage_dig",
+        "_complete_coverage_dump",
+        "_reject_active_coverage_corridor",
+        "_update_corridor_belief",
+        "_maybe_reopen_coverage_pass",
+        "_request_coverage_terminal_stop",
+    }
 
-    class _FakeCoordinator:
-        def complete_dig(self, got_obs: dict[str, Any]) -> None:
-            assert got_obs is obs
-            events.append("complete_dig")
-
-        def complete_dump(self, got_obs: dict[str, Any], *, reason: str) -> None:
-            assert got_obs is obs
-            events.append(f"complete_dump:{reason}")
-
-        def reject_active_corridor(
-            self,
-            got_obs: dict[str, Any],
-            *,
-            reason: str,
-        ) -> None:
-            assert got_obs is obs
-            events.append(f"reject:{reason}")
-
-        def maybe_reopen_pass(self, got_obs: dict[str, Any], *, reason: str) -> bool:
-            assert got_obs is obs
-            events.append(f"reopen:{reason}")
-            return True
-
-        def request_terminal_stop(self, reason: str, *, replace: bool = False) -> None:
-            events.append(f"terminal:{reason}:{replace}")
-
-    planner._coverage_effect_runtime_coordinator = MethodType(
-        lambda self: _FakeCoordinator(),
-        planner,
+    assert not (removed_names & set(PrimitivePlannerACTPolicy.__dict__))
+    assert "_primitive_coverage_effect_runtime" in PrimitivePlannerACTPolicy.__dict__
+    assert (
+        "_primitive_coverage_effect_runtime_ports"
+        in PrimitivePlannerACTPolicy.__dict__
     )
-
-    planner._complete_coverage_dig(obs)
-    planner._complete_coverage_dump(obs, reason="dump_done")
-    planner._reject_active_coverage_corridor(obs, reason="bad_dig")
-    reopened = planner._maybe_reopen_coverage_pass(obs, reason="all_depleted")
-    planner._request_coverage_terminal_stop("terminal", replace=True)
-
-    assert reopened is True
-    assert events == [
-        "complete_dig",
-        "complete_dump:dump_done",
-        "reject:bad_dig",
-        "reopen:all_depleted",
-        "terminal:terminal:True",
-    ]

@@ -9,13 +9,37 @@ import numpy as np
 import pytest
 
 from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_DIM
-from testbed.planner import primitive_adapter_config as adapter_config
-from testbed.planner.primitive_adapter_config import (
+import testbed.planner.primitive.config.adapter as adapter_config
+from testbed.planner.primitive.config.adapter import (
     PrimitivePlannerAdapterConfigInputs,
     PrimitivePlannerAdapterConfigNormalizer,
     PrimitivePlannerAdapterConfigState,
 )
+from testbed.planner.primitive.decision.backends.legacy_capability_provider import (
+    PrimitiveFSMCapabilityProviderConfig,
+)
+from testbed.planner.primitive.effects.return_handoff import (
+    ReturnHandoffReadinessConfig,
+)
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+
+
+_POLICY_HELPER_FACADE_NAMES = {
+    "_scripted_bootstrap_target_reached",
+    "_align_vector",
+    "_optional_align_vector",
+    "_optional_float",
+    "_validate_dig_cut_planner_config",
+    "_load_dig_cut_prior",
+    "_raw_fields_in_prior_range",
+    "_normalize_plane_depth_mode",
+    "_normalize_failed_dig_replan_skill",
+    "_coverage_candidate_builder",
+    "_normalize_goal_sequence",
+    "_dig_depth_profile_token_from_prior_mapping",
+    "_unpack_return_target_token_plan",
+    "_return_start_envelope_token_from_prior_mapping",
+}
 
 
 def _prior_payload() -> dict[str, object]:
@@ -70,6 +94,75 @@ def test_default_config_normalizes_legacy_defaults_and_vector_helpers() -> None:
     assert optional is not None
     assert optional.dtype == np.float32
     assert optional.tolist() == [1.0, 2.0, 3.0, 4.0]
+
+
+def test_normalizer_exposes_fsm_capability_provider_config() -> None:
+    state = _normalize(
+        PrimitivePlannerAdapterConfigInputs(
+            action_dim=4,
+            dig_to_carry_min_bucket_mass_kg=123.0,
+            dig_to_carry_target_bucket_mass_kg=None,
+            dig_to_carry_mass_plateau_hold_steps=0,
+            dig_to_carry_mass_plateau_min_steps=0,
+            dump_ready_min_bucket_mass_kg=77.0,
+            return_to_dig_start_envelope_gate_enabled=True,
+        )
+    )
+
+    config = state.fsm_capability_provider_config
+
+    assert isinstance(config, PrimitiveFSMCapabilityProviderConfig)
+    assert config.action_dim == 4
+    assert config.dig_to_carry_min_bucket_mass_kg == 123.0
+    assert config.dig_to_carry_target_bucket_mass_kg == 123.0
+    assert config.dig_to_carry_mass_plateau_hold_steps == 1
+    assert config.dig_to_carry_mass_plateau_min_steps == 1
+    assert config.dump_ready_min_bucket_mass_kg == 77.0
+    assert config.return_to_dig_start_envelope_gate_enabled is True
+    assert state.as_policy_field_updates()["dig_to_carry_target_bucket_mass_kg"] == 123.0
+
+
+def test_normalizer_exposes_return_handoff_readiness_config() -> None:
+    state = _normalize(
+        PrimitivePlannerAdapterConfigInputs(
+            action_dim=4,
+            return_target_planner={"enabled": True},
+            return_to_dig_max_entry_error_m=0.31,
+            return_to_dig_max_bucket_mass_kg=9.5,
+            return_to_dig_start_envelope_direct_handoff_enabled=True,
+            return_to_dig_start_envelope_gate_enabled=True,
+            return_to_dig_start_envelope_spatial_tolerance=0.12,
+            return_to_dig_start_envelope_depth_tolerance_m=0.07,
+            return_to_dig_start_envelope_local_depth_tolerance_m=0.006,
+            return_to_dig_start_envelope_plane_depth_tolerance_m=0.009,
+            return_to_dig_start_envelope_plane_depth_mode="p50_floor",
+            return_to_dig_start_envelope_qpos_tolerance=0.05,
+            return_to_dig_start_envelope_require_contact=False,
+        )
+    )
+
+    config = state.return_handoff_readiness_config
+
+    assert isinstance(config, ReturnHandoffReadinessConfig)
+    assert config.return_target_planner_enabled is True
+    assert config.max_entry_error_m == 0.31
+    assert config.max_bucket_mass_kg == 9.5
+    assert config.start_envelope_direct_handoff_enabled is True
+    assert config.start_envelope_gate.enabled is True
+    assert config.start_envelope_gate.action_dim == 4
+    assert config.start_envelope_gate.spatial_tolerance == 0.12
+    assert config.start_envelope_gate.depth_tolerance_m == 0.07
+    assert config.start_envelope_gate.local_depth_tolerance_m == 0.006
+    assert config.start_envelope_gate.plane_depth_tolerance_m == 0.009
+    assert config.start_envelope_gate.plane_depth_mode == "p50_floor"
+    assert config.start_envelope_gate.qpos_tolerance == 0.05
+    assert config.start_envelope_gate.require_contact is False
+    assert (
+        state.as_policy_field_updates()[
+            "return_to_dig_start_envelope_direct_handoff_enabled"
+        ]
+        is True
+    )
 
 
 def test_pre_dig_align_enabled_config_fails_fast_after_runtime_removal() -> None:
@@ -303,36 +396,33 @@ def test_state_exemplar_path_disabled_and_relative_path_resolution(
     assert exemplars_by_cell[2][0]["exemplar_id"] == "cell2_a"
 
 
-def test_policy_config_state_apply_and_helper_facades_delegate(monkeypatch) -> None:
+def test_policy_no_longer_exposes_test_only_helper_facades() -> None:
+    assert _POLICY_HELPER_FACADE_NAMES.isdisjoint(
+        PrimitivePlannerACTPolicy.__dict__
+    )
+
+
+def test_policy_config_state_apply_uses_normalized_state() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
+    config = _normalize().fsm_capability_provider_config
     state = PrimitivePlannerAdapterConfigState(
         {
             "action_dim": 4,
             "dig_cut_planner_mode": "conservative_pose",
-        }
+        },
+        fsm_capability_provider_config=config,
     )
     policy._apply_adapter_config_state(state)
     assert policy.action_dim == 4
     assert policy.dig_cut_planner_mode == "conservative_pose"
+    assert policy._fsm_capability_provider_config is config
 
-    monkeypatch.setattr(adapter_config, "optional_float", lambda value: 123.0)
-    assert PrimitivePlannerACTPolicy._optional_float("ignored") == 123.0
-
-    monkeypatch.setattr(
-        adapter_config,
-        "align_vector",
-        lambda value, *, default, action_dim: np.full(
-            int(action_dim),
-            7.0,
-            dtype=np.float32,
-        ),
-    )
-    policy.action_dim = 3
-    assert policy._align_vector([1, 2, 3], default=[0, 0, 0]).tolist() == [
-        7.0,
-        7.0,
-        7.0,
-    ]
+    assert adapter_config.optional_float("123.0") == 123.0
+    assert adapter_config.align_vector(
+        [1, 2, 3],
+        default=[0, 0, 0],
+        action_dim=3,
+    ).tolist() == [1.0, 2.0, 3.0]
 
 
 def test_policy_init_uses_config_normalizer_boundary() -> None:

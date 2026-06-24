@@ -4,8 +4,8 @@ from copy import deepcopy
 
 import numpy as np
 
-from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
-from testbed.planner.primitive_coverage_updates import (
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
+from testbed.planner.primitive.coverage.effects import (
     CoverageEffectFactService,
     CoverageRuntimeService,
 )
@@ -27,12 +27,12 @@ def _coverage_effect_fact_service(policy) -> CoverageEffectFactService:
             )
         ),
         remaining_depth=(
-            lambda obs, corridor: policy._coverage_remaining_depth_for_corridor(
+            lambda obs, corridor: policy._primitive_coverage_selection_runtime().coverage_remaining_depth_for_corridor(
                 obs,
                 corridor,
             )
         ),
-        corridor_attempt_limit=policy._coverage_corridor_attempt_limit,
+        corridor_attempt_limit=policy._primitive_coverage_selection_runtime().coverage_corridor_attempt_limit,
     )
 
 
@@ -46,19 +46,20 @@ def test_coverage_runtime_service_matches_multi_pass_reopen_facade() -> None:
             "multi_pass_min_remaining_depth_m": 0.04,
         },
     )
-    policy._ensure_coverage_corridors()
-    for corridor in policy._coverage_corridors:
+    policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+    for corridor in policy._coverage_runtime_state().coverage_corridors:
         corridor.depleted = True
         corridor.attempts = 2
         corridor.low_productivity_streak = 2
         corridor.last_reason = "unit_test_depleted"
-    policy._coverage_global_low_productivity_streak = 3
-    policy._coverage_rejected_state_exemplar_ids.update({"cell0_a"})
+    policy._coverage_runtime_state().coverage_global_low_productivity_streak = 3
+    policy._coverage_runtime_state().coverage_rejected_state_exemplar_ids.update({"cell0_a"})
     obs = _coverage_obs(mass=0.0, dig_distance=0.0, removed_cell0=0.02)
 
-    service_corridors = deepcopy(policy._coverage_corridors)
+    service_corridors = deepcopy(policy._coverage_runtime_state().coverage_corridors)
+    effect_runtime = policy._primitive_coverage_effect_runtime()
     service_result = CoverageRuntimeService(
-        policy._coverage_runtime_config(),
+        effect_runtime.coverage_runtime_config(),
     ).maybe_reopen_pass(
         service_corridors,
         _coverage_effect_fact_service(policy).reopen_facts(
@@ -68,24 +69,27 @@ def test_coverage_runtime_service_matches_multi_pass_reopen_facade() -> None:
         ),
     )
 
-    reopened = policy._maybe_reopen_coverage_pass(obs, reason="unit_test_reopen")
+    reopened = effect_runtime.maybe_reopen_coverage_pass(
+        obs,
+        reason="unit_test_reopen",
+    )
 
     assert reopened is True
     assert service_result.reopened is True
-    assert service_result.pass_index == policy._coverage_pass_index
-    assert service_result.active_corridor_id == policy._coverage_active_corridor_id
+    assert service_result.pass_index == policy._coverage_runtime_state().coverage_pass_index
+    assert service_result.active_corridor_id == policy._coverage_runtime_state().coverage_active_corridor_id
     assert (
         service_result.global_low_productivity_streak
-        == policy._coverage_global_low_productivity_streak
+        == policy._coverage_runtime_state().coverage_global_low_productivity_streak
     )
     assert service_result.clear_rejected_state_exemplar_ids is True
-    assert policy._coverage_rejected_state_exemplar_ids == set()
+    assert policy._coverage_runtime_state().coverage_rejected_state_exemplar_ids == set()
     assert service_result.reopened_corridors[-1] == (
         policy.planner_trace()["coverage_decision_trace"][-1]["reopened_corridors"][-1]
     )
     for service_corridor, planner_corridor in zip(
         service_corridors,
-        policy._coverage_corridors,
+        policy._coverage_runtime_state().coverage_corridors,
     ):
         assert service_corridor.depleted == planner_corridor.depleted
         assert service_corridor.attempts == planner_corridor.attempts
@@ -104,39 +108,45 @@ def test_coverage_runtime_service_matches_multi_pass_reopen_facade() -> None:
 def test_coverage_runtime_service_matches_terminal_stop_replace_gate() -> None:
     policy = _coverage_planner_policy(dig_policy=_RecordingPolicy(0))
 
-    first = CoverageRuntimeService(policy._coverage_runtime_config()).request_terminal_stop(
+    effect_runtime = policy._primitive_coverage_effect_runtime()
+    first = CoverageRuntimeService(
+        effect_runtime.coverage_runtime_config()
+    ).request_terminal_stop(
         _coverage_effect_fact_service(policy).terminal_facts(
             "first_reason",
             replace=False,
         )
     )
-    policy._request_coverage_terminal_stop("first_reason")
+    effect_runtime.request_coverage_terminal_stop("first_reason")
 
     ignored = CoverageRuntimeService(
-        policy._coverage_runtime_config()
+        effect_runtime.coverage_runtime_config()
     ).request_terminal_stop(
         _coverage_effect_fact_service(policy).terminal_facts(
             "ignored_reason",
             replace=False,
         )
     )
-    policy._request_coverage_terminal_stop("ignored_reason")
+    effect_runtime.request_coverage_terminal_stop("ignored_reason")
 
     replaced = CoverageRuntimeService(
-        policy._coverage_runtime_config()
+        effect_runtime.coverage_runtime_config()
     ).request_terminal_stop(
         _coverage_effect_fact_service(policy).terminal_facts(
             "replacement_reason",
             replace=True,
         )
     )
-    policy._request_coverage_terminal_stop("replacement_reason", replace=True)
+    effect_runtime.request_coverage_terminal_stop(
+        "replacement_reason",
+        replace=True,
+    )
 
     assert first.record_event is True
     assert ignored.record_event is False
     assert replaced.record_event is True
-    assert policy._coverage_terminal_stop_requested is True
-    assert policy._coverage_terminal_stop_reason == "replacement_reason"
+    assert policy._coverage_runtime_state().coverage_terminal_stop_requested is True
+    assert policy._coverage_runtime_state().coverage_terminal_stop_reason == "replacement_reason"
     terminal_events = [
         event
         for event in policy.planner_trace()["coverage_decision_trace"]

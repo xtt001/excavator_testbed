@@ -13,12 +13,13 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
     ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
 )
-from testbed.planner.primitive_coverage import CoverageCorridorState
-from testbed.planner.primitive_coverage_state import CoverageRuntimeState
-from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
-from testbed.planner.primitive_capability_provider import (
+from testbed.planner.primitive.coverage.selection import CoverageCorridorState
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive.decision.backends.legacy_capability_provider import (
     PrimitiveFSMCapabilityProvider,
+    PrimitiveFSMCapabilityProviderConfig,
     PrimitiveFSMCapabilityProviderPorts,
 )
 
@@ -121,6 +122,7 @@ def _env_with_bucket_pose(
 
 def _ports(
     *,
+    config: PrimitiveFSMCapabilityProviderConfig | None = None,
     calls: list[str] | None = None,
     semantic_boundary_profile_active: bool = False,
     return_state: dict[str, bool] | None = None,
@@ -163,55 +165,58 @@ def _ports(
             return True
 
     return PrimitiveFSMCapabilityProviderPorts(
-        action_dim=2,
+        config=config
+        or PrimitiveFSMCapabilityProviderConfig(
+            action_dim=2,
+            dig_to_carry_min_distance_to_dig_area_m=0.5,
+            dig_to_carry_min_bucket_mass_kg=20.0,
+            dig_to_carry_target_bucket_mass_kg=20.0,
+            dig_to_carry_mass_plateau_enabled=True,
+            dig_to_carry_mass_plateau_min_bucket_mass_kg=5.0,
+            dig_to_carry_mass_plateau_hold_steps=3,
+            dig_to_carry_mass_plateau_min_steps=5,
+            dump_ready_min_bucket_mass_kg=10.0,
+            dig_bad_replan_enabled=True,
+            dig_bad_replan_max_steps=10,
+            dig_bad_replan_min_bucket_mass_kg=3.0,
+            dig_exit_guard_enabled=True,
+            dig_exit_guard_min_steps=10,
+            dig_exit_guard_min_bucket_mass_kg=3.0,
+            dig_exit_guard_overshoot_m=0.65,
+            dump_ready_hold_steps=2,
+            dump_ready_min_height_above_rim_m=0.5,
+            dump_ready_require_over_footprint=True,
+            dump_ready_require_clearance=True,
+            dump_ready_max_horizontal_distance_m=1.0,
+            dump_ready_position_mode="footprint_or_dump_area_relative",
+            dump_ready_max_dump_area_footprint_outside_distance_m=0.25,
+            dump_ready_min_dump_area_relative_x_m=-1.0,
+            dump_ready_max_dump_area_relative_x_m=1.0,
+            dump_ready_min_dump_area_relative_z_m=-1.0,
+            dump_ready_max_dump_area_relative_z_m=1.0,
+            dump_ready_near_window_enabled=False,
+            dump_ready_near_window_x_tolerance_m=0.0,
+            dump_ready_near_window_z_tolerance_m=0.0,
+            dump_ready_near_window_outside_tolerance_m=0.0,
+            dump_ready_near_window_require_over_footprint=True,
+            dump_done_max_bucket_mass_kg=1.0,
+            dump_done_min_deposit_delta_kg=2.0,
+            dump_done_use_boundary_event=True,
+            dump_done_hold_steps=1,
+            return_to_dig_start_envelope_direct_handoff_enabled=True,
+            return_to_dig_start_envelope_gate_enabled=True,
+            return_to_dig_shallow_guard_enabled=True,
+            return_to_dig_max_bucket_mass_kg=1.0,
+            return_to_dig_touch_tolerance_m=0.5,
+            return_to_dig_min_depth_m=-0.1,
+            return_to_dig_max_depth_m=0.5,
+            return_to_dig_max_entry_error_m=0.1,
+        ),
         semantic_boundary_profile_active=lambda: semantic_boundary_profile_active,
         cycle_state=cycle_state,
         coverage_state=coverage_state,
         return_state=runtime_return_state,
-        dig_to_carry_min_distance_to_dig_area_m=0.5,
-        dig_to_carry_min_bucket_mass_kg=20.0,
-        dig_to_carry_target_bucket_mass_kg=20.0,
-        dig_to_carry_mass_plateau_enabled=True,
-        dig_to_carry_mass_plateau_min_bucket_mass_kg=5.0,
-        dig_to_carry_mass_plateau_hold_steps=3,
-        dig_to_carry_mass_plateau_min_steps=5,
-        dump_ready_min_bucket_mass_kg=10.0,
-        dig_bad_replan_enabled=True,
-        dig_bad_replan_max_steps=10,
-        dig_bad_replan_min_bucket_mass_kg=3.0,
-        dig_exit_guard_enabled=True,
-        dig_exit_guard_min_steps=10,
-        dig_exit_guard_min_bucket_mass_kg=3.0,
-        dig_exit_guard_overshoot_m=0.65,
-        dump_ready_hold_steps=2,
-        dump_ready_min_height_above_rim_m=0.5,
-        dump_ready_require_over_footprint=True,
-        dump_ready_require_clearance=True,
-        dump_ready_max_horizontal_distance_m=1.0,
-        dump_ready_position_mode="footprint_or_dump_area_relative",
-        dump_ready_max_dump_area_footprint_outside_distance_m=0.25,
-        dump_ready_min_dump_area_relative_x_m=-1.0,
-        dump_ready_max_dump_area_relative_x_m=1.0,
-        dump_ready_min_dump_area_relative_z_m=-1.0,
-        dump_ready_max_dump_area_relative_z_m=1.0,
-        dump_ready_near_window_enabled=False,
-        dump_ready_near_window_x_tolerance_m=0.0,
-        dump_ready_near_window_z_tolerance_m=0.0,
-        dump_ready_near_window_outside_tolerance_m=0.0,
-        dump_ready_near_window_require_over_footprint=True,
-        dump_done_max_bucket_mass_kg=1.0,
-        dump_done_min_deposit_delta_kg=2.0,
-        dump_done_use_boundary_event=True,
-        dump_done_hold_steps=1,
         return_handoff_readiness_service=_FakeReturnHandoffReadinessService(),
-        return_to_dig_start_envelope_direct_handoff_enabled=True,
-        return_to_dig_start_envelope_gate_enabled=True,
-        return_to_dig_shallow_guard_enabled=True,
-        return_to_dig_max_bucket_mass_kg=1.0,
-        return_to_dig_touch_tolerance_m=0.5,
-        return_to_dig_min_depth_m=-0.1,
-        return_to_dig_max_depth_m=0.5,
-        return_to_dig_max_entry_error_m=0.1,
     )
 
 
@@ -237,6 +242,30 @@ def test_provider_dig_status_projects_observation_without_reason_mirror() -> Non
 
     assert reasons == []
     assert provider.ports.cycle_state.dig_to_carry_reason == "loaded"
+
+
+def test_provider_reads_static_transition_thresholds_from_config() -> None:
+    config = PrimitiveFSMCapabilityProviderConfig(
+        **{
+            **_ports().config.__dict__,
+            "dig_to_carry_min_bucket_mass_kg": 30.0,
+            "dig_to_carry_target_bucket_mass_kg": 30.0,
+            "dig_to_carry_mass_plateau_enabled": False,
+        }
+    )
+    provider = PrimitiveFSMCapabilityProvider(ports=_ports(config=config))
+
+    below = provider.dig_transition_status(
+        _obs(mass_in_bucket_kg=25.0, min_distance_to_dig_area_m=1.0),
+        boundary_event=None,
+    )
+    above = provider.dig_transition_status(
+        _obs(mass_in_bucket_kg=35.0, min_distance_to_dig_area_m=1.0),
+        boundary_event=None,
+    )
+
+    assert below.dig_to_carry_ready is False
+    assert above.dig_to_carry_ready is True
 
 
 def test_provider_dig_exit_guard_computes_overshoot_from_active_corridor_and_tip_pose() -> None:
@@ -404,8 +433,12 @@ def test_provider_ports_do_not_accept_planner_or_policy_self() -> None:
     assert "self" not in field_names
     assert "planner" not in field_names
     assert "policy" not in field_names
+    assert "config" in field_names
     assert {"cycle_state", "coverage_state", "return_state"} <= field_names
     assert "return_handoff_readiness_service" in field_names
+    assert "dig_to_carry_min_bucket_mass_kg" not in field_names
+    assert "dump_ready_min_bucket_mass_kg" not in field_names
+    assert "return_to_dig_max_bucket_mass_kg" not in field_names
     assert not {
         "coverage_terminal_stop_requested",
         "dig_step_count",

@@ -4,11 +4,32 @@ from types import MethodType, SimpleNamespace
 
 import numpy as np
 
-from testbed.planner.primitive_cycle_state import (
+from testbed.planner.primitive.execution.cycle_state import (
     PrimitiveCycleReportStatus,
     PrimitiveCycleRuntimeState,
 )
+from testbed.planner.primitive.decision.backends.legacy_capability_provider import (
+    PrimitiveFSMCapabilityProviderConfig,
+    PrimitiveFSMCapabilityProviderPorts,
+)
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+from tests.primitive_policy_test_helpers import make_policy_shell_for_private_weld_tests
+
+
+_CYCLE_PROGRESS_FIELD_NAMES = {
+    "dump_ready_hold_count",
+    "dump_done_hold_count",
+    "dig_step_count",
+    "dig_best_mass_kg",
+    "dig_mass_plateau_count",
+    "dig_to_carry_reason",
+    "dig_bad_replan_count",
+    "dig_exit_guard_replan_count",
+    "completed_transition_count",
+    "transition_timeout_count",
+    "cycle_index",
+    "dump_start_deposited_mass_kg",
+}
 
 
 def test_cycle_runtime_state_fresh_matches_legacy_reset_defaults() -> None:
@@ -62,36 +83,10 @@ def test_cycle_runtime_state_methods_preserve_legacy_counter_rules() -> None:
     assert state.dig_to_carry_reason == ""
 
 
-def test_policy_legacy_cycle_fields_are_backed_by_one_state_owner() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
-    state = policy._primitive_cycle_runtime_state()
+def test_policy_no_longer_exposes_old_cycle_progress_property_facades() -> None:
+    removed_names = {f"_{name}" for name in _CYCLE_PROGRESS_FIELD_NAMES}
 
-    policy._dump_ready_hold_count = 2
-    policy._dump_done_hold_count = 3
-    policy._dig_step_count = 4
-    policy._dig_best_mass_kg = 5.0
-    policy._dig_mass_plateau_count = 6
-    policy._dig_to_carry_reason = "loaded"
-    policy._dig_bad_replan_count = 7
-    policy._dig_exit_guard_replan_count = 8
-    policy._completed_transition_count = 9
-    policy._transition_timeout_count = 10
-    policy._cycle_index = 11
-    policy._dump_start_deposited_mass_kg = 12.5
-
-    assert policy._primitive_cycle_runtime_state() is state
-    assert state.dump_ready_hold_count == 2
-    assert state.dump_done_hold_count == 3
-    assert state.dig_step_count == 4
-    assert state.dig_best_mass_kg == 5.0
-    assert state.dig_mass_plateau_count == 6
-    assert state.dig_to_carry_reason == "loaded"
-    assert state.dig_bad_replan_count == 7
-    assert state.dig_exit_guard_replan_count == 8
-    assert state.completed_transition_count == 9
-    assert state.transition_timeout_count == 10
-    assert state.cycle_index == 11
-    assert state.dump_start_deposited_mass_kg == 12.5
+    assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
 
 
 def test_policy_reset_application_replaces_cycle_state_owner() -> None:
@@ -105,7 +100,7 @@ def test_policy_reset_application_replaces_cycle_state_owner() -> None:
             return {"_cycle_state": reset_state}
 
     policy._apply_reset_lifecycle_state(_ResetState())
-    policy._cycle_index = 3
+    reset_state.cycle_index = 3
 
     assert policy._primitive_cycle_runtime_state() is reset_state
     assert policy._primitive_cycle_runtime_state() is not old_state
@@ -113,20 +108,35 @@ def test_policy_reset_application_replaces_cycle_state_owner() -> None:
     assert old_state.cycle_index == 9
 
 
-def test_policy_cycle_methods_write_state_owner() -> None:
+def test_policy_no_longer_exposes_cycle_return_transition_wrappers() -> None:
+    removed_names = {
+        "_set_dump_ready_hold_count",
+        "_set_dump_start_deposited_mass",
+        "_set_dump_done_hold_count",
+        "_mark_return_next_dig_event_seen",
+        "_complete_return_transition_for_backend",
+        "_next_skill_after_return_transition",
+        "_increment_dig_exit_guard_replan_count",
+        "_increment_dig_bad_replan_count",
+    }
+
+    assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
+
+
+def test_cycle_state_owner_methods_write_runtime_state() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     state = policy._primitive_cycle_runtime_state()
     policy.action_dim = 4
     policy.dig_to_carry_mass_plateau_epsilon_kg = 0.1
-    policy._coverage_current_payload_gain_kg = 0.0
+    policy._coverage_runtime_state().coverage_current_payload_gain_kg = 0.0
 
-    policy._set_dump_ready_hold_count(4)
-    policy._set_dump_done_hold_count(5)
-    policy._set_dump_start_deposited_mass(6.5)
-    policy._increment_dig_bad_replan_count()
-    policy._increment_dig_exit_guard_replan_count()
-    policy._complete_return_transition_for_backend()
-    policy._transition_timeout_count = 2
+    state.set_dump_ready_hold_count(4)
+    state.set_dump_done_hold_count(5)
+    state.set_dump_start_deposited_mass_kg(6.5)
+    state.increment_dig_bad_replan_count()
+    state.increment_dig_exit_guard_replan_count()
+    state.complete_return_transition()
+    state.transition_timeout_count = 2
     policy._update_dig_progress({"task_metrics": {"mass_in_bucket_kg": 3.0}})
     policy._update_dig_progress({"task_metrics": {"mass_in_bucket_kg": 3.05}})
 
@@ -141,21 +151,30 @@ def test_policy_cycle_methods_write_state_owner() -> None:
     assert state.dig_step_count == 2
     assert state.dig_best_mass_kg == 3.05
     assert state.dig_mass_plateau_count == 1
-    assert policy._coverage_current_payload_gain_kg == 3.05
+    assert policy._coverage_runtime_state().coverage_current_payload_gain_kg == 3.05
 
 
-def test_requested_effect_ports_share_cycle_and_return_state_owners() -> None:
+def test_requested_effect_runtime_ports_share_cycle_and_return_state_owners() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     policy.action_dim = 4
     cycle_state = policy._primitive_cycle_runtime_state()
     return_state = policy._primitive_return_runtime_state()
+    policy._primitive_coverage_effect_runtime = MethodType(
+        lambda self: object(),
+        policy,
+    )
+    policy._primitive_dig_recovery = MethodType(lambda self: object(), policy)
+    policy._primitive_return_handoff_runtime = MethodType(
+        lambda self: object(),
+        policy,
+    )
 
-    ports = policy._requested_effect_applier_ports()
+    ports = policy._primitive_requested_effect_runtime_ports()
 
     assert ports.cycle_state is cycle_state
     assert ports.return_state is return_state
-    assert not hasattr(ports, "deposited_mass")
-    assert hasattr(ports, "observation_facts")
+    assert ports.return_transition_next_skill_name == "dig"
+    assert ports.action_dim == 4
     assert not hasattr(ports, "complete_return_transition")
     assert not hasattr(ports, "mark_return_next_dig_event_seen")
     assert not hasattr(ports, "set_dump_ready_hold_count")
@@ -174,11 +193,14 @@ def test_skill_lifecycle_cycle_ports_write_state_owner() -> None:
     state = policy._primitive_cycle_runtime_state()
     policy._skill_name = "dig"
     policy._switch_reason = ""
-    policy._active_policy = MethodType(
-        lambda self: type("_Policy", (), {"reset": lambda self: None})(),
+    class _ActionDispatchService:
+        def active_policy(self):
+            return type("_Policy", (), {"reset": lambda self: None})()
+
+    policy._action_dispatch_service = MethodType(
+        lambda self: _ActionDispatchService(),
         policy,
     )
-    policy._clear_dig_cut_plan = MethodType(lambda self: None, policy)
 
     ports = policy._primitive_skill_lifecycle_ports()
     assert ports.cycle_state is state
@@ -215,59 +237,64 @@ def test_capability_provider_ports_read_cycle_state_owner() -> None:
     return_state.return_next_dig_event_seen = False
     return_state.return_to_dig_entry_close_state = True
     return_state.return_to_dig_start_envelope_ready_state = True
-    policy.action_dim = 1
     policy._semantic_boundary_profile_active = MethodType(lambda self: False, policy)
     policy._dig_exit_overshoot_m = MethodType(lambda self, obs: 0.0, policy)
-    policy.dig_to_carry_min_distance_to_dig_area_m = 0.0
-    policy.dig_to_carry_min_bucket_mass_kg = 0.0
-    policy.dig_to_carry_target_bucket_mass_kg = 0.0
-    policy.dig_to_carry_mass_plateau_enabled = False
-    policy.dig_to_carry_mass_plateau_min_bucket_mass_kg = 0.0
-    policy.dig_to_carry_mass_plateau_hold_steps = 1
-    policy.dig_to_carry_mass_plateau_min_steps = 1
-    policy.dump_ready_min_bucket_mass_kg = 0.0
-    policy.dig_bad_replan_enabled = False
-    policy.dig_bad_replan_max_steps = 1
-    policy.dig_bad_replan_min_bucket_mass_kg = 0.0
-    policy.dig_exit_guard_enabled = False
-    policy.dig_exit_guard_min_steps = 1
-    policy.dig_exit_guard_min_bucket_mass_kg = 0.0
-    policy.dig_exit_guard_overshoot_m = 0.0
-    policy.dump_ready_hold_steps = 1
-    policy.dump_ready_min_height_above_rim_m = 0.0
-    policy.dump_ready_require_over_footprint = False
-    policy.dump_ready_require_clearance = False
-    policy.dump_ready_max_horizontal_distance_m = None
-    policy.dump_ready_position_mode = "footprint"
-    policy.dump_ready_max_dump_area_footprint_outside_distance_m = None
-    policy.dump_ready_min_dump_area_relative_x_m = None
-    policy.dump_ready_max_dump_area_relative_x_m = None
-    policy.dump_ready_min_dump_area_relative_z_m = None
-    policy.dump_ready_max_dump_area_relative_z_m = None
-    policy.dump_ready_near_window_enabled = False
-    policy.dump_ready_near_window_x_tolerance_m = 0.0
-    policy.dump_ready_near_window_z_tolerance_m = 0.0
-    policy.dump_ready_near_window_outside_tolerance_m = 0.0
-    policy.dump_ready_near_window_require_over_footprint = False
-    policy.dump_done_max_bucket_mass_kg = 0.0
-    policy.dump_done_min_deposit_delta_kg = 0.0
-    policy.dump_done_use_boundary_event = False
-    policy.dump_done_hold_steps = 1
-    policy.return_to_dig_max_bucket_mass_kg = 0.0
-    policy.return_to_dig_touch_tolerance_m = 0.0
-    policy.return_to_dig_min_depth_m = 0.0
-    policy.return_to_dig_max_depth_m = 0.0
-    policy.return_to_dig_shallow_guard_enabled = False
-    policy.return_to_dig_max_entry_error_m = None
-    policy.return_to_dig_start_envelope_direct_handoff_enabled = False
-    policy.return_to_dig_start_envelope_gate_enabled = False
-    policy._return_to_dig_direct_handoff_ready = MethodType(
-        lambda self, obs, *, handoff_ready: False,
-        policy,
-    )
-    policy._return_to_dig_handoff_ready = MethodType(lambda self, obs: True, policy)
 
-    ports = policy._primitive_fsm_capability_provider_ports()
+    ports = PrimitiveFSMCapabilityProviderPorts(
+        config=PrimitiveFSMCapabilityProviderConfig(
+            action_dim=1,
+            dig_to_carry_min_distance_to_dig_area_m=0.0,
+            dig_to_carry_min_bucket_mass_kg=0.0,
+            dig_to_carry_target_bucket_mass_kg=0.0,
+            dig_to_carry_mass_plateau_enabled=False,
+            dig_to_carry_mass_plateau_min_bucket_mass_kg=0.0,
+            dig_to_carry_mass_plateau_hold_steps=1,
+            dig_to_carry_mass_plateau_min_steps=1,
+            dump_ready_min_bucket_mass_kg=0.0,
+            dig_bad_replan_enabled=False,
+            dig_bad_replan_max_steps=1,
+            dig_bad_replan_min_bucket_mass_kg=0.0,
+            dig_exit_guard_enabled=False,
+            dig_exit_guard_min_steps=1,
+            dig_exit_guard_min_bucket_mass_kg=0.0,
+            dig_exit_guard_overshoot_m=0.0,
+            dump_ready_hold_steps=1,
+            dump_ready_min_height_above_rim_m=0.0,
+            dump_ready_require_over_footprint=False,
+            dump_ready_require_clearance=False,
+            dump_ready_max_horizontal_distance_m=None,
+            dump_ready_position_mode="footprint",
+            dump_ready_max_dump_area_footprint_outside_distance_m=None,
+            dump_ready_min_dump_area_relative_x_m=None,
+            dump_ready_max_dump_area_relative_x_m=None,
+            dump_ready_min_dump_area_relative_z_m=None,
+            dump_ready_max_dump_area_relative_z_m=None,
+            dump_ready_near_window_enabled=False,
+            dump_ready_near_window_x_tolerance_m=0.0,
+            dump_ready_near_window_z_tolerance_m=0.0,
+            dump_ready_near_window_outside_tolerance_m=0.0,
+            dump_ready_near_window_require_over_footprint=False,
+            dump_done_max_bucket_mass_kg=0.0,
+            dump_done_min_deposit_delta_kg=0.0,
+            dump_done_use_boundary_event=False,
+            dump_done_hold_steps=1,
+            return_to_dig_start_envelope_direct_handoff_enabled=False,
+            return_to_dig_start_envelope_gate_enabled=False,
+            return_to_dig_shallow_guard_enabled=False,
+            return_to_dig_max_bucket_mass_kg=0.0,
+            return_to_dig_touch_tolerance_m=0.0,
+            return_to_dig_min_depth_m=0.0,
+            return_to_dig_max_depth_m=0.0,
+            return_to_dig_max_entry_error_m=None,
+        ),
+        semantic_boundary_profile_active=(
+            lambda: policy._semantic_boundary_profile_active()
+        ),
+        cycle_state=policy._primitive_cycle_runtime_state(),
+        coverage_state=policy._coverage_runtime_state(),
+        return_state=policy._primitive_return_runtime_state(),
+        return_handoff_readiness_service=object(),
+    )
 
     assert ports.cycle_state is state
     assert ports.coverage_state is coverage_state
@@ -293,7 +320,7 @@ def test_capability_provider_ports_read_cycle_state_owner() -> None:
 
 
 def test_tick_finalization_and_report_inputs_read_cycle_state_owner() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     state = policy._primitive_cycle_runtime_state()
     state.completed_transition_count = 7
     state.transition_timeout_count = 8
@@ -302,10 +329,18 @@ def test_tick_finalization_and_report_inputs_read_cycle_state_owner() -> None:
     state.cycle_index = 11
     policy._skill_name = "dump"
     policy._switch_reason = "carry_to_dump"
+    policy.return_max_steps = 0
     policy.primitive_checkpoint_paths = {"dump": "dump.ckpt"}
-    policy._first_dig_policy_active = MethodType(lambda self: False, policy)
+    class _ActionDispatchService:
+        def first_dig_policy_active(self) -> bool:
+            return False
 
-    inputs = policy._tick_finalization_inputs(
+    policy._action_dispatch_service = MethodType(
+        lambda self: _ActionDispatchService(),
+        policy,
+    )
+
+    inputs = policy._primitive_tick_finalization_runtime().finalization_inputs(
         transition_timeout=False,
         transition_completed=True,
     )
@@ -337,7 +372,7 @@ def test_tick_finalization_and_report_inputs_read_cycle_state_owner() -> None:
         },
     )()
 
-    snapshot = policy._debug_state_snapshot_for_report()
+    snapshot = policy._primitive_report_composition_runtime().report_runtime().debug_state_snapshot_for_report()
     assert snapshot.completed_transition_count == 7
     assert snapshot.transition_timeout_count == 8
     assert snapshot.dump_ready_hold_count == 9
@@ -411,7 +446,7 @@ def test_cycle_runtime_state_projects_populated_report_status() -> None:
 
 
 def test_policy_dig_progress_debug_facade_delegates_to_cycle_report_status() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     state = policy._primitive_cycle_runtime_state()
     state.dig_step_count = 6
     state.dig_best_mass_kg = 7.5
@@ -421,13 +456,13 @@ def test_policy_dig_progress_debug_facade_delegates_to_cycle_report_status() -> 
     state.dig_exit_guard_replan_count = 10
 
     assert (
-        policy._debug_report_dig_progress_fields()
+        policy._primitive_report_composition_runtime().report_runtime().debug_report_dig_progress_fields()
         == state.to_report_status().dig_progress_debug_fields()
     )
 
 
 def test_policy_rollout_summary_inputs_use_cycle_report_status_projection() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     cycle_status = PrimitiveCycleReportStatus(
         completed_transition_count=11,
         transition_timeout_count=12,
@@ -460,12 +495,6 @@ def test_policy_rollout_summary_inputs_use_cycle_report_status_projection() -> N
         lambda self: SimpleNamespace(timeout_count=0),
         policy,
     )
-    policy._token_report_status = MethodType(lambda self: SimpleNamespace(), policy)
-    policy._cell_entry_report_status = MethodType(lambda self: SimpleNamespace(), policy)
-    policy._pre_dig_align_report_status = MethodType(
-        lambda self: SimpleNamespace(),
-        policy,
-    )
     policy.dump_done_use_boundary_event = False
     policy.cell_entry_enabled = False
     policy.return_to_dig_max_entry_error_m = 0.5
@@ -488,8 +517,10 @@ def test_policy_rollout_summary_inputs_use_cycle_report_status_projection() -> N
     policy.pre_dig_align_first_dig_only = True
     policy.pre_dig_align_replan_after_failed_dig = False
     policy.pre_dig_align_surface_guard_enabled = False
+    policy.pre_dig_align_controlled_dims = []
+    policy.action_dim = 4
 
-    inputs = policy._rollout_summary_inputs()
+    inputs = policy._primitive_report_composition_runtime().report_runtime().rollout_summary_inputs()
 
     assert inputs.transition_timeout_count == 12
     assert inputs.completed_transition_count == 11
@@ -498,7 +529,7 @@ def test_policy_rollout_summary_inputs_use_cycle_report_status_projection() -> N
     assert inputs.dig_exit_guard_replan_count == 20
 
 
-def test_policy_tick_finalization_inputs_use_cycle_report_status_projection() -> None:
+def test_policy_tick_finalization_runtime_uses_cycle_report_status_projection() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     cycle_status = PrimitiveCycleReportStatus(
         completed_transition_count=21,
@@ -516,10 +547,18 @@ def test_policy_tick_finalization_inputs_use_cycle_report_status_projection() ->
     policy._cycle_report_status = MethodType(lambda self: cycle_status, policy)
     policy._skill_name = "dump"
     policy._switch_reason = "carry_to_dump"
+    policy.return_max_steps = 0
     policy.primitive_checkpoint_paths = {"dump": "dump.ckpt"}
-    policy._first_dig_policy_active = MethodType(lambda self: False, policy)
+    class _ActionDispatchService:
+        def first_dig_policy_active(self) -> bool:
+            return False
 
-    inputs = policy._tick_finalization_inputs(
+    policy._action_dispatch_service = MethodType(
+        lambda self: _ActionDispatchService(),
+        policy,
+    )
+
+    inputs = policy._primitive_tick_finalization_runtime().finalization_inputs(
         transition_timeout=False,
         transition_completed=True,
     )

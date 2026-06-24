@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import fields
-from types import MappingProxyType, MethodType, SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -10,14 +10,14 @@ import pytest
 from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX
 from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX
 from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX
-from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
-from testbed.planner.primitive_return_token_planning import (
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
+from testbed.planner.primitive.token.return_planning import (
     PrimitiveReturnTokenPlanningPorts,
     PrimitiveReturnTokenPlanningService,
 )
-from testbed.planner.primitive_coverage_state import CoverageRuntimeState
-from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
-from testbed.planner.primitive_tokens import (
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
+from testbed.planner.primitive.token.tokens import (
     ReturnStartEnvelopeTokenPlan,
     ReturnTargetTokenPlan,
 )
@@ -403,114 +403,3 @@ def test_ports_boundary_is_typed_and_does_not_accept_planner_self() -> None:
     assert "qpos" not in names
     assert "qvel" not in names
     assert names.isdisjoint(removed_state_callbacks)
-
-
-def test_policy_private_facades_delegate_to_return_token_planning_service() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
-    events: list[tuple[str, object]] = []
-
-    class FakeService:
-        def build_next_dig_cut_plan_for_return(self, obs: dict[str, Any]):
-            events.append(("build_next", obs))
-            return "return-plan"
-
-        def build_return_start_envelope_tokens_for_obs(
-            self,
-            obs: dict[str, Any],
-            raw_fields: dict[str, float | int],
-            *,
-            corridor_id: int | None = None,
-        ) -> str:
-            events.append(("build_start", (obs, raw_fields, corridor_id)))
-            return "start-token"
-
-        def apply_return_start_envelope_token_plan(
-            self,
-            plan: ReturnStartEnvelopeTokenPlan,
-        ) -> str:
-            events.append(("apply_start", plan))
-            return "applied"
-
-        def condition_return_start_envelope_qpos_from_relocate(
-            self,
-            token: np.ndarray,
-            *,
-            raw_fields: dict[str, float | int],
-            source: str,
-        ) -> str:
-            events.append(("condition", (float(token[0]), raw_fields, source)))
-            return "conditioned"
-
-        def return_start_envelope_prior_token(
-            self,
-            *,
-            corridor_id: int | None,
-        ) -> str:
-            events.append(("prior_token", corridor_id))
-            return "prior-token"
-
-        def return_start_envelope_prior_mapping(
-            self,
-            *,
-            corridor_id: int | None,
-        ) -> str:
-            events.append(("prior_mapping", corridor_id))
-            return "prior-mapping"
-
-        def return_start_envelope_prior_bounds(self, corridor_id: int | None) -> str:
-            events.append(("prior_bounds", corridor_id))
-            return "prior-bounds"
-
-        def return_start_envelope_cell_id(self, corridor_id: int | None) -> int:
-            events.append(("cell_id", corridor_id))
-            return 123
-
-    fake_service = FakeService()
-
-    def service(self: PrimitivePlannerACTPolicy) -> FakeService:
-        return fake_service
-
-    policy._primitive_return_token_planning_service = MethodType(service, policy)
-    plan = ReturnStartEnvelopeTokenPlan(
-        token=_token(5, 1.0),
-        source="source",
-        use_prior_spatial_bounds=True,
-        use_prior_qpos_bounds=False,
-    )
-
-    assert policy._build_next_dig_cut_plan_for_return({"id": "obs"}) == "return-plan"
-    assert (
-        policy._build_return_start_envelope_tokens_for_obs(
-            {"id": "obs"},
-            {"operator_entry_x_m": 1.0},
-            corridor_id=7,
-        )
-        == "start-token"
-    )
-    assert policy._apply_return_start_envelope_token_plan(plan) == "applied"
-    assert (
-        policy._maybe_condition_return_start_envelope_qpos_from_relocate(
-            _token(2, 2.0),
-            raw_fields={"operator_entry_x_m": 3.0},
-            source="source",
-        )
-        == "conditioned"
-    )
-    assert policy._return_start_envelope_prior_token(corridor_id=1) == "prior-token"
-    assert (
-        policy._return_start_envelope_prior_mapping(corridor_id=2)
-        == "prior-mapping"
-    )
-    assert policy._return_start_envelope_prior_bounds(3) == "prior-bounds"
-    assert policy._return_start_envelope_cell_id(4) == 123
-
-    assert events == [
-        ("build_next", {"id": "obs"}),
-        ("build_start", ({"id": "obs"}, {"operator_entry_x_m": 1.0}, 7)),
-        ("apply_start", plan),
-        ("condition", (2.0, {"operator_entry_x_m": 3.0}, "source")),
-        ("prior_token", 1),
-        ("prior_mapping", 2),
-        ("prior_bounds", 3),
-        ("cell_id", 4),
-    ]

@@ -8,12 +8,13 @@ from testbed.planner.cell_entry import (
     EntryEnvelope,
     PlannerDecisionAudit,
 )
-from testbed.planner.primitive_cell_entry_state import (
+from testbed.planner.primitive.compatibility.cell_entry import (
     PrimitiveCellEntryCompatibilityRuntimeState,
     PrimitiveCellEntryReportConfig,
     PrimitiveCellEntryReportStatus,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+from tests.primitive_policy_test_helpers import make_policy_shell_for_private_weld_tests
 
 
 def test_cell_entry_compatibility_runtime_state_fresh_matches_reset_defaults() -> None:
@@ -65,12 +66,12 @@ def test_policy_no_longer_exposes_private_cell_entry_runtime_facades() -> None:
 
 
 def test_cell_entry_debug_fields_match_policy_facade_for_fresh_state() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     state = PrimitiveCellEntryCompatibilityRuntimeState.fresh()
 
     fields = state.debug_fields()
 
-    assert fields == policy._debug_report_cell_entry_fields()
+    assert fields == policy._primitive_report_composition_runtime().report_runtime().debug_report_cell_entry_fields()
     assert fields["cell_entry_selected_cell_id"] == -1
     assert fields["cell_entry_selected_long_index"] == -1
     assert fields["cell_entry_selected_short_index"] == -1
@@ -87,7 +88,7 @@ def test_cell_entry_debug_fields_match_policy_facade_for_fresh_state() -> None:
 
 
 def test_policy_cell_entry_debug_facade_ignores_removed_runtime_state() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     state = PrimitiveCellEntryCompatibilityRuntimeState.fresh()
     state.goal = CellEntryGoal(
         cycle_id=3,
@@ -125,7 +126,7 @@ def test_policy_cell_entry_debug_facade_ignores_removed_runtime_state() -> None:
     state.seen_cell_id = 6
     policy.__dict__["_cell_entry_state"] = state
 
-    fields = policy._debug_report_cell_entry_fields()
+    fields = policy._primitive_report_composition_runtime().report_runtime().debug_report_cell_entry_fields()
 
     assert fields["cell_entry_selected_cell_id"] == -1
     assert fields["cell_entry_selected_long_index"] == -1
@@ -184,15 +185,20 @@ def test_cell_entry_report_status_projects_populated_trace_with_shallow_copy() -
 
 
 def test_policy_cell_entry_debug_facade_delegates_to_report_status() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     policy.cell_entry_enabled = True
     state = PrimitiveCellEntryCompatibilityRuntimeState.fresh()
     state.seen_cell_id = 5
     policy.__dict__["_cell_entry_state"] = state
 
-    assert policy._debug_report_cell_entry_fields() == (
+    assert policy._primitive_report_composition_runtime().report_runtime().debug_report_cell_entry_fields() == (
         PrimitiveCellEntryCompatibilityRuntimeState.fresh()
-        .to_report_status(policy._cell_entry_report_config())
+        .to_report_status(
+            policy._primitive_report_composition_runtime().cell_entry_report_config()
+        )
         .debug_fields()
     )
-    assert policy._cell_entry_report_status().enabled is False
+    assert (
+        policy._primitive_report_composition_runtime().cell_entry_report_status().enabled
+        is False
+    )

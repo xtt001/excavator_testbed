@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from testbed.planner.primitive_coverage import CoverageCandidateBuilder
+from testbed.planner.primitive.coverage.selection import CoverageCandidateBuilder
 
 
 def _prior() -> dict[str, object]:

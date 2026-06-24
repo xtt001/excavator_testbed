@@ -1,18 +1,34 @@
 from __future__ import annotations
 
-from types import MethodType
-from typing import Any
-
 import numpy as np
 import pytest
 
-from testbed.planner.primitive_tick_finalization import (
+from testbed.planner.primitive.execution.cycle_state import (
+    PrimitiveCycleReportStatus,
+    PrimitiveCycleRuntimeState,
+)
+from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
+from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive.execution.tick_finalization import (
     PrimitivePlannerDebugState,
     PrimitiveTickFinalizationInputs,
+    PrimitiveTickFinalizationRuntime,
+    PrimitiveTickFinalizationRuntimePorts,
     PrimitiveTickFinalizationService,
 )
 from testbed.policies.hybrid.adapter import HYBRID_MODE_TRANSITION, HYBRID_MODE_WORK
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+
+
+_OLD_TICK_FINALIZATION_POLICY_WRAPPERS = (
+    "_record_tick_previous_action",
+    "_transition_completed_after_tick_dispatch",
+    "_finalize_tick_debug_state",
+    "_make_debug_state",
+    "_tick_finalization_inputs",
+    "_account_return_timeout_for_tick",
+    "_tick_finalization_service",
+)
 
 
 def _inputs(
@@ -47,6 +63,22 @@ def _inputs(
         primitive_cycle_index=5,
         approach_ready_hold_count=approach_ready_hold_count,
         dump_release_ready_hold_count=dump_release_ready_hold_count,
+    )
+
+
+def _cycle_report_status() -> PrimitiveCycleReportStatus:
+    return PrimitiveCycleReportStatus(
+        completed_transition_count=1,
+        transition_timeout_count=2,
+        dump_ready_hold_count=3,
+        dump_done_hold_count=4,
+        primitive_cycle_index=5,
+        dig_step_count=6,
+        dig_best_mass_kg=7.5,
+        dig_mass_plateau_count=8,
+        dig_to_carry_reason="loaded",
+        dig_bad_replan_count=9,
+        dig_exit_guard_replan_count=10,
     )
 
 
@@ -155,15 +187,56 @@ def test_make_debug_state_assembles_5p_fields_and_return_only_transition() -> No
     assert return_state.hybrid_mode == HYBRID_MODE_TRANSITION
 
 
-def test_policy_tick_finalization_private_methods_delegate_to_service() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-    action = np.asarray([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
-    copied_action = np.asarray([9.0, 8.0, 7.0, 6.0], dtype=np.float32)
-    debug_state = PrimitivePlannerDebugState(
+def test_policy_no_longer_exposes_tick_finalization_private_wrappers() -> None:
+    for wrapper_name in _OLD_TICK_FINALIZATION_POLICY_WRAPPERS:
+        assert wrapper_name not in PrimitivePlannerACTPolicy.__dict__
+
+
+def test_tick_finalization_runtime_builds_and_writes_debug_state() -> None:
+    execution_state = PrimitiveExecutionRuntimeState(
+        skill_name="dig",
+        switch_reason="dig_to_carry_loaded",
+    )
+    ports = PrimitiveTickFinalizationRuntimePorts(
+        execution_state=execution_state,
+        cycle_state=PrimitiveCycleRuntimeState(),
+        return_state=PrimitiveReturnRuntimeState(),
+        cycle_report_status=_cycle_report_status,
+        first_dig_policy_active=lambda: True,
+        skill_ids={"dig": 0, "return": 3},
+        primitive_checkpoint_paths={
+            "dig": "/ckpt/dig.pt",
+            "first_dig": "/ckpt/first_dig.pt",
+            "return": "/ckpt/return.pt",
+        },
+        transition_skill_names=("return",),
+        return_max_steps=3,
+    )
+    runtime = PrimitiveTickFinalizationRuntime.from_ports(ports)
+
+    inputs = runtime.finalization_inputs(
+        transition_timeout=False,
+        transition_completed=True,
+    )
+    made_state = runtime.make_debug_state(
+        transition_timeout=False,
+        transition_completed=True,
+    )
+    runtime.finalize_debug_state(
+        transition_timeout=False,
+        transition_completed=True,
+    )
+
+    assert inputs.skill_name == "dig"
+    assert inputs.skill_switch_reason == "dig_to_carry_loaded"
+    assert inputs.first_dig_policy_active is True
+    assert inputs.completed_transition_count == 1
+    assert inputs.transition_timeout_count == 2
+    assert made_state == PrimitivePlannerDebugState(
         skill_name="dig",
         skill_id=0,
         skill_switch_reason="dig_to_carry_loaded",
-        primitive_checkpoint_path="/ckpt/dig.pt",
+        primitive_checkpoint_path="/ckpt/first_dig.pt",
         hybrid_mode=HYBRID_MODE_WORK,
         transition_timeout=False,
         transition_completed=True,
@@ -173,50 +246,33 @@ def test_policy_tick_finalization_private_methods_delegate_to_service() -> None:
         dump_done_hold_count=4,
         primitive_cycle_index=5,
     )
-    inputs = object()
-    events: list[str] = []
+    assert execution_state.debug_state == made_state
 
-    class _FakeService:
-        def copy_previous_action(self, got_action: np.ndarray) -> np.ndarray:
-            assert got_action is action
-            events.append("copy_previous_action")
-            return copied_action
 
-        def transition_completed_after_dispatch(self, reason: str) -> bool:
-            assert reason == "return_to_dig_start_envelope_ready"
-            events.append("transition_completed")
-            return True
-
-        def make_debug_state(self, got_inputs: Any) -> PrimitivePlannerDebugState:
-            assert got_inputs is inputs
-            events.append("make_debug_state")
-            return debug_state
-
-    planner._switch_reason = "return_to_dig_start_envelope_ready"
-    planner._tick_finalization_service = MethodType(lambda self: _FakeService(), planner)
-    planner._tick_finalization_inputs = MethodType(
-        lambda self, *, transition_timeout, transition_completed: inputs,
-        planner,
+def test_tick_finalization_runtime_accounts_return_timeout_only_for_return() -> None:
+    execution_state = PrimitiveExecutionRuntimeState(skill_name="dig")
+    cycle_state = PrimitiveCycleRuntimeState()
+    return_state = PrimitiveReturnRuntimeState(return_step_count=2)
+    runtime = PrimitiveTickFinalizationRuntime.from_ports(
+        PrimitiveTickFinalizationRuntimePorts(
+            execution_state=execution_state,
+            cycle_state=cycle_state,
+            return_state=return_state,
+            cycle_report_status=_cycle_report_status,
+            first_dig_policy_active=lambda: False,
+            skill_ids={"dig": 0, "return": 3},
+            primitive_checkpoint_paths={"dig": "/ckpt/dig.pt"},
+            transition_skill_names=("return",),
+            return_max_steps=3,
+        )
     )
 
-    planner._record_tick_previous_action(action)
-    completed = planner._transition_completed_after_tick_dispatch()
-    made_state = planner._make_debug_state(
-        transition_timeout=False,
-        transition_completed=True,
-    )
-    planner._finalize_tick_debug_state(
-        transition_timeout=False,
-        transition_completed=True,
-    )
+    assert runtime.account_return_timeout() is False
+    assert return_state.return_step_count == 2
+    assert cycle_state.transition_timeout_count == 0
 
-    assert planner._prev_action is copied_action
-    assert completed is True
-    assert made_state is debug_state
-    assert planner._debug_state is debug_state
-    assert events == [
-        "copy_previous_action",
-        "transition_completed",
-        "make_debug_state",
-        "make_debug_state",
-    ]
+    execution_state.set_skill_name("return")
+
+    assert runtime.account_return_timeout() is True
+    assert return_state.return_step_count == 3
+    assert cycle_state.transition_timeout_count == 1

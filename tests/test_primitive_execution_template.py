@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from testbed.planner.primitive_decision import (
+from testbed.planner.primitive.decision.contracts import (
     CompleteReturnTransitionEffect,
     MarkReturnNextDigEventSeenEffect,
     PrimitiveDecisionResult,
@@ -11,9 +11,34 @@ from testbed.planner.primitive_decision import (
     SwitchToNextSkillAfterReturnEffect,
     SwitchSkillEffect,
 )
-from testbed.planner.primitive_execution import (
+import testbed.planner.primitive.execution.runtime as primitive_execution
+from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
+from testbed.planner.primitive.execution.runtime import (
     PrimitiveTickHooks,
     run_primitive_tick,
+)
+from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+
+
+_OLD_EXECUTION_DRIVER_POLICY_WRAPPERS = (
+    "_tick_boundary_event",
+    "_reset_tick_switch_reason",
+    "_current_tick_skill_name",
+    "_dispatch_tick_action",
+    "_record_tick_previous_action",
+    "_transition_completed_after_tick_dispatch",
+    "_finalize_tick_debug_state",
+    "_tick_execution_hooks",
+    "_active_policy",
+    "_all_policies",
+    "_first_dig_policy_active",
+)
+
+_OLD_EXECUTION_COMPOSITION_POLICY_WRAPPERS = (
+    "_execution_driver_ports",
+    "_execution_driver",
+    "_decide_tick",
+    "_apply_requested_tick_effects",
 )
 
 
@@ -94,6 +119,127 @@ class FakeTickHooks(PrimitiveTickHooks):
         self.events.append(
             f"debug_finalize:timeout={transition_timeout}:completed={transition_completed}"
         )
+
+
+def test_policy_no_longer_exposes_execution_driver_private_wrappers() -> None:
+    for wrapper_name in _OLD_EXECUTION_DRIVER_POLICY_WRAPPERS:
+        assert wrapper_name not in PrimitivePlannerACTPolicy.__dict__
+
+
+def test_policy_no_longer_exposes_execution_composition_private_wrappers() -> None:
+    for wrapper_name in _OLD_EXECUTION_COMPOSITION_POLICY_WRAPPERS:
+        assert wrapper_name not in PrimitivePlannerACTPolicy.__dict__
+
+
+def test_execution_runtime_composes_driver_from_focused_services_and_owners() -> None:
+    events: list[str] = []
+    execution_state = PrimitiveExecutionRuntimeState(skill_name="dig")
+
+    class BoundaryRuntime:
+        def update(self, obs: dict[str, Any]) -> str:
+            events.append(f"boundary:{obs['marker']}")
+            return "boundary-event"
+
+    class DigProgressRuntime:
+        def update(self, obs: dict[str, Any]) -> None:
+            events.append(f"dig_progress:{obs['marker']}")
+
+    class DecisionRuntime:
+        def decide_tick(
+            self,
+            *,
+            obs: dict[str, Any],
+            boundary_event: Any | None,
+            preparation: Any,
+        ) -> PrimitiveDecisionResult:
+            events.append(
+                "decide:"
+                f"{boundary_event}:"
+                f"{preparation.skill_name_before_decision}:"
+                f"{preparation.dig_progress_updated}"
+            )
+            return PrimitiveDecisionResult.from_requested_effects(
+                decision_source="test_execution_runtime",
+                status="skill_switch",
+                skill_before="dig",
+                skill_after="return",
+                switch_reason="return_to_dig_runtime_probe",
+                effects=(
+                    RequestedPlannerEffect(
+                        effect_type="record_decision_trace",
+                        reason="runtime_probe",
+                    ),
+                ),
+            )
+
+    class RequestedEffectApplier:
+        def apply(
+            self,
+            obs: dict[str, Any],
+            effects: tuple[RequestedPlannerEffect, ...],
+        ) -> None:
+            events.append(f"apply:{obs['marker']}:{len(effects)}")
+            execution_state.set_switch_reason("return_to_dig_runtime_probe")
+
+    class TickFinalizationRuntime:
+        def account_return_timeout(self) -> bool:
+            events.append("return_timeout")
+            return True
+
+        def finalize_debug_state(
+            self,
+            *,
+            transition_timeout: bool,
+            transition_completed: bool,
+        ) -> None:
+            events.append(
+                f"finalize:{transition_timeout}:{transition_completed}"
+            )
+
+    class ActionDispatchService:
+        def dispatch_action(self, obs: dict[str, Any]) -> list[float]:
+            events.append(f"dispatch:{obs['marker']}")
+            return [0.2, 0.4]
+
+    class TickFinalizationService:
+        def copy_previous_action(self, action: Any) -> Any:
+            events.append(f"copy_previous:{action}")
+            return ("copied", tuple(action))
+
+        def transition_completed_after_dispatch(self, switch_reason: str) -> bool:
+            events.append(f"transition_completed:{switch_reason}")
+            return switch_reason.startswith("return_to_dig_")
+
+    runtime = primitive_execution.PrimitiveExecutionRuntime.from_ports(
+        primitive_execution.PrimitiveExecutionRuntimePorts(
+            execution_state=execution_state,
+            boundary_event_runtime=BoundaryRuntime(),
+            dig_progress_runtime=DigProgressRuntime(),
+            decision_runtime=DecisionRuntime(),
+            requested_effect_applier=RequestedEffectApplier(),
+            tick_finalization_runtime=TickFinalizationRuntime(),
+            action_dispatch_service=ActionDispatchService(),
+            tick_finalization_service=TickFinalizationService(),
+        )
+    )
+
+    result = runtime.execution_driver().run_tick({"marker": "obs"})
+
+    assert result.action == [0.2, 0.4]
+    assert result.transition_timeout is True
+    assert result.transition_completed is True
+    assert execution_state.prev_action == ("copied", (0.2, 0.4))
+    assert events == [
+        "boundary:obs",
+        "dig_progress:obs",
+        "decide:boundary-event:dig:True",
+        "apply:obs:1",
+        "return_timeout",
+        "dispatch:obs",
+        "copy_previous:[0.2, 0.4]",
+        "transition_completed:return_to_dig_runtime_probe",
+        "finalize:True:True",
+    ]
 
 
 def test_run_primitive_tick_orders_dig_tick_hooks_and_returns_result() -> None:

@@ -4,12 +4,12 @@ from dataclasses import dataclass, field
 from types import MethodType
 from typing import Any
 
-from testbed.planner import primitive_execution
-from testbed.planner.primitive_decision import (
+import testbed.planner.primitive.execution.runtime as primitive_execution
+from testbed.planner.primitive.decision.contracts import (
     PrimitiveDecisionResult,
     RequestedPlannerEffect,
 )
-from testbed.planner.primitive_execution import (
+from testbed.planner.primitive.execution.runtime import (
     PrimitiveExecutionDriver,
     PrimitiveExecutionPorts,
     PrimitiveTickResult,
@@ -266,7 +266,14 @@ def test_policy_predict_delegates_to_execution_driver() -> None:
             events.append("driver_predict")
             return action
 
-    planner._execution_driver = MethodType(lambda self: _FakeDriver(), planner)
+    class _FakeExecutionRuntime:
+        def execution_driver(self) -> _FakeDriver:
+            return _FakeDriver()
+
+    planner._primitive_execution_runtime = MethodType(
+        lambda self: _FakeExecutionRuntime(),
+        planner,
+    )
 
     assert planner.predict(obs) is action
     assert events == ["driver_predict"]

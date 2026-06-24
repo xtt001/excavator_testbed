@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from testbed.planner.primitive_tokens import ReturnRelocateTokenPlanner
+from testbed.planner.primitive.token.tokens import ReturnRelocateTokenPlanner
 
 
 def test_return_relocate_token_planner_copies_and_clears_target_fields() -> None:

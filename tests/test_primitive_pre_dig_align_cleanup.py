@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from testbed.planner.primitive_action_dispatch import PrimitiveActionDispatchService
-from testbed.planner.primitive_adapter_config import (
+from testbed.planner.primitive.execution.action_dispatch import PrimitiveActionDispatchService
+from testbed.planner.primitive.config.adapter import (
     PrimitivePlannerAdapterConfigInputs,
     PrimitivePlannerAdapterConfigNormalizer,
 )

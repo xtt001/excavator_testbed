@@ -7,16 +7,24 @@ from typing import Any
 import numpy as np
 import pytest
 
-from testbed.planner.primitive_coverage_state import CoverageRuntimeState
-from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive_execution_state import (
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.execution.state import (
     PrimitiveExecutionRuntimeState,
 )
-from testbed.planner.primitive_action_dispatch import (
+from testbed.planner.primitive.execution.action_dispatch import (
     PrimitiveActionDispatchPorts,
     PrimitiveActionDispatchService,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+
+
+_OLD_EXECUTION_ACTION_POLICY_WRAPPERS = (
+    "_dispatch_tick_action",
+    "_active_policy",
+    "_all_policies",
+    "_first_dig_policy_active",
+)
 
 
 class _FakePolicy:
@@ -246,7 +254,12 @@ def test_unknown_skill_raises_exact_error() -> None:
         service.active_policy()
 
 
-def test_policy_action_dispatch_private_methods_delegate_to_service() -> None:
+def test_policy_no_longer_exposes_action_dispatch_private_wrappers() -> None:
+    for wrapper_name in _OLD_EXECUTION_ACTION_POLICY_WRAPPERS:
+        assert wrapper_name not in PrimitivePlannerACTPolicy.__dict__
+
+
+def test_policy_action_dispatch_service_uses_focused_contract() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs = {"qpos": [1.0]}
     action = np.asarray([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
@@ -272,10 +285,12 @@ def test_policy_action_dispatch_private_methods_delegate_to_service() -> None:
         planner,
     )
 
-    assert planner._dispatch_tick_action(obs) is action
-    assert planner._active_policy() is policy
-    assert planner._all_policies() is policies
-    assert planner._first_dig_policy_active() is True
+    service = planner._action_dispatch_service()
+
+    assert service.dispatch_action(obs) is action
+    assert service.active_policy() is policy
+    assert service.all_policies() is policies
+    assert service.first_dig_policy_active() is True
 
 
 def test_policy_action_dispatch_ports_share_focused_state_owners() -> None:
@@ -288,8 +303,8 @@ def test_policy_action_dispatch_ports_share_focused_state_owners() -> None:
     planner.first_dig_policy = _FakePolicy("first_dig")
     planner.bootstrap_policy = _FakePolicy("bootstrap")
     planner._skill_name = "dig"
-    planner._cycle_index = 0
-    planner._coverage_completed_dump_count = 0
+    planner._primitive_cycle_runtime_state().cycle_index = 0
+    planner._coverage_runtime_state().coverage_completed_dump_count = 0
 
     ports = planner._action_dispatch_ports()
     port_fields = {field.name for field in fields(PrimitiveActionDispatchPorts)}

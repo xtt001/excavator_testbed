@@ -4,18 +4,18 @@ import math
 from types import MethodType
 from typing import Any
 
-from testbed.planner.primitive_coverage_reports import CoverageSummaryReportStatus
-from testbed.planner.primitive_cell_entry_state import (
+from testbed.planner.primitive.coverage.reports import CoverageSummaryReportStatus
+from testbed.planner.primitive.compatibility.cell_entry import (
     PrimitiveCellEntryReportStatus,
 )
-from testbed.planner.primitive_pre_dig_align_state import (
+from testbed.planner.primitive.compatibility.pre_dig_align import (
     PrimitivePreDigAlignReportStatus,
 )
-from testbed.planner.primitive_rollout_summary import (
+from testbed.planner.primitive.report.rollout_summary import (
     PrimitiveRolloutSummaryBuilder,
     PrimitiveRolloutSummaryInputs,
 )
-from testbed.planner.primitive_token_state import PrimitiveTokenReportStatus
+from testbed.planner.primitive.token.state import PrimitiveTokenReportStatus
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
@@ -193,17 +193,14 @@ def test_rollout_summary_builder_preserves_int_and_nan_projection() -> None:
 
 def test_policy_rollout_summary_delegates_to_summary_builder() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
-    sentinel_inputs = object()
     built_summary = {"primitive_final_skill": "dig", "primitive_cycle_index": 1}
 
-    class _FakeBuilder:
-        def build(self, got_inputs: object) -> dict[str, Any]:
-            assert got_inputs is sentinel_inputs
+    class _FakePublicRuntime:
+        def rollout_summary(self) -> dict[str, Any]:
             return built_summary
 
-    planner._rollout_summary_inputs = MethodType(
-        lambda self: sentinel_inputs, planner
+    planner._primitive_runtime_kernel_runtime = MethodType(
+        lambda self: _FakePublicRuntime(), planner
     )
-    planner._rollout_summary_builder = MethodType(lambda self: _FakeBuilder(), planner)
 
     assert planner.rollout_summary() is built_summary

@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import numpy as np
 
-from testbed.planner.primitive_pre_dig_align_state import (
+from testbed.planner.primitive.compatibility.pre_dig_align import (
     PrimitivePreDigAlignCompatibilityRuntimeState,
     PrimitivePreDigAlignReportConfig,
 )
-from testbed.planner.primitive_reset_lifecycle import (
+from testbed.planner.primitive.execution.reset_lifecycle import (
     PrimitiveResetLifecyclePorts,
     PrimitiveResetLifecycleService,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+from tests.primitive_policy_test_helpers import make_policy_shell_for_private_weld_tests
 
 
 def test_pre_dig_align_compatibility_runtime_state_fresh_matches_reset_defaults() -> None:
@@ -210,7 +211,7 @@ def test_pre_dig_align_state_projects_populated_debug_fields() -> None:
 
 
 def test_policy_pre_dig_align_debug_facade_delegates_to_state_report_status() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     policy.action_dim = 4
     policy.pre_dig_align_enabled = True
     policy.pre_dig_align_first_dig_only = True
@@ -228,14 +229,14 @@ def test_policy_pre_dig_align_debug_facade_delegates_to_state_report_status() ->
         dtype=bool,
     )
     policy.pre_dig_align_bucket_target_qpos = None
-    policy._cycle_index = 0
+    policy._primitive_cycle_runtime_state().cycle_index = 0
     state = PrimitivePreDigAlignCompatibilityRuntimeState.fresh(action_dim=4)
     state.completed_count = 3
     state.timeout_count = 2
     state.replan_count = 1
     policy.__dict__["_pre_dig_align_state"] = state
 
-    fields = policy._debug_report_pre_dig_align_fields()
+    fields = policy._primitive_report_composition_runtime().report_runtime().debug_report_pre_dig_align_fields()
 
     assert fields["pre_dig_align_enabled"] is False
     assert fields["pre_dig_align_completed_count"] == 0

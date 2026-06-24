@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import fields
-from types import MappingProxyType, MethodType, SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -20,19 +20,50 @@ from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX
 from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX
 from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX
 from testbed.data.schema import ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX
-from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
-from testbed.planner.primitive_dig_token_planning import (
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
+from testbed.planner.primitive.token.dig_planning import (
     PrimitiveDigTokenPlanningPorts,
     PrimitiveDigTokenPlanningService,
 )
-from testbed.planner.primitive_coverage_state import CoverageRuntimeState
-from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
-from testbed.planner.primitive_tokens import (
+from testbed.planner.primitive.token.planning_runtime import (
+    PrimitiveTokenPlanningRuntime,
+    PrimitiveTokenPlanningRuntimePorts,
+)
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
+from testbed.planner.primitive.token.tokens import (
     DigCutTokenPlan,
     DigDepthProfileTokenPlan,
     DigDepthProfileTokenPlanningError,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+
+_TOKEN_PLANNING_WRAPPER_NAMES = {
+    "primitive_dig_token_planning_service",
+    "primitive_dig_token_planning_ports",
+    "build_dig_depth_profile_tokens_for_obs",
+    "apply_dig_depth_profile_token_plan",
+    "build_live_dig_depth_profile_tokens_for_obs",
+    "dig_depth_profile_prior_token",
+    "dig_depth_profile_prior_mapping",
+    "dig_depth_profile_raw_fields",
+    "dig_depth_profile_cell_id",
+    "build_dig_cut_tokens_for_obs",
+    "apply_dig_cut_token_plan",
+    "primitive_return_token_planning_service",
+    "primitive_return_token_planning_ports",
+    "build_next_dig_cut_plan_for_return",
+    "build_return_start_envelope_tokens_for_obs",
+    "apply_return_start_envelope_token_plan",
+    "maybe_condition_return_start_envelope_qpos_from_relocate",
+    "return_start_envelope_prior_token",
+    "return_start_envelope_prior_mapping",
+    "return_start_envelope_prior_bounds",
+    "return_start_envelope_cell_id",
+    "raw_fields_from_live_pose",
+    "build_operator_prior_dig_cut_tokens",
+    "build_operator_prior_coverage_dig_cut_tokens",
+}
 
 
 def _token(size: int, value: float) -> np.ndarray:
@@ -726,104 +757,65 @@ def test_ports_boundary_is_typed_and_does_not_accept_planner_self() -> None:
     assert names.isdisjoint(removed_state_callbacks)
 
 
-def test_policy_private_facades_delegate_to_dig_token_planning_service() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
-    events: list[tuple[str, object]] = []
+def test_token_planning_runtime_builds_typed_dig_and_return_ports_without_planner_self() -> None:
+    token_state = PrimitiveTokenRuntimeState.fresh()
+    coverage_state = CoverageRuntimeState()
+    events: list[str] = []
+    cut_planner = _DigCutPlanner(events)
+    depth_planner = _DepthPlanner(events)
 
-    class FakeService:
-        def build_dig_cut_tokens_for_obs(self, obs: dict[str, Any]) -> str:
-            events.append(("build_cut", obs))
-            return "cut"
+    class _ReturnTargetPlanner:
+        pass
 
-        def apply_dig_cut_token_plan(self, plan: DigCutTokenPlan) -> str:
-            events.append(("apply_cut", plan))
-            return "applied-cut"
+    class _ReturnStartEnvelopePlanner:
+        pass
 
-        def build_dig_depth_profile_tokens_for_obs(self, obs: dict[str, Any]) -> str:
-            events.append(("build_depth", obs))
-            return "depth"
-
-        def apply_dig_depth_profile_token_plan(
-            self,
-            plan: DigDepthProfileTokenPlan,
-        ) -> str:
-            events.append(("apply_depth", plan))
-            return "applied-depth"
-
-        def build_live_dig_depth_profile_tokens_for_obs(
-            self,
-            obs: dict[str, Any],
-            *,
-            cell_id: int,
-        ) -> str:
-            events.append(("live_depth", (obs, cell_id)))
-            return "live-depth"
-
-        def dig_depth_profile_prior_token(self, cell_id: int) -> str:
-            events.append(("prior_token", cell_id))
-            return "prior-token"
-
-        def dig_depth_profile_prior_mapping(self, cell_id: int) -> str:
-            events.append(("prior_mapping", cell_id))
-            return "prior-mapping"
-
-        def dig_depth_profile_raw_fields(self, obs: dict[str, Any]) -> str:
-            events.append(("raw_fields", obs))
-            return "raw-fields"
-
-        def dig_depth_profile_cell_id(self, obs: dict[str, Any]) -> int:
-            events.append(("cell_id", obs))
-            return 5
-
-        def build_operator_prior_coverage_dig_cut_tokens(
-            self,
-            obs: dict[str, Any],
-        ) -> str:
-            events.append(("coverage_cut", obs))
-            return "coverage-cut"
-
-    fake_service = FakeService()
-
-    def service(self: PrimitivePlannerACTPolicy) -> FakeService:
-        return fake_service
-
-    policy._primitive_dig_token_planning_service = MethodType(service, policy)
-    cut_plan = _dig_plan(1.0, source="source")
-    depth_plan = DigDepthProfileTokenPlan(
-        token=_token(DIG_DEPTH_PROFILE_TOKEN_DIM, 1.0),
-        source="source",
-        fallback_reason="",
+    ports = PrimitiveTokenPlanningRuntimePorts(
+        token_state=token_state,
+        coverage_state=coverage_state,
+        dig_cut_planner_mode=lambda: "conservative_pose",
+        dig_cut_planner_fallback_mode=lambda: "conservative_pose",
+        cycle_index=lambda: 0,
+        dig_cut_token_planner=lambda: cut_planner,
+        dig_depth_profile_token_planner=lambda: depth_planner,
+        return_target_token_planner=lambda: _ReturnTargetPlanner(),
+        return_start_envelope_token_planner=lambda: _ReturnStartEnvelopePlanner(),
+        observation_facts=lambda obs: PrimitiveObservationFacts.from_obs(
+            obs,
+            action_dim=4,
+        ),
+        select_next_coverage_corridor=lambda obs: SimpleNamespace(
+            corridor_id=1,
+            cell_id=2,
+        ),
+        coverage_raw_fields=lambda corridor, *, obs, update_state=False: {
+            "operator_entry_x_m": 1.0,
+        },
     )
+    runtime = PrimitiveTokenPlanningRuntime.from_ports(ports)
 
-    assert policy._build_dig_cut_tokens_for_obs({"id": "obs"}) == "cut"
-    assert policy._apply_dig_cut_token_plan(cut_plan) == "applied-cut"
-    assert policy._build_dig_depth_profile_tokens_for_obs({"id": "obs"}) == "depth"
-    assert (
-        policy._apply_dig_depth_profile_token_plan(depth_plan)
-        == "applied-depth"
-    )
-    assert (
-        policy._build_live_dig_depth_profile_tokens_for_obs({"id": "obs"}, cell_id=2)
-        == "live-depth"
-    )
-    assert policy._dig_depth_profile_prior_token(3) == "prior-token"
-    assert policy._dig_depth_profile_prior_mapping(4) == "prior-mapping"
-    assert policy._dig_depth_profile_raw_fields({"id": "obs"}) == "raw-fields"
-    assert policy._dig_depth_profile_cell_id({"id": "obs"}) == 5
-    assert (
-        policy._build_operator_prior_coverage_dig_cut_tokens({"id": "obs"})
-        == "coverage-cut"
-    )
+    dig_ports = runtime.dig_token_planning_ports()
+    return_ports = runtime.return_token_planning_ports()
+    runtime_fields = {field.name for field in fields(PrimitiveTokenPlanningRuntimePorts)}
 
-    assert events == [
-        ("build_cut", {"id": "obs"}),
-        ("apply_cut", cut_plan),
-        ("build_depth", {"id": "obs"}),
-        ("apply_depth", depth_plan),
-        ("live_depth", ({"id": "obs"}, 2)),
-        ("prior_token", 3),
-        ("prior_mapping", 4),
-        ("raw_fields", {"id": "obs"}),
-        ("cell_id", {"id": "obs"}),
-        ("coverage_cut", {"id": "obs"}),
-    ]
+    assert "planner" not in runtime_fields
+    assert "self" not in runtime_fields
+    assert dig_ports.token_state is token_state
+    assert dig_ports.coverage_state is coverage_state
+    assert return_ports.token_state is token_state
+    assert return_ports.coverage_state is coverage_state
+    assert dig_ports.coverage_raw_fields(
+        SimpleNamespace(corridor_id=3),
+        obs={"id": "obs"},
+    ) == {"operator_entry_x_m": 1.0}
+    assert return_ports.coverage_raw_fields(
+        SimpleNamespace(corridor_id=4),
+        obs={"id": "obs"},
+        update_state=True,
+    ) == {"operator_entry_x_m": 1.0}
+
+
+def test_policy_no_longer_exposes_old_token_planning_wrappers() -> None:
+    removed_names = {f"_{name}" for name in _TOKEN_PLANNING_WRAPPER_NAMES}
+
+    assert removed_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)

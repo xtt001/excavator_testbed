@@ -9,16 +9,22 @@ from testbed.data.schema import (
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
 )
-from testbed.planner.primitive_scripted_bootstrap import (
+from testbed.planner.primitive.execution.scripted_bootstrap import (
     PrimitiveScriptedBootstrapReportStatus,
     PrimitiveScriptedBootstrapRuntimeConfig,
     PrimitiveScriptedBootstrapRuntimeService,
     PrimitiveScriptedBootstrapRuntimeState,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+from tests.primitive_policy_test_helpers import make_policy_shell_for_private_weld_tests
 
 
 _DEFAULT_TARGET = object()
+_SCRIPTED_BOOTSTRAP_COUNTER_FIELD_NAMES = {
+    "scripted_bootstrap_step_count",
+    "scripted_bootstrap_hold_count",
+    "scripted_bootstrap_timeout_count",
+}
 
 
 def _config(
@@ -102,13 +108,21 @@ def test_scripted_bootstrap_state_fresh_matches_legacy_reset_defaults() -> None:
     assert state.timeout_count == 0
 
 
-def test_policy_legacy_scripted_bootstrap_fields_use_one_state_owner() -> None:
+def test_policy_no_longer_exposes_old_scripted_bootstrap_counter_facades() -> None:
+    removed_policy_names = {
+        f"_{name}" for name in _SCRIPTED_BOOTSTRAP_COUNTER_FIELD_NAMES
+    }
+
+    assert removed_policy_names.isdisjoint(PrimitivePlannerACTPolicy.__dict__)
+
+
+def test_policy_scripted_bootstrap_state_owner_is_direct_counter_source() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     state = policy._primitive_scripted_bootstrap_runtime_state()
 
-    policy._scripted_bootstrap_step_count = 3
-    policy._scripted_bootstrap_hold_count = 4
-    policy._scripted_bootstrap_timeout_count = 5
+    state.step_count = 3
+    state.hold_count = 4
+    state.timeout_count = 5
 
     assert policy._primitive_scripted_bootstrap_runtime_state() is state
     assert state.step_count == 3
@@ -127,7 +141,7 @@ def test_policy_reset_application_replaces_scripted_bootstrap_state_owner() -> N
             return {"_scripted_bootstrap_state": reset_state}
 
     policy._apply_reset_lifecycle_state(_ResetState())
-    policy._scripted_bootstrap_step_count = 2
+    policy._primitive_scripted_bootstrap_runtime_state().step_count = 2
 
     assert policy._primitive_scripted_bootstrap_runtime_state() is reset_state
     assert policy._primitive_scripted_bootstrap_runtime_state() is not old_state
@@ -223,13 +237,14 @@ def test_action_raises_exact_error_without_target_qpos() -> None:
         service.action({"qpos": np.zeros(4)})
 
 
-def test_policy_scripted_bootstrap_facades_delegate_to_service() -> None:
+def test_policy_scripted_bootstrap_runtime_weld_uses_service_contract() -> None:
     policy = object.__new__(PrimitivePlannerACTPolicy)
     _install_policy_scripted_config(policy, action_clip=[0.5, 1.0, 1.0, 1.0])
     state = policy._primitive_scripted_bootstrap_runtime_state()
+    service = policy._primitive_scripted_bootstrap_runtime_service()
 
     assert policy._scripted_bootstrap_enabled() is True
-    assert policy._scripted_bootstrap_target_reached(
+    assert service.target_reached(
         {
             "qpos": policy.scripted_bootstrap_target_qpos.copy(),
             "qvel": np.zeros(4, dtype=np.float32),
@@ -319,13 +334,13 @@ def test_policy_should_end_bootstrap_non_scripted_modes_use_bootstrap_status_fac
 
 
 def test_policy_debug_scripted_bootstrap_fields_read_state_owner() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     state = policy._primitive_scripted_bootstrap_runtime_state()
     state.step_count = 7
     state.hold_count = 2
     state.timeout_count = 1
 
-    assert policy._debug_report_scripted_bootstrap_fields() == {
+    assert policy._primitive_report_composition_runtime().report_runtime().debug_report_scripted_bootstrap_fields() == {
         "scripted_bootstrap_step_count": 7,
         "scripted_bootstrap_hold_count": 2,
         "scripted_bootstrap_timeout_count": 1,
@@ -370,20 +385,20 @@ def test_scripted_bootstrap_runtime_state_projects_populated_report_status() -> 
 
 
 def test_policy_scripted_bootstrap_debug_facade_delegates_to_report_status() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     state = policy._primitive_scripted_bootstrap_runtime_state()
     state.step_count = 7
     state.hold_count = 2
     state.timeout_count = 1
 
     assert (
-        policy._debug_report_scripted_bootstrap_fields()
+        policy._primitive_report_composition_runtime().report_runtime().debug_report_scripted_bootstrap_fields()
         == state.to_report_status().debug_fields()
     )
 
 
 def test_policy_rollout_summary_inputs_use_scripted_bootstrap_report_status() -> None:
-    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy = make_policy_shell_for_private_weld_tests()
     status = PrimitiveScriptedBootstrapReportStatus(
         step_count=7,
         hold_count=2,
@@ -436,6 +451,6 @@ def test_policy_rollout_summary_inputs_use_scripted_bootstrap_report_status() ->
     policy.pre_dig_align_controlled_dims = []
     policy.pre_dig_align_bucket_target_qpos = 0.0
 
-    inputs = policy._rollout_summary_inputs()
+    inputs = policy._primitive_report_composition_runtime().report_runtime().rollout_summary_inputs()
 
     assert inputs.scripted_bootstrap_timeout_count == 9

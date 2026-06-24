@@ -3,14 +3,21 @@ from __future__ import annotations
 from dataclasses import fields
 from typing import Any
 
-from testbed.planner.primitive_backend_facts import PrimitiveBackendFactsAccess
-from testbed.planner.primitive_backend_input import PrimitiveBackendDecisionInput
-from testbed.planner.primitive_decision_capabilities import (
+from testbed.planner.primitive.facts.backend import (
+    PrimitiveBackendFactsAccess,
+    PrimitiveBackendFactsPorts,
+    PrimitiveBackendFactsSource,
+)
+from testbed.planner.primitive.decision.input import (
+    PrimitiveBackendDecisionInput,
+    PrimitiveBackendDecisionInputBuilder,
+)
+from testbed.planner.primitive.decision.capabilities import (
     PrimitiveDecisionCompatibilityActions,
 )
-from testbed.planner.primitive_decision_context import PrimitiveDecisionContext
-from testbed.planner.primitive_decision_facts import PrimitiveDecisionFacts
-from testbed.planner.primitive_execution import PrimitiveTickPreparation
+from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
+from testbed.planner.primitive.facts.decision import PrimitiveDecisionFacts
+from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 
 
 def _context() -> PrimitiveDecisionContext:
@@ -73,6 +80,20 @@ class _FakeCompatibilityActions:
         raise AssertionError("input construction must not handle residual")
 
 
+class _FakeTransitionStatusReader:
+    def dig_transition_status(self, obs, boundary_event):
+        raise AssertionError("input construction must not read dig transition facts")
+
+    def carry_transition_status(self, obs, boundary_event):
+        raise AssertionError("input construction must not read carry transition facts")
+
+    def dump_transition_status(self, obs, boundary_event):
+        raise AssertionError("input construction must not read dump transition facts")
+
+    def return_transition_status(self, obs, boundary_event):
+        raise AssertionError("input construction must not read return transition facts")
+
+
 def test_backend_decision_input_from_context_reuses_common_identity() -> None:
     context = _context()
     facts_source = _FakeFactsSource()
@@ -92,6 +113,29 @@ def test_backend_decision_input_from_context_reuses_common_identity() -> None:
         ("decision_facts", context, None),
         ("backend_facts", context, facts_source.first_common),
     ]
+
+
+def test_backend_decision_input_builder_uses_backend_facts_source_boundary() -> None:
+    context = _context()
+    facts_source = PrimitiveBackendFactsSource.from_ports(
+        PrimitiveBackendFactsPorts(
+            current_skill_name=lambda: "dig",
+            current_switch_reason=lambda: "loaded",
+            transition_status_reader=_FakeTransitionStatusReader(),
+        )
+    )
+    actions = _FakeCompatibilityActions()
+
+    decision_input = PrimitiveBackendDecisionInputBuilder.from_sources(
+        facts_source=facts_source,
+        compatibility_actions=actions,
+    ).build(context)
+
+    assert decision_input.context is context
+    assert decision_input.compatibility_actions is actions
+    assert decision_input.common.current_skill_name == "dig"
+    assert decision_input.common.current_switch_reason == "loaded"
+    assert decision_input.backend_facts.common is decision_input.common
 
 
 def test_backend_decision_input_public_shape_avoids_planner_and_callback_fields() -> None:

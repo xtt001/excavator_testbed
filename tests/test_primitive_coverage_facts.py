@@ -18,17 +18,17 @@ from testbed.data.schema import (
     ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
     ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
 )
-from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
-from testbed.planner.primitive_coverage import CoverageCorridorState
-from testbed.planner.primitive_coverage_exemplars import (
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
+from testbed.planner.primitive.coverage.selection import CoverageCorridorState
+from testbed.planner.primitive.coverage.exemplars import (
     CoverageStateExemplarPlanInputs,
     CoverageStateExemplarPlanResult,
 )
-from testbed.planner.primitive_coverage_facts import (
+from testbed.planner.primitive.coverage.facts import (
     CoveragePlanningFactConfig,
     CoveragePlanningFactService,
 )
-from testbed.planner.primitive_coverage_state import CoverageRuntimeState
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from tests.test_agx_primitives_v2_2 import (
     _RecordingPolicy,
     _coverage_obs,
@@ -234,13 +234,13 @@ def test_selection_facts_project_remaining_depth_entry_distance_qpos_and_exempla
     assert fact.state_exemplar_id == "cell0_a"
 
 
-def test_policy_facades_delegate_to_shared_coverage_fact_service() -> None:
+def test_coverage_selection_runtime_delegates_to_shared_fact_service() -> None:
     policy = _coverage_planner_policy(
         dig_policy=_RecordingPolicy(0),
         coverage_extra={"use_env_removed_depth": True},
     )
-    policy._ensure_coverage_corridors()
-    corridor = policy._coverage_corridors[0]
+    policy._primitive_coverage_selection_runtime().ensure_coverage_corridors()
+    corridor = policy._coverage_runtime_state().coverage_corridors[0]
     obs = _coverage_obs(
         mass=0.0,
         dig_distance=0.0,
@@ -248,16 +248,16 @@ def test_policy_facades_delegate_to_shared_coverage_fact_service() -> None:
         bucket_tip_pose=(float(corridor.entry_x_m), 0.0, float(corridor.entry_z_m)),
     )
 
-    service = policy._coverage_planning_fact_service()
-    facade_raw_fields = policy._coverage_raw_fields(corridor, obs=obs)
+    service = policy._primitive_coverage_selection_runtime().coverage_planning_fact_service()
+    runtime_raw_fields = policy._primitive_coverage_selection_runtime().coverage_raw_fields(corridor, obs=obs)
     service_raw_fields = service.raw_fields(corridor, obs=obs)
-    facade_facts = policy._coverage_selection_facts(obs, [corridor])
+    runtime_facts = policy._primitive_coverage_selection_runtime().coverage_selection_facts(obs, [corridor])
     service_facts = service.selection_facts(obs, [corridor])
 
     assert service.coverage_state is policy._coverage_state
-    assert facade_raw_fields == service_raw_fields
-    assert facade_facts.keys() == service_facts.keys()
-    fact = facade_facts[int(corridor.corridor_id)]
+    assert runtime_raw_fields == service_raw_fields
+    assert runtime_facts.keys() == service_facts.keys()
+    fact = runtime_facts[int(corridor.corridor_id)]
     expected = service_facts[int(corridor.corridor_id)]
     assert fact.remaining_depth_m == pytest.approx(expected.remaining_depth_m)
     assert fact.first_dig_entry_distance_m == pytest.approx(

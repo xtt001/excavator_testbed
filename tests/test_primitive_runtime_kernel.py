@@ -5,10 +5,14 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from testbed.planner.primitive_runtime_kernel import (
+import testbed.planner.primitive.shell.runtime_kernel as primitive_runtime_kernel
+from testbed.planner.primitive.report.debug_report import PrimitiveDebugReportBuilder
+from testbed.planner.primitive.report.planner_trace import PrimitivePlannerTraceBuilder
+from testbed.planner.primitive.shell.runtime_kernel import (
     PrimitivePlannerRuntimeKernel,
     PrimitivePlannerRuntimeKernelPorts,
 )
+from testbed.planner.primitive.report.rollout_summary import PrimitiveRolloutSummaryBuilder
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
@@ -41,6 +45,88 @@ class _FakeReportBuilder:
     def build(self, inputs: object) -> dict[str, object]:
         self._events.append((f"{self._name}_build", inputs))
         return {"report": self._name, "inputs": inputs}
+
+
+_OLD_PUBLIC_RUNTIME_POLICY_WRAPPERS = (
+    "_runtime_kernel",
+    "_runtime_kernel_ports",
+    "_debug_report_builder",
+    "_rollout_summary_builder",
+    "_planner_trace_builder",
+)
+
+
+def test_policy_no_longer_exposes_public_runtime_composition_wrappers() -> None:
+    for wrapper_name in _OLD_PUBLIC_RUNTIME_POLICY_WRAPPERS:
+        assert wrapper_name not in PrimitivePlannerACTPolicy.__dict__
+
+
+def test_public_runtime_composes_kernel_from_focused_services_and_runtimes() -> None:
+    events: list[tuple[str, object]] = []
+
+    class _FakeTickFinalizationRuntime:
+        def make_debug_state(self, **kwargs: object) -> dict[str, object]:
+            events.append(("make_debug", kwargs))
+            return {"debug": kwargs}
+
+    class _FakeExecutionRuntime:
+        def execution_driver(self) -> _FakeExecutionDriver:
+            events.append(("execution_runtime_driver", None))
+            return _FakeExecutionDriver(events)
+
+    class _FakeReportRuntime:
+        def debug_report_inputs(self) -> str:
+            events.append(("debug_inputs", None))
+            return "debug-inputs"
+
+        def rollout_summary_inputs(self) -> str:
+            events.append(("summary_inputs", None))
+            return "summary-inputs"
+
+        def planner_trace_inputs(self) -> str:
+            events.append(("trace_inputs", None))
+            return "trace-inputs"
+
+    public_runtime = primitive_runtime_kernel.PrimitivePlannerPublicRuntime.from_ports(
+        primitive_runtime_kernel.PrimitivePlannerPublicRuntimePorts(
+            reset_lifecycle_service=lambda: _FakeResetService(events),
+            apply_reset_lifecycle_state=lambda state: events.append(
+                ("apply", state)
+            ),
+            tick_finalization_runtime=lambda: _FakeTickFinalizationRuntime(),
+            set_debug_state=lambda state: events.append(("set_debug", state)),
+            execution_runtime=lambda: _FakeExecutionRuntime(),
+            report_runtime=lambda: _FakeReportRuntime(),
+        )
+    )
+    kernel = public_runtime.runtime_kernel()
+
+    kernel.reset()
+    assert kernel.predict({"obs": "value"}).tolist() == [1.0, 2.0]
+    runtime_ports = public_runtime.runtime_kernel_ports()
+    assert isinstance(runtime_ports.debug_report_builder(), PrimitiveDebugReportBuilder)
+    assert runtime_ports.debug_report_inputs() == "debug-inputs"
+    assert isinstance(
+        runtime_ports.rollout_summary_builder(),
+        PrimitiveRolloutSummaryBuilder,
+    )
+    assert runtime_ports.rollout_summary_inputs() == "summary-inputs"
+    assert isinstance(
+        runtime_ports.planner_trace_builder(),
+        PrimitivePlannerTraceBuilder,
+    )
+    assert runtime_ports.planner_trace_inputs() == "trace-inputs"
+    assert [name for name, _ in events] == [
+        "reset_service",
+        "apply",
+        "make_debug",
+        "set_debug",
+        "execution_runtime_driver",
+        "execution_predict",
+        "debug_inputs",
+        "summary_inputs",
+        "trace_inputs",
+    ]
 
 
 def test_runtime_kernel_reset_owns_reset_sequence() -> None:
@@ -117,7 +203,7 @@ def test_runtime_kernel_ports_do_not_receive_planner_self() -> None:
     assert "self" not in field_names
 
 
-def test_policy_public_methods_delegate_to_runtime_kernel(monkeypatch) -> None:
+def test_policy_public_methods_delegate_to_public_runtime(monkeypatch) -> None:
     events: list[tuple[str, object]] = []
     action = np.asarray([3.0, 4.0], dtype=np.float32)
 
@@ -144,7 +230,7 @@ def test_policy_public_methods_delegate_to_runtime_kernel(monkeypatch) -> None:
     fake_kernel = _FakeKernel()
     monkeypatch.setattr(
         PrimitivePlannerACTPolicy,
-        "_runtime_kernel",
+        "_primitive_runtime_kernel_runtime",
         lambda self: fake_kernel,
         raising=False,
     )

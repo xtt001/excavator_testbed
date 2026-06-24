@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from testbed.planner.primitive_capabilities import PrimitiveObservationFacts
-from testbed.planner.primitive_decision import (
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
+from testbed.planner.primitive.decision.contracts import (
     CompleteCoverageDigEffect,
     CompleteCoverageDumpEffect,
     CompleteReturnTransitionEffect,
@@ -25,12 +25,15 @@ from testbed.planner.primitive_decision import (
     SwitchSkillEffect,
     SwitchToNextSkillAfterReturnEffect,
 )
-from testbed.planner.primitive_effects import (
+from testbed.planner.primitive.effects.requested import (
+    PrimitiveRequestedEffectRuntime,
+    PrimitiveRequestedEffectRuntimePorts,
     RequestedEffectApplier,
     RequestedEffectApplierPorts,
 )
-from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
+from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
 def _ports(
@@ -94,6 +97,83 @@ def test_requested_effect_ports_use_state_owners_not_storage_callbacks() -> None
         "set_dump_start_deposited_mass",
         "set_dump_done_hold_count",
     } & field_names
+
+
+def test_requested_effect_runtime_composes_applier_from_explicit_ports() -> None:
+    events: list[str] = []
+    obs = {
+        "tag": "current",
+        "task_metrics": {"deposited_mass_in_target_box_kg": 12.5},
+    }
+    cycle_state = PrimitiveCycleRuntimeState.fresh()
+    return_state = PrimitiveReturnRuntimeState.fresh()
+
+    class _CoverageEffectRuntime:
+        def reject_active_coverage_corridor(self, got_obs, *, reason):
+            assert got_obs is obs
+            events.append(f"reject:{reason}")
+
+        def complete_coverage_dig(self, got_obs):
+            assert got_obs is obs
+            events.append("coverage_dig")
+
+        def complete_coverage_dump(self, got_obs, *, reason):
+            assert got_obs is obs
+            events.append(f"coverage_dump:{reason}")
+
+    class _DigRecoveryService:
+        def restart_after_failed_dig(self, reason, got_obs):
+            assert got_obs is obs
+            events.append(f"restart:{reason}")
+
+    class _ReturnHandoffRuntime:
+        def apply_direct_handoff(self, got_obs, *, reason):
+            assert got_obs is obs
+            events.append(f"return:{reason}")
+
+    runtime = PrimitiveRequestedEffectRuntime.from_ports(
+        PrimitiveRequestedEffectRuntimePorts(
+            cycle_state=cycle_state,
+            return_state=return_state,
+            set_skill=lambda skill, reason: events.append(
+                f"skill:{skill}:{reason}"
+            ),
+            return_transition_next_skill_name="dig",
+            coverage_effect_runtime=_CoverageEffectRuntime(),
+            dig_recovery_service=_DigRecoveryService(),
+            return_handoff_runtime=_ReturnHandoffRuntime(),
+            action_dim=4,
+        )
+    )
+
+    runtime.apply(
+        obs,
+        (
+            SwitchSkillEffect("carry", "dig_to_carry_loaded"),
+            RejectActiveCoverageCorridorEffect("bad_dig_low_payload"),
+            RestartAfterFailedDigEffect("bad_dig_low_payload"),
+            CompleteCoverageDigEffect(),
+            SetDumpStartDepositedMassFromObservationEffect(),
+            CompleteCoverageDumpEffect("dump_mass_low"),
+            SetReturnOrDirectHandoffEffect("dump_to_return_mass_low"),
+        ),
+    )
+
+    assert events == [
+        "skill:carry:dig_to_carry_loaded",
+        "reject:bad_dig_low_payload",
+        "restart:bad_dig_low_payload",
+        "coverage_dig",
+        "coverage_dump:dump_mass_low",
+        "return:dump_to_return_mass_low",
+    ]
+    assert cycle_state.dump_start_deposited_mass_kg == 12.5
+
+
+def test_policy_no_longer_exposes_requested_effect_private_wrappers() -> None:
+    old_applier_name = "_requested_effect_" + "applier"
+    assert old_applier_name not in PrimitivePlannerACTPolicy.__dict__
+    assert f"{old_applier_name}_ports" not in PrimitivePlannerACTPolicy.__dict__
 
 
 def test_requested_effect_applier_applies_mixed_effects_in_order() -> None:

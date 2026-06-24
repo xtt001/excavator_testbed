@@ -19,9 +19,9 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
     ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
 )
-from testbed.planner.primitive_coverage import CoverageCorridorState
-from testbed.planner.primitive_coverage_state import CoverageRuntimeState
-from testbed.planner.primitive_return_handoff import (
+from testbed.planner.primitive.coverage.selection import CoverageCorridorState
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.effects.return_handoff import (
     ReturnHandoffReadinessConfig,
     ReturnHandoffReadinessPorts,
     ReturnHandoffReadinessService,
@@ -32,17 +32,44 @@ from testbed.planner.primitive_return_handoff import (
     ReturnStartEnvelopeGateResult,
     ReturnStartEnvelopeGateService,
 )
-from testbed.planner.primitive_cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive_decision import SetReturnOrDirectHandoffEffect
-from testbed.planner.primitive_execution_state import (
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.decision.contracts import SetReturnOrDirectHandoffEffect
+from testbed.planner.primitive.effects.requested import (
+    PrimitiveRequestedEffectRuntime,
+    PrimitiveRequestedEffectRuntimePorts,
+)
+from testbed.planner.primitive.execution.state import (
     PrimitiveExecutionRuntimeState,
 )
-from testbed.planner.primitive_return_state import PrimitiveReturnRuntimeState
-from testbed.planner.primitive_token_state import PrimitiveTokenRuntimeState
+from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
 from testbed.policies.hybrid.primitive_planner import (
     PRE_DIG_ALIGN_SKILL_NAME,
     PrimitivePlannerACTPolicy,
 )
+
+_OLD_POLICY_RETURN_HANDOFF_READINESS_WRAPPERS = {
+    "_return_to_dig_entry_close",
+    "_return_to_dig_handoff_ready",
+    "_return_to_dig_direct_handoff_ready",
+    "_return_to_dig_start_envelope_ready",
+    "_return_start_envelope_gate_service",
+    "_return_start_envelope_gate_config",
+    "_return_start_envelope_gate_inputs",
+    "_apply_return_start_envelope_gate_result",
+    "_return_to_dig_entry_error_for_obs",
+    "_return_to_dig_entry_target",
+    "_return_handoff_readiness_config",
+    "_return_handoff_readiness_ports",
+    "_return_handoff_readiness_service",
+}
+
+_OLD_POLICY_RETURN_DIRECT_HANDOFF_EFFECT_WRAPPERS = {
+    "_set_return_or_direct_handoff",
+    "_try_return_direct_handoff_at_current_obs",
+    "_return_direct_handoff_effect_service",
+    "_return_direct_handoff_effect_ports",
+}
 
 
 def _token() -> np.ndarray:
@@ -268,6 +295,18 @@ def test_return_direct_handoff_ports_use_focused_state_owners() -> None:
         "return_to_dig_direct_handoff_ready",
     } & port_fields
     assert "readiness_service" in port_fields
+
+
+def test_policy_no_longer_exposes_old_return_handoff_readiness_wrappers() -> None:
+    assert _OLD_POLICY_RETURN_HANDOFF_READINESS_WRAPPERS.isdisjoint(
+        PrimitivePlannerACTPolicy.__dict__
+    )
+
+
+def test_policy_no_longer_exposes_old_return_direct_handoff_effect_wrappers() -> None:
+    assert _OLD_POLICY_RETURN_DIRECT_HANDOFF_EFFECT_WRAPPERS.isdisjoint(
+        PrimitivePlannerACTPolicy.__dict__
+    )
 
 
 def test_return_handoff_readiness_prefers_pending_next_cycle_raw_entry_target() -> None:
@@ -608,21 +647,14 @@ def test_start_envelope_gate_records_qpos_checks_and_missing_payload() -> None:
     assert missing.checks["qpos_missing"] is True
 
 
-def test_policy_start_envelope_wrapper_delegates_and_writes_cached_result() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-    planner._return_start_envelope_tokens = _token()
-    planner._return_start_envelope_use_prior_spatial_bounds = False
-    planner._return_start_envelope_use_prior_qpos_bounds = False
-    planner._pending_dig_cut_corridor_id = 7
-    planner.action_dim = 4
-    planner._return_start_envelope_prior_bounds = MethodType(
-        lambda self, corridor_id: (None, None),
-        planner,
-    )
-    planner._return_start_envelope_prior_mapping = MethodType(
-        lambda self, *, corridor_id: (None, "missing"),
-        planner,
-    )
+def test_return_handoff_readiness_service_start_envelope_writes_cached_result() -> None:
+    token_state = PrimitiveTokenRuntimeState.fresh()
+    token_state.return_start_envelope_tokens = _token()
+    token_state.return_start_envelope_use_prior_spatial_bounds = False
+    token_state.return_start_envelope_use_prior_qpos_bounds = False
+    token_state.pending_dig_cut_corridor_id = 7
+    return_state = PrimitiveReturnRuntimeState.fresh()
+
     expected_result = ReturnStartEnvelopeGateResult(
         ready=False,
         error=0.25,
@@ -638,12 +670,25 @@ def test_policy_start_envelope_wrapper_delegates_and_writes_cached_result() -> N
             calls.append(inputs)
             return expected_result
 
-    planner._return_start_envelope_gate_service = MethodType(
-        lambda self: _FakeService(),
-        planner,
+    service = ReturnHandoffReadinessService(
+        ports=ReturnHandoffReadinessPorts(
+            config=_readiness_config(),
+            action_dim=4,
+            execution_state=PrimitiveExecutionRuntimeState.fresh(
+                initial_skill_name="return"
+            ),
+            cycle_state=PrimitiveCycleRuntimeState.fresh(),
+            return_state=return_state,
+            token_state=token_state,
+            coverage_state=CoverageRuntimeState(),
+            start_envelope_gate_service=_FakeService(),
+            ensure_return_target_plan_for_cycle=lambda obs: None,
+            return_start_envelope_prior_bounds=lambda corridor_id: (None, None),
+            return_start_envelope_prior_mapping=lambda corridor_id: None,
+        )
     )
 
-    ready = planner._return_to_dig_start_envelope_ready(
+    ready = service.start_envelope_ready(
         {"qpos": [1.0, 2.0, 3.0, 4.0], "env_state": _env_state()}
     )
 
@@ -651,129 +696,139 @@ def test_policy_start_envelope_wrapper_delegates_and_writes_cached_result() -> N
     assert len(calls) == 1
     assert calls[0].prior_bounds() == (None, None)
     assert calls[0].prior_mapping() is None
-    assert planner._return_to_dig_start_envelope_ready_state is False
-    assert planner._return_to_dig_start_envelope_error == 0.25
-    assert planner._return_to_dig_start_envelope_checks == {"qpos_0": {"ok": False}}
+    assert return_state.return_to_dig_start_envelope_ready_state is False
+    assert return_state.return_to_dig_start_envelope_error == 0.25
+    assert return_state.return_to_dig_start_envelope_checks == {
+        "qpos_0": {"ok": False}
+    }
 
 
-def test_policy_return_handoff_readiness_ports_share_focused_owners() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-    planner.action_dim = 4
-    planner.return_target_planner_enabled = True
-    planner.return_to_dig_max_entry_error_m = 0.25
-    planner.return_to_dig_max_bucket_mass_kg = 2.0
-    planner.return_to_dig_start_envelope_direct_handoff_enabled = True
-    planner.return_to_dig_start_envelope_gate_enabled = True
-    planner.return_to_dig_start_envelope_spatial_tolerance = 0.1
-    planner.return_to_dig_start_envelope_depth_tolerance_m = 0.08
-    planner.return_to_dig_start_envelope_local_depth_tolerance_m = 0.005
-    planner.return_to_dig_start_envelope_plane_depth_tolerance_m = 0.005
-    planner.return_to_dig_start_envelope_plane_depth_mode = "range"
-    planner.return_to_dig_start_envelope_qpos_tolerance = 0.04
-    planner.return_to_dig_start_envelope_require_contact = False
-    planner._ensure_return_target_plan_for_cycle = MethodType(
-        lambda self, obs: None,
-        planner,
-    )
-    planner._return_start_envelope_prior_bounds = MethodType(
-        lambda self, corridor_id: (None, None),
-        planner,
-    )
-    planner._return_start_envelope_prior_mapping = MethodType(
-        lambda self, *, corridor_id: (None, "missing"),
-        planner,
+def test_return_handoff_runtime_composes_readiness_from_explicit_ports() -> None:
+    from testbed.planner.primitive.effects.return_handoff_runtime import (
+        PrimitiveReturnHandoffRuntime,
+        PrimitiveReturnHandoffRuntimePorts,
     )
 
-    ports = planner._return_handoff_readiness_ports()
+    execution_state = PrimitiveExecutionRuntimeState.fresh(initial_skill_name="return")
+    cycle_state = PrimitiveCycleRuntimeState.fresh()
+    return_state = PrimitiveReturnRuntimeState.fresh()
+    token_state = PrimitiveTokenRuntimeState.fresh()
+    coverage_state = CoverageRuntimeState()
+    ensure_calls: list[str] = []
 
-    assert ports.execution_state is planner._primitive_execution_runtime_state()
-    assert ports.cycle_state is planner._primitive_cycle_runtime_state()
-    assert ports.return_state is planner._primitive_return_runtime_state()
-    assert ports.token_state is planner._primitive_token_runtime_state()
-    assert ports.coverage_state is planner._coverage_runtime_state()
-
-
-def test_policy_return_or_direct_handoff_wrapper_delegates_to_service() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-    obs = {"tag": "obs"}
-    calls: list[tuple[str, dict[str, object], str]] = []
-
-    class _FakeService:
-        def apply(self, got_obs: dict[str, object], *, reason: str) -> object:
-            calls.append(("apply", got_obs, reason))
-            return object()
-
-        def try_direct_handoff(self, got_obs: dict[str, object]) -> object:
-            calls.append(("try", got_obs, ""))
-            return SimpleNamespace(direct_handoff_applied=True)
-
-    planner._return_direct_handoff_effect_service = MethodType(
-        lambda self: _FakeService(),
-        planner,
+    runtime = PrimitiveReturnHandoffRuntime.from_ports(
+        PrimitiveReturnHandoffRuntimePorts(
+            config=_readiness_config(),
+            action_dim=4,
+            execution_state=execution_state,
+            cycle_state=cycle_state,
+            return_state=return_state,
+            token_state=token_state,
+            coverage_state=coverage_state,
+            set_skill=lambda skill, reason: None,
+            ensure_return_target_plan_for_cycle=(
+                lambda obs: ensure_calls.append(str(obs.get("tag", "")))
+            ),
+            return_start_envelope_prior_bounds=lambda corridor_id: (None, None),
+            return_start_envelope_prior_mapping=lambda corridor_id: None,
+        )
     )
 
-    planner._set_return_or_direct_handoff(obs, reason="dump_to_return_mass_low")
-    planner._try_return_direct_handoff_at_current_obs(obs)
+    service = runtime.readiness_service()
+    ports = service.ports
 
-    assert calls == [
-        ("apply", obs, "dump_to_return_mass_low"),
-        ("try", obs, ""),
-    ]
+    assert ports.execution_state is execution_state
+    assert ports.cycle_state is cycle_state
+    assert ports.return_state is return_state
+    assert ports.token_state is token_state
+    assert ports.coverage_state is coverage_state
+    assert isinstance(ports.start_envelope_gate_service, ReturnStartEnvelopeGateService)
 
 
-def test_policy_return_direct_handoff_ports_share_execution_and_cycle_owners() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
-    planner._skill_name = "return"
-    planner.return_target_planner_enabled = True
-    planner.return_to_dig_start_envelope_direct_handoff_enabled = True
-    planner._set_skill = MethodType(lambda self, skill, reason: None, planner)
-    planner._ensure_return_target_plan_for_cycle = MethodType(
-        lambda self, obs: None,
-        planner,
-    )
-    readiness = SimpleNamespace(
-        handoff_ready=lambda obs: False,
-        direct_handoff_ready=lambda obs, *, handoff_ready: False,
-    )
-    planner._return_handoff_readiness_service = MethodType(
-        lambda self: readiness,
-        planner,
+def test_return_handoff_runtime_composes_direct_handoff_effect_service() -> None:
+    from testbed.planner.primitive.effects.return_handoff_runtime import (
+        PrimitiveReturnHandoffRuntime,
+        PrimitiveReturnHandoffRuntimePorts,
     )
 
-    ports = planner._return_direct_handoff_effect_ports()
+    execution_state = PrimitiveExecutionRuntimeState.fresh(initial_skill_name="return")
+    cycle_state = PrimitiveCycleRuntimeState.fresh()
+    events: list[str] = []
+
+    runtime = PrimitiveReturnHandoffRuntime.from_ports(
+        PrimitiveReturnHandoffRuntimePorts(
+            config=_readiness_config(),
+            action_dim=4,
+            execution_state=execution_state,
+            cycle_state=cycle_state,
+            return_state=PrimitiveReturnRuntimeState.fresh(),
+            token_state=PrimitiveTokenRuntimeState.fresh(),
+            coverage_state=CoverageRuntimeState(),
+            set_skill=lambda skill, reason: events.append(f"{skill}:{reason}"),
+            ensure_return_target_plan_for_cycle=lambda obs: None,
+            return_start_envelope_prior_bounds=lambda corridor_id: (None, None),
+            return_start_envelope_prior_mapping=lambda corridor_id: None,
+        )
+    )
+
+    ports = runtime.direct_handoff_effect_service().ports
     port_fields = {field.name for field in fields(ReturnDirectHandoffEffectPorts)}
 
-    assert ports.execution_state is planner._primitive_execution_runtime_state()
-    assert ports.cycle_state is planner._primitive_cycle_runtime_state()
+    assert ports.execution_state is execution_state
+    assert ports.cycle_state is cycle_state
     assert ports.execution_state.skill_name == "return"
     assert "current_skill_name" not in port_fields
     assert "complete_return_transition" not in port_fields
     assert "next_skill_after_return_transition" not in port_fields
     assert "return_to_dig_handoff_ready" not in port_fields
     assert "return_to_dig_direct_handoff_ready" not in port_fields
-    assert ports.readiness_service is readiness
-    assert hasattr(planner, "_complete_return_transition_for_backend")
-    assert hasattr(planner, "_next_skill_after_return_transition")
+    assert ports.return_target_planner_enabled is True
+    assert ports.return_to_dig_start_envelope_direct_handoff_enabled is True
 
 
-def test_policy_requested_effect_path_uses_service_backed_return_wrapper() -> None:
-    planner = object.__new__(PrimitivePlannerACTPolicy)
+def test_requested_effect_runtime_path_uses_return_direct_handoff_service() -> None:
     obs = {"tag": "obs"}
-    calls: list[tuple[dict[str, object], str]] = []
+    calls: list[str] = []
 
-    class _FakeService:
-        def apply(self, got_obs: dict[str, object], *, reason: str) -> object:
-            calls.append((got_obs, reason))
-            return object()
+    class _FakeReturnHandoffRuntime:
+        def apply_direct_handoff(
+            self,
+            applied_obs: dict[str, Any],
+            *,
+            reason: str,
+        ) -> None:
+            calls.append(f"runtime:{applied_obs['tag']}:{reason}")
 
-    planner._return_direct_handoff_effect_service = MethodType(
-        lambda self: _FakeService(),
-        planner,
+    class _UnusedCoverageEffectRuntime:
+        def reject_active_coverage_corridor(self, got_obs, *, reason):
+            raise AssertionError("return-only effect must not reject coverage")
+
+        def complete_coverage_dig(self, got_obs):
+            raise AssertionError("return-only effect must not complete dig")
+
+        def complete_coverage_dump(self, got_obs, *, reason):
+            raise AssertionError("return-only effect must not complete dump")
+
+    class _UnusedDigRecoveryService:
+        def restart_after_failed_dig(self, reason, got_obs):
+            raise AssertionError("return-only effect must not restart dig")
+
+    runtime = PrimitiveRequestedEffectRuntime.from_ports(
+        PrimitiveRequestedEffectRuntimePorts(
+            cycle_state=PrimitiveCycleRuntimeState.fresh(),
+            return_state=PrimitiveReturnRuntimeState.fresh(),
+            set_skill=lambda skill, reason: None,
+            return_transition_next_skill_name="dig",
+            coverage_effect_runtime=_UnusedCoverageEffectRuntime(),
+            dig_recovery_service=_UnusedDigRecoveryService(),
+            return_handoff_runtime=_FakeReturnHandoffRuntime(),
+            action_dim=4,
+        )
     )
 
-    planner._apply_requested_tick_effects(
+    runtime.apply(
         obs,
         (SetReturnOrDirectHandoffEffect(reason="dump_to_return_mass_low"),),
     )
 
-    assert calls == [(obs, "dump_to_return_mass_low")]
+    assert calls == ["runtime:obs:dump_to_return_mass_low"]

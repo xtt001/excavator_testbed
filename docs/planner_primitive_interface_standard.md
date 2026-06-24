@@ -16,10 +16,41 @@ without additional interface work.
 ## Source Documents
 
 - `docs/planner_execution_abstraction_flow.svg`
+- `docs/planner_package_layout_target.md`
+- `docs/planner_policy_shell_target_interface.md`
+- `docs/planner_responsibility_chain_migration_design.md`
+- `docs/planner_responsibility_chain_migration_simulation.md`
 - `docs/planner_current_code_architecture_plan.md`
 - `docs/planner_effect_boundary_design.md`
+- `docs/planner_baseline_architecture_map.md`
 - `docs/planner_rollout_evidence_refactor_plan.md`
 - `docs/planner_rollout_evidence_refactor_log.md`
+- `docs/prompts/planner_rollout_evidence_goal_prompt.md`
+- `AGENTS.md`
+
+## Deep Reflection Reference Set
+
+Three-iteration planner reflections must use the following explicit reference
+set instead of relying on memory or an unnamed old document:
+
+- primary architecture target: `docs/planner_execution_abstraction_flow.svg`
+  and this interface standard;
+- current implementation target: `docs/planner_current_code_architecture_plan.md`
+  and `docs/planner_effect_boundary_design.md`;
+- historical baseline/evidence context:
+  `docs/planner_baseline_architecture_map.md`, used as historical comparison
+  and rollout-evidence grounding, not as a replacement for the current
+  implementation target;
+- workflow contract: `docs/planner_rollout_evidence_refactor_plan.md`,
+  `docs/planner_rollout_evidence_refactor_log.md`, and
+  `docs/prompts/planner_rollout_evidence_goal_prompt.md`;
+- repository governance: `AGENTS.md`;
+- live code facts: `testbed/policies/hybrid/primitive_planner.py`, focused
+  modules under `testbed/planner/`, and focused primitive tests.
+
+Any deep reflection that cannot name these references, or cannot explain why a
+reference is stale or inapplicable, must stop and update the reference set
+before another executor dispatch.
 
 ## Maturity Statement
 
@@ -32,10 +63,12 @@ Current maturity:
   the policy shell no longer owns the live `BoundaryDetector.update(...)`
   argument assembly**
 - legacy FSM mainline branch conversion to requested effects: **achieved**
-- capability/status provider boundary for legacy FSM: **partly achieved;
+- capability/status provider boundary for legacy FSM: **achieved for the
+  current legacy-FSM transition-status chain;
   dig/carry/dump/return transition status assembly is focused, and dig-exit
   overshoot now derives from observation facts plus the coverage state owner
-  rather than a policy callback**
+  rather than a policy callback; old policy-private backend-status wrappers
+  are retired**
 - effect request/application boundary: **achieved for current requested effects**
 - focused token, coverage, handoff, dispatch, report, reset, config services:
   **mostly achieved**
@@ -54,6 +87,15 @@ Current maturity:
   `CoverageReportService.bucket_snapshot(...)` over typed
   `PrimitiveObservationFacts`; the policy shell no longer owns the live
   mass/deposit/env-state bucket snapshot projection**
+- coverage report/decision-event composition boundary: **achieved through
+  `PrimitiveCoverageReportRuntime`; the policy shell no longer directly
+  constructs coverage report config/state/service objects or keeps old private
+  coverage report helper wrappers**
+- coverage static config boundary: **achieved through
+  `PrimitiveCoverageStaticConfig`; coverage report, selection/planning-fact,
+  state-exemplar, update, and runtime config snapshots are constructed in the
+  coverage lane, while policy runtime port methods keep only dynamic
+  state/callback welds**
 - effect-side observation metric fact-source boundary: **achieved for
   requested-effect dump-start deposited mass and failed-dig current bucket mass
   through typed `PrimitiveObservationFacts` providers; policy-built scalar
@@ -71,6 +113,20 @@ Current maturity:
   `first_dig_qpos_delta` callback remains explicit because it still touches
   parked pre-dig-align target material; scoring/selection algorithms remain in
   the existing coverage services**
+- coverage selection/fact composition boundary: **achieved through
+  `PrimitiveCoverageSelectionRuntime`; the policy shell no longer directly
+  constructs `CoverageSelectionRuntimePorts`, `CoverageSelectionConfig`,
+  `CoveragePlanningFactConfig`, or `CoveragePlanningFactService`; old private
+  coverage selection/fact policy helper wrappers have been retired after
+  callers/tests moved to the focused runtime/service contracts**
+- policy test-only / dead-candidate helper facade cleanup: **achieved for the
+  current adapter/config helper, prior-loading, scripted-bootstrap
+  target-reached, coverage-candidate-builder, and token conversion helper
+  cluster; tests now call `primitive_adapter_config`,
+  `PrimitiveScriptedBootstrapRuntimeService`,
+  `PrimitiveDigTokenPlanningService`, `PrimitiveReturnTokenPlanningService`,
+  `DigCutTokenPlanner`, `CoverageCandidateBuilder`, or focused runtime
+  contracts directly instead of preserving old policy-private helper names**
 - bootstrap end fact-source boundary: **achieved for non-scripted bootstrap
   end gates through `PrimitiveObservationFacts` and `BootstrapStatus`; scripted
   bootstrap still takes precedence through `PrimitiveScriptedBootstrapRuntimeService`,
@@ -93,6 +149,17 @@ Current maturity:
   terminal-stop facts through `CoverageEffectFactService`; the policy no
   longer builds coverage effect fact dataclasses through callback ports, and
   the old private policy fact helper facades have been removed**
+- coverage effect/update composition boundary: **achieved through
+  `PrimitiveCoverageEffectRuntime`; the policy shell no longer directly
+  constructs `CoverageUpdateConfig`, `CoverageUpdateService`,
+  `CoverageRuntimeConfig`, `CoverageRuntimeService`, or
+  `CoverageEffectRuntimePorts`, and old private coverage effect/update helper
+  wrappers have been removed after callers/tests moved to the focused runtime
+  contract**
+- coverage effect owner-state setter boundary: **achieved through
+  `CoverageRuntimeState`; old private policy setter/update wrappers for
+  coverage payload, dump, low-productivity, pass, active-corridor,
+  rejected-exemplar, and terminal-stop owner fields have been removed**
 - dig progress tick-update boundary: **achieved for per-dig tick progress and
   current coverage payload gain updates through
   `PrimitiveDigProgressRuntimeService`; the policy shell no longer owns the
@@ -143,21 +210,81 @@ Current maturity:
   pre-dig-align counters, cached target/error arrays, readiness booleans,
   timeout reason, surface-guard report storage, and public debug/summary report
   projection**
-- failed-dig/restart recovery service boundary: **achieved for the direct
-  restart/recovery helpers through `PrimitiveDigRecoveryService`, while
-  keeping `pre_dig_align` explicitly parked/residual and algorithm/action
-  dependencies as explicit ports**
+- failed-dig/restart recovery service boundary: **achieved through
+  `PrimitiveDigRecoveryService`; old private policy restart wrappers are
+  retired, token-plan clear/invalidate actions route through
+  `PrimitiveTokenObservationRuntime`, and `pre_dig_align` remains explicitly
+  parked/residual**
 - runtime composition root / public runtime kernel: **achieved for public
   runtime routing**
-- decision runtime backend factory/registry: **achieved for selecting the
-  default `legacy_fsm` factory while unsupported backend names fail fast**
+- decision runtime backend factory/registry: **achieved for selecting any
+  backend factory registered in `PrimitiveDecisionRuntimePorts`, with default
+  policy registration still limited to `legacy_fsm` and unsupported names
+  failing fast**
 - backend-neutral fact access for non-FSM decision strategies: **partly
   achieved for common context/skill facts plus lazy bootstrap and
   dig/carry/dump/return decision facts through `PrimitiveBackendFactsAccess`,
   carried through the legacy FSM branch chain by
   `PrimitiveBackendDecisionInput`**
+- external backend contract readiness: **achieved at generic runtime-contract
+  level through fake backend tests; no production plugin/config selection is
+  implemented**
 - behavior-tree, VLM, LLM, or learned decision backend implementation:
-  **not implemented; unsupported backends must fail fast**
+  **not implemented**
+
+### Backend-Ready Production Import Contract
+
+This section is the allowed production import surface for future external
+decision backend work. It is intentionally narrower than the design documents.
+Files such as `docs/planner_policy_shell_target_interface.md` remain review
+artifacts and must not be imported or treated as runtime APIs.
+
+Allowed generic decision/backend contract imports:
+
+- `testbed.planner.primitive.decision.context.PrimitiveDecisionContext`
+- `testbed.planner.primitive.decision.contracts.PrimitiveDecisionResult`
+- `testbed.planner.primitive.decision.contracts.RequestedPlannerEffect`
+- concrete requested-effect records from
+  `testbed.planner.primitive.decision.contracts`, such as
+  `SwitchSkillEffect`, coverage effects, return effects, and dump/carry
+  counter effects
+- `testbed.planner.primitive.decision.runtime.PrimitiveDecisionRuntime`
+- `testbed.planner.primitive.decision.runtime.PrimitiveDecisionRuntimeConfig`
+- `testbed.planner.primitive.decision.runtime.PrimitiveDecisionRuntimePorts`
+- `testbed.planner.primitive.decision.backends.legacy_fsm.PrimitiveDecisionBackend`
+- `testbed.planner.primitive.decision.backends.legacy_fsm.PrimitiveCompatibilityDecisionBackend`
+- `testbed.planner.primitive.decision.backends.legacy_fsm.PrimitiveDecisionBackendFactory`
+
+Allowed facts/input contract imports:
+
+- `testbed.planner.primitive.facts.decision.PrimitiveDecisionFacts`
+- `testbed.planner.primitive.facts.backend.PrimitiveBackendFactsPorts`
+- `testbed.planner.primitive.facts.backend.PrimitiveBackendFactsSource`
+- `testbed.planner.primitive.facts.backend.PrimitiveBackendFactsAccess`
+- typed transition fact views from `testbed.planner.primitive.facts.decision`
+- `testbed.planner.primitive.decision.input.PrimitiveBackendDecisionInput`
+- `testbed.planner.primitive.decision.input.PrimitiveBackendDecisionInputBuilder`
+
+Allowed effect application contract imports:
+
+- `testbed.planner.primitive.effects.requested.RequestedEffectApplier`
+- `testbed.planner.primitive.effects.requested.RequestedEffectApplierPorts`
+- `testbed.planner.primitive.effects.requested.PrimitiveRequestedEffectRuntime`
+- `testbed.planner.primitive.effects.requested.PrimitiveRequestedEffectRuntimePorts`
+
+Shell and lane dependency rules:
+
+- Future backend code must not import
+  `testbed.policies.hybrid.primitive_planner.PrimitivePlannerACTPolicy`.
+- Future backend code must not depend on policy private methods, policy private
+  attributes, broad planner-self objects, blackboards, callback bags, or design
+  documents.
+- `PrimitivePlannerACTPolicy` remains the default production registration weld
+  for `legacy_fsm` until production plugin/config routing is explicitly
+  requested.
+- The fake backend contract proof is test-local. It proves generic
+  runtime/factory selection, not production plugin discovery or a real external
+  backend implementation.
 
 Do not describe the current code as "fully swappable backend architecture." The
 accurate claim is: the confirmed-live 4P legacy FSM path has been backendified,
@@ -169,9 +296,13 @@ public debug/summary/report/schema compatibility remains temporarily for both
 paths, but enabled `pre_dig_align` or `cell_entry` primitive-planner runtime
 config must fail fast instead of silently running or being ignored. Historical
 `cell_entry` data/HDF5/training low-dimensional support remains a compatibility
-contract outside primitive planner runtime. Do not promote either parked path
-into backend facts, token contracts, behavior-tree nodes, VLM packets, or
-mainline runtime architecture as part of ordinary refactor momentum.
+contract outside primitive planner runtime. Historical successful
+legacy/diagnostic/transition `pre_dig_align` evidence also exists, but enabled
+pre-dig runtime is invalid in the selected current mainline architecture unless
+the user explicitly re-approves that legacy behavior. Do not promote either
+parked path into backend facts, token contracts, behavior-tree nodes, VLM
+packets, or mainline runtime architecture as part of ordinary refactor
+momentum.
 After the parked pre-dig-align cleanup, `PrimitivePlannerACTPolicy` also no
 longer exposes the old private false predicate facades
 `_should_pre_dig_align_before_dig()` or
@@ -199,10 +330,23 @@ Current boundary:
   boundary detector, then delegates constructor config normalization to
   `PrimitivePlannerAdapterConfigNormalizer`.
 - `reset()`, `predict()`, `debug_state()`, `rollout_summary()`, and
-  `planner_trace()` delegate to `PrimitivePlannerRuntimeKernel`.
-- The policy still builds the runtime kernel's typed ports and keeps legacy
-  storage/facade methods, but it is no longer the owner of the public runtime
-  route.
+  `planner_trace()` delegate to `PrimitivePlannerPublicRuntime`.
+- The policy supplies focused runtimes/services and explicit shell writeback
+  callbacks through a typed public-runtime weld, but it no longer builds
+  `PrimitivePlannerRuntimeKernelPorts` or report builders directly.
+- The policy supplies decision-runtime shell facts through
+  `LegacyFSMDecisionBackendFactoryPorts`, registers
+  `LegacyFSMDecisionBackendFactory.from_runtime_ports(...)` in
+  `PrimitiveDecisionRuntimePorts.backend_factories`, and delegates backend
+  selection to `PrimitiveDecisionRuntime`; it no longer constructs
+  `PrimitiveFSMCapabilityProvider`, `PrimitiveDecisionCapabilities`, or
+  `LegacyFSMBranchPorts` inline.
+- The policy does not construct `PrimitiveFSMCapabilityProviderPorts` inline.
+  Constructor-normalized static transition values flow through
+  `PrimitiveFSMCapabilityProviderConfig` on `PrimitivePlannerAdapterConfigState`;
+  live semantic-boundary, cycle, coverage, return, and return-handoff readiness
+  inputs remain explicit typed ports into
+  `LegacyFSMDecisionBackendFactoryPorts`.
 
 Gap:
 
@@ -224,17 +368,20 @@ Ideal boundary:
 
 ```text
 PrimitivePlannerACTPolicy
+  -> PrimitivePlannerPublicRuntime
   -> PrimitivePlannerRuntimeKernel
+      -> PrimitiveExecutionRuntime
       -> PrimitiveExecutionDriver
       -> PrimitiveDecisionRuntime
       -> RequestedEffectApplier
       -> PrimitiveActionDispatchService
-      -> PrimitiveTickFinalizationService
+      -> PrimitiveTickFinalizationRuntime / PrimitiveTickFinalizationService
       -> report builders
       -> token/coverage/return services
 ```
 
-The runtime kernel owns public runtime routing:
+The public runtime owns composition of the kernel ports and builders. The
+runtime kernel owns public runtime routing:
 
 - `reset()`
 - `predict(obs)`
@@ -247,10 +394,16 @@ composition of all services needed by those public calls.
 
 Current boundary:
 
+- `PrimitivePlannerPublicRuntime` owns construction of
+  `PrimitivePlannerRuntimeKernelPorts` from focused reset, execution,
+  finalization, and report runtimes plus explicit debug-state writeback.
 - `PrimitivePlannerRuntimeKernel` owns the public runtime route:
   `reset()`, `predict(obs)`, `debug_state()`, `rollout_summary()`, and
   `planner_trace()`.
-- `PrimitiveExecutionDriver` owns one-tick execution ordering under the kernel.
+- `PrimitiveExecutionRuntime` owns construction of `PrimitiveExecutionPorts`
+  from focused services and owners, then provides `PrimitiveExecutionDriver`
+  to the kernel.
+- `PrimitiveExecutionDriver` owns one-tick execution ordering under the runtime.
 - `PrimitiveResetLifecycleService`, report builders, action dispatch, token
   runtime, and coverage services remain focused owners called through typed
   kernel/policy ports.
@@ -288,6 +441,10 @@ Current boundary:
   requested-effect validation/application -> return timeout accounting ->
   action dispatch -> previous-action recording -> transition-completed check ->
   debug finalization.
+- Execution-driver ports call focused services and owner state directly for
+  boundary events, switch-reason reset/current skill reads, action dispatch,
+  previous-action copy, transition-completed checks, and debug-state writeback.
+  The old policy-private execution hook wrappers are retired.
 
 Gap:
 
@@ -325,7 +482,10 @@ call planner private methods, or write shell state.
 
 Current boundary:
 
-- `PrimitiveDecisionRuntime` selects only the `legacy_fsm` backend.
+- `PrimitiveDecisionRuntime` selects any backend factory registered in
+  `PrimitiveDecisionRuntimePorts.backend_factories` after normalizing the
+  requested backend name. `PrimitivePlannerACTPolicy` still registers only the
+  default `legacy_fsm` factory.
 - `PrimitiveDecisionRuntimePorts` exposes a `backend_factories` registry from
   normalized backend name to a backend factory builder. The runtime selects a
   factory through that registry instead of depending on a
@@ -333,6 +493,29 @@ Current boundary:
 - `LegacyFSMDecisionBackendFactory` owns `LegacyFSMBranchSet` construction and
   reuse for the default backend, plus requested and legacy-compatibility
   backend construction.
+- Focused tests and policy callers that need a backend factory or backend
+  instance use `PrimitiveDecisionRuntime.backend_factory_for(...)`,
+  `requested_backend_for(...)`, or `compatibility_backend_for(...)` with an
+  explicit backend name. Concrete legacy FSM adapter classes remain in
+  `testbed/planner/primitive/decision/backends/legacy_fsm.py`, but the
+  runtime-facing accessor surface is backend-neutral. The old policy-private
+  backend access wrappers and old legacy-FSM-specific runtime accessors are
+  retired and are not part of the current interface.
+- Focused tests and execution callers that need requested/default decisions use
+  `PrimitiveDecisionRuntime.decide_tick(...)`; callers that need legacy
+  compatibility decision behavior use
+  `PrimitiveDecisionRuntime.decide_legacy_compatibility_tick(...)`, or the
+  focused backend contracts directly. The old policy-private
+  `_decide_tick(...)`, `_decide_tick_with_legacy_fsm()`, and
+  `_maybe_switch_skill()` facades are retired and are not part of the current
+  interface.
+- A future backend factory can plug into the generic runtime contract by
+  implementing `PrimitiveDecisionBackendFactory`, registering a builder in
+  `PrimitiveDecisionRuntimePorts.backend_factories`, and using
+  `PrimitiveDecisionRuntimeConfig.backend_name` to select that registered name.
+  The runtime contract does not require editing `PrimitivePlannerACTPolicy`
+  main decision flow; the current policy shell still provides only the default
+  legacy factory registration weld.
 - `LegacyFSMBranchSet` owns requested order and legacy compatibility order.
 - `PrimitiveRequestedBranchRunner` and
   `LegacyFSMCompatibilityDecisionBackend` each construct one
@@ -361,6 +544,10 @@ Current boundary:
 
 Gap:
 
+- `PrimitiveBackendFactsSource` is the backend-facing source of truth for
+  common decision facts and lazy backend facts access. The older
+  `PrimitiveDecisionFactsSource` name remains only as a compatibility alias
+  and must not be treated as the main concept for new backend contracts.
 - `PrimitiveDecisionCapabilities` is now a compatibility facade and
   construction helper, not the direct branch dependency.
 - `PrimitiveDecisionFacts` currently covers common facts only: context identity,
@@ -468,6 +655,11 @@ Current boundary:
   `ReturnHandoffReadinessService` directly from provider ports, while
   `return_transition_status(...)` only reads cached return owner flags and
   observation facts.
+- Legacy FSM branches and focused tests consume transition statuses through
+  `PrimitiveFSMCapabilityProvider`, `PrimitiveDecisionCapabilities`, or
+  `LegacyFSMBranchPorts`. The old policy-private
+  `_dig/_carry/_dump/_return_transition_status_for_backend(...)` wrappers are
+  retired and are not part of the current interface.
 - `PrimitiveDecisionFacts` is the first backend-neutral common facts packet. It
   contains `PrimitiveDecisionContext`, current skill name, current switch
   reason, and read-only context accessors; it does not include transition status
@@ -494,7 +686,7 @@ Current boundary:
   and the read-only `BootstrapDecisionStatus`; it does not contain residual
   handler, provider, callback, effect, mutation, refresh, or sync fields.
 - `PrimitiveBackendFactsAccess` in
-  `testbed/planner/primitive_backend_facts.py` is the backend-facing lazy
+  `testbed/planner/primitive/facts/backend.py` is the backend-facing lazy
   read-only access object for bootstrap and dig/carry/dump/return transition
   facts. It holds a `PrimitiveDecisionContext`, one common
   `PrimitiveDecisionFacts` identity, a private read-only
@@ -502,23 +694,53 @@ Current boundary:
   `PrimitiveTransitionStatusReader`; its public API is limited to
   `bootstrap_decision()`, `dig_transition()`, `carry_transition()`,
   `dump_transition()`, and `return_transition()`.
-- `PrimitiveDecisionFactsSource` owns read-only common facts and backend facts
-  access construction.
+- `PrimitiveBackendFactsSource` owns read-only common facts and backend facts
+  access construction from `PrimitiveBackendFactsPorts`.
 - `PrimitiveDecisionCompatibilityActions` owns explicit compatibility actions:
   dig reason sync, return refresh, and residual `pre_dig_align` handling.
 - `PrimitiveBackendDecisionInput` in
-  `testbed/planner/primitive_backend_input.py` is the per-tick legacy-FSM
+  `testbed/planner/primitive/decision/input.py` is the per-tick legacy-FSM
   backend input passed through requested and legacy compatibility branch
   orders. It holds the `PrimitiveDecisionContext`, one
   `PrimitiveBackendFactsAccess`, explicit compatibility actions, and the
   private facts source needed only for explicit common-facts rereads after an
   already-applied compatibility action.
 - `PrimitiveDecisionBackendFactory` is the runtime-facing backend factory
-  contract. `LegacyFSMDecisionBackendFactory` is the only concrete factory and
-  owns legacy branch-set construction/reuse plus requested and compatibility
-  backend construction.
+  contract. It returns generic requested and compatibility backend protocols
+  rather than legacy-specific compatibility types. `LegacyFSMDecisionBackendFactory`
+  is the only concrete factory and owns legacy branch-set construction/reuse
+  plus requested and compatibility backend construction.
+- Generic backend contract surfaces are:
+  `PrimitiveDecisionBackend`, `PrimitiveCompatibilityDecisionBackend`,
+  `PrimitiveDecisionBackendFactory`, `PrimitiveDecisionRuntimePorts`,
+  `PrimitiveDecisionRuntimeConfig`, and `PrimitiveDecisionRuntime`.
+- Default concrete adapter surfaces are:
+  `LegacyFSMDecisionBackendFactoryPorts`, `LegacyFSMDecisionBackendFactory`,
+  `LegacyFSMBranchPorts`, `LegacyFSMBranchSet`, and the concrete `LegacyFSM*`
+  branch/backend classes in
+  `testbed/planner/primitive/decision/backends/legacy_fsm.py`.
+- Compatibility-only/test-only removed surfaces include old private policy
+  backend/composition wrappers and `PrimitiveDecisionRuntimeComposition*`; they
+  should stay absent unless a public compatibility owner is explicitly added.
+- `LegacyFSMDecisionBackendFactoryPorts` in
+  `testbed/planner/primitive/decision/backends/legacy_fsm.py` owns default
+  legacy-FSM factory composition from explicit typed runtime inputs. It builds
+  `PrimitiveFSMCapabilityProviderPorts` from focused static
+  `PrimitiveFSMCapabilityProviderConfig` plus explicit live state/service
+  inputs, then builds the focused capability provider, decision capabilities,
+  and legacy FSM branch ports inside the concrete legacy adapter boundary.
+  `PrimitiveDecisionRuntime` no longer imports or owns that legacy
+  composition; it selects and invokes backend factories through the generic
+  registry only.
 - `PrimitiveDecisionCapabilities` remains as a compatibility facade over
   facts source plus compatibility actions for older tests and diagnostics.
+- `PrimitivePlannerACTPolicy` no longer exposes the old private
+  capability/composition wrappers `_decision_runtime_ports()`,
+  `_legacy_fsm_backend_factory()`, `_legacy_fsm_branch_ports()`,
+  `_primitive_decision_capabilities*()`, or
+  `_primitive_fsm_capability_provider*()`. The policy shell keeps only a typed
+  decision-runtime composition weld and does not retain old wrappers because
+  tests mentioned them.
 - `PrimitiveObservationFacts` and transition status dataclasses exist.
   Observation facts own target geometry projection plus bucket dig-area and
   bucket-tip dig-area pose projection for transition facts.
@@ -565,6 +787,16 @@ Current boundary:
 - `RequestedEffectApplier` owns effect-class dispatch, writes simple cycle and
   return state effects through focused runtime owners, and keeps external
   action/algorithm effects as explicit typed ports.
+- `PrimitiveRequestedEffectRuntime` owns construction of
+  `RequestedEffectApplierPorts` from explicit typed inputs and is the object
+  passed to `PrimitiveExecutionRuntimePorts.requested_effect_applier`.
+  `PrimitivePlannerACTPolicy` keeps only a typed runtime weld and no longer
+  exposes `_requested_effect_applier()` or `_requested_effect_applier_ports()`.
+- Old private policy transition wrappers for dump hold/deposit writes, return
+  next-dig marking, return transition completion, return next-skill selection,
+  and dig replan counters have been retired; tests and production callbacks use
+  `PrimitiveCycleRuntimeState`, `PrimitiveReturnRuntimeState`, and
+  `RequestedEffectApplier` contracts directly.
 
 Gap:
 
@@ -589,24 +821,37 @@ Ideal boundary:
 - Mutable planner runtime state lives in focused state owners.
 - Effect appliers mutate state owners through typed ports.
 - The public adapter stores only public compatibility handles and state owners.
+- Next-phase target: `PrimitivePlannerACTPolicy` converges to the external
+  communication/API adapter surface only; internal runtime/state/decision/
+  effect/report/input assembly moves behind stable owner/runtime/service
+  boundaries.
 
 Current boundary:
 
-- `CoverageRuntimeState` owns coverage mutable state.
+- `CoverageRuntimeState` owns coverage mutable state. Tests and diagnostics use
+  `_coverage_runtime_state()` directly; the policy no longer keeps old private
+  coverage property facades.
 - `PrimitiveTokenRuntimeState` owns mutable token and pending next-dig token
-  runtime state.
+  runtime state. The policy no longer keeps old private token/pending property
+  facades or duplicate reset snapshot writeback entries for those fields.
 - `PrimitiveReturnRuntimeState` owns mutable return handoff/runtime cache state:
   return step count, entry-close result, next-dig-event flag, and return
   start-envelope gate result/checks. It also owns live return report/status
-  projection from explicit start-envelope config facts.
+  projection from explicit start-envelope config facts. The policy no longer
+  keeps old private return-runtime property facades or duplicate reset snapshot
+  writeback entries for those fields.
 - `PrimitiveCycleRuntimeState` owns confirmed-live 4P cycle/progress state:
   dig progress counters, dump hold counters, transition counters, cycle index,
   and dump-start deposited-mass baseline. It also owns live cycle/progress
-  report/finalization projection through `PrimitiveCycleReportStatus`.
+  report/finalization projection through `PrimitiveCycleReportStatus`. The
+  policy no longer keeps old private cycle/progress property facades or
+  duplicate reset snapshot writeback entries for those fields.
 - `PrimitiveScriptedBootstrapRuntimeState` owns scripted bootstrap counters:
   step count, target-reached hold count, and timeout count. It also owns live
   scripted-bootstrap report/status projection through
-  `PrimitiveScriptedBootstrapReportStatus`.
+  `PrimitiveScriptedBootstrapReportStatus`. The policy no longer keeps old
+  private scripted-bootstrap counter property facades or duplicate reset
+  snapshot writeback entries for those counters.
 - `PrimitiveScriptedBootstrapRuntimeService` owns scripted-qpos bootstrap
   runtime rules: enabled detection, target-reached hold gating, timeout
   completion, and PD action generation.
@@ -641,7 +886,9 @@ Current boundary:
   `_pre_dig_align_*` runtime field facades or reset snapshot writeback; report
   helpers project fresh disabled/default values instead of reading mutable
   policy pre-dig-align state. The runtime action, readiness, target, timeout,
-  failed-dig replan, and branch-selection algorithms have been removed.
+  failed-dig replan, and branch-selection algorithms have been removed from
+  current mainline runtime, while historical legacy/diagnostic evidence remains
+  a parking record rather than a live backend contract.
 - Skill lifecycle, reset lifecycle, and token runtime services own sequencing,
   but only write through remaining policy compatibility facades for live or
   retained private names.
@@ -691,6 +938,9 @@ Gap:
 - It is reached through the runtime kernel and execution driver, but still
   receives low-level policy handles, observation assembly, scripted bootstrap
   action, and residual pre-dig-align action through policy-built dispatch ports.
+- Reset lifecycle, skill lifecycle, recovery, execution ports, and focused
+  tests use `PrimitiveActionDispatchService` or typed dispatch ports directly;
+  the old policy-private action-dispatch helper names are retired.
 
 Standard:
 
@@ -715,27 +965,54 @@ Current boundary:
 - `PrimitiveObservationInjectionRuntimeState` owns reset-default,
   per-observation clear, assembler-result application, and compatibility
   projection for the injected flags reported through debug/summary/trace paths.
+- `PrimitiveTokenObservationRuntime` owns the composition boundary between
+  policy observation assembly and token runtime sequencing: it builds
+  `PrimitivePolicyObservationAssemblerPorts`, builds `PrimitiveTokenRuntimePorts`,
+  clears/applies observation-injection state, and delegates dig/return token
+  sequencing to `PrimitiveTokenRuntimeCoordinator`. The policy shell keeps
+  typed token-observation runtime ports/runtime factory only; old private
+  token-observation and token-runtime wrapper names have been retired after
+  callers/tests moved to the focused runtime contract.
 - `PrimitiveTokenRuntimeState` owns mutable dig/return token arrays, token
   source/fallback/prior-bound fields, return start-envelope prior flags, and
   pending next-dig token/raw/exemplar fields. It also owns live `TokenStatus`
   projection from explicit cell-entry enablement, observation-injection flags,
   and dig-depth-profile config facts, plus token/pending/dig-cut report
-  metadata projection through `PrimitiveTokenReportStatus`.
+  metadata projection through `PrimitiveTokenReportStatus`. Old private
+  token/pending policy property facades and duplicate reset writeback entries
+  have been removed.
 - `PrimitiveReturnRuntimeState` owns non-token return handoff/runtime cache
   fields, so return-target token state and return handoff cache state are no
-  longer mixed in the policy shell.
+  longer mixed in the policy shell. Return token and pending next-dig token
+  private compatibility properties remain outside this return-runtime owner
+  cleanup.
 - `ReturnHandoffReadinessService` owns return-to-dig entry-target precedence,
   entry-error calculation, entry-close cache writeback, return start-envelope
   gate input/result writeback, `handoff_ready`, and direct-handoff mass/config
   gating over focused execution/cycle/return/token/coverage state owners.
-  `PrimitivePlannerACTPolicy` retains old private method names only as
-  compatibility facades and typed port assembly.
+  `PrimitiveReturnHandoffRuntime` now owns composition of that readiness
+  service, the start-envelope gate service, and direct-handoff effect service
+  from typed state ports, adapter-normalized `ReturnHandoffReadinessConfig`,
+  and explicit return-target/prior algorithm ports. The old private policy
+  return handoff readiness wrappers are retired; `PrimitivePlannerACTPolicy`
+  retains only a return-handoff runtime weld.
+- `ReturnDirectHandoffEffectService` owns the effect-side return/direct-handoff
+  sequence. `SetReturnOrDirectHandoffEffect` application now delegates through
+  `PrimitiveReturnHandoffRuntime.apply_direct_handoff(...)`; the old private
+  policy action wrappers for setting return, trying direct handoff, service
+  construction, direct-handoff ports, and readiness ports/service construction
+  are retired.
 - `PrimitiveTokenRuntimeCoordinator` owns dig/return token runtime sequencing.
   Its ports now carry the focused `PrimitiveTokenRuntimeState` owner directly
   for token storage reads/writes and `CoverageRuntimeState` directly for
   pending next-dig state-exemplar handoff reads and clear timing; external
   config, token-builder algorithms, return-relocate planning, and token
   planning services remain explicit ports.
+- `PrimitiveTokenPlanningRuntime` owns service and port composition for
+  `PrimitiveDigTokenPlanningService` and `PrimitiveReturnTokenPlanningService`.
+  The policy shell supplies typed token-planning runtime ports/runtime factory
+  only; old private token-planning helper names have been retired after
+  callers/tests moved to the focused runtime/service contracts.
 - `PrimitiveDigTokenPlanningService` and
   `PrimitiveReturnTokenPlanningService` own orchestration.
 - `CoveragePlanningFactService` owns coverage selection facts, coverage
@@ -743,6 +1020,16 @@ Current boundary:
   override/writeback, exemplar distance/id projection, removed-depth grid and
   weighted exemplar helper delegation, and remaining-depth facts from explicit
   coverage config/state/exemplar/observation inputs.
+- `PrimitiveCoverageSelectionRuntime` owns coverage selection/fact composition:
+  selection runtime ports, coverage selection config/service construction, and
+  coverage planning fact config/service construction. The policy shell supplies
+  typed coverage-selection runtime ports and runtime factory as owner welds;
+  legacy private helper names for selection/fact access are retired. The later
+  scoring/exemplar helper cleanup also retired old private policy helper names
+  for candidate construction, scoring/first-dig facts, state-exemplar
+  projection, and coverage state-owner writeback; callers use
+  `PrimitiveCoverageSelectionRuntime`, focused coverage services/builders, or
+  `CoverageRuntimeState` directly.
 - `PrimitiveDigTokenPlanningService` ports carry `PrimitiveTokenRuntimeState`
   and `CoverageRuntimeState` directly for active dig token planning storage
   reads/writes; external config, token planners, observation facts, and
@@ -754,13 +1041,12 @@ Current boundary:
   external config, token planners, observation facts, coverage selection, and
   coverage raw-field projection remain explicit ports backed by the coverage
   planning fact service.
-- Token algorithm classes remain in `primitive_tokens.py`.
-- `PrimitivePlannerACTPolicy` keeps old `_dig_cut_*`, `_return_*`, and
-  `_pending_dig_*` private names as property-backed compatibility facades over
-  the single token state owner. Its token-status report helper remains a thin
-  facade that delegates to the token state owner, and its token report-status
-  helper remains a thin explicit-facts assembler for debug, summary, and trace
-  report consumers.
+- Token algorithm classes remain in `primitive/token/tokens.py`.
+- `PrimitiveTokenRuntimeState` owns the old dig/return/pending token storage
+  that used to be exposed through private policy property facades. The policy
+  no longer exposes those old private property names. Its token-status and
+  token-report status helpers remain typed report welds that supply explicit
+  external facts to the report runtime.
 
 Gap:
 
@@ -795,8 +1081,17 @@ Current boundary:
 
 - `CoverageRuntimeState` owns mutable coverage state.
 - Coverage selection/effect runtime coordinators own runtime sequencing.
+- `PrimitiveCoverageEffectRuntime` owns coverage effect/update composition:
+  update/runtime config construction, update/runtime service construction, and
+  effect runtime port/coordinator construction. The policy shell supplies
+  typed coverage-effect runtime ports and keeps only the focused effect runtime
+  factory as the private owner weld.
+- Mutable coverage owner-field writes use `CoverageRuntimeState` methods
+  directly; old private policy setter wrappers for coverage effect owner state
+  have been retired.
 - Candidate construction, scoring, and state-exemplar planning have focused
-  owners.
+  owners. Old private policy helper wrappers for this cluster have been retired
+  after focused tests and production callbacks moved to those owners.
 
 Gap:
 
@@ -821,14 +1116,25 @@ Current boundary:
 
 - `PrimitiveDebugReportBuilder`, `PrimitiveRolloutSummaryBuilder`, and
   `PrimitivePlannerTraceBuilder` exist.
+- `PrimitiveReportCompositionRuntime` owns construction of
+  `PrimitiveReportRuntimePorts` plus token, `cell_entry`, and `pre_dig_align`
+  report-status projection from focused owners/runtimes.
+  `PrimitiveReportRuntime` then owns construction of
+  `PrimitiveDebugReportInputs`, `PrimitiveRolloutSummaryInputs`, and
+  `PrimitivePlannerTraceInputs` from those typed report ports. The policy keeps
+  public report methods and a typed report-composition weld; old private
+  report-runtime and report/status composition helper wrappers were retired
+  after runtime-kernel callbacks and focused tests moved to focused report
+  contracts.
 - `CoverageReportService` owns coverage corridor debug payloads, coverage
   decision-event payloads, coverage debug-field schema projection through
   explicit `CoverageDebugReportInputs`, planner-trace coverage sub-projection
   through `CoverageTraceReportStatus`, and rollout-summary coverage sub-
   projection through `CoverageSummaryReportStatus`. For live report inputs, the
-  service projects those coverage outputs from `CoverageRuntimeState`,
-  `CoverageReportConfig`, and `CoverageSelectionService` rather than from a
-  policy-owned coverage snapshot.
+  service projects those coverage outputs through
+  `PrimitiveCoverageReportRuntime` from `CoverageRuntimeState`,
+  `CoverageReportConfig`, and `CoverageSelectionService` rather than from
+  policy-owned private report helper methods.
 - `PrimitiveTokenRuntimeState` owns token/pending/dig-cut report metadata
   projection through `PrimitiveTokenReportStatus`; debug pending/dig-cut fields,
   rollout-summary pending/dig-cut fields, and planner-trace dig-cut metadata
@@ -841,16 +1147,17 @@ Current boundary:
   rollout-summary, and planner-trace report projection through
   `PrimitiveCellEntryReportStatus`; this is report parking only and does not
   make `cell_entry` a mainline token/backend/runtime capability.
-- Policy still prepares section snapshots and compatibility fields.
+- Policy no longer directly constructs the public report input dataclasses.
 
 Gap:
 
-- This layer is close to target.
+- This layer is closer to target.
 - Section snapshot providers may be further narrowed later. Coverage debug,
   trace, and summary coverage snapshot projection are outside the large policy
   class. Parked pre-dig-align debug/summary projection and parked cell-entry
   debug/summary/trace projection are owned by their compatibility state owners.
-  Other report input assembly still has policy-side compatibility glue.
+  Report input assembly is now a focused runtime boundary, while section status
+  providers and helper facades remain available for compatibility tests.
 
 Standard:
 
@@ -874,11 +1181,13 @@ Current boundary:
 - `PrimitiveSkillLifecycleService` owns `_set_skill()` lifecycle sequencing
   and uses the focused execution, cycle, return, pre-dig-align compatibility,
   and coverage runtime state owners directly instead of policy-built storage
-  setter callbacks.
+  setter callbacks. Its dig-token clear hook routes through
+  `PrimitiveTokenObservationRuntime` and no longer depends on an old private
+  policy clear wrapper.
 
 Gap:
 
-- `primitive_adapter_config.py` is already over the large-file threshold. It is
+- `primitive/config/adapter.py` is already over the large-file threshold. It is
   allowed as the result of this extraction, but new config behavior should not
   continue accumulating there without a split.
 
@@ -895,7 +1204,9 @@ Current parking:
 
 - `pre_dig_align`: removed runtime execution path with disabled public
   debug/summary/report schema compatibility. Enabled config is invalid and
-  must fail fast. It is not target mainline backend capability.
+  must fail fast. It has historical successful legacy/diagnostic/transition
+  evidence, but it is not target mainline backend capability without explicit
+  user re-approval.
 - `cell_entry`: compatibility/report material. It is not target token contract
   for the selected mainline rollout. Primitive-planner private `_cell_entry_*`
   runtime facades and reset snapshot writeback have been removed; public report
@@ -1000,6 +1311,26 @@ architecture-record ownership:
    architecture documents, interface standards, and execution records as part of
    that audit. Target-gap analysis, next-slice candidates, every-third-iteration
    reflection, and dispatch decisions belong to the audit thread.
+6. The every-third-iteration reflection gate must be explicit in both prompt
+   surfaces. The refactor/audit prompt records the accepted-slice count and
+   whether the next callback triggers the gate. The executor prompt asks only
+   for fact-only evidence needed by that gate and must not ask the executor to
+   write the deep reflection or choose the next slice. The fourth bounded
+   implementation dispatch is blocked until the audit thread records the
+   reflection or stops for user confirmation.
+7. Each future refactor/audit and executor prompt must copy the mandatory skill
+   compliance block explicitly: target lock first; planner yields after one
+   dispatch; executor green is not closure; planner-side closure gate is
+   required; lightweight reflection follows every callback; deep reflection
+   follows every three accepted implementation callbacks or any failed/
+   misaligned callback; executor callback is fact-only; no invented runtime
+   config; no unapproved config edits; protection is a constraint, not the
+   objective; do not preserve removable private glue; do not pass planner
+   `self` into focused modules; do not add broad pass-through objects, generic
+   blackboards, broad config bags, anemic services, or one-method-per-private-
+   method callback bags; preserve public schema, token contracts, branch order,
+   reason strings, reset timing, default legacy FSM, and BT/VLM/LLM fail-fast
+   status unless the user explicitly approves a semantic change.
 
 This keeps strategic architecture documentation consistent across phases while
 still requiring each code slice to provide enough evidence for documentation to
