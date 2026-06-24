@@ -182,6 +182,38 @@ class RestartAfterFailedDigEffect(RequestedPlannerEffect):
 
 
 @dataclass(frozen=True)
+class RestartDigWithNewCutEffect(RequestedPlannerEffect):
+    """Restart dig with a new cut while preserving the provided switch reason."""
+
+    effect_type: str = field(default="restart_dig_with_new_cut", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+    reason: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(self, "effect_type", "restart_dig_with_new_cut")
+        object.__setattr__(self, "reason", str(self.reason))
+        object.__setattr__(self, "payload", None)
+
+
+@dataclass(frozen=True)
+class ReplanOrRestartPreDigAlignEffect(RequestedPlannerEffect):
+    """Try pre-dig timeout replan handoff, otherwise restart pre-dig-align."""
+
+    effect_type: str = field(default="replan_or_restart_pre_dig_align", init=False)
+    payload: Mapping[str, object] | None = field(default=None, init=False)
+    reason: str = field(default="", init=False)
+    replan_reason: str
+    restart_reason: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "already_applied", False)
+        object.__setattr__(self, "effect_type", "replan_or_restart_pre_dig_align")
+        object.__setattr__(self, "reason", str(self.restart_reason))
+        object.__setattr__(self, "payload", None)
+
+
+@dataclass(frozen=True)
 class CompleteCoverageDigEffect(RequestedPlannerEffect):
     """Complete coverage dig accounting for the current observation."""
 
@@ -414,6 +446,8 @@ __all__ = [
     "IncrementDigBadReplanCountEffect",
     "RejectActiveCoverageCorridorEffect",
     "RestartAfterFailedDigEffect",
+    "RestartDigWithNewCutEffect",
+    "ReplanOrRestartPreDigAlignEffect",
     "CompleteCoverageDigEffect",
     "SetDumpReadyHoldCountEffect",
     "SetDumpStartDepositedMassFromObservationEffect",
@@ -493,6 +527,21 @@ def _validate_requested_effect_shape(effect: RequestedPlannerEffect) -> None:
         raise PrimitiveDecisionContractError(
             "failed-dig restart effects must use RestartAfterFailedDigEffect"
         )
+    if normalized_type == "restart_dig_with_new_cut" and not isinstance(
+        effect,
+        RestartDigWithNewCutEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "new-cut restart effects must use RestartDigWithNewCutEffect"
+        )
+    if normalized_type == "replan_or_restart_pre_dig_align" and not isinstance(
+        effect,
+        ReplanOrRestartPreDigAlignEffect,
+    ):
+        raise PrimitiveDecisionContractError(
+            "pre-dig replan/restart effects must use "
+            "ReplanOrRestartPreDigAlignEffect"
+        )
     if normalized_type == "complete_coverage_dig" and not isinstance(
         effect,
         CompleteCoverageDigEffect,
@@ -560,6 +609,7 @@ def _validate_requested_effect_shape(effect: RequestedPlannerEffect) -> None:
         (
             RejectActiveCoverageCorridorEffect,
             RestartAfterFailedDigEffect,
+            RestartDigWithNewCutEffect,
             CompleteCoverageDumpEffect,
             SetReturnOrDirectHandoffEffect,
         ),
@@ -567,6 +617,14 @@ def _validate_requested_effect_shape(effect: RequestedPlannerEffect) -> None:
         if not str(effect.reason).strip():
             raise PrimitiveDecisionContractError(
                 f"{effect.effect_type} requires a non-empty reason"
+            )
+    if isinstance(effect, ReplanOrRestartPreDigAlignEffect):
+        if not (
+            str(effect.replan_reason).strip()
+            and str(effect.restart_reason).strip()
+        ):
+            raise PrimitiveDecisionContractError(
+                "ReplanOrRestartPreDigAlign effect requires non-empty reasons"
             )
     if callable(effect):
         raise PrimitiveDecisionContractError("effect object must not be callable")

@@ -773,14 +773,9 @@ class PrimitivePlannerAdapterConfigNormalizer:
             "pre_dig_align_cfg",
             dict(inputs.pre_dig_align or {}),
         )
-        if bool(pre_dig_align_cfg.get("enabled", False)):
-            raise ValueError(
-                "pre_dig_align runtime execution has been removed; "
-                "set pre_dig_align.enabled=false or remove the block."
-            )
         set_value(
             "pre_dig_align_enabled",
-            False,
+            bool(pre_dig_align_cfg.get("enabled", False)),
         )
         set_value(
             "pre_dig_align_first_dig_only",

@@ -15,8 +15,10 @@ from testbed.planner.primitive.decision.contracts import (
     MarkReturnNextDigEventSeenEffect,
     PrimitiveDecisionContractError,
     RejectActiveCoverageCorridorEffect,
+    ReplanOrRestartPreDigAlignEffect,
     RequestedPlannerEffect,
     RestartAfterFailedDigEffect,
+    RestartDigWithNewCutEffect,
     SetDumpDoneHoldCountEffect,
     SetDumpReadyHoldCountEffect,
     SetDumpStartDepositedMassFromObservationEffect,
@@ -46,6 +48,8 @@ class RequestedEffectApplierPorts:
     next_skill_after_return_transition: Callable[[], str]
     reject_active_coverage_corridor: Callable[..., None]
     restart_after_failed_dig: Callable[[str, dict[str, Any]], None]
+    restart_dig_with_new_cut: Callable[[str], None]
+    replan_or_restart_pre_dig_align: Callable[[dict[str, Any], str, str], None]
     complete_coverage_dig: Callable[[dict[str, Any]], None]
     observation_facts: Callable[[dict[str, Any]], PrimitiveObservationFacts]
     complete_coverage_dump: Callable[..., None]
@@ -124,6 +128,25 @@ class RequestedEffectApplier:
                     "RestartAfterFailedDig effect requires non-empty reason"
                 )
             ports.restart_after_failed_dig(reason, obs)
+        elif isinstance(effect, RestartDigWithNewCutEffect):
+            reason = str(effect.reason)
+            if not reason.strip():
+                raise PrimitiveDecisionContractError(
+                    "RestartDigWithNewCut effect requires non-empty reason"
+                )
+            ports.restart_dig_with_new_cut(reason)
+        elif isinstance(effect, ReplanOrRestartPreDigAlignEffect):
+            replan_reason = str(effect.replan_reason)
+            restart_reason = str(effect.restart_reason)
+            if not (replan_reason.strip() and restart_reason.strip()):
+                raise PrimitiveDecisionContractError(
+                    "ReplanOrRestartPreDigAlign effect requires non-empty reasons"
+                )
+            ports.replan_or_restart_pre_dig_align(
+                obs,
+                replan_reason=replan_reason,
+                restart_reason=restart_reason,
+            )
         elif isinstance(effect, CompleteCoverageDigEffect):
             ports.complete_coverage_dig(obs)
         elif isinstance(effect, SetDumpReadyHoldCountEffect):
@@ -169,6 +192,7 @@ class PrimitiveRequestedEffectRuntimePorts:
     dig_recovery_service: PrimitiveDigRecoveryService
     return_handoff_runtime: PrimitiveReturnHandoffRuntime
     action_dim: int
+    return_transition_next_skill: Callable[[], str] | None = None
 
 
 @dataclass(frozen=True)
@@ -192,7 +216,9 @@ class PrimitiveRequestedEffectRuntime:
                 return_state=ports.return_state,
                 set_skill=ports.set_skill,
                 next_skill_after_return_transition=(
-                    lambda: str(ports.return_transition_next_skill_name)
+                    ports.return_transition_next_skill
+                    if ports.return_transition_next_skill is not None
+                    else lambda: str(ports.return_transition_next_skill_name)
                 ),
                 reject_active_coverage_corridor=(
                     ports.coverage_effect_runtime.reject_active_coverage_corridor
@@ -202,6 +228,12 @@ class PrimitiveRequestedEffectRuntime:
                 ),
                 complete_coverage_dig=(
                     ports.coverage_effect_runtime.complete_coverage_dig
+                ),
+                restart_dig_with_new_cut=(
+                    ports.dig_recovery_service.restart_dig_with_new_cut
+                ),
+                replan_or_restart_pre_dig_align=(
+                    ports.dig_recovery_service.replan_or_restart_pre_dig_align
                 ),
                 observation_facts=(
                     lambda obs: PrimitiveObservationFacts.from_obs(

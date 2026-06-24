@@ -56,6 +56,7 @@ def _ports(
     cycle_index: int = 1,
     completed_dump_count: int = 1,
     scripted_bootstrap_enabled: bool = False,
+    pre_dig_align_action: Any | None = None,
 ) -> PrimitiveActionDispatchPorts:
     execution_state = PrimitiveExecutionRuntimeState.fresh(
         initial_skill_name=skill_name,
@@ -77,6 +78,10 @@ def _ports(
         events.append("scripted_action")
         return np.asarray([9.0, 8.0, 7.0, 6.0], dtype=np.float32)
 
+    def default_pre_dig_align_action(obs: dict[str, Any]) -> np.ndarray:
+        events.append("pre_dig_align_action")
+        return np.asarray([4.0, 3.0, 2.0, 1.0], dtype=np.float32)
+
     return PrimitiveActionDispatchPorts(
         execution_state=execution_state,
         cycle_state=cycle_state,
@@ -95,6 +100,7 @@ def _ports(
         policy_observation=policy_observation,
         scripted_bootstrap_enabled=lambda: scripted_bootstrap_enabled,
         scripted_bootstrap_action=scripted_action,
+        pre_dig_align_action=pre_dig_align_action or default_pre_dig_align_action,
     )
 
 
@@ -129,18 +135,20 @@ def test_dispatch_short_circuits_to_scripted_bootstrap_action() -> None:
     assert low_level.predicted_obs is None
 
 
-def test_pre_dig_align_no_longer_has_runtime_action_dispatch() -> None:
+def test_pre_dig_align_short_circuits_to_runtime_action_without_policy_lookup() -> None:
     events: list[str] = []
+    low_level = _FakePolicy("dig", events)
     service = PrimitiveActionDispatchService.from_ports(
-        _ports(events, skill_name="pre_dig_align")
+        _ports(events, skill_name="pre_dig_align", dig_policy=low_level)
     )
 
-    with pytest.raises(
-        RuntimeError,
-        match="Unknown primitive skill 'pre_dig_align'.",
-    ):
-        service.dispatch_action({"qpos": [1.0]})
-    assert events == []
+    action = service.dispatch_action({"qpos": [1.0]})
+
+    assert action.dtype == np.float32
+    assert action.shape == (4,)
+    assert action.tolist() == [4.0, 3.0, 2.0, 1.0]
+    assert events == ["pre_dig_align_action"]
+    assert low_level.predicted_obs is None
 
 
 def test_dispatch_normal_policy_uses_policy_observation_and_shapes_action() -> None:
@@ -318,3 +326,34 @@ def test_policy_action_dispatch_ports_share_focused_state_owners() -> None:
     assert "current_skill_name" not in port_fields
     assert "cycle_index" not in port_fields
     assert "coverage_completed_dump_count" not in port_fields
+
+
+def test_policy_action_dispatch_ports_supply_pre_dig_align_runtime_action() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    planner.action_dim = 4
+    planner.dig_policy = _FakePolicy("dig")
+    planner.carry_policy = _FakePolicy("carry")
+    planner.dump_policy = _FakePolicy("dump")
+    planner.return_policy = _FakePolicy("return")
+    planner.first_dig_policy = None
+    planner.bootstrap_policy = None
+    planner._skill_name = "pre_dig_align"
+    obs = {"qpos": [1.0]}
+    action = np.asarray([-0.1, -0.2, -0.3, -0.4], dtype=np.float32)
+    calls: list[dict[str, Any]] = []
+
+    class _FakePreDigAlignRuntimeService:
+        def action(self, got_obs: dict[str, Any]) -> np.ndarray:
+            calls.append(got_obs)
+            return action
+
+    planner._primitive_pre_dig_align_runtime_service = MethodType(
+        lambda self: _FakePreDigAlignRuntimeService(),
+        planner,
+    )
+
+    ports = planner._action_dispatch_ports()
+    dispatched = PrimitiveActionDispatchService.from_ports(ports).dispatch_action(obs)
+
+    np.testing.assert_allclose(dispatched, action)
+    assert calls == [obs]

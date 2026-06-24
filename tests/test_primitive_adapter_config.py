@@ -165,19 +165,31 @@ def test_normalizer_exposes_return_handoff_readiness_config() -> None:
     )
 
 
-def test_pre_dig_align_enabled_config_fails_fast_after_runtime_removal() -> None:
-    with pytest.raises(
-        ValueError,
-        match=(
-            "pre_dig_align runtime execution has been removed; "
-            "set pre_dig_align.enabled=false"
-        ),
-    ):
-        _normalize(
-            PrimitivePlannerAdapterConfigInputs(
-                pre_dig_align={"enabled": True},
-            )
+def test_pre_dig_align_enabled_config_normalizes_opt_in_runtime_fields() -> None:
+    state = _normalize(
+        PrimitivePlannerAdapterConfigInputs(
+            pre_dig_align={
+                "enabled": True,
+                "first_dig_only": True,
+                "replan_after_failed_dig": True,
+                "controlled_dims": [1, 0, 1, 0],
+                "bucket_target_qpos": -0.2,
+            },
         )
+    )
+    updates = state.as_policy_field_updates()
+
+    assert updates["pre_dig_align_cfg"]["enabled"] is True
+    assert updates["pre_dig_align_enabled"] is True
+    assert updates["pre_dig_align_first_dig_only"] is True
+    assert updates["pre_dig_align_replan_after_failed_dig"] is True
+    assert updates["pre_dig_align_controlled_dims"].tolist() == [
+        True,
+        False,
+        True,
+        False,
+    ]
+    assert updates["pre_dig_align_bucket_target_qpos"] == -0.2
 
 
 def test_disabled_pre_dig_align_config_remains_report_schema_compatible() -> None:

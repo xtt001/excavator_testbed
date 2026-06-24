@@ -6,6 +6,10 @@ from typing import Any
 
 import numpy as np
 
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
+    ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+)
 from testbed.planner.boundary_detector import BoundaryDetector
 from testbed.planner.primitive.execution.boundary_event import (
     PrimitiveBoundaryEventRuntimePorts,
@@ -95,6 +99,12 @@ from testbed.planner.primitive.execution.scripted_bootstrap import (
     PrimitiveScriptedBootstrapRuntimeConfig,
     PrimitiveScriptedBootstrapRuntimeService,
     PrimitiveScriptedBootstrapRuntimeState,
+)
+from testbed.planner.primitive.execution.pre_dig_align import (
+    PrimitivePreDigAlignPorts,
+    PrimitivePreDigAlignRuntimeConfig,
+    PrimitivePreDigAlignRuntimeService,
+    PrimitivePreDigAlignRuntimeState,
 )
 from testbed.planner.primitive.token.state import (
     PrimitiveTokenRuntimeState,
@@ -380,8 +390,13 @@ class PrimitivePlannerACTPolicy(Policy):
             bootstrap_end_mode=lambda: str(self.bootstrap_end_mode),
             bootstrap_policy_available=lambda: self.bootstrap_policy is not None,
             scripted_bootstrap_enabled=lambda: self._scripted_bootstrap_enabled(),
+            should_pre_dig_align_before_dig=(
+                lambda: self._primitive_pre_dig_align_runtime_service()
+                .should_pre_dig_align_before_dig()
+            ),
             action_dim=int(self.action_dim),
             bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
             dig_skill_name="dig",
         )
 
@@ -471,6 +486,17 @@ class PrimitivePlannerACTPolicy(Policy):
         if state is None:
             state = PrimitiveScriptedBootstrapRuntimeState.fresh()
             self.__dict__["_scripted_bootstrap_state"] = state
+        return state
+
+    def _primitive_pre_dig_align_runtime_state(
+        self,
+    ) -> PrimitivePreDigAlignRuntimeState:
+        state = self.__dict__.get("_pre_dig_align_runtime_state")
+        if state is None:
+            state = PrimitivePreDigAlignRuntimeState.fresh(
+                action_dim=int(getattr(self, "action_dim", 4))
+            )
+            self.__dict__["_pre_dig_align_runtime_state"] = state
         return state
 
     def _scripted_bootstrap_report_status(
@@ -575,6 +601,12 @@ class PrimitivePlannerACTPolicy(Policy):
             scripted_bootstrap_action=lambda obs: self._scripted_bootstrap_action(obs),
             bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
             dig_skill_name="dig",
+            pre_dig_align_action=(
+                lambda obs: self._primitive_pre_dig_align_runtime_service().action(
+                    obs
+                )
+            ),
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
         )
 
     def _decision_runtime(self) -> PrimitiveDecisionRuntime:
@@ -598,6 +630,10 @@ class PrimitivePlannerACTPolicy(Policy):
             carry_skill_name="carry",
             dump_skill_name="dump",
             return_skill_name="return",
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
+            pre_dig_align_service=(
+                self._primitive_pre_dig_align_runtime_service()
+            ),
         )
         return PrimitiveDecisionRuntime.from_ports(
             PrimitiveDecisionRuntimePorts(
@@ -624,6 +660,14 @@ class PrimitivePlannerACTPolicy(Policy):
             return_state=self._primitive_return_runtime_state(),
             set_skill=lambda skill, reason: self._set_skill(skill, reason),
             return_transition_next_skill_name="dig",
+            return_transition_next_skill=(
+                lambda: (
+                    PRE_DIG_ALIGN_SKILL_NAME
+                    if self._primitive_pre_dig_align_runtime_service()
+                    .should_pre_dig_align_before_dig()
+                    else "dig"
+                )
+            ),
             coverage_effect_runtime=self._primitive_coverage_effect_runtime(),
             dig_recovery_service=self._primitive_dig_recovery(),
             return_handoff_runtime=self._primitive_return_handoff_runtime(),
@@ -778,8 +822,40 @@ class PrimitivePlannerACTPolicy(Policy):
             scripted_bootstrap_report_status=(
                 self._scripted_bootstrap_report_status
             ),
+            pre_dig_align_state=self._primitive_pre_dig_align_runtime_state,
+            pre_dig_align_enabled=lambda: bool(self.pre_dig_align_enabled),
+            pre_dig_align_first_dig_only=(
+                lambda: bool(self.pre_dig_align_first_dig_only)
+            ),
+            pre_dig_align_replan_after_failed_dig=(
+                lambda: bool(self.pre_dig_align_replan_after_failed_dig)
+            ),
+            pre_dig_align_entry_intent_controlled_dims=(
+                lambda: self.pre_dig_align_entry_intent_controlled_dims
+            ),
+            pre_dig_align_surface_guard_enabled=(
+                lambda: bool(self.pre_dig_align_surface_guard_enabled)
+            ),
+            pre_dig_align_active_for_next_dig=(
+                lambda: self._primitive_pre_dig_align_runtime_service()
+                .should_pre_dig_align_before_dig()
+            ),
+            pre_dig_align_first_dig_entry_close_handoff=(
+                lambda: bool(self.pre_dig_align_first_dig_entry_close_handoff)
+            ),
+            pre_dig_align_entry_intent_handoff_enabled=(
+                lambda: bool(self.pre_dig_align_entry_intent_handoff_enabled)
+            ),
+            pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max=(
+                lambda: (
+                    self.pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max
+                )
+            ),
             pre_dig_align_controlled_dims=(
                 lambda: self.pre_dig_align_controlled_dims
+            ),
+            pre_dig_align_bucket_target_qpos=(
+                lambda: self.pre_dig_align_bucket_target_qpos
             ),
             action_dim=lambda: int(getattr(self, "action_dim", 4)),
             goal_sector_id=self._primitive_token_planner_factory().goal_sector_id,
@@ -863,6 +939,11 @@ class PrimitivePlannerACTPolicy(Policy):
                     )[0]
                 )
             ),
+            should_pre_dig_align_before_dig=(
+                lambda: self._primitive_pre_dig_align_runtime_service()
+                .should_pre_dig_align_before_dig()
+            ),
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
             dig_skill_name="dig",
         )
 
@@ -908,6 +989,8 @@ class PrimitivePlannerACTPolicy(Policy):
             cycle_state=self._primitive_cycle_runtime_state(),
             return_state=self._primitive_return_runtime_state(),
             coverage_state=self._coverage_runtime_state(),
+            token_state=self._primitive_token_runtime_state(),
+            pre_dig_align_state=self._primitive_pre_dig_align_runtime_state(),
             reset_active_policy=(
                 lambda: self._action_dispatch_service().active_policy().reset()
             ),
@@ -924,6 +1007,27 @@ class PrimitivePlannerACTPolicy(Policy):
                     .primitive_token_runtime()
                     .clear_dig_cut_plan()
                 )
+            ),
+            build_operator_prior_coverage_dig_cut_tokens=(
+                lambda obs: (
+                    self._primitive_token_planning_runtime()
+                    .build_operator_prior_coverage_dig_cut_tokens(obs)
+                )
+            ),
+            raw_fields_in_prior_range=(
+                lambda raw_fields: (
+                    self._primitive_token_planner_factory()
+                    .dig_cut_token_planner()
+                    .raw_fields_in_prior_range(raw_fields)
+                )
+            ),
+            pre_dig_align_entry_error=(
+                lambda obs: self._primitive_pre_dig_align_runtime_service()
+                .entry_error(obs)
+            ),
+            pre_dig_align_timeout_can_handoff=(
+                lambda obs: self._primitive_pre_dig_align_runtime_service()
+                .timeout_can_handoff(obs)
             ),
             set_skill=lambda skill_name, reason: self._set_skill(
                 skill_name,
@@ -954,9 +1058,19 @@ class PrimitivePlannerACTPolicy(Policy):
                     action_dim=int(self.action_dim),
                 )
             ),
+            should_pre_dig_align_before_dig=(
+                lambda: self._primitive_pre_dig_align_runtime_service()
+                .should_pre_dig_align_before_dig()
+            ),
+            should_pre_dig_align_after_failed_dig=(
+                lambda: self._primitive_pre_dig_align_runtime_service()
+                .should_pre_dig_align_after_failed_dig()
+            ),
+            dig_cut_planner_mode=lambda: str(self.dig_cut_planner_mode),
             dig_failed_replan_next_skill=(
                 lambda: str(self.dig_failed_replan_next_skill)
             ),
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
         )
 
     def _should_end_bootstrap(self, *, obs: dict, boundary_event: Any | None) -> bool:
@@ -1011,6 +1125,136 @@ class PrimitivePlannerACTPolicy(Policy):
 
     def _scripted_bootstrap_action(self, obs: dict) -> np.ndarray:
         return self._primitive_scripted_bootstrap_runtime_service().action(obs)
+
+    def _primitive_pre_dig_align_runtime_config(
+        self,
+    ) -> PrimitivePreDigAlignRuntimeConfig:
+        return PrimitivePreDigAlignRuntimeConfig(
+            action_dim=int(self.action_dim),
+            enabled=bool(self.pre_dig_align_enabled),
+            first_dig_only=bool(self.pre_dig_align_first_dig_only),
+            replan_after_failed_dig=bool(
+                self.pre_dig_align_replan_after_failed_dig
+            ),
+            kp=float(self.pre_dig_align_kp),
+            kd=float(self.pre_dig_align_kd),
+            action_clip=self.pre_dig_align_action_clip,
+            action_signs=self.pre_dig_align_action_signs,
+            controlled_dims=self.pre_dig_align_controlled_dims,
+            entry_intent_controlled_dims=(
+                self.pre_dig_align_entry_intent_controlled_dims
+            ),
+            bucket_target_qpos=self.pre_dig_align_bucket_target_qpos,
+            qpos_tolerance=self.pre_dig_align_qpos_tolerance,
+            qvel_abs_max=float(self.pre_dig_align_qvel_abs_max),
+            hold_steps=int(self.pre_dig_align_hold_steps),
+            max_steps=int(self.pre_dig_align_max_steps),
+            max_entry_error_m=self.pre_dig_align_max_entry_error_m,
+            timeout_accept_entry_error_m=(
+                self.pre_dig_align_timeout_accept_entry_error_m
+            ),
+            timeout_replan_entry_error_m=(
+                self.pre_dig_align_timeout_replan_entry_error_m
+            ),
+            start_envelope_enabled=bool(
+                self.pre_dig_align_start_envelope_enabled
+            ),
+            first_dig_entry_close_handoff=bool(
+                self.pre_dig_align_first_dig_entry_close_handoff
+            ),
+            first_dig_entry_close_handoff_qvel_abs_max=(
+                self.pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max
+            ),
+            start_envelope_max_entry_error_m=float(
+                self.pre_dig_align_start_envelope_max_entry_error_m
+            ),
+            entry_intent_handoff_enabled=bool(
+                self.pre_dig_align_entry_intent_handoff_enabled
+            ),
+            surface_guard_enabled=bool(self.pre_dig_align_surface_guard_enabled),
+            surface_guard_max_penetration_m=float(
+                self.pre_dig_align_surface_guard_max_penetration_m
+            ),
+            surface_guard_handoff_entry_error_m=(
+                self.pre_dig_align_surface_guard_handoff_entry_error_m
+            ),
+            surface_guard_use_contact_fallback=bool(
+                self.pre_dig_align_surface_guard_use_contact_fallback
+            ),
+            start_qpos_min=self.pre_dig_align_start_qpos_min,
+            start_qpos_max=self.pre_dig_align_start_qpos_max,
+            start_pose_min=self.pre_dig_align_start_pose_min,
+            start_pose_max=self.pre_dig_align_start_pose_max,
+            qpos_min=self.pre_dig_align_qpos_min,
+            qpos_max=self.pre_dig_align_qpos_max,
+            qpos_from_token_coefficients=(
+                self.pre_dig_align_qpos_from_token_coefficients
+            ),
+        )
+
+    def _primitive_pre_dig_align_runtime_ports(
+        self,
+    ) -> PrimitivePreDigAlignPorts:
+        return PrimitivePreDigAlignPorts(
+            ensure_dig_cut_plan_for_cycle=(
+                lambda obs: (
+                    self._primitive_token_observation_runtime()
+                    .ensure_dig_cut_plan_for_cycle(obs)
+                )
+            ),
+            dig_cut_tokens=lambda: self._primitive_token_runtime_state().dig_cut_tokens,
+            active_coverage_corridor=(
+                lambda: self._coverage_runtime_state().active_corridor()
+            ),
+            bucket_tip_dig_area_pose=(
+                lambda obs: (
+                    PrimitiveObservationFacts.from_obs(
+                        obs,
+                        action_dim=int(self.action_dim),
+                    ).bucket_tip_dig_area_pose()
+                )
+            ),
+            bucket_dig_area_pose=(
+                lambda obs: (
+                    PrimitiveObservationFacts.from_obs(
+                        obs,
+                        action_dim=int(self.action_dim),
+                    ).bucket_dig_area_pose()
+                )
+            ),
+            bucket_depth_below_local_surface=(
+                lambda obs: (
+                    PrimitiveObservationFacts.from_obs(
+                        obs,
+                        action_dim=int(self.action_dim),
+                    ).env_state_value(
+                        ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX
+                    )
+                )
+            ),
+            bucket_dig_area_contact_mask=(
+                lambda obs: (
+                    PrimitiveObservationFacts.from_obs(
+                        obs,
+                        action_dim=int(self.action_dim),
+                    ).env_state_value(
+                        ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
+                        default=0.0,
+                    )
+                    > 0.5
+                )
+            ),
+            cycle_index=lambda: int(self._primitive_cycle_runtime_state().cycle_index),
+        )
+
+    def _primitive_pre_dig_align_runtime_service(
+        self,
+    ) -> PrimitivePreDigAlignRuntimeService:
+        return PrimitivePreDigAlignRuntimeService.from_ports(
+            config=self._primitive_pre_dig_align_runtime_config(),
+            state=self._primitive_pre_dig_align_runtime_state(),
+            ports=self._primitive_pre_dig_align_runtime_ports(),
+        )
 
     def _update_dig_progress(self, obs: dict) -> None:
         self._primitive_dig_progress_runtime_service().update(obs)

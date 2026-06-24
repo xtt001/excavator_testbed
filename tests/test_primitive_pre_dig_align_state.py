@@ -6,6 +6,9 @@ from testbed.planner.primitive.compatibility.pre_dig_align import (
     PrimitivePreDigAlignCompatibilityRuntimeState,
     PrimitivePreDigAlignReportConfig,
 )
+from testbed.planner.primitive.execution.pre_dig_align import (
+    PrimitivePreDigAlignRuntimeState,
+)
 from testbed.planner.primitive.execution.reset_lifecycle import (
     PrimitiveResetLifecyclePorts,
     PrimitiveResetLifecycleService,
@@ -81,6 +84,7 @@ def test_reset_lifecycle_no_longer_emits_pre_dig_align_runtime_fields() -> None:
         bootstrap_end_mode=lambda: "dig",
         bootstrap_policy_available=lambda: False,
         scripted_bootstrap_enabled=lambda: False,
+        should_pre_dig_align_before_dig=lambda: False,
         action_dim=4,
     )
 
@@ -229,16 +233,74 @@ def test_policy_pre_dig_align_debug_facade_delegates_to_state_report_status() ->
         dtype=bool,
     )
     policy.pre_dig_align_bucket_target_qpos = None
+    policy.pre_dig_align_kp = 2.0
+    policy.pre_dig_align_kd = 0.25
+    policy.pre_dig_align_action_clip = np.asarray(
+        [0.55, 0.35, 0.35, 0.35],
+        dtype=np.float32,
+    )
+    policy.pre_dig_align_action_signs = np.asarray(
+        [1.0, -1.0, 1.0, 1.0],
+        dtype=np.float32,
+    )
+    policy.pre_dig_align_qpos_tolerance = np.asarray(
+        [0.025, 0.04, 0.05, 0.06],
+        dtype=np.float32,
+    )
+    policy.pre_dig_align_qvel_abs_max = 0.12
+    policy.pre_dig_align_hold_steps = 3
+    policy.pre_dig_align_max_steps = 140
+    policy.pre_dig_align_max_entry_error_m = None
+    policy.pre_dig_align_timeout_accept_entry_error_m = None
+    policy.pre_dig_align_timeout_replan_entry_error_m = None
+    policy.pre_dig_align_start_envelope_enabled = False
+    policy.pre_dig_align_start_envelope_max_entry_error_m = 0.65
+    policy.pre_dig_align_surface_guard_max_penetration_m = 0.005
+    policy.pre_dig_align_surface_guard_handoff_entry_error_m = None
+    policy.pre_dig_align_surface_guard_use_contact_fallback = True
+    policy.pre_dig_align_start_qpos_min = np.asarray(
+        [0.45, 0.52, 0.0, 0.0],
+        dtype=np.float32,
+    )
+    policy.pre_dig_align_start_qpos_max = np.asarray(
+        [0.57, 0.78, 0.40, 0.12],
+        dtype=np.float32,
+    )
+    policy.pre_dig_align_start_pose_min = np.asarray(
+        [-0.60, -0.30, -1.50],
+        dtype=np.float32,
+    )
+    policy.pre_dig_align_start_pose_max = np.asarray(
+        [1.65, 0.25, 1.20],
+        dtype=np.float32,
+    )
+    policy.pre_dig_align_qpos_min = np.asarray(
+        [0.44, 0.50, 0.0, 0.0],
+        dtype=np.float32,
+    )
+    policy.pre_dig_align_qpos_max = np.asarray(
+        [0.56, 0.79, 0.42, 0.36],
+        dtype=np.float32,
+    )
+    policy.pre_dig_align_qpos_from_token_coefficients = np.asarray(
+        [
+            [0.49761536, -0.00324577, -0.07974796],
+            [0.48509995, 0.34124863, -0.02063946],
+            [0.39998216, -0.50266185, 0.04142020],
+            [0.21223230, -0.14153491, -0.01244724],
+        ],
+        dtype=np.float32,
+    )
     policy._primitive_cycle_runtime_state().cycle_index = 0
-    state = PrimitivePreDigAlignCompatibilityRuntimeState.fresh(action_dim=4)
+    state = PrimitivePreDigAlignRuntimeState.fresh(action_dim=4)
     state.completed_count = 3
     state.timeout_count = 2
     state.replan_count = 1
-    policy.__dict__["_pre_dig_align_state"] = state
+    policy.__dict__["_pre_dig_align_runtime_state"] = state
 
     fields = policy._primitive_report_composition_runtime().report_runtime().debug_report_pre_dig_align_fields()
 
-    assert fields["pre_dig_align_enabled"] is False
-    assert fields["pre_dig_align_completed_count"] == 0
-    assert fields["pre_dig_align_timeout_count"] == 0
-    assert fields["pre_dig_align_replan_count"] == 0
+    assert fields["pre_dig_align_enabled"] is True
+    assert fields["pre_dig_align_completed_count"] == 3
+    assert fields["pre_dig_align_timeout_count"] == 2
+    assert fields["pre_dig_align_replan_count"] == 1

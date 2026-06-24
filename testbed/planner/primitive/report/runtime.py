@@ -28,9 +28,12 @@ from testbed.planner.primitive.report.debug_report import (
 )
 from testbed.planner.primitive.report.planner_trace import PrimitivePlannerTraceInputs
 from testbed.planner.primitive.compatibility.pre_dig_align import (
-    PrimitivePreDigAlignCompatibilityRuntimeState,
     PrimitivePreDigAlignReportConfig,
     PrimitivePreDigAlignReportStatus,
+    pre_dig_align_report_status_from_state,
+)
+from testbed.planner.primitive.execution.pre_dig_align import (
+    PrimitivePreDigAlignRuntimeState,
 )
 from testbed.planner.primitive.execution.return_state import PrimitiveReturnReportStatus
 from testbed.planner.primitive.report.rollout_summary import PrimitiveRolloutSummaryInputs
@@ -276,7 +279,20 @@ class PrimitiveReportCompositionPorts:
     scripted_bootstrap_report_status: Callable[
         [], PrimitiveScriptedBootstrapReportStatus
     ]
+    pre_dig_align_state: Callable[[], PrimitivePreDigAlignRuntimeState]
+    pre_dig_align_enabled: Callable[[], bool]
+    pre_dig_align_first_dig_only: Callable[[], bool]
+    pre_dig_align_replan_after_failed_dig: Callable[[], bool]
+    pre_dig_align_entry_intent_controlled_dims: Callable[[], Any]
+    pre_dig_align_surface_guard_enabled: Callable[[], bool]
+    pre_dig_align_active_for_next_dig: Callable[[], bool]
+    pre_dig_align_first_dig_entry_close_handoff: Callable[[], bool]
+    pre_dig_align_entry_intent_handoff_enabled: Callable[[], bool]
+    pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max: Callable[
+        [], float | None
+    ]
     pre_dig_align_controlled_dims: Callable[[], Any]
+    pre_dig_align_bucket_target_qpos: Callable[[], float | None]
     action_dim: Callable[[], int]
     goal_sector_id: Callable[[int], int]
     next_goal_sector_id: Callable[[], int]
@@ -337,23 +353,39 @@ class PrimitiveReportCompositionRuntime:
 
     def pre_dig_align_report_config(self) -> PrimitivePreDigAlignReportConfig:
         return PrimitivePreDigAlignReportConfig(
-            enabled=False,
-            first_dig_only=False,
-            replan_after_failed_dig=False,
-            entry_intent_controlled_dims=None,
-            surface_guard_enabled=False,
-            active_for_next_dig=False,
-            first_dig_entry_close_handoff=False,
-            entry_intent_handoff_enabled=False,
-            first_dig_entry_close_handoff_qvel_abs_max=None,
+            enabled=bool(self.ports.pre_dig_align_enabled()),
+            first_dig_only=bool(self.ports.pre_dig_align_first_dig_only()),
+            replan_after_failed_dig=bool(
+                self.ports.pre_dig_align_replan_after_failed_dig()
+            ),
+            entry_intent_controlled_dims=(
+                self.ports.pre_dig_align_entry_intent_controlled_dims()
+            ),
+            surface_guard_enabled=bool(
+                self.ports.pre_dig_align_surface_guard_enabled()
+            ),
+            active_for_next_dig=bool(
+                self.ports.pre_dig_align_active_for_next_dig()
+            ),
+            first_dig_entry_close_handoff=bool(
+                self.ports.pre_dig_align_first_dig_entry_close_handoff()
+            ),
+            entry_intent_handoff_enabled=bool(
+                self.ports.pre_dig_align_entry_intent_handoff_enabled()
+            ),
+            first_dig_entry_close_handoff_qvel_abs_max=(
+                self.ports
+                .pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max()
+            ),
             controlled_dims=self.ports.pre_dig_align_controlled_dims(),
-            bucket_target_qpos=None,
+            bucket_target_qpos=self.ports.pre_dig_align_bucket_target_qpos(),
         )
 
     def pre_dig_align_report_status(self) -> PrimitivePreDigAlignReportStatus:
-        return PrimitivePreDigAlignCompatibilityRuntimeState.fresh(
-            action_dim=int(self.ports.action_dim()),
-        ).to_report_status(self.pre_dig_align_report_config())
+        return pre_dig_align_report_status_from_state(
+            self.ports.pre_dig_align_state(),
+            self.pre_dig_align_report_config(),
+        )
 
     def report_runtime_ports(self) -> PrimitiveReportRuntimePorts:
         coverage_runtime = self.ports.coverage_report_runtime

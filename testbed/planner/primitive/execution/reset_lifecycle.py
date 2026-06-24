@@ -15,6 +15,9 @@ from testbed.planner.primitive.execution.return_state import PrimitiveReturnRunt
 from testbed.planner.primitive.execution.scripted_bootstrap import (
     PrimitiveScriptedBootstrapRuntimeState,
 )
+from testbed.planner.primitive.execution.pre_dig_align import (
+    PrimitivePreDigAlignRuntimeState,
+)
 from testbed.planner.primitive.facts.observation import (
     PrimitiveObservationInjectionRuntimeState,
 )
@@ -30,8 +33,10 @@ class PrimitiveResetLifecyclePorts:
     bootstrap_end_mode: Callable[[], str]
     bootstrap_policy_available: Callable[[], bool]
     scripted_bootstrap_enabled: Callable[[], bool]
+    should_pre_dig_align_before_dig: Callable[[], bool]
     action_dim: int
     bootstrap_skill_name: str = "bootstrap"
+    pre_dig_align_skill_name: str = "pre_dig_align"
     dig_skill_name: str = "dig"
 
 
@@ -49,6 +54,7 @@ class PrimitiveResetLifecycleState:
     observation_injection_state: PrimitiveObservationInjectionRuntimeState
     token_state: PrimitiveTokenRuntimeState
     coverage_state: CoverageRuntimeState
+    pre_dig_align_runtime_state: PrimitivePreDigAlignRuntimeState
     debug_transition_timeout: bool
     debug_transition_completed: bool
 
@@ -66,6 +72,7 @@ class PrimitiveResetLifecycleState:
             "_observation_injection_state": self.observation_injection_state,
             "_token_state": self.token_state,
             "_coverage_state": self.coverage_state,
+            "_pre_dig_align_runtime_state": self.pre_dig_align_runtime_state,
         }
 
 
@@ -109,6 +116,9 @@ class PrimitiveResetLifecycleService:
             observation_injection_state=observation_injection_state,
             token_state=token_state,
             coverage_state=CoverageRuntimeState(),
+            pre_dig_align_runtime_state=(
+                PrimitivePreDigAlignRuntimeState.fresh(action_dim=action_dim)
+            ),
             debug_transition_timeout=False,
             debug_transition_completed=False,
         )
@@ -124,6 +134,8 @@ class PrimitiveResetLifecycleService:
         )
         if has_bootstrap:
             return str(ports.bootstrap_skill_name)
+        if bool(ports.should_pre_dig_align_before_dig()):
+            return str(ports.pre_dig_align_skill_name)
         return str(ports.dig_skill_name)
 
 

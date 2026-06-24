@@ -3487,14 +3487,25 @@ class TestPrimitivesV22(unittest.TestCase):
         )
 
     def test_primitive_planner_pre_dig_align_enabled_config_fails_fast(self) -> None:
-        with self.assertRaisesRegex(
-            ValueError,
-            "pre_dig_align runtime execution has been removed",
-        ):
-            _coverage_planner_policy(
-                dig_policy=_RecordingPolicy(0),
-                pre_dig_align_enabled=True,
-            )
+        policy = _coverage_planner_policy(
+            dig_policy=_RecordingPolicy(0),
+            pre_dig_align_enabled=True,
+        )
+        pre_dig_state = policy._primitive_pre_dig_align_runtime_state()
+        pre_dig_state.completed_count = 4
+        pre_dig_state.timeout_count = 3
+        pre_dig_state.replan_count = 2
+
+        self.assertTrue(policy.pre_dig_align_enabled)
+        self.assertTrue(policy._primitive_pre_dig_align_runtime_config().enabled)
+        self.assertEqual(policy.debug_state()["skill_name"], "pre_dig_align")
+        self.assertTrue(policy.debug_state()["pre_dig_align_enabled"])
+        self.assertEqual(policy.debug_state()["pre_dig_align_completed_count"], 4)
+        self.assertEqual(policy.rollout_summary()["pre_dig_align_enabled"], 1)
+        self.assertEqual(policy.rollout_summary()["pre_dig_align_completed_count"], 4)
+        policy.reset()
+        self.assertEqual(policy.debug_state()["skill_name"], "pre_dig_align")
+        self.assertEqual(policy.debug_state()["pre_dig_align_completed_count"], 0)
 
     def test_primitive_planner_bootstrap_policy_can_receive_dig_cut_tokens(self) -> None:
         bootstrap_policy = _RecordingPolicy(0)

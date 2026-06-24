@@ -1,6 +1,8 @@
 # Pre-Dig-Align Runtime Restoration Design
 
-Status: user-approved design target, implementation not started.
+Status: unit-level restoration implemented through Slice 8; Unity runtime smoke
+validation completed on 2026-06-25. Enabled opt-in routing reaches the restored
+runtime; target-cycle success remains a separate behavioral/performance issue.
 
 This document specifies how to restore `pre_dig_align` runtime behavior under
 the current SVG-aligned primitive planner package structure. It is a design and
@@ -21,9 +23,29 @@ not introduce the failure, but the evidence is strong enough to reclassify
 `pre_dig_align` from permanently removed runtime material to a user-approved
 runtime capability.
 
-The default config behavior should remain unchanged unless a specific eval
-config is intentionally edited. Enabled `pre_dig_align` configs should become
-valid again only after the runtime chain is restored.
+The default config behavior remains unchanged unless a specific eval config is
+intentionally edited. Enabled `pre_dig_align` configs are valid again after the
+Slice 1-8 runtime, reset, and report chain restoration, but the capability is
+still opt-in and must not silently become the default mainline path.
+
+## Implementation Status
+
+As of the Slice 8 planner-side closure audit, the Python/unit-level restoration
+chain is implemented:
+
+- service-local runtime owner in
+  `testbed/planner/primitive/execution/pre_dig_align.py`;
+- action dispatch, legacy-FSM active branch, failed-dig recovery, return
+  handoff, reset lifecycle, and adapter enabled-config wiring;
+- live public debug and rollout-summary projection from focused runtime state;
+- focused tests and planner guards for the restored chain.
+
+Unity runtime smoke validation was completed after Slice 8. The enabled
+YuLong v2.4.5 qc6-equivalent run reached live `pre_dig_align` runtime and
+public counters without dispatch/config failure, then stopped for
+`low_productivity_consecutive`. The disabled smoke kept the default path
+unchanged: `pre_dig_align_enabled=0`, final skill `dig`, and the same
+low-productivity stop shape as the current disabled baseline.
 
 ## Non-Goals
 
@@ -203,10 +225,12 @@ without depending on policy-private methods.
 Restored behavior:
 
 - `restart_pre_dig_align(reason)` switches to `pre_dig_align`, records the
-  reason, resets active policy, resets pre-dig counters needed for a fresh
-  attempt, resets dig progress, clears current payload, clears active corridor,
-  clears pending return next-dig event, invalidates pending dig-cut plan, and
-  clears the active dig-cut plan.
+  reason, resets pre-dig counters needed for a fresh attempt, resets dig
+  progress, clears current payload, clears active corridor, clears pending
+  return next-dig event, invalidates pending dig-cut plan, and clears the
+  active dig-cut plan. It intentionally does not reset the active ACT policy
+  after switching to `pre_dig_align`, because `pre_dig_align` is dispatched by
+  its focused runtime action branch rather than by a low-level ACT policy.
 - `try_replan_pre_dig_align_handoff(obs)` rebuilds a coverage dig-cut token
   when coverage mode allows it, updates pre-dig entry error, and switches to
   `dig` with `pre_dig_align_replan_to_dig_entry_close` when timeout handoff
@@ -284,6 +308,25 @@ Required Unity validation after unit verification:
    and target-cycle completion.
 4. Run the current disabled config as a no-regression smoke to confirm the
    default-disabled path still executes.
+
+Completed Unity smoke evidence on 2026-06-25:
+
+- Enabled temporary config:
+  `runs/eval/pre_dig_align_restored_enabled_3cycle_20260625/eval_pre_dig_enabled.yaml`.
+  Result: exit 0, `episode_len=1200`,
+  `rollout_stop_reason=low_productivity_consecutive`,
+  `primitive_final_skill=pre_dig_align`, `pre_dig_align_enabled=1`,
+  `pre_dig_align_completed_count=8`, `pre_dig_align_replan_count=9`,
+  `pre_dig_align_timeout_count=0`, `max_bucket_mass=0.0`,
+  `target_cycle_completed_dump_count=0`.
+- Disabled temporary config:
+  `runs/eval/pre_dig_align_restored_disabled_3cycle_20260625/eval_pre_dig_disabled_abs_ckpts.yaml`.
+  Result: exit 0, `episode_len=926`,
+  `rollout_stop_reason=low_productivity_consecutive`,
+  `primitive_final_skill=dig`, `pre_dig_align_enabled=0`,
+  `pre_dig_align_completed_count=0`, `pre_dig_align_replan_count=0`,
+  `pre_dig_align_timeout_count=0`, `max_bucket_mass=0.0`,
+  `target_cycle_completed_dump_count=0`.
 
 ## Implementation Slicing
 

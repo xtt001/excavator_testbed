@@ -45,6 +45,7 @@ from testbed.planner.primitive.decision.contracts import (
     IncrementDigExitGuardReplanCountEffect,
     MarkReturnNextDigEventSeenEffect,
     RejectActiveCoverageCorridorEffect,
+    RestartDigWithNewCutEffect,
     RestartAfterFailedDigEffect,
     SetDumpDoneHoldCountEffect,
     SetDumpReadyHoldCountEffect,
@@ -105,6 +106,64 @@ class _RecordingCompatBranch(_RecordingBranch):
     def maybe_handle(self, *, obs, boundary_event):
         self.calls.append(self.name)
         return self.handled
+
+
+class _FakePreDigAlignService:
+    def __init__(
+        self,
+        *,
+        ready: bool,
+        surface_guard_triggered: bool = False,
+        surface_guard_handoff: bool = False,
+        timed_out: bool = False,
+        timeout_handoff: bool = False,
+        timeout_handoff_reason: str = "",
+    ) -> None:
+        self._ready = bool(ready)
+        self._surface_guard_triggered = bool(surface_guard_triggered)
+        self._surface_guard_handoff = bool(surface_guard_handoff)
+        self._timed_out = bool(timed_out)
+        self._timeout_handoff = bool(timeout_handoff)
+        self.timeout_handoff_reason = str(timeout_handoff_reason)
+        self.ready_calls: list[dict[str, Any]] = []
+        self.surface_guard_calls: list[dict[str, Any]] = []
+        self.surface_guard_handoff_calls: list[dict[str, Any]] = []
+        self.timeout_handoff_calls: list[dict[str, Any]] = []
+        self.completed_count = 0
+        self.surface_guard_count = 0
+        self.hold_reset_count = 0
+        self.timeout_count = 0
+
+    def ready(self, obs: dict[str, Any]) -> bool:
+        self.ready_calls.append(obs)
+        return self._ready
+
+    def mark_completed(self) -> None:
+        self.completed_count += 1
+
+    def surface_guard_triggered_for_state(self, obs: dict[str, Any]) -> bool:
+        self.surface_guard_calls.append(obs)
+        return self._surface_guard_triggered
+
+    def mark_surface_guard(self) -> None:
+        self.surface_guard_count += 1
+
+    def reset_hold(self) -> None:
+        self.hold_reset_count += 1
+
+    def surface_guard_can_handoff(self, obs: dict[str, Any]) -> bool:
+        self.surface_guard_handoff_calls.append(obs)
+        return self._surface_guard_handoff
+
+    def timed_out(self) -> bool:
+        return self._timed_out
+
+    def mark_timeout(self) -> None:
+        self.timeout_count += 1
+
+    def timeout_can_handoff(self, obs: dict[str, Any]) -> bool:
+        self.timeout_handoff_calls.append(obs)
+        return self._timeout_handoff
 
 
 def _requested_no_change_result(
@@ -449,6 +508,7 @@ capabilities: PrimitiveDecisionCapabilities | None = None
 def _legacy_fsm_branch_ports(
     *,
     state: dict[str, str] | None = None,
+    pre_dig_align_service: _FakePreDigAlignService | None = None,
 ) -> LegacyFSMBranchPorts:
     state = state if state is not None else {"skill": "legacy_skill", "reason": ""}
 
@@ -464,6 +524,7 @@ def _legacy_fsm_branch_ports(
         return_skill_name="return",
         facts_source=capabilities.facts_source(),
         compatibility_actions=capabilities.compatibility_actions(),
+        pre_dig_align_service=pre_dig_align_service,
     )
 
 
@@ -786,7 +847,7 @@ def test_requested_branch_runner_uses_single_backend_input_for_ordered_branches(
     assert inputs[0].context is context
 
 
-def test_requested_branch_runner_rejects_pre_dig_align_without_residual() -> None:
+def test_requested_branch_runner_rejects_pre_dig_align_without_branch() -> None:
     calls: list[str] = []
     runner = PrimitiveRequestedBranchRunner(
         **_runner_dependencies(),
@@ -908,24 +969,248 @@ def test_legacy_fsm_backend_adapter_wraps_existing_switch_callback() -> None:
     assert result.switch_reason == "dig_to_carry_boundary_confirmed"
 
 
-def test_requested_runner_rejects_removed_pre_dig_align_skill() -> None:
-    branch_set = LegacyFSMBranchSet.from_ports(_legacy_fsm_branch_ports())
-
-    with pytest.raises(
-        PrimitiveDecisionContractError,
-        match="pre_dig_align",
-    ):
-        branch_set.requested_runner().decide_context(
-            PrimitiveDecisionContext(
-                obs={},
-                boundary_event=None,
-                preparation=PrimitiveTickPreparation(
-                    boundary_event=None,
-                    skill_name_before_decision="pre_dig_align",
-                    dig_progress_updated=False,
-                ),
-            )
+def test_requested_runner_pre_dig_align_ready_switches_to_dig_and_marks_completed() -> None:
+    service = _FakePreDigAlignService(ready=True)
+    branch_set = LegacyFSMBranchSet.from_ports(
+        _legacy_fsm_branch_ports(
+            state={"skill": "pre_dig_align", "reason": ""},
+            pre_dig_align_service=service,
         )
+    )
+    obs: dict[str, Any] = {"qpos": [1.0]}
+
+    result = branch_set.requested_runner().decide_context(
+        PrimitiveDecisionContext(
+            obs=obs,
+            boundary_event=None,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=None,
+                skill_name_before_decision="pre_dig_align",
+                dig_progress_updated=False,
+            ),
+        )
+    )
+
+    assert service.ready_calls == [obs]
+    assert service.completed_count == 1
+    assert result.status == "skill_switch"
+    assert result.skill_before == "pre_dig_align"
+    assert result.skill_after == "dig"
+    assert result.switch_reason == "pre_dig_align_to_dig_ready"
+    assert result.effects == (
+        SwitchSkillEffect(
+            target_skill_name="dig",
+            switch_reason="pre_dig_align_to_dig_ready",
+        ),
+    )
+
+
+def test_requested_runner_pre_dig_align_surface_guard_handoff_preempts_ready() -> None:
+    service = _FakePreDigAlignService(
+        ready=True,
+        surface_guard_triggered=True,
+        surface_guard_handoff=True,
+    )
+    branch_set = LegacyFSMBranchSet.from_ports(
+        _legacy_fsm_branch_ports(
+            state={"skill": "pre_dig_align", "reason": ""},
+            pre_dig_align_service=service,
+        )
+    )
+    obs: dict[str, Any] = {"qpos": [1.0]}
+
+    result = branch_set.requested_runner().decide_context(
+        PrimitiveDecisionContext(
+            obs=obs,
+            boundary_event=None,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=None,
+                skill_name_before_decision="pre_dig_align",
+                dig_progress_updated=False,
+            ),
+        )
+    )
+
+    assert service.surface_guard_calls == [obs]
+    assert service.surface_guard_handoff_calls == [obs]
+    assert service.ready_calls == []
+    assert service.surface_guard_count == 1
+    assert service.hold_reset_count == 1
+    assert service.completed_count == 1
+    assert result.status == "skill_switch"
+    assert result.skill_after == "dig"
+    assert result.switch_reason == "pre_dig_align_to_dig_surface_guard"
+    assert result.effects == (
+        SwitchSkillEffect(
+            target_skill_name="dig",
+            switch_reason="pre_dig_align_to_dig_surface_guard",
+        ),
+    )
+
+
+def test_requested_runner_pre_dig_align_surface_guard_replans_when_handoff_blocked() -> None:
+    service = _FakePreDigAlignService(
+        ready=True,
+        surface_guard_triggered=True,
+        surface_guard_handoff=False,
+    )
+    branch_set = LegacyFSMBranchSet.from_ports(
+        _legacy_fsm_branch_ports(
+            state={"skill": "pre_dig_align", "reason": ""},
+            pre_dig_align_service=service,
+        )
+    )
+    obs: dict[str, Any] = {"qpos": [1.0]}
+
+    result = branch_set.requested_runner().decide_context(
+        PrimitiveDecisionContext(
+            obs=obs,
+            boundary_event=None,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=None,
+                skill_name_before_decision="pre_dig_align",
+                dig_progress_updated=False,
+            ),
+        )
+    )
+
+    assert service.surface_guard_calls == [obs]
+    assert service.surface_guard_handoff_calls == [obs]
+    assert service.ready_calls == []
+    assert service.surface_guard_count == 1
+    assert service.hold_reset_count == 1
+    assert service.completed_count == 0
+    assert result.status == "skill_switch"
+    assert result.skill_after == "dig"
+    assert result.switch_reason == "pre_dig_align_to_dig_surface_guard_replan"
+    assert result.effects == (
+        RejectActiveCoverageCorridorEffect(
+            reason="pre_align_surface_penetration_entry_gap"
+        ),
+        RestartDigWithNewCutEffect(
+            reason="pre_dig_align_to_dig_surface_guard_replan"
+        ),
+    )
+
+
+def test_requested_runner_pre_dig_align_timeout_handoff_uses_service_reason() -> None:
+    service = _FakePreDigAlignService(
+        ready=False,
+        timed_out=True,
+        timeout_handoff=True,
+        timeout_handoff_reason="pre_dig_align_to_dig_timeout_intent_aligned",
+    )
+    branch_set = LegacyFSMBranchSet.from_ports(
+        _legacy_fsm_branch_ports(
+            state={"skill": "pre_dig_align", "reason": ""},
+            pre_dig_align_service=service,
+        )
+    )
+    obs: dict[str, Any] = {"qpos": [1.0]}
+
+    result = branch_set.requested_runner().decide_context(
+        PrimitiveDecisionContext(
+            obs=obs,
+            boundary_event=None,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=None,
+                skill_name_before_decision="pre_dig_align",
+                dig_progress_updated=False,
+            ),
+        )
+    )
+
+    assert service.surface_guard_calls == [obs]
+    assert service.ready_calls == [obs]
+    assert service.timeout_handoff_calls == [obs]
+    assert service.timeout_count == 1
+    assert service.completed_count == 0
+    assert result.status == "skill_switch"
+    assert result.skill_after == "dig"
+    assert result.switch_reason == "pre_dig_align_to_dig_timeout_intent_aligned"
+    assert result.effects == (
+        SwitchSkillEffect(
+            target_skill_name="dig",
+            switch_reason="pre_dig_align_to_dig_timeout_intent_aligned",
+        ),
+    )
+
+
+def test_requested_runner_pre_dig_align_timeout_handoff_falls_back_to_close_enough_reason() -> None:
+    service = _FakePreDigAlignService(
+        ready=False,
+        timed_out=True,
+        timeout_handoff=True,
+    )
+    branch_set = LegacyFSMBranchSet.from_ports(
+        _legacy_fsm_branch_ports(
+            state={"skill": "pre_dig_align", "reason": ""},
+            pre_dig_align_service=service,
+        )
+    )
+    obs: dict[str, Any] = {"qpos": [1.0]}
+
+    result = branch_set.requested_runner().decide_context(
+        PrimitiveDecisionContext(
+            obs=obs,
+            boundary_event=None,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=None,
+                skill_name_before_decision="pre_dig_align",
+                dig_progress_updated=False,
+            ),
+        )
+    )
+
+    assert service.timeout_count == 1
+    assert result.switch_reason == "pre_dig_align_to_dig_timeout_close_enough"
+    assert result.effects == (
+        SwitchSkillEffect(
+            target_skill_name="dig",
+            switch_reason="pre_dig_align_to_dig_timeout_close_enough",
+        ),
+    )
+
+
+def test_requested_runner_pre_dig_align_timeout_rejects_then_replans_or_retries() -> None:
+    service = _FakePreDigAlignService(
+        ready=False,
+        timed_out=True,
+        timeout_handoff=False,
+    )
+    branch_set = LegacyFSMBranchSet.from_ports(
+        _legacy_fsm_branch_ports(
+            state={"skill": "pre_dig_align", "reason": ""},
+            pre_dig_align_service=service,
+        )
+    )
+    obs: dict[str, Any] = {"qpos": [1.0]}
+
+    result = branch_set.requested_runner().decide_context(
+        PrimitiveDecisionContext(
+            obs=obs,
+            boundary_event=None,
+            preparation=PrimitiveTickPreparation(
+                boundary_event=None,
+                skill_name_before_decision="pre_dig_align",
+                dig_progress_updated=False,
+            ),
+        )
+    )
+
+    assert service.timeout_handoff_calls == [obs]
+    assert service.timeout_count == 1
+    assert service.completed_count == 0
+    assert result.status == "skill_switch"
+    assert result.skill_after == "pre_dig_align"
+    assert result.switch_reason == "pre_dig_align_retry_entry_gap"
+    assert result.effects[0] == RejectActiveCoverageCorridorEffect(
+        reason="align_entry_gap_timeout"
+    )
+    assert result.effects[1].effect_type == "replan_or_restart_pre_dig_align"
+    assert result.effects[1].reason == "pre_dig_align_retry_entry_gap"
+    assert result.effects[1].replan_reason == "pre_dig_align_replan_to_dig_entry_close"
+    assert result.effects[1].restart_reason == "pre_dig_align_retry_entry_gap"
 
 
 def test_legacy_fsm_bootstrap_branch_selects_dig_after_pre_dig_removal() -> None:

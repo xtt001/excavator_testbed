@@ -290,25 +290,22 @@ Do not describe the current code as "fully swappable backend architecture." The
 accurate claim is: the confirmed-live 4P legacy FSM path has been backendified,
 and the shell now delegates most domain work to focused services.
 
-Parked-path policy: `pre_dig_align` and primitive-planner `cell_entry` runtime
-execution have been removed after explicit checkpoint/review gates. Disabled
-public debug/summary/report/schema compatibility remains temporarily for both
-paths, but enabled `pre_dig_align` or `cell_entry` primitive-planner runtime
-config must fail fast instead of silently running or being ignored. Historical
-`cell_entry` data/HDF5/training low-dimensional support remains a compatibility
-contract outside primitive planner runtime. Historical successful
-legacy/diagnostic/transition `pre_dig_align` evidence also exists, but enabled
-pre-dig runtime is invalid in the selected current mainline architecture unless
-the user explicitly re-approves that legacy behavior. Do not promote either
-parked path into backend facts, token contracts, behavior-tree nodes, VLM
-packets, or mainline runtime architecture as part of ordinary refactor
-momentum.
-After the parked pre-dig-align cleanup, `PrimitivePlannerACTPolicy` also no
-longer exposes the old private false predicate facades
+Restored/parked-path policy: primitive-planner `cell_entry` remains parked
+compatibility material, while `pre_dig_align` has been explicitly re-approved
+and restored as an opt-in runtime capability. Enabled `pre_dig_align` config is
+valid after the Slice 1-8 runtime restoration; enabled `cell_entry`
+primitive-planner runtime config must still fail fast. Historical `cell_entry`
+data/HDF5/training low-dimensional support remains a compatibility contract
+outside primitive planner runtime. Do not promote either path into
+behavior-tree nodes, VLM packets, plugin routing, or default mainline runtime
+architecture as part of ordinary refactor momentum.
+After the pre-dig-align restoration, `PrimitivePlannerACTPolicy` still does not
+expose the old private false predicate facades
 `_should_pre_dig_align_before_dig()` or
-`_should_pre_dig_align_after_failed_dig()`; direct return handoff continues to
-select `dig`, while public disabled pre-dig report/debug/summary schema
-compatibility remains.
+`_should_pre_dig_align_after_failed_dig()`. The restored entry decisions read
+focused `PrimitivePreDigAlignRuntimeService` predicates through explicit reset,
+failed-dig, and return-handoff ports; disabled config keeps the previous
+false/zero public report compatibility.
 
 ## Layer 1: Public Adapter
 
@@ -877,18 +874,17 @@ Current boundary:
   `_cell_entry_*` runtime field facades or reset snapshot writeback; report
   helpers project fresh disabled/default values instead of reading mutable
   policy cell-entry state.
-- `PrimitivePreDigAlignCompatibilityRuntimeState` owns parked pre-dig-align
-  compatibility/report projection defaults. It projects parked pre-dig-align
-  debug and rollout-summary report fields through
-  `PrimitivePreDigAlignReportStatus` from explicit
-  `PrimitivePreDigAlignReportConfig` facts. After the primitive-planner
-  `pre_dig_align` runtime cleanup, the policy no longer keeps the old
-  `_pre_dig_align_*` runtime field facades or reset snapshot writeback; report
-  helpers project fresh disabled/default values instead of reading mutable
-  policy pre-dig-align state. The runtime action, readiness, target, timeout,
-  failed-dig replan, and branch-selection algorithms have been removed from
-  current mainline runtime, while historical legacy/diagnostic evidence remains
-  a parking record rather than a live backend contract.
+- `PrimitivePreDigAlignRuntimeState` and
+  `PrimitivePreDigAlignRuntimeService` own the restored opt-in pre-dig-align
+  runtime counters, target/error state, readiness, timeout, surface guard,
+  action, and entry predicates. Public pre-dig debug and rollout-summary fields
+  are projected from live runtime state through
+  `PrimitivePreDigAlignReportStatus` and explicit
+  `PrimitivePreDigAlignReportConfig` facts, while
+  `PrimitivePreDigAlignCompatibilityRuntimeState` remains a schema-compatible
+  projection helper for disabled/default compatibility. The policy no longer
+  keeps old `_pre_dig_align_*` runtime field facades or reset snapshot
+  writeback; it only welds focused runtime/config/state services together.
 - Skill lifecycle, reset lifecycle, and token runtime services own sequencing,
   but only write through remaining policy compatibility facades for live or
   retained private names.
@@ -1202,11 +1198,15 @@ Standard:
 
 Current parking:
 
-- `pre_dig_align`: removed runtime execution path with disabled public
-  debug/summary/report schema compatibility. Enabled config is invalid and
-  must fail fast. It has historical successful legacy/diagnostic/transition
-  evidence, but it is not target mainline backend capability without explicit
-  user re-approval.
+- `pre_dig_align`: restored opt-in runtime capability after explicit user
+  re-approval and Slice 1-8 unit-level closure. Enabled config is valid and
+  feeds the focused runtime, action dispatch, legacy-FSM active branch,
+  failed-dig recovery, return handoff, reset lifecycle, and live report
+  projection. Unity smoke validation on 2026-06-25 confirmed enabled routing
+  reaches live `pre_dig_align` counters and default-disabled routing remains
+  `pre_dig_align_enabled=0`; it did not establish target-cycle behavioral
+  success. The capability is not a default mainline requirement and is not a
+  behavior-tree/VLM/LLM/plugin backend contract.
 - `cell_entry`: compatibility/report material. It is not target token contract
   for the selected mainline rollout. Primitive-planner private `_cell_entry_*`
   runtime facades and reset snapshot writeback have been removed; public report

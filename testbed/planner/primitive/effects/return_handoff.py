@@ -35,6 +35,8 @@ class ReturnDirectHandoffEffectPorts:
     return_to_dig_start_envelope_direct_handoff_enabled: bool
     ensure_return_target_plan_for_cycle: Callable[[dict[str, Any]], None]
     readiness_service: ReturnHandoffReadinessService
+    should_pre_dig_align_before_dig: Callable[[], bool]
+    pre_dig_align_skill_name: str
     dig_skill_name: str = "dig"
 
 
@@ -84,7 +86,11 @@ class ReturnDirectHandoffEffectService:
             return ReturnDirectHandoffEffectResult(direct_handoff_applied=False)
 
         ports.cycle_state.complete_return_transition()
-        next_skill = str(ports.dig_skill_name)
+        next_skill = (
+            str(ports.pre_dig_align_skill_name)
+            if ports.should_pre_dig_align_before_dig()
+            else str(ports.dig_skill_name)
+        )
         switch_reason = f"return_to_{next_skill}_start_envelope_ready"
         ports.set_skill(next_skill, switch_reason)
         return ReturnDirectHandoffEffectResult(

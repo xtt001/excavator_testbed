@@ -234,6 +234,7 @@ def _direct_handoff_ports(
     direct_handoff_enabled: bool = True,
     handoff_ready: bool = True,
     direct_handoff_ready: bool = True,
+    should_pre_dig_align_before_dig: bool = False,
     next_skill: str = "dig",
 ) -> ReturnDirectHandoffEffectPorts:
     execution_state = PrimitiveExecutionRuntimeState.fresh(
@@ -279,6 +280,8 @@ def _direct_handoff_ports(
         ),
         ensure_return_target_plan_for_cycle=ensure,
         readiness_service=_FakeReadinessService(),
+        should_pre_dig_align_before_dig=lambda: should_pre_dig_align_before_dig,
+        pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
         dig_skill_name="dig",
     )
 
@@ -295,6 +298,8 @@ def test_return_direct_handoff_ports_use_focused_state_owners() -> None:
         "return_to_dig_direct_handoff_ready",
     } & port_fields
     assert "readiness_service" in port_fields
+    assert "should_pre_dig_align_before_dig" in port_fields
+    assert "pre_dig_align_skill_name" in port_fields
 
 
 def test_policy_no_longer_exposes_old_return_handoff_readiness_wrappers() -> None:
@@ -503,6 +508,34 @@ def test_return_direct_handoff_service_applies_ready_direct_handoff_to_dig_in_or
         "direct_ready:obs:True",
         "complete",
         "set:dig:return_to_dig_start_envelope_ready",
+    ]
+
+
+def test_return_direct_handoff_service_selects_pre_dig_align_when_runtime_requests_it() -> None:
+    events: list[str] = []
+    service = ReturnDirectHandoffEffectService(
+        ports=_direct_handoff_ports(
+            events,
+            next_skill="dig",
+            should_pre_dig_align_before_dig=True,
+        )
+    )
+
+    result = service.apply(
+        {"tag": "obs"},
+        reason="dump_to_return_dump_complete_boundary",
+    )
+
+    assert result.direct_handoff_applied is True
+    assert result.next_skill == "pre_dig_align"
+    assert result.switch_reason == "return_to_pre_dig_align_start_envelope_ready"
+    assert events == [
+        "set:return:dump_to_return_dump_complete_boundary",
+        "ensure:obs",
+        "handoff_ready:obs",
+        "direct_ready:obs:True",
+        "complete",
+        "set:pre_dig_align:return_to_pre_dig_align_start_envelope_ready",
     ]
 
 
@@ -731,6 +764,8 @@ def test_return_handoff_runtime_composes_readiness_from_explicit_ports() -> None
             ),
             return_start_envelope_prior_bounds=lambda corridor_id: (None, None),
             return_start_envelope_prior_mapping=lambda corridor_id: None,
+            should_pre_dig_align_before_dig=lambda: False,
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
         )
     )
 
@@ -768,6 +803,8 @@ def test_return_handoff_runtime_composes_direct_handoff_effect_service() -> None
             ensure_return_target_plan_for_cycle=lambda obs: None,
             return_start_envelope_prior_bounds=lambda corridor_id: (None, None),
             return_start_envelope_prior_mapping=lambda corridor_id: None,
+            should_pre_dig_align_before_dig=lambda: True,
+            pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
         )
     )
 
@@ -784,6 +821,8 @@ def test_return_handoff_runtime_composes_direct_handoff_effect_service() -> None
     assert "return_to_dig_direct_handoff_ready" not in port_fields
     assert ports.return_target_planner_enabled is True
     assert ports.return_to_dig_start_envelope_direct_handoff_enabled is True
+    assert ports.should_pre_dig_align_before_dig() is True
+    assert ports.pre_dig_align_skill_name == PRE_DIG_ALIGN_SKILL_NAME
 
 
 def test_requested_effect_runtime_path_uses_return_direct_handoff_service() -> None:
@@ -812,6 +851,18 @@ def test_requested_effect_runtime_path_uses_return_direct_handoff_service() -> N
     class _UnusedDigRecoveryService:
         def restart_after_failed_dig(self, reason, got_obs):
             raise AssertionError("return-only effect must not restart dig")
+
+        def restart_dig_with_new_cut(self, reason):
+            raise AssertionError("return-only effect must not restart dig")
+
+        def replan_or_restart_pre_dig_align(
+            self,
+            got_obs,
+            *,
+            replan_reason,
+            restart_reason,
+        ):
+            raise AssertionError("return-only effect must not restart pre-dig")
 
     runtime = PrimitiveRequestedEffectRuntime.from_ports(
         PrimitiveRequestedEffectRuntimePorts(

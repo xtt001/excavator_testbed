@@ -14327,3 +14327,274 @@ Each completed refactor round should append:
     restoration;
   - no old policy-private `_pre_dig_align_*` method restoration in
     `PrimitivePlannerACTPolicy`.
+
+### 2026-06-25 Pre-Dig-Align Action-Dispatch Cleanup Test Reclassified
+
+- Scope: stale cleanup test expectation and log sync only; no production code,
+  config adapter, legacy FSM, dig recovery, return handoff, report projection,
+  Unity rollout, checkpoint/model, runtime config, remote, CI, env var,
+  `cell_entry`, 5P, BT/VLM/LLM, or plugin-routing behavior was changed.
+- Reclassified the old parked-path cleanup assertion that
+  `pre_dig_align` action dispatch should raise unknown-skill. After the
+  user-approved runtime restoration and action-dispatch reconnection, active
+  `pre_dig_align` is no longer parked at the action-dispatch lane: it dispatches
+  through `PrimitiveActionDispatchService` to the focused pre-dig runtime
+  action before normal ACT policy lookup.
+- Retained the remaining cleanup locks: enabled `pre_dig_align` config still
+  fails fast for now, disabled config still keeps public report-schema input
+  fields, and `PrimitivePlannerACTPolicy` still does not expose the old
+  policy-private `_should_pre_dig_align_before_dig()` or
+  `_should_pre_dig_align_after_failed_dig()` facades.
+
+### 2026-06-25 Pre-Dig-Align Opt-In Adapter Config Reopened
+
+- Scope: reopened only the adapter normalization gate for explicitly enabled
+  `pre_dig_align` config after the focused runtime service and action-dispatch
+  tests existed. The change is limited to `testbed/planner/primitive/config/adapter.py`
+  mapping `pre_dig_align_enabled` from `pre_dig_align.enabled` and focused
+  adapter/cleanup/AGX constructor tests.
+- Preserved boundaries: missing or disabled `pre_dig_align` config remains
+  disabled by default; normalized `pre_dig_align_*` fields remain the runtime
+  config source of truth; `cell_entry` enabled config still fails fast.
+- Still parked/out of scope for this slice: legacy FSM pre-dig selection and
+  ready/timeout/surface transitions, dig recovery restart/replan helpers,
+  return handoff selection, live report/debug/summary projection changes,
+  Unity rollout, checkpoint/model changes, runtime config files, remotes, CI,
+  env vars, 5P, BT/VLM/LLM, plugin routing, and old policy-private predicate
+  facades.
+- Verification recorded by executor slice: adapter/cleanup/AGX opt-in tests,
+  action-dispatch/runtime focused tests, compileall for touched Python files,
+  plan and skill contract guards, and `git diff --check`.
+
+### 2026-06-25 Pre-Dig-Align Ready-Handoff FSM Branch Restored
+
+- Scope: restored only the active `pre_dig_align` ready subcase in the legacy
+  FSM requested branch chain. When the focused pre-dig runtime service reports
+  ready, the branch marks the pre-dig runtime completed count and requests a
+  switch to `dig` with `pre_dig_align_to_dig_ready`.
+- Files: `testbed/planner/primitive/decision/backends/legacy_fsm.py` owns the
+  ready-only decision branch; `testbed/planner/primitive/execution/pre_dig_align.py`
+  owns the completed-count mutation; `PrimitivePlannerACTPolicy` only passes
+  the focused pre-dig runtime service into the legacy FSM factory.
+- Preserved boundaries: non-`pre_dig_align` branch behavior, unknown-skill
+  fail-fast, action dispatch, opt-in adapter config, token schemas, default
+  backend behavior for normal skills, and public debug/summary/trace key names
+  remain unchanged.
+- Still parked/out of scope for this slice: pre-dig surface guard, timeout,
+  timeout replan/retry, dig recovery entry into pre-dig, return handoff
+  selection of pre-dig, live report/debug/summary projection, Unity rollout,
+  checkpoint/model changes, runtime config files, remotes, CI, env vars,
+  `cell_entry`, 5P, BT/VLM/LLM, plugin routing, and old policy-private
+  `_pre_dig_align_*` methods.
+- Verification recorded by executor slice: focused pre-dig ready-handoff
+  backend/decision tests, full backend/decision contract tests, focused
+  action-dispatch/runtime/adapter/cleanup tests, compileall for touched Python
+  files, plan and skill contract guards, and `git diff --check`.
+
+### 2026-06-25 Pre-Dig-Align Surface-Guard FSM Subchain Restored
+
+- Scope: restored only the active `pre_dig_align` surface-guard subcase in the
+  legacy FSM requested branch chain, ahead of the ready handoff. When the
+  focused pre-dig runtime service reports a surface guard trigger, the branch
+  records surface-guard state through the runtime owner and resets the pre-dig
+  hold count before any ready evaluation.
+- Behavior:
+  - handoff allowed: request switch to `dig` with
+    `pre_dig_align_to_dig_surface_guard`;
+  - handoff blocked: reject the active corridor with
+    `pre_align_surface_penetration_entry_gap` and request an exact-reason dig
+    restart with `pre_dig_align_to_dig_surface_guard_replan`.
+- Files: `testbed/planner/primitive/decision/backends/legacy_fsm.py` owns the
+  surface-guard decision ordering, `testbed/planner/primitive/execution/pre_dig_align.py`
+  owns the surface-guard counter and hold reset, and
+  `testbed/planner/primitive/effects/requested.py` applies the narrow
+  `RestartDigWithNewCutEffect` through existing dig-recovery runtime.
+- Preserved boundaries: Slice 4 ready handoff, non-`pre_dig_align` branch
+  behavior, unknown-skill fail-fast, action dispatch, opt-in adapter config,
+  token schemas, default backend behavior for normal skills, and public
+  debug/summary/trace key names remain unchanged.
+- Still parked/out of scope for this slice: timeout, timeout replan/retry, dig
+  recovery entry into pre-dig, return handoff selection of pre-dig, live
+  report/debug/summary projection, Unity rollout, checkpoint/model changes,
+  runtime config files, remotes, CI, env vars, `cell_entry`, 5P, BT/VLM/LLM,
+  plugin routing, and old policy-private `_pre_dig_align_*` methods.
+- Verification recorded by executor slice: focused pre-dig surface/ready tests,
+  requested-effect tests for exact new-cut restart, full backend/decision
+  contract tests, focused action-dispatch/runtime/adapter/cleanup tests,
+  compileall for touched Python files, plan and skill contract guards, and
+  `git diff --check`.
+
+### 2026-06-25 Pre-Dig-Align Surface Parity Recovery And Timeout FSM Subchain Restored
+
+- Scope: repaired the active `pre_dig_align` surface-guard handoff parity bug
+  and restored the active timeout subchain after surface guard and ready in the
+  legacy FSM requested branch chain.
+- Behavior:
+  - surface-guard handoff allowed now records the surface guard, resets hold
+    count, increments completed count, and switches to `dig` with
+    `pre_dig_align_to_dig_surface_guard`;
+  - timeout now increments timeout count in the focused pre-dig runtime owner,
+    then switches to `dig` with the service timeout handoff reason or
+    `pre_dig_align_to_dig_timeout_close_enough` when handoff is allowed;
+  - timeout handoff blocked now rejects the active corridor with
+    `align_entry_gap_timeout` and applies a typed pre-dig replan-or-restart
+    effect using `pre_dig_align_replan_to_dig_entry_close` or
+    `pre_dig_align_retry_entry_gap`.
+- Files: `testbed/planner/primitive/execution/pre_dig_align.py` owns timeout
+  threshold/counter helpers, `testbed/planner/primitive/decision/backends/legacy_fsm.py`
+  owns the active surface/ready/timeout ordering, and
+  `testbed/planner/primitive/execution/dig_recovery.py` owns the focused
+  pre-dig timeout replan/retry side effects through explicit ports.
+- Preserved boundaries: no old policy-private `_pre_dig_align_*`,
+  `_should_pre_dig_align*`, `_restart_pre_dig_align`, or
+  `_try_replan_pre_dig_align_handoff` methods were restored; `PrimitivePlannerACTPolicy`
+  remains a thin composition root for this path.
+- Still parked/out of scope for this slice: failed-dig entry into pre-dig,
+  return handoff selection of pre-dig, live report/debug/summary projection,
+  Unity rollout, checkpoint/model changes, runtime config files, remotes, CI,
+  env vars, `cell_entry`, 5P, BT/VLM/LLM, and plugin routing.
+
+### 2026-06-25 Pre-Dig-Align Entry Chain Restored
+
+- Scope: restored entry into the opt-in `pre_dig_align` runtime from the two
+  live next-dig entry chains: failed-dig recovery and return handoff. The
+  focused pre-dig runtime predicates now feed explicit dig-recovery and
+  return-handoff ports; `PrimitivePlannerACTPolicy` only passes those focused
+  service calls through the composition root.
+- Behavior:
+  - failed-dig recovery now restarts `pre_dig_align` with
+    `dig_to_pre_dig_align_{reason}` when either pre-dig runtime predicate says
+    the next dig should align first; stop and normal `dig_retry_{reason}`
+    behavior remain unchanged when the predicates are false;
+  - direct return handoff now completes the return transition and switches to
+    `pre_dig_align` with `return_to_pre_dig_align_start_envelope_ready` when
+    the pre-dig predicate is true, otherwise preserving
+    `return_to_dig_start_envelope_ready`;
+  - normal return-completion requested effects now use the same explicit
+    next-skill selector, so return completion and direct handoff agree.
+- Files: `testbed/planner/primitive/execution/dig_recovery.py` owns failed-dig
+  pre-dig restart selection, `testbed/planner/primitive/effects/return_handoff.py`
+  and `return_handoff_runtime.py` own return pre-dig selection, and
+  `testbed/planner/primitive/effects/requested.py` owns the requested-effect
+  return next-skill selector.
+- Additional guard: requested-effect integration now proves the Slice 6
+  pre-dig timeout replan success applies through the real dig-recovery service
+  and leaves live execution state as `dig` with
+  `pre_dig_align_replan_to_dig_entry_close`.
+- Preserved boundaries: no report/debug/summary projection, Unity rollout,
+  config files, remotes, checkpoint/model files, `cell_entry`, 5P,
+  BT/VLM/LLM, plugin routing, or old policy-private pre-dig methods were
+  restored in this slice.
+
+### 2026-06-25 Pre-Dig-Align Reset And Live Report Projection Restored
+
+- Scope: restored unit-level reset lifecycle and public debug/rollout summary
+  projection for the opt-in `pre_dig_align` runtime after the runtime service,
+  action dispatch, FSM subchain, and entry chain were restored.
+- Behavior:
+  - reset lifecycle keeps bootstrap precedence, then selects `pre_dig_align`
+    before `dig` when the focused pre-dig runtime says the next dig should align
+    first;
+  - reset now creates a fresh live `PrimitivePreDigAlignRuntimeState` with
+    action-dim-sized arrays instead of relying on compatibility-only fresh
+    report defaults;
+  - public pre-dig debug and rollout summary keys keep their existing names but
+    now project from live pre-dig runtime/config state, preserving disabled
+    false/zero compatibility when the feature is not enabled.
+- Files: `testbed/planner/primitive/execution/reset_lifecycle.py` owns reset
+  initial-skill selection and fresh pre-dig runtime state reset,
+  `testbed/planner/primitive/report/runtime.py` owns live report composition,
+  and `testbed/planner/primitive/compatibility/pre_dig_align.py` only supplies a
+  schema-neutral report-status projection helper.
+- Preserved boundaries: no public report/debug/summary/trace key names were
+  renamed or removed; no Unity rollout, runtime/eval config files,
+  checkpoint/model files, remotes, CI, env vars, `cell_entry`, 5P, BT/VLM/LLM,
+  plugin routing, or old policy-private pre-dig methods were restored.
+
+### 2026-06-25 Pre-Dig-Align Source-Of-Truth Docs Closed For Unity Validation
+
+- Scope: documentation-only closure after accepted Slice 1-8 implementation
+  and planner-side Python verification. No production code, tests, configs,
+  checkpoints, remotes, CI, env vars, or Unity assets were changed in this
+  documentation slice.
+- Source-of-truth updates:
+  - `docs/superpowers/specs/2026-06-25-pre-dig-align-runtime-restoration-design.md`
+    recorded unit-level restoration as implemented through Slice 8 before the
+    later Unity smoke entry superseded that validation status;
+  - `docs/planner_current_code_architecture_plan.md` now classifies
+    `pre_dig_align` as a user-approved opt-in runtime capability owned by
+    focused primitive lanes, while keeping `cell_entry` parked;
+  - `docs/planner_primitive_interface_standard.md` now distinguishes restored
+    opt-in `pre_dig_align` from still-parked `cell_entry`, and records live
+    report projection from focused runtime state.
+- Planner-side evidence already verified before this docs closure:
+  - reset/report bundle: `53 passed, 105 deselected`;
+  - entry/effects/decision runtime bundle: `66 passed`;
+  - backend/action/config/cleanup bundle: `133 passed`;
+  - plan guard, skill guard, and `git diff --check` all exited 0.
+- Next action: resume Unity validation. Run a historical or equivalent
+  `pre_dig_align.enabled=true` YuLong v2.4.5 qc6 configuration to confirm the
+  restored runtime is reached and public summary counters are live, then run
+  the current disabled config smoke to confirm default-disabled behavior
+  remains intact.
+
+### 2026-06-25 Pre-Dig-Align Unity Runtime Smoke Completed
+
+- Scope: ran real Unity/AGX smoke validation for the accepted Slice 1-8
+  `pre_dig_align` restoration, using temporary eval configs with the same
+  YuLong v2.4.5 qc6 checkpoint family. No tracked runtime/eval config,
+  checkpoint/model, Unity asset, remote, fetch/pull/push/reset, or environment
+  setting was changed.
+- Runtime bug found and fixed before final enabled smoke: the first enabled
+  run reached failed-dig recovery and crashed with
+  `RuntimeError: Unknown primitive skill 'pre_dig_align'` because
+  `restart_pre_dig_align()` reset the active ACT policy after switching
+  `skill_name` to `pre_dig_align`. The focused runtime branch, not a low-level
+  ACT policy, owns `pre_dig_align` action dispatch. The fix removed only that
+  reset from `restart_pre_dig_align`; ordinary `dig` retry still resets the
+  active policy.
+- Focused regression evidence after the fix:
+  - red proof before the fix: the pre-dig recovery tests observed an
+    unintended `active_reset` during `restart_pre_dig_align`;
+  - `python -m pytest -q tests/test_primitive_dig_recovery.py
+    tests/test_primitive_effects.py tests/test_primitive_backend.py
+    tests/test_primitive_action_dispatch.py` -> `105 passed`;
+  - `python -m compileall -q
+    testbed/planner/primitive/execution/dig_recovery.py
+    tests/test_primitive_dig_recovery.py` -> exit 0;
+  - `git diff --check` -> exit 0.
+- Enabled Unity smoke:
+  - config:
+    `runs/eval/pre_dig_align_restored_enabled_3cycle_20260625/eval_pre_dig_enabled.yaml`;
+  - command: `DISPLAY=:0 XAUTHORITY=/run/user/1000/gdm/Xauthority
+    PYTHONUNBUFFERED=1 python -m testbed.cli.eval --config
+    runs/eval/pre_dig_align_restored_enabled_3cycle_20260625/eval_pre_dig_enabled.yaml
+    --num-rollouts 1 --target-cycle-gate 3 --output-dir
+    runs/eval/pre_dig_align_restored_enabled_3cycle_20260625`;
+  - result: exit 0, `success=false`, `episode_len=1200`,
+    `rollout_stop_reason=low_productivity_consecutive`,
+    `primitive_final_skill=pre_dig_align`, `pre_dig_align_enabled=1`,
+    `pre_dig_align_completed_count=8`, `pre_dig_align_replan_count=9`,
+    `pre_dig_align_timeout_count=0`, `pre_dig_align_surface_guard_count=0`,
+    `dig_exit_guard_replan_count=9`, `max_bucket_mass=0.0`,
+    `target_cycle_completed_dump_count=0`, `hard_target_collision_count=0`,
+    `spill_before_target_count=0`.
+- Disabled Unity smoke:
+  - config:
+    `runs/eval/pre_dig_align_restored_disabled_3cycle_20260625/eval_pre_dig_disabled_abs_ckpts.yaml`;
+  - command: `DISPLAY=:0 XAUTHORITY=/run/user/1000/gdm/Xauthority
+    PYTHONUNBUFFERED=1 python -m testbed.cli.eval --config
+    runs/eval/pre_dig_align_restored_disabled_3cycle_20260625/eval_pre_dig_disabled_abs_ckpts.yaml
+    --num-rollouts 1 --target-cycle-gate 3 --output-dir
+    runs/eval/pre_dig_align_restored_disabled_3cycle_20260625`;
+  - result: exit 0, `success=false`, `episode_len=926`,
+    `rollout_stop_reason=low_productivity_consecutive`,
+    `primitive_final_skill=dig`, `pre_dig_align_enabled=0`,
+    `pre_dig_align_completed_count=0`, `pre_dig_align_replan_count=0`,
+    `pre_dig_align_timeout_count=0`, `max_bucket_mass=0.0`,
+    `target_cycle_completed_dump_count=0`, `hard_target_collision_count=0`,
+    `spill_before_target_count=0`.
+- Conclusion: Unity runtime validation is closed for route reachability and
+  default-disabled no-regression. It does not claim restored `pre_dig_align`
+  solves target-cycle performance in this smoke; that remains a separate
+  behavior/model/config investigation if needed.

@@ -24,6 +24,8 @@ from testbed.planner.primitive.decision.contracts import (
 from testbed.planner.primitive.decision.contracts import MarkReturnNextDigEventSeenEffect
 from testbed.planner.primitive.decision.contracts import RejectActiveCoverageCorridorEffect
 from testbed.planner.primitive.decision.contracts import RestartAfterFailedDigEffect
+from testbed.planner.primitive.decision.contracts import RestartDigWithNewCutEffect
+from testbed.planner.primitive.decision.contracts import ReplanOrRestartPreDigAlignEffect
 from testbed.planner.primitive.decision.contracts import SetDumpDoneHoldCountEffect
 from testbed.planner.primitive.decision.contracts import SetDumpReadyHoldCountEffect
 from testbed.planner.primitive.decision.contracts import (
@@ -60,6 +62,32 @@ DIG_REQUESTED_DECISION_SOURCE = "legacy_fsm_dig_requested_effect"
 CARRY_REQUESTED_DECISION_SOURCE = "legacy_fsm_carry_requested_effect"
 DUMP_REQUESTED_DECISION_SOURCE = "legacy_fsm_dump_requested_effect"
 RETURN_REQUESTED_DECISION_SOURCE = "legacy_fsm_return_requested_effect"
+PRE_DIG_ALIGN_REQUESTED_DECISION_SOURCE = "legacy_fsm_pre_dig_align_requested_effect"
+
+
+class PrimitivePreDigAlignDecisionService(Protocol):
+    """Pre-dig-align decision surface used by the legacy FSM ready branch."""
+
+    def ready(self, obs: dict[str, Any]) -> bool: ...
+
+    def mark_completed(self) -> None: ...
+
+    def surface_guard_triggered_for_state(self, obs: dict[str, Any]) -> bool: ...
+
+    def mark_surface_guard(self) -> None: ...
+
+    def reset_hold(self) -> None: ...
+
+    def surface_guard_can_handoff(self, obs: dict[str, Any]) -> bool: ...
+
+    def timed_out(self) -> bool: ...
+
+    def mark_timeout(self) -> None: ...
+
+    @property
+    def timeout_handoff_reason(self) -> str: ...
+
+    def timeout_can_handoff(self, obs: dict[str, Any]) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -73,6 +101,8 @@ class LegacyFSMBranchPorts:
     return_skill_name: str
     facts_source: PrimitiveBackendFactsSource
     compatibility_actions: PrimitiveDecisionCompatibilityActions
+    pre_dig_align_skill_name: str = "pre_dig_align"
+    pre_dig_align_service: PrimitivePreDigAlignDecisionService | None = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +124,8 @@ class LegacyFSMDecisionBackendFactoryPorts:
     carry_skill_name: str
     dump_skill_name: str
     return_skill_name: str
+    pre_dig_align_skill_name: str = "pre_dig_align"
+    pre_dig_align_service: PrimitivePreDigAlignDecisionService | None = None
 
 
 class PrimitiveDecisionBackend(Protocol):
@@ -160,6 +192,7 @@ class PrimitiveRequestedBranchRunner:
     carry_branch: PrimitiveDecisionBranch
     dump_branch: PrimitiveDecisionBranch
     return_branch: PrimitiveDecisionBranch
+    pre_dig_align_branch: PrimitiveDecisionBranch | None = None
 
     def decide_context(
         self,
@@ -169,6 +202,13 @@ class PrimitiveRequestedBranchRunner:
             facts_source=self.facts_source,
             compatibility_actions=self.compatibility_actions,
         ).build(context)
+        if (
+            self.pre_dig_align_branch is not None
+            and str(context.skill_name_before_decision) == "pre_dig_align"
+        ):
+            result = self.pre_dig_align_branch.decide_input(decision_input)
+            if result is not None:
+                return result
         for branch in (
             self.bootstrap_branch,
             self.dig_branch,
@@ -544,6 +584,146 @@ class LegacyFSMReturnBranch:
             )
         return tuple(effects)
 
+
+@dataclass(frozen=True)
+class LegacyFSMPreDigAlignConfig:
+    pre_dig_align_skill_name: str
+    dig_skill_name: str
+
+
+@dataclass(frozen=True)
+class LegacyFSMPreDigAlignBranch:
+    """Ready-only pre-dig-align branch of the legacy FSM."""
+
+    config: LegacyFSMPreDigAlignConfig
+    service: PrimitivePreDigAlignDecisionService
+
+    def decide_input(
+        self,
+        decision_input: PrimitiveBackendDecisionInput,
+    ) -> PrimitiveDecisionResult | None:
+        facts = decision_input.common
+        skill_before = str(facts.skill_name_before_decision)
+        if not facts.is_current_skill(self.config.pre_dig_align_skill_name):
+            return None
+        if self.service.surface_guard_triggered_for_state(decision_input.context.obs):
+            return self._surface_guard_result(
+                obs=decision_input.context.obs,
+                skill_before=skill_before,
+            )
+        if self.service.ready(decision_input.context.obs):
+            self.service.mark_completed()
+            switch_reason = "pre_dig_align_to_dig_ready"
+            return PrimitiveDecisionResult.from_requested_effects(
+                decision_source=PRE_DIG_ALIGN_REQUESTED_DECISION_SOURCE,
+                status="skill_switch",
+                skill_before=skill_before,
+                skill_after=str(self.config.dig_skill_name),
+                switch_reason=switch_reason,
+                effects=(
+                    SwitchSkillEffect(
+                        target_skill_name=str(self.config.dig_skill_name),
+                        switch_reason=switch_reason,
+                    ),
+                ),
+            )
+        if self.service.timed_out():
+            return self._timeout_result(
+                obs=decision_input.context.obs,
+                skill_before=skill_before,
+            )
+        return PrimitiveDecisionResult.from_requested_effects(
+            decision_source=PRE_DIG_ALIGN_REQUESTED_DECISION_SOURCE,
+            status="no_change",
+            skill_before=skill_before,
+            skill_after=skill_before,
+            switch_reason="",
+            effects=(),
+        )
+
+    def _surface_guard_result(
+        self,
+        *,
+        obs: dict[str, Any],
+        skill_before: str,
+    ) -> PrimitiveDecisionResult:
+        self.service.mark_surface_guard()
+        self.service.reset_hold()
+        if self.service.surface_guard_can_handoff(obs):
+            self.service.mark_completed()
+            switch_reason = "pre_dig_align_to_dig_surface_guard"
+            return PrimitiveDecisionResult.from_requested_effects(
+                decision_source=PRE_DIG_ALIGN_REQUESTED_DECISION_SOURCE,
+                status="skill_switch",
+                skill_before=skill_before,
+                skill_after=str(self.config.dig_skill_name),
+                switch_reason=switch_reason,
+                effects=(
+                    SwitchSkillEffect(
+                        target_skill_name=str(self.config.dig_skill_name),
+                        switch_reason=switch_reason,
+                    ),
+                ),
+            )
+        switch_reason = "pre_dig_align_to_dig_surface_guard_replan"
+        return PrimitiveDecisionResult.from_requested_effects(
+            decision_source=PRE_DIG_ALIGN_REQUESTED_DECISION_SOURCE,
+            status="skill_switch",
+            skill_before=skill_before,
+            skill_after=str(self.config.dig_skill_name),
+            switch_reason=switch_reason,
+            effects=(
+                RejectActiveCoverageCorridorEffect(
+                    reason="pre_align_surface_penetration_entry_gap",
+                ),
+                RestartDigWithNewCutEffect(reason=switch_reason),
+            ),
+        )
+
+    def _timeout_result(
+        self,
+        *,
+        obs: dict[str, Any],
+        skill_before: str,
+    ) -> PrimitiveDecisionResult:
+        self.service.mark_timeout()
+        if self.service.timeout_can_handoff(obs):
+            switch_reason = (
+                str(self.service.timeout_handoff_reason).strip()
+                or "pre_dig_align_to_dig_timeout_close_enough"
+            )
+            return PrimitiveDecisionResult.from_requested_effects(
+                decision_source=PRE_DIG_ALIGN_REQUESTED_DECISION_SOURCE,
+                status="skill_switch",
+                skill_before=skill_before,
+                skill_after=str(self.config.dig_skill_name),
+                switch_reason=switch_reason,
+                effects=(
+                    SwitchSkillEffect(
+                        target_skill_name=str(self.config.dig_skill_name),
+                        switch_reason=switch_reason,
+                    ),
+                ),
+            )
+        switch_reason = "pre_dig_align_retry_entry_gap"
+        return PrimitiveDecisionResult.from_requested_effects(
+            decision_source=PRE_DIG_ALIGN_REQUESTED_DECISION_SOURCE,
+            status="skill_switch",
+            skill_before=skill_before,
+            skill_after=str(self.config.pre_dig_align_skill_name),
+            switch_reason=switch_reason,
+            effects=(
+                RejectActiveCoverageCorridorEffect(
+                    reason="align_entry_gap_timeout",
+                ),
+                ReplanOrRestartPreDigAlignEffect(
+                    replan_reason="pre_dig_align_replan_to_dig_entry_close",
+                    restart_reason=switch_reason,
+                ),
+            ),
+        )
+
+
 @dataclass(frozen=True)
 class LegacyFSMBranchSet:
     """Constructed legacy FSM branches plus their supported dispatch orders."""
@@ -555,9 +735,19 @@ class LegacyFSMBranchSet:
     carry_branch: PrimitiveDecisionBranch
     dump_branch: PrimitiveDecisionBranch
     return_branch: PrimitiveDecisionBranch
+    pre_dig_align_branch: PrimitiveDecisionBranch | None = None
 
     @classmethod
     def from_ports(cls, ports: LegacyFSMBranchPorts) -> "LegacyFSMBranchSet":
+        pre_dig_align_branch = None
+        if ports.pre_dig_align_service is not None:
+            pre_dig_align_branch = LegacyFSMPreDigAlignBranch(
+                config=LegacyFSMPreDigAlignConfig(
+                    pre_dig_align_skill_name=ports.pre_dig_align_skill_name,
+                    dig_skill_name=ports.dig_skill_name,
+                ),
+                service=ports.pre_dig_align_service,
+            )
         return cls(
             facts_source=ports.facts_source,
             compatibility_actions=ports.compatibility_actions,
@@ -578,6 +768,7 @@ class LegacyFSMBranchSet:
             return_branch=LegacyFSMReturnBranch(
                 config=LegacyFSMReturnConfig(return_skill_name=ports.return_skill_name),
             ),
+            pre_dig_align_branch=pre_dig_align_branch,
         )
 
     def requested_runner(self) -> PrimitiveRequestedBranchRunner:
@@ -589,6 +780,7 @@ class LegacyFSMBranchSet:
             carry_branch=self.carry_branch,
             dump_branch=self.dump_branch,
             return_branch=self.return_branch,
+            pre_dig_align_branch=self.pre_dig_align_branch,
         )
 
     def requested_decision_backend(self) -> "LegacyFSMRequestedDecisionBackend":
@@ -633,6 +825,8 @@ def _legacy_fsm_branch_ports_from_runtime_ports(
         return_skill_name=ports.return_skill_name,
         facts_source=capabilities.facts_source(),
         compatibility_actions=capabilities.compatibility_actions(),
+        pre_dig_align_skill_name=ports.pre_dig_align_skill_name,
+        pre_dig_align_service=ports.pre_dig_align_service,
     )
 
 
@@ -742,6 +936,15 @@ class LegacyFSMCompatibilityDecisionBackend:
             facts_source=self.branch_set.facts_source,
             compatibility_actions=self.branch_set.compatibility_actions,
         ).build(context)
+        if (
+            self.branch_set.pre_dig_align_branch is not None
+            and str(context.skill_name_before_decision) == "pre_dig_align"
+        ):
+            result = self.branch_set.pre_dig_align_branch.decide_input(
+                decision_input
+            )
+            if result is not None:
+                return result
         for branch in (
             self.branch_set.bootstrap_branch,
             self.branch_set.dig_branch,
@@ -785,10 +988,13 @@ __all__ = [
     "LegacyFSMDigConfig",
     "LegacyFSMDumpBranch",
     "LegacyFSMDumpConfig",
+    "LegacyFSMPreDigAlignBranch",
+    "LegacyFSMPreDigAlignConfig",
     "LegacyFSMRequestedDecisionBackend",
     "LegacyFSMReturnBranch",
     "LegacyFSMReturnConfig",
     "PrimitiveCompatibilityDecisionBackend",
+    "PrimitivePreDigAlignDecisionService",
     "PrimitiveDecisionBranch",
     "PrimitiveDecisionBackend",
     "PrimitiveDecisionBackendFactory",

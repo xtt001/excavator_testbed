@@ -142,47 +142,54 @@ class PrimitivePreDigAlignCompatibilityRuntimeState:
         self,
         config: PrimitivePreDigAlignReportConfig,
     ) -> PrimitivePreDigAlignReportStatus:
-        return PrimitivePreDigAlignReportStatus(
-            enabled=bool(config.enabled),
-            first_dig_only=bool(config.first_dig_only),
-            replan_after_failed_dig=bool(config.replan_after_failed_dig),
-            entry_intent_controlled_dims=_optional_int_list(
-                config.entry_intent_controlled_dims
-            ),
-            surface_guard_enabled=bool(config.surface_guard_enabled),
-            surface_depth_m=float(self.surface_depth_m),
-            surface_guard_triggered=bool(self.surface_guard_triggered),
-            surface_guard_count=int(self.surface_guard_count),
-            active_for_next_dig=bool(config.active_for_next_dig),
-            step_count=int(self.step_count),
-            hold_count=int(self.hold_count),
-            timeout_count=int(self.timeout_count),
-            completed_count=int(self.completed_count),
-            replan_count=int(self.replan_count),
-            target_qpos=np.asarray(self.target_qpos, dtype=float).tolist(),
-            error=np.asarray(self.error, dtype=float).tolist(),
-            entry_error_m=float(self.entry_error_m),
-            start_envelope_ready=bool(self.start_envelope_ready),
-            first_dig_entry_close_handoff=bool(
-                config.first_dig_entry_close_handoff
-            ),
-            entry_close_handoff_ready=bool(self.entry_close_handoff_ready),
-            entry_intent_handoff_enabled=bool(
-                config.entry_intent_handoff_enabled
-            ),
-            entry_intent_handoff_ready=bool(self.entry_intent_handoff_ready),
-            first_dig_entry_close_handoff_qvel_abs_max=float(
-                np.nan
-                if config.first_dig_entry_close_handoff_qvel_abs_max is None
-                else config.first_dig_entry_close_handoff_qvel_abs_max
-            ),
-            controlled_dims=_int_list(config.controlled_dims),
-            bucket_target_qpos=float(
-                np.nan
-                if config.bucket_target_qpos is None
-                else config.bucket_target_qpos
-            ),
-        )
+        return pre_dig_align_report_status_from_state(self, config)
+
+
+def pre_dig_align_report_status_from_state(
+    state: Any,
+    config: PrimitivePreDigAlignReportConfig,
+) -> PrimitivePreDigAlignReportStatus:
+    """Project a schema-compatible report status from a pre-dig state owner."""
+
+    return PrimitivePreDigAlignReportStatus(
+        enabled=bool(config.enabled),
+        first_dig_only=bool(config.first_dig_only),
+        replan_after_failed_dig=bool(config.replan_after_failed_dig),
+        entry_intent_controlled_dims=_optional_int_list(
+            config.entry_intent_controlled_dims
+        ),
+        surface_guard_enabled=bool(config.surface_guard_enabled),
+        surface_depth_m=float(state.surface_depth_m),
+        surface_guard_triggered=bool(state.surface_guard_triggered),
+        surface_guard_count=int(state.surface_guard_count),
+        active_for_next_dig=bool(config.active_for_next_dig),
+        step_count=int(state.step_count),
+        hold_count=int(state.hold_count),
+        timeout_count=int(state.timeout_count),
+        completed_count=int(state.completed_count),
+        replan_count=int(state.replan_count),
+        target_qpos=np.asarray(state.target_qpos, dtype=float).tolist(),
+        error=np.asarray(state.error, dtype=float).tolist(),
+        entry_error_m=float(state.entry_error_m),
+        start_envelope_ready=bool(state.start_envelope_ready),
+        first_dig_entry_close_handoff=bool(
+            config.first_dig_entry_close_handoff
+        ),
+        entry_close_handoff_ready=bool(state.entry_close_handoff_ready),
+        entry_intent_handoff_enabled=bool(config.entry_intent_handoff_enabled),
+        entry_intent_handoff_ready=bool(state.entry_intent_handoff_ready),
+        first_dig_entry_close_handoff_qvel_abs_max=float(
+            np.nan
+            if config.first_dig_entry_close_handoff_qvel_abs_max is None
+            else config.first_dig_entry_close_handoff_qvel_abs_max
+        ),
+        controlled_dims=_int_list(config.controlled_dims),
+        bucket_target_qpos=float(
+            np.nan
+            if config.bucket_target_qpos is None
+            else config.bucket_target_qpos
+        ),
+    )
 
 
 def _optional_int_list(values: Any | None) -> list[int] | None:
@@ -199,4 +206,5 @@ __all__ = [
     "PrimitivePreDigAlignCompatibilityRuntimeState",
     "PrimitivePreDigAlignReportConfig",
     "PrimitivePreDigAlignReportStatus",
+    "pre_dig_align_report_status_from_state",
 ]

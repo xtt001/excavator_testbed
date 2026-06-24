@@ -41,6 +41,8 @@ class PrimitiveReturnHandoffRuntimePorts:
         tuple[np.ndarray | None, np.ndarray | None],
     ]
     return_start_envelope_prior_mapping: Callable[[int], dict[str, object] | None]
+    should_pre_dig_align_before_dig: Callable[[], bool]
+    pre_dig_align_skill_name: str
     dig_skill_name: str = "dig"
 
 
@@ -101,6 +103,10 @@ class PrimitiveReturnHandoffRuntime:
                     ports.ensure_return_target_plan_for_cycle
                 ),
                 readiness_service=self.readiness_service(),
+                should_pre_dig_align_before_dig=(
+                    ports.should_pre_dig_align_before_dig
+                ),
+                pre_dig_align_skill_name=str(ports.pre_dig_align_skill_name),
                 dig_skill_name=str(ports.dig_skill_name),
             )
         )

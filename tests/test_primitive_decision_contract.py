@@ -68,6 +68,64 @@ from testbed.planner.primitive.effects.return_handoff import (
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
+class _NoopPolicy:
+    def reset(self) -> None:
+        pass
+
+    def predict(self, obs: dict[str, Any]) -> np.ndarray:
+        del obs
+        return np.zeros(4, dtype=np.float32)
+
+
+class _NoopBoundaryDetector:
+    boundary_profile = "legacy"
+
+    def reset(self) -> None:
+        pass
+
+
+class _FakePreDigAlignRuntimeService:
+    def __init__(self, *, ready: bool) -> None:
+        self._ready = bool(ready)
+        self.ready_calls: list[dict[str, Any]] = []
+        self.completed_count = 0
+
+    def ready(self, obs: dict[str, Any]) -> bool:
+        self.ready_calls.append(obs)
+        return self._ready
+
+    def mark_completed(self) -> None:
+        self.completed_count += 1
+
+    def surface_guard_triggered_for_state(self, obs: dict[str, Any]) -> bool:
+        del obs
+        return False
+
+    def mark_surface_guard(self) -> None:
+        raise AssertionError("surface guard was not expected")
+
+    def reset_hold(self) -> None:
+        raise AssertionError("surface guard was not expected")
+
+    def surface_guard_can_handoff(self, obs: dict[str, Any]) -> bool:
+        del obs
+        raise AssertionError("surface guard was not expected")
+
+    def timed_out(self) -> bool:
+        return False
+
+    def mark_timeout(self) -> None:
+        raise AssertionError("timeout was not expected")
+
+    @property
+    def timeout_handoff_reason(self) -> str:
+        return ""
+
+    def timeout_can_handoff(self, obs: dict[str, Any]) -> bool:
+        del obs
+        raise AssertionError("timeout was not expected")
+
+
 _OLD_TRANSITION_STATUS_POLICY_WRAPPERS = (
     "_dig_transition_status_for_backend",
     "_carry_transition_status_for_backend",
@@ -145,6 +203,19 @@ class _FakeDigRecoveryService:
     def restart_after_failed_dig(self, reason: str, got_obs: dict[str, Any]) -> None:
         assert got_obs is self._expected_obs
         self._events.append(f"restart:{reason}")
+
+    def restart_dig_with_new_cut(self, reason: str) -> None:
+        self._events.append(f"restart_new_cut:{reason}")
+
+    def replan_or_restart_pre_dig_align(
+        self,
+        got_obs: dict[str, Any],
+        *,
+        replan_reason: str,
+        restart_reason: str,
+    ) -> None:
+        assert got_obs is self._expected_obs
+        self._events.append(f"pre_dig:{replan_reason}:{restart_reason}")
 
 
 def _default_dig_status(**overrides: Any) -> DigTransitionStatus:
@@ -855,7 +926,7 @@ def test_primitive_planner_mainline_miss_does_not_call_broad_legacy_fallback() -
     assert "broad legacy fallback" in message
 
 
-def test_primitive_planner_pre_dig_align_is_unhandled_after_cleanup() -> None:
+def test_primitive_planner_unknown_skill_error_propagates_from_decision_runtime() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs: dict[str, Any] = {"qpos": [1.0]}
     calls: list[tuple[dict[str, Any], None, PrimitiveTickPreparation]] = []
@@ -863,20 +934,20 @@ def test_primitive_planner_pre_dig_align_is_unhandled_after_cleanup() -> None:
     class FakeRuntime:
         def decide_tick(self, *, obs, boundary_event, preparation):
             calls.append((obs, boundary_event, preparation))
-            raise PrimitiveDecisionContractError("unhandled planner skill: pre_dig_align")
+            raise PrimitiveDecisionContractError("unhandled planner skill: legacy_skill")
 
     planner._decision_runtime = MethodType(
         lambda self: FakeRuntime(),
         planner,
     )
 
-    with pytest.raises(PrimitiveDecisionContractError, match="pre_dig_align"):
+    with pytest.raises(PrimitiveDecisionContractError, match="legacy_skill"):
         planner._decision_runtime().decide_tick(
             obs=obs,
             boundary_event=None,
             preparation=PrimitiveTickPreparation(
                 boundary_event=None,
-                skill_name_before_decision="pre_dig_align",
+                skill_name_before_decision="legacy_skill",
                 dig_progress_updated=False,
             ),
         )
@@ -887,11 +958,53 @@ def test_primitive_planner_pre_dig_align_is_unhandled_after_cleanup() -> None:
             None,
             PrimitiveTickPreparation(
                 boundary_event=None,
-                skill_name_before_decision="pre_dig_align",
+                skill_name_before_decision="legacy_skill",
                 dig_progress_updated=False,
             ),
         )
     ]
+
+
+def test_primitive_planner_decision_runtime_composes_pre_dig_align_ready_branch() -> None:
+    service = _FakePreDigAlignRuntimeService(ready=True)
+    policy = PrimitivePlannerACTPolicy(
+        dig_policy=_NoopPolicy(),
+        carry_policy=_NoopPolicy(),
+        dump_policy=_NoopPolicy(),
+        return_policy=_NoopPolicy(),
+        boundary_detector=_NoopBoundaryDetector(),
+        pre_dig_align={"enabled": True, "hold_steps": 1},
+    )
+    policy._skill_name = "pre_dig_align"
+    policy._switch_reason = ""
+    policy._primitive_pre_dig_align_runtime_service = MethodType(
+        lambda self: service,
+        policy,
+    )
+    obs: dict[str, Any] = {"qpos": [1.0]}
+
+    result = policy._decision_runtime().decide_tick(
+        obs=obs,
+        boundary_event=None,
+        preparation=PrimitiveTickPreparation(
+            boundary_event=None,
+            skill_name_before_decision="pre_dig_align",
+            dig_progress_updated=False,
+        ),
+    )
+
+    assert service.ready_calls == [obs]
+    assert service.completed_count == 1
+    assert result.status == "skill_switch"
+    assert result.skill_before == "pre_dig_align"
+    assert result.skill_after == "dig"
+    assert result.switch_reason == "pre_dig_align_to_dig_ready"
+    assert result.effects == (
+        SwitchSkillEffect(
+            target_skill_name="dig",
+            switch_reason="pre_dig_align_to_dig_ready",
+        ),
+    )
 
 
 def test_primitive_planner_legacy_compatibility_applies_requested_compat_result() -> None:
@@ -955,7 +1068,7 @@ def test_primitive_planner_legacy_compatibility_applies_requested_compat_result(
     ]
 
 
-def test_primitive_planner_legacy_compatibility_propagates_removed_pre_dig_error() -> None:
+def test_primitive_planner_legacy_compatibility_propagates_unknown_skill_error() -> None:
     planner = object.__new__(PrimitivePlannerACTPolicy)
     obs: dict[str, Any] = {"qpos": [1.0]}
     calls: list[Any] = []
@@ -963,9 +1076,9 @@ def test_primitive_planner_legacy_compatibility_propagates_removed_pre_dig_error
     class FakeRuntime:
         def decide_legacy_compatibility_tick(self, *, obs, boundary_event, preparation):
             calls.append(("decide", obs, boundary_event, preparation))
-            raise PrimitiveDecisionContractError("unhandled planner skill: pre_dig_align")
+            raise PrimitiveDecisionContractError("unhandled planner skill: legacy_skill")
 
-    planner._skill_name = "pre_dig_align"
+    planner._skill_name = "legacy_skill"
     planner._decision_runtime = MethodType(
         lambda self: FakeRuntime(),
         planner,
@@ -979,7 +1092,7 @@ def test_primitive_planner_legacy_compatibility_propagates_removed_pre_dig_error
         planner,
     )
 
-    with pytest.raises(PrimitiveDecisionContractError, match="pre_dig_align"):
+    with pytest.raises(PrimitiveDecisionContractError, match="legacy_skill"):
         _apply_legacy_compatibility_decision(
             planner,
             obs=obs,
@@ -993,7 +1106,7 @@ def test_primitive_planner_legacy_compatibility_propagates_removed_pre_dig_error
             None,
             PrimitiveTickPreparation(
                 boundary_event=None,
-                skill_name_before_decision="pre_dig_align",
+                skill_name_before_decision="legacy_skill",
                 dig_progress_updated=False,
             ),
         )

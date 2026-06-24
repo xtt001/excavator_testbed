@@ -4,6 +4,9 @@ from types import MethodType, SimpleNamespace
 from typing import Any
 
 import testbed.planner.primitive.report.runtime as report_runtime_module
+from testbed.planner.primitive.execution.pre_dig_align import (
+    PrimitivePreDigAlignRuntimeState,
+)
 from testbed.planner.primitive.facts.observation import (
     PrimitiveObservationInjectionRuntimeState,
 )
@@ -342,7 +345,20 @@ def test_report_composition_runtime_projects_token_status_from_focused_states() 
                 timeout_count=0,
                 debug_fields=lambda: {},
             ),
+            pre_dig_align_state=lambda: PrimitivePreDigAlignRuntimeState.fresh(
+                action_dim=4
+            ),
+            pre_dig_align_enabled=lambda: False,
+            pre_dig_align_first_dig_only=lambda: False,
+            pre_dig_align_replan_after_failed_dig=lambda: False,
+            pre_dig_align_entry_intent_controlled_dims=lambda: None,
+            pre_dig_align_surface_guard_enabled=lambda: False,
+            pre_dig_align_active_for_next_dig=lambda: False,
+            pre_dig_align_first_dig_entry_close_handoff=lambda: False,
+            pre_dig_align_entry_intent_handoff_enabled=lambda: False,
+            pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max=lambda: None,
             pre_dig_align_controlled_dims=lambda: [1, 0, 1, 0],
+            pre_dig_align_bucket_target_qpos=lambda: None,
             action_dim=lambda: 4,
             goal_sector_id=lambda cycle_index: int(cycle_index),
             next_goal_sector_id=lambda: 0,
