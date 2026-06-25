@@ -17,8 +17,11 @@ Repo A 负责：
 - Repo C — `sim-protocol`：共享协议、schema、常量、评测定义
 
 **后续 planner/backend 开发优先参考**：
+[docs/planner_decision_structure_research_roadmap.md](docs/planner_decision_structure_research_roadmap.md)
+记录 BT、Utility、GOAP/HTN/TAMP、LLM/VLM/WAM 等候选决策结构的前期研究排序、
+rubric、验证资产与进入实现前的停止条件；
 [docs/planner_decision_theory_backend_contract.md](docs/planner_decision_theory_backend_contract.md)
-记录了第一个 decision-theory primitive decision backend 的接入边界、测试入口、
+记录第一个 decision-theory primitive decision backend 的接入边界、测试入口、
 facts/effects 约束和生产注册前置条件。
 
 ---
