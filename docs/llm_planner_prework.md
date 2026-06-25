@@ -27,3 +27,7 @@
 
 - 给 `PrimitivePlannerACTPolicy` 做职责 map：scheduler、coverage、return handoff、token builder、debug summary。
 - 新 planner 语义必须进小模块；大文件只保留 facade / adapter / pass-through。
+
+## 4. 回查既有 10-cycle checkpoint
+
+- 用新增 `rollout review` 回查既有 `10-cycle smooth` checkpoint：确认连续跑通是否真的等于 entry/exit/depth/payload 跟手。
