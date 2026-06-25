@@ -14683,3 +14683,19 @@ Each completed refactor round should append:
 - Updated `tests/test_primitive_backend_ready_contract.py` to keep guarding
   that design documents are not production import APIs, now using the active
   backend guide instead of the archived policy-shell target draft.
+
+### 2026-06-25 Decision-Theory Backend Pre-Implementation Contract
+
+- Scope: documented the pre-implementation contract for the first
+  decision-theory primitive decision backend. No production planner code,
+  runtime/eval config, checkpoint/model, Unity asset, remote, fetch/pull/push,
+  or environment setting was changed.
+- Added `docs/planner_decision_theory_backend_contract.md` as the scoped
+  readiness gate before backend implementation. It records the initial
+  `decision_theory` working name, expected module location, test-only first
+  registration plan, allowed facts, allowed effects, required tests,
+  production-registration constraints, and open semantic decisions.
+- Updated active references in `docs/planner_scheduling_backend_design.md`,
+  `docs/planner_primitive_interface_standard.md`, and
+  `docs/planner_current_architecture.md` so future backend work distinguishes
+  generic backend readiness from the narrower decision-theory backend contract.

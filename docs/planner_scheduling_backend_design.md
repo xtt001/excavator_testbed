@@ -10,6 +10,8 @@ production-config-selected backends already exist.
 Use this guide with:
 
 - `docs/planner_current_architecture.md`
+- `docs/planner_decision_theory_backend_contract.md` for the first scoped
+  decision-theory backend attempt
 - `docs/planner_primitive_interface_standard.md`
 - `tests/test_primitive_backend_ready_contract.py`
 
@@ -34,6 +36,9 @@ The current planner is backend-ready at the generic runtime-contract level:
 The current backend path is still the default legacy FSM adapter. Future
 backends should reuse the generic decision, fact, input, and effect contracts
 instead of reading `PrimitivePlannerACTPolicy` or policy private methods.
+For the first decision-theory backend, lock the narrower pre-implementation
+scope in `docs/planner_decision_theory_backend_contract.md` before adding
+production code.
 
 ## Backend Contract Diagram
 

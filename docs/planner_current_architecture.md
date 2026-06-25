@@ -9,6 +9,8 @@ intermediate SVG target or a future backend system.
 Use this document with:
 
 - `docs/planner_primitive_interface_standard.md`
+- `docs/planner_decision_theory_backend_contract.md` for scoped
+  decision-theory backend preparation
 - `docs/planner_current_code_architecture_plan.md`
 - `docs/planner_rollout_evidence_refactor_plan.md`
 - `docs/planner_rollout_evidence_refactor_log.md`
@@ -136,6 +138,8 @@ explicitly approves a semantic change.
 - 5P, BT, VLM, LLM, learned scheduling backends, plugin routing, and production
   backend config selection remain out of scope until a future phase explicitly
   starts them.
+- `docs/planner_decision_theory_backend_contract.md` is a planning contract for
+  one such future phase; it does not change the current runtime flow by itself.
 
 ## Documentation Ownership
 

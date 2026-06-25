@@ -18,6 +18,7 @@ without additional interface work.
 
 - `docs/planner_current_architecture.md`
 - `docs/planner_scheduling_backend_design.md`
+- `docs/planner_decision_theory_backend_contract.md`
 - `docs/planner_current_code_architecture_plan.md`
 - `docs/planner_baseline_architecture_map.md`
 - `docs/planner_rollout_evidence_refactor_plan.md`
@@ -34,7 +35,9 @@ set instead of relying on memory or an unnamed old document:
 - primary architecture target: `docs/planner_current_architecture.md` and this
   interface standard;
 - future backend target:
-  `docs/planner_scheduling_backend_design.md`;
+  `docs/planner_scheduling_backend_design.md`, plus
+  `docs/planner_decision_theory_backend_contract.md` for the first scoped
+  decision-theory backend attempt;
 - current implementation inventory:
   `docs/planner_current_code_architecture_plan.md`;
 - historical baseline/evidence context:
@@ -588,6 +591,9 @@ Standard:
   facades, or broad callback bags.
 - `legacy_fsm` remains the only supported runtime backend until this document is
   updated with a concrete alternate backend contract.
+- The first decision-theory backend must satisfy
+  `docs/planner_decision_theory_backend_contract.md` before production
+  registration or config routing is added.
 
 ## Layer 5: Decision Context
 
