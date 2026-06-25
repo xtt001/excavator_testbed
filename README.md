@@ -16,6 +16,11 @@ Repo A 负责：
   asset 路径仍保留 `Assets/AGXUnity_Excavator/...`
 - Repo C — `sim-protocol`：共享协议、schema、常量、评测定义
 
+**后续 planner/backend 开发优先参考**：
+[docs/planner_decision_theory_backend_contract.md](docs/planner_decision_theory_backend_contract.md)
+记录了第一个 decision-theory primitive decision backend 的接入边界、测试入口、
+facts/effects 约束和生产注册前置条件。
+
 ---
 
 ## 当前状态
@@ -1063,6 +1068,7 @@ ACT 已经获得目标载荷/质量 plateau 但尚未离开 dig box，planner �
 当前权威文档：
 - 本 README：仓库说明、当前状态、quick start
 - [docs/current_status_and_plan.md](/home/pingfan/PACT/excavator_testbed/docs/current_status_and_plan.md)：详细的“已开发内容 / 当前 smoke 验证结果 / 下一步计划 / 为什么要补失效归因能力”
+- [docs/planner_decision_theory_backend_contract.md](docs/planner_decision_theory_backend_contract.md)：后续接入 decision-theory primitive decision backend 前优先参考的边界、facts/effects、测试和生产注册清单
 - [docs/planner_to_act_conceptual_contract.md](/home/pingfan/PACT/excavator_testbed/docs/planner_to_act_conceptual_contract.md)：从概念上说明上层 planner 到低层 ACT 的控制结构、职责边界和输入输出
 - [docs/v2_1_failure_retrospective.md](/home/pingfan/PACT/excavator_testbed/docs/v2_1_failure_retrospective.md)：V2.1 初期多轮失败原因、script/human transition gap、goal-conditioned ACT 与 V2.2 修复复盘
 - [docs/training_setup.md](/home/pingfan/PACT/excavator_testbed/docs/training_setup.md)：训练配置字段、实验记录项、失效归因时应保留的证据链
