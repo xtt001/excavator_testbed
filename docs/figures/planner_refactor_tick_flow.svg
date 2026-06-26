@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">One primitive planner tick flow</title>
+  <desc id="desc">A vertical flow diagram showing predict, preparation, decision, effect application, action dispatch, report finalization, and action return.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 34px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+      .subtitle { font: 500 18px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .stepNum { font: 800 22px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #ffffff; }
+      .stepTitle { font: 700 20px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+      .stepText { font: 500 15px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .bandTitle { font: 800 15px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: .08em; fill: #334155; }
+      .bandText { font: 600 14px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .arrow { stroke: #334155; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .thinArrow { stroke: #64748b; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1600" height="900"/>
+  <text class="title" x="72" y="70">One Tick: Decision Before Mutation, Mutation Before Action</text>
+  <text class="subtitle" x="72" y="104">This is the behavior-preserving execution order the refactor makes explicit.</text>
+
+  <rect x="72" y="150" width="330" height="652" rx="8" fill="#e0f2fe" opacity="0.75"/>
+  <rect x="442" y="150" width="330" height="652" rx="8" fill="#ede9fe" opacity="0.75"/>
+  <rect x="812" y="150" width="330" height="652" rx="8" fill="#ffedd5" opacity="0.78"/>
+  <rect x="1182" y="150" width="330" height="652" rx="8" fill="#dcfce7" opacity="0.78"/>
+
+  <text class="bandTitle" x="104" y="188">PUBLIC ROUTE</text>
+  <text class="bandText" x="104" y="215">Caller still sees one policy object.</text>
+  <text class="bandTitle" x="474" y="188">READ-ONLY DECISION INPUT</text>
+  <text class="bandText" x="474" y="215">Facts and context are projected.</text>
+  <text class="bandTitle" x="844" y="188">VALIDATED MUTATION</text>
+  <text class="bandText" x="844" y="215">Only effect owners change state.</text>
+  <text class="bandTitle" x="1214" y="188">ACTION + REPORTING</text>
+  <text class="bandText" x="1214" y="215">ACT produces control; reports audit.</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="126" y="280" width="222" height="94" rx="8" fill="#ffffff" stroke="#38bdf8" stroke-width="2"/>
+    <circle cx="162" cy="327" r="24" fill="#0284c7"/>
+    <text class="stepNum" x="155" y="335">1</text>
+    <text class="stepTitle" x="198" y="314">predict(obs)</text>
+    <text class="stepText" x="198" y="340">public API entry</text>
+
+    <rect x="496" y="240" width="222" height="110" rx="8" fill="#ffffff" stroke="#a78bfa" stroke-width="2"/>
+    <circle cx="532" cy="295" r="24" fill="#7c3aed"/>
+    <text class="stepNum" x="525" y="303">2</text>
+    <text class="stepTitle" x="568" y="280">Prepare tick</text>
+    <text class="stepText" x="568" y="306">context, boundary event,</text>
+    <text class="stepText" x="568" y="328">pre-decision facts</text>
+
+    <rect x="496" y="430" width="222" height="110" rx="8" fill="#ffffff" stroke="#8b5cf6" stroke-width="2"/>
+    <circle cx="532" cy="485" r="24" fill="#6d28d9"/>
+    <text class="stepNum" x="525" y="493">3</text>
+    <text class="stepTitle" x="568" y="470">Decide</text>
+    <text class="stepText" x="568" y="496">decision runtime calls</text>
+    <text class="stepText" x="568" y="518">legacy_fsm backend</text>
+
+    <rect x="866" y="430" width="222" height="110" rx="8" fill="#ffffff" stroke="#fb923c" stroke-width="2"/>
+    <circle cx="902" cy="485" r="24" fill="#ea580c"/>
+    <text class="stepNum" x="895" y="493">4</text>
+    <text class="stepTitle" x="938" y="470">Apply effects</text>
+    <text class="stepText" x="938" y="496">validate result, then</text>
+    <text class="stepText" x="938" y="518">mutate focused owners</text>
+
+    <rect x="1236" y="350" width="222" height="110" rx="8" fill="#ffffff" stroke="#22c55e" stroke-width="2"/>
+    <circle cx="1272" cy="405" r="24" fill="#16a34a"/>
+    <text class="stepNum" x="1265" y="413">5</text>
+    <text class="stepTitle" x="1308" y="390">Dispatch action</text>
+    <text class="stepText" x="1308" y="416">active ACT or focused</text>
+    <text class="stepText" x="1308" y="438">action path</text>
+
+    <rect x="1236" y="570" width="222" height="110" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="2"/>
+    <circle cx="1272" cy="625" r="24" fill="#15803d"/>
+    <text class="stepNum" x="1265" y="633">6</text>
+    <text class="stepTitle" x="1308" y="610">Finalize</text>
+    <text class="stepText" x="1308" y="636">previous action,</text>
+    <text class="stepText" x="1308" y="658">debug, trace, summary</text>
+  </g>
+
+  <path class="arrow" d="M 348 327 C 410 327, 430 295, 486 295"/>
+  <path class="arrow" d="M 607 350 L 607 420"/>
+  <path class="arrow" d="M 718 485 L 856 485"/>
+  <path class="arrow" d="M 1088 485 C 1156 485, 1164 405, 1226 405"/>
+  <path class="arrow" d="M 1347 460 L 1347 560"/>
+  <path class="thinArrow" d="M 1347 680 C 1347 744, 244 744, 244 386"/>
+
+  <rect x="190" y="732" width="1160" height="50" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text class="stepText" x="222" y="763">Invariant: backend chooses and returns requested effects; runtime validates and applies them; low-level ACT still generates the 4D control action.</text>
+</svg>

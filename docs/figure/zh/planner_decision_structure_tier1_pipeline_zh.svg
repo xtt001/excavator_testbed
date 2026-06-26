@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Tier 1 决策结构探索流水线</title>
+  <desc id="desc">展示归档 artifact、Tier 1 schema、gold examples、checker、validation report、audit warnings、离线研究角色和未来 runtime gate。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 34px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .subtitle { font: 500 18px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .cardTitle { font: 700 18px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .cardText { font: 500 14px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .badge { font: 800 13px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #ffffff; }
+      .guardTitle { font: 800 16px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #7c2d12; }
+      .guardText { font: 600 14px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #92400e; }
+      .arrow { stroke: #334155; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .thinArrow { stroke: #64748b; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1600" height="900"/>
+  <text class="title" x="72" y="70">Tier 1 决策结构探索：离线影子验证边界</text>
+  <text class="subtitle" x="72" y="104">Schema、字段引用、反例和人审约束先定义；线上接入必须经过后续 runtime gate。</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="84" y="230" width="180" height="132" rx="8" fill="#ffffff" stroke="#38bdf8" stroke-width="2"/>
+    <rect x="104" y="210" width="140" height="30" rx="8" fill="#0284c7"/>
+    <text class="badge" x="144" y="230">归档包</text>
+    <text class="cardTitle" x="108" y="270">aggregate_tx24</text>
+    <text class="cardText" x="108" y="296">rollout JSONL</text>
+    <text class="cardText" x="108" y="318">planner trace</text>
+    <text class="cardText" x="108" y="340">summary + evidence</text>
+
+    <rect x="330" y="230" width="180" height="132" rx="8" fill="#ffffff" stroke="#8b5cf6" stroke-width="2"/>
+    <rect x="350" y="210" width="140" height="30" rx="8" fill="#7c3aed"/>
+    <text class="badge" x="391" y="230">Schema</text>
+    <text class="cardTitle" x="354" y="270">Tier 1 v0</text>
+    <text class="cardText" x="354" y="296">允许哪些输入</text>
+    <text class="cardText" x="354" y="318">禁止哪些字段</text>
+    <text class="cardText" x="354" y="340">输出必须长什么样</text>
+
+    <rect x="576" y="230" width="180" height="132" rx="8" fill="#ffffff" stroke="#a78bfa" stroke-width="2"/>
+    <rect x="596" y="210" width="140" height="30" rx="8" fill="#6d28d9"/>
+    <text class="badge" x="630" y="230">金样例</text>
+    <text class="cardTitle" x="600" y="270">Gold cases</text>
+    <text class="cardText" x="600" y="296">4 个 coverage 事件</text>
+    <text class="cardText" x="600" y="318">解释 claim</text>
+    <text class="cardText" x="600" y="340">反例和拒答</text>
+
+    <rect x="822" y="230" width="180" height="132" rx="8" fill="#ffffff" stroke="#14b8a6" stroke-width="2"/>
+    <rect x="842" y="210" width="140" height="30" rx="8" fill="#0d9488"/>
+    <text class="badge" x="886" y="230">校验</text>
+    <text class="cardTitle" x="846" y="270">Validator CLI</text>
+    <text class="cardText" x="846" y="296">tb-planner</text>
+    <text class="cardText" x="846" y="318">tier1-validate</text>
+    <text class="cardText" x="846" y="340">校验包和样例</text>
+
+    <rect x="1068" y="230" width="180" height="132" rx="8" fill="#ffffff" stroke="#22c55e" stroke-width="2"/>
+    <rect x="1088" y="210" width="140" height="30" rx="8" fill="#16a34a"/>
+    <text class="badge" x="1124" y="230">报告</text>
+    <text class="cardTitle" x="1092" y="270">Passed true</text>
+    <text class="cardText" x="1092" y="296">10 个 select 事件</text>
+    <text class="cardText" x="1092" y="318">金样例通过</text>
+    <text class="cardText" x="1092" y="340">限制条件记录清楚</text>
+
+    <rect x="1314" y="230" width="180" height="132" rx="8" fill="#ffffff" stroke="#f97316" stroke-width="2"/>
+    <rect x="1334" y="210" width="140" height="30" rx="8" fill="#ea580c"/>
+    <text class="badge" x="1365" y="230">审计风险</text>
+    <text class="cardTitle" x="1338" y="270">两类风险点</text>
+    <text class="cardText" x="1338" y="296">事件 2：低 margin</text>
+    <text class="cardText" x="1338" y="318">事件 19：非唯一</text>
+    <text class="cardText" x="1338" y="340">selected_score</text>
+  </g>
+
+  <path class="arrow" d="M 264 296 L 320 296"/>
+  <path class="arrow" d="M 510 296 L 566 296"/>
+  <path class="arrow" d="M 756 296 L 812 296"/>
+  <path class="arrow" d="M 1002 296 L 1058 296"/>
+  <path class="arrow" d="M 1248 296 L 1304 296"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="206" y="500" width="340" height="150" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+    <text class="cardTitle" x="236" y="535">Coverage Utility 影子打分</text>
+    <text class="cardText" x="236" y="565">只读地重排候选 corridor，解释权衡。</text>
+    <text class="cardText" x="236" y="590">输出 ranking、margin、分歧类型、</text>
+    <text class="cardText" x="236" y="615">缺失事实、置信度和字段引用。</text>
+
+    <rect x="630" y="500" width="340" height="150" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-width="2"/>
+    <text class="cardTitle" x="660" y="535">LLM 报告解释器</text>
+    <text class="cardText" x="660" y="565">只用公开 report 生成可审计说明。</text>
+    <text class="cardText" x="660" y="590">每个 claim 都要有字段引用和 role。</text>
+    <text class="cardText" x="660" y="615">不读 raw obs，不输出 effect 或 action。</text>
+
+    <rect x="1054" y="500" width="340" height="150" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="2"/>
+    <text class="cardTitle" x="1084" y="535">未来 runtime gate</text>
+    <text class="cardText" x="1084" y="565">只有 facts、effect、skill scope、</text>
+    <text class="cardText" x="1084" y="590">测试注册和 rollout / A-B 验收</text>
+    <text class="cardText" x="1084" y="615">都明确后，才谈线上接入。</text>
+  </g>
+
+  <path class="thinArrow" d="M 420 362 C 420 425, 376 442, 376 490"/>
+  <path class="thinArrow" d="M 666 362 C 666 430, 800 432, 800 490"/>
+  <path class="thinArrow" d="M 1404 362 C 1404 440, 1224 438, 1224 490"/>
+  <path class="arrow" d="M 546 575 L 620 575"/>
+  <path class="arrow" d="M 970 575 L 1044 575"/>
+
+  <rect x="84" y="735" width="684" height="82" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text class="guardTitle" x="112" y="768">已验证</text>
+  <text class="guardText" x="112" y="795">归档包、schema、金样例、反例拒答在离线审计语境下是自洽的。</text>
+
+  <rect x="832" y="735" width="662" height="82" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.5"/>
+  <text class="guardTitle" x="860" y="768">未验证</text>
+  <text class="guardText" x="860" y="795">没有证明反事实收益、完整 action replay、ACT parity、VLM 验证或生产后端就绪。</text>
+</svg>

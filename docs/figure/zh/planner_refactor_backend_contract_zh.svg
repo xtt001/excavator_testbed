@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">未来决策后端接入合同边界</title>
+  <desc id="desc">展示 test-scoped decision_theory backend 如何通过 backend factories、typed facts、decision result、effect validation 和 effect applier 接入，同时阻断 policy 私有状态、ACT predict 和直接状态修改。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <marker id="block" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="10" markerHeight="10" orient="auto">
+      <circle cx="6" cy="6" r="5" fill="#ef4444"/>
+      <path d="M 3.5 3.5 L 8.5 8.5 M 8.5 3.5 L 3.5 8.5" stroke="#ffffff" stroke-width="1.7"/>
+    </marker>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 34px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .subtitle { font: 500 18px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .cardTitle { font: 700 18px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .cardText { font: 500 14px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .label { font: 800 15px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #334155; }
+      .phase { font: 800 15px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .arrow { stroke: #334155; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .blockArrow { stroke: #dc2626; stroke-width: 2.4; stroke-dasharray: 8 6; fill: none; marker-end: url(#block); }
+      .thinArrow { stroke: #64748b; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1600" height="900"/>
+  <text class="title" x="72" y="70">未来决策后端：测试接入与生产边界</text>
+  <text class="subtitle" x="72" y="104">已具备 backend factory 合同；生产默认、配置路由和 A/B 验收仍是后续 gate。</text>
+
+  <rect x="72" y="150" width="456" height="620" rx="8" fill="#dbeafe" opacity="0.58"/>
+  <rect x="572" y="150" width="456" height="620" rx="8" fill="#ede9fe" opacity="0.6"/>
+  <rect x="1072" y="150" width="456" height="620" rx="8" fill="#dcfce7" opacity="0.58"/>
+
+  <text class="label" x="104" y="188">注册和输入</text>
+  <text class="label" x="604" y="188">后端只做决策</text>
+  <text class="label" x="1104" y="188">校验后再改状态</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="112" y="236" width="170" height="110" rx="8" fill="#ffffff" stroke="#60a5fa" stroke-width="2"/>
+    <text class="cardTitle" x="134" y="270">配置</text>
+    <text class="cardText" x="134" y="296">backend_name =</text>
+    <text class="cardText" x="134" y="318">decision_theory</text>
+
+    <rect x="318" y="236" width="170" height="110" rx="8" fill="#ffffff" stroke="#60a5fa" stroke-width="2"/>
+    <text class="cardTitle" x="340" y="270">Factory 表</text>
+    <text class="cardText" x="340" y="296">backend_factories</text>
+    <text class="cardText" x="340" y="318">测试里注册</text>
+
+    <rect x="206" y="420" width="190" height="112" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+    <text class="cardTitle" x="228" y="454">DecisionRuntime</text>
+    <text class="cardText" x="228" y="480">归一化名字</text>
+    <text class="cardText" x="228" y="502">选择 factory</text>
+
+    <rect x="206" y="610" width="190" height="104" rx="8" fill="#ffffff" stroke="#3b82f6" stroke-width="2"/>
+    <text class="cardTitle" x="228" y="644">后端输入</text>
+    <text class="cardText" x="228" y="670">context + 允许的</text>
+    <text class="cardText" x="228" y="692">typed facts</text>
+
+    <rect x="628" y="236" width="344" height="120" rx="8" fill="#ffffff" stroke="#a78bfa" stroke-width="2"/>
+    <text class="cardTitle" x="654" y="270">decision_theory backend</text>
+    <text class="cardText" x="654" y="298">第一阶段：测试范围</text>
+    <text class="cardText" x="654" y="320">只做 primitive 调度判断</text>
+    <text class="cardText" x="654" y="342">stay / switch / reason / effects</text>
+
+    <rect x="628" y="438" width="344" height="124" rx="8" fill="#ffffff" stroke="#8b5cf6" stroke-width="2"/>
+    <text class="cardTitle" x="654" y="472">允许读取</text>
+    <text class="cardText" x="654" y="500">PrimitiveBackendDecisionInput</text>
+    <text class="cardText" x="654" y="522">PrimitiveBackendFactsAccess</text>
+    <text class="cardText" x="654" y="544">common + transition facts</text>
+
+    <rect x="628" y="638" width="344" height="102" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-width="2"/>
+    <text class="cardTitle" x="654" y="672">输出</text>
+    <text class="cardText" x="654" y="698">PrimitiveDecisionResult</text>
+    <text class="cardText" x="654" y="720">有序 RequestedPlannerEffect 列表</text>
+
+    <rect x="1112" y="236" width="176" height="104" rx="8" fill="#ffffff" stroke="#22c55e" stroke-width="2"/>
+    <text class="cardTitle" x="1134" y="270">校验</text>
+    <text class="cardText" x="1134" y="296">effect contract</text>
+    <text class="cardText" x="1134" y="318">拒绝坏 shape</text>
+
+    <rect x="1320" y="236" width="176" height="104" rx="8" fill="#ffffff" stroke="#22c55e" stroke-width="2"/>
+    <text class="cardTitle" x="1342" y="270">应用</text>
+    <text class="cardText" x="1342" y="296">RequestedEffect</text>
+    <text class="cardText" x="1342" y="318">Applier</text>
+
+    <rect x="1172" y="438" width="256" height="124" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="2"/>
+    <text class="cardTitle" x="1198" y="472">聚焦状态 Owner</text>
+    <text class="cardText" x="1198" y="500">coverage、token、return</text>
+    <text class="cardText" x="1198" y="522">cycle、execution、report</text>
+    <text class="cardText" x="1198" y="544">状态变更归属地</text>
+
+    <rect x="1126" y="650" width="348" height="90" rx="8" fill="#ffffff" stroke="#86efac" stroke-width="2"/>
+    <text class="phase" x="1152" y="684">生产接入是后续阶段</text>
+    <text class="cardText" x="1152" y="710">显式配置、rollout / A-B、</text>
+    <text class="cardText" x="1152" y="732">默认不变测试，都要另开 gate</text>
+  </g>
+
+  <path class="thinArrow" d="M 282 291 L 308 291"/>
+  <path class="arrow" d="M 403 346 C 403 386, 338 386, 320 412"/>
+  <path class="arrow" d="M 301 532 L 301 600"/>
+  <path class="arrow" d="M 396 662 C 478 662, 520 296, 618 296"/>
+  <path class="arrow" d="M 800 356 L 800 428"/>
+  <path class="arrow" d="M 800 562 L 800 628"/>
+  <path class="arrow" d="M 972 689 C 1036 689, 1048 288, 1102 288"/>
+  <path class="arrow" d="M 1288 288 L 1310 288"/>
+  <path class="arrow" d="M 1408 340 C 1408 396, 1300 390, 1300 428"/>
+
+  <rect x="622" y="790" width="876" height="62" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.5"/>
+  <text class="cardTitle" x="650" y="825">后端不得</text>
+  <text class="cardText" x="788" y="825">导入 policy shell、读私有属性、调用 ACT predict、直接改状态、改 token / report / checkpoint schema</text>
+  <path class="blockArrow" d="M 1060 812 C 980 812, 950 320, 972 296"/>
+</svg>

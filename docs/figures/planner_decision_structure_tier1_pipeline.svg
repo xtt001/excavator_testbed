@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Tier 1 decision-structure exploration pipeline</title>
+  <desc id="desc">A pipeline diagram showing archived artifacts, Tier 1 schema, gold examples, checker, validation report, audit warnings, offline research roles, and future backend gates.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 34px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+      .subtitle { font: 500 18px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .cardTitle { font: 700 18px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+      .cardText { font: 500 14px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .badge { font: 800 13px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: .08em; fill: #ffffff; }
+      .guardTitle { font: 800 16px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #7c2d12; }
+      .guardText { font: 600 14px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #92400e; }
+      .arrow { stroke: #334155; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .thinArrow { stroke: #64748b; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1600" height="900"/>
+  <text class="title" x="72" y="70">Tier 1 Decision-Structure Exploration</text>
+  <text class="subtitle" x="72" y="104">The safer path: offline shadow validation before any runtime backend promotion.</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="84" y="230" width="180" height="132" rx="8" fill="#ffffff" stroke="#38bdf8" stroke-width="2"/>
+    <rect x="104" y="210" width="140" height="30" rx="8" fill="#0284c7"/>
+    <text class="badge" x="128" y="230">ARTIFACTS</text>
+    <text class="cardTitle" x="108" y="270">aggregate_tx24</text>
+    <text class="cardText" x="108" y="296">rollout JSONL</text>
+    <text class="cardText" x="108" y="318">planner trace</text>
+    <text class="cardText" x="108" y="340">summary + evidence</text>
+
+    <rect x="330" y="230" width="180" height="132" rx="8" fill="#ffffff" stroke="#8b5cf6" stroke-width="2"/>
+    <rect x="350" y="210" width="140" height="30" rx="8" fill="#7c3aed"/>
+    <text class="badge" x="383" y="230">SCHEMA</text>
+    <text class="cardTitle" x="354" y="270">Tier 1 v0</text>
+    <text class="cardText" x="354" y="296">allowed inputs</text>
+    <text class="cardText" x="354" y="318">forbidden fields</text>
+    <text class="cardText" x="354" y="340">output contracts</text>
+
+    <rect x="576" y="230" width="180" height="132" rx="8" fill="#ffffff" stroke="#a78bfa" stroke-width="2"/>
+    <rect x="596" y="210" width="140" height="30" rx="8" fill="#6d28d9"/>
+    <text class="badge" x="628" y="230">EXAMPLES</text>
+    <text class="cardTitle" x="600" y="270">Gold cases</text>
+    <text class="cardText" x="600" y="296">4 coverage events</text>
+    <text class="cardText" x="600" y="318">LLM claims</text>
+    <text class="cardText" x="600" y="340">negative rejections</text>
+
+    <rect x="822" y="230" width="180" height="132" rx="8" fill="#ffffff" stroke="#14b8a6" stroke-width="2"/>
+    <rect x="842" y="210" width="140" height="30" rx="8" fill="#0d9488"/>
+    <text class="badge" x="886" y="230">CHECK</text>
+    <text class="cardTitle" x="846" y="270">Validator CLI</text>
+    <text class="cardText" x="846" y="296">tb-planner</text>
+    <text class="cardText" x="846" y="318">tier1-validate</text>
+    <text class="cardText" x="846" y="340">package checker</text>
+
+    <rect x="1068" y="230" width="180" height="132" rx="8" fill="#ffffff" stroke="#22c55e" stroke-width="2"/>
+    <rect x="1088" y="210" width="140" height="30" rx="8" fill="#16a34a"/>
+    <text class="badge" x="1124" y="230">REPORT</text>
+    <text class="cardTitle" x="1092" y="270">Passed true</text>
+    <text class="cardText" x="1092" y="296">10 select events</text>
+    <text class="cardText" x="1092" y="318">all gold pass</text>
+    <text class="cardText" x="1092" y="340">limits recorded</text>
+
+    <rect x="1314" y="230" width="180" height="132" rx="8" fill="#ffffff" stroke="#f97316" stroke-width="2"/>
+    <rect x="1334" y="210" width="140" height="30" rx="8" fill="#ea580c"/>
+    <text class="badge" x="1362" y="230">WARNINGS</text>
+    <text class="cardTitle" x="1338" y="270">Audit flags</text>
+    <text class="cardText" x="1338" y="296">event 2 low margin</text>
+    <text class="cardText" x="1338" y="318">event 19 non-unique</text>
+    <text class="cardText" x="1338" y="340">selected score</text>
+  </g>
+
+  <path class="arrow" d="M 264 296 L 320 296"/>
+  <path class="arrow" d="M 510 296 L 566 296"/>
+  <path class="arrow" d="M 756 296 L 812 296"/>
+  <path class="arrow" d="M 1002 296 L 1058 296"/>
+  <path class="arrow" d="M 1248 296 L 1304 296"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="206" y="500" width="340" height="150" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="2"/>
+    <text class="cardTitle" x="236" y="535">Coverage Utility shadow scorer</text>
+    <text class="cardText" x="236" y="565">Read-only candidate re-rank and tradeoff audit.</text>
+    <text class="cardText" x="236" y="590">Outputs: ranking, margin, disagreement category,</text>
+    <text class="cardText" x="236" y="615">missing facts, confidence, field references.</text>
+
+    <rect x="630" y="500" width="340" height="150" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-width="2"/>
+    <text class="cardTitle" x="660" y="535">LLM report explainer</text>
+    <text class="cardText" x="660" y="565">Field-grounded summaries from public reports.</text>
+    <text class="cardText" x="660" y="590">Every claim needs citations and role labels.</text>
+    <text class="cardText" x="660" y="615">No raw obs, private state, effects, or actions.</text>
+
+    <rect x="1054" y="500" width="340" height="150" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="2"/>
+    <text class="cardTitle" x="1084" y="535">Future runtime gate</text>
+    <text class="cardText" x="1084" y="565">Only after typed facts, effect sufficiency,</text>
+    <text class="cardText" x="1084" y="590">skill scope, test registration, and rollout</text>
+    <text class="cardText" x="1084" y="615">or A/B acceptance gates are explicit.</text>
+  </g>
+
+  <path class="thinArrow" d="M 420 362 C 420 425, 376 442, 376 490"/>
+  <path class="thinArrow" d="M 666 362 C 666 430, 800 432, 800 490"/>
+  <path class="thinArrow" d="M 1404 362 C 1404 440, 1224 438, 1224 490"/>
+  <path class="arrow" d="M 546 575 L 620 575"/>
+  <path class="arrow" d="M 970 575 L 1044 575"/>
+
+  <rect x="84" y="735" width="684" height="82" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text class="guardTitle" x="112" y="768">What it proves</text>
+  <text class="guardText" x="112" y="795">The package, schema, gold examples, and negative rejections are internally valid for offline audit.</text>
+
+  <rect x="832" y="735" width="662" height="82" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.5"/>
+  <text class="guardTitle" x="860" y="768">What it does not prove</text>
+  <text class="guardText" x="860" y="795">No counterfactual rollout improvement, full action replay, ACT parity, VLM validation, or production backend readiness.</text>
+</svg>

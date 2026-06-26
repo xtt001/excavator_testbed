@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Primitive planner 单 tick 执行流</title>
+  <desc id="desc">展示 predict、准备 tick、决策、应用 effect、分发动作、报告收尾和返回 action 的顺序。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 34px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .subtitle { font: 500 18px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .stepNum { font: 800 22px ui-sans-serif, system-ui, sans-serif; fill: #ffffff; }
+      .stepTitle { font: 700 20px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .stepText { font: 500 15px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .bandTitle { font: 800 15px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #334155; }
+      .bandText { font: 600 14px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .arrow { stroke: #334155; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .thinArrow { stroke: #64748b; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1600" height="900"/>
+  <text class="title" x="72" y="70">单 Tick：先决策，再改状态，最后出动作</text>
+  <text class="subtitle" x="72" y="104">执行顺序：backend 只返回 requested effects；状态变更由 effect owner 完成。</text>
+
+  <rect x="72" y="150" width="330" height="652" rx="8" fill="#e0f2fe" opacity="0.75"/>
+  <rect x="442" y="150" width="330" height="652" rx="8" fill="#ede9fe" opacity="0.75"/>
+  <rect x="812" y="150" width="330" height="652" rx="8" fill="#ffedd5" opacity="0.78"/>
+  <rect x="1182" y="150" width="330" height="652" rx="8" fill="#dcfce7" opacity="0.78"/>
+
+  <text class="bandTitle" x="104" y="188">公共入口</text>
+  <text class="bandText" x="104" y="215">外部仍然只调用一个 policy。</text>
+  <text class="bandTitle" x="474" y="188">只读决策输入</text>
+  <text class="bandText" x="474" y="215">把事实和 context 投影出来。</text>
+  <text class="bandTitle" x="844" y="188">受控状态变更</text>
+  <text class="bandText" x="844" y="215">只有 effect owner 改状态。</text>
+  <text class="bandTitle" x="1214" y="188">动作和报告</text>
+  <text class="bandText" x="1214" y="215">ACT 控制动作，report 做审计。</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="126" y="280" width="222" height="94" rx="8" fill="#ffffff" stroke="#38bdf8" stroke-width="2"/>
+    <circle cx="162" cy="327" r="24" fill="#0284c7"/>
+    <text class="stepNum" x="155" y="335">1</text>
+    <text class="stepTitle" x="198" y="314">predict(obs)</text>
+    <text class="stepText" x="198" y="340">公共 API 入口</text>
+
+    <rect x="496" y="240" width="222" height="110" rx="8" fill="#ffffff" stroke="#a78bfa" stroke-width="2"/>
+    <circle cx="532" cy="295" r="24" fill="#7c3aed"/>
+    <text class="stepNum" x="525" y="303">2</text>
+    <text class="stepTitle" x="568" y="280">准备 tick</text>
+    <text class="stepText" x="568" y="306">context、边界事件、</text>
+    <text class="stepText" x="568" y="328">决策前事实</text>
+
+    <rect x="496" y="430" width="222" height="110" rx="8" fill="#ffffff" stroke="#8b5cf6" stroke-width="2"/>
+    <circle cx="532" cy="485" r="24" fill="#6d28d9"/>
+    <text class="stepNum" x="525" y="493">3</text>
+    <text class="stepTitle" x="568" y="470">做决策</text>
+    <text class="stepText" x="568" y="496">DecisionRuntime 调用</text>
+    <text class="stepText" x="568" y="518">legacy_fsm backend</text>
+
+    <rect x="866" y="430" width="222" height="110" rx="8" fill="#ffffff" stroke="#fb923c" stroke-width="2"/>
+    <circle cx="902" cy="485" r="24" fill="#ea580c"/>
+    <text class="stepNum" x="895" y="493">4</text>
+    <text class="stepTitle" x="938" y="470">应用 effect</text>
+    <text class="stepText" x="938" y="496">先校验 result，</text>
+    <text class="stepText" x="938" y="518">再改聚焦 owner</text>
+
+    <rect x="1236" y="350" width="222" height="110" rx="8" fill="#ffffff" stroke="#22c55e" stroke-width="2"/>
+    <circle cx="1272" cy="405" r="24" fill="#16a34a"/>
+    <text class="stepNum" x="1265" y="413">5</text>
+    <text class="stepTitle" x="1308" y="390">分发动作</text>
+    <text class="stepText" x="1308" y="416">当前 active skill</text>
+    <text class="stepText" x="1308" y="438">对应 ACT 或动作路径</text>
+
+    <rect x="1236" y="570" width="222" height="110" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="2"/>
+    <circle cx="1272" cy="625" r="24" fill="#15803d"/>
+    <text class="stepNum" x="1265" y="633">6</text>
+    <text class="stepTitle" x="1308" y="610">收尾报告</text>
+    <text class="stepText" x="1308" y="636">记录 previous action、</text>
+    <text class="stepText" x="1308" y="658">debug、trace、summary</text>
+  </g>
+
+  <path class="arrow" d="M 348 327 C 410 327, 430 295, 486 295"/>
+  <path class="arrow" d="M 607 350 L 607 420"/>
+  <path class="arrow" d="M 718 485 L 856 485"/>
+  <path class="arrow" d="M 1088 485 C 1156 485, 1164 405, 1226 405"/>
+  <path class="arrow" d="M 1347 460 L 1347 560"/>
+  <path class="thinArrow" d="M 1347 680 C 1347 744, 244 744, 244 386"/>
+
+  <rect x="190" y="732" width="1160" height="50" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text class="stepText" x="222" y="763">核心边界：backend 选择并返回 requested effects；runtime 校验和应用；低层 ACT 输出 4D 控制动作。</text>
+</svg>

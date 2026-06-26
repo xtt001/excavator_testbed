@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
+  <title id="title">Primitive planner 重构后的责任泳道</title>
+  <desc id="desc">展示公共壳、决策通道、可变运行状态 owner、领域服务和只读报告输出之间的责任边界。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 34px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .subtitle { font: 500 18px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .laneTitle { font: 800 18px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .cardTitle { font: 700 18px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .cardText { font: 500 14px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .calloutTitle { font: 800 16px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #7c2d12; }
+      .calloutText { font: 600 14px "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; fill: #92400e; }
+      .arrow { stroke: #334155; stroke-width: 2.4; fill: none; marker-end: url(#arrow); }
+      .thinArrow { stroke: #64748b; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1600" height="980"/>
+  <text class="title" x="72" y="70">责任泳道：事实、选择、状态变更、报告各有 Owner</text>
+  <text class="subtitle" x="72" y="104">重点不是“少了多少行”，而是谁负责事实、谁负责选择、谁负责改状态、谁负责报告。</text>
+
+  <rect x="72" y="152" width="272" height="660" rx="8" fill="#dbeafe" opacity="0.55"/>
+  <rect x="374" y="152" width="272" height="660" rx="8" fill="#ede9fe" opacity="0.58"/>
+  <rect x="676" y="152" width="272" height="660" rx="8" fill="#ffedd5" opacity="0.58"/>
+  <rect x="978" y="152" width="272" height="660" rx="8" fill="#ccfbf1" opacity="0.58"/>
+  <rect x="1280" y="152" width="248" height="660" rx="8" fill="#dcfce7" opacity="0.58"/>
+
+  <text class="laneTitle" x="104" y="190">公共壳</text>
+  <text class="laneTitle" x="406" y="190">决策通道</text>
+  <text class="laneTitle" x="708" y="190">状态 Owner</text>
+  <text class="laneTitle" x="1010" y="190">领域服务</text>
+  <text class="laneTitle" x="1312" y="190">报告输出</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="104" y="242" width="208" height="106" rx="8" fill="#ffffff" stroke="#60a5fa" stroke-width="2"/>
+    <text class="cardTitle" x="126" y="276">PrimitivePlanner</text>
+    <text class="cardTitle" x="126" y="300">ACTPolicy</text>
+    <text class="cardText" x="126" y="326">外部兼容入口</text>
+
+    <rect x="104" y="420" width="208" height="112" rx="8" fill="#ffffff" stroke="#93c5fd" stroke-width="2"/>
+    <text class="cardTitle" x="126" y="454">Public Runtime</text>
+    <text class="cardText" x="126" y="480">reset / predict</text>
+    <text class="cardText" x="126" y="502">debug / summary / trace</text>
+
+    <rect x="104" y="604" width="208" height="112" rx="8" fill="#ffffff" stroke="#bfdbfe" stroke-width="2"/>
+    <text class="cardTitle" x="126" y="638">配置和焊接</text>
+    <text class="cardText" x="126" y="664">低层 policy 句柄</text>
+    <text class="cardText" x="126" y="686">跨边界动态端口</text>
+
+    <rect x="406" y="224" width="208" height="96" rx="8" fill="#ffffff" stroke="#a78bfa" stroke-width="2"/>
+    <text class="cardTitle" x="428" y="258">DecisionContext</text>
+    <text class="cardText" x="428" y="284">每个 tick 的身份信息</text>
+
+    <rect x="406" y="362" width="208" height="104" rx="8" fill="#ffffff" stroke="#8b5cf6" stroke-width="2"/>
+    <text class="cardTitle" x="428" y="396">Backend Facts</text>
+    <text class="cardText" x="428" y="422">只读懒加载事实</text>
+    <text class="cardText" x="428" y="444">各 transition 视图</text>
+
+    <rect x="406" y="508" width="208" height="104" rx="8" fill="#ffffff" stroke="#7c3aed" stroke-width="2"/>
+    <text class="cardTitle" x="428" y="542">legacy_fsm</text>
+    <text class="cardText" x="428" y="568">当前生产后端</text>
+    <text class="cardText" x="428" y="590">保留原分支顺序</text>
+
+    <rect x="406" y="654" width="208" height="104" rx="8" fill="#ffffff" stroke="#6d28d9" stroke-width="2"/>
+    <text class="cardTitle" x="428" y="688">DecisionResult</text>
+    <text class="cardText" x="428" y="714">有序 requested effects</text>
+    <text class="cardText" x="428" y="736">可审计 reason</text>
+
+    <rect x="708" y="224" width="208" height="86" rx="8" fill="#ffffff" stroke="#fb923c" stroke-width="2"/>
+    <text class="cardTitle" x="730" y="258">执行生命周期</text>
+    <text class="cardText" x="730" y="284">active skill、reason</text>
+
+    <rect x="708" y="344" width="208" height="86" rx="8" fill="#ffffff" stroke="#fb923c" stroke-width="2"/>
+    <text class="cardTitle" x="730" y="378">Cycle / 进度</text>
+    <text class="cardText" x="730" y="404">循环计数和进度</text>
+
+    <rect x="708" y="464" width="208" height="86" rx="8" fill="#ffffff" stroke="#f97316" stroke-width="2"/>
+    <text class="cardTitle" x="730" y="498">Return 状态</text>
+    <text class="cardText" x="730" y="524">handoff runtime cache</text>
+
+    <rect x="708" y="584" width="208" height="86" rx="8" fill="#ffffff" stroke="#ea580c" stroke-width="2"/>
+    <text class="cardTitle" x="730" y="618">Coverage 状态</text>
+    <text class="cardText" x="730" y="644">corridor、score、终止</text>
+
+    <rect x="708" y="704" width="208" height="86" rx="8" fill="#ffffff" stroke="#c2410c" stroke-width="2"/>
+    <text class="cardTitle" x="730" y="738">Token 状态</text>
+    <text class="cardText" x="730" y="764">dig / return tokens</text>
+
+    <rect x="1010" y="224" width="208" height="104" rx="8" fill="#ffffff" stroke="#2dd4bf" stroke-width="2"/>
+    <text class="cardTitle" x="1032" y="258">Coverage 服务</text>
+    <text class="cardText" x="1032" y="284">候选选择 / effect</text>
+    <text class="cardText" x="1032" y="306">报告投影</text>
+
+    <rect x="1010" y="374" width="208" height="104" rx="8" fill="#ffffff" stroke="#14b8a6" stroke-width="2"/>
+    <text class="cardTitle" x="1032" y="408">Token 规划</text>
+    <text class="cardText" x="1032" y="434">dig cut / depth</text>
+    <text class="cardText" x="1032" y="456">return envelope</text>
+
+    <rect x="1010" y="524" width="208" height="104" rx="8" fill="#ffffff" stroke="#0d9488" stroke-width="2"/>
+    <text class="cardTitle" x="1032" y="558">恢复 / handoff</text>
+    <text class="cardText" x="1032" y="584">failed dig / replan</text>
+    <text class="cardText" x="1032" y="606">return handoff</text>
+
+    <rect x="1010" y="674" width="208" height="104" rx="8" fill="#ffffff" stroke="#0f766e" stroke-width="2"/>
+    <text class="cardTitle" x="1032" y="708">兼容路径</text>
+    <text class="cardText" x="1032" y="734">pre_dig_align 可选</text>
+    <text class="cardText" x="1032" y="756">cell_entry 停车</text>
+
+    <rect x="1312" y="260" width="184" height="96" rx="8" fill="#ffffff" stroke="#22c55e" stroke-width="2"/>
+    <text class="cardTitle" x="1334" y="294">debug_state</text>
+    <text class="cardText" x="1334" y="320">公共调试 schema</text>
+
+    <rect x="1312" y="430" width="184" height="96" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="2"/>
+    <text class="cardTitle" x="1334" y="464">rollout_summary</text>
+    <text class="cardText" x="1334" y="490">episode 聚合</text>
+
+    <rect x="1312" y="600" width="184" height="96" rx="8" fill="#ffffff" stroke="#15803d" stroke-width="2"/>
+    <text class="cardTitle" x="1334" y="634">planner_trace</text>
+    <text class="cardText" x="1334" y="660">审计证据</text>
+  </g>
+
+  <path class="arrow" d="M 312 476 L 396 414"/>
+  <path class="arrow" d="M 614 706 L 698 387"/>
+  <path class="thinArrow" d="M 916 627 L 1000 276"/>
+  <path class="thinArrow" d="M 916 747 L 1000 426"/>
+  <path class="thinArrow" d="M 916 507 L 1000 576"/>
+  <path class="thinArrow" d="M 1218 276 L 1302 308"/>
+  <path class="thinArrow" d="M 1218 426 L 1302 478"/>
+  <path class="thinArrow" d="M 1218 726 L 1302 648"/>
+
+  <rect x="72" y="846" width="710" height="72" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text class="calloutTitle" x="100" y="878">核心规则</text>
+  <text class="calloutText" x="100" y="904">决策读事实、返回 effect；状态 owner 改状态；报告只负责审计。</text>
+
+  <rect x="824" y="846" width="704" height="72" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.5"/>
+  <text class="calloutTitle" x="852" y="878">未确认边界</text>
+  <text class="calloutText" x="852" y="904">report-only 字段、cell_entry、可选 pre_dig_align 不能自动升级为默认后端输入。</text>
+</svg>
