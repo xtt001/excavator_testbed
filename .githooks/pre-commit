@@ -5,7 +5,8 @@ ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
 mapfile -t STAGED_PATHS < <(git diff --cached --name-only)
+PYTHON_BIN="${PYTHON:-python3}"
 
-python scripts/planner_refactor_guard.py --check-historical-files "${STAGED_PATHS[@]}"
-python scripts/planner_refactor_guard.py --check-plan-contract
-python scripts/planner_refactor_guard.py --check-skill-contract
+"$PYTHON_BIN" scripts/planner_refactor_guard.py --check-historical-files "${STAGED_PATHS[@]}"
+"$PYTHON_BIN" scripts/planner_refactor_guard.py --check-plan-contract
+"$PYTHON_BIN" scripts/planner_refactor_guard.py --check-skill-contract

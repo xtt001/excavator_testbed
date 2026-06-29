@@ -4,8 +4,8 @@ Status: **active design guide for future scheduling/decision backends**.
 
 This document explains how a future scheduling backend should attach to the
 current primitive planner contracts. It is a design guide and integration
-checklist. It does not claim that BT, VLM, LLM, learned, plugin-routed, or
-production-config-selected backends already exist.
+checklist. It does not claim that BT production routing, VLM, LLM, learned,
+plugin-routed, or production-config-selected backends already exist.
 
 Use this guide with:
 
@@ -27,13 +27,17 @@ The current planner is backend-ready at the generic runtime-contract level:
   surface;
 - the production shell currently registers only `legacy_fsm`;
 - unsupported backend names fail fast;
-- focused fake-backend tests prove the generic runtime/factory contract;
+- focused backend-selection tests prove the generic runtime/factory contract;
+- a non-default `behavior_tree_shadow` backend exists for focused harness
+  registration, explicit continue-current-skill fallback, a first
+  return-completed transition branch, and node trace output;
 - production plugin discovery and user-facing backend config routing are not
   implemented.
 
-The current backend path is still the default legacy FSM adapter. Future
-backends should reuse the generic decision, fact, input, and effect contracts
-instead of reading `PrimitivePlannerACTPolicy` or policy private methods.
+The current production backend path is still the default legacy FSM adapter.
+Future backends should reuse the generic decision, fact, input, and effect
+contracts instead of reading `PrimitivePlannerACTPolicy` or policy private
+methods.
 
 ## Backend Contract Diagram
 
@@ -52,6 +56,18 @@ flowchart LR
 ```
 
 Backends choose and explain. Effect runtimes mutate focused planner state.
+
+Trace output is not an internal-only debug artifact. The target trace
+abstraction is backend-neutral so online Unity eval and offline eval can consume
+the same trace service/export contract. Generic trace records should capture
+`backend_name`, `decision_source`, active skill, skill before/after, status,
+selected-intent or path summary, reasons, requested effects, optional
+confidence/score fields, diagnostic checks, and compact/rich export modes.
+Backend-specific details must be nested payloads: BT node statuses and selected
+tree paths belong in a BT payload; VLM prompt ids, visual evidence ids, model
+answer summaries, confidence, refusal/fallback reasons, and grounding artifacts
+belong in a VLM payload. Concrete backends must not own Unity eval I/O, offline
+replay file formats, rollout writer internals, or eval orchestration.
 
 ## Allowed Production Import Surface
 
@@ -114,6 +130,17 @@ Expected shape:
 6. Register the factory through `PrimitiveDecisionRuntimePorts.backend_factories`
    in a scoped production weld or test harness.
 
+The current `behavior_tree_shadow` backend follows this shape only for scoped
+tests or explicit harness registration. It is not registered by the production
+shell.
+
+For decision trace work, add a stable generic trace record or adapter boundary
+before wiring consumers. Online Unity eval should be able to consume a compact
+per-tick trace; offline eval should be able to consume a richer replayable trace
+for parity, mismatch diagnosis, and aggregate analysis. Both consumers should
+share backend-neutral trace semantics through a trace/export owner outside any
+concrete backend.
+
 Adding a user-facing backend selector, plugin registry, config schema, or
 runtime route is a separate product decision. Do not smuggle it into the first
 backend implementation unless explicitly requested.
@@ -131,8 +158,9 @@ Future backends must not:
   behavior-preserving backend;
 - introduce hidden token schema, report schema, reset timing, threshold, or
   checkpoint compatibility changes;
-- treat `cell_entry`, 5P, BT, VLM, LLM, or learned backend support as implied by
-  this guide.
+- treat `cell_entry`, 5P, BT production routing, VLM, LLM, or learned backend
+  support as implied by this guide. The `behavior_tree_shadow` skeleton only
+  proves the first non-default fallback/trace contract.
 
 Future backends should:
 

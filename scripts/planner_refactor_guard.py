@@ -17,7 +17,7 @@ SKILL_PATH = (
     Path.home()
     / ".codex"
     / "skills"
-    / "excavator-planner-safe-refactor"
+    / "closed-loop-planner-executor"
     / "SKILL.md"
 )
 
@@ -153,19 +153,28 @@ def check_skill_contract(skill_path: str | Path = SKILL_PATH) -> None:
     path = Path(skill_path)
     text = _read(path)
     for needle in (
-        "docs/planner_rollout_evidence_refactor_plan.md",
-        "docs/planner_rollout_evidence_refactor_log.md",
-        "docs/planner_baseline_architecture_map.md",
-        "docs/planner_current_code_architecture_plan.md",
-        "branch baseline",
-        "rollout log",
-        "first-principles",
-        "primary goal",
+        "name: closed-loop-planner-executor",
+        "Hard rules:",
+        "Planner owns goal",
+        "Executor performs one bounded slice",
+        "target lock",
+        "confirmed reference base",
+        "callback",
+        "reflection",
+        "thinking: xhigh",
+        "thinking: high",
+        "Closure:",
     ):
         _require(text.lower(), needle.lower(), path=path)
-    if "primitive_scheduler_service_refactor_plan" in text:
+    for forbidden in ("primitive_scheduler_service_refactor_plan",):
+        if forbidden in text:
+            raise PlannerRefactorGuardError(
+                "skill contract must point at the generic closed-loop planner "
+                f"executor skill, not project-specific legacy plan text: {forbidden}"
+            )
+    if "excavator-planner-safe-refactor" in text:
         raise PlannerRefactorGuardError(
-            "skill must not treat the old primitive scheduler plan as active"
+            "skill contract must not point agents at the removed planner refactor skill"
         )
 
 

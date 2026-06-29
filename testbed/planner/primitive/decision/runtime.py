@@ -21,6 +21,7 @@ from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 
 LEGACY_FSM_DECISION_BACKEND_NAME = "legacy_fsm"
 SUPPORTED_DECISION_BACKENDS = (LEGACY_FSM_DECISION_BACKEND_NAME,)
+PRODUCTION_DECISION_BACKEND_NAMES = SUPPORTED_DECISION_BACKENDS
 
 
 @dataclass(frozen=True)
@@ -150,7 +151,9 @@ class PrimitiveDecisionRuntime:
 
 __all__ = [
     "LEGACY_FSM_DECISION_BACKEND_NAME",
+    "PRODUCTION_DECISION_BACKEND_NAMES",
     "PrimitiveDecisionRuntime",
     "PrimitiveDecisionRuntimeConfig",
     "PrimitiveDecisionRuntimePorts",
+    "SUPPORTED_DECISION_BACKENDS",
 ]

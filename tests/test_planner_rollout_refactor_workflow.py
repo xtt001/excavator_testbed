@@ -199,24 +199,25 @@ def test_historical_file_guard_blocks_recreating_legacy_plan(tmp_path: Path) -> 
         )
 
 
-def test_skill_contract_points_to_rollout_evidence_plan(tmp_path: Path) -> None:
+def test_skill_contract_requires_closed_loop_planner_executor_rules(
+    tmp_path: Path,
+) -> None:
     skill = tmp_path / "SKILL.md"
     skill.write_text(
         "\n".join(
             [
                 "---",
-                "name: excavator-planner-safe-refactor",
-                "description: Use for rollout-evidence-driven planner refactors.",
+                "name: closed-loop-planner-executor",
+                "description: Use for closed-loop planner executor work.",
                 "---",
-                "# Excavator Planner Safe Refactor",
-                "Read docs/planner_rollout_evidence_refactor_plan.md first.",
-                "Keep docs/planner_rollout_evidence_refactor_log.md separate.",
-                "Update docs/planner_baseline_architecture_map.md before migration.",
-                "Read docs/planner_current_code_architecture_plan.md before migration.",
-                "Use real rollout log evidence before extracting code.",
-                "Reconstruct the branch baseline architecture first.",
-                "Run the first-principles reflection gate every round.",
-                "The primary goal is refactoring and abstraction.",
+                "# Closed Loop Planner Executor",
+                "Hard rules:",
+                "- Planner owns goal, target lock, scope, reflection, recovery, closure, and the next slice.",
+                "- Executor performs one bounded slice only.",
+                "- Preserve the confirmed reference base.",
+                "- Use callback facts for every executor completion.",
+                "- Use thinking: xhigh or thinking: high.",
+                "Closure: planner verifies before the next dispatch.",
             ]
         ),
         encoding="utf-8",
@@ -229,13 +230,7 @@ def test_repository_rollout_refactor_contract_is_wired() -> None:
     root = Path(__file__).resolve().parents[1]
 
     check_plan_contract(root)
-    check_skill_contract(
-        Path.home()
-        / ".codex"
-        / "skills"
-        / "excavator-planner-safe-refactor"
-        / "SKILL.md"
-    )
+    check_skill_contract()
 
 
 def test_pre_commit_config_wires_planner_refactor_hooks() -> None:
@@ -266,7 +261,7 @@ def test_goal_prompt_exists_for_rollout_evidence_goal_mode() -> None:
     ).read_text(encoding="utf-8")
 
     assert "Long-running Goal" in prompt
-    assert "$excavator-planner-safe-refactor" in prompt
+    assert "$closed-loop-planner-executor" in prompt
     assert "rollout log" in prompt.lower()
     assert "first-principles" in prompt.lower()
     assert "branch baseline" in prompt.lower()
@@ -281,6 +276,7 @@ def test_goal_prompt_exists_for_rollout_evidence_goal_mode() -> None:
     assert "thinking: high" in prompt
     assert "three-iteration reflection" in prompt
     assert "primitive_scheduler_service_refactor_plan" not in prompt
+    assert "excavator-planner-safe-refactor" not in prompt
 
 
 def test_architecture_map_template_exists_separate_from_plan() -> None:

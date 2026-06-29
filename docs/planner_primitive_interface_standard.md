@@ -10,9 +10,10 @@ move the code toward the current architecture entry point in
 `docs/planner_scheduling_backend_design.md`.
 
 The current implementation is best described as **default legacy FSM
-backendified with focused services**. It is not yet a fully backend-agnostic
-planner where behavior-tree, VLM, or learned decision backends can be swapped in
-without additional interface work.
+backendified with focused services** plus a non-default behavior-tree shadow
+backend skeleton. It is not yet a fully backend-agnostic planner where
+behavior-tree, VLM, or learned decision backends can be swapped in without
+additional interface work.
 
 ## Source Documents
 
@@ -230,10 +231,13 @@ Current maturity:
   carried through the legacy FSM branch chain by
   `PrimitiveBackendDecisionInput`**
 - external backend contract readiness: **achieved at generic runtime-contract
-  level through fake backend tests; no production plugin/config selection is
-  implemented**
-- behavior-tree, VLM, LLM, or learned decision backend implementation:
-  **not implemented**
+  level and exercised through explicit `behavior_tree_shadow` selection tests;
+  no production plugin/config selection is implemented**
+- behavior-tree decision backend implementation: **partly implemented as a
+  non-default shadow backend with continue-current-skill fallback, a
+  return-completed transition branch, BT payload mapping, and compact/rich trace
+  export tests; production routing and full BT facts are not implemented**
+- VLM, LLM, or learned decision backend implementation: **not implemented**
 
 ### Backend-Ready Production Import Contract
 
@@ -285,9 +289,14 @@ Shell and lane dependency rules:
 - `PrimitivePlannerACTPolicy` remains the default production registration weld
   for `legacy_fsm` until production plugin/config routing is explicitly
   requested.
-- The fake backend contract proof is test-local. It proves generic
+- Older fake-backend contract proof remains test-local. It proves generic
   runtime/factory selection, not production plugin discovery or a real external
   backend implementation.
+- The `behavior_tree_shadow` backend is concrete code, but it is non-default
+  and explicit-only. It proves harness registration, a no-change fallback, the
+  first return-completed transition branch, and BT-specific node trace output.
+  The trace bundle feeds the generic online/offline eval trace contract, not an
+  internal-only debug artifact.
 
 Do not describe the current code as "fully swappable backend architecture." The
 accurate claim is: the confirmed-live 4P legacy FSM path has been backendified,
@@ -570,13 +579,15 @@ Gap:
 - Return transition facts now have a typed read-only view, but that view is
   constructed lazily only after the active return branch has refreshed cached
   handoff state.
-- The backend registry currently contains only the `legacy_fsm` factory. It is
-  a selection/construction boundary, not proof that behavior-tree, VLM, or
-  learned backends can already consume the current facts packet.
+- The production backend registry currently contains only the `legacy_fsm`
+  factory. It is a selection/construction boundary, not proof that complete
+  behavior-tree, VLM, or learned backends can already consume the current facts
+  packet.
 - There is no full backend-neutral fact packet for behavior-tree or VLM
   strategies because transition, token, coverage, and return handoff facts are
   not yet in a neutral packet.
-- There is no alternate backend implementation.
+- `behavior_tree_shadow` is the only alternate backend implementation, and it
+  is limited to an explicit no-change fallback plus trace skeleton.
 
 Standard:
 
@@ -586,8 +597,13 @@ Standard:
   effects.
 - New backends must not depend on policy private attributes, compatibility
   facades, or broad callback bags.
-- `legacy_fsm` remains the only supported runtime backend until this document is
-  updated with a concrete alternate backend contract.
+- `legacy_fsm` remains the only default production runtime backend.
+  `behavior_tree_shadow` may be used by focused tests or explicit harnesses, but
+  it is not a user-facing backend selector.
+- Future generic decision trace service/export work must keep ownership split:
+  each backend produces backend-specific payload details, while a
+  consumer-neutral report/trace owner adapts generic decision trace records for
+  online Unity eval and offline eval.
 
 ## Layer 5: Decision Context
 
@@ -751,8 +767,9 @@ Gap:
   but the packet is still tailored to the legacy FSM branch chain and its
   explicit compatibility actions.
 - The runtime factory/registry boundary is present, but only the legacy FSM
-  factory is registered and supported. It does not yet include a non-FSM
-  backend factory or a richer backend-neutral facts packet for alternate
+  factory is registered by the production shell. The non-FSM
+  `behavior_tree_shadow` factory exists for explicit harness registration, but
+  does not yet include a richer backend-neutral facts packet for alternate
   strategies.
 - Residual `pre_dig_align` is still a capability-side already-applied handler.
 - `PrimitiveDecisionFacts` is not yet the complete `PrimitiveBackendFacts`
@@ -811,6 +828,18 @@ Standard:
 - Effects must not carry callables, `self`, planner objects, or method-call
   payloads.
 - Effect order is part of the contract.
+- Generic decision trace records should capture backend name, decision source,
+  active skill, skill before/after, status, selected-intent or path summary,
+  reasons, requested effects, optional confidence/score fields, diagnostic
+  checks, and compact/rich export modes.
+- Backend-specific trace details belong in nested payloads. BT node statuses
+  and selected tree paths belong in a BT payload; VLM prompt ids, visual
+  evidence ids, model answer summaries, confidence, refusal/fallback reasons,
+  and grounding artifacts belong in a VLM payload.
+- Trace export is a separate consumer-neutral boundary. Online Unity eval and
+  offline eval must be able to consume the same generic trace semantics, but
+  backend code must not own Unity eval I/O, offline replay file formats,
+  rollout writer internals, or eval orchestration.
 - Adding an effect requires focused tests, validation tests, and parity tests for
   any public observable surface it touches.
 
@@ -1216,7 +1245,10 @@ Current parking:
   keys remain disabled/default.
 - `5P`: removed runtime. Historical behavior is preserved only by git history;
   runtime eval may keep a fail-fast diagnostic.
-- behavior-tree, VLM, and LLM backends: unsupported parked scope.
+- behavior-tree production routing and full BT decision semantics: still parked
+  scope. The current `behavior_tree_shadow` code is only a non-default fallback
+  and trace skeleton.
+- VLM and LLM backends: unsupported parked scope.
 
 Standard:
 
@@ -1265,8 +1297,15 @@ The next code work should follow this order:
      `pre_dig_align` and `cell_entry`.
    - Do not do this before the runtime kernel boundary is clear.
 
-5. Only then prototype a new backend.
-   - Start with a non-default, fail-closed backend contract test.
+5. Continue the new-backend prototype only behind explicit selection.
+   - The initial non-default `behavior_tree_shadow` backend is present for
+     continue-current-skill fallback, node trace payloads, and the first
+     return-completed transition branch.
+   - The generic trace record/schema and compact/rich adapter boundary now live
+     under the report owner for online Unity eval and offline eval consumers,
+     but consumer I/O is still not wired.
+   - Next backend slices must add focused BT branch facts or effects with their
+     own tests before any production route selection.
    - The backend must consume decision facts and return requested effects.
 
 ## Verification Standard

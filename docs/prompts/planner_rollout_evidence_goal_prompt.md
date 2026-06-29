@@ -10,7 +10,7 @@ objective:
 在 /home/pingfan/PACT/excavator_testbed 中按 baseline-architecture + rollout-evidence-driven 方法继续 planner backend/runtime migration。不要继续在巨大 primitive planner 文件里牵线式重构，也不要把当前半迁移 HEAD 当作目标架构。先回到 branch baseline 重建 planner 架构图，再用真实 rollout log 证明 live path，起新 focused module，把旧代码里真实用上的逻辑搬出来；parity 通过后只做 thin facade / legacy parking / compatibility owner，不把删除旧函数当作当前目标。
 
 必须使用：
-- $excavator-planner-safe-refactor
+- $closed-loop-planner-executor
 - superpowers:test-driven-development
 - superpowers:verification-before-completion
 
@@ -29,7 +29,7 @@ objective:
 - docs/planner_scheduling_backend_design.md
 - docs/planner_current_code_architecture_plan.md
 - docs/planner_evidence_trace_tool.md
-- /home/pingfan/.codex/skills/excavator-planner-safe-refactor/SKILL.md
+- /home/pingfan/.codex/skills/closed-loop-planner-executor/SKILL.md
 
 可选历史参考，不作为实施 source-of-truth：
 - docs/refactor_history/planner/

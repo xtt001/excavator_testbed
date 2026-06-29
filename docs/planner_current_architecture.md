@@ -25,9 +25,20 @@ The current implementation is:
 - a focused primitive planner package under `testbed/planner/primitive/...`;
 - a default legacy FSM backend wired through generic decision-runtime
   contracts;
+- a non-default behavior-tree shadow backend that can be registered by a
+  focused harness and currently proves explicit continue-current-skill fallback,
+  the first return-completed transition branch, and trace output;
 - backend-ready at the contract level for future scheduling backends;
 - not a complete BT, VLM, LLM, learned-backend, plugin, or production backend
   routing system.
+
+The target abstraction is a backend-neutral decision platform, not BT itself.
+The current BT shadow backend is only the first concrete/shadow backend. The
+generic decision trace/export surface now lives under the report boundary and
+provides compact/rich dictionary adapters for online Unity eval and offline
+eval consumers, but it is not yet wired into Unity sockets, offline writers, or
+eval runners. Backend-specific details such as BT node paths remain nested
+payloads under a generic decision trace record.
 
 The accurate maturity statement remains:
 
@@ -51,7 +62,9 @@ flowchart LR
   decision_runtime --> input_builder["primitive/decision/input.py\nbackend decision input"]
   input_builder --> backend_facts["primitive/facts/backend.py\nlazy backend facts access"]
   decision_runtime --> legacy["primitive/decision/backends/legacy_fsm.py\ndefault backend"]
+  decision_runtime -. explicit harness registration .-> bt_shadow["primitive/decision/backends/behavior_tree.py\nnon-default shadow backend"]
   legacy --> result["PrimitiveDecisionResult\nrequested effects"]
+  bt_shadow --> result
   result --> effects["primitive/effects/requested.py\nordered effect application"]
   effects --> state_owners["execution / cycle / return / coverage / token state owners"]
   exec --> dispatch["primitive/execution/action_dispatch.py\nlow-level ACT action route"]
@@ -133,7 +146,10 @@ explicitly approves a semantic change.
 - `cell_entry` remains parked compatibility/report material in primitive
   planner runtime. Enabled primitive-planner `cell_entry` runtime config should
   still fail fast.
-- 5P, BT, VLM, LLM, learned scheduling backends, plugin routing, and production
+- BT production routing and complete behavior-tree decision semantics remain
+  out of scope. The current BT code is only a non-default shadow backend for
+  explicit registration tests and the first return-transition branch.
+- 5P, VLM, LLM, learned scheduling backends, plugin routing, and production
   backend config selection remain out of scope until a future phase explicitly
   starts them.
 
