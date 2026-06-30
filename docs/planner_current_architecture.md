@@ -10,8 +10,8 @@ Use this document with:
 
 - `docs/planner_primitive_interface_standard.md`
 - `docs/planner_scheduling_backend_design.md`
+- `docs/planner_decision_backend_contract.md`
 - `docs/planner_to_act_conceptual_contract.md`
-- `docs/v2_5_design_sketch/README.md`
 - `docs/v2_5_rollout_issue_record_2026_06_30.md`
 
 Older planner migration plans, evidence reports, and prompt templates were
@@ -159,4 +159,4 @@ explicitly approves a semantic change.
 Update this document when the actual package lanes, runtime flow, or backend
 readiness claim changes. Keep round-by-round execution evidence in the
 short-lived work artifacts for that implementation round, then fold durable
-facts back into this document or the relevant V2.5 design-sketch file.
+facts back into this document or `docs/planner_decision_backend_contract.md`.

@@ -21,8 +21,8 @@ Current maturity statement: `default legacy FSM backendified with focused servic
 
 - `docs/planner_current_architecture.md`
 - `docs/planner_scheduling_backend_design.md`
+- `docs/planner_decision_backend_contract.md`
 - `docs/planner_to_act_conceptual_contract.md`
-- `docs/v2_5_design_sketch/README.md`
 - `docs/v2_5_rollout_issue_record_2026_06_30.md`
 - `AGENTS.md`
 
@@ -37,8 +37,8 @@ relying on memory, deleted development plans, or unnamed old documents:
   `docs/planner_scheduling_backend_design.md`;
 - conceptual control contract:
   `docs/planner_to_act_conceptual_contract.md`;
-- V2.5 design and progress context:
-  `docs/v2_5_design_sketch/`;
+- decision backend, trace, validation, and backend-selection contract:
+  `docs/planner_decision_backend_contract.md`;
 - V2.5 rollout configuration context:
   `docs/v2_5_rollout_issue_record_2026_06_30.md`;
 - repository governance: `AGENTS.md`;

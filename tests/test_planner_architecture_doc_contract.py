@@ -81,11 +81,12 @@ def test_readme_points_to_curated_docs() -> None:
         "docs/planner_to_act_conceptual_contract.md",
         "docs/planner_current_architecture.md",
         "docs/planner_scheduling_backend_design.md",
+        "docs/planner_decision_backend_contract.md",
         "docs/data_processing_hdf5_qc_contract.md",
         "docs/primitive_phase_boundaries.md",
-        "docs/v2_5_design_sketch/",
     ):
         assert needle in readme
 
     assert "docs/current_status_and_plan.md" not in readme
     assert "docs/v2_2_4primitives/phase_boundaries.md" not in readme
+    assert "docs/v2_5_design_sketch/" not in readme

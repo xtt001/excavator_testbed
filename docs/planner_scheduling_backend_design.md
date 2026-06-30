@@ -11,6 +11,7 @@ Use this guide with:
 
 - `docs/planner_current_architecture.md`
 - `docs/planner_primitive_interface_standard.md`
+- `docs/planner_decision_backend_contract.md`
 - `tests/test_primitive_backend_ready_contract.py`
 
 Historical backend drafts from earlier refactor rounds are no longer part of

@@ -26,22 +26,10 @@ YULONG_DOCS = frozenset(
 REFACTOR_DOCS = frozenset(
     {
         "docs/planner_current_architecture.md",
+        "docs/planner_decision_backend_contract.md",
         "docs/planner_scheduling_backend_design.md",
         "docs/planner_primitive_interface_standard.md",
         "docs/v2_5_rollout_issue_record_2026_06_30.md",
-        "docs/v2_5_design_sketch/README.md",
-        "docs/v2_5_design_sketch/backend_payload_mapping_detail.md",
-        "docs/v2_5_design_sketch/backend_proposal_validation_detail.md",
-        "docs/v2_5_design_sketch/backend_registration_selection_detail.md",
-        "docs/v2_5_design_sketch/behavior_tree_shadow_growth_detail.md",
-        "docs/v2_5_design_sketch/decision_backend_stage_design.md",
-        "docs/v2_5_design_sketch/decision_trace_protocol.md",
-        "docs/v2_5_design_sketch/fallback_handoff_fact_audit_detail.md",
-        "docs/v2_5_design_sketch/graph_contract_detail.md",
-        "docs/v2_5_design_sketch/handoff.md",
-        "docs/v2_5_design_sketch/implementation_progress.md",
-        "docs/v2_5_design_sketch/online_offline_eval_trace_integration_detail.md",
-        "docs/v2_5_design_sketch/trace_service_detail.md",
     }
 )
 
@@ -60,6 +48,7 @@ REMOVED_DOC_FRAGMENTS = (
     "docs/current_status_and_plan.md",
     "docs/v2_1_plan",
     "docs/v2_2_4primitives",
+    "docs/v2_5_design_sketch",
 )
 
 
@@ -128,16 +117,16 @@ def check_changed_docs(
 def check_architecture_contract(root: str | Path = ".") -> None:
     root_path = Path(root)
     architecture_path = root_path / "docs/planner_current_architecture.md"
+    decision_backend_path = root_path / "docs/planner_decision_backend_contract.md"
     scheduling_path = root_path / "docs/planner_scheduling_backend_design.md"
     interface_path = root_path / "docs/planner_primitive_interface_standard.md"
     rollout_path = root_path / "docs/v2_5_rollout_issue_record_2026_06_30.md"
-    design_readme_path = root_path / "docs/v2_5_design_sketch/README.md"
 
     architecture = _read(architecture_path)
+    decision_backend = _read(decision_backend_path)
     scheduling = _read(scheduling_path)
     interface = _read(interface_path)
     rollout = _read(rollout_path)
-    design_readme = _read(design_readme_path)
 
     for needle in (
         "active current planner architecture entry point",
@@ -147,6 +136,17 @@ def check_architecture_contract(root: str | Path = ".") -> None:
         "backend-neutral decision platform",
     ):
         _require(architecture, needle, path=architecture_path)
+
+    for needle in (
+        "active decision-backend architecture and extension contract",
+        "default legacy FSM backendified with focused services",
+        "DecisionTraceRecord",
+        "DecisionProposalValidator",
+        "behavior_tree_shadow",
+        "LLM Or VLM Planner Integration Rules",
+        "legacy_fsm",
+    ):
+        _require(decision_backend, needle, path=decision_backend_path)
 
     for needle in (
         "active design guide for future scheduling/decision backends",
@@ -160,7 +160,7 @@ def check_architecture_contract(root: str | Path = ".") -> None:
     for needle in (
         "active interface target and implementation standard",
         "default legacy FSM backendified with focused services",
-        "docs/v2_5_design_sketch/",
+        "docs/planner_decision_backend_contract.md",
         "docs/v2_5_rollout_issue_record_2026_06_30.md",
     ):
         _require(interface, needle, path=interface_path)
@@ -173,15 +173,7 @@ def check_architecture_contract(root: str | Path = ".") -> None:
     ):
         _require(rollout, needle, path=rollout_path)
 
-    for needle in (
-        "DecisionTraceRecord",
-        "proposal validation",
-        "behavior_tree_shadow",
-        "backend registration and selection",
-    ):
-        _require(design_readme, needle, path=design_readme_path)
-
-    for path in (architecture_path, scheduling_path, interface_path):
+    for path in (architecture_path, decision_backend_path, scheduling_path, interface_path):
         text = _read(path)
         for removed in REMOVED_DOC_FRAGMENTS:
             if removed in text:
