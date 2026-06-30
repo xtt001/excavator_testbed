@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
+import h5py
 import numpy as np
 
 from testbed.cli.audit_return_ckpt import (
+    RETURN_START_TOKEN_KEY,
     apply_return_envelope_variant,
+    _read_obs_at_step,
     summarize_records,
 )
 
@@ -70,6 +75,52 @@ class ReturnCkptAuditTest(unittest.TestCase):
             float(np.linalg.norm(np.asarray([1.0, 0.0, 0.0, -4.0]))),
             places=6,
         )
+
+    def test_read_obs_derives_return_relocate_tokens_from_return_target_tokens(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as tmp:
+            episode_path = Path(tmp) / "episode.hdf5"
+            return_start = np.linspace(0.1, 1.8, 18, dtype=np.float32)
+            return_target = np.arange(10, dtype=np.float32)
+            return_target[7] = 70.0
+            return_target[8] = 80.0
+            return_target[9] = 1.0
+            with h5py.File(episode_path, "w") as handle:
+                handle.create_dataset(
+                    "observations/qpos",
+                    data=np.asarray([[1.0, 2.0, 3.0, 4.0]], dtype=np.float32),
+                )
+                handle.create_dataset(
+                    "observations/qvel",
+                    data=np.asarray([[0.1, 0.2, 0.3, 0.4]], dtype=np.float32),
+                )
+                handle.create_dataset(
+                    "observations/images/fpv",
+                    data=np.zeros((1, 2, 2, 3), dtype=np.uint8),
+                )
+                handle.create_dataset(
+                    "v2/step/return_target_tokens",
+                    data=return_target.reshape(1, -1),
+                )
+                with h5py.File(episode_path, "r") as handle:
+                    obs = _read_obs_at_step(
+                        handle=handle,
+                        step=0,
+                        camera_names=["fpv"],
+                        low_dim_keys=[
+                            "qpos",
+                            "qvel",
+                            RETURN_START_TOKEN_KEY,
+                            "return_relocate_tokens_v1",
+                        ],
+                        return_start_token=return_start,
+                    )
+
+            np.testing.assert_allclose(obs["return_relocate_tokens_v1"][:7], np.arange(7))
+            self.assertEqual(float(obs["return_relocate_tokens_v1"][7]), 0.0)
+            self.assertEqual(float(obs["return_relocate_tokens_v1"][8]), 0.0)
+            self.assertEqual(float(obs["return_relocate_tokens_v1"][9]), 1.0)
 
 
 if __name__ == "__main__":

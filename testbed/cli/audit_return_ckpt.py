@@ -21,7 +21,10 @@ import h5py
 import numpy as np
 import yaml
 
-from testbed.data.dataset import _episode_matches_metadata_filters
+from testbed.data.dataset import (
+    _episode_matches_metadata_filters,
+    _read_return_relocate_tokens_dataset,
+)
 from testbed.data.hdf5_io import episode_id_from_path, list_episodes
 from testbed.data.operator_first_v2_2 import RETURN_START_ENVELOPE_TOKEN_DIM
 from testbed.runtime._train import _resolve_low_dim_state_dim
@@ -29,6 +32,7 @@ from testbed.runtime._train import _resolve_low_dim_state_dim
 
 RETURN_START_TOKEN_KEY = "return_start_envelope_tokens_v1"
 RETURN_START_TOKEN_PATH = "v2/step/return_start_envelope_tokens_v1"
+RETURN_RELOCATE_TOKEN_KEY = "return_relocate_tokens_v1"
 
 DEFAULT_TOKEN_VARIANTS = (
     "original",
@@ -310,6 +314,8 @@ def _read_obs_at_step(
             obs[key] = handle["observations/qvel"][step].astype(np.float32)
         elif key == RETURN_START_TOKEN_KEY:
             obs[key] = np.asarray(return_start_token, dtype=np.float32)
+        elif key == RETURN_RELOCATE_TOKEN_KEY:
+            obs[key] = _read_return_relocate_tokens_dataset(handle, index=step)
         else:
             raise ValueError(
                 f"Unsupported low_dim key {key!r} for return checkpoint audit."

@@ -34,6 +34,8 @@ tb-audit-return-ckpt \
   --output "${AUDIT_DIR}/return_ckpt_audit.json"
 ```
 
+`tb-audit-return-ckpt` 支持包含 `return_start_envelope_tokens_v1` 的 return checkpoint；如果当前 return policy 还包含 `return_relocate_tokens_v1`，audit 会按数据加载合同从 `return_target_tokens` 派生该 token。当前变体分析仍聚焦 return-start envelope，return-relocate token 作为 recorded-stream 输入参与离线推理。
+
 再生成 eval 前清单：
 
 ```bash

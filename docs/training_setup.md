@@ -200,6 +200,8 @@ tb-rollout-review --results-dir <eval_results_dir>
 
 `policy_audit_manifest.json` 只汇总已有 audit JSON，不替代 `tb-audit-dig-ckpt`、`tb-audit-dig-depth-semantics`、`tb-audit-return-ckpt`。缺少某类 audit 或 schema 不匹配时必须保留为 evidence gap。
 
+如果 return config 同时使用 `return_start_envelope_tokens_v1` 和 `return_relocate_tokens_v1`，`tb-audit-return-ckpt` 会读取 recorded stream 中的 return-relocate token；受控 token 变体仍主要用于检查 return-start envelope 对动作的影响。
+
 浅挖类问题优先看：
 
 - dig token / depth-profile 分桶是否被 policy 区分。
