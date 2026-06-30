@@ -1,4 +1,0 @@
-interface:
-  display_name: "Evidence-Guided Refactor"
-  short_description: "Refactor with scoped evidence"
-  default_prompt: "Use $evidence-guided-refactor to plan this refactor from evidence, classify code paths, and avoid semantic drift."

@@ -89,7 +89,7 @@ Repo A 负责：
   - 当前 ownership smoke eval:
     `testbed/configs/eval_agx_v2_2_4primitives_ownership_leftboost_qvel_3cycle_smoke.yaml`
   - phase boundary source of truth:
-    `docs/v2_2_4primitives/phase_boundaries.md`
+    `docs/primitive_phase_boundaries.md`
   - ownership 定义：`carry` 只负责 loaded transport；`dump` 负责 move to top
     of target、alignment、release 和 post-dump hold
   - `dump` 起点固定为 `first approach_dump stage`；如果 stable curl-out 早于
@@ -1062,14 +1062,20 @@ ACT 已经获得目标载荷/质量 plateau 但尚未离开 dig box，planner �
 
 当前权威文档：
 - 本 README：仓库说明、当前状态、quick start
-- [docs/current_status_and_plan.md](/home/pingfan/PACT/excavator_testbed/docs/current_status_and_plan.md)：详细的“已开发内容 / 当前 smoke 验证结果 / 下一步计划 / 为什么要补失效归因能力”
 - [docs/planner_to_act_conceptual_contract.md](/home/pingfan/PACT/excavator_testbed/docs/planner_to_act_conceptual_contract.md)：从概念上说明上层 planner 到低层 ACT 的控制结构、职责边界和输入输出
+- [docs/planner_current_architecture.md](/home/pingfan/PACT/excavator_testbed/docs/planner_current_architecture.md)：当前 primitive planner 架构、decision backend / trace 边界和扩展规则
+- [docs/planner_scheduling_backend_design.md](/home/pingfan/PACT/excavator_testbed/docs/planner_scheduling_backend_design.md)：未来 scheduling / decision backend 接入指南
 - [docs/v2_1_failure_retrospective.md](/home/pingfan/PACT/excavator_testbed/docs/v2_1_failure_retrospective.md)：V2.1 初期多轮失败原因、script/human transition gap、goal-conditioned ACT 与 V2.2 修复复盘
+- [docs/data_processing_hdf5_qc_contract.md](/home/pingfan/PACT/excavator_testbed/docs/data_processing_hdf5_qc_contract.md)：数据处理、HDF5 字段、primitive 切分和 QC 逻辑
+- [docs/primitive_phase_boundaries.md](/home/pingfan/PACT/excavator_testbed/docs/primitive_phase_boundaries.md)：`dig/carry/dump/return` 四 primitive ownership 契约
 - [docs/training_setup.md](/home/pingfan/PACT/excavator_testbed/docs/training_setup.md)：训练配置字段、实验记录项、失效归因时应保留的证据链
 
-保留文档：
-- `docs/技术可行性评估与顶层架构设计.md`：技术路线与顶层架构评估
-- `docs/工程机械_土堆颗粒模拟调研.md`：土体 / 颗粒模拟调研
+阶段与规划文档：
+- `docs/project_history_v1_to_now.md`：V1 到当前阶段的项目复盘索引
+- `docs/v1_to_v2_3_exploration_path.md`：V1 到 V2.3 的探索路径
+- `docs/v2_4plan.md`、`docs/v2_4_5_spatial_mass_ownership.md`：V2.4 / V2.4.5 主线设计
+- `docs/llm_planner_prework.md`：引入 LLM goal planner 前的收尾清单
+- `docs/v2_5_design_sketch/`：V2.5 decision backend、trace、BT shadow 和 proposal validation 设计记录
 
 ---
 
@@ -1089,9 +1095,14 @@ testbed/
   cli/                    tb-record-teleop, tb-replay, tb-dataset-videos, tb-dataset-qc, tb-train, tb-eval, tb-experiment-record
 
 docs/
-  current_status_and_plan.md
-  技术可行性评估与顶层架构设计.md
-  工程机械_土堆颗粒模拟调研.md
+  data_processing_hdf5_qc_contract.md
+  planner_to_act_conceptual_contract.md
+  planner_current_architecture.md
+  planner_scheduling_backend_design.md
+  primitive_phase_boundaries.md
+  project_history_v1_to_now.md
+  llm_planner_prework.md
+  v2_5_design_sketch/
 ```
 
 常用产物路径：

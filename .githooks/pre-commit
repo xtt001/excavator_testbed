@@ -7,6 +7,6 @@ cd "$ROOT"
 mapfile -t STAGED_PATHS < <(git diff --cached --name-only)
 PYTHON_BIN="${PYTHON:-python3}"
 
-"$PYTHON_BIN" scripts/planner_refactor_guard.py --check-historical-files "${STAGED_PATHS[@]}"
-"$PYTHON_BIN" scripts/planner_refactor_guard.py --check-plan-contract
-"$PYTHON_BIN" scripts/planner_refactor_guard.py --check-skill-contract
+"$PYTHON_BIN" scripts/planner_architecture_doc_guard.py --check-changed-docs "${STAGED_PATHS[@]}"
+"$PYTHON_BIN" scripts/planner_architecture_doc_guard.py --check-architecture-contract
+"$PYTHON_BIN" scripts/planner_architecture_doc_guard.py --check-doc-inventory

@@ -28,11 +28,10 @@
 - return 数据新增 `/v2/step/return_start_envelope_tokens_v1` 和
   `/v2/step/return_start_envelope_valid_mask`。当前 token 为 18D：
   `long_norm, short_norm, depth_center, tip_radius, depth_min, depth_max,
-  contact_flag, qpos_center[4], qpos_half_width[4], qvel_abs_max, qpos_valid,
-  spatial_depth_valid`。V2.4.5 builder 从下一轮 dig-start 附近 40-step 窗口抽取
+  contact_allowed, qpos_center[4], qpos_half_width[4], qvel_abs_max, valid,
+  no_dump_contact_required`。V2.4.5 builder 从下一轮 dig-start 附近 40-step 窗口抽取
   envelope；valid mask 是 per-dim mask，Gate 1 的 episode-level envelope valid 使用
-  token 第 16 维 `qpos_valid`，即 qpos/qvel 核心状态可用，而不是要求所有空间维度逐项全有效。
-  dim/order/path 的代码 source-of-truth 是 `testbed.contracts.primitive_tokens`。
+  token 第 16 维，即 qpos/qvel 核心状态可用，而不是要求所有空间维度逐项全有效。
 - `EpisodicDataset`、train/eval runtime、ACT adapter 和 `primitive_planner_act` 已识别
   `return_start_envelope_tokens_v1`。live/eval 中 return planner 仍维护 pending
   `dig_cut_tokens`，同时给 return policy 注入 envelope token；planner 不因此写动作轨迹。
@@ -43,8 +42,6 @@
   - `act_yulong_v2_4_5_spatial_mass_dump_qvel.yaml`
 - `tb-build-v2_4-hindsight-pipeline` 已支持反馈 gate：
   - Gate 1 写 `04_pre_materialize_qc.json`，失败直接停止，不 materialize。
-    Gate 1 primitive-VDS numeric QC 的实现 source-of-truth 是
-    `testbed.pipeline.v2_4_qc_gates`；CLI 只保留参数解析、stage 编排和 thin facade。
   - Gate 2 自动跑 `tb-audit-primitive-boundaries`，写
     `04b_boundary_audit_gate_summary.json`。当 boundary profile 是
     `v2_4_5_spatial_mass` 且未传 `--ack-feedback-gates` 时，默认停在 Gate 2 等人工审阅。
@@ -554,9 +551,6 @@ python -m testbed.cli.build_v2_4_hindsight_pipeline \
   token p90-p10 分离、可靠 depth source 占比、return max length、return/dig
   保留比例、overlong return reject 比例、dump max/p95 length，以及 dump 内是否混入
   transition mode/phase；QC 不通过时直接 fail，不进入 materialize/train。
-  该 Gate 1 检查的阈值、HDF5 读取和 feedback payload 生成集中在
-  `testbed.pipeline.v2_4_qc_gates`，本次职责迁移不改变 JSON 字段、failed-check 文案
-  或 pipeline stage 行为。
 - V2.4.5 ownership 改为以 64D `env_state` 的空间位置和质量变化定义边界，详见
   `docs/v2_4_5_spatial_mass_ownership.md`。旧 `/v2` cycle/phase 只作为候选和诊断，
   不能再作为唯一 ownership 真相；一个旧 cycle 内出现多个 material pulse 时需要拆分

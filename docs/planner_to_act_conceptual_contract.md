@@ -1,19 +1,5 @@
 # Planner 到 ACT 的概念控制契约
 
-Status: historical conceptual note.
-
-Current implementation planning source of truth:
-`docs/planner_current_code_architecture_plan.md`.
-
-This document is still useful for the high-level control contract between the
-planner and ACT policies. However, sections below that name concrete modules as
-"source-of-truth" reflect the pre-rollback partial refactor history and are not
-current file-ownership guidance. In particular, do not treat references to
-`testbed.planner.runtime`, `testbed.planner.cell_entry_runtime`, extracted
-coverage/dig/dump/return services, or old backend contracts as current
-implementation targets unless they are reintroduced through the current-code
-architecture plan.
-
 本文不按当前仓库的代码模块分层，而按控制系统里的概念职责说明：
 上层 planner 如何把任务目标逐层变成低层 ACT 可以执行的条件输入，以及每层需要什么
 输入、输出什么信息。
@@ -132,12 +118,10 @@ dig --loaded / dig_complete--> carry --dump committed / target ready--> dump
              dig
 ```
 
-### 当前状态机与未来行为树
+### 我们现在是不是状态机
 
-是。当前在线控制仍可以理解为一个显式有限状态机，但它只是当前 public facade
-采用的调度外壳。长期重构目标不是把这个状态机本身打磨成最终架构，而是把状态机里
-可复用的 condition、action、context、token 和 reporting 语义沉淀成行为树也能直接
-调用的 capability 层。
+是。当前在线控制可以理解为一个显式有限状态机，但状态机只负责 primitive 调度和
+handoff/replan，不负责直接输出连续动作。
 
 更准确地说，系统由两部分叠在一起：
 
@@ -146,30 +130,8 @@ dig --loaded / dig_complete--> carry --dump committed / target ready--> dump
 2. 在线 scheduler 是状态机：在 `bootstrap/pre_dig_align/dig/carry/dump/return` 之间切换，
    每个状态把观测和 token 交给对应 ACT，ACT 再输出 4D action。
 
-因此状态机的状态不是“机械臂姿态状态”，而是“当前由哪个 primitive ACT 接管控制”。
-状态机不学习动作，也不生成 joystick；它只判断什么时候交接、什么时候拒绝当前目标并
-重规划。
-
-长期代码结构上，`PrimitivePlannerACTPolicy` 应逐步收敛成 compatibility adapter：
-它保留现有 public API、active skill、switch reason、policy dispatch、reset timing、
-debug/rollout 输出和旧配置入口，但不再是决策语义的 source-of-truth。状态机分支中可复用
-的能力应迁到 behavior-tree friendly capability，例如 coverage selection、dig/dump/return
-gate、dig-start alignment、return envelope、token builder、policy observation assembly
-和 debug/summary facts。
-
-这些 capability 的目标输入输出是 `snapshot + blackboard + config -> result/effect`：
-
-- `snapshot` 来自 `PlannerSnapshot` / `PlannerObservationView`，负责 raw observation
-  解析。
-- `blackboard` 保存当前 cycle、held token、pending dig plan、coverage state、runtime
-  counters 和最近 transition reason。
-- `result` 表示 condition/action 的判断结果，例如 ready/fail/running、reason 和诊断。
-- `effect` 显式表达需要 shell 应用的副作用，例如 set skill、reset policy、更新 counter、
-  hold/clear token、record trace 或 request terminal stop。
-
-行为树、decision tree 或当前状态机都只能组合这些 capability，不能复制 token/profile/
-schema 语义，也不能直接读写旧 planner 私有字段。后续迁移仍遵循同一原则：只移动职责边界，
-不改变 token 语义、gate 阈值、switch reason、debug 字段或 rollout 行为。
+因此状态机的状态不是“机械臂姿态状态”，而是“当前由哪个 primitive ACT 接管控制”。状态机
+不学习动作，也不生成 joystick；它只判断什么时候交接、什么时候拒绝当前目标并重规划。
 
 | 状态 | 动作来源 | 进入时携带的信息 | 主要退出方向 |
 | --- | --- | --- | --- |
@@ -186,121 +148,6 @@ schema 语义，也不能直接读写旧 planner 私有字段。后续迁移仍�
 `v2_4_5_spatial_mass` profile 作为语义事件源。下面的数值是当前配置里的主要阈值；
 它们是配置项，不是概念上不可变的常数。
 
-当前 primitive profile/version contract 的代码 source-of-truth 是
-`testbed.contracts.primitive_profile`。`boundary_profile` 名称、primitive version、
-4P/5P primitive name 列表，以及 `v2_4_5_spatial_mass -> v2_4_5_spatial_mass_4primitives`
-映射都应从该模块引用；primitive builder、`BoundaryDetector` 和 V2.4 pipeline CLI
-只保留旧常量名作为 facade，不再各自复制 profile/version 字符串。
-
-当前 V2.4.5 spatial-mass primitive slicing 的实现 source-of-truth 是
-`testbed.data.primitive_spatial_mass`。该模块负责 material-cycle 窗口拆分、
-spatial-mass boundary finder、carry/dump QC、return-start envelope token builder
-以及 return overlay 组装；`testbed.data.primitives_v2_2` 继续负责 raw episode discovery、
-HDF5 写入和 summary aggregation，并保留旧 helper 名称作为 facade。此次迁移只移动职责边界，
-不改变 primitive window、reject reason、metadata key、return envelope token 或输出 layout。
-
-当前在线 dig-cut intent 组装的实现 source-of-truth 是
-`testbed.planner.dig_cut_plan`。该模块负责 conservative live-pose raw fields/token、
-operator-prior pose clamp、missing-pose median fallback、source string 和 fallback
-reason 的纯组装；`PrimitivePlannerACTPolicy` 仍负责 dig-cut planner mode 分支顺序、
-pending return-target plan 复用、coverage corridor selection、coverage state 写回、
-fallback-mode 执行、prior-range debug flag、policy dispatch 和 debug/rollout schema。
-该边界让 dig-cut token builder 成为可复用 capability，但不把状态机拆成多个互相抢状态的
-planner。
-
-当前在线 observation facts 解析的实现 source-of-truth 是
-`testbed.planner.snapshots`。该模块负责把 `obs`、`task_metrics` 和 `env_state`
-解析成 planner/scheduler 所需事实，包括 bucket mass、deposit、dig-area
-distance/depth/contact、bucket/tip pose、dig cell id、target geometry，以及
-`PlannerSnapshot` / `PlannerObservationView`。`PrimitivePlannerACTPolicy` 仍负责何时
-构造 snapshot、如何把这些 facts 交给 lifecycle/handoff services、以及所有状态写回和
-transition 语义；observation parser 不做 gate 判断或状态机跳转。
-
-当前 primitive planner 初始化配置 helper 的实现 source-of-truth 是
-`testbed.planner.primitive_config`。该模块只负责 mode/name/vector/optional
-value normalization、dig-cut prior loading、dig-cut / coverage / dig-depth-profile
-config validation，以及 legacy goal-sequence normalization；`PrimitivePlannerACTPolicy`
-仍负责 `__init__` 中的配置写回、service 实例创建、active state 初始化和 reset timing。
-该边界避免把配置解析散落在状态机 shell 内，但不改变默认配置、错误文本或在线调度语义。
-
-当前 cell-entry grid、online planner、auditor 和 token builder 的实现 source-of-truth 是
-`testbed.planner.cell_entry`；cell-entry online runtime facts/state projection、
-token/audit service、completion trace projection 和 debug snapshot projection 的
-source-of-truth 是 `testbed.planner.cell_entry_runtime`。`cell_entry` 保留 runtime
-symbols 的 compatibility re-export，保护旧 import path。cell-entry runtime facts
-的 source projection 也由该 service 从 `PlannerObservationView` 的原始 observation
-复用 `snapshots` legacy helpers 构建，避免 planner shell 复制 cell id、bucket pose、
-geometry availability 和 bucket mass 投影。`PrimitivePlannerACTPolicy` 仍负责
-cell-entry reset 时机、何时请求 token、runtime state 写回、trace append、
-policy-observation injection flag、debug/summary schema 和 policy dispatch。
-
-当前在线 dump lifecycle gate 的实现 source-of-truth 是
-`testbed.planner.dump_lifecycle.DumpLifecycleGateService`。该 service 负责
-4P legacy dump readiness、dump-area relative / near-window geometry gate、
-dump mass/deposit completion gate、carry release safety gate，以及 5P
-approach-to-dump readiness gate。该 service 还负责 carry/dump 分支的纯 outcome
-classification，返回旧 switch reason 和 coverage completion reason。dump lifecycle
-facts 的 source projection 也由该 service 从 `PlannerObservationView` 的原始
-observation 复用 `snapshots` legacy helpers 构建，避免 planner shell 复制
-mass/deposit/target-geometry 投影。
-`PrimitivePlannerACTPolicy` 仍负责 branch order、hold counter、dump start deposit
-写回、coverage completion 执行、skill transition、policy reset 和 return direct
-handoff；此次迁移不改变 threshold、boundary event 优先级、reason 字符串或 debug
-schema。
-5P compatibility path 仍保留自己的 state-machine override，但 debug-state 的 dump
-lifecycle hold-count projection 同样通过 `DumpLifecycleGateService` status snapshot
-facade；5P 的 `dump_release_ready_hold_count` 继续作为 public debug schema 中兼容的
-dump-ready hold count 输出，不改变 5P 调度语义。
-
-当前在线 dig lifecycle gate 的实现 source-of-truth 是
-`testbed.planner.dig_lifecycle.DigLifecycleGateService`。该 service 负责 dig
-progress 状态更新、bad-dig readiness、exit-guard overshoot readiness、
-`dig_complete` low-payload guard，以及 legacy / semantic `dig -> carry` readiness
-reason。dig lifecycle facts 的 source projection 也由该 service 从
-`PlannerObservationView`、boundary event、coverage state 和 shell-owned runtime
-counters 纯组装；planner shell 不再在大文件内展开这些 facts 字段。dig branch
-transition request、outcome classification、counter projection
-和 failed-dig stop payload projection 的 source-of-truth 是
-`testbed.planner.dig_lifecycle_transition`；`dig_lifecycle` 保留 compatibility re-export
-和 inherited method API。`dig_lifecycle` 仍负责 failed-dig recovery 的纯 decision，
-返回 `pre_dig_align` / `stop` / `dig` retry 目标和旧 switch/terminal reason。
-`PrimitivePlannerACTPolicy` 仍负责 dig 分支顺序、coverage reject/complete、
-failed-dig recovery 执行、skill transition、policy reset、terminal stop 请求、
-planner trace 和 debug schema。
-
-当前 scripted bootstrap compatibility 的实现 source-of-truth 是
-`testbed.planner.bootstrap.BootstrapService`。该 service 只负责 legacy/diagnostic
-bootstrap compatibility 的纯判断和动作数值：`scripted_qpos` enable 判断、
-scripted target/qvel hold gate、scripted timeout end gate、learned bootstrap 的
-`first_qualified_dig_start` / `loaded_and_clear` end gate，以及 scripted qpos PD
-action。bootstrap facts 的 source projection 也由该 service 从
-`PlannerObservationView` 的原始 observation 复用 `snapshots` legacy helpers 构建，
-避免 planner shell 复制 qpos/qvel、mass/distance 和 boundary flag 投影。
-`PrimitivePlannerACTPolicy` 仍负责 bootstrap 分支顺序、`bootstrap_to_*` switch
-reason、scripted step/hold/timeout counter 写回、active policy dispatch、policy reset
-和 debug schema。bootstrap 不因此成为 V2.4.5 mainline 调度语义。
-
-当前 pre-dig alignment 数值和纯 readiness helper 的实现 source-of-truth 是
-`testbed.planner.dig_start_alignment.DigStartAlignmentService`。该 service 负责
-target qpos、PD servo action、surface-guard trigger / can-handoff、entry-close
-threshold、start-envelope qpos / pose gate、first-dig entry-close handoff、
-entry-intent mode / handoff、timeout handoff reason，以及 ready sample 对 hold
-count 的建议更新；该 service 还根据 caller-provided surface/ready/timeout gate
-结果做纯 outcome classification，返回旧 action/reason 字符串。
-`PrimitivePlannerACTPolicy` 仍负责 pre-dig-align 分支顺序、
-surface/timeout/completed/replan counters、hold counter 写回、coverage reject/replan、
-token rebuild、skill transition、policy reset 和 debug schema。
-
-当前 ACT policy observation 装配的实现 source-of-truth 是
-`testbed.planner.policy_observation.PolicyObservationAssembler`。该 service 负责
-optional token helper 的纯 request gate，以及把已经生成的 optional low-dim token
-合并进 policy observation，并返回 `*_token_injected` debug 标志。request gate 只基于
-显式 facts/config 判断当前 active skill 下哪些 helper 应被请求；它不生成 token，也
-不决定实际 token 是否存在。`PrimitivePlannerACTPolicy` 仍负责调用 token builder、
-写回 token/pending/debug state、选择 policy 并 dispatch action；实际 injected flag
-仍由合并时 token 是否非 `None` 决定。这次迁移不改变 token contract、low-dim key、
-return envelope gate、pending dig plan 或状态机跳转语义。
-
 | 事件或跳转 | 当前判定逻辑 |
 | --- | --- |
 | `qualified_dig_start` / `dig_start` | bucket 到 dig area 的最小距离 `<= 0.05m`，并且 bucket 低于 dig-area plane `>= 0.02m`。如果使用 legacy progress 模式，还要求 reward/load progress 或 bucket/excavated mass 增量。 |
@@ -312,7 +159,7 @@ return envelope gate、pending dig plan 或状态机跳转语义。
 | `release_onset` | 已进入 dump ownership 后，bucket 位于 dump area 附近：outside distance `<= 0.45m` 或 over target footprint；同时当前步 bucket mass drop `>= 0.5kg` 或 dump/target deposit gain `>= 0.5kg`。 |
 | `dump_complete` / `dump -> return` | `release_onset` 已见后，bucket residual mass 低于 success 配置阈值，当前 qc6 配置为 `15kg`，且 target/dump deposit 进入 plateau。planner 在 `dump_done_use_boundary_event=true` 时优先消费该 boundary event。 |
 | `spill_before_target` | 作为质量诊断，只在 bucket mass 明显下降、同帧没有 target/dump deposit progress，并且当前不在有效 dump geometry 时计数。若 `bucket_over_target_footprint_mask=1` 且 `dump_clearance_ok_mask=1`，允许 Unity/AGX 的 bucket mass 与 deposit 传感存在 1 帧左右的更新时序差，不把这种目标内释放误报为漏土。 |
-| `return -> dig` | 不是单纯等 `qualified_dig_start`。状态机先 latch `next_dig_entry_ready` 或 qualified dig start，然后要求 `_return_to_dig_handoff_ready` 成立：pending entry error `<= 0.55m`，并通过 `return_start_envelope_tokens_v1` 的 spatial/depth/contact/qpos gate。当前 gate 使用 long/short tolerance `0.10`、qpos tolerance `0.04`；若 prior cell 带 `dig_start_local_depth_m`，local depth 使用该训练分布的 p05-p95 加 `0.005m` tolerance，否则才退回 token depth min/max 加 `0.08m`。`return_to_dig_start_envelope_require_contact=true` 会独立要求 dig contact，不再依赖 token 的 `contact_flag`。`p50_floor` 在有 local-depth prior 且要求 contact 时使用 plane-depth p05-p95 作 terrain-offset 检查，否则继续用 p50 floor 防止零深度 handoff。若显式打开 `return_to_dig_start_envelope_direct_handoff_enabled`，return 在空斗低质量且 entry/envelope 已 ready 时可不等新的接触式 boundary event，直接交给下一轮 dig/pre-dig-align；如果 dump/carry 完成当帧已经满足该 gate，状态机也允许同帧 `dump/carry -> dig`，避免先执行一帧 return ACT 后错过浅接触窗口。 |
+| `return -> dig` | 不是单纯等 `qualified_dig_start`。状态机先 latch `next_dig_entry_ready` 或 qualified dig start，然后要求 `_return_to_dig_handoff_ready` 成立：pending entry error `<= 0.55m`，并通过 `return_start_envelope_tokens_v1` 的 spatial/depth/contact/qpos gate。当前 gate 使用 long/short tolerance `0.10`、qpos tolerance `0.04`；若 prior cell 带 `dig_start_local_depth_m`，local depth 使用该训练分布的 p05-p95 加 `0.005m` tolerance，否则才退回 token depth min/max 加 `0.08m`。`return_to_dig_start_envelope_require_contact=true` 会独立要求 dig contact，不再依赖 token[6]。`p50_floor` 在有 local-depth prior 且要求 contact 时使用 plane-depth p05-p95 作 terrain-offset 检查，否则继续用 p50 floor 防止零深度 handoff。若显式打开 `return_to_dig_start_envelope_direct_handoff_enabled`，return 在空斗低质量且 entry/envelope 已 ready 时可不等新的接触式 boundary event，直接交给下一轮 dig/pre-dig-align；如果 dump/carry 完成当帧已经满足该 gate，状态机也允许同帧 `dump/carry -> dig`，避免先执行一帧 return ACT 后错过浅接触窗口。 |
 
 这里有两个容易混淆的点：
 
@@ -400,11 +247,22 @@ planner 决策：
 
 ### return 阶段
 
-输入：
+这里要区分两类东西：**return ACT 真正读取的 low-dim 输入**，以及
+**planner/scheduler 在 return 阶段暂存的下一铲计划**。后者服务于 handoff
+和下一轮 dig，不等于当前 return policy 的输入。
+
+return ACT 输入：
 
 - 图像、`qpos`、`qvel`
 - `return_start_envelope_tokens_v1`
-- planner 侧 pending 下一轮 `dig_cut_tokens`，但它不进入当前 return ACT low-dim
+- return-relocate 训练/评测线可额外读取 `return_relocate_tokens_v1`。这是从
+  `return_target_tokens` 派生的 relocation-only view，只保留 entry/exit/direction/length
+  和 valid，depth/payload 固定为 0；它不是完整下一铲 cut token。
+
+planner 侧上下文：
+
+- pending 下一轮 `dig_cut_tokens`。它在 return 阶段生成或保持，用于下一轮 dig 和
+  handoff entry-close / envelope 对齐，但不进入当前 return ACT low-dim。
 
 planner 决策：
 
@@ -425,49 +283,13 @@ planner 决策：
 - return ACT 的 4D action。
 - 通过 gate 后进入下一轮 dig，并复用 pending dig plan。
 
-## 离线数据切分逻辑
+## 数据处理、HDF5 字段与 QC
 
-离线 primitive 数据切分不是简单复用旧 `/v2/cycle`，也不是按在线状态机逐步 replay 一遍。
-当前 V2.4.5 的 source of truth 是 material cycle：用 `env_state` 里的空间、质量、沉积、
-removed-depth 事件验证一轮真实 material movement，再把它切成四个 ACT 训练窗口。
+数据录制、relabel、离线 primitive 切分、HDF5 字段、VDS/materialize、`qc6` 和具体 QC
+gate 已迁移到独立文档：[data_processing_hdf5_qc_contract.md](data_processing_hdf5_qc_contract.md)。
 
-核心原则：
-
-- 仍然只产出四个 primitive：`dig -> carry -> dump -> return`。
-- 旧 `/v2/cycle` 只作为搜索窗口和诊断参考；最终边界由 material pulse、dig/dump 几何、
-  bucket mass、deposit 和 removed-depth 决定。
-- 离线 builder 可以用局部未来窗口确认 plateau、未来无新增装料、release 后稳定等事实；
-  这些 oracle 只用于切数据和 QC，不能作为在线 ACT 输入。
-- window 采用半开区间语义理解：某个 realign 或 material event 属于哪个窗口，要按
-  `[start, end)` 归属，避免前一轮吞掉下一轮起点。
-
-| Primitive | 起点 | 终点 | 接受/拒绝重点 |
-| --- | --- | --- | --- |
-| `dig` | material cycle 内 first stable dig-box contact/depth；若可靠则使用 `qualified_dig_start` | payload/removed-depth 已出现、bucket mass 峰值已出现、未来短窗口无显著新增 mass，且 bucket contact/depth 低、稳定离开 dig box | gold dig 必须有可靠 surface-relative depth / removed-depth outcome；dig 内不能出现 dump/target deposit 增加 |
-| `carry` | `dig_end` | `dump_start` | 包含带料运输和 dump 前预姿态调整；只要还在接近/对准 dump area，movement 仍归 carry。若 dump 前已有明显 deposit contamination，当前红线为 `deposit_delta > 5kg AND deposit_delta / payload_loss > 10%`，reject |
-| `dump` | 从 `release_onset` 向前找有限 committed aiming window；上限为 `release_onset - 120`，并要求进入 stable aiming band | release 后 bucket residual mass 低位稳定，deposit plateau | `dump_start` 不能因为未来会倒土就提前吞掉长距离 transport；当前 surface-depth band 使用 stable outside `<= 0.25m`、fallback outside `<= 0.30m`、relative x/z corridor 和 8-step 稳定阈值 |
-| `return` | `dump_end` | 下一轮 first next-dig-start envelope ready / `first_next_dig_entry_ready` | return 只在存在下一轮 material dig-start 时生成；terminal cycle 不产 return，只写 reject/summary |
-
-material cycle 的基本证据链是：
-
-1. bucket 在 dig virtual box 内开始接触/入土。
-2. removed-depth grid 或 bucket mass 出现有效增加；gold 样本要求可靠 removed-depth delta。
-3. 带料离开 dig box 并接近 dump area。
-4. 在 dump area 内发生 bucket mass drop，并伴随 dump/target deposit increase。
-5. bucket residual mass 回到低位并稳定，然后进入 return。
-
-多 pulse 和 realign 的处理规则：
-
-- 如果旧 `/v2/cycle` 内出现多个 `load -> release` material pulse，优先拆成多个 material
-  sub-cycle；空间/质量证据对不上时才 reject。
-- material cycle 内有 `replay_pose_realign_steps`，则该子轮的 `dig/carry/dump` reject。
-- realign 落在 return window 内，只 reject 对应 return。
-- realign 正好落在下一轮 start/qds 帧时，只归属下一轮，不应把前一轮 clean return 丢掉。
-
-当前实现入口是 `tb-build-primitives-v2_2 --boundary-profile v2_4_5_spatial_mass`，
-上层流水线是 `tb-build-v2_4-hindsight-pipeline`。builder 输出接受的 primitive windows、
-token、outcome/QC 指标和 reject reason；训练 loader 只读取已经通过这些边界和 QC 的
-窗口。
+本文件只保留 planner-to-ACT 的概念契约：planner 决定何时切换 primitive、如何构造 token、
+handoff gate 何时允许把 pending dig plan 交给 dig ACT。离线数据如何产生和验收，以独立数据文档为准。
 
 ## token 契约
 
@@ -487,110 +309,16 @@ supervision_keys:
 对应配置是
 `runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/train_configs/act_return_surface_depth_qvel.yaml`。
 eval 侧的 `return_low_dim_keys` 也是同一组 key。
-如果 eval 打开 `return_to_dig_start_envelope_gate_enabled` 或
-`return_to_dig_start_envelope_direct_handoff_enabled`，`return_low_dim_keys` 必须包含
-`return_start_envelope_tokens_v1`；否则启动时应直接失败，避免 handoff gate 使用了
-start-envelope 语义而 return ACT checkpoint 实际没有读入该 token。
-
-ACT checkpoint 加载也必须保持同一份 low-dim 契约：`policy_config.state_dim`、
-`dataset_stats.pkl` 里的 `proprio_dim` / `proprio_keys` / `proprio_mean` /
-`proprio_std` 必须和当前 `low_dim_keys` 推导出的维度一致。只有 legacy
-`low_dim_keys=["qpos"]` 可以显式使用旧的 `qpos_mean` / `qpos_std` stats；其它组合
-缺少 `proprio_mean` / `proprio_std` 时不得静默加载。
-
-当前 low-dim observation contract 的代码 source-of-truth 是
-`testbed.contracts.low_dim`。`LOW_DIM_CONTRACT_VERSION`、supported key 列表、
-每个 key 的 dim、token slice、observation assembly，以及 stats/checkpoint
-兼容性校验都应从该模块引用；`dataset`、`runtime/_train.py`、`runtime/_eval.py`
-和 `ACTAdapter` 只保留旧入口作为 facade，不再各自复制一份 low-dim 语义。
-
-当前 primitive token contract 的代码 source-of-truth 是
-`testbed.contracts.primitive_tokens`。`dig_cut_tokens`、
-`dig_depth_profile_tokens_v1`、`return_target_tokens`、
-`return_relocate_tokens_v1`、`return_start_envelope_tokens_v1` 和
-`return_start_envelope_valid_mask` 的 dim、field order、HDF5 dataset path、
-metadata dim attr aliases、contract version、index/slice 和 relocation 派生规则都应从该模块引用；
-data builder、dataset loader、runtime/eval、ACT adapter 和 planner 只保留旧常量或
-helper 作为 facade，不再复制 token 下标或 path。
-
-当前 return start-envelope / handoff gate 的实现 source-of-truth 分为三个稳定
-capability：`testbed.planner.return_start_envelope_config` 负责 runtime config
-dataclass、field table、config builder 和 plane-depth mode normalization；
-`testbed.planner.return_start_envelope_prior` 负责 cell/global prior
-fallback、prior token source、prior bounds 读取和 gate-prior context；
-`testbed.planner.return_start_envelope` 负责 live fallback token 构造、
-relocate-conditioned qpos/spatial conditioning、`build_return_start_envelope_for_plan()`
-的 prior/live/conditioning 组合，以及 return->dig spatial/depth/contact/qpos gate
-检查。`return_start_envelope` 继续 re-export config 与 prior-context symbols，保护旧 import
-path；`PrimitivePlannerACTPolicy` 中的旧方法名只作为 facade 转调。此次迁移只移动
-职责边界，不改变 token dim/order、prior fallback、gate 判定、debug_state 字段或
-rollout 行为。
-
-当前在线 dig depth-profile token source selection 的实现 source-of-truth 是
-`testbed.planner.dig_depth_profile.DigDepthProfileService`。该 service 负责
-`live_plan` / `prior_profile` 选择、state-conditioned exemplar 优先级、cell/global
-prior fallback、prior token validation、required-prior 失败，以及 live plan token
-构造，并从 caller-provided facts 解析 raw-fields 与 cell id fallback 级联。该 service
-也通过显式 callbacks 统一 pending/active/live/env input source sampling 顺序；
-`PrimitivePlannerACTPolicy` 仍负责提供 pending dig、active coverage corridor、
-live pose/current dig token、env-state facts callbacks，以及 coverage/pending dig state、
-debug 字段写回和 ACT dispatch。此次迁移只移动职责边界，不改变
-`dig_depth_profile_tokens_v1` contract、source string、fallback reason、coverage
-exemplar 选择或 rollout 行为。
-
-当前 return target planner 的 result assembly source-of-truth 是
-`testbed.planner.return_target_plan.ReturnTargetPlanService`。该 service 只负责把
-planner 已经选出的 next-dig target token、return start-envelope token、source /
-fallback reason 和 exemplar snapshot 组装成 return target state 与 pending dig state；
-它不选择 coverage corridor，不生成 dig cut token，不构造 return envelope，也不写 planner
-字段。`PrimitivePlannerACTPolicy` 仍负责 target/corridor selection、pending state
-最终写回、return->dig handoff context、policy dispatch 和 debug schema。此次迁移不改变
-return target token、pending dig cut 生命周期、source string、fallback_zero 行为或
-rollout trace。
-
-当前 dig coverage / corridor planning 的实现 source-of-truth 是
-`testbed.planner.dig_coverage.CoverageService`。该 service object 负责 coverage
-corridor candidate 构造、cell-weighted prior 和 percentile-grid fallback、corridor
-scoring、first-dig gate、state exemplar conditioning、coverage raw fields、
-belief/depletion 更新，以及 coverage decision trace payload。terminal-stop 请求不由
-service 直接触发；service 返回 deferred coverage action result，`DigCoverageMixin`
-facade 在 planner shell 调用链中执行旧 terminal-stop side effect 并保留旧 trace
-event。`DigCoverageMixin` 和 `PrimitivePlannerACTPolicy` 继续保留旧 `_coverage_*` /
-`_ensure_coverage_corridors()` / `_select_coverage_corridor()` 等 private 入口作为
-facade 兼容层。此次迁移只移动职责边界，不改变 coverage scoring、candidate layout、
-state exemplar 语义、reject/deplete/terminal reason 或 planner trace/debug 字段。
-
-当前 primitive planner debug/summary schema 的实现 source-of-truth 是
-`testbed.planner.primitive_debug`；debug-state、planner-trace 和 rollout-summary 的
-explicit facts contract 与 facts assembly source-of-truth 是
-`testbed.planner.primitive_debug_facts`。
-`primitive_debug` 负责 `PrimitivePlannerACTPolicy.debug_state()`、
-`rollout_summary()` 和 `planner_trace()` 的 public schema builder、key order、
-coercion、planner debug-state snapshot dataclass 和 side-effect-free 构造 helper。
-`primitive_debug` 也 re-export explicit facts dataclass，保护旧 import path。
-`primitive_debug_facts` 负责定义 explicit facts dataclass，并把 planner shell 已采样的
-scalar fields 与各 service snapshot 投影成 facts contract。planner 类中的
-`_make_debug_state()`、
-`_debug_state_facts()`、`_planner_trace_facts()`、`_rollout_summary_facts()` 及同名
-public 方法只保留为 facade。此次迁移只移动职责边界，不改变字段名、字段顺序、
-默认值、字段类型、token contract string、coverage decision trace payload、
-rollout JSONL 消费语义或 planner 状态机行为。
-
-当前 rollout step/debug schema 的实现 source-of-truth 是
-`testbed.eval.rollout_step_records`。该模块负责 eval policy input 组装、
-逐 timestep JSONL record 字段和发送给 AGX/Unity 的 planner debug payload；
-`EvalSuite._planner_debug_json` 只保留为 facade。每条 rollout 的 JSONL、summary
-和 planner trace 写出编排由 `testbed.eval.rollout_artifacts` 承担，并继续复用
-现有 `rollout_logs` schema helper。此次迁移只移动 EvalSuite 内部职责边界，
-不改变 rollout loop、HDF5 layout、JSONL 字段、summary/manifest 字段或 planner
-debug JSON 语义。
 
 这意味着：
 
 - return ACT 不读取 `dig_cut_tokens`。
 - return ACT 不读取 `return_target_tokens`。
-- return ACT 不读取 `return_relocate_tokens_v1`。
-- return ACT 不直接拿下一铲的 cell、cut depth、target payload 或 removed-depth goal。
+- 基础 surface-depth/qc6labels scale080 配置中，return ACT 不读取
+  `return_relocate_tokens_v1`；return-relocate 训练/评测线可以额外加入这个 masked
+  relocation token。
+- return ACT 不直接拿下一铲的完整 cell、cut depth、target payload 或 removed-depth
+  goal。即使使用 `return_relocate_tokens_v1`，depth/payload 也应被屏蔽。
 - `dig_cut_planner.return_start_envelope.use_cell_prior=false` 时，live return envelope 使用
   qc6 gold return 的 global envelope prior；cell/corridor 只影响下一轮 dig token 和
   entry-close gate，不再默认影响 return-start envelope token。
@@ -670,12 +398,12 @@ long/short 和 qpos center 覆盖 envelope token 对应字段，让 return ACT �
 | 2 | depth_center | 目标 dig-start depth center |
 | 3 | tip_radius | bucket tip 允许半径 |
 | 4-5 | depth_min, depth_max | local depth gate |
-| 6 | contact_flag | 当前 token 要求/记录 dig contact |
+| 6 | contact_allowed | 是否要求/允许 dig contact |
 | 7-10 | qpos_center[4] | dig-start 姿态中心 |
 | 11-14 | qpos_half_width[4] | 姿态 envelope 半宽 |
 | 15 | qvel_abs_max | 交接时速度上限 |
-| 16 | qpos_valid | qpos/qvel envelope 是否有效 |
-| 17 | spatial_depth_valid | spatial/depth envelope 是否有效 |
+| 16 | valid | qpos envelope 是否有效 |
+| 17 | no_dump_contact_required | spatial/depth envelope 是否有效 |
 
 return->dig 交接不能只看 2D entry error；它还要看 envelope gate 是否成立，尤其是
 depth/contact/qpos 是否进入下一轮 dig ACT 的训练分布。

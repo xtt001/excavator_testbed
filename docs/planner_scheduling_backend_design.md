@@ -13,9 +13,9 @@ Use this guide with:
 - `docs/planner_primitive_interface_standard.md`
 - `tests/test_primitive_backend_ready_contract.py`
 
-Historical backend drafts under `docs/refactor_history/planner/` are useful for
-context only. If they conflict with this guide or the current code, this guide
-and the current code win.
+Historical backend drafts from earlier refactor rounds are no longer part of
+the active documentation tree. If old git history conflicts with this guide or
+the current code, this guide and the current code win.
 
 ## Current Readiness
 

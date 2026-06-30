@@ -25,7 +25,6 @@ class PlannerArtifactPaths:
     planner_trace: Path
     rollout_summary: Path
     resolved_config: Path
-    evidence_report: Path
 
     def at_root(self, root: Path) -> PlannerArtifactPaths:
         return PlannerArtifactPaths(
@@ -33,7 +32,6 @@ class PlannerArtifactPaths:
             planner_trace=_at_root(root, self.planner_trace),
             rollout_summary=_at_root(root, self.rollout_summary),
             resolved_config=_at_root(root, self.resolved_config),
-            evidence_report=_at_root(root, self.evidence_report),
         )
 
 
@@ -85,7 +83,6 @@ AGGREGATE_TX24_ARTIFACTS = PlannerArtifactPaths(
         "runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/"
         "eval_resolved_config.yaml"
     ),
-    evidence_report=Path("docs/planner_evidence_reports/2026-06-18-baseline-aggregate_tx24.md"),
 )
 
 

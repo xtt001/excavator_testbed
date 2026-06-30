@@ -15,46 +15,39 @@ backend skeleton. It is not yet a fully backend-agnostic planner where
 behavior-tree, VLM, or learned decision backends can be swapped in without
 additional interface work.
 
+Current maturity statement: `default legacy FSM backendified with focused services`.
+
 ## Source Documents
 
 - `docs/planner_current_architecture.md`
 - `docs/planner_scheduling_backend_design.md`
-- `docs/planner_current_code_architecture_plan.md`
-- `docs/planner_baseline_architecture_map.md`
-- `docs/planner_rollout_evidence_refactor_plan.md`
-- `docs/planner_rollout_evidence_refactor_log.md`
-- `docs/prompts/planner_rollout_evidence_goal_prompt.md`
-- `docs/refactor_history/planner/README.md`
+- `docs/planner_to_act_conceptual_contract.md`
+- `docs/v2_5_design_sketch/README.md`
+- `docs/v2_5_rollout_issue_record_2026_06_30.md`
 - `AGENTS.md`
 
-## Deep Reflection Reference Set
+## Active Reference Set
 
-Three-iteration planner reflections must use the following explicit reference
-set instead of relying on memory or an unnamed old document:
+Planner interface work must use the following explicit reference set instead of
+relying on memory, deleted development plans, or unnamed old documents:
 
 - primary architecture target: `docs/planner_current_architecture.md` and this
   interface standard;
 - future backend target:
   `docs/planner_scheduling_backend_design.md`;
-- current implementation inventory:
-  `docs/planner_current_code_architecture_plan.md`;
-- historical baseline/evidence context:
-  `docs/planner_baseline_architecture_map.md`, used as historical comparison
-  and rollout-evidence grounding, not as a replacement for the current
-  implementation target;
-- workflow contract: `docs/planner_rollout_evidence_refactor_plan.md`,
-  `docs/planner_rollout_evidence_refactor_log.md`, and
-  `docs/prompts/planner_rollout_evidence_goal_prompt.md`;
-- historical context:
-  `docs/refactor_history/planner/`, used only when a prompt explicitly needs
-  superseded design rationale or risk history;
+- conceptual control contract:
+  `docs/planner_to_act_conceptual_contract.md`;
+- V2.5 design and progress context:
+  `docs/v2_5_design_sketch/`;
+- V2.5 rollout configuration context:
+  `docs/v2_5_rollout_issue_record_2026_06_30.md`;
 - repository governance: `AGENTS.md`;
 - live code facts: `testbed/policies/hybrid/primitive_planner.py`, focused
   modules under `testbed/planner/`, and focused primitive tests.
 
-Any deep reflection that cannot name these references, or cannot explain why a
-reference is stale or inapplicable, must stop and update the reference set
-before another executor dispatch.
+Deleted planner migration plans, evidence reports, archived refactor drafts, and
+prompt templates are historical scaffolding only. Do not recreate them as active
+sources of truth for this branch.
 
 ## Maturity Statement
 

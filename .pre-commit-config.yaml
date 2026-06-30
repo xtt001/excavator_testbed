@@ -28,20 +28,14 @@ repos:
 
   - repo: local
     hooks:
-      - id: planner-refactor-history-guard
-        name: Prevent extending closed planner refactor history
-        entry: python3 scripts/planner_refactor_guard.py --check-historical-files
+      - id: planner-doc-inventory-guard
+        name: Validate curated planner documentation inventory
+        entry: python3 scripts/planner_architecture_doc_guard.py --check-changed-docs
         language: system
-        files: ^docs/(primitive_scheduler_service_refactor_plan\.md|primitive_scheduler_service_refactor_plan_DO_NOT_EXTEND_HISTORY\.md)$
-      - id: planner-refactor-plan-contract
-        name: Validate planner rollout-evidence plan contract
-        entry: python3 scripts/planner_refactor_guard.py --check-plan-contract
-        language: system
-        pass_filenames: false
-        files: ^(docs/planner_rollout_evidence_refactor_plan\.md|docs/planner_rollout_evidence_refactor_log\.md|docs/primitive_scheduler_service_refactor_plan_DO_NOT_EXTEND_HISTORY\.md|scripts/planner_refactor_guard\.py)$
-      - id: planner-refactor-skill-contract
-        name: Validate closed-loop planner executor skill contract
-        entry: python3 scripts/planner_refactor_guard.py --check-skill-contract
+        files: ^docs/
+      - id: planner-architecture-doc-contract
+        name: Validate planner architecture documentation contract
+        entry: python3 scripts/planner_architecture_doc_guard.py --check-architecture-contract --check-doc-inventory
         language: system
         pass_filenames: false
-        files: ^(scripts/planner_refactor_guard\.py|docs/planner_rollout_evidence_refactor_plan\.md|docs/planner_rollout_evidence_refactor_log\.md)$
+        files: ^(docs/|scripts/planner_architecture_doc_guard\.py)$

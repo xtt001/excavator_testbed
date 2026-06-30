@@ -484,19 +484,15 @@ dump 后姿态。
 - `/v2/step/return_start_envelope_tokens_v1`，shape `(T, 18)`，`float32`。
 - `/v2/step/return_start_envelope_valid_mask`，shape `(T, 18)`，`uint8`。
 
-primitive token dim、field order、dataset path 与 index/slice 的代码 source-of-truth 是
-`testbed.contracts.primitive_tokens`。
-
 dataset/runtime/ACT adapter/eval planner 均已识别该 low-dim key。训练配置使用
 `qpos + qvel + return_start_envelope_tokens_v1`；旧 `return_target_tokens` 仍保留为
 诊断和 pending dig-cut intent 的来源，但不再作为 V2.4.5 return 训练输入。
 
 `return_start_envelope_valid_mask` 是 per-dim mask，不是 all-or-nothing episode flag。
 空间、depth、contact 维度可因局部 geometry 缺失而单独置 0；只要 qpos/qvel 核心状态
-可用，token 第 16 维 `qpos_valid` 仍可为 1，Gate 1 也以这个核心 valid 判定 return
-episode 是否有可训练 envelope。第 17 维 `spatial_depth_valid` 表示 spatial/depth
-envelope 是否有效。这样做的目的，是避免一个空间传感维度临时缺失就把整条 return
-训练窗丢掉，同时仍让训练/诊断知道哪些 envelope 维度不能监督。
+可用，token 第 16 维仍可为 1，Gate 1 也以这个核心 valid 判定 return episode 是否有
+可训练 envelope。这样做的目的，是避免一个空间传感维度临时缺失就把整条 return 训练窗
+丢掉，同时仍让训练/诊断知道哪些 envelope 维度不能监督。
 
 2026-05-25 return relocation 训练不重新定义 primitive 边界，也不把完整
 `return_target_tokens` 重新塞回 return ACT。新增的 `return_relocate_tokens_v1` 是

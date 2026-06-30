@@ -9,13 +9,14 @@ intermediate SVG target or a future backend system.
 Use this document with:
 
 - `docs/planner_primitive_interface_standard.md`
-- `docs/planner_current_code_architecture_plan.md`
-- `docs/planner_rollout_evidence_refactor_plan.md`
-- `docs/planner_rollout_evidence_refactor_log.md`
+- `docs/planner_scheduling_backend_design.md`
+- `docs/planner_to_act_conceptual_contract.md`
+- `docs/v2_5_design_sketch/README.md`
+- `docs/v2_5_rollout_issue_record_2026_06_30.md`
 
-Historical design drafts and migration simulations live under
-`docs/refactor_history/planner/`. They are useful for risk context, but they are
-not current implementation targets.
+Older planner migration plans, evidence reports, and prompt templates were
+development-time scaffolding. They are intentionally not part of the active
+documentation tree after the YuLong documentation cleanup.
 
 ## Current Architecture Claim
 
@@ -38,7 +39,7 @@ generic decision trace/export surface now lives under the report boundary and
 provides compact/rich dictionary adapters for online Unity eval and offline
 eval consumers, but it is not yet wired into Unity sockets, offline writers, or
 eval runners. Backend-specific details such as BT node paths remain nested
-payloads under a generic decision trace record.
+payloads under the generic `DecisionTraceRecord`.
 
 The accurate maturity statement remains:
 
@@ -156,6 +157,6 @@ explicitly approves a semantic change.
 ## Documentation Ownership
 
 Update this document when the actual package lanes, runtime flow, or backend
-readiness claim changes. Append execution evidence to
-`docs/planner_rollout_evidence_refactor_log.md`; do not turn this architecture
-entry point into a round-by-round change log.
+readiness claim changes. Keep round-by-round execution evidence in the
+short-lived work artifacts for that implementation round, then fold durable
+facts back into this document or the relevant V2.5 design-sketch file.

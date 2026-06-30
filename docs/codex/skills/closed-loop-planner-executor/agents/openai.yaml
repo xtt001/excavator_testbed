@@ -1,6 +1,0 @@
-interface:
-  display_name: "Closed Loop Planner Executor"
-  short_description: "Coordinate hard tasks with closed-loop handoffs"
-  default_prompt: "Use $closed-loop-planner-executor for a difficult or long-running task that needs planner/executor callbacks, target lock, confirmed reference base, reflection, and hard rules restated in every prompt."
-policy:
-  allow_implicit_invocation: true
