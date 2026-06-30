@@ -15,6 +15,10 @@ from testbed.data.operator_first_v2_2 import (
 )
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
+from testbed.runtime.torch_performance import (
+    configure_torch_performance,
+    eval_torch_performance_config,
+)
 
 
 def eval_policy(config: dict[str, Any]) -> None:
@@ -60,6 +64,7 @@ def eval_policy(config: dict[str, Any]) -> None:
         )
     )
     device          = str(policy_cfg.get("device", eval_cfg.get("device", "cuda")))
+    _configure_eval_torch_performance(eval_cfg, device=device)
     if policy_class == "HYBRID_PLANNER_ACT":
         ckpt_path_value = (
             eval_cfg.get("work_ckpt_path")
@@ -1098,6 +1103,17 @@ def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) ->
         ),
     }
     return int(sum(dims[key] for key in low_dim_keys))
+
+
+def _configure_eval_torch_performance(
+    eval_cfg: dict[str, Any],
+    *,
+    device: str,
+):
+    torch_performance_config = eval_torch_performance_config(eval_cfg)
+    eval_cfg.update(torch_performance_config.as_config_dict())
+    configure_torch_performance(torch_performance_config, device=device)
+    return torch_performance_config
 
 
 def _validate_dig_depth_profile_eval_low_dim(

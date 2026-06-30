@@ -1,6 +1,6 @@
 # 当前训练与评测检查清单
 
-状态日期：2026-06-22
+状态日期：2026-06-30
 适用范围：Repo A 仿真库当前 V2.4 / V2.4.5 数据、训练、离线审核、eval / rollout review。每次新实验都应重新勾选，不要把旧勾选当作长期事实。
 
 ## 0. 先确认本次任务
@@ -92,9 +92,11 @@
 
 ## 6. Policy audit：eval 前必须做
 
-- [ ] dig policy 已运行 `tb-audit-dig-ckpt` 或等价离线审核。
-- [ ] 浅挖 / 深度问题已运行 `tb-audit-dig-depth-semantics` 或等价审核。
-- [ ] return policy 已运行 `tb-audit-return-ckpt` 或等价离线审核。
+- [ ] dig policy 已运行 `tb-audit-dig-ckpt --output <audit_dir>/dig_ckpt_audit.json` 或等价离线审核。
+- [ ] 浅挖 / 深度问题已运行 `tb-audit-dig-depth-semantics --output <audit_dir>/dig_depth_semantics_audit.json` 或等价审核。
+- [ ] return policy 已运行 `tb-audit-return-ckpt --output <audit_dir>/return_ckpt_audit.json` 或等价离线审核。
+- [ ] 已运行 `tb-policy-audit-manifest --output <audit_dir>/policy_audit_manifest.json ...` 汇总现有 audit JSON。
+- [ ] `policy_audit_manifest.json` 中 `overall_status=ready_for_rollout_eval`，或已记录缺失 audit / schema mismatch 的豁免理由。
 - [ ] 已检查 token 改变时 action / outcome 是否有响应，不只是 loss 下降。
 - [ ] 已检查 policy 是否跟随 expert 关键动作段，而不是输出平均轨迹。
 - [ ] 离线审核异常时，不进入 live eval，先回到数据或训练问题。
@@ -111,6 +113,10 @@
 
 ## 8. Rollout review
 
+- [ ] 已运行 `tb-rollout-review --results-dir <eval_results_dir>`。
+- [ ] `<eval_results_dir>/rollout_review.json` 已保存，或显式 `--output` 路径已记录。
+- [ ] `rollout_review.json` 中 `overall_status`、`evidence_gaps`、`root_cause_hints` 已写入实验结论。
+- [ ] `llm_candidate_ranking_ready` 只有在 policy audit 和 rollout quality 都干净、coverage trace 指向 candidate ranking 问题时才视为 true。
 - [ ] 已看 summary，不只看成功率。
 - [ ] 已看视频或 contact sheet。
 - [ ] 已比较 planned vs actual 的 dig entry、exit、depth、payload。

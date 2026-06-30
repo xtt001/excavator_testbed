@@ -529,6 +529,11 @@ YuLong operator-first 训练优化不改变图像分辨率或推理输入语义�
 `fpv` 图像，只通过 `batch_size`、`num_workers`、`prefetch_factor`、
 `hdf5_cache_size`、TF32/cudnn benchmark 和较低频率的 validation/plot 来提高吞吐；
 如果出现 CUDA OOM，优先把对应 primitive 的 `batch_size` 下调。
+训练 runtime 默认保留 `allow_tf32=true` / `cudnn_benchmark=true` 的吞吐优先设置；
+live eval runtime 默认改为 `allow_tf32=false`、`cudnn_benchmark=false`、
+`matmul_precision=highest`，并把最终 torch backend 设置写入 resolved config，避免
+long-rollout 复现受 PyTorch 默认 TF32 路径影响。需要做吞吐探针时，可在 `eval:`
+里显式覆盖这些字段。
 同一轮的 conditioned dig 与 5/10/15-dig GC-ACT VDS diagnostic 配置也默认打开
 4 个 DataLoader worker、`persistent_workers` 和 HDF5 handle cache；迁到新 SSD
 时要把 VDS wrapper 及其 sibling source roots 一起放在同一个新 archive root 下，

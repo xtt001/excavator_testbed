@@ -8,8 +8,6 @@ import pickle
 from pathlib import Path
 from typing import Any
 
-import torch
-
 from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_TOKEN_DIM,
@@ -18,6 +16,10 @@ from testbed.data.operator_first_v2_2 import (
 )
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
+from testbed.runtime.torch_performance import (
+    configure_torch_performance,
+    train_torch_performance_config,
+)
 
 
 def train_policy(config: dict[str, Any]) -> None:
@@ -98,6 +100,7 @@ def train_policy(config: dict[str, Any]) -> None:
         "outcome_hidden_dim": outcome_head_cfg.get("hidden_dim"),
     }
 
+    torch_performance_config = train_torch_performance_config(train_cfg)
     full_config = {
         "num_epochs":     int(train_cfg.get("num_epochs", 2000)),
         "ckpt_dir":       str(ckpt_dir),
@@ -115,9 +118,7 @@ def train_policy(config: dict[str, Any]) -> None:
         "keep_only_best_ckpt": bool(train_cfg.get("keep_only_best_ckpt", False)),
         "amp":            bool(train_cfg.get("amp", False)),
         "amp_dtype":      str(train_cfg.get("amp_dtype", "auto")),
-        "cudnn_benchmark": bool(train_cfg.get("cudnn_benchmark", True)),
-        "allow_tf32":     bool(train_cfg.get("allow_tf32", True)),
-        "matmul_precision": str(train_cfg.get("matmul_precision", "high")),
+        **torch_performance_config.as_config_dict(),
         "split_seed":     split_seed,
         "train_split_ratio": train_split_ratio,
         "reuse_split":    reuse_split,
@@ -128,7 +129,7 @@ def train_policy(config: dict[str, Any]) -> None:
     }
 
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    _configure_torch_performance(train_cfg=train_cfg, device=device)
+    configure_torch_performance(torch_performance_config, device=device)
 
     batch_size   = int(train_cfg.get("batch_size", 8))
     num_workers  = int(train_cfg.get("num_workers", 4))
@@ -240,22 +241,6 @@ def _build_resolved_train_config(
     train_cfg["allow_tf32"] = bool(full_config["allow_tf32"])
     train_cfg["matmul_precision"] = str(full_config["matmul_precision"])
     return resolved
-
-
-def _configure_torch_performance(
-    *,
-    train_cfg: dict[str, Any],
-    device: str,
-) -> None:
-    if not str(device).startswith("cuda") or not torch.cuda.is_available():
-        return
-    torch.backends.cudnn.benchmark = bool(train_cfg.get("cudnn_benchmark", True))
-    allow_tf32 = bool(train_cfg.get("allow_tf32", True))
-    torch.backends.cuda.matmul.allow_tf32 = allow_tf32
-    torch.backends.cudnn.allow_tf32 = allow_tf32
-    precision = str(train_cfg.get("matmul_precision", "high"))
-    if precision:
-        torch.set_float32_matmul_precision(precision)
 
 
 def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) -> int:

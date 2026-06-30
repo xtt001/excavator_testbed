@@ -1,6 +1,6 @@
 # 训练与评测 Runbook
 
-状态日期：2026-06-22
+状态日期：2026-06-30
 适用范围：Repo A 仿真库当前 V2.4 / V2.4.5 训练、评测、离线审核流程。V1、V2.1 和早期 V2.2 内容只作为历史对照，不再作为默认训练依据。
 
 ## 1. 当前信源
@@ -161,21 +161,44 @@ return_qc6_envelope_20260622
 命令以当前 config 为准，下面只记录意图。
 
 ```bash
+RUN_ID=<run_id>
+AUDIT_DIR=runs/audit/${RUN_ID}
+
 # 训练
 tb-train --config testbed/configs/<act_config>.yaml
+
+# dig checkpoint 离线审核
+tb-audit-dig-ckpt \
+  --config testbed/configs/<dig_act_config>.yaml \
+  --ckpt <dig_checkpoint> \
+  --output "${AUDIT_DIR}/dig_ckpt_audit.json"
+
+# dig 深度语义审核
+tb-audit-dig-depth-semantics \
+  --dataset-dir <dig_dataset_dir> \
+  --output "${AUDIT_DIR}/dig_depth_semantics_audit.json"
+
+# return checkpoint 离线审核
+tb-audit-return-ckpt \
+  --config testbed/configs/<return_act_config>.yaml \
+  --ckpt <return_checkpoint> \
+  --output "${AUDIT_DIR}/return_ckpt_audit.json"
+
+# eval 前证据清单
+tb-policy-audit-manifest \
+  --output "${AUDIT_DIR}/policy_audit_manifest.json" \
+  --dig-ckpt-audit "${AUDIT_DIR}/dig_ckpt_audit.json" \
+  --dig-depth-audit "${AUDIT_DIR}/dig_depth_semantics_audit.json" \
+  --return-ckpt-audit "${AUDIT_DIR}/return_ckpt_audit.json"
 
 # 评测 / rollout
 tb-eval --config testbed/configs/<eval_config>.yaml
 
-# dig checkpoint 离线审核
-tb-audit-dig-ckpt --config testbed/configs/<act_config>.yaml --ckpt <checkpoint>
-
-# dig 深度语义审核
-tb-audit-dig-depth-semantics --config testbed/configs/<act_config>.yaml --ckpt <checkpoint>
-
-# return checkpoint 离线审核
-tb-audit-return-ckpt --config testbed/configs/<act_config>.yaml --ckpt <checkpoint>
+# eval 后 rollout review，默认写入 <eval_results_dir>/rollout_review.json
+tb-rollout-review --results-dir <eval_results_dir>
 ```
+
+`policy_audit_manifest.json` 只汇总已有 audit JSON，不替代 `tb-audit-dig-ckpt`、`tb-audit-dig-depth-semantics`、`tb-audit-return-ckpt`。缺少某类 audit 或 schema 不匹配时必须保留为 evidence gap。
 
 浅挖类问题优先看：
 
@@ -198,6 +221,14 @@ return 类问题优先看：
 - `coverage_decision_trace`：选点、跳点、重复点、fallback 是否合理。
 - terminal reason：成功、timeout、safety stop、empty bucket、wrong phase 等。
 - 视频 / contact sheet：是否存在肉眼可见但指标没捕获的问题。
+
+标准产物路径：
+
+```text
+<eval_results_dir>/rollout_review.json
+```
+
+`rollout_review.json` 的顶层字段包括 `schema_version`、`source_results_dir`、`overall_status`、`evidence_gaps`、`rollout_reviews`、`root_cause_hints`、`llm_candidate_ranking_ready`。该报告只做诊断，不改变 eval success 语义。
 
 `3cycle_smoke` 用于快速冒烟；`15cycle_probe` / `30cycle_probe` 是 probe，不应直接写成已经完成稳定长程闭环。
 
