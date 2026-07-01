@@ -377,10 +377,17 @@ Phase 1 acceptance note：
 
 ### Phase 2: Shape guard shadow audit
 
-- [ ] 不改变生产 gate，先做 shape guard shadow audit，只记录会在何处触发。
+- [x] 不改变生产 gate，先做 shape guard shadow audit，只记录会在何处触发。
 - [ ] 统计默认 shadow events：`low_payload_shape_guard_stop`、`overdig_guard_stop`、`depth_budget_exhausted`、`outside_protected_removed_increased`。
 - [ ] 分析这些 shadow events 是否会降低 overdig risk，同时不 materially 降低 payload / cycle efficiency。
 - [ ] 继续保持 no production gate change、no official pass/fail、no official T1 defaults，直到 shadow evidence 足够明确。
+
+Phase 2A note：
+
+- `testbed.eval.terrain_shape_guard_shadow.build_shape_guard_shadow_audit()` 已定义 shadow-only event contract / review surface。
+- 当前 contract 只读取 explicit-target baseline report 中已有 nested facts，不重新实现 target-grid、metric、projection 或 report 公式。
+- 所有 threshold / payload 约束都必须由调用方显式传入；缺少证据或 threshold 时返回 `not_evaluated`，非法数值返回 `invalid_input`。
+- 当前阶段仍不接 production gate、不写 run artifact、不接 `rollout_review.json` schema、不声明 eval pass/fail / planner success / official T1 default。
 
 通过标准：
 

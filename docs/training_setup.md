@@ -345,6 +345,23 @@ depth；输出包含 `target_spec`、`latest_projection`、`convergence_projecti
 语义。当前 run 的显式非官方 baseline packet 记录在
 `docs/oracle_terrain_residual_baseline_report.md`。
 
+shape guard shadow audit 当前由
+`testbed.eval.terrain_shape_guard_shadow.build_shape_guard_shadow_audit()` 生成。它只读取
+baseline report 中已有的 `latest_projection.target_residual_metrics` 和
+`convergence_projection.summary` 字段，不重新实现 target-grid、residual metric、projection 或
+report 公式。输出是 shadow-only review surface，包含 `low_payload_shape_guard_stop`、
+`overdig_guard_stop`、`depth_budget_exhausted` 和
+`outside_protected_removed_increased` 四个事件记录。每个事件只报告
+`triggered`、`not_triggered`、`not_evaluated` 或 `invalid_input`，并带有证据字段和稳定
+reason；top-level summary 只列出 triggered / not-evaluated event names 和 validation
+errors。所有阈值和 payload/cycle-efficiency 约束都必须由调用方显式传入：target overdig max、
+target positive residual max、outside-target removed-depth delta max，以及 latest/min payload
+fraction。缺少显式阈值、payload 输入或 report 嵌套证据时，该事件必须是
+`not_evaluated`；非法数值输入返回 `invalid_input`，不抛出常规诊断规格错误。该 helper 不推断
+payload、不提供默认阈值、不写 run artifact、不接入 `rollout_review.json` schema，也不改变
+production planner/gate/policy/runtime、eval pass/fail、planner success、official T1 default 或
+物理体积语义。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

@@ -2238,3 +2238,130 @@ Next bounded target:
 - Keep it shadow-audit-only, with explicit evidence/status fields and no
   production gate changes, official pass/fail semantics, rollout-review schema
   integration, official T1 defaults, or generated run artifacts.
+
+## 2026-07-01: Phase 2A Planner Callback Audit And Deep Reflection
+
+Executor slice:
+
+- Phase 2A: shape guard shadow-audit event contract and review surface.
+
+Planner-side callback acceptance:
+
+- Callback status: success.
+- Target lock matched:
+  - branch/status: `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 20]`
+  - HEAD: `cdc83bdbfee8ea3cb19b558e24268168d3dda822`
+  - dirty files: expected Phase 2A files only
+- Accepted changed files:
+  - `testbed/eval/terrain_shape_guard_shadow.py`
+  - `tests/test_terrain_shape_guard_shadow.py`
+  - `docs/training_setup.md`
+- Callback was factual and scoped to a pure eval shadow-audit owner, focused
+  tests, and source-of-truth documentation.
+
+Contract accepted:
+
+- New owner: `testbed.eval.terrain_shape_guard_shadow.build_shape_guard_shadow_audit()`.
+- Schema/source: `terrain_shape_guard_shadow_audit_v1` /
+  `explicit_target_shape_guard_shadow_audit`.
+- Event names:
+  `low_payload_shape_guard_stop`, `overdig_guard_stop`,
+  `depth_budget_exhausted`, `outside_protected_removed_increased`.
+- Event statuses: `triggered`, `not_triggered`, `not_evaluated`,
+  `invalid_input`.
+- The owner reads existing nested baseline report facts only; it does not
+  recompute target-grid, residual metric, projection, or report formulas.
+- Thresholds and payload constraints are explicit inputs only. Missing evidence
+  or thresholds produce `not_evaluated`; invalid numeric inputs produce
+  `invalid_input`.
+
+Planner-side verification:
+
+- `python -m pytest -q tests/test_terrain_shape_guard_shadow.py` passed:
+  `4 passed`.
+- `python -m pytest -q tests/test_terrain_shape_guard_shadow.py tests/test_terrain_target_report.py tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed: `49 passed`.
+- `python -m compileall testbed/eval/terrain_shape_guard_shadow.py testbed/eval/terrain_target_report.py testbed/eval/terrain_target_projection.py testbed/eval/terrain_target_metrics.py tests/test_terrain_shape_guard_shadow.py tests/test_terrain_target_report.py tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/training_setup.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- Read-only current-run smoke audit passed with results file count `10 -> 10`.
+- `git diff --check` passed.
+
+Planner-side current-run smoke audit:
+
+- Explicit non-official target spec:
+  `grid_shape=[3, 2]`, `row_start=0`, `row_end=2`, `col_start=0`,
+  `col_end=1`, `target_depth_m=0.25`.
+- Explicit smoke-only thresholds:
+  `max_target_overdig_depth_sum_m=0.0`,
+  `max_target_positive_residual_depth_sum_m=0.4`,
+  `max_outside_target_removed_depth_delta_m=0.0`.
+- Payload inputs were absent.
+- Baseline report status: `present`.
+- Shadow audit status: `present`.
+- Triggered events:
+  `depth_budget_exhausted`, `outside_protected_removed_increased`.
+- Not evaluated events: `low_payload_shape_guard_stop`.
+- `overdig_guard_stop`: `not_triggered` with latest target overdig `0.0`
+  against explicit max `0.0`.
+- `depth_budget_exhausted`: `triggered` with latest target positive residual
+  `0.374313589186` against explicit max `0.4`.
+- `outside_protected_removed_increased`: `triggered` with outside-target
+  removed-depth delta `0.428853750229` against explicit max `0.0`.
+- `low_payload_shape_guard_stop`: `not_evaluated` because explicit payload
+  inputs were absent.
+
+Closure audit:
+
+- No production planner/gate/policy/runtime behavior changed.
+- No rollout-review schema integration, eval pass/fail, planner success
+  semantics, official T1 defaults, default thresholds, generated run artifacts,
+  physical volume, meter-derived current-run IoU, official cycle IDs,
+  candidate/effect/capability implementation, payload inference, dependency,
+  config, branch, or upstream behavior changed.
+- Existing target metric/projection/report behavior was preserved.
+
+Deep reflection:
+
+- Trigger: this callback is the third accepted callback since the latest
+  recorded deep reflection.
+- Reference set: user objective, current target lock, Phase 1 accepted
+  diagnostic baseline, `docs/oracle_terrain_residual_planner_v0_plan.md`,
+  `docs/oracle_terrain_residual_baseline_report.md`,
+  `docs/training_setup.md`, and closed-loop hard rules.
+- Objective alignment: aligned. The loop has moved from metric discovery to a
+  concrete shadow-audit contract while preserving the user's default of
+  no-production-gate change.
+- Non-goal check: still holding. Official T1 defaults, default thresholds,
+  pass/fail semantics, production planner changes, rollout-review schema
+  integration, generated run artifacts, and payload inference remain out of
+  scope.
+- Verification quality: adequate for this stage. Tests cover explicit
+  thresholds, missing nested evidence, invalid numeric inputs, and all-missing
+  thresholds; planner-side smoke confirms current-run behavior without writing
+  artifacts.
+- Documentation state: updated. `docs/training_setup.md` owns the helper
+  contract, and this plan/log now record Phase 2A acceptance.
+- Slice sizing verdict: acceptable. Phase 2A was a focused code slice with one
+  owner and a matching test/doc path. The next slice should be docs/report
+  projection, not another metric expansion.
+- Event-driven discipline: preserved. Executor returned callback facts to the
+  planner thread; planner audited before accepting and dispatching.
+- Prompt/config discipline: preserved. No runtime config, branch, upstream, or
+  dependency changes were made.
+- Accepted-slice count since latest recorded deep reflection resets to `0/3`
+  after this reflection.
+
+Next bounded target:
+
+- Phase 2B should refresh the durable baseline report with the current-run
+  shape guard shadow-audit results using explicit example thresholds.
+- Keep it docs/report-only unless a narrow source-of-truth doc sync is needed.
+- Do not add more shadow event code, production gates, official thresholds,
+  rollout-review schema integration, pass/fail semantics, generated run
+  artifacts, or payload inference.
