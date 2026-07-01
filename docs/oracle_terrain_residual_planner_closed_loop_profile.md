@@ -66,15 +66,15 @@ The reason is context durability: executor threads remain visible as normal
 project threads and preserve their own chat history. Subagents may be used only
 if the user explicitly reopens that mode for a later task.
 
-Callback collection is thread-based:
+Callback collection is thread-based and event-driven:
 
-- The executor thread returns the requested callback schema in its own thread.
-- If available, the executor thread may send the callback back to the planner
-  thread.
-- If direct thread-to-thread callback is unavailable, the planner reads the
-  executor thread and audits its final callback.
+- The executor thread must send the requested callback schema back to the
+  planner thread when it finishes or hits a blocker.
+- The planner must not poll the executor thread while waiting.
+- Reading the executor thread is only a recovery fallback if callback delivery
+  fails or the user explicitly asks for inspection.
 
-Do not replace this with background subagent delegation.
+Do not replace this with background subagent delegation or polling.
 
 ## Scope
 

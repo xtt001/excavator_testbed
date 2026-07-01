@@ -141,7 +141,8 @@ Planner action:
 Workflow rule from this point:
 
 - The planner dispatches bounded executor prompts through Codex threads.
-- Callback collection is done by reading the executor thread or by a thread
-  message back to the planner.
+- Callback collection is done by a thread message back to the planner.
+- The planner must not poll while waiting; reading the executor thread is only a
+  recovery fallback if callback delivery fails.
 - Multi-agent subagents are out of scope unless the user explicitly reopens
   that mode.
