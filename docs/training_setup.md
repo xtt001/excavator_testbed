@@ -249,6 +249,21 @@ return 类问题优先看：
 
 `rollout_review.json` 的顶层字段包括 `schema_version`、`source_results_dir`、`overall_status`、`evidence_gaps`、`rollout_reviews`、`root_cause_hints`、`llm_candidate_ranking_ready`。该报告只做诊断，不改变 eval success 语义。
 
+每个 rollout review 还会输出 `terrain_residual` 诊断块。该块只读取 per-rollout jsonl
+中最新可用的 compact dig-area `env_state` 快照，使用 `testbed.data.schema` 中的
+grid count、removed-depth、target-depth 和 valid-mask 下标计算：
+
+- `removed_depth_grid_m`、`target_depth_grid_m`、`residual_depth_grid_m = target - removed`。
+- valid cell 上的 positive residual、overdig、target/removed depth sum 和
+  `target_removed_completion_ratio = sum(min(removed, target)) / target_depth_sum_m`。
+- `snapshot_row_index`、`grid_shape`、`cell_count`、`valid_cell_count` 和明确的 source
+  provenance。
+
+当前记录没有 cell size、origin、timestamp、frame transform、height/elevation grid 或
+confidence grid，报告必须把这些字段标为 `missing`，不能从现有 jsonl 推断。该 residual
+块是离线诊断和 Phase 0 baseline 投影，不改变 planner、gate、checkpoint、token 或 eval
+success 语义。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

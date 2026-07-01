@@ -146,3 +146,89 @@ Workflow rule from this point:
   recovery fallback if callback delivery fails.
 - Multi-agent subagents are out of scope unless the user explicitly reopens
   that mode.
+
+Thread selection:
+
+- Active executor thread: `019f1d6b-1367-71f3-8cb1-c4d891769109`.
+- Duplicate fork `019f1d6b-4f86-7a81-86ad-65d1fb46acfe` was archived and must
+  not be used for future dispatch.
+
+## 2026-07-01: Phase 0B Callback Audit
+
+Executor thread:
+
+- `019f1d6b-1367-71f3-8cb1-c4d891769109`
+
+Executor slice:
+
+- Phase 0B: minimal offline terrain-grid/residual metric contract in rollout
+  review.
+
+Executor status:
+
+- Partial, because the executor observed target-lock HEAD drift. The executor
+  started from `c9b6c30b276ca5aa27b356a67186f824d51a68dc`; the planner later
+  committed thread-routing docs and moved HEAD to
+  `0dfbb97d12ff49726334210ef95fc6bdd2970bec`.
+- The executor left five expected slice files in the worktree and reported the
+  drift as failure facts instead of broadening scope.
+
+Accepted implementation facts:
+
+- Added focused owner `testbed/eval/terrain_residual_metrics.py`.
+- Kept `testbed/eval/rollout_review.py` as thin integration: it imports and
+  calls `build_terrain_residual_summary()` and attaches the returned diagnostic
+  block.
+- Added `terrain_residual` to per-rollout review output.
+- Residual metrics use the latest usable compact dig-area `env_state` snapshot:
+  removed-depth `[39:45]`, target-depth `[45:51]`, valid mask `[51:57]`, and
+  long/short grid counts.
+- Missing provenance remains explicit for confidence grid, height/elevation
+  grid, cell size, origin, timestamp, and frame transform.
+- Added focused tests in `tests/test_terrain_residual_metrics.py`.
+- Added thin rollout-review integration coverage in `tests/test_rollout_review.py`.
+- Updated `docs/training_setup.md` to document the diagnostic-only
+  `terrain_residual` block.
+
+Planner closure audit:
+
+- Planner-side target lock after callback:
+  - branch: `tx/oracle-terrain-residual-planner-v0`
+  - HEAD: `0dfbb97d12ff49726334210ef95fc6bdd2970bec`
+  - dirty files: only the five expected Phase 0B files.
+- The callback was factual, scoped, and included the target-lock mismatch as a
+  failure fact.
+- The mismatch was caused by a planner-side workflow-doc commit during executor
+  execution, not by executor repo mutation outside scope.
+- The diff matched the Phase 0B ownership boundary and did not touch planner,
+  policy, token, checkpoint, dependency, config, branch, or runtime behavior.
+
+Planner-side verification:
+
+- `python -m pytest -q tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed, 11 tests.
+- `python -m compileall testbed/eval/terrain_residual_metrics.py testbed/eval/rollout_review.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/training_setup.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- `git diff --check` passed.
+
+Lightweight reflection:
+
+- Reference used: user objective, Phase 0 acceptance, ownership boundaries, and
+  thread execution rule.
+- Alignment verdict: aligned after planner audit. Phase 0 now has a minimal
+  residual diagnostic contract without changing production planner/gate/policy
+  behavior.
+- Efficiency verdict: useful implementation progress. The only process cost was
+  the expected recovery from planner-caused HEAD drift.
+
+Next bounded target:
+
+- Commit the accepted Phase 0B implementation.
+- Then dispatch the next slice back to active executor thread
+  `019f1d6b-1367-71f3-8cb1-c4d891769109` with a refreshed HEAD.

@@ -11,6 +11,7 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
 )
+from testbed.eval.terrain_residual_metrics import build_terrain_residual_summary
 
 
 SCHEMA_VERSION = "rollout_review_v1"
@@ -139,6 +140,7 @@ def _review_single_rollout(
         "handoff": handoff,
         "coverage": coverage,
         "depth_tracking": _depth_tracking_review(summary, rollout_records),
+        "terrain_residual": build_terrain_residual_summary(rollout_records),
         "planned_actual_cycles": _planned_actual_cycles(summary),
         "evidence_gaps": evidence_gaps,
         "root_cause_hints": _unique_strings(root_cause_hints),

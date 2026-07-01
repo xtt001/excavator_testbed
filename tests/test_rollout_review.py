@@ -3,6 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from testbed.data.schema import (
+    ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX,
+    ENV_STATE_DIG_AREA_GRID_LONG_COUNT_IDX,
+    ENV_STATE_DIG_AREA_GRID_SHORT_COUNT_IDX,
+    ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
+    ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
+)
 from testbed.eval.rollout_review import build_rollout_review
 
 
@@ -22,6 +29,30 @@ def _env_state(*, plane_depth: float, local_surface_depth: float) -> list[float]
     values = [0.0] * 64
     values[8] = plane_depth
     values[31] = local_surface_depth
+    return values
+
+
+def _env_state_with_terrain_grid(
+    *,
+    removed_depth: list[float],
+    target_depth: list[float],
+    valid_mask: list[float],
+) -> list[float]:
+    values = [0.0] * 64
+    values[ENV_STATE_DIG_AREA_GRID_LONG_COUNT_IDX] = 3.0
+    values[ENV_STATE_DIG_AREA_GRID_SHORT_COUNT_IDX] = 2.0
+    values[
+        ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX : ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX
+        + 6
+    ] = removed_depth
+    values[
+        ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX : ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX
+        + 6
+    ] = target_depth
+    values[
+        ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX : ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX
+        + 6
+    ] = valid_mask
     return values
 
 
@@ -378,3 +409,52 @@ def test_rollout_review_reports_local_surface_depth_separately_from_summary_plan
     assert depth["summary_plane_depth"]["error_mean_m"] == 0.27
     assert depth["cycles"][0]["dig_local_surface_depth_error_m"] == 0.020000000000000018
     assert depth["cycles"][0]["summary_plane_depth_error_m"] == 0.27
+
+
+def test_rollout_review_includes_diagnostic_terrain_residual_block(
+    tmp_path: Path,
+) -> None:
+    results_dir = tmp_path / "results"
+    summary_path = _write_json(
+        results_dir / "rollouts" / "rollout_005_summary.json",
+        {
+            "rollout_id": 5,
+            "success": True,
+            "quality_issue_count": 0,
+            "return_to_dig_entry_close": 1,
+            "return_to_dig_entry_error_m": 0.1,
+            "return_to_dig_max_entry_error_m": 0.55,
+        },
+    )
+    _write_json(
+        results_dir / "rollouts" / "rollout_005_planner_trace.json",
+        {"coverage_decision_trace": [{"event": "select_corridor"}]},
+    )
+    _write_jsonl(
+        results_dir / "rollouts" / "rollout_005.jsonl",
+        [
+            {"skill_name": "dig", "env_state": [0.0] * 20},
+            {
+                "skill_name": "dig",
+                "env_state": _env_state_with_terrain_grid(
+                    removed_depth=[0.05, 0.20, 0.35, 0.10, 0.00, 0.50],
+                    target_depth=[0.20, 0.20, 0.30, 0.00, 0.00, 0.40],
+                    valid_mask=[1.0, 1.0, 1.0, 0.0, 1.0, 1.0],
+                ),
+            },
+        ],
+    )
+    _write_json(
+        results_dir / "rollout_manifest.json",
+        {"rollouts": [{"rollout_id": 5, "summary_path": str(summary_path)}]},
+    )
+
+    review = build_rollout_review(results_dir)
+
+    terrain_residual = review["rollout_reviews"][0]["terrain_residual"]
+    assert terrain_residual["status"] == "present"
+    assert terrain_residual["snapshot_row_index"] == 1
+    assert terrain_residual["grid_shape"] == [3, 2]
+    assert terrain_residual["positive_residual_depth_sum_m"] == 0.15
+    assert terrain_residual["overdig_depth_sum_m"] == 0.15
+    assert terrain_residual["target_removed_completion_ratio"] == 0.8636363636363635
