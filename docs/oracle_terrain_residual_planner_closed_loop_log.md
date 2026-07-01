@@ -2898,3 +2898,136 @@ Next bounded target:
   target/outside-target cells, depth-budget evidence, and return/alignment
   proxy evidence, but must not become heuristic scoring, production planner
   integration, official thresholds, physical bucket geometry, or eval pass/fail.
+
+## 2026-07-01: Phase 3B Executor Candidate Evidence Packet
+
+Slice:
+
+- Phase 3B: offline candidate constraint/evidence annotation.
+
+Boundary:
+
+- Added a focused eval owner, `testbed/eval/terrain_candidate_evidence.py`.
+- Kept `terrain_candidate_generation.py` as candidate enumeration only.
+- Did not change rollout review, target report/projection/metrics owners,
+  production planner modules, runtime config, or generated run artifacts.
+
+TDD red:
+
+- Added `tests/test_terrain_candidate_evidence.py` before production code.
+- Red command: `python -m pytest -q tests/test_terrain_candidate_evidence.py`.
+- Expected failure: `ModuleNotFoundError: No module named
+  'testbed.eval.terrain_candidate_evidence'`.
+
+Implemented contract:
+
+- Public function:
+  `build_candidate_constraint_evidence(...)`.
+- Inputs are explicit: candidates, target mask, valid mask, grid shape,
+  `max_candidate_depth_m`, `protected_boundary_cell_radius`, and optional
+  `return_origin_cell_index`.
+- Per-candidate evidence preserves input order and reports candidate id, anchor
+  cell, direction, candidate depth, row-major grid-cell footprint proxy,
+  grid-boundary clipping, target/outside-target footprint cells, valid/invalid
+  footprint cells, protected/outside-protected boundary cells, explicit
+  depth-budget status, and optional Manhattan return-alignment proxy.
+- Top-level output includes schema/source/status/offline-only/profile,
+  candidate count, evidence records, constraint summary, validation errors, and
+  missing provenance statuses.
+- Statuses include `present`, `no_candidates`, `invalid_candidates`,
+  `invalid_grid_shape`, `invalid_grid_lengths`, `invalid_mask_values`,
+  `invalid_depth_budget`, `invalid_boundary_radius`, and
+  `invalid_return_origin`.
+
+Current-run candidate evidence smoke:
+
+- Recomputed the current-run baseline report read-only from
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- Explicit target spec: `grid_shape=[3, 2]`, rows `[0:2]`, cols `[0:1]`,
+  `target_depth_m=0.25`.
+- Candidate options:
+  `direction_options=['row_forward', 'row_reverse', 'col_forward', 'col_reverse']`,
+  `depth_fraction_options=[0.5, 0.75, 1.0]`,
+  `min_candidate_count=20`, `max_candidate_count=100`.
+- Evidence inputs: `max_candidate_depth_m=0.2`,
+  `protected_boundary_cell_radius=1`, `return_origin_cell_index=0`.
+- Results file count stayed `10 -> 10`.
+- Baseline status / latest row: `present` / `6147`.
+- Candidate status / count: `present` / `24`; positive residual target cells
+  `[0, 2]`.
+- Evidence status: `present`.
+- Constraint summary: depth-budget exceeded count `0`, clipped-by-grid-boundary
+  count `9`, outside-target footprint candidate count `9`,
+  outside-protected footprint candidate count `0`, protected-boundary
+  saturation ratio `1.0`, return proxy min/max `0` / `1` cells.
+- First evidence sample: `cut_candidate_000001`, anchor cell `0`, direction
+  `row_forward`, candidate depth `0.095992526039`, footprint `[0, 1]`,
+  outside-target footprint `[1]`, return proxy `0` cells.
+- Last evidence sample: `cut_candidate_000024`, anchor cell `2`, direction
+  `col_reverse`, candidate depth `0.182328537107`, footprint `[2, 0]`,
+  outside-target footprint `[]`, return proxy `1` cell.
+
+Documentation changed:
+
+- `docs/training_setup.md` documents the offline candidate evidence contract,
+  explicit inputs, statuses, proxy limitations, and non-goals.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks the second Phase 3
+  checklist item complete only as grid-cell proxy/evidence fields and records
+  that physical bucket swept-footprint remains Phase 4.
+
+## 2026-07-01: Phase 3B Planner Callback Audit
+
+Callback audit:
+
+- Accepted executor status: `success`.
+- Target lock matched the expected Phase 3B base:
+  `b07ac5086736b4218d01ed5b11d3e5d9ee9fadf7`.
+- Accepted changed files:
+  - `testbed/eval/terrain_candidate_evidence.py`
+  - `tests/test_terrain_candidate_evidence.py`
+  - `docs/training_setup.md`
+  - `docs/oracle_terrain_residual_planner_v0_plan.md`
+  - `docs/oracle_terrain_residual_planner_closed_loop_log.md`
+- Callback was factual and scoped to offline/eval-only candidate constraint
+  evidence.
+
+Planner-side verification:
+
+- `python -m pytest -q tests/test_terrain_candidate_evidence.py tests/test_terrain_candidate_generation.py tests/test_terrain_target_report.py tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed with `54 passed`.
+- `python -m compileall testbed/eval/terrain_candidate_evidence.py testbed/eval/terrain_candidate_generation.py testbed/eval/terrain_target_report.py testbed/eval/terrain_target_projection.py testbed/eval/terrain_target_metrics.py tests/test_terrain_candidate_evidence.py tests/test_terrain_candidate_generation.py tests/test_terrain_target_report.py tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/training_setup.md docs/oracle_terrain_residual_planner_v0_plan.md docs/oracle_terrain_residual_planner_closed_loop_log.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- Read-only current-run candidate evidence smoke kept the results file count at
+  `10 -> 10`.
+- `git diff --check` passed.
+
+Closure audit:
+
+- Phase 3B now has an explicit offline constraint/evidence annotation contract
+  for generated candidates.
+- Current-run smoke produced evidence for `24` candidates: depth-budget
+  exceeded count `0`, clipped-by-grid-boundary count `9`, outside-target
+  footprint candidate count `9`, outside-protected footprint candidate count
+  `0`, protected-boundary saturation ratio `1.0`, and return proxy min/max
+  `0` / `1` cells.
+- The helper remains grid-cell proxy evidence only. It does not implement
+  physical bucket swept-footprint, heuristic scoring, sorting, top-k selection,
+  production planner integration, official defaults, pass/fail semantics, or run
+  artifact writing.
+- Accepted-slice count since latest recorded deep reflection: `2/3`.
+
+Next bounded target:
+
+- Phase 3C: implement offline heuristic candidate scoring over Phase 3A/3B
+  outputs.
+- Keep scoring explicit-input-only and eval-only. It may compute deterministic
+  score components from candidate depth, target/outside/protected footprint
+  evidence, depth-budget evidence, and return proxy, but must not sort/top-k by
+  default, change production planner behavior, define official weights, or
+  promote pass/fail semantics.

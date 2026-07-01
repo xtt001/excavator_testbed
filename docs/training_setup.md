@@ -381,6 +381,30 @@ production planner，不写 run artifact，不定义官方候选数量、官方�
 eval pass/fail 或 planner success 语义。缺少 cell size 时不做物理 footprint、meter-derived
 tolerance、boundary 或体积推断。
 
+offline candidate constraint evidence 当前由
+`testbed.eval.terrain_candidate_evidence.build_candidate_constraint_evidence()` 标注。它读取
+`build_discrete_cut_candidates()` 的候选列表，以及显式 `target_region_mask`、`valid_mask`、
+`grid_shape`、`max_candidate_depth_m`、`protected_boundary_cell_radius` 和可选
+`return_origin_cell_index`。该 helper 不生成新候选、不排序、不打分，只按候选输入顺序输出
+`evidence_records` 和 `constraint_summary`。
+
+每条 evidence 记录使用 row-major grid-cell proxy footprint，而不是物理 bucket footprint：
+`row_forward` / `row_reverse` / `col_forward` / `col_reverse` 分别表示 anchor cell 加相邻同
+row/col cell；相邻 cell 出网格时记录 `clipped_by_grid_boundary=true` 和 off-grid neighbor，
+不会虚构 footprint。每条记录同时给出 target / outside-target footprint cells、valid / invalid
+footprint cells、显式 Chebyshev cell-radius 保护区内外 cells、`candidate_depth_m <=
+max_candidate_depth_m` 的 depth-budget evidence，以及可选的 Manhattan row-major
+`return_alignment_cost_proxy`。如果没有显式 return origin，该 proxy 为 `not_evaluated`。
+
+top-level 状态包括 `present`、`no_candidates`、`invalid_candidates`、`invalid_grid_shape`、
+`invalid_grid_lengths`、`invalid_mask_values`、`invalid_depth_budget`、
+`invalid_boundary_radius` 和 `invalid_return_origin`。`constraint_summary` 汇总候选数、
+grid footprint proxy 名称、保护半径、保护区 cell count / saturation ratio、depth-budget 超出数、
+grid-boundary clipped 数、outside-target / outside-protected candidate 数，以及 return proxy
+min/max。所有 budget、boundary radius 和 return origin 都是调用方显式输入；该 helper 不定义官方
+depth budget、boundary tolerance、bucket footprint、physical volume、cell-size inference、top-k、
+pass/fail、eval success 或 production planner 语义。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

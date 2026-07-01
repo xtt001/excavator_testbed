@@ -418,7 +418,7 @@ Phase 2 closure note：
 
 - Phase 3A default entry target: offline discrete candidate generator / candidate evidence, not production planner integration.
 - [x] 从正 residual 区域生成 `20 - 100` 个候选 cut。
-- [ ] 对候选 cut 加入 bucket footprint、边界容差、depth budget 和 return/alignment cost。
+- [x] 对候选 cut 加入 grid-cell footprint proxy、边界保护半径、depth budget 和 return/alignment proxy evidence。
 - [ ] 先用 heuristic scoring 跑离线排序，不接入生产 planner。
 
 Phase 3A note：
@@ -426,7 +426,14 @@ Phase 3A note：
 - `testbed.eval.terrain_candidate_generation.build_discrete_cut_candidates()` 已定义 offline-only discrete cut candidate contract。
 - 该 helper 只使用显式 row-major residual grid、target mask、valid mask、grid shape、direction options、depth fraction options 和显式 min/max candidate count。
 - 当前 run latest projection 使用显式非官方 target spec、方向 `row_forward` / `row_reverse` / `col_forward` / `col_reverse`、depth fraction `0.5` / `0.75` / `1.0` 生成 `24` 个候选，覆盖 positive residual target cells `[0, 2]`，结果数量落在 `20 - 100` 的显式 smoke 范围内。
-- 仍未完成 bucket physical footprint、boundary tolerance、depth budget、return/alignment cost、heuristic effect model scoring、production planner integration、official direction/depth defaults 或 pass/fail 语义。
+- Phase 3A 本身未完成 bucket physical footprint、boundary tolerance、depth budget、return/alignment cost、heuristic effect model scoring、production planner integration、official direction/depth defaults 或 pass/fail 语义；Phase 3B 只补其中的 grid-cell proxy evidence。
+
+Phase 3B note：
+
+- `testbed.eval.terrain_candidate_evidence.build_candidate_constraint_evidence()` 已定义 offline-only candidate constraint/evidence contract。
+- 该 helper 按输入候选顺序输出 row-major grid-cell footprint proxy、target/outside-target footprint cells、valid/invalid footprint cells、显式 Chebyshev boundary cell-radius 保护区证据、显式 max candidate depth budget evidence，以及可选 Manhattan return-alignment proxy evidence。
+- 当前 run latest projection 使用 Phase 3A 候选和 smoke-only 约束 `max_candidate_depth_m=0.2`、`protected_boundary_cell_radius=1`、`return_origin_cell_index=0` 得到 evidence status `present`、candidate count `24`、depth-budget exceeded count `0`、outside-target footprint candidate count `9`、outside-protected footprint candidate count `0`、boundary saturation ratio `1.0`、return proxy min/max `0` / `1` cells，结果文件数保持 `10 -> 10`。
+- 该证据仍是 grid-cell proxy，不是 physical bucket swept-footprint kernel；不做 heuristic scoring、top-k selection、production planner integration、official defaults、eval pass/fail 或 planner success 语义。
 
 通过标准：
 
