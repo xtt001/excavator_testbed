@@ -55,6 +55,27 @@ Historical planner-refactor memory is useful only as workflow context. Paths,
 branch names, old guard script names, and HEAD locks from earlier planner
 refactor rounds are stale until rechecked live.
 
+## Thread Execution Rule
+
+Executor work for this workflow must run in separate Codex conversation threads,
+not in multi-agent subagents. The planner creates or messages an executor
+thread with the bounded prompt, then yields until the executor thread has a
+callback or blocker.
+
+The reason is context durability: executor threads remain visible as normal
+project threads and preserve their own chat history. Subagents may be used only
+if the user explicitly reopens that mode for a later task.
+
+Callback collection is thread-based:
+
+- The executor thread returns the requested callback schema in its own thread.
+- If available, the executor thread may send the callback back to the planner
+  thread.
+- If direct thread-to-thread callback is unavailable, the planner reads the
+  executor thread and audits its final callback.
+
+Do not replace this with background subagent delegation.
+
 ## Scope
 
 The route is:

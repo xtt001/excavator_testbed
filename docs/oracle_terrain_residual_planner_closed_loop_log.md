@@ -123,3 +123,25 @@ Next bounded target:
   offline rollout review without changing production planner or gate behavior.
 - The next executor prompt must refresh the live HEAD and dirty state before
   dispatch.
+
+## 2026-07-01: Thread Execution Correction
+
+User correction:
+
+- Executor work should use newly created Codex conversation threads, not
+  subagents, so the execution context is preserved as normal thread history.
+
+Planner action:
+
+- Closed the mistakenly spawned Phase 0B subagent before accepting any work from
+  it.
+- Updated `docs/oracle_terrain_residual_planner_closed_loop_profile.md` with a
+  thread-only executor rule.
+
+Workflow rule from this point:
+
+- The planner dispatches bounded executor prompts through Codex threads.
+- Callback collection is done by reading the executor thread or by a thread
+  message back to the planner.
+- Multi-agent subagents are out of scope unless the user explicitly reopens
+  that mode.
