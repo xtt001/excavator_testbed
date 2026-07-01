@@ -82,6 +82,7 @@ def build_latest_target_residual_projection(
         target_depth_grid_m=target_grid["target_depth_grid_m"],
         target_region_mask=target_grid["target_region_mask"],
         valid_mask=snapshot["valid_mask"],
+        grid_shape=grid_shape,
     )
     return _projection_result(
         status=str(target_residual_metrics["status"]),
@@ -147,6 +148,7 @@ def build_target_residual_convergence_projection(
             target_depth_grid_m=target_grid["target_depth_grid_m"],
             target_region_mask=target_grid["target_region_mask"],
             valid_mask=snapshot["valid_mask"],
+            grid_shape=grid_shape,
         )
         if metrics["status"] != "present":
             failed_metric = metrics

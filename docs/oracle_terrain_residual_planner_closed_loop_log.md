@@ -1808,3 +1808,214 @@ Hold-and-confirm gate:
   - whether these remain diagnostic-only or become pass/fail later.
 - No further implementation slice should be dispatched for boundary tolerance
   or shape IoU until these semantics are confirmed.
+
+## 2026-07-01: Phase 1K Callback Audit
+
+Executor thread:
+
+- `019f1d6b-1367-71f3-8cb1-c4d891769109`
+
+Executor slice:
+
+- Phase 1K: dual-tolerance shape-overlap diagnostics.
+
+Executor status:
+
+- Success.
+- Worktree target lock matched at start.
+- HEAD stayed `87d3d9d45c0cf1433ae2f31ce85928550ee392f1`.
+- Expected slice files were modified:
+  - `testbed/eval/terrain_target_metrics.py`
+  - `testbed/eval/terrain_target_projection.py`
+  - `tests/test_terrain_target_metrics.py`
+  - `tests/test_terrain_target_projection.py`
+  - `tests/test_terrain_target_report.py`
+  - `docs/training_setup.md`
+
+Accepted implementation facts:
+
+- `build_target_residual_metrics()` now accepts optional keyword-only
+  `grid_shape` and `cell_size_m` inputs while preserving existing callers.
+- Every metric result includes nested
+  `target_shape_overlap_diagnostics`, including invalid validation results.
+- Present diagnostics include:
+  - `removed_active_depth_threshold_m: 0.0`
+  - strict `raw_target_overlap`
+  - `one_cell_dilated_target_overlap` using row-major Chebyshev / 8-neighbor
+    dilation with `cell_radius: 1`
+  - saturation ratio so small-grid dilation cannot silently look better than it
+    is
+  - `meter_tolerance_profiles` with `narrow_0_30m` and `bucket_0_50m`
+- Current-run cell size remains missing, so meter profiles report
+  `cell_size_missing` rather than inferring meter-derived IoU.
+- When `cell_size_m` is explicitly supplied, meter profile radius is computed
+  with `ceil(tolerance_m / cell_size_m)`.
+- `build_latest_target_residual_projection()` and
+  `build_target_residual_convergence_projection()` pass explicit `grid_shape`
+  into nested target residual metrics.
+- `terrain_target_report.py` production code was not changed; report tests only
+  assert nested propagation.
+- `docs/training_setup.md` documents the new diagnostics and their
+  diagnostic-only limitations.
+
+Planner-side current-run smoke report:
+
+- Used explicit non-official example spec:
+  `grid_shape=[3, 2]`, `row_start=0`, `row_end=2`, `col_start=0`,
+  `col_end=1`, `target_depth_m=0.25`.
+- Read
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- File count under the results directory stayed `10 -> 10`; no new run files
+  were created.
+- Report status was `present`.
+- Latest projection row was `6147`.
+- Latest raw IoU was `0.333333333333`.
+- Latest raw outside removed-depth sum was `0.488698139786`.
+- Latest one-cell dilated IoU was `1.0`.
+- Latest one-cell dilated saturation ratio was `1.0`.
+- Latest outside-dilated removed-depth sum was `0.0`.
+- Latest `narrow_0_30m` and `bucket_0_50m` statuses were both
+  `cell_size_missing`.
+- Convergence point count was `10`.
+- Convergence trend remained
+  `target_positive_residual_reduced_outside_removed_increased`.
+- First point row `416`: raw IoU `0.333333333333`, one-cell dilated IoU
+  `0.333333333333`, saturation `1.0`.
+- Last point row `5821`: raw IoU `0.333333333333`, one-cell dilated IoU
+  `1.0`, saturation `1.0`.
+
+Planner-side verification:
+
+- `python -m pytest -q tests/test_terrain_target_metrics.py` passed:
+  `13 passed`.
+- `python -m pytest -q tests/test_terrain_target_projection.py tests/test_terrain_target_report.py tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed: `45 passed`.
+- `python -m compileall testbed/eval/terrain_target_metrics.py testbed/eval/terrain_target_projection.py testbed/eval/terrain_target_report.py testbed/eval/terrain_target_grid.py testbed/eval/terrain_residual_metrics.py testbed/eval/rollout_review.py tests/test_terrain_target_metrics.py tests/test_terrain_target_projection.py tests/test_terrain_target_report.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/training_setup.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- Read-only current-run smoke report passed with results file count `10 -> 10`.
+- `git diff --check` passed.
+
+Planner closure audit:
+
+- Target lock matched after callback:
+  - branch: `tx/oracle-terrain-residual-planner-v0`
+  - HEAD: `87d3d9d45c0cf1433ae2f31ce85928550ee392f1`
+  - dirty files: only expected Phase 1K files before planner log sync
+- Callback was factual, scoped, and free of planner-directed strategy.
+- Diff stayed within focused eval metric/projection owners, focused tests, and
+  the closest source-of-truth documentation.
+- No rollout-review schema, official T1 defaults, pass/fail semantics, planner
+  success semantics, eval success semantics, runtime gate/policy behavior,
+  token/checkpoint/config/dependency, branch/upstream, or generated run artifact
+  behavior changed.
+
+Lightweight reflection:
+
+- Reference used: user objective, Phase 1 bucket-aware task metric requirement
+  in `docs/oracle_terrain_residual_planner_v0_plan.md`, user-confirmed
+  dual-tolerance / dilated-IoU default, and diagnostic-only boundary in
+  `docs/training_setup.md`.
+- Alignment verdict: aligned. Phase 1 now includes shape-overlap and
+  boundary-tolerance diagnostics without promoting them into official
+  pass/fail semantics.
+- Efficiency verdict: useful progress. This was a substantive metric slice, not
+  repeated process or report-only work.
+- Accepted-slice count since the latest deep reflection is now `3/3`; deep
+  reflection is required before the next implementation dispatch.
+
+## 2026-07-01: Deep Reflection After Phase 1I-1K
+
+Trigger:
+
+- Three accepted callbacks since the latest recorded deep reflection:
+  Phase 1I, Phase 1J, and Phase 1K.
+
+Reference base:
+
+- User objective: prove whether an oracle terrain residual planner can drive a
+  target pit shape toward convergence in simulation ground-truth terrain,
+  without relying on single rollout `success=1.0`.
+- Phase 1 requirement in `docs/oracle_terrain_residual_planner_v0_plan.md`:
+  target grid, positive/negative residual, boundary tolerance, depth RMSE,
+  shape IoU, residual convergence curve, and baseline report.
+- Current diagnostic contract in `docs/training_setup.md`.
+- Durable baseline packet in
+  `docs/oracle_terrain_residual_baseline_report.md`.
+- User-confirmed default choices:
+  - dual tolerance diagnostics: `0.30m` narrow and `0.50m` bucket footprint
+  - raw target-cell overlap as strict contrast
+  - one-cell dilated target mask IoU as current practical shape-overlap
+    diagnostic
+  - saturation / coverage guard fields
+  - diagnostic-only until explicit promotion
+
+What Phase 1I-1K added:
+
+- Phase 1I added threshold-free target-interior depth-error metrics:
+  RMSE, MAE, and abs max.
+- Phase 1J refreshed the durable current-run baseline report with those
+  depth-error diagnostics.
+- Phase 1K added raw and dilated target-overlap diagnostics, dual tolerance
+  profile records, and explicit `cell_size_missing` handling for current-run
+  meter profiles.
+
+Alignment verdict:
+
+- Aligned. The loop now answers a larger part of the Phase 1 question:
+  target residual decreases can be inspected together with target interior
+  depth error, raw/dilated shape overlap, outside-target removed depth, and
+  convergence trend.
+- The implementation still respects non-goals: no production planner/gate
+  change, no rollout-review schema change, no official T1 default, no
+  pass/fail semantics, and no generated run artifact writes.
+
+Verification verdict:
+
+- Current verification is proving the right layer for Phase 1: pure eval owner
+  tests, projection/report propagation tests, docs guards, compile checks, and a
+  read-only current-run smoke.
+- The largest remaining evidence gap is not test coverage for the new metric
+  formulas; it is the missing current-run provenance needed for meter-derived
+  tolerance profiles: cell size, origin, frame transform, official target
+  defaults, physical volume conversion, and official cycle IDs.
+
+Efficiency verdict:
+
+- The last three accepted callbacks were necessary. Phase 1I and Phase 1K were
+  real metric capability additions; Phase 1J was a targeted doc sync to keep the
+  durable baseline packet current.
+- The next report refresh should be docs-only and short. After that, Phase 1
+  should close rather than adding more metric variants.
+
+Default decisions going forward:
+
+- Continue using dual tolerance diagnostics, not a single official threshold.
+- Continue using one-cell dilated target mask IoU as the current practical
+  shape-overlap diagnostic, with raw target-cell overlap as strict contrast.
+- Keep meter-derived tolerance profiles explicit-input only until cell size is
+  available.
+- Keep all current Phase 1 fields diagnostic-only.
+- Do not pause for more semantic choices unless a future slice would change
+  production planner/gate behavior, official pass/fail criteria, token/schema,
+  checkpoint compatibility, dependencies, or branch/upstream state.
+
+Next bounded target:
+
+- Phase 1L should refresh
+  `docs/oracle_terrain_residual_baseline_report.md` with current-run
+  `target_shape_overlap_diagnostics` facts from the committed report builder.
+- It should be docs-only, use the same explicit non-official target spec, and
+  keep `official_t1_default=false`.
+- It should record raw IoU, one-cell dilated IoU, saturation ratio, outside
+  raw/dilated removed-depth sums, and meter profile `cell_size_missing`
+  statuses.
+- Do not write generated artifacts under the eval run results directory.
+- Do not change code, tests, rollout-review schema, official target defaults,
+  pass/fail semantics, runtime planner/gate/policy behavior, config, token,
+  checkpoint, branch, or upstream behavior.

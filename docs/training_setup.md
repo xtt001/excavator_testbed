@@ -294,8 +294,23 @@ depth sum、target completion ratio、target 外 valid cells 的 removed-depth s
 还会在 valid target cells 内报告 threshold-free depth-error 诊断：
 `target_residual_depth_rmse_m`、`target_residual_depth_mae_m` 和
 `target_residual_depth_abs_max_m`。如果没有 target cell，这些字段保留为 `null`，不能解释成
-零误差或成功。该 metric 仍是离线诊断，不提供 bucket-aware IoU、boundary tolerance、
-protected-area band、target-shape pass/fail、物理体积、官方 cycle id 或 eval success 语义。
+零误差或成功。该 metric 还会输出 `target_shape_overlap_diagnostics`，作为 threshold-free
+shape-overlap 诊断：
+
+- `raw_target_overlap` 严格比较 valid target cells 与 valid removed-active cells
+  (`removed_depth_grid_m > 0.0`) 的交并比，并报告 target 外 valid cells 的 removed-depth
+  sum，作为不加容差的对照口径。
+- `one_cell_dilated_target_overlap` 在调用方显式传入有效 `grid_shape` 时，用 row-major
+  Chebyshev / 8-neighbor 一格膨胀 target mask，再报告 dilated target cell count、valid-cell
+  count、saturation ratio、intersection / union / IoU 和 dilated target 外 removed-depth
+  sum。saturation ratio 用来暴露小 grid 上膨胀 mask 是否已经覆盖大部分或全部 valid cells。
+- `meter_tolerance_profiles` 固定包含 `narrow_0_30m` (`0.30m`) 和 `bucket_0_50m`
+  (`0.50m`) 两个诊断 profile。当前 rollout records 没有 cell size，因此 profile 会明确标记
+  `cell_size_missing`，不会推断 meter-derived IoU；只有调用方显式提供 `cell_size_m` 时才按
+  `ceil(tolerance_m / cell_size_m)` 的保守规则换算 cell radius 并计算同类 overlap 字段。
+
+这些 overlap / tolerance 字段仍是离线诊断，不提供 pass/fail、planner success、eval success、
+官方 T1 默认值、protected-area band、物理体积、官方 cycle id 或 runtime gate 语义。
 
 latest-snapshot rollout projection 当前由
 `testbed.eval.terrain_target_projection.build_latest_target_residual_projection()` 组合上述两个

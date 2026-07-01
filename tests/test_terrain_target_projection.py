@@ -33,6 +33,75 @@ def _env_state_with_compact_grid(
     return values
 
 
+def _missing_meter_profile(tolerance_m: float) -> dict[str, object]:
+    return {
+        "status": "cell_size_missing",
+        "tolerance_m": tolerance_m,
+        "cell_size_m": None,
+        "cell_radius": None,
+        "cell_radius_rule": "ceil(tolerance_m / cell_size_m)",
+        "dilation_type": "chebyshev_8_neighbor_row_major",
+        "dilated_target_cell_count": None,
+        "valid_cell_count": None,
+        "saturation_ratio": None,
+        "intersection_cell_count": None,
+        "union_cell_count": None,
+        "iou": None,
+        "outside_dilated_target_removed_depth_sum_m": None,
+    }
+
+
+def _expected_shape_overlap(
+    *,
+    removed_active_cell_count: int,
+    raw_intersection_cell_count: int,
+    raw_union_cell_count: int,
+    raw_iou: float,
+    outside_raw_target_removed_depth_sum_m: float,
+    dilated_intersection_cell_count: int,
+    dilated_union_cell_count: int,
+    dilated_iou: float,
+    outside_dilated_target_removed_depth_sum_m: float,
+) -> dict[str, object]:
+    return {
+        "status": "present",
+        "source": "explicit_target_shape_overlap_diagnostics",
+        "semantics": "diagnostic_only",
+        "removed_active_depth_threshold_m": 0.0,
+        "grid_shape": [3, 2],
+        "cell_size_m": None,
+        "raw_target_overlap": {
+            "status": "present",
+            "target_cell_count": 2,
+            "removed_active_cell_count": removed_active_cell_count,
+            "intersection_cell_count": raw_intersection_cell_count,
+            "union_cell_count": raw_union_cell_count,
+            "iou": raw_iou,
+            "outside_raw_target_removed_depth_sum_m": (
+                outside_raw_target_removed_depth_sum_m
+            ),
+        },
+        "one_cell_dilated_target_overlap": {
+            "status": "present",
+            "dilation_type": "chebyshev_8_neighbor_row_major",
+            "cell_radius": 1,
+            "dilated_target_cell_count": 6,
+            "valid_cell_count": 6,
+            "saturation_ratio": 1.0,
+            "intersection_cell_count": dilated_intersection_cell_count,
+            "union_cell_count": dilated_union_cell_count,
+            "iou": dilated_iou,
+            "outside_dilated_target_removed_depth_sum_m": (
+                outside_dilated_target_removed_depth_sum_m
+            ),
+        },
+        "meter_tolerance_profiles": {
+            "narrow_0_30m": _missing_meter_profile(0.3),
+            "bucket_0_50m": _missing_meter_profile(0.5),
+        },
+    }
+
+
 def test_latest_target_projection_uses_latest_usable_snapshot_and_explicit_target() -> None:
     projection = build_latest_target_residual_projection(
         [
@@ -102,6 +171,17 @@ def test_latest_target_projection_uses_latest_usable_snapshot_and_explicit_targe
     assert (
         projection["target_residual_metrics"]["outside_target_removed_depth_sum_m"]
         == 0.95
+    )
+    assert projection["target_residual_metrics"][
+        "target_shape_overlap_diagnostics"
+    ]["grid_shape"] == [3, 2]
+    assert projection["target_residual_metrics"][
+        "target_shape_overlap_diagnostics"
+    ]["one_cell_dilated_target_overlap"]["status"] == "present"
+    assert projection["target_residual_metrics"][
+        "target_shape_overlap_diagnostics"
+    ]["meter_tolerance_profiles"]["narrow_0_30m"]["status"] == (
+        "cell_size_missing"
     )
     assert projection["cell_size_status"] == "missing"
     assert projection["origin_status"] == "missing"
@@ -268,6 +348,17 @@ def test_target_convergence_projection_reports_dig_segment_curve_and_summary() -
                 "target_residual_depth_mae_m": 0.25,
                 "target_residual_depth_abs_max_m": 0.25,
                 "residual_depth_grid_m": [0.25, 0.0, 0.25, 0.0, 0.0, 0.0],
+                "target_shape_overlap_diagnostics": _expected_shape_overlap(
+                    removed_active_cell_count=0,
+                    raw_intersection_cell_count=0,
+                    raw_union_cell_count=2,
+                    raw_iou=0.0,
+                    outside_raw_target_removed_depth_sum_m=0.0,
+                    dilated_intersection_cell_count=0,
+                    dilated_union_cell_count=6,
+                    dilated_iou=0.0,
+                    outside_dilated_target_removed_depth_sum_m=0.0,
+                ),
                 "invalid_target_cell_count": 0,
                 "validation_errors": [],
                 "cell_size_status": "missing",
@@ -304,6 +395,17 @@ def test_target_convergence_projection_reports_dig_segment_curve_and_summary() -
                 "target_residual_depth_mae_m": 0.1,
                 "target_residual_depth_abs_max_m": 0.15,
                 "residual_depth_grid_m": [0.15, 0.0, -0.05, 0.0, -0.2, 0.0],
+                "target_shape_overlap_diagnostics": _expected_shape_overlap(
+                    removed_active_cell_count=3,
+                    raw_intersection_cell_count=2,
+                    raw_union_cell_count=3,
+                    raw_iou=0.666666666667,
+                    outside_raw_target_removed_depth_sum_m=0.2,
+                    dilated_intersection_cell_count=3,
+                    dilated_union_cell_count=6,
+                    dilated_iou=0.5,
+                    outside_dilated_target_removed_depth_sum_m=0.0,
+                ),
                 "invalid_target_cell_count": 0,
                 "validation_errors": [],
                 "cell_size_status": "missing",
