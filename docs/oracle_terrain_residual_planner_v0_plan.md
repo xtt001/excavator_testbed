@@ -417,9 +417,16 @@ Phase 2 closure note：
 ### Phase 3: Discrete candidate generator
 
 - Phase 3A default entry target: offline discrete candidate generator / candidate evidence, not production planner integration.
-- [ ] 从正 residual 区域生成 `20 - 100` 个候选 cut。
+- [x] 从正 residual 区域生成 `20 - 100` 个候选 cut。
 - [ ] 对候选 cut 加入 bucket footprint、边界容差、depth budget 和 return/alignment cost。
 - [ ] 先用 heuristic scoring 跑离线排序，不接入生产 planner。
+
+Phase 3A note：
+
+- `testbed.eval.terrain_candidate_generation.build_discrete_cut_candidates()` 已定义 offline-only discrete cut candidate contract。
+- 该 helper 只使用显式 row-major residual grid、target mask、valid mask、grid shape、direction options、depth fraction options 和显式 min/max candidate count。
+- 当前 run latest projection 使用显式非官方 target spec、方向 `row_forward` / `row_reverse` / `col_forward` / `col_reverse`、depth fraction `0.5` / `0.75` / `1.0` 生成 `24` 个候选，覆盖 positive residual target cells `[0, 2]`，结果数量落在 `20 - 100` 的显式 smoke 范围内。
+- 仍未完成 bucket physical footprint、boundary tolerance、depth budget、return/alignment cost、heuristic effect model scoring、production planner integration、official direction/depth defaults 或 pass/fail 语义。
 
 通过标准：
 

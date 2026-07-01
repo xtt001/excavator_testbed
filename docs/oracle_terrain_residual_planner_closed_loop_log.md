@@ -2771,3 +2771,130 @@ Next bounded target:
 - Candidate generation must remain offline/eval-only, with no production
   planner integration, no pass/fail semantics, no official defaults, and no run
   artifacts.
+
+## 2026-07-01: Phase 3A Executor Candidate Contract Packet
+
+Executor slice:
+
+- Phase 3A: offline discrete candidate generator contract.
+- Scope: focused pure eval owner plus focused tests and source-of-truth docs.
+- No production planner integration, rollout-review schema integration, CLI
+  default, config, run artifact, official T1 default, pass/fail, physical
+  volume, meter-derived current-run IoU, effect/capability scoring, dependency,
+  branch, or upstream changes.
+
+Boundary decision:
+
+- Created new focused owner
+  `testbed/eval/terrain_candidate_generation.py`.
+- Existing target grid, target metrics, projection, report, rollout review, and
+  shadow-audit modules do not own offline candidate-generation algorithms.
+
+TDD evidence:
+
+- Red command:
+  `python -m pytest -q tests/test_terrain_candidate_generation.py`.
+- Red failure: `ModuleNotFoundError: No module named
+  'testbed.eval.terrain_candidate_generation'`.
+- Green focused command passed after implementation:
+  `python -m pytest -q tests/test_terrain_candidate_generation.py`.
+
+Candidate-generation contract implemented:
+
+- Public function:
+  `build_discrete_cut_candidates(...)`.
+- Inputs are explicit row-major residual depth grid, target mask, valid mask,
+  grid shape, direction options, depth fraction options, and explicit min/max
+  candidate count.
+- Candidate anchors are valid target cells with positive residual.
+- Candidate order is deterministic: row-major anchors, direction option order,
+  then depth fraction option order.
+- Candidate records include candidate id, anchor cell / row / col, direction,
+  depth fraction, anchor positive residual depth, candidate depth, and
+  `offline_only=true`.
+- Statuses include `present`, `candidate_count_below_min`,
+  `candidate_count_above_max`, `no_positive_residual_cells`,
+  `invalid_grid_shape`, `invalid_grid_lengths`, `invalid_mask_values`,
+  `invalid_residual_values`, and `invalid_candidate_options`.
+
+Current-run candidate smoke:
+
+- Recomputed the current-run baseline report read-only from
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- Explicit target spec: `grid_shape=[3, 2]`, rows `[0:2]`, cols `[0:1]`,
+  `target_depth_m=0.25`.
+- Candidate options:
+  `direction_options=['row_forward', 'row_reverse', 'col_forward', 'col_reverse']`,
+  `depth_fraction_options=[0.5, 0.75, 1.0]`,
+  `min_candidate_count=20`, `max_candidate_count=100`.
+- Results file count stayed `10 -> 10`.
+- Candidate status: `present`.
+- Positive residual target cells: `[0, 2]`.
+- Candidate count / untruncated count: `24` / `24`.
+- Coverage: covered cells `[0, 2]`, uncovered cells `[]`.
+- First candidate: `cut_candidate_000001` at anchor cell `0`, row `0`, col
+  `0`, direction `row_forward`, depth fraction `0.5`, candidate depth
+  `0.095992526039`.
+- Last candidate: `cut_candidate_000024` at anchor cell `2`, row `1`, col `0`,
+  direction `col_reverse`, depth fraction `1.0`, candidate depth
+  `0.182328537107`.
+
+Documentation changed:
+
+- `docs/training_setup.md` documents the offline candidate-generation contract,
+  explicit options, statuses, provenance limits, and non-goals.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks the first Phase 3
+  candidate-generation item complete and records Phase 3A facts; later Phase 3
+  footprint, boundary, depth-budget, return/alignment, effect scoring, and
+  production integration items remain incomplete.
+
+## 2026-07-01: Phase 3A Planner Callback Audit
+
+Callback audit:
+
+- Accepted executor status: `success`.
+- Target lock matched the expected Phase 3A base:
+  `3a920bcc6895e8a4ceec44cfa5d449346fc98768`.
+- Accepted changed files:
+  - `testbed/eval/terrain_candidate_generation.py`
+  - `tests/test_terrain_candidate_generation.py`
+  - `docs/training_setup.md`
+  - `docs/oracle_terrain_residual_planner_v0_plan.md`
+  - `docs/oracle_terrain_residual_planner_closed_loop_log.md`
+- Callback was factual and scoped to offline/eval-only candidate generation.
+
+Planner-side verification:
+
+- `python -m pytest -q tests/test_terrain_candidate_generation.py tests/test_terrain_target_report.py tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed with `50 passed`.
+- `python -m compileall testbed/eval/terrain_candidate_generation.py testbed/eval/terrain_target_report.py testbed/eval/terrain_target_projection.py testbed/eval/terrain_target_metrics.py tests/test_terrain_candidate_generation.py tests/test_terrain_target_report.py tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/training_setup.md docs/oracle_terrain_residual_planner_v0_plan.md docs/oracle_terrain_residual_planner_closed_loop_log.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- Read-only current-run candidate smoke kept the results file count at
+  `10 -> 10`.
+- `git diff --check` passed.
+
+Closure audit:
+
+- Phase 3A now has a deterministic offline candidate-generation contract.
+- Current-run smoke generated `24` candidates from positive residual target
+  cells `[0, 2]` using explicit non-official options.
+- The helper remains candidate evidence only: no bucket physical footprint,
+  boundary tolerance, depth budget, return/alignment cost, heuristic scoring,
+  production planner integration, official defaults, pass/fail semantics, or
+  run artifact writing was introduced.
+- Accepted-slice count since latest recorded deep reflection: `1/3`.
+
+Next bounded target:
+
+- Phase 3B: add offline candidate constraint/evidence annotation for generated
+  candidates.
+- Keep it eval-only and explicit-input-only. It may report grid-cell footprint,
+  target/outside-target cells, depth-budget evidence, and return/alignment
+  proxy evidence, but must not become heuristic scoring, production planner
+  integration, official thresholds, physical bucket geometry, or eval pass/fail.

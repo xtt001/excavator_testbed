@@ -362,6 +362,25 @@ payload、不提供默认阈值、不写 run artifact、不接入 `rollout_revie
 production planner/gate/policy/runtime、eval pass/fail、planner success、official T1 default 或
 物理体积语义。
 
+offline discrete candidate generation 当前由
+`testbed.eval.terrain_candidate_generation.build_discrete_cut_candidates()` 生成。它只读取显式
+row-major `residual_depth_grid_m`、`target_region_mask`、`valid_mask` 和 `grid_shape`，从
+valid target cells 中 `residual_depth_grid_m > 0.0` 的 anchor 生成离线候选。调用方必须显式传入
+`direction_options`、`depth_fraction_options`、`min_candidate_count` 和 `max_candidate_count`；
+候选排序固定为 row-major positive residual anchor、direction option 顺序、depth fraction option
+顺序。每个候选包含 `candidate_id`、anchor cell / row / col、direction、depth fraction、
+anchor positive residual depth、candidate depth 和 `offline_only=true`。`candidate_depth_m` 只等于
+anchor positive residual depth 乘以 depth fraction，不推断 bucket 物理 footprint 或官方 depth cap。
+
+该 helper 输出 `positive_residual_coverage`、candidate count、untruncated candidate count、
+validation errors 和 cell size / origin / timestamp / frame transform / height/elevation /
+confidence provenance status。`present` 只表示按显式选项生成了候选且数量落在显式 min/max 内；
+`candidate_count_below_min`、`candidate_count_above_max`、`no_positive_residual_cells` 和
+`invalid_*` 状态只用于离线诊断。该候选集不是 heuristic effect model scoring，不接
+production planner，不写 run artifact，不定义官方候选数量、官方方向集、官方 depth fraction、
+eval pass/fail 或 planner success 语义。缺少 cell size 时不做物理 footprint、meter-derived
+tolerance、boundary 或体积推断。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续
