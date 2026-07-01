@@ -4180,3 +4180,189 @@ Next bounded target:
   integration, no action selection promoted to runtime, no official success
   semantics, no generated run artifacts unless explicitly scoped and
   non-destructive, and no calibrated-model fallback invented from telemetry.
+
+## 2026-07-02: Phase 6A Executor Baseline Comparison Packet
+
+Target lock observed:
+
+- cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Branch/status before edits:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 33]`.
+- HEAD before edits: `39eac59f1326b75c984319c4cc0d948f7c715c69`.
+- Worktree was clean before edits.
+
+Slice:
+
+- Phase 6A heuristic-only offline baseline-comparison scaffold.
+- No production planner, rollout-review schema, generated run artifact,
+  simulation rollout, calibrated-model fallback, config, dependency, branch, or
+  upstream behavior changed.
+
+Boundary decision:
+
+- Added focused owner `testbed.eval.terrain_residual_baseline_comparison`.
+- Existing owners remain scoped to candidate generation, constraint evidence,
+  scoring, effect modeling, effect summary, calibration inventory, and
+  extraction. Baseline comparison is cross-branch evidence aggregation, so it is
+  not placed in those owners or in rollout review / target report wrappers.
+
+TDD red:
+
+- Added `tests/test_terrain_residual_baseline_comparison.py` before production
+  code.
+- `python -m pytest -q tests/test_terrain_residual_baseline_comparison.py`
+  failed as expected with
+  `ModuleNotFoundError: No module named 'testbed.eval.terrain_residual_baseline_comparison'`.
+
+Contract implemented:
+
+- Added
+  `build_residual_planner_baseline_comparison(current_planner_evidence=...,
+  target_residual_report=..., candidate_generation=..., candidate_evidence=...,
+  candidate_scoring=..., candidate_effect_summary=...,
+  calibrated_branch_evidence=..., profile=...)`.
+- Output schema is
+  `terrain_residual_planner_baseline_comparison_v1` with source
+  `explicit_offline_residual_planner_baseline_comparison`.
+- Branch summaries are deterministic and ordered as
+  `current_planner_baseline`, `heuristic_residual_pipeline`, and
+  `calibrated_residual_pipeline`.
+- Current branch records rollout / target residual facts and explicitly sets
+  target success claim to `not_claimed`.
+- Heuristic branch records candidate count, positive residual cell count,
+  coverage status, constraint summary, diagnostic ranking facts, and effect
+  summary / payload-proxy volumes; it does not output production selection,
+  top-k, or closed-loop proof.
+- Calibrated branch reports `not_evaluated` with reason
+  `blocked_by_missing_gold_samples` when Phase 5 evidence has zero usable gold
+  samples and zero usable extracted records.
+- `comparison_limits` records no closed-loop resimulation, no counterfactual
+  cycle count, no cycle time, no production integration, no official success
+  semantics, and no invented calibrated-model fallback.
+
+Current-run smoke:
+
+- Recomputed current target residual baseline report in memory from
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`
+  with explicit target spec `grid_shape=[3, 2]`, rows `[0:2]`, cols `[0:1]`,
+  `target_depth_m=0.25`.
+- Recomputed Phase 3 candidates / evidence / scoring and Phase 4 effects /
+  effect summary with the existing explicit smoke options.
+- Recomputed Phase 5 calibration inventory evidence from explicit roots
+  `runs/calibration/v2_3_reachability_live` and
+  `runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/frame_audit`.
+- File counts were unchanged:
+  current results `10 -> 10`, calibration root `9 -> 9`, frame audit root
+  `17 -> 17`.
+- Smoke facts: report status `present`, comparison status `present`, current
+  branch `present`, heuristic branch `present`, calibrated branch
+  `not_evaluated` / `blocked_by_missing_gold_samples`, candidate count `24`,
+  best score candidate `cut_candidate_000009`, effect summary status
+  `present`, effect record count `24`, payload proxy fraction max
+  `0.899929931625`, expected / target / outside-target / overdig volume totals
+  `0.368464939353` / `0.263189242395` / `0.105275696958` /
+  `0.105879229144`, usable gold sample count `0`, validation errors `[]`.
+
+Verification run before packet:
+
+- Focused green:
+  `python -m pytest -q tests/test_terrain_residual_baseline_comparison.py`
+  -> `4 passed`.
+- Related bundle:
+  `python -m pytest -q tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_calibration_extraction.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_target_report.py tests/test_terrain_target_projection.py
+  tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py
+  tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  -> `85 passed`.
+- Compileall for the new comparison owner and related calibration/candidate /
+  target owners/tests passed.
+
+Documentation changed:
+
+- `docs/training_setup.md` documents the baseline-comparison helper contract,
+  explicit input evidence, branch statuses, comparison limits, and
+  no-production/no-pass-fail boundary.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks only the Phase 6A
+  offline comparison scaffold complete and keeps full Phase 6 closed-loop
+  baseline comparison incomplete.
+
+## 2026-07-02: Phase 6A Planner Acceptance
+
+Planner acceptance status:
+
+- Accepted as Phase 6A heuristic-only offline baseline-comparison scaffold.
+- Accepted-slice count since the latest recorded deep reflection is now `1/3`.
+- No deep reflection is required for this acceptance.
+
+Planner-side audit:
+
+- Rechecked target lock in `/home/pingfan/PACT/excavator_testbed`: branch
+  `tx/oracle-terrain-residual-planner-v0` was ahead `33`, HEAD
+  `39eac59f1326b75c984319c4cc0d948f7c715c69`, with only the expected Phase 6A
+  docs and new comparison owner/test modified or untracked.
+- Re-read the new baseline-comparison owner, focused tests, and changed
+  plan/training/log documentation.
+- Confirmed the new owner is focused and small: `testbed/eval/terrain_residual_baseline_comparison.py`
+  is `286` lines.
+- Confirmed the helper emits only offline comparison evidence across
+  `current_planner_baseline`, `heuristic_residual_pipeline`, and
+  `calibrated_residual_pipeline`; it does not emit selected candidate,
+  top-k action, runtime action, pass/fail, eval success, or planner success
+  semantics.
+- Planner-side smoke found one pre-commit interface-shape issue: the real
+  `build_explicit_target_residual_baseline_report()` output exposes
+  `diagnostic_summary`, while the first comparison helper version only read a
+  test-shaped `summary` field. A focused regression was added before the fix
+  and failed with empty target residual evidence; the owner now reads
+  `diagnostic_summary` first and keeps `summary` only as a tolerated fallback.
+
+Planner-side verification:
+
+- Re-ran the related baseline/calibration/candidate/effect/target bundle:
+  `tests/test_terrain_residual_baseline_comparison.py`,
+  `tests/test_terrain_calibration_extraction.py`,
+  `tests/test_terrain_calibration_inventory.py`,
+  `tests/test_terrain_candidate_effect_model.py`,
+  `tests/test_terrain_candidate_effect_summary.py`,
+  `tests/test_terrain_candidate_scoring.py`,
+  `tests/test_terrain_candidate_evidence.py`,
+  `tests/test_terrain_candidate_generation.py`, target projection/report/metric
+  tests, terrain residual metric tests, and rollout review tests; result:
+  `85 passed`.
+- Re-ran compile checks for the new comparison owner and related eval owners and
+  tests; result: passed.
+- Recomputed the current-run comparison smoke read-only; inspected file counts
+  remained `10 -> 10`, `9 -> 9`, and `17 -> 17`.
+- Smoke comparison status was `present`; current and heuristic branches were
+  `present`; calibrated branch was `not_evaluated` with reason
+  `blocked_by_missing_gold_samples`.
+- Focused regression for the real target-report summary shape passed after the
+  correction.
+
+Acceptance rationale:
+
+- The slice creates the missing Phase 6 comparison artifact shape without
+  pretending it is a closed-loop A/B/C proof.
+- It correctly preserves Phase 5's conclusion: calibrated branch is blocked by
+  missing usable gold samples, so no telemetry-based calibrated fallback is
+  invented.
+- It records the heuristic residual pipeline's current-run evidence while
+  preserving the limits: no closed-loop resimulation, no counterfactual cycle
+  count, no cycle time, no production integration, and no official success
+  semantics.
+
+Next bounded target:
+
+- Phase 6B should refresh the durable baseline report with the Phase 6A
+  comparison output and limits.
+- This should be docs/report-only unless a very small formatting helper is
+  already needed; it must not run new simulations, write run artifacts,
+  introduce pass/fail semantics, or promote heuristic rankings into runtime
+  actions.

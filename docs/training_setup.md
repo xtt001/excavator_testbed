@@ -544,6 +544,26 @@ validation errors 和 missing provenance。一个 usable extracted record 必须
 `invalid_split_keys`、`no_supported_sources` 和 `no_records`。如果后续需要把 provisional telemetry mapping
 提升为 calibration schema，必须单独确认字段语义、label 语义、split 语义和 compatibility policy。
 
+offline residual planner baseline comparison 当前由
+`testbed.eval.terrain_residual_baseline_comparison.build_residual_planner_baseline_comparison()` 生成。
+它是 heuristic-only / offline-only evidence scaffold，不启动新 rollout，不写 run artifact，不接入 production
+planner，也不定义官方 target success、pass/fail、eval success 或 planner success。调用方必须显式传入内存中的
+current planner evidence、target residual report `diagnostic_summary`、Phase 3 candidate generation / constraint / scoring
+evidence、Phase 4 effect summary evidence，以及 Phase 5 calibrated branch availability evidence。
+
+该 helper 固定输出三条 branch summary：`current_planner_baseline`、`heuristic_residual_pipeline` 和
+`calibrated_residual_pipeline`。current branch 只记录当前 rollout / target residual facts，并把 target
+success 标为 `not_claimed`。heuristic branch 只汇总 candidate count、positive residual coverage、
+constraint summary、diagnostic score ranking 和 effect-summary volume / payload-proxy evidence；它不输出
+runtime selection、top-k action 或闭环优劣证明。calibrated branch 在 Phase 5 evidence 显示
+`usable_record_count=0` 且 `usable_extracted_record_count=0` 时必须保持 `not_evaluated`，reason 为
+`blocked_by_missing_gold_samples`，不能从 telemetry fallback 发明 calibrated model。
+
+top-level status 包括 `present`、`invalid_current_planner_evidence`、`invalid_heuristic_evidence` 和
+`invalid_calibrated_evidence`。`comparison_limits` 明确记录 `closed_loop_resimulation_status=not_run`、
+counterfactual cycle count / cycle time 不可用、production integration 未接入、official success semantics 未定义、
+calibrated-model fallback 未发明。完整 Phase 6 闭环 baseline comparison 仍需要真正的 A/B/C 多铲仿真证据。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

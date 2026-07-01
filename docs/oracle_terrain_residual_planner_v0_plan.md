@@ -542,12 +542,22 @@ Phase 5 closure note：
 
 ### Phase 6: Oracle residual planner 闭环仿真
 
+- [x] 建立 heuristic-only offline baseline-comparison scaffold，先汇总 current / heuristic / calibrated branch evidence 和限制项。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
   - C: residual planner + calibrated effect model + capability filter
 - [ ] 对 T1/T2 目标坑形跑多铲闭环。
 - [ ] 记录每铲 residual、payload、overdig、handoff、deposit quality。
+
+Phase 6A note：
+
+- `testbed.eval.terrain_residual_baseline_comparison.build_residual_planner_baseline_comparison()` 已定义 heuristic-only offline baseline-comparison evidence scaffold。
+- 该 helper 只接收显式 in-memory evidence：current rollout / target residual facts、Phase 3 candidate generation / constraint / scoring evidence、Phase 4 effect summary evidence，以及 Phase 5 calibrated branch availability evidence；不读取隐式全局路径，不启动 simulation rollout，不写 `runs` artifact，不接入 rollout-review schema 或 production planner。
+- Current-run smoke 使用当前 rollout `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl` 和显式非官方 T1-like target spec；comparison status `present`，current branch `present`，heuristic branch `present`，calibrated branch `not_evaluated` / `blocked_by_missing_gold_samples`。
+- Smoke 中 heuristic candidate count `24`，best score candidate `cut_candidate_000009`，effect record count `24`，payload proxy fraction max `0.899929931625`，expected / target / outside-target / overdig volume totals 分别为 `0.368464939353`、`0.263189242395`、`0.105275696958`、`0.105879229144`。
+- Phase 5 calibrated evidence 仍为 usable gold sample count `0`，因此 calibrated branch 只记录 blocker，不发明 telemetry fallback 或 calibrated model。检查的 results / calibration source file counts 保持 `10 -> 10`、`9 -> 9`、`17 -> 17`。
+- 该 Phase 6A scaffold 不证明 B 优于 A，也不证明 C 优于 B；完整 Phase 6 baseline 仍需要真正的 closed-loop resimulation、counterfactual cycle count、cycle time、production integration boundary 和官方成功语义之外的明确评价口径。
 
 通过标准：
 
