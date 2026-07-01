@@ -273,6 +273,16 @@ confidence grid，报告必须把这些字段标为 `missing`，不能从现有 
 planner、gate、checkpoint、token 或 eval success 语义。由于 cell size 仍缺失，
 positive residual、overdig、target/removed 仍是 depth sum，不是物理体积。
 
+T1-like rectangular shallow-pit 目标网格当前只提供显式参数生成器
+`testbed.eval.terrain_target_grid.build_rectangular_target_grid()`，用于后续离线 target-shape
+诊断。调用方必须显式传入 grid shape、valid mask、半开 row/col 矩形边界和 target depth；
+该工具按 row-major 顺序生成 `target_depth_grid_m` 与 `target_region_mask`，并报告
+`valid_cell_count`、`target_cell_count`、`target_depth_sum_m`、`validation_errors` 以及
+缺失的 cell size / origin / timestamp / frame transform / height/elevation / confidence
+provenance。矩形若选中 invalid cell 会被拒绝为 `invalid_target_region_mask`，不会静默把
+invalid cell 当作 target cell。该工具不声明官方 T1 默认尺寸、默认深度、cell size、物理面积、
+world-frame 或 eval success 语义，也不接入 production planner/gate。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续
