@@ -378,7 +378,7 @@ Phase 1 acceptance note：
 ### Phase 2: Shape guard shadow audit
 
 - [x] 不改变生产 gate，先做 shape guard shadow audit，只记录会在何处触发。
-- [ ] 统计默认 shadow events：`low_payload_shape_guard_stop`、`overdig_guard_stop`、`depth_budget_exhausted`、`outside_protected_removed_increased`。
+- [x] 在 durable current-run baseline report 中统计默认 shadow events：`low_payload_shape_guard_stop`、`overdig_guard_stop`、`depth_budget_exhausted`、`outside_protected_removed_increased`。
 - [ ] 分析这些 shadow events 是否会降低 overdig risk，同时不 materially 降低 payload / cycle efficiency。
 - [ ] 继续保持 no production gate change、no official pass/fail、no official T1 defaults，直到 shadow evidence 足够明确。
 
@@ -388,6 +388,13 @@ Phase 2A note：
 - 当前 contract 只读取 explicit-target baseline report 中已有 nested facts，不重新实现 target-grid、metric、projection 或 report 公式。
 - 所有 threshold / payload 约束都必须由调用方显式传入；缺少证据或 threshold 时返回 `not_evaluated`，非法数值返回 `invalid_input`。
 - 当前阶段仍不接 production gate、不写 run artifact、不接 `rollout_review.json` schema、不声明 eval pass/fail / planner success / official T1 default。
+
+Phase 2B note：
+
+- `docs/oracle_terrain_residual_baseline_report.md` 已记录当前 run 的 shadow audit report。
+- 该报告使用显式非官方示例阈值，只用于 durable baseline / smoke evidence：target overdig max `0.0`、target positive residual max `0.4`、outside-target removed-depth delta max `0.0`，payload 输入缺失。
+- 当前 run 中 `depth_budget_exhausted` 和 `outside_protected_removed_increased` 为 `triggered`，`overdig_guard_stop` 为 `not_triggered`，`low_payload_shape_guard_stop` 为 `not_evaluated`。
+- 这些状态不是官方 threshold、production gate、eval pass/fail 或 planner success 语义。
 
 通过标准：
 

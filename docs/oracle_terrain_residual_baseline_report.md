@@ -11,9 +11,9 @@ not an eval pass/fail judgment.
 
 - cwd: `/home/pingfan/PACT/excavator_testbed`
 - branch/status: `tx/oracle-terrain-residual-planner-v0`, tracking
-  `origin/tx/v2_6-llm-planner`, ahead `18`
+  `origin/tx/v2_6-llm-planner`, ahead `21`
 - HEAD observed during this report slice:
-  `62ef7914461532e0bb983acc2950b8e9a041f7f3`
+  `8754d432db5e70eaa78df77a06e914a188ee82b6`
 
 ## Input Run
 
@@ -122,6 +122,57 @@ run because the records do not include cell size:
 
 No meter-derived IoU is inferred.
 
+## Shape Guard Shadow Audit
+
+This section records a shadow-only diagnostic audit for the same explicit
+non-official target spec. It does not make a production decision, stop the
+planner, define eval pass/fail, or define official threshold/default semantics.
+
+Audit identity:
+
+- source: `explicit_target_shape_guard_shadow_audit`
+- schema: `terrain_shape_guard_shadow_audit_v1`
+- status: `present`
+- `shadow_only`: `true`
+- `no_production_decision`: `true`
+- validation errors: `[]`
+
+Explicit example thresholds used for this report only:
+
+| Input | Value |
+| --- | ---: |
+| `max_target_overdig_depth_sum_m` | `0.0` |
+| `max_target_positive_residual_depth_sum_m` | `0.4` |
+| `max_outside_target_removed_depth_delta_m` | `0.0` |
+| `latest_payload_fraction` | `null` |
+| `min_payload_fraction` | `null` |
+
+These are report/smoke example thresholds only. They are not official defaults,
+not runtime gate thresholds, and not target-shape success criteria.
+
+Event summary:
+
+| Event | Status | Reason | Evidence |
+| --- | --- | --- | --- |
+| `low_payload_shape_guard_stop` | `not_evaluated` | `missing_explicit_payload_inputs` | `latest_payload_fraction=null`, `min_payload_fraction=null` |
+| `overdig_guard_stop` | `not_triggered` | `latest_target_overdig_within_explicit_max` | latest target overdig `0.0`, explicit max `0.0` |
+| `depth_budget_exhausted` | `triggered` | `latest_target_positive_residual_at_or_below_explicit_max` | latest target positive residual `0.374313589186`, explicit max `0.4` |
+| `outside_protected_removed_increased` | `triggered` | `outside_target_removed_delta_exceeds_explicit_max` | outside-target removed-depth delta `0.428853750229`, explicit max `0.0` |
+
+Triggered event names:
+
+- `depth_budget_exhausted`
+- `outside_protected_removed_increased`
+
+Not-evaluated event names:
+
+- `low_payload_shape_guard_stop`
+
+The payload event is not evaluated because this report does not infer payload
+fraction from the baseline report. The two triggered events mean only that the
+explicit example thresholds would flag those shadow conditions in the current
+run evidence.
+
 ## Interpretation
 
 For this explicit non-official example spec, target positive residual decreases
@@ -137,7 +188,8 @@ point to `0.191779018803` at the last point, and MAE moves from
 
 These facts are diagnostic evidence only. They do not prove target-shape
 success or failure, and they do not define planner success, eval success,
-bucket-aware tolerance, boundary tolerance pass/fail, or official T1 semantics.
+bucket-aware tolerance, boundary tolerance pass/fail, shape-guard pass/fail,
+production stopping behavior, or official T1 semantics.
 
 ## Missing Provenance
 
@@ -168,7 +220,8 @@ This report does not:
   semantics;
 - introduce target-shape pass/fail, eval pass/fail, planner success, bucket
   IoU pass/fail, official boundary tolerance, protected-area band, RMSE
-  threshold/pass-fail, candidate/effect/capability semantics, or official
+  threshold/pass-fail, shape-guard pass/fail, production stopping behavior,
+  default shadow thresholds, candidate/effect/capability semantics, or official
   cycle IDs;
 - change production planner, gate, policy, runtime config, token order,
   checkpoint contracts, branch, upstream, or dependencies.

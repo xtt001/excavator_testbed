@@ -2365,3 +2365,127 @@ Next bounded target:
 - Do not add more shadow event code, production gates, official thresholds,
   rollout-review schema integration, pass/fail semantics, generated run
   artifacts, or payload inference.
+
+## 2026-07-01: Phase 2B Executor Report Packet
+
+Executor slice:
+
+- Phase 2B: durable current-run shape guard shadow-audit report refresh.
+
+Executor status:
+
+- Pending planner callback audit.
+- Expected docs/report files:
+  - `docs/oracle_terrain_residual_baseline_report.md`
+  - `docs/oracle_terrain_residual_planner_v0_plan.md`
+  - `docs/oracle_terrain_residual_planner_closed_loop_log.md`
+
+Current-run report/audit facts recorded:
+
+- Baseline report recomputed in memory with explicit non-official target spec:
+  `grid_shape=[3, 2]`, rows `[0:2]`, cols `[0:1]`,
+  `target_depth_m=0.25`.
+- Shape guard shadow audit recomputed in memory with explicit report-only
+  example thresholds:
+  - `max_target_overdig_depth_sum_m=0.0`
+  - `max_target_positive_residual_depth_sum_m=0.4`
+  - `max_outside_target_removed_depth_delta_m=0.0`
+  - payload inputs absent
+- Baseline report status: `present`.
+- Shadow audit status: `present`.
+- Triggered events:
+  `depth_budget_exhausted`, `outside_protected_removed_increased`.
+- Not-evaluated events: `low_payload_shape_guard_stop`.
+- Event records:
+  - `overdig_guard_stop`: `not_triggered`, latest target overdig `0.0`
+    against explicit max `0.0`.
+  - `depth_budget_exhausted`: `triggered`, latest target positive residual
+    `0.374313589186` against explicit max `0.4`.
+  - `outside_protected_removed_increased`: `triggered`,
+    outside-target removed-depth delta `0.428853750229` against explicit max
+    `0.0`.
+  - `low_payload_shape_guard_stop`: `not_evaluated` because explicit payload
+    inputs were absent.
+
+Scope preserved:
+
+- This report packet is shadow-only diagnostic evidence.
+- It does not define official thresholds, target-shape success/failure,
+  production planner/gate behavior, eval pass/fail, rollout-review schema,
+  generated run artifacts, payload inference, physical volume, or official T1
+  semantics.
+
+## 2026-07-01: Phase 2B Planner Callback Audit
+
+Planner-side callback acceptance:
+
+- Callback status: success.
+- Target lock matched:
+  - branch/status: `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 21]`
+  - HEAD: `8754d432db5e70eaa78df77a06e914a188ee82b6`
+  - dirty files: expected Phase 2B docs only
+- Accepted changed files:
+  - `docs/oracle_terrain_residual_baseline_report.md`
+  - `docs/oracle_terrain_residual_planner_v0_plan.md`
+  - `docs/oracle_terrain_residual_planner_closed_loop_log.md`
+- Callback was factual and scoped to docs/report refresh only.
+
+Planner-side verification:
+
+- Read-only current-run report/audit smoke passed with results file count
+  `10 -> 10`.
+- Recomputed shadow audit values matched the report:
+  - triggered events:
+    `depth_budget_exhausted`, `outside_protected_removed_increased`
+  - not-evaluated events: `low_payload_shape_guard_stop`
+  - `overdig_guard_stop`: `not_triggered`, latest target overdig `0.0`
+    against explicit max `0.0`
+  - `depth_budget_exhausted`: `triggered`, latest target positive residual
+    `0.374313589186` against explicit max `0.4`
+  - `outside_protected_removed_increased`: `triggered`,
+    outside-target removed-depth delta `0.428853750229` against explicit max
+    `0.0`
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/oracle_terrain_residual_baseline_report.md docs/oracle_terrain_residual_planner_v0_plan.md docs/oracle_terrain_residual_planner_closed_loop_log.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- `git diff --check` passed.
+
+Closure audit:
+
+- The durable baseline report now includes the Phase 2A shadow-audit result for
+  the current run.
+- The plan now marks durable current-run counting of the four default shadow
+  events complete.
+- The recorded thresholds remain explicit report/smoke examples, not official
+  defaults, runtime gate thresholds, or target-shape success criteria.
+- No code, tests, rollout-review schema, generated run artifacts, official
+  defaults, pass/fail semantics, eval success, planner success, production
+  planner/gate/policy/runtime behavior, payload inference, physical volume,
+  meter-derived current-run IoU, candidate/effect/capability implementation,
+  dependency/config/branch/upstream behavior changed.
+
+Lightweight reflection:
+
+- Reference used: Phase 2 shadow-audit section in
+  `docs/oracle_terrain_residual_planner_v0_plan.md`, the durable baseline
+  report, the Phase 2A shadow-audit contract in `docs/training_setup.md`, and
+  the closed-loop hard rules.
+- Alignment verdict: aligned. Phase 2B converted current-run shadow events into
+  durable evidence without promoting them into official thresholds or gates.
+- Efficiency verdict: useful docs/report slice. The next remaining question is
+  impact, not another event-contract expansion.
+- Accepted-slice count since latest recorded deep reflection is now `1/3`.
+
+Next bounded target:
+
+- Phase 2C should analyze current-run shadow-event impact evidence: whether the
+  recorded shadow events indicate reduced overdig risk and what payload /
+  cycle-efficiency evidence is available or missing.
+- Prefer a docs/report analysis slice if existing rollout review fields are
+  sufficient. Add code only if a stable focused eval owner is necessary to
+  avoid ad hoc report math.
+- Keep no-production-gate, no official thresholds, no pass/fail semantics, no
+  rollout-review schema integration, and no generated run artifacts.
