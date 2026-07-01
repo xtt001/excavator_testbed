@@ -3344,3 +3344,162 @@ Next bounded target:
 - It must remain eval-only and explicit-input-only: no calibrated model, no
   production planner integration, no top-k action semantics, no default payload
   capacity, and no generated run artifacts.
+
+## 2026-07-02: Phase 4B Executor Effect Summary Packet
+
+Scope:
+
+- Phase 4B: offline candidate effect summary / payload proxy evidence.
+- This executor packet records implementation facts only; planner reflection is
+  not written here.
+
+Boundary decision:
+
+- No existing small owner owned cross-candidate effect summary or payload proxy
+  evidence.
+- Added focused eval owner
+  `testbed/eval/terrain_candidate_effect_summary.py`.
+- Kept rollout review, production planner, target metrics/projection/report,
+  candidate generation, candidate evidence, candidate scoring, and the Phase 4A
+  effect kernel out of the effect-summary responsibility.
+
+TDD red:
+
+- Added `tests/test_terrain_candidate_effect_summary.py` before production
+  code.
+- Red command:
+  `python -m pytest -q tests/test_terrain_candidate_effect_summary.py`.
+- Expected failure observed: `ModuleNotFoundError: No module named
+  'testbed.eval.terrain_candidate_effect_summary'`.
+
+Contract implemented:
+
+- Public owner:
+  `build_candidate_effect_summary(effect_records, *, payload_capacity_m3,
+  profile='explicit_candidate_effect_summary')`.
+- Inputs are explicit: Phase 4A effect records in caller-supplied order and
+  finite positive `payload_capacity_m3`.
+- Top-level output includes schema `terrain_candidate_effect_summary_v1`,
+  source `explicit_candidate_effect_summary`, status, `offline_only=true`,
+  profile, effect record count, payload capacity, summary records, aggregate
+  summary, diagnostic rankings, validation errors, and missing provenance.
+- Per-candidate summary preserves input order and reports candidate id, effect
+  status, expected / target / outside-target / overdig volumes, footprint count,
+  grid-boundary clipped flag, payload proxy volume / fraction, outside-target
+  volume fraction, and overdig volume fraction.
+- Aggregate summary reports min/max/mean payload proxy volume and fraction,
+  total expected / target / outside-target / overdig volumes, and diagnostic
+  candidate ids for max payload proxy, max outside-target volume, and max
+  overdig volume.
+- Diagnostic rankings are evidence-only and deterministic: payload proxy
+  descending, outside-target volume descending, and overdig volume descending,
+  with original input order tie-breaks.
+- Statuses include `present`, `no_effect_records`,
+  `invalid_effect_records`, and `invalid_payload_capacity`.
+
+Current-run effect-summary smoke:
+
+- Source rollout:
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- Explicit target spec: grid shape `[3, 2]`, rows `[0:2]`, cols `[0:1]`,
+  target depth `0.25`.
+- Phase 3 smoke options/weights and Phase 4A geometry values were reused.
+- Payload capacity input was explicit, non-official smoke value
+  `payload_capacity_m3=0.04`.
+- Results file count remained `10 -> 10`.
+- Candidate count `24`; all `24` Phase 4A effect records had status
+  `present`.
+- Effect summary status `present`; summary record count `24`.
+- Payload proxy volume min / max / mean: `0.005697766785` /
+  `0.035997197265` / `0.015352705806`.
+- Payload proxy fraction min / max / mean: `0.142444169625` /
+  `0.899929931625` / `0.383817645159`.
+- Expected / target / outside-target / overdig volume totals:
+  `0.368464939353` / `0.263189242395` / `0.105275696958` /
+  `0.105879229144`.
+- Max payload proxy candidate: `cut_candidate_000009`.
+- Max outside-target volume candidate: `cut_candidate_000003`.
+- Max overdig volume candidate: `cut_candidate_000009`.
+- Payload ranking first / last: `cut_candidate_000009` /
+  `cut_candidate_000016`.
+- Outside-target ranking first / last: `cut_candidate_000003` /
+  `cut_candidate_000024`.
+- Overdig ranking first / last: `cut_candidate_000009` /
+  `cut_candidate_000024`.
+
+Documentation changed:
+
+- `docs/training_setup.md` documents the effect summary / payload proxy
+  contract, explicit capacity input, statuses, diagnostic rankings, provenance,
+  and non-goals.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks the Phase 4 payload
+  proxy / volume summary evidence item complete and records Phase 4B smoke
+  facts.
+- Calibrated effect/capability model, production integration, default
+  geometry/capacity, action selection, pass/fail, eval success, and planner
+  success remain out of scope.
+
+Verification:
+
+- `python -m pytest -q tests/test_terrain_candidate_effect_summary.py` passed
+  with `5 passed`.
+- Full related bundle, compile checks, doc guards, architecture guards, smoke,
+  diff check, and final status were assigned to the executor closure step.
+
+Behavior preserved:
+
+- No production planner/gate/policy/runtime integration.
+- No rollout-review schema integration.
+- No generated run artifacts.
+- No default payload capacity, official bucket geometry, material density,
+  cycle time, official T1 defaults, pass/fail, top-k/action selection, eval
+  success, or planner success semantics.
+
+## 2026-07-02: Phase 4B Planner Acceptance
+
+Planner acceptance status:
+
+- Accepted as Phase 4B offline effect-summary / payload-proxy evidence.
+- Accepted-slice count since the latest recorded deep reflection is now `2/3`.
+- No deep reflection is required for this acceptance.
+
+Planner-side verification:
+
+- Re-read the new effect-summary owner, focused tests, and changed
+  plan/training/log documentation.
+- Re-ran the related candidate/effect/target bundle:
+  `tests/test_terrain_candidate_effect_summary.py`,
+  `tests/test_terrain_candidate_effect_model.py`,
+  `tests/test_terrain_candidate_scoring.py`,
+  `tests/test_terrain_candidate_evidence.py`,
+  `tests/test_terrain_candidate_generation.py`, target projection/report/metric
+  tests, terrain residual metric tests, and rollout review tests; result:
+  `68 passed`.
+- Re-ran compile checks for the new effect-summary owner and related
+  candidate/target owners and tests; result: passed.
+- Re-ran changed-doc guard, docs inventory guard, architecture contract guard,
+  and whitespace diff check; result: passed.
+- Recomputed the current-run effect-summary smoke read-only; results directory
+  file count remained `10 -> 10`, all `24` effect records were `present`, and
+  the payload proxy / outside-target / overdig summary values matched the
+  executor packet.
+
+Acceptance rationale:
+
+- The slice adds a focused offline owner for summarizing Phase 4A effect records
+  and explicit payload-capacity proxy evidence.
+- It preserves caller-supplied order, separates diagnostic rankings from action
+  selection, and keeps payload capacity as an explicit smoke/report input.
+- It does not introduce production planner integration, rollout-review schema
+  changes, official geometry/capacity defaults, top-k selection, pass/fail, eval
+  success, or planner success semantics.
+
+Next bounded target:
+
+- Phase 4C should close the remaining Phase 4 entry/exit expected-delta gap:
+  add explicit entry/exit path evidence for the offline geometric effect model
+  without making entry/exit defaults, production planner behavior, calibrated
+  physics, or action-selection semantics.
+- Keep the work focused on explicit inputs and read-only current-run smoke
+  evidence. Do not infer official cell size, bucket geometry, payload capacity,
+  material density, cycle time, or ACT capability from the current run.

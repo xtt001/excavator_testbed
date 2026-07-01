@@ -457,7 +457,7 @@ Phase 3 closure note：
 
 - [x] 实现 geometric swept-footprint kernel。
 - [ ] 用 bucket 尺寸、entry/exit、方向、目标 penetration 生成 expected delta patch。
-- [ ] 输出 expected removed volume、overdig volume、payload proxy 和 footprint。
+- [x] 输出 expected removed volume、overdig volume、payload proxy 和 footprint。
 
 Phase 4A note：
 
@@ -465,7 +465,16 @@ Phase 4A note：
 - 该 helper 只使用显式 candidate、row-major depth grids、target / valid masks、grid shape、cell size、bucket width/length 和可选 penetration depth；当前 run smoke 使用非官方示例几何 `cell_size_m=0.25`、`bucket_width_m=0.25`、`bucket_length_m=0.5`，不从当前 run 推断这些值。
 - Footprint model 明确是 `centerline_rectangular_swept_footprint_approximation`，不是 calibrated bucket physics；它输出 row-major footprint cells、grid-boundary clipping、expected delta depth grid、expected removed volume、target/outside-target removed delta volume 和 overdig delta volume。
 - 当前 run smoke 以 Phase 3C diagnostic best candidate `cut_candidate_000009` 为输入，得到 effect status `present`、footprint `[0, 2, 4]`、clipped `true`、penetration depth `0.191985052079` from `candidate_depth_m`、expected removed depth sum / volume `0.575955156237` / `0.035997197265`、target removed delta sum / volume `0.383970104158` / `0.02399813151`、outside-target delta sum / volume `0.191985052079` / `0.011999065755`、overdig delta sum / volume `0.201641567051` / `0.012602597941`，结果文件数保持 `10 -> 10`。
-- Phase 4A 仍不是 production planner integration、official geometry defaults、top-k action selection、calibrated effect/capability model、payload proxy、pass/fail、eval success 或 planner success 语义；完整 entry/exit、payload proxy 和校准模型仍保持未完成。
+- Phase 4A 本身仍不是 production planner integration、official geometry defaults、top-k action selection、calibrated effect/capability model、payload proxy、pass/fail、eval success 或 planner success 语义；完整 entry/exit 和校准模型仍保持未完成。
+
+Phase 4B note：
+
+- `testbed.eval.terrain_candidate_effect_summary.build_candidate_effect_summary()` 已定义 offline-only candidate effect summary / payload proxy evidence contract。
+- 该 helper 只读取 Phase 4A effect records 和显式 `payload_capacity_m3`；payload capacity 是调用方输入，不是 config/default/official bucket capacity，也不推断 material density、cycle time 或 fill model。
+- 它按 effect record 输入顺序输出 summary records，包含 expected / target / outside-target / overdig volume、footprint count / clipped flag、payload proxy volume / fraction，以及 outside-target / overdig volume fractions；并输出 payload / outside-target / overdig 的 diagnostic rankings。ranking 只用于 evidence，不包含 selected/top-k/action 字段。
+- 当前 run smoke 使用显式非官方 `payload_capacity_m3=0.04`，24 个 Phase 4A effect records 全部为 `present`，effect summary status `present`，payload proxy volume min / max / mean `0.005697766785` / `0.035997197265` / `0.015352705806`，payload proxy fraction min / max / mean `0.142444169625` / `0.899929931625` / `0.383817645159`。
+- 当前 run max payload proxy candidate `cut_candidate_000009`，max outside-target volume candidate `cut_candidate_000003`，max overdig volume candidate `cut_candidate_000009`；结果文件数保持 `10 -> 10`。
+- Phase 4B 仍不是 calibrated effect/capability model、production planner integration、official geometry/capacity default、top-k action selection、pass/fail、eval success 或 planner success 语义。
 
 通过标准：
 

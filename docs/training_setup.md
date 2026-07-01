@@ -451,6 +451,28 @@ production planner，不写 run artifact，不定义官方 cell size、bucket ge
 payload proxy、calibrated effect/capability model、top-k、pass/fail、eval success 或 planner success
 语义。
 
+offline candidate effect summary / payload proxy evidence 当前由
+`testbed.eval.terrain_candidate_effect_summary.build_candidate_effect_summary()` 生成。它只读取 Phase 4A
+effect records 和调用方显式传入的 `payload_capacity_m3`；该 capacity 是本次离线诊断输入，不写入
+config，不作为官方 bucket payload、bucket geometry、material density 或 fill model 默认值。
+
+summary record 按 effect record 输入顺序保留，包含 candidate id、effect status、expected removed
+volume、target removed volume、outside-target removed volume、overdig volume delta、footprint cell
+count、grid-boundary clipped flag、`payload_proxy_volume_m3 = min(expected_removed_volume_m3,
+payload_capacity_m3)` 和 `payload_proxy_fraction`。当 expected removed volume 大于 0 时，还报告
+outside-target volume fraction 和 overdig volume fraction；分母为 0 时这些 fraction 为 `None`，不虚构
+比值。aggregate summary 汇总 payload proxy volume/fraction 的 min/max/mean、expected / target /
+outside-target / overdig volume totals，以及 max payload proxy、max outside-target volume 和 max
+overdig volume 的诊断 candidate id。
+
+`diagnostic_rankings` 只提供 evidence-only 排序：payload proxy volume 降序、outside-target volume
+降序、overdig volume 降序，tie-break 使用原输入顺序。该 ranking 不包含 selected/top-k/action 字段，
+不接 production planner。top-level 状态包括 `present`、`no_effect_records`、
+`invalid_effect_records` 和 `invalid_payload_capacity`，并保留 calibrated payload model、material
+density、cycle time、bucket fill model 和 production integration 的 missing / not-integrated provenance。
+该 helper 不定义 payload/capacity default、material density、cycle-time semantics、pass/fail、eval
+success、planner success、top-k action selection 或 calibrated effect/capability model。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续
