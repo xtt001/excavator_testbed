@@ -1373,3 +1373,203 @@ Next bounded target:
   pass/fail semantics.
 - Verification should rerun a read-only report smoke, changed-doc guards, doc
   inventory, architecture contract, and `git diff --check`.
+
+## 2026-07-01: Phase 1H Partial Callback Audit And Recovery
+
+Executor thread:
+
+- `019f1d6b-1367-71f3-8cb1-c4d891769109`
+
+Executor slice:
+
+- Phase 1H: durable current-run explicit-target baseline report document.
+
+Initial executor status:
+
+- Partial.
+- Worktree target lock matched at start.
+- HEAD stayed `441eb1a28f06e2fd1d17e64ea6f3e0ccada4a69f`.
+- Expected docs were modified or added:
+  `docs/oracle_terrain_residual_baseline_report.md` and
+  `docs/training_setup.md`.
+
+Accepted document facts:
+
+- Added English report document
+  `docs/oracle_terrain_residual_baseline_report.md`.
+- Added a short cross-reference from `docs/training_setup.md`.
+- The report records the current run under the explicit non-official target
+  spec:
+  `grid_shape=[3, 2]`, `row_start=0`, `row_end=2`, `col_start=0`,
+  `col_end=1`, `target_depth_m=0.25`,
+  `profile=explicit_t1_like_rectangular_shallow_pit`,
+  `official_t1_default=false`.
+- The report records source `explicit_target_residual_baseline_report`, schema
+  `explicit_target_residual_baseline_report_v1`, and report status `present`.
+- It records latest projection and convergence summary values from
+  `build_explicit_target_residual_baseline_report()`.
+- It explicitly states diagnostic-only interpretation, missing provenance, and
+  non-goals.
+- It does not write generated artifacts under the eval run results directory.
+- It does not change rollout review schema, official target defaults,
+  pass/fail semantics, or runtime planner behavior.
+
+Current-run smoke report facts:
+
+- Read
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- File count under the results directory stayed `10 -> 10`; no new run files
+  were created.
+- Report status was `present`.
+- Latest target positive residual depth sum was `0.374313589186`.
+- Latest target overdig depth sum was `0.0`.
+- Latest target removed completion ratio was `0.251372821628`.
+- Latest outside-target removed depth sum was `0.488698139786`.
+- Convergence point count was `10`.
+- Convergence trend was
+  `target_positive_residual_reduced_outside_removed_increased`.
+- Convergence target positive residual start/end/delta was
+  `0.498092905036` / `0.383547134697` / `-0.114545770339`.
+- Convergence outside-target removed depth start/end/delta was
+  `0.050789695233` / `0.479643445462` / `0.428853750229`.
+
+Partial failure facts:
+
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/oracle_terrain_residual_baseline_report.md docs/training_setup.md`
+  failed with:
+  `planner-doc-guard: unexpected docs must not be recreated: docs/oracle_terrain_residual_baseline_report.md`.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  failed with:
+  `planner-doc-guard: docs inventory mismatch; unexpected: docs/oracle_terrain_residual_baseline_report.md`.
+- Planner-side root cause: `scripts/planner_architecture_doc_guard.py` uses
+  `EXPECTED_DOCS = YULONG_DOCS | REFACTOR_DOCS`, and the new report document
+  was not yet in the curated set.
+
+Recovery dispatch:
+
+- Recovery target was limited to guard/inventory sync.
+- Allowed owner was `scripts/planner_architecture_doc_guard.py`, with
+  `tests/test_planner_architecture_doc_contract.py` only if needed.
+- The report document and `docs/training_setup.md` content were to be
+  preserved.
+
+Recovery callback status:
+
+- Success.
+- Reproduced both red guard failures before editing.
+- Added `docs/oracle_terrain_residual_baseline_report.md` to `YULONG_DOCS` in
+  `scripts/planner_architecture_doc_guard.py`.
+- No guard logic was loosened or disabled.
+- `tests/test_planner_architecture_doc_contract.py` did not need editing because
+  it imports `EXPECTED_DOCS` dynamically.
+
+Planner-side verification after recovery:
+
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/oracle_terrain_residual_baseline_report.md docs/training_setup.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- `python -m pytest -q tests/test_planner_architecture_doc_contract.py` passed,
+  8 tests.
+- `python -m compileall scripts/planner_architecture_doc_guard.py tests/test_planner_architecture_doc_contract.py`
+  passed.
+- Read-only current-run report smoke passed again after recovery; results file
+  count stayed `10 -> 10`.
+- `git diff --check` passed.
+
+Planner closure audit:
+
+- Target lock matched after recovery:
+  - branch: `tx/oracle-terrain-residual-planner-v0`
+  - HEAD: `441eb1a28f06e2fd1d17e64ea6f3e0ccada4a69f`
+  - dirty files: expected Phase 1H docs plus recovery guard allowlist
+- The partial callback was factual and scoped; it stopped instead of editing
+  guard code outside the docs-only prompt.
+- The recovery callback was factual and scoped; it changed only the curated docs
+  allowlist.
+- The new report document is now accepted as a curated source-of-truth doc.
+- Guard behavior still rejects unexpected docs.
+- No report metrics, rollout review schema, runtime planner/gate/policy
+  behavior, eval pass/fail semantics, config, branch, upstream, token order, or
+  checkpoint contract changed.
+
+Lightweight reflection:
+
+- Reference used: user objective, Phase 1 baseline-report requirement in
+  `docs/oracle_terrain_residual_planner_v0_plan.md`, `AGENTS.md` documentation
+  sync rule, and the closed-loop failure-channel rule.
+- Alignment verdict: aligned after recovery. The durable baseline report now
+  exists and the repository guard recognizes it as curated documentation.
+- Efficiency verdict: necessary recovery. The partial callback exposed a real
+  source-of-truth inventory constraint; the recovery fixed the inventory rather
+  than weakening the guard or deleting the report.
+- Accepted-slice count would have become `2/3`, but a partial callback requires
+  immediate deep reflection; the reflection below resets the cadence.
+
+## 2026-07-01: Deep Reflection After Phase 1H Partial
+
+Reference set:
+
+- User goal: develop an oracle terrain residual planner v0 evaluation baseline
+  with durable artifacts and without inventing official semantics.
+- `docs/oracle_terrain_residual_planner_v0_plan.md`.
+- `docs/llm_planner_closed_loop_terrain_conclusion.md`.
+- `docs/oracle_terrain_residual_baseline_report.md`.
+- `docs/training_setup.md`.
+- `AGENTS.md` governance rules.
+- `closed-loop-planner-executor` failure-channel and closure rules.
+
+Failure assessment:
+
+- The partial was not an implementation drift or report-content problem.
+- The executor obeyed the docs-only prompt by stopping when code guard changes
+  were needed.
+- The root cause was a stale curated docs inventory after adding a new durable
+  source-of-truth report.
+- The recovery changed only the allowlist entry needed to make the new report a
+  recognized curated doc.
+
+Alignment assessment:
+
+- The workflow still serves the original objective: Phase 1 now has a durable
+  current-run baseline packet for explicit target residual evidence.
+- The report keeps the example target spec non-official and diagnostic-only.
+- The report states that target positive residual decreases under the example
+  spec while outside-target removed depth increases substantially; it does not
+  label this as success or failure.
+- Missing cell size, origin, timestamp, frame transform, height/elevation,
+  confidence, physical volume, official cycle IDs, and official target defaults
+  remain explicit.
+
+Scope and risk assessment:
+
+- Good: no rollout-review schema, eval pass/fail, runtime planner, gate, policy,
+  config, token, checkpoint, branch, or upstream behavior changed.
+- Good: the docs guard still rejects unexpected docs.
+- Risk: Phase 1 still has unchecked metric items in the plan, especially depth
+  RMSE, boundary tolerance, and shape IoU.
+- Risk: boundary tolerance and shape IoU require explicit threshold/geometry
+  semantics; they should not be invented as defaults.
+- Opportunity: target interior depth-error metrics such as RMSE/MAE can be added
+  as diagnostic formulas without defining pass/fail thresholds.
+
+Accepted-slice count reset:
+
+- Deep reflection completed after the partial/recovery sequence.
+- Accepted-slice count since latest recorded deep reflection resets to `0/3`.
+
+Next bounded target:
+
+- Phase 1I should add diagnostic target interior depth-error fields to
+  `build_target_residual_metrics()`, such as target residual RMSE and MAE over
+  valid target cells.
+- The slice should remain threshold-free and diagnostic-only.
+- The new fields should propagate through existing latest projection,
+  convergence projection, and baseline report nested metric blocks without
+  adding rollout-review schema integration.
+- Update tests and `docs/training_setup.md`.
+- Keep boundary tolerance, shape IoU, bucket-aware IoU, pass/fail semantics, and
+  official target defaults out of scope until their semantics are explicitly
+  confirmed.

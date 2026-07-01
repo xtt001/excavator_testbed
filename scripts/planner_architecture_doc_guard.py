@@ -12,6 +12,7 @@ YULONG_DOCS = frozenset(
         "docs/large_scene_simulation_training_requirements.md",
         "docs/llm_planner_closed_loop_terrain_conclusion.md",
         "docs/llm_planner_prework.md",
+        "docs/oracle_terrain_residual_baseline_report.md",
         "docs/oracle_terrain_residual_planner_v0_plan.md",
         "docs/oracle_terrain_residual_planner_closed_loop_profile.md",
         "docs/oracle_terrain_residual_planner_closed_loop_log.md",

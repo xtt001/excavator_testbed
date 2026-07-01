@@ -324,7 +324,8 @@ depth；输出包含 `target_spec`、`latest_projection`、`convergence_projecti
 都为 `present` 时为 `present`；两者共享同一 validation / missing status 时透传该 status；否则为
 `partial` 并在 summary 中保留各 projection status。该 helper 默认不写 report artifact、不接入
 `rollout_review.json` schema、不定义官方 T1 默认值，也不改变 planner、gate、eval success 或物理体积
-语义。
+语义。当前 run 的显式非官方 baseline packet 记录在
+`docs/oracle_terrain_residual_baseline_report.md`。
 
 depth 诊断必须区分三种口径：
 
