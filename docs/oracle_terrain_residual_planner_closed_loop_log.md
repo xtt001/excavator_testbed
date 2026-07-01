@@ -2661,3 +2661,113 @@ Next bounded target:
   code, tests, default thresholds, production gates, pass/fail semantics,
   rollout-review schema integration, generated run artifacts, or payload
   inference.
+
+## 2026-07-01: Phase 2D Executor Closure Packet
+
+Executor slice:
+
+- Phase 2D: Phase 2 closure / Phase 3 handoff note.
+- Scope: docs-only closure.
+- No code, tests, metrics, report fields, rollout-review schema, generated run
+  artifacts, production gate, default threshold, pass/fail, or payload
+  inference changes.
+
+Phase 2 closure facts recorded:
+
+- Phase 2 is closed as a no-production-gate shadow-audit milestone.
+- The shadow audit is useful retrospective evidence for current-run risk
+  review, especially the outside-target removed-depth growth signal recorded in
+  Phase 2C.
+- Current artifacts are insufficient to justify production gating or to prove
+  no material payload / cycle-efficiency loss.
+- The Phase 2 impact-analysis checklist item remains open and is explicitly
+  deferred / blocked by missing shadow-stop counterfactual evidence.
+- Missing evidence remains: shadow stop / replan counterfactuals, guarded cycle
+  count, cycle-time evidence, and explicit payload inputs.
+
+Phase 3 handoff facts recorded:
+
+- `docs/oracle_terrain_residual_planner_v0_plan.md` now states the Phase 3A
+  default entry target as offline discrete candidate generator / candidate
+  evidence.
+- The handoff explicitly does not promote a shape guard to production planner
+  integration.
+
+Documentation changed:
+
+- `docs/oracle_terrain_residual_planner_v0_plan.md`.
+- `docs/oracle_terrain_residual_planner_closed_loop_log.md`.
+
+## 2026-07-01: Phase 2D Planner Callback Audit And Deep Reflection
+
+Planner-side callback acceptance:
+
+- Callback status: success.
+- Target lock matched:
+  - branch/status: `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 23]`
+  - HEAD: `7aa2b0ec78bed8bad0ec7165f6019f0e53fd9f79`
+  - dirty files: expected Phase 2D docs only
+- Accepted changed files:
+  - `docs/oracle_terrain_residual_planner_v0_plan.md`
+  - `docs/oracle_terrain_residual_planner_closed_loop_log.md`
+- Callback was factual and scoped to docs-only closure.
+
+Planner-side verification:
+
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/oracle_terrain_residual_planner_v0_plan.md docs/oracle_terrain_residual_planner_closed_loop_log.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- `git diff --check` passed.
+
+Closure audit:
+
+- Phase 2 is now recorded as a no-production-gate shadow-audit milestone.
+- The Phase 2 impact-analysis checklist remains open and explicitly deferred
+  by missing shadow-stop counterfactual evidence.
+- Phase 3A default entry target is now recorded as offline discrete candidate
+  generator / candidate evidence, not production planner integration.
+- No code, tests, metrics, report fields, rollout-review schema, generated run
+  artifacts, official default thresholds, official T1 defaults, pass/fail
+  semantics, eval success, planner success, production planner/gate/policy
+  runtime behavior, payload inference, physical volume, meter-derived current
+  run IoU, candidate/effect/capability implementation, dependency/config,
+  branch, or upstream behavior changed.
+
+Deep reflection:
+
+- Trigger: this callback is the third accepted callback since the latest
+  recorded deep reflection.
+- Reference set: user objective, Phase 1 diagnostic baseline, Phase 2
+  shadow-audit contract and impact notes, durable baseline report, current
+  plan/log docs, `docs/training_setup.md`, and closed-loop hard rules.
+- Objective alignment: aligned. Phase 2 created a concrete shadow-audit
+  contract and durable evidence, then stopped before unsupported production
+  gating.
+- Non-goal check: still holding. Official thresholds, production gate behavior,
+  eval pass/fail, planner success, rollout-review schema integration, generated
+  run artifacts, and payload inference were not introduced.
+- Verification quality: adequate for the current milestone. Phase 2 verified
+  shadow audit mechanics, current-run report values, and payload/cycle evidence
+  limits, but cannot prove counterfactual guarded performance from existing
+  artifacts.
+- Documentation state: current. The plan, baseline report, training setup, and
+  closed-loop log now agree on the Phase 2 boundary and Phase 3A default entry.
+- Slice sizing verdict: acceptable. Phase 2 avoided further report-field churn
+  after the evidence gap became clear.
+- Event-driven discipline: preserved. Executor callbacks returned to the
+  planner thread and planner closure preceded the next dispatch.
+- Next-slice implication: move to Phase 3A offline candidate evidence. Do not
+  continue expanding shape-guard reports unless new counterfactual data exists.
+- Accepted-slice count since latest recorded deep reflection resets to `0/3`
+  after this reflection.
+
+Next bounded target:
+
+- Phase 3A: define the offline discrete candidate generator contract and a
+  minimal focused owner/test surface for explicit target/residual inputs.
+- Candidate generation must remain offline/eval-only, with no production
+  planner integration, no pass/fail semantics, no official defaults, and no run
+  artifacts.

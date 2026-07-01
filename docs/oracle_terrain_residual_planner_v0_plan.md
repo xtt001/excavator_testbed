@@ -379,7 +379,7 @@ Phase 1 acceptance note：
 
 - [x] 不改变生产 gate，先做 shape guard shadow audit，只记录会在何处触发。
 - [x] 在 durable current-run baseline report 中统计默认 shadow events：`low_payload_shape_guard_stop`、`overdig_guard_stop`、`depth_budget_exhausted`、`outside_protected_removed_increased`。
-- [ ] 分析这些 shadow events 是否会降低 overdig risk，同时不 materially 降低 payload / cycle efficiency。
+- [ ] 分析这些 shadow events 是否会降低 overdig risk，同时不 materially 降低 payload / cycle efficiency。（当前 deferred / blocked by missing shadow-stop counterfactual evidence。）
 - [ ] 继续保持 no production gate change、no official pass/fail、no official T1 defaults，直到 shadow evidence 足够明确。
 
 Phase 2A note：
@@ -403,6 +403,12 @@ Phase 2C note：
 - 当前 artifact 可见的 payload / cycle evidence 是 actual run 结果：10 个 planned/actual cycle 记录、bucket mass out mean/min/max `61.33190612793` / `28.913818359375` / `79.430519104004` kg、deposited fraction mean/min/max `0.802401915908` / `0.572773417672` / `0.968514219634`，但 rollout review overall status 为 `needs_root_cause_audit`，`target_cycle_gate_success=false`，且 `quality_issue_count=183`、`low_cycle_deposited_fraction_count=9`。
 - 影响分析仍未完成：当前 evidence 没有 shadow stop / replan counterfactual，`low_payload_shape_guard_stop` 因 payload 输入缺失未评估，也没有 guarded cycle count 或 cycle-time 证据。因此不能证明 shape guard 会降低 overdig 且不 materially 降低 payload / cycle efficiency。
 
+Phase 2 closure note：
+
+- Phase 2 作为 no-production-gate shadow-audit milestone 关闭：shadow audit 对 current run 是有用的 retrospective evidence，尤其暴露 outside-target removed-depth 增长风险。
+- 当前 artifact 不足以证明 production shape guard 会降低 overdig，也不足以证明不会 materially 降低 payload / cycle efficiency；因此不提升为 production gate、不定义默认阈值、不声明 pass/fail。
+- Phase 3A 默认入口是 offline discrete candidate generator / candidate evidence：先生成和审查候选 cut 及其离线证据，不接 production planner integration。
+
 通过标准：
 
 - 能证明 shape guard 是否会减少过挖风险。
@@ -410,6 +416,7 @@ Phase 2C note：
 
 ### Phase 3: Discrete candidate generator
 
+- Phase 3A default entry target: offline discrete candidate generator / candidate evidence, not production planner integration.
 - [ ] 从正 residual 区域生成 `20 - 100` 个候选 cut。
 - [ ] 对候选 cut 加入 bucket footprint、边界容差、depth budget 和 return/alignment cost。
 - [ ] 先用 heuristic scoring 跑离线排序，不接入生产 planner。
