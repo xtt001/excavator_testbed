@@ -2489,3 +2489,175 @@ Next bounded target:
   avoid ad hoc report math.
 - Keep no-production-gate, no official thresholds, no pass/fail semantics, no
   rollout-review schema integration, and no generated run artifacts.
+
+## 2026-07-01: Phase 2C Executor Impact Evidence Packet
+
+Executor slice:
+
+- Phase 2C: current-run shadow-event impact evidence review.
+- Scope: docs/report analysis only, using existing baseline report, shadow
+  audit, rollout review, and rollout summary fields.
+- No code, tests, rollout-review schema, production gate, official threshold,
+  or generated run artifact changes.
+
+Read-only recomputation:
+
+- Results dir:
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results`.
+- Rollout jsonl:
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- Explicit target spec: `grid_shape=[3, 2]`, rows `[0:2]`, cols `[0:1]`,
+  target depth `0.25`.
+- Explicit report-only thresholds:
+  - `max_target_overdig_depth_sum_m=0.0`
+  - `max_target_positive_residual_depth_sum_m=0.4`
+  - `max_outside_target_removed_depth_delta_m=0.0`
+  - payload inputs absent.
+- Results file count stayed `10 -> 10`.
+
+Overdig-risk evidence recorded:
+
+- Shadow audit status: `present`.
+- Triggered events:
+  `depth_budget_exhausted`, `outside_protected_removed_increased`.
+- Not-evaluated events: `low_payload_shape_guard_stop`.
+- `outside_protected_removed_increased`: `triggered` because outside-target
+  removed-depth delta is `0.428853750229` against explicit max `0.0`.
+- `depth_budget_exhausted`: `triggered` because latest target positive residual
+  is `0.374313589186` against explicit max `0.4`.
+- `overdig_guard_stop`: `not_triggered` because latest target overdig is `0.0`
+  against explicit max `0.0`.
+
+Payload / cycle-efficiency evidence recorded:
+
+- `build_rollout_review(results_dir)` returned overall status
+  `needs_root_cause_audit`, with no evidence gaps.
+- Rollout summary fields report `success=true`,
+  `target_cycle_gate_success=false`, stop reason `dig_area_depleted`,
+  completed dump cycles `10`, target cycle gate `15`, and `10`
+  planned/actual cycle records.
+- Bucket mass out mean/min/max: `61.33190612793` /
+  `28.913818359375` / `79.430519104004` kg.
+- Deposited fraction mean/min/max: `0.802401915908` /
+  `0.572773417672` / `0.968514219634`.
+- Quality fields: `quality_issue_count=183`,
+  `low_cycle_deposited_fraction_count=9`, post-dump target mass drop mean/max
+  `0.0` / `0.0` kg.
+
+Evidence gaps recorded:
+
+- The current audit is retrospective and does not simulate stopping, replanning,
+  or alternate cuts at triggered events.
+- `low_payload_shape_guard_stop` remains `not_evaluated` because explicit
+  payload inputs are absent.
+- Current bucket mass and deposited-fraction fields describe the actual run,
+  not a counterfactual guarded run.
+- Existing artifacts do not prove guarded cycle count, cycle time, or payload
+  efficiency after hypothetical shadow stops.
+- The explicit thresholds remain report/smoke examples only, not official
+  defaults or production gate values.
+
+Durable docs updated:
+
+- `docs/oracle_terrain_residual_baseline_report.md` now includes
+  `Shadow Audit Impact Evidence` with overdig-risk signal, available
+  payload/cycle evidence, evidence gaps, and a conservative conclusion.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` records Phase 2C as
+  partial evidence and keeps the impact-analysis checklist item open.
+
+## 2026-07-01: Phase 2C Planner Callback Audit
+
+Planner-side callback acceptance:
+
+- Callback status: success.
+- Target lock matched:
+  - branch/status: `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 22]`
+  - HEAD: `770489fe6c80cbbc420450865cac1f6800c40ba8`
+  - dirty files: expected Phase 2C docs only
+- Accepted changed files:
+  - `docs/oracle_terrain_residual_baseline_report.md`
+  - `docs/oracle_terrain_residual_planner_v0_plan.md`
+  - `docs/oracle_terrain_residual_planner_closed_loop_log.md`
+- Callback was factual and scoped to docs/report analysis.
+
+Planner-side verification:
+
+- A first planner-side smoke snippet failed because it accessed
+  `build_rollout_review()` through a non-existent top-level `rollouts` key.
+  Root cause: validation-script structure mismatch; current builder returns
+  `rollout_reviews`.
+- Corrected read-only smoke passed with results file count `10 -> 10`.
+- Recomputed shadow audit values matched the report:
+  - triggered events:
+    `depth_budget_exhausted`, `outside_protected_removed_increased`
+  - not-evaluated events: `low_payload_shape_guard_stop`
+  - `overdig_guard_stop`: `not_triggered`, latest target overdig `0.0`
+    against explicit max `0.0`
+  - `depth_budget_exhausted`: `triggered`, latest target positive residual
+    `0.374313589186` against explicit max `0.4`
+  - `outside_protected_removed_increased`: `triggered`,
+    outside-target removed-depth delta `0.428853750229` against explicit max
+    `0.0`
+- Recomputed payload / cycle fields matched the report:
+  - review overall status and rollout status: `needs_root_cause_audit`
+  - `success=True`, `target_cycle_gate_success=False`, stop reason
+    `dig_area_depleted`
+  - planned/actual cycle count `10`, completed dump count `10`, target cycle
+    gate `15`
+  - bucket mass out mean/min/max/stdev:
+    `61.33190612793` / `28.913818359375` / `79.4305191040039` /
+    `15.127678986711`
+  - deposited fraction mean/min/max/stdev:
+    `0.802401915908` / `0.5727734176718415` /
+    `0.9685142196339357` / `0.114068889876`
+  - target deposit delta mean/min/max:
+    `49.890930366516` / `22.66865348815918` / `73.15655517578125`
+  - `quality_issue_count=183`, `low_cycle_deposited_fraction_count=9`,
+    post-dump target mass drop mean/max `0.0` / `0.0`
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/oracle_terrain_residual_baseline_report.md docs/oracle_terrain_residual_planner_v0_plan.md docs/oracle_terrain_residual_planner_closed_loop_log.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- `git diff --check` passed.
+
+Closure audit:
+
+- The durable baseline now records a conservative impact review: current
+  evidence supports an outside-target overdig-risk concern under explicit
+  example thresholds.
+- The plan correctly keeps the Phase 2 impact-analysis checklist item open.
+  Current artifacts do not prove a counterfactual guarded run, guarded cycle
+  count, cycle time, or payload efficiency after hypothetical shadow stops.
+- `low_payload_shape_guard_stop` remains `not_evaluated` because explicit
+  payload inputs are absent.
+- No code, tests, rollout-review schema, generated run artifacts, official
+  defaults, pass/fail semantics, eval success, planner success, production
+  planner/gate/policy/runtime behavior, payload inference, physical volume,
+  meter-derived current-run IoU, candidate/effect/capability implementation,
+  dependency/config/branch/upstream behavior changed.
+
+Lightweight reflection:
+
+- Reference used: Phase 2 impact-analysis requirement in
+  `docs/oracle_terrain_residual_planner_v0_plan.md`, current durable baseline
+  report, Phase 2A shadow-audit contract, and closed-loop hard rules.
+- Alignment verdict: aligned. Phase 2C answered the current evidence question
+  without overstating it.
+- Efficiency verdict: useful boundary-setting slice. The next action should
+  close or hand off Phase 2 based on the evidence gap, then move toward
+  counterfactual/offline candidate work rather than adding more report fields.
+- Accepted-slice count since latest recorded deep reflection is now `2/3`.
+
+Next bounded target:
+
+- Phase 2D should write a concise Phase 2 closure / handoff note: shadow audit
+  is useful as retrospective evidence, but current artifacts are insufficient
+  to prove material payload/cycle impact or justify production gating.
+- The recommended next development direction is to proceed to offline
+  candidate/effect evidence work rather than promote a shape guard.
+- Keep this as docs-only unless a guard requires narrow doc sync. Do not add
+  code, tests, default thresholds, production gates, pass/fail semantics,
+  rollout-review schema integration, generated run artifacts, or payload
+  inference.

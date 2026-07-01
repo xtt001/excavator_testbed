@@ -396,6 +396,13 @@ Phase 2B note：
 - 当前 run 中 `depth_budget_exhausted` 和 `outside_protected_removed_increased` 为 `triggered`，`overdig_guard_stop` 为 `not_triggered`，`low_payload_shape_guard_stop` 为 `not_evaluated`。
 - 这些状态不是官方 threshold、production gate、eval pass/fail 或 planner success 语义。
 
+Phase 2C note：
+
+- `docs/oracle_terrain_residual_baseline_report.md` 已记录 current-run shadow-event impact evidence review，作为 partial evidence。
+- 当前证据支持 overdig-risk signal：`outside_protected_removed_increased` 在 outside-target removed-depth delta `0.428853750229` 对显式示例上限 `0.0` 时触发，`depth_budget_exhausted` 在 latest target positive residual `0.374313589186` 对显式示例上限 `0.4` 时触发。
+- 当前 artifact 可见的 payload / cycle evidence 是 actual run 结果：10 个 planned/actual cycle 记录、bucket mass out mean/min/max `61.33190612793` / `28.913818359375` / `79.430519104004` kg、deposited fraction mean/min/max `0.802401915908` / `0.572773417672` / `0.968514219634`，但 rollout review overall status 为 `needs_root_cause_audit`，`target_cycle_gate_success=false`，且 `quality_issue_count=183`、`low_cycle_deposited_fraction_count=9`。
+- 影响分析仍未完成：当前 evidence 没有 shadow stop / replan counterfactual，`low_payload_shape_guard_stop` 因 payload 输入缺失未评估，也没有 guarded cycle count 或 cycle-time 证据。因此不能证明 shape guard 会降低 overdig 且不 materially 降低 payload / cycle efficiency。
+
 通过标准：
 
 - 能证明 shape guard 是否会减少过挖风险。

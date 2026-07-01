@@ -11,9 +11,9 @@ not an eval pass/fail judgment.
 
 - cwd: `/home/pingfan/PACT/excavator_testbed`
 - branch/status: `tx/oracle-terrain-residual-planner-v0`, tracking
-  `origin/tx/v2_6-llm-planner`, ahead `21`
+  `origin/tx/v2_6-llm-planner`, ahead `22`
 - HEAD observed during this report slice:
-  `8754d432db5e70eaa78df77a06e914a188ee82b6`
+  `770489fe6c80cbbc420450865cac1f6800c40ba8`
 
 ## Input Run
 
@@ -172,6 +172,66 @@ The payload event is not evaluated because this report does not infer payload
 fraction from the baseline report. The two triggered events mean only that the
 explicit example thresholds would flag those shadow conditions in the current
 run evidence.
+
+## Shadow Audit Impact Evidence
+
+This section reviews what the current shadow-event evidence can and cannot say
+about reducing overdig risk without materially reducing payload or cycle
+efficiency. The review recomputed the baseline report and shadow audit
+read-only, then inspected the existing rollout review and summary artifacts. The
+results directory file count stayed `10 -> 10`.
+
+Overdig-risk signal supported by the current shadow events:
+
+- `outside_protected_removed_increased` is triggered because outside-target
+  removed-depth delta is `0.428853750229` against the explicit example max
+  `0.0`.
+- `depth_budget_exhausted` is triggered because latest target positive residual
+  is `0.374313589186`, at or below the explicit example max `0.4`.
+- `overdig_guard_stop` is not triggered because latest target overdig inside
+  the two selected target cells is `0.0` against explicit max `0.0`.
+- `low_payload_shape_guard_stop` is not evaluated because explicit payload
+  inputs are absent.
+
+Existing payload / cycle-efficiency evidence available from the current
+artifacts:
+
+| Field | Value |
+| --- | ---: |
+| rollout review overall status | `needs_root_cause_audit` |
+| rollout success flag | `true` |
+| target cycle gate success | `false` |
+| rollout stop reason | `dig_area_depleted` |
+| completed dump cycles | `10` |
+| target cycle gate | `15` |
+| planned/actual cycle records | `10` |
+| bucket mass out mean / min / max | `61.33190612793` / `28.913818359375` / `79.430519104004` |
+| bucket mass out population stdev | `15.127678986711` |
+| deposited fraction mean / min / max | `0.802401915908` / `0.572773417672` / `0.968514219634` |
+| deposited fraction population stdev | `0.114068889876` |
+| target deposit delta mean / min / max kg | `49.890930366516` / `22.668653488159` / `73.156555175781` |
+| quality issue count | `183` |
+| low-cycle deposited-fraction count | `9` |
+| post-dump target mass drop mean / max kg | `0.0` / `0.0` |
+
+Evidence gaps that prevent a stronger impact claim:
+
+- The audit is retrospective; it does not simulate stopping, replanning, or
+  choosing alternative cuts at the triggered shadow events.
+- The payload event is not evaluated because the audit did not receive explicit
+  `latest_payload_fraction` / `min_payload_fraction` inputs.
+- The bucket mass and deposited-fraction fields describe the actual current run,
+  not a counterfactual shape-guarded run.
+- The current summary exposes completed dump count and target-cycle-gate status,
+  but it does not prove cycle time, guarded cycle count, or payload efficiency
+  after hypothetical shadow stops.
+- The example thresholds are report-only values, not official defaults or
+  production gate thresholds.
+
+Conservative conclusion: the current evidence supports an overdig-risk concern
+for outside-target removal growth under the explicit example thresholds. It
+does not prove that a shape guard would reduce overdig in production, nor that
+such a guard would preserve payload or cycle efficiency without material loss.
 
 ## Interpretation
 
