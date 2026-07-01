@@ -11,9 +11,9 @@ not an eval pass/fail judgment.
 
 - cwd: `/home/pingfan/PACT/excavator_testbed`
 - branch/status: `tx/oracle-terrain-residual-planner-v0`, tracking
-  `origin/tx/v2_6-llm-planner`, ahead `16`
+  `origin/tx/v2_6-llm-planner`, ahead `18`
 - HEAD observed during this report slice:
-  `43e911612e9833211820ede64c51cd118e0d0214`
+  `62ef7914461532e0bb983acc2950b8e9a041f7f3`
 
 ## Input Run
 
@@ -94,6 +94,34 @@ diagnostics, not pass/fail criteria.
 | last convergence point | `5821` | `0.191779018803` | `0.191773567348` | `0.19321956858` |
 | latest projection | `6147` | `0.187219063753` | `0.187156794593` | `0.191985052079` |
 
+## Target Shape Overlap / Tolerance Summary
+
+These values compare valid removed-active cells (`removed_depth_grid_m > 0.0`)
+against the explicit target cells. They are diagnostic shape-overlap evidence,
+not target-shape pass/fail criteria.
+
+| Point | Snapshot row | Raw IoU | Raw outside removed-depth sum | One-cell dilated IoU | Dilated saturation | Outside dilated removed-depth sum |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| first convergence point | `416` | `0.333333333333` | `0.050789695233` | `0.333333333333` | `1.0` | `0.0` |
+| last convergence point | `5821` | `0.333333333333` | `0.479643445462` | `1.0` | `1.0` | `0.0` |
+| latest projection | `6147` | `0.333333333333` | `0.488698139786` | `1.0` | `1.0` | `0.0` |
+
+The one-cell dilated mask uses row-major Chebyshev / 8-neighbor dilation. For
+this explicit `3 x 2` grid, that one-cell dilation saturates all valid cells
+(`saturation_ratio = 1.0`). Therefore a dilated IoU of `1.0` at the last and
+latest points only means all removed-active valid cells fall inside the
+saturated dilated mask; it must not be interpreted as target-shape success.
+
+Meter tolerance profiles are present as diagnostics but not evaluated for this
+run because the records do not include cell size:
+
+| Profile | Tolerance | Status |
+| --- | ---: | --- |
+| `narrow_0_30m` | `0.30m` | `cell_size_missing` |
+| `bucket_0_50m` | `0.50m` | `cell_size_missing` |
+
+No meter-derived IoU is inferred.
+
 ## Interpretation
 
 For this explicit non-official example spec, target positive residual decreases
@@ -103,11 +131,13 @@ stays at `0.0`, and the latest target removed completion ratio remains low at
 `0.251372821628`. Target-interior depth-error diagnostics also decrease across
 the example convergence evidence: RMSE moves from `0.24904827798` at the first
 point to `0.191779018803` at the last point, and MAE moves from
-`0.249046452518` to `0.191773567348`.
+`0.249046452518` to `0.191773567348`. Raw target-cell IoU stays at
+`0.333333333333`, while raw outside-target removed-depth sum grows from
+`0.050789695233` to `0.479643445462` across the convergence points.
 
 These facts are diagnostic evidence only. They do not prove target-shape
 success or failure, and they do not define planner success, eval success,
-bucket-aware tolerance, or official T1 semantics.
+bucket-aware tolerance, boundary tolerance pass/fail, or official T1 semantics.
 
 ## Missing Provenance
 
@@ -137,8 +167,9 @@ This report does not:
 - define official T1 dimensions, depth, cell size, origin, or world-frame
   semantics;
 - introduce target-shape pass/fail, eval pass/fail, planner success, bucket
-  IoU, boundary tolerance, protected-area band, RMSE threshold/pass-fail,
-  candidate/effect/capability semantics, or official cycle IDs;
+  IoU pass/fail, official boundary tolerance, protected-area band, RMSE
+  threshold/pass-fail, candidate/effect/capability semantics, or official
+  cycle IDs;
 - change production planner, gate, policy, runtime config, token order,
   checkpoint contracts, branch, upstream, or dependencies.
 

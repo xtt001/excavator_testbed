@@ -2019,3 +2019,123 @@ Next bounded target:
 - Do not change code, tests, rollout-review schema, official target defaults,
   pass/fail semantics, runtime planner/gate/policy behavior, config, token,
   checkpoint, branch, or upstream behavior.
+
+## 2026-07-01: Phase 1L Callback Audit
+
+Executor thread:
+
+- `019f1d6b-1367-71f3-8cb1-c4d891769109`
+
+Executor slice:
+
+- Phase 1L: durable baseline report refresh for shape-overlap diagnostics.
+
+Executor status:
+
+- Success.
+- Worktree target lock matched at start.
+- HEAD stayed `62ef7914461532e0bb983acc2950b8e9a041f7f3`.
+- Expected docs-only slice file was modified:
+  `docs/oracle_terrain_residual_baseline_report.md`.
+
+Accepted document facts:
+
+- Refreshed the report's observed branch ahead count to `18`.
+- Refreshed the observed HEAD to
+  `62ef7914461532e0bb983acc2950b8e9a041f7f3`.
+- Added `Target Shape Overlap / Tolerance Summary`.
+- Added first / last / latest shape-overlap table:
+  - first convergence row `416`: raw IoU `0.333333333333`, raw outside
+    removed-depth sum `0.050789695233`, one-cell dilated IoU
+    `0.333333333333`, saturation `1.0`, outside-dilated removed-depth sum
+    `0.0`
+  - last convergence row `5821`: raw IoU `0.333333333333`, raw outside
+    removed-depth sum `0.479643445462`, one-cell dilated IoU `1.0`,
+    saturation `1.0`, outside-dilated removed-depth sum `0.0`
+  - latest row `6147`: raw IoU `0.333333333333`, raw outside removed-depth sum
+    `0.488698139786`, one-cell dilated IoU `1.0`, saturation `1.0`,
+    outside-dilated removed-depth sum `0.0`
+- Added explicit interpretation warning that one-cell Chebyshev / 8-neighbor
+  dilation saturates all valid cells in the current `3 x 2` grid, so dilated
+  IoU `1.0` at the last/latest points is not target-shape success.
+- Added meter tolerance profile table showing `narrow_0_30m` and
+  `bucket_0_50m` both as `cell_size_missing`.
+- Updated interpretation to note that raw IoU stayed `0.333333333333` while raw
+  outside-target removed-depth grew from `0.050789695233` to
+  `0.479643445462` over the convergence points.
+- Updated non-goal wording to allow diagnostic overlap/tolerance fields while
+  preserving no pass/fail and no official boundary-tolerance semantics.
+
+Planner-side current-run smoke report:
+
+- Used explicit non-official example spec:
+  `grid_shape=[3, 2]`, `row_start=0`, `row_end=2`, `col_start=0`,
+  `col_end=1`, `target_depth_m=0.25`.
+- Read
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- File count under the results directory stayed `10 -> 10`; no new run files
+  were created.
+- Report status was `present`; convergence curve point count was `10`.
+- First row `416`: raw IoU `0.333333333333`, raw outside removed-depth sum
+  `0.050789695233`, one-cell dilated IoU `0.333333333333`, saturation `1.0`,
+  outside-dilated removed-depth sum `0.0`, meter statuses `cell_size_missing`
+  / `cell_size_missing`.
+- Last row `5821`: raw IoU `0.333333333333`, raw outside removed-depth sum
+  `0.479643445462`, one-cell dilated IoU `1.0`, saturation `1.0`,
+  outside-dilated removed-depth sum `0.0`, meter statuses `cell_size_missing`
+  / `cell_size_missing`.
+- Latest row `6147`: raw IoU `0.333333333333`, raw outside removed-depth sum
+  `0.488698139786`, one-cell dilated IoU `1.0`, saturation `1.0`,
+  outside-dilated removed-depth sum `0.0`, meter statuses `cell_size_missing`
+  / `cell_size_missing`.
+
+Planner-side verification:
+
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/oracle_terrain_residual_baseline_report.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- Read-only current-run smoke report passed with results file count `10 -> 10`.
+- `git diff --check` passed.
+
+Planner closure audit:
+
+- Target lock matched after callback:
+  - branch: `tx/oracle-terrain-residual-planner-v0`
+  - HEAD: `62ef7914461532e0bb983acc2950b8e9a041f7f3`
+  - dirty files: only expected Phase 1L baseline report doc before planner log
+    sync
+- Callback was factual, scoped, and free of planner-directed strategy.
+- Diff stayed in the durable baseline report document.
+- No code, tests, generated run artifacts, rollout-review schema, official T1
+  defaults, pass/fail semantics, runtime planner/gate/policy behavior,
+  token/checkpoint/config/dependency, branch/upstream, or meter-derived IoU
+  inference changed.
+
+Lightweight reflection:
+
+- Reference used: user objective, Phase 1 baseline report requirement in
+  `docs/oracle_terrain_residual_planner_v0_plan.md`, the Phase 1K diagnostic
+  contract in `docs/training_setup.md`, and the current
+  `docs/oracle_terrain_residual_baseline_report.md`.
+- Alignment verdict: aligned. The durable report now exposes the same
+  shape-overlap and tolerance facts as the committed metric chain.
+- Efficiency verdict: necessary doc sync. This was the expected short
+  report-only slice after a real metric addition.
+- Accepted-slice count since the latest deep reflection is now `1/3`.
+
+Next bounded target:
+
+- Phase 1M should create a Phase 1 acceptance / transition packet:
+  - update `docs/oracle_terrain_residual_planner_v0_plan.md` Phase 1 checklist
+    status without claiming pass/fail semantics;
+  - add a compact Phase 1 acceptance summary to the closed-loop log;
+  - identify remaining evidence gaps and the default Phase 2 direction.
+- This should be docs-only unless the plan guard requires a narrow doc allowlist
+  update.
+- Do not add more Phase 1 metric variants.
+- Do not change code, tests, rollout-review schema, production planner/gate,
+  official target defaults, pass/fail semantics, config, token, checkpoint,
+  dependency, branch, or upstream behavior.
