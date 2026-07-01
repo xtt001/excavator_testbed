@@ -515,6 +515,15 @@ missing counts、split-key detection / distinct group counts、validation errors
 不拟合模型、不虚构 labels、不声明 pass/fail、eval success、planner success、episode split 官方语义或
 production integration。
 
+同一 inventory 输出还包含 `observed_field_catalog` 和 `schema_gap_summary`。`observed_field_catalog`
+只统计支持源中 JSON/JSONL object record 的原始 top-level field presence counts，并按 field 名稳定排序；
+metadata document、unsupported source 和 parser error 不会被解释成 calibration schema。`schema_gap_summary`
+只基于调用方显式传入的 `required_fields` 与 `episode_split_key_candidates` 汇总 gap：哪些 required
+fields 在全部 records 中缺失、部分存在或全部存在，哪些 split-key candidates 出现或完全缺失，以及
+这些事实对 `usable_record_count` 的影响。该 catalog/gap summary 不做 alias inference，不把 `label`、
+`source_id`、`mass_in_bucket_kg` 或其他 telemetry field 自动映射成 success、payload 或 episode split 语义；
+如需语义映射，必须在后续切片用显式 schema 决策单独定义。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

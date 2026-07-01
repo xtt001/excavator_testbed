@@ -498,6 +498,7 @@ Phase 4 closure note：
 ### Phase 5: Calibrated effect / capability
 
 - [x] 建立 gold-sample calibration inventory / schema evidence，先清点显式 source、required fields、episode split key 和 missing provenance。
+- [x] 建立 observed source-field catalog / required-field gap summary，只记录原始字段存在性与显式 schema gap，不推断 alias 或 labels。
 - [ ] 使用 gold samples 做统计校准，修正深度增益、横向偏移、长度缩放和 payload。
 - [ ] 增加 bootstrap 或 quantile uncertainty。
 - [ ] 单独训练或拟合 capability filter，输出 `P_success`、`P_overdig`、`P_low_payload`。
@@ -511,6 +512,13 @@ Phase 5A note：
 - 当前 repo smoke 检查显式路径 `runs/calibration/v2_3_reachability_live` 和 `runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/frame_audit`，文件数保持 `9 -> 9` 和 `17 -> 17`。
 - 使用显式非官方未来校准 required fields `candidate_id`、`expected_removed_volume_m3`、`target_removed_volume_m3`、`outside_target_removed_volume_m3`、`overdig_volume_delta_m3`、`payload_volume_m3`、`success`、`overdig_event`、`low_payload_event`，以及 split-key candidates `episode_id`、`rollout_id`、`run_id`。
 - Smoke inventory status `present`，source count `26`，supported / unsupported source count `9` / `17`，total records `14639`，usable records `0`，detected split keys `[]`，records with any split key `0`，所有显式 required fields 都在 `14639` 条记录中缺失。因此当前 artifacts 还不足以拟合 calibrated effect / capability model。
+
+Phase 5B note：
+
+- Inventory 现在输出 `observed_field_catalog` 和 `schema_gap_summary`，只统计支持源 JSON/JSONL records 的原始 top-level fields，并按 field 名稳定排序。
+- 当前 repo smoke 中 observed field count 为 `19`；全量出现字段包括 `action`、`bucket_tip_depth_plane_m`、`bucket_tip_depth_surface_m`、`bucket_tip_x_m`、`bucket_tip_y_m`、`bucket_tip_z_m`、`excavated_mass_kg`、`mass_in_bucket_kg`、`qpos`、`qvel`、`soil_grid_mass_kg`、`step_id`、`t`、`target_hard_collision_count` 和 `warnings`，`label` 出现 `11639` 次，`source_id` 出现 `6371` 次。
+- `schema_gap_summary` 明确显示所有显式 future calibration required fields 都在全部 `14639` 条 records 中缺失，`episode_id`、`rollout_id`、`run_id` 也都没有出现；`usable_record_implication` 为 `no_usable_records_for_explicit_required_fields_and_split_keys`。
+- 这些字段只作为 raw observed field facts 记录；当前没有把 `label`、`source_id`、payload-like mass fields 或 telemetry fields 推断成 success、payload、episode split 或 calibrated model schema。
 
 通过标准：
 

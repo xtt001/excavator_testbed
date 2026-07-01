@@ -3836,3 +3836,149 @@ Next bounded target:
 - It should remain inventory/schema evidence only: no model fitting, no label
   inference, no official required fields, no generated run artifacts, and no
   production planner integration.
+
+## 2026-07-02: Phase 5B Executor Observed Field Catalog Packet
+
+Target lock observed:
+
+- cwd `/home/pingfan/PACT/excavator_testbed`.
+- Branch/status `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 31]`.
+- HEAD `7a3f1ca5a7f3139e57e6e285a3779be5edd5b7e3`.
+- Worktree clean before edits.
+
+Scope:
+
+- Phase 5B: observed calibration source field catalog / required-field gap
+  matrix.
+- Accepted-slice count carried in: `1/3`; executor does not write planner
+  reflection.
+
+Boundary decision:
+
+- Existing owner `testbed.eval.terrain_calibration_inventory` already owns
+  calibration source inventory and schema evidence.
+- Extended that owner rather than creating a new module; the owner remained
+  under the large-file threshold and no model-fitting responsibility was added.
+
+TDD red:
+
+- Added focused assertions for `observed_field_catalog` and
+  `schema_gap_summary` before production code.
+- `python -m pytest -q tests/test_terrain_calibration_inventory.py` failed
+  before implementation with `KeyError: 'observed_field_catalog'`.
+
+Implementation:
+
+- Preserved the existing `build_gold_sample_calibration_inventory(...)`
+  contract and statuses.
+- Added deterministic `observed_field_catalog` with total observed field count,
+  stable `field_ascending` sort order, and per-field record presence counts for
+  supported JSON/JSONL object records.
+- Added deterministic `schema_gap_summary` with required fields absent from all
+  records, partially present, present in all records, split-key candidates
+  absent/present, total/usable record counts, missing-required-field record
+  count, records with any split key, and usable-record implication.
+- No alias inference, label inference, official required fields, pass/fail,
+  eval success, planner success, generated run artifacts, or production
+  integration were introduced.
+
+Current-repo smoke:
+
+- Explicit source roots checked:
+  `runs/calibration/v2_3_reachability_live` and
+  `runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/frame_audit`.
+- File counts remained `9 -> 9` and `17 -> 17`; no files were written under
+  `runs`.
+- Inventory status `present`; source count `26`; supported / unsupported source
+  count `9` / `17`; total records `14639`; usable records `0`.
+- Observed field count `19`.
+- Top observed fields by record count include `action`,
+  `bucket_tip_depth_plane_m`, `bucket_tip_depth_surface_m`, `bucket_tip_x_m`,
+  `bucket_tip_y_m`, `bucket_tip_z_m`, `excavated_mass_kg`,
+  `mass_in_bucket_kg`, `qpos`, `qvel`, `soil_grid_mass_kg`, `step_id`, `t`,
+  `target_hard_collision_count`, and `warnings`, each present in `14639`
+  records.
+- `label` appeared in `11639` records and `source_id` appeared in `6371`
+  records, recorded only as raw observed fields.
+- All explicit future calibration required fields were absent from all `14639`
+  records.
+- Split-key candidates `episode_id`, `rollout_id`, and `run_id` were absent
+  from all records.
+- `schema_gap_summary.usable_record_implication` was
+  `no_usable_records_for_explicit_required_fields_and_split_keys`.
+
+Documentation changed:
+
+- `docs/training_setup.md` documents observed field catalog and schema gap
+  summary semantics, explicit-input-only behavior, stable sorting, and
+  no-inference boundary.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks only the Phase 5B
+  observed-field/gap evidence item complete and keeps calibrated model,
+  capability model, official schema, and production integration incomplete.
+
+## 2026-07-02: Phase 5B Planner Acceptance
+
+Planner acceptance status:
+
+- Accepted as Phase 5B observed calibration source-field catalog / schema-gap
+  evidence.
+- Accepted-slice count since the latest recorded deep reflection is now `2/3`.
+- No deep reflection is required for this acceptance.
+
+Planner-side audit:
+
+- Rechecked target lock in `/home/pingfan/PACT/excavator_testbed`: branch
+  `tx/oracle-terrain-residual-planner-v0` was ahead `31`, HEAD
+  `7a3f1ca5a7f3139e57e6e285a3779be5edd5b7e3`, with only the five expected
+  Phase 5B files modified.
+- Re-read the changed calibration inventory owner, focused tests, and changed
+  plan/training/log documentation.
+- Confirmed the implementation stayed in the existing focused inventory owner;
+  `testbed/eval/terrain_calibration_inventory.py` remained below the large-file
+  threshold at `598` lines.
+- Confirmed the new catalog records raw top-level field presence only and does
+  not infer aliases from telemetry fields such as `label`, `source_id`,
+  `mass_in_bucket_kg`, or `excavated_mass_kg`.
+
+Planner-side verification:
+
+- Re-ran the related calibration/candidate/effect/target bundle:
+  `tests/test_terrain_calibration_inventory.py`,
+  `tests/test_terrain_candidate_effect_model.py`,
+  `tests/test_terrain_candidate_effect_summary.py`,
+  `tests/test_terrain_candidate_scoring.py`,
+  `tests/test_terrain_candidate_evidence.py`,
+  `tests/test_terrain_candidate_generation.py`, target projection/report/metric
+  tests, terrain residual metric tests, and rollout review tests; result:
+  `76 passed`.
+- Re-ran compile checks for the inventory owner and related eval owners and
+  tests; result: passed.
+- Re-ran changed-doc guard, docs inventory guard, architecture contract guard,
+  and whitespace diff check; result: passed.
+- Recomputed the current-repo inventory smoke read-only; inspected directory
+  file counts remained `9 -> 9` and `17 -> 17`, inventory status was `present`,
+  total records were `14639`, usable records were `0`, observed field count was
+  `19`, and all explicit future calibration required fields and split-key
+  candidates were absent from the supported records.
+
+Acceptance rationale:
+
+- The slice makes the Phase 5A blocker actionable: the repo now records both
+  the raw fields that actually exist and the explicit future schema fields that
+  are missing.
+- It preserves the correct boundary for Phase 5: inventory/schema evidence only,
+  with no model fitting, fake labels, official schema, split semantics,
+  pass/fail, eval success, planner success, generated artifacts, or production
+  integration.
+- The next decision should use these raw field facts to define a separate,
+  explicit calibration extraction contract rather than silently mapping
+  telemetry fields to labels.
+
+Next bounded target:
+
+- Phase 5C should add an explicit calibration-record extraction/spec proposal
+  layer that remains offline and inactive by default.
+- It should consume the observed field catalog as evidence, but any mapping from
+  raw telemetry fields to future calibration labels must be explicit,
+  caller-provided, and documented as provisional unless the user later promotes
+  it into an official schema.

@@ -98,6 +98,34 @@ def test_gold_sample_calibration_inventory_counts_records_fields_and_splits(tmp_
         },
         "records_missing_any_required_field_count": 1,
     }
+    assert inventory["observed_field_catalog"] == {
+        "total_observed_field_count": 6,
+        "sort_order": "field_ascending",
+        "field_presence_counts": [
+            {"field": "candidate_id", "record_count": 4},
+            {"field": "episode_id", "record_count": 2},
+            {"field": "expected_removed_volume_m3", "record_count": 4},
+            {"field": "payload_volume_m3", "record_count": 3},
+            {"field": "rollout_id", "record_count": 1},
+            {"field": "success", "record_count": 4},
+        ],
+    }
+    assert inventory["schema_gap_summary"] == {
+        "required_fields_absent_from_all_records": [],
+        "required_fields_partially_present": ["payload_volume_m3"],
+        "required_fields_present_in_all_records": [
+            "candidate_id",
+            "expected_removed_volume_m3",
+            "success",
+        ],
+        "split_key_candidates_absent_from_all_records": [],
+        "split_key_candidates_present_in_records": ["episode_id", "rollout_id"],
+        "total_record_count": 4,
+        "usable_record_count": 2,
+        "records_missing_any_required_field_count": 1,
+        "records_with_any_split_key_count": 3,
+        "usable_record_implication": "some_records_usable_for_explicit_required_fields_and_split_keys",
+    }
     assert inventory["split_summary"] == {
         "episode_split_key_candidates": SPLIT_KEYS,
         "detected_split_keys": ["episode_id", "rollout_id"],
@@ -143,6 +171,28 @@ def test_gold_sample_calibration_inventory_stays_present_when_no_records_are_usa
         "expected_removed_volume_m3": 0,
         "payload_volume_m3": 1,
         "success": 1,
+    }
+    assert inventory["observed_field_catalog"]["field_presence_counts"] == [
+        {"field": "candidate_id", "record_count": 1},
+        {"field": "expected_removed_volume_m3", "record_count": 1},
+    ]
+    assert inventory["schema_gap_summary"] == {
+        "required_fields_absent_from_all_records": [
+            "payload_volume_m3",
+            "success",
+        ],
+        "required_fields_partially_present": [],
+        "required_fields_present_in_all_records": [
+            "candidate_id",
+            "expected_removed_volume_m3",
+        ],
+        "split_key_candidates_absent_from_all_records": ["episode_id", "rollout_id"],
+        "split_key_candidates_present_in_records": [],
+        "total_record_count": 1,
+        "usable_record_count": 0,
+        "records_missing_any_required_field_count": 1,
+        "records_with_any_split_key_count": 0,
+        "usable_record_implication": "no_usable_records_for_explicit_required_fields_and_split_keys",
     }
     assert inventory["split_summary"]["records_with_any_split_key_count"] == 0
     assert inventory["source_summaries"][0]["usable_record_count"] == 0

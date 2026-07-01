@@ -267,6 +267,7 @@ def _source_summary(
             required_fields=required_fields,
             split_keys=split_keys,
         ),
+        "observed_field_presence_counts": _observed_field_presence_counts(records),
         "field_presence_counts": _field_presence_counts(records, required_fields),
         "missing_required_field_counts": _missing_required_field_counts(
             records,
@@ -323,10 +324,33 @@ def _inventory_result(
         "total_record_count": total_record_count,
         "usable_record_count": usable_record_count,
         "source_summaries": source_summaries,
+        "observed_field_catalog": _observed_field_catalog(source_summaries),
         "field_summary": _field_summary(source_summaries, required_fields),
         "split_summary": _split_summary(source_summaries, split_keys),
+        "schema_gap_summary": _schema_gap_summary(
+            source_summaries,
+            required_fields,
+            split_keys,
+        ),
         "validation_errors": validation_errors,
         "missing_provenance": _missing_provenance(),
+    }
+
+
+def _observed_field_catalog(
+    source_summaries: list[dict[str, Any]],
+) -> dict[str, Any]:
+    observed_counts: dict[str, int] = {}
+    for summary in source_summaries:
+        for field, count in summary.get("observed_field_presence_counts", {}).items():
+            observed_counts[field] = observed_counts.get(field, 0) + count
+    return {
+        "total_observed_field_count": len(observed_counts),
+        "sort_order": "field_ascending",
+        "field_presence_counts": [
+            {"field": field, "record_count": observed_counts[field]}
+            for field in sorted(observed_counts)
+        ],
     }
 
 
@@ -388,6 +412,74 @@ def _split_summary(
         "split_key_presence_counts": presence_counts,
         "distinct_split_group_counts": distinct_groups,
     }
+
+
+def _schema_gap_summary(
+    source_summaries: list[dict[str, Any]],
+    required_fields: list[str],
+    split_keys: list[str],
+) -> dict[str, Any]:
+    total_record_count = sum(summary["record_count"] for summary in source_summaries)
+    usable_record_count = sum(
+        summary["usable_record_count"] for summary in source_summaries
+    )
+    field_summary = _field_summary(source_summaries, required_fields)
+    split_summary = _split_summary(source_summaries, split_keys)
+    field_counts = field_summary["field_presence_counts"]
+    split_counts = split_summary["split_key_presence_counts"]
+    return {
+        "required_fields_absent_from_all_records": [
+            field for field in required_fields if field_counts.get(field, 0) == 0
+        ],
+        "required_fields_partially_present": [
+            field
+            for field in required_fields
+            if 0 < field_counts.get(field, 0) < total_record_count
+        ],
+        "required_fields_present_in_all_records": [
+            field
+            for field in required_fields
+            if total_record_count > 0
+            and field_counts.get(field, 0) == total_record_count
+        ],
+        "split_key_candidates_absent_from_all_records": [
+            key for key in split_keys if split_counts.get(key, 0) == 0
+        ],
+        "split_key_candidates_present_in_records": [
+            key for key in split_keys if split_counts.get(key, 0) > 0
+        ],
+        "total_record_count": total_record_count,
+        "usable_record_count": usable_record_count,
+        "records_missing_any_required_field_count": field_summary[
+            "records_missing_any_required_field_count"
+        ],
+        "records_with_any_split_key_count": split_summary[
+            "records_with_any_split_key_count"
+        ],
+        "usable_record_implication": _usable_record_implication(
+            usable_record_count,
+            total_record_count,
+        ),
+    }
+
+
+def _usable_record_implication(
+    usable_record_count: int,
+    total_record_count: int,
+) -> str:
+    if usable_record_count == 0:
+        return "no_usable_records_for_explicit_required_fields_and_split_keys"
+    if usable_record_count == total_record_count:
+        return "all_records_usable_for_explicit_required_fields_and_split_keys"
+    return "some_records_usable_for_explicit_required_fields_and_split_keys"
+
+
+def _observed_field_presence_counts(records: list[dict[str, Any]]) -> dict[str, int]:
+    observed_counts: dict[str, int] = {}
+    for record in records:
+        for field in record:
+            observed_counts[field] = observed_counts.get(field, 0) + 1
+    return dict(sorted(observed_counts.items()))
 
 
 def _field_presence_counts(
