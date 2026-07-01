@@ -314,6 +314,18 @@ ratio、outside-target removed-depth sum，以及诊断性 trend。该 curve 是
 不声明官方 cycle id；trend 不作为 planner success、eval pass/fail、bucket-aware tolerance 或
 boundary-protected shape success 语义。
 
+显式目标坑形 baseline report 当前由
+`testbed.eval.terrain_target_report.build_explicit_target_residual_baseline_report()` 生成。它只组合
+`build_latest_target_residual_projection()` 与
+`build_target_residual_convergence_projection()` 的已有输出，不重新实现 target-grid 或 target
+residual 公式。调用方必须显式传入 rollout records、grid shape、半开 row/col 矩形边界和 target
+depth；输出包含 `target_spec`、`latest_projection`、`convergence_projection` 和从嵌套 projection
+字段复制出的 `diagnostic_summary`。report `status` 仅表示诊断证据完整性：latest 与 convergence
+都为 `present` 时为 `present`；两者共享同一 validation / missing status 时透传该 status；否则为
+`partial` 并在 summary 中保留各 projection status。该 helper 默认不写 report artifact、不接入
+`rollout_review.json` schema、不定义官方 T1 默认值，也不改变 planner、gate、eval success 或物理体积
+语义。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

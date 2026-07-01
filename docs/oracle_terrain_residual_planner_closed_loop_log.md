@@ -1246,3 +1246,130 @@ Next bounded target:
 - A read-only current-run smoke projection may use the same non-official example
   spec as prior slices, with `official_t1_default=False` recorded in the
   callback.
+
+## 2026-07-01: Phase 1G Callback Audit
+
+Executor thread:
+
+- `019f1d6b-1367-71f3-8cb1-c4d891769109`
+
+Executor slice:
+
+- Phase 1G: standalone explicit-target baseline report builder.
+
+Executor status:
+
+- Success.
+- Worktree target lock matched at start.
+- HEAD stayed `29499e490f71f1b06abc2d5e5e3f19b4e6bccea3`.
+- Expected slice files were modified or added:
+  `testbed/eval/terrain_target_report.py`,
+  `tests/test_terrain_target_report.py`, and `docs/training_setup.md`.
+
+Accepted implementation facts:
+
+- Added new focused eval owner `testbed/eval/terrain_target_report.py`.
+- Added public function `build_explicit_target_residual_baseline_report()`.
+- Source is `explicit_target_residual_baseline_report`.
+- Schema is `explicit_target_residual_baseline_report_v1`.
+- The report composes existing
+  `build_latest_target_residual_projection()` and
+  `build_target_residual_convergence_projection()` outputs.
+- The report embeds both nested projections and exposes a copied
+  `diagnostic_summary` from nested projection and convergence-summary fields.
+- Report status is `present` only when both latest and convergence projections
+  are `present`; shared non-present status is surfaced; mixed status is
+  reported as `partial`.
+- Top-level missing provenance statuses are copied from nested projections when
+  available and default to `missing`.
+- No target-grid formula, target residual metric formula, rollout-review
+  integration, generated artifact writing, official T1 default, eval pass/fail
+  semantics, physical volume, boundary tolerance, bucket-aware IoU, candidate
+  semantics, or runtime planner behavior was added.
+
+TDD evidence:
+
+- Initial red:
+  `python -m pytest -q tests/test_terrain_target_report.py` failed during
+  collection with `ModuleNotFoundError: No module named 'testbed.eval.terrain_target_report'`.
+- Focused report green passed with 3 tests.
+
+Planner-side current-run smoke report:
+
+- Used explicit non-official example spec:
+  `grid_shape=[3, 2]`, `row_start=0`, `row_end=2`, `col_start=0`,
+  `col_end=1`, `target_depth_m=0.25`, `official_t1_default=False`.
+- Read
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- File count stayed 10 and no files were written.
+- Report status was `present`.
+- Report schema was `explicit_target_residual_baseline_report_v1`.
+- Latest projection status was `present`.
+- Convergence projection status was `present`.
+- Latest snapshot row was `6147`.
+- Latest target positive residual depth sum was `0.374313589186`.
+- Latest target overdig depth sum was `0.0`.
+- Latest target removed completion ratio was `0.251372821628`.
+- Latest outside-target removed depth sum was `0.488698139786`.
+- Convergence point count was `10`.
+- Convergence trend was
+  `target_positive_residual_reduced_outside_removed_increased`.
+- Convergence target positive residual start/end/delta was
+  `0.498092905036` / `0.383547134697` / `-0.114545770339`.
+- Convergence outside-target removed depth start/end/delta was
+  `0.050789695233` / `0.479643445462` / `0.428853750229`.
+
+Planner-side verification:
+
+- `python -m pytest -q tests/test_terrain_target_report.py tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed, 39 tests.
+- `python -m compileall testbed/eval/terrain_target_report.py testbed/eval/terrain_target_projection.py testbed/eval/terrain_target_metrics.py testbed/eval/terrain_target_grid.py testbed/eval/terrain_residual_metrics.py testbed/eval/rollout_review.py tests/test_terrain_target_report.py tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/training_setup.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- `git diff --check` passed.
+
+Planner closure audit:
+
+- Target lock matched after callback:
+  - branch: `tx/oracle-terrain-residual-planner-v0`
+  - HEAD: `29499e490f71f1b06abc2d5e5e3f19b4e6bccea3`
+  - dirty files: only the expected Phase 1G files before planner log sync
+- Callback was factual, scoped, and free of planner-directed strategy.
+- Diff stayed inside the new report composition owner, focused tests, and
+  closest documentation.
+- The report owner does not recompute target-grid or residual metric formulas;
+  it copies and packages nested owner outputs.
+- No planner runtime, gate, policy, token, checkpoint, dependency, config,
+  branch, upstream, rollout-review schema, or eval success semantics changed.
+
+Lightweight reflection:
+
+- Reference used: user objective, Phase 1 target-shape evaluation requirements
+  in `docs/oracle_terrain_residual_planner_v0_plan.md`, `AGENTS.md` ownership
+  boundaries, and the thread execution rule.
+- Alignment verdict: aligned. The workflow now has a reusable pure report object
+  for explicit target baseline evidence.
+- Efficiency verdict: useful progress. This slice reduced repeated hand-assembly
+  of latest and convergence projections while staying out of schema/runtime
+  integration.
+- Accepted-slice count since the latest deep reflection is now `1/3`.
+
+Next bounded target:
+
+- Phase 1H should create a durable current-run explicit-target baseline report
+  document from the pure report builder and the known current run, using the
+  same non-official example target spec.
+- The document must clearly state `official_t1_default=False`, list the exact
+  run path and HEAD used, and preserve all current limitations.
+- It should be documentation/report-only unless a tiny helper is necessary for
+  reproducible extraction; prefer no new production code.
+- It must not write generated artifacts under the eval run results directory,
+  change `rollout_review.json`, define official target defaults, or introduce
+  pass/fail semantics.
+- Verification should rerun a read-only report smoke, changed-doc guards, doc
+  inventory, architecture contract, and `git diff --check`.
