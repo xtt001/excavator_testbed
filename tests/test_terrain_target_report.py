@@ -126,6 +126,13 @@ def test_explicit_target_report_composes_latest_and_convergence_outputs() -> Non
         summary["latest_target_positive_residual_depth_sum_m"]
         == latest_metrics["target_positive_residual_depth_sum_m"]
     )
+    assert latest_metrics["target_residual_depth_rmse_m"] == 0.111803398875
+    assert (
+        report["convergence_projection"]["curve"][-1]["target_residual_metrics"][
+            "target_residual_depth_mae_m"
+        ]
+        == 0.1
+    )
     assert (
         summary["latest_target_overdig_depth_sum_m"]
         == latest_metrics["target_overdig_depth_sum_m"]

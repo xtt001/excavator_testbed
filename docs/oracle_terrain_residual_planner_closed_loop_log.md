@@ -1573,3 +1573,129 @@ Next bounded target:
 - Keep boundary tolerance, shape IoU, bucket-aware IoU, pass/fail semantics, and
   official target defaults out of scope until their semantics are explicitly
   confirmed.
+
+## 2026-07-01: Phase 1I Callback Audit
+
+Executor thread:
+
+- `019f1d6b-1367-71f3-8cb1-c4d891769109`
+
+Executor slice:
+
+- Phase 1I: diagnostic target interior depth-error metrics.
+
+Executor status:
+
+- Success.
+- Worktree target lock matched at start.
+- HEAD stayed `8c66aa4adae1a750900e9cdcee53d9141d355c15`.
+- Expected slice files were modified:
+  `testbed/eval/terrain_target_metrics.py`,
+  `tests/test_terrain_target_metrics.py`,
+  `tests/test_terrain_target_projection.py`,
+  `tests/test_terrain_target_report.py`, and `docs/training_setup.md`.
+
+Accepted implementation facts:
+
+- Added threshold-free target-interior depth-error diagnostics to
+  `build_target_residual_metrics()`.
+- Present output now includes `target_residual_depth_rmse_m`,
+  `target_residual_depth_mae_m`, and
+  `target_residual_depth_abs_max_m`.
+- The fields are computed over valid target cells only using
+  `target_depth_grid_m - removed_depth_grid_m`.
+- When `target_cell_count == 0`, the three fields are `None`, not zero.
+- Existing invalid input status semantics are preserved; invalid results include
+  the new fields as `None`.
+- Existing latest projection, convergence projection, and baseline report owners
+  do not recompute these formulas. The new values propagate through nested
+  `target_residual_metrics` blocks.
+- No thresholds, pass/fail semantics, boundary tolerance, shape IoU,
+  bucket-aware IoU, official T1 defaults, rollout-review integration, runtime
+  planner or gate behavior, config, token, or checkpoint changes were added.
+
+TDD evidence:
+
+- Initial selector command was not a valid red:
+  `python -m pytest -q tests/test_terrain_target_metrics.py tests/test_terrain_target_report.py -k "target_residual_depth"`
+  selected no tests.
+- Valid red before production edit:
+  `python -m pytest -q tests/test_terrain_target_metrics.py tests/test_terrain_target_report.py`
+  failed with 5 failures and 6 passes.
+- Red failures were missing-key failures for
+  `target_residual_depth_rmse_m`, `target_residual_depth_mae_m`, and
+  `target_residual_depth_abs_max_m` in focused metrics and nested report tests.
+
+Planner-side current-run smoke report:
+
+- Used explicit non-official example spec:
+  `grid_shape=[3, 2]`, `row_start=0`, `row_end=2`, `col_start=0`,
+  `col_end=1`, `target_depth_m=0.25`.
+- Read
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- File count under the results directory stayed `10 -> 10`; no new run files
+  were created.
+- Report status was `present`.
+- Latest snapshot row was `6147`.
+- Latest nested target residual depth RMSE / MAE / abs max were
+  `0.187219063753` / `0.187156794593` / `0.191985052079`.
+- Convergence point count was `10`.
+- Convergence trend was
+  `target_positive_residual_reduced_outside_removed_increased`.
+- First convergence point row `416` had RMSE / MAE / abs max
+  `0.24904827798` / `0.249046452518` / `0.25`.
+- Last convergence point row `5821` had RMSE / MAE / abs max
+  `0.191779018803` / `0.191773567348` / `0.19321956858`.
+
+Planner-side verification:
+
+- `python -m pytest -q tests/test_terrain_target_report.py tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed, 40 tests.
+- `python -m compileall testbed/eval/terrain_target_metrics.py testbed/eval/terrain_target_projection.py testbed/eval/terrain_target_report.py testbed/eval/terrain_target_grid.py testbed/eval/terrain_residual_metrics.py testbed/eval/rollout_review.py tests/test_terrain_target_metrics.py tests/test_terrain_target_projection.py tests/test_terrain_target_report.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/training_setup.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- Read-only current-run smoke report passed with results file count `10 -> 10`.
+- `git diff --check` passed.
+
+Planner closure audit:
+
+- Target lock matched after callback:
+  - branch: `tx/oracle-terrain-residual-planner-v0`
+  - HEAD: `8c66aa4adae1a750900e9cdcee53d9141d355c15`
+  - dirty files: only expected Phase 1I files before planner log sync
+- Callback was factual, scoped, and free of planner-directed strategy.
+- Diff stayed inside the metric owner, nested propagation tests, and closest
+  documentation.
+- No planner runtime, gate, policy, token, checkpoint, dependency, config,
+  branch, upstream, rollout-review schema, official target semantics, or eval
+  success semantics changed.
+- The committed baseline report document was intentionally not refreshed in this
+  slice because the executor prompt kept that out of scope.
+
+Lightweight reflection:
+
+- Reference used: user objective, Phase 1 metric requirements in
+  `docs/oracle_terrain_residual_planner_v0_plan.md`, `AGENTS.md` ownership
+  boundaries, and the Phase 1H deep reflection.
+- Alignment verdict: aligned. Phase 1 now has target-interior depth-error
+  diagnostics that do not require threshold or geometry-semantics decisions.
+- Efficiency verdict: useful progress. The slice expanded the existing metric
+  owner and let nested owners carry the fields without broader schema work.
+- Accepted-slice count since the latest deep reflection is now `1/3`.
+
+Next bounded target:
+
+- Phase 1J should refresh `docs/oracle_terrain_residual_baseline_report.md` for
+  the current HEAD and include the new target interior RMSE / MAE / abs-max
+  values.
+- This should be a docs-only report refresh using the committed report builder
+  and the same explicit non-official target spec.
+- Do not write generated artifacts under the eval run results directory.
+- Do not change rollout-review schema, official target defaults, pass/fail
+  semantics, boundary tolerance, shape IoU, bucket-aware IoU, runtime planner,
+  gate, policy, config, token, or checkpoint behavior.

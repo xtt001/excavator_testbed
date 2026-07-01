@@ -291,8 +291,11 @@ depth sum、target completion ratio、target 外 valid cells 的 removed-depth s
 `residual_depth_grid_m = target_depth_grid_m - removed_depth_grid_m`。输入长度不一致、depth
 非有限或为负、mask 非有限、target mask 选中 invalid cell 时会返回具体 validation status 和
 `validation_errors`，不会抛出常规规格错误，也不会静默把 invalid cell 当作 target cell。该 metric
-仍是离线诊断，不提供 bucket-aware IoU、boundary tolerance、protected-area band、RMSE、物理体积、
-官方 cycle id 或 eval success 语义。
+还会在 valid target cells 内报告 threshold-free depth-error 诊断：
+`target_residual_depth_rmse_m`、`target_residual_depth_mae_m` 和
+`target_residual_depth_abs_max_m`。如果没有 target cell，这些字段保留为 `null`，不能解释成
+零误差或成功。该 metric 仍是离线诊断，不提供 bucket-aware IoU、boundary tolerance、
+protected-area band、target-shape pass/fail、物理体积、官方 cycle id 或 eval success 语义。
 
 latest-snapshot rollout projection 当前由
 `testbed.eval.terrain_target_projection.build_latest_target_residual_projection()` 组合上述两个

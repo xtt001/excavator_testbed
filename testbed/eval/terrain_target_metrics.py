@@ -41,6 +41,9 @@ def build_target_residual_metrics(
             target_removed_depth_sum_m=None,
             target_removed_completion_ratio=None,
             outside_target_removed_depth_sum_m=None,
+            target_residual_depth_rmse_m=None,
+            target_residual_depth_mae_m=None,
+            target_residual_depth_abs_max_m=None,
             residual_depth_grid_m=[],
             invalid_target_cell_count=0,
             validation_errors=[
@@ -65,6 +68,9 @@ def build_target_residual_metrics(
             target_removed_depth_sum_m=None,
             target_removed_completion_ratio=None,
             outside_target_removed_depth_sum_m=None,
+            target_residual_depth_rmse_m=None,
+            target_residual_depth_mae_m=None,
+            target_residual_depth_abs_max_m=None,
             residual_depth_grid_m=[],
             invalid_target_cell_count=0,
             validation_errors=[
@@ -88,6 +94,9 @@ def build_target_residual_metrics(
             target_removed_depth_sum_m=None,
             target_removed_completion_ratio=None,
             outside_target_removed_depth_sum_m=None,
+            target_residual_depth_rmse_m=None,
+            target_residual_depth_mae_m=None,
+            target_residual_depth_abs_max_m=None,
             residual_depth_grid_m=[],
             invalid_target_cell_count=0,
             validation_errors=[
@@ -115,6 +124,9 @@ def build_target_residual_metrics(
             target_removed_depth_sum_m=None,
             target_removed_completion_ratio=None,
             outside_target_removed_depth_sum_m=None,
+            target_residual_depth_rmse_m=None,
+            target_residual_depth_mae_m=None,
+            target_residual_depth_abs_max_m=None,
             residual_depth_grid_m=[],
             invalid_target_cell_count=invalid_target_cell_count,
             validation_errors=[
@@ -140,6 +152,10 @@ def build_target_residual_metrics(
         )
         if not is_target and is_valid
     ]
+    target_error_metrics = _target_depth_error_metrics(
+        residual_depth,
+        target_indices,
+    )
     target_depth_sum = _metric_sum(target_depth[index] for index in target_indices)
     target_removed_sum = _metric_sum(
         removed_depth[index] for index in target_indices
@@ -171,6 +187,9 @@ def build_target_residual_metrics(
         outside_target_removed_depth_sum_m=_metric_sum(
             removed_depth[index] for index in outside_target_indices
         ),
+        target_residual_depth_rmse_m=target_error_metrics["rmse"],
+        target_residual_depth_mae_m=target_error_metrics["mae"],
+        target_residual_depth_abs_max_m=target_error_metrics["abs_max"],
         residual_depth_grid_m=residual_depth,
         invalid_target_cell_count=0,
         validation_errors=[],
@@ -191,6 +210,9 @@ def _target_metrics_result(
     target_removed_depth_sum_m: float | None,
     target_removed_completion_ratio: float | None,
     outside_target_removed_depth_sum_m: float | None,
+    target_residual_depth_rmse_m: float | None,
+    target_residual_depth_mae_m: float | None,
+    target_residual_depth_abs_max_m: float | None,
     residual_depth_grid_m: list[float],
     invalid_target_cell_count: int,
     validation_errors: list[str],
@@ -209,6 +231,9 @@ def _target_metrics_result(
         "target_removed_depth_sum_m": target_removed_depth_sum_m,
         "target_removed_completion_ratio": target_removed_completion_ratio,
         "outside_target_removed_depth_sum_m": outside_target_removed_depth_sum_m,
+        "target_residual_depth_rmse_m": target_residual_depth_rmse_m,
+        "target_residual_depth_mae_m": target_residual_depth_mae_m,
+        "target_residual_depth_abs_max_m": target_residual_depth_abs_max_m,
         "residual_depth_grid_m": residual_depth_grid_m,
         "invalid_target_cell_count": int(invalid_target_cell_count),
         "validation_errors": validation_errors,
@@ -224,6 +249,27 @@ def _parse_nonnegative_depths(values: Sequence[Any]) -> list[float] | None:
             return None
         parsed_values.append(_metric_float(parsed))
     return parsed_values
+
+
+def _target_depth_error_metrics(
+    residual_depth_grid_m: list[float],
+    target_indices: list[int],
+) -> dict[str, float | None]:
+    if not target_indices:
+        return {
+            "rmse": None,
+            "mae": None,
+            "abs_max": None,
+        }
+
+    residuals = [residual_depth_grid_m[index] for index in target_indices]
+    squared_error_sum = math.fsum(residual * residual for residual in residuals)
+    absolute_errors = [abs(residual) for residual in residuals]
+    return {
+        "rmse": _metric_float(math.sqrt(squared_error_sum / len(residuals))),
+        "mae": _metric_float(math.fsum(absolute_errors) / len(absolute_errors)),
+        "abs_max": _metric_float(max(absolute_errors)),
+    }
 
 
 def _parse_mask(values: Sequence[Any]) -> list[bool] | None:

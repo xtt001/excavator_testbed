@@ -26,6 +26,9 @@ def test_target_residual_metrics_compare_removed_depth_to_target_shape() -> None
         "target_removed_depth_sum_m": 0.9,
         "target_removed_completion_ratio": 0.8333333333333334,
         "outside_target_removed_depth_sum_m": 0.45,
+        "target_residual_depth_rmse_m": 0.191485421551,
+        "target_residual_depth_mae_m": 0.166666666667,
+        "target_residual_depth_abs_max_m": 0.3,
         "residual_depth_grid_m": [0.1, -0.05, -0.1, -0.4, -0.2, -0.3],
         "invalid_target_cell_count": 0,
         "validation_errors": [],
@@ -65,6 +68,9 @@ def test_target_residual_metrics_accept_target_grid_generator_output() -> None:
     assert metrics["target_removed_depth_sum_m"] == 0.45
     assert metrics["target_removed_completion_ratio"] == 0.7
     assert metrics["outside_target_removed_depth_sum_m"] == 0.2
+    assert metrics["target_residual_depth_rmse_m"] == 0.12747548784
+    assert metrics["target_residual_depth_mae_m"] == 0.125
+    assert metrics["target_residual_depth_abs_max_m"] == 0.15
 
 
 def test_target_residual_metrics_reports_invalid_grid_lengths() -> None:
@@ -155,3 +161,21 @@ def test_target_residual_metrics_reports_null_completion_ratio_without_target_de
     assert metrics["target_depth_sum_m"] == 0.0
     assert metrics["target_removed_completion_ratio"] is None
     assert metrics["target_overdig_depth_sum_m"] == 0.3
+    assert metrics["target_residual_depth_rmse_m"] == 0.158113883008
+    assert metrics["target_residual_depth_mae_m"] == 0.15
+    assert metrics["target_residual_depth_abs_max_m"] == 0.2
+
+
+def test_target_residual_metrics_reports_null_depth_error_without_target_cells() -> None:
+    metrics = build_target_residual_metrics(
+        removed_depth_grid_m=[0.10, 0.20, 0.30],
+        target_depth_grid_m=[0.00, 0.00, 0.00],
+        target_region_mask=[0.0, 0.0, 0.0],
+        valid_mask=[1.0, 1.0, 1.0],
+    )
+
+    assert metrics["status"] == "present"
+    assert metrics["target_cell_count"] == 0
+    assert metrics["target_residual_depth_rmse_m"] is None
+    assert metrics["target_residual_depth_mae_m"] is None
+    assert metrics["target_residual_depth_abs_max_m"] is None
