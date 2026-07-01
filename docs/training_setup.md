@@ -451,6 +451,28 @@ production planner，不写 run artifact，不定义官方 cell size、bucket ge
 payload proxy、calibrated effect/capability model、top-k、pass/fail、eval success 或 planner success
 语义。
 
+offline entry/exit swept-footprint effect evidence 的公共入口为
+`testbed.eval.terrain_candidate_effect_model.build_entry_exit_swept_footprint_effect()`；具体实现放在 focused
+owner `testbed.eval.terrain_candidate_entry_exit_effect`，避免把 entry/exit 线段算法继续堆入几何
+effect facade。它读取单个
+offline candidate、显式 `removed_depth_grid_m`、`target_depth_grid_m`、`target_region_mask`、
+`valid_mask`、`grid_shape`、`cell_size_m`、`bucket_width_m`、`entry_cell_index`、
+`exit_cell_index` 和 `target_penetration_depth_m`。entry / exit cell 必须是 row-major grid 内的
+valid cell，且两者不能相同；这些入口、出口、宽度和 penetration 都是调用方输入，不从 current run
+或配置推断。
+
+该 helper 的 path model 明确命名为 `entry_exit_centerline_segment_approximation`，不是 calibrated
+bucket physics。candidate direction 会作为 evidence 保留，但 swept centerline 使用显式 entry cell
+center 到 exit cell center 的线段；cell center 在线段投影范围内且到线段的垂直距离不超过
+`bucket_width_m / 2` 时进入 footprint。输出包含 `entry_exit_path`、target / outside-target /
+valid / invalid footprint cells、row-major `expected_delta_depth_grid_m`、以及与 Phase 4A 相同口径的
+expected / target / outside-target / overdig depth-sum 和 volume summary。top-level 状态包括
+`present`、`invalid_candidate`、`invalid_grid_shape`、`invalid_grid_lengths`、
+`invalid_mask_values`、`invalid_depth_values`、`invalid_geometry`、`invalid_entry_exit` 和
+`no_valid_footprint_cells`。该 helper 只提供 offline entry/exit expected-delta evidence；它不定义
+entry/exit default、official geometry、ACT capability、action selection、top-k、pass/fail、eval
+success、planner success 或 production planner/gate/policy/runtime 语义。
+
 offline candidate effect summary / payload proxy evidence 当前由
 `testbed.eval.terrain_candidate_effect_summary.build_candidate_effect_summary()` 生成。它只读取 Phase 4A
 effect records 和调用方显式传入的 `payload_capacity_m3`；该 capacity 是本次离线诊断输入，不写入

@@ -1,4 +1,5 @@
 from testbed.eval.terrain_candidate_effect_model import (
+    build_entry_exit_swept_footprint_effect,
     build_geometric_swept_footprint_effect,
 )
 from testbed.eval.terrain_candidate_evidence import (
@@ -47,6 +48,20 @@ def _present_inputs(**overrides):
         "bucket_width_m": 0.5,
         "bucket_length_m": 1.0,
     }
+    inputs.update(overrides)
+    return inputs
+
+
+def _entry_exit_inputs(**overrides):
+    inputs = _present_inputs()
+    inputs.pop("bucket_length_m")
+    inputs.update(
+        {
+            "entry_cell_index": 5,
+            "exit_cell_index": 7,
+            "target_penetration_depth_m": 0.1,
+        }
+    )
     inputs.update(overrides)
     return inputs
 
@@ -226,3 +241,124 @@ def test_build_geometric_swept_footprint_effect_composes_with_candidate_pipeline
     assert result["status"] == "present"
     assert result["candidate_id"] == best_candidate_id
     assert result["footprint"]["footprint_cell_count"] >= 1
+
+
+def test_build_entry_exit_swept_footprint_effect_reports_segment_patch_and_volumes():
+    result = build_entry_exit_swept_footprint_effect(**_entry_exit_inputs())
+
+    assert result["status"] == "present"
+    assert result["offline_only"] is True
+    assert result["source"] == "explicit_entry_exit_swept_footprint_effect"
+    assert result["entry_exit_path"] == {
+        "model": "entry_exit_centerline_segment_approximation",
+        "candidate_direction": "row_forward",
+        "entry_cell_index": 5,
+        "entry_row": 1,
+        "entry_col": 1,
+        "exit_cell_index": 7,
+        "exit_row": 1,
+        "exit_col": 3,
+        "segment_length_m": 1.0,
+    }
+    assert result["geometry_inputs"] == {
+        "cell_size_m": 0.5,
+        "bucket_width_m": 0.5,
+        "target_penetration_depth_m": 0.1,
+        "target_penetration_depth_source": "explicit_target_penetration_depth_m",
+    }
+    assert result["footprint"]["model"] == (
+        "entry_exit_centerline_segment_approximation"
+    )
+    assert result["footprint"]["footprint_cell_indices"] == [5, 6, 7]
+    assert result["footprint"]["target_footprint_cell_indices"] == [5, 6]
+    assert result["footprint"]["outside_target_footprint_cell_indices"] == [7]
+    assert result["footprint"]["valid_footprint_cell_indices"] == [5, 6, 7]
+    assert result["footprint"]["invalid_footprint_cell_indices"] == []
+    assert result["footprint"]["entry_cell_valid"] is True
+    assert result["footprint"]["exit_cell_valid"] is True
+    assert result["footprint"]["footprint_clipped_by_grid_boundary"] is False
+    assert result["expected_delta_depth_grid_m"] == [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1,
+        0.1,
+        0.1,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ]
+    assert result["summary_metrics"] == {
+        "expected_removed_depth_sum_m": 0.3,
+        "expected_removed_volume_m3": 0.075,
+        "target_removed_delta_sum_m": 0.2,
+        "target_removed_volume_m3": 0.05,
+        "outside_target_removed_delta_sum_m": 0.1,
+        "outside_target_removed_volume_m3": 0.025,
+        "overdig_depth_delta_sum_m": 0.15,
+        "overdig_volume_delta_m3": 0.0375,
+    }
+
+
+def test_build_entry_exit_swept_footprint_effect_uses_explicit_segment_not_candidate_direction():
+    result = build_entry_exit_swept_footprint_effect(
+        **_entry_exit_inputs(candidate=_candidate(direction="col_forward"))
+    )
+
+    assert result["status"] == "present"
+    assert result["entry_exit_path"]["candidate_direction"] == "col_forward"
+    assert result["footprint"]["footprint_cell_indices"] == [5, 6, 7]
+
+
+def test_build_entry_exit_swept_footprint_effect_returns_explicit_invalid_statuses():
+    assert (
+        build_entry_exit_swept_footprint_effect(
+            **_entry_exit_inputs(candidate={"candidate_id": "missing_fields"})
+        )["status"]
+        == "invalid_candidate"
+    )
+    assert (
+        build_entry_exit_swept_footprint_effect(**_entry_exit_inputs(grid_shape=[3, 5]))[
+            "status"
+        ]
+        == "invalid_grid_shape"
+    )
+    assert (
+        build_entry_exit_swept_footprint_effect(
+            **_entry_exit_inputs(target_depth_grid_m=[0.0])
+        )["status"]
+        == "invalid_grid_lengths"
+    )
+    assert (
+        build_entry_exit_swept_footprint_effect(
+            **_entry_exit_inputs(target_region_mask=["bad"] * 12)
+        )["status"]
+        == "invalid_mask_values"
+    )
+    assert (
+        build_entry_exit_swept_footprint_effect(
+            **_entry_exit_inputs(removed_depth_grid_m=[-1.0] + [0.0] * 11)
+        )["status"]
+        == "invalid_depth_values"
+    )
+    assert (
+        build_entry_exit_swept_footprint_effect(
+            **_entry_exit_inputs(bucket_width_m=0.0)
+        )["status"]
+        == "invalid_geometry"
+    )
+    assert (
+        build_entry_exit_swept_footprint_effect(
+            **_entry_exit_inputs(entry_cell_index=5, exit_cell_index=5)
+        )["status"]
+        == "invalid_entry_exit"
+    )
+    assert (
+        build_entry_exit_swept_footprint_effect(
+            **_entry_exit_inputs(valid_mask=[True] * 5 + [False] + [True] * 6)
+        )["status"]
+        == "invalid_entry_exit"
+    )

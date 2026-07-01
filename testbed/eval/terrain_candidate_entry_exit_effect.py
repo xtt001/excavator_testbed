@@ -1,4 +1,4 @@
-"""Offline geometric effect evidence for terrain cut candidates."""
+"""Offline entry/exit swept-footprint effect evidence for terrain candidates."""
 
 from __future__ import annotations
 
@@ -6,15 +6,11 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from testbed.eval.terrain_candidate_entry_exit_effect import (
-    build_entry_exit_swept_footprint_effect,
-)
 
-
-SCHEMA = "terrain_candidate_geometric_effect_v1"
-SOURCE = "explicit_geometric_swept_footprint_effect"
-DEFAULT_PROFILE = "explicit_geometric_swept_footprint_effect"
-FOOTPRINT_MODEL = "centerline_rectangular_swept_footprint_approximation"
+SCHEMA = "terrain_candidate_entry_exit_effect_v1"
+SOURCE = "explicit_entry_exit_swept_footprint_effect"
+DEFAULT_PROFILE = "explicit_entry_exit_swept_footprint_effect"
+PATH_MODEL = "entry_exit_centerline_segment_approximation"
 DIRECTION_DELTAS = {
     "row_forward": (0, 1),
     "row_reverse": (0, -1),
@@ -23,9 +19,9 @@ DIRECTION_DELTAS = {
 }
 
 
-def build_geometric_swept_footprint_effect(
-    *,
+def build_entry_exit_swept_footprint_effect(
     candidate: Mapping[str, Any],
+    *,
     removed_depth_grid_m: Sequence[Any],
     target_depth_grid_m: Sequence[Any],
     target_region_mask: Sequence[Any],
@@ -33,11 +29,12 @@ def build_geometric_swept_footprint_effect(
     grid_shape: Sequence[Any],
     cell_size_m: Any,
     bucket_width_m: Any,
-    bucket_length_m: Any,
-    penetration_depth_m: Any = None,
+    entry_cell_index: Any,
+    exit_cell_index: Any,
+    target_penetration_depth_m: Any,
     profile: str = DEFAULT_PROFILE,
 ) -> dict[str, Any]:
-    """Estimate an offline rectangular swept-footprint delta patch."""
+    """Estimate an offline entry/exit centerline swept-footprint delta patch."""
 
     lengths = {
         len(removed_depth_grid_m),
@@ -46,11 +43,12 @@ def build_geometric_swept_footprint_effect(
         len(valid_mask),
     }
     if len(lengths) != 1 or not lengths or next(iter(lengths)) == 0:
-        return _effect_result(
+        return _result(
             status="invalid_grid_lengths",
             profile=profile,
             candidate_id=None,
             grid_shape=None,
+            entry_exit_path=_empty_path(),
             geometry_inputs=_empty_geometry_inputs(),
             footprint=_empty_footprint(),
             expected_delta_depth_grid_m=[],
@@ -63,11 +61,12 @@ def build_geometric_swept_footprint_effect(
     cell_count = next(iter(lengths))
     parsed_grid_shape = _parse_grid_shape(grid_shape, cell_count)
     if parsed_grid_shape is None:
-        return _effect_result(
+        return _result(
             status="invalid_grid_shape",
             profile=profile,
             candidate_id=None,
             grid_shape=None,
+            entry_exit_path=_empty_path(),
             geometry_inputs=_empty_geometry_inputs(),
             footprint=_empty_footprint(),
             expected_delta_depth_grid_m=[],
@@ -80,11 +79,12 @@ def build_geometric_swept_footprint_effect(
     removed_depth = _parse_depth_grid(removed_depth_grid_m)
     target_depth = _parse_depth_grid(target_depth_grid_m)
     if removed_depth is None or target_depth is None:
-        return _effect_result(
+        return _result(
             status="invalid_depth_values",
             profile=profile,
             candidate_id=None,
             grid_shape=[parsed_grid_shape[0], parsed_grid_shape[1]],
+            entry_exit_path=_empty_path(),
             geometry_inputs=_empty_geometry_inputs(),
             footprint=_empty_footprint(),
             expected_delta_depth_grid_m=[],
@@ -97,11 +97,12 @@ def build_geometric_swept_footprint_effect(
     target_mask = _parse_mask(target_region_mask)
     valid_cells = _parse_mask(valid_mask)
     if target_mask is None or valid_cells is None:
-        return _effect_result(
+        return _result(
             status="invalid_mask_values",
             profile=profile,
             candidate_id=None,
             grid_shape=[parsed_grid_shape[0], parsed_grid_shape[1]],
+            entry_exit_path=_empty_path(),
             geometry_inputs=_empty_geometry_inputs(),
             footprint=_empty_footprint(),
             expected_delta_depth_grid_m=[],
@@ -117,11 +118,12 @@ def build_geometric_swept_footprint_effect(
         cell_count=cell_count,
     )
     if candidate_errors:
-        return _effect_result(
+        return _result(
             status="invalid_candidate",
             profile=profile,
             candidate_id=None,
             grid_shape=[parsed_grid_shape[0], parsed_grid_shape[1]],
+            entry_exit_path=_empty_path(),
             geometry_inputs=_empty_geometry_inputs(),
             footprint=_empty_footprint(),
             expected_delta_depth_grid_m=[],
@@ -132,50 +134,70 @@ def build_geometric_swept_footprint_effect(
     geometry, geometry_errors = _parse_geometry(
         cell_size_m=cell_size_m,
         bucket_width_m=bucket_width_m,
-        bucket_length_m=bucket_length_m,
-        penetration_depth_m=penetration_depth_m,
-        candidate_depth_m=parsed_candidate["candidate_depth_m"],
+        target_penetration_depth_m=target_penetration_depth_m,
     )
     geometry_inputs = _geometry_inputs(geometry)
     if geometry_errors:
-        return _effect_result(
+        return _result(
             status="invalid_geometry",
             profile=profile,
             candidate_id=parsed_candidate["candidate_id"],
             grid_shape=[parsed_grid_shape[0], parsed_grid_shape[1]],
+            entry_exit_path=_empty_path(parsed_candidate["direction"]),
             geometry_inputs=geometry_inputs,
-            footprint=_empty_footprint(),
+            footprint=_empty_footprint(parsed_candidate),
             expected_delta_depth_grid_m=[],
             summary_metrics=_empty_summary_metrics(),
             validation_errors=geometry_errors,
         )
 
-    footprint_indices = _footprint_cell_indices(
-        candidate=parsed_candidate,
+    entry_exit_path, entry_exit_errors = _parse_entry_exit_path(
+        entry_cell_index=entry_cell_index,
+        exit_cell_index=exit_cell_index,
         valid_cells=valid_cells,
         grid_shape=parsed_grid_shape,
+        cell_count=cell_count,
         cell_size_m=geometry["cell_size_m"],
-        bucket_width_m=geometry["bucket_width_m"],
-        bucket_length_m=geometry["bucket_length_m"],
+        candidate_direction=parsed_candidate["direction"],
     )
-    footprint_clipped = _footprint_clipped_by_grid_boundary(
-        candidate=parsed_candidate,
+    if entry_exit_errors:
+        return _result(
+            status="invalid_entry_exit",
+            profile=profile,
+            candidate_id=parsed_candidate["candidate_id"],
+            grid_shape=[parsed_grid_shape[0], parsed_grid_shape[1]],
+            entry_exit_path=entry_exit_path,
+            geometry_inputs=geometry_inputs,
+            footprint=_empty_footprint(parsed_candidate),
+            expected_delta_depth_grid_m=[],
+            summary_metrics=_empty_summary_metrics(),
+            validation_errors=entry_exit_errors,
+        )
+
+    footprint_all_indices = _segment_cell_indices(
         grid_shape=parsed_grid_shape,
         cell_size_m=geometry["cell_size_m"],
         bucket_width_m=geometry["bucket_width_m"],
-        bucket_length_m=geometry["bucket_length_m"],
+        entry_exit_path=entry_exit_path,
     )
+    footprint_indices = [index for index in footprint_all_indices if valid_cells[index]]
+    invalid_footprint_indices = [
+        index for index in footprint_all_indices if not valid_cells[index]
+    ]
     if not footprint_indices:
-        return _effect_result(
+        return _result(
             status="no_valid_footprint_cells",
             profile=profile,
             candidate_id=parsed_candidate["candidate_id"],
             grid_shape=[parsed_grid_shape[0], parsed_grid_shape[1]],
+            entry_exit_path=entry_exit_path,
             geometry_inputs=geometry_inputs,
             footprint=_footprint_result(
                 candidate=parsed_candidate,
                 footprint_indices=[],
-                footprint_clipped_by_grid_boundary=footprint_clipped,
+                invalid_footprint_indices=invalid_footprint_indices,
+                target_mask=target_mask,
+                valid_cells=valid_cells,
                 cell_area_m2=geometry["cell_size_m"] ** 2,
             ),
             expected_delta_depth_grid_m=[0.0 for _ in range(cell_count)],
@@ -183,12 +205,12 @@ def build_geometric_swept_footprint_effect(
             validation_errors=[],
         )
 
+    footprint_set = set(footprint_indices)
     expected_delta_depth_grid_m = [
-        geometry["penetration_depth_m"] if index in set(footprint_indices) else 0.0
+        _metric_float(
+            geometry["target_penetration_depth_m"] if index in footprint_set else 0.0
+        )
         for index in range(cell_count)
-    ]
-    expected_delta_depth_grid_m = [
-        _metric_float(value) for value in expected_delta_depth_grid_m
     ]
     summary_metrics = _summary_metrics(
         expected_delta_depth_grid_m=expected_delta_depth_grid_m,
@@ -199,16 +221,19 @@ def build_geometric_swept_footprint_effect(
         cell_area_m2=geometry["cell_size_m"] ** 2,
     )
 
-    return _effect_result(
+    return _result(
         status="present",
         profile=profile,
         candidate_id=parsed_candidate["candidate_id"],
         grid_shape=[parsed_grid_shape[0], parsed_grid_shape[1]],
+        entry_exit_path=entry_exit_path,
         geometry_inputs=geometry_inputs,
         footprint=_footprint_result(
             candidate=parsed_candidate,
             footprint_indices=footprint_indices,
-            footprint_clipped_by_grid_boundary=footprint_clipped,
+            invalid_footprint_indices=invalid_footprint_indices,
+            target_mask=target_mask,
+            valid_cells=valid_cells,
             cell_area_m2=geometry["cell_size_m"] ** 2,
         ),
         expected_delta_depth_grid_m=expected_delta_depth_grid_m,
@@ -284,129 +309,133 @@ def _parse_geometry(
     *,
     cell_size_m: Any,
     bucket_width_m: Any,
-    bucket_length_m: Any,
-    penetration_depth_m: Any,
-    candidate_depth_m: float,
+    target_penetration_depth_m: Any,
 ) -> tuple[dict[str, Any], list[str]]:
     parsed_cell_size = _parse_positive_float(cell_size_m)
     parsed_bucket_width = _parse_positive_float(bucket_width_m)
-    parsed_bucket_length = _parse_positive_float(bucket_length_m)
+    parsed_penetration = _parse_nonnegative_float(target_penetration_depth_m)
     validation_errors: list[str] = []
     if parsed_cell_size is None:
         validation_errors.append("cell_size_m must be a finite positive number")
     if parsed_bucket_width is None:
         validation_errors.append("bucket_width_m must be a finite positive number")
-    if parsed_bucket_length is None:
-        validation_errors.append("bucket_length_m must be a finite positive number")
-
-    if penetration_depth_m is None:
-        parsed_penetration = candidate_depth_m
-        penetration_source = "candidate_depth_m"
-    else:
-        parsed_penetration = _parse_nonnegative_float(penetration_depth_m)
-        penetration_source = "explicit_penetration_depth_m"
-        if parsed_penetration is None:
-            validation_errors.append(
-                "penetration_depth_m must be a finite nonnegative number when provided"
-            )
-            parsed_penetration = 0.0
+    if parsed_penetration is None:
+        validation_errors.append(
+            "target_penetration_depth_m must be a finite nonnegative number"
+        )
 
     return (
         {
             "cell_size_m": parsed_cell_size,
             "bucket_width_m": parsed_bucket_width,
-            "bucket_length_m": parsed_bucket_length,
-            "penetration_depth_m": parsed_penetration,
-            "penetration_depth_source": penetration_source,
+            "target_penetration_depth_m": parsed_penetration,
+            "target_penetration_depth_source": (
+                "explicit_target_penetration_depth_m"
+            ),
         },
         validation_errors,
     )
 
 
-def _footprint_cell_indices(
+def _parse_entry_exit_path(
     *,
-    candidate: dict[str, Any],
+    entry_cell_index: Any,
+    exit_cell_index: Any,
     valid_cells: list[bool],
     grid_shape: tuple[int, int],
+    cell_count: int,
     cell_size_m: float,
-    bucket_width_m: float,
-    bucket_length_m: float,
-) -> list[int]:
-    _, col_count = grid_shape
-    half_width_m = bucket_width_m / 2.0
-    footprint_indices: list[int] = []
-    for index, is_valid in enumerate(valid_cells):
-        if not is_valid:
-            continue
-        row = index // col_count
-        col = index % col_count
-        row_delta_m = (row - candidate["anchor_row"]) * cell_size_m
-        col_delta_m = (col - candidate["anchor_col"]) * cell_size_m
-        along_m, lateral_m = _directional_distances(
-            direction=candidate["direction"],
-            row_delta_m=row_delta_m,
-            col_delta_m=col_delta_m,
-        )
-        if (
-            -1e-12 <= along_m <= bucket_length_m + 1e-12
-            and abs(lateral_m) <= half_width_m + 1e-12
-        ):
-            footprint_indices.append(index)
-    return footprint_indices
+    candidate_direction: str,
+) -> tuple[dict[str, Any], list[str]]:
+    row_count, col_count = grid_shape
+    entry = _parse_integer(entry_cell_index)
+    exit_ = _parse_integer(exit_cell_index)
+    errors: list[str] = []
+    if entry is None or entry < 0 or entry >= cell_count:
+        errors.append("entry_cell_index must be an in-range row-major cell index")
+    if exit_ is None or exit_ < 0 or exit_ >= cell_count:
+        errors.append("exit_cell_index must be an in-range row-major cell index")
+    if not errors and entry == exit_:
+        errors.append("entry_cell_index and exit_cell_index must differ")
+    if not errors and (not valid_cells[entry] or not valid_cells[exit_]):
+        errors.append("entry_cell_index and exit_cell_index must refer to valid cells")
+    if errors:
+        return _empty_path(candidate_direction), errors
+
+    entry_row = entry // col_count
+    entry_col = entry % col_count
+    exit_row = exit_ // col_count
+    exit_col = exit_ % col_count
+    if entry_row >= row_count or exit_row >= row_count:
+        return _empty_path(candidate_direction), [
+            "entry_cell_index and exit_cell_index must map inside grid_shape"
+        ]
+
+    segment_length_m = math.hypot(
+        (exit_row - entry_row) * cell_size_m,
+        (exit_col - entry_col) * cell_size_m,
+    )
+    if segment_length_m <= 0.0:
+        return _empty_path(candidate_direction), [
+            "entry/exit segment length must be positive"
+        ]
+
+    return (
+        {
+            "model": PATH_MODEL,
+            "candidate_direction": candidate_direction,
+            "entry_cell_index": entry,
+            "entry_row": entry_row,
+            "entry_col": entry_col,
+            "exit_cell_index": exit_,
+            "exit_row": exit_row,
+            "exit_col": exit_col,
+            "segment_length_m": _metric_float(segment_length_m),
+        },
+        [],
+    )
 
 
-def _directional_distances(
+def _segment_cell_indices(
     *,
-    direction: str,
-    row_delta_m: float,
-    col_delta_m: float,
-) -> tuple[float, float]:
-    if direction == "row_forward":
-        return col_delta_m, row_delta_m
-    if direction == "row_reverse":
-        return -col_delta_m, row_delta_m
-    if direction == "col_forward":
-        return row_delta_m, col_delta_m
-    return -row_delta_m, col_delta_m
-
-
-def _footprint_clipped_by_grid_boundary(
-    *,
-    candidate: dict[str, Any],
     grid_shape: tuple[int, int],
     cell_size_m: float,
     bucket_width_m: float,
-    bucket_length_m: float,
-) -> bool:
-    row_count, col_count = grid_shape
-    anchor_row_m = candidate["anchor_row"] * cell_size_m
-    anchor_col_m = candidate["anchor_col"] * cell_size_m
+    entry_exit_path: dict[str, Any],
+) -> list[int]:
+    _, col_count = grid_shape
+    entry_row_m = entry_exit_path["entry_row"] * cell_size_m
+    entry_col_m = entry_exit_path["entry_col"] * cell_size_m
+    exit_row_m = entry_exit_path["exit_row"] * cell_size_m
+    exit_col_m = entry_exit_path["exit_col"] * cell_size_m
+    vector_row_m = exit_row_m - entry_row_m
+    vector_col_m = exit_col_m - entry_col_m
+    length_sq = vector_row_m * vector_row_m + vector_col_m * vector_col_m
+    if length_sq <= 0.0:
+        return []
+
     half_width_m = bucket_width_m / 2.0
-    max_row_m = (row_count - 1) * cell_size_m
-    max_col_m = (col_count - 1) * cell_size_m
-
-    if candidate["direction"] == "row_forward":
-        row_min = anchor_row_m - half_width_m
-        row_max = anchor_row_m + half_width_m
-        col_min = anchor_col_m
-        col_max = anchor_col_m + bucket_length_m
-    elif candidate["direction"] == "row_reverse":
-        row_min = anchor_row_m - half_width_m
-        row_max = anchor_row_m + half_width_m
-        col_min = anchor_col_m - bucket_length_m
-        col_max = anchor_col_m
-    elif candidate["direction"] == "col_forward":
-        row_min = anchor_row_m
-        row_max = anchor_row_m + bucket_length_m
-        col_min = anchor_col_m - half_width_m
-        col_max = anchor_col_m + half_width_m
-    else:
-        row_min = anchor_row_m - bucket_length_m
-        row_max = anchor_row_m
-        col_min = anchor_col_m - half_width_m
-        col_max = anchor_col_m + half_width_m
-
-    return row_min < 0.0 or col_min < 0.0 or row_max > max_row_m or col_max > max_col_m
+    footprint_indices: list[int] = []
+    for row in range(grid_shape[0]):
+        for col in range(grid_shape[1]):
+            point_row_m = row * cell_size_m
+            point_col_m = col * cell_size_m
+            delta_row_m = point_row_m - entry_row_m
+            delta_col_m = point_col_m - entry_col_m
+            projection = (
+                delta_row_m * vector_row_m + delta_col_m * vector_col_m
+            ) / length_sq
+            if projection < -1e-12 or projection > 1.0 + 1e-12:
+                continue
+            closest_row_m = entry_row_m + projection * vector_row_m
+            closest_col_m = entry_col_m + projection * vector_col_m
+            distance_m = math.hypot(
+                point_row_m - closest_row_m,
+                point_col_m - closest_col_m,
+            )
+            if distance_m <= half_width_m + 1e-12:
+                footprint_indices.append(row * col_count + col)
+    return footprint_indices
 
 
 def _summary_metrics(
@@ -476,12 +505,13 @@ def _summary_metrics(
     }
 
 
-def _effect_result(
+def _result(
     *,
     status: str,
     profile: str,
     candidate_id: str | None,
     grid_shape: list[int] | None,
+    entry_exit_path: dict[str, Any],
     geometry_inputs: dict[str, Any],
     footprint: dict[str, Any],
     expected_delta_depth_grid_m: list[float],
@@ -496,6 +526,7 @@ def _effect_result(
         "profile": str(profile),
         "candidate_id": candidate_id,
         "grid_shape": grid_shape,
+        "entry_exit_path": entry_exit_path,
         "geometry_inputs": geometry_inputs,
         "footprint": footprint,
         "expected_delta_depth_grid_m": expected_delta_depth_grid_m,
@@ -509,9 +540,10 @@ def _geometry_inputs(geometry: dict[str, Any]) -> dict[str, Any]:
     return {
         "cell_size_m": geometry["cell_size_m"],
         "bucket_width_m": geometry["bucket_width_m"],
-        "bucket_length_m": geometry["bucket_length_m"],
-        "penetration_depth_m": geometry["penetration_depth_m"],
-        "penetration_depth_source": geometry["penetration_depth_source"],
+        "target_penetration_depth_m": geometry["target_penetration_depth_m"],
+        "target_penetration_depth_source": geometry[
+            "target_penetration_depth_source"
+        ],
     }
 
 
@@ -519,9 +551,8 @@ def _empty_geometry_inputs() -> dict[str, Any]:
     return {
         "cell_size_m": None,
         "bucket_width_m": None,
-        "bucket_length_m": None,
-        "penetration_depth_m": None,
-        "penetration_depth_source": None,
+        "target_penetration_depth_m": None,
+        "target_penetration_depth_source": None,
     }
 
 
@@ -529,37 +560,77 @@ def _footprint_result(
     *,
     candidate: dict[str, Any],
     footprint_indices: list[int],
-    footprint_clipped_by_grid_boundary: bool,
+    invalid_footprint_indices: list[int],
+    target_mask: list[bool],
+    valid_cells: list[bool],
     cell_area_m2: float,
 ) -> dict[str, Any]:
     return {
-        "model": FOOTPRINT_MODEL,
-        "model_scope": "offline_geometric_approximation_not_calibrated_bucket_physics",
+        "model": PATH_MODEL,
+        "model_scope": (
+            "offline_entry_exit_segment_approximation_not_calibrated_bucket_physics"
+        ),
         "direction": candidate["direction"],
         "anchor_cell_index": candidate["anchor_cell_index"],
         "anchor_row": candidate["anchor_row"],
         "anchor_col": candidate["anchor_col"],
         "footprint_cell_indices": footprint_indices,
         "footprint_cell_count": len(footprint_indices),
-        "footprint_clipped_by_grid_boundary": footprint_clipped_by_grid_boundary,
+        "target_footprint_cell_indices": [
+            index for index in footprint_indices if target_mask[index]
+        ],
+        "outside_target_footprint_cell_indices": [
+            index for index in footprint_indices if not target_mask[index]
+        ],
+        "valid_footprint_cell_indices": [
+            index for index in footprint_indices if valid_cells[index]
+        ],
+        "invalid_footprint_cell_indices": invalid_footprint_indices,
+        "entry_cell_valid": True,
+        "exit_cell_valid": True,
+        "footprint_clipped_by_grid_boundary": False,
+        "clipping_basis": "explicit_entry_exit_segment_only",
         "cell_area_m2": _metric_float(cell_area_m2),
         "nonzero_delta_cell_indices": footprint_indices,
     }
 
 
-def _empty_footprint() -> dict[str, Any]:
+def _empty_footprint(candidate: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
-        "model": FOOTPRINT_MODEL,
-        "model_scope": "offline_geometric_approximation_not_calibrated_bucket_physics",
-        "direction": None,
-        "anchor_cell_index": None,
-        "anchor_row": None,
-        "anchor_col": None,
+        "model": PATH_MODEL,
+        "model_scope": (
+            "offline_entry_exit_segment_approximation_not_calibrated_bucket_physics"
+        ),
+        "direction": candidate["direction"] if candidate else None,
+        "anchor_cell_index": candidate["anchor_cell_index"] if candidate else None,
+        "anchor_row": candidate["anchor_row"] if candidate else None,
+        "anchor_col": candidate["anchor_col"] if candidate else None,
         "footprint_cell_indices": [],
         "footprint_cell_count": 0,
+        "target_footprint_cell_indices": [],
+        "outside_target_footprint_cell_indices": [],
+        "valid_footprint_cell_indices": [],
+        "invalid_footprint_cell_indices": [],
+        "entry_cell_valid": None,
+        "exit_cell_valid": None,
         "footprint_clipped_by_grid_boundary": None,
+        "clipping_basis": "explicit_entry_exit_segment_only",
         "cell_area_m2": None,
         "nonzero_delta_cell_indices": [],
+    }
+
+
+def _empty_path(candidate_direction: str | None = None) -> dict[str, Any]:
+    return {
+        "model": PATH_MODEL,
+        "candidate_direction": candidate_direction,
+        "entry_cell_index": None,
+        "entry_row": None,
+        "entry_col": None,
+        "exit_cell_index": None,
+        "exit_row": None,
+        "exit_col": None,
+        "segment_length_m": None,
     }
 
 
@@ -664,15 +735,15 @@ def _provenance_fields(geometry_inputs: dict[str, Any]) -> dict[str, str]:
         "cell_size_status": (
             "explicit" if geometry_inputs.get("cell_size_m") is not None else "missing"
         ),
-        "bucket_geometry_status": (
+        "bucket_width_status": (
             "explicit"
             if geometry_inputs.get("bucket_width_m") is not None
-            and geometry_inputs.get("bucket_length_m") is not None
             else "missing"
         ),
-        "penetration_depth_status": str(
-            geometry_inputs.get("penetration_depth_source") or "missing"
+        "target_penetration_depth_status": str(
+            geometry_inputs.get("target_penetration_depth_source") or "missing"
         ),
+        "entry_exit_geometry_status": "explicit_input_required",
         "calibrated_bucket_physics_status": "missing",
         "capability_model_status": "missing",
         "payload_model_status": "missing",
@@ -680,7 +751,4 @@ def _provenance_fields(geometry_inputs: dict[str, Any]) -> dict[str, str]:
     }
 
 
-__all__ = [
-    "build_entry_exit_swept_footprint_effect",
-    "build_geometric_swept_footprint_effect",
-]
+__all__ = ["build_entry_exit_swept_footprint_effect"]

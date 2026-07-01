@@ -456,7 +456,7 @@ Phase 3 closure note：
 ### Phase 4: Heuristic effect model
 
 - [x] 实现 geometric swept-footprint kernel。
-- [ ] 用 bucket 尺寸、entry/exit、方向、目标 penetration 生成 expected delta patch。
+- [x] 用 bucket 尺寸、entry/exit、方向、目标 penetration 生成 expected delta patch。
 - [x] 输出 expected removed volume、overdig volume、payload proxy 和 footprint。
 
 Phase 4A note：
@@ -465,7 +465,7 @@ Phase 4A note：
 - 该 helper 只使用显式 candidate、row-major depth grids、target / valid masks、grid shape、cell size、bucket width/length 和可选 penetration depth；当前 run smoke 使用非官方示例几何 `cell_size_m=0.25`、`bucket_width_m=0.25`、`bucket_length_m=0.5`，不从当前 run 推断这些值。
 - Footprint model 明确是 `centerline_rectangular_swept_footprint_approximation`，不是 calibrated bucket physics；它输出 row-major footprint cells、grid-boundary clipping、expected delta depth grid、expected removed volume、target/outside-target removed delta volume 和 overdig delta volume。
 - 当前 run smoke 以 Phase 3C diagnostic best candidate `cut_candidate_000009` 为输入，得到 effect status `present`、footprint `[0, 2, 4]`、clipped `true`、penetration depth `0.191985052079` from `candidate_depth_m`、expected removed depth sum / volume `0.575955156237` / `0.035997197265`、target removed delta sum / volume `0.383970104158` / `0.02399813151`、outside-target delta sum / volume `0.191985052079` / `0.011999065755`、overdig delta sum / volume `0.201641567051` / `0.012602597941`，结果文件数保持 `10 -> 10`。
-- Phase 4A 本身仍不是 production planner integration、official geometry defaults、top-k action selection、calibrated effect/capability model、payload proxy、pass/fail、eval success 或 planner success 语义；完整 entry/exit 和校准模型仍保持未完成。
+- Phase 4A 本身仍不是 production planner integration、official geometry defaults、top-k action selection、calibrated effect/capability model、payload proxy、pass/fail、eval success 或 planner success 语义；entry/exit 线段证据和校准模型当时仍保持未完成。
 
 Phase 4B note：
 
@@ -475,6 +475,20 @@ Phase 4B note：
 - 当前 run smoke 使用显式非官方 `payload_capacity_m3=0.04`，24 个 Phase 4A effect records 全部为 `present`，effect summary status `present`，payload proxy volume min / max / mean `0.005697766785` / `0.035997197265` / `0.015352705806`，payload proxy fraction min / max / mean `0.142444169625` / `0.899929931625` / `0.383817645159`。
 - 当前 run max payload proxy candidate `cut_candidate_000009`，max outside-target volume candidate `cut_candidate_000003`，max overdig volume candidate `cut_candidate_000009`；结果文件数保持 `10 -> 10`。
 - Phase 4B 仍不是 calibrated effect/capability model、production planner integration、official geometry/capacity default、top-k action selection、pass/fail、eval success 或 planner success 语义。
+
+Phase 4C note：
+
+- `testbed.eval.terrain_candidate_effect_model.build_entry_exit_swept_footprint_effect()` 已定义 offline-only explicit entry/exit swept-footprint / expected-delta evidence contract；公共入口保留在 effect model，具体实现位于 focused owner `testbed.eval.terrain_candidate_entry_exit_effect`。
+- 该 helper 使用显式 entry cell、exit cell、cell size、bucket width 和 target penetration；candidate direction 被保留为 evidence，但 swept centerline 使用 entry cell center 到 exit cell center 的显式线段，不从 current run 或配置推断 entry/exit、geometry、ACT capability 或 penetration 默认值。
+- 它输出 `entry_exit_path`、entry/exit segment length、target / outside-target / valid / invalid footprint cells、row-major expected delta depth grid，以及与 Phase 4A 相同口径的 expected / target / outside-target / overdig depth sum 和 volume。
+- 当前 run smoke 仍以 Phase 3C diagnostic best candidate `cut_candidate_000009` 为输入，使用显式非官方 `entry_cell_index=0`、`exit_cell_index=4`、`cell_size_m=0.25`、`bucket_width_m=0.25`、`target_penetration_depth_m=0.191985052079`，得到 effect status `present`、entry/exit segment length `0.5`、footprint `[0, 2, 4]`、expected removed depth sum / volume `0.575955156237` / `0.035997197265`、target removed delta sum / volume `0.383970104158` / `0.02399813151`、outside-target delta sum / volume `0.191985052079` / `0.011999065755`、overdig delta sum / volume `0.201641567051` / `0.012602597941`，validation errors `[]`，结果文件数保持 `10 -> 10`。
+- Phase 4C 仍不是 calibrated effect/capability model、production planner integration、official geometry/capacity/entry-exit default、top-k action selection、pass/fail、eval success 或 planner success 语义。
+
+Phase 4 closure note：
+
+- Phase 4 作为 offline heuristic effect evidence milestone 关闭：centerline rectangular footprint、entry/exit segment footprint、expected delta depth grid、expected / target / outside-target / overdig volume、payload proxy summary 和 diagnostic rankings 都已有 focused eval owner 与 current-run smoke evidence。
+- 该 closure 不声明 residual planner + heuristic effect model 已优于 current planner；Phase 4 的实现项完成，但离线/仿真闭环优劣仍要到 Phase 6 baseline comparison 证明。
+- Phase 5A 默认入口是 gold-sample calibration inventory / schema evidence：先确认可用于 calibration 的样本来源、字段、episode split 键和缺失项，再拟合任何 calibrated effect 或 capability model。
 
 通过标准：
 

@@ -3503,3 +3503,185 @@ Next bounded target:
 - Keep the work focused on explicit inputs and read-only current-run smoke
   evidence. Do not infer official cell size, bucket geometry, payload capacity,
   material density, cycle time, or ACT capability from the current run.
+
+## 2026-07-02: Phase 4C Executor Entry/Exit Effect Packet
+
+Target lock observed:
+
+- cwd `/home/pingfan/PACT/excavator_testbed`.
+- Branch/status `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 29]`.
+- HEAD `1ba980863c458779f7ed4fec3b2a8b9beb812381`.
+- Worktree clean before edits.
+
+Scope:
+
+- Phase 4C: explicit entry/exit swept-footprint expected-delta evidence.
+- Accepted-slice count carried in: `2/3`; executor does not write planner
+  reflection.
+
+Boundary decision:
+
+- Existing `testbed.eval.terrain_candidate_effect_model` owns the public
+  geometric-effect surface, but adding the entry/exit implementation there would
+  push that file over the repository large-file policy threshold.
+- Phase 4C therefore keeps a thin public re-export at
+  `build_entry_exit_swept_footprint_effect()` and places the focused entry/exit
+  algorithm in `testbed.eval.terrain_candidate_entry_exit_effect`.
+- No rollout-review schema, production planner, target metric, projection,
+  report, candidate generation, candidate evidence, candidate scoring, or
+  effect-summary behavior was changed.
+
+TDD red:
+
+- Added focused `entry_exit` tests first.
+- `python -m pytest -q tests/test_terrain_candidate_effect_model.py -k "entry_exit"`
+  failed before implementation with `ImportError: cannot import name
+  'build_entry_exit_swept_footprint_effect'`.
+
+Implementation:
+
+- Added public
+  `testbed.eval.terrain_candidate_effect_model.build_entry_exit_swept_footprint_effect()`
+  backed by focused owner `testbed.eval.terrain_candidate_entry_exit_effect`.
+- Inputs are explicit: candidate, row-major removed/target depth grids, target
+  and valid masks, grid shape, `cell_size_m`, `bucket_width_m`,
+  `entry_cell_index`, `exit_cell_index`, and `target_penetration_depth_m`.
+- Entry and exit cells must be valid row-major valid cells and must differ.
+- The model is `entry_exit_centerline_segment_approximation`: candidate
+  direction is preserved as evidence, but the swept centerline is the explicit
+  segment from entry cell center to exit cell center.
+- Output includes `entry_exit_path`, footprint cell sets, row-major expected
+  delta grid, summary depth/volume metrics, validation errors, and provenance.
+- Statuses implemented include `present`, `invalid_candidate`,
+  `invalid_grid_shape`, `invalid_grid_lengths`, `invalid_mask_values`,
+  `invalid_depth_values`, `invalid_geometry`, `invalid_entry_exit`, and
+  `no_valid_footprint_cells`.
+
+Current-run smoke:
+
+- Recomputed baseline/candidates/evidence/scoring read-only from
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- Results directory file count remained `10 -> 10`.
+- Baseline status `present`; candidate generation status `present`; candidate
+  count `24`; scoring status `present`.
+- Diagnostic best candidate remained `cut_candidate_000009`, candidate depth
+  `0.191985052079`.
+- Entry/exit smoke used explicit non-official `entry_cell_index=0`,
+  `exit_cell_index=4`, `cell_size_m=0.25`, `bucket_width_m=0.25`, and
+  `target_penetration_depth_m=0.191985052079`.
+- Entry/exit effect status `present`; segment length `0.5`; footprint cells
+  `[0, 2, 4]`; validation errors `[]`.
+- Expected removed depth sum / volume: `0.575955156237` /
+  `0.035997197265`.
+- Target removed delta sum / volume: `0.383970104158` / `0.02399813151`.
+- Outside-target delta sum / volume: `0.191985052079` / `0.011999065755`.
+- Overdig delta sum / volume: `0.201641567051` / `0.012602597941`.
+
+Documentation changed:
+
+- `docs/training_setup.md` documents the entry/exit effect contract, explicit
+  geometry / penetration inputs, segment approximation, statuses, provenance,
+  and non-goals.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks the Phase 4
+  entry/exit expected-delta checklist item complete and records Phase 4C smoke
+  facts.
+- Calibrated effect/capability model, production integration, default geometry
+  / capacity / entry-exit, action selection, pass/fail, eval success, and
+  planner success remain out of scope.
+
+Verification:
+
+- Focused green, related bundle, compile checks, doc guards, architecture
+  guards, smoke, diff check, and final status were assigned to the executor
+  closure step.
+
+## 2026-07-02: Phase 4C Planner Acceptance And Deep Reflection
+
+Planner acceptance status:
+
+- Accepted as Phase 4C explicit entry/exit swept-footprint expected-delta
+  evidence.
+- Accepted-slice count since the latest recorded deep reflection is now `3/3`.
+- Deep reflection was run after this acceptance, as required.
+
+Planner-side verification:
+
+- Re-read the focused entry/exit owner, the thin public re-export, focused
+  tests, and changed plan/training/log documentation.
+- Re-ran the related candidate/effect/target bundle:
+  `tests/test_terrain_candidate_effect_model.py`,
+  `tests/test_terrain_candidate_effect_summary.py`,
+  `tests/test_terrain_candidate_scoring.py`,
+  `tests/test_terrain_candidate_evidence.py`,
+  `tests/test_terrain_candidate_generation.py`, target projection/report/metric
+  tests, terrain residual metric tests, and rollout review tests; result:
+  `71 passed`.
+- Re-ran compile checks for the entry/exit owner, effect facade, related
+  candidate/target owners, and tests; result: passed.
+- Re-ran changed-doc guard, docs inventory guard, architecture contract guard,
+  and whitespace diff check; result: passed.
+- Recomputed the current-run entry/exit smoke read-only; results directory file
+  count remained `10 -> 10`, best diagnostic candidate remained
+  `cut_candidate_000009`, segment length was `0.5`, footprint cells were
+  `[0, 2, 4]`, and summary metrics matched the executor packet.
+- Checked file lengths after the split: `terrain_candidate_effect_model.py`
+  has `686` lines and `terrain_candidate_entry_exit_effect.py` has `754` lines.
+
+Acceptance rationale:
+
+- The slice closes the remaining Phase 4 entry/exit expected-delta implementation
+  item while preserving explicit-input-only semantics.
+- The implementation was correctly split into a focused entry/exit owner with a
+  thin public re-export from the existing effect model surface, avoiding a large
+  mixed-responsibility effect-model file.
+- It does not introduce production planner integration, rollout-review schema
+  changes, official geometry/capacity/entry-exit defaults, calibrated physics,
+  ACT capability, top-k selection, pass/fail, eval success, or planner success
+  semantics.
+
+Deep reflection against reference base:
+
+- Alignment verdict: aligned. The last three accepted slices created the
+  Phase 4 effect-model evidence layer requested by the plan without promoting it
+  to runtime behavior.
+- Reference base used: AGENTS responsibility rules, the Oracle Terrain Residual
+  Planner v0 plan, the closed-loop terrain conclusion/profile/log docs,
+  `docs/training_setup.md`, the current eval owners/tests, and the explicit
+  non-official current-run smoke inputs.
+- Progress verdict: substantive. The loop added three focused eval owners or
+  focused owner extensions: geometric effect kernel, effect summary / payload
+  proxy, and entry/exit effect evidence. These are not process-only callbacks.
+- Scope verdict: controlled. No production planner/gate/policy/runtime path,
+  rollout-review schema, config, dependency, branch/upstream, or generated
+  run artifact was changed.
+- Boundary verdict: acceptable. The entry/exit implementation was split out
+  before the effect facade crossed the large-file threshold, and public imports
+  remain stable through a thin re-export.
+- Evidence verdict: useful but still offline. Current-run smoke confirms the
+  helpers compose over the existing rollout facts, but it does not prove that a
+  residual planner using the heuristic effect model beats the current planner.
+- Known gaps: no official cell size, bucket geometry, entry/exit default,
+  payload capacity, material density, cycle time, calibrated bucket physics,
+  ACT capability model, gold-sample calibration, or Phase 6 closed-loop baseline
+  comparison.
+- Efficiency verdict: continue, but move to data evidence. More heuristic
+  helpers would add diminishing value until gold-sample availability and schema
+  are made explicit.
+- Accepted-slice count resets to `0/3` after this deep reflection.
+
+Phase 4 closure:
+
+- Phase 4 is closed as an offline heuristic effect evidence milestone.
+- This closure does not satisfy the Phase 4 performance standard that residual
+  planner + heuristic effect model must outperform current planner in offline or
+  simulation closed loop. That proof remains a Phase 6 baseline-comparison
+  requirement.
+
+Next bounded target:
+
+- Phase 5A: build a gold-sample calibration inventory / schema evidence helper
+  or report.
+- The next slice should first identify available candidate gold/calibration
+  sources, required fields, episode split keys, usable sample counts, and missing
+  provenance. It should not fit a calibrated model yet and should not infer
+  official sample semantics from filenames alone.
