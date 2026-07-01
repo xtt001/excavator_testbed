@@ -455,9 +455,17 @@ Phase 3 closure note：
 
 ### Phase 4: Heuristic effect model
 
-- [ ] 实现 geometric swept-footprint kernel。
+- [x] 实现 geometric swept-footprint kernel。
 - [ ] 用 bucket 尺寸、entry/exit、方向、目标 penetration 生成 expected delta patch。
 - [ ] 输出 expected removed volume、overdig volume、payload proxy 和 footprint。
+
+Phase 4A note：
+
+- `testbed.eval.terrain_candidate_effect_model.build_geometric_swept_footprint_effect()` 已定义 offline-only geometric swept-footprint / expected delta patch contract。
+- 该 helper 只使用显式 candidate、row-major depth grids、target / valid masks、grid shape、cell size、bucket width/length 和可选 penetration depth；当前 run smoke 使用非官方示例几何 `cell_size_m=0.25`、`bucket_width_m=0.25`、`bucket_length_m=0.5`，不从当前 run 推断这些值。
+- Footprint model 明确是 `centerline_rectangular_swept_footprint_approximation`，不是 calibrated bucket physics；它输出 row-major footprint cells、grid-boundary clipping、expected delta depth grid、expected removed volume、target/outside-target removed delta volume 和 overdig delta volume。
+- 当前 run smoke 以 Phase 3C diagnostic best candidate `cut_candidate_000009` 为输入，得到 effect status `present`、footprint `[0, 2, 4]`、clipped `true`、penetration depth `0.191985052079` from `candidate_depth_m`、expected removed depth sum / volume `0.575955156237` / `0.035997197265`、target removed delta sum / volume `0.383970104158` / `0.02399813151`、outside-target delta sum / volume `0.191985052079` / `0.011999065755`、overdig delta sum / volume `0.201641567051` / `0.012602597941`，结果文件数保持 `10 -> 10`。
+- Phase 4A 仍不是 production planner integration、official geometry defaults、top-k action selection、calibrated effect/capability model、payload proxy、pass/fail、eval success 或 planner success 语义；完整 entry/exit、payload proxy 和校准模型仍保持未完成。
 
 通过标准：
 

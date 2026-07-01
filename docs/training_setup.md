@@ -425,6 +425,32 @@ model、payload model、physical bucket footprint、cell size 和 official weigh
 `rollout_review.json` schema，不定义 pass/fail、eval success、planner success、official candidate
 defaults 或 production behavior。
 
+offline geometric swept-footprint effect evidence 当前由
+`testbed.eval.terrain_candidate_effect_model.build_geometric_swept_footprint_effect()` 生成。它读取单个
+offline candidate、显式 `removed_depth_grid_m`、`target_depth_grid_m`、`target_region_mask`、
+`valid_mask`、`grid_shape`、`cell_size_m`、`bucket_width_m`、`bucket_length_m`，以及可选
+`penetration_depth_m`。所有几何量都必须由调用方显式传入；当前 run 记录缺少 cell size 和
+bucket geometry 时不得推断。
+
+该 helper 的 footprint model 明确命名为
+`centerline_rectangular_swept_footprint_approximation`，不是 calibrated bucket physics。它把 anchor
+cell center 作为起点，按 `row_forward` / `row_reverse` / `col_forward` / `col_reverse` 的 row-major
+方向，用 `cell_size_m` 将 cell center 距离转换成米；valid cell center 在 `[0, bucket_length_m]`
+的前向区间内且横向距离不超过 `bucket_width_m / 2` 时进入 footprint。若请求的中心线矩形范围越过
+grid 边界，则记录 `footprint_clipped_by_grid_boundary=true`，但不虚构 grid 外 cell。
+
+expected delta patch 是 row-major `expected_delta_depth_grid_m`，footprint cell 上的 delta 等于
+`penetration_depth_m`；缺少显式 penetration 时使用 candidate 的 `candidate_depth_m`，并把来源记录为
+`candidate_depth_m`。输出使用 `cell_size_m ** 2` 计算
+`expected_removed_volume_m3`、`target_removed_volume_m3`、`outside_target_removed_volume_m3` 和
+`overdig_volume_delta_m3`，同时保留 depth-sum 口径。overdig delta 只比较 expected removal 前后相对
+`target_depth_grid_m` 的 overdig 变化。top-level 状态包括 `present`、`invalid_candidate`、
+`invalid_grid_shape`、`invalid_grid_lengths`、`invalid_mask_values`、`invalid_depth_values`、
+`invalid_geometry` 和 `no_valid_footprint_cells`。该 helper 是 offline effect evidence，不接
+production planner，不写 run artifact，不定义官方 cell size、bucket geometry、penetration depth、
+payload proxy、calibrated effect/capability model、top-k、pass/fail、eval success 或 planner success
+语义。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

@@ -3201,3 +3201,146 @@ Next bounded target:
   non-official example values, but must not infer cell size, bucket geometry,
   physical volume, production planner behavior, official defaults, or pass/fail
   semantics from the current run.
+
+## 2026-07-02: Phase 4A Executor Geometric Effect Packet
+
+Scope:
+
+- Phase 4A: offline geometric swept-footprint / expected delta patch kernel.
+- This executor packet records implementation facts only; planner reflection is
+  not written here.
+
+Boundary decision:
+
+- No existing small owner owned candidate effect modeling.
+- Added focused eval owner
+  `testbed/eval/terrain_candidate_effect_model.py`.
+- Kept candidate generation, candidate evidence, candidate scoring, target
+  report/projection/metrics, rollout review, and production planner modules out
+  of the effect-model responsibility.
+
+TDD red:
+
+- Added `tests/test_terrain_candidate_effect_model.py` before production code.
+- Red command: `python -m pytest -q tests/test_terrain_candidate_effect_model.py`.
+- Expected failure observed: `ModuleNotFoundError: No module named
+  'testbed.eval.terrain_candidate_effect_model'`.
+
+Contract implemented:
+
+- Public owner:
+  `build_geometric_swept_footprint_effect(...)`.
+- Inputs are explicit: candidate, removed-depth grid, target-depth grid,
+  target-region mask, valid mask, grid shape, cell size, bucket width, bucket
+  length, and optional penetration depth.
+- Candidate validation requires candidate id, anchor cell / row / col,
+  direction, candidate depth, and `offline_only=true`.
+- Directions match Phase 3 row-major semantics: `row_forward`, `row_reverse`,
+  `col_forward`, `col_reverse`.
+- Footprint model is explicitly
+  `centerline_rectangular_swept_footprint_approximation`, not calibrated bucket
+  physics.
+- Expected delta patch is row-major and uses `candidate_depth_m` as penetration
+  source unless explicit `penetration_depth_m` is supplied.
+- Summary metrics include expected removed depth/volume, target removed
+  depth/volume, outside-target removed depth/volume, and overdig depth/volume
+  delta.
+- Statuses include `present`, `invalid_candidate`, `invalid_grid_shape`,
+  `invalid_grid_lengths`, `invalid_mask_values`, `invalid_depth_values`,
+  `invalid_geometry`, and `no_valid_footprint_cells`.
+
+Current-run effect smoke:
+
+- Source rollout:
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- Explicit target spec: grid shape `[3, 2]`, rows `[0:2]`, cols `[0:1]`,
+  target depth `0.25`.
+- Phase 3 candidate/scoring inputs reused with explicit smoke-only weights and
+  constraints.
+- Effect geometry inputs were non-official smoke values:
+  `cell_size_m=0.25`, `bucket_width_m=0.25`, `bucket_length_m=0.5`,
+  `penetration_depth_m=None`.
+- Results file count remained `10 -> 10`.
+- Candidate count `24`; diagnostic best candidate `cut_candidate_000009` with
+  score `3.91985052079`.
+- Effect status `present`; footprint cells `[0, 2, 4]`; clipped `true`.
+- Penetration depth `0.191985052079`, source `candidate_depth_m`.
+- Expected removed depth sum / volume: `0.575955156237` /
+  `0.035997197265`.
+- Target removed delta sum / volume: `0.383970104158` / `0.02399813151`.
+- Outside-target delta sum / volume: `0.191985052079` / `0.011999065755`.
+- Overdig delta sum / volume: `0.201641567051` / `0.012602597941`.
+- First / last nonzero patch facts: cell `0` / `4`, both
+  `0.191985052079`.
+
+Documentation changed:
+
+- `docs/training_setup.md` documents the offline geometric effect contract,
+  explicit geometry inputs, centerline rectangular approximation, volume
+  semantics, statuses, provenance, and non-goals.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks only the first
+  Phase 4 checklist item complete and records Phase 4A current-run smoke facts.
+- Expected delta / payload output and calibrated effect/capability model remain
+  incomplete.
+
+Verification:
+
+- `python -m pytest -q tests/test_terrain_candidate_effect_model.py` passed with
+  `5 passed`.
+- `python -m pytest -q tests/test_terrain_candidate_effect_model.py tests/test_terrain_candidate_scoring.py tests/test_terrain_candidate_evidence.py tests/test_terrain_candidate_generation.py tests/test_terrain_target_report.py tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed with `63 passed`.
+- `python -m compileall testbed/eval/terrain_candidate_effect_model.py testbed/eval/terrain_candidate_scoring.py testbed/eval/terrain_candidate_evidence.py testbed/eval/terrain_candidate_generation.py testbed/eval/terrain_target_report.py testbed/eval/terrain_target_projection.py testbed/eval/terrain_target_metrics.py tests/test_terrain_candidate_effect_model.py tests/test_terrain_candidate_scoring.py tests/test_terrain_candidate_evidence.py tests/test_terrain_candidate_generation.py tests/test_terrain_target_report.py tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py`
+  passed.
+
+Behavior preserved:
+
+- No production planner/gate/policy/runtime integration.
+- No rollout-review schema integration.
+- No generated run artifacts.
+- No official/default cell size, bucket geometry, penetration depth, weights,
+  target shape, top-k selection, pass/fail, eval success, or planner success
+  semantics.
+
+## 2026-07-02: Phase 4A Planner Acceptance
+
+Planner acceptance status:
+
+- Accepted as Phase 4A geometric effect kernel evidence.
+- Accepted-slice count since the latest recorded deep reflection is now `1/3`.
+- No deep reflection is required for this acceptance.
+
+Planner-side verification:
+
+- Re-read the new effect owner, focused tests, and changed plan/training/log
+  documentation.
+- Re-ran the focused candidate/effect bundle:
+  `tests/test_terrain_candidate_effect_model.py`,
+  `tests/test_terrain_candidate_scoring.py`,
+  `tests/test_terrain_candidate_evidence.py`,
+  `tests/test_terrain_candidate_generation.py`, target projection/report/metric
+  tests, terrain residual metric tests, and rollout review tests; result:
+  `63 passed`.
+- Re-ran compile checks for the new effect owner and related candidate/target
+  owners and tests; result: passed.
+- Re-ran changed-doc guard, docs inventory guard, architecture contract guard,
+  and whitespace diff check; result: passed.
+- Recomputed the current-run effect smoke read-only; results directory file
+  count remained `10 -> 10`, best diagnostic candidate remained
+  `cut_candidate_000009`, and effect output matched the executor packet.
+
+Acceptance rationale:
+
+- The slice adds a focused offline owner for explicit geometric swept-footprint
+  and expected delta patch evidence.
+- It keeps geometry inputs explicit and labels the model as a centerline
+  rectangular approximation, not calibrated bucket physics.
+- It does not change planner runtime, rollout review schema, config, official
+  defaults, action selection, or success semantics.
+
+Next bounded target:
+
+- Phase 4B should add offline candidate effect summary / payload proxy evidence
+  from explicit effect records and explicit payload capacity.
+- It must remain eval-only and explicit-input-only: no calibrated model, no
+  production planner integration, no top-k action semantics, no default payload
+  capacity, and no generated run artifacts.
