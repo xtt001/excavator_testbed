@@ -18,6 +18,22 @@ Planner/ACT 层级契约只描述 policy 消费哪些 token；数据如何产生
 - VDS / materialize / virtualize：`testbed/data/vds.py`、`testbed/data/materialize.py`、
   `testbed/data/virtualize_images.py`
 
+## 检查类型命名与边界
+
+本文主责是 `data QC`，但训练、eval 和 LLM planner 前证据门禁会继续消费这些证据。当前
+检查类型按阶段命名如下：
+
+| 名称 | 发生阶段 | 责任边界 |
+| --- | --- | --- |
+| `data QC` | 训练前 | 检查 raw / VDS / materialized copy、HDF5 字段、mask、primitive 边界和 reject 统计。本文是该层主要 source of truth。 |
+| `policy audit` | 训练后、eval 前 | 在 recorded stream 上离线检查 checkpoint 行为，判断 policy 是否已经不跟 token 或不跟专家。它不重做数据 QC。 |
+| `policy audit manifest` | eval 前 | 汇总已有 policy audit JSON，生成可进入 rollout 的证据清单。缺失项只能标为 `missing`，不能伪造通过。 |
+| `rollout review` | eval 后 | 检查真实闭环表现，包括 planned vs actual、handoff、coverage trace 和 terminal reason。它只做诊断，不改变 eval success 语义。 |
+| `root-cause audit` | rollout review 发现明确症状后 | 定位问题来自 policy、token 语义、handoff、live scaling、planner belief 还是数据/QC 回流问题。 |
+
+因此，`data QC` 通过只代表训练数据和 primitive 切分证据可用；它不能替代训练后
+`policy audit`，也不能证明真实闭环 rollout 已经跟手。
+
 ## 总体链路
 
 当前主线是分阶段的，不是从 raw 一步直接写最终训练集。
@@ -35,7 +51,9 @@ raw full-cycle / replay refreshed root      # 输入：自然 full-cycle 或 rep
   -> gate2: tb-audit-primitive-boundaries   # 导出 timeline、videos、contact sheets，人工复核 primitive 边界
   -> tb-materialize-vds                     # 将通过审计的 primitive VDS 写成 materialized primitive training copy
   -> gate1b: materialized-copy QC           # 复查 materialized copy：图像数据必须实体化，不再是 virtual
-  -> train / eval / offline audit           # 使用训练 copy 训练/评测，并保留 offline audit 证据
+  -> train / policy audit / audit manifest  # 使用训练 copy 训练，并保留 eval 前 checkpoint 证据
+  -> eval / rollout review / root-cause audit
+                                           # 用真实闭环表现检查 planned-vs-actual、handoff、coverage 和 terminal reason
 ```
 
 分阶段的原因：

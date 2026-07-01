@@ -10,7 +10,7 @@
 - 数据、VDS、primitive、QC 和 Gate 合同：`docs/data_processing_hdf5_qc_contract.md`
 - planner / ACT 行为边界：`docs/planner_to_act_conceptual_contract.md`
 - config 入口和历史/当前状态：`testbed/configs/README.md`
-- prework / policy audit / rollout review 术语：`docs/llm_planner_prework.md`
+- LLM planner 前地形闭环方向：`docs/llm_planner_closed_loop_terrain_conclusion.md`
 - 代码事实：`testbed/data/*`、`testbed/train/*`、`testbed/evaluation/*`、`testbed/pipeline/*`
 
 如果本文和上述信源冲突，以上述信源和当前代码为准，并更新本文。
@@ -30,15 +30,31 @@ raw full-cycle / replay refreshed root
   -> Gate 2: tb-audit-primitive-boundaries + contact sheet / manual review
   -> tb-materialize-vds
   -> Gate 1b: materialized-copy QC
-  -> tb-train / tb-eval / offline audit
+  -> tb-train
+  -> policy audit / policy audit manifest
+  -> tb-eval
+  -> rollout review / root-cause audit
 ```
 
 定位问题时按四层拆开：
 
 1. 数据 QC：raw、VDS、materialized copy、字段、mask、primitive boundary、reject 统计。
 2. Policy audit：训练后、eval 前，对 checkpoint 做离线行为审核。
-3. Rollout review：eval 后看 planned vs actual、handoff、coverage trace、terminal reason。
-4. Root-cause audit：只有当前三层证据不足时，再追 live observation/action scaling、temporal aggregation、控制切换等。
+3. Policy audit manifest：eval 前汇总已有离线 audit JSON，生成证据清单。
+4. Rollout review：eval 后看 planned vs actual、handoff、coverage trace、terminal reason。
+5. Root-cause audit：只有前面证据指出明确症状后，再追 live observation/action scaling、temporal aggregation、控制切换等。
+
+### 2.1 检查类型命名
+
+长期文档中统一使用这些名称，不再依赖临时计划文件：
+
+| 名称 | 阶段 | 作用 |
+| --- | --- | --- |
+| `data QC` | 训练前 | 检查数据质量，包括 raw / VDS / materialized copy、字段、mask、primitive 边界和 reject 统计。 |
+| `policy audit` | 训练后、eval 前 | 检查 checkpoint 在 recorded stream 上是否已经不跟 token 或不跟专家。 |
+| `policy audit manifest` | eval 前 | 汇总已有离线 audit JSON；缺失项只能标为 `missing`，不能伪造通过。 |
+| `rollout review` | eval 后 | 检查真实闭环表现，包括 planned vs actual、handoff、coverage trace 和 terminal reason。 |
+| `root-cause audit` | rollout review 发现明确症状后 | 定位问题来自 policy、token 语义、handoff、live scaling、planner belief 还是数据/QC 回流。 |
 
 ## 3. 当前数据合同
 
@@ -218,8 +234,9 @@ return 类问题优先看：
 
 当前 eval 不只看“有没有完成若干 cycle”。每次 rollout review 至少检查：
 
-- planned vs actual：entry、exit、dig depth、payload、dump target。
-- phase handoff：dig->return、return->carry、carry->dump、dump->dig。
+- dig planned vs actual：entry、exit、dig depth、payload。
+- carry / dump transport quality：deposited fraction、low deposit、残留或漏料等质量指标。
+- `return -> dig` handoff readiness：是否回到下一铲 entry 附近，能否交接给 dig。
 - `coverage_decision_trace`：选点、跳点、重复点、fallback 是否合理。
 - terminal reason：成功、timeout、safety stop、empty bucket、wrong phase 等。
 - 视频 / contact sheet：是否存在肉眼可见但指标没捕获的问题。
@@ -231,6 +248,21 @@ return 类问题优先看：
 ```
 
 `rollout_review.json` 的顶层字段包括 `schema_version`、`source_results_dir`、`overall_status`、`evidence_gaps`、`rollout_reviews`、`root_cause_hints`、`llm_candidate_ranking_ready`。该报告只做诊断，不改变 eval success 语义。
+
+depth 诊断必须区分三种口径：
+
+- `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续
+  `dig` 段的 `env_state[31] bucket_depth_below_local_surface_m` 峰值，目标来自
+  `dig_cut_tokens[7] * 0.8`。
+- `depth_tracking.summary_plane_depth` / `planned_actual_cycles.depth_peak_m`：历史
+  summary plane-depth 诊断，来自 `env_state[8] bucket_depth_below_dig_area_plane_m`，
+  且窗口可覆盖 `qds -> dump_end`，不能直接当作 command-depth 跟手结论。
+- `depth_tracking.expert_p95_overshoot`：相对专家 p95 的超出量，用于判断是否离开专家
+  支持范围，不等同于 target depth error。
+
+handoff 诊断优先读取 per-rollout jsonl 中已完成的 `return -> dig`
+transition。已经 terminal-stop 后停在 `return` 的不完整段会记录为 ignored，并保留
+原始 summary snapshot，避免把终止后的残留 return 帧误判成真实 handoff 失败。
 
 `3cycle_smoke` 用于快速冒烟；`15cycle_probe` / `30cycle_probe` 是 probe，不应直接写成已经完成稳定长程闭环。
 

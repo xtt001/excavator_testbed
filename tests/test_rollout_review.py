@@ -12,6 +12,19 @@ def _write_json(path: Path, payload: dict[str, object]) -> Path:
     return path
 
 
+def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows))
+    return path
+
+
+def _env_state(*, plane_depth: float, local_surface_depth: float) -> list[float]:
+    values = [0.0] * 64
+    values[8] = plane_depth
+    values[31] = local_surface_depth
+    return values
+
+
 def test_rollout_review_flags_successful_rollout_with_quality_issues_and_missing_coverage_trace(
     tmp_path: Path,
 ) -> None:
@@ -59,6 +72,134 @@ def test_rollout_review_flags_successful_rollout_with_quality_issues_and_missing
     assert rollout_review["status"] == "needs_root_cause_audit"
     assert "quality_issue_count" in rollout_review["quality"]["flags"]
     assert rollout_review["handoff"]["return_to_dig_entry_close"] is True
+
+
+def test_rollout_review_ignores_terminal_return_segment_for_handoff(
+    tmp_path: Path,
+) -> None:
+    results_dir = tmp_path / "results"
+    summary_path = _write_json(
+        results_dir / "rollouts" / "rollout_000_summary.json",
+        {
+            "rollout_id": 0,
+            "success": True,
+            "target_cycle_gate_success": 0,
+            "quality_issue_count": 0,
+            "return_to_dig_entry_close": 0,
+            "return_to_dig_entry_error_m": 4.83,
+            "return_to_dig_max_entry_error_m": 0.55,
+            "coverage_terminal_stop_requested": 1,
+            "coverage_terminal_stop_reason": "dig_area_depleted",
+            "rollout_stop_reason": "dig_area_depleted",
+        },
+    )
+    _write_json(
+        results_dir / "rollouts" / "rollout_000_planner_trace.json",
+        {
+            "coverage_decision_trace": [{"event": "select_corridor"}],
+            "coverage_terminal_stop_requested": True,
+            "coverage_terminal_stop_reason": "dig_area_depleted",
+        },
+    )
+    _write_jsonl(
+        results_dir / "rollouts" / "rollout_000.jsonl",
+        [
+            {
+                "t": 10,
+                "skill_name": "return",
+                "return_to_dig_entry_close": False,
+                "return_to_dig_entry_error_m": 4.2,
+                "return_to_dig_max_entry_error_m": 0.55,
+                "coverage_terminal_stop_requested": False,
+            },
+            {
+                "t": 11,
+                "skill_name": "dig",
+                "skill_switch_reason": "return_to_dig_start_envelope_ready",
+                "return_to_dig_entry_close": True,
+                "return_to_dig_entry_error_m": 0.24,
+                "return_to_dig_max_entry_error_m": 0.55,
+                "coverage_terminal_stop_requested": False,
+            },
+            {
+                "t": 20,
+                "skill_name": "return",
+                "return_to_dig_entry_close": False,
+                "return_to_dig_entry_error_m": 4.83,
+                "return_to_dig_max_entry_error_m": 0.55,
+                "coverage_terminal_stop_requested": True,
+                "coverage_terminal_stop_reason": "dig_area_depleted",
+            },
+        ],
+    )
+    _write_json(
+        results_dir / "rollout_manifest.json",
+        {
+            "rollouts": [{"rollout_id": 0, "summary_path": str(summary_path)}],
+        },
+    )
+
+    review = build_rollout_review(results_dir)
+
+    handoff = review["rollout_reviews"][0]["handoff"]
+    assert handoff["status"] == "ready"
+    assert handoff["source"] == "rollout_jsonl_completed_return_to_dig_transitions"
+    assert handoff["return_to_dig_entry_close"] is True
+    assert handoff["return_to_dig_entry_error_m"] == 0.24
+    assert handoff["completed_handoff_count"] == 1
+    assert handoff["ignored_incomplete_return_segment_count"] == 1
+    assert handoff["summary_snapshot"]["return_to_dig_entry_error_m"] == 4.83
+
+
+def test_rollout_review_marks_terminal_only_return_handoff_not_applicable(
+    tmp_path: Path,
+) -> None:
+    results_dir = tmp_path / "results"
+    summary_path = _write_json(
+        results_dir / "rollouts" / "rollout_000_summary.json",
+        {
+            "rollout_id": 0,
+            "success": True,
+            "quality_issue_count": 0,
+            "return_to_dig_entry_close": 0,
+            "return_to_dig_entry_error_m": 4.83,
+            "return_to_dig_max_entry_error_m": 0.55,
+            "coverage_terminal_stop_requested": 1,
+            "coverage_terminal_stop_reason": "dig_area_depleted",
+            "rollout_stop_reason": "dig_area_depleted",
+        },
+    )
+    _write_json(
+        results_dir / "rollouts" / "rollout_000_planner_trace.json",
+        {"coverage_decision_trace": [{"event": "terminal_stop"}]},
+    )
+    _write_jsonl(
+        results_dir / "rollouts" / "rollout_000.jsonl",
+        [
+            {
+                "t": 20,
+                "skill_name": "return",
+                "return_to_dig_entry_close": False,
+                "return_to_dig_entry_error_m": 4.83,
+                "return_to_dig_max_entry_error_m": 0.55,
+                "coverage_terminal_stop_requested": True,
+                "coverage_terminal_stop_reason": "dig_area_depleted",
+            },
+        ],
+    )
+    _write_json(
+        results_dir / "rollout_manifest.json",
+        {"rollouts": [{"rollout_id": 0, "summary_path": str(summary_path)}]},
+    )
+
+    review = build_rollout_review(results_dir)
+
+    handoff = review["rollout_reviews"][0]["handoff"]
+    assert handoff["status"] == "not_applicable"
+    assert handoff["source"] == "rollout_jsonl_no_completed_return_to_dig_transitions"
+    assert handoff["return_to_dig_entry_error_m"] is None
+    assert handoff["ignored_terminal_return_segment_count"] == 1
+    assert handoff["summary_snapshot"]["return_to_dig_entry_error_m"] == 4.83
 
 
 def test_rollout_review_marks_llm_candidate_ranking_ready_when_coverage_trace_explains_issue(
@@ -175,3 +316,65 @@ def test_rollout_review_resolves_repo_relative_manifest_paths(
     assert review["overall_status"] == "reviewed"
     assert review["evidence_gaps"] == []
     assert review["rollout_reviews"][0]["coverage"]["status"] == "present"
+
+
+def test_rollout_review_reports_local_surface_depth_separately_from_summary_plane_depth(
+    tmp_path: Path,
+) -> None:
+    results_dir = tmp_path / "results"
+    summary_path = _write_json(
+        results_dir / "rollouts" / "rollout_004_summary.json",
+        {
+            "rollout_id": 4,
+            "success": True,
+            "quality_issue_count": 0,
+            "return_to_dig_entry_close": 1,
+            "return_to_dig_entry_error_m": 0.1,
+            "return_to_dig_max_entry_error_m": 0.55,
+            "cycle1_depth_target_m": 0.25,
+            "cycle1_depth_peak_m": 0.52,
+            "cycle1_depth_error_m": 0.27,
+            "cycle1_depth_expert_p95_overshoot_m": 0.11,
+        },
+    )
+    _write_json(
+        results_dir / "rollouts" / "rollout_004_planner_trace.json",
+        {"coverage_decision_trace": [{"event": "select_corridor"}]},
+    )
+    _write_jsonl(
+        results_dir / "rollouts" / "rollout_004.jsonl",
+        [
+            {
+                "skill_name": "dig",
+                "dig_cut_tokens": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3125, 1.0, 1.0],
+                "env_state": _env_state(plane_depth=0.50, local_surface_depth=0.20),
+            },
+            {
+                "skill_name": "dig",
+                "dig_cut_tokens": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3125, 1.0, 1.0],
+                "env_state": _env_state(plane_depth=0.52, local_surface_depth=0.27),
+            },
+            {
+                "skill_name": "carry",
+                "dig_cut_tokens": [0.0] * 10,
+                "env_state": _env_state(plane_depth=0.60, local_surface_depth=0.40),
+            },
+        ],
+    )
+    _write_json(
+        results_dir / "rollout_manifest.json",
+        {"rollouts": [{"rollout_id": 4, "summary_path": str(summary_path)}]},
+    )
+
+    review = build_rollout_review(results_dir)
+
+    depth = review["rollout_reviews"][0]["depth_tracking"]
+    assert depth["status"] == "present"
+    assert depth["dig_local_surface"]["source"] == (
+        "rollout_jsonl_contiguous_dig_segments_env_state_31"
+    )
+    assert depth["dig_local_surface"]["target_source"] == "dig_cut_tokens[7]*0.8"
+    assert depth["dig_local_surface"]["error_mean_m"] == 0.020000000000000018
+    assert depth["summary_plane_depth"]["error_mean_m"] == 0.27
+    assert depth["cycles"][0]["dig_local_surface_depth_error_m"] == 0.020000000000000018
+    assert depth["cycles"][0]["summary_plane_depth_error_m"] == 0.27

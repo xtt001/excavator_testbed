@@ -291,6 +291,18 @@ gate 已迁移到独立文档：[data_processing_hdf5_qc_contract.md](data_proce
 本文件只保留 planner-to-ACT 的概念契约：planner 决定何时切换 primitive、如何构造 token、
 handoff gate 何时允许把 pending dig plan 交给 dig ACT。离线数据如何产生和验收，以独立数据文档为准。
 
+## planner 开发边界
+
+新增 planner 语义应优先进入小的、职责明确的模块或 service object。`PrimitivePlannerACTPolicy`
+应收敛为在线状态机和外部 policy adapter 的薄壳：保留 active skill、transition reason、
+state lifecycle、policy dispatch 和 focused service 调用顺序；coverage、return handoff、
+token builder、debug summary、候选评分和未来 residual planning 不应继续堆进大类。
+
+证据门禁和报告工具只负责暴露事实，不改变控制语义。本阶段新增的 `policy audit manifest`
+和 `rollout review` 不调整 planner backend、不改变 threshold、不改变 checkpoint contract，
+也不改变 eval success 计算。任何影响训练、rollout、token contract、handoff 或 success
+语义的修改，都必须先在对应 source-of-truth 文档里确认。
+
 ## token 契约
 
 ### 当前 surface-depth 训练配置

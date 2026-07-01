@@ -75,7 +75,10 @@ tb-rollout-review \
 每个 rollout 至少复查：
 
 - planned vs actual：entry、exit、dig depth、payload/deposit。
-- `return -> dig` handoff readiness：entry-close、entry error、允许最大 entry error。
+- `return -> dig` handoff readiness：entry-close、entry error、允许最大 entry error。若
+  jsonl 存在，优先使用已完成的 `return -> dig` transition；episode 终止后停在
+  `return` 的残留段只记录为 ignored，不参与 ready/not-ready 判定，避免最终
+  summary snapshot 污染 handoff 结论。
 - coverage evidence：`coverage_decision_trace` 是否存在，terminal stop / depleted / reject 是否可解释。
 - terminal reason：是否只是 target-cycle gate 触发，而不是证明每铲都跟手。
 - quality flags：low deposited fraction、quality issue、浅挖、dig area escape 等。

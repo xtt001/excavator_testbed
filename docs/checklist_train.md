@@ -8,6 +8,7 @@
 - [ ] 本次是数据重建 / QC，而不是直接训练。
 - [ ] 本次是训练某个 primitive policy。
 - [ ] 本次是训练后 policy audit。
+- [ ] 本次是 eval 前 policy audit manifest 汇总。
 - [ ] 本次是 eval / rollout review。
 - [ ] 本次是 root-cause audit。
 - [ ] 已写清 run id、目标 primitive、数据版本、config、预期验证标准。
@@ -18,7 +19,7 @@
 - [ ] 已查看 `docs/data_processing_hdf5_qc_contract.md`，确认数据、VDS、primitive、Gate 合同。
 - [ ] 已查看 `testbed/configs/README.md`，确认 config 是当前入口还是 legacy 入口。
 - [ ] 已查看 `docs/planner_to_act_conceptual_contract.md`，确认 planner / ACT 的分工边界。
-- [ ] 如涉及 LLM / planner prework，已查看 `docs/llm_planner_prework.md`。
+- [ ] 如涉及 LLM planner 方向，已查看 `docs/llm_planner_closed_loop_terrain_conclusion.md`。
 
 ## 2. 数据与字段
 
@@ -95,8 +96,13 @@
 - [ ] dig policy 已运行 `tb-audit-dig-ckpt --output <audit_dir>/dig_ckpt_audit.json` 或等价离线审核。
 - [ ] 浅挖 / 深度问题已运行 `tb-audit-dig-depth-semantics --output <audit_dir>/dig_depth_semantics_audit.json` 或等价审核。
 - [ ] return policy 已运行 `tb-audit-return-ckpt --output <audit_dir>/return_ckpt_audit.json` 或等价离线审核。
+- [ ] 各 audit JSON 的 schema / headline / summary / evidence gaps 已记录。
+
+## 6b. Policy audit manifest：rollout 前证据清单
+
 - [ ] 已运行 `tb-policy-audit-manifest --output <audit_dir>/policy_audit_manifest.json ...` 汇总现有 audit JSON。
 - [ ] `policy_audit_manifest.json` 中 `overall_status=ready_for_rollout_eval`，或已记录缺失 audit / schema mismatch 的豁免理由。
+- [ ] 缺少某类 audit 时结果保持 `missing`，没有手工改成通过。
 - [ ] 已检查 token 改变时 action / outcome 是否有响应，不只是 loss 下降。
 - [ ] 已检查 policy 是否跟随 expert 关键动作段，而不是输出平均轨迹。
 - [ ] 离线审核异常时，不进入 live eval，先回到数据或训练问题。
@@ -109,7 +115,7 @@
 - [ ] `15cycle_probe` / `30cycle_probe` 是 probe，结论需配合 rollout review。
 - [ ] 输出目录是新目录，不覆盖旧视频和 summary。
 - [ ] eval 所需随机种子、起始地形、cell weighting / prior 已记录。
-- [ ] 如果 planner / LLM 参与，prework 输入和 planner 输出都已保存。
+- [ ] 如果 planner / LLM 参与，规划输入、证据门禁输出和 planner 输出都已保存。
 
 ## 8. Rollout review
 
@@ -120,8 +126,10 @@
 - [ ] 已看 summary，不只看成功率。
 - [ ] 已看视频或 contact sheet。
 - [ ] 已比较 planned vs actual 的 dig entry、exit、depth、payload。
-- [ ] 已检查 dig->return handoff 的姿态、bucket 高度、payload。
-- [ ] 已检查 return->carry、carry->dump、dump->dig 的 phase handoff。
+- [ ] depth 跟手结论优先看 `depth_tracking.dig_local_surface`，并与
+      `summary_plane_depth`、`expert_p95_overshoot` 分开记录。
+- [ ] 已检查 `return -> dig` handoff readiness：entry-close、entry error、允许最大 entry error。
+- [ ] 已检查 carry / dump transport quality：deposited fraction、low deposit、残留或漏料。
 - [ ] 已检查 `coverage_decision_trace`：选点、跳点、重复点、fallback 是否合理。
 - [ ] 已记录 terminal reason：成功、timeout、safety stop、empty bucket、wrong phase 等。
 - [ ] 如果失败模式集中，已触发 root-cause audit，而不是直接重训。
@@ -131,6 +139,8 @@
 - [ ] policy audit 正常但 live rollout 异常：检查 observation/action scaling、temporal aggregation、handoff。
 - [ ] dig 浅挖：检查 `dig_cut_tokens`、depth-profile token、实际 depth / payload 对齐。
 - [ ] return 异常：检查 return envelope token、dig 后起点分布、bucket state。
+- [ ] handoff 异常：优先看 `rollout_review.json` 中 completed `return -> dig`
+      transition；terminal-stop 后的 ignored return 段不能单独证明 handoff 失败。
 - [ ] carry / dump 异常：检查 phase boundary、bucket loaded state、dump target。
 - [ ] coverage 异常：检查 planner 候选点、cell prior、跳点逻辑和 terminal reason。
 - [ ] 数据问题明确时，回到 Gate 1 / Gate 2，不用训练掩盖数据错误。

@@ -6,6 +6,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+from testbed.data.operator_first_v2_2 import DIG_CUT_DEPTH_SCALE_M
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+    ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+)
+
 
 SCHEMA_VERSION = "rollout_review_v1"
 MAX_REVIEW_CYCLES = 30
@@ -37,12 +43,19 @@ def build_rollout_review(results_dir: str | Path) -> dict[str, Any]:
             rollout_id=rollout_id,
             summary=summary,
         )
+        rollout_records, jsonl_path = _load_rollout_records(
+            source_results_dir=source_results_dir,
+            rollout_id=rollout_id,
+            summary=summary,
+        )
         review = _review_single_rollout(
             rollout_id=rollout_id,
             summary=summary,
             summary_path=summary_path,
             planner_trace=trace,
             planner_trace_path=trace_path,
+            rollout_records=rollout_records,
+            jsonl_path=jsonl_path,
         )
         rollout_reviews.append(review)
         evidence_gaps.extend(review["evidence_gaps"])
@@ -82,6 +95,8 @@ def _review_single_rollout(
     summary_path: Path,
     planner_trace: dict[str, Any],
     planner_trace_path: Path,
+    rollout_records: list[dict[str, Any]],
+    jsonl_path: Path,
 ) -> dict[str, Any]:
     evidence_gaps: list[str] = []
     root_cause_hints: list[str] = []
@@ -94,7 +109,7 @@ def _review_single_rollout(
     if quality["flags"]:
         root_cause_hints.append("inspect_policy_handoff_or_live_scaling")
 
-    handoff = _handoff_review(summary)
+    handoff = _handoff_review(summary, rollout_records)
     if handoff["status"] == "missing":
         evidence_gaps.append(f"rollout_{rollout_id}:return_to_dig_handoff_fields_missing")
 
@@ -119,9 +134,11 @@ def _review_single_rollout(
         "rollout_stop_reason": str(summary.get("rollout_stop_reason", "")),
         "summary_path": str(summary_path),
         "planner_trace_path": str(planner_trace_path),
+        "jsonl_path": str(jsonl_path),
         "quality": quality,
         "handoff": handoff,
         "coverage": coverage,
+        "depth_tracking": _depth_tracking_review(summary, rollout_records),
         "planned_actual_cycles": _planned_actual_cycles(summary),
         "evidence_gaps": evidence_gaps,
         "root_cause_hints": _unique_strings(root_cause_hints),
@@ -155,7 +172,17 @@ def _quality_review(summary: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _handoff_review(summary: dict[str, Any]) -> dict[str, Any]:
+def _handoff_review(
+    summary: dict[str, Any],
+    rollout_records: list[dict[str, Any]],
+) -> dict[str, Any]:
+    jsonl_review = _completed_return_handoff_review(summary, rollout_records)
+    if jsonl_review is not None:
+        return jsonl_review
+    return _summary_handoff_review(summary)
+
+
+def _summary_handoff_review(summary: dict[str, Any]) -> dict[str, Any]:
     required = (
         "return_to_dig_entry_close",
         "return_to_dig_entry_error_m",
@@ -167,6 +194,7 @@ def _handoff_review(summary: dict[str, Any]) -> dict[str, Any]:
             "return_to_dig_entry_close": None,
             "return_to_dig_entry_error_m": None,
             "return_to_dig_max_entry_error_m": None,
+            "source": "summary_snapshot",
         }
     entry_error = _optional_float(summary.get("return_to_dig_entry_error_m"))
     max_error = _optional_float(summary.get("return_to_dig_max_entry_error_m"))
@@ -177,6 +205,141 @@ def _handoff_review(summary: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": status,
         "return_to_dig_entry_close": entry_close,
+        "return_to_dig_entry_error_m": entry_error,
+        "return_to_dig_max_entry_error_m": max_error,
+        "source": "summary_snapshot",
+    }
+
+
+def _completed_return_handoff_review(
+    summary: dict[str, Any],
+    rollout_records: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if not rollout_records:
+        return None
+
+    summary_snapshot = _summary_handoff_review(summary)
+    fallback_max_error = _optional_float(summary.get("return_to_dig_max_entry_error_m"))
+    completed: list[dict[str, Any]] = []
+    ignored_incomplete = 0
+    ignored_terminal = 0
+    in_return = False
+    segment_terminal = False
+
+    for row in rollout_records:
+        skill_name = str(row.get("skill_name", ""))
+        if skill_name == "return":
+            if not in_return:
+                in_return = True
+                segment_terminal = False
+            if _row_terminal_stop(row):
+                segment_terminal = True
+            continue
+
+        if not in_return:
+            continue
+
+        if skill_name == "dig":
+            transition = _handoff_transition_from_row(
+                row,
+                fallback_max_error=fallback_max_error,
+            )
+            if transition is not None:
+                completed.append(transition)
+            else:
+                ignored_incomplete += 1
+        else:
+            ignored_incomplete += 1
+            if segment_terminal or _row_terminal_stop(row):
+                ignored_terminal += 1
+        in_return = False
+        segment_terminal = False
+
+    if in_return:
+        ignored_incomplete += 1
+        if segment_terminal:
+            ignored_terminal += 1
+
+    if not completed and ignored_incomplete > 0 and ignored_terminal == ignored_incomplete:
+        return {
+            "status": "not_applicable",
+            "return_to_dig_entry_close": None,
+            "return_to_dig_entry_error_m": None,
+            "return_to_dig_max_entry_error_m": fallback_max_error,
+            "source": "rollout_jsonl_no_completed_return_to_dig_transitions",
+            "completed_handoff_count": 0,
+            "ignored_incomplete_return_segment_count": int(ignored_incomplete),
+            "ignored_terminal_return_segment_count": int(ignored_terminal),
+            "summary_snapshot": {
+                "status": summary_snapshot["status"],
+                "return_to_dig_entry_close": summary_snapshot[
+                    "return_to_dig_entry_close"
+                ],
+                "return_to_dig_entry_error_m": summary_snapshot[
+                    "return_to_dig_entry_error_m"
+                ],
+                "return_to_dig_max_entry_error_m": summary_snapshot[
+                    "return_to_dig_max_entry_error_m"
+                ],
+            },
+        }
+    if not completed:
+        return None
+
+    errors = [
+        float(item["return_to_dig_entry_error_m"])
+        for item in completed
+        if item["return_to_dig_entry_error_m"] is not None
+    ]
+    max_error = _first_optional_float(
+        [item.get("return_to_dig_max_entry_error_m") for item in completed]
+        + [fallback_max_error]
+    )
+    entry_error = max(errors) if errors else None
+    all_close = all(bool(item["return_to_dig_entry_close"]) for item in completed)
+    status = "ready" if all_close else "not_ready"
+    if entry_error is not None and max_error is not None and entry_error > max_error:
+        status = "not_ready"
+
+    return {
+        "status": status,
+        "return_to_dig_entry_close": all_close,
+        "return_to_dig_entry_error_m": entry_error,
+        "return_to_dig_max_entry_error_m": max_error,
+        "source": "rollout_jsonl_completed_return_to_dig_transitions",
+        "completed_handoff_count": int(len(completed)),
+        "ignored_incomplete_return_segment_count": int(ignored_incomplete),
+        "ignored_terminal_return_segment_count": int(ignored_terminal),
+        "summary_snapshot": {
+            "status": summary_snapshot["status"],
+            "return_to_dig_entry_close": summary_snapshot[
+                "return_to_dig_entry_close"
+            ],
+            "return_to_dig_entry_error_m": summary_snapshot[
+                "return_to_dig_entry_error_m"
+            ],
+            "return_to_dig_max_entry_error_m": summary_snapshot[
+                "return_to_dig_max_entry_error_m"
+            ],
+        },
+    }
+
+
+def _handoff_transition_from_row(
+    row: dict[str, Any],
+    *,
+    fallback_max_error: float | None,
+) -> dict[str, Any] | None:
+    if "return_to_dig_entry_close" not in row or "return_to_dig_entry_error_m" not in row:
+        return None
+    entry_error = _optional_float(row.get("return_to_dig_entry_error_m"))
+    max_error = _first_optional_float(
+        [row.get("return_to_dig_max_entry_error_m"), fallback_max_error]
+    )
+    return {
+        "return_to_dig_entry_close": _bool_value(
+            row.get("return_to_dig_entry_close")
+        ),
         "return_to_dig_entry_error_m": entry_error,
         "return_to_dig_max_entry_error_m": max_error,
     }
@@ -218,6 +381,164 @@ def _coverage_review(
         "depleted_count": depleted_count,
         "candidate_ranking_issue": candidate_issue,
     }
+
+
+def _depth_tracking_review(
+    summary: dict[str, Any],
+    rollout_records: list[dict[str, Any]],
+) -> dict[str, Any]:
+    local_cycles = _dig_local_surface_depth_cycles(rollout_records)
+    summary_cycles = _summary_depth_cycles(summary)
+    all_cycle_indices = sorted({*local_cycles.keys(), *summary_cycles.keys()})
+    cycles: list[dict[str, Any]] = []
+    for cycle_index in all_cycle_indices:
+        cycle = {"cycle_index": int(cycle_index)}
+        if cycle_index in local_cycles:
+            cycle.update(local_cycles[cycle_index])
+        if cycle_index in summary_cycles:
+            cycle.update(summary_cycles[cycle_index])
+        cycles.append(cycle)
+
+    local_errors = [
+        cycle["dig_local_surface_depth_error_m"]
+        for cycle in local_cycles.values()
+        if cycle.get("dig_local_surface_depth_error_m") is not None
+    ]
+    plane_errors = [
+        cycle["summary_plane_depth_error_m"]
+        for cycle in summary_cycles.values()
+        if cycle.get("summary_plane_depth_error_m") is not None
+    ]
+    expert_overshoots = [
+        cycle["summary_depth_expert_p95_overshoot_m"]
+        for cycle in summary_cycles.values()
+        if cycle.get("summary_depth_expert_p95_overshoot_m") is not None
+    ]
+    return {
+        "status": "present" if cycles else "missing",
+        "dig_local_surface": {
+            "status": "present" if local_errors else "missing",
+            "source": "rollout_jsonl_contiguous_dig_segments_env_state_31",
+            "window": "contiguous rows where skill_name == 'dig'",
+            "env_state_index": int(ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX),
+            "env_state_field": "bucket_depth_below_local_surface_m",
+            "target_source": "dig_cut_tokens[7]*0.8",
+            "target_scale_m": float(DIG_CUT_DEPTH_SCALE_M),
+            "cycle_count": int(len(local_errors)),
+            **_error_stats(local_errors),
+        },
+        "summary_plane_depth": {
+            "status": "present" if plane_errors else "missing",
+            "source": "rollout_summary_cycle_depth_peak_m",
+            "window": "quality_metrics qds->dump_end/dump_start/qds",
+            "env_state_index": int(ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX),
+            "env_state_field": "bucket_depth_below_dig_area_plane_m",
+            "target_source": "cycleN_depth_target_m",
+            "cycle_count": int(len(plane_errors)),
+            **_error_stats(plane_errors),
+        },
+        "expert_p95_overshoot": {
+            "status": "present" if expert_overshoots else "missing",
+            "source": "rollout_summary_cycle_depth_expert_p95_overshoot_m",
+            "cycle_count": int(len(expert_overshoots)),
+            "mean_m": _mean_or_none(expert_overshoots),
+            "max_m": max(expert_overshoots) if expert_overshoots else None,
+        },
+        "cycles": cycles,
+    }
+
+
+def _dig_local_surface_depth_cycles(
+    rollout_records: list[dict[str, Any]],
+) -> dict[int, dict[str, Any]]:
+    cycles: dict[int, dict[str, Any]] = {}
+    cycle_index = 0
+    active_segment: list[tuple[int, dict[str, Any]]] = []
+    for row_index, row in enumerate(rollout_records):
+        if str(row.get("skill_name", "")) == "dig":
+            active_segment.append((row_index, row))
+            continue
+        if active_segment:
+            cycle_index += 1
+            cycle = _dig_local_surface_depth_cycle(cycle_index, active_segment)
+            if cycle is not None:
+                cycles[cycle_index] = cycle
+            active_segment = []
+    if active_segment:
+        cycle_index += 1
+        cycle = _dig_local_surface_depth_cycle(cycle_index, active_segment)
+        if cycle is not None:
+            cycles[cycle_index] = cycle
+    return cycles
+
+
+def _dig_local_surface_depth_cycle(
+    cycle_index: int,
+    segment: list[tuple[int, dict[str, Any]]],
+) -> dict[str, Any] | None:
+    target_depth = _first_optional_float(
+        [
+            _sequence_float(row.get("dig_cut_tokens"), 7)
+            for _, row in segment
+        ]
+    )
+    if target_depth is None:
+        return None
+    target_depth *= float(DIG_CUT_DEPTH_SCALE_M)
+    local_depths = [
+        depth
+        for _, row in segment
+        if (
+            depth := _env_state_scalar(
+                row,
+                ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+            )
+        )
+        is not None
+    ]
+    if not local_depths:
+        return None
+    peak_depth = max(local_depths)
+    return {
+        "dig_local_surface_depth_target_m": float(target_depth),
+        "dig_local_surface_depth_peak_m": float(peak_depth),
+        "dig_local_surface_depth_error_m": float(peak_depth - target_depth),
+        "dig_local_surface_depth_source": "rollout_jsonl_env_state_31",
+        "dig_segment_start_row": int(segment[0][0]),
+        "dig_segment_end_row": int(segment[-1][0]),
+    }
+
+
+def _summary_depth_cycles(summary: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    cycles: dict[int, dict[str, Any]] = {}
+    for cycle_index in range(1, MAX_REVIEW_CYCLES + 1):
+        prefix = f"cycle{cycle_index}"
+        target = _optional_float(summary.get(f"{prefix}_depth_target_m"))
+        peak = _optional_float(summary.get(f"{prefix}_depth_peak_m"))
+        error = _optional_float(summary.get(f"{prefix}_depth_error_m"))
+        if error is None and target is not None and peak is not None:
+            error = peak - target
+        expert_p95_overshoot = _optional_float(
+            summary.get(f"{prefix}_depth_expert_p95_overshoot_m")
+        )
+        if (
+            target is None
+            and peak is None
+            and error is None
+            and expert_p95_overshoot is None
+        ):
+            continue
+        cycle: dict[str, Any] = {}
+        if target is not None:
+            cycle["summary_plane_depth_target_m"] = target
+        if peak is not None:
+            cycle["summary_plane_depth_peak_m"] = peak
+        if error is not None:
+            cycle["summary_plane_depth_error_m"] = error
+        if expert_p95_overshoot is not None:
+            cycle["summary_depth_expert_p95_overshoot_m"] = expert_p95_overshoot
+        cycles[cycle_index] = cycle
+    return cycles
 
 
 def _planned_actual_cycles(summary: dict[str, Any]) -> list[dict[str, Any]]:
@@ -310,6 +631,30 @@ def _load_planner_trace(
     return {}, trace_path
 
 
+def _load_rollout_records(
+    *,
+    source_results_dir: Path,
+    rollout_id: int,
+    summary: dict[str, Any],
+) -> tuple[list[dict[str, Any]], Path]:
+    path_value = summary.get("jsonl_path") or summary.get("rollout_jsonl_path")
+    jsonl_path = (
+        _resolve_path(path_value, source_results_dir)
+        if path_value
+        else source_results_dir / "rollouts" / f"rollout_{rollout_id:03d}.jsonl"
+    )
+    if not jsonl_path.exists():
+        return [], jsonl_path
+    records: list[dict[str, Any]] = []
+    for line in jsonl_path.read_text().splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        if isinstance(record, dict):
+            records.append(record)
+    return records, jsonl_path
+
+
 def _discover_rollout_summaries(source_results_dir: Path) -> list[dict[str, Any]]:
     rollouts_dir = source_results_dir / "rollouts"
     discovered: list[dict[str, Any]] = []
@@ -353,6 +698,65 @@ def _optional_float(value: object) -> float | None:
 def _float_value(value: object, default: float = 0.0) -> float:
     parsed = _optional_float(value)
     return default if parsed is None else parsed
+
+
+def _first_optional_float(values: list[object]) -> float | None:
+    for value in values:
+        parsed = _optional_float(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _sequence_float(value: object, index: int) -> float | None:
+    if not isinstance(value, (list, tuple)) or len(value) <= index:
+        return None
+    return _optional_float(value[index])
+
+
+def _env_state_scalar(row: dict[str, Any], index: int) -> float | None:
+    env_state = row.get("env_state")
+    if not isinstance(env_state, (list, tuple)) or len(env_state) <= index:
+        return None
+    return _optional_float(env_state[index])
+
+
+def _mean_or_none(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return float(sum(values) / len(values))
+
+
+def _error_stats(values: list[float]) -> dict[str, float | None]:
+    if not values:
+        return {
+            "error_mean_m": None,
+            "error_min_m": None,
+            "error_max_m": None,
+            "error_abs_max_m": None,
+        }
+    return {
+        "error_mean_m": _mean_or_none(values),
+        "error_min_m": min(values),
+        "error_max_m": max(values),
+        "error_abs_max_m": max(abs(value) for value in values),
+    }
+
+
+def _bool_value(value: object) -> bool:
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "yes"}:
+            return True
+        if lowered in {"false", "no", ""}:
+            return False
+    return bool(int(_float_value(value, 1.0 if bool(value) else 0.0)))
+
+
+def _row_terminal_stop(row: dict[str, Any]) -> bool:
+    return bool(_bool_value(row.get("coverage_terminal_stop_requested", False))) or bool(
+        str(row.get("coverage_terminal_stop_reason", "")).strip()
+    )
 
 
 def _jsonable(value: Any) -> Any:
