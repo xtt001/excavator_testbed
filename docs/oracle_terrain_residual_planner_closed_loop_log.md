@@ -1699,3 +1699,112 @@ Next bounded target:
 - Do not change rollout-review schema, official target defaults, pass/fail
   semantics, boundary tolerance, shape IoU, bucket-aware IoU, runtime planner,
   gate, policy, config, token, or checkpoint behavior.
+
+## 2026-07-01: Phase 1J Callback Audit
+
+Executor thread:
+
+- `019f1d6b-1367-71f3-8cb1-c4d891769109`
+
+Executor slice:
+
+- Phase 1J: refresh durable baseline report with target-interior depth-error
+  diagnostics.
+
+Executor status:
+
+- Success.
+- Worktree target lock matched at start.
+- HEAD stayed `43e911612e9833211820ede64c51cd118e0d0214`.
+- Expected slice file was modified:
+  `docs/oracle_terrain_residual_baseline_report.md`.
+
+Accepted document facts:
+
+- Refreshed the baseline report's observed branch ahead count to `16`.
+- Refreshed the observed HEAD to
+  `43e911612e9833211820ede64c51cd118e0d0214`.
+- Added latest-projection target residual depth RMSE / MAE / abs max:
+  `0.187219063753` / `0.187156794593` / `0.191985052079`.
+- Added a concise target-interior depth-error summary table:
+  - first convergence point row `416`: `0.24904827798` /
+    `0.249046452518` / `0.25`
+  - last convergence point row `5821`: `0.191779018803` /
+    `0.191773567348` / `0.19321956858`
+  - latest projection row `6147`: `0.187219063753` /
+    `0.187156794593` / `0.191985052079`
+- Updated interpretation to state that target-interior depth-error diagnostics
+  decrease across this explicit non-official example convergence evidence.
+- Updated non-goal wording from broad `RMSE` exclusion to
+  `RMSE threshold/pass-fail`, preserving the diagnostic-only boundary while
+  allowing the Phase 1I diagnostic RMSE field.
+- Preserved `official_t1_default=false`, missing provenance, and all non-goal
+  warnings.
+
+Planner-side current-run smoke report:
+
+- Used explicit non-official example spec:
+  `grid_shape=[3, 2]`, `row_start=0`, `row_end=2`, `col_start=0`,
+  `col_end=1`, `target_depth_m=0.25`.
+- Read
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- File count under the results directory stayed `10 -> 10`; no new run files
+  were created.
+- Report status was `present`.
+- Latest row and RMSE / MAE / abs max were row `6147`,
+  `0.187219063753` / `0.187156794593` / `0.191985052079`.
+- First convergence point row and RMSE / MAE / abs max were row `416`,
+  `0.24904827798` / `0.249046452518` / `0.25`.
+- Last convergence point row and RMSE / MAE / abs max were row `5821`,
+  `0.191779018803` / `0.191773567348` / `0.19321956858`.
+
+Planner-side verification:
+
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/oracle_terrain_residual_baseline_report.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- Read-only current-run smoke report passed with results file count `10 -> 10`.
+- `git diff --check` passed.
+
+Planner closure audit:
+
+- Target lock matched after callback:
+  - branch: `tx/oracle-terrain-residual-planner-v0`
+  - HEAD: `43e911612e9833211820ede64c51cd118e0d0214`
+  - dirty files: only expected Phase 1J report doc before planner log sync
+- Callback was factual, scoped, and free of planner-directed strategy.
+- Diff stayed in the committed baseline report document.
+- No code, tests, generated run artifacts, rollout-review schema, official T1
+  defaults, pass/fail semantics, boundary tolerance, shape IoU, bucket-aware
+  IoU, runtime planner/gate/policy behavior, config, token, checkpoint,
+  dependency, branch, or upstream behavior changed.
+
+Lightweight reflection:
+
+- Reference used: user objective, Phase 1 baseline-report requirement in
+  `docs/oracle_terrain_residual_planner_v0_plan.md`, the current
+  `docs/oracle_terrain_residual_baseline_report.md`, and the Phase 1I metric
+  contract.
+- Alignment verdict: aligned. The durable baseline report now reflects the
+  latest target-interior depth-error diagnostics.
+- Efficiency verdict: necessary doc sync. This kept the committed report
+  current with the metric owner without broadening into schema or runtime work.
+- Accepted-slice count since the latest deep reflection is now `2/3`.
+
+Hold-and-confirm gate:
+
+- Phase 1 has now covered explicit target-grid generation, target residual
+  sums, threshold-free target interior depth-error diagnostics, convergence
+  evidence, and a durable current-run baseline report.
+- Remaining Phase 1 plan items, especially boundary tolerance and shape IoU,
+  require semantic decisions before code:
+  - whether to use a narrow tolerance band such as `0.25m - 0.30m`, a bucket
+    footprint tolerance such as `0.45m - 0.55m`, or report both as diagnostics;
+  - whether shape IoU should be computed on target cells, dilated target cells,
+    removed-depth active cells, or another bucket-footprint projection;
+  - whether these remain diagnostic-only or become pass/fail later.
+- No further implementation slice should be dispatched for boundary tolerance
+  or shape IoU until these semantics are confirmed.
