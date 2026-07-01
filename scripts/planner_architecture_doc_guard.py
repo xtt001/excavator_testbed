@@ -14,6 +14,7 @@ YULONG_DOCS = frozenset(
         "docs/llm_planner_prework.md",
         "docs/oracle_terrain_residual_planner_v0_plan.md",
         "docs/oracle_terrain_residual_planner_closed_loop_profile.md",
+        "docs/oracle_terrain_residual_planner_closed_loop_log.md",
         "docs/oracle_terrain_residual_planner_phase0a_prompt.md",
         "docs/planner_to_act_conceptual_contract.md",
         "docs/primitive_phase_boundaries.md",

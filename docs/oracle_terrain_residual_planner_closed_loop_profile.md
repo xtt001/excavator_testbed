@@ -38,12 +38,13 @@ Hard rules:
 - Source-of-truth documents:
   - `docs/llm_planner_closed_loop_terrain_conclusion.md`
   - `docs/oracle_terrain_residual_planner_v0_plan.md`
+  - `docs/oracle_terrain_residual_planner_closed_loop_log.md`
   - `docs/planner_to_act_conceptual_contract.md`
   - `docs/data_processing_hdf5_qc_contract.md`
   - `docs/training_setup.md`
   - `AGENTS.md`
 - Current baseline commit after the pre-development cleanup:
-  `cd787074ea001025c04b99030b17b10053df88e9`.
+  `342f813678aa7d47c489e2683be6f06589a881ee`.
 - Current local branch:
   `tx/oracle-terrain-residual-planner-v0`.
 - Current upstream note: the local branch still tracks
