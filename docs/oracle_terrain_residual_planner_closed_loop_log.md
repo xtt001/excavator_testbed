@@ -3982,3 +3982,201 @@ Next bounded target:
   raw telemetry fields to future calibration labels must be explicit,
   caller-provided, and documented as provisional unless the user later promotes
   it into an official schema.
+
+## 2026-07-02: Phase 5C Executor Explicit Extraction Packet
+
+Target lock observed:
+
+- cwd `/home/pingfan/PACT/excavator_testbed`.
+- Branch/status `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 32]`.
+- HEAD `0bd39a0000fc7c506b3c7c6f98a78711fe3256fd`.
+- Worktree clean before edits.
+
+Scope:
+
+- Phase 5C: explicit calibration extraction spec / mapping feasibility
+  evidence.
+- Accepted-slice count carried in: `2/3`; executor does not write planner
+  reflection.
+
+Boundary decision:
+
+- `testbed.eval.terrain_calibration_inventory` remains inventory/schema-gap
+  owner.
+- Added focused owner `testbed.eval.terrain_calibration_extraction` because
+  explicit caller-provided mapping and extraction are a distinct evidence
+  responsibility from inventory.
+
+TDD red:
+
+- Added `tests/test_terrain_calibration_extraction.py` before production code.
+- `python -m pytest -q tests/test_terrain_calibration_extraction.py` failed
+  before implementation with `ModuleNotFoundError: No module named
+  'testbed.eval.terrain_calibration_extraction'`.
+
+Implementation:
+
+- Added
+  `build_explicit_calibration_record_extraction(source_paths, *,
+  field_mapping, required_output_fields, episode_split_key_candidates,
+  profile='explicit_calibration_record_extraction')`.
+- The helper is offline-only extraction evidence, not model fitting and not an
+  official sample schema.
+- Inputs are explicit source paths, caller-provided output-to-raw
+  `field_mapping`, explicit required output fields, and explicit split-key
+  candidates.
+- Supported record sources are JSONL object records and JSON list-of-object
+  records; JSON metadata dicts are reported as metadata documents, not
+  extracted records.
+- Extracted records contain only mapped output fields; raw fields are not
+  carried.
+- Usable extracted records require all explicit required output fields and at
+  least one explicit split key.
+- Top-level output reports schema/source/status/offline/profile, source counts,
+  mapping summary, extracted record counts, missing output-field summary, split
+  summary, bounded sample record shape evidence, validation errors, and missing
+  provenance.
+- Statuses implemented: `present`, `no_sources`, `invalid_source_paths`,
+  `invalid_field_mapping`, `invalid_required_output_fields`,
+  `invalid_split_keys`, `no_supported_sources`, and `no_records`.
+
+Current-repo smoke:
+
+- Explicit source roots checked:
+  `runs/calibration/v2_3_reachability_live` and
+  `runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/frame_audit`.
+- File counts remained `9 -> 9` and `17 -> 17`; no files were written under
+  `runs`.
+- Provisional telemetry-only mapping used:
+  `telemetry_time_s <- t`, `telemetry_step_id <- step_id`,
+  `telemetry_label <- label`, `telemetry_source_id <- source_id`,
+  `telemetry_mass_in_bucket_kg <- mass_in_bucket_kg`,
+  `telemetry_excavated_mass_kg <- excavated_mass_kg`, and
+  `telemetry_soil_grid_mass_kg <- soil_grid_mass_kg`.
+- Provisional extraction status `present`; source count `26`; supported /
+  unsupported source count `9` / `17`; total source records `14639`; extracted
+  records `14639`; usable extracted records `3371`.
+- Provisional required output missing counts: `telemetry_time_s=0`,
+  `telemetry_step_id=0`, `telemetry_label=3000`,
+  `telemetry_mass_in_bucket_kg=0`, `telemetry_excavated_mass_kg=0`,
+  `telemetry_soil_grid_mass_kg=0`.
+- `telemetry_source_id` was detected in `6371` records with `1` distinct group.
+- Negative smoke with explicit future calibration identity mapping still
+  produced `usable_extracted_record_count=0`; all nine Phase 5A future required
+  fields were missing from all `14639` records, and `episode_id`, `rollout_id`,
+  and `run_id` were not detected.
+
+Documentation changed:
+
+- `docs/training_setup.md` documents the explicit extraction helper, explicit
+  mapping inputs, provisional mapping boundary, no-inference rule, statuses,
+  and missing provenance.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks only the Phase 5C
+  explicit extraction/mapping feasibility evidence item complete and keeps
+  statistical calibration, uncertainty, capability filter, and episode-split
+  evaluation incomplete.
+
+## 2026-07-02: Phase 5C Planner Acceptance And Deep Reflection
+
+Planner acceptance status:
+
+- Accepted as Phase 5C explicit calibration extraction / mapping feasibility
+  evidence.
+- Accepted-slice count since the latest recorded deep reflection is now `3/3`.
+- Deep reflection was run after this acceptance, as required.
+
+Planner-side audit:
+
+- Rechecked target lock in `/home/pingfan/PACT/excavator_testbed`: branch
+  `tx/oracle-terrain-residual-planner-v0` was ahead `32`, HEAD
+  `0bd39a0000fc7c506b3c7c6f98a78711fe3256fd`, with only the expected Phase 5C
+  docs and new extraction owner/test modified or untracked.
+- Re-read the new extraction owner, focused tests, and changed
+  plan/training/log documentation.
+- Confirmed `testbed/eval/terrain_calibration_inventory.py` remains inventory /
+  schema-gap owner, while `testbed/eval/terrain_calibration_extraction.py`
+  owns explicit caller-provided mapping/extraction evidence.
+- Confirmed the extraction owner is below the large-file threshold at `625`
+  lines; the inventory owner remains `598` lines.
+- Confirmed extracted records contain only mapped output fields, and the tests
+  prove unmapped raw fields such as `label`, `source_id`, and
+  `mass_in_bucket_kg` are not inferred or carried.
+
+Planner-side verification:
+
+- Re-ran the related calibration/candidate/effect/target bundle:
+  `tests/test_terrain_calibration_extraction.py`,
+  `tests/test_terrain_calibration_inventory.py`,
+  `tests/test_terrain_candidate_effect_model.py`,
+  `tests/test_terrain_candidate_effect_summary.py`,
+  `tests/test_terrain_candidate_scoring.py`,
+  `tests/test_terrain_candidate_evidence.py`,
+  `tests/test_terrain_candidate_generation.py`, target projection/report/metric
+  tests, terrain residual metric tests, and rollout review tests; result:
+  `81 passed`.
+- Re-ran compile checks for the new extraction owner, inventory owner, related
+  eval owners, and tests; result: passed.
+- Recomputed the current-repo extraction smoke read-only; inspected directory
+  file counts remained `9 -> 9` and `17 -> 17`.
+- Provisional telemetry mapping produced status `present`, extracted records
+  `14639`, usable extracted records `3371`, and `raw_fields_carried=False`.
+- Negative future-schema identity mapping produced status `present`, extracted
+  records `14639`, usable extracted records `0`, and no detected
+  `episode_id`, `rollout_id`, or `run_id`.
+
+Acceptance rationale:
+
+- The slice cleanly separates two facts: provisional telemetry extraction is
+  mechanically possible under an explicit mapping, while future calibration
+  records remain unavailable under the explicit effect/capability schema.
+- It does not silently promote telemetry fields into success, payload, split,
+  pass/fail, eval success, planner success, or official calibration schema
+  semantics.
+- It does not change production planner behavior, rollout-review schema, run
+  artifacts, config, dependencies, or branch/upstream state.
+
+Deep reflection against reference base:
+
+- Alignment verdict: aligned. Phase 5 now has inventory, raw-field catalog,
+  schema-gap summary, and explicit extraction feasibility evidence without
+  inventing gold labels or fitting a model from unsuitable records.
+- Reference base used: AGENTS governance, the Oracle Terrain Residual Planner
+  v0 plan, closed-loop log, training setup, current calibration inventory /
+  extraction owners and tests, and the explicit no-inference boundary from the
+  user-confirmed workflow.
+- Progress verdict: useful and substantive. The last three accepted slices
+  added code-level evidence owners and tests, not just process documentation.
+- Scope verdict: controlled. No production planner/gate/policy/runtime path,
+  rollout-review schema, config, dependency, generated run artifact, official
+  schema, label semantics, or split semantics was introduced.
+- Verification verdict: sufficient for evidence readiness. Tests and smokes
+  prove source availability, raw-field presence, explicit extraction behavior,
+  and the blocker for future calibration labels.
+- Blocker verdict: statistical calibration is not responsibly executable from
+  the currently inspected artifacts. The current data has telemetry fields and
+  provisional labels, but no confirmed target fields for effect/capability
+  model training.
+- Efficiency verdict: stop adding calibration helper layers for now. More
+  Phase 5 code would mostly formalize missing data rather than unlock model
+  fitting.
+- Accepted-slice count resets to `0/3` after this deep reflection.
+
+Phase 5 closure:
+
+- Phase 5 is closed as a calibration evidence / schema-readiness milestone.
+- It is not closed as a calibrated effect/capability model milestone.
+- Statistical calibration, uncertainty, capability filter, and episode-split
+  evaluation remain deferred until official schema/labels/split semantics and
+  usable gold samples exist.
+
+Next bounded target:
+
+- Phase 6A should start a heuristic-only offline baseline-comparison scaffold.
+- The scaffold should compare current-run/current-planner evidence against the
+  existing heuristic residual candidate/effect pipeline where possible, while
+  marking the calibrated-model branch `not_evaluated` because Phase 5 found no
+  usable gold samples for that path.
+- It must remain offline/report evidence only: no production planner
+  integration, no action selection promoted to runtime, no official success
+  semantics, no generated run artifacts unless explicitly scoped and
+  non-destructive, and no calibrated-model fallback invented from telemetry.

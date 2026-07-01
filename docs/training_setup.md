@@ -524,6 +524,26 @@ fields 在全部 records 中缺失、部分存在或全部存在，哪些 split-
 `source_id`、`mass_in_bucket_kg` 或其他 telemetry field 自动映射成 success、payload 或 episode split 语义；
 如需语义映射，必须在后续切片用显式 schema 决策单独定义。
 
+explicit calibration record extraction / mapping feasibility evidence 当前由
+`testbed.eval.terrain_calibration_extraction.build_explicit_calibration_record_extraction()` 生成。
+它是 offline-only extraction helper，不训练 calibrated effect model，也不定义官方样本 schema。调用方必须显式传入
+`source_paths`、`field_mapping`、`required_output_fields` 和
+`episode_split_key_candidates`。`field_mapping` 是 caller-provided explicit raw-field mapping：
+输出字段名指向原始 observed field 名；helper 只按这份 mapping 抽取字段，不做 alias inference，不把
+`label`、`source_id`、`mass_in_bucket_kg`、`excavated_mass_kg` 或其他 telemetry fields 自动解释为
+success、payload、split key、pass/fail、eval success 或 planner success。
+
+该 helper 使用与 inventory 相同的显式 source-path 边界：只检查调用方给出的文件或目录，目录只在该显式 root
+下递归枚举文件，不扫描整个 repo 或整个 `runs`。当前支持 JSONL object records 和 JSON list-of-object
+records；JSON metadata dict 会作为 metadata document 报告，不作为 extracted records；unsupported source
+和 parser error 都保留为 source-level facts。输出包含 mapping summary、extracted record count、
+usable extracted record count、missing output-field summary、split summary、bounded sample record shape evidence、
+validation errors 和 missing provenance。一个 usable extracted record 必须同时包含全部显式
+`required_output_fields`，并至少包含一个显式 split-key candidate。top-level 状态包括 `present`、
+`no_sources`、`invalid_source_paths`、`invalid_field_mapping`、`invalid_required_output_fields`、
+`invalid_split_keys`、`no_supported_sources` 和 `no_records`。如果后续需要把 provisional telemetry mapping
+提升为 calibration schema，必须单独确认字段语义、label 语义、split 语义和 compatibility policy。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

@@ -499,6 +499,7 @@ Phase 4 closure note：
 
 - [x] 建立 gold-sample calibration inventory / schema evidence，先清点显式 source、required fields、episode split key 和 missing provenance。
 - [x] 建立 observed source-field catalog / required-field gap summary，只记录原始字段存在性与显式 schema gap，不推断 alias 或 labels。
+- [x] 建立 explicit calibration extraction / mapping feasibility evidence，只应用 caller-provided provisional mapping，不推断官方 schema。
 - [ ] 使用 gold samples 做统计校准，修正深度增益、横向偏移、长度缩放和 payload。
 - [ ] 增加 bootstrap 或 quantile uncertainty。
 - [ ] 单独训练或拟合 capability filter，输出 `P_success`、`P_overdig`、`P_low_payload`。
@@ -519,6 +520,20 @@ Phase 5B note：
 - 当前 repo smoke 中 observed field count 为 `19`；全量出现字段包括 `action`、`bucket_tip_depth_plane_m`、`bucket_tip_depth_surface_m`、`bucket_tip_x_m`、`bucket_tip_y_m`、`bucket_tip_z_m`、`excavated_mass_kg`、`mass_in_bucket_kg`、`qpos`、`qvel`、`soil_grid_mass_kg`、`step_id`、`t`、`target_hard_collision_count` 和 `warnings`，`label` 出现 `11639` 次，`source_id` 出现 `6371` 次。
 - `schema_gap_summary` 明确显示所有显式 future calibration required fields 都在全部 `14639` 条 records 中缺失，`episode_id`、`rollout_id`、`run_id` 也都没有出现；`usable_record_implication` 为 `no_usable_records_for_explicit_required_fields_and_split_keys`。
 - 这些字段只作为 raw observed field facts 记录；当前没有把 `label`、`source_id`、payload-like mass fields 或 telemetry fields 推断成 success、payload、episode split 或 calibrated model schema。
+
+Phase 5C note：
+
+- `testbed.eval.terrain_calibration_extraction.build_explicit_calibration_record_extraction()` 已定义 offline-only explicit mapping/extraction evidence contract。
+- 该 helper 只应用调用方显式传入的 `field_mapping`、`required_output_fields` 和 split-key candidates；不从 observed field catalog 自动推断 alias，不把 `label`、`source_id`、`mass_in_bucket_kg`、`excavated_mass_kg` 或 telemetry fields 自动解释成 success、payload、split key、pass/fail、eval success 或 planner success。
+- 当前 repo smoke 使用 provisional telemetry-only mapping：`telemetry_time_s <- t`、`telemetry_step_id <- step_id`、`telemetry_label <- label`、`telemetry_source_id <- source_id`、`telemetry_mass_in_bucket_kg <- mass_in_bucket_kg`、`telemetry_excavated_mass_kg <- excavated_mass_kg`、`telemetry_soil_grid_mass_kg <- soil_grid_mass_kg`。
+- Provisional smoke status `present`，source count `26`，supported / unsupported source count `9` / `17`，total source records `14639`，extracted records `14639`，usable extracted records `3371`；`telemetry_label` 缺失 `3000` 条，`telemetry_source_id` 出现在 `6371` 条记录中且只有 `1` 个 distinct group。文件数保持 `9 -> 9` 和 `17 -> 17`。
+- Negative smoke 使用 explicit future calibration identity mapping 仍得到 `usable_extracted_record_count=0`，所有 Phase 5A future required fields 缺失 `14639` 条，`episode_id`、`rollout_id`、`run_id` 都未检测到。因此当前 mapping feasibility 只证明 provisional telemetry extraction 可行，不证明 calibrated effect / capability labels 已存在。
+
+Phase 5 closure note：
+
+- Phase 5 目前关闭为 calibration evidence / schema-readiness milestone，而不是 calibrated model milestone。
+- 统计校准、uncertainty、capability filter 和 episode-split evaluation 继续保持未完成；原因是当前 inspected artifacts 没有满足显式 future calibration schema 的 usable records，也没有经确认的 official labels、split semantics、material/payload semantics 或 capability targets。
+- 后续默认推进方向转入 Phase 6A 的 heuristic-only offline baseline comparison scaffold；calibrated-model 分支必须保持 `not_evaluated`，直到 gold sample schema 和可用样本被明确提供。
 
 通过标准：
 
