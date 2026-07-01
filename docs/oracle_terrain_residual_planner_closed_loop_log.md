@@ -1043,3 +1043,206 @@ Next bounded target:
   standalone. Do not add rollout-review integration, official T1 defaults,
   physical volume, boundary tolerance, bucket-aware IoU, candidate generation,
   runtime gates, eval success semantics, or official cycle IDs in Phase 1F.
+
+## 2026-07-01: Phase 1F Callback Audit
+
+Executor thread:
+
+- `019f1d6b-1367-71f3-8cb1-c4d891769109`
+
+Executor slice:
+
+- Phase 1F: standalone explicit-target residual convergence projection.
+
+Executor status:
+
+- Success.
+- Worktree target lock matched at start.
+- HEAD stayed `3cdd82228ddb5c31f20e3d5b1b94d11aec81a135`.
+- Expected slice files were modified:
+  `testbed/eval/terrain_target_projection.py`,
+  `tests/test_terrain_target_projection.py`, and `docs/training_setup.md`.
+
+Accepted implementation facts:
+
+- Added public function `build_target_residual_convergence_projection()` to the
+  focused eval owner `testbed/eval/terrain_target_projection.py`.
+- Source is `rollout_jsonl_dig_segments_explicit_target_residual_convergence`.
+- Curve window is the final usable compact-grid snapshot per contiguous row
+  segment where `skill_name == "dig"`.
+- Contiguous dig segments are numbered one-based; segments without a usable
+  compact-grid snapshot are skipped.
+- The function builds the explicit rectangular target grid with
+  `build_rectangular_target_grid()` and computes each point with
+  `build_target_residual_metrics()`.
+- Output includes status, source, curve window, target spec, target grid, curve,
+  summary, and explicit missing provenance statuses.
+- Curve points include dig-segment index, snapshot row index, target positive
+  residual depth sum, target overdig depth sum, target removed completion ratio,
+  outside-target removed-depth sum, and the full target residual metrics block.
+- Summary status is `present` for at least two curve points,
+  `insufficient_points` for one point, and `missing` for zero points.
+- Summary reports point count plus start, end, and delta values for target
+  positive residual, target overdig, target removed completion ratio, and
+  outside-target removed-depth sum.
+- Diagnostic trend values are
+  `target_positive_residual_reduced_outside_removed_increased`,
+  `target_positive_residual_reduced_outside_removed_not_increased`,
+  `target_positive_residual_not_reduced`, `insufficient_points`, and `missing`.
+- Invalid target specs surface the target-grid validation status without
+  building a fallback curve.
+- Metric validation failure while building the curve surfaces the metric status
+  without returning partial fallback curve points.
+- No rollout-review integration or schema change was added.
+- No official T1 default dimensions, default target depth, cell size, origin,
+  physical area, world-frame semantics, physical volume, eval success
+  semantics, official cycle IDs, or runtime planner behavior was introduced.
+
+TDD evidence:
+
+- Initial red:
+  `python -m pytest -q tests/test_terrain_target_projection.py -k "target_convergence"`
+  failed during collection with
+  `ImportError: cannot import name 'build_target_residual_convergence_projection'`.
+- Focused target-convergence green passed with 4 tests selected and 4 deselected.
+
+Planner-side current-run smoke projection:
+
+- Used explicit non-official example spec:
+  `grid_shape=[3, 2]`, `row_start=0`, `row_end=2`, `col_start=0`,
+  `col_end=1`, `target_depth_m=0.25`, `official_t1_default=False`.
+- Read
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- File count stayed 10 and no files were written.
+- Projection status was `present`.
+- Curve point count was `10`.
+- First point: dig segment `1`, snapshot row `416`, target positive residual
+  `0.498092905036`, target overdig `0.0`, target removed completion ratio
+  `0.003814189928`, outside-target removed-depth sum `0.050789695233`.
+- Last point: dig segment `10`, snapshot row `5821`, target positive residual
+  `0.383547134697`, target overdig `0.0`, target removed completion ratio
+  `0.232905730606`, outside-target removed-depth sum `0.479643445462`.
+- Summary status was `present`.
+- Summary delta values were target positive residual `-0.114545770339`,
+  target overdig `0.0`, target removed completion ratio `0.229091540678`, and
+  outside-target removed-depth sum `0.428853750229`.
+- Diagnostic trend was
+  `target_positive_residual_reduced_outside_removed_increased`.
+
+Planner-side verification:
+
+- `python -m pytest -q tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed, 36 tests.
+- `python -m compileall testbed/eval/terrain_target_projection.py testbed/eval/terrain_target_metrics.py testbed/eval/terrain_target_grid.py testbed/eval/terrain_residual_metrics.py testbed/eval/rollout_review.py tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/training_setup.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- `git diff --check` passed.
+
+Planner closure audit:
+
+- Target lock matched after callback:
+  - branch: `tx/oracle-terrain-residual-planner-v0`
+  - HEAD: `3cdd82228ddb5c31f20e3d5b1b94d11aec81a135`
+  - dirty files: only the expected Phase 1F files before planner log sync
+- Callback was factual, scoped, and free of planner-directed strategy.
+- Diff stayed inside the existing focused eval owner, focused tests, and closest
+  documentation.
+- No planner runtime, gate, policy, token, checkpoint, dependency, config,
+  branch, upstream, or eval success semantics changed.
+
+Lightweight reflection:
+
+- Reference used: user objective, Phase 1 target-shape evaluation requirements
+  in `docs/oracle_terrain_residual_planner_v0_plan.md`, `AGENTS.md` ownership
+  boundaries, and the thread execution rule.
+- Alignment verdict: aligned. The workflow now has both latest-snapshot and
+  per-dig-segment explicit target-shape residual projections.
+- Efficiency verdict: useful progress. The slice reused the focused target-grid
+  and target-metric owners rather than copying metric formulas into a report or
+  review layer.
+- Accepted-slice count since the latest deep reflection is now `3/3`; the deep
+  reflection gate is due and recorded below before another dispatch.
+
+## 2026-07-01: Deep Reflection After Phase 1D-1F
+
+Reference set:
+
+- User goal: develop an oracle terrain residual planner v0 evaluation baseline
+  without inventing official semantics.
+- `docs/oracle_terrain_residual_planner_v0_plan.md`.
+- `docs/llm_planner_closed_loop_terrain_conclusion.md`.
+- `docs/training_setup.md`.
+- `AGENTS.md` governance rules.
+- `closed-loop-planner-executor` thread rules and the current thread execution
+  contract.
+
+Accepted slices reviewed:
+
+- Phase 1D added standalone explicit-target residual metrics from explicit
+  row-major arrays.
+- Phase 1E added standalone latest-snapshot target residual projection from
+  rollout records and an explicit rectangular target spec.
+- Phase 1F added standalone per-dig-segment target residual convergence
+  projection and summary from the same explicit target spec.
+
+Alignment assessment:
+
+- The accepted work stays within eval diagnostics and focused owners.
+- It advances Phase 1 from generic compact-grid residual evidence toward
+  target-shape evidence without promoting the example rectangle into official
+  T1 semantics.
+- The current non-official example projection shows target positive residual
+  decreasing from `0.498092905036` to `0.383547134697`, while outside-target
+  removed-depth sum increases from `0.050789695233` to `0.479643445462`.
+- Inside-target overdig remains `0.0` for the example spec, but the low target
+  completion ratio ending at `0.232905730606` and the large outside-target
+  removal increase mean the evidence is diagnostic only, not a quality pass.
+
+Scope and risk assessment:
+
+- Good: no production planner, gate, policy, token, checkpoint, dependency,
+  runtime config, rollout-review schema, or eval pass/fail behavior changed.
+- Good: missing cell size, origin, world transform, height/elevation,
+  confidence, and physical volume remain explicit rather than inferred.
+- Good: official T1 defaults, official cycle IDs, boundary tolerance,
+  bucket-aware IoU, target-shape pass/fail, candidate/effect semantics, and
+  runtime gate semantics remain out of scope.
+- Risk: target-shape diagnostics now exist as separate primitives; the next
+  useful artifact should package them into a single explicit-target baseline
+  report so future slices do not keep reassembling the same evidence by hand.
+- Risk: the explicit example spec is useful for smoke projection but must remain
+  clearly labeled as non-official until the user approves actual target
+  dimensions, depth, and provenance.
+
+Recovery or correction needed:
+
+- None for the accepted slices.
+- Continue to avoid rollout-review integration until the report fields and
+  schema policy are deliberately confirmed.
+
+Accepted-slice count reset:
+
+- Deep reflection completed after the third accepted callback.
+- Accepted-slice count since latest recorded deep reflection resets to `0/3`.
+
+Next bounded target:
+
+- Phase 1G should add a standalone explicit-target baseline report builder that
+  composes latest-snapshot projection and convergence projection for supplied
+  rollout records plus an explicit target spec.
+- The report should remain pure and diagnostic: no artifact writing by default,
+  no rollout-review schema change, no official T1 defaults, and no eval
+  pass/fail semantics.
+- The report can expose a compact status, the target spec, latest projection,
+  convergence projection, and a short diagnostic summary derived from existing
+  fields.
+- Tests should prove the report composes existing owners, surfaces validation
+  failures, and keeps missing provenance explicit.
+- A read-only current-run smoke projection may use the same non-official example
+  spec as prior slices, with `official_t1_default=False` recorded in the
+  callback.

@@ -305,6 +305,15 @@ observed / target spec grid shape、observed removed-depth grid、valid mask、`
 `rollout_review.json` schema、不声明官方 T1 默认值，也不改变 eval success 或 production planner/gate
 语义。
 
+target-shape residual convergence 当前由
+`testbed.eval.terrain_target_projection.build_target_residual_convergence_projection()` 生成。它使用同一类显式
+矩形 target spec，并按 per-rollout records 中连续 `dig` 段取该段最后一个可用 compact-grid
+snapshot，逐点调用 `build_target_residual_metrics()`，输出 dig-segment curve 和 summary。summary
+只报告点数、起止值与 delta：target positive residual、target overdig、target removed completion
+ratio、outside-target removed-depth sum，以及诊断性 trend。该 curve 是 dig-segment evidence，
+不声明官方 cycle id；trend 不作为 planner success、eval pass/fail、bucket-aware tolerance 或
+boundary-protected shape success 语义。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续
