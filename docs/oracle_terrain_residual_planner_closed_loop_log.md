@@ -3685,3 +3685,154 @@ Next bounded target:
   sources, required fields, episode split keys, usable sample counts, and missing
   provenance. It should not fit a calibrated model yet and should not infer
   official sample semantics from filenames alone.
+
+## 2026-07-02: Phase 5A Executor Calibration Inventory Packet
+
+Target lock observed:
+
+- cwd `/home/pingfan/PACT/excavator_testbed`.
+- Branch/status `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 30]`.
+- HEAD `c1d92faaf7a6c743c0964d036cfcb33bd73b8299`.
+- Worktree clean before edits.
+
+Scope:
+
+- Phase 5A: gold-sample calibration inventory / schema evidence.
+- Accepted-slice count carried in: `0/3`; executor does not write planner
+  reflection.
+
+Boundary decision:
+
+- No existing small eval owner owned calibration source inventory or schema
+  evidence.
+- Added focused owner `testbed.eval.terrain_calibration_inventory`.
+- Did not modify rollout review, production planner, target metrics,
+  target projection/report, candidate generation/evidence/scoring, effect
+  model, effect summary, or runtime behavior.
+
+TDD red:
+
+- Added `tests/test_terrain_calibration_inventory.py` before production code.
+- `python -m pytest -q tests/test_terrain_calibration_inventory.py` failed
+  before implementation with `ModuleNotFoundError: No module named
+  'testbed.eval.terrain_calibration_inventory'`.
+
+Implementation:
+
+- Added
+  `build_gold_sample_calibration_inventory(source_paths, *, required_fields,
+  episode_split_key_candidates,
+  profile='explicit_gold_sample_calibration_inventory')`.
+- The helper is offline-only inventory evidence, not a trainer and not a
+  calibrated effect/capability model.
+- Inputs are explicit source paths, explicit required fields, and explicit
+  split-key candidates.
+- Directories are recursively walked only under the explicit root paths supplied
+  by the caller.
+- Supported record sources are JSONL object records and JSON list-of-object
+  records.
+- JSON metadata dicts are reported as metadata documents, not calibration
+  records.
+- Unsupported files and parser errors are preserved as source-level facts.
+- A usable record requires all explicit required fields and at least one
+  explicit split key.
+- Top-level output reports schema/source/status/offline/profile, source counts,
+  record counts, usable record count, source summaries, field summary, split
+  summary, validation errors, and missing provenance.
+- Statuses implemented: `present`, `no_sources`, `invalid_source_paths`,
+  `invalid_required_fields`, `invalid_split_keys`, and
+  `no_supported_sources`.
+
+Current-repo smoke:
+
+- Explicit source roots checked:
+  `runs/calibration/v2_3_reachability_live` and
+  `runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/frame_audit`.
+- File counts remained `9 -> 9` and `17 -> 17`; no files were written under
+  `runs`.
+- Explicit required fields used:
+  `candidate_id`, `expected_removed_volume_m3`,
+  `target_removed_volume_m3`, `outside_target_removed_volume_m3`,
+  `overdig_volume_delta_m3`, `payload_volume_m3`, `success`,
+  `overdig_event`, `low_payload_event`.
+- Explicit split-key candidates used: `episode_id`, `rollout_id`, `run_id`.
+- Inventory status `present`.
+- Source count `26`; supported / unsupported source count `9` / `17`.
+- Source status counts: metadata documents `5`, present record sources `4`,
+  unsupported sources `17`.
+- Total record count `14639`; usable record count `0`.
+- Detected split keys `[]`; records with any split key `0`; distinct split
+  group counts were `0` for `episode_id`, `rollout_id`, and `run_id`.
+- Missing required field counts were `14639` for every explicit required field.
+- Parser error sources `[]`.
+
+Documentation changed:
+
+- `docs/training_setup.md` documents the calibration inventory helper,
+  explicit inputs, supported file kinds, usable-record rule, statuses, parser
+  facts, missing provenance, and non-goals.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks only the Phase 5A
+  inventory/schema-evidence item complete and records current smoke facts.
+- Model calibration, uncertainty, capability filter fitting, official sample
+  schema, official split semantics, labels, pass/fail, eval success, planner
+  success, and production integration remain incomplete/out of scope.
+
+Verification:
+
+- Focused green, related bundle, compile checks, doc guards, architecture
+  guards, smoke, diff check, and final status were assigned to the executor
+  closure step.
+
+## 2026-07-02: Phase 5A Planner Acceptance
+
+Planner acceptance status:
+
+- Accepted as Phase 5A gold-sample calibration inventory / schema evidence.
+- Accepted-slice count since the latest recorded deep reflection is now `1/3`.
+- No deep reflection is required for this acceptance.
+
+Planner-side verification:
+
+- Re-read the new calibration inventory owner, focused tests, and changed
+  plan/training/log documentation.
+- Re-ran the related calibration/candidate/effect/target bundle:
+  `tests/test_terrain_calibration_inventory.py`,
+  `tests/test_terrain_candidate_effect_model.py`,
+  `tests/test_terrain_candidate_effect_summary.py`,
+  `tests/test_terrain_candidate_scoring.py`,
+  `tests/test_terrain_candidate_evidence.py`,
+  `tests/test_terrain_candidate_generation.py`, target projection/report/metric
+  tests, terrain residual metric tests, and rollout review tests; result:
+  `76 passed`.
+- Re-ran compile checks for the new inventory owner and related eval owners and
+  tests; result: passed.
+- Re-ran changed-doc guard, docs inventory guard, architecture contract guard,
+  and whitespace diff check; result: passed.
+- Recomputed the current-repo inventory smoke read-only; inspected directory
+  file counts remained `9 -> 9` and `17 -> 17`, inventory status was `present`,
+  total records were `14639`, usable records were `0`, and no split keys were
+  detected for the explicit candidates `episode_id`, `rollout_id`, and `run_id`.
+- Planner-side source-field spot check found the inspected JSONL records are
+  reachability/live telemetry shaped: top observed fields include `t`,
+  `step_id`, `action`, `qpos`, `qvel`, `mass_in_bucket_kg`,
+  `excavated_mass_kg`, `soil_grid_mass_kg`, `label`, and `source_id`.
+
+Acceptance rationale:
+
+- The slice correctly blocks premature calibrated modeling by proving that the
+  inspected sources do not satisfy the explicit future effect/capability
+  calibration schema.
+- It records parser and unsupported-source facts without inventing labels,
+  official sample schema, official split semantics, pass/fail, eval success, or
+  planner success.
+- It does not change runtime behavior, rollout-review schema, production
+  planner paths, config, dependencies, or run artifacts.
+
+Next bounded target:
+
+- Phase 5B should make the source-schema gap more actionable by adding an
+  observed field catalog / required-field gap matrix for the explicit
+  calibration sources.
+- It should remain inventory/schema evidence only: no model fitting, no label
+  inference, no official required fields, no generated run artifacts, and no
+  production planner integration.

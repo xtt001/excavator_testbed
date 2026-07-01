@@ -495,6 +495,26 @@ density、cycle time、bucket fill model 和 production integration 的 missing 
 该 helper 不定义 payload/capacity default、material density、cycle-time semantics、pass/fail、eval
 success、planner success、top-k action selection 或 calibrated effect/capability model。
 
+gold-sample calibration inventory / schema evidence 当前由
+`testbed.eval.terrain_calibration_inventory.build_gold_sample_calibration_inventory()` 生成。它是
+offline-only inventory helper，不训练 calibrated effect model，也不训练 capability model。调用方必须显式传入
+`source_paths`、`required_fields` 和 `episode_split_key_candidates`；repo 不定义官方 gold-sample schema、
+官方 required fields、官方 split keys、label 语义、payload capacity 或 material-density 默认值。
+
+该 helper 只检查调用方给出的显式文件或目录；目录会在该显式 root 下递归枚举文件，不扫描整个 repo 或整个
+`runs`。当前支持 JSONL object records 和 JSON list-of-object records；JSON metadata dict 会作为
+metadata document 报告，但不会被当作 calibration records；不支持的文件后缀会计入 unsupported source，
+解析错误保留在 source-level `parser_errors`，不会让整个 inventory 失败。一个 usable calibration record
+必须同时包含全部显式 `required_fields`，并至少包含一个显式 split-key candidate。
+
+输出包含 source/support/record/usable record counts、per-source summaries、required-field presence /
+missing counts、split-key detection / distinct group counts、validation errors 和 missing provenance。top-level
+状态包括 `present`、`no_sources`、`invalid_source_paths`、`invalid_required_fields`、
+`invalid_split_keys` 和 `no_supported_sources`。如果支持源能解析但没有 usable records，状态仍为
+`present`，并用 `usable_record_count=0`、missing-field counts 和 split evidence 暴露 gap。该 helper
+不拟合模型、不虚构 labels、不声明 pass/fail、eval success、planner success、episode split 官方语义或
+production integration。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

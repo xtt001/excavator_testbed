@@ -497,10 +497,20 @@ Phase 4 closure note：
 
 ### Phase 5: Calibrated effect / capability
 
+- [x] 建立 gold-sample calibration inventory / schema evidence，先清点显式 source、required fields、episode split key 和 missing provenance。
 - [ ] 使用 gold samples 做统计校准，修正深度增益、横向偏移、长度缩放和 payload。
 - [ ] 增加 bootstrap 或 quantile uncertainty。
 - [ ] 单独训练或拟合 capability filter，输出 `P_success`、`P_overdig`、`P_low_payload`。
 - [ ] 使用 episode split 评估，禁止随机 sample split 泄漏。
+
+Phase 5A note：
+
+- `testbed.eval.terrain_calibration_inventory.build_gold_sample_calibration_inventory()` 已定义 offline-only gold-sample calibration inventory / schema evidence contract。
+- 该 helper 只检查调用方显式传入的 source paths、required fields 和 episode split key candidates；目录只在显式 root 下递归枚举，不扫描整个 repo 或整个 `runs`，也不定义官方 sample schema、label 语义、episode split 语义、pass/fail、eval success 或 planner success。
+- 当前支持 JSONL object records 与 JSON list-of-object records；JSON metadata dict 只作为 metadata document 报告，不当作 calibration records；unsupported files 和 parser errors 都保留为 source-level facts。
+- 当前 repo smoke 检查显式路径 `runs/calibration/v2_3_reachability_live` 和 `runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/frame_audit`，文件数保持 `9 -> 9` 和 `17 -> 17`。
+- 使用显式非官方未来校准 required fields `candidate_id`、`expected_removed_volume_m3`、`target_removed_volume_m3`、`outside_target_removed_volume_m3`、`overdig_volume_delta_m3`、`payload_volume_m3`、`success`、`overdig_event`、`low_payload_event`，以及 split-key candidates `episode_id`、`rollout_id`、`run_id`。
+- Smoke inventory status `present`，source count `26`，supported / unsupported source count `9` / `17`，total records `14639`，usable records `0`，detected split keys `[]`，records with any split key `0`，所有显式 required fields 都在 `14639` 条记录中缺失。因此当前 artifacts 还不足以拟合 calibrated effect / capability model。
 
 通过标准：
 
