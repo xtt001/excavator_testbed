@@ -419,7 +419,7 @@ Phase 2 closure note：
 - Phase 3A default entry target: offline discrete candidate generator / candidate evidence, not production planner integration.
 - [x] 从正 residual 区域生成 `20 - 100` 个候选 cut。
 - [x] 对候选 cut 加入 grid-cell footprint proxy、边界保护半径、depth budget 和 return/alignment proxy evidence。
-- [ ] 先用 heuristic scoring 跑离线排序，不接入生产 planner。
+- [x] 先用 heuristic scoring 跑离线排序证据，不接入 production planner。
 
 Phase 3A note：
 
@@ -434,6 +434,19 @@ Phase 3B note：
 - 该 helper 按输入候选顺序输出 row-major grid-cell footprint proxy、target/outside-target footprint cells、valid/invalid footprint cells、显式 Chebyshev boundary cell-radius 保护区证据、显式 max candidate depth budget evidence，以及可选 Manhattan return-alignment proxy evidence。
 - 当前 run latest projection 使用 Phase 3A 候选和 smoke-only 约束 `max_candidate_depth_m=0.2`、`protected_boundary_cell_radius=1`、`return_origin_cell_index=0` 得到 evidence status `present`、candidate count `24`、depth-budget exceeded count `0`、outside-target footprint candidate count `9`、outside-protected footprint candidate count `0`、boundary saturation ratio `1.0`、return proxy min/max `0` / `1` cells，结果文件数保持 `10 -> 10`。
 - 该证据仍是 grid-cell proxy，不是 physical bucket swept-footprint kernel；不做 heuristic scoring、top-k selection、production planner integration、official defaults、eval pass/fail 或 planner success 语义。
+
+Phase 3C note：
+
+- `testbed.eval.terrain_candidate_scoring.build_candidate_heuristic_scores()` 已定义 offline-only heuristic score evidence contract。
+- 该 helper 只读取 Phase 3B `evidence_records` 和显式权重，按输入顺序输出 score records，并单独给出 deterministic diagnostic ranking；ranking 只按 total score 降序、再按原输入顺序排列，不包含 selected/top-k/action 字段。
+- 当前 run 使用 smoke-only 权重 `candidate_depth_reward=10.0`、`target_footprint_cell_reward=1.0`、`outside_target_footprint_cell_penalty=2.0`、`outside_protected_boundary_cell_penalty=4.0`、`depth_budget_exceeded_penalty=5.0`、`grid_boundary_clipped_penalty=0.5`、`return_alignment_distance_penalty=0.25` 得到 scoring status `present`、score count `24`、best candidate `cut_candidate_000009` score `3.91985052079`、worst candidate `cut_candidate_000013` score `-0.33835731446`、ranking first `cut_candidate_000009`、ranking last `cut_candidate_000019`，结果文件数保持 `10 -> 10`。
+- 该 scoring 是 heuristic offline evidence，不是 calibrated effect/capability model；不定义官方权重、默认 top-k、production planner 行为、pass/fail、eval success 或 planner success 语义。
+
+Phase 3 closure note：
+
+- Phase 3 作为 offline candidate evidence milestone 关闭：候选枚举、grid-cell proxy constraint evidence 和显式权重 heuristic scoring/ranking evidence 都已具备 focused eval owner 和 current-run smoke evidence。
+- 该阶段仍没有 physical bucket swept-footprint kernel、expected delta patch、payload proxy、calibrated effect/capability model、production planner integration、official defaults、top-k selection 或 pass/fail 语义。
+- Phase 4A 默认入口是 geometric swept-footprint / expected delta patch kernel，仍从 explicit-input eval owner 开始，不从 current run 推断 cell size 或 bucket geometry。
 
 通过标准：
 

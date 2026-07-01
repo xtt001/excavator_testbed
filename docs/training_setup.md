@@ -405,6 +405,26 @@ min/max。所有 budget、boundary radius 和 return origin 都是调用方显�
 depth budget、boundary tolerance、bucket footprint、physical volume、cell-size inference、top-k、
 pass/fail、eval success 或 production planner 语义。
 
+offline heuristic candidate scoring 当前由
+`testbed.eval.terrain_candidate_scoring.build_candidate_heuristic_scores()` 生成。它只读取
+`build_candidate_constraint_evidence()` 输出的 `evidence_records` 和调用方显式传入的 `weights`。
+必需权重 key 为 `candidate_depth_reward`、`target_footprint_cell_reward`、
+`outside_target_footprint_cell_penalty`、`outside_protected_boundary_cell_penalty`、
+`depth_budget_exceeded_penalty`、`grid_boundary_clipped_penalty` 和
+`return_alignment_distance_penalty`。这些权重只属于本次离线诊断调用；repo 不定义默认权重或官方权重。
+
+score record 按 evidence 输入顺序保留。每条记录输出 candidate depth reward、target footprint
+reward、outside-target penalty、outside-protected penalty、depth-budget exceeded penalty、
+grid-boundary clipped penalty 和 return-alignment distance penalty 的组件值，并把组件求和成
+`total_score`。return proxy 缺失时该组件为 `not_evaluated` 且贡献 `0.0`，不会推断 return cost。
+`ranking` 只按 total score 降序、再按原输入顺序给出 deterministic diagnostic ranking；它不包含
+selected/top-k/action 字段，也不接入 production planner。top-level 状态包括 `present`、
+`no_evidence_records`、`invalid_evidence_records` 和 `invalid_weights`，并保留 calibrated effect
+model、payload model、physical bucket footprint、cell size 和 official weight 的 missing provenance。
+该 helper 是 heuristic score evidence，不是 calibrated effect/capability model，不写 run artifact，不改变
+`rollout_review.json` schema，不定义 pass/fail、eval success、planner success、official candidate
+defaults 或 production behavior。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

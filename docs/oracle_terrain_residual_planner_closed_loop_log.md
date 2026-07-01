@@ -3031,3 +3031,173 @@ Next bounded target:
   evidence, depth-budget evidence, and return proxy, but must not sort/top-k by
   default, change production planner behavior, define official weights, or
   promote pass/fail semantics.
+
+## 2026-07-01: Phase 3C Executor Candidate Scoring Packet
+
+Slice:
+
+- Phase 3C: offline heuristic candidate scoring/ranking evidence.
+
+Boundary:
+
+- Added a focused eval owner, `testbed/eval/terrain_candidate_scoring.py`.
+- Kept candidate generation as enumeration and candidate evidence as constraint
+  annotation.
+- Did not change rollout review, target report/projection/metrics owners,
+  production planner modules, runtime config, or generated run artifacts.
+
+TDD red:
+
+- Added `tests/test_terrain_candidate_scoring.py` before production code.
+- Red command: `python -m pytest -q tests/test_terrain_candidate_scoring.py`.
+- Expected failure: `ModuleNotFoundError: No module named
+  'testbed.eval.terrain_candidate_scoring'`.
+
+Implemented contract:
+
+- Public function:
+  `build_candidate_heuristic_scores(...)`.
+- Inputs are explicit: Phase 3B evidence records and caller-provided weights.
+- Required weight keys: `candidate_depth_reward`,
+  `target_footprint_cell_reward`, `outside_target_footprint_cell_penalty`,
+  `outside_protected_boundary_cell_penalty`,
+  `depth_budget_exceeded_penalty`, `grid_boundary_clipped_penalty`, and
+  `return_alignment_distance_penalty`.
+- Score records preserve evidence input order and report component values for
+  candidate depth, target footprint, outside-target footprint, outside-protected
+  footprint, depth-budget exceeded, grid-boundary clipped, and return-alignment
+  distance.
+- Ranking is diagnostic-only: deterministic total-score descending order with
+  input-order tie break; no selected/top-k/action semantics.
+- Statuses include `present`, `no_evidence_records`,
+  `invalid_evidence_records`, and `invalid_weights`.
+
+Current-run candidate scoring smoke:
+
+- Recomputed the current-run baseline report read-only from
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- Explicit target spec: `grid_shape=[3, 2]`, rows `[0:2]`, cols `[0:1]`,
+  `target_depth_m=0.25`.
+- Candidate options:
+  `direction_options=['row_forward', 'row_reverse', 'col_forward', 'col_reverse']`,
+  `depth_fraction_options=[0.5, 0.75, 1.0]`,
+  `min_candidate_count=20`, `max_candidate_count=100`.
+- Evidence inputs: `max_candidate_depth_m=0.2`,
+  `protected_boundary_cell_radius=1`, `return_origin_cell_index=0`.
+- Scoring weights:
+  `candidate_depth_reward=10.0`, `target_footprint_cell_reward=1.0`,
+  `outside_target_footprint_cell_penalty=2.0`,
+  `outside_protected_boundary_cell_penalty=4.0`,
+  `depth_budget_exceeded_penalty=5.0`,
+  `grid_boundary_clipped_penalty=0.5`,
+  `return_alignment_distance_penalty=0.25`.
+- Results file count stayed `10 -> 10`.
+- Baseline status / latest row: `present` / `6147`.
+- Candidate status / count: `present` / `24`.
+- Evidence status: `present`.
+- Scoring status / score count: `present` / `24`.
+- Score summary: best candidate `cut_candidate_000009` score
+  `3.91985052079`; worst candidate `cut_candidate_000013` score
+  `-0.33835731446`; mean score `1.591175959447`.
+- Ranking first / last: `cut_candidate_000009` /
+  `cut_candidate_000019`.
+- First score record: `cut_candidate_000001`, total score
+  `-0.04007473961`, candidate-depth reward `0.95992526039`,
+  target-footprint reward `1.0`, outside-target penalty `-2.0`,
+  return-alignment penalty `0.0`.
+- Best score record: `cut_candidate_000009`, total score `3.91985052079`,
+  candidate-depth reward `1.91985052079`, target-footprint reward `2.0`,
+  no outside-target/protected/depth/clipped/return penalty.
+
+Documentation changed:
+
+- `docs/training_setup.md` documents the offline candidate scoring contract,
+  explicit weights, statuses, ranking-evidence-only boundary, and non-goals.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks the third Phase 3
+  checklist item complete only as offline heuristic scoring/ranking evidence
+  and records that calibrated effect/capability models remain out of scope.
+
+## 2026-07-01: Phase 3C Planner Callback Audit And Deep Reflection
+
+Callback audit:
+
+- Accepted executor status: `success`.
+- Target lock matched the expected Phase 3C base:
+  `c828c16d6f7eda7320f4f296beee911996b860b4`.
+- Accepted changed files:
+  - `testbed/eval/terrain_candidate_scoring.py`
+  - `tests/test_terrain_candidate_scoring.py`
+  - `docs/training_setup.md`
+  - `docs/oracle_terrain_residual_planner_v0_plan.md`
+  - `docs/oracle_terrain_residual_planner_closed_loop_log.md`
+- Callback was factual and scoped to offline/eval-only heuristic score
+  evidence.
+
+Planner-side verification:
+
+- `python -m pytest -q tests/test_terrain_candidate_scoring.py tests/test_terrain_candidate_evidence.py tests/test_terrain_candidate_generation.py tests/test_terrain_target_report.py tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed with `58 passed`.
+- `python -m compileall testbed/eval/terrain_candidate_scoring.py testbed/eval/terrain_candidate_evidence.py testbed/eval/terrain_candidate_generation.py testbed/eval/terrain_target_report.py testbed/eval/terrain_target_projection.py testbed/eval/terrain_target_metrics.py tests/test_terrain_candidate_scoring.py tests/test_terrain_candidate_evidence.py tests/test_terrain_candidate_generation.py tests/test_terrain_target_report.py tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/training_setup.md docs/oracle_terrain_residual_planner_v0_plan.md docs/oracle_terrain_residual_planner_closed_loop_log.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- Read-only current-run candidate scoring smoke kept the results file count at
+  `10 -> 10`.
+- `git diff --check` passed.
+
+Closure audit:
+
+- Phase 3 now has three focused eval-only owners for candidate enumeration,
+  candidate constraint evidence, and heuristic score/ranking evidence.
+- Current-run smoke produced `24` score records. Best evidence label:
+  `cut_candidate_000009` with score `3.91985052079`; worst evidence label:
+  `cut_candidate_000013` with score `-0.33835731446`.
+- Ranking remains diagnostic-only: it contains ordered candidate ids, not
+  selected/top-k/action semantics.
+- No production planner integration, rollout-review schema integration,
+  official/default weights, pass/fail semantics, generated run artifacts,
+  calibrated effect/capability model, payload inference, physical volume, or
+  config/dependency changes were introduced.
+
+Deep reflection:
+
+- Trigger: this callback is the third accepted callback since the latest
+  recorded deep reflection.
+- Reference set: user objective, Phase 1 target-residual diagnostic baseline,
+  Phase 2 shadow-audit boundary, Phase 3 candidate evidence plan, durable
+  baseline report, current plan/log docs, `docs/training_setup.md`, and
+  closed-loop hard rules.
+- Objective alignment: aligned. Phase 3 created the missing offline candidate
+  evidence ladder before any production planner integration.
+- Non-goal check: still holding. The loop did not introduce official target
+  defaults, official candidate/default weights, top-k action selection,
+  rollout-review schema changes, production gates, eval pass/fail, planner
+  success semantics, generated run artifacts, or payload inference.
+- Verification quality: adequate for the milestone. Candidate generation,
+  constraint evidence, scoring evidence, source docs, and current-run smoke
+  were all exercised, but the scoring remains heuristic evidence and has not
+  been validated against real effect outcomes.
+- Documentation state: current. The plan, training setup, and closed-loop log
+  agree that Phase 3 is offline evidence only and Phase 4 owns effect modeling.
+- Slice sizing verdict: acceptable. Phase 3 did necessary work in three owner
+  slices instead of folding scoring into generation or evidence modules.
+- Efficiency verdict: still useful. The last three callbacks moved code and
+  tests forward rather than only process/report churn.
+- Next-slice implication: move to Phase 4A geometric swept-footprint /
+  expected-delta kernel with explicit inputs. Do not infer current-run cell size
+  or bucket geometry.
+- Accepted-slice count since latest recorded deep reflection resets to `0/3`
+  after this reflection.
+
+Next bounded target:
+
+- Phase 4A: define a focused eval-only geometric swept-footprint / expected
+  delta patch kernel.
+- Keep all geometry inputs explicit. Current-run smoke may use labeled
+  non-official example values, but must not infer cell size, bucket geometry,
+  physical volume, production planner behavior, official defaults, or pass/fail
+  semantics from the current run.
