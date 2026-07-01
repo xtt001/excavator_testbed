@@ -2139,3 +2139,102 @@ Next bounded target:
 - Do not change code, tests, rollout-review schema, production planner/gate,
   official target defaults, pass/fail semantics, config, token, checkpoint,
   dependency, branch, or upstream behavior.
+
+## 2026-07-01: Phase 1M Executor Transition Packet
+
+Executor slice:
+
+- Phase 1M: Phase 1 acceptance / transition packet.
+
+Executor status:
+
+- Pending planner callback audit.
+- Expected docs-only files:
+  - `docs/oracle_terrain_residual_planner_v0_plan.md`
+  - `docs/oracle_terrain_residual_planner_closed_loop_log.md`
+
+Factual Phase 1 closure recorded:
+
+- Phase 1 checklist now marks the implemented diagnostic pieces complete:
+  explicit target-grid generation, target residual / overdig / completion
+  metrics, residual convergence curve and summary, target-interior depth-error
+  diagnostics, raw/dilated shape overlap, dual tolerance profile records, and
+  the durable current-run baseline report.
+- Phase 1 explicitly does not mark official T1 defaults, meter-derived
+  tolerance, physical volume, official cycle IDs, target-shape pass/fail, or
+  production planner improvement as complete.
+- Phase 1 acceptance note records the current evidence as diagnostic baseline
+  evidence: target positive residual and target-interior depth error decrease,
+  while raw outside-target removed-depth grows and the one-cell dilated mask
+  saturates the current `3 x 2` grid.
+- Remaining provenance gaps recorded: cell size, origin, frame transform,
+  height/elevation/confidence grid, physical volume conversion, official cycle
+  IDs, and official target defaults.
+
+Default Phase 2 direction recorded:
+
+- Shape guard shadow audit only; no production gate change.
+- Default shadow events:
+  `low_payload_shape_guard_stop`, `overdig_guard_stop`,
+  `depth_budget_exhausted`, `outside_protected_removed_increased`.
+- Default interpretation: measure whether these shadow events would reduce
+  overdig risk without materially reducing payload / cycle efficiency.
+
+Next bounded target for Phase 2A:
+
+- Define the shape guard shadow-audit event contract and review surface without
+  changing production planner/gate behavior or official pass/fail semantics.
+
+## 2026-07-01: Phase 1M Planner Callback Audit
+
+Planner-side callback acceptance:
+
+- Callback status: success.
+- Target lock matched:
+  - branch/status: `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 19]`
+  - HEAD: `5dfbc6f09fffffa4f0e1884b16d13c8fd9f26010`
+  - dirty files: only the expected Phase 1M docs before planner closure sync
+- Accepted changed files:
+  - `docs/oracle_terrain_residual_planner_v0_plan.md`
+  - `docs/oracle_terrain_residual_planner_closed_loop_log.md`
+- Callback was factual and scoped to documentation status / transition updates.
+
+Planner-side verification:
+
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/oracle_terrain_residual_planner_v0_plan.md docs/oracle_terrain_residual_planner_closed_loop_log.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- `git diff --check` passed.
+
+Closure audit:
+
+- Phase 1 diagnostic baseline is now documented as accepted.
+- The plan marks implemented diagnostic components complete and keeps
+  official T1 defaults, meter-derived tolerance, physical volume, official
+  cycle IDs, target-shape pass/fail, and production planner improvement out of
+  scope.
+- The Phase 2 default is shadow-audit-only; no production gate, eval pass/fail,
+  planner success, rollout-review schema, runtime planner/gate/policy behavior,
+  token/checkpoint/config/dependency, branch, upstream, or generated run
+  artifact behavior changed.
+
+Lightweight reflection:
+
+- Reference used: user objective, Phase 1 baseline report, current plan/log
+  docs, `docs/training_setup.md`, and the closed-loop planner/executor rules.
+- Alignment verdict: aligned. Phase 1 is closed as diagnostic evidence, not as
+  official target-shape success or planner improvement.
+- Efficiency verdict: acceptable. The transition packet prevented Phase 1 from
+  expanding into more metric variants and set a bounded Phase 2A target.
+- Accepted-slice count since latest recorded deep reflection is now `2/3`.
+  This callback does not trigger the three-accepted-slice deep-reflection gate.
+
+Next bounded target:
+
+- Phase 2A: define a shape guard shadow-audit event contract and review surface.
+- Keep it shadow-audit-only, with explicit evidence/status fields and no
+  production gate changes, official pass/fail semantics, rollout-review schema
+  integration, official T1 defaults, or generated run artifacts.

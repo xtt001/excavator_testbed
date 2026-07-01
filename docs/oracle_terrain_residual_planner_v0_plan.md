@@ -356,21 +356,31 @@ dig 结束后记录 outcome
 
 ### Phase 1: Bucket-aware 任务级评价
 
-- [ ] 实现 target grid 生成器，先支持 T1 大矩形浅坑。
-- [ ] 实现 positive residual、negative residual、boundary tolerance、depth RMSE、shape IoU 等指标。
-- [ ] 每铲后记录 residual convergence curve。
-- [ ] 生成当前 planner 在 T1 目标下的 baseline 报告。
+- [x] 实现显式参数 target grid 生成器，支持 T1-like 矩形浅坑诊断输入。
+- [x] 实现 target 内 positive residual / overdig / completion、target 外 removed-depth、residual grid，以及 current compact-grid residual summary。
+- [x] 记录 latest snapshot、dig-segment residual convergence curve 和 convergence summary。
+- [x] 实现 target-interior depth-error 诊断：RMSE、MAE、absolute max。
+- [x] 实现 raw target-cell overlap、一格 Chebyshev / 8-neighbor dilated overlap、dual tolerance profile records（`narrow_0_30m`、`bucket_0_50m`）。
+- [x] 生成 durable current-run explicit-target baseline report：`docs/oracle_terrain_residual_baseline_report.md`。
+- [ ] 未完成/未声明：官方 T1 默认尺寸/深度、cell size 与 meter-derived tolerance、物理体积、官方 cycle ID、target-shape pass/fail、production planner 改进。
 
 通过标准：
 
 - 能回答“当前 planner 对指定坑形是否越挖越接近目标”。
 - 不再用单一 `success=1.0` 判断任务完成。
 
+Phase 1 acceptance note：
+
+- Phase 1 现在作为诊断 baseline / evidence milestone 关闭。它可以回答当前 run 中 current planner 是否让显式目标 residual 证据朝正确方向移动。
+- 当前非官方显式目标证据显示 target positive residual 和 target-interior depth error 下降；同时 raw outside-target removed-depth 明显增长，且一格 dilated mask 在当前 `3 x 2` compact grid 上饱和。因此这些事实是诊断 baseline evidence，不是 target-shape success / failure。
+- 仍缺失的 provenance：cell size、origin、frame transform、height/elevation/confidence grid、physical volume conversion、official cycle ID、official target defaults。
+
 ### Phase 2: Shape guard shadow audit
 
-- [ ] 不改变生产 gate，先在 rollout review 中 shadow 记录 shape guard 会在何处触发。
-- [ ] 统计 `low_payload_shape_guard_stop`、`overdig_guard_stop`、`depth_budget_exhausted` 等事件。
-- [ ] 分析当前过深是否主要来自 payload 不足后的持续下探。
+- [ ] 不改变生产 gate，先做 shape guard shadow audit，只记录会在何处触发。
+- [ ] 统计默认 shadow events：`low_payload_shape_guard_stop`、`overdig_guard_stop`、`depth_budget_exhausted`、`outside_protected_removed_increased`。
+- [ ] 分析这些 shadow events 是否会降低 overdig risk，同时不 materially 降低 payload / cycle efficiency。
+- [ ] 继续保持 no production gate change、no official pass/fail、no official T1 defaults，直到 shadow evidence 足够明确。
 
 通过标准：
 
