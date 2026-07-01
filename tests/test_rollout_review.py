@@ -458,3 +458,16 @@ def test_rollout_review_includes_diagnostic_terrain_residual_block(
     assert terrain_residual["positive_residual_depth_sum_m"] == 0.15
     assert terrain_residual["overdig_depth_sum_m"] == 0.15
     assert terrain_residual["target_removed_completion_ratio"] == 0.8636363636363635
+    assert terrain_residual["residual_convergence_curve_status"] == "present"
+    assert terrain_residual["residual_convergence_curve"] == [
+        {
+            "dig_segment_index": 1,
+            "snapshot_row_index": 1,
+            "positive_residual_depth_sum_m": 0.15,
+            "overdig_depth_sum_m": 0.15,
+            "target_depth_sum_m": 1.10,
+            "removed_depth_sum_m": 1.10,
+            "target_removed_completion_ratio": 0.8636363636363635,
+            "valid_cell_count": 5,
+        }
+    ]

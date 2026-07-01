@@ -396,3 +396,124 @@ Next bounded target:
 - Do not add target-shape generation, bucket-aware IoU, candidate generation,
   production planner behavior, runtime gates, token/checkpoint changes, or
   physical volume metrics in Phase 1A.
+
+## 2026-07-01: Phase 1A Callback Audit
+
+Executor thread:
+
+- `019f1d6b-1367-71f3-8cb1-c4d891769109`
+
+Executor slice:
+
+- Phase 1A: diagnostic residual convergence curve in the existing
+  `terrain_residual_metrics` owner and rollout review output.
+
+Executor status:
+
+- Success.
+- Worktree target lock matched at start.
+- HEAD stayed `1f189bbfa44aa67eee30171d4ca2ad177f701bef`.
+- Four expected files were modified:
+  `testbed/eval/terrain_residual_metrics.py`,
+  `tests/test_terrain_residual_metrics.py`, `tests/test_rollout_review.py`, and
+  `docs/training_setup.md`.
+
+Accepted implementation facts:
+
+- Added `residual_convergence_curve` to the diagnostic `terrain_residual` block.
+- Added provenance fields:
+  `residual_convergence_curve_status`,
+  `residual_convergence_curve_source`, and
+  `residual_convergence_curve_window`.
+- The curve source is
+  `rollout_jsonl_contiguous_dig_segments_final_usable_env_state_compact_dig_area_grid`.
+- The curve window is the final usable compact-grid snapshot per contiguous
+  rows where `skill_name == "dig"`.
+- Curve points are dig-segment diagnostic evidence, not official cycle IDs.
+- `dig_segment_index` is one-based over contiguous dig segments; segments
+  without a usable compact grid snapshot are skipped.
+- Each point records `dig_segment_index`, `snapshot_row_index`,
+  positive residual depth sum, overdig depth sum, target/removed depth sum,
+  completion ratio, and valid cell count.
+- Latest-snapshot fields and computations remain unchanged.
+- Missing provenance remains explicit. No confidence, height/elevation, cell
+  size, origin, timestamp, frame transform, physical volume, candidate, or
+  runtime planner semantics were invented.
+- `docs/training_setup.md` now documents the curve semantics and limitations.
+
+TDD evidence:
+
+- The first attempted selector was not a valid red because no tests were
+  selected.
+- Valid red:
+  `python -m pytest -q tests/test_terrain_residual_metrics.py tests/test_rollout_review.py -k "convergence_curve"`
+  failed with `KeyError: 'residual_convergence_curve_status'`.
+- Focused green:
+  `python -m pytest -q tests/test_terrain_residual_metrics.py tests/test_rollout_review.py -k "convergence_curve or terrain_residual"`
+  passed with 5 tests selected.
+
+Planner-side current-run projection:
+
+- Built the current run review in memory only for
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results`.
+- No files were written.
+- Latest snapshot remained row `6147`, positive residual `0.07200298831`,
+  overdig `0.206387549638`, and completion ratio
+  `0.8499937710015274`.
+- Curve status was `present` with 10 points.
+- First curve point: segment `1`, row `416`, positive residual
+  `0.427303199075`, overdig `0.0`, target depth sum `0.479999989272`,
+  removed depth sum `0.052696790197`, completion ratio
+  `0.10978498203077769`, valid cell count `6`.
+- Last curve point: segment `10`, row `5821`, positive residual
+  `0.078868877143`, overdig `0.194965198636`, target depth sum
+  `0.479999989272`, removed depth sum `0.596096310765`, completion ratio
+  `0.8356898356130845`, valid cell count `6`.
+
+Planner-side verification:
+
+- `python -m pytest -q tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed, 12 tests.
+- `python -m compileall testbed/eval/terrain_residual_metrics.py testbed/eval/rollout_review.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/training_setup.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- `git diff --check` passed.
+
+Planner closure audit:
+
+- Target lock matched after callback:
+  - branch: `tx/oracle-terrain-residual-planner-v0`
+  - HEAD: `1f189bbfa44aa67eee30171d4ca2ad177f701bef`
+  - dirty files: only the four expected Phase 1A files before planner log sync
+- Callback was factual, scoped, and free of planner-directed strategy.
+- Diff stayed inside the allowed eval owner, tests, and closest documentation.
+- No planner runtime, gate, policy, token, checkpoint, dependency, config,
+  branch, upstream, or eval success semantics changed.
+
+Lightweight reflection:
+
+- Reference used: user objective, Phase 1 acceptance in
+  `docs/oracle_terrain_residual_planner_v0_plan.md`, `AGENTS.md` ownership
+  boundaries, and the thread execution rule.
+- Alignment verdict: aligned. The review can now show residual trend evidence
+  across dig progress for the current compact-grid baseline.
+- Efficiency verdict: useful progress. The slice added a necessary metric
+  surface rather than adding another inventory pass.
+- Accepted-slice count since the latest deep reflection is now `1/3`.
+
+Next bounded target:
+
+- Phase 1B should add a compact diagnostic convergence summary derived from
+  `residual_convergence_curve`, still inside the focused eval owner.
+- The summary should report start/end/delta for positive residual, overdig, and
+  completion ratio, plus curve point count and a diagnostic trend status.
+- It must remain depth-sum based, not physical volume based, until cell size
+  exists.
+- It must not add target-shape generation, bucket-aware IoU, candidate
+  generation, production planner behavior, runtime gates, token/checkpoint
+  changes, or official cycle-id semantics.

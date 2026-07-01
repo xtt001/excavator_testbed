@@ -82,6 +82,73 @@ def test_terrain_residual_summary_uses_latest_usable_grid_snapshot() -> None:
     assert summary["frame_transform_status"] == "missing"
 
 
+def test_terrain_residual_summary_reports_dig_segment_convergence_curve() -> None:
+    records = [
+        {
+            "skill_name": "dig",
+            "env_state": _env_state_with_grid(
+                removed_depth=[0.00, 0.00, 0.00, 0.00, 0.00, 0.00],
+                target_depth=[0.20, 0.20, 0.20, 0.20, 0.20, 0.20],
+                valid_mask=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            ),
+        },
+        {
+            "skill_name": "dig",
+            "env_state": _env_state_with_grid(
+                removed_depth=[0.10, 0.20, 0.30, 0.40, 0.50, 0.60],
+                target_depth=[0.30, 0.30, 0.30, 0.30, 0.30, 0.30],
+                valid_mask=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            ),
+        },
+        {"skill_name": "carry", "env_state": [0.0] * 64},
+        {"skill_name": "dig", "env_state": [0.0] * 20},
+        {
+            "skill_name": "dig",
+            "env_state": _env_state_with_grid(
+                removed_depth=[0.25, 0.25, 0.35, 0.35, 0.30, 0.00],
+                target_depth=[0.30, 0.30, 0.30, 0.30, 0.30, 0.30],
+                valid_mask=[1.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+            ),
+        },
+        {"skill_name": "return", "env_state": [0.0] * 20},
+    ]
+
+    summary = build_terrain_residual_summary(records)
+
+    assert summary["snapshot_row_index"] == 4
+    assert summary["positive_residual_depth_sum_m"] == 0.35
+    assert summary["overdig_depth_sum_m"] == 0.1
+    assert summary["residual_convergence_curve_status"] == "present"
+    assert summary["residual_convergence_curve_source"] == (
+        "rollout_jsonl_contiguous_dig_segments_final_usable_env_state_compact_dig_area_grid"
+    )
+    assert summary["residual_convergence_curve_window"] == (
+        "final usable compact-grid snapshot per contiguous rows where skill_name == 'dig'"
+    )
+    assert summary["residual_convergence_curve"] == [
+        {
+            "dig_segment_index": 1,
+            "snapshot_row_index": 1,
+            "positive_residual_depth_sum_m": 0.3,
+            "overdig_depth_sum_m": 0.6,
+            "target_depth_sum_m": 1.8,
+            "removed_depth_sum_m": 2.1,
+            "target_removed_completion_ratio": 0.8333333333333333,
+            "valid_cell_count": 6,
+        },
+        {
+            "dig_segment_index": 2,
+            "snapshot_row_index": 4,
+            "positive_residual_depth_sum_m": 0.35,
+            "overdig_depth_sum_m": 0.1,
+            "target_depth_sum_m": 1.5,
+            "removed_depth_sum_m": 1.25,
+            "target_removed_completion_ratio": 0.7666666666666666,
+            "valid_cell_count": 5,
+        },
+    ]
+
+
 def test_terrain_residual_summary_marks_shape_unknown_when_counts_do_not_match() -> None:
     summary = build_terrain_residual_summary(
         [
@@ -122,3 +189,5 @@ def test_terrain_residual_summary_returns_missing_without_usable_snapshot() -> N
     assert summary["target_depth_grid_m"] == []
     assert summary["residual_depth_grid_m"] == []
     assert summary["target_removed_completion_ratio"] is None
+    assert summary["residual_convergence_curve_status"] == "missing"
+    assert summary["residual_convergence_curve"] == []

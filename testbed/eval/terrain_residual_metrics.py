@@ -16,6 +16,12 @@ from testbed.data.schema import (
 
 GRID_CELL_COUNT = 6
 SOURCE = "rollout_jsonl_env_state_compact_dig_area_grid"
+CONVERGENCE_CURVE_SOURCE = (
+    "rollout_jsonl_contiguous_dig_segments_final_usable_env_state_compact_dig_area_grid"
+)
+CONVERGENCE_CURVE_WINDOW = (
+    "final usable compact-grid snapshot per contiguous rows where skill_name == 'dig'"
+)
 
 
 def build_terrain_residual_summary(
@@ -27,6 +33,138 @@ def build_terrain_residual_summary(
     if snapshot is None:
         return _missing_summary()
 
+    metrics = _snapshot_metrics(snapshot)
+    convergence_curve = _dig_segment_residual_convergence_curve(rollout_records)
+
+    return {
+        "status": "present",
+        "source": SOURCE,
+        "snapshot_row_index": int(snapshot["row_index"]),
+        "grid_shape": _grid_shape(
+            snapshot["long_count"],
+            snapshot["short_count"],
+        ),
+        "cell_count": GRID_CELL_COUNT,
+        "valid_cell_count": metrics["valid_cell_count"],
+        "removed_depth_grid_m": metrics["removed_depth_grid_m"],
+        "target_depth_grid_m": metrics["target_depth_grid_m"],
+        "residual_depth_grid_m": metrics["residual_depth_grid_m"],
+        "positive_residual_depth_sum_m": metrics["positive_residual_depth_sum_m"],
+        "overdig_depth_sum_m": metrics["overdig_depth_sum_m"],
+        "target_depth_sum_m": metrics["target_depth_sum_m"],
+        "removed_depth_sum_m": metrics["removed_depth_sum_m"],
+        "target_removed_completion_ratio": metrics["target_removed_completion_ratio"],
+        "residual_convergence_curve_status": (
+            "present" if convergence_curve else "missing"
+        ),
+        "residual_convergence_curve_source": CONVERGENCE_CURVE_SOURCE,
+        "residual_convergence_curve_window": CONVERGENCE_CURVE_WINDOW,
+        "residual_convergence_curve": convergence_curve,
+        **_missing_provenance_fields(),
+        "env_state_indices": _env_state_index_provenance(),
+    }
+
+
+def _latest_grid_snapshot(
+    rollout_records: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    for row_index in range(len(rollout_records) - 1, -1, -1):
+        snapshot = _grid_snapshot_from_row(row_index, rollout_records[row_index])
+        if snapshot is not None:
+            return snapshot
+    return None
+
+
+def _dig_segment_residual_convergence_curve(
+    rollout_records: list[dict[str, Any]],
+) -> list[dict[str, int | float | None]]:
+    points: list[dict[str, int | float | None]] = []
+    in_dig_segment = False
+    dig_segment_index = 0
+    latest_segment_snapshot: dict[str, Any] | None = None
+
+    for row_index, row in enumerate(rollout_records):
+        if str(row.get("skill_name", "")) == "dig":
+            if not in_dig_segment:
+                in_dig_segment = True
+                dig_segment_index += 1
+                latest_segment_snapshot = None
+            snapshot = _grid_snapshot_from_row(row_index, row)
+            if snapshot is not None:
+                latest_segment_snapshot = snapshot
+            continue
+
+        if in_dig_segment:
+            point = _curve_point(dig_segment_index, latest_segment_snapshot)
+            if point is not None:
+                points.append(point)
+        in_dig_segment = False
+        latest_segment_snapshot = None
+
+    if in_dig_segment:
+        point = _curve_point(dig_segment_index, latest_segment_snapshot)
+        if point is not None:
+            points.append(point)
+    return points
+
+
+def _grid_snapshot_from_row(row_index: int, row: dict[str, Any]) -> dict[str, Any] | None:
+    env_state = row.get("env_state")
+    if not isinstance(env_state, (list, tuple)):
+        return None
+    removed_depth = _float_slice(
+        env_state,
+        ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
+        GRID_CELL_COUNT,
+    )
+    target_depth = _float_slice(
+        env_state,
+        ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
+        GRID_CELL_COUNT,
+    )
+    valid_mask = _float_slice(
+        env_state,
+        ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX,
+        GRID_CELL_COUNT,
+    )
+    if removed_depth is None or target_depth is None or valid_mask is None:
+        return None
+    return {
+        "row_index": int(row_index),
+        "long_count": _sequence_float(
+            env_state,
+            ENV_STATE_DIG_AREA_GRID_LONG_COUNT_IDX,
+        ),
+        "short_count": _sequence_float(
+            env_state,
+            ENV_STATE_DIG_AREA_GRID_SHORT_COUNT_IDX,
+        ),
+        "removed_depth_grid_m": removed_depth,
+        "target_depth_grid_m": target_depth,
+        "valid_mask": valid_mask,
+    }
+
+
+def _curve_point(
+    dig_segment_index: int,
+    snapshot: dict[str, Any] | None,
+) -> dict[str, int | float | None] | None:
+    if snapshot is None:
+        return None
+    metrics = _snapshot_metrics(snapshot)
+    return {
+        "dig_segment_index": int(dig_segment_index),
+        "snapshot_row_index": int(snapshot["row_index"]),
+        "positive_residual_depth_sum_m": metrics["positive_residual_depth_sum_m"],
+        "overdig_depth_sum_m": metrics["overdig_depth_sum_m"],
+        "target_depth_sum_m": metrics["target_depth_sum_m"],
+        "removed_depth_sum_m": metrics["removed_depth_sum_m"],
+        "target_removed_completion_ratio": metrics["target_removed_completion_ratio"],
+        "valid_cell_count": metrics["valid_cell_count"],
+    }
+
+
+def _snapshot_metrics(snapshot: dict[str, Any]) -> dict[str, Any]:
     removed_depth = snapshot["removed_depth_grid_m"]
     target_depth = snapshot["target_depth_grid_m"]
     valid_mask = snapshot["valid_mask"]
@@ -49,16 +187,7 @@ def build_terrain_residual_summary(
         min(removed_depth[index], target_depth[index]) for index in valid_indices
     )
     completion_ratio = float(completion_sum / target_sum) if target_sum > 0.0 else None
-
     return {
-        "status": "present",
-        "source": SOURCE,
-        "snapshot_row_index": int(snapshot["row_index"]),
-        "grid_shape": _grid_shape(
-            snapshot["long_count"],
-            snapshot["short_count"],
-        ),
-        "cell_count": GRID_CELL_COUNT,
         "valid_cell_count": int(len(valid_indices)),
         "removed_depth_grid_m": removed_depth,
         "target_depth_grid_m": target_depth,
@@ -68,51 +197,7 @@ def build_terrain_residual_summary(
         "target_depth_sum_m": target_sum,
         "removed_depth_sum_m": removed_sum,
         "target_removed_completion_ratio": completion_ratio,
-        **_missing_provenance_fields(),
-        "env_state_indices": _env_state_index_provenance(),
     }
-
-
-def _latest_grid_snapshot(
-    rollout_records: list[dict[str, Any]],
-) -> dict[str, Any] | None:
-    for row_index in range(len(rollout_records) - 1, -1, -1):
-        row = rollout_records[row_index]
-        env_state = row.get("env_state")
-        if not isinstance(env_state, (list, tuple)):
-            continue
-        removed_depth = _float_slice(
-            env_state,
-            ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
-            GRID_CELL_COUNT,
-        )
-        target_depth = _float_slice(
-            env_state,
-            ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
-            GRID_CELL_COUNT,
-        )
-        valid_mask = _float_slice(
-            env_state,
-            ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX,
-            GRID_CELL_COUNT,
-        )
-        if removed_depth is None or target_depth is None or valid_mask is None:
-            continue
-        return {
-            "row_index": int(row_index),
-            "long_count": _sequence_float(
-                env_state,
-                ENV_STATE_DIG_AREA_GRID_LONG_COUNT_IDX,
-            ),
-            "short_count": _sequence_float(
-                env_state,
-                ENV_STATE_DIG_AREA_GRID_SHORT_COUNT_IDX,
-            ),
-            "removed_depth_grid_m": removed_depth,
-            "target_depth_grid_m": target_depth,
-            "valid_mask": valid_mask,
-        }
-    return None
 
 
 def _missing_summary() -> dict[str, Any]:
@@ -131,6 +216,10 @@ def _missing_summary() -> dict[str, Any]:
         "target_depth_sum_m": None,
         "removed_depth_sum_m": None,
         "target_removed_completion_ratio": None,
+        "residual_convergence_curve_status": "missing",
+        "residual_convergence_curve_source": CONVERGENCE_CURVE_SOURCE,
+        "residual_convergence_curve_window": CONVERGENCE_CURVE_WINDOW,
+        "residual_convergence_curve": [],
         **_missing_provenance_fields(),
         "env_state_indices": _env_state_index_provenance(),
     }
