@@ -232,3 +232,167 @@ Next bounded target:
 - Commit the accepted Phase 0B implementation.
 - Then dispatch the next slice back to active executor thread
   `019f1d6b-1367-71f3-8cb1-c4d891769109` with a refreshed HEAD.
+
+## 2026-07-01: Phase 0C Callback Audit
+
+Executor thread:
+
+- `019f1d6b-1367-71f3-8cb1-c4d891769109`
+
+Executor slice:
+
+- Phase 0C: read-only current-run terrain residual projection using the Phase 0B
+  rollout-review diagnostic contract.
+
+Executor status:
+
+- Success.
+- Worktree stayed clean.
+- HEAD stayed `868b32c4ab0898e0d52ab668f9b8f42c022d89d6`.
+
+Accepted current-run facts:
+
+- Inspected
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results`.
+- Built `build_rollout_review(results_dir)` in memory only. The results
+  directory file count stayed unchanged and no new files were written.
+- Built review status remained `overall_status: needs_root_cause_audit`,
+  `evidence_gaps: []`, and `llm_candidate_ranking_ready: false`.
+- Terrain residual status was `present` from
+  `rollout_jsonl_env_state_compact_dig_area_grid`.
+- The latest usable compact-grid snapshot was row index `6147` with grid shape
+  `[3, 2]`, six valid cells, and target depth sum `0.479999989272`.
+- Removed depth grid:
+  `[0.058014947921, 0.136428371072, 0.067671462893, 0.181556522846, 0.042310595512, 0.128402650356]`.
+- Target depth grid:
+  `[0.079999998212, 0.079999998212, 0.079999998212, 0.079999998212, 0.079999998212, 0.079999998212]`.
+- Residual depth grid:
+  `[0.021985050291, -0.05642837286, 0.012328535319, -0.101556524634, 0.0376894027, -0.048402652144]`.
+- Positive residual depth sum was `0.07200298831`.
+- Overdig depth sum was `0.206387549638`.
+- Removed depth sum was `0.6143845506`.
+- Target removed completion ratio was `0.8499937710015274`.
+
+Accepted related baseline facts:
+
+- Quality/deposit review fields were present with `quality_status: issue`,
+  `quality_issue_count: 183`, `low_cycle_deposited_fraction_count: 9`, and
+  `cycle_deposited_fraction_min: 0.5727734176718415`.
+- Planned/actual cycle fields were present for 10 cycles, including
+  `deposited_fraction`, `depth_target_m`, `depth_peak_m`, and planned/actual
+  entry/exit x fields.
+- Depth tracking fields were present:
+  - local-surface cycle count `10`, mean error `0.03357278704643249`, and abs max
+    error `0.20337753295898436`;
+  - summary-plane cycle count `10`, mean error `0.15730891823768617`, and abs max
+    error `0.25914466381073`;
+  - expert p95 overshoot count `10`, mean `0.06820847994384767`, and max
+    `0.15047275149154665`.
+- Handoff fields were present with `handoff_status: ready`,
+  `handoff_source: rollout_jsonl_completed_return_to_dig_transitions`,
+  `return_to_dig_entry_close: true`,
+  `return_to_dig_entry_error_m: 0.33865916140467844`, and
+  `completed_handoff_count: 9`.
+- Coverage fields were present with `coverage_decision_trace_count: 22` and
+  `coverage_terminal_stop_reason: dig_area_depleted`.
+
+Still-missing facts after Phase 0C:
+
+- Confidence grid, height grid, elevation grid, cell size, origin, timestamp,
+  and frame transform remain missing.
+- Current overdig, target, and removed values are depth sums, not physical
+  volumes, because cell size is missing.
+- Only the latest usable compact grid snapshot is reported. A per-cycle
+  residual convergence curve is not yet present.
+- Payload-named fields are not exposed by the built rollout review, although
+  existing summary fields include mass/deposit information.
+
+Executor verification:
+
+- `python -m pytest -q tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed, 11 tests.
+- Read-only `build_rollout_review()` current-run projection completed without
+  writing files.
+- Read-only key search confirmed deposit/depth/handoff availability and
+  payload-named field absence.
+- `git diff --check` passed.
+- Final `git status --short --branch` was clean on
+  `tx/oracle-terrain-residual-planner-v0`, ahead 6 from
+  `origin/tx/v2_6-llm-planner`.
+
+Planner closure audit:
+
+- Target lock matched after callback:
+  - branch: `tx/oracle-terrain-residual-planner-v0`
+  - HEAD: `868b32c4ab0898e0d52ab668f9b8f42c022d89d6`
+  - dirty state: clean
+- Callback was factual, read-only, and scoped to current-run projection.
+- No planner, production runtime, policy, token, checkpoint, dependency,
+  config, branch, upstream, or eval success semantics changed.
+- The callback closes Phase 0 by proving that current rollout review can
+  reproduce the key residual and overdig depth-sum baseline from the latest
+  compact grid snapshot.
+
+Lightweight reflection:
+
+- Reference used: user objective, Phase 0 acceptance in
+  `docs/oracle_terrain_residual_planner_v0_plan.md`, thread execution rule in
+  this log/profile, and ownership boundaries in `AGENTS.md`.
+- Alignment verdict: aligned. The workflow now has source-proven current-run
+  residual baseline evidence without pretending that missing grid provenance
+  exists.
+- Efficiency verdict: useful progress. Phase 0C was read-only but directly
+  projected the latest run into the newly added residual contract, not repeated
+  process.
+
+## 2026-07-01: Deep Reflection After Three Accepted Callbacks
+
+Trigger:
+
+- Three accepted callbacks since the latest deep reflection gate: Phase 0A,
+  Phase 0B, and Phase 0C.
+
+Reference base:
+
+- User objective: prove whether numerical terrain residual planning can make a
+  target pit shape converge before connecting an LLM planner.
+- Source-of-truth documents:
+  `docs/llm_planner_closed_loop_terrain_conclusion.md`,
+  `docs/oracle_terrain_residual_planner_v0_plan.md`,
+  `docs/oracle_terrain_residual_planner_closed_loop_profile.md`, this log,
+  `docs/planner_to_act_conceptual_contract.md`,
+  `docs/data_processing_hdf5_qc_contract.md`, `docs/training_setup.md`, and
+  `AGENTS.md`.
+- Target lock: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `tx/oracle-terrain-residual-planner-v0`, upstream unchanged, no push/fetch/
+  pull/reset/checkout/rebase.
+
+Deep reflection verdict:
+
+- Phase 0 is accepted as a minimal metric-provenance baseline. The workflow now
+  knows where residual depth comes from, which provenance fields remain missing,
+  and what the latest current-run residual/overdig depth-sum baseline is.
+- The loop should not spend another slice on read-only inventory unless a new
+  blocker appears. The next useful work is a bounded Phase 1 diagnostic metric
+  increment in the existing `eval` owner.
+- The workflow must continue to treat current compact-grid values as depth sums
+  until cell size exists. Do not rename them to volumes or infer physical volume.
+- Missing confidence, height/elevation, origin, timestamp, frame transform, and
+  payload-named fields are explicit constraints, not permission to invent data.
+- Thread execution is now stable: the active executor thread is
+  `019f1d6b-1367-71f3-8cb1-c4d891769109`; the duplicate fork remains archived
+  and out of scope.
+
+Next bounded target:
+
+- Phase 1A should add a diagnostic residual convergence curve to the focused
+  `terrain_residual_metrics` owner and rollout review.
+- The curve must be derived only from usable compact-grid snapshots already
+  present in rollout jsonl. It should report per-snapshot or per-completed-dig
+  residual depth-sum points with source/provenance fields.
+- If cycle segmentation cannot be determined unambiguously from existing
+  records without broadening scope, the executor must return exact blocker
+  facts instead of inventing official per-cycle semantics.
+- Do not add target-shape generation, bucket-aware IoU, candidate generation,
+  production planner behavior, runtime gates, token/checkpoint changes, or
+  physical volume metrics in Phase 1A.
