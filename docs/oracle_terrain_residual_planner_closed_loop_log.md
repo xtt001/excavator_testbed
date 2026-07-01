@@ -915,3 +915,131 @@ Next bounded target:
 - Keep physical volumes, cell size, world-frame semantics, bucket-aware IoU,
   boundary tolerance, candidate generation, runtime gates, and official cycle
   IDs out of scope.
+
+## 2026-07-01: Phase 1E Callback Audit
+
+Executor thread:
+
+- `019f1d6b-1367-71f3-8cb1-c4d891769109`
+
+Executor slice:
+
+- Phase 1E: standalone explicit-target latest-snapshot rollout projection.
+
+Executor status:
+
+- Success.
+- Worktree target lock matched at start.
+- HEAD stayed `b2f5b09fe76ae2a3378bfbc4a38c802f37be7218`.
+- Expected slice files were modified or added:
+  `testbed/eval/terrain_target_projection.py`,
+  `tests/test_terrain_target_projection.py`, and `docs/training_setup.md`.
+
+Accepted implementation facts:
+
+- Added new focused eval owner `testbed/eval/terrain_target_projection.py`.
+- Added public function `build_latest_target_residual_projection()`.
+- Source is `rollout_jsonl_latest_compact_grid_explicit_target_projection`.
+- The projection reads explicit rollout records, extracts the latest usable
+  compact-grid removed-depth and valid-mask snapshot, builds an explicit
+  rectangular target grid, and calls `build_target_residual_metrics()`.
+- It uses schema constants for compact-grid long count, short count,
+  removed-depth slice, and valid-mask slice.
+- It uses observed `removed_depth_grid_m` and `valid_mask` from the latest
+  snapshot plus the explicit target spec. It does not use the rollout's current
+  target-depth grid as the task target.
+- Output includes status, source, snapshot row index, observed grid shape,
+  target spec grid shape, observed removed-depth grid, valid mask, target grid,
+  target residual metrics, and explicit missing provenance statuses.
+- No usable compact-grid snapshot returns `missing_snapshot` with empty observed
+  arrays and no target grid or metrics.
+- Target-grid validation failures are surfaced as projection status, with
+  target metrics left unset.
+- If observed compact grid counts do not match six cells, observed grid shape
+  is `None` while the explicit target spec and metrics can still be reported
+  from the six-cell compact arrays.
+- No rollout-review integration or schema change was added.
+- No official T1 default dimensions, default target depth, cell size, origin,
+  physical area, world-frame semantics, physical volume, eval success
+  semantics, or runtime planner behavior was introduced.
+
+TDD evidence:
+
+- Initial red:
+  `python -m pytest -q tests/test_terrain_target_projection.py` failed during
+  collection with `ModuleNotFoundError: No module named 'testbed.eval.terrain_target_projection'`.
+- Focused projection green passed with 4 tests.
+
+Planner-side current-run smoke projection:
+
+- Used explicit non-official example spec:
+  `grid_shape=[3, 2]`, `row_start=0`, `row_end=2`, `col_start=0`,
+  `col_end=1`, `target_depth_m=0.25`, `official_t1_default=False`.
+- Read
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- File count stayed 10 and no files were written.
+- Projection status was `present`.
+- Snapshot row index was `6147`.
+- Observed grid shape was `[3, 2]`.
+- Target grid status was `present`.
+- Target cell count was `2`.
+- Target depth sum was `0.5`.
+- Target residual metric status was `present`.
+- Target positive residual depth sum was `0.374313589186`.
+- Target overdig depth sum was `0.0`.
+- Target removed completion ratio was `0.251372821628`.
+- Outside-target removed depth sum was `0.488698139786`.
+
+Planner-side verification:
+
+- `python -m pytest -q tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed, 32 tests.
+- `python -m compileall testbed/eval/terrain_target_projection.py testbed/eval/terrain_target_metrics.py testbed/eval/terrain_target_grid.py testbed/eval/terrain_residual_metrics.py testbed/eval/rollout_review.py tests/test_terrain_target_projection.py tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/training_setup.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- `git diff --check` passed.
+
+Planner closure audit:
+
+- Target lock matched after callback:
+  - branch: `tx/oracle-terrain-residual-planner-v0`
+  - HEAD: `b2f5b09fe76ae2a3378bfbc4a38c802f37be7218`
+  - dirty files: only the expected Phase 1E files before planner log sync
+- Callback was factual, scoped, and free of planner-directed strategy.
+- Diff stayed inside the allowed eval owner, focused tests, and closest
+  documentation.
+- No planner runtime, gate, policy, token, checkpoint, dependency, config,
+  branch, upstream, or eval success semantics changed.
+
+Lightweight reflection:
+
+- Reference used: user objective, Phase 1 target-shape evaluation requirements
+  in `docs/oracle_terrain_residual_planner_v0_plan.md`, `AGENTS.md` ownership
+  boundaries, and the thread execution rule.
+- Alignment verdict: aligned. The workflow can now project an explicit target
+  spec onto current rollout evidence without changing rollout review schema.
+- Efficiency verdict: useful progress. This slice composed existing focused
+  owners into the missing latest-snapshot projection instead of duplicating
+  target metric formulas.
+- Accepted-slice count since the latest deep reflection is now `2/3`.
+
+Next bounded target:
+
+- Phase 1F should add a standalone explicit-target residual convergence curve
+  over contiguous `dig` segments, using final usable compact-grid snapshots per
+  segment and the explicit rectangular target spec.
+- The implementation should compose the existing latest-snapshot projection,
+  target-grid owner, and target-metric owner where practical, avoiding copied
+  formulas.
+- It should output per-segment target-shape metrics plus a compact summary of
+  start/end/delta for target positive residual, target overdig, target
+  completion ratio, and outside-target removed-depth sum.
+- It must remain explicit-parameter, depth-sum-only, diagnostic-only, and
+  standalone. Do not add rollout-review integration, official T1 defaults,
+  physical volume, boundary tolerance, bucket-aware IoU, candidate generation,
+  runtime gates, eval success semantics, or official cycle IDs in Phase 1F.

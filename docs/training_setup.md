@@ -294,6 +294,17 @@ depth sum、target completion ratio、target 外 valid cells 的 removed-depth s
 仍是离线诊断，不提供 bucket-aware IoU、boundary tolerance、protected-area band、RMSE、物理体积、
 官方 cycle id 或 eval success 语义。
 
+latest-snapshot rollout projection 当前由
+`testbed.eval.terrain_target_projection.build_latest_target_residual_projection()` 组合上述两个
+owner：它从显式传入的 rollout records 中读取最新可用 compact-grid `env_state` removed-depth
+和 valid-mask 快照，再用显式矩形 target spec 生成 target grid，并调用
+`build_target_residual_metrics()` 计算 target-shape residual。输出包含 `snapshot_row_index`、
+observed / target spec grid shape、observed removed-depth grid、valid mask、`target_grid` 和
+`target_residual_metrics`。没有可用 snapshot 时返回 `missing_snapshot`；target spec 或 metric
+验证失败时透传对应 validation status。该 helper 只用于离线投影，不写 review artifact、不改变
+`rollout_review.json` schema、不声明官方 T1 默认值，也不改变 eval success 或 production planner/gate
+语义。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续
