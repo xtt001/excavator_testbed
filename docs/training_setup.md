@@ -283,6 +283,17 @@ provenance。矩形若选中 invalid cell 会被拒绝为 `invalid_target_region
 invalid cell 当作 target cell。该工具不声明官方 T1 默认尺寸、默认深度、cell size、物理面积、
 world-frame 或 eval success 语义，也不接入 production planner/gate。
 
+显式目标坑形 residual metric 当前由
+`testbed.eval.terrain_target_metrics.build_target_residual_metrics()` 单独计算。调用方必须显式传入
+observed `removed_depth_grid_m`、`target_depth_grid_m`、`target_region_mask` 和 `valid_mask`；
+该工具只比较 row-major depth grid，报告 target 内 positive residual、overdig、target/removed
+depth sum、target completion ratio、target 外 valid cells 的 removed-depth sum，以及
+`residual_depth_grid_m = target_depth_grid_m - removed_depth_grid_m`。输入长度不一致、depth
+非有限或为负、mask 非有限、target mask 选中 invalid cell 时会返回具体 validation status 和
+`validation_errors`，不会抛出常规规格错误，也不会静默把 invalid cell 当作 target cell。该 metric
+仍是离线诊断，不提供 bucket-aware IoU、boundary tolerance、protected-area band、RMSE、物理体积、
+官方 cycle id 或 eval success 语义。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

@@ -803,3 +803,115 @@ Next bounded target:
   rollout_review in Phase 1D unless strictly needed for focused tests.
 - After Phase 1D, a later slice can connect the explicit target-grid and
   target-shape metrics to current-run offline projection.
+
+## 2026-07-01: Phase 1D Callback Audit
+
+Executor thread:
+
+- `019f1d6b-1367-71f3-8cb1-c4d891769109`
+
+Executor slice:
+
+- Phase 1D: standalone explicit-target residual metrics.
+
+Executor status:
+
+- Success.
+- Worktree target lock matched at start.
+- HEAD stayed `824c3349e31eebb30bcd1c30f3939c31984c245d`.
+- Expected slice files were modified or added:
+  `testbed/eval/terrain_target_metrics.py`,
+  `tests/test_terrain_target_metrics.py`, and `docs/training_setup.md`.
+
+Accepted implementation facts:
+
+- Added new focused eval owner `testbed/eval/terrain_target_metrics.py`.
+- Added public function `build_target_residual_metrics()`.
+- Inputs are explicit arrays only:
+  `removed_depth_grid_m`, `target_depth_grid_m`, `target_region_mask`, and
+  `valid_mask`.
+- Source is `explicit_target_grid_removed_depth_comparison`.
+- Default profile is `explicit_target_shape_residual_metrics`.
+- Output includes `residual_depth_grid_m = target_depth_grid_m - removed_depth_grid_m`
+  in matching row-major order.
+- Present output includes status, source, profile, cell counts, valid target and
+  outside-target counts, target positive residual depth sum, target overdig
+  depth sum, target depth sum, target removed-depth sum, target completion
+  ratio, outside-target removed-depth sum, invalid target cell count,
+  validation errors, and explicit missing provenance statuses.
+- Metrics are depth sums only, not physical volumes.
+- Target metrics are computed over valid target cells only.
+- Outside-target removed-depth sum is computed over valid non-target cells.
+- Completion ratio is `sum(min(removed, target)) / target_depth_sum_m` when
+  target depth sum is positive, otherwise `None`.
+- Implemented validation statuses: `invalid_grid_lengths`,
+  `invalid_depth_values`, `invalid_mask_values`, and
+  `invalid_target_region_mask`.
+- Target cells outside the valid mask are rejected as
+  `invalid_target_region_mask` and are not silently counted.
+- No rollout-review integration was added in this slice.
+- No official T1 default dimensions, default target depth, cell size, origin,
+  world-frame semantics, physical volume, bucket-aware IoU, boundary tolerance,
+  protected-area band, depth RMSE, candidate/effect/capability semantics, eval
+  success semantics, or official cycle IDs were introduced.
+
+TDD evidence:
+
+- Initial red:
+  `python -m pytest -q tests/test_terrain_target_metrics.py` failed during
+  collection with `ModuleNotFoundError: No module named 'testbed.eval.terrain_target_metrics'`.
+- Focused metric green passed with 7 tests.
+
+Planner-side verification:
+
+- `python -m pytest -q tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed, 28 tests.
+- `python -m compileall testbed/eval/terrain_target_metrics.py testbed/eval/terrain_target_grid.py testbed/eval/terrain_residual_metrics.py testbed/eval/rollout_review.py tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py tests/test_terrain_residual_metrics.py tests/test_rollout_review.py`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs docs/training_setup.md`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- `git diff --check` passed.
+
+Planner closure audit:
+
+- Target lock matched after callback:
+  - branch: `tx/oracle-terrain-residual-planner-v0`
+  - HEAD: `824c3349e31eebb30bcd1c30f3939c31984c245d`
+  - dirty files: only the expected Phase 1D files before planner log sync
+- Callback was factual, scoped, and free of planner-directed strategy.
+- Diff stayed inside the allowed eval owner, focused tests, and closest
+  documentation.
+- No planner runtime, gate, policy, token, checkpoint, dependency, config,
+  branch, upstream, or eval success semantics changed.
+
+Lightweight reflection:
+
+- Reference used: user objective, Phase 1 target-shape evaluation requirements
+  in `docs/oracle_terrain_residual_planner_v0_plan.md`, `AGENTS.md` ownership
+  boundaries, and the thread execution rule.
+- Alignment verdict: aligned. The workflow can now compute explicit
+  target-shape residual metrics independently of the rollout's current compact
+  target field.
+- Efficiency verdict: useful progress. This slice created the missing metric
+  primitive needed before current-run explicit target projection.
+- Accepted-slice count since the latest deep reflection is now `1/3`.
+
+Next bounded target:
+
+- Phase 1E should add a standalone offline projection helper that applies an
+  explicit rectangular target spec to rollout records and computes latest
+  target-shape residual metrics from the latest usable compact-grid snapshot.
+- The helper should compose the existing target-grid generator and
+  target-shape metric owner. Avoid duplicating metric formulas.
+- It should accept explicit target spec parameters only and should not define
+  official T1 defaults.
+- It may read current-run records in tests or an optional read-only projection,
+  but it must not write generated review artifacts or change rollout-review
+  schema/eval success semantics in Phase 1E.
+- Keep physical volumes, cell size, world-frame semantics, bucket-aware IoU,
+  boundary tolerance, candidate generation, runtime gates, and official cycle
+  IDs out of scope.
