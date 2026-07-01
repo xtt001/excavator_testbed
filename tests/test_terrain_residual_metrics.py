@@ -149,6 +149,81 @@ def test_terrain_residual_summary_reports_dig_segment_convergence_curve() -> Non
     ]
 
 
+def test_terrain_residual_summary_reports_convergence_summary_from_curve() -> None:
+    records = [
+        {
+            "skill_name": "dig",
+            "env_state": _env_state_with_grid(
+                removed_depth=[0.00, 0.00, 0.15, 0.15, 0.15, 0.15],
+                target_depth=[0.20, 0.20, 0.20, 0.20, 0.20, 0.20],
+                valid_mask=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            ),
+        },
+        {"skill_name": "carry", "env_state": [0.0] * 64},
+        {
+            "skill_name": "dig",
+            "env_state": _env_state_with_grid(
+                removed_depth=[0.30, 0.30, 0.20, 0.20, 0.20, 0.20],
+                target_depth=[0.20, 0.20, 0.20, 0.20, 0.20, 0.20],
+                valid_mask=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            ),
+        },
+    ]
+
+    summary = build_terrain_residual_summary(records)
+
+    assert summary["residual_convergence_summary"] == {
+        "status": "present",
+        "source": "residual_convergence_curve",
+        "point_count": 2,
+        "start_dig_segment_index": 1,
+        "end_dig_segment_index": 2,
+        "positive_residual_depth_sum_start_m": 0.6,
+        "positive_residual_depth_sum_end_m": 0.0,
+        "positive_residual_depth_sum_delta_m": -0.6,
+        "overdig_depth_sum_start_m": 0.0,
+        "overdig_depth_sum_end_m": 0.2,
+        "overdig_depth_sum_delta_m": 0.2,
+        "target_removed_completion_ratio_start": 0.5,
+        "target_removed_completion_ratio_end": 1.0,
+        "target_removed_completion_ratio_delta": 0.5,
+        "diagnostic_trend": "positive_residual_reduced_overdig_increased",
+    }
+
+
+def test_terrain_residual_summary_marks_convergence_summary_insufficient() -> None:
+    records = [
+        {
+            "skill_name": "dig",
+            "env_state": _env_state_with_grid(
+                removed_depth=[0.00, 0.00, 0.20, 0.20, 0.20, 0.20],
+                target_depth=[0.20, 0.20, 0.20, 0.20, 0.20, 0.20],
+                valid_mask=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            ),
+        },
+    ]
+
+    summary = build_terrain_residual_summary(records)
+
+    assert summary["residual_convergence_summary"] == {
+        "status": "insufficient_points",
+        "source": "residual_convergence_curve",
+        "point_count": 1,
+        "start_dig_segment_index": 1,
+        "end_dig_segment_index": 1,
+        "positive_residual_depth_sum_start_m": 0.4,
+        "positive_residual_depth_sum_end_m": 0.4,
+        "positive_residual_depth_sum_delta_m": None,
+        "overdig_depth_sum_start_m": 0.0,
+        "overdig_depth_sum_end_m": 0.0,
+        "overdig_depth_sum_delta_m": None,
+        "target_removed_completion_ratio_start": 0.6666666666666667,
+        "target_removed_completion_ratio_end": 0.6666666666666667,
+        "target_removed_completion_ratio_delta": None,
+        "diagnostic_trend": "insufficient_points",
+    }
+
+
 def test_terrain_residual_summary_marks_shape_unknown_when_counts_do_not_match() -> None:
     summary = build_terrain_residual_summary(
         [
@@ -191,3 +266,20 @@ def test_terrain_residual_summary_returns_missing_without_usable_snapshot() -> N
     assert summary["target_removed_completion_ratio"] is None
     assert summary["residual_convergence_curve_status"] == "missing"
     assert summary["residual_convergence_curve"] == []
+    assert summary["residual_convergence_summary"] == {
+        "status": "missing",
+        "source": "residual_convergence_curve",
+        "point_count": 0,
+        "start_dig_segment_index": None,
+        "end_dig_segment_index": None,
+        "positive_residual_depth_sum_start_m": None,
+        "positive_residual_depth_sum_end_m": None,
+        "positive_residual_depth_sum_delta_m": None,
+        "overdig_depth_sum_start_m": None,
+        "overdig_depth_sum_end_m": None,
+        "overdig_depth_sum_delta_m": None,
+        "target_removed_completion_ratio_start": None,
+        "target_removed_completion_ratio_end": None,
+        "target_removed_completion_ratio_delta": None,
+        "diagnostic_trend": "missing",
+    }

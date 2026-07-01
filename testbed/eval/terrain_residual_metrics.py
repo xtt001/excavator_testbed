@@ -22,6 +22,7 @@ CONVERGENCE_CURVE_SOURCE = (
 CONVERGENCE_CURVE_WINDOW = (
     "final usable compact-grid snapshot per contiguous rows where skill_name == 'dig'"
 )
+CONVERGENCE_SUMMARY_SOURCE = "residual_convergence_curve"
 
 
 def build_terrain_residual_summary(
@@ -60,6 +61,9 @@ def build_terrain_residual_summary(
         "residual_convergence_curve_source": CONVERGENCE_CURVE_SOURCE,
         "residual_convergence_curve_window": CONVERGENCE_CURVE_WINDOW,
         "residual_convergence_curve": convergence_curve,
+        "residual_convergence_summary": _residual_convergence_summary(
+            convergence_curve
+        ),
         **_missing_provenance_fields(),
         "env_state_indices": _env_state_index_provenance(),
     }
@@ -164,6 +168,140 @@ def _curve_point(
     }
 
 
+def _residual_convergence_summary(
+    convergence_curve: list[dict[str, int | float | None]],
+) -> dict[str, int | float | str | None]:
+    point_count = len(convergence_curve)
+    if point_count == 0:
+        return _empty_residual_convergence_summary("missing", point_count)
+
+    start = convergence_curve[0]
+    end = convergence_curve[-1]
+    status = "present" if point_count >= 2 else "insufficient_points"
+    positive_delta = _summary_delta(
+        end,
+        start,
+        "positive_residual_depth_sum_m",
+        enabled=point_count >= 2,
+    )
+    overdig_delta = _summary_delta(
+        end,
+        start,
+        "overdig_depth_sum_m",
+        enabled=point_count >= 2,
+    )
+    completion_delta = _summary_delta(
+        end,
+        start,
+        "target_removed_completion_ratio",
+        enabled=point_count >= 2,
+    )
+
+    return {
+        "status": status,
+        "source": CONVERGENCE_SUMMARY_SOURCE,
+        "point_count": int(point_count),
+        "start_dig_segment_index": _summary_int(start, "dig_segment_index"),
+        "end_dig_segment_index": _summary_int(end, "dig_segment_index"),
+        "positive_residual_depth_sum_start_m": _summary_float(
+            start,
+            "positive_residual_depth_sum_m",
+        ),
+        "positive_residual_depth_sum_end_m": _summary_float(
+            end,
+            "positive_residual_depth_sum_m",
+        ),
+        "positive_residual_depth_sum_delta_m": positive_delta,
+        "overdig_depth_sum_start_m": _summary_float(start, "overdig_depth_sum_m"),
+        "overdig_depth_sum_end_m": _summary_float(end, "overdig_depth_sum_m"),
+        "overdig_depth_sum_delta_m": overdig_delta,
+        "target_removed_completion_ratio_start": _summary_float(
+            start,
+            "target_removed_completion_ratio",
+        ),
+        "target_removed_completion_ratio_end": _summary_float(
+            end,
+            "target_removed_completion_ratio",
+        ),
+        "target_removed_completion_ratio_delta": completion_delta,
+        "diagnostic_trend": _diagnostic_convergence_trend(
+            status,
+            positive_delta,
+            overdig_delta,
+        ),
+    }
+
+
+def _empty_residual_convergence_summary(
+    status: str,
+    point_count: int,
+) -> dict[str, int | str | None]:
+    return {
+        "status": status,
+        "source": CONVERGENCE_SUMMARY_SOURCE,
+        "point_count": int(point_count),
+        "start_dig_segment_index": None,
+        "end_dig_segment_index": None,
+        "positive_residual_depth_sum_start_m": None,
+        "positive_residual_depth_sum_end_m": None,
+        "positive_residual_depth_sum_delta_m": None,
+        "overdig_depth_sum_start_m": None,
+        "overdig_depth_sum_end_m": None,
+        "overdig_depth_sum_delta_m": None,
+        "target_removed_completion_ratio_start": None,
+        "target_removed_completion_ratio_end": None,
+        "target_removed_completion_ratio_delta": None,
+        "diagnostic_trend": status,
+    }
+
+
+def _summary_delta(
+    end: dict[str, int | float | None],
+    start: dict[str, int | float | None],
+    field: str,
+    *,
+    enabled: bool,
+) -> float | None:
+    if not enabled:
+        return None
+    start_value = _summary_float(start, field)
+    end_value = _summary_float(end, field)
+    if start_value is None or end_value is None:
+        return None
+    return _metric_float(end_value - start_value)
+
+
+def _summary_float(
+    point: dict[str, int | float | None],
+    field: str,
+) -> float | None:
+    value = point.get(field)
+    if value is None:
+        return None
+    return float(value)
+
+
+def _summary_int(point: dict[str, int | float | None], field: str) -> int | None:
+    value = point.get(field)
+    if value is None:
+        return None
+    return int(value)
+
+
+def _diagnostic_convergence_trend(
+    status: str,
+    positive_delta: float | None,
+    overdig_delta: float | None,
+) -> str:
+    if status != "present":
+        return status
+    if positive_delta is None or positive_delta >= 0.0:
+        return "positive_residual_not_reduced"
+    if overdig_delta is not None and overdig_delta > 0.0:
+        return "positive_residual_reduced_overdig_increased"
+    return "positive_residual_reduced_overdig_not_increased"
+
+
 def _snapshot_metrics(snapshot: dict[str, Any]) -> dict[str, Any]:
     removed_depth = snapshot["removed_depth_grid_m"]
     target_depth = snapshot["target_depth_grid_m"]
@@ -220,6 +358,7 @@ def _missing_summary() -> dict[str, Any]:
         "residual_convergence_curve_source": CONVERGENCE_CURVE_SOURCE,
         "residual_convergence_curve_window": CONVERGENCE_CURVE_WINDOW,
         "residual_convergence_curve": [],
+        "residual_convergence_summary": _residual_convergence_summary([]),
         **_missing_provenance_fields(),
         "env_state_indices": _env_state_index_provenance(),
     }

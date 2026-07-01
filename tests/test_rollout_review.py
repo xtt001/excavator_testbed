@@ -471,3 +471,20 @@ def test_rollout_review_includes_diagnostic_terrain_residual_block(
             "valid_cell_count": 5,
         }
     ]
+    assert terrain_residual["residual_convergence_summary"] == {
+        "status": "insufficient_points",
+        "source": "residual_convergence_curve",
+        "point_count": 1,
+        "start_dig_segment_index": 1,
+        "end_dig_segment_index": 1,
+        "positive_residual_depth_sum_start_m": 0.15,
+        "positive_residual_depth_sum_end_m": 0.15,
+        "positive_residual_depth_sum_delta_m": None,
+        "overdig_depth_sum_start_m": 0.15,
+        "overdig_depth_sum_end_m": 0.15,
+        "overdig_depth_sum_delta_m": None,
+        "target_removed_completion_ratio_start": 0.8636363636363635,
+        "target_removed_completion_ratio_end": 0.8636363636363635,
+        "target_removed_completion_ratio_delta": None,
+        "diagnostic_trend": "insufficient_points",
+    }

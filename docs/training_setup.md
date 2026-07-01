@@ -262,12 +262,16 @@ grid count、removed-depth、target-depth 和 valid-mask 下标计算：
   compact grid 快照，记录 `dig_segment_index`、`snapshot_row_index`、positive residual、
   overdig、target/removed depth sum、completion ratio 和 valid cell count。该曲线是
   dig-segment 诊断证据，不声明官方 cycle id 语义。
+- `residual_convergence_summary`：只从 `residual_convergence_curve` 派生，报告起止
+  dig-segment 点数、positive residual / overdig / completion ratio 的起点、终点和
+  delta，并给出诊断性 `diagnostic_trend`。该 trend 只概括已观察 dig-segment 证据，
+  不作为 eval pass/fail、planner success 或官方收敛语义。
 
 当前记录没有 cell size、origin、timestamp、frame transform、height/elevation grid 或
 confidence grid，报告必须把这些字段标为 `missing`，不能从现有 jsonl 推断。该 residual
-块和 convergence curve 都是离线诊断和 baseline 投影，不改变 planner、gate、checkpoint、
-token 或 eval success 语义。由于 cell size 仍缺失，positive residual、overdig、
-target/removed 仍是 depth sum，不是物理体积。
+块、convergence curve 和 convergence summary 都是离线诊断和 baseline 投影，不改变
+planner、gate、checkpoint、token 或 eval success 语义。由于 cell size 仍缺失，
+positive residual、overdig、target/removed 仍是 depth sum，不是物理体积。
 
 depth 诊断必须区分三种口径：
 
