@@ -272,6 +272,22 @@ def test_dig_cut_prior_loading_validates_token_order(tmp_path: Path) -> None:
         adapter_config.load_dig_cut_prior(str(bad_path))
 
 
+def test_residual_cut_intent_dig_cut_planner_mode_does_not_require_prior_path() -> None:
+    state = _normalize(
+        PrimitivePlannerAdapterConfigInputs(
+            dig_cut_planner={
+                "mode": "residual_cut_intent",
+            }
+        )
+    )
+    updates = state.as_policy_field_updates()
+
+    assert updates["dig_cut_planner_mode"] == "residual_cut_intent"
+    assert updates["dig_cut_prior_path"] == ""
+    assert updates["dig_cut_prior"] == {}
+    assert updates["dig_cut_hold_token_until_skill_exit"] is False
+
+
 @pytest.mark.parametrize(
     ("dig_cut_planner", "match"),
     [

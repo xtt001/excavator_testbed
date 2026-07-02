@@ -749,6 +749,14 @@ Phase 6G-B note：
 - `build_residual_eval_run_plan()` 新增默认 `False` 的显式 `residual_cut_intent_token_adapter_available` evidence。默认行为保持 Phase 6G-A 三个 B blocker 不变；当调用方显式传入 `True` 且 residual runtime integration 仍不可用时，B branch 仍为 `not_runnable` / `runtime_integration_status=missing`，但 blockers 只保留 `missing_residual_runtime_planner_mode` 和 `missing_simulated_branch_execution_artifacts`。
 - Phase 6G-B 仍不新增 `dig_cut_planner.mode`，不运行 `tb-eval` 或 simulation，不创建 `runs` artifact，不写 branch output files，不改 production planner / rollout-review schema / CLI entrypoint，也不定义 command-space controls、official thresholds、pass/fail、eval success、planner success 或 calibrated fallback。
 
+Phase 6G-C note：
+
+- `testbed.planner.primitive.token.dig_planning.PrimitiveDigTokenPlanningService` 已新增显式 `residual_cut_intent` runtime token-planning mode。该 mode 只消费 caller-provided `residual_cut_intent_plan_provider` 返回的 `DigCutTokenPlan` 或 existing dig-cut raw-fields tuple，并继续通过 `apply_dig_cut_token_plan()` 写入现有 token source / fallback / prior-range state。
+- `testbed.planner.primitive.token.planning_runtime.PrimitiveTokenPlanningRuntimePorts` 只做 provider 端口传递；`dig_cut_planner.mode=residual_cut_intent` 被 config validation 接受，但不是默认值，也不读取全局文件、env vars、`runs` artifact 或隐藏状态。
+- provider 返回 no plan 或抛错时，只有 `dig_cut_planner_fallback_mode=conservative_pose` 才走 existing conservative fallback；否则按 existing operator-prior mode 规则抛出原始错误。
+- `build_residual_eval_run_plan()` 新增默认 `False` 的显式 `residual_runtime_planner_mode_available` evidence。默认 Phase 6G-A / 6G-B blockers 不变；当 runtime mode 与 token adapter 都被调用方显式证明 available 且 full runtime integration 仍不可用时，B branch 仍保持 `not_runnable` / `runtime_integration_status=missing`，blockers 只剩 `missing_simulated_branch_execution_artifacts`。
+- Phase 6G-C 不运行 `tb-eval` 或 simulation，不创建 `runs` artifact，不写 branch output files，不改 eval YAML/default config/production planner decisions/rollout-review schema/CLI entrypoint，也不定义 command-space controls、official thresholds、pass/fail、eval success、planner success 或 calibrated fallback。
+
 通过标准：
 
 - B 优于 A，说明收益来自 residual closed-loop。

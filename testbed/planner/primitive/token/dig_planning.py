@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -29,7 +29,43 @@ if TYPE_CHECKING:
     from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
 
 
+DIG_CUT_PLANNER_MODE_CONSERVATIVE_POSE = "conservative_pose"
+DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR = "operator_prior"
+DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_COVERAGE = "operator_prior_coverage"
+DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_SWEEP_BELIEF = "operator_prior_sweep_belief"
+DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT = "residual_cut_intent"
+SUPPORTED_DIG_CUT_PLANNER_MODES = frozenset(
+    {
+        DIG_CUT_PLANNER_MODE_CONSERVATIVE_POSE,
+        DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR,
+        DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_COVERAGE,
+        DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_SWEEP_BELIEF,
+        DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT,
+    }
+)
+DIG_CUT_PLANNER_MODES_REQUIRING_PRIOR = frozenset(
+    {
+        DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR,
+        DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_COVERAGE,
+        DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_SWEEP_BELIEF,
+    }
+)
+DIG_CUT_PLANNER_COVERAGE_MODES = frozenset(
+    {
+        DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_COVERAGE,
+        DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_SWEEP_BELIEF,
+    }
+)
+RESIDUAL_CUT_INTENT_NO_PLAN_REASON = (
+    "residual_cut_intent provider returned no plan"
+)
+
+
 DigCutPlanTuple = tuple[np.ndarray, dict[str, float | int], str, str]
+ResidualCutIntentPlanProvider = Callable[
+    [dict[str, Any]],
+    DigCutTokenPlan | DigCutPlanTuple | None,
+]
 
 
 class CoverageRawFieldsBuilder(Protocol):
@@ -60,6 +96,7 @@ class PrimitiveDigTokenPlanningPorts:
 
     select_next_coverage_corridor: Callable[[dict[str, Any]], Any]
     coverage_raw_fields: CoverageRawFieldsBuilder
+    residual_cut_intent_plan_provider: ResidualCutIntentPlanProvider | None = None
 
 
 @dataclass(frozen=True)
@@ -109,13 +146,13 @@ class PrimitiveDigTokenPlanningService:
                 ),
             )
             return self.apply_dig_cut_token_plan(plan)
-        if mode == "conservative_pose":
+        if mode == DIG_CUT_PLANNER_MODE_CONSERVATIVE_POSE:
             return self.apply_dig_cut_token_plan(
                 planner.plan_conservative_pose(
                     self.observation_facts(obs).bucket_dig_area_pose()
                 )
             )
-        if mode == "operator_prior":
+        if mode == DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR:
             try:
                 return self.apply_dig_cut_token_plan(
                     planner.plan_operator_prior(
@@ -131,7 +168,7 @@ class PrimitiveDigTokenPlanningService:
                         fallback_reason=str(exc),
                     )
                 )
-        if mode in {"operator_prior_coverage", "operator_prior_sweep_belief"}:
+        if mode in DIG_CUT_PLANNER_COVERAGE_MODES:
             try:
                 _token, raw_fields, source, fallback_reason = (
                     self.build_operator_prior_coverage_dig_cut_tokens(obs)
@@ -142,6 +179,20 @@ class PrimitiveDigTokenPlanningService:
                         source=source,
                         fallback_reason=fallback_reason,
                     )
+                )
+            except Exception as exc:
+                if str(ports.dig_cut_planner_fallback_mode()) != "conservative_pose":
+                    raise
+                return self.apply_dig_cut_token_plan(
+                    planner.plan_fallback_conservative_pose(
+                        self.observation_facts(obs).bucket_dig_area_pose(),
+                        fallback_reason=str(exc),
+                    )
+                )
+        if mode == DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT:
+            try:
+                return self.apply_dig_cut_token_plan(
+                    self.build_residual_cut_intent_dig_cut_token_plan(obs)
                 )
             except Exception as exc:
                 if str(ports.dig_cut_planner_fallback_mode()) != "conservative_pose":
@@ -192,6 +243,33 @@ class PrimitiveDigTokenPlanningService:
             source="operator_prior_coverage",
         )
         return self.unpack_dig_cut_token_plan(plan)
+
+    def build_residual_cut_intent_dig_cut_token_plan(
+        self,
+        obs: dict[str, Any],
+    ) -> DigCutTokenPlan:
+        provider = self.ports.residual_cut_intent_plan_provider
+        if provider is None:
+            raise ValueError(RESIDUAL_CUT_INTENT_NO_PLAN_REASON)
+        result = provider(obs)
+        if result is None:
+            raise ValueError(RESIDUAL_CUT_INTENT_NO_PLAN_REASON)
+        if isinstance(result, DigCutTokenPlan):
+            return result
+        if isinstance(result, tuple) and len(result) == 4:
+            _token, raw_fields, source, fallback_reason = result
+            if not isinstance(raw_fields, Mapping):
+                raise TypeError(
+                    "residual_cut_intent provider raw_fields must be a mapping"
+                )
+            return self.ports.dig_cut_token_planner().plan_from_raw_fields(
+                dict(raw_fields),
+                source=str(source),
+                fallback_reason=str(fallback_reason),
+            )
+        raise TypeError(
+            "residual_cut_intent provider must return DigCutTokenPlan or DigCutPlanTuple"
+        )
 
     @staticmethod
     def unpack_dig_cut_token_plan(plan: DigCutTokenPlan) -> DigCutPlanTuple:
@@ -348,7 +426,17 @@ class PrimitiveDigTokenPlanningService:
 
 __all__ = [
     "CoverageRawFieldsBuilder",
+    "DIG_CUT_PLANNER_COVERAGE_MODES",
+    "DIG_CUT_PLANNER_MODE_CONSERVATIVE_POSE",
+    "DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR",
+    "DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_COVERAGE",
+    "DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_SWEEP_BELIEF",
+    "DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT",
+    "DIG_CUT_PLANNER_MODES_REQUIRING_PRIOR",
     "DigCutPlanTuple",
     "PrimitiveDigTokenPlanningPorts",
     "PrimitiveDigTokenPlanningService",
+    "RESIDUAL_CUT_INTENT_NO_PLAN_REASON",
+    "ResidualCutIntentPlanProvider",
+    "SUPPORTED_DIG_CUT_PLANNER_MODES",
 ]

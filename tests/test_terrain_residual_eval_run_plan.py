@@ -154,6 +154,28 @@ def test_plan_removes_adapter_blocker_when_token_adapter_is_explicitly_available
     ]
 
 
+def test_plan_removes_runtime_mode_and_adapter_blockers_when_explicitly_available():
+    result = build_residual_eval_run_plan(
+        current_eval_metadata=_current_eval_metadata(),
+        predicted_ab_artifacts=_predicted_ab_artifacts(),
+        planned_results_root="runs/eval/phase6g_real_ab_20260702",
+        protected_evidence_roots=["runs/eval/current_baseline/results"],
+        residual_runtime_integration_available=False,
+        residual_runtime_planner_mode_available=True,
+        residual_cut_intent_token_adapter_available=True,
+    )
+
+    branch_b = result["branches"]["heuristic_residual_pipeline"]
+    assert branch_b["status"] == "not_runnable"
+    assert branch_b["command_status"] == "not_runnable"
+    assert branch_b["runtime_integration_status"] == "missing"
+    assert branch_b["runtime_planner_mode_status"] == "available"
+    assert branch_b["cut_intent_token_adapter_status"] == "available"
+    assert branch_b["blockers"] == [
+        "missing_simulated_branch_execution_artifacts",
+    ]
+
+
 def test_plan_rejects_missing_current_eval_argv():
     metadata = _current_eval_metadata()
     metadata.pop("argv")

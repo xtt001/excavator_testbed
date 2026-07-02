@@ -5793,6 +5793,191 @@ Next bounded target:
 - The next slice should not run full simulation yet unless it first has a
   verified mode/config surface and a no-overwrite branch output root.
 
+## 2026-07-02: Phase 6G-C Residual Cut-Intent Runtime Mode Executor Packet
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 48]`.
+- Initial HEAD: `3aa5d76cf25eaa3abfb0ac4013253ccd7e1a496c`.
+- Initial dirty state: clean.
+
+Boundary decision:
+
+- Kept runtime mode behavior in
+  `testbed/planner/primitive/token/dig_planning.py`, the active dig-token
+  planning owner.
+- Kept `testbed/planner/primitive/token/planning_runtime.py` as thin provider
+  port composition.
+- Kept `testbed/eval/terrain_residual_eval_run_plan.py` as run-plan evidence
+  owner only; it adjusts explicit B blockers without owning token planning.
+- `testbed/planner/primitive/config/adapter.py` only references the centralized
+  supported dig-cut mode set and does not own residual cut-intent behavior.
+
+TDD red:
+
+- Added `tests/test_primitive_residual_cut_intent_runtime_mode.py` before
+  production code.
+- First red command:
+  `python -m pytest -q tests/test_primitive_residual_cut_intent_runtime_mode.py`.
+- Expected red result: collection failed with
+  `ImportError: cannot import name 'DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT'`.
+- Added the run-plan flag test before changing the run-plan owner.
+- Command:
+  `python -m pytest -q tests/test_terrain_residual_eval_run_plan.py`.
+- Expected red result: one failure with
+  `TypeError: build_residual_eval_run_plan() got an unexpected keyword argument 'residual_runtime_planner_mode_available'`.
+- Added the config-supported-mode test before changing config validation.
+- Command:
+  `python -m pytest -q tests/test_primitive_adapter_config.py`.
+- Expected red result: one failure with
+  `ValueError: Unsupported dig_cut_planner mode 'residual_cut_intent'`.
+
+Implemented contract:
+
+- Added focused dig-cut planner mode constant:
+  `residual_cut_intent`.
+- Added explicit port:
+  `residual_cut_intent_plan_provider(obs)`.
+- Provider result may be an existing `DigCutTokenPlan` or a
+  `(token, raw_fields, source, fallback_reason)` tuple compatible with existing
+  dig-cut raw-field planning.
+- `PrimitiveDigTokenPlanningService.build_dig_cut_tokens_for_obs()` consumes the
+  explicit provider only when mode is `residual_cut_intent`, then writes token
+  state through `apply_dig_cut_token_plan()`.
+- Provider missing / no-plan / error follows the existing fallback rule:
+  `dig_cut_planner_fallback_mode=conservative_pose` uses
+  `plan_fallback_conservative_pose()`, otherwise the error is raised.
+- Config validation now accepts `dig_cut_planner.mode=residual_cut_intent`
+  without requiring `prior_path`; the default remains `conservative_pose`.
+
+Run-plan evidence update:
+
+- `build_residual_eval_run_plan()` now accepts explicit
+  `residual_runtime_planner_mode_available=False`.
+- Default behavior remains unchanged: B branch is `not_runnable` with blockers
+  `missing_residual_runtime_planner_mode`,
+  `missing_cut_intent_to_dig_cut_token_adapter`, and
+  `missing_simulated_branch_execution_artifacts`.
+- When both `residual_runtime_planner_mode_available=True` and
+  `residual_cut_intent_token_adapter_available=True` are explicit while full
+  residual runtime integration is still unavailable, B remains
+  `not_runnable` / `runtime_integration_status=missing`, records both
+  statuses as `available`, and removes only those two blockers. The remaining
+  blocker is `missing_simulated_branch_execution_artifacts`.
+
+Preserved non-goals:
+
+- No eval YAML or default config edits.
+- No `tb-eval` or simulation run.
+- No `runs` artifact creation.
+- No branch output files.
+- No production planner decisions, rollout-review schema, CLI entrypoint,
+  pyproject scripts, dependencies, remotes, branches, staging, or commits.
+- No pass/fail, eval success, planner success, official defaults/thresholds,
+  command-space controls, or calibrated fallback.
+
+Verification:
+
+- Focused green:
+  `python -m pytest -q tests/test_primitive_residual_cut_intent_runtime_mode.py`
+  -> `5 passed`.
+- Run-plan tests:
+  `python -m pytest -q tests/test_terrain_residual_eval_run_plan.py`
+  -> `6 passed`.
+- Related bundle:
+  `python -m pytest -q tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_terrain_residual_eval_run_plan.py tests/test_primitive_adapter_config.py
+  tests/test_primitive_coverage_config.py tests/test_primitive_reset_lifecycle.py`
+  -> `56 passed`.
+- Compileall:
+  `python -m compileall -q testbed/planner/primitive/token/dig_planning.py
+  testbed/planner/primitive/token/planning_runtime.py
+  testbed/planner/primitive/config/adapter.py
+  testbed/eval/terrain_residual_eval_run_plan.py
+  tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_terrain_residual_eval_run_plan.py tests/test_primitive_adapter_config.py`
+  -> exit `0`.
+- Changed-doc guard:
+  `python scripts/planner_architecture_doc_guard.py --check-changed-docs
+  docs/training_setup.md docs/oracle_terrain_residual_planner_v0_plan.md
+  docs/oracle_terrain_residual_planner_closed_loop_log.md` -> exit `0`.
+- Doc inventory guard, architecture contract guard, and `git diff --check`
+  all exited `0`.
+
+## 2026-07-02: Phase 6G-C Planner Acceptance And Deep Reflection
+
+Planner audit:
+
+- Target lock rechecked in planner thread:
+  `/home/pingfan/PACT/excavator_testbed`, branch status
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 48]`,
+  HEAD `3aa5d76cf25eaa3abfb0ac4013253ccd7e1a496c`.
+- Worktree contained only expected Phase 6G-C files: primitive dig-token
+  planning/runtime owners, config validation, residual eval run-plan owner,
+  focused tests, and source-of-truth docs.
+- Large-file audit: `testbed/planner/primitive/config/adapter.py` is over the
+  repository large-file threshold, but the change there is thin validation
+  wiring to the centralized supported mode set; residual runtime behavior lives
+  in the smaller token-planning owner.
+
+Planner-side verification:
+
+- Focused runtime/config/run-plan suite:
+  `python -m pytest -q tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_terrain_residual_eval_run_plan.py
+  tests/test_primitive_adapter_config.py` -> `32 passed`.
+- Related primitive bundle:
+  `python -m pytest -q tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_terrain_residual_eval_run_plan.py tests/test_primitive_adapter_config.py
+  tests/test_primitive_coverage_config.py tests/test_primitive_reset_lifecycle.py`
+  -> `56 passed`.
+- Compileall for changed code/tests exited `0`.
+- Changed-doc guard, doc inventory guard, architecture contract guard, and
+  `git diff --check` all exited `0`.
+
+Acceptance:
+
+- Phase 6G-C accepted as the explicit residual cut-intent primitive runtime
+  mode slice.
+- It removes the runtime-mode blocker only when explicitly proven available;
+  default behavior and default config remain unchanged.
+- B branch remains not runnable until simulated branch execution artifacts are
+  produced.
+- Accepted-slice count since the latest deep reflection reached `3/3`; deep
+  reflection completed below and the count resets to `0/3`.
+
+Deep reflection:
+
+- Alignment verdict: aligned with the user's correction to pursue the core
+  implementation path. Phase 6G-A/B/C moved from command plan, to token adapter,
+  to real primitive runtime mode instead of adding more perimeter reports.
+- Efficiency verdict: good. Each slice removed one concrete blocker and kept
+  ownership focused: run-plan evidence, token adapter, runtime mode.
+- Config discipline verdict: acceptable. The new mode is accepted by validation
+  but no eval YAML/default config was changed, and `conservative_pose` remains
+  the default.
+- Remaining blocker: there are still no simulated branch execution artifacts
+  for B. The next work should stop treating this as documentation and create
+  the smallest no-overwrite execution artifact/request surface that the real
+  eval runner can consume.
+
+Next bounded target:
+
+- Phase 6G-D should produce a concrete residual B-branch execution request /
+  artifact bundle under a fresh no-overwrite run root, using the existing
+  A-branch eval command evidence plus explicit B settings:
+  `dig_cut_planner.mode=residual_cut_intent`, adapter/runtime mode available,
+  and residual cut-intent token source evidence.
+- It should still avoid a full simulation unless the request artifact and
+  no-overwrite layout are verified first.
+- It must not invent official thresholds, pass/fail semantics, planner success,
+  eval success, calibrated fallback, or hidden defaults.
+
 ## 2026-07-02: Phase 6G-A Residual Eval Run Plan Packet
 
 Target lock:

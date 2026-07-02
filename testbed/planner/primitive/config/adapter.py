@@ -26,6 +26,10 @@ from testbed.planner.primitive.effects.return_handoff import (
     ReturnHandoffReadinessConfig,
     ReturnStartEnvelopeGateConfig,
 )
+from testbed.planner.primitive.token.dig_planning import (
+    DIG_CUT_PLANNER_MODES_REQUIRING_PRIOR,
+    SUPPORTED_DIG_CUT_PLANNER_MODES,
+)
 from testbed.planner.primitive.token.tokens import GoalTokenProvider
 
 
@@ -1290,20 +1294,13 @@ def validate_dig_cut_planner_config(
 ) -> None:
     if not dig_cut_planner_enabled:
         return
-    supported_modes = {
-        "conservative_pose",
-        "operator_prior",
-        "operator_prior_coverage",
-        "operator_prior_sweep_belief",
-    }
-    if dig_cut_planner_mode not in supported_modes:
+    if dig_cut_planner_mode not in SUPPORTED_DIG_CUT_PLANNER_MODES:
         raise ValueError(
             f"Unsupported dig_cut_planner mode {dig_cut_planner_mode!r}; "
-            f"expected one of {sorted(supported_modes)}."
+            f"expected one of {sorted(SUPPORTED_DIG_CUT_PLANNER_MODES)}."
         )
     if (
-        dig_cut_planner_mode
-        in {"operator_prior", "operator_prior_coverage", "operator_prior_sweep_belief"}
+        dig_cut_planner_mode in DIG_CUT_PLANNER_MODES_REQUIRING_PRIOR
         and not dig_cut_prior_path
     ):
         raise ValueError(f"{dig_cut_planner_mode} dig_cut_planner requires prior_path.")

@@ -33,6 +33,7 @@ def build_residual_eval_run_plan(
     planned_results_root: Any,
     protected_evidence_roots: Sequence[Any],
     residual_runtime_integration_available: bool,
+    residual_runtime_planner_mode_available: bool = False,
     residual_cut_intent_token_adapter_available: bool = False,
     heuristic_branch_argv: Sequence[Any] | None = None,
     calibration_available: bool = False,
@@ -106,6 +107,9 @@ def build_residual_eval_run_plan(
         current_argv=current_argv,
         predicted_ab_artifacts=artifact_summary,
         residual_runtime_integration_available=residual_runtime_integration_available,
+        residual_runtime_planner_mode_available=(
+            residual_runtime_planner_mode_available
+        ),
         residual_cut_intent_token_adapter_available=(
             residual_cut_intent_token_adapter_available
         ),
@@ -160,6 +164,7 @@ def _branches(
     current_argv: list[str],
     predicted_ab_artifacts: Mapping[str, Any],
     residual_runtime_integration_available: bool,
+    residual_runtime_planner_mode_available: bool,
     residual_cut_intent_token_adapter_available: bool,
     heuristic_argv: list[str] | None,
     calibration_available: bool,
@@ -187,6 +192,9 @@ def _branches(
             branch_root=branch_roots["heuristic_residual_pipeline"],
             predicted_ab_artifacts=predicted_ab_artifacts,
             residual_runtime_integration_available=residual_runtime_integration_available,
+            residual_runtime_planner_mode_available=(
+                residual_runtime_planner_mode_available
+            ),
             residual_cut_intent_token_adapter_available=(
                 residual_cut_intent_token_adapter_available
             ),
@@ -205,10 +213,12 @@ def _heuristic_branch(
     branch_root: str,
     predicted_ab_artifacts: Mapping[str, Any],
     residual_runtime_integration_available: bool,
+    residual_runtime_planner_mode_available: bool,
     residual_cut_intent_token_adapter_available: bool,
     heuristic_argv: list[str] | None,
 ) -> dict[str, Any]:
     if not residual_runtime_integration_available:
+        runtime_mode_available = bool(residual_runtime_planner_mode_available)
         token_adapter_available = bool(residual_cut_intent_token_adapter_available)
         return {
             "label": "B",
@@ -216,6 +226,9 @@ def _heuristic_branch(
             "evidence_type": "predicted_artifact_to_runtime_gap",
             "command_status": "not_runnable",
             "runtime_integration_status": "missing",
+            "runtime_planner_mode_status": (
+                "available" if runtime_mode_available else "missing"
+            ),
             "cut_intent_token_adapter_status": (
                 "available" if token_adapter_available else "missing"
             ),
@@ -223,6 +236,7 @@ def _heuristic_branch(
             "predicted_artifact_root": predicted_ab_artifacts.get("results_root"),
             "predicted_artifact_status": predicted_ab_artifacts.get("status"),
             "blockers": _b_runtime_blockers(
+                residual_runtime_planner_mode_available=runtime_mode_available,
                 residual_cut_intent_token_adapter_available=token_adapter_available
             ),
         }
@@ -235,6 +249,7 @@ def _heuristic_branch(
         "evidence_type": "heuristic_residual_eval_command_plan",
         "command_status": "runnable",
         "runtime_integration_status": "available",
+        "runtime_planner_mode_status": "available",
         "cut_intent_token_adapter_status": "available",
         "argv": planned_argv,
         "command": shlex.join(planned_argv),
@@ -247,9 +262,12 @@ def _heuristic_branch(
 
 def _b_runtime_blockers(
     *,
+    residual_runtime_planner_mode_available: bool,
     residual_cut_intent_token_adapter_available: bool,
 ) -> list[str]:
-    blockers = [B_RUNTIME_MODE_BLOCKER]
+    blockers = []
+    if not residual_runtime_planner_mode_available:
+        blockers.append(B_RUNTIME_MODE_BLOCKER)
     if not residual_cut_intent_token_adapter_available:
         blockers.append(B_CUT_INTENT_TOKEN_ADAPTER_BLOCKER)
     blockers.append(B_BRANCH_EXECUTION_ARTIFACTS_BLOCKER)
