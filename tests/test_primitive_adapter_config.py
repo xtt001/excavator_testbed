@@ -288,6 +288,41 @@ def test_residual_cut_intent_dig_cut_planner_mode_does_not_require_prior_path() 
     assert updates["dig_cut_hold_token_until_skill_exit"] is False
 
 
+def test_residual_cut_intent_source_path_is_explicit_optional_config() -> None:
+    default_updates = _normalize().as_policy_field_updates()
+    assert default_updates["residual_cut_intent_source_path"] == ""
+
+    state = _normalize(
+        PrimitivePlannerAdapterConfigInputs(
+            dig_cut_planner={
+                "mode": "residual_cut_intent",
+                "residual_cut_intent_source_path": (
+                    "runs/eval/unit/residual_cut_intent_source.json"
+                ),
+            }
+        )
+    )
+    updates = state.as_policy_field_updates()
+
+    assert updates["dig_cut_planner_mode"] == "residual_cut_intent"
+    assert updates["residual_cut_intent_source_path"] == (
+        "runs/eval/unit/residual_cut_intent_source.json"
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="residual_cut_intent_source_path must be a path string",
+    ):
+        _normalize(
+            PrimitivePlannerAdapterConfigInputs(
+                dig_cut_planner={
+                    "mode": "residual_cut_intent",
+                    "residual_cut_intent_source_path": ["not", "a", "path"],
+                }
+            )
+        )
+
+
 @pytest.mark.parametrize(
     ("dig_cut_planner", "match"),
     [

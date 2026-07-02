@@ -759,21 +759,26 @@ Phase 6G-A 的 residual eval run command plan 当前由
 该 helper 是 eval-only run-plan owner：它接收 current baseline `eval_run_metadata`、Phase 6F predicted
 A/B artifact summary、future planned results root、protected evidence roots、residual runtime
 integration availability，以及默认关闭的显式 residual runtime planner mode / residual cut-intent token
-adapter availability evidence。
+adapter / residual cut-intent source provider availability evidence。
 它不读取隐式全局配置、不启动 `tb-eval`、不创建 run root、不写 artifact。
 
 输出包含 schema/source/status/offline_only、固定 A/B/C branch order、per-branch command plan、
 artifact input summary、no-overwrite validation、validation errors、non-goal statuses 和 provenance statuses。
 A branch 会从 current baseline `argv` 还原 `tb-eval` 命令，并把 `--output-dir` 改写到新的
 `<planned_results_root>/current_planner_baseline`。B branch 在 residual runtime integration 不可用时保持
-`not_runnable`，并默认记录三个直接 blocker：missing residual runtime planner mode、missing cut-intent to
-dig-cut token adapter、missing simulated branch execution artifacts。Phase 6G-B 之后，如果调用方显式证明
+`not_runnable`，并默认记录四个直接 blocker：missing residual runtime planner mode、missing cut-intent to
+dig-cut token adapter、missing residual cut-intent source provider、missing simulated branch execution artifacts。
+Phase 6G-B 之后，如果调用方显式证明
 `residual_cut_intent_token_adapter_available=True`，B branch 仍保持 `not_runnable`，但 adapter blocker 会被移除，
-剩余 blocker 为 missing residual runtime planner mode 和 missing simulated branch execution artifacts。Phase 6G-C
+剩余 blocker 为 missing residual runtime planner mode、missing residual cut-intent source provider 和
+missing simulated branch execution artifacts。Phase 6G-C
 之后，如果调用方同时显式证明 `residual_runtime_planner_mode_available=True` 和
 `residual_cut_intent_token_adapter_available=True`，B branch 仍保持 `not_runnable`，但 runtime-mode / adapter
-blockers 都会被移除，剩余 blocker 为 missing simulated branch execution artifacts。C branch 在无 usable gold
-samples 时继续 `not_evaluated` / `blocked_by_missing_gold_samples`。
+blockers 都会被移除，剩余 blocker 为 missing residual cut-intent source provider 和
+missing simulated branch execution artifacts。Phase 6G-D 之后，如果调用方也显式证明
+`residual_cut_intent_source_provider_available=True`，B branch 仍保持 `not_runnable`，但 source-provider blocker
+会被移除，剩余 blocker 为 missing simulated branch execution artifacts。C branch 在无 usable gold samples 时继续
+`not_evaluated` / `blocked_by_missing_gold_samples`。
 
 run-plan status 包括 `present`、`invalid_current_eval_metadata`、`invalid_predicted_ab_artifacts`、
 `invalid_residual_runtime_integration`、`invalid_planned_results_root` 和
@@ -806,6 +811,22 @@ conservative fallback，否则抛出错误。`dig_cut_planner.mode=residual_cut_
 但不是默认值；该 mode 不读取全局文件、env vars、`runs` artifacts 或隐藏状态，不运行 simulation，不写
 branch output files，不改 eval YAML/default config/production planner decisions/rollout-review schema/CLI entrypoint，
 也不定义 command-space controls、official thresholds、pass/fail、eval success、planner success 或 calibrated fallback。
+
+Phase 6G-D 的 residual cut-intent runtime source provider 当前由
+`testbed.planner.primitive.token.residual_cut_intent_source.build_residual_cut_intent_plan_provider_from_source_path()`
+负责。该 helper 只在调用方显式提供 `dig_cut_planner.residual_cut_intent_source_path` 时读取一个 JSON source；
+空 path 返回 `None`，不会扫描当前 `runs`、环境变量、默认配置或隐藏全局状态。source contract 为
+`residual_cut_intent_runtime_source_v1` / `explicit_residual_cut_intent_runtime_source`，必须显式列出
+cycle-indexed plans；每个 plan 可以包装 Phase 6G-B adapter output，并提供 `dig_cut_tokens`、`raw_fields`、
+plan `source` 和可选 `fallback_reason`。provider 通过当前 primitive cycle index 做确定性 exact-cycle lookup；
+missing file、invalid JSON、invalid plan status、invalid token/raw-field shape、duplicate cycle 或 missing cycle 都以
+`ResidualCutIntentPlanSourceError` 明确暴露。
+
+`PrimitivePlannerACTPolicy` 只保存 optional `residual_cut_intent_source_path` 并把它焊接到
+`PrimitiveTokenPlanningRuntimePorts.residual_cut_intent_plan_provider`；默认值仍为空，`dig_cut_planner.mode` 默认仍为
+`conservative_pose`。该 source provider 不运行 simulation、不创建 `runs` artifact、不写 branch output files、
+不改 eval YAML/default config/production planner decisions/rollout-review schema/CLI entrypoint，也不定义
+command-space controls、official thresholds、pass/fail、eval success、planner success 或 calibrated fallback。
 
 depth 诊断必须区分三种口径：
 

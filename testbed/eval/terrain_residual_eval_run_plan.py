@@ -18,10 +18,12 @@ BRANCH_ORDER = [
 ]
 B_RUNTIME_MODE_BLOCKER = "missing_residual_runtime_planner_mode"
 B_CUT_INTENT_TOKEN_ADAPTER_BLOCKER = "missing_cut_intent_to_dig_cut_token_adapter"
+B_CUT_INTENT_SOURCE_PROVIDER_BLOCKER = "missing_residual_cut_intent_source_provider"
 B_BRANCH_EXECUTION_ARTIFACTS_BLOCKER = "missing_simulated_branch_execution_artifacts"
 B_RUNTIME_BLOCKERS = [
     B_RUNTIME_MODE_BLOCKER,
     B_CUT_INTENT_TOKEN_ADAPTER_BLOCKER,
+    B_CUT_INTENT_SOURCE_PROVIDER_BLOCKER,
     B_BRANCH_EXECUTION_ARTIFACTS_BLOCKER,
 ]
 
@@ -35,6 +37,7 @@ def build_residual_eval_run_plan(
     residual_runtime_integration_available: bool,
     residual_runtime_planner_mode_available: bool = False,
     residual_cut_intent_token_adapter_available: bool = False,
+    residual_cut_intent_source_provider_available: bool = False,
     heuristic_branch_argv: Sequence[Any] | None = None,
     calibration_available: bool = False,
     profile: str = DEFAULT_PROFILE,
@@ -113,6 +116,9 @@ def build_residual_eval_run_plan(
         residual_cut_intent_token_adapter_available=(
             residual_cut_intent_token_adapter_available
         ),
+        residual_cut_intent_source_provider_available=(
+            residual_cut_intent_source_provider_available
+        ),
         heuristic_argv=heuristic_argv,
         calibration_available=calibration_available,
     )
@@ -166,6 +172,7 @@ def _branches(
     residual_runtime_integration_available: bool,
     residual_runtime_planner_mode_available: bool,
     residual_cut_intent_token_adapter_available: bool,
+    residual_cut_intent_source_provider_available: bool,
     heuristic_argv: list[str] | None,
     calibration_available: bool,
 ) -> dict[str, dict[str, Any]]:
@@ -198,6 +205,9 @@ def _branches(
             residual_cut_intent_token_adapter_available=(
                 residual_cut_intent_token_adapter_available
             ),
+            residual_cut_intent_source_provider_available=(
+                residual_cut_intent_source_provider_available
+            ),
             heuristic_argv=heuristic_argv,
         ),
         "calibrated_residual_pipeline": _calibrated_branch(
@@ -215,11 +225,15 @@ def _heuristic_branch(
     residual_runtime_integration_available: bool,
     residual_runtime_planner_mode_available: bool,
     residual_cut_intent_token_adapter_available: bool,
+    residual_cut_intent_source_provider_available: bool,
     heuristic_argv: list[str] | None,
 ) -> dict[str, Any]:
     if not residual_runtime_integration_available:
         runtime_mode_available = bool(residual_runtime_planner_mode_available)
         token_adapter_available = bool(residual_cut_intent_token_adapter_available)
+        source_provider_available = bool(
+            residual_cut_intent_source_provider_available
+        )
         return {
             "label": "B",
             "status": "not_runnable",
@@ -232,12 +246,16 @@ def _heuristic_branch(
             "cut_intent_token_adapter_status": (
                 "available" if token_adapter_available else "missing"
             ),
+            "cut_intent_source_provider_status": (
+                "available" if source_provider_available else "missing"
+            ),
             "planned_output_dir": branch_root,
             "predicted_artifact_root": predicted_ab_artifacts.get("results_root"),
             "predicted_artifact_status": predicted_ab_artifacts.get("status"),
             "blockers": _b_runtime_blockers(
                 residual_runtime_planner_mode_available=runtime_mode_available,
-                residual_cut_intent_token_adapter_available=token_adapter_available
+                residual_cut_intent_token_adapter_available=token_adapter_available,
+                residual_cut_intent_source_provider_available=source_provider_available,
             ),
         }
 
@@ -251,6 +269,7 @@ def _heuristic_branch(
         "runtime_integration_status": "available",
         "runtime_planner_mode_status": "available",
         "cut_intent_token_adapter_status": "available",
+        "cut_intent_source_provider_status": "available",
         "argv": planned_argv,
         "command": shlex.join(planned_argv),
         "planned_output_dir": branch_root,
@@ -264,12 +283,15 @@ def _b_runtime_blockers(
     *,
     residual_runtime_planner_mode_available: bool,
     residual_cut_intent_token_adapter_available: bool,
+    residual_cut_intent_source_provider_available: bool,
 ) -> list[str]:
     blockers = []
     if not residual_runtime_planner_mode_available:
         blockers.append(B_RUNTIME_MODE_BLOCKER)
     if not residual_cut_intent_token_adapter_available:
         blockers.append(B_CUT_INTENT_TOKEN_ADAPTER_BLOCKER)
+    if not residual_cut_intent_source_provider_available:
+        blockers.append(B_CUT_INTENT_SOURCE_PROVIDER_BLOCKER)
     blockers.append(B_BRANCH_EXECUTION_ARTIFACTS_BLOCKER)
     return blockers
 

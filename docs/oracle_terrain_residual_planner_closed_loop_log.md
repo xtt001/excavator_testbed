@@ -5978,6 +5978,76 @@ Next bounded target:
 - It must not invent official thresholds, pass/fail semantics, planner success,
   eval success, calibrated fallback, or hidden defaults.
 
+## 2026-07-02: Phase 6G-D Planner Acceptance
+
+Planner audit:
+
+- Target lock rechecked in planner thread:
+  `/home/pingfan/PACT/excavator_testbed`, branch status
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 49]`,
+  HEAD `e813835c2a308955f79f5ba5aa0793e245190124`.
+- Worktree contained only expected Phase 6G-D files: new focused
+  residual-cut-intent source owner/test, thin config and policy pass-through,
+  run-plan blocker evidence, and source-of-truth docs.
+- Large-file audit: `testbed/planner/primitive/config/adapter.py` and
+  `testbed/policies/hybrid/primitive_planner.py` are both over the repository
+  large-file threshold, but this slice only adds optional path validation /
+  provider pass-through. Source loading, validation, and provider behavior live
+  in `testbed/planner/primitive/token/residual_cut_intent_source.py`.
+
+Planner-side verification:
+
+- Focused source/runtime/config/run-plan suite:
+  `python -m pytest -q tests/test_primitive_residual_cut_intent_source.py
+  tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_terrain_residual_eval_run_plan.py tests/test_primitive_adapter_config.py`
+  -> `42 passed`.
+- Related primitive bundle:
+  `python -m pytest -q tests/test_primitive_residual_cut_intent_source.py
+  tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_terrain_residual_eval_run_plan.py tests/test_primitive_adapter_config.py
+  tests/test_primitive_coverage_config.py tests/test_primitive_reset_lifecycle.py`
+  -> `63 passed`.
+- Compileall for changed code/tests exited `0`.
+- Changed-doc guard, doc inventory guard, architecture contract guard, and
+  `git diff --check` all exited `0`.
+- Protected current evidence file count stayed `10`.
+
+Acceptance:
+
+- Phase 6G-D accepted as the explicit residual cut-intent runtime source /
+  provider slice.
+- Default behavior remains unchanged: empty source path creates no provider and
+  default `dig_cut_planner.mode` remains `conservative_pose`.
+- B branch now has explicit evidence flags for runtime mode, token adapter, and
+  source provider. It remains not runnable until simulated branch execution
+  artifacts exist.
+- Accepted-slice count since the latest deep reflection: `1/3`.
+
+Lightweight reflection:
+
+- Reference used: user instruction to pursue the core path, Phase 6G-C
+  remaining blocker, primitive token runtime contract, and no-hidden-default /
+  no-simulation boundaries.
+- Alignment verdict: aligned. The slice gives the new runtime mode an explicit
+  durable source path instead of scanning current `runs` state or inventing
+  defaults.
+- Efficiency verdict: useful core implementation. It removes another real
+  blocker and keeps large-file edits to pass-through only.
+
+Next bounded target:
+
+- Phase 6G-E should materialize the explicit
+  `residual_cut_intent_runtime_source_v1` JSON source from existing predicted
+  B rollout / selected cut-intent evidence and Phase 6G-B adapter output under
+  a fresh no-overwrite request/artifact root.
+- It should reuse the existing Phase 6F artifact pipeline/writer where
+  appropriate instead of creating a duplicate general artifact writer.
+- It must still avoid running `tb-eval` or simulation until the source artifact
+  and branch request layout are verified.
+
 ## 2026-07-02: Phase 6G-A Residual Eval Run Plan Packet
 
 Target lock:

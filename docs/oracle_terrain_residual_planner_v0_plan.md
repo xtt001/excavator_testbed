@@ -557,6 +557,8 @@ Phase 5 closure note：
 - [x] 建立 Phase 6F-C runner-facing CLI entrypoint，用显式 request JSON 调用 Phase 6F-B pipeline 并输出 pipeline result JSON。
 - [x] 建立 Phase 6G-A residual eval run command plan owner，把 current A branch 的 `tb-eval` 命令改写到未来 A/B run root，并把 B branch runtime integration 缺口落到 command-plan evidence。
 - [x] 建立 Phase 6G-B residual cut-intent dig-cut token adapter，将 Phase 6E-C eval-only cut intent 转成现有 primitive dig-cut raw fields / `dig_cut_tokens` 合约。
+- [x] 建立 Phase 6G-C residual cut-intent runtime planner mode，使 primitive token runtime 能消费显式 provider。
+- [x] 建立 Phase 6G-D residual cut-intent runtime source provider，使 `dig_cut_planner.mode=residual_cut_intent` 能从显式 durable source 构造 provider。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -736,7 +738,7 @@ Phase 6G-A note：
 - `testbed.eval.terrain_residual_eval_run_plan.build_residual_eval_run_plan()` 已定义 focused eval run-plan owner，负责把当前 baseline metadata 和 Phase 6F predicted A/B artifacts 转成下一步真实 eval A/B 的 per-branch command plan。
 - 该 helper 只接收显式 `current_eval_metadata`、`predicted_ab_artifacts`、future `planned_results_root`、protected evidence roots 和 residual runtime integration availability；它不读取隐式全局配置、不启动 `tb-eval`、不创建 run root、不写 artifact、不改 production planner。
 - A branch 从 current baseline `argv` 还原可运行命令，并把 `--output-dir` 改写到 `runs/eval/oracle_terrain_residual_phase6g_real_ab_20260702/current_planner_baseline`。Current-run smoke 中 A branch status / command status 均为 `runnable`，source config 是 `runs/jobs/yulong_v2_4_5_return_relocate_token_swap_all_train_eval_20260526/eval_configs/eval_10cycle_next_entry_cell_prior_relocate_spatial_bounds_fail_fast.yaml`。
-- B branch 在当前 repo 状态下保持 `not_runnable` / `runtime_integration_status=missing`，blockers 为 `missing_residual_runtime_planner_mode`、`missing_cut_intent_to_dig_cut_token_adapter`、`missing_simulated_branch_execution_artifacts`。C branch 继续 `not_evaluated` / `blocked_by_missing_gold_samples`。
+- B branch 在当前 repo 状态下保持 `not_runnable` / `runtime_integration_status=missing`，blockers 为 `missing_residual_runtime_planner_mode`、`missing_cut_intent_to_dig_cut_token_adapter`、`missing_residual_cut_intent_source_provider`、`missing_simulated_branch_execution_artifacts`。C branch 继续 `not_evaluated` / `blocked_by_missing_gold_samples`。
 - Smoke facts: run plan status `present`，validation errors `[]`，no-overwrite status `present`，future root `runs/eval/oracle_terrain_residual_phase6g_real_ab_20260702` remained absent `False -> False`，protected current results file count stayed `10 -> 10`。
 - Phase 6G-A 是从 predicted artifact pipeline 走向真实 eval runner 的 command-level bridge，但仍未完成 B branch runtime integration；完整 Phase 6 baseline comparison 仍需要把 B branch cut intent 接入 runtime planner / dig-cut token adapter 后运行真实 closed-loop simulation。
 
@@ -746,7 +748,7 @@ Phase 6G-B note：
 - 该 helper 只接收显式 `cut_intent`、`cell_centers_m`、`direction_vectors`、`bucket_length_m`、`payload_kg` 和 profile；`cell_centers_m` 可用 integer/string cell id 映射到 `{x_m, z_m}` 或 two-item sequence，`direction_vectors` 用 cut-intent direction 映射到 two-item x/z vector。它不推断 grid-to-world axes、不定义 official geometry，也不从 volume 推断 payload。
 - Adapter 验证 finite positive bucket length / candidate depth、finite non-negative payload、known anchor cell、known direction 和 nonzero direction vector。输出包含 schema/source/status/offline_only/profile、candidate id、primitive raw fields、`dig_cut_tokens` plain list、validation errors、adapter y=0 convention、token contract constants、non-goal statuses 和 provenance statuses。
 - `operator_entry_y_m` / `operator_exit_y_m` 使用 `0.0` 是 offline adapter convention，不是 official terrain geometry。`payload_kg` 显式写入 `operator_cut_payload_gain_kg` 和 `operator_effective_deposit_delta_kg`。
-- `build_residual_eval_run_plan()` 新增默认 `False` 的显式 `residual_cut_intent_token_adapter_available` evidence。默认行为保持 Phase 6G-A 三个 B blocker 不变；当调用方显式传入 `True` 且 residual runtime integration 仍不可用时，B branch 仍为 `not_runnable` / `runtime_integration_status=missing`，但 blockers 只保留 `missing_residual_runtime_planner_mode` 和 `missing_simulated_branch_execution_artifacts`。
+- `build_residual_eval_run_plan()` 新增默认 `False` 的显式 `residual_cut_intent_token_adapter_available` evidence。默认行为保持 Phase 6G-A B blockers 不变；当调用方显式传入 `True` 且 residual runtime integration 仍不可用时，B branch 仍为 `not_runnable` / `runtime_integration_status=missing`，但 blockers 只保留 `missing_residual_runtime_planner_mode`、`missing_residual_cut_intent_source_provider` 和 `missing_simulated_branch_execution_artifacts`。
 - Phase 6G-B 仍不新增 `dig_cut_planner.mode`，不运行 `tb-eval` 或 simulation，不创建 `runs` artifact，不写 branch output files，不改 production planner / rollout-review schema / CLI entrypoint，也不定义 command-space controls、official thresholds、pass/fail、eval success、planner success 或 calibrated fallback。
 
 Phase 6G-C note：
@@ -754,8 +756,16 @@ Phase 6G-C note：
 - `testbed.planner.primitive.token.dig_planning.PrimitiveDigTokenPlanningService` 已新增显式 `residual_cut_intent` runtime token-planning mode。该 mode 只消费 caller-provided `residual_cut_intent_plan_provider` 返回的 `DigCutTokenPlan` 或 existing dig-cut raw-fields tuple，并继续通过 `apply_dig_cut_token_plan()` 写入现有 token source / fallback / prior-range state。
 - `testbed.planner.primitive.token.planning_runtime.PrimitiveTokenPlanningRuntimePorts` 只做 provider 端口传递；`dig_cut_planner.mode=residual_cut_intent` 被 config validation 接受，但不是默认值，也不读取全局文件、env vars、`runs` artifact 或隐藏状态。
 - provider 返回 no plan 或抛错时，只有 `dig_cut_planner_fallback_mode=conservative_pose` 才走 existing conservative fallback；否则按 existing operator-prior mode 规则抛出原始错误。
-- `build_residual_eval_run_plan()` 新增默认 `False` 的显式 `residual_runtime_planner_mode_available` evidence。默认 Phase 6G-A / 6G-B blockers 不变；当 runtime mode 与 token adapter 都被调用方显式证明 available 且 full runtime integration 仍不可用时，B branch 仍保持 `not_runnable` / `runtime_integration_status=missing`，blockers 只剩 `missing_simulated_branch_execution_artifacts`。
+- `build_residual_eval_run_plan()` 新增默认 `False` 的显式 `residual_runtime_planner_mode_available` evidence。默认 Phase 6G-A / 6G-B blockers 不变；当 runtime mode 与 token adapter 都被调用方显式证明 available 且 full runtime integration 仍不可用时，B branch 仍保持 `not_runnable` / `runtime_integration_status=missing`，blockers 只剩 `missing_residual_cut_intent_source_provider` 和 `missing_simulated_branch_execution_artifacts`。
 - Phase 6G-C 不运行 `tb-eval` 或 simulation，不创建 `runs` artifact，不写 branch output files，不改 eval YAML/default config/production planner decisions/rollout-review schema/CLI entrypoint，也不定义 command-space controls、official thresholds、pass/fail、eval success、planner success 或 calibrated fallback。
+
+Phase 6G-D note：
+
+- `testbed.planner.primitive.token.residual_cut_intent_source.build_residual_cut_intent_plan_provider_from_source_path()` 已定义 explicit residual cut-intent runtime source/provider contract。调用方必须显式提供 `dig_cut_planner.residual_cut_intent_source_path`；空 path 返回 `None`，不会扫描当前 `runs`、env vars、默认配置或隐藏全局状态。
+- Source JSON contract 是 `residual_cut_intent_runtime_source_v1` / `explicit_residual_cut_intent_runtime_source`，必须包含 `status=present` 和 cycle-indexed `plans`。每个 plan 可以包装 Phase 6G-B adapter output，并提供 `dig_cut_tokens`、`raw_fields`、plan `source` 和可选 `fallback_reason`；provider 用当前 primitive cycle index 做 exact deterministic lookup。
+- `PrimitivePlannerACTPolicy` 只做 optional source path 保存和 provider port pass-through；默认值仍为空，默认 `dig_cut_planner.mode` 仍为 `conservative_pose`。
+- `build_residual_eval_run_plan()` 新增默认 `False` 的显式 `residual_cut_intent_source_provider_available` evidence。当 runtime mode、token adapter、source provider 都由调用方显式证明 available 且 full residual runtime integration 仍不可用时，B branch 仍保持 `not_runnable` / `runtime_integration_status=missing`，blockers 只剩 `missing_simulated_branch_execution_artifacts`。
+- Phase 6G-D 不运行 `tb-eval` 或 simulation，不创建 `runs` artifact，不写 branch output files，不改 eval YAML/default config/production planner decisions/rollout-review schema/CLI entrypoint，也不定义 command-space controls、official thresholds、pass/fail、eval success、planner success 或 calibrated fallback。
 
 通过标准：
 

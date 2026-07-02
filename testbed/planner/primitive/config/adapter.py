@@ -400,6 +400,18 @@ class PrimitivePlannerAdapterConfigNormalizer:
             "dig_cut_planner_fallback_mode",
             str(dig_cut_planner_cfg.get("fallback_mode", "conservative_pose")),
         )
+        residual_cut_intent_source_path = dig_cut_planner_cfg.get(
+            "residual_cut_intent_source_path",
+            "",
+        )
+        if residual_cut_intent_source_path is None:
+            residual_cut_intent_source_path = ""
+        if not isinstance(residual_cut_intent_source_path, (str, Path)):
+            raise ValueError("residual_cut_intent_source_path must be a path string.")
+        set_value(
+            "residual_cut_intent_source_path",
+            str(residual_cut_intent_source_path),
+        )
         set_value(
             "dig_cut_hold_token_until_skill_exit",
             bool(
