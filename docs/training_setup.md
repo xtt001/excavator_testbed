@@ -684,6 +684,27 @@ outside-target removed depth、completion ratio，以及 expected delta depth / 
 `no_valid_candidate_path`；这些都是 diagnostic stop reasons，不是 pass/fail、eval success 或 planner success
 语义。
 
+offline predicted A/B residual comparison 当前由
+`testbed.eval.terrain_residual_baseline_comparison.build_predicted_residual_ab_comparison()` 生成。
+它是 Phase 6E-F eval-only comparison helper，用于把 current planner A 的真实 current-run residual
+evidence 与 Phase 6E-E predicted B rollout counterfactual 放进同一个显式离线输出。它不运行 simulation，
+不创建 branch output files，不写 `runs` artifact，不接入 production planner / rollout-review schema，也不把
+effect-model counterfactual 解释成真实 closed-loop 结果。
+
+调用方必须显式传入 `current_planner_evidence`、`target_residual_report`、`predicted_b_rollout` 和
+`calibrated_branch_evidence`。输出固定三条 branch：A branch `evidence_type=current_rollout_evidence`，
+只记录 current rollout / target residual facts 并保持 target success `not_claimed`；B branch
+`evidence_type=predicted_counterfactual`，记录 predicted rollout step count、stop reason、selected
+eval-only cut-intent candidate ids、initial / final positive residual、completion ratio、overdig、
+outside-target removed depth，以及 aggregate expected delta depth / volume；C branch 在 Phase 5/6 evidence
+显示没有 usable gold samples 时继续保持 `not_evaluated` / `blocked_by_missing_gold_samples`。
+
+top-level status 包括 `present`、`invalid_current_planner_evidence`、`invalid_predicted_rollout_evidence` 和
+`invalid_calibrated_evidence`。`comparison_limits` 明确记录 A 为 current rollout evidence，B 为 predicted
+counterfactual，B real simulation `not_run`、production integration `not_integrated`、official success semantics
+/ official threshold `not_defined`、calibrated-model fallback `not_invented`。该 helper 不输出 pass/fail、
+eval success、planner success、production readiness、command-space controls、official thresholds 或 calibrated fallback。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

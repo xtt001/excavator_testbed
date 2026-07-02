@@ -9,11 +9,20 @@ from typing import Any
 SCHEMA = "terrain_residual_planner_baseline_comparison_v1"
 SOURCE = "explicit_offline_residual_planner_baseline_comparison"
 DEFAULT_PROFILE = "heuristic_only_offline_baseline_comparison"
+PREDICTED_AB_SCHEMA = "terrain_residual_predicted_ab_comparison_v1"
+PREDICTED_AB_SOURCE = "explicit_predicted_residual_ab_comparison"
+PREDICTED_AB_PROFILE = "predicted_residual_ab_comparison"
 BRANCH_ORDER = [
     "current_planner_baseline",
     "heuristic_residual_pipeline",
     "calibrated_residual_pipeline",
 ]
+PREDICTED_AB_METRIC_KEYS = (
+    "target_positive_residual_depth_sum_m",
+    "target_removed_completion_ratio",
+    "target_overdig_depth_sum_m",
+    "outside_target_removed_depth_sum_m",
+)
 
 
 def build_residual_planner_baseline_comparison(
@@ -55,6 +64,41 @@ def build_residual_planner_baseline_comparison(
         "branch_order": list(BRANCH_ORDER),
         "branches": branches,
         "comparison_limits": _comparison_limits(),
+        "validation_errors": validation_errors,
+    }
+
+
+def build_predicted_residual_ab_comparison(
+    *,
+    current_planner_evidence: Mapping[str, Any],
+    target_residual_report: Mapping[str, Any],
+    predicted_b_rollout: Mapping[str, Any],
+    calibrated_branch_evidence: Mapping[str, Any],
+    profile: str = PREDICTED_AB_PROFILE,
+) -> dict[str, Any]:
+    """Compare current rollout evidence with predicted B-branch rollout evidence."""
+
+    branches = {
+        "current_planner_baseline": _predicted_ab_current_branch(
+            current_planner_evidence,
+            target_residual_report,
+        ),
+        "heuristic_residual_pipeline": _predicted_b_branch(predicted_b_rollout),
+        "calibrated_residual_pipeline": _calibrated_branch(
+            calibrated_branch_evidence,
+        ),
+    }
+
+    status, validation_errors = _predicted_ab_status(branches)
+    return {
+        "schema": PREDICTED_AB_SCHEMA,
+        "source": PREDICTED_AB_SOURCE,
+        "status": status,
+        "offline_only": True,
+        "profile": str(profile),
+        "branch_order": list(BRANCH_ORDER),
+        "branches": branches,
+        "comparison_limits": _predicted_ab_limits(),
         "validation_errors": validation_errors,
     }
 
@@ -104,6 +148,56 @@ def _current_branch(
             "convergence_point_count": summary.get("convergence_point_count"),
             "convergence_diagnostic_trend": summary.get(
                 "convergence_diagnostic_trend"
+            ),
+        },
+        "target_success_claim": "not_claimed",
+    }
+
+
+def _predicted_ab_current_branch(
+    current_planner_evidence: Mapping[str, Any],
+    target_residual_report: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not _has_present_status(current_planner_evidence):
+        return {
+            "branch_name": "current_planner_baseline",
+            "status": "invalid",
+            "reason": "current_planner_evidence status must be present",
+        }
+    if not _has_present_status(target_residual_report):
+        return {
+            "branch_name": "current_planner_baseline",
+            "status": "invalid",
+            "reason": "target_residual_report status must be present",
+        }
+
+    summary = _target_report_summary(target_residual_report)
+    return {
+        "branch_name": "current_planner_baseline",
+        "status": "present",
+        "evidence_type": "current_rollout_evidence",
+        "source_status": str(current_planner_evidence.get("status")),
+        "rollout_evidence": {
+            "planned_cycle_count": current_planner_evidence.get(
+                "planned_cycle_count"
+            ),
+            "actual_cycle_count": current_planner_evidence.get("actual_cycle_count"),
+            "payload_summary": current_planner_evidence.get("payload_summary"),
+        },
+        "target_residual_evidence": {
+            "report_status": str(target_residual_report.get("status")),
+            "latest_snapshot_row_index": summary.get("latest_snapshot_row_index"),
+            "target_positive_residual_depth_sum_m": summary.get(
+                "latest_target_positive_residual_depth_sum_m"
+            ),
+            "target_removed_completion_ratio": summary.get(
+                "latest_target_removed_completion_ratio"
+            ),
+            "target_overdig_depth_sum_m": summary.get(
+                "latest_target_overdig_depth_sum_m"
+            ),
+            "outside_target_removed_depth_sum_m": summary.get(
+                "latest_outside_target_removed_depth_sum_m"
             ),
         },
         "target_success_claim": "not_claimed",
@@ -187,6 +281,59 @@ def _heuristic_branch(
     }
 
 
+def _predicted_b_branch(predicted_b_rollout: Mapping[str, Any]) -> dict[str, Any]:
+    status_error = _predicted_rollout_status_error(predicted_b_rollout)
+    if status_error is not None:
+        return {
+            "branch_name": "heuristic_residual_pipeline",
+            "status": "invalid",
+            "reason": status_error,
+        }
+
+    initial_metrics = _mapping_value(predicted_b_rollout.get("initial_metrics"))
+    final_metrics = _mapping_value(predicted_b_rollout.get("final_metrics"))
+    aggregate_delta_summary = _mapping_value(
+        predicted_b_rollout.get("aggregate_delta_summary")
+    )
+    target_positive_delta = _round_float(
+        aggregate_delta_summary.get("target_positive_residual_depth_delta_m")
+    )
+    return {
+        "branch_name": "heuristic_residual_pipeline",
+        "status": "present",
+        "evidence_type": "predicted_counterfactual",
+        "predicted_rollout_status": str(predicted_b_rollout.get("status")),
+        "step_count": predicted_b_rollout.get("step_count"),
+        "stop_reason": predicted_b_rollout.get("stop_reason"),
+        "cut_intent_candidate_ids": _cut_intent_candidate_ids(predicted_b_rollout),
+        "initial_metrics": _predicted_metric_subset(initial_metrics),
+        "final_metrics": _predicted_metric_subset(final_metrics),
+        "aggregate_delta_summary": {
+            "target_positive_residual_depth_delta_m": target_positive_delta,
+            "target_positive_residual_improvement_m": _positive_improvement(
+                target_positive_delta
+            ),
+            "target_removed_completion_ratio_delta": _round_float(
+                aggregate_delta_summary.get("target_removed_completion_ratio_delta")
+            ),
+            "target_overdig_depth_increase_m": _round_float(
+                aggregate_delta_summary.get("target_overdig_depth_delta_m")
+            ),
+            "outside_target_removed_depth_increase_m": _round_float(
+                aggregate_delta_summary.get("outside_target_removed_depth_delta_m")
+            ),
+            "expected_delta_depth_sum_m": _round_float(
+                aggregate_delta_summary.get("expected_delta_depth_sum_m")
+            ),
+            "expected_delta_volume_m3": _round_float(
+                aggregate_delta_summary.get("expected_delta_volume_m3")
+            ),
+        },
+        "real_simulation_status": "not_run",
+        "production_runtime_status": "not_integrated",
+    }
+
+
 def _calibrated_branch(
     calibrated_branch_evidence: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -246,6 +393,24 @@ def _comparison_status(
     return "present", []
 
 
+def _predicted_ab_status(
+    branches: dict[str, dict[str, Any]],
+) -> tuple[str, list[str]]:
+    current_branch = branches["current_planner_baseline"]
+    if current_branch["status"] != "present":
+        return "invalid_current_planner_evidence", [current_branch["reason"]]
+
+    heuristic_branch = branches["heuristic_residual_pipeline"]
+    if heuristic_branch["status"] != "present":
+        return "invalid_predicted_rollout_evidence", [heuristic_branch["reason"]]
+
+    calibrated_branch = branches["calibrated_residual_pipeline"]
+    if calibrated_branch["status"] == "invalid":
+        return "invalid_calibrated_evidence", [calibrated_branch["reason"]]
+
+    return "present", []
+
+
 def _first_heuristic_status_error(
     *,
     candidate_generation: Mapping[str, Any],
@@ -261,6 +426,44 @@ def _first_heuristic_status_error(
     ):
         if not _has_present_status(evidence):
             return f"{label} status must be present"
+    return None
+
+
+def _predicted_rollout_status_error(predicted_b_rollout: Any) -> str | None:
+    if not _has_present_status(predicted_b_rollout):
+        return "predicted_b_rollout status must be present"
+
+    for label in ("initial_metrics", "final_metrics"):
+        metrics = predicted_b_rollout.get(label)
+        if not isinstance(metrics, Mapping):
+            return f"predicted_b_rollout {label} must be a mapping"
+        metric_status = metrics.get("status")
+        if metric_status not in (None, "present"):
+            return f"predicted_b_rollout {label} status must be present"
+        for key in PREDICTED_AB_METRIC_KEYS:
+            if key not in metrics:
+                return f"predicted_b_rollout {label} must include {key}"
+
+    aggregate_delta_summary = predicted_b_rollout.get("aggregate_delta_summary")
+    if not isinstance(aggregate_delta_summary, Mapping):
+        return "predicted_b_rollout aggregate_delta_summary must be a mapping"
+    for key in (
+        "target_positive_residual_depth_delta_m",
+        "target_overdig_depth_delta_m",
+        "outside_target_removed_depth_delta_m",
+        "target_removed_completion_ratio_delta",
+        "expected_delta_depth_sum_m",
+        "expected_delta_volume_m3",
+    ):
+        if key not in aggregate_delta_summary:
+            return f"predicted_b_rollout aggregate_delta_summary must include {key}"
+
+    per_step_records = predicted_b_rollout.get("per_step_records")
+    if not isinstance(per_step_records, list):
+        return "predicted_b_rollout per_step_records must be a list"
+    for index, record in enumerate(per_step_records):
+        if not isinstance(record, Mapping):
+            return f"predicted_b_rollout per_step_records[{index}] must be a mapping"
     return None
 
 
@@ -290,4 +493,54 @@ def _comparison_limits() -> dict[str, str]:
     }
 
 
-__all__ = ["build_residual_planner_baseline_comparison"]
+def _predicted_ab_limits() -> dict[str, str]:
+    return {
+        "a_branch_evidence_type": "current_rollout_evidence",
+        "b_branch_evidence_type": "predicted_counterfactual",
+        "b_real_simulation_status": "not_run",
+        "production_integration_status": "not_integrated",
+        "official_success_semantics_status": "not_defined",
+        "official_threshold_status": "not_defined",
+        "calibrated_model_fallback_status": "not_invented",
+    }
+
+
+def _predicted_metric_subset(metrics: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: _round_float(metrics.get(key))
+        for key in PREDICTED_AB_METRIC_KEYS
+    }
+
+
+def _cut_intent_candidate_ids(predicted_b_rollout: Mapping[str, Any]) -> list[str]:
+    candidate_ids: list[str] = []
+    per_step_records = predicted_b_rollout.get("per_step_records")
+    if not isinstance(per_step_records, list):
+        return candidate_ids
+    for record in per_step_records:
+        if not isinstance(record, Mapping):
+            continue
+        candidate_id = record.get("cut_intent_candidate_id")
+        if candidate_id is not None:
+            candidate_ids.append(str(candidate_id))
+    return candidate_ids
+
+
+def _round_float(value: Any) -> Any:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int | float):
+        return round(float(value), 12)
+    return value
+
+
+def _positive_improvement(value: Any) -> Any:
+    if isinstance(value, int | float):
+        return round(max(0.0, -float(value)), 12)
+    return value
+
+
+__all__ = [
+    "build_residual_planner_baseline_comparison",
+    "build_predicted_residual_ab_comparison",
+]

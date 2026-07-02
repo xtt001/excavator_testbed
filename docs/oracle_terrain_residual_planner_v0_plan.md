@@ -551,7 +551,7 @@ Phase 5 closure note：
 - [x] 建立 Phase 6E-C eval-only heuristic cut-intent generation owner，从 B branch 候选/评分/effect evidence 生成一个 future harness cut intent，不输出 production runtime action。
 - [x] 建立 Phase 6E-D eval-only predicted residual update / one-cut counterfactual owner，将 selected cut-intent 的 effect delta 应用到当前 terrain evidence 并重算 before/after metrics。
 - [x] 建立 Phase 6E-E eval-only predicted B-branch rollout loop，在显式小 cycle budget 内迭代更新 predicted terrain state 并输出 per-step evidence。
-- [ ] 建立 Phase 6E-F predicted A/B comparison report，将 current planner A evidence 与 predicted B rollout evidence 放进同一比较输出，仍不声明真实 closed-loop pass/fail。
+- [x] 建立 Phase 6E-F predicted A/B comparison report，将 current planner A evidence 与 predicted B rollout evidence 放进同一比较输出，仍不声明真实 closed-loop pass/fail。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -689,6 +689,14 @@ Phase 6E-F default entry target：
 
 - 下一步直接建立 predicted A/B comparison report：将现有 current planner A target residual evidence 与 Phase 6E-E predicted B rollout evidence 放进同一个比较输出，记录 branch status、initial/final residual、completion、overdig、outside-target movement、predicted step count、stop reason、calibrated C blocker 和限制项。
 - 该 slice 应刷新 durable baseline report 或建立小 focused report owner（视现有 owner 边界决定），但不得把 predicted B counterfactual 写成真实 simulation 结果，不得声明 pass/fail、eval success、planner success、official thresholds 或 production readiness。
+
+Phase 6E-F note：
+
+- `testbed.eval.terrain_residual_baseline_comparison.build_predicted_residual_ab_comparison()` 已扩展现有 offline comparison owner，生成 Phase 6E-F predicted A/B residual comparison report。
+- 该 helper 只接收显式 in-memory evidence：current planner A evidence、target residual report、Phase 6E-E predicted B rollout output 和 calibrated branch evidence。它不读取隐式全局路径、不运行 simulation、不创建 `runs` artifact、不写 branch output files、不接 production planner 或 rollout-review schema。
+- A branch 输出 `evidence_type=current_rollout_evidence`，只记录 current rollout / target residual facts，target success 继续 `not_claimed`。B branch 输出 `evidence_type=predicted_counterfactual`，记录 predicted step count、stop reason、selected eval-only cut-intent candidate ids、initial / final residual、completion、overdig、outside-target movement 和 aggregate expected delta depth / volume。C branch 在 usable gold samples 缺失时继续 `not_evaluated` / `blocked_by_missing_gold_samples`。
+- Current-run smoke facts: current report status `present`，predicted rollout status `present`，step count `1`，stop reason `zero_target_positive_residual`，selected candidate `cut_candidate_000009`；A positive residual / completion / overdig / outside-target removed depth 为 `0.374313589186` / `0.251372821628` / `0.0` / `0.488698139786`；B final values 为 `0.0` / `1.0` / `0.009656514972` / `0.680683191865`；expected delta depth / volume 为 `0.575955156237` / `0.035997197265`。
+- Phase 6E-F 仍不是真实 A/B closed-loop comparison：B branch 是 effect-model predicted counterfactual，不是真实 simulation rollout；该输出不声明 pass/fail、eval success、planner success、official thresholds、production readiness、command-space controls 或 calibrated fallback。完整 Phase 6 baseline comparison 仍需要真实 A/B/C closed-loop run artifacts 和明确评价口径。
 
 通过标准：
 

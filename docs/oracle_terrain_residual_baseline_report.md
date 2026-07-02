@@ -305,6 +305,86 @@ calibrated model is better than the heuristic branch, and does not establish any
 runtime action, official target default, official threshold, target-shape
 success, eval success, or planner success semantics.
 
+## Predicted Residual A/B Comparison
+
+This section records the Phase 6E-F predicted A/B comparison output for the
+same current run and explicit non-official target spec. Branch A is current
+rollout evidence. Branch B is a Phase 6E-E effect-model counterfactual, not a
+real simulation rollout. Branch C remains blocked by missing usable gold
+samples.
+
+Comparison identity:
+
+- source: `explicit_predicted_residual_ab_comparison`
+- schema: `terrain_residual_predicted_ab_comparison_v1`
+- status: `present`
+- `offline_only`: `true`
+- validation errors: `[]`
+
+Input scope:
+
+- target rollout:
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`
+- explicit non-official target spec: `grid_shape=[3, 2]`, rows `[0:2]`,
+  cols `[0:1]`, `target_depth_m=0.25`
+- protected current results file count in the read-only smoke: `10 -> 10`
+- future Phase 6D/6E run root remained absent:
+  `runs/eval/oracle_terrain_residual_phase6d_t1_ab_20260702/results`
+
+Branch status summary:
+
+| Branch | Status | Evidence type / reason |
+| --- | --- | --- |
+| `current_planner_baseline` | `present` | `current_rollout_evidence` |
+| `heuristic_residual_pipeline` | `present` | `predicted_counterfactual` |
+| `calibrated_residual_pipeline` | `not_evaluated` | `blocked_by_missing_gold_samples` |
+
+A/B residual comparison facts:
+
+| Field | A current rollout | B predicted counterfactual |
+| --- | ---: | ---: |
+| target positive residual depth sum | `0.374313589186` | `0.0` |
+| target removed completion ratio | `0.251372821628` | `1.0` |
+| target overdig depth sum | `0.0` | `0.009656514972` |
+| outside-target removed depth sum | `0.488698139786` | `0.680683191865` |
+
+B predicted rollout facts:
+
+| Field | Value |
+| --- | ---: |
+| predicted rollout status | `present` |
+| step count | `1` |
+| stop reason | `zero_target_positive_residual` |
+| selected eval-only cut-intent candidate | `cut_candidate_000009` |
+| aggregate expected delta depth | `0.575955156237` |
+| aggregate expected delta volume | `0.035997197265` |
+
+Delta summary:
+
+| Field | Value |
+| --- | ---: |
+| target positive residual delta | `-0.374313589186` |
+| target positive residual improvement magnitude | `0.374313589186` |
+| target removed completion ratio delta | `0.748627178372` |
+| target overdig increase | `0.009656514972` |
+| outside-target removed-depth increase | `0.191985052079` |
+
+Comparison limits:
+
+- A branch evidence type: `current_rollout_evidence`
+- B branch evidence type: `predicted_counterfactual`
+- B real simulation status: `not_run`
+- production integration: `not_integrated`
+- official success semantics: `not_defined`
+- official thresholds: `not_defined`
+- calibrated-model fallback: `not_invented`
+
+Conservative interpretation: the Phase 6E-F output places current A residual
+evidence and predicted B counterfactual residual evidence in one durable report
+packet. It still does not prove that B outperforms A in real closed-loop
+simulation, does not define pass/fail or success semantics, and does not promote
+the eval-only cut intent into runtime action selection.
+
 ## Interpretation
 
 For this explicit non-official example spec, target positive residual decreases

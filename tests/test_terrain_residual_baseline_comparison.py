@@ -1,6 +1,7 @@
 import json
 
 from testbed.eval.terrain_residual_baseline_comparison import (
+    build_predicted_residual_ab_comparison,
     build_residual_planner_baseline_comparison,
 )
 
@@ -24,6 +25,7 @@ def _target_report():
             "latest_snapshot_row_index": 6147,
             "latest_target_positive_residual_depth_sum_m": 0.374313589186,
             "latest_target_overdig_depth_sum_m": 0.0,
+            "latest_target_removed_completion_ratio": 0.251372821628,
             "latest_outside_target_removed_depth_sum_m": 0.488698139786,
             "convergence_summary_status": "present",
             "convergence_point_count": 10,
@@ -115,6 +117,49 @@ def _effect_summary():
                 {"rank": 1, "candidate_id": "cut_candidate_000001"}
             ],
         },
+    }
+
+
+def _predicted_rollout():
+    return {
+        "status": "present",
+        "schema": "terrain_residual_predicted_rollout_v1",
+        "source": "explicit_predicted_residual_rollout",
+        "offline_only": True,
+        "step_count": 1,
+        "stop_reason": "zero_target_positive_residual",
+        "initial_metrics": {
+            "status": "present",
+            "target_positive_residual_depth_sum_m": 0.374313589186,
+            "target_overdig_depth_sum_m": 0.0,
+            "outside_target_removed_depth_sum_m": 0.488698139786,
+            "target_removed_completion_ratio": 0.251372821628,
+        },
+        "final_metrics": {
+            "status": "present",
+            "target_positive_residual_depth_sum_m": 0.0,
+            "target_overdig_depth_sum_m": 0.009656514972,
+            "outside_target_removed_depth_sum_m": 0.680683191865,
+            "target_removed_completion_ratio": 1.0,
+        },
+        "per_step_records": [
+            {
+                "step_index": 0,
+                "status": "present",
+                "cut_intent_candidate_id": "cut_candidate_000009",
+                "expected_delta_depth_sum_m": 0.575955156237,
+                "expected_delta_volume_m3": 0.035997197265,
+            }
+        ],
+        "aggregate_delta_summary": {
+            "target_positive_residual_depth_delta_m": -0.374313589186,
+            "target_overdig_depth_delta_m": 0.009656514972,
+            "outside_target_removed_depth_delta_m": 0.191985052079,
+            "target_removed_completion_ratio_delta": 0.748627178372,
+            "expected_delta_depth_sum_m": 0.575955156237,
+            "expected_delta_volume_m3": 0.035997197265,
+        },
+        "validation_errors": [],
     }
 
 
@@ -298,4 +343,143 @@ def test_residual_planner_baseline_comparison_validates_calibrated_evidence():
     )
     assert comparison["validation_errors"] == [
         "calibrated branch evidence must include usable gold sample count",
+    ]
+
+
+def test_predicted_residual_ab_comparison_reports_current_and_predicted_branches():
+    comparison = build_predicted_residual_ab_comparison(
+        current_planner_evidence=_current_evidence(),
+        target_residual_report=_target_report(),
+        predicted_b_rollout=_predicted_rollout(),
+        calibrated_branch_evidence=_missing_gold_sample_evidence(),
+    )
+
+    assert comparison["status"] == "present"
+    assert comparison["schema"] == "terrain_residual_predicted_ab_comparison_v1"
+    assert comparison["source"] == "explicit_predicted_residual_ab_comparison"
+    assert comparison["offline_only"] is True
+    assert comparison["branch_order"] == [
+        "current_planner_baseline",
+        "heuristic_residual_pipeline",
+        "calibrated_residual_pipeline",
+    ]
+    assert comparison["branches"]["current_planner_baseline"] == {
+        "branch_name": "current_planner_baseline",
+        "status": "present",
+        "evidence_type": "current_rollout_evidence",
+        "source_status": "present",
+        "rollout_evidence": {
+            "planned_cycle_count": 10,
+            "actual_cycle_count": 10,
+            "payload_summary": {"total_deposited_fraction": 0.91},
+        },
+        "target_residual_evidence": {
+            "report_status": "present",
+            "latest_snapshot_row_index": 6147,
+            "target_positive_residual_depth_sum_m": 0.374313589186,
+            "target_removed_completion_ratio": 0.251372821628,
+            "target_overdig_depth_sum_m": 0.0,
+            "outside_target_removed_depth_sum_m": 0.488698139786,
+        },
+        "target_success_claim": "not_claimed",
+    }
+    assert comparison["branches"]["heuristic_residual_pipeline"] == {
+        "branch_name": "heuristic_residual_pipeline",
+        "status": "present",
+        "evidence_type": "predicted_counterfactual",
+        "predicted_rollout_status": "present",
+        "step_count": 1,
+        "stop_reason": "zero_target_positive_residual",
+        "cut_intent_candidate_ids": ["cut_candidate_000009"],
+        "initial_metrics": {
+            "target_positive_residual_depth_sum_m": 0.374313589186,
+            "target_removed_completion_ratio": 0.251372821628,
+            "target_overdig_depth_sum_m": 0.0,
+            "outside_target_removed_depth_sum_m": 0.488698139786,
+        },
+        "final_metrics": {
+            "target_positive_residual_depth_sum_m": 0.0,
+            "target_removed_completion_ratio": 1.0,
+            "target_overdig_depth_sum_m": 0.009656514972,
+            "outside_target_removed_depth_sum_m": 0.680683191865,
+        },
+        "aggregate_delta_summary": {
+            "target_positive_residual_depth_delta_m": -0.374313589186,
+            "target_positive_residual_improvement_m": 0.374313589186,
+            "target_removed_completion_ratio_delta": 0.748627178372,
+            "target_overdig_depth_increase_m": 0.009656514972,
+            "outside_target_removed_depth_increase_m": 0.191985052079,
+            "expected_delta_depth_sum_m": 0.575955156237,
+            "expected_delta_volume_m3": 0.035997197265,
+        },
+        "real_simulation_status": "not_run",
+        "production_runtime_status": "not_integrated",
+    }
+    assert comparison["branches"]["calibrated_residual_pipeline"] == {
+        "branch_name": "calibrated_residual_pipeline",
+        "status": "not_evaluated",
+        "reason": "blocked_by_missing_gold_samples",
+        "usable_gold_sample_count": 0,
+        "usable_extracted_record_count": 0,
+        "schema_gap_implication": (
+            "no_usable_records_for_explicit_required_fields_and_split_keys"
+        ),
+    }
+    assert comparison["comparison_limits"] == {
+        "a_branch_evidence_type": "current_rollout_evidence",
+        "b_branch_evidence_type": "predicted_counterfactual",
+        "b_real_simulation_status": "not_run",
+        "production_integration_status": "not_integrated",
+        "official_success_semantics_status": "not_defined",
+        "official_threshold_status": "not_defined",
+        "calibrated_model_fallback_status": "not_invented",
+    }
+    assert comparison["validation_errors"] == []
+
+    all_keys = set(_all_keys(comparison))
+    assert "runtime_action" not in all_keys
+    assert "command_space_controls" not in all_keys
+    assert "production_readiness" not in all_keys
+    assert "pass_fail" not in all_keys
+    assert "eval_success" not in all_keys
+    assert "planner_success" not in all_keys
+    assert "official_threshold" not in all_keys
+    assert "calibrated_fallback" not in all_keys
+    serialized = json.dumps(comparison, sort_keys=True)
+    assert "predicted_counterfactual" in serialized
+    assert "current_rollout_evidence" in serialized
+
+
+def test_predicted_residual_ab_comparison_validates_current_and_predicted_inputs():
+    invalid_current = build_predicted_residual_ab_comparison(
+        current_planner_evidence={"status": "missing"},
+        target_residual_report=_target_report(),
+        predicted_b_rollout=_predicted_rollout(),
+        calibrated_branch_evidence=_missing_gold_sample_evidence(),
+    )
+    assert invalid_current["status"] == "invalid_current_planner_evidence"
+    assert invalid_current["validation_errors"] == [
+        "current_planner_evidence status must be present",
+    ]
+
+    invalid_report = build_predicted_residual_ab_comparison(
+        current_planner_evidence=_current_evidence(),
+        target_residual_report={"status": "missing"},
+        predicted_b_rollout=_predicted_rollout(),
+        calibrated_branch_evidence=_missing_gold_sample_evidence(),
+    )
+    assert invalid_report["status"] == "invalid_current_planner_evidence"
+    assert invalid_report["validation_errors"] == [
+        "target_residual_report status must be present",
+    ]
+
+    invalid_predicted = build_predicted_residual_ab_comparison(
+        current_planner_evidence=_current_evidence(),
+        target_residual_report=_target_report(),
+        predicted_b_rollout={"status": "invalid_branch_run_plan"},
+        calibrated_branch_evidence=_missing_gold_sample_evidence(),
+    )
+    assert invalid_predicted["status"] == "invalid_predicted_rollout_evidence"
+    assert invalid_predicted["validation_errors"] == [
+        "predicted_b_rollout status must be present",
     ]

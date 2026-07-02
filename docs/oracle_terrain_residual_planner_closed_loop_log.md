@@ -5636,6 +5636,231 @@ Preserved non-goals:
 - No command-space controls, official defaults, official thresholds, pass/fail,
   eval success, planner success, or calibrated fallback.
 
+## 2026-07-02: Phase 6E-F Planner Acceptance
+
+Planner audit:
+
+- Target lock rechecked in planner thread:
+  `/home/pingfan/PACT/excavator_testbed`, branch status
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 42]`,
+  HEAD `53ed107735f9978f8eaac028c92a2fea47161525`.
+- Worktree contained only the expected Phase 6E-F files:
+  `testbed/eval/terrain_residual_baseline_comparison.py`,
+  `tests/test_terrain_residual_baseline_comparison.py`,
+  `docs/training_setup.md`,
+  `docs/oracle_terrain_residual_planner_v0_plan.md`,
+  `docs/oracle_terrain_residual_baseline_report.md`, and this log.
+- Boundary check accepted the executor decision to extend the existing
+  comparison owner. Final line count:
+  `testbed/eval/terrain_residual_baseline_comparison.py` `546`, below the
+  large-file threshold.
+
+Planner-side verification:
+
+- Focused test:
+  `python -m pytest -q tests/test_terrain_residual_baseline_comparison.py` ->
+  `6 passed`.
+- Related bundle:
+  `python -m pytest -q tests/test_terrain_residual_predicted_rollout.py
+  tests/test_terrain_residual_cut_update.py
+  tests/test_terrain_residual_cut_intent.py
+  tests/test_terrain_residual_closed_loop_branch_plan.py
+  tests/test_terrain_residual_closed_loop_manifest.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_calibration_extraction.py
+  tests/test_terrain_target_report.py tests/test_terrain_target_projection.py
+  tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py
+  tests/test_terrain_residual_metrics.py tests/test_rollout_review.py` ->
+  `109 passed`.
+- Compileall for the touched comparison owner/test and related eval owners
+  exited `0`.
+- Changed-doc guard, doc inventory guard, architecture contract guard, and
+  `git diff --check` all exited `0`.
+
+Planner-side current-run smoke:
+
+- Rebuilt the current target residual report, Phase 6E-A manifest, Phase 6E-B
+  branch plan, Phase 6E-E predicted B rollout, and Phase 6E-F predicted A/B
+  comparison in memory.
+- Report / manifest / branch-plan / predicted-rollout / comparison statuses:
+  all `present`.
+- Predicted step count: `1`; stop reason: `zero_target_positive_residual`;
+  selected eval-only cut-intent candidate: `cut_candidate_000009`.
+- A current target positive residual: `0.374313589186`; B predicted final
+  target positive residual: `0.0`.
+- B predicted deltas: completion `0.748627178372`, overdig increase
+  `0.009656514972`, outside-target removed-depth increase `0.191985052079`,
+  expected delta depth / volume `0.575955156237` / `0.035997197265`.
+- C branch remained `not_evaluated` / `blocked_by_missing_gold_samples`.
+- Validation errors: `[]`.
+- Future root
+  `runs/eval/oracle_terrain_residual_phase6d_t1_ab_20260702/results` remained
+  absent before and after smoke.
+- Protected current results file count stayed unchanged.
+
+Acceptance:
+
+- Phase 6E-F accepted as the predicted A/B comparison report that places current
+  A rollout evidence and predicted B counterfactual evidence in one output.
+- Accepted-slice count since the latest deep reflection: `1/3`.
+- Deep reflection is not due yet.
+
+Lightweight reflection:
+
+- Reference used: user correction to execute the core idea directly, Phase
+  6E-E predicted B rollout, Phase 6E-F target, no-production / no-artifact
+  non-goals, and repo ownership rules.
+- Alignment verdict: aligned. The slice moved from B-only predicted rollout
+  evidence to direct A/B comparison evidence without claiming a real simulation
+  result.
+- Efficiency verdict: useful core implementation. It converted the predicted
+  rollout into the durable comparison surface needed before a minimal harness or
+  artifact-writing runner can be scoped.
+
+Next bounded target:
+
+- Move from in-memory predicted comparison to a minimal eval-only comparison
+  artifact path or runner entrypoint that materializes the already-defined A/B
+  evidence under a new non-overwriting run root.
+- It should reuse the manifest no-overwrite rules, predicted rollout, and
+  predicted A/B comparison helper; it must not run a real simulator, alter
+  production planner behavior, or invent pass/fail / official threshold
+  semantics.
+
+## 2026-07-02: Phase 6E-F Executor Predicted A/B Comparison Packet
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 42]`.
+- Initial HEAD: `53ed107735f9978f8eaac028c92a2fea47161525`.
+- Initial dirty state: clean.
+
+Boundary decision:
+
+- Extended the existing small comparison owner,
+  `testbed/eval/terrain_residual_baseline_comparison.py`, rather than adding a
+  new owner.
+- Rationale: the file already owns offline cross-branch baseline comparison
+  evidence, and Phase 6E-F compares A current evidence with B predicted rollout
+  evidence and C calibration availability evidence.
+- Did not modify rollout review, production planner, candidate/effect owners,
+  calibration owners, CLI, runtime, branch/upstream/config, or dependencies.
+
+Implemented contract:
+
+- Added public helper:
+  `testbed.eval.terrain_residual_baseline_comparison.build_predicted_residual_ab_comparison()`.
+- Inputs are explicit in-memory evidence:
+  `current_planner_evidence`, `target_residual_report`,
+  `predicted_b_rollout`, and `calibrated_branch_evidence`.
+- Output schema/source:
+  `terrain_residual_predicted_ab_comparison_v1` /
+  `explicit_predicted_residual_ab_comparison`.
+- Branches:
+  - A `current_planner_baseline`: status `present`,
+    `evidence_type=current_rollout_evidence`, target success `not_claimed`.
+  - B `heuristic_residual_pipeline`: status `present`,
+    `evidence_type=predicted_counterfactual`, includes predicted rollout step
+    count, stop reason, selected eval-only cut-intent candidate ids, initial /
+    final residual metrics, and aggregate expected delta depth / volume.
+  - C `calibrated_residual_pipeline`: `not_evaluated` /
+    `blocked_by_missing_gold_samples` when usable gold samples remain absent.
+- Statuses covered by focused tests: `present`,
+  `invalid_current_planner_evidence`, `invalid_predicted_rollout_evidence`, and
+  inherited `invalid_calibrated_evidence`.
+
+TDD and verification facts:
+
+- TDD red:
+  `python -m pytest -q tests/test_terrain_residual_baseline_comparison.py -k "predicted_residual_ab"`
+  failed during collection with
+  `ImportError: cannot import name 'build_predicted_residual_ab_comparison'`.
+- Focused green:
+  `python -m pytest -q tests/test_terrain_residual_baseline_comparison.py -k "predicted_residual_ab"` ->
+  `2 passed, 4 deselected`.
+- Focused file:
+  `python -m pytest -q tests/test_terrain_residual_baseline_comparison.py` ->
+  `6 passed`.
+- Related bundle:
+  `python -m pytest -q tests/test_terrain_residual_predicted_rollout.py
+  tests/test_terrain_residual_cut_update.py
+  tests/test_terrain_residual_cut_intent.py
+  tests/test_terrain_residual_closed_loop_branch_plan.py
+  tests/test_terrain_residual_closed_loop_manifest.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_calibration_extraction.py
+  tests/test_terrain_target_report.py tests/test_terrain_target_projection.py
+  tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py
+  tests/test_terrain_residual_metrics.py tests/test_rollout_review.py` ->
+  `109 passed`.
+- Compileall for touched comparison owner/test and related eval owners exited
+  `0`.
+
+Current-run smoke facts:
+
+- Recomputed current target report in memory from
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`
+  using explicit non-official target spec `grid_shape=[3, 2]`, rows `[0:2]`,
+  cols `[0:1]`, `target_depth_m=0.25`.
+- Rebuilt Phase 6E-A manifest, Phase 6E-B branch plan, and Phase 6E-E
+  predicted rollout in memory.
+- Target report / manifest / branch plan / predicted rollout / predicted A/B
+  comparison statuses: all `present`.
+- Predicted rollout step count: `1`.
+- Stop reason: `zero_target_positive_residual`.
+- Selected eval-only cut-intent candidate: `cut_candidate_000009`.
+- A current positive residual / completion / overdig / outside-target removed:
+  `0.374313589186` / `0.251372821628` / `0.0` /
+  `0.488698139786`.
+- B predicted final positive residual / completion / overdig / outside-target
+  removed: `0.0` / `1.0` / `0.009656514972` / `0.680683191865`.
+- Delta summary: target positive residual delta `-0.374313589186`,
+  improvement magnitude `0.374313589186`, completion delta `0.748627178372`,
+  overdig increase `0.009656514972`, outside-target removed-depth increase
+  `0.191985052079`, expected delta depth / volume `0.575955156237` /
+  `0.035997197265`.
+- C branch: `not_evaluated` / `blocked_by_missing_gold_samples`.
+- Validation errors: `[]`.
+- Future root
+  `runs/eval/oracle_terrain_residual_phase6d_t1_ab_20260702/results` remained
+  absent before/after smoke.
+- Protected current results file count stayed `10 -> 10`.
+
+Docs changed:
+
+- `docs/training_setup.md` documents the predicted A/B comparison helper,
+  explicit inputs, branch evidence types, statuses, limits, and non-goals.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks only Phase 6E-F
+  predicted A/B comparison report complete and keeps full Phase 6 closed-loop
+  baseline comparison open.
+- `docs/oracle_terrain_residual_baseline_report.md` records durable Phase 6E-F
+  predicted A/B comparison facts and limits.
+- This log records the executor packet; no planner reflection was written.
+
+Preserved non-goals:
+
+- No real simulation.
+- No `runs` artifact creation.
+- No branch output files.
+- No production planner / gate / policy / runtime integration.
+- No rollout-review schema integration.
+- No command-space controls, official defaults, official thresholds, pass/fail,
+  eval success, planner success, production readiness, or calibrated fallback.
+
 ## 2026-07-02: Phase 6E-E Planner Acceptance And Deep Reflection
 
 Planner audit:
