@@ -5636,6 +5636,163 @@ Preserved non-goals:
 - No command-space controls, official defaults, official thresholds, pass/fail,
   eval success, planner success, or calibrated fallback.
 
+## 2026-07-02: Phase 6G-B Residual Cut-Intent Token Adapter Packet
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 47]`.
+- Initial HEAD: `b386b53a2370ecbccd0f703c9ae6bcffecb9eab3`.
+- Initial dirty state: clean.
+
+Boundary decision:
+
+- Added a new focused primitive token owner,
+  `testbed/planner/primitive/token/residual_cut_intent.py`.
+- Responsibility: convert one eval-only residual cut-intent record into the
+  existing primitive dig-cut raw fields and `dig_cut_tokens` contract.
+- `testbed/eval/terrain_residual_eval_run_plan.py` remains only a command-plan
+  evidence owner; it records explicit adapter availability and adjusts B branch
+  blockers without owning token geometry or runtime planner behavior.
+
+TDD red:
+
+- Added `tests/test_primitive_residual_cut_intent_tokens.py` before production
+  code.
+- Command:
+  `python -m pytest -q tests/test_primitive_residual_cut_intent_tokens.py`.
+- Expected red result: collection failed with
+  `ModuleNotFoundError: No module named 'testbed.planner.primitive.token.residual_cut_intent'`.
+- Added the run-plan flag test before changing the run-plan owner.
+- Command:
+  `python -m pytest -q tests/test_terrain_residual_eval_run_plan.py`.
+- Expected red result: one failure with
+  `TypeError: build_residual_eval_run_plan() got an unexpected keyword argument 'residual_cut_intent_token_adapter_available'`.
+
+Implemented contract:
+
+- Public helper:
+  `build_residual_cut_intent_dig_cut_token(...)`.
+- Schema/source:
+  `residual_cut_intent_dig_cut_token_v1` /
+  `explicit_residual_cut_intent_dig_cut_token`.
+- Inputs are explicit: Phase 6E-C eval-only cut intent or nested `cut_intent`
+  record, `cell_centers_m`, `direction_vectors`, `bucket_length_m`,
+  `payload_kg`, and profile.
+- `cell_centers_m` supports integer/string cell ids mapped to `{x_m, z_m}` or
+  a two-item x/z sequence. `direction_vectors` supports direction string to a
+  two-item x/z vector and normalizes nonzero vectors.
+- Validation covers finite positive bucket length, finite non-negative payload,
+  finite positive candidate depth, known anchor cell, known direction, and
+  nonzero direction vector. Ordinary invalid input returns `status=invalid`
+  with validation errors, empty raw fields, and empty tokens.
+- Output includes schema/source/status/offline_only/profile, candidate id, raw
+  fields, `dig_cut_tokens` as a plain list, validation errors, adapter
+  conventions, token contract constants, non-goal statuses, and provenance
+  statuses.
+- Token construction uses existing
+  `DigCutTokenPlanner.plan_from_raw_fields()` and the existing dig-cut contract
+  from `testbed.data.operator_first_v2_2`.
+- `payload_kg` is copied to both `operator_cut_payload_gain_kg` and
+  `operator_effective_deposit_delta_kg`.
+- `operator_entry_y_m` and `operator_exit_y_m` are `0.0` by adapter convention,
+  not official terrain geometry.
+
+Run-plan evidence update:
+
+- `build_residual_eval_run_plan()` now accepts explicit
+  `residual_cut_intent_token_adapter_available=False`.
+- Default behavior remains unchanged: B branch is `not_runnable` with blockers
+  `missing_residual_runtime_planner_mode`,
+  `missing_cut_intent_to_dig_cut_token_adapter`, and
+  `missing_simulated_branch_execution_artifacts`.
+- When the adapter flag is explicitly `True` and residual runtime integration is
+  still unavailable, B branch remains `not_runnable` /
+  `runtime_integration_status=missing`, records
+  `cut_intent_token_adapter_status=available`, and removes only
+  `missing_cut_intent_to_dig_cut_token_adapter` from blockers.
+
+Verification:
+
+- Focused green:
+  `python -m pytest -q tests/test_primitive_residual_cut_intent_tokens.py` ->
+  `3 passed`.
+- Updated run-plan tests:
+  `python -m pytest -q tests/test_terrain_residual_eval_run_plan.py` ->
+  `5 passed`.
+- Related bundle:
+  `python -m pytest -q tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_terrain_residual_eval_run_plan.py
+  tests/test_terrain_residual_cut_intent.py
+  tests/test_primitive_adapter_config.py tests/test_primitive_coverage_config.py
+  tests/test_primitive_reset_lifecycle.py` -> `53 passed`.
+- Compileall:
+  `python -m compileall -q testbed/planner/primitive/token/residual_cut_intent.py
+  testbed/eval/terrain_residual_eval_run_plan.py
+  tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_terrain_residual_eval_run_plan.py` -> exit `0`.
+
+Preserved non-goals:
+
+- No new `dig_cut_planner.mode`.
+- No eval YAML or config edits.
+- No `tb-eval` or simulation run.
+- No `runs` artifact creation.
+- No branch output files.
+- No production planner decisions, rollout-review schema, CLI entrypoint,
+  pyproject scripts, dependencies, remotes, branches, staging, or commits.
+- No pass/fail, eval success, planner success, official defaults/thresholds,
+  command-space controls, or calibrated fallback.
+
+Planner acceptance:
+
+- Planner target lock rechecked after callback:
+  `/home/pingfan/PACT/excavator_testbed`, branch status
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 47]`,
+  HEAD `b386b53a2370ecbccd0f703c9ae6bcffecb9eab3`.
+- Worktree contained only the expected Phase 6G-B files:
+  `testbed/planner/primitive/token/residual_cut_intent.py`,
+  `tests/test_primitive_residual_cut_intent_tokens.py`,
+  `testbed/eval/terrain_residual_eval_run_plan.py`,
+  `tests/test_terrain_residual_eval_run_plan.py`, and the three
+  source-of-truth docs.
+- Planner audit confirmed the adapter generates the existing 10-value dig-cut
+  token contract through `DigCutTokenPlanner.plan_from_raw_fields()` rather
+  than adding another report-only schema.
+- Planner-side focused verification:
+  `python -m pytest -q tests/test_primitive_residual_cut_intent_tokens.py tests/test_terrain_residual_eval_run_plan.py`
+  -> `8 passed`.
+- Planner-side compileall for the new owner/test and changed run-plan files
+  exited `0`.
+- Changed-doc guard, doc inventory guard, architecture contract guard, and
+  `git diff --check` all exited `0`.
+- Phase 6G-B accepted as the residual cut-intent to dig-cut token adapter
+  slice. It removes only the adapter blocker when explicitly proven available;
+  B remains not runnable until runtime planner mode and branch execution
+  artifacts exist.
+
+Lightweight reflection:
+
+- Reference used: user directive to execute the core path, Phase 6G-A blocker
+  evidence, existing primitive dig-cut token contract, and no-simulation /
+  no-config non-goals.
+- Alignment verdict: aligned. This slice removed a real B-branch blocker by
+  producing the existing token contract, not by adding another perimeter
+  document.
+- Efficiency verdict: useful core implementation; verification was sampled in
+  planner because it checked callback trust and doc-sync risk, not a full
+  duplicate of the executor bundle.
+- Accepted-slice count since the latest deep reflection: `2/3`.
+
+Next bounded target:
+
+- Phase 6G-C should add the smallest runtime planner-mode entry point that can
+  consume an explicit residual cut-intent token source during eval, without
+  changing default configs.
+- The next slice should not run full simulation yet unless it first has a
+  verified mode/config surface and a no-overwrite branch output root.
+
 ## 2026-07-02: Phase 6G-A Residual Eval Run Plan Packet
 
 Target lock:

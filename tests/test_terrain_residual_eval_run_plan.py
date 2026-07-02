@@ -133,6 +133,27 @@ def test_plan_builds_runnable_a_command_and_blocks_b_without_runtime_adapter():
     assert "calibrated_fallback" not in all_keys
 
 
+def test_plan_removes_adapter_blocker_when_token_adapter_is_explicitly_available():
+    result = build_residual_eval_run_plan(
+        current_eval_metadata=_current_eval_metadata(),
+        predicted_ab_artifacts=_predicted_ab_artifacts(),
+        planned_results_root="runs/eval/phase6g_real_ab_20260702",
+        protected_evidence_roots=["runs/eval/current_baseline/results"],
+        residual_runtime_integration_available=False,
+        residual_cut_intent_token_adapter_available=True,
+    )
+
+    branch_b = result["branches"]["heuristic_residual_pipeline"]
+    assert branch_b["status"] == "not_runnable"
+    assert branch_b["command_status"] == "not_runnable"
+    assert branch_b["runtime_integration_status"] == "missing"
+    assert branch_b["cut_intent_token_adapter_status"] == "available"
+    assert branch_b["blockers"] == [
+        "missing_residual_runtime_planner_mode",
+        "missing_simulated_branch_execution_artifacts",
+    ]
+
+
 def test_plan_rejects_missing_current_eval_argv():
     metadata = _current_eval_metadata()
     metadata.pop("argv")

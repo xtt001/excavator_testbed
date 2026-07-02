@@ -757,22 +757,40 @@ production planner / rollout-review schema，也不生成 runtime action。
 Phase 6G-A 的 residual eval run command plan 当前由
 `testbed.eval.terrain_residual_eval_run_plan.build_residual_eval_run_plan()` 负责。
 该 helper 是 eval-only run-plan owner：它接收 current baseline `eval_run_metadata`、Phase 6F predicted
-A/B artifact summary、future planned results root、protected evidence roots，以及 residual runtime
-integration availability。它不读取隐式全局配置、不启动 `tb-eval`、不创建 run root、不写 artifact。
+A/B artifact summary、future planned results root、protected evidence roots、residual runtime
+integration availability，以及默认关闭的显式 residual cut-intent token adapter availability evidence。
+它不读取隐式全局配置、不启动 `tb-eval`、不创建 run root、不写 artifact。
 
 输出包含 schema/source/status/offline_only、固定 A/B/C branch order、per-branch command plan、
 artifact input summary、no-overwrite validation、validation errors、non-goal statuses 和 provenance statuses。
 A branch 会从 current baseline `argv` 还原 `tb-eval` 命令，并把 `--output-dir` 改写到新的
 `<planned_results_root>/current_planner_baseline`。B branch 在 residual runtime integration 不可用时保持
-`not_runnable`，并记录三个直接 blocker：missing residual runtime planner mode、missing cut-intent to
-dig-cut token adapter、missing simulated branch execution artifacts。C branch 在无 usable gold samples 时继续
-`not_evaluated` / `blocked_by_missing_gold_samples`。
+`not_runnable`，并默认记录三个直接 blocker：missing residual runtime planner mode、missing cut-intent to
+dig-cut token adapter、missing simulated branch execution artifacts。Phase 6G-B 之后，如果调用方显式证明
+`residual_cut_intent_token_adapter_available=True`，B branch 仍保持 `not_runnable`，但 adapter blocker 会被移除，
+剩余 blocker 为 missing residual runtime planner mode 和 missing simulated branch execution artifacts。C branch
+在无 usable gold samples 时继续 `not_evaluated` / `blocked_by_missing_gold_samples`。
 
 run-plan status 包括 `present`、`invalid_current_eval_metadata`、`invalid_predicted_ab_artifacts`、
 `invalid_residual_runtime_integration`、`invalid_planned_results_root` 和
 `protected_evidence_root_overlap`。如果调用方声明 residual runtime integration available，则必须显式提供
 B branch argv；该 helper 不发明 planner mode、config override、command-space controls、official thresholds、
 pass/fail、eval success、planner success、production readiness 或 calibrated fallback。
+
+Phase 6G-B 的 residual cut-intent dig-cut token adapter 当前由
+`testbed.planner.primitive.token.residual_cut_intent.build_residual_cut_intent_dig_cut_token()` 负责。
+该 helper 是 offline primitive token adapter owner：它接收 Phase 6E-C eval-only cut intent 或 nested
+`cut_intent` record、显式 `cell_centers_m`、显式 `direction_vectors`、`bucket_length_m` 和 `payload_kg`，
+输出现有 primitive planner dig-cut raw fields 和 `dig_cut_tokens` plain list。`cell_centers_m` 支持
+integer/string cell id 到 `{x_m, z_m}` 或 two-item sequence 的映射；`direction_vectors` 只按 cut-intent
+direction 查找 two-item x/z vector 并归一化。
+
+Adapter 使用 `testbed.data.operator_first_v2_2` 的 dig-cut token dimension / scale constants，并通过
+`DigCutTokenPlanner.plan_from_raw_fields()` 生成现有 token order：entry x/z、exit x/z、direction x/z、
+length、depth、payload、valid。`payload_kg` 同时写入 `operator_cut_payload_gain_kg` 和
+`operator_effective_deposit_delta_kg`；`operator_entry_y_m` / `operator_exit_y_m` 固定为 `0.0` 是 offline
+adapter convention，不是 official geometry。该 helper 不推断 grid-to-world axes、不定义 official geometry、
+不新增 planner mode、不运行 simulation、不写 `runs` artifact，也不生成 production runtime action。
 
 depth 诊断必须区分三种口径：
 

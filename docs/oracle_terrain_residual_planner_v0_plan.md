@@ -556,6 +556,7 @@ Phase 5 closure note：
 - [x] 建立 Phase 6F-B predicted A/B artifact pipeline，从 source rollout JSONL 到 predicted B rollout、A/B comparison 和 artifact writer 形成一个显式 eval-only 端到端链路。
 - [x] 建立 Phase 6F-C runner-facing CLI entrypoint，用显式 request JSON 调用 Phase 6F-B pipeline 并输出 pipeline result JSON。
 - [x] 建立 Phase 6G-A residual eval run command plan owner，把 current A branch 的 `tb-eval` 命令改写到未来 A/B run root，并把 B branch runtime integration 缺口落到 command-plan evidence。
+- [x] 建立 Phase 6G-B residual cut-intent dig-cut token adapter，将 Phase 6E-C eval-only cut intent 转成现有 primitive dig-cut raw fields / `dig_cut_tokens` 合约。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -738,6 +739,15 @@ Phase 6G-A note：
 - B branch 在当前 repo 状态下保持 `not_runnable` / `runtime_integration_status=missing`，blockers 为 `missing_residual_runtime_planner_mode`、`missing_cut_intent_to_dig_cut_token_adapter`、`missing_simulated_branch_execution_artifacts`。C branch 继续 `not_evaluated` / `blocked_by_missing_gold_samples`。
 - Smoke facts: run plan status `present`，validation errors `[]`，no-overwrite status `present`，future root `runs/eval/oracle_terrain_residual_phase6g_real_ab_20260702` remained absent `False -> False`，protected current results file count stayed `10 -> 10`。
 - Phase 6G-A 是从 predicted artifact pipeline 走向真实 eval runner 的 command-level bridge，但仍未完成 B branch runtime integration；完整 Phase 6 baseline comparison 仍需要把 B branch cut intent 接入 runtime planner / dig-cut token adapter 后运行真实 closed-loop simulation。
+
+Phase 6G-B note：
+
+- `testbed.planner.primitive.token.residual_cut_intent.build_residual_cut_intent_dig_cut_token()` 已定义 focused primitive token adapter owner，负责把 Phase 6E-C eval-only cut intent 或 nested `cut_intent` record 转成现有 `DigCutTokenPlanner.plan_from_raw_fields()` 可消费的 raw fields 和 `dig_cut_tokens` list。
+- 该 helper 只接收显式 `cut_intent`、`cell_centers_m`、`direction_vectors`、`bucket_length_m`、`payload_kg` 和 profile；`cell_centers_m` 可用 integer/string cell id 映射到 `{x_m, z_m}` 或 two-item sequence，`direction_vectors` 用 cut-intent direction 映射到 two-item x/z vector。它不推断 grid-to-world axes、不定义 official geometry，也不从 volume 推断 payload。
+- Adapter 验证 finite positive bucket length / candidate depth、finite non-negative payload、known anchor cell、known direction 和 nonzero direction vector。输出包含 schema/source/status/offline_only/profile、candidate id、primitive raw fields、`dig_cut_tokens` plain list、validation errors、adapter y=0 convention、token contract constants、non-goal statuses 和 provenance statuses。
+- `operator_entry_y_m` / `operator_exit_y_m` 使用 `0.0` 是 offline adapter convention，不是 official terrain geometry。`payload_kg` 显式写入 `operator_cut_payload_gain_kg` 和 `operator_effective_deposit_delta_kg`。
+- `build_residual_eval_run_plan()` 新增默认 `False` 的显式 `residual_cut_intent_token_adapter_available` evidence。默认行为保持 Phase 6G-A 三个 B blocker 不变；当调用方显式传入 `True` 且 residual runtime integration 仍不可用时，B branch 仍为 `not_runnable` / `runtime_integration_status=missing`，但 blockers 只保留 `missing_residual_runtime_planner_mode` 和 `missing_simulated_branch_execution_artifacts`。
+- Phase 6G-B 仍不新增 `dig_cut_planner.mode`，不运行 `tb-eval` 或 simulation，不创建 `runs` artifact，不写 branch output files，不改 production planner / rollout-review schema / CLI entrypoint，也不定义 command-space controls、official thresholds、pass/fail、eval success、planner success 或 calibrated fallback。
 
 通过标准：
 
