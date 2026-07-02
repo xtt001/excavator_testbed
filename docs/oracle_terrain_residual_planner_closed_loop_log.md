@@ -5636,6 +5636,159 @@ Preserved non-goals:
 - No command-space controls, official defaults, official thresholds, pass/fail,
   eval success, planner success, or calibrated fallback.
 
+## 2026-07-02: Phase 6F-B Planner Recovery And Pipeline Completion
+
+Recovery facts:
+
+- Executor thread `019f1d6b-1367-71f3-8cb1-c4d891769109` disconnected before
+  returning the requested full callback.
+- Planner recovery target lock:
+  `/home/pingfan/PACT/excavator_testbed`, branch status
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 44]`,
+  HEAD `0588e1ca1d23c5db71e361c859585b01e608b7fe`.
+- Recovery worktree initially contained only the expected partial Phase 6F-B
+  files:
+  `testbed/eval/terrain_residual_ab_artifact_pipeline.py` and
+  `tests/test_terrain_residual_ab_artifact_pipeline.py`.
+- Focused recovery test initially failed with two issues: the synthetic unit
+  expected one predicted step while the existing scoring / rollout chain
+  deterministically produced two, and protected evidence root overlap was
+  wrapped as `invalid_pipeline_options` instead of surfacing the manifest
+  no-overwrite status.
+
+Boundary decision:
+
+- Accepted the executor-created focused owner
+  `testbed.eval.terrain_residual_ab_artifact_pipeline`.
+- Responsibility: orchestrate the complete eval-only predicted A/B artifact
+  chain from explicit source rollout JSONL and explicit options through target
+  report, manifest, branch plan, predicted B rollout, predicted A/B comparison,
+  and artifact writer.
+- The fix stayed in this new owner because the missing behavior was pipeline
+  status propagation, not writer semantics, candidate/effect semantics, rollout
+  review, production planner, or CLI orchestration.
+
+Implemented / corrected contract:
+
+- Public helper:
+  `build_and_write_predicted_residual_ab_artifacts(...)`.
+- Inputs are explicit: `source_rollout_path`, `results_root`, target spec,
+  cycle budget, candidate generation / constraint options, scoring weights,
+  effect geometry, payload capacity, selection policy, protected evidence roots,
+  and optional calibration evidence.
+- The helper reads JSONL object records, rebuilds the Phase 6E / 6F evidence
+  chain in memory, and writes artifacts through the Phase 6F-A writer.
+- Output includes schema/source/status/offline_only, source record count, nested
+  statuses, artifact summary, branch statuses, predicted B rollout summary,
+  comparison delta summary, validation errors, non-goal statuses, and provenance
+  statuses.
+- No-overwrite errors now surface as the concrete manifest / writer status
+  such as `protected_evidence_root_overlap` before any artifact write.
+- The helper still does not run simulation, create production runtime actions,
+  define command-space controls, declare pass/fail, eval success, planner
+  success, official defaults / thresholds, production readiness, or calibrated
+  fallback.
+
+Current-run pipeline smoke:
+
+- Source rollout:
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- Explicit non-official target spec: `grid_shape=[3, 2]`, rows `[0:2]`,
+  cols `[0:1]`, `target_depth_m=0.25`.
+- Generated artifact root:
+  `runs/eval/oracle_terrain_residual_phase6f_pipeline_ab_20260702/results`.
+- Pipeline status: `present`.
+- Nested statuses: target report, experiment manifest, branch run plan,
+  predicted B rollout, predicted A/B comparison, and artifact writer all
+  `present`.
+- Source record count: `6148`.
+- Written files: `eval_run_metadata.json`, `experiment_manifest.json`,
+  `branch_run_plan.json`, `predicted_b_rollout.json`,
+  `branch_comparison_report.json`, and `rollout_manifest.json`.
+- Branch statuses: A `present`, B `present`, C `not_evaluated`.
+- Predicted B step count: `1`.
+- Stop reason: `zero_target_positive_residual`.
+- Selected eval-only cut-intent candidate: `cut_candidate_000009`.
+- A target positive residual: `0.374313589186`.
+- B predicted final target positive residual: `0.0`.
+- Target positive residual improvement: `0.374313589186`.
+- Completion delta: `0.748627178372`.
+- Overdig increase: `0.009656514972`.
+- Outside-target removed-depth increase: `0.191985052079`.
+- Expected delta depth / volume: `0.575955156237` /
+  `0.035997197265`.
+- Validation errors: `[]`.
+- Protected current results file count stayed `10 -> 10`.
+
+Documentation sync:
+
+- `docs/training_setup.md` documents the Phase 6F-B pipeline helper, explicit
+  inputs, nested status chain, no-overwrite propagation, statuses, and
+  non-goals.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks only Phase 6F-B
+  predicted A/B artifact pipeline complete and records the current-run smoke
+  facts.
+- `docs/oracle_terrain_residual_baseline_report.md` records the durable
+  pipeline artifact root, written file list, comparison facts, no-overwrite
+  facts, and conservative interpretation.
+
+Verification:
+
+- Focused green:
+  `python -m pytest -q tests/test_terrain_residual_ab_artifact_pipeline.py` ->
+  `4 passed`.
+- Current-run pipeline smoke described above completed with status `present`.
+- Full related bundle, compileall, changed-doc guard, doc inventory guard,
+  architecture contract guard, and whitespace diff check are run as the final
+  closure checks for this recovery slice.
+
+Preserved non-goals:
+
+- No real simulation run.
+- No production planner / gate / policy / runtime integration.
+- No rollout-review schema integration.
+- No command-space controls, official defaults, official thresholds, pass/fail,
+  eval success, planner success, production readiness, or calibrated fallback.
+- No existing protected current-run evidence was overwritten.
+
+Acceptance:
+
+- Phase 6F-B accepted as the eval-only predicted A/B artifact pipeline.
+- The recovered slice converts the previous writer-only surface into a
+  reproducible source-rollout-to-artifacts path, which is core progress toward
+  comparable Phase 6 evidence.
+- Accepted-slice count reached `3/3`; deep reflection completed below and the
+  count is reset to `0/3`.
+
+Deep reflection:
+
+- Reference used: user instruction to continue the previous flow and choose the
+  best core option without waiting; Phase 6F target of making predicted A/B
+  evidence reproducible as durable artifacts; no-production and no-real-sim
+  boundaries.
+- Alignment verdict: aligned. The recovery did not add another perimeter
+  contract; it completed the core artifact pipeline that can regenerate the
+  predicted A/B packet from the source rollout and explicit options.
+- Verification verdict: now proving the right layer. Unit tests cover pipeline
+  status / writer rejection behavior, and the current-run smoke proves the
+  source JSONL -> predicted B rollout -> A/B comparison -> artifacts chain.
+- Efficiency verdict: useful recovery, not duplicated process. The only
+  repeated checks are closure checks needed after a disconnected executor and
+  docs changed in the planner thread.
+- Remaining gap: this is still predicted counterfactual evidence. Full Phase 6
+  is not complete until a real closed-loop A/B runner executes branch A/B under
+  explicit artifact paths and comparable metrics.
+
+Next bounded target:
+
+- Implement the smallest useful runner-facing entrypoint around the Phase 6F-B
+  pipeline so the artifact generation path is callable without a bespoke Python
+  smoke script.
+- The entrypoint should remain eval-only, explicit-input, and no-overwrite. It
+  should not run a simulator, integrate production planner/runtime, invent
+  official defaults / thresholds, or define pass/fail / eval success /
+  planner success.
+
 ## 2026-07-02: Phase 6F-A Planner Recovery And Artifact Materialization Packet
 
 Recovery context:

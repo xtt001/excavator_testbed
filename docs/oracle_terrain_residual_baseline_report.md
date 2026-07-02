@@ -441,6 +441,83 @@ surface. It still does not run a simulator, does not define pass/fail or success
 semantics, does not integrate with production planner/runtime, and does not
 turn the predicted B counterfactual into a real rollout.
 
+## Predicted A/B Artifact Pipeline
+
+This section records the Phase 6F-B end-to-end eval pipeline output. The
+pipeline reads the explicit source rollout JSONL, rebuilds the target residual
+report and predicted B branch evidence in memory, builds the predicted A/B
+comparison, and then writes the same deterministic artifact surface as Phase
+6F-A. It is still an effect-model counterfactual pipeline, not a simulator run.
+
+Pipeline identity:
+
+- source: `explicit_predicted_residual_ab_artifact_pipeline`
+- schema: `terrain_residual_predicted_ab_artifact_pipeline_v1`
+- status: `present`
+- validation errors: `[]`
+
+Source and target:
+
+- source rollout:
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`
+- source record count: `6148`
+- explicit non-official target spec: `grid_shape=[3, 2]`, rows `[0:2]`,
+  cols `[0:1]`, `target_depth_m=0.25`
+
+Artifact root:
+
+```text
+runs/eval/oracle_terrain_residual_phase6f_pipeline_ab_20260702/results
+```
+
+Nested status summary:
+
+| Stage | Status |
+| --- | --- |
+| target residual report | `present` |
+| experiment manifest | `present` |
+| branch run plan | `present` |
+| predicted B rollout | `present` |
+| predicted A/B comparison | `present` |
+| artifact writer | `present` |
+
+Written files:
+
+- `eval_run_metadata.json`
+- `experiment_manifest.json`
+- `branch_run_plan.json`
+- `predicted_b_rollout.json`
+- `branch_comparison_report.json`
+- `rollout_manifest.json`
+
+Pipeline comparison facts:
+
+| Field | Value |
+| --- | ---: |
+| predicted B step count | `1` |
+| predicted B stop reason | `zero_target_positive_residual` |
+| selected eval-only cut-intent candidate | `cut_candidate_000009` |
+| A target positive residual | `0.374313589186` |
+| B predicted final positive residual | `0.0` |
+| target positive residual improvement | `0.374313589186` |
+| target completion delta | `0.748627178372` |
+| target overdig increase | `0.009656514972` |
+| outside-target removed-depth increase | `0.191985052079` |
+| expected delta depth | `0.575955156237` |
+| expected delta volume | `0.035997197265` |
+
+No-overwrite facts:
+
+- protected current results file count stayed `10 -> 10`
+- pipeline root did not exist before the smoke and exists after the smoke
+- protected-root overlap is rejected before artifact writing
+
+Conservative interpretation: Phase 6F-B makes the predicted A/B artifact
+generation reproducible from the source rollout and explicit options. It still
+does not prove B outperforms A in real closed-loop simulation, does not define
+pass/fail or success semantics, and does not promote eval-only cut intents into
+runtime action selection.
+
 ## Interpretation
 
 For this explicit non-official example spec, target positive residual decreases

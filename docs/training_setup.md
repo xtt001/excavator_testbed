@@ -723,6 +723,25 @@ writer status 包括 `present`、`invalid_results_root`、`protected_evidence_ro
 production runtime action、不输出 command-space controls、不定义 pass/fail、eval success、planner success、
 official defaults / thresholds、production readiness 或 calibrated fallback。
 
+Phase 6F-B 的 predicted A/B artifact pipeline 当前由
+`testbed.eval.terrain_residual_ab_artifact_pipeline.build_and_write_predicted_residual_ab_artifacts()`
+负责。该 helper 是 eval-only orchestration owner：它从显式 `source_rollout_path` 读取 rollout JSONL，
+用显式 target spec / cycle budget / candidate options / scoring weights / effect geometry / payload capacity
+重建 current target residual report、Phase 6E-A manifest、Phase 6E-B branch plan、Phase 6E-E predicted
+B rollout、Phase 6E-F predicted A/B comparison，然后调用 Phase 6F-A writer 物化 artifact。
+
+调用方必须显式传入 `results_root` 和 `protected_evidence_roots`。pipeline 会保留 writer 的 no-overwrite
+边界：如果 proposed results root 等于或嵌套在 protected evidence root 下，manifest / writer 链会返回
+`protected_evidence_root_overlap`，不会创建 artifact。输出包含 schema/source/status/offline_only、
+source record count、nested statuses、artifact summary、branch statuses、predicted B rollout summary、
+comparison delta summary、validation errors、non-goal statuses 和 provenance statuses。
+
+pipeline status 包括 `present`、`invalid_source_rollout`、`invalid_target_spec`、
+`invalid_pipeline_options`、`protected_evidence_root_overlap`、`results_root_already_exists` 以及下游 evidence /
+writer 的具体 validation status。该 pipeline 会创建新的 eval results artifact root，但仍不运行真实 simulation、
+不创建 production runtime action、不输出 command-space controls、不定义 pass/fail、eval success、
+planner success、official defaults / thresholds、production readiness 或 calibrated fallback。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

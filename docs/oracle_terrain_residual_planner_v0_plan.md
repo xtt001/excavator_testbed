@@ -553,6 +553,7 @@ Phase 5 closure note：
 - [x] 建立 Phase 6E-E eval-only predicted B-branch rollout loop，在显式小 cycle budget 内迭代更新 predicted terrain state 并输出 per-step evidence。
 - [x] 建立 Phase 6E-F predicted A/B comparison report，将 current planner A evidence 与 predicted B rollout evidence 放进同一比较输出，仍不声明真实 closed-loop pass/fail。
 - [x] 建立 Phase 6F-A predicted A/B artifact writer，将 in-memory manifest / branch plan / predicted B rollout / predicted A-B comparison 物化到新的非覆盖 eval results root。
+- [x] 建立 Phase 6F-B predicted A/B artifact pipeline，从 source rollout JSONL 到 predicted B rollout、A/B comparison 和 artifact writer 形成一个显式 eval-only 端到端链路。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -707,6 +708,16 @@ Phase 6F-A note：
 - 写入文件：`eval_run_metadata.json`、`experiment_manifest.json`、`branch_run_plan.json`、`predicted_b_rollout.json`、`branch_comparison_report.json`、`rollout_manifest.json`。
 - Smoke facts: writer status `present`，comparison status `present`，predicted B step count `1`，stop reason `zero_target_positive_residual`，candidate `cut_candidate_000009`，A residual `0.374313589186`，B final residual `0.0`，completion delta `0.748627178372`，overdig increase `0.009656514972`，outside-target increase `0.191985052079`，expected delta depth / volume `0.575955156237` / `0.035997197265`；protected current results file count stayed `10 -> 10`。
 - Phase 6F-A 仍不是真实 simulation：它只物化 predicted counterfactual artifacts，不接 production planner，不声明 pass/fail、eval success、planner success、official thresholds、production readiness 或 calibrated fallback。
+
+Phase 6F-B note：
+
+- `testbed.eval.terrain_residual_ab_artifact_pipeline.build_and_write_predicted_residual_ab_artifacts()` 已定义 focused eval pipeline owner，将 source rollout JSONL、显式 target spec、cycle budget、candidate/effect/scoring/payload options 串成完整 predicted A/B artifact 生成链路。
+- 该 helper 在内存中重建 target residual report、Phase 6E-A manifest、Phase 6E-B branch plan、Phase 6E-E predicted B rollout 和 Phase 6E-F predicted A/B comparison，然后调用 Phase 6F-A writer 写入新的非覆盖 results root。它不读取隐式全局配置、不运行 simulation、不接 production planner 或 rollout-review schema。
+- Current-run pipeline smoke root：
+  `runs/eval/oracle_terrain_residual_phase6f_pipeline_ab_20260702/results`。
+- 写入文件：`eval_run_metadata.json`、`experiment_manifest.json`、`branch_run_plan.json`、`predicted_b_rollout.json`、`branch_comparison_report.json`、`rollout_manifest.json`。
+- Smoke facts: pipeline status `present`，nested statuses all `present`，source record count `6148`，predicted B step count `1`，stop reason `zero_target_positive_residual`，selected candidate `cut_candidate_000009`，A residual `0.374313589186`，B final residual `0.0`，completion delta `0.748627178372`，overdig increase `0.009656514972`，outside-target increase `0.191985052079`，expected delta depth / volume `0.575955156237` / `0.035997197265`；protected current results file count stayed `10 -> 10`。
+- Phase 6F-B 仍不是真实 simulation 或 production behavior：它只把 predicted counterfactual pipeline 物化为 eval artifacts，不声明 pass/fail、eval success、planner success、official thresholds、production readiness、command-space controls 或 calibrated fallback。
 
 通过标准：
 
