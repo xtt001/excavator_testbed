@@ -561,6 +561,7 @@ Phase 5 closure note：
 - [x] 建立 Phase 6G-D residual cut-intent runtime source provider，使 `dig_cut_planner.mode=residual_cut_intent` 能从显式 durable source 构造 provider。
 - [x] 建立 Phase 6G-E residual cut-intent runtime source artifact materialization，使 Phase 6F predicted A/B artifact pipeline 写出可被 Phase 6G-D provider 加载的 `residual_cut_intent_runtime_source.json`。
 - [x] 建立 Phase 6G-F runner-facing B-branch eval request / invocation artifact bridge，使真实 `tb-eval` B branch config/argv 能显式指向 runtime source。
+- [x] 建立 Phase 6G-G B-branch bounded smoke stop-timing contract，使 request-local config 显式用 zero terminal hold 避免 bounded smoke 请求未覆盖的 next-cycle source plan。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -787,6 +788,14 @@ Phase 6G-F note：
 - B-branch request smoke 写入 `runs/eval/oracle_terrain_residual_phase6g_f_b_branch_request_20260702`，request status `present`，request writer files `3`，CLI result 后该 root 文件数为 `4`。planned full root `runs/eval/oracle_terrain_residual_phase6g_f_real_ab_20260702` 仍未创建；protected current results file count stayed `10 -> 10`。
 - 最小真实 B-branch execution smoke 使用 generated config、fresh smoke output root、`--target-cycle-gate 1` 和 `--no-video` 启动 `tb-eval`。它证明 runtime mode/source 已进入 primitive runtime，但失败于 `ResidualCutIntentPlanSourceError: residual_cut_intent source missing plan for cycle_index 1`；partial smoke outputs 为 `eval_resolved_config.yaml`、`eval_run_metadata.json(status=failed)` 和 `rollout_000.partial.jsonl`。
 - Phase 6G-F 因此没有声明 B branch eval success、planner success、pass/fail 或 production readiness。剩余 blocker 是 runtime source 的 cycle coverage / runner stop-timing contract：后续真实 B branch execution 需要 source plans 覆盖 runner 实际会请求的 primitive cycle indices，或显式确认 bounded smoke 的 terminal-hold/stop semantics。
+
+Phase 6G-G note：
+
+- Root cause: Phase 6G-F 的 failed smoke 使用 `--target-cycle-gate 1` 覆盖了 gate 数值，但 request-local config 仍继承 baseline `eval.target_cycle_gate_terminal_hold_steps=100`。partial rollout 最后一条仍是 `primitive_cycle_index=0` 且 `dump_end_mask=1`；下一 tick 在写下一条 rollout record 前进入 cycle `1` source lookup，因此 exact provider 抛出 missing cycle plan。
+- `testbed.eval.terrain_residual_b_branch_eval_request.write_residual_b_branch_eval_request()` 现在在 B request artifact config 内显式设置 `eval.target_cycle_gate_terminal_hold_steps=0`，并在 request result `runtime_config` 中记录 `eval.target_cycle_gate_terminal_hold_steps: 0`。这是 request-local stop-timing contract，不改 checked-in eval YAML/default config、不改 `tb-eval` CLI、不改 provider exact lookup、不新增 hidden fallback 或 last-plan reuse。
+- Fresh Phase 6G-G predicted source root `runs/eval/oracle_terrain_residual_phase6g_g_predicted_ab_with_source_20260702/results` 写出 7 个 predicted artifacts；包含 status `present` 的 `residual_cut_intent_runtime_source.json`，plan count 仍为 `1`，覆盖 cycle `0`，candidate id `cut_candidate_000009`。
+- Fresh B request root `runs/eval/oracle_terrain_residual_phase6g_g_b_branch_request_20260702` 写出 3 个 request files；generated config 保留 `dig_cut_planner.mode=residual_cut_intent`、`fallback_mode=raise` 和 source path，并把 `target_cycle_gate_terminal_hold_steps` 写为 `0`。
+- Fresh bounded B smoke 使用 generated config、fresh smoke output root、`--target-cycle-gate 1` 和 `--no-video` 启动 `tb-eval`，exit code `0`。`eval_run_metadata.json` status `completed`、error `null`，`metrics.json` 记录 `target_cycle_gate_success_rate=1.0`，`rollout_manifest.json` 记录 stop reason `target_cycle_gate_reached`。这只证明 bounded smoke stop-timing contract 避免 missing cycle plan；仍不声明 official pass/fail、eval success、planner success、production readiness、official threshold 或 calibrated fallback。
 
 通过标准：
 

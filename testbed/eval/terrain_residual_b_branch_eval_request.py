@@ -29,6 +29,7 @@ BRANCH_NAME = "heuristic_residual_pipeline"
 CONFIG_FILENAME = "heuristic_residual_pipeline_eval_config.yaml"
 INVOCATION_FILENAME = "heuristic_residual_pipeline_invocation.json"
 RUN_PLAN_FILENAME = "residual_eval_run_plan.json"
+B_BRANCH_TARGET_CYCLE_GATE_TERMINAL_HOLD_STEPS = 0
 WRITTEN_FILES = [
     CONFIG_FILENAME,
     INVOCATION_FILENAME,
@@ -371,6 +372,12 @@ def _b_branch_eval_config(
     runtime_source_path: str | None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     config = copy.deepcopy(dict(baseline_config))
+    eval_cfg = config.setdefault("eval", {})
+    if not isinstance(eval_cfg, dict):
+        raise ValueError("eval config must be a mapping")
+    eval_cfg["target_cycle_gate_terminal_hold_steps"] = (
+        B_BRANCH_TARGET_CYCLE_GATE_TERMINAL_HOLD_STEPS
+    )
     policy_cfg = config.setdefault("policy", {})
     if not isinstance(policy_cfg, dict):
         raise ValueError("policy config must be a mapping")
@@ -387,6 +394,9 @@ def _b_branch_eval_config(
     )
     policy_cfg["dig_cut_planner"] = dig_cut_cfg
     runtime_config = {
+        "eval.target_cycle_gate_terminal_hold_steps": (
+            B_BRANCH_TARGET_CYCLE_GATE_TERMINAL_HOLD_STEPS
+        ),
         "dig_cut_planner.enabled": True,
         "dig_cut_planner.mode": DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT,
         "dig_cut_planner.residual_cut_intent_source_path": str(runtime_source_path),

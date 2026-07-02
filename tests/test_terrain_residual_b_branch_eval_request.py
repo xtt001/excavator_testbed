@@ -155,6 +155,7 @@ def test_request_writer_materializes_runner_consumable_b_branch_invocation(
     assert result["planned_results_root"] == str(planned_results_root)
     assert result["branch"] == "heuristic_residual_pipeline"
     assert result["runtime_config"] == {
+        "eval.target_cycle_gate_terminal_hold_steps": 0,
         "dig_cut_planner.enabled": True,
         "dig_cut_planner.mode": "residual_cut_intent",
         "dig_cut_planner.residual_cut_intent_source_path": str(runtime_source),
@@ -176,6 +177,7 @@ def test_request_writer_materializes_runner_consumable_b_branch_invocation(
             encoding="utf-8"
         )
     )
+    assert generated_config["eval"]["target_cycle_gate_terminal_hold_steps"] == 0
     dig_cut_planner = generated_config["policy"]["dig_cut_planner"]
     assert dig_cut_planner["enabled"] is True
     assert dig_cut_planner["mode"] == "residual_cut_intent"
@@ -212,6 +214,44 @@ def test_request_writer_materializes_runner_consumable_b_branch_invocation(
     assert branch_b["planned_output_dir"] == (
         str(planned_results_root / "heuristic_residual_pipeline")
     )
+
+
+def test_request_writer_sets_explicit_zero_target_cycle_terminal_hold(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    baseline_config = tmp_path / "configs/current_eval.yaml"
+    _baseline_config(baseline_config)
+    baseline_payload = yaml.safe_load(baseline_config.read_text(encoding="utf-8"))
+    baseline_payload["eval"]["target_cycle_gate_terminal_hold_steps"] = 100
+    baseline_config.write_text(
+        yaml.safe_dump(baseline_payload, sort_keys=False),
+        encoding="utf-8",
+    )
+    predicted_root = _predicted_artifact_root(tmp_path / "predicted_ab/results")
+    runtime_source = _runtime_source(
+        predicted_root / "residual_cut_intent_runtime_source.json"
+    )
+    request_root = tmp_path / "phase6g_f_request"
+
+    result = write_residual_b_branch_eval_request(
+        current_eval_metadata=_current_eval_metadata(baseline_config),
+        predicted_ab_artifact_root=predicted_root,
+        runtime_source_path=runtime_source,
+        request_root=request_root,
+        planned_results_root=tmp_path / "phase6g_f_real_ab",
+        protected_evidence_roots=[],
+    )
+
+    assert result["status"] == "present"
+    assert result["runtime_config"]["eval.target_cycle_gate_terminal_hold_steps"] == 0
+    generated_config = yaml.safe_load(
+        (request_root / "heuristic_residual_pipeline_eval_config.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert generated_config["eval"]["target_cycle_gate_terminal_hold_steps"] == 0
 
 
 def test_request_writer_rejects_existing_or_protected_roots(

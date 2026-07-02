@@ -889,6 +889,28 @@ primitive runtime 请求 cycle `1`，随后因 source 只有 cycle `0` plan 而�
 `eval_run_metadata.json(status=failed)` 和 `rollouts/rollout_000.partial.jsonl`。这不是 eval success 或
 planner success；它把剩余 blocker 缩小为 runtime source cycle coverage / runner stop-timing contract。
 
+Phase 6G-G 将该 blocker 缩小为 request/eval stop-timing contract：failed smoke 的
+`--target-cycle-gate 1` 只覆盖 gate 数值，generated config 仍继承
+`eval.target_cycle_gate_terminal_hold_steps=100`，所以第一个 dump 结束后 runner 继续 terminal hold，
+下一 tick 请求 primitive cycle `1`，而 Phase 6G-E source 只显式覆盖 cycle `0`。
+
+B-branch request writer 现在只在 request-local `heuristic_residual_pipeline_eval_config.yaml` 中额外显式设置
+`eval.target_cycle_gate_terminal_hold_steps=0`，并在 request result 的 `runtime_config` 记录
+`eval.target_cycle_gate_terminal_hold_steps: 0`。该合同不改变 checked-in eval YAML/default config，
+不改 `tb-eval` CLI，不改 provider exact lookup，也不引入 hidden fallback、last-plan reuse 或 source
+cycle 扩展。
+
+Fresh Phase 6G-G smoke facts：predicted source root
+`runs/eval/oracle_terrain_residual_phase6g_g_predicted_ab_with_source_20260702/results`
+写出 7 个 predicted artifacts，runtime source status `present`，plan count `1`，cycle coverage `[0]`。
+B request root `runs/eval/oracle_terrain_residual_phase6g_g_b_branch_request_20260702`
+写出 3 个 request files；generated config 中 `target_cycle_gate_terminal_hold_steps: 0`。真实 bounded
+B smoke root
+`runs/eval/oracle_terrain_residual_phase6g_g_real_b_smoke_20260702/heuristic_residual_pipeline/results`
+status `completed`、error `null`，`target_cycle_gate_success_rate=1.0`，rollout stop reason
+`target_cycle_gate_reached`。这只是 bounded smoke stop-timing evidence，不是 official eval success、
+planner success、pass/fail、production readiness 或 calibrated fallback。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

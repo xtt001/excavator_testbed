@@ -5636,6 +5636,206 @@ Preserved non-goals:
 - No command-space controls, official defaults, official thresholds, pass/fail,
   eval success, planner success, or calibrated fallback.
 
+## 2026-07-02: Phase 6G-G Bounded B Smoke Stop-Timing Contract
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 52]`.
+- Initial HEAD: `fe194ea7ce7ee53c13405c14f764d8d12c5d2e59`.
+- Initial dirty state: clean.
+
+Root-cause trace:
+
+- Failed Phase 6G-F smoke metadata:
+  `status=failed`, `target_cycle_gate=1`,
+  `target_cycle_gate_terminal_hold_steps=100`, error
+  `ResidualCutIntentPlanSourceError: residual_cut_intent source missing plan for cycle_index 1: missing plan for cycle_index 1`.
+- Failed source artifact:
+  `residual_cut_intent_runtime_source.json` status `present`, plan count `1`,
+  cycle coverage `[0]`, candidate id `cut_candidate_000009`.
+- Failed partial rollout had `707` lines. The tail stayed in
+  `primitive_cycle_index=0`; the final recorded row had `dump_end_mask=1`.
+  The cycle `1` lookup happened before the next row could be written.
+- Runtime provider exact-looks up the current primitive cycle via
+  `build_residual_cut_intent_plan_provider_from_source_path(... cycle_index=...)`
+  and `ExplicitResidualCutIntentPlanSource.plan_for_cycle()`. It correctly
+  raises on missing cycle plans; no provider fallback was added.
+- Eval suite target-cycle gate stops immediately only when
+  `target_cycle_gate_terminal_hold_steps <= 0`; otherwise it holds after the
+  gate is reached. The Phase 6G-F CLI command overrode `target_cycle_gate=1`
+  but did not override inherited terminal hold `100`.
+
+Boundary decision:
+
+- Existing owner:
+  `testbed/eval/terrain_residual_b_branch_eval_request.py`.
+- Responsibility: materialize request-local B-branch eval config/argv artifacts.
+- New responsibility: request-local stop-timing contract for bounded B smoke.
+- Decision: keep in existing owner. No change to `testbed/eval/suite.py`,
+  primitive provider exact lookup, production planner semantics, checked-in eval
+  defaults, or `tb-eval` CLI.
+
+TDD red:
+
+- Added focused test before production code:
+  `tests/test_terrain_residual_b_branch_eval_request.py::test_request_writer_sets_explicit_zero_target_cycle_terminal_hold`.
+- Red command:
+  `python -m pytest -q tests/test_terrain_residual_b_branch_eval_request.py::test_request_writer_sets_explicit_zero_target_cycle_terminal_hold`.
+- Expected red result: failed with
+  `KeyError: 'eval.target_cycle_gate_terminal_hold_steps'`.
+
+Implemented contract:
+
+- `write_residual_b_branch_eval_request()` now writes request-local
+  `eval.target_cycle_gate_terminal_hold_steps=0` into
+  `heuristic_residual_pipeline_eval_config.yaml`.
+- The top-level request result records the same explicit value in
+  `runtime_config` as `eval.target_cycle_gate_terminal_hold_steps: 0`.
+- Existing B runtime values remain:
+  `dig_cut_planner.enabled=true`, `dig_cut_planner.mode=residual_cut_intent`,
+  `dig_cut_planner.residual_cut_intent_source_path=<runtime_source_path>`,
+  `dig_cut_planner.fallback_mode=raise`,
+  `dig_cut_planner.hold_token_until_skill_exit=false`, and
+  `dig_cut_planner.prior_path=""`.
+
+Fresh Phase 6G-G artifacts and smoke:
+
+- Protected current results recursive file count stayed `10 -> 10`.
+- Fresh predicted request/root:
+  `runs/eval/oracle_terrain_residual_phase6g_g_predicted_ab_with_source_20260702`.
+- Predicted artifact CLI exit code `0`; result status `present`; nested
+  target report, manifest, branch plan, predicted rollout, runtime source,
+  comparison, and artifact writer statuses all `present`.
+- Fresh runtime source:
+  `runs/eval/oracle_terrain_residual_phase6g_g_predicted_ab_with_source_20260702/results/residual_cut_intent_runtime_source.json`.
+  Status `present`, plan count `1`, cycle coverage `[0]`, candidate id
+  `cut_candidate_000009`.
+- Fresh B request root:
+  `runs/eval/oracle_terrain_residual_phase6g_g_b_branch_request_20260702`.
+  Request CLI exit code `0`; request status `present`; written files `3`;
+  generated config has `target_cycle_gate_terminal_hold_steps: 0`.
+- Fresh bounded smoke command:
+  `python -m testbed.cli.eval --config runs/eval/oracle_terrain_residual_phase6g_g_b_branch_request_20260702/heuristic_residual_pipeline_eval_config.yaml --num-rollouts 1 --target-cycle-gate 1 --no-video --output-dir runs/eval/oracle_terrain_residual_phase6g_g_real_b_smoke_20260702/heuristic_residual_pipeline`.
+- Smoke exit code `0`. Metadata status `completed`, error `null`,
+  `target_cycle_gate=1`, `target_cycle_gate_terminal_hold_steps=0`.
+- `metrics.json` records `target_cycle_gate_success_count=1`,
+  `target_cycle_gate_success_rate=1.0`, and
+  `target_cycle_completed_dump_mean=1.0`.
+- `rollout_manifest.json` records stop reason `target_cycle_gate_reached`,
+  `target_cycle_gate_success=1`, `target_cycle_completed_dump_count=1`, and
+  `primitive_cycle_index=0`.
+
+Verification:
+
+- Focused green:
+  `python -m pytest -q tests/test_terrain_residual_b_branch_eval_request.py::test_request_writer_sets_explicit_zero_target_cycle_terminal_hold`
+  -> `1 passed`.
+- Request writer suite:
+  `python -m pytest -q tests/test_terrain_residual_b_branch_eval_request.py`
+  -> `7 passed`.
+- Related runtime/source/artifact/request bundle:
+  `python -m pytest -q tests/test_terrain_residual_b_branch_eval_request.py
+  tests/test_terrain_residual_eval_run_plan.py
+  tests/test_terrain_residual_ab_artifact_pipeline.py
+  tests/test_terrain_residual_ab_artifact_pipeline_cli.py
+  tests/test_terrain_residual_ab_artifact_writer.py
+  tests/test_primitive_residual_cut_intent_source.py
+  tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_primitive_adapter_config.py` -> `60 passed`.
+- Compileall for touched Python owner/test exited `0`.
+
+Preserved non-goals:
+
+- No checked-in eval YAML/default config change.
+- No provider fallback, calibrated fallback, hidden last-plan reuse, or source
+  cycle extension.
+- No production planner / gate / policy semantic change.
+- No rollout-review schema integration.
+- No command-space controls, official thresholds, official defaults, official
+  pass/fail, eval success, planner success, or production readiness claim.
+
+## 2026-07-02: Phase 6G-G Planner Acceptance
+
+Planner audit:
+
+- Target lock rechecked in planner thread:
+  `/home/pingfan/PACT/excavator_testbed`, branch status
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 52]`,
+  HEAD `fe194ea7ce7ee53c13405c14f764d8d12c5d2e59`.
+- Worktree contained only expected Phase 6G-G files: the B request owner,
+  focused request tests, and source-of-truth docs.
+- The change is a request-local stop-timing contract:
+  `eval.target_cycle_gate_terminal_hold_steps=0` in the generated B branch
+  config. It does not change checked-in eval configs, provider exact lookup, or
+  primitive runtime defaults.
+
+Planner-side verification:
+
+- Related request/runtime/source/artifact suite:
+  `python -m pytest -q tests/test_terrain_residual_b_branch_eval_request.py
+  tests/test_terrain_residual_eval_run_plan.py
+  tests/test_terrain_residual_ab_artifact_pipeline.py
+  tests/test_terrain_residual_ab_artifact_pipeline_cli.py
+  tests/test_terrain_residual_ab_artifact_writer.py
+  tests/test_primitive_residual_cut_intent_source.py
+  tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_primitive_adapter_config.py` -> `60 passed`.
+- Compileall for the touched owner/test exited `0`.
+- Changed-doc guard, doc inventory guard, architecture contract guard,
+  architecture doc contract tests, and `git diff --check` all exited `0`.
+
+Planner-side smoke audit:
+
+- Fresh B smoke metadata:
+  `runs/eval/oracle_terrain_residual_phase6g_g_real_b_smoke_20260702/heuristic_residual_pipeline/results/eval_run_metadata.json`
+  has `status=completed`, `target_cycle_gate=1`, and
+  `target_cycle_gate_terminal_hold_steps=0`.
+- Generated B request config contains
+  `target_cycle_gate_terminal_hold_steps: 0`,
+  `dig_cut_planner.mode: residual_cut_intent`,
+  `dig_cut_planner.fallback_mode: raise`, and the explicit
+  `residual_cut_intent_source_path`.
+- Runtime source still has exactly one plan covering cycle `0`; no hidden
+  source extension or fallback was added.
+- Protected current evidence file count stayed `10`.
+
+Acceptance:
+
+- Phase 6G-G accepted as the bounded B-branch smoke stop-timing contract slice.
+- It proves the real runner can complete a one-cycle B smoke using the residual
+  cut-intent runtime mode and explicit runtime source.
+- It does not prove full B branch closed-loop success beyond
+  `--target-cycle-gate 1`, and it does not define official pass/fail, eval
+  success, planner success, or production readiness.
+- Accepted-slice count since the latest deep reflection: `1/3`.
+- Deep reflection is not due.
+
+Lightweight reflection:
+
+- Reference used: Phase 6G-F failure facts, the provider exact-lookup contract,
+  eval suite target-cycle-gate semantics, and user instruction to pursue the
+  core implementation path.
+- Alignment verdict: aligned. This slice resolved the real blocker found by the
+  previous smoke without weakening the provider contract or adding hidden
+  fallback behavior.
+- Efficiency verdict: high. A single request-local config field moved the work
+  from request bridge to an actual completed bounded B smoke.
+
+Next bounded target:
+
+- Phase 6G-H should produce a same-gate, no-overwrite real A/B bounded smoke
+  comparison.
+- It should run or materialize an A-branch smoke under the same
+  `--target-cycle-gate 1` / zero-terminal-hold conditions, then compare it to
+  the completed Phase 6G-G B smoke using durable artifact summaries.
+- The comparison must label the result as bounded one-cycle smoke evidence,
+  not full Phase 6 success, and must keep C `not_evaluated` unless calibration
+  evidence changes.
+
 ## 2026-07-02: Phase 6G-F Planner Acceptance And Deep Reflection
 
 Planner audit:
