@@ -560,6 +560,7 @@ Phase 5 closure note：
 - [x] 建立 Phase 6G-C residual cut-intent runtime planner mode，使 primitive token runtime 能消费显式 provider。
 - [x] 建立 Phase 6G-D residual cut-intent runtime source provider，使 `dig_cut_planner.mode=residual_cut_intent` 能从显式 durable source 构造 provider。
 - [x] 建立 Phase 6G-E residual cut-intent runtime source artifact materialization，使 Phase 6F predicted A/B artifact pipeline 写出可被 Phase 6G-D provider 加载的 `residual_cut_intent_runtime_source.json`。
+- [x] 建立 Phase 6G-F runner-facing B-branch eval request / invocation artifact bridge，使真实 `tb-eval` B branch config/argv 能显式指向 runtime source。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -775,6 +776,17 @@ Phase 6G-E note：
 - Phase 6F writer/pipeline 的 fixed artifact list 新增 `residual_cut_intent_runtime_source.json`。pipeline request 必须显式提供 `residual_cut_intent_runtime_source_inputs`；CLI `--request-json` 合同同步要求该字段。缺失或无效的 source-building 输入返回 deterministic `invalid_runtime_source_inputs` / `invalid_request`，并在 writer 前停止，不创建 results root。
 - 生成的 runtime source 使用 `testbed.planner.primitive.token.residual_cut_intent_source` 中的 `residual_cut_intent_runtime_source_v1` / `explicit_residual_cut_intent_runtime_source` 常量；每个 source plan 包含 `cycle_index`、`cut_intent_candidate_id`、Phase 6G-B `plan` payload、plan `source` 和可选 `fallback_reason`。
 - Phase 6G-E 仍不运行 `tb-eval` 或 simulation，不改 eval YAML/default config/production planner decisions/rollout-review schema，不生成 runtime action，不定义 command-space controls、official thresholds、pass/fail、eval success、planner success、production readiness 或 calibrated fallback。
+
+Phase 6G-F note：
+
+- `testbed.eval.terrain_residual_b_branch_eval_request.write_residual_b_branch_eval_request()` 已定义 focused B-branch eval request owner，负责把 current eval metadata、Phase 6G-E predicted artifact root、`residual_cut_intent_runtime_source.json`、fresh request root、fresh planned results root 和 protected evidence roots 转成 runner-facing request artifacts。
+- `tb-terrain-residual-b-branch-request` 是该 owner 的薄 CLI entrypoint；它只读取显式 request JSON 和 current `eval_run_metadata.json`，不运行 simulation，不写 branch execution outputs，也不改现有 eval YAML/default config。
+- request writer 读取 current eval config 后写出 `heuristic_residual_pipeline_eval_config.yaml`，并显式设置 B branch runtime config：`dig_cut_planner.enabled=true`、`dig_cut_planner.mode=residual_cut_intent`、`dig_cut_planner.residual_cut_intent_source_path=<runtime_source_path>`、`dig_cut_planner.fallback_mode=raise`、`dig_cut_planner.hold_token_until_skill_exit=false`、`dig_cut_planner.prior_path=""`。这些值只存在于 request artifact config，不改变默认 `dig_cut_planner.mode=conservative_pose`。
+- request root 固定写入 `heuristic_residual_pipeline_eval_config.yaml`、`heuristic_residual_pipeline_invocation.json` 和 `residual_eval_run_plan.json`；若 CLI 使用 `--output-json`，还会写出 top-level request result。planned real branch root 只作为 expected output root 记录，request writer 不创建该 root。
+- Current-run request smoke 先用当前 Phase 6F CLI 在 fresh root `runs/eval/oracle_terrain_residual_phase6g_f_predicted_ab_with_source_20260702/results` 重新物化 7 个 predicted artifacts，包括 `residual_cut_intent_runtime_source.json`。runtime source status `present`，plan count `1`，candidate id `cut_candidate_000009`。
+- B-branch request smoke 写入 `runs/eval/oracle_terrain_residual_phase6g_f_b_branch_request_20260702`，request status `present`，request writer files `3`，CLI result 后该 root 文件数为 `4`。planned full root `runs/eval/oracle_terrain_residual_phase6g_f_real_ab_20260702` 仍未创建；protected current results file count stayed `10 -> 10`。
+- 最小真实 B-branch execution smoke 使用 generated config、fresh smoke output root、`--target-cycle-gate 1` 和 `--no-video` 启动 `tb-eval`。它证明 runtime mode/source 已进入 primitive runtime，但失败于 `ResidualCutIntentPlanSourceError: residual_cut_intent source missing plan for cycle_index 1`；partial smoke outputs 为 `eval_resolved_config.yaml`、`eval_run_metadata.json(status=failed)` 和 `rollout_000.partial.jsonl`。
+- Phase 6G-F 因此没有声明 B branch eval success、planner success、pass/fail 或 production readiness。剩余 blocker 是 runtime source 的 cycle coverage / runner stop-timing contract：后续真实 B branch execution 需要 source plans 覆盖 runner 实际会请求的 primitive cycle indices，或显式确认 bounded smoke 的 terminal-hold/stop semantics。
 
 通过标准：
 

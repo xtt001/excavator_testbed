@@ -848,6 +848,47 @@ record；runtime source builder 将该 record 与显式 `cell_centers_m`、`dire
 不生成 production runtime action，不定义 command-space controls、official thresholds、pass/fail、eval success、
 planner success、production readiness 或 calibrated fallback。
 
+Phase 6G-F 的 B-branch runner-facing eval request 当前由
+`testbed.eval.terrain_residual_b_branch_eval_request.write_residual_b_branch_eval_request()`
+负责。该 helper 是 eval request artifact owner：它读取显式 `current_eval_metadata`、Phase 6G-E
+`predicted_ab_artifact_root`、`runtime_source_path`、fresh `request_root`、fresh `planned_results_root`
+和 `protected_evidence_roots`，然后写出真实 `tb-eval` 可消费的 B branch config/argv/request artifacts。
+CLI entrypoint 是 `tb-terrain-residual-b-branch-request`，只读取 `--request-json`，可选
+`--output-json` 写出 top-level request result。
+
+request writer 不改任何 checked-in eval YAML/default config。它从 current eval config 复制一份 request-local
+`heuristic_residual_pipeline_eval_config.yaml`，并只在该 artifact config 内显式设置：
+`dig_cut_planner.enabled=true`、`dig_cut_planner.mode=residual_cut_intent`、
+`dig_cut_planner.residual_cut_intent_source_path=<runtime_source_path>`、
+`dig_cut_planner.fallback_mode=raise`、`dig_cut_planner.hold_token_until_skill_exit=false` 和
+`dig_cut_planner.prior_path=""`。这些值让 B branch 使用 explicit source provider，避免缺 source 时静默回落到
+conservative pose，也避免 residual source path 仍依赖 legacy prior。
+
+request root 固定写入 `heuristic_residual_pipeline_eval_config.yaml`、
+`heuristic_residual_pipeline_invocation.json` 和 `residual_eval_run_plan.json`。`residual_eval_run_plan.json`
+中的 B branch argv 指向 request-local config，并把 `--output-dir` 改写到
+`<planned_results_root>/heuristic_residual_pipeline`；planned branch output root 只作为 expected output
+记录，request writer 不创建它。该 helper 的 no-overwrite guard 会拒绝 pre-existing request root、
+pre-existing planned results root，以及 request/planned root 与 protected evidence root 的 same-or-nested overlap。
+
+Current-run Phase 6G-F smoke facts：fresh predicted artifact root
+`runs/eval/oracle_terrain_residual_phase6g_f_predicted_ab_with_source_20260702/results`
+写出 7 个 files，并包含 status `present` 的 `residual_cut_intent_runtime_source.json`；runtime source
+plan count 为 `1`，candidate id 为 `cut_candidate_000009`。B request root
+`runs/eval/oracle_terrain_residual_phase6g_f_b_branch_request_20260702` 写出 3 个 request files，
+CLI result 后该 root file count 为 `4`。planned full root
+`runs/eval/oracle_terrain_residual_phase6g_f_real_ab_20260702` 没有被 request writer 创建；protected
+current results file count stayed `10 -> 10`。
+
+一次最小真实 B-branch smoke 使用 generated config、fresh smoke output root、
+`--target-cycle-gate 1` 和 `--no-video` 启动 `tb-eval`。runner 成功加载 residual mode/source，并执行到
+primitive runtime 请求 cycle `1`，随后因 source 只有 cycle `0` plan 而失败：
+`ResidualCutIntentPlanSourceError: residual_cut_intent source missing plan for cycle_index 1`。
+该 smoke 只留下 partial branch artifacts：
+`runs/eval/oracle_terrain_residual_phase6g_f_real_b_smoke_20260702/heuristic_residual_pipeline/results/eval_resolved_config.yaml`、
+`eval_run_metadata.json(status=failed)` 和 `rollouts/rollout_000.partial.jsonl`。这不是 eval success 或
+planner success；它把剩余 blocker 缩小为 runtime source cycle coverage / runner stop-timing contract。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

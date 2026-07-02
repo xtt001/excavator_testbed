@@ -5636,6 +5636,232 @@ Preserved non-goals:
 - No command-space controls, official defaults, official thresholds, pass/fail,
   eval success, planner success, or calibrated fallback.
 
+## 2026-07-02: Phase 6G-F Planner Acceptance And Deep Reflection
+
+Planner audit:
+
+- Target lock rechecked in planner thread:
+  `/home/pingfan/PACT/excavator_testbed`, branch status
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 51]`,
+  HEAD `9561e853d7646bffd1ae1f6b6875fce1b8ca3106`.
+- Worktree contained only expected Phase 6G-F files: the new focused
+  B-branch eval request owner, thin CLI entrypoint, focused tests, console
+  script entry, and source-of-truth docs.
+- Generated artifacts were under fresh ignored `runs/eval` roots only:
+  the Phase 6G-F predicted artifact root, B request root, and failed B smoke
+  root. Protected current evidence stayed unchanged at `10` files.
+- Boundary audit: `testbed/eval/terrain_residual_b_branch_eval_request.py`
+  owns request materialization; the CLI only validates explicit request JSON and
+  calls that owner. Large primitive config / policy files were not edited.
+
+Planner-side verification:
+
+- Related request/runtime/source/artifact suite:
+  `python -m pytest -q tests/test_terrain_residual_b_branch_eval_request.py
+  tests/test_terrain_residual_eval_run_plan.py
+  tests/test_terrain_residual_ab_artifact_pipeline.py
+  tests/test_terrain_residual_ab_artifact_pipeline_cli.py
+  tests/test_terrain_residual_ab_artifact_writer.py
+  tests/test_primitive_residual_cut_intent_source.py
+  tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_primitive_adapter_config.py` -> `59 passed`.
+- Compileall for the new request owner, CLI, and tests exited `0`.
+- Changed-doc guard, doc inventory guard, architecture contract guard,
+  architecture doc contract tests, and `git diff --check` all exited `0`.
+- Runtime smoke metadata confirms the failure was:
+  `ResidualCutIntentPlanSourceError: residual_cut_intent source missing plan for cycle_index 1: missing plan for cycle_index 1`.
+
+Acceptance:
+
+- Phase 6G-F accepted as the runner-facing B-branch eval request / invocation
+  bridge slice.
+- It proves that a request-local config can point real `tb-eval` at
+  `dig_cut_planner.mode=residual_cut_intent` and the generated
+  `residual_cut_intent_runtime_source.json`.
+- It does not prove successful B branch execution. The bounded real B smoke
+  started the runner and reached primitive runtime, then failed because the
+  runtime source covered cycle `0` only while the runner requested cycle `1`.
+- Accepted-slice count since the latest deep reflection reached `3/3`. This
+  callback also contained a real smoke failure, so deep reflection is required
+  and recorded below. The accepted-slice count resets to `0/3` after this
+  reflection.
+
+Deep reflection:
+
+- Reference used: user correction to execute the core path, Phase 6G-C runtime
+  mode, Phase 6G-D source provider, Phase 6G-E source artifact
+  materialization, no-hidden-default constraints, and protected-evidence
+  no-overwrite rules.
+- Alignment verdict: aligned. The last three accepted slices moved from runtime
+  mode, to durable explicit source provider, to request artifacts consumed by
+  real `tb-eval`; this is the core path, not a perimeter-only workflow.
+- Efficiency verdict: acceptable. Phase 6G-F did run into a real execution
+  blocker, but the smoke failure is valuable because it identifies the next
+  concrete interface gap at the primitive cycle boundary.
+- Config discipline verdict: acceptable. The only checked-in config-facing
+  change is a console script entry. The request-local generated config carries
+  `dig_cut_planner.mode=residual_cut_intent`, source path, and
+  `fallback_mode=raise`; default checked-in configs remain unchanged.
+- Remaining blocker: runtime source cycle coverage / runner stop timing. A
+  successful B smoke needs either source plans for every primitive cycle the
+  runner can request in the bounded run, or an explicit terminal-hold / stop
+  contract that prevents requesting a missing next-cycle plan.
+
+Next bounded target:
+
+- Phase 6G-G should fix the cycle coverage / stop-timing contract directly.
+- The executor should trace primitive cycle indexing and target-cycle gate
+  timing from the failed partial rollout and current runtime code before
+  changing behavior.
+- Preferred core outcome: make the runtime source and request path support a
+  bounded B smoke without missing cycle plans, then rerun the smallest fresh
+  no-overwrite B smoke.
+- If the correct contract is to extend plans, do it explicitly from predicted
+  rollout evidence with clear provenance; if the correct contract is terminal
+  hold / reuse last plan, encode that as an explicit source/provider policy, not
+  a hidden fallback.
+- The slice must still not invent official thresholds, pass/fail semantics,
+  planner success, eval success, calibrated fallback, hidden defaults, or
+  command-space controls.
+
+## 2026-07-02: Phase 6G-F B-Branch Eval Request Executor Packet
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 51]`.
+- Initial HEAD: `9561e853d7646bffd1ae1f6b6875fce1b8ca3106`.
+- Initial dirty state: clean.
+
+Boundary decision:
+
+- Added focused eval owner
+  `testbed/eval/terrain_residual_b_branch_eval_request.py`.
+- Responsibility: materialize the smallest runner-facing B-branch eval request
+  artifacts that point real `tb-eval` at a Phase 6G-E runtime source.
+- Added thin CLI module
+  `testbed/cli/terrain_residual_b_branch_eval_request.py` and console script
+  `tb-terrain-residual-b-branch-request`.
+- Did not edit eval YAML/default configs, production planner decisions,
+  rollout-review schema, or runner internals.
+
+TDD red:
+
+- Added `tests/test_terrain_residual_b_branch_eval_request.py` before
+  production code.
+- Command:
+  `python -m pytest -q tests/test_terrain_residual_b_branch_eval_request.py`.
+- Expected red result: collection failed with
+  `ModuleNotFoundError: No module named 'testbed.cli.terrain_residual_b_branch_eval_request'`.
+
+Implemented contract:
+
+- Public helper:
+  `write_residual_b_branch_eval_request(...)`.
+- CLI request JSON fields:
+  `current_eval_metadata_path`, `predicted_ab_artifact_root`,
+  `runtime_source_path`, `request_root`, `planned_results_root`, and
+  `protected_evidence_roots`.
+- Request root writes:
+  `heuristic_residual_pipeline_eval_config.yaml`,
+  `heuristic_residual_pipeline_invocation.json`, and
+  `residual_eval_run_plan.json`.
+- The generated request-local config explicitly sets:
+  `dig_cut_planner.enabled=true`,
+  `dig_cut_planner.mode=residual_cut_intent`,
+  `dig_cut_planner.residual_cut_intent_source_path=<runtime_source_path>`,
+  `dig_cut_planner.fallback_mode=raise`,
+  `dig_cut_planner.hold_token_until_skill_exit=false`, and
+  `dig_cut_planner.prior_path=""`.
+- Default `dig_cut_planner.mode` remains `conservative_pose`; no checked-in
+  config file was changed.
+- The invocation argv points to the generated config and rewrites
+  `--output-dir` to
+  `<planned_results_root>/heuristic_residual_pipeline`.
+- The request writer records expected branch outputs but does not create the
+  planned branch output root.
+- No-overwrite validation rejects pre-existing request root, pre-existing
+  planned results root, and same-or-nested overlap with protected evidence roots.
+
+Current-run request smoke:
+
+- Fresh predicted artifact root:
+  `runs/eval/oracle_terrain_residual_phase6g_f_predicted_ab_with_source_20260702/results`.
+- Predicted artifact CLI status: `present`.
+- Predicted artifact file count: `7`.
+- Runtime source path:
+  `runs/eval/oracle_terrain_residual_phase6g_f_predicted_ab_with_source_20260702/results/residual_cut_intent_runtime_source.json`.
+- Runtime source status/schema/source: `present` /
+  `residual_cut_intent_runtime_source_v1` /
+  `explicit_residual_cut_intent_runtime_source`.
+- Runtime source plan count: `1`.
+- Runtime source candidate ids: `cut_candidate_000009`.
+- B request root:
+  `runs/eval/oracle_terrain_residual_phase6g_f_b_branch_request_20260702`.
+- Request writer status: `present`.
+- Request writer files: `3`.
+- CLI result made request root recursive file count `4`.
+- Planned full branch root
+  `runs/eval/oracle_terrain_residual_phase6g_f_real_ab_20260702`
+  remained absent.
+- Protected current results file count stayed `10 -> 10`.
+
+Real B-branch execution smoke:
+
+- Command used generated config with fresh output root:
+  `python -m testbed.cli.eval --config runs/eval/oracle_terrain_residual_phase6g_f_b_branch_request_20260702/heuristic_residual_pipeline_eval_config.yaml --num-rollouts 1 --target-cycle-gate 1 --no-video --output-dir runs/eval/oracle_terrain_residual_phase6g_f_real_b_smoke_20260702/heuristic_residual_pipeline`.
+- Exit code: `1`.
+- Runner loaded the residual request config and began the rollout; progress
+  reached approximately step `700 / 24000`.
+- Failure:
+  `ResidualCutIntentPlanSourceError: residual_cut_intent source missing plan for cycle_index 1: missing plan for cycle_index 1`.
+- Partial smoke outputs:
+  `runs/eval/oracle_terrain_residual_phase6g_f_real_b_smoke_20260702/heuristic_residual_pipeline/results/eval_resolved_config.yaml`,
+  `runs/eval/oracle_terrain_residual_phase6g_f_real_b_smoke_20260702/heuristic_residual_pipeline/results/eval_run_metadata.json`,
+  and
+  `runs/eval/oracle_terrain_residual_phase6g_f_real_b_smoke_20260702/heuristic_residual_pipeline/results/rollouts/rollout_000.partial.jsonl`.
+- Smoke `eval_run_metadata.json` status: `failed`.
+- Smoke metadata error:
+  `ResidualCutIntentPlanSourceError: residual_cut_intent source missing plan for cycle_index 1: missing plan for cycle_index 1`.
+- The smoke proves the request bridge reaches the real primitive runtime, but it
+  does not produce successful B branch execution artifacts.
+
+Verification:
+
+- Focused green:
+  `python -m pytest -q tests/test_terrain_residual_b_branch_eval_request.py` ->
+  `6 passed`.
+- Related runtime/source/artifact/request bundle:
+  `python -m pytest -q tests/test_terrain_residual_b_branch_eval_request.py
+  tests/test_terrain_residual_eval_run_plan.py
+  tests/test_terrain_residual_ab_artifact_pipeline.py
+  tests/test_terrain_residual_ab_artifact_pipeline_cli.py
+  tests/test_terrain_residual_ab_artifact_writer.py
+  tests/test_primitive_residual_cut_intent_source.py
+  tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_primitive_adapter_config.py` -> `59 passed`.
+
+Preserved non-goals:
+
+- No checked-in eval YAML/default config changes.
+- No push, fetch, pull, rebase, checkout, stage, or commit.
+- No production planner / gate / policy semantic change.
+- No rollout-review schema integration.
+- No command-space controls, official defaults, official thresholds, pass/fail,
+  eval success, planner success, production readiness, or calibrated fallback.
+
+Remaining blocker:
+
+- Runtime source cycle coverage / runner stop-timing contract is still missing.
+  The generated source had only cycle `0`, while real primitive runtime
+  requested cycle `1` before the bounded smoke ended.
+- A later successful real B branch run needs runtime source plans covering the
+  primitive cycle indices the runner will request, or an explicit bounded-smoke
+  stop/terminal-hold contract that does not request a missing next-cycle plan.
+
 ## 2026-07-02: Phase 6G-E Planner Acceptance
 
 Planner audit:
