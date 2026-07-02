@@ -980,6 +980,19 @@ count `921`。C remains `not_evaluated` / `blocked_by_missing_gold_samples`; no 
 source repetition, official pass/fail, eval success, planner success, production readiness, command-space controls,
 or calibrated fallback is claimed.
 
+Phase 6G-J root-cause review inspected the gate-2 result roots read-only. B did consume residual dig-cut tokens from
+the explicit runtime source (`dig_cut_token_source=explicit_residual_cut_intent_dig_cut_token`, source status
+`present`, plan count `3`, cycles `[0, 1, 2]`) and had a physical dump event (`dump_start_mask=1`,
+`dump_end_mask=1`). The gate count still stayed zero because the eval summary used `coverage_completed_dump_count=0`;
+coverage effect runtime currently covers `operator_prior_coverage` / `operator_prior_sweep_belief`, while B runs
+`dig_cut_planner.mode=residual_cut_intent`. The first behavioral divergence after B's dump is handoff-related: A
+enters return and reaches the next qualified dig start, but B switches directly from dump to dig with
+`return_target_token_source=fallback_zero`, remains in `cycle_id=0`, and then fails the next dig with
+`dig_failed_bad_dig_low_payload`. The next implementation slice should therefore target an explicit residual
+return-target / cycle-handoff contract after dump, or a narrowly justified count fix if fresh evidence proves the
+count is wrong; it must not introduce hidden fallback, source repetition, official pass/fail, eval success, planner
+success, production readiness, command-space controls, or calibrated fallback.
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

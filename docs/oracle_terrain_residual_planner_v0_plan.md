@@ -564,6 +564,7 @@ Phase 5 closure note：
 - [x] 建立 Phase 6G-G B-branch bounded smoke stop-timing contract，使 request-local config 显式用 zero terminal hold 避免 bounded smoke 请求未覆盖的 next-cycle source plan。
 - [x] 建立 Phase 6G-H same-gate real A/B bounded smoke comparison，将 current A branch 和 Phase 6G-G B branch 的真实 one-cycle smoke artifacts 放进同一 durable comparison 输出。
 - [x] 建立 Phase 6G-I smallest multi-cycle B request source-coverage preflight，并用显式 multi-step predicted source 完成 `target_cycle_gate=2` real A/B bounded smoke comparison。
+- [x] 完成 Phase 6G-J B gate-2 no-dump 根因审查，确认 B 已消费 residual dig-cut token 且实际发生一次 dump，但 dump 后 return/handoff 链和 coverage-count 口径导致 gate 计数为 `0`。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -850,6 +851,27 @@ Phase 6G-I note：
 - C remains `not_evaluated` / `blocked_by_missing_gold_samples`. The gate-2 comparison is bounded smoke evidence only;
   it does not define official pass/fail, eval success, planner success, full Phase 6 success, production readiness,
   command-space controls, or calibrated fallback.
+
+Phase 6G-J note：
+
+- Phase 6G-J read-only root-cause review inspected the gate-2 A/B result roots without code or doc changes in the
+  executor thread. The executor callback did not reach the planner automatically, so the planner recovered it with
+  `codex_app.read_thread` and then corrected the workflow profile to require explicit callback routing.
+- B did consume residual cut-intent plans: rollout records contain
+  `dig_cut_token_source=explicit_residual_cut_intent_dig_cut_token`, and the runtime source had status `present`,
+  plan count `3`, and cycles `[0, 1, 2]`.
+- B also had a physical dump event: `dump_start_mask=1` and `dump_end_mask=1` appear in the rollout. However the eval
+  summary used `coverage_completed_dump_count=0`, so `target_cycle_completed_dump_count` stayed `0`.
+- The coverage count stayed zero because coverage effect runtime is currently enabled for
+  `operator_prior_coverage` / `operator_prior_sweep_belief`, while B runs with
+  `dig_cut_planner.mode=residual_cut_intent`; B planner traces show empty coverage corridors.
+- First behavioral divergence after the first dump: A enters a return span and then reaches the next qualified dig
+  start; B switches directly from dump to dig with `return_target_token_source=fallback_zero`, remains in `cycle_id=0`,
+  and the next dig ends with `dig_failed_bad_dig_low_payload`.
+- Phase 6G-K should therefore target the core residual-branch handoff problem: residual mode needs an explicit
+  return-target / cycle-handoff contract after dump, or a narrowly justified target-cycle counting fix if evidence
+  proves the count is wrong. It must not invent official pass/fail, hidden fallback, source repetition, or default
+  runtime behavior.
 
 通过标准：
 

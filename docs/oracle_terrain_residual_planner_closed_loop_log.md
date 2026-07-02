@@ -5636,6 +5636,62 @@ Preserved non-goals:
 - No command-space controls, official defaults, official thresholds, pass/fail,
   eval success, planner success, or calibrated fallback.
 
+## 2026-07-02: Phase 6G-J Planner Recovery And Root-Cause Acceptance
+
+Planner recovery:
+
+- User reported that Phase 6G-I / Phase 6G-J appeared stopped and that this
+  planner thread did not react automatically.
+- The planner recovered the stopped executor result with `codex_app.read_thread`.
+  The missing callback was a workflow issue, not a repo-code issue: ordinary
+  thread creation does not auto-wake the planner unless the executor prompt
+  carries an explicit callback route back to the controlling planner thread.
+- The planner profile has since been updated to require that callback route in
+  future executor prompts.
+
+Recovered executor facts:
+
+- Phase 6G-J was a read-only root-cause review of the gate-2 A/B smoke roots.
+- Target lock matched
+  `/home/pingfan/PACT/excavator_testbed`,
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 55]`,
+  HEAD `3d5b0ab40daf9b358cfb79480bda73f5056dca84`, with a clean worktree
+  before and after.
+- No files, configs, runs, branches, staging, commits, remotes, or dependencies
+  were changed by that executor.
+- B did consume residual cut-intent plans: rollout records contain
+  `dig_cut_token_source=explicit_residual_cut_intent_dig_cut_token`; the runtime
+  source had status `present`, plan count `3`, cycles `[0, 1, 2]`, and
+  validation errors `[]`.
+- B also produced a physical dump event with `dump_start_mask=1` and
+  `dump_end_mask=1`.
+- The B summary still reported `target_cycle_completed_dump_count=0` because
+  the eval summary used `coverage_completed_dump_count=0` ahead of dump-end
+  fallback.
+- The coverage count stayed zero because coverage effect runtime currently
+  covers `operator_prior_coverage` / `operator_prior_sweep_belief`, while the
+  B branch used `dig_cut_planner.mode=residual_cut_intent`; B planner traces had
+  empty coverage corridors.
+- The first concrete behavioral divergence after the first dump was handoff:
+  A entered a return span and reached the next qualified dig start, while B
+  switched directly from dump to dig with
+  `return_target_token_source=fallback_zero`, stayed in `cycle_id=0`, and then
+  ended the next dig with `dig_failed_bad_dig_low_payload`.
+
+Planner decision:
+
+- Phase 6G-J is accepted as root-cause evidence, not as a successful Phase 6
+  comparison.
+- The next bounded target is Phase 6G-K: address the core residual B branch
+  handoff problem by implementing or proving an explicit residual return-target
+  / cycle-handoff contract after dump. If fresh evidence proves the metric count
+  is wrong independently of handoff, a narrow count fix is acceptable, but it
+  must be evidence-backed.
+- Phase 6G-K must not invent official pass/fail, eval success, planner success,
+  production readiness, default residual runtime behavior, hidden fallback,
+  last-plan reuse, source repetition, command-space controls, official
+  thresholds, or calibrated fallback.
+
 ## 2026-07-02: Phase 6G-G Bounded B Smoke Stop-Timing Contract
 
 Target lock:
