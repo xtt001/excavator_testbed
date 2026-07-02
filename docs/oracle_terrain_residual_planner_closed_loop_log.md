@@ -6142,6 +6142,50 @@ Status:
   current predicted evidence generated source coverage only for cycle `0`, not
   required cycle `1`.
 
+## 2026-07-02: Planner Callback/Wakeup Discipline Correction
+
+Trigger:
+
+- User observed that a background executor thread had stopped but the planner
+  did not react automatically.
+- The stopped thread was Phase 6G-J,
+  `019f226b-10ec-7a30-9499-4971fc406b28`.
+
+Observed tool/process facts:
+
+- The planner had created Phase 6G-J with `codex_app.create_thread`.
+- The executor completed in its own thread with a `partial` factual callback,
+  but it did not send that callback back to the controlling planner thread.
+- The Codex toolset exposed thread creation/reading/sending tools, but no
+  `automation_update` / wakeup automation tool was available in this turn.
+- Therefore ordinary `create_thread` completion did not wake the planner. The
+  planner only recovered after explicitly reading the executor thread.
+
+Profile correction:
+
+- `docs/oracle_terrain_residual_planner_closed_loop_profile.md` now records
+  that every executor prompt must name the callback route explicitly.
+- In the Codex desktop app, the preferred route is
+  `codex_app.send_message_to_thread` back to the controlling planner thread
+  when available; omit `hostId` unless verified for the current host.
+- The planner must record created executor thread id, title, target lock, and
+  expected callback route before yielding.
+- A created executor thread that only writes its final answer in its own thread
+  is not sufficient callback delivery.
+- `codex_app.read_thread` is the recovery path when callback delivery fails, the
+  executor is visibly idle, or the user asks for inspection.
+- If no automation / wakeup tool is available, the planner must not claim
+  unattended automatic polling; it may only use the thread-read recovery path on
+  the next planner turn.
+
+Workflow implication:
+
+- Future executor prompts must contain a concrete callback instruction, not just
+  a callback schema.
+- Future planner dispatches must not describe background execution as
+  automatically reviewed unless either the explicit callback succeeds or a real
+  automation tool is available and configured.
+
 ## 2026-07-02: Phase 6G-I Planner Recovery And Gate-2 Smoke
 
 Planner recovery trigger:

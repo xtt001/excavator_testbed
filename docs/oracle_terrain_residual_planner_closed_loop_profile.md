@@ -70,11 +70,27 @@ Callback collection is thread-based and event-driven:
 
 - The executor thread must send the requested callback schema back to the
   planner thread when it finishes or hits a blocker.
-- The planner must not poll the executor thread while waiting.
-- Reading the executor thread is only a recovery fallback if callback delivery
-  fails or the user explicitly asks for inspection.
+- The executor prompt must name the callback route explicitly. In the Codex
+  desktop app, use `codex_app.send_message_to_thread` to the controlling
+  planner thread when that tool is available; omit `hostId` unless it has been
+  verified for the current host.
+- The planner must record the created executor thread id, title, expected
+  target lock, and callback route in the log or current handoff state before it
+  yields.
+- Ordinary `create_thread` completion does not by itself wake the controlling
+  planner thread. A created executor thread that only writes its final answer in
+  its own thread is not sufficient callback delivery for this workflow.
+- Reading the executor thread with `codex_app.read_thread` is the required
+  recovery path when callback delivery fails, the executor is visibly idle, or
+  the user asks for inspection.
+- If an automation / wakeup tool is unavailable in the current App toolset, the
+  planner must not claim unattended automatic polling. It may use the
+  thread-read recovery path on the next planner turn, and must make the missing
+  automation capability explicit.
 
-Do not replace this with background subagent delegation or polling.
+Do not replace this with background subagent delegation. Polling or thread
+reads are allowed only as the documented recovery path when the explicit
+callback route failed or is unavailable.
 
 ## Scope
 
