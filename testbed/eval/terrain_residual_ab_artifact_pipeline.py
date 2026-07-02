@@ -14,6 +14,9 @@ from testbed.eval.terrain_residual_ab_artifact_writer import (
 from testbed.eval.terrain_residual_baseline_comparison import (
     build_predicted_residual_ab_comparison,
 )
+from testbed.eval.terrain_residual_cut_intent_runtime_source import (
+    build_residual_cut_intent_runtime_source,
+)
 from testbed.eval.terrain_residual_closed_loop_branch_plan import (
     REQUIRED_CUT_INTENT_FIELDS,
     build_closed_loop_branch_run_plan,
@@ -74,6 +77,7 @@ def build_and_write_predicted_residual_ab_artifacts(
     scoring_weights: Mapping[str, Any],
     effect_geometry: Mapping[str, Any],
     payload_capacity_m3: Any,
+    residual_cut_intent_runtime_source_inputs: Mapping[str, Any],
     selection_policy: Any,
     protected_evidence_roots: Sequence[Any],
     calibration_evidence: Mapping[str, Any] | None = None,
@@ -248,6 +252,7 @@ def build_and_write_predicted_residual_ab_artifacts(
                 experiment_manifest=experiment_manifest,
                 branch_run_plan=branch_run_plan,
                 predicted_b_rollout=predicted_b_rollout,
+                residual_cut_intent_runtime_source={},
                 predicted_ab_comparison={},
                 artifact_writer={},
             ),
@@ -256,6 +261,35 @@ def build_and_write_predicted_residual_ab_artifacts(
             predicted_ab_comparison={},
             validation_errors=list(predicted_b_rollout.get("validation_errors", []))
             or ["predicted B rollout status must be present"],
+        )
+
+    residual_cut_intent_runtime_source = build_residual_cut_intent_runtime_source(
+        predicted_b_rollout=predicted_b_rollout,
+        runtime_source_inputs=residual_cut_intent_runtime_source_inputs,
+    )
+    if residual_cut_intent_runtime_source.get("status") != "present":
+        return _pipeline_result(
+            status="invalid_runtime_source_inputs",
+            profile=profile,
+            source_rollout_path=normalized_source_path,
+            results_root=normalized_results_root,
+            source_record_count=len(source_records),
+            nested_statuses=_nested_statuses(
+                target_report=target_report,
+                experiment_manifest=experiment_manifest,
+                branch_run_plan=branch_run_plan,
+                predicted_b_rollout=predicted_b_rollout,
+                residual_cut_intent_runtime_source=residual_cut_intent_runtime_source,
+                predicted_ab_comparison={},
+                artifact_writer={},
+            ),
+            artifact_writer={},
+            predicted_b_rollout=predicted_b_rollout,
+            predicted_ab_comparison={},
+            validation_errors=list(
+                residual_cut_intent_runtime_source.get("validation_errors", [])
+            )
+            or ["residual cut-intent runtime source status must be present"],
         )
 
     predicted_ab_comparison = build_predicted_residual_ab_comparison(
@@ -279,6 +313,7 @@ def build_and_write_predicted_residual_ab_artifacts(
                 experiment_manifest=experiment_manifest,
                 branch_run_plan=branch_run_plan,
                 predicted_b_rollout=predicted_b_rollout,
+                residual_cut_intent_runtime_source=residual_cut_intent_runtime_source,
                 predicted_ab_comparison=predicted_ab_comparison,
                 artifact_writer={},
             ),
@@ -293,6 +328,7 @@ def build_and_write_predicted_residual_ab_artifacts(
         experiment_manifest=experiment_manifest,
         branch_run_plan=branch_run_plan,
         predicted_b_rollout=predicted_b_rollout,
+        residual_cut_intent_runtime_source=residual_cut_intent_runtime_source,
         predicted_ab_comparison=predicted_ab_comparison,
         source_rollout_path=normalized_source_path,
         protected_evidence_roots=normalized_protected_roots,
@@ -309,6 +345,7 @@ def build_and_write_predicted_residual_ab_artifacts(
             experiment_manifest=experiment_manifest,
             branch_run_plan=branch_run_plan,
             predicted_b_rollout=predicted_b_rollout,
+            residual_cut_intent_runtime_source=residual_cut_intent_runtime_source,
             predicted_ab_comparison=predicted_ab_comparison,
             artifact_writer=artifact_writer,
         ),
@@ -566,12 +603,16 @@ def _nested_statuses(
     predicted_b_rollout: Mapping[str, Any],
     predicted_ab_comparison: Mapping[str, Any],
     artifact_writer: Mapping[str, Any],
+    residual_cut_intent_runtime_source: Mapping[str, Any] | None = None,
 ) -> dict[str, str | None]:
     return {
         "target_residual_report": _status(target_report),
         "experiment_manifest": _status(experiment_manifest),
         "branch_run_plan": _status(branch_run_plan),
         "predicted_b_rollout": _status(predicted_b_rollout),
+        "residual_cut_intent_runtime_source": _status(
+            residual_cut_intent_runtime_source or {}
+        ),
         "predicted_ab_comparison": _status(predicted_ab_comparison),
         "artifact_writer": _status(artifact_writer),
     }

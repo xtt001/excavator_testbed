@@ -488,6 +488,7 @@ def _step_record(
         "effect_record_status": effect_record["status"],
         "effect_summary_status": effect_summary["status"],
         "cut_intent_status": cut_intent["status"],
+        "cut_intent": dict(cut_intent["cut_intent"]),
         "predicted_update_status": predicted_update["status"],
         "before_metrics": _metric_subset(predicted_update["before_metrics"]),
         "after_metrics": _metric_subset(predicted_update["after_metrics"]),

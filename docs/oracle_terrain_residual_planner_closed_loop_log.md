@@ -5636,6 +5636,82 @@ Preserved non-goals:
 - No command-space controls, official defaults, official thresholds, pass/fail,
   eval success, planner success, or calibrated fallback.
 
+## 2026-07-02: Phase 6G-E Planner Acceptance
+
+Planner audit:
+
+- Target lock rechecked in planner thread:
+  `/home/pingfan/PACT/excavator_testbed`, branch status
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 50]`,
+  HEAD `63d898bb2a51e981c72fe3b94972cbd54cadb403`.
+- Worktree contained only expected Phase 6G-E files: predicted rollout,
+  predicted A/B artifact writer, predicted A/B artifact pipeline, CLI request
+  validation, focused tests, source-of-truth docs, and the new focused
+  runtime-source materialization helper.
+- Boundary audit: `testbed/eval/terrain_residual_cut_intent_runtime_source.py`
+  owns only runtime-source payload construction from predicted B rollout
+  evidence plus explicit adapter inputs. The writer remains the artifact
+  materialization owner, the pipeline remains orchestration, and the CLI remains
+  thin request validation / pass-through.
+
+Planner-side verification:
+
+- Related runtime/source/artifact suite:
+  `python -m pytest -q tests/test_primitive_residual_cut_intent_source.py
+  tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_terrain_residual_predicted_rollout.py
+  tests/test_terrain_residual_ab_artifact_writer.py
+  tests/test_terrain_residual_ab_artifact_pipeline.py
+  tests/test_terrain_residual_ab_artifact_pipeline_cli.py
+  tests/test_terrain_residual_eval_run_plan.py
+  tests/test_primitive_adapter_config.py` -> `57 passed`.
+- Protected current evidence file count stayed `10`.
+- Executor-side compileall, changed-doc guard, doc inventory guard,
+  architecture contract guard, and `git diff --check` all exited `0`.
+
+Acceptance:
+
+- Phase 6G-E accepted as the residual cut-intent runtime source artifact
+  materialization slice.
+- The Phase 6F predicted A/B artifact pipeline now writes
+  `residual_cut_intent_runtime_source.json`, and that file is loadable by the
+  Phase 6G-D source provider.
+- Runtime source adapter inputs remain explicit:
+  `cell_centers_m`, `direction_vectors`, `bucket_length_m`, and `payload_kg`.
+  The pipeline does not infer these from effect geometry, payload capacity,
+  current `runs`, environment variables, or hidden defaults.
+- Accepted-slice count since the latest deep reflection: `2/3`.
+- Deep reflection is not due yet.
+
+Lightweight reflection:
+
+- Reference used: user instruction to pursue the core implementation path,
+  Phase 6G-D remaining blocker, the existing primitive residual cut-intent
+  runtime source provider, and no-hidden-default / no-simulation boundaries.
+- Alignment verdict: aligned. This slice converts predicted B rollout evidence
+  into a concrete runtime-source artifact that the primitive runtime path can
+  consume, rather than adding another report-only layer.
+- Efficiency verdict: useful core implementation. It removes the missing source
+  artifact gap and leaves the remaining blocker as real branch execution
+  artifacts.
+
+Next bounded target:
+
+- Phase 6G-F should produce a runner-facing B-branch execution request that
+  points at a fresh no-overwrite results root, sets
+  `dig_cut_planner.mode=residual_cut_intent`, and references the generated
+  `residual_cut_intent_runtime_source.json`.
+- The executor should inspect the real eval/CLI/config entrypoints first. If a
+  bounded local B-branch run can be launched from explicit request artifacts
+  without changing defaults or overwriting protected evidence, it may run it and
+  report the resulting branch artifacts. If the real runner cannot yet consume
+  the request, it must return the exact remaining code/config blocker instead
+  of inventing pass/fail or success semantics.
+- The slice must not invent official thresholds, pass/fail semantics, planner
+  success, eval success, calibrated fallback, hidden defaults, or command-space
+  controls.
+
 ## 2026-07-02: Phase 6G-B Residual Cut-Intent Token Adapter Packet
 
 Target lock:

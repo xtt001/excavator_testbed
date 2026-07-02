@@ -141,6 +141,15 @@ def test_predicted_rollout_iterates_until_target_residual_is_zero():
     assert step["step_index"] == 0
     assert step["status"] == "present"
     assert step["cut_intent_candidate_id"] == "cut_candidate_000001"
+    assert step["cut_intent"]["cut_intent_candidate_id"] == "cut_candidate_000001"
+    assert step["cut_intent"]["candidate_id"] == "cut_candidate_000001"
+    assert step["cut_intent"]["anchor_cell_index"] == 0
+    assert step["cut_intent"]["anchor_row"] == 0
+    assert step["cut_intent"]["anchor_col"] == 0
+    assert step["cut_intent"]["direction"] == "col_forward"
+    assert step["cut_intent"]["candidate_depth_m"] == 0.2
+    assert step["cut_intent"]["runner_input_status"] == "ready_for_eval_harness"
+    assert step["cut_intent"]["production_runtime_action"] is False
     assert step["before_metrics"]["target_positive_residual_depth_sum_m"] == 0.4
     assert step["after_metrics"]["target_positive_residual_depth_sum_m"] == 0.0
     assert step["expected_delta_depth_sum_m"] == 0.4

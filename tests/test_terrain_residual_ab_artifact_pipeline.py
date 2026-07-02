@@ -11,6 +11,10 @@ from testbed.data.schema import (
 from testbed.eval.terrain_residual_ab_artifact_pipeline import (
     build_and_write_predicted_residual_ab_artifacts,
 )
+from testbed.planner.primitive.token.residual_cut_intent_source import (
+    RESIDUAL_CUT_INTENT_RUNTIME_SOURCE_SCHEMA,
+    build_residual_cut_intent_plan_provider_from_source_path,
+)
 
 
 EXPECTED_FILES = [
@@ -18,6 +22,7 @@ EXPECTED_FILES = [
     "experiment_manifest.json",
     "branch_run_plan.json",
     "predicted_b_rollout.json",
+    "residual_cut_intent_runtime_source.json",
     "branch_comparison_report.json",
     "rollout_manifest.json",
 ]
@@ -126,6 +131,23 @@ def _pipeline_kwargs(source_path="runs/eval/source/results/rollouts/rollout_000.
             "penetration_depth_m": None,
         },
         "payload_capacity_m3": 0.04,
+        "residual_cut_intent_runtime_source_inputs": {
+            "cell_centers_m": {
+                str(index): {
+                    "x_m": float(index // 2) * 0.25,
+                    "z_m": float(index % 2) * 0.25,
+                }
+                for index in range(6)
+            },
+            "direction_vectors": {
+                "row_forward": {"x": 1.0, "z": 0.0},
+                "row_reverse": {"x": -1.0, "z": 0.0},
+                "col_forward": {"x": 0.0, "z": 1.0},
+                "col_reverse": {"x": 0.0, "z": -1.0},
+            },
+            "bucket_length_m": 0.5,
+            "payload_kg": 12.5,
+        },
         "selection_policy": "score_ranking_first",
         "protected_evidence_roots": ["runs/eval/protected/results"],
     }
@@ -168,12 +190,13 @@ def test_pipeline_builds_chain_and_writes_predicted_ab_artifacts(tmp_path, monke
         "experiment_manifest": "present",
         "branch_run_plan": "present",
         "predicted_b_rollout": "present",
+        "residual_cut_intent_runtime_source": "present",
         "predicted_ab_comparison": "present",
         "artifact_writer": "present",
     }
     assert result["artifact_summary"] == {
         "status": "present",
-        "artifact_count": 6,
+        "artifact_count": 7,
         "written_files": EXPECTED_FILES,
         "results_root": "runs/eval/phase6f_pipeline/results",
     }
@@ -207,6 +230,25 @@ def test_pipeline_builds_chain_and_writes_predicted_ab_artifacts(tmp_path, monke
     assert comparison["branches"]["heuristic_residual_pipeline"][
         "evidence_type"
     ] == "predicted_counterfactual"
+    runtime_source = json.loads(
+        (root / "residual_cut_intent_runtime_source.json").read_text()
+    )
+    assert runtime_source["schema"] == RESIDUAL_CUT_INTENT_RUNTIME_SOURCE_SCHEMA
+    assert runtime_source["status"] == "present"
+    assert [plan["cycle_index"] for plan in runtime_source["plans"]] == [0, 1]
+    assert [
+        plan["cut_intent_candidate_id"] for plan in runtime_source["plans"]
+    ] == ["cut_candidate_000008", "cut_candidate_000009"]
+    source_provider = build_residual_cut_intent_plan_provider_from_source_path(
+        root / "residual_cut_intent_runtime_source.json",
+        cycle_index=lambda: 1,
+    )
+    assert source_provider is not None
+    token, raw_fields, source, fallback_reason = source_provider({"id": "obs"})
+    assert len(token) == 10
+    assert raw_fields["operator_cut_payload_gain_kg"] == 12.5
+    assert source == "explicit_residual_cut_intent_dig_cut_token"
+    assert fallback_reason == ""
 
     all_keys = set(_all_keys(result))
     assert "runtime_action" not in all_keys
@@ -246,6 +288,36 @@ def test_pipeline_reports_invalid_target_and_option_evidence(tmp_path, monkeypat
         "invalid_cycle_budget"
     )
     assert option_result["artifact_summary"]["artifact_count"] == 0
+
+
+def test_pipeline_rejects_invalid_runtime_source_inputs_without_writing(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    source_path = tmp_path / "runs/eval/source/results/rollouts/rollout_000.jsonl"
+    _write_unit_rollout(source_path)
+
+    invalid_result = _build_pipeline(
+        residual_cut_intent_runtime_source_inputs={
+            "cell_centers_m": {},
+            "direction_vectors": {
+                "row_forward": {"x": 1.0, "z": 0.0},
+                "row_reverse": {"x": -1.0, "z": 0.0},
+                "col_forward": {"x": 0.0, "z": 1.0},
+                "col_reverse": {"x": 0.0, "z": -1.0},
+            },
+            "bucket_length_m": 0.5,
+            "payload_kg": 12.5,
+        },
+    )
+
+    assert invalid_result["status"] == "invalid_runtime_source_inputs"
+    assert invalid_result["nested_statuses"]["residual_cut_intent_runtime_source"] == (
+        "invalid"
+    )
+    assert invalid_result["artifact_summary"]["artifact_count"] == 0
+    assert (tmp_path / "runs/eval/phase6f_pipeline/results").exists() is False
 
 
 def test_pipeline_passes_through_writer_rejections(tmp_path, monkeypatch):

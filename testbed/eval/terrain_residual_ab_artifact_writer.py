@@ -16,6 +16,7 @@ ARTIFACT_FILES = [
     "experiment_manifest.json",
     "branch_run_plan.json",
     "predicted_b_rollout.json",
+    "residual_cut_intent_runtime_source.json",
     "branch_comparison_report.json",
     "rollout_manifest.json",
 ]
@@ -41,6 +42,7 @@ def write_predicted_residual_ab_artifacts(
     experiment_manifest: Mapping[str, Any],
     branch_run_plan: Mapping[str, Any],
     predicted_b_rollout: Mapping[str, Any],
+    residual_cut_intent_runtime_source: Mapping[str, Any],
     predicted_ab_comparison: Mapping[str, Any],
     source_rollout_path: Any,
     protected_evidence_roots: Sequence[Any],
@@ -97,6 +99,7 @@ def write_predicted_residual_ab_artifacts(
         experiment_manifest=experiment_manifest,
         branch_run_plan=branch_run_plan,
         predicted_b_rollout=predicted_b_rollout,
+        residual_cut_intent_runtime_source=residual_cut_intent_runtime_source,
         predicted_ab_comparison=predicted_ab_comparison,
         source_rollout_path=normalized_source_rollout_path,
     )
@@ -135,6 +138,7 @@ def write_predicted_residual_ab_artifacts(
             experiment_manifest=experiment_manifest,
             branch_run_plan=branch_run_plan,
             predicted_b_rollout=predicted_b_rollout,
+            residual_cut_intent_runtime_source=residual_cut_intent_runtime_source,
             predicted_ab_comparison=predicted_ab_comparison,
             source_rollout_path=normalized_source_rollout_path,
             branch_statuses=branch_statuses,
@@ -188,6 +192,7 @@ def _artifact_payloads(
     experiment_manifest: Mapping[str, Any],
     branch_run_plan: Mapping[str, Any],
     predicted_b_rollout: Mapping[str, Any],
+    residual_cut_intent_runtime_source: Mapping[str, Any],
     predicted_ab_comparison: Mapping[str, Any],
     source_rollout_path: str,
     branch_statuses: Mapping[str, Any],
@@ -227,6 +232,9 @@ def _artifact_payloads(
         "experiment_manifest.json": dict(experiment_manifest),
         "branch_run_plan.json": dict(branch_run_plan),
         "predicted_b_rollout.json": dict(predicted_b_rollout),
+        "residual_cut_intent_runtime_source.json": dict(
+            residual_cut_intent_runtime_source
+        ),
         "branch_comparison_report.json": dict(predicted_ab_comparison),
         "rollout_manifest.json": rollout_manifest,
     }
@@ -268,6 +276,7 @@ def _evidence_error(
     experiment_manifest: Any,
     branch_run_plan: Any,
     predicted_b_rollout: Any,
+    residual_cut_intent_runtime_source: Any,
     predicted_ab_comparison: Any,
     source_rollout_path: str | None,
 ) -> str | None:
@@ -275,6 +284,10 @@ def _evidence_error(
         ("experiment_manifest", experiment_manifest),
         ("branch_run_plan", branch_run_plan),
         ("predicted_b_rollout", predicted_b_rollout),
+        (
+            "residual_cut_intent_runtime_source",
+            residual_cut_intent_runtime_source,
+        ),
         ("predicted_ab_comparison", predicted_ab_comparison),
     ):
         if not isinstance(evidence, Mapping) or evidence.get("status") != "present":

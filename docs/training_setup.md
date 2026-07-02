@@ -715,7 +715,8 @@ comparison 物化到新的非覆盖 results root。
 写入前会验证 results root 位于当前 repo 内、不是 protected evidence root 本身或其子路径、且写入前不存在；
 也会验证 manifest / branch plan / predicted rollout / predicted A-B comparison 的 required status。输出
 固定写入 `eval_run_metadata.json`、`experiment_manifest.json`、`branch_run_plan.json`、
-`predicted_b_rollout.json`、`branch_comparison_report.json` 和 `rollout_manifest.json`。所有 JSON 文件使用
+`predicted_b_rollout.json`、`residual_cut_intent_runtime_source.json`、
+`branch_comparison_report.json` 和 `rollout_manifest.json`。所有 JSON 文件使用
 deterministic sorted-key formatting 并以 newline 结束，便于后续 diff / manifest 检查。
 
 writer status 包括 `present`、`invalid_results_root`、`protected_evidence_root_overlap`、
@@ -728,25 +729,30 @@ Phase 6F-B 的 predicted A/B artifact pipeline 当前由
 负责。该 helper 是 eval-only orchestration owner：它从显式 `source_rollout_path` 读取 rollout JSONL，
 用显式 target spec / cycle budget / candidate options / scoring weights / effect geometry / payload capacity
 重建 current target residual report、Phase 6E-A manifest、Phase 6E-B branch plan、Phase 6E-E predicted
-B rollout、Phase 6E-F predicted A/B comparison，然后调用 Phase 6F-A writer 物化 artifact。
+B rollout、Phase 6G-E residual cut-intent runtime source、Phase 6E-F predicted A/B comparison，然后调用
+Phase 6F-A writer 物化 artifact。
 
-调用方必须显式传入 `results_root` 和 `protected_evidence_roots`。pipeline 会保留 writer 的 no-overwrite
+调用方必须显式传入 `results_root`、`protected_evidence_roots` 和
+`residual_cut_intent_runtime_source_inputs`。runtime source inputs 必须包含 `cell_centers_m`、
+`direction_vectors`、`bucket_length_m` 和 `payload_kg`；pipeline 不从 effect geometry、payload capacity、
+当前 `runs`、env vars 或默认配置推断这些 runtime adapter 输入。pipeline 会保留 writer 的 no-overwrite
 边界：如果 proposed results root 等于或嵌套在 protected evidence root 下，manifest / writer 链会返回
 `protected_evidence_root_overlap`，不会创建 artifact。输出包含 schema/source/status/offline_only、
 source record count、nested statuses、artifact summary、branch statuses、predicted B rollout summary、
 comparison delta summary、validation errors、non-goal statuses 和 provenance statuses。
 
 pipeline status 包括 `present`、`invalid_source_rollout`、`invalid_target_spec`、
-`invalid_pipeline_options`、`protected_evidence_root_overlap`、`results_root_already_exists` 以及下游 evidence /
-writer 的具体 validation status。该 pipeline 会创建新的 eval results artifact root，但仍不运行真实 simulation、
+`invalid_pipeline_options`、`invalid_runtime_source_inputs`、`protected_evidence_root_overlap`、
+`results_root_already_exists` 以及下游 evidence / writer 的具体 validation status。该 pipeline 会创建新的 eval results artifact root，但仍不运行真实 simulation、
 不创建 production runtime action、不输出 command-space controls、不定义 pass/fail、eval success、
 planner success、official defaults / thresholds、production readiness 或 calibrated fallback。
 
 Phase 6F-C 的 runner-facing CLI entrypoint 是 `tb-terrain-residual-ab-artifacts`，实现位于
 `testbed.cli.terrain_residual_ab_artifact_pipeline`。CLI 是 pipeline 的薄入口：调用方必须通过
 `--request-json` 传入一个 JSON object，字段与
-`build_and_write_predicted_residual_ab_artifacts()` 的显式输入一致；CLI 不提供 official target、
-threshold、geometry、payload 或 scoring 默认值。`--output-json` 可选，用于保存 top-level pipeline
+`build_and_write_predicted_residual_ab_artifacts()` 的显式输入一致，包括
+`residual_cut_intent_runtime_source_inputs`；CLI 不提供 official target、threshold、geometry、payload、
+runtime source adapter 输入或 scoring 默认值。`--output-json` 可选，用于保存 top-level pipeline
 result；未提供时结果写到 stdout。
 
 CLI 返回码只表达入口执行状态：pipeline status 为 `present` 时返回 `0`，request JSON 无效时返回 `2`，
@@ -827,6 +833,20 @@ missing file、invalid JSON、invalid plan status、invalid token/raw-field shap
 `conservative_pose`。该 source provider 不运行 simulation、不创建 `runs` artifact、不写 branch output files、
 不改 eval YAML/default config/production planner decisions/rollout-review schema/CLI entrypoint，也不定义
 command-space controls、official thresholds、pass/fail、eval success、planner success 或 calibrated fallback。
+
+Phase 6G-E 的 residual cut-intent runtime source artifact materialization 当前由
+`testbed.eval.terrain_residual_cut_intent_runtime_source.build_residual_cut_intent_runtime_source()` 与
+Phase 6F writer/pipeline 共同负责。predicted rollout per-step records 保留 nested eval-only `cut_intent`
+record；runtime source builder 将该 record 与显式 `cell_centers_m`、`direction_vectors`、`bucket_length_m`、
+`payload_kg` 传入 Phase 6G-B adapter，生成 cycle-indexed `plans`。写出的 source JSON 使用
+`residual_cut_intent_runtime_source_v1` / `explicit_residual_cut_intent_runtime_source` 常量，可由
+`build_residual_cut_intent_plan_provider_from_source_path()` 读取。
+
+如果 `residual_cut_intent_runtime_source_inputs` 缺失或无法让 adapter 构造 present plan，pipeline 返回
+`invalid_runtime_source_inputs`，CLI request 缺字段时返回 `invalid_request`；这些失败都会在 writer 前停止，
+不会创建 results root。该 materialization 仍是 eval-only artifact 生成：不运行 `tb-eval` 或 simulation，
+不生成 production runtime action，不定义 command-space controls、official thresholds、pass/fail、eval success、
+planner success、production readiness 或 calibrated fallback。
 
 depth 诊断必须区分三种口径：
 

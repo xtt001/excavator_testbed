@@ -99,6 +99,23 @@ def _request_payload(source_path: Path, results_root: Path) -> dict[str, object]
             "penetration_depth_m": None,
         },
         "payload_capacity_m3": 0.04,
+        "residual_cut_intent_runtime_source_inputs": {
+            "cell_centers_m": {
+                str(index): {
+                    "x_m": float(index // 2) * 0.25,
+                    "z_m": float(index % 2) * 0.25,
+                }
+                for index in range(6)
+            },
+            "direction_vectors": {
+                "row_forward": {"x": 1.0, "z": 0.0},
+                "row_reverse": {"x": -1.0, "z": 0.0},
+                "col_forward": {"x": 0.0, "z": 1.0},
+                "col_reverse": {"x": 0.0, "z": -1.0},
+            },
+            "bucket_length_m": 0.5,
+            "payload_kg": 12.5,
+        },
         "selection_policy": "score_ranking_first",
         "protected_evidence_roots": [str(source_path.parent.parent)],
     }
@@ -132,10 +149,43 @@ def test_cli_runs_pipeline_from_explicit_request_json(
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["status"] == "present"
     assert payload["nested_statuses"]["predicted_ab_comparison"] == "present"
-    assert payload["artifact_summary"]["artifact_count"] == 6
+    assert payload["artifact_summary"]["artifact_count"] == 7
     assert payload["predicted_b_rollout_summary"]["selected_candidate_ids"]
     assert (results_root / "branch_comparison_report.json").is_file()
+    assert (results_root / "residual_cut_intent_runtime_source.json").is_file()
     assert (results_root / "rollout_manifest.json").is_file()
+
+
+def test_cli_rejects_missing_runtime_source_inputs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    source_path = tmp_path / "source/results/rollouts/rollout_000.jsonl"
+    results_root = tmp_path / "phase6f_cli/results"
+    request_path = tmp_path / "request.json"
+    output_path = tmp_path / "pipeline_result.json"
+    _write_rollout_jsonl(source_path)
+    request = _request_payload(source_path, results_root)
+    request.pop("residual_cut_intent_runtime_source_inputs")
+    request_path.write_text(json.dumps(request, indent=2), encoding="utf-8")
+
+    rc = main(
+        [
+            "--request-json",
+            str(request_path),
+            "--output-json",
+            str(output_path),
+        ]
+    )
+
+    assert rc == 2
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["status"] == "invalid_request"
+    assert payload["validation_errors"] == [
+        "request JSON missing required fields: ['residual_cut_intent_runtime_source_inputs']"
+    ]
+    assert results_root.exists() is False
 
 
 def test_console_script_exposes_pipeline_entrypoint() -> None:

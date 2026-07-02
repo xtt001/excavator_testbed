@@ -24,6 +24,7 @@ REQUIRED_REQUEST_FIELDS = [
     "scoring_weights",
     "effect_geometry",
     "payload_capacity_m3",
+    "residual_cut_intent_runtime_source_inputs",
     "selection_policy",
     "protected_evidence_roots",
 ]

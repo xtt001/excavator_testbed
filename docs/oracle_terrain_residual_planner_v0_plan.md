@@ -559,6 +559,7 @@ Phase 5 closure note：
 - [x] 建立 Phase 6G-B residual cut-intent dig-cut token adapter，将 Phase 6E-C eval-only cut intent 转成现有 primitive dig-cut raw fields / `dig_cut_tokens` 合约。
 - [x] 建立 Phase 6G-C residual cut-intent runtime planner mode，使 primitive token runtime 能消费显式 provider。
 - [x] 建立 Phase 6G-D residual cut-intent runtime source provider，使 `dig_cut_planner.mode=residual_cut_intent` 能从显式 durable source 构造 provider。
+- [x] 建立 Phase 6G-E residual cut-intent runtime source artifact materialization，使 Phase 6F predicted A/B artifact pipeline 写出可被 Phase 6G-D provider 加载的 `residual_cut_intent_runtime_source.json`。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -766,6 +767,14 @@ Phase 6G-D note：
 - `PrimitivePlannerACTPolicy` 只做 optional source path 保存和 provider port pass-through；默认值仍为空，默认 `dig_cut_planner.mode` 仍为 `conservative_pose`。
 - `build_residual_eval_run_plan()` 新增默认 `False` 的显式 `residual_cut_intent_source_provider_available` evidence。当 runtime mode、token adapter、source provider 都由调用方显式证明 available 且 full residual runtime integration 仍不可用时，B branch 仍保持 `not_runnable` / `runtime_integration_status=missing`，blockers 只剩 `missing_simulated_branch_execution_artifacts`。
 - Phase 6G-D 不运行 `tb-eval` 或 simulation，不创建 `runs` artifact，不写 branch output files，不改 eval YAML/default config/production planner decisions/rollout-review schema/CLI entrypoint，也不定义 command-space controls、official thresholds、pass/fail、eval success、planner success 或 calibrated fallback。
+
+Phase 6G-E note：
+
+- `testbed.eval.terrain_residual_cut_intent_runtime_source.build_residual_cut_intent_runtime_source()` 已定义 focused source-payload builder，负责把 Phase 6E-E predicted B rollout step 中保留的 nested `cut_intent` 与显式 `cell_centers_m`、`direction_vectors`、`bucket_length_m`、`payload_kg` 转成 Phase 6G-B adapter output，并包装为 Phase 6G-D loader 可消费的 cycle-indexed runtime source payload。
+- `testbed.eval.terrain_residual_predicted_rollout.build_predicted_residual_rollout()` 的 per-step records 现在保留 nested eval-only `cut_intent` record；原有 step summary fields、stop reasons、metrics 和 non-goal 语义保持不变。
+- Phase 6F writer/pipeline 的 fixed artifact list 新增 `residual_cut_intent_runtime_source.json`。pipeline request 必须显式提供 `residual_cut_intent_runtime_source_inputs`；CLI `--request-json` 合同同步要求该字段。缺失或无效的 source-building 输入返回 deterministic `invalid_runtime_source_inputs` / `invalid_request`，并在 writer 前停止，不创建 results root。
+- 生成的 runtime source 使用 `testbed.planner.primitive.token.residual_cut_intent_source` 中的 `residual_cut_intent_runtime_source_v1` / `explicit_residual_cut_intent_runtime_source` 常量；每个 source plan 包含 `cycle_index`、`cut_intent_candidate_id`、Phase 6G-B `plan` payload、plan `source` 和可选 `fallback_reason`。
+- Phase 6G-E 仍不运行 `tb-eval` 或 simulation，不改 eval YAML/default config/production planner decisions/rollout-review schema，不生成 runtime action，不定义 command-space controls、official thresholds、pass/fail、eval success、planner success、production readiness 或 calibrated fallback。
 
 通过标准：
 

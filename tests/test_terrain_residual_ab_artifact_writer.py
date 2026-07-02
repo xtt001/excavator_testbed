@@ -3,8 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_DIM
 from testbed.eval.terrain_residual_ab_artifact_writer import (
     write_predicted_residual_ab_artifacts,
+)
+from testbed.planner.primitive.token.residual_cut_intent_source import (
+    RESIDUAL_CUT_INTENT_RUNTIME_SOURCE_SCHEMA,
+    build_residual_cut_intent_plan_provider_from_source_path,
 )
 
 
@@ -13,6 +18,7 @@ EXPECTED_FILES = [
     "experiment_manifest.json",
     "branch_run_plan.json",
     "predicted_b_rollout.json",
+    "residual_cut_intent_runtime_source.json",
     "branch_comparison_report.json",
     "rollout_manifest.json",
 ]
@@ -105,6 +111,51 @@ def _predicted_rollout() -> dict[str, object]:
     }
 
 
+def _raw_fields(entry_x_m: float = 0.25) -> dict[str, float | int]:
+    return {
+        "operator_entry_x_m": entry_x_m,
+        "operator_entry_y_m": 0.0,
+        "operator_entry_z_m": 0.0,
+        "operator_exit_x_m": entry_x_m,
+        "operator_exit_y_m": 0.0,
+        "operator_exit_z_m": 0.5,
+        "operator_cut_direction_x": 0.0,
+        "operator_cut_direction_y": 0.0,
+        "operator_cut_direction_z": 1.0,
+        "operator_cut_length_m": 0.5,
+        "operator_cut_depth_peak_m": 0.2,
+        "operator_cut_payload_gain_kg": 12.0,
+        "operator_effective_deposit_delta_kg": 12.0,
+        "operator_cut_valid": 1,
+    }
+
+
+def _runtime_source() -> dict[str, object]:
+    return {
+        "schema": RESIDUAL_CUT_INTENT_RUNTIME_SOURCE_SCHEMA,
+        "source": "explicit_residual_cut_intent_runtime_source",
+        "status": "present",
+        "offline_only": True,
+        "plans": [
+            {
+                "cycle_index": 0,
+                "cut_intent_candidate_id": "cut_candidate_000009",
+                "plan": {
+                    "schema": "residual_cut_intent_dig_cut_token_v1",
+                    "source": "explicit_residual_cut_intent_dig_cut_token",
+                    "status": "present",
+                    "offline_only": True,
+                    "candidate_id": "cut_candidate_000009",
+                    "raw_fields": _raw_fields(),
+                    "dig_cut_tokens": [0.25] * DIG_CUT_TOKEN_DIM,
+                    "validation_errors": [],
+                },
+            },
+        ],
+        "validation_errors": [],
+    }
+
+
 def _comparison() -> dict[str, object]:
     return {
         "status": "present",
@@ -153,6 +204,7 @@ def _write_artifacts(**overrides):
         "experiment_manifest": _manifest(),
         "branch_run_plan": _branch_run_plan(),
         "predicted_b_rollout": _predicted_rollout(),
+        "residual_cut_intent_runtime_source": _runtime_source(),
         "predicted_ab_comparison": _comparison(),
         "source_rollout_path": "runs/eval/source/results/rollouts/rollout_000.jsonl",
         "protected_evidence_roots": ["runs/eval/protected/results"],
@@ -182,7 +234,7 @@ def test_artifact_writer_materializes_predicted_ab_json_files(tmp_path, monkeypa
     assert result["offline_only"] is True
     assert result["results_root"] == "runs/eval/phase6f/results"
     assert result["written_files"] == EXPECTED_FILES
-    assert result["artifact_count"] == 6
+    assert result["artifact_count"] == 7
     assert result["source_rollout_path"] == (
         "runs/eval/source/results/rollouts/rollout_000.jsonl"
     )
@@ -223,10 +275,20 @@ def test_artifact_writer_materializes_predicted_ab_json_files(tmp_path, monkeypa
     assert metadata["schema"] == "terrain_residual_predicted_ab_artifacts_v1"
     assert metadata["artifact_files"] == EXPECTED_FILES
     manifest = json.loads((root / "rollout_manifest.json").read_text())
-    assert manifest["artifact_count"] == 6
+    assert manifest["artifact_count"] == 7
     assert manifest["branch_statuses"]["calibrated_residual_pipeline"] == (
         "not_evaluated"
     )
+    source_provider = build_residual_cut_intent_plan_provider_from_source_path(
+        root / "residual_cut_intent_runtime_source.json",
+        cycle_index=lambda: 0,
+    )
+    assert source_provider is not None
+    token, raw_fields, source, fallback_reason = source_provider({"id": "obs"})
+    assert token.tolist() == [0.25] * DIG_CUT_TOKEN_DIM
+    assert raw_fields["operator_cut_valid"] == 1
+    assert source == "explicit_residual_cut_intent_dig_cut_token"
+    assert fallback_reason == ""
 
     all_keys = set(_all_keys(result))
     assert "runtime_action" not in all_keys
