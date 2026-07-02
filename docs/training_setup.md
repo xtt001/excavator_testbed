@@ -742,6 +742,18 @@ writer 的具体 validation status。该 pipeline 会创建新的 eval results a
 不创建 production runtime action、不输出 command-space controls、不定义 pass/fail、eval success、
 planner success、official defaults / thresholds、production readiness 或 calibrated fallback。
 
+Phase 6F-C 的 runner-facing CLI entrypoint 是 `tb-terrain-residual-ab-artifacts`，实现位于
+`testbed.cli.terrain_residual_ab_artifact_pipeline`。CLI 是 pipeline 的薄入口：调用方必须通过
+`--request-json` 传入一个 JSON object，字段与
+`build_and_write_predicted_residual_ab_artifacts()` 的显式输入一致；CLI 不提供 official target、
+threshold、geometry、payload 或 scoring 默认值。`--output-json` 可选，用于保存 top-level pipeline
+result；未提供时结果写到 stdout。
+
+CLI 返回码只表达入口执行状态：pipeline status 为 `present` 时返回 `0`，request JSON 无效时返回 `2`，
+其他 pipeline validation status 返回 `1`。这些返回码不是 eval pass/fail、planner success 或 production
+readiness 语义。CLI 仍只运行 eval-only predicted counterfactual pipeline；它不运行 simulation、不接
+production planner / rollout-review schema，也不生成 runtime action。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

@@ -5789,6 +5789,103 @@ Next bounded target:
   official defaults / thresholds, or define pass/fail / eval success /
   planner success.
 
+## 2026-07-02: Phase 6F-C CLI Entrypoint Packet
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial branch/status after Phase 6F-B commit:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 45]`.
+- Initial HEAD after Phase 6F-B commit:
+  `8642b0897e1fd509a284e2eee01796e568abcde5`.
+- Worktree was clean before the Phase 6F-C slice.
+
+TDD red:
+
+- Added `tests/test_terrain_residual_ab_artifact_pipeline_cli.py` before the
+  CLI module existed.
+- Focused red command:
+  `python -m pytest -q tests/test_terrain_residual_ab_artifact_pipeline_cli.py`.
+- Expected red result: collection failed with
+  `ModuleNotFoundError: No module named 'testbed.cli.terrain_residual_ab_artifact_pipeline'`.
+
+Boundary decision:
+
+- Added thin CLI module
+  `testbed.cli.terrain_residual_ab_artifact_pipeline` and one console script
+  entry in `pyproject.toml`.
+- Responsibility: expose the Phase 6F-B pipeline as an explicit request-JSON
+  entrypoint for runner-facing use.
+- The CLI owns argument parsing and JSON I/O only; all residual planning,
+  prediction, comparison, no-overwrite, and artifact semantics remain in the
+  focused eval owners.
+
+Implemented contract:
+
+- Console script: `tb-terrain-residual-ab-artifacts`.
+- Public module entry: `testbed.cli.terrain_residual_ab_artifact_pipeline:main`.
+- Required argument: `--request-json`, a JSON object containing the same
+  explicit fields as `build_and_write_predicted_residual_ab_artifacts()`.
+- Optional argument: `--output-json`; if omitted, the top-level pipeline result
+  is printed to stdout.
+- Return code `0` means pipeline status `present`; return code `2` means the
+  request JSON was invalid; other pipeline validation statuses return `1`.
+- Return codes are entrypoint statuses only, not eval pass/fail, planner
+  success, production readiness, or official threshold semantics.
+
+Current-run CLI smoke:
+
+- Temporary request JSON pointed at
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- Explicit non-official target spec: `grid_shape=[3, 2]`, rows `[0:2]`,
+  cols `[0:1]`, `target_depth_m=0.25`.
+- Generated CLI artifact root:
+  `runs/eval/oracle_terrain_residual_phase6f_cli_ab_20260702/results`.
+- CLI return code: `0`.
+- Pipeline status: `present`.
+- Nested statuses: target report, experiment manifest, branch run plan,
+  predicted B rollout, predicted A/B comparison, and artifact writer all
+  `present`.
+- Predicted B step count: `1`.
+- Stop reason: `zero_target_positive_residual`.
+- Selected eval-only cut-intent candidate: `cut_candidate_000009`.
+- A target positive residual: `0.374313589186`.
+- B predicted final target positive residual: `0.0`.
+- Target positive residual improvement: `0.374313589186`.
+- Completion delta: `0.748627178372`.
+- Overdig increase: `0.009656514972`.
+- Outside-target removed-depth increase: `0.191985052079`.
+- Expected delta depth / volume: `0.575955156237` /
+  `0.035997197265`.
+- Protected current results file count stayed `10 -> 10`.
+
+Documentation sync:
+
+- `docs/training_setup.md` documents the CLI contract, request JSON boundary,
+  return-code semantics, and non-goals.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks only Phase 6F-C CLI
+  entrypoint complete and records current-run smoke facts.
+- `docs/oracle_terrain_residual_baseline_report.md` records the CLI smoke
+  artifact root and comparison facts.
+
+Preserved non-goals:
+
+- No real simulation run.
+- No production planner / gate / policy / runtime integration.
+- No rollout-review schema integration.
+- No command-space controls, official defaults, official thresholds, pass/fail,
+  eval success, planner success, production readiness, or calibrated fallback.
+- No existing protected current-run evidence was overwritten.
+
+Lightweight reflection:
+
+- Reference used: Phase 6F-B deep reflection next target and the user's request
+  to keep executing the core path.
+- Alignment verdict: aligned. The CLI is the smallest useful entrypoint around
+  the completed pipeline and does not create a new semantics owner.
+- Efficiency verdict: useful implementation. It removes the bespoke smoke-script
+  dependency while preserving explicit-input and no-overwrite boundaries.
+
 ## 2026-07-02: Phase 6F-A Planner Recovery And Artifact Materialization Packet
 
 Recovery context:

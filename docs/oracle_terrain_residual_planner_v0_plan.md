@@ -554,6 +554,7 @@ Phase 5 closure note：
 - [x] 建立 Phase 6E-F predicted A/B comparison report，将 current planner A evidence 与 predicted B rollout evidence 放进同一比较输出，仍不声明真实 closed-loop pass/fail。
 - [x] 建立 Phase 6F-A predicted A/B artifact writer，将 in-memory manifest / branch plan / predicted B rollout / predicted A-B comparison 物化到新的非覆盖 eval results root。
 - [x] 建立 Phase 6F-B predicted A/B artifact pipeline，从 source rollout JSONL 到 predicted B rollout、A/B comparison 和 artifact writer 形成一个显式 eval-only 端到端链路。
+- [x] 建立 Phase 6F-C runner-facing CLI entrypoint，用显式 request JSON 调用 Phase 6F-B pipeline 并输出 pipeline result JSON。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -718,6 +719,15 @@ Phase 6F-B note：
 - 写入文件：`eval_run_metadata.json`、`experiment_manifest.json`、`branch_run_plan.json`、`predicted_b_rollout.json`、`branch_comparison_report.json`、`rollout_manifest.json`。
 - Smoke facts: pipeline status `present`，nested statuses all `present`，source record count `6148`，predicted B step count `1`，stop reason `zero_target_positive_residual`，selected candidate `cut_candidate_000009`，A residual `0.374313589186`，B final residual `0.0`，completion delta `0.748627178372`，overdig increase `0.009656514972`，outside-target increase `0.191985052079`，expected delta depth / volume `0.575955156237` / `0.035997197265`；protected current results file count stayed `10 -> 10`。
 - Phase 6F-B 仍不是真实 simulation 或 production behavior：它只把 predicted counterfactual pipeline 物化为 eval artifacts，不声明 pass/fail、eval success、planner success、official thresholds、production readiness、command-space controls 或 calibrated fallback。
+
+Phase 6F-C note：
+
+- `tb-terrain-residual-ab-artifacts` 已作为 runner-facing CLI entrypoint 接入 `pyproject.toml`，实现位于 `testbed.cli.terrain_residual_ab_artifact_pipeline`。
+- CLI 只读取显式 `--request-json`，调用 `build_and_write_predicted_residual_ab_artifacts()`，并把 top-level pipeline result 写到 `--output-json` 或 stdout。request JSON 必须携带 source rollout path、results root、target spec、cycle budget、candidate/effect/scoring/payload options、selection policy 和 protected evidence roots；CLI 不提供 official target、threshold、geometry、payload 或 scoring 默认值。
+- Current-run CLI smoke root：
+  `runs/eval/oracle_terrain_residual_phase6f_cli_ab_20260702/results`。
+- Smoke facts: CLI return code `0`，pipeline status `present`，nested statuses all `present`，predicted B step count `1`，stop reason `zero_target_positive_residual`，selected candidate `cut_candidate_000009`，A residual `0.374313589186`，B final residual `0.0`，completion delta `0.748627178372`，overdig increase `0.009656514972`，outside-target increase `0.191985052079`，expected delta depth / volume `0.575955156237` / `0.035997197265`；protected current results file count stayed `10 -> 10`。
+- Phase 6F-C 仍不是真实 simulation 或 production behavior：CLI return code 不是 eval pass/fail、planner success 或 production readiness；该入口不接 production planner、不接 rollout-review schema、不生成 runtime action、不定义 official thresholds 或 calibrated fallback。
 
 通过标准：
 

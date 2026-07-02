@@ -518,6 +518,55 @@ does not prove B outperforms A in real closed-loop simulation, does not define
 pass/fail or success semantics, and does not promote eval-only cut intents into
 runtime action selection.
 
+## Predicted A/B Artifact CLI
+
+This section records the Phase 6F-C CLI entrypoint smoke. The CLI is a thin
+runner-facing wrapper around the Phase 6F-B pipeline: it reads a caller-supplied
+request JSON, runs the explicit eval-only pipeline, and writes the top-level
+pipeline result JSON to stdout or an output path.
+
+CLI identity:
+
+- command: `tb-terrain-residual-ab-artifacts`
+- module: `testbed.cli.terrain_residual_ab_artifact_pipeline`
+- request input: explicit `--request-json`
+- result output: `--output-json` or stdout
+- return code in smoke: `0`
+
+Artifact root:
+
+```text
+runs/eval/oracle_terrain_residual_phase6f_cli_ab_20260702/results
+```
+
+CLI smoke facts:
+
+| Field | Value |
+| --- | ---: |
+| pipeline status | `present` |
+| predicted B step count | `1` |
+| predicted B stop reason | `zero_target_positive_residual` |
+| selected eval-only cut-intent candidate | `cut_candidate_000009` |
+| A target positive residual | `0.374313589186` |
+| B predicted final positive residual | `0.0` |
+| target positive residual improvement | `0.374313589186` |
+| target completion delta | `0.748627178372` |
+| target overdig increase | `0.009656514972` |
+| outside-target removed-depth increase | `0.191985052079` |
+| expected delta depth | `0.575955156237` |
+| expected delta volume | `0.035997197265` |
+
+No-overwrite facts:
+
+- protected current results file count stayed `10 -> 10`
+- CLI artifact root did not exist before the smoke and exists after the smoke
+- request JSON was explicit and temporary; no official defaults were inferred
+
+Conservative interpretation: Phase 6F-C makes the predicted A/B artifact
+pipeline callable without a bespoke Python smoke script. The CLI return code
+does not define eval pass/fail, planner success, production readiness, or
+official thresholds.
+
 ## Interpretation
 
 For this explicit non-official example spec, target positive residual decreases

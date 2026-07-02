@@ -73,6 +73,7 @@ tb-virtualize-images = "testbed.cli.virtualize_images:main"
 tb-unity-restart-smoke = "testbed.cli.unity_restart_smoke:main"
 tb-build-v2_4-hindsight-pipeline = "testbed.cli.build_v2_4_hindsight_pipeline:main"
 tb-planner-evidence = "testbed.cli.planner_evidence:main"
+tb-terrain-residual-ab-artifacts = "testbed.cli.terrain_residual_ab_artifact_pipeline:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
