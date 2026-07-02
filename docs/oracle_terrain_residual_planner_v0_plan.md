@@ -544,6 +544,7 @@ Phase 5 closure note：
 
 - [x] 建立 heuristic-only offline baseline-comparison scaffold，先汇总 current / heuristic / calibrated branch evidence 和限制项。
 - [x] 将 Phase 6A offline baseline-comparison output / limitations 刷新进 durable baseline report。
+- [x] 记录 Phase 6C closure / next-decision note，暂停继续实现，直到真实闭环仿真设计被明确 scoped。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -564,6 +565,18 @@ Phase 6B note：
 
 - `docs/oracle_terrain_residual_baseline_report.md` 已刷新 `Offline Residual Baseline Comparison` section，记录 Phase 6A comparison schema/source、三条 branch status、current-run smoke facts 和 comparison limits。
 - 该 durable report refresh 只把现有 Phase 6A offline evidence 写入报告；不新增代码、不改测试、不启动新 rollout、不写 `runs` artifact、不接入 production planner，也不把 Phase 6 完整 A/B/C baseline comparison 标记完成。
+
+Phase 6C closure / next-decision note：
+
+- Phase 6 的 offline evidence / durable report milestone 有用：当前已经能把 current planner evidence、heuristic residual candidate/effect pipeline evidence 和 calibrated branch blocker 放进同一离线比较 scaffold。
+- 但完整 A/B/C closed-loop baseline comparison 仍未完成，继续保持 deferred：当前没有新 simulation rollout、没有 counterfactual cycle count、没有 cycle-time evidence、没有 T1/T2 多目标闭环复现实验，也没有 C 分支可用 gold-sample calibration。
+- 默认决策是暂停 Phase 6 implementation work，直到 Phase 6D 真实闭环仿真设计被明确 scoped。最低 design packet 必须先写清：
+  - target set：T1/T2 或其他目标坑形的显式 target specs、是否为 official/default、以及 target/protected/boundary 口径；
+  - cycle budget：每组 baseline 的最大 cycle 数、stop 条件、carry/dump 约束和失败处理；
+  - metrics：positive residual、overdig、outside-protected removal、target completion、payload/deposited fraction、cycle count、handoff/deposit quality，以及是否记录 cycle time；
+  - artifact paths：run root、rollout jsonl、planner trace、summary/comparison report 的路径和不覆盖现有证据的规则；
+  - branch definitions：A=current planner，B=residual planner + heuristic effect model，C=calibrated residual planner only when usable gold samples / calibration are available, otherwise `not_evaluated`；
+  - acceptance and non-goals：运行前明确验收指标和非目标，不从 smoke thresholds 推断 official defaults，不引入 production integration、runtime action selection、pass/fail、eval success 或 planner success 语义。
 
 通过标准：
 

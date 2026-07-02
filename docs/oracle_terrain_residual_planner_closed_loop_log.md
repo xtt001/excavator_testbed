@@ -4502,3 +4502,152 @@ Next bounded target:
 - Default scope should remain docs/report-only: decide whether Phase 6 should
   pause as an offline evidence milestone or proceed only after a real
   closed-loop simulation design is explicitly scoped.
+
+## 2026-07-02: Phase 6C Executor Closure Packet
+
+Target lock observed:
+
+- cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Branch/status before edits:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 35]`.
+- HEAD before edits: `bfe30bd2ef4888b4025e51656f6521ea9acf9c6f`.
+- Worktree was clean before edits.
+
+Slice:
+
+- Phase 6C docs-only closure / next-decision note.
+- No code, tests, config, runtime, dependencies, branch, upstream, generated
+  run artifacts, rollout-review schema, simulation rollout, or production
+  planner behavior changed.
+
+TDD:
+
+- Not required for this docs-only closure slice.
+
+Closure facts recorded:
+
+- Phase 6 offline evidence / durable report milestones are useful and now
+  documented: current planner evidence, heuristic residual candidate/effect
+  evidence, and calibrated branch blocker can be compared in one offline
+  scaffold.
+- Full Phase 6 A/B/C closed-loop baseline comparison remains incomplete and
+  deferred.
+- Missing proof remains: no new simulation rollout, no counterfactual cycle
+  count, no cycle-time evidence, no T1/T2 multi-target closed-loop
+  reproduction, and no usable gold-sample calibration for C.
+- Default outcome is to pause Phase 6 implementation work until a real Phase 6D
+  closed-loop simulation design is explicitly scoped.
+
+Minimum Phase 6D design requirements recorded:
+
+- Explicit target set, including target specs and official/non-official status.
+- Cycle budget, stop conditions, carry/dump constraints, and failure handling.
+- Metrics for residual, overdig, outside-protected removal, target completion,
+  payload/deposited fraction, cycle count, handoff/deposit quality, and whether
+  cycle time is available.
+- Artifact paths for run root, rollout jsonl, planner trace, summary, and
+  comparison report, with no overwrite of existing evidence.
+- Branch definitions: A current planner, B residual planner + heuristic effect
+  model, and C calibrated residual planner only when usable gold samples and
+  calibration exist; otherwise C remains `not_evaluated`.
+- Acceptance and non-goals must be explicit before running: no official
+  defaults inferred from smoke thresholds, no production integration, no
+  runtime action selection, and no pass/fail, eval success, or planner success
+  semantics unless separately confirmed.
+
+Documentation changed:
+
+- `docs/oracle_terrain_residual_planner_v0_plan.md` records the Phase 6C
+  closure / next-decision note and keeps full Phase 6 baseline comparison
+  incomplete.
+- `docs/oracle_terrain_residual_planner_closed_loop_log.md` records this
+  executor packet.
+- `docs/oracle_terrain_residual_baseline_report.md` and `docs/training_setup.md`
+  were read and did not need changes for this closure slice.
+
+Verification completed before callback:
+
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs
+  docs/oracle_terrain_residual_planner_v0_plan.md
+  docs/oracle_terrain_residual_planner_closed_loop_log.md` -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  -> exit `0`.
+- `git diff --check` -> exit `0`.
+- Final `git status --short --branch` showed only the two expected modified
+  docs; `git rev-parse HEAD` remained
+  `bfe30bd2ef4888b4025e51656f6521ea9acf9c6f`.
+
+## 2026-07-02: Phase 6C Planner Acceptance And Deep Reflection
+
+Planner acceptance status:
+
+- Accepted as Phase 6C docs-only closure / next-decision note.
+- Accepted-slice count since the latest deep reflection reached `3/3`.
+- Deep reflection was required and completed below; accepted-slice count resets
+  to `0/3`.
+
+Planner-side audit:
+
+- Rechecked target lock in `/home/pingfan/PACT/excavator_testbed`: branch
+  `tx/oracle-terrain-residual-planner-v0` was ahead `35`, HEAD
+  `bfe30bd2ef4888b4025e51656f6521ea9acf9c6f`, with only
+  `docs/oracle_terrain_residual_planner_v0_plan.md` and
+  `docs/oracle_terrain_residual_planner_closed_loop_log.md` modified.
+- Re-read the Phase 6 plan closure note and closed-loop log diff.
+- Confirmed the slice is docs-only and does not change code, tests, configs,
+  runtime behavior, run artifacts, production planner integration, or
+  rollout-review schema.
+- Confirmed full Phase 6 baseline comparison remains incomplete / deferred and
+  that future Phase 6D requires an explicit closed-loop simulation design
+  packet before any run.
+- Planner-side doc sync changed the executor packet's verification section from
+  planned commands to the callback-observed exit `0` results.
+
+Planner-side verification:
+
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs
+  docs/oracle_terrain_residual_planner_v0_plan.md
+  docs/oracle_terrain_residual_planner_closed_loop_log.md` -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  -> exit `0`.
+- `git diff --check` -> exit `0`.
+
+Deep reflection reference base:
+
+- User objective: build Oracle Terrain Residual Planner v0 evidence and
+  source-of-truth artifacts without drifting into unverified runtime semantics.
+- Source-of-truth docs: `docs/oracle_terrain_residual_planner_v0_plan.md`,
+  `docs/oracle_terrain_residual_baseline_report.md`,
+  `docs/oracle_terrain_residual_planner_closed_loop_log.md`, and
+  `docs/training_setup.md`.
+- Behavior boundaries: no production planner/gate/policy/runtime integration,
+  no rollout-review schema change, no generated run artifacts, no official
+  defaults or pass/fail semantics unless explicitly scoped.
+- Verification standard: changed-doc guard, doc inventory guard, architecture
+  contract guard, whitespace diff check, plus code tests only when code changes.
+
+Deep reflection verdict:
+
+- Phase 6A/6B/6C were aligned with the reference base: they produced an offline
+  comparison owner, durable report evidence, and a closure decision without
+  promoting the evidence into runtime action or success semantics.
+- The loop is no longer blocked by missing documentation; it is blocked by a
+  real experimental-design decision. Further code/doc helper slices would mostly
+  repackage the same limitation unless a Phase 6D closed-loop simulation design
+  is explicitly scoped.
+- The calibrated branch remains correctly blocked by missing usable gold samples
+  and must not be approximated from telemetry fallback.
+- Efficiency verdict: stop dispatching executor slices for Phase 6 now. The next
+  useful work is not another implementation helper; it is a user/planner decision
+  on real simulation targets, branch definitions, artifact paths, and acceptance
+  boundaries.
+
+Closure decision:
+
+- No next executor slice is dispatched from this reflection.
+- Phase 6 is paused as an offline evidence/report milestone until a real Phase
+  6D closed-loop simulation design packet is explicitly requested or confirmed.
