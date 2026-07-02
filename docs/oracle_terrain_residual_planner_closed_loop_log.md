@@ -5023,3 +5023,266 @@ Next bounded target:
   integrate production planner behavior, or emit selected candidate, top-k,
   runtime action, pass/fail, eval success, planner success, official defaults,
   official thresholds, or calibrated fallback semantics.
+
+## 2026-07-02: Phase 6E-B Executor Branch Run Plan Packet
+
+Target lock observed:
+
+- cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Branch/status before edits:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 38]`.
+- HEAD before edits: `c659d5221dec7005fb40f199fc22ac2dfdfa4f89`.
+- Worktree was clean before edits.
+
+Slice:
+
+- Phase 6E-B eval-only branch run plan / executable cut-intent boundary
+  contract owner.
+- No simulation, `runs` artifact, branch output file, production planner
+  integration, rollout-review schema integration, runtime config, dependencies,
+  branch / upstream, or git staging/commit changes.
+
+Boundary decision:
+
+- Created focused owner
+  `testbed/eval/terrain_residual_closed_loop_branch_plan.py`.
+- Existing manifest owner remains responsible for experiment / artifact
+  contract shape; the new owner is responsible for A/B/C dry-run branch plans
+  and B branch future executable cut-intent boundary evidence.
+
+Contract facts recorded:
+
+- Public helper: `build_closed_loop_branch_run_plan(...)`.
+- Inputs are explicit: Phase 6E-A-like `experiment_manifest`,
+  caller-provided `branch_inputs`, caller-provided `cut_intent_contract`, and
+  optional profile.
+- Output includes schema/source/status/offline_only/profile, fixed branch
+  order, per-branch run plan records, executable cut-intent boundary evidence,
+  validation errors, non-goal statuses, and provenance statuses.
+- A branch records current planner baseline source evidence and artifact
+  expectations, with `run_status=not_run`.
+- B branch records heuristic residual pipeline input readiness,
+  `runtime_integration_status=not_integrated`, cut-intent boundary status, and
+  `production_readiness_claim=not_claimed`.
+- B cut-intent boundary names future required fields: candidate id, anchor cell
+  / row / col, direction, candidate depth, score/rank provenance,
+  effect/evidence provenance, target spec provenance, and safety/stop-condition
+  provenance.
+- C branch remains `not_evaluated` / `blocked_by_missing_gold_samples` when
+  calibration is unavailable.
+- Statuses include `present`, `invalid_manifest`, `invalid_branch_inputs`, and
+  `invalid_cut_intent_contract`.
+- The contract does not emit selected candidate, top-k, runtime action,
+  pass/fail, eval success, planner success, official defaults, official
+  thresholds, or calibrated fallback semantics.
+
+TDD:
+
+- Focused red:
+  `python -m pytest -q tests/test_terrain_residual_closed_loop_branch_plan.py`
+  failed with `ModuleNotFoundError: No module named
+  'testbed.eval.terrain_residual_closed_loop_branch_plan'`.
+- Focused green after implementation: same command passed `5 passed`.
+
+Documentation changed:
+
+- `docs/training_setup.md` documents the branch run plan / executable
+  cut-intent boundary contract and non-goals.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks only Phase 6E-B
+  branch plan / intent-boundary contract complete and keeps full Phase 6
+  baseline comparison open.
+- `docs/oracle_terrain_residual_planner_closed_loop_log.md` records this
+  executor packet.
+
+Smoke / validation facts:
+
+- Read-only manifest smoke status `present`.
+- Read-only branch run plan status `present`.
+- B cut-intent boundary status `present` with `10` required future fields.
+- C branch status `not_evaluated`, reason
+  `blocked_by_missing_gold_samples`.
+- Future run root
+  `runs/eval/oracle_terrain_residual_phase6d_t1_ab_20260702/results` stayed
+  absent before and after the smoke.
+- Protected current evidence file count stayed `10 -> 10`.
+- Validation errors `[]`.
+
+Verification observed:
+
+- `python -m pytest -q tests/test_terrain_residual_closed_loop_branch_plan.py`
+  before production owner existed -> failed with `ModuleNotFoundError` for
+  `testbed.eval.terrain_residual_closed_loop_branch_plan`.
+- `python -m pytest -q tests/test_terrain_residual_closed_loop_branch_plan.py`
+  -> `5 passed`.
+- `python -m pytest -q tests/test_terrain_residual_closed_loop_branch_plan.py
+  tests/test_terrain_residual_closed_loop_manifest.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_calibration_extraction.py
+  tests/test_terrain_target_report.py tests/test_terrain_target_projection.py
+  tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py
+  tests/test_terrain_residual_metrics.py tests/test_rollout_review.py` ->
+  `95 passed`.
+- `python -m compileall ...` for the new/touched eval owner, related eval
+  owners, and tests -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs
+  docs/training_setup.md docs/oracle_terrain_residual_planner_v0_plan.md
+  docs/oracle_terrain_residual_planner_closed_loop_log.md` -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  -> exit `0`.
+- `git diff --check` -> exit `0`.
+- Final `git status --short --branch`: branch ahead `38` with modified
+  `docs/oracle_terrain_residual_planner_closed_loop_log.md`,
+  `docs/oracle_terrain_residual_planner_v0_plan.md`, and
+  `docs/training_setup.md`; untracked
+  `testbed/eval/terrain_residual_closed_loop_branch_plan.py` and
+  `tests/test_terrain_residual_closed_loop_branch_plan.py`.
+- Final `git rev-parse HEAD`: `c659d5221dec7005fb40f199fc22ac2dfdfa4f89`.
+
+## 2026-07-02: Phase 6E-B Planner Acceptance And Deep Reflection
+
+Planner acceptance status:
+
+- Accepted as Phase 6E-B eval-only branch run plan / executable cut-intent
+  boundary contract owner.
+- Accepted-slice count since the latest deep reflection reached `3/3`.
+- Deep reflection completed below; accepted-slice count resets to `0/3` for
+  the next cycle.
+
+Planner-side audit:
+
+- Rechecked target lock in `/home/pingfan/PACT/excavator_testbed`: branch
+  `tx/oracle-terrain-residual-planner-v0` was ahead `38`, HEAD
+  `c659d5221dec7005fb40f199fc22ac2dfdfa4f89`, with only the expected docs
+  modified and the new branch-plan owner / focused test untracked.
+- Re-read the new owner
+  `testbed/eval/terrain_residual_closed_loop_branch_plan.py`, focused tests,
+  and changed source-of-truth docs.
+- Confirmed the new owner is below the large-file threshold at `393` lines and
+  owns one stable responsibility: eval-only branch run plans and B branch
+  executable cut-intent boundary evidence.
+- Confirmed the existing manifest owner remains separate at `333` lines and was
+  not expanded with branch-plan responsibility.
+- Confirmed A branch remains a dry-run plan with artifact expectations only,
+  B branch remains `runtime_integration_status=not_integrated`, and C branch
+  remains `not_evaluated` / `blocked_by_missing_gold_samples` without telemetry
+  fallback.
+- Confirmed the branch-plan contract names the future cut-intent fields but does
+  not emit an actual selected candidate, top-k, runtime action, pass/fail, eval
+  success, planner success, official defaults, official thresholds, production
+  readiness, or calibrated fallback.
+- Planner-side doc sync added Phase 6E-C as the next default entry target:
+  eval-only heuristic cut-intent generation from current candidate/evidence /
+  scoring/effect-summary records.
+
+Planner-side verification:
+
+- `python -m pytest -q tests/test_terrain_residual_closed_loop_branch_plan.py
+  tests/test_terrain_residual_closed_loop_manifest.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_calibration_extraction.py
+  tests/test_terrain_target_report.py tests/test_terrain_target_projection.py
+  tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py
+  tests/test_terrain_residual_metrics.py tests/test_rollout_review.py` ->
+  `95 passed`.
+- `python -m compileall testbed/eval/terrain_residual_closed_loop_branch_plan.py
+  testbed/eval/terrain_residual_closed_loop_manifest.py
+  testbed/eval/terrain_residual_baseline_comparison.py
+  testbed/eval/terrain_candidate_generation.py
+  testbed/eval/terrain_candidate_evidence.py
+  testbed/eval/terrain_candidate_scoring.py
+  testbed/eval/terrain_candidate_effect_model.py
+  testbed/eval/terrain_candidate_effect_summary.py
+  testbed/eval/terrain_calibration_inventory.py
+  testbed/eval/terrain_calibration_extraction.py
+  tests/test_terrain_residual_closed_loop_branch_plan.py
+  tests/test_terrain_residual_closed_loop_manifest.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_calibration_extraction.py` -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs
+  docs/training_setup.md docs/oracle_terrain_residual_planner_v0_plan.md
+  docs/oracle_terrain_residual_planner_closed_loop_log.md` -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  -> exit `0`.
+- `git diff --check` -> exit `0`.
+- Planner-side read-only smoke built the Phase 6E-A manifest and Phase 6E-B
+  branch plan in memory: manifest status `present`, branch plan status
+  `present`, B cut-intent boundary status `present`, B required future field
+  count `10`, C branch `not_evaluated` /
+  `blocked_by_missing_gold_samples`, future root
+  `runs/eval/oracle_terrain_residual_phase6d_t1_ab_20260702/results` remained
+  absent, protected evidence entry count stayed `11 -> 11`, and validation
+  errors were `[]`.
+
+Acceptance rationale:
+
+- The slice cleanly separates experiment manifest layout from per-branch dry-run
+  planning, which is the right ownership boundary before any runner can consume
+  branch inputs.
+- It closes the previously identified B-branch boundary gap without silently
+  promoting diagnostic rankings into production runtime behavior.
+- It is still not the core closed-loop behavior itself; it is accepted as the
+  last boundary-setting slice before the next implementation must produce
+  eval-only cut-intent records from actual candidate evidence.
+
+Deep reflection:
+
+- Reference base: user objective to evolve the oracle terrain residual planner
+  through evidence-backed closed-loop comparison; Phase 6D design packet; Phase
+  6E-A manifest contract; Phase 6E-B branch-plan contract; repo responsibility
+  boundaries; non-goals around no production integration, no generated run
+  artifact, and no official success semantics.
+- Alignment verdict: still aligned, but the loop has now spent three accepted
+  slices on design / manifest / branch-boundary infrastructure. Those were
+  necessary to avoid unsafe run artifacts and undefined branch semantics, but a
+  fourth perimeter-only slice would drift from the user's core goal.
+- User update considered: the user explicitly requested not to keep making
+  safety-adjacent changes outside the problem, and to execute the core idea.
+- Verification verdict: current tests prove the Phase 6E-A/B contracts and
+  no-write behavior, but they do not yet prove that the heuristic branch can
+  produce a runner-consumable cut intent from real candidate/effect evidence.
+- Documentation verdict: source-of-truth docs are current for contracts and
+  limits; the next docs update should describe concrete cut-intent generation,
+  not another abstract precondition.
+- Efficiency verdict: the previous three slices were useful setup, but the next
+  slice must move from boundary definition to core eval behavior.
+- Decision: next slice should implement eval-only heuristic cut-intent
+  generation. It may explicitly select one candidate as a future-runner cut
+  intent inside eval-only evidence, because that is now the core missing step.
+  It must still not emit production runtime action, start simulation, write
+  `runs` artifacts, define official thresholds/defaults, or claim planner/eval
+  success.
+
+Next bounded target:
+
+- Phase 6E-C should implement a focused eval-only heuristic cut-intent
+  generation owner.
+- It should consume explicit branch plan evidence plus Phase 3/4 candidate /
+  scoring / effect-summary records and emit one runner-consumable cut-intent
+  evidence record for B branch, with full provenance and validation status.
+- It may emit `cut_intent_candidate_id` or equivalent eval-only selected intent
+  evidence, but must not emit production runtime action, run simulation, create
+  `runs` artifacts, write branch output files, integrate production planner
+  behavior, or define pass/fail, eval success, planner success, official
+  defaults, official thresholds, or calibrated fallback semantics.

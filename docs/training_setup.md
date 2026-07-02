@@ -588,6 +588,26 @@ root 下时返回 `protected_evidence_root_overlap`，防止覆盖既有 current
 和 `invalid_protected_evidence_roots`。该合同不输出 selected candidate、top-k、runtime action、pass/fail、
 eval success、planner success、official defaults、official thresholds 或 calibrated fallback。
 
+offline branch run plan / executable cut-intent boundary contract 当前由
+`testbed.eval.terrain_residual_closed_loop_branch_plan.build_closed_loop_branch_run_plan()` 生成。
+它是 eval-only dry-run helper，用于把 Phase 6E-A manifest 和调用方显式 branch inputs 转成 A/B/C
+per-branch run plan records；它不运行 A/B/C，不执行 cuts，不创建 branch output files，不写 `runs` artifact，
+不接 production planner / rollout-review schema，也不输出 runtime action semantics。
+
+调用方必须显式传入 `experiment_manifest`、`branch_inputs` 和 `cut_intent_contract`。manifest 必须来自
+Phase 6E-A 形状：status `present`、固定 branch order、artifact layout 不写文件、no-overwrite validation
+为 `present`。branch inputs 必须包含 `current_planner_baseline`、`heuristic_residual_pipeline` 和
+`calibrated_residual_pipeline`。B branch 只记录 heuristic residual pipeline input readiness 与
+cut-intent boundary status，并继续保持 `runtime_integration_status=not_integrated`。
+
+cut-intent boundary 是 future runner contract only。它只列出 future executable cut intent 需要的字段，例如
+`candidate_id`、anchor cell / row / col、direction、`candidate_depth_m`、score/rank provenance、
+effect/evidence provenance、target spec provenance 和 safety/stop-condition provenance。它不携带实际 selected
+candidate，不选择 top-k，不生成 runtime action，不声明 production readiness。C branch 在没有 explicit
+calibration availability 时继续保持 `not_evaluated` / `blocked_by_missing_gold_samples`，不能从 telemetry
+fallback 发明 calibrated model。top-level status 包括 `present`、`invalid_manifest`、`invalid_branch_inputs`
+和 `invalid_cut_intent_contract`。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

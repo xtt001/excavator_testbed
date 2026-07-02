@@ -547,6 +547,7 @@ Phase 5 closure note：
 - [x] 记录 Phase 6C closure / next-decision note，暂停继续实现，直到真实闭环仿真设计被明确 scoped。
 - [x] 建立 Phase 6D closed-loop simulation design packet，先定义 T1 A/B 设计门槛，不运行仿真。
 - [x] 建立 Phase 6E-A eval-only closed-loop experiment manifest / artifact contract owner，不运行仿真、不创建 `runs` artifact。
+- [x] 建立 Phase 6E-B eval-only branch run plan / executable cut-intent boundary contract owner，不运行仿真、不输出 runtime action。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -624,6 +625,20 @@ Phase 6E-B default entry target：
 - 下一步应实现 eval-only branch run plan / executable cut-intent boundary contract owner，把 Phase 6E-A manifest 中的 A/B/C branch definitions 转换成未来 runner 可消费的 per-branch run plan。
 - 重点只定义 B branch 的 diagnostic ranking 到 executable cut-intent 的边界字段和 validation 状态；不得把 ranking 提升为 selected candidate、top-k、runtime action、production planner 行为或 pass/fail / eval success / planner success 语义。
 - 该 slice 仍不运行 simulation、不创建 `runs` artifact、不接 production planner、不覆盖 current evidence；C branch 继续在没有 usable calibration 时保持 `not_evaluated` / `blocked_by_missing_gold_samples`。
+
+Phase 6E-B note：
+
+- `testbed.eval.terrain_residual_closed_loop_branch_plan.build_closed_loop_branch_run_plan()` 已定义 eval-only branch run plan / executable cut-intent boundary contract owner。
+- 该 helper 只接收显式 `experiment_manifest`、`branch_inputs` 和 `cut_intent_contract`；它验证 Phase 6E-A manifest status / branch order / artifact layout / no-overwrite evidence，并输出固定 A/B/C branch run plan records。
+- A branch 只记录 current planner baseline source evidence / artifact expectations，`run_status=not_run`。B branch 只记录 heuristic residual pipeline input readiness、`runtime_integration_status=not_integrated` 和 future cut-intent boundary status，不声明 production readiness。C branch 在 calibration unavailable 时继续保持 `not_evaluated` / `blocked_by_missing_gold_samples`。
+- B cut-intent boundary 只列出 future runner 需要的字段：candidate id、anchor cell / row / col、direction、candidate depth、score/rank provenance、effect/evidence provenance、target spec provenance 和 safety/stop-condition provenance；它不输出实际 selected candidate、不选择 top-k、不生成 runtime action。
+- Phase 6E-B 仍不完成完整 A/B/C closed-loop baseline comparison；它只补齐 runner 前的 dry-run branch plan / intent-boundary contract，不运行 simulation、不创建 `runs` artifact、不引入 pass/fail、eval success、planner success、official defaults、official thresholds 或 calibrated fallback。
+
+Phase 6E-C default entry target：
+
+- 下一步不再继续扩展外围 safety / manifest contract；按当前决策，直接实现 eval-only heuristic cut-intent generation owner，把 B branch 的 candidate generation / evidence / scoring / effect summary 结果转换成一个 future runner 可消费的 cut-intent record。
+- Phase 6E-C 可以在 eval-only 范围内显式产生 `cut_intent_candidate_id` / selected cut-intent evidence，因为这是 runner 输入的核心缺口；但它仍不得生成 production runtime action、不得接 production planner、不得运行 simulation、不得创建 `runs` artifact，也不得声明 pass/fail、eval success、planner success、official defaults 或 official thresholds。
+- 该 owner 必须保留 provenance：candidate source、score/rank source、effect evidence source、target spec source、safety/stop-condition source，以及为什么该 intent 可用于未来 harness 而不是当前 runtime。
 
 通过标准：
 
