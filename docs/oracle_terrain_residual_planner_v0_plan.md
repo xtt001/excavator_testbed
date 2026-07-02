@@ -550,6 +550,8 @@ Phase 5 closure note：
 - [x] 建立 Phase 6E-B eval-only branch run plan / executable cut-intent boundary contract owner，不运行仿真、不输出 runtime action。
 - [x] 建立 Phase 6E-C eval-only heuristic cut-intent generation owner，从 B branch 候选/评分/effect evidence 生成一个 future harness cut intent，不输出 production runtime action。
 - [x] 建立 Phase 6E-D eval-only predicted residual update / one-cut counterfactual owner，将 selected cut-intent 的 effect delta 应用到当前 terrain evidence 并重算 before/after metrics。
+- [x] 建立 Phase 6E-E eval-only predicted B-branch rollout loop，在显式小 cycle budget 内迭代更新 predicted terrain state 并输出 per-step evidence。
+- [ ] 建立 Phase 6E-F predicted A/B comparison report，将 current planner A evidence 与 predicted B rollout evidence 放进同一比较输出，仍不声明真实 closed-loop pass/fail。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -669,6 +671,24 @@ Phase 6E-E default entry target：
 - 下一步直接实现 eval-only predicted B-branch rollout loop：用显式 cycle budget 在内存中重复执行 residual metrics -> candidate generation -> constraint evidence -> heuristic scoring -> cut intent -> geometric effect -> predicted update。
 - 该 slice 应输出 per-step trace、stop reason、final before/after metrics、overdig/outside-target deltas、completion ratio 和 provenance，用来从 one-cut evidence 推进到多步 B-branch counterfactual evidence。
 - 仍不运行真实 simulation、不创建 `runs` artifact、不接 production planner、不改 rollout-review schema、不输出 command-space controls、不声明 pass/fail / eval success / planner success / official defaults / official thresholds；但必须实际迭代更新 predicted terrain state，而不是只生成新的合同字段。
+
+Phase 6E-E note：
+
+- `testbed.eval.terrain_residual_predicted_rollout.build_predicted_residual_rollout()` 已定义 eval-only predicted B-branch rollout loop owner。
+- 该 helper 只接收显式输入：Phase 6E-B-like `branch_run_plan`、initial removed-depth grid、target depth grid、target-region mask、valid mask、grid shape、target spec、cycle budget、Phase 3 candidate generation / constraint options、Phase 3C scoring weights、Phase 4 effect geometry、Phase 4B payload capacity 和 selection policy。
+- 每一步都会基于当前 predicted terrain state 重新计算 target residual metrics，生成 candidates，构造 constraint evidence 和 heuristic scores，生成 geometric effects / effect summary，调用 Phase 6E-C cut-intent helper 选择 eval-only cut intent，再调用 Phase 6E-D update helper 应用 effect delta。
+- 输出记录 step count、stop reason、initial / final metrics、per-step `cut_intent_candidate_id`、before / after positive residual、overdig、outside-target removed depth、completion ratio、expected delta depth / volume 和 provenance。stop reasons 是 diagnostic evidence（例如 `max_cycles_reached`、`zero_target_positive_residual`、`no_positive_residual_cells`、`no_valid_candidate_path`），不是 pass/fail 或 success 语义。
+- Phase 6E-E 仍不是真实 closed-loop rollout 或 production planner behavior：它不运行 simulation、不创建 `runs` artifact、不写 branch output files、不输出 command-space controls、不声明 eval success、planner success、official defaults、official thresholds 或 calibrated fallback。
+
+Phase 6E-E planner acceptance note：
+
+- Planner-side acceptance split support parsing / result-assembly helpers into `testbed.eval.terrain_residual_predicted_rollout_contract` so the public rollout owner stays below the repository large-file threshold. Public behavior remains `build_predicted_residual_rollout()`.
+- Current-run planner-side smoke reproduced the Phase 6E-E facts after the split: status `present`, one predicted B step, stop reason `zero_target_positive_residual`, selected candidate `cut_candidate_000009`, target positive residual `0.374313589186 -> 0.0`, overdig `0.0 -> 0.009656514972`, outside-target removed depth `0.488698139786 -> 0.680683191865`, completion ratio `0.251372821628 -> 1.0`, and no `runs` artifact writes.
+
+Phase 6E-F default entry target：
+
+- 下一步直接建立 predicted A/B comparison report：将现有 current planner A target residual evidence 与 Phase 6E-E predicted B rollout evidence 放进同一个比较输出，记录 branch status、initial/final residual、completion、overdig、outside-target movement、predicted step count、stop reason、calibrated C blocker 和限制项。
+- 该 slice 应刷新 durable baseline report 或建立小 focused report owner（视现有 owner 边界决定），但不得把 predicted B counterfactual 写成真实 simulation 结果，不得声明 pass/fail、eval success、planner success、official thresholds 或 production readiness。
 
 通过标准：
 

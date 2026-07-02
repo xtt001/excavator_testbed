@@ -657,6 +657,33 @@ deltas。top-level status 包括 `present`、`invalid_cut_intent`、`invalid_eff
 `invalid_mask_values`、`invalid_cell_size` 和 `invalid_metric_inputs`。该 helper 仍不声明 pass/fail、
 eval success、planner success、official defaults、official thresholds 或 calibrated fallback。
 
+offline predicted B-branch rollout loop 当前由
+`testbed.eval.terrain_residual_predicted_rollout.build_predicted_residual_rollout()` 生成。
+它是 eval-only evidence helper，用于在内存中重复执行 B branch heuristic residual pipeline：
+target residual metrics -> discrete candidate generation -> constraint evidence -> heuristic scoring ->
+geometric effect model -> effect summary -> heuristic cut intent -> predicted residual update。它实际迭代
+`predicted_removed_depth_grid_m`，但不运行真实 simulation，不创建 branch output files，不写 `runs`
+artifact，也不接入 production planner / rollout-review schema 或 command-space control。
+输入解析、option provenance 和结果结构由
+`testbed.eval.terrain_residual_predicted_rollout_contract` 承担，以保持 rollout 编排 owner 聚焦且低于
+仓库 large-file threshold；公开 helper 和行为契约仍在
+`build_predicted_residual_rollout()`。
+
+调用方必须显式传入 `branch_run_plan`、initial removed-depth grid、target depth grid、target-region mask、
+valid mask、grid shape、target spec、cycle budget、candidate generation options、candidate constraint options、
+scoring weights、effect geometry、payload capacity 和 selection policy。当前 selection policy 仍只支持
+`score_ranking_first`，cycle budget 必须显式提供 finite positive `max_cycles`；helper 不定义官方 target、
+threshold、payload、geometry 或 stop-condition 默认值。
+
+输出包含 schema/source/status/offline_only、step count、stop reason、initial metrics、final metrics、
+per-step records、final predicted removed-depth grid、aggregate delta summary、validation errors、non-goal
+statuses 和 provenance statuses。每个 step record 记录 step index、`cut_intent_candidate_id`、candidate /
+evidence / scoring / effect / intent / update statuses、before / after target positive residual、overdig、
+outside-target removed depth、completion ratio，以及 expected delta depth / volume。stop reason 包括
+`max_cycles_reached`、`zero_target_positive_residual`、`no_positive_residual_cells` 和
+`no_valid_candidate_path`；这些都是 diagnostic stop reasons，不是 pass/fail、eval success 或 planner success
+语义。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续
