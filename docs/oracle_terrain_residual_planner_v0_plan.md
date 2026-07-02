@@ -555,6 +555,7 @@ Phase 5 closure note：
 - [x] 建立 Phase 6F-A predicted A/B artifact writer，将 in-memory manifest / branch plan / predicted B rollout / predicted A-B comparison 物化到新的非覆盖 eval results root。
 - [x] 建立 Phase 6F-B predicted A/B artifact pipeline，从 source rollout JSONL 到 predicted B rollout、A/B comparison 和 artifact writer 形成一个显式 eval-only 端到端链路。
 - [x] 建立 Phase 6F-C runner-facing CLI entrypoint，用显式 request JSON 调用 Phase 6F-B pipeline 并输出 pipeline result JSON。
+- [x] 建立 Phase 6G-A residual eval run command plan owner，把 current A branch 的 `tb-eval` 命令改写到未来 A/B run root，并把 B branch runtime integration 缺口落到 command-plan evidence。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -728,6 +729,15 @@ Phase 6F-C note：
   `runs/eval/oracle_terrain_residual_phase6f_cli_ab_20260702/results`。
 - Smoke facts: CLI return code `0`，pipeline status `present`，nested statuses all `present`，predicted B step count `1`，stop reason `zero_target_positive_residual`，selected candidate `cut_candidate_000009`，A residual `0.374313589186`，B final residual `0.0`，completion delta `0.748627178372`，overdig increase `0.009656514972`，outside-target increase `0.191985052079`，expected delta depth / volume `0.575955156237` / `0.035997197265`；protected current results file count stayed `10 -> 10`。
 - Phase 6F-C 仍不是真实 simulation 或 production behavior：CLI return code 不是 eval pass/fail、planner success 或 production readiness；该入口不接 production planner、不接 rollout-review schema、不生成 runtime action、不定义 official thresholds 或 calibrated fallback。
+
+Phase 6G-A note：
+
+- `testbed.eval.terrain_residual_eval_run_plan.build_residual_eval_run_plan()` 已定义 focused eval run-plan owner，负责把当前 baseline metadata 和 Phase 6F predicted A/B artifacts 转成下一步真实 eval A/B 的 per-branch command plan。
+- 该 helper 只接收显式 `current_eval_metadata`、`predicted_ab_artifacts`、future `planned_results_root`、protected evidence roots 和 residual runtime integration availability；它不读取隐式全局配置、不启动 `tb-eval`、不创建 run root、不写 artifact、不改 production planner。
+- A branch 从 current baseline `argv` 还原可运行命令，并把 `--output-dir` 改写到 `runs/eval/oracle_terrain_residual_phase6g_real_ab_20260702/current_planner_baseline`。Current-run smoke 中 A branch status / command status 均为 `runnable`，source config 是 `runs/jobs/yulong_v2_4_5_return_relocate_token_swap_all_train_eval_20260526/eval_configs/eval_10cycle_next_entry_cell_prior_relocate_spatial_bounds_fail_fast.yaml`。
+- B branch 在当前 repo 状态下保持 `not_runnable` / `runtime_integration_status=missing`，blockers 为 `missing_residual_runtime_planner_mode`、`missing_cut_intent_to_dig_cut_token_adapter`、`missing_simulated_branch_execution_artifacts`。C branch 继续 `not_evaluated` / `blocked_by_missing_gold_samples`。
+- Smoke facts: run plan status `present`，validation errors `[]`，no-overwrite status `present`，future root `runs/eval/oracle_terrain_residual_phase6g_real_ab_20260702` remained absent `False -> False`，protected current results file count stayed `10 -> 10`。
+- Phase 6G-A 是从 predicted artifact pipeline 走向真实 eval runner 的 command-level bridge，但仍未完成 B branch runtime integration；完整 Phase 6 baseline comparison 仍需要把 B branch cut intent 接入 runtime planner / dig-cut token adapter 后运行真实 closed-loop simulation。
 
 通过标准：
 

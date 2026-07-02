@@ -754,6 +754,26 @@ CLI 返回码只表达入口执行状态：pipeline status 为 `present` 时返�
 readiness 语义。CLI 仍只运行 eval-only predicted counterfactual pipeline；它不运行 simulation、不接
 production planner / rollout-review schema，也不生成 runtime action。
 
+Phase 6G-A 的 residual eval run command plan 当前由
+`testbed.eval.terrain_residual_eval_run_plan.build_residual_eval_run_plan()` 负责。
+该 helper 是 eval-only run-plan owner：它接收 current baseline `eval_run_metadata`、Phase 6F predicted
+A/B artifact summary、future planned results root、protected evidence roots，以及 residual runtime
+integration availability。它不读取隐式全局配置、不启动 `tb-eval`、不创建 run root、不写 artifact。
+
+输出包含 schema/source/status/offline_only、固定 A/B/C branch order、per-branch command plan、
+artifact input summary、no-overwrite validation、validation errors、non-goal statuses 和 provenance statuses。
+A branch 会从 current baseline `argv` 还原 `tb-eval` 命令，并把 `--output-dir` 改写到新的
+`<planned_results_root>/current_planner_baseline`。B branch 在 residual runtime integration 不可用时保持
+`not_runnable`，并记录三个直接 blocker：missing residual runtime planner mode、missing cut-intent to
+dig-cut token adapter、missing simulated branch execution artifacts。C branch 在无 usable gold samples 时继续
+`not_evaluated` / `blocked_by_missing_gold_samples`。
+
+run-plan status 包括 `present`、`invalid_current_eval_metadata`、`invalid_predicted_ab_artifacts`、
+`invalid_residual_runtime_integration`、`invalid_planned_results_root` 和
+`protected_evidence_root_overlap`。如果调用方声明 residual runtime integration available，则必须显式提供
+B branch argv；该 helper 不发明 planner mode、config override、command-space controls、official thresholds、
+pass/fail、eval success、planner success、production readiness 或 calibrated fallback。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

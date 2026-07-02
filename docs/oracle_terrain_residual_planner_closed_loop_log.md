@@ -5636,6 +5636,127 @@ Preserved non-goals:
 - No command-space controls, official defaults, official thresholds, pass/fail,
   eval success, planner success, or calibrated fallback.
 
+## 2026-07-02: Phase 6G-A Residual Eval Run Plan Packet
+
+Target lock:
+
+- cwd: `/home/pingfan/PACT/excavator_testbed`
+- initial branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 46]`
+- initial HEAD: `69dcd5b2385df096e6d4686213d16f79150a1201`
+- initial dirty state: clean
+
+Boundary decision:
+
+- Created focused eval owner
+  `testbed/eval/terrain_residual_eval_run_plan.py`.
+- Reason: Phase 6F artifact pipeline owns predicted A/B artifact generation;
+  the new responsibility is command-level planning for the next real eval
+  branch run. It belongs outside rollout review, production planner, runtime,
+  candidate/effect owners, and the artifact writer/pipeline.
+- The owner does not run `tb-eval`, does not write run artifacts, and does not
+  invent a B branch runtime planner mode.
+
+TDD red:
+
+- Added `tests/test_terrain_residual_eval_run_plan.py` before production code.
+- Command: `python -m pytest -q tests/test_terrain_residual_eval_run_plan.py`
+- Expected red result: collection failed with
+  `ModuleNotFoundError: No module named 'testbed.eval.terrain_residual_eval_run_plan'`.
+
+Implemented contract:
+
+- Public helper:
+  `build_residual_eval_run_plan(...)`.
+- Schema/source:
+  `terrain_residual_eval_run_plan_v1` /
+  `explicit_residual_eval_run_plan`.
+- Inputs are explicit: current eval metadata, predicted A/B artifact summary,
+  future planned results root, protected evidence roots, residual runtime
+  integration availability, and optional explicit B branch argv.
+- Output includes status, offline-only flag, fixed A/B/C branch order,
+  per-branch command plan, artifact input summary, no-overwrite validation,
+  validation errors, non-goal statuses, and provenance statuses.
+- A branch rewrites the current baseline `argv` to point `--output-dir` at the
+  future A branch output root.
+- B branch remains `not_runnable` when residual runtime integration is not
+  available, with blockers:
+  `missing_residual_runtime_planner_mode`,
+  `missing_cut_intent_to_dig_cut_token_adapter`, and
+  `missing_simulated_branch_execution_artifacts`.
+- C branch remains `not_evaluated` / `blocked_by_missing_gold_samples` when
+  calibration is unavailable.
+- If residual runtime integration is declared available, explicit
+  `heuristic_branch_argv` is required; the helper does not invent planner modes
+  or config overrides.
+
+Current-run smoke facts:
+
+- Current baseline metadata:
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/eval_run_metadata.json`.
+- Predicted A/B artifacts:
+  `runs/eval/oracle_terrain_residual_phase6f_cli_ab_20260702/results`.
+- Future planned root:
+  `runs/eval/oracle_terrain_residual_phase6g_real_ab_20260702`.
+- Run plan status: `present`.
+- Validation errors: `[]`.
+- No-overwrite status: `present`.
+- A branch status / command status: `runnable` / `runnable`.
+- A planned output dir:
+  `runs/eval/oracle_terrain_residual_phase6g_real_ab_20260702/current_planner_baseline`.
+- A source config:
+  `runs/jobs/yulong_v2_4_5_return_relocate_token_swap_all_train_eval_20260526/eval_configs/eval_10cycle_next_entry_cell_prior_relocate_spatial_bounds_fail_fast.yaml`.
+- B branch status / command status / runtime integration:
+  `not_runnable` / `not_runnable` / `missing`.
+- C status / reason:
+  `not_evaluated` / `blocked_by_missing_gold_samples`.
+- Future root existed before / after smoke: `False -> False`.
+- Protected current results file count: `10 -> 10`.
+
+Verification:
+
+- Focused green:
+  `python -m pytest -q tests/test_terrain_residual_eval_run_plan.py` ->
+  `4 passed`.
+- Related bundle:
+  `python -m pytest -q tests/test_terrain_residual_eval_run_plan.py
+  tests/test_terrain_residual_ab_artifact_pipeline_cli.py
+  tests/test_terrain_residual_ab_artifact_pipeline.py
+  tests/test_terrain_residual_ab_artifact_writer.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_residual_predicted_rollout.py
+  tests/test_terrain_residual_cut_update.py
+  tests/test_terrain_residual_cut_intent.py
+  tests/test_terrain_residual_closed_loop_branch_plan.py
+  tests/test_terrain_residual_closed_loop_manifest.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_calibration_extraction.py
+  tests/test_terrain_target_report.py tests/test_terrain_target_projection.py
+  tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py
+  tests/test_terrain_residual_metrics.py tests/test_rollout_review.py` ->
+  `122 passed`.
+- Compileall for the new owner/test and related Phase 6 eval owners exited
+  `0`.
+- Changed-doc guard for `docs/training_setup.md`,
+  `docs/oracle_terrain_residual_planner_v0_plan.md`,
+  `docs/oracle_terrain_residual_planner_closed_loop_log.md`, and
+  `docs/oracle_terrain_residual_baseline_report.md` exited `0`.
+
+Preserved non-goals:
+
+- No real simulation run.
+- No `tb-eval` invocation.
+- No `runs` artifact creation.
+- No production planner / gate / policy / runtime integration.
+- No rollout-review schema integration.
+- No command-space controls, official defaults, official thresholds, pass/fail,
+  eval success, planner success, production readiness, or calibrated fallback.
+
 ## 2026-07-02: Phase 6F-B Planner Recovery And Pipeline Completion
 
 Recovery facts:

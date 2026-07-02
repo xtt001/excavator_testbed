@@ -567,6 +567,63 @@ pipeline callable without a bespoke Python smoke script. The CLI return code
 does not define eval pass/fail, planner success, production readiness, or
 official thresholds.
 
+## Residual Eval Run Plan
+
+This section records the Phase 6G-A command-plan bridge from predicted A/B
+artifacts toward a real eval runner invocation. It does not run `tb-eval` and
+does not create a new run root.
+
+Run-plan identity:
+
+- schema: `terrain_residual_eval_run_plan_v1`
+- source: `explicit_residual_eval_run_plan`
+- owner: `testbed.eval.terrain_residual_eval_run_plan`
+- future planned root: `runs/eval/oracle_terrain_residual_phase6g_real_ab_20260702`
+
+Current-run smoke inputs:
+
+- current baseline metadata:
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/eval_run_metadata.json`
+- predicted A/B artifacts:
+  `runs/eval/oracle_terrain_residual_phase6f_cli_ab_20260702/results`
+- protected current evidence root:
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results`
+
+Smoke facts:
+
+| Field | Value |
+| --- | --- |
+| run plan status | `present` |
+| validation errors | `[]` |
+| no-overwrite status | `present` |
+| A branch status | `runnable` |
+| A command status | `runnable` |
+| A planned output dir | `runs/eval/oracle_terrain_residual_phase6g_real_ab_20260702/current_planner_baseline` |
+| A source config | `runs/jobs/yulong_v2_4_5_return_relocate_token_swap_all_train_eval_20260526/eval_configs/eval_10cycle_next_entry_cell_prior_relocate_spatial_bounds_fail_fast.yaml` |
+| B branch status | `not_runnable` |
+| B command status | `not_runnable` |
+| B runtime integration status | `missing` |
+| C branch status | `not_evaluated` |
+| C reason | `blocked_by_missing_gold_samples` |
+
+B branch blockers:
+
+- `missing_residual_runtime_planner_mode`
+- `missing_cut_intent_to_dig_cut_token_adapter`
+- `missing_simulated_branch_execution_artifacts`
+
+No-write facts:
+
+- future root existed before smoke: `False`
+- future root existed after smoke: `False`
+- protected current results file count stayed `10 -> 10`
+
+Conservative interpretation: Phase 6G-A identifies the exact command-level gap
+between the predicted A/B artifact pipeline and a real B-branch eval run. A can
+be rerun under a new branch output directory. B still cannot be honestly run as
+a simulator branch until the residual cut intent is wired into runtime planner
+mode and dig-cut token generation.
+
 ## Interpretation
 
 For this explicit non-official example spec, target positive residual decreases
