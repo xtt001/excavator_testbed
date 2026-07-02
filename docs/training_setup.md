@@ -633,6 +633,30 @@ official defaults、official thresholds 或 calibrated fallback。top-level stat
 scoring / effect summary 和 target spec 都来自调用方显式输入，artifact write / runner execution 仍为
 not written / not run。
 
+offline predicted residual update / one-cut counterfactual 当前由
+`testbed.eval.terrain_residual_cut_update.build_predicted_residual_update()` 生成。
+它是 eval-only evidence helper，用于把一个 Phase 6E-C cut intent 与匹配的 Phase 4 effect delta patch
+应用到显式 current removed-depth grid，并通过
+`testbed.eval.terrain_target_metrics.build_target_residual_metrics()` 重新计算 before / after target residual
+metrics。它不运行真实 simulation，不创建 branch output files，不写 `runs` artifact，也不接入 production
+planner / rollout-review schema。
+
+调用方必须显式传入 `cut_intent`、matching `effect_record`、`removed_depth_grid_m`、
+`target_depth_grid_m`、`target_region_mask`、`valid_mask`、`grid_shape`，以及可选 `cell_size_m`。helper
+验证 cut intent 为 `runner_input_status=ready_for_eval_harness` 且 `production_runtime_action=False`，
+验证 effect record status 为 `present`、candidate id 匹配、`expected_delta_depth_grid_m` 与 grid 长度一致，
+然后计算 `predicted_removed_depth_grid_m = removed_depth_grid_m + expected_delta_depth_grid_m`。不做物理仿真、
+bucket clipping 或 runtime command 生成。
+
+输出包含 schema/source/status/offline_only、`cut_intent_candidate_id`、before metrics、after metrics、
+delta summary、predicted removed-depth grid、validation errors、non-goal statuses 和 provenance statuses。
+delta summary 至少记录 target positive residual delta、target overdig delta、outside-target removed-depth delta、
+target completion ratio delta 和 expected delta depth sum；只有在调用方显式提供 `cell_size_m` 时才记录 volume
+deltas。top-level status 包括 `present`、`invalid_cut_intent`、`invalid_effect_record`、
+`candidate_effect_mismatch`、`invalid_grid_lengths`、`invalid_grid_shape`、`invalid_depth_values`、
+`invalid_mask_values`、`invalid_cell_size` 和 `invalid_metric_inputs`。该 helper 仍不声明 pass/fail、
+eval success、planner success、official defaults、official thresholds 或 calibrated fallback。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

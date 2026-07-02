@@ -549,6 +549,7 @@ Phase 5 closure note：
 - [x] 建立 Phase 6E-A eval-only closed-loop experiment manifest / artifact contract owner，不运行仿真、不创建 `runs` artifact。
 - [x] 建立 Phase 6E-B eval-only branch run plan / executable cut-intent boundary contract owner，不运行仿真、不输出 runtime action。
 - [x] 建立 Phase 6E-C eval-only heuristic cut-intent generation owner，从 B branch 候选/评分/effect evidence 生成一个 future harness cut intent，不输出 production runtime action。
+- [x] 建立 Phase 6E-D eval-only predicted residual update / one-cut counterfactual owner，将 selected cut-intent 的 effect delta 应用到当前 terrain evidence 并重算 before/after metrics。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -653,6 +654,21 @@ Phase 6E-D default entry target：
 - 下一步直接实现 eval-only predicted residual update / one-cut counterfactual owner：用 Phase 6E-C cut intent 对应的 Phase 4 effect delta 更新当前 removed-depth grid，并重新计算 post-cut target residual metrics。
 - 该 slice 应输出 before / after residual、overdig、outside-target removal、payload proxy 和 effect provenance，用来形成 B branch 单步闭环证据；它不是新的 safety wrapper，也不应只增加合同字段。
 - 仍不运行真实 simulation、不写 `runs` artifact、不接 production planner、不声明 pass/fail / eval success / planner success / official defaults / official thresholds；但它必须实际计算预测状态变化，而不只是记录边界。
+
+Phase 6E-D note：
+
+- `testbed.eval.terrain_residual_cut_update.build_predicted_residual_update()` 已定义 eval-only predicted residual update / one-cut counterfactual owner。
+- 该 helper 只接收显式输入：Phase 6E-C cut intent 或其 nested cut-intent record、matching Phase 4 effect record、current removed-depth grid、target depth grid、target region mask、valid mask、grid shape 和可选 `cell_size_m`。
+- 它验证 cut intent 为 future harness-ready 且 `production_runtime_action=False`，验证 effect record candidate id 与 cut intent candidate id 一致，并用 `expected_delta_depth_grid_m` 计算 `predicted_removed_depth_grid_m`。随后复用 `build_target_residual_metrics()` 计算 before / after metrics 和 delta summary。
+- Delta summary 记录 target positive residual delta、target overdig delta、outside-target removed-depth delta、target completion ratio delta 和 expected delta depth sum；只有显式提供 `cell_size_m` 时才记录 volume deltas。
+- Phase 6E-D 是单步 B-branch counterfactual evidence，仍不是真实 simulation 或 production planner behavior：它不创建 `runs` artifact、不写 branch output files、不输出 command-space controls、不声明 pass/fail、eval success、planner success、official defaults、official thresholds 或 calibrated fallback。
+- Current-run planner-side smoke 中，selected candidate `cut_candidate_000009` 的 predicted update 将 target positive residual `0.374313589186 -> 0.0`，completion ratio `0.251372821628 -> 1.0`，同时 target overdig `0.0 -> 0.009656514972`、outside-target removed depth `0.488698139786 -> 0.680683191865`，这些仍只是 effect-model counterfactual evidence，不是真实 closed-loop rollout。
+
+Phase 6E-E default entry target：
+
+- 下一步直接实现 eval-only predicted B-branch rollout loop：用显式 cycle budget 在内存中重复执行 residual metrics -> candidate generation -> constraint evidence -> heuristic scoring -> cut intent -> geometric effect -> predicted update。
+- 该 slice 应输出 per-step trace、stop reason、final before/after metrics、overdig/outside-target deltas、completion ratio 和 provenance，用来从 one-cut evidence 推进到多步 B-branch counterfactual evidence。
+- 仍不运行真实 simulation、不创建 `runs` artifact、不接 production planner、不改 rollout-review schema、不输出 command-space controls、不声明 pass/fail / eval success / planner success / official defaults / official thresholds；但必须实际迭代更新 predicted terrain state，而不是只生成新的合同字段。
 
 通过标准：
 

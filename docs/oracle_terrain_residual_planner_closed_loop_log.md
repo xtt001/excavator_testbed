@@ -5524,3 +5524,203 @@ Next bounded target:
   still avoiding real simulation, `runs` artifacts, branch output files,
   production planner integration, rollout-review schema changes, pass/fail,
   eval success, planner success, official defaults, and official thresholds.
+
+## 2026-07-02: Phase 6E-D Executor Predicted Residual Update Packet
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial branch/status: `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 40]`.
+- Initial HEAD: `478b6cdb32d243030dec8ede7ef0d1b60624b70c`.
+- Initial dirty state: clean.
+
+Boundary decision:
+
+- Added a new focused eval owner,
+  `testbed/eval/terrain_residual_cut_update.py`, instead of extending the
+  cut-intent owner, geometric effect model, or target metrics owner.
+- Responsibility: apply one selected cut intent's explicit effect delta to a
+  current removed-depth grid and recompute before / after target residual
+  metrics.
+- Existing owners remain separate: cut intent selects runner input evidence,
+  effect model estimates delta patches, and target metrics computes residual
+  metrics.
+
+Implemented contract:
+
+- Public helper:
+  `testbed.eval.terrain_residual_cut_update.build_predicted_residual_update()`.
+- Inputs are explicit: Phase 6E-C cut intent or nested cut-intent record,
+  matching Phase 4 effect record, current removed-depth grid, target-depth grid,
+  target-region mask, valid mask, grid shape, and optional `cell_size_m`.
+- The helper validates harness-ready eval cut intent evidence
+  (`runner_input_status=ready_for_eval_harness`,
+  `production_runtime_action=False`), validates matching effect candidate id,
+  validates `expected_delta_depth_grid_m`, computes
+  `predicted_removed_depth_grid_m = removed_depth_grid_m + expected_delta_depth_grid_m`,
+  and calls `build_target_residual_metrics()` for before / after metrics.
+- Output includes schema/source/status/offline_only, cut-intent candidate id,
+  before metrics, after metrics, delta summary, predicted removed-depth grid,
+  effect provenance, validation errors, non-goal statuses, and provenance
+  statuses.
+- Statuses covered: `present`, `invalid_cut_intent`,
+  `invalid_effect_record`, `candidate_effect_mismatch`,
+  `invalid_grid_lengths`, `invalid_grid_shape`, `invalid_depth_values`,
+  `invalid_mask_values`, `invalid_cell_size`, and `invalid_metric_inputs`.
+
+Current-run smoke facts:
+
+- Recomputed current target residual report in memory from
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`
+  using explicit non-official target spec `grid_shape=[3, 2]`, rows `[0:2]`,
+  cols `[0:1]`, `target_depth_m=0.25`.
+- Rebuilt Phase 3/4/6E-A/6E-B/6E-C chain in memory.
+- Candidate count: `24`.
+- Cut-intent candidate id: `cut_candidate_000009`.
+- Matching effect status: `present`.
+- Predicted residual update status: `present`.
+- Before target positive residual: `0.374313589186`.
+- After target positive residual: `0.0`.
+- Target positive residual delta: `-0.374313589186`.
+- Before target overdig: `0.0`.
+- After target overdig: `0.009656514972`.
+- Target overdig delta: `0.009656514972`.
+- Before outside-target removed depth: `0.488698139786`.
+- After outside-target removed depth: `0.680683191865`.
+- Outside-target removed-depth delta: `0.191985052079`.
+- Before completion ratio: `0.251372821628`.
+- After completion ratio: `1.0`.
+- Completion ratio delta: `0.748627178372`.
+- Expected delta depth sum: `0.575955156237`.
+- Expected delta volume with explicit `cell_size_m=0.25`: `0.035997197265`.
+- Effect provenance status: `present`.
+- Validation errors: `[]`.
+- Future root
+  `runs/eval/oracle_terrain_residual_phase6d_t1_ab_20260702/results` remained
+  absent before and after smoke.
+- Protected current results file count stayed `10 -> 10`.
+
+Verification:
+
+- TDD red:
+  `python -m pytest -q tests/test_terrain_residual_cut_update.py` failed with
+  `ModuleNotFoundError: No module named 'testbed.eval.terrain_residual_cut_update'`.
+- Focused green:
+  `python -m pytest -q tests/test_terrain_residual_cut_update.py` ->
+  `4 passed`.
+- Related bundle:
+  `python -m pytest -q tests/test_terrain_residual_cut_update.py
+  tests/test_terrain_residual_cut_intent.py
+  tests/test_terrain_residual_closed_loop_branch_plan.py
+  tests/test_terrain_residual_closed_loop_manifest.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_calibration_extraction.py
+  tests/test_terrain_target_report.py tests/test_terrain_target_projection.py
+  tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py
+  tests/test_terrain_residual_metrics.py tests/test_rollout_review.py` ->
+  `103 passed`.
+
+Preserved non-goals:
+
+- No real simulation run.
+- No `runs` artifact creation.
+- No branch output files.
+- No production planner / gate / policy / runtime integration.
+- No rollout-review schema integration.
+- No command-space controls, official defaults, official thresholds, pass/fail,
+  eval success, planner success, or calibrated fallback.
+
+## 2026-07-02: Phase 6E-D Planner Acceptance
+
+Planner audit:
+
+- Target lock rechecked in planner thread:
+  `/home/pingfan/PACT/excavator_testbed`, branch status
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 40]`,
+  HEAD `478b6cdb32d243030dec8ede7ef0d1b60624b70c`.
+- Worktree contained only the expected Phase 6E-D files:
+  `testbed/eval/terrain_residual_cut_update.py`,
+  `tests/test_terrain_residual_cut_update.py`, and the three source-of-truth
+  docs.
+- Callback was factual and scoped. It implemented the core one-cut predicted
+  state update rather than another perimeter contract.
+
+Planner-side verification:
+
+- Focused test:
+  `python -m pytest -q tests/test_terrain_residual_cut_update.py` ->
+  `4 passed`.
+- Related bundle:
+  `python -m pytest -q tests/test_terrain_residual_cut_update.py
+  tests/test_terrain_residual_cut_intent.py
+  tests/test_terrain_residual_closed_loop_branch_plan.py
+  tests/test_terrain_residual_closed_loop_manifest.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_calibration_extraction.py
+  tests/test_terrain_target_report.py tests/test_terrain_target_projection.py
+  tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py
+  tests/test_terrain_residual_metrics.py tests/test_rollout_review.py` ->
+  `103 passed`.
+- Compileall for the new owner/test and related eval owners exited `0`.
+- Changed-doc guard, doc inventory guard, architecture contract guard, and
+  `git diff --check` all exited `0`.
+
+Planner-side current-run smoke:
+
+- Rebuilt current target residual report, Phase 3 candidates/evidence/scoring,
+  Phase 4 effects/effect summary, Phase 6E-A manifest, Phase 6E-B branch plan,
+  Phase 6E-C cut intent, and Phase 6E-D predicted update in memory.
+- Selected candidate id: `cut_candidate_000009`.
+- Predicted update status: `present`; validation errors: `[]`.
+- Before / after target positive residual: `0.374313589186` -> `0.0`.
+- Before / after target overdig: `0.0` -> `0.009656514972`.
+- Before / after outside-target removed depth: `0.488698139786` ->
+  `0.680683191865`.
+- Before / after completion ratio: `0.251372821628` -> `1.0`.
+- Expected delta depth sum / volume: `0.575955156237` /
+  `0.035997197265`.
+- Future root
+  `runs/eval/oracle_terrain_residual_phase6d_t1_ab_20260702/results` remained
+  absent; protected current results file count stayed `10 -> 10`.
+
+Acceptance:
+
+- Phase 6E-D accepted as eval-only predicted residual update / one-cut
+  counterfactual evidence.
+- Accepted-slice count since the latest deep reflection: `2/3`.
+- Deep reflection is not due yet.
+
+Lightweight reflection:
+
+- Reference used: user correction to execute the core residual-planning idea,
+  Phase 6E-D target, and no-production / no-artifact non-goals.
+- Alignment verdict: aligned. This slice changed the evidence from selected
+  intent to predicted terrain state and before/after residual metrics.
+- Efficiency verdict: useful core implementation; not a safety-adjacent or
+  boundary-only round.
+
+Next bounded target:
+
+- Phase 6E-E should implement an eval-only predicted B-branch rollout loop.
+- It should iteratively recompute residual metrics, candidate generation,
+  constraint evidence, heuristic scoring, selected cut intent, geometric effect
+  patch, and predicted residual update for a small explicit cycle budget.
+- Output should include per-step candidate id, before/after residual,
+  overdig/outside-target deltas, completion ratio, stop reason, final metrics,
+  and provenance.
+- It must remain in-memory and eval-only: no real simulation, no `runs`
+  artifact, no production planner integration, no rollout-review schema
+  integration, no command-space control, no pass/fail, no eval success, no
+  planner success, no official defaults/thresholds, and no calibrated fallback.
