@@ -4651,3 +4651,140 @@ Closure decision:
 - No next executor slice is dispatched from this reflection.
 - Phase 6 is paused as an offline evidence/report milestone until a real Phase
   6D closed-loop simulation design packet is explicitly requested or confirmed.
+
+## 2026-07-02: Phase 6D Executor Closed-Loop Design Packet
+
+Target lock observed:
+
+- cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Branch/status before edits:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 36]`.
+- HEAD before edits: `822ca9c93c75fe42f18815b4d0cbdea4d84bd639`.
+- Worktree was clean before edits.
+
+Slice:
+
+- Phase 6D closed-loop simulation design packet for the first real A/B
+  experiment.
+- Docs/design-only. No code, tests, simulations, `runs` artifacts, config,
+  runtime, dependencies, branch/upstream, rollout-review schema, or production
+  planner behavior changed.
+
+Design facts recorded:
+
+- Recorded the Phase 6D design packet in
+  `docs/oracle_terrain_residual_planner_v0_plan.md`. A standalone new design
+  doc was not retained because the doc inventory guard rejects unexpected docs.
+- Purpose: design gate before runner/harness/code work; not a run and not
+  production integration.
+- Branch definitions: A is current planner baseline; B is residual planner with
+  heuristic candidate/effect/scoring pipeline; C stays `not_evaluated` unless
+  usable gold samples and calibration exist.
+- Initial experiment scope: T1 only, large shallow rectangular pit, explicit
+  non-official target spec matching current smoke `grid_shape=[3, 2]`, rows
+  `[0:2]`, cols `[0:1]`, `target_depth_m=0.25`.
+- T2 is deferred until T1 A/B artifacts are comparable.
+- Cycle budget: preserve current 10-cycle baseline as initial comparison budget
+  unless a later design explicitly changes it.
+- Stop conditions to define before implementation: max cycles, target residual
+  threshold, overdig/outside-protected abort, no-valid-candidate,
+  low-payload handling, and simulation/runtime failure.
+- Required metrics: positive residual, overdig, outside-target /
+  outside-protected removal, target completion, target depth error,
+  payload/deposited fraction, low-payload events, cycle count, handoff/deposit
+  quality, and cycle-time availability.
+- Future artifact layout: proposed new root
+  `runs/eval/oracle_terrain_residual_phase6d_t1_ab_<timestamp>/results/` with
+  rollout jsonl, planner trace, residual per-cycle report, branch comparison
+  report, and manifest.
+- No-overwrite rule: future implementation must not reuse or overwrite existing
+  current-run evidence under
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/`.
+- Phase 6E boundary: simulation/eval harness first, not production planner
+  integration; B may reuse offline eval owners but needs a harness contract
+  before diagnostic rankings become executable cut intent.
+- Acceptance before Phase 6E: accepted design packet, explicit artifact paths
+  and branch definitions, no official semantics inferred from smoke thresholds,
+  and C blocked unless usable gold samples are available.
+
+Documentation changed:
+
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks only the Phase 6D
+  design packet complete, records the full Phase 6D design packet, and keeps
+  full A/B/C baseline comparison incomplete.
+- `docs/oracle_terrain_residual_planner_closed_loop_log.md` records this
+  executor packet.
+- `docs/oracle_terrain_residual_baseline_report.md` and `docs/training_setup.md`
+  were read and did not need changes.
+
+TDD:
+
+- Not required for this docs/design-only slice.
+
+Verification observed:
+
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs
+  docs/oracle_terrain_residual_planner_v0_plan.md
+  docs/oracle_terrain_residual_planner_closed_loop_log.md` -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  -> exit `0`.
+- `git diff --check` -> exit `0`.
+- Final `git status --short --branch`: branch ahead `36` with only
+  `docs/oracle_terrain_residual_planner_v0_plan.md` and
+  `docs/oracle_terrain_residual_planner_closed_loop_log.md` modified.
+- Final `git rev-parse HEAD`: `822ca9c93c75fe42f18815b4d0cbdea4d84bd639`.
+
+## 2026-07-02: Phase 6D Planner Acceptance
+
+Planner acceptance status:
+
+- Accepted as Phase 6D closed-loop simulation design packet.
+- Accepted-slice count since the latest deep reflection is now `1/3`.
+- No deep reflection is required for this acceptance.
+
+Planner-side audit:
+
+- Rechecked target lock in `/home/pingfan/PACT/excavator_testbed`: branch
+  `tx/oracle-terrain-residual-planner-v0` was ahead `36`, HEAD
+  `822ca9c93c75fe42f18815b4d0cbdea4d84bd639`, with only the expected plan and
+  closed-loop log docs modified.
+- Re-read the Phase 6D design note and executor packet.
+- Confirmed the design packet records T1 A/B scope, A/B/C branch definitions,
+  10-cycle initial budget, required metrics, future artifact layout, and
+  no-overwrite rules.
+- Confirmed the slice remains docs/design-only: no code, tests, simulation,
+  `runs` artifacts, production planner integration, official defaults,
+  pass/fail, eval success, planner success, runtime action selection, or
+  calibrated fallback semantics were introduced.
+- Planner-side doc sync added the Phase 6E default entry target: an eval-only
+  closed-loop experiment manifest / artifact contract owner before any runner
+  or simulation work.
+
+Planner-side verification:
+
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs
+  docs/oracle_terrain_residual_planner_v0_plan.md
+  docs/oracle_terrain_residual_planner_closed_loop_log.md` -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  -> exit `0`.
+- `git diff --check` -> exit `0`.
+
+Acceptance rationale:
+
+- The design packet turns the Phase 6C pause condition into a concrete first
+  closed-loop experiment design without starting the experiment prematurely.
+- It is now clear that the next code slice should not be a full runner yet; it
+  should first make branch definitions and artifact layout executable as a
+  tested manifest contract.
+
+Next bounded target:
+
+- Phase 6E-A should implement a focused eval-only closed-loop experiment
+  manifest / artifact contract owner.
+- It must not run simulation, create run directories, overwrite existing
+  evidence, integrate production planner behavior, or emit official success /
+  pass-fail semantics.

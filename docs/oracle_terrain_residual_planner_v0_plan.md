@@ -545,6 +545,7 @@ Phase 5 closure note：
 - [x] 建立 heuristic-only offline baseline-comparison scaffold，先汇总 current / heuristic / calibrated branch evidence 和限制项。
 - [x] 将 Phase 6A offline baseline-comparison output / limitations 刷新进 durable baseline report。
 - [x] 记录 Phase 6C closure / next-decision note，暂停继续实现，直到真实闭环仿真设计被明确 scoped。
+- [x] 建立 Phase 6D closed-loop simulation design packet，先定义 T1 A/B 设计门槛，不运行仿真。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -577,6 +578,37 @@ Phase 6C closure / next-decision note：
   - artifact paths：run root、rollout jsonl、planner trace、summary/comparison report 的路径和不覆盖现有证据的规则；
   - branch definitions：A=current planner，B=residual planner + heuristic effect model，C=calibrated residual planner only when usable gold samples / calibration are available, otherwise `not_evaluated`；
   - acceptance and non-goals：运行前明确验收指标和非目标，不从 smoke thresholds 推断 official defaults，不引入 production integration、runtime action selection、pass/fail、eval success 或 planner success 语义。
+
+Phase 6D design note：
+
+- 本节作为 Phase 6D durable closed-loop simulation design packet：它是 future runner / harness / code work 之前的 design gate，不是一次 run，也不是 production planner integration。
+- Branch definitions：
+  - A: current planner baseline，复用现有 current-run planner / rollout evidence。
+  - B: residual planner + heuristic candidate/effect/scoring pipeline，可复用 Phase 3/4 offline eval owners，但必须先在 harness contract 中定义如何把 diagnostic candidate ranking 转成 executable cut intent，不能提前把 selected / top-k / action semantics 泄漏进 report。
+  - C: calibrated residual planner，在没有 usable gold samples / calibration 前保持 `not_evaluated` / blocked，不允许从 telemetry fallback 发明 calibrated model。
+- Initial experiment scope：
+  - 第一轮只做 T1 A/B：large shallow rectangular pit，初始 explicit non-official target spec 保持 current smoke 口径 `grid_shape=[3, 2]`，rows `[0:2]`，cols `[0:1]`，`target_depth_m=0.25`，除非后续 design 明确修改。
+  - T2 deferred until T1 A/B artifacts are comparable。
+- Cycle budget and stops：
+  - 初始比较预算保留 current 10-cycle baseline，除非后续 design 显式修改。
+  - Phase 6E implementation 前必须明确 stop conditions：max cycles、target residual threshold、overdig / outside-protected abort、no-valid-candidate、low-payload handling、simulation/runtime failure。
+- Required metrics per cycle and final：
+  - positive residual、overdig、outside-target / outside-protected removal、target completion、target depth error、payload / deposited fraction、low-payload events、cycle count / stop reason、handoff/deposit quality，以及 cycle time 是否可用。
+- Artifact layout / no-overwrite：
+  - 建议 future run root pattern：`runs/eval/oracle_terrain_residual_phase6d_t1_ab_<timestamp>/results/`；本 slice 不创建该目录。
+  - Expected files：`eval_resolved_config.yaml`、`eval_run_metadata.json`、`rollouts/<branch>/rollout_000.jsonl`、`rollouts/<branch>/rollout_000_summary.json`、`rollouts/<branch>/rollout_000_planner_trace.json`、`residual_per_cycle_report.json`、`branch_comparison_report.json`、`rollout_manifest.json`。
+  - Future Phase 6E must not reuse or overwrite existing evidence under `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/`。
+- Acceptance criteria before Phase 6E：
+  - design packet accepted；
+  - artifact paths and branch definitions explicit；
+  - no official target / pass-fail / runtime semantics inferred from smoke thresholds；
+  - C branch remains blocked unless usable gold samples are available。
+- Non-goals：本 slice 不运行 simulation，不写 `runs` artifact，不改代码/测试，不接入 production planner / gate / policy / runtime，不定义 official defaults、thresholds、pass/fail、eval success、planner success，也不提供 calibrated fallback。
+
+Phase 6E default entry target：
+
+- 先实现 eval-only closed-loop experiment manifest / artifact contract owner，固定 A/B/C branch definitions、T1 target spec、future run-root / expected-file layout 和 no-overwrite validation。
+- Phase 6E-A 不运行 simulation、不创建 `runs` artifact、不接 production planner；它只让后续 runner/harness 有一个可测试、可复用、不会覆盖既有证据的 manifest contract。
 
 通过标准：
 
