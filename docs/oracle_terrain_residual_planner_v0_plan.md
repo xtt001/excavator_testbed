@@ -562,6 +562,7 @@ Phase 5 closure note：
 - [x] 建立 Phase 6G-E residual cut-intent runtime source artifact materialization，使 Phase 6F predicted A/B artifact pipeline 写出可被 Phase 6G-D provider 加载的 `residual_cut_intent_runtime_source.json`。
 - [x] 建立 Phase 6G-F runner-facing B-branch eval request / invocation artifact bridge，使真实 `tb-eval` B branch config/argv 能显式指向 runtime source。
 - [x] 建立 Phase 6G-G B-branch bounded smoke stop-timing contract，使 request-local config 显式用 zero terminal hold 避免 bounded smoke 请求未覆盖的 next-cycle source plan。
+- [x] 建立 Phase 6G-H same-gate real A/B bounded smoke comparison，将 current A branch 和 Phase 6G-G B branch 的真实 one-cycle smoke artifacts 放进同一 durable comparison 输出。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -796,6 +797,15 @@ Phase 6G-G note：
 - Fresh Phase 6G-G predicted source root `runs/eval/oracle_terrain_residual_phase6g_g_predicted_ab_with_source_20260702/results` 写出 7 个 predicted artifacts；包含 status `present` 的 `residual_cut_intent_runtime_source.json`，plan count 仍为 `1`，覆盖 cycle `0`，candidate id `cut_candidate_000009`。
 - Fresh B request root `runs/eval/oracle_terrain_residual_phase6g_g_b_branch_request_20260702` 写出 3 个 request files；generated config 保留 `dig_cut_planner.mode=residual_cut_intent`、`fallback_mode=raise` 和 source path，并把 `target_cycle_gate_terminal_hold_steps` 写为 `0`。
 - Fresh bounded B smoke 使用 generated config、fresh smoke output root、`--target-cycle-gate 1` 和 `--no-video` 启动 `tb-eval`，exit code `0`。`eval_run_metadata.json` status `completed`、error `null`，`metrics.json` 记录 `target_cycle_gate_success_rate=1.0`，`rollout_manifest.json` 记录 stop reason `target_cycle_gate_reached`。这只证明 bounded smoke stop-timing contract 避免 missing cycle plan；仍不声明 official pass/fail、eval success、planner success、production readiness、official threshold 或 calibrated fallback。
+
+Phase 6G-H note：
+
+- `testbed.eval.terrain_residual_real_ab_smoke_comparison` 定义 focused real smoke artifact owner：`write_current_planner_bounded_smoke_request()` 只为 A branch 写 request-local current planner config/argv，`write_real_ab_bounded_smoke_comparison()` 只汇总真实 A/B bounded smoke result roots。
+- A branch request root `runs/eval/oracle_terrain_residual_phase6g_h_real_ab_smoke_comparison_20260702/current_planner_baseline_request` 写出 `current_planner_baseline_eval_config.yaml`、`current_planner_baseline_invocation.json` 和 request result；request-local config 显式设置 `eval.target_cycle_gate=1`、`eval.target_cycle_gate_terminal_hold_steps=0`、`eval.save_video=false`，并保留 current planner `dig_cut_planner.mode=operator_prior_sweep_belief`。
+- Fresh A smoke 使用 generated config、`--target-cycle-gate 1`、`--no-video` 和 fresh output root `runs/eval/oracle_terrain_residual_phase6g_h_real_ab_smoke_comparison_20260702/real_smoke_runs/current_planner_baseline` 运行 `tb-eval`，exit code `0`。A metadata status `completed`、error `null`，`target_cycle_gate_success_rate=1.0`，stop reason `target_cycle_gate_reached`，rollout line count `736`。
+- B branch 没有重跑，复用 Phase 6G-G completed root `runs/eval/oracle_terrain_residual_phase6g_g_real_b_smoke_20260702/heuristic_residual_pipeline/results`；B metadata status `completed`、error `null`，`target_cycle_gate_success_rate=1.0`，stop reason `target_cycle_gate_reached`，rollout line count `708`，config 仍为 `dig_cut_planner.mode=residual_cut_intent` 且显式 source path 指向 Phase 6G-G runtime source。
+- Durable comparison artifact `runs/eval/oracle_terrain_residual_phase6g_h_real_ab_smoke_comparison_20260702/real_ab_bounded_smoke_comparison.json` status `present`，branch order 为 A/B/C，C 保持 `not_evaluated` / `blocked_by_missing_gold_samples`。该 artifact 标注 `evidence_scope=bounded_one_cycle_smoke`、`full_phase6_success_claim=not_claimed`、`official_pass_fail_status=not_defined`、`production_readiness_status=not_claimed`，不声明完整 Phase 6 成功。
+- Protected current evidence root `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results` file count stayed `10 -> 10`。
 
 通过标准：
 

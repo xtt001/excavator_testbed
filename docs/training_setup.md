@@ -911,6 +911,40 @@ status `completed`、error `null`，`target_cycle_gate_success_rate=1.0`，rollo
 `target_cycle_gate_reached`。这只是 bounded smoke stop-timing evidence，不是 official eval success、
 planner success、pass/fail、production readiness 或 calibrated fallback。
 
+Phase 6G-H 的 same-gate real A/B bounded smoke comparison 当前由
+`testbed.eval.terrain_residual_real_ab_smoke_comparison.write_current_planner_bounded_smoke_request()`
+和 `write_real_ab_bounded_smoke_comparison()` 负责。A request helper 读取显式 current eval metadata，
+复制 current planner eval config 到 request artifact，并只在该 artifact config 内设置
+`eval.target_cycle_gate=1`、`eval.target_cycle_gate_terminal_hold_steps=0` 和 `eval.save_video=false`；
+它保留 current planner `dig_cut_planner.mode=operator_prior_sweep_belief`，不改变 checked-in
+eval YAML/default config。comparison helper 只读取真实 `tb-eval` result roots 的
+`eval_run_metadata.json`、`eval_resolved_config.yaml`、`metrics.json`、`rollout_manifest.json`、
+`rollouts/rollout_000_summary.json` 和 rollout jsonl line count，不使用 predicted B evidence 代替真实 B
+execution artifacts。
+
+Current-run Phase 6G-H smoke facts：fresh comparison root
+`runs/eval/oracle_terrain_residual_phase6g_h_real_ab_smoke_comparison_20260702`
+初始不存在。A request root
+`runs/eval/oracle_terrain_residual_phase6g_h_real_ab_smoke_comparison_20260702/current_planner_baseline_request`
+写出 request-local config、invocation 和 request result。A smoke 使用 generated config、
+`--target-cycle-gate 1`、`--no-video` 和 fresh output root
+`runs/eval/oracle_terrain_residual_phase6g_h_real_ab_smoke_comparison_20260702/real_smoke_runs/current_planner_baseline`
+运行 `tb-eval`，exit code `0`；A metadata status `completed`、error `null`，
+`target_cycle_gate_success_rate=1.0`，stop reason `target_cycle_gate_reached`，rollout line count `736`。
+B branch 没有重跑，复用 completed Phase 6G-G root
+`runs/eval/oracle_terrain_residual_phase6g_g_real_b_smoke_20260702/heuristic_residual_pipeline/results`；
+B metadata status `completed`、error `null`，`target_cycle_gate_success_rate=1.0`，stop reason
+`target_cycle_gate_reached`，rollout line count `708`，config 使用
+`dig_cut_planner.mode=residual_cut_intent` 和显式 runtime source path。
+
+Durable comparison artifact
+`runs/eval/oracle_terrain_residual_phase6g_h_real_ab_smoke_comparison_20260702/real_ab_bounded_smoke_comparison.json`
+status `present`，branch order 为 `current_planner_baseline`、`heuristic_residual_pipeline`、
+`calibrated_residual_pipeline`；C 继续 `not_evaluated` / `blocked_by_missing_gold_samples`。该 artifact
+明确标注 `evidence_scope=bounded_one_cycle_smoke`、`full_phase6_success_claim=not_claimed`、
+`official_pass_fail_status=not_defined`、`production_readiness_status=not_claimed` 和
+`calibrated_fallback_status=not_invented`。Protected current evidence root file count stayed `10 -> 10`。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

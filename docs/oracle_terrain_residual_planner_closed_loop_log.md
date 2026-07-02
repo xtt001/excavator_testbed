@@ -5836,6 +5836,195 @@ Next bounded target:
   not full Phase 6 success, and must keep C `not_evaluated` unless calibration
   evidence changes.
 
+## 2026-07-02: Phase 6G-H Same-Gate Real A/B Bounded Smoke Comparison
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 53]`.
+- Initial HEAD: `5e3c2699c5080a2c72b79b5e977319a77241c64c`.
+- Initial dirty state: clean.
+
+Boundary decision:
+
+- Added focused eval owner
+  `testbed/eval/terrain_residual_real_ab_smoke_comparison.py`.
+- Responsibility: materialize request-local A-branch bounded smoke config/argv
+  and summarize real A/B bounded smoke result roots.
+- Did not edit `testbed/eval/suite.py`, `testbed/cli/eval.py`, checked-in eval
+  YAML/default configs, production planner code, rollout-review schema, or B
+  request/source provider semantics.
+- Did not rerun B because Phase 6G-G B artifacts were already completed and
+  comparable under `target_cycle_gate=1` / terminal hold `0`.
+
+TDD red:
+
+- Added `tests/test_terrain_residual_real_ab_smoke_comparison.py` before
+  production code.
+- Red command:
+  `python -m pytest -q tests/test_terrain_residual_real_ab_smoke_comparison.py`.
+- Expected red result: collection failed with
+  `ModuleNotFoundError: No module named 'testbed.eval.terrain_residual_real_ab_smoke_comparison'`.
+
+Implemented contract:
+
+- `write_current_planner_bounded_smoke_request(...)` writes
+  `current_planner_baseline_eval_config.yaml` and
+  `current_planner_baseline_invocation.json` under a fresh request root.
+- A request-local config explicitly sets
+  `eval.target_cycle_gate=1`,
+  `eval.target_cycle_gate_terminal_hold_steps=0`, and
+  `eval.save_video=false`.
+- A branch preserves current planner behavior:
+  `dig_cut_planner.mode=operator_prior_sweep_belief`.
+- `write_real_ab_bounded_smoke_comparison(...)` reads real result roots:
+  `eval_run_metadata.json`, `eval_resolved_config.yaml`, `metrics.json`,
+  `rollout_manifest.json`, `rollouts/rollout_000_summary.json`, and rollout
+  jsonl line count.
+- The comparison validates same-gate facts and emits branch config facts,
+  metadata status/error, stop reason, target-cycle fields, completed dump
+  count, primitive cycle index, rollout line count, selected metrics, C
+  `not_evaluated`, no-overwrite validation, and non-goal scope labels.
+
+Artifacts and smoke:
+
+- Phase 6G-H comparison root was absent before the run:
+  `runs/eval/oracle_terrain_residual_phase6g_h_real_ab_smoke_comparison_20260702`.
+- Protected current evidence file count stayed `10 -> 10`.
+- Existing Phase 6G-G B results file count before reuse: `9`.
+- A request root:
+  `runs/eval/oracle_terrain_residual_phase6g_h_real_ab_smoke_comparison_20260702/current_planner_baseline_request`.
+  Helper status `present`; request files `2`; request result JSON was also
+  written for provenance.
+- A smoke command:
+  `python -m testbed.cli.eval --config runs/eval/oracle_terrain_residual_phase6g_h_real_ab_smoke_comparison_20260702/current_planner_baseline_request/current_planner_baseline_eval_config.yaml --num-rollouts 1 --target-cycle-gate 1 --no-video --output-dir runs/eval/oracle_terrain_residual_phase6g_h_real_ab_smoke_comparison_20260702/real_smoke_runs/current_planner_baseline`.
+- A smoke exit code `0`; A results root file count `9`.
+- A metadata status `completed`, error `null`, `target_cycle_gate=1`,
+  `target_cycle_gate_success_rate=1.0`, terminal hold `0`, stop reason
+  `target_cycle_gate_reached`, `target_cycle_completed_dump_count=1`,
+  `primitive_cycle_index=0`, rollout line count `736`.
+- B reused root:
+  `runs/eval/oracle_terrain_residual_phase6g_g_real_b_smoke_20260702/heuristic_residual_pipeline/results`.
+  B metadata status `completed`, error `null`, `target_cycle_gate=1`,
+  `target_cycle_gate_success_rate=1.0`, terminal hold `0`, stop reason
+  `target_cycle_gate_reached`, `target_cycle_completed_dump_count=1`,
+  `primitive_cycle_index=0`, rollout line count `708`.
+- B config facts: `dig_cut_planner.mode=residual_cut_intent` and
+  `dig_cut_planner.residual_cut_intent_source_path=runs/eval/oracle_terrain_residual_phase6g_g_predicted_ab_with_source_20260702/results/residual_cut_intent_runtime_source.json`.
+- Durable comparison artifact:
+  `runs/eval/oracle_terrain_residual_phase6g_h_real_ab_smoke_comparison_20260702/real_ab_bounded_smoke_comparison.json`.
+  Status `present`; validation errors `[]`; branch order A/B/C; C
+  `not_evaluated` / `blocked_by_missing_gold_samples`.
+- Comparison scope:
+  `evidence_scope=bounded_one_cycle_smoke`,
+  `full_phase6_success_claim=not_claimed`,
+  `official_pass_fail_status=not_defined`,
+  `production_readiness_status=not_claimed`,
+  `calibrated_fallback_status=not_invented`.
+
+Verification:
+
+- Focused green:
+  `python -m pytest -q tests/test_terrain_residual_real_ab_smoke_comparison.py`
+  -> `3 passed`.
+- Related request/runtime/source/artifact bundle:
+  `python -m pytest -q tests/test_terrain_residual_real_ab_smoke_comparison.py
+  tests/test_terrain_residual_b_branch_eval_request.py
+  tests/test_terrain_residual_eval_run_plan.py
+  tests/test_terrain_residual_ab_artifact_pipeline.py
+  tests/test_terrain_residual_ab_artifact_pipeline_cli.py
+  tests/test_terrain_residual_ab_artifact_writer.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_primitive_residual_cut_intent_source.py
+  tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_primitive_adapter_config.py` -> `69 passed`.
+- Compileall for touched Python owner/tests and related B request owner/tests
+  exited `0`.
+- Changed-doc guard, doc inventory guard, architecture contract guard,
+  architecture doc contract tests, and `git diff --check` all exited `0`.
+
+Preserved non-goals:
+
+- No checked-in eval YAML/default config changes.
+- No B rerun.
+- No production planner / gate / policy semantic change.
+- No rollout-review schema integration.
+- No command-space controls, official thresholds, official defaults, official
+  pass/fail, eval success, planner success, full Phase 6 success, production
+  readiness, or calibrated fallback claim.
+
+## 2026-07-02: Phase 6G-H Planner Acceptance
+
+Planner audit:
+
+- Target lock rechecked in planner thread:
+  `/home/pingfan/PACT/excavator_testbed`, branch status
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 53]`,
+  HEAD `5e3c2699c5080a2c72b79b5e977319a77241c64c`.
+- Worktree contained only expected Phase 6G-H files: the new focused real A/B
+  bounded-smoke comparison owner/test and source-of-truth docs.
+- The new helper is `981` lines, below the large-file threshold. Future Phase 6
+  scale-up work should not add new semantic branches to this file; split a new
+  focused owner if more behavior is needed.
+
+Planner-side verification:
+
+- Related request/runtime/source/artifact bundle:
+  `python -m pytest -q tests/test_terrain_residual_real_ab_smoke_comparison.py
+  tests/test_terrain_residual_b_branch_eval_request.py
+  tests/test_terrain_residual_eval_run_plan.py
+  tests/test_terrain_residual_ab_artifact_pipeline.py
+  tests/test_terrain_residual_ab_artifact_pipeline_cli.py
+  tests/test_terrain_residual_ab_artifact_writer.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_primitive_residual_cut_intent_source.py
+  tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_primitive_adapter_config.py` -> `69 passed`.
+- Compileall for touched Python owner/tests and related B request owner/tests
+  exited `0`.
+- Changed-doc guard, doc inventory guard, architecture contract guard,
+  architecture doc contract tests, and `git diff --check` exited `0`.
+
+Planner-side artifact audit:
+
+- Durable comparison artifact:
+  `runs/eval/oracle_terrain_residual_phase6g_h_real_ab_smoke_comparison_20260702/real_ab_bounded_smoke_comparison.json`.
+- Comparison status `present`; validation errors `[]`.
+- A branch and B branch both completed under `target_cycle_gate=1` and
+  `target_cycle_gate_terminal_hold_steps=0`.
+- A branch mode: `operator_prior_sweep_belief`; rollout line count `736`.
+- B branch mode: `residual_cut_intent`; rollout line count `708`.
+- C branch remains `not_evaluated` / `blocked_by_missing_gold_samples`.
+- Protected current evidence root file count stayed `10`; Phase 6G-H artifact
+  root file count is `13`.
+
+Acceptance:
+
+- Phase 6G-H accepted as same-gate real A/B bounded one-cycle smoke comparison.
+- This is real runner evidence for a one-cycle smoke only; it is not full
+  Phase 6 success, not official pass/fail, not eval success, not planner
+  success, and not production readiness.
+- Accepted-slice count since the latest deep reflection: `2/3`.
+- Deep reflection is not due yet.
+
+Next bounded target:
+
+- Phase 6G-I should move the core path from one-cycle same-gate smoke to a
+  small multi-cycle A/B bounded run, starting with the smallest explicit gate
+  that exercises more than one primitive cycle.
+- The slice should first prove or generate residual runtime source coverage for
+  the primitive cycle indices the runner will request, then run comparable A/B
+  roots under no-overwrite rules.
+- If the source coverage cannot be produced from current predicted evidence,
+  it should return the exact blocker rather than inventing fallback, reusing the
+  last plan, or claiming success.
+- It must keep C `not_evaluated` unless usable calibration evidence exists, and
+  it must not introduce official thresholds, pass/fail, eval success, planner
+  success, production readiness, or checked-in default config changes.
+
 ## 2026-07-02: Phase 6G-F Planner Acceptance And Deep Reflection
 
 Planner audit:
