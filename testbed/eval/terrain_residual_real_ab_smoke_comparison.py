@@ -236,6 +236,7 @@ def write_real_ab_bounded_smoke_comparison(
         protected_evidence_roots=protected_roots,
         branches=branches,
         no_overwrite_validation=no_overwrite_validation,
+        expected_target_cycle_gate=int(expected_target_cycle_gate),
         validation_errors=validation_errors,
     )
     if status != "present":
@@ -260,6 +261,7 @@ def write_real_ab_bounded_smoke_comparison(
                 **no_overwrite_validation,
                 "output_path_preexisting": True,
             },
+            expected_target_cycle_gate=int(expected_target_cycle_gate),
             validation_errors=["output_path must not already exist before writing"],
         )
     except OSError as exc:
@@ -270,6 +272,7 @@ def write_real_ab_bounded_smoke_comparison(
             protected_evidence_roots=protected_roots,
             branches=branches,
             no_overwrite_validation=no_overwrite_validation,
+            expected_target_cycle_gate=int(expected_target_cycle_gate),
             validation_errors=[f"real A/B smoke comparison write failed: {exc}"],
         )
     return result
@@ -346,6 +349,7 @@ def _comparison_result(
     protected_evidence_roots: list[str],
     branches: Mapping[str, Mapping[str, Any]],
     no_overwrite_validation: Mapping[str, Any],
+    expected_target_cycle_gate: int,
     validation_errors: list[str],
 ) -> dict[str, Any]:
     return {
@@ -358,7 +362,7 @@ def _comparison_result(
         "output_path": output_path,
         "branch_order": list(BRANCH_ORDER),
         "branches": {name: dict(branches[name]) for name in BRANCH_ORDER},
-        "comparison_scope": _comparison_scope(),
+        "comparison_scope": _comparison_scope(expected_target_cycle_gate),
         "no_overwrite_validation": dict(no_overwrite_validation),
         "validation_errors": list(validation_errors),
         "protected_evidence_roots": list(protected_evidence_roots),
@@ -901,9 +905,14 @@ def _rollout_line_count(results_root: Path) -> tuple[int | None, str | None]:
     return None, None
 
 
-def _comparison_scope() -> dict[str, str]:
+def _comparison_scope(expected_target_cycle_gate: int) -> dict[str, str]:
+    evidence_scope = (
+        "bounded_one_cycle_smoke"
+        if expected_target_cycle_gate <= 1
+        else "bounded_multi_cycle_smoke"
+    )
     return {
-        "evidence_scope": "bounded_one_cycle_smoke",
+        "evidence_scope": evidence_scope,
         "full_phase6_success_claim": "not_claimed",
         "official_pass_fail_status": "not_defined",
         "production_readiness_status": "not_claimed",

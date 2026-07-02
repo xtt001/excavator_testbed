@@ -66,6 +66,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         request_root=request["request_root"],
         planned_results_root=request["planned_results_root"],
         protected_evidence_roots=request["protected_evidence_roots"],
+        target_cycle_gate=request.get("target_cycle_gate"),
         profile=str(request.get("profile", "phase6g_f_residual_b_branch_eval_request")),
     )
     _emit_result(result, args.output_json)

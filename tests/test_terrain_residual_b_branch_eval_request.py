@@ -98,7 +98,12 @@ def _predicted_artifact_root(root: Path) -> Path:
     return root
 
 
-def _runtime_source(path: Path, *, status: str = "present") -> Path:
+def _runtime_source(
+    path: Path,
+    *,
+    status: str = "present",
+    cycle_indices: tuple[int, ...] = (0,),
+) -> Path:
     payload = {
         "schema": RESIDUAL_CUT_INTENT_RUNTIME_SOURCE_SCHEMA,
         "source": "explicit_residual_cut_intent_runtime_source",
@@ -106,7 +111,7 @@ def _runtime_source(path: Path, *, status: str = "present") -> Path:
         "offline_only": True,
         "plans": [
             {
-                "cycle_index": 0,
+                "cycle_index": cycle_index,
                 "cut_intent_candidate_id": "cut_candidate_000009",
                 "plan": {
                     "status": "present",
@@ -114,7 +119,8 @@ def _runtime_source(path: Path, *, status: str = "present") -> Path:
                     "raw_fields": {"operator_cut_valid": 1},
                     "dig_cut_tokens": [0.1] * 10,
                 },
-            },
+            }
+            for cycle_index in cycle_indices
         ],
         "validation_errors": [],
     }
@@ -214,6 +220,93 @@ def test_request_writer_materializes_runner_consumable_b_branch_invocation(
     assert branch_b["planned_output_dir"] == (
         str(planned_results_root / "heuristic_residual_pipeline")
     )
+
+
+def test_request_writer_rejects_target_cycle_gate_without_source_coverage(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    baseline_config = tmp_path / "configs/current_eval.yaml"
+    _baseline_config(baseline_config)
+    predicted_root = _predicted_artifact_root(tmp_path / "predicted_ab/results")
+    runtime_source = _runtime_source(
+        predicted_root / "residual_cut_intent_runtime_source.json",
+        cycle_indices=(0,),
+    )
+    request_root = tmp_path / "phase6g_i_request"
+
+    result = write_residual_b_branch_eval_request(
+        current_eval_metadata=_current_eval_metadata(baseline_config),
+        predicted_ab_artifact_root=predicted_root,
+        runtime_source_path=runtime_source,
+        request_root=request_root,
+        planned_results_root=tmp_path / "phase6g_i_real_ab",
+        protected_evidence_roots=[],
+        target_cycle_gate=2,
+    )
+
+    assert result["status"] == "invalid_runtime_source"
+    assert result["validation_errors"] == [
+        "runtime source missing required cycle plans for target_cycle_gate 2: [1]"
+    ]
+    assert request_root.exists() is False
+
+
+def test_request_writer_materializes_explicit_target_cycle_gate_when_source_covers_it(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    baseline_config = tmp_path / "configs/current_eval.yaml"
+    _baseline_config(baseline_config)
+    predicted_root = _predicted_artifact_root(tmp_path / "predicted_ab/results")
+    runtime_source = _runtime_source(
+        predicted_root / "residual_cut_intent_runtime_source.json",
+        cycle_indices=(0, 1),
+    )
+    request_root = tmp_path / "phase6g_i_request"
+    planned_results_root = tmp_path / "phase6g_i_real_ab"
+
+    result = write_residual_b_branch_eval_request(
+        current_eval_metadata=_current_eval_metadata(baseline_config),
+        predicted_ab_artifact_root=predicted_root,
+        runtime_source_path=runtime_source,
+        request_root=request_root,
+        planned_results_root=planned_results_root,
+        protected_evidence_roots=[],
+        target_cycle_gate=2,
+    )
+
+    assert result["status"] == "present"
+    assert result["runtime_config"]["eval.target_cycle_gate"] == 2
+    assert result["runtime_source"]["cycle_indices"] == [0, 1]
+    assert result["runtime_source"]["required_cycle_indices"] == [0, 1]
+    assert result["runtime_source"]["missing_required_cycle_indices"] == []
+
+    generated_config = yaml.safe_load(
+        (request_root / "heuristic_residual_pipeline_eval_config.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert generated_config["eval"]["target_cycle_gate"] == 2
+
+    invocation = json.loads(
+        (request_root / "heuristic_residual_pipeline_invocation.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert invocation["argv"] == [
+        "testbed/cli/eval.py",
+        "--config",
+        str(request_root / "heuristic_residual_pipeline_eval_config.yaml"),
+        "--num-rollouts",
+        "1",
+        "--target-cycle-gate",
+        "2",
+        "--output-dir",
+        str(planned_results_root / "heuristic_residual_pipeline"),
+    ]
 
 
 def test_request_writer_sets_explicit_zero_target_cycle_terminal_hold(
@@ -338,7 +431,8 @@ def test_cli_writes_b_branch_request_from_explicit_request_json(
     )
     predicted_root = _predicted_artifact_root(tmp_path / "predicted_ab/results")
     runtime_source = _runtime_source(
-        predicted_root / "residual_cut_intent_runtime_source.json"
+        predicted_root / "residual_cut_intent_runtime_source.json",
+        cycle_indices=(0, 1),
     )
     request_path = tmp_path / "request.json"
     output_path = tmp_path / "request_result.json"
@@ -352,6 +446,7 @@ def test_cli_writes_b_branch_request_from_explicit_request_json(
                 "request_root": str(request_root),
                 "planned_results_root": str(tmp_path / "phase6g_f_real_ab"),
                 "protected_evidence_roots": [str(current_metadata_path.parent)],
+                "target_cycle_gate": 2,
             },
             indent=2,
         ),
@@ -370,8 +465,14 @@ def test_cli_writes_b_branch_request_from_explicit_request_json(
     assert rc == 0
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["status"] == "present"
+    assert payload["runtime_config"]["eval.target_cycle_gate"] == 2
     assert payload["written_files"] == EXPECTED_REQUEST_FILES
-    assert (request_root / "heuristic_residual_pipeline_eval_config.yaml").is_file()
+    generated_config = yaml.safe_load(
+        (request_root / "heuristic_residual_pipeline_eval_config.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert generated_config["eval"]["target_cycle_gate"] == 2
     assert (request_root / "heuristic_residual_pipeline_invocation.json").is_file()
     assert (request_root / "residual_eval_run_plan.json").is_file()
 

@@ -945,6 +945,41 @@ status `present`，branch order 为 `current_planner_baseline`、`heuristic_resi
 `official_pass_fail_status=not_defined`、`production_readiness_status=not_claimed` 和
 `calibrated_fallback_status=not_invented`。Protected current evidence root file count stayed `10 -> 10`。
 
+Phase 6G-I 的 smallest multi-cycle probe 将 explicit gate 提到 `target_cycle_gate=2` 前，先要求
+B-branch runtime source 显式覆盖 runner 会请求的 primitive cycle plans。B request writer / CLI 现在支持
+request-local optional `target_cycle_gate`：当该字段存在时，它会在写 request root 之前检查
+`residual_cut_intent_runtime_source.json` 是否覆盖 cycles `[0, target_cycle_gate)`；覆盖不足时返回
+`invalid_runtime_source`，不创建 request root 或 planned results root。覆盖足够时，writer 只在 request-local
+config 和 argv 中写入 `eval.target_cycle_gate=<target_cycle_gate>`，不改变 checked-in eval YAML/default config。
+
+Current-run Phase 6G-I coverage facts：fresh predicted probe root
+`runs/eval/oracle_terrain_residual_phase6g_i_multicycle_coverage_probe_20260702/results`
+写出 7 个 predicted artifacts；`predicted_b_rollout.json` status `present`、step count `1`、stop reason
+`zero_target_positive_residual`；`residual_cut_intent_runtime_source.json` status `present`、plan count `1`、
+cycle coverage `[0]`、candidate id `cut_candidate_000009`。Fresh B request input root
+`runs/eval/oracle_terrain_residual_phase6g_i_b_branch_request_inputs_20260702` 写出 request/result files `2`；
+request CLI for `target_cycle_gate=2` returned `invalid_runtime_source` with validation error
+`runtime source missing required cycle plans for target_cycle_gate 2: [1]`。
+
+Planner recovery facts：the original predicted source cleared target positive residual in one predicted step. `max_candidate_depth_m`
+is constraint/scoring evidence rather than a hard generator cap, so the recovery used explicit
+`depth_fraction_options=[0.1]`, `min_candidate_count=1`, and `max_cycles=3` under the same explicit non-official target
+spec. Fresh source root `runs/eval/oracle_terrain_residual_phase6g_i_fraction_010_depth025_min1_20260702/results`
+produced `predicted_b_rollout.json` status `present`, step count `3`, stop reason `max_cycles_reached`, and runtime
+source cycle coverage `[0, 1, 2]` with candidate id `cut_candidate_000003`。With that source, gate-2 B request root
+`runs/eval/oracle_terrain_residual_phase6g_i_gate2_b_branch_request_20260702` was written, and real A/B bounded smoke
+roots were written under `runs/eval/oracle_terrain_residual_phase6g_i_gate2_real_ab_20260702/`.
+
+Corrected comparison artifact
+`runs/eval/oracle_terrain_residual_phase6g_i_gate2_real_ab_20260702/real_ab_gate2_bounded_smoke_comparison.json`
+has status `present`, validation errors `[]`, and `evidence_scope=bounded_multi_cycle_smoke`。A/current reached
+`target_cycle_gate=2` with `target_cycle_gate_success_rate=1.0`, `target_cycle_completed_dump_count=2`, stop reason
+`target_cycle_gate_reached`, and rollout line count `1383`。B/residual runtime completed but did not meet the gate:
+`target_cycle_gate_success_rate=0.0`, `target_cycle_completed_dump_count=0`, empty gate stop reason, and rollout line
+count `921`。C remains `not_evaluated` / `blocked_by_missing_gold_samples`; no hidden fallback, last-plan reuse,
+source repetition, official pass/fail, eval success, planner success, production readiness, command-space controls,
+or calibrated fallback is claimed.
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

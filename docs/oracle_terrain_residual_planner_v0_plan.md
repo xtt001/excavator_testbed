@@ -563,6 +563,7 @@ Phase 5 closure note：
 - [x] 建立 Phase 6G-F runner-facing B-branch eval request / invocation artifact bridge，使真实 `tb-eval` B branch config/argv 能显式指向 runtime source。
 - [x] 建立 Phase 6G-G B-branch bounded smoke stop-timing contract，使 request-local config 显式用 zero terminal hold 避免 bounded smoke 请求未覆盖的 next-cycle source plan。
 - [x] 建立 Phase 6G-H same-gate real A/B bounded smoke comparison，将 current A branch 和 Phase 6G-G B branch 的真实 one-cycle smoke artifacts 放进同一 durable comparison 输出。
+- [x] 建立 Phase 6G-I smallest multi-cycle B request source-coverage preflight，并用显式 multi-step predicted source 完成 `target_cycle_gate=2` real A/B bounded smoke comparison。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -806,6 +807,49 @@ Phase 6G-H note：
 - B branch 没有重跑，复用 Phase 6G-G completed root `runs/eval/oracle_terrain_residual_phase6g_g_real_b_smoke_20260702/heuristic_residual_pipeline/results`；B metadata status `completed`、error `null`，`target_cycle_gate_success_rate=1.0`，stop reason `target_cycle_gate_reached`，rollout line count `708`，config 仍为 `dig_cut_planner.mode=residual_cut_intent` 且显式 source path 指向 Phase 6G-G runtime source。
 - Durable comparison artifact `runs/eval/oracle_terrain_residual_phase6g_h_real_ab_smoke_comparison_20260702/real_ab_bounded_smoke_comparison.json` status `present`，branch order 为 A/B/C，C 保持 `not_evaluated` / `blocked_by_missing_gold_samples`。该 artifact 标注 `evidence_scope=bounded_one_cycle_smoke`、`full_phase6_success_claim=not_claimed`、`official_pass_fail_status=not_defined`、`production_readiness_status=not_claimed`，不声明完整 Phase 6 成功。
 - Protected current evidence root `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results` file count stayed `10 -> 10`。
+
+Phase 6G-I note：
+
+- `testbed.eval.terrain_residual_b_branch_eval_request.write_residual_b_branch_eval_request()` and the thin
+  `tb-terrain-residual-b-branch-request` CLI now accept optional request-local `target_cycle_gate`. When provided,
+  the B request writer validates that the explicit `residual_cut_intent_runtime_source.json` covers every required
+  cycle in `[0, target_cycle_gate)` before writing request artifacts.
+- If source coverage is sufficient, the writer writes `eval.target_cycle_gate=<target_cycle_gate>` only into the
+  request-local config and argv. It still writes `eval.target_cycle_gate_terminal_hold_steps=0`, keeps
+  `dig_cut_planner.mode=residual_cut_intent`, and does not alter checked-in eval YAML/default configs.
+- If source coverage is insufficient, the writer returns `invalid_runtime_source` before creating the request root or
+  planned results root. This preserves the exact-cycle provider contract and does not introduce hidden fallback,
+  last-plan reuse, source plan repetition, or calibrated fallback.
+- Fresh Phase 6G-I predicted coverage probe root
+  `runs/eval/oracle_terrain_residual_phase6g_i_multicycle_coverage_probe_20260702/results` wrote 7 predicted
+  artifacts. `predicted_b_rollout.json` status `present`, step count `1`, stop reason
+  `zero_target_positive_residual`; `residual_cut_intent_runtime_source.json` status `present`, plan count `1`,
+  cycle coverage `[0]`, candidate id `cut_candidate_000009`.
+- Fresh Phase 6G-I B request input root
+  `runs/eval/oracle_terrain_residual_phase6g_i_b_branch_request_inputs_20260702` wrote request/result files `2`.
+  The `target_cycle_gate=2` request returned `invalid_runtime_source` with
+  `runtime source missing required cycle plans for target_cycle_gate 2: [1]`.
+- Planner recovery identified that the original predicted source cleared target positive residual in one predicted step.
+  `max_candidate_depth_m` is constraint/scoring evidence, not a hard generation cap. A new explicit predicted source
+  run used `depth_fraction_options=[0.1]`, `min_candidate_count=1`, and `max_cycles=3` under the same explicit
+  non-official target spec. Fresh root
+  `runs/eval/oracle_terrain_residual_phase6g_i_fraction_010_depth025_min1_20260702/results` produced predicted
+  rollout status `present`, step count `3`, stop reason `max_cycles_reached`, and runtime source cycle coverage
+  `[0, 1, 2]` with candidate id `cut_candidate_000003`.
+- With that source, gate-2 B request root
+  `runs/eval/oracle_terrain_residual_phase6g_i_gate2_b_branch_request_20260702` was written with `target_cycle_gate=2`
+  and zero terminal hold. Real A and B smoke outputs were written under
+  `runs/eval/oracle_terrain_residual_phase6g_i_gate2_real_ab_20260702/`.
+- Corrected comparison artifact
+  `runs/eval/oracle_terrain_residual_phase6g_i_gate2_real_ab_20260702/real_ab_gate2_bounded_smoke_comparison.json`
+  has status `present`, validation errors `[]`, and `evidence_scope=bounded_multi_cycle_smoke`. A/current completed
+  the bounded gate with `target_cycle_gate_success_rate=1.0`, `target_cycle_completed_dump_count=2`, stop reason
+  `target_cycle_gate_reached`, and rollout line count `1383`. B/residual runtime completed the run but did not meet
+  the gate: `target_cycle_gate_success_rate=0.0`, `target_cycle_completed_dump_count=0`, empty gate stop reason, and
+  rollout line count `921`.
+- C remains `not_evaluated` / `blocked_by_missing_gold_samples`. The gate-2 comparison is bounded smoke evidence only;
+  it does not define official pass/fail, eval success, planner success, full Phase 6 success, production readiness,
+  command-space controls, or calibrated fallback.
 
 通过标准：
 

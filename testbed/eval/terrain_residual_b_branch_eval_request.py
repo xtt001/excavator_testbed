@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import shlex
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -54,6 +55,7 @@ def write_residual_b_branch_eval_request(
     request_root: Any,
     planned_results_root: Any,
     protected_evidence_roots: Sequence[Any],
+    target_cycle_gate: Any | None = None,
     profile: str = DEFAULT_PROFILE,
 ) -> dict[str, Any]:
     """Write an explicit B-branch eval request consumable by ``tb-eval``."""
@@ -123,8 +125,22 @@ def write_residual_b_branch_eval_request(
         )
 
     normalized_runtime_source_path = _path_string(runtime_source_path)
+    normalized_target_cycle_gate, target_cycle_gate_error = _target_cycle_gate(
+        target_cycle_gate
+    )
+    if target_cycle_gate_error is not None:
+        return _invalid_result(
+            status="invalid_target_cycle_gate",
+            profile=profile,
+            request_root=normalized_request_root,
+            planned_results_root=normalized_planned_root,
+            protected_evidence_roots=protected_roots,
+            no_overwrite_validation=no_overwrite_validation,
+            validation_errors=[target_cycle_gate_error],
+        )
     runtime_source_summary, runtime_source_errors = _runtime_source_summary(
-        normalized_runtime_source_path
+        normalized_runtime_source_path,
+        target_cycle_gate=normalized_target_cycle_gate,
     )
     if runtime_source_errors:
         return _invalid_result(
@@ -144,11 +160,13 @@ def write_residual_b_branch_eval_request(
     generated_config, runtime_config = _b_branch_eval_config(
         baseline_config,
         runtime_source_path=normalized_runtime_source_path,
+        target_cycle_gate=normalized_target_cycle_gate,
     )
-    heuristic_argv = _argv_with_config_and_output_dir(
+    heuristic_argv = _argv_with_config_output_and_target_gate(
         current_argv,
         config_path=config_artifact_path,
         output_dir=branch_output_dir,
+        target_cycle_gate=normalized_target_cycle_gate,
     )
     eval_run_plan = build_residual_eval_run_plan(
         current_eval_metadata=current_eval_metadata,
@@ -370,6 +388,7 @@ def _b_branch_eval_config(
     baseline_config: Mapping[str, Any],
     *,
     runtime_source_path: str | None,
+    target_cycle_gate: int | None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     config = copy.deepcopy(dict(baseline_config))
     eval_cfg = config.setdefault("eval", {})
@@ -378,6 +397,8 @@ def _b_branch_eval_config(
     eval_cfg["target_cycle_gate_terminal_hold_steps"] = (
         B_BRANCH_TARGET_CYCLE_GATE_TERMINAL_HOLD_STEPS
     )
+    if target_cycle_gate is not None:
+        eval_cfg["target_cycle_gate"] = int(target_cycle_gate)
     policy_cfg = config.setdefault("policy", {})
     if not isinstance(policy_cfg, dict):
         raise ValueError("policy config must be a mapping")
@@ -404,6 +425,8 @@ def _b_branch_eval_config(
         "dig_cut_planner.hold_token_until_skill_exit": False,
         "dig_cut_planner.prior_path": "",
     }
+    if target_cycle_gate is not None:
+        runtime_config["eval.target_cycle_gate"] = int(target_cycle_gate)
     return config, runtime_config
 
 
@@ -439,7 +462,11 @@ def _predicted_artifact_summary(root_value: Any) -> tuple[dict[str, Any], list[s
     }, []
 
 
-def _runtime_source_summary(path_value: str | None) -> tuple[dict[str, Any], list[str]]:
+def _runtime_source_summary(
+    path_value: str | None,
+    *,
+    target_cycle_gate: int | None,
+) -> tuple[dict[str, Any], list[str]]:
     if path_value is None:
         return {}, ["runtime_source_path must be a non-empty path string"]
     source_path = _resolve_path(path_value)
@@ -460,6 +487,26 @@ def _runtime_source_summary(path_value: str | None) -> tuple[dict[str, Any], lis
     plans = payload.get("plans")
     if not isinstance(plans, Sequence) or isinstance(plans, (str, bytes)):
         return {}, ["runtime source must include a plans list"]
+    cycle_indices = sorted(
+        {
+            cycle
+            for plan in plans
+            if isinstance(plan, Mapping)
+            for cycle in [_nonnegative_int(plan.get("cycle_index"))]
+            if cycle is not None
+        }
+    )
+    required_cycle_indices = (
+        list(range(int(target_cycle_gate))) if target_cycle_gate is not None else []
+    )
+    missing_required_cycle_indices = [
+        cycle for cycle in required_cycle_indices if cycle not in cycle_indices
+    ]
+    if missing_required_cycle_indices:
+        return {}, [
+            "runtime source missing required cycle plans for target_cycle_gate "
+            f"{target_cycle_gate}: {missing_required_cycle_indices}"
+        ]
     candidate_ids = [
         str(plan.get("cut_intent_candidate_id"))
         for plan in plans
@@ -471,6 +518,9 @@ def _runtime_source_summary(path_value: str | None) -> tuple[dict[str, Any], lis
         "source": str(payload.get("source", "")),
         "status": "present",
         "plan_count": len(plans),
+        "cycle_indices": cycle_indices,
+        "required_cycle_indices": required_cycle_indices,
+        "missing_required_cycle_indices": missing_required_cycle_indices,
         "candidate_ids": candidate_ids,
     }, []
 
@@ -507,13 +557,20 @@ def _current_eval_argv(metadata: Any) -> tuple[list[str], list[str]]:
     return normalized, []
 
 
-def _argv_with_config_and_output_dir(
+def _argv_with_config_output_and_target_gate(
     argv: Sequence[str],
     *,
     config_path: str,
     output_dir: str,
+    target_cycle_gate: int | None,
 ) -> list[str]:
     updated = _argv_with_value(argv, "--config", config_path, alternate="-c")
+    if target_cycle_gate is not None:
+        updated = _argv_with_value(
+            updated,
+            "--target-cycle-gate",
+            str(int(target_cycle_gate)),
+        )
     return _argv_with_value(updated, "--output-dir", output_dir)
 
 
@@ -679,6 +736,30 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return []
     return [str(item) for item in value if str(item)]
+
+
+def _target_cycle_gate(value: Any | None) -> tuple[int | None, str | None]:
+    if value is None:
+        return None, None
+    parsed = _nonnegative_int(value)
+    if parsed is None or parsed <= 0:
+        return None, "target_cycle_gate must be a positive integer when provided"
+    return parsed, None
+
+
+def _nonnegative_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(parsed) or parsed < 0.0:
+        return None
+    integer = int(parsed)
+    if not math.isclose(parsed, float(integer), abs_tol=1.0e-9):
+        return None
+    return integer
 
 
 def _non_goal_statuses() -> dict[str, str]:

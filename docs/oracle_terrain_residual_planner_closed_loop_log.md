@@ -6025,6 +6025,223 @@ Next bounded target:
   it must not introduce official thresholds, pass/fail, eval success, planner
   success, production readiness, or checked-in default config changes.
 
+## 2026-07-02: Phase 6G-I Multi-Cycle Coverage Probe Executor Packet
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 54]`.
+- Initial HEAD: `95ddc56fba24c15e133a412161b3309c077e5345`.
+- Initial dirty state: clean.
+
+Boundary decision:
+
+- Kept the B request change in the existing focused owner
+  `testbed/eval/terrain_residual_b_branch_eval_request.py`.
+- Responsibility: materialize runner-facing B request artifacts and validate
+  the explicit runtime source required by that request.
+- Added only thin CLI pass-through in
+  `testbed/cli/terrain_residual_b_branch_eval_request.py`.
+- Did not edit checked-in eval YAML/default configs, production planner code,
+  source provider exact lookup, real A/B comparison owner, rollout-review
+  schema, or calibrated branch semantics.
+
+TDD red:
+
+- Added target-gate/source-coverage tests before production code in
+  `tests/test_terrain_residual_b_branch_eval_request.py`.
+- Red command:
+  `python -m pytest -q tests/test_terrain_residual_b_branch_eval_request.py -k 'target_cycle_gate or request_writer_materializes_runner_consumable'`.
+- Expected red result: two failures with
+  `TypeError: write_residual_b_branch_eval_request() got an unexpected keyword argument 'target_cycle_gate'`.
+- Added CLI pass-through expectation before production CLI code.
+- Red command:
+  `python -m pytest -q tests/test_terrain_residual_b_branch_eval_request.py -k 'cli_writes_b_branch_request'`.
+- Expected red result: `KeyError: 'eval.target_cycle_gate'`.
+
+Implemented contract:
+
+- `write_residual_b_branch_eval_request(..., target_cycle_gate=<int>)` is
+  optional and preserves existing behavior when omitted.
+- When provided, `target_cycle_gate` must be a positive integer.
+- Before writing request artifacts, the writer validates that
+  `residual_cut_intent_runtime_source.json` covers cycles
+  `[0, target_cycle_gate)`.
+- Missing coverage returns `invalid_runtime_source` and writes no request files.
+- Sufficient coverage writes `eval.target_cycle_gate=<target_cycle_gate>` only
+  into the request-local generated config and argv.
+- Existing request-local `eval.target_cycle_gate_terminal_hold_steps=0`,
+  `dig_cut_planner.mode=residual_cut_intent`, source path, and fallback
+  `raise` semantics are preserved.
+
+Artifacts and blocker facts:
+
+- Fresh predicted probe root:
+  `runs/eval/oracle_terrain_residual_phase6g_i_multicycle_coverage_probe_20260702/results`.
+- Probe artifact file count under parent root: `9`.
+- Probe `predicted_b_rollout.json`: status `present`, step count `1`, stop
+  reason `zero_target_positive_residual`, per-step cycle indices `[0]`,
+  candidate id `cut_candidate_000009`.
+- Probe `residual_cut_intent_runtime_source.json`: status `present`, plan count
+  `1`, cycle coverage `[0]`, candidate id `cut_candidate_000009`.
+- Fresh B request input root:
+  `runs/eval/oracle_terrain_residual_phase6g_i_b_branch_request_inputs_20260702`.
+- Request input/root file count: `2` (`request.json`, `request_result.json`).
+- Request used `target_cycle_gate=2` and source path
+  `runs/eval/oracle_terrain_residual_phase6g_i_multicycle_coverage_probe_20260702/results/residual_cut_intent_runtime_source.json`.
+- Request CLI exit code: `1`.
+- Request result status: `invalid_runtime_source`.
+- Validation error:
+  `runtime source missing required cycle plans for target_cycle_gate 2: [1]`.
+- B request root
+  `runs/eval/oracle_terrain_residual_phase6g_i_b_branch_request_20260702`
+  remained absent.
+- Planned real A/B root
+  `runs/eval/oracle_terrain_residual_phase6g_i_real_ab_20260702`
+  remained absent.
+- Protected current evidence root file count stayed `10`.
+- No A or B real `tb-eval` multi-cycle smoke was run after the coverage
+  blocker; no real A/B comparison artifact was written.
+
+Verification:
+
+- Focused B request suite:
+  `python -m pytest -q tests/test_terrain_residual_b_branch_eval_request.py`
+  -> `9 passed`.
+- Related request/runtime/source/artifact bundle:
+  `python -m pytest -q tests/test_terrain_residual_real_ab_smoke_comparison.py
+  tests/test_terrain_residual_b_branch_eval_request.py
+  tests/test_terrain_residual_eval_run_plan.py
+  tests/test_terrain_residual_ab_artifact_pipeline.py
+  tests/test_terrain_residual_ab_artifact_pipeline_cli.py
+  tests/test_terrain_residual_ab_artifact_writer.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_primitive_residual_cut_intent_source.py
+  tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_primitive_adapter_config.py` -> `71 passed`.
+- Compileall for touched Python files/tests exited `0`.
+- Changed-doc guard, doc inventory guard, architecture contract guard,
+  planner doc contract tests, and `git diff --check` all exited `0`.
+
+Preserved non-goals:
+
+- No checked-in eval YAML/default config changes.
+- No hidden fallback, last-plan reuse, source plan repetition, command-space
+  controls, official thresholds, official defaults, official pass/fail, eval
+  success, planner success, full Phase 6 success, production readiness, or
+  calibrated fallback.
+- C remains `not_evaluated` / `blocked_by_missing_gold_samples`.
+
+Status:
+
+- Phase 6G-I produced a deterministic multi-cycle coverage blocker for the
+  smallest gate attempted (`target_cycle_gate=2`).
+- It did not produce comparable multi-cycle A/B bounded smoke evidence because
+  current predicted evidence generated source coverage only for cycle `0`, not
+  required cycle `1`.
+
+## 2026-07-02: Phase 6G-I Planner Recovery And Gate-2 Smoke
+
+Planner recovery trigger:
+
+- User reported Phase 6G-I appeared stopped.
+- Planner inspected the callback and worktree. The callback was partial rather
+  than still running: the B request preflight correctly rejected
+  `target_cycle_gate=2` because the generated runtime source covered only
+  cycle `[0]`.
+- Target lock during recovery:
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 54]`,
+  HEAD `95ddc56fba24c15e133a412161b3309c077e5345`, with the expected
+  Phase 6G-I modified files.
+
+Root-cause trace:
+
+- The initial predicted source used the ordinary Phase 6F options and selected
+  a cut that drove target positive residual to zero in one predicted step, so
+  the runtime source only had cycle `0`.
+- Changing only `target_depth_m` or `max_candidate_depth_m` did not create a
+  multi-step source. `max_candidate_depth_m` is constraint/scoring evidence,
+  not a hard generator cap.
+- A multi-step predicted source required explicit generation options that
+  reduce candidate cut depth directly. The successful recovery used
+  `depth_fraction_options=[0.1]`, `min_candidate_count=1`, and `max_cycles=3`.
+
+TDD recovery:
+
+- Added
+  `tests/test_terrain_residual_real_ab_smoke_comparison.py::test_real_ab_bounded_smoke_comparison_labels_multi_cycle_gate_scope`
+  before production code.
+- Red command:
+  `python -m pytest -q tests/test_terrain_residual_real_ab_smoke_comparison.py::test_real_ab_bounded_smoke_comparison_labels_multi_cycle_gate_scope`.
+- Expected red result: assertion failed because `comparison_scope.evidence_scope`
+  was `bounded_one_cycle_smoke` for `expected_target_cycle_gate=2`.
+- Fixed the existing comparison owner
+  `testbed/eval/terrain_residual_real_ab_smoke_comparison.py` so scope is
+  `bounded_one_cycle_smoke` for gate `1` and `bounded_multi_cycle_smoke` for
+  larger explicit gates. The owner remained below the large-file threshold
+  (`990` lines).
+
+Recovered predicted source:
+
+- Fresh root:
+  `runs/eval/oracle_terrain_residual_phase6g_i_fraction_010_depth025_min1_20260702/results`.
+- Predicted rollout status `present`, step count `3`, stop reason
+  `max_cycles_reached`.
+- Runtime source status `present`, plan count `3`, cycle coverage `[0, 1, 2]`.
+- Per-step selected candidate id: `cut_candidate_000003`.
+- Initial / final target positive residual: `0.374313589186` ->
+  `0.27025769096`.
+
+Gate-2 real A/B smoke:
+
+- A request root:
+  `runs/eval/oracle_terrain_residual_phase6g_i_gate2_current_request_20260702`.
+- B request root:
+  `runs/eval/oracle_terrain_residual_phase6g_i_gate2_b_branch_request_20260702`.
+- Planned real root:
+  `runs/eval/oracle_terrain_residual_phase6g_i_gate2_real_ab_20260702`.
+- Real A command completed with exit code `0`.
+  `current_planner_baseline/results` metadata status `completed`;
+  `target_cycle_gate_success_rate=1.0`;
+  `target_cycle_completed_dump_count=2`; stop reason
+  `target_cycle_gate_reached`; rollout line count `1383`.
+- Real B command completed with exit code `0`.
+  `heuristic_residual_pipeline/results` metadata status `completed`;
+  `target_cycle_gate_success_rate=0.0`;
+  `target_cycle_completed_dump_count=0`; gate stop reason empty; rollout line
+  count `921`.
+
+Corrected comparison artifact:
+
+- Output:
+  `runs/eval/oracle_terrain_residual_phase6g_i_gate2_real_ab_20260702/real_ab_gate2_bounded_smoke_comparison.json`.
+- Status `present`; validation errors `[]`.
+- `comparison_scope.evidence_scope=bounded_multi_cycle_smoke`.
+- Branch order A/B/C preserved. C remains `not_evaluated` /
+  `blocked_by_missing_gold_samples`.
+- Protected current evidence root file count stayed `10`.
+
+Preserved non-goals:
+
+- No checked-in eval YAML/default config change.
+- No hidden fallback, last-plan reuse, source plan repetition, command-space
+  controls, official thresholds, official defaults, official pass/fail, eval
+  success, planner success, full Phase 6 success, production readiness, or
+  calibrated fallback.
+
+Lightweight reflection:
+
+- Reference used: user request to continue the stopped 6G-I core path, the
+  Phase 6 goal of real A/B residual-planner evidence, and no-invented-success
+  non-goals.
+- Alignment verdict: recovered. The loop moved from a valid coverage blocker to
+  actual gate-2 A/B bounded smoke evidence.
+- Efficiency verdict: useful core progress. The next slice should investigate
+  why B produced zero target-cycle dumps under gate 2, not add new wrappers.
+
 ## 2026-07-02: Phase 6G-F Planner Acceptance And Deep Reflection
 
 Planner audit:

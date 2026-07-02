@@ -310,6 +310,42 @@ def test_real_ab_bounded_smoke_comparison_reads_artifacts_and_labels_limits(
     assert json.loads(output_path.read_text(encoding="utf-8")) == result
 
 
+def test_real_ab_bounded_smoke_comparison_labels_multi_cycle_gate_scope(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    a_root = _write_result_root(
+        tmp_path / "real_ab/current_planner_baseline/results",
+        branch_name="current_planner_baseline",
+        mode="operator_prior_sweep_belief",
+        target_cycle_gate=2,
+    )
+    b_root = _write_result_root(
+        tmp_path / "real_ab/heuristic_residual_pipeline/results",
+        branch_name="heuristic_residual_pipeline",
+        mode="residual_cut_intent",
+        target_cycle_gate=2,
+        residual_source_path="predicted_ab/residual_cut_intent_runtime_source.json",
+    )
+
+    result = write_real_ab_bounded_smoke_comparison(
+        current_results_root=a_root,
+        heuristic_results_root=b_root,
+        output_path=tmp_path / "real_ab/comparison/gate2_comparison.json",
+        protected_evidence_roots=[],
+        expected_target_cycle_gate=2,
+        expected_terminal_hold_steps=0,
+    )
+
+    assert result["status"] == "present"
+    assert result["comparison_scope"]["evidence_scope"] == (
+        "bounded_multi_cycle_smoke"
+    )
+    assert result["branches"]["current_planner_baseline"]["target_cycle_gate"] == 2
+    assert result["branches"]["heuristic_residual_pipeline"]["target_cycle_gate"] == 2
+
+
 def test_real_ab_bounded_smoke_comparison_rejects_gate_mismatch(
     tmp_path: Path,
     monkeypatch,
