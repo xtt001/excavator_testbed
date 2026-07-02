@@ -5636,6 +5636,92 @@ Preserved non-goals:
 - No command-space controls, official defaults, official thresholds, pass/fail,
   eval success, planner success, or calibrated fallback.
 
+## 2026-07-02: Phase 6F-A Planner Recovery And Artifact Materialization Packet
+
+Recovery context:
+
+- The Phase 6F-A executor thread target-locked successfully and added the
+  focused artifact writer test and owner, but did not return the requested full
+  fact callback after the focused test became green.
+- Planner read the executor thread, observed the partial worktree, and completed
+  the bounded slice directly rather than leaving a partial state.
+- Current planner target lock before completion: cwd
+  `/home/pingfan/PACT/excavator_testbed`, branch
+  `tx/oracle-terrain-residual-planner-v0`, HEAD
+  `400f0fd85ead5f5dcbcc2a760c134b4e21254b8b`.
+
+Boundary decision:
+
+- Added focused eval owner
+  `testbed/eval/terrain_residual_ab_artifact_writer.py`.
+- Responsibility: materialize already-built predicted A/B residual evidence to
+  deterministic JSON artifacts under an explicit non-overwriting results root.
+- Did not put writing behavior into the comparison owner, predicted rollout
+  owner, rollout review, CLI, production planner, or runtime code.
+
+Implemented contract:
+
+- Public helper:
+  `testbed.eval.terrain_residual_ab_artifact_writer.write_predicted_residual_ab_artifacts()`.
+- Inputs are explicit: `results_root`, `experiment_manifest`,
+  `branch_run_plan`, `predicted_b_rollout`, `predicted_ab_comparison`,
+  `source_rollout_path`, and `protected_evidence_roots`.
+- The helper validates evidence status, rejects protected-root overlap, rejects
+  pre-existing results roots, creates the new results root, and writes:
+  `eval_run_metadata.json`, `experiment_manifest.json`,
+  `branch_run_plan.json`, `predicted_b_rollout.json`,
+  `branch_comparison_report.json`, and `rollout_manifest.json`.
+- Statuses covered by tests include `present`,
+  `protected_evidence_root_overlap`, `results_root_already_exists`,
+  `invalid_evidence`, and `invalid_results_root`.
+
+Current-run artifact smoke:
+
+- Source rollout:
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`.
+- Explicit non-official target spec: `grid_shape=[3, 2]`, rows `[0:2]`,
+  cols `[0:1]`, `target_depth_m=0.25`.
+- Materialized artifact root:
+  `runs/eval/oracle_terrain_residual_phase6f_predicted_ab_20260702/results`.
+- Writer status: `present`; validation errors: `[]`.
+- Written files:
+  `eval_run_metadata.json`, `experiment_manifest.json`,
+  `branch_run_plan.json`, `predicted_b_rollout.json`,
+  `branch_comparison_report.json`, and `rollout_manifest.json`.
+- Predicted comparison status: `present`.
+- B predicted step count / stop reason / selected candidate:
+  `1` / `zero_target_positive_residual` / `cut_candidate_000009`.
+- A target positive residual: `0.374313589186`; B predicted final target
+  positive residual: `0.0`.
+- B predicted deltas: completion `0.748627178372`, overdig increase
+  `0.009656514972`, outside-target removed-depth increase `0.191985052079`,
+  expected delta depth / volume `0.575955156237` / `0.035997197265`.
+- C branch remained `not_evaluated` / `blocked_by_missing_gold_samples`.
+- Protected current results file count stayed `10 -> 10`.
+
+Docs changed:
+
+- `docs/training_setup.md` documents the artifact writer contract, explicit
+  inputs, no-overwrite behavior, artifact files, statuses, and non-goals.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks only Phase 6F-A
+  predicted A/B artifact materialization complete.
+- `docs/oracle_terrain_residual_baseline_report.md` records the generated
+  artifact root, written file list, comparison facts, and limits.
+
+Preserved non-goals:
+
+- No real simulation run.
+- No production planner / gate / policy / runtime integration.
+- No rollout-review schema integration.
+- No command-space controls, official defaults, official thresholds, pass/fail,
+  eval success, planner success, production readiness, or calibrated fallback.
+
+Acceptance:
+
+- Phase 6F-A accepted as eval-only predicted A/B artifact materialization.
+- Accepted-slice count since the latest deep reflection: `2/3`.
+- Deep reflection is not due yet.
+
 ## 2026-07-02: Phase 6E-F Planner Acceptance
 
 Planner audit:

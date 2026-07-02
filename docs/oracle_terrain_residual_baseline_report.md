@@ -385,6 +385,62 @@ packet. It still does not prove that B outperforms A in real closed-loop
 simulation, does not define pass/fail or success semantics, and does not promote
 the eval-only cut intent into runtime action selection.
 
+## Materialized Predicted A/B Artifacts
+
+This section records the Phase 6F-A artifact materialization output. The
+artifacts are generated from explicit in-memory evidence: the Phase 6E-A
+manifest, Phase 6E-B branch plan, Phase 6E-E predicted B rollout, and Phase
+6E-F predicted A/B comparison. They are not real simulator rollouts.
+
+Artifact writer identity:
+
+- source: `explicit_predicted_residual_ab_artifact_writer`
+- schema: `terrain_residual_predicted_ab_artifacts_v1`
+- status: `present`
+- validation errors: `[]`
+
+Artifact root:
+
+```text
+runs/eval/oracle_terrain_residual_phase6f_predicted_ab_20260702/results
+```
+
+Written files:
+
+- `eval_run_metadata.json`
+- `experiment_manifest.json`
+- `branch_run_plan.json`
+- `predicted_b_rollout.json`
+- `branch_comparison_report.json`
+- `rollout_manifest.json`
+
+Materialized comparison facts:
+
+| Field | Value |
+| --- | ---: |
+| predicted B step count | `1` |
+| predicted B stop reason | `zero_target_positive_residual` |
+| selected eval-only cut-intent candidate | `cut_candidate_000009` |
+| A target positive residual | `0.374313589186` |
+| B predicted final positive residual | `0.0` |
+| target completion delta | `0.748627178372` |
+| target overdig increase | `0.009656514972` |
+| outside-target removed-depth increase | `0.191985052079` |
+| expected delta depth | `0.575955156237` |
+| expected delta volume | `0.035997197265` |
+
+No-overwrite facts:
+
+- protected current results file count stayed `10 -> 10`
+- writer rejected overwrite semantics in tests
+- artifact writer status remains eval-only and diagnostic-only
+
+Conservative interpretation: Phase 6F-A creates durable JSON artifacts for the
+predicted A/B comparison so later runner or review work has a concrete file
+surface. It still does not run a simulator, does not define pass/fail or success
+semantics, does not integrate with production planner/runtime, and does not
+turn the predicted B counterfactual into a real rollout.
+
 ## Interpretation
 
 For this explicit non-official example spec, target positive residual decreases

@@ -552,6 +552,7 @@ Phase 5 closure note：
 - [x] 建立 Phase 6E-D eval-only predicted residual update / one-cut counterfactual owner，将 selected cut-intent 的 effect delta 应用到当前 terrain evidence 并重算 before/after metrics。
 - [x] 建立 Phase 6E-E eval-only predicted B-branch rollout loop，在显式小 cycle budget 内迭代更新 predicted terrain state 并输出 per-step evidence。
 - [x] 建立 Phase 6E-F predicted A/B comparison report，将 current planner A evidence 与 predicted B rollout evidence 放进同一比较输出，仍不声明真实 closed-loop pass/fail。
+- [x] 建立 Phase 6F-A predicted A/B artifact writer，将 in-memory manifest / branch plan / predicted B rollout / predicted A-B comparison 物化到新的非覆盖 eval results root。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -697,6 +698,15 @@ Phase 6E-F note：
 - A branch 输出 `evidence_type=current_rollout_evidence`，只记录 current rollout / target residual facts，target success 继续 `not_claimed`。B branch 输出 `evidence_type=predicted_counterfactual`，记录 predicted step count、stop reason、selected eval-only cut-intent candidate ids、initial / final residual、completion、overdig、outside-target movement 和 aggregate expected delta depth / volume。C branch 在 usable gold samples 缺失时继续 `not_evaluated` / `blocked_by_missing_gold_samples`。
 - Current-run smoke facts: current report status `present`，predicted rollout status `present`，step count `1`，stop reason `zero_target_positive_residual`，selected candidate `cut_candidate_000009`；A positive residual / completion / overdig / outside-target removed depth 为 `0.374313589186` / `0.251372821628` / `0.0` / `0.488698139786`；B final values 为 `0.0` / `1.0` / `0.009656514972` / `0.680683191865`；expected delta depth / volume 为 `0.575955156237` / `0.035997197265`。
 - Phase 6E-F 仍不是真实 A/B closed-loop comparison：B branch 是 effect-model predicted counterfactual，不是真实 simulation rollout；该输出不声明 pass/fail、eval success、planner success、official thresholds、production readiness、command-space controls 或 calibrated fallback。完整 Phase 6 baseline comparison 仍需要真实 A/B/C closed-loop run artifacts 和明确评价口径。
+
+Phase 6F-A note：
+
+- `testbed.eval.terrain_residual_ab_artifact_writer.write_predicted_residual_ab_artifacts()` 已定义 focused eval artifact writer，负责把 Phase 6E-F predicted A/B evidence 写成 JSON artifact。
+- Current-run materialization root：
+  `runs/eval/oracle_terrain_residual_phase6f_predicted_ab_20260702/results`。
+- 写入文件：`eval_run_metadata.json`、`experiment_manifest.json`、`branch_run_plan.json`、`predicted_b_rollout.json`、`branch_comparison_report.json`、`rollout_manifest.json`。
+- Smoke facts: writer status `present`，comparison status `present`，predicted B step count `1`，stop reason `zero_target_positive_residual`，candidate `cut_candidate_000009`，A residual `0.374313589186`，B final residual `0.0`，completion delta `0.748627178372`，overdig increase `0.009656514972`，outside-target increase `0.191985052079`，expected delta depth / volume `0.575955156237` / `0.035997197265`；protected current results file count stayed `10 -> 10`。
+- Phase 6F-A 仍不是真实 simulation：它只物化 predicted counterfactual artifacts，不接 production planner，不声明 pass/fail、eval success、planner success、official thresholds、production readiness 或 calibrated fallback。
 
 通过标准：
 

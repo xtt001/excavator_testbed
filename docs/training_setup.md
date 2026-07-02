@@ -705,6 +705,24 @@ counterfactual，B real simulation `not_run`、production integration `not_integ
 / official threshold `not_defined`、calibrated-model fallback `not_invented`。该 helper 不输出 pass/fail、
 eval success、planner success、production readiness、command-space controls、official thresholds 或 calibrated fallback。
 
+Phase 6F-A 的 predicted A/B artifact materialization 由
+`testbed.eval.terrain_residual_ab_artifact_writer.write_predicted_residual_ab_artifacts()` 负责。
+该 helper 不重新计算 planner 证据；调用方必须显式传入已经构建好的 `experiment_manifest`、
+`branch_run_plan`、`predicted_b_rollout`、`predicted_ab_comparison`、`source_rollout_path`、`results_root`
+和 `protected_evidence_roots`。它只做 eval-only JSON artifact 写入，把 Phase 6E-F 的 in-memory
+comparison 物化到新的非覆盖 results root。
+
+写入前会验证 results root 位于当前 repo 内、不是 protected evidence root 本身或其子路径、且写入前不存在；
+也会验证 manifest / branch plan / predicted rollout / predicted A-B comparison 的 required status。输出
+固定写入 `eval_run_metadata.json`、`experiment_manifest.json`、`branch_run_plan.json`、
+`predicted_b_rollout.json`、`branch_comparison_report.json` 和 `rollout_manifest.json`。所有 JSON 文件使用
+deterministic sorted-key formatting 并以 newline 结束，便于后续 diff / manifest 检查。
+
+writer status 包括 `present`、`invalid_results_root`、`protected_evidence_root_overlap`、
+`results_root_already_exists`、`invalid_evidence` 和 `write_failed`。该 writer 不运行 simulation、不创建
+production runtime action、不输出 command-space controls、不定义 pass/fail、eval success、planner success、
+official defaults / thresholds、production readiness 或 calibrated fallback。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续
