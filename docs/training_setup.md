@@ -608,6 +608,31 @@ calibration availability 时继续保持 `not_evaluated` / `blocked_by_missing_g
 fallback 发明 calibrated model。top-level status 包括 `present`、`invalid_manifest`、`invalid_branch_inputs`
 和 `invalid_cut_intent_contract`。
 
+offline heuristic residual cut-intent generation 当前由
+`testbed.eval.terrain_residual_cut_intent.build_heuristic_residual_cut_intent()` 生成。
+它是 eval-only evidence helper，用于把 Phase 6E-B branch run plan、Phase 3 candidate generation /
+constraint evidence / heuristic scoring 和 Phase 4 effect summary 转成一个 future harness 可消费的 B branch
+cut-intent evidence record。它不运行 simulation，不创建 branch output files，不写 `runs` artifact，不接
+production planner / rollout-review schema，也不生成 production runtime action。
+
+调用方必须显式传入 `branch_run_plan`、`candidate_generation`、`candidate_evidence`、
+`candidate_scoring`、`candidate_effect_summary`、`target_spec` 和 `selection_policy`。当前唯一实现的
+selection policy 是 `score_ranking_first`：helper 读取 diagnostic offline scoring ranking 的第一名，
+并在 candidate generation、constraint evidence 和 effect summary records 中逐项 cross-check 同一个
+candidate id。通过后输出一个 `cut_intent`，包含 `cut_intent_candidate_id`、anchor cell / row / col、
+direction、`candidate_depth_m`、score/rank provenance、effect evidence provenance、target spec provenance、
+safety / stop-condition provenance status、`runner_input_status=ready_for_eval_harness`，以及
+`production_runtime_action=False`。
+
+该 helper 可以在 eval-only 范围内产生一个 selected cut-intent evidence，因为这是 future runner 输入的
+核心缺口；但它仍不输出 top-k list、command-space controls、pass/fail、eval success、planner success、
+official defaults、official thresholds 或 calibrated fallback。top-level status 包括 `present`、
+`invalid_branch_run_plan`、`invalid_selection_policy`、`invalid_candidate_scoring`、
+`invalid_candidate_generation`、`invalid_candidate_evidence`、`invalid_candidate_effect_summary` 和
+`invalid_target_spec`。provenance statuses 显式标记 branch plan、candidate generation / evidence /
+scoring / effect summary 和 target spec 都来自调用方显式输入，artifact write / runner execution 仍为
+not written / not run。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

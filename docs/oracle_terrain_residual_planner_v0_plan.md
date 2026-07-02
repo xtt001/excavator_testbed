@@ -548,6 +548,7 @@ Phase 5 closure note：
 - [x] 建立 Phase 6D closed-loop simulation design packet，先定义 T1 A/B 设计门槛，不运行仿真。
 - [x] 建立 Phase 6E-A eval-only closed-loop experiment manifest / artifact contract owner，不运行仿真、不创建 `runs` artifact。
 - [x] 建立 Phase 6E-B eval-only branch run plan / executable cut-intent boundary contract owner，不运行仿真、不输出 runtime action。
+- [x] 建立 Phase 6E-C eval-only heuristic cut-intent generation owner，从 B branch 候选/评分/effect evidence 生成一个 future harness cut intent，不输出 production runtime action。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -639,6 +640,19 @@ Phase 6E-C default entry target：
 - 下一步不再继续扩展外围 safety / manifest contract；按当前决策，直接实现 eval-only heuristic cut-intent generation owner，把 B branch 的 candidate generation / evidence / scoring / effect summary 结果转换成一个 future runner 可消费的 cut-intent record。
 - Phase 6E-C 可以在 eval-only 范围内显式产生 `cut_intent_candidate_id` / selected cut-intent evidence，因为这是 runner 输入的核心缺口；但它仍不得生成 production runtime action、不得接 production planner、不得运行 simulation、不得创建 `runs` artifact，也不得声明 pass/fail、eval success、planner success、official defaults 或 official thresholds。
 - 该 owner 必须保留 provenance：candidate source、score/rank source、effect evidence source、target spec source、safety/stop-condition source，以及为什么该 intent 可用于未来 harness 而不是当前 runtime。
+
+Phase 6E-C note：
+
+- `testbed.eval.terrain_residual_cut_intent.build_heuristic_residual_cut_intent()` 已定义 eval-only heuristic cut-intent generation owner。
+- 该 helper 只接收显式输入：Phase 6E-B-like `branch_run_plan`、Phase 3 `candidate_generation` / `candidate_evidence` / `candidate_scoring`、Phase 4 `candidate_effect_summary`、`target_spec` 和 `selection_policy`；当前唯一实现的 policy 是 `score_ranking_first`。
+- 它读取 scoring ranking 第一名，并 cross-check 同一个 candidate id 存在于 candidate generation、constraint evidence 和 effect summary records。通过后输出一个 `cut_intent`，包含 `cut_intent_candidate_id`、anchor cell / row / col、direction、candidate depth、score/rank provenance、effect evidence provenance、target spec provenance、safety/stop-condition provenance status、`runner_input_status=ready_for_eval_harness` 和 `production_runtime_action=False`。
+- Phase 6E-C 是 core B-branch runner-input evidence，但仍不是 simulation 或 production planner behavior：它不创建 `runs` artifact、不写 branch output files、不输出 command-space controls、不选择 top-k、不声明 pass/fail、eval success、planner success、official defaults、official thresholds 或 calibrated fallback。
+
+Phase 6E-D default entry target：
+
+- 下一步直接实现 eval-only predicted residual update / one-cut counterfactual owner：用 Phase 6E-C cut intent 对应的 Phase 4 effect delta 更新当前 removed-depth grid，并重新计算 post-cut target residual metrics。
+- 该 slice 应输出 before / after residual、overdig、outside-target removal、payload proxy 和 effect provenance，用来形成 B branch 单步闭环证据；它不是新的 safety wrapper，也不应只增加合同字段。
+- 仍不运行真实 simulation、不写 `runs` artifact、不接 production planner、不声明 pass/fail / eval success / planner success / official defaults / official thresholds；但它必须实际计算预测状态变化，而不只是记录边界。
 
 通过标准：
 

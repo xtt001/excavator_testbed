@@ -5286,3 +5286,241 @@ Next bounded target:
   `runs` artifacts, write branch output files, integrate production planner
   behavior, or define pass/fail, eval success, planner success, official
   defaults, official thresholds, or calibrated fallback semantics.
+
+## 2026-07-02: Phase 6E-C Executor Heuristic Cut-Intent Packet
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial branch/status: `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 39]`.
+- Initial HEAD: `edb66526686a6d98696cb05bc508758c3d205ae1`.
+- Initial dirty state: clean.
+
+Boundary decision:
+
+- Added a new focused eval owner,
+  `testbed/eval/terrain_residual_cut_intent.py`, rather than extending the
+  Phase 6E-A manifest owner or Phase 6E-B branch-plan owner.
+- Responsibility: convert explicit B-branch candidate generation / constraint
+  evidence / scoring / effect-summary records into one eval-only future-harness
+  cut-intent evidence record.
+- Existing manifest and branch-plan owners remain contract / dry-run boundary
+  owners and do not own selected cut-intent evidence.
+
+Implemented contract:
+
+- Public helper:
+  `testbed.eval.terrain_residual_cut_intent.build_heuristic_residual_cut_intent()`.
+- Inputs are explicit: `branch_run_plan`, `candidate_generation`,
+  `candidate_evidence`, `candidate_scoring`, `candidate_effect_summary`,
+  `target_spec`, and `selection_policy`.
+- Current selection policy: `score_ranking_first`.
+- The helper selects scoring ranking rank `1`, cross-checks the candidate id in
+  candidate generation, constraint evidence, and effect summary records, and
+  emits one `cut_intent` record with candidate id, anchor cell / row / col,
+  direction, candidate depth, score/rank provenance, effect evidence
+  provenance, target spec provenance, safety / stop-condition provenance status,
+  `runner_input_status=ready_for_eval_harness`, and
+  `production_runtime_action=False`.
+- Statuses covered: `present`, `invalid_branch_run_plan`,
+  `invalid_selection_policy`, `invalid_candidate_scoring`,
+  `invalid_candidate_generation`, `invalid_candidate_evidence`,
+  `invalid_candidate_effect_summary`, and `invalid_target_spec`.
+
+Current-run smoke facts:
+
+- Recomputed current target residual report in memory from
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`
+  using explicit non-official target spec `grid_shape=[3, 2]`, rows `[0:2]`,
+  cols `[0:1]`, `target_depth_m=0.25`.
+- Built Phase 3 candidates/evidence/scoring and Phase 4 effect summary in
+  memory using the prior explicit smoke options.
+- Candidate count: `24`.
+- Scoring ranking first: `cut_candidate_000009`, rank `1`, total score
+  `3.91985052079`.
+- Effect summary record count: `24`.
+- Phase 6E-A manifest status: `present`.
+- Phase 6E-B branch-plan status: `present`.
+- Phase 6E-C cut-intent status: `present`.
+- Cut-intent candidate id: `cut_candidate_000009`.
+- Runner input status: `ready_for_eval_harness`.
+- Production runtime action flag: `False`.
+- Validation errors: `[]`.
+- Future root
+  `runs/eval/oracle_terrain_residual_phase6d_t1_ab_20260702/results` remained
+  absent before and after smoke.
+- Protected current results file count stayed `10 -> 10`.
+
+Verification:
+
+- TDD red:
+  `python -m pytest -q tests/test_terrain_residual_cut_intent.py` failed with
+  `ModuleNotFoundError: No module named 'testbed.eval.terrain_residual_cut_intent'`.
+- Focused green:
+  `python -m pytest -q tests/test_terrain_residual_cut_intent.py` ->
+  `4 passed`.
+- Related bundle:
+  `python -m pytest -q tests/test_terrain_residual_cut_intent.py
+  tests/test_terrain_residual_closed_loop_branch_plan.py
+  tests/test_terrain_residual_closed_loop_manifest.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_calibration_extraction.py
+  tests/test_terrain_target_report.py tests/test_terrain_target_projection.py
+  tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py
+  tests/test_terrain_residual_metrics.py tests/test_rollout_review.py` ->
+  `99 passed`.
+- `python -m compileall ...` for the new/touched eval owner, related eval
+  owners, and focused tests -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs
+  docs/training_setup.md docs/oracle_terrain_residual_planner_v0_plan.md
+  docs/oracle_terrain_residual_planner_closed_loop_log.md` -> exit `0`
+  before this packet was appended; rerun required after packet append.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  -> exit `0`.
+
+Preserved non-goals:
+
+- No simulation run.
+- No `runs` artifact creation.
+- No branch output files.
+- No production planner / gate / policy / runtime integration.
+- No rollout-review schema integration.
+- No official defaults, official thresholds, pass/fail, eval success, planner
+  success, top-k list, command-space control, or calibrated fallback.
+
+## 2026-07-02: Phase 6E-C Planner Acceptance
+
+Planner acceptance status:
+
+- Accepted as Phase 6E-C eval-only heuristic cut-intent generation owner.
+- Accepted-slice count since the latest deep reflection is now `1/3`.
+- No deep reflection is required for this acceptance.
+
+Planner-side audit:
+
+- Rechecked target lock in `/home/pingfan/PACT/excavator_testbed`: branch
+  `tx/oracle-terrain-residual-planner-v0` was ahead `39`, HEAD
+  `edb66526686a6d98696cb05bc508758c3d205ae1`, with only the expected docs
+  modified and the new cut-intent owner / focused test untracked.
+- Re-read the new owner `testbed/eval/terrain_residual_cut_intent.py`,
+  focused tests, and changed source-of-truth docs.
+- Confirmed the new owner is below the large-file threshold at `551` lines and
+  owns one stable responsibility: eval-only heuristic residual cut-intent
+  evidence generation.
+- Confirmed this slice follows the user's correction: it moves beyond perimeter
+  contracts and produces a concrete eval-only selected cut intent from actual
+  candidate / scoring / effect evidence.
+- Confirmed the helper selects the scoring ranking rank `1`, cross-checks the
+  selected candidate id in candidate generation, constraint evidence, and
+  effect summary records, and emits a single `cut_intent` record.
+- Confirmed the output includes `cut_intent_candidate_id`,
+  score/effect/target/safety provenance, `runner_input_status=ready_for_eval_harness`,
+  and `production_runtime_action=False`.
+- Confirmed it does not emit top-k lists, command-space controls, production
+  runtime actions, pass/fail, eval success, planner success, official defaults,
+  official thresholds, calibrated fallback, simulation output, `runs` artifacts,
+  branch output files, or rollout-review schema integration.
+- Planner-side doc sync added Phase 6E-D as the next default entry target:
+  eval-only predicted residual update / one-cut counterfactual from cut intent
+  and effect delta.
+
+Planner-side verification:
+
+- `python -m pytest -q tests/test_terrain_residual_cut_intent.py
+  tests/test_terrain_residual_closed_loop_branch_plan.py
+  tests/test_terrain_residual_closed_loop_manifest.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_calibration_extraction.py
+  tests/test_terrain_target_report.py tests/test_terrain_target_projection.py
+  tests/test_terrain_target_metrics.py tests/test_terrain_target_grid.py
+  tests/test_terrain_residual_metrics.py tests/test_rollout_review.py` ->
+  `99 passed`.
+- `python -m compileall testbed/eval/terrain_residual_cut_intent.py
+  testbed/eval/terrain_residual_closed_loop_branch_plan.py
+  testbed/eval/terrain_residual_closed_loop_manifest.py
+  testbed/eval/terrain_residual_baseline_comparison.py
+  testbed/eval/terrain_candidate_generation.py
+  testbed/eval/terrain_candidate_evidence.py
+  testbed/eval/terrain_candidate_scoring.py
+  testbed/eval/terrain_candidate_effect_model.py
+  testbed/eval/terrain_candidate_effect_summary.py
+  testbed/eval/terrain_calibration_inventory.py
+  testbed/eval/terrain_calibration_extraction.py
+  tests/test_terrain_residual_cut_intent.py
+  tests/test_terrain_residual_closed_loop_branch_plan.py
+  tests/test_terrain_residual_closed_loop_manifest.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_calibration_extraction.py` -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs
+  docs/training_setup.md docs/oracle_terrain_residual_planner_v0_plan.md
+  docs/oracle_terrain_residual_planner_closed_loop_log.md` -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  -> exit `0`.
+- `git diff --check` -> exit `0`.
+- Planner-side current-run smoke recomputed the current target report and the
+  Phase 3/4/6E-A/6E-B/6E-C chain in memory: report status `present`, candidate
+  status/count `present` / `24`, evidence status `present`, scoring status
+  `present`, scoring rank `1` candidate `cut_candidate_000009` with score
+  `3.91985052079`, effect summary status/count `present` / `24`, manifest
+  status `present`, branch-plan status `present`, cut-intent status `present`,
+  cut-intent candidate id `cut_candidate_000009`, runner input status
+  `ready_for_eval_harness`, `production_runtime_action=False`, validation
+  errors `[]`, future root
+  `runs/eval/oracle_terrain_residual_phase6d_t1_ab_20260702/results` absent,
+  and protected evidence entry count stayed `11 -> 11`.
+
+Acceptance rationale:
+
+- This slice implements the core B-branch runner input previously missing from
+  Phase 6: one deterministic eval-only cut intent derived from actual
+  candidate/evidence/scoring/effect-summary records.
+- It deliberately permits selected intent evidence inside eval scope because
+  that is the core problem now, while keeping the correct boundary against
+  production runtime action and unverified success semantics.
+- The next useful core step is not another manifest or safety contract; it is
+  applying the selected cut intent's effect delta to current terrain evidence to
+  produce a predicted one-cut residual update.
+
+Lightweight reflection:
+
+- Reference used: user request to execute the core idea, Phase 6E-B deep
+  reflection, Phase 6E-C default target, and no-production / no-artifact
+  non-goals.
+- Alignment verdict: aligned and materially closer to closed-loop behavior.
+- Efficiency verdict: useful core implementation slice; not a perimeter-only
+  contract round.
+
+Next bounded target:
+
+- Phase 6E-D should implement eval-only predicted residual update / one-cut
+  counterfactual evidence.
+- It should consume explicit current removed-depth / target grids, selected
+  cut-intent evidence, and the matching Phase 4 effect delta grid, then output
+  before / after target residual metrics, overdig and outside-target deltas,
+  and effect provenance.
+- It must actually compute predicted post-cut state change in memory, while
+  still avoiding real simulation, `runs` artifacts, branch output files,
+  production planner integration, rollout-review schema changes, pass/fail,
+  eval success, planner success, official defaults, and official thresholds.
