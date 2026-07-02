@@ -11,9 +11,9 @@ not an eval pass/fail judgment.
 
 - cwd: `/home/pingfan/PACT/excavator_testbed`
 - branch/status: `tx/oracle-terrain-residual-planner-v0`, tracking
-  `origin/tx/v2_6-llm-planner`, ahead `22`
+  `origin/tx/v2_6-llm-planner`, ahead `34`
 - HEAD observed during this report slice:
-  `770489fe6c80cbbc420450865cac1f6800c40ba8`
+  `7b65e95244dc2730bf55ee70917f03ce0c4fd6f7`
 
 ## Input Run
 
@@ -232,6 +232,78 @@ Conservative conclusion: the current evidence supports an overdig-risk concern
 for outside-target removal growth under the explicit example thresholds. It
 does not prove that a shape guard would reduce overdig in production, nor that
 such a guard would preserve payload or cycle efficiency without material loss.
+
+## Offline Residual Baseline Comparison
+
+This section records the Phase 6A offline baseline-comparison scaffold output
+for the same current run and explicit non-official target spec. It is
+report/evidence infrastructure only. It does not run a new simulation rollout,
+define target-shape success, define eval/planner success, compare closed-loop
+performance, or promote any diagnostic ranking into runtime action selection.
+
+Comparison identity:
+
+- source: `explicit_offline_residual_planner_baseline_comparison`
+- schema: `terrain_residual_planner_baseline_comparison_v1`
+- status: `present`
+- `offline_only`: `true`
+- validation errors: `[]`
+
+Input scope:
+
+- target rollout:
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`
+- explicit non-official target spec: `grid_shape=[3, 2]`, rows `[0:2]`,
+  cols `[0:1]`, `target_depth_m=0.25`
+- candidate/effect/calibration evidence: recomputed in memory from the Phase
+  3/4/5 offline helpers using explicit smoke-only options and capacity values
+  documented in the phase log
+
+Branch status summary:
+
+| Branch | Status | Reason / evidence |
+| --- | --- | --- |
+| `current_planner_baseline` | `present` | current rollout and target residual diagnostics are available |
+| `heuristic_residual_pipeline` | `present` | offline candidate, constraint, scoring, effect, and payload-proxy evidence are available |
+| `calibrated_residual_pipeline` | `not_evaluated` | `blocked_by_missing_gold_samples` |
+
+Heuristic branch smoke facts:
+
+| Field | Value |
+| --- | ---: |
+| candidate count | `24` |
+| best score candidate | `cut_candidate_000009` |
+| effect record count | `24` |
+| payload proxy fraction max | `0.899929931625` |
+| expected removed volume total | `0.368464939353` |
+| target removed volume total | `0.263189242395` |
+| outside-target removed volume total | `0.105275696958` |
+| overdig volume delta total | `0.105879229144` |
+
+Calibrated branch facts:
+
+| Field | Value |
+| --- | ---: |
+| usable gold sample count | `0` |
+| usable extracted record count | `0` |
+
+Comparison limits:
+
+- closed-loop resimulation: `not_run`
+- counterfactual cycle count: `not_available`
+- cycle time: `not_available`
+- production integration: `not_integrated`
+- official success semantics: `not_defined`
+- calibrated-model fallback: `not_invented`
+
+Conservative interpretation: the Phase 6A scaffold proves that current-run
+diagnostics and the heuristic residual candidate/effect pipeline can be placed
+side by side in a durable offline comparison packet, while the calibrated branch
+is correctly blocked by missing usable gold samples. It does not prove the
+heuristic residual pipeline outperforms the current planner, does not prove a
+calibrated model is better than the heuristic branch, and does not establish any
+runtime action, official target default, official threshold, target-shape
+success, eval success, or planner success semantics.
 
 ## Interpretation
 

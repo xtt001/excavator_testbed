@@ -4366,3 +4366,139 @@ Next bounded target:
   already needed; it must not run new simulations, write run artifacts,
   introduce pass/fail semantics, or promote heuristic rankings into runtime
   actions.
+
+## 2026-07-02: Phase 6B Executor Durable Report Refresh Packet
+
+Target lock observed:
+
+- cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Branch/status before edits:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 34]`.
+- HEAD before edits: `7b65e95244dc2730bf55ee70917f03ce0c4fd6f7`.
+- Worktree was clean before edits.
+
+Slice:
+
+- Phase 6B durable current-run baseline report refresh for Phase 6A offline
+  residual baseline-comparison output and limitations.
+- Docs/report-only. No code, tests, config, runtime, dependencies, branch,
+  upstream, generated run artifacts, rollout-review schema, or production
+  planner behavior changed.
+
+TDD:
+
+- Not required for this docs/report-only slice.
+
+Report facts recorded:
+
+- Added `Offline Residual Baseline Comparison` to
+  `docs/oracle_terrain_residual_baseline_report.md`.
+- Recorded comparison schema/source:
+  `terrain_residual_planner_baseline_comparison_v1` /
+  `explicit_offline_residual_planner_baseline_comparison`.
+- Recorded branch statuses:
+  `current_planner_baseline=present`,
+  `heuristic_residual_pipeline=present`,
+  `calibrated_residual_pipeline=not_evaluated` with reason
+  `blocked_by_missing_gold_samples`.
+- Recorded current-run smoke target rollout
+  `runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000.jsonl`
+  and explicit non-official target spec `grid_shape=[3, 2]`, rows `[0:2]`,
+  cols `[0:1]`, `target_depth_m=0.25`.
+- Recorded candidate count `24`, best score candidate `cut_candidate_000009`,
+  effect record count `24`, payload proxy fraction max `0.899929931625`,
+  expected / target / outside-target / overdig volume totals
+  `0.368464939353` / `0.263189242395` / `0.105275696958` /
+  `0.105879229144`, usable gold sample count `0`, usable extracted record
+  count `0`, and validation errors `[]`.
+- Recorded comparison limits: no closed-loop resimulation, no counterfactual
+  cycle count, no cycle time, no production integration, no official success
+  semantics, and no invented calibrated-model fallback.
+
+Plan update:
+
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks only the Phase 6B
+  durable report refresh complete.
+- Full Phase 6 A/B/C closed-loop baseline comparison remains incomplete.
+
+Read-only smoke:
+
+- Re-ran the Phase 6A comparison owner in memory with explicit evidence and
+  current-run helper outputs.
+- Observed comparison status `present`, current branch `present`, heuristic
+  branch `present`, calibrated branch `not_evaluated` /
+  `blocked_by_missing_gold_samples`, candidate count `24`, effect record count
+  `24`, usable gold sample count `0`, usable extracted record count `0`,
+  validation errors `[]`.
+- Inspected source file counts were unchanged:
+  current results `10 -> 10`, calibration source root `9 -> 9`, frame-audit
+  source root `17 -> 17`.
+
+Verification completed before callback:
+
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs
+  docs/oracle_terrain_residual_baseline_report.md
+  docs/oracle_terrain_residual_planner_v0_plan.md
+  docs/oracle_terrain_residual_planner_closed_loop_log.md` -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  -> exit `0`.
+- `git diff --check` -> exit `0`.
+- Final `git status --short --branch` showed only the three expected modified
+  docs; `git rev-parse HEAD` remained
+  `7b65e95244dc2730bf55ee70917f03ce0c4fd6f7`.
+
+## 2026-07-02: Phase 6B Planner Acceptance
+
+Planner acceptance status:
+
+- Accepted as Phase 6B durable report refresh.
+- Accepted-slice count since the latest deep reflection is now `2/3`.
+- No deep reflection is required for this acceptance.
+
+Planner-side audit:
+
+- Rechecked target lock in `/home/pingfan/PACT/excavator_testbed`: branch
+  `tx/oracle-terrain-residual-planner-v0` was ahead `34`, HEAD
+  `7b65e95244dc2730bf55ee70917f03ce0c4fd6f7`, with only the expected three
+  docs modified.
+- Re-read the baseline report, Phase 6 plan note, and closed-loop log diff.
+- Confirmed the report refresh records only offline comparison evidence and
+  limitations; it does not claim B > A, C > B, target-shape success, eval
+  success, planner success, official defaults, runtime action selection, or
+  calibrated-model fallback.
+- Planner-side doc sync corrected the baseline report repository metadata from
+  the stale earlier report slice to the Phase 6B target lock: ahead `34`, HEAD
+  `7b65e95244dc2730bf55ee70917f03ce0c4fd6f7`.
+- Planner-side doc sync also changed the executor packet's verification section
+  from planned commands to the callback-observed exit `0` results.
+
+Planner-side verification:
+
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs
+  docs/oracle_terrain_residual_baseline_report.md
+  docs/oracle_terrain_residual_planner_v0_plan.md
+  docs/oracle_terrain_residual_planner_closed_loop_log.md` -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  -> exit `0`.
+- `git diff --check` -> exit `0`.
+
+Acceptance rationale:
+
+- The slice moved Phase 6A comparison output into the durable baseline report,
+  which is the intended source-of-truth artifact for current-run diagnostic
+  evidence.
+- It keeps full Phase 6 baseline proof open because no closed-loop
+  resimulation, counterfactual cycle count, cycle-time evidence, or production
+  integration was run.
+
+Next bounded target:
+
+- Phase 6C should be a closure / next-decision slice for Phase 6 planning,
+  unless the user wants to stop after report refresh.
+- Default scope should remain docs/report-only: decide whether Phase 6 should
+  pause as an offline evidence milestone or proceed only after a real
+  closed-loop simulation design is explicitly scoped.

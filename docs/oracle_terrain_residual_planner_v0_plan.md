@@ -543,6 +543,7 @@ Phase 5 closure note：
 ### Phase 6: Oracle residual planner 闭环仿真
 
 - [x] 建立 heuristic-only offline baseline-comparison scaffold，先汇总 current / heuristic / calibrated branch evidence 和限制项。
+- [x] 将 Phase 6A offline baseline-comparison output / limitations 刷新进 durable baseline report。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -558,6 +559,11 @@ Phase 6A note：
 - Smoke 中 heuristic candidate count `24`，best score candidate `cut_candidate_000009`，effect record count `24`，payload proxy fraction max `0.899929931625`，expected / target / outside-target / overdig volume totals 分别为 `0.368464939353`、`0.263189242395`、`0.105275696958`、`0.105879229144`。
 - Phase 5 calibrated evidence 仍为 usable gold sample count `0`，因此 calibrated branch 只记录 blocker，不发明 telemetry fallback 或 calibrated model。检查的 results / calibration source file counts 保持 `10 -> 10`、`9 -> 9`、`17 -> 17`。
 - 该 Phase 6A scaffold 不证明 B 优于 A，也不证明 C 优于 B；完整 Phase 6 baseline 仍需要真正的 closed-loop resimulation、counterfactual cycle count、cycle time、production integration boundary 和官方成功语义之外的明确评价口径。
+
+Phase 6B note：
+
+- `docs/oracle_terrain_residual_baseline_report.md` 已刷新 `Offline Residual Baseline Comparison` section，记录 Phase 6A comparison schema/source、三条 branch status、current-run smoke facts 和 comparison limits。
+- 该 durable report refresh 只把现有 Phase 6A offline evidence 写入报告；不新增代码、不改测试、不启动新 rollout、不写 `runs` artifact、不接入 production planner，也不把 Phase 6 完整 A/B/C baseline comparison 标记完成。
 
 通过标准：
 
