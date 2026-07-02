@@ -4788,3 +4788,238 @@ Next bounded target:
 - It must not run simulation, create run directories, overwrite existing
   evidence, integrate production planner behavior, or emit official success /
   pass-fail semantics.
+
+## 2026-07-02: Phase 6E-A Executor Manifest Contract Packet
+
+Target lock observed:
+
+- cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Branch/status before edits:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 37]`.
+- HEAD before edits: `132f2cb3203d5a732a7b6d2f078e7416e996aeb8`.
+- Worktree was clean before edits.
+
+Slice:
+
+- Phase 6E-A eval-only closed-loop experiment manifest / artifact contract
+  owner.
+- No simulation, `runs` artifact, production planner integration,
+  rollout-review schema integration, runtime config, dependencies, branch /
+  upstream, or git staging/commit changes.
+
+Boundary decision:
+
+- Created focused owner
+  `testbed/eval/terrain_residual_closed_loop_manifest.py`.
+- Existing owners remain separate: baseline comparison owns offline branch
+  comparison evidence, candidate/effect owners own Phase 3/4 diagnostics, and
+  rollout review / production planner do not own future experiment manifest
+  contract semantics.
+
+Contract facts recorded:
+
+- Public helper:
+  `build_closed_loop_experiment_manifest(...)`.
+- Inputs are explicit: future `results_root`, target spec, branch definitions,
+  cycle budget, stop conditions, expected metric names, expected artifact files,
+  protected evidence roots, and explicit calibration availability.
+- Output includes schema/source/status/offline_only, fixed branch order,
+  normalized branches, artifact layout, no-overwrite validation, target spec,
+  cycle budget, stop condition summary, expected metric names, validation
+  errors, non-goal statuses, and provenance statuses.
+- Branch semantics: A `current_planner_baseline` present; B
+  `heuristic_residual_pipeline` present but `runtime_integration_status` remains
+  `not_integrated`; C `calibrated_residual_pipeline` remains `not_evaluated` /
+  `blocked_by_missing_gold_samples` unless calibration availability is explicit.
+- No-overwrite validation rejects proposed results roots that are equal to or
+  nested under protected evidence roots.
+- Artifact validation rejects absolute paths and paths escaping the future
+  results root via `..`.
+- The manifest contract does not emit selected candidate, top-k, runtime action,
+  pass/fail, eval success, planner success, official defaults, official
+  thresholds, or calibrated fallback semantics.
+
+TDD:
+
+- Focused red:
+  `python -m pytest -q tests/test_terrain_residual_closed_loop_manifest.py`
+  failed with `ModuleNotFoundError: No module named
+  'testbed.eval.terrain_residual_closed_loop_manifest'`.
+- Focused green after implementation: same command passed `5 passed`.
+
+Documentation changed:
+
+- `docs/training_setup.md` documents the manifest contract, explicit inputs,
+  no-overwrite validation, statuses, and non-goals.
+- `docs/oracle_terrain_residual_planner_v0_plan.md` marks only Phase 6E-A
+  manifest contract complete and keeps full Phase 6 baseline comparison open.
+- `docs/oracle_terrain_residual_planner_closed_loop_log.md` records this
+  executor packet.
+
+Smoke / validation facts:
+
+- Read-only manifest smoke status `present`.
+- Branch order:
+  `current_planner_baseline`, `heuristic_residual_pipeline`,
+  `calibrated_residual_pipeline`.
+- Calibrated branch status `not_evaluated`, reason
+  `blocked_by_missing_gold_samples`.
+- Artifact count `9`; no-overwrite validation status `present`.
+- Protected current evidence file count stayed `10 -> 10`.
+- Future run root
+  `runs/eval/oracle_terrain_residual_phase6d_t1_ab_20260702/results` did not
+  exist after the smoke.
+- Validation errors `[]`.
+
+Verification observed:
+
+- `python -m pytest -q tests/test_terrain_residual_closed_loop_manifest.py`
+  before production owner existed -> failed with `ModuleNotFoundError` for
+  `testbed.eval.terrain_residual_closed_loop_manifest`.
+- `python -m pytest -q tests/test_terrain_residual_closed_loop_manifest.py`
+  -> `5 passed`.
+- `python -m pytest -q tests/test_terrain_residual_closed_loop_manifest.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_calibration_extraction.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_target_report.py
+  tests/test_terrain_target_projection.py
+  tests/test_terrain_target_metrics.py
+  tests/test_terrain_target_grid.py
+  tests/test_terrain_residual_metrics.py tests/test_rollout_review.py` ->
+  `90 passed`.
+- `python -m compileall ...` for the new/touched eval owner, related eval
+  owners, and tests -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs
+  docs/training_setup.md docs/oracle_terrain_residual_planner_v0_plan.md
+  docs/oracle_terrain_residual_planner_closed_loop_log.md` -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  -> exit `0`.
+- `git diff --check` -> exit `0`.
+- Final `git status --short --branch`: branch ahead `37` with modified
+  `docs/oracle_terrain_residual_planner_closed_loop_log.md`,
+  `docs/oracle_terrain_residual_planner_v0_plan.md`, and
+  `docs/training_setup.md`; untracked
+  `testbed/eval/terrain_residual_closed_loop_manifest.py` and
+  `tests/test_terrain_residual_closed_loop_manifest.py`.
+- Final `git rev-parse HEAD`: `132f2cb3203d5a732a7b6d2f078e7416e996aeb8`.
+
+## 2026-07-02: Phase 6E-A Planner Acceptance
+
+Planner acceptance status:
+
+- Accepted as Phase 6E-A eval-only closed-loop experiment manifest / artifact
+  contract owner.
+- Accepted-slice count since the latest deep reflection is now `2/3`.
+- No deep reflection is required for this acceptance.
+
+Planner-side audit:
+
+- Rechecked target lock in `/home/pingfan/PACT/excavator_testbed`: branch
+  `tx/oracle-terrain-residual-planner-v0` was ahead `37`, HEAD
+  `132f2cb3203d5a732a7b6d2f078e7416e996aeb8`, with only the expected docs
+  modified and new manifest owner / focused test untracked.
+- Re-read the new owner
+  `testbed/eval/terrain_residual_closed_loop_manifest.py`, focused tests, and
+  changed source-of-truth docs.
+- Confirmed the new owner is below the large-file threshold at `333` lines and
+  owns one stable responsibility: eval-only closed-loop experiment manifest /
+  artifact contract semantics.
+- Confirmed the contract keeps all inputs explicit, fixes A/B/C branch order,
+  validates future artifact layout and protected evidence roots, and leaves B
+  branch runtime integration as `not_integrated`.
+- Confirmed C branch remains `not_evaluated` /
+  `blocked_by_missing_gold_samples` when calibration availability is false.
+- Confirmed no selected candidate, top-k, runtime action, pass/fail, eval
+  success, planner success, official defaults, official thresholds, calibrated
+  fallback, simulation run, `runs` artifact, rollout-review schema integration,
+  or production planner behavior was introduced.
+- Planner-side doc sync added Phase 6E-B as the next default entry target:
+  eval-only branch run plan / executable cut-intent boundary contract.
+
+Planner-side verification:
+
+- `python -m pytest -q tests/test_terrain_residual_closed_loop_manifest.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_calibration_extraction.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_target_report.py
+  tests/test_terrain_target_projection.py
+  tests/test_terrain_target_metrics.py
+  tests/test_terrain_target_grid.py
+  tests/test_terrain_residual_metrics.py tests/test_rollout_review.py` ->
+  `90 passed`.
+- `python -m compileall testbed/eval/terrain_residual_closed_loop_manifest.py
+  testbed/eval/terrain_residual_baseline_comparison.py
+  testbed/eval/terrain_candidate_generation.py
+  testbed/eval/terrain_candidate_evidence.py
+  testbed/eval/terrain_candidate_scoring.py
+  testbed/eval/terrain_candidate_effect_model.py
+  testbed/eval/terrain_candidate_effect_summary.py
+  testbed/eval/terrain_calibration_inventory.py
+  testbed/eval/terrain_calibration_extraction.py
+  tests/test_terrain_residual_closed_loop_manifest.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_calibration_extraction.py` -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs
+  docs/training_setup.md docs/oracle_terrain_residual_planner_v0_plan.md
+  docs/oracle_terrain_residual_planner_closed_loop_log.md` -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  -> exit `0`.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  -> exit `0`.
+- `git diff --check` -> exit `0`.
+- Planner-side read-only smoke built the manifest in memory: manifest status
+  `present`, calibrated branch status `not_evaluated`, future root
+  `runs/eval/oracle_terrain_residual_phase6d_t1_ab_20260702/results` still did
+  not exist, protected evidence entry count stayed `11 -> 11`, and validation
+  errors were `[]`.
+
+Acceptance rationale:
+
+- The slice converts the Phase 6D design gate into a tested reusable manifest
+  contract without prematurely running a closed-loop experiment.
+- It materially reduces the next-run risk by making artifact layout and
+  no-overwrite behavior explicit before any future runner can write files.
+- It still does not solve the B branch execution boundary, so the next slice
+  should define branch run plans and the executable cut-intent contract before
+  any simulation or action semantics are introduced.
+
+Lightweight reflection:
+
+- Reference used: Phase 6D design packet, Phase 6E default entry target, repo
+  responsibility boundaries, and no-production / no-artifact non-goals.
+- Alignment verdict: aligned; this is necessary pre-run infrastructure rather
+  than process-only documentation.
+- Efficiency verdict: useful code slice with focused tests and doc sync; not a
+  duplicate verification-only round.
+
+Next bounded target:
+
+- Phase 6E-B should implement an eval-only branch run plan / executable
+  cut-intent boundary contract owner.
+- It should consume explicit manifest / branch input evidence and emit
+  per-branch plan records for A/B/C, including the B branch cut-intent boundary
+  fields required before diagnostic candidate rankings can become runner input.
+- It must not run simulation, create `runs` artifacts, write branch outputs,
+  integrate production planner behavior, or emit selected candidate, top-k,
+  runtime action, pass/fail, eval success, planner success, official defaults,
+  official thresholds, or calibrated fallback semantics.

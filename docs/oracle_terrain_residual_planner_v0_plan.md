@@ -546,6 +546,7 @@ Phase 5 closure note：
 - [x] 将 Phase 6A offline baseline-comparison output / limitations 刷新进 durable baseline report。
 - [x] 记录 Phase 6C closure / next-decision note，暂停继续实现，直到真实闭环仿真设计被明确 scoped。
 - [x] 建立 Phase 6D closed-loop simulation design packet，先定义 T1 A/B 设计门槛，不运行仿真。
+- [x] 建立 Phase 6E-A eval-only closed-loop experiment manifest / artifact contract owner，不运行仿真、不创建 `runs` artifact。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -609,6 +610,20 @@ Phase 6E default entry target：
 
 - 先实现 eval-only closed-loop experiment manifest / artifact contract owner，固定 A/B/C branch definitions、T1 target spec、future run-root / expected-file layout 和 no-overwrite validation。
 - Phase 6E-A 不运行 simulation、不创建 `runs` artifact、不接 production planner；它只让后续 runner/harness 有一个可测试、可复用、不会覆盖既有证据的 manifest contract。
+
+Phase 6E-A note：
+
+- `testbed.eval.terrain_residual_closed_loop_manifest.build_closed_loop_experiment_manifest()` 已定义 eval-only closed-loop experiment manifest / artifact contract owner。
+- 该 helper 只接收显式输入：future `results_root`、target spec、A/B/C branch definitions、cycle budget、stop conditions、expected metric names、expected artifact files 和 protected evidence roots；它不读取隐式全局路径、不创建 run root、不写 `runs` artifact、不启动 simulation、不接 rollout-review schema 或 production planner。
+- Branch order 固定为 `current_planner_baseline`、`heuristic_residual_pipeline`、`calibrated_residual_pipeline`。A branch 为 current planner baseline，B branch 为 heuristic residual pipeline 且保持 `runtime_integration_status=not_integrated`，C branch 在 `calibration_available=False` 时保持 `not_evaluated` / `blocked_by_missing_gold_samples`。
+- Artifact contract 验证 expected files 必须是相对路径且不能逃逸 future results root；no-overwrite validation 会在 proposed results root 等于或嵌套在 protected current evidence root 下时返回 `protected_evidence_root_overlap`。
+- Phase 6E-A 仍不完成完整 A/B/C closed-loop baseline comparison；它只把 Phase 6D 设计变成可测试 manifest shape，不引入 selected candidate、top-k、runtime action、pass/fail、eval success、planner success、official defaults、official thresholds 或 calibrated fallback。
+
+Phase 6E-B default entry target：
+
+- 下一步应实现 eval-only branch run plan / executable cut-intent boundary contract owner，把 Phase 6E-A manifest 中的 A/B/C branch definitions 转换成未来 runner 可消费的 per-branch run plan。
+- 重点只定义 B branch 的 diagnostic ranking 到 executable cut-intent 的边界字段和 validation 状态；不得把 ranking 提升为 selected candidate、top-k、runtime action、production planner 行为或 pass/fail / eval success / planner success 语义。
+- 该 slice 仍不运行 simulation、不创建 `runs` artifact、不接 production planner、不覆盖 current evidence；C branch 继续在没有 usable calibration 时保持 `not_evaluated` / `blocked_by_missing_gold_samples`。
 
 通过标准：
 

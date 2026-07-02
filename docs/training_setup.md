@@ -564,6 +564,30 @@ top-level status 包括 `present`、`invalid_current_planner_evidence`、`invali
 counterfactual cycle count / cycle time 不可用、production integration 未接入、official success semantics 未定义、
 calibrated-model fallback 未发明。完整 Phase 6 闭环 baseline comparison 仍需要真正的 A/B/C 多铲仿真证据。
 
+offline closed-loop experiment manifest / artifact contract 当前由
+`testbed.eval.terrain_residual_closed_loop_manifest.build_closed_loop_experiment_manifest()` 生成。
+它是 eval-only manifest helper，用于把 Phase 6D 的 closed-loop simulation design 固化成可验证的
+manifest shape；它不运行 simulation，不创建 run root，不写 `runs` artifact，不接入 production planner、
+rollout-review schema 或 runtime action selection。
+
+调用方必须显式传入 future `results_root`、target spec、A/B/C branch definitions、cycle budget、
+stop conditions、expected metric names、expected artifact files 和 protected evidence roots。target spec 必须
+包含 `grid_shape`、row / col bounds、`target_depth_m` 和 official / non-official marker；artifact files
+必须是相对路径，不能是绝对路径或包含 `..` 的 escaping path。helper 会固定 branch order 为
+`current_planner_baseline`、`heuristic_residual_pipeline`、`calibrated_residual_pipeline`：A branch 为
+current planner baseline，B branch 为 heuristic residual pipeline 且保持 `runtime_integration_status=not_integrated`，
+C branch 在没有 explicit calibration availability 时保持 `not_evaluated`，reason 为
+`blocked_by_missing_gold_samples`。
+
+manifest 输出包含 schema/source/status/offline_only、normalized branches、artifact layout、no-overwrite
+validation、target spec、cycle budget、stop-condition summary、metric names、validation errors、non-goal statuses
+和 provenance statuses。no-overwrite validation 会在 proposed results root 等于或嵌套在 protected evidence
+root 下时返回 `protected_evidence_root_overlap`，防止覆盖既有 current-run evidence。top-level status 包括
+`present`、`invalid_target_spec`、`invalid_branch_definitions`、`invalid_artifact_layout`、
+`protected_evidence_root_overlap`、`invalid_cycle_budget`、`invalid_stop_conditions`、`invalid_metric_names`
+和 `invalid_protected_evidence_roots`。该合同不输出 selected candidate、top-k、runtime action、pass/fail、
+eval success、planner success、official defaults、official thresholds 或 calibrated fallback。
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续
