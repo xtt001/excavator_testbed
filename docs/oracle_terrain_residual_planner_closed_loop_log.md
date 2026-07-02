@@ -5692,6 +5692,154 @@ Planner decision:
   last-plan reuse, source repetition, command-space controls, official
   thresholds, or calibrated fallback.
 
+## 2026-07-02: Phase 6G-K Residual Return-Target Handoff Contract
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 57]`.
+- Initial HEAD: `d6c62f3e683bff74ce6122a8348fb93eb8b6e69c`.
+- Initial dirty state: clean.
+
+Root-cause trace:
+
+- Gate-2 B config had `dig_cut_planner.mode=residual_cut_intent`,
+  `return_target_planner.enabled=true`, and a present explicit runtime source
+  covering cycles `[0, 1, 2]`.
+- `PrimitiveReturnTokenPlanningService.build_next_dig_cut_plan_for_return()`
+  supported conservative/operator-prior/coverage modes only. In residual mode
+  it raised unsupported-mode, and `PrimitiveTokenRuntimeCoordinator` converted
+  that exception into `return_target_token_source=fallback_zero`.
+- The fix target was therefore the residual return-target provider path, not
+  the target-cycle count.
+
+TDD:
+
+- Added failing tests before production changes:
+  - `tests/test_primitive_return_token_planning.py::test_residual_cut_intent_route_consumes_explicit_return_target_provider`
+  - `tests/test_primitive_residual_cut_intent_runtime_mode.py::test_token_planning_runtime_passes_residual_return_target_provider_to_return_ports`
+  - `tests/test_primitive_residual_cut_intent_source.py::test_primitive_planner_exposes_next_cycle_residual_return_target_provider`
+- Red command:
+  `python -m pytest -q tests/test_primitive_return_token_planning.py::test_residual_cut_intent_route_consumes_explicit_return_target_provider tests/test_primitive_residual_cut_intent_runtime_mode.py::test_token_planning_runtime_passes_residual_return_target_provider_to_return_ports tests/test_primitive_residual_cut_intent_source.py::test_primitive_planner_exposes_next_cycle_residual_return_target_provider`.
+- Expected red result: three failures. The return/runtime ports rejected
+  `residual_cut_intent_return_target_plan_provider`, and
+  `PrimitivePlannerACTPolicy` lacked
+  `_residual_cut_intent_return_target_plan_provider()`.
+
+Implementation facts:
+
+- `testbed.planner.primitive.token.return_planning.PrimitiveReturnTokenPlanningService`
+  now owns residual return-target planning for
+  `dig_cut_planner.mode=residual_cut_intent`.
+- The service consumes only an explicit
+  `residual_cut_intent_return_target_plan_provider`; missing provider or
+  missing plan still raises through the existing diagnostic path.
+- `PrimitiveTokenPlanningRuntimePorts` passes the provider to return planning.
+- `ReturnTargetTokenPlanner.plan_from_dig_cut_plan()` preserves existing return
+  source-prefix semantics, producing sources such as
+  `conditioned_return_explicit_residual_cut_intent_dig_cut_token`.
+- `PrimitivePlannerACTPolicy` adds only thin large-file wiring: active dig uses
+  the existing provider with exact current-cycle lookup, while return-target
+  planning builds a provider from the same request-local
+  `residual_cut_intent_source_path` with `cycle_index + 1` lookup.
+
+Config facts:
+
+- No checked-in eval YAML/default config was edited.
+- Fresh B smoke used existing request-local artifact config from
+  `runs/eval/oracle_terrain_residual_phase6g_i_gate2_b_branch_request_20260702/heuristic_residual_pipeline_eval_config.yaml`.
+- Resolved smoke config values:
+  `eval.target_cycle_gate=2`,
+  `eval.target_cycle_gate_terminal_hold_steps=0`,
+  `eval.save_video=false`,
+  `dig_cut_planner.enabled=true`,
+  `dig_cut_planner.mode=residual_cut_intent`,
+  `dig_cut_planner.residual_cut_intent_source_path=runs/eval/oracle_terrain_residual_phase6g_i_fraction_010_depth025_min1_20260702/results/residual_cut_intent_runtime_source.json`,
+  `dig_cut_planner.fallback_mode=raise`,
+  `dig_cut_planner.hold_token_until_skill_exit=false`,
+  `dig_cut_planner.prior_path=""`,
+  `return_target_planner.enabled=true`,
+  `return_target_planner.hold_token_until_skill_exit=true`, and
+  `return_target_planner.token_source_prefix=conditioned_return`.
+
+Fresh B smoke:
+
+- Command completed with exit code `0`:
+  `python testbed/cli/eval.py --config runs/eval/oracle_terrain_residual_phase6g_i_gate2_b_branch_request_20260702/heuristic_residual_pipeline_eval_config.yaml --num-rollouts 1 --target-cycle-gate 2 --output-dir runs/eval/oracle_terrain_residual_phase6g_k_real_b_smoke_20260702/heuristic_residual_pipeline --no-video`.
+- Artifact root:
+  `runs/eval/oracle_terrain_residual_phase6g_k_real_b_smoke_20260702/heuristic_residual_pipeline/results`.
+- Recursive file count: `9` (`5` files at the results root plus `4` rollout
+  files).
+- Metadata status `completed`, error `null`.
+- First dump evidence: `dump_start_mask=1` at `t=699`, `dump_end_mask=1` at
+  `t=718`.
+- First post-dump handoff evidence: `t=719` entered `return` with
+  `return_target_token_source=conditioned_return_explicit_residual_cut_intent_dig_cut_token`,
+  `return_start_envelope_token_source=live_current_obs_fallback+relocate_spatial_linear+relocate_qpos_linear`,
+  `return_to_dig_entry_close=false`, and
+  `return_to_dig_start_envelope_ready=false`.
+- Rollout source counts: `420` rows with
+  `conditioned_return_explicit_residual_cut_intent_dig_cut_token`, `719` rows
+  with `none`, and no rows with `fallback_zero`.
+- Skill row counts: bootstrap `267`, dig `150`, carry `143`, dump `159`,
+  return `420`.
+- Gate/count fields remained not satisfied:
+  `target_cycle_gate_success_rate=0.0`,
+  `target_cycle_completed_dump_mean=0.0`,
+  `coverage_completed_dump_count=0`,
+  `completed_transition_count=0`, and `transition_timeout_count=1`.
+- This proves the assigned blocker changed from dump-to-dig with
+  `fallback_zero` to explicit residual return-target with an uncompleted return
+  handoff. It does not prove Phase 6 success.
+
+Verification:
+
+- Red command above failed for the expected missing-provider/missing-method
+  reasons.
+- Green command for the three new tests passed: `3 passed`.
+- Related token/return-handoff bundle passed:
+  `python -m pytest -q tests/test_primitive_return_token_planning.py tests/test_primitive_residual_cut_intent_runtime_mode.py tests/test_primitive_residual_cut_intent_source.py tests/test_primitive_residual_cut_intent_tokens.py tests/test_primitive_dig_token_planning.py tests/test_primitive_token_runtime.py tests/test_primitive_return_handoff.py`
+  -> `69 passed`.
+- A broader exploratory bundle that included
+  `tests/test_primitive_return_state.py` had one unrelated fixture failure for
+  missing `pre_dig_align_entry_intent_controlled_dims`; it was not fixed in
+  this slice.
+- `python -m compileall -q ...` passed for touched Python modules and tests.
+- `python scripts/planner_architecture_doc_guard.py --check-changed-docs ...`
+  passed after this log entry.
+- `python scripts/planner_architecture_doc_guard.py --check-doc-inventory`
+  passed.
+- `python scripts/planner_architecture_doc_guard.py --check-architecture-contract`
+  passed.
+- `git diff --check` passed after this log entry.
+
+Executor preserved non-goals:
+
+- Executor did not fetch, pull, push, reset, checkout, rebase, stage, or commit.
+- No checked-in eval YAML/default config changes.
+- No hidden fallback, source repetition, last-plan reuse, official pass/fail,
+  eval success, planner success, production readiness, command-space controls,
+  official thresholds, calibrated fallback, or coverage-count semantics change.
+
+Planner closure audit:
+
+- The controlling planner accepted Phase 6G-K after rechecking target lock,
+  status, diff scope, docs, and artifact facts. The callback was factual and
+  stayed within the token/runtime/docs/tests ownership boundary.
+- Large-file policy remained satisfied: `testbed/policies/hybrid/primitive_planner.py`
+  is a large file and received only thin provider wiring. The return-target
+  behavior lives in the focused token planning owner.
+- Planner-side artifact sampling corrected the file-count wording above and
+  confirmed the first post-dump row `t=719` enters `return` with
+  `return_target_token_source=conditioned_return_explicit_residual_cut_intent_dig_cut_token`
+  and no `fallback_zero`.
+- Remaining blocker for Phase 6G-L is not residual dig-token fallback. It is
+  return handoff/envelope readiness: `return_to_dig_entry_close=false`,
+  `return_to_dig_start_envelope_ready=false`, and the first post-dump envelope
+  checks fail on long/short position, dig contact, and qpos bounds before the
+  rollout reaches `transition_timeout_count=1` / `completed_transition_count=0`.
+
 ## 2026-07-02: Phase 6G-G Bounded B Smoke Stop-Timing Contract
 
 Target lock:

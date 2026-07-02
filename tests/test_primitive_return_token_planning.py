@@ -11,6 +11,10 @@ from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX
 from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX
 from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX
 from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
+from testbed.planner.primitive.token.dig_planning import (
+    DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT,
+    ResidualCutIntentPlanProvider,
+)
 from testbed.planner.primitive.token.return_planning import (
     PrimitiveReturnTokenPlanningPorts,
     PrimitiveReturnTokenPlanningService,
@@ -18,6 +22,7 @@ from testbed.planner.primitive.token.return_planning import (
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
 from testbed.planner.primitive.token.tokens import (
+    DigCutTokenPlan,
     ReturnStartEnvelopeTokenPlan,
     ReturnTargetTokenPlan,
 )
@@ -88,6 +93,28 @@ class _ReturnTargetPlanner:
             source=f"return_{dig_cut_planner_mode}",
             corridor_id=corridor_id,
         )
+
+    def plan_from_dig_cut_plan(
+        self,
+        dig_cut_plan: DigCutTokenPlan,
+        *,
+        source_suffix: str,
+        corridor_id: int,
+    ) -> ReturnTargetTokenPlan:
+        self.events.append(
+            "plan_from_dig_cut_plan:"
+            f"{source_suffix}:{corridor_id}:"
+            f"{dig_cut_plan.raw_fields['operator_entry_x_m']}"
+        )
+        plan = ReturnTargetTokenPlan(
+            token=np.asarray(dig_cut_plan.token, dtype=np.float32).copy(),
+            raw_fields=MappingProxyType(dict(dig_cut_plan.raw_fields)),
+            source=f"conditioned_return_{source_suffix}",
+            fallback_reason=str(dig_cut_plan.fallback_reason),
+            corridor_id=int(corridor_id),
+        )
+        self.last_plan = plan
+        return plan
 
 
 class _ReturnStartEnvelopePlanner:
@@ -164,6 +191,7 @@ def _ports(
     prior_spatial: bool = True,
     prior_qpos: bool = False,
     events: list[str] | None = None,
+    residual_return_target_plan_provider: ResidualCutIntentPlanProvider | None = None,
 ) -> tuple[
     PrimitiveReturnTokenPlanningPorts,
     dict[str, object],
@@ -222,6 +250,9 @@ def _ports(
                 f"{selected.corridor_id}:{obs['id']}:{update_state}"
             )
             or {"operator_entry_x_m": 12.5}
+        ),
+        residual_cut_intent_return_target_plan_provider=(
+            residual_return_target_plan_provider
         ),
     )
     return ports, state, events, target_planner, start_planner
@@ -285,6 +316,55 @@ def test_coverage_route_selects_sets_active_and_builds_raw_fields(mode: str) -> 
     assert source == f"return_{mode}"
     assert fallback == f"fallback_return_{mode}"
     assert corridor_id == 42
+
+
+def test_residual_cut_intent_route_consumes_explicit_return_target_provider() -> None:
+    events: list[str] = []
+    provided_plan = DigCutTokenPlan(
+        token=_token(3, 8.0),
+        raw_fields=MappingProxyType(
+            {
+                "operator_entry_x_m": 8.0,
+                "operator_entry_z_m": -0.25,
+            }
+        ),
+        source="explicit_residual_cut_intent_dig_cut_token",
+        fallback_reason="",
+        in_prior_p10_p90=False,
+    )
+
+    def provider(obs: dict[str, Any]) -> DigCutTokenPlan:
+        events.append(f"provider:{obs['id']}")
+        return provided_plan
+
+    ports, _, events, target_planner, _ = _ports(
+        mode=DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT,
+        events=events,
+        residual_return_target_plan_provider=provider,
+    )
+
+    token, raw_fields, source, fallback, corridor_id = (
+        PrimitiveReturnTokenPlanningService.from_ports(
+            ports
+        ).build_next_dig_cut_plan_for_return(
+            {"id": "obs", "pose_x": 0, "pose_y": 0, "pose_z": 0}
+        )
+    )
+
+    assert events == [
+        "provider:obs",
+        "plan_from_dig_cut_plan:explicit_residual_cut_intent_dig_cut_token:-1:8.0",
+    ]
+    assert source == "conditioned_return_explicit_residual_cut_intent_dig_cut_token"
+    assert fallback == ""
+    assert corridor_id == -1
+    assert raw_fields == {
+        "operator_entry_x_m": 8.0,
+        "operator_entry_z_m": -0.25,
+    }
+    assert target_planner.last_plan is not None
+    assert token is not target_planner.last_plan.token
+    np.testing.assert_allclose(token, _token(3, 8.0))
 
 
 def test_unsupported_return_target_mode_keeps_old_error_shape() -> None:

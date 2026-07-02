@@ -271,3 +271,39 @@ def test_token_planning_runtime_passes_residual_cut_intent_provider_to_dig_ports
     assert "residual_cut_intent_plan_provider" in runtime_fields
     assert "residual_cut_intent_plan_provider" in dig_fields
     assert dig_ports.residual_cut_intent_plan_provider is provider
+
+
+def test_token_planning_runtime_passes_residual_return_target_provider_to_return_ports() -> None:
+    dig_provider = lambda obs: _plan(8.0, source="runtime_dig_provider")
+    return_provider = lambda obs: _plan(9.0, source="runtime_return_provider")
+    token_state = PrimitiveTokenRuntimeState.fresh()
+    coverage_state = CoverageRuntimeState()
+    runtime = PrimitiveTokenPlanningRuntime.from_ports(
+        PrimitiveTokenPlanningRuntimePorts(
+            token_state=token_state,
+            coverage_state=coverage_state,
+            dig_cut_planner_mode=lambda: DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT,
+            dig_cut_planner_fallback_mode=lambda: "conservative_pose",
+            cycle_index=lambda: 0,
+            dig_cut_token_planner=lambda: _DigCutPlanner([]),
+            dig_depth_profile_token_planner=lambda: object(),
+            return_target_token_planner=lambda: object(),
+            return_start_envelope_token_planner=lambda: object(),
+            observation_facts=lambda obs: _ObservationFacts(),
+            select_next_coverage_corridor=lambda obs: SimpleNamespace(
+                corridor_id=1,
+                cell_id=2,
+            ),
+            coverage_raw_fields=lambda corridor, *, obs, update_state=False: {
+                "operator_entry_x_m": 1.0,
+            },
+            residual_cut_intent_plan_provider=dig_provider,
+            residual_cut_intent_return_target_plan_provider=return_provider,
+        )
+    )
+
+    return_ports = runtime.return_token_planning_ports()
+    runtime_fields = {field.name for field in fields(PrimitiveTokenPlanningRuntimePorts)}
+
+    assert "residual_cut_intent_return_target_plan_provider" in runtime_fields
+    assert return_ports.residual_cut_intent_return_target_plan_provider is return_provider

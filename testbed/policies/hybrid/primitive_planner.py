@@ -1425,12 +1425,22 @@ class PrimitivePlannerACTPolicy(Policy):
             residual_cut_intent_plan_provider=(
                 self._residual_cut_intent_plan_provider()
             ),
+            residual_cut_intent_return_target_plan_provider=(
+                self._residual_cut_intent_return_target_plan_provider()
+            ),
         )
 
     def _residual_cut_intent_plan_provider(self):
         return build_residual_cut_intent_plan_provider_from_source_path(
             str(getattr(self, "residual_cut_intent_source_path", "")),
             cycle_index=lambda: int(self._primitive_cycle_runtime_state().cycle_index),
+        )
+
+    def _residual_cut_intent_return_target_plan_provider(self):
+        return build_residual_cut_intent_plan_provider_from_source_path(
+            str(getattr(self, "residual_cut_intent_source_path", "")),
+            cycle_index=lambda: int(self._primitive_cycle_runtime_state().cycle_index)
+            + 1,
         )
 
     def _primitive_coverage_selection_runtime_ports(

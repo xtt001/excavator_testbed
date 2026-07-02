@@ -204,3 +204,34 @@ def test_primitive_planner_exposes_residual_source_provider_as_thin_port(
 
     policy.residual_cut_intent_source_path = ""
     assert policy._residual_cut_intent_plan_provider() is None
+
+
+def test_primitive_planner_exposes_next_cycle_residual_return_target_provider(
+    tmp_path: Path,
+) -> None:
+    source_path = _write_source(
+        tmp_path / "residual_cut_intent_source.json",
+        plans=[
+            {
+                "cycle_index": 0,
+                "plan": _adapter_output("cut_candidate_000000", 0.5),
+            },
+            {
+                "cycle_index": 1,
+                "plan": _adapter_output("cut_candidate_000001", 0.75),
+            },
+        ],
+    )
+
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy.residual_cut_intent_source_path = str(source_path)
+    policy._primitive_cycle_runtime_state().cycle_index = 0
+
+    provider = policy._residual_cut_intent_return_target_plan_provider()
+
+    assert provider is not None
+    _token, raw_fields, _source, _fallback_reason = provider({"id": "obs"})
+    assert raw_fields["operator_entry_x_m"] == 0.75
+
+    policy.residual_cut_intent_source_path = ""
+    assert policy._residual_cut_intent_return_target_plan_provider() is None

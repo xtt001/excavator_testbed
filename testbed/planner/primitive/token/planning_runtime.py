@@ -47,6 +47,9 @@ class PrimitiveTokenPlanningRuntimePorts:
     select_next_coverage_corridor: Callable[[dict[str, Any]], Any]
     coverage_raw_fields: DigCoverageRawFieldsBuilder
     residual_cut_intent_plan_provider: ResidualCutIntentPlanProvider | None = None
+    residual_cut_intent_return_target_plan_provider: (
+        ResidualCutIntentPlanProvider | None
+    ) = None
 
 
 @dataclass(frozen=True)
@@ -103,6 +106,9 @@ class PrimitiveTokenPlanningRuntime:
             observation_facts=ports.observation_facts,
             select_next_coverage_corridor=ports.select_next_coverage_corridor,
             coverage_raw_fields=ports.coverage_raw_fields,
+            residual_cut_intent_return_target_plan_provider=(
+                ports.residual_cut_intent_return_target_plan_provider
+            ),
         )
 
     def build_dig_depth_profile_tokens_for_obs(

@@ -565,6 +565,7 @@ Phase 5 closure note：
 - [x] 建立 Phase 6G-H same-gate real A/B bounded smoke comparison，将 current A branch 和 Phase 6G-G B branch 的真实 one-cycle smoke artifacts 放进同一 durable comparison 输出。
 - [x] 建立 Phase 6G-I smallest multi-cycle B request source-coverage preflight，并用显式 multi-step predicted source 完成 `target_cycle_gate=2` real A/B bounded smoke comparison。
 - [x] 完成 Phase 6G-J B gate-2 no-dump 根因审查，确认 B 已消费 residual dig-cut token 且实际发生一次 dump，但 dump 后 return/handoff 链和 coverage-count 口径导致 gate 计数为 `0`。
+- [x] 建立 Phase 6G-K explicit residual return-target handoff contract，使 B branch dump 后 return-target 规划使用同一 request-local residual source 的 next-cycle plan，而不是落到 `fallback_zero`。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
@@ -872,6 +873,21 @@ Phase 6G-J note：
   return-target / cycle-handoff contract after dump, or a narrowly justified target-cycle counting fix if evidence
   proves the count is wrong. It must not invent official pass/fail, hidden fallback, source repetition, or default
   runtime behavior.
+
+Phase 6G-K note：
+
+- `testbed.planner.primitive.token.return_planning.PrimitiveReturnTokenPlanningService` now has the residual
+  return-target planning owner for `dig_cut_planner.mode=residual_cut_intent`. It consumes only an explicit
+  `residual_cut_intent_return_target_plan_provider`; missing provider or missing plan keeps the existing exception
+  path and does not introduce hidden fallback.
+- `PrimitivePlannerACTPolicy` wires that provider as a thin port from the same request-local
+  `dig_cut_planner.residual_cut_intent_source_path`, but with `cycle_index + 1` lookup. Active dig token planning
+  still uses exact current-cycle lookup, so the source contract remains explicit and no source repetition or
+  last-plan reuse is added.
+- Return target source is derived through existing return target prefix semantics, for example
+  `conditioned_return_explicit_residual_cut_intent_dig_cut_token`. The generated return-start envelope continues to
+  use existing return-start-envelope planning; no checked-in eval YAML/default config, threshold, pass/fail,
+  planner success, production readiness, command-space control, or calibrated fallback semantics are changed.
 
 通过标准：
 

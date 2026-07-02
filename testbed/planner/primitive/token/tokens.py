@@ -417,6 +417,19 @@ class ReturnTargetTokenPlanner:
             corridor_id=int(corridor_id),
         )
 
+    def plan_from_dig_cut_plan(
+        self,
+        dig_cut_plan: DigCutTokenPlan,
+        *,
+        source_suffix: str,
+        corridor_id: int,
+    ) -> ReturnTargetTokenPlan:
+        return self._from_dig_cut_plan(
+            dig_cut_plan,
+            source=f"{self.source_prefix}_{source_suffix}",
+            corridor_id=int(corridor_id),
+        )
+
     @staticmethod
     def _from_dig_cut_plan(
         dig_cut_plan: DigCutTokenPlan,

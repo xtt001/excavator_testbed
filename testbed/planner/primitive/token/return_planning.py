@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 
+from testbed.planner.primitive.token.dig_planning import (
+    DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT,
+    RESIDUAL_CUT_INTENT_NO_PLAN_REASON,
+    ResidualCutIntentPlanProvider,
+)
 from testbed.planner.primitive.token.tokens import (
+    DigCutTokenPlan,
     ReturnStartEnvelopeTokenPlan,
     ReturnStartEnvelopeTokenPlanner,
     ReturnTargetTokenPlan,
@@ -48,6 +54,9 @@ class PrimitiveReturnTokenPlanningPorts:
     observation_facts: Callable[[dict[str, Any]], PrimitiveObservationFacts]
     select_next_coverage_corridor: Callable[[dict[str, Any]], Any]
     coverage_raw_fields: CoverageRawFieldsBuilder
+    residual_cut_intent_return_target_plan_provider: (
+        ResidualCutIntentPlanProvider | None
+    ) = None
 
 
 @dataclass(frozen=True)
@@ -98,7 +107,46 @@ class PrimitiveReturnTokenPlanningService:
                     corridor_id=corridor_id,
                 )
             )
+        if mode == DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT:
+            return self.unpack_return_target_token_plan(
+                self.build_residual_cut_intent_return_target_plan(obs)
+            )
         raise ValueError(f"Unsupported dig_cut_planner mode {mode!r}.")
+
+    def build_residual_cut_intent_return_target_plan(
+        self,
+        obs: dict[str, Any],
+    ) -> ReturnTargetTokenPlan:
+        provider = self.ports.residual_cut_intent_return_target_plan_provider
+        if provider is None:
+            raise ValueError(RESIDUAL_CUT_INTENT_NO_PLAN_REASON)
+        result = provider(obs)
+        if result is None:
+            raise ValueError(RESIDUAL_CUT_INTENT_NO_PLAN_REASON)
+        planner = self.ports.return_target_token_planner()
+        if isinstance(result, DigCutTokenPlan):
+            dig_cut_plan = result
+        elif isinstance(result, tuple) and len(result) == 4:
+            _token, raw_fields, source, fallback_reason = result
+            if not isinstance(raw_fields, Mapping):
+                raise TypeError(
+                    "residual_cut_intent return target provider raw_fields must be a mapping"
+                )
+            dig_cut_plan = planner.dig_cut_planner.plan_from_raw_fields(
+                dict(raw_fields),
+                source=str(source),
+                fallback_reason=str(fallback_reason),
+            )
+        else:
+            raise TypeError(
+                "residual_cut_intent return target provider must return "
+                "DigCutTokenPlan or DigCutPlanTuple"
+            )
+        return planner.plan_from_dig_cut_plan(
+            dig_cut_plan,
+            source_suffix=str(dig_cut_plan.source),
+            corridor_id=-1,
+        )
 
     @staticmethod
     def unpack_return_target_token_plan(

@@ -993,6 +993,17 @@ return-target / cycle-handoff contract after dump, or a narrowly justified count
 count is wrong; it must not introduce hidden fallback, source repetition, official pass/fail, eval success, planner
 success, production readiness, command-space controls, or calibrated fallback.
 
+Phase 6G-K implements the core handoff contract instead of changing the gate count. Residual return-target planning is
+owned by `testbed.planner.primitive.token.return_planning.PrimitiveReturnTokenPlanningService`: when
+`dig_cut_planner.mode=residual_cut_intent`, it consumes only an explicit
+`residual_cut_intent_return_target_plan_provider` and derives return target tokens from that plan through existing
+return-target prefix semantics, such as `conditioned_return_explicit_residual_cut_intent_dig_cut_token`. The policy
+shell builds this provider from the same request-local `dig_cut_planner.residual_cut_intent_source_path` as the active
+dig provider, but with `cycle_index + 1` lookup so return prepares the next dig while active dig remains exact current
+cycle. Missing provider/source still follows the existing error/fallback-zero diagnostic path; there is no hidden
+fallback, last-plan reuse, source repetition, checked-in eval YAML/default config change, official pass/fail,
+planner-success, production-readiness, command-space-control, or calibrated-fallback claim.
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续
