@@ -940,6 +940,20 @@ Phase 6G-Q note:
   with residual B dump-exit terrain/contact state, or whether return ACT cannot reach a valid target from that state.
   It should not default to another residual-source coordinate variant.
 
+Phase 6G-R note:
+
+- The envelope-compatibility diagnostic confirmed that 6G-P selected cell `0` by the current nearest-entry rule:
+  cycle-1 raw entry `(0.8955, -0.952)` exactly matches checked-in prior cell `0`, and all return rows used
+  `qc6_return_start_envelope_cell_0+relocate_spatial_linear+relocate_qpos_linear`.
+- No mapping/reporting bug was evidenced. The checked-in 6G-P prior cell `0` lacks a `dig_start_local_depth_m`
+  summary, generates a local-depth lower bound around `0.240m`, has a plane-depth floor around `0.586m`, and requires
+  contact. The 6G-P dump-exit and all `420` return rows stayed at local depth `0.0`, plane depth `0.0`, and contact
+  `0.0`.
+- The working 2026-06-16 handoff used a different surface-depth prior artifact whose selected cell includes shallow
+  local-depth stats and a plane-depth p05 of `0.0`. The next bounded evidence should therefore be a request-local
+  counterfactual that keeps the 6G-P mixed source but swaps only the prior path to that already-existing
+  surface-depth prior, without promoting config defaults.
+
 通过标准：
 
 - B 优于 A，说明收益来自 residual closed-loop。

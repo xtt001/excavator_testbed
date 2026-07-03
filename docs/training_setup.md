@@ -1031,6 +1031,14 @@ true, and no failed checks. The next training/eval question is therefore whether
 is compatible with residual B dump-exit terrain/contact state, not whether another residual-source coordinate variant
 can improve the return token.
 
+Phase 6G-R narrowed that question to the prior artifact used for the return-start envelope. The 6G-P checked-in prior
+`yulong_removed_depth_dig_cut_prior_v3` selected cell `0` consistently, but its target required local/plane depth and
+contact that the residual B dump-exit and return trajectory never reached. The known working run used the existing
+surface-depth prior artifact from
+`runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/`, with explicit shallow local-depth stats and a
+plane-depth p05 of `0.0`. The next smoke should be a request-local prior-path counterfactual only; do not treat it as
+a checked-in default promotion.
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

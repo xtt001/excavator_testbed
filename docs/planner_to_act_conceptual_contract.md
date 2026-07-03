@@ -357,6 +357,13 @@ eval 侧的 `return_low_dim_keys` 也是同一组 key。
   tokens describe a target start-state distribution that must be physically
   reachable from the dump-exit terrain/contact state; they are not a success
   override and do not relax the readiness gate.
+- Phase 6G-R clarified that the selected envelope target also depends on which
+  prior artifact supplies the cell-conditioned start-state distribution. The
+  checked-in 6G-P prior selected cell `0` consistently, but that cell asked for
+  local/plane depth and contact values that the residual B return trajectory
+  never reached. A request-local surface-depth prior counterfactual is allowed
+  as evidence, but changing checked-in defaults remains a separate semantic
+  decision.
 
 所以当前主线里，return 的任务是回到“dig ACT 可以接管的状态分布”，而不是执行下一铲
 dig plan 的前半段。下一铲 plan 仍然存在，但它停留在 planner/scheduler 侧，等真正切回

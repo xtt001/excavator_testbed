@@ -6493,6 +6493,101 @@ Next bounded target:
   P/L/working rollout rows. If it finds a narrow testable owner bug, it may use
   TDD and sync docs; otherwise it must return exact artifact facts and stop.
 
+## 2026-07-03: Phase 6G-R Envelope Compatibility Diagnostic
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial and final branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 64]`.
+- Initial and final HEAD:
+  `b2c48863db02d2bb49b7a4c93f947eb96d4fe21b`.
+- Initial and final tracked dirty state: clean.
+
+Request-local artifact:
+
+- Created ignored diagnostic artifact:
+  `runs/eval/oracle_terrain_residual_phase6g_r_envelope_compatibility_diagnostic_20260703/phase6g_r_envelope_compatibility_analysis.json`.
+- No tracked source, doc, test, or checked-in config files changed in the
+  executor slice.
+
+Diagnostic facts:
+
+- 6G-P mixed cycle `1` return-target raw entry was exactly
+  `(x_m=0.8955, z_m=-0.952)`.
+- Under the checked-in 6G-P prior
+  `testbed/configs/planner_priors/yulong_removed_depth_dig_cut_prior_v3.json`,
+  that entry maps to coverage cell `0` with distance `0.0m`; the next nearest
+  cell was cell `1` at `0.13265703901414347m`.
+- The observed 6G-P return-start envelope source was
+  `qc6_return_start_envelope_cell_0+relocate_spatial_linear+relocate_qpos_linear`
+  for all `420` return rows. Selection mapping is therefore consistent with
+  the current nearest-entry rule; no selection bug is evidenced.
+- The checked-in 6G-P prior cell `0` has `source_count=110`,
+  `source_fraction=0.201835`, and
+  `match_source=nearest_qc6_coverage_cell_by_next_operator_entry`.
+- That prior cell has no `dig_start_local_depth_m` summary, but its generated
+  token/check range requires local depth at least `0.23979200243949889`; it
+  also has `dig_start_plane_depth_m.p50=0.585981` and contact active through
+  token index `6=1.0`.
+- 6G-P dump-end row `t=701` had `env_state[31] local_depth_m=0.0`,
+  `env_state[8] plane_depth_m=0.0`, and `dig_contact=0.0`; the first return row
+  kept the same depth/contact values.
+- Across all `420` analyzed 6G-P return rows, `local_depth_m`, `plane_depth_m`,
+  and `dig_contact` each had ok count `0` and fail count `420`; their observed
+  values stayed `0.0` from first to last return row.
+- 6G-P min-entry row `t=1119` had
+  `return_to_dig_entry_error_m=0.5719057233363999`, failed checks
+  `dig_contact`, `local_depth_m`, `plane_depth_m`, and `qpos_3`. Spatial
+  long/short and `qpos_0` / `qpos_1` / `qpos_2` were already inside range.
+- The working 2026-06-16 run used a different prior artifact:
+  `runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/planner_prior_v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524_next_entry_cells.json`.
+  Its working transition row used
+  `qc6_return_start_envelope_cell_1+relocate_spatial_linear+relocate_qpos_linear`.
+- Working prior cell `1` includes `dig_start_local_depth_m`
+  `p05=0.00601`, `p50=0.011339`, `p95=0.021112`, and
+  `dig_start_plane_depth_m` with `p05=0.0`, `p50=0.056943`, `p95=0.253921`.
+  The working transition row passed all checks with `dig_contact=1.0` and
+  local depth inside the configured range.
+
+Planner closure audit:
+
+- Accepted as a partial diagnostic. It narrowed the first directly evidenced
+  owner to the selected checked-in cell-0 return-start envelope target's
+  depth/contact compatibility with the residual B dump-exit and return
+  trajectory.
+- It did not prove a narrow code bug: current residual raw-entry to corridor
+  selection selects cell `0` correctly under the checked-in prior, and handoff
+  reporting explains `ready=false` through concrete failed checks.
+- The diagnostic exposes a config/artifact-level mismatch: 6G-P is using
+  `yulong_removed_depth_dig_cut_prior_v3`, whose cell-0 envelope asks for deep
+  local/plane depth and contact that residual B never reaches, while the known
+  working run uses a surface-depth prior with explicit local-depth stats and a
+  shallow plane-depth floor.
+- No local commit was made for executor work because the executor produced only
+  ignored request-local artifacts and left the tracked tree clean.
+
+Reflection:
+
+- Verdict: aligned partial. The next useful evidence is not another source
+  variant or gate-threshold change; it is a request-local prior counterfactual
+  using an already-existing, verified surface-depth prior artifact.
+- Efficiency verdict: the slice removed a class of code-owner suspicions
+  without simulator cost. A single bounded smoke is now justified because it
+  tests the artifact/config hypothesis directly.
+
+Next bounded target:
+
+- Phase 6G-S should run a bounded request-local gate-2 B smoke that preserves
+  the 6G-P mixed source and all return/gate settings but swaps only
+  `policy.dig_cut_planner.prior_path` to the working surface-depth prior
+  artifact
+  `runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/planner_prior_v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524_next_entry_cells.json`.
+- The slice must verify the generated config and selected envelope source, then
+  report whether B reaches return handoff, which cell is selected, and whether
+  local depth, plane depth, contact, and qpos checks improve. It must not
+  promote the working prior to a checked-in default or claim official success.
+
 ## 2026-07-02: Phase 6G-G Bounded B Smoke Stop-Timing Contract
 
 Target lock:
