@@ -6175,6 +6175,112 @@ Next bounded target:
   pass/fail, and no code changes unless the executor discovers a narrow
   artifact-generation bug required to run the experiment.
 
+## 2026-07-03: Phase 6G-O Corridor Source B Smoke Probe
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial and final branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 61]`.
+- Initial and final HEAD:
+  `6decbe50270a9db0a91e5a5a78241fc42ddd614a`.
+- Initial and final tracked dirty state: clean.
+
+Request-local artifacts:
+
+- Created ignored, request-local artifacts under:
+  - `runs/eval/oracle_terrain_residual_phase6g_o_corridor_source_probe_20260703`
+  - `runs/eval/oracle_terrain_residual_phase6g_o_b_branch_request_20260703`
+  - `runs/eval/oracle_terrain_residual_phase6g_o_real_b_smoke_20260703`
+- Generated source root file count: `11`.
+- B request root file count: `6`.
+- Smoke results file count: `10`.
+- No tracked source, doc, test, or checked-in config files changed.
+
+Experiment facts:
+
+- The source probe rebuilt all three residual source plans with explicit QC6
+  prior coverage-cell geometry.
+- Prior coverage cell `0` was used for the observed `anchor_cell_index=0`.
+  Its verified entry was `{x_m:0.8955,z_m:-0.952}` and its exit was
+  `{x_m:-0.0301,z_m:-0.7181}`.
+- The request-local `direction_vectors.col_forward` was derived from the
+  normalized cell-0 entry-to-exit delta:
+  `{x:-0.9695232202658369,z:0.24499943952050482}`.
+- Generated runtime source status was `present`, with plan count `3` and
+  cycle coverage `[0, 1, 2]`. All cycles used nonzero corridor-shaped raw
+  fields:
+  `operator_entry_x_m=0.8955`, `operator_entry_z_m=-0.952`,
+  `operator_exit_x_m=0.4107383898670815`,
+  `operator_exit_z_m=-0.8295002802397475`.
+- Cycle `0` dig-cut token became
+  `[0.4477500021457672, -0.47600001096725464, 0.20536918938159943,
+  -0.4147501289844513, -0.9695231914520264, 0.24499943852424622,
+  0.25, 0.023998131975531578, 0.2083333283662796, 1.0]`.
+
+Smoke facts:
+
+- Fresh B smoke used a request-local overlay that only restored the already
+  accepted 6G-L QC6 prior path:
+  `policy.dig_cut_planner.prior_path=testbed/configs/planner_priors/yulong_removed_depth_dig_cut_prior_v3.json`.
+- The smoke command completed with exit code `0` and metadata status
+  `completed`, error `null`.
+- Artifact root:
+  `runs/eval/oracle_terrain_residual_phase6g_o_real_b_smoke_20260703/heuristic_residual_pipeline/results`.
+- Row count: `415`.
+- Skill counts: bootstrap `267`, dig `148`; no carry, dump, or return rows.
+- The smoke consumed the new explicit corridor dig token for `148` dig rows.
+- It stopped in the first dig with
+  `skill_switch_reason=dig_failed_stop_complete_low_payload`.
+- `dump_start_mask` count `0`, `dump_end_mask` count `0`,
+  `completed_transition_count=0.0`, `transition_timeout_count=0.0`,
+  and `target_cycle_gate_success_rate=0.0`.
+- Final bucket mass was `9.372297286987305`, below the residual bucket-mass
+  threshold path reported by the smoke analysis. No return target, return
+  relocate, return-start envelope, min-entry, or min-envelope row existed.
+
+Planner closure audit:
+
+- The callback is accepted as a partial artifact probe, not as a successful
+  return-handoff experiment. It produced a useful negative result: replacing
+  the whole residual source with corridor-shaped geometry changes active dig
+  behavior and stops before dump/return, so it cannot evaluate the 6G-L return
+  handoff blocker.
+- This does not invalidate the corridor-conditioned return-target hypothesis.
+  It shows the hypothesis must be isolated from active dig: cycle `0` should
+  preserve the original residual source so the first dig can reach dump/return,
+  while cycle `1+` can carry corridor-conditioned return-target / relocate
+  fields for the next dig.
+- No local commit was made for executor work because only ignored run
+  artifacts were created and the tracked tree stayed clean.
+
+Deep reflection:
+
+- Reference base: real closed-loop A/B/C evidence remains the target. The last
+  three recovery slices have narrowed the blocker from return handoff, to
+  source coordinates, to source-cycle coupling. Continuing to globally change
+  source coordinates would optimize the wrong part of the loop.
+- Verdict: aligned partial with another slice-shape adjustment. The next
+  experiment should build a mixed source to isolate active-dig plan semantics
+  from return-target semantics before any durable code or contract promotion.
+- Efficiency verdict: useful artifact evidence. It prevented a bad semantic
+  promotion in which all residual dig plans would be forced into corridor prior
+  coordinates and fail before return.
+- Accepted-slice count since the latest deep reflection remains `0/3` because
+  this was a no-change partial artifact probe, and deep reflection was run
+  immediately.
+
+Next bounded target:
+
+- Phase 6G-P should create a request-local mixed source: cycle `0` copied from
+  the original 6G-I residual source so active dig can reproduce the path that
+  reaches dump/return, and cycles `1` / `2` copied or rebuilt from the 6G-O
+  corridor-shaped source so return-target planning receives nonzero
+  corridor-conditioned fields for the next dig.
+- Then run a bounded gate-2 B smoke with the 6G-L QC6 prior path restored only
+  in request-local config. The goal is to test return handoff in isolation,
+  not to claim official pass/fail or promote source semantics.
+
 ## 2026-07-02: Phase 6G-G Bounded B Smoke Stop-Timing Contract
 
 Target lock:
