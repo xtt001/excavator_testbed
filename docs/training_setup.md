@@ -1014,6 +1014,14 @@ fallback remains diagnostic behavior. A fresh B smoke using only a request-local
 `completed_transition_count=0` because entry-close never became true (`min return_to_dig_entry_error_m ~= 0.781m`
 against `0.55m`) and the envelope gate still failed plane-depth/qpos checks.
 
+Phase 6G-P isolated that blocker from residual source token geometry. A mixed-source B smoke kept cycle `0` on the
+original residual active-dig plan so the rollout reached carry, dump, and return, while cycles `1` / `2` used
+corridor-conditioned next-cycle return target / relocate tokens. Return still timed out with
+`completed_transition_count=0`, `transition_timeout_count=1`, `entry_close_count=0`, and `envelope_ready_count=0`.
+The closest entry row remained just outside the entry gate (`return_to_dig_entry_error_m ~= 0.572m`) and still failed
+contact, depth, and qpos checks. This makes the next training/eval question a return ACT trajectory and dump-exit
+state comparison against the working 2026-06-16 handoff, not another residual-source coordinate variant by default.
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

@@ -6281,6 +6281,135 @@ Next bounded target:
   in request-local config. The goal is to test return handoff in isolation,
   not to claim official pass/fail or promote source semantics.
 
+## 2026-07-03: Phase 6G-P Mixed Source Return-Target Isolation Smoke
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial and final branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 62]`.
+- Initial and final HEAD:
+  `61b6235039ef2bfce109b0057373fbbf24cdad82`.
+- Initial and final tracked dirty state: clean.
+
+Request-local artifacts:
+
+- Created ignored, request-local artifacts under:
+  - `runs/eval/oracle_terrain_residual_phase6g_p_mixed_source_probe_20260703_r1`
+  - `runs/eval/oracle_terrain_residual_phase6g_p_b_branch_request_20260703_r1`
+  - `runs/eval/oracle_terrain_residual_phase6g_p_real_b_smoke_20260703_r1`
+- The unsuffixed 6G-P base roots already contained ignored files from the
+  earlier recovery attempt, so the executor used `_r1` fresh roots and did not
+  overwrite the base roots.
+- Mixed source:
+  `runs/eval/oracle_terrain_residual_phase6g_p_mixed_source_probe_20260703_r1/results/residual_cut_intent_runtime_source.json`.
+- Smoke analysis:
+  `runs/eval/oracle_terrain_residual_phase6g_p_real_b_smoke_20260703_r1/heuristic_residual_pipeline/results/phase6g_p_smoke_analysis.json`.
+- No tracked source, doc, test, or checked-in config files changed in the
+  executor slice.
+
+Experiment facts:
+
+- Exact object-copy checks reported cycle `0` equal to the original 6G-I
+  cycle `0`, and cycles `1` / `2` equal to the 6G-O corridor-shaped cycles
+  `1` / `2`.
+- Mixed source verification reported status `present`, plan count `3`, and
+  cycle coverage `[0, 1, 2]`.
+- Cycle `0` preserved the near-origin active-dig plan:
+  entry `(0.0, 0.0)`, exit `(0.0, 0.5)`, token spatial slots
+  `[0.0, 0.0, 0.0, 0.25, 0.0, 1.0, 0.25]`.
+- Cycles `1` / `2` used corridor-conditioned return-target plans:
+  entry `(0.8955, -0.952)`, exit
+  `(0.4107383898670815, -0.8295002802397475)`, token spatial slots
+  `[0.4477500021457672, -0.47600001096725464,
+  0.20536918938159943, -0.4147501289844513,
+  -0.9695231914520264, 0.24499943852424622, 0.25]`.
+
+Smoke facts:
+
+- Fresh B smoke used a request-local overlay that only restored the accepted
+  QC6 prior path:
+  `policy.dig_cut_planner.prior_path=testbed/configs/planner_priors/yulong_removed_depth_dig_cut_prior_v3.json`.
+- The smoke command completed with exit code `0` and metadata status
+  `completed`, error `null`.
+- Artifact root:
+  `runs/eval/oracle_terrain_residual_phase6g_p_real_b_smoke_20260703_r1/heuristic_residual_pipeline/results`.
+- Recursive result file count: `10`.
+- Row count: `1122`.
+- Skill counts: bootstrap `267`, dig `144`, carry `139`, dump `152`,
+  return `420`.
+- Dump masks were present: `dump_start_mask_count=1`,
+  `dump_end_mask_count=1`.
+- First return row at `t=702` used
+  `return_target_token_source=conditioned_return_explicit_residual_cut_intent_dig_cut_token`,
+  `return_relocate_token_source=conditioned_return_explicit_residual_cut_intent_dig_cut_token`,
+  and
+  `return_start_envelope_token_source=qc6_return_start_envelope_cell_0+relocate_spatial_linear+relocate_qpos_linear`.
+- First return target tokens were
+  `[0.4477500021457672, -0.47600001096725464,
+  0.20536918938159943, -0.4147501289844513,
+  -0.9695231914520264, 0.24499943852424622, 0.25,
+  0.021598318591713905, 0.2083333283662796, 1.0]`.
+- First return relocate tokens were
+  `[0.4477500021457672, -0.47600001096725464,
+  0.20536918938159943, -0.4147501289844513,
+  -0.9695231914520264, 0.24499943852424622, 0.25,
+  0.0, 0.0, 1.0]`.
+- Return handoff still did not complete:
+  `completed_transition_count=0`, `transition_timeout_count=1`,
+  `return_next_dig_event_seen=0`, and
+  `rollout_stop_reason=transition_timeout`.
+- Return rows had `entry_close_count=0` and `envelope_ready_count=0`.
+- Min-entry return row at `t=1119` had
+  `return_to_dig_entry_error_m=0.5719057233363999`,
+  `return_to_dig_start_envelope_error=0.585981`, failed checks
+  `dig_contact`, `local_depth_m`, `plane_depth_m`, `qpos_3`.
+- Min-envelope return row at `t=805` had
+  `return_to_dig_entry_error_m=1.9802243903932348`,
+  `return_to_dig_start_envelope_error=0.585981`, and failed checks
+  `dig_contact`, `local_depth_m`, `long_norm`, `plane_depth_m`, `qpos_0`,
+  `qpos_1`, `qpos_2`, `qpos_3`, `short_norm`.
+
+Planner closure audit:
+
+- The callback is accepted as a partial artifact experiment. It cleanly
+  isolated next-cycle corridor-conditioned return target / relocate tokens
+  while preserving the original cycle-0 active dig path, so it avoided the
+  6G-O low-payload first-dig blocker.
+- The result does not solve return handoff. It disproves the narrower
+  hypothesis that corridor-conditioned next-cycle return target / relocate
+  tokens are sufficient for B to complete the return-to-dig handoff.
+- No local commit was made for executor work because only ignored run artifacts
+  were created and the tracked tree stayed clean.
+
+Deep reflection:
+
+- Reference base: real closed-loop A/B/C evidence remains the target, with core
+  progress over defensive scaffolding. 6G-K/L fixed real residual return-target
+  and envelope-prior wiring; 6G-M/N/O/P have now eliminated the main token
+  source hypotheses without completing the handoff.
+- Verdict: aligned partial, but another source-shape experiment would now be
+  low leverage. The current evidence points at return ACT / handoff readiness
+  dynamics under the residual B dump exit state rather than at missing residual
+  source lookup, `fallback_zero`, envelope-prior selection, or next-cycle
+  corridor token conditioning.
+- Efficiency verdict: the loop should stop producing source JSON variants and
+  move to a bounded trajectory-level comparison of failing residual return rows
+  against the known working 2026-06-16 return handoff row/trajectory.
+- Accepted-slice count since this deep reflection resets to `0/3`.
+
+Next bounded target:
+
+- Phase 6G-Q should compare the full return trajectory for 6G-P (and, where
+  useful, 6G-L) against the working 2026-06-16 `refactored_fsm` return
+  handoff. It should identify the first directly evidenced owner among return
+  ACT conditioning, return-start envelope target mismatch, return dump-exit
+  initial state, or handoff gate measurement/reporting.
+- The slice should not run another source-variant smoke unless the trajectory
+  comparison proves a specific request-local counterfactual is needed. If it
+  finds a narrow code owner bug, it may use TDD; otherwise it should return
+  exact artifact facts and stop.
+
 ## 2026-07-02: Phase 6G-G Bounded B Smoke Stop-Timing Contract
 
 Target lock:

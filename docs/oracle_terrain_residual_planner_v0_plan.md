@@ -908,6 +908,21 @@ Phase 6G-L note：
   entry-close (`min return_to_dig_entry_error_m ~= 0.781m`, threshold `0.55m`) and envelope-ready stayed false with
   plane-depth/qpos failures.
 
+Phase 6G-P note：
+
+- The mixed-source isolation smoke preserved original cycle-0 residual active-dig tokens so B reached carry, dump,
+  and return, while cycles `1` / `2` supplied corridor-conditioned next-cycle return target / relocate tokens.
+- The first return row used
+  `conditioned_return_explicit_residual_cut_intent_dig_cut_token` for return target and return relocate, and
+  `qc6_return_start_envelope_cell_0+relocate_spatial_linear+relocate_qpos_linear` for the return-start envelope.
+  No `fallback_zero` path was involved.
+- Return handoff still timed out with `completed_transition_count=0`, `transition_timeout_count=1`,
+  `entry_close_count=0`, and `envelope_ready_count=0`. The closest entry row remained just outside the entry gate
+  (`return_to_dig_entry_error_m ~= 0.572m`) and still failed contact/depth/qpos checks.
+- This rules out the narrow hypothesis that isolated corridor-conditioned next-cycle return target / relocate tokens
+  are sufficient. The next core slice should compare residual B return trajectories against the working 2026-06-16
+  handoff path before running more source-shape variants or promoting source semantics.
+
 通过标准：
 
 - B 优于 A，说明收益来自 residual closed-loop。
