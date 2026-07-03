@@ -6085,6 +6085,96 @@ Next bounded target:
   bounded B smoke. If the semantic choice cannot be proven from existing
   contracts and working artifacts, stop with exact facts and no code change.
 
+## 2026-07-03: Phase 6G-N Residual Source Coordinate Diagnostic
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial and final branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 60]`.
+- Initial and final HEAD:
+  `7021ee5ff03f1ccdec03ff09883ee78e861df69e`.
+- Initial and final dirty state: clean.
+
+Diagnostic facts:
+
+- No files, checked-in configs, request configs, or run artifacts changed in
+  the executor slice.
+- The 6G-I / 6G-L runtime source was generated from explicit
+  `residual_cut_intent_runtime_source_inputs` with local residual-grid
+  `cell_centers_m`, including `cell_centers_m[0]={x_m:0.0,z_m:0.0}` and
+  `direction_vectors.col_forward={x:0.0,z:1.0}`.
+- `build_residual_cut_intent_runtime_source()` only wraps predicted B per-step
+  `cut_intent` records and passes those explicit inputs into
+  `build_residual_cut_intent_dig_cut_token()`.
+- `build_residual_cut_intent_dig_cut_token()` maps `anchor_cell_index` through
+  the explicit `cell_centers_m`, maps the cut-intent direction through the
+  explicit `direction_vectors`, and builds raw fields / 10D tokens through
+  `DigCutTokenPlanner.plan_from_raw_fields()`.
+- The observed 6G-L return rows exactly reflected that source: cycle `1`
+  encoded `operator_entry_x_m=0.0`, `operator_entry_z_m=0.0`,
+  `operator_exit_x_m=0.0`, `operator_exit_z_m=0.5`, producing near-origin
+  `return_target_tokens` and `return_relocate_tokens`.
+- The checked-in QC6 prior contains six coverage cells and six return-start
+  envelope cells. Coverage cell `0` entry/exit geometry is nonzero
+  (`entry={x_m:0.8955,z_m:-0.952}`,
+  `exit={x_m:-0.0301,z_m:-0.7181}`).
+- In-memory proof showed the existing builder can emit nonzero
+  corridor-shaped fields if the explicit runtime-source inputs are replaced by
+  prior coverage-cell geometry. For the first plan, raw fields became
+  `operator_entry_x_m=0.8955`, `operator_entry_z_m=-0.952`,
+  `operator_exit_x_m=0.4107383898670815`, and
+  `operator_exit_z_m=-0.8295002802397475`, with nonzero spatial tokens. This
+  proof wrote no files.
+
+Planner closure audit:
+
+- The callback is accepted as a scoped partial diagnostic. It further narrowed
+  the blocker from generic source / return-relocate semantics to the concrete
+  request-local coordinate input: the current source request uses residual-grid
+  local coordinates and does not carry a prior path, coverage cells, per-cell
+  corridor entry/exit fields, or a verified residual-grid-to-dig-area
+  transform.
+- No implementation fix was accepted because the existing source-generation
+  contract explicitly names `cell_centers_m` and `direction_vectors` as caller
+  inputs; current docs/artifacts do not prove the builder should silently
+  replace them with QC6 prior/corridor coordinates.
+- The next slice should therefore be an artifact-level proof first, not a
+  code-level semantic promotion: generate a request-local source using explicit
+  prior/corridor geometry and run a bounded B smoke to test whether
+  corridor-conditioned return-relocate tokens remove the remaining handoff
+  blocker.
+
+Deep reflection:
+
+- Reference base: the user objective remains real closed-loop A/B/C comparison
+  evidence. The loop has now produced two no-code partial diagnostics after
+  the 6G-L implementation. Continuing to ask executors to prove source
+  semantics in code without a successful artifact would be slow and weakly
+  connected to the objective.
+- Verdict: aligned partial with a required slice-shape change. The next work
+  should use the existing explicit-input contract to run a non-official,
+  request-local corridor-conditioned source experiment. Only if that artifact
+  improves return handoff should the workflow promote a durable source/request
+  contract change.
+- Efficiency verdict: acceptable only because it prevents an unsafe auto-remap
+  code change. The next slice must produce artifact evidence, not another
+  read-only source archaeology round.
+- Accepted-slice count since the latest deep reflection remains `0/3` because
+  this was a no-change partial diagnostic, and deep reflection was run
+  immediately.
+
+Next bounded target:
+
+- Phase 6G-O should create a request-local, non-overwriting B experiment that
+  rebuilds the residual runtime source with explicit QC6 prior/corridor
+  geometry inputs instead of residual-grid local `cell_centers_m`, then run a
+  bounded gate-2 B smoke.
+- This must remain diagnostic and request-local: no checked-in config/default
+  changes, no hidden fallback, no handoff-threshold relaxation, no official
+  pass/fail, and no code changes unless the executor discovers a narrow
+  artifact-generation bug required to run the experiment.
+
 ## 2026-07-02: Phase 6G-G Bounded B Smoke Stop-Timing Contract
 
 Target lock:
