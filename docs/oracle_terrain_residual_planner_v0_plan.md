@@ -923,6 +923,23 @@ Phase 6G-P note：
   are sufficient. The next core slice should compare residual B return trajectories against the working 2026-06-16
   handoff path before running more source-shape variants or promoting source semantics.
 
+Phase 6G-Q note:
+
+- The return-trajectory diagnostic recovered from a missed executor callback and wrote the request-local analysis
+  artifact
+  `runs/eval/oracle_terrain_residual_phase6g_q_return_trajectory_diagnostic_20260703/phase6g_q_return_trajectory_analysis.json`.
+- 6G-P and the working 2026-06-16 run used the same return checkpoint family and the same return low-dim keys. In
+  6G-P, first/min/last return rows all used nonzero corridor-conditioned return target / relocate tokens and the
+  `qc6_return_start_envelope_cell_0+relocate_spatial_linear+relocate_qpos_linear` envelope source, so source fallback
+  and near-origin token conditioning are no longer the current blocker.
+- The remaining observed failure is depth/contact compatibility at the selected return-start envelope: 6G-P failed
+  `local_depth_m`, `plane_depth_m`, `dig_contact`, and `qpos_3` through all return rows, with the min-entry row at
+  `return_to_dig_entry_error_m ~= 0.572m`. The working row reached `entry_error ~= 0.099m`,
+  `start_envelope_error=0.0`, `dig_contact=1`, and no failed checks through the same reporting fields.
+- The next core slice should focus on whether the selected QC6 cell-0 return-start envelope target is incompatible
+  with residual B dump-exit terrain/contact state, or whether return ACT cannot reach a valid target from that state.
+  It should not default to another residual-source coordinate variant.
+
 通过标准：
 
 - B 优于 A，说明收益来自 residual closed-loop。

@@ -348,6 +348,15 @@ eval 侧的 `return_low_dim_keys` 也是同一组 key。
   return-start envelope generation remains on the existing live-current-observation
   fallback path; this does not make missing residual plans successful and does
   not relax the return->dig entry/envelope gate.
+- Phase 6G-Q confirmed that even with nonzero corridor-conditioned residual
+  return target / relocate tokens and a QC6 cell-0 return-start envelope,
+  return->dig readiness can still fail for real depth/contact reasons. In that
+  diagnostic, source fallback and near-origin tokens were cleared, but every
+  return row still failed `local_depth_m`, `plane_depth_m`, `dig_contact`, and
+  `qpos_3`. The conceptual contract therefore remains: return-start envelope
+  tokens describe a target start-state distribution that must be physically
+  reachable from the dump-exit terrain/contact state; they are not a success
+  override and do not relax the readiness gate.
 
 所以当前主线里，return 的任务是回到“dig ACT 可以接管的状态分布”，而不是执行下一铲
 dig plan 的前半段。下一铲 plan 仍然存在，但它停留在 planner/scheduler 侧，等真正切回

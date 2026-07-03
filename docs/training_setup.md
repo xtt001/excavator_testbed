@@ -1022,6 +1022,15 @@ The closest entry row remained just outside the entry gate (`return_to_dig_entry
 contact, depth, and qpos checks. This makes the next training/eval question a return ACT trajectory and dump-exit
 state comparison against the working 2026-06-16 handoff, not another residual-source coordinate variant by default.
 
+Phase 6G-Q compared the residual B return trajectory against the working 2026-06-16 handoff. The diagnostic cleared
+source fallback, near-origin return tokens, and handoff reporting as the first blocker for 6G-P: all analyzed 6G-P
+return rows used nonzero corridor-conditioned return target / relocate tokens and a QC6 cell-0 return-start envelope.
+The persistent failures were `local_depth_m`, `plane_depth_m`, `dig_contact`, and `qpos_3`; in contrast, the working
+transition row reached `return_to_dig_entry_error_m ~= 0.099m`, `return_to_dig_start_envelope_error=0.0`, contact
+true, and no failed checks. The next training/eval question is therefore whether the selected cell-0 envelope target
+is compatible with residual B dump-exit terrain/contact state, not whether another residual-source coordinate variant
+can improve the return token.
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

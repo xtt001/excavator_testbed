@@ -6410,6 +6410,89 @@ Next bounded target:
   finds a narrow code owner bug, it may use TDD; otherwise it should return
   exact artifact facts and stop.
 
+## 2026-07-03: Phase 6G-Q Return Trajectory Diagnostic
+
+Planner recovery note:
+
+- The executor completed the assigned diagnostic, but the thread callback did
+  not reach the planner route. The planner recovered the fact-only final answer
+  and audited the request-local artifact instead of waiting for another empty
+  callback.
+- Target lock matched: cwd `/home/pingfan/PACT/excavator_testbed`, branch
+  `tx/oracle-terrain-residual-planner-v0` ahead `63`, HEAD
+  `b86dea8095610be37b931be07a4c6e0b9343f5e2`.
+- The executor changed no tracked source, doc, test, or checked-in config
+  files. It created only the ignored analysis artifact
+  `runs/eval/oracle_terrain_residual_phase6g_q_return_trajectory_diagnostic_20260703/phase6g_q_return_trajectory_analysis.json`.
+
+Diagnostic facts:
+
+- 6G-Q compared the 6G-P mixed-source return trajectory, the 6G-L original
+  residual-source return trajectory, and the working 2026-06-16
+  `refactored_fsm` handoff.
+- 6G-P and the working run used the same return checkpoint family and the same
+  return low-dim keys: `qpos`, `qvel`, `return_start_envelope_tokens_v1`, and
+  `return_relocate_tokens_v1`.
+- In 6G-P, all first/min/last return rows used nonzero corridor-conditioned
+  return target and return relocate tokens plus
+  `qc6_return_start_envelope_cell_0+relocate_spatial_linear+relocate_qpos_linear`.
+  This clears residual source fallback, near-origin tokens, and return-target
+  `cycle_index + 1` lookup as the current blocker.
+- 6G-P still had `420` return rows with `entry_close_count=0`,
+  `envelope_ready_count=0`, `completed_transition_count=0`, and
+  `transition_timeout_count=1`.
+- At the 6G-P min-entry row `t=1119`,
+  `return_to_dig_entry_error_m=0.5719057233363999`; spatial long/short and
+  `qpos_0` / `qpos_1` / `qpos_2` were inside range, `qpos_3` was only
+  `0.0035207` outside range, but `local_depth_m=0.0` was below the token range
+  minimum `0.239792`, `plane_depth_m=0.0` was below the floor `0.585981`, and
+  `dig_contact=0`.
+- 6G-P failed `local_depth_m`, `plane_depth_m`, `dig_contact`, and `qpos_3`
+  through all return rows; its start-envelope error plateaued at `0.585981`
+  for `317` rows.
+- In the working 2026-06-16 row `t=1002`, the same reporting fields reached
+  `return_to_dig_entry_error_m=0.09901039892653803`,
+  `return_to_dig_start_envelope_error=0.0`,
+  `return_to_dig_start_envelope_ready=true`, `transition_completed=true`, and
+  no failed checks. Its `dig_contact=1`, `local_depth_m=0.014655` was inside
+  `[0.00101, 0.026112]`, and `plane_depth_m=0.0` was allowed by
+  `floor_source=p05_local_contact_prior`.
+
+Planner closure audit:
+
+- Accepted as a partial diagnostic. The gate/reporting fields are internally
+  consistent: failed payloads explain `ready=false` in 6G-P, while the working
+  row reports `ready=true` and no failed checks through the same field family.
+- The first directly evidenced owner is now residual B
+  `qc6_return_start_envelope_cell_0` target depth/contact compatibility under
+  the residual dump-exit state, not residual source lookup, fallback-zero,
+  near-origin return tokens, or return handoff reporting.
+- No local commit was made for executor work because the executor produced only
+  ignored request-local artifacts and left the tracked tree clean.
+
+Reflection:
+
+- Verdict: aligned partial. The loop should stop producing source/token
+  variants unless a later owner proof requires one; the current bottleneck is
+  whether the selected cell-0 return-start envelope target is compatible with
+  the residual B dump-exit terrain/contact state and return ACT behavior.
+- Efficiency verdict: the callback transport failed, but the slice still
+  reduced search space. The planner should dispatch with stricter callback
+  wording and continue treating missed callbacks as recoverable facts, not as
+  proof that an executor is still running.
+
+Next bounded target:
+
+- Phase 6G-R should prove, without another fresh smoke by default, whether
+  `qc6_return_start_envelope_cell_0` target construction/selection is
+  incompatible with the residual B dump-exit terrain/contact state, or whether
+  the return policy simply cannot reach that valid target from the residual B
+  return trajectory.
+- It should inspect the return-start envelope cell construction/selection
+  owner, the QC6 prior values, the 6G-Q analysis artifact, and the relevant
+  P/L/working rollout rows. If it finds a narrow testable owner bug, it may use
+  TDD and sync docs; otherwise it must return exact artifact facts and stop.
+
 ## 2026-07-02: Phase 6G-G Bounded B Smoke Stop-Timing Contract
 
 Target lock:
