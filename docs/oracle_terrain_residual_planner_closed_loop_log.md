@@ -6001,6 +6001,90 @@ Deep reflection:
   threshold relaxation unless direct trace evidence proves that exact owner is
   wrong.
 
+## 2026-07-03: Phase 6G-M Residual Return Relocate Diagnostic
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial and final branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 59]`.
+- Initial and final HEAD:
+  `8999d2f5d20096a3d88355faec7aa7dba1b330a3`.
+- Initial and final dirty state: clean.
+
+Diagnostic facts:
+
+- No files or checked-in configs changed in this slice.
+- 6G-L min-entry row `t=880` used
+  `return_target_token_source=conditioned_return_explicit_residual_cut_intent_dig_cut_token`
+  and
+  `return_start_envelope_token_source=qc6_return_start_envelope_cell_2+relocate_spatial_linear+relocate_qpos_linear`,
+  but its `return_target_tokens` and `return_relocate_tokens` still encoded a
+  near-origin residual plan. The row stayed outside handoff readiness with
+  `return_to_dig_entry_error_m=0.7806440719919507`,
+  `return_to_dig_start_envelope_error=0.585147`, and failed
+  local-depth, plane-depth, contact, and qpos checks.
+- 6G-L min-envelope row `t=957` used the same target/envelope sources and the
+  same zero-location return target / relocate conditioning. It reached
+  `return_to_dig_start_envelope_error=0.44233799874782564` but still failed
+  long-norm, plane-depth, and qpos checks.
+- The comparable working 2026-06-16 row at `t=1002` used the same return
+  checkpoint and low-dim key set, but carried nonzero corridor relocation
+  tokens from `conditioned_return_operator_prior_sweep_belief`; it completed
+  return handoff with `return_to_dig_entry_error_m=0.09901039892653803`,
+  `return_to_dig_start_envelope_error=0.0`, and all envelope checks true.
+- The explicit 6G-L residual runtime source contained cycle-indexed plans with
+  `operator_entry_x_m=0.0`, `operator_entry_z_m=0.0`,
+  `operator_exit_x_m=0.0`, and `operator_exit_z_m=0.5`. This source explains
+  the near-origin `return_target_tokens` / `return_relocate_tokens` observed in
+  return.
+- The handoff gate owner behaved as expected: false entry/envelope checks were
+  rejected. The token runtime also behaved according to the current contract:
+  `return_relocate_tokens` are derived from `return_target_tokens`.
+
+Planner closure audit:
+
+- The callback is accepted as a scoped partial diagnostic, not as a successful
+  implementation slice. It advanced the objective by ruling out another local
+  return-handoff/runtime-plumbing bug and narrowing the remaining blocker to
+  residual source / return-relocate conditioning semantics.
+- No commit was made for executor work because the executor left the tree
+  unchanged.
+- The next implementation slice must not relax handoff thresholds or rework
+  the already accepted 6G-K / 6G-L contracts by default. It must first prove
+  whether the residual runtime source builder should emit corridor-conditioned
+  return-relocate-compatible plan fields for the next cycle.
+
+Deep reflection:
+
+- Reference base: the user objective is real closed-loop A/B/C comparison
+  evidence, not a clean token-plumbing scaffold. Source-of-truth docs remain
+  this log, `docs/oracle_terrain_residual_planner_v0_plan.md`,
+  `docs/training_setup.md`, and
+  `docs/planner_to_act_conceptual_contract.md`.
+- Verdict: aligned partial. 6G-M avoided a speculative code edit and exposed
+  the next real semantic decision: the return policy consumes
+  `return_relocate_tokens_v1`, but the residual runtime source currently gives
+  it a near-origin relocation plan unlike the working corridor-conditioned
+  examples.
+- Efficiency verdict: acceptable after acceleration. The next slice should be
+  implementation-oriented and tightly limited to source generation / token
+  semantics proof, with no more broad handoff archaeology unless new artifact
+  evidence contradicts this closure.
+- Accepted-slice count since the latest deep reflection remains `0/3` because
+  this was a no-change partial diagnostic, and deep reflection was run
+  immediately.
+
+Next bounded target:
+
+- Phase 6G-N should inspect the residual runtime source generation owner and
+  prove whether the source can and should emit corridor-conditioned
+  return-relocate-compatible raw fields/tokens for the next-cycle plan.
+- If the owner and semantics are clear, implement the smallest TDD-covered fix
+  in the source-generation/token owner, sync the closest docs, and run a fresh
+  bounded B smoke. If the semantic choice cannot be proven from existing
+  contracts and working artifacts, stop with exact facts and no code change.
+
 ## 2026-07-02: Phase 6G-G Bounded B Smoke Stop-Timing Contract
 
 Target lock:
