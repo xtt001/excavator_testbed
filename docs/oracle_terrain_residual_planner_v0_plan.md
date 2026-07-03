@@ -889,6 +889,25 @@ Phase 6G-K note：
   use existing return-start-envelope planning; no checked-in eval YAML/default config, threshold, pass/fail,
   planner success, production readiness, command-space control, or calibrated fallback semantics are changed.
 
+Phase 6G-L note：
+
+- Residual return-target planning now maps explicit next-dig raw entry fields to the nearest existing coverage
+  corridor before building `return_start_envelope_tokens_v1`; the existing corridor-to-cell mapping then selects the
+  cell-conditioned qc6 return-start envelope prior. This lets residual B use the same envelope prior path as coverage
+  modes when a request-local or checked-in prior is present, without feeding dig-cut tokens to return ACT or confusing
+  pending corridor ids with cell ids.
+- Missing coverage prior/corridors still degrades to the existing live-current-observation return envelope path; it
+  does not turn missing residual source into hidden fallback success and does not relax entry, contact, depth, qpos,
+  or transition-count gates.
+- Fresh 6G-L B smoke with a request-local config that only restored checked-in
+  `testbed/configs/planner_priors/yulong_removed_depth_dig_cut_prior_v3.json` changed the first post-dump envelope
+  source from `live_current_obs_fallback+relocate...` to
+  `qc6_return_start_envelope_cell_2+relocate_spatial_linear+relocate_qpos_linear`. The return handoff still timed
+  out: `completed_transition_count=0`, `transition_timeout_count=1`, `target_cycle_gate_success_rate=0.0`.
+- The remaining 6G-L runtime blocker is no longer return-start envelope prior selection. The smoke never reached
+  entry-close (`min return_to_dig_entry_error_m ~= 0.781m`, threshold `0.55m`) and envelope-ready stayed false with
+  plane-depth/qpos failures.
+
 通过标准：
 
 - B 优于 A，说明收益来自 residual closed-loop。

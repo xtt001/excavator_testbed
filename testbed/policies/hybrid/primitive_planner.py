@@ -1428,6 +1428,12 @@ class PrimitivePlannerACTPolicy(Policy):
             residual_cut_intent_return_target_plan_provider=(
                 self._residual_cut_intent_return_target_plan_provider()
             ),
+            ensure_coverage_corridors=(
+                lambda: (
+                    self._primitive_coverage_selection_runtime()
+                    .ensure_coverage_corridors()
+                )
+            ),
         )
 
     def _residual_cut_intent_plan_provider(self):

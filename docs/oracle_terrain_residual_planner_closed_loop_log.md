@@ -5840,6 +5840,167 @@ Planner closure audit:
   checks fail on long/short position, dig contact, and qpos bounds before the
   rollout reaches `transition_timeout_count=1` / `completed_transition_count=0`.
 
+## 2026-07-02: Phase 6G-L Residual Return-Start Envelope Cell Prior
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Initial branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 58]`.
+- Initial HEAD: `956401311d45dafe80a1a436b264cab6043ef6df`.
+- Initial dirty state: clean.
+
+Root-cause trace:
+
+- Read-only 6G-K artifact sampling confirmed the first post-dump B row entered
+  `return` at `t=719` with
+  `return_target_token_source=conditioned_return_explicit_residual_cut_intent_dig_cut_token`,
+  `return_start_envelope_token_source=live_current_obs_fallback+relocate_spatial_linear+relocate_qpos_linear`,
+  `return_to_dig_entry_close=false`, and
+  `return_to_dig_start_envelope_ready=false`.
+- Across 6G-K return rows, entry-close existed only for a window and never
+  overlapped envelope-ready. Envelope error reached `0.0152` but still failed
+  long/short/contact; entry error reached `0.399m` but then failed
+  local-depth/qpos. The rollout ended with
+  `transition_timeout_count=1` and `completed_transition_count=0`.
+- A comparable working return handoff from
+  `runs/eval/planner_compare_20260616_x99/refactored_fsm/results/rollouts/rollout_000.jsonl`
+  used `qc6_return_start_envelope_cell_*+relocate...` and completed with
+  `return_to_dig_entry_close=true`,
+  `return_to_dig_start_envelope_ready=true`, and envelope error `0.0`.
+- The residual return-target path preserved explicit next-cycle source but set
+  `corridor_id=-1`; with the 6G-K smoke config `prior_path=''`, return-start
+  envelope generation could not choose a cell-conditioned qc6 prior and fell
+  back to live-current-observation envelope.
+
+Implementation facts:
+
+- `PrimitiveReturnTokenPlanningService` now maps residual explicit
+  `operator_entry_x_m/z_m` raw fields to the nearest existing coverage corridor
+  before calling `ReturnTargetTokenPlanner.plan_from_dig_cut_plan()`. The
+  existing corridor-to-cell mapping then selects the return-start envelope cell.
+- The service can now ensure coverage corridors through a typed, thin port so a
+  request-local prior can populate corridors even when residual mode does not
+  run coverage selection.
+- `PrimitiveTokenPlanningRuntime` passes the new port through, and
+  `PrimitivePlannerACTPolicy` adds only thin wiring to
+  `ensure_coverage_corridors()`.
+- Missing coverage prior/corridors remains the previous diagnostic
+  live-current-observation return-envelope path. Missing residual source still
+  follows the existing explicit-provider failure path and does not become
+  fallback success.
+
+TDD and verification:
+
+- Red test:
+  `python -m pytest -q tests/test_primitive_return_token_planning.py::test_residual_cut_intent_return_target_maps_raw_entry_to_envelope_cell`
+  failed because residual return-target planning still passed `corridor_id=-1`.
+- Second red test:
+  `python -m pytest -q tests/test_primitive_return_token_planning.py::test_residual_cut_intent_return_target_ensures_corridors_before_cell_match`
+  failed because `PrimitiveReturnTokenPlanningPorts` had no
+  `ensure_coverage_corridors` port.
+- Green focused tests:
+  `python -m pytest -q tests/test_primitive_return_token_planning.py` ->
+  `10 passed`.
+- Related green bundle:
+  `python -m pytest -q tests/test_primitive_return_token_planning.py
+  tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_dig_token_planning.py
+  tests/test_primitive_token_runtime.py tests/test_primitive_return_handoff.py`
+  -> `62 passed`.
+- A broader bundle that included `tests/test_primitive_return_state.py` still
+  has the pre-existing unrelated fixture failure for missing
+  `pre_dig_align_entry_intent_controlled_dims`; it was not changed in this
+  slice.
+
+Request-local smoke:
+
+- Generated request-local config:
+  `runs/eval/oracle_terrain_residual_phase6g_l_real_b_smoke_20260702/heuristic_residual_pipeline/request_local_eval_config.yaml`.
+- Only runtime config value changed from 6G-K resolved config:
+  `policy.dig_cut_planner.prior_path=testbed/configs/planner_priors/yulong_removed_depth_dig_cut_prior_v3.json`.
+  Source checks: 6G-K resolved config had `prior_path: ''`; checked-in
+  `testbed/configs/eval_yulong_v2_4_operator_prior_coverage_15cycle_smoke.yaml`
+  uses the same prior path, and that prior contains six coverage cells and six
+  return-start-envelope cells.
+- Command completed with exit code `0`:
+  `python testbed/cli/eval.py --config runs/eval/oracle_terrain_residual_phase6g_l_real_b_smoke_20260702/heuristic_residual_pipeline/request_local_eval_config.yaml --num-rollouts 1 --target-cycle-gate 2 --output-dir runs/eval/oracle_terrain_residual_phase6g_l_real_b_smoke_20260702/heuristic_residual_pipeline --no-video`.
+- Artifact root:
+  `runs/eval/oracle_terrain_residual_phase6g_l_real_b_smoke_20260702/heuristic_residual_pipeline/results`.
+  Recursive file count: `9`.
+- First post-dump row `t=700` entered `return` with
+  `return_target_token_source=conditioned_return_explicit_residual_cut_intent_dig_cut_token`
+  and
+  `return_start_envelope_token_source=qc6_return_start_envelope_cell_2+relocate_spatial_linear+relocate_qpos_linear`.
+- Return source counts: `420` rows with the explicit residual return target,
+  `420` rows with the cell-2 qc6 return-start envelope, and no
+  `fallback_zero`.
+- The smoke still timed out:
+  `target_cycle_gate_success_rate=0.0`,
+  `target_cycle_gate_success_count=0`,
+  `completed_transition_count=0`,
+  `transition_timeout_count=1`, and `transition_fallback_count=0`.
+- The remaining blocker changed again: entry-close never became true
+  (`min return_to_dig_entry_error_m=0.7806440719919507`, threshold `0.55`),
+  and envelope-ready remained false with plane-depth/qpos failures.
+
+Executor preserved non-goals:
+
+- Executor did not fetch, pull, push, reset, checkout, rebase, stage, or commit.
+- No checked-in eval YAML/default config changes.
+- No dig-token fallback, source repetition, last-plan reuse, hidden fallback,
+  count/gate semantics change, threshold relaxation, official pass/fail,
+  eval success, planner success, production readiness, command-space controls,
+  or calibrated fallback.
+
+Planner closure audit:
+
+- The controlling planner accepted Phase 6G-L as a partial but necessary
+  closure slice: it removed the residual return-start envelope prior-selection
+  blocker, but did not complete return handoff.
+- Planner-side diff audit found one boundary issue before commit: the new raw
+  entry matcher returned a nearest `cell_id` into `pending_dig_cut_corridor_id`.
+  That would be unsafe when `corridor_id` and `cell_id` are not one-to-one,
+  because the next dig token path treats pending ids as coverage corridor ids.
+- The acceptance fix changed the matcher to return nearest `corridor_id`; the
+  existing `return_start_envelope_cell_id(corridor_id)` mapping continues to
+  choose the cell-conditioned return-start envelope prior.
+- Fresh focused red-green evidence for that planner correction:
+  `tests/test_primitive_return_token_planning.py::test_residual_cut_intent_return_target_maps_raw_entry_to_envelope_cell`
+  and
+  `tests/test_primitive_return_token_planning.py::test_residual_cut_intent_return_target_ensures_corridors_before_cell_match`
+  first failed with `...:2:8.0` where `...:1:8.0` was expected, then passed
+  after the fix.
+- Planner-side verification after the correction passed:
+  `python -m pytest -q tests/test_primitive_return_token_planning.py
+  tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_dig_token_planning.py
+  tests/test_primitive_token_runtime.py tests/test_primitive_return_handoff.py`
+  -> `62 passed`; compileall for touched Python passed; changed-docs,
+  doc-inventory, architecture-contract, and `git diff --check` passed.
+
+Deep reflection:
+
+- Reference base: user objective is real closed-loop A/B/C evidence, source docs
+  are this log plus `docs/oracle_terrain_residual_planner_v0_plan.md` and
+  `docs/training_setup.md`; behavior contracts forbid hidden fallback, count
+  semantics changes, threshold relaxation, and checked-in default config edits.
+- Verdict: accepted as aligned partial progress. The slice removed a real
+  return-start envelope prior-selection blocker and improved artifact evidence,
+  but did not solve the return handoff. The loop should not keep adding token
+  plumbing unless the next artifact trace proves another token ownership gap.
+- Efficiency verdict: useful implementation plus necessary audit. The planner
+  correction was needed because executor tests had confused cell id with
+  corridor id.
+- Next bounded target: Phase 6G-M should diagnose why return ACT with explicit
+  residual return target and `qc6_return_start_envelope_cell_2+relocate...`
+  still cannot reach entry/envelope readiness. It should compare the 6G-L
+  min-entry/min-envelope rows against the working 2026-06-16 return handoff
+  artifact, then implement only an evidence-backed fix. It must not revisit
+  residual dig-token fallback, prior selection, target-cycle counts, or
+  threshold relaxation unless direct trace evidence proves that exact owner is
+  wrong.
+
 ## 2026-07-02: Phase 6G-G Bounded B Smoke Stop-Timing Contract
 
 Target lock:

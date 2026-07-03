@@ -340,6 +340,14 @@ eval 侧的 `return_low_dim_keys` 也是同一组 key。
   start-state 描述，直接用它分桶会把左侧 cell0 的 return 姿态错分到其它 bucket，
   造成 live planner 看起来回到平均位置。`tb-build-surface-depth-planner-prior`
   固化了这个规则。
+- Runtime residual return-target plans that come from explicit request-local
+  raw fields follow the same rule: if coverage corridors are available, planner
+  maps `operator_entry_x_m/z_m` to the nearest coverage corridor, then uses the
+  existing corridor-to-cell mapping before selecting a cell-conditioned
+  return-start envelope prior. If no prior/corridor is available,
+  return-start envelope generation remains on the existing live-current-observation
+  fallback path; this does not make missing residual plans successful and does
+  not relax the return->dig entry/envelope gate.
 
 所以当前主线里，return 的任务是回到“dig ACT 可以接管的状态分布”，而不是执行下一铲
 dig plan 的前半段。下一铲 plan 仍然存在，但它停留在 planner/scheduler 侧，等真正切回

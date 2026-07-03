@@ -192,6 +192,7 @@ def _ports(
     prior_qpos: bool = False,
     events: list[str] | None = None,
     residual_return_target_plan_provider: ResidualCutIntentPlanProvider | None = None,
+    ensure_coverage_corridors=None,
 ) -> tuple[
     PrimitiveReturnTokenPlanningPorts,
     dict[str, object],
@@ -215,6 +216,8 @@ def _ports(
     coverage_state = CoverageRuntimeState(coverage_corridors=[corridor])
     state["token_state"] = token_state
     state["coverage_state"] = coverage_state
+    if ensure_coverage_corridors is None:
+        ensure_coverage_corridors = lambda: None
 
     def observation_facts(obs: dict[str, Any]) -> PrimitiveObservationFacts:
         env_state = np.zeros(64, dtype=np.float32)
@@ -254,6 +257,7 @@ def _ports(
         residual_cut_intent_return_target_plan_provider=(
             residual_return_target_plan_provider
         ),
+        ensure_coverage_corridors=ensure_coverage_corridors,
     )
     return ports, state, events, target_planner, start_planner
 
@@ -365,6 +369,142 @@ def test_residual_cut_intent_route_consumes_explicit_return_target_provider() ->
     assert target_planner.last_plan is not None
     assert token is not target_planner.last_plan.token
     np.testing.assert_allclose(token, _token(3, 8.0))
+
+
+def test_residual_cut_intent_return_target_maps_raw_entry_to_envelope_cell() -> None:
+    events: list[str] = []
+    provided_plan = DigCutTokenPlan(
+        token=_token(3, 8.0),
+        raw_fields=MappingProxyType(
+            {
+                "operator_entry_x_m": 8.0,
+                "operator_entry_z_m": -0.25,
+            }
+        ),
+        source="explicit_residual_cut_intent_dig_cut_token",
+        fallback_reason="",
+        in_prior_p10_p90=False,
+    )
+
+    def provider(obs: dict[str, Any]) -> DigCutTokenPlan:
+        events.append(f"provider:{obs['id']}")
+        return provided_plan
+
+    ports, state, events, target_planner, _ = _ports(
+        mode=DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT,
+        events=events,
+        residual_return_target_plan_provider=provider,
+    )
+    coverage_state = state["coverage_state"]
+    assert isinstance(coverage_state, CoverageRuntimeState)
+    coverage_state.coverage_corridors = [
+        SimpleNamespace(
+            corridor_id=0,
+            cell_id=4,
+            entry_x_m=2.0,
+            entry_z_m=2.0,
+        ),
+        SimpleNamespace(
+            corridor_id=1,
+            cell_id=2,
+            entry_x_m=7.8,
+            entry_z_m=-0.2,
+        ),
+    ]
+
+    _token_value, _raw_fields, _source, _fallback, corridor_id = (
+        PrimitiveReturnTokenPlanningService.from_ports(
+            ports
+        ).build_next_dig_cut_plan_for_return(
+            {"id": "obs", "pose_x": 0, "pose_y": 0, "pose_z": 0}
+        )
+    )
+
+    assert events == [
+        "provider:obs",
+        "plan_from_dig_cut_plan:explicit_residual_cut_intent_dig_cut_token:1:8.0",
+    ]
+    assert corridor_id == 1
+    assert target_planner.last_plan is not None
+    assert target_planner.last_plan.corridor_id == 1
+    assert (
+        PrimitiveReturnTokenPlanningService.from_ports(
+            ports
+        ).return_start_envelope_cell_id(corridor_id)
+        == 2
+    )
+
+
+def test_residual_cut_intent_return_target_ensures_corridors_before_cell_match() -> None:
+    events: list[str] = []
+    provided_plan = DigCutTokenPlan(
+        token=_token(3, 8.0),
+        raw_fields=MappingProxyType(
+            {
+                "operator_entry_x_m": 8.0,
+                "operator_entry_z_m": -0.25,
+            }
+        ),
+        source="explicit_residual_cut_intent_dig_cut_token",
+        fallback_reason="",
+        in_prior_p10_p90=False,
+    )
+
+    def provider(obs: dict[str, Any]) -> DigCutTokenPlan:
+        events.append(f"provider:{obs['id']}")
+        return provided_plan
+
+    def ensure_coverage_corridors() -> None:
+        events.append("ensure_corridors")
+        coverage_state = state["coverage_state"]
+        assert isinstance(coverage_state, CoverageRuntimeState)
+        coverage_state.coverage_corridors = [
+            SimpleNamespace(
+                corridor_id=0,
+                cell_id=4,
+                entry_x_m=2.0,
+                entry_z_m=2.0,
+            ),
+            SimpleNamespace(
+                corridor_id=1,
+                cell_id=2,
+                entry_x_m=7.8,
+                entry_z_m=-0.2,
+            ),
+        ]
+
+    ports, state, events, target_planner, _ = _ports(
+        mode=DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT,
+        events=events,
+        residual_return_target_plan_provider=provider,
+        ensure_coverage_corridors=ensure_coverage_corridors,
+    )
+    coverage_state = state["coverage_state"]
+    assert isinstance(coverage_state, CoverageRuntimeState)
+    coverage_state.coverage_corridors = []
+
+    _token_value, _raw_fields, _source, _fallback, corridor_id = (
+        PrimitiveReturnTokenPlanningService.from_ports(
+            ports
+        ).build_next_dig_cut_plan_for_return(
+            {"id": "obs", "pose_x": 0, "pose_y": 0, "pose_z": 0}
+        )
+    )
+
+    assert events == [
+        "provider:obs",
+        "ensure_corridors",
+        "plan_from_dig_cut_plan:explicit_residual_cut_intent_dig_cut_token:1:8.0",
+    ]
+    assert corridor_id == 1
+    assert target_planner.last_plan is not None
+    assert target_planner.last_plan.corridor_id == 1
+    assert (
+        PrimitiveReturnTokenPlanningService.from_ports(
+            ports
+        ).return_start_envelope_cell_id(corridor_id)
+        == 2
+    )
 
 
 def test_unsupported_return_target_mode_keeps_old_error_shape() -> None:

@@ -1004,6 +1004,16 @@ cycle. Missing provider/source still follows the existing error/fallback-zero di
 fallback, last-plan reuse, source repetition, checked-in eval YAML/default config change, official pass/fail,
 planner-success, production-readiness, command-space-control, or calibrated-fallback claim.
 
+Phase 6G-L keeps the return-start envelope and dig-cut token contracts distinct while fixing residual envelope prior
+selection. When a residual return-target plan comes from explicit request-local raw fields, return planning now maps
+that next-dig entry to the nearest existing coverage corridor; the existing corridor-to-cell mapping then selects
+`return_start_envelope_cells`. If no coverage prior/corridors exist, the previous live-current-observation envelope
+fallback remains diagnostic behavior. A fresh B smoke using only a request-local config restore of
+`testbed/configs/planner_priors/yulong_removed_depth_dig_cut_prior_v3.json` confirmed the source changed to
+`qc6_return_start_envelope_cell_2+relocate_spatial_linear+relocate_qpos_linear`; the transition still timed out with
+`completed_transition_count=0` because entry-close never became true (`min return_to_dig_entry_error_m ~= 0.781m`
+against `0.55m`) and the envelope gate still failed plane-depth/qpos checks.
+
 depth 诊断必须区分三种口径：
 
 - `depth_tracking.dig_local_surface`：正式 command-depth 跟手口径，来自 jsonl 连续

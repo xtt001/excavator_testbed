@@ -29,6 +29,10 @@ if TYPE_CHECKING:
 ReturnTargetPlanTuple = tuple[np.ndarray, dict[str, float | int], str, str, int]
 
 
+def _noop() -> None:
+    return None
+
+
 class CoverageRawFieldsBuilder(Protocol):
     """Build dig-cut raw fields from a selected coverage corridor."""
 
@@ -57,6 +61,7 @@ class PrimitiveReturnTokenPlanningPorts:
     residual_cut_intent_return_target_plan_provider: (
         ResidualCutIntentPlanProvider | None
     ) = None
+    ensure_coverage_corridors: Callable[[], None] = _noop
 
 
 @dataclass(frozen=True)
@@ -142,10 +147,13 @@ class PrimitiveReturnTokenPlanningService:
                 "residual_cut_intent return target provider must return "
                 "DigCutTokenPlan or DigCutPlanTuple"
             )
+        corridor_id = self.return_start_envelope_corridor_id_from_raw_fields(
+            dict(dig_cut_plan.raw_fields)
+        )
         return planner.plan_from_dig_cut_plan(
             dig_cut_plan,
             source_suffix=str(dig_cut_plan.source),
-            corridor_id=-1,
+            corridor_id=-1 if corridor_id is None else int(corridor_id),
         )
 
     @staticmethod
@@ -252,6 +260,47 @@ class PrimitiveReturnTokenPlanningService:
         if int(corridor_id) >= 0:
             return int(corridor_id)
         return None
+
+    def return_start_envelope_corridor_id_from_raw_fields(
+        self,
+        raw_fields: Mapping[str, float | int],
+    ) -> int | None:
+        """Map a planned next-dig entry to the nearest coverage corridor."""
+
+        try:
+            entry_x = float(raw_fields.get("operator_entry_x_m", float("nan")))
+            entry_z = float(raw_fields.get("operator_entry_z_m", float("nan")))
+        except Exception:
+            return None
+        if not (np.isfinite(entry_x) and np.isfinite(entry_z)):
+            return None
+
+        self.ensure_coverage_corridors_available()
+        best_corridor_id: int | None = None
+        best_distance = float("inf")
+        for corridor in self.ports.coverage_state.coverage_corridors:
+            corridor_entry_x = float(getattr(corridor, "entry_x_m", float("nan")))
+            corridor_entry_z = float(getattr(corridor, "entry_z_m", float("nan")))
+            if not (np.isfinite(corridor_entry_x) and np.isfinite(corridor_entry_z)):
+                continue
+            distance = float(
+                (entry_x - corridor_entry_x) ** 2
+                + (entry_z - corridor_entry_z) ** 2
+            )
+            if distance < best_distance:
+                best_distance = distance
+                best_corridor_id = int(getattr(corridor, "corridor_id", -1))
+        if best_corridor_id is None or best_corridor_id < 0:
+            return None
+        return int(best_corridor_id)
+
+    def ensure_coverage_corridors_available(self) -> None:
+        if self.ports.coverage_state.coverage_corridors:
+            return
+        try:
+            self.ports.ensure_coverage_corridors()
+        except Exception:
+            return
 
     def observation_facts(
         self,

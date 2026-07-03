@@ -50,6 +50,7 @@ class PrimitiveTokenPlanningRuntimePorts:
     residual_cut_intent_return_target_plan_provider: (
         ResidualCutIntentPlanProvider | None
     ) = None
+    ensure_coverage_corridors: Callable[[], None] = lambda: None
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,7 @@ class PrimitiveTokenPlanningRuntime:
             residual_cut_intent_return_target_plan_provider=(
                 ports.residual_cut_intent_return_target_plan_provider
             ),
+            ensure_coverage_corridors=ports.ensure_coverage_corridors,
         )
 
     def build_dig_depth_profile_tokens_for_obs(
