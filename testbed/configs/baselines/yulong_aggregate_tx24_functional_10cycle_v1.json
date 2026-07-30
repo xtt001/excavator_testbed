@@ -1,0 +1,63 @@
+{
+  "schema": "act_functional_baseline_manifest_v1",
+  "baseline_id": "yulong_aggregate_tx24_functional_10cycle_v1",
+  "status": "functional_baseline_only",
+  "artifact_availability": "external_append_only",
+  "source_results_dir": "runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results",
+  "functional_evidence": {
+    "qualified_dig_start_count": 10,
+    "dump_start_count": 10,
+    "dump_end_count": 10,
+    "completed_dump_count": 10,
+    "completed_intermediate_return_handoff_count": 9,
+    "rollout_stop_reason": "dig_area_depleted"
+  },
+  "artifacts": {
+    "resolved_config": {
+      "path": "runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/eval_resolved_config.yaml",
+      "sha256": "6060b11823896dd8f9a95342ace53f3e9e1f729507156ff89bd27f8d05f69ec9"
+    },
+    "rollout_summary": {
+      "path": "runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollouts/rollout_000_summary.json",
+      "sha256": "ea6138b2c586dc7b5aa679c1af401d36577fbd25d29bc9b3899e9cc466ae5e24"
+    },
+    "rollout_manifest": {
+      "path": "runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollout_manifest.json",
+      "sha256": "29a21ddf1459cc5f6f266709e936dfbfbb8230b5bc9d02adb2d96dee17b1dc5a"
+    },
+    "rollout_review": {
+      "path": "runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/results/rollout_review.json",
+      "sha256": "13728dfefaac2a301cd158548732c854e4c761bbe5f2851d38a2b77fa7f78f93"
+    },
+    "video": {
+      "path": "runs/eval/v2_5_bt_reproduce_aggregate_tx24_20260630_current_fixed_eval_tf32off/videos/rollout_000.mp4",
+      "sha256": "8a6898a8857963598bac3cc0b69edb40bf1ef68f67471d7872ca4fd7e4e7641a"
+    }
+  },
+  "checkpoints": {
+    "dig": {
+      "path": "runs/ckpts/v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524/dig/policy_best.ckpt",
+      "sha256": "13fcafea27d0a801191e2447f174e821f22e989dd85a82e533d62804f3253db5"
+    },
+    "carry": {
+      "path": "runs/ckpts/v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524/carry/policy_best.ckpt",
+      "sha256": "e973e53e2424e3972a943abb66f980216fe5e1c40e3eb66e398db4604c779f0e"
+    },
+    "dump": {
+      "path": "runs/ckpts/v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524/dump/policy_best.ckpt",
+      "sha256": "9ffa4b676e07e43ac920c8cc0b1532d3bdb39afc6790a02fddcddef32b9c3d46"
+    },
+    "return": {
+      "path": "runs/ckpts/v2_4_5_return_relocate_token_swap_all_surface_depth_qc6labels_scale080_20260526/return/policy_best.ckpt",
+      "sha256": "43a4a87951af415182106e30de9a749aa4ad8143390b1564b321ca51ba760116"
+    }
+  },
+  "evidence_limits": {
+    "observed_rollout_env_state_width": 64,
+    "typed_wall_contact_available": false,
+    "typed_bottom_contact_available": false,
+    "current_107d_safety_contract_proven": false,
+    "formal_act_freeze_bundle": false,
+    "note": "The live artifact is older than the planned 89D label: its JSONL rows contain 64D env_state. It is locked only as a ten-cycle functional baseline."
+  }
+}

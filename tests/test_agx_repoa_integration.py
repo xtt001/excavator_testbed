@@ -134,6 +134,41 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         self.assertIsNotNone(fake_metrics.saved_json)
         append_csv.assert_called_once()
 
+    def test_eval_policy_propagates_explicit_seed_base(self) -> None:
+        captured: dict[str, object] = {}
+        fake_metrics = _FakeMetrics()
+
+        class FakeSuite:
+            def __init__(self, **kwargs) -> None:
+                captured["suite_kwargs"] = kwargs
+
+            def run(self):
+                return fake_metrics
+
+        config = {
+            "task": {"name": "agx_excavation_teleop"},
+            "eval": {
+                "num_rollouts": 1,
+                "save_video": False,
+                "seed": 2,
+            },
+            "policy": {
+                "name": "dummy",
+                "action_dim": 4,
+                "mode": "zero",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config["eval"]["results_dir"] = tmpdir
+            with (
+                patch("testbed.eval.suite.EvalSuite", FakeSuite),
+                patch("testbed.eval.metrics.EvalMetrics.append_to_csv"),
+            ):
+                eval_policy(config)
+
+        self.assertEqual(captured["suite_kwargs"]["seed_base"], 2)
+
     def test_build_episode_metadata_uses_runtime_info_and_teleop_settings(self) -> None:
         info = GetInfoResponse(
             success=True,

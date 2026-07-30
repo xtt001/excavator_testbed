@@ -958,6 +958,9 @@ class PrimitivePlannerACTPolicy(Policy):
     def _set_skill(self, skill_name: str, reason: str) -> None:
         self._primitive_skill_lifecycle().set_skill(skill_name, reason)
 
+    def _restart_skill(self, reason: str) -> None:
+        self._primitive_skill_lifecycle().restart_skill(reason)
+
     def _primitive_skill_lifecycle(self) -> PrimitiveSkillLifecycleService:
         return PrimitiveSkillLifecycleService.from_ports(
             self._primitive_skill_lifecycle_ports()

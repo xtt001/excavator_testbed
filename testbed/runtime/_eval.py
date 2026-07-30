@@ -32,7 +32,7 @@ def eval_policy(config: dict[str, Any]) -> None:
 
     policy_class = str(policy_cfg.get("class", policy_cfg.get("name", "ACT"))).upper()
     task_name = task_cfg.get("name", task_cfg.get("task_name", config.get("task_name", "")))
-    from testbed.eval.tasks import get_eval_task
+    from testbed.eval.tasks import EVAL_SEED, get_eval_task
 
     task_def = get_eval_task(task_name)
     equipment_model = task_cfg.get(
@@ -50,6 +50,9 @@ def eval_policy(config: dict[str, Any]) -> None:
             config.get("rollout", {}).get("num_rollouts_default", 50),
         )
     )
+    seed_base = int(eval_cfg.get("seed", EVAL_SEED))
+    if seed_base < 0:
+        raise ValueError("eval.seed must be non-negative")
     save_video      = bool(eval_cfg.get("save_video", True))
     if policy_class == "PRIMITIVE_PLANNER_ACT_5P":
         raise ValueError(
@@ -112,6 +115,20 @@ def eval_policy(config: dict[str, Any]) -> None:
     )
     record_hdf5_with_cell_entry = bool(
         eval_cfg.get("record_hdf5_with_cell_entry", True)
+    )
+    from testbed.runtime.eval_output_paths import (
+        assert_eval_output_paths_available,
+    )
+
+    assert_eval_output_paths_available(
+        enabled=bool(eval_cfg.get("no_overwrite", False)),
+        results_dir=results_dir,
+        video_dir=video_dir,
+        rollout_log_dir=rollout_log_dir,
+        hdf5_dir=record_hdf5_dir,
+        save_video=save_video,
+        save_rollout_logs=save_rollout_logs,
+        record_hdf5=record_hdf5,
     )
     send_planner_debug_to_backend = bool(
         eval_cfg.get("send_planner_debug_to_backend", True)
@@ -933,6 +950,7 @@ def eval_policy(config: dict[str, Any]) -> None:
         scenario_id=None if scenario_id is None else str(scenario_id),
     )
     eval_run_metadata["status"] = "started"
+    eval_run_metadata["seed_base"] = seed_base
     eval_run_metadata["success"] = {
         "mode": agx_success_mode,
         "signal_name": success_signal_name,
@@ -1004,6 +1022,7 @@ def eval_policy(config: dict[str, Any]) -> None:
         policy       = policy,
         task_name    = task_name,
         num_rollouts = num_rollouts,
+        seed_base    = seed_base,
         save_video   = save_video,
         video_dir    = video_dir,
         results_dir  = results_dir,
@@ -1242,6 +1261,13 @@ def _build_act_eval_policy(
         ),
         "outcome_hidden_dim": outcome_head_config.get("hidden_dim"),
     }
+    for temporal_key in (
+        "temporal_agg_window",
+        "temporal_agg_weight_order",
+        "temporal_agg_decay",
+    ):
+        if temporal_key in act_params:
+            policy_config[temporal_key] = act_params[temporal_key]
     from testbed.policies.act.adapter import ACTAdapter
 
     return ACTAdapter.from_checkpoint(

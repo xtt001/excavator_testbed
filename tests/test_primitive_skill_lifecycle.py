@@ -66,6 +66,23 @@ def test_same_skill_noop_preserves_reason_and_side_effects() -> None:
     assert events == []
 
 
+def test_same_skill_restart_resets_policy_updates_reason_and_resets_skill_state() -> None:
+    ports, owners, events = _ports(skill_name="return", switch_reason="old_reason")
+    owners["return"].return_step_count = 17
+    owners["return"].return_next_dig_event_seen = True
+
+    PrimitiveSkillLifecycleService.from_ports(ports).restart_skill(
+        "hard_bottom_neutral_acknowledged",
+    )
+
+    execution_state = owners["execution"]
+    assert execution_state.skill_name == "return"
+    assert execution_state.switch_reason == "hard_bottom_neutral_acknowledged"
+    assert owners["return"].return_step_count == 0
+    assert owners["return"].return_next_dig_event_seen is False
+    assert events == ["reset:return", "clear_dig_cut_plan"]
+
+
 def test_switch_to_dig_resets_active_policy_and_dig_lifecycle_without_clear() -> None:
     ports, owners, events = _ports(skill_name="return", switch_reason="old")
     cycle_state = owners["cycle"]
@@ -138,6 +155,24 @@ def test_policy_set_skill_delegates_to_skill_lifecycle_service() -> None:
     planner._set_skill("carry", "dig_to_carry_loaded")
 
     assert calls == [("carry", "dig_to_carry_loaded")]
+
+
+def test_policy_restart_skill_delegates_to_skill_lifecycle_service() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    calls: list[str] = []
+
+    class _FakeLifecycle:
+        def restart_skill(self, reason: str) -> None:
+            calls.append(reason)
+
+    planner._primitive_skill_lifecycle = MethodType(
+        lambda self: _FakeLifecycle(),
+        planner,
+    )
+
+    planner._restart_skill("hard_bottom_neutral_acknowledged")
+
+    assert calls == ["hard_bottom_neutral_acknowledged"]
 
 
 def test_skill_lifecycle_boundary_uses_typed_ports_without_planner_self() -> None:

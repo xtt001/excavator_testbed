@@ -1,0 +1,59 @@
+# Fresh four-camera ACT trained only from the repaired strict replay inventory.
+# Fresh start only: resume_ckpt must remain absent.
+
+task:
+  task_name: agx_excavation_teleop
+  equipment_model: yulong
+  dataset_dir: /data/pingfan/excavator_testbed_data/yulong_strict18_terrain_residual_v0/primitives_copy/carry
+  num_episodes: 0
+  episode_len: 298
+  camera_names:
+    - stick_up
+    - stick_down
+    - eye_left
+    - eye_right
+  backend:
+    name: agx
+    dt: 0.02
+
+policy:
+  class: ACT
+  device: cuda
+  low_dim_keys:
+    - qpos
+    - qvel
+  act_params:
+    chunk_size: 100
+    kl_weight: 10.0
+    hidden_dim: 512
+    dim_feedforward: 3200
+
+train:
+  lr: 1.0e-5
+  num_epochs: 500
+  batch_size: 4
+  seed: 0
+  device: cuda
+  num_workers: 8
+  prefetch_factor: 4
+  persistent_workers: true
+  pin_memory: true
+  hdf5_cache_size: 32
+  split_seed: 0
+  train_split_ratio: 0.8
+  split_path: /data/pingfan/excavator_testbed_data/yulong_strict18_terrain_residual_v0/splits/carry_source_split.yaml
+  reuse_split: true
+  action_loss_mask_scope: loss_sampling_stats
+  metadata_filters:
+    training_tier: gold
+  val_every: 20
+  save_latest_every: 25
+  checkpoint_every: 50
+  plot_every: 100
+  keep_only_best_ckpt: true
+  amp: true
+  amp_dtype: auto
+  cudnn_benchmark: true
+  allow_tf32: true
+  matmul_precision: high
+  ckpt_dir: /data/pingfan/excavator_testbed_runs/ckpts/yulong_strict18_terrain_residual_v0/carry

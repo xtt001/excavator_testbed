@@ -8,21 +8,24 @@ any ACT internals.
 Temporal aggregation
 --------------------
 When `temporal_agg=True`, actions are chunked and averaged using the
-scheme from the original paper. Only the last `num_queries` chunks can
-contribute to the current action, so inference keeps a rolling
-`(C, C, Na)` buffer instead of the original dense `(T, T+C, Na)` tensor.
+scheme from the original paper. `temporal_agg_window` bounds contributor
+age and defaults to `num_queries`; `temporal_agg_weight_order` defaults
+to the historical oldest-first weighting for checkpoint compatibility.
+Inference keeps a rolling `(C, C, Na)` buffer instead of the original
+dense `(T, T+C, Na)` tensor.
 """
 
 from __future__ import annotations
 
+import math
 import pickle
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
-from einops import rearrange
 import torchvision.transforms as transforms
+from einops import rearrange
 
 from testbed.data.camera_images import observation_camera_rgb
 from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
@@ -78,16 +81,26 @@ class ACTAdapter(Policy):
         self._low_dim_keys = list(policy_config.get("low_dim_keys", ["qpos"]))
         self._image_mask_config = dict(policy_config.get("image_mask") or {})
 
+        # Resolve the inference contract before constructing the model so invalid
+        # runtime settings cannot trigger an expensive checkpoint build/load.
+        self._num_queries: int = policy_config["num_queries"]
+        (
+            self._temporal_agg_window,
+            self._temporal_agg_weight_order,
+            self._temporal_agg_decay,
+        ) = self._resolve_temporal_aggregation_config(
+            policy_config,
+            num_queries=self._num_queries,
+        )
+        self._t: int = 0
+        self._all_time_actions: torch.Tensor | None = None
+        self._all_time_actions_valid: torch.Tensor | None = None
+        self._cached_actions: torch.Tensor | None = None
+        self._max_episode_len = int(policy_config.get("max_episode_len", 400))
+
         model, optimizer = build_ACT_model_and_optimizer(policy_config)
         self._model     = model.to(self.device)
         self._optimizer = optimizer
-
-        # temporal aggregation state
-        self._num_queries: int  = policy_config["num_queries"]
-        self._t: int            = 0
-        self._all_time_actions: torch.Tensor | None = None
-        self._all_time_actions_valid: torch.Tensor | None = None
-        self._max_episode_len = int(policy_config.get("max_episode_len", 400))
 
         self._normalize  = transforms.Normalize(
             mean=[0.485, 0.456, 0.406],
@@ -103,6 +116,7 @@ class ACTAdapter(Policy):
         self._t = 0
         self._all_time_actions = None
         self._all_time_actions_valid = None
+        self._cached_actions = None
 
     # ── inference ─────────────────────────────────────────────────────────────
 
@@ -280,6 +294,58 @@ class ACTAdapter(Policy):
             torch.from_numpy(np.asarray(std, dtype=np.float32)).to(self.device),
         )
 
+    @staticmethod
+    def _resolve_temporal_aggregation_config(
+        policy_config: dict[str, Any],
+        *,
+        num_queries: int,
+    ) -> tuple[int, str, float]:
+        window = policy_config.get("temporal_agg_window", num_queries)
+        if (
+            isinstance(window, bool)
+            or not isinstance(window, int)
+            or window < 1
+            or window > num_queries
+        ):
+            raise ValueError(
+                "policy_config.temporal_agg_window must be an integer in "
+                f"[1, num_queries={num_queries}], got {window!r}."
+            )
+
+        weight_order = policy_config.get(
+            "temporal_agg_weight_order",
+            "legacy_oldest_first",
+        )
+        if (
+            not isinstance(weight_order, str)
+            or weight_order not in {"legacy_oldest_first", "newest_first"}
+        ):
+            raise ValueError(
+                "policy_config.temporal_agg_weight_order must be "
+                "'legacy_oldest_first' or 'newest_first', "
+                f"got {weight_order!r}."
+            )
+
+        decay_value = policy_config.get("temporal_agg_decay", 0.01)
+        if isinstance(decay_value, bool):
+            raise ValueError(
+                "policy_config.temporal_agg_decay must be a finite "
+                f"non-negative number, got {decay_value!r}."
+            )
+        try:
+            decay = float(decay_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "policy_config.temporal_agg_decay must be a finite "
+                f"non-negative number, got {decay_value!r}."
+            ) from exc
+        if not math.isfinite(decay) or decay < 0.0:
+            raise ValueError(
+                "policy_config.temporal_agg_decay must be a finite "
+                f"non-negative number, got {decay_value!r}."
+            )
+        return window, weight_order, decay
+
     def _aggregate(self, a_hat: torch.Tensor) -> np.ndarray:
         """
         Temporal aggregation from the ACT paper.
@@ -322,8 +388,20 @@ class ACTAdapter(Policy):
         # Weighted average of past chunks that cover step t.  The dense ACT
         # implementation reads rows in chronological order; preserve that order
         # while using only the rolling window that can still affect this step.
-        start_step = max(0, t - self._num_queries + 1)
+        temporal_window = getattr(
+            self,
+            "_temporal_agg_window",
+            self._num_queries,
+        )
+        weight_order = getattr(
+            self,
+            "_temporal_agg_weight_order",
+            "legacy_oldest_first",
+        )
+        decay = getattr(self, "_temporal_agg_decay", 0.01)
+        start_step = max(0, t - temporal_window + 1)
         actions_for_curr_step = []
+        action_ages = []
         for source_step in range(start_step, t + 1):
             source_slot = source_step % self._num_queries
             query_offset = t - source_step
@@ -331,9 +409,13 @@ class ACTAdapter(Policy):
                 actions_for_curr_step.append(
                     self._all_time_actions[source_slot, query_offset]
                 )
+                action_ages.append(query_offset)
         actions_for_curr_step = torch.stack(actions_for_curr_step, dim=0)
-        k = 0.01
-        exp_weights = np.exp(-k * np.arange(len(actions_for_curr_step)))
+        if weight_order == "legacy_oldest_first":
+            weight_distance = np.arange(len(actions_for_curr_step))
+        else:
+            weight_distance = np.asarray(action_ages)
+        exp_weights = np.exp(-decay * weight_distance)
         exp_weights = exp_weights / exp_weights.sum()
         exp_weights = torch.from_numpy(exp_weights).float().to(self.device).unsqueeze(1)
         action = (actions_for_curr_step * exp_weights).sum(0).cpu().numpy()

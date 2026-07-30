@@ -40,6 +40,7 @@ from testbed.eval.hybrid_metrics import (
     build_hybrid_summary,
 )
 from testbed.eval.planner_metrics import aggregate_planner_metrics
+from testbed.eval.policy_inference_timing import timed_policy_predict
 from testbed.eval.quality_metrics import (
     aggregate_quality_metrics,
     build_quality_summary,
@@ -161,6 +162,7 @@ class EvalSuite:
         live_goal_dump_target_norm: float = 1.0,
         episode_len: int | None = None,
         camera_names: list[str] | None = None,
+        seed_base: int = EVAL_SEED,
     ):
         self.policy       = policy
         self.task_def     = get_eval_task(task_name)
@@ -169,6 +171,9 @@ class EvalSuite:
         if camera_names is not None:
             self.task_def = replace(self.task_def, camera_names=list(camera_names))
         self.num_rollouts = num_rollouts
+        self.seed_base = int(seed_base)
+        if self.seed_base < 0:
+            raise ValueError("seed_base must be non-negative")
         self.save_video   = save_video
         self.ckpt_path    = ckpt_path
         self.save_rollout_logs = bool(save_rollout_logs)
@@ -244,7 +249,7 @@ class EvalSuite:
 
     def run(self) -> EvalMetrics:
         """Execute all rollouts and return aggregate EvalMetrics."""
-        np.random.seed(EVAL_SEED)
+        np.random.seed(self.seed_base)
         task = self.task_def
         env  = self._make_env(task)
 
@@ -277,13 +282,13 @@ class EvalSuite:
 
         try:
             for rollout_id in range(self.num_rollouts):
-                np.random.seed(EVAL_SEED + rollout_id)
+                np.random.seed(self.seed_base + rollout_id)
 
                 # MuJoCo: set deterministic object pose per rollout
                 if task.backend_type != "agx" and task.make_object_pose is not None:
                     env.set_initial_object_pose(task.make_object_pose())
 
-                ts = env.reset(seed=EVAL_SEED + rollout_id)
+                ts = env.reset(seed=self.seed_base + rollout_id)
                 self.policy.reset()
                 rollout_recorder = None
                 if self.record_hdf5:
@@ -349,7 +354,10 @@ class EvalSuite:
                         if goal_tokens is not None:
                             policy_input["goal_tokens"] = goal_tokens
 
-                    action = self.policy.predict(policy_input)
+                    action, policy_inference_latency_ms = timed_policy_predict(
+                        self.policy,
+                        policy_input,
+                    )
                     policy_debug = (
                         dict(self.policy.debug_state())
                         if hasattr(self.policy, "debug_state")
@@ -434,6 +442,9 @@ class EvalSuite:
                                 else np.array(post_obs.get("env_state"), dtype=np.float32)
                             ),
                             "action": np.array(action, dtype=np.float32),
+                            "policy_inference_latency_ms": float(
+                                policy_inference_latency_ms
+                            ),
                             "goal_tokens": (
                                 None
                                 if policy_input.get("goal_tokens") is None
@@ -444,6 +455,15 @@ class EvalSuite:
                             ),
                             "cell_entry_selected_cell_id": int(
                                 policy_debug.get("cell_entry_selected_cell_id", -1)
+                            ),
+                            "planned_cut_cell_id": int(
+                                policy_debug.get("planned_cut_cell_id", -1)
+                            ),
+                            "box_residual_active_cell_id": int(
+                                policy_debug.get(
+                                    "box_residual_active_cell_id",
+                                    -1,
+                                )
                             ),
                             "cell_entry_selected_long_index": int(
                                 policy_debug.get("cell_entry_selected_long_index", -1)
@@ -747,6 +767,47 @@ class EvalSuite:
                             "dig_exit_guard_replan_count": int(
                                 policy_debug.get("dig_exit_guard_replan_count", 0)
                             ),
+                            "carry_start_base_ready": bool(
+                                policy_debug.get("carry_start_base_ready", False)
+                            ),
+                            "carry_start_envelope_ready": bool(
+                                policy_debug.get(
+                                    "carry_start_envelope_ready",
+                                    False,
+                                )
+                            ),
+                            "carry_start_envelope_hold_count": int(
+                                policy_debug.get(
+                                    "carry_start_envelope_hold_count",
+                                    0,
+                                )
+                            ),
+                            "carry_start_envelope_violations": list(
+                                policy_debug.get(
+                                    "carry_start_envelope_violations",
+                                    [],
+                                )
+                                or []
+                            ),
+                            "carry_start_envelope_feature_checks": dict(
+                                policy_debug.get(
+                                    "carry_start_envelope_feature_checks",
+                                    {},
+                                )
+                                or {}
+                            ),
+                            "carry_start_envelope_artifact_sha256": str(
+                                policy_debug.get(
+                                    "carry_start_envelope_artifact_sha256",
+                                    "",
+                                )
+                            ),
+                            "carry_start_envelope_timeout": bool(
+                                policy_debug.get(
+                                    "carry_start_envelope_timeout",
+                                    False,
+                                )
+                            ),
                             "pre_dig_align_enabled": bool(
                                 policy_debug.get("pre_dig_align_enabled", False)
                             ),
@@ -922,18 +983,15 @@ class EvalSuite:
                             f"  rollout {rollout_id:03d}  step {t + 1} / {task.episode_len}"
                         )
 
-                    if bool(policy_debug.get("transition_timeout", False)):
-                        rollout_stop_reason = "transition_timeout"
-                        break
-                    if bool(
-                        policy_debug.get("planner_terminal_stop_requested", False)
-                    ):
-                        rollout_stop_reason = str(
-                            policy_debug.get(
-                                "planner_terminal_stop_reason",
-                                "planner_terminal_stop",
-                            )
-                        )
+                    from testbed.eval.rollout_terminal import (
+                        policy_terminal_stop_reason,
+                    )
+
+                    policy_stop_reason = policy_terminal_stop_reason(
+                        policy_debug
+                    )
+                    if policy_stop_reason is not None:
+                        rollout_stop_reason = policy_stop_reason
                         break
                     (
                         target_cycle_gate_reached_step,
@@ -1309,7 +1367,7 @@ class EvalSuite:
         metadata: dict[str, object] = {
             ATTR_TASK_NAME: task.name,
             ATTR_SIM_BACKEND: "agxunity" if task.backend_type == "agx" else task.backend_type,
-            ATTR_SEED: int(EVAL_SEED + rollout_id),
+            ATTR_SEED: int(self.seed_base + rollout_id),
             ATTR_PARAM_VERSION: "v2.2_policy_rollout",
             ATTR_RECORDING_MODE: "policy_rollout",
             ATTR_RECORDING_PROTOCOL_VERSION: "v2.2_policy_rollout_hdf5",

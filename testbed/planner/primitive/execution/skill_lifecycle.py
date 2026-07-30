@@ -45,7 +45,19 @@ class PrimitiveSkillLifecycleService:
         ports.execution_state.set_skill_name(target_skill)
         ports.execution_state.set_switch_reason(str(reason))
         ports.reset_active_policy()
+        self._reset_skill_state(target_skill)
 
+    def restart_skill(self, reason: str) -> None:
+        """Restart the current primitive even when its skill name is unchanged."""
+
+        ports = self.ports
+        target_skill = str(ports.execution_state.skill_name)
+        ports.execution_state.set_switch_reason(str(reason))
+        ports.reset_active_policy()
+        self._reset_skill_state(target_skill)
+
+    def _reset_skill_state(self, target_skill: str) -> None:
+        ports = self.ports
         if target_skill == "carry":
             ports.cycle_state.set_dump_ready_hold_count(0)
         elif target_skill == "dump":
