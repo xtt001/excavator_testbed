@@ -1,0 +1,165 @@
+{
+  "schema": "goal_following_mainline_implementation_manifest_v1",
+  "created_at": "2026-07-31T00:00:00+08:00",
+  "git_boundary": {
+    "freeze_tag": "freeze/terrain-residual-pre-goal-following-20260731",
+    "freeze_commit": "ca1c9914d15a1b29b4a39d2da9ac007d08c30ae0",
+    "mainline_branch": "codex/goal-following-mainline",
+    "verified_implementation_commit": "d0db99fd226604c3bbbf3aaa93f78f57b4371958",
+    "upstream_configured": false,
+    "remote_push_performed": false
+  },
+  "frozen_nine_dig_evidence": {
+    "evidence_type": "bounded_unity_diagnostic",
+    "result": "failed",
+    "completed_digs": 9,
+    "required_digs": 10,
+    "completed_dumps": 9,
+    "required_dumps": 10,
+    "censored_tenth_handoff": true,
+    "promotion_eligible": false,
+    "safety_thresholds_relaxed": false,
+    "production_default_changed": false
+  },
+  "benchmark": {
+    "implementation_status": "implemented_offline_contract",
+    "expert_windows": 433,
+    "train_partition_windows": 374,
+    "source_heldout_windows": 59,
+    "heldout_sources": [
+      33,
+      34
+    ],
+    "rollout_completed_segments": 9,
+    "rollout_censored_handoffs": 1,
+    "censored_handoff_act_tracking_label": false,
+    "censored_handoff_predictor_training_label": false,
+    "expert_predictor_labels_currently_valid": false,
+    "synthetic_golden_report_sha256": "0e5d9569550e184d787c74d31bf552c90a3ab35924e61d842b0a6c5b6abf0ca5",
+    "current_decision": "insufficient_evidence",
+    "decision_reason": "complete authoritative continuous goals, calibrated references, actual/reference paths, forward-kinematics paths, and effect arrays have not been assembled into a real benchmark artifact",
+    "act_retraining_allowed": false,
+    "live_unlocked": false
+  },
+  "predictor": {
+    "implementation_status": "contract_trainer_calibration_artifact_and_offline_bridge_implemented",
+    "input_schema": "continuous_goal_worktool_sweep_input_v2",
+    "terrain_signature_schema": "terrain_signature_v1",
+    "terrain_signature_dim": 89,
+    "path_progress_points": 64,
+    "bspline_control_points_per_joint": 12,
+    "ensemble_seeds": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "hidden_dims": [
+      64,
+      64
+    ],
+    "loss": "huber",
+    "conformal_coverage": 0.95,
+    "conformal_source_counts": {
+      "33": 29,
+      "34": 30
+    },
+    "ood_rule": "leave_one_source_out_p99",
+    "per_member_train_only_normalization": true,
+    "runtime_static_lineage_inventory_required": [
+      "normalization_sha256",
+      "checkpoint_sha256",
+      "calibration_sha256",
+      "predictor_code_sha256"
+    ],
+    "nearest_trajectory_fallback_allowed": false,
+    "real_training_artifact_created": false,
+    "real_training_status": "blocked_missing_authoritative_goal_intent"
+  },
+  "real_training_label_audit": {
+    "status": "blocked",
+    "manifest_sha256": "5bcdeff67845a329c154655bad5dc3c4afc62b541759188c407321f30802d8e0",
+    "source_split_sha256": "cc2e1b95d0c6b7a2019344e5e8e23b65b11fcf0307785709c8e37de993dd7a40",
+    "finite_qpos_qvel_env_state_windows": 433,
+    "terrain_signature_dim": 89,
+    "path_length_min": 67,
+    "path_length_median": 188,
+    "path_length_max": 1730,
+    "path_starts_at_operator_entry": 161,
+    "path_starts_after_operator_entry": 272,
+    "handoff_to_operator_entry_offset_steps": {
+      "min_for_delayed_paths": 1,
+      "max_for_delayed_paths": 76
+    },
+    "missing_authoritative_fields": [
+      "planned target_cell_id",
+      "payload_intent_kg",
+      "effect_intent"
+    ],
+    "forbidden_substitutions": [
+      "dominant_removed_depth_cell_id as planned target_cell_id",
+      "actual payload gain as payload intent",
+      "actual effect as effect intent",
+      "episode or expert identity as model input"
+    ],
+    "required_semantic_decision": "approve and centralize an expert_demonstration_goal pseudo-goal contract before creating a trusted dataset builder"
+  },
+  "safety_effect_and_act": {
+    "uncertainty_sweep_evaluator": "implemented",
+    "nominal_plus_16_qpos_corners": true,
+    "adaptive_interpolation": true,
+    "required_link_wall_witnesses": 12,
+    "interpolation_margin_m": 0.01,
+    "act_tracking_margin_m": 0.05,
+    "required_clearance_after_margins_m": 0.24,
+    "effect_support_gate": {
+      "implemented": true,
+      "minimum_positive_samples_per_capability": 20,
+      "minimum_negative_samples_per_capability": 20,
+      "minimum_reset_groups_per_capability": 3,
+      "controlled_unity_samples_collected": false
+    },
+    "act_route_evaluator": "implemented",
+    "current_act_status": "frozen",
+    "existing_goal_conditioned_act_retrained": false,
+    "trajectory_conditioned_act_v1_created": false,
+    "planner_threshold_masking_allowed": false
+  },
+  "promotion_gates": {
+    "offline_e0_g1_w1": "unexecuted",
+    "unity_3d_sweep": "unexecuted",
+    "bounded_live_e0_g1_w1": "unexecuted",
+    "g1_single_1x10": "unexecuted",
+    "auto_promotion_allowed": false,
+    "default_behavior_changed": false
+  },
+  "post_freeze_contact_semantics": {
+    "implementation_status": "implemented_opt_in",
+    "mode": "allow_finite_bucket_contacts",
+    "default_mode": "interrupt",
+    "finite_bucket_only_contact_automatic_failure": false,
+    "boom_stick_unknown_high_force_nonfinite_stuck_timeout_hardbottom_failure": true,
+    "production_default_enabled": false
+  },
+  "verification": {
+    "targeted_status": "passed",
+    "targeted_result": "195 passed",
+    "targeted_scope": "predictor, benchmark, continuous-goal, contact safety, uncertainty, effect, ACT route, and promotion-gate contracts",
+    "full_workspace_pytest": "2203 passed, 44 warnings in 72.99s",
+    "detached_clean_worktree_pytest": "2198 passed, 5 skipped, 44 warnings in 71.92s",
+    "detached_skip_reason": "five existing paired-Unity checkout contract tests used their checked-in skip rule because the sibling Unity checkout is intentionally unavailable from the detached temporary path",
+    "ruff_check": "passed",
+    "compileall": "passed",
+    "documentation_contract_guard": "passed",
+    "git_diff_check": "passed",
+    "clean_worktree": "passed at verified implementation commit d0db99fd226604c3bbbf3aaa93f78f57b4371958"
+  },
+  "out_of_scope_or_not_executed": {
+    "real_machine_run": false,
+    "unity_live_run": false,
+    "gpu_training_run": false,
+    "remote_push": false,
+    "production_or_default_config_activation": false
+  }
+}

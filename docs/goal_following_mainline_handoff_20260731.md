@@ -290,3 +290,9 @@ policy:
 This mode preserves the existing strict `<100000 N` finite-force condition.
 It does not relax hard-bottom, stuck, timeout, neutral-stop, or unknown
 component handling, and it does not by itself unlock any Unity or live gate.
+
+## Implementation evidence
+
+The exact implemented/unexecuted boundary, data-label blocker, and clean
+worktree verification results are recorded in
+`docs/goal_following_mainline_implementation_manifest_20260731.json`.
