@@ -286,7 +286,7 @@ def test_real_ab_bounded_smoke_comparison_reads_artifacts_and_labels_limits(
     assert result["comparison_scope"] == {
         "evidence_scope": "bounded_one_cycle_smoke",
         "full_phase6_success_claim": "not_claimed",
-        "official_pass_fail_status": "not_defined",
+        "official_pass_fail_status": "defined_by_terrain_residual_pass_fail_v1",
         "production_readiness_status": "not_claimed",
         "calibrated_fallback_status": "not_invented",
     }
@@ -305,6 +305,16 @@ def test_real_ab_bounded_smoke_comparison_reads_artifacts_and_labels_limits(
         "branch_name": "calibrated_residual_pipeline",
         "status": "not_evaluated",
         "reason": "blocked_by_missing_gold_samples",
+    }
+    assert result["non_goal_statuses"] == {
+        "production_planner_integration_status": "not_integrated",
+        "rollout_review_schema_integration_status": "not_integrated",
+        "runtime_action_status": "not_created",
+        "command_space_control_status": "not_created",
+        "official_success_semantics_status": "defined_by_terrain_residual_pass_fail_v1",
+        "official_default_status": "defined_by_terrain_residual_target_v1",
+        "official_threshold_status": "defined_by_a_baseline_anchored_v0",
+        "calibrated_model_fallback_status": "not_invented",
     }
     assert output_path.is_file()
     assert json.loads(output_path.read_text(encoding="utf-8")) == result

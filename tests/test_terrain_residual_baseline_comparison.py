@@ -280,7 +280,9 @@ def test_residual_planner_baseline_comparison_reports_three_branches():
         "counterfactual_cycle_count_status": "not_available",
         "cycle_time_status": "not_available",
         "production_integration_status": "not_integrated",
-        "official_success_semantics_status": "not_defined",
+        "official_success_semantics_status": "defined_by_terrain_residual_pass_fail_v1",
+        "official_default_status": "defined_by_terrain_residual_target_v1",
+        "official_threshold_status": "defined_by_a_baseline_anchored_v0",
         "calibrated_model_fallback_status": "not_invented",
     }
     all_keys = set(_all_keys(comparison))
@@ -430,8 +432,9 @@ def test_predicted_residual_ab_comparison_reports_current_and_predicted_branches
         "b_branch_evidence_type": "predicted_counterfactual",
         "b_real_simulation_status": "not_run",
         "production_integration_status": "not_integrated",
-        "official_success_semantics_status": "not_defined",
-        "official_threshold_status": "not_defined",
+        "official_success_semantics_status": "defined_by_terrain_residual_pass_fail_v1",
+        "official_default_status": "defined_by_terrain_residual_target_v1",
+        "official_threshold_status": "defined_by_a_baseline_anchored_v0",
         "calibrated_model_fallback_status": "not_invented",
     }
     assert comparison["validation_errors"] == []

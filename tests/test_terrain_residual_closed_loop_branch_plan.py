@@ -206,9 +206,9 @@ def test_branch_run_plan_records_dry_run_plans_and_cut_intent_boundary() -> None
         "production_planner_integration_status": "not_integrated",
         "rollout_review_schema_integration_status": "not_integrated",
         "runtime_action_selection_status": "not_defined",
-        "official_success_semantics_status": "not_defined",
-        "official_default_status": "not_defined",
-        "official_threshold_status": "not_defined",
+        "official_success_semantics_status": "defined_by_terrain_residual_pass_fail_v1",
+        "official_default_status": "defined_by_terrain_residual_target_v1",
+        "official_threshold_status": "defined_by_a_baseline_anchored_v0",
         "calibrated_model_fallback_status": "not_invented",
     }
 

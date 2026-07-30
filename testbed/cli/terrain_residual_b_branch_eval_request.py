@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from testbed.eval.terrain_residual_contract import official_contract_statuses
 from testbed.eval.terrain_residual_b_branch_eval_request import (
     write_residual_b_branch_eval_request,
 )
@@ -117,9 +118,7 @@ def _invalid_request_result(path: Path, errors: list[str]) -> dict[str, Any]:
             "production_planner_integration_status": "not_integrated",
             "rollout_review_schema_integration_status": "not_integrated",
             "runtime_action_status": "not_created",
-            "official_success_semantics_status": "not_defined",
-            "official_threshold_status": "not_defined",
-            "calibrated_model_fallback_status": "not_invented",
+            **official_contract_statuses(),
         },
     }
 

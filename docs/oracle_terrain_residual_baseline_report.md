@@ -7,6 +7,81 @@ Oracle Terrain Residual Planner v0. It is a durable, human-readable packet
 built from the pure eval report builder, not a rollout-review schema change and
 not an eval pass/fail judgment.
 
+## Current Official Phase 6 v0 Contract
+
+The historical baseline sections below still describe the explicit
+non-official smoke target used when they were produced. Current Phase 6 v0 eval
+semantics are now centralized in
+`testbed.eval.terrain_residual_contract`:
+
+- `terrain_residual_target_v1` defines official T1
+  `t1_large_shallow_rectangular_pit_default`: compact `grid[3,2]`, rows
+  `[0,2)`, cols `[0,2)`, depth `0.25m`.
+- `terrain_residual_target_v1` defines official T2
+  `t2_long_shallow_trench_default`: compact `grid[3,2]`, rows `[0,3)`, cols
+  `[0,1)`, depth `0.25m`.
+- The official conservative pass/fail profile is
+  `not_worse_than_current_A_gate2_baseline`. A same-run branch must reach the
+  target-cycle gate, complete at least two dumps, have zero transition
+  timeouts, and be no worse than the A gate-2 baseline on target positive
+  residual, target overdig, outside-target removal, deposited fraction, and
+  depth absolute error.
+
+Request-local official evidence is written at:
+
+```text
+runs/eval/oracle_terrain_residual_phase6_official_v0_pass_fail_20260703/official_t1_t2_a_baseline_pass_fail_comparison.json
+```
+
+That artifact records A passing both official targets against its own gate-2
+baseline. The target-specific B reruns reached gate 2 with zero transition
+timeouts for both T1 and T2, but failed official v0 on
+`target_positive_residual_worse_than_baseline`,
+`deposited_fraction_below_baseline`, and `depth_abs_error_above_baseline`.
+The evidence points to execution-quality / ACT depth response or dump-exit
+state rather than return reachability: B request-local cut intents ask for
+shallow depth around `0.015m - 0.019m`, while real B depth peaks are around
+`0.21m - 0.29m` and deposit / payload are lower than A. No planner behavior
+change, checked-in default config change, prior promotion, or production
+readiness claim is made from this evidence.
+
+The current depth-execution diagnostic root is:
+
+```text
+runs/eval/oracle_terrain_residual_phase6_depth_execution_diagnostic_20260703
+```
+
+Its index artifact
+`t1_t2_b_depth_execution_diagnostic_index.json` records that both completed T1
+cycles and both completed T2 cycles overshot the residual intent depth. T1 mean
+depth peak minus intent is `0.223569767456m`; T2 mean depth peak minus intent is
+`0.245077269058m`. Both target-specific B runs still reached gate 2 with zero
+transition timeouts, and dump-exit rows show return envelope readiness. This
+keeps the next root-cause focus on ACT depth response / dump-exit state, not on
+return reachability.
+
+`testbed.eval.terrain_residual_execution_diagnostic` also owns the
+request-local official-v0 failure packet builder/writer. The packet is only a
+summary of existing official pass/fail, depth diagnostic, cycle-quality, and
+B-runtime-source artifacts. Its required conservative statuses are
+`planner_behavior_change_status=not_made`,
+`production_readiness_status=not_claimed`, and
+`calibrated_branch_status=blocked_pending_gold_replay_samples`. The current
+generated packet is
+`runs/eval/oracle_terrain_residual_phase6_official_v0_failure_packet_20260707/official_v0_failure_packet.json`.
+
+The calibrated C branch remains
+`blocked_pending_gold_replay_samples`. The new
+`testbed.eval.terrain_gold_cycle_samples` owner defines one
+`terrain_gold_cycle_sample_v1` JSONL record per completed cycle with required
+`payload_mass_kg`. Complete cycle-quality-derived records include start/end
+removed-depth grids, target grid/masks, residual metrics, payload peak,
+effective deposited mass, deposited fraction, depth target/peak/error,
+planned/actual entry and exit fields, success, transition, and gate fields.
+Volume labels remain `requires_unity_volume_fields` until future Unity /
+env-state direct volume measurements exist; they are not inferred from
+`removed_depth_delta * cell_area`.
+
 ## Repository State
 
 - cwd: `/home/pingfan/PACT/excavator_testbed`
@@ -624,6 +699,140 @@ be rerun under a new branch output directory. B still cannot be honestly run as
 a simulator branch until the residual cut intent is wired into runtime planner
 mode and dig-cut token generation.
 
+## Phase 6G-T Real A/B Surface-Prior Residual Projection
+
+This section records the first fresh gate-2 real A/B bounded smoke after the
+Phase 6G-S surface-prior counterfactual unblocked B return handoff. It uses the
+same explicit non-official target spec as this report. It remains bounded
+one-rollout evidence and does not define official pass/fail.
+
+Artifacts:
+
+- A/B comparison:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/real_ab_gate2_surface_prior_bounded_smoke_comparison.json`
+- residual metric comparison:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/real_ab_gate2_surface_prior_residual_metric_comparison.json`
+- A explicit target residual report:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/current_planner_baseline_explicit_target_residual_report.json`
+- B explicit target residual report:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/heuristic_residual_pipeline_explicit_target_residual_report.json`
+
+Gate facts:
+
+| Branch | Gate success | Completed dumps | Stop reason | Lines |
+| --- | ---: | ---: | --- | ---: |
+| A current planner | `1.0` | `2` | `target_cycle_gate_reached` | `1454` |
+| B heuristic residual + surface prior | `1.0` | `2` | `target_cycle_gate_reached` | `1432` |
+| C calibrated | `not_evaluated` | | `blocked_by_missing_gold_samples` | |
+
+Residual projection facts:
+
+| Field | A current | B heuristic | B - A |
+| --- | ---: | ---: | ---: |
+| latest target positive residual depth sum | `0.497471058391` | `0.497159857768` | `-0.000311200623` |
+| latest target removed completion ratio | `0.005057883218` | `0.005680284464` | `+0.000622401246` |
+| latest outside-target removed depth sum | `0.102324411273` | `0.086281180382` | `-0.016043230891` |
+| latest target overdig depth sum | `0.0` | `0.0` | `0.0` |
+| convergence target positive residual delta | `-0.000310920703` | `-0.000933047268` | `-0.000622126565` |
+| convergence completion ratio delta | `+0.000621841406` | `+0.001866094536` | `+0.00124425313` |
+| convergence outside-target removed delta | `+0.052445076406` | `+0.039773162455` | `-0.012671913951` |
+
+Execution-quality caveat:
+
+| Field | A current | B heuristic |
+| --- | ---: | ---: |
+| deposited fraction mean | `0.8045243480617356` | `0.6729643155685991` |
+| deposited fraction min | `0.7736410550070904` | `0.6371127565113851` |
+| dig-depth absolute error mean | `0.03503912687301633m` | `0.24203957766294482m` |
+
+Conservative interpretation: B shows a small explicit-target residual
+projection improvement over A in this bounded smoke, and both branches reached
+the same gate. However, B's deposited fraction and depth-command tracking are
+worse in the same run. This is evidence that the residual path can now complete
+the bounded gate with request-local surface-depth prior evidence; it is not a
+full Phase 6 success claim, production-readiness claim, checked-in prior
+promotion, or calibrated C comparison.
+
+## Phase 6G-U Request-Local T1/T2 Cycle Quality Projection
+
+The user authorized reasonable request-local default assumptions for the larger
+Phase 6 experiment goals. This section records posthoc projections on the
+existing Phase 6G-T gate-2 A/B rollouts; it does not rerun simulation and does
+not define checked-in official target defaults.
+
+New artifacts:
+
+- assumptions:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/phase6_request_local_default_target_assumptions.json`
+- T1/T2 comparison:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/phase6_request_local_default_t1_t2_ab_comparison.json`
+- original-target per-cycle A report:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/current_planner_baseline_cycle_quality_report.json`
+- original-target per-cycle B report:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/heuristic_residual_pipeline_cycle_quality_report.json`
+- target-specific T1/T2 B rerun comparison:
+  `runs/eval/oracle_terrain_residual_phase6g_u_target_specific_t1_t2_ab_20260703/phase6g_u_target_specific_t1_t2_ab_comparison.json`
+
+Request-local target assumptions:
+
+| Target | Compact-grid rectangle | Depth | Reason |
+| --- | --- | ---: | --- |
+| T1 large shallow rectangle | rows `[0, 2)`, cols `[0, 2)` | `0.25m` | covers `4 / 6` cells, about `67%` |
+| T2 long shallow trench | rows `[0, 3)`, cols `[0, 1)` | `0.25m` | one-cell-wide trench across the long axis |
+
+Default T1/T2 posthoc B-minus-A facts:
+
+| Field | T1 default B - A | T2 default B - A |
+| --- | ---: | ---: |
+| latest target positive residual depth sum | `+0.015732030268` | `-0.000311200623` |
+| latest target removed completion ratio | `-0.015732030268` | `+0.000414934164` |
+| latest outside-target removed depth sum | `0.0` | `-0.016043230891` |
+| latest target overdig depth sum | `0.0` | `0.0` |
+| deposited fraction mean | `-0.131560032493` | `-0.131560032493` |
+| effective deposit delta mean | `-11.33339881897kg` | `-11.33339881897kg` |
+| payload peak mean | `-9.625952243805kg` | `-9.625952243805kg` |
+
+Interpretation: with these request-local defaults, B is not uniformly better.
+The T2 trench projection preserves a small residual advantage for B, while the
+larger T1 rectangle makes B worse than A on positive residual and completion.
+Both target projections keep the same execution-quality caveat: B has worse
+payload/deposit quality. C remains `not_evaluated` /
+`blocked_by_missing_gold_samples`.
+
+Target-specific B rerun:
+
+The posthoc result was followed by request-local target-specific B source
+generation and real bounded B reruns. For each target, the source generation
+preserved the 6G-P isolation design: cycle `0` used the near-origin active-dig
+plan and cycles `1` / `2` used corridor-conditioned return-target plans. The B
+config preserved the surface-depth prior and gate settings from 6G-T.
+
+| Target | B gate success | B completed dumps | B stop reason | B rollout lines |
+| --- | ---: | ---: | --- | ---: |
+| T1 target-specific B | `1` | `2` | `target_cycle_gate_reached` | `1476` |
+| T2 target-specific B | `1` | `2` | `target_cycle_gate_reached` | `1439` |
+
+Target-specific B-minus-A facts, with A using the Phase 6G-T current baseline
+rollout projected onto the same target:
+
+| Field | T1 target-specific B - A | T2 target-specific B - A |
+| --- | ---: | ---: |
+| latest target positive residual depth sum | `+0.013392139722` | `+0.000310925942` |
+| latest target removed completion ratio | `-0.013392139722` | `-0.000414567923` |
+| latest outside-target removed depth sum | `0.0` | `-0.018496505917` |
+| latest target overdig depth sum | `0.0` | `0.0` |
+| deposited fraction mean | `-0.082576753762` | `-0.094762842451` |
+| effective deposit delta mean | `-8.226134777069kg` | `-10.882712960243kg` |
+| payload peak mean | `-7.206075668335kg` | `-10.695754528046kg` |
+| depth absolute error mean | `+0.188530640304m` | `+0.210038141906m` |
+
+Interpretation update: target-specific B reruns reached gate 2 for both default
+targets, but neither T1 nor T2 beats A on positive residual or completion.
+The earlier T2 B advantage was only a posthoc projection on the 6G-T B rollout;
+after regenerating and rerunning the B residual source for T2, B is slightly
+worse than A on target residual while still carrying the same deposit / payload
+and depth-tracking caveats.
+
 ## Interpretation
 
 For this explicit non-official example spec, target positive residual decreases
@@ -666,7 +875,8 @@ This report does not:
 
 - integrate with `rollout_review.json`;
 - change rollout review schema;
-- write generated artifacts under `runs/eval`;
+- make the original baseline projection builder write generated artifacts under
+  `runs/eval` as part of report generation;
 - define official T1 dimensions, depth, cell size, origin, or world-frame
   semantics;
 - introduce target-shape pass/fail, eval pass/fail, planner success, bucket
@@ -684,3 +894,9 @@ The report values were produced in memory with
 using the rollout jsonl path and explicit target spec listed above. The smoke
 projection confirmed that no files were written under the eval results
 directory.
+
+The Phase 6G-T values were produced by first running fresh request-local
+bounded A/B smoke artifacts under
+`runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/`, then
+applying the same report builder to each branch's `rollout_000.jsonl` and
+writing explicit comparison artifacts in that same request-local root.

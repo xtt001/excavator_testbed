@@ -156,8 +156,9 @@ def test_closed_loop_experiment_manifest_records_phase6d_t1_ab_contract() -> Non
         "run_artifact_status": "not_created",
         "production_planner_integration_status": "not_integrated",
         "rollout_review_schema_integration_status": "not_integrated",
-        "official_success_semantics_status": "not_defined",
-        "official_default_status": "not_defined",
+        "official_success_semantics_status": "defined_by_terrain_residual_pass_fail_v1",
+        "official_default_status": "defined_by_terrain_residual_target_v1",
+        "official_threshold_status": "defined_by_a_baseline_anchored_v0",
         "runtime_action_selection_status": "not_defined",
         "calibrated_model_fallback_status": "not_invented",
     }

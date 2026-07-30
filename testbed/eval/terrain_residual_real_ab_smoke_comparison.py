@@ -11,6 +11,8 @@ from typing import Any
 
 import yaml
 
+from testbed.eval.terrain_residual_contract import official_contract_statuses
+
 
 CURRENT_REQUEST_SCHEMA = "terrain_residual_current_bounded_smoke_request_v1"
 CURRENT_REQUEST_SOURCE = "explicit_current_planner_bounded_smoke_request"
@@ -365,6 +367,7 @@ def _comparison_result(
         "comparison_scope": _comparison_scope(expected_target_cycle_gate),
         "no_overwrite_validation": dict(no_overwrite_validation),
         "validation_errors": list(validation_errors),
+        "non_goal_statuses": _non_goal_statuses(),
         "protected_evidence_roots": list(protected_evidence_roots),
     }
 
@@ -914,7 +917,7 @@ def _comparison_scope(expected_target_cycle_gate: int) -> dict[str, str]:
     return {
         "evidence_scope": evidence_scope,
         "full_phase6_success_claim": "not_claimed",
-        "official_pass_fail_status": "not_defined",
+        "official_pass_fail_status": "defined_by_terrain_residual_pass_fail_v1",
         "production_readiness_status": "not_claimed",
         "calibrated_fallback_status": "not_invented",
     }
@@ -926,10 +929,7 @@ def _non_goal_statuses() -> dict[str, str]:
         "rollout_review_schema_integration_status": "not_integrated",
         "runtime_action_status": "not_created",
         "command_space_control_status": "not_created",
-        "official_success_semantics_status": "not_defined",
-        "official_default_status": "not_defined",
-        "official_threshold_status": "not_defined",
-        "calibrated_model_fallback_status": "not_invented",
+        **official_contract_statuses(),
     }
 
 

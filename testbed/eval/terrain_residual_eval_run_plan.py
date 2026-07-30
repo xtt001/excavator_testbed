@@ -7,6 +7,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from testbed.eval.terrain_residual_contract import official_contract_statuses
+
 
 SCHEMA = "terrain_residual_eval_run_plan_v1"
 SOURCE = "explicit_residual_eval_run_plan"
@@ -478,11 +480,10 @@ def _non_goal_statuses() -> dict[str, str]:
         "production_planner_integration_status": "not_integrated_by_plan_builder",
         "rollout_review_schema_integration_status": "not_integrated",
         "runtime_action_status": "not_created",
-        "pass_fail_status": "not_defined",
+        "pass_fail_status": "defined_by_terrain_residual_pass_fail_v1",
         "eval_success_status": "not_defined",
         "planner_success_status": "not_defined",
-        "official_threshold_status": "not_defined",
-        "calibrated_model_fallback_status": "not_invented",
+        **official_contract_statuses(),
     }
 
 

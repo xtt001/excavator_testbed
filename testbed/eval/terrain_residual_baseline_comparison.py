@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from testbed.eval.terrain_residual_contract import official_contract_statuses
+
 
 SCHEMA = "terrain_residual_planner_baseline_comparison_v1"
 SOURCE = "explicit_offline_residual_planner_baseline_comparison"
@@ -488,8 +490,7 @@ def _comparison_limits() -> dict[str, str]:
         "counterfactual_cycle_count_status": "not_available",
         "cycle_time_status": "not_available",
         "production_integration_status": "not_integrated",
-        "official_success_semantics_status": "not_defined",
-        "calibrated_model_fallback_status": "not_invented",
+        **official_contract_statuses(),
     }
 
 
@@ -499,9 +500,7 @@ def _predicted_ab_limits() -> dict[str, str]:
         "b_branch_evidence_type": "predicted_counterfactual",
         "b_real_simulation_status": "not_run",
         "production_integration_status": "not_integrated",
-        "official_success_semantics_status": "not_defined",
-        "official_threshold_status": "not_defined",
-        "calibrated_model_fallback_status": "not_invented",
+        **official_contract_statuses(),
     }
 
 

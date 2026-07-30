@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from testbed.eval.terrain_residual_contract import official_contract_statuses
+
 
 SCHEMA = "terrain_residual_closed_loop_branch_run_plan_v1"
 SOURCE = "explicit_closed_loop_branch_run_plan"
@@ -376,10 +378,7 @@ def _non_goal_statuses() -> dict[str, str]:
         "production_planner_integration_status": "not_integrated",
         "rollout_review_schema_integration_status": "not_integrated",
         "runtime_action_selection_status": "not_defined",
-        "official_success_semantics_status": "not_defined",
-        "official_default_status": "not_defined",
-        "official_threshold_status": "not_defined",
-        "calibrated_model_fallback_status": "not_invented",
+        **official_contract_statuses(),
     }
 
 

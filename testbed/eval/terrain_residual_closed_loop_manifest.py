@@ -7,6 +7,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import PurePosixPath
 from typing import Any
 
+from testbed.eval.terrain_residual_contract import official_contract_statuses
+
 
 SCHEMA = "terrain_residual_closed_loop_experiment_manifest_v1"
 SOURCE = "explicit_closed_loop_experiment_manifest"
@@ -312,10 +314,8 @@ def _non_goal_statuses() -> dict[str, str]:
         "run_artifact_status": "not_created",
         "production_planner_integration_status": "not_integrated",
         "rollout_review_schema_integration_status": "not_integrated",
-        "official_success_semantics_status": "not_defined",
-        "official_default_status": "not_defined",
         "runtime_action_selection_status": "not_defined",
-        "calibrated_model_fallback_status": "not_invented",
+        **official_contract_statuses(),
     }
 
 

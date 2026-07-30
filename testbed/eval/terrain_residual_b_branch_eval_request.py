@@ -12,6 +12,7 @@ from typing import Any
 
 import yaml
 
+from testbed.eval.terrain_residual_contract import official_contract_statuses
 from testbed.eval.terrain_residual_eval_run_plan import (
     build_residual_eval_run_plan,
 )
@@ -770,10 +771,7 @@ def _non_goal_statuses() -> dict[str, str]:
         "rollout_review_schema_integration_status": "not_integrated",
         "runtime_action_status": "not_created",
         "command_space_control_status": "not_created",
-        "official_success_semantics_status": "not_defined",
-        "official_default_status": "not_defined",
-        "official_threshold_status": "not_defined",
-        "calibrated_model_fallback_status": "not_invented",
+        **official_contract_statuses(),
     }
 
 
