@@ -66,6 +66,8 @@ class AgxSimBackend(SimBackend):
         reset_terrain: bool = True,
         reset_pose: bool = True,
         scenario_id: str | None = None,
+        diagnostic_terrain_mode: str | None = None,
+        control_compatibility_profile: str | None = None,
         reward_overrides: dict[str, Any] | None = None,
     ) -> None:
         if timeout_s is None:
@@ -77,6 +79,16 @@ class AgxSimBackend(SimBackend):
         self._reset_terrain = bool(reset_terrain)
         self._reset_pose = bool(reset_pose)
         self._scenario_id = None if scenario_id in (None, "") else str(scenario_id)
+        self._diagnostic_terrain_mode = (
+            None
+            if diagnostic_terrain_mode in (None, "")
+            else str(diagnostic_terrain_mode)
+        )
+        self._control_compatibility_profile = (
+            None
+            if control_compatibility_profile in (None, "")
+            else str(control_compatibility_profile)
+        )
         self._task_name = str(task_name)
         self._reward_overrides = dict(reward_overrides or {})
         self._mission = None
@@ -91,6 +103,13 @@ class AgxSimBackend(SimBackend):
                 self._client.get_info,
                 action_name="get_info",
             )
+            if self._info.protocol_version in ("agx-sim/v1", "agx-sim/v2"):
+                required_cameras = ("stick_up", "stick_down", "eye_left", "eye_right")
+                if self._info.camera_names != required_cameras:
+                    raise AgxProtocolError(
+                        "multi-camera contract mismatch: "
+                        f"expected {list(required_cameras)}, got {list(self._info.camera_names)}"
+                    )
         if self._reward_tracker is None:
             env_state_order = getattr(
                 self._info,
@@ -141,9 +160,21 @@ class AgxSimBackend(SimBackend):
                 reset_terrain=self._reset_terrain if reset_terrain is None else bool(reset_terrain),
                 reset_pose=self._reset_pose if reset_pose is None else bool(reset_pose),
                 scenario_id=self._scenario_id if scenario_id is None else scenario_id,
+                diagnostic_terrain_mode=self._diagnostic_terrain_mode,
+                control_compatibility_profile=self._control_compatibility_profile,
             ),
             action_name="reset",
         )
+        if self._control_compatibility_profile is not None:
+            expected_warning = (
+                "replay_control_compatibility_profile:"
+                f"{self._control_compatibility_profile}"
+            )
+            if expected_warning not in set(reset_response.warnings):
+                raise AgxProtocolError(
+                    "Unity did not acknowledge the requested replay control "
+                    f"compatibility profile {self._control_compatibility_profile!r}."
+                )
         self._next_step_id = 0
         ts = self._step_with_id(
             step_id=self._next_step_id,
@@ -301,13 +332,47 @@ class AgxSimBackend(SimBackend):
             return fn()
 
     def _obs_from_step_response(self, response: StepResponse) -> dict[str, Any]:
-        image = response.decode_rgb_image()
-        images = {"fpv": image.copy()} if image is not None else {}
+        encoded_images: dict[str, dict[str, Any]] = {}
+        images: dict[str, np.ndarray] = {}
+        if response.images:
+            expected_names = list(self.get_info().camera_names)
+            frame_names = [frame.name for frame in response.images]
+            if frame_names != expected_names:
+                raise AgxProtocolError(
+                    "camera frame order/set mismatch: "
+                    f"expected {expected_names}, got {frame_names}"
+                )
+            for frame in response.images:
+                if frame.encoding != "jpeg":
+                    raise AgxProtocolError(
+                        f"unsupported encoded camera format {frame.encoding!r}"
+                    )
+                if frame.row_order != "top_to_bottom" or frame.color_space != "rgb":
+                    raise AgxProtocolError(
+                        f"unsupported camera metadata for {frame.name!r}: "
+                        f"row_order={frame.row_order!r}, color_space={frame.color_space!r}"
+                    )
+                if frame.width <= 0 or frame.height <= 0 or not frame.payload:
+                    raise AgxProtocolError(
+                        f"invalid encoded camera dimensions/payload for {frame.name!r}: "
+                        f"{frame.width}x{frame.height}, {len(frame.payload)} bytes"
+                    )
+                encoded_images[frame.name] = {
+                    "encoding": "jpeg",
+                    "shape": (frame.height, frame.width, 3),
+                    "row_order": frame.row_order,
+                    "color_space": frame.color_space,
+                    "data": frame.payload,
+                }
+        else:
+            image = response.decode_rgb_image()
+            images = {"fpv": image.copy()} if image is not None else {}
 
         return {
             "qpos": response.qpos.astype(np.float32, copy=True),
             "qvel": response.qvel.astype(np.float32, copy=True),
             "images": images,
+            "encoded_images": encoded_images,
             "env_state": response.env_state.astype(np.float32, copy=True),
             "step_id": int(response.step_id),
             "sim_time_ns": int(response.sim_time_ns),

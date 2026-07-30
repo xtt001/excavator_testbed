@@ -18,6 +18,42 @@ Planner/ACT 层级契约只描述 policy 消费哪些 token；数据如何产生
 - VDS / materialize / virtualize：`testbed/data/vds.py`、`testbed/data/materialize.py`、
   `testbed/data/virtualize_images.py`
 
+## 2026-07-23 strict-18 训练数据合同
+
+box-emptying residual planner 本轮只允许使用以下 strict source episode：
+
+```text
+3, 6, 7, 8, 9, 13, 16, 19, 23, 24, 25, 27, 28, 29, 30, 32, 33, 34
+```
+
+公共 VDS text codec 对原始 bytes、`b'...'` 和最多四层嵌套 bytes-repr 做安全
+canonical decode；无法在边界内规范化时直接报错，不保留隐式 fallback。修复链只从
+strict manifest 重建新 no-overwrite VDS，禁止扫描 partial/layered salvage。固定输出为：
+
+```text
+/data/pingfan/excavator_testbed_data/yulong_strict18_terrain_residual_v0/
+```
+
+primitive 使用 `v2_4_5_spatial_mass` boundary profile，审核通过后才从 VDS
+materialize 为普通 HDF5。新 primitive id 必须携带 `source_episode_id`；episode 33/34
+只属于 validation，其余 16 条只属于 train。四个 primitive 各有显式 split 文件，
+任何 source episode 跨 train/validation 都是 hard failure。
+
+strict-18 数据发布 gate 同时要求：full-episode step/mask 计数与原 strict root 完全
+一致；所有字符串无嵌套 repr；四路 JPEG sentinel 可解码；primitive 非空且 materialized
+copy 不含 virtual dataset；lineage 中出现 partial salvage 立即失败。当前通过报告为
+`qc/data_readiness.json`，batch 4 的 loader/gradient 报告为
+`qc/batch4_gradient_preflight.json`。这些报告证明训练数据就绪，不替代 policy audit 或
+真实 Unity closed-loop validation。
+
+effect sample 的 pre/post 都使用 10-step stable window。pre 是 operator entry 前最后
+一个稳定窗口；post 是 operator exit 后 150 steps 内第一个稳定窗口，并以
+`/v2/step/work_stage_id == dump` 的首帧作为硬上界，整个窗口必须在 dump 前结束。
+当前 no-overwrite 重建结果是 439/439 eligible、0 reject，写入
+`qc/executed_cut_silver_{records,manifest}_predump_support_v1.*`。manifest 同时保存从
+439 条 executed cut 直接计算的 strict-18 p01-p99 support envelope；planner 不得手工
+放宽该 envelope 来隐藏 OOD candidate。
+
 ## 检查类型命名与边界
 
 本文主责是 `data QC`，但训练、eval 和 LLM planner 前证据门禁会继续消费这些证据。当前
@@ -70,6 +106,337 @@ raw full-cycle / replay refreshed root      # 输入：自然 full-cycle 或 rep
   detector 推断 `/v2` cycle，可能漏掉下一次 dig-start，把多个周期粘成超长 return。
   因此刷新 replay 时必须用 `--v2-label-source-dir <已QC的v2_2 relabeled root>` 转移原始
   `/v2` 边界，再用 V2.4.5 material-cycle 语义重切。
+- `tb-replay --diagnostic-log` 的 JSONL 是 replay 刷新前后的诊断证据，不是训练字段。
+  当 Unity step-ack response 携带 `warnings` 或 reset response 携带 `reset_warnings` 时，
+  diagnostic step record 会透传 `warnings_before`、`warnings_after` 和
+  `reset_warnings_before`，用于检查 reset seed、soil/native reset、contact-force 等
+  Unity 侧诊断状态。QC/训练不得把这些 warnings 当作 HDF5 schema 字段或 gold label。
+- 当前 Unity replay relabel 方差评估是单独的 silver 数据轨道：旧 HDF5 只作为只读
+  trajectory source，在当前 Unity 分支下重复 replay 后，用
+  `tb-terrain-replay-relabel-stats` 汇总 `payload_mass_kg`、`effective_deposit_mass_kg`
+  和 removed-depth delta grid 的 repeat variance。该命令输出
+  `terrain_replay_relabel_stats_v1` report 和
+  `terrain_replay_relabel_cycle_sample_v1` JSONL；它不写官方
+  `terrain_gold_cycle_sample_v1`，也不把旧 HDF5 label 当成 truth。
+  A 档可作为 `current_unity_replay_relabel` fine relabel 候选，B 档必须携带
+  uncertainty / lowered `recommended_weight`，C 档只能诊断或粗粒度使用。进入
+  V2.4/V2.4.5 数据链时仍必须传入已 QC 的 `--v2-label-source-dir`，不得用 replay
+  refresh 结果重新推断 `/v2` 边界。
+
+## 2026-07-17 固定批次：清洗、Replay 与证据边界
+
+本轮唯一允许的输入是：
+
+```text
+/data/pingfan/excavator_testbed_data/yulong_v2_2_pro_full_task_four_camera_jpeg_20260717
+```
+
+`tb-build-terrain-clean-dataset` 会先把输入解析为 realpath，再要求目录中恰好存在
+`episode_0.hdf5 .. episode_35.hdf5`。旧 26 条以及任何其他目录都不能被扫描、读取或写入
+lineage；目录不相等或 episode inventory 不精确时直接失败。默认输出是新的 no-overwrite
+目录：
+
+```text
+/data/pingfan/excavator_testbed_data/yulong_v2_2_pro_full_task_four_camera_jpeg_20260717_cycle_clean_v1
+```
+
+固定 VDS 链为：
+
+```text
+raw 36
+  -> labels_v2_1_vds
+  -> operator_first_vds
+  -> hindsight_vds
+  -> clean_all_vds
+       |-> post_fix_default_vds       # episode_22..35；默认池
+       `-> pre_fix_salvage_vds        # episode_0..21；仅 salvage/ablation
+```
+
+原 HDF5 始终只读：不删行、不重采样、不覆盖。builder 在执行前后对每个 source 的 size、
+mtime、realpath 及完整 HDF5 dataset shape/dtype/VDS 结构做相等性检查。核心审计产物是
+`source_manifest.json`、`contamination_windows.jsonl`、`cycle_eligibility.jsonl`、
+`field_gap_report.json` 和 `episode_cleaning_report.json`。每个周期分别记录
+`act_training_eligible`、`effect_calibration_eligible`、`replay_candidate`、
+`review_required` 与 `deposit_label_valid`，不使用单一 `usable` 字段覆盖不同用途。
+
+局部清洗规则如下：
+
+| 污染 | 处理 |
+| --- | --- |
+| `L1(action) < 0.05` 且 `<2s` | 保留。 |
+| 同类停顿 `2–5s` | active work stage 的所在周期进入 review 并从默认池屏蔽；inter-cycle/none 保留。 |
+| 同类停顿 `>=5s` | 仅将停顿区间 `/v2/step/action_loss_mask` 置 `0`，不删行，也不自动否决整周期。 |
+| `abs(diff(qpos)) >= 0.05` 或 `abs(diff(qvel)) >= 5.0` | 按 `step_ns` 对事件前后各加 `1s` mask guard，只否决事件所在周期。 |
+| timestamp gap `>100ms` | 局部 mask；只有同时存在 step-id 缺失/回退或动态断点时，相关周期才被否决 replay。 |
+| 全零动作、任何非有限数、缺失整路相机、没有完整周期 | 整条 episode 只进入 diagnostic 清单，不进入三个训练/replay 视图。 |
+| 单个 JPEG 损坏 | 只 mask 对应 timestep；其他帧和周期继续保留。 |
+| 不完整尾周期 | 禁止 effect/replay；此前干净 ACT 监督仍可保留。 |
+| deposited fraction `<0` 或 `>1.05` | 只令 deposit label invalid，不连带否决 terrain/replay。 |
+
+被 reject/review 的周期会同步清零已有 `dig_goal_valid_mask` 和
+`return_goal_valid_mask`，防止污染窗口中的 hindsight outcome 继续参与训练。pool VDS 的
+mask 还会对被 reject/review 的整周期置零；`clean_all_vds` 保留局部 mask，便于审计不同
+用途的可用性。
+
+builder 同时输出完全分离的两个训练 data overlay：
+
+- `training_configs/post_fix_default_data.yaml`：默认启用，只指向
+  `post_fix_default_vds`，并过滤 `controller_epoch=post_fix_candidate`。
+- `training_configs/pre_fix_salvage_ablation_data.yaml`：默认禁用，只指向
+  `pre_fix_salvage_vds`，并过滤 `controller_epoch=pre_fix_candidate`。
+
+两者都要求 `train.action_loss_mask_scope=loss_sampling_stats`，且分别指向各自的
+`lineage.json`。这些文件是待合并到具体 ACT 架构 config 的 data overlay，不会隐式决定
+policy、checkpoint 或训练超参数。
+
+### 前期 14 条的 current-controller action 校准
+
+clean builder 的 `pre_fix_salvage` 是隔离边界，不是永久弃用结论。经逐 episode
+`qvel/action` 审计、录制期场景配置核对，以及 `episode_3` 的接触前 live replay 反证，
+本批存在四个归一化 action -> target-speed
+合同：
+
+| 录制阶段 | episode 范围 | `[swing, boom, stick, bucket]` max target speed |
+| --- | --- | --- |
+| early controller | `0..2` | `[0.5, 0.05, 0.05, 0.1]` |
+| early boom tuned | `3..17` | `[0.5, 0.07, 0.05, 0.1]` |
+| intermediate tuning | `18..20` | `[0.6, 0.07, 0.07, 0.15]` |
+| current controller | `21..35` | `[0.7, 0.1, 0.1, 0.2]` |
+
+旧 v1 曾把 `episode_3..17` 的 boom 误归为 `0.05`。源数据在无 digging contact、
+高且稳定 action 区间的 response audit 给出 `0.070`，而 `episode_3` replay 在第 65 步
+接触前便稳定越过 `qpos` 误差门；两次证据一致。因此
+`..._cycle_action_calibrated_v1` 只保留为已证伪假设的诊断 lineage，不再进入 replay 或
+training selection。修复只新增 v2，不覆盖 v1。
+
+`tb-build-action-calibrated-dataset` 只读取既有 clean root，并固定选择 14 条有完整训练
+内容的前期 episode：`1,3,4,6,7,8,9,10,12,13,14,16,19,20`，以及 10 条 current
+reference episode：`23,24,25,27,28,29,30,32,33,34`。原 action、原 clean VDS 和 raw
+HDF5 都不修改。每轴校准使用：
+
+```text
+current_equivalent_action =
+    original_action * source_max_target_speed / current_max_target_speed
+```
+
+这保证校准前后的物理 target speed 逐 timestep 等价；它不是按 post action 分布做
+quantile fitting，也不伪造更快的专家轨迹。新 wrapper 的顶层 `/action` 是校准后的
+current-controller normalized command，`/v2/step/action_original` 永久保留原 command；
+metadata 固定写入 source/target profile、四轴 scale 和
+`action_contract=yulong_current_equivalent_normalized_speed_v2`。
+
+为隔离旧 limiter 的极少量 back-driven response，builder 从 10 条 current-reference 数据
+计算每轴 neutral-action (`abs(action)<0.05`) `abs(qvel)` 的 p99.5 support，并带前后各
+50-step guard 写 `/v2/step/action_calibration_valid_mask`。最终训练
+`action_loss_mask = clean mask AND calibration-valid mask`，只能进一步屏蔽，不能重新放开
+clean mask。阈值、逐 episode mask 数和最大 target-speed 等价误差都写入
+`calibration_manifest.json` / `calibration_acceptance_report.json`。
+
+默认 no-overwrite 输出为：
+
+```text
+..._20260717_cycle_action_calibrated_v2/
+  mixed_current_equivalent_vds/  # 14 calibrated pre + 10 identity post
+  pre_calibrated_vds/            # calibrated-pre ablation
+  post_reference_vds/            # post-only baseline
+  training_configs/
+```
+
+该产物只达到 `offline_action_contract_calibration`：可以进入 mixed-training A/B，但不能仅凭
+物理 action 等价宣称模型效果或 closed-loop 已通过。正式提升为默认训练池仍需比较
+post-only、naive-mix、calibrated-mix，并在 held-out post episode 和当前 Unity 闭环上做
+non-inferiority 验证。
+
+Replay 默认的 `post_fix_raw` profile 只能从 `post_fix_replay_selection.jsonl` 选择默认池；
+`calibrated_mixed_current_equivalent` profile 则只接受固定 24 条
+`mixed_current_equivalent_vds`、统一 action contract 和完整 raw/clean lineage。`tb-replay
+--selection-manifest` 会按 episode 合并选中周期，并执行原始 step `0` 到最后一个选中周期
+结束的完整因果前缀；mask 区间仍逐 action、逐固定 Unity step 回放。selection 模式强制
+zero post-tail，禁止 pose realign，不做墙钟重采样，也不跳过停顿。
+`--selection-episode-id` 可用于复用已完成的 pilot、只执行其余 episode；它只过滤执行集合，
+manifest 中所有候选行仍先经过 approved-root/source-path 硬门校验，不能借过滤绕过 lineage。
+selection 模式强制显式提供录制对应的 `--config`；本批固定为
+`testbed/configs/teleop_yulong_v2_2_pro_full_task_four_camera_jpeg.yaml`。缺少该配置会改变
+boundary detector 的 `qualified_dig_start` 与 residual-mass 阈值，因此现在直接报错，不再
+静默使用通用默认值。
+
+current Unity replay 需要 `agx-sim/v2` 的 89D `agx_env_state_v2_3_89`：前 64D 不变，
+新增 grid origin、长短轴单位向量、cell 长宽/面积、reference plane、6 格 baseline depth
+和 6 格 surface valid fraction。每个快照同时产出 0.08m full-grid diagnostic 以及正式
+T1/T2 0.25m residual，正式记录必须带 `target_id`。体积仅按 signed depth delta 的网格
+积分派生：positive delta 累加为 removed volume，negative delta 单独记 refill/deposition，
+二者不相互抵消；状态必须写为 `derived_grid_integral` 和
+`unavailable_no_sensor`，不能称为 direct gold。
+
+Replay 证据标记为 `replay_derived_open_loop`。它不生成 planned cut、planned/actual
+entry/exit、gate、transition 或 planner actual-response 字段；这些键保持缺失，并带
+`missing_not_generated_by_replay` 状态。只有后续真实 planner 闭环记录才允许填这些字段。
+`episode_28` pilot 使用 `terrain_replay_pilot_gate_v2`，按用途拆开判定：源数据中的 ACT
+监督资格只由 clean overlay 和 `action_loss_mask` 决定，不因碰撞后的 Replay qpos 漂移而
+否决；episode 级 Replay 可用性要求无 exception、无 realign、首次合格 dig/soil contact
+之前的 `qpos_max_error <= 0.02`、grid geometry 稳定、目标 cell valid fraction 均
+`>=0.5`，并且至少 4/5 次满足语义门槛。每次至少应完成源完整周期数的 85%；正式 T1/T2
+最终 completion 相对源下降不超过 5 个百分点，五次 completion 标准差不超过 0.05，
+final grid 最大单元标准差不超过 0.06m，positive residual 不超过源值 +0.05m，
+overdig/outside removal 不超过源值 + `max(0.05m, 15% * 源值)`。
+
+碰撞后的全局 qpos error 只保留为诊断，不再作为 episode 拒绝条件。Replay 周期边界按
+时间单调匹配到源周期，允许 `+-1s`；未匹配的周期不得生成 source-aligned effect 标签，
+但不要求五次边界逐 step 完全一致。A/B variance tier 只决定逐周期 effect relabel 是否
+可用于 fine/weak calibration；A/B 占比是信息项，不再是 pilot 硬门。C 档只屏蔽 effect
+标签，不连带否决干净 ACT 监督。pilot 的 episode 语义门未通过时才停止默认池批量 Replay。
+最终坑形使用完整因果前缀最后一个 Unity step 的 terminal env-state snapshot，而不是最后
+一个被 detector 识别出的 dump boundary，避免边界漏检把较早的坑形误当作最终结果。
+批量汇总分别报告 `process_stable` 与 `strict` effect 周期：前者要求 Replay 过程完整且
+该周期 T1/T2 均为 A/B，后者还要求整个 episode 通过最终坑形语义门。二者不能混写为一个
+“usable”数字。
+
+### 固定 24 条的首个合格 Replay 数据集
+
+`tb-build-terrain-replay-dataset` 把校准后的 14 条 pre 与 10 条 post 作为 24 个固定
+source identity。每条最多串行执行 5 次，严格选择执行顺序中的**第一个**单次语义门通过者；
+成功立即停止该 episode，不比较多个通过 attempt 的分数，也不把 4/5 repeatability 伪装成
+单条入选证据。三条代表性 smoke 顺序固定为 `episode_28`、`episode_1`、`episode_19`，之后
+才依次处理其余 post、普通 pre，以及最后的高风险 `episode_9/16/20`。
+
+默认 no-overwrite 输出为：
+
+```text
+/data/pingfan/excavator_testbed_data/
+yulong_v2_2_pro_full_task_four_camera_jpeg_20260717_cycle_action_calibrated_replay_selected_control_compatible_v2
+```
+
+录制时间线和五次失败 smoke 进一步确认：action scale 校准只能统一物理 target speed，不能
+恢复 `episode_0..21` 录制期使用的 target-speed limiter/zero-hold 执行语义。固定 24 条中的
+14 条 pre source 因此使用显式 `--control-compatibility-profile recording_pre_fix_v1`；10 条
+post reference 使用 `production`。前者恢复“实测 constraint speed 作为 limiter 状态”、
+录制期 ordinary-zero-speed 行为，当前 production controller、场景 max speed、soft limit、
+terrain 和 action contract 均不改变。该路由写入 run contract、attempt command、diagnostic
+和 HDF5 metadata；Unity RESET 必须返回匹配的
+`replay_control_compatibility_profile:*` acknowledgement，否则按协议硬错误停止。
+
+`recording_pre_fix_v1` 只允许与 `calibrated_mixed_current_equivalent` selection profile 和固定
+pre-calibration episode inventory 同时使用；直接 `--episode`、post source 或其他 lineage
+都会在 Python 侧被拒绝。每个 RESET 在未请求兼容 profile 时恢复 `production`，因此一次
+兼容 Replay 不会把旧控制律泄漏到后续普通运行。兼容产物仍是
+`replay_derived_selected_pass` / `not_gold`，必须保留
+`replay_control_compatibility_profile` provenance，不能称为 current-controller closed-loop。
+
+每个 attempt 都保留命令、Replay 日志、diagnostics、三 target cycle samples、HDF5 audit 和
+`terrain_replay_single_attempt_gate_v1`。失败 attempt 先落盘 gate 与删除意图，再只删除该
+output root 内生成的大体积 HDF5；原 raw、clean、calibrated 文件永久只读。`--resume` 只有
+在 run contract、24 个 source hash、selection/config 和 live runtime contract 完全一致时
+才继续，已入选或已耗尽的 episode 不重复运行。
+
+实现责任分为两层：`terrain_replay_run_contract` 唯一拥有固定 source inventory、执行顺序、
+preflight、source 不变性与 resume contract；`terrain_replay_dataset_builder` 只编排 attempt、
+selection 和汇总。若代表性 smoke 的技术合同全部正常、但五次单次语义门仍耗尽，summary 必须
+写 `status=halted_representative_smoke_failure` 和 `batch_stop`，不得误写成协议/字段
+`hard_stop`；默认情况下正式批量仍不启动。定位完成后可以显式使用
+`--resume --continue-after-smoke-semantic-failure` 继续统计其余 source，但 builder 只有在该
+smoke 恰好已有 5 次 attempt、每次 process/HDF5/四相机/89D 合同均通过、没有 validation
+error，且唯一失败项为 `semantic_attempt_failed` 时才允许继续。该开关不降低单条 gate、
+不增加第 6 次 attempt、也不把已耗尽 smoke 选入数据集；最终不足 24 条必须保持 `partial`
+和 `default_enabled: false`。任何技术合同失败仍按原规则停止。
+
+入选文件固化到 `selected_full_hdf5/episode_N.hdf5`，同一次 realization 必须同时包含四路
+JPEG、逐步相同的校准 `/action`、qpos/qvel、89D env-state 和 cycle sidecar。metadata 明确
+写入 `selection_policy=first_passing_attempt_v1`、
+`evidence_kind=replay_derived_selected_pass`、
+`repeatability_status=not_assessed_single_attempt` 和 `gold_status=not_gold`。它不是原轨迹的
+字段补丁，也不能和 source 再算成第二个独立 identity。
+
+单次门仍要求 0 exception、0 realign、完整固定-step 因果前缀、首次合格 contact 前
+`qpos_max_error <= 0.02`、四相机/89D/协议字段完整、grid geometry 与 valid fraction 合格，
+并满足源相对的周期完成率及 T1/T2 completion/residual/overdig/outside-removal 容差；接触后
+qpos 仅诊断。通过后从 replay 自身状态重算 V2.1、operator-first、hindsight 和 clean VDS，
+最终 `action_loss_mask = source_calibrated_mask AND replay_qc_mask`，只能继续收紧。正式训练
+视图为 `selected_replay_clean_vds`；24/24 之前 config 保持 `default_enabled: false`。
+
+聚合产物包括 `selected_manifest.jsonl`、`attempt_inventory.jsonl`、
+`selected_cycle_samples.jsonl`、`post_replay_qc.json` 和
+`training_configs/selected_replay_22train_2val.yaml`。每个检测周期必须恰有 0.08m diagnostic、
+T1、T2 三条记录；volume 仍是 grid integral derived，planner planned-cut、entry/exit、gate、
+transition 和 actual-response 仍为 missing。只有后续真实 planner closed-loop 才能填这些字段。
+
+### 七条耗尽 episode 的分层 Replay 抢救
+
+`tb-salvage-terrain-replay-dataset` 只接受上述 control-compatible v2 父批次、其中固定的
+17 条 strict pass，以及固定失败集合 `episode_1/4/9/10/12/14/20`。默认 no-overwrite
+输出为：
+
+```text
+/data/pingfan/excavator_testbed_data/
+yulong_v2_2_pro_full_task_four_camera_jpeg_20260717_cycle_action_calibrated_replay_selected_control_compatible_v2_salvage_v1
+```
+
+推荐按以下顺序执行；preflight 是只读检查，严格阶段可独立停住，随后只能用相同 run
+contract 显式 resume：
+
+```bash
+tb-salvage-terrain-replay-dataset --preflight-only
+tb-salvage-terrain-replay-dataset --stop-after-strict
+tb-salvage-terrain-replay-dataset --resume
+```
+
+strict 阶段继续使用原单次语义门，禁止 realign，按 `4:10, 9:10, 12:5, 10:5,
+1:5, 14:1, 20:1` 的固定预算执行，并始终选择执行顺序中的第一个 strict pass。局部排名
+不能影响 strict 选择：只在 strict 失败结果中按合法周期数、合法 action step 数、纯开环优先、
+较早 attempt 的顺序保留一个 provisional HDF5。
+
+仍未 strict 通过的 source 最多运行 3 次
+`replay_corrected_partial_salvage_v1`。该 profile 固定全轴 qpos realign 合同
+`0.04 / 3 steps / 200-step interval / 15-step burn-in / max 20`，且永远不能进入 strict
+manifest。corrected HDF5 的 `/timestamps/step_id` 使用连续的 causal source-action index
+（`replay_step_id_semantics=causal_source_action_index_v1`）；realign RPC 前后的 Unity backend
+step id 原值保留在 diagnostics。这样 RPC 自身造成的 backend id 前移/重复不会被误判成漏
+action，而任意 causal action 缺步仍是硬错误。realign 所在周期、前后 guard 和受影响
+transition 都被隔离；局部最终 mask 固定为
+`source_calibrated_mask AND replay_qc_mask AND local_cycle_mask`，只能收紧。一个局部周期还必须
+满足边界单调匹配 `+-1 s`、入口及首次接触前 qpos 误差 `<=0.02`、四相机/89D/step
+合同完整、grid geometry 稳定、target valid fraction `>=0.5`，并通过 replay-native V2
+周期清洗。
+
+输出将 strict 与 ablation 完全分离：`combined_strict_clean_vds` 由父 17 条加新 strict
+结果组成；`layered_salvage_clean_vds` 对每个 source identity 最多引用一个 strict 或局部候选。
+后者以及所有 corrected/partial 记录始终
+`default_enabled=false`、`strict_pool_eligible=false`、`gold_status=not_gold`。不足 24 条 strict
+时，strict 配置同样保持禁用。`episode_14/20` 若仍 strict 耗尽，只写入重录建议，不阻塞
+其他结果。attempt、候选移动和 composite VDS 都采用 no-overwrite/atomic intent；`--resume`
+会校验 source hash、父批次 checksum、runtime build 和已移动候选 checksum，不会重复已计数
+attempt，也不会把同一 source 的 replay 当作新的独立 identity。
+
+完成报告中的 `local_eligible_cycle_count` 与 `local_valid_action_step_count` 只汇总每个 source
+最终保留的唯一 partial 候选；`all_attempt_local_eligible_cycle_count` 和
+`local_cycle_audit_row_count` 单独描述全量 attempt 审计历史，禁止把多次尝试的周期重复计入
+最终可用监督量。
+
+Pilot determinism failures may be isolated with the explicit
+`tb-replay --diagnostic-terrain-mode` reset ablations. Supported modes are
+`production`, `no_dynamic_mass`, `no_excavation_force_feedback`, and
+`terrain_disabled`. They are diagnostic-only: the omitted flag is the only
+normal replay default, Unity restores production native settings before every
+RESET, and ablation outputs cannot enter replay acceptance, relabeling, or
+closed-loop evidence. Use a bounded selection manifest and a new no-overwrite
+diagnostic output path for each mode.
+
+The bounded `episode_28` cycle-0 diagnosis on 2026-07-20 found two coupled
+failure mechanisms. Across five 631-step production repeats, qpos repeat spread
+first exceeded `1e-5` at step 193 after soil-particle creation began, then
+exceeded `0.02` at step 614. With `no_dynamic_mass`, five repeats remained
+within `1.91e-7` qpos spread for the whole prefix, but each still exceeded the
+then-current source-qpos gate (`~0.031`) when the bucket contacted
+`CodexFactoryLayout/CodexDigAreaBoards/Dig_XMax_Board` from step 612. Therefore
+the ablation proves a repeat-variance source but is not a determinism fix: dynamic
+soil creation introduces the early stochastic trajectory difference, and the
+physical XMax board contact amplifies it. Disabling only
+shovel excavation force feedback did not remove variance. The source episode is
+64D and lacks `runtime_build_id`, so exact source/current build parity remains
+unprovable. The durable diagnostic report is
+`..._cycle_clean_v1/replay_determinism_diagnosis_episode28_cycle0_v1/diagnosis_summary_v2.json`;
+that old whole-trajectory gate is superseded only for data Replay evaluation by
+`terrain_replay_pilot_gate_v2`. The semantic pilot passed, so post-fix batch Replay may proceed.
+Planner closed-loop evidence remains a separate later phase.
 
 ## 版本层和 qc6
 
@@ -112,6 +479,53 @@ dig-start envelope。V2.4.5 的重切逻辑就是在这个 material cycle 内重
 
 ## HDF5 字段
 
+### 当前四相机 JPEG 录制契约
+
+当前 YuLong 四相机录制的确定顺序是
+`stick_up,stick_down,eye_left,eye_right`。新录制使用
+`testbed/configs/teleop_yulong_v2_2_pro_full_task_four_camera_jpeg.yaml`，Unity 每个 control step
+对每路画面只编码一次 JPEG，HDF5 直接保存收到的 bytes，不先解码再编码。这里的
+“MJPEG-style”指按 timestep 独立保存的一串 JPEG frame，不是 HDF5 内嵌的单体 `.mjpeg`、AVI
+或 H.264 视频流。JPEG/MJPEG-style 是有损视觉压缩；当前 Unity wire 默认是 `512x288`、JPEG
+quality `95`（`AgxSimStepAckServer` Inspector 字段可调），而 Python 端只接受 wire 声明的
+`jpeg` frame，不根据文件扩展名猜编码。
+
+性能实现约束：这四个 camera 是 capture-only camera，组件必须保持 disabled，仅由 step-ack
+捕获路径显式调用 `Camera.Render()`；否则 Unity 会先自动渲染、录制时再手动渲染，造成重复
+camera pass。GPU readback 的 `RenderTexture` 和 CPU `Texture2D` 在分辨率不变时应跨 step
+复用，`ReadPixels` 后不得为了 JPEG 编码调用 `Apply()` 回传 GPU。以上约束只减少重复渲染、
+资源抖动和无效 GPU 上传，不改变 frame 顺序、尺寸、JPEG quality、bytes 或 step 对齐语义。
+bucket mass/contact 等逐步诊断仍保留在 wire warnings 中，但 Unity Editor 的文本日志必须按
+配置间隔限流；只有失败响应可以绕过间隔立即记录，避免正常遥测 warning 触发逐 step I/O。
+step-ack 的单请求/单响应语义不变；连接建立后，网络线程最多以 1 ms 间隔检查新请求，并在
+主线程把 response 入队时由信号立即唤醒，不得在每个请求和响应阶段各固定 sleep 5 ms。
+step-ack 组件启用并接管控制权时，必须在首个客户端请求到达前停止现有机构运动并关闭 AGX
+自动步进，避免 EpisodeManager 被禁用后遗留的执行器目标继续驱动机器；组件禁用时恢复接管前
+的自动步进模式。该预连接停车不替代客户端 RESET，RESET 仍拥有正式 episode 初态。
+
+新 episode 的图像契约是：
+
+- `/metadata` attrs 中 `camera_names` 必须按上述顺序保存，`image_format=jpeg`；顺序由录制/训练
+  config 明确拥有，不按 HDF5 group key 的字典序猜测。
+- 每路存到 `/observations/encoded_images/<camera>`，shape 为 `(T,)` HDF5 vlen `uint8`，dataset
+  attr 为 `encoding=jpeg`；默认不同时写一份 `/observations/images/<camera>` dense raw copy。
+- reader、ACT dataset 和视频预览在消费边界解码为 RGB `uint8 HWC`。训练仍按 config 中的
+  `camera_names` 堆成 camera tensor；JPEG 只是存储表示，不改变低维 token、action 或 ACT
+  action dimension。
+- `tb-dataset-qc` 必须检查 metadata/stored camera set 和显式期望顺序、每路长度等于 `T`、
+  vlen `uint8`/`encoding=jpeg`、逐帧可解码、以及每路 decoded HWC shape 稳定。失败报告必须带
+  camera 名和 frame index，不能只写通用 `missing_images`。
+- VDS、materialize 和 image virtualization 必须原样转移 JPEG bytes 和 attrs，禁止在数据变换
+  中 decode/re-encode；训练 copy 中 encoded dataset 必须是实体 dataset，不能遗留 unresolved
+  VDS/external link。
+- rollout/replay 的 HDF5 recorder 直接透传 `encoded_images`。保存 MP4 预览时只解码第一个
+  configured camera；该预览解码不回写 HDF5，也不产生第二份 JPEG。
+
+兼容边界：旧 `/observations/images/fpv` dense raw RGB episode、旧单 `fpv` config 和对应 checkpoint
+继续按原契约读取，不批量改写，也不宣称它们天然支持四相机。新四相机 checkpoint/config 与旧
+单相机 checkpoint/config 是不同输入契约；是否混合旧/新数据必须作为显式训练实验决定，不能靠
+loader fallback 静默拼接。
+
 ### 基础 episode 字段
 
 当前基础 schema 是 `1.1`，`/v2` 仍是 add-only extension，不通过删除/改名破坏旧读写。
@@ -121,8 +535,9 @@ dig-start envelope。V2.4.5 的重切逻辑就是在这个 material cycle 内重
 | `/metadata` attrs | attrs | `schema_version`、`task_name`、`sim_backend`、`seed`、`timestamp`、`control_hz`、`dt`、`camera_names`、`image_format`、`recording_mode`、`scenario_id`、`env_state_order` 等 episode 元数据 |
 | `/observations/qpos` | `(T, 4) float32` | `[swing, boom, stick, bucket]` position norm |
 | `/observations/qvel` | `(T, 4) float32` | 同顺序速度 |
-| `/observations/env_state` | `(T, 64) float32` | AGX/Unity 状态和几何事实，见下一节 |
+| `/observations/env_state` | `(T, 64 or 89) float32` | 2026-07-17 raw 是 64D；当前 `agx-sim/v2` replay/runtime 是 append-only 89D，见下一节 |
 | `/observations/images/fpv` | `(T, H, W, 3) uint8` | FPV 图像；VDS 阶段可为 virtual，训练 copy 必须 materialized |
+| `/observations/encoded_images/<camera>` | `(T,)` vlen `uint8` | 新四相机逐帧 JPEG bytes，dataset `encoding=jpeg`；与 dense raw layout episode 内互斥 |
 | `/action` | `(T, 4) float32` | `[swing, boom, stick, bucket]` actuator speed command |
 | `/rewards` | `(T,) float32` optional | 诊断/兼容字段 |
 | `/timestamps/step_id` | `(T,) int64` | step 序号，QC 要求单调 |
@@ -157,6 +572,10 @@ dig-start envelope。V2.4.5 的重切逻辑就是在这个 material cycle 内重
 | 61 | `bucket_dig_area_penetration_contact_mask` | dig contact/readiness；schema 里也作为 `bucket_contact_dig_area_mask` legacy alias |
 | 62 | `bucket_contact_dump_area_mask` | dump contact 诊断 |
 | 63 | `hard_collision_count` | 碰撞 QC |
+| 64-72 | grid origin、long/short axis unit vectors | 锁定 3x2 网格在 world frame 的位置和方向 |
+| 73-76 | cell long/short size、cell area、reference plane local Y | 网格积分与几何一致性 |
+| 77-82 | `dig_area_baseline_depth_m_r{0..2}_c{0..1}` | reset 时的 6 格 surface baseline |
+| 83-88 | `dig_area_surface_valid_fraction_r{0..2}_c{0..1}` | 每格实际成功采样比例；pilot target cell 要求不低于 0.5 |
 
 ### `/v2/step` 字段
 
@@ -165,7 +584,7 @@ dig-start envelope。V2.4.5 的重切逻辑就是在这个 material cycle 内重
 | `/v2/step/cycle_id` | `(T,) int32` | 旧 cycle id；当前只作搜索/诊断坐标 |
 | `/v2/step/mode_id`、`phase_id`、`phase_progress`、`work_stage_id` | `(T,)` | 旧 mode/phase/stage 标签；可用于 reject/QC，不是 V2.4.5 ownership 真相 |
 | `/v2/step/goal_tokens` | `(T, 10) float32` | 早期 goal-conditioning 兼容字段 |
-| `/v2/step/action_loss_mask` | `(T,) uint8` | 动作监督 mask |
+| `/v2/step/action_loss_mask` | `(T,) uint8` | 动作监督 mask；clean config 的 `loss_sampling_stats` 还将它用于采样起点和 action/proprio 统计 |
 | `/v2/step/planner_replan_mask` | `(T,) uint8` | planner replan 诊断 |
 | `/v2/step/qualified_dig_start_mask` | `(T,) uint8` | V2.1 起点锚点 / material sub-cycle 搜索参考 |
 | `/v2/step/dump_start_mask`、`dump_end_mask` | `(T,) uint8` | 旧 dump event；当前作为 fallback / 上界 |

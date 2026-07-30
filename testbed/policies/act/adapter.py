@@ -24,6 +24,7 @@ import torch
 from einops import rearrange
 import torchvision.transforms as transforms
 
+from testbed.data.camera_images import observation_camera_rgb
 from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.image_masks import apply_image_mask
 from testbed.policies.base import Policy, register_policy
@@ -132,12 +133,16 @@ class ACTAdapter(Policy):
         cam_images: list[np.ndarray] = []
         for cam in self._camera_names:
             key = f"image_{cam}"
-            if key not in obs:
-                raise ValueError(
-                    f"ACTAdapter.predict(): missing required camera input {key!r}."
-                )
+            cam_input = obs.get(key)
+            if cam_input is None:
+                try:
+                    cam_input = observation_camera_rgb(obs, cam)
+                except KeyError as exc:
+                    raise ValueError(
+                        f"ACTAdapter.predict(): missing required camera input {key!r}."
+                    ) from exc
             cam_img = apply_image_mask(
-                np.asarray(obs[key]),
+                np.asarray(cam_input),
                 camera_name=cam,
                 mask_config=self._image_mask_config,
                 mask=obs.get(f"image_mask_{cam}"),
@@ -199,12 +204,17 @@ class ACTAdapter(Policy):
         cam_images: list[np.ndarray] = []
         for cam in self._camera_names:
             key = f"image_{cam}"
-            if key not in obs:
-                raise ValueError(
-                    f"ACTAdapter.predict_with_outcome(): missing required camera input {key!r}."
-                )
+            cam_input = obs.get(key)
+            if cam_input is None:
+                try:
+                    cam_input = observation_camera_rgb(obs, cam)
+                except KeyError as exc:
+                    raise ValueError(
+                        "ACTAdapter.predict_with_outcome(): missing required "
+                        f"camera input {key!r}."
+                    ) from exc
             cam_img = apply_image_mask(
-                np.asarray(obs[key]),
+                np.asarray(cam_input),
                 camera_name=cam,
                 mask_config=self._image_mask_config,
                 mask=obs.get(f"image_mask_{cam}"),

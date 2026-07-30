@@ -16,6 +16,8 @@ import h5py
 import numpy as np
 
 from testbed.data.schema import (
+    ATTR_CAMERA_NAMES,
+    ATTR_IMAGE_FORMAT,
     ATTR_SCHEMA_VERSION,
     ATTR_SIM,
     DS_ACTION,
@@ -29,11 +31,19 @@ from testbed.data.schema import (
     DS_STEP_NS,
     GRP_METADATA,
     GRP_ACTION_SOURCE,
+    GRP_ENCODED_IMAGES,
     GRP_TIMESTAMPS,
     GRP_V2,
     GRP_V2_CYCLE,
     GRP_V2_STEP,
     SCHEMA_VERSION,
+)
+from testbed.data.camera_images import (
+    JPEG_ENCODING,
+    decode_jpeg_rgb,
+    encoded_frame_to_uint8,
+    ordered_camera_names,
+    validate_exclusive_camera_layout,
 )
 
 
@@ -46,6 +56,7 @@ def write_episode(
     qvel: np.ndarray,
     actions: np.ndarray,
     images: dict[str, np.ndarray] | None = None,
+    encoded_images: dict[str, Any] | None = None,
     rewards: np.ndarray | None = None,
     metadata: dict[str, Any] | None = None,
     compress: bool = True,
@@ -67,6 +78,19 @@ def write_episode(
     path.parent.mkdir(parents=True, exist_ok=True)
 
     str_dtype = h5py.special_dtype(vlen=str)
+
+    metadata = dict(metadata or {})
+    stored_camera_names = validate_exclusive_camera_layout(
+        (images or {}).keys(), (encoded_images or {}).keys()
+    )
+    ordered_names = (
+        ordered_camera_names(stored_camera_names, metadata)
+        if stored_camera_names
+        else []
+    )
+    if ordered_names:
+        metadata[ATTR_CAMERA_NAMES] = ",".join(ordered_names)
+        metadata[ATTR_IMAGE_FORMAT] = JPEG_ENCODING if encoded_images else "raw_rgb"
 
     with h5py.File(path, "w") as f:
         # ── metadata ─────────────────────────────────────────────────────────
@@ -92,13 +116,19 @@ def write_episode(
 
         if images:
             img_grp = obs_grp.create_group("images")
-            for cam, arr in images.items():
+            for cam in ordered_names:
+                arr = images[cam]
                 image_arr = arr.astype(np.uint8)
                 img_grp.create_dataset(
                     cam,
                     data=image_arr,
                     **_image_dataset_kwargs(image_arr, compress=compress),
                 )
+
+        if encoded_images:
+            encoded_grp = obs_grp.create_group("encoded_images")
+            for cam in ordered_names:
+                _write_encoded_image_dataset(encoded_grp, cam, encoded_images[cam])
 
         # ── action ───────────────────────────────────────────────────────────
         f.create_dataset("action", data=actions.astype(np.float32))
@@ -154,7 +184,12 @@ def write_v2_extension(
         _write_v2_group(f, v2)
 
 
-def read_episode(path: str | Path, *, load_images: bool = True) -> dict[str, Any]:
+def read_episode(
+    path: str | Path,
+    *,
+    load_images: bool = True,
+    load_encoded_images: bool = True,
+) -> dict[str, Any]:
     """
     Read a full episode from HDF5 (v1.0 and v1.1 compatible).
 
@@ -184,12 +219,38 @@ def read_episode(path: str | Path, *, load_images: bool = True) -> dict[str, Any
         result["qvel"]    = f[DS_QVEL][()].astype(np.float32)
         result["actions"] = f[DS_ACTION][()].astype(np.float32)
 
-        # images
+        # images: encoded episodes are decoded here so all consumers see RGB HWC.
         images = {}
-        if load_images and "observations/images" in f:
-            for cam in f["observations/images"]:
-                images[cam] = f[f"observations/images/{cam}"][()]
+        encoded_images: dict[str, list[np.ndarray]] = {}
+        raw_group = f.get("observations/images")
+        encoded_group = f.get(GRP_ENCODED_IMAGES)
+        stored_names = validate_exclusive_camera_layout(
+            raw_group.keys() if raw_group is not None else (),
+            encoded_group.keys() if encoded_group is not None else (),
+        )
+        metadata_attrs = dict(f[GRP_METADATA].attrs) if GRP_METADATA in f else {}
+        ordered_names = ordered_camera_names(stored_names, metadata_attrs)
+        if encoded_group is not None and (load_images or load_encoded_images):
+            for cam in ordered_names:
+                dataset = encoded_group[cam]
+                encoding = dataset.attrs.get("encoding", "")
+                if isinstance(encoding, bytes):
+                    encoding = encoding.decode()
+                if str(encoding).lower() != JPEG_ENCODING:
+                    raise ValueError(f"camera {cam!r} has unsupported encoding {encoding!r}")
+                frames = [
+                    np.asarray(dataset[i], dtype=np.uint8).reshape(-1).copy()
+                    for i in range(dataset.shape[0])
+                ]
+                if load_encoded_images:
+                    encoded_images[cam] = frames
+                if load_images:
+                    images[cam] = np.stack([decode_jpeg_rgb(frame) for frame in frames])
+        elif load_images and raw_group is not None:
+            for cam in ordered_names:
+                images[cam] = raw_group[cam][()]
         result["images"] = images
+        result["encoded_images"] = encoded_images
 
         # rewards (optional)
         result["rewards"] = f[DS_REWARDS][()] if DS_REWARDS in f else None
@@ -286,6 +347,16 @@ def _image_dataset_kwargs(arr: np.ndarray, *, compress: bool) -> dict[str, Any]:
     if arr.ndim >= 4 and int(arr.shape[0]) > 0:
         kwargs["chunks"] = (1,) + tuple(int(value) for value in arr.shape[1:])
     return kwargs
+
+
+def _write_encoded_image_dataset(group: h5py.Group, name: str, frames: Any) -> None:
+    frame_list = list(frames)
+    dataset = group.create_dataset(
+        name, (len(frame_list),), dtype=h5py.vlen_dtype(np.dtype("uint8"))
+    )
+    dataset.attrs["encoding"] = JPEG_ENCODING
+    for index, frame in enumerate(frame_list):
+        dataset[index] = encoded_frame_to_uint8(frame)
 
 
 def _read_v2_group(h5_file: h5py.File) -> dict[str, dict[str, Any]] | None:

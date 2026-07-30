@@ -43,6 +43,7 @@ from typing import Any, TextIO
 import numpy as np
 import yaml
 
+from testbed.data.camera_images import observation_camera_rgb
 log = logging.getLogger(__name__)
 
 DIAGNOSTIC_ENV_STATE_FIELDS = {
@@ -803,9 +804,10 @@ def _replay_one(
     frames: list[np.ndarray] = []
     qpos_replay: list[np.ndarray] = []
     recorder = None
+    camera_names = _resolve_camera_names(meta, task_cfg)
+    preview_camera_name = camera_names[0] if camera_names else None
     if record_output_dir is not None:
         info = backend.get_info()
-        camera_names = _resolve_camera_names(meta, task_cfg)
         recorder = EpisodeRecorder(
             output_dir=record_output_dir,
             episode_idx=record_episode_idx,
@@ -999,8 +1001,10 @@ def _replay_one(
                 ts.info.get("task_metrics", obs_after.get("task_metrics", {}))
             ),
         )
-        if save_video and "fpv" in obs_before["images"] and obs_before["images"]["fpv"] is not None:
-            frames.append(obs_before["images"]["fpv"].copy())
+        if save_video and preview_camera_name is not None:
+            frames.append(
+                observation_camera_rgb(obs_before, preview_camera_name).copy()
+            )
 
         if realtime:
             time.sleep(1.0 / control_hz)

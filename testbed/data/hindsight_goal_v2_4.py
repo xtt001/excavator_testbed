@@ -93,7 +93,11 @@ def build_hindsight_goal_dataset(
 
     episode_summaries: list[dict[str, Any]] = []
     for source_path in episode_paths:
-        episode = read_episode(source_path, load_images=(storage_mode == STORAGE_MODE_COPY))
+        episode = read_episode(
+            source_path,
+            load_images=(storage_mode == STORAGE_MODE_COPY),
+            load_encoded_images=(storage_mode == STORAGE_MODE_COPY),
+        )
         enriched_v2, summary = enrich_episode_hindsight_goal(
             episode=episode,
             source_episode=str(source_path),

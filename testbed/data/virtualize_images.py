@@ -2,7 +2,8 @@
 
 This module is the archival counterpart to :mod:`testbed.data.materialize`.
 It keeps low-dimensional arrays local in the output HDF5 file, but replaces
-``/observations/images/*`` datasets with VDS links back to the canonical source
+``/observations/images/*`` and ``/observations/encoded_images/*`` datasets with
+VDS links back to the canonical source
 episode.  The result is much smaller than a materialized copy while preserving
 lossless reads when the source HDF5 files remain available.
 """
@@ -649,7 +650,11 @@ def _metadata_attrs(h5_file: h5py.File) -> dict[str, Any]:
 
 
 def _is_image_dataset(logical_path: str, dataset: h5py.Dataset) -> bool:
-    return logical_path.startswith("observations/images/") and dataset.ndim >= 4
+    return (
+        logical_path.startswith("observations/images/") and dataset.ndim >= 4
+    ) or (
+        logical_path.startswith("observations/encoded_images/") and dataset.ndim == 1
+    )
 
 
 def _logical_nbytes(dataset: h5py.Dataset) -> int:

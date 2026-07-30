@@ -13,6 +13,7 @@ import numpy as np
 
 from testbed.backends.agx.backend import AgxSimBackend
 from testbed.backends.agx.protocol import (
+    RECORDING_PRE_FIX_CONTROL_PROFILE,
     IMAGE_PIXEL_FORMAT,
     AgxProtocolError,
     AgxSimClient,
@@ -25,6 +26,7 @@ from testbed.backends.agx.protocol import (
     _pack_string,
     _pack_string_array,
     encode_frame,
+    encode_reset_request,
     encode_realign_pose_request,
     encode_step_request,
     read_frame,
@@ -168,6 +170,66 @@ def _decode_request_frame(frame: bytes) -> tuple[MessageType, bytes]:
 
 
 class AgxProtocolTests(unittest.TestCase):
+    def test_reset_request_encoder_keeps_legacy_layout_without_diagnostics(self) -> None:
+        frame = encode_reset_request(
+            seed=17,
+            reset_terrain=True,
+            reset_pose=False,
+        )
+        message_type, payload = _decode_request_frame(frame)
+        self.assertEqual(message_type, MessageType.RESET_REQ)
+
+        reader = _PayloadReader(payload)
+        self.assertEqual(reader.read_int32(), 17)
+        self.assertTrue(reader.read_bool())
+        self.assertFalse(reader.read_bool())
+        reader.ensure_fully_consumed()
+
+    def test_reset_request_encoder_appends_terrain_diagnostic_mode(self) -> None:
+        frame = encode_reset_request(
+            seed=18,
+            reset_terrain=True,
+            reset_pose=True,
+            client_time_ns=123,
+            scenario_id="s0_truck",
+            diagnostic_terrain_mode="no_dynamic_mass",
+        )
+        message_type, payload = _decode_request_frame(frame)
+        self.assertEqual(message_type, MessageType.RESET_REQ)
+
+        reader = _PayloadReader(payload)
+        self.assertEqual(reader.read_int32(), 18)
+        self.assertTrue(reader.read_bool())
+        self.assertTrue(reader.read_bool())
+        self.assertEqual(reader.read_int64(), 123)
+        self.assertEqual(reader.read_string(), "s0_truck")
+        self.assertEqual(reader.read_string(), "no_dynamic_mass")
+        reader.ensure_fully_consumed()
+
+    def test_reset_request_encoder_appends_control_compatibility_profile(self) -> None:
+        frame = encode_reset_request(
+            seed=19,
+            reset_terrain=True,
+            reset_pose=True,
+            client_time_ns=456,
+            scenario_id="s0_truck",
+            control_compatibility_profile=RECORDING_PRE_FIX_CONTROL_PROFILE,
+        )
+        message_type, payload = _decode_request_frame(frame)
+        self.assertEqual(message_type, MessageType.RESET_REQ)
+
+        reader = _PayloadReader(payload)
+        self.assertEqual(reader.read_int32(), 19)
+        self.assertTrue(reader.read_bool())
+        self.assertTrue(reader.read_bool())
+        self.assertEqual(reader.read_int64(), 456)
+        self.assertEqual(reader.read_string(), "s0_truck")
+        self.assertEqual(reader.read_string(), "")
+        self.assertEqual(
+            reader.read_string(), RECORDING_PRE_FIX_CONTROL_PROFILE
+        )
+        reader.ensure_fully_consumed()
+
     def test_step_request_encoder_keeps_legacy_layout_without_debug(self) -> None:
         frame = encode_step_request(7, np.zeros(4, dtype=np.float32))
         message_type, payload = _decode_request_frame(frame)
@@ -359,6 +421,8 @@ class AgxProtocolTests(unittest.TestCase):
             reset_terrain=False,
             reset_pose=True,
             scenario_id=None,
+            diagnostic_terrain_mode=None,
+            control_compatibility_profile=None,
         )
         self.assertTrue(fake_timestep.observation["reset_applied"])
         self.assertEqual(fake_timestep.observation["reset_warnings"], [])
@@ -393,6 +457,83 @@ class AgxProtocolTests(unittest.TestCase):
             reset_terrain=True,
             reset_pose=True,
             scenario_id="s0_baseline",
+            diagnostic_terrain_mode=None,
+            control_compatibility_profile=None,
+        )
+
+    def test_backend_reset_uses_configured_terrain_diagnostic_mode(self) -> None:
+        backend = AgxSimBackend(
+            host="127.0.0.1",
+            port=5057,
+            timeout_s=1.0,
+            diagnostic_terrain_mode="no_dynamic_mass",
+        )
+        backend._info = SimpleNamespace(
+            action_order=(
+                "swing_speed_cmd",
+                "boom_speed_cmd",
+                "stick_speed_cmd",
+                "bucket_speed_cmd",
+            )
+        )
+
+        fake_reset = SimpleNamespace(reset_applied=True, warnings=())
+        fake_timestep = SimpleNamespace(observation={})
+
+        with (
+            patch.object(backend._client, "reset", return_value=fake_reset) as mock_reset,
+            patch.object(backend, "_step_with_id", return_value=fake_timestep),
+        ):
+            backend.reset(seed=6)
+
+        mock_reset.assert_called_once_with(
+            seed=6,
+            reset_terrain=True,
+            reset_pose=True,
+            scenario_id=None,
+            diagnostic_terrain_mode="no_dynamic_mass",
+            control_compatibility_profile=None,
+        )
+
+    def test_backend_reset_uses_recording_control_compatibility_profile(self) -> None:
+        backend = AgxSimBackend(
+            host="127.0.0.1",
+            port=5057,
+            timeout_s=1.0,
+            control_compatibility_profile=RECORDING_PRE_FIX_CONTROL_PROFILE,
+        )
+        backend._info = SimpleNamespace(
+            action_order=(
+                "swing_speed_cmd",
+                "boom_speed_cmd",
+                "stick_speed_cmd",
+                "bucket_speed_cmd",
+            )
+        )
+
+        expected_warning = (
+            "replay_control_compatibility_profile:"
+            f"{RECORDING_PRE_FIX_CONTROL_PROFILE}"
+        )
+        fake_reset = SimpleNamespace(
+            reset_applied=True,
+            warnings=(expected_warning,),
+        )
+        fake_timestep = SimpleNamespace(observation={})
+
+        with (
+            patch.object(backend._client, "reset", return_value=fake_reset) as mock_reset,
+            patch.object(backend, "_step_with_id", return_value=fake_timestep),
+        ):
+            backend.reset(seed=19)
+
+        mock_reset.assert_called_once_with(
+            seed=19,
+            reset_terrain=True,
+            reset_pose=True,
+            scenario_id=None,
+            diagnostic_terrain_mode=None,
+            control_compatibility_profile=RECORDING_PRE_FIX_CONTROL_PROFILE,
         )
 
     def test_backend_get_info_retries_once_after_unexpected_response_type(self) -> None:

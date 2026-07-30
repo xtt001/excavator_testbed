@@ -9,10 +9,20 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib
+import h5py
 import numpy as np
 
+from testbed.data.camera_images import (
+    JPEG_ENCODING,
+    camera_names_from_metadata,
+    decode_jpeg_rgb,
+)
 from testbed.data.hdf5_io import list_episodes, read_episode
-from testbed.data.schema import ATTR_ENV_STATE_ORDER, ATTR_EPISODE_ID
+from testbed.data.schema import (
+    ATTR_ENV_STATE_ORDER,
+    ATTR_EPISODE_ID,
+    GRP_ENCODED_IMAGES,
+)
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -23,6 +33,7 @@ def run_dataset_qc(
     output_dir: str | Path | None = None,
     *,
     short_episode_threshold: int = 50,
+    expected_camera_names: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     dataset_dir = Path(dataset_dir)
     output_dir = Path(output_dir) if output_dir is not None else dataset_dir / "qc"
@@ -48,9 +59,18 @@ def run_dataset_qc(
     non_monotonic_step_ids: list[str] = []
     nan_or_inf_ids: list[str] = []
     shape_mismatch_ids: list[str] = []
+    camera_contract_error_ids: list[str] = []
+    camera_contract_errors: dict[str, list[str]] = {}
 
     for path in episode_paths:
         episode_id = path.stem
+        camera_audit = _audit_episode_cameras(
+            path,
+            expected_camera_names=expected_camera_names,
+        )
+        if camera_audit["errors"]:
+            camera_contract_error_ids.append(episode_id)
+            camera_contract_errors[episode_id] = list(camera_audit["errors"])
         try:
             episode = read_episode(path)
         except Exception as exc:
@@ -71,6 +91,11 @@ def run_dataset_qc(
                     "action_dim": -1,
                     "qpos_dim": -1,
                     "qvel_dim": -1,
+                    "camera_count": int(camera_audit["camera_count"]),
+                    "camera_names": ",".join(camera_audit["camera_names"]),
+                    "camera_format": str(camera_audit["format"]),
+                    "camera_shapes": json.dumps(camera_audit["shapes"], sort_keys=True),
+                    "camera_errors": ";".join(camera_audit["errors"]),
                     "timestamp": "",
                     "operator_id": "",
                     "session_id": "",
@@ -101,6 +126,8 @@ def run_dataset_qc(
         if not images:
             warnings.append("missing_images")
             missing_image_ids.append(episode_id)
+        if camera_audit["errors"]:
+            warnings.append("camera_contract")
         if env_state is None:
             warnings.append("missing_env_state")
             missing_env_state_ids.append(episode_id)
@@ -152,6 +179,11 @@ def run_dataset_qc(
                 "action_dim": int(actions.shape[1]) if actions.ndim == 2 else -1,
                 "qpos_dim": int(qpos.shape[1]) if qpos.ndim == 2 else -1,
                 "qvel_dim": int(qvel.shape[1]) if qvel.ndim == 2 else -1,
+                "camera_count": int(camera_audit["camera_count"]),
+                "camera_names": ",".join(camera_audit["camera_names"]),
+                "camera_format": str(camera_audit["format"]),
+                "camera_shapes": json.dumps(camera_audit["shapes"], sort_keys=True),
+                "camera_errors": ";".join(camera_audit["errors"]),
                 "timestamp": str(metadata.get("timestamp", "")),
                 "operator_id": str(metadata.get("operator_id", "")),
                 "session_id": str(metadata.get("session_id", "")),
@@ -198,6 +230,8 @@ def run_dataset_qc(
             "non_monotonic_step_ids": non_monotonic_step_ids,
             "nan_or_inf_ids": nan_or_inf_ids,
             "shape_mismatch_ids": shape_mismatch_ids,
+            "camera_contract_error_ids": camera_contract_error_ids,
+            "camera_contract_errors": camera_contract_errors,
         },
         "env_state_order_values": sorted(env_state_orders),
         "env_state_order_consistent": len(env_state_orders) <= 1,
@@ -222,6 +256,124 @@ def run_dataset_qc(
         "summary": summary,
     }
 
+
+def _audit_episode_cameras(
+    path: Path,
+    *,
+    expected_camera_names: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "camera_count": 0,
+        "camera_names": [],
+        "format": "none",
+        "shapes": {},
+        "errors": [],
+    }
+    try:
+        with h5py.File(path, "r") as handle:
+            metadata = dict(handle["metadata"].attrs) if "metadata" in handle else {}
+            configured = camera_names_from_metadata(metadata)
+            raw_group = handle.get("observations/images")
+            encoded_group = handle.get(GRP_ENCODED_IMAGES)
+            raw_names = list(raw_group.keys()) if raw_group is not None else []
+            encoded_names = list(encoded_group.keys()) if encoded_group is not None else []
+            stored_names = raw_names or encoded_names
+            result["camera_count"] = len(stored_names)
+            result["camera_names"] = configured or stored_names
+            result["format"] = "mixed" if raw_names and encoded_names else (
+                JPEG_ENCODING if encoded_names else ("raw_rgb" if raw_names else "none")
+            )
+            if raw_names and encoded_names:
+                result["errors"].append(
+                    f"mixed_camera_layout:raw={raw_names},encoded={encoded_names}"
+                )
+            if configured and set(configured) != set(stored_names):
+                missing = [name for name in configured if name not in stored_names]
+                unexpected = [name for name in stored_names if name not in configured]
+                result["errors"].append(
+                    f"camera_set_mismatch:missing={missing},unexpected={unexpected}"
+                )
+            expected_names = [str(name) for name in expected_camera_names or ()]
+            if expected_names:
+                actual_names = configured or stored_names
+                if set(expected_names) != set(actual_names):
+                    missing = [name for name in expected_names if name not in actual_names]
+                    unexpected = [name for name in actual_names if name not in expected_names]
+                    result["errors"].append(
+                        f"expected_camera_set_mismatch:missing={missing},unexpected={unexpected}"
+                    )
+                elif actual_names != expected_names:
+                    result["errors"].append(
+                        f"camera_order_mismatch:expected={expected_names},actual={actual_names}"
+                    )
+            expected_len = int(handle["action"].shape[0]) if "action" in handle else -1
+            for camera_name in raw_names:
+                dataset = raw_group[camera_name]
+                if dataset.ndim != 4 or dataset.dtype != np.dtype("uint8") or dataset.shape[-1] != 3:
+                    result["errors"].append(
+                        f"camera={camera_name}:raw_layout_invalid:shape={dataset.shape},dtype={dataset.dtype}"
+                    )
+                    continue
+                result["shapes"][camera_name] = list(dataset.shape[1:])
+                if int(dataset.shape[0]) != expected_len:
+                    result["errors"].append(
+                        f"camera={camera_name}:length_mismatch:expected={expected_len},actual={dataset.shape[0]}"
+                    )
+            for camera_name in encoded_names:
+                dataset = encoded_group[camera_name]
+                encoding = dataset.attrs.get("encoding", "")
+                if isinstance(encoding, bytes):
+                    encoding = encoding.decode("utf-8", errors="replace")
+                vlen_base = h5py.check_vlen_dtype(dataset.dtype)
+                if dataset.ndim != 1 or vlen_base != np.dtype("uint8"):
+                    result["errors"].append(
+                        f"camera={camera_name}:encoded_layout_invalid:shape={dataset.shape},dtype={dataset.dtype}"
+                    )
+                    continue
+                if str(encoding).lower() != JPEG_ENCODING:
+                    result["errors"].append(
+                        f"camera={camera_name}:encoding_invalid:expected=jpeg,actual={encoding}"
+                    )
+                if int(dataset.shape[0]) != expected_len:
+                    result["errors"].append(
+                        f"camera={camera_name}:length_mismatch:expected={expected_len},actual={dataset.shape[0]}"
+                    )
+                decoded_shape = None
+                for frame_index in range(int(dataset.shape[0])):
+                    try:
+                        decoded = decode_jpeg_rgb(dataset[frame_index])
+                    except Exception as exc:
+                        result["errors"].append(
+                            f"camera={camera_name}:frame={frame_index}:jpeg_decode_failed:{exc}"
+                        )
+                        continue
+                    if decoded.dtype != np.uint8 or decoded.ndim != 3 or decoded.shape[-1] != 3:
+                        result["errors"].append(
+                            f"camera={camera_name}:frame={frame_index}:decoded_layout_invalid:"
+                            f"shape={decoded.shape},dtype={decoded.dtype}"
+                        )
+                        continue
+                    shape = tuple(int(value) for value in decoded.shape)
+                    if decoded_shape is None:
+                        decoded_shape = shape
+                    elif shape != decoded_shape:
+                        result["errors"].append(
+                            f"camera={camera_name}:frame={frame_index}:dimension_mismatch:"
+                            f"expected={decoded_shape},actual={shape}"
+                        )
+                if decoded_shape is not None:
+                    result["shapes"][camera_name] = list(decoded_shape)
+            distinct_shapes = {
+                tuple(int(value) for value in shape)
+                for shape in result["shapes"].values()
+            }
+            if len(distinct_shapes) > 1:
+                result["errors"].append(
+                    f"camera_dimensions_inconsistent:shapes={result['shapes']}"
+                )
+    except Exception as exc:
+        result["errors"].append(f"camera_audit_unreadable:{type(exc).__name__}:{exc}")
+    return result
 
 def _series_stats(array: np.ndarray) -> dict[str, Any]:
     array = np.asarray(array, dtype=np.float64)

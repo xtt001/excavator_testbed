@@ -27,6 +27,7 @@ from typing import Any
 
 import numpy as np
 
+from testbed.data.camera_images import observation_camera_rgb
 from testbed.eval.rollout_logs import (
     build_rollout_manifest,
     build_rollout_summary,
@@ -332,9 +333,11 @@ class EvalSuite:
                     # Assemble policy input — add image_{cam} keys (channel-first float)
                     policy_input = dict(obs)
                     for cam in task.camera_names:
-                        img = obs.get("images", {}).get(cam)
-                        if img is not None:
+                        if cam in (obs.get("images", {}) or {}) or cam in (
+                            obs.get("encoded_images", {}) or {}
+                        ):
                             from einops import rearrange
+                            img = observation_camera_rgb(obs, cam)
                             policy_input[f"image_{cam}"] = rearrange(
                                 np.array(img, dtype=np.float32) / 255.0,
                                 "h w c -> c h w",
@@ -909,9 +912,10 @@ class EvalSuite:
                     # Video frames
                     if self.save_video and task.camera_names:
                         cam0 = task.camera_names[0]
-                        frame = ts.observation.get("images", {}).get(cam0)
-                        if frame is not None:
-                            frames.append(frame)
+                        if cam0 in (ts.observation.get("images", {}) or {}) or cam0 in (
+                            ts.observation.get("encoded_images", {}) or {}
+                        ):
+                            frames.append(observation_camera_rgb(ts.observation, cam0))
 
                     if self._should_log_step_progress(t + 1, task.episode_len):
                         print(
@@ -1282,14 +1286,17 @@ class EvalSuite:
             ATTR_QVEL_ORDER,
             ATTR_RECORDING_MODE,
             ATTR_RECORDING_PROTOCOL_VERSION,
-            ATTR_SCENE_VERSION,
+            ATTR_RUNTIME_BUILD_ID,
             ATTR_SCENARIO_ID,
+            ATTR_SCENE_VERSION,
             ATTR_SEED,
             ATTR_SIM_BACKEND,
             ATTR_SOIL_PRESET_ID,
             ATTR_TARGET_DEPTH_M,
             ATTR_TASK_GOAL_DESCRIPTION,
             ATTR_TASK_NAME,
+            ATTR_TERRAIN_STATE_CONTRACT_VERSION,
+            ATTR_TERRAIN_VOLUME_SOURCE,
             ATTR_WARMUP_OR_TRAIN,
         )
 
@@ -1336,6 +1343,19 @@ class EvalSuite:
                     ATTR_ENV_STATE_ORDER: ",".join(info.env_state_order),
                 }
             )
+            runtime_contract = str(
+                getattr(info, "env_state_contract_version", "") or ""
+            ).strip()
+            if runtime_contract:
+                metadata[ATTR_ENV_STATE_CONTRACT_VERSION] = runtime_contract
+            for attr_name, info_name in (
+                (ATTR_RUNTIME_BUILD_ID, "runtime_build_id"),
+                (ATTR_TERRAIN_STATE_CONTRACT_VERSION, "terrain_state_contract_version"),
+                (ATTR_TERRAIN_VOLUME_SOURCE, "terrain_volume_source"),
+            ):
+                value = str(getattr(info, info_name, "") or "").strip()
+                if value:
+                    metadata[attr_name] = value
         if len(camera_names) == 1 and camera_names[0] in camera_by_name:
             camera = camera_by_name[camera_names[0]]
             metadata[ATTR_CAMERA_WIDTH] = int(camera.width)

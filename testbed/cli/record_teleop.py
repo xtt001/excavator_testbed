@@ -48,6 +48,9 @@ from testbed.data.schema import (
     ATTR_DT,
     ATTR_EPISODE_ID,
     ATTR_ENV_STATE_CONTRACT_VERSION,
+    ATTR_RUNTIME_BUILD_ID,
+    ATTR_TERRAIN_STATE_CONTRACT_VERSION,
+    ATTR_TERRAIN_VOLUME_SOURCE,
     ATTR_ENV_STATE_ORDER,
     ATTR_IMAGE_FORMAT,
     ATTR_INVERT,
@@ -666,6 +669,15 @@ def _build_episode_metadata(
     ):
         if attr_name in metadata_cfg:
             metadata[attr_name] = metadata_cfg[attr_name]
+    for attr_name, info_name in (
+        (ATTR_ENV_STATE_CONTRACT_VERSION, "env_state_contract_version"),
+        (ATTR_RUNTIME_BUILD_ID, "runtime_build_id"),
+        (ATTR_TERRAIN_STATE_CONTRACT_VERSION, "terrain_state_contract_version"),
+        (ATTR_TERRAIN_VOLUME_SOURCE, "terrain_volume_source"),
+    ):
+        value = str(getattr(info, info_name, "") or "").strip()
+        if value:
+            metadata[attr_name] = value
     if config_path is not None:
         metadata[ATTR_RECORD_CONFIG_PATH] = str(config_path)
     if record_config_yaml:

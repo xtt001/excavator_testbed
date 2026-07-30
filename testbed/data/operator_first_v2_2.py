@@ -98,6 +98,7 @@ def build_operator_first_dataset(
         episode = read_episode(
             source_path,
             load_images=(storage_mode == STORAGE_MODE_COPY),
+            load_encoded_images=(storage_mode == STORAGE_MODE_COPY),
         )
         enriched_v2, summary = enrich_episode_operator_first(
             episode=episode,

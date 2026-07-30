@@ -1,0 +1,99 @@
+# YuLong V2.2 pro/operator full-task teleop config, opt-in four-camera variant.
+# Camera frames arrive as independently decodable JPEG bytes and are stored
+# without decode/re-encode.
+
+agx:
+  host: "127.0.0.1"
+  port: 5057
+  timeout: 10.0
+  reset_terrain: true
+  reset_pose: true
+
+teleop:
+  input: "joystick"
+  num_episodes: 10
+  stop_mode: "target_dump_count"
+  target_dump_count: 99
+  stop_on_success: false
+  post_success_tail_steps: 0
+  manual_save_key: "s"
+  metadata:
+    operator_id: ""
+    session_id: "yulong_v2_2_pro_full_task_four_camera_jpeg_20260716"
+    notes: "YuLong V2.2 pro full-task natural multiround teleop; manual stop at reachable low-productivity cutoff"
+    scene_version: "yulong_cad_v2_2"
+    soil_preset_id: "digterrain_default"
+    dig_area_preset_id: "digarea_3x2_default"
+    dump_area_preset_id: "active_dump_area_default"
+    task_goal_description: "Natural multiround dig-box to dump-box production; success is mass/productivity over reachable area, not emptying the full box"
+    target_depth_m: 0.08
+    recording_protocol_version: "v2.2_pro_full_task_four_camera_jpeg_hdf5_v1"
+    warmup_or_train: "train"
+    operator_notes: ""
+    observer_notes: ""
+    env_state_contract_version: "agx_env_state_v2_2_64"
+    offtarget_deposited_mass_source: "unavailable"
+    success_rule_source: "mass_productivity_until_grid_depth_fixed"
+
+  joystick:
+    joystick_id: 0
+    joystick_ids: [1, 0, 1, 0]
+    axis_map: [1, 1, 0, 0]
+    invert: [true, false, false, true]
+    reset_button: 10
+    save_button: 9
+    deadzone: 0.05
+    scale: [1.0, 1.0, 1.0, 1.0]
+    clip: 1.0
+    response_profile:
+      enabled: true
+      use_measured_dt: false
+      deadzone: [0.1, 0.1, 0.1, 0.1]
+      attack_rate: 4.0
+      release_rate: 6.0
+      recenter_rate: 7.0
+      exponent: 1.0
+
+  keyboard:
+    key_speed: 0.5
+    window_title: "Testbed Teleop"
+
+task:
+  task_name: "agx_excavation_teleop"
+  equipment_model: "yulong"
+  dataset_dir: "/data/pingfan/excavator_testbed_data/yulong_v2_2_pro_full_task_four_camera_jpeg_20260717"
+  camera_names: ["stick_up", "stick_down", "eye_left", "eye_right"]
+  max_steps: 20000
+  control_hz: 50
+  dt: 0.02
+  seed: -1
+  param_version: "v2_2_yulong_pro_full_task_four_camera_jpeg"
+  scenario_id: "s0_truck"
+  recording_mode: "teleop_pro_full_task_four_camera_jpeg"
+
+success:
+  mode: "dump_complete_final_hold"
+  signal_name: "deposited_mass_in_target_box_kg"
+  mass_thresh: 20.0
+  residual_bucket_mass_thresh: 45.0
+  hold_steps: 25
+  stage_success:
+    dig_min_payload_gain_kg: 15.0
+    dig_min_depth_m: 0.02
+    dump_min_deposit_delta_kg: 8.0
+    dump_min_deposited_fraction: 0.25
+    max_hard_collision_delta: 0
+
+reward:
+  load_mass_threshold_kg: 55.0
+  target_approach_distance_m: 1.25
+  deposit_started_threshold_kg: 5.0
+  dig_area_touch_tolerance_m: 0.05
+  dig_below_plane_depth_tolerance_m: 0.02
+  qualified_dig_start_mode: "contact_depth"
+  unsafe_distance_m: 0.20
+  unsafe_distance_penalty: 0.25
+  hard_collision_penalty: 0.75
+  spill_penalty: 0.25
+
+action_semantics: "actuator_speed_cmd"

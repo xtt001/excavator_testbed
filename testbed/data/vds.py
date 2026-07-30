@@ -8,13 +8,15 @@ lineage, and primitive ownership remain readable without scanning the source.
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import subprocess
 import sys
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import h5py
 import numpy as np
@@ -32,6 +34,7 @@ from testbed.data.schema import (
     DS_STEP_ID,
     DS_STEP_NS,
     GRP_ACTION_SOURCE,
+    GRP_ENCODED_IMAGES,
     GRP_METADATA,
     GRP_OBS,
     GRP_TIMESTAMPS,
@@ -40,7 +43,6 @@ from testbed.data.schema import (
     GRP_V2_STEP,
     SCHEMA_VERSION,
 )
-
 
 STORAGE_MODE_COPY = "copy"
 STORAGE_MODE_VDS = "vds"
@@ -83,7 +85,7 @@ def write_vds_episode(
         meta.attrs[ATTR_SIM] = True
         if metadata:
             for key, value in metadata.items():
-                meta.attrs[str(key)] = value
+                meta.attrs[str(key)] = _canonicalize_hdf5_attr(value)
         meta.attrs["storage_mode"] = STORAGE_MODE_VDS
         meta.attrs["vds_source_path"] = str(source_ref)
         meta.attrs["vds_source_abs_path"] = str(source_path.resolve())
@@ -111,6 +113,21 @@ def write_vds_episode(
                     start=start,
                     end=end,
                 )
+
+        if GRP_ENCODED_IMAGES in src:
+            obs_grp.require_group("encoded_images")
+            for camera_name in src[GRP_ENCODED_IMAGES]:
+                dataset_path = f"{GRP_ENCODED_IMAGES}/{camera_name}"
+                _create_vds(
+                    dst,
+                    src=src,
+                    target_path=dataset_path,
+                    source_path=dataset_path,
+                    source_ref=source_ref,
+                    start=start,
+                    end=end,
+                )
+                _copy_attrs(src[dataset_path].attrs, dst[dataset_path].attrs)
 
         _create_vds(dst, src=src, target_path=DS_ACTION, source_path=DS_ACTION, source_ref=source_ref, start=start, end=end)
         if DS_REWARDS in src:
@@ -244,6 +261,7 @@ def _create_vds(
     if parent and parent != ".":
         h5_file.require_group(parent)
     h5_file.create_virtual_dataset(target_path, layout)
+    _copy_attrs(source_dataset.attrs, h5_file[target_path].attrs)
 
 
 def _write_v2_mixed(
@@ -277,33 +295,92 @@ def _write_v2_mixed(
                     end=end,
                 )
         _write_dataset_group(step_grp, step_overlay)
+        if GRP_V2_STEP in src:
+            for key in step_overlay:
+                source_key = f"{GRP_V2_STEP}/{key}"
+                target_key = f"{GRP_V2_STEP}/{key}"
+                if source_key in src and target_key in dst:
+                    _copy_attrs(src[source_key].attrs, dst[target_key].attrs)
     if cycle_payload:
         _write_dataset_group(v2_grp.require_group("cycle"), cycle_payload)
+        if GRP_V2_CYCLE in src:
+            for key in cycle_payload:
+                source_key = f"{GRP_V2_CYCLE}/{key}"
+                target_key = f"{GRP_V2_CYCLE}/{key}"
+                if source_key in src and target_key in dst:
+                    _copy_attrs(src[source_key].attrs, dst[target_key].attrs)
 
 
 def _write_dataset_group(group: h5py.Group, payload: dict[str, np.ndarray]) -> None:
     for key, value in payload.items():
         arr = np.asarray(value)
         if arr.dtype.kind in {"U", "O"}:
-            _write_string_dataset(group, str(key), [str(item) for item in arr.reshape(-1)])
+            _write_string_dataset(group, str(key), arr.reshape(-1))
             continue
         group.create_dataset(str(key), data=arr)
 
 
-def _write_string_dataset(group: h5py.Group, name: str, values: Iterable[str]) -> None:
-    values = [str(value) for value in values]
+def _write_string_dataset(group: h5py.Group, name: str, values: Iterable[Any]) -> None:
+    values = [_canonical_hdf5_text(value) for value in values]
     str_dtype = h5py.special_dtype(vlen=str)
     ds = group.create_dataset(str(name), (len(values),), dtype=str_dtype)
     for index, value in enumerate(values):
         ds[index] = value
 
 
+def _copy_attrs(src_attrs: h5py.AttributeManager, dst_attrs: h5py.AttributeManager) -> None:
+    for key, value in src_attrs.items():
+        dst_attrs[key] = _canonicalize_hdf5_attr(value)
+
+
 def _read_string_slice(dataset: h5py.Dataset, *, start: int, end: int) -> list[str]:
     values = dataset[start:end]
-    return [
-        item.decode() if isinstance(item, bytes) else str(item)
-        for item in values
-    ]
+    return [_canonical_hdf5_text(item) for item in values]
+
+
+def _canonical_hdf5_text(value: Any) -> str:
+    """Decode HDF5 text and unwrap accidental nested bytes-literal strings.
+
+    Older wrapper builders converted raw ``bytes`` with ``str(value)``. Repeating
+    that operation produced values such as ``b\"b'gold'\"``. Only exact Python
+    bytes literals are unwrapped; ordinary strings containing similar text are
+    left unchanged unless the entire value is a bytes literal.
+    """
+
+    if isinstance(value, (bytes, np.bytes_)):
+        text = bytes(value).decode("utf-8")
+    else:
+        text = str(value)
+    max_nested_bytes_literals = 4
+    for _ in range(max_nested_bytes_literals):
+        if not text.startswith(("b'", 'b"')):
+            return text
+        try:
+            decoded = ast.literal_eval(text)
+        except (SyntaxError, ValueError) as exc:
+            raise ValueError(
+                f"HDF5 text cannot be canonicalized as a bytes literal: {text!r}"
+            ) from exc
+        if not isinstance(decoded, bytes):
+            raise ValueError(
+                f"HDF5 text cannot be canonicalized as bytes: {text!r}"
+            )
+        next_text = decoded.decode("utf-8")
+        if next_text == text:
+            raise ValueError(f"HDF5 text canonicalization made no progress: {text!r}")
+        text = next_text
+    if text.startswith(("b'", 'b"')):
+        raise ValueError(
+            "HDF5 text contains more than 4 nested bytes literals: "
+            f"{text!r}"
+        )
+    return text
+
+
+def _canonicalize_hdf5_attr(value: Any) -> Any:
+    if isinstance(value, (str, bytes, np.str_, np.bytes_)):
+        return _canonical_hdf5_text(value)
+    return value
 
 
 def _git(args: list[str]) -> str:

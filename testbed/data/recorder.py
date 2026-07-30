@@ -33,8 +33,9 @@ from typing import Any
 
 import numpy as np
 
+from testbed.data.camera_images import encoded_frame_to_uint8, validate_camera_step
 from testbed.data.hdf5_io import write_episode
-from testbed.data.schema import ATTR_EPISODE_ID
+from testbed.data.schema import ATTR_CAMERA_NAMES, ATTR_EPISODE_ID, ATTR_IMAGE_FORMAT
 
 
 class EpisodeRecorder:
@@ -68,6 +69,8 @@ class EpisodeRecorder:
         self._actions: list[np.ndarray] = []
         self._rewards: list[float]      = []
         self._images:  dict[str, list[np.ndarray]] = {}
+        self._encoded_images: dict[str, list[np.ndarray]] = {}
+        self._camera_storage_mode: str | None = None
 
         # ── v1.1 buffers ─────────────────────────────────────────────────────
         self._step_ids:        list[int]        = []
@@ -102,6 +105,15 @@ class EpisodeRecorder:
         action_src_type  "teleop" | "policy" | "scripted" (v1.1).
         action_src_id    "joystick" | "keyboard" | ... (v1.1).
         """
+        images: dict = obs.get("images", {})
+        encoded_images: dict = obs.get("encoded_images", {})
+        cams, step_mode = validate_camera_step(
+            requested_names=self.camera_names,
+            raw_images=images,
+            encoded_images=encoded_images,
+            previous_mode=self._camera_storage_mode,
+        )
+
         self._qpos.append(np.array(obs["qpos"], dtype=np.float32))
         self._qvel.append(np.array(obs["qvel"], dtype=np.float32))
         self._actions.append(np.array(action, dtype=np.float32))
@@ -117,13 +129,17 @@ class EpisodeRecorder:
         if env_s is not None:
             self._env_states.append(np.array(env_s, dtype=np.float32))
 
-        images: dict = obs.get("images", {})
-        cams = self.camera_names if self.camera_names else list(images.keys())
+        if step_mode is not None:
+            self._camera_storage_mode = step_mode
         for cam in cams:
             if cam in images:
                 if cam not in self._images:
                     self._images[cam] = []
                 self._images[cam].append(np.array(images[cam], dtype=np.uint8))
+            else:
+                self._encoded_images.setdefault(cam, []).append(
+                    encoded_frame_to_uint8(encoded_images[cam])
+                )
 
     # ── Save ─────────────────────────────────────────────────────────────────
 
@@ -159,6 +175,13 @@ class EpisodeRecorder:
         images: dict[str, np.ndarray] = {
             cam: np.stack(frames) for cam, frames in self._images.items()
         }
+        encoded_images = {
+            cam: list(frames) for cam, frames in self._encoded_images.items()
+        }
+        stored_names = list(self.camera_names or images.keys() or encoded_images.keys())
+        if stored_names:
+            meta[ATTR_CAMERA_NAMES] = ",".join(stored_names)
+            meta[ATTR_IMAGE_FORMAT] = "jpeg" if encoded_images else "raw_rgb"
 
         env_state = (
             np.stack(self._env_states)
@@ -171,6 +194,7 @@ class EpisodeRecorder:
             qvel=qvel,
             actions=actions,
             images=images if images else None,
+            encoded_images=encoded_images if encoded_images else None,
             rewards=rewards,
             metadata=meta,
             # v1.1
@@ -197,6 +221,8 @@ class EpisodeRecorder:
         self._actions.clear()
         self._rewards.clear()
         self._images.clear()
+        self._encoded_images.clear()
+        self._camera_storage_mode = None
         self._step_ids.clear()
         self._step_ns.clear()
         self._env_states.clear()

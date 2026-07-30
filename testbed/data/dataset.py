@@ -17,6 +17,7 @@ import torch
 import yaml
 from torch.utils.data import DataLoader, Dataset
 
+from testbed.data.camera_images import read_camera_rgb
 from testbed.data.hdf5_io import list_episodes
 from testbed.data.image_masks import (
     apply_image_mask,
@@ -524,7 +525,7 @@ class EpisodicDataset(Dataset):
             )
             image_dict = {}
             for cam in self.camera_names:
-                image = f[f"/observations/images/{cam}"][t0]
+                image = read_camera_rgb(f, cam, t0)
                 mask = None
                 mask_path = mask_dataset_path(
                     camera_name=cam,

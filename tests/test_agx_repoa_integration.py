@@ -178,6 +178,10 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
                 ),
             ),
             warnings=(),
+            env_state_contract_version="agx_env_state_v2_3_89",
+            runtime_build_id="unity-test-build",
+            terrain_state_contract_version="terrain_state_grid_3x2_v1",
+            terrain_volume_source="grid_depth_integral",
         )
         metadata = _build_episode_metadata(
             info=info,
@@ -223,6 +227,13 @@ class RepoAAgxIntegrationTests(unittest.TestCase):
         self.assertEqual(metadata["camera_height"], 288)
         self.assertEqual(metadata["camera_fps"], 50.0)
         self.assertEqual(metadata["camera_row_order"], "top_to_bottom")
+        self.assertEqual(metadata["env_state_contract_version"], "agx_env_state_v2_3_89")
+        self.assertEqual(metadata["runtime_build_id"], "unity-test-build")
+        self.assertEqual(
+            metadata["terrain_state_contract_version"],
+            "terrain_state_grid_3x2_v1",
+        )
+        self.assertEqual(metadata["terrain_volume_source"], "grid_depth_integral")
         self.assertEqual(
             metadata["qpos_order"],
             "swing_position_norm,boom_position_norm,stick_position_norm,bucket_position_norm",

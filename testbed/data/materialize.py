@@ -195,7 +195,16 @@ def _copy_dataset(
     stats.dataset_count += 1
     stats.logical_bytes += _logical_nbytes(src_dataset)
 
-    if _is_image_dataset(logical_path, src_dataset):
+    if _is_encoded_image_dataset(logical_path, src_dataset):
+        stats.image_dataset_count += 1
+        dst_dataset = dst_parent.create_dataset(
+            name,
+            shape=src_dataset.shape,
+            dtype=src_dataset.dtype,
+        )
+        for index in range(int(src_dataset.shape[0])):
+            dst_dataset[index] = np.asarray(src_dataset[index], dtype=np.uint8)
+    elif _is_image_dataset(logical_path, src_dataset):
         stats.image_dataset_count += 1
         dst_dataset = dst_parent.create_dataset(
             name,
@@ -246,7 +255,13 @@ def _mark_materialized(dst: h5py.File, *, source_path: Path) -> None:
 
 
 def _is_image_dataset(logical_path: str, dataset: h5py.Dataset) -> bool:
-    return logical_path.startswith("observations/images/") and dataset.ndim >= 4
+    return (
+        logical_path.startswith("observations/images/") and dataset.ndim >= 4
+    ) or _is_encoded_image_dataset(logical_path, dataset)
+
+
+def _is_encoded_image_dataset(logical_path: str, dataset: h5py.Dataset) -> bool:
+    return logical_path.startswith("observations/encoded_images/") and dataset.ndim == 1
 
 
 def _image_dataset_kwargs(dataset: h5py.Dataset, *, compress: bool) -> dict[str, Any]:

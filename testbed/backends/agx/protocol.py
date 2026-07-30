@@ -18,7 +18,6 @@ from enum import IntEnum
 
 import numpy as np
 
-
 MAGIC = 0xA6A6A6A6
 HEADER_VERSION = 1
 HEADER_SIZE_BYTES = 16
@@ -26,7 +25,41 @@ MAX_PAYLOAD_BYTES = 128 * 1024 * 1024
 
 IMAGE_PIXEL_FORMAT = "raw_rgb"
 IMAGE_ROW_ORDER = "top_to_bottom"
-PROTOCOL_VERSION = "agx-sim/v0"
+IMAGE_COLOR_SPACE = "rgb"
+LEGACY_PROTOCOL_VERSION = "agx-sim/v0"
+MULTI_CAMERA_PROTOCOL_VERSION = "agx-sim/v1"
+PROTOCOL_VERSION = "agx-sim/v2"
+ACTION_ORDER_V2 = (
+    "swing_speed_cmd",
+    "boom_speed_cmd",
+    "stick_speed_cmd",
+    "bucket_speed_cmd",
+)
+QPOS_ORDER_V2 = (
+    "swing_position_norm",
+    "boom_position_norm",
+    "stick_position_norm",
+    "bucket_position_norm",
+)
+QVEL_ORDER_V2 = (
+    "swing_speed",
+    "boom_speed",
+    "stick_speed",
+    "bucket_speed",
+)
+MULTI_CAMERA_STEP_MARKER = 0x314D4143
+TERRAIN_DIAGNOSTIC_MODES = (
+    "production",
+    "no_dynamic_mass",
+    "no_excavation_force_feedback",
+    "terrain_disabled",
+)
+PRODUCTION_CONTROL_PROFILE = "production"
+RECORDING_PRE_FIX_CONTROL_PROFILE = "recording_pre_fix_v1"
+CONTROL_COMPATIBILITY_PROFILES = (
+    PRODUCTION_CONTROL_PROFILE,
+    RECORDING_PRE_FIX_CONTROL_PROFILE,
+)
 
 
 class AgxProtocolError(RuntimeError):
@@ -68,6 +101,18 @@ class CameraDescriptor:
     fps: float
     pixel_format: str
     row_order: str
+    color_space: str = IMAGE_COLOR_SPACE
+
+
+@dataclass(frozen=True)
+class ImageFrame:
+    name: str
+    encoding: str
+    width: int
+    height: int
+    row_order: str
+    color_space: str
+    payload: bytes
 
 
 @dataclass(frozen=True)
@@ -87,6 +132,10 @@ class GetInfoResponse:
     supports_images: bool
     cameras: tuple[CameraDescriptor, ...]
     warnings: tuple[str, ...]
+    env_state_contract_version: str = ""
+    runtime_build_id: str = ""
+    terrain_state_contract_version: str = ""
+    terrain_volume_source: str = ""
 
 
 @dataclass(frozen=True)
@@ -114,6 +163,7 @@ class StepResponse:
     reward: float
     sim_time_ns: int
     warnings: tuple[str, ...]
+    images: tuple[ImageFrame, ...] = ()
 
     def decode_rgb_image(self) -> np.ndarray | None:
         if self.image_w == 0 or self.image_h == 0:
@@ -153,6 +203,11 @@ class _PayloadReader:
         data = self._payload[self._offset : end]
         self._offset = end
         return data
+
+    def peek_int32(self) -> int:
+        if self._offset + 4 > len(self._payload):
+            raise AgxProtocolError("payload_truncated")
+        return struct.unpack("<i", self._payload[self._offset : self._offset + 4])[0]
 
     def read_bool(self) -> bool:
         return bool(struct.unpack("<B", self._take(1))[0])
@@ -255,16 +310,35 @@ def encode_reset_request(
     reset_pose: bool = True,
     client_time_ns: int | None = None,
     scenario_id: str | None = None,
+    diagnostic_terrain_mode: str | None = None,
+    control_compatibility_profile: str | None = None,
 ) -> bytes:
     payload = io.BytesIO()
     payload.write(struct.pack("<i", int(seed)))
     payload.write(_pack_bool(reset_terrain))
     payload.write(_pack_bool(reset_pose))
-    if client_time_ns is not None or scenario_id is not None:
+    if (
+        client_time_ns is not None
+        or scenario_id is not None
+        or diagnostic_terrain_mode is not None
+        or control_compatibility_profile is not None
+    ):
         client_time = client_time_ns if client_time_ns is not None else -1
         payload.write(struct.pack("<q", int(client_time)))
-    if scenario_id is not None:
-        payload.write(_pack_string(scenario_id))
+    if (
+        scenario_id is not None
+        or diagnostic_terrain_mode is not None
+        or control_compatibility_profile is not None
+    ):
+        payload.write(_pack_string("" if scenario_id is None else scenario_id))
+    if diagnostic_terrain_mode is not None or control_compatibility_profile is not None:
+        payload.write(
+            _pack_string(
+                "" if diagnostic_terrain_mode is None else diagnostic_terrain_mode
+            )
+        )
+    if control_compatibility_profile is not None:
+        payload.write(_pack_string(str(control_compatibility_profile)))
     return encode_frame(MessageType.RESET_REQ, payload.getvalue())
 
 
@@ -367,6 +441,16 @@ def decode_get_info_response(payload: bytes) -> GetInfoResponse:
     qpos_order = reader.read_string_array()
     qvel_order = reader.read_string_array()
     env_state_order = reader.read_string_array()
+    if protocol_version == PROTOCOL_VERSION:
+        env_state_contract_version = reader.read_string()
+        runtime_build_id = reader.read_string()
+        terrain_state_contract_version = reader.read_string()
+        terrain_volume_source = reader.read_string()
+    else:
+        env_state_contract_version = ""
+        runtime_build_id = ""
+        terrain_state_contract_version = ""
+        terrain_volume_source = ""
     camera_names = reader.read_string_array()
     supports_reset_pose = reader.read_bool()
     supports_images = reader.read_bool()
@@ -375,15 +459,32 @@ def decode_get_info_response(payload: bytes) -> GetInfoResponse:
     if camera_count < 0 or camera_count > 1024:
         raise AgxProtocolError("camera_descriptor_count_invalid")
     cameras = []
+    if protocol_version not in (
+        LEGACY_PROTOCOL_VERSION,
+        MULTI_CAMERA_PROTOCOL_VERSION,
+        PROTOCOL_VERSION,
+    ):
+        raise AgxProtocolError(f"unsupported protocol_version {protocol_version!r}")
+    descriptor_has_color_space = protocol_version in (
+        MULTI_CAMERA_PROTOCOL_VERSION,
+        PROTOCOL_VERSION,
+    )
     for _ in range(camera_count):
+        name = reader.read_string()
+        width = reader.read_int32()
+        height = reader.read_int32()
+        fps = reader.read_float32()
+        pixel_format = reader.read_string()
+        row_order = reader.read_string()
         cameras.append(
             CameraDescriptor(
-                name=reader.read_string(),
-                width=reader.read_int32(),
-                height=reader.read_int32(),
-                fps=reader.read_float32(),
-                pixel_format=reader.read_string(),
-                row_order=reader.read_string(),
+                name=name,
+                width=width,
+                height=height,
+                fps=fps,
+                pixel_format=pixel_format,
+                row_order=row_order,
+                color_space=reader.read_string() if descriptor_has_color_space else IMAGE_COLOR_SPACE,
             )
         )
 
@@ -406,6 +507,10 @@ def decode_get_info_response(payload: bytes) -> GetInfoResponse:
         supports_images=supports_images,
         cameras=tuple(cameras),
         warnings=warnings,
+        env_state_contract_version=env_state_contract_version,
+        runtime_build_id=runtime_build_id,
+        terrain_state_contract_version=terrain_state_contract_version,
+        terrain_volume_source=terrain_volume_source,
     )
 
 
@@ -434,10 +539,35 @@ def decode_step_response(payload: bytes) -> StepResponse:
     qpos = reader.read_float_array()
     qvel = reader.read_float_array()
     env_state = reader.read_float_array()
-    image_format = reader.read_string()
-    image_w = reader.read_int32()
-    image_h = reader.read_int32()
-    image_payload = reader.read_bytes()
+    images: tuple[ImageFrame, ...] = ()
+    if reader.peek_int32() == MULTI_CAMERA_STEP_MARKER:
+        reader.read_int32()
+        image_count = reader.read_int32()
+        if image_count < 0 or image_count > 1024:
+            raise AgxProtocolError("image_frame_count_invalid")
+        parsed_images = []
+        for _ in range(image_count):
+            parsed_images.append(
+                ImageFrame(
+                    name=reader.read_string(),
+                    encoding=reader.read_string(),
+                    width=reader.read_int32(),
+                    height=reader.read_int32(),
+                    row_order=reader.read_string(),
+                    color_space=reader.read_string(),
+                    payload=reader.read_bytes(),
+                )
+            )
+        images = tuple(parsed_images)
+        image_format = ""
+        image_w = 0
+        image_h = 0
+        image_payload = b""
+    else:
+        image_format = reader.read_string()
+        image_w = reader.read_int32()
+        image_h = reader.read_int32()
+        image_payload = reader.read_bytes()
     reward = reader.read_float32()
     sim_time_ns = reader.read_int64()
     warnings = reader.read_string_array()
@@ -456,6 +586,7 @@ def decode_step_response(payload: bytes) -> StepResponse:
         reward=reward,
         sim_time_ns=sim_time_ns,
         warnings=warnings,
+        images=images,
     )
 
 
@@ -491,7 +622,7 @@ class AgxSimClient:
         finally:
             self._socket = None
 
-    def __enter__(self) -> "AgxSimClient":
+    def __enter__(self) -> AgxSimClient:
         self.connect()
         return self
 
@@ -515,6 +646,8 @@ class AgxSimClient:
         reset_terrain: bool = True,
         reset_pose: bool = True,
         scenario_id: str | None = None,
+        diagnostic_terrain_mode: str | None = None,
+        control_compatibility_profile: str | None = None,
     ) -> ResetResponse:
         response = self._roundtrip(
             encode_reset_request(
@@ -523,6 +656,8 @@ class AgxSimClient:
                 reset_pose=reset_pose,
                 client_time_ns=time.time_ns(),
                 scenario_id=scenario_id,
+                diagnostic_terrain_mode=diagnostic_terrain_mode,
+                control_compatibility_profile=control_compatibility_profile,
             ),
             expected=MessageType.RESET_RESP,
         )

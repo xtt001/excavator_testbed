@@ -21,7 +21,7 @@ Schema v1.1 layout (add-only on top of v1.0)
 │   ├── dt                   float 0.02        ← v1.1
 │   ├── action_semantics     str   "actuator_speed_cmd"  ← v1.1
 │   ├── camera_names         str   comma-sep   ← v1.1
-│   ├── image_format         str   "raw_rgb"   ← v1.1
+│   ├── image_format         str   "raw_rgb" | "jpeg"   ← v1.1
 │   ├── protocol_version     str   optional    ← v1.1
 │   ├── episode_id           str   optional
 │   ├── operator_id          str   optional
@@ -96,8 +96,8 @@ Schema v1.1 layout (add-only on top of v1.0)
 │   │                                      bucket_dig_area_short_index,
 │   │                                      bucket_dig_area_cell_id]
 │   │                                      ← v1.1 add-only
-│   └── images/
-│       └── fpv              (T, H, W, 3) uint8                        ← v1.1
+│   ├── images/<camera>      (T, H, W, 3) uint8 raw RGB               ← v1.1
+│   └── encoded_images/<camera> (T,) vlen uint8 JPEG bytes optional
 │
 ├── action                   (T, 4)  float32  [swing, boom, stick, bucket]
 ├── rewards                  (T,)    float32  optional
@@ -177,6 +177,7 @@ SCHEMA_VERSION = "1.1"
 GRP_METADATA      = "metadata"
 GRP_OBS           = "observations"
 GRP_IMAGES        = "observations/images"
+GRP_ENCODED_IMAGES = "observations/encoded_images"
 GRP_TIMESTAMPS    = "timestamps"        # v1.1
 GRP_ACTION_SOURCE = "action_source"     # v1.1
 GRP_V2            = "v2"                # optional Repo A add-only extension
@@ -290,7 +291,7 @@ ATTR_CONTROL_HZ       = "control_hz"
 ATTR_DT               = "dt"
 ATTR_ACTION_SEMANTICS = "action_semantics"
 ATTR_CAMERA_NAMES     = "camera_names"       # comma-separated string
-ATTR_IMAGE_FORMAT     = "image_format"       # "raw_rgb" | "h264"
+ATTR_IMAGE_FORMAT     = "image_format"       # "raw_rgb" | "jpeg"
 ATTR_PROTOCOL_VERSION = "protocol_version"   # optional
 ATTR_EPISODE_ID       = "episode_id"
 ATTR_OPERATOR_ID      = "operator_id"
@@ -345,6 +346,11 @@ ATTR_WARMUP_OR_TRAIN = "warmup_or_train"
 ATTR_OPERATOR_NOTES = "operator_notes"
 ATTR_OBSERVER_NOTES = "observer_notes"
 ATTR_ENV_STATE_CONTRACT_VERSION = "env_state_contract_version"
+ATTR_RUNTIME_BUILD_ID = "runtime_build_id"
+ATTR_TERRAIN_STATE_CONTRACT_VERSION = "terrain_state_contract_version"
+ATTR_TERRAIN_VOLUME_SOURCE = "terrain_volume_source"
+ATTR_VOLUME_LABEL_STATUS = "volume_label_status"
+ATTR_DIRECT_VOLUME_STATUS = "direct_volume_status"
 
 # ── V0 locked constants ───────────────────────────────────────────────────────
 DEFAULT_CONTROL_HZ       = 50
@@ -470,6 +476,90 @@ ENV_STATE_ORDER_V2_2 = (
     "bucket_dig_area_penetration_contact_mask",
     "bucket_contact_dump_area_mask",
     "hard_collision_count",
+)
+
+# v2.3 is an append-only terrain-grid contract.  The first 64 entries remain
+# byte-for-byte compatible with ENV_STATE_ORDER_V2_2; the suffix makes the
+# sampled grid reproducible instead of relying on scene-local assumptions.
+ENV_STATE_DIG_AREA_GRID_ORIGIN_WORLD_START_IDX = 64
+ENV_STATE_DIG_AREA_LONG_AXIS_UNIT_WORLD_START_IDX = 67
+ENV_STATE_DIG_AREA_SHORT_AXIS_UNIT_WORLD_START_IDX = 70
+ENV_STATE_DIG_AREA_CELL_LONG_SIZE_IDX = 73
+ENV_STATE_DIG_AREA_CELL_SHORT_SIZE_IDX = 74
+ENV_STATE_DIG_AREA_CELL_AREA_IDX = 75
+ENV_STATE_DIG_AREA_REFERENCE_PLANE_LOCAL_Y_IDX = 76
+ENV_STATE_DIG_AREA_BASELINE_DEPTH_START_IDX = 77
+ENV_STATE_DIG_AREA_SURFACE_VALID_FRACTION_START_IDX = 83
+ENV_STATE_V2_3_DIM = 89
+ENV_STATE_CONTRACT_VERSION_V2_3 = "agx_env_state_v2_3_89"
+TERRAIN_STATE_CONTRACT_VERSION_GRID_3X2_V1 = "terrain_state_grid_3x2_v1"
+
+ENV_STATE_ORDER_V2_3 = ENV_STATE_ORDER_V2_2 + (
+    "dig_area_grid_origin_world_x_m",
+    "dig_area_grid_origin_world_y_m",
+    "dig_area_grid_origin_world_z_m",
+    "dig_area_long_axis_unit_world_x",
+    "dig_area_long_axis_unit_world_y",
+    "dig_area_long_axis_unit_world_z",
+    "dig_area_short_axis_unit_world_x",
+    "dig_area_short_axis_unit_world_y",
+    "dig_area_short_axis_unit_world_z",
+    "dig_area_cell_long_size_m",
+    "dig_area_cell_short_size_m",
+    "dig_area_cell_area_m2",
+    "dig_area_reference_plane_local_y_m",
+    "dig_area_baseline_depth_m_r0_c0",
+    "dig_area_baseline_depth_m_r0_c1",
+    "dig_area_baseline_depth_m_r1_c0",
+    "dig_area_baseline_depth_m_r1_c1",
+    "dig_area_baseline_depth_m_r2_c0",
+    "dig_area_baseline_depth_m_r2_c1",
+    "dig_area_surface_valid_fraction_r0_c0",
+    "dig_area_surface_valid_fraction_r0_c1",
+    "dig_area_surface_valid_fraction_r1_c0",
+    "dig_area_surface_valid_fraction_r1_c1",
+    "dig_area_surface_valid_fraction_r2_c0",
+    "dig_area_surface_valid_fraction_r2_c1",
+)
+
+# v2.4 appends the live hard-bottom box residual and typed safety-contact
+# contract.  Recorded strict Replay remains a v2.3/89D dataset; only new live
+# rollouts may advertise and emit this 107D suffix.
+ENV_STATE_DIG_AREA_HARD_BOTTOM_DEPTH_IDX = 89
+ENV_STATE_DIG_AREA_SOURCE_BULK_DENSITY_IDX = 90
+ENV_STATE_DIG_AREA_REMAINING_SOIL_VOLUME_START_IDX = 91
+ENV_STATE_DIG_AREA_CURRENT_REMAINING_MASS_IDX = 97
+ENV_STATE_DIG_AREA_INITIAL_REMAINING_MASS_IDX = 98
+ENV_STATE_DIG_AREA_REMAINING_MASS_FRACTION_IDX = 99
+ENV_STATE_DIG_AREA_REMAINING_MASS_VALID_MASK_IDX = 100
+ENV_STATE_EXCAVATOR_WALL_CONTACT_TYPED_MASK_IDX = 101
+ENV_STATE_EXCAVATOR_WALL_CONTACT_STEP_MAX_FORCE_IDX = 102
+ENV_STATE_EXCAVATOR_WALL_CONTACT_SESSION_COUNT_IDX = 103
+ENV_STATE_BUCKET_FACTORY_FLOOR_CONTACT_TYPED_MASK_IDX = 104
+ENV_STATE_BUCKET_FACTORY_FLOOR_CONTACT_STEP_MAX_FORCE_IDX = 105
+ENV_STATE_BUCKET_FACTORY_FLOOR_CONTACT_SESSION_COUNT_IDX = 106
+ENV_STATE_V2_4_DIM = 107
+ENV_STATE_CONTRACT_VERSION_V2_4 = "agx_env_state_v2_4_107"
+
+ENV_STATE_ORDER_V2_4 = ENV_STATE_ORDER_V2_3 + (
+    "dig_area_hard_bottom_depth_m",
+    "dig_area_source_bulk_density_kg_m3",
+    "dig_area_remaining_soil_volume_m3_r0_c0",
+    "dig_area_remaining_soil_volume_m3_r0_c1",
+    "dig_area_remaining_soil_volume_m3_r1_c0",
+    "dig_area_remaining_soil_volume_m3_r1_c1",
+    "dig_area_remaining_soil_volume_m3_r2_c0",
+    "dig_area_remaining_soil_volume_m3_r2_c1",
+    "dig_area_current_remaining_mass_kg",
+    "dig_area_initial_remaining_mass_kg",
+    "dig_area_remaining_mass_fraction",
+    "dig_area_remaining_mass_valid_mask",
+    "excavator_wall_contact_typed_mask",
+    "excavator_wall_contact_step_max_force_n",
+    "excavator_wall_contact_session_count",
+    "bucket_factory_floor_contact_typed_mask",
+    "bucket_factory_floor_contact_step_max_force_n",
+    "bucket_factory_floor_contact_session_count",
 )
 
 # ── Image dataset name template ───────────────────────────────────────────────
