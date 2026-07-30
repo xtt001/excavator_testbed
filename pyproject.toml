@@ -70,6 +70,7 @@ tb-build-executed-cut-effect-samples = "testbed.cli.build_executed_cut_effect_sa
 tb-train-terrain-effect-ensemble = "testbed.cli.train_terrain_effect_ensemble:main"
 tb-build-act-unity-validation = "testbed.cli.build_act_unity_validation:main"
 tb-build-act-functional-10cycle-validation = "testbed.cli.build_act_functional_10cycle_validation:main"
+tb-goal-conditioned-recovery-experiment = "testbed.cli.goal_conditioned_recovery_experiment:main"
 tb-build-act-functional-baseline-bundle = "testbed.cli.build_act_functional_baseline_bundle:main"
 tb-act-regression-offline-diagnostic = "testbed.cli.act_regression_offline_diagnostic:main"
 tb-build-act-regression-plan-matrix = "testbed.cli.build_act_regression_plan_matrix:main"

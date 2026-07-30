@@ -27,8 +27,8 @@ from testbed.planner.primitive.token.tokens import (
 )
 
 if TYPE_CHECKING:
-    from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
     from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+    from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
     from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
 
 
@@ -37,9 +37,13 @@ DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR = "operator_prior"
 DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_COVERAGE = "operator_prior_coverage"
 DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_SWEEP_BELIEF = "operator_prior_sweep_belief"
 DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT = "residual_cut_intent"
+DIG_CUT_PLANNER_MODE_CONTINUOUS_GOAL_CONDITIONED = (
+    "continuous_goal_conditioned"
+)
 SUPPORTED_DIG_CUT_PLANNER_MODES = frozenset(
     {
         DIG_CUT_PLANNER_MODE_CONSERVATIVE_POSE,
+        DIG_CUT_PLANNER_MODE_CONTINUOUS_GOAL_CONDITIONED,
         DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR,
         DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_COVERAGE,
         DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_SWEEP_BELIEF,
@@ -55,6 +59,7 @@ DIG_CUT_PLANNER_MODES_REQUIRING_PRIOR = frozenset(
 )
 DIG_CUT_PLANNER_COVERAGE_MODES = frozenset(
     {
+        DIG_CUT_PLANNER_MODE_CONTINUOUS_GOAL_CONDITIONED,
         DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_COVERAGE,
         DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_SWEEP_BELIEF,
     }
@@ -125,7 +130,7 @@ class PrimitiveDigTokenPlanningService:
     def from_ports(
         cls,
         ports: PrimitiveDigTokenPlanningPorts,
-    ) -> "PrimitiveDigTokenPlanningService":
+    ) -> PrimitiveDigTokenPlanningService:
         return cls(ports=ports)
 
     def build_dig_cut_tokens_for_obs(self, obs: dict[str, Any]) -> np.ndarray:
@@ -136,6 +141,8 @@ class PrimitiveDigTokenPlanningService:
         planner = ports.dig_cut_token_planner()
         token_state.dig_cut_fallback_reason = ""
         if self._pending_dig_cut_matches_current_cycle():
+            if mode == DIG_CUT_PLANNER_MODE_CONTINUOUS_GOAL_CONDITIONED:
+                validate_locked_continuous_pending_plan(token_state)
             plan = planner.plan_pending_return_target(
                 tokens=token_state.pending_dig_cut_tokens,
                 raw_fields=token_state.pending_dig_cut_raw_fields,
@@ -440,7 +447,7 @@ class PrimitiveDigTokenPlanningService:
     def observation_facts(
         self,
         obs: dict[str, Any],
-    ) -> "PrimitiveObservationFacts":
+    ) -> PrimitiveObservationFacts:
         return self.ports.observation_facts(obs)
 
     def _pending_dig_cut_matches_current_cycle(self) -> bool:
@@ -456,10 +463,39 @@ class PrimitiveDigTokenPlanningService:
         )
 
 
+def validate_locked_continuous_pending_plan(
+    token_state: PrimitiveTokenRuntimeState,
+) -> None:
+    """Reject any post-commit mutation before the locked goal reaches ACT."""
+
+    locked_plan = token_state.pending_dig_locked_execution_plan
+    pending_raw_fields = token_state.pending_dig_cut_raw_fields
+    pending_tokens = token_state.pending_dig_cut_tokens
+    locked_envelope = getattr(locked_plan, "return_envelope", None)
+    locked_goal_id = str(getattr(locked_plan, "goal_id", ""))
+    if (
+        locked_plan is None
+        or len(locked_goal_id) != 64
+        or str(getattr(locked_envelope, "goal_id", "")) != locked_goal_id
+        or pending_raw_fields is None
+        or dict(getattr(locked_plan, "raw_fields", {}) or {})
+        != dict(pending_raw_fields)
+        or pending_tokens is None
+        or not np.array_equal(
+            np.asarray(getattr(locked_plan, "dig_token", []), dtype=np.float32),
+            np.asarray(pending_tokens, dtype=np.float32),
+        )
+    ):
+        raise ValueError(
+            "continuous_goal_contract_invalid: locked pending goal drift"
+        )
+
+
 __all__ = [
     "CoverageRawFieldsBuilder",
     "DIG_CUT_PLANNER_COVERAGE_MODES",
     "DIG_CUT_PLANNER_MODE_CONSERVATIVE_POSE",
+    "DIG_CUT_PLANNER_MODE_CONTINUOUS_GOAL_CONDITIONED",
     "DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR",
     "DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_COVERAGE",
     "DIG_CUT_PLANNER_MODE_OPERATOR_PRIOR_SWEEP_BELIEF",
@@ -471,4 +507,5 @@ __all__ = [
     "RESIDUAL_CUT_INTENT_NO_PLAN_REASON",
     "ResidualCutIntentPlanProvider",
     "SUPPORTED_DIG_CUT_PLANNER_MODES",
+    "validate_locked_continuous_pending_plan",
 ]

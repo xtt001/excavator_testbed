@@ -23,16 +23,7 @@ from testbed.planner.primitive.compatibility.cell_entry import (
     PrimitiveCellEntryCompatibilityRuntimeState,
 )
 from testbed.planner.primitive.coverage.selection import CoverageCorridorState
-from testbed.planner.primitive.coverage.config import (
-    CoverageExecutionLibraryConfig,
-    PrimitiveCoverageStaticConfig,
-)
-from testbed.planner.primitive.coverage.plan_readiness import (
-    CoverageFirstPlanPoseStabilityService,
-)
-from testbed.planner.primitive.coverage.wall_safety import (
-    CoverageWallSafetyConfig,
-)
+from testbed.planner.primitive.coverage.config import PrimitiveCoverageStaticConfig
 from testbed.planner.primitive.coverage.selection_runtime import (
     PrimitiveCoverageSelectionRuntime,
     PrimitiveCoverageSelectionRuntimePorts as CoverageSelectionBoundaryPorts,
@@ -782,16 +773,6 @@ class PrimitivePlannerACTPolicy(Policy):
             global_low_productivity_stop=int(
                 self.coverage_global_low_productivity_stop
             ),
-            wall_safety=getattr(
-                self,
-                "coverage_wall_safety_config",
-                CoverageWallSafetyConfig(),
-            ),
-            execution_library=getattr(
-                self,
-                "coverage_execution_library_config",
-                CoverageExecutionLibraryConfig(),
-            ),
         )
 
     def _primitive_coverage_report_runtime_ports(
@@ -977,9 +958,6 @@ class PrimitivePlannerACTPolicy(Policy):
     def _set_skill(self, skill_name: str, reason: str) -> None:
         self._primitive_skill_lifecycle().set_skill(skill_name, reason)
 
-    def _restart_skill(self, reason: str) -> None:
-        self._primitive_skill_lifecycle().restart_skill(reason)
-
     def _primitive_skill_lifecycle(self) -> PrimitiveSkillLifecycleService:
         return PrimitiveSkillLifecycleService.from_ports(
             self._primitive_skill_lifecycle_ports()
@@ -1101,34 +1079,7 @@ class PrimitivePlannerACTPolicy(Policy):
     def _should_end_bootstrap(self, *, obs: dict, boundary_event: Any | None) -> bool:
         scripted_bootstrap = self._primitive_scripted_bootstrap_runtime_service()
         if scripted_bootstrap.enabled():
-            if not scripted_bootstrap.should_end_bootstrap(obs):
-                return False
-            execution_config = getattr(
-                self,
-                "coverage_execution_library_config",
-                CoverageExecutionLibraryConfig(),
-            )
-            stability_config = (
-                execution_config.first_plan_pose_stability
-            )
-            if not (
-                execution_config.enabled
-                and stability_config.enabled
-            ):
-                return True
-            observation = PrimitiveObservationFacts.from_obs(
-                obs,
-                action_dim=int(self.action_dim),
-            )
-            readiness = CoverageFirstPlanPoseStabilityService(
-                config=stability_config,
-                state=self._coverage_runtime_state(),
-            ).observe(observation.bucket_tip_dig_area_pose())
-            if readiness.timed_out:
-                self._coverage_runtime_state().request_terminal_stop(
-                    "first_plan_pose_stability_timeout"
-                )
-            return bool(readiness.ready)
+            return scripted_bootstrap.should_end_bootstrap(obs)
         observation = PrimitiveObservationFacts.from_obs(
             obs,
             action_dim=int(self.action_dim),
@@ -1414,6 +1365,10 @@ class PrimitivePlannerACTPolicy(Policy):
                     .plan(token)
                 )
             ),
+            allow_return_plan_fallback=(
+                lambda: str(self.dig_cut_planner_fallback_mode)
+                == "conservative_pose"
+            ),
             dig_skill_name="dig",
             return_skill_name="return",
             bootstrap_skill_name=BOOTSTRAP_SKILL_NAME,
@@ -1481,6 +1436,15 @@ class PrimitivePlannerACTPolicy(Policy):
                 lambda: (
                     self._primitive_coverage_selection_runtime()
                     .ensure_coverage_corridors()
+                )
+            ),
+            select_next_coverage_plan=(
+                lambda obs, *, update_state: (
+                    self._primitive_coverage_selection_runtime()
+                    .select_next_coverage_plan(
+                        obs,
+                        update_state=update_state,
+                    )
                 )
             ),
         )

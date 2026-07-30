@@ -74,6 +74,7 @@ class CoverageRuntimeState:
     coverage_active_execution_contract: (
         CoverageActiveExecutionContract | None
     ) = None
+    coverage_active_continuous_execution_plan: Any = None
     coverage_final_live_handoff_guard_result: Any = None
     coverage_active_state_exemplar_ids: list[str] = field(default_factory=list)
     coverage_rejected_state_exemplar_ids: set[str] = field(default_factory=set)
@@ -179,7 +180,49 @@ class CoverageRuntimeState:
         )
         self.coverage_active_execution_trace = {}
         self.coverage_active_execution_contract = None
+        self.coverage_active_continuous_execution_plan = None
         self.coverage_final_live_handoff_guard_result = None
+
+    def set_active_continuous_execution_plan(
+        self,
+        *,
+        corridor: CoverageCorridorState,
+        locked_plan: Any,
+    ) -> None:
+        """Commit one complete continuous plan without exact-tuple identity."""
+
+        goal = getattr(locked_plan, "goal", None)
+        if (
+            goal is None
+            or int(getattr(goal, "target_cell_id", -1))
+            != int(corridor.cell_id)
+            or len(str(getattr(locked_plan, "goal_id", ""))) != 64
+        ):
+            raise ValueError(
+                "continuous_goal_contract_invalid: corridor identity drift"
+            )
+        self.clear_active_execution_candidate()
+        self.coverage_active_corridor_id = int(corridor.corridor_id)
+        self.coverage_last_selected_corridor_id = int(corridor.corridor_id)
+        self.coverage_active_effect_outcome_cell_id = int(corridor.cell_id)
+        self.coverage_last_selected_effect_outcome_cell_id = int(
+            corridor.cell_id
+        )
+        self.coverage_active_return_envelope_cell_id = int(corridor.cell_id)
+        self.coverage_active_execution_raw_fields = dict(
+            getattr(locked_plan, "raw_fields", {}) or {}
+        )
+        self.coverage_active_execution_raw_fields_sha256 = str(
+            getattr(locked_plan, "raw_fields_sha256", "")
+        )
+        self.coverage_active_execution_trace = {
+            "mode": "continuous_goal_conditioned",
+            "goal_id": str(getattr(locked_plan, "goal_id", "")),
+            "planned_qpos_path_sha256": str(
+                getattr(locked_plan, "planned_qpos_path_sha256", "")
+            ),
+        }
+        self.coverage_active_continuous_execution_plan = locked_plan
 
     def active_exact_return_transition(self) -> Any | None:
         """Return the locked post-return contract, never a cell-prior alias."""

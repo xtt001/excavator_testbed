@@ -50,6 +50,7 @@ class PrimitiveTokenObservationRuntimePorts:
     ]
     build_return_start_envelope_tokens_for_obs: ReturnStartEnvelopeTokenBuilder
     plan_return_relocate_tokens: Callable[[np.ndarray], np.ndarray]
+    allow_return_plan_fallback: Callable[[], bool] = lambda: True
 
     dig_skill_name: str = "dig"
     return_skill_name: str = "return"
@@ -179,6 +180,7 @@ class PrimitiveTokenObservationRuntime:
                 ports.build_return_start_envelope_tokens_for_obs
             ),
             plan_return_relocate_tokens=ports.plan_return_relocate_tokens,
+            allow_return_plan_fallback=ports.allow_return_plan_fallback,
             dig_skill_name=ports.dig_skill_name,
             return_skill_name=ports.return_skill_name,
             bootstrap_skill_name=ports.bootstrap_skill_name,

@@ -22,8 +22,8 @@ from testbed.planner.primitive.token.tokens import (
 )
 
 if TYPE_CHECKING:
-    from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
     from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+    from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
     from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
 
 
@@ -76,7 +76,7 @@ class PrimitiveReturnTokenPlanningService:
     def from_ports(
         cls,
         ports: PrimitiveReturnTokenPlanningPorts,
-    ) -> "PrimitiveReturnTokenPlanningService":
+    ) -> PrimitiveReturnTokenPlanningService:
         return cls(ports=ports)
 
     def build_next_dig_cut_plan_for_return(
@@ -98,7 +98,11 @@ class PrimitiveReturnTokenPlanningService:
                     self.observation_facts(obs).bucket_dig_area_pose()
                 )
             )
-        if mode in {"operator_prior_coverage", "operator_prior_sweep_belief"}:
+        if mode in {
+            "continuous_goal_conditioned",
+            "operator_prior_coverage",
+            "operator_prior_sweep_belief",
+        }:
             if ports.select_next_coverage_plan is None:
                 corridor = ports.select_next_coverage_corridor(obs)
                 raw_fields = ports.coverage_raw_fields(
@@ -320,7 +324,7 @@ class PrimitiveReturnTokenPlanningService:
     def observation_facts(
         self,
         obs: dict[str, Any],
-    ) -> "PrimitiveObservationFacts":
+    ) -> PrimitiveObservationFacts:
         return self.ports.observation_facts(obs)
 
     @staticmethod

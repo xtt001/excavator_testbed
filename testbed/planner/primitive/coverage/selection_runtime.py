@@ -9,6 +9,10 @@ from typing import Any
 import numpy as np
 
 from testbed.planner.primitive.coverage.config import PrimitiveCoverageStaticConfig
+from testbed.planner.primitive.coverage.continuous_worktool_sweep import (
+    CONTINUOUS_GOAL_3D_PREDICTOR_MISSING,
+    ContinuousGoalQposSweepPredictor,
+)
 from testbed.planner.primitive.coverage.execution_runtime import (
     CoverageExecutionLibraryRuntime,
     compact_execution_candidate_trace,
@@ -49,6 +53,12 @@ class PrimitiveCoverageSelectionRuntimePorts:
     maybe_reopen_pass: Callable[[dict[str, Any], str], bool]
     request_terminal_stop: Callable[[str], None]
     record_decision_event: Callable[..., None]
+    continuous_goal_qpos_sweep_predictor: (
+        ContinuousGoalQposSweepPredictor | None
+    ) = None
+    continuous_goal_execution_plan_provider: Callable[..., tuple[Any, Any]] | None = (
+        None
+    )
 
 
 @dataclass(frozen=True)
@@ -113,6 +123,14 @@ class PrimitiveCoverageSelectionRuntime:
         *,
         update_state: bool,
     ) -> tuple[CoverageCorridorState, dict[str, float | int]]:
+        if (
+            self.ports.static_config.dig_cut_planner_mode
+            == "continuous_goal_conditioned"
+        ):
+            return self._select_next_continuous_goal_plan(
+                obs,
+                update_state=update_state,
+            )
         if self.ports.static_config.execution_library.enabled:
             return self._select_next_execution_library_plan(
                 obs,
@@ -156,6 +174,74 @@ class PrimitiveCoverageSelectionRuntime:
                 },
             )
             return corridor, raw_fields
+
+    def _select_next_continuous_goal_plan(
+        self,
+        obs: dict[str, Any],
+        *,
+        update_state: bool,
+    ) -> tuple[CoverageCorridorState, dict[str, float | int]]:
+        predictor = self.ports.continuous_goal_qpos_sweep_predictor
+        if predictor is None:
+            exc = NoWallSafeCorridorError(
+                detail="no production continuous goal to qpos sweep provider",
+                reason=CONTINUOUS_GOAL_3D_PREDICTOR_MISSING,
+            )
+            self._record_no_wall_safe_corridor(obs, exc)
+            raise exc
+        provider = self.ports.continuous_goal_execution_plan_provider
+        if provider is None:
+            exc = NoWallSafeCorridorError(
+                detail="continuous goal execution-plan provider missing",
+                reason="continuous_goal_contract_invalid",
+            )
+            self._record_no_wall_safe_corridor(obs, exc)
+            raise exc
+        try:
+            corridor, locked_plan = provider(
+                obs,
+                predictor=predictor,
+                update_state=update_state,
+            )
+            raw_fields = dict(getattr(locked_plan, "raw_fields", {}) or {})
+            goal_id = str(getattr(locked_plan, "goal_id", ""))
+            if (
+                not isinstance(corridor, CoverageCorridorState)
+                or len(goal_id) != 64
+                or not raw_fields
+            ):
+                raise ValueError("incomplete locked continuous execution plan")
+        except Exception as error:
+            exc = NoWallSafeCorridorError(
+                detail=str(error),
+                reason="continuous_goal_contract_invalid",
+            )
+            self._record_no_wall_safe_corridor(obs, exc)
+            raise exc from error
+        if update_state:
+            self.ports.state.set_active_continuous_execution_plan(
+                corridor=corridor,
+                locked_plan=locked_plan,
+            )
+        self.ports.record_decision_event(
+            "continuous_goal_execution_plan_locked",
+            obs=obs,
+            corridor=corridor,
+            extra={
+                "goal_id": goal_id,
+                "raw_fields_sha256": str(
+                    getattr(locked_plan, "raw_fields_sha256", "")
+                ),
+                "planned_qpos_path_sha256": str(
+                    getattr(
+                        locked_plan,
+                        "planned_qpos_path_sha256",
+                        "",
+                    )
+                ),
+            },
+        )
+        return corridor, raw_fields
 
     def _select_next_execution_library_plan(
         self,

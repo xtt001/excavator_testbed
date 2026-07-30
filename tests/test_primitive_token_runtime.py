@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import fields
+from types import SimpleNamespace
+
 import numpy as np
+import pytest
 
 from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.operator_first_v2_2 import (
@@ -9,11 +12,14 @@ from testbed.data.operator_first_v2_2 import (
     RETURN_START_ENVELOPE_TOKEN_DIM,
     RETURN_TARGET_TOKEN_DIM,
 )
+from testbed.planner.primitive.coverage.start_reachability import (
+    CoverageTupleStartReachabilityEvaluation,
+)
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.token.runtime import (
     PrimitiveTokenRuntimeCoordinator,
     PrimitiveTokenRuntimePorts,
 )
-from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
@@ -148,9 +154,7 @@ def _ports(
                 state_view["bootstrap_policy_available"]
             ),
             cycle_index=lambda: int(state_view["cycle_index"]),
-            dig_cut_planner_enabled=lambda: bool(
-                state_view["dig_cut_planner_enabled"]
-            ),
+            dig_cut_planner_enabled=lambda: bool(state_view["dig_cut_planner_enabled"]),
             dig_cut_hold_token_until_skill_exit=lambda: bool(
                 state_view["dig_cut_hold_token_until_skill_exit"]
             ),
@@ -193,11 +197,9 @@ def test_terminal_stop_returns_cached_dig_copies_only_for_active_dig() -> None:
     token = PrimitiveTokenRuntimeCoordinator.from_ports(ports).dig_cut_tokens_for_obs(
         {"id": "obs"}
     )
-    depth = (
-        PrimitiveTokenRuntimeCoordinator.from_ports(
-            ports
-        ).dig_depth_profile_tokens_for_obs({"id": "obs"})
-    )
+    depth = PrimitiveTokenRuntimeCoordinator.from_ports(
+        ports
+    ).dig_depth_profile_tokens_for_obs({"id": "obs"})
 
     assert events == []
     assert token is not state["dig_cut_tokens"]
@@ -315,9 +317,9 @@ def test_return_hold_cycle_hit_skips_rebuild_and_returns_copies() -> None:
 def test_ensure_return_target_success_writes_tokens_and_pending_plan() -> None:
     ports, state, events = _ports(state={"skill": "return"})
 
-    PrimitiveTokenRuntimeCoordinator.from_ports(ports).ensure_return_target_plan_for_cycle(
-        {"id": "ret"}
-    )
+    PrimitiveTokenRuntimeCoordinator.from_ports(
+        ports
+    ).ensure_return_target_plan_for_cycle({"id": "ret"})
 
     assert events == [
         "build_return_plan:ret",
@@ -355,7 +357,158 @@ def test_ensure_return_target_success_writes_tokens_and_pending_plan() -> None:
     assert float(state["pending_dig_state_exemplar_distance"]) == 1.25
 
 
-def test_ensure_return_target_exception_writes_fallback_and_invalidates_pending() -> None:
+def test_continuous_return_commits_same_goal_envelope_without_legacy_builder() -> None:
+    ports, state, events = _ports(
+        state={
+            "skill": "return",
+            "return_target_hold_token_until_skill_exit": True,
+        }
+    )
+    coverage_state = state["coverage_state"]
+    assert isinstance(coverage_state, CoverageRuntimeState)
+    goal_id = "e" * 64
+    raw_fields = {"operator_entry_x_m": 1.5}
+    dig_token = _token(DIG_CUT_TOKEN_DIM, 13.0)
+    envelope_token = _token(RETURN_START_ENVELOPE_TOKEN_DIM, 0.25)
+    locked_plan = SimpleNamespace(
+        goal_id=goal_id,
+        raw_fields=raw_fields,
+        dig_token=dig_token,
+        return_envelope=SimpleNamespace(
+            goal_id=goal_id,
+            token=envelope_token,
+        ),
+    )
+    coverage_state.coverage_active_continuous_execution_plan = locked_plan
+
+    runtime = PrimitiveTokenRuntimeCoordinator.from_ports(ports)
+    runtime.ensure_return_target_plan_for_cycle({"id": "continuous"})
+    relocate = runtime.return_relocate_tokens_for_obs({"id": "continuous"})
+
+    assert events == ["build_return_plan:continuous"]
+    assert relocate is None
+    assert state["pending_dig_locked_execution_plan"] is locked_plan
+    assert state["return_start_envelope_token_source"] == "continuous_cut_goal"
+    assert state["return_start_envelope_use_prior_spatial_bounds"] is False
+    assert state["return_start_envelope_use_prior_qpos_bounds"] is False
+    assert state["pending_dig_state_exemplar_ids"] == []
+    assert np.isnan(state["pending_dig_state_exemplar_distance"])
+    np.testing.assert_array_equal(
+        state["return_start_envelope_tokens"],
+        envelope_token,
+    )
+
+
+def test_exact_paired_return_token_is_committed_without_cell_prior_builder() -> None:
+    ports, state, events = _ports(state={"skill": "return"})
+    coverage_state = state["coverage_state"]
+    assert isinstance(coverage_state, CoverageRuntimeState)
+    exact_token = tuple(float(value) for value in range(18))
+    exact_mask = (1,) * 18
+    evaluation = CoverageTupleStartReachabilityEvaluation(
+        profile="strict_train_return_start_reachability_11d_v1",
+        eligible=True,
+        rejection_reason="",
+        selection_phase="post_return",
+        exemplar_id="episode_168",
+        raw_fields_sha256="a" * 64,
+        artifact_sha256="b" * 64,
+        paired_return_primitive_episode_id=158,
+        paired_return_exemplar_id="episode_158",
+        exact_return_start_envelope_tokens=exact_token,
+        exact_return_start_envelope_valid_mask=exact_mask,
+        paired_handoff_facts=(0.5,) * 11,
+    )
+    coverage_state.set_active_execution_candidate(
+        corridor_id=1_000_168,
+        effect_outcome_cell_id=1,
+        return_envelope_cell_id=0,
+        exemplar_id="episode_168",
+        raw_fields={"operator_entry_x_m": 1.5},
+        raw_fields_sha256="a" * 64,
+        execution_tail_plane_depth_reserve_m=0.01,
+        start_reachability_evaluation=evaluation,
+    )
+
+    PrimitiveTokenRuntimeCoordinator.from_ports(
+        ports
+    ).ensure_return_target_plan_for_cycle({"id": "ret"})
+
+    assert events == ["build_return_plan:ret"]
+    np.testing.assert_allclose(
+        state["return_start_envelope_tokens"],
+        np.asarray(exact_token, dtype=np.float32),
+    )
+    assert (
+        state["return_start_envelope_token_source"]
+        == "strict_train_gold_return:episode_158"
+    )
+    assert state["return_start_envelope_use_prior_spatial_bounds"] is False
+    assert state["return_start_envelope_use_prior_qpos_bounds"] is False
+    assert state["pending_dig_exact_start_contract_required"] is True
+    np.testing.assert_array_equal(
+        state["pending_dig_exact_return_envelope_valid_mask"],
+        np.ones(18, dtype=np.uint8),
+    )
+    assert state["pending_dig_execution_exemplar_id"] == "episode_168"
+    assert state["pending_dig_execution_raw_fields_sha256"] == "a" * 64
+    assert state["pending_dig_paired_return_primitive_episode_id"] == 158
+    assert state["pending_dig_paired_return_exemplar_id"] == "episode_158"
+    assert state["pending_dig_return_transition_artifact_sha256"] == "b" * 64
+
+
+def test_exact_return_plan_validation_is_atomic() -> None:
+    ports, state, _ = _ports(state={"skill": "return"})
+    token_state = ports.state
+    old_target = token_state.return_target_tokens.copy()
+    old_pending_cycle = token_state.pending_dig_cut_cycle_id
+
+    with pytest.raises(
+        ValueError,
+        match="exact return plan identity or valid-mask contract invalid",
+    ):
+        token_state.commit_return_plan(
+            return_target_tokens=_token(RETURN_TARGET_TOKEN_DIM, 13.0),
+            return_start_envelope_tokens=_token(
+                RETURN_START_ENVELOPE_TOKEN_DIM,
+                14.0,
+            ),
+            return_start_envelope_token_source="strict_train_gold_return:episode_158",
+            return_start_envelope_use_prior_spatial_bounds=False,
+            return_start_envelope_use_prior_qpos_bounds=False,
+            return_target_token_source="operator_prior_coverage",
+            return_target_fallback_reason="",
+            return_target_planned_cycle_id=3,
+            pending_dig_cut_cycle_id=4,
+            pending_dig_cut_raw_fields={"operator_entry_x_m": 1.5},
+            pending_dig_cut_tokens=_token(DIG_CUT_TOKEN_DIM, 13.0),
+            pending_dig_cut_corridor_id=42,
+            pending_dig_execution_exemplar_id="episode_168",
+            pending_dig_execution_raw_fields_sha256="a" * 64,
+            pending_dig_paired_return_primitive_episode_id=158,
+            pending_dig_paired_return_exemplar_id="",
+            pending_dig_return_transition_artifact_sha256="b" * 64,
+            pending_dig_exact_start_contract_required=True,
+            pending_dig_exact_return_envelope_valid_mask=np.ones(
+                RETURN_START_ENVELOPE_TOKEN_DIM,
+                dtype=np.uint8,
+            ),
+            pending_dig_depth_profile_tokens=_token(
+                DIG_DEPTH_PROFILE_TOKEN_DIM,
+                8.0,
+            ),
+            pending_dig_state_exemplar_ids=["ex_a"],
+            pending_dig_state_exemplar_distance=1.25,
+        )
+
+    np.testing.assert_array_equal(token_state.return_target_tokens, old_target)
+    assert token_state.pending_dig_cut_cycle_id == old_pending_cycle
+    assert state["pending_dig_paired_return_exemplar_id"] == ""
+
+
+def test_ensure_return_target_exception_writes_fallback_and_invalidates_pending() -> (
+    None
+):
     def fail_build_return_plan(obs: dict):
         raise RuntimeError("bad return plan")
 
@@ -371,9 +524,9 @@ def test_ensure_return_target_exception_writes_fallback_and_invalidates_pending(
         }
     )
 
-    PrimitiveTokenRuntimeCoordinator.from_ports(ports).ensure_return_target_plan_for_cycle(
-        {"id": "ret"}
-    )
+    PrimitiveTokenRuntimeCoordinator.from_ports(
+        ports
+    ).ensure_return_target_plan_for_cycle({"id": "ret"})
 
     np.testing.assert_allclose(
         state["return_target_tokens"],
@@ -393,7 +546,46 @@ def test_ensure_return_target_exception_writes_fallback_and_invalidates_pending(
     assert state["pending_dig_depth_profile_tokens"] is None
     assert state["pending_dig_state_exemplar_ids"] == []
     assert np.isnan(float(state["pending_dig_state_exemplar_distance"]))
+    assert state["pending_dig_execution_exemplar_id"] == ""
+    assert state["pending_dig_execution_raw_fields_sha256"] == ""
+    assert state["pending_dig_paired_return_primitive_episode_id"] == -1
+    assert state["pending_dig_paired_return_exemplar_id"] == ""
+    assert state["pending_dig_return_transition_artifact_sha256"] == ""
+    assert state["pending_dig_exact_start_contract_required"] is False
+    assert state["pending_dig_exact_return_envelope_valid_mask"] is None
     assert events == []
+
+
+def test_strict_return_planning_propagates_missing_artifact_or_cycle_error() -> None:
+    def fail_build_return_plan(obs: dict):
+        raise RuntimeError("planned_effect_artifact_or_candidate_cycle_missing")
+
+    ports, state, _ = _ports(state={"skill": "return"})
+    ports = PrimitiveTokenRuntimePorts(
+        **{
+            field.name: (
+                fail_build_return_plan
+                if field.name == "build_next_dig_cut_plan_for_return"
+                else (lambda: False)
+                if field.name == "allow_return_plan_fallback"
+                else getattr(ports, field.name)
+            )
+            for field in fields(PrimitiveTokenRuntimePorts)
+        }
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="planned_effect_artifact_or_candidate_cycle_missing",
+    ):
+        PrimitiveTokenRuntimeCoordinator.from_ports(
+            ports
+        ).ensure_return_target_plan_for_cycle({"id": "ret"})
+
+    assert state["return_target_token_source"] == "none"
+    assert int(state["pending_dig_cut_cycle_id"]) == -1
+    assert state["pending_dig_cut_tokens"] is None
+    assert state["pending_dig_exact_start_contract_required"] is False
 
 
 def test_clear_dig_cut_plan_and_invalidate_pending_plan_reset_exact_fields() -> None:
@@ -429,9 +621,39 @@ def test_clear_dig_cut_plan_and_invalidate_pending_plan_reset_exact_fields() -> 
     assert np.isnan(float(state["pending_dig_state_exemplar_distance"]))
 
 
+def test_invalidate_return_plan_clears_all_held_return_and_pending_dig_state() -> None:
+    ports, state, _ = _ports(state={"skill": "return"})
+    runtime = PrimitiveTokenRuntimeCoordinator.from_ports(ports)
+
+    runtime.invalidate_return_plan()
+
+    assert int(state["return_target_planned_cycle_id"]) == -1
+    np.testing.assert_allclose(
+        state["return_target_tokens"],
+        np.zeros(RETURN_TARGET_TOKEN_DIM, dtype=np.float32),
+    )
+    np.testing.assert_allclose(
+        state["return_relocate_tokens"],
+        np.zeros(RETURN_TARGET_TOKEN_DIM, dtype=np.float32),
+    )
+    np.testing.assert_allclose(
+        state["return_start_envelope_tokens"],
+        np.zeros(RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.float32),
+    )
+    assert state["return_target_token_source"] == "none"
+    assert state["return_start_envelope_token_source"] == "none"
+    assert state["return_target_fallback_reason"] == ""
+    assert int(state["pending_dig_cut_cycle_id"]) == -1
+    assert int(state["pending_dig_cut_corridor_id"]) == -1
+    assert state["pending_dig_cut_raw_fields"] is None
+    assert state["pending_dig_cut_tokens"] is None
+
+
 def test_token_runtime_boundary_uses_typed_ports_without_planner_self() -> None:
     port_fields = {field.name for field in fields(PrimitiveTokenRuntimePorts)}
-    coordinator_fields = {field.name for field in fields(PrimitiveTokenRuntimeCoordinator)}
+    coordinator_fields = {
+        field.name for field in fields(PrimitiveTokenRuntimeCoordinator)
+    }
 
     assert "state" in port_fields
     assert "coverage_state" in port_fields

@@ -16,11 +16,15 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
     ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
 )
-from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.effects.continuous_goal_handoff import (
+    ContinuousGoalHandoffGuardService,
+    ContinuousGoalHandoffGuardState,
+)
 from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
 from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
 
 
@@ -146,12 +150,13 @@ class ReturnStartEnvelopeGateInputs:
     token: Any
     env_state: Any
     qpos: Any
+    qvel: Any
     prior_bounds: Callable[[], tuple[np.ndarray | None, np.ndarray | None]]
     prior_mapping: Callable[[], dict[str, object] | None]
     use_prior_spatial_bounds: bool
     use_prior_qpos_bounds: bool
-    qvel: Any = ()
     exact_contract_required: bool = False
+    continuous_contract_required: bool = False
     use_prior_depth_bounds: bool = True
     exact_valid_mask: Any = None
 
@@ -184,21 +189,34 @@ class ReturnStartEnvelopeGateService:
             )
 
         token = np.asarray(inputs.token, dtype=np.float32).reshape(-1)
+        strict_contract_required = bool(
+            inputs.exact_contract_required
+            or inputs.continuous_contract_required
+        )
         if token.shape[0] != RETURN_START_ENVELOPE_TOKEN_DIM:
             return ReturnStartEnvelopeGateResult(
-                ready=not inputs.exact_contract_required,
+                ready=not strict_contract_required,
                 error=float("nan"),
                 checks={"missing_token": True},
             )
         if not bool(np.all(np.isfinite(token))):
             return ReturnStartEnvelopeGateResult(
-                ready=not inputs.exact_contract_required,
+                ready=not strict_contract_required,
                 error=float("nan"),
                 checks={"nonfinite_token": True},
             )
-        if float(token[16]) <= 0.5 and float(token[17]) <= 0.5:
+        if (
+            float(token[16]) <= 0.5
+            and float(token[17]) <= 0.5
+        ) or (
+            inputs.continuous_contract_required
+            and (
+                float(token[16]) <= 0.5
+                or float(token[17]) <= 0.5
+            )
+        ):
             return ReturnStartEnvelopeGateResult(
-                ready=not inputs.exact_contract_required,
+                ready=not strict_contract_required,
                 error=float("nan"),
                 checks={"invalid_token": True},
             )
@@ -351,7 +369,7 @@ class ReturnStartEnvelopeGateService:
                     }
                 )
             elif (
-                inputs.exact_contract_required
+                strict_contract_required
                 and len(env_state)
                 > ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX
             ):
@@ -379,7 +397,7 @@ class ReturnStartEnvelopeGateService:
                 state.checks["plane_depth_m"].update(
                     {"mode": "token_range"}
                 )
-            elif inputs.exact_contract_required:
+            elif strict_contract_required:
                 state.ready = False
                 state.checks["plane_depth_missing"] = True
 
@@ -480,6 +498,9 @@ class ReturnHandoffReadinessService:
 
     def entry_target(self) -> tuple[float, float] | None:
         ports = self.ports
+        continuous_contract_required = bool(
+            ports.token_state.pending_dig_locked_execution_plan is not None
+        )
         raw_fields = ports.token_state.pending_dig_cut_raw_fields
         if (
             raw_fields is not None
@@ -490,6 +511,10 @@ class ReturnHandoffReadinessService:
             entry_z = float(raw_fields.get("operator_entry_z_m", float("nan")))
             if np.isfinite(entry_x) and np.isfinite(entry_z):
                 return entry_x, entry_z
+            if continuous_contract_required:
+                return None
+        elif continuous_contract_required:
+            return None
         corridor = ports.coverage_state.active_corridor()
         if corridor is None:
             return None
@@ -517,10 +542,16 @@ class ReturnHandoffReadinessService:
             ports.ensure_return_target_plan_for_cycle(obs)
         entry_error = self.entry_error_for_obs(obs)
         max_entry_error = ports.config.max_entry_error_m
+        continuous_contract_required = bool(
+            ports.token_state.pending_dig_locked_execution_plan is not None
+        )
         if max_entry_error is None:
-            close = True
+            close = bool(
+                not continuous_contract_required
+                or np.isfinite(entry_error)
+            )
         elif not np.isfinite(entry_error):
-            close = True
+            close = not continuous_contract_required
         else:
             close = bool(float(entry_error) <= float(max_entry_error))
         ports.return_state.set_entry_close_result(
@@ -556,6 +587,12 @@ class ReturnHandoffReadinessService:
         result = self.ports.start_envelope_gate_service.evaluate(
             self.start_envelope_gate_inputs(obs)
         )
+        locked_plan = self.ports.token_state.pending_dig_locked_execution_plan
+        if locked_plan is not None:
+            result = self._apply_continuous_goal_stable_hold(
+                result,
+                locked_plan=locked_plan,
+            )
         self.apply_start_envelope_gate_result(result)
         return bool(result.ready)
 
@@ -569,12 +606,8 @@ class ReturnHandoffReadinessService:
         ports = self.ports
         observation = self._observation(obs)
         corridor_id = int(ports.token_state.pending_dig_cut_corridor_id)
-        exact_contract_required = bool(
-            getattr(
-                ports.token_state,
-                "pending_dig_exact_start_contract_required",
-                False,
-            )
+        continuous_contract_required = bool(
+            ports.token_state.pending_dig_locked_execution_plan is not None
         )
         return ReturnStartEnvelopeGateInputs(
             token=ports.token_state.return_start_envelope_tokens,
@@ -593,13 +626,97 @@ class ReturnHandoffReadinessService:
             use_prior_qpos_bounds=(
                 ports.token_state.return_start_envelope_use_prior_qpos_bounds
             ),
-            exact_contract_required=exact_contract_required,
-            use_prior_depth_bounds=not exact_contract_required,
-            exact_valid_mask=getattr(
-                ports.token_state,
-                "pending_dig_exact_return_envelope_valid_mask",
-                None,
+            exact_contract_required=bool(
+                ports.token_state.pending_dig_exact_start_contract_required
             ),
+            continuous_contract_required=continuous_contract_required,
+            use_prior_depth_bounds=not bool(
+                ports.token_state.pending_dig_exact_start_contract_required
+                or continuous_contract_required
+            ),
+            exact_valid_mask=(
+                ports.token_state.pending_dig_exact_return_envelope_valid_mask
+            ),
+        )
+
+    def _apply_continuous_goal_stable_hold(
+        self,
+        result: ReturnStartEnvelopeGateResult,
+        *,
+        locked_plan: Any,
+    ) -> ReturnStartEnvelopeGateResult:
+        ports = self.ports
+        return_state = ports.return_state
+        pending_cycle_id = int(ports.token_state.pending_dig_cut_cycle_id)
+        expected_goal_id = str(getattr(locked_plan, "goal_id", ""))
+        if (
+            int(return_state.continuous_goal_handoff_cycle_id)
+            != pending_cycle_id
+        ):
+            return_state.reset_continuous_goal_handoff(
+                cycle_id=pending_cycle_id,
+                goal_id=expected_goal_id,
+            )
+        guard_state = ContinuousGoalHandoffGuardState(
+            goal_id=str(return_state.continuous_goal_handoff_goal_id),
+            hold_count=int(return_state.continuous_goal_handoff_hold_count),
+            first_ready_step=(
+                return_state.continuous_goal_handoff_first_ready_step
+            ),
+        )
+        envelope = getattr(locked_plan, "return_envelope", None)
+        entry_error_m = float(return_state.return_to_dig_entry_error_m)
+        entry_evaluated = bool(
+            return_state.return_to_dig_entry_evaluated_state
+        )
+        entry_close = bool(return_state.return_to_dig_entry_close_state)
+        entry_ok = bool(
+            entry_evaluated
+            and entry_close
+            and np.isfinite(entry_error_m)
+        )
+        base_checks = dict(result.checks)
+        base_checks["entry_target"] = {
+            "value": entry_error_m,
+            "max": self.ports.config.max_entry_error_m,
+            "evaluated": entry_evaluated,
+            "ok": entry_ok,
+        }
+        guard_result = ContinuousGoalHandoffGuardService(
+            hold_steps=3
+        ).evaluate(
+            guard_state,
+            expected_goal_id=expected_goal_id,
+            envelope_goal_id=str(getattr(envelope, "goal_id", "")),
+            return_step=int(return_state.return_step_count),
+            token=ports.token_state.return_start_envelope_tokens,
+            prior_independent_depth_m=float(
+                getattr(envelope, "terrain_local_depth_m", float("nan"))
+            ),
+            prior_independent_plane_depth_m=float(
+                getattr(envelope, "terrain_plane_depth_m", float("nan"))
+            ),
+            base_ready=bool(result.ready and entry_ok),
+            base_checks=base_checks,
+        )
+        return_state.apply_continuous_goal_handoff_result(
+            goal_id=guard_state.goal_id,
+            hold_count=guard_result.hold_count,
+            first_ready_step=guard_result.first_ready_step,
+        )
+        checks = dict(result.checks)
+        checks["continuous_goal_handoff"] = {
+            "goal_id": expected_goal_id,
+            "hold_count": int(guard_result.hold_count),
+            "hold_steps": 3,
+            "first_ready_step": guard_result.first_ready_step,
+            "violations": dict(guard_result.violations),
+            "ok": bool(guard_result.ready),
+        }
+        return ReturnStartEnvelopeGateResult(
+            ready=bool(guard_result.ready),
+            error=float(result.error),
+            checks=checks,
         )
 
     def apply_start_envelope_gate_result(

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import fields
-from types import MethodType
 from types import SimpleNamespace
 from typing import Any
 
@@ -13,35 +12,35 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
     ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
 )
 from testbed.planner.primitive.coverage.selection import CoverageCorridorState
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.decision.contracts import SetReturnOrDirectHandoffEffect
+from testbed.planner.primitive.effects.requested import (
+    PrimitiveRequestedEffectRuntime,
+    PrimitiveRequestedEffectRuntimePorts,
+)
 from testbed.planner.primitive.effects.return_handoff import (
+    ReturnDirectHandoffEffectPorts,
+    ReturnDirectHandoffEffectService,
     ReturnHandoffReadinessConfig,
     ReturnHandoffReadinessPorts,
     ReturnHandoffReadinessService,
-    ReturnDirectHandoffEffectPorts,
-    ReturnDirectHandoffEffectService,
     ReturnStartEnvelopeGateConfig,
     ReturnStartEnvelopeGateInputs,
     ReturnStartEnvelopeGateResult,
     ReturnStartEnvelopeGateService,
 )
 from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive.decision.contracts import SetReturnOrDirectHandoffEffect
-from testbed.planner.primitive.effects.requested import (
-    PrimitiveRequestedEffectRuntime,
-    PrimitiveRequestedEffectRuntimePorts,
-)
+from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive.execution.state import (
     PrimitiveExecutionRuntimeState,
 )
-from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
 from testbed.policies.hybrid.primitive_planner import (
     PRE_DIG_ALIGN_SKILL_NAME,
@@ -122,11 +121,15 @@ def _inputs(
     token: np.ndarray | list[float] | None = None,
     env_state: np.ndarray | None = None,
     qpos: np.ndarray | None = None,
+    qvel: np.ndarray | None = None,
     prior_mapping: dict[str, object] | None = None,
     lower: np.ndarray | None = None,
     upper: np.ndarray | None = None,
     use_prior_spatial_bounds: bool = False,
     use_prior_qpos_bounds: bool = False,
+    exact_contract_required: bool = False,
+    use_prior_depth_bounds: bool = True,
+    exact_valid_mask: np.ndarray | None = None,
 ) -> ReturnStartEnvelopeGateInputs:
     return ReturnStartEnvelopeGateInputs(
         token=_token() if token is None else token,
@@ -136,10 +139,22 @@ def _inputs(
             if qpos is None
             else qpos
         ),
+        qvel=(
+            np.zeros(4, dtype=np.float32)
+            if qvel is None
+            else qvel
+        ),
         prior_bounds=lambda: (lower, upper),
         prior_mapping=lambda: prior_mapping,
         use_prior_spatial_bounds=use_prior_spatial_bounds,
         use_prior_qpos_bounds=use_prior_qpos_bounds,
+        exact_contract_required=exact_contract_required,
+        use_prior_depth_bounds=use_prior_depth_bounds,
+        exact_valid_mask=(
+            np.ones(RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.uint8)
+            if exact_valid_mask is None and exact_contract_required
+            else exact_valid_mask
+        ),
     )
 
 
@@ -236,6 +251,7 @@ def _direct_handoff_ports(
     direct_handoff_ready: bool = True,
     should_pre_dig_align_before_dig: bool = False,
     next_skill: str = "dig",
+    final_handoff_eligible: bool = True,
 ) -> ReturnDirectHandoffEffectPorts:
     execution_state = PrimitiveExecutionRuntimeState.fresh(
         initial_skill_name=current_skill,
@@ -283,6 +299,22 @@ def _direct_handoff_ports(
         should_pre_dig_align_before_dig=lambda: should_pre_dig_align_before_dig,
         pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
         dig_skill_name="dig",
+        final_handoff_guard=(
+            lambda obs: SimpleNamespace(
+                required=True,
+                eligible=final_handoff_eligible,
+                rejection_reason=(
+                    ""
+                    if final_handoff_eligible
+                    else "worktool_3d_clearance_below_minimum"
+                ),
+            )
+        ),
+        request_terminal_neutral=(
+            lambda obs, reason: events.append(
+                f"terminal:{obs['tag']}:{reason}"
+            )
+        ),
     )
 
 
@@ -300,6 +332,29 @@ def test_return_direct_handoff_ports_use_focused_state_owners() -> None:
     assert "readiness_service" in port_fields
     assert "should_pre_dig_align_before_dig" in port_fields
     assert "pre_dig_align_skill_name" in port_fields
+    assert "final_handoff_guard" in port_fields
+    assert "request_terminal_neutral" in port_fields
+
+
+def test_final_live_3d_failure_blocks_handoff_and_requests_neutral_terminal() -> None:
+    events: list[str] = []
+    service = ReturnDirectHandoffEffectService(
+        ports=_direct_handoff_ports(
+            events,
+            current_skill="return",
+            final_handoff_eligible=False,
+        )
+    )
+
+    result = service.try_direct_handoff({"tag": "obs"})
+
+    assert result.direct_handoff_applied is False
+    assert result.switch_reason == "worktool_3d_clearance_below_minimum"
+    assert "complete" not in events
+    assert not any(event.startswith("set:dig:") for event in events)
+    assert events[-1] == (
+        "terminal:obs:worktool_3d_clearance_below_minimum"
+    )
 
 
 def test_policy_no_longer_exposes_old_return_handoff_readiness_wrappers() -> None:
@@ -363,6 +418,117 @@ def test_return_handoff_readiness_prefers_pending_next_cycle_raw_entry_target() 
     assert close is True
     assert return_state.return_to_dig_entry_error_m == pytest.approx(0.2)
     assert return_state.return_to_dig_entry_close_state is True
+
+
+def test_locked_continuous_goal_handoff_is_held_for_three_ready_ticks() -> None:
+    goal_id = "d" * 64
+    token_state = PrimitiveTokenRuntimeState.fresh()
+    token_state.pending_dig_cut_cycle_id = 4
+    token_state.pending_dig_cut_raw_fields = {
+        "operator_entry_x_m": 1.0,
+        "operator_entry_z_m": 2.0,
+    }
+    token_state.return_start_envelope_tokens = _token()
+    token_state.pending_dig_locked_execution_plan = SimpleNamespace(
+        goal_id=goal_id,
+        return_envelope=SimpleNamespace(
+            goal_id=goal_id,
+            terrain_local_depth_m=0.12,
+            terrain_plane_depth_m=0.10,
+        ),
+    )
+    return_state = PrimitiveReturnRuntimeState.fresh()
+    cycle_state = PrimitiveCycleRuntimeState.fresh()
+    cycle_state.cycle_index = 3
+    service = _readiness_service(
+        cycle_state=cycle_state,
+        token_state=token_state,
+        return_state=return_state,
+        gate_results=[
+            ReturnStartEnvelopeGateResult(
+                ready=True,
+                error=0.0,
+                checks={"qpos_0": {"ok": True}},
+            )
+        ],
+    )
+
+    readiness: list[bool] = []
+    for step in (30, 31, 32):
+        return_state.return_step_count = step
+        readiness.append(
+            service.handoff_ready(
+                {
+                    "tag": str(step),
+                    "env_state": _return_handoff_env(
+                        bucket_x=1.0,
+                        bucket_z=2.0,
+                    ),
+                    "qpos": np.zeros(4, dtype=np.float32),
+                    "qvel": np.zeros(4, dtype=np.float32),
+                }
+            )
+        )
+
+    assert readiness == [False, False, True]
+    assert return_state.continuous_goal_handoff_hold_count == 3
+    assert return_state.continuous_goal_handoff_first_ready_step == 32
+    checks = return_state.return_to_dig_start_envelope_checks
+    assert checks["continuous_goal_handoff"]["goal_id"] == goal_id
+    assert checks["continuous_goal_handoff"]["violations"] == {}
+
+
+def test_locked_continuous_goal_handoff_fails_closed_on_nan_entry() -> None:
+    goal_id = "e" * 64
+    token_state = PrimitiveTokenRuntimeState.fresh()
+    token_state.pending_dig_cut_cycle_id = 4
+    token_state.pending_dig_cut_raw_fields = {
+        "operator_entry_x_m": float("nan"),
+        "operator_entry_z_m": 2.0,
+    }
+    token_state.return_start_envelope_tokens = _token()
+    token_state.pending_dig_locked_execution_plan = SimpleNamespace(
+        goal_id=goal_id,
+        return_envelope=SimpleNamespace(
+            goal_id=goal_id,
+            terrain_local_depth_m=0.12,
+            terrain_plane_depth_m=0.10,
+        ),
+    )
+    return_state = PrimitiveReturnRuntimeState.fresh()
+    cycle_state = PrimitiveCycleRuntimeState.fresh()
+    cycle_state.cycle_index = 3
+    service = _readiness_service(
+        cycle_state=cycle_state,
+        token_state=token_state,
+        return_state=return_state,
+        gate_results=[
+            ReturnStartEnvelopeGateResult(
+                ready=True,
+                error=0.0,
+                checks={"qpos_0": {"ok": True}},
+            )
+        ],
+    )
+
+    ready = service.handoff_ready(
+        {
+            "tag": "nan-entry",
+            "env_state": _return_handoff_env(
+                bucket_x=1.0,
+                bucket_z=2.0,
+            ),
+            "qpos": np.zeros(4, dtype=np.float32),
+            "qvel": np.zeros(4, dtype=np.float32),
+        }
+    )
+
+    assert ready is False
+    assert return_state.continuous_goal_handoff_hold_count == 0
+    violations = return_state.return_to_dig_start_envelope_checks[
+        "continuous_goal_handoff"
+    ]["violations"]
+    assert violations["entry_target"]["ok"] is False
 
 
 def test_return_handoff_readiness_falls_back_to_active_corridor_entry_target() -> None:
@@ -678,6 +844,88 @@ def test_start_envelope_gate_records_qpos_checks_and_missing_payload() -> None:
 
     assert missing.ready is False
     assert missing.checks["qpos_missing"] is True
+
+
+def test_start_envelope_gate_enforces_token_qvel_limit() -> None:
+    token = _token()
+    token[15] = 0.05
+
+    accepted = ReturnStartEnvelopeGateService(config=_config()).evaluate(
+        _inputs(token=token, qvel=np.asarray([0.01, -0.04, 0.05, 0.0]))
+    )
+    rejected = ReturnStartEnvelopeGateService(config=_config()).evaluate(
+        _inputs(token=token, qvel=np.asarray([0.01, -0.051, 0.0, 0.0]))
+    )
+    missing = ReturnStartEnvelopeGateService(config=_config()).evaluate(
+        _inputs(token=token, qvel=np.asarray([0.0, 0.0, 0.0]))
+    )
+
+    assert accepted.ready is True
+    assert accepted.checks["qvel_abs_max"]["ok"] is True
+    assert rejected.ready is False
+    assert rejected.checks["qvel_abs_max"]["ok"] is False
+    assert missing.ready is False
+    assert missing.checks["qvel_missing"] is True
+
+
+def test_exact_start_envelope_fails_closed_on_invalid_token_or_mask() -> None:
+    invalid_token = _token()
+    invalid_token[16:18] = 0.0
+
+    legacy = ReturnStartEnvelopeGateService(config=_config()).evaluate(
+        _inputs(token=invalid_token)
+    )
+    exact_invalid = ReturnStartEnvelopeGateService(config=_config()).evaluate(
+        _inputs(
+            token=invalid_token,
+            exact_contract_required=True,
+        )
+    )
+    exact_mask = ReturnStartEnvelopeGateService(config=_config()).evaluate(
+        _inputs(
+            exact_contract_required=True,
+            exact_valid_mask=np.asarray([1] * 17 + [0], dtype=np.uint8),
+        )
+    )
+
+    assert legacy.ready is True
+    assert exact_invalid.ready is False
+    assert exact_invalid.checks["invalid_token"] is True
+    assert exact_mask.ready is False
+    assert exact_mask.checks["invalid_exact_valid_mask"] is True
+
+
+def test_exact_start_envelope_does_not_read_cell_depth_prior() -> None:
+    token = _token()
+    env = _env_state()
+    env[ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX] = 0.12
+    env[ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX] = 0.12
+    prior = {
+        "dig_start_local_depth_m": {
+            "p05": 0.40,
+            "p50": 0.45,
+            "p95": 0.50,
+        },
+        "dig_start_plane_depth_m": {
+            "p05": 0.40,
+            "p50": 0.45,
+            "p95": 0.50,
+        },
+    }
+
+    result = ReturnStartEnvelopeGateService(config=_config()).evaluate(
+        _inputs(
+            token=token,
+            env_state=env,
+            prior_mapping=prior,
+            exact_contract_required=True,
+            use_prior_depth_bounds=False,
+        )
+    )
+
+    assert result.ready is True
+    assert result.checks["local_depth_m"]["mode"] == "token_range"
+    assert result.checks["plane_depth_m"]["mode"] == "token_range"
 
 
 def test_return_handoff_readiness_service_start_envelope_writes_cached_result() -> None:

@@ -61,15 +61,20 @@ class PrimitiveReturnRuntimeState:
     return_step_count: int = 0
     return_to_dig_entry_error_m: float = field(default_factory=lambda: float("nan"))
     return_to_dig_entry_close_state: bool = True
+    return_to_dig_entry_evaluated_state: bool = False
     return_next_dig_event_seen: bool = False
     return_to_dig_start_envelope_ready_state: bool = True
     return_to_dig_start_envelope_error: float = field(
         default_factory=lambda: float("nan")
     )
     return_to_dig_start_envelope_checks: dict[str, Any] = field(default_factory=dict)
+    continuous_goal_handoff_cycle_id: int = -1
+    continuous_goal_handoff_goal_id: str = ""
+    continuous_goal_handoff_hold_count: int = 0
+    continuous_goal_handoff_first_ready_step: int | None = None
 
     @classmethod
-    def fresh(cls) -> "PrimitiveReturnRuntimeState":
+    def fresh(cls) -> PrimitiveReturnRuntimeState:
         """Return a fresh return runtime state matching reset defaults."""
 
         return cls()
@@ -136,6 +141,31 @@ class PrimitiveReturnRuntimeState:
     ) -> None:
         self.return_to_dig_entry_error_m = float(error_m)
         self.return_to_dig_entry_close_state = bool(close)
+        self.return_to_dig_entry_evaluated_state = True
+
+    def reset_continuous_goal_handoff(
+        self,
+        *,
+        cycle_id: int,
+        goal_id: str,
+    ) -> None:
+        self.continuous_goal_handoff_cycle_id = int(cycle_id)
+        self.continuous_goal_handoff_goal_id = str(goal_id)
+        self.continuous_goal_handoff_hold_count = 0
+        self.continuous_goal_handoff_first_ready_step = None
+
+    def apply_continuous_goal_handoff_result(
+        self,
+        *,
+        goal_id: str,
+        hold_count: int,
+        first_ready_step: int | None,
+    ) -> None:
+        self.continuous_goal_handoff_goal_id = str(goal_id)
+        self.continuous_goal_handoff_hold_count = int(hold_count)
+        self.continuous_goal_handoff_first_ready_step = (
+            None if first_ready_step is None else int(first_ready_step)
+        )
 
 
 __all__ = ["PrimitiveReturnReportStatus", "PrimitiveReturnRuntimeState"]

@@ -32,8 +32,7 @@ class ReturnStartEnvelopeTokenBuilder(Protocol):
         raw_fields: dict[str, float | int],
         *,
         corridor_id: int | None = None,
-    ) -> np.ndarray:
-        ...
+    ) -> np.ndarray: ...
 
 
 @dataclass(frozen=True)
@@ -54,9 +53,12 @@ class PrimitiveTokenRuntimePorts:
     build_dig_cut_tokens_for_obs: Callable[[dict[str, Any]], np.ndarray]
     build_dig_depth_profile_tokens_for_obs: Callable[[dict[str, Any]], np.ndarray]
 
-    build_next_dig_cut_plan_for_return: Callable[[dict[str, Any]], ReturnTargetPlanTuple]
+    build_next_dig_cut_plan_for_return: Callable[
+        [dict[str, Any]], ReturnTargetPlanTuple
+    ]
     build_return_start_envelope_tokens_for_obs: ReturnStartEnvelopeTokenBuilder
     plan_return_relocate_tokens: Callable[[np.ndarray], np.ndarray]
+    allow_return_plan_fallback: Callable[[], bool] = lambda: True
 
     dig_skill_name: str = "dig"
     return_skill_name: str = "return"
@@ -73,7 +75,7 @@ class PrimitiveTokenRuntimeCoordinator:
     def from_ports(
         cls,
         ports: PrimitiveTokenRuntimePorts,
-    ) -> "PrimitiveTokenRuntimeCoordinator":
+    ) -> PrimitiveTokenRuntimeCoordinator:
         return cls(ports=ports)
 
     def dig_cut_tokens_for_obs(self, obs: dict[str, Any]) -> np.ndarray | None:
@@ -121,6 +123,8 @@ class PrimitiveTokenRuntimeCoordinator:
         if not self._return_tokens_available_for_obs():
             return None
         self.ensure_return_target_plan_for_cycle(obs)
+        if self.ports.state.pending_dig_locked_execution_plan is not None:
+            return None
         token = self.ports.plan_return_relocate_tokens(
             self.ports.state.return_target_tokens
         )
@@ -151,40 +155,174 @@ class PrimitiveTokenRuntimeCoordinator:
                 ports.build_next_dig_cut_plan_for_return(obs)
             )
             target_token = np.asarray(token, dtype=np.float32).astype(np.float32)
-            ports.state.return_target_tokens = target_token
-            ports.state.return_start_envelope_tokens = (
-                ports.build_return_start_envelope_tokens_for_obs(
+            exact_transition = ports.coverage_state.active_exact_return_transition()
+            continuous_plan = (
+                ports.coverage_state.coverage_active_continuous_execution_plan
+            )
+            if continuous_plan is not None:
+                if (
+                    dict(getattr(continuous_plan, "raw_fields", {}) or {})
+                    != dict(raw_fields)
+                    or not np.array_equal(
+                        np.asarray(
+                            getattr(continuous_plan, "dig_token", []),
+                            dtype=np.float32,
+                        ),
+                        target_token,
+                    )
+                ):
+                    raise ValueError(
+                        "continuous_goal_contract_invalid:"
+                        "return plan content drift"
+                    )
+                continuous_envelope = getattr(
+                    continuous_plan,
+                    "return_envelope",
+                    None,
+                )
+                start_envelope_token = np.asarray(
+                    getattr(continuous_envelope, "token", []),
+                    dtype=np.float32,
+                ).reshape(-1)
+                if (
+                    str(getattr(continuous_envelope, "goal_id", ""))
+                    != str(getattr(continuous_plan, "goal_id", ""))
+                    or start_envelope_token.shape
+                    != (RETURN_START_ENVELOPE_TOKEN_DIM,)
+                    or not np.all(np.isfinite(start_envelope_token))
+                ):
+                    raise ValueError(
+                        "return_envelope_contract_invalid:"
+                        "continuous goal identity or token"
+                    )
+                start_envelope_source = "continuous_cut_goal"
+                exact_valid_mask = None
+                exact_required = False
+            elif exact_transition is None:
+                start_envelope_token = ports.build_return_start_envelope_tokens_for_obs(
                     obs,
                     dict(raw_fields),
                     corridor_id=int(corridor_id),
                 )
-            )
-            ports.state.return_target_token_source = str(source)
-            ports.state.return_target_fallback_reason = str(fallback_reason)
-            ports.state.return_target_planned_cycle_id = cycle_index
-            ports.state.pending_dig_cut_cycle_id = cycle_index + 1
-            ports.state.pending_dig_cut_raw_fields = dict(raw_fields)
-            ports.state.pending_dig_cut_tokens = (
-                np.asarray(token, dtype=np.float32).astype(np.float32)
-            )
-            ports.state.pending_dig_cut_corridor_id = int(corridor_id)
+                start_envelope_source = str(
+                    ports.state.return_start_envelope_token_source
+                )
+                exact_valid_mask = None
+                exact_required = False
+            else:
+                start_envelope_token = np.asarray(
+                    exact_transition.exact_return_start_envelope_tokens,
+                    dtype=np.float32,
+                ).reshape(-1)
+                exact_valid_mask = np.asarray(
+                    exact_transition.exact_return_start_envelope_valid_mask,
+                    dtype=np.uint8,
+                ).reshape(-1)
+                if (
+                    start_envelope_token.shape != (RETURN_START_ENVELOPE_TOKEN_DIM,)
+                    or not np.all(np.isfinite(start_envelope_token))
+                    or exact_valid_mask.shape != (RETURN_START_ENVELOPE_TOKEN_DIM,)
+                    or not bool(np.all(exact_valid_mask > 0))
+                    or not bool(exact_transition.eligible)
+                    or str(exact_transition.exemplar_id)
+                    != str(ports.coverage_state.coverage_active_execution_exemplar_id)
+                    or str(exact_transition.raw_fields_sha256)
+                    != str(
+                        ports.coverage_state.coverage_active_execution_raw_fields_sha256
+                    )
+                ):
+                    raise ValueError("exact_return_transition_contract_invalid")
+                start_envelope_source = (
+                    "strict_train_gold_return:"
+                    f"{exact_transition.paired_return_exemplar_id}"
+                )
+                exact_required = True
+
+            if exact_required or continuous_plan is not None:
+                use_prior_spatial_bounds = False
+                use_prior_qpos_bounds = False
+            else:
+                use_prior_spatial_bounds = bool(
+                    ports.state.return_start_envelope_use_prior_spatial_bounds
+                )
+                use_prior_qpos_bounds = bool(
+                    ports.state.return_start_envelope_use_prior_qpos_bounds
+                )
             profile_token = (
-                ports.coverage_state.coverage_active_state_exemplar_profile_token
+                None
+                if continuous_plan is not None
+                else ports.coverage_state.coverage_active_state_exemplar_profile_token
             )
-            ports.state.pending_dig_depth_profile_tokens = (
+            pending_depth_profile_tokens = (
                 None
                 if profile_token is None
-                else np.asarray(profile_token, dtype=np.float32).astype(
-                    np.float32
-                ).copy()
+                else np.asarray(profile_token, dtype=np.float32)
+                .astype(np.float32)
+                .copy()
             )
-            ports.state.pending_dig_state_exemplar_ids = list(
-                ports.coverage_state.coverage_active_state_exemplar_ids
-            )
-            ports.state.pending_dig_state_exemplar_distance = float(
-                ports.coverage_state.coverage_active_state_exemplar_distance
+            ports.state.commit_return_plan(
+                return_target_tokens=target_token,
+                return_start_envelope_tokens=np.asarray(
+                    start_envelope_token,
+                    dtype=np.float32,
+                ),
+                return_start_envelope_token_source=start_envelope_source,
+                return_start_envelope_use_prior_spatial_bounds=(
+                    use_prior_spatial_bounds
+                ),
+                return_start_envelope_use_prior_qpos_bounds=(use_prior_qpos_bounds),
+                return_target_token_source=str(source),
+                return_target_fallback_reason=str(fallback_reason),
+                return_target_planned_cycle_id=cycle_index,
+                pending_dig_cut_cycle_id=cycle_index + 1,
+                pending_dig_cut_raw_fields=dict(raw_fields),
+                pending_dig_cut_tokens=np.asarray(
+                    token,
+                    dtype=np.float32,
+                ),
+                pending_dig_cut_corridor_id=int(corridor_id),
+                pending_dig_execution_exemplar_id=str(
+                    ports.coverage_state.coverage_active_execution_exemplar_id
+                    if exact_required
+                    else ""
+                ),
+                pending_dig_execution_raw_fields_sha256=str(
+                    ports.coverage_state.coverage_active_execution_raw_fields_sha256
+                    if exact_required
+                    else ""
+                ),
+                pending_dig_paired_return_primitive_episode_id=int(
+                    exact_transition.paired_return_primitive_episode_id
+                    if exact_required
+                    else -1
+                ),
+                pending_dig_paired_return_exemplar_id=str(
+                    exact_transition.paired_return_exemplar_id if exact_required else ""
+                ),
+                pending_dig_return_transition_artifact_sha256=str(
+                    exact_transition.artifact_sha256 if exact_required else ""
+                ),
+                pending_dig_exact_start_contract_required=bool(exact_required),
+                pending_dig_exact_return_envelope_valid_mask=(exact_valid_mask),
+                pending_dig_depth_profile_tokens=(pending_depth_profile_tokens),
+                pending_dig_state_exemplar_ids=(
+                    []
+                    if continuous_plan is not None
+                    else list(
+                        ports.coverage_state.coverage_active_state_exemplar_ids
+                    )
+                ),
+                pending_dig_state_exemplar_distance=float(
+                    float("nan")
+                    if continuous_plan is not None
+                    else ports.coverage_state.coverage_active_state_exemplar_distance
+                ),
+                pending_dig_locked_execution_plan=continuous_plan,
             )
         except Exception as exc:
+            if not bool(ports.allow_return_plan_fallback()):
+                self.invalidate_return_plan()
+                raise
             ports.state.return_target_tokens = np.zeros(
                 RETURN_TARGET_TOKEN_DIM, dtype=np.float32
             )
@@ -218,6 +356,38 @@ class PrimitiveTokenRuntimeCoordinator:
         ports.state.pending_dig_depth_profile_tokens = None
         ports.state.pending_dig_state_exemplar_ids = []
         ports.state.pending_dig_state_exemplar_distance = float("nan")
+        ports.state.pending_dig_execution_exemplar_id = ""
+        ports.state.pending_dig_execution_raw_fields_sha256 = ""
+        ports.state.pending_dig_paired_return_primitive_episode_id = -1
+        ports.state.pending_dig_paired_return_exemplar_id = ""
+        ports.state.pending_dig_return_transition_artifact_sha256 = ""
+        ports.state.pending_dig_exact_start_contract_required = False
+        ports.state.pending_dig_exact_return_envelope_valid_mask = None
+        ports.state.pending_dig_locked_execution_plan = None
+
+    def invalidate_return_plan(self) -> None:
+        """Clear every held return token and the pending next-dig plan."""
+
+        ports = self.ports
+        ports.state.return_target_planned_cycle_id = -1
+        ports.state.return_target_tokens = np.zeros(
+            RETURN_TARGET_TOKEN_DIM,
+            dtype=np.float32,
+        )
+        ports.state.return_relocate_tokens = np.zeros(
+            RETURN_TARGET_TOKEN_DIM,
+            dtype=np.float32,
+        )
+        ports.state.return_start_envelope_tokens = np.zeros(
+            RETURN_START_ENVELOPE_TOKEN_DIM,
+            dtype=np.float32,
+        )
+        ports.state.return_target_token_source = "none"
+        ports.state.return_start_envelope_token_source = "none"
+        ports.state.return_start_envelope_use_prior_spatial_bounds = True
+        ports.state.return_start_envelope_use_prior_qpos_bounds = True
+        ports.state.return_target_fallback_reason = ""
+        self.invalidate_pending_dig_cut_plan()
 
     def _dig_tokens_available_for_obs(self) -> bool:
         ports = self.ports

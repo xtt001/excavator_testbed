@@ -110,6 +110,7 @@ class PrimitivePlannerAdapterConfigInputs:
     cell_entry_low_productivity_payload_gain_kg: float = 100.0
     dig_cut_planner: dict[str, Any] | None = None
     return_target_planner: dict[str, Any] | None = None
+    box_emptying: dict[str, Any] | None = None
     scripted_bootstrap_target_qpos: list[float] | tuple[float, ...] | np.ndarray | None = None
     scripted_bootstrap_kp: float = 2.0
     scripted_bootstrap_kd: float = 0.25
@@ -402,7 +403,7 @@ class PrimitivePlannerAdapterConfigNormalizer:
             "dig_cut_planner_mode",
             str(dig_cut_planner_cfg.get("mode", "conservative_pose")),
         )
-        set_value(
+        dig_cut_planner_fallback_mode = set_value(
             "dig_cut_planner_fallback_mode",
             str(dig_cut_planner_cfg.get("fallback_mode", "conservative_pose")),
         )
@@ -418,7 +419,7 @@ class PrimitivePlannerAdapterConfigNormalizer:
             "residual_cut_intent_source_path",
             str(residual_cut_intent_source_path),
         )
-        set_value(
+        dig_cut_hold_token_until_skill_exit = set_value(
             "dig_cut_hold_token_until_skill_exit",
             bool(
                 dig_cut_planner_cfg.get(
@@ -428,6 +429,7 @@ class PrimitivePlannerAdapterConfigNormalizer:
                         "operator_prior",
                         "operator_prior_coverage",
                         "operator_prior_sweep_belief",
+                        "continuous_goal_conditioned",
                     },
                 )
             ),
@@ -442,10 +444,87 @@ class PrimitivePlannerAdapterConfigNormalizer:
         )
         set_value("dig_cut_prior_id", str(dig_cut_prior.get("prior_id", "")))
 
+        box_emptying_cfg = set_value(
+            "box_emptying_cfg",
+            dict(inputs.box_emptying or {}),
+        )
+        box_emptying_planner_enabled = set_value(
+            "box_emptying_planner_enabled",
+            bool(box_emptying_cfg.get("enabled", False)),
+        )
+        box_emptying_safety_enabled = set_value(
+            "box_emptying_safety_enabled",
+            bool(
+                box_emptying_cfg.get(
+                    "safety_enabled",
+                    box_emptying_cfg.get("enabled", False),
+                )
+            ),
+        )
+        artifact_manifest_path = box_emptying_cfg.get(
+            "effect_artifact_manifest_path",
+            "",
+        )
+        if artifact_manifest_path is None:
+            artifact_manifest_path = ""
+        if not isinstance(artifact_manifest_path, (str, Path)):
+            raise ValueError(
+                "box_emptying.effect_artifact_manifest_path must be a path string."
+            )
+        set_value(
+            "box_emptying_artifact_manifest_path",
+            str(artifact_manifest_path),
+        )
+        carry_start_envelope_cfg = dict(
+            box_emptying_cfg.get("carry_start_envelope", {}) or {}
+        )
+        functional_cycle_gate_cfg = dict(
+            box_emptying_cfg.get("functional_cycle_gate", {}) or {}
+        )
+        for gate_name, gate_config in (
+            ("carry_start_envelope", carry_start_envelope_cfg),
+            ("functional_cycle_gate", functional_cycle_gate_cfg),
+        ):
+            if bool(gate_config.get("enabled", False)) and not (
+                box_emptying_safety_enabled
+            ):
+                raise ValueError(
+                    f"box_emptying.{gate_name}.enabled=true requires "
+                    "the safety interlock."
+                )
+        if (
+            bool(functional_cycle_gate_cfg.get("enabled", False))
+            and int(functional_cycle_gate_cfg.get("target_cycles", 10)) != 10
+        ):
+            raise ValueError(
+                "act_functional_10cycle_validation_v1 requires "
+                "functional_cycle_gate.target_cycles=10."
+            )
+        if box_emptying_planner_enabled:
+            if dig_cut_planner_mode != "residual_cut_intent":
+                raise ValueError(
+                    "box_emptying.enabled=true requires "
+                    "dig_cut_planner.mode='residual_cut_intent'."
+                )
+            if dig_cut_planner_fallback_mode != "error":
+                raise ValueError(
+                    "box_emptying.enabled=true requires "
+                    "dig_cut_planner.fallback_mode='error'."
+                )
+            if not str(artifact_manifest_path).strip():
+                raise ValueError(
+                    "box_emptying.enabled=true requires "
+                    "effect_artifact_manifest_path."
+                )
+            if not box_emptying_safety_enabled:
+                raise ValueError(
+                    "box_emptying.enabled=true requires the safety interlock."
+                )
+
         return_start_envelope_cfg = dict(
             dig_cut_planner_cfg.get("return_start_envelope", {}) or {}
         )
-        set_value(
+        return_start_envelope_use_cell_prior = set_value(
             "return_start_envelope_use_cell_prior",
             bool(return_start_envelope_cfg.get("use_cell_prior", False)),
         )
@@ -463,7 +542,7 @@ class PrimitivePlannerAdapterConfigNormalizer:
         qpos_from_relocate_cfg = dict(
             return_start_envelope_cfg.get("qpos_from_relocate", {}) or {}
         )
-        set_value(
+        return_start_envelope_qpos_from_relocate_enabled = set_value(
             "return_start_envelope_qpos_from_relocate_enabled",
             bool(qpos_from_relocate_cfg.get("enabled", False)),
         )
@@ -497,7 +576,7 @@ class PrimitivePlannerAdapterConfigNormalizer:
         spatial_from_relocate_cfg = dict(
             return_start_envelope_cfg.get("spatial_from_relocate", {}) or {}
         )
-        set_value(
+        return_start_envelope_spatial_from_relocate_enabled = set_value(
             "return_start_envelope_spatial_from_relocate_enabled",
             bool(spatial_from_relocate_cfg.get("enabled", False)),
         )
@@ -556,26 +635,71 @@ class PrimitivePlannerAdapterConfigNormalizer:
             "return_target_planner_cfg",
             dict(inputs.return_target_planner or {}),
         )
-        set_value(
+        return_target_planner_enabled = set_value(
             "return_target_planner_enabled",
             bool(return_target_planner_cfg.get("enabled", False)),
         )
-        set_value(
+        return_target_hold_token_until_skill_exit = set_value(
             "return_target_hold_token_until_skill_exit",
             bool(return_target_planner_cfg.get("hold_token_until_skill_exit", True)),
         )
+        if dig_cut_planner_mode == "continuous_goal_conditioned" and (
+            not dig_cut_hold_token_until_skill_exit
+            or not return_target_hold_token_until_skill_exit
+        ):
+            raise ValueError(
+                "continuous_goal_conditioned requires dig and return "
+                "hold_token_until_skill_exit=true"
+            )
+        if dig_cut_planner_mode == "continuous_goal_conditioned" and any(
+            (
+                return_start_envelope_use_cell_prior,
+                return_start_envelope_qpos_from_relocate_enabled,
+                return_start_envelope_spatial_from_relocate_enabled,
+            )
+        ):
+            raise ValueError(
+                "continuous_goal_conditioned forbids legacy return "
+                "cell-prior and relocate-derived sources"
+            )
         set_value(
             "return_target_token_source_prefix",
             str(return_target_planner_cfg.get("token_source_prefix", "return_target")),
         )
 
         coverage_cfg = dict(dig_cut_planner_cfg.get("coverage", {}) or {})
-        set_value(
+        coverage_wall_safety_config = set_value(
             "coverage_wall_safety_config",
             CoverageWallSafetyConfig.from_mapping(
                 coverage_cfg.get("wall_safety", {})
             ),
         )
+        if dig_cut_planner_mode == "continuous_goal_conditioned":
+            if not coverage_wall_safety_config.enabled:
+                raise ValueError(
+                    "continuous_goal_conditioned requires "
+                    "coverage.wall_safety.enabled=true"
+                )
+            if not return_target_planner_enabled:
+                raise ValueError(
+                    "continuous_goal_conditioned requires "
+                    "return_target_planner.enabled=true"
+                )
+            if not values["return_to_dig_start_envelope_gate_enabled"]:
+                raise ValueError(
+                    "continuous_goal_conditioned requires "
+                    "return_to_dig_start_envelope_gate_enabled=true"
+                )
+        if coverage_wall_safety_config.enabled:
+            if not box_emptying_safety_enabled:
+                raise ValueError(
+                    "coverage.wall_safety.enabled=true requires the safety "
+                    "interlock."
+                )
+            if dig_cut_planner_fallback_mode == "conservative_pose":
+                raise ValueError(
+                    "coverage.wall_safety.enabled=true forbids planner fallback."
+                )
         coverage_candidate_layout = set_value(
             "coverage_candidate_layout",
             str(coverage_cfg.get("candidate_layout", "percentile_grid"))
@@ -999,6 +1123,7 @@ class PrimitivePlannerAdapterConfigNormalizer:
         validate_dig_cut_planner_config(
             dig_cut_planner_enabled=dig_cut_planner_enabled,
             dig_cut_planner_mode=dig_cut_planner_mode,
+            dig_cut_planner_fallback_mode=dig_cut_planner_fallback_mode,
             dig_cut_prior_path=dig_cut_prior_path,
             coverage_candidate_layout=coverage_candidate_layout,
             dig_depth_profile_source=dig_depth_profile_source,
@@ -1318,6 +1443,7 @@ def validate_dig_cut_planner_config(
     *,
     dig_cut_planner_enabled: bool,
     dig_cut_planner_mode: str,
+    dig_cut_planner_fallback_mode: str | None = None,
     dig_cut_prior_path: str,
     coverage_candidate_layout: str,
     dig_depth_profile_source: str,
@@ -1331,6 +1457,14 @@ def validate_dig_cut_planner_config(
         raise ValueError(
             f"Unsupported dig_cut_planner mode {dig_cut_planner_mode!r}; "
             f"expected one of {sorted(SUPPORTED_DIG_CUT_PLANNER_MODES)}."
+        )
+    if (
+        dig_cut_planner_mode == "continuous_goal_conditioned"
+        and dig_cut_planner_fallback_mode != "raise"
+    ):
+        raise ValueError(
+            "continuous_goal_conditioned requires "
+            "dig_cut_planner.fallback_mode='raise'."
         )
     if (
         dig_cut_planner_mode in DIG_CUT_PLANNER_MODES_REQUIRING_PRIOR
