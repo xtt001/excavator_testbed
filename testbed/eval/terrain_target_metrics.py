@@ -6,7 +6,6 @@ import math
 from collections.abc import Sequence
 from typing import Any
 
-
 SOURCE = "explicit_target_grid_removed_depth_comparison"
 DEFAULT_PROFILE = "explicit_target_shape_residual_metrics"
 SHAPE_OVERLAP_SOURCE = "explicit_target_shape_overlap_diagnostics"

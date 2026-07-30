@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import re
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -9,7 +9,6 @@ import pytest
 import yaml
 
 from testbed.data.camera_images import observation_camera_rgb
-
 
 ROOT = Path(__file__).resolve().parents[1]
 UNITY_ROOT = ROOT.parents[1] / "AGXUnityE85ExcavatorSim"

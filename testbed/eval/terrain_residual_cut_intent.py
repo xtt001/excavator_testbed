@@ -6,7 +6,6 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-
 SCHEMA = "terrain_residual_heuristic_cut_intent_v1"
 SOURCE = "explicit_heuristic_residual_cut_intent"
 DEFAULT_PROFILE = "phase6e_heuristic_residual_cut_intent"

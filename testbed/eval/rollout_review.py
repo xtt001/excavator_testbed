@@ -13,7 +13,6 @@ from testbed.data.schema import (
 )
 from testbed.eval.terrain_residual_metrics import build_terrain_residual_summary
 
-
 SCHEMA_VERSION = "rollout_review_v1"
 MAX_REVIEW_CYCLES = 30
 

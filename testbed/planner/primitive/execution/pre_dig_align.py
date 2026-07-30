@@ -80,7 +80,7 @@ class PrimitivePreDigAlignRuntimeState:
         cls,
         *,
         action_dim: int,
-    ) -> "PrimitivePreDigAlignRuntimeState":
+    ) -> PrimitivePreDigAlignRuntimeState:
         return cls(
             target_qpos=np.zeros(int(action_dim), dtype=np.float32),
             error=np.zeros(int(action_dim), dtype=np.float32),
@@ -116,7 +116,7 @@ class PrimitivePreDigAlignRuntimeService:
         config: PrimitivePreDigAlignRuntimeConfig,
         state: PrimitivePreDigAlignRuntimeState,
         ports: PrimitivePreDigAlignPorts,
-    ) -> "PrimitivePreDigAlignRuntimeService":
+    ) -> PrimitivePreDigAlignRuntimeService:
         return cls(config=config, state=state, ports=ports)
 
     def should_pre_dig_align_before_dig(self) -> bool:

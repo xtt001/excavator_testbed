@@ -18,7 +18,6 @@ from testbed.planner.primitive.execution.scripted_bootstrap import (
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 from tests.primitive_policy_test_helpers import make_policy_shell_for_private_weld_tests
 
-
 _DEFAULT_TARGET = object()
 _SCRIPTED_BOOTSTRAP_COUNTER_FIELD_NAMES = {
     "scripted_bootstrap_step_count",

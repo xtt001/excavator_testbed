@@ -11,13 +11,12 @@ from testbed.planner.primitive.decision.backends.legacy_fsm import (
     PrimitiveDecisionBackend,
     PrimitiveDecisionBackendFactory,
 )
+from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
 from testbed.planner.primitive.decision.contracts import (
     PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
 )
-from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
 from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
-
 
 LEGACY_FSM_DECISION_BACKEND_NAME = "legacy_fsm"
 SUPPORTED_DECISION_BACKENDS = (LEGACY_FSM_DECISION_BACKEND_NAME,)
@@ -51,7 +50,7 @@ class PrimitiveDecisionRuntime:
         ports: PrimitiveDecisionRuntimePorts,
         *,
         config: PrimitiveDecisionRuntimeConfig | None = None,
-    ) -> "PrimitiveDecisionRuntime":
+    ) -> PrimitiveDecisionRuntime:
         return cls(
             ports=ports,
             config=config or PrimitiveDecisionRuntimeConfig(),

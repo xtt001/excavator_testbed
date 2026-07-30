@@ -3,21 +3,24 @@ from __future__ import annotations
 from dataclasses import fields
 from typing import Any
 
+from testbed.planner.primitive.decision.capabilities import (
+    BootstrapDecisionStatus,
+    PrimitiveDecisionCapabilities,
+    PrimitiveDecisionCapabilitiesPorts,
+    PrimitiveDecisionCompatibilityActions,
+    PrimitiveDecisionFactsSource,
+)
+from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
+from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
+from testbed.planner.primitive.facts.backend import (
+    PrimitiveBackendFactsAccess,
+    PrimitiveBootstrapDecisionFacts,
+)
 from testbed.planner.primitive.facts.capabilities import (
     CarryTransitionStatus,
     DigTransitionStatus,
     DumpTransitionStatus,
 )
-from testbed.planner.primitive.facts.backend import PrimitiveBackendFactsAccess
-from testbed.planner.primitive.facts.backend import PrimitiveBootstrapDecisionFacts
-from testbed.planner.primitive.decision.capabilities import (
-    BootstrapDecisionStatus,
-    PrimitiveDecisionCompatibilityActions,
-    PrimitiveDecisionCapabilities,
-    PrimitiveDecisionCapabilitiesPorts,
-    PrimitiveDecisionFactsSource,
-)
-from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
 from testbed.planner.primitive.facts.decision import (
     PrimitiveCarryTransitionFacts,
     PrimitiveDecisionFacts,
@@ -25,7 +28,6 @@ from testbed.planner.primitive.facts.decision import (
     PrimitiveDumpTransitionFacts,
     PrimitiveReturnTransitionFacts,
 )
-from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 
 
 class _RecordingTransitionStatusProvider:

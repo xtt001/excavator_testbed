@@ -67,7 +67,7 @@ class PrimitiveTokenObservationRuntime:
     def from_ports(
         cls,
         ports: PrimitiveTokenObservationRuntimePorts,
-    ) -> "PrimitiveTokenObservationRuntime":
+    ) -> PrimitiveTokenObservationRuntime:
         return cls(ports=ports)
 
     def policy_obs(self, obs: dict[str, Any]) -> dict[str, Any]:

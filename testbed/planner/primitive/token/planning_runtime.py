@@ -8,15 +8,17 @@ from typing import Any
 
 import numpy as np
 
-from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.token.dig_planning import (
     CoveragePlanSelector,
-    CoverageRawFieldsBuilder as DigCoverageRawFieldsBuilder,
     DigCutPlanTuple,
     PrimitiveDigTokenPlanningPorts,
     PrimitiveDigTokenPlanningService,
     ResidualCutIntentPlanProvider,
+)
+from testbed.planner.primitive.token.dig_planning import (
+    CoverageRawFieldsBuilder as DigCoverageRawFieldsBuilder,
 )
 from testbed.planner.primitive.token.return_planning import (
     PrimitiveReturnTokenPlanningPorts,
@@ -65,7 +67,7 @@ class PrimitiveTokenPlanningRuntime:
     def from_ports(
         cls,
         ports: PrimitiveTokenPlanningRuntimePorts,
-    ) -> "PrimitiveTokenPlanningRuntime":
+    ) -> PrimitiveTokenPlanningRuntime:
         return cls(ports=ports)
 
     def dig_token_planning_service(self) -> PrimitiveDigTokenPlanningService:

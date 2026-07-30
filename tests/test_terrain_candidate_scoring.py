@@ -4,7 +4,6 @@ from testbed.eval.terrain_candidate_evidence import (
 from testbed.eval.terrain_candidate_generation import build_discrete_cut_candidates
 from testbed.eval.terrain_candidate_scoring import build_candidate_heuristic_scores
 
-
 WEIGHTS = {
     "candidate_depth_reward": 10.0,
     "target_footprint_cell_reward": 1.0,

@@ -14,7 +14,6 @@ from testbed.data.schema import ENV_STATE_V2_2_DIM
 from testbed.data.terrain_clean_dataset import build_terrain_clean_dataset
 from testbed.data.terrain_cycle_cleaning import TerrainCycleCleaningConfig
 
-
 CAMERAS = ("stick_up", "stick_down", "eye_left", "eye_right")
 
 

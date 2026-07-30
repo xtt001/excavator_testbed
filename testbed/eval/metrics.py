@@ -61,7 +61,7 @@ class EvalMetrics:
         episode_lengths: list[int] | None = None,
         successes: list[bool] | None = None,
         extra: dict | None = None,
-    ) -> "EvalMetrics":
+    ) -> EvalMetrics:
         import numpy as np
         n = len(episode_returns)
         if successes is None:
@@ -95,7 +95,7 @@ class EvalMetrics:
             json.dump(self.to_dict(), f, indent=2)
 
     @classmethod
-    def from_json(cls, path: Path | str) -> "EvalMetrics":
+    def from_json(cls, path: Path | str) -> EvalMetrics:
         with open(path) as f:
             d = json.load(f)
         return cls(**d)
@@ -116,7 +116,7 @@ class EvalMetrics:
         return row
 
     @staticmethod
-    def append_to_csv(metrics_list: list["EvalMetrics"], path: Path | str) -> None:
+    def append_to_csv(metrics_list: list[EvalMetrics], path: Path | str) -> None:
         """Append multiple EvalMetrics to a CSV file (creates file if absent)."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)

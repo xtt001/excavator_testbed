@@ -19,7 +19,10 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from testbed.backends.agx.protocol import IMAGE_PIXEL_FORMAT, AgxSimClient
+from testbed.backends.agx.protocol import (  # noqa: E402
+    IMAGE_PIXEL_FORMAT,
+    AgxSimClient,
+)
 
 
 def _assert_finite(name: str, value: np.ndarray) -> None:

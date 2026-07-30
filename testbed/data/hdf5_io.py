@@ -8,13 +8,19 @@ schema versioning, and an optional Repo A `/v2` extension group.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
 import h5py
 import numpy as np
 
+from testbed.data.camera_images import (
+    JPEG_ENCODING,
+    decode_jpeg_rgb,
+    encoded_frame_to_uint8,
+    ordered_camera_names,
+    validate_exclusive_camera_layout,
+)
 from testbed.data.schema import (
     ATTR_CAMERA_NAMES,
     ATTR_IMAGE_FORMAT,
@@ -29,23 +35,15 @@ from testbed.data.schema import (
     DS_REWARDS,
     DS_STEP_ID,
     DS_STEP_NS,
-    GRP_METADATA,
     GRP_ACTION_SOURCE,
     GRP_ENCODED_IMAGES,
+    GRP_METADATA,
     GRP_TIMESTAMPS,
     GRP_V2,
     GRP_V2_CYCLE,
     GRP_V2_STEP,
     SCHEMA_VERSION,
 )
-from testbed.data.camera_images import (
-    JPEG_ENCODING,
-    decode_jpeg_rgb,
-    encoded_frame_to_uint8,
-    ordered_camera_names,
-    validate_exclusive_camera_layout,
-)
-
 
 # ─── Write ────────────────────────────────────────────────────────────────────
 

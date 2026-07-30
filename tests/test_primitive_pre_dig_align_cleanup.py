@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from testbed.planner.primitive.execution.action_dispatch import PrimitiveActionDispatchService
 from testbed.planner.primitive.config.adapter import (
     PrimitivePlannerAdapterConfigInputs,
     PrimitivePlannerAdapterConfigNormalizer,
+)
+from testbed.planner.primitive.execution.action_dispatch import (
+    PrimitiveActionDispatchService,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 from tests.test_primitive_action_dispatch import _ports

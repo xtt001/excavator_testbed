@@ -13,9 +13,9 @@ from testbed.planner.primitive.coverage.selection_runtime import (
     PrimitiveCoverageSelectionRuntimePorts,
 )
 from tests.test_agx_primitives_v2_2 import (
-    _RecordingPolicy,
     _coverage_obs,
     _coverage_planner_policy,
+    _RecordingPolicy,
 )
 
 

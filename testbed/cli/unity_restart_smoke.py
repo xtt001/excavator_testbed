@@ -16,7 +16,6 @@ from typing import Any
 
 import numpy as np
 
-
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_UNITY_PROJECT = Path("/home/pingfan/AGXUnityE85ExcavatorSim")
 DEFAULT_STATUS_RELATIVE = Path("Temp/CodexPlayModeBootstrap/status.json")

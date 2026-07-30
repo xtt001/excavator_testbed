@@ -7,7 +7,6 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA = "terrain_explicit_calibration_record_extraction_v1"
 SOURCE = "explicit_calibration_record_extraction"
 DEFAULT_PROFILE = "explicit_calibration_record_extraction"

@@ -2,7 +2,6 @@ from pathlib import Path
 
 from testbed.backends.agx.protocol import CONTROL_COMPATIBILITY_PROFILES
 
-
 UNITY_ROOT = Path("/home/pingfan/AGXUnityE85ExcavatorSim")
 UNITY_SCRIPTS = (
     UNITY_ROOT

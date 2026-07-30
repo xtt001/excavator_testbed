@@ -35,7 +35,7 @@ class PrimitiveScriptedBootstrapRuntimeState:
     timeout_count: int = 0
 
     @classmethod
-    def fresh(cls) -> "PrimitiveScriptedBootstrapRuntimeState":
+    def fresh(cls) -> PrimitiveScriptedBootstrapRuntimeState:
         return cls()
 
     def to_report_status(self) -> PrimitiveScriptedBootstrapReportStatus:

@@ -6,56 +6,55 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.decision.backends.legacy_capability_provider import (
+    PrimitiveFSMCapabilityProvider,
+    PrimitiveFSMCapabilityProviderConfig,
+    PrimitiveFSMCapabilityProviderPorts,
+)
+from testbed.planner.primitive.decision.capabilities import (
+    PrimitiveDecisionCapabilities,
+    PrimitiveDecisionCapabilitiesPorts,
+    PrimitiveDecisionCompatibilityActions,
+)
+from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
+from testbed.planner.primitive.decision.contracts import (
+    CompleteCoverageDigEffect,
+    CompleteCoverageDumpEffect,
+    CompleteReturnTransitionEffect,
+    IncrementDigBadReplanCountEffect,
+    IncrementDigExitGuardReplanCountEffect,
+    MarkReturnNextDigEventSeenEffect,
+    PrimitiveDecisionContractError,
+    PrimitiveDecisionResult,
+    RejectActiveCoverageCorridorEffect,
+    ReplanOrRestartPreDigAlignEffect,
+    RestartAfterFailedDigEffect,
+    RestartDigWithNewCutEffect,
+    SetDumpDoneHoldCountEffect,
+    SetDumpReadyHoldCountEffect,
+    SetDumpStartDepositedMassFromObservationEffect,
+    SetReturnOrDirectHandoffEffect,
+    SwitchSkillEffect,
+    SwitchToNextSkillAfterReturnEffect,
+)
+from testbed.planner.primitive.decision.input import (
+    PrimitiveBackendDecisionInput,
+    PrimitiveBackendDecisionInputBuilder,
+)
+from testbed.planner.primitive.effects.return_handoff import (
+    ReturnHandoffReadinessService,
+)
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
+from testbed.planner.primitive.facts.backend import PrimitiveBackendFactsSource
 from testbed.planner.primitive.facts.capabilities import (
     CarryTransitionStatus,
     DigTransitionStatus,
     DumpTransitionStatus,
     ReturnTransitionStatus,
 )
-from testbed.planner.primitive.decision.contracts import PrimitiveDecisionContractError
-from testbed.planner.primitive.decision.contracts import PrimitiveDecisionResult
-from testbed.planner.primitive.decision.contracts import CompleteCoverageDigEffect
-from testbed.planner.primitive.decision.contracts import CompleteCoverageDumpEffect
-from testbed.planner.primitive.decision.contracts import CompleteReturnTransitionEffect
-from testbed.planner.primitive.decision.contracts import IncrementDigBadReplanCountEffect
-from testbed.planner.primitive.decision.contracts import (
-    IncrementDigExitGuardReplanCountEffect,
-)
-from testbed.planner.primitive.decision.contracts import MarkReturnNextDigEventSeenEffect
-from testbed.planner.primitive.decision.contracts import RejectActiveCoverageCorridorEffect
-from testbed.planner.primitive.decision.contracts import RestartAfterFailedDigEffect
-from testbed.planner.primitive.decision.contracts import RestartDigWithNewCutEffect
-from testbed.planner.primitive.decision.contracts import ReplanOrRestartPreDigAlignEffect
-from testbed.planner.primitive.decision.contracts import SetDumpDoneHoldCountEffect
-from testbed.planner.primitive.decision.contracts import SetDumpReadyHoldCountEffect
-from testbed.planner.primitive.decision.contracts import (
-    SetDumpStartDepositedMassFromObservationEffect,
-)
-from testbed.planner.primitive.decision.contracts import SetReturnOrDirectHandoffEffect
-from testbed.planner.primitive.decision.contracts import SwitchSkillEffect
-from testbed.planner.primitive.decision.contracts import SwitchToNextSkillAfterReturnEffect
-from testbed.planner.primitive.decision.capabilities import (
-    PrimitiveDecisionCompatibilityActions,
-    PrimitiveDecisionCapabilities,
-    PrimitiveDecisionCapabilitiesPorts,
-)
-from testbed.planner.primitive.facts.backend import PrimitiveBackendFactsSource
-from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
-from testbed.planner.primitive.decision.input import (
-    PrimitiveBackendDecisionInput,
-    PrimitiveBackendDecisionInputBuilder,
-)
-from testbed.planner.primitive.decision.backends.legacy_capability_provider import (
-    PrimitiveFSMCapabilityProvider,
-    PrimitiveFSMCapabilityProviderConfig,
-    PrimitiveFSMCapabilityProviderPorts,
-)
-from testbed.planner.primitive.coverage.state import CoverageRuntimeState
-from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
-from testbed.planner.primitive.effects.return_handoff import ReturnHandoffReadinessService
-from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
-
 
 BOOTSTRAP_REQUESTED_DECISION_SOURCE = "legacy_fsm_bootstrap_requested_effect"
 DIG_REQUESTED_DECISION_SOURCE = "legacy_fsm_dig_requested_effect"
@@ -746,7 +745,7 @@ class LegacyFSMBranchSet:
     pre_dig_align_branch: PrimitiveDecisionBranch | None = None
 
     @classmethod
-    def from_ports(cls, ports: LegacyFSMBranchPorts) -> "LegacyFSMBranchSet":
+    def from_ports(cls, ports: LegacyFSMBranchPorts) -> LegacyFSMBranchSet:
         pre_dig_align_branch = None
         if ports.pre_dig_align_service is not None:
             pre_dig_align_branch = LegacyFSMPreDigAlignBranch(
@@ -791,7 +790,7 @@ class LegacyFSMBranchSet:
             pre_dig_align_branch=self.pre_dig_align_branch,
         )
 
-    def requested_decision_backend(self) -> "LegacyFSMRequestedDecisionBackend":
+    def requested_decision_backend(self) -> LegacyFSMRequestedDecisionBackend:
         return LegacyFSMRequestedDecisionBackend(branch_set=self)
 
     def compatibility_decision_backend(self) -> PrimitiveCompatibilityDecisionBackend:
@@ -863,21 +862,21 @@ class LegacyFSMDecisionBackendFactory:
     def from_ports(
         cls,
         ports: LegacyFSMBranchPorts,
-    ) -> "LegacyFSMDecisionBackendFactory":
+    ) -> LegacyFSMDecisionBackendFactory:
         return cls(lambda: LegacyFSMBranchSet.from_ports(ports))
 
     @classmethod
     def from_runtime_ports(
         cls,
         ports: LegacyFSMDecisionBackendFactoryPorts,
-    ) -> "LegacyFSMDecisionBackendFactory":
+    ) -> LegacyFSMDecisionBackendFactory:
         return cls.from_ports(_legacy_fsm_branch_ports_from_runtime_ports(ports))
 
     @classmethod
     def from_branch_set(
         cls,
         branch_set: LegacyFSMBranchSet,
-    ) -> "LegacyFSMDecisionBackendFactory":
+    ) -> LegacyFSMDecisionBackendFactory:
         return cls(lambda: branch_set)
 
     def branch_set(self) -> LegacyFSMBranchSet:
@@ -887,7 +886,7 @@ class LegacyFSMDecisionBackendFactory:
             object.__setattr__(self, "_cached_branch_set", cached)
         return cached
 
-    def requested_decision_backend(self) -> "LegacyFSMRequestedDecisionBackend":
+    def requested_decision_backend(self) -> LegacyFSMRequestedDecisionBackend:
         return self.branch_set().requested_decision_backend()
 
     def compatibility_decision_backend(self) -> PrimitiveCompatibilityDecisionBackend:
@@ -904,7 +903,7 @@ class LegacyFSMRequestedDecisionBackend:
     def from_ports(
         cls,
         ports: LegacyFSMBranchPorts,
-    ) -> "LegacyFSMRequestedDecisionBackend":
+    ) -> LegacyFSMRequestedDecisionBackend:
         return cls(branch_set=LegacyFSMBranchSet.from_ports(ports))
 
     def decide_context(

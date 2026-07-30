@@ -11,7 +11,6 @@ from testbed.eval.terrain_target_projection import (
     build_target_residual_convergence_projection,
 )
 
-
 SOURCE = "explicit_target_residual_baseline_report"
 SCHEMA = "explicit_target_residual_baseline_report_v1"
 DEFAULT_PROFILE = "explicit_t1_like_rectangular_shallow_pit"

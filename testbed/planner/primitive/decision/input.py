@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from testbed.planner.primitive.facts.backend import (
-    PrimitiveBackendFactsAccess,
-    PrimitiveBackendFactsSource,
-)
 from testbed.planner.primitive.decision.capabilities import (
     PrimitiveDecisionCompatibilityActions,
 )
 from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
+from testbed.planner.primitive.facts.backend import (
+    PrimitiveBackendFactsAccess,
+    PrimitiveBackendFactsSource,
+)
 from testbed.planner.primitive.facts.decision import PrimitiveDecisionFacts
 
 
@@ -31,7 +31,7 @@ class PrimitiveBackendDecisionInput:
         *,
         facts_source: PrimitiveBackendFactsSource,
         compatibility_actions: PrimitiveDecisionCompatibilityActions,
-    ) -> "PrimitiveBackendDecisionInput":
+    ) -> PrimitiveBackendDecisionInput:
         common = facts_source.decision_facts(context)
         backend_facts = facts_source.backend_facts(context, facts=common)
         return cls(
@@ -62,7 +62,7 @@ class PrimitiveBackendDecisionInputBuilder:
         *,
         facts_source: PrimitiveBackendFactsSource,
         compatibility_actions: PrimitiveDecisionCompatibilityActions,
-    ) -> "PrimitiveBackendDecisionInputBuilder":
+    ) -> PrimitiveBackendDecisionInputBuilder:
         return cls(
             facts_source=facts_source,
             compatibility_actions=compatibility_actions,

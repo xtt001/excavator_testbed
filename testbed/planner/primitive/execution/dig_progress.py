@@ -6,9 +6,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 
 
 @dataclass(frozen=True)
@@ -38,7 +38,7 @@ class PrimitiveDigProgressRuntimeService:
     def from_ports(
         cls,
         ports: PrimitiveDigProgressRuntimePorts,
-    ) -> "PrimitiveDigProgressRuntimeService":
+    ) -> PrimitiveDigProgressRuntimeService:
         return cls(ports=ports)
 
     def update(self, obs: dict[str, Any]) -> None:

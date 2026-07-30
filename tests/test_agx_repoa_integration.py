@@ -25,23 +25,25 @@ from testbed.data.qc import run_dataset_qc
 from testbed.data.recorder import EpisodeRecorder
 from testbed.data.v2_1 import (
     GOAL_TOKEN_VERSION,
-    build_goal_tokens as build_goal_tokens_v2_1,
     label_episode_v2_1,
 )
-from testbed.eval.suite import EvalSuite
+from testbed.data.v2_1 import (
+    build_goal_tokens as build_goal_tokens_v2_1,
+)
 from testbed.eval.multi_cycle_metrics import (
     aggregate_multicycle_metrics,
     build_multicycle_summary,
 )
+from testbed.eval.suite import EvalSuite
 from testbed.planner.boundary_detector import BoundaryDetector
 from testbed.policies.act.adapter import ACTAdapter
+from testbed.runtime._eval import eval_policy
+from testbed.runtime._train import train_policy
 from testbed.runtime.experiment_record import (
     append_experiment_registry,
     build_experiment_record,
     write_experiment_record,
 )
-from testbed.runtime._train import train_policy
-from testbed.runtime._eval import eval_policy
 
 
 class _FakeMetrics:

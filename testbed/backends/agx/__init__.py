@@ -2,8 +2,8 @@
 
 from testbed.backends.agx.backend import (
     AGXSimBackend,
-    AGXTimestep,
     AgxSimBackend,
+    AGXTimestep,
     AgxTimeStep,
 )
 from testbed.backends.agx.protocol import (

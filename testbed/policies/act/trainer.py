@@ -22,8 +22,8 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from testbed.policies.base import Trainer, compute_dict_mean, detach_dict, set_seed
 from testbed.policies.act.adapter import ACTAdapter
+from testbed.policies.base import Trainer, compute_dict_mean, detach_dict, set_seed
 
 
 class ACTTrainer(Trainer):

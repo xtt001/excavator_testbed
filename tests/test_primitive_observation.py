@@ -11,21 +11,19 @@ from testbed.data.operator_first_v2_2 import (
     RETURN_START_ENVELOPE_TOKEN_DIM,
     RETURN_TARGET_TOKEN_DIM,
 )
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.facts.observation import (
     PrimitiveObservationInjectionRuntimeState,
     PrimitivePolicyObservationAssembler,
     PrimitivePolicyObservationAssemblerPorts,
-    PrimitivePolicyObservationAssemblyResult,
     PrimitiveTokenInjectionState,
 )
 from testbed.planner.primitive.token.observation_runtime import (
     PrimitiveTokenObservationRuntime,
     PrimitiveTokenObservationRuntimePorts,
 )
-from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
-
 
 _INJECTED_FLAG_NAMES = {
     "cell_entry_token_injected",

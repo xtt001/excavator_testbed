@@ -6,7 +6,6 @@ import math
 from collections.abc import Mapping
 from typing import Any
 
-
 SCHEMA = "terrain_shape_guard_shadow_audit_v1"
 SOURCE = "explicit_target_shape_guard_shadow_audit"
 EVENT_NAMES = (

@@ -8,11 +8,10 @@ teleop can feel closer to the current Unity control chain when desired.
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import numpy as np
-
 
 ACTION_DIM = 4
 

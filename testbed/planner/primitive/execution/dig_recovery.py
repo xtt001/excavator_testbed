@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 
-from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive.execution.pre_dig_align import (
     PrimitivePreDigAlignRuntimeState,
 )
-from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
 from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
 
 
@@ -60,7 +61,7 @@ class PrimitiveDigRecoveryService:
     def from_ports(
         cls,
         ports: PrimitiveDigRecoveryPorts,
-    ) -> "PrimitiveDigRecoveryService":
+    ) -> PrimitiveDigRecoveryService:
         return cls(ports=ports)
 
     def restart_pre_dig_align(self, reason: str) -> None:

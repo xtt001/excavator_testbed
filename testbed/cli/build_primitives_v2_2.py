@@ -6,10 +6,10 @@ import argparse
 import json
 from pathlib import Path
 
-from testbed.data.primitives_v2_2 import build_primitive_datasets
 from testbed.data.primitives_v2_2 import (
     PRIMITIVE_BOUNDARY_PROFILE_DEFAULT,
     PRIMITIVE_BOUNDARY_PROFILES,
+    build_primitive_datasets,
 )
 from testbed.data.transition_v2_1 import CLEAN_PROFILE_STAGE5
 from testbed.data.vds import (

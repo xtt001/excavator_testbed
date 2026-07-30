@@ -8,16 +8,15 @@ import numpy as np
 import pytest
 
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
-from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive.execution.state import (
-    PrimitiveExecutionRuntimeState,
-)
 from testbed.planner.primitive.execution.action_dispatch import (
     PrimitiveActionDispatchPorts,
     PrimitiveActionDispatchService,
 )
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.execution.state import (
+    PrimitiveExecutionRuntimeState,
+)
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
-
 
 _OLD_EXECUTION_ACTION_POLICY_WRAPPERS = (
     "_dispatch_tick_action",

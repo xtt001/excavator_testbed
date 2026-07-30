@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from types import MethodType
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -13,27 +12,25 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
 )
 from testbed.planner.primitive.coverage.selection import CoverageCorridorState
-from testbed.planner.primitive.facts.capabilities import (
-    CarryTransitionStatus,
-    DigTransitionStatus,
-    DumpTransitionStatus,
-    ReturnTransitionStatus,
-)
+from testbed.planner.primitive.decision import contracts as primitive_decision
 from testbed.planner.primitive.decision.backends.legacy_capability_provider import (
     PrimitiveFSMCapabilityProvider,
     PrimitiveFSMCapabilityProviderConfig,
     PrimitiveFSMCapabilityProviderPorts,
 )
-from testbed.planner.primitive.decision import contracts as primitive_decision
 from testbed.planner.primitive.decision.backends.legacy_fsm import (
     LegacyFSMBranchPorts,
     LegacyFSMDecisionBackendFactory,
 )
+from testbed.planner.primitive.decision.capabilities import (
+    PrimitiveDecisionCapabilities,
+    PrimitiveDecisionCapabilitiesPorts,
+)
 from testbed.planner.primitive.decision.contracts import (
     LEGACY_FSM_DECISION_SOURCE,
     CompleteCoverageDigEffect,
-    CompleteReturnTransitionEffect,
     CompleteCoverageDumpEffect,
+    CompleteReturnTransitionEffect,
     IncrementDigBadReplanCountEffect,
     IncrementDigExitGuardReplanCountEffect,
     LegacyDecisionOutcomeEffect,
@@ -47,23 +44,25 @@ from testbed.planner.primitive.decision.contracts import (
     SetDumpReadyHoldCountEffect,
     SetDumpStartDepositedMassFromObservationEffect,
     SetReturnOrDirectHandoffEffect,
-    SwitchToNextSkillAfterReturnEffect,
     SwitchSkillEffect,
+    SwitchToNextSkillAfterReturnEffect,
     validate_decision_effect_contract,
-)
-from testbed.planner.primitive.decision.capabilities import (
-    PrimitiveDecisionCapabilities,
-    PrimitiveDecisionCapabilitiesPorts,
 )
 from testbed.planner.primitive.decision.runtime import (
     LEGACY_FSM_DECISION_BACKEND_NAME,
     PrimitiveDecisionRuntime,
     PrimitiveDecisionRuntimePorts,
 )
-from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 from testbed.planner.primitive.effects.return_handoff import (
     ReturnHandoffReadinessConfig,
     ReturnStartEnvelopeGateConfig,
+)
+from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
+from testbed.planner.primitive.facts.capabilities import (
+    CarryTransitionStatus,
+    DigTransitionStatus,
+    DumpTransitionStatus,
+    ReturnTransitionStatus,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 

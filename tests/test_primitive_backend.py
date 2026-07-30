@@ -8,21 +8,52 @@ import pytest
 
 from testbed.planner.primitive.decision.backends.legacy_fsm import (
     LegacyFSMBackendAdapter,
-    LegacyFSMBranchPorts,
-    LegacyFSMBranchSet,
     LegacyFSMBootstrapBranch,
     LegacyFSMBootstrapConfig,
+    LegacyFSMBranchPorts,
+    LegacyFSMBranchSet,
     LegacyFSMCarryBranch,
     LegacyFSMCarryConfig,
     LegacyFSMCompatibilityDecisionBackend,
-    LegacyFSMDumpBranch,
-    LegacyFSMDumpConfig,
     LegacyFSMDigBranch,
     LegacyFSMDigConfig,
+    LegacyFSMDumpBranch,
+    LegacyFSMDumpConfig,
     LegacyFSMRequestedDecisionBackend,
     LegacyFSMReturnBranch,
     LegacyFSMReturnConfig,
     PrimitiveRequestedBranchRunner,
+)
+from testbed.planner.primitive.decision.capabilities import (
+    PrimitiveDecisionCapabilities,
+    PrimitiveDecisionCapabilitiesPorts,
+)
+from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
+from testbed.planner.primitive.decision.contracts import (
+    LEGACY_FSM_DECISION_SOURCE,
+    CompleteCoverageDigEffect,
+    CompleteCoverageDumpEffect,
+    CompleteReturnTransitionEffect,
+    IncrementDigBadReplanCountEffect,
+    IncrementDigExitGuardReplanCountEffect,
+    MarkReturnNextDigEventSeenEffect,
+    PrimitiveDecisionContractError,
+    PrimitiveDecisionResult,
+    RejectActiveCoverageCorridorEffect,
+    RestartAfterFailedDigEffect,
+    RestartDigWithNewCutEffect,
+    SetDumpDoneHoldCountEffect,
+    SetDumpReadyHoldCountEffect,
+    SetDumpStartDepositedMassFromObservationEffect,
+    SetReturnOrDirectHandoffEffect,
+    SwitchSkillEffect,
+    SwitchToNextSkillAfterReturnEffect,
+)
+from testbed.planner.primitive.decision.input import PrimitiveBackendDecisionInput
+from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
+from testbed.planner.primitive.facts.backend import (
+    BootstrapDecisionStatus,
+    PrimitiveBootstrapDecisionFacts,
 )
 from testbed.planner.primitive.facts.capabilities import (
     CarryTransitionStatus,
@@ -30,37 +61,6 @@ from testbed.planner.primitive.facts.capabilities import (
     DumpTransitionStatus,
     ReturnTransitionStatus,
 )
-from testbed.planner.primitive.facts.backend import (
-    BootstrapDecisionStatus,
-    PrimitiveBackendFactsAccess,
-    PrimitiveBootstrapDecisionFacts,
-)
-from testbed.planner.primitive.decision.input import PrimitiveBackendDecisionInput
-from testbed.planner.primitive.decision.contracts import (
-    LEGACY_FSM_DECISION_SOURCE,
-    CompleteCoverageDigEffect,
-    CompleteReturnTransitionEffect,
-    CompleteCoverageDumpEffect,
-    IncrementDigBadReplanCountEffect,
-    IncrementDigExitGuardReplanCountEffect,
-    MarkReturnNextDigEventSeenEffect,
-    RejectActiveCoverageCorridorEffect,
-    RestartDigWithNewCutEffect,
-    RestartAfterFailedDigEffect,
-    SetDumpDoneHoldCountEffect,
-    SetDumpReadyHoldCountEffect,
-    SetDumpStartDepositedMassFromObservationEffect,
-    SetReturnOrDirectHandoffEffect,
-    PrimitiveDecisionContractError,
-    PrimitiveDecisionResult,
-    SwitchToNextSkillAfterReturnEffect,
-    SwitchSkillEffect,
-)
-from testbed.planner.primitive.decision.capabilities import (
-    PrimitiveDecisionCapabilities,
-    PrimitiveDecisionCapabilitiesPorts,
-)
-from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
 from testbed.planner.primitive.facts.decision import (
     PrimitiveCarryTransitionFacts,
     PrimitiveDecisionFacts,
@@ -68,7 +68,6 @@ from testbed.planner.primitive.facts.decision import (
     PrimitiveDumpTransitionFacts,
     PrimitiveReturnTransitionFacts,
 )
-from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 
 
 class _RecordingBranch:

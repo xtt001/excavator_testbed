@@ -4,15 +4,15 @@ from copy import deepcopy
 
 import numpy as np
 
-from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.coverage.effects import (
     CoverageEffectFactService,
     CoverageUpdateService,
 )
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from tests.test_agx_primitives_v2_2 import (
-    _RecordingPolicy,
     _coverage_obs,
     _coverage_planner_policy,
+    _RecordingPolicy,
 )
 
 

@@ -13,7 +13,6 @@ from testbed.data.hdf5_io import list_episodes
 from testbed.data.schema import (
     ATTR_ENV_STATE_ORDER,
     DS_ENV_STATE,
-    GRP_METADATA,
     ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
@@ -21,8 +20,8 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
     ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
+    GRP_METADATA,
 )
-
 
 TARGET_GEOMETRY_FIELDS = (
     "target_horizontal_distance_m",

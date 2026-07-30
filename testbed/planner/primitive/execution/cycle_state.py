@@ -54,7 +54,7 @@ class PrimitiveCycleRuntimeState:
     dump_start_deposited_mass_kg: float = 0.0
 
     @classmethod
-    def fresh(cls) -> "PrimitiveCycleRuntimeState":
+    def fresh(cls) -> PrimitiveCycleRuntimeState:
         """Return a fresh cycle runtime state matching reset defaults."""
         return cls()
 

@@ -7,9 +7,12 @@ from typing import Any
 import numpy as np
 import pytest
 
-from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX
-from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX
-from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
+)
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.token.dig_planning import (
     DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT,
@@ -19,14 +22,12 @@ from testbed.planner.primitive.token.return_planning import (
     PrimitiveReturnTokenPlanningPorts,
     PrimitiveReturnTokenPlanningService,
 )
-from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
 from testbed.planner.primitive.token.tokens import (
     DigCutTokenPlan,
     ReturnStartEnvelopeTokenPlan,
     ReturnTargetTokenPlan,
 )
-from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 
 def _token(size: int, value: float) -> np.ndarray:
@@ -217,7 +218,8 @@ def _ports(
     state["token_state"] = token_state
     state["coverage_state"] = coverage_state
     if ensure_coverage_corridors is None:
-        ensure_coverage_corridors = lambda: None
+        def ensure_coverage_corridors() -> None:
+            return None
 
     def observation_facts(obs: dict[str, Any]) -> PrimitiveObservationFacts:
         env_state = np.zeros(64, dtype=np.float32)

@@ -120,7 +120,7 @@ class KeyboardActionSource(ActionSource):
         log.info("KeyboardActionSource ready (WASD+arrows).")
 
     @classmethod
-    def from_config(cls, cfg: dict) -> "KeyboardActionSource":
+    def from_config(cls, cfg: dict) -> KeyboardActionSource:
         return cls(
             key_speed=cfg.get("key_speed", 0.5),
             window_title=cfg.get("window_title", "Testbed Teleop"),

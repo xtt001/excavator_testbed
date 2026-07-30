@@ -10,14 +10,14 @@ import numpy as np
 
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
+from testbed.planner.primitive.execution.pre_dig_align import (
+    PrimitivePreDigAlignRuntimeState,
+)
 from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive.execution.scripted_bootstrap import (
     PrimitiveScriptedBootstrapRuntimeState,
 )
-from testbed.planner.primitive.execution.pre_dig_align import (
-    PrimitivePreDigAlignRuntimeState,
-)
+from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
 from testbed.planner.primitive.facts.observation import (
     PrimitiveObservationInjectionRuntimeState,
 )
@@ -86,7 +86,7 @@ class PrimitiveResetLifecycleService:
     def from_ports(
         cls,
         ports: PrimitiveResetLifecyclePorts,
-    ) -> "PrimitiveResetLifecycleService":
+    ) -> PrimitiveResetLifecycleService:
         return cls(ports=ports)
 
     def reset(self) -> PrimitiveResetLifecycleState:

@@ -25,7 +25,6 @@ from typing import Any
 import numpy as np
 import torch
 import torchvision.transforms as transforms
-from einops import rearrange
 
 from testbed.data.camera_images import observation_camera_rgb
 from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
@@ -599,7 +598,7 @@ class ACTAdapter(Policy):
         norm_stats_path: str | Path,
         temporal_agg: bool = False,
         device: str = "cuda",
-    ) -> "ACTAdapter":
+    ) -> ACTAdapter:
         """
         Convenience factory: load an ACT policy from a checkpoint file.
 

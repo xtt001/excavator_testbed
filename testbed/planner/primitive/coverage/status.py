@@ -40,7 +40,7 @@ class CoverageStatus:
         last_effective_deposit_delta_kg: float = 0.0,
         active_corridor_depleted: bool = False,
         rejected_active_corridor: bool = False,
-    ) -> "CoverageStatus":
+    ) -> CoverageStatus:
         frozen_scores = tuple(
             MappingProxyType(dict(candidate_score))
             for candidate_score in candidate_scores

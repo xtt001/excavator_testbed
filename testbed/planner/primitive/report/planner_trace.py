@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_CONTRACT
-from testbed.planner.primitive.compatibility.cell_entry import PrimitiveCellEntryReportStatus
+from testbed.planner.primitive.compatibility.cell_entry import (
+    PrimitiveCellEntryReportStatus,
+)
 from testbed.planner.primitive.coverage.reports import CoverageTraceReportStatus
 from testbed.planner.primitive.token.state import PrimitiveTokenReportStatus
-
 
 DIG_CUT_TOKEN_CONTRACT_TEXT = (
     "entry_x,entry_z,exit_x,exit_z,dir_x,dir_z,"

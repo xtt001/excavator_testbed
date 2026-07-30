@@ -6,7 +6,6 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-
 SCHEMA = "terrain_candidate_heuristic_scores_v1"
 SOURCE = "explicit_candidate_heuristic_score_evidence"
 DEFAULT_PROFILE = "explicit_candidate_heuristic_score_evidence"

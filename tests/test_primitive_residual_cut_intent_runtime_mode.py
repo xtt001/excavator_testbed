@@ -238,7 +238,9 @@ def test_residual_cut_intent_mode_provider_errors_follow_existing_fallback_polic
 
 
 def test_token_planning_runtime_passes_residual_cut_intent_provider_to_dig_ports() -> None:
-    provider = lambda obs: _plan(8.0, source="runtime_provider")
+    def provider(obs):
+        return _plan(8.0, source="runtime_provider")
+
     token_state = PrimitiveTokenRuntimeState.fresh()
     coverage_state = CoverageRuntimeState()
     runtime = PrimitiveTokenPlanningRuntime.from_ports(
@@ -274,8 +276,12 @@ def test_token_planning_runtime_passes_residual_cut_intent_provider_to_dig_ports
 
 
 def test_token_planning_runtime_passes_residual_return_target_provider_to_return_ports() -> None:
-    dig_provider = lambda obs: _plan(8.0, source="runtime_dig_provider")
-    return_provider = lambda obs: _plan(9.0, source="runtime_return_provider")
+    def dig_provider(obs):
+        return _plan(8.0, source="runtime_dig_provider")
+
+    def return_provider(obs):
+        return _plan(9.0, source="runtime_return_provider")
+
     token_state = PrimitiveTokenRuntimeState.fresh()
     coverage_state = CoverageRuntimeState()
     runtime = PrimitiveTokenPlanningRuntime.from_ports(

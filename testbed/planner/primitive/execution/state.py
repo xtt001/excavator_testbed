@@ -23,7 +23,7 @@ class PrimitiveExecutionRuntimeState:
         *,
         initial_skill_name: str = "dig",
         switch_reason: str = "",
-    ) -> "PrimitiveExecutionRuntimeState":
+    ) -> PrimitiveExecutionRuntimeState:
         """Return a fresh execution runtime state matching reset defaults."""
 
         return cls(

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import numpy as np
 
-
 # ─── Site names registry ──────────────────────────────────────────────────────
 
 # Map robot variant name → EE site defined in its MJCF

@@ -16,8 +16,8 @@ from testbed.data.schema import (
     ATTR_TRANSITION_SOURCE,
     ATTR_V2_ENABLED,
     ATTR_WORK_STAGE_VERSION,
-    ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
@@ -27,10 +27,8 @@ from testbed.data.schema import (
 from testbed.planner.boundary_detector import (
     MODE_TRANSITION,
     MODE_WORK,
-    BoundaryDetector,
     build_boundary_detector_from_config,
 )
-
 
 GOAL_TOKEN_DIM = 10
 GOAL_TOKEN_VERSION = "v2_1c_sector10d_digarea13"
@@ -386,7 +384,6 @@ def label_episode_v2_1(
             else (next_start_step if next_start_step is not None else n_steps)
         )
         window = slice(start_step, max(start_step + 1, cycle_slice_end))
-        transition_end = next_start_step if next_start_step is not None else end_step
 
         curr_sector_id = swing_to_sector_id(float(qpos_arr[start_step, 0]))
         peak_bucket_depth_m = float(np.max(bucket_depth[window]))

@@ -6,12 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.coverage.config import PrimitiveCoverageStaticConfig
-from testbed.planner.primitive.coverage.selection import (
-    CoverageCorridorState,
-    CoverageSelectionService,
-)
 from testbed.planner.primitive.coverage.reports import (
     CoverageBucketSnapshot,
     CoverageReportConfig,
@@ -20,7 +15,12 @@ from testbed.planner.primitive.coverage.reports import (
     CoverageSummaryReportStatus,
     CoverageTraceReportStatus,
 )
+from testbed.planner.primitive.coverage.selection import (
+    CoverageCorridorState,
+    CoverageSelectionService,
+)
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 
 
 @dataclass(frozen=True)
@@ -45,7 +45,7 @@ class PrimitiveCoverageReportRuntime:
     def from_ports(
         cls,
         ports: PrimitiveCoverageReportRuntimePorts,
-    ) -> "PrimitiveCoverageReportRuntime":
+    ) -> PrimitiveCoverageReportRuntime:
         return cls(ports=ports)
 
     @staticmethod

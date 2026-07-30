@@ -15,13 +15,13 @@ from testbed.data.schema import (
 )
 from testbed.planner.primitive.coverage.selection import CoverageCorridorState
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
-from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive.decision.backends.legacy_capability_provider import (
     PrimitiveFSMCapabilityProvider,
     PrimitiveFSMCapabilityProviderConfig,
     PrimitiveFSMCapabilityProviderPorts,
 )
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
 
 
 class _BoundaryEvent:

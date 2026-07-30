@@ -22,7 +22,6 @@ from testbed.eval.terrain_residual_contract import (
 from testbed.eval.terrain_target_grid import build_rectangular_target_grid
 from testbed.eval.terrain_target_metrics import build_target_residual_metrics
 
-
 SCHEMA = "terrain_cycle_quality_report_v1"
 SOURCE = "rollout_jsonl_per_cycle_terrain_quality_report"
 DEFAULT_PROFILE = "explicit_t1_like_rectangular_shallow_pit"

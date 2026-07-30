@@ -8,7 +8,6 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA = "terrain_residual_execution_diagnostic_v1"
 SOURCE = "residual_cut_intent_execution_quality_diagnostic"
 FAILURE_PACKET_SCHEMA = "terrain_residual_official_v0_failure_packet_v1"

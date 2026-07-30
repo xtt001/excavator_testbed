@@ -23,7 +23,6 @@ from testbed.data.schema import (
 )
 from testbed.data.v2_1 import build_goal_tokens
 
-
 PRIMITIVE_GOAL_SECTOR_IDS = {"left": 0, "mid": 1, "right": 2}
 
 
@@ -44,7 +43,7 @@ class GoalTokenProvider:
         scenario_id: str = "s0_truck",
         depth_norm: float = 0.0,
         dump_target_norm: float = 0.0,
-    ) -> "GoalTokenProvider":
+    ) -> GoalTokenProvider:
         return cls(
             goal_sequence=cls.normalize_goal_sequence(goal_sequence),
             scenario_id=str(scenario_id),

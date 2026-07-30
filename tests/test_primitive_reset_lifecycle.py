@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import fields
-from types import SimpleNamespace
-from types import MethodType
-from typing import Any
+from types import MethodType, SimpleNamespace
 
 import numpy as np
 import pytest
@@ -15,19 +13,18 @@ from testbed.data.operator_first_v2_2 import (
     RETURN_TARGET_TOKEN_DIM,
 )
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.execution.pre_dig_align import (
+    PrimitivePreDigAlignRuntimeState,
+)
 from testbed.planner.primitive.execution.reset_lifecycle import (
     PrimitiveResetLifecyclePorts,
     PrimitiveResetLifecycleService,
-)
-from testbed.planner.primitive.execution.pre_dig_align import (
-    PrimitivePreDigAlignRuntimeState,
 )
 from testbed.policies.hybrid.primitive_planner import (
     BOOTSTRAP_SKILL_NAME,
     PRE_DIG_ALIGN_SKILL_NAME,
     PrimitivePlannerACTPolicy,
 )
-
 
 _OBSERVATION_INJECTION_FLAG_NAMES = {
     "cell_entry_token_injected",

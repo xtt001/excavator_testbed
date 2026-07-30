@@ -6,7 +6,6 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-
 SCHEMA = "terrain_candidate_constraint_evidence_v1"
 SOURCE = "explicit_target_candidate_constraint_evidence"
 DEFAULT_PROFILE = "explicit_target_candidate_constraint_evidence"

@@ -10,13 +10,17 @@ from typing import Any
 
 import numpy as np
 
-from testbed.data.hdf5_io import episode_id_from_path, list_episodes, read_episode, write_episode
+from testbed.data.hdf5_io import (
+    episode_id_from_path,
+    list_episodes,
+    read_episode,
+    write_episode,
+)
 from testbed.data.schema import (
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
 )
-
 
 TRANSITION_RECORDING_MODE = "transition_relabel"
 TRANSITION_WINDOW_NAME = "dump_end_to_next_qualified_dig_start"

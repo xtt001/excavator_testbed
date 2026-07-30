@@ -16,7 +16,6 @@ from testbed.planner.primitive.token.residual_cut_intent_source import (
     build_residual_cut_intent_plan_provider_from_source_path,
 )
 
-
 EXPECTED_FILES = [
     "eval_run_metadata.json",
     "experiment_manifest.json",

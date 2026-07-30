@@ -2,7 +2,6 @@ from pathlib import Path
 
 from testbed.backends.agx.protocol import TERRAIN_DIAGNOSTIC_MODES
 
-
 UNITY_ROOT = Path("/home/pingfan/AGXUnityE85ExcavatorSim")
 UNITY_BRIDGE = (
     UNITY_ROOT

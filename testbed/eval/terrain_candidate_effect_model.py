@@ -10,7 +10,6 @@ from testbed.eval.terrain_candidate_entry_exit_effect import (
     build_entry_exit_swept_footprint_effect,
 )
 
-
 SCHEMA = "terrain_candidate_geometric_effect_v1"
 SOURCE = "explicit_geometric_swept_footprint_effect"
 DEFAULT_PROFILE = "explicit_geometric_swept_footprint_effect"

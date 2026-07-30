@@ -3,22 +3,21 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import testbed.planner.primitive.execution.runtime as primitive_execution
 from testbed.planner.primitive.decision.contracts import (
     CompleteReturnTransitionEffect,
     MarkReturnNextDigEventSeenEffect,
     PrimitiveDecisionResult,
     RequestedPlannerEffect,
-    SwitchToNextSkillAfterReturnEffect,
     SwitchSkillEffect,
+    SwitchToNextSkillAfterReturnEffect,
 )
-import testbed.planner.primitive.execution.runtime as primitive_execution
-from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
 from testbed.planner.primitive.execution.runtime import (
     PrimitiveTickHooks,
     run_primitive_tick,
 )
+from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
-
 
 _OLD_EXECUTION_DRIVER_POLICY_WRAPPERS = (
     "_tick_boundary_event",

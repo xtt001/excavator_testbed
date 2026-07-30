@@ -29,7 +29,6 @@ from testbed.data.hdf5_io import episode_id_from_path, list_episodes
 from testbed.data.operator_first_v2_2 import RETURN_START_ENVELOPE_TOKEN_DIM
 from testbed.runtime._train import _resolve_low_dim_state_dim
 
-
 RETURN_START_TOKEN_KEY = "return_start_envelope_tokens_v1"
 RETURN_START_TOKEN_PATH = "v2/step/return_start_envelope_tokens_v1"
 RETURN_RELOCATE_TOKEN_KEY = "return_relocate_tokens_v1"

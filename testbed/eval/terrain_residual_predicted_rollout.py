@@ -45,7 +45,6 @@ from testbed.eval.terrain_residual_predicted_rollout_contract import (
 )
 
 
-
 def build_predicted_residual_rollout(
     *,
     branch_run_plan: Mapping[str, Any],

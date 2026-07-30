@@ -8,6 +8,12 @@ from typing import Any
 
 import numpy as np
 
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.effects.return_handoff import (
+    ReturnHandoffReadinessService,
+)
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive.facts.capabilities import (
     CarryTransitionStatus,
     DigTransitionStatus,
@@ -15,10 +21,6 @@ from testbed.planner.primitive.facts.capabilities import (
     PrimitiveObservationFacts,
     ReturnTransitionStatus,
 )
-from testbed.planner.primitive.coverage.state import CoverageRuntimeState
-from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive.effects.return_handoff import ReturnHandoffReadinessService
-from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
 
 
 @dataclass(frozen=True)
@@ -101,7 +103,7 @@ class PrimitiveFSMCapabilityProvider:
     def from_ports(
         cls,
         ports: PrimitiveFSMCapabilityProviderPorts,
-    ) -> "PrimitiveFSMCapabilityProvider":
+    ) -> PrimitiveFSMCapabilityProvider:
         return cls(ports=ports)
 
     def dig_transition_status(

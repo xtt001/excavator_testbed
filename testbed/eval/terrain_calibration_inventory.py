@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA = "terrain_gold_sample_calibration_inventory_v1"
 SOURCE = "explicit_gold_sample_calibration_inventory"
 DEFAULT_PROFILE = "explicit_gold_sample_calibration_inventory"

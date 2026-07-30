@@ -14,9 +14,11 @@ from testbed.planner.primitive.coverage.selection import (
 )
 
 if TYPE_CHECKING:
-    from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
     from testbed.planner.primitive.coverage.state import CoverageRuntimeState
-    from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+    from testbed.planner.primitive.execution.cycle_state import (
+        PrimitiveCycleRuntimeState,
+    )
+    from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 
 
 @dataclass(frozen=True)
@@ -507,7 +509,7 @@ class CoverageEffectRuntimeCoordinator:
     def from_ports(
         cls,
         ports: CoverageEffectRuntimePorts,
-    ) -> "CoverageEffectRuntimeCoordinator":
+    ) -> CoverageEffectRuntimeCoordinator:
         return cls(ports=ports)
 
     def complete_dig(self, obs: dict[str, Any]) -> None:

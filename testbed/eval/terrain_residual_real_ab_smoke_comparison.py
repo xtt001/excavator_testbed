@@ -13,7 +13,6 @@ import yaml
 
 from testbed.eval.terrain_residual_contract import official_contract_statuses
 
-
 CURRENT_REQUEST_SCHEMA = "terrain_residual_current_bounded_smoke_request_v1"
 CURRENT_REQUEST_SOURCE = "explicit_current_planner_bounded_smoke_request"
 COMPARISON_SCHEMA = "terrain_residual_real_ab_bounded_smoke_comparison_v1"

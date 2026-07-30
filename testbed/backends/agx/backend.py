@@ -9,29 +9,29 @@ from typing import Any
 
 import numpy as np
 
-from testbed.backends.base import SimBackend
 from testbed.backends.agx.protocol import (
     AgxProtocolError,
     AgxSimClient,
     GetInfoResponse,
     StepResponse,
 )
+from testbed.backends.base import SimBackend
 from testbed.tasks.logic.excavator_reward import (
+    AGX_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE,
+    AGX_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE,
+    AGX_BUCKET_DUMP_AREA_RELATIVE_X,
+    AGX_BUCKET_DUMP_AREA_RELATIVE_Z,
+    AGX_BUCKET_HEIGHT_ABOVE_TARGET_RIM,
+    AGX_BUCKET_OVER_TARGET_FOOTPRINT,
     AGX_DEPOSITED_MASS_IN_TARGET_BOX,
+    AGX_DUMP_CLEARANCE_OK,
     AGX_EXCAVATED_MASS,
     AGX_MASS_IN_BUCKET,
     AGX_MASS_IN_TARGET_BOX,
     AGX_MIN_DISTANCE_TO_DIG_AREA,
     AGX_MIN_DISTANCE_TO_TARGET,
     AGX_TARGET_CONTACT_MAX_NORMAL_FORCE_N,
-    AGX_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE,
-    AGX_BUCKET_HEIGHT_ABOVE_TARGET_RIM,
-    AGX_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE,
-    AGX_BUCKET_DUMP_AREA_RELATIVE_X,
-    AGX_BUCKET_DUMP_AREA_RELATIVE_Z,
     AGX_TARGET_HARD_COLLISION_COUNT,
-    AGX_BUCKET_OVER_TARGET_FOOTPRINT,
-    AGX_DUMP_CLEARANCE_OK,
     AGX_TARGET_HORIZONTAL_DISTANCE,
     AgxExcavationRewardTracker,
     get_agx_excavation_mission,

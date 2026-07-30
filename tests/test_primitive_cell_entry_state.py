@@ -11,7 +11,6 @@ from testbed.planner.cell_entry import (
 from testbed.planner.primitive.compatibility.cell_entry import (
     PrimitiveCellEntryCompatibilityRuntimeState,
     PrimitiveCellEntryReportConfig,
-    PrimitiveCellEntryReportStatus,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 from tests.primitive_policy_test_helpers import make_policy_shell_for_private_weld_tests

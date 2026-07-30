@@ -15,41 +15,44 @@ from testbed.planner.primitive.compatibility.cell_entry import (
     PrimitiveCellEntryReportConfig,
     PrimitiveCellEntryReportStatus,
 )
-from testbed.planner.primitive.coverage.selection import CoverageSelectionService
-from testbed.planner.primitive.coverage.reports import (
-    CoverageReportConfig,
-    CoverageReportService,
-)
-from testbed.planner.primitive.coverage.state import CoverageRuntimeState
-from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleReportStatus
-from testbed.planner.primitive.report.debug_report import (
-    PrimitiveDebugReportInputs,
-    PrimitiveDebugStateSnapshot,
-)
-from testbed.planner.primitive.report.planner_trace import PrimitivePlannerTraceInputs
 from testbed.planner.primitive.compatibility.pre_dig_align import (
     PrimitivePreDigAlignReportConfig,
     PrimitivePreDigAlignReportStatus,
     pre_dig_align_report_status_from_state,
 )
+from testbed.planner.primitive.coverage.reports import (
+    CoverageReportConfig,
+    CoverageReportService,
+)
+from testbed.planner.primitive.coverage.selection import CoverageSelectionService
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleReportStatus
 from testbed.planner.primitive.execution.pre_dig_align import (
     PrimitivePreDigAlignRuntimeState,
 )
 from testbed.planner.primitive.execution.return_state import PrimitiveReturnReportStatus
-from testbed.planner.primitive.report.rollout_summary import PrimitiveRolloutSummaryInputs
 from testbed.planner.primitive.execution.scripted_bootstrap import (
     PrimitiveScriptedBootstrapReportStatus,
 )
-from testbed.planner.primitive.execution.tick_finalization import PrimitivePlannerDebugState
+from testbed.planner.primitive.execution.tick_finalization import (
+    PrimitivePlannerDebugState,
+)
 from testbed.planner.primitive.facts.observation import (
     PrimitiveObservationInjectionRuntimeState,
+)
+from testbed.planner.primitive.report.debug_report import (
+    PrimitiveDebugReportInputs,
+    PrimitiveDebugStateSnapshot,
+)
+from testbed.planner.primitive.report.planner_trace import PrimitivePlannerTraceInputs
+from testbed.planner.primitive.report.rollout_summary import (
+    PrimitiveRolloutSummaryInputs,
 )
 from testbed.planner.primitive.token.state import (
     PrimitiveTokenReportStatus,
     PrimitiveTokenRuntimeState,
 )
 from testbed.planner.primitive.token.status import TokenStatus
-
 
 TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY = "v2_2_primitive_return_policy"
 TRANSITION_POLICY_MODE_PRIMITIVE = "primitive_return_policy"
@@ -93,7 +96,7 @@ class PrimitiveReportRuntime:
     def from_ports(
         cls,
         ports: PrimitiveReportRuntimePorts,
-    ) -> "PrimitiveReportRuntime":
+    ) -> PrimitiveReportRuntime:
         return cls(ports=ports)
 
     def debug_report_inputs(self) -> PrimitiveDebugReportInputs:
@@ -319,7 +322,7 @@ class PrimitiveReportCompositionRuntime:
     def from_ports(
         cls,
         ports: PrimitiveReportCompositionPorts,
-    ) -> "PrimitiveReportCompositionRuntime":
+    ) -> PrimitiveReportCompositionRuntime:
         return cls(ports=ports)
 
     def token_status_for_debug_report(self) -> TokenStatus:

@@ -8,8 +8,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-import matplotlib
 import h5py
+import matplotlib
 import numpy as np
 
 from testbed.data.camera_images import (

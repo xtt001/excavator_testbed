@@ -14,9 +14,6 @@ from testbed.eval.terrain_residual_ab_artifact_writer import (
 from testbed.eval.terrain_residual_baseline_comparison import (
     build_predicted_residual_ab_comparison,
 )
-from testbed.eval.terrain_residual_cut_intent_runtime_source import (
-    build_residual_cut_intent_runtime_source,
-)
 from testbed.eval.terrain_residual_closed_loop_branch_plan import (
     REQUIRED_CUT_INTENT_FIELDS,
     build_closed_loop_branch_run_plan,
@@ -24,13 +21,15 @@ from testbed.eval.terrain_residual_closed_loop_branch_plan import (
 from testbed.eval.terrain_residual_closed_loop_manifest import (
     build_closed_loop_experiment_manifest,
 )
+from testbed.eval.terrain_residual_cut_intent_runtime_source import (
+    build_residual_cut_intent_runtime_source,
+)
 from testbed.eval.terrain_residual_predicted_rollout import (
     build_predicted_residual_rollout,
 )
 from testbed.eval.terrain_target_report import (
     build_explicit_target_residual_baseline_report,
 )
-
 
 SCHEMA = "terrain_residual_predicted_ab_artifact_pipeline_v1"
 SOURCE = "explicit_predicted_residual_ab_artifact_pipeline"

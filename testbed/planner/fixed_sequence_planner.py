@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 SECTOR_NAME_TO_ID = {
     "left": 0,
     "mid": 1,

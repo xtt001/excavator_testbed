@@ -10,7 +10,12 @@ from typing import Any
 
 import numpy as np
 
-from testbed.data.hdf5_io import episode_id_from_path, list_episodes, read_episode, write_episode
+from testbed.data.hdf5_io import (
+    episode_id_from_path,
+    list_episodes,
+    read_episode,
+    write_episode,
+)
 from testbed.data.schema import (
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
@@ -20,7 +25,6 @@ from testbed.data.schema import (
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
     ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
-
 
 WORKSKILL_RECORDING_MODE = "workskill_relabel"
 WORKSKILL_WINDOW_NAME = "qualified_dig_start_to_dump_end"

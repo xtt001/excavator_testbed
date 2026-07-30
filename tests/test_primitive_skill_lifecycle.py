@@ -5,13 +5,13 @@ from types import MethodType
 
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive.execution.state import (
-    PrimitiveExecutionRuntimeState,
-)
 from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive.execution.skill_lifecycle import (
     PrimitiveSkillLifecyclePorts,
     PrimitiveSkillLifecycleService,
+)
+from testbed.planner.primitive.execution.state import (
+    PrimitiveExecutionRuntimeState,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 

@@ -6,13 +6,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
 from testbed.planner.primitive.facts.capabilities import (
     CarryTransitionStatus,
     DigTransitionStatus,
     DumpTransitionStatus,
     ReturnTransitionStatus,
 )
-from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
 from testbed.planner.primitive.facts.decision import (
     PrimitiveCarryTransitionFacts,
     PrimitiveDecisionFacts,
@@ -137,7 +137,7 @@ class PrimitiveBackendFactsSource:
     def from_ports(
         cls,
         ports: PrimitiveBackendFactsPorts,
-    ) -> "PrimitiveBackendFactsSource":
+    ) -> PrimitiveBackendFactsSource:
         return cls(ports)
 
     def decision_facts(
@@ -155,7 +155,7 @@ class PrimitiveBackendFactsSource:
         context: PrimitiveDecisionContext,
         *,
         facts: PrimitiveDecisionFacts | None = None,
-    ) -> "PrimitiveBackendFactsAccess":
+    ) -> PrimitiveBackendFactsAccess:
         common = facts or self.decision_facts(context)
         return PrimitiveBackendFactsAccess.from_reader(
             context=context,
@@ -189,7 +189,7 @@ class PrimitiveBackendFactsAccess:
         common: PrimitiveDecisionFacts,
         transition_status_reader: PrimitiveTransitionStatusReader,
         bootstrap_decision_reader: PrimitiveBootstrapDecisionReader | None = None,
-    ) -> "PrimitiveBackendFactsAccess":
+    ) -> PrimitiveBackendFactsAccess:
         return cls(
             context=context,
             common=common,

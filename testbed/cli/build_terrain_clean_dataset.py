@@ -9,7 +9,6 @@ from pathlib import Path
 from testbed.data.terrain_clean_dataset import build_terrain_clean_dataset
 from testbed.data.terrain_cycle_cleaning import APPROVED_TERRAIN_DATASET_ROOT
 
-
 DEFAULT_OUTPUT_ROOT = APPROVED_TERRAIN_DATASET_ROOT.with_name(
     f"{APPROVED_TERRAIN_DATASET_ROOT.name}_cycle_clean_v1"
 )

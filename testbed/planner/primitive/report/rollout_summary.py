@@ -7,12 +7,11 @@ from dataclasses import dataclass
 from testbed.planner.primitive.compatibility.cell_entry import (
     PrimitiveCellEntryReportStatus,
 )
-from testbed.planner.primitive.coverage.reports import CoverageSummaryReportStatus
 from testbed.planner.primitive.compatibility.pre_dig_align import (
     PrimitivePreDigAlignReportStatus,
 )
+from testbed.planner.primitive.coverage.reports import CoverageSummaryReportStatus
 from testbed.planner.primitive.token.state import PrimitiveTokenReportStatus
-
 
 PrimitiveRolloutSummaryValue = float | int | str | list[str]
 

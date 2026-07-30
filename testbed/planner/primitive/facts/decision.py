@@ -5,14 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
+from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 from testbed.planner.primitive.facts.capabilities import (
     CarryTransitionStatus,
     DigTransitionStatus,
     DumpTransitionStatus,
     ReturnTransitionStatus,
 )
-from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
-from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 
 
 @dataclass(frozen=True)
@@ -38,7 +38,7 @@ class PrimitiveDecisionFacts:
         *,
         current_skill_name: Any,
         current_switch_reason: Any,
-    ) -> "PrimitiveDecisionFacts":
+    ) -> PrimitiveDecisionFacts:
         return cls(
             context=context,
             current_skill_name=str(current_skill_name),

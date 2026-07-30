@@ -9,7 +9,6 @@ import numpy as np
 from testbed.data.hdf5_io import write_episode
 from testbed.data.target_geometry_audit import audit_target_geometry_dataset
 
-
 LEGACY_ENV_STATE_ORDER = (
     "mass_in_bucket_kg",
     "excavated_mass_kg",

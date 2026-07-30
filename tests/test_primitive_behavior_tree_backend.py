@@ -5,8 +5,8 @@ from typing import Any
 
 import testbed.planner.primitive.report.decision_trace as decision_trace_module
 from testbed.planner.primitive.decision.backends.behavior_tree import (
-    BEHAVIOR_TREE_DECISION_BACKEND_NAME,
     BEHAVIOR_TREE_CONTINUE_DECISION_SOURCE,
+    BEHAVIOR_TREE_DECISION_BACKEND_NAME,
     BEHAVIOR_TREE_RETURN_COMPLETED_DECISION_SOURCE,
     BehaviorTreeDecisionBackendFactory,
     BehaviorTreeDecisionBackendFactoryPorts,
@@ -27,11 +27,11 @@ from testbed.planner.primitive.decision.runtime import (
 )
 from testbed.planner.primitive.decision.validation import DecisionProposalValidator
 from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
-from testbed.planner.primitive.facts.capabilities import ReturnTransitionStatus
 from testbed.planner.primitive.facts.backend import (
     PrimitiveBackendFactsPorts,
     PrimitiveBackendFactsSource,
 )
+from testbed.planner.primitive.facts.capabilities import ReturnTransitionStatus
 from testbed.planner.primitive.report.decision_trace import (
     DecisionTraceAssembler,
     DecisionTraceMetadata,

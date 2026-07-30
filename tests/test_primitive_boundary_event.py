@@ -9,10 +9,9 @@ from testbed.planner.primitive.execution.boundary_event import (
     PrimitiveBoundaryEventRuntimePorts,
     PrimitiveBoundaryEventRuntimeService,
 )
-from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
-
 
 _OLD_BOUNDARY_EVENT_POLICY_WRAPPERS = ("_tick_boundary_event",)
 

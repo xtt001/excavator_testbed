@@ -9,7 +9,6 @@ from typing import Any
 
 from testbed.eval.terrain_residual_contract import official_contract_statuses
 
-
 SCHEMA = "terrain_residual_eval_run_plan_v1"
 SOURCE = "explicit_residual_eval_run_plan"
 DEFAULT_PROFILE = "phase6g_residual_eval_run_plan"

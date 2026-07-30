@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -242,7 +242,7 @@ class JoystickActionSource(ActionSource):
             log.info("Unity-style joystick response smoothing enabled.")
 
     @classmethod
-    def from_config(cls, cfg: dict, *, default_dt: float = 0.02) -> "JoystickActionSource":
+    def from_config(cls, cfg: dict, *, default_dt: float = 0.02) -> JoystickActionSource:
         """Construct from a flat config dict (e.g. loaded from teleop_v0.yaml)."""
         return cls(
             joystick_id=cfg.get("joystick_id", 0),

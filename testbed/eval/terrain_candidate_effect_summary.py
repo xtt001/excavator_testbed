@@ -6,7 +6,6 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-
 SCHEMA = "terrain_candidate_effect_summary_v1"
 SOURCE = "explicit_candidate_effect_summary"
 DEFAULT_PROFILE = "explicit_candidate_effect_summary"

@@ -4,6 +4,190 @@ This document is the startup prompt and handoff packet for the next ordinary
 Codex development thread. It replaces the previous planner/executor thread
 workflow for this effort.
 
+> **2026-07-31 superseding handoff:** the active mainline is
+> `exact diagnostic → contact audit/A-B → Unity wall+FactoryFloor diagnostic
+> → return-handoff/action diagnostic → return-handoff owner isolation
+> → contact-budget freeze
+> → continuous predictor → E0/G1/W1 → bounded live
+> → conditional 1×10`.
+> The contact audit/A-B stage has finished and is now paused for human review.
+> Geometry covered 433 paths; all 18 recorded-action source replays completed,
+> but all `379 train + 61 holdout` dig windows were fairness-invalid and none
+> may drive production inference. The six immutable paired attempts produced
+> B carry+dump on seeds 0/1 and a repeat-session hard stop on seed 2, so the
+> source-locked append-only `reanalysis_v4` classification is `inconclusive`.
+> It is a zero-execution postprocess of the original attempts. Production
+> bucket region and force/duration/impulse budgets are not frozen. Do not
+> implement the qpos predictor, modify the continuous contact contract, or run
+> E0/G1/W1, bounded live, or 1×10 until the user explicitly reviews and freezes
+> those contact semantics.
+>
+> One separately authorized B2 diagnostic then reran **seed 2 exactly once**.
+> Its only semantic delta was `session_end_clear_ticks=2`: one 20ms clear
+> observation remains inside the same logical bucket-wall session. The source
+> reset, target, checkpoint set, ACT settings, timeout, and hard thresholds
+> remained locked. Physical contact at step 625 and steps 627..689 was
+> bucket-only on the same `Dig_ZMin_Board`, with step 626 as the sole clear
+> observation. B2 merged those physical sessions, entered carry, completed
+> dump, and had no hard-stop violation. The outcome is
+> `single_clear_tick_split_supported`.
+>
+> A later, separately authorized current-code diagnostic ran **one fresh
+> seed-1000 rollout and no retry**, with a maximum of ten shovels. It used the
+> historical seven-dump Strict-18 resolved config/reset/checkpoint lineage but
+> did not resume cycle 8. Its only ordinary wall-contact semantic change made
+> finite, strictly sub-100kN bucket contact record-only across arbitrary
+> sessions, durations, bucket regions, and wall identities. Such contact could
+> not request neutral, reset ACT, replan, or block a corridor; boom/stick/other,
+> data anomalies, high force, hard-bottom, stuck, and timeout remained hard
+> stops.
+>
+> That sole rollout completed six dumps and stopped safely during shovel 7 on
+> `hard_bottom_depth_budget_guard_clearance_depth_increase`. Zero-based report
+> shovel index 1 (the second shovel) contained 12 physical bucket ×
+> `Dig_ZMin_Board` sessions over 21 contact ticks and 0.42s, with normal
+> peak/RMS `73924.76/43681.23N`, normal impulse
+> `15555.178944N·s`, and observed motion progress. All 21 allowed ticks had zero
+> neutral, ACT-reset, replan, and corridor-block side effects. Report status was
+> `passed`, outcome `hard_safety_stop_before_10`; no HDF5 was written.
+>
+> The later Unity-only wall+FactoryFloor investigation invalidated its first
+> apparent high-force result: v2/v4 were launched with `-nographics`, so ACT
+> consumed Null-renderer frozen gray camera frames. Unity now rejects a
+> supports-images GET_INFO/capture with
+> `recording_camera_graphics_device_unavailable` when the graphics device is
+> Null. v5 used a real GPU but had an extra preflight RESET; v6 ended in an
+> FMOD native crash. The final valid v7 used RTX 5070 Ti, exactly one RESET,
+> and matched the frozen A0 reset on every fairness metric. It completed seven
+> dumps and ended on the unchanged timeout chain. Shovel 6 had one 68.353kN
+> bucket-wall tick; shovel 7 had 3.98s bucket-wall contact peaking at 31.971kN
+> and 3.20s bucket-FactoryFloor contact peaking at 61.433kN, with motion
+> progress during both long contacts. No boom/stick/other, >=100kN, stuck, or
+> data anomaly occurred.
+>
+> The original v7 failed report remains immutable. Append-only
+> `run/report_reanalysis_v2.json` corrects only the JSONL ownership of a
+> post-step contact immediately followed by an independent timeout
+> zero→neutral→terminal chain; it reports `passed/timeout`, seven dumps, and
+> valid reset fairness.
+>
+> The subsequent return-handoff audit found that extending timeout or widening
+> qpos_1 was not supported: v7 ACT commanded boom farther down before contact
+> and crossed the locked cell-0 upper bound. A diagnostic-only boom-axis
+> limiter was therefore added without changing the envelope. v3 completed
+> seven dumps but never exercised it because the config was incorrectly scoped
+> to cell 0 while the fresh goal was cell 4. v4 exposed a wiring bug that used
+> the bucket's current spatial cell instead of the locked return-goal cell and
+> correctly failed closed. Both roots remain immutable evidence.
+>
+> The corrected no-overwrite v5 used the locked coverage return-goal identity.
+> All 358 train handoffs across cells 0..5 support the in-envelope target. The
+> live goal was cell 2; the controller intervened for 19 ticks, kept qpos_1
+> below the unchanged `0.622343` upper bound, entered the eighth dig, and
+> completed the eighth dump. Reset fairness passed, the eighth shovel had no
+> wall/floor contact or hard violation, and no HDF5 was written. The generic
+> report label `normal_completed_10` is historical; the manifest and stop
+> reason prove this was an eight-dump gate, not a 1×10.
+>
+> A final two-part causal diagnostic then compared the immutable v7 step-3550
+> failure against all 416 strict-18 return→dig boundaries and independently
+> pulsed the Unity boom without ACT or terrain physics. No same-cell expert row
+> jointly matched the cut intent, full 18D return envelope, qpos/qvel,
+> local-depth gate, and required contact; ignoring contact still produced zero
+> envelope+state matches. The locked envelope contact token is `0`, while
+> runtime config forces `require_contact=true`. All five
+> near-upper-band cell-0 expert examples continued negative boom action rather
+> than braking. In Unity, full failure-posture-matched tests at boom qpos
+> `0.42/0.52/0.62` produced the expected inverse command/qpos direction,
+> max/min gain ratio `1.119953`, and zero external/wall/FactoryFloor contacts.
+> The source-locked conclusion is therefore
+> `return_handoff_contract_outside_expert_support`: Unity mapping is normal,
+> and the evidence does not support an expert-brakes/ACT-does-not temporal
+> failure. It does not yet choose a replacement production return contract.
+>
+> A target-scoped owner diagnostic has now answered that narrower question.
+> Production-service replay of the immutable v7 segment showed that simply
+> setting global `require_contact=false` also moved the plane-depth floor from
+> prior p05 to p50, so the handoff still missed the pre-qpos window. Keeping
+> depth on its original prior p05-p95 bounds and letting 18D token field 6 own
+> contact made the offline gate ready at step 3554, before qpos_1 failed at
+> step 3555.
+>
+> The first live attempt applied that change globally and is superseded because
+> it perturbed earlier handoffs, took a cycle-3 carry release-safety path, and
+> timed out after four dumps. The accepted v2 kept v7 semantics until seven
+> completed dumps, then activated the diagnostic owner control. Reset fairness
+> was exact. It entered the eighth dig at step 3475 with qpos_1
+> `0.598779 < 0.648137`, completed the eighth `dump_end`, and stopped on the
+> target-cycle gate with no safety violation. Use
+> `return_handoff_owner_target_scoped_diagnostic_v2/run/report_reanalysis_v1.json`;
+> the raw terminal generic dump counter is one tick stale at 7, while both
+> `target_cycle_completed_dump_count` and `dump_end_count` are 8.
+>
+> Two later no-overwrite diagnostic roots extended that same request-local
+> setup to a ten-dump target. Both resets were fair, but both stopped after
+> exactly two dump events, before the owner control activated. In each run the
+> second shovel released while still owned by `carry`, took
+> `carry_to_return_release_safety`, and never entered the explicit dump skill.
+> Bucket-only FactoryFloor contact lasted about four seconds and remained
+> below 100kN. Return then re-entered terrain with `61.660kg` and `68.385kg`
+> residual bucket mass, exceeded both local-depth and qpos_1 envelope checks,
+> and ended on the unchanged timeout chain. Use
+> `return_handoff_owner_target_scoped_10cycle_diagnostic_v1/run/report_reanalysis_v1.json`
+> and
+> `return_handoff_owner_target_scoped_10cycle_diagnostic_v2/run/report.json`.
+> Neither attempt exercised the seventh-dump owner change, so they do not
+> overturn the gate-8 proof. They identify an earlier lifecycle blocker:
+> `carry -> dump` committed-boundary/release ordering.
+>
+> All of B2, the wall-only diagnostic, v7, and the return-action v5 remain
+> diagnostic/non-promotable; the owner-isolation v2 has the same boundary.
+> They do not replace the original six-attempt
+> `inconclusive` contact classification, define a production contact budget,
+> promote the axis limiter, or count as a ten-dump pass. The next semantic
+> decision is to review whether token-owned contact plus prior-owned depth is
+> the desired production return contract, or whether to keep it diagnostic and
+> instead address return ACT/data. Before another multi-shovel repeat, isolate
+> why release can complete under carry ownership without a committed dump
+> transition. Contact-budget review is still unresolved and all
+> predictor/live rollout gates remain false.
+
+## Post-Restart Status
+
+This document originally launched the Phase 6G-S work from handoff commit
+`ec6e47253968864aea26aca0571aff7c7f12cbe4`. The main thread has since
+completed Phase 6G-S and Phase 6G-T; consult
+`docs/oracle_terrain_residual_planner_closed_loop_log.md` for the current
+source-of-truth facts before treating the older "Immediate next step" section
+below as active work.
+
+Current post-restart facts:
+
+- Phase 6G-S request-local prior counterfactual succeeded: with the 6G-P mixed
+  source and gate settings preserved, changing only
+  `policy.dig_cut_planner.prior_path` to the existing surface-depth prior let
+  B complete return handoff and gate 2.
+- Phase 6G-T fresh gate-2 A/B bounded smoke succeeded for both A and B. The
+  explicit target residual projection showed a small B improvement over A, with
+  worse B deposited fraction / depth-command tracking as an execution-quality
+  caveat.
+- C remains `not_evaluated` / `blocked_by_missing_gold_samples`.
+- The working surface-depth prior remains request-local evidence only; it is
+  not a checked-in default promotion.
+- A main-thread open-testing audit verified the existing 6G-S / 6G-T artifacts
+  and focused residual tests. The remaining unchecked Phase 6 items are broader
+  experiment objectives that require explicit target / run-scope / calibration
+  decisions, not a safe default continuation of the old immediate-next-step
+  smoke.
+- The user later authorized request-local reasonable defaults for those broader
+  Phase 6 experiment objectives. Phase 6G-U added per-cycle quality reports and
+  posthoc T1/T2 default projections on the existing 6G-T A/B rollouts, then
+  generated target-specific T1/T2 B runtime sources and reran bounded B smokes.
+  Both target-specific B reruns reached gate 2, but both are worse than A on
+  target residual/completion; the earlier posthoc T2 B advantage does not
+  survive target-specific source regeneration. B also remains worse on deposit
+  / payload / depth tracking in both targets.
+
 ## Operating Mode
 
 Do not continue the previous planner/executor callback loop.

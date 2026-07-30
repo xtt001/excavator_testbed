@@ -6,7 +6,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
-
 LEGACY_FSM_DECISION_SOURCE = "legacy_fsm_side_effects_applied"
 
 PrimitiveDecisionStatus = Literal["no_change", "skill_switch"]
@@ -337,7 +336,7 @@ class PrimitiveDecisionResult:
         skill_after: str,
         switch_reason: str,
         decision_source: str = LEGACY_FSM_DECISION_SOURCE,
-    ) -> "PrimitiveDecisionResult":
+    ) -> PrimitiveDecisionResult:
         status: PrimitiveDecisionStatus = (
             "skill_switch" if skill_after != skill_before else "no_change"
         )
@@ -375,7 +374,7 @@ class PrimitiveDecisionResult:
         switch_reason: str,
         effects: tuple[RequestedPlannerEffect, ...],
         validate: bool = True,
-    ) -> "PrimitiveDecisionResult":
+    ) -> PrimitiveDecisionResult:
         result = cls(
             decision_source=str(decision_source),
             status=status,

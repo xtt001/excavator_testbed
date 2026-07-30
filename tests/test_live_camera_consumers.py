@@ -11,7 +11,6 @@ import yaml
 from testbed.data.camera_images import observation_camera_rgb
 from testbed.policies.act.adapter import ACTAdapter
 
-
 CAMERAS = ["stick_up", "stick_down", "eye_left", "eye_right"]
 
 

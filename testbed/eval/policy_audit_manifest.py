@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 SCHEMA_VERSION = "policy_audit_manifest_v1"
 
 EXPECTED_AUDITS = {

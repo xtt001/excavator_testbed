@@ -130,7 +130,7 @@ class PrimitivePreDigAlignCompatibilityRuntimeState:
         cls,
         *,
         action_dim: int,
-    ) -> "PrimitivePreDigAlignCompatibilityRuntimeState":
+    ) -> PrimitivePreDigAlignCompatibilityRuntimeState:
         """Return reset-default pre-dig-align compatibility storage."""
 
         return cls(

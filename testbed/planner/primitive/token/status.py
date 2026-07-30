@@ -29,7 +29,7 @@ class TokenVectorStatus:
         tokens: Any = None,
         fallback_reason: str = "",
         in_prior_p10_p90: bool = False,
-    ) -> "TokenVectorStatus":
+    ) -> TokenVectorStatus:
         return cls(
             injected=bool(injected),
             dim=int(dim),
@@ -87,7 +87,7 @@ class TokenStatus:
         return_start_envelope_token_dim: int = 0,
         return_start_envelope_token_source: str = "none",
         return_start_envelope_tokens: Any = None,
-    ) -> "TokenStatus":
+    ) -> TokenStatus:
         relocate_source = (
             return_target_token_source
             if return_relocate_token_source is None

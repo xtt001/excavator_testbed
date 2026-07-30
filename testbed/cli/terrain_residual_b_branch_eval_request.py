@@ -9,11 +9,10 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from testbed.eval.terrain_residual_contract import official_contract_statuses
 from testbed.eval.terrain_residual_b_branch_eval_request import (
     write_residual_b_branch_eval_request,
 )
-
+from testbed.eval.terrain_residual_contract import official_contract_statuses
 
 REQUIRED_REQUEST_FIELDS = [
     "current_eval_metadata_path",

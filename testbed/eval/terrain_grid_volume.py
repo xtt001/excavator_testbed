@@ -7,7 +7,6 @@ from typing import Any
 
 import numpy as np
 
-
 VOLUME_LABEL_STATUS = "derived_grid_integral"
 DIRECT_VOLUME_STATUS = "unavailable_no_sensor"
 MIN_VALID_SAMPLE_FRACTION = 0.5

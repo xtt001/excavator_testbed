@@ -23,20 +23,13 @@ import numpy as np
 from testbed.data.hdf5_io import list_episodes, read_episode, write_episode
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_DEPTH_SCALE_M,
-    DIG_CUT_TOKEN_DIM,
     DIG_CUT_TOKEN_CONTRACT,
+    DIG_CUT_TOKEN_DIM,
     OPERATOR_FIRST_VERSION,
     RETURN_TARGET_TOKEN_DIM,
 )
 from testbed.data.schema import (
     ATTR_GOAL_TOKEN_DIM,
-    DS_V2_CYCLE_ACTUAL_REMOVED_DEPTH_DELTA_GRID,
-    DS_V2_CYCLE_DEPTH_OUTCOME_SOURCE,
-    DS_V2_CYCLE_DIG_OUTCOME_EFFECTIVE_DEPOSIT_DELTA_KG,
-    DS_V2_CYCLE_DIG_OUTCOME_PAYLOAD_GAIN_KG,
-    DS_V2_CYCLE_DOMINANT_REMOVED_DEPTH_CELL_ID,
-    DS_V2_CYCLE_HANDOFF_OUTCOME_SOURCE,
-    DS_V2_CYCLE_RETURN_OUTCOME_ENTRY_DELTA_NORM_M,
     DS_V2_STEP_DIG_GOAL_VALID_MASK,
     DS_V2_STEP_DIG_OUTCOME_TARGETS,
     DS_V2_STEP_RETURN_GOAL_VALID_MASK,
@@ -44,8 +37,12 @@ from testbed.data.schema import (
     ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
     ENV_STATE_V2_2_DIM,
 )
-from testbed.data.vds import STORAGE_MODE_COPY, STORAGE_MODE_VDS, write_lineage_json, write_vds_episode
-
+from testbed.data.vds import (
+    STORAGE_MODE_COPY,
+    STORAGE_MODE_VDS,
+    write_lineage_json,
+    write_vds_episode,
+)
 
 HINDSIGHT_GOAL_VERSION = "v2_4_hindsight_goal_v1"
 HINDSIGHT_GOAL_TOKEN_CONTRACT = DIG_CUT_TOKEN_CONTRACT

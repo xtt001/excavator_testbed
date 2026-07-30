@@ -9,36 +9,42 @@ from __future__ import annotations
 import json
 import shutil
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import numpy as np
 
-from testbed.data.hdf5_io import episode_id_from_path, list_episodes, read_episode, write_episode
+from testbed.data.hdf5_io import (
+    episode_id_from_path,
+    list_episodes,
+    read_episode,
+    write_episode,
+)
+from testbed.data.operator_first_v2_2 import RETURN_START_ENVELOPE_TOKEN_DIM
 from testbed.data.schema import (
     DS_V2_STEP_RETURN_START_ENVELOPE_TOKENS_V1,
     DS_V2_STEP_RETURN_START_ENVELOPE_VALID_MASK,
     ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
     ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
-    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_DUMP_AREA_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
-    ENV_STATE_DUMP_CLEARANCE_OK_IDX,
+    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
+    ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
     ENV_STATE_OFFTARGET_DEPOSITED_MASS_IDX,
     ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX,
     ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
-from testbed.data.operator_first_v2_2 import RETURN_START_ENVELOPE_TOKEN_DIM
 from testbed.data.transition_v2_1 import extract_transition_slices
 from testbed.data.v2_1 import WORK_STAGE_NAME_TO_ID
 from testbed.data.vds import (
@@ -49,7 +55,6 @@ from testbed.data.vds import (
     write_lineage_json,
     write_vds_episode,
 )
-
 
 PRIMITIVE_RECORDING_MODE = "primitive_relabel"
 PRIMITIVE_VERSION = "v2_2_4primitives"

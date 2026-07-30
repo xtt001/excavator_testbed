@@ -7,8 +7,8 @@ from testbed.planner.primitive.execution.cycle_state import (
     PrimitiveCycleReportStatus,
     PrimitiveCycleRuntimeState,
 )
-from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
 from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
 from testbed.planner.primitive.execution.tick_finalization import (
     PrimitivePlannerDebugState,
     PrimitiveTickFinalizationInputs,
@@ -18,7 +18,6 @@ from testbed.planner.primitive.execution.tick_finalization import (
 )
 from testbed.policies.hybrid.adapter import HYBRID_MODE_TRANSITION, HYBRID_MODE_WORK
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
-
 
 _OLD_TICK_FINALIZATION_POLICY_WRAPPERS = (
     "_record_tick_previous_action",

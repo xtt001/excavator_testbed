@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
+from testbed.cli.label_v2_1 import _load_label_config_sections
 from testbed.data.dataset import load_data
 from testbed.data.hdf5_io import read_episode, write_episode
 from testbed.data.schema import (
@@ -33,7 +34,6 @@ from testbed.data.workskill_v2_1 import (
     CLEAN_PROFILE_STAGE5_STRICT,
     build_workskill_dataset,
 )
-from testbed.cli.label_v2_1 import _load_label_config_sections
 
 
 def _with_target_geometry(env_state: np.ndarray) -> np.ndarray:

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 import numpy as np
 
 from testbed.data.schema import ATTR_CAMERA_NAMES, GRP_ENCODED_IMAGES
-
 
 JPEG_ENCODING = "jpeg"
 

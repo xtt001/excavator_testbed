@@ -4,7 +4,6 @@ from testbed.eval.terrain_calibration_inventory import (
     build_gold_sample_calibration_inventory,
 )
 
-
 REQUIRED_FIELDS = [
     "candidate_id",
     "expected_removed_volume_m3",

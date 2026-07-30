@@ -9,7 +9,6 @@ from typing import Any
 
 import numpy as np
 
-
 APPROVED_TERRAIN_DATASET_ROOT = Path(
     "/data/pingfan/excavator_testbed_data/"
     "yulong_v2_2_pro_full_task_four_camera_jpeg_20260717"

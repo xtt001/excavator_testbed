@@ -1,5 +1,1297 @@
 # Oracle Terrain Residual Planner v0 开发计划
 
+> 2026-07-31 主线已切换为：
+> `exact diagnostic`
+> → `contact audit/A-B`
+> → `Unity wall+FactoryFloor diagnostic`
+> → `return-handoff/action diagnostic`
+> → `return-handoff owner isolation`
+> → `contact-budget freeze`
+> → `continuous predictor`
+> → `E0/G1/W1`
+> → `bounded live`
+> → `conditional 1×10`。
+>
+> contact evidence 阶段已经完成并冻结：补强 typed per-part/per-wall sidecar，修复
+> 同一 wall-contact session 从低力升至 `>=100 kN` 时仍可能推进 ACT 的漏洞，
+> 审计 18 个 expert source，并对 diagnostic-only `episode_168` 执行 seeds
+> `0/1/2` 的 3 组 paired A/B。B 只允许首次连续 bucket-only、same-wall、
+> finite 且 `<100 kN` 的 session；一个无接触 tick 即消耗豁免。A/B 结束后
+> 必须暂停等待人工冻结 production bucket region 与接触预算。
+>
+> 实测为：geometry `433/433` 完成；18 个 source replay 均一次完成，但
+> train `379/379` 与 holdout `61/61` dig window 全部因公平门 `invalid`，
+> production inference window 为 `0`。paired A/B 的 3 对 reset fairness
+> 全通过，B 在 seed 0/1 完成 carry+dump，seed 2 因第二接触 session 硬停止，
+> 即 `2/3`。因果分类是 `inconclusive`，production contact budget 仍未冻结。
+> `reanalysis_v4` 是读取原 6 个 rollout 的 append-only 后处理复算，
+> `executed_attempt_count=0`，不是第 7 次或后续重跑。
+>
+> 人工审核前又获准执行一个独立 diagnostic B2：只重跑 seed 2 一次，且只把
+> logical wall-contact session 的结束条件改为连续两个 clear ticks。该 run
+> 通过双重 reset fairness，把 step 625 和 `627..689` 的两个 Unity physical
+> sessions 经单个 step-626 `20ms` clear tick 合并为一个 logical session，
+> 随后进入 carry 并完成 dump；无 boom/stick、wall drift、`>=100kN`、
+> hard-bottom、stuck 或 timeout。outcome 为
+> `single_clear_tick_split_supported`。这不覆盖原 paired A/B 的
+> `inconclusive`，也不授权冻结 production contact budget。
+>
+> 又单独授权并只执行了一次 seed-1000 observe-only multi-shovel
+> diagnostic。它从历史 7-dump Strict-18 resolved config 的 fresh reset 开始，
+> 不续跑 cycle 8；finite `<100kN` bucket wall contact 跨任意 session、
+> duration、region 和 wall 全部只记录。运行完成 6 次 dump，第 7 铲因
+> hard-bottom depth-budget clearance increase 安全终止。唯一接触铲的
+> 12 sessions / 21 ticks 全部 bucket-only、side-effect-free，并在接触期间
+> 保持运动进展。这是 current-code、non-promotable 诊断，不授权 production
+> contract 或预算。
+>
+> 最新单独授权的 Unity-only wall+FactoryFloor diagnostic 在用户允许定位问题后
+> 进行了 create-new 诊断重跑。根因不是接触放行：`v2/v4` host 带
+> `-nographics`，Unity 使用 Null renderer，四路 ACT 相机是低方差冻结灰图；
+> 因而 step 331 的 `117717.805N` 是 blind-camera ACT 产生的无效物理结论。
+> Unity 现已在支持图像但 graphics device 为 Null 时，于 GET_INFO/首次 capture
+> 前以 `recording_camera_graphics_device_unavailable` fail closed，并把 camera
+> capture 源码纳入 manifest SHA。
+>
+> `v5` 用真实 GPU 完成 4 次 dump 后 timeout，但人工视觉 preflight 多做了一次
+> RESET，只保留为旁证；`v6` 在 step 243 因 FMOD native SIGSEGV 失败，属于
+> infrastructure failure。最终公平证据 `v7` 无额外 preflight reset：RTX 5070 Ti、
+> 单 RESET、与 frozen A0 首帧全部公平门差值为 0。它完成 7 次 dump，最终在第
+> 7 铲 return 由既有 timeout zero→neutral ack→terminal。第 6 铲只有
+> `0.02s` bucket×`Dig_ZMin_Board` 接触，peak `68.353kN`；第 7 铲 wall
+> `3.98s/31.971kN peak`、FactoryFloor `3.20s/61.433kN peak`，两者均有
+> motion progress。没有 boom/stick/other、`>=100kN`、stuck 或数据异常。
+> append-only `report_reanalysis_v2.json` 修复了 contact post-step 与下一行
+> timeout ownership 的离线归因，状态 `passed/timeout`；没有重写原 failed
+> report。结果仍为 diagnostic/non-promotable，production 合同和全部 downstream
+> gate 不变。
+>
+> 随后的 expert return→dig handoff 审计没有支持放宽既有 qpos envelope：
+> v7 的最终 return 是 ACT 在 contact 前持续命令 boom 下压，先越过 qpos_1
+> 上界，再与接触条件同时成为 blocker。为保持 envelope 不变，新增了只在第
+> 7 次 dump 后启用的 diagnostic boom-axis PD action limiter。`v3` 因把目标
+> 写死为 cell 0、而 fresh rollout 选择 cell 4，实际介入为 0；`v4` 又暴露出
+> wiring 把 bucket 当前空间 cell 错当成 locked goal cell，因而 fail closed。
+> 修复后 `v5` 从 locked return goal 读取 cell 2，在原 qpos_1 上界
+> `0.622343` 内介入 19 ticks，进入第 8 次 dig 并完成第 8 次 dump。它是一次
+> 有效的单因素因果证明，不是 production controller promotion，也不是 1×10。
+>
+> 随后的 owner 诊断直接重算 v7 gate。只取消 global contact override 会把
+> plane-depth floor 从 prior p05 隐式切到 p50，因此仍不能在 qpos_1 越界前
+> ready。保持原有效 p05-p95 深度边界，并让 contact 仅由 18D token field 6
+> 决定后，离线 step 3554 ready、step 3555 才越界。首个全局 live attempt
+> 因从第一铲就改变 handoff 时序而被 supersede；有效 v2 只在七次 dump 后
+> 激活 owner control，step 3475 进入第 8 次 dig 并完成第 8 个 dump_end，
+> 无 hard-stop violation。该证据支持 owner-conflict 因果结论，但仍是
+> request-local、diagnostic-only、non-promotable。
+>
+> 同一 owner 诊断随后把 bounded target 扩为 10，并执行两个独立
+> no-overwrite replicate。两次都在 owner 激活前重复出现第二铲
+> carry-side release，随后 loaded/deep return timeout，只完成 2 dumps。
+> 因而当前不能声称 diagnostic 1×10；下一单因素对象前移为 carry 的
+> committed-dump boundary 与 release ordering，而不是继续调整 return
+> owner、阈值或 timeout。
+>
+> `continuous_goal_conditioned` 已作为独立 fail-closed mode 落地。它固定
+> `fallback_mode=raise`、dig/return 全程 hold，禁止 exact library、episode
+> selection、state-exemplar raw-field 合成、coordinate median、nearest-expert
+> snap、prior/live-current/relocate return fallback。原子 `ContinuousCutGoal`
+> 只由 entry/exit 派生 direction 与 length；`LockedCutGoalExecutionPlan`
+> 同时锁定 10D token、同源 18D envelope、qpos path SHA 和 diagnostic-only
+> support/OOD。
+>
+> Python 继续唯一拥有 `ACT=0.05m / interpolation=0.01m / hard=0.24m`。
+> Unity append-only `continuous_goal_worktool_sweep_input_v1` /
+> `continuous_goal_worktool_sweep_measurement_v1` 使用 v2 per-joint arc-length
+> subdivision，逐子段证明 `<=0.01m`，并返回 12 个 link×wall witness；旧 v1
+> evaluator 保留为 diagnostic。当前仓库仍没有可信 goal→qpos predictor，
+> 因此 offline preflight 在
+> `continuous_goal_3d_predictor_missing` 停止，三方 live 与 conditional 1×10
+> 均未解锁。
+
+## 0Q. 2026-07-31 Diagnostic 10-Shovel Lifecycle Replicates
+
+现有 owner-isolation runner 已改为显式接收 `target_completed_dumps`，并在
+report 中以目标 cycle 而不是写死的“第八铲”识别 handoff 与终止。target 只
+允许在 owner 激活门槛之后且最多为 10；collector 现在也能保留 owner 尚未
+激活时的有效 early-stop 证据，而不会把它误报为 artifact failure。
+
+gate-10 v1/v2 与已接受 gate-8 配置相比，只改变输出路径、诊断 metadata 和
+`target_cycle_gate: 8 -> 10`。两次 reset fairness 的全部差值均为 0，且都
+完成两次 dump 后在 cycle 2 return timeout。owner evidence 分别为
+`848 inactive / 0 active` 和 `839 inactive / 0 active`，所以该结果没有检验
+第七铲后的 owner override。
+
+两个 run 都在第二铲复现同一生命周期链：
+
+1. dig 正常转 carry；
+2. bucket 在 FactoryFloor 上保持约 4 秒、force 约 66.6--66.7kN；
+3. release/dump_end 在 carry ownership 内完成，没有
+   `carry_to_dump_dump_committed_boundary`；
+4. 状态机经 `carry_to_return_release_safety` 进入 return；
+5. return 带着 61.660kg/68.385kg 残余负载重新接触并挖入土体；
+6. local depth 与 qpos_1 均越出原 envelope，最终走既有
+   timeout zero-action/neutral/terminal 链。
+
+没有 boom/stick、`>=100kN`、stuck 或数据异常。该重复结果说明下一步不应
+再次盲跑 10 铲，也不应修改 return timeout；应先保持 contact 和 envelope
+不变，只诊断 carry 为什么在 committed dump transition 前完成 release。
+
+## 0P. 2026-07-31 Return Handoff Owner-Isolation Diagnostic
+
+冻结 source 是有效 GPU v7。production gate 的 contact 决策原为
+`config.require_contact OR token[6]`，而该 source 的 token[6] 为 0、config
+却为 true。238 个 final-return tick 的 production-service replay 与原记录
+逐字段一致。
+
+第一阶段只把 config contact override 设为 false。它没有产生 ready 帧，因为
+`p50_floor` 的 plane-depth lower bound 同时从 prior p05 `0.027709m` 切到
+p50 `0.304557m`。这证明 contact owner 与 depth owner 存在隐藏交叉耦合，不是
+local depth 本身的新阈值问题。第二阶段把 depth 明确留给 runtime prior
+p05-p95；其有效 local/plane bounds 与 v7 原 gate 完全相同。该离线反事实在
+step 3554 ready，qpos_1 在 step 3555 才首次超过 `0.648137`。
+
+全局 owner attempt 从第一轮 return 就生效，改变了较早 transition，随后走
+cycle-3 carry release-safety 并在 cycle 4 return timeout；它只证明实验 scope
+有混淆。有效 v2 增加 diagnostic-only delayed control：
+
+```yaml
+return_start_envelope_owner_control:
+  enabled: true
+  diagnostic_only: true
+  min_completed_dump_count: 7
+  contact_owner: token
+  depth_owner: runtime_prior_p05_p95
+```
+
+因此前七次 dump 的 base gate 不变。公平 reset 全部为 0-delta；控制在完成
+7 dumps 后激活。step 3475 handoff ready 并切到第 8 次 dig：qpos_1
+`0.598779`，距离上界尚有 `0.049358`；local depth `0.001567m` 与 plane depth
+`0.185409m` 均通过原 prior bounds。rollout 随后产生第 8 个 dump_end，并由
+gate-8 正常终止；无 wall/floor contact 或 hard stop。authoritative report：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/
+  yulong_strict18_terrain_residual_v0/
+  return_handoff_owner_target_scoped_diagnostic_v2/
+    run/report_reanalysis_v1.json
+```
+
+该结果只证明本次 owner 隔离足以解除第八铲 handoff，不直接修改 production
+合同，也不解锁 predictor、E0/G1/W1、bounded live 或 functional 1x10。
+
+## 0O. 2026-07-30 Return Handoff Boom-Axis Single-Factor Diagnostic
+
+冻结 source 是有效 GPU `v7`。其第 7 次 dump 位于 step 3350，随后最终
+return 的原始 cell-0 qpos_1 上界为 `0.648137`。ACT 在首次 contact 前已持续
+输出约 `-0.55` 的 boom action；新的 `0.02` activation margin 对应
+step 3550，原 run 在 step 3555 首次越过上界并同时满足 contact。单纯延长
+timeout 不会改变这条动作链，放宽 qpos envelope 又没有 same-goal expert
+支持，因此本诊断只改 return 末段的 boom action，不改 handoff checks。
+
+expert support audit 的 358 个 train handoff 覆盖 cell `0..5`。每个 cell 都以
+既有 `p95 + 0.04` 上界计算 `target=upper-0.016`；六个 target 均不高于对应
+train maximum，最小 headroom 是 cell 1 的约 `0.000332`。controller 只在第
+7 次 dump 后、locked return goal 的 qpos_1 距原上界 `0.02` 以内且仍向上运动
+时介入；其余三个 action 维度、ACT checkpoint、reset、contact rules、
+timeout 和 envelope 全部不变。recorder 持久化 controller lineage，若未实际
+介入则报告 fail closed。
+
+no-overwrite 诊断链保留如下：
+
+- `return_approach_axis_limit_diagnostic_v1/v2`：prepared-only，没有 rollout；
+- `v3`：reset fairness 通过并完成 7 dumps，但 fresh goal 是 cell 4，而配置
+  错误写死 cell 0；intervention count 为 0，最终仍 timeout；
+- `v4`：已推广到任意 locked cell，但 controller 接收到 bucket 当前空间 cell。
+  locked goal 为 cell 0，bucket 在 step 3707 跨到 spatial cell 1 后触发
+  `diagnostic_return_approach_axis_limit_lineage_drift`，完成 7 dumps，属于
+  diagnostic wiring failure；
+- `v5`：controller 改为读取 locked coverage return goal cell；reset fairness
+  全部为 0-delta，goal cell 2，真实介入 19 ticks（controller steps
+  `3708..3726`），ACT proposed boom action 首次约 `-0.548`，executed action
+  被制动到 `+0.35`。
+
+`v5` 的 dominant cell-2 bound 从 steps `3495..3727` 保持
+`0.6223429823`；最大 checked qpos_1 为 `0.6221795082`，没有 upper-bound
+violation。随后 step 3728 进入第 8 次 dig，step 4028 完成第 8 次 dump，
+rollout 由 target-cycle gate 正常结束。通用 contact report 仍使用历史标签
+`normal_completed_10`，但 manifest、`max_shovels=8`、dump pulses 和 stop
+reason 都明确这是 gate-8 诊断，不是十铲验证。
+
+第 8 铲无 wall/FactoryFloor contact 或 hard violation。整次 run 只有第 2 铲
+出现 bucket×`Dig_ZMin_Board` 的低力接触：40 ticks / `0.8s`，normal
+peak/RMS `84.846/41.377kN`，impulse `28161.825N·s`，且有 motion progress。
+报告为：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/
+  yulong_strict18_terrain_residual_v0/
+  return_approach_axis_limit_diagnostic_v5/run/report.json
+```
+
+report SHA256 是
+`e4b27b77d64c81e677e2de14d1dd36854f8e3fdf14644832132a03003d1a3d22`。
+因果结论仅为：**在该公平 rollout 中，return 末段 boom overshoot 是阻止第
+8 铲的真实 blocker，保持 envelope 不变的局部 action shaping 足以解除它。**
+该结果不冻结 production contact budget，不把 diagnostic limiter 变成默认，
+也不解锁 continuous predictor、E0/G1/W1、bounded live 或 functional 1×10。
+
+## 0N. 2026-07-30 GPU Camera Contract Recovery And Valid Unity Diagnostic
+
+最终可解释 root：
+
+```text
+.../unity_contact_observe_only_multicycle_diagnostic_v7/
+```
+
+根因对比锁定了 qpos/qvel、10D token、checkpoint SHA 和首次 dig 前状态：
+`v4` 与历史可工作 A0 在这些字段上相同，首次视觉 ACT inference 后才分叉。
+`v4` Unity 日志却明确为 `Forcing GfxDevice: Null / Renderer: Null Device`，
+step-0 四相机 payload 仅约 `11.7kB`，视频无 overlay 区域跨帧完全冻结；历史
+GPU run 的 payload 约 `216kB`，场景随运动变化。ACT inference latent 固定为
+zero，skill switch 也已清空 temporal state，因此剩余唯一因果差异是无效相机。
+
+修复保持协议和 107D 不变：
+
+- `AgxSimCameraRuntimeContract` 拒绝 `GraphicsDeviceType.Null`；
+- 支持图像的 GET_INFO 在任何 STEP/RESET 前返回
+  `recording_camera_graphics_device_unavailable`；
+- JPEG capture 本身再次 fail closed，防止绕过 GET_INFO；
+- camera capture、server 和 diagnostic host test 源码一起进入 source
+  lineage；live camera rollout 禁止 `-nographics`，离线 inert FK/sweep 不受影响。
+
+重跑证据按 no-overwrite root 保留：
+
+- `v5`：真实 GPU，2143 steps、4 dumps、timeout；但启动前的人工相机
+  preflight 额外执行一次 RESET，故只作 side evidence；
+- `v6`：真实 GPU，在 step 243 遇到 FMOD `AudioManager::systemCallback`
+  native SIGSEGV，Python 收到 socket close；无完整 rollout，归为 infrastructure
+  failure；
+- `v7`：真实 GPU、3771 steps、单 RESET、process return code 0；相对 frozen
+  baseline 的 qpos/qvel/bucket-tip/terrain depth/remaining mass 差值全部为 0，
+  reset fairness `valid=true`。
+
+`v7` dump pulses 位于 steps `417/845/1282/1814/2294/2834/3350`，共 7 次。
+逐铲接触为：
+
+| shovel（1-based） | dump | wall | FactoryFloor | motion |
+| ---: | --- | --- | --- | --- |
+| 1–5 | yes | none | none | N/A |
+| 6 | yes | bucket×`Dig_ZMin_Board`, `1 tick/0.02s`, peak/RMS `68.353/68.353kN`, impulse `1367.065N·s` | none | wall 未过进展阈值 |
+| 7 | yes | bucket×`Dig_ZMin_Board`, `199 ticks/3.98s`, peak/RMS `31.971/30.718kN`, impulse `122248.148N·s` | bucket×`FactoryFloor`, `160 ticks/3.20s`, peak/RMS `61.433/56.799kN`；v1 不提供 impulse | wall/floor 均有进展 |
+
+最终 step `3770/3771` 是独立 timeout 的 zero request 与 neutral-ack terminal。
+旧 report 把 step 3769 的 post-step contact 和下一行 timeout 错配为 contact
+side effect。TDD 后的 shared evidence owner 只在紧邻的 timeout/stuck
+zero→neutral→terminal 链完整时接受这种重叠；unsafe contact 仍不能借此绕过。
+原 `report.json` 保持冻结，append-only 修正证据为：
+
+```text
+.../unity_contact_observe_only_multicycle_diagnostic_v7/run/
+  report_reanalysis_v2.json
+```
+
+其 SHA256 为
+`b64faeaaf4a3abedecbfe43b9dddcdcb2abf724e0049bd85bc132290a2e6dca2`，
+状态 `passed`、termination `timeout`、completed dumps `7`、reset fairness
+`valid=true`。`v1` reanalysis 也保持 append-only；`v2` 进一步证明 timeout
+不能掩盖 timeout 前一 contact row 上已有的 safety side effect。这证明放行的
+低力 bucket wall/floor contact 与历史 7-dump
+功能水平相容，但不是 10-dump 成功，也不冻结 production region 或预算。
+
+## 0M. 2026-07-30 Historical Invalid Unity Wall+FactoryFloor Diagnostic
+
+> 本节保留 `v2` 当时的原始观察。0N 后续证明 `v2/v4` 均运行在 Null renderer
+> 灰图上，因此这里的 117.7kN 不能用于接触合同判断。
+
+执行 root：
+
+```text
+.../unity_contact_observe_only_multicycle_diagnostic_v2/
+```
+
+`v1` 只在 RESET/STEP 前的 GET_INFO preflight 暴露 action/qpos/qvel order
+校验误用了简写字段；它没有 `attempt_started.json` 或 `run/`，不计作
+rollout。校验改为 wire protocol 的 canonical field names 后，以 create-new
+`v2` 重新锁定源码 SHA。`v2` 只有一个
+`attempt_started.json`，`retry_count=0`，没有 HDF5。
+
+与历史 7-dump A0 source 相比，reset、seed 1000、四 checkpoint、
+`dataset_stats.pkl`、ACT、planner、timeout 和既有 hard threshold 均保持
+source-locked。唯一诊断语义是：
+
+- finite 且严格 `<100000N` 的 bucket wall/FactoryFloor contact 只记录；
+- 不限制 session、duration、region 或 wall identity；
+- ordinary contact 不得 neutral、ACT reset、replan 或 block corridor；
+- 仅在显式 `agx_unity` diagnostic 中关闭 typed hard-bottom takeover 和
+  hard-bottom depth-budget warning；
+- `>=100000N`、boom/stick/other、invalid/non-finite lineage、stuck 和
+  timeout 仍硬停止。
+
+唯一 attempt 运行 333 steps，只开始第 1 铲并进入 carry，完成 dump 为 `0`。
+wall sidecar 在 steps `331..333` 记录同一 bucket × `Dig_ZMin_Board`
+session：duration `0.06s`，normal peak/RMS
+`117717.805/95080.743312N`，normal impulse `5611.64844N·s`。step 331
+已经超过 100kN；step 332 输出 zero neutral request，step 333 收到 neutral
+ack 并 terminal。接触窗口有 qpos/tangential motion，但 bucket-tip 的大位移
+包含高力冲击响应，不能解释为任务方向的有效进展。FactoryFloor contact tick
+为 `0`，所以 bottom bypass 未被实测。
+
+eval process return code 为 `0`，rollout summary stop reason 是
+`box_safety:wall_contact_high_force`。严格 report 状态仍为 `failed`，blocker
+是已消费 JSONL 缺少 per-row Unity diagnostic marker/contact kind，并沿用
+wall event id `-1`，无法证明 strict same-event lineage。append-only
+`posthoc_observational_evidence_v1.json` 只保留可直接从 canonical sidecar 和
+summary 复核的高力事实，状态为 `blocked/non-promotable`。日志字段与 event-id
+漏洞已在运行后用 TDD 修复；按 no-retry 约束未再次执行 rollout。该证据不授权
+production contact-budget、predictor、E0/G1/W1、bounded live 或 functional
+1×10。
+
+## 0L. 2026-07-30 Current-code Observe-only Multi-shovel Diagnostic
+
+正式 no-overwrite root：
+
+```text
+.../wall_contact_observe_only_multicycle_diagnostic_v2/
+```
+
+v2 是唯一执行 root；此前 v1 只在 final code review 前生成过 stale prestart
+manifest，没有 `run/`，不构成 attempt。v2 从历史 7-dump
+`act_freeze_probe_1x10_strict_prior_v1` 锁定 config、reset、四 checkpoint、
+四份 `dataset_stats.pkl` 与 planner prior，再从 fresh seed-1000 reset 开始。
+current ACT/eval/contact/report 代码和 Unity scene/normalization/contact lineage
+也按 SHA 锁定。
+
+唯一普通 wall-contact 语义变化是
+`wall_first_touch_mode=record_bucket_all_contacts` 加显式
+`wall_contact_diagnostic_observe_only_enabled=true`。finite、严格 `<100kN`
+且 bucket-only 的接触不限 session、duration、region 或 wall identity，只做
+观测；不得 neutral、ACT reset、replan 或 corridor block。任何
+boom/stick/other/ambiguous、non-finite/invalid lineage、`>=100kN`、
+hard-bottom、stuck 或 timeout 仍硬停止。一次 attempt、最多 10 铲、无重试、
+不写 HDF5。
+
+实际结果：
+
+- 3293 steps，started shovel `7`，completed dump `6`；
+- report shovel index 1（第二铲）出现 bucket × `Dig_ZMin_Board`：12
+  physical sessions、21 ticks、
+  `0.42s`，normal peak/RMS `73924.76/43681.23N`，normal impulse
+  `15555.178944N·s`，接触期间 motion progress 为 true；
+- 其余 shovel 没有 wall contact；21 个允许 tick 的 neutral、ACT reset、
+  replan、corridor block 全为 0；
+- 第 7 铲以
+  `hard_bottom_depth_budget_guard_clearance_depth_increase` 经 neutral ack
+  terminal；
+- report `passed / hard_safety_stop_before_10`，reset fairness 通过，
+  process return code 0。
+
+这只证明普通 bucket wall contact 不是该次运行的终止原因；没有达到 10 dump，
+也没有超过历史 7-dump 结果。不得从这一个 diagnostic 推导 production allowed
+region、force/duration/impulse budget，或改变原 paired A/B 的
+`inconclusive`。contact-budget freeze、continuous predictor、E0/G1/W1、
+bounded live、functional 1×10 gate 全部继续为 false。
+
+## 0K. 2026-07-30 Independent Seed-2 Session-Gap Diagnostic B2
+
+唯一 create-new root：
+
+```text
+.../wall_contact_session_gap_diagnostic_b2_v1/
+```
+
+实验合同只有一个变量：`session_end_clear_ticks=2`。一个 clear tick 保留在当前
+logical session；只有连续两个 clear ticks 才消费首次 bucket-session 豁免。
+Unity 原始 physical session 计数不改，Python 只在 raw session `N→N+1`、
+中间恰好一个 clear tick、新 session 从 `consecutive_contact_steps=1` 开始，
+且 component/wall identity 未漂移时建立 logical bridge。boom/stick/other、
+非有限或 `>=100kN` 力、wall drift、hard-bottom、stuck、timeout 仍在 ACT
+inference 前走 zero→neutral→terminal。
+
+该 root 只包含 seed-2 B2 的一个 attempt：
+
+- `retry_count=0`、`executed_attempt_count=1`、process return code `0`；
+- physical session 1 为 step `625`，physical session 2 为 `627..689`，
+  二者同为 bucket × `Dig_ZMin_Board`，中间只有 step `626` 的 `0.02s`
+  clear observation；
+- logical session 为一个、共 `64` 个 contact ticks，peak force 分别
+  `40094.2852N` 和 `39874.3242N`；
+- contact 在 carry 前结束，随后进入 carry、完成 dump，并以
+  `target_cycle_gate_reached` 结束；
+- 双重 reset fairness 通过，hard-stop violation 为空，未写训练 HDF5。
+
+报告 outcome 为 `single_clear_tick_split_supported`。它只推翻“seed 2 必须因
+第二次独立贴壁而失败”这一窄解释；不会修改原始六次 A/B artifact 或 causal
+classification。production bucket region 与 force/duration/impulse budget
+仍须人工审核后冻结；continuous contract、predictor、E0/G1/W1、bounded live
+和 1×10 继续禁止。
+
+## 0J. 2026-07-29 Contact Semantics Evidence Gate
+
+正式 evidence root：
+
+```text
+.../wall_contact_semantics_recovery_v1/
+```
+
+该阶段的三类证据必须分开解释：
+
+- Unity geometry 是 433 条 recorded qpos path 的 inert shadow-FK audit，
+  不是动作回放或 closed-loop；最大逐子段 proof 为 `0.009990016m`。
+- expert replay 是 18 个 source 各一次完整 recorded-action Unity replay；
+  typed lineage 完整，但 440 个 dig window 全部未通过联合公平门，因此只能描述，
+  不能选择 production region/budget。
+- paired A/B 是 6 次真实 one-cycle diagnostic closed-loop。三对公平门通过，
+  B 的 dump/carry/contact-ended-before-carry 均为 `2/3`，seed 2 以
+  `wall_contact_repeat_session` 结束。
+
+初版 report 的 A/B extractor 误把 cycle 0 sibling return provenance 当作目标
+identity drift，并拒绝 EvalSuite 的 `box_safety:` terminal 前缀。原始 artifact
+不可覆盖；TDD 修复后，`reanalysis_v4` 只重新抽取原始 rollout 并记录执行次数
+为 0。复算 collection 为 `passed`，但 causal classification 仍是
+`inconclusive`。因此下一步仍是人工审核并冻结 bucket region 与
+force/duration/impulse budget；continuous contract、predictor、E0/G1/W1、
+bounded live 和 1×10 全部保持禁止。
+
+> 2026-07-28 最新阶段覆盖：tuple-start phase-specific Unity shadow-FK 实测
+> 已完成，未支持修改 start-bound 或放宽校准后的 3D 合同。
+> `episode_171` 的真实 paired-handoff + expert-dig 路径 effective clearance
+> 只有 `0.225414m < 0.24m`；同端点的 post-return scalar bound 还低估完整
+> 工作装置位移约 `17.6mm`。cycle-0 source preamble 起点不同，禁止与 production
+> bound 做数值比较。因此原 preflight `0/5` 继续生效，bounded transfer、1x10、
+> 重训和 effect model 均保持暂停。
+
+## 0I. 2026-07-28 Phase-specific Tuple-start Transition 实测
+
+诊断入口和 no-overwrite evidence root 为：
+
+```bash
+python -m testbed.cli.build_coverage_start_transition_diagnosis prepare --help
+python -m testbed.cli.build_coverage_start_transition_diagnosis finalize --help
+```
+
+```text
+.../worktool_margin_calibrated_transfer_v1/start_transition_diagnosis_v2/
+  measurement_input/worktool_transition_sweep_input_v1.json
+  unity_measurement/worktool_transition_sweep_measurement_v1.json
+  diagnosis/coverage_start_transition_geometry_diagnosis_v1.json
+```
+
+该诊断只读取冻结 artifact 和连续 qpos。cycle 0 使用 source episode 6
+`0..214` 与冻结 runtime `1..137`；post-return 使用 source episode 24 中
+`episode_161` handoff `2304..2308` 和 `episode_171` dig `2308..2423`。
+中间 `2305..2307` 没有被 primitive 拼接遗漏，也没有用 synthetic interpolation
+替代。
+
+Unity 的通用 transition sweep 是既有 shadow-FK 的 append-only editor schema：
+旧 `3 expert + 5 ACT` measurement contract 不变；新 schema 接受任意数量 recorded
+path，并输出 boom/stick/bucket × 四墙共 12 组 witness、全局最小净距、自适应采样
+bound 和完整 convex-cover endpoint displacement。它不移动在线 rig，也不更改
+107D/step-ack 协议。
+
+实测说明：
+
+```text
+episode_24 source expert preamble clearance: 0.379269 m
+frozen cycle-0 runtime prefix clearance:      0.402612 m
+episode_161 handoff -> episode_171 start:     0.320002 m
+episode_171 expert dig:                       0.285414 m
+post-return full-path effective:
+  0.285414 - 0.05 ACT - 0.01 interpolation = 0.225414 m
+```
+
+后者低于 `hard_clearance_m=0.24`，所以删除 start margin 也不能使该 tuple 合法。
+同时 paired handoff 的同端点 exact cover displacement 为
+`0.092744m > 0.075173m` planner chord-sum bound。这否定“旧 start bound
+过保守”的修复方向；本轮不把 bound 改小、不删 gate、不修改 planner selection。
+cycle-0 两条 recorded path 都不连接 frozen live start 与 exact expert start，
+因此 v2 明确将它们标为 `planner_bound_endpoint_match=false`，不输出伪比较。
+
+cycle-0 source expert preamble 只证明训练 episode 的初始化轨迹安全，不能证明
+当前 runtime prefix 会到达 `episode_24` start。因此 diagnosis 结果锁定为：
+
+```text
+start_bound_contract_change_allowed = false
+bounded_live_allowed                = false
+thresholds_relaxed                  = false
+```
+
+由于 production config 和候选语义没有变化，上一轮五状态 preflight 仍是当前门，
+不做同配置重复 replay。下一项工作应是重新设计可证明 conservative 的
+phase-specific start geometry contract，并寻找/生成同时满足 exact start transition
+和 full expert-dig clearance 的 tuple；这属于新的单因素方案，不能在本阶段暗中
+加入 bridge、降低 `0.24/0.05/0.01m` 或启动 live。
+
+## 0H. 2026-07-28 Calibrated Production Full-Gate Preflight
+
+新的配置和只读 production replay 位于：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  worktool_margin_calibrated_transfer_v1/
+    configs/bounded_transfer_v1.yaml
+    production_preflight_v2_1/
+      coverage_execution_production_preflight_v2.json
+```
+
+artifact SHA256 为
+`20db8124e3f8f53ba8d1a09c3b345625a02cc9411abd6918fd7b060f1b04dba1`，
+并锁定七个 production selector/gate 实现文件的 SHA256。
+新 `coverage_execution_production_preflight_v2` 使用生产
+`CoverageExecutionLibraryRuntime` 和配置中的 `hard_clearance_m=0.24`，覆盖五个
+必须状态并保留每个状态全部 374 条 tuple trace。Gate 结果为：
+
+```text
+cycle0:       278 wall-2D + 96 worktool-3D reject
+post-return0: 278 wall-2D + 87 start + 9 worktool-3D reject
+post-return1: 278 wall-2D + 87 start + 9 worktool-3D reject
+post-return2: 278 wall-2D + 82 start + 14 worktool-3D reject
+step2987:     219 outcome-depleted + 128 wall-2D + 27 start reject
+```
+
+cycle-0 最优 `episode_24` nominal `0.633019m`，但 reset-to-exemplar start bound
+`0.689452m`，effective 为 `-0.116433m`。三条 post-return 的共同最优
+`episode_171` nominal 为 `0.285414m`，paired-handoff start bound
+`0.075173m`，effective 为 `0.150241m < 0.24m`。这说明校准后的剩余 blocker
+不是旧的“全库 nominal 必为空”，而是 live first-start 与
+reachability-supported return transition 同几何安全 tuple 没有交集。
+
+因此本阶段在 offline gate 后停止：不得启动 3-reset bounded、diagnostic 1x3、
+正式 1x10、重训或 effect-model；不得降低 `0.05m` tracking margin、
+`0.24m` hard clearance、关闭 start reachability 或引入 fallback。后续单因素
+诊断应分别实测 first-dig initialization→tuple start 和 paired expert/live
+handoff→dig start 的 worktool clearance loss，再决定 start-bound 合同是否保守；
+不能用本次 replay 声称闭环已经修正。
+
+## 0G. 2026-07-28 Worktool Tracking 实测与 3D Margin 校准
+
+实测固定使用 source episode 24 的相同 replay prefix `0:899` 和 strict-train
+`episode_168` target segment `899:1050`。每次 reset 后先用 recorded actions
+恢复相同 terrain/history/start，再做 expert continuation 或 ACT takeover，避免把
+return/handoff mismatch 误记为 ACT tracking error。三次 expert replay 与五次
+ACT repeat 均有 terminal zero-action/neutral ack，且不生成训练 HDF5。
+
+证据 root：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  expert_act_tracking_calibration_v1/
+```
+
+关键测量：
+
+```text
+expert replay minimum clearance: 0.286671 .. 0.295515 m
+ACT repeat minimum clearance:     0.244541 .. 0.252072 m
+ACT full-3D deviation P95/P99:    0.493919 / 0.529946 m
+wall-clearance loss P95/P99/max:  0.043156 / 0.043701 / 0.043838 m
+```
+
+完整 3D deviation 使用 monotonic DTW 后的
+`maximum_corresponding_convex_cover_point_displacement_m`，保留为 capability
+诊断；它包含沿 cut 方向平移和 link rotation，不允许直接代替 wall-normal safety
+margin。3D gate 的墙相关合同按全路径最小净距损失校准：
+
+```yaml
+worktool_sweep_3d:
+  act_tracking_margin_m: 0.05
+  pose_interpolation_bound_m: 0.01
+  hard_clearance_m: 0.24
+```
+
+`0.05m` 是五次 ACT 中最大 clearance loss 加 `0.002m` FK error 后向上取整；
+`0.24m` 是最小 contact-free ACT clearance 扣除同一 FK error 后向下取整。
+2D coverage prefilter 的 `hard_clearance=0.30m / soft_clearance=0.45m` 是另一套
+平面 corridor 合同，本次不修改。
+
+在冻结的 374-tuple sweep 上，旧总 nominal 要求
+`0.15+0.01+0.30=0.46m` 通过 0 条；新要求
+`0.05+0.01+0.24=0.30m` 在后续 live-start/reachability/hard-bottom/OOD gate
+之前通过 19 条。`episode_168` nominal clearance `0.288379m` 仍被新 3D nominal
+gate 拒绝。更新中央默认值只解除错误的“全库必定为空”算术合同，不是 bounded
+promotion，更不是 1x10 通过。
+
+恢复 live 的顺序仍为：用新值重放 production candidate intersection；存在合法
+tuple 后才运行 bounded probes；bounded gate 通过后另行批准正式 1x10。本轮
+effect model、重训、A1/A2、3x10、30% freeze 和新增数据继续暂停。
+
+## 0F. 2026-07-28 Tuple Start 与 Return Target 统一合同
+
+中央数据 artifact：
+
+```text
+/data/pingfan/excavator_testbed_data/yulong_strict18_terrain_residual_v0/qc/
+  strict_train_coverage_return_transition_library_v1.json
+```
+
+它从 358 条 strict-train gold return 中按
+`source_episode_id + return_next_material_cycle_id` 形成 353 个 post-return 精确配对；
+16 个 episode-first 和 5 个无 gold 配对 tuple 只允许 cycle 0。
+`episode_168 -> episode_158` 是固定 lineage guard。artifact 同时拥有唯一的
+11D reachability 归一化范围及 leave-one-out p99 阈值：
+
+```text
+RMS:        0.2242876880450012
+L-infinity: 0.4098004328849277
+SHA256:     65952a2932a1d1373a74b825eb4d79c24d43224ca3e2449abcd7515395ab1e86
+```
+
+production selection 的顺序为：
+
+1. outcome/depleted、blocked corridor 和 2D wall；
+2. 当前 return-start 对真实 tuple 的 paired-start reachability；
+3. paired expert handoff 到 dig exemplar start 的 3D nominal precheck；
+4. exhausted physical cell、hard-bottom budget 和 removed-depth OOD；
+5. cell 内真实 tuple K=1 与原 A0 跨 cell 排序；
+6. return 结束时用 actual live handoff qpos 执行最终 3D gate。
+
+tuple 一旦选择，dig raw tuple、paired return ID、精确 18D start-envelope token、
+valid mask 和四类 SHA 原子提交。exact path 固定
+`use_prior_spatial_bounds=false`、`use_prior_qpos_bounds=false`；cell/global prior、
+relocate、synthetic token 和 fallback 都不能改写它。handoff 必须通过精确
+spatial/local-depth/plane-depth/contact/qpos/qvel gate。缺配对、reachability
+artifact/SHA 漂移、exact timeout 或 final 3D fail 都走
+zero-action -> neutral ack -> terminal。
+
+离线 diagnosis 位于：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  tuple_start_alignment_diagnosis_v1/
+    diagnosis/tuple_start_alignment_diagnosis_v1.json
+    production_preflight/resolved_config.yaml
+```
+
+三条冻结 return start 都在全局 train p01-p99 内，但 `episode_168` 的精确配对
+reachability 3/3 拒绝；每条仍分别有 `35/40/61` 个 reachability alternative。
+旧 cell token 3/3 接受 recorded handoff，精确 `episode_158` token 3/3 拒绝。
+teacher-forced ACT 对照证明 token 会显著改变动作，但不构成闭环修正证据。
+
+校准前的独立 blocker（历史）是 `nominal_3d_clearance_contract_blocks_all`：
+374 条记录中最大
+nominal clearance 为 `0.340938926m`；即使 start displacement 为 0，扣除
+`0.01m + 0.15m` 后最大 effective clearance 只有 `0.180938926m`，没有记录达到
+`0.30m`。因此 production replay 无合法 candidate，本阶段必须停止，不得放宽阈值、
+运行 bounded live/1x10 或用旧目标 fallback。
+
+> 2026-07-28 历史阶段记录：Unity 3D worktool sweep companion、374 条
+> strict-train qpos pose path、5-fixture FK calibration、Python fail-closed
+> candidate gate 和 production replay 均已实现。`episode_168` 已在三条冻结 live
+> start 上 3/3 提前拒绝；但原始 pre-state 与 step 2987 replay 均没有
+> `effective_clearance >=0.30m` 的替代真实 tuple。因此 bounded one-dig 和正式
+> 1x10 没有运行。本阶段在 `no_3d_wall_safe_corridor` 停止，不改变
+> `0.15m/0.01m/0.30m` 合同。
+
+## 0E. 2026-07-28 Unity 3D Worktool Sweep 与 Fail-Closed 结果
+
+实现分为三个稳定所有者：
+
+1. `testbed.data.coverage_pose_paths` 从 materialized strict-train dig primitives
+   构建 374 条完整 qpos path，并锁定 tuple/raw-fields、source、qpos order 和
+   normalization SHA。
+2. Unity `WorktoolKinematicSweepService` 负责 shadow FK、collision-shape ownership、
+   convex cover、四墙 AGX distance 和自适应 path sampling；editor exporter 负责
+   no-overwrite artifact 与 source SHA。
+3. Python `CoverageWorktoolSweepService` 只消费 companion artifact，计算
+   live-start bound 并在 production candidate/final guard 中执行硬门。
+
+中央配置位于
+`dig_cut_planner.coverage.actual_tuple_execution_library.worktool_sweep_3d`：
+
+```yaml
+enabled: true
+profile: unity_kinematic_convex_cover_worktool_sweep_v1
+hard_clearance_m: 0.30
+act_tracking_margin_m: 0.15
+pose_interpolation_bound_m: 0.01
+artifact_path: <coverage_worktool_sweep_library_v1_1.json>
+artifact_sha256: e29be1667731f537af8b4d66f931869467dfc9a6dfc53471a0d09b07ee9fbc21
+execution_library_sha256: b47e69be47f6da7d0a5fa0c168170ab771af3823269167f8b2ce64374da91614
+pose_library_sha256: cf93063fb47b81dc2083a8fd56dc696d1f0f6911ac385c5331414653190f16a2
+missing_contract: fail_closed
+```
+
+Unity artifact 对 boom/stick/bucket 的全部 active collision shapes 与
+`Dig_XMin/XMax/ZMin/ZMax_Board` 精确 serialized Box 逐 pair 记录 minimum witness。
+Mesh 用包含全部 collision vertices 的 convex-hull cover，输出因此是保守 lower
+bound。液压杆和独立 linkage 本版不纳入。5 个隔离 native AGX hinge-chain fixture
+的最大 position error 约 `1.43e-6m`、rotation error `0deg`；不移动 online rig，
+通过 `2mm/0.2deg` 门。107D/step-ack 合同未修改。
+
+证据 root：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  unity_3d_worktool_sweep_v1/
+```
+
+验收结果：
+
+```text
+pose paths:                         374 strict-train, passed
+Unity geometry sweeps:              374/374 valid
+episode_168 frozen-start rejection: 3/3, passed
+episode_168 bucket->ZMin witness:    present
+initial production replay:          no_3d_wall_safe_corridor
+step-2987 production replay:        no_3d_wall_safe_corridor
+bounded live:                       forbidden, not run
+functional 1x10:                    forbidden, not run
+```
+
+初始 replay 的 374 条候选中 278 条由 2D gate 拒绝、其余 96 条由 3D gate
+拒绝；3D 中最优 effective clearance 为 `-0.216433m`。step 2987 修正状态下，
+219 条 outcome depleted、128 条 2D reject、剩余 27 条 3D reject，最优值为
+`-0.621955m`。这些负值主要反映锁定的
+live-start-to-exemplar-start displacement conservative bound；本轮不允许据此反向
+调小 ACT margin、插值界、hard clearance 或使用 fallback。只有新证据能证明存在
+合法 candidate 后，才可重新进入 3-reset bounded one-dig；其 3/3 通过后才允许唯一
+一次 A0 1x10。
+
+> 2026-07-28 历史阶段记录：真实专家 tuple、四类 ID 所有权、execution-tail
+> hard-bottom budget 和 per-cell LOO-p99 gate 已接入 production selector；离线
+> step 2987 重放通过。随后 3-reset bounded live 的 target cycle 均选择
+> `episode_168`，二维净距 `0.373659m`，但 3/3 bucket 接触
+> `Dig_ZMin_Board`。当前主因锁定为
+> `bucket_3d_swept_envelope_incomplete_primary`。1x10/3x10 未运行，promotion
+> fail closed；下一阶段转为 Unity 3D worktool sweep。
+
+## 0D. 2026-07-28 Actual-Tuple 执行合同与 3D Wall 分支
+
+新的 strict-train execution library：
+
+```text
+/data/pingfan/excavator_testbed_data/yulong_strict18_terrain_residual_v0/qc/
+  strict_train_coverage_execution_library_v1_1.json
+```
+
+它包含 374 个 dig primitive 的完整 raw fields/token、source lineage、outcome cell、
+corridor、return-envelope cell、live centerline/swept physical cells、token peak、
+plane-depth extraction-tail reserve 和 pre-state removed-depth grid。只允许 16 个
+train source；validation 33/34 和 partial/salvage 不得进入。library SHA256：
+`b47e69be47f6da7d0a5fa0c168170ab771af3823269167f8b2ce64374da91614`。
+
+production coverage 现在采用：
+
+1. outcome-cell attempt/depleted gate；
+2. blocked corridor gate；
+3. live 0.70m 2D wall/swept-cell gate；
+4. `remaining_depth - token_depth - tail_reserve >= 0.02m`；
+5. per-outcome-cell LOO-p99 removed-grid support gate；
+6. cell 内真实 tuple `K=1`，cell 间沿用 A0 score/wall penalty；
+7. final guard 只复核完整 tuple，不改写字段。
+
+step 2987 production replay 选择 `episode_168` / source episode 24 / outcome cell 1 /
+return group 0 / swept `[1,3]`；离线 wall clearance `0.373659m`，planned bottom
+clearance `0.064260m`，tail reserve `0.003428m`。这证明 synthetic M0 median 已从
+新变体中移除，但不是 live capability 证明。
+
+第一次 bounded run 暴露 Unity bucket-tip measurement-box 角点切换造成的单帧
+`0.22/0.44m` pose 跳变。该 run 被标记为 invalid diagnostic。exact-tuple 变体只在
+首次计划前增加 3-frame pose stability（最大 frame delta `0.05m`，最多 30 steps）；
+超时 fail closed。四 checkpoint、四相机、action scale、handoff/safety 和 A0
+window/weight 均未改变。
+
+随后 3 个独立 reset 的 production bounded target cycle 均逐字段执行真实
+`episode_168`。结果为：
+
+| evidence | count |
+| --- | ---: |
+| exact library tuple | 3/3 |
+| conservative 2D clearance `>=0.30m` | 3/3 |
+| typed wall contact | 3/3 |
+| bucket diagnostic external shape=`Dig_ZMin_Board` | 3/3 |
+| zero-action + neutral ack + terminal | 3/3 |
+| bottom / stuck / timeout | 0/0/0 |
+
+首次 wall force 分别约 `39.25/38.51/38.62kN`。前两轮在达到 planned depth 前即被
+wall 截断；第三轮可评估的 actual tail 为 `0.044127m`，超过 tuple
+reserve+容差 `0.023428m`。根因排序仍由 3/3 wall 决定：先进入 3D worktool sweep，
+不能先启动 `v2_4_6_cut_then_extract`，也不能把事故改写成 temporal aggregation
+问题。
+
+机器证据：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  act_goal_execution_contract_recovery_v1/
+    bounded_one_dig_pose_stable_v2/
+      validation_v2/act_actual_tuple_bounded_one_dig_validation_v1.json
+    root_cause_report_v4/manifest.json
+```
+
+3D 分支的最小合同为：
+
+- query 覆盖完整 oriented bucket、boom、stick 和 serialized box walls；
+- 覆盖 planned pose path 以及从 strict/live 证据得到的 execution-deviation envelope；
+- 继续使用 `0.30m` hard clearance，缺 geometry/shape 时 fail closed；
+- candidate trace 输出最小 3D clearance、最近 shape pair、pose/time index 和 rejection；
+- `episode_168` 必须由 3D query 拒绝或独立 preflight 证明安全，之后才允许 live；
+- 不得放宽墙距、复用 2D pass、切 A1/A2、启动 effect-model 或发布 bundle。
+
+当前 gate：
+
+```text
+exact-tuple offline replay: passed
+3-reset bounded live: failed, 3/3 bucket-wall
+functional 1x10 / 3x10: forbidden, not run
+cut-then-extract retraining: deferred behind 3D wall resolution
+next implementation branch: Unity 3D worktool sweep
+```
+
+> 2026-07-27 最新阶段覆盖：第六铲 hard-bottom 离线归因完成。wall/bottom
+> bookkeeping 字段所有权已修复，但不是唯一剩余问题。计划在 swept cells 上仍有
+> `0.07870m` 硬底余量，ACT 实际却比 planned depth 多下探 `0.13783m`；同时 logical
+> cell 4 的物理 swept cells 为 `[3,5]`。因此当前主因是
+> `act_execution_capability_primary`，附加
+> `data_scene_cell_semantic_mismatch`。修正 production replan 后仍无合法候选，
+> bounded probe 与新 1x10 均未运行；3x10、temporal A/B、30% freeze、effect-model
+> 和 planned-cut 继续暂停。
+
+## 0C. 2026-07-27 第六铲 Hard-Bottom 诊断、Bookkeeping 与 Gate
+
+no-overwrite artifact root：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  act_hard_bottom_cycle6_diagnosis_v1/
+```
+
+该 root 的 `source_lock_manifest.json` 引用并锁定原失败 JSONL、HDF5、resolved config、
+metadata、planner trace、summary、视频、prior、四 checkpoint/stats 和 Unity scene；
+原 `functional_10cycle_a0_wall_safe_1x10_v1` 未修改、未复制覆盖、未重跑。诊断窗口只含
+cycle index 5 从 dig pre-action observation 到首次 typed bottom 上升沿；neutral、
+clearance 和 replan 分开记录。
+
+锁定根因矩阵：
+
+| 检查 | 证据 | 分类 |
+| --- | --- | --- |
+| planned swept depth | depth `0.364648m`，cells `[3,5]` 最小余量 `0.078700m` | 计划满足既有 `0.02m` margin |
+| actual bucket trajectory | peak `0.502483m`，比 plan 深 `0.137835m` | ACT execution capability 主因 |
+| contact shape | bucket-tip 余量仅 `0.006493m` | 不是其他结构先触底 |
+| cell semantics | logical cell 4，center-line cell 5，swept `[3,5]` | data/scene cell semantic mismatch |
+
+`SafetyActionDecision` 追加 `contact_kind=none|wall|hard_bottom`，并在 JSONL 输出
+`box_safety_contact_kind`。状态 effect 只在 neutral ack 后应用：
+
+- wall 只携带 `blocked_corridor_id`，`depth_exhausted_cell_id=-1`，且 typed wall
+  session 必须大于 0 才能阻塞 corridor；
+- hard-bottom/depth guard 只携带实际 bucket physical cell，
+  `blocked_corridor_id=-1`；
+- clearance 保留事件种类但 mutation id 为 `-1`，不能重复耗尽；
+- policy shell 只薄调用 box-safety effect service。
+
+coverage state 另存 `coverage_depth_exhausted_physical_cell_ids`。每个 candidate 在
+prototype、selection 和 final raw-field guard 都计算 conservative 0.70m worktool
+swept cells；与任一 exhausted physical cell 相交时，必须在评分前以
+`swept_footprint_intersects_depth_exhausted_cell` 硬拒绝。
+
+step 2987 的 production replay 证明：
+
+1. 只修正 wall/bottom ownership 时，corridor 4 不再被错误耗尽且会被选中；
+2. neutral ack 后正确耗尽实际 cell 5 时，corridor 4 swept `[3,5]` 与 cell 5 相交；
+3. 其余 corridor 分别被 wall safety 或已有 depleted 状态过滤，最终仍为
+   `no_wall_safe_corridor`。
+
+所以“修 bookkeeping 后必然还有候选”的假设不成立。不得把 logical outcome cell
+当作安全 cell，也不得为制造候选而放松 wall、attempt/depleted 或 exhausted-sweep
+规则。
+
+M0/E1/W1 对照在相同 40-frame recorded observations 上完成，证据范围固定为
+teacher-forced。E1 重新验证为 strict-train `episode_354` / source episode 32；
+train-only nearest-expert 索引保留 76,469 steps，明确排除 validation 33/34 和
+partial/salvage。基础 comparison manifest 没有复用会互相污染的单一 policy
+instance，而是先将 action 栏显式标为 blocked。随后
+`goal_comparison/policy_replay_v1/manifest.json` 为三个目标分别构建同 checkpoint、
+独立 reset 的 ACT instance，并以 A0 window 100 串行重放。M0 aggregate 与记录
+actual action 逐帧完全一致；M0/E1/W1 aggregate 对 nearest-expert 的全轴 sign
+agreement 分别为 `0.49375/0.48750/0.68750`。E1/W1 仍使用 M0 的 recorded
+observations，不能当闭环反事实，但证明 goal conditioning 确实改变动作，且 M0
+执行动作与相近训练专家存在差异。offline 几何、实际执行和 checkpoint action
+证据共同给出唯一且无冲突的 ACT 主因，bounded M0/E1/W1 one-dig probe 的触发条件
+不成立。
+
+当前 live gate：
+
+```text
+bookkeeping ownership fix: passed
+offline primary classification: ACT execution capability
+data/scene physical-cell contract: unresolved
+bounded probe: not run, not required
+fresh A0 1x10 v2: not run, forbidden by gate
+```
+
+下一阶段必须单独定位/修复 ACT execution 或 goal conditioning，并分离 prior logical
+outcome label 与 physical safety geometry。不能添加 planned-depth clamp、重训或
+安全阈值放宽来掩盖根因。两项获批修复并重新通过全部离线 gate 后，才生成 fresh
+preflight，并唯一运行一次
+`functional_10cycle_a0_wall_safe_hard_bottom_fix_1x10_v2`。
+
+## 0B. 2026-07-27 A0 wall-safe 修复与 1x10 结果
+
+新增中央配置
+`dig_cut_planner.coverage.wall_safety`，A0 固定为：
+
+```yaml
+enabled: true
+profile: conservative_2d_worktool_swept_footprint_v1
+worktool_width_m: 0.70
+hard_clearance_m: 0.30
+soft_clearance_m: 0.45
+max_score_penalty: 1.0
+missing_geometry: fail_closed
+```
+
+coverage 域现在用 live env-state 的 `long_axis`、3×2 cell count 和 cell size 重建盒内
+X/Z 边界。entry→exit 线段按垂直方向的 `0.35m` 半宽膨胀；prototype 和最终 raw
+fields 各检查一次。hard-rejected、final-rejected、blocked、depth-exhausted 或
+depleted corridor 在评分前不可选。无候选时不复用旧目标、不 fallback，pre-policy
+直接发送 zero action，neutral ack 后才 terminal。candidate JSONL/trace 保存原始
+score、wall penalty、最终 score、footprint X/Z、净距、class 和 rejection reason。
+该合同仍是 conservative 2D，不宣称精确预测 boom/stick/bucket 的 Unity 3D sweep。
+
+preflight artifact：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  coverage_wall_safety_preflight_v1/coverage_wall_safety_preflight_v1.json
+```
+
+结果与锁定预期完全一致：
+
+| cell | class | eligible | minimum clearance |
+| ---: | --- | ---: | ---: |
+| 0 | hard_reject | 0 | 0.1208166921m |
+| 1 | hard_reject | 0 | 0.2339312894m |
+| 2 | near_wall | 1 | 0.3351545641m |
+| 3 | near_wall | 1 | 0.3850791080m |
+| 4 | near_wall | 1 | 0.4008731379m |
+| 5 | near_wall | 1 | 0.3209796224m |
+
+正式 A0 artifact：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  functional_10cycle_a0_wall_safe_1x10_v1/
+```
+
+四 checkpoint、相机顺序、handoff/safety 以及
+`temporal_agg_window=100 / legacy_oldest_first` 均由 preflight/resolved config
+确认。live 结果为 5 个完整 cycle，cycle 5 在 dig 后触发 hard-bottom，最终在 step
+2989 以 `box_safety:no_wall_safe_corridor` neutral ack 后停止。typed wall 为
+0 event / 0N / 0 session，stuck/timeout 为 0；唯一 bottom session 的恢复顺序完整，
+且最低已执行 footprint 净距为 `0.3209796224m`。
+
+强 validator 按预期拒绝：
+
+```text
+cycle_inventory_not_0_through_9:actual=[0, 1, 2, 3, 4, 5]
+```
+
+eval CLI 的通用物料 success 为 1.0，不具有覆盖此失败的权限，也没有生成
+`validation/` passing artifact。
+
+当时的首个直接观察是 recovery bookkeeping：step 2975 同时记录 planned corridor
+4 和 actual bottom cell 5，旧 applier 又把 corridor 4 写为
+`wall_contact_blocked_corridor`。顶部 0C 已完成该字段所有权修复及后续离线重放，
+并证明 bookkeeping 不是唯一根因。不能沿用“修字段后直接重跑 1x10”的旧结论；必须先
+解决 ACT execution/conditioning 和 logical/physical cell 合同。原 live artifact
+继续保持只读。
+
+> 2026-07-25 最新阶段覆盖：回归恢复主线已经完成模块级因果归因，但尚未执行生产
+> 修复。3x4 bounded-live 矩阵的锁定分类为 `corridor_geometry_primary`：F0
+> 2/3 wall、D1 2/3 wall、C1 0/3 wall 且 3/3 envelope、DC1 0/3 wall 且
+> 3/3 envelope。当前应先补齐 candidate corridor 的 bucket swept-footprint /
+> wall-inset filter，再从 A0 1x10 重进功能门；effect-model、planned-cut、A2、
+> 重训、30% freeze 的执行和 functional promotion 仍保持暂停。
+
+## 0A. 2026-07-25 回归模块因果诊断闭环
+
+本轮新增的 `act_regression_module_diagnosis_v1` 是诊断专用接口，不改变 A0 默认
+配置或 production planner 行为。最终 artifact root 是：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  act_regression_module_diagnosis_v1/final_verified/
+```
+
+机器可读 `evidence_matrix.json` 锁定四 checkpoint/stats、resolved base config、
+四相机顺序、plan-matrix/runtime-source/config SHA、100-step aggregation 和 Unity
+build/scene lineage；每个 repeat 同时保存 HDF5/JSONL SHA、initial-state check、
+typed wall/bottom mask、force/session、stuck/timeout 和 terminal neutral-ack。
+
+三类证据的边界固定为：
+
+| evidence | 本轮结果 | 允许的结论 |
+| --- | --- | --- |
+| offline replay | A0/A1 第 2 铲 recorded observation 上重算 fresh/aggregate/nearest-expert 和 token 反事实 | teacher-forced 局部动作诊断；不是闭环证明 |
+| bounded live | 12 个最多两铲的 F0/D1/C1/DC1 probe，全部 initial-state valid、zero-action、neutral ack、cycle-1 terminal | 用于 locked module-level causal classification；不是 1x10/3x10 |
+| TX24 bridge | 未执行 | F0 2/3 已复现且 C1 达到判定门，因此 bridge trigger 不成立 |
+
+live matrix：
+
+| condition | corridor | raw/token depth | wall | envelope | bottom/stuck/timeout |
+| --- | --- | --- | ---: | ---: | ---: |
+| F0 | 原 cell 0 | 0.419068 / 0.523835 | 2/3 | 1/3 | 0/0/0 |
+| D1 | 原 cell 0 | 0.243690 / 0.3046125 | 2/3 | 1/3 | 0/0/0 |
+| C1 | wall-safe cell 2 | 0.419068 / 0.523835 | 0/3 | 3/3 | 0/0/0 |
+| DC1 | wall-safe cell 2 | 0.243690 / 0.3046125 | 0/3 | 3/3 | 0/0/0 |
+
+C1 的 entry/exit 为 `(0.615094,-0.439306)` 到
+`(0.516926,-0.276453)`；corridor 改变包含 direction 和由 entry 派生的 return
+target，不能写成逐字段完全相同。plan-matrix allowed-field diff guard 已证明 cycle
+0、cut length、payload/effect intent 和非 geometry/depth 字段保持锁定。所有 safety
+gate 均启用；12/12 terminal contract 通过，bottom/stuck/timeout 均为 0，最高 wall
+force 91,933.62N。
+
+预设判定器输出：
+
+```text
+category = corridor_geometry_primary
+primary_modules = [corridor_geometry]
+native_a0_control_required = false
+```
+
+因此本阶段的主要原因是 `operator_prior_sweep_belief` 选择靠侧壁 corridor 时缺少
+bucket swept-footprint / wall inset 过滤。低 planned depth 没有单独消除 wall；
+hard-bottom recovery 与最新事故无直接关系；window-20 已说明 temporal aggregation
+不是唯一原因；安全 corridor 在 window-100 下 3/3 到达 carry envelope，也说明
+envelope gate 不是本次事故的制造模块。
+
+本轮只完成归因。没有修改 A0 checked-in 默认配置，没有发布 functional/frozen
+bundle，没有启动 native A0 control 或 TX24 bridge，也没有恢复 effect-model、
+planned-cut 或 residual planner。后续若批准修复，必须单独走：
+
+```text
+wall-safe candidate/swept-footprint filter
+-> A0 1x10
+-> A0 3x10
+-> 重新评估 temporal A/B
+-> 原 30% formal freeze
+-> effect-model / planned-cut / residual planner
+```
+
+> 2026-07-23 最新阶段覆盖：strict-18 四模型训练已经完成，但当前首先是十铲功能
+> 回归恢复，不是 effect-model 或坑形优化。旧 aggregate-TX24 是可完成十铲、但跟手
+> 不足的功能基线；strict-18 新 ACT 当前连 A0 1x10 都未通过。effect-model、
+> planned-cut calibration、30% freeze gate 的执行、重训和新增数据全部暂停；30%
+> 正式标准保留，不降低。
+
+## 0. 当前 box-emptying 实施锁定
+
+当前数据证据与运行证据必须分开表述：strict-18 的 18/18 HDF5、307,785 steps、
+293,463 个 action-loss steps、446 个 ACT cycle 和 439 个 effect cycle 已通过 replay
+QC；这证明数据可训练，不证明新 ACT 已在 Unity 闭环可用。
+
+本轮使用以下定义和安全边界：
+
+- residual 是 3x2 cell 内从当前地形表面到 `FactoryFloor` 顶面的剩余土体积，并计入
+  尚未并回地形的动态 particle / `HandleAsParticle` 质量；密度固定为 `1600kg/m3`。
+- 成功条件是 remaining mass fraction 连续 3 个有效 observation 不高于 5%，若斗内
+  payload 仍不低于 15kg，则先完成 dump 再 neutral-stop。
+- 暂不把超挖或极浅挖覆盖作为主要优化目标，但保留硬底、盒壁、无效挖掘、低 payload、
+  stuck、timeout 和 120-cycle 上限；任何安全终止/恢复都必须先实际发送 neutral action
+  并收到 step ack。
+- 正式训练只使用 episode `3,6,7,8,9,13,16,19,23,24,25,27,28,29,30,32,33,34`；
+  33/34 只用于 validation，partial/layered salvage 禁止进入训练。
+- 新 ACT 的真实冻结门是 3 个独立 reset、每个 10 cycles；planner 最终门是 3/3
+  独立 empty-box rollout。未完成这些 live gate 前不得将 replay QC 写成闭环通过。
+- candidate 的 `direction_x/z` 沿用现有 dig-token 合同：它是三维 cut direction 的
+  水平分量。给定 cut length 与 planned depth 时，水平 reach 按
+  `sqrt(length^2 - depth^2)` 计算；不得用纯水平单位向量冒充专家 direction。候选几何
+  在保持 swept corridor、wall inset、目标 cell 相交的前提下约束到 strict-18
+  p01-p99 support envelope，无法满足时显式过滤。
+
+当前实现状态以 `docs/training_setup.md` 的 strict-18 小节为准。旧 T1/T2 章节标记为
+deferred，后续恢复正式坑形控制时再重新启用。
+
+### 0.1 十铲功能回归恢复状态
+
+旧 aggregate-TX24 功能证据由
+`testbed/configs/baselines/yulong_aggregate_tx24_functional_10cycle_v1.json` 锁定。
+manifest 保存 resolved config、summary、rollout manifest、review、视频和四 checkpoint
+SHA256，且把证据范围限制为：
+
+- 10 次 qualified dig、10 次 dump、9 次中间 return handoff；
+- `dig_area_depleted` 停止；
+- source rollout 实测为 64D，而不是草案中误写的 89D；
+- 无 typed wall/bottom，因此只是功能基线，不是当前安全证明。
+
+三个 runtime regression 修复已经实现并由聚焦测试覆盖：
+
+1. `restart_skill()` 强制 same-skill ACT reset，清空 timestep、temporal tensors、
+   valid mask 和 cached chunk；hard-bottom 首次 ack 同时 invalidate return/pending dig
+   plan 和 held token。
+2. hard-bottom 恢复严格执行 neutral/ack、标记 exhausted cell、reset、scripted
+   clearance、第二次 neutral/ack 和 fresh switch/restart。clearance 在 inference 前
+   短路；恢复期间新增深度超过 0.002m 或超过 150 steps 时先 neutral 再终止。
+3. normal dig-to-carry 由 train-only 374-sample
+   `carry_start_envelope_v1` 连续 3 步 gate 约束，500 steps 未满足则显式
+   `carry_start_envelope_timeout`。
+
+独立 functional gate、hard-bottom probe、functional-only bundle 和 temporal A/B
+promotion contract 也已实现，但 release 取决于真实 Unity 证据，不能靠单元测试发布。
+当前 gate 状态是：
+
+| gate | 状态 | 证据 |
+| --- | --- | --- |
+| cycle-6 hard-bottom offline gate | 关闭 | 唯一主因 ACT execution capability，附加 logical/physical cell mismatch |
+| bounded one-dig probe | 未运行、不需要 | offline 证据无歧义且无冲突 |
+| A0 1x10 | 失败 | 最新 `functional_10cycle_a0_wall_safe_1x10_v1` 完成 5 个 cycle，第六铲 hard-bottom |
+| fresh A0 1x10 v2 | 禁止运行 | ACT/conditioning 与 cell contract 尚未修复 |
+| A0 3x10 | 未启动 | fresh 1x10 是前置门 |
+| A1 diagnostic 1x10 | 失败、不可升级 | 经一次性授权只改 window 100→20；仍只完成 1 次 dump，第二次 wall session 在 step 710 terminal |
+| A2 | 未启动 | A1 未恢复功能且未获 promotion 资格 |
+| functional bundle | 未发布 | 需要 A0 或获准替代版本 3x10 |
+| formal freeze | 未恢复 | 仍保留原 30% mass 和 3x10 安全标准 |
+
+以下是 wall-safety 修复前 A0 的历史对照，不是最新 live 结果。其第 2 铲 wall
+不是被 carry early-switch 触发：step 672 payload 为
+36.71kg，但 carry base/envelope 均为 false，gate 正确保持 dig。此时 bucket qpos
+0.237 低于 carry-start p01 0.719，plane depth 0.532m 高于 p99 0.277m，bucket-tip
+x/y 也在 envelope 外。当前具体阻塞因此是 strict-18 dig 尚未到达专家 carry-start
+姿态就已碰壁；neutral/ack 后 return 又无法回到 start envelope并最终 timeout。
+
+一次性 A1 诊断的 resolved config 已证明只有 contributor window 从 100 改为 20；
+weight order/decay、checkpoint、planner 和全部 gate 不变。A1 将第 2 铲首次 wall 从
+dig 后第 40 步推迟至第 60 步，并把 wall 时 payload 从 36.71kg 提高到 52.37kg、
+plane depth 从 0.537m 降到 0.517m、bucket qpos 从 0.243 提高到 0.296，说明缩短
+窗口有方向性作用。但 carry envelope 仍为 false；neutral ack 后立即出现第 2 次 wall
+session并按合同 terminal。平均 entry error 仅改善 6.79%，exit error 恶化 30.91%，
+depth absolute error 恶化 4.39%，完整 cycle deposit fraction 恶化 18.32%。因此这次
+A1 不通过功能门，也明显不满足 promotion 条件；A0 配置已按原 SHA256 恢复，A2
+继续禁止启动。
+
+另一个 `return_to_dig_max_entry_error_m=0.10` 诊断在 return 深度约 0.604m 时触发
+hard-bottom depth-budget neutral；机构惯性在连续零动作下继续到约 0.618m，超过
+0.002m 恢复增深上限，因此安全终止。它说明 fail-closed 生效，也说明 return 闭环
+仍会向硬底发散；不得靠放宽安全阈值把它记成通过。
+
+只有某个版本先通过 1x10、再通过 3x10，才生成 `functional_baseline_only` bundle。
+本次 A1 是一次不具升级资格的诊断例外，不改变 promotion 顺序，也不能作为 A2 的
+predecessor。A2 仍只能从最近被正式接受的版本改为真实 action-age
+`exp(-0.01*age)` 权重。最终接受版本通过后，才恢复 30% formal freeze；effect-model
+与 planned-cut 路线继续等待正式 frozen ACT。
+
+### 0.2 历史 live freeze 证据（已被功能回归门覆盖）
+
+四个 strict-18 ACT 训练 run 已全部完成，四个 `policy_best.ckpt` 均可 strict-load：
+
+| primitive | checkpoint SHA256 |
+| --- | --- |
+| dig | `86c27e19904b4be7dbb4173b6e8b2b07a9280166f12e51d1aaa03b3e2d42d38f` |
+| return | `443f5396ff238107f0cda26555be435cb4da2bcf31b4735333e9b38ac96b67d1` |
+| carry | `44d389a48d0f170e00c6757ecad02db77a8b24a01b4d9150ce7783f0f87f1322` |
+| dump | `b4f4c919ea75dc584b689e2ec68bf7e222a5e4713633f7e8574ac7469d2f537b` |
+
+live eval 使用 train-only strict prior、四相机顺序
+`stick_up,stick_down,eye_left,eye_right`、107D source-residual/contact 协议和真实
+Unity editor scene。2-cycle smoke 已完成 1 个完整有效 cycle 且无 safety failure；
+三次 10-cycle probe 则分别在第 8 铲触底后的 carry 撞壁、return timeout、以及第 3 铲
+carry 撞壁处停止。当前最佳 probe 为 7 个完整有效 cycle、remaining mass 下降
+8.84%；推理 P95 为 36.25ms。
+
+这意味着当前状态是：
+
+```text
+ACT training completed
+-> real closed-loop freeze gate failed
+-> no frozen bundle
+-> effect training intentionally not started
+```
+
+已实现的 hard-bottom carry swing guard 会在 neutral ack 后、bucket 清出 DigArea plane
+前抑制 swing；它消除了对应 probe 的墙碰撞，但没有解决 return/carry 的全部分布外
+恢复。专用 freeze 配置把 return entry gate 从 0.55m 调到 0.65m，因为实测 0.626m
+状态已经满足 strict-18 start envelope，且仍低于对应 cell 的 train-only expert radial
+p95 0.889m；该调整消除了同类 return timeout，但后续独立 reset 仍出现 carry wall
+contact。
+
+冻结门中的 30% remaining-mass 下降也需要单独复核：当前初始 remaining mass 为
+7407.28kg，10 cycles 达到 30% 需要平均净减少约 222.22kg/cycle；目前最佳 7 个有效
+cycle 合计减少 654.51kg，约 93.50kg/cycle。未获得用户明确批准前不得修改 30% 门，
+也不得用短程 smoke 或 legacy `success` 标志替代它。
+
+### 0.3 2026-07-23 failed-rollout diagnosis
+
+在不改数据、checkpoint 或运行阈值的前提下，对现有失败 rollout 做了逐步只读审查。
+当前证据不支持“primitive 切换后第一批动作因相机顺序、归一化或静态 action scale
+错误而立即失控”：
+
+- carry wall contact 分别发生在 carry 切换后的第 56 和第 79 步；
+- legacy return wall contact 发生在 return 切换后的第 114 步；
+- strict-prior return 的 hard-bottom contact 发生在第 326 / 333 步，timeout 在第
+  419 步；
+- train/live 相机顺序均为
+  `stick_up,stick_down,eye_left,eye_right`，JPEG 都是 top-to-bottom RGB，训练和推理
+  使用相同 ImageNet normalization；
+- live 直接发送 ACT 的四轴 unnormalized action，host 侧没有第二次 action scale；
+  action 轴、语义以及 Unity scene 的 target-speed 上限
+  `[0.7,0.1,0.1,0.2]` 与数据的 current-controller target contract 一致；
+- return live token 为 18D
+  `return_start_envelope_tokens_v1`，失败长段使用 train-derived cell token，未走
+  zero/fallback token。
+
+主要诊断结果是：
+
+1. **carry handoff 与训练边界不一致。** 20/20 个 live carry 起点都超出 train
+   primitive-start min/max。最明显的是 bucket qpos：live 为 `0.166-0.530`，train
+   为 `0.679-0.998`；bucket relative x：live `0.272-0.845`，train
+   `-1.216-0.256`；relative y：live `-0.665--0.443`，train
+   `-0.396-0.200`。train dig 最后一帧和 carry 第一帧的分布基本对齐，说明问题不是
+   primitive 数据拼接，而是 live `semantic_material_loaded` / hard-bottom recovery
+   在专家 dig-to-carry pose 形成前过早切到 carry。
+2. **regular return 起点不是主要 OOD。** 排除 wall/bottom safety 产生的 2-3 step
+   micro-segment 后，17 个 regular return 起点全部在 train-start min/max 内；失败
+   return 是运行后逐渐离开支持区。触底前 boom qpos 约 `0.88`，已高于 train 全窗口
+   p99 `0.664`；local depth 已到 `0.41-0.49m`，而 held return envelope 允许上界仅
+   `0.16m` 或更低，handoff gate 因此持续失败。
+3. **carry 碰壁前动作偏离近邻专家。** 以 qpos/qvel/bucket pose 近邻比较，entry065
+   wall 前 expert action 中位数约为 `[0.000,0.572,0.000,0.497]`，live aggregate 为
+   `[0.452,0.608,0.297,0.457]`；swing 和 stick 超出近邻 expert p05-p95。另一 wall
+   样本的 stick 同样反号并超出 expert 区间。相反，return 两次触底前的 action 均在
+   近邻 expert p05-p95 内，说明 return 是在 planner 未及时结束时继续执行
+   expert-like 下探，而不是首步模型输出完全错误。
+4. **不存在跨 primitive 的旧 chunk，但存在 primitive 内部的显著滞后。** skill
+   switch 会 reset 新 active policy；从 segment 起点重放模型后，未被 safety guard
+   改写的 aggregate action 与 live log 逐项一致。当前 100-step aggregator 按旧到新
+   排列并令旧预测权重更大；57 / 80 / 100 个 contributor 时，平均来源年龄分别约
+   `30.7 / 44.8 / 57.7` steps，即 `0.61 / 0.90 / 1.15s`。entry065 wall 时 fresh
+   first action 是 `[0.123,0.611,0.177,0.630]`，而 aggregate 已漂到
+   `[0.452,0.608,0.297,0.457]`。return timeout 前 fresh boom action 已反向为
+   `+0.175`，aggregate 仍为 `-0.177`。
+5. **hard-bottom same-skill replan 有确定的 runtime 缺口。** 第二次 return 触底后，
+   runtime 正确发送 neutral 并收到 ack，但 `next_skill=return` 触发同技能 early
+   return，没有 reset return ACT，也没有替换 held return token。接下来在 typed
+   bottom contact 仍持续时恢复发送约
+   `[-0.011,-0.398,-0.081,-0.021]`，最终 timeout。这不满足“hard bottom neutral
+   后必须离底/replan，且不得在 exhausted cell/corridor 继续下探”的安全意图。
+
+另有两个训练审计问题，但目前不能把它们单独写成 live failure 根因：
+
+- checkpoint 的 saved normalization stats 确实被 live 正确加载，但当前
+  `load_data()` 用 train+validation 的 `available` episodes 计算 stats，而不是仅用
+  `train_ids`；这是 validation leakage，需要在任何正式重训前修复。
+- strict-18 train windows 的 controller response provenance 是混合的：carry 有
+  163 个 `recording_pre_fix_v1` 与 211 个 `production` episode，return 有 155 / 203；
+  action 都已校准到 current-controller target speed，但 observation transition
+  dynamics 仍不完全同域。live 使用 production。该混合可能放大闭环累积误差，需要
+  受控 A/B 隔离，不能仅凭相关性立即重训。
+
+因此冻结门前的最小顺序改为：
+
+```text
+same-skill hard-bottom reset/clearance contract
+-> dig-to-carry train-envelope handoff gate
+-> bounded temporal-aggregation A/B
+-> production-vs-pre-fix provenance A/B
+-> only then decide whether retraining is necessary
+```
+
+这些是现有 107D Unity closed-loop artifact 加离线 checkpoint replay 的诊断证据；
+fresh-action 和 alternative aggregation 仍是 teacher-forced counterfactual，不是新的
+Unity 闭环通过证明。
+
 本文是 `docs/llm_planner_closed_loop_terrain_conclusion.md` 的执行版开发计划。它把下一阶段目标从“接入 LLM planner”收敛为：
 
 ```text
@@ -566,12 +1858,28 @@ Phase 5 closure note：
 - [x] 建立 Phase 6G-I smallest multi-cycle B request source-coverage preflight，并用显式 multi-step predicted source 完成 `target_cycle_gate=2` real A/B bounded smoke comparison。
 - [x] 完成 Phase 6G-J B gate-2 no-dump 根因审查，确认 B 已消费 residual dig-cut token 且实际发生一次 dump，但 dump 后 return/handoff 链和 coverage-count 口径导致 gate 计数为 `0`。
 - [x] 建立 Phase 6G-K explicit residual return-target handoff contract，使 B branch dump 后 return-target 规划使用同一 request-local residual source 的 next-cycle plan，而不是落到 `fallback_zero`。
+- [x] 完成 Phase 6G-S request-local surface-depth prior counterfactual，证明在保持 6G-P mixed source / gate 设置不变时，单独换到既有 surface-depth prior 可让 B 完成 return handoff 和 gate-2 bounded smoke。
+- [x] 完成 Phase 6G-T fresh gate-2 real A/B bounded smoke，并用同一显式非官方 target spec 投影 residual metrics；B 在 target residual projection 上小幅优于 A，但 deposit/depth execution quality 更差，不能声明完整 Phase 6 成功。
 - [ ] 比较三组 baseline：
   - A: current planner
   - B: residual planner + heuristic effect model
   - C: residual planner + calibrated effect model + capability filter
 - [ ] 对 T1/T2 目标坑形跑多铲闭环。
 - [ ] 记录每铲 residual、payload、overdig、handoff、deposit quality。
+
+Current testing audit note：
+
+- Phase 6G-S / 6G-T closed the immediate runnable gate-2 test path after the
+  return-handoff blocker: request-local surface-depth prior evidence let B reach
+  gate 2, and a fresh same-gate A/B smoke reached gate 2 for both branches.
+- C is not an omitted run in that smoke; it remains blocked by missing usable
+  gold-sample calibration evidence and must not be replaced by telemetry
+  fallback.
+- The user authorized reasonable request-local default assumptions for the
+  broader Phase 6 objectives. Under those assumptions, T1 is a `2 x 2` shallow
+  rectangle over the `3 x 2` compact grid at `0.25m`, and T2 is a one-column
+  long shallow trench at `0.25m`. These assumptions drive diagnostic artifacts
+  only; they are not checked-in official defaults or pass/fail thresholds.
 
 Phase 6A note：
 
@@ -953,6 +2261,179 @@ Phase 6G-R note:
   local-depth stats and a plane-depth p05 of `0.0`. The next bounded evidence should therefore be a request-local
   counterfactual that keeps the 6G-P mixed source but swaps only the prior path to that already-existing
   surface-depth prior, without promoting config defaults.
+
+Phase 6G-S note:
+
+- The request-local prior counterfactual copied the 6G-P B config and changed only
+  `policy.dig_cut_planner.prior_path` to
+  `runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/planner_prior_v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524_next_entry_cells.json`.
+- The smoke root
+  `runs/eval/oracle_terrain_residual_phase6g_s_real_b_smoke_20260703_r1/heuristic_residual_pipeline/results`
+  completed with `target_cycle_gate_success_rate=1.0`, `target_cycle_completed_dump_count=2`,
+  `completed_transition_count=1`, and `transition_timeout_count=0`.
+- All return rows selected
+  `qc6_return_start_envelope_cell_1+relocate_spatial_linear+relocate_qpos_linear`; the completed transition row
+  had `return_to_dig_entry_error_m=0.21173654848258414`, `return_to_dig_start_envelope_error=0.0`, contact true,
+  local/plane depth checks ok, qpos checks ok, and no failed envelope checks.
+- This supports the prior-artifact compatibility hypothesis from 6G-R. It does not promote the working prior to a
+  checked-in default; the durable decision remains whether to rebuild a residual-compatible surface-depth prior or use
+  a request-scoped prior selection policy.
+
+Phase 6G-T note:
+
+- Fresh A/B gate-2 roots were written under
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703`.
+  A used current planner baseline mode, and B reran the same surface-prior residual config.
+- Both A and B reached `target_cycle_gate_success_rate=1.0` with terminal hold `0` and stop reason
+  `target_cycle_gate_reached`; C remains `not_evaluated` / `blocked_by_missing_gold_samples`.
+- Explicit target residual projection comparison:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/real_ab_gate2_surface_prior_residual_metric_comparison.json`.
+  B-vs-A deltas were target positive residual `-0.000311200623`, target completion ratio `+0.000622401246`,
+  outside-target removed depth `-0.016043230891`, and target overdig `0.0`.
+- The residual projection therefore shows a small bounded-smoke B improvement over A, not merely matching stop reason.
+  However, B had worse execution-quality context: deposited fraction mean/min `0.6729643155685991` /
+  `0.6371127565113851` versus A `0.8045243480617356` / `0.7736410550070904`, and B dig-depth absolute error mean
+  `0.24203957766294482m` versus A `0.03503912687301633m`.
+- This is bounded one-rollout smoke evidence only. It does not establish full Phase 6 success, production readiness,
+  official pass/fail, checked-in prior promotion, or calibrated C benefit.
+
+Phase 6G-U note:
+
+- `testbed.eval.terrain_cycle_quality_report` now owns diagnostic per-cycle residual / payload / deposit / handoff /
+  execution-quality summaries from explicit rollout artifacts and a caller-provided target spec. It reads
+  `rollout_000.jsonl` plus `rollout_000_summary.json`, writes no-overwrite JSON reports, and keeps scope labels as
+  diagnostic / bounded smoke only.
+- The original 6G-T target now has per-cycle quality reports:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/current_planner_baseline_cycle_quality_report.json`
+  and
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/heuristic_residual_pipeline_cycle_quality_report.json`.
+- Request-local T1/T2 default assumptions and comparison are recorded in
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/phase6_request_local_default_target_assumptions.json`
+  and
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/phase6_request_local_default_t1_t2_ab_comparison.json`.
+- T1 default B-minus-A latest positive residual is `+0.015732030268`, completion ratio `-0.015732030268`, outside-target
+  removed depth `0.0`, target overdig `0.0`; B is worse than A on the T1 residual projection.
+- T2 default B-minus-A latest positive residual is `-0.000311200623`, completion ratio `+0.000414934164`,
+  outside-target removed depth `-0.016043230891`, target overdig `0.0`; B remains slightly better on this trench-shaped
+  projection.
+- In both T1 and T2 default projections, B remains worse on deposit / payload quality: deposited fraction mean delta
+  `-0.131560032493`, effective deposit delta mean `-11.33339881897kg`, payload peak mean `-9.625952243805kg`.
+- These are posthoc projections on existing 6G-T gate-2 A/B rollouts, not new target-specific simulation reruns. They
+  satisfy the current request-local diagnostic closure for T1/T2 assumptions, but not production readiness or official
+  target semantics.
+- The target-specific follow-up generated request-local T1/T2 B runtime sources with the same mixed-source isolation
+  design as 6G-P: cycle `0` from the near-origin source and cycles `1` / `2` from the corridor-conditioned source.
+  It then reran bounded gate-2 B smokes with the 6G-T surface-depth prior preserved.
+- Both target-specific B reruns reached gate 2: T1 line count `1476`, T2 line count `1439`, each with
+  `target_cycle_gate_success=1`, `target_cycle_completed_dump_count=2`, `completed_transition_count=1`, and
+  `transition_timeout_count=0`.
+- Target-specific T1/T2 comparison is recorded in
+  `runs/eval/oracle_terrain_residual_phase6g_u_target_specific_t1_t2_ab_20260703/phase6g_u_target_specific_t1_t2_ab_comparison.json`.
+  Compared with the Phase 6G-T current baseline projected onto the same target, T1 B-minus-A latest positive residual
+  is `+0.013392139722` and T2 is `+0.000310925942`; both are worse for B. T2's earlier posthoc B advantage therefore
+  does not survive target-specific source regeneration and rerun.
+- The target-specific B reruns remain worse than A on deposit / payload / depth tracking: deposited fraction mean
+  deltas are T1 `-0.082576753762` and T2 `-0.094762842451`; depth absolute error mean deltas are T1
+  `+0.188530640304m` and T2 `+0.210038141906m`.
+
+Phase 6 official-v0 closure note:
+
+- `testbed.eval.terrain_residual_contract` is the stable eval contract owner
+  for official Phase 6 v0 terrain residual semantics. It defines
+  `terrain_residual_target_v1` with official T1
+  `t1_large_shallow_rectangular_pit_default` (`grid[3,2]`, rows `[0,2)`,
+  cols `[0,2)`, depth `0.25m`) and official T2
+  `t2_long_shallow_trench_default` (`grid[3,2]`, rows `[0,3)`, cols `[0,1)`,
+  depth `0.25m`).
+- The conservative official v0 pass/fail profile is
+  `not_worse_than_current_A_gate2_baseline`. A branch is evaluated against the
+  same-run A gate-2 baseline and must reach the gate, complete at least two
+  dumps, have zero transition timeouts, and be no worse than A on target
+  positive residual, target overdig, outside-target removal, deposited
+  fraction, and depth absolute error.
+- Manifest / branch-plan / comparison artifacts now use the shared status
+  source: `official_success_semantics_status=defined_by_terrain_residual_pass_fail_v1`,
+  `official_default_status=defined_by_terrain_residual_target_v1`, and
+  `official_threshold_status=defined_by_a_baseline_anchored_v0`. This upgrades
+  only the eval contract and report status language; it does not change
+  checked-in eval defaults, planner defaults, prior artifacts, or production
+  gates.
+- Request-local official pass/fail evidence is written at
+  `runs/eval/oracle_terrain_residual_phase6_official_v0_pass_fail_20260703/official_t1_t2_a_baseline_pass_fail_comparison.json`.
+  In that artifact A passes both T1 and T2 by construction against its own
+  gate-2 baseline. Target-specific B reaches gate 2 with zero transition
+  timeouts for both targets but fails official v0 on
+  `target_positive_residual_worse_than_baseline`,
+  `deposited_fraction_below_baseline`, and
+  `depth_abs_error_above_baseline`.
+- The current B failure is therefore not a return reachability blocker. The
+  artifact evidence points to execution-quality / ACT depth response or
+  dump-exit state: request-local cut intents ask for shallow depth around
+  `0.015m - 0.019m`, while real B depth peaks are around `0.21m - 0.29m` and
+  deposit / payload are lower than A. No planner behavior change or scoring
+  guard was promoted from this evidence.
+- `testbed.eval.terrain_cycle_quality_report` now accepts an official target id
+  and includes official pass/fail output when a baseline summary is supplied.
+  Its execution-quality summary also preserves planned/actual entry and exit
+  coordinates plus depth target / peak / error fields from the rollout summary.
+  The per-cycle residual summary now also preserves the start/end compact
+  removed-depth grid, target-depth grid, target-region mask, and valid mask so
+  replay/calibration consumers do not have to reconstruct terrain evidence
+  from scalar residual metrics.
+- `testbed.eval.terrain_residual_execution_diagnostic` now also owns the
+  request-local official-v0 failure packet builder/writer. The packet combines
+  official T1/T2 pass/fail evidence, B depth-execution diagnostic summaries,
+  cycle-quality artifact references, and B runtime-source references into one
+  no-overwrite JSON output. Its conservative conclusion keeps
+  `planner_behavior_change_status=not_made`,
+  `production_readiness_status=not_claimed`, and
+  `calibrated_branch_status=blocked_pending_gold_replay_samples`.
+  The current request-local generated packet is
+  `runs/eval/oracle_terrain_residual_phase6_official_v0_failure_packet_20260707/official_v0_failure_packet.json`.
+- `testbed.eval.terrain_gold_cycle_samples` is the official gold cycle sample
+  JSONL owner. It writes one `terrain_gold_cycle_sample_v1` record per
+  completed cycle, requires at least one split key (`episode_id` or
+  `rollout_id`), and uses `payload_mass_kg` as the required payload label. A
+  complete cycle-quality-derived record includes start/end removed-depth grids,
+  target grid/masks, target residual metrics, payload peak, effective deposit,
+  deposited fraction, depth target/peak/error, planned/actual entry and exit
+  fields, success, transition, and gate fields. Volume labels remain
+  `requires_unity_volume_fields`; volume fields must come from future direct
+  Unity / env-state measurements rather than `removed_depth_delta * cell_area`
+  inference.
+- `tb-replay` now has thin request-local JSONL flags for these samples:
+  `--gold-cycle-samples-jsonl`, `--gold-cycle-samples-target-id`, and
+  `--gold-cycle-samples-low-payload-kg`. The CLI only wires arguments and calls
+  the focused sample owner; it does not put sample semantics into the large
+  replay file. Raw replay records can capture env-state terrain/payload fields
+  before Unity exposes every planned/actual execution label; Phase 5
+  calibration must use records that satisfy the full gold-cycle schema.
+- C remains `blocked_pending_gold_replay_samples`. The new recorder establishes
+  the formal replay output chain and schema tests, but it does not fabricate
+  calibration success or claim that usable calibrated samples already exist.
+
+Phase 6 depth-execution diagnostic note:
+
+- `testbed.eval.terrain_residual_execution_diagnostic` is the focused owner for
+  aligning residual cut intent with execution and dump-exit evidence. It reads
+  explicit `residual_cut_intent_runtime_source.json`, `rollout_000_summary.json`
+  and `rollout_000.jsonl` inputs, then writes no-overwrite request-local JSON
+  diagnostics. It does not change planner behavior or checked-in config.
+- Request-local root:
+  `runs/eval/oracle_terrain_residual_phase6_depth_execution_diagnostic_20260703`.
+- Index artifact:
+  `runs/eval/oracle_terrain_residual_phase6_depth_execution_diagnostic_20260703/t1_t2_b_depth_execution_diagnostic_index.json`.
+- T1 target-specific B: `cycle_count=2`, `depth_overshoot_cycle_count=2`,
+  `target_cycle_gate_success=1`, `transition_timeout_count=0`, mean depth peak
+  minus intent `0.223569767456m`, mean deposited fraction `0.7219475943`.
+- T2 target-specific B: `cycle_count=2`, `depth_overshoot_cycle_count=2`,
+  `target_cycle_gate_success=1`, `transition_timeout_count=0`, mean depth peak
+  minus intent `0.245077269058m`, mean deposited fraction `0.709761505611`.
+- Per-cycle evidence shows intent/token depth around `0.017m - 0.019m`, while
+  actual depth peaks are `0.213m - 0.290m`. Dump-exit rows report return
+  envelope readiness rather than timeout. This strengthens the current
+  hypothesis that B's official-v0 failure is dominated by ACT depth execution /
+  dump-exit state, not return reachability or a missing source plan.
 
 通过标准：
 

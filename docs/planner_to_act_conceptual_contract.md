@@ -12,6 +12,45 @@
   轨迹或逐步 qpos 轨迹。
 - ACT 的输入应是图像、机器人自身状态和紧凑条件 token，而不是完整 privileged `env_state`。
 
+## 2026-07-28 Actual-tuple return transition 合同
+
+actual-tuple 路径不再把“下一铲的 outcome cell”映射成一个 cell-median return
+envelope。一个可执行 tuple 必须同时携带同一 strict-train material transition 的：
+
+```text
+dig raw tuple
++ paired gold return
++ exact 18D return-start envelope
++ expert handoff state
++ next dig start
++ lineage / raw-fields / artifact SHA
+```
+
+cycle >=1 的 planner 在选 dig tuple 前，先用当前 return-start 的
+`qpos/qvel/bucket-tip pose` 检查该 paired return transition 是否有 replay support。
+选择成功后这些字段原子锁定；return ACT 只读精确 paired token，cell/global prior
+和 relocate 不能再重写目标。return->dig handoff 则复核精确 spatial、depth、
+contact、qpos 和 qvel envelope。这样，planner 不能选择一个当前状态无法支持的专家
+tuple，同时 return 的目标也和下一 dig tuple 来自同一条训练 transition。
+
+3D 净距有三个不同阶段，不能混用：
+
+1. cycle 0：actual current dig start；
+2. post-return 预选：paired expert handoff 到 dig exemplar start 的预测 bound；
+3. return 结束：actual live handoff qpos 的最终 hard gate。
+
+pre-return qpos 不是未来 dig start。任何配对、token、valid mask、SHA 或最终 3D
+合同缺失都必须 fail closed，不允许使用平均 envelope 或 zero-token 隐式继续。
+
+证据层级也必须分开：
+
+| evidence | 能证明什么 | 不能证明什么 |
+| --- | --- | --- |
+| frozen replay alignment | 旧 return start/end、旧 token 与精确 token 的事实差异 | 新目标已被闭环到达 |
+| teacher-forced ACT comparison | 相同 recorded observation 下 token 是否改变 action | 反事实轨迹会安全或成功 |
+| production preflight | production selector/gate 对冻结状态的决定 | Unity live capability |
+| bounded live | 在有限 cycle/reset 内实际执行与安全结果 | 10-cycle 或正式 freeze |
+
 ## 总体信息流
 
 ```text
@@ -161,6 +200,13 @@ handoff/replan，不负责直接输出连续动作。
 | `spill_before_target` | 作为质量诊断，只在 bucket mass 明显下降、同帧没有 target/dump deposit progress，并且当前不在有效 dump geometry 时计数。若 `bucket_over_target_footprint_mask=1` 且 `dump_clearance_ok_mask=1`，允许 Unity/AGX 的 bucket mass 与 deposit 传感存在 1 帧左右的更新时序差，不把这种目标内释放误报为漏土。 |
 | `return -> dig` | 不是单纯等 `qualified_dig_start`。状态机先 latch `next_dig_entry_ready` 或 qualified dig start，然后要求 `_return_to_dig_handoff_ready` 成立：pending entry error `<= 0.55m`，并通过 `return_start_envelope_tokens_v1` 的 spatial/depth/contact/qpos gate。当前 gate 使用 long/short tolerance `0.10`、qpos tolerance `0.04`；若 prior cell 带 `dig_start_local_depth_m`，local depth 使用该训练分布的 p05-p95 加 `0.005m` tolerance，否则才退回 token depth min/max 加 `0.08m`。`return_to_dig_start_envelope_require_contact=true` 会独立要求 dig contact，不再依赖 token[6]。`p50_floor` 在有 local-depth prior 且要求 contact 时使用 plane-depth p05-p95 作 terrain-offset 检查，否则继续用 p50 floor 防止零深度 handoff。若显式打开 `return_to_dig_start_envelope_direct_handoff_enabled`，return 在空斗低质量且 entry/envelope 已 ready 时可不等新的接触式 boundary event，直接交给下一轮 dig/pre-dig-align；如果 dump/carry 完成当帧已经满足该 gate，状态机也允许同帧 `dump/carry -> dig`，避免先执行一帧 return ACT 后错过浅接触窗口。 |
 
+`return_start_envelope_owner_control` 是 request-local、默认不存在且仅允许
+`diagnostic_only: true` 的因果诊断开关。达到指定的完整 dump 数之前它完全
+inert；达到门槛后，可让 18D return-envelope token field 6 成为 contact 的
+唯一 owner，并让 runtime prior 的 p05-p95 成为 local/plane depth 的唯一
+owner。该开关不改变任何数值 tolerance，也不代表 production 合同已经推广；
+production 缺省行为仍是上表所述的全局 contact override 与 `p50_floor`。
+
 这里有两个容易混淆的点：
 
 - `dump_ready_*` 仍存在于配置里，但在 `v2_4_5_spatial_mass` 下主要是 legacy fallback；
@@ -268,8 +314,9 @@ planner 决策：
 
 - 在 return 开始或 return 过程中先选好下一轮 dig intent，并把它作为 pending plan；这个
   plan 用于下一轮 dig 和 handoff entry-close，不直接喂给 return ACT。
-- 当前 surface-depth 主线把 return 当成“回到可接管分布”的 skill，不是“按下一铲 cell
-  精确导航”的 skill。
+- legacy surface-depth 主线把 return 当成“回到可接管分布”的 skill。actual-tuple
+  变体仍不让 planner 输出逐步轨迹，但必须回到与下一 dig tuple 精确配对的 gold
+  return-start envelope；不能再用 cell/global median 代替。
 - planner latch `next_dig_entry_ready`，但不会只凭一个事件切 dig；还要检查 entry error、
   spatial/depth/contact/qpos envelope。surface-depth prior 的
   `return_start_envelope_cells` 应携带从 gold dig primitive start 统计出的
@@ -364,6 +411,21 @@ eval 侧的 `return_low_dim_keys` 也是同一组 key。
   never reached. A request-local surface-depth prior counterfactual is allowed
   as evidence, but changing checked-in defaults remains a separate semantic
   decision.
+- Phase 6G-S ran that request-local counterfactual and changed only
+  `policy.dig_cut_planner.prior_path` to the existing surface-depth prior. With
+  the same 6G-P mixed source and gate settings, B selected
+  `qc6_return_start_envelope_cell_1+relocate_spatial_linear+relocate_qpos_linear`,
+  completed return handoff, and reached gate 2. The completed transition row
+  had entry error `0.21173654848258414m`, envelope error `0.0`, contact true,
+  and no local-depth / plane-depth / qpos failures. This supports the prior
+  artifact compatibility hypothesis but does not promote that prior to a
+  checked-in default and does not change the handoff gate semantics.
+- Phase 6G-T reran a fresh gate-2 A/B bounded smoke. Both A and B reached the
+  bounded gate, and the explicit target residual projection showed a small B
+  improvement over A, but B had worse deposited fraction and depth-command
+  tracking. The contract remains that return-start envelope tokens describe a
+  physically reachable dig-start distribution and must still pass the normal
+  entry/depth/contact/qpos gate; they are not a success override.
 
 所以当前主线里，return 的任务是回到“dig ACT 可以接管的状态分布”，而不是执行下一铲
 dig plan 的前半段。下一铲 plan 仍然存在，但它停留在 planner/scheduler 侧，等真正切回
@@ -462,6 +524,38 @@ return-relocate 训练的 outcome supervision 应使用
 entry/exit/direction/length/valid，不监督 depth/payload。return 可以用 shallow
 depth/contact 字段判断是否仍在安全 handoff envelope 内，但不应该把下一铲的挖深或
 装料目标当成自己要执行的动作目标。
+
+### Phase 6 official terrain residual eval contract
+
+官方 Phase 6 v0 地形 residual 目标属于 eval contract，不是 ACT 低维输入默认值，也不是
+runtime planner gate。当前 owner 是
+`testbed.eval.terrain_residual_contract`：
+
+- T1 `t1_large_shallow_rectangular_pit_default`：compact `grid[3,2]`，rows
+  `[0,2)`，cols `[0,2)`，depth `0.25m`。
+- T2 `t2_long_shallow_trench_default`：compact `grid[3,2]`，rows `[0,3)`，
+  cols `[0,1)`，depth `0.25m`。
+- pass/fail profile `not_worse_than_current_A_gate2_baseline` 只用于 eval
+  artifact：B/C 必须在同一实验里相对 A gate-2 baseline 不更差，包括 gate reached、
+  completed dump count、transition timeout、target residual、overdig、
+  outside-target removal、deposited fraction 和 depth absolute error。
+
+这条 contract 不改变 ACT 输入 shape。ACT 仍只消费 image、`qpos`、`qvel` 和当前 skill 的紧凑
+token；完整 target grid、residual grid、pass/fail 结果和 gold sample label 都留在 planner/eval
+证据层。当前 official pass/fail evidence 显示 target-specific B 已能 gate-2 reachable，但在
+target residual、deposited fraction 和 depth error 上不如 A；定位优先级因此是 ACT depth response /
+dump-exit state，而不是把 official eval target 写进 ACT 输入。
+
+最新 depth-execution diagnostic 进一步确认这个边界：T1/T2 target-specific B 的 completed cycles 都把
+约 `0.017m - 0.019m` 的 residual depth intent 执行成约 `0.213m - 0.290m` 的 depth peak，同时
+return envelope 已 ready 且 transition timeout 为 `0`。这说明下一步应先评估 ACT 对 shallow
+surface-depth intent 的条件化和 dump-exit 初始状态，而不是让 planner 输出手写 qpos setpoint 或改变
+official target contract。
+
+Gold cycle samples 由 `testbed.eval.terrain_gold_cycle_samples` 输出，每个 completed cycle
+一条 `terrain_gold_cycle_sample_v1` JSONL。required payload label 是 `payload_mass_kg`；
+`payload_volume_m3` 不能从 `removed_depth_delta * cell_area` 推断，只有未来 Unity/env-state
+提供可靠直接体积字段时才写入。
 
 ## 信息边界
 

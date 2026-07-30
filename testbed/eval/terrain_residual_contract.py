@@ -6,7 +6,6 @@ import math
 from collections.abc import Mapping
 from typing import Any
 
-
 TARGET_SCHEMA = "terrain_residual_target_v1"
 TARGET_SOURCE = "official_terrain_residual_target_contract"
 OFFICIAL_SEMANTICS = "official_phase6_v0_default"

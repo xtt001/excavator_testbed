@@ -6,10 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.coverage.config import PrimitiveCoverageStaticConfig
-from testbed.planner.primitive.coverage.selection import CoverageCorridorState
-from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.coverage.effects import (
     CoverageEffectRuntimeCoordinator,
     CoverageEffectRuntimePorts,
@@ -18,7 +15,10 @@ from testbed.planner.primitive.coverage.effects import (
     CoverageUpdateConfig,
     CoverageUpdateService,
 )
+from testbed.planner.primitive.coverage.selection import CoverageCorridorState
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,7 @@ class PrimitiveCoverageEffectRuntime:
     def from_ports(
         cls,
         ports: PrimitiveCoverageEffectRuntimePorts,
-    ) -> "PrimitiveCoverageEffectRuntime":
+    ) -> PrimitiveCoverageEffectRuntime:
         return cls(ports=ports)
 
     def coverage_update_config(self) -> CoverageUpdateConfig:

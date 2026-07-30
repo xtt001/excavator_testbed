@@ -1,23 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import fields
-from typing import Any
 
+from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
+from testbed.planner.primitive.decision.input import (
+    PrimitiveBackendDecisionInput,
+    PrimitiveBackendDecisionInputBuilder,
+)
+from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 from testbed.planner.primitive.facts.backend import (
     PrimitiveBackendFactsAccess,
     PrimitiveBackendFactsPorts,
     PrimitiveBackendFactsSource,
 )
-from testbed.planner.primitive.decision.input import (
-    PrimitiveBackendDecisionInput,
-    PrimitiveBackendDecisionInputBuilder,
-)
-from testbed.planner.primitive.decision.capabilities import (
-    PrimitiveDecisionCompatibilityActions,
-)
-from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
 from testbed.planner.primitive.facts.decision import PrimitiveDecisionFacts
-from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 
 
 def _context() -> PrimitiveDecisionContext:

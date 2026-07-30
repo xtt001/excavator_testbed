@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from testbed.eval.terrain_residual_contract import (
     OFFICIAL_PASS_FAIL_PROFILE_ID,
-    get_official_terrain_residual_target_spec,
-    official_contract_statuses,
-    list_official_terrain_residual_target_specs,
     evaluate_cycle_quality_against_baseline,
+    get_official_terrain_residual_target_spec,
+    list_official_terrain_residual_target_specs,
+    official_contract_statuses,
 )
 
 

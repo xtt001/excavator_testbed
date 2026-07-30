@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
 
@@ -39,7 +40,7 @@ class CarryStartEnvelopeGateConfig:
     def from_mapping(
         cls,
         values: Mapping[str, Any] | None,
-    ) -> "CarryStartEnvelopeGateConfig":
+    ) -> CarryStartEnvelopeGateConfig:
         raw = dict(values or {})
         return cls(
             enabled=bool(raw.get("enabled", False)),
@@ -83,7 +84,7 @@ class CarryStartEnvelopeGate:
     def from_config(
         cls,
         config: CarryStartEnvelopeGateConfig,
-    ) -> "CarryStartEnvelopeGate":
+    ) -> CarryStartEnvelopeGate:
         if int(config.hold_steps) < 1:
             raise ValueError("carry-start envelope hold_steps must be >= 1")
         if int(config.max_dig_steps) < 1:

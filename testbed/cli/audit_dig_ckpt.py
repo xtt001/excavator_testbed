@@ -28,7 +28,6 @@ from testbed.data.hdf5_io import episode_id_from_path, list_episodes
 from testbed.data.image_masks import apply_image_mask
 from testbed.runtime._train import _resolve_low_dim_state_dim
 
-
 DIG_CUT_TOKEN_KEY = "dig_cut_tokens"
 DIG_CUT_TOKEN_PATH = "v2/step/dig_cut_tokens"
 DIG_DEPTH_PROFILE_KEY = "dig_depth_profile_tokens_v1"

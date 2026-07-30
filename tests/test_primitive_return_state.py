@@ -4,17 +4,16 @@ from types import MethodType
 
 import numpy as np
 
-from testbed.planner.primitive.execution.return_state import (
-    PrimitiveReturnReportStatus,
-    PrimitiveReturnRuntimeState,
-)
 from testbed.planner.primitive.effects.return_handoff import (
     ReturnHandoffReadinessConfig,
     ReturnStartEnvelopeGateConfig,
 )
+from testbed.planner.primitive.execution.return_state import (
+    PrimitiveReturnReportStatus,
+    PrimitiveReturnRuntimeState,
+)
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 from tests.primitive_policy_test_helpers import make_policy_shell_for_private_weld_tests
-
 
 _RETURN_RUNTIME_FIELD_NAMES = {
     "return_step_count",

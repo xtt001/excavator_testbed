@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 from testbed.cli.terrain_residual_ab_artifact_pipeline import main
 from testbed.data.schema import (

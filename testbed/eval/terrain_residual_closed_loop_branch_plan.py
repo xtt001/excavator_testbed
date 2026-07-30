@@ -7,7 +7,6 @@ from typing import Any
 
 from testbed.eval.terrain_residual_contract import official_contract_statuses
 
-
 SCHEMA = "terrain_residual_closed_loop_branch_run_plan_v1"
 SOURCE = "explicit_closed_loop_branch_run_plan"
 DEFAULT_PROFILE = "phase6e_branch_run_plan_contract"

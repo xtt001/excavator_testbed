@@ -1,40 +1,38 @@
 from __future__ import annotations
 
 from dataclasses import fields
-from types import CodeType
-from types import MethodType
+from types import CodeType, MethodType
 from typing import Any
 
 import pytest
 
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.decision.backends.legacy_capability_provider import (
+    PrimitiveFSMCapabilityProviderConfig,
+)
 from testbed.planner.primitive.decision.backends.legacy_fsm import (
     LegacyFSMBranchSet,
     LegacyFSMDecisionBackendFactory,
     LegacyFSMDecisionBackendFactoryPorts,
 )
-from testbed.planner.primitive.facts.backend import PrimitiveBackendFactsSource
-from testbed.planner.primitive.decision.backends.legacy_capability_provider import (
-    PrimitiveFSMCapabilityProviderConfig,
-)
-from testbed.planner.primitive.coverage.state import CoverageRuntimeState
-from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive.decision.input import PrimitiveBackendDecisionInput
+from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
 from testbed.planner.primitive.decision.contracts import (
     PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
 )
-from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
-from testbed.planner.primitive.facts.decision import PrimitiveDecisionFacts
+from testbed.planner.primitive.decision.input import PrimitiveBackendDecisionInput
 from testbed.planner.primitive.decision.runtime import (
     LEGACY_FSM_DECISION_BACKEND_NAME,
     PrimitiveDecisionRuntime,
     PrimitiveDecisionRuntimeConfig,
     PrimitiveDecisionRuntimePorts,
 )
-from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
+from testbed.planner.primitive.facts.backend import PrimitiveBackendFactsSource
+from testbed.planner.primitive.facts.decision import PrimitiveDecisionFacts
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
-
 
 _OLD_LEGACY_FSM_BACKEND_ACCESS_POLICY_WRAPPERS = (
     "_legacy_fsm_" + "requested_decision_backend",

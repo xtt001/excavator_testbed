@@ -6,6 +6,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from testbed.planner.primitive.coverage.effect_runtime import (
+    PrimitiveCoverageEffectRuntime,
+)
 from testbed.planner.primitive.decision.contracts import (
     CompleteCoverageDigEffect,
     CompleteCoverageDumpEffect,
@@ -26,16 +29,13 @@ from testbed.planner.primitive.decision.contracts import (
     SwitchSkillEffect,
     SwitchToNextSkillAfterReturnEffect,
 )
-from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
-from testbed.planner.primitive.coverage.effect_runtime import (
-    PrimitiveCoverageEffectRuntime,
-)
-from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive.execution.dig_recovery import PrimitiveDigRecoveryService
 from testbed.planner.primitive.effects.return_handoff_runtime import (
     PrimitiveReturnHandoffRuntime,
 )
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.execution.dig_recovery import PrimitiveDigRecoveryService
 from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,7 @@ class RequestedEffectApplier:
     def from_ports(
         cls,
         ports: RequestedEffectApplierPorts,
-    ) -> "RequestedEffectApplier":
+    ) -> RequestedEffectApplier:
         return cls(ports=ports)
 
     def apply(
@@ -205,7 +205,7 @@ class PrimitiveRequestedEffectRuntime:
     def from_ports(
         cls,
         ports: PrimitiveRequestedEffectRuntimePorts,
-    ) -> "PrimitiveRequestedEffectRuntime":
+    ) -> PrimitiveRequestedEffectRuntime:
         return cls(ports=ports)
 
     def requested_effect_applier(self) -> RequestedEffectApplier:

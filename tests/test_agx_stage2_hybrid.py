@@ -10,14 +10,6 @@ from unittest.mock import patch
 
 import numpy as np
 
-from testbed.eval.suite import EvalSuite
-from testbed.planner.boundary_detector import (
-    BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS,
-    BoundaryDetector,
-    BoundaryDetectorConfig,
-    QUALIFIED_DIG_START_MODE_CONTACT_DEPTH,
-    build_boundary_detector_from_config,
-)
 from testbed.data.schema import (
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
@@ -30,10 +22,18 @@ from testbed.data.schema import (
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
 )
+from testbed.eval.suite import EvalSuite
+from testbed.planner.boundary_detector import (
+    BOUNDARY_PROFILE_V2_4_5_SPATIAL_MASS,
+    QUALIFIED_DIG_START_MODE_CONTACT_DEPTH,
+    BoundaryDetector,
+    BoundaryDetectorConfig,
+    build_boundary_detector_from_config,
+)
 from testbed.planner.corridor_servo import (
     TRANSITION_SUBMODE_WAIT_NEXT_DIG,
-    TransitionController,
     WAIT_NEXT_DIG_MODE_SERVO_REENTRY_POSE,
+    TransitionController,
     build_default_entry_corridor_bands,
     normalize_named_entry_corridor_bands,
 )

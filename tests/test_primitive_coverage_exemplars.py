@@ -1,23 +1,22 @@
 from __future__ import annotations
 
 import json
-import math
 
 import numpy as np
 import pytest
 
 from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.schema import ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX
-from testbed.planner.primitive.coverage.selection import CoverageCorridorState
 from testbed.planner.primitive.coverage.exemplars import (
     CoverageStateExemplarPlanInputs,
     CoverageStateExemplarPlanner,
     CoverageStateExemplarPlannerConfig,
 )
+from testbed.planner.primitive.coverage.selection import CoverageCorridorState
 from tests.test_agx_primitives_v2_2 import (
-    _RecordingPolicy,
     _coverage_obs,
     _coverage_planner_policy,
+    _RecordingPolicy,
 )
 
 

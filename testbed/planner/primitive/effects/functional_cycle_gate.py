@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from typing import Any, Mapping
+from typing import Any
 
 from testbed.planner.box_emptying.safety_interlock import SafetyActionDecision
 from testbed.planner.primitive.facts.capabilities import ReturnTransitionStatus
-
 
 FUNCTIONAL_TERMINAL_REASON = "functional_10cycle_terminal_return_ready"
 
@@ -24,7 +24,7 @@ class FunctionalCycleGateConfig:
     def from_mapping(
         cls,
         values: Mapping[str, Any] | None,
-    ) -> "FunctionalCycleGateConfig":
+    ) -> FunctionalCycleGateConfig:
         raw = dict(values or {})
         return cls(
             enabled=bool(raw.get("enabled", False)),

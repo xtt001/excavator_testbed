@@ -22,7 +22,6 @@ from testbed.backends.agx.protocol import (
     decode_step_response,
 )
 
-
 CAMERAS = ("stick_up", "stick_down", "eye_left", "eye_right")
 
 

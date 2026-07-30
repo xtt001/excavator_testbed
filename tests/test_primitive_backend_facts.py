@@ -5,10 +5,12 @@ from typing import Any
 
 import pytest
 
+from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
+from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 from testbed.planner.primitive.facts.backend import (
     BootstrapDecisionStatus,
-    PrimitiveBootstrapDecisionFacts,
     PrimitiveBackendFactsAccess,
+    PrimitiveBootstrapDecisionFacts,
     PrimitiveTransitionStatusReader,
 )
 from testbed.planner.primitive.facts.capabilities import (
@@ -17,7 +19,6 @@ from testbed.planner.primitive.facts.capabilities import (
     DumpTransitionStatus,
     ReturnTransitionStatus,
 )
-from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
 from testbed.planner.primitive.facts.decision import (
     PrimitiveCarryTransitionFacts,
     PrimitiveDecisionFacts,
@@ -25,7 +26,6 @@ from testbed.planner.primitive.facts.decision import (
     PrimitiveDumpTransitionFacts,
     PrimitiveReturnTransitionFacts,
 )
-from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 
 
 def _context() -> tuple[

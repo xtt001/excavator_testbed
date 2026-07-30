@@ -1,5 +1,715 @@
 # 配置文件索引
 
+## 2026-07-31 Carry→Dump Ownership Priority 10 铲诊断配置
+
+已消费、不可覆盖的 request-local 配置位于：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  carry_dump_ownership_priority_10cycle_diagnostic_v1/
+    configs/strict18_seed_1000_carry_dump_ownership_priority_gate10.yaml
+```
+
+它从
+`return_handoff_owner_target_scoped_10cycle_diagnostic_v2/run/results/eval_resolved_config.yaml`
+深拷贝。除输出目录、diagnostic metadata 和
+`boundary.release_onset_dump_ownership_diagnostic_enabled: true` 外，reset、
+目标、checkpoint、ACT、return envelope、contact mode、hard-force、
+hard-bottom、stuck、timeout 及全部数值阈值保持不变；paired reset 的所有差值
+均为 0。开关只接受“位于既有卸载区且本 tick 产生达到既有最小值的真实入箱或
+入 dump-area 增量”，仅 bucket 失重不能取得 dump ownership。该开关默认 false。
+
+唯一 attempt 已运行并消费，不得重试或覆盖。source 在第 2 铲通过
+`carry_to_return_release_safety` 跳过 dump、总计只完成 2 次 dump；本诊断把
+dump ownership 置于该 fallback 之前，第 2 铲进入并完成 dump，整个 run 没有
+任何 carry-release 直达 return，最终完成 9 次 dump。第 9 次 dump 后，next-dig
+spatial entry-close 与 depth/qpos envelope 没有同时 ready，return 用满原
+`420` steps 后按原 neutral terminal chain timeout。因此这是优先级假设的正证据，
+但不是 10-dump pass。append-only 报告为 `run/report.json`；该配置
+diagnostic-only、non-promotable、`record_hdf5=false`，所有 downstream gate
+继续为 false。
+
+## 2026-07-31 Return-Handoff Owner 10 铲诊断配置
+
+两个已消费、不可覆盖的 replicate 位于：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  return_handoff_owner_target_scoped_10cycle_diagnostic_v1/
+  return_handoff_owner_target_scoped_10cycle_diagnostic_v2/
+```
+
+两份配置都从同一 v7 source 深拷贝，并保留 gate-8 诊断的 delayed owner
+control。相对 gate-8 只允许输出路径、diagnostic metadata 和
+`eval.target_cycle_gate: 10` 不同。CLI 生成方式为：
+
+```bash
+python -m testbed.cli.return_handoff_owner_probe prepare \
+  --target-completed-dumps 10 \
+  --output-root <new-no-overwrite-root>
+```
+
+runner 只允许 target 大于 owner 激活门槛且不超过 10；每个 root 仍固定
+`max_attempts=1`、`retry_allowed=false`、`record_hdf5=false`。collector 会把
+目标 cycle 作为 `entered_target_dig/completed_target_dump` 的唯一 owner，
+并允许 owner 尚未激活前的有效安全早停进入报告。
+
+两个实际 run 都只完成 2 次 dump，随后在未激活 owner control 的情况下
+return timeout。v1 原 collector 因不接受 inactive-only evidence 而退出；
+物理 run 未重跑，其 append-only 修正报告是
+`run/report_reanalysis_v1.json`。v2 由修正后的 collector 直接生成
+`run/report.json`。两者均是 diagnostic/non-promotable，不能作为
+functional 1x10 或 production contract 证据。
+
+## 2026-07-31 Return-Handoff Owner-Isolation 诊断配置
+
+有效 request-local 配置位于：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  return_handoff_owner_target_scoped_diagnostic_v2/
+    configs/strict18_seed_1000_return_handoff_owner_target_scoped_gate8.yaml
+```
+
+它保留 v7 的
+`return_to_dig_start_envelope_require_contact: true` 与
+`return_to_dig_start_envelope_plane_depth_mode: p50_floor`，因此前七次 dump
+使用原门控。唯一语义控制位于：
+
+```yaml
+policy:
+  box_emptying:
+    return_start_envelope_owner_control:
+      enabled: true
+      diagnostic_only: true
+      min_completed_dump_count: 7
+      contact_owner: token
+      depth_owner: runtime_prior_p05_p95
+```
+
+该控制必须显式标记 `diagnostic_only: true`。达到 7 次完整 dump 后，它让
+contact 只由 18D return-envelope token field 6 决定，并让 local/plane depth
+只使用同一 runtime prior 的 p05-p95 范围；空间、qpos、qvel、深度 tolerance、
+contact safety、timeout 和全部 checkpoint 不变。缺省配置不含该 block，因而
+production 默认完全不变。
+
+有效 v2 run 进入第 8 次 dig 并产生第 8 个 `dump_end`，由
+`target_cycle_gate=8` 正常终止。终止当帧通用 `completed_dump_count` 尚为 7，
+但 `target_cycle_completed_dump_count=8` 与 `dump_end_count=8` 是本次 bounded
+完成数的 authoritative owners。报告位于
+`run/report_reanalysis_v1.json`。该配置已消费，不得重跑或推广；它不写训练
+HDF5，也不解锁 continuous predictor、E0/G1/W1、bounded live 或 functional
+1x10。
+
+## 2026-07-30 Observe-only Multi-shovel Diagnostic 配置
+
+唯一实际执行的 current-code 配置位于新的 no-overwrite v2 root：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  wall_contact_observe_only_multicycle_diagnostic_v2/
+    configs/strict18_seed_1000_observe_only_1x10.yaml
+```
+
+它从历史 7-dump
+`act_freeze_probe_1x10_strict_prior_v1/results/eval_resolved_config.yaml`
+深拷贝，使用 fresh seed-1000 reset；历史运行只提供 config/reset/checkpoint/
+planner-prior provenance，并不是从 cycle 8 续跑。四个 checkpoint 及各自
+`dataset_stats.pkl`、ACT loader/eval runtime、Unity scene/normalization/contact
+lineage 都由 manifest 逐文件 SHA 锁定。
+
+相对历史配置，普通 wall-contact 的唯一运行时语义变化是：
+
+```yaml
+policy:
+  box_emptying:
+    safety:
+      wall_first_touch_mode: record_bucket_all_contacts
+      wall_contact_diagnostic_ab_enabled: false
+      wall_contact_diagnostic_observe_only_enabled: true
+```
+
+该模式只对 bucket-only、所有力有限且严格 `<100000N` 的 wall contact
+record-only；不限制 session 数、持续时间、bucket region 或 wall identity，也
+不允许普通接触触发 neutral、ACT reset、replan 或 corridor block。
+boom/stick/other/ambiguous、`>=100000N`、non-finite/invalid lineage、
+hard-bottom、stuck 和 timeout 仍硬停止。`num_rollouts=1`、
+`target_cycle_gate=10`、`record_hdf5=false`、`no_overwrite=true`。
+
+唯一 attempt 已消费，不得再次执行 `run-once`。它完成 6 次 dump，在第 7 铲以
+`hard_bottom_depth_budget_guard_clearance_depth_increase` 安全终止；报告状态
+`passed`、outcome `hard_safety_stop_before_10`。唯一接触铲记录了 21 个
+bucket × `Dig_ZMin_Board` tick、12 个 Unity physical sessions、`0.42s`，
+peak/RMS normal force `73924.76/43681.23N`、normal impulse
+`15555.178944N·s`，且接触期间存在运动进展。21 个允许 tick 的 neutral、
+ACT reset、replan 和 corridor block 计数均为 0。
+
+文件名中的 `1x10` 仅表示 diagnostic 最大预算，不是 formal/conditional 1×10。
+该结果 diagnostic-only、non-promotable，不写训练 HDF5，且
+contact-budget freeze、continuous predictor、E0/G1/W1、bounded live 与
+functional 1×10 gate 继续为 false。先前 v1 root 只保存最终代码复核前的 stale
+prestart manifest，没有 `run/`，不得当作第二次 attempt 或有效结果。
+
+## 2026-07-30 Seed-2 Diagnostic B2 Request-local 配置
+
+唯一 B2 配置位于 create-new root：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  wall_contact_session_gap_diagnostic_b2_v1/configs/seed_2_B2.yaml
+```
+
+它从原 `paired_ab/configs/seed_2_B.yaml` 构造并锁定 source SHA。除 condition
+metadata、输出目录和
+`box_emptying.safety.wall_contact_session_end_clear_ticks: 2` 外，reset、
+episode-168 目标、四个 checkpoint、四相机、action scale、`window=100 /
+legacy_oldest_first`、ACT 选项、timeout 与全部 hard safety threshold 必须深相等。
+该值只允许 `record_bucket_first_session` 的显式 diagnostic A/B 配置使用；
+production/default 仍为一个 clear tick。
+
+B2 已按 `seed=2 / retry_count=0` 实际运行一次并完成 dump。它观察到 raw physical
+session 1 与 2 之间恰好一个 `20ms` clear tick，Python 将其视为一个 logical
+session；没有 hard-stop violation。该 YAML 已消费其 exactly-once attempt，
+不得再次传给 runner，也不得复制为 production continuous 配置。原 paired A/B
+classification 仍为 `inconclusive`，所有 downstream gate 仍为 false。
+
+## 2026-07-29 Contact Audit/A-B Request-local 配置
+
+最新链路为：
+
+```text
+exact tuple diagnostic
+→ contact audit/A-B
+→ contact-budget freeze
+→ continuous predictor
+→ E0/G1/W1
+→ bounded live
+→ conditional A0 1×10
+```
+
+当前 request-local A/B 配置只能生成到 no-overwrite
+`wall_contact_semantics_recovery_v1/paired_ab/configs/`。三组 seed 的 A/B 从
+同一冻结 A0 深拷贝；checkpoint、四相机、action scale、
+`window=100 / legacy_oldest_first`、目标、handoff、timeout 和既有 safety
+threshold 必须深相等，只允许 contact mode、condition metadata 和输出目录
+不同。两种条件都必须设置
+`box_emptying.safety.wall_contact_diagnostic_ab_enabled: true`；B 的
+`record_bucket_first_session` 若没有该标记会在配置归一化阶段被拒绝。
+这些配置只允许 one-cycle diagnostic validator 使用，不得写训练 HDF5，也
+不得作为 production continuous 配置。
+
+证据 collection 与最终 causal report 会同时保留 raw artifact 引用和可读摘要：
+几何摘要按 split/source/component/wall 保留完整 12-pair inventory、接触区间及
+bucket-local region；其中 `0.24m` 只用于本阶段 `near-wall` 的显式
+**diagnostic threshold**，不是 production clearance 或接触预算。expert 摘要把
+train-valid inference、invalid diagnostic 和 holdout evidence 分开，holdout
+不得用于区域或预算选择；A/B 摘要逐 seed 保留 reset fairness 与 B 的
+carry/dump/contact-ended/hard reason。最终报告即使得到某个因果分类，也会把
+continuous contract、qpos predictor、E0/G1/W1、bounded live 和 1×10 gate
+全部保持为 false，等待人工冻结 bucket region 与 force/duration/impulse budget。
+prepare、collect 和 finalize 还会复验固定 Python runtime/evidence source
+inventory 的逐文件 SHA 与 ordered aggregate，防止 dirty tree 中实际执行链漂移。
+
+本次实际 A/B 结果为 B `2/3` 完成 dump，seed 2 因第二 session 硬停止；三对
+reset fairness 均通过，因果分类仍为 `inconclusive`。原始 6 次 attempt 不得
+重跑或覆盖。若 extractor/reporting 修复需要复算，只允许对原始 artifact 运行：
+
+```bash
+python -m testbed.cli.wall_contact_ab_runner reextract \
+  --schedule <original-paired-ab-schedule.json> \
+  --output-dir <fresh-append-only-reanalysis-dir>
+```
+
+复算 attempt set 必须是 `reanalysis_only=true`、
+`executed_attempt_count=0`。当前 source-locked 结果为
+`wall_contact_semantics_recovery_v1/reanalysis_v4/`；它只修复 sibling return
+provenance 和 `box_safety:` terminal prefix 的后处理识别，不改变 A/B 配置或
+运行事实。该结果没有冻结 contact budget，任何 A/B YAML 仍不得推广到
+production。
+
+## 2026-07-29 Continuous Goal-conditioned Request-local 配置（接触预算冻结后）
+
+`continuous_goal_conditioned` 必须同时满足：
+
+- `fallback_mode: raise`
+- dig 与 return `hold_token_until_skill_exit: true`
+- `coverage.wall_safety.enabled: true`
+- typed safety、return target planner 和 return start-envelope gate 均启用
+- `actual_tuple_execution_library.enabled` 不得为 true；旧配置缺省的
+  `runtime_role` 为 `diagnostic_legacy`
+
+三份 request-local YAML 位于：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  goal_conditioned_runtime_recovery_v1/configs/
+```
+
+它们从同一 A0 深拷贝，只允许 goal source、condition metadata 和输出目录不同。
+当前 manifest 为 `blocked`，原因是 `continuous_goal_3d_predictor_missing`；
+这些 YAML **不得传给 `tb-eval`**。offline preflight 已确认四 checkpoint、
+四相机、A0 `window=100 / legacy_oldest_first`、carry/switch/boundary/safety/
+timeout 深相等，同时明确 `live_allowed=false` 与
+`functional_1x10_allowed=false`。
+
+## 2026-07-28 Start-transition 实测对配置的结论
+
+`worktool_margin_calibrated_transfer_v1/configs/bounded_transfer_v1.yaml`
+及其 checked-in 来源配置保持不变。新的 Unity shadow-FK transition diagnosis
+实测：
+
+```text
+episode_171 expert dig nominal clearance: 0.285413831 m
+minus ACT tracking margin:                0.050000000 m
+minus pose interpolation bound:           0.010000000 m
+effective clearance:                      0.225413831 m
+configured hard clearance:                0.240000000 m
+```
+
+因此旧 `0.075173m` paired-handoff start bound 即使不扣除，该 tuple 仍不能通过。
+而完整 convex-cover endpoint displacement 实测为 `0.092744m`，比该 scalar bound
+还大约 `0.017571m`，所以没有证据把 start bound 调小或删除。cycle-0 source
+preamble 与 production bound 的起点不同，v2 诊断明确禁止把二者作数值比较。
+
+本轮没有生成新 planner YAML、没有更改
+`hard_clearance_m=0.24 / act_tracking_margin_m=0.05 /
+pose_interpolation_bound_m=0.01`，也没有更改 2D `0.30/0.45m`。现有 calibrated
+config 仍被 production preflight `0/5` 阻断，**不得传给 `tb-eval`**。
+
+## 2026-07-28 校准后 Production Full-Gate Preflight
+
+新的 no-overwrite calibrated config 为：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  worktool_margin_calibrated_transfer_v1/
+    configs/bounded_transfer_v1.yaml
+```
+
+它保留 A0 `window=100 / legacy_oldest_first`、四 checkpoint、四相机、typed safety、
+2D wall gate 和 exact return 合同，只把中央实测 3D 值写入 request-local config。
+对应 production preflight 必须使用：
+
+```bash
+python -m testbed.cli.build_coverage_execution_gate_preflight --help
+```
+
+当前 v2 artifact 对 cycle-0、三条 post-return 和 step 2987 共五个状态均得到
+`no_wall_safe_corridor`，完整 gate 合法候选数均为 0；因此该 YAML **不得传给
+`tb-eval`**。`19/374` 仅是 zero-start nominal 计数。配置存在不等于 bounded
+promotion，旧 preflight 的 `0.30m` 硬编码结果也不能替代 v2。后续只有同一 v2
+全状态通过后，才允许生成 fresh bounded results；不得关闭 start reachability、
+3D gate 或使用 fallback。
+
+## 2026-07-28 实测校准后的 3D worktool margin
+
+`CoverageWorktoolSweepConfig` 和 actual-tuple eval builder 的当前中央默认值为：
+
+```yaml
+enabled: true
+profile: unity_kinematic_convex_cover_worktool_sweep_v1
+hard_clearance_m: 0.24
+act_tracking_margin_m: 0.05
+pose_interpolation_bound_m: 0.01
+```
+
+来源为 no-overwrite artifact：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  expert_act_tracking_calibration_v1/
+    wall_clearance_margin_recommendation_v2.json
+```
+
+artifact SHA256 为
+`1a2164c345b60fdae6c211b2152fd3d22246282615857edea6785a90283e025e`。
+三次 expert replay 与五次 same-goal ACT bounded trial 均无 typed contact。
+ACT 完整 3D deviation P95/P99 是 `0.493919/0.529946m`，只作 capability
+diagnostic；墙门采用 path-min clearance loss max `0.043838m`，因此 tracking
+margin 为 `0.05m`。hard clearance `0.24m` 来自最小 contact-free ACT clearance
+`0.244541m` 扣除 `0.002m` FK error 后向下取整。
+
+这三个数只属于 Unity convex-cover 3D final gate。checked-in A0 的 2D
+`wall_safety` 仍保持 `hard=0.30m / soft=0.45m`。旧 no-overwrite configs 中的
+`0.15/0.01/0.30m` 是历史诊断输入，不回写覆盖；新 config 必须通过 builder 生成。
+当前仅完成 margin 校准，没有运行正式 1x10，也没有新增训练数据。
+
+## 2026-07-28 Tuple start reachability 诊断变体
+
+新的 no-overwrite production preflight 为：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  tuple_start_alignment_diagnosis_v1/
+    production_preflight/resolved_config.yaml
+```
+
+它在原 actual-tuple + 3D 配置上增加：
+
+```yaml
+actual_tuple_execution_library:
+  start_reachability:
+    enabled: true
+    profile: strict_train_return_start_reachability_11d_v1
+    artifact_path: /data/pingfan/excavator_testbed_data/yulong_strict18_terrain_residual_v0/qc/strict_train_coverage_return_transition_library_v1.json
+    artifact_sha256: 65952a2932a1d1373a74b825eb4d79c24d43224ca3e2449abcd7515395ab1e86
+    execution_library_sha256: b47e69be47f6da7d0a5fa0c168170ab771af3823269167f8b2ce64374da91614
+    missing_contract: fail_closed
+```
+
+阈值不在 YAML 重复定义，而由 transition artifact 保存。cycle 0 使用 actual current
+start；cycle >=1 只允许有 gold return 配对且当前 return-start 同时通过 artifact
+RMS/L-infinity p99 的 tuple。选中后 exact return token、valid mask、paired return
+identity 和 SHA 原子锁定，禁止 cell prior、relocate 或 fallback 改写。
+
+该旧 preflight 当前 **不可运行 live**。reachability 层仍有合法 alternative，但
+它记录的是校准前 3D gate 对 374 条 tuple 全拒绝，诊断状态为
+`nominal_3d_clearance_contract_blocks_all`。新的实测 margin 不能反向改变旧
+artifact；必须生成新的 production preflight。仍不得通过关闭 start gate 或使用
+pre-return qpos 绕过。
+
+## 2026-07-28 Unity 3D worktool sweep 诊断变体
+
+checked-in A0 的 2D 配置仍未提升或覆盖。历史 no-overwrite bounded config 位于：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  unity_3d_worktool_sweep_v1/configs/
+    bounded_one_dig_3d_wall_safe_v1.yaml
+```
+
+当前 builder 在
+`dig_cut_planner.coverage.actual_tuple_execution_library.worktool_sweep_3d`
+注入：
+
+```yaml
+enabled: true
+profile: unity_kinematic_convex_cover_worktool_sweep_v1
+hard_clearance_m: 0.24
+act_tracking_margin_m: 0.05
+pose_interpolation_bound_m: 0.01
+artifact_path: <coverage_worktool_sweep_library_v1_1.json>
+artifact_sha256: e29be1667731f537af8b4d66f931869467dfc9a6dfc53471a0d09b07ee9fbc21
+execution_library_sha256: b47e69be47f6da7d0a5fa0c168170ab771af3823269167f8b2ce64374da91614
+pose_library_sha256: cf93063fb47b81dc2083a8fd56dc696d1f0f6911ac385c5331414653190f16a2
+missing_contract: fail_closed
+```
+
+该变体保留原 A0 四 checkpoint、四相机、action scale、carry envelope、typed
+safety、`window=100 / legacy_oldest_first`，先执行现有 2D gate，再执行 Unity
+convex-cover 3D hard gate。缺 artifact/raw-fields/pose/normalization SHA 或 live
+qpos 时 fail closed；所有候选失败产生 `no_3d_wall_safe_corridor`，不得 fallback。
+
+该旧 YAML 是校准前 `0.15/0.01/0.30m` artifact，不得覆盖或直接运行。
+`episode_168` 的 frozen-start 3D preflight 已 3/3 提前拒绝，但旧 production
+replay 对初始 pre-state 和 step 2987 都没有合法替代 tuple，机器报告为：
+
+```text
+.../unity_3d_worktool_sweep_v1/
+  episode_168_frozen_start_preflight_v1/
+    coverage_worktool_sweep_episode_preflight_v1.json
+  production_replan_preflight_v1/
+    coverage_execution_candidate_preflight_v1.json
+```
+
+后者 `status=failed`、`bounded_live_allowed=false`。后续实测已经正式替换中央
+3D margin，但仍需生成新的 no-overwrite production preflight；旧报告不能因配置
+更新自动变成 pass。正式 1x10 仍未运行。
+
+## 2026-07-28 strict-train Actual Tuple 诊断变体
+
+checked-in 原 A0 默认配置没有被提升或覆盖。actual-tuple 路径通过 no-overwrite eval
+config 注入以下中央 coverage 合同：
+
+```yaml
+actual_tuple_execution_library:
+  enabled: true
+  mode: exact_k1
+  path: /data/pingfan/excavator_testbed_data/yulong_strict18_terrain_residual_v0/qc/strict_train_coverage_execution_library_v1_1.json
+  artifact_sha256: b47e69be47f6da7d0a5fa0c168170ab771af3823269167f8b2ce64374da91614
+  missing_contract: fail_closed
+  first_plan_pose_stability:
+    enabled: true
+    hold_steps: 3
+    max_step_delta_m: 0.05
+    max_wait_steps: 30
+```
+
+`first_plan_pose_stability` 只处理首次 coverage plan 前 Unity bucket-tip
+measurement-box 角点切换造成的 observation spike；它不改变 ACT action，也不在后续
+cycle 隐藏 candidate 失败。exact selector 禁止 coordinate median、tuple 混合和
+fallback，library/SHA/107D geometry/physical cell 缺失时统一
+zero-action→neutral-ack→terminal。
+
+bounded live 的强 validator 输出：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  act_goal_execution_contract_recovery_v1/
+    bounded_one_dig_pose_stable_v2/
+      validation_v2/act_actual_tuple_bounded_one_dig_validation_v1.json
+    root_cause_report_v4/manifest.json
+```
+
+三次 target cycle 都选择 `episode_168`，二维净距 `0.373659m`，但 3/3 bucket 接触
+`Dig_ZMin_Board`。因此该历史变体是 diagnostic-only、promotion denied；已生成但未
+执行的 functional 1x10 YAML 不能当作 live evidence。后续 Unity 3D sweep 和本页
+顶部 tracking calibration 已覆盖其安全结论；A0 window 100/legacy weight 仍未改。
+
+诊断报告命令：
+
+```bash
+python -m testbed.cli.build_coverage_worktool_wall_diagnosis \
+  --bounded-validation <validation-v2-json> \
+  --output-dir <fresh-no-overwrite-report-dir>
+```
+
+## 2026-07-27 A0 cycle-6 hard-bottom 诊断 Gate
+
+当前 checked-in A0 配置没有被自动改成新的 live run，也没有启动 Unity。冻结的
+`functional_10cycle_a0_wall_safe_1x10_v1` 只读诊断输出为：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  act_hard_bottom_cycle6_diagnosis_v1/
+    cycle6_execution_diagnosis.json
+    coverage_replan_replay_v1.json
+    goal_comparison/manifest.json
+    goal_comparison/policy_replay_v1/manifest.json
+    root_cause_report_v2.json
+```
+
+`source_lock_manifest.json` 锁定原 JSONL/HDF5、resolved config、metadata、trace、
+summary、视频、prior、checkpoint/stats 和 Unity scene SHA。诊断结果：
+
+- planned depth `0.364648m`，swept cells `[3,5]` 最小 hard-bottom clearance
+  `0.078700m`；
+- actual peak `0.502483m`，比 plan 多下探 `0.137835m`，contact bucket-tip
+  clearance `0.006493m`；
+- primary 为 `act_execution_capability_primary`；
+- logical cell 4 与 physical cell 5 分离，附加
+  `data_scene_cell_semantic_mismatch`。
+
+运行时 debug/状态合同现在 append-only 增加：
+
+- `box_safety_contact_kind=none|wall|hard_bottom`；
+- `box_safety_wall_contact_session_count`；
+- `coverage_depth_exhausted_physical_cell_ids`；
+- candidate trace 的 `wall_centerline_cell_ids`、`wall_swept_cell_ids` 和
+  `depth_exhausted_swept_cell_ids`。
+
+wall 只允许阻塞 corridor，hard-bottom 只允许耗尽 neutral-ack 时实际 bucket cell；
+clearance 不重复 mutation。candidate swept footprint 与 exhausted physical cell
+相交时，在 selection 和 final raw-field guard 都必须 fail closed。
+
+生产 replan replay 表明：bookkeeping-only 状态会重新选择 corridor 4，但正确耗尽
+physical cell 5 后 corridor 4 的 swept `[3,5]` 被硬过滤，其余 corridor 也均不合法。
+三目标基础 manifest 不复用单一 mutating policy instance；独立
+`policy_replay_v1` 为 M0/E1/W1 分别加载同一 checkpoint、reset temporal state，并
+重放相同 40 帧。M0 aggregate 对记录 actual action 的最大绝对差为 0，证明 replay
+时钟一致；三目标 action 仍是 teacher-forced，不是闭环反事实。因此最新
+`root_cause_report_v2.json` 固定：
+
+```text
+formal_a0_1x10_allowed = false
+bounded_probe_required = false
+next_action = separate_act_conditioning_single_factor_fix
+secondary_required_fix =
+  separate_logical_outcome_cell_from_physical_safety_geometry
+```
+
+以下命令都是 offline-only，不启动 Unity：
+
+```bash
+python -m testbed.cli.build_hard_bottom_execution_diagnostic ...
+python -m testbed.cli.build_coverage_replan_replay ...
+python -m testbed.cli.build_hard_bottom_goal_comparison ...
+python -m testbed.cli.build_hard_bottom_policy_replay ...
+python -m testbed.cli.build_hard_bottom_diagnosis_gate --policy-replay ...
+```
+
+新 live config/root 不得在 gate 关闭时创建或运行。四 checkpoint、相机顺序、A0
+window-100/legacy weight、handoff 和 safety 默认值都保持原样；effect-model、
+planned-cut、A1/A2、3x10、30% freeze、重训和新增数据继续暂停。
+
+## 2026-07-27 A0 coverage wall-safety 与正式 1x10
+
+`eval_yulong_strict18_four_camera_4p_functional_10cycle_a0.yaml` 现在只新增
+`planner_safety_variant=coverage_wall_safety_v1` 和
+`dig_cut_planner.coverage.wall_safety`。四 checkpoint、四相机、handoff/safety
+参数及 A0 `temporal_agg_window=100`、`legacy_oldest_first` 均保持不变；“原 A0”
+指这些行为合同不变，不表示 YAML SHA 不变。
+
+wall-safety 默认只在该 A0 config 开启。其他 legacy config 缺省
+`enabled=false`。当前参数为：
+
+```yaml
+wall_safety:
+  enabled: true
+  profile: conservative_2d_worktool_swept_footprint_v1
+  worktool_width_m: 0.70
+  hard_clearance_m: 0.30
+  soft_clearance_m: 0.45
+  max_score_penalty: 1.0
+  missing_geometry: fail_closed
+```
+
+它对 entry→exit 完整二维线段做垂直方向半宽膨胀，prototype 和最终 raw fields 双重
+检查；没有安全候选时禁止 fallback，ACT 不推理，zero action 获得 neutral ack 后
+terminal。它不是 boom/stick/bucket 的精确 3D predictive sweep。
+
+正式运行顺序：
+
+```bash
+python -m testbed.cli.build_coverage_wall_safety_preflight \
+  --config testbed/configs/eval_yulong_strict18_four_camera_4p_functional_10cycle_a0.yaml \
+  --env-state-hdf5 <existing-107d-hdf5> \
+  --unity-scene /home/pingfan/AGXUnityE85ExcavatorSim/Assets/AGXUnity_Excavator/AGXUnity_Excavator.unity \
+  --output-dir <fresh-no-overwrite-preflight-root>
+
+tb-eval \
+  --config testbed/configs/eval_yulong_strict18_four_camera_4p_functional_10cycle_a0.yaml
+
+python -m testbed.cli.build_act_functional_10cycle_validation \
+  --results-dir <run-root>/results \
+  --output-dir <run-root>/validation \
+  --expected-rollout-count 1
+```
+
+当前 preflight 位于
+`.../coverage_wall_safety_preflight_v1/`，结果为 cell 0/1 hard reject、cell 2–5
+near-wall 可选；最低可选净距 `0.3209796224m`。正式 run 位于
+`.../functional_10cycle_a0_wall_safe_1x10_v1/`。它的 typed wall 为 0、stuck/timeout
+为 0，完成 5 个完整 cycle；第 6 铲 hard-bottom recovery 后以
+`no_wall_safe_corridor` neutral/ack 停止。强 validator 拒绝：
+
+```text
+cycle_inventory_not_0_through_9:actual=[0, 1, 2, 3, 4, 5]
+```
+
+因此当前 YAML 不具 promotion 资格；validation passing artifact、3x10 和 functional
+bundle 均未生成/启动。当时直接可见的错误是 hard-bottom event 同时把 actual bottom
+cell 5 depth-exhausted，并把 planned corridor 4 误写为
+`wall_contact_blocked_corridor`。顶部最新诊断已经修复该 ownership，并证明仍有 ACT
+overshoot 与 logical/physical cell mismatch；所以不能再沿用“只修 bookkeeping 后
+直接重跑”的历史结论。不得覆盖当前 artifact、放宽 wall clearance、切 A1/A2 或恢复
+effect-model。
+
+## 2026-07-25 Strict-18 回归因果诊断
+
+当前 A0 checked-in 配置和 production planner 默认语义没有改变。诊断链只通过
+no-overwrite artifact/config 运行：
+
+```text
+tb-build-act-regression-plan-matrix
+-> tb-act-regression-offline-diagnostic
+-> tb-build-act-regression-live-matrix
+-> tb-collect-act-regression-live-evidence
+```
+
+- plan matrix 只允许 F0/D1/C1/DC1 的 locked depth/corridor 字段变化，并对实际
+  changed paths 做 diff guard。
+- offline diagnostic 是 `teacher_forced_recorded_observation`，只使用 strict-18
+  train source split 的 `action_loss_mask=1` steps 做 nearest-expert support。
+- live matrix 固定四 checkpoint、四相机、A0 window-100 aggregation、handoff 和
+  typed safety；每个 probe 最多到 cycle 1 的 envelope/safety/500-step terminal，
+  functional cycle gate 在生成的诊断 config 中关闭。
+- bounded probe stop 的默认生产语义仍是 disabled；carry envelope 和 typed safety
+  不允许由诊断关闭。
+- collector 验证 12-run 交错 schedule、config/runtime source SHA、initial state、
+  zero-action/neutral-ack，并把四 checkpoint/stats、Unity lineage 和每个 HDF5/JSONL
+  SHA 写入最终 evidence matrix。
+
+最终 evidence 位于：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  act_regression_module_diagnosis_v1/final_verified/
+```
+
+当前分类是 `corridor_geometry_primary`；它是最多两铲的模块级 live 因果证据，不是
+1x10、3x10、functional promotion 或 formal freeze。不得用这些生成 config 替换
+`eval_yulong_strict18_four_camera_4p_functional_10cycle_a0.yaml`。
+
+## 2026-07-23 strict-18 box-emptying 主线
+
+当前四相机四 primitive ACT 从零训练入口是：
+
+- `act_yulong_strict_replay18_four_camera_dig_qvel.yaml`
+- `act_yulong_strict_replay18_four_camera_return_envelope_qvel.yaml`
+- `act_yulong_strict_replay18_four_camera_carry_qvel.yaml`
+- `act_yulong_strict_replay18_four_camera_dump_qvel.yaml`
+
+四份配置固定 `stick_up, stick_down, eye_left, eye_right`、500 epochs、lr `1e-5`、
+batch 4、AMP、seed 0、random init/no resume，并分别写入独立 checkpoint 目录。正式顺序
+是 dig -> return -> carry -> dump；前一个 run 未达到 `completed + policy_best.ckpt` 时
+不得启动下一个。训练只读
+`/data/pingfan/excavator_testbed_data/yulong_strict18_terrain_residual_v0/primitives_copy`
+及其 source-aware split，禁止混入 partial salvage。
+
+四个 run 当前均已达到 `completed + policy_best.ckpt`，但当前首先恢复十铲功能回归，
+不直接运行正式 freeze。旧 aggregate-TX24 功能基线 manifest 是：
+
+```text
+testbed/configs/baselines/yulong_aggregate_tx24_functional_10cycle_v1.json
+```
+
+strict-18 A0 功能门入口是：
+
+```text
+testbed/configs/eval_yulong_strict18_four_camera_4p_functional_10cycle_a0.yaml
+```
+
+它与正式
+`testbed/configs/eval_yulong_strict18_four_camera_4p_10cycle_freeze.yaml`
+分离：A0 关闭 legacy dump-count 立即终止，使用独立 final-return neutral ack，并明确
+不能冻结 checkpoint 或解锁 effect-model。两份配置都只引用 train partition 生成的
+`planner_priors/yulong_strict18_train_surface_depth_dig_cut_prior_v1.json`；validation
+episode 33/34 不参与 live planner prior。prior builder 必须显式传入
+`--split-dir .../splits --split-partition train`，且 no-overwrite 输出；return envelope
+source label 为 `strict18_train_return_start_envelope`。A0 runtime 当前固定：
+
+- hard-bottom contact 后 neutral/ack、token/plan invalidate、same-skill ACT restart、
+  inference-bypassed scripted clearance、第二次 neutral/ack 和 fresh replan；
+- normal dig-to-carry 使用 train-only 374-sample `carry_start_envelope_v1` 连续 3 步
+  gate，500 dig steps timeout，无隐藏 fallback；
+- temporal A0 为 window 100、`legacy_oldest_first`、decay 0.01；
+- `return_to_dig_max_entry_error_m=0.65` 保持当前正式 A0 值；任何 `.10` 运行只允许
+  标注 `promotion_eligible=false` 的诊断，不得替换配置；
+- 每次 `tb-eval --output-dir` 都必须使用新的 no-overwrite 根。
+
+截至 2026-07-23，最新 A0 正式复跑
+`functional_10cycle_a0_postguard_1x10_v1` 只完成 1 次 dump；第 2 铲 dig 在 step
+672 首次 wall contact，随后 return 在 step 1094 timeout。强口径 validator 报
+`cycle_inventory_not_0_through_9:actual=[0, 1]`，所以 hard-bottom probe、A0 1x10、
+A0 3x10、functional bundle 和 formal frozen bundle 都没有通过或发布。
+effect-model、planned-cut、30% freeze gate 的执行、重训和新增数据保持暂停；30%
+正式门不降低。不得把 eval CLI 的 legacy success 或一次 dump 解释成十铲 gate 通过。
+
+经一次性授权运行的 A1 diagnostic 只把
+`temporal_agg_window: 100 -> 20`，并在 resolved metadata 中写入
+`temporal_variant=A1_DIAGNOSTIC`、`promotion_eligible=false`；其他配置逐字段一致。
+它仍只完成 1 次 dump：第二铲首次 wall 延后 20 个 dig steps、payload 提高到
+52.37kg，但 carry envelope 仍不满足，neutral ack 后第二次 wall session 在 step 710
+terminal。exit error 和 deposit fraction 分别恶化 30.91% 和 18.32%，因此 A1
+diagnostic 已淘汰，不允许启动 A2。主 A0 YAML 已恢复到 window 100，文件 SHA256 为
+`9d3d4d7bacff11395b7f2b26921566e2cca511deae54207f5c0b71c3b7138af9`。
+
+A0 只有通过 1x10 后才允许 `--num-rollouts 3`。3x10 rollout 先用
+`python -m testbed.cli.build_act_functional_10cycle_validation` 生成独立验证记录；
+全部通过后才允许
+`python -m testbed.cli.build_act_functional_baseline_bundle`。后者固定发布
+`functional_baseline_only`，不等价于
+`act_unity_closed_loop_validation_v1`，也不能调用 `tb-freeze-act-bundle`。未来任何
+temporal 候选仍只能按单因素顺序从最近接受版本派生；本次 A1 diagnostic 不具升级
+资格，也不能作为 A2 predecessor。
+
+strict-18 文件仍是 89D `agx_env_state_v2_3_89`；新 Unity live rollout 使用 append-only
+107D `agx_env_state_v2_4_107`。后 18D 只提供 hard-bottom source residual 和 typed
+wall/bottom contact 事实，不作为四个 ACT 的默认低维输入。box-emptying 正式配置必须
+显式指定已发布且哈希验证通过的 effect/capability manifest；artifact 缺失或合同不匹配
+必须失败，不允许退回旧 coverage/fallback planner。
+
 本文档说明 `testbed/configs/` 下各类 YAML 的当前角色。
 
 从 `2026-04-17` 开始，Repo A 的 V2 主线已经切到 **V2.1 Stage 1**：
@@ -39,6 +749,11 @@
   surface/removed/target depth grid、valid mask、bucket mass delta、dump/offtarget
   deposition 标志和 contact/collision masks。`offtarget_deposited_mass_kg=-1.0`
   表示当前场景没有可靠 off-target mass sensor。
+- 2026-07-20 的 `agx-sim/v2` 将 64D 前缀原样保留，并追加 25 个可复现 terrain-grid
+  字段形成 89D `agx_env_state_v2_3_89`：grid origin、long/short axis unit vectors、
+  cell 长宽/面积、reference plane、6 格 baseline depth 和 6 格 surface valid
+  fraction。2026-07-17 的 36 条 raw 仍是 64D，只能通过 `field_gap_report.json`
+  记录缺口；当前 Unity replay 才补齐 89D，不能回写 raw。
 - 同日，`tb-label-v2_1` 的 `/v2/cycle` 会追加 stage success 字段：
   `dig_success`、`carry_success`、`dump_success`、`return_success`、
   `return_required`、`stage_success` 和诊断量
@@ -329,6 +1044,14 @@
   (`outside<=0.25m`, `x=[-0.2,1.9]`, `z=[0.45,2.1]`, rolling range
   `0.06/0.16/0.10m`)，`release_onset_max_outside_distance_m=0.45` 只用于
   已进入 dump 后的 release/drop 识别；旧 prior 没有 `coverage_cells` 时 planner 仍兼容 3x3 percentile grid。
+  request-local 因果诊断可显式设置
+  `boundary.release_onset_dump_ownership_diagnostic_enabled: true`：若严格
+  committed aiming band 尚未锁定，但 bucket 已在同一 release 区域内且本 tick
+  出现达到既有 `release_onset_min_deposit_gain_kg` 的真实入箱/入 dump-area
+  增量，则先锁定 dump ownership，并让 `carry -> dump` 优先于
+  `carry_release_safety -> return`。该开关默认关闭，不接受仅 bucket 失重作为
+  ownership 证据，不改变任何接触、力、stuck、timeout、hard-bottom 或几何
+  数值阈值，也不是 production 合同。
   `target_cycle_gate_terminal_hold_steps=100`，让达成 N-cycle gate 后继续 tail
   100 step，给 dump/coverage summary 和视频尾段留出稳定刷新窗口。
   qc6 人工复核分布为 `0:64, 1:163, 2:142, 3:180, 4:18, 5:82`，cell 4 默认按
@@ -593,6 +1316,49 @@ tail 用来保留 terminal dump 后的 plateau / `dump_end` 观测，避免刚�
 截断。可用 `--post-tail-steps <N>` 临时覆盖。刷新 replay 只读 source
 episode 的 actions/qpos/metadata，不读旧 image dataset；输出图像来自当前
 Unity 后端。
+
+2026-07-17 固定 36 条数据的 clean/replay 入口是：
+
+```bash
+tb-build-terrain-clean-dataset
+
+tb-replay \
+  --selection-manifest /data/pingfan/excavator_testbed_data/\
+yulong_v2_2_pro_full_task_four_camera_jpeg_20260717_cycle_clean_v1/\
+post_fix_replay_selection.jsonl \
+  --config testbed/configs/teleop_yulong_v2_2_pro_full_task_four_camera_jpeg.yaml \
+  --diagnostic-log <repeat-diagnostics.jsonl> \
+  --gold-cycle-samples-jsonl <repeat-cycle-samples.jsonl>
+```
+
+clean CLI 的 source allowlist 固定为该目录下 `episode_0..35`，旧 26 条不会被扫描或进入
+lineage。selection replay 从每个 episode 的 step `0` 回放到最后一个选中周期结束，mask
+区间照常逐 step 执行；禁止 pose realign、post-tail 和 mask skipping。`episode_22..35`
+进入默认池，`episode_0..21` 只进入默认关闭的 salvage/ablation 池。clean root 下的
+`training_configs/post_fix_default_data.yaml` 与
+`training_configs/pre_fix_salvage_ablation_data.yaml` 使用不同 VDS root、lineage、controller
+epoch filter，并都设置 `train.action_loss_mask_scope=loss_sampling_stats`。
+
+前期 14 条完整 episode 需要进入 mixed ACT 训练时，不直接使用 salvage action；先运行：
+
+```bash
+tb-build-action-calibrated-dataset
+```
+
+该 CLI 硬锁到上述 clean root，按 early `0..2` `[0.5,0.05,0.05,0.1]`、
+early-boom-tuned `3..17` `[0.5,0.07,0.05,0.1]`、intermediate `18..20`
+`[0.6,0.07,0.07,0.15]`、current `21..35` `[0.7,0.1,0.1,0.2]` 四个
+target-speed profile 生成 `..._cycle_action_calibrated_v2`。旧 v1 的
+`episode_3..17` boom 档位已被接触前 replay 证伪，只保留作诊断。训练 data overlay 是
+`training_configs/mixed_current_equivalent_data.yaml`；原 command 保存在
+`/v2/step/action_original`，顶层 `/action` 才是 current-controller-equivalent command。
+该 overlay 默认关闭，必须先和 `post_reference_data.yaml` 做同 seed A/B，并使用 post-only
+holdout 判断是否 non-inferior，不能把 offline calibration pass 写成 closed-loop pass。
+
+`tb-terrain-replay-pilot-gate` 只接受恰好五组 cycle JSONL 和 diagnostics。Replay 输出是
+open-loop/replay-derived：它可以提供 qpos、grid、payload、deposit、derived grid volume 和
+variance tier，但不能填 planner planned cut、entry/exit、gate、transition 或 actual-response
+证据；这些字段只允许由后续真实 planner closed-loop run 产生。
 
 当前这三份 `teleop` 配置共享同一套 FarmStick 默认臂控映射，已按真机控制习惯对齐为：
 

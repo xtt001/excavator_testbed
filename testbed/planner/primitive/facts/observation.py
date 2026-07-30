@@ -43,7 +43,7 @@ class PrimitiveObservationInjectionRuntimeState:
     return_start_envelope_token_injected: bool = False
 
     @classmethod
-    def fresh(cls) -> "PrimitiveObservationInjectionRuntimeState":
+    def fresh(cls) -> PrimitiveObservationInjectionRuntimeState:
         """Return reset-default injected flags for a new observation lifecycle."""
 
         return cls()
@@ -108,7 +108,7 @@ class PrimitivePolicyObservationAssembler:
     def from_ports(
         cls,
         ports: PrimitivePolicyObservationAssemblerPorts,
-    ) -> "PrimitivePolicyObservationAssembler":
+    ) -> PrimitivePolicyObservationAssembler:
         return cls(ports=ports)
 
     def assemble(

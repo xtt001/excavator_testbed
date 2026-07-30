@@ -13,7 +13,6 @@ from testbed.data.schema import (
     ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
 )
 
-
 GRID_CELL_COUNT = 6
 SOURCE = "rollout_jsonl_env_state_compact_dig_area_grid"
 CONVERGENCE_CURVE_SOURCE = (

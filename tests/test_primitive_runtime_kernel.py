@@ -8,11 +8,13 @@ import numpy as np
 import testbed.planner.primitive.shell.runtime_kernel as primitive_runtime_kernel
 from testbed.planner.primitive.report.debug_report import PrimitiveDebugReportBuilder
 from testbed.planner.primitive.report.planner_trace import PrimitivePlannerTraceBuilder
+from testbed.planner.primitive.report.rollout_summary import (
+    PrimitiveRolloutSummaryBuilder,
+)
 from testbed.planner.primitive.shell.runtime_kernel import (
     PrimitivePlannerRuntimeKernel,
     PrimitivePlannerRuntimeKernelPorts,
 )
-from testbed.planner.primitive.report.rollout_summary import PrimitiveRolloutSummaryBuilder
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 

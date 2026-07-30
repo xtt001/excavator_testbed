@@ -2,13 +2,13 @@
 """
 DETR model and criterion classes.
 """
+import numpy as np
 import torch
 from torch import nn
 from torch.autograd import Variable
-from .backbone import build_backbone
-from .transformer import build_transformer, TransformerEncoder, TransformerEncoderLayer
 
-import numpy as np
+from .backbone import build_backbone
+from .transformer import TransformerEncoder, TransformerEncoderLayer, build_transformer
 
 
 def reparametrize(mu, logvar):
@@ -108,7 +108,7 @@ class DETRVAE(nn.Module):
         env_state: None
         actions: batch, seq, action_dim
         """
-        is_training = actions is not None # train or val
+        is_training = actions is not None  # train or val
         bs, _ = qpos.shape
         ### Obtain latent z from action sequence
         if is_training:
@@ -221,7 +221,6 @@ class CNNMLP(nn.Module):
         env_state: None
         actions: batch, seq, action_dim
         """
-        is_training = actions is not None # train or val
         bs, _ = qpos.shape
         # Image observation features and position embeddings
         all_cam_features = []
@@ -314,7 +313,7 @@ def build(args):
     )
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print("number of parameters: %.2fM" % (n_parameters/1e6,))
+    print(f"number of parameters: {n_parameters / 1e6:.2f}M")
 
     return model
 
@@ -340,6 +339,6 @@ def build_cnnmlp(args):
     )
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print("number of parameters: %.2fM" % (n_parameters/1e6,))
+    print(f"number of parameters: {n_parameters / 1e6:.2f}M")
 
     return model

@@ -4,7 +4,6 @@ import ast
 from importlib import import_module
 from pathlib import Path
 
-
 PRIMITIVE_PACKAGE = Path(__file__).resolve().parents[1] / "testbed/planner/primitive"
 
 

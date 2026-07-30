@@ -4,7 +4,6 @@ from testbed.eval.terrain_calibration_extraction import (
     build_explicit_calibration_record_extraction,
 )
 
-
 FIELD_MAPPING = {
     "telemetry_time_s": "t",
     "telemetry_step_id": "step_id",

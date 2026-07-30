@@ -26,11 +26,19 @@ from testbed.data.action_loss_mask import (
     valid_stats_rows,
 )
 from testbed.data.camera_images import read_camera_rgb
+from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.hdf5_io import list_episodes
 from testbed.data.image_masks import (
     apply_image_mask,
     mask_dataset_path,
     require_mask_dataset,
+)
+from testbed.data.operator_first_v2_2 import (
+    DIG_CUT_LENGTH_SCALE_M,
+    DIG_CUT_POSITION_SCALE_M,
+    DIG_CUT_TOKEN_DIM,
+    RETURN_START_ENVELOPE_TOKEN_DIM,
+    RETURN_TARGET_TOKEN_DIM,
 )
 from testbed.data.schema import (
     DS_V2_STEP_ACTION_LOSS_MASK,
@@ -41,17 +49,9 @@ from testbed.data.schema import (
     DS_V2_STEP_DIG_OUTCOME_TARGETS,
     DS_V2_STEP_GOAL_TOKENS,
     DS_V2_STEP_RETURN_GOAL_VALID_MASK,
-    DS_V2_STEP_RETURN_START_ENVELOPE_TOKENS_V1,
     DS_V2_STEP_RETURN_OUTCOME_TARGETS,
+    DS_V2_STEP_RETURN_START_ENVELOPE_TOKENS_V1,
     DS_V2_STEP_RETURN_TARGET_TOKENS,
-)
-from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
-from testbed.data.operator_first_v2_2 import (
-    DIG_CUT_TOKEN_DIM,
-    DIG_CUT_LENGTH_SCALE_M,
-    DIG_CUT_POSITION_SCALE_M,
-    RETURN_START_ENVELOPE_TOKEN_DIM,
-    RETURN_TARGET_TOKEN_DIM,
 )
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM

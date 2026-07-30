@@ -12,7 +12,6 @@ numpy arrays and the raw_obs dict contract defined in backends/base.py.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 

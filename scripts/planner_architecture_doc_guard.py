@@ -9,6 +9,7 @@ YULONG_DOCS = frozenset(
     {
         "docs/checklist_train.md",
         "docs/data_processing_hdf5_qc_contract.md",
+        "docs/goal_following_mainline_handoff_20260731.md",
         "docs/large_scene_simulation_training_requirements.md",
         "docs/llm_planner_closed_loop_terrain_conclusion.md",
         "docs/llm_planner_prework.md",
@@ -21,6 +22,7 @@ YULONG_DOCS = frozenset(
         "docs/planner_to_act_conceptual_contract.md",
         "docs/primitive_phase_boundaries.md",
         "docs/project_history_v1_to_now.md",
+        "docs/terrain_residual_pre_goal_following_freeze_manifest_20260731.json",
         "docs/training_setup.md",
         "docs/v1_to_v2_3_exploration_path.md",
         "docs/v2_1_failure_retrospective.md",

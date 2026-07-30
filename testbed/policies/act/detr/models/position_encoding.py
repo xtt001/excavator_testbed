@@ -3,10 +3,12 @@
 Various positional encodings for the transformer.
 """
 import math
+
 import torch
 from torch import nn
 
 from testbed.policies.act.detr.util.misc import NestedTensor
+
 
 class PositionEmbeddingSine(nn.Module):
     """

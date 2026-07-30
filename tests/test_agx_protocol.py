@@ -13,21 +13,21 @@ import numpy as np
 
 from testbed.backends.agx.backend import AgxSimBackend
 from testbed.backends.agx.protocol import (
-    RECORDING_PRE_FIX_CONTROL_PROFILE,
     IMAGE_PIXEL_FORMAT,
+    RECORDING_PRE_FIX_CONTROL_PROFILE,
     AgxProtocolError,
     AgxSimClient,
     MessageType,
     StepResponse,
-    _PayloadReader,
     _pack_bool,
     _pack_bytes,
     _pack_float_array,
     _pack_string,
     _pack_string_array,
+    _PayloadReader,
     encode_frame,
-    encode_reset_request,
     encode_realign_pose_request,
+    encode_reset_request,
     encode_step_request,
     read_frame,
 )

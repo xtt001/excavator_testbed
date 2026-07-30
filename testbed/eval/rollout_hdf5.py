@@ -20,7 +20,6 @@ from testbed.data.schema import (
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM, CELL_ENTRY_VERSION
 
-
 PHASE_ID_BY_LABEL = {
     "idle": 0,
     "loading": 1,

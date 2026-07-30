@@ -15,7 +15,6 @@ from testbed.data.operator_first_v2_2 import (
 )
 from testbed.planner.primitive.token.tokens import DigCutTokenPlanner
 
-
 SCHEMA = "residual_cut_intent_dig_cut_token_v1"
 SOURCE = "explicit_residual_cut_intent_dig_cut_token"
 DEFAULT_PROFILE = "explicit_residual_cut_intent_dig_cut_token"

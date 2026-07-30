@@ -175,7 +175,7 @@ def test_loader_rejects_sha_mismatch_and_validation_source_leakage(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "bad.json"
-    digest = _artifact(path)
+    _artifact(path)
     with pytest.raises(ValueError, match="sha256"):
         CarryStartEnvelopeGate.from_config(
             CarryStartEnvelopeGateConfig(

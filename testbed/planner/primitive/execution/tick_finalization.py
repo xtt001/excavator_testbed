@@ -12,8 +12,8 @@ from testbed.planner.primitive.execution.cycle_state import (
     PrimitiveCycleReportStatus,
     PrimitiveCycleRuntimeState,
 )
-from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
 from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
 
 
 @dataclass(frozen=True)
@@ -133,7 +133,7 @@ class PrimitiveTickFinalizationRuntime:
     def from_ports(
         cls,
         ports: PrimitiveTickFinalizationRuntimePorts,
-    ) -> "PrimitiveTickFinalizationRuntime":
+    ) -> PrimitiveTickFinalizationRuntime:
         return cls(ports=ports)
 
     def finalization_inputs(

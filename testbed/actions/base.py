@@ -69,7 +69,7 @@ class ActionSource(abc.ABC):
     def close(self) -> None:
         """Release any resources (hardware, threads). Default: no-op."""
 
-    def __enter__(self) -> "ActionSource":
+    def __enter__(self) -> ActionSource:
         return self
 
     def __exit__(self, *_: object) -> None:

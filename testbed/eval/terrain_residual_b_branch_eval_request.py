@@ -23,7 +23,6 @@ from testbed.planner.primitive.token.residual_cut_intent_source import (
     RESIDUAL_CUT_INTENT_RUNTIME_SOURCE_SCHEMA,
 )
 
-
 SCHEMA = "terrain_residual_b_branch_eval_request_v1"
 SOURCE = "explicit_residual_b_branch_eval_request"
 DEFAULT_PROFILE = "phase6g_f_residual_b_branch_eval_request"

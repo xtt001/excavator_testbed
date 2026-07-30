@@ -6,7 +6,6 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-
 SCHEMA = "terrain_candidate_entry_exit_effect_v1"
 SOURCE = "explicit_entry_exit_swept_footprint_effect"
 DEFAULT_PROFILE = "explicit_entry_exit_swept_footprint_effect"

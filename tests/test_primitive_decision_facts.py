@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import fields
 
 from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
+from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 from testbed.planner.primitive.facts.capabilities import (
     CarryTransitionStatus,
     DigTransitionStatus,
@@ -16,7 +17,6 @@ from testbed.planner.primitive.facts.decision import (
     PrimitiveDumpTransitionFacts,
     PrimitiveReturnTransitionFacts,
 )
-from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 
 
 def _context() -> tuple[PrimitiveDecisionContext, dict[str, object], object, PrimitiveTickPreparation]:

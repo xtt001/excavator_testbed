@@ -10,14 +10,14 @@ import numpy as np
 from testbed.data.schema import (
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
+    ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_DUMP_CLEARANCE_OK_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
-    ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
-    ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
     ENV_STATE_TARGET_CONTACT_MAX_NORMAL_FORCE_N_IDX,
     ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX,
+    ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
 from testbed.planner.boundary_detector import BoundaryDetector
 from testbed.planner.corridor_servo import (
@@ -28,7 +28,6 @@ from testbed.planner.fixed_sequence_planner import FixedSequencePlanner
 from testbed.planner.rule_planner import RuleTaskPlanner
 from testbed.planner.types import CycleSummary, PlannerGoal, sector_name_from_id
 from testbed.policies.base import Policy, register_policy
-
 
 HYBRID_MODE_WORK = "WORK"
 HYBRID_MODE_TRANSITION = "TRANSITION"

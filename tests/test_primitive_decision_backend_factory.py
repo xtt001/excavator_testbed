@@ -3,32 +3,32 @@ from __future__ import annotations
 from dataclasses import fields
 from typing import Any, get_type_hints
 
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.decision.backends import (
     legacy_fsm as primitive_backend_module,
+)
+from testbed.planner.primitive.decision.backends.legacy_capability_provider import (
+    PrimitiveFSMCapabilityProviderConfig,
 )
 from testbed.planner.primitive.decision.backends.legacy_fsm import (
     LegacyFSMBranchPorts,
     LegacyFSMBranchSet,
+    LegacyFSMCompatibilityDecisionBackend,
     LegacyFSMDecisionBackendFactory,
     LegacyFSMDecisionBackendFactoryPorts,
     LegacyFSMRequestedDecisionBackend,
-    LegacyFSMCompatibilityDecisionBackend,
     PrimitiveCompatibilityDecisionBackend,
     PrimitiveDecisionBackend,
     PrimitiveDecisionBackendFactory,
 )
-from testbed.planner.primitive.facts.backend import PrimitiveBackendFactsAccess
-from testbed.planner.primitive.decision.backends.legacy_capability_provider import (
-    PrimitiveFSMCapabilityProviderConfig,
-)
-from testbed.planner.primitive.coverage.state import CoverageRuntimeState
-from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive.facts.backend import PrimitiveBackendFactsAccess
 from testbed.planner.primitive.facts.decision import (
     PrimitiveDecisionFacts,
     PrimitiveDigTransitionFacts,
 )
-from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
 
 
 class _FactoryFactsSource:

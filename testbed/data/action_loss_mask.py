@@ -9,7 +9,6 @@ import numpy as np
 
 from testbed.data.schema import DS_V2_STEP_ACTION_LOSS_MASK
 
-
 ACTION_LOSS_MASK_SCOPE_LOSS_ONLY = "loss_only"
 ACTION_LOSS_MASK_SCOPE_LOSS_SAMPLING_STATS = "loss_sampling_stats"
 ACTION_LOSS_MASK_SCOPES = (

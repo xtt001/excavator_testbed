@@ -8,7 +8,6 @@ from typing import Any
 
 from testbed.eval.terrain_target_metrics import build_target_residual_metrics
 
-
 SCHEMA = "terrain_residual_predicted_rollout_v1"
 SOURCE = "explicit_predicted_residual_rollout"
 DEFAULT_PROFILE = "phase6e_predicted_residual_rollout"
@@ -615,6 +614,3 @@ def _metric_sum(values: Any) -> float:
 def _metric_float(value: float) -> float:
     rounded = round(float(value), 12)
     return 0.0 if rounded == -0.0 else rounded
-
-
-__all__ = ["build_predicted_residual_rollout"]

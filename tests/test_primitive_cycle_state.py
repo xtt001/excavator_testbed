@@ -2,19 +2,16 @@ from __future__ import annotations
 
 from types import MethodType, SimpleNamespace
 
-import numpy as np
-
-from testbed.planner.primitive.execution.cycle_state import (
-    PrimitiveCycleReportStatus,
-    PrimitiveCycleRuntimeState,
-)
 from testbed.planner.primitive.decision.backends.legacy_capability_provider import (
     PrimitiveFSMCapabilityProviderConfig,
     PrimitiveFSMCapabilityProviderPorts,
 )
+from testbed.planner.primitive.execution.cycle_state import (
+    PrimitiveCycleReportStatus,
+    PrimitiveCycleRuntimeState,
+)
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 from tests.primitive_policy_test_helpers import make_policy_shell_for_private_weld_tests
-
 
 _CYCLE_PROGRESS_FIELD_NAMES = {
     "dump_ready_hold_count",

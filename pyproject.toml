@@ -62,21 +62,35 @@ tb-build-terrain-replay-dataset = "testbed.cli.build_terrain_replay_dataset:main
 tb-salvage-terrain-replay-dataset = "testbed.cli.salvage_terrain_replay_dataset:main"
 tb-rebuild-strict-replay-view = "testbed.cli.rebuild_strict_replay_view:main"
 tb-build-primitive-source-splits = "testbed.cli.build_primitive_source_splits:main"
-tb-terrain-replay-pilot-gate = "testbed.cli.terrain_replay_pilot_gate:main"
-tb-terrain-replay-batch-assessment = "testbed.cli.terrain_replay_batch_assessment:main"
-tb-terrain-replay-relabel-stats = "testbed.cli.terrain_replay_relabel_stats:main"
 tb-build-carry-start-envelope = "testbed.cli.build_carry_start_envelope:main"
 tb-build-executed-cut-effect-samples = "testbed.cli.build_executed_cut_effect_samples:main"
 tb-train-terrain-effect-ensemble = "testbed.cli.train_terrain_effect_ensemble:main"
 tb-build-act-unity-validation = "testbed.cli.build_act_unity_validation:main"
 tb-build-act-functional-10cycle-validation = "testbed.cli.build_act_functional_10cycle_validation:main"
+tb-build-hard-bottom-recovery-probe = "testbed.cli.build_hard_bottom_recovery_probe:main"
+tb-build-coverage-wall-safety-preflight = "testbed.cli.build_coverage_wall_safety_preflight:main"
+tb-build-coverage-worktool-sweep-preflight = "testbed.cli.build_coverage_worktool_sweep_preflight:main"
+tb-measure-worktool-tracking-calibration = "testbed.cli.measure_worktool_tracking_calibration:main"
+tb-build-coverage-execution-library = "testbed.cli.build_coverage_execution_library:main"
+tb-build-coverage-pose-paths = "testbed.cli.build_coverage_pose_paths:main"
+tb-build-coverage-return-transitions = "testbed.cli.build_coverage_return_transitions:main"
+tb-build-tuple-start-alignment-diagnosis = "testbed.cli.build_tuple_start_alignment_diagnosis:main"
+tb-build-coverage-execution-eval-config = "testbed.cli.build_coverage_execution_eval_config:main"
+tb-build-coverage-execution-preflight = "testbed.cli.build_coverage_execution_preflight:main"
+tb-build-coverage-replan-replay = "testbed.cli.build_coverage_replan_replay:main"
+tb-build-act-goal-execution-contract-recovery = "testbed.cli.build_act_goal_execution_contract_recovery:main"
+tb-build-actual-tuple-bounded-validation = "testbed.cli.build_actual_tuple_bounded_validation:main"
 tb-goal-conditioned-recovery-experiment = "testbed.cli.goal_conditioned_recovery_experiment:main"
+tb-build-coverage-worktool-wall-diagnosis = "testbed.cli.build_coverage_worktool_wall_diagnosis:main"
 tb-build-act-functional-baseline-bundle = "testbed.cli.build_act_functional_baseline_bundle:main"
 tb-act-regression-offline-diagnostic = "testbed.cli.act_regression_offline_diagnostic:main"
 tb-build-act-regression-plan-matrix = "testbed.cli.build_act_regression_plan_matrix:main"
 tb-build-act-regression-live-matrix = "testbed.cli.build_act_regression_live_matrix:main"
 tb-collect-act-regression-live-evidence = "testbed.cli.collect_act_regression_live_evidence:main"
 tb-freeze-act-bundle = "testbed.cli.freeze_act_bundle:main"
+tb-return-approach-probe = "testbed.cli.return_approach_probe:main"
+tb-terrain-replay-pilot-gate = "testbed.cli.terrain_replay_pilot_gate:main"
+tb-terrain-replay-batch-assessment = "testbed.cli.terrain_replay_batch_assessment:main"
 tb-build-dig-depth-profile-tokens-v1 = "testbed.cli.build_dig_depth_profile_tokens_v1:main"
 tb-build-primitives-v2_2 = "testbed.cli.build_primitives_v2_2:main"
 tb-build-primitives-v2_2_5p = "testbed.cli.build_primitives_v2_2_5p:main"
@@ -96,10 +110,14 @@ tb-build-v2_4-hindsight-pipeline = "testbed.cli.build_v2_4_hindsight_pipeline:ma
 tb-planner-evidence = "testbed.cli.planner_evidence:main"
 tb-terrain-residual-ab-artifacts = "testbed.cli.terrain_residual_ab_artifact_pipeline:main"
 tb-terrain-residual-b-branch-request = "testbed.cli.terrain_residual_b_branch_eval_request:main"
+tb-terrain-replay-relabel-stats = "testbed.cli.terrain_replay_relabel_stats:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["testbed*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
 
 # ─── black ────────────────────────────────────────────────────────────────────
 [tool.black]

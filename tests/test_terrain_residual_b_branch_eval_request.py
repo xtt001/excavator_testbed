@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-import tomllib
 from pathlib import Path
 
+import tomllib
 import yaml
 
 from testbed.cli.terrain_residual_b_branch_eval_request import main
@@ -13,7 +13,6 @@ from testbed.eval.terrain_residual_b_branch_eval_request import (
 from testbed.planner.primitive.token.residual_cut_intent_source import (
     RESIDUAL_CUT_INTENT_RUNTIME_SOURCE_SCHEMA,
 )
-
 
 EXPECTED_REQUEST_FILES = [
     "heuristic_residual_pipeline_eval_config.yaml",

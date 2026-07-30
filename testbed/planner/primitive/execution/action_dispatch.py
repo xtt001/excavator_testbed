@@ -12,7 +12,6 @@ from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
 
-
 BOOTSTRAP_SKILL_NAME = "bootstrap"
 DIG_SKILL_NAME = "dig"
 PRE_DIG_ALIGN_SKILL_NAME = "pre_dig_align"
@@ -52,7 +51,7 @@ class PrimitiveActionDispatchService:
     def from_ports(
         cls,
         ports: PrimitiveActionDispatchPorts,
-    ) -> "PrimitiveActionDispatchService":
+    ) -> PrimitiveActionDispatchService:
         return cls(ports=ports)
 
     def dispatch_action(self, obs: dict[str, Any]) -> Any:

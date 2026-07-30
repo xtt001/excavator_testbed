@@ -16,7 +16,6 @@ import numpy as np
 from testbed.data.hdf5_io import list_episodes, read_episode
 from testbed.data.vds import write_lineage_json, write_vds_episode
 
-
 SWING_AXIS = 0
 DIG_CONTACT_IDX = 61
 DUMP_CONTACT_IDX = 62

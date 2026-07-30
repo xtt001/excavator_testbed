@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from testbed.planner.primitive.decision.contracts import (
-    CompleteCoverageDigEffect,
     LEGACY_FSM_DECISION_SOURCE,
+    CompleteCoverageDigEffect,
     PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
     RequestedPlannerEffect,

@@ -15,10 +15,9 @@ import numpy as np
 from dm_control import mujoco as mj_lib
 from dm_control.suite import base
 
-from testbed.backends.mujoco.tasks.bimanual import BOX_POSE, _contact_pairs
+from testbed.backends.mujoco.tasks.bimanual import _contact_pairs
 from testbed.backends.mujoco.tasks.constants import (
     EXCAVATOR_MAIN_JOINTS,
-    EXCAVATOR_START_POSE,
     PUPPET_GRIPPER_POSITION_CLOSE,
     START_ARM_POSE,
     START_FAIRINO_POSE,
@@ -27,8 +26,10 @@ from testbed.backends.mujoco.tasks.constants import (
     puppet_gripper_pos_unnormalize,
     puppet_gripper_vel_normalize,
 )
-from testbed.backends.mujoco.tasks.sampling import sample_box_pose, sample_insertion_pose
-
+from testbed.backends.mujoco.tasks.sampling import (
+    sample_box_pose,
+    sample_insertion_pose,
+)
 
 # ─── Base EE Task ─────────────────────────────────────────────────────────────
 
@@ -110,27 +111,45 @@ class BimanualViperXEETask(base.Task):
     def get_qpos(self, physics) -> np.ndarray:
         raw = physics.data.qpos.copy()
         if self.arm_nums == 2:
-            l, r = raw[:8], raw[8:16]
+            left, right = raw[:8], raw[8:16]
             return np.concatenate(
-                [l[:6], [puppet_gripper_pos_normalize(l[6])],
-                 r[:6], [puppet_gripper_pos_normalize(r[6])]]
+                [
+                    left[:6],
+                    [puppet_gripper_pos_normalize(left[6])],
+                    right[:6],
+                    [puppet_gripper_pos_normalize(right[6])],
+                ]
             )
         elif self.arm_nums == 1:
-            r = raw[:8]
-            return np.concatenate([r[:6], [puppet_gripper_pos_normalize(r[6])]])
+            right = raw[:8]
+            return np.concatenate(
+                [
+                    right[:6],
+                    [puppet_gripper_pos_normalize(right[6])],
+                ]
+            )
         raise NotImplementedError
 
     def get_qvel(self, physics) -> np.ndarray:
         raw = physics.data.qvel.copy()
         if self.arm_nums == 2:
-            l, r = raw[:8], raw[8:16]
+            left, right = raw[:8], raw[8:16]
             return np.concatenate(
-                [l[:6], [puppet_gripper_vel_normalize(l[6])],
-                 r[:6], [puppet_gripper_vel_normalize(r[6])]]
+                [
+                    left[:6],
+                    [puppet_gripper_vel_normalize(left[6])],
+                    right[:6],
+                    [puppet_gripper_vel_normalize(right[6])],
+                ]
             )
         elif self.arm_nums == 1:
-            r = raw[:8]
-            return np.concatenate([r[:6], [puppet_gripper_vel_normalize(r[6])]])
+            right = raw[:8]
+            return np.concatenate(
+                [
+                    right[:6],
+                    [puppet_gripper_vel_normalize(right[6])],
+                ]
+            )
         raise NotImplementedError
 
     @staticmethod
@@ -189,10 +208,14 @@ class TransferCubeEETask(BimanualViperXEETask):
         tr = ("red_box", "vx300s_right/10_right_gripper_finger") in pairs
         tt = ("red_box", "table") in pairs
         r = 0
-        if tr: r = 1
-        if tr and not tt: r = 2
-        if tl: r = 3
-        if tl and not tt: r = 4
+        if tr:
+            r = 1
+        if tr and not tt:
+            r = 2
+        if tl:
+            r = 3
+        if tl and not tt:
+            r = 4
         return r
 
 
@@ -204,7 +227,10 @@ class InsertionEETask(BimanualViperXEETask):
     def initialize_episode(self, physics):
         self.initialize_robots(physics)
         peg_pose, socket_pose = sample_insertion_pose()
-        id2index = lambda j_id: 16 + (j_id - 16) * 7
+
+        def id2index(j_id):
+            return 16 + (j_id - 16) * 7
+
         peg_id = physics.model.name2id("red_peg_joint", "joint")
         np.copyto(physics.data.qpos[id2index(peg_id) : id2index(peg_id) + 7], peg_pose)
         sock_id = physics.model.name2id("blue_socket_joint", "joint")
@@ -226,10 +252,14 @@ class InsertionEETask(BimanualViperXEETask):
         ps = any(("red_peg", f"socket-{i}") in pairs for i in range(1, 5))
         pin = ("red_peg", "pin") in pairs
         r = 0
-        if tl and tr: r = 1
-        if tl and tr and not pt and not st: r = 2
-        if ps and not pt and not st: r = 3
-        if pin: r = 4
+        if tl and tr:
+            r = 1
+        if tl and tr and not pt and not st:
+            r = 2
+        if ps and not pt and not st:
+            r = 3
+        if pin:
+            r = 4
         return r
 
 
@@ -255,8 +285,12 @@ class LiftingCubeEETask(BimanualViperXEETask):
         tt = ("red_box", "table") in pairs or ("table", "red_box") in pairs
         ty = ("red_box", "yellow_tray") in pairs or ("yellow_tray", "red_box") in pairs
         r = 0
-        if tr: r = 1
-        if tr and not tt: r = 2
-        if tr and ty: r = 3
-        if not tr and ty: r = 4
+        if tr:
+            r = 1
+        if tr and not tt:
+            r = 2
+        if tr and ty:
+            r = 3
+        if not tr and ty:
+            r = 4
         return r

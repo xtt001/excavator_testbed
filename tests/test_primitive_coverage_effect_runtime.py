@@ -5,10 +5,6 @@ from typing import Any
 
 import numpy as np
 
-from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
-from testbed.planner.primitive.coverage.selection import CoverageCorridorState
-from testbed.planner.primitive.coverage.state import CoverageRuntimeState
-from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive.coverage.effect_runtime import (
     PrimitiveCoverageEffectRuntime,
     PrimitiveCoverageEffectRuntimePorts,
@@ -24,6 +20,10 @@ from testbed.planner.primitive.coverage.effects import (
     CoverageTerminalResult,
     CoverageUpdateResult,
 )
+from testbed.planner.primitive.coverage.selection import CoverageCorridorState
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
 

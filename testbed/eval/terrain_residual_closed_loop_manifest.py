@@ -9,7 +9,6 @@ from typing import Any
 
 from testbed.eval.terrain_residual_contract import official_contract_statuses
 
-
 SCHEMA = "terrain_residual_closed_loop_experiment_manifest_v1"
 SOURCE = "explicit_closed_loop_experiment_manifest"
 DEFAULT_PROFILE = "phase6d_t1_ab_closed_loop_manifest"

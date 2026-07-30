@@ -15,7 +15,6 @@ from testbed.data.schema import (
 from testbed.eval.terrain_target_grid import build_rectangular_target_grid
 from testbed.eval.terrain_target_metrics import build_target_residual_metrics
 
-
 GRID_CELL_COUNT = 6
 SOURCE = "rollout_jsonl_latest_compact_grid_explicit_target_projection"
 CONVERGENCE_SOURCE = "rollout_jsonl_dig_segments_explicit_target_residual_convergence"

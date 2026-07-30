@@ -13,7 +13,6 @@ from testbed.data.qc import run_dataset_qc
 from testbed.data.vds import write_vds_episode
 from testbed.data.virtualize_images import virtualize_episode_images
 
-
 CAMERAS = ["stick_up", "stick_down", "eye_left", "eye_right"]
 
 

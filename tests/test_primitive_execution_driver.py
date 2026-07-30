@@ -230,7 +230,7 @@ def test_run_primitive_tick_is_compatibility_facade_for_driver(monkeypatch: Any)
 
     class _FakeDriver:
         @classmethod
-        def from_hooks(cls, *, hooks: Any, dig_skill_name: str) -> "_FakeDriver":
+        def from_hooks(cls, *, hooks: Any, dig_skill_name: str) -> _FakeDriver:
             assert hooks is hooks_obj
             assert dig_skill_name == "custom_dig"
             events.append("from_hooks")

@@ -1,7 +1,729 @@
 # 训练与评测 Runbook
 
-状态日期：2026-06-30
+状态日期：2026-07-30
 适用范围：Repo A 仿真库当前 V2.4 / V2.4.5 训练、评测、离线审核流程。V1、V2.1 和早期 V2.2 内容只作为历史对照，不再作为默认训练依据。
+
+> 当前执行链：
+> `exact diagnostic → contact audit/A-B → Unity wall+FactoryFloor diagnostic`
+> `→ contact-budget freeze`
+> `→ continuous predictor → E0/G1/W1 → bounded live`
+> `→ conditional 1×10`。
+> 当前 contact audit/A-B 是 diagnostic、non-promotable 证据阶段，不写训练
+> HDF5。它只允许 18 个 expert source 各一次完整 recorded-action replay 和
+> `episode_168` 的 6 次 paired A/B，以及随后明确授权的 seed-2 单次 B2
+> diagnostic，以及随后明确授权的单次 seed-1000 observe-only multi-shovel
+> diagnostic 和 Unity-only wall+FactoryFloor root-cause 重跑；在人工冻结
+> contact budget 前继续禁止
+> qpos predictor、E0/G1/W1 live、functional rollout 和 1×10。
+
+## 2026-07-30 Unity-only Wall+FactoryFloor Diagnostic
+
+最终可解释证据：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  unity_contact_observe_only_multicycle_diagnostic_v7/
+```
+
+这不是训练或 formal functional 1×10，也没有写 HDF5。`v2/v4` 的早期高力
+attempt 由 `-nographics` Null renderer 驱动，四路 ACT 图像冻结，故
+117.7kN 不得用于数据或 production contact 推断。Unity 现在在支持图像而
+graphics device 为 Null 时用
+`recording_camera_graphics_device_unavailable` 拒绝 GET_INFO/capture；
+camera source 也纳入运行 manifest lineage。外部 live-camera host 不得使用
+`-nographics`。
+
+`v5` 真实 GPU run 因 visual preflight 额外 RESET 只作旁证；`v6` 是 FMOD
+native crash。最终 `v7` 只有一个 RESET，与 frozen A0 reset 的 qpos/qvel、
+bucket-tip、terrain depth、remaining mass 差值全部为 0。它运行 3771 steps，
+完成 7 dumps，最终由既有 timeout hard stop，而不是高力或 stuck 终止。
+
+| shovel（1-based） | dump | wall | FactoryFloor | motion |
+| ---: | --- | --- | --- | --- |
+| 1–5 | yes | none | none | N/A |
+| 6 | yes | bucket×`Dig_ZMin_Board`, `0.02s`, peak/RMS `68.353/68.353kN`, impulse `1367.065N·s` | none | below threshold |
+| 7 | yes | bucket×`Dig_ZMin_Board`, `3.98s`, peak/RMS `31.971/30.718kN`, impulse `122248.148N·s` | bucket×`FactoryFloor`, `3.20s`, peak/RMS `61.433/56.799kN`, impulse unsupported by v1 | yes |
+
+所有 contact 都是 bucket-only、有限且 `<100kN`；无 boom/stick/other、数据
+异常、高力或 stuck。原 report 保持冻结，修正后的 append-only
+`run/report_reanalysis_v2.json` 为 `passed/timeout`，只修复 post-step contact
+与下一行独立 timeout 的 evidence ownership。该诊断不改变 production
+hard-bottom/contact contract，也不解锁 predictor、E0/G1/W1、bounded live
+或 1×10。
+
+## 2026-07-30 Observe-only Multi-shovel Diagnostic
+
+这是一条单独授权、current-code、non-promotable 的真实 closed-loop 诊断：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  wall_contact_observe_only_multicycle_diagnostic_v2/
+```
+
+它使用历史 7-dump Strict-18 resolved config、fresh seed-1000 reset、同一四个
+checkpoint 和 planner prior，但不从历史 cycle 8 续跑。manifest 额外锁定四份
+`dataset_stats.pkl`、ACT loader/eval runtime 与当前 contact/report code。
+唯一普通接触语义变化是：bucket-only、所有力有限且严格 `<100kN` 的 wall
+contact 全部 record-only，不限 session、duration、region 或 wall；这些 tick
+不得 neutral、ACT reset、replan 或 block corridor。hard-bottom、
+boom/stick/other、数据异常、`>=100kN`、stuck 与 timeout 仍 fail closed。
+
+唯一 attempt、无重试的实际结果：
+
+| shovel index（0-based） | dump | wall contact | component / wall | sessions / ticks / duration | normal peak / RMS | normal impulse | motion during contact |
+| ---: | --- | --- | --- | --- | --- | --- | --- |
+| 0 | yes | no | — | — | — | — | N/A |
+| 1 | yes | yes | bucket / `Dig_ZMin_Board` | `12 / 21 / 0.42s` | `73924.76 / 43681.23N` | `15555.178944N·s` | yes |
+| 2 | yes | no | — | — | — | — | N/A |
+| 3 | yes | no | — | — | — | — | N/A |
+| 4 | yes | no | — | — | — | — | N/A |
+| 5 | yes | no | — | — | — | — | N/A |
+| 6 | no | no | — | — | — | — | N/A |
+
+report index 1（第二铲）的 tangential peak/RMS 为
+`438.448975/258.499294N`，total peak/RMS
+为 `73919.875/43680.374292N`。RMS 是 contact tick 上 pair maximum 的 RMS；
+每铲 total normal impulse 使用 Unity session cumulative impulse 差分，
+component×wall impulse 仅是 `step peak normal × dt` proxy。运动证据使用
+“接触前一 post-step pose + 连续 contact-positive post-step poses”，不会把
+离开接触后的帧算入。
+
+运行完成 6 次 dump、开始第 7 铲，并在 step 3293 以
+`hard_bottom_depth_budget_guard_clearance_depth_increase` 经 neutral ack
+安全终止。21 个允许接触 tick 的 neutral、ACT reset、replan、corridor block
+均为 0；reset fairness 完全通过，process return code 为 0，未写 HDF5。
+因此 wall contact 不是本次终止原因，但单次运行既未达到 10 dump，也未超过
+历史 7-dump 结果，不能据此冻结 production region/budget。所有 predictor/live/
+1×10 gate 继续为 false。
+
+## 2026-07-30 Seed-2 Session-Gap Diagnostic B2
+
+B2 是独立、create-new、non-promotable 的真实 one-cycle closed-loop 证明：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  wall_contact_session_gap_diagnostic_b2_v1/
+```
+
+它只运行 seed 2 一次，不重试；没有写 HDF5。与原 seed-2 B 相比，唯一安全语义
+变量是 `wall_contact_session_end_clear_ticks: 2`：单个 `20ms` clear
+observation 仍属于同一个 logical session，连续两个 clear observations 才结束
+session。reset、目标、checkpoint、ACT、window/aggregation、timeout 与全部 hard
+threshold 均由 manifest/source SHA 锁定。
+
+唯一 attempt 的 physical contact 为 step `625` 和 `627..689`，中间只有 step
+`626` 一个 clear tick；两段都只有 bucket × `Dig_ZMin_Board`，peak force 均约
+`40kN`。Python 合并为一个 logical session 后，contact 在 carry 前结束，运行
+进入 carry 并完成 dump；hard violation 为空，reset fairness 对 expected state
+及原 seed-2 B 均通过。报告 outcome 为
+`single_clear_tick_split_supported`。
+
+该结果只能说明原 seed-2 B 的 repeat-session 终止由单帧断档切分触发。原
+6-attempt A/B classification 仍为 `inconclusive`；不得据此生成训练数据、修改
+production contact contract、实现 predictor，或执行 E0/G1/W1、bounded live、
+1×10。下一步仍是人工冻结 bucket region 与 force/duration/impulse budget。
+
+## 2026-07-29 Contact Semantics Audit/A-B
+
+唯一允许的输出 root 为：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  wall_contact_semantics_recovery_v1/
+```
+
+原始 89D expert 数据没有 typed wall-contact sidecar；其中 generic collision
+为 0 只能报告为“字段不足”，不能证明未碰墙。几何审计覆盖
+`374 train + 59 validation = 433` 条 split-authorized dig qpos path；完整
+recorded-action replay 覆盖 16 个 train source 和 2 个 validation source，
+每个 source 仅一次、不重试。validation 只作 holdout，不参与选择 production
+region 或预算。
+
+paired A/B 固定顺序为 `0:A → 0:B → 1:B → 1:A → 2:A → 2:B`。A 首次接触
+zero→neutral→terminal；B 只记录并放行首次连续 bucket-only、same-wall、
+finite `<100 kN` session。所有 boom/stick/other、NaN/高力、第二 session、
+hard-bottom、stuck 和 timeout 仍 fail closed。旧 bounded-stop wrapper 必须
+关闭，且每次 attempt 在启动 Unity 前写 no-overwrite marker。
+Unity force/impulse 字段的 JSON `null` 只按 non-finite high-force 处理；
+wall typed-positive 但 canonical sidecar 缺失仍按 lineage invalid 终止，
+不能降级为无接触 tick。
+
+本阶段已经实际执行完成并暂停，结果必须按证据类型分开：
+
+- 离线 geometry audit：`374 train + 59 validation = 433` 条路径全部完成，
+  `clear=4484 / near_wall=548 / contact_or_overlap=164`；shadow rig inert，
+  最大逐子段证明 `0.009990016m <= 0.01m`。
+- recorded-action replay：16 个 train + 2 个 validation source 均只运行一次；
+  source collection 为 `passed`，但 train `379/379`、holdout `61/61` window
+  均为 `invalid`，所以 production inference window 为 `0`。
+- paired A/B：6 次真实 one-cycle diagnostic 均只运行一次，三对 reset
+  fairness 全部有效。B 的 seed 0/1 进入 carry 并完成 dump，seed 2 因
+  `wall_contact_repeat_session` 硬停止，故 B 为 `2/3`。
+
+最终 classification 为 `inconclusive`，没有 production contact budget 可从
+这些证据中推出。初版 A/B collection 的 provenance/prefix 后处理 bug 保留在原
+artifact；修复后使用：
+
+```bash
+python -m testbed.cli.wall_contact_ab_runner reextract \
+  --schedule <immutable-original-schedule.json> \
+  --output-dir <fresh-reanalysis-dir>
+```
+
+该命令只读原始 rollout/summary/attempt marker，输出必须包含
+`reanalysis_only=true` 和 `executed_attempt_count=0`。当前可信复算报告位于
+`wall_contact_semantics_recovery_v1/reanalysis_v4/report/`；它没有运行新
+attempt，也没有写训练 HDF5。现在等待人工冻结 bucket region 与
+force/duration/impulse budget；此前所有后续 gate 仍为 false。
+
+## 2026-07-29 Goal-conditioned Recovery Offline Preflight
+
+唯一 no-overwrite 输出为：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  goal_conditioned_runtime_recovery_v1/
+    experiment_manifest.json
+    configs/{E0_expert_goal,G1_planner_continuous_goal,W1_internal_wall_safe_goal}.yaml
+    goals/*.json
+    offline/*.json
+    evidence/{offline_evidence_matrix,offline_causal_decision}.json
+    offline_preflight_report.md
+```
+
+重建命令（只允许使用 fresh `--output-root`）：
+
+```bash
+python -m testbed.cli.goal_conditioned_recovery_experiment build-preflight \
+  --base-config testbed/configs/eval_yulong_strict18_four_camera_4p_functional_10cycle_a0.yaml \
+  --condition-set runs/jobs/goal_conditioned_runtime_recovery_v1/condition_set.json \
+  --output-root <fresh-goal-conditioned-root>
+```
+
+该 CLI 没有 live 子命令。只有三份 offline record、predictor lineage、Unity
+effective clearance 全部通过后，才可按 E0→G1→W1 各运行一次；只有三次 live
+均通过后，`build-functional-config` 才允许生成单次 G1 A0 1×10。不得把
+offline record 写成 closed-loop evidence。
+
+> 当前 live gate：phase-specific start-transition shadow-FK 实测未支持修改
+> production 合同。`episode_171` 的 handoff + expert-dig effective clearance
+> 为 `0.225414m < 0.24m`，且旧 start bound 低估而非高估 worktool endpoint
+> displacement。五状态 production preflight 仍为 `0/5`，
+> `bounded_live_allowed=false`。没有启动 bounded/1x10，也没有写入训练 HDF5、
+> 补录或重训数据。
+
+## 2026-07-28 Start-transition Shadow-FK Diagnosis
+
+生成 phase-specific recorded-qpos request 和最终诊断：
+
+```bash
+python -m testbed.cli.build_coverage_start_transition_diagnosis prepare \
+  --execution-library <strict_train_coverage_execution_library_v1_1.json> \
+  --return-transition-artifact <strict_train_coverage_return_transition_library_v1.json> \
+  --production-preflight <coverage_execution_production_preflight_v2.json> \
+  --cycle0-source-episode <full_episode_repaired_vds/episode_6.hdf5> \
+  --post-return-source-episode <full_episode_repaired_vds/episode_24.hdf5> \
+  --frozen-cycle0-rollout <functional-rollout episode_0.hdf5> \
+  --frozen-cycle0-observation-step 137 \
+  --post-return-dig-end-step 2423 \
+  --output-dir <fresh-measurement-input-dir>
+
+python -m testbed.cli.build_coverage_start_transition_diagnosis finalize \
+  --measurement-input <worktool_transition_sweep_input_v1.json> \
+  --unity-measurement <worktool_transition_sweep_measurement_v1.json> \
+  --output-dir <fresh-diagnosis-dir>
+```
+
+Unity 侧使用
+`CodexWorktoolTrajectoryMeasurementUtility.RunFromCommandLine`，但 input schema
+必须是 append-only `worktool_transition_sweep_input_v1`；旧 trajectory calibration
+schema 仍保持严格 `3 expert + 5 ACT`。新输出必须包含每条 path 的完整
+boom/stick/bucket × 四墙 witness，缺一即 Python finalize 失败。
+
+当前冻结证据：
+
+```text
+input SHA:       8ed2bad464e084650329e0d1ced759117d46f25ff0519d7aa145dfac7c9b33b0
+Unity output:    b79867287bda71b48e1514a77261eb7498054992998b5ac9fa1a07087ab44d1a
+diagnosis SHA:   f8637752408a129b5ec562b33ba75c68647c929a86f18daa5a908cf94e931d4a
+```
+
+结果是 `start_bound_contract_change_allowed=false` 和
+`bounded_live_allowed=false`。不得把 source episode 6 的安全专家初始化写成
+current-runtime alignment 证明，也不得因 handoff transition 自身净距
+`0.320002m` 安全而忽略随后 expert dig 的 `0.285414m` 最小净距。当前 runbook
+不提供 live 命令。只有 paired handoff tail 与 planner bound 共享相同端点，其
+实测 cover displacement 为 `0.092744m > 0.075173m`；cycle-0 source preamble
+起点不同，必须标记 `planner_bound_endpoint_match=false`。需要新合同获批并使
+五状态 production preflight 全通过后才能恢复 bounded。
+
+## 2026-07-28 Calibrated Production Preflight v2
+
+先生成 no-overwrite calibrated bounded config，再运行 offline preflight：
+
+```bash
+python -m testbed.cli.build_coverage_execution_gate_preflight \
+  --resolved-config <worktool_margin_calibrated_transfer_v1/configs/bounded_transfer_v1.yaml> \
+  --functional-results-dir <functional_10cycle_a0_wall_safe_1x10_v1/results> \
+  --bounded-results-dir <act_goal_execution_contract_recovery_v1/bounded_one_dig_pose_stable_v2/results> \
+  --tuple-start-alignment-artifact <tuple_start_alignment_diagnosis_v1/diagnosis/tuple_start_alignment_diagnosis_v1.json> \
+  --output-dir <fresh-no-overwrite-preflight-dir>
+```
+
+该入口固定重放 cycle-0、三条 frozen return-start 和 step 2987 hard-bottom replan，
+并从 resolved config 读取 `hard_clearance_m=0.24`。它不启动 Unity、不执行 ACT，
+每个 case 保留 374 条 production candidate trace。当前正式 artifact 位于：
+
+```text
+.../worktool_margin_calibrated_transfer_v1/
+  production_preflight_v2_1/
+    coverage_execution_production_preflight_v2.json
+```
+
+结果是五个状态 `0/5` 通过。cycle-0 在 278 条 2D reject 后，96 条全部被
+live-start 3D bound 拒绝；三条 post-return 只有 `9/9/14` 条到达 3D 门，最优
+effective clearance 均为 `0.150241m`；step 2987 在 depleted/2D/start 门已经全拒绝。
+因此不得执行已经生成的 bounded config。只有新的单因素 start-transition 实测提供
+证据并使同一 production preflight 全部通过后，才允许 `tb-eval`。不得用旧 v1
+preflight、nominal `19/374` 或关闭任一 gate 绕过。
+
+## 2026-07-28 Expert/ACT Tracking Calibration
+
+运行入口：
+
+```bash
+tb-measure-worktool-tracking-calibration collect --help
+tb-measure-worktool-tracking-calibration recommend --help
+```
+
+固定证据 root：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  expert_act_tracking_calibration_v1/
+    live_measurement.json
+    trajectory_measurement_input.json
+    trajectory_geometry_measurement.json
+    wall_clearance_margin_recommendation_v2.json
+    planner_contract_impact_v1.json
+```
+
+`collect` 是 diagnostic-only：每个 trial 重放 source episode 24 的 `0:899`
+prefix，再对 `episode_168` 的 151-step target 执行 expert continuation 或 frozen
+dig ACT。repeat 数锁定为 expert 3、ACT 5；必须使用 107D typed contact、A0
+四相机和 `window=100 / legacy_oldest_first`，每次最终 zero action + neutral ack。
+它只写 JSON/qpos path，不写 trainable HDF5。
+
+Unity trajectory measurement 对采集 qpos 使用已通过 `2mm/0.2deg` fixture 的
+shadow FK 和完整 boom/stick/bucket convex cover。实测：
+
+```text
+expert min clearance: 0.286671 .. 0.295515 m, 0/3 contacts
+ACT min clearance:    0.244541 .. 0.252072 m, 0/5 contacts
+ACT 3D P95/P99:       0.493919 / 0.529946 m
+clearance-loss max:   0.043838 m
+```
+
+完整 3D P95/P99 仅作为 capability diagnostic；因其包含沿轨迹位移与旋转，不得
+直接写入墙法向 margin。当前中央 3D runtime 值为：
+
+```yaml
+hard_clearance_m: 0.24
+act_tracking_margin_m: 0.05
+pose_interpolation_bound_m: 0.01
+```
+
+推荐 artifact SHA256：
+`1a2164c345b60fdae6c211b2152fd3d22246282615857edea6785a90283e025e`。
+这些值只替换 3D final gate；2D prefilter 仍为 hard `0.30m`、soft `0.45m`。
+margin 改变后不得直接启动正式 1x10。先用同一 execution/sweep/return-transition
+SHA 重新生成 production preflight，确认所有 gate 的交集仍有 candidate，再执行
+bounded live。
+
+## 2026-07-28 Tuple-start / gold-return artifact 与离线门
+
+当前 actual-tuple eval 还必须绑定：
+
+```text
+/data/pingfan/excavator_testbed_data/yulong_strict18_terrain_residual_v0/qc/
+  strict_train_coverage_return_transition_library_v1.json
+```
+
+其 SHA256 为
+`65952a2932a1d1373a74b825eb4d79c24d43224ca3e2449abcd7515395ab1e86`。
+builder 只接受官方 return train split 的 358 条 gold return；validation 33/34、
+silver、partial 和 salvage 出现即失败。它生成 353 个可用于 post-return 的精确配对，
+并固定 `episode_168 -> return episode_158`。
+
+生成命令入口为：
+
+```bash
+tb-build-coverage-return-transitions --help
+tb-build-tuple-start-alignment-diagnosis --help
+```
+
+eval 配置必须把该 artifact 绑定到
+`dig_cut_planner.coverage.actual_tuple_execution_library.start_reachability`，
+并同时保留 execution library 与 Unity 3D sweep 的 SHA。缺少任一 artifact、profile
+或 SHA 漂移均 fail closed。post-return selection 先过 paired-start RMS/L-infinity
+门；return ACT 使用配对 gold return 的原始 18D token，不允许 cell prior/relocate
+改写；最终 handoff 使用 live qpos 重做 3D gate。
+
+最新旧值 diagnosis 位于
+`.../tuple_start_alignment_diagnosis_v1/diagnosis/`，属于 frozen replay +
+teacher-forced contract proof，不是 bounded live。它证明旧错误 handoff 不再被接纳，
+且记录了校准前 `0.15/0.01/0.30m` 合同全拒绝。margin 已由后续实测替换；该旧
+preflight 不得冒充新合同结果。当前仍不得跳过新 production preflight 直接启动
+bounded live、1x10、重训或 effect-model。
+
+## 2026-07-28 Unity 3D worktool sweep 生成与运行门
+
+生成产物位于：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  unity_3d_worktool_sweep_v1/
+    strict_train_coverage_pose_paths_v1.json
+    worktool_shadow_fk_calibration_v1_1.json
+    coverage_worktool_sweep_library_v1_1.json
+    episode_168_frozen_start_preflight_v1/
+    production_replan_preflight_v1/
+```
+
+固定 SHA：
+
+```text
+execution library: b47e69be47f6da7d0a5fa0c168170ab771af3823269167f8b2ce64374da91614
+pose library:      cf93063fb47b81dc2083a8fd56dc696d1f0f6911ac385c5331414653190f16a2
+sweep library:     e29be1667731f537af8b4d66f931869467dfc9a6dfc53471a0d09b07ee9fbc21
+```
+
+pose library 只允许 16 个 strict-train sources 和 374 个 materialized dig
+primitives，路径覆盖全部有效 dig supervision、token peak 与 extraction tail。
+Unity exporter 使用 `YuLong_norm.json`、当前 constraint frames 和 active
+boom/stick/bucket collision shapes 生成 conservative convex-cover lower bound。
+5 个隔离 native AGX fixture 的 link position/rotation error 均通过
+`0.002m/0.2deg` 门；该 fixture 不移动 online rig。
+
+Python runtime 的精确配置为：
+
+```yaml
+worktool_sweep_3d:
+  enabled: true
+  profile: unity_kinematic_convex_cover_worktool_sweep_v1
+  hard_clearance_m: 0.24
+  act_tracking_margin_m: 0.05
+  pose_interpolation_bound_m: 0.01
+  artifact_path: <coverage_worktool_sweep_library_v1_1.json>
+  artifact_sha256: e29be1667731f537af8b4d66f931869467dfc9a6dfc53471a0d09b07ee9fbc21
+  execution_library_sha256: b47e69be47f6da7d0a5fa0c168170ab771af3823269167f8b2ce64374da91614
+  pose_library_sha256: cf93063fb47b81dc2083a8fd56dc696d1f0f6911ac385c5331414653190f16a2
+  missing_contract: fail_closed
+```
+
+`effective_clearance = sampled clearance - 0.01m - 0.05m - live-start
+displacement bound`。3D 只做硬过滤，不提供 penalty；缺 geometry/qpos/SHA 时
+fail closed。2D wall gate 仍是预过滤。所有候选失败时，runtime 不调用 ACT，必须
+zero-action→neutral-ack→terminal。107D env-state 和 step-ack protocol 不变。
+
+以下是 margin 校准前的历史结果：
+
+1. `episode_168` frozen-start preflight：3/3 rejected，passed；
+2. production initial replay：278 个 2D reject + 96 个 3D reject，无候选；
+3. production step-2987 replay：219 个 outcome depleted + 128 个 2D reject +
+   27 个 3D reject，无候选；
+4. `bounded_live_allowed=false`，当时不得运行下面生成的 diagnostic config：
+
+```text
+.../unity_3d_worktool_sweep_v1/configs/bounded_one_dig_3d_wall_safe_v1.yaml
+```
+
+旧 artifact 保留不覆盖。新合同的 frozen-library nominal prefilter 从 0 条增加到
+19 条，但尚未重放 live-start/reachability 等全部 gate。只有新 production replay
+先出现合法真实 tuple，才可运行 3 个 bounded reset；3/3
+通过后才可生成并运行唯一一次正式 1x10。当前不得启动重训、effect model、
+planned-cut、A1/A2、3x10 或 30% freeze。
+
+## 0. strict-18 box-emptying 当前训练入口
+
+本轮唯一训练数据根为：
+
+```text
+/data/pingfan/excavator_testbed_data/yulong_strict18_terrain_residual_v0/
+  full_episode_repaired_vds/
+  primitives_vds/
+  primitives_copy/
+  splits/
+  qc/
+```
+
+该 root 由当前 strict manifest no-overwrite 重建，不重跑 Unity，也不读取
+partial/layered salvage。allowlist 为 episode
+`3,6,7,8,9,13,16,19,23,24,25,27,28,29,30,32,33,34`；33/34 是 validation，
+其余 16 条是 train。source episode 不允许跨 split；primitive HDF5 必须是实体文件而
+非 VDS，并保留 `source_episode_id`。
+
+当前数据 gate 已通过：18/18 episodes、307,785 steps、293,463 个有效 action-loss
+steps；四相机 JPEG、qpos/qvel、goal tokens、action/loss mask 都可加载。primitive
+gold windows 为 dig/carry/dump 各 433，return 416。batch 4 的 train/val loader、
+`(B,4,3,288,512)` 图像、token 维度以及 bf16 AMP forward/backward/optimizer preflight
+均通过；本结论是 data/replay QC，不是 Unity live 证据。机器可读报告位于：
+
+```text
+.../qc/data_readiness.json
+.../qc/batch4_gradient_preflight.json
+.../qc/executed_cut_silver_manifest_predump_support_v1.json
+```
+
+正式四模型配置为：
+
+```text
+testbed/configs/act_yulong_strict_replay18_four_camera_dig_qvel.yaml
+testbed/configs/act_yulong_strict_replay18_four_camera_return_envelope_qvel.yaml
+testbed/configs/act_yulong_strict_replay18_four_camera_carry_qvel.yaml
+testbed/configs/act_yulong_strict_replay18_four_camera_dump_qvel.yaml
+```
+
+相机顺序固定为 `stick_up, stick_down, eye_left, eye_right`。四模型均 random init、
+500 epochs、lr `1e-5`、batch 4、AMP、seed 0、无 resume；训练顺序必须是
+dig -> return -> carry -> dump。每一阶段只有 `run_metadata.status=completed` 且存在
+`policy_best.ckpt` 才能进入下一阶段。dig 消费 `dig_cut_tokens`，return 消费
+`return_start_envelope_tokens_v1`，carry/dump 只消费图像与 qpos/qvel；dig/return
+auxiliary outcome 不得作为 effect-model label。
+
+四个正式 run 现已全部完成，checkpoint 根为：
+
+```text
+/data/pingfan/excavator_testbed_runs/ckpts/yulong_strict18_terrain_residual_v0/
+  dig/policy_best.ckpt
+  return/policy_best.ckpt
+  carry/policy_best.ckpt
+  dump/policy_best.ckpt
+```
+
+“训练完成”只表示四个 `run_metadata.status=completed` 和 checkpoint 可 strict-load，
+不表示闭环冻结通过。真实 freeze 使用
+`testbed/configs/eval_yulong_strict18_four_camera_4p_10cycle_freeze.yaml`，并以
+`tb-build-act-unity-validation` 生成的
+`act_unity_closed_loop_validation_v1` 为准。CLI 的 legacy success、单次 dump success
+或短程 smoke 不得替代 target-cycle gate。
+
+当前状态正式定义为 **系统级十铲功能回归**。旧 aggregate-TX24 已由
+`testbed/configs/baselines/yulong_aggregate_tx24_functional_10cycle_v1.json` 锁定为
+10 次 qualified dig、10 次 dump、9 次中间 return handoff 的功能基线；它的 source
+rollout 实测是 64D，且没有 typed wall/bottom，因此不是当前安全证明。strict-18 新
+ACT 的跟手尚未评价完，已先失去稳定十铲能力。
+
+runtime 修复和 gate 代码已经就位：
+
+- same-skill `restart_skill()` 无条件 reset ACT，并清空 temporal/chunk 历史；
+- hard-bottom 两次 neutral ack、token/plan invalidation、scripted clearance 和
+  exhausted-cell exclusion；
+- 374 个 strict train carry 首帧构成的 `carry_start_envelope_v1`，连续 3 步 gate，
+  SHA256 `ab8e13ac8ff4565a9faf13264c96071289b8a92e3ddcf2baaced0918920b621a`；
+- 独立 `act_functional_10cycle_validation_v1`、hard-bottom probe、
+  `functional_baseline_only` bundle 和 A0/A1/A2 promotion contract。
+
+actual-tuple execution contract 也已完成离线与 bounded-live 验证。library 位于：
+
+```text
+/data/pingfan/excavator_testbed_data/yulong_strict18_terrain_residual_v0/qc/
+  strict_train_coverage_execution_library_v1_1.json
+```
+
+它只读取 16 个 strict-train source 的 374 个 dig primitive；selector 固定真实 tuple
+`K=1`，分离 outcome/corridor/physical/return 四类 ID，并把示范 extraction tail
+纳入 hard-bottom budget。step 2987 production replay 正确选择
+`episode_168` / source episode 24，禁止 synthetic coordinate median。
+
+bounded live 的首次 attempt 因 Unity bucket-tip measurement-box 角点切换产生单帧
+pose 跳变，已作为 invalid diagnostic 保留。exact-tuple eval 变体增加首次计划
+3-frame pose-stability gate 后，3 个独立 reset 都执行同一真实 `episode_168`
+target；二维 wall clearance 均为 `0.373659m`，却全部由 bucket 接触
+`Dig_ZMin_Board`，force 约 `38.5–39.3kN`。typed bottom/stuck/timeout 为 0，三次
+zero-action/neutral-ack/terminal 均通过。
+
+强 gate 和根因报告：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  act_goal_execution_contract_recovery_v1/
+    bounded_one_dig_pose_stable_v2/
+      validation_v2/act_actual_tuple_bounded_one_dig_validation_v1.json
+    root_cause_report_v4/manifest.json
+```
+
+可重复生成 root-cause report：
+
+```bash
+python -m testbed.cli.build_coverage_worktool_wall_diagnosis \
+  --bounded-validation <bounded-root>/validation_v2/act_actual_tuple_bounded_one_dig_validation_v1.json \
+  --output-dir <fresh-no-overwrite-root-cause-report>
+```
+
+该命令重新校验 frozen JSONL size/SHA，只做诊断，不改 config 或 planner。当前
+classification 为 `bucket_3d_swept_envelope_incomplete_primary`；formal 1x10、
+3x10、functional bundle、cut-then-extract 重训、effect-model、planned-cut、
+A1/A2 和 30% freeze 均保持关闭。
+
+下一次 live 前必须先完成 Unity 3D worktool preflight：完整 oriented bucket、
+boom/stick 与 serialized walls 的最小净距查询，同时覆盖 planned path 和
+execution-deviation envelope；缺 geometry 时 fail closed。`episode_168` 必须先被
+查询拒绝或独立证明安全。不得降低现有 `0.30m` hard clearance。
+
+coverage wall-safety 也已实现。它只在当前 A0 config 启用，使用
+`conservative_2d_worktool_swept_footprint_v1`、`0.70m` worktool width、
+`0.30m` hard clearance 和 `0.45m` soft clearance；其他 legacy config 默认关闭。
+该二维包络不等于精确 Unity 3D 未来轨迹预测。正式运行前必须先生成且审核：
+
+```bash
+python -m testbed.cli.build_coverage_wall_safety_preflight \
+  --config testbed/configs/eval_yulong_strict18_four_camera_4p_functional_10cycle_a0.yaml \
+  --env-state-hdf5 <existing-107d-hdf5> \
+  --unity-scene /home/pingfan/AGXUnityE85ExcavatorSim/Assets/AGXUnity_Excavator/AGXUnity_Excavator.unity \
+  --output-dir <fresh-no-overwrite-preflight-root>
+```
+
+当前正式 preflight 已通过，cell 0/1 hard reject，cell 2–5 near-wall 且可选：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  coverage_wall_safety_preflight_v1/
+```
+
+随后完成的正式 A0 window-100 run 位于：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  functional_10cycle_a0_wall_safe_1x10_v1/
+```
+
+该 run 消除了原 wall 事故：typed wall mask/force/session 均为 0，stuck/timeout 为
+0，已执行 cut 的最小二维净距为 `0.3209796224m`。但它只完成 5 次完整
+dig/carry/dump/return；第 6 铲 dig 在 step 2975 hard-bottom，完整完成两次 neutral
+ack、ACT restart、clearance 和 replan 后，因为 `no_wall_safe_corridor` 在 step
+2989 terminal。强 validator 拒绝为：
+
+```text
+cycle_inventory_not_0_through_9:actual=[0, 1, 2, 3, 4, 5]
+```
+
+没有生成 passing validation artifact。eval CLI 的物料 `success=1.0` 不能覆盖该
+结论。原 live artifact 已冻结且不修改、不重跑。最初观察到的 hard-bottom
+bookkeeping 错误现已修复：`contact_kind` 明确区分 wall/hard-bottom，wall 只拥有
+blocked corridor，hard-bottom 只拥有实际 physical cell，且 neutral ack 前不修改
+coverage state。
+
+但是新的 cycle-6 离线归因证明 bookkeeping 不是唯一 root cause。机器可读证据位于：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  act_hard_bottom_cycle6_diagnosis_v1/
+```
+
+第六铲 planned depth 为 `0.364648m`，0.70m worktool swept cells `[3,5]` 的最小
+hard-bottom clearance 为 `0.078700m`，高于既有 `0.02m` margin；actual peak
+penetration 达 `0.502483m`，比 plan 深 `0.137835m`，接触时 bucket-tip clearance
+只有 `0.006493m`。因此主因锁定为 `act_execution_capability_primary`。logical
+outcome cell 4 与 center-line physical cell 5 不同，另有
+`data_scene_cell_semantic_mismatch`。
+
+production replan 从 step 2987 的真实 observation 和状态重放。只移除错误 wall
+depletion 时 corridor 4 可选；正确把 actual cell 5 depth-exhausted 后，corridor 4
+的 swept cells `[3,5]` 与之相交并被硬过滤，最终仍是
+`no_wall_safe_corridor`。因此不得为了重进 live 而放宽 footprint 或复用 logical
+outcome cell。
+
+M0/E1/W1 离线对照只使用 strict train；E1 lineage 为 primitive `episode_354` /
+source episode 32，nearest-expert index 含 76,469 个有效 train steps，validation
+33/34 与 partial/salvage 排除。基础 manifest 先把无法证明独立 buffer 的 action 栏
+显式设为 `blocked`，没有合成输出；后续 no-overwrite `policy_replay_v1` 为三个目标
+分别加载同一 checkpoint、reset 独立 temporal state，并用 A0 window 100 重放。
+M0 aggregate 与记录 actual action 逐帧完全一致；M0/E1/W1 aggregate 与
+nearest-expert 的 sign agreement 分别为 `0.49375/0.48750/0.68750`。该对照仍是
+teacher-forced：E1/W1 使用 M0 recorded observations，没有反事实 resimulation，
+不是闭环证明。由于执行、几何和 checkpoint action 证据给出唯一且不冲突的主因，
+bounded one-dig probe 未触发；fresh A0 1x10 gate 关闭，Unity 未启动。最新组合报告
+为 `root_cause_report_v2.json`。
+
+以下 2026-07-23 A0 是 wall-safety 修复前的历史失败对照：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  functional_10cycle_a0_postguard_1x10_v1/
+```
+
+只完成 1 次 dump；第 2 铲 dig 在 step 672 首次 wall contact，neutral/ack 后 return
+在 step 1094 timeout。功能 validator 拒绝为
+`cycle_inventory_not_0_through_9:actual=[0, 1]`，没有生成 passing artifact。
+hard-bottom 独立 probe、A0 3x10 和 functional bundle 均未通过或未启动。
+wall 时 payload 为 36.71kg，但 carry base/envelope 均为 false；gate 正确没有提前
+handoff。实际状态仍显著偏离 carry-start train envelope（bucket qpos 0.237 <
+p01 0.719，plane depth 0.532m > p99 0.277m），说明当前 dig 在形成专家 carry-start
+姿态前已经触墙，随后 return 也未能回到 start envelope。
+
+经一次性授权完成了不具升级资格的 A1 window-20 诊断：
+
+```text
+/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/
+  functional_10cycle_a1_window20_diagnostic_1x10_v1/
+```
+
+resolved config 差异审计确认唯一行为因素是
+`temporal_agg_window: 100 -> 20`；weight order 仍为
+`legacy_oldest_first`，decay 仍为 0.01，其余 checkpoint、planner 和 gate 不变。
+A1 将第二铲首次 wall 从 dig 后第 40 步推迟到第 60 步，payload 36.71→52.37kg，
+plane depth 0.537→0.517m，bucket qpos 0.243→0.296；但仍未进入 carry envelope。
+neutral ack 后立即形成第二次 wall session，step 710 terminal，仍只有 1 次 dump。
+平均 entry error 改善 6.79%，但 exit error、depth absolute error 和完整 cycle
+deposit fraction 分别恶化 30.91%、4.39% 和 18.32%。validator 仍拒绝
+`actual=[0, 1]`，不生成 passing artifact。A0 config 已按原 SHA256
+`9d3d4d7bacff11395b7f2b26921566e2cca511deae54207f5c0b71c3b7138af9`
+恢复；A1 淘汰，A2 不启动。
+
+因此 effect-model、planned-cut calibration、30% remaining-mass freeze gate 的执行、
+重训和新增数据继续暂停；30% 正式标准本身不变。已有 439 个 leakage-safe
+executed-cut silver samples 只保留为待用 corpus，不启动正式 ensemble 训练。只有先
+另立 ACT execution/conditioning 单因素修复，并分离 logical outcome label 与 physical
+safety geometry，再重新通过 offline gate，才允许生成 fresh preflight 和唯一一次新
+A0 1x10。恢复 1x10、再通过 3x10 后，才允许做单因素 temporal A/B；最终接受版本仍需
+重新通过原 30% formal freeze，之后才恢复 effect/planned-cut 路线。当前 live rollout
+使用 append-only `agx_env_state_v2_4_107`；strict-18 训练数据继续按 89D 前缀读取。
+
+以下 live 入口当前仅作合同记录，**live gate 关闭期间禁止执行**：
+
+```bash
+tb-eval \
+  --config testbed/configs/eval_yulong_strict18_four_camera_4p_functional_10cycle_a0.yaml
+
+python -m testbed.cli.build_act_functional_10cycle_validation \
+  --results-dir <fresh-no-overwrite-run-root>/results \
+  --output-dir <fresh-no-overwrite-run-root>/validation \
+  --expected-rollout-count 1
+```
+
+checked-in A0 config 已固定本轮 no-overwrite root。只有 ACT/conditioning 和
+logical/physical safety geometry 两项后续修复获批并通过离线 gate，才能复制成新的、
+明确命名的 no-overwrite config/root；不能覆盖当前失败 artifact，也不能仅用 CLI
+`--output-dir` 隐藏 config lineage 变化。
+
+1x10 通过前不得运行 3x10。一次性 A1 diagnostic 例外已经结束且淘汰，不构成
+promotion precedent，也不解锁 A2。3x10 通过后才允许调用
+`python -m testbed.cli.build_act_functional_baseline_bundle`；该 bundle 的
+`release_scope` 固定不解锁 formal freeze、effect-model 或 planned-cut。
+
+训练管线还有一个独立的复现性问题：`load_data()` 当前把所有 filtered
+`available_episode_ids` 传给 normalization stats，而不是只传 `train_ids`，所以 saved
+stats 包含 source episode 33/34 validation rows。live 使用的确是 checkpoint 自带的正确
+stats 文件，因此这不是本轮碰撞的直接解释；但正式重训前必须改为 train-only stats，
+并重新生成 checkpoint/validation evidence，不能把受污染的 val loss 作为最终模型选择
+证据。
+
+strict-18 的 action target contract 都已统一到 current-controller target speeds
+`[0.7,0.1,0.1,0.2]`，但 Replay observation dynamics 混有 `production` 与
+`recording_pre_fix_v1` compatibility profile。carry train episode 数为 211 / 163，
+return 为 203 / 155；部署 live 是 production。该 provenance 混合应通过受控 profile
+A/B 隔离，不能先验认定需要丢弃数据，也不能静默视作同域。
 
 ## 1. 当前信源
 
@@ -64,14 +786,105 @@ raw full-cycle / replay refreshed root
 
 - `/observations/qpos`
 - `/observations/qvel`
-- `/observations/env_state`：当前合同为 64D，具体语义以 schema / QC 合同为准。
+- `/observations/env_state`：2026-07-17 readonly raw 是 64D；当前 Unity
+  `agx-sim/v2` replay/runtime 合同为 append-only 89D。具体顺序以 schema / QC 合同为准。
 - `/action`
 - `/observations/images/<camera_name>`
 - `/v2/*`：阶段、事件、token、outcome target、valid mask 等训练/审核字段。
 
 训练配置只应显式消费当前 primitive 需要的字段，不应把全量 env_state 当作默认 policy 输入。
 
-### 3.2 当前 primitive 输入与监督
+### 3.2 清洗数据的 ACT mask 合同
+
+`train.action_loss_mask_scope` 有两个显式值：
+
+- `loss_only`：兼容旧行为。已有 `/v2/step/action_loss_mask` 只屏蔽 future action loss；
+  sample start 和 normalization stats 仍按旧数据范围计算。
+- `loss_sampling_stats`：2026-07-17 clean VDS 的必选值。sample start、action/proprio
+  normalization stats 和 future action loss 都只使用 mask 为 `1` 的 timestep。
+
+`loss_sampling_stats` 下，episode 缺少 mask、mask 长度不匹配、值不为 `0/1`，或没有任何
+合法采样点时必须失败；不得回退到全 `1`。clean builder 输出两个互不混用的 data overlay：
+
+- `<clean-root>/training_configs/post_fix_default_data.yaml`：默认训练池；只指向
+  `post_fix_default_vds`。
+- `<clean-root>/training_configs/pre_fix_salvage_ablation_data.yaml`：默认关闭的
+  salvage/ablation 池；只指向 `pre_fix_salvage_vds`。
+
+它们只拥有 dataset root、controller epoch filter、mask scope 和 lineage；policy 架构、
+primitive、checkpoint 与 blind-test 切分仍由具体训练实验 config 显式决定。
+
+14 条前期完整数据不再要求永久隔离。先运行：
+
+```bash
+tb-build-action-calibrated-dataset
+```
+
+它把 early/intermediate controller 的 normalized speed command 转成 current-controller
+等效 command，生成独立 no-overwrite root：
+
+```text
+/data/pingfan/excavator_testbed_data/
+yulong_v2_2_pro_full_task_four_camera_jpeg_20260717_cycle_action_calibrated_v2
+```
+
+训练侧使用
+`training_configs/mixed_current_equivalent_data.yaml` 作为 data overlay。该 overlay：
+
+- 指向 14 条 calibrated-pre + 10 条 identity-post 的统一 VDS；
+- 要求 `action_contract=yulong_current_equivalent_normalized_speed_v2`；
+- 强制 `action_loss_mask_scope=loss_sampling_stats`；
+- 复用 `recommended_post_holdout_split.yaml`，validation 只保留 current-controller
+  episode，不用 pre 数据美化验证分数。
+
+这个 mixed overlay 当前仍是 `default_enabled: false` 的训练候选。第一次实验至少保留三条
+同 seed 对照：post-only、未经校准的 naive mixed（只作风险对照）、calibrated mixed。
+离线 action loss 只能验证标签拟合；是否影响挖坑完成度、过冲、碰撞和周期效率，必须由
+当前 Unity 的真实 closed-loop 对照决定。未经 current-controller replay 的旧周期 effect
+label 也不能因为 action 已校准而自动升级为 current effect gold。
+
+注意：旧 `..._cycle_action_calibrated_v1` 把 `episode_3..17` 的 boom 录制档位误写为
+`0.05`；接触前 replay 和 free-motion response audit 都支持实际为 `0.07`。v1 保留只读
+诊断，不得进入训练或 replay；v2 使用 `0..2` early、`3..17` early-boom-tuned、
+`18..20` intermediate、`21..35` current 四段合同。
+
+校准 mixed 数据需要补齐 current Unity 字段时，使用：
+
+```bash
+# 只读检查 24 条、409692 个有效 action、Unity 89D 合同和磁盘预算
+tb-build-terrain-replay-dataset --preflight-only
+
+# 首次创建固定 no-overwrite root；可先停在三条代表性 smoke
+tb-build-terrain-replay-dataset --stop-after-smokes
+
+# 合同完全一致时继续其余 episode
+tb-build-terrain-replay-dataset --resume
+
+# 仅在 smoke 已被证实为“技术全通过、纯语义耗尽”后，继续评估其余 source
+tb-build-terrain-replay-dataset --resume --continue-after-smoke-semantic-failure
+```
+
+三条代表性 smoke 中任一条在 5 次内没有单次语义通过时，builder 会保留已选数据与全部轻量
+诊断，写 `halted_representative_smoke_failure`，并在正式 batch 前停止。这与 64D 回退、相机
+缺失或协议错误触发的 `halted_hard_contract_error` 是两个不同状态；前者不能通过重试命令
+静默变成可训练的 partial 数据集。显式 continuation 只用于完成其余 source 的可用性统计：
+它会保留 smoke failure provenance，不改变 5 次上限或单次语义门；不足 24/24 时生成的
+partial 配置继续保持禁用，不能作为默认训练池。
+
+该 builder 对每个 source 最多尝试 5 次并选择第一个通过单次语义门的完整 realization，输出
+`selected_full_hdf5`、三 target terrain sidecar，以及 replay-native 的
+`labels -> operator-first -> hindsight -> clean` VDS 链。它不会把 source 与 replay 当成
+48 条数据；最终仍是同一组 24 个 source identity。推荐 split 固定让 `episode_33/34`
+只进入 validation，其余 22 条进入 train，配置位于
+`training_configs/selected_replay_22train_2val.yaml`。
+
+训练必须读取 `selected_replay_clean_vds` 中收紧后的 `action_loss_mask`，并保持
+`action_loss_mask_scope=loss_sampling_stats`。只有 completion report 为
+`complete_24_of_24` 时该 overlay 才允许 `default_enabled: true`；partial 结果可以保留和
+审计，但不得静默成为默认池。所有这些字段仍是
+`replay_derived_selected_pass / not_gold`，不是 planner closed-loop 或 direct-volume gold。
+
+### 3.3 当前 primitive 输入与监督
 
 | Primitive / family | 默认低维输入 | 监督 / head | 状态 |
 | --- | --- | --- | --- |
@@ -1038,6 +1851,198 @@ surface-depth prior artifact from
 `runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/`, with explicit shallow local-depth stats and a
 plane-depth p05 of `0.0`. The next smoke should be a request-local prior-path counterfactual only; do not treat it as
 a checked-in default promotion.
+
+Phase 6G-S ran that request-local prior-path counterfactual. The generated config under
+`runs/eval/oracle_terrain_residual_phase6g_s_surface_prior_counterfactual_20260703_r1/` changed only
+`policy.dig_cut_planner.prior_path`, preserving the 6G-P mixed source, `target_cycle_gate=2`, terminal hold `0`,
+residual mode, fallback policy, and return-start envelope gate settings. The B smoke root
+`runs/eval/oracle_terrain_residual_phase6g_s_real_b_smoke_20260703_r1/heuristic_residual_pipeline/results`
+completed with `target_cycle_gate_success_rate=1.0`, `target_cycle_completed_dump_count=2`,
+`completed_transition_count=1`, and `transition_timeout_count=0`. The completed handoff selected
+`qc6_return_start_envelope_cell_1+relocate_spatial_linear+relocate_qpos_linear` and passed local-depth,
+plane-depth, contact, and qpos checks. This supports a prior-artifact compatibility blocker, but it is not a
+checked-in prior/default promotion.
+
+Phase 6G-T reran a fresh bounded gate-2 A/B smoke with the surface-prior B config. Both A and B reached the bounded
+gate with terminal hold `0`; C remained `not_evaluated` / `blocked_by_missing_gold_samples`. The explicit target
+residual projection showed a small B improvement over A (`target_positive_residual_depth_sum_m` delta
+`-0.000311200623`, completion ratio delta `+0.000622401246`, outside-target removed depth delta
+`-0.016043230891`, target overdig delta `0.0`). That residual projection improvement has an execution-quality caveat:
+B deposited fraction and depth command tracking were worse than A in the same smoke. Treat 6G-T as bounded evidence
+for the residual path and prior compatibility, not as full Phase 6 success or production readiness.
+
+Phase 6G-U adds `testbed.eval.terrain_cycle_quality_report` as the focused owner
+for per-cycle residual / payload / deposit / handoff / execution-quality
+diagnostics. The owner consumes explicit rollout artifacts
+(`rollout_000.jsonl` and `rollout_000_summary.json`) plus either a
+caller-provided target spec or an official target id, and writes no-overwrite
+JSON reports. It preserves planned/actual entry and exit coordinates plus depth
+target / peak / error fields from the rollout summary, and it can attach
+official v0 pass/fail output when an A-baseline quality summary is supplied.
+
+Request-local default T1/T2 assumptions were materialized under
+`runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/` for
+posthoc projection on the existing gate-2 A/B rollouts. T1 uses rows `[0, 2)`,
+cols `[0, 2)`, depth `0.25m`; T2 uses rows `[0, 3)`, cols `[0, 1)`, depth
+`0.25m`. The comparison artifact
+`phase6_request_local_default_t1_t2_ab_comparison.json` records that B is worse
+than A on T1 positive residual (`+0.015732030268`) but slightly better on T2
+positive residual (`-0.000311200623`), while remaining worse on deposit /
+payload quality for both.
+
+The follow-up target-specific Phase 6G-U B reruns generated request-local T1/T2
+runtime sources with the same mixed-source isolation pattern as 6G-P: cycle `0`
+from the near-origin active-dig source and cycles `1` / `2` from the
+corridor-conditioned source. Both B reruns preserved the 6G-T surface-depth
+prior and reached gate 2. The target-specific comparison artifact
+`runs/eval/oracle_terrain_residual_phase6g_u_target_specific_t1_t2_ab_20260703/phase6g_u_target_specific_t1_t2_ab_comparison.json`
+shows that the posthoc T2 B advantage does not survive source regeneration:
+target-specific B is worse than A on latest positive residual for both T1
+(`+0.013392139722`) and T2 (`+0.000310925942`), and remains worse on deposited
+fraction, payload, and depth-command tracking. This is still request-local
+diagnostic evidence only; it does not define official T1/T2 defaults or
+production readiness.
+
+Current official Phase 6 v0 eval semantics are centralized in
+`testbed.eval.terrain_residual_contract`. Official T1 is
+`t1_large_shallow_rectangular_pit_default`: compact `grid[3,2]`, rows
+`[0,2)`, cols `[0,2)`, depth `0.25m`. Official T2 is
+`t2_long_shallow_trench_default`: compact `grid[3,2]`, rows `[0,3)`, cols
+`[0,1)`, depth `0.25m`. The conservative profile
+`not_worse_than_current_A_gate2_baseline` anchors B/C to the same-run A gate-2
+baseline: gate reached, at least two completed dumps, zero transition timeouts,
+and no worse target residual, overdig, outside-target removal, deposited
+fraction, or depth absolute error than A.
+
+The request-local official pass/fail artifact
+`runs/eval/oracle_terrain_residual_phase6_official_v0_pass_fail_20260703/official_t1_t2_a_baseline_pass_fail_comparison.json`
+records A passing both targets and target-specific B failing both targets on
+target positive residual, deposited fraction, and depth absolute error. This is
+bounded gate-2 smoke evidence; it is not a checked-in default config change,
+planner gate change, prior promotion, or production readiness claim.
+
+The follow-up depth-execution diagnostic root
+`runs/eval/oracle_terrain_residual_phase6_depth_execution_diagnostic_20260703`
+aligns each completed B cycle's residual cut intent with actual execution and
+dump-exit evidence. T1 and T2 each have `depth_overshoot_cycle_count=2` across
+two completed cycles. T1 mean depth peak minus intent is `0.223569767456m`; T2
+mean depth peak minus intent is `0.245077269058m`. Both runs still reached
+gate 2 with zero transition timeouts, so the next training/eval question is ACT
+depth response and dump-exit state under shallow residual intents, not return
+reachability.
+
+`testbed.eval.terrain_residual_execution_diagnostic` also provides the
+request-local official-v0 failure packet builder/writer. That packet only
+summarizes existing official pass/fail, depth-execution diagnostic,
+cycle-quality, and runtime-source artifacts. It must keep
+`planner_behavior_change_status=not_made`,
+`production_readiness_status=not_claimed`, and
+`calibrated_branch_status=blocked_pending_gold_replay_samples`; it is not a
+planner default, gate, or production-readiness promotion. The current generated
+packet is
+`runs/eval/oracle_terrain_residual_phase6_official_v0_failure_packet_20260707/official_v0_failure_packet.json`.
+
+Gold cycle sample output is now formalized by
+`testbed.eval.terrain_gold_cycle_samples`. It writes one
+`terrain_gold_cycle_sample_v1` JSONL record per completed cycle and requires at
+least one split key (`episode_id` or `rollout_id`). The required payload label
+is `payload_mass_kg`. A true closed-loop cycle-quality-derived record includes
+start/end removed-depth grids, target-depth grid, target-region/valid masks,
+target residual metrics, payload peak, effective deposited mass, deposited
+fraction, depth target/peak/error, planned/actual entry and exit fields,
+success, transition, and gate fields. Current v2 replay derives volume from the
+89D grid geometry and signed removed-depth delta: positive delta contributes to
+`removed_volume_m3`, negative delta is recorded separately as
+`refill_volume_m3`, and neither is direct sensor gold. Records must retain
+`volume_label_status=derived_grid_integral` and
+`direct_volume_status=unavailable_no_sensor`.
+
+Replay outputs stay split by purpose: diagnostic JSONL is for qpos/env_state
+quality review, while replay cycle JSONL is open-loop/replay-derived evidence.
+Replay records use `evidence_kind=replay_derived_open_loop`; planned cut,
+planned/actual entry/exit, gate, transition, and planner actual-response fields
+remain absent with `missing_not_generated_by_replay` status. Only a real planner
+closed-loop run may fill those fields or be used as closed-loop calibration
+evidence. `tb-replay` only provides thin request-local flags and validation for
+`--gold-cycle-samples-jsonl`,
+`--gold-cycle-samples-target-id`, and
+`--gold-cycle-samples-low-payload-kg`; it does not own sample semantics. The
+selection-manifest path replays a clean episode's full causal prefix without
+mask skipping, post-tail, or pose realign. No training or calibrated C-branch
+availability may be claimed from replay alone.
+
+Current-Unity replay relabel variance is intentionally a separate silver track,
+implemented by `testbed.eval.terrain_replay_relabel_stats` and the thin CLI
+`tb-terrain-replay-relabel-stats`. It consumes multiple repeat replay candidate
+JSONL files for the same readonly source episode and writes
+`terrain_replay_relabel_stats_v2` plus
+`terrain_replay_relabel_cycle_sample_v2`. Replayed boundaries are first matched
+monotonically to source boundaries within the semantic gate tolerance; grouping
+then uses `(source_episode_id, target_id, source_cycle_id)`, rather than assuming
+that replay-local cycle indices remain identical after contact. The report keeps
+payload/deposit and removed-depth variance, post-contact qpos error, exception,
+realign, repeat count, tier, `recommended_weight`, and `label_usage`. Tier A is
+usable fine relabel, tier B is uncertainty-weighted weak relabel, and tier C is
+coarse/diagnostic-only. Post-contact qpos error is diagnostic and does not by
+itself demote an otherwise stable terrain-effect label. Exceptions and pose
+realign still force tier C. These records use
+`training_source=current_unity_replay_relabel` and `gold_status=not_gold`; they
+must not be mixed into strict Phase 5 gold calibration or used to claim
+calibrated C-branch readiness.
+
+The five-repeat pilot gate is `terrain_replay_pilot_gate_v2`. It separates
+three decisions:
+
+- ACT supervision remains governed by source cleaning and
+  `action_loss_mask`; replay does not reject it because of post-contact
+  trajectory divergence.
+- Episode replay usability requires process integrity, pre-contact qpos error
+  `<= 0.02`, stable grid geometry, target-cell valid fraction `>= 0.5`, at
+  least four of five semantic repeats, at least 85% source-cycle completion,
+  and final T1/T2 terrain completion/shape within the documented source-relative
+  tolerances.
+- Per-cycle effect relabeling uses only matched A/B records. C records are
+  masked for effect calibration, but the A/B fraction is reported rather than
+  used as an episode-level hard gate.
+
+Cycle boundaries need not be exactly identical. They are matched in order to
+the readonly source episode within `+-1 s`; unmatched cycles simply cannot
+produce source-aligned effect labels. The gate reports global/post-contact qpos
+error for diagnosis, but only error before the first qualified dig/soil contact
+is an acceptance condition. This gate remains replay-derived open-loop
+evidence, not real planner closed-loop evidence.
+
+After all episode gates are written, the thin
+`tb-terrain-replay-batch-assessment` CLI combines them with the immutable
+selection manifest and the full `cycle_eligibility.jsonl`. Its report keeps
+three counts separate: source-clean ACT
+cycles, episode-semantic Replay cycles, and A/B effect-relabel cycles. Effect
+counts are reported at two strengths: `process_stable` keeps source-aligned A/B
+cycles when Replay transport/process checks pass, while `strict` additionally
+requires the whole episode semantic gate to pass. This prevents a clean local
+effect label from being silently discarded while still keeping it out of the
+strict whole-task evidence pool.
+
+The fixed seven-episode salvage run is owned by the thin
+`tb-salvage-terrain-replay-dataset` CLI. Its strict view,
+`combined_strict_clean_vds`, contains the immutable parent 17 plus only newly
+strict-passing source identities. It remains `default_enabled: false` until all
+24 fixed identities are strict. The separate `layered_salvage_clean_vds` may
+substitute at most one deterministic local candidate for an exhausted source;
+its config is always `partial_replay_salvage_ablation_only` and
+`default_enabled: false`.
+
+Partial supervision is deliberately narrower than episode acceptance. Its
+`action_loss_mask` is the intersection of the calibrated source mask,
+replay-native QC mask, and local-cycle mask. Corrected attempts use the explicit
+`replay_corrected_partial_salvage_v1` evidence profile; any qpos realign and its
+guarded cycle/transition are masked, and corrected evidence can never enter the
+strict manifest. Their HDF5 step ids are causal source-action indices, while raw
+Unity backend ids remain diagnostic-only across realign RPC boundaries. All
+resulting HDF5s remain replay-derived, `not_gold`, and
+retain missing planner fields. Training/validation splits stay keyed by source
+identity, with `episode_33/34` as validation, so parent and replay variants can
+never leak across splits or be counted twice.
 
 depth 诊断必须区分三种口径：
 

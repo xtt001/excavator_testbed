@@ -12,7 +12,6 @@ from testbed.data.dataset import EpisodicDataset
 from testbed.data.hdf5_io import read_episode, write_episode
 from testbed.data.recorder import EpisodeRecorder
 
-
 CAMERAS = ["stick_up", "stick_down", "eye_left", "eye_right"]
 
 

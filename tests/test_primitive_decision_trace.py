@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import json
 
+import testbed.planner.primitive.report.decision_trace as decision_trace_module
 from testbed.planner.primitive.decision.backends.behavior_tree import (
     BehaviorTreeNodeTrace,
 )
 from testbed.planner.primitive.decision.contracts import (
-    CompleteCoverageDigEffect,
     LEGACY_FSM_DECISION_SOURCE,
+    CompleteCoverageDigEffect,
+    PrimitiveDecisionResult,
     RequestedPlannerEffect,
     SwitchSkillEffect,
-    PrimitiveDecisionResult,
 )
 from testbed.planner.primitive.facts.capabilities import (
     CarryTransitionStatus,
@@ -18,7 +19,6 @@ from testbed.planner.primitive.facts.capabilities import (
     DumpTransitionStatus,
     ReturnTransitionStatus,
 )
-import testbed.planner.primitive.report.decision_trace as decision_trace_module
 from testbed.planner.primitive.report.decision_trace import (
     DECISION_TRACE_SCHEMA_VERSION,
     DecisionDiagnosticCheck,

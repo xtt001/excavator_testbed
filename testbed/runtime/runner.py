@@ -12,7 +12,6 @@ Usage (programmatic):
 
 from __future__ import annotations
 
-import pickle
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +33,7 @@ class Runner:
     # ── Factory ───────────────────────────────────────────────────────────────
 
     @classmethod
-    def from_yaml(cls, *yaml_paths: str | Path) -> "Runner":
+    def from_yaml(cls, *yaml_paths: str | Path) -> Runner:
         """
         Load and merge one or more YAML configs (later files override earlier).
         """

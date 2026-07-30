@@ -8,7 +8,6 @@ from typing import Any
 
 from testbed.eval.terrain_target_metrics import build_target_residual_metrics
 
-
 SCHEMA = "terrain_residual_predicted_cut_update_v1"
 SOURCE = "explicit_predicted_residual_cut_update"
 DEFAULT_PROFILE = "phase6e_predicted_residual_cut_update"

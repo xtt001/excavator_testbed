@@ -23,8 +23,8 @@ def record_episodes(config: dict[str, Any]) -> None:
     inject_noise    = task_cfg.get("inject_noise", config.get("inject_noise", False))
     is_bimanual     = "bimanual" in equipment_model
 
-    from testbed.data.recorder import EpisodeRecorder
     from testbed.backends.mujoco.tasks.constants import puppet_gripper_pos_normalize
+    from testbed.data.recorder import EpisodeRecorder
 
     ScriptedPolicy = _select_scripted_policy_ee(task_name, equipment_model)
 
@@ -93,7 +93,9 @@ def record_episodes(config: dict[str, Any]) -> None:
 
         elif pipeline == "joint_replay":
             from testbed.backends.mujoco.backend import MuJoCoSimBackend
-            from testbed.backends.mujoco.scripted_policies import ExcavatorJointSpaceDigDumpPolicy
+            from testbed.backends.mujoco.scripted_policies import (
+                ExcavatorJointSpaceDigDumpPolicy,
+            )
             sim_env = MuJoCoSimBackend(task_name=task_name, equipment_model=equipment_model)
             sim_env.set_initial_object_pose(object_pose)
             ts = sim_env.reset()
@@ -169,9 +171,9 @@ def _sample_pose(task_name: str, equipment_model: str) -> np.ndarray:
 
 def _select_scripted_policy_ee(task_name: str, equipment_model: str):
     from testbed.backends.mujoco.scripted_policies import (
-        PickAndTransferPolicy,
         InsertionPolicy,
         LiftingAndMovingPolicy,
+        PickAndTransferPolicy,
     )
     if "transfer_cube" in task_name:
         return PickAndTransferPolicy

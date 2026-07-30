@@ -32,7 +32,7 @@ class PrimitiveTickHooks(Protocol):
         *,
         obs: dict[str, Any],
         boundary_event: Any | None,
-        preparation: "PrimitiveTickPreparation",
+        preparation: PrimitiveTickPreparation,
     ) -> PrimitiveDecisionResult: ...
 
     def apply_requested_effects(
@@ -88,7 +88,7 @@ class PrimitiveDecisionRuntimeLike(Protocol):
         *,
         obs: dict[str, Any],
         boundary_event: Any | None,
-        preparation: "PrimitiveTickPreparation",
+        preparation: PrimitiveTickPreparation,
     ) -> PrimitiveDecisionResult: ...
 
 
@@ -193,10 +193,10 @@ class PrimitiveExecutionRuntime:
     def from_ports(
         cls,
         ports: PrimitiveExecutionRuntimePorts,
-    ) -> "PrimitiveExecutionRuntime":
+    ) -> PrimitiveExecutionRuntime:
         return cls(ports=ports)
 
-    def execution_driver(self) -> "PrimitiveExecutionDriver":
+    def execution_driver(self) -> PrimitiveExecutionDriver:
         return PrimitiveExecutionDriver.from_ports(
             self.execution_ports(),
             dig_skill_name=self.ports.dig_skill_name,
@@ -233,7 +233,7 @@ class PrimitiveExecutionRuntime:
         *,
         obs: dict[str, Any],
         boundary_event: Any | None,
-        preparation: "PrimitiveTickPreparation",
+        preparation: PrimitiveTickPreparation,
     ) -> PrimitiveDecisionResult:
         return self.ports.decision_runtime.decide_tick(
             obs=obs,
@@ -273,7 +273,7 @@ class PrimitiveExecutionDriver:
         ports: PrimitiveExecutionPorts,
         *,
         dig_skill_name: str = "dig",
-    ) -> "PrimitiveExecutionDriver":
+    ) -> PrimitiveExecutionDriver:
         return cls(ports=ports, dig_skill_name=dig_skill_name)
 
     @classmethod
@@ -282,7 +282,7 @@ class PrimitiveExecutionDriver:
         *,
         hooks: PrimitiveTickHooks,
         dig_skill_name: str = "dig",
-    ) -> "PrimitiveExecutionDriver":
+    ) -> PrimitiveExecutionDriver:
         return cls.from_ports(
             PrimitiveExecutionPorts(
                 update_boundary_event=hooks.update_boundary_event,

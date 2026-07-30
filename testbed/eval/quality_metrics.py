@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 
+from testbed.data.operator_first_v2_2 import DIG_CUT_DEPTH_SCALE_M
 from testbed.data.schema import (
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
@@ -21,7 +22,6 @@ from testbed.data.schema import (
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
     ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
-from testbed.data.operator_first_v2_2 import DIG_CUT_DEPTH_SCALE_M
 
 FLAT_BUCKET_QPOS_THRESH = 0.20
 FAR_DUMP_START_DISTANCE_M = 1.25

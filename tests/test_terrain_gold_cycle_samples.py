@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+
 import numpy as np
 import pytest
 
@@ -176,8 +177,8 @@ def test_gold_cycle_samples_require_split_key_and_no_overwrite(tmp_path) -> None
 
 def test_replay_recorder_builds_cycle_sample_on_dump_end() -> None:
     from testbed.data.schema import (
-        ENV_STATE_DIG_AREA_CELL_AREA_IDX,
         ENV_STATE_DEPOSITED_MASS_IN_DUMP_AREA_IDX,
+        ENV_STATE_DIG_AREA_CELL_AREA_IDX,
         ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX,
         ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
         ENV_STATE_DIG_AREA_SURFACE_VALID_FRACTION_START_IDX,

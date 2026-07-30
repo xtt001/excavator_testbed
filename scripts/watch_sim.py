@@ -65,8 +65,9 @@ def load_policy(ckpt_path: Path):
 
 def watch_rollout(env, policy, seed: int, viewer, realtime: bool) -> float:
     """Run one episode while rendering into `viewer`. Returns max reward."""
-    from testbed.backends.mujoco.tasks.sampling import sample_box_pose
     from einops import rearrange
+
+    from testbed.backends.mujoco.tasks.sampling import sample_box_pose
 
     np.random.seed(seed)
     object_pose = sample_box_pose()
@@ -129,8 +130,9 @@ def main():
         sys.exit(1)
 
     # ── env + viewer ────────────────────────────────────────────────────────
-    from testbed.backends.mujoco.backend import MuJoCoSimBackend
     import mujoco.viewer as mj_viewer
+
+    from testbed.backends.mujoco.backend import MuJoCoSimBackend
 
     print(f"Loading environment: {TASK_NAME} / {EQUIPMENT_MODEL}")
     env = MuJoCoSimBackend(task_name=TASK_NAME, equipment_model=EQUIPMENT_MODEL)
@@ -147,7 +149,7 @@ def main():
     policy = None if args.no_policy else load_policy(ckpt_path)
 
     print(f"\n{'='*55}")
-    print(f"  MuJoCo interactive viewer — use mouse to orbit/zoom")
+    print("  MuJoCo interactive viewer — use mouse to orbit/zoom")
     print(f"  Running {args.rollouts} rollout(s), seed base={args.seed}")
     print(f"  Policy: {'DISABLED' if args.no_policy else ckpt_path.name}")
     print(f"  Speed:  {'max' if args.fast else 'real-time (50 Hz)'}")

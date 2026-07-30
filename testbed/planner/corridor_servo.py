@@ -11,7 +11,6 @@ from testbed.data.schema import (
     ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX,
 )
 
-
 TRANSITION_SUBMODE_CLEAR_TARGET = "clear_target"
 TRANSITION_SUBMODE_CORRIDOR_ALIGN = "corridor_align"
 TRANSITION_SUBMODE_WAIT_NEXT_DIG = "wait_next_dig"

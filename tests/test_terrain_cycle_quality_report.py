@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+
 from testbed.data.schema import (
     ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX,
     ENV_STATE_DIG_AREA_GRID_LONG_COUNT_IDX,

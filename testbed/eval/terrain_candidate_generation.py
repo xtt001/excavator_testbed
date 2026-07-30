@@ -6,7 +6,6 @@ import math
 from collections.abc import Sequence
 from typing import Any
 
-
 SCHEMA = "terrain_discrete_cut_candidates_v1"
 SOURCE = "explicit_target_residual_discrete_candidate_generation"
 DEFAULT_PROFILE = "explicit_target_residual_discrete_candidates"

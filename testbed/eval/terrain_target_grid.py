@@ -6,7 +6,6 @@ import math
 from collections.abc import Sequence
 from typing import Any
 
-
 SOURCE = "explicit_rectangular_target_grid_spec"
 DEFAULT_PROFILE = "explicit_t1_like_rectangular_shallow_pit"
 

@@ -33,7 +33,6 @@ from testbed.eval.terrain_residual_contract import get_replay_snapshot_target_sp
 from testbed.eval.terrain_target_grid import build_rectangular_target_grid
 from testbed.eval.terrain_target_metrics import build_target_residual_metrics
 
-
 SCHEMA = "terrain_gold_cycle_samples_v1"
 RECORD_SCHEMA = "terrain_gold_cycle_sample_v1"
 SOURCE = "official_gold_cycle_sample_builder"

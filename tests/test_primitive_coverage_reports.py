@@ -14,7 +14,9 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
 )
-from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
+from testbed.planner.primitive.coverage.report_runtime import (
+    PrimitiveCoverageReportRuntime,
+)
 from testbed.planner.primitive.coverage.reports import (
     CoverageBucketSnapshot,
     CoverageDebugReportInputs,
@@ -23,13 +25,11 @@ from testbed.planner.primitive.coverage.reports import (
     CoverageSummaryReportStatus,
     CoverageTraceReportStatus,
 )
-from testbed.planner.primitive.coverage.report_runtime import (
-    PrimitiveCoverageReportRuntime,
-)
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from tests.test_agx_primitives_v2_2 import (
-    _RecordingPolicy,
     _coverage_obs,
     _coverage_planner_policy,
+    _RecordingPolicy,
 )
 
 

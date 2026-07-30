@@ -7,7 +7,6 @@ from typing import Any
 
 from testbed.eval.terrain_residual_contract import official_contract_statuses
 
-
 SCHEMA = "terrain_residual_planner_baseline_comparison_v1"
 SOURCE = "explicit_offline_residual_planner_baseline_comparison"
 DEFAULT_PROFILE = "heuristic_only_offline_baseline_comparison"

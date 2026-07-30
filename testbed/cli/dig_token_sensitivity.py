@@ -15,7 +15,6 @@ from testbed.data.operator_first_v2_2 import _build_dig_cut_token
 from testbed.policies.act.adapter import ACTAdapter
 from testbed.runtime._train import _resolve_low_dim_state_dim
 
-
 DEFAULT_PRIOR_PATH = Path(
     "testbed/configs/planner_priors/yulong_operator_first_dig_cut_prior_v1.json"
 )

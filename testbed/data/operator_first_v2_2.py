@@ -33,6 +33,7 @@ from testbed.data.schema import (
     ENV_STATE_MASS_IN_BUCKET_IDX,
     ENV_STATE_V2_2_DIM,
 )
+from testbed.data.v2_1 import WORK_STAGE_NAME_TO_ID
 from testbed.data.vds import (
     EPISODE_STORAGE_MODES,
     STORAGE_MODE_COPY,
@@ -40,8 +41,6 @@ from testbed.data.vds import (
     write_lineage_json,
     write_vds_episode,
 )
-from testbed.data.v2_1 import WORK_STAGE_NAME_TO_ID
-
 
 DIG_CUT_TOKEN_DIM = 10
 RETURN_TARGET_TOKEN_DIM = DIG_CUT_TOKEN_DIM

@@ -6,8 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 
 
 @dataclass(frozen=True)
@@ -29,7 +29,7 @@ class PrimitiveBoundaryEventRuntimeService:
     def from_ports(
         cls,
         ports: PrimitiveBoundaryEventRuntimePorts,
-    ) -> "PrimitiveBoundaryEventRuntimeService":
+    ) -> PrimitiveBoundaryEventRuntimeService:
         return cls(ports=ports)
 
     def update(self, obs: dict[str, Any]) -> Any | None:

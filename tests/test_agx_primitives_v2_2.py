@@ -8,42 +8,17 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from testbed.cli.build_surface_depth_planner_prior import (
+    RETURN_ENVELOPE_MATCH_SOURCE,
+    match_return_envelope_cell_by_next_entry,
+)
+from testbed.data.dataset import get_norm_stats
+from testbed.data.hdf5_io import read_episode, write_episode
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_DEPTH_SCALE_M,
     _build_dig_cut_token,
     build_live_dig_cut_tokens_from_pose,
 )
-from testbed.data.dataset import get_norm_stats
-from testbed.data.schema import (
-    ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
-    ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
-    ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
-    ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
-    ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
-    ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
-    ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
-    ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
-    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
-    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
-    ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
-    ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
-    ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX,
-    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
-    ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
-    ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
-    ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
-    ENV_STATE_DUMP_CLEARANCE_OK_IDX,
-    ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
-    ENV_STATE_MASS_IN_BUCKET_IDX,
-    ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
-    ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX,
-    ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
-)
-from testbed.data.hdf5_io import read_episode, write_episode
 from testbed.data.primitives_v2_2 import (
     CARRY_ACTION_HORIZON_STEPS,
     CARRY_MIN_WINDOW_LEN,
@@ -55,18 +30,45 @@ from testbed.data.primitives_v2_2 import (
     extract_workskill_primitive_slices,
     extract_workskill_primitive_slices_5p,
 )
-from testbed.data.v2_1 import GOAL_TOKEN_VERSION, WORK_STAGE_NAME_TO_ID, build_goal_tokens
-from testbed.cli.build_surface_depth_planner_prior import (
-    RETURN_ENVELOPE_MATCH_SOURCE,
-    match_return_envelope_cell_by_next_entry,
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
+    ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_SHORT_NORM_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
+    ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
+    ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_X_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
+    ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
+    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+    ENV_STATE_DIG_AREA_CELL_VALID_MASK_START_IDX,
+    ENV_STATE_DIG_AREA_GEOMETRY_AVAILABLE_IDX,
+    ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
+    ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
+    ENV_STATE_DUMP_CLEARANCE_OK_IDX,
+    ENV_STATE_MASS_IN_BUCKET_IDX,
+    ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
+    ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX,
+    ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
+from testbed.data.v2_1 import (
+    GOAL_TOKEN_VERSION,
+    WORK_STAGE_NAME_TO_ID,
+    build_goal_tokens,
+)
+from testbed.planner.primitive.coverage.selection import CoverageSelectionService
+from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 from testbed.policies.base import Policy
 from testbed.policies.hybrid.primitive_planner import (
     PrimitivePlannerACTPolicy,
 )
-from testbed.planner.primitive.coverage.selection import CoverageSelectionService
-from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 YULONG_DIG_CUT_PRIOR_PATH = (
@@ -1880,7 +1882,7 @@ class TestPrimitivesV22(unittest.TestCase):
 
         state = policy.debug_state()
         cell_id = int(state["coverage_cell_id"])
-        with open(YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH, "r", encoding="utf-8") as f:
+        with open(YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH, encoding="utf-8") as f:
             prior = json.load(f)
         expected = np.asarray(
             next(
@@ -2008,7 +2010,7 @@ class TestPrimitivesV22(unittest.TestCase):
     def test_primitive_planner_strict_depth_profile_missing_cell_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             prior_path = Path(tmp) / "prior.json"
-            with open(YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH, "r", encoding="utf-8") as f:
+            with open(YULONG_REMOVED_DEPTH_DIG_CUT_PRIOR_V3_PATH, encoding="utf-8") as f:
                 prior = json.load(f)
             prior["dig_depth_profile_cells"] = []
             prior_path.write_text(json.dumps(prior), encoding="utf-8")

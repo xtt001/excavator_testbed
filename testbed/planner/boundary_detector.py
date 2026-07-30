@@ -8,13 +8,14 @@ from typing import Any
 import numpy as np
 
 from testbed.data.schema import (
+    ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
+    ENV_STATE_BUCKET_CONTACT_DUMP_AREA_MASK_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_FOOTPRINT_OUTSIDE_DISTANCE_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_X_IDX,
     ENV_STATE_BUCKET_DUMP_AREA_RELATIVE_Z_IDX,
     ENV_STATE_BUCKET_HEIGHT_ABOVE_TARGET_RIM_IDX,
-    ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
-    ENV_STATE_BUCKET_CONTACT_DUMP_AREA_MASK_IDX,
+    ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_DUMP_AREA_IDX,
     ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_DUMP_CLEARANCE_OK_IDX,
@@ -23,11 +24,9 @@ from testbed.data.schema import (
     ENV_STATE_MASS_IN_TARGET_BOX_IDX,
     ENV_STATE_MIN_DISTANCE_TO_DIG_AREA_IDX,
     ENV_STATE_MIN_DISTANCE_TO_TARGET_IDX,
-    ENV_STATE_BUCKET_OVER_TARGET_FOOTPRINT_IDX,
-    ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
     ENV_STATE_TARGET_HARD_COLLISION_COUNT_IDX,
+    ENV_STATE_TARGET_HORIZONTAL_DISTANCE_IDX,
 )
-
 
 MODE_WORK = 0
 MODE_TRANSITION = 1
@@ -108,7 +107,7 @@ def build_boundary_detector_from_config(
     success_cfg: dict[str, Any] | None = None,
     boundary_cfg: dict[str, Any] | None = None,
     pause_action_eps: float = 0.05,
-) -> "BoundaryDetector":
+) -> BoundaryDetector:
     reward_cfg = dict(reward_cfg or {})
     success_cfg = dict(success_cfg or {})
     boundary_cfg = dict(boundary_cfg or {})

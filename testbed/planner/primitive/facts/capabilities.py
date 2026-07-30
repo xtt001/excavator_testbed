@@ -46,7 +46,7 @@ class PrimitiveObservationFacts:
         obs: dict[str, Any],
         *,
         action_dim: int,
-    ) -> "PrimitiveObservationFacts":
+    ) -> PrimitiveObservationFacts:
         return cls(
             qpos=_readonly_array(
                 obs.get("qpos", np.zeros(int(action_dim), dtype=np.float32))
@@ -224,7 +224,7 @@ class BootstrapStatus:
         scripted_bootstrap_hold_steps: int = 1,
         scripted_bootstrap_step_count: int = 0,
         scripted_bootstrap_max_steps: int = 1,
-    ) -> "BootstrapStatus":
+    ) -> BootstrapStatus:
         mode = str(bootstrap_end_mode)
         scripted_enabled = bool(
             mode == "scripted_qpos" and scripted_bootstrap_target_qpos is not None
@@ -343,7 +343,7 @@ class DigTransitionStatus:
         dig_exit_guard_min_bucket_mass_kg: float = 0.0,
         dig_exit_guard_overshoot_m: float = 0.0,
         dig_exit_overshoot_m: float = float("nan"),
-    ) -> "DigTransitionStatus":
+    ) -> DigTransitionStatus:
         step_count = int(dig_step_count)
         mass = observation.mass_in_bucket_kg
         min_distance = observation.min_distance_to_dig_area_m
@@ -484,7 +484,7 @@ class CarryTransitionStatus:
         dump_ready_near_window_require_over_footprint: bool = True,
         dump_done_max_bucket_mass_kg: float = 0.0,
         dump_done_min_deposit_delta_kg: float = 0.0,
-    ) -> "CarryTransitionStatus":
+    ) -> CarryTransitionStatus:
         semantic = bool(semantic_boundary_profile_active)
         mass = observation.mass_in_bucket_kg
         deposited = observation.deposited_mass_in_target_box_kg
@@ -628,7 +628,7 @@ class DumpTransitionStatus:
         dump_done_hold_steps: int = 1,
         dump_done_max_bucket_mass_kg: float = 0.0,
         dump_done_min_deposit_delta_kg: float = 0.0,
-    ) -> "DumpTransitionStatus":
+    ) -> DumpTransitionStatus:
         semantic = bool(semantic_boundary_profile_active)
         mass = observation.mass_in_bucket_kg
         deposited = observation.deposited_mass_in_target_box_kg
@@ -727,7 +727,7 @@ class ReturnTransitionStatus:
         return_to_dig_min_depth_m: float = 0.0,
         return_to_dig_max_depth_m: float = 0.0,
         return_to_dig_max_entry_error_m: float | None = None,
-    ) -> "ReturnTransitionStatus":
+    ) -> ReturnTransitionStatus:
         semantic = bool(semantic_boundary_profile_active)
         metrics = dict(getattr(boundary_event, "metrics", {}) or {})
         mass = float(metrics.get("mass_in_bucket_kg", observation.mass_in_bucket_kg))

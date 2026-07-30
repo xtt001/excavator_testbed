@@ -76,7 +76,7 @@ class PrimitiveCellEntryCompatibilityRuntimeState:
     trace: list[dict[str, Any]] = field(default_factory=list)
 
     @classmethod
-    def fresh(cls) -> "PrimitiveCellEntryCompatibilityRuntimeState":
+    def fresh(cls) -> PrimitiveCellEntryCompatibilityRuntimeState:
         """Return reset-default cell-entry compatibility storage."""
 
         return cls()

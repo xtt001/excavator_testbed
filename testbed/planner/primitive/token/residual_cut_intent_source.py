@@ -17,7 +17,6 @@ from testbed.planner.primitive.token.dig_planning import (
     ResidualCutIntentPlanProvider,
 )
 
-
 RESIDUAL_CUT_INTENT_RUNTIME_SOURCE_SCHEMA = (
     "residual_cut_intent_runtime_source_v1"
 )

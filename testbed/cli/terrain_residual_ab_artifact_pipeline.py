@@ -13,7 +13,6 @@ from testbed.eval.terrain_residual_ab_artifact_pipeline import (
     build_and_write_predicted_residual_ab_artifacts,
 )
 
-
 REQUIRED_REQUEST_FIELDS = [
     "source_rollout_path",
     "results_root",

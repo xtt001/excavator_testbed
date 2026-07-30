@@ -10,13 +10,11 @@ import numpy as np
 from dm_control.suite import base
 
 from testbed.backends.mujoco.tasks.constants import (
-    PUPPET_GRIPPER_POSITION_CLOSE,
     START_ARM_POSE,
     puppet_gripper_pos_normalize,
     puppet_gripper_pos_unnormalize,
     puppet_gripper_vel_normalize,
 )
-
 
 # Global mutable pose slot — set before env.reset() via MuJoCoBackend
 BOX_POSE: list = [None]

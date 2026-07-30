@@ -292,7 +292,9 @@ def eval_policy(config: dict[str, Any]) -> None:
                 ),
             )
 
-        from testbed.planner.boundary_detector import build_boundary_detector_from_config
+        from testbed.planner.boundary_detector import (
+            build_boundary_detector_from_config,
+        )
         from testbed.planner.corridor_servo import (
             EntryCorridorBand,
             TransitionController,
@@ -639,7 +641,9 @@ def eval_policy(config: dict[str, Any]) -> None:
             primitive_ckpt_paths["bootstrap"] = str(bootstrap_ckpt_path)
             primitive_ckpt_dirs["bootstrap"] = str(bootstrap_ckpt_dir)
 
-        from testbed.planner.boundary_detector import build_boundary_detector_from_config
+        from testbed.planner.boundary_detector import (
+            build_boundary_detector_from_config,
+        )
         from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 
         switch_cfg = dict(policy_cfg.get("switch", {}))
@@ -928,8 +932,8 @@ def eval_policy(config: dict[str, Any]) -> None:
         policy_cls = PolicyRegistry.get(policy_class.lower())
         policy = policy_cls(**policy_cfg.get("init_kwargs", {}))
 
-    from testbed.eval.suite import EvalSuite
     from testbed.eval.metrics import EvalMetrics
+    from testbed.eval.suite import EvalSuite
     from testbed.runtime.run_metadata import (
         build_eval_run_metadata,
         write_json,

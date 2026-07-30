@@ -20,8 +20,6 @@ NOTE: This is 100% scripted-data trained, sim-only.
 from __future__ import annotations
 
 import argparse
-import os
-import pickle
 import sys
 from pathlib import Path
 
@@ -113,8 +111,8 @@ def run_rollout(env, policy, seed: int) -> tuple[list[float], list[np.ndarray]]:
 
 
 def save_video(frames: list[np.ndarray], path: Path, rewards: list[float], success: bool) -> None:
-    from testbed.eval.video import save_eval_video
     from testbed.backends.mujoco.tasks.constants import DT
+    from testbed.eval.video import save_eval_video
     path.parent.mkdir(parents=True, exist_ok=True)
     save_eval_video(
         frames=frames,

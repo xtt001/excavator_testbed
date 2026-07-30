@@ -3,6 +3,329 @@
 This log records accepted executor callbacks, planner closure audits, reflection
 verdicts, and the next bounded target for `Oracle Terrain Residual Planner v0`.
 
+## 2026-07-31: Dump Ownership Priority Crosses the Second-Shovel Failure
+
+Scope:
+
+- A request-local diagnostic flag lets release evidence acquire dump ownership
+  when the bucket is in the existing unload region and the current tick records
+  at least the existing minimum real deposit gain. Bucket mass loss alone is
+  insufficient. The flag defaults to false.
+- When dump ownership and `carry_release_safety` are simultaneously true, the
+  carry branch now enters `dump` first. The source reset, goal sequence,
+  checkpoints, ACT settings, return envelope, contact modes, hard-force limit,
+  stuck/timeout handling, hard-bottom handling, and all numeric thresholds were
+  unchanged. The run wrote no training HDF5 and is diagnostic/non-promotable.
+- The one max-10-dump attempt used an exact reset match to
+  `return_handoff_owner_target_scoped_10cycle_diagnostic_v2`; every paired reset
+  delta was zero.
+
+Observed result:
+
+- The source run completed two dumps and then took
+  `carry_to_return_release_safety` on its second shovel. The new run had zero
+  direct carry-to-return release-safety transitions. Release evidence acquired
+  dump ownership at steps 396, 794, and 1896; in particular, the second shovel
+  entered `dump` at step 794 and completed its dump before returning.
+- The run completed nine dumps, compared with two in the source. Six additional
+  carry-to-dump transitions used the unchanged committed-boundary path. It did
+  not complete the tenth dump.
+- After the ninth dump, return began at step 4517 and consumed the unchanged
+  420-step budget. The next-dig boundary latched at step 4738, but entry error
+  was `0.574945m` and the depth envelope was not ready. The envelope alone was
+  ready at steps 4740 and 4741, while entry errors remained
+  `0.566971m` and `0.562878m`, above the unchanged `0.55m` limit. Entry-close
+  first passed at step 4745, after local depth had already crossed its upper
+  bound. Thus entry-close and envelope-ready never overlapped after the
+  next-dig event.
+- At timeout, local depth was `0.411726m` against
+  `[0.001214, 0.038660]`, plane depth was `0.640196m` against
+  `[0.022401, 0.460775]`, and qpos_1 was `0.884200` against
+  `[0.337924, 0.627628]`. The stop followed the existing
+  zero-action then neutral-ack terminal chain.
+- All 138 wall-positive ticks were bucket-only against `Dig_ZMin_Board`; peak
+  normal force was `97.009kN`, below the unchanged `100kN` hard limit.
+  FactoryFloor peak normal force was `61.796kN`. There was no boom/stick,
+  non-finite, high-force, or contact-owned terminal event; the terminal owner
+  was return timeout.
+
+Closure verdict:
+
+- The priority hypothesis is supported: explicit dump ownership prevents the
+  second-shovel release from skipping dump, and the earlier two-dump failure
+  did not recur.
+- This is not a 10-dump pass. The remaining blocker is later and distinct:
+  after the ninth dump, the next-dig spatial gate and depth/qpos envelope have
+  no usable simultaneous handoff window along the return trajectory. The
+  priority change should therefore remain diagnostic while that final
+  return-handoff timing is isolated; it does not authorize a production
+  contact contract, continuous predictor, E0/G1/W1, bounded live, or
+  functional 1x10.
+- Append-only report:
+  `/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/carry_dump_ownership_priority_10cycle_diagnostic_v1/run/report.json`.
+
+## 2026-07-31: Diagnostic 10-Shovel Replicates Stop Before Owner Activation
+
+Scope:
+
+- The accepted gate-8 owner-isolation configuration was generalized without
+  changing its runtime semantics. Both new no-overwrite requests kept the
+  frozen v7 reset, checkpoints, ACT settings, contact rules, return timeout,
+  and all numeric gates. The only config deltas from gate-8 were output
+  routing, diagnostic metadata, and `target_cycle_gate: 10`.
+- Contact remained owned by the 18D token and depth by runtime prior p05-p95
+  only after seven completed dumps. Before that boundary, the original v7
+  `require_contact=true` and `p50_floor` behavior remained active.
+- Two independent roots were executed because the first run stopped before
+  exercising the requested owner boundary. No attempt was overwritten and no
+  training HDF5 was written.
+
+Observed result:
+
+- Both resets passed every fairness check with zero qpos, qvel-pair,
+  bucket-tip, terrain-depth, and remaining-mass delta. Both completed exactly
+  two dump events and then timed out in the next return. The owner override
+  never activated: the reports contain 848 and 839 inactive samples,
+  respectively, and zero active samples.
+- In both runs the second shovel remained in `carry` until release completed;
+  there was no `carry_to_dump_dump_committed_boundary`. The state machine then
+  took `carry_to_return_release_safety`. By comparison, both the source v7 and
+  the accepted gate-8 run entered the explicit dump skill on this shovel.
+- The failing second shovel had long bucket-only FactoryFloor contact:
+  `203 ticks / 4.06s / 66.637kN` in v1 and
+  `201 ticks / 4.02s / 66.729kN` in v2. Wall contact was also bucket-only and
+  sub-100kN. Neither run produced a high-force, boom/stick, stuck, or malformed
+  contact hard stop.
+- After the carry-side release, return re-entered terrain with
+  `61.660kg` and `68.385kg` in the bucket. At timeout, local depth was
+  `0.569677m` and `0.482651m`, qpos_1 was `0.811802` and `0.822363`, and both
+  checks were outside the unchanged envelope. The terminal cause was
+  `box_safety:timeout`, not contact safety and not the delayed owner control.
+
+Evidence:
+
+- v1 append-only report:
+  `/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/return_handoff_owner_target_scoped_10cycle_diagnostic_v1/run/report_reanalysis_v1.json`.
+  The reanalysis exists because the original collector incorrectly rejected a
+  valid pre-activation early stop; it did not re-execute physics.
+- v2 current-code report:
+  `/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/return_handoff_owner_target_scoped_10cycle_diagnostic_v2/run/report.json`.
+
+Closure verdict:
+
+- A diagnostic 10-dump pass was **not** achieved: both valid attempts ended
+  after two dumps. The result does not falsify the previously accepted
+  seventh-to-eighth owner proof because that control was never active.
+- The repeatable blocker is now earlier in the lifecycle:
+  second-shovel carry releases before explicit dump ownership, then return
+  starts from a loaded, deep terrain-contact state that the original envelope
+  cannot accept. Further blind repeats are not justified. The next causal
+  test should isolate the `carry -> dump` committed-boundary/release ordering
+  while preserving all contact and return-envelope rules.
+
+## 2026-07-31: Return-Handoff Owner Isolation and Eighth-Dump Proof
+
+Offline owner replay:
+
+- The immutable v7 final-return segment was replayed through the production
+  `ReturnStartEnvelopeGateService` for 238 evaluated ticks. The replay matched
+  every recorded baseline gate result.
+- Removing only global `require_contact=true` did **not** make the handoff
+  ready. That flag also selected the plane-depth floor: removing it changed the
+  effective lower bound from prior p05 `0.027709m` to prior p50 `0.304557m`.
+  At v7 step 3554, local depth and qpos_1 passed, but this hidden
+  contact-to-plane-depth coupling still blocked the handoff.
+- The owner-isolated counterfactual kept the exact effective v7 depth bounds
+  by using the runtime prior p05-p95 range, while contact was decided only by
+  18D token field 6. It became ready at step 3554; qpos_1 first failed at step
+  3555. The offline proof is
+  `/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/return_handoff_owner_target_scoped_diagnostic_v2/offline_owner_replay.json`.
+
+Live diagnostic:
+
+- A first global request-local attempt is retained but superseded. Applying
+  owner isolation from the first return changed earlier handoff timing, took a
+  cycle-3 carry release-safety path, and timed out in cycle 4 after four dumps.
+  It did not answer the seventh-to-eighth boundary question. Its append-only
+  causal correction is
+  `return_handoff_owner_diagnostic_v1/run/report_reanalysis_v1.json`.
+- The accepted v2 attempt kept source v7 handoff semantics through the first
+  seven completed dumps. A diagnostic-only control activated at
+  `completed_dump_count=7`; no production default or numeric threshold changed.
+  Reset fairness was exact: every qpos, qvel, bucket-tip, terrain-depth, and
+  remaining-mass delta was zero.
+- The eighth handoff became ready and switched to dig at step 3475. At that
+  gate, qpos_1 was `0.598779` against upper bound `0.648137` (headroom
+  `0.049358`), local depth was `0.001567m` inside
+  `[0.000717, 0.042086]`, and plane depth was `0.185409m` inside
+  `[0.027709, 0.472971]`. The token did not require contact, so no independent
+  contact check was present.
+- The run entered the eighth dig, reached carry and dump, emitted the eighth
+  `dump_end`, and stopped through the target-cycle gate. The terminal generic
+  counter was one tick stale at 7, but both authoritative terminal owners were
+  8: `target_cycle_completed_dump_count=8` and `dump_end_count=8`. There was no
+  wall/floor contact on the eighth shovel and no high-force, stuck, timeout, or
+  other safety stop.
+- Accepted append-only report:
+  `/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/return_handoff_owner_target_scoped_diagnostic_v2/run/report_reanalysis_v1.json`.
+
+Closure verdict:
+
+- The v7 eighth-shovel blocker was an owner conflict: runtime config overrode
+  the token's contact decision and coupled that decision back into plane depth.
+  Giving contact and depth one explicit owner each is sufficient to cross the
+  handoff and complete the eighth dump in this bounded diagnostic.
+- This result is diagnostic and non-promotable. It does not freeze a
+  production return contract, authorize a continuous qpos predictor, open
+  E0/G1/W1 live gates, or count as functional 1x10.
+
+## 2026-07-31: Expert-Action vs Unity-Actuator Causal Split
+
+Scope and invariants:
+
+- This was a diagnostic-only split of two questions: why ACT requested the
+  boom motion, and whether Unity executed that command with the wrong direction
+  or an abnormal pose-dependent gain.
+- No planner/handoff/safety threshold, checkpoint, dataset, or training
+  artifact changed. ACT inference was disabled for the Unity pulse test,
+  terrain physics was disabled, and any external-shape, wall, or FactoryFloor
+  contact invalidated a trial.
+- The source failure was the immutable v7 return row at step 3550:
+  cell 0, qpos_1 `0.635407`, qvel_1 `0.208141`, ACT boom action
+  `-0.548014`, handoff upper bound `0.648137`, local depth/contact both zero,
+  while the runtime required positive contact and depth.
+
+Expert-side result:
+
+- All 416 locked strict-18 return→dig boundaries were checked. There were
+  81 same-cell-0 boundaries and 79 with a return target, but zero rows matching
+  the cut intent, complete 18D return envelope, current qpos/qvel, local-depth
+  gate, and contact requirement. Even when contact was ignored, both the
+  same-cell cut-intent+state and return-envelope+state match counts remained
+  zero; only one same-cell boundary was inside the runtime local-depth gate.
+- Only one of all 416 expert boundaries was contact-positive; none of the
+  81 cell-0 boundaries was contact-positive. The runtime's contact-required
+  handoff therefore has no same-cell expert support.
+- The locked runtime envelope itself has contact token `0`, but runtime config
+  forces `require_contact=true`. This is a direct envelope-vs-gate override
+  conflict, in addition to the missing joint expert support.
+- Five same-cell expert boundaries lay within `0.03` of the runtime qpos_1
+  upper band. All five continued a negative boom action; none braked at the
+  boundary, during the preceding ten recorded source steps, or during the
+  following ten. This does not support the claim that ACT alone omitted a
+  braking pattern present in the expert data.
+
+Unity-side result:
+
+- `REALIGN_POSE` was rejected as a pose fixture after an append-only first
+  attempt showed large requested-vs-observed qpos errors. A second
+  boom-only-prepared attempt was also kept as invalid methodology because its
+  high-boom pose did not match the other three failure-state joints.
+- The accepted test reached three full fixed postures through small production
+  controller commands. Swing/stick/bucket were held at the failed-state
+  posture, while target boom qpos was `0.42`, `0.52`, and `0.62`. Each
+  positive/negative pair started from bit-identical qpos/qvel.
+- A `+0.10` boom command always reduced qpos_1 and `-0.10` always increased
+  it, matching the direction inferred from expert action/qvel. Across all six
+  pulses, normalized qpos gain ranged from `0.364091` to `0.407764` per second
+  per unit command; max/min ratio was `1.119953`, with no direction, gain,
+  contact, finite-data, or pose-repeatability violation.
+- Scaling the upper-pose `-0.10` steady response by the source ACT command
+  magnitude predicts qvel_1 `0.211635`; v7 actually recorded `0.208141`
+  (absolute error `0.003493`). The observed motion therefore follows the
+  requested command without an unexplained Unity amplification.
+
+Closure verdict:
+
+- Unity actuator direction and local response are normal at the relevant full
+  posture. The causal classification is
+  `return_handoff_contract_outside_expert_support`, not a Unity
+  cylinder-linkage mapping defect and not a demonstrated ACT temporal braking
+  failure.
+- The strongest observed mismatch is that the runtime waits for a
+  contact/depth-positive handoff state that the same-cell expert return
+  distribution does not contain. Because no jointly similar expert target and
+  state exists, this evidence proves out-of-support conditioning; it does not
+  by itself prove which new production return contract should replace it.
+- Source-locked report:
+  `/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/return_boom_causal_diagnostic_v1/causal_report_v4.json`
+  (`sha256=3665349c35a33dd7c4a5f9331a769b02539c88c671338c3af578f857fb959081`).
+  Predictor, E0/G1/W1, bounded-live, and functional-1x10 gates remain closed.
+
+## 2026-07-30: Return-Handoff Boom-Axis Diagnostic
+
+Source causal audit:
+
+- The valid GPU v7 run completed seven dumps and entered its final return at
+  step 3351.
+- Its locked cell-0 qpos_1 upper bound was `0.6481370115`.
+- ACT was already commanding approximately `-0.55` on the boom axis before
+  contact. With the diagnostic activation margin of `0.02`, the first
+  intervention candidate was step 3550; the source first exceeded qpos_1 and
+  first satisfied contact at step 3555.
+- The expert handoff audit did not support a same-goal `+0.005` envelope
+  relaxation. Extending timeout alone would not make the envelope ready.
+
+Accepted implementation:
+
+- Added a diagnostic-only return-approach axis service. It shapes only boom
+  action before the unchanged safety interlock and never changes the handoff
+  envelope.
+- The service activates only after seven completed dumps, locks the current
+  return-goal cell and qpos_1 upper bound, and fails closed on missing,
+  non-finite, or drifting lineage.
+- The recorder now emits the complete controller sidecar. Collection fails
+  with `return_approach_axis_limit_not_exercised` if an enabled probe does not
+  actually intervene.
+- The 358 train handoffs cover cells 0 through 5. For every cell,
+  `target=(train p95 + existing 0.04 tolerance) - 0.016` remains within the
+  corresponding train maximum. The smallest headroom is about `0.000332` for
+  cell 1.
+
+No-overwrite execution trail:
+
+- v1/v2 were prepared only.
+- v3 had valid reset fairness and seven dumps, but its hard-coded cell-0 scope
+  did not match the fresh cell-4 goal. Intervention count was zero and the run
+  still timed out.
+- v4 generalized the scope but exposed a wiring defect. The controller locked
+  goal cell 0, then consumed the bucket's current spatial cell; when the bucket
+  crossed into spatial cell 1, it stopped with
+  `diagnostic_return_approach_axis_limit_lineage_drift`. This was a diagnostic
+  implementation failure, not ACT or safety evidence.
+- v5 passed reset fairness and used locked goal cell 2. The controller
+  intervened on steps `3708..3726` for 19 ticks. Its first replacement changed
+  proposed ACT boom action from about `-0.548` to executed `+0.35`.
+
+Accepted v5 outcome:
+
+- Dominant cell-2 qpos_1 bound: `0.6223429823`.
+- Maximum checked qpos_1: `0.6221795082`; upper-bound violation count: zero.
+- Eighth dig entered at step 3728; eighth dump completed at step 4028.
+- Eighth shovel wall/floor contacts and hard violations: zero.
+- Whole-run ordinary contact: shovel 2 only, bucket × `Dig_ZMin_Board`,
+  40 ticks / `0.8s`, normal peak/RMS `84.846/41.377kN`, normal impulse
+  `28161.825N·s`, with motion progress.
+- Stop reason: `target_cycle_gate_terminal_hold_reached`. The generic contact
+  report's `normal_completed_10` string is a legacy label; this manifest set
+  `max_shovels=8`, so the run is not a functional 1×10.
+- Report:
+  `/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/return_approach_axis_limit_diagnostic_v5/run/report.json`
+- Report SHA256:
+  `e4b27b77d64c81e677e2de14d1dd36854f8e3fdf14644832132a03003d1a3d22`.
+
+Closure verdict:
+
+- The single-factor evidence supports the causal claim that return boom
+  overshoot blocked the eighth shovel in this fair rollout and that
+  in-envelope action shaping can remove that blocker.
+- It does not promote the diagnostic limiter, freeze the production contact
+  budget, validate ten dumps, or unlock the continuous predictor, E0/G1/W1,
+  bounded live, or functional 1×10.
+- The next semantic decision is whether the durable fix should be a bounded
+  return controller or a return-ACT data/model correction. That decision
+  requires explicit confirmation before production defaults change.
+
 ## 2026-07-01: Pre-Development Baseline
 
 Accepted baseline commits:
@@ -5636,6 +5959,392 @@ Preserved non-goals:
 - No command-space controls, official defaults, official thresholds, pass/fail,
   eval success, planner success, or calibrated fallback.
 
+## 2026-07-29: Strict-18 Contact Semantics Audit and Paired A/B
+
+Stage boundary:
+
+- Mainline:
+  `exact diagnostic → contact audit/A-B → contact-budget freeze →
+  continuous predictor → E0/G1/W1 → bounded live → conditional 1×10`.
+- Formal no-overwrite root:
+  `/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/wall_contact_semantics_recovery_v1/`.
+- Scope remained diagnostic and non-promotable. No training HDF5, qpos
+  predictor, continuous-contract relaxation, E0/G1/W1 production run, bounded
+  live promotion, or 1×10 was created.
+
+Implemented contact contract:
+
+- Unity emits append-only `worktool_wall_contact_detail_v1` warnings with exact
+  component/wall/shape/contact-point lineage, normal/tangential/total force,
+  callback/contact-point counts, contiguous session state, duration, impulse,
+  tangential displacement, and bucket-local contact point.
+- STEP/RESET framing and the 107D observation remain unchanged.
+- Python checks every wall-positive tick before ACT inference. Hard-bottom,
+  invalid lineage, forbidden component, non-finite or `>=100 kN` force, and
+  second session preserve fail-closed zero-action/neutral/terminal behavior.
+- Diagnostic B may consume exactly one continuous bucket-only/same-wall/
+  finite-sub-100-kN session. A still stops on first touch.
+
+Unity geometry audit:
+
+- Collection status: `passed`.
+- Inventory: 433 paths from 18 sources, split as 374 train and 59 validation.
+- Pair classifications:
+  `clear=4484`, `near_wall=548`, `contact_or_overlap=164`.
+- Inert shadow FK remained inert:
+  `online_rig_moved=false`.
+- Maximum proven adaptive subsegment bound:
+  `0.009990016m <= 0.01m`.
+- This is offline geometry only and inferred no production region or budget.
+- Collection SHA256:
+  `1a1ae759ec5e1b5afcc803a770031076fe7527894714c3e0f58140b7d26dc665`.
+
+Recorded-action expert replay:
+
+- All 16 train and two validation sources ran exactly once; no retry.
+- Typed contact lineage was complete.
+- Train descriptive category counts:
+  `near_wall=236`, `bucket_touch=139`, `bucket_scrape_like=142`,
+  `high_force_collision=27`, `forbidden_component=0`.
+- Fairness invalidated all train windows (`379/379`) and all holdout windows
+  (`61/61`), leaving `valid_for_inference_window_count=0`.
+- Holdout evidence was never used for region or budget selection.
+- Collection SHA256:
+  `0a48eb9e26b2c90fddfd0d6cc38b6400d027789ac83024fb8f5b767f95a30e39`.
+
+Paired one-cycle diagnostic:
+
+- The immutable order was
+  `0:A → 0:B → 1:B → 1:A → 2:A → 2:B`; all six attempts ran once.
+- All three pair reset-fairness gates passed.
+- A stopped at first wall touch with zero action and neutral acknowledgement.
+- B seed 0 and seed 1 each stayed in one bucket-only `Dig_ZMin_Board` session,
+  ended contact before carry, and completed dump.
+- B seed 2 entered a second session and terminated through
+  `box_safety:wall_contact_repeat_session`; it did not enter carry or dump.
+- B force/duration/normal-impulse summaries were:
+  seed 0 `39.860 kN / 1.380 s / 42.325 kN·s`;
+  seed 1 `38.767 kN / 1.040 s / 31.570 kN·s`;
+  seed 2 `38.250 kN / 0.060 s / 2.729 kN·s`.
+
+Append-only postprocessing correction:
+
+- The original primary report remains frozen. Its extractor incorrectly treated
+  the cycle-0 sibling return provenance as target identity drift and rejected
+  EvalSuite's canonical `box_safety:` terminal prefix.
+- TDD added support for both contracts and a reextract command that reads only
+  immutable rollout/summary/start-marker inputs.
+- The source-locked `reanalysis_v4` attempt set states
+  `reanalysis_only=true` and `executed_attempt_count=0`; no attempt was rerun.
+- Reanalysis artifact SHA256:
+  attempt set
+  `0e65d75776c1577b4717bd5e25c79492fd44bd8ba1756287589018683c42877b`,
+  A/B collection
+  `7cf115c551efae694457bba194ca9f139bd3d409869e4acdc2e84e145ca082c0`,
+  causal report
+  `a42f75661d70239de462d66c5317b8ba3e9bf337be59a939424bbdfba4b38175`,
+  Markdown report
+  `25d63c901ad00475abbc93d0c9a5e6736ebac73509de759691e060b0366c1bd2`.
+
+Decision:
+
+- B completed `2/3`, with one contact-driven repeat-session hard failure.
+- No expert window was valid for production inference and same-region
+  sub-100-kN expert support was false.
+- Causal classification: `inconclusive`.
+- Production contact budget inference is forbidden. Bucket contact region and
+  force/duration/impulse budgets remain unfrozen.
+- Work pauses here for human review; all downstream gates remain false.
+
+## 2026-07-30: Independent Seed-2 Session-Gap Diagnostic B2
+
+Authorization and scope:
+
+- The user authorized one independent diagnostic B2 and only one new
+  closed-loop attempt: seed 2, no retry, ending at target dump or an unchanged
+  hard safety terminal.
+- The no-overwrite root is
+  `/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/wall_contact_session_gap_diagnostic_b2_v1/`.
+- Reset, target/episode-168 lineage, all four checkpoints, ACT behavior,
+  aggregation/window, timeout, and existing hard thresholds were source-locked
+  to the original seed-2 B condition.
+- The only semantic delta was `session_end_clear_ticks=2`: one clear
+  observation remains part of the current logical contact session; two
+  consecutive clear observations end it.
+- Unity physical session accounting remained unchanged. The focused Python
+  decision service bridges physical session `N→N+1` only when the gap is
+  exactly one raw clear tick, the new physical session starts at
+  `consecutive_contact_steps=1`, and component/wall identity remains stable.
+  Boom/stick/other, wall drift, non-finite or `>=100kN` force, hard-bottom,
+  stuck, and timeout still hard-stop before ACT inference.
+
+TDD and implementation:
+
+- Added strict config validation for the default one-clear-tick contract and
+  the diagnostic-only two-clear-tick variant; bool, float, zero, and values
+  above two are rejected.
+- Added clear-gap state and physical-to-logical rollover handling to the
+  focused wall-contact decision service. Large planner/eval owners received
+  thin pass-through wiring only.
+- Added a create-new B2 experiment owner/CLI with source/config/environment/code
+  locks, exactly-once markers, dual reset-fairness comparison, no-retry
+  execution, and an append-only report.
+- Focused pre-run tests passed: `95 passed`. Ruff and compileall also passed.
+
+Exactly-once execution:
+
+- `seed=2`, `retry_count=0`, `executed_attempt_count=1`, process return code
+  `0`.
+- The first Unity host launch lacked a display and failed before any B2 attempt
+  marker existed. The second host launch used the active display, passed its
+  one focused Unity test, and served the sole B2 attempt. This is one
+  simulation attempt, not a retry.
+- Original seed-2 B baseline: no carry, no dump,
+  `box_safety:wall_contact_repeat_session`.
+- B2 physical session 1: step `625` only, bucket × `Dig_ZMin_Board`, peak
+  total force `40094.2852N`.
+- Step `626`: exactly one clear observation, nominal duration `0.02s`; it did
+  not end the B2 logical session.
+- B2 physical session 2: steps `627..689`, same bucket × same wall, peak total
+  force `39874.3242N`.
+- Logical result: one session containing 64 contact ticks. Contact ended before
+  carry; target carry began at step `777`, target dump completed at step `946`,
+  and terminal reason was `target_cycle_gate_reached`.
+- There was no boom/stick/other contact, wall drift, `>=100kN` force,
+  hard-bottom, stuck, timeout, or other hard-stop violation.
+
+Fairness and lineage:
+
+- Reset fairness passed both against the frozen expected reset and against the
+  original seed-2 B reset.
+- Qpos, bucket-tip, terrain-depth, and remaining-mass differences were all
+  zero. Maximum paired per-axis qvel difference was approximately `7.1e-15`;
+  maximum absolute qvel was `0.047585 < 0.10`.
+- Target lineage matched the frozen episode-168 source. No training HDF5 was
+  written.
+- Manifest SHA256:
+  `b14d351794499d83d89583b647e71011e6f3cc2526635253454098cfa428944c`.
+- B2 config SHA256:
+  `e350f936b76cba05fb155cd900854c3347219f58b2fdcacd935754a3b8333397`.
+- Attempt-result SHA256:
+  `28e530d29742ae301841da7669b0083dcde3ee80db0719d686d70a7efb6a4b2f`.
+- Final report SHA256:
+  `178edb7e7d4e5f110ec8f1d7b642e0fb3ce5dc20b2e26a4bae27e04935b847a5`.
+
+Decision:
+
+- Report status is `passed`; outcome is
+  `single_clear_tick_split_supported`.
+- This proves the original seed-2 B failure was triggered by a one-observation
+  physical-session split and that treating the single 20ms gap as continuous
+  allowed this trace to complete.
+- It does not replace or overwrite the six-attempt paired A/B
+  `inconclusive` classification, define an allowed bucket region, or establish
+  production force/duration/impulse budgets.
+- The result remains diagnostic and non-promotable.
+  `contact_budget_freeze_allowed`, `continuous_predictor_allowed`,
+  `offline_e0_g1_w1_allowed`, `bounded_live_allowed`, and
+  `functional_1x10_allowed` all remain false pending human review.
+
+## 2026-07-30: Current-code Observe-only Multi-shovel Diagnostic
+
+Authorization and scope:
+
+- The user separately authorized one fresh seed-1000 closed-loop diagnostic,
+  at most ten shovels, no retry, and no training HDF5.
+- The historical seven-dump
+  `act_freeze_probe_1x10_strict_prior_v1` run supplied the resolved config,
+  first reset state, checkpoint set, planner prior, and provenance only. The
+  new rollout did not resume historical cycle 8.
+- A prestart v1 manifest was created before final code review. It has no
+  `run/`, is intentionally rejected by the final validator because it lacks
+  the expanded stats/code lock, and was not overwritten. The sole executed
+  root is
+  `/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/wall_contact_observe_only_multicycle_diagnostic_v2/`.
+- The v2 manifest locks the four checkpoints and their four
+  `dataset_stats.pkl` files, ACT loader/eval runtime, contact decision/report
+  code, source config/rollout/reset, planner prior, and Unity
+  scene/normalization/contact lineage.
+- The only ordinary wall-contact semantic delta is
+  `record_bucket_all_contacts` with the explicit observe-only diagnostic
+  marker. Bucket-only contact whose force fields are finite and all strictly
+  below `100000N` is record-only across unlimited sessions, duration, region,
+  and wall identity. It cannot trigger neutral, ACT reset, replan, or corridor
+  block.
+- Boom/stick/other/ambiguous contact, non-finite or invalid lineage,
+  `>=100000N`, hard-bottom, stuck, and timeout remain terminal safety events.
+
+TDD and final preflight:
+
+- New tests first exposed three blockers: non-finite wall masks could look
+  contact-free; unsafe contact could be accepted without proving
+  zero→neutral→terminal; and the exactly-once evidence did not lock
+  normalization/runtime code or persist every failed collection.
+- The focused services now fail closed before ACT inference on non-finite
+  wall telemetry, require a same-event terminal-neutral proof for unsafe
+  contact, preserve hard-bottom priority on simultaneous events, and exclude
+  post-contact motion from the contact-progress window.
+- The manifest now verifies checkpoint stats, execution argv, manifest/marker/
+  log references, runtime code, and bad-output failed reports. Focused Python
+  validation passed `231` tests; Ruff, compileall, architecture/doc inventory
+  guards, and both-repo `git diff --check` passed before execution.
+- Unity focused tests remained `5/5` EditMode and `1/1` inert PlayMode; the
+  external host GET_INFO advertised `agx-sim/v2`, 50Hz, four expected cameras,
+  and the expected action/qpos order.
+
+Exactly-once execution:
+
+- `seed=1000`, `executed_attempt_count=1`, `retry_count=0`, process return
+  code `0`; wall-clock execution was approximately 169 seconds.
+- Reset fairness was exact against the frozen historical first row: qpos,
+  qvel, bucket-tip, terrain depth, and remaining mass differences were all
+  zero.
+- The rollout contained 3293 steps, started seven shovels, completed six
+  dumps, and wrote no HDF5.
+- Zero-based shovel indices 0, 2, 3, 4, and 5 completed dump without wall
+  contact. Index 1 (the second shovel) completed dump after 12 Unity physical
+  sessions / 21 contact ticks / 0.42s of bucket × `Dig_ZMin_Board` contact.
+  Index 6 was partial and had no wall contact.
+- Shovel-index-1 force evidence: normal peak/RMS
+  `73924.76/43681.233711N`, tangential peak/RMS
+  `438.448975/258.499294N`, total peak/RMS
+  `73919.875/43680.374292N`, and exact per-shovel cumulative-session normal
+  impulse delta `15555.178944N·s`.
+- Contact-period motion progress was true using the pre-contact post-step pose
+  plus contact-positive post-step poses. The 21 allowed ticks had zero
+  neutral, ACT-reset, replan, or blocked-corridor side effects. No unsafe wall
+  contact event was observed.
+- The terminal request began at step 3290 and was acknowledged at step 3293:
+  `hard_bottom_depth_budget_guard_clearance_depth_increase`.
+
+Artifacts:
+
+- Manifest SHA256:
+  `65aed792b08d2bf957edd998de1a3b9c81d6031a53600d5c92dd94443fe3dba8`.
+- Config SHA256:
+  `8da4eb34f38bbf2915fad2a7a2f9fc6c1c746ab31b9d05915dd93d2a39264f52`.
+- Rollout JSONL SHA256:
+  `038fc6c81e2253bd9267da476afe4924a80b195700544a1d0f62f541831cf937`.
+- Final report SHA256:
+  `c9609b10242b52380de0b1c1501edd5d44c95fdd1fe05900269b33fbba25da17`.
+- Unity host result: one focused external-host test passed and status is
+  `collector_complete`; port 5057 was closed after collection.
+
+Decision:
+
+- Report status is `passed`; outcome is `hard_safety_stop_before_10`.
+- The record-only bucket contact did not terminate this run: the contacted
+  shovel completed dump and four later shovels also completed. The observed
+  blocker was the unchanged hard-bottom depth-budget clearance-increase gate.
+- This one run did not reach ten dumps and did not exceed the historical
+  seven-dump result. It cannot establish that production safety is globally
+  too strict or define an allowed bucket region/force/duration/impulse budget.
+- The original paired A/B classification remains `inconclusive`. The new
+  result is diagnostic/non-promotable, writes no training data, and leaves
+  `contact_budget_freeze_allowed`, `continuous_predictor_allowed`,
+  `offline_e0_g1_w1_allowed`, `bounded_live_allowed`, and
+  `functional_1x10_allowed` false.
+
+## 2026-07-30: Unity-only Wall+FactoryFloor Root Cause And Valid v7
+
+Authorization and preserved boundary:
+
+- After the initial Unity-only result, the user explicitly allowed diagnosis,
+  fixes, and additional create-new rollouts instead of a one-attempt cap.
+- The diagnostic alone permits finite, bucket-only, strictly sub-100kN wall
+  and exact-FactoryFloor contact to be record-only and disables the legacy
+  hard-bottom depth warning/takeover. High force, boom/stick/other, data
+  anomalies, stuck, and timeout remain zero→neutral→terminal hard stops.
+- The historical A0 config/reset/checkpoint/ACT/planner thresholds stayed
+  locked. No production contact contract, predictor, E0/G1/W1 live, functional
+  1×10, training HDF5, retraining, or recording was authorized.
+
+Root cause:
+
+- `v2` recorded the first 0-dump/high-force physical result but lacked final
+  row-level marker lineage. `v4` reran with that lineage fixed and reported
+  high force `117717.805N` at step 331.
+- Both hosts were launched with `-nographics`. Unity logged
+  `Forcing GfxDevice: Null / Renderer: Null Device`; step-0 image payload was
+  about `11.7kB`, and the non-overlay scene pixels were frozen across frames.
+- A known-good GPU run used about `216kB` at step 0. Before the first dig
+  inference, qpos/qvel, token, checkpoint SHA, and policy temporal state
+  matched. ACT inference uses a zero latent, so no stochastic latent explains
+  the divergence. The blind camera was the unique evidenced cause.
+- The 117.7kN result is therefore invalid for contact-semantics inference, not
+  evidence that the record-only contact rule itself is unsafe.
+
+Fail-closed repair:
+
+- Added `AgxSimCameraRuntimeContract` and rejected
+  `GraphicsDeviceType.Null` with
+  `recording_camera_graphics_device_unavailable`.
+- A supports-images GET_INFO now fails before RESET/STEP when the renderer is
+  Null, and JPEG capture repeats the same guard.
+- The camera-capture source is included in the Unity environment lineage.
+- TDD first failed on the missing contract, then passed the focused Null-device
+  test. A real `-nographics` integration was rejected before consuming a
+  rollout.
+
+Create-new reruns:
+
+- `v5`: real RTX GPU, 2143 steps, 4 dumps, timeout. An operator visual
+  preflight had issued an extra RESET before the eval RESET, so this is only
+  side evidence.
+- `v6`: real GPU, Unity native SIGSEGV in FMOD
+  `AudioManager::systemCallback` at step 243; process return code 1 and no
+  complete rollout. This is an infrastructure failure.
+- `v7`: real RTX 5070 Ti/OpenGL renderer, no `-nographics`, step-0 payload
+  `216221` bytes, one RESET, 3771 steps, process return code 0.
+
+v7 fairness and outcome:
+
+- The Unity log contains one `ResetReq` and one `reset_applied`. Its
+  `terrain_reset_count=2` is the count of two resetter components inside that
+  one RESET, not two protocol RESETs.
+- Against the frozen A0 baseline first row, qpos, qvel, bucket tip, six terrain
+  depths, and remaining mass all have zero difference. Maximum absolute qvel
+  is `0.047585 < 0.10`; reset fairness is valid.
+- Dump pulses occurred at steps
+  `417/845/1282/1814/2294/2834/3350`: seven completed dumps.
+- Shovels 1–5 had no wall or floor contact.
+- Shovel 6 had one bucket × `Dig_ZMin_Board` tick (`0.02s`),
+  peak/RMS `68353.266/68353.266N`, impulse `1367.065N·s`, without crossing
+  the motion-progress threshold.
+- Shovel 7 had 199 bucket × `Dig_ZMin_Board` ticks (`3.98s`), peak/RMS
+  `31970.740/30717.586N`, impulse `122248.148N·s`, and motion progress.
+  The same shovel had 160 bucket × exact `FactoryFloor` ticks (`3.20s`),
+  peak/RMS `61432.945/56799.066N`, and motion progress; floor detail v1 has
+  no impulse field.
+- There was no boom/stick/other, >=100kN, invalid lineage, or stuck event.
+  The only safety reason was the final return timeout.
+
+Offline report correction:
+
+- The canonical row combines a post-step contact observation with the decision
+  made from the previous observation. The old validator used one fixed +1
+  decision offset and misclassified step 3769 because step 3770 was the
+  independent timeout zero request and step 3771 its neutral-ack terminal.
+- A focused regression now permits only an immediately adjacent timeout/stuck
+  complete hard-stop chain to own termination. Unsafe contacts still require
+  their own typed zero→neutral→terminal evidence and cannot use this path.
+- The original failed `run/report.json` remains frozen. Append-only
+  `run/report_reanalysis_v2.json` has SHA256
+  `b64faeaaf4a3abedecbfe43b9dddcdcb2abf724e0049bd85bc132290a2e6dca2`,
+  status `passed`, termination `timeout`, seven dumps, and valid reset
+  fairness. `v1` remains preserved; `v2` adds a negative regression proving an
+  adjacent timeout cannot hide a pre-existing contact-row side effect.
+
+Decision:
+
+- The renderer root cause is fixed and now fail closed before live inference.
+- v7 restores the historical seven-dump functional level while exercising
+  low-force bucket wall and FactoryFloor contact, then stops on the retained
+  timeout floor.
+- This is not a ten-dump pass or production promotion. Contact-budget freeze,
+  continuous predictor, E0/G1/W1, bounded live, and functional 1×10 remain
+  false pending human review.
+
 ## 2026-07-02: Phase 6G-J Planner Recovery And Root-Cause Acceptance
 
 Planner recovery:
@@ -6587,6 +7296,489 @@ Next bounded target:
   report whether B reaches return handoff, which cell is selected, and whether
   local depth, plane depth, contact, and qpos checks improve. It must not
   promote the working prior to a checked-in default or claim official success.
+
+## 2026-07-03: Phase 6G-S Surface-Prior Counterfactual
+
+Target lock:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Branch/status before work:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 66]`.
+- HEAD:
+  `ec6e47253968864aea26aca0571aff7c7f12cbe4`
+  (`docs: add residual planner main-thread restart prompt`).
+
+Request-local inputs:
+
+- Source 6G-P config:
+  `runs/eval/oracle_terrain_residual_phase6g_p_b_branch_request_20260703_r1/heuristic_residual_pipeline_eval_config_with_qc6_prior.yaml`.
+- Preserved mixed source:
+  `runs/eval/oracle_terrain_residual_phase6g_p_mixed_source_probe_20260703_r1/results/residual_cut_intent_runtime_source.json`.
+- New request-local config:
+  `runs/eval/oracle_terrain_residual_phase6g_s_surface_prior_counterfactual_20260703_r1/heuristic_residual_pipeline_eval_config_with_surface_prior.yaml`.
+- Changed config key only:
+  `policy.dig_cut_planner.prior_path`.
+- New prior path:
+  `runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/planner_prior_v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524_next_entry_cells.json`.
+- Preserved gate/source settings: `target_cycle_gate=2`,
+  `target_cycle_gate_terminal_hold_steps=0`,
+  `dig_cut_planner.mode=residual_cut_intent`,
+  `fallback_mode=raise`, mixed source path unchanged, and
+  return-start envelope cell prior / relocate settings unchanged.
+
+Real B smoke:
+
+- Command:
+  `python testbed/cli/eval.py --config runs/eval/oracle_terrain_residual_phase6g_s_surface_prior_counterfactual_20260703_r1/heuristic_residual_pipeline_eval_config_with_surface_prior.yaml --num-rollouts 1 --target-cycle-gate 2 --output-dir runs/eval/oracle_terrain_residual_phase6g_s_real_b_smoke_20260703_r1/heuristic_residual_pipeline --no-video`.
+- Result root:
+  `runs/eval/oracle_terrain_residual_phase6g_s_real_b_smoke_20260703_r1/heuristic_residual_pipeline/results`.
+- Analysis artifact:
+  `runs/eval/oracle_terrain_residual_phase6g_s_real_b_smoke_20260703_r1/heuristic_residual_pipeline/results/phase6g_s_surface_prior_counterfactual_analysis.json`.
+
+Key facts:
+
+- Row count `1422`; recursive file count after analysis `10`.
+- Skill counts: bootstrap `267`, dig `261`, carry `324`, dump `312`,
+  return `258`.
+- Dump start/end masks: `2` / `2`.
+- Return source counts: all `258` return rows used
+  `return_target_token_source=conditioned_return_explicit_residual_cut_intent_dig_cut_token`,
+  `return_relocate_token_source=conditioned_return_explicit_residual_cut_intent_dig_cut_token`,
+  and
+  `return_start_envelope_token_source=qc6_return_start_envelope_cell_1+relocate_spatial_linear+relocate_qpos_linear`.
+- Return segment itself had `entry_close_count=89` and
+  `envelope_ready_count=0`; the actual completed handoff happened on the next
+  `dig` row at `t=968`, with
+  `skill_switch_reason=return_to_dig_start_envelope_ready`.
+- Completed transition row had
+  `return_to_dig_entry_error_m=0.21173654848258414`,
+  `return_to_dig_start_envelope_error=0.0`,
+  `local_depth_m=0.007434844970703125`,
+  `plane_depth_m=0.0`, `dig_contact=1.0`, and no failed envelope checks.
+- Summary/gate facts: metadata status `completed`, error `null`,
+  `target_cycle_gate_success_rate=1.0`,
+  `target_cycle_completed_dump_count=2`,
+  `completed_transition_count=1`, `transition_timeout_count=0`, and stop
+  reason `target_cycle_gate_reached`.
+
+Interpretation:
+
+- The request-local surface-depth prior counterfactual completed the return
+  handoff and bounded gate-2 B smoke while preserving the 6G-P mixed source and
+  gate settings.
+- This supports the artifact/config-level blocker identified in 6G-R: the
+  checked-in removed-depth prior
+  `testbed/configs/planner_priors/yulong_removed_depth_dig_cut_prior_v3.json`
+  was incompatible with the residual B return-start depth/contact state for
+  this smoke.
+- Do not promote the working surface-depth prior to a checked-in default from
+  this evidence alone. Treat it as request-local evidence for deciding whether
+  to rebuild a residual-compatible surface-depth prior or add a request-scoped
+  prior selection policy.
+
+## 2026-07-03: Phase 6G-T Surface-Prior Gate-2 A/B Smoke
+
+Request-local roots:
+
+- A request:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_current_request_20260703`.
+- B request:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_b_branch_request_20260703`.
+- Real A/B root:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703`.
+
+Real runs:
+
+- A branch reran current planner baseline at `target_cycle_gate=2` and
+  terminal hold `0` under
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/current_planner_baseline/results`.
+- B branch reran the same surface-prior residual config under
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/heuristic_residual_pipeline/results`.
+- Comparison artifact:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/real_ab_gate2_surface_prior_bounded_smoke_comparison.json`.
+- Explicit-target residual projection comparison:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/real_ab_gate2_surface_prior_residual_metric_comparison.json`.
+
+Gate facts:
+
+- A and B both completed with `target_cycle_gate_success_rate=1.0`,
+  `target_cycle_completed_dump_count=2`, terminal hold `0`, and stop reason
+  `target_cycle_gate_reached`.
+- A rollout line count `1454`; B rollout line count `1432`.
+- C remains `not_evaluated` / `blocked_by_missing_gold_samples`.
+
+Explicit target residual projection:
+
+- Target spec remained the existing non-official smoke spec:
+  `grid_shape=[3, 2]`, rows `[0:2]`, cols `[0:1]`,
+  `target_depth_m=0.25`.
+- A latest target positive residual `0.497471058391`, target completion
+  `0.005057883218`, outside-target removed depth `0.102324411273`, target
+  overdig `0.0`.
+- B latest target positive residual `0.497159857768`, target completion
+  `0.005680284464`, outside-target removed depth `0.086281180382`, target
+  overdig `0.0`.
+- B-minus-A deltas: positive residual `-0.000311200623`, completion ratio
+  `+0.000622401246`, outside-target removed depth `-0.016043230891`,
+  target overdig `0.0`.
+
+Execution-quality caveat:
+
+- A had deposited fraction mean/min `0.8045243480617356` /
+  `0.7736410550070904` and dig-depth absolute error mean
+  `0.03503912687301633m`.
+- B had deposited fraction mean/min `0.6729643155685991` /
+  `0.6371127565113851` and dig-depth absolute error mean
+  `0.24203957766294482m`.
+- Therefore B shows a small explicit-target residual projection improvement in
+  this bounded one-rollout smoke, but it is not a broad execution-quality win
+  and is not full Phase 6 success.
+
+Preserved non-goals:
+
+- No checked-in eval YAML/default config change.
+- No prior promotion, threshold change, hidden fallback, official pass/fail,
+  eval success, planner success, full Phase 6 success, production readiness,
+  or calibrated fallback.
+
+## 2026-07-03: Main-Thread Open Testing Audit
+
+Target lock rechecked:
+
+- Cwd: `/home/pingfan/PACT/excavator_testbed`.
+- Branch/status:
+  `## tx/oracle-terrain-residual-planner-v0...origin/tx/v2_6-llm-planner [ahead 66]`.
+- HEAD:
+  `ec6e47253968864aea26aca0571aff7c7f12cbe4`
+  (`docs: add residual planner main-thread restart prompt`).
+
+Verification:
+
+- Existing 6G-S / 6G-T JSON artifacts under
+  `runs/eval/oracle_terrain_residual_phase6g_s_surface_prior_counterfactual_20260703_r1`,
+  `runs/eval/oracle_terrain_residual_phase6g_s_real_b_smoke_20260703_r1`,
+  and `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703`
+  passed `jq empty`.
+- Focused residual / A-B request / artifact / primitive contract tests:
+  `python -m pytest -q tests/test_terrain_residual_real_ab_smoke_comparison.py
+  tests/test_terrain_residual_b_branch_eval_request.py
+  tests/test_terrain_residual_eval_run_plan.py
+  tests/test_terrain_residual_ab_artifact_pipeline.py
+  tests/test_terrain_residual_ab_artifact_pipeline_cli.py
+  tests/test_terrain_residual_ab_artifact_writer.py
+  tests/test_terrain_residual_predicted_rollout.py
+  tests/test_terrain_residual_cut_update.py
+  tests/test_terrain_residual_cut_intent.py
+  tests/test_terrain_residual_closed_loop_branch_plan.py
+  tests/test_terrain_residual_closed_loop_manifest.py
+  tests/test_terrain_residual_baseline_comparison.py
+  tests/test_terrain_candidate_generation.py
+  tests/test_terrain_candidate_evidence.py
+  tests/test_terrain_candidate_scoring.py
+  tests/test_terrain_candidate_effect_model.py
+  tests/test_terrain_candidate_effect_summary.py
+  tests/test_terrain_calibration_inventory.py
+  tests/test_terrain_calibration_extraction.py
+  tests/test_terrain_target_report.py
+  tests/test_terrain_target_projection.py
+  tests/test_terrain_target_metrics.py
+  tests/test_terrain_target_grid.py
+  tests/test_terrain_residual_metrics.py
+  tests/test_primitive_residual_cut_intent_tokens.py
+  tests/test_primitive_residual_cut_intent_runtime_mode.py
+  tests/test_primitive_residual_cut_intent_source.py
+  tests/test_primitive_return_target_token_planner.py`
+  -> `150 passed`.
+
+Open testing status:
+
+- The immediate runnable gate-2 testing path after 6G-S is closed by 6G-T:
+  both A and B reached target gate 2 under request-local zero terminal hold,
+  and the residual projection artifact records the small B-over-A residual
+  improvement plus B execution-quality caveats.
+- C remains a current blocker, not an unrun smoke: usable gold-sample /
+  calibration evidence is still absent, so the calibrated branch remains
+  `not_evaluated` / `blocked_by_missing_gold_samples`.
+- The user later authorized request-local reasonable default assumptions for
+  the larger Phase 6 experiment objectives. This audit is therefore superseded
+  for posthoc projection / diagnostic artifact generation, but still applies to
+  checked-in default promotion and official pass/fail semantics.
+
+## 2026-07-03: Phase 6G-U Request-Local T1/T2 Cycle Quality Artifacts
+
+Boundary decision:
+
+- Added focused owner `testbed.eval.terrain_cycle_quality_report` instead of
+  extending `terrain_target_report.py` or the near-large
+  `terrain_residual_real_ab_smoke_comparison.py`.
+- Responsibility: derive diagnostic per-cycle residual / payload / deposit /
+  handoff / execution-quality summaries from explicit rollout artifacts and a
+  caller-provided target spec. It does not define official pass/fail,
+  production readiness, target defaults, or calibrated fallback.
+
+Request-local assumptions:
+
+- Artifact:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/phase6_request_local_default_target_assumptions.json`.
+- T1 default:
+  `t1_large_shallow_rectangular_pit_default`, compact grid `3 x 2`,
+  rows `[0, 2)`, cols `[0, 2)`, depth `0.25m`. This covers `4 / 6`
+  compact-grid cells, about `67%`, within the documented T1 `50% - 70%`
+  coverage range.
+- T2 default:
+  `t2_long_shallow_trench_default`, compact grid `3 x 2`, rows `[0, 3)`,
+  cols `[0, 1)`, depth `0.25m`. This is a one-cell-wide trench across all
+  three long-axis cells.
+
+Artifacts:
+
+- Per-cycle reports for the original 6G-T target:
+  `current_planner_baseline_cycle_quality_report.json` and
+  `heuristic_residual_pipeline_cycle_quality_report.json`.
+- Request-local T1/T2 target residual and cycle-quality reports for both A and
+  B were written under
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/`.
+- Summary comparison:
+  `runs/eval/oracle_terrain_residual_phase6g_t_gate2_real_ab_20260703/phase6_request_local_default_t1_t2_ab_comparison.json`.
+
+Key facts from the request-local default comparison:
+
+- Original 6G-T target per-cycle quality: A residual delta `-0.002528941609`,
+  deposited fraction mean `0.804524348062`; B residual delta `-0.002840142232`,
+  deposited fraction mean `0.672964315569`.
+- T1 default B-minus-A: latest positive residual `+0.015732030268`
+  (worse for B), completion ratio `-0.015732030268`, outside-target removed
+  depth `0.0`, target overdig `0.0`, deposited fraction mean
+  `-0.131560032493`.
+- T2 default B-minus-A: latest positive residual `-0.000311200623`
+  (slightly better for B), completion ratio `+0.000414934164`,
+  outside-target removed depth `-0.016043230891`, target overdig `0.0`,
+  deposited fraction mean `-0.131560032493`.
+- C remains `not_evaluated` / `blocked_by_missing_gold_samples`; no calibrated
+  fallback was invented.
+
+Interpretation:
+
+- With request-local default assumptions, the residual path is not uniformly
+  better: the T2 trench-shaped projection preserves the small B residual
+  advantage, while the larger T1 rectangle shows B worse than A on positive
+  residual and completion.
+- Across original, T1, and T2 projections, B's payload/deposit quality remains
+  worse than A. The next improvement target is therefore not another report
+  shape, but improving residual cut selection / execution quality under the
+  request-local target assumptions or rerunning B with target-specific runtime
+  source generation.
+
+## 2026-07-03: Phase 6G-U Target-Specific T1/T2 B Reruns
+
+Boundary decision:
+
+- The user authorized reasonable request-local defaults for the larger Phase 6
+  target objectives, so the main thread continued past posthoc projection into
+  target-specific B source generation and bounded real B smokes.
+- Checked-in eval defaults, planner defaults, prior artifacts, official target
+  semantics, pass/fail thresholds, and C fallback remained unchanged.
+- A was not rerun because current planner A does not consume residual target
+  source artifacts. The comparison uses the Phase 6G-T current baseline rollout
+  projected onto the same request-local T1/T2 target specs.
+
+Generated request-local roots:
+
+- T1 near-origin source:
+  `runs/eval/oracle_terrain_residual_phase6g_u_t1_large_shallow_rectangular_pit_default_near_origin_source_20260703`.
+- T1 corridor source:
+  `runs/eval/oracle_terrain_residual_phase6g_u_t1_large_shallow_rectangular_pit_default_corridor_source_20260703`.
+- T1 mixed source:
+  `runs/eval/oracle_terrain_residual_phase6g_u_t1_large_shallow_rectangular_pit_default_mixed_source_20260703`.
+- T1 B request and real B smoke:
+  `runs/eval/oracle_terrain_residual_phase6g_u_t1_large_shallow_rectangular_pit_default_b_branch_request_20260703`,
+  `runs/eval/oracle_terrain_residual_phase6g_u_t1_large_shallow_rectangular_pit_default_real_b_smoke_20260703`.
+- T2 near-origin source:
+  `runs/eval/oracle_terrain_residual_phase6g_u_t2_long_shallow_trench_default_near_origin_source_20260703`.
+- T2 corridor source:
+  `runs/eval/oracle_terrain_residual_phase6g_u_t2_long_shallow_trench_default_corridor_source_20260703`.
+- T2 mixed source:
+  `runs/eval/oracle_terrain_residual_phase6g_u_t2_long_shallow_trench_default_mixed_source_20260703`.
+- T2 B request and real B smoke:
+  `runs/eval/oracle_terrain_residual_phase6g_u_t2_long_shallow_trench_default_b_branch_request_20260703`,
+  `runs/eval/oracle_terrain_residual_phase6g_u_t2_long_shallow_trench_default_real_b_smoke_20260703`.
+- Target-specific comparison:
+  `runs/eval/oracle_terrain_residual_phase6g_u_target_specific_t1_t2_ab_20260703/phase6g_u_target_specific_t1_t2_ab_comparison.json`.
+
+Source construction:
+
+- Each target used the same isolation pattern validated by 6G-P: cycle `0`
+  copied from the target-specific near-origin active-dig source, while cycles
+  `1` / `2` copied from the target-specific corridor-conditioned source.
+- Mixed source provenance files explicitly mark this as request-local and
+  non-official, with checked-in config and runtime source builder status
+  `not_changed`.
+- B request configs preserved the 6G-T surface-depth prior and gate settings,
+  changing only the request-local residual source path and output root.
+
+Real B smoke facts:
+
+- T1 target-specific B completed with metadata status `completed`, error
+  `null`, rollout line count `1476`, `target_cycle_gate_success=1`,
+  `target_cycle_completed_dump_count=2`, `completed_transition_count=1`,
+  `transition_timeout_count=0`, and stop reason `target_cycle_gate_reached`.
+- T2 target-specific B completed with metadata status `completed`, error
+  `null`, rollout line count `1439`, `target_cycle_gate_success=1`,
+  `target_cycle_completed_dump_count=2`, `completed_transition_count=1`,
+  `transition_timeout_count=0`, and stop reason `target_cycle_gate_reached`.
+
+Target-specific B-minus-A facts:
+
+- T1: latest positive residual `+0.013392139722`, completion ratio
+  `-0.013392139722`, outside-target removed depth `0.0`, target overdig
+  `0.0`, deposited fraction mean `-0.082576753762`, effective deposit delta
+  mean `-8.226134777069kg`, payload peak mean `-7.206075668335kg`, and depth
+  absolute error mean `+0.188530640304m`.
+- T2: latest positive residual `+0.000310925942`, completion ratio
+  `-0.000414567923`, outside-target removed depth `-0.018496505917`, target
+  overdig `0.0`, deposited fraction mean `-0.094762842451`, effective deposit
+  delta mean `-10.882712960243kg`, payload peak mean `-10.695754528046kg`,
+  and depth absolute error mean `+0.210038141906m`.
+- C remains `not_evaluated` / `blocked_by_missing_gold_samples`; no calibrated
+  fallback was invented.
+
+Interpretation:
+
+- Target-specific B source regeneration and real B reruns remove the only
+  posthoc positive result: T2's small B residual advantage does not survive the
+  target-specific rerun.
+- The residual path is now proven runnable through gate 2 under request-local
+  T1/T2 defaults, but the quality result is negative versus A for both targets:
+  residual completion is not better, and deposit / payload / depth tracking are
+  worse.
+- The next development question is therefore residual cut selection and
+  execution-quality improvement, not report shape or return reachability.
+
+## 2026-07-03: Phase 6 Official V0 Contract And Gold Sample Chain
+
+Boundary decision:
+
+- Added focused eval contract owner
+  `testbed.eval.terrain_residual_contract` rather than copying target semantics
+  into comparison writers, manifest builders, or checked-in eval configs.
+- Added focused JSONL sample owner
+  `testbed.eval.terrain_gold_cycle_samples` rather than extending the large
+  `testbed/cli/replay.py` with sample schema logic.
+- `tb-replay` received only thin request-local arguments and a pass-through
+  recorder call. Checked-in eval defaults, planner defaults, prior artifacts,
+  and production planner gates were not changed.
+
+Official eval semantics:
+
+- `terrain_residual_target_v1` official T1:
+  `t1_large_shallow_rectangular_pit_default`, compact `grid[3,2]`, rows
+  `[0,2)`, cols `[0,2)`, depth `0.25m`.
+- `terrain_residual_target_v1` official T2:
+  `t2_long_shallow_trench_default`, compact `grid[3,2]`, rows `[0,3)`, cols
+  `[0,1)`, depth `0.25m`.
+- Official conservative pass/fail profile:
+  `not_worse_than_current_A_gate2_baseline`.
+- Shared artifact statuses now resolve to
+  `official_success_semantics_status=defined_by_terrain_residual_pass_fail_v1`,
+  `official_default_status=defined_by_terrain_residual_target_v1`, and
+  `official_threshold_status=defined_by_a_baseline_anchored_v0`.
+
+Implementation notes:
+
+- `terrain_cycle_quality_report` now accepts `official_target_id`, resolves
+  official T1/T2 through the contract owner, and emits `official_pass_fail`
+  when a baseline quality summary is supplied. It also preserves planned /
+  actual entry and exit coordinates plus depth target / peak / error fields
+  from rollout summaries so B execution-quality failures are inspectable.
+- `terrain_gold_cycle_samples` writes one `terrain_gold_cycle_sample_v1` JSONL
+  record per completed cycle. At least one split key (`episode_id` or
+  `rollout_id`) is required. The required payload label is `payload_mass_kg`.
+  Volume fields remain `requires_unity_volume_fields`; they must come from
+  future direct Unity/env-state measurements rather than
+  `removed_depth_delta * cell_area` inference.
+- Replay flags:
+  `--gold-cycle-samples-jsonl`, `--gold-cycle-samples-target-id`, and
+  `--gold-cycle-samples-low-payload-kg`.
+
+Official pass/fail evidence:
+
+- New request-local root:
+  `runs/eval/oracle_terrain_residual_phase6_official_v0_pass_fail_20260703`.
+- Artifact:
+  `runs/eval/oracle_terrain_residual_phase6_official_v0_pass_fail_20260703/official_t1_t2_a_baseline_pass_fail_comparison.json`.
+- A/current baseline passes both T1 and T2 against its own gate-2 baseline.
+- Target-specific B reaches gate 2 and has zero transition timeouts for both
+  T1 and T2, but fails official v0 with
+  `target_positive_residual_worse_than_baseline`,
+  `deposited_fraction_below_baseline`, and
+  `depth_abs_error_above_baseline`.
+- Current root-cause hypothesis from artifacts:
+  `act_depth_execution_quality_or_dump_exit_state`. The request-local cut
+  intents ask for shallow depth around `0.015m - 0.019m`, while real B depth
+  peaks are around `0.21m - 0.29m`; deposit / payload are also lower than A.
+  This does not support a planner scoring or return reachability behavior
+  change yet.
+
+C branch status:
+
+- C remains `blocked_pending_gold_replay_samples`.
+- The new sample recorder establishes the formal replay output chain and
+  schema tests, but no calibration result or usable-sample count is claimed.
+
+## 2026-07-03: Phase 6 B Depth-Execution / Dump-Exit Diagnostic
+
+Boundary decision:
+
+- Added focused eval owner
+  `testbed.eval.terrain_residual_execution_diagnostic`.
+- Responsibility: align explicit residual cut-intent plans with real execution
+  summary fields and dump-exit rows. The owner reads only explicit artifacts:
+  `residual_cut_intent_runtime_source.json`, `rollout_000_summary.json`, and
+  `rollout_000.jsonl`.
+- It writes request-local diagnostics only. It does not change planner
+  behavior, scoring, gates, checked-in configs, prior artifacts, or production
+  readiness semantics.
+
+Request-local root:
+
+- `runs/eval/oracle_terrain_residual_phase6_depth_execution_diagnostic_20260703`.
+- Index:
+  `runs/eval/oracle_terrain_residual_phase6_depth_execution_diagnostic_20260703/t1_t2_b_depth_execution_diagnostic_index.json`.
+- T1 diagnostic:
+  `runs/eval/oracle_terrain_residual_phase6_depth_execution_diagnostic_20260703/t1_large_shallow_rectangular_pit_default_b_depth_execution_diagnostic.json`.
+- T2 diagnostic:
+  `runs/eval/oracle_terrain_residual_phase6_depth_execution_diagnostic_20260703/t2_long_shallow_trench_default_b_depth_execution_diagnostic.json`.
+
+Key facts:
+
+- T1 target-specific B: `cycle_count=2`,
+  `depth_overshoot_cycle_count=2`, mean depth peak minus intent
+  `0.223569767456m`, mean deposited fraction `0.7219475943`,
+  `target_cycle_gate_success=1`, and `transition_timeout_count=0`.
+- T2 target-specific B: `cycle_count=2`,
+  `depth_overshoot_cycle_count=2`, mean depth peak minus intent
+  `0.245077269058m`, mean deposited fraction `0.709761505611`,
+  `target_cycle_gate_success=1`, and `transition_timeout_count=0`.
+- T1 cycle depths:
+  intent/token `0.019198505208m` / `0.01919850558m` -> actual peak
+  `0.270391881466m`; intent/token `0.017278654687m` /
+  `0.017278654873m` -> actual peak `0.213224813342m`.
+- T2 cycle depths:
+  intent/token `0.019198505208m` / `0.01919850558m` -> actual peak
+  `0.290218770504m`; intent/token `0.017278654687m` /
+  `0.017278654873m` -> actual peak `0.236412927508m`.
+- Dump-exit evidence for completed cycles reports
+  `return_to_dig_start_envelope_ready=True` and no transition timeouts.
+
+Interpretation:
+
+- The new evidence confirms that official-v0 B failure should not currently be
+  handled as a return reachability blocker or missing source-plan blocker.
+- The dominant observed problem is execution quality: real dig depth response
+  overshoots the shallow residual intent by roughly `0.20m - 0.27m`, while
+  deposited fraction remains below A. The next implementation decision should
+  therefore target ACT depth response / dump-exit state evidence before any
+  planner scoring or gate behavior change.
 
 ## 2026-07-02: Phase 6G-G Bounded B Smoke Stop-Timing Contract
 

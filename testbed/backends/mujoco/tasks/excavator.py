@@ -23,15 +23,8 @@ from testbed.backends.mujoco.tasks.bimanual import BOX_POSE, _contact_pairs
 from testbed.backends.mujoco.tasks.constants import (
     EXCAVATOR_MAIN_JOINTS,
     EXCAVATOR_START_POSE,
-    PUPPET_GRIPPER_POSITION_CLOSE,
-    START_FAIRINO_POSE,
-    START_SINGLE_ARM_POSE,
-    puppet_gripper_pos_normalize,
-    puppet_gripper_pos_unnormalize,
-    puppet_gripper_vel_normalize,
 )
 from testbed.tasks.logic.excavator_reward import ExcavatorPhaseTracker
-
 
 # ─── Joint-space task (SimBackend) ────────────────────────────────────────────
 

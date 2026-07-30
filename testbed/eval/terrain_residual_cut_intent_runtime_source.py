@@ -14,7 +14,6 @@ from testbed.planner.primitive.token.residual_cut_intent_source import (
     RESIDUAL_CUT_INTENT_RUNTIME_SOURCE_SCHEMA,
 )
 
-
 DEFAULT_PROFILE = "phase6g_residual_cut_intent_runtime_source"
 REQUIRED_SOURCE_INPUT_FIELDS = [
     "cell_centers_m",

@@ -18,8 +18,6 @@ from testbed.data.schema import (
     ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
     ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
 )
-from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
-from testbed.planner.primitive.coverage.selection import CoverageCorridorState
 from testbed.planner.primitive.coverage.exemplars import (
     CoverageStateExemplarPlanInputs,
     CoverageStateExemplarPlanResult,
@@ -28,11 +26,13 @@ from testbed.planner.primitive.coverage.facts import (
     CoveragePlanningFactConfig,
     CoveragePlanningFactService,
 )
+from testbed.planner.primitive.coverage.selection import CoverageCorridorState
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from tests.test_agx_primitives_v2_2 import (
-    _RecordingPolicy,
     _coverage_obs,
     _coverage_planner_policy,
+    _RecordingPolicy,
 )
 
 

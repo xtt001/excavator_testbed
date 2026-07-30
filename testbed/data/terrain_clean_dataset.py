@@ -8,8 +8,9 @@ the semantic sources of truth for V2.1, operator-first, and hindsight fields.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import h5py
 import numpy as np
@@ -48,7 +49,6 @@ from testbed.planner.boundary_detector import (
     QUALIFIED_DIG_START_MODE_CONTACT_DEPTH,
     QUALIFIED_DIG_START_MODES,
 )
-
 
 REQUIRED_CAMERA_NAMES = ("stick_up", "stick_down", "eye_left", "eye_right")
 PIPELINE_VERSION = "terrain_clean_dataset_v1"

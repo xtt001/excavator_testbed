@@ -27,10 +27,6 @@ from testbed.data.operator_first_v2_2 import (
 )
 from testbed.data.schema import (
     DS_ENV_STATE,
-    DS_V2_CYCLE_ACTUAL_REMOVED_DEPTH_DELTA_GRID,
-    DS_V2_CYCLE_DIG_OUTCOME_EFFECTIVE_DEPOSIT_DELTA_KG,
-    DS_V2_CYCLE_DIG_OUTCOME_PAYLOAD_GAIN_KG,
-    DS_V2_CYCLE_DOMINANT_REMOVED_DEPTH_CELL_ID,
     DS_V2_STEP_DIG_CUT_TOKENS,
     ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
@@ -43,7 +39,6 @@ from testbed.data.schema import (
     ENV_STATE_DIG_AREA_SURFACE_DEPTH_START_IDX,
     ENV_STATE_MASS_IN_BUCKET_IDX,
 )
-
 
 DEFAULT_QC6_DIG_DATASET = (
     "/fastdata/pingfan/excavator_testbed_data_hot/"

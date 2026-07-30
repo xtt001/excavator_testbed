@@ -4,12 +4,13 @@ Single-arm tasks: LiftingCube for vx300s_single and fairino5_single.
 
 from __future__ import annotations
 
-import collections
-
 import numpy as np
-from dm_control.suite import base
 
-from testbed.backends.mujoco.tasks.bimanual import BimanualViperXTask, BOX_POSE, _contact_pairs
+from testbed.backends.mujoco.tasks.bimanual import (
+    BOX_POSE,
+    BimanualViperXTask,
+    _contact_pairs,
+)
 from testbed.backends.mujoco.tasks.constants import (
     START_FAIRINO_POSE,
     START_SINGLE_ARM_POSE,

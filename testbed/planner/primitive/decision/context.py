@@ -23,7 +23,7 @@ class PrimitiveDecisionContext:
         obs: dict[str, Any],
         boundary_event: Any | None,
         preparation: PrimitiveTickPreparation,
-    ) -> "PrimitiveDecisionContext":
+    ) -> PrimitiveDecisionContext:
         return cls(
             obs=obs,
             boundary_event=boundary_event,

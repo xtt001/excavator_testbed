@@ -35,7 +35,7 @@ def _load_label_config_sections(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     if config_path is None:
         return {}, {}
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         config = yaml.safe_load(f) or {}
     if not isinstance(config, dict):
         raise ValueError(f"Label config {config_path} must be a YAML mapping.")

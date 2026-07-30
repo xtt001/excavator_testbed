@@ -9,8 +9,8 @@ from testbed.planner.primitive.coverage.selection import CoverageCorridorState
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 from tests.test_agx_primitives_v2_2 import (
-    _RecordingPolicy,
     _coverage_planner_policy,
+    _RecordingPolicy,
 )
 
 _COVERAGE_RUNTIME_FIELD_NAMES = {

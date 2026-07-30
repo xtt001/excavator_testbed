@@ -1,0 +1,236 @@
+{
+  "schema": "terrain_residual_pre_goal_following_freeze_manifest_v1",
+  "created_at": "2026-07-31T00:00:00+08:00",
+  "git": {
+    "dirty_tree_base_commit": "ec6e47253968864aea26aca0571aff7c7f12cbe4",
+    "convergence_branch": "codex/git-convergence-20260731",
+    "freeze_tag": "freeze/terrain-residual-pre-goal-following-20260731",
+    "mainline_branch": "codex/goal-following-mainline",
+    "remote_push_permitted": false,
+    "upstream_mutation_permitted": false,
+    "responsibility_commits": [
+      {
+        "order": 1,
+        "commit": "9d5de77",
+        "responsibility": "repository governance and reproducible test baseline"
+      },
+      {
+        "order": 2,
+        "commit": "38869f6",
+        "responsibility": "terrain-residual contracts and execution diagnostics"
+      },
+      {
+        "order": 3,
+        "commit": "7c936ce",
+        "responsibility": "AGX telemetry, four-camera HDF5, terrain, and contact contracts"
+      },
+      {
+        "order": 4,
+        "commit": "8a78863",
+        "responsibility": "training supervision and action-calibration data pipeline"
+      },
+      {
+        "order": 5,
+        "commit": "9ba8cae",
+        "responsibility": "replay, salvage, and strict source split"
+      },
+      {
+        "order": 6,
+        "commit": "b9c1345",
+        "responsibility": "planned-cut/effect foundations and box-emptying contracts"
+      },
+      {
+        "order": 7,
+        "commit": "85ebdd9",
+        "responsibility": "ACT freeze, ten-cycle validation, and regression diagnostics"
+      },
+      {
+        "order": 8,
+        "commit": "3e8c058",
+        "responsibility": "coverage execution, geometric sweep, and safety preflight"
+      },
+      {
+        "order": 9,
+        "commit": "044fa87",
+        "responsibility": "continuous-goal contracts and handoff without a predictor"
+      },
+      {
+        "order": 10,
+        "commit": "8d31722",
+        "responsibility": "hard-bottom, wall, and box safety diagnostics"
+      },
+      {
+        "order": 11,
+        "commit": "2a1fbf4",
+        "responsibility": "return, boom, handoff-owner, carry, and dump diagnostics"
+      }
+    ]
+  },
+  "external_recovery_snapshot": {
+    "path": "/data/pingfan/excavator_testbed_git_snapshots/20260731",
+    "sha256": {
+      "SHA256SUMS": "c989d22d7526737448421f20ea2ac59df582b086bee3f0e7a4bf28139eae87a6",
+      "git-status.txt": "72be3a294b7d6c5b302ddd961b12d6f5941c7b8d7bafafa5959505e55fb83238",
+      "snapshot-manifest.json": "625befe67355e1727664ba8aa9ec7ec38d5ec29029830e474fb59bde4d15b129",
+      "source-branch.txt": "184e9aa3166dde8f946387429346bb9c3d07ba6a6f119108ca5171209765830f",
+      "source-head.txt": "142a1beddc58aaddcb19860cc3f1f386f6d8e20c6c17ac59694351aa64d086e4",
+      "tracked-diff-stat.txt": "7ca92e809ed7bed22c89b25d73c904466c31e4a9320ec512e0200b8d10fd4496",
+      "tracked-working-tree.patch": "705a572ac2aba6a8325b807f8d563dbb6e07c9b0610c90f254f0318ba69f568b",
+      "untracked-files.tar.gz": "5662ee5c85eaa5f268dbf1cfdc7199e493b58987a84d0ef72ba8e36b8f36dcc0",
+      "untracked-files.txt": "8d8a5f1904933f14d47e9cc426a81ab3b9342b286bfa08c07e317d7d171a7588"
+    }
+  },
+  "nine_dig_diagnostic": {
+    "run_path": "/data/pingfan/excavator_testbed_runs/eval/yulong_strict18_terrain_residual_v0/carry_dump_ownership_priority_10cycle_diagnostic_v1",
+    "evidence_type": "bounded_unity_diagnostic",
+    "result": "failed",
+    "promotion_status": "non_promotable",
+    "completed_digs": 9,
+    "required_digs": 10,
+    "completed_dumps": 9,
+    "required_dumps": 10,
+    "qualified_dig_boundaries": 10,
+    "actual_dig_entries": 9,
+    "attempts": 1,
+    "resets": 1,
+    "retries": 0,
+    "training_hdf5_written": false,
+    "termination_reason": "return_timeout_before_tenth_dig",
+    "censored_handoff": true,
+    "censored_handoff_use": "evaluation_only_not_predictor_or_act_training",
+    "direct_failure_chain": [
+      "next-dig event latched",
+      "spatial entry-close and depth/qpos return envelope never overlapped",
+      "return timed out before the tenth dig"
+    ],
+    "safety": {
+      "thresholds_relaxed": false,
+      "production_default_changed": false,
+      "hard_target_collision": false,
+      "transition_collision_rate": 0.0,
+      "wall_contact_peak": 97008.8359,
+      "wall_contact_limit": 100000.0
+    },
+    "artifact_sha256": {
+      "manifest": "b77ac4e8b3d07a269cd666ef1cb2a91ea3a4cdff927cc71f02e5d4d9a636fd49",
+      "report": "a1aa19156dc9f54e6f20f85fdb343af2b3f336b9a6f837fb9160e21e9ee340ae",
+      "attempt_started": "3b4cf4f531a98812eb8601cc353225afcc57769f9f477c88793f4709654f4d71",
+      "resolved_config": "471d01414c4f15ca0c9aaf8f2883bbe3a7c25643718cf6219d33f1d12821c99f",
+      "eval_metadata": "11010086bbd263b9fd020a48e962b0c5b9d4cf11aaf4842619414e014cbdbfc8",
+      "rollout_manifest": "6dca003b40bb09b0acd3314634144caa1d01276b9479e579d1bdf564d6b9735c",
+      "rollout_summary": "e93525cc48e0490cb669ece3c212d063b190db8bba0d501bc34e6ac9ed1b3207",
+      "planner_trace": "42f7c975540a67f8ff6743da554ac30986ab84d8cef966e58ef25a243c0ebf33",
+      "rollout_jsonl": "9f8d54e59dc34651ebe3550d11b4a1eb40d623d59213fb558f49bda9d20bc6eb",
+      "video": "8baf3b67b2e9378177295749e4247869170adaba25c20d0007def804eb33715e",
+      "unity_log": "9b2ae9c0c2efe1539fe97dc243394ae08bc36702c2cec9abe3c0d6ad6f7bd9cf"
+    }
+  },
+  "frozen_semantics": {
+    "historical_exact_tuple_binding": "diagnostic_only",
+    "historical_episode_or_expert_binding": "diagnostic_only",
+    "continuous_goal_predictor_present": false,
+    "default_behavior_changed": false,
+    "safety_thresholds_relaxed": false
+  },
+  "offline_validation": {
+    "status": "passed",
+    "commit_validation": {
+      "status": "passed",
+      "method": "detached clean worktree compile plus responsibility-scoped tests",
+      "results": [
+        {
+          "commit": "9d5de77",
+          "result": "8 passed"
+        },
+        {
+          "commit": "38869f6",
+          "result": "33 passed"
+        },
+        {
+          "commit": "7c936ce",
+          "result": "96 passed, 5 existing skips"
+        },
+        {
+          "commit": "8a78863",
+          "result": "28 passed"
+        },
+        {
+          "commit": "9ba8cae",
+          "result": "100 passed"
+        },
+        {
+          "commit": "b9c1345",
+          "result": "77 passed"
+        },
+        {
+          "commit": "85ebdd9",
+          "result": "164 passed"
+        },
+        {
+          "commit": "3e8c058",
+          "result": "256 passed"
+        },
+        {
+          "commit": "044fa87",
+          "result": "95 passed"
+        },
+        {
+          "commit": "8d31722",
+          "result": "445 passed"
+        },
+        {
+          "commit": "2a1fbf4",
+          "result": "85 passed"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "pytest -q",
+        "result": "2054 passed, 5 existing skips, 44 warnings in a detached clean worktree; 2059 passed, 44 warnings in the repository workspace with the paired Unity checkout available"
+      },
+      {
+        "command": "ruff check .",
+        "result": "passed"
+      },
+      {
+        "command": "python -m compileall testbed",
+        "result": "passed"
+      },
+      {
+        "command": "python scripts/planner_architecture_doc_guard.py --check-doc-inventory --check-architecture-contract",
+        "result": "passed"
+      },
+      {
+        "command": "python -m json.tool docs/terrain_residual_pre_goal_following_freeze_manifest_20260731.json",
+        "result": "passed"
+      },
+      {
+        "command": "git diff --check",
+        "result": "passed"
+      },
+      {
+        "command": "git status --short",
+        "result": "clean"
+      }
+    ],
+    "lint_convergence": {
+      "ruff_safe_fixes": 448,
+      "explicit_remaining_fixes": 28,
+      "rules_reduced": false,
+      "scan_scope_reduced": false,
+      "intended_semantic_change": false
+    },
+    "external_tests": {
+      "live_unity_gpu_hardware_run": false,
+      "reason": "offline freeze scope; no live Unity, GPU, or hardware execution was authorized",
+      "new_skip_rules_added": false,
+      "detached_existing_skips": [
+        {
+          "count": 5,
+          "reason": "paired Unity checkout is unavailable from the detached validation worktree"
+        }
+      ]
+    }
+  }
+}

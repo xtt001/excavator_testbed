@@ -7,8 +7,11 @@ import json
 from pathlib import Path
 
 from testbed.data.hindsight_goal_v2_4 import build_hindsight_goal_dataset
-from testbed.data.vds import EPISODE_STORAGE_MODES, STORAGE_MODE_COPY
-from testbed.data.vds import update_current_symlink
+from testbed.data.vds import (
+    EPISODE_STORAGE_MODES,
+    STORAGE_MODE_COPY,
+    update_current_symlink,
+)
 
 
 def main() -> None:

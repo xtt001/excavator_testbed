@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from testbed.planner.scenario_manifest import ScenarioManifest, resolve_scenario_manifest
+from testbed.planner.scenario_manifest import (
+    ScenarioManifest,
+    resolve_scenario_manifest,
+)
 from testbed.planner.types import (
     BELIEF_STATE_ACTIVE,
     BELIEF_STATE_BLOCKED,

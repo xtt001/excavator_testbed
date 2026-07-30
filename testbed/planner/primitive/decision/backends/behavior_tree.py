@@ -23,7 +23,6 @@ from testbed.planner.primitive.decision.input import (
 )
 from testbed.planner.primitive.execution.runtime import PrimitiveTickPreparation
 
-
 BEHAVIOR_TREE_DECISION_BACKEND_NAME = "behavior_tree_shadow"
 BEHAVIOR_TREE_CONTINUE_DECISION_SOURCE = "behavior_tree_continue_current_skill"
 BEHAVIOR_TREE_RETURN_COMPLETED_DECISION_SOURCE = (
@@ -294,7 +293,7 @@ class BehaviorTreeDecisionBackendFactory:
     def from_ports(
         cls,
         ports: BehaviorTreeDecisionBackendFactoryPorts,
-    ) -> "BehaviorTreeDecisionBackendFactory":
+    ) -> BehaviorTreeDecisionBackendFactory:
         return cls(ports=ports)
 
     def requested_decision_backend(self) -> PrimitiveDecisionBackend:

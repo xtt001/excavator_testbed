@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 
 from testbed.backends.agx.protocol import (
-    MessageType,
     _pack_bool,
     _pack_string,
     _pack_string_array,

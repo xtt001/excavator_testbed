@@ -30,7 +30,6 @@ from testbed.planner.primitive.decision.contracts import (
     validate_decision_effect_contract,
 )
 
-
 DecisionProposalValidationStatus = Literal["accepted", "rejected"]
 DecisionProposalValidationCheckStatus = Literal["pass", "fail", "skipped", "unknown"]
 

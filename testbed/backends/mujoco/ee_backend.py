@@ -15,11 +15,6 @@ from dm_control import mujoco
 from dm_control.rl import control
 
 from testbed.backends.base import EESimBackend
-from testbed.backends.mujoco.tasks.bimanual import (
-    BOX_POSE,
-)
-from testbed.backends.mujoco.tasks.constants import DT
-from testbed.backends.mujoco.tasks.excavator import ExcavatorLiftingCubeEETask
 
 # EE-space task classes for non-excavator robots (imported from ee_sim_env equivalent)
 from testbed.backends.mujoco.ee_tasks import (
@@ -27,6 +22,11 @@ from testbed.backends.mujoco.ee_tasks import (
     LiftingCubeEETask,
     TransferCubeEETask,
 )
+from testbed.backends.mujoco.tasks.bimanual import (
+    BOX_POSE,
+)
+from testbed.backends.mujoco.tasks.constants import DT
+from testbed.backends.mujoco.tasks.excavator import ExcavatorLiftingCubeEETask
 
 _ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
 

@@ -15,11 +15,14 @@ from testbed.data.operator_first_v2_2 import (
     DIG_CUT_POSITION_SCALE_M,
     DIG_CUT_TOKEN_DIM,
 )
-from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX
-from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX
-from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX
-from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX
-from testbed.data.schema import ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Z_IDX,
+    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
+)
+from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.token.dig_planning import (
     PrimitiveDigTokenPlanningPorts,
@@ -29,7 +32,6 @@ from testbed.planner.primitive.token.planning_runtime import (
     PrimitiveTokenPlanningRuntime,
     PrimitiveTokenPlanningRuntimePorts,
 )
-from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
 from testbed.planner.primitive.token.tokens import (
     DigCutTokenPlan,

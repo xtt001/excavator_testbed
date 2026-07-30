@@ -14,7 +14,6 @@ from testbed.planner.types import (
     TerrainBeliefMap,
 )
 
-
 DEFAULT_TARGET_DEPTH_M = 0.08
 DEFAULT_MAX_CYCLE_STEPS = 4000
 DEFAULT_CURR_SECTOR_ID = 1

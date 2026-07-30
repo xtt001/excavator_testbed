@@ -23,7 +23,6 @@ from typing import Any
 
 import numpy as np
 
-
 # ─── Policy ABC ───────────────────────────────────────────────────────────────
 
 class Policy(abc.ABC):
@@ -168,6 +167,7 @@ def detach_dict(d: dict) -> dict:
 
 def set_seed(seed: int) -> None:
     import random
+
     import torch
     random.seed(seed)
     np.random.seed(seed)

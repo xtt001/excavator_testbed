@@ -7,7 +7,6 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-
 SCHEMA = "terrain_residual_predicted_ab_artifacts_v1"
 SOURCE = "explicit_predicted_residual_ab_artifact_writer"
 DEFAULT_PROFILE = "phase6f_predicted_ab_artifact_materialization"

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import numpy as np
 
-from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX
-from testbed.data.schema import ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX
 from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.operator_first_v2_2 import (
     DIG_CUT_TOKEN_DIM,
     RETURN_START_ENVELOPE_TOKEN_DIM,
     RETURN_TARGET_TOKEN_DIM,
+)
+from testbed.data.schema import (
+    ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
+    ENV_STATE_DEPOSITED_MASS_IN_TARGET_BOX_IDX,
 )
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
@@ -22,7 +24,6 @@ from testbed.planner.primitive.token.state import (
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
 from tests.primitive_policy_test_helpers import make_policy_shell_for_private_weld_tests
-
 
 _TOKEN_RUNTIME_FIELD_NAMES = {
     "dig_cut_planned_cycle_id",

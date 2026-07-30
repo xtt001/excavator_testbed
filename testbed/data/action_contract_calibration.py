@@ -9,10 +9,11 @@ current controller.  Raw and existing clean HDF5 files remain immutable.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import h5py
 import numpy as np
@@ -21,7 +22,6 @@ import yaml
 from testbed.data.schema import DS_ACTION, DS_QVEL, GRP_METADATA, GRP_V2_CYCLE
 from testbed.data.terrain_cycle_cleaning import APPROVED_TERRAIN_DATASET_ROOT
 from testbed.data.vds import STORAGE_MODE_VDS, write_lineage_json, write_vds_episode
-
 
 ACTION_AXIS_ORDER = ("swing", "boom", "stick", "bucket")
 ACTION_CALIBRATION_SCHEMA = "yulong_action_contract_calibration_v2"

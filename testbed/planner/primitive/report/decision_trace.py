@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Literal
 
 from testbed.planner.primitive.decision.contracts import (
     LEGACY_FSM_DECISION_SOURCE,
@@ -13,7 +13,6 @@ from testbed.planner.primitive.decision.contracts import (
     PrimitiveDecisionContractError,
     PrimitiveDecisionResult,
 )
-
 
 DECISION_TRACE_SCHEMA_VERSION = "primitive_decision_trace_v1"
 
@@ -62,7 +61,7 @@ class DecisionEffectSummary:
     payload_keys: tuple[str, ...] = ()
 
     @classmethod
-    def from_effect(cls, effect: PlannerEffect) -> "DecisionEffectSummary":
+    def from_effect(cls, effect: PlannerEffect) -> DecisionEffectSummary:
         payload = getattr(effect, "payload", None)
         payload_keys: tuple[str, ...] = ()
         if isinstance(payload, Mapping):

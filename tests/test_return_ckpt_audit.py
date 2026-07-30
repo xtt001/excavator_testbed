@@ -9,8 +9,8 @@ import numpy as np
 
 from testbed.cli.audit_return_ckpt import (
     RETURN_START_TOKEN_KEY,
-    apply_return_envelope_variant,
     _read_obs_at_step,
+    apply_return_envelope_variant,
     summarize_records,
 )
 

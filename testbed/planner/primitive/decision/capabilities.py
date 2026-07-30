@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
 from testbed.planner.primitive.facts.backend import (
     BootstrapDecisionStatus,
     PrimitiveBackendFactsAccess,
@@ -21,7 +22,6 @@ from testbed.planner.primitive.facts.capabilities import (
     DumpTransitionStatus,
     ReturnTransitionStatus,
 )
-from testbed.planner.primitive.decision.context import PrimitiveDecisionContext
 from testbed.planner.primitive.facts.decision import (
     PrimitiveCarryTransitionFacts,
     PrimitiveDecisionFacts,
@@ -115,7 +115,7 @@ class PrimitiveDecisionCapabilities:
     def from_ports(
         cls,
         ports: PrimitiveDecisionCapabilitiesPorts,
-    ) -> "PrimitiveDecisionCapabilities":
+    ) -> PrimitiveDecisionCapabilities:
         return cls(ports=ports)
 
     def current_skill_name(self) -> str:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import fields
+
 import numpy as np
 
 from testbed.data.schema import ENV_STATE_MASS_IN_BUCKET_IDX

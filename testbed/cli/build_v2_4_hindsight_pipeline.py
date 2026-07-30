@@ -9,10 +9,10 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
-
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_HOT_ROOT = Path("/fastdata/pingfan/excavator_testbed_data_hot")

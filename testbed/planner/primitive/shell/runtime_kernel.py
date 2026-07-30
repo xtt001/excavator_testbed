@@ -8,7 +8,9 @@ from typing import Any
 
 from testbed.planner.primitive.report.debug_report import PrimitiveDebugReportBuilder
 from testbed.planner.primitive.report.planner_trace import PrimitivePlannerTraceBuilder
-from testbed.planner.primitive.report.rollout_summary import PrimitiveRolloutSummaryBuilder
+from testbed.planner.primitive.report.rollout_summary import (
+    PrimitiveRolloutSummaryBuilder,
+)
 
 
 @dataclass(frozen=True)
@@ -38,7 +40,7 @@ class PrimitivePlannerRuntimeKernel:
     def from_ports(
         cls,
         ports: PrimitivePlannerRuntimeKernelPorts,
-    ) -> "PrimitivePlannerRuntimeKernel":
+    ) -> PrimitivePlannerRuntimeKernel:
         return cls(ports=ports)
 
     def reset(self) -> None:
@@ -92,7 +94,7 @@ class PrimitivePlannerPublicRuntime:
     def from_ports(
         cls,
         ports: PrimitivePlannerPublicRuntimePorts,
-    ) -> "PrimitivePlannerPublicRuntime":
+    ) -> PrimitivePlannerPublicRuntime:
         return cls(ports=ports)
 
     def runtime_kernel_ports(self) -> PrimitivePlannerRuntimeKernelPorts:
