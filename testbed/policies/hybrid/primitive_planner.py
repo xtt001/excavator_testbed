@@ -9,45 +9,69 @@ import numpy as np
 from testbed.data.schema import (
     ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_LOCAL_SURFACE_IDX,
+    ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX,
 )
 from testbed.planner.boundary_detector import BoundaryDetector
-from testbed.planner.primitive.execution.boundary_event import (
-    PrimitiveBoundaryEventRuntimePorts,
-    PrimitiveBoundaryEventRuntimeService,
+from testbed.planner.box_emptying.online_provider import (
+    BoxEmptyingResidualPlanService,
 )
-from testbed.planner.primitive.facts.capabilities import (
-    BootstrapStatus,
-    PrimitiveObservationFacts,
+from testbed.planner.box_emptying.runtime_monitor import (
+    BoxEmptyingRuntimeMonitor,
+    RuntimeMonitorConfig,
+)
+from testbed.planner.box_emptying.safety_effects import (
+    SafetyDecisionCoverageEffectService,
+)
+from testbed.planner.box_emptying.safety_interlock import (
+    BoxEmptyingSafetyInterlock,
+    SafetyActionDecision,
+    SafetyInterlockConfig,
 )
 from testbed.planner.primitive.compatibility.cell_entry import (
     PrimitiveCellEntryCompatibilityRuntimeState,
 )
-from testbed.planner.primitive.coverage.selection import CoverageCorridorState
-from testbed.planner.primitive.coverage.config import PrimitiveCoverageStaticConfig
-from testbed.planner.primitive.coverage.selection_runtime import (
-    PrimitiveCoverageSelectionRuntime,
-    PrimitiveCoverageSelectionRuntimePorts as CoverageSelectionBoundaryPorts,
+from testbed.planner.primitive.config.adapter import (
+    PrimitivePlannerAdapterConfigInputs,
+    PrimitivePlannerAdapterConfigNormalizer,
+    PrimitivePlannerAdapterConfigState,
+)
+from testbed.planner.primitive.coverage.config import (
+    CoverageExecutionLibraryConfig,
+    PrimitiveCoverageStaticConfig,
+)
+from testbed.planner.primitive.coverage.effect_runtime import (
+    PrimitiveCoverageEffectRuntime,
+)
+from testbed.planner.primitive.coverage.effect_runtime import (
+    PrimitiveCoverageEffectRuntimePorts as CoverageEffectBoundaryPorts,
+)
+from testbed.planner.primitive.coverage.execution_handoff_guard import (
+    CoverageExecutionHandoffGuardService,
+)
+from testbed.planner.primitive.coverage.plan_readiness import (
+    CoverageFirstPlanPoseStabilityService,
 )
 from testbed.planner.primitive.coverage.report_runtime import (
     PrimitiveCoverageReportRuntime,
+)
+from testbed.planner.primitive.coverage.report_runtime import (
     PrimitiveCoverageReportRuntimePorts as CoverageReportBoundaryPorts,
 )
+from testbed.planner.primitive.coverage.selection_runtime import (
+    PrimitiveCoverageSelectionRuntime,
+)
+from testbed.planner.primitive.coverage.selection_runtime import (
+    PrimitiveCoverageSelectionRuntimePorts as CoverageSelectionBoundaryPorts,
+)
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
-from testbed.planner.primitive.coverage.effect_runtime import (
-    PrimitiveCoverageEffectRuntime,
-    PrimitiveCoverageEffectRuntimePorts as CoverageEffectBoundaryPorts,
+from testbed.planner.primitive.coverage.wall_safety import (
+    CoverageWallSafetyConfig,
+    CoverageWallSafetyPrePolicyGuard,
+    CoverageWallSafetyPrePolicyGuardPorts,
 )
-from testbed.planner.primitive.execution.action_dispatch import (
-    PrimitiveActionDispatchPorts,
-    PrimitiveActionDispatchService,
-)
-from testbed.planner.primitive.execution.runtime import (
-    PrimitiveExecutionRuntime,
-    PrimitiveExecutionRuntimePorts,
-)
-from testbed.planner.primitive.execution.tick_finalization import (
-    PrimitiveTickFinalizationRuntime,
-    PrimitiveTickFinalizationRuntimePorts,
+from testbed.planner.primitive.decision.backends.legacy_fsm import (
+    LegacyFSMDecisionBackendFactory,
+    LegacyFSMDecisionBackendFactoryPorts,
 )
 from testbed.planner.primitive.decision.runtime import (
     LEGACY_FSM_DECISION_BACKEND_NAME,
@@ -55,50 +79,47 @@ from testbed.planner.primitive.decision.runtime import (
     PrimitiveDecisionRuntimeConfig,
     PrimitiveDecisionRuntimePorts,
 )
-from testbed.planner.primitive.decision.backends.legacy_fsm import (
-    LegacyFSMDecisionBackendFactory,
-    LegacyFSMDecisionBackendFactoryPorts,
+from testbed.planner.primitive.effects.bounded_dig_probe_stop import (
+    BoundedDigProbeStopConfig,
+    BoundedDigProbeStopContract,
 )
-from testbed.planner.primitive.execution.dig_recovery import (
-    PrimitiveDigRecoveryPorts,
-    PrimitiveDigRecoveryService,
+from testbed.planner.primitive.effects.carry_start_envelope import (
+    CarryStartEnvelopeGate,
+    CarryStartEnvelopeGateConfig,
+)
+from testbed.planner.primitive.effects.functional_cycle_gate import (
+    FUNCTIONAL_TERMINAL_REASON,
+    FunctionalCycleGate,
+    FunctionalCycleGateConfig,
+)
+from testbed.planner.primitive.effects.requested import (
+    PrimitiveRequestedEffectRuntime,
+    PrimitiveRequestedEffectRuntimePorts,
+)
+from testbed.planner.primitive.effects.return_handoff_runtime import (
+    PrimitiveReturnHandoffRuntime,
+    PrimitiveReturnHandoffRuntimePorts,
+)
+from testbed.planner.primitive.execution.action_dispatch import (
+    PrimitiveActionDispatchPorts,
+    PrimitiveActionDispatchService,
+)
+from testbed.planner.primitive.execution.boundary_event import (
+    PrimitiveBoundaryEventRuntimePorts,
+    PrimitiveBoundaryEventRuntimeService,
+)
+from testbed.planner.primitive.execution.cycle_state import (
+    PrimitiveCycleReportStatus,
+    PrimitiveCycleRuntimeState,
 )
 from testbed.planner.primitive.execution.dig_progress import (
     PrimitiveDigProgressRuntimeConfig,
     PrimitiveDigProgressRuntimePorts,
     PrimitiveDigProgressRuntimeService,
 )
-from testbed.planner.primitive.effects.requested import (
-    PrimitiveRequestedEffectRuntime,
-    PrimitiveRequestedEffectRuntimePorts,
-)
-from testbed.planner.primitive.execution.skill_lifecycle import (
-    PrimitiveSkillLifecyclePorts,
-    PrimitiveSkillLifecycleService,
-)
-from testbed.planner.primitive.execution.reset_lifecycle import (
-    PrimitiveResetLifecyclePorts,
-    PrimitiveResetLifecycleService,
-    PrimitiveResetLifecycleState,
-)
-from testbed.planner.primitive.shell.runtime_kernel import (
-    PrimitivePlannerPublicRuntime,
-    PrimitivePlannerPublicRuntimePorts,
-)
-from testbed.planner.primitive.execution.cycle_state import (
-    PrimitiveCycleReportStatus,
-    PrimitiveCycleRuntimeState,
-)
-from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
-from testbed.planner.primitive.execution.return_state import (
-    PrimitiveReturnReportStatus,
-    PrimitiveReturnRuntimeState,
-)
-from testbed.planner.primitive.execution.scripted_bootstrap import (
-    PrimitiveScriptedBootstrapReportStatus,
-    PrimitiveScriptedBootstrapRuntimeConfig,
-    PrimitiveScriptedBootstrapRuntimeService,
-    PrimitiveScriptedBootstrapRuntimeState,
+from testbed.planner.primitive.execution.dig_recovery import (
+    PrimitiveDigRecoveryPorts,
+    PrimitiveDigRecoveryService,
 )
 from testbed.planner.primitive.execution.pre_dig_align import (
     PrimitivePreDigAlignPorts,
@@ -106,14 +127,52 @@ from testbed.planner.primitive.execution.pre_dig_align import (
     PrimitivePreDigAlignRuntimeService,
     PrimitivePreDigAlignRuntimeState,
 )
-from testbed.planner.primitive.token.state import (
-    PrimitiveTokenRuntimeState,
+from testbed.planner.primitive.execution.reset_lifecycle import (
+    PrimitiveResetLifecyclePorts,
+    PrimitiveResetLifecycleService,
+    PrimitiveResetLifecycleState,
 )
-import testbed.planner.primitive.config.adapter as adapter_config
-from testbed.planner.primitive.config.adapter import (
-    PrimitivePlannerAdapterConfigInputs,
-    PrimitivePlannerAdapterConfigNormalizer,
-    PrimitivePlannerAdapterConfigState,
+from testbed.planner.primitive.execution.return_state import (
+    PrimitiveReturnReportStatus,
+    PrimitiveReturnRuntimeState,
+)
+from testbed.planner.primitive.execution.runtime import (
+    PrimitiveExecutionRuntime,
+    PrimitiveExecutionRuntimePorts,
+)
+from testbed.planner.primitive.execution.scripted_bootstrap import (
+    PrimitiveScriptedBootstrapReportStatus,
+    PrimitiveScriptedBootstrapRuntimeConfig,
+    PrimitiveScriptedBootstrapRuntimeService,
+    PrimitiveScriptedBootstrapRuntimeState,
+)
+from testbed.planner.primitive.execution.skill_lifecycle import (
+    PrimitiveSkillLifecyclePorts,
+    PrimitiveSkillLifecycleService,
+)
+from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
+from testbed.planner.primitive.execution.tick_finalization import (
+    PrimitiveTickFinalizationRuntime,
+    PrimitiveTickFinalizationRuntimePorts,
+)
+from testbed.planner.primitive.facts.capabilities import (
+    BootstrapStatus,
+    PrimitiveObservationFacts,
+)
+from testbed.planner.primitive.facts.observation import (
+    PrimitiveObservationInjectionRuntimeState,
+)
+from testbed.planner.primitive.report.runtime import (
+    PrimitiveReportCompositionPorts,
+    PrimitiveReportCompositionRuntime,
+)
+from testbed.planner.primitive.shell.runtime_kernel import (
+    PrimitivePlannerPublicRuntime,
+    PrimitivePlannerPublicRuntimePorts,
+)
+from testbed.planner.primitive.token.factory import (
+    PrimitiveTokenPlannerFactory,
+    PrimitiveTokenPlannerFactoryConfig,
 )
 from testbed.planner.primitive.token.observation_runtime import (
     PrimitiveTokenObservationRuntime,
@@ -126,26 +185,14 @@ from testbed.planner.primitive.token.planning_runtime import (
 from testbed.planner.primitive.token.residual_cut_intent_source import (
     build_residual_cut_intent_plan_provider_from_source_path,
 )
-from testbed.planner.primitive.token.factory import (
-    PrimitiveTokenPlannerFactory,
-    PrimitiveTokenPlannerFactoryConfig,
-)
-from testbed.planner.primitive.facts.observation import (
-    PrimitiveObservationInjectionRuntimeState,
-)
-from testbed.planner.primitive.report.runtime import (
-    PrimitiveReportCompositionPorts,
-    PrimitiveReportCompositionRuntime,
-    TRANSITION_POLICY_MODE_PRIMITIVE,
-    TRANSITION_SOURCE_PRIMITIVE_RETURN_POLICY,
-)
-from testbed.planner.primitive.effects.return_handoff_runtime import (
-    PrimitiveReturnHandoffRuntime,
-    PrimitiveReturnHandoffRuntimePorts,
+from testbed.planner.primitive.token.state import (
+    PrimitiveTokenRuntimeState,
 )
 from testbed.policies.base import Policy, register_policy
 from testbed.policies.hybrid.adapter import HYBRID_MODE_TRANSITION, HYBRID_MODE_WORK
-
+from testbed.policies.hybrid.box_emptying_runtime import (
+    build_box_emptying_residual_plan_service,
+)
 
 PRIMITIVE_SKILL_NAMES = ("dig", "carry", "dump", "return")
 PRIMITIVE_SKILL_IDS = {name: index for index, name in enumerate(PRIMITIVE_SKILL_NAMES)}
@@ -239,6 +286,7 @@ class PrimitivePlannerACTPolicy(Policy):
         cell_entry_low_productivity_payload_gain_kg: float = 100.0,
         dig_cut_planner: dict[str, Any] | None = None,
         return_target_planner: dict[str, Any] | None = None,
+        box_emptying: dict[str, Any] | None = None,
         scripted_bootstrap_target_qpos: list[float] | tuple[float, ...] | np.ndarray | None = None,
         scripted_bootstrap_kp: float = 2.0,
         scripted_bootstrap_kd: float = 0.25,
@@ -325,6 +373,7 @@ class PrimitivePlannerACTPolicy(Policy):
             cell_entry_low_productivity_payload_gain_kg=cell_entry_low_productivity_payload_gain_kg,
             dig_cut_planner=dig_cut_planner,
             return_target_planner=return_target_planner,
+            box_emptying=box_emptying,
             scripted_bootstrap_target_qpos=scripted_bootstrap_target_qpos,
             scripted_bootstrap_kp=scripted_bootstrap_kp,
             scripted_bootstrap_kd=scripted_bootstrap_kd,
@@ -356,9 +405,37 @@ class PrimitivePlannerACTPolicy(Policy):
             self._primitive_return_handoff_config = (
                 config_state.return_handoff_readiness_config
             )
+        box_config = dict(getattr(self, "box_emptying_cfg", {}) or {})
+        if bool(
+            dict(box_config.get("carry_start_envelope", {}) or {}).get(
+                "enabled",
+                False,
+            )
+        ):
+            self._carry_start_envelope_gate()
+        if bool(
+            dict(box_config.get("functional_cycle_gate", {}) or {}).get(
+                "enabled",
+                False,
+            )
+        ):
+            self._functional_cycle_gate()
+        probe_config = (
+            BoundedDigProbeStopConfig.from_box_emptying_mapping(box_config)
+        )
+        if probe_config.enabled:
+            self.__dict__["_bounded_dig_probe_stop_state"] = (
+                BoundedDigProbeStopContract(probe_config)
+            )
 
     def reset(self) -> None:
         self._primitive_runtime_kernel_runtime().reset()
+        self._reset_box_safety_interlock()
+        self._reset_box_emptying_plan_service()
+        self._reset_box_emptying_runtime_monitor()
+        self._reset_carry_start_envelope_gate()
+        self._reset_functional_cycle_gate()
+        self._reset_bounded_dig_probe_stop()
 
     def _primitive_runtime_kernel_runtime_ports(
         self,
@@ -610,6 +687,16 @@ class PrimitivePlannerACTPolicy(Policy):
                 )
             ),
             pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
+            action_interlock=(
+                self._box_safety_filter_action
+                if bool(getattr(self, "box_emptying_safety_enabled", False))
+                else None
+            ),
+            pre_policy_action=(
+                self._box_safety_pre_policy_action
+                if bool(getattr(self, "box_emptying_safety_enabled", False))
+                else None
+            ),
         )
 
     def _decision_runtime(self) -> PrimitiveDecisionRuntime:
@@ -636,6 +723,17 @@ class PrimitivePlannerACTPolicy(Policy):
             pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
             pre_dig_align_service=(
                 self._primitive_pre_dig_align_runtime_service()
+            ),
+            dig_transition_status_gate=(
+                self._carry_start_envelope_gate().apply
+            ),
+            return_transition_status_gate=(
+                lambda obs, status: self._functional_cycle_gate().apply(
+                    status,
+                    cycle_index=int(
+                        self._primitive_cycle_runtime_state().cycle_index
+                    ),
+                )
             ),
         )
         return PrimitiveDecisionRuntime.from_ports(
@@ -702,7 +800,504 @@ class PrimitivePlannerACTPolicy(Policy):
         return self._primitive_runtime_kernel_runtime().predict(obs)
 
     def debug_state(self) -> dict[str, Any]:
-        return self._primitive_runtime_kernel_runtime().debug_state()
+        report = self._primitive_runtime_kernel_runtime().debug_state()
+        if hasattr(self, "coverage_candidate_layout"):
+            coverage_state = self._coverage_runtime_state()
+            active_corridor = coverage_state.active_corridor()
+            report["planned_cut_cell_id"] = (
+                -1 if active_corridor is None else int(active_corridor.cell_id)
+            )
+            execution_config = getattr(
+                self,
+                "coverage_execution_library_config",
+                CoverageExecutionLibraryConfig(),
+            )
+            if execution_config.enabled:
+                pose_stability = (
+                    CoverageFirstPlanPoseStabilityService(
+                        config=execution_config.first_plan_pose_stability,
+                        state=coverage_state,
+                    )
+                )
+                report.update(
+                    {
+                        "coverage_execution_library_enabled": True,
+                        "coverage_execution_library_path": str(
+                            execution_config.path
+                        ),
+                        "coverage_execution_library_sha256": str(
+                            execution_config.artifact_sha256
+                        ),
+                        "coverage_execution_exemplar_id": str(
+                            coverage_state.coverage_active_execution_exemplar_id
+                        ),
+                        "coverage_execution_corridor_id": int(
+                            coverage_state.active_execution_corridor_id()
+                        ),
+                        "coverage_effect_outcome_cell_id": int(
+                            coverage_state.coverage_active_effect_outcome_cell_id
+                        ),
+                        "coverage_return_envelope_cell_id": int(
+                            coverage_state.coverage_active_return_envelope_cell_id
+                        ),
+                        "coverage_execution_raw_fields_sha256": str(
+                            coverage_state.coverage_active_execution_raw_fields_sha256
+                        ),
+                        "coverage_execution_tail_plane_depth_reserve_m": float(
+                            coverage_state.coverage_active_execution_tail_plane_depth_reserve_m
+                        ),
+                        **dict(
+                            coverage_state.coverage_active_execution_trace
+                        ),
+                        **pose_stability.debug_fields(),
+                    }
+                )
+        if bool(getattr(self, "box_emptying_safety_enabled", False)):
+            report.update(self._box_safety_interlock().debug_fields())
+        carry_start_gate = self.__dict__.get(
+            "_carry_start_envelope_gate_state"
+        )
+        if carry_start_gate is not None:
+            report.update(carry_start_gate.debug_fields())
+        functional_gate = self.__dict__.get("_functional_cycle_gate_state")
+        if functional_gate is not None:
+            report.update(functional_gate.debug_fields())
+        bounded_probe = self.__dict__.get(
+            "_bounded_dig_probe_stop_state"
+        )
+        if bounded_probe is not None:
+            report.update(bounded_probe.debug_fields())
+        plan_service = self.__dict__.get(
+            "_box_emptying_residual_plan_service_state"
+        )
+        if plan_service is not None:
+            report.update(plan_service.debug_fields())
+            report["box_residual_active_cell_id"] = int(
+                plan_service.active_cell_id
+            )
+        elif hasattr(self, "box_emptying_cfg"):
+            report["box_residual_active_cell_id"] = -1
+        return report
+
+    def _carry_start_envelope_gate(self) -> CarryStartEnvelopeGate:
+        state = self.__dict__.get("_carry_start_envelope_gate_state")
+        if state is None:
+            values = dict(
+                getattr(self, "box_emptying_cfg", {}).get(
+                    "carry_start_envelope",
+                    {},
+                )
+                or {}
+            )
+            state = CarryStartEnvelopeGate.from_config(
+                CarryStartEnvelopeGateConfig.from_mapping(values)
+            )
+            self.__dict__["_carry_start_envelope_gate_state"] = state
+        return state
+
+    def _reset_carry_start_envelope_gate(self) -> None:
+        state = self.__dict__.get("_carry_start_envelope_gate_state")
+        if state is not None:
+            state.reset()
+
+    def _functional_cycle_gate(self) -> FunctionalCycleGate:
+        state = self.__dict__.get("_functional_cycle_gate_state")
+        if state is None:
+            values = dict(
+                getattr(self, "box_emptying_cfg", {}).get(
+                    "functional_cycle_gate",
+                    {},
+                )
+                or {}
+            )
+            state = FunctionalCycleGate(
+                FunctionalCycleGateConfig.from_mapping(values)
+            )
+            self.__dict__["_functional_cycle_gate_state"] = state
+        return state
+
+    def _reset_functional_cycle_gate(self) -> None:
+        state = self.__dict__.get("_functional_cycle_gate_state")
+        if state is not None:
+            state.reset()
+
+    def _bounded_dig_probe_stop(self) -> BoundedDigProbeStopContract:
+        state = self.__dict__.get("_bounded_dig_probe_stop_state")
+        if state is None:
+            config = BoundedDigProbeStopConfig.from_box_emptying_mapping(
+                dict(getattr(self, "box_emptying_cfg", {}) or {})
+            )
+            state = BoundedDigProbeStopContract(config)
+            self.__dict__["_bounded_dig_probe_stop_state"] = state
+        return state
+
+    def _reset_bounded_dig_probe_stop(self) -> None:
+        state = self.__dict__.get("_bounded_dig_probe_stop_state")
+        if state is not None:
+            state.reset()
+
+    def _box_emptying_runtime_monitor(
+        self,
+    ) -> BoxEmptyingRuntimeMonitor | None:
+        if not bool(getattr(self, "box_emptying_planner_enabled", False)):
+            return None
+        state = self.__dict__.get("_box_emptying_runtime_monitor_state")
+        if state is None:
+            values = dict(
+                getattr(self, "box_emptying_cfg", {}).get("monitor", {}) or {}
+            )
+            state = BoxEmptyingRuntimeMonitor(RuntimeMonitorConfig(**values))
+            self.__dict__["_box_emptying_runtime_monitor_state"] = state
+        return state
+
+    def _reset_box_emptying_runtime_monitor(self) -> None:
+        state = self.__dict__.get("_box_emptying_runtime_monitor_state")
+        if state is not None:
+            state.reset()
+
+    def _box_emptying_plan_service(
+        self,
+    ) -> BoxEmptyingResidualPlanService | None:
+        if not bool(getattr(self, "box_emptying_planner_enabled", False)):
+            return None
+        state = self.__dict__.get(
+            "_box_emptying_residual_plan_service_state"
+        )
+        if state is None:
+            state = build_box_emptying_residual_plan_service(
+                dict(getattr(self, "box_emptying_cfg", {}) or {})
+            )
+            self.__dict__["_box_emptying_residual_plan_service_state"] = state
+        return state
+
+    def _reset_box_emptying_plan_service(self) -> None:
+        state = self.__dict__.get(
+            "_box_emptying_residual_plan_service_state"
+        )
+        if state is not None:
+            state.reset()
+
+    def _box_safety_interlock(self) -> BoxEmptyingSafetyInterlock:
+        state = self.__dict__.get("_box_emptying_safety_interlock")
+        if state is None:
+            safety_values = dict(
+                getattr(self, "box_emptying_cfg", {}).get("safety", {}) or {}
+            )
+            safety_values.pop("action_dim", None)
+            state = BoxEmptyingSafetyInterlock(
+                SafetyInterlockConfig(
+                    action_dim=int(self.action_dim),
+                    **safety_values,
+                )
+            )
+            self.__dict__["_box_emptying_safety_interlock"] = state
+        return state
+
+    def _reset_box_safety_interlock(self) -> None:
+        state = self.__dict__.get("_box_emptying_safety_interlock")
+        if state is not None:
+            state.reset()
+
+    def _box_safety_filter_action(
+        self,
+        obs: dict[str, Any],
+        proposed_action: np.ndarray,
+    ) -> np.ndarray:
+        interlock = self._box_safety_interlock()
+        carry_start_gate = self.__dict__.get(
+            "_carry_start_envelope_gate_state"
+        )
+        if (
+            carry_start_gate is not None
+            and carry_start_gate.timeout_requested()
+        ):
+            interlock.request_neutral_event(
+                step_id=int(obs.get("step_id", -1)),
+                reason="carry_start_envelope_timeout",
+                terminal=True,
+            )
+        functional_gate = self.__dict__.get(
+            "_functional_cycle_gate_state"
+        )
+        if (
+            functional_gate is not None
+            and functional_gate.terminal_neutral_requested()
+        ):
+            interlock.request_neutral_event(
+                step_id=int(obs.get("step_id", -1)),
+                reason=FUNCTIONAL_TERMINAL_REASON,
+                terminal=True,
+            )
+        cycle_state = self._primitive_cycle_runtime_state()
+        if int(cycle_state.transition_timeout_count) > 0:
+            interlock.request_neutral_event(
+                step_id=int(obs.get("step_id", -1)),
+                reason="timeout",
+                terminal=True,
+            )
+        monitor = self._box_emptying_runtime_monitor()
+        if monitor is not None:
+            monitor_decision = monitor.observe(
+                obs,
+                cycle_index=int(cycle_state.cycle_index),
+            )
+            plan_service = self.__dict__.get(
+                "_box_emptying_residual_plan_service_state"
+            )
+            latest = monitor.latest_stable_outcome()
+            if plan_service is not None and latest is not None:
+                signed_delta, payload = latest
+                plan_service.record_previous_outcome(
+                    signed_depth_delta_m=signed_delta,
+                    payload_gain_kg=payload,
+                )
+            if monitor_decision.stop:
+                interlock.request_neutral_event(
+                    step_id=int(obs.get("step_id", -1)),
+                    reason=monitor_decision.reason,
+                    terminal=True,
+                )
+            elif (
+                monitor_decision.dump_before_stop
+                and str(self._skill_name) != "dump"
+            ):
+                interlock.request_neutral_event(
+                    step_id=int(obs.get("step_id", -1)),
+                    reason="empty_box_dump_pending",
+                    terminal=False,
+                    next_skill="dump",
+                )
+        coverage_state = self._coverage_runtime_state()
+        active_corridor_id = int(coverage_state.coverage_active_corridor_id)
+        active_cell_id = self._box_safety_active_cell_id(
+            obs,
+            active_corridor_id=active_corridor_id,
+        )
+        plan_service = self.__dict__.get(
+            "_box_emptying_residual_plan_service_state"
+        )
+        if plan_service is not None and plan_service.active_cell_id >= 0:
+            active_cell_id = int(plan_service.active_cell_id)
+            active_corridor_id = int(plan_service.active_corridor_numeric_id)
+        decision = interlock.filter_action(
+            obs,
+            proposed_action,
+            active_cell_id=active_cell_id,
+            active_corridor_id=active_corridor_id,
+            skill_name=str(self._skill_name),
+        )
+        bounded_probe = self.__dict__.get(
+            "_bounded_dig_probe_stop_state"
+        )
+        if bounded_probe is not None:
+            step_id = int(obs.get("step_id", -1))
+            decision = bounded_probe.apply_after_safety_decision(
+                decision,
+                step_id=step_id,
+                cycle_index=int(cycle_state.cycle_index),
+                dig_step_count=int(cycle_state.dig_step_count),
+                envelope_ready=bool(
+                    carry_start_gate is not None
+                    and carry_start_gate.debug_fields().get(
+                        "carry_start_envelope_ready",
+                        False,
+                    )
+                ),
+                request_terminal_neutral=(
+                    lambda reason: interlock.request_neutral_event(
+                        step_id=step_id,
+                        reason=reason,
+                        terminal=True,
+                    )
+                ),
+                refilter_after_request=(
+                    lambda: interlock.filter_action(
+                        obs,
+                        proposed_action,
+                        active_cell_id=active_cell_id,
+                        active_corridor_id=active_corridor_id,
+                        skill_name=str(self._skill_name),
+                    )
+                ),
+            )
+        self._apply_box_safety_decision(decision)
+        return decision.action
+
+    def _box_safety_pre_policy_action(
+        self,
+        obs: dict[str, Any],
+    ) -> np.ndarray | None:
+        coverage_state = self._coverage_runtime_state()
+        active_corridor_id = int(coverage_state.coverage_active_corridor_id)
+        active_cell_id = self._box_safety_active_cell_id(
+            obs,
+            active_corridor_id=active_corridor_id,
+        )
+        plan_service = self.__dict__.get(
+            "_box_emptying_residual_plan_service_state"
+        )
+        if plan_service is not None and plan_service.active_corridor_numeric_id >= 0:
+            active_corridor_id = int(plan_service.active_corridor_numeric_id)
+        decision = self._box_safety_interlock().pre_policy_decision(
+            obs,
+            active_cell_id=active_cell_id,
+            active_corridor_id=active_corridor_id,
+            skill_name=str(self._skill_name),
+        )
+        if decision is None:
+            timeout_reason = (
+                self._coverage_execution_handoff_guard()
+                .exact_envelope_timeout_reason(
+                    skill_name=str(self._skill_name),
+                    exact_contract_required=bool(
+                        self._primitive_token_runtime_state()
+                        .pending_dig_exact_start_contract_required
+                    ),
+                    return_step_count=int(
+                        self._primitive_return_runtime_state()
+                        .return_step_count
+                    ),
+                    return_max_steps=int(self.return_max_steps),
+                )
+            )
+            if timeout_reason is not None:
+                return np.asarray(
+                    self._coverage_wall_safety_terminal_neutral_action(
+                        obs,
+                        timeout_reason,
+                    ),
+                    dtype=np.float32,
+                ).reshape(int(self.action_dim))
+            wall_action = self._coverage_wall_safety_pre_policy_guard().apply(
+                obs
+            )
+            if wall_action is None:
+                return None
+            return np.asarray(wall_action, dtype=np.float32).reshape(
+                int(self.action_dim)
+            )
+        self._apply_box_safety_decision(decision)
+        return decision.action
+
+    def _coverage_wall_safety_pre_policy_guard(
+        self,
+    ) -> CoverageWallSafetyPrePolicyGuard:
+        token_runtime = self._primitive_token_observation_runtime()
+        return CoverageWallSafetyPrePolicyGuard(
+            CoverageWallSafetyPrePolicyGuardPorts(
+                config=self.coverage_wall_safety_config,
+                current_skill_name=lambda: str(self._skill_name),
+                ensure_dig_plan=token_runtime.ensure_dig_cut_plan_for_cycle,
+                ensure_return_plan=(
+                    token_runtime.ensure_return_target_plan_for_cycle
+                ),
+                terminal_neutral_action=(
+                    self._coverage_wall_safety_terminal_neutral_action
+                ),
+            )
+        )
+
+    def _coverage_wall_safety_terminal_neutral_action(
+        self,
+        obs: dict[str, Any],
+        reason: str,
+    ) -> np.ndarray:
+        decision = self._box_safety_interlock().request_terminal_neutral_action(
+            obs,
+            reason=reason,
+            active_cell_id=-1,
+            active_corridor_id=-1,
+            skill_name=str(self._skill_name),
+        )
+        self._apply_box_safety_decision(decision)
+        return decision.action
+
+    def _box_safety_active_cell_id(
+        self,
+        obs: dict[str, Any],
+        *,
+        active_corridor_id: int,
+    ) -> int:
+        env_state = np.asarray(obs.get("env_state", []), dtype=np.float32).reshape(-1)
+        if env_state.size > ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX:
+            cell_id = int(round(env_state[ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX]))
+            if 0 <= cell_id < 6:
+                return cell_id
+        corridor = self._coverage_runtime_state().corridor_by_id(
+            active_corridor_id
+        )
+        return -1 if corridor is None else int(corridor.cell_id)
+
+    def _apply_box_safety_decision(
+        self,
+        decision: SafetyActionDecision,
+    ) -> None:
+        functional_gate = self.__dict__.get(
+            "_functional_cycle_gate_state"
+        )
+        if functional_gate is not None:
+            functional_gate.observe_safety_decision(decision)
+        bounded_probe = self.__dict__.get(
+            "_bounded_dig_probe_stop_state"
+        )
+        if bounded_probe is not None:
+            bounded_probe.observe_safety_decision(
+                decision,
+                cycle_index=int(
+                    self._primitive_cycle_runtime_state().cycle_index
+                ),
+            )
+            if bounded_probe.terminal_stop_requested():
+                self._primitive_coverage_effect_runtime().request_coverage_terminal_stop(
+                    bounded_probe.terminal_stop_reason(),
+                    replace=True,
+                )
+                return
+        if decision.terminal:
+            self._primitive_coverage_effect_runtime().request_coverage_terminal_stop(
+                f"box_safety:{decision.reason}",
+                replace=True,
+            )
+            return
+        if not decision.neutral_acknowledged:
+            return
+        SafetyDecisionCoverageEffectService(
+            coverage_state=self._coverage_runtime_state(),
+            residual_plan_service=self.__dict__.get(
+                "_box_emptying_residual_plan_service_state"
+            ),
+        ).apply(decision)
+        recovery_initial_ack = bool(
+            decision.event_id >= 0
+            and decision.hard_bottom_recovery_active
+            and decision.reason
+            in {
+                "hard_bottom_contact_neutral_acknowledged",
+                "depth_exhausted_cell_guard_neutral_acknowledged",
+                "hard_bottom_depth_budget_guard_neutral_acknowledged",
+            }
+        )
+        if decision.replan:
+            runtime = (
+                self._primitive_token_observation_runtime()
+                .primitive_token_runtime()
+            )
+            if decision.event_id >= 0:
+                runtime.invalidate_return_plan()
+            else:
+                runtime.invalidate_pending_dig_cut_plan()
+            runtime.clear_dig_cut_plan()
+        if recovery_initial_ack:
+            self._restart_skill(decision.reason)
+            self._box_safety_interlock().mark_policy_restarted(
+                decision.event_id
+            )
+            return
+        if decision.next_skill:
+            if str(decision.next_skill) == str(self._skill_name):
+                self._restart_skill(decision.reason)
+            else:
+                self._set_skill(decision.next_skill, decision.reason)
 
     def _primitive_coverage_static_config(self) -> PrimitiveCoverageStaticConfig:
         return PrimitiveCoverageStaticConfig(
@@ -773,6 +1368,16 @@ class PrimitivePlannerACTPolicy(Policy):
             global_low_productivity_stop=int(
                 self.coverage_global_low_productivity_stop
             ),
+            wall_safety=getattr(
+                self,
+                "coverage_wall_safety_config",
+                CoverageWallSafetyConfig(),
+            ),
+            execution_library=getattr(
+                self,
+                "coverage_execution_library_config",
+                CoverageExecutionLibraryConfig(),
+            ),
         )
 
     def _primitive_coverage_report_runtime_ports(
@@ -834,31 +1439,57 @@ class PrimitivePlannerACTPolicy(Policy):
                 lambda: bool(self.pre_dig_align_replan_after_failed_dig)
             ),
             pre_dig_align_entry_intent_controlled_dims=(
-                lambda: self.pre_dig_align_entry_intent_controlled_dims
+                lambda: getattr(
+                    self,
+                    "pre_dig_align_entry_intent_controlled_dims",
+                    None,
+                )
             ),
             pre_dig_align_surface_guard_enabled=(
                 lambda: bool(self.pre_dig_align_surface_guard_enabled)
             ),
             pre_dig_align_active_for_next_dig=(
-                lambda: self._primitive_pre_dig_align_runtime_service()
+                lambda: bool(
+                    getattr(self, "pre_dig_align_enabled", False)
+                )
+                and self._primitive_pre_dig_align_runtime_service()
                 .should_pre_dig_align_before_dig()
             ),
             pre_dig_align_first_dig_entry_close_handoff=(
-                lambda: bool(self.pre_dig_align_first_dig_entry_close_handoff)
+                lambda: bool(
+                    getattr(
+                        self,
+                        "pre_dig_align_first_dig_entry_close_handoff",
+                        False,
+                    )
+                )
             ),
             pre_dig_align_entry_intent_handoff_enabled=(
-                lambda: bool(self.pre_dig_align_entry_intent_handoff_enabled)
+                lambda: bool(
+                    getattr(
+                        self,
+                        "pre_dig_align_entry_intent_handoff_enabled",
+                        False,
+                    )
+                )
             ),
             pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max=(
                 lambda: (
-                    self.pre_dig_align_first_dig_entry_close_handoff_qvel_abs_max
+                    getattr(
+                        self,
+                        (
+                            "pre_dig_align_first_dig_entry_close_"
+                            "handoff_qvel_abs_max"
+                        ),
+                        None,
+                    )
                 )
             ),
             pre_dig_align_controlled_dims=(
-                lambda: self.pre_dig_align_controlled_dims
+                lambda: getattr(self, "pre_dig_align_controlled_dims", [])
             ),
             pre_dig_align_bucket_target_qpos=(
-                lambda: self.pre_dig_align_bucket_target_qpos
+                lambda: getattr(self, "pre_dig_align_bucket_target_qpos", 0.0)
             ),
             action_dim=lambda: int(getattr(self, "action_dim", 4)),
             goal_sector_id=self._primitive_token_planner_factory().goal_sector_id,
@@ -948,6 +1579,37 @@ class PrimitivePlannerACTPolicy(Policy):
             ),
             pre_dig_align_skill_name=PRE_DIG_ALIGN_SKILL_NAME,
             dig_skill_name="dig",
+            final_handoff_guard=(
+                lambda obs: (
+                    self._coverage_execution_handoff_guard().evaluate(
+                        obs.get("qpos"),
+                        pending_exemplar_id=(
+                            self._primitive_token_runtime_state()
+                            .pending_dig_execution_exemplar_id
+                        ),
+                        pending_raw_fields_sha256=(
+                            self._primitive_token_runtime_state()
+                            .pending_dig_execution_raw_fields_sha256
+                        ),
+                        pending_paired_return_primitive_episode_id=(
+                            self._primitive_token_runtime_state()
+                            .pending_dig_paired_return_primitive_episode_id
+                        ),
+                        pending_return_transition_artifact_sha256=(
+                            self._primitive_token_runtime_state()
+                            .pending_dig_return_transition_artifact_sha256
+                        ),
+                    )
+                )
+            ),
+            request_terminal_neutral=(
+                lambda obs, reason: (
+                    self._coverage_wall_safety_terminal_neutral_action(
+                        obs,
+                        reason,
+                    )
+                )
+            ),
         )
 
     def _primitive_return_handoff_runtime(self) -> PrimitiveReturnHandoffRuntime:
@@ -955,8 +1617,21 @@ class PrimitivePlannerACTPolicy(Policy):
             self._primitive_return_handoff_runtime_ports()
         )
 
+    def _coverage_execution_handoff_guard(
+        self,
+    ) -> CoverageExecutionHandoffGuardService:
+        return CoverageExecutionHandoffGuardService(
+            state=self._coverage_runtime_state(),
+            worktool_config=(
+                self.coverage_execution_library_config.worktool_sweep_3d
+            ),
+        )
+
     def _set_skill(self, skill_name: str, reason: str) -> None:
         self._primitive_skill_lifecycle().set_skill(skill_name, reason)
+
+    def _restart_skill(self, reason: str) -> None:
+        self._primitive_skill_lifecycle().restart_skill(reason)
 
     def _primitive_skill_lifecycle(self) -> PrimitiveSkillLifecycleService:
         return PrimitiveSkillLifecycleService.from_ports(
@@ -1079,7 +1754,36 @@ class PrimitivePlannerACTPolicy(Policy):
     def _should_end_bootstrap(self, *, obs: dict, boundary_event: Any | None) -> bool:
         scripted_bootstrap = self._primitive_scripted_bootstrap_runtime_service()
         if scripted_bootstrap.enabled():
-            return scripted_bootstrap.should_end_bootstrap(obs)
+            if not scripted_bootstrap.should_end_bootstrap(obs):
+                return False
+            execution_config = getattr(
+                self,
+                "coverage_execution_library_config",
+                CoverageExecutionLibraryConfig(),
+            )
+            stability_config = (
+                execution_config.first_plan_pose_stability
+            )
+            if not (
+                execution_config.enabled
+                and stability_config.enabled
+            ):
+                return True
+            observation = PrimitiveObservationFacts.from_obs(
+                obs,
+                action_dim=int(self.action_dim),
+            )
+            readiness = CoverageFirstPlanPoseStabilityService(
+                config=stability_config,
+                state=self._coverage_runtime_state(),
+            ).observe(observation.bucket_tip_dig_area_pose())
+            if readiness.timed_out:
+                self._primitive_coverage_effect_runtime().request_coverage_terminal_stop(
+                    "first_plan_pose_stability_timeout",
+                    replace=True,
+                )
+                return True
+            return bool(readiness.ready)
         observation = PrimitiveObservationFacts.from_obs(
             obs,
             action_dim=int(self.action_dim),
@@ -1450,12 +2154,29 @@ class PrimitivePlannerACTPolicy(Policy):
         )
 
     def _residual_cut_intent_plan_provider(self):
+        plan_service = self._box_emptying_plan_service()
+        if plan_service is not None:
+            return lambda obs: plan_service.plan(
+                obs,
+                target_cycle_index=int(
+                    self._primitive_cycle_runtime_state().cycle_index
+                ),
+            )
         return build_residual_cut_intent_plan_provider_from_source_path(
             str(getattr(self, "residual_cut_intent_source_path", "")),
             cycle_index=lambda: int(self._primitive_cycle_runtime_state().cycle_index),
         )
 
     def _residual_cut_intent_return_target_plan_provider(self):
+        plan_service = self._box_emptying_plan_service()
+        if plan_service is not None:
+            return lambda obs: plan_service.plan(
+                obs,
+                target_cycle_index=int(
+                    self._primitive_cycle_runtime_state().cycle_index
+                )
+                + 1,
+            )
         return build_residual_cut_intent_plan_provider_from_source_path(
             str(getattr(self, "residual_cut_intent_source_path", "")),
             cycle_index=lambda: int(self._primitive_cycle_runtime_state().cycle_index)

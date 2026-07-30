@@ -654,6 +654,7 @@ def eval_policy(config: dict[str, Any]) -> None:
             first_dig_policy_enabled=first_dig_policy is not None,
         )
         return_target_planner_cfg = dict(policy_cfg.get("return_target_planner", {}))
+        box_emptying_cfg = dict(policy_cfg.get("box_emptying", {}))
         pre_dig_align_cfg = dict(policy_cfg.get("pre_dig_align", {}))
         boundary_detector = build_boundary_detector_from_config(
             reward_cfg=reward_cfg,
@@ -849,6 +850,7 @@ def eval_policy(config: dict[str, Any]) -> None:
             ),
             "dig_cut_planner": dig_cut_planner_cfg,
             "return_target_planner": return_target_planner_cfg,
+            "box_emptying": box_emptying_cfg,
             "pre_dig_align": pre_dig_align_cfg,
             "scripted_bootstrap_target_qpos": scripted_bootstrap_cfg.get("target_qpos"),
             "scripted_bootstrap_kp": float(scripted_bootstrap_cfg.get("kp", 2.0)),

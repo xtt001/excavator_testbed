@@ -10,6 +10,17 @@ from typing import Any
 import numpy as np
 
 from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_DIM
+from testbed.planner.box_emptying.bottom_contact_detail import (
+    validate_unity_contact_diagnostic_scope,
+)
+from testbed.planner.box_emptying.wall_contact_detail import (
+    WALL_CONTACT_SESSION_END_CLEAR_TICKS_B2,
+    WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_ALL_CONTACTS,
+    WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_FIRST_SESSION,
+    validate_wall_contact_session_end_clear_ticks,
+    validate_wall_first_touch_mode,
+    validate_wall_high_force_threshold,
+)
 from testbed.planner.cell_entry import (
     CellEntryPlanner,
     CellGridSpec,
@@ -447,6 +458,101 @@ class PrimitivePlannerAdapterConfigNormalizer:
         box_emptying_cfg = set_value(
             "box_emptying_cfg",
             dict(inputs.box_emptying or {}),
+        )
+        box_safety_cfg = dict(box_emptying_cfg.get("safety", {}) or {})
+        diagnostic_ab_enabled = box_safety_cfg.get(
+            "wall_contact_diagnostic_ab_enabled",
+            False,
+        )
+        if not isinstance(diagnostic_ab_enabled, bool):
+            raise ValueError(
+                "box_emptying.safety."
+                "wall_contact_diagnostic_ab_enabled must be a boolean."
+            )
+        diagnostic_observe_only_enabled = box_safety_cfg.get(
+            "wall_contact_diagnostic_observe_only_enabled",
+            False,
+        )
+        if not isinstance(diagnostic_observe_only_enabled, bool):
+            raise ValueError(
+                "box_emptying.safety."
+                "wall_contact_diagnostic_observe_only_enabled "
+                "must be a boolean."
+            )
+        if diagnostic_ab_enabled and diagnostic_observe_only_enabled:
+            raise ValueError(
+                "wall contact diagnostic markers are mutually exclusive"
+            )
+        unity_contact_diagnostic_enabled = box_safety_cfg.get(
+            "unity_contact_diagnostic_observe_only_enabled",
+            False,
+        )
+        wall_first_touch_mode = validate_wall_first_touch_mode(
+            str(box_safety_cfg.get("wall_first_touch_mode", "interrupt"))
+        )
+        if (
+            wall_first_touch_mode
+            == WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_FIRST_SESSION
+            and not diagnostic_ab_enabled
+        ):
+            raise ValueError(
+                "record_bucket_first_session requires "
+                "wall_contact_diagnostic_ab_enabled=true"
+            )
+        if (
+            wall_first_touch_mode
+            == WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_ALL_CONTACTS
+            and not diagnostic_observe_only_enabled
+        ):
+            raise ValueError(
+                "record_bucket_all_contacts requires "
+                "wall_contact_diagnostic_observe_only_enabled=true"
+            )
+        if (
+            diagnostic_observe_only_enabled
+            and wall_first_touch_mode
+            != WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_ALL_CONTACTS
+        ):
+            raise ValueError(
+                "observe-only diagnostic marker requires "
+                "record_bucket_all_contacts mode"
+            )
+        validate_unity_contact_diagnostic_scope(
+            enabled=unity_contact_diagnostic_enabled,
+            backend=box_safety_cfg.get(
+                "unity_contact_diagnostic_backend",
+                "",
+            ),
+            wall_observe_only_enabled=diagnostic_observe_only_enabled,
+            wall_first_touch_mode=wall_first_touch_mode,
+            high_force_n=box_safety_cfg.get(
+                "wall_high_force_n",
+                100_000.0,
+            ),
+        )
+        wall_contact_session_end_clear_ticks = (
+            validate_wall_contact_session_end_clear_ticks(
+                box_safety_cfg.get(
+                    "wall_contact_session_end_clear_ticks",
+                    1,
+                )
+            )
+        )
+        if (
+            wall_contact_session_end_clear_ticks
+            == WALL_CONTACT_SESSION_END_CLEAR_TICKS_B2
+            and not (
+                wall_first_touch_mode
+                == WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_FIRST_SESSION
+                and diagnostic_ab_enabled
+            )
+        ):
+            raise ValueError(
+                "two-clear-tick session semantics requires diagnostic "
+                "record_bucket_first_session mode"
+            )
+        validate_wall_high_force_threshold(
+            float(box_safety_cfg.get("wall_high_force_n", 100_000.0))
         )
         box_emptying_planner_enabled = set_value(
             "box_emptying_planner_enabled",

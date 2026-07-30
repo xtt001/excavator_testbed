@@ -11,6 +11,57 @@ from typing import Any
 import numpy as np
 
 
+def build_box_safety_contact_diagnostic_log_fields(
+    policy_debug: dict[str, Any],
+) -> dict[str, bool | int | str]:
+    """Preserve contact-diagnostic lineage in every rollout step record."""
+
+    return {
+        "box_safety_wall_contact_diagnostic_allowed": bool(
+            policy_debug.get(
+                "box_safety_wall_contact_diagnostic_allowed",
+                False,
+            )
+        ),
+        "box_safety_factory_floor_contact_diagnostic_allowed": bool(
+            policy_debug.get(
+                "box_safety_factory_floor_contact_diagnostic_allowed",
+                False,
+            )
+        ),
+        "box_safety_unity_contact_diagnostic_allowed": bool(
+            policy_debug.get(
+                "box_safety_unity_contact_diagnostic_allowed",
+                False,
+            )
+        ),
+        "box_safety_unity_contact_diagnostic_observe_only_enabled": bool(
+            policy_debug.get(
+                (
+                    "box_safety_unity_contact_diagnostic_"
+                    "observe_only_enabled"
+                ),
+                False,
+            )
+        ),
+        "box_safety_unity_contact_diagnostic_backend": str(
+            policy_debug.get(
+                "box_safety_unity_contact_diagnostic_backend",
+                "",
+            )
+        ),
+        "box_safety_contact_kind": str(
+            policy_debug.get("box_safety_contact_kind", "none")
+        ),
+        "box_safety_wall_contact_session_count": int(
+            policy_debug.get(
+                "box_safety_wall_contact_session_count",
+                0,
+            )
+        ),
+    }
+
+
 def to_jsonable(value: Any) -> Any:
     """Convert numpy-heavy rollout data into JSON-serialisable values."""
     if isinstance(value, dict):

@@ -339,6 +339,7 @@ def _production_static_config(
             action_dim=4,
             dig_cut_planner=policy_config.get("dig_cut_planner"),
             return_target_planner=policy_config.get("return_target_planner"),
+            box_emptying=policy_config.get("box_emptying"),
             pre_dig_align=policy_config.get("pre_dig_align"),
         )
     ).as_policy_field_updates()

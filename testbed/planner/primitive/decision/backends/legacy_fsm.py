@@ -126,6 +126,14 @@ class LegacyFSMDecisionBackendFactoryPorts:
     return_skill_name: str
     pre_dig_align_skill_name: str = "pre_dig_align"
     pre_dig_align_service: PrimitivePreDigAlignDecisionService | None = None
+    dig_transition_status_gate: Callable[
+        [dict[str, Any], DigTransitionStatus],
+        DigTransitionStatus,
+    ] = lambda obs, status: status
+    return_transition_status_gate: Callable[
+        [dict[str, Any], ReturnTransitionStatus],
+        ReturnTransitionStatus,
+    ] = lambda obs, status: status
 
 
 class PrimitiveDecisionBackend(Protocol):
@@ -811,6 +819,12 @@ def _legacy_fsm_branch_ports_from_runtime_ports(
                         return_state=ports.return_state,
                         return_handoff_readiness_service=(
                             ports.return_handoff_readiness_service
+                        ),
+                        dig_transition_status_gate=(
+                            ports.dig_transition_status_gate
+                        ),
+                        return_transition_status_gate=(
+                            ports.return_transition_status_gate
                         ),
                     )
                 )

@@ -20,6 +20,10 @@ from testbed.data.schema import (
     ENV_STATE_DIG_AREA_LONG_AXIS_IDX,
     ENV_STATE_V2_4_DIM,
 )
+from testbed.planner.primitive.config.adapter import (
+    PrimitivePlannerAdapterConfigInputs,
+    PrimitivePlannerAdapterConfigNormalizer,
+)
 from testbed.planner.primitive.coverage.exemplars import (
     CoverageStateExemplarPlanner,
     CoverageStateExemplarPlannerConfig,
@@ -93,6 +97,7 @@ def _wall_policy(
         dig_cut_mode="operator_prior_sweep_belief",
         dig_cut_fallback_mode="raise",
         return_target_enabled=True,
+        box_emptying={"safety_enabled": True, "safety": {}},
     )
     return policy
 
@@ -272,3 +277,128 @@ def test_final_raw_field_guard_rejects_exhausted_physical_swept_cell() -> None:
         "swept_footprint_intersects_depth_exhausted_cell"
     )
     assert error.value.evaluation.depth_exhausted_swept_cell_ids == (5,)
+
+
+def test_enabled_wall_safety_requires_typed_runtime_safety_and_no_fallback() -> None:
+    with pytest.raises(ValueError, match="requires the safety interlock"):
+        PrimitivePlannerAdapterConfigNormalizer.normalize(
+            PrimitivePlannerAdapterConfigInputs(
+                dig_cut_planner={
+                    "enabled": True,
+                    "mode": "operator_prior_sweep_belief",
+                    "prior_path": str(STRICT_PRIOR),
+                    "fallback_mode": "raise",
+                    "coverage": {"wall_safety": WALL_CONFIG},
+                },
+                box_emptying={"safety_enabled": False},
+            )
+        )
+
+    with pytest.raises(ValueError, match="forbids planner fallback"):
+        PrimitivePlannerAdapterConfigNormalizer.normalize(
+            PrimitivePlannerAdapterConfigInputs(
+                dig_cut_planner={
+                    "enabled": True,
+                    "mode": "operator_prior_sweep_belief",
+                    "prior_path": str(STRICT_PRIOR),
+                    "fallback_mode": "conservative_pose",
+                    "coverage": {"wall_safety": WALL_CONFIG},
+                },
+                box_emptying={"safety_enabled": True},
+            )
+        )
+
+
+def test_no_safe_corridor_skips_act_then_zero_action_acknowledges_terminal() -> None:
+    dig_policy = _RecordingPolicy(0)
+    policy = _wall_policy(dig_policy=dig_policy)
+
+    first = policy.predict(_wall_obs(half_scale=0.40, step_id=10))
+    assert (
+        policy._coverage_runtime_state().coverage_terminal_stop_requested
+        is False
+    )
+    second = policy.predict(_wall_obs(half_scale=0.40, step_id=11))
+
+    np.testing.assert_array_equal(first, np.zeros(4, dtype=np.float32))
+    np.testing.assert_array_equal(second, np.zeros(4, dtype=np.float32))
+    assert dig_policy.call_count == 0
+    assert policy._coverage_runtime_state().coverage_terminal_stop_requested is True
+    assert policy._coverage_runtime_state().coverage_terminal_stop_reason == (
+        "box_safety:no_wall_safe_corridor"
+    )
+    assert policy.debug_state()["box_safety_neutral_acknowledged"] is True
+
+
+def test_return_ahead_no_safe_corridor_also_skips_return_act() -> None:
+    return_policy = _RecordingPolicy(3)
+    policy = _wall_policy(return_policy=return_policy)
+    policy._set_skill("return", "unit_test_return_ahead_no_safe")
+
+    first = policy.predict(_wall_obs(half_scale=0.40, step_id=20))
+    assert (
+        policy._coverage_runtime_state().coverage_terminal_stop_requested
+        is False
+    )
+    second = policy.predict(_wall_obs(half_scale=0.40, step_id=21))
+
+    np.testing.assert_array_equal(first, np.zeros(4, dtype=np.float32))
+    np.testing.assert_array_equal(second, np.zeros(4, dtype=np.float32))
+    assert return_policy.call_count == 0
+    assert policy._coverage_runtime_state().coverage_terminal_stop_requested is True
+
+
+def test_exact_return_envelope_timeout_neutralizes_before_return_act() -> None:
+    return_policy = _RecordingPolicy(3)
+    policy = _wall_policy(return_policy=return_policy)
+    policy._set_skill("return", "unit_test_exact_return_timeout")
+    policy._primitive_token_runtime_state().pending_dig_exact_start_contract_required = (
+        True
+    )
+    policy._primitive_return_runtime_state().return_step_count = int(
+        policy.return_max_steps
+    )
+
+    first = policy.predict(_wall_obs(step_id=24))
+    second = policy.predict(_wall_obs(step_id=25))
+
+    np.testing.assert_array_equal(first, np.zeros(4, dtype=np.float32))
+    np.testing.assert_array_equal(second, np.zeros(4, dtype=np.float32))
+    assert return_policy.call_count == 0
+    assert policy._coverage_runtime_state().coverage_terminal_stop_requested is True
+    assert policy._coverage_runtime_state().coverage_terminal_stop_reason == (
+        "box_safety:exact_return_start_envelope_timeout"
+    )
+    assert policy.debug_state()["box_safety_neutral_acknowledged"] is True
+
+
+def test_existing_safety_event_preempts_wall_planning_until_neutral_ack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dig_policy = _RecordingPolicy(0)
+    policy = _wall_policy(dig_policy=dig_policy)
+    calls = {"dig": 0, "return": 0}
+    token_runtime = SimpleNamespace(
+        ensure_dig_cut_plan_for_cycle=(
+            lambda _obs: calls.__setitem__("dig", calls["dig"] + 1)
+        ),
+        ensure_return_target_plan_for_cycle=(
+            lambda _obs: calls.__setitem__("return", calls["return"] + 1)
+        ),
+    )
+    monkeypatch.setattr(
+        policy,
+        "_primitive_token_observation_runtime",
+        lambda: token_runtime,
+    )
+    policy._box_safety_interlock().request_neutral_event(
+        step_id=30,
+        reason="timeout",
+        terminal=True,
+    )
+
+    action = policy.predict(_wall_obs(step_id=31))
+
+    np.testing.assert_array_equal(action, np.zeros(4, dtype=np.float32))
+    assert calls == {"dig": 0, "return": 0}
+    assert dig_policy.call_count == 0

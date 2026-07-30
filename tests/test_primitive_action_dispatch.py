@@ -57,6 +57,8 @@ def _ports(
     completed_dump_count: int = 1,
     scripted_bootstrap_enabled: bool = False,
     pre_dig_align_action: Any | None = None,
+    action_interlock: Any | None = None,
+    pre_policy_action: Any | None = None,
 ) -> PrimitiveActionDispatchPorts:
     execution_state = PrimitiveExecutionRuntimeState.fresh(
         initial_skill_name=skill_name,
@@ -101,6 +103,8 @@ def _ports(
         scripted_bootstrap_enabled=lambda: scripted_bootstrap_enabled,
         scripted_bootstrap_action=scripted_action,
         pre_dig_align_action=pre_dig_align_action or default_pre_dig_align_action,
+        action_interlock=action_interlock,
+        pre_policy_action=pre_policy_action,
     )
 
 
@@ -166,6 +170,72 @@ def test_dispatch_normal_policy_uses_policy_observation_and_shapes_action() -> N
     assert action.tolist() == [1.0, 2.0, 3.0, 4.0]
     assert dig_policy.predicted_obs == {"assembled": obs}
     assert events == ["policy_obs", "predict:dig"]
+
+
+def test_dispatch_applies_optional_safety_interlock_after_policy_prediction() -> None:
+    events: list[str] = []
+
+    def interlock(obs: dict[str, Any], action: np.ndarray) -> np.ndarray:
+        events.append("interlock")
+        assert obs == {"qpos": [1.0]}
+        assert action.tolist() == [1.0, 2.0, 3.0, 4.0]
+        return np.zeros(4, dtype=np.float32)
+
+    service = PrimitiveActionDispatchService.from_ports(
+        _ports(events, skill_name="dig", action_interlock=interlock)
+    )
+
+    action = service.dispatch_action({"qpos": [1.0]})
+
+    assert action.tolist() == [0.0, 0.0, 0.0, 0.0]
+    assert events == ["policy_obs", "predict:dig", "interlock"]
+
+
+def test_dispatch_pre_policy_action_skips_policy_and_post_interlock() -> None:
+    events: list[str] = []
+    dig_policy = _FakePolicy("dig", events)
+
+    def pre_policy_action(obs: dict[str, Any]) -> np.ndarray:
+        events.append("pre_policy_action")
+        assert obs == {"qpos": [1.0]}
+        return np.asarray([0.0, 0.1, -0.2, 0.3], dtype=np.float32)
+
+    def interlock(obs: dict[str, Any], action: np.ndarray) -> np.ndarray:
+        events.append("interlock")
+        return action
+
+    service = PrimitiveActionDispatchService.from_ports(
+        _ports(
+            events,
+            skill_name="dig",
+            dig_policy=dig_policy,
+            pre_policy_action=pre_policy_action,
+            action_interlock=interlock,
+        )
+    )
+
+    action = service.dispatch_action({"qpos": [1.0]})
+
+    assert action.tolist() == pytest.approx([0.0, 0.1, -0.2, 0.3])
+    assert events == ["pre_policy_action"]
+    assert dig_policy.predicted_obs is None
+
+
+def test_dispatch_pre_policy_none_falls_through_to_policy() -> None:
+    events: list[str] = []
+
+    def pre_policy_action(obs: dict[str, Any]) -> None:
+        events.append("pre_policy_check")
+        return None
+
+    service = PrimitiveActionDispatchService.from_ports(
+        _ports(events, pre_policy_action=pre_policy_action)
+    )
+
+    action = service.dispatch_action({"qpos": [1.0]})
+
+    assert action.tolist() == [1.0, 2.0, 3.0, 4.0]
+    assert events == ["pre_policy_check", "policy_obs", "predict:dig"]
 
 
 def test_first_dig_policy_active_selects_first_dig_policy() -> None:

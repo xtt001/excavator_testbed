@@ -4740,6 +4740,7 @@ def _coverage_planner_policy(
     dig_depth_profile_extra: dict | None = None,
     return_start_envelope_extra: dict | None = None,
     boundary_profile: str = "legacy",
+    box_emptying: dict | None = None,
 ) -> PrimitivePlannerACTPolicy:
     pre_dig_align_cfg = {
         "enabled": bool(pre_dig_align_enabled),
@@ -4806,6 +4807,7 @@ def _coverage_planner_policy(
             "enabled": bool(return_target_enabled),
             "hold_token_until_skill_exit": True,
         },
+        box_emptying=box_emptying,
         pre_dig_align=pre_dig_align_cfg,
     )
 

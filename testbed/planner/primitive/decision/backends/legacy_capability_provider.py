@@ -81,6 +81,14 @@ class PrimitiveFSMCapabilityProviderPorts:
     coverage_state: CoverageRuntimeState
     return_state: PrimitiveReturnRuntimeState
     return_handoff_readiness_service: ReturnHandoffReadinessService
+    dig_transition_status_gate: Callable[
+        [dict[str, Any], DigTransitionStatus],
+        DigTransitionStatus,
+    ] = lambda obs, status: status
+    return_transition_status_gate: Callable[
+        [dict[str, Any], ReturnTransitionStatus],
+        ReturnTransitionStatus,
+    ] = lambda obs, status: status
 
 
 @dataclass(frozen=True)
@@ -104,7 +112,7 @@ class PrimitiveFSMCapabilityProvider:
         ports = self.ports
         config = ports.config
         observation = self._observation(obs)
-        return DigTransitionStatus.from_inputs(
+        status = DigTransitionStatus.from_inputs(
             observation=observation,
             boundary_event=boundary_event,
             semantic_boundary_profile_active=(
@@ -150,6 +158,7 @@ class PrimitiveFSMCapabilityProvider:
             dig_exit_guard_overshoot_m=config.dig_exit_guard_overshoot_m,
             dig_exit_overshoot_m=self._dig_exit_overshoot_m(observation),
         )
+        return ports.dig_transition_status_gate(obs, status)
 
     def sync_dig_transition_reason(
         self,
@@ -254,7 +263,7 @@ class PrimitiveFSMCapabilityProvider:
     ) -> ReturnTransitionStatus:
         ports = self.ports
         config = ports.config
-        return ReturnTransitionStatus.from_inputs(
+        status = ReturnTransitionStatus.from_inputs(
             observation=self._observation(obs),
             boundary_event=boundary_event,
             semantic_boundary_profile_active=(
@@ -286,6 +295,7 @@ class PrimitiveFSMCapabilityProvider:
             return_to_dig_max_depth_m=config.return_to_dig_max_depth_m,
             return_to_dig_max_entry_error_m=config.return_to_dig_max_entry_error_m,
         )
+        return ports.return_transition_status_gate(obs, status)
 
     def _observation(self, obs: dict[str, Any]) -> PrimitiveObservationFacts:
         return PrimitiveObservationFacts.from_obs(

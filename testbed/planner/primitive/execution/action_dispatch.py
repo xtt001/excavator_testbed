@@ -38,6 +38,8 @@ class PrimitiveActionDispatchPorts:
     bootstrap_skill_name: str = BOOTSTRAP_SKILL_NAME
     dig_skill_name: str = DIG_SKILL_NAME
     pre_dig_align_skill_name: str = PRE_DIG_ALIGN_SKILL_NAME
+    action_interlock: Callable[[dict[str, Any], np.ndarray], Any] | None = None
+    pre_policy_action: Callable[[dict[str, Any]], Any | None] | None = None
 
 
 @dataclass(frozen=True)
@@ -55,22 +57,46 @@ class PrimitiveActionDispatchService:
 
     def dispatch_action(self, obs: dict[str, Any]) -> Any:
         ports = self.ports
+        override = self.pre_policy_override(obs)
+        if override is not None:
+            return override
         skill_name = self._skill_name()
         if (
             skill_name == ports.bootstrap_skill_name
             and ports.scripted_bootstrap_enabled()
         ):
-            return ports.scripted_bootstrap_action(obs)
-        if skill_name == ports.pre_dig_align_skill_name:
-            return np.asarray(
+            action = ports.scripted_bootstrap_action(obs)
+        elif skill_name == ports.pre_dig_align_skill_name:
+            action = np.asarray(
                 ports.pre_dig_align_action(obs),
                 dtype=np.float32,
             ).reshape(int(ports.action_dim))
-        policy = self.active_policy()
-        policy_obs = ports.policy_observation(obs)
-        return np.asarray(policy.predict(policy_obs), dtype=np.float32).reshape(
-            int(ports.action_dim)
-        )
+        else:
+            policy = self.active_policy()
+            policy_obs = ports.policy_observation(obs)
+            action = policy.predict(policy_obs)
+        shaped = np.asarray(action, dtype=np.float32).reshape(int(ports.action_dim))
+        if ports.action_interlock is None:
+            return shaped
+        return np.asarray(
+            ports.action_interlock(obs, shaped),
+            dtype=np.float32,
+        ).reshape(int(ports.action_dim))
+
+    def pre_policy_override(
+        self,
+        obs: dict[str, Any],
+    ) -> np.ndarray | None:
+        callback = self.ports.pre_policy_action
+        if callback is None:
+            return None
+        override = callback(obs)
+        if override is None:
+            return None
+        return np.asarray(
+            override,
+            dtype=np.float32,
+        ).reshape(int(self.ports.action_dim))
 
     def active_policy(self) -> Any:
         ports = self.ports

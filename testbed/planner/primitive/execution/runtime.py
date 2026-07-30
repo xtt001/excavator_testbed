@@ -120,6 +120,8 @@ class PrimitiveActionDispatchRuntime(Protocol):
 
     def dispatch_action(self, obs: dict[str, Any]) -> Any: ...
 
+    def pre_policy_override(self, obs: dict[str, Any]) -> Any | None: ...
+
 
 @dataclass(frozen=True)
 class PrimitiveTickPreparation:
@@ -156,6 +158,7 @@ class PrimitiveExecutionPorts:
     record_previous_action: Callable[[Any], None]
     transition_completed_after_dispatch: Callable[[], bool]
     finalize_debug_state: Callable[..., None]
+    pre_decision_action: Callable[[dict[str, Any]], Any | None] | None = None
 
 
 @dataclass(frozen=True)
@@ -215,6 +218,11 @@ class PrimitiveExecutionRuntime:
                 self.transition_completed_after_dispatch
             ),
             finalize_debug_state=ports.tick_finalization_runtime.finalize_debug_state,
+            pre_decision_action=getattr(
+                ports.action_dispatch_service,
+                "pre_policy_override",
+                None,
+            ),
         )
 
     def predict(self, obs: dict[str, Any]) -> Any:
@@ -301,6 +309,13 @@ class PrimitiveExecutionDriver:
         ports = self.ports
         boundary_event = ports.update_boundary_event(obs)
         ports.reset_switch_reason()
+        if ports.pre_decision_action is not None:
+            override = ports.pre_decision_action(obs)
+            if override is not None:
+                return self._finalize_pre_decision_override(
+                    override,
+                    boundary_event=boundary_event,
+                )
         skill_name_before_decision = ports.current_skill_name()
         dig_progress_updated = skill_name_before_decision == self.dig_skill_name
         if dig_progress_updated:
@@ -333,6 +348,40 @@ class PrimitiveExecutionDriver:
             boundary_event=boundary_event,
             transition_timeout=transition_timeout,
             transition_completed=transition_completed,
+        )
+
+    def _finalize_pre_decision_override(
+        self,
+        override: Any,
+        *,
+        boundary_event: Any | None,
+    ) -> PrimitiveTickResult:
+        ports = self.ports
+        skill_name = ports.current_skill_name()
+        action = override
+        ports.record_previous_action(action)
+        ports.finalize_debug_state(
+            transition_timeout=False,
+            transition_completed=False,
+        )
+        preparation = PrimitiveTickPreparation(
+            boundary_event=boundary_event,
+            skill_name_before_decision=skill_name,
+            dig_progress_updated=False,
+        )
+        decision = PrimitiveDecisionResult.from_legacy_fsm_outcome(
+            skill_before=skill_name,
+            skill_after=skill_name,
+            switch_reason="",
+            decision_source="pre_decision_safety_interlock",
+        )
+        return PrimitiveTickResult(
+            action=action,
+            preparation=preparation,
+            decision=decision,
+            boundary_event=boundary_event,
+            transition_timeout=False,
+            transition_completed=False,
         )
 
     def _apply_requested_effects_if_needed(

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import MethodType
+
 import numpy as np
 import pytest
 
@@ -15,6 +17,9 @@ from testbed.planner.primitive.effects.bounded_dig_probe_stop import (
     BoundedDigProbeStopContract,
     bounded_dig_probe_step_fields,
 )
+from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
+
+
 def _enabled_contract() -> BoundedDigProbeStopContract:
     config = BoundedDigProbeStopConfig.from_box_emptying_mapping(
         {
@@ -302,6 +307,173 @@ def test_runtime_composition_refilters_to_zero_for_envelope_stop() -> None:
         ]
         is True
     )
+
+
+def test_planner_facade_builds_enabled_probe_from_box_config() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    planner.box_emptying_cfg = {
+        "safety_enabled": True,
+        "bounded_dig_probe_stop": {"enabled": True},
+    }
+
+    contract = planner._bounded_dig_probe_stop()
+
+    assert contract.config.enabled is True
+    assert (
+        planner.__dict__["_bounded_dig_probe_stop_state"]
+        is contract
+    )
+
+
+def test_planner_filter_sends_zero_as_first_action_after_envelope_trigger() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    planner.action_dim = 4
+    planner._skill_name = "dig"
+    contract = _enabled_contract()
+    planner.__dict__["_bounded_dig_probe_stop_state"] = contract
+    requests: list[dict[str, object]] = []
+    applied: list[SafetyActionDecision] = []
+
+    class _CarryGate:
+        def timeout_requested(self) -> bool:
+            return False
+
+        def debug_fields(self) -> dict[str, bool]:
+            return {"carry_start_envelope_ready": True}
+
+    class _FunctionalGate:
+        def terminal_neutral_requested(self) -> bool:
+            return False
+
+    class _CycleState:
+        cycle_index = 1
+        dig_step_count = 123
+        transition_timeout_count = 0
+
+    class _Interlock:
+        pending_reason = ""
+
+        def request_neutral_event(self, **kwargs: object) -> None:
+            requests.append(dict(kwargs))
+            self.pending_reason = str(kwargs["reason"])
+
+        def filter_action(
+            self,
+            obs: dict[str, object],
+            proposed_action: np.ndarray,
+            **kwargs: object,
+        ) -> SafetyActionDecision:
+            del obs, kwargs
+            if self.pending_reason:
+                return SafetyActionDecision(
+                    action=np.zeros_like(proposed_action),
+                    reason=self.pending_reason,
+                    awaiting_neutral_ack=True,
+                )
+            return SafetyActionDecision(action=proposed_action.copy())
+
+    interlock = _Interlock()
+    coverage_state = type(
+        "_CoverageState",
+        (),
+        {
+            "coverage_active_corridor_id": -1,
+            "execution_return_envelope_cell_id": lambda self, corridor_id: -1,
+        },
+    )()
+    planner.__dict__["_carry_start_envelope_gate_state"] = _CarryGate()
+    planner.__dict__["_functional_cycle_gate_state"] = _FunctionalGate()
+    planner._box_safety_interlock = MethodType(
+        lambda self: interlock,
+        planner,
+    )
+    planner._box_emptying_runtime_monitor = MethodType(
+        lambda self: None,
+        planner,
+    )
+    planner._primitive_cycle_runtime_state = MethodType(
+        lambda self: _CycleState(),
+        planner,
+    )
+    planner._coverage_runtime_state = MethodType(
+        lambda self: coverage_state,
+        planner,
+    )
+    planner._box_safety_active_cell_id = MethodType(
+        lambda self, obs, active_corridor_id: -1,
+        planner,
+    )
+    planner._apply_box_safety_decision = MethodType(
+        lambda self, decision: applied.append(decision),
+        planner,
+    )
+
+    action = planner._box_safety_filter_action(
+        {"step_id": 60, "env_state": np.zeros(107, dtype=np.float32)},
+        np.ones(4, dtype=np.float32),
+    )
+
+    assert action.tolist() == [0.0, 0.0, 0.0, 0.0]
+    assert requests == [
+        {
+            "step_id": 60,
+            "reason": BOUNDED_DIG_PROBE_ENVELOPE_REASON,
+            "terminal": True,
+        }
+    ]
+    assert applied[-1].awaiting_neutral_ack is True
+
+
+def test_planner_terminalizes_nonterminal_safety_recovery_after_probe_ack() -> None:
+    planner = object.__new__(PrimitivePlannerACTPolicy)
+    contract = _enabled_contract()
+    contract.observe_safety_decision(
+        SafetyActionDecision(
+            action=np.zeros(4, dtype=np.float32),
+            reason="hard_bottom_contact",
+            awaiting_neutral_ack=True,
+        ),
+        cycle_index=1,
+        step_id=50,
+    )
+    planner.__dict__["_bounded_dig_probe_stop_state"] = contract
+    requested: list[tuple[str, bool]] = []
+
+    class _CycleState:
+        cycle_index = 1
+
+    class _CoverageEffects:
+        def request_coverage_terminal_stop(
+            self,
+            reason: str,
+            *,
+            replace: bool,
+        ) -> None:
+            requested.append((reason, replace))
+
+    planner._primitive_cycle_runtime_state = MethodType(
+        lambda self: _CycleState(),
+        planner,
+    )
+    planner._primitive_coverage_effect_runtime = MethodType(
+        lambda self: _CoverageEffects(),
+        planner,
+    )
+
+    planner._apply_box_safety_decision(
+        SafetyActionDecision(
+            action=np.zeros(4, dtype=np.float32),
+            reason="hard_bottom_contact_neutral_acknowledged",
+            neutral_acknowledged=True,
+            replan=True,
+            hard_bottom_recovery_active=True,
+            event_id=9,
+        )
+    )
+
+    assert requested == [
+        ("bounded_dig_probe_stop:bottom", True),
+    ]
 
 
 def test_rollout_projection_preserves_probe_handshake_fields() -> None:

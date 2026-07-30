@@ -19,43 +19,15 @@ Success rules
 
 from __future__ import annotations
 
-from dataclasses import replace
 import json
-from pathlib import Path
 import time
+from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from testbed.data.camera_images import observation_camera_rgb
-from testbed.eval.rollout_logs import (
-    build_rollout_manifest,
-    build_rollout_summary,
-    to_jsonable,
-    write_json,
-    write_jsonl,
-)
-from testbed.eval.hybrid_metrics import (
-    aggregate_hybrid_metrics,
-    build_hybrid_summary,
-)
-from testbed.eval.planner_metrics import aggregate_planner_metrics
-from testbed.eval.policy_inference_timing import timed_policy_predict
-from testbed.eval.quality_metrics import (
-    aggregate_quality_metrics,
-    build_quality_summary,
-)
-from testbed.eval.metrics import EvalMetrics
-from testbed.eval.multi_cycle_metrics import (
-    aggregate_multicycle_metrics,
-    build_multicycle_summary,
-)
-from testbed.eval.tasks import EVAL_SEED, EvalTaskDef, get_eval_task
-from testbed.eval.video import save_eval_video
-from testbed.eval.rollout_hdf5 import (
-    build_rollout_v2_payload,
-    enrich_rollout_hdf5_in_place,
-)
 from testbed.data.schema import (
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_X_IDX,
     ENV_STATE_BUCKET_DIG_AREA_RELATIVE_Y_IDX,
@@ -64,13 +36,45 @@ from testbed.data.schema import (
     ENV_STATE_BUCKET_TIP_DIG_AREA_Y_IDX,
     ENV_STATE_BUCKET_TIP_DIG_AREA_Z_IDX,
 )
+from testbed.data.v2_1 import build_goal_tokens
+from testbed.eval.hybrid_metrics import (
+    aggregate_hybrid_metrics,
+    build_hybrid_summary,
+)
+from testbed.eval.metrics import EvalMetrics
+from testbed.eval.multi_cycle_metrics import (
+    aggregate_multicycle_metrics,
+    build_multicycle_summary,
+)
+from testbed.eval.planner_metrics import aggregate_planner_metrics
+from testbed.eval.policy_inference_timing import timed_policy_predict
+from testbed.eval.quality_metrics import (
+    aggregate_quality_metrics,
+    build_quality_summary,
+)
+from testbed.eval.rollout_hdf5 import (
+    build_rollout_v2_payload,
+    enrich_rollout_hdf5_in_place,
+)
+from testbed.eval.rollout_logs import (
+    build_box_safety_contact_diagnostic_log_fields,
+    build_rollout_manifest,
+    build_rollout_summary,
+    to_jsonable,
+    write_json,
+    write_jsonl,
+)
+from testbed.eval.tasks import EVAL_SEED, EvalTaskDef, get_eval_task
+from testbed.eval.video import save_eval_video
+from testbed.planner.boundary_detector import build_boundary_detector_from_config
+from testbed.planner.primitive.effects.bounded_dig_probe_stop import (
+    bounded_dig_probe_step_fields,
+)
 from testbed.policies.base import Policy
 from testbed.tasks.logic.excavator_reward import (
     build_agx_excavation_mission_overrides,
     resolve_agx_field_indices,
 )
-from testbed.data.v2_1 import build_goal_tokens
-from testbed.planner.boundary_detector import build_boundary_detector_from_config
 
 DEFAULT_PAUSE_EPS = 0.05
 LIVE_GOAL_SECTOR_IDS = {"left": 0, "mid": 1, "right": 2}
@@ -636,6 +640,24 @@ class EvalSuite:
                             "coverage_corridor_id": int(
                                 policy_debug.get("coverage_corridor_id", -1)
                             ),
+                            "coverage_execution_exemplar_id": str(
+                                policy_debug.get(
+                                    "coverage_execution_exemplar_id",
+                                    "",
+                                )
+                            ),
+                            "coverage_execution_raw_fields_sha256": str(
+                                policy_debug.get(
+                                    "coverage_execution_raw_fields_sha256",
+                                    "",
+                                )
+                            ),
+                            "coverage_execution_corridor_id": int(
+                                policy_debug.get(
+                                    "coverage_execution_corridor_id",
+                                    -1,
+                                )
+                            ),
                             "coverage_entry_x_m": float(
                                 policy_debug.get("coverage_entry_x_m", np.nan)
                             ),
@@ -748,6 +770,67 @@ class EvalSuite:
                             ),
                             "coverage_terminal_stop_reason": str(
                                 policy_debug.get("coverage_terminal_stop_reason", "")
+                            ),
+                            "coverage_wall_safety_profile": str(
+                                policy_debug.get(
+                                    "coverage_wall_safety_profile",
+                                    "",
+                                )
+                            ),
+                            "coverage_wall_safety_class": str(
+                                policy_debug.get(
+                                    "coverage_wall_safety_class",
+                                    "",
+                                )
+                            ),
+                            "coverage_wall_safety_eligible": bool(
+                                policy_debug.get(
+                                    "coverage_wall_safety_eligible",
+                                    False,
+                                )
+                            ),
+                            "coverage_wall_minimum_clearance_m": float(
+                                policy_debug.get(
+                                    "coverage_wall_minimum_clearance_m",
+                                    np.nan,
+                                )
+                            ),
+                            "coverage_wall_clearance_x_m": float(
+                                policy_debug.get(
+                                    "coverage_wall_clearance_x_m",
+                                    np.nan,
+                                )
+                            ),
+                            "coverage_wall_clearance_z_m": float(
+                                policy_debug.get(
+                                    "coverage_wall_clearance_z_m",
+                                    np.nan,
+                                )
+                            ),
+                            "coverage_wall_score_penalty": float(
+                                policy_debug.get(
+                                    "coverage_wall_score_penalty",
+                                    np.nan,
+                                )
+                            ),
+                            "coverage_wall_rejected_corridor_ids": list(
+                                policy_debug.get(
+                                    "coverage_wall_rejected_corridor_ids",
+                                    [],
+                                )
+                            ),
+                            "coverage_wall_rejected_cell_ids": list(
+                                policy_debug.get(
+                                    "coverage_wall_rejected_cell_ids",
+                                    [],
+                                )
+                            ),
+                            "coverage_candidate_scores": list(
+                                policy_debug.get(
+                                    "coverage_candidate_scores",
+                                    [],
+                                )
+                                or []
                             ),
                             "dig_step_count": int(
                                 policy_debug.get("dig_step_count", 0)
@@ -932,6 +1015,176 @@ class EvalSuite:
                             "primitive_cycle_index": int(
                                 policy_debug.get("primitive_cycle_index", -1)
                             ),
+                            "box_safety_reason": str(
+                                policy_debug.get("box_safety_reason", "")
+                            ),
+                            "box_safety_terminal": bool(
+                                policy_debug.get("box_safety_terminal", False)
+                            ),
+                            "box_safety_awaiting_neutral_ack": bool(
+                                policy_debug.get(
+                                    "box_safety_awaiting_neutral_ack",
+                                    False,
+                                )
+                            ),
+                            "box_safety_neutral_acknowledged": bool(
+                                policy_debug.get(
+                                    "box_safety_neutral_acknowledged",
+                                    False,
+                                )
+                            ),
+                            "box_safety_replan": bool(
+                                policy_debug.get("box_safety_replan", False)
+                            ),
+                            **build_box_safety_contact_diagnostic_log_fields(
+                                policy_debug
+                            ),
+                            "box_safety_wall_contact_component": str(
+                                policy_debug.get(
+                                    "box_safety_wall_contact_component",
+                                    "",
+                                )
+                            ),
+                            "box_safety_wall_contact_wall_name": str(
+                                policy_debug.get(
+                                    "box_safety_wall_contact_wall_name",
+                                    "",
+                                )
+                            ),
+                            "box_safety_wall_contact_diagnostic_ab_enabled": bool(
+                                policy_debug.get(
+                                    (
+                                        "box_safety_wall_contact_"
+                                        "diagnostic_ab_enabled"
+                                    ),
+                                    False,
+                                )
+                            ),
+                            (
+                                "box_safety_wall_contact_diagnostic_"
+                                "observe_only_enabled"
+                            ): bool(
+                                policy_debug.get(
+                                    (
+                                        "box_safety_wall_contact_diagnostic_"
+                                        "observe_only_enabled"
+                                    ),
+                                    False,
+                                )
+                            ),
+                            "box_safety_wall_first_touch_mode": str(
+                                policy_debug.get(
+                                    "box_safety_wall_first_touch_mode",
+                                    "",
+                                )
+                            ),
+                            (
+                                "box_safety_wall_contact_session_"
+                                "end_clear_ticks"
+                            ): int(
+                                policy_debug.get(
+                                    (
+                                        "box_safety_wall_contact_session_"
+                                        "end_clear_ticks"
+                                    ),
+                                    1,
+                                )
+                            ),
+                            "box_safety_blocked_corridor_id": int(
+                                policy_debug.get(
+                                    "box_safety_blocked_corridor_id",
+                                    -1,
+                                )
+                            ),
+                            "box_safety_event_id": int(
+                                policy_debug.get("box_safety_event_id", -1)
+                            ),
+                            "box_safety_depth_exhausted_cell_id": int(
+                                policy_debug.get(
+                                    "box_safety_depth_exhausted_cell_id",
+                                    -1,
+                                )
+                            ),
+                            "box_safety_hard_bottom_contact": bool(
+                                policy_debug.get(
+                                    "box_safety_hard_bottom_contact",
+                                    False,
+                                )
+                            ),
+                            "box_safety_hard_bottom_recovery_active": bool(
+                                policy_debug.get(
+                                    "box_safety_hard_bottom_recovery_active",
+                                    False,
+                                )
+                            ),
+                            "box_safety_policy_restarted": bool(
+                                policy_debug.get(
+                                    "box_safety_policy_restarted",
+                                    False,
+                                )
+                            ),
+                            "box_safety_clearance_active": bool(
+                                policy_debug.get(
+                                    "box_safety_clearance_active",
+                                    False,
+                                )
+                            ),
+                            "box_safety_clearance_completed": bool(
+                                policy_debug.get(
+                                    "box_safety_clearance_completed",
+                                    False,
+                                )
+                            ),
+                            "box_safety_clearance_neutral_acknowledged": bool(
+                                policy_debug.get(
+                                    "box_safety_clearance_neutral_acknowledged",
+                                    False,
+                                )
+                            ),
+                            "box_safety_depth_exhausted_guard": bool(
+                                policy_debug.get(
+                                    "box_safety_depth_exhausted_guard",
+                                    False,
+                                )
+                            ),
+                            "box_safety_depth_exhausted_guard_active": bool(
+                                policy_debug.get(
+                                    "box_safety_depth_exhausted_guard_active",
+                                    False,
+                                )
+                            ),
+                            "box_safety_hard_bottom_depth_budget_guard": bool(
+                                policy_debug.get(
+                                    "box_safety_hard_bottom_depth_budget_guard",
+                                    False,
+                                )
+                            ),
+                            "box_safety_depth_exhausted_cell_ids": list(
+                                policy_debug.get(
+                                    "box_safety_depth_exhausted_cell_ids",
+                                    [],
+                                )
+                                or []
+                            ),
+                            "functional_terminal_return_ready": bool(
+                                policy_debug.get(
+                                    "functional_terminal_return_ready",
+                                    False,
+                                )
+                            ),
+                            "functional_terminal_awaiting_neutral_ack": bool(
+                                policy_debug.get(
+                                    "functional_terminal_awaiting_neutral_ack",
+                                    False,
+                                )
+                            ),
+                            "functional_terminal_neutral_acknowledged": bool(
+                                policy_debug.get(
+                                    "functional_terminal_neutral_acknowledged",
+                                    False,
+                                )
+                            ),
+                            **bounded_dig_probe_step_fields(policy_debug),
                             "primitive_goal_curr_sector_id": int(
                                 policy_debug.get("primitive_goal_curr_sector_id", -1)
                             ),
