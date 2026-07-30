@@ -6,6 +6,7 @@ instantiate the planner, Unity, or low-level ACT policies.
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import math
@@ -82,6 +83,22 @@ AGGREGATE_TX24_ARTIFACTS = PlannerArtifactPaths(
     resolved_config=Path(
         "runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/"
         "eval_resolved_config.yaml"
+    ),
+)
+
+AGGREGATE_TX24_PORTABLE_ARTIFACTS = PlannerArtifactPaths(
+    rollout_jsonl=Path(
+        "tests/fixtures/planner_current_code_parity/rollout_000.jsonl.gz"
+    ),
+    planner_trace=Path(
+        "tests/fixtures/planner_current_code_parity/"
+        "rollout_000_planner_trace.json"
+    ),
+    rollout_summary=Path(
+        "tests/fixtures/planner_current_code_parity/rollout_000_summary.json"
+    ),
+    resolved_config=Path(
+        "tests/fixtures/planner_current_code_parity/eval_resolved_config.yaml"
     ),
 )
 
@@ -257,7 +274,8 @@ AGGREGATE_TX24_CONTRACT = GoldenWindowContract(
 
 
 def read_jsonl_rows(path: Path) -> tuple[dict[str, Any], ...]:
-    with path.open("r", encoding="utf-8") as stream:
+    open_text = gzip.open if path.suffix == ".gz" else Path.open
+    with open_text(path, "rt", encoding="utf-8") as stream:
         return tuple(json.loads(line) for line in stream if line.strip())
 
 

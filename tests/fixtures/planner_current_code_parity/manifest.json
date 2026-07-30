@@ -1,0 +1,68 @@
+{
+  "golden_window_count": 112,
+  "portable_artifacts": {
+    "planner_trace": {
+      "path": "tests/fixtures/planner_current_code_parity/rollout_000_planner_trace.json",
+      "sha256": "b19447af527cf5820c24496ad280a38bc34a4c00b06442962e69b03984668a2e",
+      "size_bytes": 148368
+    },
+    "resolved_config": {
+      "path": "tests/fixtures/planner_current_code_parity/eval_resolved_config.yaml",
+      "sha256": "cc552934e6608874eb7ba277ca09c66fbd741bd7b9774f082f9c3ee7733720c1",
+      "size_bytes": 12213
+    },
+    "rollout_jsonl": {
+      "path": "tests/fixtures/planner_current_code_parity/rollout_000.jsonl.gz",
+      "sha256": "60695464839af7630eb814dc3eab885cc2ed2ad17be1df7d3f16feafeb14a397",
+      "size_bytes": 142653
+    },
+    "rollout_summary": {
+      "path": "tests/fixtures/planner_current_code_parity/rollout_000_summary.json",
+      "sha256": "44d94e025d64585a0e5e4258162feb4db7f325c3dc5d4624f2343942234a45ce",
+      "size_bytes": 28176
+    }
+  },
+  "projection": {
+    "first_ten_extra_fields": [
+      "qpos",
+      "qvel",
+      "env_state",
+      "action",
+      "debug"
+    ],
+    "golden_rows": "all_fields",
+    "other_rows": [
+      "step_id",
+      "t",
+      "skill_name",
+      "skill_id",
+      "skill_switch_reason",
+      "coverage_terminal_stop_requested",
+      "task_success"
+    ]
+  },
+  "schema_version": "planner_current_code_parity_fixture_v1",
+  "source_artifacts": {
+    "planner_trace": {
+      "path": "runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000_planner_trace.json",
+      "sha256": "b19447af527cf5820c24496ad280a38bc34a4c00b06442962e69b03984668a2e",
+      "size_bytes": 148368
+    },
+    "resolved_config": {
+      "path": "runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/eval_resolved_config.yaml",
+      "sha256": "cc552934e6608874eb7ba277ca09c66fbd741bd7b9774f082f9c3ee7733720c1",
+      "size_bytes": 12213
+    },
+    "rollout_jsonl": {
+      "path": "runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000.jsonl",
+      "sha256": "4857d6530e65c27158fc611b81be714a7820d1bc08ec8067b392049cc6cbba49",
+      "size_bytes": 49606237
+    },
+    "rollout_summary": {
+      "path": "runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts/rollout_000_summary.json",
+      "sha256": "44d94e025d64585a0e5e4258162feb4db7f325c3dc5d4624f2343942234a45ce",
+      "size_bytes": 28176
+    }
+  },
+  "source_row_count": 5584
+}

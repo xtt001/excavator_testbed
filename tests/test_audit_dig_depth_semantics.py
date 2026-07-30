@@ -8,9 +8,9 @@ import h5py
 import numpy as np
 
 from testbed.cli.audit_dig_depth_semantics import (
+    _select_episode_paths,
     compute_episode_metrics,
     summarize_metrics,
-    _select_episode_paths,
 )
 from testbed.cli.build_dig_depth_profile_tokens_v1 import _write_episode_token
 from testbed.data.dataset import get_norm_stats
@@ -18,6 +18,7 @@ from testbed.data.dig_depth_profile_v2_4 import (
     DIG_DEPTH_PROFILE_TOKEN_DIM,
     build_dig_depth_profile_token_from_metrics,
 )
+from testbed.data.operator_first_v2_2 import DIG_CUT_DEPTH_SCALE_M
 from testbed.data.schema import (
     ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX,
     ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX,
@@ -152,7 +153,7 @@ def _write_synthetic_dig_episode(path: Path, *, tier: str) -> None:
     env_state[:, ENV_STATE_BUCKET_MASS_DELTA_IDX] = [0.0, 12.0, 8.0]
     token = np.zeros((3, 10), dtype=np.float32)
     token[:, 6] = 0.5
-    token[:, 7] = 0.2
+    token[:, 7] = 0.05 / DIG_CUT_DEPTH_SCALE_M
     token[:, 8] = 0.5
     token[:, 9] = 1.0
     path.parent.mkdir(parents=True, exist_ok=True)

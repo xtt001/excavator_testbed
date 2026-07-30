@@ -15,7 +15,82 @@ them for a subdirectory.
 All user-facing responses should be in Chinese by default, unless the user
 explicitly asks for another language.
 
-2. Documentation Sync
+2. User-Facing Clarity
+
+Lead with the practical result in plain language: whether the task completed,
+what directly stopped it, why that matters, and what should happen next. Do not
+make the user decode internal experiment names, schema names, status enums,
+gate labels, abbreviations, or untranslated English terminology.
+
+When an internal identifier is needed for traceability, explain its real-world
+meaning first and place the identifier afterward in parentheses or in a
+separate technical-reference note. Define unavoidable technical terms on first
+use. For rollout and planner reports, state task completion and the direct
+failure chain before discussing internal evidence categories.
+
+This presentation rule must not weaken technical rigor. Preserve exact
+measurements, safety boundaries, evidence provenance, uncertainty, and the
+distinction between observed facts and inference; only translate how they are
+communicated to the user.
+
+For every non-trivial implementation, diagnosis, evaluation, rollout, or
+planner final response, use two audience layers:
+
+1. User conclusion
+
+   The opening must stand on its own for a reader who has not read the code,
+   configs, logs, or prior experiment labels. State, in this order:
+
+   - exactly what is complete and what remains incomplete;
+   - the direct operational or physical cause in ordinary language;
+   - what changed, what the observed result was, and whether safety checks
+     passed;
+   - whether production/default behavior changed and what should happen next.
+
+   Never use a bare phrase such as "completed" when only a diagnosis, bounded
+   experiment, replay, shadow run, or diagnostic-only implementation completed.
+   Say that boundary explicitly, for example: "The diagnosis and bounded
+   experiment completed; the production fix has not been promoted."
+
+2. Technical evidence
+
+   Put exact field names, schema dimensions, source-owner identifiers, gate
+   names, step numbers, experiment codes, raw thresholds, artifact paths, and
+   superseded attempts after the user conclusion. This layer may preserve all
+   engineering precision, but the reader must not need it to understand the
+   outcome.
+
+In the user conclusion:
+
+- Describe what a component or condition does before naming it. For example,
+  explain "which data source has the final say" before using `owner`, "the
+  conditions required to begin the next action" before using `handoff gate`,
+  and "the measured joint position" before using `qpos`.
+- Do not lead with raw identifiers or untranslated phrases such as field
+  numbers, `p05`/`p50`, `ready`, `bounded`, `request-local`, `superseded`, or
+  `diagnostic_only`. Use them only afterward in parentheses or in technical
+  evidence when traceability requires them.
+- Interpret every important number. State what is being compared, which side of
+  the limit it falls on, and why that changes the result. Prefer human-readable
+  units in the user conclusion while retaining exact raw values in technical
+  evidence.
+- Separate causal evidence from correlation and separate replay/verifier
+  evidence from real closed-loop execution.
+- State safety preservation in practical terms, such as "no safety threshold
+  was relaxed," before listing unchanged config identifiers.
+
+Before sending the final response, silently check that a non-expert reader can
+answer all four questions from the opening alone:
+
+1. What was actually completed?
+2. Why did it succeed or fail?
+3. Is the result safe and what evidence type supports it?
+4. Did the production/default system change, and what is next?
+
+If any answer requires decoding a project identifier or reading the technical
+evidence, rewrite the opening before sending.
+
+3. Documentation Sync
 
 Any task that changes code must also update the relevant documentation in the
 same task. Update the closest source of truth for the change, such as:
@@ -202,3 +277,26 @@ threshold changes, or algorithm changes.
 - Avoid uncontrolled fan-out and recursive delegation. Start with 1-3 sub-agents unless there are clearly independent tracks that justify more.
 - Escalate destructive, irreversible, privacy-sensitive, or high-stakes decisions to the user instead of letting a sub-agent decide.
 - If the thread has an active multi-agent preference and two consecutive non-trivial turns forget dispatch or collection, the next turn must self-correct before continuing.
+
+<!-- codex-deep-reasoning-budget:begin -->
+## 深度推理预算守则
+
+适用范围：在不违反更高优先级系统、开发者或用户指令的前提下，默认采用以下工作方式，以降低过早结束推理、误把边界情况当作模式题、或在低推理预算处提前 final 的概率。
+
+### 规则 0
+- 可以花费足够多的时间进行思考；不要为了显得响应很快而提前给出未经验证的答案。
+- 不要发送可选的 commentary 消息。
+- 不要用 commentary 汇报进度、叙述状态或解释中间过程。
+- 只有在工具调用需要，或用户明确要求状态更新，或更高优先级指令要求状态更新时，才使用 commentary。
+- 对于不需要工具的任务，先完成推理，然后只在 final 中回答。
+
+### 推理
+- 优先使用第一性原理推理，而不是模式匹配。
+- 在解决问题前，先识别哪些信息是可观察的，哪些行动是可控制的，以及要求保证什么。
+- 如果某个属性可以被观察、触摸感知、标记、排序或以其他方式控制，就用一个可以利用分阶段/自适应选择的策略来求解；不要把问题简化成盲目的一次性抽样。
+- 对于定量、逻辑、边界或保证类问题，在最终回答前，证明策略在最坏情况下的充分性，并证明匹配的下界。
+- 如果答案是数字，重新检查算术，并确保最终数值准确回答了问题。
+
+### 通用性
+- 这些是通用工作规则；不要针对某个特定评测、预期答案或固定输出模式进行定制。
+<!-- codex-deep-reasoning-budget:end -->

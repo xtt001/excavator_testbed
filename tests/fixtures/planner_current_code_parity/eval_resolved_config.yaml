@@ -1,0 +1,413 @@
+agx:
+  host: 127.0.0.1
+  port: 5057
+  timeout: 10.0
+boundary:
+  dig_complete_departed_distance_m: 0.08
+  dig_complete_departed_hold_steps: 3
+  dig_complete_mass_plateau_epsilon_kg: 1.0
+  dig_complete_mass_plateau_hold_steps: 8
+  dig_complete_min_bucket_mass_kg: 15.0
+  dump_committed_hold_steps: 3
+  dump_committed_max_outside_distance_m: 0.25
+  dump_committed_max_relative_x_m: 1.9
+  dump_committed_max_relative_z_m: 2.1
+  dump_committed_min_bucket_mass_kg: 15.0
+  dump_committed_min_height_above_rim_m: 0.45
+  dump_committed_min_relative_x_m: -0.2
+  dump_committed_min_relative_z_m: 0.45
+  dump_committed_outside_range_tol_m: 0.06
+  dump_committed_relative_x_range_tol_m: 0.16
+  dump_committed_relative_z_range_tol_m: 0.1
+  dump_committed_require_clearance: false
+  dump_committed_stable_window_steps: 8
+  profile: v2_4_5_spatial_mass
+  release_onset_max_outside_distance_m: 0.45
+  release_onset_min_bucket_mass_drop_kg: 0.5
+  release_onset_min_deposit_gain_kg: 0.5
+eval:
+  hdf5_dir: /home/pingfan/PACT/excavator_testbed/runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/hdf5_rollouts
+  num_rollouts: 1
+  record_hdf5: false
+  results_dir: /home/pingfan/PACT/excavator_testbed/runs/eval/planner_compare_20260616_x99/aggregate_tx24/results
+  rollout_log_dir: /home/pingfan/PACT/excavator_testbed/runs/eval/planner_compare_20260616_x99/aggregate_tx24/results/rollouts
+  save_rollout_logs: true
+  save_video: true
+  send_planner_debug_to_backend: false
+  step_log_interval: 100
+  stream_rollout_logs: true
+  target_cycle_gate: 15
+  target_cycle_gate_terminal_hold_steps: 100
+  temporal_agg: true
+  video_dir: /home/pingfan/PACT/excavator_testbed/runs/eval/planner_compare_20260616_x99/aggregate_tx24/videos
+policy:
+  act_params:
+    chunk_size: 100
+    dim_feedforward: 3200
+    hidden_dim: 512
+    kl_weight: 10
+  action_dim: 4
+  bootstrap_end_mode: scripted_qpos
+  carry_ckpt_dir: /home/pingfan/PACT/excavator_testbed/runs/ckpts/v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524/carry
+  carry_ckpt_path: /home/pingfan/PACT/excavator_testbed/runs/ckpts/v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524/carry/policy_best.ckpt
+  carry_low_dim_keys:
+  - qpos
+  - qvel
+  class: primitive_planner_act
+  device: cuda
+  dig_ckpt_dir: /home/pingfan/PACT/excavator_testbed/runs/ckpts/v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524/dig
+  dig_ckpt_path: /home/pingfan/PACT/excavator_testbed/runs/ckpts/v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524/dig/policy_best.ckpt
+  dig_cut_planner:
+    coverage:
+      attempt_penalty: 0.65
+      belief_depleted_score: 1.0
+      belief_gain_scale: 0.55
+      candidate_layout: cell_weighted_3x2
+      cell_confidence_weight: 0.75
+      cut_depth_percentile: p90
+      cut_length_percentile: p50
+      deplete_after_low_streak: 2
+      entry_x_percentiles:
+      - p10
+      - p50
+      - p90
+      entry_z_percentiles:
+      - p10
+      - p50
+      - p90
+      first_dig_max_entry_distance_m: 0.45
+      first_dig_max_qpos_delta:
+      - 0.12
+      - 0.18
+      - 0.2
+      - 0.22
+      first_dig_preferred_bonus: 0.0
+      first_dig_preferred_corridor_id: null
+      first_dig_proximity_weight: 8.0
+      first_dig_qpos_delta_weight: 4.0
+      first_dig_strategy: nearest_entry
+      global_low_productivity_stop: 9
+      low_productivity_deposit_kg: 15.0
+      low_productivity_payload_kg: 15.0
+      max_attempts_per_corridor: 3
+      multi_pass_enabled: false
+      multi_pass_max_passes: 1
+      multi_pass_min_remaining_depth_m: 0.035
+      payload_percentile: p90
+      rare_cell_max_attempts: 1
+      rare_cell_source_fraction_threshold: 0.05
+      recent_row_selection_penalty: 1.5
+      recent_selection_penalty: 1.25
+      state_conditioned_exemplars:
+        enabled: true
+        k: 5
+        path: /home/pingfan/PACT/excavator_testbed/runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/planner_state_exemplars_v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524_next_entry_cells.json
+        removed_depth_scale_m: 0.12
+        score_weight: 0.75
+        skip_rejected: true
+        target_cell_weight: 2.0
+        temperature: 0.35
+      unattempted_bonus: 2.0
+      use_env_removed_depth: true
+    enabled: true
+    fallback_mode: raise
+    hold_token_until_skill_exit: true
+    mode: operator_prior_sweep_belief
+    prior_path: /home/pingfan/PACT/excavator_testbed/runs/jobs/yulong_v2_4_5_surface_depth_replay_train_eval_20260523/planner_prior_v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524_next_entry_cells.json
+    return_start_envelope:
+      use_cell_prior: true
+      spatial_from_relocate:
+        enabled: true
+        use_prior_spatial_bounds: true
+        spatial_min:
+        - -0.9518
+        - -0.0354
+        spatial_max:
+        - 0.9365
+        - 0.9021
+        coefficients:
+        - - -0.15626
+          - -0.76613
+          - 0.71529
+          - 0.78704
+          - 0.6334
+          - -0.25819
+          - 0.04125
+          - 0.42428
+        - - 0.05006
+          - 0.41062
+          - 0.47069
+          - 0.79203
+          - -0.46738
+          - -0.14268
+          - 0.2018
+          - 0.52326
+      qpos_from_relocate:
+        enabled: true
+        use_prior_qpos_bounds: false
+        qpos_min:
+        - 0.4398
+        - 0.5062
+        - 0.0
+        - 0.0
+        qpos_max:
+        - 0.5537
+        - 0.778
+        - 0.5575
+        - 0.4736
+        coefficients:
+        - - 0.48967
+          - 0.02816
+          - -0.03435
+          - -0.02914
+          - -0.05474
+          - 0.00903
+          - -0.00097
+          - -0.00135
+        - - 0.5775
+          - 0.12312
+          - 0.05029
+          - 0.23945
+          - -0.0807
+          - -0.04956
+          - 0.03921
+          - 0.0245
+        - - 0.40189
+          - -0.26714
+          - -0.11481
+          - -0.47582
+          - 0.17629
+          - 0.10559
+          - -0.09298
+          - -0.08416
+        - - 0.01342
+          - 0.15593
+          - 0.10188
+          - 0.02176
+          - -0.11148
+          - -0.01935
+          - 0.07876
+          - 0.1763
+      min_source_count: 8
+      min_source_fraction: 0.0
+  dig_low_dim_keys:
+  - qpos
+  - qvel
+  - dig_cut_tokens
+  dig_outcome_head:
+    action_horizon: 100
+    dim: 10
+    enabled: true
+    hidden_dim: 512
+  dump_ckpt_dir: /home/pingfan/PACT/excavator_testbed/runs/ckpts/v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524/dump
+  dump_ckpt_path: /home/pingfan/PACT/excavator_testbed/runs/ckpts/v2_4_5_surface_depth_tight_dump_qc6labels_scale080_20260524/dump/policy_best.ckpt
+  dump_low_dim_keys:
+  - qpos
+  - qvel
+  pre_dig_align:
+    action_clip:
+    - 0.65
+    - 0.45
+    - 0.45
+    - 0.35
+    action_signs:
+    - 1.0
+    - -1.0
+    - 1.0
+    - 1.0
+    bucket_target_qpos: null
+    controlled_dims:
+    - 1
+    - 1
+    - 1
+    - 1
+    enabled: false
+    entry_intent_controlled_dims:
+    - 1
+    - 0
+    - 0
+    - 0
+    first_dig_entry_close_handoff: true
+    first_dig_entry_close_handoff_qvel_abs_max: 0.15
+    first_dig_only: false
+    hold_steps: 3
+    kd: 0.25
+    kp: 2.4
+    max_entry_error_m: 0.35
+    max_steps: 340
+    qpos_from_token_coefficients:
+    - - 0.4938039
+      - -0.00269709
+      - -0.08993127
+    - - 0.73186214
+      - 0.16238509
+      - -0.00951256
+    - - 0.23831582
+      - -0.41589191
+      - 0.00182466
+    - - 0.34460073
+      - -0.29267581
+      - -0.01472922
+    qpos_max:
+    - 0.55
+    - 0.86
+    - 0.52
+    - 0.55
+    qpos_min:
+    - 0.45
+    - 0.64
+    - 0.0
+    - 0.06
+    qpos_tolerance:
+    - 0.025
+    - 0.04
+    - 0.05
+    - 0.06
+    qvel_abs_max: 0.15
+    start_envelope_enabled: true
+    start_envelope_max_entry_error_m: 0.65
+    start_pose_max:
+    - 1.65
+    - 0.25
+    - 1.2
+    start_pose_min:
+    - -0.6
+    - -0.3
+    - -1.5
+    start_qpos_max:
+    - 0.55
+    - 0.86
+    - 0.52
+    - 0.55
+    start_qpos_min:
+    - 0.45
+    - 0.64
+    - 0.0
+    - 0.06
+    surface_guard_enabled: true
+    surface_guard_handoff_entry_error_m: 0.35
+    surface_guard_max_penetration_m: 0.005
+    timeout_accept_entry_error_m: 0.45
+    timeout_replan_entry_error_m: 0.45
+  primitive_low_dim_keys:
+  - qpos
+  - qvel
+  return_ckpt_dir: /home/pingfan/PACT/excavator_testbed/runs/ckpts/v2_4_5_return_relocate_token_swap_all_surface_depth_qc6labels_scale080_20260526/return
+  return_ckpt_path: /home/pingfan/PACT/excavator_testbed/runs/ckpts/v2_4_5_return_relocate_token_swap_all_surface_depth_qc6labels_scale080_20260526/return/policy_best.ckpt
+  return_low_dim_keys:
+  - qpos
+  - qvel
+  - return_start_envelope_tokens_v1
+  - return_relocate_tokens_v1
+  return_outcome_head:
+    action_horizon: 100
+    dim: 10
+    enabled: true
+    hidden_dim: 512
+  return_target_planner:
+    enabled: true
+    hold_token_until_skill_exit: true
+    token_source_prefix: conditioned_return
+  scripted_bootstrap:
+    action_clip:
+    - 0.75
+    - 0.35
+    - 0.35
+    - 0.55
+    action_signs:
+    - 1.0
+    - -1.0
+    - 1.0
+    - 1.0
+    hold_steps: 5
+    kd: 0.25
+    kp: 2.0
+    max_steps: 320
+    qpos_tolerance: 0.025
+    qvel_abs_max: 0.12
+    target_qpos:
+    - 0.5057
+    - 0.7376
+    - 0.1194
+    - 0.174
+  switch:
+    dig_bad_replan_enabled: true
+    dig_bad_replan_max_steps: 220
+    dig_bad_replan_min_bucket_mass_kg: 15.0
+    dig_exit_guard_enabled: true
+    dig_exit_guard_min_bucket_mass_kg: 20.0
+    dig_exit_guard_min_steps: 80
+    dig_exit_guard_overshoot_m: 0.65
+    dig_failed_replan_next_skill: stop
+    dig_to_carry_mass_plateau_enabled: true
+    dig_to_carry_mass_plateau_epsilon_kg: 1.0
+    dig_to_carry_mass_plateau_hold_steps: 25
+    dig_to_carry_mass_plateau_min_bucket_mass_kg: 15.0
+    dig_to_carry_mass_plateau_min_steps: 160
+    dig_to_carry_min_bucket_mass_kg: 15.0
+    dig_to_carry_min_distance_to_dig_area_m: 0.0
+    dig_to_carry_target_bucket_mass_kg: 45.0
+    dump_done_hold_steps: 1
+    dump_done_max_bucket_mass_kg: 15.0
+    dump_done_min_deposit_delta_kg: 5.0
+    dump_done_use_boundary_event: true
+    dump_ready_hold_steps: 3
+    dump_ready_max_dump_area_footprint_outside_distance_m: 0.25
+    dump_ready_max_dump_area_relative_x_m: 1.2
+    dump_ready_max_dump_area_relative_z_m: 1.8
+    dump_ready_min_bucket_mass_kg: 15.0
+    dump_ready_min_dump_area_relative_x_m: 0.0
+    dump_ready_min_dump_area_relative_z_m: 1.0
+    dump_ready_min_height_above_rim_m: 0.5
+    dump_ready_near_window_enabled: true
+    dump_ready_near_window_outside_tolerance_m: 0.0
+    dump_ready_near_window_require_over_footprint: true
+    dump_ready_near_window_x_tolerance_m: 0.05
+    dump_ready_near_window_z_tolerance_m: 0.05
+    dump_ready_position_mode: footprint_or_dump_area_relative
+    dump_ready_require_clearance: false
+    dump_ready_require_over_footprint: true
+    return_max_steps: 420
+    return_to_dig_max_bucket_mass_kg: 15.0
+    return_to_dig_max_depth_m: 0.12
+    return_to_dig_max_entry_error_m: 0.55
+    return_to_dig_min_depth_m: 0.02
+    return_to_dig_shallow_guard_enabled: true
+    return_to_dig_start_envelope_depth_tolerance_m: 0.08
+    return_to_dig_start_envelope_direct_handoff_enabled: true
+    return_to_dig_start_envelope_gate_enabled: true
+    return_to_dig_start_envelope_local_depth_tolerance_m: 0.005
+    return_to_dig_start_envelope_plane_depth_mode: p50_floor
+    return_to_dig_start_envelope_plane_depth_tolerance_m: 0.0
+    return_to_dig_start_envelope_qpos_tolerance: 0.04
+    return_to_dig_start_envelope_require_contact: true
+    return_to_dig_start_envelope_spatial_tolerance: 0.1
+    return_to_dig_touch_tolerance_m: 0.05
+  temporal_agg: true
+reward:
+  deposit_started_threshold_kg: 5.0
+  dig_area_touch_tolerance_m: 0.05
+  dig_below_plane_depth_tolerance_m: 0.02
+  hard_collision_penalty: 0.75
+  load_mass_threshold_kg: 55.0
+  qualified_dig_start_mode: contact_depth
+  spill_penalty: 0.25
+  target_approach_distance_m: 1.25
+  unsafe_distance_m: 0.2
+  unsafe_distance_penalty: 0.25
+success:
+  hold_steps: 1
+  mass_thresh: 20.0
+  mode: dump_complete_final_hold
+  residual_bucket_mass_thresh: 15.0
+  signal_name: deposited_mass_in_target_box_kg
+  strict_max_failures:
+    hard_target_collision: 0
+    spill_before_target: 0
+task:
+  camera_names:
+  - fpv
+  episode_len: 24000
+  equipment_model: yulong
+  name: agx_excavation_teleop
+  scenario_id: s0_truck

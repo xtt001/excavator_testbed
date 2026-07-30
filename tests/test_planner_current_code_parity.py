@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 from testbed.planner.golden_window_parity import (
-    AGGREGATE_TX24_ARTIFACTS,
     AGGREGATE_TX24_CONTRACT,
+    AGGREGATE_TX24_PORTABLE_ARTIFACTS,
     assert_golden_window_contract,
     audit_full_replay_inputs,
     read_jsonl_rows,
@@ -12,12 +14,37 @@ from testbed.planner.golden_window_parity import (
     skill_switches,
 )
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
+PORTABLE_FIXTURE_ROOT = (
+    REPO_ROOT / "tests" / "fixtures" / "planner_current_code_parity"
+)
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_aggregate_tx24_portable_fixture_has_locked_lineage() -> None:
+    manifest = json.loads(
+        (PORTABLE_FIXTURE_ROOT / "manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert manifest["schema_version"] == "planner_current_code_parity_fixture_v1"
+    assert manifest["source_row_count"] == 5584
+    assert manifest["golden_window_count"] == 112
+    assert manifest["source_artifacts"]["rollout_jsonl"]["sha256"] == (
+        "4857d6530e65c27158fc611b81be714a7820d1bc08ec8067b392049cc6cbba49"
+    )
+    for artifact in manifest["portable_artifacts"].values():
+        artifact_path = REPO_ROOT / artifact["path"]
+        assert artifact_path.is_file()
+        assert _sha256(artifact_path) == artifact["sha256"]
 
 
 def test_aggregate_tx24_artifacts_do_not_support_full_action_replay() -> None:
-    audit = audit_full_replay_inputs(AGGREGATE_TX24_ARTIFACTS.at_root(REPO_ROOT))
+    audit = audit_full_replay_inputs(
+        AGGREGATE_TX24_PORTABLE_ARTIFACTS.at_root(REPO_ROOT)
+    )
 
     assert audit.feasible is False
     assert audit.parity_level == "artifact-golden-window-contract"
@@ -27,7 +54,9 @@ def test_aggregate_tx24_artifacts_do_not_support_full_action_replay() -> None:
 
 
 def test_aggregate_tx24_golden_windows_cover_every_skill_switch() -> None:
-    rows = read_jsonl_rows(AGGREGATE_TX24_ARTIFACTS.at_root(REPO_ROOT).rollout_jsonl)
+    rows = read_jsonl_rows(
+        AGGREGATE_TX24_PORTABLE_ARTIFACTS.at_root(REPO_ROOT).rollout_jsonl
+    )
 
     assert skill_switches(rows) == AGGREGATE_TX24_CONTRACT.expected_skill_switches
 
@@ -50,7 +79,7 @@ def test_aggregate_tx24_golden_windows_cover_every_skill_switch() -> None:
 
 def test_aggregate_tx24_golden_window_snapshot_matches_contract() -> None:
     report = assert_golden_window_contract(
-        AGGREGATE_TX24_ARTIFACTS.at_root(REPO_ROOT),
+        AGGREGATE_TX24_PORTABLE_ARTIFACTS.at_root(REPO_ROOT),
         AGGREGATE_TX24_CONTRACT,
     )
 
