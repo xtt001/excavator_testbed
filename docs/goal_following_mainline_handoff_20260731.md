@@ -54,7 +54,13 @@ the paired Unity checkout is unavailable; no new skip rule was added.
 
 ## First mainline deliverable: goal-following benchmark
 
-Build the benchmark before training a predictor or changing ACT.
+The offline benchmark and its fixed corpus contract are implemented before any
+ACT change. The corpus loader was checked against the current gold dig manifest:
+433 windows were accepted, 374 assigned to train, and 59 assigned to held-out
+sources 33/34; seven silver dig windows were excluded. The current rollout
+contract accepts nine completed evaluation segments and one censored tenth
+handoff, and makes the censored record ineligible for ACT tracking or predictor
+training.
 
 - Expert scope: 433 dig windows, split by source into 374 train and 59 held-out
   windows. Do not randomly split primitives.
@@ -81,6 +87,13 @@ The benchmark may emit only:
 
 Only `act_tracking_primary` permits the ACT retraining route. Benchmark output
 does not unlock live execution.
+
+The benchmark has a checked-in synthetic/offline golden report whose canonical
+JSON SHA is locked by test. That fixture is not real rollout evidence. A real
+four-way decision has not been emitted yet because the 433 expert cycles and
+nine rollout cycles have not yet been assembled with complete reference,
+actual, forward-kinematics, terrain, and effect arrays. Until that evidence
+artifact exists, ACT remains frozen.
 
 ## Predictor v1 contract
 

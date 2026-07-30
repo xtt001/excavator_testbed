@@ -1,0 +1,8 @@
+{
+  "evidence_kind": "synthetic_offline_only",
+  "expected_cycle_count": 2,
+  "expected_decision": "effect_calibration_primary",
+  "fixture_schema": "goal_following_benchmark_golden_fixture_v1",
+  "real_rollout_evidence": false,
+  "report_sha256": "0e5d9569550e184d787c74d31bf552c90a3ab35924e61d842b0a6c5b6abf0ca5"
+}
