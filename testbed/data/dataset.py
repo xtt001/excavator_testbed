@@ -17,6 +17,14 @@ import torch
 import yaml
 from torch.utils.data import DataLoader, Dataset
 
+from testbed.data.action_loss_mask import (
+    ACTION_LOSS_MASK_SCOPE_LOSS_ONLY,
+    ACTION_LOSS_MASK_SCOPE_LOSS_SAMPLING_STATS,
+    normalize_action_loss_mask_scope,
+    read_action_loss_mask,
+    select_sample_start_index,
+    valid_stats_rows,
+)
 from testbed.data.camera_images import read_camera_rgb
 from testbed.data.hdf5_io import list_episodes
 from testbed.data.image_masks import (
@@ -255,6 +263,7 @@ def get_norm_stats(
     num_episodes: int,
     episode_ids: list[int] | None = None,
     low_dim_keys: list[str] | tuple[str, ...] | None = None,
+    action_loss_mask_scope: str = ACTION_LOSS_MASK_SCOPE_LOSS_ONLY,
 ) -> dict[str, np.ndarray]:
     """
     Compute mean/std normalization statistics from a set of episodes.
@@ -283,6 +292,7 @@ def get_norm_stats(
 
     dataset_dir = Path(dataset_dir)
     selected_low_dim_keys = _normalize_low_dim_keys(low_dim_keys)
+    resolved_mask_scope = normalize_action_loss_mask_scope(action_loss_mask_scope)
     all_proprio_data: list[torch.Tensor] = []
     all_qpos_data: list[torch.Tensor] = []
     all_action_data: list[torch.Tensor] = []
@@ -336,6 +346,16 @@ def get_norm_stats(
                 if "return_start_envelope_tokens_v1" in selected_low_dim_keys
                 else None
             )
+            stats_mask = (
+                read_action_loss_mask(
+                    f,
+                    expected_length=int(action.shape[0]),
+                    required=True,
+                )
+                if resolved_mask_scope
+                == ACTION_LOSS_MASK_SCOPE_LOSS_SAMPLING_STATS
+                else None
+            )
         proprio = _assemble_low_dim_observation(
             qpos=qpos,
             qvel=qvel,
@@ -348,6 +368,14 @@ def get_norm_stats(
             return_start_envelope_tokens_v1=return_start_envelope_tokens,
             low_dim_keys=selected_low_dim_keys,
         )
+        valid_rows = valid_stats_rows(
+            episode_length=int(action.shape[0]),
+            action_loss_mask=stats_mask,
+            scope=resolved_mask_scope,
+        )
+        qpos = qpos[valid_rows]
+        action = action[valid_rows]
+        proprio = proprio[valid_rows]
         all_proprio_data.append(torch.from_numpy(proprio))
         all_qpos_data.append(torch.from_numpy(qpos))
         all_action_data.append(torch.from_numpy(action))
@@ -429,6 +457,7 @@ class EpisodicDataset(Dataset):
         supervision_keys: list[str] | tuple[str, ...] | None = None,
         image_mask_config: dict[str, Any] | None = None,
         hdf5_cache_size: int = 0,
+        action_loss_mask_scope: str = ACTION_LOSS_MASK_SCOPE_LOSS_ONLY,
     ):
         super().__init__()
         self.episode_ids = episode_ids
@@ -440,6 +469,9 @@ class EpisodicDataset(Dataset):
         self.supervision_keys = _normalize_supervision_keys(supervision_keys)
         self.image_mask_config = dict(image_mask_config or {})
         self.hdf5_cache_size = max(0, int(hdf5_cache_size))
+        self.action_loss_mask_scope = normalize_action_loss_mask_scope(
+            action_loss_mask_scope
+        )
         self._h5_cache: OrderedDict[int, Any] = OrderedDict()
         self.is_sim: bool | None = None
         # Warm-up to populate self.is_sim
@@ -463,7 +495,21 @@ class EpisodicDataset(Dataset):
             T = original_action_shape[0]
 
             # ── sample start timestep ─────────────────────────────────────
-            t0 = int(np.random.choice(T))
+            sampling_mask = (
+                read_action_loss_mask(
+                    f,
+                    expected_length=int(T),
+                    required=True,
+                )
+                if self.action_loss_mask_scope
+                == ACTION_LOSS_MASK_SCOPE_LOSS_SAMPLING_STATS
+                else None
+            )
+            t0 = select_sample_start_index(
+                episode_length=int(T),
+                action_loss_mask=sampling_mask,
+                scope=self.action_loss_mask_scope,
+            )
 
             # ── observation at t0 ─────────────────────────────────────────
             qpos = f["/observations/qpos"][t0]
@@ -684,6 +730,7 @@ def load_data(
     metadata_filters: dict[str, Any] | None = None,
     image_mask_config: dict[str, Any] | None = None,
     hdf5_cache_size: int = 0,
+    action_loss_mask_scope: str = ACTION_LOSS_MASK_SCOPE_LOSS_ONLY,
 ) -> tuple[DataLoader, DataLoader, dict, bool, dict[str, Any]]:
     """
     Build train/val DataLoaders from an HDF5 dataset directory.
@@ -776,11 +823,13 @@ def load_data(
 
     selected_low_dim_keys = _normalize_low_dim_keys(low_dim_keys)
     selected_supervision_keys = _normalize_supervision_keys(supervision_keys)
+    resolved_mask_scope = normalize_action_loss_mask_scope(action_loss_mask_scope)
     norm_stats = get_norm_stats(
         dataset_dir,
         num_episodes,
         episode_ids=available,
         low_dim_keys=selected_low_dim_keys,
+        action_loss_mask_scope=resolved_mask_scope,
     )
 
     train_ds = EpisodicDataset(
@@ -793,6 +842,7 @@ def load_data(
         supervision_keys=selected_supervision_keys,
         image_mask_config=image_mask_config,
         hdf5_cache_size=hdf5_cache_size,
+        action_loss_mask_scope=resolved_mask_scope,
     )
     val_ds = EpisodicDataset(
         val_ids,
@@ -804,6 +854,7 @@ def load_data(
         supervision_keys=selected_supervision_keys,
         image_mask_config=image_mask_config,
         hdf5_cache_size=hdf5_cache_size,
+        action_loss_mask_scope=resolved_mask_scope,
     )
 
     split_info["dataset_max_episode_len"] = int(max_episode_len)
@@ -814,6 +865,7 @@ def load_data(
     split_info["low_dim_dim"] = int(norm_stats["proprio_dim"])
     split_info["image_mask_enabled"] = bool(image_mask_config)
     split_info["hdf5_cache_size"] = int(hdf5_cache_size)
+    split_info["action_loss_mask_scope"] = resolved_mask_scope
 
     loader_kw: dict = {"pin_memory": pin_memory, "num_workers": num_workers}
     if num_workers > 0:

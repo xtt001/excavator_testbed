@@ -123,6 +123,7 @@ class TrainConfig(BaseModel):
     train_split_ratio: float = 0.8
     split_path: str | None = None
     reuse_split: bool = True
+    action_loss_mask_scope: Literal["loss_only", "loss_sampling_stats"] = "loss_only"
     val_every: int = 1
     save_latest_every: int = 1
     checkpoint_every: int = 100

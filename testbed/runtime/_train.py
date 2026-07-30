@@ -53,6 +53,9 @@ def train_policy(config: dict[str, Any]) -> None:
     metadata_filters = dict(
         train_cfg.get("metadata_filters", task_cfg.get("metadata_filters", {})) or {}
     )
+    action_loss_mask_scope = str(
+        train_cfg.get("action_loss_mask_scope", "loss_only")
+    )
 
     if policy_class != "ACT":
         raise NotImplementedError(f"Trainer for policy class {policy_class!r} not yet implemented.")
@@ -126,6 +129,7 @@ def train_policy(config: dict[str, Any]) -> None:
         "supervision_keys": supervision_keys,
         "outcome_head": outcome_head_cfg,
         "metadata_filters": metadata_filters,
+        "action_loss_mask_scope": action_loss_mask_scope,
     }
 
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -155,6 +159,7 @@ def train_policy(config: dict[str, Any]) -> None:
         metadata_filters   = metadata_filters,
         image_mask_config  = image_mask_config,
         hdf5_cache_size    = int(train_cfg.get("hdf5_cache_size", 0)),
+        action_loss_mask_scope = action_loss_mask_scope,
     )
 
     # save normalisation stats so trainer can load them
@@ -229,6 +234,9 @@ def _build_resolved_train_config(
     train_cfg["reuse_split"] = bool(full_config["reuse_split"])
     train_cfg["metadata_filters"] = copy.deepcopy(
         full_config.get("metadata_filters", {})
+    )
+    train_cfg["action_loss_mask_scope"] = str(
+        full_config.get("action_loss_mask_scope", "loss_only")
     )
     train_cfg["val_every"] = int(full_config["val_every"])
     train_cfg["save_latest_every"] = int(full_config["save_latest_every"])
