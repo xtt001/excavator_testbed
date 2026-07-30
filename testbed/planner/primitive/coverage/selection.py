@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from testbed.planner.primitive.coverage.wall_safety import (
+    CoverageWallSafetyConfig,
+    CoverageWallSafetyEvaluation,
+    NoWallSafeCorridorError,
+)
 from testbed.planner.primitive.token.tokens import DigCutTokenPlanner
 
 if TYPE_CHECKING:
     from testbed.planner.primitive.coverage.state import CoverageRuntimeState
-
 
 @dataclass
 class CoverageCorridorState:
@@ -58,7 +62,6 @@ class CoverageCorridorState:
     state_exemplar_id: str = ""
     state_exemplar_distance: float = float("nan")
 
-
 @dataclass(frozen=True)
 class CoverageSelectionConfig:
     candidate_layout: str
@@ -86,7 +89,9 @@ class CoverageSelectionConfig:
     pre_dig_align_controlled_dims: np.ndarray
     state_exemplars_enabled: bool
     state_exemplar_score_weight: float
-
+    wall_safety: CoverageWallSafetyConfig = field(
+        default_factory=CoverageWallSafetyConfig
+    )
 
 @dataclass(frozen=True)
 class CoverageCandidateSelectionFacts:
@@ -95,7 +100,10 @@ class CoverageCandidateSelectionFacts:
     first_dig_qpos_delta: np.ndarray
     state_exemplar_distance: float = float("nan")
     state_exemplar_id: str = ""
-
+    wall_safety: CoverageWallSafetyEvaluation = field(
+        default_factory=CoverageWallSafetyEvaluation.disabled
+    )
+    final_wall_rejected: bool = False
 
 @dataclass(frozen=True)
 class CoverageSelectionResult:
@@ -103,7 +111,6 @@ class CoverageSelectionResult:
     selected_score: float
     candidate_scores: list[dict[str, Any]]
     first_dig_gate_available: int
-
 
 class CoverageSelectionService:
     """Score and select a coverage corridor from explicit planner facts."""
@@ -161,9 +168,10 @@ class CoverageSelectionService:
             rare_first_dig_gated_out = self.rare_first_dig_gated_out(
                 corridor,
                 corridors,
+                facts_by_corridor_id=facts_by_corridor_id,
             )
             state_exemplar_distance = float(facts.state_exemplar_distance)
-            score = (
+            score_before_wall_safety = (
                 self.score(
                     corridor,
                     remaining_depth,
@@ -172,7 +180,56 @@ class CoverageSelectionService:
                 )
                 + first_dig_bonus
             )
-            if first_dig_gated_out or rare_first_dig_gated_out:
+            wall_safety = facts.wall_safety
+            score = float(
+                score_before_wall_safety - float(wall_safety.score_penalty)
+            )
+            hard_blocked = bool(
+                self.config.wall_safety.enabled
+                and (
+                    corridor.depleted
+                    or corridor.attempts
+                    >= self.corridor_attempt_limit(corridor)
+                )
+            )
+            final_wall_rejected = bool(
+                self.config.wall_safety.enabled
+                and facts.final_wall_rejected
+            )
+            wall_rejected = bool(
+                self.config.wall_safety.enabled
+                and (not wall_safety.eligible or final_wall_rejected)
+            )
+            depth_exhausted_swept = bool(
+                self.config.wall_safety.enabled
+                and wall_safety.depth_exhausted_swept_cell_ids
+            )
+            rejection_reason = ""
+            if corridor.depleted and self.config.wall_safety.enabled:
+                rejection_reason = "corridor_depleted"
+            elif (
+                corridor.attempts >= self.corridor_attempt_limit(corridor)
+                and self.config.wall_safety.enabled
+            ):
+                rejection_reason = "corridor_attempt_limit_reached"
+            elif final_wall_rejected:
+                rejection_reason = "wall_safety_final_raw_rejected"
+            elif wall_rejected:
+                rejection_reason = str(wall_safety.rejection_reason)
+            elif depth_exhausted_swept:
+                rejection_reason = "swept_footprint_intersects_depth_exhausted_cell"
+            elif first_dig_gated_out:
+                rejection_reason = "first_dig_reachability_gate"
+            elif rare_first_dig_gated_out:
+                rejection_reason = "rare_first_dig_gate"
+            selectable = not (
+                hard_blocked
+                or wall_rejected
+                or depth_exhausted_swept
+                or first_dig_gated_out
+                or rare_first_dig_gated_out
+            )
+            if not selectable:
                 score = -1.0e12 + float(score)
             corridor.score = float(score)
             corridor.last_remaining_depth_m = float(remaining_depth)
@@ -203,7 +260,12 @@ class CoverageSelectionService:
                     "corridor_id": int(corridor.corridor_id),
                     "cell_id": int(self.cell_id(corridor)),
                     "row_id": int(row_id),
+                    "score_before_wall_safety": float(
+                        score_before_wall_safety
+                    ),
                     "score": float(score),
+                    "selectable": int(selectable),
+                    "rejection_reason": str(rejection_reason),
                     "attempts": int(corridor.attempts),
                     "attempt_limit": int(self.corridor_attempt_limit(corridor)),
                     "depleted": int(corridor.depleted),
@@ -251,15 +313,21 @@ class CoverageSelectionService:
                         else self.config.first_dig_max_entry_distance_m
                     ),
                     "low_productivity_streak": int(corridor.low_productivity_streak),
+                    **wall_safety.as_trace_fields(),
                 }
             )
-            if first_dig_gated_out or rare_first_dig_gated_out:
+            if not selectable:
                 continue
             if score > best_score:
                 best = corridor
                 best_score = float(score)
 
         if best is None:
+            if self.config.wall_safety.enabled:
+                raise NoWallSafeCorridorError(
+                    candidate_scores=candidate_scores,
+                    detail="all_candidates_rejected",
+                )
             raise ValueError("operator_prior_coverage has no selectable corridors.")
         return CoverageSelectionResult(
             selected=best,
@@ -368,9 +436,15 @@ class CoverageSelectionService:
                 continue
             if corridor.attempts >= self.corridor_attempt_limit(corridor):
                 continue
-            if self.rare_first_dig_gated_out(corridor, corridors):
-                continue
             facts = facts_by_corridor_id[int(corridor.corridor_id)]
+            if not self.wall_candidate_eligible(facts):
+                continue
+            if self.rare_first_dig_gated_out(
+                corridor,
+                corridors,
+                facts_by_corridor_id=facts_by_corridor_id,
+            ):
+                continue
             if self.first_dig_entry_reachable(
                 float(facts.first_dig_entry_distance_m)
             ) and self.first_dig_qpos_reachable(self.qpos_delta(facts)):
@@ -507,6 +581,10 @@ class CoverageSelectionService:
         self,
         corridor: CoverageCorridorState,
         corridors: list[CoverageCorridorState],
+        *,
+        facts_by_corridor_id: (
+            dict[int, CoverageCandidateSelectionFacts] | None
+        ) = None,
     ) -> bool:
         if not self.first_dig_active():
             return False
@@ -521,8 +599,24 @@ class CoverageSelectionService:
                 continue
             if candidate.attempts >= self.corridor_attempt_limit(candidate):
                 continue
+            if facts_by_corridor_id is not None:
+                facts = facts_by_corridor_id[int(candidate.corridor_id)]
+                if not self.wall_candidate_eligible(facts):
+                    continue
             return True
         return False
+
+    def wall_candidate_eligible(
+        self,
+        facts: CoverageCandidateSelectionFacts,
+    ) -> bool:
+        if not self.config.wall_safety.enabled:
+            return True
+        return bool(
+            facts.wall_safety.eligible
+            and not facts.final_wall_rejected
+            and not facts.wall_safety.depth_exhausted_swept_cell_ids
+        )
 
     def qpos_delta(self, facts: CoverageCandidateSelectionFacts) -> np.ndarray:
         return np.asarray(facts.first_dig_qpos_delta, dtype=np.float32).reshape(
@@ -545,7 +639,6 @@ class CoverageSelectionService:
     @staticmethod
     def prior_percentile(fields: dict[str, Any], field_name: str, percentile: str) -> float:
         return DigCutTokenPlanner.prior_percentile(fields, field_name, percentile)
-
 
 @dataclass(frozen=True)
 class CoverageCandidateBuilder:
@@ -806,7 +899,6 @@ class CoverageCandidateBuilder:
     def _clamp_to_prior(fields: dict[str, Any], field_name: str, value: float) -> float:
         return DigCutTokenPlanner(prior={}).clamp_to_prior(fields, field_name, value)
 
-
 @dataclass
 class CoverageSelectionRuntimePorts:
     """Shell ports for coverage corridor runtime selection sequencing."""
@@ -825,7 +917,6 @@ class CoverageSelectionRuntimePorts:
     request_terminal_stop: Callable[[str], None]
     record_decision_event: Callable[..., None]
 
-
 @dataclass(frozen=True)
 class CoverageSelectionRuntimeCoordinator:
     """Coordinate coverage corridor ensure/select runtime side effects."""
@@ -836,7 +927,7 @@ class CoverageSelectionRuntimeCoordinator:
     def from_ports(
         cls,
         ports: CoverageSelectionRuntimePorts,
-    ) -> "CoverageSelectionRuntimeCoordinator":
+    ) -> CoverageSelectionRuntimeCoordinator:
         return cls(ports=ports)
 
     def select_next_corridor(
@@ -895,7 +986,6 @@ class CoverageSelectionRuntimeCoordinator:
             if not ports.maybe_reopen_pass(obs, reason="select_all_depleted"):
                 ports.request_terminal_stop("dig_area_depleted")
         return selected
-
 
 __all__ = [
     "CoverageCandidateBuilder",

@@ -515,6 +515,37 @@ def test_coverage_routes_use_existing_coverage_raw_field_builder(mode: str) -> N
     np.testing.assert_allclose(result, _token(DIG_CUT_TOKEN_DIM, 5.0))
 
 
+def test_exact_execution_library_route_has_an_explicit_non_median_source() -> None:
+    ports, state, events, _, _ = _ports(
+        mode="operator_prior_sweep_belief"
+    )
+    coverage_state = state["coverage_state"]
+    assert isinstance(coverage_state, CoverageRuntimeState)
+    coverage_state.set_active_execution_candidate(
+        corridor_id=1_000_168,
+        effect_outcome_cell_id=1,
+        return_envelope_cell_id=0,
+        exemplar_id="episode_168",
+        raw_fields={"operator_entry_x_m": 22.5},
+        raw_fields_sha256="a" * 64,
+        execution_tail_plane_depth_reserve_m=0.0034,
+    )
+
+    _, _, source, fallback = (
+        PrimitiveDigTokenPlanningService.from_ports(
+            ports
+        ).build_operator_prior_coverage_dig_cut_tokens(
+            {"id": "obs", "pose_x": 1, "pose_y": 2, "pose_z": 3}
+        )
+    )
+
+    assert events[-1] == (
+        "plan_raw:strict_train_coverage_execution_library_v1_1:22.5:"
+    )
+    assert source == "strict_train_coverage_execution_library_v1_1"
+    assert fallback == ""
+
+
 def test_coverage_route_fallback_and_unsupported_mode_error() -> None:
     ports, _, events, _, _ = _ports(
         mode="operator_prior_coverage",

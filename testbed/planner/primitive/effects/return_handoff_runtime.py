@@ -9,8 +9,6 @@ from typing import Any
 import numpy as np
 
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
-from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
-from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
 from testbed.planner.primitive.effects.return_handoff import (
     ReturnDirectHandoffEffectPorts,
     ReturnDirectHandoffEffectService,
@@ -19,7 +17,9 @@ from testbed.planner.primitive.effects.return_handoff import (
     ReturnHandoffReadinessService,
     ReturnStartEnvelopeGateService,
 )
+from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
+from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
 from testbed.planner.primitive.token.state import PrimitiveTokenRuntimeState
 
 
@@ -44,6 +44,13 @@ class PrimitiveReturnHandoffRuntimePorts:
     should_pre_dig_align_before_dig: Callable[[], bool]
     pre_dig_align_skill_name: str
     dig_skill_name: str = "dig"
+    final_handoff_guard: Callable[[dict[str, Any]], Any] = (
+        lambda _obs: None
+    )
+    request_terminal_neutral: Callable[
+        [dict[str, Any], str],
+        None,
+    ] = lambda _obs, _reason: None
 
 
 @dataclass(frozen=True)
@@ -56,7 +63,7 @@ class PrimitiveReturnHandoffRuntime:
     def from_ports(
         cls,
         ports: PrimitiveReturnHandoffRuntimePorts,
-    ) -> "PrimitiveReturnHandoffRuntime":
+    ) -> PrimitiveReturnHandoffRuntime:
         return cls(ports=ports)
 
     def readiness_service(self) -> ReturnHandoffReadinessService:
@@ -108,6 +115,8 @@ class PrimitiveReturnHandoffRuntime:
                 ),
                 pre_dig_align_skill_name=str(ports.pre_dig_align_skill_name),
                 dig_skill_name=str(ports.dig_skill_name),
+                final_handoff_guard=ports.final_handoff_guard,
+                request_terminal_neutral=ports.request_terminal_neutral,
             )
         )
 

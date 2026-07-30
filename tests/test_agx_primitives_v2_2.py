@@ -3211,6 +3211,9 @@ class TestPrimitivesV22(unittest.TestCase):
         token_state.return_start_envelope_tokens = token.copy()
         token_state.return_start_envelope_use_prior_spatial_bounds = False
         token_state.return_start_envelope_use_prior_qpos_bounds = False
+        token_state.return_target_planned_cycle_id = int(
+            policy._primitive_cycle_runtime_state().cycle_index
+        )
         token_state.pending_dig_cut_cycle_id = (
             int(policy._primitive_cycle_runtime_state().cycle_index) + 1
         )
@@ -4731,6 +4734,7 @@ def _coverage_planner_policy(
     pre_dig_align_extra: dict | None = None,
     return_target_enabled: bool = False,
     dig_cut_mode: str = "operator_prior_coverage",
+    dig_cut_fallback_mode: str = "conservative_pose",
     prior_path: Path | str | None = None,
     coverage_extra: dict | None = None,
     dig_depth_profile_extra: dict | None = None,
@@ -4792,7 +4796,7 @@ def _coverage_planner_policy(
             "enabled": True,
             "mode": dig_cut_mode,
             "prior_path": str(prior_path or YULONG_DIG_CUT_PRIOR_PATH),
-            "fallback_mode": "conservative_pose",
+            "fallback_mode": str(dig_cut_fallback_mode),
             "hold_token_until_skill_exit": True,
             "coverage": dict(coverage_extra or {}),
             "dig_depth_profile": dict(dig_depth_profile_extra or {}),

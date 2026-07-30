@@ -11,6 +11,7 @@ import numpy as np
 from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
 from testbed.planner.primitive.token.dig_planning import (
+    CoveragePlanSelector,
     CoverageRawFieldsBuilder as DigCoverageRawFieldsBuilder,
     DigCutPlanTuple,
     PrimitiveDigTokenPlanningPorts,
@@ -51,6 +52,7 @@ class PrimitiveTokenPlanningRuntimePorts:
         ResidualCutIntentPlanProvider | None
     ) = None
     ensure_coverage_corridors: Callable[[], None] = lambda: None
+    select_next_coverage_plan: CoveragePlanSelector | None = None
 
 
 @dataclass(frozen=True)
@@ -87,6 +89,7 @@ class PrimitiveTokenPlanningRuntime:
             residual_cut_intent_plan_provider=(
                 ports.residual_cut_intent_plan_provider
             ),
+            select_next_coverage_plan=ports.select_next_coverage_plan,
         )
 
     def return_token_planning_service(self) -> PrimitiveReturnTokenPlanningService:
@@ -111,6 +114,7 @@ class PrimitiveTokenPlanningRuntime:
                 ports.residual_cut_intent_return_target_plan_provider
             ),
             ensure_coverage_corridors=ports.ensure_coverage_corridors,
+            select_next_coverage_plan=ports.select_next_coverage_plan,
         )
 
     def build_dig_depth_profile_tokens_for_obs(

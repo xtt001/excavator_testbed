@@ -10,6 +10,29 @@ import numpy as np
 from testbed.planner.primitive.coverage.selection import CoverageCorridorState
 
 
+@dataclass(frozen=True)
+class CoverageActiveExecutionContract:
+    """Atomically locked tuple, paired-return, and planned-handoff evidence."""
+
+    corridor_id: int
+    effect_outcome_cell_id: int
+    return_envelope_cell_id: int
+    exemplar_id: str
+    raw_fields_sha256: str
+    start_reachability_evaluation: Any = None
+    planned_handoff_worktool_sweep_evaluation: Any = None
+
+    @property
+    def exact_start_contract_required(self) -> bool:
+        evaluation = self.start_reachability_evaluation
+        return bool(
+            evaluation is not None
+            and bool(getattr(evaluation, "eligible", False))
+            and str(getattr(evaluation, "selection_phase", ""))
+            == "post_return"
+        )
+
+
 @dataclass
 class CoverageRuntimeState:
     """Owns the mutable coverage state used by selection, effects, and reports."""
@@ -28,10 +51,44 @@ class CoverageRuntimeState:
     coverage_terminal_stop_reason: str = ""
     coverage_candidate_scores: list[dict[str, Any]] = field(default_factory=list)
     coverage_decision_trace: list[dict[str, Any]] = field(default_factory=list)
+    coverage_wall_rejected_corridor_ids: set[int] = field(default_factory=set)
+    coverage_wall_rejected_cell_ids: set[int] = field(default_factory=set)
+    coverage_depth_exhausted_physical_cell_ids: set[int] = field(
+        default_factory=set
+    )
+    coverage_wall_safety_final_fields: dict[str, Any] = field(
+        default_factory=dict
+    )
+    coverage_active_effect_outcome_cell_id: int = -1
+    coverage_last_selected_effect_outcome_cell_id: int = -1
+    coverage_active_return_envelope_cell_id: int = -1
+    coverage_active_execution_exemplar_id: str = ""
+    coverage_active_execution_raw_fields: dict[str, float | int] = field(
+        default_factory=dict
+    )
+    coverage_active_execution_raw_fields_sha256: str = ""
+    coverage_active_execution_tail_plane_depth_reserve_m: float = float("nan")
+    coverage_active_execution_trace: dict[str, Any] = field(
+        default_factory=dict
+    )
+    coverage_active_execution_contract: (
+        CoverageActiveExecutionContract | None
+    ) = None
+    coverage_final_live_handoff_guard_result: Any = None
     coverage_active_state_exemplar_ids: list[str] = field(default_factory=list)
     coverage_rejected_state_exemplar_ids: set[str] = field(default_factory=set)
     coverage_active_state_exemplar_distance: float = float("nan")
     coverage_active_state_exemplar_profile_token: np.ndarray | None = None
+    coverage_first_plan_pose_stability_last_pose_m: tuple[
+        float,
+        float,
+        float,
+    ] | None = None
+    coverage_first_plan_pose_stability_hold_count: int = 0
+    coverage_first_plan_pose_stability_wait_count: int = 0
+    coverage_first_plan_pose_stability_spike_count: int = 0
+    coverage_first_plan_pose_stability_ready: bool = False
+    coverage_first_plan_pose_stability_timed_out: bool = False
 
     def reset(self) -> None:
         fresh = type(self)()
@@ -44,7 +101,104 @@ class CoverageRuntimeState:
         return None
 
     def active_corridor(self) -> CoverageCorridorState | None:
+        if int(self.coverage_active_effect_outcome_cell_id) >= 0:
+            for corridor in self.coverage_corridors:
+                if (
+                    int(corridor.cell_id)
+                    == int(self.coverage_active_effect_outcome_cell_id)
+                ):
+                    return corridor
         return self.corridor_by_id(self.coverage_active_corridor_id)
+
+    def active_execution_corridor_id(self) -> int:
+        return int(self.coverage_active_corridor_id)
+
+    def set_active_execution_candidate(
+        self,
+        *,
+        corridor_id: int,
+        effect_outcome_cell_id: int,
+        return_envelope_cell_id: int,
+        exemplar_id: str,
+        raw_fields: dict[str, float | int] | None = None,
+        raw_fields_sha256: str,
+        execution_tail_plane_depth_reserve_m: float,
+        trace: dict[str, Any] | None = None,
+        start_reachability_evaluation: Any = None,
+        planned_handoff_worktool_sweep_evaluation: Any = None,
+    ) -> None:
+        outcome_cell_id = int(effect_outcome_cell_id)
+        return_cell_id = int(return_envelope_cell_id)
+        if not 0 <= outcome_cell_id < 6:
+            raise ValueError(
+                f"invalid coverage effect outcome cell id: {outcome_cell_id}"
+            )
+        if not 0 <= return_cell_id < 6:
+            raise ValueError(
+                f"invalid coverage return envelope cell id: {return_cell_id}"
+            )
+        self.coverage_active_corridor_id = int(corridor_id)
+        self.coverage_last_selected_corridor_id = int(corridor_id)
+        self.coverage_active_effect_outcome_cell_id = outcome_cell_id
+        self.coverage_last_selected_effect_outcome_cell_id = outcome_cell_id
+        self.coverage_active_return_envelope_cell_id = return_cell_id
+        self.coverage_active_execution_exemplar_id = str(exemplar_id)
+        self.coverage_active_execution_raw_fields = dict(raw_fields or {})
+        self.coverage_active_execution_raw_fields_sha256 = str(
+            raw_fields_sha256
+        )
+        self.coverage_active_execution_tail_plane_depth_reserve_m = float(
+            execution_tail_plane_depth_reserve_m
+        )
+        self.coverage_active_execution_trace = dict(trace or {})
+        self.coverage_active_execution_contract = (
+            CoverageActiveExecutionContract(
+                corridor_id=int(corridor_id),
+                effect_outcome_cell_id=outcome_cell_id,
+                return_envelope_cell_id=return_cell_id,
+                exemplar_id=str(exemplar_id),
+                raw_fields_sha256=str(raw_fields_sha256),
+                start_reachability_evaluation=(
+                    start_reachability_evaluation
+                ),
+                planned_handoff_worktool_sweep_evaluation=(
+                    planned_handoff_worktool_sweep_evaluation
+                ),
+            )
+        )
+        self.coverage_final_live_handoff_guard_result = None
+
+    def clear_active_execution_candidate(self) -> None:
+        self.coverage_active_effect_outcome_cell_id = -1
+        self.coverage_active_return_envelope_cell_id = -1
+        self.coverage_active_execution_exemplar_id = ""
+        self.coverage_active_execution_raw_fields = {}
+        self.coverage_active_execution_raw_fields_sha256 = ""
+        self.coverage_active_execution_tail_plane_depth_reserve_m = float(
+            "nan"
+        )
+        self.coverage_active_execution_trace = {}
+        self.coverage_active_execution_contract = None
+        self.coverage_final_live_handoff_guard_result = None
+
+    def active_exact_return_transition(self) -> Any | None:
+        """Return the locked post-return contract, never a cell-prior alias."""
+
+        contract = self.coverage_active_execution_contract
+        if contract is None or not contract.exact_start_contract_required:
+            return None
+        return contract.start_reachability_evaluation
+
+    def execution_return_envelope_cell_id(
+        self,
+        corridor_id: int,
+    ) -> int | None:
+        if (
+            int(corridor_id) == int(self.coverage_active_corridor_id)
+            and 0 <= int(self.coverage_active_return_envelope_cell_id) < 6
+        ):
+            return int(self.coverage_active_return_envelope_cell_id)
+        return None
 
     def depleted_count(self) -> int:
         return int(sum(1 for corridor in self.coverage_corridors if corridor.depleted))
@@ -64,7 +218,34 @@ class CoverageRuntimeState:
     def set_candidate_scores(self, candidate_scores: list[dict[str, Any]]) -> None:
         self.coverage_candidate_scores = list(candidate_scores)
 
+    def reject_wall_corridor(
+        self,
+        corridor_id: int,
+        *,
+        cell_id: int | None = None,
+    ) -> None:
+        self.coverage_wall_rejected_corridor_ids.add(int(corridor_id))
+        if cell_id is not None and int(cell_id) >= 0:
+            self.coverage_wall_rejected_cell_ids.add(int(cell_id))
+
+    def wall_corridor_rejected(self, corridor_id: int) -> bool:
+        return int(corridor_id) in self.coverage_wall_rejected_corridor_ids
+
+    def mark_depth_exhausted_physical_cell(self, cell_id: int) -> None:
+        value = int(cell_id)
+        if value < 0 or value >= 6:
+            raise ValueError(f"invalid physical depth-exhausted cell id: {value}")
+        self.coverage_depth_exhausted_physical_cell_ids.add(value)
+
+    def set_wall_safety_final_fields(self, fields: dict[str, Any]) -> None:
+        self.coverage_wall_safety_final_fields = dict(fields)
+
     def set_active_corridor_id(self, value: int) -> None:
+        if (
+            int(value) != int(self.coverage_active_corridor_id)
+            and int(self.coverage_active_effect_outcome_cell_id) >= 0
+        ):
+            self.clear_active_execution_candidate()
         self.coverage_active_corridor_id = int(value)
 
     def set_last_selected_corridor_id(self, value: int) -> None:
@@ -136,4 +317,7 @@ class CoverageRuntimeState:
         self.coverage_active_state_exemplar_profile_token = None
 
 
-__all__ = ["CoverageRuntimeState"]
+__all__ = [
+    "CoverageActiveExecutionContract",
+    "CoverageRuntimeState",
+]

@@ -38,6 +38,13 @@ class ReturnDirectHandoffEffectPorts:
     should_pre_dig_align_before_dig: Callable[[], bool]
     pre_dig_align_skill_name: str
     dig_skill_name: str = "dig"
+    final_handoff_guard: Callable[[dict[str, Any]], Any] = (
+        lambda _obs: None
+    )
+    request_terminal_neutral: Callable[
+        [dict[str, Any], str],
+        None,
+    ] = lambda _obs, _reason: None
 
 
 @dataclass(frozen=True)
@@ -85,6 +92,23 @@ class ReturnDirectHandoffEffectService:
         if not direct_handoff_ready:
             return ReturnDirectHandoffEffectResult(direct_handoff_applied=False)
 
+        final_guard = ports.final_handoff_guard(obs)
+        if final_guard is not None and not bool(
+            getattr(final_guard, "eligible", False)
+        ):
+            rejection_reason = str(
+                getattr(
+                    final_guard,
+                    "rejection_reason",
+                    "exact_tuple_handoff_contract_missing",
+                )
+            )
+            ports.request_terminal_neutral(obs, rejection_reason)
+            return ReturnDirectHandoffEffectResult(
+                direct_handoff_applied=False,
+                switch_reason=rejection_reason,
+            )
+
         ports.cycle_state.complete_return_transition()
         next_skill = (
             str(ports.pre_dig_align_skill_name)
@@ -126,6 +150,10 @@ class ReturnStartEnvelopeGateInputs:
     prior_mapping: Callable[[], dict[str, object] | None]
     use_prior_spatial_bounds: bool
     use_prior_qpos_bounds: bool
+    qvel: Any = ()
+    exact_contract_required: bool = False
+    use_prior_depth_bounds: bool = True
+    exact_valid_mask: Any = None
 
 
 @dataclass(frozen=True)
@@ -158,19 +186,43 @@ class ReturnStartEnvelopeGateService:
         token = np.asarray(inputs.token, dtype=np.float32).reshape(-1)
         if token.shape[0] != RETURN_START_ENVELOPE_TOKEN_DIM:
             return ReturnStartEnvelopeGateResult(
-                ready=True,
+                ready=not inputs.exact_contract_required,
                 error=float("nan"),
                 checks={"missing_token": True},
             )
+        if not bool(np.all(np.isfinite(token))):
+            return ReturnStartEnvelopeGateResult(
+                ready=not inputs.exact_contract_required,
+                error=float("nan"),
+                checks={"nonfinite_token": True},
+            )
         if float(token[16]) <= 0.5 and float(token[17]) <= 0.5:
             return ReturnStartEnvelopeGateResult(
-                ready=True,
+                ready=not inputs.exact_contract_required,
                 error=float("nan"),
                 checks={"invalid_token": True},
             )
+        if inputs.exact_contract_required:
+            valid_mask = np.asarray(
+                inputs.exact_valid_mask,
+                dtype=np.uint8,
+            ).reshape(-1)
+            if (
+                valid_mask.shape[0] != RETURN_START_ENVELOPE_TOKEN_DIM
+                or not bool(np.all(valid_mask > 0))
+            ):
+                return ReturnStartEnvelopeGateResult(
+                    ready=False,
+                    error=float("nan"),
+                    checks={"invalid_exact_valid_mask": True},
+                )
 
         lower, upper = inputs.prior_bounds()
-        prior_mapping = inputs.prior_mapping()
+        prior_mapping = (
+            inputs.prior_mapping()
+            if inputs.use_prior_depth_bounds
+            else None
+        )
         state = _GateState()
         env_state = np.asarray(inputs.env_state, dtype=np.float32).reshape(-1)
         local_depth_prior = (
@@ -298,6 +350,38 @@ class ReturnStartEnvelopeGateService:
                         ),
                     }
                 )
+            elif (
+                inputs.exact_contract_required
+                and len(env_state)
+                > ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX
+            ):
+                plane_tol = config.plane_depth_tolerance_m
+                mode = str(config.plane_depth_mode)
+                if mode == "target_band":
+                    low = float(token[2]) - plane_tol
+                    high = float(token[2]) + plane_tol
+                elif mode == "p50_floor":
+                    low = float(token[2]) - plane_tol
+                    high = float(token[5]) + plane_tol
+                else:
+                    low = float(token[4]) - plane_tol
+                    high = float(token[5]) + plane_tol
+                state.add_check(
+                    "plane_depth_m",
+                    float(
+                        env_state[
+                            ENV_STATE_BUCKET_DEPTH_BELOW_DIG_AREA_PLANE_IDX
+                        ]
+                    ),
+                    low,
+                    high,
+                )
+                state.checks["plane_depth_m"].update(
+                    {"mode": "token_range"}
+                )
+            elif inputs.exact_contract_required:
+                state.ready = False
+                state.checks["plane_depth_missing"] = True
 
             if require_contact:
                 if len(env_state) > ENV_STATE_BUCKET_CONTACT_DIG_AREA_MASK_IDX:
@@ -335,6 +419,20 @@ class ReturnStartEnvelopeGateService:
             else:
                 state.ready = False
                 state.checks["qpos_missing"] = True
+
+            qvel = np.asarray(inputs.qvel, dtype=np.float32).reshape(-1)
+            if qvel.shape[0] >= 4:
+                qvel_abs_max = float(np.max(np.abs(qvel[:4])))
+                qvel_limit = float(token[15])
+                state.add_check(
+                    "qvel_abs_max",
+                    qvel_abs_max,
+                    0.0,
+                    qvel_limit,
+                )
+            else:
+                state.ready = False
+                state.checks["qvel_missing"] = True
 
         return ReturnStartEnvelopeGateResult(
             ready=bool(state.ready),
@@ -471,10 +569,18 @@ class ReturnHandoffReadinessService:
         ports = self.ports
         observation = self._observation(obs)
         corridor_id = int(ports.token_state.pending_dig_cut_corridor_id)
+        exact_contract_required = bool(
+            getattr(
+                ports.token_state,
+                "pending_dig_exact_start_contract_required",
+                False,
+            )
+        )
         return ReturnStartEnvelopeGateInputs(
             token=ports.token_state.return_start_envelope_tokens,
             env_state=observation.env_state,
             qpos=observation.qpos,
+            qvel=observation.qvel,
             prior_bounds=(
                 lambda: ports.return_start_envelope_prior_bounds(corridor_id)
             ),
@@ -486,6 +592,13 @@ class ReturnHandoffReadinessService:
             ),
             use_prior_qpos_bounds=(
                 ports.token_state.return_start_envelope_use_prior_qpos_bounds
+            ),
+            exact_contract_required=exact_contract_required,
+            use_prior_depth_bounds=not exact_contract_required,
+            exact_valid_mask=getattr(
+                ports.token_state,
+                "pending_dig_exact_return_envelope_valid_mask",
+                None,
             ),
         )
 

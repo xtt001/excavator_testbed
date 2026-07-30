@@ -23,7 +23,16 @@ from testbed.planner.primitive.compatibility.cell_entry import (
     PrimitiveCellEntryCompatibilityRuntimeState,
 )
 from testbed.planner.primitive.coverage.selection import CoverageCorridorState
-from testbed.planner.primitive.coverage.config import PrimitiveCoverageStaticConfig
+from testbed.planner.primitive.coverage.config import (
+    CoverageExecutionLibraryConfig,
+    PrimitiveCoverageStaticConfig,
+)
+from testbed.planner.primitive.coverage.plan_readiness import (
+    CoverageFirstPlanPoseStabilityService,
+)
+from testbed.planner.primitive.coverage.wall_safety import (
+    CoverageWallSafetyConfig,
+)
 from testbed.planner.primitive.coverage.selection_runtime import (
     PrimitiveCoverageSelectionRuntime,
     PrimitiveCoverageSelectionRuntimePorts as CoverageSelectionBoundaryPorts,
@@ -773,6 +782,16 @@ class PrimitivePlannerACTPolicy(Policy):
             global_low_productivity_stop=int(
                 self.coverage_global_low_productivity_stop
             ),
+            wall_safety=getattr(
+                self,
+                "coverage_wall_safety_config",
+                CoverageWallSafetyConfig(),
+            ),
+            execution_library=getattr(
+                self,
+                "coverage_execution_library_config",
+                CoverageExecutionLibraryConfig(),
+            ),
         )
 
     def _primitive_coverage_report_runtime_ports(
@@ -1082,7 +1101,34 @@ class PrimitivePlannerACTPolicy(Policy):
     def _should_end_bootstrap(self, *, obs: dict, boundary_event: Any | None) -> bool:
         scripted_bootstrap = self._primitive_scripted_bootstrap_runtime_service()
         if scripted_bootstrap.enabled():
-            return scripted_bootstrap.should_end_bootstrap(obs)
+            if not scripted_bootstrap.should_end_bootstrap(obs):
+                return False
+            execution_config = getattr(
+                self,
+                "coverage_execution_library_config",
+                CoverageExecutionLibraryConfig(),
+            )
+            stability_config = (
+                execution_config.first_plan_pose_stability
+            )
+            if not (
+                execution_config.enabled
+                and stability_config.enabled
+            ):
+                return True
+            observation = PrimitiveObservationFacts.from_obs(
+                obs,
+                action_dim=int(self.action_dim),
+            )
+            readiness = CoverageFirstPlanPoseStabilityService(
+                config=stability_config,
+                state=self._coverage_runtime_state(),
+            ).observe(observation.bucket_tip_dig_area_pose())
+            if readiness.timed_out:
+                self._coverage_runtime_state().request_terminal_stop(
+                    "first_plan_pose_stability_timeout"
+                )
+            return bool(readiness.ready)
         observation = PrimitiveObservationFacts.from_obs(
             obs,
             action_dim=int(self.action_dim),

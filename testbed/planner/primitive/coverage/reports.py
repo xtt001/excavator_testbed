@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -55,6 +55,9 @@ class CoverageDebugReportInputs:
     terminal_stop_reason: str
     corridors: list[dict[str, Any]]
     candidate_scores: list[dict[str, Any]]
+    wall_safety_final_fields: dict[str, Any] = field(default_factory=dict)
+    wall_rejected_corridor_ids: list[int] = field(default_factory=list)
+    wall_rejected_cell_ids: list[int] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -147,7 +150,7 @@ class CoverageReportService:
         last_selected_corridor = state.corridor_by_id(
             state.coverage_last_selected_corridor_id
         )
-        return self.debug_fields(
+        fields = self.debug_fields(
             CoverageDebugReportInputs(
                 active_corridor_id=int(state.coverage_active_corridor_id),
                 last_selected_corridor_id=int(
@@ -233,8 +236,18 @@ class CoverageReportService:
                     for corridor in state.coverage_corridors
                 ],
                 candidate_scores=list(state.coverage_candidate_scores),
+                wall_safety_final_fields=dict(
+                    state.coverage_wall_safety_final_fields
+                ),
+                wall_rejected_corridor_ids=sorted(
+                    state.coverage_wall_rejected_corridor_ids
+                ),
+                wall_rejected_cell_ids=sorted(
+                    state.coverage_wall_rejected_cell_ids
+                ),
             )
         )
+        return fields
 
     def summary_status_from_state(
         self,
@@ -424,7 +437,7 @@ class CoverageReportService:
                 return float("nan")
             return float(active.get(name, float("nan")))
 
-        return {
+        fields = {
             "coverage_corridor_id": int(inputs.active_corridor_id),
             "coverage_selected_corridor_id": int(inputs.active_corridor_id),
             "coverage_last_selected_corridor_id": int(
@@ -519,6 +532,15 @@ class CoverageReportService:
             "planner_terminal_stop_reason": str(inputs.terminal_stop_reason),
             "coverage_candidate_scores": list(inputs.candidate_scores),
         }
+        for name, value in inputs.wall_safety_final_fields.items():
+            fields[f"coverage_{name}"] = value
+        fields["coverage_wall_rejected_corridor_ids"] = list(
+            inputs.wall_rejected_corridor_ids
+        )
+        fields["coverage_wall_rejected_cell_ids"] = list(
+            inputs.wall_rejected_cell_ids
+        )
+        return fields
 
     @staticmethod
     def corridor_to_debug(

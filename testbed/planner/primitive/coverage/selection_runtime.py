@@ -8,16 +8,10 @@ from typing import Any
 
 import numpy as np
 
-from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 from testbed.planner.primitive.coverage.config import PrimitiveCoverageStaticConfig
-from testbed.planner.primitive.coverage.selection import (
-    CoverageCandidateBuilder,
-    CoverageCandidateSelectionFacts,
-    CoverageCorridorState,
-    CoverageSelectionConfig,
-    CoverageSelectionRuntimeCoordinator,
-    CoverageSelectionRuntimePorts,
-    CoverageSelectionService,
+from testbed.planner.primitive.coverage.execution_runtime import (
+    CoverageExecutionLibraryRuntime,
+    compact_execution_candidate_trace,
 )
 from testbed.planner.primitive.coverage.exemplars import (
     CoverageStateExemplarPlanner,
@@ -27,7 +21,21 @@ from testbed.planner.primitive.coverage.facts import (
     CoveragePlanningFactConfig,
     CoveragePlanningFactService,
 )
+from testbed.planner.primitive.coverage.selection import (
+    CoverageCandidateBuilder,
+    CoverageCandidateSelectionFacts,
+    CoverageCorridorState,
+    CoverageSelectionConfig,
+    CoverageSelectionRuntimeCoordinator,
+    CoverageSelectionRuntimePorts,
+    CoverageSelectionService,
+)
 from testbed.planner.primitive.coverage.state import CoverageRuntimeState
+from testbed.planner.primitive.coverage.wall_safety import (
+    CoverageFinalWallSafetyError,
+    NoWallSafeCorridorError,
+)
+from testbed.planner.primitive.facts.capabilities import PrimitiveObservationFacts
 
 
 @dataclass(frozen=True)
@@ -53,7 +61,7 @@ class PrimitiveCoverageSelectionRuntime:
     def from_ports(
         cls,
         ports: PrimitiveCoverageSelectionRuntimePorts,
-    ) -> "PrimitiveCoverageSelectionRuntime":
+    ) -> PrimitiveCoverageSelectionRuntime:
         return cls(ports=ports)
 
     def coverage_selection_runtime_ports(self) -> CoverageSelectionRuntimePorts:
@@ -90,8 +98,139 @@ class PrimitiveCoverageSelectionRuntime:
         self,
         obs: dict[str, Any],
     ) -> CoverageCorridorState:
-        return self.coverage_selection_runtime_coordinator().select_next_corridor(
-            obs
+        try:
+            return (
+                self.coverage_selection_runtime_coordinator()
+                .select_next_corridor(obs)
+            )
+        except NoWallSafeCorridorError as exc:
+            self._record_no_wall_safe_corridor(obs, exc)
+            raise
+
+    def select_next_coverage_plan(
+        self,
+        obs: dict[str, Any],
+        *,
+        update_state: bool,
+    ) -> tuple[CoverageCorridorState, dict[str, float | int]]:
+        if self.ports.static_config.execution_library.enabled:
+            return self._select_next_execution_library_plan(
+                obs,
+                update_state=update_state,
+            )
+        while True:
+            corridor = self.select_next_coverage_corridor(obs)
+            try:
+                raw_fields = self.coverage_raw_fields(
+                    corridor,
+                    obs=obs,
+                    update_state=update_state,
+                )
+            except CoverageFinalWallSafetyError as exc:
+                self.ports.state.reject_wall_corridor(
+                    corridor.corridor_id,
+                    cell_id=corridor.cell_id,
+                )
+                self.ports.record_decision_event(
+                    "wall_safety_final_guard_rejected",
+                    obs=obs,
+                    corridor=corridor,
+                    extra={
+                        **exc.evaluation.as_trace_fields(),
+                        "raw_fields": dict(exc.raw_fields),
+                        "rejection_reason": str(
+                            exc.evaluation.rejection_reason
+                        ),
+                    },
+                )
+                continue
+            self.ports.record_decision_event(
+                "wall_safety_final_guard_accepted",
+                obs=obs,
+                corridor=corridor,
+                extra={
+                    **dict(
+                        self.ports.state.coverage_wall_safety_final_fields
+                    ),
+                    "raw_fields": dict(raw_fields),
+                },
+            )
+            return corridor, raw_fields
+
+    def _select_next_execution_library_plan(
+        self,
+        obs: dict[str, Any],
+        *,
+        update_state: bool,
+    ) -> tuple[CoverageCorridorState, dict[str, float | int]]:
+        self.ensure_coverage_corridors()
+        observation = self.ports.observation_facts(obs)
+        selection_service = self.coverage_selection_service()
+        try:
+            result = CoverageExecutionLibraryRuntime(
+                config=self.ports.static_config.execution_library,
+                wall_safety_config=self.ports.static_config.wall_safety,
+                state=self.ports.state,
+                selection_service=selection_service,
+            ).select(
+                env_state=observation.env_state,
+                current_qpos=observation.qpos,
+                current_qvel=observation.qvel,
+                bucket_tip_dig_area_pose=(
+                    observation.bucket_tip_dig_area_pose()
+                ),
+                remaining_depth_by_outcome_cell_id={
+                    int(corridor.cell_id): float(
+                        self.coverage_remaining_depth_for_corridor(
+                            obs,
+                            corridor,
+                        )
+                    )
+                    for corridor in self.ports.state.coverage_corridors
+                    if 0 <= int(corridor.cell_id) < 6
+                },
+                recent_row_reference=(
+                    self.coverage_recent_row_reference_corridor()
+                ),
+                update_state=update_state,
+            )
+        except NoWallSafeCorridorError as exc:
+            self._record_no_wall_safe_corridor(obs, exc)
+            raise
+        self.ports.record_decision_event(
+            "select_actual_tuple_execution_candidate",
+            obs=obs,
+            corridor=result.corridor,
+            extra={
+                **result.candidate.as_trace_fields(),
+                "raw_fields": dict(result.raw_fields),
+                "coverage_execution_library_sha256": str(
+                    self.ports.static_config.execution_library.artifact_sha256
+                ),
+            },
+        )
+        return result.corridor, dict(result.raw_fields)
+
+    def _record_no_wall_safe_corridor(
+        self,
+        obs: dict[str, Any],
+        exc: NoWallSafeCorridorError,
+    ) -> None:
+        candidate_scores = list(exc.candidate_scores)
+        state_scores = (
+            compact_execution_candidate_trace(candidate_scores)
+            if self.ports.static_config.execution_library.enabled
+            else candidate_scores
+        )
+        self.ports.state.set_candidate_scores(state_scores)
+        self.ports.record_decision_event(
+            str(exc.reason),
+            obs=obs,
+            extra={
+                "reason": str(exc.reason),
+                "detail": str(exc.detail),
+                "candidate_scores": candidate_scores,
+            },
         )
 
     def ensure_coverage_corridors(self) -> None:
@@ -101,7 +240,13 @@ class PrimitiveCoverageSelectionRuntime:
         self,
         obs: dict[str, Any],
     ) -> CoverageCorridorState:
-        return self.coverage_selection_runtime_coordinator().select_corridor(obs)
+        try:
+            return self.coverage_selection_runtime_coordinator().select_corridor(
+                obs
+            )
+        except NoWallSafeCorridorError as exc:
+            self._record_no_wall_safe_corridor(obs, exc)
+            raise
 
     def build_cell_weighted_coverage_corridors(
         self,

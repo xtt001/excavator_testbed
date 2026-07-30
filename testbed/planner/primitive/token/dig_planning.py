@@ -16,6 +16,9 @@ from testbed.data.operator_first_v2_2 import (
     DIG_CUT_TOKEN_DIM,
 )
 from testbed.data.schema import ENV_STATE_BUCKET_DIG_AREA_CELL_ID_IDX
+from testbed.planner.primitive.coverage.execution_candidates import (
+    COVERAGE_EXECUTION_CANDIDATE_LIBRARY_SCHEMA,
+)
 from testbed.planner.primitive.token.tokens import (
     DigCutTokenPlan,
     DigDepthProfileTokenPlan,
@@ -81,6 +84,18 @@ class CoverageRawFieldsBuilder(Protocol):
         ...
 
 
+class CoveragePlanSelector(Protocol):
+    """Select one corridor together with its final guarded raw fields."""
+
+    def __call__(
+        self,
+        obs: dict[str, Any],
+        *,
+        update_state: bool,
+    ) -> tuple[Any, dict[str, float | int]]:
+        ...
+
+
 @dataclass(frozen=True)
 class PrimitiveDigTokenPlanningPorts:
     """Shell-owned readers, writers, and token algorithm providers."""
@@ -97,6 +112,7 @@ class PrimitiveDigTokenPlanningPorts:
     select_next_coverage_corridor: Callable[[dict[str, Any]], Any]
     coverage_raw_fields: CoverageRawFieldsBuilder
     residual_cut_intent_plan_provider: ResidualCutIntentPlanProvider | None = None
+    select_next_coverage_plan: CoveragePlanSelector | None = None
 
 
 @dataclass(frozen=True)
@@ -228,19 +244,30 @@ class PrimitiveDigTokenPlanningService:
         obs: dict[str, Any],
     ) -> DigCutPlanTuple:
         ports = self.ports
-        corridor = ports.select_next_coverage_corridor(obs)
+        if ports.select_next_coverage_plan is None:
+            corridor = ports.select_next_coverage_corridor(obs)
+            raw_fields = ports.coverage_raw_fields(
+                corridor,
+                obs=obs,
+                update_state=True,
+            )
+        else:
+            corridor, raw_fields = ports.select_next_coverage_plan(
+                obs,
+                update_state=True,
+            )
         ports.coverage_state.set_current_payload_gain_kg(0.0)
         ports.coverage_state.set_cycle_start_deposit_kg(
             self.observation_facts(obs).deposited_mass_in_target_box_kg
         )
-        raw_fields = ports.coverage_raw_fields(
-            corridor,
-            obs=obs,
-            update_state=True,
+        source = (
+            COVERAGE_EXECUTION_CANDIDATE_LIBRARY_SCHEMA
+            if ports.coverage_state.coverage_active_execution_exemplar_id
+            else "operator_prior_coverage"
         )
         plan = ports.dig_cut_token_planner().plan_from_raw_fields(
             raw_fields,
-            source="operator_prior_coverage",
+            source=source,
         )
         return self.unpack_dig_cut_token_plan(plan)
 
@@ -349,6 +376,11 @@ class PrimitiveDigTokenPlanningService:
         pending_raw = self.ports.token_state.pending_dig_cut_raw_fields
         if pending_raw is not None and self._pending_cycle_matches_current_cycle():
             return dict(pending_raw)
+        execution_raw = (
+            self.ports.coverage_state.coverage_active_execution_raw_fields
+        )
+        if execution_raw:
+            return dict(execution_raw)
         corridor = self.ports.coverage_state.active_corridor()
         if corridor is not None:
             return self.ports.coverage_raw_fields(corridor, obs=obs)

@@ -11,6 +11,7 @@ import numpy as np
 from testbed.planner.primitive.token.dig_planning import (
     DIG_CUT_PLANNER_MODE_RESIDUAL_CUT_INTENT,
     RESIDUAL_CUT_INTENT_NO_PLAN_REASON,
+    CoveragePlanSelector,
     ResidualCutIntentPlanProvider,
 )
 from testbed.planner.primitive.token.tokens import (
@@ -62,6 +63,7 @@ class PrimitiveReturnTokenPlanningPorts:
         ResidualCutIntentPlanProvider | None
     ) = None
     ensure_coverage_corridors: Callable[[], None] = _noop
+    select_next_coverage_plan: CoveragePlanSelector | None = None
 
 
 @dataclass(frozen=True)
@@ -97,14 +99,20 @@ class PrimitiveReturnTokenPlanningService:
                 )
             )
         if mode in {"operator_prior_coverage", "operator_prior_sweep_belief"}:
-            corridor = ports.select_next_coverage_corridor(obs)
+            if ports.select_next_coverage_plan is None:
+                corridor = ports.select_next_coverage_corridor(obs)
+                raw_fields = ports.coverage_raw_fields(
+                    corridor,
+                    obs=obs,
+                    update_state=True,
+                )
+            else:
+                corridor, raw_fields = ports.select_next_coverage_plan(
+                    obs,
+                    update_state=True,
+                )
             corridor_id = int(corridor.corridor_id)
             ports.coverage_state.set_active_corridor_id(corridor_id)
-            raw_fields = ports.coverage_raw_fields(
-                corridor,
-                obs=obs,
-                update_state=True,
-            )
             return self.unpack_return_target_token_plan(
                 planner.plan_from_coverage_raw_fields(
                     raw_fields,
@@ -251,6 +259,13 @@ class PrimitiveReturnTokenPlanningService:
     ) -> int | None:
         if corridor_id is None:
             return None
+        explicit_cell_id = (
+            self.ports.coverage_state.execution_return_envelope_cell_id(
+                int(corridor_id)
+            )
+        )
+        if explicit_cell_id is not None:
+            return int(explicit_cell_id)
         try:
             corridor = self.ports.coverage_state.corridor_by_id(int(corridor_id))
         except Exception:

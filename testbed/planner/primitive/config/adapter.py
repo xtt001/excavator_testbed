@@ -15,9 +15,15 @@ from testbed.planner.cell_entry import (
     CellGridSpec,
     PlannerDecisionAuditor,
 )
+from testbed.planner.primitive.coverage.config import (
+    CoverageExecutionLibraryConfig,
+)
 from testbed.planner.primitive.coverage.exemplars import (
     CoverageStateExemplarPlanner,
     CoverageStateExemplarPlannerConfig,
+)
+from testbed.planner.primitive.coverage.wall_safety import (
+    CoverageWallSafetyConfig,
 )
 from testbed.planner.primitive.decision.backends.legacy_capability_provider import (
     PrimitiveFSMCapabilityProviderConfig,
@@ -564,6 +570,12 @@ class PrimitivePlannerAdapterConfigNormalizer:
         )
 
         coverage_cfg = dict(dig_cut_planner_cfg.get("coverage", {}) or {})
+        set_value(
+            "coverage_wall_safety_config",
+            CoverageWallSafetyConfig.from_mapping(
+                coverage_cfg.get("wall_safety", {})
+            ),
+        )
         coverage_candidate_layout = set_value(
             "coverage_candidate_layout",
             str(coverage_cfg.get("candidate_layout", "percentile_grid"))
@@ -704,6 +716,15 @@ class PrimitivePlannerAdapterConfigNormalizer:
                     skip_rejected=coverage_state_exemplar_skip_rejected,
                 )
             ).load_exemplars(),
+        )
+        coverage_execution_library_config = set_value(
+            "coverage_execution_library_config",
+            CoverageExecutionLibraryConfig.from_mapping(
+                coverage_cfg.get("actual_tuple_execution_library")
+            ),
+        )
+        coverage_execution_library_config.validate_for_planner_mode(
+            dig_cut_planner_mode
         )
         set_value(
             "coverage_first_dig_strategy",
