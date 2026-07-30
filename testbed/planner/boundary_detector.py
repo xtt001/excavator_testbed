@@ -80,6 +80,7 @@ class BoundaryDetectorConfig:
     release_onset_max_outside_distance_m: float = 0.45
     release_onset_min_bucket_mass_drop_kg: float = 0.5
     release_onset_min_deposit_gain_kg: float = 0.5
+    release_onset_dump_ownership_diagnostic_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -223,6 +224,12 @@ def build_boundary_detector_from_config(
             ),
             release_onset_min_deposit_gain_kg=float(
                 boundary_cfg.get("release_onset_min_deposit_gain_kg", 0.5)
+            ),
+            release_onset_dump_ownership_diagnostic_enabled=bool(
+                boundary_cfg.get(
+                    "release_onset_dump_ownership_diagnostic_enabled",
+                    False,
+                )
             ),
         )
     )
@@ -410,6 +417,7 @@ class BoundaryDetector:
             self._cycle_start_target_mass_kg = metrics["mass_in_target_box_kg"]
 
         dig_complete = False
+        dump_ownership_start = False
         dump_committed_start = False
         release_onset = False
         dump_complete = False
@@ -431,7 +439,20 @@ class BoundaryDetector:
                 >= max(1, int(self.config.dump_committed_hold_steps))
             ):
                 dump_committed_start = True
+                dump_ownership_start = True
                 self._dump_started = True
+                self._plateau_count = 0
+
+            if (
+                not self._dump_started
+                and self._dig_complete_seen
+                and self.config.release_onset_dump_ownership_diagnostic_enabled
+                and self._is_dump_ownership_release_evidence(metrics)
+            ):
+                dump_ownership_start = True
+                self._dump_started = True
+                release_onset = True
+                self._release_onset_seen = True
                 self._plateau_count = 0
 
             if self._dump_started and not self._release_onset_seen:
@@ -476,7 +497,7 @@ class BoundaryDetector:
             cycle_id=int(self._current_cycle_id),
             mode_id=int(mode_id),
             qualified_dig_start=qualified_dig_start,
-            dump_start=dump_committed_start,
+            dump_start=dump_ownership_start,
             dump_end=dump_complete,
             boundary=boundary,
             pause=pause,
@@ -840,6 +861,33 @@ class BoundaryDetector:
         return float(np.max(values) - np.min(values))
 
     def _is_release_onset_condition(self, metrics: dict[str, float]) -> bool:
+        if not self._is_release_area_condition(metrics):
+            return False
+        bucket_drop = -float(metrics["delta_mass_in_bucket_kg"])
+        deposit_gain = max(
+            float(metrics["delta_deposited_mass_in_target_box_kg"]),
+            float(metrics["delta_deposited_mass_in_dump_area_kg"]),
+        )
+        return bool(
+            bucket_drop >= self.config.release_onset_min_bucket_mass_drop_kg
+            or deposit_gain >= self.config.release_onset_min_deposit_gain_kg
+        )
+
+    def _is_dump_ownership_release_evidence(
+        self,
+        metrics: dict[str, float],
+    ) -> bool:
+        if not self._is_release_area_condition(metrics):
+            return False
+        deposit_gain = max(
+            float(metrics["delta_deposited_mass_in_target_box_kg"]),
+            float(metrics["delta_deposited_mass_in_dump_area_kg"]),
+        )
+        return bool(
+            deposit_gain >= self.config.release_onset_min_deposit_gain_kg
+        )
+
+    def _is_release_area_condition(self, metrics: dict[str, float]) -> bool:
         if metrics["dump_area_geometry_available"] <= 0.0:
             return False
         outside = metrics["bucket_dump_area_footprint_outside_distance_m"]
@@ -851,17 +899,7 @@ class BoundaryDetector:
             )
             or over_footprint
         )
-        if not near_release_area:
-            return False
-        bucket_drop = -float(metrics["delta_mass_in_bucket_kg"])
-        deposit_gain = max(
-            float(metrics["delta_deposited_mass_in_target_box_kg"]),
-            float(metrics["delta_deposited_mass_in_dump_area_kg"]),
-        )
-        return bool(
-            bucket_drop >= self.config.release_onset_min_bucket_mass_drop_kg
-            or deposit_gain >= self.config.release_onset_min_deposit_gain_kg
-        )
+        return bool(near_release_area)
 
     def _is_dump_start_condition(self, metrics: dict[str, float]) -> bool:
         cycle_deposit_delta = max(

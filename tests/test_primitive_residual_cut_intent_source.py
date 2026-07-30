@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -235,3 +236,28 @@ def test_primitive_planner_exposes_next_cycle_residual_return_target_provider(
 
     policy.residual_cut_intent_source_path = ""
     assert policy._residual_cut_intent_return_target_plan_provider() is None
+
+
+class _OnlineBoxPlanService:
+    def __init__(self) -> None:
+        self.targets: list[int] = []
+
+    def plan(self, obs, *, target_cycle_index: int):
+        self.targets.append(target_cycle_index)
+        return ({"operator_entry_x_m": float(target_cycle_index)}, "online_box")
+
+
+def test_policy_routes_dig_and_return_to_shared_online_box_plan_service() -> None:
+    policy = object.__new__(PrimitivePlannerACTPolicy)
+    policy.box_emptying_planner_enabled = True
+    policy.__dict__["_box_emptying_residual_plan_service_state"] = (
+        _OnlineBoxPlanService()
+    )
+    policy.__dict__["_cycle_state"] = SimpleNamespace(cycle_index=4)
+
+    dig_provider = policy._residual_cut_intent_plan_provider()
+    return_provider = policy._residual_cut_intent_return_target_plan_provider()
+    assert dig_provider is not None
+    assert return_provider is not None
+    assert dig_provider({})[0]["operator_entry_x_m"] == 4.0
+    assert return_provider({})[0]["operator_entry_x_m"] == 5.0

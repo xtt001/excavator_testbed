@@ -70,6 +70,9 @@ from testbed.planner.boundary_detector import build_boundary_detector_from_confi
 from testbed.planner.primitive.effects.bounded_dig_probe_stop import (
     bounded_dig_probe_step_fields,
 )
+from testbed.planner.primitive.execution.return_approach_control import (
+    build_return_approach_axis_limit_log_fields,
+)
 from testbed.policies.base import Policy
 from testbed.tasks.logic.excavator_reward import (
     build_agx_excavation_mission_overrides,
@@ -1011,6 +1014,9 @@ class EvalSuite:
                             ),
                             "primitive_checkpoint_path": str(
                                 policy_debug.get("primitive_checkpoint_path", "")
+                            ),
+                            **build_return_approach_axis_limit_log_fields(
+                                policy_debug
                             ),
                             "primitive_cycle_index": int(
                                 policy_debug.get("primitive_cycle_index", -1)

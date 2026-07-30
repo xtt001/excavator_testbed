@@ -132,6 +132,10 @@ from testbed.planner.primitive.execution.reset_lifecycle import (
     PrimitiveResetLifecycleService,
     PrimitiveResetLifecycleState,
 )
+from testbed.planner.primitive.execution.return_approach_control import (
+    ReturnApproachAxisLimitConfig,
+    ReturnApproachAxisLimitService,
+)
 from testbed.planner.primitive.execution.return_state import (
     PrimitiveReturnReportStatus,
     PrimitiveReturnRuntimeState,
@@ -431,6 +435,7 @@ class PrimitivePlannerACTPolicy(Policy):
     def reset(self) -> None:
         self._primitive_runtime_kernel_runtime().reset()
         self._reset_box_safety_interlock()
+        self._reset_return_approach_axis_limit()
         self._reset_box_emptying_plan_service()
         self._reset_box_emptying_runtime_monitor()
         self._reset_carry_start_envelope_gate()
@@ -867,6 +872,11 @@ class PrimitivePlannerACTPolicy(Policy):
         )
         if bounded_probe is not None:
             report.update(bounded_probe.debug_fields())
+        return_axis_limit = self.__dict__.get(
+            "_return_approach_axis_limit_state"
+        )
+        if return_axis_limit is not None:
+            report.update(return_axis_limit.debug_fields())
         plan_service = self.__dict__.get(
             "_box_emptying_residual_plan_service_state"
         )
@@ -998,6 +1008,25 @@ class PrimitivePlannerACTPolicy(Policy):
         if state is not None:
             state.reset()
 
+    def _return_approach_axis_limit(
+        self,
+    ) -> ReturnApproachAxisLimitService:
+        state = self.__dict__.get("_return_approach_axis_limit_state")
+        if state is None:
+            state = ReturnApproachAxisLimitService(
+                ReturnApproachAxisLimitConfig.from_box_emptying_mapping(
+                    dict(getattr(self, "box_emptying_cfg", {}) or {}),
+                    action_dim=int(self.action_dim),
+                )
+            )
+            self.__dict__["_return_approach_axis_limit_state"] = state
+        return state
+
+    def _reset_return_approach_axis_limit(self) -> None:
+        state = self.__dict__.get("_return_approach_axis_limit_state")
+        if state is not None:
+            state.reset()
+
     def _box_safety_filter_action(
         self,
         obs: dict[str, Any],
@@ -1073,12 +1102,50 @@ class PrimitivePlannerACTPolicy(Policy):
             obs,
             active_corridor_id=active_corridor_id,
         )
+        return_goal_cell_id = (
+            coverage_state.execution_return_envelope_cell_id(
+                active_corridor_id
+            )
+        )
+        if return_goal_cell_id is None:
+            active_corridor = coverage_state.corridor_by_id(
+                active_corridor_id
+            )
+            return_goal_cell_id = (
+                -1
+                if active_corridor is None
+                else int(active_corridor.cell_id)
+            )
         plan_service = self.__dict__.get(
             "_box_emptying_residual_plan_service_state"
         )
         if plan_service is not None and plan_service.active_cell_id >= 0:
             active_cell_id = int(plan_service.active_cell_id)
+            return_goal_cell_id = int(plan_service.active_cell_id)
             active_corridor_id = int(plan_service.active_corridor_numeric_id)
+        if bool(
+            getattr(self, "return_approach_axis_limit_enabled", False)
+        ):
+            axis_limit_decision = self._return_approach_axis_limit().shape_action(
+                obs,
+                proposed_action,
+                skill_name=str(self._skill_name),
+                completed_dump_count=int(
+                    coverage_state.coverage_completed_dump_count
+                ),
+                goal_cell_id=return_goal_cell_id,
+                envelope_checks=(
+                    self._primitive_return_runtime_state()
+                    .return_to_dig_start_envelope_checks
+                ),
+            )
+            proposed_action = axis_limit_decision.action
+            if axis_limit_decision.terminal_reason:
+                interlock.request_neutral_event(
+                    step_id=int(obs.get("step_id", -1)),
+                    reason=axis_limit_decision.terminal_reason,
+                    terminal=True,
+                )
         decision = interlock.filter_action(
             obs,
             proposed_action,

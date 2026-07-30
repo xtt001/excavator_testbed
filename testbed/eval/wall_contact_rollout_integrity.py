@@ -30,6 +30,7 @@ RUNTIME_CODE_PATHS = (
     "testbed/planner/box_emptying/stop_conditions.py",
     "testbed/planner/primitive/config/adapter.py",
     "testbed/planner/primitive/execution/action_dispatch.py",
+    "testbed/planner/primitive/execution/return_approach_control.py",
     "testbed/policies/act/adapter.py",
     "testbed/policies/hybrid/adapter.py",
     "testbed/policies/hybrid/box_emptying_runtime.py",

@@ -8,8 +8,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_DIM
 import testbed.planner.primitive.config.adapter as adapter_config
+from testbed.data.operator_first_v2_2 import DIG_CUT_TOKEN_DIM
 from testbed.planner.primitive.config.adapter import (
     PrimitivePlannerAdapterConfigInputs,
     PrimitivePlannerAdapterConfigNormalizer,
@@ -22,7 +22,6 @@ from testbed.planner.primitive.effects.return_handoff import (
     ReturnHandoffReadinessConfig,
 )
 from testbed.policies.hybrid.primitive_planner import PrimitivePlannerACTPolicy
-
 
 _POLICY_HELPER_FACADE_NAMES = {
     "_scripted_bootstrap_target_reached",
@@ -80,6 +79,8 @@ def test_default_config_normalizes_legacy_defaults_and_vector_helpers() -> None:
     assert updates["dig_cut_planner_mode"] == "conservative_pose"
     assert updates["dig_cut_prior"] == {}
     assert updates["return_to_dig_max_entry_error_m"] is None
+    assert updates["box_emptying_cfg"] == {}
+    assert updates["box_emptying_safety_enabled"] is False
     assert adapter_config.optional_float("none") is None
     assert adapter_config.optional_float("null") is None
     assert adapter_config.optional_float("") is None
@@ -94,6 +95,164 @@ def test_default_config_normalizes_legacy_defaults_and_vector_helpers() -> None:
     assert optional is not None
     assert optional.dtype == np.float32
     assert optional.tolist() == [1.0, 2.0, 3.0, 4.0]
+
+
+def test_box_emptying_config_is_explicit_and_safety_defaults_to_planner_enablement() -> None:
+    state = _normalize(
+        PrimitivePlannerAdapterConfigInputs(
+            dig_cut_planner={
+                "mode": "residual_cut_intent",
+                "fallback_mode": "error",
+            },
+            box_emptying={
+                "enabled": True,
+                "effect_artifact_manifest_path": "/tmp/effect.json",
+                "safety": {"wall_high_force_n": 100_000.0},
+            }
+        )
+    )
+    updates = state.as_policy_field_updates()
+
+    assert updates["box_emptying_cfg"]["enabled"] is True
+    assert updates["box_emptying_safety_enabled"] is True
+    assert updates["box_emptying_cfg"]["safety"]["wall_high_force_n"] == 100_000.0
+
+
+def test_box_emptying_safety_can_be_enabled_before_planner_artifact_exists() -> None:
+    state = _normalize(
+        PrimitivePlannerAdapterConfigInputs(
+            box_emptying={"enabled": False, "safety_enabled": True}
+        )
+    )
+    updates = state.as_policy_field_updates()
+
+    assert updates["box_emptying_safety_enabled"] is True
+
+
+def test_functional_and_carry_start_runtime_gates_require_safety_interlock() -> None:
+    for gate_name in ("functional_cycle_gate", "carry_start_envelope"):
+        with pytest.raises(ValueError, match="requires the safety interlock"):
+            _normalize(
+                PrimitivePlannerAdapterConfigInputs(
+                    box_emptying={
+                        "enabled": False,
+                        "safety_enabled": False,
+                        gate_name: {"enabled": True},
+                    }
+                )
+            )
+
+
+def test_functional_cycle_gate_v1_is_exactly_ten_cycles() -> None:
+    with pytest.raises(ValueError, match="target_cycles=10"):
+        _normalize(
+            PrimitivePlannerAdapterConfigInputs(
+                box_emptying={
+                    "enabled": False,
+                    "safety_enabled": True,
+                    "functional_cycle_gate": {
+                        "enabled": True,
+                        "target_cycles": 9,
+                    },
+                }
+            )
+        )
+
+
+def test_return_approach_axis_limit_requires_diagnostic_marker_and_safety() -> None:
+    with pytest.raises(ValueError, match="diagnostic_only=true"):
+        _normalize(
+            PrimitivePlannerAdapterConfigInputs(
+                box_emptying={
+                    "safety_enabled": True,
+                    "return_approach_axis_limit": {
+                        "enabled": True,
+                        "diagnostic_only": False,
+                    },
+                }
+            )
+        )
+
+    with pytest.raises(ValueError, match="requires the safety interlock"):
+        _normalize(
+            PrimitivePlannerAdapterConfigInputs(
+                box_emptying={
+                    "safety_enabled": False,
+                    "return_approach_axis_limit": {
+                        "enabled": True,
+                        "diagnostic_only": True,
+                    },
+                }
+            )
+        )
+
+    updates = _normalize(
+        PrimitivePlannerAdapterConfigInputs(
+            box_emptying={
+                "safety_enabled": True,
+                "return_approach_axis_limit": {
+                    "enabled": True,
+                    "diagnostic_only": True,
+                    "axis_index": 1,
+                    "required_cell_id": 0,
+                    "min_completed_dump_count": 7,
+                },
+            }
+        )
+    ).as_policy_field_updates()
+
+    assert updates["return_approach_axis_limit_enabled"] is True
+    assert (
+        updates["box_emptying_cfg"]["return_approach_axis_limit"][
+            "min_completed_dump_count"
+        ]
+        == 7
+    )
+
+
+def test_enabled_box_emptying_requires_strict_online_artifact_route() -> None:
+    with pytest.raises(ValueError, match="effect_artifact_manifest_path"):
+        _normalize(
+            PrimitivePlannerAdapterConfigInputs(
+                dig_cut_planner={
+                    "mode": "residual_cut_intent",
+                    "fallback_mode": "error",
+                },
+                box_emptying={"enabled": True},
+            )
+        )
+
+    with pytest.raises(ValueError, match="fallback_mode='error'"):
+        _normalize(
+            PrimitivePlannerAdapterConfigInputs(
+                dig_cut_planner={
+                    "mode": "residual_cut_intent",
+                    "fallback_mode": "conservative_pose",
+                },
+                box_emptying={
+                    "enabled": True,
+                    "effect_artifact_manifest_path": "/tmp/released.json",
+                },
+            )
+        )
+
+    updates = _normalize(
+        PrimitivePlannerAdapterConfigInputs(
+            dig_cut_planner={
+                "mode": "residual_cut_intent",
+                "fallback_mode": "error",
+            },
+            box_emptying={
+                "enabled": True,
+                "effect_artifact_manifest_path": "/tmp/released.json",
+            },
+        )
+    ).as_policy_field_updates()
+    assert updates["box_emptying_planner_enabled"] is True
+    assert (
+        updates["box_emptying_artifact_manifest_path"]
+        == "/tmp/released.json"
+    )
 
 
 def test_normalizer_exposes_fsm_capability_provider_config() -> None:

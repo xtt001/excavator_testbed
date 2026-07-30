@@ -43,6 +43,12 @@ from testbed.planner.primitive.effects.return_handoff import (
     ReturnHandoffReadinessConfig,
     ReturnStartEnvelopeGateConfig,
 )
+from testbed.planner.primitive.effects.return_handoff_owner_control import (
+    ReturnStartEnvelopeOwnerControlConfig,
+)
+from testbed.planner.primitive.execution.return_approach_control import (
+    ReturnApproachAxisLimitConfig,
+)
 from testbed.planner.primitive.token.dig_planning import (
     DIG_CUT_PLANNER_MODES_REQUIRING_PRIOR,
     SUPPORTED_DIG_CUT_PLANNER_MODES,
@@ -459,6 +465,25 @@ class PrimitivePlannerAdapterConfigNormalizer:
             "box_emptying_cfg",
             dict(inputs.box_emptying or {}),
         )
+        return_start_envelope_owner_control = (
+            ReturnStartEnvelopeOwnerControlConfig.from_box_emptying_mapping(
+                box_emptying_cfg,
+            )
+        )
+        set_value(
+            "return_start_envelope_owner_control_enabled",
+            bool(return_start_envelope_owner_control.enabled),
+        )
+        return_approach_axis_limit_config = (
+            ReturnApproachAxisLimitConfig.from_box_emptying_mapping(
+                box_emptying_cfg,
+                action_dim=action_dim,
+            )
+        )
+        set_value(
+            "return_approach_axis_limit_enabled",
+            bool(return_approach_axis_limit_config.enabled),
+        )
         box_safety_cfg = dict(box_emptying_cfg.get("safety", {}) or {})
         diagnostic_ab_enabled = box_safety_cfg.get(
             "wall_contact_diagnostic_ab_enabled",
@@ -567,6 +592,22 @@ class PrimitivePlannerAdapterConfigNormalizer:
                 )
             ),
         )
+        if (
+            return_approach_axis_limit_config.enabled
+            and not box_emptying_safety_enabled
+        ):
+            raise ValueError(
+                "enabled return_approach_axis_limit requires "
+                "the safety interlock."
+            )
+        if (
+            return_start_envelope_owner_control.enabled
+            and not box_emptying_safety_enabled
+        ):
+            raise ValueError(
+                "enabled return_start_envelope_owner_control requires "
+                "the safety interlock."
+            )
         artifact_manifest_path = box_emptying_cfg.get(
             "effect_artifact_manifest_path",
             "",
@@ -1426,6 +1467,9 @@ class PrimitivePlannerAdapterConfigNormalizer:
                 require_contact=(
                     values["return_to_dig_start_envelope_require_contact"]
                 ),
+            ),
+            start_envelope_owner_control=(
+                return_start_envelope_owner_control
             ),
         )
         return PrimitivePlannerAdapterConfigState(

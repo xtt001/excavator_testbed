@@ -21,6 +21,10 @@ from testbed.planner.primitive.effects.continuous_goal_handoff import (
     ContinuousGoalHandoffGuardService,
     ContinuousGoalHandoffGuardState,
 )
+from testbed.planner.primitive.effects.return_handoff_owner_control import (
+    ReturnStartEnvelopeOwnerControlConfig,
+    ReturnStartEnvelopeOwnerControlService,
+)
 from testbed.planner.primitive.execution.cycle_state import PrimitiveCycleRuntimeState
 from testbed.planner.primitive.execution.return_state import PrimitiveReturnRuntimeState
 from testbed.planner.primitive.execution.state import PrimitiveExecutionRuntimeState
@@ -468,6 +472,9 @@ class ReturnHandoffReadinessConfig:
     max_bucket_mass_kg: float
     start_envelope_direct_handoff_enabled: bool
     start_envelope_gate: ReturnStartEnvelopeGateConfig
+    start_envelope_owner_control: ReturnStartEnvelopeOwnerControlConfig = (
+        ReturnStartEnvelopeOwnerControlConfig()
+    )
 
 
 @dataclass(frozen=True)
@@ -584,9 +591,32 @@ class ReturnHandoffReadinessService:
         )
 
     def start_envelope_ready(self, obs: dict[str, Any]) -> bool:
-        result = self.ports.start_envelope_gate_service.evaluate(
-            self.start_envelope_gate_inputs(obs)
-        )
+        ports = self.ports
+        owner_control = ports.config.start_envelope_owner_control
+        if owner_control.enabled:
+            decision = ReturnStartEnvelopeOwnerControlService(
+                owner_control
+            ).resolve(
+                base_gate=ports.config.start_envelope_gate,
+                completed_dump_count=(
+                    ports.coverage_state.coverage_completed_dump_count
+                ),
+            )
+            result = ReturnStartEnvelopeGateService(
+                decision.gate_config
+            ).evaluate(self.start_envelope_gate_inputs(obs))
+            result = ReturnStartEnvelopeGateResult(
+                ready=bool(result.ready),
+                error=float(result.error),
+                checks={
+                    **result.checks,
+                    "diagnostic_owner_control": decision.log_fields,
+                },
+            )
+        else:
+            result = ports.start_envelope_gate_service.evaluate(
+                self.start_envelope_gate_inputs(obs)
+            )
         locked_plan = self.ports.token_state.pending_dig_locked_execution_plan
         if locked_plan is not None:
             result = self._apply_continuous_goal_stable_hold(
@@ -597,7 +627,15 @@ class ReturnHandoffReadinessService:
         return bool(result.ready)
 
     def start_envelope_gate_config(self) -> ReturnStartEnvelopeGateConfig:
-        return self.ports.config.start_envelope_gate
+        ports = self.ports
+        return ReturnStartEnvelopeOwnerControlService(
+            ports.config.start_envelope_owner_control
+        ).resolve(
+            base_gate=ports.config.start_envelope_gate,
+            completed_dump_count=(
+                ports.coverage_state.coverage_completed_dump_count
+            ),
+        ).gate_config
 
     def start_envelope_gate_inputs(
         self,

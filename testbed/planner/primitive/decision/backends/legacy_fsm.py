@@ -442,6 +442,18 @@ class LegacyFSMCarryBranch:
         self,
         status: CarryTransitionStatus,
     ) -> tuple[Any, ...]:
+        if status.ready_to_dump:
+            reason = status.carry_to_dump_reason or "target_ready"
+            return (
+                SetDumpReadyHoldCountEffect(
+                    value=int(status.next_dump_ready_hold_count)
+                ),
+                SetDumpStartDepositedMassFromObservationEffect(),
+                SwitchSkillEffect(
+                    target_skill_name="dump",
+                    switch_reason=f"carry_to_dump_{reason}",
+                ),
+            )
         if status.carry_release_safety_done:
             return (
                 CompleteCoverageDumpEffect(reason="carry_release_safety"),
@@ -456,23 +468,11 @@ class LegacyFSMCarryBranch:
                     reason="carry_to_return_dump_complete_boundary",
                 ),
             )
-        effects: list[Any] = [
+        return (
             SetDumpReadyHoldCountEffect(
                 value=int(status.next_dump_ready_hold_count)
-            )
-        ]
-        if status.ready_to_dump:
-            reason = status.carry_to_dump_reason or "target_ready"
-            effects.extend(
-                (
-                    SetDumpStartDepositedMassFromObservationEffect(),
-                    SwitchSkillEffect(
-                        target_skill_name="dump",
-                        switch_reason=f"carry_to_dump_{reason}",
-                    ),
-                )
-            )
-        return tuple(effects)
+            ),
+        )
 
 @dataclass(frozen=True)
 class LegacyFSMDumpConfig:
