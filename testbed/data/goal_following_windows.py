@@ -158,8 +158,13 @@ def _build_expert_assignments(
                 rollout_cycle=None,
                 completed_dig_segment=True,
                 censored_handoff=False,
-                predictor_training_label=partition == "train",
-                predictor_evaluation_label=partition == "source_heldout",
+                # The source partition is fixed, but these historical windows
+                # do not contain an authoritative planner-issued continuous
+                # goal.  A future approved pseudo-goal builder must establish
+                # label eligibility explicitly; partition membership alone
+                # must not make hindsight outcomes trainable.
+                predictor_training_label=False,
+                predictor_evaluation_label=False,
                 act_tracking_label=True,
                 domain_shift_evidence=False,
             )

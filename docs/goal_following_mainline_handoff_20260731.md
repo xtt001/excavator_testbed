@@ -64,6 +64,10 @@ training.
 
 - Expert scope: 433 dig windows, split by source into 374 train and 59 held-out
   windows. Do not randomly split primitives.
+- The 374/59 split is a source-partition contract, not proof that a complete
+  continuous-goal label exists. After the real-data audit, expert
+  `predictor_training_label` and `predictor_evaluation_label` remain false
+  until an approved pseudo-goal contract and trusted builder exist.
 - Rollout scope: the 9 completed dig segments from the frozen attempt are
   evaluation/domain-shift evidence only. The incomplete tenth cycle is a
   censored handoff.
@@ -97,8 +101,15 @@ artifact exists, ACT remains frozen.
 
 ## Predictor v1 contract
 
-Define one centralized `terrain_signature_v1` from schema field names. It is the
-89-dimensional v2.3-compatible terrain base and excludes the v2.4
+The predictor contract, trainer, calibration, persistence, and planner-facing
+offline bridge are implemented. They are not enabled by any default
+configuration and are not connected to live execution. No real predictor
+artifact has been trained from the 433-window corpus because that corpus does
+not contain authoritative planner-goal intent; the exact blocker is recorded
+below.
+
+One centralized `terrain_signature_v1` is assembled from schema field names. It
+is the 89-dimensional v2.3-compatible terrain base and excludes the v2.4
 contact/hard-bottom suffix from learning input.
 
 New artifacts use `continuous_goal_worktool_sweep_input_v2` with:
@@ -128,6 +139,74 @@ Required outputs include `path_progress[64]`, `qpos_path[64,4]`,
 and normalization/checkpoint/calibration/goal/code/path lineage SHA values.
 The first qpos row must equal actual handoff qpos within `1e-6`. OOD, missing
 calibration, non-finite output, or lineage drift fails closed.
+
+Artifacts are written to a new directory only, with five member checkpoints,
+file hashes, a canonical manifest hash, source-fold ownership, normalization,
+OOD, conformal calibration, and code lineage. Strict loading revalidates both
+the hashes and the fixed model semantics. Historical v1 inputs remain
+readable, but inference requires v2 and there is no nearest-trajectory
+fallback.
+
+The fixed calibration inventory is exactly 59 windows: 29 from source 33 and
+30 from source 34. A smaller, larger, or differently distributed calibration
+set is rejected rather than mislabeled as a 95% guarantee. Each ensemble
+member owns a normalization fitted only from that member's training sources;
+its validation sources do not enter preprocessing. The exported normalization
+lineage binds the full-training OOD transform and all five member transforms.
+The predictor code SHA is computed from the fixed source-file inventory and is
+rechecked during construction, prediction, save, and load; callers cannot
+substitute an arbitrary 64-character value.
+
+The planner-facing bridge builds v2 input from the actual handoff state and
+validates every output field again before exposing a reference to the
+independent 3D sweep evaluator. A missing provider, OOD sample, missing
+calibration, malformed path/bounds, first-row drift, non-finite output, or
+lineage mismatch returns a blocker. The bridge requires an exact static
+lineage inventory for normalization, checkpoint, calibration, and predictor
+code; missing, partial, or extra lineage fields fail closed. This bridge is
+offline-only and does not replace the frozen legacy entry point.
+
+### Real training-label readiness
+
+A read-only audit of all 433 gold dig windows found that qpos, qvel, the 89D
+terrain state, and the expert path are structurally usable, but a complete
+planner-issued `ContinuousCutGoal` cannot be reconstructed without inventing
+semantics:
+
+- no window contains a plan-side `selected_cell_id`; all 433 declare
+  `planner_fields_status=missing_not_generated_by_replay`;
+- `dominant_removed_depth_cell_id` is the hindsight cell with the largest
+  observed removal, not the planned target cell;
+- `operator_cut_payload_gain_kg` and `dig_outcome_payload_gain_kg` are the same
+  measured outcome in all 433 windows, not a recorded payload intent;
+- operator entry, exit, and depth describe the executed expert cut and were
+  reconstructed after execution, not issued as a planner goal.
+
+The outcome cell agrees with the handoff bucket cell for only 190 of 433
+windows and with the operator-entry cell for only 180 of 433. Relabeling either
+as `target_cell_id` would therefore be both lossy and semantically wrong. The
+reference path alignment also needs an explicit contract: 161 paths start at
+operator entry, while 272 start 1 to 76 steps after operator entry.
+
+Consequently, this implementation does not create a pseudo-goal builder or a
+real trained artifact. Training remains blocked until the project explicitly
+defines an `expert_demonstration_goal` policy covering:
+
+1. whether an executed expert corridor may serve as a pseudo-goal;
+2. whether hindsight dominant-effect cell may serve as `target_cell_id`;
+3. how measured payload/effect may be converted into intent;
+4. whether the reference is the full dig window or the path after operator
+   entry.
+
+This is a data-semantics blocker, not a model-code blocker. Once approved, the
+usable source lineage is:
+
+- manifest SHA:
+  `5bcdeff67845a329c154655bad5dc3c4afc62b541759188c407321f30802d8e0`;
+- source split SHA:
+  `cc2e1b95d0c6b7a2019344e5e8e23b65b11fcf0307785709c8e37de993dd7a40`;
+- 374 training windows and 59 source-33/34 calibration windows;
+- path lengths from 67 to 1730 samples, median 188.
 
 ## Safety, calibration, and ACT decision order
 

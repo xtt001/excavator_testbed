@@ -64,6 +64,10 @@ def test_goal_following_corpus_freezes_source_split_and_rollout_scope() -> None:
     assert len(corpus.train_windows) == EXPERT_TRAIN_WINDOW_COUNT == 374
     assert len(corpus.heldout_windows) == EXPERT_HELDOUT_WINDOW_COUNT == 59
     assert {row.source_episode_id for row in corpus.heldout_windows} == {33, 34}
+    assert all(
+        not row.predictor_training_label and not row.predictor_evaluation_label
+        for row in corpus.expert_windows
+    )
     assert len(corpus.rollout_tracking_segments) == 9
     assert all(
         row.partition == "rollout_eval"
