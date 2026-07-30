@@ -43,7 +43,35 @@ from typing import Any, TextIO
 import numpy as np
 import yaml
 
+from testbed.backends.agx.protocol import (
+    CONTROL_COMPATIBILITY_PROFILES,
+    PRODUCTION_CONTROL_PROFILE,
+    TERRAIN_DIAGNOSTIC_MODES,
+)
 from testbed.data.camera_images import observation_camera_rgb
+from testbed.data.schema import (
+    ENV_STATE_DIG_AREA_CURRENT_REMAINING_MASS_IDX,
+    ENV_STATE_DIG_AREA_HARD_BOTTOM_DEPTH_IDX,
+    ENV_STATE_DIG_AREA_INITIAL_REMAINING_MASS_IDX,
+    ENV_STATE_DIG_AREA_REMAINING_MASS_VALID_MASK_IDX,
+    ENV_STATE_DIG_AREA_SOURCE_BULK_DENSITY_IDX,
+    ENV_STATE_EXCAVATOR_WALL_CONTACT_SESSION_COUNT_IDX,
+    ENV_STATE_EXCAVATOR_WALL_CONTACT_STEP_MAX_FORCE_IDX,
+    ENV_STATE_EXCAVATOR_WALL_CONTACT_TYPED_MASK_IDX,
+)
+from testbed.eval.terrain_replay_run_contract import (
+    recorded_replay_step_id,
+    replay_step_id_semantics,
+)
+from testbed.eval.terrain_replay_selection import (
+    CALIBRATED_MIXED_SELECTION_PROFILE,
+    POST_FIX_RAW_SELECTION_PROFILE,
+    REPLAY_EVIDENCE_PROFILES,
+    STRICT_REPLAY_EVIDENCE_PROFILE,
+    validate_control_compatibility_selection,
+    validate_replay_evidence_profile,
+)
+
 log = logging.getLogger(__name__)
 
 DIAGNOSTIC_ENV_STATE_FIELDS = {
@@ -63,6 +91,30 @@ DIAGNOSTIC_ENV_STATE_FIELDS = {
     61: "bucket_dig_area_penetration_contact_mask",
     62: "bucket_contact_dump_area_mask",
     63: "hard_collision_count",
+    ENV_STATE_DIG_AREA_HARD_BOTTOM_DEPTH_IDX: (
+        "dig_area_hard_bottom_depth_m"
+    ),
+    ENV_STATE_DIG_AREA_SOURCE_BULK_DENSITY_IDX: (
+        "dig_area_source_bulk_density_kg_m3"
+    ),
+    ENV_STATE_DIG_AREA_CURRENT_REMAINING_MASS_IDX: (
+        "dig_area_current_remaining_mass_kg"
+    ),
+    ENV_STATE_DIG_AREA_INITIAL_REMAINING_MASS_IDX: (
+        "dig_area_initial_remaining_mass_kg"
+    ),
+    ENV_STATE_DIG_AREA_REMAINING_MASS_VALID_MASK_IDX: (
+        "dig_area_remaining_mass_valid_mask"
+    ),
+    ENV_STATE_EXCAVATOR_WALL_CONTACT_TYPED_MASK_IDX: (
+        "excavator_wall_contact_typed_mask"
+    ),
+    ENV_STATE_EXCAVATOR_WALL_CONTACT_STEP_MAX_FORCE_IDX: (
+        "excavator_wall_contact_step_max_force_n"
+    ),
+    ENV_STATE_EXCAVATOR_WALL_CONTACT_SESSION_COUNT_IDX: (
+        "excavator_wall_contact_session_count"
+    ),
 }
 REMOVED_DEPTH_SLICE = slice(39, 45)
 
@@ -85,18 +137,56 @@ def _resolve_episodes(path: Path) -> list[Path]:
     raise FileNotFoundError(f"Not a file or directory: {path}")
 
 
-def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
-    )
-
+def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tb-replay",
         description="Replay recorded HDF5 episode(s) through AGX and optionally record video.",
     )
-    parser.add_argument("--episode", "-e", type=Path, required=True,
-                        help="Path to a single episode_N.hdf5 or a directory of episodes.")
+    replay_source = parser.add_mutually_exclusive_group(required=True)
+    replay_source.add_argument(
+        "--episode",
+        "-e",
+        type=Path,
+        help="Path to a single episode_N.hdf5 or a directory of episodes.",
+    )
+    parser.add_argument(
+        "--selection-episode-id",
+        action="append",
+        default=None,
+        help=(
+            "Optional source episode id to include from --selection-manifest; "
+            "repeat for multiple ids. All manifest rows still pass source validation."
+        ),
+    )
+    replay_source.add_argument(
+        "--selection-manifest",
+        type=Path,
+        help=(
+            "Clean cycle eligibility JSON/JSONL. Candidate episodes are replayed "
+            "from step 0 through the last selected cycle without skipping masks."
+        ),
+    )
+    parser.add_argument(
+        "--selection-profile",
+        choices=(
+            POST_FIX_RAW_SELECTION_PROFILE,
+            CALIBRATED_MIXED_SELECTION_PROFILE,
+        ),
+        default=POST_FIX_RAW_SELECTION_PROFILE,
+        help=(
+            "Closed source/lineage contract for --selection-manifest. The "
+            "default preserves the existing post-fix raw replay behavior."
+        ),
+    )
+    parser.add_argument(
+        "--replay-evidence-profile",
+        choices=REPLAY_EVIDENCE_PROFILES,
+        default=STRICT_REPLAY_EVIDENCE_PROFILE,
+        help=(
+            "Evidence boundary for replay output. Corrected partial salvage is "
+            "explicitly non-strict and requires recorded diagnostics."
+        ),
+    )
     parser.add_argument("--config", "-c", type=Path, default=None,
                         help="Teleop YAML config (for AGX host/port). "
                              "If omitted, uses defaults (localhost:5057).")
@@ -126,6 +216,31 @@ def main() -> None:
     parser.add_argument("--diagnostic-jump-threshold", type=float, default=0.05,
                         help="Always log steps whose replay qpos delta exceeds "
                              "this threshold.")
+    parser.add_argument(
+        "--diagnostic-terrain-mode",
+        choices=TERRAIN_DIAGNOSTIC_MODES,
+        default=None,
+        help=(
+            "Diagnostic-only Unity terrain ablation applied after RESET. "
+            "Omit for normal production replay semantics."
+        ),
+    )
+    parser.add_argument(
+        "--control-compatibility-profile",
+        choices=CONTROL_COMPATIBILITY_PROFILES,
+        default=None,
+        help=(
+            "Explicit replay execution profile applied by Unity after RESET. "
+            "recording_pre_fix_v1 is restricted to the calibrated fixed pre pool; "
+            "omit for normal production control semantics."
+        ),
+    )
+    parser.add_argument("--gold-cycle-samples-jsonl", type=Path, default=None,
+                        help="Optional JSONL path for official terrain gold cycle samples.")
+    parser.add_argument("--gold-cycle-samples-target-id", type=str, default=None,
+                        help="Official terrain residual target id for gold cycle samples.")
+    parser.add_argument("--gold-cycle-samples-low-payload-kg", type=float, default=0.0,
+                        help="Low-payload event threshold for gold cycle samples.")
     parser.add_argument("--realign-on-qpos-error", action="store_true",
                         help="When replay qpos diverges from the source for "
                              "several steps, ask Unity to realign actuator pose "
@@ -148,11 +263,89 @@ def main() -> None:
                              "LockController pose target.")
     parser.add_argument("--realign-max-count", type=int, default=20,
                         help="Maximum pose realignment events per episode.")
-    args = parser.parse_args()
+    return parser
 
-    episodes = _resolve_episodes(args.episode)
+
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    )
+
+    parser = _build_arg_parser()
+    args = parser.parse_args()
+    selection_config_errors = _validate_selection_config_args(
+        selection_manifest=args.selection_manifest,
+        config_path=args.config,
+    )
+    if selection_config_errors:
+        parser.error(selection_config_errors[0])
+
+    selection_by_path: dict[Path, Any] = {}
+    selections: list[Any] = []
+    if args.selection_manifest is not None:
+        from testbed.eval.terrain_replay_selection import load_replay_selection
+
+        selections = load_replay_selection(
+            args.selection_manifest,
+            included_episode_ids=(
+                None
+                if args.selection_episode_id is None
+                else tuple(args.selection_episode_id)
+            ),
+            selection_profile=args.selection_profile,
+        )
+        episodes = [selection.source_path for selection in selections]
+        selection_by_path = {
+            selection.source_path.resolve(): selection for selection in selections
+        }
+    else:
+        if args.selection_episode_id:
+            parser.error("--selection-episode-id requires --selection-manifest.")
+        episodes = _resolve_episodes(args.episode)
+    compatibility_errors = validate_control_compatibility_selection(
+        control_profile=args.control_compatibility_profile,
+        selection_profile=args.selection_profile,
+        selections=selections,
+    )
+    if compatibility_errors:
+        parser.error(compatibility_errors[0])
+    evidence_errors = validate_replay_evidence_profile(
+        evidence_profile=args.replay_evidence_profile,
+        selection_manifest_present=args.selection_manifest is not None,
+        selection_profile=args.selection_profile,
+        realign_on_qpos_error=bool(args.realign_on_qpos_error),
+        selected_episode_count=len(episodes),
+        record_output_present=args.record_output_dir is not None,
+        diagnostic_log_present=args.diagnostic_log is not None,
+        gold_cycle_samples_present=args.gold_cycle_samples_jsonl is not None,
+        realign_axis=args.realign_axis,
+        realign_error_threshold=args.realign_error_threshold,
+        realign_hold_steps=args.realign_hold_steps,
+        realign_min_steps_between=args.realign_min_steps_between,
+        realign_burn_in_steps=args.realign_burn_in_steps,
+        realign_max_count=args.realign_max_count,
+    )
+    if evidence_errors:
+        parser.error(evidence_errors[0])
     if not episodes:
-        log.error("No .hdf5 episode files found at %s", args.episode)
+        log.error(
+            "No replay-candidate .hdf5 episodes found from %s",
+            args.selection_manifest or args.episode,
+        )
+        return
+    for validation_error in _validate_diagnostic_log_args(
+        args.diagnostic_log,
+        episodes,
+    ):
+        log.error("%s", validation_error)
+        return
+    for validation_error in _validate_gold_cycle_sample_args(
+        output_path=args.gold_cycle_samples_jsonl,
+        target_id=args.gold_cycle_samples_target_id,
+        use_replay_target_set=args.selection_manifest is not None,
+    ):
+        log.error("%s", validation_error)
         return
     log.info("Found %d episode(s) to replay.", len(episodes))
 
@@ -175,6 +368,8 @@ def main() -> None:
         teleop_cfg=teleop_cfg,
         record_output_dir=args.record_output_dir,
     )
+    if args.selection_manifest is not None and post_tail_steps != 0:
+        parser.error("--selection-manifest requires zero replay post-tail steps.")
 
     # ── Build backend (shared across all episodes) ────────────────────────────
     from testbed.backends.agx.backend import AGXSimBackend
@@ -193,6 +388,8 @@ def main() -> None:
         timeout=agx_cfg.get("timeout", 10.0),
         reset_terrain=agx_cfg.get("reset_terrain", True),
         reset_pose=agx_cfg.get("reset_pose", True),
+        diagnostic_terrain_mode=args.diagnostic_terrain_mode,
+        control_compatibility_profile=args.control_compatibility_profile,
         task_name=first_meta["task_name"],
         reward_overrides=reward_overrides,
     )
@@ -206,9 +403,22 @@ def main() -> None:
             else 0
         )
         for ep_idx, ep_path in enumerate(episodes):
+            selection = selection_by_path.get(ep_path.resolve())
             result = _replay_one(
                 backend=backend,
                 ep_path=ep_path,
+                source_end_step_exclusive=(
+                    None if selection is None else selection.end_step_exclusive
+                ),
+                selection_cycle_ids=(
+                    () if selection is None else selection.cycle_ids
+                ),
+                use_replay_target_set=args.selection_manifest is not None,
+                control_compatibility_profile=(
+                    args.control_compatibility_profile
+                    or PRODUCTION_CONTROL_PROFILE
+                ),
+                replay_evidence_profile=str(args.replay_evidence_profile),
                 ep_idx=ep_idx,
                 total=len(episodes),
                 task_cfg=task_cfg,
@@ -229,6 +439,11 @@ def main() -> None:
                 diagnostic_every=max(0, int(args.diagnostic_every)),
                 diagnostic_error_threshold=float(args.diagnostic_error_threshold),
                 diagnostic_jump_threshold=float(args.diagnostic_jump_threshold),
+                gold_cycle_samples_jsonl_path=args.gold_cycle_samples_jsonl,
+                gold_cycle_samples_target_id=args.gold_cycle_samples_target_id,
+                gold_cycle_samples_low_payload_kg=float(
+                    args.gold_cycle_samples_low_payload_kg
+                ),
                 realign_on_qpos_error=bool(args.realign_on_qpos_error),
                 realign_error_threshold=float(args.realign_error_threshold),
                 realign_axis=str(args.realign_axis),
@@ -250,7 +465,11 @@ def main() -> None:
 
 def _peek_metadata(ep_path: Path, task_cfg: dict) -> dict:
     from testbed.data.hdf5_io import read_episode
-    ep = read_episode(ep_path, load_images=False)
+    ep = read_episode(
+        ep_path,
+        load_images=False,
+        load_encoded_images=False,
+    )
     meta = ep.get("metadata", {})
     return {
         "task_name": str(meta.get("task_name", task_cfg.get("task_name", "agx_excavation_teleop"))),
@@ -271,6 +490,73 @@ def _resolve_diagnostic_log_path(
     return path / f"{ep_path.stem}_diagnostics.jsonl"
 
 
+def _validate_diagnostic_log_args(
+    base_path: Path | None,
+    episodes: list[Path],
+) -> list[str]:
+    if base_path is None:
+        return []
+    existing = [
+        path
+        for episode in episodes
+        if (
+            path := _resolve_diagnostic_log_path(
+                base_path,
+                episode,
+                total=len(episodes),
+            )
+        ).exists()
+    ]
+    return [
+        f"Replay diagnostic JSONL already exists: {path}" for path in existing
+    ]
+
+
+def _validate_selection_config_args(
+    *,
+    selection_manifest: Path | None,
+    config_path: Path | None,
+) -> list[str]:
+    if selection_manifest is not None and config_path is None:
+        return ["--selection-manifest requires the explicit recording --config."]
+    return []
+
+
+def _validate_gold_cycle_sample_args(
+    *,
+    output_path: Path | None,
+    target_id: str | None,
+    use_replay_target_set: bool = False,
+) -> list[str]:
+    if output_path is None:
+        return []
+    if output_path.exists():
+        return [f"Gold cycle sample JSONL already exists: {output_path}"]
+    if not target_id and not use_replay_target_set:
+        return [
+            "--gold-cycle-samples-target-id is required with "
+            "--gold-cycle-samples-jsonl"
+        ]
+    return []
+
+
+def _resolve_gold_cycle_target_ids(
+    *,
+    target_id: str | None,
+    use_replay_target_set: bool,
+) -> tuple[str, ...]:
+    if use_replay_target_set:
+        from testbed.eval.terrain_residual_contract import (
+            list_replay_snapshot_target_specs,
+        )
+
+        return tuple(
+            str(spec["target_id"])
+            for spec in list_replay_snapshot_target_specs()
+        )
+    return (str(target_id),) if target_id else ()
+
+
 def _open_diagnostic_log(
     path: Path | None,
     *,
@@ -286,10 +572,13 @@ def _open_diagnostic_log(
     diagnostic_error_threshold: float,
     diagnostic_jump_threshold: float,
     realign_config: dict[str, Any],
+    control_compatibility_profile: str,
 ) -> TextIO | None:
     if path is None:
         return None
 
+    if path.exists():
+        raise FileExistsError(f"Replay diagnostic JSONL already exists: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     sink = path.open("w", encoding="utf-8", buffering=1)
     _write_jsonl(
@@ -312,6 +601,9 @@ def _open_diagnostic_log(
             "diagnostic_error_threshold": float(diagnostic_error_threshold),
             "diagnostic_jump_threshold": float(diagnostic_jump_threshold),
             "realign_config": realign_config,
+            "replay_control_compatibility_profile": str(
+                control_compatibility_profile
+            ),
             "env_state_fields": DIAGNOSTIC_ENV_STATE_FIELDS,
             "removed_depth_slice": [REMOVED_DEPTH_SLICE.start, REMOVED_DEPTH_SLICE.stop],
         },
@@ -553,6 +845,9 @@ def _write_step_diagnostic_if_needed(
             "env_state_before": env_before,
             "env_state_after": env_after,
             "removed_depth_delta_grid_3x2": depth_delta,
+            "warnings_before": list(obs_before.get("warnings", [])),
+            "warnings_after": list(obs_after.get("warnings", [])),
+            "reset_warnings_before": list(obs_before.get("reset_warnings", [])),
         },
     )
 
@@ -738,6 +1033,11 @@ def _replay_one(
     *,
     backend,
     ep_path: Path,
+    source_end_step_exclusive: int | None,
+    selection_cycle_ids: tuple[int, ...],
+    use_replay_target_set: bool,
+    control_compatibility_profile: str,
+    replay_evidence_profile: str,
     ep_idx: int,
     total: int,
     task_cfg: dict,
@@ -754,6 +1054,9 @@ def _replay_one(
     diagnostic_every: int,
     diagnostic_error_threshold: float,
     diagnostic_jump_threshold: float,
+    gold_cycle_samples_jsonl_path: Path | None,
+    gold_cycle_samples_target_id: str | None,
+    gold_cycle_samples_low_payload_kg: float,
     realign_on_qpos_error: bool,
     realign_error_threshold: float,
     realign_axis: str,
@@ -764,6 +1067,10 @@ def _replay_one(
 ) -> dict:
     from testbed.data.hdf5_io import read_episode
     from testbed.data.recorder import EpisodeRecorder
+    from testbed.eval.terrain_gold_cycle_samples import (
+        GoldCycleSampleReplayRecorder,
+        append_gold_cycle_sample_records,
+    )
     from testbed.planner.boundary_detector import build_boundary_detector_from_config
 
     log.info(
@@ -772,14 +1079,29 @@ def _replay_one(
         total,
         ep_path,
     )
-    ep = read_episode(ep_path, load_images=False)
+    ep = read_episode(
+        ep_path,
+        load_images=False,
+        load_encoded_images=False,
+    )
 
-    actions:  np.ndarray = ep["actions"]
-    qpos_ref: np.ndarray = ep["qpos"]
+    actions:  np.ndarray = np.asarray(ep["actions"], dtype=np.float32)
+    qpos_ref: np.ndarray = np.asarray(ep["qpos"], dtype=np.float32)
     qvel_ref: np.ndarray | None = (
         np.asarray(ep["qvel"], dtype=np.float32) if ep.get("qvel") is not None else None
     )
     meta:     dict       = ep.get("metadata", {})
+    if source_end_step_exclusive is not None:
+        prefix_end = int(source_end_step_exclusive)
+        if prefix_end <= 0 or prefix_end > len(actions):
+            raise ValueError(
+                f"Replay selection end {prefix_end} is outside source length "
+                f"{len(actions)} for {ep_path}."
+            )
+        actions = actions[:prefix_end]
+        qpos_ref = qpos_ref[:prefix_end]
+        if qvel_ref is not None:
+            qvel_ref = qvel_ref[:prefix_end]
     T = len(actions)
 
     control_hz = float(meta.get("control_hz", task_cfg.get("control_hz", 50)))
@@ -819,6 +1141,10 @@ def _replay_one(
                 config_path=config_path,
                 post_tail_steps=post_tail_steps,
                 realign_config=realign_config,
+                source_end_step_exclusive=source_end_step_exclusive,
+                selection_cycle_ids=selection_cycle_ids,
+                control_compatibility_profile=control_compatibility_profile,
+                replay_evidence_profile=replay_evidence_profile,
             ),
             camera_names=camera_names,
         )
@@ -831,6 +1157,19 @@ def _replay_one(
         reward_cfg=reward_cfg,
         success_cfg=success_cfg,
     )
+    gold_cycle_recorders = [
+        GoldCycleSampleReplayRecorder(
+            target_id=target_id,
+            episode_id=ep_path.stem,
+            rollout_id=f"replay_episode_{ep_idx:06d}",
+            low_payload_mass_threshold_kg=float(gold_cycle_samples_low_payload_kg),
+        )
+        for target_id in _resolve_gold_cycle_target_ids(
+            target_id=gold_cycle_samples_target_id,
+            use_replay_target_set=use_replay_target_set,
+        )
+        if gold_cycle_samples_jsonl_path is not None
+    ]
     target_dump_count = _metadata_int(meta.get("target_dump_count"), default=0)
     episode_success = False
     realign_count = 0
@@ -838,6 +1177,8 @@ def _replay_one(
     last_realign_step = -10**9
     qpos_error_hold_count = 0
     ts = backend.reset(seed=seed, scenario_id=scenario_id)
+    for gold_cycle_recorder in gold_cycle_recorders:
+        gold_cycle_recorder.observe(ts.observation.get("env_state"))
     diagnostic_sink = _open_diagnostic_log(
         diagnostic_log_path,
         source_episode=ep_path,
@@ -852,6 +1193,7 @@ def _replay_one(
         diagnostic_error_threshold=diagnostic_error_threshold,
         diagnostic_jump_threshold=diagnostic_jump_threshold,
         realign_config=realign_config,
+        control_compatibility_profile=control_compatibility_profile,
     )
 
     def _advance(
@@ -980,7 +1322,11 @@ def _replay_one(
                 obs=obs_before,
                 action=action,
                 reward=ts.reward,
-                step_id=int(obs_before.get("step_id", record_step_index)),
+                step_id=recorded_replay_step_id(
+                    record_step_index=record_step_index,
+                    backend_step_id=obs_before.get("step_id"),
+                    corrected=bool(realign_on_qpos_error),
+                ),
                 step_ns=time.time_ns(),
                 action_src_type="scripted",
                 action_src_id=action_src_id,
@@ -1001,6 +1347,11 @@ def _replay_one(
                 ts.info.get("task_metrics", obs_after.get("task_metrics", {}))
             ),
         )
+        for gold_cycle_recorder in gold_cycle_recorders:
+            gold_cycle_recorder.observe(
+                obs_after.get("env_state"),
+                dump_end=bool(boundary_event.dump_end),
+            )
         if save_video and preview_camera_name is not None:
             frames.append(
                 observation_camera_rgb(obs_before, preview_camera_name).copy()
@@ -1097,9 +1448,29 @@ def _replay_one(
                 "qpos_max_diff": max_diff,
                 "pose_realign_count": int(realign_count),
                 "pose_realign_steps": realign_steps,
+                "final_env_state": _env_state_snapshot(
+                    ts.observation.get("env_state")
+                ),
                 "recorded_episode": "" if recorded_path is None else str(recorded_path),
             },
         )
+        if gold_cycle_recorders and gold_cycle_samples_jsonl_path is not None:
+            gold_records = [
+                record
+                for gold_cycle_recorder in gold_cycle_recorders
+                for record in gold_cycle_recorder.build_result().get("records", [])
+            ]
+            append_gold_cycle_sample_records(
+                output_path=gold_cycle_samples_jsonl_path,
+                records=gold_records,
+            )
+            log.info(
+                "[%d/%d] Gold cycle samples appended: %d → %s",
+                ep_idx + 1,
+                total,
+                len(gold_records),
+                gold_cycle_samples_jsonl_path,
+            )
         return {
             "episode": ep_path.name,
             "steps": T,
@@ -1110,6 +1481,12 @@ def _replay_one(
             "pose_realign_steps": list(realign_steps),
             "recorded_episode": "" if recorded_path is None else str(recorded_path),
             "diagnostic_log": "" if diagnostic_log_path is None else str(diagnostic_log_path),
+            "source_end_step_exclusive": (
+                int(T)
+                if source_end_step_exclusive is None
+                else int(source_end_step_exclusive)
+            ),
+            "selection_cycle_ids": list(selection_cycle_ids),
         }
     finally:
         if diagnostic_sink is not None:
@@ -1189,6 +1566,10 @@ def _build_replay_metadata(
     config_path: Path | None,
     post_tail_steps: int,
     realign_config: dict[str, Any] | None = None,
+    source_end_step_exclusive: int | None = None,
+    selection_cycle_ids: tuple[int, ...] = (),
+    control_compatibility_profile: str = PRODUCTION_CONTROL_PROFILE,
+    replay_evidence_profile: str = STRICT_REPLAY_EVIDENCE_PROFILE,
 ) -> dict:
     from testbed.data.schema import (
         ATTR_ACTION_ORDER,
@@ -1200,14 +1581,14 @@ def _build_replay_metadata(
         ATTR_CAMERA_WIDTH,
         ATTR_CONTROL_HZ,
         ATTR_DIG_AREA_PRESET_ID,
-        ATTR_DUMP_AREA_PRESET_ID,
         ATTR_DT,
+        ATTR_DUMP_AREA_PRESET_ID,
         ATTR_ENV_STATE_CONTRACT_VERSION,
         ATTR_ENV_STATE_ORDER,
         ATTR_EPISODE_ID,
         ATTR_IMAGE_FORMAT,
-        ATTR_OPERATOR_NOTES,
         ATTR_OBSERVER_NOTES,
+        ATTR_OPERATOR_NOTES,
         ATTR_PROTOCOL_VERSION,
         ATTR_QPOS_ORDER,
         ATTR_QVEL_ORDER,
@@ -1216,12 +1597,15 @@ def _build_replay_metadata(
         ATTR_REPLAY_POST_TAIL_STEPS,
         ATTR_REPLAY_SOURCE_DATASET,
         ATTR_REPLAY_SOURCE_EPISODE,
+        ATTR_RUNTIME_BUILD_ID,
         ATTR_SCENE_VERSION,
         ATTR_SIM_BACKEND,
         ATTR_SOIL_PRESET_ID,
         ATTR_TARGET_DEPTH_M,
         ATTR_TASK_GOAL_DESCRIPTION,
         ATTR_TELEOP_INPUT,
+        ATTR_TERRAIN_STATE_CONTRACT_VERSION,
+        ATTR_TERRAIN_VOLUME_SOURCE,
         ATTR_WARMUP_OR_TRAIN,
     )
 
@@ -1243,8 +1627,23 @@ def _build_replay_metadata(
             ATTR_REPLAY_SOURCE_EPISODE: str(source_episode),
             ATTR_REPLAY_SOURCE_DATASET: str(source_episode.parent),
             ATTR_REPLAY_POST_TAIL_STEPS: int(post_tail_steps),
+            "replay_source_end_step_exclusive": (
+                -1
+                if source_end_step_exclusive is None
+                else int(source_end_step_exclusive)
+            ),
+            "replay_selection_cycle_ids": ",".join(
+                str(value) for value in selection_cycle_ids
+            ),
+            "replay_control_compatibility_profile": str(
+                control_compatibility_profile
+            ),
+            "replay_evidence_profile": str(replay_evidence_profile),
             "replay_pose_realign_enabled": bool(
                 (realign_config or {}).get("enabled", False)
+            ),
+            "replay_step_id_semantics": replay_step_id_semantics(
+                corrected=bool((realign_config or {}).get("enabled", False))
             ),
             "replay_pose_realign_axis": str((realign_config or {}).get("axis", "")),
             "replay_pose_realign_error_threshold": float(
@@ -1252,6 +1651,15 @@ def _build_replay_metadata(
             ),
             "replay_pose_realign_burn_in_steps": int(
                 (realign_config or {}).get("burn_in_steps", 0)
+            ),
+            "replay_pose_realign_hold_steps": int(
+                (realign_config or {}).get("hold_steps", 0)
+            ),
+            "replay_pose_realign_min_steps_between": int(
+                (realign_config or {}).get("min_steps_between", 0)
+            ),
+            "replay_pose_realign_max_count": int(
+                (realign_config or {}).get("max_count", 0)
             ),
         }
     )
@@ -1268,7 +1676,21 @@ def _build_replay_metadata(
     metadata.setdefault(ATTR_WARMUP_OR_TRAIN, "train")
     metadata.setdefault(ATTR_OPERATOR_NOTES, "")
     metadata.setdefault(ATTR_OBSERVER_NOTES, "")
-    metadata.setdefault(ATTR_ENV_STATE_CONTRACT_VERSION, "agx_env_state_v2_2_64")
+    runtime_contract = str(
+        getattr(info, "env_state_contract_version", "") or ""
+    ).strip()
+    if runtime_contract:
+        metadata[ATTR_ENV_STATE_CONTRACT_VERSION] = runtime_contract
+    else:
+        metadata.setdefault(ATTR_ENV_STATE_CONTRACT_VERSION, "agx_env_state_v2_2_64")
+    for attr_name, info_name in (
+        (ATTR_RUNTIME_BUILD_ID, "runtime_build_id"),
+        (ATTR_TERRAIN_STATE_CONTRACT_VERSION, "terrain_state_contract_version"),
+        (ATTR_TERRAIN_VOLUME_SOURCE, "terrain_volume_source"),
+    ):
+        value = str(getattr(info, info_name, "") or "").strip()
+        if value:
+            metadata[attr_name] = value
     metadata.setdefault("offtarget_deposited_mass_source", "unavailable")
     if config_path is not None:
         metadata[ATTR_REPLAY_CONFIG_PATH] = str(config_path)
