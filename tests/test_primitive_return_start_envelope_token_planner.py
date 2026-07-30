@@ -60,6 +60,36 @@ def test_return_start_envelope_token_planner_uses_cell_prior() -> None:
     np.testing.assert_allclose(plan.token, token)
 
 
+def test_return_start_envelope_token_planner_uses_artifact_source_label() -> None:
+    token = np.arange(RETURN_START_ENVELOPE_TOKEN_DIM, dtype=np.float32)
+    planner = ReturnStartEnvelopeTokenPlanner(
+        prior={
+            "return_start_envelope_source_label": (
+                "strict18_train_return_start_envelope"
+            ),
+            "return_start_envelope_cells": [
+                {
+                    "cell_id": 2,
+                    "source_count": 3,
+                    "source_fraction": 0.5,
+                    "token_median": token.tolist(),
+                },
+            ],
+        },
+        use_cell_prior=True,
+    )
+
+    plan = planner.plan(
+        raw_fields=_raw_fields(),
+        env_state=np.zeros(64, dtype=np.float32),
+        qpos=np.zeros(4, dtype=np.float32),
+        qvel=np.zeros(4, dtype=np.float32),
+        cell_id=2,
+    )
+
+    assert plan.source == "strict18_train_return_start_envelope_cell_2"
+
+
 def test_return_start_envelope_token_planner_builds_live_fallback() -> None:
     env_state = np.zeros(64, dtype=np.float32)
     env_state[ENV_STATE_BUCKET_DIG_AREA_LONG_NORM_IDX] = -0.25

@@ -638,14 +638,22 @@ class ReturnStartEnvelopeTokenPlanner:
         if mapping is not None:
             token = self.token_from_prior_mapping(mapping)
             if token is not None:
+                source_label = str(
+                    self.prior.get(
+                        "return_start_envelope_source_label",
+                        "qc6_return_start_envelope",
+                    )
+                ).strip()
+                if not source_label:
+                    source_label = "return_start_envelope"
                 if cell_id is not None and source == "cell":
-                    return token, f"qc6_return_start_envelope_cell_{int(cell_id)}"
+                    return token, f"{source_label}_cell_{int(cell_id)}"
                 if cell_id is not None and source == "global_low_support_cell":
                     return (
                         token,
-                        f"qc6_return_start_envelope_global_low_support_cell_{int(cell_id)}",
+                        f"{source_label}_global_low_support_cell_{int(cell_id)}",
                     )
-                return token, "qc6_return_start_envelope_global"
+                return token, f"{source_label}_global"
         return None, "missing_return_start_envelope_prior"
 
     def prior_mapping(

@@ -11,11 +11,13 @@ from __future__ import annotations
 import argparse
 import json
 from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import h5py
 import numpy as np
+import yaml
 
 from testbed.data.operator_first_v2_2 import RETURN_START_ENVELOPE_TOKEN_DIM
 from testbed.data.schema import (
@@ -24,7 +26,6 @@ from testbed.data.schema import (
     ENV_STATE_DIG_AREA_REMOVED_DEPTH_START_IDX,
     ENV_STATE_DIG_AREA_TARGET_DEPTH_START_IDX,
 )
-
 
 DEPTH_SCALE_M = 0.80
 CELL_COUNT = 6
@@ -53,25 +54,62 @@ def main() -> None:
         default=DEPTH_SCALE_M,
         help="Normalization scale for dig cut depth tokens.",
     )
+    parser.add_argument(
+        "--split-dir",
+        default="",
+        help=(
+            "Optional directory containing dig_source_split.yaml and "
+            "return_source_split.yaml."
+        ),
+    )
+    parser.add_argument(
+        "--split-partition",
+        choices=("train", "val"),
+        default="train",
+        help="Primitive split partition used when --split-dir is set.",
+    )
+    parser.add_argument(
+        "--return-source-label",
+        default="",
+        help=(
+            "Optional debug provenance prefix for return envelope tokens. "
+            "Legacy priors without this field keep the qc6 prefix."
+        ),
+    )
     args = parser.parse_args()
 
     copy_root = Path(args.copy_root)
+    dig_episode_ids: tuple[int, ...] | None = None
+    return_episode_ids: tuple[int, ...] | None = None
+    dig_selection: dict[str, Any] | None = None
+    return_selection: dict[str, Any] | None = None
+    if str(args.split_dir).strip():
+        split_dir = Path(args.split_dir)
+        dig_episode_ids, dig_selection = load_split_episode_ids(
+            split_dir / "dig_source_split.yaml",
+            partition=str(args.split_partition),
+        )
+        return_episode_ids, return_selection = load_split_episode_ids(
+            split_dir / "return_source_split.yaml",
+            partition=str(args.split_partition),
+        )
     prior, state_payload = build_surface_depth_planner_prior(
         copy_root=copy_root,
         tag=str(args.tag or copy_root.name),
         depth_scale_m=float(args.depth_scale_m),
+        dig_episode_ids=dig_episode_ids,
+        return_episode_ids=return_episode_ids,
+        dig_episode_selection=dig_selection,
+        return_episode_selection=return_selection,
+        return_source_label=str(args.return_source_label).strip(),
     )
     prior_path = Path(args.prior_path)
     state_exemplar_path = Path(args.state_exemplar_path)
-    prior_path.parent.mkdir(parents=True, exist_ok=True)
-    state_exemplar_path.parent.mkdir(parents=True, exist_ok=True)
-    prior_path.write_text(
-        json.dumps(_jsonable(prior), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    state_exemplar_path.write_text(
-        json.dumps(_jsonable(state_payload), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    write_surface_depth_planner_prior_outputs(
+        prior=prior,
+        state_payload=state_payload,
+        prior_path=prior_path,
+        state_exemplar_path=state_exemplar_path,
     )
     print(
         json.dumps(
@@ -95,8 +133,16 @@ def build_surface_depth_planner_prior(
     copy_root: Path,
     tag: str,
     depth_scale_m: float = DEPTH_SCALE_M,
+    dig_episode_ids: Iterable[int] | None = None,
+    return_episode_ids: Iterable[int] | None = None,
+    dig_episode_selection: dict[str, Any] | None = None,
+    return_episode_selection: dict[str, Any] | None = None,
+    return_source_label: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    records = _load_gold_dig_records(copy_root / "dig")
+    records = _load_gold_dig_records(
+        copy_root / "dig",
+        episode_ids=dig_episode_ids,
+    )
     if not records:
         raise FileNotFoundError(f"no gold dig records in {copy_root / 'dig'}")
 
@@ -124,6 +170,9 @@ def build_surface_depth_planner_prior(
     return_prior = _build_return_start_envelope_prior(
         copy_root / "return",
         coverage_cells=coverage_cells,
+        episode_ids=return_episode_ids,
+        episode_selection=return_episode_selection,
+        source_label=return_source_label,
     )
 
     prior: dict[str, Any] = {
@@ -157,6 +206,8 @@ def build_surface_depth_planner_prior(
         "fields": fields,
         "coverage_cells": coverage_cells,
     }
+    if dig_episode_selection is not None:
+        prior["source"]["episode_selection"] = dict(dig_episode_selection)
     prior.update(return_prior)
     state_payload = _build_state_exemplar_payload(records, by_cell)
     return prior, state_payload
@@ -276,12 +327,15 @@ def _build_return_start_envelope_prior(
     return_root: Path,
     *,
     coverage_cells: list[dict[str, Any]],
+    episode_ids: Iterable[int] | None = None,
+    episode_selection: dict[str, Any] | None = None,
+    source_label: str = "",
 ) -> dict[str, Any]:
     return_tokens: list[np.ndarray] = []
     return_tokens_by_cell: dict[int, list[np.ndarray]] = defaultdict(list)
     coverage_by_cell = {int(cell["cell_id"]): cell for cell in coverage_cells}
     skipped_missing_next_entry = 0
-    for path in _episode_paths(return_root):
+    for path in _episode_paths(return_root, episode_ids=episode_ids):
         with h5py.File(path, "r") as handle:
             if _text_scalar(handle, "training_tier") != "gold":
                 continue
@@ -311,21 +365,24 @@ def _build_return_start_envelope_prior(
     if not return_tokens:
         return {}
 
-    return {
+    source = {
+        "source_dataset": str(return_root),
+        "source_count_used": len(return_tokens),
+        "tier_filter": "gold",
+        "match_source": RETURN_ENVELOPE_MATCH_SOURCE,
+        "skipped_missing_next_entry_count": skipped_missing_next_entry,
+        "notes": (
+            "Cell-conditioned return-start envelope priors are grouped by "
+            "the next operator entry's nearest coverage cell. The envelope "
+            "token's own long/short values describe the start state and are "
+            "not used as the cell assignment key."
+        ),
+    }
+    if episode_selection is not None:
+        source["episode_selection"] = dict(episode_selection)
+    payload = {
         "return_start_envelope_token_contract": "return_start_envelope_tokens_v1",
-        "return_start_envelope_source": {
-            "source_dataset": str(return_root),
-            "source_count_used": len(return_tokens),
-            "tier_filter": "gold",
-            "match_source": RETURN_ENVELOPE_MATCH_SOURCE,
-            "skipped_missing_next_entry_count": skipped_missing_next_entry,
-            "notes": (
-                "Cell-conditioned return-start envelope priors are grouped by "
-                "the next operator entry's nearest coverage cell. The envelope "
-                "token's own long/short values describe the start state and are "
-                "not used as the cell assignment key."
-            ),
-        },
+        "return_start_envelope_source": source,
         "return_start_envelope_global": _token_summary(return_tokens, len(return_tokens)),
         "return_start_envelope_cells": [
             _return_envelope_cell_summary(
@@ -338,11 +395,18 @@ def _build_return_start_envelope_prior(
             if tokens
         ],
     }
+    if source_label:
+        payload["return_start_envelope_source_label"] = source_label
+    return payload
 
 
-def _load_gold_dig_records(dig_root: Path) -> list[dict[str, Any]]:
+def _load_gold_dig_records(
+    dig_root: Path,
+    *,
+    episode_ids: Iterable[int] | None = None,
+) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for path in _episode_paths(dig_root):
+    for path in _episode_paths(dig_root, episode_ids=episode_ids):
         with h5py.File(path, "r") as handle:
             if _text_scalar(handle, "training_tier") != "gold":
                 continue
@@ -529,8 +593,83 @@ def _env_scalar(env: np.ndarray, index: int) -> float:
     return value if np.isfinite(value) else 0.0
 
 
-def _episode_paths(path: Path) -> list[Path]:
-    return sorted(path.glob("episode_*.hdf5"), key=lambda p: int(p.stem.split("_")[-1]))
+def _episode_paths(
+    path: Path,
+    *,
+    episode_ids: Iterable[int] | None = None,
+) -> list[Path]:
+    available = {
+        int(candidate.stem.split("_")[-1]): candidate
+        for candidate in path.glob("episode_*.hdf5")
+    }
+    if episode_ids is None:
+        selected_ids = sorted(available)
+    else:
+        selected_ids = sorted({int(value) for value in episode_ids})
+        missing = [episode_id for episode_id in selected_ids if episode_id not in available]
+        if missing:
+            raise FileNotFoundError(
+                f"selected primitive episodes missing from {path}: {missing}"
+            )
+    return [available[episode_id] for episode_id in selected_ids]
+
+
+def load_split_episode_ids(
+    split_path: str | Path,
+    *,
+    partition: str,
+) -> tuple[tuple[int, ...], dict[str, Any]]:
+    """Load an exact primitive episode partition with overlap checks."""
+
+    path = Path(split_path)
+    if partition not in {"train", "val"}:
+        raise ValueError(f"unsupported split partition: {partition}")
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"split payload must be a mapping: {path}")
+    train_ids = tuple(int(value) for value in payload.get("train_ids", []))
+    val_ids = tuple(int(value) for value in payload.get("val_ids", []))
+    if len(set(train_ids)) != len(train_ids) or len(set(val_ids)) != len(val_ids):
+        raise ValueError(f"split_partition_duplicates:{path}")
+    overlap = sorted(set(train_ids) & set(val_ids))
+    if overlap:
+        raise ValueError(f"split_partition_overlap:{path}:{overlap}")
+    selected = train_ids if partition == "train" else val_ids
+    if not selected:
+        raise ValueError(f"split_partition_empty:{path}:{partition}")
+    return selected, {
+        "split_path": str(path.resolve()),
+        "partition": partition,
+        "primitive_episode_count": len(selected),
+        "split_policy": str(payload.get("split_policy", "")),
+    }
+
+
+def write_surface_depth_planner_prior_outputs(
+    *,
+    prior: dict[str, Any],
+    state_payload: dict[str, Any],
+    prior_path: str | Path,
+    state_exemplar_path: str | Path,
+) -> None:
+    """Write generated artifacts once; existing outputs are never replaced."""
+
+    prior_output = Path(prior_path)
+    state_output = Path(state_exemplar_path)
+    existing = [path for path in (prior_output, state_output) if path.exists()]
+    if existing:
+        raise FileExistsError(
+            "refusing to overwrite surface-depth planner artifacts: "
+            + ", ".join(str(path) for path in existing)
+        )
+    prior_output.parent.mkdir(parents=True, exist_ok=True)
+    state_output.parent.mkdir(parents=True, exist_ok=True)
+    with prior_output.open("x", encoding="utf-8") as handle:
+        handle.write(json.dumps(_jsonable(prior), indent=2, sort_keys=True) + "\n")
+    with state_output.open("x", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(_jsonable(state_payload), indent=2, sort_keys=True) + "\n"
+        )
 
 
 def _scalar(handle: h5py.File, name: str, default: float = float("nan")) -> float:

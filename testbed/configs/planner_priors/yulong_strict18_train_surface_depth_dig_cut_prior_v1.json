@@ -1,0 +1,1013 @@
+{
+  "coverage_cells": [
+    {
+      "cell_id": 0,
+      "cut_depth_peak_m": 0.419068,
+      "cut_depth_peak_m_stats": {
+        "p05": 0.168264,
+        "p50": 0.419068,
+        "p95": 0.680922
+      },
+      "dig_start_local_depth_m": {
+        "p05": 0.005717,
+        "p50": 0.012831,
+        "p95": 0.037086
+      },
+      "dig_start_plane_depth_m": {
+        "p05": 0.027709,
+        "p50": 0.304557,
+        "p95": 0.472971
+      },
+      "effective_deposit_delta_kg": 47.556427,
+      "entry": {
+        "x_m": 0.552648,
+        "z_m": -1.029915
+      },
+      "entry_stats": {
+        "radial_error_m": {
+          "p50": 0.251943,
+          "p75": 0.355854,
+          "p95": 0.650004
+        },
+        "x_m": {
+          "p05": 0.209792,
+          "p50": 0.552648,
+          "p95": 0.844381
+        },
+        "z_m": {
+          "p05": -1.401794,
+          "p50": -1.029915,
+          "p95": -0.456011
+        }
+      },
+      "exit": {
+        "x_m": 0.308558,
+        "z_m": -1.014107
+      },
+      "exit_stats": {
+        "radial_error_m": {
+          "p50": 0.393848,
+          "p75": 0.546317,
+          "p95": 1.103624
+        },
+        "x_m": {
+          "p05": -0.623448,
+          "p50": 0.308558,
+          "p95": 0.899518
+        },
+        "z_m": {
+          "p05": -1.383621,
+          "p50": -1.014107,
+          "p95": -0.60661
+        }
+      },
+      "payload_gain_kg": 83.479198,
+      "source_count": 62,
+      "source_fraction": 0.165775
+    },
+    {
+      "cell_id": 1,
+      "cut_depth_peak_m": 0.499419,
+      "cut_depth_peak_m_stats": {
+        "p05": 0.312483,
+        "p50": 0.499419,
+        "p95": 0.631916
+      },
+      "dig_start_local_depth_m": {
+        "p05": 0.00767,
+        "p50": 0.021021,
+        "p95": 0.033109
+      },
+      "dig_start_plane_depth_m": {
+        "p05": 0.020623,
+        "p50": 0.031942,
+        "p95": 0.233877
+      },
+      "effective_deposit_delta_kg": 72.45919,
+      "entry": {
+        "x_m": 0.767437,
+        "z_m": -0.974185
+      },
+      "entry_stats": {
+        "radial_error_m": {
+          "p50": 0.289386,
+          "p75": 0.359344,
+          "p95": 0.741982
+        },
+        "x_m": {
+          "p05": 0.452355,
+          "p50": 0.767437,
+          "p95": 1.110275
+        },
+        "z_m": {
+          "p05": -1.333162,
+          "p50": -0.974185,
+          "p95": -0.324761
+        }
+      },
+      "exit": {
+        "x_m": 0.651918,
+        "z_m": -0.897745
+      },
+      "exit_stats": {
+        "radial_error_m": {
+          "p50": 0.379148,
+          "p75": 0.589717,
+          "p95": 1.058993
+        },
+        "x_m": {
+          "p05": -0.399686,
+          "p50": 0.651918,
+          "p95": 1.030624
+        },
+        "z_m": {
+          "p05": -1.317397,
+          "p50": -0.897745,
+          "p95": -0.619939
+        }
+      },
+      "payload_gain_kg": 76.735046,
+      "source_count": 60,
+      "source_fraction": 0.160428
+    },
+    {
+      "cell_id": 2,
+      "cut_depth_peak_m": 0.405455,
+      "cut_depth_peak_m_stats": {
+        "p05": 0.193456,
+        "p50": 0.405455,
+        "p95": 0.632159
+      },
+      "dig_start_local_depth_m": {
+        "p05": 0.005351,
+        "p50": 0.017114,
+        "p95": 0.035794
+      },
+      "dig_start_plane_depth_m": {
+        "p05": 0.022269,
+        "p50": 0.255119,
+        "p95": 0.444179
+      },
+      "effective_deposit_delta_kg": 42.470093,
+      "entry": {
+        "x_m": 0.615094,
+        "z_m": -0.439306
+      },
+      "entry_stats": {
+        "radial_error_m": {
+          "p50": 0.42724,
+          "p75": 0.646648,
+          "p95": 0.879089
+        },
+        "x_m": {
+          "p05": 0.19018,
+          "p50": 0.615094,
+          "p95": 0.878928
+        },
+        "z_m": {
+          "p05": -1.115868,
+          "p50": -0.439306,
+          "p95": 0.324101
+        }
+      },
+      "exit": {
+        "x_m": 0.516926,
+        "z_m": -0.276453
+      },
+      "exit_stats": {
+        "radial_error_m": {
+          "p50": 0.586682,
+          "p75": 0.838394,
+          "p95": 1.500847
+        },
+        "x_m": {
+          "p05": -0.938841,
+          "p50": 0.516926,
+          "p95": 1.091738
+        },
+        "z_m": {
+          "p05": -0.798941,
+          "p50": -0.276453,
+          "p95": 0.348526
+        }
+      },
+      "payload_gain_kg": 73.342262,
+      "source_count": 70,
+      "source_fraction": 0.187166
+    },
+    {
+      "cell_id": 3,
+      "cut_depth_peak_m": 0.475107,
+      "cut_depth_peak_m_stats": {
+        "p05": 0.258461,
+        "p50": 0.475107,
+        "p95": 0.572204
+      },
+      "dig_start_local_depth_m": {
+        "p05": 0.007002,
+        "p50": 0.022636,
+        "p95": 0.033694
+      },
+      "dig_start_plane_depth_m": {
+        "p05": 0.020365,
+        "p50": 0.028677,
+        "p95": 0.3247
+      },
+      "effective_deposit_delta_kg": 67.257507,
+      "entry": {
+        "x_m": 0.841434,
+        "z_m": -0.24708
+      },
+      "entry_stats": {
+        "radial_error_m": {
+          "p50": 0.317106,
+          "p75": 0.501636,
+          "p95": 0.731643
+        },
+        "x_m": {
+          "p05": 0.443937,
+          "p50": 0.841434,
+          "p95": 1.118933
+        },
+        "z_m": {
+          "p05": -0.954241,
+          "p50": -0.24708,
+          "p95": 0.298495
+        }
+      },
+      "exit": {
+        "x_m": 0.632742,
+        "z_m": -0.233044
+      },
+      "exit_stats": {
+        "radial_error_m": {
+          "p50": 0.433469,
+          "p75": 0.561556,
+          "p95": 0.905403
+        },
+        "x_m": {
+          "p05": -0.2151,
+          "p50": 0.632742,
+          "p95": 1.115163
+        },
+        "z_m": {
+          "p05": -0.603817,
+          "p50": -0.233044,
+          "p95": 0.346637
+        }
+      },
+      "payload_gain_kg": 72.037849,
+      "source_count": 87,
+      "source_fraction": 0.23262
+    },
+    {
+      "cell_id": 4,
+      "cut_depth_peak_m": 0.364648,
+      "cut_depth_peak_m_stats": {
+        "p05": 0.215079,
+        "p50": 0.364648,
+        "p95": 0.670446
+      },
+      "dig_start_local_depth_m": {
+        "p05": 0.006214,
+        "p50": 0.012847,
+        "p95": 0.03366
+      },
+      "dig_start_plane_depth_m": {
+        "p05": 0.022401,
+        "p50": 0.258572,
+        "p95": 0.460775
+      },
+      "effective_deposit_delta_kg": 37.394043,
+      "entry": {
+        "x_m": 0.635571,
+        "z_m": 0.549191
+      },
+      "entry_stats": {
+        "radial_error_m": {
+          "p50": 0.361218,
+          "p75": 0.475107,
+          "p95": 0.889365
+        },
+        "x_m": {
+          "p05": 0.220394,
+          "p50": 0.635571,
+          "p95": 1.045616
+        },
+        "z_m": {
+          "p05": -0.318414,
+          "p50": 0.549191,
+          "p95": 0.970508
+        }
+      },
+      "exit": {
+        "x_m": 0.41758,
+        "z_m": 0.717073
+      },
+      "exit_stats": {
+        "radial_error_m": {
+          "p50": 0.523107,
+          "p75": 0.764382,
+          "p95": 1.208977
+        },
+        "x_m": {
+          "p05": -0.694327,
+          "p50": 0.41758,
+          "p95": 1.120677
+        },
+        "z_m": {
+          "p05": 0.298972,
+          "p50": 0.717073,
+          "p95": 0.987637
+        }
+      },
+      "payload_gain_kg": 75.810196,
+      "source_count": 33,
+      "source_fraction": 0.088235
+    },
+    {
+      "cell_id": 5,
+      "cut_depth_peak_m": 0.465249,
+      "cut_depth_peak_m_stats": {
+        "p05": 0.141787,
+        "p50": 0.465249,
+        "p95": 0.643357
+      },
+      "dig_start_local_depth_m": {
+        "p05": 0.006466,
+        "p50": 0.021082,
+        "p95": 0.035681
+      },
+      "dig_start_plane_depth_m": {
+        "p05": 0.020286,
+        "p50": 0.028693,
+        "p95": 0.277673
+      },
+      "effective_deposit_delta_kg": 42.068756,
+      "entry": {
+        "x_m": 0.853132,
+        "z_m": 0.662238
+      },
+      "entry_stats": {
+        "radial_error_m": {
+          "p50": 0.344547,
+          "p75": 0.496774,
+          "p95": 0.941855
+        },
+        "x_m": {
+          "p05": 0.349086,
+          "p50": 0.853132,
+          "p95": 1.08079
+        },
+        "z_m": {
+          "p05": -0.275972,
+          "p50": 0.662238,
+          "p95": 1.105163
+        }
+      },
+      "exit": {
+        "x_m": 0.716311,
+        "z_m": 0.631849
+      },
+      "exit_stats": {
+        "radial_error_m": {
+          "p50": 0.410856,
+          "p75": 0.595321,
+          "p95": 0.990142
+        },
+        "x_m": {
+          "p05": -0.221442,
+          "p50": 0.716311,
+          "p95": 1.09503
+        },
+        "z_m": {
+          "p05": 0.178615,
+          "p50": 0.631849,
+          "p95": 1.130825
+        }
+      },
+      "payload_gain_kg": 75.065121,
+      "source_count": 62,
+      "source_fraction": 0.165775
+    }
+  ],
+  "dig_cut_depth_scale_m": 0.8,
+  "dig_cut_depth_semantic": "bucket_depth_below_local_surface_peak_m",
+  "dig_cut_token_contract": "v2_4_removed_depth_cut_v3",
+  "fields": {
+    "cut_depth_peak_m": {
+      "p10": 0.24369,
+      "p50": 0.458796,
+      "p90": 0.600003
+    },
+    "cut_direction_x": {
+      "p10": -0.894669,
+      "p50": -0.3383,
+      "p90": 0.460661
+    },
+    "cut_direction_z": {
+      "p10": -0.465885,
+      "p50": 0.053986,
+      "p90": 0.575655
+    },
+    "cut_length_m": {
+      "p10": 0.525479,
+      "p50": 0.721231,
+      "p90": 1.183649
+    },
+    "effective_deposit_delta_kg": {
+      "p10": 14.643884,
+      "p50": 52.529617,
+      "p90": 86.885482
+    },
+    "entry_x_m": {
+      "p10": 0.383834,
+      "p50": 0.731882,
+      "p90": 1.009634
+    },
+    "entry_z_m": {
+      "p10": -1.169713,
+      "p50": -0.387444,
+      "p90": 0.701805
+    },
+    "exit_x_m": {
+      "p10": -0.277553,
+      "p50": 0.554963,
+      "p90": 1.031759
+    },
+    "exit_z_m": {
+      "p10": -1.052679,
+      "p50": -0.341561,
+      "p90": 0.725329
+    },
+    "payload_gain_kg": {
+      "p10": 61.345787,
+      "p50": 75.018345,
+      "p90": 98.589323
+    }
+  },
+  "prior_id": "yulong_surface_depth_dig_cut_prior_strict18_train_v1",
+  "return_start_envelope_cells": [
+    {
+      "cell_id": 0,
+      "dig_start_local_depth_m": {
+        "p05": 0.005717,
+        "p50": 0.012831,
+        "p95": 0.037086
+      },
+      "dig_start_plane_depth_m": {
+        "p05": 0.027709,
+        "p50": 0.304557,
+        "p95": 0.472971
+      },
+      "match_source": "nearest_qc6_coverage_cell_by_next_operator_entry",
+      "source_count": 69,
+      "source_fraction": 0.192737,
+      "token_median": [
+        -0.750741,
+        0.394141,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.539822,
+        0.531652,
+        0.395799,
+        0.182682,
+        0.02,
+        0.068013,
+        0.030954,
+        0.030223,
+        0.614021,
+        1.0,
+        1.0
+      ],
+      "token_p05": [
+        -0.930583,
+        0.172753,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.525625,
+        0.431589,
+        0.261897,
+        0.100964,
+        0.02,
+        0.029359,
+        0.02,
+        0.02,
+        0.212466,
+        1.0,
+        1.0
+      ],
+      "token_p95": [
+        -0.511237,
+        0.535514,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.552781,
+        0.608137,
+        0.514475,
+        0.360878,
+        0.02,
+        0.114557,
+        0.080793,
+        0.165432,
+        1.568785,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "cell_id": 1,
+      "dig_start_local_depth_m": {
+        "p05": 0.00767,
+        "p50": 0.021021,
+        "p95": 0.033109
+      },
+      "dig_start_plane_depth_m": {
+        "p05": 0.020623,
+        "p50": 0.031942,
+        "p95": 0.233877
+      },
+      "match_source": "nearest_qc6_coverage_cell_by_next_operator_entry",
+      "source_count": 66,
+      "source_fraction": 0.184358,
+      "token_median": [
+        -0.643986,
+        0.611392,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.533158,
+        0.617045,
+        0.286362,
+        0.192484,
+        0.02,
+        0.068184,
+        0.033621,
+        0.020269,
+        0.453605,
+        1.0,
+        1.0
+      ],
+      "token_p05": [
+        -0.902068,
+        0.456652,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.519108,
+        0.552536,
+        0.102633,
+        0.071251,
+        0.02,
+        0.030204,
+        0.02,
+        0.02,
+        0.204605,
+        1.0,
+        1.0
+      ],
+      "token_p95": [
+        -0.473683,
+        0.838073,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.548193,
+        0.767012,
+        0.381881,
+        0.305623,
+        0.02,
+        0.113287,
+        0.082051,
+        0.083112,
+        1.067658,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "cell_id": 2,
+      "dig_start_local_depth_m": {
+        "p05": 0.005351,
+        "p50": 0.017114,
+        "p95": 0.035794
+      },
+      "dig_start_plane_depth_m": {
+        "p05": 0.022269,
+        "p50": 0.255119,
+        "p95": 0.444179
+      },
+      "match_source": "nearest_qc6_coverage_cell_by_next_operator_entry",
+      "source_count": 54,
+      "source_fraction": 0.150838,
+      "token_median": [
+        -0.367268,
+        0.410827,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.514028,
+        0.493249,
+        0.449879,
+        0.177452,
+        0.02,
+        0.064516,
+        0.036161,
+        0.020109,
+        0.535133,
+        1.0,
+        1.0
+      ],
+      "token_p05": [
+        -0.605132,
+        0.105404,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.492221,
+        0.374007,
+        0.310198,
+        0.032259,
+        0.02,
+        0.034451,
+        0.02,
+        0.02,
+        0.233102,
+        1.0,
+        1.0
+      ],
+      "token_p95": [
+        -0.116712,
+        0.628363,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.538487,
+        0.582343,
+        0.62315,
+        0.322634,
+        0.02,
+        0.106155,
+        0.079617,
+        0.106555,
+        1.167642,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "cell_id": 3,
+      "dig_start_local_depth_m": {
+        "p05": 0.007002,
+        "p50": 0.022636,
+        "p95": 0.033694
+      },
+      "dig_start_plane_depth_m": {
+        "p05": 0.020365,
+        "p50": 0.028677,
+        "p95": 0.3247
+      },
+      "match_source": "nearest_qc6_coverage_cell_by_next_operator_entry",
+      "source_count": 67,
+      "source_fraction": 0.187151,
+      "token_median": [
+        -0.105241,
+        0.675328,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.49989,
+        0.605302,
+        0.29788,
+        0.177014,
+        0.02,
+        0.063637,
+        0.026367,
+        0.020291,
+        0.463641,
+        1.0,
+        1.0
+      ],
+      "token_p05": [
+        -0.525182,
+        0.465993,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.481139,
+        0.511265,
+        0.118103,
+        0.054893,
+        0.02,
+        0.041956,
+        0.02,
+        0.02,
+        0.190724,
+        1.0,
+        1.0
+      ],
+      "token_p95": [
+        0.092881,
+        0.889493,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.526344,
+        0.728677,
+        0.423459,
+        0.380736,
+        0.02,
+        0.099232,
+        0.061959,
+        0.113314,
+        1.547239,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "cell_id": 4,
+      "dig_start_local_depth_m": {
+        "p05": 0.006214,
+        "p50": 0.012847,
+        "p95": 0.03366
+      },
+      "dig_start_plane_depth_m": {
+        "p05": 0.022401,
+        "p50": 0.258572,
+        "p95": 0.460775
+      },
+      "match_source": "nearest_qc6_coverage_cell_by_next_operator_entry",
+      "source_count": 42,
+      "source_fraction": 0.117318,
+      "token_median": [
+        0.219437,
+        0.441336,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.472022,
+        0.498774,
+        0.41126,
+        0.169343,
+        0.02,
+        0.068781,
+        0.033823,
+        0.020062,
+        0.516695,
+        1.0,
+        1.0
+      ],
+      "token_p05": [
+        -0.149544,
+        0.137295,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.448069,
+        0.377924,
+        0.273452,
+        0.037098,
+        0.02,
+        0.03856,
+        0.02,
+        0.02,
+        0.230451,
+        1.0,
+        1.0
+      ],
+      "token_p95": [
+        0.466435,
+        0.661175,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.495384,
+        0.587628,
+        0.588787,
+        0.275935,
+        0.02,
+        0.118116,
+        0.083423,
+        0.085973,
+        1.324078,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "cell_id": 5,
+      "dig_start_local_depth_m": {
+        "p05": 0.006466,
+        "p50": 0.021082,
+        "p95": 0.035681
+      },
+      "dig_start_plane_depth_m": {
+        "p05": 0.020286,
+        "p50": 0.028693,
+        "p95": 0.277673
+      },
+      "match_source": "nearest_qc6_coverage_cell_by_next_operator_entry",
+      "source_count": 60,
+      "source_fraction": 0.167598,
+      "token_median": [
+        0.373318,
+        0.682662,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.462596,
+        0.620226,
+        0.293449,
+        0.152202,
+        0.02,
+        0.058386,
+        0.036314,
+        0.02,
+        0.432764,
+        1.0,
+        1.0
+      ],
+      "token_p05": [
+        0.096998,
+        0.507555,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.444411,
+        0.535538,
+        0.130049,
+        0.037255,
+        0.02,
+        0.02,
+        0.02,
+        0.02,
+        0.202076,
+        1.0,
+        1.0
+      ],
+      "token_p95": [
+        0.65418,
+        0.883334,
+        0.0,
+        0.2,
+        0.0,
+        0.08,
+        0.0,
+        0.48632,
+        0.736125,
+        0.398427,
+        0.306337,
+        0.02,
+        0.090772,
+        0.085242,
+        0.070346,
+        1.19911,
+        1.0,
+        1.0
+      ]
+    }
+  ],
+  "return_start_envelope_global": {
+    "source_count": 358,
+    "source_fraction": 1.0,
+    "token_median": [
+      -0.311629,
+      0.543604,
+      0.0,
+      0.2,
+      0.0,
+      0.08,
+      0.0,
+      0.510598,
+      0.572284,
+      0.339018,
+      0.175604,
+      0.02,
+      0.064189,
+      0.032872,
+      0.021233,
+      0.513285,
+      1.0,
+      1.0
+    ],
+    "token_p05": [
+      -0.859252,
+      0.225719,
+      0.0,
+      0.2,
+      0.0,
+      0.08,
+      0.0,
+      0.453037,
+      0.429432,
+      0.144186,
+      0.043997,
+      0.02,
+      0.034214,
+      0.02,
+      0.02,
+      0.204817,
+      1.0,
+      1.0
+    ],
+    "token_p95": [
+      0.508523,
+      0.846041,
+      0.0,
+      0.2,
+      0.0,
+      0.08,
+      0.0,
+      0.547324,
+      0.719621,
+      0.543021,
+      0.34309,
+      0.02,
+      0.111183,
+      0.081732,
+      0.107994,
+      1.371391,
+      1.0,
+      1.0
+    ]
+  },
+  "return_start_envelope_source": {
+    "episode_selection": {
+      "partition": "train",
+      "primitive_episode_count": 358,
+      "split_path": "/data/pingfan/excavator_testbed_data/yulong_strict18_terrain_residual_v0/splits/return_source_split.yaml",
+      "split_policy": "source_identity_exact_allowlist_v1"
+    },
+    "match_source": "nearest_qc6_coverage_cell_by_next_operator_entry",
+    "notes": "Cell-conditioned return-start envelope priors are grouped by the next operator entry's nearest coverage cell. The envelope token's own long/short values describe the start state and are not used as the cell assignment key.",
+    "skipped_missing_next_entry_count": 0,
+    "source_count_used": 358,
+    "source_dataset": "/data/pingfan/excavator_testbed_data/yulong_strict18_terrain_residual_v0/primitives_copy/return",
+    "tier_filter": "gold"
+  },
+  "return_start_envelope_source_label": "strict18_train_return_start_envelope",
+  "return_start_envelope_token_contract": "return_start_envelope_tokens_v1",
+  "schema_version": "v3",
+  "source": {
+    "episode_selection": {
+      "partition": "train",
+      "primitive_episode_count": 374,
+      "split_path": "/data/pingfan/excavator_testbed_data/yulong_strict18_terrain_residual_v0/splits/dig_source_split.yaml",
+      "split_policy": "source_identity_exact_allowlist_v1"
+    },
+    "notes": "Generated from repaired DigArea geometry replay. cut_depth_peak_m is surface-relative bucket penetration; removed-depth grids remain planner terrain state.",
+    "source_cycle_count_used": 374,
+    "source_dataset": "/data/pingfan/excavator_testbed_data/yulong_strict18_terrain_residual_v0/primitives_copy/dig",
+    "tier_filter": "gold"
+  },
+  "token_order": [
+    "entry_x",
+    "entry_z",
+    "exit_x",
+    "exit_z",
+    "cut_direction_x",
+    "cut_direction_z",
+    "cut_length",
+    "cut_depth_semantic",
+    "payload_gain",
+    "valid"
+  ]
+}
