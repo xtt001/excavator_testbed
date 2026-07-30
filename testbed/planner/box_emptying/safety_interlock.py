@@ -370,6 +370,9 @@ class BoxEmptyingSafetyInterlock:
         bottom_result = self._bottom_contact_service.last_result
         decision = SafetyActionDecision(
             action=action.copy(),
+            wall_contact_allowed=bool(
+                wall_result is not None and wall_result.allowed
+            ),
             wall_contact_diagnostic_allowed=bool(
                 wall_result is not None
                 and wall_result.diagnostic_allowed

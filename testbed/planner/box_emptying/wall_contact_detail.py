@@ -10,6 +10,11 @@ from typing import Any
 
 import numpy as np
 
+from testbed.planner.box_emptying.contact_safety_policy import (
+    ContactSafetyPolicy,
+    ContactSafetyPolicyInputs,
+)
+
 WORKTOOL_WALL_CONTACT_DETAIL_SCHEMA = "worktool_wall_contact_detail_v1"
 WORKTOOL_WALL_CONTACT_DETAIL_PREFIX = (
     f"{WORKTOOL_WALL_CONTACT_DETAIL_SCHEMA}:"
@@ -33,18 +38,23 @@ WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_FIRST_SESSION = (
 WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_ALL_CONTACTS = (
     "record_bucket_all_contacts"
 )
+WALL_FIRST_TOUCH_MODE_ALLOW_FINITE_BUCKET_CONTACTS = (
+    "allow_finite_bucket_contacts"
+)
 WALL_CONTACT_HARD_MAX_FORCE_N = 100_000.0
 WALL_CONTACT_SESSION_END_CLEAR_TICKS_DEFAULT = 1
 WALL_CONTACT_SESSION_END_CLEAR_TICKS_B2 = 2
 SUPPORTED_WALL_FIRST_TOUCH_MODES = frozenset(
     {
         WALL_FIRST_TOUCH_MODE_INTERRUPT,
+        WALL_FIRST_TOUCH_MODE_ALLOW_FINITE_BUCKET_CONTACTS,
         WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_ALL_CONTACTS,
         WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_FIRST_SESSION,
     }
 )
 
 WALL_GATE_NONE = "none"
+WALL_GATE_ALLOW = "allow"
 WALL_GATE_DIAGNOSTIC_ALLOW = "diagnostic_allow"
 WALL_GATE_INTERRUPT = "interrupt"
 WALL_GATE_TERMINAL = "terminal"
@@ -138,6 +148,10 @@ class WallContactGateResult:
     @property
     def diagnostic_allowed(self) -> bool:
         return self.kind == WALL_GATE_DIAGNOSTIC_ALLOW
+
+    @property
+    def allowed(self) -> bool:
+        return self.kind == WALL_GATE_ALLOW
 
 
 def validate_wall_first_touch_mode(value: str) -> str:
@@ -337,7 +351,7 @@ def parse_worktool_wall_contact_detail(
 
 @dataclass
 class WallContactFirstSessionService:
-    """Stateful hard gate with explicit diagnostic bucket-contact modes."""
+    """Stateful wall gate with explicit diagnostic and mainline modes."""
 
     mode: str = WALL_FIRST_TOUCH_MODE_INTERRUPT
     high_force_n: float = 100_000.0
@@ -449,7 +463,10 @@ class WallContactFirstSessionService:
                 self._consecutive_clear_ticks += 1
                 if (
                     self.mode
-                    != WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_ALL_CONTACTS
+                    not in {
+                        WALL_FIRST_TOUCH_MODE_ALLOW_FINITE_BUCKET_CONTACTS,
+                        WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_ALL_CONTACTS,
+                    }
                     and
                     self._consecutive_clear_ticks
                     >= self.session_end_clear_ticks
@@ -488,7 +505,10 @@ class WallContactFirstSessionService:
             )
         if (
             self.mode
-            != WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_ALL_CONTACTS
+            not in {
+                WALL_FIRST_TOUCH_MODE_ALLOW_FINITE_BUCKET_CONTACTS,
+                WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_ALL_CONTACTS,
+            }
             and len(detail.walls) != 1
         ):
             return self._cache(
@@ -556,7 +576,36 @@ class WallContactFirstSessionService:
                     detail=detail,
                 ),
             )
-        if self.mode == WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_ALL_CONTACTS:
+        if (
+            self.mode
+            == WALL_FIRST_TOUCH_MODE_ALLOW_FINITE_BUCKET_CONTACTS
+        ):
+            contact_result = ContactSafetyPolicy(
+                high_force_n=self.high_force_n
+            ).evaluate(
+                ContactSafetyPolicyInputs(
+                    contact_active=True,
+                    components=tuple(detail.parts),
+                    forces_n=tuple(forces),
+                    telemetry_valid=True,
+                    hard_bottom_violation=False,
+                    stuck=False,
+                    timed_out=False,
+                )
+            )
+            if contact_result.hard_failure:
+                return self._cache(
+                    cache_key,
+                    WallContactGateResult(
+                        kind=WALL_GATE_TERMINAL,
+                        reason="wall_contact_detail_invalid",
+                        detail=detail,
+                    ),
+                )
+        if self.mode in {
+            WALL_FIRST_TOUCH_MODE_ALLOW_FINITE_BUCKET_CONTACTS,
+            WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_ALL_CONTACTS,
+        }:
             sequence_valid = False
             if not self._diagnostic_started:
                 sequence_valid = (
@@ -602,8 +651,18 @@ class WallContactFirstSessionService:
             return self._cache(
                 cache_key,
                 WallContactGateResult(
-                    kind=WALL_GATE_DIAGNOSTIC_ALLOW,
-                    reason="wall_contact_bucket_record_only",
+                    kind=(
+                        WALL_GATE_ALLOW
+                        if self.mode
+                        == WALL_FIRST_TOUCH_MODE_ALLOW_FINITE_BUCKET_CONTACTS
+                        else WALL_GATE_DIAGNOSTIC_ALLOW
+                    ),
+                    reason=(
+                        "wall_contact_bucket_finite_allowed"
+                        if self.mode
+                        == WALL_FIRST_TOUCH_MODE_ALLOW_FINITE_BUCKET_CONTACTS
+                        else "wall_contact_bucket_record_only"
+                    ),
                     detail=detail,
                 ),
             )
@@ -898,6 +957,7 @@ def _points(
 
 __all__ = [
     "SUPPORTED_WALL_FIRST_TOUCH_MODES",
+    "WALL_FIRST_TOUCH_MODE_ALLOW_FINITE_BUCKET_CONTACTS",
     "WALL_FIRST_TOUCH_MODE_INTERRUPT",
     "WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_ALL_CONTACTS",
     "WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_FIRST_SESSION",

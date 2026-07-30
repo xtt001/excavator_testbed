@@ -161,11 +161,29 @@ remote push.
 
 ## Post-freeze contact semantics
 
-The proposed contact change is a new, explicit mainline semantic change and is
-not part of the frozen default:
+The post-freeze contact change is implemented as the explicit opt-in mode
+`allow_finite_bucket_contacts`. It is not part of the frozen default and no
+checked-in production/default configuration enables it:
 
 - ordinary, finite, bucket-only contact does not automatically fail;
 - boom/stick/unknown-component contact, high force, non-finite telemetry,
   stuck state, timeout, and hard-bottom violations remain hard failures.
 
-Implement it with tests and documentation after the freeze branch is tagged.
+The mode is mutually exclusive with the historical diagnostic A/B and
+observe-only markers. The adapter and runtime contract both reject mixed
+mainline/diagnostic semantics. The default remains `interrupt`.
+
+Request-local evaluation configuration may opt in only with:
+
+```yaml
+policy:
+  box_emptying:
+    safety:
+      wall_first_touch_mode: allow_finite_bucket_contacts
+      wall_contact_diagnostic_ab_enabled: false
+      wall_contact_diagnostic_observe_only_enabled: false
+```
+
+This mode preserves the existing strict `<100000 N` finite-force condition.
+It does not relax hard-bottom, stuck, timeout, neutral-stop, or unknown
+component handling, and it does not by itself unlock any Unity or live gate.

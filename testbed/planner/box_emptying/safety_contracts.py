@@ -13,6 +13,7 @@ from testbed.planner.box_emptying.bottom_contact_detail import (
 from testbed.planner.box_emptying.contact_ownership import CONTACT_KIND_NONE
 from testbed.planner.box_emptying.wall_contact_detail import (
     WALL_CONTACT_SESSION_END_CLEAR_TICKS_B2,
+    WALL_FIRST_TOUCH_MODE_ALLOW_FINITE_BUCKET_CONTACTS,
     WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_ALL_CONTACTS,
     WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_FIRST_SESSION,
     validate_wall_contact_session_end_clear_ticks,
@@ -82,6 +83,17 @@ class SafetyInterlockConfig:
                 "wall contact diagnostic markers are mutually exclusive"
             )
         mode = validate_wall_first_touch_mode(self.wall_first_touch_mode)
+        if (
+            mode == WALL_FIRST_TOUCH_MODE_ALLOW_FINITE_BUCKET_CONTACTS
+            and (
+                self.wall_contact_diagnostic_ab_enabled
+                or self.wall_contact_diagnostic_observe_only_enabled
+            )
+        ):
+            raise ValueError(
+                "allow_finite_bucket_contacts is a mainline mode and "
+                "cannot use diagnostic markers"
+            )
         clear_ticks = validate_wall_contact_session_end_clear_ticks(
             self.wall_contact_session_end_clear_ticks
         )
@@ -172,6 +184,7 @@ class SafetyActionDecision:
     depth_exhausted_guard: bool = False
     depth_exhausted_guard_active: bool = False
     hard_bottom_depth_budget_guard: bool = False
+    wall_contact_allowed: bool = False
     wall_contact_diagnostic_allowed: bool = False
     factory_floor_contact_diagnostic_allowed: bool = False
     unity_contact_diagnostic_allowed: bool = False
@@ -223,6 +236,9 @@ class SafetyActionDecision:
             ),
             "box_safety_hard_bottom_depth_budget_guard": bool(
                 self.hard_bottom_depth_budget_guard
+            ),
+            "box_safety_wall_contact_allowed": bool(
+                self.wall_contact_allowed
             ),
             "box_safety_wall_contact_diagnostic_allowed": bool(
                 self.wall_contact_diagnostic_allowed

@@ -15,6 +15,7 @@ from testbed.planner.box_emptying.bottom_contact_detail import (
 )
 from testbed.planner.box_emptying.wall_contact_detail import (
     WALL_CONTACT_SESSION_END_CLEAR_TICKS_B2,
+    WALL_FIRST_TOUCH_MODE_ALLOW_FINITE_BUCKET_CONTACTS,
     WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_ALL_CONTACTS,
     WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_FIRST_SESSION,
     validate_wall_contact_session_end_clear_ticks,
@@ -515,6 +516,18 @@ class PrimitivePlannerAdapterConfigNormalizer:
         wall_first_touch_mode = validate_wall_first_touch_mode(
             str(box_safety_cfg.get("wall_first_touch_mode", "interrupt"))
         )
+        if (
+            wall_first_touch_mode
+            == WALL_FIRST_TOUCH_MODE_ALLOW_FINITE_BUCKET_CONTACTS
+            and (
+                diagnostic_ab_enabled
+                or diagnostic_observe_only_enabled
+            )
+        ):
+            raise ValueError(
+                "allow_finite_bucket_contacts is a mainline mode and "
+                "cannot use diagnostic markers"
+            )
         if (
             wall_first_touch_mode
             == WALL_FIRST_TOUCH_MODE_RECORD_BUCKET_FIRST_SESSION

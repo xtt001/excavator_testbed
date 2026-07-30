@@ -1,5 +1,28 @@
 # 配置文件索引
 
+## Goal-Following 主线 bucket 接触语义（默认不启用）
+
+Git 冻结后的主线实现新增显式模式
+`allow_finite_bucket_contacts`：普通、有限、仅 bucket 的墙体接触可以继续执行，
+但 boom、stick、其他或不明部件接触，`>=100000N` 高力、非有限或无效遥测、
+硬底违规、卡死和超时仍然硬停止。该模式不削减任何几何安全余量。
+
+仓库默认仍为 `interrupt`，没有任何 production/default 配置自动启用新语义。
+仅 request-local 评估配置可显式写入：
+
+```yaml
+policy:
+  box_emptying:
+    safety:
+      wall_first_touch_mode: allow_finite_bucket_contacts
+      wall_contact_diagnostic_ab_enabled: false
+      wall_contact_diagnostic_observe_only_enabled: false
+```
+
+主线模式不得与历史 A/B 或 observe-only diagnostic 标记混用；配置归一化和运行时
+合同都会拒绝这种组合。启用该模式本身不解锁 offline、Unity sweep、有界闭环或
+1×10 门控。
+
 ## 2026-07-31 Carry→Dump Ownership Priority 10 铲诊断配置
 
 已消费、不可覆盖的 request-local 配置位于：
