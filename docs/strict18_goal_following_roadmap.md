@@ -2,9 +2,16 @@
 
 ## 当前结论与文档地位
 
-当前唯一授权的实现任务是**阶段 A.1：独立支持范围合同审计（`support_contract_v2`）**。
-它先解释阶段 A 中的数值支持范围拒绝来自哪里，再决定能否以新的、经过保留验证来源检验的
-合同重跑阶段 A；它不重新定义目标，也不把本次目标条件审计的 OOS 结果拿来调阈值。
+当前唯一授权的实现任务是**阶段 A.2：Return 响应稳定性原因审计与 Dig 联合支持合同独立验证**。
+它先解释两个已处于 Return v2 支持范围内、却未达到动作稳定性要求的片段；同时独立验证 Dig
+是否存在可接受正常边缘状态、又能拒绝预注册陌生状态的联合支持合同。两条审计完成后，才以
+固定合同完整重跑阶段 A；它们不重新定义目标，也不把本次目标条件审计的结果拿来调阈值。
+
+已完成的离线证据是：阶段 A 的 Dig 有 9/10 段 `goal_response_plausible`、1/10 段
+`out_of_support`；Return 在 v1 下均为 OOS。阶段 A.1 选择了 Return 的
+`joint_regularized_mahalanobis_p99_v2`，其 9 段均在该规则支持范围内；随后 Return v2 重跑
+得到 7/9 段 `goal_response_plausible` 和 2/9 段 `goal_response_invalid`。Dig 没有通过候选
+验收，仍使用 v1。这些都是 teacher-forced 诊断结果，不构成闭环或生产结论。
 
 阶段 A 与阶段 A.1 都只产生 teacher-forced recorded-observation 的离线诊断证据。它们不是
 Unity 闭环、真实机器验证、生产证明或训练结果；本轮不训练、不创建训练 HDF5、不运行 Unity
@@ -194,7 +201,7 @@ temporal aggregation 必须记录运行时实际解析值，不能只依据 YAML
 动作变化是否稳定、固定的方向不可识别结论、production/default 是否改变，以及下一步建议。
 当前出现 `out_of_support` 时，不直接进入阶段 B，而是先执行以下阶段 A.1。
 
-## 阶段 A.1：独立支持范围合同审计（`support_contract_v2`）
+## 阶段 A.1：独立支持范围合同审计（`support_contract_v2`）（已完成）
 
 ### 目的、边界与原因分支
 
@@ -283,6 +290,110 @@ closed_loop_claim=false
 primitive 的选择结果为前提。该工件必须逐 primitive 写明实际使用的支持合同，例如 Return
 使用已选择的 v2、Dig 保持 v1。这个 v2 重跑仍然只是离线证据；v1、production/default runtime、
 安全阈值和 timeout 一律不变。
+
+## 阶段 A.2：Return 响应稳定性原因审计与 Dig 联合支持合同独立验证
+
+### 目标、固定输入与禁止项
+
+阶段 A.2 仍然只读、离线、`diagnostic_only`。它不训练、不创建训练 HDF5、不运行 Unity/live，
+不改变 Planner、checkpoint、默认 runtime、runtime handoff、安全阈值或 timeout。它也不改变
+阶段 A 的四类分类、`response_threshold_axis` 或 active-frame 规则。
+
+Return 原因审计只检查已经产生 `goal_response_invalid` 的两个原始 pair；不得换 segment、换
+alternate token、换 checkpoint 或用更短窗口重做一份更容易通过的比较：
+
+| Baseline recorded segment | 固定 alternate token source | 当前未通过原因 |
+| --- | --- | --- |
+| `return:898-1043:bb329f176aba` | `return:3959-4161:4afcef2eee82` | active-frame fraction 为 0.773972602739726，低于固定的 0.80。 |
+| `return:3959-4161:4afcef2eee82` | `return:2323-2534:87aa0fb8c981` | active-frame fraction 为 0.7192118226600985，低于固定的 0.80。 |
+
+两组 pair 必须复用同一 JSONL/HDF5 记录、前一帧 observation 绑定、原始 JPEG、四相机顺序、
+checkpoint、normalization/stats、解析后的 evaluation config、action scale、设备确定性设置和
+实际 temporal contract。所有这些输入及其 SHA 必须写入新的 no-overwrite 原因审计工件。只有
+新增诊断记录可以增加，标准分类输入不得变动。
+
+**固定的 0.80** 是阶段 A 的合格线。不得降低 0.80 门槛，不得以平均值、只检查 anchor 或
+修改响应阈值把这两段判为通过；三个 anchor 仍必须同时 active，replica 一致性和 baseline
+对齐规则也仍然有效。
+
+### Return 三项原因审计
+
+审计必须逐项给出可复查结果，不能仅输出最终标签：
+
+1. **token 归一化**：对 raw 18D envelope 的字段顺序、dtype、模型键、有效位、训练时 token
+   builder、normalization 参数和归一化后 tensor 分别取证。使用与训练/evaluation 相同的 canonical
+   builder 重建每步模型可见 token；在明确 dtype/shape 后，它必须与审计路径进入模型前的 tensor
+   完全一致。任一不一致是数据合同错误，当前动作响应结果不得继续作为证据。
+2. **图像、`qpos`、`qvel` 的历史窗口**：对每个 policy step 记录 JSONL action step、HDF5
+   action 行、前一帧 observation 行、四相机原始 JPEG 与变换后模型输入、`qpos`/`qvel` 数值、
+   history index 和 reset boundary。它们必须与训练/evaluation 输入路径的实际窗口、帧偏移、
+   图像变换和排序一致；任一 mismatch 必须命名为对齐/字段语义错误，而不能被归因成模型无响应。
+3. **temporal aggregation**：标准重放必须在 segment 入口 reset 一次、segment 内连续运行、
+   不得逐帧 reset；baseline 与 alternate 分别使用独立 cache。逐帧记录 raw `100×4` chunk 差异、
+   每个实际派发动作的 cache contributor/query position/weight，以及聚合后动作差异。仅当 raw
+   chunk 在同一固定门槛下稳定响应、而标准 aggregation 的已记录贡献权重使实际派发动作低于门槛，
+   才能标记 `temporal_aggregation_dilution`。任何禁用 aggregation、清空 cache 或改变窗口的 replay
+   只能用于解释，不能替代正式分类。
+
+每个 pair 的结果必须为 `normalization_mismatch`、`observation_history_mismatch`、
+`temporal_aggregation_dilution`、`not_explained_by_frozen_inputs`，或明确记录多个同时存在的
+失配。若前三类中出现输入合同错误，先修正合同并保留旧工件，再新建完整阶段 A 重跑；若三项均
+通过但 active-frame fraction 仍低于 0.80，该 pair 保持 `goal_response_invalid`，不进入阶段 B。
+
+### Dig 联合支持合同的独立验证
+
+Dig 审计与上述两段 Return 原因审计并行、相互独立。候选支持合同的整个 family（特征顺序、
+预处理、联合距离或其他 reject rule、fit 参数、阈值 family、候选排序和验收门槛）必须在读取
+任何 target rollout 前写入候选 manifest；之后不得根据 target 结果临时调参。拟合只能读取
+strict-train 的 `action_loss_mask=1` 行，保留验证来源只用于验收；train、validation、target 的
+primitive/source episode identity 必须 source-disjoint，缺少谱系或发生交集即 fail closed。
+
+当前预注册的 Dig-only family 是五个 strict-train score quantile 的 regularised joint
+Mahalanobis 候选，固定顺序如下：
+
+1. `dig_joint_regularized_mahalanobis_p99_v1`（train p99）；
+2. `dig_joint_regularized_mahalanobis_p995_v1`（train p99.5）；
+3. `dig_joint_regularized_mahalanobis_p999_v1`（train p99.9）；
+4. `dig_joint_regularized_mahalanobis_p9995_v1`（train p99.95）；
+5. `dig_joint_regularized_mahalanobis_p9999_v1`（train p99.99）。
+
+五者共用同一 strict-train mean/covariance、precision 和 ridge
+`max(trace(covariance) / D * 1e-6, 1e-12)`；每个阈值均以 strict-train squared Mahalanobis
+score 的 `linear` 分位数计算。它们的唯一区别是上列已冻结的 train score quantile。该 Dig-only
+family 与 A.1 的 `support_contract_v2` 候选 family 不同：A.1 的 axis / Return 候选不能作为这次
+Dig 选择的成员，Dig 的结果也不重新选择或修改 Return v2。
+
+每个候选必须报告三类预注册验证：
+
+- 全部正常 held-out validation 的接受率；
+- `validation_v1_edge` cohort 的接受率：该 cohort 在读取 target 前固定为“被
+  `axis_p01_p99_v1` 拒绝、但属于 held-out validation 的正常 Dig 行”；
+- 预注册明显陌生负对照的拒绝率。若只有 synthetic 负对照，只能报告
+  `synthetic_obvious_ood_rejection`，不得把它表述为真实现场陌生状态证明。
+
+合格候选必须同时达到 `validation_normal_coverage >= 0.99`、非空
+`validation_v1_edge_coverage >= 0.99`、以及 `synthetic_obvious_ood_rejection >= 0.99`。
+合格候选按 `synthetic_obvious_ood_rejection` 降序、`validation_normal_coverage` 降序、上述固定
+family 顺序依次选择。三项门槛、负对照和 selection order 一经 manifest 固定便不能事后变更。
+没有合格候选、edge cohort 为空、来源泄漏或 target 调参时，Dig 保持 v1；不得放宽范围，不得改
+runtime handoff。
+
+### 条件性完整阶段 A 重跑
+
+仅当 Return 原因审计与 Dig 独立验证都以 `completed` 状态写完各自 no-overwrite 工件后，才启动
+新的 **完整、no-overwrite 的阶段 A 重跑**，输出根固定为
+`act_goal_condition_sensitivity_v3/`。该重跑覆盖全部 10 个 Dig 与 9 个 Return stable segment，
+保留原始 pair 选择、baseline replica、80% 门槛、三 anchor、四类分类优先级和 teacher-forced
+证据标签。
+
+重跑 manifest 必须逐 primitive 写明实际支持合同和原因审计 lineage：Return 在没有发现输入合同
+错误时继续使用已选择的 v2；发现错误则先修正并建立新的冻结输入 lineage。Dig 只有独立验证选中
+候选时才使用该候选，否则继续使用 v1。无论哪种情况，都不能覆盖 v1、Return v2 或阶段 A.2
+工件；任何仍在 OOS、`goal_response_invalid` 或 `artifact_invalid` 的 primitive 保持该结论。
+
+完整重跑只回答 Dig、Return 是否能在各自可信支持范围内稳定读取目标条件。只有两者都在其冻结
+合同下完成有效重跑并获得 `goal_response_plausible`，才有资格准备后续 Unity 单铲目标效果对照；
+v3 本身不进入阶段 B，仍不证明“指哪挖哪”、地形效果、安全或 production readiness。
 
 ## 后续阶段：仅保留为计划
 

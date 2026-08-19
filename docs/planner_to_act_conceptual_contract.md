@@ -15,11 +15,11 @@
 ## Strict-18 当前冻结边界（2026-08）
 
 [Strict-18 目标条件敏感性离线审计路线](strict18_goal_following_roadmap.md) 是当前后续
-实现范围的权威文档。阶段 A 已冻结其 teacher-forced 目标条件敏感性证据；当前唯一授权的
-实现是阶段 A.1 `support_contract_v2`：用 strict-train/held-out validation 的 source-disjoint
-预注册审计解释数值支持范围拒绝。target rollout 只能在候选已经选择后被诊断，不能用于拟合
-或调阈值。它不训练、不运行 Unity/live、不创建训练 HDF5，也不改变 production/default
-runtime、安全阈值或 timeout。
+实现范围的权威文档。阶段 A 和 A.1 已冻结 teacher-forced 目标条件敏感性与支持范围证据；当前
+唯一授权的实现是阶段 A.2：固定两段 Return `goal_response_invalid` 的输入、checkpoint 和 80%
+稳定性门槛，逐项审计 token 归一化、观测历史窗口和 temporal aggregation；同时独立验证 Dig 的
+联合支持合同。target rollout 不能参与候选拟合、阈值、排序或事后调参。它不训练、不运行
+Unity/live、不创建训练 HDF5，也不改变 production/default runtime、安全阈值或 timeout。
 
 Planner 只产生任务级目标并由 goal 生命周期服务锁定 `goal_id`；primitive scheduler 选择
 当前 skill；ACT 直接输出 4D action。Planner 不生成 joystick、qpos setpoint 或必须逐点
@@ -42,6 +42,12 @@ Planner 的目标语义、ACT 输入责任、scheduler/handoff 决策或 product
 同时未选择候选的 Dig 继续使用 v1。顶层 `support_contract_not_selected` 只表示没有覆盖全部
 primitive 的统一 v2，不会撤销已选择 primitive 的离线证据；它也绝不改变 runtime 默认或让
 Return 的支持证据冒充 Dig 的支持证据。
+
+Return 的支持证据不等于两段响应稳定性已经通过。阶段 A.2 的标准 replay 继续以固定 0.80
+active-frame fraction 和三个 active anchor 判定；任何缓存清空、窗口修改或关闭 temporal
+aggregation 的试验只能解释原因，不能把 `goal_response_invalid` 改成通过。Dig 的联合支持合同
+必须以 source-disjoint strict-train/held-out validation 预注册并独立选择；选择前 Dig 保持 v1，
+也不改变 handoff 或 production runtime。
 
 ## Historical diagnostic legacy：2026-07-28 Actual-tuple return transition 合同
 

@@ -63,7 +63,7 @@ REMOVED_DOC_FRAGMENTS = (
 )
 
 STRICT18_ROADMAP_ANCHORS = (
-    "当前唯一授权的实现任务是**阶段 A.1：独立支持范围合同审计（`support_contract_v2`）**。",
+    "当前唯一授权的实现任务是**阶段 A.2：Return 响应稳定性原因审计与 Dig 联合支持合同独立验证**。",
     "ACT 直接输出 4D action",
     "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
     "teacher_forced_recorded_observation",
@@ -73,6 +73,36 @@ STRICT18_ROADMAP_ANCHORS = (
     "阶段 D",
     "阶段 E",
     "阶段 F",
+)
+
+STRICT18_FOLLOWUP_AUDIT_ANCHORS = (
+    "阶段 A.2：Return 响应稳定性原因审计与 Dig 联合支持合同独立验证",
+    "`return:898-1043:bb329f176aba`",
+    "`return:3959-4161:4afcef2eee82`",
+    "固定的 0.80",
+    "不得降低 0.80 门槛",
+    "token 归一化",
+    "图像、`qpos`、`qvel` 的历史窗口",
+    "temporal aggregation",
+    "source-disjoint",
+    "不得根据 target 结果临时调参",
+    "Dig 保持 v1",
+    "完整、no-overwrite 的阶段 A 重跑",
+    "`act_goal_condition_sensitivity_v3/`",
+    "v3 本身不进入阶段 B",
+)
+
+STRICT18_DIG_JOINT_SUPPORT_FAMILY_ANCHORS = (
+    "`dig_joint_regularized_mahalanobis_p99_v1`",
+    "`dig_joint_regularized_mahalanobis_p995_v1`",
+    "`dig_joint_regularized_mahalanobis_p999_v1`",
+    "`dig_joint_regularized_mahalanobis_p9995_v1`",
+    "`dig_joint_regularized_mahalanobis_p9999_v1`",
+    "`max(trace(covariance) / D * 1e-6, 1e-12)`",
+    "`linear` 分位数",
+    "validation_v1_edge_coverage >= 0.99",
+    "`synthetic_obvious_ood_rejection` 降序",
+    "A.1 的 `support_contract_v2` 候选 family 不同",
 )
 
 STRICT18_CONCEPTUAL_CONTRACT_ANCHORS = (
@@ -190,6 +220,10 @@ def check_strict18_goal_following_contract(root: str | Path = ".") -> None:
     for needle in STRICT18_PHASE_A_FORMAL_RULE_ANCHORS:
         _require(roadmap, needle, path=roadmap_path)
     for needle in STRICT18_SUPPORT_CONTRACT_V2_ANCHORS:
+        _require(roadmap, needle, path=roadmap_path)
+    for needle in STRICT18_FOLLOWUP_AUDIT_ANCHORS:
+        _require(roadmap, needle, path=roadmap_path)
+    for needle in STRICT18_DIG_JOINT_SUPPORT_FAMILY_ANCHORS:
         _require(roadmap, needle, path=roadmap_path)
     for needle in STRICT18_CONCEPTUAL_CONTRACT_ANCHORS:
         _require(conceptual_contract, needle, path=conceptual_contract_path)

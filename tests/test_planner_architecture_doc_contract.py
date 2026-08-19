@@ -14,7 +14,7 @@ from scripts.planner_architecture_doc_guard import (
 )
 
 _STRICT18_BASE_ROADMAP_LINES = (
-    "当前唯一授权的实现任务是**阶段 A.1：独立支持范围合同审计（`support_contract_v2`）**。",
+    "当前唯一授权的实现任务是**阶段 A.2：Return 响应稳定性原因审计与 Dig 联合支持合同独立验证**。",
     "ACT 直接输出 4D action",
     "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
     "teacher_forced_recorded_observation",
@@ -58,17 +58,53 @@ _STRICT18_SUPPORT_CONTRACT_V2_LINES = (
     "它不以顶层 `completed`",
 )
 
+_STRICT18_FOLLOWUP_AUDIT_LINES = (
+    "阶段 A.2：Return 响应稳定性原因审计与 Dig 联合支持合同独立验证",
+    "`return:898-1043:bb329f176aba`",
+    "`return:3959-4161:4afcef2eee82`",
+    "固定的 0.80",
+    "不得降低 0.80 门槛",
+    "token 归一化",
+    "图像、`qpos`、`qvel` 的历史窗口",
+    "temporal aggregation",
+    "source-disjoint",
+    "不得根据 target 结果临时调参",
+    "Dig 保持 v1",
+    "完整、no-overwrite 的阶段 A 重跑",
+    "`act_goal_condition_sensitivity_v3/`",
+    "v3 本身不进入阶段 B",
+)
+
+_STRICT18_DIG_JOINT_SUPPORT_FAMILY_LINES = (
+    "`dig_joint_regularized_mahalanobis_p99_v1`",
+    "`dig_joint_regularized_mahalanobis_p995_v1`",
+    "`dig_joint_regularized_mahalanobis_p999_v1`",
+    "`dig_joint_regularized_mahalanobis_p9995_v1`",
+    "`dig_joint_regularized_mahalanobis_p9999_v1`",
+    "`max(trace(covariance) / D * 1e-6, 1e-12)`",
+    "`linear` 分位数",
+    "validation_v1_edge_coverage >= 0.99",
+    "`synthetic_obvious_ood_rejection` 降序",
+    "A.1 的 `support_contract_v2` 候选 family 不同",
+)
+
 
 def _strict18_roadmap_text(
     *,
     include_formal_rules: bool = True,
     include_support_contract_v2: bool = True,
+    include_followup_audit: bool = True,
+    include_dig_joint_support_family: bool = True,
 ) -> str:
     lines = list(_STRICT18_BASE_ROADMAP_LINES)
     if include_formal_rules:
         lines.extend(_STRICT18_FORMAL_RULE_LINES)
     if include_support_contract_v2:
         lines.extend(_STRICT18_SUPPORT_CONTRACT_V2_LINES)
+    if include_followup_audit:
+        lines.extend(_STRICT18_FOLLOWUP_AUDIT_LINES)
+    if include_dig_joint_support_family:
+        lines.extend(_STRICT18_DIG_JOINT_SUPPORT_FAMILY_LINES)
     return "\n".join(lines)
 
 
@@ -231,7 +267,7 @@ def test_strict18_goal_following_contract_requires_primitive_scoped_v2_replay(
     tmp_path: Path,
 ) -> None:
     roadmap = _strict18_roadmap_text().replace(
-        "Return 可用已选择的 v2 重跑，而 Dig 保持 v1\n",
+        "primitive-scoped 的 no-overwrite 阶段 A v2 审计根\n",
         "",
     )
     _write(tmp_path / "docs/strict18_goal_following_roadmap.md", roadmap)
@@ -240,5 +276,37 @@ def test_strict18_goal_following_contract_requires_primitive_scoped_v2_replay(
         _strict18_conceptual_contract_text(),
     )
 
-    with pytest.raises(PlannerDocGuardError, match="Dig 保持 v1"):
+    with pytest.raises(PlannerDocGuardError, match="primitive-scoped"):
+        check_strict18_goal_following_contract(tmp_path)
+
+
+def test_strict18_goal_following_contract_requires_followup_audit_rules(
+    tmp_path: Path,
+) -> None:
+    _write(
+        tmp_path / "docs/strict18_goal_following_roadmap.md",
+        _strict18_roadmap_text(include_followup_audit=False),
+    )
+    _write(
+        tmp_path / "docs/planner_to_act_conceptual_contract.md",
+        _strict18_conceptual_contract_text(),
+    )
+
+    with pytest.raises(PlannerDocGuardError, match="return:898"):
+        check_strict18_goal_following_contract(tmp_path)
+
+
+def test_strict18_goal_following_contract_requires_dig_joint_support_family(
+    tmp_path: Path,
+) -> None:
+    _write(
+        tmp_path / "docs/strict18_goal_following_roadmap.md",
+        _strict18_roadmap_text(include_dig_joint_support_family=False),
+    )
+    _write(
+        tmp_path / "docs/planner_to_act_conceptual_contract.md",
+        _strict18_conceptual_contract_text(),
+    )
+
+    with pytest.raises(PlannerDocGuardError, match="dig_joint_regularized"):
         check_strict18_goal_following_contract(tmp_path)
