@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -15,6 +16,10 @@ from testbed.data.act_support_contract import (
     fit_registered_support_candidates,
     generate_frozen_obvious_ood,
     load_strict_source_aware_support_rows,
+)
+from testbed.data.frozen_act_support_candidate import (
+    FrozenSupportCandidateError,
+    load_frozen_selected_support_candidate,
 )
 from testbed.data.hdf5_io import write_episode
 
@@ -256,3 +261,135 @@ def test_frozen_obvious_ood_is_deterministic_validation_only_and_rejected(
     for candidate in fitted.values():
         assessment = assess_support_candidate(candidate, first.features)
         assert not np.any(assessment.frame_in_support)
+
+
+def _write_frozen_candidates_artifact(
+    path: Path,
+    *,
+    primitive: str,
+    candidate_id: str,
+    definition: dict[str, object],
+    qualified: bool = True,
+) -> None:
+    payload = {
+        "schema": "act_support_contract_candidates_v1",
+        "support_contract_version": "support_contract_v2",
+        "primitives": {
+            primitive: [
+                {
+                    "candidate_id": candidate_id,
+                    "qualified": qualified,
+                    "definition": definition,
+                }
+            ]
+        },
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_loads_frozen_selected_candidates_without_refitting(
+    tmp_path: Path,
+) -> None:
+    config_path = _write_config_and_split(
+        tmp_path,
+        skill_name="return",
+        source_by_episode={0: 11, 1: 12, 2: 21},
+    )
+    rows = load_strict_source_aware_support_rows(training_config_path=config_path)
+    fitted = fit_registered_support_candidates(rows)
+    for candidate_id, original in fitted.items():
+        artifact_path = tmp_path / f"{candidate_id}.json"
+        _write_frozen_candidates_artifact(
+            artifact_path,
+            primitive="return",
+            candidate_id=original.candidate_id,
+            definition=original.as_dict(),
+        )
+
+        restored = load_frozen_selected_support_candidate(
+            candidates_json_path=artifact_path,
+            primitive="return",
+            candidate_id=candidate_id,
+        )
+
+        assert restored.candidate_id == original.candidate_id
+        assert restored.feature_order == rows.feature_order
+        assert restored.fit_partition == "strict_train"
+        assert restored.fit_row_count == original.fit_row_count
+        expected = assess_support_candidate(original, rows.validation_features)
+        actual = assess_support_candidate(restored, rows.validation_features)
+        np.testing.assert_array_equal(actual.frame_in_support, expected.frame_in_support)
+        np.testing.assert_allclose(
+            actual.scores,
+            expected.scores,
+            rtol=1.0e-10,
+            atol=1.0e-10,
+        )
+        if candidate_id == JOINT_REGULARIZED_MAHALANOBIS_P99_V2:
+            assert restored.precision is not None
+            assert not restored.precision.flags.writeable
+        else:
+            assert restored.lower is not None
+            assert restored.upper is not None
+
+
+def test_frozen_candidate_loader_rejects_id_feature_order_and_joint_parameters(
+    tmp_path: Path,
+) -> None:
+    config_path = _write_config_and_split(
+        tmp_path,
+        skill_name="return",
+        source_by_episode={0: 11, 1: 12, 2: 21},
+    )
+    rows = load_strict_source_aware_support_rows(training_config_path=config_path)
+    candidate = fit_registered_support_candidates(rows)[
+        JOINT_REGULARIZED_MAHALANOBIS_P99_V2
+    ]
+    artifact_path = tmp_path / "candidates.json"
+    _write_frozen_candidates_artifact(
+        artifact_path,
+        primitive="return",
+        candidate_id=candidate.candidate_id,
+        definition=candidate.as_dict(),
+    )
+
+    with pytest.raises(FrozenSupportCandidateError, match="candidate_id"):
+        load_frozen_selected_support_candidate(
+            candidates_json_path=artifact_path,
+            primitive="return",
+            candidate_id=AXIS_P01_P99_V1,
+        )
+
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    payload["primitives"]["return"][0]["qualified"] = False
+    artifact_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(FrozenSupportCandidateError, match="not qualified"):
+        load_frozen_selected_support_candidate(
+            candidates_json_path=artifact_path,
+            primitive="return",
+            candidate_id=JOINT_REGULARIZED_MAHALANOBIS_P99_V2,
+        )
+
+    payload["primitives"]["return"][0]["qualified"] = True
+    definition = payload["primitives"]["return"][0]["definition"]
+    definition["feature_order"][0], definition["feature_order"][1] = (
+        definition["feature_order"][1],
+        definition["feature_order"][0],
+    )
+    artifact_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(FrozenSupportCandidateError, match="feature order"):
+        load_frozen_selected_support_candidate(
+            candidates_json_path=artifact_path,
+            primitive="return",
+            candidate_id=JOINT_REGULARIZED_MAHALANOBIS_P99_V2,
+        )
+
+    definition["feature_order"] = list(rows.feature_order)
+    definition["covariance"] = [[float("nan")]]
+    artifact_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(FrozenSupportCandidateError, match="covariance"):
+        load_frozen_selected_support_candidate(
+            candidates_json_path=artifact_path,
+            primitive="return",
+            candidate_id=JOINT_REGULARIZED_MAHALANOBIS_P99_V2,
+        )
