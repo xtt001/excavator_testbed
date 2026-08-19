@@ -29,6 +29,7 @@ import torchvision.transforms as transforms
 from testbed.data.camera_images import observation_camera_rgb
 from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.image_masks import apply_image_mask
+from testbed.policies.act.inference import ACTActionChunk, TemporalAggregationContract
 from testbed.policies.base import Policy, register_policy
 
 
@@ -117,6 +118,29 @@ class ACTAdapter(Policy):
         self._all_time_actions_valid = None
         self._cached_actions = None
 
+    @property
+    def temporal_aggregation_contract(self) -> TemporalAggregationContract:
+        """Return the resolved temporal settings currently used by this adapter."""
+        return TemporalAggregationContract(
+            enabled=bool(self.temporal_agg),
+            num_queries=int(self._num_queries),
+            window=int(
+                getattr(
+                    self,
+                    "_temporal_agg_window",
+                    self._num_queries,
+                )
+            ),
+            weight_order=str(
+                getattr(
+                    self,
+                    "_temporal_agg_weight_order",
+                    "legacy_oldest_first",
+                )
+            ),
+            decay=float(getattr(self, "_temporal_agg_decay", 0.01)),
+        )
+
     # ── inference ─────────────────────────────────────────────────────────────
 
     def predict(self, obs: dict) -> np.ndarray:
@@ -134,61 +158,10 @@ class ACTAdapter(Policy):
         -------
         action : (Na,) float32  in *unnormalised* action space.
         """
-        proprio = self._build_proprio(obs)
-
-        # normalise low-dimensional robot state
-        proprio = (
-            proprio - self._proprio_mean
-        ) / self._proprio_std
-
-        # Assemble image tensor in configured camera order. Ignore metadata
-        # keys like `image_format` that may appear in live AGX observations.
-        cam_images: list[np.ndarray] = []
-        for cam in self._camera_names:
-            key = f"image_{cam}"
-            cam_input = obs.get(key)
-            if cam_input is None:
-                try:
-                    cam_input = observation_camera_rgb(obs, cam)
-                except KeyError as exc:
-                    raise ValueError(
-                        f"ACTAdapter.predict(): missing required camera input {key!r}."
-                    ) from exc
-            cam_img = apply_image_mask(
-                np.asarray(cam_input),
-                camera_name=cam,
-                mask_config=self._image_mask_config,
-                mask=obs.get(f"image_mask_{cam}"),
-            )
-            cam_img = np.asarray(cam_img, dtype=np.float32)
-            if cam_img.ndim != 3:
-                raise ValueError(
-                    f"ACTAdapter.predict(): expected {key!r} to be rank-3, got shape {cam_img.shape}."
-                )
-            # Accept either channel-first float images or raw channel-last RGB.
-            if cam_img.shape[0] == 3:
-                pass
-            elif cam_img.shape[-1] == 3:
-                cam_img = np.transpose(cam_img, (2, 0, 1))
-                if cam_img.max() > 1.0:
-                    cam_img = cam_img / 255.0
-            else:
-                raise ValueError(
-                    f"ACTAdapter.predict(): expected {key!r} to have 3 channels, got shape {cam_img.shape}."
-                )
-            cam_images.append(cam_img)
-
-        if not cam_images:
-            raise ValueError("ACTAdapter.predict(): no camera inputs configured.")
-
-        img = np.stack(cam_images, axis=0)                 # (n_cams, C, H, W)
-        image = torch.from_numpy(img).float().to(self.device).unsqueeze(0)  # (1, n_cams, C, H, W)
-        image = self._normalize(image)
-
-        self._model.eval()
-        with torch.no_grad():
-            model_out = self._model(proprio, image, None)   # (1, C, Na)
-            a_hat, _, _, _ = self._unpack_model_output(model_out)
+        a_hat, _ = self._forward_action_chunk(
+            obs,
+            method_name="ACTAdapter.predict()",
+        )
 
         if self.temporal_agg:
             action = self._aggregate(a_hat)
@@ -201,19 +174,67 @@ class ACTAdapter(Policy):
 
         self._t += 1
 
-        # unnormalise
-        action = (
-            action
-            * self.norm_stats["action_std"]
-            + self.norm_stats["action_mean"]
+        return self._unnormalize_actions(action).astype(np.float32)
+
+    def predict_action_chunk(self, obs: dict) -> ACTActionChunk:
+        """Return a full unnormalised ACT action chunk without advancing state.
+
+        This public inspection method evaluates the frozen checkpoint using the
+        supplied observation but does not advance the temporal aggregation
+        clock, replace a cached chunk, or write aggregation contributors.  It
+        is therefore safe for teacher-forced diagnostic audits that need a raw
+        action block in addition to the scheduled action stream.
+        """
+        a_hat, outcome = self._forward_action_chunk(
+            obs,
+            method_name="ACTAdapter.predict_action_chunk()",
         )
-        return action.astype(np.float32)
+        chunk = a_hat.squeeze(0).detach().cpu().numpy()
+        return ACTActionChunk(
+            actions=self._unnormalize_actions(chunk),
+            outcome=outcome,
+        )
 
     def predict_with_outcome(self, obs: dict) -> tuple[np.ndarray, np.ndarray | None]:
         """Return the first action plus optional outcome-head prediction."""
+        a_hat, outcome = self._forward_action_chunk(
+            obs,
+            method_name="ACTAdapter.predict_with_outcome()",
+        )
+        action = a_hat[:, 0].squeeze(0).detach().cpu().numpy()
+        return self._unnormalize_actions(action).astype(np.float32), outcome
+
+    def _forward_action_chunk(
+        self,
+        obs: dict,
+        *,
+        method_name: str,
+    ) -> tuple[torch.Tensor, np.ndarray | None]:
+        """Prepare one observation and execute the shared inference forward pass."""
+        proprio, image = self._prepare_inference_inputs(
+            obs,
+            method_name=method_name,
+        )
+        self._model.eval()
+        with torch.no_grad():
+            model_out = self._model(proprio, image, None)
+            a_hat, _, _, outcome_hat = self._unpack_model_output(model_out)
+        outcome = None
+        if outcome_hat is not None:
+            outcome = outcome_hat.squeeze(0).detach().cpu().numpy().astype(np.float32)
+        return a_hat, outcome
+
+    def _prepare_inference_inputs(
+        self,
+        obs: dict,
+        *,
+        method_name: str,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Build normalised proprioception and images in configured camera order."""
         proprio = self._build_proprio(obs)
         proprio = (proprio - self._proprio_mean) / self._proprio_std
 
+        # Ignore metadata keys such as ``image_format`` in live AGX observations.
         cam_images: list[np.ndarray] = []
         for cam in self._camera_names:
             key = f"image_{cam}"
@@ -223,8 +244,7 @@ class ACTAdapter(Policy):
                     cam_input = observation_camera_rgb(obs, cam)
                 except KeyError as exc:
                     raise ValueError(
-                        "ACTAdapter.predict_with_outcome(): missing required "
-                        f"camera input {key!r}."
+                        f"{method_name}: missing required camera input {key!r}."
                     ) from exc
             cam_img = apply_image_mask(
                 np.asarray(cam_input),
@@ -233,6 +253,12 @@ class ACTAdapter(Policy):
                 mask=obs.get(f"image_mask_{cam}"),
             )
             cam_img = np.asarray(cam_img, dtype=np.float32)
+            if cam_img.ndim != 3:
+                raise ValueError(
+                    f"{method_name}: expected {key!r} to be rank-3, got "
+                    f"shape {cam_img.shape}."
+                )
+            # Accept either channel-first float images or raw channel-last RGB.
             if cam_img.shape[0] == 3:
                 pass
             elif cam_img.shape[-1] == 3:
@@ -241,24 +267,25 @@ class ACTAdapter(Policy):
                     cam_img = cam_img / 255.0
             else:
                 raise ValueError(
-                    f"ACTAdapter.predict_with_outcome(): expected {key!r} to have 3 channels."
+                    f"{method_name}: expected {key!r} to have 3 channels, got "
+                    f"shape {cam_img.shape}."
                 )
             cam_images.append(cam_img)
 
-        image = torch.from_numpy(np.stack(cam_images, axis=0)).float()
-        image = image.to(self.device).unsqueeze(0)
-        image = self._normalize(image)
+        if not cam_images:
+            raise ValueError(f"{method_name}: no camera inputs configured.")
 
-        self._model.eval()
-        with torch.no_grad():
-            model_out = self._model(proprio, image, None)
-            a_hat, _, _, outcome_hat = self._unpack_model_output(model_out)
-        action = a_hat[:, 0].squeeze(0).cpu().numpy()
-        action = action * self.norm_stats["action_std"] + self.norm_stats["action_mean"]
-        outcome = None
-        if outcome_hat is not None:
-            outcome = outcome_hat.squeeze(0).detach().cpu().numpy().astype(np.float32)
-        return action.astype(np.float32), outcome
+        img = np.stack(cam_images, axis=0)
+        image = torch.from_numpy(img).float().to(self.device).unsqueeze(0)
+        return proprio, self._normalize(image)
+
+    def _unnormalize_actions(self, actions: np.ndarray) -> np.ndarray:
+        """Map a normalised ACT action or chunk into runtime action units."""
+        return (
+            np.asarray(actions)
+            * self.norm_stats["action_std"]
+            + self.norm_stats["action_mean"]
+        )
 
     def _build_proprio(self, obs: dict) -> torch.Tensor:
         parts: list[np.ndarray] = []

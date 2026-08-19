@@ -8,14 +8,10 @@ import pickle
 from pathlib import Path
 from typing import Any
 
-from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
-from testbed.data.operator_first_v2_2 import (
-    DIG_CUT_TOKEN_DIM,
-    RETURN_START_ENVELOPE_TOKEN_DIM,
-    RETURN_TARGET_TOKEN_DIM,
+from testbed.policies.act.inference import (
+    build_act_adapter_config,
+    resolve_act_low_dim_state_dim,
 )
-from testbed.data.v2_1 import GOAL_TOKEN_DIM
-from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
 from testbed.runtime.torch_performance import (
     configure_torch_performance,
     train_torch_performance_config,
@@ -71,37 +67,17 @@ def train_policy(config: dict[str, Any]) -> None:
     # build policy_config dict for ACTAdapter / detr
     act_params = policy_cfg.get("act_params", {})
     outcome_head_cfg = dict(policy_cfg.get("outcome_head") or {})
-    outcome_head_enabled = bool(outcome_head_cfg.get("enabled", False))
-    outcome_dim = int(
-        outcome_head_cfg.get(
-            "dim",
-            10 if outcome_head_enabled or supervision_keys else 0,
-        )
+    policy_config = build_act_adapter_config(
+        config=config,
+        camera_names=camera_names,
+        equipment_model=equipment_model,
+        max_episode_len=episode_len,
+        low_dim_keys=low_dim_keys,
+        act_params=act_params,
+        outcome_head_config=outcome_head_cfg,
+        image_mask_config=image_mask_config,
+        supervision_keys=supervision_keys,
     )
-    policy_config = {
-        "lr":            float(train_cfg.get("lr", 1e-5)),
-        "num_queries":   int(act_params.get("chunk_size", 100)),
-        "kl_weight":     float(act_params.get("kl_weight", 10)),
-        "hidden_dim":    int(act_params.get("hidden_dim", 512)),
-        "dim_feedforward": int(act_params.get("dim_feedforward", 3200)),
-        "lr_backbone":   1e-5,
-        "backbone":      "resnet18",
-        "enc_layers":    4,
-        "dec_layers":    7,
-        "nheads":        8,
-        "camera_names":  camera_names,
-        "equipment_model": equipment_model,
-        "low_dim_keys":  low_dim_keys,
-        "supervision_keys": supervision_keys,
-        "state_dim":     _resolve_low_dim_state_dim(low_dim_keys, equipment_model),
-        "image_mask":    image_mask_config,
-        "outcome_head": outcome_head_cfg,
-        "outcome_dim": outcome_dim if outcome_head_enabled else 0,
-        "outcome_action_horizon": int(
-            outcome_head_cfg.get("action_horizon", act_params.get("chunk_size", 100))
-        ),
-        "outcome_hidden_dim": outcome_head_cfg.get("hidden_dim"),
-    }
 
     torch_performance_config = train_torch_performance_config(train_cfg)
     full_config = {
@@ -252,57 +228,10 @@ def _build_resolved_train_config(
 
 
 def _resolve_low_dim_state_dim(low_dim_keys: list[str], equipment_model: str) -> int:
-    dims = {
-        "qpos": _resolve_single_low_dim_dim("qpos", equipment_model),
-        "qvel": _resolve_single_low_dim_dim("qvel", equipment_model),
-        "goal_tokens": _resolve_single_low_dim_dim("goal_tokens", equipment_model),
-        "cell_entry_tokens": _resolve_single_low_dim_dim(
-            "cell_entry_tokens", equipment_model
-        ),
-        "dig_cut_tokens": _resolve_single_low_dim_dim(
-            "dig_cut_tokens", equipment_model
-        ),
-        "dig_depth_profile_tokens_v1": _resolve_single_low_dim_dim(
-            "dig_depth_profile_tokens_v1", equipment_model
-        ),
-        "return_target_tokens": _resolve_single_low_dim_dim(
-            "return_target_tokens", equipment_model
-        ),
-        "return_relocate_tokens_v1": _resolve_single_low_dim_dim(
-            "return_relocate_tokens_v1", equipment_model
-        ),
-        "return_start_envelope_tokens_v1": _resolve_single_low_dim_dim(
-            "return_start_envelope_tokens_v1", equipment_model
-        ),
-    }
-    return int(sum(dims[key] for key in low_dim_keys))
+    """Compatibility facade for the shared ACT low-dimensional contract."""
+    return resolve_act_low_dim_state_dim(low_dim_keys, equipment_model)
 
 
 def _resolve_single_low_dim_dim(key: str, equipment_model: str) -> int:
-    equipment_model = str(equipment_model).lower()
-    if key == "goal_tokens":
-        return int(GOAL_TOKEN_DIM)
-    if key == "cell_entry_tokens":
-        return int(CELL_ENTRY_TOKEN_DIM)
-    if key == "dig_cut_tokens":
-        return int(DIG_CUT_TOKEN_DIM)
-    if key == "dig_depth_profile_tokens_v1":
-        return int(DIG_DEPTH_PROFILE_TOKEN_DIM)
-    if key == "return_target_tokens":
-        return int(RETURN_TARGET_TOKEN_DIM)
-    if key == "return_relocate_tokens_v1":
-        return int(RETURN_TARGET_TOKEN_DIM)
-    if key == "return_start_envelope_tokens_v1":
-        return int(RETURN_START_ENVELOPE_TOKEN_DIM)
-    if key in ("qpos", "qvel"):
-        if "bimanual" in equipment_model:
-            return 14
-        if (
-            "excavator_simple" in equipment_model
-            or "agxunity" in equipment_model
-            or "agx" in equipment_model
-            or "yulong" in equipment_model
-        ):
-            return 4
-        return 7
-    raise ValueError(f"Unsupported low-dim key {key!r}.")
+    """Compatibility facade for callers that resolve one ACT input key."""
+    return resolve_act_low_dim_state_dim([key], equipment_model)

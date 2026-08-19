@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from testbed.policies.act.adapter import ACTAdapter
+from testbed.policies.act.inference import build_act_adapter_config
 from testbed.runtime._eval import _build_act_eval_policy
 
 
@@ -193,3 +194,20 @@ def test_eval_policy_builder_forwards_temporal_contract(
     assert policy_config["temporal_agg_window"] == 20
     assert policy_config["temporal_agg_weight_order"] == "newest_first"
     assert policy_config["temporal_agg_decay"] == pytest.approx(0.02)
+
+
+def test_shared_builder_preserves_default_temporal_contract() -> None:
+    policy_config = build_act_adapter_config(
+        config={"train": {"lr": 1e-5}},
+        camera_names=["fpv"],
+        equipment_model="yulong",
+        max_episode_len=400,
+        low_dim_keys=["qpos"],
+        act_params={"chunk_size": 100},
+    )
+
+    resolved = ACTAdapter._resolve_temporal_aggregation_config(
+        policy_config,
+        num_queries=policy_config["num_queries"],
+    )
+    assert resolved == (100, "legacy_oldest_first", 0.01)
