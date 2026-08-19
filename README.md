@@ -1062,6 +1062,7 @@ ACT 已经获得目标载荷/质量 plateau 但尚未离开 dig box，planner �
 
 当前权威文档：
 - 本 README：仓库说明、当前状态、quick start
+- [docs/strict18_goal_following_roadmap.md](docs/strict18_goal_following_roadmap.md)：Strict-18 当前唯一授权的阶段 A 离线目标条件敏感性审计，以及阶段 B–F 的后续边界
 - [docs/planner_to_act_conceptual_contract.md](/home/pingfan/PACT/excavator_testbed/docs/planner_to_act_conceptual_contract.md)：从概念上说明上层 planner 到低层 ACT 的控制结构、职责边界和输入输出
 - [docs/planner_current_architecture.md](/home/pingfan/PACT/excavator_testbed/docs/planner_current_architecture.md)：当前 primitive planner 架构、decision backend / trace 边界和扩展规则
 - [docs/planner_scheduling_backend_design.md](/home/pingfan/PACT/excavator_testbed/docs/planner_scheduling_backend_design.md)：未来 scheduling / decision backend 接入指南

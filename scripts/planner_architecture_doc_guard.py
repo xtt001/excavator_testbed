@@ -11,6 +11,7 @@ YULONG_DOCS = frozenset(
         "docs/data_processing_hdf5_qc_contract.md",
         "docs/goal_following_mainline_implementation_manifest_20260731.json",
         "docs/goal_following_mainline_handoff_20260731.md",
+        "docs/strict18_goal_following_roadmap.md",
         "docs/large_scene_simulation_training_requirements.md",
         "docs/llm_planner_closed_loop_terrain_conclusion.md",
         "docs/llm_planner_prework.md",
@@ -59,6 +60,24 @@ REMOVED_DOC_FRAGMENTS = (
     "docs/v2_1_plan",
     "docs/v2_2_4primitives",
     "docs/v2_5_design_sketch",
+)
+
+STRICT18_ROADMAP_ANCHORS = (
+    "当前唯一授权的实现任务是**阶段 A：冻结 ACT 的目标条件敏感性离线审计**。",
+    "ACT 直接输出 4D action",
+    "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
+    "teacher_forced_recorded_observation",
+    "promotion_eligible=false",
+    "阶段 B",
+    "阶段 C",
+    "阶段 D",
+    "阶段 E",
+    "阶段 F",
+)
+
+STRICT18_CONCEPTUAL_CONTRACT_ANCHORS = (
+    "teacher-forced recorded-observation 下的动作变化，只证明 ACT 读取条件；"
+    "不等于 Unity 闭环成功或 production proof。",
 )
 
 
@@ -122,6 +141,19 @@ def check_changed_docs(
             "unexpected docs must not be recreated: "
             + ", ".join(unexpected_existing)
         )
+
+
+def check_strict18_goal_following_contract(root: str | Path = ".") -> None:
+    root_path = Path(root)
+    roadmap_path = root_path / "docs/strict18_goal_following_roadmap.md"
+    conceptual_contract_path = root_path / "docs/planner_to_act_conceptual_contract.md"
+
+    roadmap = _read(roadmap_path)
+    conceptual_contract = _read(conceptual_contract_path)
+    for needle in STRICT18_ROADMAP_ANCHORS:
+        _require(roadmap, needle, path=roadmap_path)
+    for needle in STRICT18_CONCEPTUAL_CONTRACT_ANCHORS:
+        _require(conceptual_contract, needle, path=conceptual_contract_path)
 
 
 def check_architecture_contract(root: str | Path = ".") -> None:
@@ -190,6 +222,8 @@ def check_architecture_contract(root: str | Path = ".") -> None:
                 raise PlannerDocGuardError(
                     f"{path} points at removed documentation: {removed}"
                 )
+
+    check_strict18_goal_following_contract(root_path)
 
 
 def _build_parser() -> argparse.ArgumentParser:

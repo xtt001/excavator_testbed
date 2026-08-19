@@ -12,10 +12,29 @@
   轨迹或逐步 qpos 轨迹。
 - ACT 的输入应是图像、机器人自身状态和紧凑条件 token，而不是完整 privileged `env_state`。
 
-## 2026-07-28 Actual-tuple return transition 合同
+## Strict-18 当前冻结边界（2026-08）
 
-actual-tuple 路径不再把“下一铲的 outcome cell”映射成一个 cell-median return
-envelope。一个可执行 tuple 必须同时携带同一 strict-train material transition 的：
+[Strict-18 目标条件敏感性离线审计路线](strict18_goal_following_roadmap.md) 是当前后续
+实现范围的权威文档。本轮唯一授权的实现是阶段 A：在冻结 checkpoint、记录观测和
+temporal aggregation 条件下，审计目标条件变化是否改变 ACT 的动作。它不训练、不运行
+Unity/live、不创建训练 HDF5，也不改变 production/default runtime、安全阈值或 timeout。
+
+Planner 只产生任务级目标并由 goal 生命周期服务锁定 `goal_id`；primitive scheduler 选择
+当前 skill；ACT 直接输出 4D action。Planner 不生成 joystick、qpos setpoint 或必须逐点
+跟踪的关节轨迹。完整专家 qpos path 只能用于离线数据支持、诊断和后续模型标定，不能
+作为 ACT 输入或安全放行依据。
+
+`exact-tuple` 和 continuous qpos predictor 都是 `diagnostic_legacy`。它们可保留用于
+历史证据、离线校准和失败归因，但不得进入 production runtime、充当 nearest-expert
+fallback，或绕过 scheduler、handoff 与独立安全链。
+
+**teacher-forced recorded-observation 下的动作变化，只证明 ACT 读取条件；不等于 Unity 闭环成功或 production proof。**
+
+## Historical diagnostic legacy：2026-07-28 Actual-tuple return transition 合同
+
+以下 actual-tuple 设计记录历史诊断路径，不是当前 production runtime 合同。它不再把
+“下一铲的 outcome cell”映射成一个 cell-median return envelope。一个曾可执行的 tuple
+必须同时携带同一 strict-train material transition 的：
 
 ```text
 dig raw tuple
@@ -47,7 +66,7 @@ pre-return qpos 不是未来 dig start。任何配对、token、valid mask、SHA
 | evidence | 能证明什么 | 不能证明什么 |
 | --- | --- | --- |
 | frozen replay alignment | 旧 return start/end、旧 token 与精确 token 的事实差异 | 新目标已被闭环到达 |
-| teacher-forced ACT comparison | 相同 recorded observation 下 token 是否改变 action | 反事实轨迹会安全或成功 |
+| teacher-forced ACT comparison | 相同 recorded observation 下 token 是否改变 action | 反事实轨迹会安全或成功，也不构成 Unity 或 production 证明 |
 | production preflight | production selector/gate 对冻结状态的决定 | Unity live capability |
 | bounded live | 在有限 cycle/reset 内实际执行与安全结果 | 10-cycle 或正式 freeze |
 
@@ -138,7 +157,11 @@ ACT 和环境向 planner 回传的不是“计划”，而是结果事实。
 | collision / spill / unsafe metrics | env facts | 标记 blocked/risk，影响后续 planner score |
 | ACT 执行后是否 timeout 或无进展 | scheduler 统计 | 触发 replan、fallback、terminal stop |
 
-## 当前主线的 primitive 闭环
+## 现有 runtime 的 primitive 闭环（非阶段 A 变更）
+
+本节记录当前已检入 runtime 的行为，便于解释历史 replay 和诊断日志；它不是阶段 A 的
+实现授权。阶段 A 不修改这条状态机。表中的 scripted qpos、历史 actual-tuple 和其他 legacy
+诊断分支都不能作为新的目标跟随 runtime 路径或安全门控绕过方式。
 
 当前四 primitive 闭环可以概括成下面的状态机：
 
@@ -314,9 +337,9 @@ planner 决策：
 
 - 在 return 开始或 return 过程中先选好下一轮 dig intent，并把它作为 pending plan；这个
   plan 用于下一轮 dig 和 handoff entry-close，不直接喂给 return ACT。
-- legacy surface-depth 主线把 return 当成“回到可接管分布”的 skill。actual-tuple
-  变体仍不让 planner 输出逐步轨迹，但必须回到与下一 dig tuple 精确配对的 gold
-  return-start envelope；不能再用 cell/global median 代替。
+- legacy surface-depth 主线把 return 当成“回到可接管分布”的 skill。historical
+  actual-tuple 变体是 `diagnostic_legacy`；它不得回到 production runtime。其历史证据中，
+  return-start envelope 与下一 dig tuple 精确配对，而不是 cell/global median。
 - planner latch `next_dig_entry_ready`，但不会只凭一个事件切 dig；还要检查 entry error、
   spatial/depth/contact/qpos envelope。surface-depth prior 的
   `return_start_envelope_cells` 应携带从 gold dig primitive start 统计出的

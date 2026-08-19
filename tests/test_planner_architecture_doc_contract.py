@@ -10,6 +10,7 @@ from scripts.planner_architecture_doc_guard import (
     check_architecture_contract,
     check_changed_docs,
     check_doc_inventory,
+    check_strict18_goal_following_contract,
 )
 
 
@@ -78,6 +79,7 @@ def test_readme_points_to_curated_docs() -> None:
     readme = (root / "README.md").read_text(encoding="utf-8")
 
     for needle in (
+        "docs/strict18_goal_following_roadmap.md",
         "docs/planner_to_act_conceptual_contract.md",
         "docs/planner_current_architecture.md",
         "docs/planner_scheduling_backend_design.md",
@@ -90,3 +92,58 @@ def test_readme_points_to_curated_docs() -> None:
     assert "docs/current_status_and_plan.md" not in readme
     assert "docs/v2_2_4primitives/phase_boundaries.md" not in readme
     assert "docs/v2_5_design_sketch/" not in readme
+
+
+def test_strict18_goal_following_contract_requires_current_stage_a_anchors(
+    tmp_path: Path,
+) -> None:
+    _write(
+        tmp_path / "docs/strict18_goal_following_roadmap.md",
+        "\n".join(
+            (
+                "当前唯一授权的实现任务是**阶段 A：冻结 ACT 的目标条件敏感性离线审计**。",
+                "ACT 直接输出 4D action",
+                "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
+                "teacher_forced_recorded_observation",
+                "promotion_eligible=false",
+                "阶段 B",
+                "阶段 C",
+                "阶段 D",
+                "阶段 E",
+                "阶段 F",
+            )
+        ),
+    )
+    _write(
+        tmp_path / "docs/planner_to_act_conceptual_contract.md",
+        "teacher-forced recorded-observation 下的动作变化，只证明 ACT 读取条件；"
+        "不等于 Unity 闭环成功或 production proof。\n",
+    )
+
+    check_strict18_goal_following_contract(tmp_path)
+
+
+def test_strict18_goal_following_contract_rejects_missing_evidence_boundary(
+    tmp_path: Path,
+) -> None:
+    _write(
+        tmp_path / "docs/strict18_goal_following_roadmap.md",
+        "\n".join(
+            (
+                "当前唯一授权的实现任务是**阶段 A：冻结 ACT 的目标条件敏感性离线审计**。",
+                "ACT 直接输出 4D action",
+                "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
+                "teacher_forced_recorded_observation",
+                "promotion_eligible=false",
+                "阶段 B",
+                "阶段 C",
+                "阶段 D",
+                "阶段 E",
+                "阶段 F",
+            )
+        ),
+    )
+    _write(tmp_path / "docs/planner_to_act_conceptual_contract.md", "# Contract\n")
+
+    with pytest.raises(PlannerDocGuardError, match="teacher-forced"):
+        check_strict18_goal_following_contract(tmp_path)
