@@ -15,9 +15,11 @@
 ## Strict-18 当前冻结边界（2026-08）
 
 [Strict-18 目标条件敏感性离线审计路线](strict18_goal_following_roadmap.md) 是当前后续
-实现范围的权威文档。本轮唯一授权的实现是阶段 A：在冻结 checkpoint、记录观测和
-temporal aggregation 条件下，审计目标条件变化是否改变 ACT 的动作。它不训练、不运行
-Unity/live、不创建训练 HDF5，也不改变 production/default runtime、安全阈值或 timeout。
+实现范围的权威文档。阶段 A 已冻结其 teacher-forced 目标条件敏感性证据；当前唯一授权的
+实现是阶段 A.1 `support_contract_v2`：用 strict-train/held-out validation 的 source-disjoint
+预注册审计解释数值支持范围拒绝。target rollout 只能在候选已经选择后被诊断，不能用于拟合
+或调阈值。它不训练、不运行 Unity/live、不创建训练 HDF5，也不改变 production/default
+runtime、安全阈值或 timeout。
 
 Planner 只产生任务级目标并由 goal 生命周期服务锁定 `goal_id`；primitive scheduler 选择
 当前 skill；ACT 直接输出 4D action。Planner 不生成 joystick、qpos setpoint 或必须逐点
@@ -29,6 +31,12 @@ Planner 只产生任务级目标并由 goal 生命周期服务锁定 `goal_id`�
 fallback，或绕过 scheduler、handoff 与独立安全链。
 
 **teacher-forced recorded-observation 下的动作变化，只证明 ACT 读取条件；不等于 Unity 闭环成功或 production proof。**
+
+`support_contract_v1` 是已发布阶段 A 工件的历史基线，必须保留。`support_contract_v2` 即使通过
+held-out validation，也只会创建 no-overwrite 离线审计与可能的阶段 A v2 重跑；它不改变
+Planner 的目标语义、ACT 输入责任、scheduler/handoff 决策或 production/default runtime。若
+对齐正确但 v2 仍拒绝 Return 状态，系统必须在 handoff 拒绝该状态或补采专家数据并重训，不能
+通过放宽合同绕过独立安全链。
 
 ## Historical diagnostic legacy：2026-07-28 Actual-tuple return transition 合同
 

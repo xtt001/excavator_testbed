@@ -63,7 +63,7 @@ REMOVED_DOC_FRAGMENTS = (
 )
 
 STRICT18_ROADMAP_ANCHORS = (
-    "当前唯一授权的实现任务是**阶段 A：冻结 ACT 的目标条件敏感性离线审计**。",
+    "当前唯一授权的实现任务是**阶段 A.1：独立支持范围合同审计（`support_contract_v2`）**。",
     "ACT 直接输出 4D action",
     "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
     "teacher_forced_recorded_observation",
@@ -78,6 +78,8 @@ STRICT18_ROADMAP_ANCHORS = (
 STRICT18_CONCEPTUAL_CONTRACT_ANCHORS = (
     "teacher-forced recorded-observation 下的动作变化，只证明 ACT 读取条件；"
     "不等于 Unity 闭环成功或 production proof。",
+    "`support_contract_v1` 是已发布阶段 A 工件的历史基线，必须保留。",
+    "它不改变\nPlanner 的目标语义、ACT 输入责任、scheduler/handoff 决策或 production/default runtime。",
 )
 
 STRICT18_PHASE_A_FORMAL_RULE_ANCHORS = (
@@ -90,6 +92,22 @@ STRICT18_PHASE_A_FORMAL_RULE_ANCHORS = (
     "active-frame fraction < 0.80",
     "any OOS -> OOS",
     "not_identifiable_in_teacher_forced_replay",
+)
+
+STRICT18_SUPPORT_CONTRACT_V2_ANCHORS = (
+    "阶段 A.1：独立支持范围合同审计（`support_contract_v2`）",
+    "`support_contract_v1` 必须保留为历史基线",
+    "不得用阶段 A target audit 调参",
+    "source-disjoint",
+    "`axis_p01_p99_v1`",
+    "`axis_p0005_p9995_v2`",
+    "`joint_regularized_mahalanobis_p99_v2`",
+    "validation_normal_coverage >= 0.99",
+    "synthetic_obvious_ood_rejection >= 0.99",
+    "`support_contract_not_selected`",
+    "时间对齐或字段语义错误",
+    "`plots/return_<segment-id>.svg`",
+    "production/default runtime、安全阈值和 timeout 一律不变",
 )
 
 
@@ -165,6 +183,8 @@ def check_strict18_goal_following_contract(root: str | Path = ".") -> None:
     for needle in STRICT18_ROADMAP_ANCHORS:
         _require(roadmap, needle, path=roadmap_path)
     for needle in STRICT18_PHASE_A_FORMAL_RULE_ANCHORS:
+        _require(roadmap, needle, path=roadmap_path)
+    for needle in STRICT18_SUPPORT_CONTRACT_V2_ANCHORS:
         _require(roadmap, needle, path=roadmap_path)
     for needle in STRICT18_CONCEPTUAL_CONTRACT_ANCHORS:
         _require(conceptual_contract, needle, path=conceptual_contract_path)

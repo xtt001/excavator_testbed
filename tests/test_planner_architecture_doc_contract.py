@@ -13,6 +13,70 @@ from scripts.planner_architecture_doc_guard import (
     check_strict18_goal_following_contract,
 )
 
+_STRICT18_BASE_ROADMAP_LINES = (
+    "当前唯一授权的实现任务是**阶段 A.1：独立支持范围合同审计（`support_contract_v2`）**。",
+    "ACT 直接输出 4D action",
+    "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
+    "teacher_forced_recorded_observation",
+    "promotion_eligible=false",
+    "阶段 B",
+    "阶段 C",
+    "阶段 D",
+    "阶段 E",
+    "阶段 F",
+)
+
+_STRICT18_FORMAL_RULE_LINES = (
+    "strict-train p01-p99",
+    "artifact_invalid",
+    "baseline_tolerance_axis = max(1e-6, 10 * max_abs(baseline_replica_A - baseline_replica_B))",
+    "replica_noise_cap_axis = max(1e-6, 0.005 * abs(action_std_axis))",
+    "这里没有相对误差项",
+    "response_threshold_axis = max(baseline_tolerance_axis, 0.05 * abs(action_std_axis))",
+    "active-frame fraction < 0.80",
+    "any OOS -> OOS",
+    "not_identifiable_in_teacher_forced_replay",
+)
+
+_STRICT18_SUPPORT_CONTRACT_V2_LINES = (
+    "阶段 A.1：独立支持范围合同审计（`support_contract_v2`）",
+    "`support_contract_v1` 必须保留为历史基线",
+    "不得用阶段 A target audit 调参",
+    "source-disjoint",
+    "`axis_p01_p99_v1`",
+    "`axis_p0005_p9995_v2`",
+    "`joint_regularized_mahalanobis_p99_v2`",
+    "validation_normal_coverage >= 0.99",
+    "synthetic_obvious_ood_rejection >= 0.99",
+    "`support_contract_not_selected`",
+    "时间对齐或字段语义错误",
+    "`plots/return_<segment-id>.svg`",
+    "production/default runtime、安全阈值和 timeout 一律不变",
+)
+
+
+def _strict18_roadmap_text(
+    *,
+    include_formal_rules: bool = True,
+    include_support_contract_v2: bool = True,
+) -> str:
+    lines = list(_STRICT18_BASE_ROADMAP_LINES)
+    if include_formal_rules:
+        lines.extend(_STRICT18_FORMAL_RULE_LINES)
+    if include_support_contract_v2:
+        lines.extend(_STRICT18_SUPPORT_CONTRACT_V2_LINES)
+    return "\n".join(lines)
+
+
+def _strict18_conceptual_contract_text() -> str:
+    return (
+        "teacher-forced recorded-observation 下的动作变化，只证明 ACT 读取条件；"
+        "不等于 Unity 闭环成功或 production proof。\n"
+        "`support_contract_v1` 是已发布阶段 A 工件的历史基线，必须保留。\n"
+        "它不改变\n"
+        "Planner 的目标语义、ACT 输入责任、scheduler/handoff 决策或 production/default runtime。\n"
+    )
+
 
 def _write(path: Path, text: str = "# Doc\n") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -94,39 +158,16 @@ def test_readme_points_to_curated_docs() -> None:
     assert "docs/v2_5_design_sketch/" not in readme
 
 
-def test_strict18_goal_following_contract_requires_current_stage_a_anchors(
+def test_strict18_goal_following_contract_requires_current_stage_a_support_anchors(
     tmp_path: Path,
 ) -> None:
     _write(
         tmp_path / "docs/strict18_goal_following_roadmap.md",
-        "\n".join(
-            (
-                "当前唯一授权的实现任务是**阶段 A：冻结 ACT 的目标条件敏感性离线审计**。",
-                "ACT 直接输出 4D action",
-                "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
-                "teacher_forced_recorded_observation",
-                "promotion_eligible=false",
-                "strict-train p01-p99",
-                "artifact_invalid",
-                "baseline_tolerance_axis = max(1e-6, 10 * max_abs(baseline_replica_A - baseline_replica_B))",
-                "replica_noise_cap_axis = max(1e-6, 0.005 * abs(action_std_axis))",
-                "这里没有相对误差项",
-                "response_threshold_axis = max(baseline_tolerance_axis, 0.05 * abs(action_std_axis))",
-                "active-frame fraction < 0.80",
-                "any OOS -> OOS",
-                "not_identifiable_in_teacher_forced_replay",
-                "阶段 B",
-                "阶段 C",
-                "阶段 D",
-                "阶段 E",
-                "阶段 F",
-            )
-        ),
+        _strict18_roadmap_text(),
     )
     _write(
         tmp_path / "docs/planner_to_act_conceptual_contract.md",
-        "teacher-forced recorded-observation 下的动作变化，只证明 ACT 读取条件；"
-        "不等于 Unity 闭环成功或 production proof。\n",
+        _strict18_conceptual_contract_text(),
     )
 
     check_strict18_goal_following_contract(tmp_path)
@@ -137,25 +178,11 @@ def test_strict18_goal_following_contract_rejects_missing_formal_rules(
 ) -> None:
     _write(
         tmp_path / "docs/strict18_goal_following_roadmap.md",
-        "\n".join(
-            (
-                "当前唯一授权的实现任务是**阶段 A：冻结 ACT 的目标条件敏感性离线审计**。",
-                "ACT 直接输出 4D action",
-                "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
-                "teacher_forced_recorded_observation",
-                "promotion_eligible=false",
-                "阶段 B",
-                "阶段 C",
-                "阶段 D",
-                "阶段 E",
-                "阶段 F",
-            )
-        ),
+        _strict18_roadmap_text(include_formal_rules=False),
     )
     _write(
         tmp_path / "docs/planner_to_act_conceptual_contract.md",
-        "teacher-forced recorded-observation 下的动作变化，只证明 ACT 读取条件；"
-        "不等于 Unity 闭环成功或 production proof。\n",
+        _strict18_conceptual_contract_text(),
     )
 
     with pytest.raises(PlannerDocGuardError, match="artifact_invalid"):
@@ -167,31 +194,29 @@ def test_strict18_goal_following_contract_rejects_missing_evidence_boundary(
 ) -> None:
     _write(
         tmp_path / "docs/strict18_goal_following_roadmap.md",
-        "\n".join(
-            (
-                "当前唯一授权的实现任务是**阶段 A：冻结 ACT 的目标条件敏感性离线审计**。",
-                "ACT 直接输出 4D action",
-                "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
-                "teacher_forced_recorded_observation",
-                "promotion_eligible=false",
-                "strict-train p01-p99",
-                "artifact_invalid",
-                "baseline_tolerance_axis = max(1e-6, 10 * max_abs(baseline_replica_A - baseline_replica_B))",
-                "replica_noise_cap_axis = max(1e-6, 0.005 * abs(action_std_axis))",
-                "这里没有相对误差项",
-                "response_threshold_axis = max(baseline_tolerance_axis, 0.05 * abs(action_std_axis))",
-                "active-frame fraction < 0.80",
-                "any OOS -> OOS",
-                "not_identifiable_in_teacher_forced_replay",
-                "阶段 B",
-                "阶段 C",
-                "阶段 D",
-                "阶段 E",
-                "阶段 F",
-            )
-        ),
+        _strict18_roadmap_text(),
     )
     _write(tmp_path / "docs/planner_to_act_conceptual_contract.md", "# Contract\n")
 
     with pytest.raises(PlannerDocGuardError, match="teacher-forced"):
+        check_strict18_goal_following_contract(tmp_path)
+
+
+def test_strict18_goal_following_contract_rejects_missing_support_audit_rules(
+    tmp_path: Path,
+) -> None:
+    roadmap = _strict18_roadmap_text().replace(
+        "`joint_regularized_mahalanobis_p99_v2`\n",
+        "",
+    )
+    _write(
+        tmp_path / "docs/strict18_goal_following_roadmap.md",
+        roadmap,
+    )
+    _write(
+        tmp_path / "docs/planner_to_act_conceptual_contract.md",
+        _strict18_conceptual_contract_text(),
+    )
+
+    with pytest.raises(PlannerDocGuardError, match="joint_regularized_mahalanobis_p99_v2"):
         check_strict18_goal_following_contract(tmp_path)

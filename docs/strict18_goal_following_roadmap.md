@@ -2,13 +2,13 @@
 
 ## 当前结论与文档地位
 
-当前唯一授权的实现任务是**阶段 A：冻结 ACT 的目标条件敏感性离线审计**。它只检查：在
-完全相同的记录观测、关节状态、图像历史、checkpoint 和 temporal aggregation 条件下，
-仅替换目标条件时，冻结 ACT 是否产生稳定、可解释的动作变化。
+当前唯一授权的实现任务是**阶段 A.1：独立支持范围合同审计（`support_contract_v2`）**。
+它先解释阶段 A 中的数值支持范围拒绝来自哪里，再决定能否以新的、经过保留验证来源检验的
+合同重跑阶段 A；它不重新定义目标，也不把本次目标条件审计的 OOS 结果拿来调阈值。
 
-阶段 A 只产生 teacher-forced recorded-observation 证据。它不是 Unity 闭环、真实机器
-验证、生产证明或训练结果；本阶段不训练、不创建训练 HDF5、不运行 Unity rollout/live/1×10，
-也不改变 production/default runtime、安全阈值或 timeout。
+阶段 A 与阶段 A.1 都只产生 teacher-forced recorded-observation 的离线诊断证据。它们不是
+Unity 闭环、真实机器验证、生产证明或训练结果；本轮不训练、不创建训练 HDF5、不运行 Unity
+rollout/live/1×10，也不改变 production/default runtime、安全阈值或 timeout。
 
 本文固定后续实现边界。它不改写
 [历史 handoff](goal_following_mainline_handoff_20260731.md) 或
@@ -86,17 +86,22 @@ promotion_eligible=false
 baseline 对齐失败时，所有反事实结果无效。即使通过，也不能推出反事实轨迹安全、Unity
 闭环成功、地形效果正确或 production ready。
 
-### 正式判定合同
+### `support_contract_v1`：阶段 A 的正式判定合同
 
 阶段 A 的四类分类只适用于完整且可验证的工件。若 preflight、action integrity 或 baseline
 复刻任一项失败，工件的顶层 `status` 必须是 `artifact_invalid`，并且不得写入四类
 `classification` 中的任何一个。这条边界优先于以下所有支持范围和动作响应判定。
 
 对每个 primitive 的每个 selected frame，baseline 与 alternate 都必须逐字段通过对应
-strict-train p01-p99 数值支持检查。只要任一方有任何数值支持越界，该 primitive 就是
-`out_of_support`；不能以动作差异、复刻稳定性或锚点通过来覆盖它。
+strict-train p01-p99 数值支持检查。这个已冻结规则的候选标识是
+`axis_p01_p99_v1`，并构成 `support_contract_v1`。只要任一方有任何数值支持越界，该
+primitive 就是 `out_of_support`；不能以动作差异、复刻稳定性或锚点通过来覆盖它。
 这些上下界只由该 primitive 的 train split 内 action-loss-valid 数值行拟合，验证来源不得
 参与拟合或被当作支持证据。
+
+`support_contract_v1` 必须保留为历史基线：阶段 A 已写出的 v1 工件不得覆盖、重标或以 v2
+结论替换。阶段 A.1 即使选择了 v2，也只会创建新的 no-overwrite 离线审计工件；它不会改变
+production/default runtime。
 
 baseline 要由互相独立的 replica A/B 在相同冻结条件下重放。对每个动作轴，先计算整个
 selected-frame 集合中的最大绝对差，再得到唯一的基线复刻容差：
@@ -187,15 +192,100 @@ temporal aggregation 必须记录运行时实际解析值，不能只依据 YAML
 
 阶段 A 完成后停止并报告证据类型、baseline 是否对齐、Dig 和 Return 是否分别响应条件、
 动作变化是否稳定、固定的方向不可识别结论、production/default 是否改变，以及下一步建议。
-它不在本阶段实施后续路线。
+当前出现 `out_of_support` 时，不直接进入阶段 B，而是先执行以下阶段 A.1。
+
+## 阶段 A.1：独立支持范围合同审计（`support_contract_v2`）
+
+### 目的、边界与原因分支
+
+这是一项只读、离线的支持范围合同审计。它只回答“记录到的状态是否属于冻结 ACT 的已验证
+数值支持范围”，不判断动作方向、地形效果、轨迹安全或“指哪挖哪”。它不训练、不重跑
+Unity/live，也不把 `support_contract_v2` 接入 production/default runtime。
+
+对每个 Return stable segment，审计必须保留并可视化其每一轴实际 `qpos`/`qvel` 相对 strict-train
+分布的位置，同时记录 JSONL action step、HDF5 action 行、前一帧 observation 行、primitive
+episode/source episode、`action_loss_mask`、字段名、单位/形状和 token/envelope。图表与原始
+数值必须能区分下列互斥的处理分支：
+
+1. **时间对齐或字段语义错误**：动作与 JSONL/HDF5 不一致、前一帧 observation 关系不连续、
+   primitive/source 映射、字段维度、单位或 token 键不一致。修正数据合同后，使用 v1 重新跑
+   阶段 A；不得用更宽阈值掩盖错误。
+2. **v1 规则过于保守**：严格 source-disjoint 训练/验证预注册证明某个 v2 候选能覆盖正常验证
+   状态，同时仍拒绝预定义的明显陌生状态。保留 v1，并以选定 v2 在新的 no-overwrite 根重跑
+   阶段 A。
+3. **真实训练覆盖缺口**：对齐正确且没有候选通过预注册验证，或目标状态仍被选定 v2 拒绝。
+   不得以放宽规则继续；后续只能在 Return handoff 拒绝该状态，或采集这些起始姿态/速度下的
+   专家数据并重训。
+
+### 不得用目标审计调参
+
+不得用阶段 A target audit 调参：`act_goal_condition_sensitivity_v1` 的 Return OOS 帧、segment、
+动作差异、token 选择和任何派生统计都不得参与 v2 候选拟合、分位数/距离阈值、合格判定、
+候选排序或 synthetic OOD 的构造。它只能在 v2 选择已锁定后作为 target diagnosis 的被测对象。
+
+训练与验证必须 source-disjoint；每行都要保留 partition、primitive episode、source episode、
+step index、step id 与 `action_loss_mask` 谱系。候选拟合只能读取 strict-train 的
+`action_loss_mask=1` 行；验证来源只用于预注册验收，target rollout 不得泄漏到任何支持规则的
+标定过程，即使它无法被映射为一个独立的 primitive source identity 也同样如此。
+
+### 预注册候选与验收
+
+每个 primitive 都对完整 ACT 数值低维输入判定支持范围：`qpos[0:4] + qvel[0:4] +` 该 primitive
+完整 conditioned token/envelope（Dig 10D，Return 18D）。报告必须另行按 `qpos`、`qvel` 与 token
+三组归因，不能把 token 越界误写成 Return 姿态问题。
+
+候选集合、参数和优先顺序在读取 target 前固定如下：
+
+| 候选 ID | train-only 拟合规则 |
+| --- | --- |
+| `axis_p01_p99_v1` | 每个完整输入维度的 p01–p99；它是 v1 对照，不会被修改。 |
+| `axis_p0005_p9995_v2` | 每个完整输入维度的 p0.05–p99.95。 |
+| `joint_regularized_mahalanobis_p99_v2` | 完整输入向量的 strict-train 均值与协方差；使用确定性 ridge `max(trace(covariance) / D * 1e-6, 1e-12)`，以 strict-train squared Mahalanobis distance 的 p99 为阈值。 |
+
+冻结的明显陌生状态负对照只来自 held-out validation：每个验证行是 anchor，对每一个特征做
+确定性的交替符号扰动，幅度固定为 `32 * max(abs(anchor_feature), validation_feature_span, 1.0)`。
+必须保留 anchor、字段、符号和扰动后的值谱系；不得从 target 或 train 行生成该负对照。
+
+每个候选必须同时满足：
+
+```text
+validation_normal_coverage >= 0.99
+synthetic_obvious_ood_rejection >= 0.99
+```
+
+不满足前者的状态是 `rejected_validation_coverage`，不满足后者的是
+`rejected_obvious_ood_rejection`，两者都不满足时必须同时记录。合格候选按
+`synthetic_obvious_ood_rejection` 降序、`validation_normal_coverage` 降序排序；仍相同时按固定
+优先级 `axis_p01_p99_v1`、`joint_regularized_mahalanobis_p99_v2`、
+`axis_p0005_p9995_v2` 选择。任何一项 primitive 没有合格候选，审计顶层状态必须为
+`support_contract_not_selected`，不得对 target 给出“v2 已支持”的结论。
+
+### 工件、重跑与运行时边界
+
+`support_contract_v2` 输出必须写入一个新的 no-overwrite 根，至少包含候选拟合、验证验收、
+每段 Return target diagnosis、选择理由、全部输入 SHA 与 code SHA。每个 Return segment 还必须
+生成确定性的 `plots/return_<segment-id>.svg`（`segment-id` 必须先作确定性的文件名安全规范化）：
+八个 `qpos`/`qvel` 轨迹 panel 各自叠加 strict-train p01/p99 与支持判定注释。图只服务于原因审计，
+不是候选阈值、排序或验收的输入。每份输出都标记：
+
+```text
+teacher_forced_recorded_observation
+diagnostic_only=true
+promotion_eligible=false
+closed_loop_claim=false
+```
+
+只有状态为 `completed`、每个 primitive 已选择候选、且 target diagnosis 不含对齐/语义错误时，
+才能以选定的 `support_contract_v2` 新建另一个 no-overwrite 的阶段 A 审计根。该 v2 重跑仍然
+只是离线证据；v1、production/default runtime、安全阈值和 timeout 一律不变。
 
 ## 后续阶段：仅保留为计划
 
 ### 阶段 B：收口目标与结果的数据合同
 
 定义在线 `DesiredCutGoal` 与历史 `AchievedCutOutcome` 的边界，不能把专家实际结果当作
-Planner 的原始意图。只有阶段 A 产生 `goal_response_plausible` 证据后，才进入 Unity 单铲
-目标效果对照准备。
+Planner 的原始意图。只有在 `support_contract_v1` 或已选择的 `support_contract_v2` 下完成阶段 A
+重跑并产生 `goal_response_plausible` 证据后，才进入 Unity 单铲目标效果对照准备。
 
 ### 阶段 C：建立短期行为安全盾
 
