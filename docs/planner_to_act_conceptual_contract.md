@@ -38,6 +38,11 @@ Planner 的目标语义、ACT 输入责任、scheduler/handoff 决策或 product
 对齐正确但 v2 仍拒绝 Return 状态，系统必须在 handoff 拒绝该状态或补采专家数据并重训，不能
 通过放宽合同绕过独立安全链。
 
+支持合同的选择按 primitive 独立：已选择的 Return v2 可以进入 primitive-scoped 阶段 A 重跑，
+同时未选择候选的 Dig 继续使用 v1。顶层 `support_contract_not_selected` 只表示没有覆盖全部
+primitive 的统一 v2，不会撤销已选择 primitive 的离线证据；它也绝不改变 runtime 默认或让
+Return 的支持证据冒充 Dig 的支持证据。
+
 ## Historical diagnostic legacy：2026-07-28 Actual-tuple return transition 合同
 
 以下 actual-tuple 设计记录历史诊断路径，不是当前 production runtime 合同。它不再把

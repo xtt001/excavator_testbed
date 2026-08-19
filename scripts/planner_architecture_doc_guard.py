@@ -80,6 +80,7 @@ STRICT18_CONCEPTUAL_CONTRACT_ANCHORS = (
     "不等于 Unity 闭环成功或 production proof。",
     "`support_contract_v1` 是已发布阶段 A 工件的历史基线，必须保留。",
     "它不改变\nPlanner 的目标语义、ACT 输入责任、scheduler/handoff 决策或 production/default runtime。",
+    "Return 的支持证据冒充 Dig 的支持证据。",
 )
 
 STRICT18_PHASE_A_FORMAL_RULE_ANCHORS = (
@@ -107,7 +108,11 @@ STRICT18_SUPPORT_CONTRACT_V2_ANCHORS = (
     "`support_contract_not_selected`",
     "时间对齐或字段语义错误",
     "`plots/return_<segment-id>.svg`",
-    "production/default runtime、安全阈值和 timeout 一律不变",
+    "安全阈值和 timeout 一律不变",
+    "Dig 保持 v1",
+    "不得要求每个 primitive 都选择 v2 后才允许",
+    "primitive-scoped 的 no-overwrite 阶段 A v2 审计根",
+    "它不以顶层 `completed`",
 )
 
 

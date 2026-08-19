@@ -211,8 +211,8 @@ episode/source episode、`action_loss_mask`、字段名、单位/形状和 token
    primitive/source 映射、字段维度、单位或 token 键不一致。修正数据合同后，使用 v1 重新跑
    阶段 A；不得用更宽阈值掩盖错误。
 2. **v1 规则过于保守**：严格 source-disjoint 训练/验证预注册证明某个 v2 候选能覆盖正常验证
-   状态，同时仍拒绝预定义的明显陌生状态。保留 v1，并以选定 v2 在新的 no-overwrite 根重跑
-   阶段 A。
+   状态，同时仍拒绝预定义的明显陌生状态。该结论按 primitive 独立成立：Return 可用已选择的
+   v2 重跑，而 Dig 保持 v1；保留 v1，并以相应规则在新的 no-overwrite 根重跑阶段 A。
 3. **真实训练覆盖缺口**：对齐正确且没有候选通过预注册验证，或目标状态仍被选定 v2 拒绝。
    不得以放宽规则继续；后续只能在 Return handoff 拒绝该状态，或采集这些起始姿态/速度下的
    专家数据并重训。
@@ -258,7 +258,10 @@ synthetic_obvious_ood_rejection >= 0.99
 `synthetic_obvious_ood_rejection` 降序、`validation_normal_coverage` 降序排序；仍相同时按固定
 优先级 `axis_p01_p99_v1`、`joint_regularized_mahalanobis_p99_v2`、
 `axis_p0005_p9995_v2` 选择。任何一项 primitive 没有合格候选，审计顶层状态必须为
-`support_contract_not_selected`，不得对 target 给出“v2 已支持”的结论。
+`support_contract_not_selected`，这只表示不存在覆盖全部 primitive 的统一 v2；不得把它写成
+“所有 primitive 都没有支持”。已选择候选的 primitive 仍保留其独立选择结果，未选择候选的
+primitive 必须继续使用 `support_contract_v1`，不得要求每个 primitive 都选择 v2 后才允许
+对已选择 primitive 重跑。
 
 ### 工件、重跑与运行时边界
 
@@ -275,16 +278,19 @@ promotion_eligible=false
 closed_loop_claim=false
 ```
 
-只有状态为 `completed`、每个 primitive 已选择候选、且 target diagnosis 不含对齐/语义错误时，
-才能以选定的 `support_contract_v2` 新建另一个 no-overwrite 的阶段 A 审计根。该 v2 重跑仍然
-只是离线证据；v1、production/default runtime、安全阈值和 timeout 一律不变。
+任一 primitive 只要已经选择候选、且该 primitive 的 target diagnosis 不含对齐/语义错误，就能
+新建一个 primitive-scoped 的 no-overwrite 阶段 A v2 审计根；它不以顶层 `completed` 或其他
+primitive 的选择结果为前提。该工件必须逐 primitive 写明实际使用的支持合同，例如 Return
+使用已选择的 v2、Dig 保持 v1。这个 v2 重跑仍然只是离线证据；v1、production/default runtime、
+安全阈值和 timeout 一律不变。
 
 ## 后续阶段：仅保留为计划
 
 ### 阶段 B：收口目标与结果的数据合同
 
 定义在线 `DesiredCutGoal` 与历史 `AchievedCutOutcome` 的边界，不能把专家实际结果当作
-Planner 的原始意图。只有在 `support_contract_v1` 或已选择的 `support_contract_v2` 下完成阶段 A
+Planner 的原始意图。单一 primitive 的 v2 重跑不能进入阶段 B。只有后续 Unity 闭环所需的每个
+primitive 都在各自冻结的 `support_contract_v1` 或已选择的 `support_contract_v2` 下完成阶段 A
 重跑并产生 `goal_response_plausible` 证据后，才进入 Unity 单铲目标效果对照准备。
 
 ### 阶段 C：建立短期行为安全盾

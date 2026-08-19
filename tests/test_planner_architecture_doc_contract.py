@@ -51,7 +51,11 @@ _STRICT18_SUPPORT_CONTRACT_V2_LINES = (
     "`support_contract_not_selected`",
     "时间对齐或字段语义错误",
     "`plots/return_<segment-id>.svg`",
-    "production/default runtime、安全阈值和 timeout 一律不变",
+    "安全阈值和 timeout 一律不变",
+    "Return 可用已选择的 v2 重跑，而 Dig 保持 v1",
+    "不得要求每个 primitive 都选择 v2 后才允许",
+    "primitive-scoped 的 no-overwrite 阶段 A v2 审计根",
+    "它不以顶层 `completed`",
 )
 
 
@@ -75,6 +79,7 @@ def _strict18_conceptual_contract_text() -> str:
         "`support_contract_v1` 是已发布阶段 A 工件的历史基线，必须保留。\n"
         "它不改变\n"
         "Planner 的目标语义、ACT 输入责任、scheduler/handoff 决策或 production/default runtime。\n"
+        "Return 的支持证据冒充 Dig 的支持证据。\n"
     )
 
 
@@ -219,4 +224,21 @@ def test_strict18_goal_following_contract_rejects_missing_support_audit_rules(
     )
 
     with pytest.raises(PlannerDocGuardError, match="joint_regularized_mahalanobis_p99_v2"):
+        check_strict18_goal_following_contract(tmp_path)
+
+
+def test_strict18_goal_following_contract_requires_primitive_scoped_v2_replay(
+    tmp_path: Path,
+) -> None:
+    roadmap = _strict18_roadmap_text().replace(
+        "Return 可用已选择的 v2 重跑，而 Dig 保持 v1\n",
+        "",
+    )
+    _write(tmp_path / "docs/strict18_goal_following_roadmap.md", roadmap)
+    _write(
+        tmp_path / "docs/planner_to_act_conceptual_contract.md",
+        _strict18_conceptual_contract_text(),
+    )
+
+    with pytest.raises(PlannerDocGuardError, match="Dig 保持 v1"):
         check_strict18_goal_following_contract(tmp_path)
