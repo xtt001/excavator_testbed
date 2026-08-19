@@ -12,8 +12,10 @@ import numpy as np
 import yaml
 
 from testbed.data.operator_first_v2_2 import _build_dig_cut_token
-from testbed.policies.act.adapter import ACTAdapter
-from testbed.runtime._train import _resolve_low_dim_state_dim
+from testbed.policies.act.inference import (
+    build_act_adapter_config,
+    load_act_policy,
+)
 
 DEFAULT_PRIOR_PATH = Path(
     "testbed/configs/planner_priors/yulong_operator_first_dig_cut_prior_v1.json"
@@ -50,7 +52,6 @@ def main() -> None:
     train_cfg = dict(config.get("train", {}) or {})
     act_params = dict(policy_cfg.get("act_params", {}) or {})
     outcome_head_cfg = dict(policy_cfg.get("outcome_head") or {})
-    outcome_head_enabled = bool(outcome_head_cfg.get("enabled", False))
 
     dataset_dir = Path(args.dataset_dir or task_cfg["dataset_dir"])
     episode_path = dataset_dir / f"episode_{int(args.episode_id)}.hdf5"
@@ -70,35 +71,17 @@ def main() -> None:
     ckpt_path = Path(args.ckpt)
     ckpt_dir = ckpt_path.parent
 
-    adapter_config = {
-        "lr": float(train_cfg.get("lr", 1.0e-5)),
-        "num_queries": int(act_params.get("chunk_size", 100)),
-        "kl_weight": float(act_params.get("kl_weight", 10.0)),
-        "hidden_dim": int(act_params.get("hidden_dim", 512)),
-        "dim_feedforward": int(act_params.get("dim_feedforward", 3200)),
-        "lr_backbone": 1.0e-5,
-        "backbone": "resnet18",
-        "enc_layers": 4,
-        "dec_layers": 7,
-        "nheads": 8,
-        "camera_names": camera_names,
-        "equipment_model": equipment_model,
-        "max_episode_len": episode_len,
-        "low_dim_keys": low_dim_keys,
-        "state_dim": _resolve_low_dim_state_dim(low_dim_keys, equipment_model),
-        "image_mask": dict(policy_cfg.get("image_mask") or {}),
-        "outcome_head": outcome_head_cfg,
-        "outcome_dim": int(
-            outcome_head_cfg.get("dim", 10 if outcome_head_enabled else 0)
-        )
-        if outcome_head_enabled
-        else 0,
-        "outcome_action_horizon": int(
-            outcome_head_cfg.get("action_horizon", act_params.get("chunk_size", 100))
-        ),
-        "outcome_hidden_dim": outcome_head_cfg.get("hidden_dim"),
-    }
-    policy = ACTAdapter.from_checkpoint(
+    adapter_config = build_act_adapter_config(
+        config=config,
+        camera_names=camera_names,
+        equipment_model=equipment_model,
+        max_episode_len=episode_len,
+        low_dim_keys=low_dim_keys,
+        act_params=act_params,
+        outcome_head_config=outcome_head_cfg,
+        image_mask_config=dict(policy_cfg.get("image_mask") or {}),
+    )
+    policy = load_act_policy(
         ckpt_path=ckpt_path,
         policy_config=adapter_config,
         norm_stats_path=ckpt_dir / "dataset_stats.pkl",

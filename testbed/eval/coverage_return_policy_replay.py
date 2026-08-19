@@ -13,6 +13,10 @@ import h5py
 import numpy as np
 
 from testbed.data.camera_images import read_camera_rgb
+from testbed.policies.act.inference import (
+    build_act_adapter_config,
+    load_act_policy,
+)
 
 COVERAGE_RETURN_TOKEN_POLICY_REPLAY_SCHEMA = "coverage_return_token_policy_replay_v1"
 CAMERA_ORDER = ("stick_up", "stick_down", "eye_left", "eye_right")
@@ -64,32 +68,33 @@ def run_teacher_forced_return_replay(
     checkpoint = _require_file(policy_config["return_ckpt_path"])
     stats = _require_file(checkpoint.parent / "dataset_stats.pkl")
 
-    from testbed.runtime._eval import (
-        _build_act_eval_policy,
-        _configure_eval_torch_performance,
-    )
+    from testbed.runtime._eval import _configure_eval_torch_performance
 
     _configure_eval_torch_performance(
         dict(original_config.get("eval", {}) or {}),
         device=str(device),
     )
 
+    adapter_config = build_act_adapter_config(
+        config=dict(original_config),
+        camera_names=camera_names,
+        equipment_model=str(task_config.get("equipment_model", "yulong")),
+        max_episode_len=int(task_config.get("episode_len", 24000)),
+        low_dim_keys=low_dim_keys,
+        act_params=dict(act_params),
+        outcome_head_config=dict(
+            policy_config.get("return_outcome_head", {}) or {}
+        ),
+        image_mask_config=dict(policy_config.get("image_mask", {}) or {}),
+    )
+
     def build_policy() -> Any:
-        return _build_act_eval_policy(
-            config=dict(original_config),
+        return load_act_policy(
             ckpt_path=checkpoint,
-            ckpt_dir=checkpoint.parent,
-            camera_names=camera_names,
-            equipment_model=str(task_config.get("equipment_model", "yulong")),
-            max_episode_len=int(task_config.get("episode_len", 24000)),
-            low_dim_keys=low_dim_keys,
+            policy_config=adapter_config,
+            norm_stats_path=stats,
             temporal_agg=True,
             device=str(device),
-            act_params=dict(act_params),
-            outcome_head_config=dict(
-                policy_config.get("return_outcome_head", {}) or {}
-            ),
-            image_mask_config=dict(policy_config.get("image_mask", {}) or {}),
         )
 
     condition_results: dict[str, Any] = {}

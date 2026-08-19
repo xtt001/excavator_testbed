@@ -20,13 +20,14 @@ from typing import Any
 
 import h5py
 import numpy as np
-import torch
 import yaml
 
 from testbed.data.dataset import _episode_matches_metadata_filters
 from testbed.data.hdf5_io import episode_id_from_path, list_episodes
-from testbed.data.image_masks import apply_image_mask
-from testbed.runtime._train import _resolve_low_dim_state_dim
+from testbed.policies.act.inference import (
+    build_act_adapter_config,
+    load_act_policy,
+)
 
 DIG_CUT_TOKEN_KEY = "dig_cut_tokens"
 DIG_CUT_TOKEN_PATH = "v2/step/dig_cut_tokens"
@@ -202,45 +203,23 @@ def _load_policy(
     device: str,
     temporal_agg: bool,
 ):
-    from testbed.policies.act.adapter import ACTAdapter
-
     task_cfg = dict(config.get("task", {}) or {})
     policy_cfg = dict(config.get("policy", {}) or {})
-    train_cfg = dict(config.get("train", {}) or {})
     act_params = dict(policy_cfg.get("act_params", {}) or {})
     outcome_head_cfg = dict(policy_cfg.get("outcome_head") or {})
-    outcome_head_enabled = bool(outcome_head_cfg.get("enabled", False))
     equipment_model = str(task_cfg.get("equipment_model", "yulong"))
     episode_len = int(task_cfg.get("episode_len", 512))
-    adapter_config = {
-        "lr": float(train_cfg.get("lr", 1.0e-5)),
-        "num_queries": int(act_params.get("chunk_size", 100)),
-        "kl_weight": float(act_params.get("kl_weight", 10.0)),
-        "hidden_dim": int(act_params.get("hidden_dim", 512)),
-        "dim_feedforward": int(act_params.get("dim_feedforward", 3200)),
-        "lr_backbone": 1.0e-5,
-        "backbone": "resnet18",
-        "enc_layers": 4,
-        "dec_layers": 7,
-        "nheads": 8,
-        "camera_names": camera_names,
-        "equipment_model": equipment_model,
-        "max_episode_len": episode_len,
-        "low_dim_keys": low_dim_keys,
-        "state_dim": _resolve_low_dim_state_dim(low_dim_keys, equipment_model),
-        "image_mask": dict(policy_cfg.get("image_mask") or {}),
-        "outcome_head": outcome_head_cfg,
-        "outcome_dim": int(
-            outcome_head_cfg.get("dim", 10 if outcome_head_enabled else 0)
-        )
-        if outcome_head_enabled
-        else 0,
-        "outcome_action_horizon": int(
-            outcome_head_cfg.get("action_horizon", act_params.get("chunk_size", 100))
-        ),
-        "outcome_hidden_dim": outcome_head_cfg.get("hidden_dim"),
-    }
-    return ACTAdapter.from_checkpoint(
+    adapter_config = build_act_adapter_config(
+        config=config,
+        camera_names=camera_names,
+        equipment_model=equipment_model,
+        max_episode_len=episode_len,
+        low_dim_keys=low_dim_keys,
+        act_params=act_params,
+        outcome_head_config=outcome_head_cfg,
+        image_mask_config=dict(policy_cfg.get("image_mask") or {}),
+    )
+    return load_act_policy(
         ckpt_path=ckpt_path,
         policy_config=adapter_config,
         norm_stats_path=ckpt_path.parent / "dataset_stats.pkl",
@@ -323,7 +302,9 @@ def _audit_episode(
                 camera_names=camera_names,
                 low_dim_keys=low_dim_keys,
             )
-            pred_chunk, outcome = _predict_action_chunk(policy, obs)
+            action_chunk = policy.predict_action_chunk(obs)
+            pred_chunk = action_chunk.actions
+            outcome = action_chunk.outcome
             expert_chunk = actions[start_step : start_step + pred_chunk.shape[0]]
             chunk_records.append(
                 _build_chunk_record(
@@ -374,50 +355,6 @@ def _read_obs_at_step(
             raise KeyError(f"Episode is missing {image_path}")
         obs[f"image_{camera_name}"] = handle[image_path][step]
     return obs
-
-
-def _predict_action_chunk(policy: Any, obs: dict[str, np.ndarray]) -> tuple[np.ndarray, np.ndarray | None]:
-    proprio = policy._build_proprio(obs)
-    proprio = (proprio - policy._proprio_mean) / policy._proprio_std
-
-    cam_images: list[np.ndarray] = []
-    for cam in policy._camera_names:
-        key = f"image_{cam}"
-        if key not in obs:
-            raise ValueError(f"Missing camera input {key!r}.")
-        cam_img = apply_image_mask(
-            np.asarray(obs[key]),
-            camera_name=cam,
-            mask_config=policy._image_mask_config,
-            mask=obs.get(f"image_mask_{cam}"),
-        )
-        cam_img = np.asarray(cam_img, dtype=np.float32)
-        if cam_img.ndim != 3:
-            raise ValueError(f"Expected {key!r} rank-3 image, got {cam_img.shape}.")
-        if cam_img.shape[0] == 3:
-            pass
-        elif cam_img.shape[-1] == 3:
-            cam_img = np.transpose(cam_img, (2, 0, 1))
-            if cam_img.max() > 1.0:
-                cam_img = cam_img / 255.0
-        else:
-            raise ValueError(f"Expected {key!r} to have 3 channels, got {cam_img.shape}.")
-        cam_images.append(cam_img)
-
-    image = torch.from_numpy(np.stack(cam_images, axis=0)).float()
-    image = image.to(policy.device).unsqueeze(0)
-    image = policy._normalize(image)
-
-    policy._model.eval()
-    with torch.no_grad():
-        model_out = policy._model(proprio, image, None)
-        a_hat, _, _, outcome_hat = policy._unpack_model_output(model_out)
-    chunk = a_hat.squeeze(0).detach().cpu().numpy()
-    chunk = chunk * policy.norm_stats["action_std"] + policy.norm_stats["action_mean"]
-    outcome = None
-    if outcome_hat is not None:
-        outcome = outcome_hat.squeeze(0).detach().cpu().numpy().astype(np.float32)
-    return chunk.astype(np.float32), outcome
 
 
 def _build_episode_payload(

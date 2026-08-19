@@ -48,6 +48,10 @@ from testbed.eval.act_regression_offline_diagnostic import (
     temporal_contributors,
     write_json_exclusive,
 )
+from testbed.policies.act.inference import (
+    build_act_adapter_config,
+    load_act_policy,
+)
 
 
 def run_recorded_observation_diagnosis(
@@ -154,30 +158,30 @@ def run_recorded_observation_diagnosis(
             "dig dataset stats must contain 18D proprio normalization"
         )
 
-    from testbed.runtime._eval import (
-        _build_act_eval_policy,
-        _configure_eval_torch_performance,
-    )
+    from testbed.runtime._eval import _configure_eval_torch_performance
 
     resolved_performance = _configure_eval_torch_performance(
         dict(config.get("eval", {}) or {}),
         device=str(device),
     )
-    policy = _build_act_eval_policy(
+    adapter_config = build_act_adapter_config(
         config=config,
-        ckpt_path=checkpoint_path,
-        ckpt_dir=stats_path.parent,
         camera_names=camera_names,
         equipment_model=str(task_cfg.get("equipment_model", "yulong")),
         max_episode_len=int(task_cfg.get("episode_len", 24000)),
         low_dim_keys=low_dim_keys,
-        temporal_agg=True,
-        device=str(device),
         act_params=act_params,
         outcome_head_config=dict(
             policy_cfg.get("dig_outcome_head", {}) or {}
         ),
         image_mask_config=dict(policy_cfg.get("image_mask", {}) or {}),
+    )
+    policy = load_act_policy(
+        ckpt_path=checkpoint_path,
+        policy_config=adapter_config,
+        norm_stats_path=stats_path,
+        temporal_agg=True,
+        device=str(device),
     )
     policy.reset()
 
