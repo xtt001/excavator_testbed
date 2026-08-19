@@ -66,6 +66,7 @@ def run_act_goal_condition_sensitivity_audit(
     action_std_by_primitive: Mapping[str, np.ndarray] | None = None,
     support_assessors_by_primitive: Mapping[str, SupportAssessor] | None = None,
     support_lineage_by_primitive: Mapping[str, Mapping[str, Any]] | None = None,
+    additional_source_lineage: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run all stable Dig/Return pairs and write the Stage-A evidence root.
 
@@ -126,6 +127,11 @@ def run_act_goal_condition_sensitivity_audit(
         "eval_run_metadata": _source_record(source_paths["eval_run_metadata"]),
         "artifact_repo_commit": _artifact_repo_commit(source_paths["eval_run_metadata"]),
     }
+    extra_lineage = _normalise_additional_source_lineage(additional_source_lineage)
+    if extra_lineage is not None:
+        # The caller supplies already SHA-verified immutable prerequisites.
+        # Store them before artifact creation; never amend a written manifest.
+        source_lineage["additional_audit_lineage"] = extra_lineage
     frozen_action_std = (
         {
             primitive: np.asarray(action_std_by_primitive[primitive], dtype=np.float32)
@@ -225,6 +231,22 @@ def _source_paths(source_root: Path) -> dict[str, Path]:
         if not path.is_file():
             raise FileNotFoundError(f"Stage-A source is missing {label}: {path}")
     return paths
+
+
+def _normalise_additional_source_lineage(
+    value: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Accept only JSON-safe immutable prerequisite lineage supplied by a binder."""
+
+    if value is None:
+        return None
+    if not isinstance(value, Mapping) or not value:
+        raise ValueError("additional_source_lineage must be a non-empty mapping")
+    try:
+        # Round-trip also detaches this manifest input from caller-owned state.
+        return json.loads(json.dumps(dict(value), allow_nan=False, sort_keys=True))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("additional_source_lineage must be JSON-safe") from exc
 
 
 def _evaluate_primitive_segments(

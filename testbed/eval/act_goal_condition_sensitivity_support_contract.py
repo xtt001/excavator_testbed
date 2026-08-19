@@ -59,6 +59,7 @@ def run_primitive_scoped_stage_a_support_audit(
     frozen_candidate_loader: FrozenCandidateLoader | None = None,
     support_assessor_builder: SupportAssessorBuilder | None = None,
     stage_a_runner: StageARunner | None = None,
+    additional_source_lineage: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run a new Stage-A artifact with Return v2 and Dig v1 support.
 
@@ -125,16 +126,25 @@ def run_primitive_scoped_stage_a_support_audit(
     }
 
     runner = stage_a_runner or run_act_goal_condition_sensitivity_audit
+    runner_kwargs: dict[str, Any] = {
+        "source_results_root": source_root,
+        "dig_training_config_path": dig_config,
+        "return_training_config_path": return_config,
+        "output_root": destination,
+        "device": str(device),
+        "policy_factory_builder": policy_factory_builder,
+        "action_std_by_primitive": action_std_by_primitive,
+        "support_assessors_by_primitive": {"return": return_assessor},
+        "support_lineage_by_primitive": {"return": return_lineage},
+    }
+    if additional_source_lineage is not None:
+        if not isinstance(additional_source_lineage, Mapping) or not additional_source_lineage:
+            raise PrimitiveScopedSupportBindingError(
+                "additional_source_lineage must be a non-empty mapping"
+            )
+        runner_kwargs["additional_source_lineage"] = dict(additional_source_lineage)
     runner_result = runner(
-        source_results_root=source_root,
-        dig_training_config_path=dig_config,
-        return_training_config_path=return_config,
-        output_root=destination,
-        device=str(device),
-        policy_factory_builder=policy_factory_builder,
-        action_std_by_primitive=action_std_by_primitive,
-        support_assessors_by_primitive={"return": return_assessor},
-        support_lineage_by_primitive={"return": return_lineage},
+        **runner_kwargs,
     )
     if not isinstance(runner_result, Mapping):
         raise PrimitiveScopedSupportBindingError("Stage-A runner must return a mapping")

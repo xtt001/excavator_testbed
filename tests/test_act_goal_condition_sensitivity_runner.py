@@ -306,6 +306,9 @@ def test_runner_writes_six_files_with_lineage_oos_precedence_and_isolation(
         device="cpu",
         policy_factory_builder=_factory_builder,
         action_std_by_primitive=_action_std(),
+        additional_source_lineage={
+            "a2_prerequisite_audits": {"stage_b_eligible": False}
+        },
     )
 
     assert result["status"] == "completed"
@@ -320,6 +323,9 @@ def test_runner_writes_six_files_with_lineage_oos_precedence_and_isolation(
     ]
     manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["source_lineage"]["artifact_repo_commit"] == "a" * 40
+    assert manifest["source_lineage"]["additional_audit_lineage"] == {
+        "a2_prerequisite_audits": {"stage_b_eligible": False}
+    }
     assert set(manifest["source_lineage"]["checkpoints_and_stats"]) == {
         "dig",
         "return",
