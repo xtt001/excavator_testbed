@@ -24,11 +24,12 @@ from typing import Any
 
 import numpy as np
 import torch
-import torchvision.transforms as transforms
 
-from testbed.data.camera_images import observation_camera_rgb
 from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
-from testbed.data.image_masks import apply_image_mask
+from testbed.policies.act.image_preprocessing import (
+    make_act_image_normalizer,
+    preprocess_act_observation_images,
+)
 from testbed.policies.act.inference import ACTActionChunk, TemporalAggregationContract
 from testbed.policies.base import Policy, register_policy
 
@@ -102,10 +103,7 @@ class ACTAdapter(Policy):
         self._model     = model.to(self.device)
         self._optimizer = optimizer
 
-        self._normalize  = transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225],
-        )
+        self._normalize = make_act_image_normalizer()
         self._proprio_mean, self._proprio_std = self._resolve_proprio_norm_stats()
         self._token_slice = self._resolve_goal_token_slice()
 
@@ -233,51 +231,15 @@ class ACTAdapter(Policy):
         """Build normalised proprioception and images in configured camera order."""
         proprio = self._build_proprio(obs)
         proprio = (proprio - self._proprio_mean) / self._proprio_std
-
-        # Ignore metadata keys such as ``image_format`` in live AGX observations.
-        cam_images: list[np.ndarray] = []
-        for cam in self._camera_names:
-            key = f"image_{cam}"
-            cam_input = obs.get(key)
-            if cam_input is None:
-                try:
-                    cam_input = observation_camera_rgb(obs, cam)
-                except KeyError as exc:
-                    raise ValueError(
-                        f"{method_name}: missing required camera input {key!r}."
-                    ) from exc
-            cam_img = apply_image_mask(
-                np.asarray(cam_input),
-                camera_name=cam,
-                mask_config=self._image_mask_config,
-                mask=obs.get(f"image_mask_{cam}"),
-            )
-            cam_img = np.asarray(cam_img, dtype=np.float32)
-            if cam_img.ndim != 3:
-                raise ValueError(
-                    f"{method_name}: expected {key!r} to be rank-3, got "
-                    f"shape {cam_img.shape}."
-                )
-            # Accept either channel-first float images or raw channel-last RGB.
-            if cam_img.shape[0] == 3:
-                pass
-            elif cam_img.shape[-1] == 3:
-                cam_img = np.transpose(cam_img, (2, 0, 1))
-                if cam_img.max() > 1.0:
-                    cam_img = cam_img / 255.0
-            else:
-                raise ValueError(
-                    f"{method_name}: expected {key!r} to have 3 channels, got "
-                    f"shape {cam_img.shape}."
-                )
-            cam_images.append(cam_img)
-
-        if not cam_images:
-            raise ValueError(f"{method_name}: no camera inputs configured.")
-
-        img = np.stack(cam_images, axis=0)
-        image = torch.from_numpy(img).float().to(self.device).unsqueeze(0)
-        return proprio, self._normalize(image)
+        image = preprocess_act_observation_images(
+            obs,
+            camera_names=self._camera_names,
+            image_mask_config=self._image_mask_config,
+            device=self.device,
+            method_name=method_name,
+            normalizer=self._normalize,
+        )
+        return proprio, image.normalized_images
 
     def _unnormalize_actions(self, actions: np.ndarray) -> np.ndarray:
         """Map a normalised ACT action or chunk into runtime action units."""

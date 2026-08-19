@@ -16,6 +16,7 @@ __all__ = [
     "list_episodes",
     "EpisodeRecorder",
     "EpisodicDataset",
+    "assemble_act_low_dim_observation",
     "get_norm_stats",
     "load_data",
 ]
@@ -28,6 +29,10 @@ _EXPORT_MAP = {
     "list_episodes": ("testbed.data.hdf5_io", "list_episodes"),
     "EpisodeRecorder": ("testbed.data.recorder", "EpisodeRecorder"),
     "EpisodicDataset": ("testbed.data.dataset", "EpisodicDataset"),
+    "assemble_act_low_dim_observation": (
+        "testbed.data.act_low_dim",
+        "assemble_act_low_dim_observation",
+    ),
     "get_norm_stats": ("testbed.data.dataset", "get_norm_stats"),
     "load_data": ("testbed.data.dataset", "load_data"),
 }

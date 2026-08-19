@@ -17,6 +17,10 @@ import torch
 import yaml
 from torch.utils.data import DataLoader, Dataset
 
+from testbed.data.act_low_dim import (
+    SUPPORTED_ACT_LOW_DIM_KEYS,
+    assemble_act_low_dim_observation,
+)
 from testbed.data.action_loss_mask import (
     ACTION_LOSS_MASK_SCOPE_LOSS_ONLY,
     ACTION_LOSS_MASK_SCOPE_LOSS_SAMPLING_STATS,
@@ -29,7 +33,6 @@ from testbed.data.camera_images import read_camera_rgb
 from testbed.data.dig_depth_profile_v2_4 import DIG_DEPTH_PROFILE_TOKEN_DIM
 from testbed.data.hdf5_io import list_episodes
 from testbed.data.image_masks import (
-    apply_image_mask,
     mask_dataset_path,
     require_mask_dataset,
 )
@@ -55,18 +58,14 @@ from testbed.data.schema import (
 )
 from testbed.data.v2_1 import GOAL_TOKEN_DIM
 from testbed.planner.cell_entry import CELL_ENTRY_TOKEN_DIM
-
-SUPPORTED_LOW_DIM_KEYS = (
-    "qpos",
-    "qvel",
-    "goal_tokens",
-    "cell_entry_tokens",
-    "dig_cut_tokens",
-    "dig_depth_profile_tokens_v1",
-    "return_target_tokens",
-    "return_relocate_tokens_v1",
-    "return_start_envelope_tokens_v1",
+from testbed.policies.act.image_preprocessing import (
+    ACT_IMAGE_INPUT_LAYOUT_HWC,
+    ACT_IMAGE_VALUE_SCALING_TRAINING_DATASET,
+    transform_act_camera_images,
 )
+
+# Compatibility alias.  The public source of truth lives in act_low_dim.py.
+SUPPORTED_LOW_DIM_KEYS = SUPPORTED_ACT_LOW_DIM_KEYS
 
 SUPPORTED_SUPERVISION_KEYS = (
     "dig_outcome_targets",
@@ -131,128 +130,19 @@ def _assemble_low_dim_observation(
     return_start_envelope_tokens_v1: np.ndarray | None = None,
     low_dim_keys: list[str],
 ) -> np.ndarray:
-    qpos_arr = np.asarray(qpos, dtype=np.float32)
-    qvel_arr = np.asarray(qvel, dtype=np.float32)
-    goal_tokens_arr = (
-        None if goal_tokens is None else np.asarray(goal_tokens, dtype=np.float32)
+    """Compatibility facade for the public ACT training assembly API."""
+    return assemble_act_low_dim_observation(
+        qpos=qpos,
+        qvel=qvel,
+        goal_tokens=goal_tokens,
+        cell_entry_tokens=cell_entry_tokens,
+        dig_cut_tokens=dig_cut_tokens,
+        dig_depth_profile_tokens_v1=dig_depth_profile_tokens_v1,
+        return_target_tokens=return_target_tokens,
+        return_relocate_tokens_v1=return_relocate_tokens_v1,
+        return_start_envelope_tokens_v1=return_start_envelope_tokens_v1,
+        low_dim_keys=low_dim_keys,
     )
-    cell_entry_tokens_arr = (
-        None
-        if cell_entry_tokens is None
-        else np.asarray(cell_entry_tokens, dtype=np.float32)
-    )
-    dig_cut_tokens_arr = (
-        None if dig_cut_tokens is None else np.asarray(dig_cut_tokens, dtype=np.float32)
-    )
-    dig_depth_profile_tokens_arr = (
-        None
-        if dig_depth_profile_tokens_v1 is None
-        else np.asarray(dig_depth_profile_tokens_v1, dtype=np.float32)
-    )
-    return_target_tokens_arr = (
-        None
-        if return_target_tokens is None
-        else np.asarray(return_target_tokens, dtype=np.float32)
-    )
-    return_relocate_tokens_arr = (
-        None
-        if return_relocate_tokens_v1 is None
-        else np.asarray(return_relocate_tokens_v1, dtype=np.float32)
-    )
-    return_start_envelope_tokens_arr = (
-        None
-        if return_start_envelope_tokens_v1 is None
-        else np.asarray(return_start_envelope_tokens_v1, dtype=np.float32)
-    )
-    sequence_mode = (
-        qpos_arr.ndim > 1
-        or qvel_arr.ndim > 1
-        or (goal_tokens_arr is not None and goal_tokens_arr.ndim > 1)
-        or (cell_entry_tokens_arr is not None and cell_entry_tokens_arr.ndim > 1)
-        or (dig_cut_tokens_arr is not None and dig_cut_tokens_arr.ndim > 1)
-        or (
-            dig_depth_profile_tokens_arr is not None
-            and dig_depth_profile_tokens_arr.ndim > 1
-        )
-        or (
-            return_target_tokens_arr is not None
-            and return_target_tokens_arr.ndim > 1
-        )
-        or (
-            return_relocate_tokens_arr is not None
-            and return_relocate_tokens_arr.ndim > 1
-        )
-        or (
-            return_start_envelope_tokens_arr is not None
-            and return_start_envelope_tokens_arr.ndim > 1
-        )
-    )
-    parts: list[np.ndarray] = []
-    for key in low_dim_keys:
-        if key == "qpos":
-            part = qpos_arr
-        elif key == "qvel":
-            part = qvel_arr
-        elif key == "goal_tokens":
-            if goal_tokens_arr is None:
-                raise KeyError(
-                    "Requested low_dim key 'goal_tokens' but /v2/step/goal_tokens is missing."
-                )
-            part = goal_tokens_arr
-        elif key == "cell_entry_tokens":
-            if cell_entry_tokens_arr is None:
-                raise KeyError(
-                    "Requested low_dim key 'cell_entry_tokens' but "
-                    "/v2/step/cell_entry_tokens is missing."
-                )
-            part = cell_entry_tokens_arr
-        elif key == "dig_cut_tokens":
-            if dig_cut_tokens_arr is None:
-                raise KeyError(
-                    "Requested low_dim key 'dig_cut_tokens' but "
-                    "/v2/step/dig_cut_tokens is missing."
-                )
-            part = dig_cut_tokens_arr
-        elif key == "dig_depth_profile_tokens_v1":
-            if dig_depth_profile_tokens_arr is None:
-                raise KeyError(
-                    "Requested low_dim key 'dig_depth_profile_tokens_v1' but "
-                    "/v2/step/dig_depth_profile_tokens_v1 is missing."
-                )
-            part = dig_depth_profile_tokens_arr
-        elif key == "return_target_tokens":
-            if return_target_tokens_arr is None:
-                raise KeyError(
-                    "Requested low_dim key 'return_target_tokens' but "
-                    "/v2/step/return_target_tokens is missing."
-                )
-            part = return_target_tokens_arr
-        elif key == "return_relocate_tokens_v1":
-            if return_relocate_tokens_arr is None:
-                raise KeyError(
-                    "Requested low_dim key 'return_relocate_tokens_v1' but "
-                    "a relocate target could not be derived from "
-                    "/v2/step/return_target_tokens or metadata next_operator fields."
-                )
-            part = return_relocate_tokens_arr
-        elif key == "return_start_envelope_tokens_v1":
-            if return_start_envelope_tokens_arr is None:
-                raise KeyError(
-                    "Requested low_dim key 'return_start_envelope_tokens_v1' but "
-                    "/v2/step/return_start_envelope_tokens_v1 is missing."
-                )
-            part = return_start_envelope_tokens_arr
-        else:
-            continue
-        if sequence_mode:
-            part = part.reshape(part.shape[0], -1)
-        else:
-            part = part.reshape(-1)
-        parts.append(part)
-    if not parts:
-        raise ValueError("low_dim_keys must contain at least one supported key.")
-    axis = 1 if sequence_mode else 0
-    return np.concatenate(parts, axis=axis).astype(np.float32)
 
 
 # ─── Normalization stats ──────────────────────────────────────────────────────
@@ -356,7 +246,7 @@ def get_norm_stats(
                 == ACTION_LOSS_MASK_SCOPE_LOSS_SAMPLING_STATS
                 else None
             )
-        proprio = _assemble_low_dim_observation(
+        proprio = assemble_act_low_dim_observation(
             qpos=qpos,
             qvel=qvel,
             goal_tokens=goal_tokens,
@@ -557,7 +447,7 @@ class EpisodicDataset(Dataset):
                     key=self.supervision_keys[0],
                     index=t0,
                 )
-            proprio = _assemble_low_dim_observation(
+            proprio = assemble_act_low_dim_observation(
                 qpos=qpos,
                 qvel=qvel,
                 goal_tokens=goal_tokens,
@@ -570,6 +460,7 @@ class EpisodicDataset(Dataset):
                 low_dim_keys=self.low_dim_keys,
             )
             image_dict = {}
+            image_masks = {}
             for cam in self.camera_names:
                 image = read_camera_rgb(f, cam, t0)
                 mask = None
@@ -588,12 +479,17 @@ class EpisodicDataset(Dataset):
                             f"Episode {ep_id} is missing required image mask dataset "
                             f"{mask_path!r} for camera {cam!r}."
                         )
-                image_dict[cam] = apply_image_mask(
-                    image,
-                    camera_name=cam,
-                    mask_config=self.image_mask_config,
-                    mask=mask,
-                )
+                image_dict[cam] = image
+                image_masks[cam] = mask
+            image_transform = transform_act_camera_images(
+                camera_images=image_dict,
+                camera_names=self.camera_names,
+                image_mask_config=self.image_mask_config,
+                camera_masks=image_masks,
+                method_name=f"EpisodicDataset episode {ep_id}",
+                value_scaling=ACT_IMAGE_VALUE_SCALING_TRAINING_DATASET,
+                input_layout=ACT_IMAGE_INPUT_LAYOUT_HWC,
+            )
 
             # ── action from t0 onward (legacy hack for real data) ─────────
             if is_sim:
@@ -636,19 +532,11 @@ class EpisodicDataset(Dataset):
                 )
             is_pad[:action_len] |= loss_mask == 0
 
-        # ── assemble camera tensor ─────────────────────────────────────────
-        all_cam_images = np.stack(
-            [image_dict[c] for c in self.camera_names], axis=0
-        )  # (n_cams, H, W, 3)
-
         # ── convert to tensors ────────────────────────────────────────────
-        image_data = torch.from_numpy(all_cam_images)
+        image_data = torch.from_numpy(image_transform.transformed_images).float()
         proprio_data = torch.from_numpy(proprio).float()
         action_data = torch.from_numpy(padded_action).float()
         is_pad_t = torch.from_numpy(is_pad)
-
-        # channel-last → channel-first + normalize to [0, 1]
-        image_data = torch.einsum("k h w c -> k c h w", image_data).float() / 255.0
 
         # normalise proprio and actions
         action_data = (
