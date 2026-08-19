@@ -52,6 +52,7 @@ from testbed.runtime._eval import _configure_eval_torch_performance
 BASELINE_SCHEMA = "act_goal_condition_sensitivity_baseline_v1"
 PRIMITIVE_SCHEMA = "act_goal_condition_sensitivity_primitive_v1"
 PolicyFactoryBuilder = Callable[[str, Mapping[str, Any]], Callable[[Mapping[str, Any], str], Any]]
+SupportAssessor = Callable[[Mapping[str, Any], Any], Mapping[str, Any]]
 
 
 def run_act_goal_condition_sensitivity_audit(
@@ -63,6 +64,8 @@ def run_act_goal_condition_sensitivity_audit(
     device: str = "cuda",
     policy_factory_builder: PolicyFactoryBuilder | None = None,
     action_std_by_primitive: Mapping[str, np.ndarray] | None = None,
+    support_assessors_by_primitive: Mapping[str, SupportAssessor] | None = None,
+    support_lineage_by_primitive: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run all stable Dig/Return pairs and write the Stage-A evidence root.
 
@@ -108,6 +111,11 @@ def run_act_goal_condition_sensitivity_audit(
         "dig": _strict_train_support(dig_train, skill_name="dig"),
         "return": _strict_train_support(return_train, skill_name="return"),
     }
+    applied_supports = _resolve_applied_supports(
+        supports=supports,
+        support_assessors_by_primitive=support_assessors_by_primitive,
+        support_lineage_by_primitive=support_lineage_by_primitive,
+    )
     source_lineage = {
         "source_results_root": str(source_root),
         "eval_resolved_config": _source_record(source_paths["eval_config"]),
@@ -130,6 +138,10 @@ def run_act_goal_condition_sensitivity_audit(
         policy_cfg,
         required=policy_factory_builder is None,
     )
+    source_lineage["applied_support_contract_by_primitive"] = {
+        primitive: dict(applied_supports[primitive]["lineage"])
+        for primitive in ("dig", "return")
+    }
     inference_descriptions: dict[str, dict[str, Any]] = {}
     factory_builder = policy_factory_builder or _production_policy_factory_builder(
         eval_config=eval_config,
@@ -147,7 +159,7 @@ def run_act_goal_condition_sensitivity_audit(
             records = _evaluate_primitive_segments(
                 primitive=primitive,
                 segments=primitive_segments[primitive],
-                support=supports[primitive],
+                support_assessor=applied_supports[primitive]["assessor"],
                 policy_factory=factory_builder(primitive, policy_cfg),
                 observation_reader=reader,
                 action_std=frozen_action_std[primitive],
@@ -156,6 +168,7 @@ def run_act_goal_condition_sensitivity_audit(
                 primitive=primitive,
                 records=records,
                 support=supports[primitive],
+                applied_support_contract=applied_supports[primitive]["lineage"],
             )
         isolation = run_carry_dump_isolation(
             policy_cfg=policy_cfg,
@@ -218,7 +231,7 @@ def _evaluate_primitive_segments(
     *,
     primitive: str,
     segments: Sequence[RecordedActReplaySegment],
-    support: StrictTrainNumericSupport,
+    support_assessor: SupportAssessor,
     policy_factory: Callable[[Mapping[str, Any], str], Any],
     observation_reader: Callable[[RecordedActReplayFrame], Mapping[str, Any]],
     action_std: np.ndarray,
@@ -245,7 +258,7 @@ def _evaluate_primitive_segments(
             policy_factory=policy_factory,
             action_std=action_std,
             observation_reader=observation_reader,
-            support_assessor=_support_assessor(support),
+            support_assessor=support_assessor,
         )
         records.append(
             {
@@ -301,6 +314,186 @@ def _support_assessor(
         return _support_record(assessment)
 
     return assess
+
+
+def build_frozen_candidate_support_assessor(candidate: Any) -> SupportAssessor:
+    """Build a no-fit assessor from one already-frozen support candidate.
+
+    The candidate is supplied by the support-contract audit caller.  This
+    function never reads rows, computes a quantile, or changes a threshold; it
+    only evaluates the recorded qpos/qvel stream plus the condition token that
+    the Stage-A replay already passes to ACT.
+    """
+
+    from testbed.data.act_support_contract import assess_support_candidate
+
+    candidate_id = str(_field(candidate, "candidate_id", "")).strip()
+    feature_order = tuple(str(value) for value in _field(candidate, "feature_order", ()))
+    fit_partition = str(_field(candidate, "fit_partition", "")).strip()
+    if not candidate_id or not feature_order:
+        raise ValueError("frozen support candidate lacks candidate_id or feature_order")
+    if fit_partition != "strict_train":
+        raise ValueError("injected support candidate must be fitted on strict_train")
+
+    def assess(condition: Mapping[str, Any], segment: Any) -> Mapping[str, Any]:
+        feature = _support_feature_matrix(condition=condition, segment=segment)
+        if feature.shape[1] != len(feature_order):
+            raise ValueError(
+                "injected support candidate feature width does not match replay input"
+            )
+        assessment = assess_support_candidate(candidate, feature)
+        record = dict(assessment.as_dict())
+        record["status"] = (
+            "supported" if bool(np.all(assessment.frame_in_support)) else "out_of_support"
+        )
+        return record
+
+    return assess
+
+
+def _resolve_applied_supports(
+    *,
+    supports: Mapping[str, StrictTrainNumericSupport],
+    support_assessors_by_primitive: Mapping[str, SupportAssessor] | None,
+    support_lineage_by_primitive: Mapping[str, Mapping[str, Any]] | None,
+) -> dict[str, dict[str, Any]]:
+    """Bind default v1 or injected frozen support without touching ACT state."""
+
+    expected = {"dig", "return"}
+    overrides = _normalise_support_override_mapping(
+        support_assessors_by_primitive,
+        label="support_assessors_by_primitive",
+    )
+    lineages = _normalise_support_override_mapping(
+        support_lineage_by_primitive,
+        label="support_lineage_by_primitive",
+        require_callable=False,
+    )
+    if set(overrides) != set(lineages):
+        raise ValueError(
+            "support assessor overrides and support lineage must cover the same primitives"
+        )
+    result: dict[str, dict[str, Any]] = {}
+    for primitive in ("dig", "return"):
+        support = supports.get(primitive)
+        if support is None:
+            raise ValueError(f"strict v1 support is missing {primitive}")
+        if primitive in overrides:
+            assessor = overrides[primitive]
+            lineage = _injected_support_lineage(lineages[primitive], primitive=primitive)
+        else:
+            assessor = _support_assessor(support)
+            lineage = _default_support_lineage(support)
+        result[primitive] = {
+            "assessor": _lineaged_support_assessor(assessor, lineage),
+            "lineage": lineage,
+        }
+    if set(result) != expected:  # Defensive invariant if supported primitives change.
+        raise ValueError("applied support binding does not cover Dig and Return")
+    return result
+
+
+def _normalise_support_override_mapping(
+    value: Mapping[str, Any] | None,
+    *,
+    label: str,
+    require_callable: bool = True,
+) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be a mapping")
+    expected = {"dig", "return"}
+    result = {str(primitive): item for primitive, item in value.items()}
+    extra = sorted(set(result) - expected)
+    if extra:
+        raise ValueError(f"{label} has unsupported primitives {extra!r}")
+    if any(item is None for item in result.values()):
+        raise ValueError(f"{label} contains a missing override")
+    if require_callable and any(not callable(item) for item in result.values()):
+        raise ValueError(f"{label} values must be callable")
+    if not require_callable and any(not isinstance(item, Mapping) for item in result.values()):
+        raise ValueError(f"{label} values must be mappings")
+    return result
+
+
+def _default_support_lineage(
+    support: StrictTrainNumericSupport,
+) -> dict[str, Any]:
+    return {
+        "binding": "default_strict_train_numeric_support",
+        "support_contract_version": "support_contract_v1",
+        "candidate_id": "axis_p01_p99_v1",
+        "fit_partition": "strict_train",
+        "feature_order": list(support.feature_order),
+        "train_source_episode_ids": list(support.train_source_episode_ids),
+        "validation_source_episode_ids": list(support.validation_source_episode_ids),
+        "kept_step_count": support.kept_step_count,
+    }
+
+
+def _injected_support_lineage(
+    raw: Mapping[str, Any],
+    *,
+    primitive: str,
+) -> dict[str, Any]:
+    lineage = dict(raw)
+    candidate_id = str(lineage.get("candidate_id", "")).strip()
+    version = str(lineage.get("support_contract_version", "")).strip()
+    if not candidate_id or not version:
+        raise ValueError(
+            f"injected {primitive} support lineage requires candidate_id and "
+            "support_contract_version"
+        )
+    if "binding" in lineage and lineage["binding"] != "injected_frozen_support_assessor":
+        raise ValueError("injected support lineage binding is not recognized")
+    return {
+        "binding": "injected_frozen_support_assessor",
+        **lineage,
+    }
+
+
+def _lineaged_support_assessor(
+    assessor: SupportAssessor,
+    lineage: Mapping[str, Any],
+) -> SupportAssessor:
+    frozen_lineage = dict(lineage)
+
+    def assess(condition: Mapping[str, Any], segment: Any) -> Mapping[str, Any]:
+        result = assessor(condition, segment)
+        if not isinstance(result, Mapping):
+            raise ValueError("support assessor must return a mapping")
+        record = dict(result)
+        existing = record.get("support_contract")
+        if existing is not None and dict(existing) != frozen_lineage:
+            raise ValueError("support assessor returned conflicting support contract lineage")
+        record["support_contract"] = dict(frozen_lineage)
+        return record
+
+    return assess
+
+
+def _support_feature_matrix(
+    *,
+    condition: Mapping[str, Any],
+    segment: Any,
+) -> np.ndarray:
+    frames = list(_field(segment, "frames", ()))
+    if not frames:
+        raise ValueError("support assessment requires recorded frames")
+    qpos = np.asarray([frame.qpos for frame in frames], dtype=np.float64)
+    qvel = np.asarray([frame.qvel for frame in frames], dtype=np.float64)
+    token = np.repeat(
+        np.asarray(condition["token"], dtype=np.float64).reshape(1, -1),
+        len(frames),
+        axis=0,
+    )
+    if qpos.shape != (len(frames), 4) or qvel.shape != (len(frames), 4):
+        raise ValueError("support replay qpos/qvel must each have shape (frame_count, 4)")
+    feature = np.concatenate((qpos, qvel, token), axis=1)
+    if not np.isfinite(feature).all():
+        raise ValueError("support replay feature contains non-finite values")
+    return feature
 
 
 def _support_record(assessment: NumericSupportAssessment) -> dict[str, Any]:
@@ -446,6 +639,7 @@ def _primitive_payload(
     primitive: str,
     records: Sequence[Mapping[str, Any]],
     support: StrictTrainNumericSupport,
+    applied_support_contract: Mapping[str, Any],
 ) -> dict[str, Any]:
     outcomes = [str(record["result"].get("status")) for record in records]
     classifications = Counter(
@@ -473,6 +667,7 @@ def _primitive_payload(
             "kept_step_count": support.kept_step_count,
             "masked_step_count": support.masked_step_count,
         },
+        "applied_support_contract": dict(applied_support_contract),
         "segment_pair_records": list(records),
         "aggregate": {
             "segment_pair_count": len(records),
@@ -559,6 +754,10 @@ def _manifest(
             "report.md",
         ],
         "source_lineage": dict(source_lineage),
+        "applied_support_contract_by_primitive": {
+            name: payload.get("applied_support_contract", {})
+            for name, payload in primitive_payloads.items()
+        },
         "clean_code": dict(clean_code),
         "torch_performance": dict(performance),
         "primitive_status": {
@@ -743,4 +942,7 @@ def _float_list(values: np.ndarray) -> list[float]:
     return [float(value) for value in np.asarray(values, dtype=np.float32).reshape(-1)]
 
 
-__all__ = ["run_act_goal_condition_sensitivity_audit"]
+__all__ = [
+    "build_frozen_candidate_support_assessor",
+    "run_act_goal_condition_sensitivity_audit",
+]

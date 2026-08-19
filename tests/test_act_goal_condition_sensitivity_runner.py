@@ -9,6 +9,10 @@ import numpy as np
 import pytest
 import yaml
 
+from testbed.data.act_support_contract import (
+    JOINT_REGULARIZED_MAHALANOBIS_P99_V2,
+    FittedSupportCandidate,
+)
 from testbed.eval import act_goal_condition_sensitivity_runner as runner
 
 
@@ -136,6 +140,7 @@ def _install_clean_synthetic_dependencies(
     monkeypatch: pytest.MonkeyPatch,
     *,
     oos_dig_alternates: bool,
+    oos_return_alternates: bool = False,
 ) -> None:
     segments = [
         _segment(primitive="dig", token=0.0, start_step=10),
@@ -178,7 +183,18 @@ def _install_clean_synthetic_dependencies(
                 and primitive == "dig"
                 and float(np.asarray(condition["token"])[0]) == 1.0
             )
-            return {"status": "out_of_support" if is_dig_alternate else "supported"}
+            is_return_alternate = (
+                oos_return_alternates
+                and primitive == "return"
+                and float(np.asarray(condition["token"])[0]) == 1.0
+            )
+            return {
+                "status": (
+                    "out_of_support"
+                    if is_dig_alternate or is_return_alternate
+                    else "supported"
+                )
+            }
 
         return assess
 
@@ -211,6 +227,28 @@ def _install_clean_synthetic_dependencies(
 
 def _factory_builder(primitive: str, _policy_cfg: dict[str, object]):
     return lambda _condition, _replica_id: _Policy(primitive)
+
+
+def _recording_factory_builder(records: list[dict[str, object]]):
+    def build(primitive: str, policy_cfg: dict[str, object]):
+        policy_contract = tuple(
+            str(value) for value in policy_cfg[f"{primitive}_low_dim_keys"]
+        )
+
+        def factory(condition: dict[str, object], replica_id: str) -> _Policy:
+            records.append(
+                {
+                    "primitive": primitive,
+                    "replica_id": replica_id,
+                    "condition_id": str(condition["condition_id"]),
+                    "policy_low_dim_keys": policy_contract,
+                }
+            )
+            return _Policy(primitive)
+
+        return factory
+
+    return build
 
 
 def _action_std() -> dict[str, np.ndarray]:
@@ -299,3 +337,160 @@ def test_runner_writes_six_files_with_lineage_oos_precedence_and_isolation(
         assert isolation["checks"][primitive]["extraneous_dig_token"][
             "injected_input_key"
         ] == "dig_cut_tokens"
+
+
+def test_return_frozen_support_override_changes_only_return_support_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, train, _checkpoints = _source_root(tmp_path)
+    _install_clean_synthetic_dependencies(
+        monkeypatch,
+        oos_dig_alternates=False,
+        oos_return_alternates=True,
+    )
+    default_policy_records: list[dict[str, object]] = []
+    override_policy_records: list[dict[str, object]] = []
+
+    default_result = runner.run_act_goal_condition_sensitivity_audit(
+        source_results_root=source,
+        dig_training_config_path=train,
+        return_training_config_path=train,
+        output_root=tmp_path / "stage_a_v1",
+        device="cpu",
+        policy_factory_builder=_recording_factory_builder(default_policy_records),
+        action_std_by_primitive=_action_std(),
+    )
+
+    injected_calls: list[dict[str, object]] = []
+
+    def return_v2_assessor(
+        condition: dict[str, object],
+        segment: dict[str, object],
+    ) -> dict[str, object]:
+        injected_calls.append(
+            {
+                "condition_id": condition["condition_id"],
+                "primitive": segment["primitive"],
+            }
+        )
+        return {
+            "status": "supported",
+            "candidate_score": 0.25,
+            "candidate_threshold": 1.0,
+        }
+
+    return_lineage = {
+        "support_contract_version": "support_contract_v2",
+        "candidate_id": "joint_regularized_mahalanobis_p99_v2",
+        "source_artifact": {"manifest_sha256": "c" * 64},
+    }
+    override_result = runner.run_act_goal_condition_sensitivity_audit(
+        source_results_root=source,
+        dig_training_config_path=train,
+        return_training_config_path=train,
+        output_root=tmp_path / "stage_a_mixed_support_v2",
+        device="cpu",
+        policy_factory_builder=_recording_factory_builder(override_policy_records),
+        action_std_by_primitive=_action_std(),
+        support_assessors_by_primitive={"return": return_v2_assessor},
+        support_lineage_by_primitive={"return": return_lineage},
+    )
+
+    assert default_result["status"] == override_result["status"] == "completed"
+    default_root = Path(default_result["output_root"])
+    override_root = Path(override_result["output_root"])
+    default_dig = json.loads((default_root / "dig.json").read_text(encoding="utf-8"))
+    override_dig = json.loads((override_root / "dig.json").read_text(encoding="utf-8"))
+    assert default_dig == override_dig
+
+    default_return = json.loads((default_root / "return.json").read_text(encoding="utf-8"))
+    override_return = json.loads((override_root / "return.json").read_text(encoding="utf-8"))
+    default_condition = default_return["segment_pair_records"][0]["result"]["conditions"]
+    override_condition = override_return["segment_pair_records"][0]["result"]["conditions"]
+    default_alternate = next(
+        value for key, value in default_condition.items() if key != "recorded_token"
+    )
+    override_alternate = next(
+        value for key, value in override_condition.items() if key != "recorded_token"
+    )
+    assert default_alternate["classification"] == "out_of_support"
+    assert override_alternate["classification"] == "goal_response_plausible"
+    assert override_alternate["support"]["counterfactual"]["support_contract"] == {
+        "binding": "injected_frozen_support_assessor",
+        **return_lineage,
+    }
+    assert override_return["applied_support_contract"] == {
+        "binding": "injected_frozen_support_assessor",
+        **return_lineage,
+    }
+
+    # The override is a support gate only.  Dig is byte-identical, and Return's
+    # baseline replay retains the same independent-cache and temporal result.
+    default_baseline = default_return["segment_pair_records"][0]["result"]["baseline"]
+    override_baseline = override_return["segment_pair_records"][0]["result"]["baseline"]
+    default_baseline.pop("support")
+    override_baseline.pop("support")
+    assert default_baseline == override_baseline
+    def baseline_factory_records(records: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [
+            record
+            for record in records
+            if record["primitive"] == "return"
+            and str(record["replica_id"]).startswith("baseline_replica")
+        ]
+
+    assert baseline_factory_records(default_policy_records) == baseline_factory_records(
+        override_policy_records
+    )
+    assert {
+        record["policy_low_dim_keys"]
+        for record in default_policy_records + override_policy_records
+        if record["primitive"] == "return"
+    } == {("qpos", "qvel", "return_start_envelope_tokens_v1")}
+    assert len(injected_calls) == 4
+    assert {record["primitive"] for record in injected_calls} == {"return"}
+
+    manifest = json.loads((override_root / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["applied_support_contract_by_primitive"]["dig"]["candidate_id"] == (
+        "axis_p01_p99_v1"
+    )
+    assert manifest["applied_support_contract_by_primitive"]["return"] == {
+        "binding": "injected_frozen_support_assessor",
+        **return_lineage,
+    }
+
+
+def test_frozen_candidate_assessor_uses_only_loaded_parameters() -> None:
+    feature_order = tuple(
+        [f"qpos[{index}]" for index in range(4)]
+        + [f"qvel[{index}]" for index in range(4)]
+        + [f"return_start_envelope_tokens_v1[{index}]" for index in range(18)]
+    )
+    candidate = FittedSupportCandidate(
+        candidate_id=JOINT_REGULARIZED_MAHALANOBIS_P99_V2,
+        feature_order=feature_order,
+        fit_partition="strict_train",
+        fit_row_count=10,
+        lower_quantile=None,
+        upper_quantile=None,
+        lower=None,
+        upper=None,
+        mean=np.zeros(len(feature_order), dtype=np.float64),
+        covariance=np.eye(len(feature_order), dtype=np.float64),
+        precision=np.eye(len(feature_order), dtype=np.float64),
+        regularization=1.0e-6,
+        threshold=1.0,
+        threshold_kind="train_p99_squared_distance",
+    )
+    segment = _segment(primitive="return", token=0.0, start_step=30)
+    assessor = runner.build_frozen_candidate_support_assessor(candidate)
+
+    result = assessor(
+        {"token": np.asarray(segment.token, dtype=np.float32)},
+        {"frames": segment.frames},
+    )
+
+    assert result["candidate_id"] == JOINT_REGULARIZED_MAHALANOBIS_P99_V2
+    assert result["status"] == "supported"
+    assert result["threshold"] == pytest.approx(1.0)
