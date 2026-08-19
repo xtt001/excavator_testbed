@@ -86,6 +86,61 @@ promotion_eligible=false
 baseline 对齐失败时，所有反事实结果无效。即使通过，也不能推出反事实轨迹安全、Unity
 闭环成功、地形效果正确或 production ready。
 
+### 正式判定合同
+
+阶段 A 的四类分类只适用于完整且可验证的工件。若 preflight、action integrity 或 baseline
+复刻任一项失败，工件的顶层 `status` 必须是 `artifact_invalid`，并且不得写入四类
+`classification` 中的任何一个。这条边界优先于以下所有支持范围和动作响应判定。
+
+对每个 primitive 的每个 selected frame，baseline 与 alternate 都必须逐字段通过对应
+strict-train p01-p99 数值支持检查。只要任一方有任何数值支持越界，该 primitive 就是
+`out_of_support`；不能以动作差异、复刻稳定性或锚点通过来覆盖它。
+这些上下界只由该 primitive 的 train split 内 action-loss-valid 数值行拟合，验证来源不得
+参与拟合或被当作支持证据。
+
+baseline 要由互相独立的 replica A/B 在相同冻结条件下重放。对每个动作轴，先计算整个
+selected-frame 集合中的最大绝对差，再得到唯一的基线复刻容差：
+
+```text
+baseline_tolerance_axis = max(1e-6, 10 * max_abs(baseline_replica_A - baseline_replica_B))
+```
+
+在派生这个容差前，replica 的原始 chunk 和实际派发动作都必须先通过按轴的噪声上限：
+
+```text
+replica_noise_cap_axis = max(1e-6, 0.005 * abs(action_std_axis))
+```
+
+任一 replica 差异超过该上限，或任一 replica 与保存动作的差异超过派生后的
+`baseline_tolerance_axis`，工件都是 `artifact_invalid`。这里没有相对误差项，也不能根据
+动作幅度临时放大容差。反事实响应阈值同样按轴固定：
+
+```text
+response_threshold_axis = max(baseline_tolerance_axis, 0.05 * abs(action_std_axis))
+```
+
+`action_std_axis` 必须来自冻结的动作归一化/训练统计工件。对每个 selected frame，只要任一
+实际派发动作轴的绝对 baseline/alternate 差值严格大于该轴 `response_threshold_axis`，该帧
+就是 active；否则 inactive。active-frame fraction 是 active frame 占全部 selected frame 的
+比例，start/mid/end 三个 anchors 都必须是 active。
+
+对有效工件，单个 primitive 按下面顺序分类：
+
+1. baseline 或 alternate 有任一 selected-frame 数值支持越界：`out_of_support`。
+2. 每个实际派发动作轴的 delta 都小于或等于相应 `response_threshold_axis`：`goal_insensitive`。
+3. 已存在 active response，但 alternate replicas 的任一轴差异超过 `baseline_tolerance_axis`、
+   active-frame fraction < 0.80，或任一 start/mid/end anchor inactive：`goal_response_invalid`。
+4. 其余有效结果：`goal_response_plausible`。
+
+跨 primitive 汇总时，先前的 `artifact_invalid` 仍不产生四类总分类。其余有效结果使用固定
+优先级：any OOS -> OOS；all insensitive -> insensitive；all plausible -> plausible；otherwise ->
+invalid。对应公开标签依次为 `out_of_support`、`goal_insensitive`、
+`goal_response_plausible`、`goal_response_invalid`。
+
+`direction_assessment` 必须固定为 `not_identifiable_in_teacher_forced_replay`。teacher-forced
+重放中的 joint-action 符号、token 几何字段或差值方向，都不能证明真实机械运动方向、地形
+效果方向或安全方向；这些问题留给后续 Unity/闭环证据。
+
 ### Dig、Return 与 Carry/Dump 的审计范围
 
 | 对象 | 基线条件 | 反事实条件 | 可得结论 |
@@ -117,7 +172,7 @@ temporal aggregation 必须记录运行时实际解析值，不能只依据 YAML
 每个条件必须各自拥有独立 policy 实例、独立 temporal cache 和独立 reset。条件之间不得
 共享 cache，且不能每帧重置 policy。
 
-### 输出、失败关闭与分类
+### 输出与失败关闭
 
 输出写入不可覆盖根目录 `act_goal_condition_sensitivity_v1/`。每份结果至少保留：
 
@@ -126,20 +181,13 @@ temporal aggregation 必须记录运行时实际解析值，不能只依据 YAML
 - 整段 temporal-aggregated 实际派发动作差异；
 - token/envelope、checkpoint、stats、trace、config 与代码 lineage。
 
-出现下列任一情况立即终止，不静默放宽容差：baseline 不能复现保存动作；观测、图像、qpos、
-qvel、相机顺序或非目标低维输入在条件间不一致；token/envelope 在原 segment 内漂移；输出
-目录已存在。
-
-分类只能使用：
-
-- `goal_insensitive`
-- `goal_response_invalid`
-- `out_of_support`
-- `goal_response_plausible`
+除正式判定合同中的 `artifact_invalid` 外，出现下列任一情况也必须失败关闭，且不得静默
+放宽容差：观测、图像、qpos、qvel、相机顺序或非目标低维输入在条件间不一致；token/envelope
+在原 segment 内漂移；输出目录已存在。
 
 阶段 A 完成后停止并报告证据类型、baseline 是否对齐、Dig 和 Return 是否分别响应条件、
-动作变化是否稳定且方向合理、production/default 是否改变，以及下一步建议。它不在本阶段
-决定四类阈值或实施后续路线。
+动作变化是否稳定、固定的方向不可识别结论、production/default 是否改变，以及下一步建议。
+它不在本阶段实施后续路线。
 
 ## 后续阶段：仅保留为计划
 

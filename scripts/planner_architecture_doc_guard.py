@@ -80,6 +80,18 @@ STRICT18_CONCEPTUAL_CONTRACT_ANCHORS = (
     "不等于 Unity 闭环成功或 production proof。",
 )
 
+STRICT18_PHASE_A_FORMAL_RULE_ANCHORS = (
+    "artifact_invalid",
+    "strict-train p01-p99",
+    "baseline_tolerance_axis = max(1e-6, 10 * max_abs(baseline_replica_A - baseline_replica_B))",
+    "replica_noise_cap_axis = max(1e-6, 0.005 * abs(action_std_axis))",
+    "这里没有相对误差项",
+    "response_threshold_axis = max(baseline_tolerance_axis, 0.05 * abs(action_std_axis))",
+    "active-frame fraction < 0.80",
+    "any OOS -> OOS",
+    "not_identifiable_in_teacher_forced_replay",
+)
+
 
 class PlannerDocGuardError(RuntimeError):
     pass
@@ -151,6 +163,8 @@ def check_strict18_goal_following_contract(root: str | Path = ".") -> None:
     roadmap = _read(roadmap_path)
     conceptual_contract = _read(conceptual_contract_path)
     for needle in STRICT18_ROADMAP_ANCHORS:
+        _require(roadmap, needle, path=roadmap_path)
+    for needle in STRICT18_PHASE_A_FORMAL_RULE_ANCHORS:
         _require(roadmap, needle, path=roadmap_path)
     for needle in STRICT18_CONCEPTUAL_CONTRACT_ANCHORS:
         _require(conceptual_contract, needle, path=conceptual_contract_path)
