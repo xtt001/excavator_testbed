@@ -14,6 +14,7 @@ from testbed.eval import act_goal_condition_sensitivity_runner as _runner
 from testbed.eval.act_goal_condition_sensitivity import (
     ACT_GOAL_CONDITION_SENSITIVITY_MANIFEST_SCHEMA,
     ACT_GOAL_CONDITION_SENSITIVITY_RESULTS_SCHEMA,
+    _response_threshold,
     derive_replica_tolerance,
     evaluate_goal_condition_sensitivity_segment,
     write_goal_condition_sensitivity_artifact,
@@ -228,6 +229,15 @@ def test_replica_tolerance_helper_is_registered_from_both_baselines() -> None:
     assert tolerance["replica_noise_cap_axis"] == pytest.approx([0.05, 1.0e-6])
     assert tolerance["chunk_max_abs_delta_axis"][0] == pytest.approx(0.02)
     assert tolerance["dispatched_tolerance_axis"][0] == pytest.approx(0.1)
+
+
+def test_response_threshold_never_drops_below_baseline_tolerance() -> None:
+    threshold = _response_threshold(
+        baseline_tolerance=np.asarray([0.01, 1.0e-6], dtype=np.float32),
+        action_std=np.asarray([0.1, 0.5], dtype=np.float32),
+    )
+
+    np.testing.assert_allclose(threshold, [0.01, 0.025])
 
 
 def test_support_precedes_response_and_insensitive_precedes_plausible() -> None:

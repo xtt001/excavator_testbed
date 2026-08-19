@@ -142,7 +142,13 @@ def evaluate_goal_condition_sensitivity_segment(
             stage="baseline_action_std",
             reason="frozen checkpoint action_std width does not match dispatched action",
         )
-    action_threshold = frozen_action_std * np.float32(ACTION_STD_FRACTION)
+    action_threshold = _response_threshold(
+        baseline_tolerance=np.asarray(
+            tolerance["dispatched_tolerance_axis"],
+            dtype=np.float32,
+        ),
+        action_std=frozen_action_std,
+    )
     base_result["baseline"] = {
         "condition_id": normalized["baseline"]["condition_id"],
         "status": "aligned",
@@ -685,6 +691,26 @@ def _response_gate(
             _float_list(value) for value in action_delta
         ],
     }
+
+
+def _response_threshold(
+    *,
+    baseline_tolerance: np.ndarray,
+    action_std: np.ndarray,
+) -> np.ndarray:
+    """Return the frozen per-axis response threshold without weakening replay noise."""
+
+    tolerance = _finite_array(
+        baseline_tolerance,
+        label="baseline_tolerance_axis",
+        ndim=1,
+    )
+    std = _finite_array(action_std, label="frozen_checkpoint_action_std", ndim=1)
+    if tolerance.shape != std.shape:
+        raise PhaseAContractError(
+            "baseline tolerance and frozen checkpoint action std widths differ"
+        )
+    return np.maximum(tolerance, np.float32(ACTION_STD_FRACTION) * np.abs(std))
 
 
 def _assess_support(
