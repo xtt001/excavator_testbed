@@ -1360,4 +1360,5 @@ target-safety 训练还有一个额外契约：
 
 ## Legacy
 
-原始 PACT 代码保留在 `legacy/`，不再作为当前 AGX 主路径继续扩展。
+原始 PACT 的迁移来源保留在 Git 历史中；当前 checkout 不再物化一个不可恢复的
+`legacy/` 子模块，也不将它作为当前 AGX 主路径继续扩展。
