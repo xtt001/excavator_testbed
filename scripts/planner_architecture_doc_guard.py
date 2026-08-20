@@ -63,7 +63,7 @@ REMOVED_DOC_FRAGMENTS = (
 )
 
 STRICT18_ROADMAP_ANCHORS = (
-    "当前唯一授权的实现任务是**阶段 A.3：Dig 数值支持范围异常的对齐与覆盖审计**。",
+    "当前唯一授权的实现任务是**阶段 A.4：Dig 局部完整状态支持合同验证**。",
     "ACT 直接输出 4D action",
     "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
     "teacher_forced_recorded_observation",
@@ -118,6 +118,22 @@ STRICT18_DIG_OUTLIER_AUDIT_ANCHORS = (
     "`repair_data_contract_then_rerun_stage_a`",
     "保持 v1",
     "runtime 对该 Return→Dig handoff 拒绝或停止",
+)
+
+STRICT18_DIG_LOCAL_STATE_SUPPORT_ANCHORS = (
+    "阶段 A.4：Dig 局部完整状态支持合同验证",
+    "`dig_local_complete_state_k8_sources2_v1`",
+    "`dig_local_complete_state_k16_sources2_v1`",
+    "`dig_local_complete_state_k32_sources3_v1`",
+    "IQR/1.3489795003921634",
+    "MAD/0.6744897501960817",
+    "每个 strict-train source 最多固定均匀抽取 128 个 calibration query",
+    "同 source 行必须\n从参考集排除",
+    "邻居 action 到分量中位数",
+    "validation_normal_coverage >= 0.99",
+    "目标 OOS 段、其分类、动作、",
+    "完整邻居 action/provenance 只在已选择候选后的独立 target",
+    "不能直接成为 runtime 通用放行",
 )
 
 STRICT18_CONCEPTUAL_CONTRACT_ANCHORS = (
@@ -241,6 +257,8 @@ def check_strict18_goal_following_contract(root: str | Path = ".") -> None:
     for needle in STRICT18_DIG_JOINT_SUPPORT_FAMILY_ANCHORS:
         _require(roadmap, needle, path=roadmap_path)
     for needle in STRICT18_DIG_OUTLIER_AUDIT_ANCHORS:
+        _require(roadmap, needle, path=roadmap_path)
+    for needle in STRICT18_DIG_LOCAL_STATE_SUPPORT_ANCHORS:
         _require(roadmap, needle, path=roadmap_path)
     for needle in STRICT18_CONCEPTUAL_CONTRACT_ANCHORS:
         _require(conceptual_contract, needle, path=conceptual_contract_path)

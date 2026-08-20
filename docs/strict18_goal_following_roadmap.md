@@ -2,10 +2,10 @@
 
 ## 当前结论与文档地位
 
-当前唯一授权的实现任务是**阶段 A.3：Dig 数值支持范围异常的对齐与覆盖审计**。
-它只解释阶段 A v3 中固定的 Dig OOS 段到底来自记录/字段对齐、短暂记录异常，还是训练覆盖
-证据不足；不会把目标段用来调支持阈值或训练。阶段 A.2 的 Return 原因审计和 Dig 联合支持
-合同验证已经完成，v3 也已完整重跑；其 OOS/invalid 结论仍然有效，不能由本审计直接改写。
+当前唯一授权的实现任务是**阶段 A.4：Dig 局部完整状态支持合同验证**。
+它不再问单一维度是否落在全局盒子里，而是预注册“完整 18D 状态附近是否有跨来源、动作一致的
+专家邻居”的候选规则。所有规则只能由 strict-train 冻结，再由 held-out validation 选定；固定
+OOS 段只能在选择后作诊断，不能倒推阈值或训练。A.3 已排除对齐错误，但没有改变 v3 的 OOS 结论。
 
 已完成的离线证据是：阶段 A 的 Dig 有 9/10 段 `goal_response_plausible`、1/10 段
 `out_of_support`；Return 在 v1 下均为 OOS。阶段 A.1 选择了 Return 的
@@ -457,6 +457,45 @@ validation 中有 116 行；所以不能把单轴速度 OOS 直接说成训练�
 受支持状态：五种 Dig joint 候选仍未通过 held-validation 合同。当前处理决定是保持 v1，并在
 runtime 对这类 Return→Dig handoff 拒绝或停止；若后续任务必须允许它，应采集对应完整状态的专家
 数据并在新的 source-disjoint 合同下重训。
+
+## 阶段 A.4：Dig 局部完整状态支持合同验证
+
+### 预注册规则与来源边界
+
+此阶段只读取 strict-train Dig 的 `action_loss_mask=1` 行：完整 18D
+`qpos + qvel + dig_cut_tokens`、对应 4D 专家 action 和 source episode provenance。每一维尺度只能
+从 strict-train 计算，按 median、IQR/1.3489795003921634、MAD/0.6744897501960817、相对 epsilon
+fallback 的固定顺序处理；不能让 `qvel[1]` 单独主导距离。
+
+固定候选 family 为：
+
+1. `dig_local_complete_state_k8_sources2_v1`：8 个邻居、至少 2 个不同 source episode；
+2. `dig_local_complete_state_k16_sources2_v1`：16 个邻居、至少 2 个不同 source episode；
+3. `dig_local_complete_state_k32_sources3_v1`：32 个邻居、至少 3 个不同 source episode。
+
+每个 strict-train source 最多固定均匀抽取 128 个 calibration query；该 query 的同 source 行必须
+从参考集排除，参考集仍为全部其它 strict-train source 行。每候选的 kth-neighbour robust-scaled
+18D L2 半径、邻居 action 到分量中位数的总 L2 偏差和四轴最大偏差，均以这些 strict-train calibration
+query 的 `linear` p99 冻结。候选需要同时满足近邻数量、跨来源数、距离和总/各轴动作一致性。
+
+### 保留验证选择与目标隔离
+
+候选冻结后才在 source-disjoint held validation 上测正常状态接受率，并对 validation-derived
+frozen obvious-OOD 数值负对照测拒绝率。合格条件固定为：
+
+```text
+validation_normal_coverage >= 0.99
+synthetic_obvious_ood_rejection >= 0.99
+```
+
+合格候选按 OOD 拒绝率降序、正常验证覆盖率降序、上述固定顺序选择。目标 OOS 段、其分类、动作、
+token 和任何派生统计不得进入拟合、scale、近邻数、来源数、距离阈值、动作一致性阈值、排序或验收。
+validation/OOD 只能写紧凑摘要与 digest；完整邻居 action/provenance 只在已选择候选后的独立 target
+诊断工件中出现。
+
+局部规则只代表 Dig 的离线候选，不能直接成为 runtime 通用放行。若没有候选通过，保持 v1 拒绝；
+若有候选通过，仍需独立审计固定 OOS 段，并且只把它视为正常尾部候选，不进入阶段 B、Unity 或
+production runtime。
 
 ## 后续阶段：仅保留为计划
 

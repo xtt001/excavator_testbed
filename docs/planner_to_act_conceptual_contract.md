@@ -15,10 +15,10 @@
 ## Strict-18 当前冻结边界（2026-08）
 
 [Strict-18 目标条件敏感性离线审计路线](strict18_goal_following_roadmap.md) 是当前后续
-实现范围的权威文档。阶段 A、A.1 和 A.2 已冻结 teacher-forced 目标条件、支持范围与 Return
-时序原因证据；当前唯一授权的实现是阶段 A.3：对固定 Dig OOS 段逐帧核对前一帧 observation、
-qpos/qvel/token 表示、`action_loss_mask=1` 训练人口与 held validation 分布。target rollout 只可
-用于描述，不能参与候选拟合、阈值、排序或事后调参。它不训练、不运行 Unity/live、不创建训练
+实现范围的权威文档。阶段 A、A.1、A.2 和 A.3 已冻结 teacher-forced 目标条件、支持范围、
+Return 时序原因及固定 Dig OOS 的对齐证据；当前唯一授权的实现是阶段 A.4：以完整 18D Dig 状态、
+跨来源近邻和专家动作一致性预注册局部支持候选，再只用 held validation 选择。target rollout 只可
+在选择后作诊断，不能参与拟合、阈值、排序或事后调参。它不训练、不运行 Unity/live、不创建训练
 HDF5，也不改变 production/default runtime、安全阈值或 timeout。
 
 Planner 只产生任务级目标并由 goal 生命周期服务锁定 `goal_id`；primitive scheduler 选择
@@ -52,6 +52,10 @@ aggregation 的试验只能解释原因，不能把 `goal_response_invalid` 改�
 Dig A.3 即使观察到单轴 qvel 在 strict-train 中存在数值先例，也不能把它当作完整状态支持或放宽
 `support_contract_v1`。对齐错误先修合同；没有验证合格的新合同前，Return→Dig handoff 对该状态
 仍应拒绝或停止。这个离线判断不证明物理单位、闭环轨迹、地形效果或生产安全。
+
+Dig A.4 的局部邻居必须来自完整状态而非最近专家轨迹 fallback：训练来源、距离和邻居专家 action
+的一致性都要先冻结，再由 held validation 验证。即使局部候选通过，也只可进入独立的离线 target
+诊断；Planner、scheduler/handoff 和 production runtime 不能自动采用它。
 
 ## Historical diagnostic legacy：2026-07-28 Actual-tuple return transition 合同
 
