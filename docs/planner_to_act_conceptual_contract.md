@@ -62,6 +62,9 @@ Return A.5 把“模型是否读取条件”和“哪一块历史计划实际派
 冻结的新近权重/最大年龄策略。离线选中的策略也只是 opt-in shadow candidate；只有 Unity/闭环证据
 显示轨迹、地形残差和独立安全约束改善，才可讨论默认策略替换。
 
+A.5 的独立 Return 验证没有选出策略：两条较新候选既未严格改善 legacy 响应，也未维持全部质量
+门槛。因此 legacy 仍是默认派发，不能把历史 contributor 取证直接转成 runtime 修复或 Unity 放行。
+
 ## Historical diagnostic legacy：2026-07-28 Actual-tuple return transition 合同
 
 以下 actual-tuple 设计记录历史诊断路径，不是当前 production runtime 合同。它不再把

@@ -121,7 +121,7 @@ _STRICT18_DIG_LOCAL_STATE_SUPPORT_LINES = (
 
 _STRICT18_RETURN_TEMPORAL_DISPATCH_LINES = (
     "阶段 A.5：Return temporal dispatch 合同验证",
-    "`return_temporal_dispatch_forensics_v1/`",
+    "`return_temporal_dispatch_forensics_v2/`",
     "`legacy_100_oldest_first_decay_0p01`",
     "`newest_first_100_decay_0p01`",
     "`newest_first_max_age_20_decay_0p01`",

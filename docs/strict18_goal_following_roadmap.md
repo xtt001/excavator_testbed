@@ -517,7 +517,7 @@ Dig OOS 样本设计自动放行规则，也不修改历史 v3 的 `out_of_suppo
 
 ### 先冻结旧策略抵消证据
 
-`return_temporal_dispatch_forensics_v1/` 必须先复现既有 stability artifact 的 cache contributor、
+`return_temporal_dispatch_forensics_v2/` 必须先复现既有 stability artifact 的 cache contributor、
 legacy `predict()` 重建和 Stage-A response mask，再逐帧记录 source action step、query offset、
 weight、4D raw action-delta、加权贡献和对最新 query 的反向投影。它只解释旧失败，不能用两段
 `return:898-1043:bb329f176aba`、`return:3959-4161:4afcef2eee82` 选新策略。
@@ -546,6 +546,19 @@ jitter/discontinuity reference。可选择候选必须逐 pair 和聚合都不�
 合格候选按更高聚合响应、更低 envelope violation、更低 discontinuity、更低 action-scale 比率、固定
 strategy ID 排序。未选中时保持 legacy；选中时只冻结为 opt-in shadow candidate，随后才可进入 Unity/
 闭环单铲验证实际铲斗轨迹、地形残差和安全约束，不能直接替换默认聚合策略。
+
+### A.5 已完成的离线结论
+
+历史贡献取证已确认两种机制同时存在。`return:898-1043` 有 33 个最新响应被压低的帧，其中 13 帧
+是历史贡献净反向、20 帧是最新 query 权重稀释，最新权重仅 1.10%–2.66%；`return:3959-4161` 有
+57 帧，其中 41 帧净反向、16 帧权重稀释，最新权重仅 0.62%–2.04%。这解释旧策略失败，但没有用于
+候选选择。
+
+独立 16 段 held Return 验证没有选出策略。legacy 的聚合响应为 0.953433，但已有两段低于 80%；
+100-step newest-first 为 0.950034，最大年龄 20 的 newest-first 为 0.929640。两条可选策略都没有
+严格改善 legacy 的聚合响应，并在至少一个 pair 的 envelope 或 discontinuity 质量门槛上更差，故
+`return_temporal_dispatch_validation_v1/` 状态为 `dispatch_contract_not_selected`。默认 legacy 聚合
+不变，不生成 opt-in shadow candidate，也不进入 Unity/闭环单铲验证。
 
 ## 后续阶段：仅保留为计划
 

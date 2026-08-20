@@ -15,7 +15,7 @@ DEFAULT_RETURN_STABILITY_OUTPUT_ROOT = (
     DEFAULT_SOURCE_RESULTS_ROOT.parent / "return_goal_response_stability_audit_v1"
 )
 DEFAULT_OUTPUT_ROOT = (
-    DEFAULT_SOURCE_RESULTS_ROOT.parent / "return_temporal_dispatch_forensics_v1"
+    DEFAULT_SOURCE_RESULTS_ROOT.parent / "return_temporal_dispatch_forensics_v2"
 )
 
 
