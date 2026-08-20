@@ -10,6 +10,7 @@ from testbed.eval.temporal_dispatch_contract import (
     evaluate_temporal_dispatch_metrics,
     pre_registered_temporal_dispatch_strategies,
     reconstruct_temporal_dispatch,
+    temporal_dispatch_contributors_for_frame,
 )
 
 
@@ -78,6 +79,10 @@ def test_legacy_reconstruction_reports_query_indices_weights_and_reset_boundary(
         np.asarray([10.0, 20.0, 30.0]), expected_weights / expected_weights.sum()
     )
     assert trace.actions[2, 0] == pytest.approx(expected)
+    assert temporal_dispatch_contributors_for_frame(
+        current_frame=2,
+        strategy=strategy,
+    ) == contributors
 
     assert len(trace.contributors[3]) == 1
     assert trace.contributors[3][0].source_frame_index == 3

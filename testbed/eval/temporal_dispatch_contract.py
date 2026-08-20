@@ -309,6 +309,48 @@ def pre_registered_temporal_dispatch_strategies() -> dict[str, TemporalDispatchS
     return {strategy.strategy_id: strategy for strategy in strategies}
 
 
+def temporal_dispatch_contributors_for_frame(
+    *,
+    current_frame: int,
+    strategy: TemporalDispatchStrategy,
+    epoch_start_frame: int = 0,
+) -> tuple[TemporalDispatchContributor, ...]:
+    """Describe the exact chunk/query weights used at one live dispatch frame."""
+
+    _nonnegative_int(current_frame, "current_frame")
+    _nonnegative_int(epoch_start_frame, "epoch_start_frame")
+    if epoch_start_frame > current_frame:
+        raise TemporalDispatchContractError(
+            "epoch_start_frame must not follow current_frame"
+        )
+    if strategy.dispatch_mode == _LATEST_MODE:
+        source_indices = np.asarray([current_frame], dtype=np.int64)
+        query_indices = np.asarray([0], dtype=np.int64)
+        weights = np.asarray([1.0], dtype=np.float64)
+    else:
+        start_frame = max(
+            epoch_start_frame,
+            current_frame - strategy.maximum_contributor_age,
+        )
+        source_indices = np.arange(start_frame, current_frame + 1, dtype=np.int64)
+        query_indices = current_frame - source_indices
+        weights = _temporal_weights(ages=query_indices, strategy=strategy)
+    return tuple(
+        TemporalDispatchContributor(
+            source_frame_index=int(source_frame),
+            query_index=int(query_index),
+            age=int(current_frame - source_frame),
+            weight=float(weight),
+        )
+        for source_frame, query_index, weight in zip(
+            source_indices,
+            query_indices,
+            weights,
+            strict=True,
+        )
+    )
+
+
 def reconstruct_temporal_dispatch(
     *,
     chunks: np.ndarray,
@@ -343,42 +385,29 @@ def reconstruct_temporal_dispatch(
     for current_frame in range(frame_count):
         if current_frame in reset_set:
             epoch_start = current_frame
-        if strategy.dispatch_mode == _LATEST_MODE:
-            source_indices = np.asarray([current_frame], dtype=np.int64)
-            query_indices = np.asarray([0], dtype=np.int64)
-            weights = np.asarray([1.0], dtype=np.float64)
-        else:
-            start_frame = max(
-                epoch_start,
-                current_frame - strategy.maximum_contributor_age,
-            )
-            source_indices = np.arange(start_frame, current_frame + 1, dtype=np.int64)
-            query_indices = current_frame - source_indices
-            weights = _temporal_weights(
-                ages=query_indices,
-                strategy=strategy,
-            )
+        contributors = temporal_dispatch_contributors_for_frame(
+            current_frame=current_frame,
+            strategy=strategy,
+            epoch_start_frame=epoch_start,
+        )
+        source_indices = np.asarray(
+            [item.source_frame_index for item in contributors],
+            dtype=np.int64,
+        )
+        query_indices = np.asarray(
+            [item.query_index for item in contributors],
+            dtype=np.int64,
+        )
+        weights = np.asarray(
+            [item.weight for item in contributors],
+            dtype=np.float64,
+        )
 
         values_for_frame = values[source_indices, query_indices]
         actions[current_frame] = np.sum(
             values_for_frame * weights[:, None], axis=0, dtype=np.float64
         ).astype(np.float32)
-        contributors_by_frame.append(
-            tuple(
-                TemporalDispatchContributor(
-                    source_frame_index=int(source_frame),
-                    query_index=int(query_index),
-                    age=int(current_frame - source_frame),
-                    weight=float(weight),
-                )
-                for source_frame, query_index, weight in zip(
-                    source_indices,
-                    query_indices,
-                    weights,
-                    strict=True,
-                )
-            )
-        )
+        contributors_by_frame.append(contributors)
 
     return TemporalDispatchTrace(
         strategy=strategy,
@@ -647,4 +676,5 @@ __all__ = [
     "evaluate_temporal_dispatch_metrics",
     "pre_registered_temporal_dispatch_strategies",
     "reconstruct_temporal_dispatch",
+    "temporal_dispatch_contributors_for_frame",
 ]
