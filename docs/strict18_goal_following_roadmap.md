@@ -497,6 +497,17 @@ validation/OOD 只能写紧凑摘要与 digest；完整邻居 action/provenance 
 若有候选通过，仍需独立审计固定 OOS 段，并且只把它视为正常尾部候选，不进入阶段 B、Unity 或
 production runtime。
 
+### A.4 已完成的离线结论
+
+三条候选对 validation-derived frozen obvious-OOD 都达到 1.0 拒绝率，但 source-disjoint 正常
+held validation 接受率分别仅为 0.466498、0.620476、0.583632，均低于预注册的 0.99。因此
+`dig_local_state_support_validation_v1/` 的状态为 `support_contract_not_selected`，没有冻结候选可
+用于固定 OOS 段的 target 支持诊断，更不能替代 v1 或进入 runtime。
+
+这说明“单轴速度和局部最近邻存在”仍不足以证明局部合同可泛化到独立来源。当前操作结论不变：
+保持 v1 拒绝/停止。若未来要覆盖该 handoff，先采集跨来源的完整状态与一致专家 action，再重新
+预注册并验证局部合同；不能以本次 OOS 个例调低来源数、距离或动作一致性门槛。
+
 ## 后续阶段：仅保留为计划
 
 ### 阶段 B：收口目标与结果的数据合同
