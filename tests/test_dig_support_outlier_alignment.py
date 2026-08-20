@@ -7,12 +7,6 @@ import numpy as np
 import pytest
 import yaml
 
-from testbed.data.hdf5_io import write_episode
-from testbed.data.recorded_act_replay import (
-    RecordedActReplayFrame,
-    RecordedActReplaySegment,
-    StrictTrainNumericSupport,
-)
 from testbed.data.dig_support_outlier_alignment import (
     DigSupportOutlierAlignmentError,
     Hdf5QposQvelContract,
@@ -20,6 +14,12 @@ from testbed.data.dig_support_outlier_alignment import (
     build_dig_support_outlier_frame_rows,
     compare_dig_qvel_feature_contracts,
     inspect_recorded_dig_segment_integrity,
+)
+from testbed.data.hdf5_io import write_episode
+from testbed.data.recorded_act_replay import (
+    RecordedActReplayFrame,
+    RecordedActReplaySegment,
+    StrictTrainNumericSupport,
 )
 
 
