@@ -100,18 +100,17 @@ def _render_report(result: Mapping[str, Any]) -> str:
     for segment in result.get("segments", ()):  # Defensive for injected tests.
         if not isinstance(segment, Mapping):
             continue
-        summary = segment.get("forensics", {}).get("suppression_mechanism_summary", {})
+        ranking = segment.get("forensic_ranking", {})
+        if not isinstance(ranking, Mapping):
+            ranking = {}
+        summary = ranking.get("suppression_mechanism_summary", {})
         if not isinstance(summary, Mapping):
             summary = {}
         lines.append(
             "- `{segment}`：受抑制帧 {count}；历史净反向 {opposes}；"
             "最新权重稀释 {diluted}；最新 query 权重 {low:.4%}–{high:.4%}。".format(
-                segment=segment.get("baseline_segment_id", "unknown"),
-                count=segment.get("forensics", {}).get(
-                    "latest_response_suppressed_frame_count", "unknown"
-                )
-                if isinstance(segment.get("forensics"), Mapping)
-                else "unknown",
+                segment=segment.get("segment_id", "unknown"),
+                count=ranking.get("latest_response_suppressed_frame_count", "unknown"),
                 opposes=summary.get(
                     "historical_net_opposes_latest_response_frame_count", "unknown"
                 ),

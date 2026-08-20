@@ -22,8 +22,8 @@ def _result() -> dict[str, object]:
         "closed_loop_claim": False,
         "segments": [
             {
-                "baseline_segment_id": "return:1-2:test",
-                "forensics": {
+                "segment_id": "return:1-2:test",
+                "forensic_ranking": {
                     "latest_response_suppressed_frame_count": 2,
                     "suppression_mechanism_summary": {
                         "historical_net_opposes_latest_response_frame_count": 1,
