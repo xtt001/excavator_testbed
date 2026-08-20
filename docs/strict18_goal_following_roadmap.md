@@ -2,10 +2,10 @@
 
 ## 当前结论与文档地位
 
-当前唯一授权的实现任务是**阶段 A.4：Dig 局部完整状态支持合同验证**。
-它不再问单一维度是否落在全局盒子里，而是预注册“完整 18D 状态附近是否有跨来源、动作一致的
-专家邻居”的候选规则。所有规则只能由 strict-train 冻结，再由 held-out validation 选定；固定
-OOS 段只能在选择后作诊断，不能倒推阈值或训练。A.3 已排除对齐错误，但没有改变 v3 的 OOS 结论。
+当前唯一授权的实现任务是**阶段 A.5：Return temporal dispatch 合同验证**。
+它先解释 oldest-first 聚合如何抵消已记录的目标响应，再用独立 Return 保留数据选择一条 opt-in
+dispatch shadow 候选。两段失败 Return 样本只用于历史取证，绝不能选择窗口、权重、年龄或阈值。
+Dig 单例不再继续寻找自动放行规则；它保留为后续 Unity/闭环单铲观察样本。
 
 已完成的离线证据是：阶段 A 的 Dig 有 9/10 段 `goal_response_plausible`、1/10 段
 `out_of_support`；Return 在 v1 下均为 OOS。阶段 A.1 选择了 Return 的
@@ -504,9 +504,48 @@ held validation 接受率分别仅为 0.466498、0.620476、0.583632，均低于
 `dig_local_state_support_validation_v1/` 的状态为 `support_contract_not_selected`，没有冻结候选可
 用于固定 OOS 段的 target 支持诊断，更不能替代 v1 或进入 runtime。
 
-这说明“单轴速度和局部最近邻存在”仍不足以证明局部合同可泛化到独立来源。当前操作结论不变：
-保持 v1 拒绝/停止。若未来要覆盖该 handoff，先采集跨来源的完整状态与一致专家 action，再重新
-预注册并验证局部合同；不能以本次 OOS 个例调低来源数、距离或动作一致性门槛。
+这说明“单轴速度和局部最近邻存在”仍不足以证明局部合同可泛化到独立来源。因此停止继续为这一个
+Dig OOS 样本设计自动放行规则，也不修改历史 v3 的 `out_of_support` 记录。研究决策是把它作为
+**可接受的尾部观察样本**加入后续 Unity/闭环 Dig 单铲测试；Dig 的 9 个稳定响应段加上这个已通过
+对齐审计的尾部样本，构成“Dig 可读取并跟随条件”的离线测试准入证据。它不等于 runtime 通用支持、
+真实地形效果、安全或 production 放行。
+
+若未来需要 runtime 覆盖该 handoff，仍须先采集跨来源的完整状态与一致专家 action，再重新预注册
+并验证合同；不能以本次 OOS 个例调低来源数、距离或动作一致性门槛。
+
+## 阶段 A.5：Return temporal dispatch 合同验证
+
+### 先冻结旧策略抵消证据
+
+`return_temporal_dispatch_forensics_v1/` 必须先复现既有 stability artifact 的 cache contributor、
+legacy `predict()` 重建和 Stage-A response mask，再逐帧记录 source action step、query offset、
+weight、4D raw action-delta、加权贡献和对最新 query 的反向投影。它只解释旧失败，不能用两段
+`return:898-1043:bb329f176aba`、`return:3959-4161:4afcef2eee82` 选新策略。
+
+### 预注册 temporal dispatch 候选
+
+1. `legacy_100_oldest_first_decay_0p01`：当前 100-query oldest-first、decay 0.01，只作比较基线；
+2. `newest_first_100_decay_0p01`：相同最大年龄、按最新 query 加权；
+3. `newest_first_max_age_20_decay_0p01`：最新加权，明确最大 contributor age 为 20；
+4. `latest_current_chunk_diagnostic`：只取当前 chunk query 0，永远 `diagnostic_only`，不可选择或上线。
+
+每个策略必须显式 reset 于每段入口，baseline/alternate 使用独立 temporal state，且 contributor
+不得跨 reset。候选只能通过 raw public ACT chunks 离线重建，不得在本阶段改默认 adapter/runtime。
+
+### 独立 Return 保留验证与验收
+
+验证集固定为 source-disjoint held Return 的每个 source 最多 8 个稳定段、按固定排序均匀抽样；
+当前为两个 held source 共 16 段。counterfactual token 只从这批采样段的真实 Return envelope 循环
+选择，coverage 固定表述为 `fixed_16_source_balanced_held_validation_segments_only`，不代表完整世界。
+
+响应阈值固定为 `max(1e-6, 0.05 * strict_train_action_scale)`，每个 pair 和聚合都必须达到 80%。
+动作质量边界只从 strict-train expert action 冻结：p01/p99 action envelope、per-axis action-delta p99
+jitter/discontinuity reference。可选择候选必须逐 pair 和聚合都不比 legacy 更接近该分布边界或更不连续，
+通过 replica、cache/reset、legacy 重建和 action-scale 稳定性核验，并严格提升 legacy 的聚合目标响应。
+
+合格候选按更高聚合响应、更低 envelope violation、更低 discontinuity、更低 action-scale 比率、固定
+strategy ID 排序。未选中时保持 legacy；选中时只冻结为 opt-in shadow candidate，随后才可进入 Unity/
+闭环单铲验证实际铲斗轨迹、地形残差和安全约束，不能直接替换默认聚合策略。
 
 ## 后续阶段：仅保留为计划
 

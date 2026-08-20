@@ -63,7 +63,7 @@ REMOVED_DOC_FRAGMENTS = (
 )
 
 STRICT18_ROADMAP_ANCHORS = (
-    "当前唯一授权的实现任务是**阶段 A.4：Dig 局部完整状态支持合同验证**。",
+    "当前唯一授权的实现任务是**阶段 A.5：Return temporal dispatch 合同验证**。",
     "ACT 直接输出 4D action",
     "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
     "teacher_forced_recorded_observation",
@@ -134,6 +134,22 @@ STRICT18_DIG_LOCAL_STATE_SUPPORT_ANCHORS = (
     "目标 OOS 段、其分类、动作、",
     "完整邻居 action/provenance 只在已选择候选后的独立 target",
     "不能直接成为 runtime 通用放行",
+)
+
+STRICT18_RETURN_TEMPORAL_DISPATCH_ANCHORS = (
+    "阶段 A.5：Return temporal dispatch 合同验证",
+    "`return_temporal_dispatch_forensics_v1/`",
+    "`legacy_100_oldest_first_decay_0p01`",
+    "`newest_first_100_decay_0p01`",
+    "`newest_first_max_age_20_decay_0p01`",
+    "`latest_current_chunk_diagnostic`",
+    "每个 source 最多 8 个稳定段",
+    "`fixed_16_source_balanced_held_validation_segments_only`",
+    "max(1e-6, 0.05 * strict_train_action_scale)",
+    "每个 pair 和聚合都必须达到 80%",
+    "严格提升 legacy 的聚合目标响应",
+    "opt-in shadow candidate",
+    "不能直接替换默认聚合策略",
 )
 
 STRICT18_CONCEPTUAL_CONTRACT_ANCHORS = (
@@ -259,6 +275,8 @@ def check_strict18_goal_following_contract(root: str | Path = ".") -> None:
     for needle in STRICT18_DIG_OUTLIER_AUDIT_ANCHORS:
         _require(roadmap, needle, path=roadmap_path)
     for needle in STRICT18_DIG_LOCAL_STATE_SUPPORT_ANCHORS:
+        _require(roadmap, needle, path=roadmap_path)
+    for needle in STRICT18_RETURN_TEMPORAL_DISPATCH_ANCHORS:
         _require(roadmap, needle, path=roadmap_path)
     for needle in STRICT18_CONCEPTUAL_CONTRACT_ANCHORS:
         _require(conceptual_contract, needle, path=conceptual_contract_path)

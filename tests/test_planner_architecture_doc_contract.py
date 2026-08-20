@@ -14,7 +14,7 @@ from scripts.planner_architecture_doc_guard import (
 )
 
 _STRICT18_BASE_ROADMAP_LINES = (
-    "当前唯一授权的实现任务是**阶段 A.4：Dig 局部完整状态支持合同验证**。",
+    "当前唯一授权的实现任务是**阶段 A.5：Return temporal dispatch 合同验证**。",
     "ACT 直接输出 4D action",
     "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
     "teacher_forced_recorded_observation",
@@ -119,6 +119,22 @@ _STRICT18_DIG_LOCAL_STATE_SUPPORT_LINES = (
     "不能直接成为 runtime 通用放行",
 )
 
+_STRICT18_RETURN_TEMPORAL_DISPATCH_LINES = (
+    "阶段 A.5：Return temporal dispatch 合同验证",
+    "`return_temporal_dispatch_forensics_v1/`",
+    "`legacy_100_oldest_first_decay_0p01`",
+    "`newest_first_100_decay_0p01`",
+    "`newest_first_max_age_20_decay_0p01`",
+    "`latest_current_chunk_diagnostic`",
+    "每个 source 最多 8 个稳定段",
+    "`fixed_16_source_balanced_held_validation_segments_only`",
+    "max(1e-6, 0.05 * strict_train_action_scale)",
+    "每个 pair 和聚合都必须达到 80%",
+    "严格提升 legacy 的聚合目标响应",
+    "opt-in shadow candidate",
+    "不能直接替换默认聚合策略",
+)
+
 
 def _strict18_roadmap_text(
     *,
@@ -128,6 +144,7 @@ def _strict18_roadmap_text(
     include_dig_joint_support_family: bool = True,
     include_dig_outlier_audit: bool = True,
     include_dig_local_state_support: bool = True,
+    include_return_temporal_dispatch: bool = True,
 ) -> str:
     lines = list(_STRICT18_BASE_ROADMAP_LINES)
     if include_formal_rules:
@@ -142,6 +159,8 @@ def _strict18_roadmap_text(
         lines.extend(_STRICT18_DIG_OUTLIER_AUDIT_LINES)
     if include_dig_local_state_support:
         lines.extend(_STRICT18_DIG_LOCAL_STATE_SUPPORT_LINES)
+    if include_return_temporal_dispatch:
+        lines.extend(_STRICT18_RETURN_TEMPORAL_DISPATCH_LINES)
     return "\n".join(lines)
 
 
@@ -377,5 +396,21 @@ def test_strict18_goal_following_contract_requires_local_state_support_rules(
         _strict18_conceptual_contract_text(),
     )
 
-    with pytest.raises(PlannerDocGuardError, match="dig_local_complete_state"):
+    with pytest.raises(PlannerDocGuardError, match="阶段 A.4"):
+        check_strict18_goal_following_contract(tmp_path)
+
+
+def test_strict18_goal_following_contract_requires_return_temporal_dispatch_rules(
+    tmp_path: Path,
+) -> None:
+    _write(
+        tmp_path / "docs/strict18_goal_following_roadmap.md",
+        _strict18_roadmap_text(include_return_temporal_dispatch=False),
+    )
+    _write(
+        tmp_path / "docs/planner_to_act_conceptual_contract.md",
+        _strict18_conceptual_contract_text(),
+    )
+
+    with pytest.raises(PlannerDocGuardError, match="return_temporal_dispatch"):
         check_strict18_goal_following_contract(tmp_path)
