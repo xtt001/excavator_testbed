@@ -2,10 +2,10 @@
 
 ## 当前结论与文档地位
 
-当前唯一授权的实现任务是**阶段 A.2：Return 响应稳定性原因审计与 Dig 联合支持合同独立验证**。
-它先解释两个已处于 Return v2 支持范围内、却未达到动作稳定性要求的片段；同时独立验证 Dig
-是否存在可接受正常边缘状态、又能拒绝预注册陌生状态的联合支持合同。两条审计完成后，才以
-固定合同完整重跑阶段 A；它们不重新定义目标，也不把本次目标条件审计的结果拿来调阈值。
+当前唯一授权的实现任务是**阶段 A.3：Dig 数值支持范围异常的对齐与覆盖审计**。
+它只解释阶段 A v3 中固定的 Dig OOS 段到底来自记录/字段对齐、短暂记录异常，还是训练覆盖
+证据不足；不会把目标段用来调支持阈值或训练。阶段 A.2 的 Return 原因审计和 Dig 联合支持
+合同验证已经完成，v3 也已完整重跑；其 OOS/invalid 结论仍然有效，不能由本审计直接改写。
 
 已完成的离线证据是：阶段 A 的 Dig 有 9/10 段 `goal_response_plausible`、1/10 段
 `out_of_support`；Return 在 v1 下均为 OOS。阶段 A.1 选择了 Return 的
@@ -394,6 +394,56 @@ runtime handoff。
 完整重跑只回答 Dig、Return 是否能在各自可信支持范围内稳定读取目标条件。只有两者都在其冻结
 合同下完成有效重跑并获得 `goal_response_plausible`，才有资格准备后续 Unity 单铲目标效果对照；
 v3 本身不进入阶段 B，仍不证明“指哪挖哪”、地形效果、安全或 production readiness。
+
+## 阶段 A.3：Dig 数值支持范围异常的对齐与覆盖审计
+
+### 固定对象、边界与输入
+
+本阶段只审计 v3 中唯一的 Dig OOS 段
+`dig:1044-1083:37a4b7afda73`。它保持同一 JSONL/HDF5、同一 strict Dig training config、同一
+`axis_p01_p99_v1` 和同一 Stage-A 分类；不改 p01/p99、不选择新候选、不训练、不创建训练 HDF5、
+不改 runtime handoff、Planner、安全阈值、timeout、Unity 或真实设备。
+
+工件必须以 no-overwrite 根 `dig_support_outlier_audit_v1/` 输出逐帧 table、对齐结果、分布结果、
+处理决定和所有输入 SHA。每份输出固定标记
+`teacher_forced_recorded_observation`、`diagnostic_only=true`、
+`promotion_eligible=false`、`closed_loop_claim=false`。
+
+### 先排除数据合同错误
+
+每帧必须保留 action JSONL/HDF5 index、action step、前一帧 observation step、`qpos`、`qvel`、
+完整 10D `dig_cut_tokens` 以及 v1 每维 p01/p99。审计必须证明 action 使用前一帧 observation、
+JSONL/HDF5 action 行连续、token 稳定、没有段内 skill switch 或 policy reset。
+
+`qvel[1]` 的字段名只能从 HDF5 metadata 记录为 `boom_speed`；没有显式单位或 qvel-specific scale
+metadata 时，物理单位固定写为 `not_inferred`。它必须与 strict-train Dig HDF5 的 dtype、字段顺序和
+原始表示一致。严格训练支持范围只允许 `action_loss_mask=1` 的行；mask=0、其他 primitive 和被
+split 排除的 Dig primitive 窗口只能作为诊断对照，不能回填或扩展支持范围。
+
+若上述任一对齐、字段或时间合同失败，处理决定只能是 `repair_data_contract_then_rerun_stage_a`；
+不得把当前 OOS 解释为 ACT 能力限制。
+
+### 覆盖与保留验证边界
+
+对通过对齐的段，报告 qvel[1] 的整个段区间和仅 OOS 帧区间、连续 OOS run、每帧最近 strict-train
+Dig state（固定的 v1-span-normalised L2 仅作描述）、同 qvel[1] OOS 数值区间在 strict-train
+mask=1、held validation、mask=0、其他 primitive、排除 Dig 窗口中的行数与谱系。最近邻和单轴数值
+相近都不能自动证明完整状态已获支持，也不能成为新阈值。
+
+held validation 只能展示正常状态在既有 v1 下的位置；目标段不得参与任何候选拟合、分位数、距离
+阈值、排序或验收。此前 Dig 五种预注册 joint family 均未通过保留验证的 normal/edge/OOD 三项门槛，
+所以 A.3 即使发现 qvel[1] 在训练中有数值先例，也不能宣称 v1 过于保守或放宽 runtime。
+
+### 处理决定
+
+1. 对齐错误：修正数据合同后，以新 lineage 完整重跑阶段 A。
+2. 短暂记录异常：只有逐帧证据确实显示孤立异常或采集/QC 失配时，标为不适合作为能力证据并追查
+   采集；不能凭 OOS 标签自行断言异常。
+3. 没有已验证的完整状态支持：保持 v1，在 runtime 对该 Return→Dig handoff 拒绝或停止。若任务
+   确实要求覆盖这类姿态/速度组合，采集对应专家数据并在新的 source-disjoint 合同下重训。
+
+本阶段不进入阶段 B。它只决定当前 OOS 能否作为可靠能力证据，以及在没有新证据时必须保持何种
+fail-closed 处理。
 
 ## 后续阶段：仅保留为计划
 

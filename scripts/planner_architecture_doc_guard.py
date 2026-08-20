@@ -63,7 +63,7 @@ REMOVED_DOC_FRAGMENTS = (
 )
 
 STRICT18_ROADMAP_ANCHORS = (
-    "当前唯一授权的实现任务是**阶段 A.2：Return 响应稳定性原因审计与 Dig 联合支持合同独立验证**。",
+    "当前唯一授权的实现任务是**阶段 A.3：Dig 数值支持范围异常的对齐与覆盖审计**。",
     "ACT 直接输出 4D action",
     "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
     "teacher_forced_recorded_observation",
@@ -103,6 +103,21 @@ STRICT18_DIG_JOINT_SUPPORT_FAMILY_ANCHORS = (
     "validation_v1_edge_coverage >= 0.99",
     "`synthetic_obvious_ood_rejection` 降序",
     "A.1 的 `support_contract_v2` 候选 family 不同",
+)
+
+STRICT18_DIG_OUTLIER_AUDIT_ANCHORS = (
+    "阶段 A.3：Dig 数值支持范围异常的对齐与覆盖审计",
+    "`dig:1044-1083:37a4b7afda73`",
+    "`axis_p01_p99_v1`",
+    "`dig_support_outlier_audit_v1/`",
+    "action 使用前一帧 observation",
+    "`boom_speed`",
+    "`not_inferred`",
+    "`action_loss_mask=1`",
+    "不得参与任何候选拟合、分位数、距离",
+    "`repair_data_contract_then_rerun_stage_a`",
+    "保持 v1",
+    "runtime 对该 Return→Dig handoff 拒绝或停止",
 )
 
 STRICT18_CONCEPTUAL_CONTRACT_ANCHORS = (
@@ -224,6 +239,8 @@ def check_strict18_goal_following_contract(root: str | Path = ".") -> None:
     for needle in STRICT18_FOLLOWUP_AUDIT_ANCHORS:
         _require(roadmap, needle, path=roadmap_path)
     for needle in STRICT18_DIG_JOINT_SUPPORT_FAMILY_ANCHORS:
+        _require(roadmap, needle, path=roadmap_path)
+    for needle in STRICT18_DIG_OUTLIER_AUDIT_ANCHORS:
         _require(roadmap, needle, path=roadmap_path)
     for needle in STRICT18_CONCEPTUAL_CONTRACT_ANCHORS:
         _require(conceptual_contract, needle, path=conceptual_contract_path)

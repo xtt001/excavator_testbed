@@ -14,7 +14,7 @@ from scripts.planner_architecture_doc_guard import (
 )
 
 _STRICT18_BASE_ROADMAP_LINES = (
-    "当前唯一授权的实现任务是**阶段 A.2：Return 响应稳定性原因审计与 Dig 联合支持合同独立验证**。",
+    "当前唯一授权的实现任务是**阶段 A.3：Dig 数值支持范围异常的对齐与覆盖审计**。",
     "ACT 直接输出 4D action",
     "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
     "teacher_forced_recorded_observation",
@@ -88,6 +88,21 @@ _STRICT18_DIG_JOINT_SUPPORT_FAMILY_LINES = (
     "A.1 的 `support_contract_v2` 候选 family 不同",
 )
 
+_STRICT18_DIG_OUTLIER_AUDIT_LINES = (
+    "阶段 A.3：Dig 数值支持范围异常的对齐与覆盖审计",
+    "`dig:1044-1083:37a4b7afda73`",
+    "`axis_p01_p99_v1`",
+    "`dig_support_outlier_audit_v1/`",
+    "action 使用前一帧 observation",
+    "`boom_speed`",
+    "`not_inferred`",
+    "`action_loss_mask=1`",
+    "不得参与任何候选拟合、分位数、距离",
+    "`repair_data_contract_then_rerun_stage_a`",
+    "保持 v1",
+    "runtime 对该 Return→Dig handoff 拒绝或停止",
+)
+
 
 def _strict18_roadmap_text(
     *,
@@ -95,6 +110,7 @@ def _strict18_roadmap_text(
     include_support_contract_v2: bool = True,
     include_followup_audit: bool = True,
     include_dig_joint_support_family: bool = True,
+    include_dig_outlier_audit: bool = True,
 ) -> str:
     lines = list(_STRICT18_BASE_ROADMAP_LINES)
     if include_formal_rules:
@@ -105,6 +121,8 @@ def _strict18_roadmap_text(
         lines.extend(_STRICT18_FOLLOWUP_AUDIT_LINES)
     if include_dig_joint_support_family:
         lines.extend(_STRICT18_DIG_JOINT_SUPPORT_FAMILY_LINES)
+    if include_dig_outlier_audit:
+        lines.extend(_STRICT18_DIG_OUTLIER_AUDIT_LINES)
     return "\n".join(lines)
 
 
@@ -292,7 +310,7 @@ def test_strict18_goal_following_contract_requires_followup_audit_rules(
         _strict18_conceptual_contract_text(),
     )
 
-    with pytest.raises(PlannerDocGuardError, match="return:898"):
+    with pytest.raises(PlannerDocGuardError, match="阶段 A.2"):
         check_strict18_goal_following_contract(tmp_path)
 
 
@@ -309,4 +327,20 @@ def test_strict18_goal_following_contract_requires_dig_joint_support_family(
     )
 
     with pytest.raises(PlannerDocGuardError, match="dig_joint_regularized"):
+        check_strict18_goal_following_contract(tmp_path)
+
+
+def test_strict18_goal_following_contract_requires_dig_outlier_audit_rules(
+    tmp_path: Path,
+) -> None:
+    _write(
+        tmp_path / "docs/strict18_goal_following_roadmap.md",
+        _strict18_roadmap_text(include_dig_outlier_audit=False),
+    )
+    _write(
+        tmp_path / "docs/planner_to_act_conceptual_contract.md",
+        _strict18_conceptual_contract_text(),
+    )
+
+    with pytest.raises(PlannerDocGuardError, match="dig:1044"):
         check_strict18_goal_following_contract(tmp_path)

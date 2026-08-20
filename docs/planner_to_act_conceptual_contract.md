@@ -15,11 +15,11 @@
 ## Strict-18 当前冻结边界（2026-08）
 
 [Strict-18 目标条件敏感性离线审计路线](strict18_goal_following_roadmap.md) 是当前后续
-实现范围的权威文档。阶段 A 和 A.1 已冻结 teacher-forced 目标条件敏感性与支持范围证据；当前
-唯一授权的实现是阶段 A.2：固定两段 Return `goal_response_invalid` 的输入、checkpoint 和 80%
-稳定性门槛，逐项审计 token 归一化、观测历史窗口和 temporal aggregation；同时独立验证 Dig 的
-联合支持合同。target rollout 不能参与候选拟合、阈值、排序或事后调参。它不训练、不运行
-Unity/live、不创建训练 HDF5，也不改变 production/default runtime、安全阈值或 timeout。
+实现范围的权威文档。阶段 A、A.1 和 A.2 已冻结 teacher-forced 目标条件、支持范围与 Return
+时序原因证据；当前唯一授权的实现是阶段 A.3：对固定 Dig OOS 段逐帧核对前一帧 observation、
+qpos/qvel/token 表示、`action_loss_mask=1` 训练人口与 held validation 分布。target rollout 只可
+用于描述，不能参与候选拟合、阈值、排序或事后调参。它不训练、不运行 Unity/live、不创建训练
+HDF5，也不改变 production/default runtime、安全阈值或 timeout。
 
 Planner 只产生任务级目标并由 goal 生命周期服务锁定 `goal_id`；primitive scheduler 选择
 当前 skill；ACT 直接输出 4D action。Planner 不生成 joystick、qpos setpoint 或必须逐点
@@ -48,6 +48,10 @@ active-frame fraction 和三个 active anchor 判定；任何缓存清空、窗�
 aggregation 的试验只能解释原因，不能把 `goal_response_invalid` 改成通过。Dig 的联合支持合同
 必须以 source-disjoint strict-train/held-out validation 预注册并独立选择；选择前 Dig 保持 v1，
 也不改变 handoff 或 production runtime。
+
+Dig A.3 即使观察到单轴 qvel 在 strict-train 中存在数值先例，也不能把它当作完整状态支持或放宽
+`support_contract_v1`。对齐错误先修合同；没有验证合格的新合同前，Return→Dig handoff 对该状态
+仍应拒绝或停止。这个离线判断不证明物理单位、闭环轨迹、地形效果或生产安全。
 
 ## Historical diagnostic legacy：2026-07-28 Actual-tuple return transition 合同
 
