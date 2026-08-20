@@ -445,6 +445,19 @@ held validation 只能展示正常状态在既有 v1 下的位置；目标段不
 本阶段不进入阶段 B。它只决定当前 OOS 能否作为可靠能力证据，以及在没有新证据时必须保持何种
 fail-closed 处理。
 
+### A.3 已完成的离线结论
+
+固定段的对齐检查已通过：40 帧 action 均绑定前一帧 observation，JSONL/HDF5 行连续，token
+稳定；`qvel[1]` 的 metadata 字段为 `boom_speed`、表示为 raw float32，但物理单位仍为
+`not_inferred`。OOS 是 action 1048–1064 的连续 17 帧，不是单帧突刺，也没有段内 reset 或
+skill switch。
+
+该 OOS 帧的 `qvel[1]` 数值区间在 strict-train、`action_loss_mask=1` 中有 253 行，在 held
+validation 中有 116 行；所以不能把单轴速度 OOS 直接说成训练从未见过。但这也不能把该段列为
+受支持状态：五种 Dig joint 候选仍未通过 held-validation 合同。当前处理决定是保持 v1，并在
+runtime 对这类 Return→Dig handoff 拒绝或停止；若后续任务必须允许它，应采集对应完整状态的专家
+数据并在新的 source-disjoint 合同下重训。
+
 ## 后续阶段：仅保留为计划
 
 ### 阶段 B：收口目标与结果的数据合同
