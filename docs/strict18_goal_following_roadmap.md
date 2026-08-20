@@ -2,10 +2,11 @@
 
 ## 当前结论与文档地位
 
-当前唯一授权的实现任务是**阶段 A.5：Return temporal dispatch 合同验证**。
-它先解释 oldest-first 聚合如何抵消已记录的目标响应，再用独立 Return 保留数据选择一条 opt-in
-dispatch shadow 候选。两段失败 Return 样本只用于历史取证，绝不能选择窗口、权重、年龄或阈值。
-Dig 单例不再继续寻找自动放行规则；它保留为后续 Unity/闭环单铲观察样本。
+当前唯一授权的实现任务是**阶段 A.6：受限 Return 闭环因果诊断**。
+这是用户单独授权的 action-driving Return-only 诊断，用 16 个无重试试验臂比较相同入口下的两个
+真实目标与 legacy/latest-current-chunk 两种派发。它只判断旧 temporal aggregation 是否压制目标响应，
+不承担策略晋级、完整作业或生产验收。当前 Unity `REALIGN_POSE` 不应用非零 `qvel`，所以真实执行状态
+仍是 `preflight_blocked`；路线冻结不等于已经可以运行。
 
 已完成的离线证据是：阶段 A 的 Dig 有 9/10 段 `goal_response_plausible`、1/10 段
 `out_of_support`；Return 在 v1 下均为 OOS。阶段 A.1 选择了 Return 的
@@ -13,9 +14,10 @@ Dig 单例不再继续寻找自动放行规则；它保留为后续 Unity/闭环
 得到 7/9 段 `goal_response_plausible` 和 2/9 段 `goal_response_invalid`。Dig 没有通过候选
 验收，仍使用 v1。这些都是 teacher-forced 诊断结果，不构成闭环或生产结论。
 
-阶段 A 与阶段 A.1 都只产生 teacher-forced recorded-observation 的离线诊断证据。它们不是
-Unity 闭环、真实机器验证、生产证明或训练结果；本轮不训练、不创建训练 HDF5、不运行 Unity
-rollout/live/1×10，也不改变 production/default runtime、安全阈值或 timeout。
+阶段 A 至 A.5 的既有结果保持原证据边界：它们只产生 teacher-forced recorded-observation 或独立
+held Return 的离线诊断证据，不构成 Unity 闭环、真实机器验证、生产证明或训练结果。阶段 A.6 是
+单独授权的 Unity action-driving Return-only 诊断，但仍不训练、不创建训练 HDF5、不运行真实机器或
+1×10，也不改变 production/default runtime、安全阈值或 timeout。
 
 本文固定后续实现边界。它不改写
 [历史 handoff](goal_following_mainline_handoff_20260731.md) 或
@@ -559,6 +561,100 @@ strategy ID 排序。未选中时保持 legacy；选中时只冻结为 opt-in sh
 严格改善 legacy 的聚合响应，并在至少一个 pair 的 envelope 或 discontinuity 质量门槛上更差，故
 `return_temporal_dispatch_validation_v1/` 状态为 `dispatch_contract_not_selected`。默认 legacy 聚合
 不变，不生成 opt-in shadow candidate，也不进入 Unity/闭环单铲验证。
+
+## 阶段 A.6：受限 Return 闭环因果诊断（已授权，真实执行 `preflight_blocked`）
+
+本阶段工件 ID 固定为 `bounded_return_closed_loop_causal_diagnostic_v1`。这是用户单独授权的 action-driving Return-only 诊断：
+它会让选定的 Return policy 动作实际驱动 Unity，但不会启动完整
+planner、连续作业或任何其他 primitive。整个工件固定为 `diagnostic_only=true`、
+`promotion_eligible=false`；即使观察到清晰因果差异，也不能据此替换默认 temporal aggregation。
+
+### 冻结的四个入口与 16 个试验臂
+
+每个入口取阶段 A recorded replay 中首个 Return action 的前一帧 observation。任何 arm 都必须实际应用
+完整 `qpos + qvel` fixture，不能只恢复关节位置：
+
+| fixture | 历史段与 pre-action observation | qpos | qvel | original → alternate |
+| --- | --- | --- | --- | --- |
+| `F1` = `return:898-1043:bb329f176aba` | observation 897 | `[0.74795699, 0.34310636, 0.30324715, 0.24549121]` | `[-0.15910102, 0.06749017, -0.07764082, -1.59256399]` | cell 0 → cell 4 |
+| `N1` = `return:3453-3664:bb329f176aba` | observation 3452 | `[0.75891024, 0.17245358, 0.46108255, 0.18568459]` | `[-0.23446512, 0.07024936, -0.20576259, -1.59381640]` | cell 0 → cell 4 |
+| `F2` = `return:3959-4161:4afcef2eee82` | observation 3958 | `[0.75662756, 0.45767179, 0.32543743, 0.24470162]` | `[-0.18330808, 0.14484043, -0.35911530, -1.59288502]` | cell 4 → cell 1 |
+| `N2` = `return:4437-4633:4afcef2eee82` | observation 4436 | `[0.75445473, 0.34224159, 0.36418903, 0.25357413]` | `[-0.07492465, 0.19027799, -0.20308734, -1.55695999]` | cell 4 → cell 1 |
+
+四个 fixture 都运行 `original` / `alternate` × legacy / latest-current-chunk，共固定为
+`16-arm/no-retry`。legacy 的精确 ID 是 `legacy_100_oldest_first_decay_0p01`；latest-current-chunk 的
+精确 ID 是 `latest_current_chunk_diagnostic`。后者只取当前 chunk 的 query 0，并且
+`latest_current_chunk_diagnostic` 只作因果诊断对照，永远不可选择、晋级或成为默认派发。
+
+A.5 已拒绝的 `newest_first_100_decay_0p01` 和 `newest_first_max_age_20_decay_0p01` 不得复活，也不构成
+A.6 的额外试验臂。每个 arm 使用独立 policy/temporal state，在 fixture 应用并完成 preflight 后只
+reset 一次；目标 token、checkpoint、stats、相机顺序、action scale 和安全配置在首个动作前锁定。
+执行顺序必须在工件 manifest 中预注册，不能根据前序结果调整。
+
+### 动作前的强制 preflight
+
+任何 arm 发出非零动作前必须同时满足：
+
+1. fixture 服务已经实际应用完整 `qpos + qvel`，并由响应明确确认 `qpos_applied=true` 和
+   `qvel_applied=true`；随后观测到的四轴位置与速度须落入预注册容差。只回显请求值不算应用成功。
+2. 同一 fixture 的四个 arm 必须恢复同一完整地形状态，并匹配可观测地形状态、scene SHA、runtime build、四相机顺序和输入 SHA；
+   checkpoint、dataset stats、Return config、original/alternate token
+   与动作缩放也必须逐项匹配。107D 可观测地形指纹只能用于复核，不能代替隐藏土壤状态的恢复证据。
+3. RESET 目前只确认 Unity managed random seed；`soil_seed_status=not_supported`，所以 seed 相同不能
+   证明 AGX 隐藏土壤状态相同。动作前必须有完整地形快照恢复，或可验证的确定性 soil seed 恢复；
+   只有可观测地形指纹而没有上述任一能力时，整个矩阵保持 `preflight_blocked`。
+4. `scenario_id` 当前只解析、不选择场景。不得把请求中的 scenario 字符串当成场景已切换；必须以
+   实际加载的 scene SHA、runtime build 和相机合同为准。
+
+当前 Unity `REALIGN_POSE` 会清零速度并报告 `qvel_applied=false`；历史 source 也只记录可观测地形，
+没有可恢复的完整土壤快照或确定性 soil seed。现有协议还没有实际施加动作、逐轴限位干预的原子遥测，
+专用 runner 也尚未接入正式 Return handoff evaluator。因此真实 action-driving 执行必须保持
+`preflight_blocked`。不得以 qpos-only、zero-qvel surrogate 冒充原始入口；observable-only terrain
+surrogate 同样不能冒充原始地形。不得通过放宽容差、删除速度检查、前滚几步后近似命中或把请求值写进
+manifest 来绕过。fixture 缺失或任一 lineage 不匹配时，该 arm 记录阻塞并结束；`no-retry` 禁止自动换
+seed、换入口或补跑替代臂。
+
+Python 侧先用已有阶段 A v3 与 source-disjoint Return 验证工件生成 no-overwrite runtime lock；这一步只读
+源码和工件，不连接 Unity：
+
+```bash
+python -m testbed.cli.return_closed_loop_probe \
+  --stage-a-v3-root <act_goal_condition_sensitivity_v3> \
+  --return-training-config <return_training_config.yaml> \
+  --return-validation <return_temporal_dispatch_validation_v1/validation.json> \
+  --runtime-lock <new_runtime_lock.json> \
+  --output-root <new_probe_root> \
+  --prepare-runtime-lock-only
+```
+
+随后去掉 `--prepare-runtime-lock-only` 运行正式 preflight。只有 lock 与全部 16 个 arm 的动作前检查都通过，
+并另有明确动作授权时，才可加 `--execute`。当前预计结果是 `preflight_blocked`，且
+`nonzero_action_count=0`；blocked 工件仍须写出 `manifest.json`、`preflight.json`、`arms.json`、
+`results.json` 和 `report.md`，作为没有运动的能力审计证据。
+
+### Return-only 执行与安全终止
+
+每个 arm 的硬上限为 420 个 STEP。只允许冻结 Return checkpoint 产生 4D action，禁止 scheduler
+转入其他 primitive。运行中只观测 Return→Dig handoff；观察到 handoff、达到 420 步上限或触发任何
+安全停止后，都执行 zero action → neutral acknowledgement，然后结束该 arm。不得进入 Dig、Carry 或 Dump。
+
+动作边界、碰撞、高力、非法 contact lineage、硬底、卡死和 timeout 沿用当前冻结安全合同；
+不修改 production/default runtime、安全阈值或 timeout。任一安全停止都保持原始失败结果，不允许 latest 路径、
+替代目标或自动重试绕过。
+
+### 必须记录的闭环证据
+
+no-overwrite 工件至少逐 STEP 记录：
+
+- 同步图像、`qpos/qvel`、请求动作、实际施加动作、逐轴限位干预和 temporal contributor；
+- 铲斗轨迹、目标包络命中、轨迹分离起点、动作抖动/跳变/边界、碰撞与安全停止；
+- 每个目标的最终位置与姿态误差、首次进入及持续保持包络的时间、handoff observation；
+- RESET/fixture 报告、可观测地形指纹、scene/build/camera/SHA lineage、停止原因和 neutral ACK。
+
+解释边界固定如下：legacy 下 original/alternate 已分开，支持 teacher-forced 限制是离线失败的重要原因；
+legacy 趋同而 latest 分开，只支持“历史聚合可能压制条件响应”；两者都趋同，原因更可能位于目标表达、
+ACT 条件能力或动力学执行；两者都分开但 latest 更抖、越界或触发安全停止，说明 legacy 平滑具有价值。
+这些结论都不允许 latest-current-chunk 晋级，也不允许修改默认策略；任何生产候选仍需另行预注册、实现和批准。
 
 ## 后续阶段：仅保留为计划
 

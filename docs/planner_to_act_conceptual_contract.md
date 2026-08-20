@@ -15,11 +15,10 @@
 ## Strict-18 当前冻结边界（2026-08）
 
 [Strict-18 目标条件敏感性离线审计路线](strict18_goal_following_roadmap.md) 是当前后续
-实现范围的权威文档。阶段 A 至 A.4 已冻结 teacher-forced 目标条件、支持范围、Return 时序原因及
-固定 Dig OOS 对齐/局部支持证据；当前唯一授权的实现是阶段 A.5：以两段 Return 历史 contributor
-取证为解释边界，再只用 source-disjoint held Return 选择 temporal dispatch shadow 候选。target
-失败段不得参与窗口、权重、年龄、阈值或排序。它不训练、不运行 Unity/live、不创建训练 HDF5，也不
-改变 production/default runtime、安全阈值或 timeout。
+实现范围的权威文档。阶段 A 至 A.5 已冻结 teacher-forced 目标条件、支持范围、Return 时序原因、
+固定 Dig OOS 对齐/局部支持证据，以及“独立 held Return 未选出新派发策略”的历史结论。当前唯一
+授权的实现是阶段 A.6；它不重开 A.5 候选选择，也不修改 production/default runtime、安全阈值或
+timeout。
 
 Planner 只产生任务级目标并由 goal 生命周期服务锁定 `goal_id`；primitive scheduler 选择
 当前 skill；ACT 直接输出 4D action。Planner 不生成 joystick、qpos setpoint 或必须逐点
@@ -64,6 +63,21 @@ Return A.5 把“模型是否读取条件”和“哪一块历史计划实际派
 
 A.5 的独立 Return 验证没有选出策略：两条较新候选既未严格改善 legacy 响应，也未维持全部质量
 门槛。因此 legacy 仍是默认派发，不能把历史 contributor 取证直接转成 runtime 修复或 Unity 放行。
+
+A.6 是用户单独授权的 action-driving Return-only 闭环因果诊断。它只在四个冻结入口上比较
+original/alternate 目标和 legacy/latest-current-chunk 派发，固定 16 个无重试试验臂；不运行
+Dig/Carry/Dump，也不代表完整 planner 闭环。latest-current-chunk 只作因果对照，不构成默认派发或 production 晋级证据。
+
+完整 qpos + qvel fixture 未实际应用时必须 preflight_blocked。当前 Unity `REALIGN_POSE` 明确忽略
+请求的非零 `qvel`，所以 qpos-only 或 zero-qvel 代理不能冒充历史失败/正常入口。动作前还必须恢复
+完整地形状态，并匹配可观测地形状态、加载场景、runtime build、四相机顺序、checkpoint/stats/config/
+token/input SHA；managed random seed 不证明隐藏 AGX 土壤状态一致，107D 可观测指纹也不能替代完整
+土壤快照或确定性 soil seed，`scenario_id` 字符串同样不证明场景已切换。没有实际施加动作与逐轴限位
+干预遥测、或没有正式 Return handoff evaluator 时，也必须在策略加载和非零动作前阻断。
+
+A.6 的 handoff 只作为观测结果。达到 handoff、420-step 上限或安全停止时，必须发送零动作并等待
+neutral acknowledgement，然后终止该 arm；scheduler 不得继续进入 Dig、Carry 或 Dump。轨迹分离、
+目标包络命中、动作连续性、限位、碰撞和安全停止只能形成受限 Unity 因果诊断，不能直接改默认策略。
 
 ## Historical diagnostic legacy：2026-07-28 Actual-tuple return transition 合同
 

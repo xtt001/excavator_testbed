@@ -14,7 +14,7 @@ from scripts.planner_architecture_doc_guard import (
 )
 
 _STRICT18_BASE_ROADMAP_LINES = (
-    "当前唯一授权的实现任务是**阶段 A.5：Return temporal dispatch 合同验证**。",
+    "当前唯一授权的实现任务是**阶段 A.6：受限 Return 闭环因果诊断**。",
     "ACT 直接输出 4D action",
     "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
     "teacher_forced_recorded_observation",
@@ -135,6 +135,37 @@ _STRICT18_RETURN_TEMPORAL_DISPATCH_LINES = (
     "不能直接替换默认聚合策略",
 )
 
+_STRICT18_BOUNDED_RETURN_CLOSED_LOOP_LINES = (
+    "阶段 A.6：受限 Return 闭环因果诊断",
+    "`bounded_return_closed_loop_causal_diagnostic_v1`",
+    "用户单独授权的 action-driving Return-only 诊断",
+    "`16-arm/no-retry`",
+    "`F1` = `return:898-1043:bb329f176aba`",
+    "`N1` = `return:3453-3664:bb329f176aba`",
+    "`F2` = `return:3959-4161:4afcef2eee82`",
+    "`N2` = `return:4437-4633:4afcef2eee82`",
+    "`original` / `alternate` × legacy / latest-current-chunk",
+    "`latest_current_chunk_diagnostic` 只作因果诊断对照",
+    "`newest_first_100_decay_0p01` 和 `newest_first_max_age_20_decay_0p01` 不得复活",
+    "每个 arm 的硬上限为 420 个 STEP",
+    "只观测 Return→Dig handoff",
+    "zero action → neutral acknowledgement",
+    "不得进入 Dig、Carry 或 Dump",
+    "完整 `qpos + qvel` fixture",
+    "`qvel_applied=true`",
+    "`preflight_blocked`",
+    "不得以 qpos-only、zero-qvel surrogate 冒充原始入口",
+    "可观测地形状态、scene SHA、runtime build、四相机顺序和输入 SHA",
+    "107D 可观测地形指纹只能用于复核，不能代替隐藏土壤状态的恢复证据",
+    "完整地形快照恢复，或可验证的确定性 soil seed 恢复",
+    "实际施加动作、逐轴限位干预的原子遥测",
+    "尚未接入正式 Return handoff evaluator",
+    "`soil_seed_status=not_supported`",
+    "`scenario_id` 当前只解析、不选择场景",
+    "铲斗轨迹、目标包络命中、轨迹分离起点、动作抖动/跳变/边界、碰撞与安全停止",
+    "不修改 production/default runtime、安全阈值或 timeout",
+)
+
 
 def _strict18_roadmap_text(
     *,
@@ -145,6 +176,7 @@ def _strict18_roadmap_text(
     include_dig_outlier_audit: bool = True,
     include_dig_local_state_support: bool = True,
     include_return_temporal_dispatch: bool = True,
+    include_bounded_return_closed_loop: bool = True,
 ) -> str:
     lines = list(_STRICT18_BASE_ROADMAP_LINES)
     if include_formal_rules:
@@ -161,6 +193,8 @@ def _strict18_roadmap_text(
         lines.extend(_STRICT18_DIG_LOCAL_STATE_SUPPORT_LINES)
     if include_return_temporal_dispatch:
         lines.extend(_STRICT18_RETURN_TEMPORAL_DISPATCH_LINES)
+    if include_bounded_return_closed_loop:
+        lines.extend(_STRICT18_BOUNDED_RETURN_CLOSED_LOOP_LINES)
     return "\n".join(lines)
 
 
@@ -172,6 +206,11 @@ def _strict18_conceptual_contract_text() -> str:
         "它不改变\n"
         "Planner 的目标语义、ACT 输入责任、scheduler/handoff 决策或 production/default runtime。\n"
         "Return 的支持证据冒充 Dig 的支持证据。\n"
+        "A.6 是用户单独授权的 action-driving Return-only 闭环因果诊断。\n"
+        "完整 qpos + qvel fixture 未实际应用时必须 preflight_blocked。\n"
+        "107D 可观测指纹也不能替代完整\n"
+        "土壤快照或确定性 soil seed\n"
+        "latest-current-chunk 只作因果对照，不构成默认派发或 production 晋级证据。\n"
     )
 
 
@@ -413,4 +452,89 @@ def test_strict18_goal_following_contract_requires_return_temporal_dispatch_rule
     )
 
     with pytest.raises(PlannerDocGuardError, match="return_temporal_dispatch"):
+        check_strict18_goal_following_contract(tmp_path)
+
+
+def test_strict18_goal_following_contract_requires_bounded_return_closed_loop_rules(
+    tmp_path: Path,
+) -> None:
+    _write(
+        tmp_path / "docs/strict18_goal_following_roadmap.md",
+        _strict18_roadmap_text(include_bounded_return_closed_loop=False),
+    )
+    _write(
+        tmp_path / "docs/planner_to_act_conceptual_contract.md",
+        _strict18_conceptual_contract_text(),
+    )
+
+    with pytest.raises(PlannerDocGuardError, match="bounded_return_closed_loop"):
+        check_strict18_goal_following_contract(tmp_path)
+
+
+def test_strict18_goal_following_contract_rejects_zero_qvel_fixture_substitution(
+    tmp_path: Path,
+) -> None:
+    roadmap = _strict18_roadmap_text().replace(
+        "不得以 qpos-only、zero-qvel surrogate 冒充原始入口\n",
+        "",
+    )
+    _write(tmp_path / "docs/strict18_goal_following_roadmap.md", roadmap)
+    _write(
+        tmp_path / "docs/planner_to_act_conceptual_contract.md",
+        _strict18_conceptual_contract_text(),
+    )
+
+    with pytest.raises(PlannerDocGuardError, match="zero-qvel surrogate"):
+        check_strict18_goal_following_contract(tmp_path)
+
+
+def test_strict18_goal_following_contract_rejects_observable_only_terrain_proxy(
+    tmp_path: Path,
+) -> None:
+    roadmap = _strict18_roadmap_text().replace(
+        "107D 可观测地形指纹只能用于复核，不能代替隐藏土壤状态的恢复证据\n",
+        "",
+    )
+    _write(tmp_path / "docs/strict18_goal_following_roadmap.md", roadmap)
+    _write(
+        tmp_path / "docs/planner_to_act_conceptual_contract.md",
+        _strict18_conceptual_contract_text(),
+    )
+
+    with pytest.raises(PlannerDocGuardError, match="隐藏土壤状态"):
+        check_strict18_goal_following_contract(tmp_path)
+
+
+def test_strict18_goal_following_contract_keeps_rejected_dispatches_out_of_a6(
+    tmp_path: Path,
+) -> None:
+    roadmap = _strict18_roadmap_text().replace(
+        "`newest_first_100_decay_0p01` 和 "
+        "`newest_first_max_age_20_decay_0p01` 不得复活\n",
+        "",
+    )
+    _write(tmp_path / "docs/strict18_goal_following_roadmap.md", roadmap)
+    _write(
+        tmp_path / "docs/planner_to_act_conceptual_contract.md",
+        _strict18_conceptual_contract_text(),
+    )
+
+    with pytest.raises(PlannerDocGuardError, match="不得复活"):
+        check_strict18_goal_following_contract(tmp_path)
+
+
+def test_strict18_conceptual_contract_requires_a6_evidence_boundary(
+    tmp_path: Path,
+) -> None:
+    conceptual = _strict18_conceptual_contract_text().replace(
+        "latest-current-chunk 只作因果对照，不构成默认派发或 production 晋级证据。\n",
+        "",
+    )
+    _write(
+        tmp_path / "docs/strict18_goal_following_roadmap.md",
+        _strict18_roadmap_text(),
+    )
+    _write(tmp_path / "docs/planner_to_act_conceptual_contract.md", conceptual)
+
+    with pytest.raises(PlannerDocGuardError, match="latest-current-chunk"):
         check_strict18_goal_following_contract(tmp_path)

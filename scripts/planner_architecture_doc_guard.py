@@ -63,7 +63,7 @@ REMOVED_DOC_FRAGMENTS = (
 )
 
 STRICT18_ROADMAP_ANCHORS = (
-    "当前唯一授权的实现任务是**阶段 A.5：Return temporal dispatch 合同验证**。",
+    "当前唯一授权的实现任务是**阶段 A.6：受限 Return 闭环因果诊断**。",
     "ACT 直接输出 4D action",
     "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
     "teacher_forced_recorded_observation",
@@ -137,8 +137,8 @@ STRICT18_DIG_LOCAL_STATE_SUPPORT_ANCHORS = (
 )
 
 STRICT18_RETURN_TEMPORAL_DISPATCH_ANCHORS = (
-    "阶段 A.5：Return temporal dispatch 合同验证",
     "`return_temporal_dispatch_forensics_v2/`",
+    "阶段 A.5：Return temporal dispatch 合同验证",
     "`legacy_100_oldest_first_decay_0p01`",
     "`newest_first_100_decay_0p01`",
     "`newest_first_max_age_20_decay_0p01`",
@@ -152,12 +152,47 @@ STRICT18_RETURN_TEMPORAL_DISPATCH_ANCHORS = (
     "不能直接替换默认聚合策略",
 )
 
+STRICT18_BOUNDED_RETURN_CLOSED_LOOP_ANCHORS = (
+    "阶段 A.6：受限 Return 闭环因果诊断",
+    "`bounded_return_closed_loop_causal_diagnostic_v1`",
+    "用户单独授权的 action-driving Return-only 诊断",
+    "`16-arm/no-retry`",
+    "`F1` = `return:898-1043:bb329f176aba`",
+    "`N1` = `return:3453-3664:bb329f176aba`",
+    "`F2` = `return:3959-4161:4afcef2eee82`",
+    "`N2` = `return:4437-4633:4afcef2eee82`",
+    "`original` / `alternate` × legacy / latest-current-chunk",
+    "`latest_current_chunk_diagnostic` 只作因果诊断对照",
+    "`newest_first_100_decay_0p01` 和 `newest_first_max_age_20_decay_0p01` 不得复活",
+    "每个 arm 的硬上限为 420 个 STEP",
+    "只观测 Return→Dig handoff",
+    "zero action → neutral acknowledgement",
+    "不得进入 Dig、Carry 或 Dump",
+    "完整 `qpos + qvel` fixture",
+    "`qvel_applied=true`",
+    "`preflight_blocked`",
+    "不得以 qpos-only、zero-qvel surrogate 冒充原始入口",
+    "可观测地形状态、scene SHA、runtime build、四相机顺序和输入 SHA",
+    "107D 可观测地形指纹只能用于复核，不能代替隐藏土壤状态的恢复证据",
+    "完整地形快照恢复，或可验证的确定性 soil seed 恢复",
+    "实际施加动作、逐轴限位干预的原子遥测",
+    "尚未接入正式 Return handoff evaluator",
+    "`soil_seed_status=not_supported`",
+    "`scenario_id` 当前只解析、不选择场景",
+    "铲斗轨迹、目标包络命中、轨迹分离起点、动作抖动/跳变/边界、碰撞与安全停止",
+    "不修改 production/default runtime、安全阈值或 timeout",
+)
+
 STRICT18_CONCEPTUAL_CONTRACT_ANCHORS = (
     "teacher-forced recorded-observation 下的动作变化，只证明 ACT 读取条件；"
     "不等于 Unity 闭环成功或 production proof。",
     "`support_contract_v1` 是已发布阶段 A 工件的历史基线，必须保留。",
     "它不改变\nPlanner 的目标语义、ACT 输入责任、scheduler/handoff 决策或 production/default runtime。",
     "Return 的支持证据冒充 Dig 的支持证据。",
+    "A.6 是用户单独授权的 action-driving Return-only 闭环因果诊断。",
+    "完整 qpos + qvel fixture 未实际应用时必须 preflight_blocked。",
+    "107D 可观测指纹也不能替代完整\n土壤快照或确定性 soil seed",
+    "latest-current-chunk 只作因果对照，不构成默认派发或 production 晋级证据。",
 )
 
 STRICT18_PHASE_A_FORMAL_RULE_ANCHORS = (
@@ -277,6 +312,8 @@ def check_strict18_goal_following_contract(root: str | Path = ".") -> None:
     for needle in STRICT18_DIG_LOCAL_STATE_SUPPORT_ANCHORS:
         _require(roadmap, needle, path=roadmap_path)
     for needle in STRICT18_RETURN_TEMPORAL_DISPATCH_ANCHORS:
+        _require(roadmap, needle, path=roadmap_path)
+    for needle in STRICT18_BOUNDED_RETURN_CLOSED_LOOP_ANCHORS:
         _require(roadmap, needle, path=roadmap_path)
     for needle in STRICT18_CONCEPTUAL_CONTRACT_ANCHORS:
         _require(conceptual_contract, needle, path=conceptual_contract_path)
