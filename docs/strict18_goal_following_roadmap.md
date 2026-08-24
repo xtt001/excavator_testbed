@@ -2,11 +2,25 @@
 
 ## 当前结论与文档地位
 
-当前唯一授权的实现任务是**阶段 A.6：受限 Return 闭环因果诊断**。
-这是用户单独授权的 action-driving Return-only 诊断，用 16 个无重试试验臂比较相同入口下的两个
-真实目标与 legacy/latest-current-chunk 两种派发。它只判断旧 temporal aggregation 是否压制目标响应，
-不承担策略晋级、完整作业或生产验收。当前 Unity `REALIGN_POSE` 不应用非零 `qvel`，所以真实执行状态
-仍是 `preflight_blocked`；路线冻结不等于已经可以运行。
+当前授权路线已切换为**阶段 B → C → D：Dig 单铲位置 A/B 土体效果验证**。实验从同一个严格训练姿态出发，
+只平移 DigArea 中的 entry-z 和 exit-z，深度、方向、长度、载荷、checkpoint、时序聚合和安全阈值不变。
+实现阶段只允许准备、验证和生成 no-overwrite 合同；发送动作仍需显式的执行授权。2026-08-21 的首次
+在线运行在 original 铲斗软限位时停止。随后确认旧轨迹点存在动态角点切换缺陷，在不改变默认观测的前提下
+改用请求局部固定中齿点，并经用户再次授权完成新的阶段 C/D 两臂运行。
+
+Unity 当前没有可审计的隐藏土体快照，也没有已证明的确定性土体 seed。因此即使两臂的轨迹、入土/出土几何和
+六格移除效果都分开，结果仍只能标记为诊断证据（`diagnostic_only=true`、`promotion_eligible=false`）。
+它可以准入下一次 Return→Dig 集成诊断，但不能改变生产或默认行为。
+
+当前阶段 D 结果是 `action_only_no_trajectory_separation`，实际效果臂为 `2/2`。两臂都完成入土、出土和
+neutral ACK，没有墙、FactoryFloor、未知/禁止接触、碰撞、输入裁剪或软限位；最大力约
+`20972.54 N`/`12059.06 N`，低于 `100000 N`。raw action 的目标响应为 `100/100`，但接触轨迹中位分离
+只有 `0.282983 m`，低于 `0.50 m`，alternate 没有在目标 cell 4 产生移除深度。初始可观测状态一致，隐藏
+土体仍未证明。因此不进入 Return→Dig 集成；下一项研究问题是目标 token 经执行器和动力学映射到空间轨迹
+时为何没有到达 alternate 位置，以及现有训练是否覆盖该联合条件。
+
+阶段 A.6 和 A.6-S-3 的 Return 实现、实验记录与失效原因现已冻结为历史材料。不继续深挖 Return，
+不补跑其旧试验臂，也不删除或覆盖两个仓库中已有的未提交材料。本文后续 A.6 章节仅供证据溯源。
 
 已完成的离线证据是：阶段 A 的 Dig 有 9/10 段 `goal_response_plausible`、1/10 段
 `out_of_support`；Return 在 v1 下均为 OOS。阶段 A.1 选择了 Return 的
@@ -656,26 +670,448 @@ legacy 趋同而 latest 分开，只支持“历史聚合可能压制条件响�
 ACT 条件能力或动力学执行；两者都分开但 latest 更抖、越界或触发安全停止，说明 legacy 平滑具有价值。
 这些结论都不允许 latest-current-chunk 晋级，也不允许修改默认策略；任何生产候选仍需另行预注册、实现和批准。
 
-## 后续阶段：仅保留为计划
+## 阶段 A.6-S：Return 在线 pose-matched 因果冒烟测试（独立低证据诊断）
+
+这是独立于严格 A.6 的 opt-in 快速诊断，工件根固定为
+`return_online_pose_matched_causal_smoke_v0/`。它不会修改、放宽或绕过 A.6 的完整状态恢复和
+fail-closed 合同，也不能把 zero-qvel、可观测 107D 或当前场景冒充历史失败状态复现。
+
+### A.6-S-0：四姿态无动作 REALIGN/readback 预检
+
+任何新的 16-arm 工件目录、ACT policy、世界位姿 probe 或非零动作之前，必须先通过独立的
+`return_online_pose_matched_realign_preflight_vN/`。它只运行 F1、F2、N1、N2：每组固定
+`RESET(seed=1000)` → `REALIGN(qvel=0, hold=true, lock-application=1 STEP)` → 20 个严格 4D 零动作
+保持锁定。RESET 内部零步与 REALIGN 的 1 个锁定应用步都不计入这 20 步。结束时另发一次显式
+`zero + release_realign_pose`，记录 transport ACK 后才断开，避免留下诊断锁会话。
+
+预检在 REALIGN 后、第一条 neutral 后和第 20 条 neutral 后都写入 Unity 原始关节位置、由观测端
+生成的协议归一化关节位置、原始关节速度、observer profile 路径/SHA/四轴范围、锁状态、速度控制器
+状态和 hold 生命周期。qvel 的 Unity 语义固定为 `raw_identity`；请求零 qvel 表示清刚体速度和力，
+不是历史非零 qvel 回放。归一化的唯一所有者是 `ActObservationCollector`：REALIGN 的反归一化、
+diagnostics 的归一化与 controller 的临时 soft-limit 视图都从该 live owner 取得同一份四轴范围。
+
+通过条件不能只看“锁 target 已写入”。四组都必须在冻结 `1e-6` 下读回 requested normalized qpos，
+20 步后原始 qvel 收敛到 `<=1e-6`，20 步期间 lock 不得被普通 neutral 解除，最后显式 release 必须
+得到 ACK。训练时物理 qpos profile 的 SHA、范围和顺序还必须能从冻结 HDF5/训练 lineage 证明，并与
+live observer profile 完全一致；同名 `YuLong_norm.json`、当前场景或 ACT 的 z-score stats 都不是该证明。
+缺少这项来源证据的固定阻断项是 `training_qpos_normalization_unproven`。
+
+早期 `.../return_online_pose_matched_realign_preflight_v0/` 与 v1 的 20-step 检查说明：偏差从
+REALIGN readback 就出现，不是第一条 neutral 解除锁；F1/F2/N1/N2 的最大 normalized qpos 误差为
+0.387385、0.365194、0.255008、0.326443，20 步后仍不收敛且 F1、F2、N2 出现 bucket ×
+`Dig_ZMin_Board` 接触。该工件只说明较长 live 物理演化会失控，不足以判定目标 pose 本身穿入板体。
+
+为分开三类原因，独立的
+`.../return_realign_no_motion_calibration_v0/` 固定改为：`RESET` →
+`REALIGN(hold=true,burn_in=0)` → 物理步前 diagnostics → **一条** held-zero physical STEP →
+物理步后 diagnostics → zero-release。四组均未加载 policy、未进入 Return、未发送非零动作。实际结果是：
+
+- 当前 `YuLong_norm.json` 的请求 normalized qpos、Python 以 live min/max 独立反归一化的 raw qpos、
+  Unity `requested_qpos_raw` 和四个 lock target 在 `1e-6` 内一致；四个 lock 均写入
+  `swing_joint/boom_joint/stick_joint/bucket_joint` 且 enabled。因此现有 profile 解释下，不是
+  “归一化映射错”或“lock target 写到错误约束”。
+- 现有无碰撞独立 hinge 链以固定 128 solver steps 对四个 raw target 全部收敛，逐轴误差为零；
+  按当前 profile 解释 normalized qpos 后，当前场景的 shadow-FK convex-cover 四墙 endpoint 查询也全部 clear，F1/F2 对 `Dig_ZMin_Board`
+  的最小 clearance 分别约 1.474m/1.517m。首条 held-zero physical STEP 没有板、地板或外部 bucket
+  接触。因此不能把 F1/F2 称为“当前场景中天然穿入该板”；早期 20-step 接触是 live 物理路径中的独立
+  失败，不能被忽略，但也不能倒推为 target-pose 穿入。
+- 四组首条物理步后的 qpos 仍分别距请求 0.387385、0.365194、0.255008、0.326443，raw qvel 峰值约
+  1.24/1.24/1.23/1.24。这保留为 `physical_reachability_unresolved_after_one_held_physical_step`：
+  当前 live 物理链没有把正确的锁目标变成 readback pose；一步证据不能声称绝对不可达，更不能归因于 ACT。
+
+历史物理 qpos 归一化谱系现正式为 `unknown`。训练 Return 的 422 个 HDF5、其 17 个原始来源和冻结
+rollout 只记录 qpos order；均没有 profile path/SHA/raw min/max。rollout 虽记录 base commit
+`2ef274…`，也明确 `unity_git_dirty=1`。当前 live profile SHA 是 `1a73cf05…`，base profile SHA 是
+`f3e4d105…`，四轴范围不同，故两者都不能当成训练 profile。F1/F2/N1/N2 从此只能称为
+**normalized-qpos pose surrogate**，绝不能称为历史物理姿态复现。
+
+### A.6-S-1：当前 RESET fixture 在线路线
+
+在线 ACT 测试不再要求历史 F1/F2/N1/N2 physical profile、隐藏土体恢复或 16 臂历史矩阵先通过。
+历史 fixture 只保留给离线 temporal aggregation 归因。当前在线路线固定为：从当前 Unity `RESET` 的实际
+readback 开始，不 REALIGN 到历史 qpos；执行固定 20 个零动作 settling；冻结最终的真实 qpos/qvel、107D、
+四路 decoded RGB SHA、profile SHA、scene/build/camera 合同为一个新 fixture。每个 original/alternate ×
+legacy/latest arm 都独立 `RESET + 同一 settling`，并且必须同时匹配该 fixture；任一 pair 不一致，全部四臂
+在 policy 创建前阻断。latest 仍只作诊断，legacy 默认不变。
+
+`.../return_current_reset_fixture_v0/` 已实际通过：最终 qpos 为
+`[0.5, 0.262185544, 0.694795728, 0.346762478]`，profile SHA 为 `1a73cf05…`，最大 qvel 约
+`5.66e-8`，20 步内无接触。它是 current-reset fixture，不是历史姿态或土体复现。
+
+`.../return_current_reset_goal_response_v0/` 首次以冻结 N1 的 original/alternate target pair 预检四臂。
+qpos、qvel、107D 连续字段、scene/build/camera descriptor 全部一致；但 original/latest 的 `eye_right`
+decoded RGB SHA 变为 `5b005877…`，而 fixture 及其他三臂为 `20b90c27…`，所以 4/4 在 policy 前阻断，
+实际非零动作数为 0。该 v0 不表示 ACT 不响应，只表示视觉输入的严格字节相等还未建立。
+
+用户明确选择不追逐逐帧绝对像素相等后，独立的零动作相机等价性标定先运行同一 RESET 内四次采样，
+再运行四个独立 RESET cycle。`.../return_current_reset_camera_equivalence_v1/` 的跨 RESET 结果中，
+只有 `eye_right` 在一组比较出现变化：最大通道差 4、平均通道差约 0.000936、变化像素比例约 0.1085%；
+其余三路为零差异。使用同一 N1 original token、冻结 qpos/qvel/env state 和独立 reset cache 的 ACT 推理，
+legacy 与 latest 的最大首动作差均为 `3.70e-6`，远低于既有 strict-train action-delta 合同。该工件只把
+这一已测量的小幅视觉变化标为 current-reset 起点的动作等价，不改变相机、policy、legacy 默认或安全阈值。
+
+基于该冻结等价合同，`.../return_current_reset_goal_response_v1/` 实际执行 4/4 臂，Unity 对 111 次非零
+命令给出 transport ACK，四臂均在首次土壤接触时 zero→neutral ACK 终止。首次接触前，original/alternate
+bucket-tip 轨迹都满足 2cm、连续 3 帧分离：legacy 在第 4 帧首次分离、共同 28 帧内最大距离约 0.315m；
+latest 在第 5 帧首次分离、共同 19 帧内最大距离约 0.164m。可是 legacy original/alternate 分别在第
+36/29 步接触，latest original/alternate 分别在第 26/20 步接触，全部是 soil contact。因此正式结论为
+`safety_window_short`：当前 RESET fixture 下存在接触前的目标条件轨迹分离诊断证据，但安全窗口不足，
+不得把它提升为完整在线目标响应、目标包络成功、ACT physical-effect 或生产结论；更不能把接触后的轨迹
+用于目标响应判断。
+
+为人工核查“首次土体接触是否与 token 所要求的运动一致”，同一已授权的四臂矩阵另以全帧四相机录制方式
+写入 `.../return_current_reset_goal_response_v2_video_capture_v0/`。每臂保存四路单视角 MP4 与一个 2×2
+合成 MP4；视频帧带有 camera 名称、帧号和接触状态，并且在首次 soil contact 帧后立即停止。这个工件仅供
+观察接触前后的画面，未改变 policy、默认 legacy temporal aggregation、安全阈值或上述
+`safety_window_short` 结论；视频本身也不能证明接触是 token 必然要求还是异常动力学结果，须结合 token 和
+首次接触前的 trace 判断。
+
+旧的 `.../return_current_profile_origin_v0/` / `return_current_profile_goal_response_v0/` 是本路线改写前的
+过渡工件：后者仅执行 1/4，30 次非零命令后发生土壤接触并安全停止，状态为 `partial_execution/invalid`。
+它不构成 current-reset 路线的 ACT 结论，也不应被补跑或与新工件混合。
+
+### A.6-S-2：自动候选 Return 起点与 legacy-first 在线路线
+
+新的独立入口 `tb-return-auto-candidate-goal-response` 从 Stage-A v3 的全部 9 个 Return segment 读取
+`action_step-1` 的首个 pre-action observation。历史 normalized qpos 只作为当前 live profile 下的
+runtime-only override 种子。旧 HDF5 的物理 qpos 归一化谱系继续固定为 `unknown`，不恢复历史 qvel、土体
+或接触状态，也不把选中结果称为历史姿态复现。
+
+候选资格与排序在连接 Unity 前冻结。original/alternate 必须通过既有 26D Return 支持模型和阈值
+`73.96288339909502`；历史首帧不得有 dig/soil、墙、地板或 hard collision。历史 DumpArea mask 只记录，
+不作为淘汰项。顺序固定为正常段优先，再按 DigArea 距离降序、qvel L2 升序、两目标最差支持余量降序和
+起始 step 升序。9 个候选全部只做一次无动作预览，最终始终取该顺序中的第一个通过者，不按 policy 输出、
+轨迹或接触结果重排。
+
+每个候选与每个执行臂都进入独立 Play 会话。新的 Editor 桥只切换当前场景的 Play/Edit 状态，不调用场景
+或资产保存，也不打开场景。候选执行 `RESET(seed=1000)`、`REALIGN(burn_in=0,hold=true,qvel=0)` 和 20 个
+held-zero STEP。门控包括同一 normalization owner 的映射/lock target、`1e-6` readback 与末三帧稳定性、
+四块 DigArea 板的 shadow-FK convex-cover clear、完整无接触遥测、四相机合同、FK 世界位姿以及 settled
+qpos/qvel 对两枚 token 的冻结支持。任一失败只淘汰该候选；不放宽阈值，不重跑挑结果。
+接触监控必须在每个 STEP 明确返回 `worktool_contact_monitor_status_v1:status=ready`；只有这个 ready
+哨兵存在时，缺省的 `bucket_contact_diagnostic:contact_count` 才解释为零。ready 缺失、monitor missing 或
+not_registered 都按接触遥测不完整停止，不能靠 107D 中的零值推断无外部接触。
+
+选中后冻结 `selected_fixture.json`，再在同一 RESET/settle 状态下采集四次零动作图像。逐相机记录最大
+像素差、平均差、变化像素比例和变化通道比例；每份图像用独立 policy/cache 对同一 original token 做
+legacy/latest 影子推理，首动作差必须落在既有 strict-train 阈值
+`[0.077259831,0.053346492,0.068022251,0.120000005]` 内。这里不要求像素 SHA 完全相同，且影子动作绝不
+下发 Unity。
+
+在线阶段先只运行 legacy original/alternate。每臂独立重新进入 Play、RESET、override、20 步 settle、
+加载 policy 并只 reset cache 一次；只允许 Return、最多 420 STEP、不重试。第一次 soil、外部 bucket、板、
+墙、地板接触，碰撞、接触遥测缺失或安全停止立即 zero→neutral。trace 和视频保留首次接触响应帧，轨迹
+比较严格排除该帧及以后数据。legacy 在共同接触前窗口形成 2cm、连续 3 帧的 bucket-tip 分离时，报告
+`precontact_online_goal_response_observed` 并停止，不自动运行 latest。只有两条 legacy 均无接触完成 420
+步且未分离，才准入 `latest_current_chunk_diagnostic` 两臂。latest 仍只用公开 chunk API 的首动作，默认
+legacy temporal aggregation 不变。
+
+默认 no-overwrite 根为 `.../run/return_auto_candidate_goal_response_v0/`。工件包含全部候选历史/Unity
+四视角、readback 和淘汰原因、相机动作等价性、接触前轨迹图，以及实际执行臂的四路单视角和 2×2 合成
+MP4。该路线只能回答“当前 profile、当前场景、可验证一致起点上，只换 Return token 时，接触前真实轨迹
+是否改变”。它不解释历史 F1/F2，不证明 applied action、目标包络完成、Return→Dig handoff 或生产能力。
+
+2026-08-20 的首次 `return_auto_candidate_goal_response_v0` 真实运行完成了 9/9 候选的首个 held-zero
+预览，但在第一步把接触监控的 `status=ready` 哨兵误解析成接触对象，因此 9 个候选都被错误提前停止。
+该工件执行臂为 0、非零命令为 0，只能作为 blocked 工件；它不证明候选发生了物理接触，也不构成 ACT
+目标响应结论。解析器已增加回归测试并修复，同时将 20 步中的瞬态运动与 settled 末态 readback 分开；
+遵守 no-overwrite/no-retry 边界，本次没有覆盖或补跑 v0。后续如获准运行，应使用新的工件版本根。
+
+后续 v1 证明该自动路线的候选摆姿方法本身不适合作为在线首门：它通过旧 `REALIGN` 从 RESET 姿态沿物理
+路径运动到候选，六个候选在过渡途中碰到 `Dig_ZMin_Board`，其余三个在 20 步内也没有到达各自请求姿态。
+这些接触发生在 policy 创建和 token 动作之前，不能用于判断 ACT。该路线保留为失败诊断，不再补跑，也不
+再把 `REALIGN` 当作下面人工预览路线的实现。
+
+### A.6-S-3：人工选择、Play Mode 临时 pose override 的 Return 诊断
+
+新入口 `tb-return-manual-pose-matched` 第一阶段只生成 6–12 个候选的历史/当前 Unity 四视角预览，随后停在
+等待操作者明确选择的状态。候选仍来自冻结 Return segment 的 `action_step-1` observation，正常段优先；
+历史 normalized qpos 只作为当前 profile 的关节姿态种子。该阶段不构建 policy、不进入 Return、不发送非零
+动作，也不自动选择候选。
+
+候选姿态使用独立协议 `runtime_pose_override_v1`，不调用 `REALIGN_POSE`。服务只存在于当前 Play Mode，
+宿主使用 `HideAndDontSave`。安装期间临时关闭挖机碰撞形状，用四个主关节的 constraint lock 在隔离状态下
+收敛；恢复原碰撞状态后只做一个接触验证物理步并采集 qpos/qvel、107D、四相机和 bucket-tip 世界位姿。
+这个过程避免铲斗沿 RESET→候选的现场路径扫过挡板。目标姿态本身若与土壤、板、墙或地板接触，仍按当前
+物理接触淘汰，不能因安装阶段隔离碰撞而忽略。
+
+每个候选使用独立 Play 会话。退出前发送严格零动作并显式释放 override，RESET 后退出 Play Mode；Editor
+控制器只切换 Play/Edit，不保存或打开场景。每次会话前后核对活动场景路径、dirty 状态和磁盘 SHA。默认
+首次 `v0` 工件已如实保留为摆姿 lock 力饱和的 blocked 尝试；修复后的 no-overwrite 根为
+`.../run/return_manual_pose_matched_return_smoke_v1/`，第一阶段输出
+`candidates/contact_sheet.png`、`candidates/candidate_table.md`、逐候选 `preview.json`、`selection.json`、
+manifest、preflight、空 arms、results 和中文 report。
+
+操作者只能从标为可选的候选中明确给出 `Cxx`。第二阶段才会在各自重新进入的 Play 会话中运行 legacy
+original/alternate；两臂从同一人工基准重新安装，policy/cache 独立。首次接触或安全停止即 zero→neutral，
+接触帧及以后不参与目标响应判断。只有 legacy 在足够的无接触窗口内仍趋同时，才允许追加
+`latest_current_chunk_diagnostic`；默认 legacy temporal aggregation 始终不变。该路线的证据类型固定为
+`unity_manual_pose_matched_return_smoke`，只回答当前 profile、人工确认起点、接触前的目标单变量响应，不能
+解释历史 F1/F2、完整 Return 成功或生产能力。
+
+第一阶段 `.../run/return_manual_pose_matched_return_smoke_v1/` 已完成 9/9 候选预览，全部在当前 Unity 中
+稳定且未观察到初始土壤、板、墙、地板或外部 bucket 接触。操作者明确选择 `C01`（历史 Return segment
+起始 step 416）。第二阶段使用新的 no-overwrite 根
+`.../run/return_manual_pose_matched_return_execution_v0/`。它不会改写第一阶段工件；`selection.json` 会冻结
+选择来源及其 SHA。每次 C01 安装固定经过 RESET、`runtime_pose_override_v1` 和 20 个 held-zero STEP，
+绝不调用旧姿态通道。运行前的四次零动作相机采样记录最大/平均像素差、变化像素比例及变化通道比例；同一
+original token 的 legacy/latest 首动作差仍使用冻结 strict-train 逐轴阈值判定，不要求图像 SHA 完全一致。
+
+第二阶段的 original/alternate 各自再经过独立 Play 会话的无动作起点采集；关节位置、关节速度和 107D
+连续字段按 `1e-6` 比较，离散 mask、scene/build/profile/camera descriptor 精确比较。任何失败都会在 policy
+执行实例创建前阻断非零动作。实际动作的第一帧显式释放 runtime override 并核对 Unity 返回的 controller
+state restored 哨兵。每条结束路径再发送零动作、确认 STEP transport ACK、RESET 并退出 Play Mode；场景
+路径、dirty 状态和磁盘 SHA 必须保持不变。每个实际执行臂保存四路单视角 MP4 和 2×2 合成 MP4。
+
+首次第二阶段工件 `.../return_manual_pose_matched_return_execution_v0/` 在两个 legacy 臂各收到一条非零动作后，
+因逐帧 bucket-tip probe 重用了 preparation 的 sample ID 而停止。该工件没有接触，也没有可比较世界轨迹；
+它是测量链失败的 `inconclusive` 工件，不能称为安全窗口太短或 ACT 不响应。修复只让同一 Play 会话复用
+同一个递增 probe session，并新增“测量链失败不得归类为安全窗口”回归测试；没有改候选、token、阈值或策略。
+
+修复后的 no-overwrite 工件 `.../return_manual_pose_matched_return_execution_v1/` 完成了两个 legacy 臂。两臂
+的 qpos、qvel 与 107D 连续字段起点误差均为 0；四次零动作相机采样仅 `stick_up` 一帧有轻微变化（最大通道
+差 2、变化像素比例约 0.0732%），同一 token 的 ACT 首动作最大逐轴变化仅约
+`[1.01e-6,1.56e-6,6.07e-7,4.65e-6]`，远低于冻结阈值。Unity 共确认 535 条非零 STEP；共同的 250 帧
+接触前窗口中，bucket-tip 从第 10 帧开始满足 2cm、连续 3 帧分离，最大距离约 0.996m，因此结论为
+`precontact_online_goal_response_observed`。original/alternate 分别在第 283/250 帧首次 soil contact 后停止，
+没有板、墙、地板、外部 bucket contact 或 hard collision。alternate 在接触前第 226–245 帧进入自己的直接
+目标包络，original 未进入自己的包络。因此本结果证明的是 legacy 在接触前会随 Return token 改变真实轨迹，
+不证明两目标都完成、完整 Return 成功或土体效果正确。legacy 已分离，latest 按预注册规则未运行。
+运行结束后的独立默认 RESET 回归又在全新 Play 会话中执行 20 个零动作 STEP；其 qpos/qvel 与运行前冻结的
+RESET fixture 最大误差均为 0、无接触、非零动作数为 0，活动场景路径、dirty 状态和磁盘 SHA 也完全一致。
+这项检查只证明本次 runtime-only override 已清除且默认 RESET readback 未变，不提升上述诊断的证据等级。
+
+工件必须固定写明：
+
+```text
+evidence_kind=unity_online_pose_matched_surrogate
+diagnostic_only=true
+promotion_eligible=false
+historical_state_replay_claim=false
+production_default_changed=false
+official_handoff_claim=false
+```
+
+它复用 F1/F2/N1/N2、original/alternate 和 legacy/latest 的 16-arm 矩阵，但每个 arm 只恢复 fixture
+qpos，明确清零 qvel，并在 REALIGN 后执行固定 20 个 neutral STEP。original/alternate 的 post-settle
+qpos、qvel、107D、四相机 RGB 指纹、scene、build 与相机合同必须在预冻结 `1e-6` 容差和精确指纹下
+一致；不一致的 pair 直接 `invalid`，不重试。没有历史土壤快照、历史非零 qvel、正式 handoff evaluator、
+actual applied-action 或逐轴限位遥测时，本诊断仍可运行，但这些限制必须写入 manifest。
+
+每个 policy 独立加载并只 reset 一次。legacy 保持 `predict()` 的既有 temporal aggregation；latest 每帧
+只用公开 `predict_action_chunk(obs).first_action`，永远是诊断对照，不能成为默认或上线候选。Return 期间
+发生土壤、外部 bucket、墙或地板接触的 arm 标记 `contact_contaminated`；接触遥测无法确认时标记
+`contact_telemetry_inconclusive`，两者都不参与目标响应结论。
+
+线上“接近”固定为：相对 settle 后起点，bucket tip 到自身 token 世界平面中心的距离至少缩短 2 cm，且
+持续 3 帧；直接 token geometry entry 另行记录，不等同正式 Return→Dig handoff。逐状态只允许报告
+`legacy_online_goal_response_observed`、`temporal_aggregation_suppression_indicated`、
+`online_goal_response_not_observed`（无 applied telemetry 时附加 `execution_chain_inconclusive`）、
+`legacy_smoothing_value_observed` 或 `inconclusive/invalid`。不得将 blocked、部分执行、轨迹图或该 surrogate
+描述为严格闭环目标跟随成功。
+
+当前 Unity 协议没有逐帧世界 bucket/tip pose；本诊断只可使用既有、Temp-only、非原子
+`FixedBucketTipFkCaptureProbe` 旁路并记录其 source SHA 和 `non_atomic_world_pose_capture` 边界。探针未在
+Play Mode 前启用、每帧 capture 失败、5057 不可连接、GET_INFO/scene/四相机/107D 合同不匹配时，必须写新的
+no-overwrite blocked 工件，不伪造运行结果。普通 RESET、planner、默认 temporal aggregation、安全阈值和
+timeout 均不改变。
+
+## 当前路线：Dig 单铲位置 A/B
+
+### 实现入口与执行授权
+
+只读校验正式 support 工件、冻结目标和合同 SHA 时使用：
+
+```bash
+tb-dig-single-shovel-ab validate
+```
+
+该命令不创建工件、不进入 Play Mode，也不发送动作。真实阶段 C/D 只能由显式授权的命令进入，
+且 `--artifact-root` 必须指向一个尚不存在的新目录：
+
+```bash
+tb-dig-single-shovel-ab run \
+  --artifact-root /absolute/new/artifact/path \
+  --execute-authorized \
+  --unity-editor-pid <PID>
+```
+
+`run` 先完成两个独立、可丢弃的 100 tick 预演；任一预演失败就不进入效果臂。进入阶段 D 后仍按
+original→alternate 每臂一次执行，不允许重试或替换目标。所有结果固定保留隐藏土体未证明、仅作诊断、
+不可晋级的证据边界。
+
+进入任一 Play Mode 前还要检查本实验依赖的 Unity 运行时／Editor C# 源文件不晚于当前
+`Library/ScriptAssemblies` 中对应程序集。若源码比已编译程序集新，说明 Editor 尚未完成导入或域重载，
+必须以 `unity_script_assembly_stale` 在动作前停止。该时间戳检查只用于拒绝明显陈旧的运行时，不能替代
+首个全零 STEP 的诊断 sidecar、协议版本、场景和运行 build 核验。运行时异常工件保留经过单行化并限制
+到 300 字符的原始错误详情，避免只记录异常类型而丢失协议失败原因。
+
+在线工件分别记录“已经完整解析并写入轨迹的 tick”和“Unity 已确认响应的效果 STEP 调用数”。后者在
+收到 STEP 响应后、构造严格遥测对象前递增，因此即使响应后的 Python 校验异常，也不能把已发生的物理步
+误报为零。缺少该可选计数接口的 mock/旧注入端只以完整轨迹行数作为保守下界。
+
+JSON 工件不嵌入相机二进制。相机 JPEG 原始字节只进入四路视频；start/end 等 JSON 中对应 `data` 字段
+改写为 `binary_sha256_v1` 的长度和 SHA-256 记录。固定 JSON 在创建目标文件前先完整序列化，序列化失败
+不会留下看似存在的半截工件。
+
+姿态稳定结束时，解除临时锁与首个诊断零动作必须由 Unity 在同一个 STEP 内原子完成。该请求只接受
+四轴精确零动作，并在推进物理步前切换到经验证的静止锁；后续零动作继续保持，首个非零动作到来前才
+恢复会话开始时快照的普通控制器配置。此交接是 Dig 实验请求局部能力，默认 STEP、生产控制参数和
+既有安全阈值不变。交接后的实际 qpos/qvel 仍必须通过 `0.005`/`0.10` 原门槛，不能用该能力绕过初态核验。
 
 ### 阶段 B：收口目标与结果的数据合同
 
-定义在线 `DesiredCutGoal` 与历史 `AchievedCutOutcome` 的边界，不能把专家实际结果当作
-Planner 的原始意图。单一 primitive 的 v2 重跑不能进入阶段 B。只有后续 Unity 闭环所需的每个
-primitive 都在各自冻结的 `support_contract_v1` 或已选择的 `support_contract_v2` 下完成阶段 A
-重跑并产生 `goal_response_plausible` 证据后，才进入 Unity 单铲目标效果对照准备。
+以 `ContinuousCutGoal` 作为唯一目标事实源，并用版本化的 `AchievedCutOutcome` 表示实际入土、最大深度、
+出土、铲尖轨迹和六格土体变化。冻结 original/cell 2 与 alternate/cell 4，两个 10D token
+只允许索引 1 和 3 不同。官方数值、目标 SHA、机械初态、成功阈值和时序合同由
+`build_official_dig_effect_ab_contract()` 集中生成，运行时必须从正式 Dig v1 工件加载 18D 逐轴 p01–p99，
+不复制一套支持范围。
 
 ### 阶段 C：建立短期行为安全盾
 
-基于 Unity 影子预演或 ACT rollout，评估冻结 ACT 在当前状态、条件、历史与 temporal
-aggregation 下的短期扫掠风险。该阶段不得用专家 qpos path 代替 ACT 实际可能运动。
+每个目标使用一个独立、可丢弃、不保存场景的 Play Mode 会话。RESET(seed=1000) 后安装冻结姿态，
+零动作稳定 20 tick，并校验机械、铲尖、可观测六格地形、剩余质量、场景、build、四相机和离散 mask。
+每个效果臂发送首个动作前，还必须证明它与全部已建立的预演/效果会话身份互不重复；不能等到结果汇总时
+才发现会话复用。每个诊断 STEP 都必须显式给出铲斗接触计数和最大法向力，零接触也要报告 `0/0`；
+缺失不能解释成没有接触。
+默认 107D 的 `bucket_dig_area_penetration_contact_mask` 来自动态铲斗测量盒，是入土几何信号，并非刚体
+接触回调。单铲 A/B 的正式诊断轨迹改用请求局部的固定中齿前缘点
+`bucket_center_tooth_leading_edge_midpoint_v0_1`；Unity 在同一 STEP 中回报该点、局部表面深度和入土 mask，
+Python 校验 schema、候选、lineage、有限值和 `0.005 m` 阈值后才使用。这样避免动态最低角点切换造成约
+`0.44 m` 的伪跳变，同时不改变默认 107D 或生产观测。几何信号可以在可变形土体入侵时为真，而独立
+worktool monitor 仍合法报告零刚体接触；两条证据都必须完整且各自自洽，但不要求同一 tick 同时上升。
+墙、硬底、禁止/未知接触和力门槛仍由独立接触证明触发，现有停止阈值不变。
+随后用独立 policy/cache 运行 100 tick 冻结 ACT 影子预演。预演不计入 A/B 效果证据，不得用专家路径替代，
+也不得放宽安全阈值。墙、硬底、未知/禁止接触、碰撞、非有限值、动作裁剪、软限位、卡死、超时或
+力大于等于 100000 N 都必须零动作并等待 neutral ACK 后停止。普通 bucket-only 可变形土体接触允许继续。
+预演通过只记为 `diagnostic_preflight_passed`，不构成三维安全或同土证明。
 
 ### 阶段 D：同 reset 的 Unity 单铲目标效果对照
 
-在相同 reset 下比较目标改变后的实际运动和地形效果。它是 Unity 诊断证据，不是多铲
-闭环验收。
+按 original→alternate 顺序运行，每臂重建 backend、Play Mode、ACTAdapter 和 cache，每臂一次、不重试，
+最多 250 tick / 5 s。每个 STEP 要求默认关闭的 `actuation_diagnostics_v1` 原子回报，并保存 50 Hz 轨迹、
+原始 chunk/派发/执行器动作、接触、力、六格移除深度、剩余土量和视频。任一启动失败也消耗该臂唯一机会。
+
+最终工件固定为 `contract.json`、`preflight.json`、两臂各自的 `start.json` / `trace.jsonl` /
+`end.json` / `summary.json` / video、`pair_metrics.json`、`decision.json` 和 `report.md`，全部 no-overwrite，
+并绑定 Python/Unity HEAD、dirty 状态与依赖 SHA。只有两臂的轨迹、入土/深度/出土和目标 cell 效果都达标且无安全事件，
+才输出 `next_experiment=return_to_dig_integration`；在隐藏土体一致性未证明时，该结论仍仅为诊断级。
+
+2026-08-21 的在线收口使用 no-overwrite 根
+`runs/eval/dig_single_shovel_ab_20260821T181507+0800/`。两个 100 tick 预演都通过；original 效果臂
+保留 226 行 fsync 轨迹和 226 帧四路/合成视频，随后因铲斗轴软限位停止并完成 7 步 neutral ACK。
+铲斗从第 59 步开始持续接触土体，最大局部入土深度 `0.34915972 m`，停止时六格移除深度为
+`[0.00415147, 0, 0.02283448, 0, 0, 0] m`。这些局部土体变化不能覆盖“无出土 + 安全停止”的失败，
+也不能单臂推断 A/B 目标效果。`decision.json` 固定为 `realised_attempt_count=1`、
+`planned_attempt_count=2`、`retry_allowed=false`；场景磁盘 SHA 前后保持
+`97b01deb2229b087f110defef2c117f19c4ad8e16b1ad51d154fe5cc6514b7c9`。
+
+对该工件的姿态配对复查发现，旧轨迹点会在相邻 20 ms 内跳约 `0.44 m`，根因是每帧重新选择测量盒的
+最低角点，不能代表固定物理铲尖。修复采用上述请求局部固定中齿点，并由新合同版本映射和 source SHA
+绑定；普通 STEP、checkpoint、legacy oldest-first 100-step 聚合和所有安全阈值不变。修复经 Python
+相关测试 `198 passed`、Unity 静态协议测试 `26 passed`、运行时/Editor 程序集编译以及当前 Editor 内
+3 项 no-save 测试验证；no-save 测试前后场景路径、dirty 状态和磁盘 SHA 一致。
+
+用户重新授权的新 no-overwrite 根为
+`runs/eval/dig_single_shovel_ab_20260821T193147+0800/`。两个 100 tick 预演及两个效果臂均完成，实际臂数
+`2/2`。original/alternate 分别保留 `188`/`136` 个 50 Hz 效果 STEP，均检测到入土、连续 3 tick 出土并
+完成 neutral ACK；最大力 `20972.54 N`/`12059.06 N`，未发生裁剪、软限位、墙、硬底、硬碰撞、禁止或
+未知接触；现有加速度限速按原配置在每臂最初 6 tick 对称工作。修复后的最大单 tick 铲尖位移为
+`0.014009 m`/`0.013997 m`，场景 SHA 保持不变。
+
+能力结论仍失败。raw chunk 目标响应为 `100/100`，但接触阶段轨迹中位分离 `0.282983 m < 0.50 m`。
+original/alternate 的入土误差为 `0.452967 m`/`0.860084 m`，最大深度误差为 `0.220922 m`/`0.276756 m`，
+出土误差为 `1.406151 m`/`1.432217 m`。original 对 cell 2 的移除深度为 `0.021632 m`；alternate 对
+cell 4 为 `0 m`，仍在 cell 2 移除 `0.004594 m`。分类为 `action_only_no_trajectory_separation`，不进入
+Return→Dig 集成。原子回报未见 dispatch mismatch、输入裁剪或软限位；两臂只有最初 6 tick 出现相同的
+既有加速度限速。传输裁剪和软限位不是本次直接原因，下一轮仍需一起审计目标 token 经执行器/动力学到
+空间轨迹的映射和训练覆盖。隐藏土体未证明，结果保持诊断级、不可晋级且不改变默认系统。
 
 ### 阶段 E：有界多铲 residual 闭环
+
+在继续阶段 E 前，2026-08-22 新增了冻结物理结果约束的离线支线，详见
+`docs/dig_token_swap_effect_consistency_v1.md`。该支线没有补人类成对数据，也没有提高
+`token_swap_loss_weight=1.0`。静态固定中齿 FK 和 planner 范围变体已通过，但冻结 effect
+ensemble 未通过轨迹、末端、六格深度和 ensemble 分歧门，因此 A/B/C 均在 checkpoint 加载前
+停止为 `0/2000`。当前路线是先修复 action→物理结果 predictor；不能据此进入正式重训或恢复
+Unity A/B。
+
+该支线随后在 strict-train 内完成了四折 source-grouped 一步动力学定位。source/episode 等权后，
+fixed-tip 的 1/5/10-step per-source equal 误差为 `0.000725/0.005986/0.014777 m`，但
+25/50/100-step 扩大为 `0.040282/0.071962/0.225685 m`。结论固定为
+`long_horizon_dynamics_accumulation`。source 33/34 未重新用于选择；轨迹门失败，因此 soil head、
+最终 predictor freeze 和 ACT A/B/C 都没有启动。
+
+同一折上的自回归课程随后按 `5→10→25→50→100` 完成，bucket 被确认从第 5 步最先发散。加入硬
+`qpos∈[0,1]` 投影后，100-step trajectory/endpoint/disagreement 改善到
+`0.040195/0.056302/0.021728 m`，但仍未同时满足 `0.04/0.03/0.02 m`。短 action-history
+残差信号不足，现有数据又缺少 target speed、acceleration limiter 和 cylinder response；这先形成待验证
+假设，不直接扩模型或加 loss 权重。
+
+随后完成了 bucket-only 有限历史直接比较。swing/boom/stick 的 checkpoint 参数和逐步输出保持冻结，实际
+最大差为 `0.0`。5/10 步 action history 对第 5 步 bucket qvel 只改善 `0.45%/0.90%`；再加入 bucket
+qvel 和冻结基座残差后改善 `8.55%`，95% 区间为 `[6.16%,11.19%]`，但仍未达到预注册的 30% 门，
+qpos/fixed-tip 的 `11.23%` 改善也未达到 `30%/20%`。最相似跨 episode 历史的下一步响应差中位数为
+`0.00169 < 0.02`，没有形成“同历史异响应”证据。误差主要集中在关节边界：near-boundary qvel h5
+为 `0.178388`，interior 为 `0.0404995`，上端 20% qpos 区间还会在 response-history 模型下轻微恶化。
+完整历史窗口只覆盖 374 个 train episode 中的 331 个，source 19/23 又分别只有 90/11 个窗口。因此当前路线
+改为先审计边界/异常 episode 与 source 覆盖，不把 controller cohort 相关性直接解释为标定因果，
+也不启动 soil/ACT。工件位于
+`predictor_source_grouped_v1/bucket_only_v1/comparison_full_v1/`。
+
+只读分层定位随后确认边界是主因素：距边界不超过 0.05 时，h5 bucket qvel source 等权误差是内部的
+`4.772× [3.363,6.784]`；移除误差质量最高的 17 个 episode 后仍为
+`3.105× [2.537,5.127]`。top 5% episode 虽占 per-window 误差 `43.67%`，但移除后 source 等权只改善
+`11.00%`，未达到 episode 集中门。source 24/30 的 leave-one-source-out 改善为 `7.42%/4.45%`，但
+qpos/qvel/前 5 步 action 配对后没有 source 通过样本数、平衡和 99% 区间门；epoch 的 h1/h5 配对区间也
+都跨 0。当前路线因此固定为先收紧 predictor 证据范围，而不是删 episode 或追标定差异。
+
+固定距离分箱给出的非对称离线可信支持候选为 `bucket qpos normalized ∈ [0.05,0.80]`。该值当前只写入
+`bucket_only_v1/read_only_localization_v2/` 的诊断工件，默认 support、planner、ACT 和生产 joint limits
+均未修改。只有将它接入 predictor 离线 gate 并重新通过轨迹/末端/分歧门后，才重新讨论 soil head 或
+ACT A/B/C。
+
+冻结 checkpoint 的内部范围复评随后完成。筛选只用真实 qpos/qvel/action：初始和真实未来 100 步 bucket
+qpos 均在 `[0.05,0.80]`，过去 10 步、当前与未来 100 步 qvel/action 均通过原 strict-train p01-p99。
+12,922/35,573 个窗口被保留。100 步 full-tip trajectory `0.031580 m` 和三成员分歧 `0.013407 m`
+分别通过 `0.04/0.02 m` 门，但 endpoint `0.046381 m > 0.03 m`，所以 metric gate 仍失败。
+
+覆盖门同时失败：仅 197 个 episode、14 个 source，source 19/23 完全没有保留窗口。结论固定为
+`audit_actuator_state_or_change_predictor_structure`；边界只是最明显症状，收紧范围仍不足以冻结动力学模型。
+当前路线是检查缺失的执行器响应状态或更换长程 predictor 结构，不训练 soil head、不加载 ACT，也不修改
+planner/真实挖机 joint range。工件位于 `bucket_only_v1/internal_support_eval_v1/`。
+
+一步残差状态归因随后完成。53,229 个内部 qpos/current-support 行上，OOF bucket qvel 一步 MAE 为
+`0.015436`。静态载荷有描述性差异，但 empty/loaded 匹配仅 97 对、balance `0.1045` 且 99% 区间跨 0；
+载荷变化率对照有 727/819 个平衡匹配，效果仍小且区间跨 0。depth、几何 contact、最近反向和
+controller epoch/profile 也没有同时通过样本数、匹配平衡和 cluster bootstrap 门。
+
+当前 HDF5 的 contact mask 几乎恒为 1，目标箱 force 在 Dig 中恒为 0；缺少 worktool/soil force、最终目标
+速度、加速度/软限位 mask、bucket cylinder position/velocity 和液压压力/执行器力。路线因此固定为
+`collect_missing_actuator_and_contact_telemetry`。只允许同初态、同 bucket 序列、no-contact/controlled-contact
+各少量重复的 bucket-only 采集；其他三轴冻结，不运行昂贵 Dig A/B，不训练 ACT。工件位于
+`bucket_only_v1/residual_state_audit_v3/`。
+
+在实际补遥测前，周期性真实状态重锚给出了更低成本的路线判别。复用同一 12,922 个内部范围窗口时，
+每 1/5/10/25 步重锚 qpos/qvel 的 100 步 endpoint source 等权误差为
+`0.000433/0.003097/0.006721/0.016091 m`，全部低于 3 cm。worst-source 在 1/5/10 步间隔也通过，25 步
+间隔的 source 24 为 `0.032449 m`，因此最大稳定间隔为 10 步。结论改为
+`autoregressive_accumulation_primary`：当前观察足以支持短段预测，主要失败来自自回归累计。
+
+下一路线只允许同预算比较小型 direct-trajectory 与 compact-hidden-state 模型。覆盖门仍因 197 episode、
+14 source 失败，因此即使新结构过 3 cm 也不能直接晋级；还必须补内部自然操作覆盖。若新结构不能同时通过
+3 cm source-equal/worst-source 双门和覆盖门，正式停止该离线物理约束支线，禁止用 5 cm 门重标成功。
+工件位于 `bucket_only_v1/reanchor_eval_v2/`。
+
+最终的等预算结构比较没有挽救该路线。direct full-trajectory MLP 与 compact action-history GRU 分别为
+226,400/181,208 参数，使用相同 folds、三个 seed、sample schedules 和每成员 2,000 updates。direct 的
+trajectory/endpoint/worst-source/disagreement 为 `0.109417/0.116209/0.184532/0.092906 m`；GRU 为
+`0.091635/0.122010/0.181832/0.052354 m`。两者四项门全部失败，覆盖门也仍失败。
+
+路线结论固定为 `stop_offline_predictor_route`。不冻结 dynamics predictor，不训练 soil effect model，
+不恢复 token-swap A/B/C 或 ACT，也不把 endpoint 门从 3 cm 放宽到 5 cm。后续若继续 Dig 目标跟随，必须
+另开具有新观测/新数据合同的路线，不能沿用本支线失败工件宣称物理约束已通过。工件位于
+`bucket_only_v1/structure_comparison_full_v1/`。
 
 在显式目标生命周期、独立安全门控和 stop rule 下，验证 residual 更新能否安全驱动下一铲
 规划。结果须和阶段 A、C、D 的证据类型分开报告。
@@ -694,3 +1130,57 @@ aggregation 下的短期扫掠风险。该阶段不得用专家 qpos path 代替
 每次报告先说明完成的是哪种证据、实际观察到什么、是否保留了安全边界、production/default
 是否改变；随后再列 token、checkpoint、路径、SHA 和内部实验标识。没有相应 Unity 或正式
 闭环证据时，不得使用“已实现实时目标跟随”或同义结论。
+
+## Dig dispatch 路线判定（2026-08-23）
+
+已完成默认关闭的 `dig_act_receding_horizon_dispatch_diagnostic_v1`。112 个 planner-reachable 位置变体
+各使用 100 帧相同 recorded observation，legacy contributor age 覆盖完整 `0–99`。物理侧只在每个
+episode 的 91 个真实状态锚点做 5/10 步短投影，避免再次使用已失败的长程 predictor。
+
+latest-chunk 的 10-step direction/ranking 为 `24.34%/50.26%`，legacy 为 `26.72%/50.33%`；两项都
+没有达到 80%，也没有相对提高 15 个百分点。latest projected separation p10 只有 `0.485 mm`，低于
+`20 mm` 门；direction 与 separation 的 paired bootstrap 还确认 latest 更差。raw goal response
+仍有 `80.89%`，所以这不是 goal condition response 回归。action support violation 只增加
+`0.27` 个百分点，没有超过 1 个百分点限制。
+
+路线结论为 `temporal_dispatch_not_primary`。不修改默认 ACT dispatch，也不申请最小 Unity 单铲测试。
+下一阶段改为 `goal_conditioned_act_vs_diffusion_policy` 架构对照；对照仍需冻结数据、相同 observation、
+相同目标变体、source/episode 分组和独立 policy state。任何短期 FK/dynamics 结果都继续标记为
+`short_horizon_projection_only`，不能代替 Unity 接触轨迹或目标 cell 土体效果。
+
+权威工件位于
+`runs/eval/dig_act_receding_horizon_dispatch_diagnostic_20260823T184504+0800/`。ACT checkpoint、训练、
+Unity、planner 和 production/default 行为均未改变。
+
+## ACT-vs-DP 前置数据门（2026-08-23）
+
+公平架构对照尚未启动。先执行的 `dig_goal_action_identifiability_precheck_v1` 使用 primitive t0、完整
+100-step 监督、正式 18D support、四相机和相同 controller metadata 检查“同状态、多目标、动作随目标变化”。
+
+241 个可用 episode 中有 2,021 个同 source/metadata 组合，但 qpos `≤0.005`、qvel `≤0.02` 后为 0；因此
+同目标噪声 pair 和 0.1/0.2 m 位置目标 pair 都为 0。112 个冻结目标的 planner base/alternate 自然示范覆盖
+也是 `0/112`。该结果在动作或模型比较前就触发 fail-closed，不是 ACT 或 DP 效果判定。
+
+路线改为 `paired_goal_action_demonstrations`。最小数据应满足：相同可恢复初态、相同相机与 terrain、至少两个
+planner-reachable 位置目标、每目标独立示教、完整 100-step action 与 source/session lineage。先让 t0 状态门、
+四相机门、同目标噪声基线、八个平移 bin 覆盖和 source/episode bootstrap 全部通过，再创建同预算 ACT/DP
+训练 job。
+
+不调整 temporal decay/window/weight，不启动 Unity，不训练土体模型。权威工件位于
+`runs/eval/dig_goal_action_identifiability_precheck_20260823T205439+0800/`。
+
+## 最小 DP 架构响应探针（2026-08-24）
+
+为确认“换成 Diffusion Policy 是否会在相同数据上自行恢复 goal response”，完成了一次纯离线、不可晋级的
+最小探针。它使用相同 strict-train source split、38,853 个 100-step 窗口、四相机、18D observation、10D
+Dig token、三训练 seed 和三 inference-noise seed。每帧重新采样，只派发最新 chunk 的第一个动作，完全关闭
+temporal aggregation。
+
+结果没有形成架构改善：正确目标变化的 first-action L2 p10 仅 `0.000560`，raw goal response 为 0；
+diffusion noise p95 为 `1.428145`，远大于 goal effect。direction/ranking 为 `30.08%/50.01%`，10-step
+separation p10 为 `0.0274 mm`，训练 seed 方向一致率为 `6.65%`。动作 support 没有恶化且无非有限值，
+但方向、排序、分离、bootstrap、noise 和 seed 一致性门全部失败。
+
+路线分类为 `minimal_dp_probe_noise_dominates`。数据可辨识性门仍失败，因此该探针即使局部指标变好也不可晋级；
+当前更没有理由调整 denoising steps、模型宽度或预算。下一步保持 `paired_goal_action_demonstrations`，不启动
+Unity。权威工件为 `runs/eval/dig_minimal_diffusion_probe_20260824T150222+0800/`。

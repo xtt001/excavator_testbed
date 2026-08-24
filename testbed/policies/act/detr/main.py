@@ -92,6 +92,19 @@ def build_ACT_model_and_optimizer(args_override):
     return model, optimizer
 
 
+def build_ACT_model_for_inference(args_override):
+    """Build ACT weights without constructing training-only optimiser state."""
+    parser = argparse.ArgumentParser(
+        'DETR training and evaluation script', parents=[get_args_parser()]
+    )
+    args = parser.parse_args([])
+
+    for k, v in args_override.items():
+        setattr(args, k, v)
+
+    return build_ACT_model(args)
+
+
 def build_CNNMLP_model_and_optimizer(args_override):
     parser = argparse.ArgumentParser('DETR training and evaluation script', parents=[get_args_parser()])
     args = parser.parse_args([])

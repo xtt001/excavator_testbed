@@ -14,7 +14,12 @@ from scripts.planner_architecture_doc_guard import (
 )
 
 _STRICT18_BASE_ROADMAP_LINES = (
-    "当前唯一授权的实现任务是**阶段 A.6：受限 Return 闭环因果诊断**。",
+    "当前授权路线已切换为**阶段 B → C → D：Dig 单铲位置 A/B 土体效果验证**。",
+    "Return 实现、实验记录与失效原因现已冻结为历史材料",
+    "`diagnostic_only=true`、`promotion_eligible=false`",
+    "`actuation_diagnostics_v1`",
+    "隐藏土体一致性未证明",
+    "阶段 A.6：受限 Return 闭环因果诊断",
     "ACT 直接输出 4D action",
     "`exact-tuple` 与现有 continuous qpos predictor 是 `diagnostic_legacy`。",
     "teacher_forced_recorded_observation",
@@ -279,6 +284,7 @@ def test_readme_points_to_curated_docs() -> None:
     readme = (root / "README.md").read_text(encoding="utf-8")
 
     for needle in (
+        "docs/strict18_realtime_goal_following_handoff_prompt_20260820.md",
         "docs/strict18_goal_following_roadmap.md",
         "docs/planner_to_act_conceptual_contract.md",
         "docs/planner_current_architecture.md",

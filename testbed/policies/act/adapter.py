@@ -65,8 +65,12 @@ class ACTAdapter(Policy):
         norm_stats: dict[str, np.ndarray],
         temporal_agg: bool = False,
         device: str = "cuda",
+        create_optimizer: bool = True,
     ):
-        from testbed.policies.act.detr.main import build_ACT_model_and_optimizer
+        from testbed.policies.act.detr.main import (
+            build_ACT_model_and_optimizer,
+            build_ACT_model_for_inference,
+        )
 
         self.device       = torch.device(device if torch.cuda.is_available() else "cpu")
         self.policy_config = dict(policy_config)
@@ -99,8 +103,14 @@ class ACTAdapter(Policy):
         self._cached_actions: torch.Tensor | None = None
         self._max_episode_len = int(policy_config.get("max_episode_len", 400))
 
-        model, optimizer = build_ACT_model_and_optimizer(policy_config)
-        self._model     = model.to(self.device)
+        if create_optimizer:
+            model, optimizer = build_ACT_model_and_optimizer(policy_config)
+        else:
+            model = build_ACT_model_for_inference(policy_config)
+            optimizer = None
+            for parameter in model.parameters():
+                parameter.requires_grad_(False)
+        self._model = model.to(self.device)
         self._optimizer = optimizer
 
         self._normalize = make_act_image_normalizer()
@@ -496,6 +506,27 @@ class ACTAdapter(Policy):
     def configure_optimizers(self):
         return self._optimizer
 
+    def set_outcome_head_trainable(self, trainable: bool) -> None:
+        """Freeze/unfreeze only the action-to-outcome decoder parameters."""
+        head = getattr(self._model, "outcome_head", None)
+        if head is None:
+            raise RuntimeError("ACT outcome head is unavailable")
+        for parameter in head.parameters():
+            parameter.requires_grad_(bool(trainable))
+        head.train(bool(trainable))
+
+    def predict_outcome_from_action_chunk_tensor(
+        self, action_chunk: torch.Tensor
+    ) -> torch.Tensor:
+        """Differentiable public facade used by offline frozen-head ablations."""
+        method = getattr(self._model, "_predict_outcome_from_actions", None)
+        if not callable(method):
+            raise RuntimeError("ACT outcome decoder is unavailable")
+        result = method(action_chunk)
+        if result is None:
+            raise RuntimeError("ACT outcome decoder returned no prediction")
+        return result
+
     def state_dict(self):
         return self._model.state_dict()
 
@@ -587,6 +618,7 @@ class ACTAdapter(Policy):
         norm_stats_path: str | Path,
         temporal_agg: bool = False,
         device: str = "cuda",
+        create_optimizer: bool = True,
     ) -> ACTAdapter:
         """
         Convenience factory: load an ACT policy from a checkpoint file.
@@ -608,6 +640,7 @@ class ACTAdapter(Policy):
             norm_stats=norm_stats,
             temporal_agg=temporal_agg,
             device=device,
+            create_optimizer=create_optimizer,
         )
 
         raw = torch.load(ckpt_path, map_location="cpu")

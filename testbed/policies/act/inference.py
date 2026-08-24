@@ -206,6 +206,7 @@ def load_act_policy(
     norm_stats_path: str | Path | None = None,
     temporal_agg: bool = False,
     device: str = "cuda",
+    create_optimizer: bool = True,
 ) -> ACTAdapter:
     """Load a frozen ACT adapter with an explicit normalisation artifact."""
     from testbed.policies.act.adapter import ACTAdapter
@@ -222,6 +223,7 @@ def load_act_policy(
         norm_stats_path=resolved_norm_stats_path,
         temporal_agg=bool(temporal_agg),
         device=device,
+        create_optimizer=bool(create_optimizer),
     )
 
 

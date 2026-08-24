@@ -2081,6 +2081,265 @@ tb-cleanup-training-artifacts --ckpt-dir <ckpt_dir> --delete
 
 ## 10. 历史基线说明
 
+### Dig token-swap 冻结物理结果诊断
+
+`docs/dig_token_swap_effect_consistency_v1.md` 记录新的默认关闭诊断路径。该路径从自然 Dig
+数据训练不接收 token 的 action→fixed-tip/removed-depth predictor，并用冻结 predictor 对
+planner-range token 变体施加 tracking、ranking 和 separation。现有 BC、KL、hindsight outcome、
+10D token 和 `token_swap_loss_weight=1.0` 都不改。
+
+当前 frozen effect model 未通过可信度门，所以训练 runner 必须在 ACT checkpoint 加载和 optimizer
+创建前停止；A/B/C 实际更新数为 `0/2000`。不要把 loss 模块已实现写成 checkpoint 已重训，也不要
+从失败工件恢复训练或修改生产 config。
+
+predictor 开发必须使用 source-grouped 折，禁止随机拆重叠窗口。当前固定四折见
+`docs/dig_token_swap_effect_consistency_v1.md`。采样和 early-stop 指标都要先等权 source，再等权
+episode；同时保留 per-window 指标观察真实样本分布。一步 joint transition 与 100-step rollout 必须
+分开报告。当前一步 fixed-tip 误差小于 1 mm，但 100-step endpoint 超过 0.22 m，属于累计发散；
+在该轨迹门通过前不得训练 soil head 或加载 ACT。
+
+joint rollout 稳定性训练固定使用 `5→10→25→50→100` 自回归课程；每一步输入必须是模型自己的
+qpos/qvel，next qpos 只能由 predicted next qvel、`dt=0.02` 和 YuLong normalization range 积分，
+再硬投影到 `[0,1]`。next-qvel、qpos、fixed-tip、velocity continuity、range 五项先按物理尺度
+归一化，再等权平均；不得通过扩大 hidden 或提高某一 loss 权重追门。
+
+当前课程后 trajectory/endpoint/disagreement 为 `0.040195/0.056302/0.021728 m`，仍失败。
+lag 1–10 action history 与 bucket 一步残差没有 material correlation；缺失的 per-step
+`final_target_speed`、`acceleration_limited_mask`、cylinder position/velocity 仍是候选缺失状态，但必须先用
+有限历史直接比较验证，不能只凭相关性决定加字段。
+
+bucket-only 比较使用 `tb` Python 模块入口：
+
+```bash
+python -m testbed.cli.train_bucket_input_comparison \
+  --frozen-curriculum-artifact <curriculum_v2_hard_qpos/artifact.json> \
+  --bucket-history-cache <bucket_history_windows_v2.npz> \
+  --fk-artifact <fixed_tip_fk_artifact.json> \
+  --output-dir <new_no_overwrite_dir>
+```
+
+默认四臂为 current state/action、5-step action history、10-step action history 和
+5-step action/qvel/base-residual history。只训练 bucket corrector；冻结 joint base 的 swing/boom/stick 参数与
+逐步输出都必须保持零差异。输入历史只来自 t0 之前；当前和未来 target 只参与 loss，不可进入 feature。
+正式比较必须沿用四个 source folds、三个 seed、source/episode 均衡采样、每阶段 100 次更新和
+`5→10→25→50→100` 课程。
+
+当前正式结果中，纯 action history 的 h5 qvel 改善不足 1%；加入 qvel/residual history 后改善
+`8.55% [6.16%,11.19%]`，仍低于 30% 门。相似历史没有出现达到门槛的一对多响应，误差集中在 qpos 边界和
+少数 source/episode。因此下一步是检查边界窗口、状态跳变和 source 覆盖；不要增加网络、提高 loss 权重、
+训练 soil head 或加载 ACT。
+
+只读数据定位使用：
+
+```bash
+python -m testbed.cli.localize_bucket_rollout_data \
+  --oof-errors <comparison_full_v1/oof_bucket_errors.npz> \
+  --bucket-history-cache <bucket_history_windows_v2.npz> \
+  --output-dir <new_no_overwrite_dir>
+```
+
+它只读取折外误差、历史窗口和 HDF5 metadata。边界分箱固定为到最近 normalized qpos 边界
+`[0,.01)/[.01,.025)/[.025,.05)/[.05,.10)/[.10,.20)/[.20,.50]`；episode/source 使用
+per-window、episode 等权、source 等权三套 leave-one-out。controller/source 比较先在 qpos、qvel 和
+当前或前 5 步 action 上做一对一 caliper matching；匹配不平衡、样本不足或区间跨 0 时不得作控制时期结论。
+
+当前边界比值为 `4.772×`，移除 top 5% error-mass episode 后仍为 `3.105×`。配对 source/epoch 均未过门。
+按两侧分箱误差不超过核心区间 2 倍推导出的 predictor 可信支持候选为 `[0.05,0.80]`。该候选默认关闭，
+不能直接写入 planner、ACT、生产 joint limit 或正式 checkpoint；下一步只能先接入 predictor 离线 gate 并
+重新评估 trajectory/endpoint/disagreement。
+
+冻结 predictor 的内部范围复评使用：
+
+```bash
+python -m testbed.cli.evaluate_bucket_internal_support \
+  --frozen-curriculum-artifact <curriculum_v2_hard_qpos/artifact.json> \
+  --bucket-comparison-artifact <comparison_full_v1/artifact.json> \
+  --bucket-history-cache <bucket_history_windows_v2.npz> \
+  --transition-cache <strict_train_transitions.npz> \
+  --fk-artifact <fixed_tip_fk_artifact.json> \
+  --output-dir <new_no_overwrite_dir>
+```
+
+命令必须先写 `selection.json`，再加载模型。真实 bucket qpos 的初态和未来 100 步均须在 `[0.05,0.80]`；
+过去 10 步、当前和未来 100 步 qvel/action 都须通过 transition cache 的逐轴 p01-p99。不得读取预测误差筛窗。
+模型和 corrector 必须 `eval()`、`requires_grad=false`，运行中不得创建 optimizer。
+
+当前复评保留 12,922 个窗口、197 个 episode、14 个 source。trajectory/disagreement 为
+`0.031580/0.013407 m`，通过；endpoint 为 `0.046381 m`，失败。source 19/23 无窗口，覆盖门也失败。
+因此不能冻结 predictor 或训练 soil effect model；下一步检查执行器响应状态缺失，或更换 predictor 结构。
+
+一步残差状态审计使用：
+
+```bash
+python -m testbed.cli.audit_bucket_residual_state \
+  --transition-cache <strict_train_transitions.npz> \
+  --transition-manifest <strict_train_transitions.json> \
+  --frozen-curriculum-artifact <curriculum_v2_hard_qpos/artifact.json> \
+  --output-dir <new_no_overwrite_dir>
+```
+
+命令先从 HDF5 导出物理状态并冻结 load/depth 分组阈值，再加载三成员 OOF predictor。目标是有符号
+`next bucket qvel` 残差；匹配只使用当前 qpos/qvel/action，且必须跨 source。不得随机拆行、按 residual
+挑样本或训练 residual head。
+
+当前现有字段均未通过解释门。`bucket_mass_delta_kg` 有 727–819 个平衡匹配但效果小且区间跨 0；静态载荷、
+depth、contact、反向和 controller 对照则受到匹配数、平衡或区间限制。下一采集最小必需字段为 final target
+speed、acceleration/soft-limit mask、bucket cylinder position/velocity、worktool/soil force 或 resistance，
+以及可用时的液压压力/执行器力。采集使用同初态、同 bucket 动作序列，no-contact/controlled-contact 各建议
+3 个独立 session；swing/boom/stick 冻结，ACT 不加载。完成后才允许固定预算 A/B/C，不能直接调大模型或 loss。
+
+周期性真实状态重锚诊断使用：
+
+```bash
+python -m testbed.cli.evaluate_bucket_reanchoring \
+  --bucket-comparison-artifact <comparison_full_v1/artifact.json> \
+  --internal-support-artifact <internal_support_eval_v1/artifact.json> \
+  --bucket-history-cache <bucket_history_windows_v2.npz> \
+  --fk-artifact <fixed_tip_fk_artifact.json> \
+  --output-dir <new_no_overwrite_dir>
+```
+
+重锚发生在本步预测和误差记录之后，只影响下一步输入。必须固定 interval `1/5/10/25` 并复用完全相同的
+selected indices；不得为某个 interval 重选窗口。当前 endpoint source 等权均过 3 cm，worst-source 在
+interval 1/5/10 也通过，25 步为 `0.032449 m`，所以最大稳定间隔是 10 步。分类为
+`autoregressive_accumulation_primary`。
+
+下一对照只能使用相同 source/session folds、训练预算和 BC 数据，比较小型 direct trajectory 与 compact
+hidden-state 模型。正式门保持 3 cm，不允许改成 5 cm；同时要求 source-equal、worst-source 和覆盖门。
+任一新结构仍失败时停止该 predictor/离线物理约束路线，不训练 ACT 或 soil head。
+
+最后的等预算结构比较使用：
+
+```bash
+python -m testbed.cli.compare_dig_trajectory_structures \
+  --bucket-comparison-artifact <comparison_full_v1/artifact.json> \
+  --internal-support-artifact <internal_support_eval_v1/artifact.json> \
+  --bucket-history-cache <bucket_history_windows_v2.npz> \
+  --fk-artifact <fixed_tip_fk_artifact.json> \
+  --output-dir <new_no_overwrite_dir> \
+  --updates 2000 \
+  --batch-size 128
+```
+
+两种结构必须共享 selected indices、source folds、seed、逐 batch schedule、loss、updates 和 batch size；参数
+比必须不超过 1.30。当前 direct/GRU 参数量为 `226400/181208`。正式 OOF 中 direct 的 trajectory/endpoint/
+worst/disagreement 为 `0.109417/0.116209/0.184532/0.092906 m`，GRU 为
+`0.091635/0.122010/0.181832/0.052354 m`，均全部失败。
+
+因此该离线 dynamics/effect-consistency 支线已经停止。不要继续扩大 hidden、增加 updates、提高 loss 权重、
+放宽到 5 cm、训练 soil head 或加载 ACT。诊断 checkpoint 只能保留在 no-overwrite 工件中，不能作为正式
+predictor 或 production 候选。
+
 旧 V1 / V2.1 文档里关于 `act_agx_v1`、9D `env_state`、`episode_len=1000`、`qpos only`、`dump_complete_final_hold`、`success_rate=100%` 等内容，只能用于解释当时实验，不再代表当前系统状态。
 
 如果需要复现旧结果，应把它标为 legacy experiment，并同时记录当前代码是否仍支持对应 config。不要把旧成功结论迁移到 V2.4.5 spatial-mass / qc6 / depth-profile 训练上。
+
+## Dig ACT receding-horizon dispatch 离线诊断
+
+该诊断默认关闭。`--dry-run` 只打印合同，不加载 ACT、backend 或 Unity：
+
+```bash
+python -m testbed.cli.dig_act_receding_horizon_dispatch_diagnostic --dry-run
+```
+
+正式执行必须显式 opt in，并提供一个不存在的新目录：
+
+```bash
+python -m testbed.cli.dig_act_receding_horizon_dispatch_diagnostic \
+  --execute-offline-diagnostic \
+  --output-dir <new_no_overwrite_dir> \
+  --variant-count 112 \
+  --bootstrap-resamples 2000 \
+  --bootstrap-seed 20260823 \
+  --device cuda \
+  --projection-device cpu
+```
+
+CLI 从指定的 reanchor decision、structure decision 和 bucket comparison artifact 追溯 ACT checkpoint、
+dataset stats、18D support、token order、camera/low-dim order、split、planner variants、source-grouped
+joint dynamics 和 fixed-tip FK。不得在命令行复制这些语义。使用的 position-translation 变体必须在完整
+100 帧上通过 18D p01-p99、几何自洽和有效 cell 检查；每个纳入 source 至少有 8 个完整支持 episode，
+source 33/34 一律排除。
+
+ACT 使用 inference-only 构造，`create_optimizer=false`，所有参数 `requires_grad=false`。运行中禁止
+optimizer、backward、checkpoint 写入、backend 调用、Unity 启动和动作发送。legacy trace 重构当前
+`ACTAdapter.predict()` 的 100-query、oldest-first、decay `0.01` 合同，并用公共 `predict()` 做 `1e-6`
+行为兼容检查；latest trace 每帧只使用新 chunk 的首动作，goal SHA 或 request 变化时 reset cache。
+
+dispatch 保存完整 100 帧，legacy contributor age 因此覆盖 `0–99`。joint dynamics 只做 91 个
+recorded-state anchors 上的 5/10-step projection；禁止生成或引用 100-step projected trajectory。
+固定输出为 `contract.json`、`input_manifest.json`、`variants.jsonl`、两种 trace、`pair_metrics.json`、
+`bootstrap.json`、`decision.json`、`report.md` 和三张图。所有文件 no-overwrite。
+
+当前权威运行是
+`runs/eval/dig_act_receding_horizon_dispatch_diagnostic_20260823T184504+0800/`，分类为
+`temporal_dispatch_not_primary`，下一实验为 `goal_conditioned_act_vs_diffusion_policy`。该结论只属于
+teacher-forced recorded observation 加短期投影，不代表 Unity/真实轨迹、土体效果或生产可用性。
+
+## ACT-vs-DP 前的 Dig goal/action 数据可辨识性预检
+
+该预检默认关闭，且自身绝不创建 ACT/DP optimizer。dry-run 命令为：
+
+```bash
+python -m testbed.cli.dig_goal_action_identifiability_precheck --dry-run
+```
+
+正式运行必须提供不存在的新目录：
+
+```bash
+python -m testbed.cli.dig_goal_action_identifiability_precheck \
+  --execute-precheck \
+  --output-dir <new_no_overwrite_dir> \
+  --bootstrap-resamples 2000 \
+  --bootstrap-seed 20260823
+```
+
+输入 lineage 从最终 receding-horizon dispatch `input_manifest.json` 解析，不复制 checkpoint、stats、support、
+split、相机或 token 顺序。检查只使用 strict-train source，source 33/34 排除。每个 primitive 只取 t0，要求
+前 100 步 action loss mask 全有效、t0 18D 在 p01-p99 内，并要求同 source、不同 primitive episode、相同
+controller epoch/profile/calibration、qpos 最大差 `≤0.005`、qvel 最大差 `≤0.02`。机械状态通过后才计算四相机
+64×64 像素、correlation 和 difference-hash 门。
+
+数据门固定要求：同目标噪声至少 30 pair/4 source；不同目标至少 100 pair/8 source；112 个冻结目标至少覆盖
+100 个；八个 ±x/±z、0.1/0.2 m bin 各至少 8 个；前 10 步动作响应通过率至少 80%，且 source/episode
+bootstrap 95% 下界大于 0。任何一项失败都输出 `data_supervision_unidentifiable`，不启动策略训练。
+
+当前权威运行是
+`runs/eval/dig_goal_action_identifiability_precheck_20260823T205439+0800/`。241 个 episode 通过行级前置条件，
+2,021 个同 source/metadata 组合在机械状态门后变成 0；同目标/不同目标 pair 均为 0，112 个 base/alternate
+目标覆盖为 0。因此分类为 `data_supervision_unidentifiable`，下一步是
+`paired_goal_action_demonstrations`。ACT、DP、土体模型、Unity、动作发送、temporal 参数和生产默认均未改变。
+
+## 最小 Dig Diffusion Policy 探针
+
+该命令只用于数据门失败后的离线架构响应诊断，默认关闭且永久不可晋级：
+
+```bash
+python -m testbed.cli.dig_minimal_diffusion_probe --dry-run
+
+python -m testbed.cli.dig_minimal_diffusion_probe \
+  --execute-probe \
+  --output-dir <new_no_overwrite_dir> \
+  --training-updates 1000 \
+  --bootstrap-resamples 2000 \
+  --bootstrap-seed 20260824 \
+  --device cuda
+```
+
+输入从最终 dispatch manifest、失败的数据可辨识性 decision 和 source-grouped rollout cache 解析。固定合同为：
+
+- 38,853 个 strict-train 100-step 窗口；source 33/34 排除；source→episode 均衡采样；
+- 四相机按正式顺序转灰度 32×32，low-dim 顺序固定为 `qpos,qvel,dig_cut_tokens`；
+- 100×4 action chunk，训练 seeds `0/1/2`，inference-noise seeds `100/101/102`；
+- 50-step epsilon-prediction DDPM，10-step deterministic DDIM，hidden 64，100,148 参数；
+- 每帧重新采样，派发 query 0；禁止 cache 和 temporal aggregation；
+- base-correct、alternate-correct、zero、shuffled 四条件共享 initial diffusion noise；
+- 只允许冻结 5/10-step projection，禁止失败的 100-step dynamics 证据。
+
+运行会实际训练 DP probe，所以会创建三个 probe-local optimizer 和 checkpoint；这些 checkpoint 只能留在
+no-overwrite 工件中，不能写入 production config 或 `DiffusionAdapter`。ACT、土体模型、backend 和 Unity 不加载。
+
+当前权威运行位于 `runs/eval/dig_minimal_diffusion_probe_20260824T150222+0800/`，分类为
+`minimal_dp_probe_noise_dominates`。正确目标 effect p10 `0.000560`，noise p95 `1.428145`；direction/ranking
+`30.08%/50.01%`，separation p10 `0.0274 mm`，seed 一致率 `6.65%`。action support 未恶化且无非有限值，
+但所有目标跟随门失败。下一步仍为 `paired_goal_action_demonstrations`，不得直接进入 Unity。
