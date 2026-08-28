@@ -9,6 +9,7 @@ YULONG_DOCS = frozenset(
     {
         "docs/checklist_train.md",
         "docs/data_processing_hdf5_qc_contract.md",
+        "docs/dig_act_executor_and_trajectory_planning_exploration_20260822_20260828.md",
         "docs/dig_token_swap_effect_consistency_v1.md",
         "docs/dig_short_trajectory_conditioned_act_development_plan.md",
         "docs/goal_following_mainline_implementation_manifest_20260731.json",
