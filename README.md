@@ -1065,6 +1065,7 @@ ACT 已经获得目标载荷/质量 plateau 但尚未离开 dig box，planner �
 - [docs/strict18_goal_following_roadmap.md](docs/strict18_goal_following_roadmap.md)：Strict-18 当前 Dig 单铲位置 A/B 的阶段 B→C→D 合同；Return A.6 仅保留为冻结历史
 - [docs/strict18_realtime_goal_following_handoff_prompt_20260820.md](docs/strict18_realtime_goal_following_handoff_prompt_20260820.md)：Dig 单铲实验的当前交接入口，包含诊断证据边界、Git 状态、安全阻断和执行次序
 - [docs/dig_short_trajectory_conditioned_act_development_plan.md](docs/dig_short_trajectory_conditioned_act_development_plan.md)：下一阶段短轨迹条件 ACT 的 Phase 0→A→B→C 开发、停门和分支启动计划
+- [docs/goal_conditioned_act_data_identifiability.md](docs/goal_conditioned_act_data_identifiability.md)：说明目标条件 ACT 的数据可辨识性、Hindsight 标签边界、长时序接触任务的数据要求，以及学习与传统控制的合理分工
 - [docs/planner_to_act_conceptual_contract.md](/home/pingfan/PACT/excavator_testbed/docs/planner_to_act_conceptual_contract.md)：从概念上说明上层 planner 到低层 ACT 的控制结构、职责边界和输入输出
 - [docs/planner_current_architecture.md](/home/pingfan/PACT/excavator_testbed/docs/planner_current_architecture.md)：当前 primitive planner 架构、decision backend / trace 边界和扩展规则
 - [docs/planner_scheduling_backend_design.md](/home/pingfan/PACT/excavator_testbed/docs/planner_scheduling_backend_design.md)：未来 scheduling / decision backend 接入指南
